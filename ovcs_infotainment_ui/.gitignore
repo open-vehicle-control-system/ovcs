@@ -35,3 +35,4 @@ ovcs_infotainment_ui-*.tar
 npm-debug.log
 /assets/node_modules/
 
+priv/
