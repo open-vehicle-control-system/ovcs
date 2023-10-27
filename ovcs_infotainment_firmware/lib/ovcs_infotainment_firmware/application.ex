@@ -15,7 +15,9 @@ defmodule OvcsInfotainmentFirmware.Application do
         xdg_runtime_dir: @xdg_runtime_dir,
         name: :weston,
         cli_args: [
-          "--continue-without-input"
+          "--continue-without-input",
+          "--shell=kiosk-shell.so",
+          "-i0"
         ]
       },
       {NervesCog,
