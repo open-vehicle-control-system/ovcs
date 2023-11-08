@@ -21,7 +21,7 @@ defmodule OvcsInfotainmentFirmware.Application do
         ]
       },
       {NervesCog,
-       url: "http://localhost:4000",
+       url: "http://localhost:4000/",
        fullscreen: true,
        xdg_runtime_dir: @xdg_runtime_dir,
        wayland_display: "wayland-1",

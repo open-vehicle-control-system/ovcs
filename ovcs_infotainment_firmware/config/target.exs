@@ -94,19 +94,41 @@ config :mdns_lite,
 # Import target specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.
 # Uncomment to use target specific configurations
-config :ovcs_infotainment_ui, OvcsInfotainmentUiWeb.Endpoint,
+# Configure your database
+config :ovcs_infotainment_backend, OvcsInfotainmentBackend.Repo,
+  database: "/data/ovcs_infotainment_backend/ovcs_infotainment_backend.db",
+  pool_size: 5,
+  stacktrace: true,
+  show_sensitive_data_on_connection_error: true
+
+# Configures the endpoint
+config :ovcs_infotainment_backend,
+  ecto_repos: [OvcsInfotainmentBackend.Repo],
+  generators: [timestamp_type: :utc_datetime]
+
+# Configures the endpoint
+config :ovcs_infotainment_backend, OvcsInfotainmentBackendWeb.Endpoint,
   url: [host: "localhost"],
   http: [port: 4000],
   cache_static_manifest: "priv/static/cache_manifest.json",
   secret_key_base: "HEY05EB1dFVSu6KykKHuS4rQPQzSHv4F7mGVB/gnDLrIu75wE/ytBXy2TaL3A6RA",
-  live_view: [signing_salt: "AAAABjEyERMkxgDh"],
   check_origin: false,
-  render_errors: [view: OvcsInfotainmentUiWeb.ErrorView, accepts: ~w(html json), layout: false],
-  pubsub_server: OvcsInfotainmentUi.PubSub,
   # Start the server since we're running in a release instead of through `mix`
   server: true,
   # Nerves root filesystem is read-only, so disable the code reloader
-  code_reloader: false
+  code_reloader: false,
+  adapter: Phoenix.Endpoint.Cowboy2Adapter,
+  render_errors: [
+    formats: [json: OvcsInfotainmentBackendWeb.ErrorJSON],
+    layout: false
+  ],
+  pubsub_server: OvcsInfotainmentBackend.PubSub,
+  live_view: [signing_salt: "NYYbIS2A"]
+
+# Configures Elixir's Logger
+config :logger, :console,
+  format: "$time $metadata[$level] $message\n",
+  metadata: [:request_id]
 
 # Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, Jason

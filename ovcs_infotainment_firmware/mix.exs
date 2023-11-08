@@ -46,7 +46,7 @@ defmodule OvcsInfotainmentFirmware.MixProject do
       {:plug_cowboy, "~> 2.0"},
       {:nerves_weston, github: "coop/nerves_weston"},
       {:nerves_cog, github: "coop/nerves_cog"},
-      {:ovcs_infotainment_ui, path: "../ovcs_infotainment_ui", targets: @all_targets, env: Mix.env()},
+      {:ovcs_infotainment_backend, path: "../ovcs_infotainment_backend", targets: @all_targets, env: Mix.env()},
 
       # Dependencies for specific targets
       # NOTE: It's generally low risk and recommended to follow minor version
