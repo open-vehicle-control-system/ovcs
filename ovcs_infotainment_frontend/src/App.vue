@@ -40,7 +40,7 @@ import {
 } from '@heroicons/vue/24/outline'
 
 const navigation = [
-  { name: 'Debug', href: '/', icon: DocumentMagnifyingGlassIcon, current: true },
+  { name: 'Debug', href: '/debug', icon: DocumentMagnifyingGlassIcon, current: true },
 ]
 
 const sidebarOpen = ref(false)
