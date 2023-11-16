@@ -40,6 +40,8 @@ Send the message using the following command:
 cansend vcan0 111#FF11FF11FF11FF11
 ```
 
+Receive with Elixir:
+
 ```elixir
 {:ok, frame} = :socket.recv(sock) # Blocking until a message is received, Example: {:ok, <<17, 1, 0, 0, 8, 0, 0, 0, 255, 17, 255, 17, 255, 17, 255, 17>>}
 <<frame_id::binary-size(2), _unused1::binary-size(2), frame_data_length::binary-size(1), _unused2::binary-size(3), frame_data::binary  >>} = frame
