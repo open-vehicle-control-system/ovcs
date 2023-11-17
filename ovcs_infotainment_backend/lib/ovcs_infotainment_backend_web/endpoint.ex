@@ -1,6 +1,8 @@
 defmodule OvcsInfotainmentBackendWeb.Endpoint do
   use Phoenix.Endpoint, otp_app: :ovcs_infotainment_backend
-
+  socket "/sockets/dashboard", OvcsInfotainmentBackendWeb.Sockets.DashboardSocket,
+    websocket: true,
+    longpoll: false
   # The session will be stored in the cookie and signed,
   # this means its contents can be read but not tampered with.
   # Set :encryption_salt if you would also like to encrypt it.
@@ -46,8 +48,6 @@ defmodule OvcsInfotainmentBackendWeb.Endpoint do
   plug Plug.MethodOverride
   plug Plug.Head
   plug Plug.Session, @session_options
-  socket "/sockets/dashboard", OvcsInfotainmentBackendWeb.Sockets.DashboardSocket,
-    websocket: true,
-    longpoll: false
+
   plug OvcsInfotainmentBackendWeb.Router
 end
