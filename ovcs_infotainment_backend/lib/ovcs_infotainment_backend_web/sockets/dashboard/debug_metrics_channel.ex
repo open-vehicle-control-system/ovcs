@@ -10,7 +10,9 @@ defmodule OvcsInfotainmentBackendWeb.Sockets.Dashboard.DebugMetricsChannel do
   end
 
   def handle_info(:update, socket) do
-    push(socket, "updated", metrics(0))
+    IO.inspect "UPDATE"
+    timestamp = DateTime.to_unix(DateTime.utc_now())
+    push(socket, "updated", metrics(timestamp))
     {:noreply, socket}
   end
 
