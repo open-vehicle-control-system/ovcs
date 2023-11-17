@@ -2,7 +2,13 @@ defmodule OvcsInfotainmentBackendWeb.Sockets.Dashboard.DebugMetricsChannel do
   use Phoenix.Channel
 
   def join("debug-metrics", _message, socket) do
-    response  = %{socket: "jason"}
-    {:reply, {:ok, response}, socket}
+    IO.inspect "Socket connected"
+    {:ok, socket}
+  end
+
+  def handle_in("bootstrap", attrs, socket) do
+      post = Repo.insert!(changeset)
+      response = %{sockay: "jason"}
+      {:reply, {:ok, response}, socket}
   end
 end
