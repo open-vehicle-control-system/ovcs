@@ -11,7 +11,7 @@ const router = createRouter({
     },
     {
       path: '/',
-      name: 'debug',
+      name: 'home',
       component: DebugView
     },
   ]
