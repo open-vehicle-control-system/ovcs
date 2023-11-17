@@ -1,6 +1,7 @@
 <script setup>
 import { storeToRefs } from 'pinia'
 import { useMetricsStore } from "../stores/metrics.js"
+import { Socket } from 'phoenix'
 const { metrics } = storeToRefs(useMetricsStore())
 </script>
 
@@ -31,6 +32,19 @@ const { metrics } = storeToRefs(useMetricsStore())
 export default {
   name: "App",
   components: {
+  },
+  mounted: () => {
+    let store = useMetricsStore()
+    let dashboardSocket = new Socket("ws://localhost:4000/sockets/dashboard", {})
+    dashboardSocket.connect()
+    let metricsChannel = dashboardSocket.channel("debug-metrics", {})
+
+    metricsChannel.on("updated", payload => {
+      store.$patch(payload)
+    })
+
+    metricsChannel.join()
+      .receive("ok", () => {})
   },
   data: () => ({
   }),
