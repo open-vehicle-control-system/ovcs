@@ -3,17 +3,26 @@ defmodule OvcsInfotainmentBackendWeb.Sockets.Dashboard.DebugMetricsChannel do
 
   def join("debug-metrics", _message, socket) do
     IO.inspect "Socket connected"
+    Process.flag(:trap_exit, true)
+    :timer.send_interval(5000, :update)
+    send(self(), :update)
     {:ok, socket}
   end
 
-  def handle_in("bootstrap", _attrs, socket) do
-      {:reply, {:ok, metrics()}, socket}
+  def handle_info(:update, socket) do
+    push(socket, "updated", metrics(0))
+    {:noreply, socket}
   end
 
+  def handle_in("bootstrap", _attrs, socket) do
+    timestamp = DateTime.to_unix(DateTime.utc_now())
+    {:reply, {:ok, metrics(timestamp)}, socket}
+  end
 
-  defp metrics do
+  defp metrics(timestamp) do
     %{
       metrics: [
+        %{id: "0", type: "metric",  attributes: %{name: "timestamp", kind: "integer", unit: "epoch", origin: "clock", value: timestamp}},
         %{id: "1", type: "metric",  attributes: %{name: "speed", kind: "integer", unit: "m/s", origin: "abs", value: 14}},
         %{id: "2", type: "metric",  attributes: %{name: "frontLeftWheelSpeed", kind: "integer", unit: "m/s", origin: "abs", value: 14}},
         %{id: "3", type: "metric",  attributes: %{name: "frontRightWheelSpeed", kind: "integer", unit: "m/s", origin: "abs", value: 14}},
