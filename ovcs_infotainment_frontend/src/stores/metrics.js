@@ -27,7 +27,7 @@ export const useMetricsStore = defineStore('metrics', {
   actions: {
     async getMetrics(){
       this.metrics = [
-        
+
       ]
     }
   }
