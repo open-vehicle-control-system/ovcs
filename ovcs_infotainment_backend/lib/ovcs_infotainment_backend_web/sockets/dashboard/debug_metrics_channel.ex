@@ -6,8 +6,7 @@ defmodule OvcsInfotainmentBackendWeb.Sockets.Dashboard.DebugMetricsChannel do
     {:ok, socket}
   end
 
-  def handle_in("bootstrap", attrs, socket) do
-      post = Repo.insert!(changeset)
+  def handle_in("bootstrap", _attrs, socket) do
       response = %{sockay: "jason"}
       {:reply, {:ok, response}, socket}
   end
