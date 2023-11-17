@@ -14,11 +14,11 @@ const { metrics } = storeToRefs(useMetricsStore())
     <div class="mt-6 border-t border-gray-100 dark:border-gray-800">
       <dl class="divide-y divide-gray-100 dark:divide-gray-600">
         <template v-for="metric in metrics">
-        <div class="px-4 py-6 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-0">
+        <div class="px-4 py-6 sm:grid sm:grid-cols-2 sm:gap-4 sm:px-0">
           <dt class="text-xl font-medium leading-6 text-gray-900 dark:text-gray-400">
             {{ humanizeKey(metric["attributes"]["name"])}}
           </dt>
-          <dd class="mt-1 text-2xl leading-6 text-gray-700 dark:text-gray-200 sm:col-span-2 sm:mt-0">
+          <dd class="mt-1 text-2xl px-28 leading-6 text-gray-700 dark:text-gray-200 sm:col-span-1 sm:mt-0">
             {{ formatValue(metric["attributes"]["value"], metric["attributes"]["unit"]) }}
           </dd>
         </div>
