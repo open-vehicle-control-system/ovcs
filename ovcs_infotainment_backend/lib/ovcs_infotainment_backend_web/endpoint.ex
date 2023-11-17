@@ -46,5 +46,8 @@ defmodule OvcsInfotainmentBackendWeb.Endpoint do
   plug Plug.MethodOverride
   plug Plug.Head
   plug Plug.Session, @session_options
+  socket "/sockets/dashboard", OvcsInfotainmentBackendWeb.Sockets.DashboardSocket,
+    websocket: true,
+    longpoll: false
   plug OvcsInfotainmentBackendWeb.Router
 end
