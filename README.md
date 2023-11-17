@@ -27,7 +27,7 @@ You have to open an [erlang socket](https://www.erlang.org/doc/man/socket) with 
 
 ```elixir
 {:ok, sock} = :socket.open(29, :raw, 1)
-{:ok, ifindex} = :socket.ioctl(sock, :gifindex, 'vcan0') # Single quotes matters, you need a charlist not a binary
+{:ok, ifindex} = :socket.ioctl(sock, :gifindex, 'can0') # Single quotes matters, you need a charlist not a binary
 addr = <<0::size(16)-little, ifindex::size(32)-little, 0::size(32), 0::size(32), 0::size(64)>>
 :socket.bind(sock, %{:family => 29, :addr => addr})
 ```

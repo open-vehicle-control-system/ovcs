@@ -20,6 +20,28 @@ config :nerves, :firmware, rootfs_overlay: "rootfs_overlay"
 
 config :nerves, source_date_epoch: "1698084254"
 
+config :nerves, :firmware,
+  fwup_conf: "config/fwup.conf"
+
+config :vintage_net,
+  config: [
+    {"wlan0",
+      %{
+        type: VintageNetWiFi,
+        vintage_net_wifi: %{
+          wpa_supplicant_conf: """
+          network={
+            ssid="Area42-Guest"
+            key_mgmt=WPA-PSK
+            psk="bemyguest"
+          }
+          """
+        },
+        ipv4: %{method: :dhcp},
+      }
+    }
+  ]
+
 if Mix.target() == :host do
   import_config "host.exs"
 else

@@ -43,6 +43,7 @@ defmodule OvcsInfotainmentFirmware.MixProject do
 
       # Dependencies for all targets except :host
       {:nerves_pack, "~> 0.7.0", targets: @all_targets},
+      {:vintage_net_wifi, "~> 0.11.7", targets: @all_targets},
       {:plug_cowboy, "~> 2.0"},
       {:nerves_weston, github: "coop/nerves_weston"},
       {:nerves_cog, github: "coop/nerves_cog"},

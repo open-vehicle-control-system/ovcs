@@ -18,7 +18,8 @@ defmodule OvcsInfotainmentBackend.Application do
       # Start a worker by calling: OvcsInfotainmentBackend.Worker.start_link(arg)
       # {OvcsInfotainmentBackend.Worker, arg},
       # Start to serve requests, typically the last entry
-      OvcsInfotainmentBackendWeb.Endpoint
+      OvcsInfotainmentBackendWeb.Endpoint,
+      {OvcsInfotainmentBackend.CanFrameHandlerService, {}}
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html
