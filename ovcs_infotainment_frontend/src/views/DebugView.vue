@@ -47,6 +47,9 @@ export default {
         case "celcius":
           formattedValue = value + " " + "°C"
           break
+        case "m/s":
+          formattedValue = value + " " + unit + " (" + value*(18/5)+ " " + "km/h)"
+          break
         case undefined:
           formattedValue = value
           break
