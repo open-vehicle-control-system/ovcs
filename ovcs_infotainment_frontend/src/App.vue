@@ -22,8 +22,8 @@
       </div>
     </div>
 
-    <main class="py-10 lg:pl-72 dark:bg-gray-800">
-      <div class="px-4 sm:px-6 lg:px-8">
+    <main class="py-10 lg:pl-32 dark:bg-gray-800">
+      <div class="sm:px-6 lg:px-8">
         <RouterView />
       </div>
     </main>
