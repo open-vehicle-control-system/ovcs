@@ -1,4 +1,6 @@
 defmodule OvcsInfotainmentBackend.CanService do
+  alias OvcsInfotainmentBackend.Can.Frame
+
   @can_domain 29
   @can_protocol 1
   @can_type :raw
@@ -19,12 +21,21 @@ defmodule OvcsInfotainmentBackend.CanService do
   end
 
   def receive_one_frame(socket) do
-    {:ok, frame} = :socket.recv(socket)
-    <<frame_id::binary-size(2), _unused1::binary-size(2), frame_data_length::binary-size(1), _unused2::binary-size(3), frame_data::binary  >> = frame
-    encoded_frame_id = Base.encode16(frame_id)
-    encoded_frame_data_length = :binary.decode_unsigned(frame_data_length)
-    encoded_frame_data = Base.encode16(frame_data)
-    {:ok, %{id: encoded_frame_id, length: encoded_frame_data_length, data: encoded_frame_data, raw_frame: frame}}
+    {:ok, raw_frame} = :socket.recv(socket)
+    <<
+      id::little-integer-size(16),
+      _unused1::binary-size(2),
+      data_length::little-integer-size(8),
+      _unused2::binary-size(3),
+      raw_data::binary-size(data_length),
+      _unused3::binary
+    >> = raw_frame
+    frame = %Frame{
+      id: id,
+      data_length: data_length,
+      raw_data: raw_data
+    }
+    {:ok, frame}
   end
 
   def send_frame(socket, raw_frame) do
