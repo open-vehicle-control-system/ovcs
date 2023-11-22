@@ -1,10 +1,11 @@
 defmodule OvcsInfotainmentBackendWeb.Sockets.Dashboard.DebugMetricsChannel do
   use Phoenix.Channel
 
+  intercept ["update_handbrake"]
+
   def join("debug-metrics", _message, socket) do
     IO.inspect "Socket connected"
     Process.flag(:trap_exit, true)
-    :timer.send_interval(5000, :update)
     send(self(), :update)
     {:ok, socket}
   end
@@ -16,12 +17,15 @@ defmodule OvcsInfotainmentBackendWeb.Sockets.Dashboard.DebugMetricsChannel do
     {:noreply, socket}
   end
 
-  def handle_in("bootstrap", _attrs, socket) do
+  def handle_out("update_handbrake", handbrake_signal, socket) do
+    IO.inspect "OUUT"
+    IO.inspect handbrake_signal
     timestamp = DateTime.to_unix(DateTime.utc_now())
-    {:reply, {:ok, metrics(timestamp)}, socket}
+    push(socket, "updated", metrics(timestamp, handbrake_signal.value))
+    {:noreply, socket}
   end
 
-  defp metrics(timestamp) do
+  defp metrics(timestamp, handbrake_engaged \\ false) do
     %{
       metrics: [
         %{id: "0", type: "metric",  attributes: %{name: "timestamp", kind: "integer", unit: "epoch", origin: "clock", value: timestamp}},
@@ -34,7 +38,7 @@ defmodule OvcsInfotainmentBackendWeb.Sockets.Dashboard.DebugMetricsChannel do
         %{id: "7", type: "metric",  attributes: %{name: "coolingFuildTemp", kind: "integer", unit: "celcius", origin: "engine", value: 89}},
         %{id: "8", type: "metric",  attributes: %{name: "incarAirbagSystemOnline", kind: "boolean", origin: "airbag", value: true}},
         %{id: "9", type: "metric",  attributes: %{name: "passengerAirbagOnline", kind: "boolean", origin: "airbag", value: true}},
-        %{id: "10", type: "metric", attributes: %{name: "handbrakeEngaged", kind: "boolean", origin: "handbrake", value: false}},
+        %{id: "10", type: "metric", attributes: %{name: "handbrakeEngaged", kind: "boolean", origin: "handbrake", value: handbrake_engaged}},
         %{id: "11", type: "metric", attributes: %{name: "steeringPumpActive", kind: "boolean", origin: "steering_pump", value: true}},
         %{id: "12", type: "metric", attributes: %{name: "driverDoorOpen", kind: "boolean", origin: "doors", value: false}},
         %{id: "13", type: "metric", attributes: %{name: "frontPassengerDoorOpen", kind: "boolean", origin: "doors", value: false}},

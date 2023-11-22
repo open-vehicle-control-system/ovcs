@@ -1,4 +1,4 @@
-defmodule OvcsInfotainmentBackend.CanService do
+defmodule OvcsInfotainmentBackend.Can.Util do
   alias OvcsInfotainmentBackend.Can.Frame
 
   @can_domain 29

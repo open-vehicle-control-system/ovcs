@@ -11,6 +11,9 @@ config :ovcs_infotainment_backend,
   ecto_repos: [OvcsInfotainmentBackend.Repo],
   generators: [timestamp_type: :utc_datetime]
 
+config :ovcs_infotainment_backend, :can_networks, System.get_env("CAN_NETWORKS") || "drive:vcan0:50000,confort:vcan1:10000"
+config :ovcs_infotainment_backend, :vehicle, System.get_env("VEHICLE") || "polo-2007-bluemotion"
+
 # Configures the endpoint
 config :ovcs_infotainment_backend, OvcsInfotainmentBackendWeb.Endpoint,
   url: [host: "localhost"],

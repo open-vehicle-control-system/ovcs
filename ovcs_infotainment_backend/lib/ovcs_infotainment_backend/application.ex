@@ -18,14 +18,30 @@ defmodule OvcsInfotainmentBackend.Application do
       # Start a worker by calling: OvcsInfotainmentBackend.Worker.start_link(arg)
       # {OvcsInfotainmentBackend.Worker, arg},
       # Start to serve requests, typically the last entry
-      OvcsInfotainmentBackendWeb.Endpoint,
-      {OvcsInfotainmentBackend.CanFrameHandlerService, {}}
-    ]
+      OvcsInfotainmentBackendWeb.Endpoint
+    ] ++ can_consumers()
 
     # See https://hexdocs.pm/elixir/Supervisor.html
     # for other strategies and supported options
     opts = [strategy: :one_for_one, name: OvcsInfotainmentBackend.Supervisor]
     Supervisor.start_link(children, opts)
+  end
+
+  defp can_consumers() do
+    signals_spec = extract_signals_spec()
+    can_network_specs = Application.get_env(:ovcs_infotainment_backend, :can_networks) |> String.split(",")
+    Enum.map(can_network_specs, fn (can_network_spec) ->
+      args = can_network_spec |> String.split(":")
+      network_name = args |> List.first()
+      consumer_name = "#{network_name |> String.capitalize()}Consumer" |> String.to_atom
+      Supervisor.child_spec({OvcsInfotainmentBackend.Can.Consumer, args ++ [signals_spec]}, id: consumer_name)
+    end)
+  end
+
+  defp extract_signals_spec() do
+    vehicle = Application.get_env(:ovcs_infotainment_backend, :vehicle)
+    config_path =  Path.join(:code.priv_dir(:ovcs_infotainment_backend), "vehicles/#{vehicle}.json")
+    Jason.decode!(File.read!(config_path))["canSignals"]
   end
 
   # Tell Phoenix to update the endpoint configuration

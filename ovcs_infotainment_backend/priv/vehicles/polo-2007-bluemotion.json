@@ -1,0 +1,19 @@
+{
+    "model": "Polo 2007 Bluemotion",
+    "brand": "Volksvagen",
+    "canSignals": {
+        "handbrakeEngaged": {
+            "canNetwork": "drive", 
+            "frameId": "320",
+            "kind": "boolean",
+            "startByte": 1,
+            "byteNumber": 1,
+            "endianness": "little",
+            "emitter": "handbrakeController",
+            "mapping": {
+                "00": true,
+                "02": false
+            }
+        }
+    } 
+}
