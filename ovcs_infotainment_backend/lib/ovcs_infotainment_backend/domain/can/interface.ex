@@ -6,8 +6,12 @@ defmodule OvcsInfotainmentBackend.Can.Interface do
     GenServer.start_link(__MODULE__, args)
   end
 
+  def process_name(network_name) do
+    "#{network_name |> String.capitalize()}Interface" |> String.to_atom
+  end
+
   @impl true
-  def init([network_name, interface, bitrate, signal_specs]) do
+  def init([network_name, interface, bitrate, signal_specs, frame_handler]) do
     Util.setup_can_interface(interface, bitrate)
     {:ok, socket} = Util.bind_socket(interface)
     compiled_signal_specs = compile_signal_specs(signal_specs)
@@ -16,26 +20,26 @@ defmodule OvcsInfotainmentBackend.Can.Interface do
       %{
         network_name: network_name,
         socket: socket,
-        signal_specs: signal_specs, compiled_signal_specs: compiled_signal_specs
+        signal_specs: signal_specs, compiled_signal_specs: compiled_signal_specs,
+        frame_handler: frame_handler
       }
     }
   end
 
   @impl true
-  def handle_info(:receive_frame, state) do
+  def handle_cast(:receive_frame, state) do
     {:ok, frame} = Util.receive_one_frame(state.socket)
-    IO.inspect frame
-    (state.compiled_signal_specs[frame.id] || []) |> Enum.each(fn(compiled_signal_spec) ->
+    signals = (state.compiled_signal_specs[frame.id] || []) |> Enum.map(fn(compiled_signal_spec) ->
       {:ok, signal} =  Signal.from_frame_for_compiled_spec(frame, compiled_signal_spec)
-      IO.inspect signal
-      IO.inspect OvcsInfotainmentBackendWeb.Endpoint.broadcast!("debug-metrics", "update_handbrake", signal)
+      signal
     end)
+    state.frame_handler.handle_frame(frame, signals)
     receive_frame()
     {:noreply, state}
   end
 
   defp receive_frame do
-    send(self(), :receive_frame)
+    GenServer.cast(self(), :receive_frame)
   end
 
   # {800: [{name: 'handbrakeEngaged', value: true, mapping: ....}, {name: 'handbrakeError': {value: true, ...}}]}

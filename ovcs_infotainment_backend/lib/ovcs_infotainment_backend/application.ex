@@ -7,6 +7,7 @@ defmodule OvcsInfotainmentBackend.Application do
 
   @impl true
   def start(_type, _args) do
+    vehicle_config = vehicle_config()
     children = [
       OvcsInfotainmentBackendWeb.Telemetry,
       OvcsInfotainmentBackend.Repo,
@@ -18,8 +19,9 @@ defmodule OvcsInfotainmentBackend.Application do
       # Start a worker by calling: OvcsInfotainmentBackend.Worker.start_link(arg)
       # {OvcsInfotainmentBackend.Worker, arg},
       # Start to serve requests, typically the last entry
-      OvcsInfotainmentBackendWeb.Endpoint
-    ] ++ can_interfaces()
+      OvcsInfotainmentBackendWeb.Endpoint,
+      {OvcsInfotainmentBackend.VehicleStateManager, [vehicle_config]}
+    ] ++ can_interfaces(vehicle_config)
 
     # See https://hexdocs.pm/elixir/Supervisor.html
     # for other strategies and supported options
@@ -27,21 +29,21 @@ defmodule OvcsInfotainmentBackend.Application do
     Supervisor.start_link(children, opts)
   end
 
-  defp can_interfaces() do
-    signals_spec = extract_signals_spec()
+  defp can_interfaces(vehicle_config) do
+    signals_spec = vehicle_config["canSignals"]
     can_network_specs = Application.get_env(:ovcs_infotainment_backend, :can_networks) |> String.split(",")
     Enum.map(can_network_specs, fn (can_network_spec) ->
       args = can_network_spec |> String.split(":")
       network_name = args |> List.first()
-      interface_name = "#{network_name |> String.capitalize()}Interface" |> String.to_atom
-      Supervisor.child_spec({OvcsInfotainmentBackend.Can.Interface, args ++ [signals_spec]}, id: interface_name)
+      interface_name = OvcsInfotainmentBackend.Can.Interface.process_name(network_name)
+      Supervisor.child_spec({OvcsInfotainmentBackend.Can.Interface, args ++ [signals_spec, OvcsInfotainmentBackend.VehicleStateManager]}, id: interface_name)
     end)
   end
 
-  defp extract_signals_spec() do
+  defp vehicle_config() do
     vehicle = Application.get_env(:ovcs_infotainment_backend, :vehicle)
     config_path =  Path.join(:code.priv_dir(:ovcs_infotainment_backend), "vehicles/#{vehicle}.json")
-    Jason.decode!(File.read!(config_path))["canSignals"]
+    Jason.decode!(File.read!(config_path))
   end
 
   # Tell Phoenix to update the endpoint configuration
