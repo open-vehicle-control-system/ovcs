@@ -9,6 +9,10 @@ defmodule OvcsInfotainmentBackend.VehicleStateManager do
     GenServer.cast(__MODULE__, {:handle_frame, frame, signals})
   end
 
+  def signals() do
+    GenServer.call(__MODULE__, :get_signals)
+  end
+
   @impl true
   def init([vehicle_config]) do
     {:ok,
@@ -23,25 +27,33 @@ defmodule OvcsInfotainmentBackend.VehicleStateManager do
   end
 
   @impl true
-  def handle_cast({:handle_frame, frame, signals}, state) do
-    IO.inspect frame
+  def handle_call(:get_signals, _from, state) do
+    {:reply, state.signals, state}
+  end
+
+  @impl true
+  def handle_cast({:handle_frame, _frame, signals}, state) do
     IO.inspect signals
+    last_updated_at = state.signals.updated_at
     new_signals_state = signals |> Enum.reduce(state.signals, fn(signal, signals_state) ->
       current_signal = signals_state[signal.name]
-      last_updated_at = signals_state.updated_at
-      new_state = case is_nil(current_signal) || current_signal.value != signal.value do
+      case is_nil(current_signal) || current_signal.value != signal.value do
         true ->
           signals_state
           |> Map.put(signal.name, signal)
-          |> Map.put(:updated_at, DateTime.to_unix(DateTime.utc_now()))
+          |> Map.put(:updated_at, now())
         false ->
           signals_state
       end
-      if last_updated_at != new_state.updated_at do
-        OvcsInfotainmentBackendWeb.Endpoint.broadcast!("debug-metrics", "update_handbrake", signals |> List.first())
-      end
-      new_state
     end)
+    if last_updated_at != new_signals_state.updated_at do
+      OvcsInfotainmentBackendWeb.Endpoint.broadcast!("debug-metrics", "update", new_signals_state)
+    end
     {:noreply, %{state | signals: new_signals_state}}
+  end
+
+  defp now() do
+    DateTime.utc_now()
+    |> DateTime.to_unix()
   end
 end

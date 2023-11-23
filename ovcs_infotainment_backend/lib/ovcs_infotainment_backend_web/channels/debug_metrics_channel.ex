@@ -1,31 +1,30 @@
-defmodule OvcsInfotainmentBackendWeb.Sockets.Dashboard.DebugMetricsChannel do
+defmodule OvcsInfotainmentBackendWeb.DebugMetricsChannel do
   use Phoenix.Channel
 
-  intercept ["update_handbrake"]
+  alias OvcsInfotainmentBackend.VehicleStateManager
+
+  intercept ["update"]
 
   def join("debug-metrics", _message, socket) do
     IO.inspect "Socket connected"
-    Process.flag(:trap_exit, true)
-    send(self(), :update)
+    send(self(), :init)
     {:ok, socket}
   end
 
-  def handle_info(:update, socket) do
-    IO.inspect "UPDATE"
-    timestamp = DateTime.to_unix(DateTime.utc_now())
-    push(socket, "updated", metrics(timestamp))
+  def handle_info(:init, socket) do
+    IO.inspect "Channel INIT"
+    signals = VehicleStateManager.signals()
+    push(socket, "updated", metrics(signals, now()))
     {:noreply, socket}
   end
 
-  def handle_out("update_handbrake", handbrake_signal, socket) do
-    IO.inspect "OUUT"
-    IO.inspect handbrake_signal
-    timestamp = DateTime.to_unix(DateTime.utc_now())
-    push(socket, "updated", metrics(timestamp, handbrake_signal.value))
+  def handle_out("update", signals, socket) do
+    IO.inspect "Channel OUT"
+    push(socket, "updated", metrics(signals, now()))
     {:noreply, socket}
   end
 
-  defp metrics(timestamp, handbrake_engaged \\ false) do
+  defp metrics(signals, timestamp) do
     %{
       metrics: [
         %{id: "0", type: "metric",  attributes: %{name: "timestamp", kind: "integer", unit: "epoch", origin: "clock", value: timestamp}},
@@ -38,7 +37,7 @@ defmodule OvcsInfotainmentBackendWeb.Sockets.Dashboard.DebugMetricsChannel do
         %{id: "7", type: "metric",  attributes: %{name: "coolingFuildTemp", kind: "integer", unit: "celcius", origin: "engine", value: 89}},
         %{id: "8", type: "metric",  attributes: %{name: "incarAirbagSystemOnline", kind: "boolean", origin: "airbag", value: true}},
         %{id: "9", type: "metric",  attributes: %{name: "passengerAirbagOnline", kind: "boolean", origin: "airbag", value: true}},
-        %{id: "10", type: "metric", attributes: %{name: "handbrakeEngaged", kind: "boolean", origin: "handbrake", value: handbrake_engaged}},
+        %{id: "10", type: "metric", attributes: %{name: "handbrakeEngaged", kind: "boolean", origin: "handbrake", value: signals["handbrakeEngaged"] && signals["handbrakeEngaged"].value}},
         %{id: "11", type: "metric", attributes: %{name: "steeringPumpActive", kind: "boolean", origin: "steering_pump", value: true}},
         %{id: "12", type: "metric", attributes: %{name: "driverDoorOpen", kind: "boolean", origin: "doors", value: false}},
         %{id: "13", type: "metric", attributes: %{name: "frontPassengerDoorOpen", kind: "boolean", origin: "doors", value: false}},
@@ -49,5 +48,10 @@ defmodule OvcsInfotainmentBackendWeb.Sockets.Dashboard.DebugMetricsChannel do
         %{id: "18", type: "metric", attributes: %{name: "beamActive", kind: "boolean", origin: "lights", value: true}}
       ]
     }
+  end
+
+  defp now() do
+    DateTime.utc_now()
+    |> DateTime.to_unix()
   end
 end

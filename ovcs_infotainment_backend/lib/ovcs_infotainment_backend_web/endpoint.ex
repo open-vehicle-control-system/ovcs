@@ -1,6 +1,6 @@
 defmodule OvcsInfotainmentBackendWeb.Endpoint do
   use Phoenix.Endpoint, otp_app: :ovcs_infotainment_backend
-  socket "/sockets/dashboard", OvcsInfotainmentBackendWeb.Sockets.DashboardSocket,
+  socket "/sockets/dashboard", OvcsInfotainmentBackendWeb.DashboardSocket,
     websocket: true,
     longpoll: false
   # The session will be stored in the cookie and signed,
