@@ -2,6 +2,7 @@
 import { storeToRefs } from 'pinia'
 import { useMetricsStore } from "../stores/metrics.js"
 import { Socket } from 'phoenix'
+import KioskBoard from '../kioskboard'
 const { metrics } = storeToRefs(useMetricsStore())
 </script>
 
@@ -14,6 +15,7 @@ const { metrics } = storeToRefs(useMetricsStore())
     </div>
     <div class="mt-6 border-t border-gray-100 dark:border-gray-800">
       <dl class="divide-y divide-gray-100 dark:divide-gray-600">
+
         <template v-for="metric in metrics">
         <div class="px-4 py-6 sm:grid sm:grid-cols-2 sm:gap-4 sm:px-0">
           <dt class="text-xl font-medium leading-6 text-gray-900 dark:text-gray-400">
@@ -45,6 +47,9 @@ export default {
 
     metricsChannel.join()
       .receive("ok", () => {})
+
+
+    KioskBoard.run(".js-keyboard")
   },
   data: () => ({
   }),

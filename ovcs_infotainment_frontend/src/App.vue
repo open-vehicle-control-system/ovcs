@@ -41,4 +41,6 @@ const navigation = [
   { name: 'Debug', href: '/debug', icon: DocumentMagnifyingGlassIcon, current: true },
 ]
 const sidebarOpen = ref(false)
+
+
 </script>
