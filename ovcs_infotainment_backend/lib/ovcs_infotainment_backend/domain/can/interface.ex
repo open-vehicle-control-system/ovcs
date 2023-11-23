@@ -1,4 +1,4 @@
-defmodule OvcsInfotainmentBackend.Can.Consumer do
+defmodule OvcsInfotainmentBackend.Can.Interface do
   use GenServer
   alias OvcsInfotainmentBackend.Can.{Signal, Util, CompiledSignalSpec}
 
@@ -7,14 +7,6 @@ defmodule OvcsInfotainmentBackend.Can.Consumer do
   end
 
   @impl true
-  @spec init([...]) ::
-          {:ok,
-           %{
-             compiled_signal_specs: any(),
-             network_name: any(),
-             signal_specs: map(),
-             socket: {:"$socket", :socket.socket_handle()}
-           }}
   def init([network_name, interface, bitrate, signal_specs]) do
     Util.setup_can_interface(interface, bitrate)
     {:ok, socket} = Util.bind_socket(interface)

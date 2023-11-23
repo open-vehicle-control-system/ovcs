@@ -19,7 +19,7 @@ defmodule OvcsInfotainmentBackend.Application do
       # {OvcsInfotainmentBackend.Worker, arg},
       # Start to serve requests, typically the last entry
       OvcsInfotainmentBackendWeb.Endpoint
-    ] ++ can_consumers()
+    ] ++ can_interfaces()
 
     # See https://hexdocs.pm/elixir/Supervisor.html
     # for other strategies and supported options
@@ -27,14 +27,14 @@ defmodule OvcsInfotainmentBackend.Application do
     Supervisor.start_link(children, opts)
   end
 
-  defp can_consumers() do
+  defp can_interfaces() do
     signals_spec = extract_signals_spec()
     can_network_specs = Application.get_env(:ovcs_infotainment_backend, :can_networks) |> String.split(",")
     Enum.map(can_network_specs, fn (can_network_spec) ->
       args = can_network_spec |> String.split(":")
       network_name = args |> List.first()
-      consumer_name = "#{network_name |> String.capitalize()}Consumer" |> String.to_atom
-      Supervisor.child_spec({OvcsInfotainmentBackend.Can.Consumer, args ++ [signals_spec]}, id: consumer_name)
+      interface_name = "#{network_name |> String.capitalize()}Interface" |> String.to_atom
+      Supervisor.child_spec({OvcsInfotainmentBackend.Can.Interface, args ++ [signals_spec]}, id: interface_name)
     end)
   end
 

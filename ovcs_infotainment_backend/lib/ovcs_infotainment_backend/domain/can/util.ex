@@ -6,8 +6,8 @@ defmodule OvcsInfotainmentBackend.Can.Util do
   @can_type :raw
 
   def setup_can_interface(interface, bitrate) do
-    :os.cmd('ip link set #{interface} type can bitrate #{bitrate}')
-    :os.cmd('ip link set #{interface} up type can')
+    IO.inspect :os.cmd('ip link set #{interface} type can bitrate #{bitrate}')
+    IO.inspect :os.cmd('ip link set #{interface} up type can')
     :ok
   end
 
