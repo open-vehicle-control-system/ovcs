@@ -69,7 +69,7 @@ export default {
         case "m/s":
           formattedValue = value + " " + unit + " (" + value*(18/5)+ " " + "km/h)"
           break
-        case undefined:
+        case null:
           formattedValue = value
           break
         default:
