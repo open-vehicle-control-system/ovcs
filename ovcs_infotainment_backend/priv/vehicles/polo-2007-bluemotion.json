@@ -146,6 +146,17 @@
             "endianness": "little",
             "origin": "engine",
             "scale": 0.25
+        },
+        "speed": {
+            "canNetwork": "drive", 
+            "frameId": "5A0",
+            "kind": "integer",
+            "unit": "km/h",
+            "valueStart": 16,
+            "valueLength": 8,
+            "endianness": "little",
+            "origin": "engine",
+            "scale": 1.48
         }
     } 
 }
