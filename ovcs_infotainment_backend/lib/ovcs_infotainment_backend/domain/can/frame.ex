@@ -2,7 +2,7 @@ defmodule OvcsInfotainmentBackend.Can.Frame do
   defstruct [:id, :data_length, :raw_data]
 
   def to_string(frame) do
-    "#{frame.id}(0x#{id_hex(frame)})  [#{frame.data_length}]  #{raw_data_hex(frame)}"
+    "#{id_hex(frame)}  [#{frame.data_length}]  #{raw_data_hex(frame)}"
   end
 
   def id_hex(frame) do

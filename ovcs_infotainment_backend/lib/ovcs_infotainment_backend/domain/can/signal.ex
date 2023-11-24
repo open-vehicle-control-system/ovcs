@@ -15,13 +15,17 @@ defmodule OvcsInfotainmentBackend.Can.Signal do
       origin: compiled_signal_spec.origin,
       value: nil
     }
-    bytes = :binary.part(frame.raw_data, compiled_signal_spec.start_byte, compiled_signal_spec.byte_number)
+    raw_data            = frame.raw_data
+    raw_data_bit_length = frame.data_length
+    head_length         = compiled_signal_spec.value_start
+    value_length        = compiled_signal_spec.value_length
+    tail_length         = raw_data_bit_length - head_length - value_length
     number = case compiled_signal_spec.endianness do
       "little" ->
-        <<val::little-integer-size(8 * compiled_signal_spec.byte_number)>> = bytes
+        <<_head::size(head_length), val::little-integer-size(value_length), _tail::size(tail_length)>> = raw_data
         val
       "big"    ->
-        <<val::big-integer-size(8 * compiled_signal_spec.byte_number)>> = bytes
+        <<_head::size(head_length), val::big-integer-size(value_length), _tail::size(tail_length)>> = raw_data
         val
     end
     value = case compiled_signal_spec.kind do

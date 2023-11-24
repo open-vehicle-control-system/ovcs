@@ -32,7 +32,7 @@ defmodule OvcsInfotainmentBackend.Can.Util do
     >> = raw_frame
     frame = %Frame{
       id: id,
-      data_length: data_length,
+      data_length: data_length * 8,
       raw_data: raw_data
     }
     {:ok, frame}

@@ -1,6 +1,6 @@
 defmodule OvcsInfotainmentBackend.Can.Interface do
   use GenServer
-  alias OvcsInfotainmentBackend.Can.{Signal, Util, CompiledSignalSpec}
+  alias OvcsInfotainmentBackend.Can.{Signal, Util, CompiledSignalSpec, Frame}
 
   def start_link(args) do
     GenServer.start_link(__MODULE__, args)
@@ -33,9 +33,15 @@ defmodule OvcsInfotainmentBackend.Can.Interface do
       {:ok, signal} =  Signal.from_frame_for_compiled_spec(frame, compiled_signal_spec)
       signal
     end)
-    state.frame_handler.handle_frame(frame, signals)
+    send_signals_to_frame_handler(state, frame, signals)
     receive_frame()
     {:noreply, state}
+  end
+
+  defp send_signals_to_frame_handler(state, frame, []), do: nil
+  defp send_signals_to_frame_handler(state, frame, signals) do
+    IO.inspect Frame.to_string(frame)
+    state.frame_handler.handle_frame(frame, signals)
   end
 
   defp receive_frame do

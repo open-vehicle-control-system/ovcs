@@ -6,34 +6,34 @@
             "canNetwork": "drive", 
             "frameId": "320",
             "kind": "boolean",
-            "startByte": 1,
-            "byteNumber": 1,
+            "valueStart": 8,
+            "valueLength": 8,
             "endianness": "little",
             "origin": "handbrake",
             "mapping": {
-                "00": false,
-                "02": true
+                "0": false,
+                "2": true
             }
         },
-        "incarAirbagSystemOnline": {
+        "inCarAirbagSystemOnline": {
             "canNetwork": "drive", 
             "frameId": "50",
             "kind": "boolean",
-            "startByte": 0,
-            "byteNumber": 1,
+            "valueStart": 0,
+            "valueLength": 8,
             "endianness": "little",
             "origin": "airbag",
             "mapping": {
-                "00": true,
-                "02": false
+                "0": true,
+                "2": false
             }
         },
         "passengerAirbagOnline": {
             "canNetwork": "drive", 
             "frameId": "50",
             "kind": "boolean",
-            "startByte": 1,
-            "byteNumber": 1,
+            "valueStart": 8,
+            "valueLength": 8,
             "endianness": "little",
             "origin": "airbag",
             "mapping": {
@@ -45,14 +45,107 @@
             "canNetwork": "drive", 
             "frameId": "470",
             "kind": "boolean",
-            "startByte": 2,
-            "byteNumber": 1,
+            "valueStart": 16,
+            "valueLength": 8,
             "endianness": "little",
-            "origin": "airbag",
+            "origin": "compartimentController",
             "mapping": {
                 "64": true,
                 "0": false
             }
+        },
+        "warningLightsActive": {
+            "canNetwork": "drive", 
+            "frameId": "470",
+            "kind": "boolean",
+            "valueStart": 0,
+            "valueLength": 8,
+            "endianness": "little",
+            "origin": "compartimentController",
+            "mapping": {
+                "8": true,
+                "B": true,
+                "1": false,
+                "2": false,
+                "0": false
+            },
+            "_comment": "0:False, 8:WarningActiveOff, 11:WarningActiveOn, 1:leftActive, 2:rightActive"
+        },
+        "frontLeftDoorOpen": {
+            "canNetwork": "drive", 
+            "frameId": "470",
+            "kind": "boolean",
+            "valueStart": 15,
+            "valueLength": 1,
+            "endianness": "little",
+            "origin": "doors",
+            "mapping": {
+                "0": false,
+                "1": true
+            }
+        },
+        "frontRightDoorOpen": {
+            "canNetwork": "drive", 
+            "frameId": "470",
+            "kind": "boolean",
+            "valueStart": 14,
+            "valueLength": 1,
+            "endianness": "little",
+            "origin": "doors",
+            "mapping": {
+                "0": false,
+                "1": true
+            }
+        },
+        "rearLeftDoorOpen": {
+            "canNetwork": "drive", 
+            "frameId": "470",
+            "kind": "boolean",
+            "valueStart": 13,
+            "valueLength": 1,
+            "endianness": "little",
+            "origin": "doors",
+            "mapping": {
+                "0": false,
+                "1": true
+            }
+        },
+        "rearRightDoorOpen": {
+            "canNetwork": "drive", 
+            "frameId": "470",
+            "kind": "boolean",
+            "valueStart": 12,
+            "valueLength": 1,
+            "endianness": "little",
+            "origin": "doors",
+            "mapping": {
+                "0": false,
+                "1": true
+            }
+        },
+        "trunkDoorOpen": {
+            "canNetwork": "drive", 
+            "frameId": "470",
+            "kind": "boolean",
+            "valueStart": 10,
+            "valueLength": 1,
+            "endianness": "little",
+            "origin": "doors",
+            "mapping": {
+                "0": false,
+                "1": true
+            }
+        },
+        "engineRotationsPerMinute": {
+            "canNetwork": "drive", 
+            "frameId": "280",
+            "kind": "integer",
+            "unit": "rpm",
+            "valueStart": 16,
+            "valueLength": 16,
+            "endianness": "little",
+            "origin": "engine",
+            "scale": 0.25
         }
     } 
 }

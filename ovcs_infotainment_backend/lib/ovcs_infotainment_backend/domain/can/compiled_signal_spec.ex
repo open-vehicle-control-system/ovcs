@@ -4,12 +4,14 @@ defmodule OvcsInfotainmentBackend.Can.CompiledSignalSpec do
     :name,
     :kind,
     :frame_id,
-    :start_byte,
-    :byte_number,
+    :value_start,
+    :value_length,
     :endianness,
     :mapping,
     :unit,
-    :origin
+    :origin,
+    :scale,
+    :offset
   ]
 
   def from_signal_spec(name, signal_spec) do
@@ -17,16 +19,19 @@ defmodule OvcsInfotainmentBackend.Can.CompiledSignalSpec do
       name: name,
       frame_id: convert_hex_to_integer(signal_spec["frameId"]),
       kind: signal_spec["kind"] || "integer",
-      start_byte: signal_spec["startByte"] || 0,
-      byte_number: signal_spec["byteNumber"] || 1,
+      value_start: signal_spec["valueStart"] || 0,
+      value_length: signal_spec["valueLength"] || 1,
       endianness: signal_spec["endianness"] || "little",
       mapping: compile_mapping(signal_spec["mapping"]),
       unit: signal_spec["unit"],
-      origin: signal_spec["origin"]
+      origin: signal_spec["origin"],
+      scale: signal_spec["scale"] || 1,
+      offset: signal_spec["offset"] || 0
     }
     {:ok, compiled_signal_spec}
   end
 
+  defp compile_mapping(nil), do: nil
   defp compile_mapping(mapping) do
     mapping |> Map.keys() |> Enum.reduce(%{}, fn(hex_key, compiled_mapping) ->
       key = convert_hex_to_integer(hex_key)
