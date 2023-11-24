@@ -3,7 +3,7 @@ defmodule OvcsInfotainmentBackend.Can.Signal do
     :name,
     :value,
     :unit,
-    :emitter,
+    :origin,
     kind: "integer"
   ]
 
@@ -12,7 +12,7 @@ defmodule OvcsInfotainmentBackend.Can.Signal do
       name: compiled_signal_spec.name,
       kind: compiled_signal_spec.kind,
       unit: compiled_signal_spec.unit,
-      emitter: compiled_signal_spec.emitter,
+      origin: compiled_signal_spec.origin,
       value: nil
     }
     bytes = :binary.part(frame.raw_data, compiled_signal_spec.start_byte, compiled_signal_spec.byte_number)

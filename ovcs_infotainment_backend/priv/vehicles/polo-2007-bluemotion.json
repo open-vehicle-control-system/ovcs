@@ -9,11 +9,52 @@
             "startByte": 1,
             "byteNumber": 1,
             "endianness": "little",
-            "emitter": "handbrakeController",
+            "origin": "handbrake",
             "mapping": {
                 "00": false,
                 "02": true
             }
+        },
+        "incarAirbagSystemOnline": {
+            "canNetwork": "drive", 
+            "frameId": "50",
+            "kind": "boolean",
+            "startByte": 0,
+            "byteNumber": 1,
+            "endianness": "little",
+            "origin": "airbag",
+            "mapping": {
+                "00": true,
+                "02": false
+            }
+        },
+        "passengerAirbagOnline": {
+            "canNetwork": "drive", 
+            "frameId": "50",
+            "kind": "boolean",
+            "startByte": 1,
+            "byteNumber": 1,
+            "endianness": "little",
+            "origin": "airbag",
+            "mapping": {
+                "9": true,
+                "B": false
+            }
+        },
+        "beamActive": {
+            "canNetwork": "drive", 
+            "frameId": "470",
+            "kind": "boolean",
+            "startByte": 2,
+            "byteNumber": 1,
+            "endianness": "little",
+            "origin": "airbag",
+            "mapping": {
+                "64": true,
+                "0": false
+            }
         }
     } 
 }
+
+

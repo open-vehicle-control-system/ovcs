@@ -9,7 +9,7 @@ defmodule OvcsInfotainmentBackend.Can.CompiledSignalSpec do
     :endianness,
     :mapping,
     :unit,
-    :emitter
+    :origin
   ]
 
   def from_signal_spec(name, signal_spec) do
@@ -22,7 +22,7 @@ defmodule OvcsInfotainmentBackend.Can.CompiledSignalSpec do
       endianness: signal_spec["endianness"] || "little",
       mapping: compile_mapping(signal_spec["mapping"]),
       unit: signal_spec["unit"],
-      emitter: signal_spec["emitter"]
+      origin: signal_spec["origin"]
     }
     {:ok, compiled_signal_spec}
   end
