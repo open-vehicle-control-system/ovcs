@@ -14,6 +14,25 @@
 
 * Run `npm run dev` in the `ovcs_infotainment_frontend` folder to run the Vue.js app.
 
+## Test can frames
+
+### Handbrake 
+
+* engaged: `cansend vcan0 320#03027F0100000000`
+* disengaged `cansend vcan0 320#03007F0100000000`
+
+## RPM
+
+* 1250 rpm: `cansend vcan0 280#0000881300000000`
+* 2250 rpm: `cansend vcan0 280#0000282300000000`
+
+## Speed
+
+Need two frame to display
+
+* 1A0#0000000000000000
+* 5A0#0000600000000000
+
 ## Deploy
 
 * Run `./build.sh` to build the firmware then, either:
