@@ -14,20 +14,41 @@ defmodule OvcsInfotainmentBackendWeb.DebugMetricsChannel do
   def handle_info(:init, socket) do
     IO.inspect "Channel INIT"
     signals = VehicleStateManager.signals()
-    push(socket, "updated", metrics(signals, now()))
+    push(socket, "updated", render_metrics(signals))
     {:noreply, socket}
   end
 
   def handle_out("update", signals, socket) do
     IO.inspect "Channel OUT"
-    push(socket, "updated", metrics(signals, now()))
+    push(socket, "updated", render_metrics(signals))
     {:noreply, socket}
   end
 
-  defp metrics(signals, timestamp) do
+  defp render_metrics(signals) do
+    %{
+      metrics: signals  |> Map.values() |> Enum.map(fn(signal) ->
+        render_metric(signal)
+      end)
+    }
+  end
+
+  defp render_metric(signal) do
+    %{
+      id: signal.name,
+      type: "metric",
+      attributes: %{
+        name: signal.name,
+        kind: signal.kind,
+        origin: signal.emitter,
+        value: signal.value,
+        unit: signal.unit
+      }
+    }
+  end
+
+  def metrics(signals) do
     %{
       metrics: [
-        %{id: "0", type: "metric",  attributes: %{name: "timestamp", kind: "integer", unit: "epoch", origin: "clock", value: timestamp}},
         %{id: "1", type: "metric",  attributes: %{name: "speed", kind: "integer", unit: "m/s", origin: "abs", value: 14}},
         %{id: "2", type: "metric",  attributes: %{name: "frontLeftWheelSpeed", kind: "integer", unit: "m/s", origin: "abs", value: 14}},
         %{id: "3", type: "metric",  attributes: %{name: "frontRightWheelSpeed", kind: "integer", unit: "m/s", origin: "abs", value: 14}},
@@ -48,10 +69,5 @@ defmodule OvcsInfotainmentBackendWeb.DebugMetricsChannel do
         %{id: "18", type: "metric", attributes: %{name: "beamActive", kind: "boolean", origin: "lights", value: true}}
       ]
     }
-  end
-
-  defp now() do
-    DateTime.utc_now()
-    |> DateTime.to_unix()
   end
 end

@@ -28,7 +28,8 @@ defmodule OvcsInfotainmentBackend.VehicleStateManager do
 
   @impl true
   def handle_call(:get_signals, _from, state) do
-    {:reply, state.signals, state}
+
+    {:reply, signals_only(state.signals), state}
   end
 
   @impl true
@@ -47,7 +48,7 @@ defmodule OvcsInfotainmentBackend.VehicleStateManager do
       end
     end)
     if last_updated_at != new_signals_state.updated_at do
-      OvcsInfotainmentBackendWeb.Endpoint.broadcast!("debug-metrics", "update", new_signals_state)
+      OvcsInfotainmentBackendWeb.Endpoint.broadcast!("debug-metrics", "update", signals_only(new_signals_state))
     end
     {:noreply, %{state | signals: new_signals_state}}
   end
@@ -55,5 +56,10 @@ defmodule OvcsInfotainmentBackend.VehicleStateManager do
   defp now() do
     DateTime.utc_now()
     |> DateTime.to_unix()
+  end
+
+  defp signals_only(signals) do
+    signals
+    |> Map.drop([:updated_at])
   end
 end

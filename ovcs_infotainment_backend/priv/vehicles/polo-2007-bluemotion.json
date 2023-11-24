@@ -11,8 +11,8 @@
             "endianness": "little",
             "emitter": "handbrakeController",
             "mapping": {
-                "00": true,
-                "02": false
+                "00": false,
+                "02": true
             }
         }
     } 
