@@ -16,7 +16,6 @@ defmodule OvcsInfotainmentFirmware.Application do
         name: :weston,
         cli_args: [
           "--continue-without-input",
-          "--shell=kiosk-shell.so",
           "-i0"
         ]
       },
