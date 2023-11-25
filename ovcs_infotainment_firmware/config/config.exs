@@ -29,15 +29,15 @@ config :vintage_net,
       %{
         type: VintageNetWiFi,
         vintage_net_wifi: %{
-          wpa_supplicant_conf: """
-          network={
-            ssid="Area42-Guest"
-            key_mgmt=WPA-PSK
-            psk="bemyguest"
-          }
-          """
+          networks: [
+            %{
+              key_mgmt: :wpa_psk,
+              psk: "Area42-Guest",
+              ssid: "bemyguest"
+            }
+          ]
         },
-        ipv4: %{method: :dhcp},
+        ipv4: %{method: :dhcp}
       }
     }
   ]
