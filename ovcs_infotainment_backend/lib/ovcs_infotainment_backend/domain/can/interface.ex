@@ -15,7 +15,7 @@ defmodule OvcsInfotainmentBackend.Can.Interface do
   def init([network_name, interface, bitrate, signal_specs, frame_handler]) do
     :ok                   = Util.setup_can_interface(interface, bitrate)
     {:ok, socket}         = Util.bind_socket(interface)
-    compiled_signal_specs = compile_signal_specs(signal_specs)
+    compiled_signal_specs = IO.inspect(compile_signal_specs(signal_specs, network_name))
     receive_frame()
     {:ok,
       %{
@@ -50,8 +50,12 @@ defmodule OvcsInfotainmentBackend.Can.Interface do
   end
 
   # {800: [{name: 'handbrakeEngaged', value: true, mapping: ....}, {name: 'handbrakeError': {value: true, ...}}]}
-  defp compile_signal_specs(signal_specs) do
-    signal_specs |> Map.keys() |> Enum.reduce(%{}, fn(signal_name, compiled_signal_specs) ->
+  defp compile_signal_specs(signal_specs, network_name) do
+    signal_specs
+    |> Enum.filter(fn({_key, %{"canNetwork" => network}}) -> network == network_name end)
+    |> Map.new()
+    |> Map.keys()
+    |> Enum.reduce(%{}, fn(signal_name, compiled_signal_specs) ->
       signal_spec = signal_specs[signal_name]
       {:ok, compiled_signal_spec} = CompiledSignalSpec.from_signal_spec(signal_name, signal_spec)
       existing_compiled_signal_specs_for_frame = compiled_signal_specs[compiled_signal_spec.frame_id] || []
