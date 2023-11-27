@@ -152,11 +152,11 @@
             "frameId": "5A0",
             "kind": "integer",
             "unit": "km/h",
-            "valueStart": 16,
-            "valueLength": 8,
+            "valueStart": 8,
+            "valueLength": 16,
             "endianness": "little",
             "origin": "engine",
-            "scale": 1.48
+            "scale": 0.0075
         }
     } 
 }
