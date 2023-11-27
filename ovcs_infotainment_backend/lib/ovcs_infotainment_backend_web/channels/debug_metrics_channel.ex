@@ -1,25 +1,26 @@
 defmodule OvcsInfotainmentBackendWeb.DebugMetricsChannel do
   use Phoenix.Channel
+  require Logger
 
   alias OvcsInfotainmentBackend.VehicleStateManager
 
   intercept ["update"]
 
   def join("debug-metrics", _message, socket) do
-    IO.inspect "Socket connected"
+    Logger.debug("Channel connected")
     send(self(), :init)
     {:ok, socket}
   end
 
   def handle_info(:init, socket) do
-    IO.inspect "Channel INIT"
+    Logger.debug("Channel initialized")
     signals = VehicleStateManager.signals()
     push(socket, "updated", render_metrics(signals))
     {:noreply, socket}
   end
 
   def handle_out("update", signals, socket) do
-    IO.inspect "Channel OUT"
+    Logger.debug("Channel will output event")
     push(socket, "updated", render_metrics(signals))
     {:noreply, socket}
   end

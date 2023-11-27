@@ -1,15 +1,46 @@
 defmodule OvcsInfotainmentBackend.Can.Util do
   alias OvcsInfotainmentBackend.Can.Frame
+  require Logger
 
   @can_domain 29
   @can_protocol 1
   @can_type :raw
 
-  def setup_can_interface(interface, bitrate) do
-    :timer.sleep 5000
-    IO.inspect :os.cmd('ip link set #{interface} type can bitrate #{bitrate}')
-    IO.inspect :os.cmd('ip link set #{interface} up type can')
-    :ok
+  def setup_can_interface(interface, bitrate, retry_number \\ 0)
+  def setup_can_interface(interface, _bitrate, 40) do
+    Logger.error("Could not open CAN bus interface #{interface} shutting down")
+    System.stop(1)
+  end
+  def setup_can_interface(interface, bitrate, retry_number) when binary_part(interface, 0, 4) == "vcan" do
+    with  {output, 0} <- System.cmd("ip", ["link", "show", interface]),
+          false       <- output |> String.match?(~r/state DOWN/)
+    do
+      Logger.info("Connection to #{interface} initialized")
+      :ok
+    else
+      _ -> Logger.warning("""
+          Please enable virtual CAN bus interface: #{interface} manually with the following commands:
+          $ sudo ip link add dev #{interface} type vcan
+          $ sudo ip link set up #{interface}
+          The applicaltion will start working once done
+        """)
+        :timer.sleep(1000)
+        setup_can_interface(interface, bitrate, retry_number + 1)
+    end
+  end
+
+  def setup_can_interface(interface, bitrate, retry_number) do
+    with  {_output, 0} <- System.cmd("ip", ["link", "set", interface, "type", "can", "bitrate", bitrate], stderr_to_stdout: true),
+          {_output, 0} <- System.cmd("ip", ["link", "set", interface, "up"], stderr_to_stdout: true)
+    do
+      Logger.info("Connection to the CAN bus #{interface} with a  bitrate of #{bitrate} bit/seconds initialized")
+      :ok
+    else
+      {output, 1} ->
+        Logger.warning("The connection to the CAN bus interface #{interface} failed with the following reason: '#{output}'Retrying in 0.5 seconds.")
+        :timer.sleep(500)
+        setup_can_interface(interface, bitrate, retry_number + 1)
+    end
   end
 
   def bind_socket(interface) do

@@ -1,19 +1,20 @@
 defmodule OvcsInfotainmentBackend.Can.Interface do
   use GenServer
   alias OvcsInfotainmentBackend.Can.{Signal, Util, CompiledSignalSpec, Frame}
+  require Logger
 
   def start_link(args) do
     GenServer.start_link(__MODULE__, args)
   end
 
   def process_name(network_name) do
-    "#{network_name |> String.capitalize()}Interface" |> String.to_atom
+    "#{network_name |> String.capitalize()}CanBusInterface" |> String.to_atom
   end
 
   @impl true
   def init([network_name, interface, bitrate, signal_specs, frame_handler]) do
-    Util.setup_can_interface(interface, bitrate)
-    {:ok, socket} = Util.bind_socket(interface)
+    :ok                   = Util.setup_can_interface(interface, bitrate)
+    {:ok, socket}         = Util.bind_socket(interface)
     compiled_signal_specs = compile_signal_specs(signal_specs)
     receive_frame()
     {:ok,
@@ -38,9 +39,9 @@ defmodule OvcsInfotainmentBackend.Can.Interface do
     {:noreply, state}
   end
 
-  defp send_signals_to_frame_handler(state, frame, []), do: nil
+  defp send_signals_to_frame_handler(_state, _frame, []), do: nil
   defp send_signals_to_frame_handler(state, frame, signals) do
-    IO.inspect Frame.to_string(frame)
+    Logger.debug(Frame.to_string(frame))
     state.frame_handler.handle_frame(frame, signals)
   end
 
