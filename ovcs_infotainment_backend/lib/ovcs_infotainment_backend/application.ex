@@ -31,7 +31,7 @@ defmodule OvcsInfotainmentBackend.Application do
 
   defp can_interfaces(vehicle_config) do
     signals_spec = vehicle_config["canSignals"]
-    can_network_specs = Application.get_env(:ovcs_infotainment_backend, :can_networks) |> String.split(",")
+    can_network_specs = Application.get_env(:ovcs_infotainment_backend, :can_networks) |> String.split(",", trim: true)
     Enum.map(can_network_specs, fn (can_network_spec) ->
       args = can_network_spec |> String.split(":")
       network_name = args |> List.first()
