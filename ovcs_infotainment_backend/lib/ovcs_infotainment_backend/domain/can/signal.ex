@@ -33,7 +33,7 @@ defmodule OvcsInfotainmentBackend.Can.Signal do
         val
     end
     value = case compiled_signal_spec.kind do
-      "integer" -> (number * compiled_signal_spec.scale) + compiled_signal_spec.offset
+      "integer" -> Float.round((number * compiled_signal_spec.scale) + compiled_signal_spec.offset, compiled_signal_spec.decimals)
       _        -> compiled_signal_spec.mapping[number]
     end
     {:ok, %{signal | value: value}}

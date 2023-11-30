@@ -56,8 +56,7 @@ defmodule OvcsInfotainmentBackend.VehicleStateManager do
   end
 
   defp now() do
-    DateTime.utc_now()
-    |> DateTime.to_unix()
+    System.os_time(:microsecond)
   end
 
   defp signals_only(signals) do

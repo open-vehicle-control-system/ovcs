@@ -9,7 +9,8 @@
 ## Local Development
 
 * Run `mix phx.server` in the  `ovcs_infotainment_backend` folder to run the Phoenix app.
-    * The CAN/BUS networks to be used can be configured with `export CAN_NETWORKS=drive:vcan0:50000,confort:vcan1:10000`
+    * The CAN/BUS networks to be used can be configured with `export CAN_NETWORKS=drive:vcan0,confort:vcan1`
+    * If the "ip link" command requires "sudo", you should configure the CAN networks manully and set the `MANUAL_SETUP` environnment variable to `true`
     * The vehicle configuration to use ba be configured with `export VEHICLE=polo-2007-bluemotion`
 
 * Run `npm run dev` in the `ovcs_infotainment_frontend` folder to run the Vue.js app.

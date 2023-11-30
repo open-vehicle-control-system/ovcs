@@ -164,7 +164,8 @@
             "valueLength": 16,
             "endianness": "little",
             "origin": "engine",
-            "scale": 0.0075
+            "scale": 0.0075,
+            "decimals": 2
         }
     } 
 }

@@ -152,6 +152,7 @@ config :logger, :console,
 # Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, Jason
 
-config :ovcs_infotainment_backend, :can_networks, "drive:can0:500000:false,confort:can1:100000:false"
+config :ovcs_infotainment_backend, :can_networks, "drive:can0,confort:can1"
+config :ovcs_infotainment_backend, :manual_setup, false
 config :ovcs_infotainment_backend, :vehicle, "polo-2007-bluemotion"
 # import_config "#{Mix.target()}.exs"

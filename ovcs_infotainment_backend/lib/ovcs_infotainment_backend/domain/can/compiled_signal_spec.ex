@@ -11,7 +11,8 @@ defmodule OvcsInfotainmentBackend.Can.CompiledSignalSpec do
     :unit,
     :origin,
     :scale,
-    :offset
+    :offset,
+    :decimals
   ]
 
   def from_signal_spec(name, signal_spec) do
@@ -26,7 +27,8 @@ defmodule OvcsInfotainmentBackend.Can.CompiledSignalSpec do
       unit: signal_spec["unit"],
       origin: signal_spec["origin"],
       scale: signal_spec["scale"] || 1,
-      offset: signal_spec["offset"] || 0
+      offset: signal_spec["offset"] || 0,
+      decimals: signal_spec["decimals"] || 0,
     }
     {:ok, compiled_signal_spec}
   end
