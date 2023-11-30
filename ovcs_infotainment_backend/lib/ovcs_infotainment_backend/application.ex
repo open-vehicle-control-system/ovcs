@@ -30,13 +30,14 @@ defmodule OvcsInfotainmentBackend.Application do
   end
 
   defp can_interfaces(vehicle_config) do
-    signals_spec = vehicle_config["canSignals"]
+    signals_spec      = vehicle_config["canSignals"]
     can_network_specs = Application.get_env(:ovcs_infotainment_backend, :can_networks) |> String.split(",", trim: true)
+    manual_setup      = Application.get_env(:ovcs_infotainment_backend, :manual_setup)
     Enum.map(can_network_specs, fn (can_network_spec) ->
-      args = can_network_spec |> String.split(":")
-      network_name = args |> List.first()
-      interface_name = OvcsInfotainmentBackend.Can.Interface.process_name(network_name)
-      Supervisor.child_spec({OvcsInfotainmentBackend.Can.Interface, args ++ [signals_spec, OvcsInfotainmentBackend.VehicleStateManager]}, id: interface_name)
+      [network_name, interface] = can_network_spec |> String.split(":")
+      bitrate                   = vehicle_config["canNetworks"][network_name]["bitrate"]
+      interface_name            = OvcsInfotainmentBackend.Can.Interface.process_name(network_name)
+      Supervisor.child_spec({OvcsInfotainmentBackend.Can.Interface, [network_name, interface, bitrate, manual_setup, signals_spec, OvcsInfotainmentBackend.VehicleStateManager]}, id: interface_name)
     end)
   end
 

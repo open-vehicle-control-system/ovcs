@@ -7,6 +7,10 @@ defmodule OvcsInfotainmentBackend.Can.Signal do
     kind: "integer"
   ]
 
+  def to_string(signal) do
+    "[Signal] #{signal.name} = #{signal.value}"
+  end
+
   def from_frame_for_compiled_spec(frame, compiled_signal_spec) do
     signal = %OvcsInfotainmentBackend.Can.Signal{
       name: compiled_signal_spec.name,

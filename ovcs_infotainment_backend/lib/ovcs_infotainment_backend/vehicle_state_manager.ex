@@ -1,6 +1,7 @@
 defmodule OvcsInfotainmentBackend.VehicleStateManager do
   use GenServer
   require Logger
+  alias OvcsInfotainmentBackend.Can.Signal
 
   def start_link(args) do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
@@ -35,10 +36,9 @@ defmodule OvcsInfotainmentBackend.VehicleStateManager do
 
   @impl true
   def handle_cast({:handle_frame, _frame, signals}, state) do
-    IO.inspect signals
-    #Logger.debug(signals)
     last_updated_at = state.signals.updated_at
     new_signals_state = signals |> Enum.reduce(state.signals, fn(signal, signals_state) ->
+      Logger.debug(Signal.to_string(signal))
       current_signal = signals_state[signal.name]
       case is_nil(current_signal) || current_signal.value != signal.value do
         true ->

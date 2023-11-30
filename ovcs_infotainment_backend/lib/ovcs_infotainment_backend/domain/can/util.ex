@@ -11,7 +11,7 @@ defmodule OvcsInfotainmentBackend.Can.Util do
     Logger.error("Could not open CAN bus interface #{interface} shutting down")
     System.stop(1)
   end
-  def setup_can_interface(interface, bitrate, _manual_setup, retry_number) when binary_part(interface, 0, 4) == "vcan" do
+  def setup_can_interface(interface, bitrate, manual_setup, retry_number) when binary_part(interface, 0, 4) == "vcan" do
     with  {output, 0} <- System.cmd("ip", ["link", "show", interface]),
           false       <- output |> String.match?(~r/state DOWN/)
     do
@@ -25,24 +25,31 @@ defmodule OvcsInfotainmentBackend.Can.Util do
           The applicaltion will start working once done
         """)
         :timer.sleep(1000)
-        setup_can_interface(interface, bitrate, retry_number + 1)
+        setup_can_interface(interface, bitrate, manual_setup, retry_number + 1)
     end
   end
-  def setup_can_interface(interface, _bitrate, true, _retry_number) do
+  def setup_can_interface(interface, _bitrate, true = _manual_setup, _retry_number) do
     Logger.info("Connection to the CAN bus #{interface} skipped due to manual setup config")
     :ok
   end
-  def setup_can_interface(interface, bitrate, manual_setup, retry_number) do
+  def setup_can_interface(interface, bitrate, false = manual_setup, retry_number) do
     with  {_output, 0} <- System.cmd("ip", ["link", "set", interface, "type", "can", "bitrate", bitrate], stderr_to_stdout: true),
           {_output, 0} <- System.cmd("ip", ["link", "set", interface, "up"], stderr_to_stdout: true)
     do
       Logger.info("Connection to the CAN bus #{interface} with a  bitrate of #{bitrate} bit/seconds initialized")
       :ok
     else
+      {"RTNETLINK answers: Operation not permitted\n", _} ->
+        Logger.error("""
+          The connection to the CAN bus interface #{interface} cannot be open.
+          This system probably requires to setup the interface manually with sudo.
+          You should then set the MANUAL_SETUP env variable to "true"
+        """)
+        System.stop(1)
       {output, _} ->
         Logger.warning("The connection to the CAN bus interface #{interface} failed with the following reason: '#{output}'Retrying in 0.5 seconds.")
         :timer.sleep(500)
-        setup_can_interface(interface, bitrate, retry_number + 1)
+        setup_can_interface(interface, bitrate, manual_setup, retry_number + 1)
     end
   end
 

@@ -1,6 +1,14 @@
 {
     "model": "Polo 2007 Bluemotion",
     "brand": "Volksvagen",
+    "canNetworks": {
+        "drive": {
+            "bitrate": "500000"
+        },
+        "confort": {
+            "bitrate": "100000"
+        }
+    },
     "canSignals": {
         "handbrakeEngaged": {
             "canNetwork": "drive", 

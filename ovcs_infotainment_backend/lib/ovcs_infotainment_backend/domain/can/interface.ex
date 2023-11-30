@@ -13,9 +13,9 @@ defmodule OvcsInfotainmentBackend.Can.Interface do
 
   @impl true
   def init([network_name, interface, bitrate, manual_setup, signal_specs, frame_handler]) do
-    :ok                   = Util.setup_can_interface(interface, bitrate, manual_setup == "true")
+    :ok                   = Util.setup_can_interface(interface, bitrate, manual_setup)
     {:ok, socket}         = Util.bind_socket(interface)
-    compiled_signal_specs = IO.inspect(compile_signal_specs(signal_specs, network_name))
+    compiled_signal_specs = compile_signal_specs(signal_specs, network_name)
     receive_frame()
     {:ok,
       %{
