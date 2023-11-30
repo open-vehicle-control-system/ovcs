@@ -41,7 +41,11 @@ if keys == [],
     """)
 
 config :nerves_ssh,
-  authorized_keys: Enum.map(keys, &File.read!/1)
+  authorized_keys: [
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIANjmUxQ46KyMw+gzhjvPf5bMx5djE0ge96TosMazbkx thibault@spin42.com",
+    "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC7cQdQbGsUqnCr6ko6QpdOobbhqWU1zXg4adNvjoZMuH5OLV2uzL9cH5FzmSNhh6GwOm/LXKNVefrWR/L2T6H5LPgT0oubaaIcMfvB0q+Ldv6zlSJ/7mWzQeItA2yV/uqoWrUkHH01IsYaXhwtztyVjIBJW9F0Ol7HOPd02GU5yUibyj+2Ptv8caHdfEEwuODF11mtBvygpbCQKQJxZYuVs1f1GoNkRWBydVi5Ub1QqxyxnYmX14/6ijADsnap90LLfplyEpL1hPt6y4agzzeoF47OhSeQ/TowcfKNRx/o+N0XKhOsmzw2UCDSvd5k31eAnTONsy3lUWyyew8NbrGQIoNqKsiq2vKB1JGgPJIuCLd3gPsl3UmMNH07m/g+/b5Rr68jXjgtcxSTBL/h+1qQEbKc2A/f5KplZj/gRkYrl8YYEi6+ypi/jWij8LLQZ7u8xCYoWJURyGDFFSN/pA3E6MmLGzMqLfO8yfmumUYuOYFsSX55tthyLRr9f4H5u3s= mlainez@marc-framework"
+  ]
+
 
 # Configure the network using vintage_net
 #
@@ -57,7 +61,21 @@ config :vintage_net,
        type: VintageNetEthernet,
        ipv4: %{method: :dhcp}
      }},
-    {"wlan0", %{type: VintageNetWiFi}}
+     {"wlan0",
+      %{
+        type: VintageNetWiFi,
+        vintage_net_wifi: %{
+          networks: [
+            %{
+              key_mgmt: :wpa_psk,
+              psk: "Area42-Guest",
+              ssid: "bemyguest"
+            }
+          ]
+       },
+       ipv4: %{method: :dhcp}
+     }
+    }
   ]
 
 config :mdns_lite,

@@ -23,25 +23,6 @@ config :nerves, source_date_epoch: "1698084254"
 config :nerves, :firmware,
   fwup_conf: "config/fwup.conf"
 
-config :vintage_net,
-  config: [
-    {"wlan0",
-      %{
-        type: VintageNetWiFi,
-        vintage_net_wifi: %{
-          networks: [
-            %{
-              key_mgmt: :wpa_psk,
-              psk: "Area42-Guest",
-              ssid: "bemyguest"
-            }
-          ]
-        },
-        ipv4: %{method: :dhcp}
-      }
-    }
-  ]
-
 if Mix.target() == :host do
   import_config "host.exs"
 else
