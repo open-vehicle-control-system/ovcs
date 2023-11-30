@@ -68,8 +68,8 @@ config :vintage_net,
           networks: [
             %{
               key_mgmt: :wpa_psk,
-              psk: "Area42-Guest",
-              ssid: "bemyguest"
+              ssid: "Area42-Guest",
+              psk: "bemyguest"
             }
           ]
        },
@@ -146,11 +146,12 @@ config :ovcs_infotainment_backend, OvcsInfotainmentBackendWeb.Endpoint,
 # Configures Elixir's Logger
 config :logger, :console,
   format: "$time $metadata[$level] $message\n",
-  metadata: [:request_id]
+  metadata: [:request_id],
+  level: :debug
 
 # Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, Jason
 
-config :ovcs_infotainment_backend, :can_networks, "drive:can0:50000,confort:can1:10000"
+config :ovcs_infotainment_backend, :can_networks, "drive:can0:500000:false,confort:can1:100000:false"
 config :ovcs_infotainment_backend, :vehicle, "polo-2007-bluemotion"
 # import_config "#{Mix.target()}.exs"

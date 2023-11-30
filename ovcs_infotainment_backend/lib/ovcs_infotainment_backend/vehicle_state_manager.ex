@@ -35,7 +35,8 @@ defmodule OvcsInfotainmentBackend.VehicleStateManager do
 
   @impl true
   def handle_cast({:handle_frame, _frame, signals}, state) do
-    Logger.debug(signals)
+    IO.inspect signals
+    #Logger.debug(signals)
     last_updated_at = state.signals.updated_at
     new_signals_state = signals |> Enum.reduce(state.signals, fn(signal, signals_state) ->
       current_signal = signals_state[signal.name]

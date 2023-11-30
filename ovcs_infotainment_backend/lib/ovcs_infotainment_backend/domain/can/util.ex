@@ -6,12 +6,12 @@ defmodule OvcsInfotainmentBackend.Can.Util do
   @can_protocol 1
   @can_type :raw
 
-  def setup_can_interface(interface, bitrate, retry_number \\ 0)
-  def setup_can_interface(interface, _bitrate, 40) do
+  def setup_can_interface(interface, bitrate, manual_setup \\ false, retry_number \\ 0)
+  def setup_can_interface(interface, _bitrate, _manual_setup, 40) do
     Logger.error("Could not open CAN bus interface #{interface} shutting down")
     System.stop(1)
   end
-  def setup_can_interface(interface, bitrate, retry_number) when binary_part(interface, 0, 4) == "vcan" do
+  def setup_can_interface(interface, bitrate, _manual_setup, retry_number) when binary_part(interface, 0, 4) == "vcan" do
     with  {output, 0} <- System.cmd("ip", ["link", "show", interface]),
           false       <- output |> String.match?(~r/state DOWN/)
     do
@@ -28,15 +28,18 @@ defmodule OvcsInfotainmentBackend.Can.Util do
         setup_can_interface(interface, bitrate, retry_number + 1)
     end
   end
-
-  def setup_can_interface(interface, bitrate, retry_number) do
+  def setup_can_interface(interface, _bitrate, true, _retry_number) do
+    Logger.info("Connection to the CAN bus #{interface} skipped due to manual setup config")
+    :ok
+  end
+  def setup_can_interface(interface, bitrate, manual_setup, retry_number) do
     with  {_output, 0} <- System.cmd("ip", ["link", "set", interface, "type", "can", "bitrate", bitrate], stderr_to_stdout: true),
           {_output, 0} <- System.cmd("ip", ["link", "set", interface, "up"], stderr_to_stdout: true)
     do
       Logger.info("Connection to the CAN bus #{interface} with a  bitrate of #{bitrate} bit/seconds initialized")
       :ok
     else
-      {output, 1} ->
+      {output, _} ->
         Logger.warning("The connection to the CAN bus interface #{interface} failed with the following reason: '#{output}'Retrying in 0.5 seconds.")
         :timer.sleep(500)
         setup_can_interface(interface, bitrate, retry_number + 1)
