@@ -15,8 +15,7 @@ defmodule OvcsInfotainmentFirmware.Application do
         xdg_runtime_dir: @xdg_runtime_dir,
         name: :weston,
         cli_args: [
-          "--continue-without-input",
-          "-i0"
+          "--config=/etc/weston.ini"
         ]
       },
       {NervesCog,
