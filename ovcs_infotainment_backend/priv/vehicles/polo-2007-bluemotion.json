@@ -166,6 +166,50 @@
             "origin": "engine",
             "scale": 0.0075,
             "decimals": 2
+        },
+        "lockState": {
+            "canNetwork": "confort", 
+            "frameId": "591",
+            "kind": "string",
+            "valueStart": 8,
+            "valueLength": 8,
+            "endianness": "little",
+            "origin": "lock",
+            "mapping": {
+                "0": "open",
+                "4": "key_closed",
+                "1": "car_closed"
+            }
+        },
+        "keyState": {
+            "canNetwork": "confort", 
+            "frameId": "271",
+            "kind": "string",
+            "valueStart": 0,
+            "valueLength": 8,
+            "endianness": "little",
+            "origin": "lock",
+            "mapping": {
+                "0": "off",
+                "1": "keyEngaged",
+                "87": "contactOn",
+                "8B": "startEngine"
+            }
+        },
+        "keyStateDrive": {
+            "canNetwork": "drive", 
+            "frameId": "570",
+            "kind": "string",
+            "valueStart": 0,
+            "valueLength": 8,
+            "endianness": "little",
+            "origin": "lock",
+            "mapping": {
+                "0": "off",
+                "1": "keyEngaged",
+                "87": "contactOn",
+                "8B": "startEngine"
+            }
         }
     } 
 }
