@@ -1,5 +1,16 @@
 # OVCS infotainment 
 
+## Local environment setup
+
+* Install asdf: `git clone https://github.com/asdf-vm/asdf.git ~/.asdf`
+* Install erlang:  `asdf plugin add erlang https://github.com/asdf-vm/asdf-erlang.git && asdf install erlang 26.1.2 && asdf global erlang 26.1.2`
+* Install elixir: `asdf plugin-add elixir https://github.com/asdf-vm/asdf-elixir.git && asdf install elixir 1.15.7 && asdf global elixir 1.15.7`
+* Install NVM: `curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.5/install.sh | bash`
+* Install Node: `nvm install node`
+* Install NPM: `npm install -g npm`
+* Install nervers: See https://hexdocs.pm/nerves/installation.html
+* Install can-utils: `sudo apt-get install can-utils`
+
 ## Applications
 
 * `ovcs_infotainment_backend`: Phoenix app connecting to the CAN/Bus and exposing the internal API
@@ -27,13 +38,6 @@
 * 1250 rpm: `cansend vcan0 280#0000881300000000`
 * 2250 rpm: `cansend vcan0 280#0000282300000000`
 
-## Speed
-
-Need two frame to display
-
-* 1A0#0000000000000000
-* 5A0#0000600000000000
-
 ## Deploy
 
 * Run `./build.sh` to build the firmware then, either:
@@ -53,37 +57,4 @@ You have to open an [erlang socket](https://www.erlang.org/doc/man/socket) with 
 {:ok, ifindex} = :socket.ioctl(sock, :gifindex, 'can0') # Single quotes matters, you need a charlist not a binary
 addr = <<0::size(16)-little, ifindex::size(32)-little, 0::size(32), 0::size(32), 0::size(64)>>
 :socket.bind(sock, %{:family => 29, :addr => addr})
-```
-
-## Receive a message
-
-Send the message using the following command:
-
-```
-cansend vcan0 111#FF11FF11FF11FF11
-```
-
-Receive with Elixir:
-
-```elixir
-{:ok, frame} = :socket.recv(sock) # Blocking until a message is received, Example: {:ok, <<17, 1, 0, 0, 8, 0, 0, 0, 255, 17, 255, 17, 255, 17, 255, 17>>}
-<<frame_id::binary-size(2), _unused1::binary-size(2), frame_data_length::binary-size(1), _unused2::binary-size(3), frame_data::binary  >>} = frame
-encoded_frame_id = Base.encode16(frame_id) # Example: "1101"
-encoded_frame_data_length = :binary.decode_unsigned(frame_data_length) # Example: 8
-encoded_frame_data = Base.encode16(frame_data) # Example: "FF11FF11FF11FF11"
-```
-
-## Send a message
-
-Build a binary based on the structure defined above:
-
-```elixir
-:socket.send(sock, <<17, 1, 0, 0, 8, 0, 0, 0, 255, 17, 255, 17, 255, 17, 255, 17>>)
-```
-
-Receive it using the following command: 
-
-```bash
-$ candump -tz vcan0
-(000.000000)  vcan0  111   [8]  FF 11 FF 11 FF 11 FF 11
 ```
