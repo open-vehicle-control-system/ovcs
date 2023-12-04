@@ -177,8 +177,8 @@
             "origin": "lock",
             "mapping": {
                 "0": "open",
-                "4": "key_closed",
-                "1": "car_closed"
+                "4": "keyClosed",
+                "1": "carSwitchClosed"
             }
         },
         "keyState": {
