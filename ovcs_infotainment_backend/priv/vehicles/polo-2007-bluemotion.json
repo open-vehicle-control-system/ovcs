@@ -177,9 +177,11 @@
             "origin": "lock",
             "mapping": {
                 "0": "open",
+                "8": "open",
                 "4": "keyClosed",
                 "1": "carSwitchClosed"
-            }
+            },
+            "_comment": "8 seems to be the state when the car boots and is already open"
         },
         "keyState": {
             "canNetwork": "confort", 
