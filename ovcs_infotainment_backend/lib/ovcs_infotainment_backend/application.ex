@@ -36,8 +36,8 @@ defmodule OvcsInfotainmentBackend.Application do
     Enum.map(can_network_specs, fn (can_network_spec) ->
       [network_name, interface] = can_network_spec |> String.split(":")
       bitrate                   = vehicle_config["canNetworks"][network_name]["bitrate"]
-      interface_name            = OvcsInfotainmentBackend.Can.Interface.process_name(network_name)
-      Supervisor.child_spec({OvcsInfotainmentBackend.Can.Interface, [network_name, interface, bitrate, manual_setup, signals_spec, OvcsInfotainmentBackend.VehicleStateManager]}, id: interface_name)
+      process_name              = Cantastic.Interface.process_name(network_name)
+      Supervisor.child_spec({Cantastic.Interface, [network_name, interface, bitrate, manual_setup, signals_spec, OvcsInfotainmentBackend.VehicleStateManager]}, id: process_name)
     end)
   end
 
