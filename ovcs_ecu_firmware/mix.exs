@@ -34,7 +34,6 @@ defmodule OvcsEcuFirmware.MixProject do
       {:shoehorn, "~> 0.9.1"},
       {:ring_logger, "~> 0.10.0"},
       {:toolshed, "~> 0.3.0"},
-      {:cantastic, path: "../libraries/cantastic"},
 
       # Allow Nerves.Runtime on host to support development, testing and CI.
       # See config/host.exs for usage.
@@ -42,6 +41,7 @@ defmodule OvcsEcuFirmware.MixProject do
 
       # Dependencies for all targets except :host
       {:nerves_pack, "~> 0.7.0", targets: @all_targets},
+      {:ovcs_ecu, path: "../ovcs_ecu", targets: @all_targets, env: Mix.env()},
 
       # Dependencies for specific targets
       # NOTE: It's generally low risk and recommended to follow minor version

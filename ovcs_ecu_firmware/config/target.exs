@@ -112,5 +112,7 @@ config :mdns_lite,
 # Import target specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.
 # Uncomment to use target specific configurations
-
+config :ovcs_ecu, :can_networks, "drive:can0,leafEv:can1"
+config :ovcs_ecu, :manual_setup, false
+config :ovcs_ecu, :vehicle, "polo-2007-bluemotion-leaf-em57"
 # import_config "#{Mix.target()}.exs"
