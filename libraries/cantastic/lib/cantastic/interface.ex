@@ -1,20 +1,27 @@
 defmodule Cantastic.Interface do
   use GenServer
-  alias Cantastic.{Signal, Util, CompiledSignalSpec, Frame}
+  alias Cantastic.{Signal, Util, CompiledSignalSpec, Frame, SocketStore}
   require Logger
 
-  def start_link(args) do
-    GenServer.start_link(__MODULE__, args)
+  def start_link([process_name | _args] = args) do
+    GenServer.start_link(__MODULE__, args, name: process_name)
   end
 
   def process_name(network_name) do
     "#{network_name |> String.capitalize()}CanBusInterface" |> String.to_atom
   end
 
+
+  def send_frame(process_name, raw_frame) do
+    socket = SocketStore.get(process_name)
+    Util.send_frame(socket, raw_frame)
+  end
+
   @impl true
-  def init([network_name, interface, bitrate, manual_setup, signal_specs, frame_handler]) do
+  def init([process_name, network_name, interface, bitrate, manual_setup, signal_specs, frame_handler]) do
     :ok                   = Util.setup_can_interface(interface, bitrate, manual_setup)
     {:ok, socket}         = Util.bind_socket(interface)
+    SocketStore.set(process_name, socket)
     compiled_signal_specs = compile_signal_specs(signal_specs, network_name)
     receive_frame()
     {:ok,
