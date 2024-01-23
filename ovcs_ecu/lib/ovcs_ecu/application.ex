@@ -9,7 +9,8 @@ defmodule OvcsEcu.Application do
   def start(_type, _args) do
     vehicle_config = vehicle_config()
     children = [
-      {OvcsEcu.VehicleStateManager, [vehicle_config]}
+      {OvcsEcu.VehicleStateManager, [vehicle_config]},
+      {Cantastic.SocketStore, []}
     ] ++ can_interfaces(vehicle_config)
 
     # See https://hexdocs.pm/elixir/Supervisor.html
@@ -26,7 +27,7 @@ defmodule OvcsEcu.Application do
       [network_name, interface] = can_network_spec |> String.split(":")
       bitrate                   = vehicle_config["canNetworks"][network_name]["bitrate"]
       process_name              = Cantastic.Interface.process_name(network_name)
-      Supervisor.child_spec({Cantastic.Interface, [network_name, interface, bitrate, manual_setup, signals_spec, OvcsEcu.VehicleStateManager]}, id: process_name)
+      Supervisor.child_spec({Cantastic.Interface, [process_name, network_name, interface, bitrate, manual_setup, signals_spec, OvcsEcu.VehicleStateManager]}, id: process_name)
     end)
   end
 
