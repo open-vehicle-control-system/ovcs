@@ -11,7 +11,6 @@ defmodule OvcsInfotainmentFirmware.Application do
   def start(_type, _args) do
     children = [
       {NervesWeston,
-        tty: 1,
         xdg_runtime_dir: @xdg_runtime_dir,
         name: :weston,
         cli_args: [
