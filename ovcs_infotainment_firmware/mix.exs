@@ -45,8 +45,8 @@ defmodule OvcsInfotainmentFirmware.MixProject do
       {:nerves_pack, "~> 0.7.0", targets: @all_targets},
       {:vintage_net_wifi, "~> 0.11.7", targets: @all_targets},
       {:plug_cowboy, "~> 2.0"},
-      {:nerves_weston, github: "coop/nerves_weston"},
       {:nerves_cog, github: "coop/nerves_cog"},
+      {:nerves_weston, github: "Spin42/nerves_weston"},
       {:ovcs_infotainment_backend, path: "../ovcs_infotainment_backend", targets: @all_targets, env: Mix.env()},
 
       # Dependencies for specific targets
@@ -54,7 +54,6 @@ defmodule OvcsInfotainmentFirmware.MixProject do
       # bumps to Nerves systems. Since these include Linux kernel and Erlang
       # version updates, please review their release notes in case
       # changes to your application are needed.
-      {:nerves_system_rpi4, "~> 1.24", runtime: false, targets: :rpi4},
       {
         :ovcs_infotainment_system_rpi4,
         path: "../../ovcs_infotainment_system_rpi4",
