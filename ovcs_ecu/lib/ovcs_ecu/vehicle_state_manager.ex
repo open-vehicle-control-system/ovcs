@@ -14,12 +14,17 @@ defmodule OvcsEcu.VehicleStateManager do
     GenServer.call(__MODULE__, :get_signals)
   end
 
+  def can_config() do
+    GenServer.call(__MODULE__, :get_can_config)
+  end
+
   @impl true
   def init([vehicle_config]) do
     {:ok,
       %{
         model: vehicle_config["model"],
         brand: vehicle_config["brand"],
+        can_config: vehicle_config,
         signals: %{
           updated_at: nil
         }
@@ -29,8 +34,12 @@ defmodule OvcsEcu.VehicleStateManager do
 
   @impl true
   def handle_call(:get_signals, _from, state) do
-
     {:reply, signals_only(state.signals), state}
+  end
+
+  @impl true
+  def handle_call(:get_can_config, _from, state) do
+    {:reply, state.can_config, state}
   end
 
   @impl true
