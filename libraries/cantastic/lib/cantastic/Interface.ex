@@ -1,21 +1,17 @@
-defmodule Cantastic.Receiver do
+defmodule Cantastic.Interface do
   use GenServer
-  alias Cantastic.{Signal, Util, CompiledSignalSpec, Frame, Interface}
+  alias Cantastic.{Signal, Util, CompiledSignalSpec, Frame, SocketStore}
   require Logger
 
   def start_link([process_name | _args] = args) do
     GenServer.start_link(__MODULE__, args, name: process_name)
   end
 
-  def process_name(network_name) do
-    "Cantastic#{network_name |> String.capitalize()}Receiver" |> String.to_atom
-  end
-
   @impl true
   def init([process_name, network_name, interface, bitrate, manual_setup, signal_specs, frame_handler]) do
     :ok                   = Util.setup_can_interface(interface, bitrate, manual_setup)
     {:ok, socket}         = Util.bind_socket(interface)
-    Interface.store_socket(process_name, socket)
+    SocketStore.set(process_name, socket)
     compiled_signal_specs = compile_signal_specs(signal_specs, network_name)
     receive_frame()
     {:ok,
@@ -38,6 +34,16 @@ defmodule Cantastic.Receiver do
     send_signals_to_frame_handler(state, frame, signals)
     receive_frame()
     {:noreply, state}
+  end
+
+  def send_raw_frame(network_name, raw_frame) do
+    process_name = process_name(network_name)
+    socket = SocketStore.get(process_name)
+    :socket.send(socket, raw_frame)
+  end
+
+  def process_name(network_name) do
+    "Cantastic#{network_name |> String.capitalize()}Interface" |> String.to_atom
   end
 
   defp send_signals_to_frame_handler(_state, _frame, []), do: nil
