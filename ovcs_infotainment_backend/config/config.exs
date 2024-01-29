@@ -11,9 +11,11 @@ config :ovcs_infotainment_backend,
   ecto_repos: [OvcsInfotainmentBackend.Repo],
   generators: [timestamp_type: :utc_datetime]
 
-  config :ovcs_infotainment_backend, :can_networks, System.get_env("CAN_NETWORKS") || "drive:vcan0,confort:vcan1"
-  config :ovcs_infotainment_backend, :manual_setup, System.get_env("MANUAL_SETUP") == "true" || false
-  config :ovcs_infotainment_backend, :vehicle, System.get_env("VEHICLE") || "polo-2007-bluemotion"
+config :ovcs_infotainment_backend, :vehicle, System.get_env("VEHICLE") || "polo-2007-bluemotion"
+
+config :cantastic, :can_networks, System.get_env("CAN_NETWORKS") || "drive:vcan0,confort:vcan1"
+config :cantastic, :manual_setup, System.get_env("MANUAL_SETUP") == "true" || false
+config :cantastic, :frame_handler, OvcsInfotainmentBackend.VehicleStateManager
 
 # Configures the endpoint
 config :ovcs_infotainment_backend, OvcsInfotainmentBackendWeb.Endpoint,

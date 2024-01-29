@@ -80,7 +80,15 @@ defmodule Cantastic.Util do
     {:ok, frame}
   end
 
-  def send_frame(socket, raw_frame) do
-    :socket.send(socket, raw_frame)
+  def raw_frame(id, raw_data) do
+    data_length = byte_size(raw_data)
+    padding     = 8 - data_length
+    << id::little-integer-size(16),
+      0::2 * 8,
+      data_length,
+      0::3 * 8
+    >> <>
+    raw_data <>
+    <<0::padding * 8>>
   end
 end
