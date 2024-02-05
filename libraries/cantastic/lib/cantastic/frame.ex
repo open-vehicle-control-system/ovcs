@@ -3,25 +3,25 @@ defmodule Cantastic.Frame do
   defstruct [:id, :data_length, :raw_data]
 
   def to_string(frame) do
-    "[Frame] #{id_hex(frame)}  [#{frame.data_length}]  #{raw_data_hex(frame)}"
+    "[Frame] #{format_id(frame)}  [#{frame.data_length}]  #{format_data(frame)}"
   end
 
-  def id_hex(frame) do
-    frame.id |> Integer.to_string(16)
+  def format_id(frame) do
+    frame.id |> Util.integer_to_hex()
   end
 
-  def raw_data_hex(frame) do
+  def format_data(frame) do
     frame.raw_data
-    |> Base.encode16()
+    |> Util.bin_to_hex()
     |> String.split("", trim: true)
     |> Enum.chunk_every(2)
     |> Enum.join(" ")
   end
 
   def send(network_name, hex_id, hex_data) do
-    id              = hex_id |> String.to_integer(16)
-    {:ok, raw_data} = Base.decode16(hex_data)
-    raw_frame       = Util.raw_frame(id, raw_data)
+    id        = hex_id |> Util.hex_to_integer()
+    raw_data  = Util.hex_to_bin(hex_data)
+    raw_frame = Util.raw_frame(id, raw_data)
     Interface.send_raw_frame(network_name, raw_frame)
   end
 end

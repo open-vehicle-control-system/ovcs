@@ -1,7 +1,7 @@
 defmodule OvcsEcu.TestEngine do
   use GenServer
-  alias Cantastic.{Frame}
-  use Bitwise
+  alias Cantastic.Frame
+  alias OvcsEcu.NissanLeaf.Util
 
   @stop_torque 0
 
@@ -34,7 +34,7 @@ defmodule OvcsEcu.TestEngine do
   def handle_info(:torque_loop, state) do
     send_torque_message(state.torque, state.torque_counter)
     torque_loop()
-    {:noreply, %{state | torque_counter: rem(state.torque_counter+1, 4)}}
+    {:noreply, %{state | torque_counter: state.torque_counter+1}}
   end
 
   @impl true
@@ -64,13 +64,13 @@ defmodule OvcsEcu.TestEngine do
   end
 
   def send_torque_message(torque, counter) do
-    prefix = "6E6E"
-    raw_torque = <<torque::big-integer-size(16)>>
-    hex_torque = raw_torque |> Base.encode16()
-    hex_counter = compute_hex_shifted_counter(counter)
-    postfix = "4401"
-    crc = compute_crc(prefix <> hex_torque <> hex_counter <> postfix)
-    Frame.send("drive", "1D4", prefix <> hex_torque <> hex_counter <> postfix <> crc)
+    prefix      = "6E6E"
+    hex_torque  = torque |> Cantastic.Util.integer_to_bin_little() |> Cantastic.Util.bin_to_hex()
+    hex_counter = Util.shifted_counter(counter) |> Cantastic.Util.integer_to_hex()
+    postfix     = "4401"
+    payload     = prefix <> hex_torque <> hex_counter <> postfix
+    crc         = Util.crc8(payload) |> Cantastic.Util.integer_to_hex()
+    Frame.send("drive", "1D4", payload <> crc)
   end
 
   def send_keep_alive_message() do
@@ -81,33 +81,11 @@ defmodule OvcsEcu.TestEngine do
 
   def send_vms_status_message(counter) do
     prefix      = "4E4000AAC000"
-    hex_counter = compute_hex_counter(counter)
-    crc         = compute_crc(prefix <> hex_counter)
-    Frame.send("drive", "11A", prefix <> hex_counter <> crc)
+    hex_counter = Util.counter(counter) |> Cantastic.Util.integer_to_hex()
+    payload     = prefix <> hex_counter
+    crc         = Util.crc8(payload) |> Cantastic.Util.integer_to_hex()
+    Frame.send("drive", "11A", payload <> crc)
     :timer.sleep(10)
-    send_vms_status_message(rem(counter+1, 4))
-  end
-
-  def compute_crc(hex_data) do
-    {:ok, raw_data} = Base.decode16(hex_data)
-    CRC.calculate(
-      raw_data,
-      %{
-        width: 8,
-        poly: 0x85,
-        init: 0x00,
-        refin: false,
-        refout: false,
-        xorout: 0x00
-      }
-    ) |> Integer.to_string(16) |> String.pad_leading(2, "0")
-  end
-
-  def compute_hex_counter(counter) do
-    counter |> Integer.to_string(16) |> String.pad_leading(2, "0")
-  end
-
-  def compute_hex_shifted_counter(counter) do
-    bxor(7, counter <<< 6) |> Integer.to_string(16) |> String.pad_leading(2, "0")
+    send_vms_status_message(counter + 1)
   end
 end
