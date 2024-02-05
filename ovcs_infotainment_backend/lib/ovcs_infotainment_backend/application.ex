@@ -20,7 +20,8 @@ defmodule OvcsInfotainmentBackend.Application do
       # {OvcsInfotainmentBackend.Worker, arg},
       # Start to serve requests, typically the last entry
       OvcsInfotainmentBackendWeb.Endpoint,
-      {OvcsInfotainmentBackend.VehicleStateManager, [vehicle_config]}
+      {OvcsInfotainmentBackend.VehicleStateManager, [vehicle_config]},
+      {OvcsInfotainmentBackend.SystemInformationManager, []},
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html
