@@ -14,7 +14,7 @@ defmodule Cantastic.Application do
     frame_handler     = Application.get_env(:cantastic, :frame_handler)
     config            = frame_handler.can_config()
     signals_spec      = config["canSignals"]
-    receivers = Enum.map(can_network_specs, fn (can_network_spec) ->
+    interfaces = Enum.map(can_network_specs, fn (can_network_spec) ->
       [network_name, interface] = can_network_spec |> String.split(":")
       bitrate                   = config["canNetworks"][network_name]["bitrate"]
       process_name              = Interface.process_name(network_name)
@@ -23,7 +23,7 @@ defmodule Cantastic.Application do
 
     children = [
       {Cantastic.SocketStore, []}
-    ] ++ receivers
+    ] ++ interfaces
 
 
     # See https://hexdocs.pm/elixir/Supervisor.html
