@@ -15,7 +15,7 @@ const sidebarOpen = ref(false)
 
 <template>
   <div>
-    <div class="py-0 lg:pl-32 dark:bg-gray-800 text-indigo-200"><h3 id="clock" class="text-xl text-center">{{ currentTime }}</h3></div>
+    <div class="py-0 lg:pl-32 h-32 dark:bg-gray-800 text-gray-900 dark:text-gray-400"><h3 id="clock" class="text-xl text-center">{{ currentTime }}</h3></div>
     <!-- Static sidebar for desktop -->
     <div class="lg:fixed lg:inset-y-0 lg:z-50 lg:flex lg:w-51 lg:flex-col">
       <!-- Sidebar component, swap this element with another sidebar if you like -->
@@ -61,6 +61,7 @@ export default {
     }
   },
   beforeMount(){
+    this.setCurrentTime();
     this.timer = setInterval(this.setCurrentTime, 1000);
   },
   beforeUnmount(){
