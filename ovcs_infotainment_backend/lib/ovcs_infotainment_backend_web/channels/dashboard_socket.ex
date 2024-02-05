@@ -3,6 +3,7 @@ defmodule OvcsInfotainmentBackendWeb.DashboardSocket do
 
   ## Channels
   channel "debug-metrics", OvcsInfotainmentBackendWeb.DebugMetricsChannel
+  channel "system-information", OvcsInfotainmentBackendWeb.SystemInformationChannel
 
   def connect(_params, socket) do
     {:ok, socket}
