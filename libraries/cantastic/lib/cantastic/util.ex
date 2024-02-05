@@ -91,4 +91,31 @@ defmodule Cantastic.Util do
     raw_data <>
     <<0::padding * 8>>
   end
+
+  def hex_to_bin(hex_data) do
+    hex_data |> Base.decode16!()
+  end
+
+  def bin_to_hex(raw_data) do
+    raw_data |> Base.encode16()
+  end
+
+  def integer_to_hex(integer) do
+    integer
+    |> Integer.to_string(16)
+    |> String.pad_leading(2, "0")
+  end
+
+  def hex_to_integer(hex, size \\ 16) do
+    {int, _} = Integer.parse(hex, size)
+    int
+  end
+
+  def integer_to_bin_big(integer, size \\ 16) do
+    <<integer::big-integer-size(size)>>
+  end
+
+  def integer_to_bin_little(integer, size \\ 16) do
+    <<integer::little-integer-size(size)>>
+  end
 end
