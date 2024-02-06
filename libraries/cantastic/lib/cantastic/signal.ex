@@ -20,7 +20,7 @@ defmodule Cantastic.Signal do
       value: nil
     }
     raw_data            = frame.raw_data
-    raw_data_bit_length = frame.data_length
+    raw_data_bit_length = frame.data_length * 8
     head_length         = compiled_signal_spec.value_start
     value_length        = compiled_signal_spec.value_length
     tail_length         = raw_data_bit_length - head_length - value_length
