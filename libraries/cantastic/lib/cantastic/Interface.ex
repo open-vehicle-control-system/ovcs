@@ -26,7 +26,7 @@ defmodule Cantastic.Interface do
 
   @impl true
   def handle_cast(:receive_frame, state) do
-    {:ok, frame} = Util.receive_one_frame(state.socket)
+    {:ok, frame} = receive_one_frame(state.network_name, state.socket)
     signals = (state.compiled_signal_specs[frame.id] || []) |> Enum.map(fn(compiled_signal_spec) ->
       {:ok, signal} =  Signal.from_frame_for_compiled_spec(frame, compiled_signal_spec)
       signal
@@ -34,6 +34,25 @@ defmodule Cantastic.Interface do
     send_signals_to_frame_handler(state, frame, signals)
     receive_frame()
     {:noreply, state}
+  end
+
+  def receive_one_frame(network_name, socket) do
+    {:ok, raw_frame} = :socket.recv(socket)
+    <<
+      id::little-integer-size(16),
+      _unused1::binary-size(2),
+      data_length::little-integer-size(8),
+      _unused2::binary-size(3),
+      raw_data::binary-size(data_length),
+      _unused3::binary
+    >> = raw_frame
+    frame = %Frame{
+      id: id,
+      network_name: network_name,
+      data_length: data_length,
+      raw_data: raw_data
+    }
+    {:ok, frame}
   end
 
   def send_raw_frame(network_name, raw_frame) do
