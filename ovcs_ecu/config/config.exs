@@ -11,7 +11,7 @@ config :ovcs_ecu, :vehicle, System.get_env("VEHICLE") || "polo-2007-bluemotion-l
 
 config :cantastic, :can_networks, System.get_env("CAN_NETWORKS") || "drive:vcan0,confort:vcan1"
 config :cantastic, :manual_setup, System.get_env("MANUAL_SETUP") == "true" || false
-config :cantastic, :frame_handler, OvcsEcu.VehicleStateManager
+config :cantastic, :frame_handler, OvcsEcu.VehicleManager
 
 # Configures Elixir's Logger
 config :logger, :console,
