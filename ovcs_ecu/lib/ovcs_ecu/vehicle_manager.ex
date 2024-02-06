@@ -1,4 +1,4 @@
-defmodule OvcsEcu.VehicleStateManager do
+defmodule OvcsEcu.VehicleManager do
   use GenServer
   require Logger
 
@@ -16,6 +16,14 @@ defmodule OvcsEcu.VehicleStateManager do
 
   def can_config() do
     GenServer.call(__MODULE__, :get_can_config)
+  end
+
+  def init_engine() do
+    OvcsEcu.NissanLeaf.Vms.init_engine()
+  end
+
+  def throttle_engine(torque) do
+    OvcsEcu.NissanLeaf.Vms.throttle_engine(torque)
   end
 
   @impl true

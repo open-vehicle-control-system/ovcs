@@ -3,21 +3,12 @@ defmodule Cantastic.Frame do
 
   defstruct [:id, :data_length, :raw_data, :network_name]
 
-  def build(id_hex: id_hex, network_name: network_name, data_hex: data_hex) do
-    raw_data = data_hex |> Cantastic.Util.hex_to_bin()
-    %Cantastic.Frame{
-      id: id_hex |> Cantastic.Util.hex_to_integer(),
-      network_name: network_name,
-      raw_data: raw_data,
-      data_length: byte_size(raw_data) * 8
-    }
-  end
-  def build(id: id, network_name: network_name, raw_data: raw_data, data_length: data_length) do
+  def build(id: id, network_name: network_name, raw_data: raw_data) do
     %Cantastic.Frame{
       id: id,
       network_name: network_name,
       raw_data: raw_data,
-      data_length: data_length
+      data_length: byte_size(raw_data)
     }
   end
 
@@ -26,7 +17,11 @@ defmodule Cantastic.Frame do
   end
 
   def send_hex(network_name, id_hex, data_hex) do
-    frame = build(id_hex: id_hex, network_name: network_name, data_hex: data_hex)
+    frame = build(
+      id: id_hex |> Cantastic.Util.hex_to_integer(),
+      network_name: network_name,
+      raw_data: data_hex |> Cantastic.Util.hex_to_bin()
+    )
     send(frame)
   end
 
@@ -56,5 +51,4 @@ defmodule Cantastic.Frame do
     frame.raw_data <>
     <<0::padding * 8>>
   end
-
 end
