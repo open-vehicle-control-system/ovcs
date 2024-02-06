@@ -1,5 +1,4 @@
 defmodule Cantastic.Util do
-  alias Cantastic.Frame
   require Logger
 
   @can_domain 29
@@ -60,36 +59,6 @@ defmodule Cantastic.Util do
     address = <<0::size(16)-little, ifindex::size(32)-little, 0::size(32), 0::size(32), 0::size(64)>>
     :socket.bind(socket, %{:family => @can_domain, :addr => address})
     {:ok, socket}
-  end
-
-  def receive_one_frame(socket) do
-    {:ok, raw_frame} = :socket.recv(socket)
-    <<
-      id::little-integer-size(16),
-      _unused1::binary-size(2),
-      data_length::little-integer-size(8),
-      _unused2::binary-size(3),
-      raw_data::binary-size(data_length),
-      _unused3::binary
-    >> = raw_frame
-    frame = %Frame{
-      id: id,
-      data_length: data_length * 8,
-      raw_data: raw_data
-    }
-    {:ok, frame}
-  end
-
-  def raw_frame(id, raw_data) do
-    data_length = byte_size(raw_data)
-    padding     = 8 - data_length
-    << id::little-integer-size(16),
-      0::2 * 8,
-      data_length,
-      0::3 * 8
-    >> <>
-    raw_data <>
-    <<0::padding * 8>>
   end
 
   def hex_to_bin(hex_data) do
