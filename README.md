@@ -59,3 +59,55 @@ You have to open an [erlang socket](https://www.erlang.org/doc/man/socket) with 
 addr = <<0::size(16)-little, ifindex::size(32)-little, 0::size(32), 0::size(32), 0::size(64)>>
 :socket.bind(sock, %{:family => 29, :addr => addr})
 ```
+
+## Start Sequence
+
+- Key contact on 
+- 12V enabled everywhere
+- Key start engine
+- Switch on signal -> Arduino controller (grouped with controls or not?) enable 12V to Inverter, water pump, vacuum pump
+- Within 2 seconds, ECU sends VMS frames (Status, alive, torque)
+- ECU request main negative contactor ON
+- Contactors controller: Main negative contactor ON
+- ECU request precharge contactor ON
+- Contactors controller: Main precharge contactor ON
+- ECU check precharge complete (Based on BMS?)
+- ECU request main positive contactor ON
+- Contactors controller: Main positive contactor ON
+- ECU request precharge contactor OFF
+- Contactors controller: precharge contactor OFF
+
+
+## OVCS CAN MESSAGES
+
+### Car Controls calibration mode
+
+- ID: 0x500
+- Data:
+    - Byte 0 (Mode): 0 == OFF / 1 == ON
+- Frequency: 200ms
+
+### Car Controls status
+
+- ID: 0x200 
+- Data:
+    - Byte 0 (Throttle): 0 - 255 -> 0 to 100% 
+- Frequency: 10ms
+
+## Contactors state request (sent by ECU)
+
+- ID: 0x100
+- Data: 
+    - Byte 0 (Main negative Contactor): 0 == OFF / 1 == ON
+    - Byte 1 (Main positive Contactor): 0 == OFF / 1 == ON
+    - Byte 2 (Precharge contactor):  0 == OFF / 1 == ON
+Frequency: 20ms
+
+## Contactors status (sent by contactors controller)
+
+- ID: 0x101
+- Data: 
+    - Byte 0 (Main negative Contactor): 0 == OFF / 1 == ON
+    - Byte 1 (Main positive Contactor): 0 == OFF / 1 == ON
+    - Byte 2 (Precharge contactor):  0 == OFF / 1 == ON
+Frequency: 10ms
