@@ -39,12 +39,4 @@ git clone https://github.com/Spin42/ovcs_infotainment_system_rpi4.git
 git clone https://github.com/Spin42/ovcs_ecu_system_rpi4.git
 ```
 
-## Local Development
-
-* Run `mix phx.server` in the  `ovcs_infotainment_backend` folder to run the Phoenix app.
-    * The CAN/BUS networks to be used can be configured with `export CAN_NETWORKS=drive:vcan0,confort:vcan1`
-    * If the "ip link" command requires "sudo", you should configure the CAN networks manully and set the `MANUAL_SETUP` environnment variable to `true`
-    * The vehicle configuration to use ba be configured with `VEHICLE=polo-2007-bluemotion`
-
-* Run `npm run dev` in the `ovcs_infotainment_frontend` folder to run the Vue.js app.
-* You can simulate the vehicle (infinite loop) with the following command: `canplayer -l i -I candumps/candump-standard-test.log vcan0=can0 vcan1=can1`
+Next: [Applications](./applications.md)
