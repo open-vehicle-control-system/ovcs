@@ -9,8 +9,7 @@ defmodule OvcsEcu.Application do
   def start(_type, _args) do
     vehicle_config = vehicle_config()
     children = [
-      {OvcsEcu.VehicleManager, [vehicle_config]},
-      {OvcsEcu.VehicleSupervisor, [vehicle_config]}
+      {OvcsEcu.VehicleManager, [vehicle_config]}
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html
