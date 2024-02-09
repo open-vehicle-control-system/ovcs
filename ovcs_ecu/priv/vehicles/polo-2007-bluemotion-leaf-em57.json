@@ -104,10 +104,10 @@
                             "valueStart": 0,
                             "valueLength": 8,
                             "mapping": {
-                                "drive": "4",
-                                "neutral": "3",
-                                "rear": "2",
-                                "parked": "0"
+                                "4": "drive",
+                                "3": "neutral",
+                                "2": "rear",
+                                "0": "parked"
                             }
                         },
                         "filler1": {
