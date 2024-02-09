@@ -56,7 +56,7 @@
                         }
                     }
                 },
-                "torqueRequest": {
+                "vmsTorqueRequest": {
                     "id": "1D4",
                     "frequency": 10,
                     "signals": {
@@ -99,7 +99,7 @@
                     "frequency": 10,
                     "signals": {
                         "gear": {
-                            "kind": "integer",
+                            "kind": "string",
                             "endianness": "big",
                             "valueStart": 0,
                             "valueLength": 8,
@@ -126,7 +126,11 @@
                             "kind": "integer",
                             "endianness": "little",
                             "valueStart": 24,
-                            "valueLength": 8
+                            "valueLength": 8,
+                            "mapping": {
+                                "55": 0,
+                                "AA": 1
+                            }
                         },
                         "filler2": {
                             "kind": "static",
