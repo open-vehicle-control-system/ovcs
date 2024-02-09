@@ -1,5 +1,5 @@
 defmodule Cantastic.Frame do
-  alias Cantastic.{Util, Interface}
+  alias Cantastic.{Util, CompiledSignalSpec}
 
   defstruct [:id, :data_length, :raw_data, :network_name]
 
@@ -12,17 +12,18 @@ defmodule Cantastic.Frame do
     }
   end
 
-  def send(frame) do
-    Interface.send_raw_frame(frame.network_name, to_bin(frame))
+  def build_from_compiled_spec(compiled_frame_spec, parameters) do
+    raw_data = build_raw_data_from_compiled_spec(compiled_frame_spec, parameters)
+    Cantastic.Frame.build(id: compiled_frame_spec.id, network_name: compiled_frame_spec.network_name, raw_data: raw_data)
   end
 
-  def send_hex(network_name, id_hex, data_hex) do
-    frame = build(
-      id: id_hex |> Cantastic.Util.hex_to_integer(),
-      network_name: network_name,
-      raw_data: data_hex |> Cantastic.Util.hex_to_bin()
-    )
-    send(frame)
+  def build_raw_data_from_compiled_spec(compiled_frame_spec, parameters) do
+    compiled_frame_spec.compiled_signal_specs
+    |> Enum.reduce(<<>>, fn (compiled_signal_spec, raw_data) ->
+      value = (parameters || %{})[compiled_signal_spec.name]
+      raw_signal = CompiledSignalSpec.instantiate_raw(raw_data, compiled_signal_spec, value)
+      Kernel.<>(raw_data, raw_signal)
+    end)
   end
 
   def to_string(frame) do

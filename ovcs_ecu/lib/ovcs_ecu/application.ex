@@ -17,6 +17,7 @@ defmodule OvcsEcu.Application do
     opts = [strategy: :one_for_one, name: OvcsEcu.Supervisor]
     supervisor = Supervisor.start_link(children, opts)
     Application.ensure_all_started(:cantastic)
+    OvcsEcu.NissanLeaf.Vms.init_emitters() # TODO review where to put it
     supervisor
   end
 

@@ -1,28 +1,32 @@
 defmodule Cantastic.Emitter do
   use GenServer
+  alias Cantastic.{Interface, Frame}
 
   def start_link(%{process_name: process_name} = args) do
     GenServer.start_link(__MODULE__, args, name: process_name)
   end
 
   @impl true
-  def init(%{frequency: frequency, frame_sending_function: frame_sending_function, initial_data: initial_data, initialy_enabled: initialy_enabled}) do
-    if initialy_enabled do
-      enable(self())
-    end
+  def init(%{process_name:  _, compiled_frame_spec: compiled_frame_spec, socket: socket, network_name: network_name}) do
     {:ok,
       %{
-        frame_sending_function: frame_sending_function,
+        socket: socket,
+        network_name: network_name,
+        parameters_builder_function: nil,
         sending_timer: nil,
-        data: initial_data,
-        frequency: frequency
+        data: %{},
+        frequency: compiled_frame_spec.frequency,
+        compiled_frame_spec: compiled_frame_spec
       }
     }
   end
 
   @impl true
   def handle_info(:send_frame, state) do
-    {:ok, state} = state.frame_sending_function.(state)
+    {:ok, parameters, state} = state.parameters_builder_function.(state)
+    frame = Frame.build_from_compiled_spec(state.compiled_frame_spec, parameters)
+    raw_frame = Frame.to_bin(frame)
+    :socket.send(state.socket, raw_frame)
     {:noreply, state}
   end
 
@@ -59,6 +63,14 @@ defmodule Cantastic.Emitter do
     {:reply, :ok, state}
   end
 
+  @impl true
+  def handle_call({:configure, initialization_args}, _from, state) do
+    state = state
+    |> Map.put(:parameters_builder_function, initialization_args.parameters_builder_function)
+    |> Map.put(:data, initialization_args.initial_data)
+    {:reply, :ok, state}
+  end
+
   def send_frame(emitter) do
     Process.send_after(emitter, :send_frame, 0)
   end
@@ -75,21 +87,29 @@ defmodule Cantastic.Emitter do
     GenServer.call(emitter, {:get, fun}, timeout)
   end
 
-  def update(emitter, fun, timeout \\ 5000) when is_function(fun, 1) do
+  def update(network_name, frame_name, fun, timeout \\ 5000) when is_function(fun, 1) do
+    emitter =  Interface.emitter_process_name(network_name, frame_name)
     GenServer.call(emitter, {:update, fun}, timeout)
   end
 
-  def batch_enable(emitters) do
-    emitters |> Enum.each(
-      fn (emitter) ->
+  def configure(network_name, frame_name, initialization_args) do
+    emitter =  Interface.emitter_process_name(network_name, frame_name)
+    GenServer.call(emitter, {:configure, initialization_args})
+  end
+
+  def batch_enable(network_name, frame_names) do
+    frame_names |> Enum.each(
+      fn (frame_name) ->
+        emitter = Interface.emitter_process_name(network_name, frame_name)
         enable(emitter)
       end
     )
   end
 
-  def batch_disable(emitters) do
-    emitters |> Enum.each(
-      fn (emitter) ->
+  def batch_disable(network_name, frame_names) do
+    frame_names |> Enum.each(
+      fn (frame_name) ->
+        emitter = Interface.emitter_process_name(network_name, frame_name)
         disable(emitter)
       end
     )
