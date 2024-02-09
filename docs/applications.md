@@ -52,8 +52,6 @@ sudo modprobe can_raw
 
 * Run `npm run dev` in the `ovcs_infotainment_frontend` folder to run the Vue.js app.
 
-Next: [Testing with can messages](./testing_can_messages.md)
-
 ## Elixir x libsocketcan binding ([Source](https://elixirforum.com/t/erlang-socket-module-for-socketcan-on-nerves-device/57294))
 
 You have to open an [erlang socket](https://www.erlang.org/doc/man/socket) with the following args: 
@@ -68,3 +66,5 @@ You have to open an [erlang socket](https://www.erlang.org/doc/man/socket) with 
 addr = <<0::size(16)-little, ifindex::size(32)-little, 0::size(32), 0::size(32), 0::size(64)>>
 :socket.bind(sock, %{:family => 29, :addr => addr})
 ```
+
+Next: [Testing with can messages](./testing_can_messages.md)
