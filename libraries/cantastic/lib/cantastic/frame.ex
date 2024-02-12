@@ -43,7 +43,7 @@ defmodule Cantastic.Frame do
   end
 
   def to_bin(frame) do
-    padding     = 8 - frame.data_length
+    padding = 8 - frame.data_length
     << frame.id::little-integer-size(16),
       0::2 * 8,
       frame.data_length,
