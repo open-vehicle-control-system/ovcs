@@ -1,11 +1,11 @@
 {
     "model": "Polo 2007 Bluemotion",
-    "brand": "Volksvagen",
+    "brand": "Volkswagen",
     "canNetworks": {
         "drive": {
             "bitrate": "500000",
             "emittedFrames": {
-                "contactorsStateRequest": {
+                "contactorsStatusRequest": {
                     "id": "100",
                     "frequency": 20,
                     "signals": [
@@ -24,7 +24,7 @@
                         {
                             "name": "mainPositiveContactorEnabled",
                             "kind": "boolean",
-                            "valueStart": 0,
+                            "valueStart": 8,
                             "valueLength": 8,
                             "endianness": "little",
                             "origin": "OVCS ECU",
@@ -36,7 +36,7 @@
                         {
                             "name": "prechargeContactorEnabled",
                             "kind": "boolean",
-                            "valueStart": 0,
+                            "valueStart": 16,
                             "valueLength": 8,
                             "endianness": "little",
                             "origin": "OVCS ECU",

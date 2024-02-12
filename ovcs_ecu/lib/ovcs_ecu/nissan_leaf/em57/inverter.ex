@@ -1,4 +1,4 @@
-defmodule OvcsEcu.NissanLeaf.Vms do
+defmodule OvcsEcu.NissanLeaf.Em57.Inverter do
   alias OvcsEcu.NissanLeaf.Util
   alias Cantastic.Emitter
 
@@ -23,6 +23,7 @@ defmodule OvcsEcu.NissanLeaf.Vms do
         "counter" => 0
       }
     })
+    :ok
   end
 
   def alive_frame_parameters_builder(state) do
@@ -54,14 +55,17 @@ defmodule OvcsEcu.NissanLeaf.Vms do
     {:ok, parameters, state}
   end
 
-  def init_engine() do
+  def on() do
     Emitter.batch_enable(@network_name, ["vmsAlive", "vmsTorqueRequest", "vmsStatus"])
-    #Emitter.batch_enable(@network_name, ["vmsStatus",])
   end
 
-  def throttle_engine(torque) do
+  def throttle(torque) do
     Emitter.update(@network_name, "vmsTorqueRequest", fn (state) ->
       state |> put_in([:data, "torque"], torque)
     end)
+  end
+
+  def ready_to_drive?() do
+    false
   end
 end

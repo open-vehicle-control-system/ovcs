@@ -8,14 +8,14 @@ defmodule Cantastic.Receiver do
   end
 
   @impl true
-  def init([network_name, socket, compiled_received_frame_specs, frame_handler]) do
+  def init([network_name, socket, compiled_received_frame_specs]) do
     receive_frame()
     {:ok,
       %{
         network_name: network_name,
         socket: socket,
         compiled_received_frame_specs: compiled_received_frame_specs,
-        frame_handler: frame_handler
+        frame_handlers: []
       }
     }
   end
@@ -54,7 +54,9 @@ defmodule Cantastic.Receiver do
   defp send_signals_to_frame_handler(_state, _frame, []), do: nil
   defp send_signals_to_frame_handler(state, frame, signals) do
     Logger.debug(Frame.to_string(frame))
-    state.frame_handler.handle_frame(frame, signals)
+    state.frame_handlers |> Enum.each(fn (frame_handler) ->
+      frame_handler.handle_frame(frame, signals)
+    end)
   end
 
   defp receive_frame do
