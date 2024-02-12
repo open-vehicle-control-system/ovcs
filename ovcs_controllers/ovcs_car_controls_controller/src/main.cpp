@@ -1,6 +1,7 @@
 #include <DebugLog.h>
 #include <CanUtils.h>
 #include <PersistanceHelpers.h>
+#include <ConvertionUtils.h>
 
 #define THROTTLE_PEDAL_PIN A0
 #define DEBUGLOG_DEFAULT_LOG_LEVEL_TRACE
@@ -50,12 +51,6 @@ void listen_for_calibration_message() {
       was_in_calibration_mode = false;
     }
   }
-}
-
-int convert_throttle_to_max_range(int value, int calibration_low, int calibration_high){
-  int range = calibration_high - calibration_low;
-  int value_without_offset = value - calibration_low;
-  return (value_without_offset/4*255)/(range/4);
 }
 
 void setup() {
