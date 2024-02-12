@@ -19,9 +19,9 @@ defmodule Cantastic.CompiledSignalSpec do
     :value
   ]
 
-  def from_signal_spec(frame_id, frame_name, name, signal_spec) do
+  def from_signal_spec(frame_id, frame_name, signal_spec) do
     compiled_signal_spec = %Cantastic.CompiledSignalSpec{
-      name: name,
+      name: signal_spec["name"],
       frame_id: frame_id,
       frame_name: frame_name,
       kind: signal_spec["kind"] || "integer",
@@ -35,7 +35,7 @@ defmodule Cantastic.CompiledSignalSpec do
       scale: signal_spec["scale"] || 1,
       offset: signal_spec["offset"] || 0,
       decimals: signal_spec["decimals"] || 0,
-      value: signal_spec["value"]
+      value: signal_spec["value"] |> Util.hex_to_bin()
     }
     {:ok, compiled_signal_spec}
   end
@@ -46,16 +46,16 @@ defmodule Cantastic.CompiledSignalSpec do
       false -> value
     end
     int = case compiled_signal_spec.kind do
-      "static" -> compiled_signal_spec.value |> Util.hex_to_integer(compiled_signal_spec.value_length)
-      "integer" -> Integer.floor_div(value, compiled_signal_spec.scale) - compiled_signal_spec.offset
-      "string" -> compiled_signal_spec.reverse_mapping[value] |> Util.hex_to_integer(compiled_signal_spec.value_length)
-    end
-
-    case compiled_signal_spec.endianness do
-      "little" ->
-        <<int::little-integer-size(compiled_signal_spec.value_length)>>
-      "big"    ->
-        <<int::big-integer-size(compiled_signal_spec.value_length)>>
+      "static" -> compiled_signal_spec.value
+      "integer" ->
+        int = round(value / compiled_signal_spec.scale - compiled_signal_spec.offset)
+        case compiled_signal_spec.endianness do
+          "little" ->
+            <<int::little-integer-size(compiled_signal_spec.value_length)>>
+          "big"    ->
+            <<int::big-integer-size(compiled_signal_spec.value_length)>>
+        end
+      "string" -> compiled_signal_spec.reverse_mapping[value]
     end
   end
 
@@ -70,7 +70,7 @@ defmodule Cantastic.CompiledSignalSpec do
   defp compile_reverse_mapping(nil), do: nil
   defp compile_reverse_mapping(mapping) do
     mapping |> Map.keys() |> Enum.reduce(%{}, fn(hex_value, compiled_mapping) ->
-      value = Util.hex_to_integer(hex_value)
+      value = Util.hex_to_bin(hex_value)
       compiled_mapping |> Map.put(mapping[hex_value], value)
     end)
   end

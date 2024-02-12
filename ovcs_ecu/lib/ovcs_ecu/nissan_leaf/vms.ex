@@ -12,15 +12,15 @@ defmodule OvcsEcu.NissanLeaf.Vms do
     Emitter.configure(@network_name, "vmsTorqueRequest", %{
       parameters_builder_function: &torque_frame_parameters_builder/1,
       initial_data: %{
-        torque: 0,
-        counter: 0
+        "torque" => 0,
+        "counter" => 0
       }
     })
     Emitter.configure(@network_name, "vmsStatus", %{
       parameters_builder_function: &status_frame_parameters_builder/1,
       initial_data: %{
-        gear: "parked",
-        counter: 0
+        "gear" => "parked",
+        "counter" => 0
       }
     })
   end
@@ -30,38 +30,38 @@ defmodule OvcsEcu.NissanLeaf.Vms do
   end
 
   def torque_frame_parameters_builder(state) do
-    counter = state.data.counter
+    counter = state.data["counter"]
     parameters = %{
-      torque: state.data.torque,
-      counter: Util.shifted_counter(counter),
-      crc: &Util.crc8/1
+      "torque" => state.data["torque"],
+      "counter" => Util.shifted_counter(counter),
+      "crc" => &Util.crc8/1
     }
 
-    state = state |> put_in([:data, :counter], Util.counter(counter + 1))
+    state = state |> put_in([:data, "counter"], Util.counter(counter + 1))
     {:ok, parameters, state}
   end
 
   def status_frame_parameters_builder(state) do
-    counter = state.data.counter
+    counter = state.data["counter"]
     parameters = %{
-      gear: state.data.gear,
-      heartbeat: rem(counter, 2),
-      counter: Util.counter(counter),
-      crc: &Util.crc8/1
+      "gear" => state.data["gear"],
+      "heartbeat" => rem(counter, 2),
+      "counter" => Util.counter(counter),
+      "crc" => &Util.crc8/1
     }
 
-    state = state |> put_in([:data, :counter], Util.counter(counter + 1))
+    state = state |> put_in([:data, "counter"], Util.counter(counter + 1))
     {:ok, parameters, state}
   end
 
   def init_engine() do
     #Emitter.batch_enable(@network_name, ["vmsAlive", "vmsTorqueRequest", "vmsStatus"])
-    Emitter.batch_enable(@network_name, ["vmsAlive",])
+    Emitter.batch_enable(@network_name, ["vmsStatus",])
   end
 
   def throttle_engine(torque) do
     Emitter.update(@network_name, "vmsTorqueRequest", fn (state) ->
-      state |> put_in([:data, :torque], torque)
+      state |> put_in([:data, "torque"], torque)
     end)
   end
 end
