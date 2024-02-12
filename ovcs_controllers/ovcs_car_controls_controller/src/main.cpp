@@ -1,85 +1,73 @@
-#include <SPI.h>
-#include <mcp2515.h>
-#include <EEPROM.h>
+#include <DebugLog.h>
+#include <CanUtils.h>
+#include <PersistanceHelpers.h>
 
 #define THROTTLE_PEDAL_PIN A0
-#define THROTTLE_CAN_MESSAGE_FREQUENCY_MS 10
+#define DEBUGLOG_DEFAULT_LOG_LEVEL_TRACE
 
-unsigned long sendingTimestamp = 0;
-unsigned long now;
-
-struct can_frame receivedCanMessage;
-struct can_frame throttleCanMessage;
 MCP2515 can_0(10);
+can_frame calibration_message;
 
+int initialized = false;
 int calibration_mode = false;
 int was_in_calibration_mode = false;
 
 int throttle_pedal_calibration_low = 1023;
 int throttle_pedal_calibration_high = 0;
 
-void send_can_message(int value){
-  now = millis();
-  if(sendingTimestamp + THROTTLE_CAN_MESSAGE_FREQUENCY_MS <= now){
-    sendingTimestamp = now;
-    int throttle = ((value - throttle_pedal_calibration_low)/4*255) / ((throttle_pedal_calibration_high - throttle_pedal_calibration_low)/4);
-    throttleCanMessage.can_id = 0x200;
-    throttleCanMessage.can_dlc = 1;
-    throttleCanMessage.data[0] = throttle;
-    can_0.sendMessage(&throttleCanMessage);
-  }
+boolean initialize_throttle_values(){
+  throttle_pedal_calibration_low = read_calibration_data("throttle_low")*4;
+  throttle_pedal_calibration_high = read_calibration_data("throttle_high")*4;
+  return true;
 }
 
-void read_values_from_eeprom(){
-  int eeprom_throttle_pedal_low = EEPROM.read(0)*4;
-  throttle_pedal_calibration_low = eeprom_throttle_pedal_low;
-  int eeprom_throttle_pedal_high = EEPROM.read(1)*4;
-  throttle_pedal_calibration_high = eeprom_throttle_pedal_high;
+boolean initialize_controller(){
+  boolean can_has_errors = initialize_can(can_0);
+  return !can_has_errors && initialize_throttle_values();
 }
 
-void save_values_to_eeprom(){
-  // Divide by 4 as max value for analog is 1023 but bytes
-  // in EEPROM can hold value up to 255
-  EEPROM.write(0, throttle_pedal_calibration_low/4);
-  Serial.print("Eeprom throttle low: ");
-  Serial.println(throttle_pedal_calibration_low/4);
-  EEPROM.write(1, throttle_pedal_calibration_high/4);
-  Serial.print("Eeprom throttle high: ");
-  Serial.println(throttle_pedal_calibration_high/4);
+void reset_values(){
+  throttle_pedal_calibration_low = 1023;
+  throttle_pedal_calibration_high = 0;
 }
 
-void listen_to_canbus() {
-  if (can_0.readMessage(&receivedCanMessage) == MCP2515::ERROR_OK) {
-    if(receivedCanMessage.can_id == 0x500 && receivedCanMessage.data[0] == 1){
-      calibration_mode = true;
-      if(was_in_calibration_mode == false){
-        was_in_calibration_mode = true;
-      }
-      Serial.println("System is now in calibration mode");
+void listen_for_calibration_message() {
+  calibration_message = read_can_message(can_0, 0x500);
+  if(calibration_message.can_id == 0x500 && calibration_message.data[0] == 1){
+    calibration_mode = true;
+    if(was_in_calibration_mode == false){
+      was_in_calibration_mode = true;
     }
-    if(receivedCanMessage.can_id == 0x500 && receivedCanMessage.data[0] == 0){
-      calibration_mode = false;
-      if(was_in_calibration_mode == true){
-        Serial.println("Was in calibration mode, saving values to EEPROM...");
-        save_values_to_eeprom();
-        was_in_calibration_mode = false;
-      }
+    reset_values();
+    LOG_INFO("System is now in calibration mode");
+  }
+  if(calibration_message.can_id == 0x500 && calibration_message.data[0] == 0){
+    calibration_mode = false;
+    if(was_in_calibration_mode == true){
+      LOG_INFO("Was in calibration mode, saving values...");
+      save_calibration_data("throttle_low", throttle_pedal_calibration_low/4);
+      save_calibration_data("throttle_high", throttle_pedal_calibration_high/4);
+      was_in_calibration_mode = false;
     }
   }
+}
+
+int convert_throttle_to_max_range(int value, int calibration_low, int calibration_high){
+  int range = calibration_high - calibration_low;
+  int value_without_offset = value - calibration_low;
+  return (value_without_offset/4*255)/(range/4);
 }
 
 void setup() {
   Serial.begin(9600);
-
-  can_0.reset();
-  can_0.setBitrate(CAN_500KBPS, MCP_8MHZ);
-  can_0.setNormalMode();
-
-  read_values_from_eeprom();
+  initialized = initialize_controller();
+  if(!initialized){
+    LOG_ERROR("Controller cannot initialize");
+  }
 }
 
 void loop() {
-  listen_to_canbus();
+  listen_for_calibration_message();
   if(calibration_mode){
     int throttle_pedal_resistance = analogRead(THROTTLE_PEDAL_PIN);
     throttle_pedal_calibration_low = min(throttle_pedal_resistance, throttle_pedal_calibration_low);
@@ -87,6 +75,7 @@ void loop() {
   } else {
     was_in_calibration_mode = false;
     int throttle_pedal_resistance = analogRead(THROTTLE_PEDAL_PIN);
-    send_can_message(throttle_pedal_resistance);
+    int throttle = convert_throttle_to_max_range(throttle_pedal_resistance, throttle_pedal_calibration_low, throttle_pedal_calibration_high);
+    send_throttle_message(can_0, throttle);
   }
 }
