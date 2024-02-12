@@ -55,8 +55,8 @@ defmodule OvcsEcu.NissanLeaf.Vms do
   end
 
   def init_engine() do
-    #Emitter.batch_enable(@network_name, ["vmsAlive", "vmsTorqueRequest", "vmsStatus"])
-    Emitter.batch_enable(@network_name, ["vmsStatus",])
+    Emitter.batch_enable(@network_name, ["vmsAlive", "vmsTorqueRequest", "vmsStatus"])
+    #Emitter.batch_enable(@network_name, ["vmsStatus",])
   end
 
   def throttle_engine(torque) do
