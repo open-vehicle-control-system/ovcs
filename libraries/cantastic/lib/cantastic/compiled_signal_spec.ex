@@ -45,7 +45,7 @@ defmodule Cantastic.CompiledSignalSpec do
       true -> value.(raw_data)
       false -> value
     end
-    int = case compiled_signal_spec.kind do
+    case compiled_signal_spec.kind do
       "static" -> compiled_signal_spec.value
       "integer" ->
         int = round(value / compiled_signal_spec.scale - compiled_signal_spec.offset)

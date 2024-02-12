@@ -2,7 +2,7 @@ defmodule Cantastic.Interface do
   alias Cantastic.{Util, CompiledFrameSpec, Receiver, Emitter}
   require Logger
 
-  def configure_children(can_network_specs, manual_setup, frame_handler, config) do
+  def configure_children(can_network_specs, manual_setup, config) do
     interface_specs = Enum.map(can_network_specs, fn (can_network_spec) ->
       [network_name, interface] = can_network_spec |> String.split(":")
       network_config            = config["canNetworks"][network_name]
@@ -15,17 +15,17 @@ defmodule Cantastic.Interface do
       }
     end)
 
-    receivers = configure_receivers(interface_specs, frame_handler)
+    receivers = configure_receivers(interface_specs)
     emitters  = configure_emitters(interface_specs)
     receivers ++ emitters
   end
 
-  def configure_receivers(interface_specs, frame_handler) do
+  def configure_receivers(interface_specs) do
     interface_specs
     |> Enum.map(fn (%{network_name: network_name, network_config: network_config, socket: socket}) ->
       process_name                  = receiver_process_name(network_name)
       compiled_received_frame_specs = compile_frame_specs(network_config["receivedFrames"], network_name)
-      Supervisor.child_spec({Receiver, [process_name, network_name, socket, compiled_received_frame_specs, frame_handler]}, id: process_name)
+      Supervisor.child_spec({Receiver, [process_name, network_name, socket, compiled_received_frame_specs]}, id: process_name)
     end)
   end
 
