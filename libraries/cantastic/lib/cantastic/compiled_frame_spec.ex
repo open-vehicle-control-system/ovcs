@@ -26,8 +26,8 @@ defmodule Cantastic.CompiledFrameSpec do
 
   defp compile_signal_specs(frame_id, frame_name, signal_specs) do
       signal_specs
-      |> Enum.map(fn ({signal_name, signal_spec}) ->
-        {:ok, compiled_signal_spec} = CompiledSignalSpec.from_signal_spec(frame_id, frame_name, signal_name, signal_spec)
+      |> Enum.map(fn (signal_spec) ->
+        {:ok, compiled_signal_spec} = CompiledSignalSpec.from_signal_spec(frame_id, frame_name, signal_spec)
         compiled_signal_spec
       end)
   end

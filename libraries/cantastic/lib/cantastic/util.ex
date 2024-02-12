@@ -61,8 +61,11 @@ defmodule Cantastic.Util do
     {:ok, socket}
   end
 
+  def hex_to_bin(nil), do: nil
   def hex_to_bin(hex_data) do
-    hex_data |> Base.decode16!()
+    hex_data
+    |> String.pad_leading(2, "0")
+    |> Base.decode16!()
   end
 
   def bin_to_hex(raw_data) do
