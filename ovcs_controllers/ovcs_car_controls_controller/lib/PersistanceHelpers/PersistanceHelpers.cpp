@@ -1,5 +1,4 @@
 #include <PersistanceHelpers.h>
-#include <EEPROM.h>
 
 #define LABEL_SIZE 2
 
@@ -24,7 +23,9 @@ int read_calibration_data(char* label){
     int addr = get_addr(label);
     if(addr != -1){
         int value = EEPROM.read(addr);
+        return value;
     }
+    return -1;
 }
 
 int get_addr(char* label){
