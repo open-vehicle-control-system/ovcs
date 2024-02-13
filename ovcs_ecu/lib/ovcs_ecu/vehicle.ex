@@ -54,4 +54,19 @@ defmodule OvcsEcu.Vehicle do
     Inverter.off()
     BatteryManagementSystem.high_voltage_off()
   end
+
+  def test_enable_calibration_mode() do
+    CarControlsController.enable_calibration_mode()
+  end
+
+  def test_disable_calibration_mode() do
+    CarControlsController.disable_calibration_mode()
+  end
+
+  def enable_debugger() do
+    Mix.ensure_application!(:wx)
+    Mix.ensure_application!(:runtime_tools)
+    Mix.ensure_application!(:observer)
+    :observer.start()
+  end
 end
