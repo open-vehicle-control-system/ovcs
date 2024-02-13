@@ -27,6 +27,7 @@ defmodule Cantastic.Receiver do
       {:ok, signal} =  Signal.from_frame_for_compiled_spec(frame, compiled_signal_spec)
       signal
     end)
+    frame = %{frame | name: compiled_frame_spec.name}
     send_signals_to_frame_handler(compiled_frame_spec.frame_handlers, frame, signals)
     receive_frame()
     {:noreply, state}

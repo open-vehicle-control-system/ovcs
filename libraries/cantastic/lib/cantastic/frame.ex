@@ -1,7 +1,7 @@
 defmodule Cantastic.Frame do
   alias Cantastic.{Util, CompiledSignalSpec}
 
-  defstruct [:id, :data_length, :raw_data, :network_name]
+  defstruct [:id, :name, :data_length, :raw_data, :network_name]
 
   def build(id: id, network_name: network_name, raw_data: raw_data) do
     %Cantastic.Frame{

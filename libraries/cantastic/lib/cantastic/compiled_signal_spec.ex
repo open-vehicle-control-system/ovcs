@@ -32,7 +32,7 @@ defmodule Cantastic.CompiledSignalSpec do
       reverse_mapping: compile_reverse_mapping(signal_spec["mapping"]),
       unit: signal_spec["unit"],
       origin: signal_spec["origin"],
-      scale: signal_spec["scale"] || 1,
+      scale: (signal_spec["scale"] || 1) + 0.0,
       offset: signal_spec["offset"] || 0,
       decimals: signal_spec["decimals"] || 0,
       value: signal_spec["value"] |> Util.hex_to_bin()
@@ -48,7 +48,7 @@ defmodule Cantastic.CompiledSignalSpec do
     case compiled_signal_spec.kind do
       "static" -> compiled_signal_spec.value
       "integer" ->
-        int = round(value / compiled_signal_spec.scale - compiled_signal_spec.offset)
+        int = round((value / compiled_signal_spec.scale) - compiled_signal_spec.offset)
         case compiled_signal_spec.endianness do
           "little" ->
             <<int::little-integer-size(compiled_signal_spec.value_length)>>
