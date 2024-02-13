@@ -1,23 +1,27 @@
 defmodule OvcsEcu.Application do
-  # See https://hexdocs.pm/elixir/Application.html
-  # for more information on OTP Applications
   @moduledoc false
 
   use Application
 
   @impl true
   def start(_type, _args) do
-    vehicle_config = vehicle_config()
+    _vehicle_config = vehicle_config()
     children = [
-      {OvcsEcu.VehicleStateManager, [vehicle_config]}
+      {OvcsEcu.NissanLeaf.Em57.Charger, []},
+      {OvcsEcu.OvcsControllers.CarControlsController, []},
+      {OvcsEcu.OvcsControllers.ContactorsController, []},
+      {OvcsEcu.OvcsControllers.VmsController, []},
+      {OvcsEcu.VwPolo.IgnitionLock, []},
+      {OvcsEcu.NissanLeaf.Em57.Inverter, []},
+      {OvcsEcu.BatteryManagementSystem, []},
+      {OvcsEcu.Charger, []},
+      {OvcsEcu.IgnitionLock, []},
+      {OvcsEcu.Inverter, []},
+      {OvcsEcu.Vehicle, []}
     ]
 
-    # See https://hexdocs.pm/elixir/Supervisor.html
-    # for other strategies and supported options
     opts = [strategy: :one_for_one, name: OvcsEcu.Supervisor]
-    supervisor = Supervisor.start_link(children, opts)
-    Application.ensure_all_started(:cantastic)
-    supervisor
+    Supervisor.start_link(children, opts)
   end
 
   defp vehicle_config() do
