@@ -7,8 +7,15 @@ defmodule OvcsEcu.Application do
   def start(_type, _args) do
     _vehicle_config = vehicle_config()
     children = [
+      {OvcsEcu.NissanLeaf.Em57.Charger, []},
+      {OvcsEcu.OvcsControllers.CarControlsController, []},
+      {OvcsEcu.OvcsControllers.ContactorsController, []},
+      {OvcsEcu.OvcsControllers.VmsController, []},
+      {OvcsEcu.VwPolo.IgnitionLock, []},
+      {OvcsEcu.NissanLeaf.Em57.Inverter, []},
       {OvcsEcu.BatteryManagementSystem, []},
       {OvcsEcu.Charger, []},
+      {OvcsEcu.IgnitionLock, []},
       {OvcsEcu.Inverter, []},
       {OvcsEcu.Vehicle, []}
     ]

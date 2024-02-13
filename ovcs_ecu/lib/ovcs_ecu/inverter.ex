@@ -3,7 +3,6 @@ defmodule OvcsEcu.Inverter do
 
   @impl true
   def init(_) do
-    :ok = OvcsEcu.NissanLeaf.Em57.Inverter.init_emitters()
     {:ok, %{}}
   end
 
@@ -12,8 +11,13 @@ defmodule OvcsEcu.Inverter do
   end
 
   def on() do
-    # Trigger 12v on pin IGN_SW
+    OvcsEcu.OvcsControllers.VmsController.switch_on_inverter_relay()
     OvcsEcu.NissanLeaf.Em57.Inverter.on()
+  end
+
+  def off() do
+    OvcsEcu.OvcsControllers.VmsController.switch_off_inverter_relay()
+    OvcsEcu.NissanLeaf.Em57.Inverter.off()
   end
 
   def ready_to_drive?() do

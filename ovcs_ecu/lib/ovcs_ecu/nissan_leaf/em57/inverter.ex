@@ -1,22 +1,34 @@
 defmodule OvcsEcu.NissanLeaf.Em57.Inverter do
+  use GenServer
+
   alias OvcsEcu.NissanLeaf.Util
   alias Cantastic.Emitter
 
   @network_name "drive"
 
-  def init_emitters() do
-    Emitter.configure(@network_name, "vmsAlive", %{
+  @impl true
+  def init(_) do
+    :ok = init_emitters()
+    {:ok, %{}}
+  end
+
+  def start_link(_) do
+    GenServer.start_link(__MODULE__, nil, name: __MODULE__)
+  end
+
+  defp init_emitters() do
+    :ok = Emitter.configure(@network_name, "vmsAlive", %{
       parameters_builder_function: &alive_frame_parameters_builder/1,
       initial_data: nil
     })
-    Emitter.configure(@network_name, "vmsTorqueRequest", %{
+    :ok = Emitter.configure(@network_name, "vmsTorqueRequest", %{
       parameters_builder_function: &torque_frame_parameters_builder/1,
       initial_data: %{
         "torque" => 0,
         "counter" => 0
       }
     })
-    Emitter.configure(@network_name, "vmsStatus", %{
+    :ok = Emitter.configure(@network_name, "vmsStatus", %{
       parameters_builder_function: &status_frame_parameters_builder/1,
       initial_data: %{
         "gear" => "parked",
@@ -57,6 +69,10 @@ defmodule OvcsEcu.NissanLeaf.Em57.Inverter do
 
   def on() do
     Emitter.batch_enable(@network_name, ["vmsAlive", "vmsTorqueRequest", "vmsStatus"])
+  end
+
+  def off() do
+    Emitter.batch_disable(@network_name, ["vmsAlive", "vmsTorqueRequest", "vmsStatus"])
   end
 
   def throttle(torque) do

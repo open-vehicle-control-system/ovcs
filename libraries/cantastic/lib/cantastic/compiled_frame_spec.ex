@@ -1,5 +1,11 @@
 defmodule Cantastic.CompiledFrameSpec do
   alias Cantastic.{Util, CompiledSignalSpec}
+  @behaviour Access
+
+  defdelegate fetch(term, key), to: Map
+  defdelegate get(term, key, default), to: Map
+  defdelegate get_and_update(term, key, fun), to: Map
+  defdelegate pop(term, key), to: Map
 
   defstruct [
     :id,
@@ -7,7 +13,8 @@ defmodule Cantastic.CompiledFrameSpec do
     :network_name,
     :frequency,
     :validate_frequency,
-    :compiled_signal_specs
+    :compiled_signal_specs,
+    :frame_handlers
   ]
 
   def from_frame_spec(network_name, name, frame_spec) do
@@ -19,7 +26,8 @@ defmodule Cantastic.CompiledFrameSpec do
       network_name: network_name,
       frequency: frame_spec["frequency"],
       validate_frequency: frame_spec["validateFrequency"] || false,
-      compiled_signal_specs: compile_signal_specs(frame_id, name, signal_specs)
+      compiled_signal_specs: compile_signal_specs(frame_id, name, signal_specs),
+      frame_handlers: []
     }
     {:ok, compiled_frame_spec}
   end
