@@ -1,5 +1,9 @@
 defmodule OvcsEcu.OvcsControllers.ContactorsController do
+  use GenServer
+
   alias Cantastic.Emitter
+
+  @network_name "drive"
 
   @network_name "drive"
   @frame_name "contactorsStatusRequest"
@@ -11,8 +15,9 @@ defmodule OvcsEcu.OvcsControllers.ContactorsController do
   @precharge_delay 5000
   @relay_operating_delay 50
 
-  def init_emitters() do
-    Emitter.configure(@network_name, @frame_name, %{
+  @impl true
+  def init(_) do
+    :ok = Emitter.configure(@network_name, @frame_name, %{
       parameters_builder_function: &contactors_state_request_frame_parameters/1,
       initial_data: %{
         @main_negative_contactor => false,
@@ -20,15 +25,16 @@ defmodule OvcsEcu.OvcsControllers.ContactorsController do
         @precharge_contactor     => false
       }
     })
-    :ok
+    Emitter.batch_enable(@network_name, [@frame_name])
+    {:ok, %{}}
+  end
+
+  def start_link(_) do
+    GenServer.start_link(__MODULE__, nil, name: __MODULE__)
   end
 
   def contactors_state_request_frame_parameters(state) do
     {:ok, state.data, state}
-  end
-
-  def initialize() do
-    Emitter.batch_enable(@network_name, [@frame_name])
   end
 
   def on() do

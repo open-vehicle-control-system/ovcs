@@ -55,7 +55,7 @@ defmodule Cantastic.CompiledSignalSpec do
           "big"    ->
             <<int::big-integer-size(compiled_signal_spec.value_length)>>
         end
-      "string" -> compiled_signal_spec.reverse_mapping[value]
+      _ -> compiled_signal_spec.reverse_mapping[value]
     end
   end
 
