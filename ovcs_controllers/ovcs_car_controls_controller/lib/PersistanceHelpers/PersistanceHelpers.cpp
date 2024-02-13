@@ -8,8 +8,8 @@ typedef struct address {
 } address;
 
 address addresses[LABEL_SIZE] = {
-    {"throttle_low",0},
-    {"throttle_high",1}
+    {(char*)"throttle_low",0},
+    {(char*)"throttle_high",1}
 };
 
 void save_calibration_data(char* label, int value){
