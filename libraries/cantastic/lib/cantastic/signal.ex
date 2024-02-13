@@ -1,6 +1,7 @@
 defmodule Cantastic.Signal do
   defstruct [
     :name,
+    :frame_name,
     :value,
     :unit,
     :origin,
@@ -8,19 +9,20 @@ defmodule Cantastic.Signal do
   ]
 
   def to_string(signal) do
-    "[Signal] #{signal.name} = #{signal.value}"
+    "[Signal] #{signal.frame_name}.#{signal.name} = #{signal.value}"
   end
 
   def from_frame_for_compiled_spec(frame, compiled_signal_spec) do
     signal = %Cantastic.Signal{
       name: compiled_signal_spec.name,
+      frame_name: compiled_signal_spec.frame_name,
       kind: compiled_signal_spec.kind,
       unit: compiled_signal_spec.unit,
       origin: compiled_signal_spec.origin,
       value: nil
     }
     raw_data            = frame.raw_data
-    raw_data_bit_length = frame.data_length
+    raw_data_bit_length = frame.data_length * 8
     head_length         = compiled_signal_spec.value_start
     value_length        = compiled_signal_spec.value_length
     tail_length         = raw_data_bit_length - head_length - value_length

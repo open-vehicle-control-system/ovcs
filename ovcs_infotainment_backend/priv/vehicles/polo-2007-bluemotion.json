@@ -3,217 +3,288 @@
     "brand": "Volksvagen",
     "canNetworks": {
         "drive": {
-            "bitrate": "500000"
+            "bitrate": "500000",
+            "receivedFrames": {
+                "contactorsStatus": {
+                    "id": "101",
+                    "frequency": 10,
+                    "validateFrequency": true,
+                    "signals": [
+                        {
+                            "name": "mainNegativeContactorEnabled",
+                            "kind": "boolean",
+                            "valueStart": 0,
+                            "valueLength": 8,
+                            "endianness": "little",
+                            "origin": "OVCS ECU",
+                            "mapping": {
+                                "0": false,
+                                "1": true
+                            }
+                        },
+                        {
+                            "name": "mainPositiveContactorEnabled",
+                            "kind": "boolean",
+                            "valueStart": 8,
+                            "valueLength": 8,
+                            "endianness": "little",
+                            "origin": "OVCS ECU",
+                            "mapping": {
+                                "0": false,
+                                "1": true
+                            }
+                        },
+                        {
+                            "name": "prechargeContactorEnabled",
+                            "kind": "boolean",
+                            "valueStart": 16,
+                            "valueLength": 8,
+                            "endianness": "little",
+                            "origin": "OVCS ECU",
+                            "mapping": {
+                                "0": false,
+                                "1": true
+                            }
+                        }
+                    ]
+                },
+                "carStatus": {
+                    "id": "470",
+                    "signals": [
+                        {
+                            "name": "frontLeftDoorOpen",
+                            "kind": "boolean",
+                            "valueStart": 15,
+                            "valueLength": 1,
+                            "endianness": "little",
+                            "origin": "doors",
+                            "mapping": {
+                                "0": false,
+                                "1": true
+                            }
+                        },
+                        {
+                            "name": "frontRightDoorOpen",
+                            "kind": "boolean",
+                            "valueStart": 14,
+                            "valueLength": 1,
+                            "endianness": "little",
+                            "origin": "doors",
+                            "mapping": {
+                                "0": false,
+                                "1": true
+                            }
+                        },
+                        {
+                            "name": "rearLeftDoorOpen",
+                            "kind": "boolean",
+                            "valueStart": 13,
+                            "valueLength": 1,
+                            "endianness": "little",
+                            "origin": "doors",
+                            "mapping": {
+                                "0": false,
+                                "1": true
+                            }
+                        },
+                        {
+                            "name": "rearRightDoorOpen",
+                            "kind": "boolean",
+                            "valueStart": 12,
+                            "valueLength": 1,
+                            "endianness": "little",
+                            "origin": "doors",
+                            "mapping": {
+                                "0": false,
+                                "1": true
+                            }
+                        },
+                        {
+                            "name": "trunkDoorOpen",
+                            "kind": "boolean",
+                            "valueStart": 10,
+                            "valueLength": 1,
+                            "endianness": "little",
+                            "origin": "doors",
+                            "mapping": {
+                                "0": false,
+                                "1": true
+                            }
+                        },
+                        {
+                            "name": "beamActive",
+                            "kind": "boolean",
+                            "valueStart": 16,
+                            "valueLength": 8,
+                            "endianness": "little",
+                            "origin": "compartimentController",
+                            "mapping": {
+                                "64": true,
+                                "0": false
+                            }
+                        },
+                        {
+                            "name": "warningLightsActive",
+                            "kind": "boolean",
+                            "valueStart": 0,
+                            "valueLength": 8,
+                            "endianness": "little",
+                            "origin": "compartimentController",
+                            "mapping": {
+                                "8": true,
+                                "B": true,
+                                "1": false,
+                                "2": false,
+                                "0": false
+                            },
+                            "_comment": "0:False, 8:WarningActiveOff, 11:WarningActiveOn, 1:leftActive, 2:rightActive"
+                        }
+                    ]
+                },
+                "airbagsStatus": {
+                    "id": "50",
+                    "signals": [
+                        {
+                            "name": "inCarAirbagSystemOnline",
+                            "kind": "boolean",
+                            "valueStart": 0,
+                            "valueLength": 8,
+                            "endianness": "little",
+                            "origin": "airbag",
+                            "mapping": {
+                                "0": true,
+                                "2": false
+                            }
+                        },
+                        {
+                            "name": "passengerAirbagOnline",
+                            "kind": "boolean",
+                            "valueStart": 8,
+                            "valueLength": 8,
+                            "endianness": "little",
+                            "origin": "airbag",
+                            "mapping": {
+                                "9": true,
+                                "B": false
+                            }
+                        }
+                    ]
+                },
+                "handbrakeStatus": {
+                    "id": "320",
+                    "signals": [
+                        {
+                            "name": "handbrakeEngaged",
+                            "kind": "boolean",
+                            "valueStart": 8,
+                            "valueLength": 8,
+                            "endianness": "little",
+                            "origin": "handbrake",
+                            "mapping": {
+                                "0": false,
+                                "2": true
+                            }
+                        }
+                    ]
+                },
+                "engineStatus": {
+                    "id": "280",
+                    "signals": [
+                        {
+                            "name": "engineRotationsPerMinute",
+                            "kind": "integer",
+                            "unit": "rpm",
+                            "valueStart": 16,
+                            "valueLength": 16,
+                            "endianness": "little",
+                            "origin": "engine",
+                            "scale": 0.25
+                        }
+                    ]
+                },
+                "absStatus": {
+                    "id": "5A0",
+                    "signals": [
+                        {
+                            "name": "speed",
+                            "kind": "integer",
+                            "unit": "km/h",
+                            "valueStart": 8,
+                            "valueLength": 16,
+                            "endianness": "little",
+                            "origin": "engine",
+                            "scale": 0.0075,
+                            "decimals": 2
+                        }
+                    ]
+                },
+                "lockStatus": {
+                    "id": "591",
+                    "signals": [
+                        {
+                            "name": "lockState",
+                            "kind": "string",
+                            "valueStart": 8,
+                            "valueLength": 8,
+                            "endianness": "little",
+                            "origin": "lock",
+                            "mapping": {
+                                "0": "open",
+                                "8": "open",
+                                "4": "keyClosed",
+                                "1": "carSwitchClosed"
+                            },
+                            "_comment": "8 seems to be the state when the car boots and is already open"
+                        }
+                    ]
+                },
+                "keyStatus": {
+                    "id": "570",
+                    "signals": [
+                        {
+                            "name": "keyState",
+                            "canNetwork": "drive", 
+                            "frameId": "570",
+                            "kind": "string",
+                            "valueStart": 0,
+                            "valueLength": 8,
+                            "endianness": "little",
+                            "origin": "lock",
+                            "mapping": {
+                                "0": "off",
+                                "1": "keyEngaged",
+                                "87": "contactOn",
+                                "8B": "startEngine"
+                            }
+                        }
+                    ]
+                }
+            }
         },
         "confort": {
-            "bitrate": "100000"
-        }
-    },
-    "canSignals": {
-        "handbrakeEngaged": {
-            "canNetwork": "drive", 
-            "frameId": "320",
-            "kind": "boolean",
-            "valueStart": 8,
-            "valueLength": 8,
-            "endianness": "little",
-            "origin": "handbrake",
-            "mapping": {
-                "0": false,
-                "2": true
-            }
-        },
-        "inCarAirbagSystemOnline": {
-            "canNetwork": "drive", 
-            "frameId": "50",
-            "kind": "boolean",
-            "valueStart": 0,
-            "valueLength": 8,
-            "endianness": "little",
-            "origin": "airbag",
-            "mapping": {
-                "0": true,
-                "2": false
-            }
-        },
-        "passengerAirbagOnline": {
-            "canNetwork": "drive", 
-            "frameId": "50",
-            "kind": "boolean",
-            "valueStart": 8,
-            "valueLength": 8,
-            "endianness": "little",
-            "origin": "airbag",
-            "mapping": {
-                "9": true,
-                "B": false
-            }
-        },
-        "beamActive": {
-            "canNetwork": "drive", 
-            "frameId": "470",
-            "kind": "boolean",
-            "valueStart": 16,
-            "valueLength": 8,
-            "endianness": "little",
-            "origin": "compartimentController",
-            "mapping": {
-                "64": true,
-                "0": false
-            }
-        },
-        "warningLightsActive": {
-            "canNetwork": "drive", 
-            "frameId": "470",
-            "kind": "boolean",
-            "valueStart": 0,
-            "valueLength": 8,
-            "endianness": "little",
-            "origin": "compartimentController",
-            "mapping": {
-                "8": true,
-                "B": true,
-                "1": false,
-                "2": false,
-                "0": false
-            },
-            "_comment": "0:False, 8:WarningActiveOff, 11:WarningActiveOn, 1:leftActive, 2:rightActive"
-        },
-        "frontLeftDoorOpen": {
-            "canNetwork": "drive", 
-            "frameId": "470",
-            "kind": "boolean",
-            "valueStart": 15,
-            "valueLength": 1,
-            "endianness": "little",
-            "origin": "doors",
-            "mapping": {
-                "0": false,
-                "1": true
-            }
-        },
-        "frontRightDoorOpen": {
-            "canNetwork": "drive", 
-            "frameId": "470",
-            "kind": "boolean",
-            "valueStart": 14,
-            "valueLength": 1,
-            "endianness": "little",
-            "origin": "doors",
-            "mapping": {
-                "0": false,
-                "1": true
-            }
-        },
-        "rearLeftDoorOpen": {
-            "canNetwork": "drive", 
-            "frameId": "470",
-            "kind": "boolean",
-            "valueStart": 13,
-            "valueLength": 1,
-            "endianness": "little",
-            "origin": "doors",
-            "mapping": {
-                "0": false,
-                "1": true
-            }
-        },
-        "rearRightDoorOpen": {
-            "canNetwork": "drive", 
-            "frameId": "470",
-            "kind": "boolean",
-            "valueStart": 12,
-            "valueLength": 1,
-            "endianness": "little",
-            "origin": "doors",
-            "mapping": {
-                "0": false,
-                "1": true
-            }
-        },
-        "trunkDoorOpen": {
-            "canNetwork": "drive", 
-            "frameId": "470",
-            "kind": "boolean",
-            "valueStart": 10,
-            "valueLength": 1,
-            "endianness": "little",
-            "origin": "doors",
-            "mapping": {
-                "0": false,
-                "1": true
-            }
-        },
-        "engineRotationsPerMinute": {
-            "canNetwork": "drive", 
-            "frameId": "280",
-            "kind": "integer",
-            "unit": "rpm",
-            "valueStart": 16,
-            "valueLength": 16,
-            "endianness": "little",
-            "origin": "engine",
-            "scale": 0.25
-        },
-        "speed": {
-            "canNetwork": "drive", 
-            "frameId": "5A0",
-            "kind": "integer",
-            "unit": "km/h",
-            "valueStart": 8,
-            "valueLength": 16,
-            "endianness": "little",
-            "origin": "engine",
-            "scale": 0.0075,
-            "decimals": 2
-        },
-        "lockState": {
-            "canNetwork": "confort", 
-            "frameId": "591",
-            "kind": "string",
-            "valueStart": 8,
-            "valueLength": 8,
-            "endianness": "little",
-            "origin": "lock",
-            "mapping": {
-                "0": "open",
-                "8": "open",
-                "4": "keyClosed",
-                "1": "carSwitchClosed"
-            },
-            "_comment": "8 seems to be the state when the car boots and is already open"
-        },
-        "keyState": {
-            "canNetwork": "confort", 
-            "frameId": "271",
-            "kind": "string",
-            "valueStart": 0,
-            "valueLength": 8,
-            "endianness": "little",
-            "origin": "lock",
-            "mapping": {
-                "0": "off",
-                "1": "keyEngaged",
-                "87": "contactOn",
-                "8B": "startEngine"
-            }
-        },
-        "keyStateDrive": {
-            "canNetwork": "drive", 
-            "frameId": "570",
-            "kind": "string",
-            "valueStart": 0,
-            "valueLength": 8,
-            "endianness": "little",
-            "origin": "lock",
-            "mapping": {
-                "0": "off",
-                "1": "keyEngaged",
-                "87": "contactOn",
-                "8B": "startEngine"
+            "bitrate": "100000",
+            "receivedFrames": {
+                "keyStatusConfort": {
+                    "id": "271",
+                    "signals": [
+                        {
+                            "name": "keyState",
+                            "kind": "string",
+                            "valueStart": 0,
+                            "valueLength": 8,
+                            "endianness": "little",
+                            "origin": "lock",
+                            "mapping": {
+                                "0": "off",
+                                "1": "keyEngaged",
+                                "87": "contactOn",
+                                "8B": "startEngine"
+                            }
+                        }
+                    ]
+                }
             }
         }
-    } 
+    }
 }
-
 

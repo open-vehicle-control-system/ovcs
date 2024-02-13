@@ -1,0 +1,23 @@
+GPIO 8 -> CS0 aka CS0.0
+GPIO 7 -> CS0.1
+GPIO 6 -> CS0.2
+
+GPIO 22 -> INT0 aka INT0.0
+GPIO 23 -> INT0.1
+GPIO 24 -> INT0.2
+
+----
+
+GPIO 18 -> CS1 aka CS1.0
+GPIO 17 -> CS1.1
+GPIO 16 -> CS1.2
+
+GPIO 25 -> INT1 aka INT1.0
+GPIO 26 -> INT1.1
+GPIO 27 -> INT1.2
+
+
+
+U5 -> SPI1.X
+
+U2 -> SPI0.X

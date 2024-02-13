@@ -1,5 +1,4 @@
 defmodule Cantastic.Util do
-  alias Cantastic.Frame
   require Logger
 
   @can_domain 29
@@ -62,33 +61,33 @@ defmodule Cantastic.Util do
     {:ok, socket}
   end
 
-  def receive_one_frame(socket) do
-    {:ok, raw_frame} = :socket.recv(socket)
-    <<
-      id::little-integer-size(16),
-      _unused1::binary-size(2),
-      data_length::little-integer-size(8),
-      _unused2::binary-size(3),
-      raw_data::binary-size(data_length),
-      _unused3::binary
-    >> = raw_frame
-    frame = %Frame{
-      id: id,
-      data_length: data_length * 8,
-      raw_data: raw_data
-    }
-    {:ok, frame}
+  def hex_to_bin(nil), do: nil
+  def hex_to_bin(hex_data) do
+    hex_data
+    |> String.pad_leading(2, "0")
+    |> Base.decode16!()
   end
 
-  def raw_frame(id, raw_data) do
-    data_length = byte_size(raw_data)
-    padding     = 8 - data_length
-    << id::little-integer-size(16),
-      0::2 * 8,
-      data_length,
-      0::3 * 8
-    >> <>
-    raw_data <>
-    <<0::padding * 8>>
+  def bin_to_hex(raw_data) do
+    raw_data |> Base.encode16()
+  end
+
+  def integer_to_hex(integer) do
+    integer
+    |> Integer.to_string(16)
+    |> String.pad_leading(2, "0")
+  end
+
+  def hex_to_integer(hex, size \\ 16) do
+    {int, _} = Integer.parse(hex, size)
+    int
+  end
+
+  def integer_to_bin_big(integer, size \\ 16) do
+    <<integer::big-integer-size(size)>>
+  end
+
+  def integer_to_bin_little(integer, size \\ 16) do
+    <<integer::little-integer-size(size)>>
   end
 end
