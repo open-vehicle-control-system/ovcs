@@ -1,9 +1,19 @@
-#include <Arduino.h>
 #include <unity.h>
+#include <Arduino.h>
+
+using namespace fakeit;
+
+#include "test_conversion_utils.h"
+#include "test_persistance_helpers.h"
+
+#define RUN_TEST_GROUP(TEST) \
+    if (!std::getenv("TEST_GROUP") || (strcmp(#TEST, std::getenv("TEST_GROUP")) == 0)) { \
+        TEST::run_tests(); \
+    }
 
 void setUp(void)
 {
-  // set stuff up here
+  ArduinoFakeReset();
 }
 
 void tearDown(void)
@@ -11,17 +21,10 @@ void tearDown(void)
   // clean stuff up here
 }
 
-void setup()
+int main()
 {
-  // NOTE!!! Wait for >2 secs
-  // if board doesn't support software reset via Serial.DTR/RTS
-  delay(2000);
-
   UNITY_BEGIN(); // IMPORTANT LINE!
-  //RUN_TEST();
-}
-
-void loop()
-{
-  UNITY_END(); // stop unit testing
+  RUN_TEST_GROUP(ConversionUtilsTest);
+  RUN_TEST_GROUP(PersistanceHelpersTest);
+  return UNITY_END();
 }
