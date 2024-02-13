@@ -11,7 +11,7 @@ defmodule Cantastic.Application do
   def start(_type, _args) do
     can_network_specs = Application.get_env(:cantastic, :can_networks) |> String.split(",", trim: true)
     manual_setup      = Application.get_env(:cantastic, :manual_setup)
-    config            = IO.inspect(can_config())
+    config            = can_config()
 
     interface_childen = Interface.configure_children(can_network_specs, manual_setup, config)
 

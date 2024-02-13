@@ -4,7 +4,6 @@ defmodule OvcsEcu.BatteryManagementSystem do
 
   @impl true
   def init(_) do
-    :ok = ContactorsController.init_emitters()
     {:ok, %{}}
   end
 
@@ -14,6 +13,10 @@ defmodule OvcsEcu.BatteryManagementSystem do
 
   def high_voltage_on() do
     ContactorsController.on()
+  end
+
+  def high_voltage_off() do
+    ContactorsController.off()
   end
 
   def ready_to_drive?() do

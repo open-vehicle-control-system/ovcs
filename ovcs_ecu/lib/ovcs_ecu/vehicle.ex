@@ -3,19 +3,22 @@ defmodule OvcsEcu.Vehicle do
   require Logger
   alias OvcsEcu.{Inverter, BatteryManagementSystem, IgnitionLock, OvcsControllers.CarControlsController}
 
+  @loop_sleep 5
+
   def start_link(args) do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
   end
 
   @impl true
   def init(_) do
+    #loop() -> uncomment when loop is ready
     {:ok, %{
       ignition_started: false
     }}
   end
 
   @impl true
-  def handle_info(:timeout, state) do
+  def handle_info(:loop, state) do
     if (IgnitionLock.last_ignition_requested_at() < DateTime.utc_now() - 5000 && !state.ignition_started) do
       ^state = start_ignition(state)
     end
@@ -29,7 +32,6 @@ defmodule OvcsEcu.Vehicle do
 
   defp start_ignition(state) do
     # Will be trigger when key is in engineStart
-    # Inverter 12 swicth on
     Inverter.on()
     BatteryManagementSystem.high_voltage_on()
     %{state | ignition_started: true}
@@ -39,4 +41,17 @@ defmodule OvcsEcu.Vehicle do
     Inverter.ready_to_drive?() && BatteryManagementSystem.ready_to_drive?()
   end
 
+  defp loop do
+    Process.send_after(self(), :loop, @loop_sleep)
+  end
+
+  def test_ignition() do
+    Inverter.on()
+    BatteryManagementSystem.high_voltage_on()
+  end
+
+  def test_shutdown() do
+    Inverter.off()
+    BatteryManagementSystem.high_voltage_off()
+  end
 end
