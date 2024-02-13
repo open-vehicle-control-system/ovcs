@@ -1,31 +1,27 @@
-# OVCS infotainment 
+# OVCS
 
-## Local environment setup
+## What is OVCS?
 
-* Install asdf: `git clone https://github.com/asdf-vm/asdf.git ~/.asdf`
-* Install erlang:  `asdf plugin add erlang https://github.com/asdf-vm/asdf-erlang.git && asdf install erlang 26.1.2 && asdf global erlang 26.1.2`
-* Install elixir: `asdf plugin-add elixir https://github.com/asdf-vm/asdf-elixir.git && asdf install elixir 1.15.7 && asdf global elixir 1.15.7`
-* Install NVM: `curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.5/install.sh | bash`
-* Install Node: `nvm install node`
-* Install NPM: `npm install -g npm`
-* Install nervers: See https://hexdocs.pm/nerves/installation.html
-* Install can-utils: `sudo apt-get install can-utils`
+OVCS stands for Open Vehicule Control system. It is a set of open-hardware and open-software components meant as a development platform for tinkering with vehicules.
 
-## Applications
+OVCS is based on simple, off-the-shelve components to make it affordable and accessible to people with no to limited knowledge about the embedded computing world.
 
-* `ovcs_infotainment_backend`: Phoenix app connecting to the CAN/Bus and exposing the internal API
-* `ovcs_infotainment_firmware`: Nerves app packaging the backend on a Raspberry
-* `ovcs_infotainment_frontend`: Vue.js App displaying the car interface. Served as static files by the backend app in prod
+OVCS can help you:
+* Retrofit a car or any other vehicule by providing an easy to modify system to interact with the vehicule's CAN buses
+* Create a dashboard for any kind of vehicule using high-level web technologies such as the  Phoenix framework and Vue.js
+* Make multiple components from different vehicule brands work together by aggregating the different CAN buses and providing a standardized set of CAN messages on the OVCS CAN bus.
 
-## Local Development
+## Disclaimer
 
-* Run `mix phx.server` in the  `ovcs_infotainment_backend` folder to run the Phoenix app.
-    * The CAN/BUS networks to be used can be configured with `export CAN_NETWORKS=drive:vcan0,confort:vcan1`
-    * If the "ip link" command requires "sudo", you should configure the CAN networks manully and set the `MANUAL_SETUP` environnment variable to `true`
-    * The vehicle configuration to use ba be configured with `VEHICLE=polo-2007-bluemotion`
+OVCS is provided as is an without any warranty. Use it at your own risk. It is not road certified and therefore does not meet all required criteria to do so. We decline any responsibility for any incident resulting in the usage of OVCS. OVCS is a hobby research project.
 
-* Run `npm run dev` in the `ovcs_infotainment_frontend` folder to run the Vue.js app.
-* You can simulate the vehicle (infinite loop) with the following command: `canplayer -l i -I candumps/candump-standard-test.log vcan0=can0 vcan1=can1`
+## Table of content
+
+1. [Getting started](./getting_started.md)
+2. [Applications](./applications.md)
+3. [Testing Can messages](./testing_can_messages.md)
+4. [Hardware architecture](./hardware_architecture.md)
+5. [Running on hardware](./running_hardware.md)
 
 ## Test can frames
 
