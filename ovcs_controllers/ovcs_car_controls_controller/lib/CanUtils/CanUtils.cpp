@@ -1,8 +1,5 @@
 #include <CanUtils.h>
 
-#include <SPI.h>
-#include <mcp2515.h>
-
 #define THROTTLE_CAN_MESSAGE_FREQUENCY_MS 10
 
 unsigned long sendingTimestamp = 0;
