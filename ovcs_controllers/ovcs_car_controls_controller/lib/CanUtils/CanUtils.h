@@ -1,6 +1,7 @@
 #ifndef CanUtils_h
 #define CanUtils_h
 
+#include <Arduino.h>
 #include <SPI.h>
 #include <mcp2515.h>
 
