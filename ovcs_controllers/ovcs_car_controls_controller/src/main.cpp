@@ -70,7 +70,7 @@ void loop() {
   } else {
     was_in_calibration_mode = false;
     int throttle_pedal_resistance = analogRead(THROTTLE_PEDAL_PIN);
-    int throttle = convert_throttle_to_max_range(throttle_pedal_resistance, throttle_pedal_calibration_low, throttle_pedal_calibration_high);
+    int throttle = convert_throttle_to_max_range(throttle_pedal_resistance, throttle_pedal_calibration_low/4, throttle_pedal_calibration_high/4);
     send_throttle_message(can_0, throttle);
   }
 }
