@@ -1,0 +1,557 @@
+{
+    "model": "Polo 2007 Bluemotion",
+    "brand": "Volkswagen",
+    "canNetworks": {
+        "drive": {
+            "bitrate": "500000",
+            "emittedFrames": {
+                "contactorsStatusRequest": {
+                    "id": "100",
+                    "frequency": 20,
+                    "signals": [
+                        {
+                            "name": "mainNegativeContactorEnabled",
+                            "kind": "boolean",
+                            "valueStart": 0,
+                            "valueLength": 8,
+                            "endianness": "little",
+                            "origin": "OVCS ECU",
+                            "mapping": {
+                                "0": false,
+                                "1": true
+                            }
+                        },
+                        {
+                            "name": "mainPositiveContactorEnabled",
+                            "kind": "boolean",
+                            "valueStart": 8,
+                            "valueLength": 8,
+                            "endianness": "little",
+                            "origin": "OVCS ECU",
+                            "mapping": {
+                                "0": false,
+                                "1": true
+                            }
+                        },
+                        {
+                            "name": "prechargeContactorEnabled",
+                            "kind": "boolean",
+                            "valueStart": 16,
+                            "valueLength": 8,
+                            "endianness": "little",
+                            "origin": "OVCS ECU",
+                            "mapping": {
+                                "0": false,
+                                "1": true
+                            }
+                        }
+                    ]
+                },
+                "vmsRelaysStatusRequest": {
+                    "id": "110",
+                    "frequency": 20,
+                    "signals": [
+                        {
+                            "name": "inverterRelayEnabled",
+                            "kind": "boolean",
+                            "valueStart": 0,
+                            "valueLength": 8,
+                            "endianness": "little",
+                            "origin": "OVCS VMS",
+                            "mapping": {
+                                "0": false,
+                                "1": true
+                            }
+                        }
+                    ]
+                },
+                "vmsAlive": {
+                    "id": "50B",
+                    "frequency": 100,
+                    "signals": [
+                        {
+                            "name": "unknown",
+                            "kind": "static",
+                            "valueStart": 0,
+                            "valueLength": 56,
+                            "value": "000006C0000000"
+                        }
+                    ]
+                },
+                "vmsTorqueRequest": {
+                    "id": "1D4",
+                    "frequency": 10,
+                    "signals": [
+                        {
+                            "name": "prefix",
+                            "kind": "static",
+                            "valueStart": 0,
+                            "valueLength": 16,
+                            "value": "6E6E"
+                        },
+                        {
+                            "name": "torque",
+                            "kind": "integer",
+                            "endianness": "big",
+                            "valueStart": 16,
+                            "valueLength": 16,
+                            "scale": 0.25,
+                            "unit": "N/m"
+                        },
+                        {
+                            "name": "counter",
+                            "kind": "integer",
+                            "endianness": "little",
+                            "valueStart": 32,
+                            "valueLength": 8
+                        },
+                        {
+                            "name": "suffix",
+                            "kind": "static",
+                            "valueStart": 40,
+                            "valueLength": 16,
+                            "value": "4401"
+                        },
+                        {
+                            "name": "crc",
+                            "kind": "integer",
+                            "endianness": "little",
+                            "valueStart": 56,
+                            "valueLength": 8
+                        }
+                    ]
+                },
+                "vmsStatus": {
+                    "id": "11A",
+                    "frequency": 10,
+                    "signals": [
+                        {
+                            "name": "gear",
+                            "kind": "string",
+                            "endianness": "big",
+                            "valueStart": 0,
+                            "valueLength": 8,
+                            "mapping": {
+                                "4": "drive",
+                                "3": "neutral",
+                                "2": "rear",
+                                "0": "parked"
+                            }
+                        },
+                        {
+                            "name": "filler1",
+                            "kind": "static",
+                            "valueStart": 8,
+                            "valueLength": 8,
+                            "value": "40"
+                        },
+                        {
+                            "name": "steeringWheelButoon",
+                            "kind": "static",
+                            "valueStart": 16,
+                            "valueLength": 8,
+                            "value": "0"
+                        },
+                        {
+                            "name": "heartbeat",
+                            "kind": "integer",
+                            "endianness": "little",
+                            "valueStart": 24,
+                            "valueLength": 8,
+                            "mapping": {
+                                "55": 0,
+                                "AA": 1
+                            }
+                        },
+                        {
+                            "name": "filler2",
+                            "kind": "static",
+                            "valueStart": 32,
+                            "valueLength": 16,
+                            "value": "C000"
+                        },
+                        {
+                            "name": "counter",
+                            "kind": "integer",
+                            "endianness": "little",
+                            "valueStart": 48,
+                            "valueLength": 8
+                        },
+                        {
+                            "name": "crc",
+                            "kind": "integer",
+                            "endianness": "little",
+                            "valueStart": 56,
+                            "valueLength": 8
+                        }
+                    ]
+                },
+                "gearStatus": {
+                    "id": "600",
+                    "frequency": 20,
+                    "signals": [
+                        {
+                            "name": "gearSelected",
+                            "kind": "string",
+                            "valueStart": 0,
+                            "valueLength": 8,
+                            "endianness": "little",
+                            "origin": "VMS",
+                            "mapping": {
+                                "0": "drive",
+                                "1": "neutral",
+                                "2": "reverse",
+                                "3": "parking"
+                            }
+                        }
+                    ]
+                }
+            },
+            "receivedFrames": {
+                "contactorsStatus": {
+                    "id": "101",
+                    "frequency": 10,
+                    "validateFrequency": true,
+                    "signals": [
+                        {
+                            "name": "mainNegativeContactorEnabled",
+                            "kind": "boolean",
+                            "valueStart": 0,
+                            "valueLength": 8,
+                            "endianness": "little",
+                            "origin": "OVCS ECU",
+                            "mapping": {
+                                "0": false,
+                                "1": true
+                            }
+                        },
+                        {
+                            "name": "mainPositiveContactorEnabled",
+                            "kind": "boolean",
+                            "valueStart": 8,
+                            "valueLength": 8,
+                            "endianness": "little",
+                            "origin": "OVCS ECU",
+                            "mapping": {
+                                "0": false,
+                                "1": true
+                            }
+                        },
+                        {
+                            "name": "prechargeContactorEnabled",
+                            "kind": "boolean",
+                            "valueStart": 16,
+                            "valueLength": 8,
+                            "endianness": "little",
+                            "origin": "OVCS ECU",
+                            "mapping": {
+                                "0": false,
+                                "1": true
+                            }
+                        }
+                    ]
+                },
+                "vmsRelaysStatus": {
+                    "id": "111",
+                    "frequency": 10,
+                    "validateFrequency": true,
+                    "signals": [
+                        {
+                            "name": "inverterRelayEnabled",
+                            "kind": "boolean",
+                            "valueStart": 0,
+                            "valueLength": 8,
+                            "endianness": "little",
+                            "origin": "OVCS ECU",
+                            "mapping": {
+                                "0": false,
+                                "1": true
+                            }
+                        }
+                    ]
+                },
+                "carControlsStatus": {
+                    "id": "200",
+                    "frequency": 10,
+                    "validateFrequency": true,
+                    "signals": [
+                        {
+                            "name": "maxRawThrottle",
+                            "kind": "integer",
+                            "valueStart": 0,
+                            "valueLength": 16,
+                            "endianness": "little",
+                            "origin": "OVCS ECU"
+                        },
+                        {
+                            "name": "rawThrottleA",
+                            "kind": "integer",
+                            "valueStart": 16,
+                            "valueLength": 16,
+                            "endianness": "little",
+                            "origin": "OVCS ECU"
+                        },
+                        {
+                            "name": "rawThrottleB",
+                            "kind": "integer",
+                            "valueStart": 32,
+                            "valueLength": 16,
+                            "endianness": "little",
+                            "origin": "OVCS ECU"
+                        },
+                        {
+                            "name": "gearRequested",
+                            "kind": "string",
+                            "valueStart": 48,
+                            "valueLength": 8,
+                            "endianness": "little",
+                            "origin": "VMS",
+                            "mapping": {
+                                "0": "drive",
+                                "1": "neutral",
+                                "2": "reverse",
+                                "3": "parking"
+                            }
+                        }
+                    ]
+                },
+                "carStatus": {
+                    "id": "470",
+                    "signals": [
+                        {
+                            "name": "frontLeftDoorOpen",
+                            "kind": "boolean",
+                            "valueStart": 15,
+                            "valueLength": 1,
+                            "endianness": "little",
+                            "origin": "doors",
+                            "mapping": {
+                                "0": false,
+                                "1": true
+                            }
+                        },
+                        {
+                            "name": "frontRightDoorOpen",
+                            "kind": "boolean",
+                            "valueStart": 14,
+                            "valueLength": 1,
+                            "endianness": "little",
+                            "origin": "doors",
+                            "mapping": {
+                                "0": false,
+                                "1": true
+                            }
+                        },
+                        {
+                            "name": "rearLeftDoorOpen",
+                            "kind": "boolean",
+                            "valueStart": 13,
+                            "valueLength": 1,
+                            "endianness": "little",
+                            "origin": "doors",
+                            "mapping": {
+                                "0": false,
+                                "1": true
+                            }
+                        },
+                        {
+                            "name": "rearRightDoorOpen",
+                            "kind": "boolean",
+                            "valueStart": 12,
+                            "valueLength": 1,
+                            "endianness": "little",
+                            "origin": "doors",
+                            "mapping": {
+                                "0": false,
+                                "1": true
+                            }
+                        },
+                        {
+                            "name": "trunkDoorOpen",
+                            "kind": "boolean",
+                            "valueStart": 10,
+                            "valueLength": 1,
+                            "endianness": "little",
+                            "origin": "doors",
+                            "mapping": {
+                                "0": false,
+                                "1": true
+                            }
+                        },
+                        {
+                            "name": "beamActive",
+                            "kind": "boolean",
+                            "valueStart": 16,
+                            "valueLength": 8,
+                            "endianness": "little",
+                            "origin": "compartimentController",
+                            "mapping": {
+                                "64": true,
+                                "0": false
+                            }
+                        },
+                        {
+                            "name": "warningLightsActive",
+                            "kind": "boolean",
+                            "valueStart": 0,
+                            "valueLength": 8,
+                            "endianness": "little",
+                            "origin": "compartimentController",
+                            "mapping": {
+                                "8": true,
+                                "B": true,
+                                "1": false,
+                                "2": false,
+                                "0": false
+                            },
+                            "_comment": "0:False, 8:WarningActiveOff, 11:WarningActiveOn, 1:leftActive, 2:rightActive"
+                        }
+                    ]
+                },
+                "airbagsStatus": {
+                    "id": "50",
+                    "signals": [
+                        {
+                            "name": "inCarAirbagSystemOnline",
+                            "kind": "boolean",
+                            "valueStart": 0,
+                            "valueLength": 8,
+                            "endianness": "little",
+                            "origin": "airbag",
+                            "mapping": {
+                                "0": true,
+                                "2": false
+                            }
+                        },
+                        {
+                            "name": "passengerAirbagOnline",
+                            "kind": "boolean",
+                            "valueStart": 8,
+                            "valueLength": 8,
+                            "endianness": "little",
+                            "origin": "airbag",
+                            "mapping": {
+                                "9": true,
+                                "B": false
+                            }
+                        }
+                    ]
+                },
+                "handbrakeStatus": {
+                    "id": "320",
+                    "signals": [
+                        {
+                            "name": "handbrakeEngaged",
+                            "kind": "boolean",
+                            "valueStart": 8,
+                            "valueLength": 8,
+                            "endianness": "little",
+                            "origin": "handbrake",
+                            "mapping": {
+                                "0": false,
+                                "2": true
+                            }
+                        }
+                    ]
+                },
+                "engineStatus": {
+                    "id": "280",
+                    "signals": [
+                        {
+                            "name": "engineRotationsPerMinute",
+                            "kind": "integer",
+                            "unit": "rpm",
+                            "valueStart": 16,
+                            "valueLength": 16,
+                            "endianness": "little",
+                            "origin": "engine",
+                            "scale": 0.25
+                        }
+                    ]
+                },
+                "absStatus": {
+                    "id": "5A0",
+                    "signals": [
+                        {
+                            "name": "speed",
+                            "kind": "integer",
+                            "unit": "km/h",
+                            "valueStart": 8,
+                            "valueLength": 16,
+                            "endianness": "little",
+                            "origin": "engine",
+                            "scale": 0.0075,
+                            "decimals": 2
+                        }
+                    ]
+                },
+                "lockStatus": {
+                    "id": "591",
+                    "signals": [
+                        {
+                            "name": "lockState",
+                            "kind": "string",
+                            "valueStart": 8,
+                            "valueLength": 8,
+                            "endianness": "little",
+                            "origin": "lock",
+                            "mapping": {
+                                "0": "open",
+                                "8": "open",
+                                "4": "keyClosed",
+                                "1": "carSwitchClosed"
+                            },
+                            "_comment": "8 seems to be the state when the car boots and is already open"
+                        }
+                    ]
+                },
+                "keyStatus": {
+                    "id": "570",
+                    "signals": [
+                        {
+                            "name": "keyState",
+                            "canNetwork": "drive", 
+                            "frameId": "570",
+                            "kind": "string",
+                            "valueStart": 0,
+                            "valueLength": 8,
+                            "endianness": "little",
+                            "origin": "lock",
+                            "mapping": {
+                                "0": "off",
+                                "1": "keyEngaged",
+                                "87": "contactOn",
+                                "8B": "startEngine"
+                            }
+                        }
+                    ]
+                }
+            }
+        },
+        "confort": {
+            "bitrate": "100000",
+            "receivedFrames": {
+                "keyStatusConfort": {
+                    "id": "271",
+                    "signals": [
+                        {
+                            "name": "keyState",
+                            "kind": "string",
+                            "valueStart": 0,
+                            "valueLength": 8,
+                            "endianness": "little",
+                            "origin": "lock",
+                            "mapping": {
+                                "0": "off",
+                                "1": "keyEngaged",
+                                "87": "contactOn",
+                                "8B": "startEngine"
+                            }
+                        }
+                    ]
+                }
+            }
+        }
+    }
+}
+
