@@ -53,13 +53,13 @@ defmodule Cantastic.Receiver do
   end
 
   @impl true
-  def handle_call({:subscribe, frame_handler, frame_names}, _from, state) do
+  def handle_cast({:subscribe, frame_handler, frame_names}, state) do
     state = frame_names |> Enum.reduce(state, fn(frame_name, new_state) ->
       {:ok, compiled_frame_spec} = find_compiled_frame_spec_by_name(state.compiled_received_frame_specs, frame_name)
       frame_handlers = [frame_handler | compiled_frame_spec.frame_handlers]
       put_in(new_state, [:compiled_received_frame_specs, compiled_frame_spec.id, :frame_handlers], frame_handlers)
     end)
-    {:reply, :ok, state}
+    {:noreply, state}
   end
 
   def find_compiled_frame_spec_by_name(compiled_received_frame_specs, frame_name) do
@@ -83,6 +83,6 @@ defmodule Cantastic.Receiver do
 
   def subscribe(frame_handler, network_name, frame_names) do
     receiver =  Interface.receiver_process_name(network_name)
-    GenServer.call(receiver, {:subscribe, frame_handler, frame_names})
+    GenServer.cast(receiver, {:subscribe, frame_handler, frame_names})
   end
 end
