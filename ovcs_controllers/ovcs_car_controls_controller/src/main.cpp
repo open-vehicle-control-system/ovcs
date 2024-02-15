@@ -1,55 +1,84 @@
+#include <Arduino.h>
 #include <DebugLog.h>
-#include <CanUtils.h>
-#include <PersistanceHelpers.h>
-#include <ConvertionUtils.h>
+#include <TransportUtils.h>
 
-#define THROTTLE_PEDAL_PIN A0
+#define THROTTLE_PEDAL_PIN_1 A0
+#define THROTTLE_PEDAL_PIN_2 A1
 #define DEBUGLOG_DEFAULT_LOG_LEVEL_TRACE
+#define ANALOG_READ_RESOLUTION 14
+#define MAX_ANALOG_READ_VALUE 16383
+#define GEAR_DRIVE_PIN 2
+#define DRIVE_INDICATOR_PIN 6
+#define GEAR_NEUTRAL_PIN 3
+#define NEUTRAL_INDICATOR_PIN 7
+#define GEAR_REVERSE_PIN 4
+#define REVERSE_INDICATOR_PIN 8
+#define GEAR_PARKING_PIN 5
+#define PARKING_INDICATOR_PIN 9
+#define DRIVE 0
+#define NEUTRAL 1
+#define REVERSE 2
+#define PARKING 3
 
-MCP2515 can_0(10);
-can_frame calibration_message;
+boolean initialized = false;
+int selected_gear = PARKING;
+int validated_gear = PARKING;
 
-int initialized = false;
-int calibration_mode = false;
-int was_in_calibration_mode = false;
+void reset_indicators(){
+  digitalWrite(DRIVE_INDICATOR_PIN, LOW);
+  digitalWrite(NEUTRAL_INDICATOR_PIN, LOW);
+  digitalWrite(REVERSE_INDICATOR_PIN, LOW);
+  digitalWrite(PARKING_INDICATOR_PIN, LOW);
+}
 
-int throttle_pedal_calibration_low = 1023;
-int throttle_pedal_calibration_high = 0;
-
-boolean initialize_throttle_values(){
-  throttle_pedal_calibration_low = read_calibration_data("throttle_low")*4;
-  throttle_pedal_calibration_high = read_calibration_data("throttle_high")*4;
+boolean initialize_gear_selector(){
+  pinMode(DRIVE_INDICATOR_PIN, OUTPUT);
+  pinMode(NEUTRAL_INDICATOR_PIN, OUTPUT);
+  pinMode(REVERSE_INDICATOR_PIN, OUTPUT);
+  pinMode(PARKING_INDICATOR_PIN, OUTPUT);
   return true;
 }
 
-boolean initialize_controller(){
-  boolean can_has_errors = initialize_can(can_0);
-  return !can_has_errors && initialize_throttle_values();
-}
-
-void reset_values(){
-  throttle_pedal_calibration_low = 1023;
-  throttle_pedal_calibration_high = 0;
-}
-
-void listen_for_calibration_message() {
-  calibration_message = read_can_message(can_0, 0x500);
-  if(calibration_message.can_id == 0x500 && calibration_message.data[0] == 1){
-    calibration_mode = true;
-    if(was_in_calibration_mode == false){
-      was_in_calibration_mode = true;
-    }
-    reset_values();
-    LOG_INFO("System is now in calibration mode");
+int set_validated_gear(){
+  int gear = receive_validated_gear();
+  if(gear == PARKING || gear == REVERSE || gear == NEUTRAL || gear == DRIVE){
+    return gear;
+  } else {
+    return validated_gear;
   }
-  if(calibration_message.can_id == 0x500 && calibration_message.data[0] == 0){
-    calibration_mode = false;
-    if(was_in_calibration_mode == true){
-      LOG_INFO("Was in calibration mode, saving values...");
-      save_calibration_data("throttle_low", throttle_pedal_calibration_low/4);
-      save_calibration_data("throttle_high", throttle_pedal_calibration_high/4);
-      was_in_calibration_mode = false;
-    }
+}
+
+boolean initialize_controller(){
+  boolean transport_has_errors = initialize_transport();
+  boolean gear_selector_initialized = initialize_gear_selector();
+  return !transport_has_errors && gear_selector_initialized;
+}
+
+void select_gear_position(int drive_gear_status, int neutral_gear_status, int reverse_gear_status, int parking_gear_status){
+  if(drive_gear_status == 0 && neutral_gear_status == 1 && reverse_gear_status == 1 && parking_gear_status == 1){
+    selected_gear = DRIVE;
+  } else if(drive_gear_status == 1 && neutral_gear_status == 0 && reverse_gear_status == 1 && parking_gear_status == 1){
+    selected_gear = NEUTRAL;
+  } else if(drive_gear_status == 1 && neutral_gear_status == 1 && reverse_gear_status == 0 && parking_gear_status == 1){
+    selected_gear = REVERSE;
+  } else if(drive_gear_status == 1 && neutral_gear_status == 1 && reverse_gear_status == 1 && parking_gear_status == 0){
+    selected_gear = PARKING;
+  }
+}
+
+void indicate_gear_position(int gear){
+  if(gear == PARKING){
+    reset_indicators();
+    digitalWrite(PARKING_INDICATOR_PIN, HIGH);
+  } else if(gear == NEUTRAL){
+    reset_indicators();
+    digitalWrite(NEUTRAL_INDICATOR_PIN, HIGH);
+  } else if(gear == REVERSE){
+    reset_indicators();
+    digitalWrite(REVERSE_INDICATOR_PIN, HIGH);
+  } else if(gear == DRIVE){
+    reset_indicators();
+    digitalWrite(DRIVE_INDICATOR_PIN, HIGH);
   }
 }
 
@@ -62,15 +91,15 @@ void setup() {
 }
 
 void loop() {
-  listen_for_calibration_message();
-  if(calibration_mode){
-    int throttle_pedal_resistance = analogRead(THROTTLE_PEDAL_PIN);
-    throttle_pedal_calibration_low = min(throttle_pedal_resistance, throttle_pedal_calibration_low);
-    throttle_pedal_calibration_high = max(throttle_pedal_resistance, throttle_pedal_calibration_high);
-  } else {
-    was_in_calibration_mode = false;
-    int throttle_pedal_resistance = analogRead(THROTTLE_PEDAL_PIN);
-    int throttle = convert_throttle_to_max_range(throttle_pedal_resistance, throttle_pedal_calibration_low/4, throttle_pedal_calibration_high/4);
-    send_throttle_message(can_0, throttle);
-  }
+  analogReadResolution(ANALOG_READ_RESOLUTION); // Set resolution to 14bits (max 16383) instead of 10bits (max 1023)
+  int throttle_pedal_voltage_1 = analogRead(THROTTLE_PEDAL_PIN_1);
+  int throttle_pedal_voltage_2 = analogRead(THROTTLE_PEDAL_PIN_2);
+  int drive_gear_status        = digitalRead(GEAR_DRIVE_PIN);
+  int neutral_gear_status      = digitalRead(GEAR_NEUTRAL_PIN);
+  int reverse_gear_status      = digitalRead(GEAR_REVERSE_PIN);
+  int parking_gear_status      = digitalRead(GEAR_PARKING_PIN);
+  select_gear_position(drive_gear_status, neutral_gear_status, reverse_gear_status, parking_gear_status);
+  send_message(MAX_ANALOG_READ_VALUE, throttle_pedal_voltage_1, throttle_pedal_voltage_2, selected_gear);
+  validated_gear = set_validated_gear();
+  indicate_gear_position(validated_gear);
 }

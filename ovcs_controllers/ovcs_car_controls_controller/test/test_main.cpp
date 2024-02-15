@@ -24,7 +24,6 @@ void tearDown(void)
 int main()
 {
   UNITY_BEGIN(); // IMPORTANT LINE!
-  RUN_TEST_GROUP(ConversionUtilsTest);
-  RUN_TEST_GROUP(PersistanceHelpersTest);
+  //RUN_TEST_GROUP(CanUtilsTests);
   return UNITY_END();
 }
