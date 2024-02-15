@@ -121,24 +121,6 @@
                         }
                     ]
                 },
-                "carControlsCalibrationModeRequest": {
-                    "id": "500",
-                    "frequency": 100,
-                    "signals": [
-                        {
-                            "name": "calibrationModeEnabled",
-                            "kind": "boolean",
-                            "valueStart": 0,
-                            "valueLength": 8,
-                            "endianness": "little",
-                            "origin": "OVCS VMS",
-                            "mapping": {
-                                "0": false,
-                                "1": true
-                            }
-                        }
-                    ]
-                },
                 "vmsStatus": {
                     "id": "11A",
                     "frequency": 10,
@@ -274,9 +256,25 @@
                     "validateFrequency": true,
                     "signals": [
                         {
-                            "name": "throttle",
+                            "name": "maxRawThrottle",
                             "kind": "integer",
                             "valueStart": 0,
+                            "valueLength": 16,
+                            "endianness": "little",
+                            "origin": "OVCS ECU"
+                        },
+                        {
+                            "name": "rawThrottleA",
+                            "kind": "integer",
+                            "valueStart": 16,
+                            "valueLength": 16,
+                            "endianness": "little",
+                            "origin": "OVCS ECU"
+                        },
+                        {
+                            "name": "rawThrottleB",
+                            "kind": "integer",
+                            "valueStart": 32,
                             "valueLength": 16,
                             "endianness": "little",
                             "origin": "OVCS ECU"

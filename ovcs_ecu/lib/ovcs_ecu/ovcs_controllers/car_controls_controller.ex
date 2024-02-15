@@ -13,22 +13,11 @@ defmodule OvcsEcu.OvcsControllers.CarControlsController do
 
   @impl true
   def init(_) do
-    :ok = Emitter.configure(@network_name, @calibration_frame_name, %{
-      parameters_builder_function: &calibration_mode_request_frame_parameters/1,
-      initial_data: %{
-        @calibration_mode => false,
-      }
-    })
-    Emitter.batch_enable(@network_name, [@calibration_frame_name])
     Cantastic.Receiver.subscribe(self(), @network_name, ["carControlsStatus"])
     {:ok, %{
       throttle: 0
       }
     }
-  end
-
-  def calibration_mode_request_frame_parameters(state) do
-    {:ok, state.data, state}
   end
 
   def enable_calibration_mode() do
@@ -46,16 +35,13 @@ defmodule OvcsEcu.OvcsControllers.CarControlsController do
   end
 
   @impl true
-  def handle_info({:handle_frame, %Frame{name: @car_controls_status_frame_name} = _frame, [throttle_signal] = _signals}, state) do
+  def handle_info({:handle_frame, %Frame{name: @car_controls_status_frame_name} = _frame, [raw_max_throttle_signal, raw_throttle_a, raw_throttle_b] = _signals}, state) do
     IO.inspect "-----"
-    IO.inspect throttle_signal
-    throttle = convert_raw_throttle(throttle_signal.value)
-    IO.inspect throttle
+    IO.inspect raw_max_throttle_signal
+    IO.inspect raw_throttle_a
+    IO.inspect raw_throttle_b
+    throttle = 0
     {:noreply, %{state | throttle: throttle }}
-  end
-
-  defp convert_raw_throttle(raw_throttle) do
-    raw_throttle / 2.55
   end
 
   @impl true
