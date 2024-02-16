@@ -36,7 +36,9 @@ boolean initializeGearSelector(){
   pinMode(NEUTRAL_INDICATOR_PIN, OUTPUT);
   pinMode(REVERSE_INDICATOR_PIN, OUTPUT);
   pinMode(PARKING_INDICATOR_PIN, OUTPUT);
-  return true;
+  // Make sure there is no hardware fault on any of the gear shifter pins
+  boolean noErrors = (digitalRead(DRIVE) == 1 && digitalRead(NEUTRAL) == 1 && digitalRead(REVERSE) == 1 && digitalRead(PARKING) == 1);
+  return noErrors;
 }
 
 int setValidatedGear(){
