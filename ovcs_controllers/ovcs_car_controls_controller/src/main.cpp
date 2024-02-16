@@ -42,7 +42,7 @@ boolean initializeGearSelector(){
 }
 
 int setValidatedGear(){
-  int gear = receiveValidatedGear();
+  int gear = Transport::pullValidatedGear();
   if(gear == PARKING || gear == REVERSE || gear == NEUTRAL || gear == DRIVE){
     return gear;
   } else {
@@ -51,7 +51,7 @@ int setValidatedGear(){
 }
 
 boolean initializeController(){
-  boolean transportHasErrors = initializeTransport();
+  boolean transportHasErrors = Transport::initialize();
   boolean gearSelectorInitialized = initializeGearSelector();
   return !transportHasErrors && gearSelectorInitialized;
 }
@@ -101,7 +101,7 @@ void loop() {
   int reverseGearStatus      = digitalRead(GEAR_REVERSE_PIN);
   int parkingGearStatus      = digitalRead(GEAR_PARKING_PIN);
   selectGearPosition(driveGearStatus, neutralGearStatus, reverseGearStatus, parkingGearStatus);
-  sendFrame(MAX_ANALOG_READ_VALUE, throttle_pedal_voltage_1, throttle_pedal_voltage_2, selectedGear);
+  Transport::sendFrame(MAX_ANALOG_READ_VALUE, throttle_pedal_voltage_1, throttle_pedal_voltage_2, selectedGear);
   validatedGear = setValidatedGear();
   indicateGearPosition(validatedGear);
 }

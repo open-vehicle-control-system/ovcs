@@ -18,14 +18,14 @@ can_frame receivedCanMessage;
 
 MCP2515 OVCS_CAN(CAN_PIN);
 
-boolean initializeTransport(){
+boolean Transport::initialize(){
   OVCS_CAN.reset();
   OVCS_CAN.setBitrate(CAN_SPEED, CAN_FREQUENCY);
   OVCS_CAN.setNormalMode();
   return OVCS_CAN.checkError();
 }
 
-void sendFrame(int maxAnalogReadValue, int throttleValue1, int throttleValue2, int selectedGear){
+void Transport::sendFrame(int maxAnalogReadValue, int throttleValue1, int throttleValue2, int selectedGear){
   now = millis();
   if(sendingTimestamp + THROTTLE_CAN_MESSAGE_FREQUENCY_MS <= now){
     sendingTimestamp = now;
@@ -42,7 +42,7 @@ void sendFrame(int maxAnalogReadValue, int throttleValue1, int throttleValue2, i
   }
 }
 
-int receiveValidatedGear(){
+int Transport::pullValidatedGear(){
   if(OVCS_CAN.readMessage(&receivedCanMessage) == MCP2515::ERROR_OK){
     if(receivedCanMessage.can_id == GEAR_CAN_MESSAGE_ID){
       return receivedCanMessage.data[0];

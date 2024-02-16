@@ -3,8 +3,12 @@
 
 #include <Arduino.h>
 
-boolean initializeTransport();
-void sendFrame(int maxAnalogReadValue, int throttleValue1, int throttleValue2, int selectedGear);
-int receiveValidatedGear();
+class Transport{
+
+    public:
+        boolean static initialize();
+        void static sendFrame(int maxAnalogReadValue, int throttleValue1, int throttleValue2, int selectedGear);
+        int static pullValidatedGear();
+};
 
 #endif
