@@ -19,8 +19,18 @@ namespace ThrottlePedalTests{
         Verify(Method(ArduinoFake(), analogReadResolution).Using(expectedResolutionByVMSinBits)).Once();
     }
 
+    void test_readValues_returns_the_analogRead_values_without_modification(){
+        ThrottlePedal pedal = ThrottlePedal();
+        When(Method(ArduinoFake(), analogRead)).AlwaysReturn(42);
+        When(Method(ArduinoFake(), analogReadResolution)).Return();
+        AnalogValues values = pedal.readValues();
+        TEST_ASSERT_EQUAL_INT(42, values.pin_1);
+        TEST_ASSERT_EQUAL_INT(42, values.pin_2);
+    }
+
     void run_tests(void){
         RUN_TEST(test_initialize_sets_analog_pins_as_input);
         RUN_TEST(test_readValues_sets_resolution_to_what_VMSU_expects);
+        RUN_TEST(test_readValues_returns_the_analogRead_values_without_modification);
     }
 }
