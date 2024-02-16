@@ -1,72 +1,40 @@
 #include <Arduino.h>
 #include <DebugLog.h>
-#include <InitializationHelpers.h>
+#include <Transport.h>
+#include <GearSelector.h>
+#include <GearIndicator.h>
+#include <ThrottlePedal.h>
 
-#define THROTTLE_PEDAL_PIN_1 A0
-#define THROTTLE_PEDAL_PIN_2 A1
 #define DEBUGLOG_DEFAULT_LOG_LEVEL_TRACE
-#define ANALOG_READ_RESOLUTION 14
-#define MAX_ANALOG_READ_VALUE 16383
 
 boolean initialized = false;
-int selectedGear = PARKING;
-int validatedGear = PARKING;
 
-int setValidatedGear(){
-  int gear = Transport::pullValidatedGear();
-  if(gear == PARKING || gear == REVERSE || gear == NEUTRAL || gear == DRIVE){
-    return gear;
-  } else {
-    return validatedGear;
-  }
-}
+Transport transport = Transport();
+GearSelector gearSelector = GearSelector();
+GearIndicator gearIndicator = GearIndicator(transport);
+ThrottlePedal throttlePedal = ThrottlePedal();
 
-void selectGearPosition(int driveGearStatus, int neutralGearStatus, int reverseGearStatus, int parkingGearStatus){
-  if(driveGearStatus == 0 && neutralGearStatus == 1 && reverseGearStatus == 1 && parkingGearStatus == 1){
-    selectedGear = DRIVE;
-  } else if(driveGearStatus == 1 && neutralGearStatus == 0 && reverseGearStatus == 1 && parkingGearStatus == 1){
-    selectedGear = NEUTRAL;
-  } else if(driveGearStatus == 1 && neutralGearStatus == 1 && reverseGearStatus == 0 && parkingGearStatus == 1){
-    selectedGear = REVERSE;
-  } else if(driveGearStatus == 1 && neutralGearStatus == 1 && reverseGearStatus == 1 && parkingGearStatus == 0){
-    selectedGear = PARKING;
-  }
-}
-
-void indicateGearPosition(int gear){
-  if(gear == PARKING){
-    InitializationHelpers::resetIndicators();
-    digitalWrite(PARKING_INDICATOR_PIN, HIGH);
-  } else if(gear == NEUTRAL){
-    InitializationHelpers::resetIndicators();
-    digitalWrite(NEUTRAL_INDICATOR_PIN, HIGH);
-  } else if(gear == REVERSE){
-    InitializationHelpers::resetIndicators();
-    digitalWrite(REVERSE_INDICATOR_PIN, HIGH);
-  } else if(gear == DRIVE){
-    InitializationHelpers::resetIndicators();
-    digitalWrite(DRIVE_INDICATOR_PIN, HIGH);
-  }
+boolean initializeAllComponents(){
+    boolean transportInitialized = transport.initialize();
+    boolean gearSelectorInitialized = gearSelector.initialize();
+    boolean gearIndicatorInitialized = gearIndicator.initialize();
+    return transportInitialized && gearSelectorInitialized && gearIndicatorInitialized;
 }
 
 void setup() {
-  Serial.begin(9600);
-  initialized = InitializationHelpers::initializeController();
-  if(!initialized){
-    LOG_ERROR("Controller cannot be initialized");
-  }
+    Serial.begin(9600);
+    boolean initialized = initializeAllComponents();
+    if(!initialized){
+      LOG_ERROR("Controller cannot be initialized");
+    }
 }
 
 void loop() {
-  analogReadResolution(ANALOG_READ_RESOLUTION); // Set resolution to 14bits (max 16383) instead of 10bits (max 1023)
-  int throttle_pedal_voltage_1 = analogRead(THROTTLE_PEDAL_PIN_1);
-  int throttle_pedal_voltage_2 = analogRead(THROTTLE_PEDAL_PIN_2);
-  int driveGearStatus          = digitalRead(GEAR_DRIVE_PIN);
-  int neutralGearStatus        = digitalRead(GEAR_NEUTRAL_PIN);
-  int reverseGearStatus        = digitalRead(GEAR_REVERSE_PIN);
-  int parkingGearStatus        = digitalRead(GEAR_PARKING_PIN);
-  selectGearPosition(driveGearStatus, neutralGearStatus, reverseGearStatus, parkingGearStatus);
-  Transport::sendFrame(MAX_ANALOG_READ_VALUE, throttle_pedal_voltage_1, throttle_pedal_voltage_2, selectedGear);
-  validatedGear = setValidatedGear();
-  indicateGearPosition(validatedGear);
+    int selectedGear = gearSelector.getGearPosition(); // Get which position the gear selector is
+    int* throttlePedalReadings = throttlePedal.readValues(); // Get readings from throttle pedal
+
+    // Send frame through transport with aggregated data
+    transport.sendFrame(MAX_ANALOG_READ_VALUE, throttlePedalReadings[0], throttlePedalReadings[1], selectedGear);
+    int validatedGear = gearIndicator.getValidatedGearPosition(); // Get ECU validated gear
+    gearIndicator.indicateGearPosition(validatedGear); // Light validated gear indicator
 }
