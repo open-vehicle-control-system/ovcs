@@ -21,17 +21,17 @@
 #define PARKING 3
 
 boolean initialized = false;
-int selected_gear = PARKING;
-int validated_gear = PARKING;
+int selectedGear = PARKING;
+int validatedGear = PARKING;
 
-void reset_indicators(){
+void resetIndicators(){
   digitalWrite(DRIVE_INDICATOR_PIN, LOW);
   digitalWrite(NEUTRAL_INDICATOR_PIN, LOW);
   digitalWrite(REVERSE_INDICATOR_PIN, LOW);
   digitalWrite(PARKING_INDICATOR_PIN, LOW);
 }
 
-boolean initialize_gear_selector(){
+boolean initializeGearSelector(){
   pinMode(DRIVE_INDICATOR_PIN, OUTPUT);
   pinMode(NEUTRAL_INDICATOR_PIN, OUTPUT);
   pinMode(REVERSE_INDICATOR_PIN, OUTPUT);
@@ -39,54 +39,54 @@ boolean initialize_gear_selector(){
   return true;
 }
 
-int set_validated_gear(){
-  int gear = receive_validated_gear();
+int setValidatedGear(){
+  int gear = receiveValidatedGear();
   if(gear == PARKING || gear == REVERSE || gear == NEUTRAL || gear == DRIVE){
     return gear;
   } else {
-    return validated_gear;
+    return validatedGear;
   }
 }
 
-boolean initialize_controller(){
-  boolean transport_has_errors = initialize_transport();
-  boolean gear_selector_initialized = initialize_gear_selector();
-  return !transport_has_errors && gear_selector_initialized;
+boolean initializeController(){
+  boolean transportHasErrors = initializeTransport();
+  boolean gearSelectorInitialized = initializeGearSelector();
+  return !transportHasErrors && gearSelectorInitialized;
 }
 
-void select_gear_position(int drive_gear_status, int neutral_gear_status, int reverse_gear_status, int parking_gear_status){
-  if(drive_gear_status == 0 && neutral_gear_status == 1 && reverse_gear_status == 1 && parking_gear_status == 1){
-    selected_gear = DRIVE;
-  } else if(drive_gear_status == 1 && neutral_gear_status == 0 && reverse_gear_status == 1 && parking_gear_status == 1){
-    selected_gear = NEUTRAL;
-  } else if(drive_gear_status == 1 && neutral_gear_status == 1 && reverse_gear_status == 0 && parking_gear_status == 1){
-    selected_gear = REVERSE;
-  } else if(drive_gear_status == 1 && neutral_gear_status == 1 && reverse_gear_status == 1 && parking_gear_status == 0){
-    selected_gear = PARKING;
+void selectGearPosition(int driveGearStatus, int neutralGearStatus, int reverseGearStatus, int parkingGearStatus){
+  if(driveGearStatus == 0 && neutralGearStatus == 1 && reverseGearStatus == 1 && parkingGearStatus == 1){
+    selectedGear = DRIVE;
+  } else if(driveGearStatus == 1 && neutralGearStatus == 0 && reverseGearStatus == 1 && parkingGearStatus == 1){
+    selectedGear = NEUTRAL;
+  } else if(driveGearStatus == 1 && neutralGearStatus == 1 && reverseGearStatus == 0 && parkingGearStatus == 1){
+    selectedGear = REVERSE;
+  } else if(driveGearStatus == 1 && neutralGearStatus == 1 && reverseGearStatus == 1 && parkingGearStatus == 0){
+    selectedGear = PARKING;
   }
 }
 
-void indicate_gear_position(int gear){
+void indicateGearPosition(int gear){
   if(gear == PARKING){
-    reset_indicators();
+    resetIndicators();
     digitalWrite(PARKING_INDICATOR_PIN, HIGH);
   } else if(gear == NEUTRAL){
-    reset_indicators();
+    resetIndicators();
     digitalWrite(NEUTRAL_INDICATOR_PIN, HIGH);
   } else if(gear == REVERSE){
-    reset_indicators();
+    resetIndicators();
     digitalWrite(REVERSE_INDICATOR_PIN, HIGH);
   } else if(gear == DRIVE){
-    reset_indicators();
+    resetIndicators();
     digitalWrite(DRIVE_INDICATOR_PIN, HIGH);
   }
 }
 
 void setup() {
   Serial.begin(9600);
-  initialized = initialize_controller();
+  initialized = initializeController();
   if(!initialized){
-    LOG_ERROR("Controller cannot initialize");
+    LOG_ERROR("Controller cannot be initialized");
   }
 }
 
@@ -94,12 +94,12 @@ void loop() {
   analogReadResolution(ANALOG_READ_RESOLUTION); // Set resolution to 14bits (max 16383) instead of 10bits (max 1023)
   int throttle_pedal_voltage_1 = analogRead(THROTTLE_PEDAL_PIN_1);
   int throttle_pedal_voltage_2 = analogRead(THROTTLE_PEDAL_PIN_2);
-  int drive_gear_status        = digitalRead(GEAR_DRIVE_PIN);
-  int neutral_gear_status      = digitalRead(GEAR_NEUTRAL_PIN);
-  int reverse_gear_status      = digitalRead(GEAR_REVERSE_PIN);
-  int parking_gear_status      = digitalRead(GEAR_PARKING_PIN);
-  select_gear_position(drive_gear_status, neutral_gear_status, reverse_gear_status, parking_gear_status);
-  send_message(MAX_ANALOG_READ_VALUE, throttle_pedal_voltage_1, throttle_pedal_voltage_2, selected_gear);
-  validated_gear = set_validated_gear();
-  indicate_gear_position(validated_gear);
+  int driveGearStatus        = digitalRead(GEAR_DRIVE_PIN);
+  int neutralGearStatus      = digitalRead(GEAR_NEUTRAL_PIN);
+  int reverseGearStatus      = digitalRead(GEAR_REVERSE_PIN);
+  int parkingGearStatus      = digitalRead(GEAR_PARKING_PIN);
+  selectGearPosition(driveGearStatus, neutralGearStatus, reverseGearStatus, parkingGearStatus);
+  sendFrame(MAX_ANALOG_READ_VALUE, throttle_pedal_voltage_1, throttle_pedal_voltage_2, selectedGear);
+  validatedGear = setValidatedGear();
+  indicateGearPosition(validatedGear);
 }

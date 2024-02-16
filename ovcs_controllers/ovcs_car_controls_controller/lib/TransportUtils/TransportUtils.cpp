@@ -18,31 +18,31 @@ can_frame receivedCanMessage;
 
 MCP2515 OVCS_CAN(CAN_PIN);
 
-boolean initialize_transport(){
+boolean initializeTransport(){
   OVCS_CAN.reset();
   OVCS_CAN.setBitrate(CAN_SPEED, CAN_FREQUENCY);
   OVCS_CAN.setNormalMode();
   return OVCS_CAN.checkError();
 }
 
-void send_message(int max_analog_read_value, int value_voltage_1, int value_voltage_2, int selected_gear){
+void sendFrame(int maxAnalogReadValue, int throttleValue1, int throttleValue2, int selectedGear){
   now = millis();
   if(sendingTimestamp + THROTTLE_CAN_MESSAGE_FREQUENCY_MS <= now){
     sendingTimestamp = now;
     sentCanMessage.can_id = THROTTLE_CAN_MESSAGE_ID;
     sentCanMessage.can_dlc = 7;
-    sentCanMessage.data[0] = lowByte(max_analog_read_value);
-    sentCanMessage.data[1] = highByte(max_analog_read_value);
-    sentCanMessage.data[2] = lowByte(value_voltage_1);
-    sentCanMessage.data[3] = highByte(value_voltage_1);
-    sentCanMessage.data[4] = lowByte(value_voltage_2);
-    sentCanMessage.data[5] = highByte(value_voltage_2);
-    sentCanMessage.data[6] = selected_gear;
+    sentCanMessage.data[0] = lowByte(maxAnalogReadValue);
+    sentCanMessage.data[1] = highByte(maxAnalogReadValue);
+    sentCanMessage.data[2] = lowByte(throttleValue1);
+    sentCanMessage.data[3] = highByte(throttleValue1);
+    sentCanMessage.data[4] = lowByte(throttleValue2);
+    sentCanMessage.data[5] = highByte(throttleValue2);
+    sentCanMessage.data[6] = selectedGear;
     OVCS_CAN.sendMessage(&sentCanMessage);
   }
 }
 
-int receive_validated_gear(){
+int receiveValidatedGear(){
   if(OVCS_CAN.readMessage(&receivedCanMessage) == MCP2515::ERROR_OK){
     if(receivedCanMessage.can_id == GEAR_CAN_MESSAGE_ID){
       return receivedCanMessage.data[0];
