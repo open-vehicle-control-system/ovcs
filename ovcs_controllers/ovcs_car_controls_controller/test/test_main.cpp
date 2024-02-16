@@ -3,8 +3,7 @@
 
 using namespace fakeit;
 
-#include "test_conversion_utils.h"
-#include "test_persistance_helpers.h"
+#include <gear_selector_tests.h>
 
 #define RUN_TEST_GROUP(TEST) \
     if (!std::getenv("TEST_GROUP") || (strcmp(#TEST, std::getenv("TEST_GROUP")) == 0)) { \
@@ -24,6 +23,6 @@ void tearDown(void)
 int main()
 {
   UNITY_BEGIN(); // IMPORTANT LINE!
-  //RUN_TEST_GROUP(CanUtilsTests);
+  RUN_TEST_GROUP(GearSelectorTests);
   return UNITY_END();
 }
