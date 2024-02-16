@@ -34,7 +34,7 @@ void loop() {
     int* throttlePedalReadings = throttlePedal.readValues(); // Get readings from throttle pedal
 
     // Send frame through transport with aggregated data
-    transport.sendFrame(MAX_ANALOG_READ_VALUE, throttlePedalReadings[0], throttlePedalReadings[1], selectedGear);
+    transport.sendFrame(MAX_ANALOG_READ_VALUE, throttlePedalReadings.pin_1, throttlePedalReadings.pin_2, selectedGear);
     int validatedGear = gearIndicator.getValidatedGearPosition(); // Get ECU validated gear
     gearIndicator.indicateGearPosition(validatedGear); // Light validated gear indicator
 }

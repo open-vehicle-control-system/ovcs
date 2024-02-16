@@ -5,8 +5,12 @@
 #define THROTTLE_PEDAL_PIN_1 A0
 #define THROTTLE_PEDAL_PIN_2 A1
 
+struct AnalogValues{
+    int pin_1, pin_2;
+};
+
 class ThrottlePedal{
     public:
         boolean initialize();
-        int* readValues();
+        AnalogValues readValues();
 };
