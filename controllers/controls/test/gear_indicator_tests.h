@@ -56,8 +56,7 @@ namespace GearIndicatorTests{
         Mock<TransportMock> spy(mock);
         When(Method(ArduinoFake(), digitalWrite)).AlwaysReturn();
         indicator.indicateGearPosition(DRIVE);
-        Verify(Method(ArduinoFake(), digitalWrite).Using(DRIVE_INDICATOR_PIN, LOW)).Exactly(1); //reset
-        Verify(Method(ArduinoFake(), digitalWrite).Using(DRIVE_INDICATOR_PIN, HIGH)).Exactly(1);
+        Verify(Method(ArduinoFake(), digitalWrite).Using(DRIVE_INDICATOR_PIN, LOW), Method(ArduinoFake(), digitalWrite).Using(DRIVE_INDICATOR_PIN, HIGH)).Exactly(1);
     }
 
     void test_indicate_gear_position_write_on_neutral_pin_when_neutral_validated(){
@@ -66,8 +65,7 @@ namespace GearIndicatorTests{
         Mock<TransportMock> spy(mock);
         When(Method(ArduinoFake(), digitalWrite)).AlwaysReturn();
         indicator.indicateGearPosition(NEUTRAL);
-        Verify(Method(ArduinoFake(), digitalWrite).Using(NEUTRAL_INDICATOR_PIN, LOW)).Exactly(1); //reset
-        Verify(Method(ArduinoFake(), digitalWrite).Using(NEUTRAL_INDICATOR_PIN, HIGH)).Exactly(1);
+        Verify(Method(ArduinoFake(), digitalWrite).Using(NEUTRAL_INDICATOR_PIN, LOW), Method(ArduinoFake(), digitalWrite).Using(NEUTRAL_INDICATOR_PIN, HIGH)).Exactly(1);
     }
 
     void test_indicate_gear_position_write_on_reverse_pin_when_reverse_validated(){
@@ -76,8 +74,7 @@ namespace GearIndicatorTests{
         Mock<TransportMock> spy(mock);
         When(Method(ArduinoFake(), digitalWrite)).AlwaysReturn();
         indicator.indicateGearPosition(REVERSE);
-        Verify(Method(ArduinoFake(), digitalWrite).Using(REVERSE_INDICATOR_PIN, LOW)).Exactly(1); //reset
-        Verify(Method(ArduinoFake(), digitalWrite).Using(REVERSE_INDICATOR_PIN, HIGH)).Exactly(1);
+        Verify(Method(ArduinoFake(), digitalWrite).Using(REVERSE_INDICATOR_PIN, LOW), Method(ArduinoFake(), digitalWrite).Using(REVERSE_INDICATOR_PIN, HIGH)).Exactly(1);
     }
 
     void test_indicate_gear_position_write_on_parking_pin_when_parking_validated(){
@@ -86,8 +83,7 @@ namespace GearIndicatorTests{
         Mock<TransportMock> spy(mock);
         When(Method(ArduinoFake(), digitalWrite)).AlwaysReturn();
         indicator.indicateGearPosition(PARKING);
-        Verify(Method(ArduinoFake(), digitalWrite).Using(PARKING_INDICATOR_PIN, LOW)).Exactly(1); //reset
-        Verify(Method(ArduinoFake(), digitalWrite).Using(PARKING_INDICATOR_PIN, HIGH)).Exactly(1);
+        Verify(Method(ArduinoFake(), digitalWrite).Using(PARKING_INDICATOR_PIN, LOW), Method(ArduinoFake(), digitalWrite).Using(PARKING_INDICATOR_PIN, HIGH)).Exactly(1);
     }
 
     void run_tests(void){
