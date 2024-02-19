@@ -2,6 +2,7 @@
 #include <DebugLog.h>
 #include <GearSelector.h>
 #include <GearIndicator.h>
+#include <Transport.h>
 #include <ThrottlePedal.h>
 
 #define DEBUGLOG_DEFAULT_LOG_LEVEL_TRACE
@@ -10,7 +11,7 @@ boolean initialized = false;
 
 Transport transport = Transport();
 GearSelector gearSelector = GearSelector();
-GearIndicator gearIndicator = GearIndicator(transport);
+GearIndicator gearIndicator = GearIndicator(&transport);
 ThrottlePedal throttlePedal = ThrottlePedal();
 
 boolean initializeAllComponents(){
