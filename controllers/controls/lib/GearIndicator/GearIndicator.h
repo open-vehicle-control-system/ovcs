@@ -11,6 +11,7 @@ class GearIndicator{
         boolean initialize();
         int getValidatedGearPosition();
         void indicateGearPosition(int gear);
+    private:
         void reset();
 };
 #endif
