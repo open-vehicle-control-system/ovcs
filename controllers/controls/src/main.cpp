@@ -9,23 +9,24 @@
 
 boolean initialized = false;
 
-Transport transport = Transport();
-GearSelector gearSelector = GearSelector();
+Transport transport         = Transport();
+GearSelector gearSelector   = GearSelector();
 GearIndicator gearIndicator = GearIndicator(&transport);
 ThrottlePedal throttlePedal = ThrottlePedal();
 
 boolean initializeAllComponents(){
-    boolean transportInitialized = transport.initialize();
-    boolean gearSelectorInitialized = gearSelector.initialize();
+    boolean transportInitialized     = transport.initialize();
+    boolean gearSelectorInitialized  = gearSelector.initialize();
     boolean gearIndicatorInitialized = gearIndicator.initialize();
-    return transportInitialized && gearSelectorInitialized && gearIndicatorInitialized;
+    boolean throttlePedalInitialized = throttlePedal.initialize();
+    return transportInitialized && gearSelectorInitialized && gearIndicatorInitialized && throttlePedalInitialized;
 }
 
 void setup() {
     Serial.begin(9600);
     boolean initialized = initializeAllComponents();
     if(!initialized){
-      LOG_ERROR("Controller cannot be initialized");
+      LOG_ERROR("Controller cannot be initialized"); // TODO : Give more information
     }
 }
 
