@@ -4,8 +4,8 @@
 
 class TransportMock : public AbstractTransport{
     public:
-        boolean initialize();
-        void sendFrame(int maxAnalogReadValue, int throttleValue1, int throttleValue2, int selectedGear);
-        int pullValidatedGear();
+        virtual boolean initialize();
+        virtual void sendFrame(int maxAnalogReadValue, int throttleValue1, int throttleValue2, int selectedGear);
+        virtual int pullValidatedGear();
 };
 #endif
