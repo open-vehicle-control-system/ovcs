@@ -1,5 +1,4 @@
 #include <GearIndicator.h>
-#include <SPI.h>
 
 int validatedGear = PARKING;
 
