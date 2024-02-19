@@ -9,10 +9,10 @@ defmodule VmsApi.Application do
   def start(_type, _args) do
     children = [
       VmsApiWeb.Telemetry,
-      VmsApi.Repo,
-      {Ecto.Migrator,
-        repos: Application.fetch_env!(:vms_api, :ecto_repos),
-        skip: skip_migrations?()},
+      #VmsApi.Repo,
+      #{Ecto.Migrator,
+      #  repos: Application.fetch_env!(:vms_api, :ecto_repos),
+      #  skip: skip_migrations?()},
       {DNSCluster, query: Application.get_env(:vms_api, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: VmsApi.PubSub},
       # Start a worker by calling: VmsApi.Worker.start_link(arg)
