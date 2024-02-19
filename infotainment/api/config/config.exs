@@ -7,23 +7,26 @@
 # General application configuration
 import Config
 
-import_config "../../core/config/config.exs"
-
-config :vms_api,
-  namespace: VmsApi,
-  ecto_repos: [VmsApi.Repo],
+config :infotainment_api,
+  ecto_repos: [InfotainmentApi.Repo],
   generators: [timestamp_type: :utc_datetime]
 
+config :infotainment_api, :vehicle, System.get_env("VEHICLE") || "polo-2007-bluemotion"
+
+config :cantastic, :can_networks, System.get_env("CAN_NETWORKS") || "drive:vcan0,confort:vcan1"
+config :cantastic, :manual_setup, System.get_env("MANUAL_SETUP") == "true" || false
+config :cantastic, :frame_handler, InfotainmentApi.VehicleStateManager
+
 # Configures the endpoint
-config :vms_api, VmsApiWeb.Endpoint,
+config :infotainment_api, InfotainmentApiWeb.Endpoint,
   url: [host: "localhost"],
-  adapter: Bandit.PhoenixAdapter,
+  adapter: Phoenix.Endpoint.Cowboy2Adapter,
   render_errors: [
-    formats: [json: VmsApiWeb.ErrorJSON],
+    formats: [json: InfotainmentApiWeb.ErrorJSON],
     layout: false
   ],
-  pubsub_server: VmsApi.PubSub,
-  live_view: [signing_salt: "Q0e581t3"]
+  pubsub_server: InfotainmentApi.PubSub,
+  live_view: [signing_salt: "NYYbIS2A"]
 
 # Configures Elixir's Logger
 config :logger, :console,

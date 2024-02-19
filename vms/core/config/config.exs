@@ -7,17 +7,26 @@
 # General application configuration
 import Config
 
+config :vms_core,
+  namespace: VmsCore,
+  ecto_repos: [VmsCore.Repo],
+  generators: [timestamp_type: :utc_datetime]
+
 config :vms_core, VmsCore.Repo,
   database: Path.expand("../vms_core_dev.db", Path.dirname(__ENV__.file)),
   pool_size: 5,
   stacktrace: true,
   show_sensitive_data_on_connection_error: true
 
-config :vms_core, :vehicle, System.get_env("VEHICLE") || "polo-2007-bluemotion-leaf-em57"
+vehicle = System.get_env("VEHICLE") || "polo-2007-bluemotion-leaf-em57"
+
+config :vms_core, :vehicle, vehicle
 
 config :cantastic, :can_networks, System.get_env("CAN_NETWORKS") || "drive:vcan0,confort:vcan1"
 config :cantastic, :manual_setup, System.get_env("MANUAL_SETUP") == "true" || false
-config :cantastic, :can_config_path, "/home/thibault/Development/ovcs_base/ovcs/vms/core/priv/vehicles/polo-2007-bluemotion-leaf-em57.json"
+config :cantastic, :otp_app, :vms_core
+config :cantastic, :priv_can_config_path, "vehicles/#{vehicle}.json"
+
 
 # Configures Elixir's Logger
 config :logger, :console,

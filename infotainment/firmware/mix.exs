@@ -1,10 +1,10 @@
-defmodule VmsFirmware.MixProject do
+defmodule OvcsInfotainmentFirmware.MixProject do
   use Mix.Project
 
-  @app :vms_firmware
+  @app :infotainment_firmware
   @version "0.1.0"
   @all_targets [
-    :rpi4, :ovcs_vms_system_rpi4
+    :rpi4, :ovcs_infotainment_system_rpi4
   ]
 
   def project do
@@ -23,7 +23,7 @@ defmodule VmsFirmware.MixProject do
   # Run "mix help compile.app" to learn about applications.
   def application do
     [
-      mod: {VmsFirmware.Application, []},
+      mod: {InfotainmentFirmware.Application, []},
       extra_applications: [:logger, :runtime_tools]
     ]
   end
@@ -43,7 +43,11 @@ defmodule VmsFirmware.MixProject do
 
       # Dependencies for all targets except :host
       {:nerves_pack, "~> 0.7.0", targets: @all_targets},
-      {:vms_api, path: "../api", targets: @all_targets, env: Mix.env()},
+      {:vintage_net_wifi, "~> 0.11.7", targets: @all_targets},
+      {:plug_cowboy, "~> 2.0"},
+      {:nerves_cog, github: "coop/nerves_cog"},
+      {:nerves_weston, github: "Spin42/nerves_weston"},
+      {:infotainment_api, path: "../infotainment_api", targets: @all_targets, env: Mix.env()},
 
       # Dependencies for specific targets
       # NOTE: It's generally low risk and recommended to follow minor version
@@ -51,10 +55,10 @@ defmodule VmsFirmware.MixProject do
       # version updates, please review their release notes in case
       # changes to your application are needed.
       {
-        :ovcs_vms_system_rpi4,
-        path: "../../../ovcs_vms_system_rpi4",
+        :ovcs_infotainment_system_rpi4,
+        path: "../../ovcs_infotainment_system_rpi4",
         runtime: false,
-        targets: :ovcs_vms_system_rpi4,
+        targets: :ovcs_infotainment_system_rpi4,
         nerves: [compile: true]
       },
     ]

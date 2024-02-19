@@ -23,7 +23,9 @@ defmodule Cantastic.Application do
   end
 
   defp can_config() do
-    config_path = Application.get_env(:cantastic, :can_config_path)
+    opt_app              = Application.get_env(:cantastic, :otp_app)
+    priv_can_config_path = Application.get_env(:cantastic, :priv_can_config_path)
+    config_path          = Path.join(:code.priv_dir(opt_app), priv_can_config_path)
     Jason.decode!(File.read!(config_path))
   end
 end

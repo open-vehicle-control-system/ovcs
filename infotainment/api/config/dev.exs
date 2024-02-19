@@ -1,8 +1,8 @@
 import Config
 
 # Configure your database
-config :vms_api, VmsApi.Repo,
-  database: Path.expand("../api_dev.db", Path.dirname(__ENV__.file)),
+config :infotainment_api, InfotainmentApi.Repo,
+  database: Path.expand("../infotainment_api_dev.db", Path.dirname(__ENV__.file)),
   pool_size: 5,
   stacktrace: true,
   show_sensitive_data_on_connection_error: true
@@ -13,14 +13,14 @@ config :vms_api, VmsApi.Repo,
 # The watchers configuration can be used to run external
 # watchers to your application. For example, we can use it
 # to bundle .js and .css sources.
-config :vms_api, VmsApiWeb.Endpoint,
+config :infotainment_api, InfotainmentApiWeb.Endpoint,
   # Binding to loopback ipv4 address prevents access from other machines.
   # Change to `ip: {0, 0, 0, 0}` to allow access from other machines.
   http: [ip: {127, 0, 0, 1}, port: 4000],
   check_origin: false,
   code_reloader: true,
   debug_errors: true,
-  secret_key_base: "LQP9rbV/o2Yj2ly3LuaYGCp7WUF4Laapw0zATa386aqfL9VD2/zOnahcaobnGsC2",
+  secret_key_base: "k9uDboNn9q8Kj2wkTo3nZN7jCgnb+WRgT5eFf+bpAYH5vNSRoR0Xv4dR3VNJVw78",
   watchers: []
 
 # ## SSL Support
@@ -47,7 +47,7 @@ config :vms_api, VmsApiWeb.Endpoint,
 # different ports.
 
 # Enable dev routes for dashboard and mailbox
-config :vms_api, dev_routes: true
+config :infotainment_api, dev_routes: true
 
 # Do not include metadata nor timestamps in development logs
 config :logger, :console, format: "[$level] $message\n"
