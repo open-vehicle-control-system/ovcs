@@ -1,14 +1,8 @@
-#ifndef Transport_h
-#define Transport_h
+#include <AbstractTransport.h>
 
-#include <Arduino.h>
-
-class Transport{
-
+class Transport : AbstractTransport{
     public:
-        boolean static initialize();
-        void static sendFrame(int maxAnalogReadValue, int throttleValue1, int throttleValue2, int selectedGear);
-        int static pullValidatedGear();
+        boolean initialize();
+        void sendFrame(int maxAnalogReadValue, int throttleValue1, int throttleValue2, int selectedGear);
+        int pullValidatedGear();
 };
-
-#endif

@@ -1,7 +1,7 @@
-#include <Transport.h>
-
+#include <Arduino.h>
 #include <SPI.h>
 #include <mcp2515.h>
+#include <Transport.h>
 
 #define THROTTLE_CAN_MESSAGE_FREQUENCY_MS 10
 #define THROTTLE_CAN_MESSAGE_ID 0x200

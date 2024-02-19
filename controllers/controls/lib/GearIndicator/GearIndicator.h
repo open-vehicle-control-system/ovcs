@@ -1,6 +1,6 @@
 #include <Arduino.h>
-#include <Transport.h>
 #include <GearConstants.h>
+#include <Transport.h>
 
 class GearIndicator{
     public:

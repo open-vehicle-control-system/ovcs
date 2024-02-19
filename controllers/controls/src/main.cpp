@@ -1,6 +1,5 @@
 #include <Arduino.h>
 #include <DebugLog.h>
-#include <Transport.h>
 #include <GearSelector.h>
 #include <GearIndicator.h>
 #include <ThrottlePedal.h>
@@ -31,7 +30,7 @@ void setup() {
 
 void loop() {
     int selectedGear = gearSelector.getGearPosition(); // Get which position the gear selector is
-    int* throttlePedalReadings = throttlePedal.readValues(); // Get readings from throttle pedal
+    AnalogValues throttlePedalReadings = throttlePedal.readValues(); // Get readings from throttle pedal
 
     // Send frame through transport with aggregated data
     transport.sendFrame(MAX_ANALOG_READ_VALUE, throttlePedalReadings.pin_1, throttlePedalReadings.pin_2, selectedGear);
