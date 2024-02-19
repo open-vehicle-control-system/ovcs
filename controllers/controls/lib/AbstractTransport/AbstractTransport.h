@@ -1,3 +1,5 @@
+#ifndef ABSTRACTTRANSPORT_H
+#define ABSTRACTTRANSPORT_H
 #include <Arduino.h>
 
 struct AbstractTransport{
@@ -6,3 +8,4 @@ struct AbstractTransport{
         virtual void sendFrame(int, int, int, int) = 0;
         virtual int pullValidatedGear() = 0;
 };
+#endif

@@ -1,3 +1,6 @@
+#ifndef THROTTLEPEDAL_H
+#define THROTTLEPEDAL_H
+
 #include <Arduino.h>
 
 #define ANALOG_READ_RESOLUTION 14
@@ -14,3 +17,4 @@ class ThrottlePedal{
         boolean initialize();
         AnalogValues readValues();
 };
+#endif

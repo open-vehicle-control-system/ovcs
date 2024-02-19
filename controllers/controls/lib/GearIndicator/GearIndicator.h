@@ -1,13 +1,16 @@
+#ifndef GEARINDICATOR_H
+#define GEARINDICATOR_H
 #include <Arduino.h>
 #include <GearConstants.h>
-#include <Transport.h>
+#include <AbstractTransport.h>
 
 class GearIndicator{
     public:
-        Transport _transport;
-        GearIndicator(Transport transport);
+        AbstractTransport* _transport;
+        GearIndicator(AbstractTransport* transport);
         boolean initialize();
         int getValidatedGearPosition();
         void indicateGearPosition(int gear);
         void reset();
 };
+#endif

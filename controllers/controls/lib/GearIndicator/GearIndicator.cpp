@@ -1,8 +1,9 @@
 #include <GearIndicator.h>
+#include <SPI.h>
 
 int validatedGear = PARKING;
 
-GearIndicator::GearIndicator(Transport transport){
+GearIndicator::GearIndicator(AbstractTransport* transport){
     _transport = transport;
 }
 
@@ -23,7 +24,7 @@ boolean GearIndicator::initialize(){
 }
 
 int GearIndicator::getValidatedGearPosition(){
-    int gear = _transport.pullValidatedGear();
+    int gear = _transport->pullValidatedGear();
     if(gear == PARKING || gear == REVERSE || gear == NEUTRAL || gear == DRIVE){
         validatedGear = gear;
     }
