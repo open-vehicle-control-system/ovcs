@@ -9,23 +9,13 @@ defmodule Cantastic.Application do
 
   @impl true
   def start(_type, _args) do
-    can_network_specs = Application.get_env(:cantastic, :can_networks) |> String.split(",", trim: true)
-    manual_setup      = Application.get_env(:cantastic, :manual_setup)
-    config            = can_config()
-
-    interface_childen = Interface.configure_children(can_network_specs, manual_setup, config)
-
-    children = [] ++ interface_childen
+    opts = [strategy: :one_for_one, name: Cantastic.ConfigurationSupervisor]
+    Supervisor.start_link([{Cantastic.ConfigurationStore, []}], opts)
+    IO.inspect "*******"
+    children = Interface.configure_children()
     # See https://hexdocs.pm/elixir/Supervisor.html
     # for other strategies and supported options
-    opts = [strategy: :one_for_one, name: Cantastic.Supervisor]
+    opts = [strategy: :one_for_one, name: Cantastic.InterfaceSupervisor]
     Supervisor.start_link(children, opts)
-  end
-
-  defp can_config() do
-    opt_app              = Application.get_env(:cantastic, :otp_app)
-    priv_can_config_path = Application.get_env(:cantastic, :priv_can_config_path)
-    config_path          = Path.join(:code.priv_dir(opt_app), priv_can_config_path)
-    Jason.decode!(File.read!(config_path))
   end
 end

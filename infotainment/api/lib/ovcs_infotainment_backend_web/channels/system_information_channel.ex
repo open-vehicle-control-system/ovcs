@@ -2,7 +2,7 @@ defmodule InfotainmentApiWeb.SystemInformationChannel do
   use Phoenix.Channel
   require Logger
 
-  alias InfotainmentApi.SystemInformationManager
+  alias InfotainmentCore.SystemInformationManager
 
   intercept ["update"]
 

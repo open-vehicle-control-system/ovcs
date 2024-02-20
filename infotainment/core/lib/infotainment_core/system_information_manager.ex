@@ -1,4 +1,4 @@
-defmodule InfotainmentApi.SystemInformationManager do
+defmodule InfotainmentCore.SystemInformationManager do
   use GenServer
   require Logger
 

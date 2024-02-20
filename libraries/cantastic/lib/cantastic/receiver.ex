@@ -1,6 +1,6 @@
 defmodule Cantastic.Receiver do
   use GenServer
-  alias Cantastic.{Signal, CompiledFrameSpec, Frame, Interface}
+  alias Cantastic.{Signal, CompiledFrameSpec, Frame, Interface, ConfigurationStore}
   require Logger
 
   def start_link([process_name | args_tail] = _args) do
@@ -54,6 +54,10 @@ defmodule Cantastic.Receiver do
 
   @impl true
   def handle_cast({:subscribe, frame_handler, frame_names}, state) do
+    frame_names = case frame_names do
+      "*"   -> frame_names(state)
+      [_|_] -> frame_names
+    end
     state = frame_names |> Enum.reduce(state, fn(frame_name, new_state) ->
       {:ok, compiled_frame_spec} = find_compiled_frame_spec_by_name(state.compiled_received_frame_specs, frame_name)
       frame_handlers = [frame_handler | compiled_frame_spec.frame_handlers]
@@ -81,8 +85,20 @@ defmodule Cantastic.Receiver do
     Process.send_after(self(), :receive_frame, 0)
   end
 
+  def subscribe(frame_handler) do
+    ConfigurationStore.networks()|> Enum.each(fn (network) ->
+      receiver =  Interface.receiver_process_name(network.network_name)
+      GenServer.cast(receiver, {:subscribe, frame_handler, "*"})
+    end)
+  end
   def subscribe(frame_handler, network_name, frame_names) do
     receiver =  Interface.receiver_process_name(network_name)
     GenServer.cast(receiver, {:subscribe, frame_handler, frame_names})
+  end
+
+  def frame_names(state) do
+    state.compiled_received_frame_specs |> Enum.map(fn({_frame_id, compiled_frame_spec}) ->
+      compiled_frame_spec.name
+    end)
   end
 end

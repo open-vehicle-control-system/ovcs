@@ -7,7 +7,6 @@ defmodule InfotainmentApi.Application do
 
   @impl true
   def start(_type, _args) do
-    vehicle_config = vehicle_config()
     children = [
       InfotainmentApiWeb.Telemetry,
       InfotainmentApi.Repo,
@@ -20,22 +19,13 @@ defmodule InfotainmentApi.Application do
       # {InfotainmentApi.Worker, arg},
       # Start to serve requests, typically the last entry
       InfotainmentApiWeb.Endpoint,
-      {InfotainmentApi.VehicleStateManager, [vehicle_config]},
-      {InfotainmentApi.SystemInformationManager, []},
+      {InfotainmentApi.SignalDispatcher, []}
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html
     # for other strategies and supported options
     opts = [strategy: :one_for_one, name: InfotainmentApi.Supervisor]
-    supervisor = Supervisor.start_link(children, opts)
-    Application.ensure_all_started(:cantastic)
-    supervisor
-  end
-
-  defp vehicle_config() do
-    vehicle = Application.get_env(:infotainment_api, :vehicle)
-    config_path =  Path.join(:code.priv_dir(:infotainment_api), "vehicles/#{vehicle}.json")
-    Jason.decode!(File.read!(config_path))
+    Supervisor.start_link(children, opts)
   end
 
   # Tell Phoenix to update the endpoint configuration

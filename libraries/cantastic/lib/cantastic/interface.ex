@@ -1,16 +1,13 @@
 defmodule Cantastic.Interface do
-  alias Cantastic.{Util, CompiledFrameSpec, Receiver, Emitter}
+  alias Cantastic.{Util, CompiledFrameSpec, Receiver, Emitter, ConfigurationStore}
   require Logger
 
-  def configure_children(can_network_specs, manual_setup, config) do
-    interface_specs = Enum.map(can_network_specs, fn (can_network_spec) ->
-      [network_name, interface] = can_network_spec |> String.split(":")
-      network_config            = config["canNetworks"][network_name]
-      bitrate                   = network_config["bitrate"]
-      {:ok, socket}             = initialize_socket(interface, bitrate, manual_setup)
+  def configure_children() do
+    interface_specs = ConfigurationStore.networks() |> Enum.map(fn (network) ->
+      {:ok, socket} = initialize_socket(network.interface, network.bitrate, ConfigurationStore.manual_setup())
       %{
-        network_name: network_name,
-        network_config: network_config,
+        network_name: network.network_name,
+        network_config: network.network_config,
         socket: socket
       }
     end)

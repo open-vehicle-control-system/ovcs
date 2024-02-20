@@ -5,7 +5,6 @@ defmodule VmsCore.Application do
 
   @impl true
   def start(_type, _args) do
-    _vehicle_config = vehicle_config()
     children = [
       #VmsCore.Repo,
       #{Ecto.Migrator,
@@ -26,12 +25,6 @@ defmodule VmsCore.Application do
 
     opts = [strategy: :one_for_one, name: VmsCore.Supervisor]
     Supervisor.start_link(children, opts)
-  end
-
-  defp vehicle_config() do
-    vehicle = Application.get_env(:vms_core, :vehicle)
-    config_path =  Path.join(:code.priv_dir(:vms_core), "vehicles/#{vehicle}.json")
-    Jason.decode!(File.read!(config_path))
   end
 
   defp skip_migrations?() do

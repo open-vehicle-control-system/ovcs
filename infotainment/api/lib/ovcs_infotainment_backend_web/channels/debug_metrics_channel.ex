@@ -2,7 +2,7 @@ defmodule InfotainmentApiWeb.DebugMetricsChannel do
   use Phoenix.Channel
   require Logger
 
-  alias InfotainmentApi.VehicleStateManager
+  alias InfotainmentCore.VehicleStateManager
 
   intercept ["update"]
 

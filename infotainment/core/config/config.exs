@@ -7,25 +7,25 @@
 # General application configuration
 import Config
 
-config :vms_core,
-  namespace: VmsCore,
-  ecto_repos: [VmsCore.Repo],
+config :infotainment_core,
+  namespace: InfotainmentCore,
+  ecto_repos: [InfotainmentCore.Repo],
   generators: [timestamp_type: :utc_datetime]
 
-config :vms_core, VmsCore.Repo,
-  database: Path.expand("../vms_core_dev.db", Path.dirname(__ENV__.file)),
+config :infotainment_core, InfotainmentCore.Repo,
+  database: Path.expand("../infotainment_core_dev.db", Path.dirname(__ENV__.file)),
   pool_size: 5,
   stacktrace: true,
   show_sensitive_data_on_connection_error: true
 
 vehicle = System.get_env("VEHICLE") || "polo-2007-bluemotion-leaf-em57"
 
-config :vms_core, :vehicle, vehicle
+config :infotainment_core, :vehicle, vehicle
 
 config :cantastic,
   can_networks: (System.get_env("CAN_NETWORKS") || "drive:vcan0,confort:vcan1"),
   manual_setup: (System.get_env("MANUAL_SETUP") == "true" || false),
-  otp_app: :vms_core,
+  otp_app: :infotainment_core,
   priv_can_config_path: "vehicles/#{vehicle}.json"
 
 
