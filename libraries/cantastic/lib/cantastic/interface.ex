@@ -21,7 +21,7 @@ defmodule Cantastic.Interface do
     interface_specs
     |> Enum.map(fn (%{network_name: network_name, network_config: network_config, socket: socket}) ->
       process_name                  = receiver_process_name(network_name)
-      compiled_received_frame_specs = compile_frame_specs(network_config["receivedFrames"], network_name)
+      compiled_received_frame_specs = compile_frame_specs((network_config[:received_frames] || %{}), network_name)
       Supervisor.child_spec({Receiver, [process_name, network_name, socket, compiled_received_frame_specs]}, id: process_name)
     end)
   end
@@ -29,7 +29,7 @@ defmodule Cantastic.Interface do
   def configure_emitters(interface_specs) do
     interface_specs
     |> Enum.map(fn (%{network_name: network_name, network_config: network_config, socket: socket}) ->
-      (network_config["emittedFrames"] || %{})
+      (network_config[:emitted_frames] || %{})
       |> compile_frame_specs(network_name)
       |> Enum.map(fn({_frame_id, compiled_frame_spec}) ->
         arguments = %{
@@ -50,10 +50,13 @@ defmodule Cantastic.Interface do
   end
 
   def receiver_process_name(network_name) do
+    network_name = network_name |> Atom.to_string()
     "Cantastic#{network_name |> String.capitalize()}Receiver" |> String.to_atom
   end
 
   def emitter_process_name(network_name, frame_name) do
+    network_name = network_name |> Atom.to_string()
+    frame_name   = frame_name |> Atom.to_string()
     "Cantastic#{network_name |> String.capitalize()}#{frame_name |> String.capitalize()}Emitter" |> String.to_atom
   end
 

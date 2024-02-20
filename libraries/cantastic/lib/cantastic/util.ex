@@ -78,8 +78,8 @@ defmodule Cantastic.Util do
     |> String.pad_leading(2, "0")
   end
 
-  def hex_to_integer(hex, size \\ 16) do
-    {int, _} = Integer.parse(hex, size)
+  def string_to_integer(string) do
+    {int, _} = Integer.parse(string)
     int
   end
 
@@ -89,5 +89,10 @@ defmodule Cantastic.Util do
 
   def integer_to_bin_little(integer, size \\ 16) do
     <<integer::little-integer-size(size)>>
+  end
+
+  def unsigned_integer_to_bin_big(nil), do: nil
+  def unsigned_integer_to_bin_big(integer) do
+    :binary.encode_unsigned(integer)
   end
 end

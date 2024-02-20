@@ -18,14 +18,14 @@ defmodule Cantastic.CompiledFrameSpec do
   ]
 
   def from_frame_spec(network_name, name, frame_spec) do
-    frame_id            = frame_spec["id"] |> Util.hex_to_integer
-    signal_specs        = frame_spec["signals"] || []
+    frame_id            = frame_spec.id
+    signal_specs        = frame_spec[:signals] || []
     compiled_frame_spec = %Cantastic.CompiledFrameSpec{
       id: frame_id,
       name: name,
       network_name: network_name,
-      frequency: frame_spec["frequency"],
-      validate_frequency: frame_spec["validateFrequency"] || false,
+      frequency: frame_spec[:frequency],
+      validate_frequency: frame_spec[:validate_frequency] || false,
       compiled_signal_specs: compile_signal_specs(frame_id, name, signal_specs),
       frame_handlers: []
     }

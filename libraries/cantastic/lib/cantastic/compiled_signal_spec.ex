@@ -21,21 +21,21 @@ defmodule Cantastic.CompiledSignalSpec do
 
   def from_signal_spec(frame_id, frame_name, signal_spec) do
     compiled_signal_spec = %Cantastic.CompiledSignalSpec{
-      name: signal_spec["name"],
+      name: signal_spec.name,
       frame_id: frame_id,
       frame_name: frame_name,
-      kind: signal_spec["kind"] || "integer",
-      value_start: signal_spec["valueStart"] || 0,
-      value_length: signal_spec["valueLength"] || 1,
-      endianness: signal_spec["endianness"] || "little",
-      mapping: compile_mapping(signal_spec["mapping"]),
-      reverse_mapping: compile_reverse_mapping(signal_spec["mapping"]),
-      unit: signal_spec["unit"],
-      origin: signal_spec["origin"],
-      scale: (signal_spec["scale"] || 1) + 0.0,
-      offset: signal_spec["offset"] || 0,
-      decimals: signal_spec["decimals"] || 0,
-      value: signal_spec["value"] |> Util.hex_to_bin()
+      kind: signal_spec[:kind] || "integer",
+      value_start: signal_spec.value_start,
+      value_length: signal_spec.value_length,
+      endianness: signal_spec[:endianness] || "little",
+      mapping: compile_mapping(signal_spec[:mapping]),
+      reverse_mapping: compile_reverse_mapping(signal_spec[:mapping]),
+      unit: signal_spec[:unit],
+      origin: signal_spec[:origin],
+      scale: (signal_spec[:scale] || 1) + 0.0,
+      offset: signal_spec[:offset] || 0,
+      decimals: signal_spec[:decimals] || 0,
+      value: signal_spec[:value] |> Util.unsigned_integer_to_bin_big()
     }
     {:ok, compiled_signal_spec}
   end
@@ -61,17 +61,19 @@ defmodule Cantastic.CompiledSignalSpec do
 
   defp compile_mapping(nil), do: nil
   defp compile_mapping(mapping) do
-    mapping |> Map.keys() |> Enum.reduce(%{}, fn(hex_key, compiled_mapping) ->
-      key = Util.hex_to_integer(hex_key)
-      compiled_mapping |> Map.put(key, mapping[hex_key])
+    mapping |> Map.keys() |> Enum.reduce(%{}, fn(atom_key, compiled_mapping) ->
+      string_key = atom_key |> Atom.to_string()
+      key = Util.string_to_integer(string_key)
+      compiled_mapping |> Map.put(key, mapping[atom_key])
     end)
   end
 
   defp compile_reverse_mapping(nil), do: nil
   defp compile_reverse_mapping(mapping) do
-    mapping |> Map.keys() |> Enum.reduce(%{}, fn(hex_value, compiled_mapping) ->
-      value = Util.hex_to_bin(hex_value)
-      compiled_mapping |> Map.put(mapping[hex_value], value)
+    mapping |> Map.keys() |> Enum.reduce(%{}, fn(atom_value, compiled_mapping) ->
+      string_value = atom_value |> Atom.to_string()
+      value =  string_value |> Util.string_to_integer() |> Util.unsigned_integer_to_bin_big()
+      compiled_mapping |> Map.put(mapping[atom_value], value)
     end)
   end
 end

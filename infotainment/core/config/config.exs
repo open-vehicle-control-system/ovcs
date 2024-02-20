@@ -26,11 +26,11 @@ config :cantastic,
   can_networks: (System.get_env("CAN_NETWORKS") || "drive:vcan0,confort:vcan1"),
   manual_setup: (System.get_env("MANUAL_SETUP") == "true" || false),
   otp_app: :infotainment_core,
-  priv_can_config_path: "vehicles/#{vehicle}.json"
+  priv_can_config_path: "vehicles/#{vehicle}.yml"
 
 
 # Configures Elixir's Logger
 config :logger, :console,
   format: "$time $metadata[$level] $message\n",
   metadata: [:request_id],
-  level: :info
+  level: :debug
