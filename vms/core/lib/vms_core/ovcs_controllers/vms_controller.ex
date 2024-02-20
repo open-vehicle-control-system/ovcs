@@ -3,11 +3,11 @@ defmodule VmsCore.OvcsControllers.VmsController do
 
   alias Cantastic.Emitter
 
-  @network_name "drive"
+  @network_name :drive
 
-  @frame_name "vmsRelaysStatusRequest"
+  @frame_name "vms_relays_status_request"
 
-  @inverter_relay "inverterRelayEnabled"
+  @inverter_relay "inverter_relay_enabled"
 
 
   @impl true

@@ -2,10 +2,10 @@ defmodule VmsCore.OvcsControllers.CarControlsController do
   use GenServer
   alias Cantastic.{Frame, Emitter}
 
-  @network_name "drive"
-  @calibration_frame_name "carControlsCalibrationModeRequest"
-  @car_controls_status_frame_name "carControlsStatus"
-  @calibration_mode "calibrationModeEnabled"
+  @network_name :drive
+  @calibration_frame_name "car_controls_calibration_mode_request"
+  @car_controls_status_frame_name "car_controls_status"
+  @calibration_mode "calibration_mode_enabled"
 
   def start_link(_) do
     GenServer.start_link(__MODULE__, nil, name: __MODULE__)
@@ -13,7 +13,7 @@ defmodule VmsCore.OvcsControllers.CarControlsController do
 
   @impl true
   def init(_) do
-    Cantastic.Receiver.subscribe(self(), @network_name, ["carControlsStatus"])
+    Cantastic.Receiver.subscribe(self(), @network_name, ["car_controls_status"])
     {:ok, %{
       throttle: 0
       }

@@ -17,16 +17,15 @@ defmodule Cantastic.CompiledFrameSpec do
     :frame_handlers
   ]
 
-  def from_frame_spec(network_name, name, frame_spec) do
-    frame_id            = frame_spec.id
+  def from_frame_spec(network_name, frame_spec) do
     signal_specs        = frame_spec[:signals] || []
     compiled_frame_spec = %Cantastic.CompiledFrameSpec{
-      id: frame_id,
-      name: name,
+      id: frame_spec.id,
+      name: frame_spec.name,
       network_name: network_name,
       frequency: frame_spec[:frequency],
       validate_frequency: frame_spec[:validate_frequency] || false,
-      compiled_signal_specs: compile_signal_specs(frame_id, name, signal_specs),
+      compiled_signal_specs: compile_signal_specs(frame_spec.id, frame_spec.name, signal_specs),
       frame_handlers: []
     }
     {:ok, compiled_frame_spec}

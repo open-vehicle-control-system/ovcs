@@ -2,9 +2,9 @@ defmodule VmsCore.VwPolo.IgnitionLock do
   use GenServer
   alias Cantastic.Frame
 
-  @network_name "drive"
+  @network_name :drive
 
-  @key_status_frame_name "keyStatus"
+  @key_status_frame_name "key_status"
 
   @impl true
   def init(_) do

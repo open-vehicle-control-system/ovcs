@@ -3,12 +3,12 @@ defmodule VmsCore.OvcsControllers.ContactorsController do
 
   alias Cantastic.Emitter
 
-  @network_name "drive"
-  @frame_name "contactorsStatusRequest"
+  @network_name :drive
+  @frame_name "contactors_status_request"
 
-  @main_negative_contactor "mainNegativeContactorEnabled"
-  @main_positive_contactor "mainPositiveContactorEnabled"
-  @precharge_contactor "prechargeContactorEnabled"
+  @main_negative_contactor "main_negative_contactor_enabled"
+  @main_positive_contactor "main_positive_contactor_enabled"
+  @precharge_contactor "precharge_contactor_enabled"
 
   @precharge_delay 5000
   @relay_operating_delay 50
