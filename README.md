@@ -37,9 +37,9 @@ OVCS is provided as is an without any warranty. Use it at your own risk. It is n
 
 ## Deploy
 
-* Run `./build.sh` to build the firmware then, either:
-    * run `./burn.sh` to burn a sd card
-    * run `./upload_over_usb.sh` to update an existing Raspberry connected to your host over USB 
+* Run `./ovcs-cli build [vms|infotainment]` to build the firmwares, then either:
+    * `./ovcs-cli burn [vms|infotainment]` to burn the firmwares on a SD card
+    * `./ovcs-cli upload [vms|infotainment] [optional: host|ip address]` to upload the firmwares on the target
 
 ## Elixir x libsocketcan binding ([Source](https://elixirforum.com/t/erlang-socket-module-for-socketcan-on-nerves-device/57294))
 

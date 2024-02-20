@@ -1,0 +1,32 @@
+#!/bin/bash
+set -e
+
+ACTION=$1
+COMPONENT="$2"
+BASEDIR=$(dirname $0)
+shift
+shift
+
+if [ -z "$ACTION" ]; then
+    echo "Missing argument: [action], you should specify it as first argument:"
+    echo
+    echo "$ ./ovcs-cli [build|burn|upload] [component name] [action extra arguments]"
+    echo
+    echo "For example: "
+    echo "$ ./ovcs-cli upload vms 192.168.1.42"
+    echo
+    exit 1
+fi
+
+if [ -z "$COMPONENT" ]; then
+    echo "Missing argument: [action], you should specify it as first argument:"
+    echo
+    echo "$ ./ovcs-cli [build|burn|upload] [component name] [action extra arguments]"
+    echo
+    echo "For example: "
+    echo "$ ./ovcs-cli upload vms 192.168.1.42"
+    echo
+    exit 1
+fi
+
+$BASEDIR/scripts/$ACTION.sh $COMPONENT "$@"

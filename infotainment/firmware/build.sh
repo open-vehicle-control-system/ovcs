@@ -1,8 +1,11 @@
 #!/bin/sh
 export MIX_TARGET=ovcs_infotainment_system_rpi4
-cd ./ovcs_infotainment_frontend
+BASEDIR=$(dirname $0)
+
+cd $BASEDIR/../dashboard
 npm install
 npm run build
-cd ../ovcs_infotainment_firmware
+cd ../firmware
+pwd
 mix deps.get
 mix firmware

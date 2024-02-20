@@ -16,6 +16,6 @@ export default defineConfig({
     }
   },
   build: {
-    outDir: "../ovcs_infotainment_backend/priv/static/"
+    outDir: "../api/priv/static/"
   }
 })

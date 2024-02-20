@@ -11,7 +11,6 @@ defmodule Cantastic.Application do
   def start(_type, _args) do
     opts = [strategy: :one_for_one, name: Cantastic.ConfigurationSupervisor]
     Supervisor.start_link([{Cantastic.ConfigurationStore, []}], opts)
-    IO.inspect "*******"
     children = Interface.configure_children()
     # See https://hexdocs.pm/elixir/Supervisor.html
     # for other strategies and supported options

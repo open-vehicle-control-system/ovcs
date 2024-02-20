@@ -47,7 +47,7 @@ defmodule OvcsInfotainmentFirmware.MixProject do
       {:plug_cowboy, "~> 2.0"},
       {:nerves_cog, github: "coop/nerves_cog"},
       {:nerves_weston, github: "Spin42/nerves_weston"},
-      {:infotainment_api, path: "../infotainment_api", targets: @all_targets, env: Mix.env()},
+      {:infotainment_api, path: "../api", targets: @all_targets, env: Mix.env()},
 
       # Dependencies for specific targets
       # NOTE: It's generally low risk and recommended to follow minor version
@@ -56,7 +56,7 @@ defmodule OvcsInfotainmentFirmware.MixProject do
       # changes to your application are needed.
       {
         :ovcs_infotainment_system_rpi4,
-        path: "../../ovcs_infotainment_system_rpi4",
+        path: "../../../ovcs_infotainment_system_rpi4",
         runtime: false,
         targets: :ovcs_infotainment_system_rpi4,
         nerves: [compile: true]

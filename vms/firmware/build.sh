@@ -1,5 +1,7 @@
-#!/bin/sh
+#!/bin/bash
 export MIX_TARGET=ovcs_vms_system_rpi4
-cd ./vms/firmware
+BASEDIR=$(dirname $0)
+
+cd $BASEDIR
 mix deps.get
 mix firmware
