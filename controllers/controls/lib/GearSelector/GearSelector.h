@@ -7,5 +7,6 @@ class GearSelector{
     public:
         boolean initialize();
         int getGearPosition();
+        void setGearPosition(int position);
 };
 #endif
