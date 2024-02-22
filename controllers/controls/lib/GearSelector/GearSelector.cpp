@@ -28,7 +28,3 @@ int GearSelector::getGearPosition(){
     }
     return selectedGear;
 }
-
-void GearSelector::setGearPosition(int position){
-    selectedGear = position;
-}

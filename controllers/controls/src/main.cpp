@@ -44,8 +44,5 @@ void loop() {
     transport.sendFrame(MAX_ANALOG_READ_VALUE, throttlePedalReadings.pin_1, throttlePedalReadings.pin_2, selectedGear);
     
     int validatedGear = gearIndicator.getValidatedGearPosition(); // Get ECU validated gear
-    if(validatedGear != selectedGear){
-        gearSelector.setGearPosition(validatedGear);
-    }
     gearIndicator.indicateGearPosition(validatedGear); // Light validated gear indicator
 }
