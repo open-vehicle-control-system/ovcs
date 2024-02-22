@@ -5,13 +5,10 @@ defmodule Cantastic.Application do
 
   @impl true
   def start(_type, _args) do
-    with {:ok, _pid} <- start_configuration()
-    do
-      start_interfaces()
-    else
+    case start_configuration() do
+      {:ok, _pid} -> start_interfaces()
       {:error, error} -> {:error, error}
     end
-
   end
 
   defp start_configuration() do

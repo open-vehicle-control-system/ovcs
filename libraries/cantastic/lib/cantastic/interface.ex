@@ -4,7 +4,7 @@ defmodule Cantastic.Interface do
 
   def configure_children() do
     interface_specs = ConfigurationStore.networks() |> Enum.map(fn (network) ->
-      {:ok, socket} = initialize_socket(network.interface, network.bitrate, ConfigurationStore.manual_setup())
+      {:ok, socket} = initialize_socket(network.interface, network.bitrate, ConfigurationStore.setup_can_interfaces())
       %{
         network_name: network.network_name,
         network_config: network.network_config,
@@ -44,8 +44,8 @@ defmodule Cantastic.Interface do
     |> List.flatten
   end
 
-  def initialize_socket(interface, bitrate, manual_setup) do
-    :ok           = Util.setup_can_interface(interface, bitrate, manual_setup)
+  def initialize_socket(interface, bitrate, setup_can_interfaces) do
+    :ok           = Util.setup_can_interface(interface, bitrate, setup_can_interfaces)
     Util.bind_socket(interface)
   end
 

@@ -24,7 +24,7 @@ config :infotainment_core, :vehicle, vehicle
 
 config :cantastic,
   can_networks: (System.get_env("CAN_NETWORKS") || "drive:vcan0,confort:vcan1"),
-  manual_setup: (System.get_env("MANUAL_SETUP") == "true" || false),
+  setup_can_interfaces: (System.get_env("SETUP_CAN_INTERFACES") == "true" || false),
   otp_app: :infotainment_core,
   priv_can_config_path: "vehicles/#{vehicle}.yml"
 

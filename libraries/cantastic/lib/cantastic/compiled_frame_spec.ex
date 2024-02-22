@@ -1,5 +1,5 @@
 defmodule Cantastic.CompiledFrameSpec do
-  alias Cantastic.{Util, CompiledSignalSpec}
+  alias Cantastic.CompiledSignalSpec
   @behaviour Access
 
   defdelegate fetch(term, key), to: Map

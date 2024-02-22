@@ -5,7 +5,7 @@ defmodule Cantastic.ConfigurationStore do
     networks = compute_networks()
     state = %{
       networks: networks,
-      manual_setup: compute_manual_setup()
+      setup_can_interfaces: Application.get_env(:cantastic, :setup_can_interfaces)
     }
     Agent.start_link(fn -> state end, name: __MODULE__)
   end
@@ -24,9 +24,9 @@ defmodule Cantastic.ConfigurationStore do
     end)
   end
 
-  def manual_setup() do
+  def setup_can_interfaces() do
     Agent.get(__MODULE__, fn(state) ->
-      state.manual_setup
+      state.setup_can_interfaces
     end)
   end
 
@@ -37,7 +37,7 @@ defmodule Cantastic.ConfigurationStore do
     with {:ok, config}  <- YamlElixir.read_from_file(config_path, atoms: true),
          {:ok, encoded} <- Jason.encode(config)
     do
-      IO.inspect encoded |> Jason.decode(keys: :atoms)
+      encoded |> Jason.decode(keys: :atoms)
     else
       {:error, error} -> {:error, error}
     end
@@ -58,9 +58,5 @@ defmodule Cantastic.ConfigurationStore do
         bitrate: bitrate
       }
     end)
-  end
-
-  defp compute_manual_setup() do
-    Application.get_env(:cantastic, :manual_setup)
   end
 end
