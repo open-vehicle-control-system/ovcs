@@ -1,8 +1,8 @@
-#ifndef TRANSPORT_H
-#define TRANSPORT_H
+#ifndef OVCSMCP2515_H
+#define OVCSMCP2515_H
 #include <AbstractTransport.h>
 
-class Transport : public AbstractTransport{
+class OvcsMcp2515 : public AbstractTransport{
     public:
         boolean initialize();
         void sendFrame(int maxAnalogReadValue, int throttleValue1, int throttleValue2, int selectedGear);
