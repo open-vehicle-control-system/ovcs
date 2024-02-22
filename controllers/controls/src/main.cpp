@@ -2,7 +2,7 @@
 #include <DebugLog.h>
 #include <GearSelector.h>
 #include <GearIndicator.h>
-#include <OvcsMcp2515.h>
+#include <ControlsMcp2515.h>
 #include <ThrottlePedal.h>
 
 #define DEBUGLOG_DEFAULT_LOG_LEVEL_TRACE
@@ -13,7 +13,7 @@
 boolean initialized = false;
 int status = STATUS_NOT_INITIALIZED;
 
-OvcsMcp2515 transport       = OvcsMcp2515();
+ControlsMcp2515 transport   = ControlsMcp2515();
 GearSelector gearSelector   = GearSelector();
 GearIndicator gearIndicator = GearIndicator(&transport);
 ThrottlePedal throttlePedal = ThrottlePedal();

@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #include <SPI.h>
 #include <mcp2515.h>
-#include <OvcsMcp2515.h>
+#include <ControlsMcp2515.h>
 
 #define KEEP_ALIVE_CAN_MESSAGE_FREQUENCY_MS 10
 #define KEEP_ALIVE_CAN_MESSAGE_ID 0x300
@@ -22,14 +22,14 @@ can_frame receivedCanMessage;
 
 MCP2515 OVCS_CAN(CAN_PIN);
 
-boolean OvcsMcp2515::initialize(){
+boolean ControlsMcp2515::initialize(){
   OVCS_CAN.reset();
   OVCS_CAN.setBitrate(CAN_SPEED, CAN_FREQUENCY);
   OVCS_CAN.setNormalMode();
   return !OVCS_CAN.checkError();
 }
 
-void OvcsMcp2515::sendFrame(int maxAnalogReadValue, int throttleValue1, int throttleValue2, int selectedGear){
+void ControlsMcp2515::sendFrame(int maxAnalogReadValue, int throttleValue1, int throttleValue2, int selectedGear){
   now = millis();
   if(throttleSendingTimestamp + THROTTLE_CAN_MESSAGE_FREQUENCY_MS <= now){
     throttleSendingTimestamp = now;
@@ -46,7 +46,7 @@ void OvcsMcp2515::sendFrame(int maxAnalogReadValue, int throttleValue1, int thro
   }
 }
 
-void OvcsMcp2515::sendKeepAlive(int status){
+void ControlsMcp2515::sendKeepAlive(int status){
   now = millis();
   if(keepEliveSendingTimestamp + KEEP_ALIVE_CAN_MESSAGE_FREQUENCY_MS <= now){
     keepEliveSendingTimestamp = now;
@@ -57,7 +57,7 @@ void OvcsMcp2515::sendKeepAlive(int status){
   }
 }
 
-int OvcsMcp2515::pullValidatedGear(){
+int ControlsMcp2515::pullValidatedGear(){
   if(OVCS_CAN.readMessage(&receivedCanMessage) == MCP2515::ERROR_OK){
     if(receivedCanMessage.can_id == GEAR_CAN_MESSAGE_ID){
       return receivedCanMessage.data[0];
