@@ -23,6 +23,8 @@ defmodule Cantastic.Receiver do
   def handle_info(:receive_frame, state) do
     {:ok, frame} = receive_one_frame(state.network_name, state.socket)
     frame_specification = (state.frame_specifications[frame.id] || %FrameSpecification{})
+    IO.inspect frame_specification
+    IO.inspect frame
     signals = (frame_specification.signal_specifications || []) |> Enum.map(fn(signal_specification) ->
       {:ok, signal} =  Signal.from_frame_for_specification(frame, signal_specification)
       signal

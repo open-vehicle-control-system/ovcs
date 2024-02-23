@@ -26,17 +26,21 @@ defmodule Cantastic.Signal do
     head_length         = signal_specification.value_start
     value_length        = signal_specification.value_length
     tail_length         = raw_data_bit_length - head_length - value_length
-    number = case signal_specification.endianness do
-      "little" ->
-        <<_head::size(head_length), val::little-integer-size(value_length), _tail::size(tail_length)>> = raw_data
-        val
-      "big"    ->
-        <<_head::size(head_length), val::big-integer-size(value_length), _tail::size(tail_length)>> = raw_data
-        val
-    end
+
     value = case signal_specification.kind do
-      "integer" -> Float.round((number * signal_specification.scale) + signal_specification.offset, signal_specification.decimals)
-      _        -> signal_specification.mapping[number]
+      "integer" ->
+        number = case signal_specification.endianness do
+          "little" ->
+            <<_head::size(head_length), val::little-integer-size(value_length), _tail::size(tail_length)>> = raw_data
+            val
+          "big"    ->
+            <<_head::size(head_length), val::big-integer-size(value_length), _tail::size(tail_length)>> = raw_data
+            val
+        end
+        Float.round((number * signal_specification.scale) + signal_specification.offset, signal_specification.decimals)
+      _ ->
+        val = <<_head::size(head_length), val::binary-size(value_length), _tail::size(tail_length)>> = raw_data
+        signal_specification.mapping[val]
     end
     {:ok, %{signal | value: value}}
   end
