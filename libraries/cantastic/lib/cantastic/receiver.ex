@@ -8,13 +8,13 @@ defmodule Cantastic.Receiver do
   end
 
   @impl true
-  def init([network_name, socket, compiled_received_frame_specs]) do
+  def init([network_name, socket, frame_specifications]) do
     receive_frame()
     {:ok,
       %{
         network_name: network_name,
         socket: socket,
-        compiled_received_frame_specs: compiled_received_frame_specs
+        frame_specifications: frame_specifications
       }
     }
   end
@@ -22,7 +22,7 @@ defmodule Cantastic.Receiver do
   @impl true
   def handle_info(:receive_frame, state) do
     {:ok, frame} = receive_one_frame(state.network_name, state.socket)
-    frame_specification = (state.compiled_received_frame_specs[frame.id] || %FrameSpecification{})
+    frame_specification = (state.frame_specifications[frame.id] || %FrameSpecification{})
     signals = (frame_specification.signal_specifications || []) |> Enum.map(fn(signal_specification) ->
       {:ok, signal} =  Signal.from_frame_for_specification(frame, signal_specification)
       signal
@@ -59,15 +59,15 @@ defmodule Cantastic.Receiver do
       [_|_] -> frame_names
     end
     state = frame_names |> Enum.reduce(state, fn(frame_name, new_state) ->
-      {:ok, frame_specification} = find_frame_specification_by_name(state.compiled_received_frame_specs, frame_name)
+      {:ok, frame_specification} = find_frame_specification_by_name(state.frame_specifications, frame_name)
       frame_handlers = [frame_handler | frame_specification.frame_handlers]
-      put_in(new_state, [:compiled_received_frame_specs, frame_specification.id, :frame_handlers], frame_handlers)
+      put_in(new_state, [:frame_specifications, frame_specification.id, :frame_handlers], frame_handlers)
     end)
     {:noreply, state}
   end
 
-  def find_frame_specification_by_name(compiled_received_frame_specs, frame_name) do
-    {_frame_id, frame_specification} = compiled_received_frame_specs |> Enum.find(fn ({_frame_id, frame_specification}) ->
+  def find_frame_specification_by_name(frame_specifications, frame_name) do
+    {_frame_id, frame_specification} = frame_specifications |> Enum.find(fn ({_frame_id, frame_specification}) ->
       frame_specification.name == frame_name
     end)
     {:ok, frame_specification}
@@ -97,7 +97,7 @@ defmodule Cantastic.Receiver do
   end
 
   def frame_names(state) do
-    state.compiled_received_frame_specs |> Enum.map(fn({_frame_id, frame_specification}) ->
+    state.frame_specifications |> Enum.map(fn({_frame_id, frame_specification}) ->
       frame_specification.name
     end)
   end
