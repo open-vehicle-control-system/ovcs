@@ -20,22 +20,23 @@ defmodule Cantastic.SignalSpecification do
   ]
 
   def from_signal_specification(frame_id, frame_name, yaml_signal_specification) do
+    value_length         = yaml_signal_specification.value_length
     signal_specification = %Cantastic.SignalSpecification{
       name: yaml_signal_specification.name,
       frame_id: frame_id,
       frame_name: frame_name,
       kind: yaml_signal_specification[:kind] || "integer",
       value_start: yaml_signal_specification.value_start,
-      value_length: yaml_signal_specification.value_length,
+      value_length: value_length,
       endianness: yaml_signal_specification[:endianness] || "little",
-      mapping: compute_mapping(yaml_signal_specification[:mapping]),
-      reverse_mapping: compute_reverse_mapping(yaml_signal_specification[:mapping]),
+      mapping: compute_mapping(yaml_signal_specification[:mapping], value_length),
+      reverse_mapping: compute_reverse_mapping(yaml_signal_specification[:mapping], value_length),
       unit: yaml_signal_specification[:unit],
       origin: yaml_signal_specification[:origin],
       scale: (yaml_signal_specification[:scale] || 1) + 0.0,
       offset: yaml_signal_specification[:offset] || 0,
       decimals: yaml_signal_specification[:decimals] || 0,
-      value: yaml_signal_specification[:value] |> Util.unsigned_integer_to_bin_big()
+      value: yaml_signal_specification[:value] |> Util.integer_to_bin_big(value_length)
     }
     {:ok, signal_specification}
   end
@@ -59,20 +60,19 @@ defmodule Cantastic.SignalSpecification do
     end
   end
 
-  defp compute_mapping(nil), do: nil
-  defp compute_mapping(mapping) do
+  defp compute_mapping(nil, _value_length), do: nil
+  defp compute_mapping(mapping, value_length) do
     mapping |> Map.keys() |> Enum.reduce(%{}, fn(atom_key, computed_mapping) ->
-      string_key = atom_key |> Atom.to_string()
-      key        = Util.string_to_integer(string_key)
+      key = atom_key |> Atom.to_string() |> Util.string_to_integer() |>  Util.integer_to_bin_big(value_length)
       computed_mapping |> Map.put(key, mapping[atom_key])
     end)
   end
 
-  defp compute_reverse_mapping(nil), do: nil
-  defp compute_reverse_mapping(mapping) do
+  defp compute_reverse_mapping(nil, _value_length), do: nil
+  defp compute_reverse_mapping(mapping, value_length) do
     mapping |> Map.keys() |> Enum.reduce(%{}, fn(atom_value, computed_mapping) ->
       string_value = atom_value |> Atom.to_string()
-      value        = string_value |> Util.string_to_integer() |> Util.unsigned_integer_to_bin_big()
+      value        = string_value |> Util.string_to_integer() |> Util.integer_to_bin_big(value_length)
       computed_mapping |> Map.put(mapping[atom_value], value)
     end)
   end

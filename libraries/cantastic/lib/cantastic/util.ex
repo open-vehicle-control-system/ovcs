@@ -17,20 +17,22 @@ defmodule Cantastic.Util do
   end
 
   def string_to_integer(string) do
-    {int, _} = Integer.parse(string)
-    int
+    with padded   <- string |> String.pad_leading(2, "0"),
+         {int, _} <- padded |> Integer.parse()
+    do
+      int
+    else
+      :error -> {:error, "'#{string}' is not a valid integer"}
+    end
   end
 
-  def integer_to_bin_big(integer, size \\ 16) do
+  def integer_to_bin_big(integer, size \\ 16)
+  def integer_to_bin_big(nil, _size), do: nil
+  def integer_to_bin_big(integer, size) do
     <<integer::big-integer-size(size)>>
   end
 
   def integer_to_bin_little(integer, size \\ 16) do
     <<integer::little-integer-size(size)>>
-  end
-
-  def unsigned_integer_to_bin_big(nil), do: nil
-  def unsigned_integer_to_bin_big(integer) do
-    :binary.encode_unsigned(integer)
   end
 end
