@@ -11,12 +11,12 @@ defmodule VmsCore.Inverter do
   end
 
   def on() do
-    VmsCore.OvcsControllers.VmsController.switch_on_inverter_relay()
+    VmsCore.Controllers.VmsController.switch_on_inverter_relay()
     VmsCore.NissanLeaf.Em57.Inverter.on()
   end
 
   def off() do
-    VmsCore.OvcsControllers.VmsController.switch_off_inverter_relay()
+    VmsCore.Controllers.VmsController.switch_off_inverter_relay()
     VmsCore.NissanLeaf.Em57.Inverter.off()
   end
 

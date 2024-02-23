@@ -1,6 +1,6 @@
 defmodule VmsCore.BatteryManagementSystem do
   use GenServer
-  alias VmsCore.OvcsControllers.ContactorsController
+  alias VmsCore.Controllers.ContactorsController
 
   @impl true
   def init(_) do

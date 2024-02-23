@@ -1,7 +1,7 @@
 defmodule VmsCore.Vehicle do
   use GenServer
   require Logger
-  alias VmsCore.{Inverter, BatteryManagementSystem, IgnitionLock, OvcsControllers.CarControlsController}
+  alias VmsCore.{Inverter, BatteryManagementSystem, IgnitionLock, Controllers.ControlsController}
 
   @loop_sleep 5
 
@@ -24,7 +24,7 @@ defmodule VmsCore.Vehicle do
     end
 
     if (ready_to_drive?()) do
-      CarControlsController.throttle() |> Inverter.throttle()
+      ControlsController.throttle() |> Inverter.throttle()
     end
 
     {:noreply, state}
@@ -60,11 +60,11 @@ defmodule VmsCore.Vehicle do
   end
 
   def test_enable_calibration_mode() do
-    CarControlsController.enable_calibration_mode()
+    ControlsController.enable_calibration_mode()
   end
 
   def test_disable_calibration_mode() do
-    CarControlsController.disable_calibration_mode()
+    ControlsController.disable_calibration_mode()
   end
 
   def enable_debugger() do

@@ -1,11 +1,9 @@
-defmodule VmsCore.OvcsControllers.CarControlsController do
+defmodule VmsCore.Controllers.ControlsController do
   use GenServer
   alias Cantastic.{Frame, Emitter}
 
   @network_name :drive
-  @calibration_frame_name "car_controls_calibration_mode_request"
   @car_controls_status_frame_name "car_controls_status"
-  @calibration_mode "calibration_mode_enabled"
 
   def start_link(_) do
     GenServer.start_link(__MODULE__, nil, name: __MODULE__)
@@ -29,9 +27,7 @@ defmodule VmsCore.OvcsControllers.CarControlsController do
   end
 
   defp switch_calibration(enable) do
-    Emitter.update(@network_name, @calibration_frame_name, fn (state) ->
-      state |> put_in([:data, @calibration_mode], enable)
-    end)
+    #todo
   end
 
   @impl true

@@ -1,4 +1,4 @@
-defmodule VmsCore.OvcsControllers.ContactorsController do
+defmodule VmsCore.Controllers.ContactorsController do
   use GenServer
 
   alias Cantastic.Emitter
