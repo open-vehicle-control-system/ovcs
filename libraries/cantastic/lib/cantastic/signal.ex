@@ -39,7 +39,7 @@ defmodule Cantastic.Signal do
         end
         Float.round((number * signal_specification.scale) + signal_specification.offset, signal_specification.decimals)
       _ ->
-        val = <<_head::size(head_length), val::binary-size(value_length), _tail::size(tail_length)>> = raw_data
+        <<_head::size(head_length), val::bitstring-size(value_length), _tail::size(tail_length)>> = raw_data
         signal_specification.mapping[val]
     end
     {:ok, %{signal | value: value}}

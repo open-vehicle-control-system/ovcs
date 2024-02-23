@@ -20,7 +20,6 @@ defmodule VmsCore.VwPolo.IgnitionLock do
 
   @impl true
   def handle_info({:handle_frame,  %Frame{name: @key_status_frame_name}, [key_status_signal]}, state) do
-    IO.inspect key_status_signal
     key_status = key_status_signal.value
     {:noreply, %{state | key_status: key_status}}
   end
