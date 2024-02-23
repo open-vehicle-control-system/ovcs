@@ -46,8 +46,8 @@ defmodule Cantastic.ConfigurationStore do
   defp compute_networks() do
     raw_can_network_specifications = Application.get_env(:cantastic, :can_networks) |> String.split(",", trim: true)
     {:ok, config}                  = compute_can_configuration()
-    Enum.map(raw_can_network_specifications, fn (raw_can_network_spec) ->
-      [network_name, interface] = raw_can_network_spec |> String.split(":")
+    Enum.map(raw_can_network_specifications, fn (raw_can_network_specification) ->
+      [network_name, interface] = raw_can_network_specification |> String.split(":")
       network_name              = network_name |> String.to_atom()
       network_config            = config.can_networks[network_name]
       bitrate                   = network_config.bitrate

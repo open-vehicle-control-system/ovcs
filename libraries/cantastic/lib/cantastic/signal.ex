@@ -12,21 +12,21 @@ defmodule Cantastic.Signal do
     "[Signal] #{signal.frame_name}.#{signal.name} = #{signal.value}"
   end
 
-  def from_frame_for_compiled_spec(frame, compiled_signal_spec) do
+  def from_frame_for_specification(frame, signal_specification) do
     signal = %Cantastic.Signal{
-      name: compiled_signal_spec.name,
-      frame_name: compiled_signal_spec.frame_name,
-      kind: compiled_signal_spec.kind,
-      unit: compiled_signal_spec.unit,
-      origin: compiled_signal_spec.origin,
+      name: signal_specification.name,
+      frame_name: signal_specification.frame_name,
+      kind: signal_specification.kind,
+      unit: signal_specification.unit,
+      origin: signal_specification.origin,
       value: nil
     }
     raw_data            = frame.raw_data
     raw_data_bit_length = frame.data_length * 8
-    head_length         = compiled_signal_spec.value_start
-    value_length        = compiled_signal_spec.value_length
+    head_length         = signal_specification.value_start
+    value_length        = signal_specification.value_length
     tail_length         = raw_data_bit_length - head_length - value_length
-    number = case compiled_signal_spec.endianness do
+    number = case signal_specification.endianness do
       "little" ->
         <<_head::size(head_length), val::little-integer-size(value_length), _tail::size(tail_length)>> = raw_data
         val
@@ -34,9 +34,9 @@ defmodule Cantastic.Signal do
         <<_head::size(head_length), val::big-integer-size(value_length), _tail::size(tail_length)>> = raw_data
         val
     end
-    value = case compiled_signal_spec.kind do
-      "integer" -> Float.round((number * compiled_signal_spec.scale) + compiled_signal_spec.offset, compiled_signal_spec.decimals)
-      _        -> compiled_signal_spec.mapping[number]
+    value = case signal_specification.kind do
+      "integer" -> Float.round((number * signal_specification.scale) + signal_specification.offset, signal_specification.decimals)
+      _        -> signal_specification.mapping[number]
     end
     {:ok, %{signal | value: value}}
   end

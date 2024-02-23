@@ -33,4 +33,4 @@ config :cantastic,
 config :logger, :console,
   format: "$time $metadata[$level] $message\n",
   metadata: [:request_id],
-  level: :debug
+  level: (System.get_env("LOG_LEVEL") || "debug") |> String.to_atom()

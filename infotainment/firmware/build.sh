@@ -6,6 +6,5 @@ cd $BASEDIR/../dashboard
 npm install
 npm run build
 cd ../firmware
-pwd
 mix deps.get
 mix firmware

@@ -7,7 +7,7 @@ defmodule Cantastic.Emitter do
   end
 
   @impl true
-  def init(%{process_name:  _, compiled_frame_spec: compiled_frame_spec, socket: socket, network_name: network_name}) do
+  def init(%{process_name:  _, frame_specification: frame_specification, socket: socket, network_name: network_name}) do
     {:ok,
       %{
         socket: socket,
@@ -15,8 +15,8 @@ defmodule Cantastic.Emitter do
         parameters_builder_function: nil,
         sending_timer: nil,
         data: %{},
-        frequency: compiled_frame_spec.frequency,
-        compiled_frame_spec: compiled_frame_spec
+        frequency: frame_specification.frequency,
+        frame_specification: frame_specification
       }
     }
   end
@@ -24,7 +24,7 @@ defmodule Cantastic.Emitter do
   @impl true
   def handle_info(:send_frame, state) do
     {:ok, parameters, state} = state.parameters_builder_function.(state)
-    frame = Frame.build_from_compiled_spec(state.compiled_frame_spec, parameters)
+    frame = Frame.build_from_specification(state.frame_specification, parameters)
     raw_frame = Frame.to_bin(frame)
     :socket.send(state.socket, raw_frame)
     {:noreply, state}

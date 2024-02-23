@@ -1,5 +1,5 @@
 defmodule Cantastic.Frame do
-  alias Cantastic.{Util, CompiledSignalSpec}
+  alias Cantastic.{Util, SignalSpecification}
 
   defstruct [:id, :name, :data_length, :raw_data, :network_name]
 
@@ -12,16 +12,16 @@ defmodule Cantastic.Frame do
     }
   end
 
-  def build_from_compiled_spec(compiled_frame_spec, parameters) do
-    raw_data = build_raw_data_from_compiled_spec(compiled_frame_spec, parameters)
-    Cantastic.Frame.build(id: compiled_frame_spec.id, network_name: compiled_frame_spec.network_name, raw_data: raw_data)
+  def build_from_specification(frame_specification, parameters) do
+    raw_data = build_raw_data_from_specification(frame_specification, parameters)
+    Cantastic.Frame.build(id: frame_specification.id, network_name: frame_specification.network_name, raw_data: raw_data)
   end
 
-  def build_raw_data_from_compiled_spec(compiled_frame_spec, parameters) do
-    compiled_frame_spec.compiled_signal_specs
-    |> Enum.reduce(<<>>, fn (compiled_signal_spec, raw_data) ->
-      value = (parameters || %{})[compiled_signal_spec.name]
-      raw_signal = CompiledSignalSpec.instantiate_raw(raw_data, compiled_signal_spec, value)
+  def build_raw_data_from_specification(frame_specification, parameters) do
+    frame_specification.signal_specifications
+    |> Enum.reduce(<<>>, fn (signal_specification, raw_data) ->
+      value = (parameters || %{})[signal_specification.name]
+      raw_signal = SignalSpecification.instantiate_raw(raw_data, signal_specification, value)
       Kernel.<>(raw_data, raw_signal)
     end)
   end
