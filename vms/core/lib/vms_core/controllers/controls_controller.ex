@@ -24,18 +24,6 @@ defmodule VmsCore.Controllers.ControlsController do
     }
   end
 
-  def get_calibration_value_for_key(key) do
-    import Ecto.Query
-    record = from(cc in VmsCore.ControlsCalibration, where: cc.key == ^key, limit: 1, order_by: [desc: :inserted_at])
-    |> VmsCore.Repo.all()
-    |> List.first(%{})
-    Map.get(record, :value, 0) # Returns 0 if no calibration data found
-  end
-
-  def compute_throttle_from_raw_value(value, state) do
-    (trunc(value) - state.low_raw_throttle_a)/(state.high_raw_throttle_a - state.low_raw_throttle_a)
-  end
-
   def enable_calibration_mode() do
     GenServer.call(__MODULE__, :enable_calibration);
   end
@@ -49,6 +37,23 @@ defmodule VmsCore.Controllers.ControlsController do
       true -> enable_calibration_mode()
       false -> disable_calibration_mode()
     end
+  end
+
+  def get_calibration_value_for_key(key) do
+    import Ecto.Query
+    record = from(cc in VmsCore.ControlsCalibration, where: cc.key == ^key, limit: 1, order_by: [desc: :inserted_at])
+    |> VmsCore.Repo.all()
+    |> List.first(%{})
+    Map.get(record, :value, 0) # Returns 0 if no calibration data found
+  end
+
+  def set_calibration_value_for_key(key, value) do
+    record = %VmsCore.ControlsCalibration{key: key, value: value}
+    VmsCore.Repo.insert(record)
+  end
+
+  def compute_throttle_from_raw_value(value, state) do
+    (trunc(value) - state.low_raw_throttle_a)/(state.high_raw_throttle_a - state.low_raw_throttle_a)
   end
 
   @impl true
@@ -72,8 +77,8 @@ defmodule VmsCore.Controllers.ControlsController do
             high_raw_throttle_b: Enum.max([state.high_raw_throttle_b, trunc(raw_throttle_b.value)])
           }
       "disabled" ->
-        throttle = if state.high_raw_throttle_a == 0 || state.high_raw_throttle_b == 0 do
-          # Throttle has not been calibrated yet so no throttle, vms should be in "setup" mode
+        throttle = if state.high_raw_throttle_a <= state.low_raw_throttle_a || state.high_raw_throttle_b <= state.low_raw_throttle_b do
+          # Throttle has not been calibrated yet or has calibration errors so no throttle, vms should force calibration
           0
         else
           compute_throttle_from_raw_value(raw_throttle_a.value, state)
@@ -99,14 +104,10 @@ defmodule VmsCore.Controllers.ControlsController do
 
   def handle_call(:disable_calibration, _from, state) do
     if state.calibration_status == "in_progress" do
-      low_raw_throttle_a = %VmsCore.ControlsCalibration{key: "low_raw_throttle_a", value: state.low_raw_throttle_a}
-      low_raw_throttle_b = %VmsCore.ControlsCalibration{key: "low_raw_throttle_b", value: state.low_raw_throttle_b}
-      high_raw_throttle_a = %VmsCore.ControlsCalibration{key: "high_raw_throttle_a", value: state.high_raw_throttle_a}
-      high_raw_throttle_b = %VmsCore.ControlsCalibration{key: "high_raw_throttle_b", value: state.high_raw_throttle_b}
-      VmsCore.Repo.insert(low_raw_throttle_a)
-      VmsCore.Repo.insert(low_raw_throttle_b)
-      VmsCore.Repo.insert(high_raw_throttle_a)
-      VmsCore.Repo.insert(high_raw_throttle_b)
+      set_calibration_value_for_key("low_raw_throttle_a", state.low_raw_throttle_a)
+      set_calibration_value_for_key("low_raw_throttle_b", state.low_raw_throttle_b)
+      set_calibration_value_for_key("high_raw_throttle_a", state.high_raw_throttle_a)
+      set_calibration_value_for_key("high_raw_throttle_b", state.high_raw_throttle_b)
       IO.inspect state
     end
     {:reply, false, %{ state | calibration_status: "disabled" }}
