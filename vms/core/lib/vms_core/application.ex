@@ -6,10 +6,10 @@ defmodule VmsCore.Application do
   @impl true
   def start(_type, _args) do
     children = [
-      #VmsCore.Repo,
-      #{Ecto.Migrator,
-      #  repos: Application.fetch_env!(:vms_core, :ecto_repos),
-      #  skip: skip_migrations?()},
+      VmsCore.Repo,
+      {Ecto.Migrator,
+        repos: Application.fetch_env!(:vms_core, :ecto_repos),
+        skip: skip_migrations?()},
       {VmsCore.NissanLeaf.Em57.Charger, []},
       {VmsCore.Controllers.ControlsController, []},
       {VmsCore.Controllers.ContactorsController, []},
