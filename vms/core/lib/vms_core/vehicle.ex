@@ -54,7 +54,6 @@ defmodule VmsCore.Vehicle do
   end
 
   defp start_ignition(state) do
-    IO.inspect "Start_ignition"
     with :ok <- Inverter.on(),
          :ok <- BatteryManagementSystem.high_voltage_on()
     do
