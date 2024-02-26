@@ -109,8 +109,7 @@ defmodule VmsCore.Controllers.ControlsController do
   end
 
   defp set_calibration_value_for_key(key, value) do
-    record = %ControlsCalibration{key: key, value: value}
-    Repo.insert(record)
+    %ControlsCalibration{key: key, value: value} |> Repo.insert()
   end
 
   defp compute_throttle_from_raw_value(value, state) do
