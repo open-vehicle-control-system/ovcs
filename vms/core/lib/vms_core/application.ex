@@ -14,10 +14,12 @@ defmodule VmsCore.Application do
       {VmsCore.Controllers.ControlsController, []},
       {VmsCore.Controllers.ContactorsController, []},
       {VmsCore.Controllers.VmsController, []},
+      {VmsCore.VwPolo.Abs, []},
       {VmsCore.VwPolo.IgnitionLock, []},
       {VmsCore.NissanLeaf.Em57.Inverter, []},
       {VmsCore.BatteryManagementSystem, []},
       {VmsCore.Charger, []},
+      {VmsCore.Abs, []},
       {VmsCore.IgnitionLock, []},
       {VmsCore.Inverter, []},
       {VmsCore.Vehicle, []}

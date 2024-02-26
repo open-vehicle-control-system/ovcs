@@ -1,7 +1,7 @@
 defmodule VmsCore.Vehicle do
   use GenServer
   require Logger
-  alias VmsCore.{Inverter, BatteryManagementSystem, IgnitionLock, Controllers.ControlsController}
+  alias VmsCore.{Inverter, BatteryManagementSystem, Abs, IgnitionLock, Controllers.ControlsController}
 
   @loop_sleep 10
 
@@ -38,7 +38,22 @@ defmodule VmsCore.Vehicle do
   end
 
   defp handle_gear(state) do
-    state
+    requested_gear = ControlsController.requested_gear()
+    selected_gear  = Inverter.selected_gear()
+    speed          = Abs.speed()
+    throttle       = ControlsController.throttle()
+    case {selected_gear, requested_gear, speed < 1.0, throttle == 0} do
+      {"parking", "parking", _, _} -> state
+      {"reverse", "reverse", _, _} -> state
+      {"neutral", "neutral", _, _} -> state
+      {"drive", "drive", _, _}     -> state
+      {_, "parking", true, true}   -> select_gear("parking", state)
+      {_, "reverse", true, true}   -> select_gear("reverse", state)
+      {"neutral", "drive", _, _}   -> select_gear("drive", state)
+      {_, "drive", true, true}     -> select_gear("drive", state)
+      {_, "neutral", _, _}         -> select_gear("neutral", state)
+      _                            -> state
+    end
   end
 
   defp handle_throttle(state) do
@@ -48,8 +63,13 @@ defmodule VmsCore.Vehicle do
     end
   end
 
+  defp select_gear(gear, state) do
+    :ok = Inverter.select_gear(gear)
+    state
+  end
+
   defp apply_throttle(state) do
-    ControlsController.throttle() |> Inverter.throttle()
+    :ok = ControlsController.throttle() |> Inverter.throttle()
     state
   end
 

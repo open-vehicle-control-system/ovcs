@@ -4,6 +4,7 @@ defmodule VmsCore.Inverter do
   alias VmsCore.NissanLeaf.Em57
 
   defdelegate throttle(percentage_torque), to: Em57.Inverter
+  defdelegate selected_gear(), to: Em57.Inverter
 
   @impl true
   def init(_) do
@@ -36,12 +37,26 @@ defmodule VmsCore.Inverter do
     end
   end
 
+  @impl true
+  def handle_cast({:select_gear, gear}, state) do
+    with :ok <- Em57.Inverter.select_gear(gear)
+    do
+      {:noreply, state}
+    else
+      :unexpected -> :unexpected
+    end
+  end
+
   def on() do
     GenServer.cast(__MODULE__, :on)
   end
 
   def off() do
     GenServer.cast(__MODULE__, :off)
+  end
+
+  def select_gear(gear) do
+    GenServer.cast(__MODULE__, {:select_gear, gear})
   end
 
   def ready_to_drive?() do

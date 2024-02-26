@@ -22,7 +22,7 @@ defmodule VmsCore.Controllers.ControlsController do
         high_raw_throttle_b: get_calibration_value_for_key("high_raw_throttle_b"),
         low_raw_throttle_a: get_calibration_value_for_key("low_raw_throttle_a"),
         low_raw_throttle_b: get_calibration_value_for_key("low_raw_throttle_b"),
-        gear_requested: "parking"
+        requested_gear: "parking"
       }
     }
   end
@@ -30,7 +30,8 @@ defmodule VmsCore.Controllers.ControlsController do
   @impl true
   def handle_info({:handle_frame, _frame, [raw_max_throttle | _] = _signals}, %{calibration_status: "started"} = state) do
    state = %{state |
-      throttle: 0, # Makes sure no throttle during calibration
+      throttle: 0, # Makes sure no throttle during
+      requested_gear: "parking",
       low_raw_throttle_a: trunc(raw_max_throttle.value),
       low_raw_throttle_b: trunc(raw_max_throttle.value),
       high_raw_throttle_a: 0,
@@ -44,6 +45,7 @@ defmodule VmsCore.Controllers.ControlsController do
   def handle_info({:handle_frame, _frame, [_, raw_throttle_a, raw_throttle_b, _] = _signals}, %{calibration_status: "in_progress"} = state) do
     state = %{state |
       throttle: 0, # Makes sure no throttle during calibration
+      requested_gear: "parking",
       low_raw_throttle_a: Enum.min([state.low_raw_throttle_a, trunc(raw_throttle_a.value)]),
       low_raw_throttle_b: Enum.min([state.low_raw_throttle_b, trunc(raw_throttle_b.value)]),
       high_raw_throttle_a: Enum.max([state.high_raw_throttle_a, trunc(raw_throttle_a.value)]),
@@ -53,7 +55,7 @@ defmodule VmsCore.Controllers.ControlsController do
   end
 
   @impl true
-  def handle_info({:handle_frame, _frame, [_, raw_throttle_a, _raw_throttle_b, gear_requested] = _signals}, %{calibration_status: "disabled"} = state) do
+  def handle_info({:handle_frame, _frame, [_, raw_throttle_a, _raw_throttle_b, requested_gear] = _signals}, %{calibration_status: "disabled"} = state) do
     throttle = if state.high_raw_throttle_a <= state.low_raw_throttle_a || state.high_raw_throttle_b <= state.low_raw_throttle_b do
       # Throttle has not been calibrated yet or has calibration errors so no throttle, vms should force calibration
       0
@@ -62,7 +64,7 @@ defmodule VmsCore.Controllers.ControlsController do
     end
     state = %{state |
       throttle: throttle,
-      gear_requested: gear_requested
+      requested_gear: requested_gear.value
     }
     {:noreply, state}
   end
@@ -70,6 +72,11 @@ defmodule VmsCore.Controllers.ControlsController do
   @impl true
   def handle_call(:throttle, _from, state) do
     {:reply, state.throttle, state}
+  end
+
+  @impl true
+  def handle_call(:requested_gear, _from, state) do
+    {:reply, state.requested_gear, state}
   end
 
   @impl true
@@ -92,6 +99,10 @@ defmodule VmsCore.Controllers.ControlsController do
 
   def throttle() do
     GenServer.call(__MODULE__, :throttle)
+  end
+
+  def requested_gear() do
+    GenServer.call(__MODULE__, :requested_gear)
   end
 
   def enable_calibration_mode() do

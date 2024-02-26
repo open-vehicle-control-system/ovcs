@@ -93,8 +93,8 @@ can_networks:
             value_start: 0
             value_length: 8
             mapping:
-              0x00: parked
-              0x02: rear
+              0x00: parking
+              0x02: reverse
               0x03: neutral
               0x04: drive
           - name: filler1
@@ -204,7 +204,7 @@ can_networks:
             value_start: 32
             value_length: 16
             origin: OVCS ECU
-          - name: gear_requested
+          - name: requested_gear
             kind: string
             value_start: 48
             value_length: 8

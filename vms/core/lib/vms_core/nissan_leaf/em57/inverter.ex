@@ -9,7 +9,9 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
   @impl true
   def init(_) do
     :ok = init_emitters()
-    {:ok, %{}}
+    {:ok, %{
+      selected_gear: "parking"
+    }}
   end
 
   def start_link(_) do
@@ -31,11 +33,21 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
     :ok = Emitter.configure(@network_name, "vms_status", %{
       parameters_builder_function: &status_frame_parameters_builder/1,
       initial_data: %{
-        "gear" => "parked",
+        "gear" => "parking",
         "counter" => 0
       }
     })
     :ok
+  end
+
+  @impl true
+  def handle_cast({:select_gear, gear}, state) do
+    {:noreply, %{state | selected_gear: gear}}
+  end
+
+  @impl true
+  def handle_call(:selected_gear, _from, state) do
+    {:reply, state.selected_gear, state}
   end
 
   def alive_frame_parameters_builder(state) do
@@ -77,9 +89,20 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
 
   def throttle(percentage_throttle) do
     torque = percentage_throttle * 128 #TODO compute torque properly
-    Emitter.update(@network_name, "vms_torque_request", fn (state) ->
+    :ok = Emitter.update(@network_name, "vms_torque_request", fn (state) ->
       state |> put_in([:data, "torque"], torque)
     end)
+  end
+
+  def select_gear(gear) do
+    :ok = Emitter.update(@network_name, "vms_status", fn (state) ->
+      state |> put_in([:data, "gear"], gear)
+    end)
+    GenServer.cast(__MODULE__, {:select_gear, gear}) #TODO check how to receive that info from the inverter itself
+  end
+
+  def selected_gear() do
+    GenServer.call(__MODULE__, :selected_gear)
   end
 
   def ready_to_drive?() do
