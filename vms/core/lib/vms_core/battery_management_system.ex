@@ -2,6 +2,8 @@ defmodule VmsCore.BatteryManagementSystem do
   use GenServer
   alias VmsCore.Controllers.ContactorsController
 
+  defdelegate ready_to_drive?, to: ContactorsController
+
   @impl true
   def init(_) do
     {:ok, %{}}
@@ -11,15 +13,32 @@ defmodule VmsCore.BatteryManagementSystem do
     GenServer.start_link(__MODULE__, nil, name: __MODULE__)
   end
 
+  @impl true
+  def handle_cast(:high_voltage_on, state) do
+    with :ok <- ContactorsController.on()
+    do
+      {:noreply, state}
+    else
+      :unexpected -> :unexpected
+    end
+  end
+
+  @impl true
+  def handle_cast(:high_voltage_off, state) do
+    with :ok <- ContactorsController.off()
+    do
+      {:noreply, state}
+    else
+      :unexpected -> :unexpected
+    end
+  end
+
+
   def high_voltage_on() do
-    ContactorsController.on()
+    GenServer.cast(__MODULE__, :high_voltage_on)
   end
 
   def high_voltage_off() do
-    ContactorsController.off()
-  end
-
-  def ready_to_drive?() do
-    false
+    GenServer.cast(__MODULE__, :high_voltage_off)
   end
 end

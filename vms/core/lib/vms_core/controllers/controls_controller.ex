@@ -13,7 +13,7 @@ defmodule VmsCore.Controllers.ControlsController do
 
   @impl true
   def init(_) do
-    Receiver.subscribe(self(), @network_name, ["car_controls_status"])
+    :ok = Receiver.subscribe(self(), @network_name, ["car_controls_status"])
     {
       :ok, %{
         throttle: 0,
@@ -37,7 +37,7 @@ defmodule VmsCore.Controllers.ControlsController do
   defp get_calibration_value_for_key(key) do
     record = from(cc in ControlsCalibration, where: cc.key == ^key, limit: 1, order_by: [desc: :inserted_at])
     |> Repo.one()
-    Map.get(record, :value, 0) # Returns 0 if no calibration data found
+    Map.get(record || %{}, :value, 0) # Returns 0 if no calibration data found
   end
 
   defp set_calibration_value_for_key(key, value) do
@@ -83,7 +83,6 @@ defmodule VmsCore.Controllers.ControlsController do
       compute_throttle_from_raw_value(raw_throttle_a.value, state)
     end
     state = %{state | throttle: throttle}
-    IO.inspect state
     {:noreply, state}
   end
 

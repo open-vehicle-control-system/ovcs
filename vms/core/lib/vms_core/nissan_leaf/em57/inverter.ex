@@ -75,13 +75,14 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
     Emitter.batch_disable(@network_name, ["vms_alive", "vms_torque_request", "vms_status"])
   end
 
-  def throttle(torque) do
+  def throttle(percentage_throttle) do
+    torque = percentage_throttle * 128 #TODO compute torque properly
     Emitter.update(@network_name, "vms_torque_request", fn (state) ->
       state |> put_in([:data, "torque"], torque)
     end)
   end
 
   def ready_to_drive?() do
-    false
+    true # Should check inverter can messages for actual status
   end
 end

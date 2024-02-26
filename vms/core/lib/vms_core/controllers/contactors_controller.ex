@@ -4,7 +4,9 @@ defmodule VmsCore.Controllers.ContactorsController do
   alias Cantastic.Emitter
 
   @network_name :drive
-  @frame_name "contactors_status_request"
+  @status_request_frame_name "contactors_status_request"
+  @status_frame_name "contactors_status"
+
 
   @main_negative_contactor "main_negative_contactor_enabled"
   @main_positive_contactor "main_positive_contactor_enabled"
@@ -19,7 +21,8 @@ defmodule VmsCore.Controllers.ContactorsController do
 
   @impl true
   def init(_) do
-    :ok = Emitter.configure(@network_name, @frame_name, %{
+    :ok = Cantastic.Receiver.subscribe(self(), @network_name, [@status_frame_name])
+    :ok = Emitter.configure(@network_name, @status_request_frame_name, %{
       parameters_builder_function: &contactors_state_request_frame_parameters/1,
       initial_data: %{
         @main_negative_contactor => false,
@@ -27,12 +30,36 @@ defmodule VmsCore.Controllers.ContactorsController do
         @precharge_contactor     => false
       }
     })
-    Emitter.batch_enable(@network_name, [@frame_name])
-    {:ok, %{}}
+    :ok = Emitter.batch_enable(@network_name, [@status_request_frame_name])
+    {:ok, %{
+      main_negative_contactor_enabled: false,
+      main_positive_contactor_enabled: false,
+      precharge_contactor_enabled: false
+    }}
   end
 
-  def contactors_state_request_frame_parameters(state) do
+  defp contactors_state_request_frame_parameters(state) do
     {:ok, state.data, state}
+  end
+
+  @impl true
+  def handle_info({:handle_frame,  _frame, [%{value: main_negative_contactor_enabled}, %{value: main_positive_contactor_enabled}, %{value: precharge_contactor_enabled}] = _signals}, state) do
+    {:noreply, %{state |
+        main_negative_contactor_enabled: main_negative_contactor_enabled,
+        main_positive_contactor_enabled: main_positive_contactor_enabled,
+        precharge_contactor_enabled: precharge_contactor_enabled
+      }
+    }
+  end
+
+  @impl true
+  def handle_call(:ready_to_drive?,  _from, state) do
+    ready = !state.precharge_contactor_enabled && state.main_negative_contactor_enabled && state.main_positive_contactor_enabled
+    {:reply, ready, state}
+  end
+
+  def ready_to_drive?() do
+    GenServer.call(__MODULE__, :ready_to_drive?)
   end
 
   def on() do
@@ -41,6 +68,8 @@ defmodule VmsCore.Controllers.ContactorsController do
          :ok <- finish_precharge()
     do
       :ok
+    else
+      :unexpected -> :unexpected
     end
   end
 
@@ -50,6 +79,8 @@ defmodule VmsCore.Controllers.ContactorsController do
          :ok <- disable_contactor(@main_positive_contactor)
     do
       :ok
+    else
+      :unexpected -> :unexpected
     end
   end
 
@@ -58,6 +89,8 @@ defmodule VmsCore.Controllers.ContactorsController do
          :ok <- enable_contactor(@precharge_contactor)
     do
       :ok
+    else
+      :unexpected -> :unexpected
     end
   end
 
@@ -67,6 +100,8 @@ defmodule VmsCore.Controllers.ContactorsController do
          :ok <- disable_contactor(@precharge_contactor)
     do
       :ok
+    else
+      :unexpected -> :unexpected
     end
   end
 
@@ -79,7 +114,7 @@ defmodule VmsCore.Controllers.ContactorsController do
   end
 
   defp actuate_contactor(contactor_name, enable) do
-    Emitter.update(@network_name, @frame_name, fn (state) ->
+    Emitter.update(@network_name, @status_request_frame_name, fn (state) ->
       state |> put_in([:data, contactor_name], enable)
     end)
   end

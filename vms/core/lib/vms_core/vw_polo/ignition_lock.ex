@@ -1,6 +1,5 @@
 defmodule VmsCore.VwPolo.IgnitionLock do
   use GenServer
-  alias Cantastic.Frame
 
   @network_name :drive
 
@@ -18,9 +17,12 @@ defmodule VmsCore.VwPolo.IgnitionLock do
     GenServer.start_link(__MODULE__, nil, name: __MODULE__)
   end
 
+  # off
+  # key_engaged
+  # contact_on
+  # start_engine
   @impl true
-  def handle_info({:handle_frame,  %Frame{name: @key_status_frame_name}, [key_status_signal]}, state) do
-    key_status = key_status_signal.value
+  def handle_info({:handle_frame,  _frame, [%{value: key_status}] = _signals}, state) do
     {:noreply, %{state | key_status: key_status}}
   end
 
@@ -31,9 +33,5 @@ defmodule VmsCore.VwPolo.IgnitionLock do
 
   def key_status() do
     GenServer.call(__MODULE__, :key_status)
-  end
-
-  def last_ignition_requested_at() do
-    0
   end
 end

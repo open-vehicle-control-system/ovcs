@@ -3,7 +3,7 @@ defmodule VmsCore.Vehicle do
   require Logger
   alias VmsCore.{Inverter, BatteryManagementSystem, IgnitionLock, Controllers.ControlsController}
 
-  @loop_sleep 5
+  @loop_sleep 10
 
   def start_link(args) do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
@@ -11,52 +11,90 @@ defmodule VmsCore.Vehicle do
 
   @impl true
   def init(_) do
-    #loop() -> uncomment when loop is ready
+    loop()
     {:ok, %{
-      ignition_started: false
+      ignition_started: false,
+      selected_gear: "parking"
     }}
   end
 
   @impl true
   def handle_info(:loop, state) do
-    if (IgnitionLock.last_ignition_requested_at() < DateTime.utc_now() - 5000 && !state.ignition_started) do
-      ^state = start_ignition(state)
-    end
-
-    if (ready_to_drive?()) do
-      ControlsController.throttle() |> Inverter.throttle()
-    end
-
+    state = state
+      |> handle_ignition()
+      |> handle_gear()
+      |> handle_throttle()
+    loop()
     {:noreply, state}
   end
 
-  defp start_ignition(state) do
-    # Will be trigger when key is in engineStart
-    Inverter.on()
-    BatteryManagementSystem.high_voltage_on()
-    %{state | ignition_started: true}
+  defp handle_ignition(state) do
+    case {state.ignition_started, IgnitionLock.key_status()} do
+      {false, "start_engine"} -> start_ignition(state)
+      {true, "off"}           -> shutdown(state)
+      {true, "key_engaged"}   -> shutdown(state)
+      _                       -> state
+    end
   end
 
-  defp ready_to_drive?() do
-    Inverter.ready_to_drive?() && BatteryManagementSystem.ready_to_drive?()
+  defp handle_gear(state) do
+    state
+  end
+
+  defp handle_throttle(state) do
+    case ready_to_drive?(state) do
+      {true, true} -> apply_throttle(state)
+      _            -> state
+    end
+  end
+
+  defp apply_throttle(state) do
+    ControlsController.throttle() |> Inverter.throttle()
+    state
+  end
+
+  defp start_ignition(state) do
+    IO.inspect "Start_ignition"
+    with :ok <- Inverter.on(),
+         :ok <- BatteryManagementSystem.high_voltage_on()
+    do
+      %{state | ignition_started: true}
+    else
+      :unexpected -> :unexpected
+    end
+  end
+
+  defp ready_to_drive?(state) do
+    state.ignition_started && Inverter.ready_to_drive?() && BatteryManagementSystem.ready_to_drive?()
+  end
+
+  defp shutdown(state) do
+    with :ok <- Inverter.off(),
+         :ok <- BatteryManagementSystem.high_voltage_off()
+    do
+      %{state | ignition_started: false}
+    else
+      :unexpected -> :unexpected
+    end
   end
 
   defp loop do
     Process.send_after(self(), :loop, @loop_sleep)
   end
 
-  def key_status() do
+  # ---- Test functions ----
+  def test_shutdown() do
+    :ok = Inverter.off()
+    :ok = BatteryManagementSystem.high_voltage_off()
+  end
+
+  def test_key_status() do
     IgnitionLock.key_status()
   end
 
   def test_ignition() do
-    Inverter.on()
-    BatteryManagementSystem.high_voltage_on()
-  end
-
-  def test_shutdown() do
-    Inverter.off()
-    BatteryManagementSystem.high_voltage_off()
+    :ok = Inverter.on()
+    :ok = BatteryManagementSystem.high_voltage_on()
   end
 
   def test_enable_calibration_mode() do
