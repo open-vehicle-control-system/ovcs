@@ -18,7 +18,8 @@ defmodule VmsApi.Application do
       # Start a worker by calling: VmsApi.Worker.start_link(arg)
       # {VmsApi.Worker, arg},
       # Start to serve requests, typically the last entry
-      VmsApiWeb.Endpoint
+      VmsApiWeb.Endpoint,
+      {VmsApi.CarControlsDispatcher, []}
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html

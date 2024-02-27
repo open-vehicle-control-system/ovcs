@@ -9,6 +9,7 @@ defmodule VmsCore.Controllers.ControlsController do
   @car_controls_status_frame_name "car_controls_status"
   @selected_gear_frame_name "gear_status"
   @selected_gear "selected_gear"
+  @car_controls_update_interval_ms 500
 
   def start_link(_) do
     GenServer.start_link(__MODULE__, nil, name: __MODULE__)
@@ -26,14 +27,18 @@ defmodule VmsCore.Controllers.ControlsController do
     :ok = Emitter.batch_enable(@network_name, [@selected_gear_frame_name])
     {
       :ok, %{
-        throttle: 0,
-        calibration_status: "disabled",
-        raw_max_throttle: 0,
-        high_raw_throttle_a: get_calibration_value_for_key("high_raw_throttle_a"),
-        high_raw_throttle_b: get_calibration_value_for_key("high_raw_throttle_b"),
-        low_raw_throttle_a: get_calibration_value_for_key("low_raw_throttle_a"),
-        low_raw_throttle_b: get_calibration_value_for_key("low_raw_throttle_b"),
-        requested_gear: "parking"
+        car_controls: %{
+          throttle: 0,
+          calibration_status: "disabled",
+          raw_max_throttle: 0,
+          high_raw_throttle_a: get_calibration_value_for_key("high_raw_throttle_a"),
+          high_raw_throttle_b: get_calibration_value_for_key("high_raw_throttle_b"),
+          low_raw_throttle_a: get_calibration_value_for_key("low_raw_throttle_a"),
+          low_raw_throttle_b: get_calibration_value_for_key("low_raw_throttle_b"),
+          requested_gear: "parking",
+        },
+        last_dashboard_updated_at: :os.system_time(:millisecond),
+        clients: [],
       }
     }
   end
@@ -43,9 +48,24 @@ defmodule VmsCore.Controllers.ControlsController do
   end
 
   @impl true
+<<<<<<< HEAD
   def handle_info({:handle_frame, _frame, [raw_max_throttle | _] = _signals}, %{calibration_status: "started"} = state) do
    state = %{state |
       throttle: 0,
+=======
+  def handle_cast({:subscribe, client}, state) do
+    {:noreply, %{state | clients: [client | state.clients]}}
+  end
+
+  def subscribe(client) do
+    GenServer.cast(__MODULE__, {:subscribe, client})
+  end
+
+  @impl true
+  def handle_info({:handle_frame, _frame, [raw_max_throttle | _] = _signals}, %{car_controls: %{calibration_status: "started"}} = state) do
+   state = Map.replace(state, :car_controls, %{
+      throttle: 0, # Makes sure no throttle during
+>>>>>>> fad2902 (Real time dashboard data)
       requested_gear: "parking",
       raw_max_throttle: raw_max_throttle.value,
       low_raw_throttle_a: trunc(raw_max_throttle.value),
@@ -53,74 +73,85 @@ defmodule VmsCore.Controllers.ControlsController do
       high_raw_throttle_a: 0,
       high_raw_throttle_b: 0,
       calibration_status: "in_progress"
-    }
+    })
+    broadcast_state(state)
     {:noreply, state}
   end
 
   @impl true
+<<<<<<< HEAD
   def handle_info({:handle_frame, _frame, [_, raw_throttle_a, raw_throttle_b, _] = _signals}, %{calibration_status: "in_progress"} = state) do
     state = %{state |
       throttle: 0,
+=======
+  def handle_info({:handle_frame, _frame, [_, raw_throttle_a, raw_throttle_b, _] = _signals}, %{car_controls: %{calibration_status: "in_progress"}} = state) do
+    state = Map.replace(state, :car_controls, %{
+      throttle: 0, # Makes sure no throttle during calibration
+>>>>>>> fad2902 (Real time dashboard data)
       requested_gear: "parking",
-      low_raw_throttle_a: Enum.min([state.low_raw_throttle_a, trunc(raw_throttle_a.value)]),
-      low_raw_throttle_b: Enum.min([state.low_raw_throttle_b, trunc(raw_throttle_b.value)]),
-      high_raw_throttle_a: Enum.max([state.high_raw_throttle_a, trunc(raw_throttle_a.value)]),
-      high_raw_throttle_b: Enum.max([state.high_raw_throttle_b, trunc(raw_throttle_b.value)])
-    }
+      low_raw_throttle_a: Enum.min([state.car_controls.low_raw_throttle_a, trunc(raw_throttle_a.value)]),
+      low_raw_throttle_b: Enum.min([state.car_controls.low_raw_throttle_b, trunc(raw_throttle_b.value)]),
+      high_raw_throttle_a: Enum.max([state.car_controls.high_raw_throttle_a, trunc(raw_throttle_a.value)]),
+      high_raw_throttle_b: Enum.max([state.car_controls.high_raw_throttle_b, trunc(raw_throttle_b.value)]),
+      calibration_status: "in_progress"
+    })
+    broadcast_state(state)
     {:noreply, state}
   end
 
   @impl true
-  def handle_info({:handle_frame, _frame, [_, raw_throttle_a, _raw_throttle_b, requested_gear] = _signals}, %{calibration_status: "disabled"} = state) do
-    throttle = if state.high_raw_throttle_a <= state.low_raw_throttle_a || state.high_raw_throttle_b <= state.low_raw_throttle_b do
+  def handle_info({:handle_frame, _frame, [_, raw_throttle_a, _raw_throttle_b, requested_gear] = _signals}, %{car_controls: %{calibration_status: "disabled"}} = state) do
+    throttle = if state.car_controls.high_raw_throttle_a <= state.car_controls.low_raw_throttle_a || state.car_controls.high_raw_throttle_b <= state.car_controls.low_raw_throttle_b do
+      # Throttle has not been calibrated yet or has calibration errors so no throttle, vms should force calibration
       Logger.warn("Throttle has not been calibrated yet or has calibration errors so no throttle, vms should force calibration")
       0
     else
       compute_throttle_from_raw_value(raw_throttle_a.value, state)
     end
-    state = %{state |
-      throttle: throttle,
-      requested_gear: requested_gear.value
-    }
+    state = put_in(state, [:car_controls, :throttle], throttle) |> put_in([:car_controls, :requested_gear], requested_gear.value)
+    broadcast_state(state)
     {:noreply, state}
   end
 
   @impl true
   def handle_call(:throttle, _from, state) do
-    {:reply, state.throttle, state}
+    {:reply, state.car_controls.throttle, state}
   end
 
   @impl true
   def handle_call(:requested_gear, _from, state) do
-    {:reply, state.requested_gear, state}
+    {:reply, state.car_controls.requested_gear, state}
   end
 
   @impl true
   def handle_call(:enable_calibration, _from, state) do
-    IO.inspect("Enable calibration")
-    {:reply, :ok, %{ state | calibration_status: "started" }}
+    state = put_in(state, [:car_controls, :calibration_status], "started")
+    broadcast_state(state)
+    {:reply, :ok, state}
   end
 
   def handle_call(:get_state, _from, state) do
-    {:reply, state, state}
+    {:reply, state.car_controls, state}
   end
 
-  def handle_call(:disable_calibration, _from, %{calibration_status: "in_progress"} = state) do
-    with {:ok, _} <- set_calibration_value_for_key("low_raw_throttle_a", state.low_raw_throttle_a),
-          {:ok, _} <- set_calibration_value_for_key("low_raw_throttle_b", state.low_raw_throttle_b),
-          {:ok, _} <- set_calibration_value_for_key("high_raw_throttle_a", state.high_raw_throttle_a),
-          {:ok, _} <- set_calibration_value_for_key("high_raw_throttle_b", state.high_raw_throttle_b)
+  def handle_call(:disable_calibration, _from, %{car_controls: %{calibration_status: "in_progress"}} = state) do
+    with {:ok, _} <- set_calibration_value_for_key("low_raw_throttle_a", state.car_controls.low_raw_throttle_a),
+          {:ok, _} <- set_calibration_value_for_key("low_raw_throttle_b", state.car_controls.low_raw_throttle_b),
+          {:ok, _} <- set_calibration_value_for_key("high_raw_throttle_a", state.car_controls.high_raw_throttle_a),
+          {:ok, _} <- set_calibration_value_for_key("high_raw_throttle_b", state.car_controls.high_raw_throttle_b)
     do
-      IO.inspect state
-      {:reply, :ok, %{ state | calibration_status: "disabled" }}
+      state = put_in(state, [:car_controls, :calibration_status], "disabled")
+      broadcast_state(state)
+      {:reply, :ok, state}
     else
       {:error, error} -> {:error, error}
     end
   end
 
-  def handle_call(:disable_calibration, _from, %{calibration_status: "started"} = state) do
-    IO.inspect("Disable calibration")
-    {:reply, :ok, %{ state | calibration_status: "disabled" }}
+  def handle_call(:disable_calibration, _from, %{car_controls: %{calibration_status: "started"}} = state) do
+    state = put_in(state, [:car_controls, :calibration_status], "disabled")
+    broadcast_state(state)
+    {:reply, :ok, state}
   end
 
   def select_gear(gear) do
@@ -149,6 +180,16 @@ defmodule VmsCore.Controllers.ControlsController do
     GenServer.call(__MODULE__, :get_state);
   end
 
+  def broadcast_state(state) do
+    now = :os.system_time(:millisecond)
+    if (state.last_dashboard_updated_at + @car_controls_update_interval_ms) < now do
+      state.clients |> Enum.each(fn (client) ->
+        state = %{state | last_dashboard_updated_at: now}
+        GenServer.cast(client, {:updated, state.car_controls})
+      end)
+    end
+  end
+
   defp get_calibration_value_for_key(key) do
     record = from(cc in ControlsCalibration, where: cc.key == ^key, limit: 1, order_by: [desc: :inserted_at])
     |> Repo.one()
@@ -160,6 +201,6 @@ defmodule VmsCore.Controllers.ControlsController do
   end
 
   defp compute_throttle_from_raw_value(value, state) do
-    (trunc(value) - state.low_raw_throttle_a)/(state.high_raw_throttle_a - state.low_raw_throttle_a)
+    (trunc(value) - state.car_controls.low_raw_throttle_a)/(state.car_controls.high_raw_throttle_a - state.car_controls.low_raw_throttle_a)
   end
 end

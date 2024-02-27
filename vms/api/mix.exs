@@ -45,7 +45,7 @@ defmodule VmsApi.MixProject do
       {:dns_cluster, "~> 0.1.1"},
       {:bandit, "~> 1.2"},
       {:cors_plug, "~> 3.0.3"},
-      {:poison, "~> 5.0"},
+      {:json, "~> 1.4"},
       {:vms_core, path: "../core"},
     ]
   end

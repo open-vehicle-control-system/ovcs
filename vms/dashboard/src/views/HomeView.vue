@@ -13,6 +13,7 @@ import {
 } from '@heroicons/vue/24/outline'
 
 import { storeToRefs } from 'pinia'
+import { Socket } from 'phoenix'
 import axios from 'axios'
 import { useCarControls } from "../stores/car_controls.js"
 
@@ -146,6 +147,18 @@ const sidebarOpen = ref(false)
                       <div class="text-gray-900">{{ carControls.high_raw_throttle_b }}</div>
                     </dd>
                   </div>
+                  <div class="pt-6 sm:flex">
+                    <dt class="font-medium text-gray-900 sm:w-64 sm:flex-none sm:pr-6">Requested Gear</dt>
+                    <dd class="mt-1 flex justify-between gap-x-6 sm:mt-0 sm:flex-auto">
+                      <div class="text-gray-900">{{ carControls.requested_gear }}</div>
+                    </dd>
+                  </div>
+                  <div class="pt-6 sm:flex">
+                    <dt class="font-medium text-gray-900 sm:w-64 sm:flex-none sm:pr-6">Throttle</dt>
+                    <dd class="mt-1 flex justify-between gap-x-6 sm:mt-0 sm:flex-auto">
+                      <div class="text-gray-900">{{ carControls.throttle }}</div>
+                    </dd>
+                  </div>
                 </dl>
               </div>
             </div>
@@ -165,6 +178,17 @@ export default {
     let carControlsStore = useCarControls()
     axios.get("http://localhost:4000/api/calibration", {})
     .then((response) => carControlsStore.$patch(response.data));
+
+    let vmsDashboardSocket = new Socket("ws://localhost:4000/sockets/dashboard", {})
+    vmsDashboardSocket.connect();
+    let carControlsChannel = vmsDashboardSocket.channel("car-controls", {})
+
+    carControlsChannel.on("updated", payload => {
+      console.log(payload);
+      carControlsStore.$patch(payload);
+    })
+
+    carControlsChannel.join().receive("ok", () => {})
   },
   methods: {
     toggleCalibration: (calibrationEnabled) => {

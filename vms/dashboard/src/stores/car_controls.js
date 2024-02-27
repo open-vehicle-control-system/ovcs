@@ -8,7 +8,9 @@ export const useCarControls = defineStore('carControls', {
         low_raw_throttle_a: 0,
         high_raw_throttle_a: 0,
         low_raw_throttle_b: 0,
-        high_raw_throttle_b: 0
+        high_raw_throttle_b: 0,
+        requested_gear: "parking",
+        throttle: 0
     }),
     getters: {
         calibrationEnabled: (state) =>
