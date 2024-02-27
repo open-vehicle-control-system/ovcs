@@ -49,7 +49,7 @@ can_networks:
         id: 0x600
         frequency: 20
         signals:
-          - name: gear_selected
+          - name: selected_gear
             kind: string
             value_start: 0
             value_length: 8

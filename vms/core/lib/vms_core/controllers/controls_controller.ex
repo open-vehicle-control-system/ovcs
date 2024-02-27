@@ -1,12 +1,14 @@
 defmodule VmsCore.Controllers.ControlsController do
   import Ecto.Query
   use GenServer
-  alias Cantastic.{Receiver}
+  alias Cantastic.{Receiver, Emitter}
   alias VmsCore.{Repo, ControlsCalibration}
   require Logger
 
   @network_name :ovcs
   @car_controls_status_frame_name "car_controls_status"
+  @selected_gear_frame_name "gear_status"
+  @selected_gear "selected_gear"
 
   def start_link(_) do
     GenServer.start_link(__MODULE__, nil, name: __MODULE__)
@@ -15,6 +17,13 @@ defmodule VmsCore.Controllers.ControlsController do
   @impl true
   def init(_) do
     :ok = Receiver.subscribe(self(), @network_name, [@car_controls_status_frame_name])
+    :ok = Emitter.configure(@network_name, @selected_gear_frame_name, %{
+      parameters_builder_function: &gear_status_frame_parameters/1,
+      initial_data: %{
+        @selected_gear => "parking"
+      }
+    })
+    :ok = Emitter.batch_enable(@network_name, [@selected_gear_frame_name])
     {
       :ok, %{
         throttle: 0,
@@ -27,6 +36,10 @@ defmodule VmsCore.Controllers.ControlsController do
         requested_gear: "parking"
       }
     }
+  end
+
+  defp gear_status_frame_parameters(state) do
+    {:ok, state.data, state}
   end
 
   @impl true
@@ -108,6 +121,12 @@ defmodule VmsCore.Controllers.ControlsController do
   def handle_call(:disable_calibration, _from, %{calibration_status: "started"} = state) do
     IO.inspect("Disable calibration")
     {:reply, :ok, %{ state | calibration_status: "disabled" }}
+  end
+
+  def select_gear(gear) do
+    :ok = Emitter.update(@network_name, @selected_gear_frame_name, fn (state) ->
+      state |> put_in([:data,  @selected_gear], gear)
+    end)
   end
 
   def throttle() do
