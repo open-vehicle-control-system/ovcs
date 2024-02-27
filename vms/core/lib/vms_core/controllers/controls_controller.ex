@@ -18,6 +18,7 @@ defmodule VmsCore.Controllers.ControlsController do
       :ok, %{
         throttle: 0,
         calibration_status: "disabled",
+        raw_max_throttle: 0,
         high_raw_throttle_a: get_calibration_value_for_key("high_raw_throttle_a"),
         high_raw_throttle_b: get_calibration_value_for_key("high_raw_throttle_b"),
         low_raw_throttle_a: get_calibration_value_for_key("low_raw_throttle_a"),
@@ -32,6 +33,7 @@ defmodule VmsCore.Controllers.ControlsController do
    state = %{state |
       throttle: 0, # Makes sure no throttle during
       requested_gear: "parking",
+      raw_max_throttle: raw_max_throttle.value,
       low_raw_throttle_a: trunc(raw_max_throttle.value),
       low_raw_throttle_b: trunc(raw_max_throttle.value),
       high_raw_throttle_a: 0,
@@ -81,7 +83,12 @@ defmodule VmsCore.Controllers.ControlsController do
 
   @impl true
   def handle_call(:enable_calibration, _from, state) do
+    IO.inspect("Enable calibration")
     {:reply, true, %{ state | calibration_status: "started" }}
+  end
+
+  def handle_call(:get_state, _from, state) do
+    {:reply, state, state}
   end
 
   def handle_call(:disable_calibration, _from, %{calibration_status: "in_progress"} = state) do
@@ -95,6 +102,11 @@ defmodule VmsCore.Controllers.ControlsController do
     else
       {:error, error} -> {:error, error}
     end
+  end
+
+  def handle_call(:disable_calibration, _from, %{calibration_status: "started"} = state) do
+    IO.inspect("Disable calibration")
+    {:reply, false, %{ state | calibration_status: "disabled" }}
   end
 
   def throttle() do
@@ -111,6 +123,10 @@ defmodule VmsCore.Controllers.ControlsController do
 
   def disable_calibration_mode() do
     GenServer.call(__MODULE__, :disable_calibration);
+  end
+
+  def get_calibration_data() do
+    GenServer.call(__MODULE__, :get_state);
   end
 
   defp get_calibration_value_for_key(key) do
