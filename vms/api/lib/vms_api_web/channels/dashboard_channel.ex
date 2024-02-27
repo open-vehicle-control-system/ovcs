@@ -1,8 +1,6 @@
 defmodule VmsApiWeb.DashboardChannel do
   use VmsApiWeb, :channel
 
-  alias VmsCore.CarControlsController
-
   intercept ["update"]
 
   @impl true
@@ -29,6 +27,7 @@ defmodule VmsApiWeb.DashboardChannel do
     {:noreply, socket}
   end
 
+  @impl true
   def handle_out("update", payload, socket) do
     push(socket, "updated", payload)
     {:noreply, socket}

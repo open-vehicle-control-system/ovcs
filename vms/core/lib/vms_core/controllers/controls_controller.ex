@@ -48,11 +48,6 @@ defmodule VmsCore.Controllers.ControlsController do
   end
 
   @impl true
-<<<<<<< HEAD
-  def handle_info({:handle_frame, _frame, [raw_max_throttle | _] = _signals}, %{calibration_status: "started"} = state) do
-   state = %{state |
-      throttle: 0,
-=======
   def handle_cast({:subscribe, client}, state) do
     {:noreply, %{state | clients: [client | state.clients]}}
   end
@@ -65,7 +60,6 @@ defmodule VmsCore.Controllers.ControlsController do
   def handle_info({:handle_frame, _frame, [raw_max_throttle | _] = _signals}, %{car_controls: %{calibration_status: "started"}} = state) do
    state = Map.replace(state, :car_controls, %{
       throttle: 0, # Makes sure no throttle during
->>>>>>> fad2902 (Real time dashboard data)
       requested_gear: "parking",
       raw_max_throttle: raw_max_throttle.value,
       low_raw_throttle_a: trunc(raw_max_throttle.value),
@@ -79,15 +73,9 @@ defmodule VmsCore.Controllers.ControlsController do
   end
 
   @impl true
-<<<<<<< HEAD
-  def handle_info({:handle_frame, _frame, [_, raw_throttle_a, raw_throttle_b, _] = _signals}, %{calibration_status: "in_progress"} = state) do
-    state = %{state |
-      throttle: 0,
-=======
   def handle_info({:handle_frame, _frame, [_, raw_throttle_a, raw_throttle_b, _] = _signals}, %{car_controls: %{calibration_status: "in_progress"}} = state) do
     state = Map.replace(state, :car_controls, %{
       throttle: 0, # Makes sure no throttle during calibration
->>>>>>> fad2902 (Real time dashboard data)
       requested_gear: "parking",
       low_raw_throttle_a: Enum.min([state.car_controls.low_raw_throttle_a, trunc(raw_throttle_a.value)]),
       low_raw_throttle_b: Enum.min([state.car_controls.low_raw_throttle_b, trunc(raw_throttle_b.value)]),
@@ -102,8 +90,7 @@ defmodule VmsCore.Controllers.ControlsController do
   @impl true
   def handle_info({:handle_frame, _frame, [_, raw_throttle_a, _raw_throttle_b, requested_gear] = _signals}, %{car_controls: %{calibration_status: "disabled"}} = state) do
     throttle = if state.car_controls.high_raw_throttle_a <= state.car_controls.low_raw_throttle_a || state.car_controls.high_raw_throttle_b <= state.car_controls.low_raw_throttle_b do
-      # Throttle has not been calibrated yet or has calibration errors so no throttle, vms should force calibration
-      Logger.warn("Throttle has not been calibrated yet or has calibration errors so no throttle, vms should force calibration")
+      Logger.warning("Throttle has not been calibrated yet or has calibration errors so no throttle, vms should force calibration")
       0
     else
       compute_throttle_from_raw_value(raw_throttle_a.value, state)
