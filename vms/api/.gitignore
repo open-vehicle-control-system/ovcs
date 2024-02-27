@@ -25,6 +25,10 @@ erl_crash.dump
 # Ignore package tarball (built via "mix hex.build").
 api-*.tar
 
+# generated public assets
+/priv/static/
+!/priv/static/.gitkeep
+
 # Database files
 *.db
 *.db-*

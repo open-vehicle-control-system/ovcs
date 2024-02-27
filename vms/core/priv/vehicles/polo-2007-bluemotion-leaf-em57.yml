@@ -132,30 +132,6 @@ can_networks:
               0x01: neutral
               0x02: reverse
               0x03: parking
-      - name: key_status
-        id: 0x570
-        signals:
-          - name: key_state
-            kind: string
-            value_start: 0
-            value_length: 8
-            origin: lock
-            mapping:
-              0x00: 'off'
-              0x01: key_engaged
-              0x87: contact_on
-              0x8B: start_engine
-      - name: abs_status
-        id: 0x5A0
-        signals:
-          - name: speed
-            kind: integer
-            unit: km/h
-            value_start: 8
-            value_length: 16
-            origin: engine
-            scale: 0.0075
-            decimals: 2
   leaf_drive: 
     bitrate: 500000
     emitted_frames: 
@@ -359,6 +335,30 @@ can_networks:
               0x01: car_switch_closed
               0x04: key_closed
               0x08: open
+      - name: key_status
+        id: 0x570
+        signals:
+          - name: key_state
+            kind: string
+            value_start: 0
+            value_length: 8
+            origin: lock
+            mapping:
+              0x00: 'off'
+              0x01: key_engaged
+              0x87: contact_on
+              0x8B: start_engine
+      - name: abs_status
+        id: 0x5A0
+        signals:
+          - name: speed
+            kind: integer
+            unit: km/h
+            value_start: 8
+            value_length: 16
+            origin: engine
+            scale: 0.0075
+            decimals: 2
   polo_comfort:
     bitrate: 100000
     received_frames:

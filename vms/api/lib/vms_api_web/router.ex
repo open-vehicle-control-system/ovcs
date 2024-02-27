@@ -27,4 +27,8 @@ defmodule VmsApiWeb.Router do
       live_dashboard "/dashboard", metrics: VmsApiWeb.Telemetry
     end
   end
+
+  scope "/", VmsApiWeb do
+    get "/*path", HomeController, :index
+  end
 end
