@@ -84,7 +84,7 @@ defmodule VmsCore.Controllers.ControlsController do
   @impl true
   def handle_call(:enable_calibration, _from, state) do
     IO.inspect("Enable calibration")
-    {:reply, true, %{ state | calibration_status: "started" }}
+    {:reply, :ok, %{ state | calibration_status: "started" }}
   end
 
   def handle_call(:get_state, _from, state) do
@@ -98,7 +98,7 @@ defmodule VmsCore.Controllers.ControlsController do
           {:ok, _} <- set_calibration_value_for_key("high_raw_throttle_b", state.high_raw_throttle_b)
     do
       IO.inspect state
-      {:reply, false, %{ state | calibration_status: "disabled" }}
+      {:reply, :ok, %{ state | calibration_status: "disabled" }}
     else
       {:error, error} -> {:error, error}
     end
@@ -106,7 +106,7 @@ defmodule VmsCore.Controllers.ControlsController do
 
   def handle_call(:disable_calibration, _from, %{calibration_status: "started"} = state) do
     IO.inspect("Disable calibration")
-    {:reply, false, %{ state | calibration_status: "disabled" }}
+    {:reply, :ok, %{ state | calibration_status: "disabled" }}
   end
 
   def throttle() do

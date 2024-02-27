@@ -123,12 +123,6 @@ const sidebarOpen = ref(false)
                     </dd>
                   </div>
                   <div class="pt-6 sm:flex">
-                    <dt class="font-medium text-gray-900 sm:w-64 sm:flex-none sm:pr-6">Max throttle value</dt>
-                    <dd class="mt-1 flex justify-between gap-x-6 sm:mt-0 sm:flex-auto">
-                      <div class="text-gray-900">{{ carControls.raw_max_throttle }}</div>
-                    </dd>
-                  </div>
-                  <div class="pt-6 sm:flex">
                     <dt class="font-medium text-gray-900 sm:w-64 sm:flex-none sm:pr-6">Low raw throttle value A</dt>
                     <dd class="mt-1 flex justify-between gap-x-6 sm:mt-0 sm:flex-auto">
                       <div class="text-gray-900">{{ carControls.low_raw_throttle_a }}</div>
