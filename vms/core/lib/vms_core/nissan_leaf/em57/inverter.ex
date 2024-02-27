@@ -4,7 +4,7 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
   alias VmsCore.NissanLeaf.Util
   alias Cantastic.Emitter
 
-  @network_name :drive
+  @network_name :leaf_drive
 
   @impl true
   def init(_) do
@@ -88,7 +88,11 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
   end
 
   def throttle(percentage_throttle) do
-    torque = percentage_throttle * 128 #TODO compute torque properly
+    torque = case percentage_throttle do
+      value when value < 0.3 -> 0
+      value when value < 0.6 -> 33
+      _                      -> 60
+    end
     :ok = Emitter.update(@network_name, "vms_torque_request", fn (state) ->
       state |> put_in([:data, "torque"], torque)
     end)

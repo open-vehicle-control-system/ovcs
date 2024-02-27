@@ -1,7 +1,7 @@
 defmodule VmsCore.VwPolo.Abs do
   use GenServer
 
-  @network_name :drive
+  @network_name :ovcs
 
   @abs_status_frame_name "abs_status"
 

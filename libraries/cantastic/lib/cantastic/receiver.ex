@@ -67,10 +67,13 @@ defmodule Cantastic.Receiver do
   end
 
   def find_frame_specification_by_name(frame_specifications, frame_name) do
-    {_frame_id, frame_specification} = frame_specifications |> Enum.find(fn ({_frame_id, frame_specification}) ->
-      frame_specification.name == frame_name
-    end)
-    {:ok, frame_specification}
+    case frame_specifications |> Enum.find(fn ({_frame_id, f}) -> f.name == frame_name end) do
+      {_frame_id, frame_specification} -> {:ok, frame_specification}
+      nil ->
+        spec = frame_specifications |> Map.values() |> List.first()
+        network_name = spec.network_name
+        {:error, "Frame '#{frame_name}' not found for network '#{network_name}'"}
+    end
   end
 
   defp send_signals_to_frame_handler(_frame_handlers, _frame, []), do: nil

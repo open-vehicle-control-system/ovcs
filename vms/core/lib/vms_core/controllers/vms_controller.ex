@@ -3,7 +3,7 @@ defmodule VmsCore.Controllers.VmsController do
 
   alias Cantastic.Emitter
 
-  @network_name :drive
+  @network_name :ovcs
 
   @status_request_frame_name "vms_relays_status_request"
   @status_frame_name "vms_relays_status"

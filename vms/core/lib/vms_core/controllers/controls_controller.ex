@@ -3,8 +3,9 @@ defmodule VmsCore.Controllers.ControlsController do
   use GenServer
   alias Cantastic.{Receiver}
   alias VmsCore.{Repo, ControlsCalibration}
+  require Logger
 
-  @network_name :drive
+  @network_name :ovcs
   @car_controls_status_frame_name "car_controls_status"
 
   def start_link(_) do
@@ -31,7 +32,7 @@ defmodule VmsCore.Controllers.ControlsController do
   @impl true
   def handle_info({:handle_frame, _frame, [raw_max_throttle | _] = _signals}, %{calibration_status: "started"} = state) do
    state = %{state |
-      throttle: 0, # Makes sure no throttle during
+      throttle: 0,
       requested_gear: "parking",
       raw_max_throttle: raw_max_throttle.value,
       low_raw_throttle_a: trunc(raw_max_throttle.value),
@@ -46,7 +47,7 @@ defmodule VmsCore.Controllers.ControlsController do
   @impl true
   def handle_info({:handle_frame, _frame, [_, raw_throttle_a, raw_throttle_b, _] = _signals}, %{calibration_status: "in_progress"} = state) do
     state = %{state |
-      throttle: 0, # Makes sure no throttle during calibration
+      throttle: 0,
       requested_gear: "parking",
       low_raw_throttle_a: Enum.min([state.low_raw_throttle_a, trunc(raw_throttle_a.value)]),
       low_raw_throttle_b: Enum.min([state.low_raw_throttle_b, trunc(raw_throttle_b.value)]),
@@ -59,7 +60,7 @@ defmodule VmsCore.Controllers.ControlsController do
   @impl true
   def handle_info({:handle_frame, _frame, [_, raw_throttle_a, _raw_throttle_b, requested_gear] = _signals}, %{calibration_status: "disabled"} = state) do
     throttle = if state.high_raw_throttle_a <= state.low_raw_throttle_a || state.high_raw_throttle_b <= state.low_raw_throttle_b do
-      # Throttle has not been calibrated yet or has calibration errors so no throttle, vms should force calibration
+      Logger.warn("Throttle has not been calibrated yet or has calibration errors so no throttle, vms should force calibration")
       0
     else
       compute_throttle_from_raw_value(raw_throttle_a.value, state)

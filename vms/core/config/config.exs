@@ -23,11 +23,10 @@ vehicle = System.get_env("VEHICLE") || "polo-2007-bluemotion-leaf-em57"
 config :vms_core, :vehicle, vehicle
 
 config :cantastic,
-  can_networks: (System.get_env("CAN_NETWORKS") || "drive:vcan0,confort:vcan1"),
-  manual_setup: (System.get_env("MANUAL_SETUP") == "true" || false),
+  can_networks: (System.get_env("CAN_NETWORKS") || "ovcs:vcan0,leaf_drive:vcan1,polo_drive:vcan2,polo_comfort:vcan3"),
+  setup_can_interfaces: (System.get_env("SETUP_CAN_INTERFACES") == "true" || false),
   otp_app: :vms_core,
   priv_can_config_path: "vehicles/#{vehicle}.yml"
-
 
 # Configures Elixir's Logger
 config :logger, :console,

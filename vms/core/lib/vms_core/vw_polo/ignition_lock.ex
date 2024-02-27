@@ -1,7 +1,7 @@
 defmodule VmsCore.VwPolo.IgnitionLock do
   use GenServer
 
-  @network_name :drive
+  @network_name :ovcs
 
   @key_status_frame_name "key_status"
 

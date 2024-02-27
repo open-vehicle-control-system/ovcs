@@ -31,8 +31,16 @@ defmodule Cantastic.Signal do
       "integer" ->
         number = case signal_specification.endianness do
           "little" ->
-            <<_head::size(head_length), val::little-integer-size(value_length), _tail::size(tail_length)>> = raw_data
-            val
+            try do
+              <<_head::size(head_length), val::little-integer-size(value_length), _tail::size(tail_length)>> = raw_data
+              val
+            rescue
+              error in MatchError  ->
+                IO.inspect signal_specification.frame_name
+                IO.inspect frame
+                IO.inspect raw_data
+                {:error, error}
+            end
           "big"    ->
             <<_head::size(head_length), val::big-integer-size(value_length), _tail::size(tail_length)>> = raw_data
             val

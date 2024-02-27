@@ -58,8 +58,8 @@ defmodule VmsCore.Vehicle do
 
   defp handle_throttle(state) do
     case ready_to_drive?(state) do
-      {true, true} -> apply_throttle(state)
-      _            -> state
+      true -> apply_throttle(state)
+      _    -> state
     end
   end
 

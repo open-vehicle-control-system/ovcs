@@ -37,7 +37,6 @@ void setup() {
 }
 
 void loop() {
-    transport.sendKeepAlive(status);
     int selectedGear = gearSelector.getGearPosition(); // Get which position the gear selector is
     AnalogValues throttlePedalReadings = throttlePedal.readValues(); // Get readings from throttle pedal
     // Send frame through transport with aggregated data
