@@ -75,8 +75,7 @@ defmodule Cantastic.Interface do
 
   defp setup_can_interface(interface, bitrate, setup_can_interfaces \\ false, retry_number \\ 0)
   defp setup_can_interface(interface, _bitrate, _setup_can_interfaces, 40) do
-    Logger.error("Could not open CAN bus interface #{interface} shutting down")
-    System.stop(1)
+    Logger.error("Could not open CAN bus interface #{interface}")
   end
   defp setup_can_interface(interface, bitrate, setup_can_interfaces, retry_number) when binary_part(interface, 0, 4) == "vcan" do
     with  {output, 0} <- System.cmd("ip", ["link", "show", interface]),
@@ -101,6 +100,7 @@ defmodule Cantastic.Interface do
   end
   defp setup_can_interface(interface, bitrate, true = setup_can_interfaces, retry_number) do
     with  {_output, 0} <- System.cmd("ip", ["link", "set", interface, "type", "can", "bitrate", "#{bitrate}"], stderr_to_stdout: true),
+          {_output, 0} <- System.cmd("ip", ["link", "set", interface, "txqueuelen", "1000"], stderr_to_stdout: true),
           {_output, 0} <- System.cmd("ip", ["link", "set", interface, "up"], stderr_to_stdout: true)
     do
       Logger.info("Connection to the CAN bus #{interface} with a  bitrate of #{bitrate} bit/seconds initialized")

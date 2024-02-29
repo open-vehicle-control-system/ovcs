@@ -27,9 +27,11 @@ int prechargeContactorRequestedState = 0;
 
 void receive_frame() {
   if (OVCS_CAN.readMessage(&contactorsStatusRequestFrame) == MCP2515::ERROR_OK) {
-    mainNegativeContactorRequestedState = contactorsStatusRequestFrame.data[0];
-    mainPositiveRequestedContactor = contactorsStatusRequestFrame.data[1];
-    prechargeContactorRequestedState = contactorsStatusRequestFrame.data[2];
+    if(contactorsStatusRequestFrame.can_id == CONTACTORS_STATUS_REQUEST_FRAME_ID){
+      mainNegativeContactorRequestedState = contactorsStatusRequestFrame.data[0];
+      mainPositiveRequestedContactor = contactorsStatusRequestFrame.data[1];
+      prechargeContactorRequestedState = contactorsStatusRequestFrame.data[2];
+    }
   } 
 }
 
@@ -55,9 +57,9 @@ void setup() {
 
   OVCS_CAN.reset();
   OVCS_CAN.setBitrate(CAN_500KBPS, MCP_8MHZ);
-  OVCS_CAN.setFilterMask(MCP2515::MASK0,0,0x7FF);
-  OVCS_CAN.setFilter(MCP2515::RXF0,0,CONTACTORS_STATUS_REQUEST_FRAME_ID);
-  OVCS_CAN.setFilterMask(MCP2515::MASK1,0,0x7FF);
+  // OVCS_CAN.setFilterMask(MCP2515::MASK0,0,0x7FF);
+  // OVCS_CAN.setFilter(MCP2515::RXF0,0,CONTACTORS_STATUS_REQUEST_FRAME_ID);
+  // OVCS_CAN.setFilterMask(MCP2515::MASK1,0,0x7FF);
   OVCS_CAN.setNormalMode();
 
   pinMode(MAIN_NEGATIVE_CONTACTOR_RELAY_PIN, OUTPUT);

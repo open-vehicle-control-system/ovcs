@@ -23,7 +23,9 @@ int inverterRelayRequestedState = 0;
 
 void receive_frame() {
   if (OVCS_CAN.readMessage(&vmsRelaysStatusRequestFrame) == MCP2515::ERROR_OK) {
-    inverterRelayRequestedState = vmsRelaysStatusRequestFrame.data[0];
+    if(vmsRelaysStatusRequestFrame.can_id == VMS_RELAYS_STATUS_REQUEST_FRAME_ID){
+      inverterRelayRequestedState = vmsRelaysStatusRequestFrame.data[0];
+    }
   } 
 }
 
@@ -45,9 +47,9 @@ void setup() {
 
   OVCS_CAN.reset();
   OVCS_CAN.setBitrate(CAN_500KBPS, MCP_8MHZ);
-  OVCS_CAN.setFilterMask(MCP2515::MASK0, 0, 0x7FF);
-  OVCS_CAN.setFilter(MCP2515::RXF0, 0, VMS_RELAYS_STATUS_REQUEST_FRAME_ID);
-  OVCS_CAN.setFilterMask(MCP2515::MASK1, 0, 0x7FF);
+  // OVCS_CAN.setFilterMask(MCP2515::MASK0, 0, 0x7FF);
+  // OVCS_CAN.setFilter(MCP2515::RXF0, 0, VMS_RELAYS_STATUS_REQUEST_FRAME_ID);
+  // OVCS_CAN.setFilterMask(MCP2515::MASK1, 0, 0x7FF);
   OVCS_CAN.setNormalMode();
 
   pinMode(INVERTER_RELAY_PIN, OUTPUT);

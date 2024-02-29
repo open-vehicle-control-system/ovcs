@@ -176,10 +176,10 @@ export default {
   },
   mounted: () => {
     let carControlsStore = useCarControls()
-    axios.get("http://localhost:4000/api/calibration", {})
+    axios.get("/api/calibration", {})
     .then((response) => carControlsStore.$patch(response.data));
 
-    let vmsDashboardSocket = new Socket("ws://localhost:4000/sockets/dashboard", {})
+    let vmsDashboardSocket = new Socket("ws://172.16.0.211:4000/sockets/dashboard", {})
     vmsDashboardSocket.connect();
     let carControlsChannel = vmsDashboardSocket.channel("car-controls", {})
 
@@ -193,12 +193,12 @@ export default {
   methods: {
     toggleCalibration: (calibrationEnabled) => {
       let carControlsStore = useCarControls()
-      axios.post("http://localhost:4000/api/calibration", {
+      axios.post("/api/calibration", {
         calibrationModeEnabled: calibrationEnabled,
       })
       .then((response) => {
         carControlsStore.$patch(response.data)
-        return axios.get("http://localhost:4000/api/calibration", {});
+        return axios.get("/api/calibration", {});
       })
       .then((response) => carControlsStore.$patch(response.data));
     }

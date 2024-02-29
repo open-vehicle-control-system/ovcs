@@ -2,7 +2,7 @@
 model: Polo 2007 Bluemotion
 brand: Volkswagen
 can_networks:
-  drive:
+  ovcs:
     bitrate: 500000
     emitted_frames:
       - name: contactors_status_request
@@ -45,93 +45,11 @@ can_networks:
             mapping:
               0x00: false
               0x01: true
-      - name: vms_alive
-        id: 0x50B
-        frequency: 100
-        signals:
-          - name: unknown
-            kind: static
-            value_start: 0
-            value_length: 56
-            value: 0x000006C0000000
-      - name: vms_torque_request
-        id: 0x1D4
-        frequency: 10
-        signals:
-          - name: prefix
-            kind: static
-            value_start: 0
-            value_length: 16
-            value: 0x6E6E
-          - name: torque
-            kind: integer
-            endianness: big
-            value_start: 16
-            value_length: 16
-            scale: 0.25
-            unit: N/m
-          - name: counter
-            kind: integer
-            value_start: 32
-            value_length: 8
-          - name: suffix
-            kind: static
-            value_start: 40
-            value_length: 16
-            value: 0x4401
-          - name: crc
-            kind: integer
-            value_start: 56
-            value_length: 8
-      - name: vms_status
-        id: 0x11A
-        frequency: 10
-        signals:
-          - name: gear
-            kind: string
-            endianness: big
-            value_start: 0
-            value_length: 8
-            mapping:
-              0x00: parked
-              0x02: rear
-              0x03: neutral
-              0x04: drive
-          - name: filler1
-            kind: static
-            value_start: 8
-            value_length: 8
-            value: 0x40
-          - name: steering_wheel_butoon
-            kind: static
-            value_start: 16
-            value_length: 8
-            value: 0
-          - name: heartbeat
-            kind: integer
-            value_start: 24
-            value_length: 8
-            mapping:
-              0x55: 0
-              0xAA: 1
-          - name: filler2
-            kind: static
-            value_start: 32
-            value_length: 16
-            value: 0xC000
-          - name: counter
-            kind: integer
-            value_start: 48
-            value_length: 8
-          - name: crc
-            kind: integer
-            value_start: 56
-            value_length: 8
       - name: gear_status
         id: 0x600
         frequency: 20
         signals:
-          - name: gear_selected
+          - name: selected_gear
             kind: string
             value_start: 0
             value_length: 8
@@ -204,7 +122,7 @@ can_networks:
             value_start: 32
             value_length: 16
             origin: OVCS ECU
-          - name: gear_requested
+          - name: requested_gear
             kind: string
             value_start: 48
             value_length: 8
@@ -214,6 +132,94 @@ can_networks:
               0x01: neutral
               0x02: reverse
               0x03: parking
+  leaf_drive: 
+    bitrate: 500000
+    emitted_frames: 
+      - name: vms_alive
+        id: 0x50B
+        frequency: 100
+        signals:
+          - name: unknown
+            kind: static
+            value_start: 0
+            value_length: 56
+            value: 0x000006C0000000
+      - name: vms_torque_request
+        id: 0x1D4
+        frequency: 10
+        signals:
+          - name: prefix
+            kind: static
+            value_start: 0
+            value_length: 16
+            value: 0x6E6E
+          - name: torque
+            kind: integer
+            endianness: big
+            value_start: 16
+            value_length: 16
+            scale: 0.25
+            unit: N/m
+          - name: counter
+            kind: integer
+            value_start: 32
+            value_length: 8
+          - name: suffix
+            kind: static
+            value_start: 40
+            value_length: 16
+            value: 0x4401
+          - name: crc
+            kind: integer
+            value_start: 56
+            value_length: 8
+      - name: vms_status
+        id: 0x11A
+        frequency: 10
+        signals:
+          - name: gear
+            kind: string
+            endianness: big
+            value_start: 0
+            value_length: 8
+            mapping:
+              0x00: parking
+              0x02: reverse
+              0x03: neutral
+              0x04: drive
+          - name: filler1
+            kind: static
+            value_start: 8
+            value_length: 8
+            value: 0x40
+          - name: steering_wheel_butoon
+            kind: static
+            value_start: 16
+            value_length: 8
+            value: 0
+          - name: heartbeat
+            kind: integer
+            value_start: 24
+            value_length: 8
+            mapping:
+              0x55: 0
+              0xAA: 1
+          - name: filler2
+            kind: static
+            value_start: 32
+            value_length: 16
+            value: 0xC000
+          - name: counter
+            kind: integer
+            value_start: 48
+            value_length: 8
+          - name: crc
+            kind: integer
+            value_start: 56
+            value_length: 8
+  polo_drive: 
+    bitrate: 500000
+    received_frames: 
       - name: car_status
         id: 0x470
         signals:
@@ -316,17 +322,6 @@ can_networks:
             value_length: 16
             origin: engine
             scale: 0.25
-      - name: abs_status
-        id: 0x5A0
-        signals:
-          - name: speed
-            kind: integer
-            unit: km/h
-            value_start: 8
-            value_length: 16
-            origin: engine
-            scale: 0.0075
-            decimals: 2
       - name: lock_status
         id: 0x591
         signals:
@@ -353,7 +348,18 @@ can_networks:
               0x01: key_engaged
               0x87: contact_on
               0x8B: start_engine
-  confort:
+      - name: abs_status
+        id: 0x5A0
+        signals:
+          - name: speed
+            kind: integer
+            unit: km/h
+            value_start: 8
+            value_length: 16
+            origin: engine
+            scale: 0.0075
+            decimals: 2
+  polo_comfort:
     bitrate: 100000
     received_frames:
       - name: key_status_confort

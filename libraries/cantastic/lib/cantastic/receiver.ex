@@ -78,7 +78,6 @@ defmodule Cantastic.Receiver do
 
   defp send_signals_to_frame_handler(_frame_handlers, _frame, []), do: nil
   defp send_signals_to_frame_handler(frame_handlers, frame, signals) do
-    Logger.debug(Frame.to_string(frame))
     frame_handlers |> Enum.each(fn (frame_handler) ->
       Process.send(frame_handler, {:handle_frame, frame, signals}, [])
     end)

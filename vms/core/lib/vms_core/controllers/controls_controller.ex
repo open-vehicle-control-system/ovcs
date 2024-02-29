@@ -188,6 +188,9 @@ defmodule VmsCore.Controllers.ControlsController do
   end
 
   defp compute_throttle_from_raw_value(value, state) do
-    (trunc(value) - state.car_controls.low_raw_throttle_a)/(state.car_controls.high_raw_throttle_a - state.car_controls.low_raw_throttle_a)
+    Float.round(
+      (trunc(value) - state.car_controls.low_raw_throttle_a)/(state.car_controls.high_raw_throttle_a - state.car_controls.low_raw_throttle_a),
+      2
+    )
   end
 end
