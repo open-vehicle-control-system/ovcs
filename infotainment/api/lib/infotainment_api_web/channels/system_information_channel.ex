@@ -14,8 +14,8 @@ defmodule InfotainmentApiWeb.SystemInformationChannel do
 
   def handle_info(:init, socket) do
     Logger.debug("Channel initialized")
-    data = SystemInformationManager.information()
-    push(socket, "updated", render_system_information(data))
+    system_information = SystemInformationManager.system_information()
+    push(socket, "updated", render_system_information(system_information))
     {:noreply, socket}
   end
 
@@ -25,9 +25,9 @@ defmodule InfotainmentApiWeb.SystemInformationChannel do
     {:noreply, socket}
   end
 
-  defp render_system_information(data) do
+  defp render_system_information(system_information) do
     %{
-      data: data  |> Map.values() |> Enum.map(fn(data_point) ->
+      data: system_information.data  |> Enum.map(fn(data_point) ->
         render_data_point(data_point)
       end)
     }
@@ -35,10 +35,11 @@ defmodule InfotainmentApiWeb.SystemInformationChannel do
 
   defp render_data_point(data_point) do
     %{
-      id: data_point.name,
+      id: data_point.id,
       type: "system",
       attributes: %{
         name: data_point.name,
+        label: data_point.label,
         value: data_point.value,
         unit: data_point.unit
       }

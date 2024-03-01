@@ -22,7 +22,8 @@ defmodule InfotainmentCore.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:cantastic, path: "../../libraries/cantastic"}
+      {:cantastic, path: "../../libraries/cantastic"},
+      {:json, "~> 1.4"}
     ]
   end
 end

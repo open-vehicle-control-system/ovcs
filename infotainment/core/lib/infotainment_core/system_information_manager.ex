@@ -6,8 +6,8 @@ defmodule InfotainmentCore.SystemInformationManager do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
   end
 
-  def information() do
-    GenServer.call(__MODULE__, :get_system_information)
+  def system_information() do
+    GenServer.call(__MODULE__, :system_information)
   end
 
   @impl true
@@ -20,14 +20,32 @@ defmodule InfotainmentCore.SystemInformationManager do
   end
 
   @impl true
-  def handle_call(:get_system_information, _from, state) do
-    {result, 0} = System.cmd("ip", ["route","list","default"])
-    default_if = Regex.scan(~r/.*dev (.*) .*/U, result, capture: :all_but_first) |> List.first |> List.first |> String.to_charlist
-    {:ok, ifs} = :inet.getifaddrs
-    {_if, attrs} = List.keyfind(ifs, default_if, 0)
-    {:addr, ip} = List.keyfind(attrs, :addr, 0)
-    {a,b,c,d} = ip
-    ip_as_string = "#{a}.#{b}.#{c}.#{d}"
-    {:reply, state |> Map.put(:data, %{name: "ipAddress", value: ip_as_string, unit: ""}), state}
+  def handle_call(:system_information, _from, state) do
+    {:reply, state |> Map.put(:data, local_ip_addresses()), state}
+  end
+
+  defp local_ip_addresses() do
+    {addresses, 0} = System.cmd("ip", ["--json", "address"])
+    {:ok, json} = JSON.decode(addresses)
+
+    Enum.filter(json, fn interface ->
+      interface["addr_info"] != [] && interface["ifname"] != "lo"
+    end) |> Enum.map(
+      fn interface ->
+        local_interface = Enum.filter interface["addr_info"], fn address ->
+          address["family"] == "inet"
+        end
+      end
+    ) |> List.flatten |> Enum.map(
+      fn local_interface ->
+        %{
+          id: local_interface["label"],
+          name: local_interface["label"],
+          label: "Network interface",
+          value: local_interface["local"],
+          unit: nil
+        }
+      end
+    )
   end
 end
