@@ -179,16 +179,22 @@ export default {
     axios.get("/api/calibration", {})
     .then((response) => carControlsStore.$patch(response.data));
 
-    let vmsDashboardSocket = new Socket("ws://172.16.0.211:4000/sockets/dashboard", {})
+    let vmsDashboardSocket = new Socket("ws://localhost:4000/sockets/dashboard", {})
     vmsDashboardSocket.connect();
     let carControlsChannel = vmsDashboardSocket.channel("car-controls", {})
+    let networkInterfaces = vmsDashboardSocket.channel("network-interfaces", {})
 
     carControlsChannel.on("updated", payload => {
       console.log(payload);
       carControlsStore.$patch(payload);
     })
 
+    networkInterfaces.on("updated", payload => {
+      console.log(payload);
+    })
+
     carControlsChannel.join().receive("ok", () => {})
+    networkInterfaces.join().receive("ok", () => {})
   },
   methods: {
     toggleCalibration: (calibrationEnabled) => {

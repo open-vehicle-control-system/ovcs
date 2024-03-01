@@ -28,7 +28,8 @@ defmodule VmsCore.MixProject do
       {:cantastic, path: "../../libraries/cantastic"},
       {:crc, "~> 0.10"},
       {:ecto_sql, "~> 3.10"},
-      {:ecto_sqlite3, ">= 0.0.0"}
+      {:ecto_sqlite3, ">= 0.0.0"},
+      {:json, "~> 1.4"}
     ]
   end
 end

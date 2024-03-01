@@ -19,7 +19,8 @@ defmodule VmsApi.Application do
       # {VmsApi.Worker, arg},
       # Start to serve requests, typically the last entry
       VmsApiWeb.Endpoint,
-      {VmsApi.CarControlsDispatcher, []}
+      {VmsApi.CarControlsDispatcher, []},
+      {VmsApi.NetworkInterfacesStatusDispatcher, []}
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html
