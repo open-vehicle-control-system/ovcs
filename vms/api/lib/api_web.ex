@@ -48,6 +48,14 @@ defmodule VmsApiWeb do
     end
   end
 
+  def view do
+    quote do
+      use Phoenix.View, root: "lib/vms_api_web/templates",
+                        namespace: VmsApiWeb
+      alias  VmsApiWeb.Router.Helpers, as: Routes
+    end
+  end
+
   def verified_routes do
     quote do
       use Phoenix.VerifiedRoutes,

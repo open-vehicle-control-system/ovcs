@@ -10,6 +10,7 @@ defmodule VmsApiWeb.Router do
     get "/status", StatusController, :show
     post "/calibration", CalibrationController, :create
     get "/calibration", CalibrationController, :show
+    resources "/samples", SamplesController, only: [:index, :create, :show, :update, :delete]
   end
 
   # Enable LiveDashboard in development
