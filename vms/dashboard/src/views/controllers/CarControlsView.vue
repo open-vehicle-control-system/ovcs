@@ -4,10 +4,12 @@ import { ref } from 'vue'
 import { Switch, SwitchGroup, SwitchLabel } from '@headlessui/vue'
 
 import { Socket } from 'phoenix'
-import axios from 'axios'
+
 import { useCarControls } from "../../stores/car_controls.js"
+import CalibrationHelpers from "../../helpers/calibration_helpers.js"
 
 const carControls = useCarControls()
+
 </script>
 
 <template>
@@ -90,8 +92,7 @@ export default {
   },
   mounted: () => {
     let carControlsStore = useCarControls()
-    axios.get(import.meta.env.VITE_BASE_URL + "/api/calibration", {})
-    .then((response) => carControlsStore.$patch(response.data));
+    CalibrationHelpers.fetch_calibration_data().then((response) => carControlsStore.$patch(response.data));
 
     let vmsDashboardSocket = new Socket(import.meta.env.VITE_BASE_WS + "/sockets/dashboard", {})
     vmsDashboardSocket.connect();
@@ -106,15 +107,12 @@ export default {
   methods: {
     toggleCalibration: (calibrationEnabled) => {
       let carControlsStore = useCarControls()
-      axios.post(import.meta.env.VITE_BASE_URL + "/api/calibration", {
-        calibrationModeEnabled: calibrationEnabled,
-      })
-      .then((response) => {
+      CalibrationHelpers.post_calibration_enabled(calibrationEnabled).then((response) => {
         carControlsStore.$patch(response.data)
-        return axios.get(import.meta.env.VITE_BASE_URL + "/api/calibration", {});
+        return CalibrationHelpers.fetch_calibration_data();
       })
       .then((response) => carControlsStore.$patch(response.data));
-    }
+    },
   },
 };
 
