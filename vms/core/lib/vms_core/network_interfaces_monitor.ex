@@ -2,7 +2,7 @@ defmodule VmsCore.NetworkInterfacesMonitor do
   use GenServer
   require Logger
 
-  @interface_status_refresh_interval_ms 500
+  @interface_status_refresh_interval_ms 1500
 
   def start_link(args) do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
@@ -31,7 +31,7 @@ defmodule VmsCore.NetworkInterfacesMonitor do
   @impl true
   def handle_info(:update_interfaces_status, state) do
     schedule_worker()
-    {interfaces_as_json, 0} = System.cmd("ip", ["--json", "-details", "-statistics", "address", "show"])
+    {interfaces_as_json, 0} = System.cmd("ip", ["--json", "-details", "-s", "-s", "address", "show"])
     {:ok, interfaces}       = JSON.decode(interfaces_as_json)
     state = Map.put(state, :interfaces, interfaces)
     state.clients |> Enum.each(fn (client) ->

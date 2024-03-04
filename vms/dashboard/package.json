@@ -10,6 +10,7 @@
     "test:unit": "vitest"
   },
   "dependencies": {
+    "dotenv": "^16.4.5",
     "pinia": "^2.1.7",
     "vue": "^3.4.15",
     "vue-router": "^4.2.5"
@@ -26,7 +27,7 @@
     "phoenix": "^1.7.11",
     "postcss": "^8.4.35",
     "tailwindcss": "^3.4.1",
-    "vite": "^5.0.11",
+    "vite": "^5.1.4",
     "vitest": "^1.2.2"
   }
 }
