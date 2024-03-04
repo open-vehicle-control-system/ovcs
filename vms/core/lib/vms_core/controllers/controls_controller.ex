@@ -68,7 +68,7 @@ defmodule VmsCore.Controllers.ControlsController do
       high_raw_throttle_b: 0,
       calibration_status: "in_progress"
     })
-    broadcast_state(state)
+    notify_clients(state)
     {:noreply, state}
   end
 
@@ -83,7 +83,7 @@ defmodule VmsCore.Controllers.ControlsController do
       high_raw_throttle_b: Enum.max([state.car_controls.high_raw_throttle_b, trunc(raw_throttle_b.value)]),
       calibration_status: "in_progress"
     })
-    broadcast_state(state)
+    notify_clients(state)
     {:noreply, state}
   end
 
@@ -96,7 +96,7 @@ defmodule VmsCore.Controllers.ControlsController do
       compute_throttle_from_raw_value(raw_throttle_a.value, state)
     end
     state = put_in(state, [:car_controls, :throttle], throttle) |> put_in([:car_controls, :requested_gear], requested_gear.value)
-    broadcast_state(state)
+    notify_clients(state)
     {:noreply, state}
   end
 
@@ -113,7 +113,7 @@ defmodule VmsCore.Controllers.ControlsController do
   @impl true
   def handle_call(:enable_calibration, _from, state) do
     state = put_in(state, [:car_controls, :calibration_status], "started")
-    broadcast_state(state)
+    notify_clients(state)
     {:reply, :ok, state}
   end
 
@@ -128,7 +128,7 @@ defmodule VmsCore.Controllers.ControlsController do
           {:ok, _} <- set_calibration_value_for_key("high_raw_throttle_b", state.car_controls.high_raw_throttle_b)
     do
       state = put_in(state, [:car_controls, :calibration_status], "disabled")
-      broadcast_state(state)
+      notify_clients(state)
       {:reply, :ok, state}
     else
       {:error, error} -> {:error, error}
@@ -137,7 +137,7 @@ defmodule VmsCore.Controllers.ControlsController do
 
   def handle_call(:disable_calibration, _from, %{car_controls: %{calibration_status: "started"}} = state) do
     state = put_in(state, [:car_controls, :calibration_status], "disabled")
-    broadcast_state(state)
+    notify_clients(state)
     {:reply, :ok, state}
   end
 
@@ -167,7 +167,7 @@ defmodule VmsCore.Controllers.ControlsController do
     GenServer.call(__MODULE__, :get_state);
   end
 
-  def broadcast_state(state) do
+  def notify_clients(state) do
     now = :os.system_time(:millisecond)
     if (state.last_dashboard_updated_at + @car_controls_update_interval_ms) < now do
       state.clients |> Enum.each(fn (client) ->
