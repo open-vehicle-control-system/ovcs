@@ -86,7 +86,6 @@ export default {
     let carControlsChannel = vmsDashboardSocket.channel("car-controls", {})
 
     carControlsChannel.on("updated", payload => {
-      console.log(payload);
       carControlsStore.$patch(payload);
     })
 
