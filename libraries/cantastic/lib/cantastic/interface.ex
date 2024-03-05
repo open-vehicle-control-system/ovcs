@@ -77,8 +77,14 @@ defmodule Cantastic.Interface do
   defp setup_can_interface(interface, _bitrate, _setup_can_interfaces, 40) do
     Logger.error("Could not open CAN bus interface #{interface}")
   end
+  defp setup_can_interface(interface, _bitrate, false = _setup_can_interfaces, _retry_number) do
+    Logger.info("Connection to the CAN bus #{interface} skipped following can interface setup config")
+    :ok
+  end
   defp setup_can_interface(interface, bitrate, setup_can_interfaces, retry_number) when binary_part(interface, 0, 4) == "vcan" do
-    with  {output, 0} <- System.cmd("ip", ["link", "show", interface]),
+    with  {output, 0} <- System.cmd("ip", ["link", "add", "dev", interface, "type", "vcan"]),
+          {output, 0} <- System.cmd("ip", ["link", "set", "up", interface]),
+          {output, 0} <- System.cmd("ip", ["link", "show", interface]),
           false       <- output |> String.match?(~r/state DOWN/)
     do
       Logger.info("Connection to #{interface} initialized")
@@ -93,10 +99,6 @@ defmodule Cantastic.Interface do
         :timer.sleep(1000)
         setup_can_interface(interface, bitrate, setup_can_interfaces, retry_number + 1)
     end
-  end
-  defp setup_can_interface(interface, _bitrate, false = _setup_can_interfaces, _retry_number) do
-    Logger.info("Connection to the CAN bus #{interface} skipped following can interface setup config")
-    :ok
   end
   defp setup_can_interface(interface, bitrate, true = setup_can_interfaces, retry_number) do
     with  {_output, 0} <- System.cmd("ip", ["link", "set", interface, "type", "can", "bitrate", "#{bitrate}"], stderr_to_stdout: true),

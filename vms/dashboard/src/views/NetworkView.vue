@@ -157,7 +157,7 @@ export default {
   },
   mounted: () => {
     let networkInterfacesStore = useNetworkInterfaces()
-    let vmsDashboardSocket = new Socket("ws://localhost:4000/sockets/dashboard", {})
+    let vmsDashboardSocket = new Socket(import.meta.env.VITE_BASE_WS + "/sockets/dashboard", {})
     vmsDashboardSocket.connect();
     let networkInterfaces = vmsDashboardSocket.channel("network-interfaces", {})
 

@@ -17,7 +17,7 @@ defmodule Cantastic.Application do
   end
 
   defp start_interfaces() do
-    children = Interface.configure_children()
+    children = Interface.configure_children() ++ [{Cantastic.Socketcand, []}]
     opts     = [strategy: :one_for_one, name: Cantastic.InterfaceSupervisor]
     Supervisor.start_link(children, opts)
   end

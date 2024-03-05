@@ -5,7 +5,9 @@ defmodule Cantastic.ConfigurationStore do
     networks = compute_networks()
     state = %{
       networks: networks,
-      setup_can_interfaces: Application.get_env(:cantastic, :setup_can_interfaces)
+      setup_can_interfaces: Application.get_env(:cantastic, :setup_can_interfaces),
+      socketcand_ip_interface: Application.get_env(:cantastic, :socketcand_ip_interface) || "eth0",
+      enable_socketcand: Application.get_env(:cantastic, :enable_socketcand) || false,
     }
     Agent.start_link(fn -> state end, name: __MODULE__)
   end
@@ -21,6 +23,18 @@ defmodule Cantastic.ConfigurationStore do
   def networks() do
     Agent.get(__MODULE__, fn(state) ->
       state.networks
+    end)
+  end
+
+  def socketcand_ip_interface() do
+    Agent.get(__MODULE__, fn(state) ->
+      state.socketcand_ip_interface
+    end)
+  end
+
+  def enable_socketcand() do
+    Agent.get(__MODULE__, fn(state) ->
+      state.enable_socketcand
     end)
   end
 
