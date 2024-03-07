@@ -14,7 +14,6 @@ defmodule VmsCore.VwPolo.Engine do
         "engine_rotations_per_minute" => 0
       }
     })
-    :ok = Emitter.batch_enable(@network_name, [@engine_status_frame_name])
     {:ok, %{}}
   end
 
@@ -30,5 +29,13 @@ defmodule VmsCore.VwPolo.Engine do
     :ok = Emitter.update(@network_name, @engine_status_frame_name, fn (state) ->
       state |> put_in([:data, "engine_rotations_per_minute"], rpm)
     end)
+  end
+
+  def on() do
+    Emitter.batch_enable(@network_name, [@engine_status_frame_name])
+  end
+
+  def off() do
+    Emitter.batch_disable(@network_name, [@engine_status_frame_name])
   end
 end

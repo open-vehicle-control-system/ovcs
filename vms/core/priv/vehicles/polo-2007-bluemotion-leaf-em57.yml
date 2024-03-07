@@ -225,8 +225,8 @@ can_networks:
           - name: em57_rotations_per_minute
             kind: integer
             endianness: big
-            value_start: 41
-            value_length: 15
+            value_start: 32
+            value_length: 16
             unit: rpm
   polo_drive: 
     bitrate: 500000

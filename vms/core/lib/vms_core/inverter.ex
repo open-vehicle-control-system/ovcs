@@ -2,9 +2,9 @@ defmodule VmsCore.Inverter do
   use GenServer
   alias VmsCore.Controllers.VmsController
   alias VmsCore.NissanLeaf.Em57
+  alias VmsCore.VwPolo
 
-  defdelegate throttle(percentage_torque), to: Em57.Inverter
-  defdelegate selected_gear(), to: Em57.Inverter
+  defdelegate throttle(percentage_torque, selected_gear), to: Em57.Inverter
 
   @impl true
   def init(_) do
@@ -17,8 +17,9 @@ defmodule VmsCore.Inverter do
 
   @impl true
   def handle_cast(:on, state) do
-    with :ok <- VmsController.switch_on_inverter_relay(),
-         :ok <- Em57.Inverter.on()
+    with  :ok <- VmsController.switch_on_inverter_relay(),
+          :ok <- Em57.Inverter.on(),
+          :ok <- VwPolo.Engine.on()
     do
       {:noreply, state}
     else
@@ -28,18 +29,9 @@ defmodule VmsCore.Inverter do
 
   @impl true
   def handle_cast(:off, state) do
-    with :ok <- VmsController.switch_off_inverter_relay(),
+    with :ok <- VwPolo.Engine.off(),
+         :ok <- VmsController.switch_off_inverter_relay(),
          :ok <- Em57.Inverter.off()
-    do
-      {:noreply, state}
-    else
-      :unexpected -> :unexpected
-    end
-  end
-
-  @impl true
-  def handle_cast({:select_gear, gear}, state) do
-    with :ok <- Em57.Inverter.select_gear(gear)
     do
       {:noreply, state}
     else
@@ -53,10 +45,6 @@ defmodule VmsCore.Inverter do
 
   def off() do
     GenServer.cast(__MODULE__, :off)
-  end
-
-  def select_gear(gear) do
-    GenServer.cast(__MODULE__, {:select_gear, gear})
   end
 
   def rpm() do

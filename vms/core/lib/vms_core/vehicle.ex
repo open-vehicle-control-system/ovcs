@@ -40,7 +40,7 @@ defmodule VmsCore.Vehicle do
 
   defp handle_gear(state) do
     requested_gear = ControlsController.requested_gear()
-    selected_gear  = Inverter.selected_gear()
+    selected_gear  = state.selected_gear
     speed          = Abs.speed()
     throttle       = ControlsController.throttle()
     case {selected_gear, requested_gear, speed < 1.0, throttle < 0.1} do # TODO check safe throttle
@@ -70,13 +70,12 @@ defmodule VmsCore.Vehicle do
   end
 
   defp select_gear(gear, state) do
-    :ok = Inverter.select_gear(gear)
     :ok = ControlsController.select_gear(gear)
-    state
+    %{state | selected_gear: gear}
   end
 
   defp apply_throttle(state) do
-    :ok = ControlsController.throttle() |> Inverter.throttle()
+    :ok = ControlsController.throttle() |> Inverter.throttle(state.selected_gear)
     state
   end
 

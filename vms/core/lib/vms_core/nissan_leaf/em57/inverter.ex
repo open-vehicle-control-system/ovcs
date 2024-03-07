@@ -15,7 +15,6 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
     :ok = init_emitters()
     Cantastic.Receiver.subscribe(self(), @network_name, [@inverter_status_frame_name])
     {:ok, %{
-      selected_gear: "parking",
       rpm: 0
     }}
   end
@@ -39,7 +38,7 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
     :ok = Emitter.configure(@network_name, @vms_status_frame_name, %{
       parameters_builder_function: &status_frame_parameters_builder/1,
       initial_data: %{
-        "gear" => "parking",
+        "gear" => "drive",
         "counter" => 0
       }
     })
@@ -47,18 +46,12 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
   end
 
   @impl true
-  def handle_cast({:select_gear, gear}, state) do
-    {:noreply, %{state | selected_gear: gear}}
-  end
-
-  @impl true
-  def handle_call(:selected_gear, _from, state) do
-    {:reply, state.selected_gear, state}
-  end
-
-  @impl true
   def handle_call(:rpm, _from, state) do
-    {:reply, state.rpm, state}
+    rpm = case state.rpm do
+      value when value > 6000 -> 0
+      value -> value
+    end
+    {:reply, rpm, state}
   end
 
   @impl true
@@ -103,27 +96,16 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
     Emitter.batch_disable(@network_name, [@vms_alive_frame_name, @vms_torque_request_frame_name, @vms_status_frame_name])
   end
 
-  def throttle(percentage_throttle) do
+  def throttle(percentage_throttle, gear) do
     :ok = Emitter.update(@network_name, @vms_torque_request_frame_name, fn (state) ->
-      max_torque = case state.data.gear do
-        "drive" -> 200 #TODO store in DB
-        "reverse" -> 20
-        _ -> 0
+      {max_torque, factor} = case gear do
+        "drive" -> {100, 1} #TODO store in DB
+        "reverse" -> {20, -1}
+        _ -> {0, 0}
       end
-      torque = percentage_throttle * max_torque
+      torque = factor * percentage_throttle * max_torque
       state |> put_in([:data, "torque"], torque)
     end)
-  end
-
-  def select_gear(gear) do
-    :ok = Emitter.update(@network_name, @vms_status_frame_name, fn (state) ->
-      state |> put_in([:data, "gear"], gear)
-    end)
-    GenServer.cast(__MODULE__, {:select_gear, gear}) #TODO check how to receive that info from the inverter itself
-  end
-
-  def selected_gear() do
-    GenServer.call(__MODULE__, :selected_gear)
   end
 
   def rpm() do
