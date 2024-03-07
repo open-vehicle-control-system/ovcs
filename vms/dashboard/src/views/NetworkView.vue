@@ -12,6 +12,7 @@ const statuses = {
   UP: 'text-green-400 bg-green-400/10',
   DOWN: 'text-rose-400 bg-rose-400/10',
 }
+
 </script>
 
 <template>
@@ -49,7 +50,12 @@ const statuses = {
                           </div>
                         </td>
                         <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{{ networkInterface.txqlen }}</td>
-                        <td v-if="networkInterfaces.statistics[networkInterface.ifindex]" class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{{ networkInterfaces.interfaceLoad(networkInterface.ifindex) }}%</td>
+                        <td v-if="networkInterfaces.statistics[networkInterface.ifindex]" class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                          <div class="inline-block bg-gray-200 rounded-full h-2.5 dark:bg-gray-100 w-20">
+                            <div class="bg-blue-600 h-2.5 rounded-full" :style="{'width': networkInterfaces.interfaceLoad(networkInterface.ifindex) + '%'}"></div>
+                          </div>
+                          <div class="inline-block px-3">{{ networkInterfaces.interfaceLoad(networkInterface.ifindex) }}%</div>
+                        </td>
                       </tr>
                     </tbody>
                   </table>
