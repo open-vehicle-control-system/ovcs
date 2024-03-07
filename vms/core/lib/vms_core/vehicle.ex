@@ -58,7 +58,7 @@ defmodule VmsCore.Vehicle do
   end
 
   defp handle_rpm(state) do
-    :ok = Inverter.rpm() |> VmsCore.VwPolo.Engine.rpm()
+    :ok = Inverter.rpm() |> abs() |> VmsCore.VwPolo.Engine.rpm()
     state
   end
 

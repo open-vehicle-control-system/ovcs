@@ -6,6 +6,9 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
 
   @network_name :leaf_drive
   @inverter_status_frame_name "inverter_status"
+  @vms_alive_frame_name "vms_alive"
+  @vms_torque_request_frame_name "vms_torque_request"
+  @vms_status_frame_name "vms_status"
 
   @impl true
   def init(_) do
@@ -22,18 +25,18 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
   end
 
   defp init_emitters() do
-    :ok = Emitter.configure(@network_name, "vms_alive", %{
+    :ok = Emitter.configure(@network_name, @vms_alive_frame_name, %{
       parameters_builder_function: &alive_frame_parameters_builder/1,
       initial_data: nil
     })
-    :ok = Emitter.configure(@network_name, "vms_torque_request", %{
+    :ok = Emitter.configure(@network_name, @vms_torque_request_frame_name, %{
       parameters_builder_function: &torque_frame_parameters_builder/1,
       initial_data: %{
         "torque" => 0,
         "counter" => 0
       }
     })
-    :ok = Emitter.configure(@network_name, "vms_status", %{
+    :ok = Emitter.configure(@network_name, @vms_status_frame_name, %{
       parameters_builder_function: &status_frame_parameters_builder/1,
       initial_data: %{
         "gear" => "parking",
@@ -93,26 +96,27 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
   end
 
   def on() do
-    Emitter.batch_enable(@network_name, ["vms_alive", "vms_torque_request", "vms_status"])
+    Emitter.batch_enable(@network_name, [@vms_alive_frame_name, @vms_torque_request_frame_name, @vms_status_frame_name])
   end
 
   def off() do
-    Emitter.batch_disable(@network_name, ["vms_alive", "vms_torque_request", "vms_status"])
+    Emitter.batch_disable(@network_name, [@vms_alive_frame_name, @vms_torque_request_frame_name, @vms_status_frame_name])
   end
 
   def throttle(percentage_throttle) do
-    torque = case percentage_throttle do
-      value when value < 0.3 -> 0
-      value when value < 0.6 -> 33
-      _                      -> 60
-    end
-    :ok = Emitter.update(@network_name, "vms_torque_request", fn (state) ->
+    :ok = Emitter.update(@network_name, @vms_torque_request_frame_name, fn (state) ->
+      max_torque = case state.data.gear do
+        "drive" -> 200 #TODO store in DB
+        "reverse" -> 20
+        _ -> 0
+      end
+      torque = percentage_throttle * max_torque
       state |> put_in([:data, "torque"], torque)
     end)
   end
 
   def select_gear(gear) do
-    :ok = Emitter.update(@network_name, "vms_status", fn (state) ->
+    :ok = Emitter.update(@network_name, @vms_status_frame_name, fn (state) ->
       state |> put_in([:data, "gear"], gear)
     end)
     GenServer.cast(__MODULE__, {:select_gear, gear}) #TODO check how to receive that info from the inverter itself
