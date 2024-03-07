@@ -24,7 +24,7 @@ defmodule Cantastic.Socketcand do
 
     Task.async(fn() ->
       Logger.info("Starting socketcand for debugging purposes...")
-      {output, 0} = System.cmd("socketcand", ["-i", interfaces, "-l", ip_interface])
+      {_output, 0} = System.cmd("socketcand", ["-i", interfaces, "-l", ip_interface])
     end)
     {:noreply, state}
   end

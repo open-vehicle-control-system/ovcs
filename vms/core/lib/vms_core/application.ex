@@ -11,6 +11,7 @@ defmodule VmsCore.Application do
         repos: Application.fetch_env!(:vms_core, :ecto_repos),
         skip: skip_migrations?()},
       {VmsCore.NissanLeaf.Em57.Charger, []},
+      {VmsCore.VwPolo.Engine, []},
       {VmsCore.Controllers.ControlsController, []},
       {VmsCore.Controllers.ContactorsController, []},
       {VmsCore.Controllers.VmsController, []},

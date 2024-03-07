@@ -217,8 +217,41 @@ can_networks:
             kind: integer
             value_start: 56
             value_length: 8
+    received_frames: 
+      - name: inverter_status
+        id: 0x1DA
+        frequency: 10
+        signals:
+          - name: em57_rotations_per_minute
+            kind: integer
+            endianness: big
+            value_start: 41
+            value_length: 15
+            unit: rpm
   polo_drive: 
     bitrate: 500000
+    emitted_frames:
+      - name: engine_status
+        id: 0x280
+        frequency: 100
+        signals:
+          - name: filler1
+            kind: static
+            value_start: 0
+            value_length: 16
+            value: 0x0000
+          - name: engine_rotations_per_minute
+            kind: integer
+            unit: rpm
+            value_start: 16
+            value_length: 16
+            origin: engine
+            scale: 0.25
+          - name: filler2
+            kind: static
+            value_start: 32
+            value_length: 32
+            value: 0x00000000
     received_frames: 
       - name: car_status
         id: 0x470
@@ -312,16 +345,6 @@ can_networks:
             mapping:
               0x00: false
               0x02: true
-      - name: engine_status
-        id: 0x280
-        signals:
-          - name: engine_rotations_per_minute
-            kind: integer
-            unit: rpm
-            value_start: 16
-            value_length: 16
-            origin: engine
-            scale: 0.25
       - name: lock_status
         id: 0x591
         signals:

@@ -24,6 +24,7 @@ defmodule VmsCore.Vehicle do
       |> handle_ignition()
       |> handle_gear()
       |> handle_throttle()
+      |> handle_rpm()
     loop()
     {:noreply, state}
   end
@@ -54,6 +55,11 @@ defmodule VmsCore.Vehicle do
       {_, "neutral", _, _}         -> select_gear("neutral", state)
       _                            -> state
     end
+  end
+
+  defp handle_rpm(state) do
+    :ok = Inverter.rpm() |> VmsCore.VwPolo.Engine.rpm()
+    state
   end
 
   defp handle_throttle(state) do

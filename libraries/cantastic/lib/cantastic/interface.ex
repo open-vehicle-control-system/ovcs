@@ -82,8 +82,8 @@ defmodule Cantastic.Interface do
     :ok
   end
   defp setup_can_interface(interface, bitrate, setup_can_interfaces, retry_number) when binary_part(interface, 0, 4) == "vcan" do
-    with  {output, 0} <- System.cmd("ip", ["link", "add", "dev", interface, "type", "vcan"]),
-          {output, 0} <- System.cmd("ip", ["link", "set", "up", interface]),
+    with  {_output, 0} <- System.cmd("ip", ["link", "add", "dev", interface, "type", "vcan"]),
+          {_output, 0} <- System.cmd("ip", ["link", "set", "up", interface]),
           {output, 0} <- System.cmd("ip", ["link", "show", interface]),
           false       <- output |> String.match?(~r/state DOWN/)
     do

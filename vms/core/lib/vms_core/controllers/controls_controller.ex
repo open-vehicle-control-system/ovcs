@@ -104,7 +104,6 @@ defmodule VmsCore.Controllers.ControlsController do
     state = put_in(state, [:car_controls, :throttle], throttle) |> put_in([:car_controls, :requested_gear], requested_gear.value)
       |> put_in([:car_controls, :raw_throttle_a], raw_throttle_a.value) |> put_in([:car_controls, :raw_throttle_b], raw_throttle_b.value)
     notify_clients(state)
-    IO.inspect state
     {:noreply, state}
   end
 

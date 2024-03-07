@@ -19,11 +19,6 @@ defmodule VmsCore.NetworkInterfacesMonitor do
     }
   end
 
-  @impl true
-  def handle_cast({:subscribe, client}, state) do
-    {:noreply, %{state | clients: [client | state.clients]}}
-  end
-
   def subscribe(client) do
     GenServer.cast(__MODULE__, {:subscribe, client})
   end

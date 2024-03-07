@@ -59,6 +59,10 @@ defmodule VmsCore.Inverter do
     GenServer.cast(__MODULE__, {:select_gear, gear})
   end
 
+  def rpm() do
+    Em57.Inverter.rpm()
+  end
+
   def ready_to_drive?() do
     VmsController.ready_to_drive?() && Em57.Inverter.ready_to_drive?()
   end

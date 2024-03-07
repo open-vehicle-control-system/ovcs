@@ -5,12 +5,15 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
   alias Cantastic.Emitter
 
   @network_name :leaf_drive
+  @inverter_status_frame_name "inverter_status"
 
   @impl true
   def init(_) do
     :ok = init_emitters()
+    Cantastic.Receiver.subscribe(self(), @network_name, [@inverter_status_frame_name])
     {:ok, %{
-      selected_gear: "parking"
+      selected_gear: "parking",
+      rpm: 0
     }}
   end
 
@@ -48,6 +51,16 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
   @impl true
   def handle_call(:selected_gear, _from, state) do
     {:reply, state.selected_gear, state}
+  end
+
+  @impl true
+  def handle_call(:rpm, _from, state) do
+    {:reply, state.rpm, state}
+  end
+
+  @impl true
+  def handle_info({:handle_frame,  _frame, [%{value: rpm}] = _signals}, state) do
+    {:noreply, %{state | rpm: rpm}}
   end
 
   def alive_frame_parameters_builder(state) do
@@ -107,6 +120,10 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
 
   def selected_gear() do
     GenServer.call(__MODULE__, :selected_gear)
+  end
+
+  def rpm() do
+    GenServer.call(__MODULE__, :rpm)
   end
 
   def ready_to_drive?() do
