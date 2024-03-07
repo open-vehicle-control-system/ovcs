@@ -1,11 +1,11 @@
 import axios from 'axios'
 
 const fetch_calibration_data = () => {
-    return axios.get("/api/calibration", {});
+    return axios.get(import.meta.env.VITE_BASE_URL + "/api/calibration", {});
   }
 
 const post_calibration_enabled = (calibrationEnabled) => {
-    return axios.post("/api/calibration", {
+    return axios.post(import.meta.env.VITE_BASE_URL + "/api/calibration", {
       calibrationModeEnabled: calibrationEnabled,
     });
   }
