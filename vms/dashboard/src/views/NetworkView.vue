@@ -33,6 +33,7 @@ const statuses = {
                         <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Link Type</th>
                         <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">State</th>
                         <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Tx queue length</th>
+                        <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Load</th>
                       </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-200 bg-white">
@@ -48,6 +49,7 @@ const statuses = {
                           </div>
                         </td>
                         <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{{ networkInterface.txqlen }}</td>
+                        <td v-if="networkInterfaces.statistics[networkInterface.ifindex]" class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{{ networkInterfaces.interfaceLoad(networkInterface.ifindex) }}%</td>
                       </tr>
                     </tbody>
                   </table>
@@ -163,6 +165,7 @@ export default {
 
     networkInterfaces.on("updated", payload => {
       networkInterfacesStore.$patch(payload);
+      networkInterfacesStore.computeInterfacesLoad();
     })
 
     networkInterfaces.join().receive("ok", () => {})

@@ -2,7 +2,7 @@ defmodule VmsCore.NetworkInterfacesMonitor do
   use GenServer
   require Logger
 
-  @interface_status_refresh_interval_ms 1500
+  @interface_status_refresh_interval_ms 1000
 
   def start_link(args) do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
