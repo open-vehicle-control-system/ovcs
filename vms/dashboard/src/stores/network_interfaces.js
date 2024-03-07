@@ -44,8 +44,9 @@ export const useNetworkInterfaces = defineStore('networkInterfaces', {
                     let bitrate = networkInterface.linkinfo.info_data.bittiming.bitrate;
                     let bytes_exchanged = networkInterface.stats64.rx.bytes;
                     let previous_bytes_exchanged = this.previousBytesExchanged(networkInterface.ifindex);
-                    let load = ((bytes_exchanged - previous_bytes_exchanged) / (bitrate/8)) * 100;
+                    let load = ((bytes_exchanged - previous_bytes_exchanged)*8*100 / (bitrate));
                     this.statistics[networkInterface.ifindex]["load"] = Math.trunc(load);
+                    this.statistics[networkInterface.ifindex]["bytes"] = bytes_exchanged;
                 }
             }
         }
