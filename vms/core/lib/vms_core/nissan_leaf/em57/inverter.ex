@@ -97,13 +97,13 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
   end
 
   def throttle(percentage_throttle, gear) do
+    {max_torque, factor} = case gear do
+      "drive" -> {100, 1} #TODO store in DB
+      "reverse" -> {20, -1}
+      _ -> {0, 0}
+    end
+    torque = factor * percentage_throttle * max_torque
     :ok = Emitter.update(@network_name, @vms_torque_request_frame_name, fn (state) ->
-      {max_torque, factor} = case gear do
-        "drive" -> {100, 1} #TODO store in DB
-        "reverse" -> {20, -1}
-        _ -> {0, 0}
-      end
-      torque = factor * percentage_throttle * max_torque
       state |> put_in([:data, "torque"], torque)
     end)
   end
