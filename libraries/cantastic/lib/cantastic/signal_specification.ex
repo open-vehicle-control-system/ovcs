@@ -12,10 +12,9 @@ defmodule Cantastic.SignalSpecification do
     :mapping,
     :reverse_mapping,
     :unit,
-    :origin,
     :scale,
     :offset,
-    :decimals,
+    :sign,
     :value
   ]
 
@@ -26,16 +25,15 @@ defmodule Cantastic.SignalSpecification do
       frame_id: frame_id,
       frame_name: frame_name,
       kind: yaml_signal_specification[:kind] || "integer",
+      sign: yaml_signal_specification[:sign] || "unsigned",
       value_start: yaml_signal_specification.value_start,
       value_length: value_length,
       endianness: yaml_signal_specification[:endianness] || "little",
       mapping: compute_mapping(yaml_signal_specification[:mapping], value_length),
       reverse_mapping: compute_reverse_mapping(yaml_signal_specification[:mapping], value_length),
       unit: yaml_signal_specification[:unit],
-      origin: yaml_signal_specification[:origin],
       scale: (yaml_signal_specification[:scale] || 1) + 0.0,
       offset: yaml_signal_specification[:offset] || 0,
-      decimals: yaml_signal_specification[:decimals] || 0,
       value: yaml_signal_specification[:value] |> Util.integer_to_bin_big(value_length)
     }
     {:ok, signal_specification}
@@ -56,7 +54,7 @@ defmodule Cantastic.SignalSpecification do
           "big"    ->
             <<int::big-integer-size(signal_specification.value_length)>>
         end
-      _ -> signal_specification.reverse_mapping[value]
+      "enum" -> signal_specification.reverse_mapping[value]
     end
   end
 

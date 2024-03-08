@@ -4,8 +4,7 @@ defmodule Cantastic.Signal do
     :frame_name,
     :value,
     :unit,
-    :origin,
-    kind: "integer"
+    :kind
   ]
 
   def to_string(signal) do
@@ -18,7 +17,6 @@ defmodule Cantastic.Signal do
       frame_name: signal_specification.frame_name,
       kind: signal_specification.kind,
       unit: signal_specification.unit,
-      origin: signal_specification.origin,
       value: nil
     }
     raw_data            = frame.raw_data
@@ -27,26 +25,36 @@ defmodule Cantastic.Signal do
     value_length        = signal_specification.value_length
     tail_length         = raw_data_bit_length - head_length - value_length
 
-    value = case signal_specification.kind do
-      "integer" ->
-        number = case signal_specification.endianness do
-          "little" ->
-            try do
-              <<_head::size(head_length), val::little-integer-size(value_length), _tail::size(tail_length)>> = raw_data
-              val
-            rescue
-              error in MatchError ->
-                {:error, error}
+    try do
+      value = case signal_specification.kind do
+        "static" ->
+          <<_head::size(head_length), val::bitstring-size(value_length), _tail::size(tail_length)>> = raw_data
+          val
+        "integer" ->
+            int = case {signal_specification.endianness, signal_specification.sign} do
+              {"little", "signed"} ->
+                <<_head::size(head_length), val::little-signed-integer-size(value_length), _tail::size(tail_length)>> = raw_data
+                val
+              {"little", "unsigned"} ->
+                <<_head::size(head_length), val::little-unsigned-integer-size(value_length), _tail::size(tail_length)>> = raw_data
+                val
+              {"big", "signed"} ->
+                <<_head::size(head_length), val::big-signed-integer-size(value_length), _tail::size(tail_length)>> = raw_data
+                val
+              {"big", "unsigned"} ->
+                <<_head::size(head_length), val::big-unsigned-integer-size(value_length), _tail::size(tail_length)>> = raw_data
+                val
             end
-          "big"    ->
-            <<_head::size(head_length), val::big-integer-size(value_length), _tail::size(tail_length)>> = raw_data
-            val
-        end
-        Float.round((number * signal_specification.scale) + signal_specification.offset, signal_specification.decimals)
-      _ ->
-        <<_head::size(head_length), val::bitstring-size(value_length), _tail::size(tail_length)>> = raw_data
-        signal_specification.mapping[val]
+
+          round((int * signal_specification.scale) + signal_specification.offset)
+        "enum" ->
+          <<_head::size(head_length), val::bitstring-size(value_length), _tail::size(tail_length)>> = raw_data
+          signal_specification.mapping[val]
+      end
+      {:ok, %{signal | value: value}}
+    rescue
+      error in MatchError ->
+        {:error, error}
     end
-    {:ok, %{signal | value: value}}
   end
 end

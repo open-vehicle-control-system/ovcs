@@ -40,7 +40,6 @@ defmodule InfotainmentApiWeb.DebugMetricsChannel do
       attributes: %{
         name: signal.name,
         kind: signal.kind,
-        origin: signal.origin,
         value: signal.value,
         unit: signal.unit
       }

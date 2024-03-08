@@ -1,6 +1,4 @@
 ---
-model: Polo 2007 Bluemotion
-brand: Volkswagen
 can_networks:
   ovcs:
     bitrate: 500000
@@ -10,26 +8,23 @@ can_networks:
         frequency: 20
         signals:
           - name: main_negative_contactor_enabled
-            kind: boolean
+            kind: enum
             value_start: 0
             value_length: 8
-            origin: OVCS ECU
             mapping:
               0x00: false
               0x01: true
           - name: main_positive_contactor_enabled
-            kind: boolean
+            kind: enum
             value_start: 8
             value_length: 8
-            origin: OVCS ECU
             mapping:
               0x00: false
               0x01: true
           - name: precharge_contactor_enabled
-            kind: boolean
+            kind: enum
             value_start: 16
             value_length: 8
-            origin: OVCS ECU
             mapping:
               0x00: false
               0x01: true
@@ -38,10 +33,9 @@ can_networks:
         frequency: 20
         signals:
           - name: inverter_relay_enabled
-            kind: boolean
+            kind: enum
             value_start: 0
             value_length: 8
-            origin: OVCS VMS
             mapping:
               0x00: false
               0x01: true
@@ -50,10 +44,9 @@ can_networks:
         frequency: 20
         signals:
           - name: selected_gear
-            kind: string
+            kind: enum
             value_start: 0
             value_length: 8
-            origin: VMS
             mapping:
               0x00: drive
               0x01: neutral
@@ -66,26 +59,23 @@ can_networks:
         validate_frequency: true
         signals:
           - name: main_negative_contactor_enabled
-            kind: boolean
+            kind: enum
             value_start: 0
             value_length: 8
-            origin: OVCS ECU
             mapping:
               0x00: false
               0x01: true
           - name: main_positive_contactor_enabled
-            kind: boolean
+            kind: enum
             value_start: 8
             value_length: 8
-            origin: OVCS ECU
             mapping:
               0x00: false
               0x01: true
           - name: precharge_contactor_enabled
-            kind: boolean
+            kind: enum
             value_start: 16
             value_length: 8
-            origin: OVCS ECU
             mapping:
               0x00: false
               0x01: true
@@ -95,10 +85,9 @@ can_networks:
         validate_frequency: true
         signals:
           - name: inverter_relay_enabled
-            kind: boolean
+            kind: enum
             value_start: 0
             value_length: 8
-            origin: OVCS ECU
             mapping:
               0x00: false
               0x01: true
@@ -108,25 +97,18 @@ can_networks:
         validate_frequency: true
         signals:
           - name: max_raw_throttle
-            kind: integer
             value_start: 0
             value_length: 16
-            origin: OVCS ECU
           - name: raw_throttle_a
-            kind: integer
             value_start: 16
             value_length: 16
-            origin: OVCS ECU
           - name: raw_throttle_b
-            kind: integer
             value_start: 32
             value_length: 16
-            origin: OVCS ECU
           - name: requested_gear
-            kind: string
+            kind: enum
             value_start: 48
             value_length: 8
-            origin: VMS
             mapping:
               0x00: drive
               0x01: neutral
@@ -154,7 +136,7 @@ can_networks:
             value_length: 16
             value: 0x6E6E
           - name: torque
-            kind: integer
+            sign: signed
             endianness: big
             value_start: 16
             value_length: 12
@@ -166,7 +148,6 @@ can_networks:
             value_length: 4
             value: 0x00
           - name: counter
-            kind: integer
             value_start: 32
             value_length: 8
           - name: suffix
@@ -175,7 +156,6 @@ can_networks:
             value_length: 16
             value: 0x4401
           - name: crc
-            kind: integer
             value_start: 56
             value_length: 8
       - name: vms_status
@@ -183,8 +163,7 @@ can_networks:
         frequency: 10
         signals:
           - name: gear
-            kind: string
-            endianness: big
+            kind: enum
             value_start: 0
             value_length: 8
             mapping:
@@ -201,9 +180,8 @@ can_networks:
             kind: static
             value_start: 16
             value_length: 8
-            value: 0
+            value: 0x0
           - name: heartbeat
-            kind: integer
             value_start: 24
             value_length: 8
             mapping:
@@ -215,11 +193,9 @@ can_networks:
             value_length: 16
             value: 0xC000
           - name: counter
-            kind: integer
             value_start: 48
             value_length: 8
           - name: crc
-            kind: integer
             value_start: 56
             value_length: 8
     received_frames: 
@@ -228,8 +204,8 @@ can_networks:
         frequency: 10
         signals:
           - name: em57_rotations_per_minute
-            kind: integer
             endianness: big
+            sign: signed
             value_start: 32
             value_length: 16
             unit: rpm
@@ -250,7 +226,6 @@ can_networks:
             unit: rpm
             value_start: 16
             value_length: 16
-            origin: engine
             scale: 0.25
           - name: filler2
             kind: static
@@ -262,58 +237,51 @@ can_networks:
         id: 0x470
         signals:
           - name: front_left_door_open
-            kind: boolean
+            kind: enum
             value_start: 15
             value_length: 1
-            origin: doors
             mapping:
               0x00: false
               0x01: true
           - name: front_right_door_open
-            kind: boolean
+            kind: enum
             value_start: 14
             value_length: 1
-            origin: doors
             mapping:
               0x00: false
               0x01: true
           - name: rear_left_door_open
-            kind: boolean
+            kind: enum
             value_start: 13
             value_length: 1
-            origin: doors
             mapping:
               0x00: false
               0x01: true
           - name: rear_right_door_open
-            kind: boolean
+            kind: enum
             value_start: 12
             value_length: 1
-            origin: doors
             mapping:
               0x00: false
               0x01: true
           - name: trunk_door_open
-            kind: boolean
+            kind: enum
             value_start: 10
             value_length: 1
-            origin: doors
             mapping:
               0x00: false
               0x01: true
           - name: beam_active
-            kind: boolean
+            kind: enum
             value_start: 16
             value_length: 8
-            origin: compartiment_controller
             mapping:
               0x00: false
               0x64: true
           - name: warning_lights_active
-            kind: boolean
+            kind: enum
             value_start: 0
             value_length: 8
-            origin: compartiment_controller
             mapping: # 0:False, 8:WarningActiveOff, 11:WarningActiveOn, 1:leftActive, 2:rightActive
               0x00: false
               0x01: false
@@ -324,18 +292,16 @@ can_networks:
         id: 0x50
         signals:
           - name: in_car_airbag_system_online
-            kind: boolean
+            kind: enum
             value_start: 0
             value_length: 8
-            origin: airbag
             mapping:
               0x00: true
               0x02: false
           - name: passenger_airbag_online
-            kind: boolean
+            kind: enum
             value_start: 8
             value_length: 8
-            origin: airbag
             mapping:
               0x09: true
               0xB: false
@@ -343,10 +309,9 @@ can_networks:
         id: 0x320
         signals:
           - name: handbrake_engaged
-            kind: boolean
+            kind: enum
             value_start: 8
             value_length: 8
-            origin: handbrake
             mapping:
               0x00: false
               0x02: true
@@ -354,10 +319,9 @@ can_networks:
         id: 0x591
         signals:
           - name: lock_state
-            kind: string
+            kind: enum
             value_start: 8
             value_length: 8
-            origin: lock
             mapping: # 8 seems to be the state when the car boots and is already open
               0x00: open 
               0x01: car_switch_closed
@@ -367,10 +331,9 @@ can_networks:
         id: 0x570
         signals:
           - name: key_state
-            kind: string
+            kind: enum
             value_start: 0
             value_length: 8
-            origin: lock
             mapping:
               0x00: 'off'
               0x01: key_engaged
@@ -380,13 +343,10 @@ can_networks:
         id: 0x5A0
         signals:
           - name: speed
-            kind: integer
             unit: km/h
             value_start: 8
             value_length: 16
-            origin: engine
             scale: 0.0075
-            decimals: 2
   polo_comfort:
     bitrate: 100000
     received_frames:
@@ -394,10 +354,9 @@ can_networks:
         id: 0x271
         signals:
           - name: key_state
-            kind: string
+            kind: enum
             value_start: 0
             value_length: 8
-            origin: lock
             mapping:
               0x00: 'off'
               0x01: key_engaged

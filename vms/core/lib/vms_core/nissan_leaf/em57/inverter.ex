@@ -98,7 +98,7 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
 
   def throttle(percentage_throttle, gear) do
     {max_torque, factor} = case gear do
-      "drive" -> {100, 1} #TODO store in DB
+      "drive" -> {50, 1} #TODO store in DB
       "reverse" -> {20, -1}
       _ -> {0, 0}
     end

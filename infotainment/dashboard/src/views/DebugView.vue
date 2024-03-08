@@ -60,7 +60,7 @@ export default {
   mounted: () => {
     let store = useMetricsStore()
     let systemStore = systemInformationStore()
-    let dashboardSocket = new Socket("ws://localhost:4000/sockets/dashboard", {})
+    let dashboardSocket = new Socket("ws://localhost:4001/sockets/dashboard", {})
     dashboardSocket.connect()
     let metricsChannel = dashboardSocket.channel("debug-metrics", {})
     let systemInformationChannel = dashboardSocket.channel("system-information", {})
