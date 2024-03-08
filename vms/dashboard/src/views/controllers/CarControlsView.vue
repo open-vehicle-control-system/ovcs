@@ -7,7 +7,7 @@ import { Socket } from 'phoenix'
 
 import { useCarControls } from "../../stores/car_controls.js"
 import CalibrationHelpers from "../../helpers/calibration_helpers.js"
-
+import VueApexCharts from "vue3-apexcharts";
 const carControls = useCarControls()
 
 </script>
@@ -83,14 +83,20 @@ const carControls = useCarControls()
       </div>
     </div>
   </form>
+
+  <div>
+    <h2>Real time throttle</h2>
+    <apexchart type="line" :options="options" :series="series"></apexchart>
+  </div>
 </template>
 
 <script>
 export default {
   name: "CarControls",
   components: {
+    apexchart: VueApexCharts,
   },
-  mounted: () => {
+  mounted: function() {
     let carControlsStore = useCarControls()
     CalibrationHelpers.fetch_calibration_data().then((response) => carControlsStore.$patch(response.data));
 
@@ -98,8 +104,20 @@ export default {
     vmsDashboardSocket.connect();
     let carControlsChannel = vmsDashboardSocket.channel("car-controls", {})
 
+    let chartData = [{name: "Throttle A", data: []}, {name: "Throttle B", data: []}];
     carControlsChannel.on("updated", payload => {
-      carControlsStore.$patch(payload);
+        carControlsStore.$patch(payload);
+        if(chartData[0]["data"].length >= 100){
+          chartData[0]["data"].shift();
+        }
+        if(chartData[1]["data"].length >= 100){
+          chartData[1]["data"].shift();
+        }
+        let timestamp = Date.now()
+        chartData[0]["data"].push([timestamp, payload.raw_throttle_a]);
+        chartData[1]["data"].push([timestamp, payload.raw_throttle_b]);
+        this.series = chartData;
+        window.dispatchEvent(new Event('resize'));
     })
 
     carControlsChannel.join().receive("ok", () => {})
@@ -114,6 +132,23 @@ export default {
       .then((response) => carControlsStore.$patch(response.data));
     },
   },
+
+  data: () => {
+    return {
+      options: {
+        chart: {
+          id: 'vuechart-example'
+        },
+        xaxis: {
+          type: 'datetime'
+        }
+      },
+      series: [
+        {name: "Throttle A", data: []},
+        {name: "Throttle B", data: []}
+      ]
+    }
+  }
 };
 
 </script>
