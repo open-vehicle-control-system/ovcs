@@ -20,9 +20,16 @@ elsif ARGV[0] == "start"
     cansend("vcan0", "111" , "01")  # vms_relays_status
     cansend("vcan0", "200" , min + "00" + min + "00" + min + "00" + "00")
 elsif ARGV[0] == "throttle"
-    value = ARGV[1] || 125
+    if ARGV[1] == "R"
+        gear = "02"
+    elsif ARGV[1] == "D"
+        gear = "00"
+    else 
+        raise "Invalid gear"
+    end
+    value = ARGV[2] || 125
     hex = "%.2x" % value
-    cansend("vcan0", "200" , max + "00" + hex + "00" + hex + "00" + "00")
+    cansend("vcan0", "200" , max + "00" + hex + "00" + hex + "00" + gear)
 elsif ARGV[0] == "stop"
     cansend("vcan2", "570" , "0020FF00") # Start ignition with key
     sleep 2

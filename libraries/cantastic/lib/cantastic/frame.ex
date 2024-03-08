@@ -22,7 +22,7 @@ defmodule Cantastic.Frame do
     |> Enum.reduce(<<>>, fn (signal_specification, raw_data) ->
       value = (parameters || %{})[signal_specification.name]
       raw_signal = SignalSpecification.instantiate_raw(raw_data, signal_specification, value)
-      Kernel.<>(raw_data, raw_signal)
+      <<raw_data::bitstring, raw_signal::bitstring>>
     end)
   end
 
