@@ -2,6 +2,7 @@
 
 import { ref } from 'vue'
 import { Switch, SwitchGroup, SwitchLabel } from '@headlessui/vue'
+import LineChart from "../../components/RealTimeLineChart.vue";
 
 import { Socket } from 'phoenix'
 
@@ -83,6 +84,8 @@ const carControls = useCarControls()
       </div>
     </div>
   </form>
+
+  <LineChart></LineChart>
 </template>
 
 <script>
