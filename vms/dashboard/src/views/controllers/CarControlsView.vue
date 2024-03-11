@@ -1,15 +1,74 @@
 <script setup>
+  import { Switch, SwitchGroup, SwitchLabel } from '@headlessui/vue'
+  import { Socket } from 'phoenix'
+  import { useCarControls } from "../../stores/car_controls.js"
+  import CalibrationHelpers from "../../helpers/calibration_helpers.js"
+  import VueApexCharts from "vue3-apexcharts";
 
-import { ref } from 'vue'
-import { Switch, SwitchGroup, SwitchLabel } from '@headlessui/vue'
+  const carControls = useCarControls()
+</script>
 
-import { Socket } from 'phoenix'
 
-import { useCarControls } from "../../stores/car_controls.js"
-import CalibrationHelpers from "../../helpers/calibration_helpers.js"
-import VueApexCharts from "vue3-apexcharts";
-const carControls = useCarControls()
+<script>
+export default {
+  name: "CarControls",
+  components: {
+    apexchart: VueApexCharts,
+  },
+  mounted: function() {
+    let carControlsStore = useCarControls()
+    CalibrationHelpers.fetch_calibration_data().then((response) => carControlsStore.$patch(response.data));
 
+    let vmsDashboardSocket = new Socket(import.meta.env.VITE_BASE_WS + "/sockets/dashboard", {})
+    vmsDashboardSocket.connect();
+    let carControlsChannel = vmsDashboardSocket.channel("car-controls", {})
+
+    let chartData = [{name: "Throttle A", data: []}, {name: "Throttle B", data: []}];
+    carControlsChannel.on("updated", payload => {
+        carControlsStore.$patch(payload);
+        if(chartData[0]["data"].length >= 100){
+          chartData[0]["data"].shift();
+        }
+        if(chartData[1]["data"].length >= 100){
+          chartData[1]["data"].shift();
+        }
+        let timestamp = Date.now()
+        chartData[0]["data"].push([timestamp, payload.raw_throttle_a]);
+        chartData[1]["data"].push([timestamp, payload.raw_throttle_b]);
+        this.series = chartData;
+        window.dispatchEvent(new Event('resize'));
+    })
+
+    carControlsChannel.join().receive("ok", () => {})
+  },
+  methods: {
+    toggleCalibration: (calibrationEnabled) => {
+      let carControlsStore = useCarControls()
+      CalibrationHelpers.post_calibration_enabled(calibrationEnabled).then((response) => {
+        carControlsStore.$patch(response.data)
+        return CalibrationHelpers.fetch_calibration_data();
+      })
+      .then((response) => carControlsStore.$patch(response.data));
+    },
+  },
+
+  data: () => {
+    return {
+      options: {
+        chart: {
+          id: 'vuechart-example'
+        },
+        xaxis: {
+          type: 'datetime'
+        }
+      },
+      series: [
+        {name: "Throttle A", data: []},
+        {name: "Throttle B", data: []}
+      ]
+    }
+  }
+};
 </script>
 
 <template>
@@ -89,66 +148,3 @@ const carControls = useCarControls()
     <apexchart type="line" :options="options" :series="series"></apexchart>
   </div>
 </template>
-
-<script>
-export default {
-  name: "CarControls",
-  components: {
-    apexchart: VueApexCharts,
-  },
-  mounted: function() {
-    let carControlsStore = useCarControls()
-    CalibrationHelpers.fetch_calibration_data().then((response) => carControlsStore.$patch(response.data));
-
-    let vmsDashboardSocket = new Socket(import.meta.env.VITE_BASE_WS + "/sockets/dashboard", {})
-    vmsDashboardSocket.connect();
-    let carControlsChannel = vmsDashboardSocket.channel("car-controls", {})
-
-    let chartData = [{name: "Throttle A", data: []}, {name: "Throttle B", data: []}];
-    carControlsChannel.on("updated", payload => {
-        carControlsStore.$patch(payload);
-        if(chartData[0]["data"].length >= 100){
-          chartData[0]["data"].shift();
-        }
-        if(chartData[1]["data"].length >= 100){
-          chartData[1]["data"].shift();
-        }
-        let timestamp = Date.now()
-        chartData[0]["data"].push([timestamp, payload.raw_throttle_a]);
-        chartData[1]["data"].push([timestamp, payload.raw_throttle_b]);
-        this.series = chartData;
-        window.dispatchEvent(new Event('resize'));
-    })
-
-    carControlsChannel.join().receive("ok", () => {})
-  },
-  methods: {
-    toggleCalibration: (calibrationEnabled) => {
-      let carControlsStore = useCarControls()
-      CalibrationHelpers.post_calibration_enabled(calibrationEnabled).then((response) => {
-        carControlsStore.$patch(response.data)
-        return CalibrationHelpers.fetch_calibration_data();
-      })
-      .then((response) => carControlsStore.$patch(response.data));
-    },
-  },
-
-  data: () => {
-    return {
-      options: {
-        chart: {
-          id: 'vuechart-example'
-        },
-        xaxis: {
-          type: 'datetime'
-        }
-      },
-      series: [
-        {name: "Throttle A", data: []},
-        {name: "Throttle B", data: []}
-      ]
-    }
-  }
-};
-
-</script>
