@@ -12,9 +12,9 @@ defmodule Cantastic.FrameSpecification do
     :name,
     :network_name,
     :frequency,
-    :validate_frequency,
     :signal_specifications,
-    :frame_handlers
+    :frame_handlers,
+    :allowed_frequency_leeway
   ]
 
   def from_frame_specification(network_name, yaml_frame_specification) do
@@ -25,7 +25,7 @@ defmodule Cantastic.FrameSpecification do
       name: yaml_frame_specification.name,
       network_name: network_name,
       frequency: yaml_frame_specification[:frequency],
-      validate_frequency: yaml_frame_specification[:validate_frequency] || false,
+      allowed_frequency_leeway: yaml_frame_specification[:allowed_frequency_leeway] || 10,
       signal_specifications: signal_specifications,
       frame_handlers: []
     }

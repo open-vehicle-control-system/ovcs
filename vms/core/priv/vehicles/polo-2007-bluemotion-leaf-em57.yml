@@ -56,7 +56,6 @@ can_networks:
       - name: contactors_status
         id: 0x101
         frequency: 10
-        validate_frequency: true
         signals:
           - name: main_negative_contactor_enabled
             kind: enum
@@ -82,7 +81,6 @@ can_networks:
       - name: vms_relays_status
         id: 0x111
         frequency: 10
-        validate_frequency: true
         signals:
           - name: inverter_relay_enabled
             kind: enum
@@ -94,7 +92,6 @@ can_networks:
       - name: car_controls_status
         id: 0x200
         frequency: 10
-        validate_frequency: true
         signals:
           - name: max_raw_throttle
             value_start: 0

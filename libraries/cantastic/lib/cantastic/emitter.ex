@@ -75,14 +75,6 @@ defmodule Cantastic.Emitter do
     Process.send_after(emitter, :send_frame, 0)
   end
 
-  def enable(emitter) do
-    GenServer.cast(emitter, :enable)
-  end
-
-  def disable(emitter) do
-    GenServer.cast(emitter, :disable)
-  end
-
   def get(emitter, fun, timeout \\ 5000) when is_function(fun, 1) do
     GenServer.call(emitter, {:get, fun}, timeout)
   end
@@ -97,11 +89,21 @@ defmodule Cantastic.Emitter do
     GenServer.call(emitter, {:configure, initialization_args})
   end
 
+
+  def enable(network_name, frame_name) do
+    emitter = Interface.emitter_process_name(network_name, frame_name)
+    GenServer.cast(emitter, :enable)
+  end
+
+  def disable(network_name, frame_name) do
+    emitter = Interface.emitter_process_name(network_name, frame_name)
+    GenServer.cast(emitter, :disable)
+  end
+
   def batch_enable(network_name, frame_names) do
     frame_names |> Enum.each(
       fn (frame_name) ->
-        emitter = Interface.emitter_process_name(network_name, frame_name)
-        enable(emitter)
+        enable(network_name, frame_name)
       end
     )
   end
@@ -109,8 +111,7 @@ defmodule Cantastic.Emitter do
   def batch_disable(network_name, frame_names) do
     frame_names |> Enum.each(
       fn (frame_name) ->
-        emitter = Interface.emitter_process_name(network_name, frame_name)
-        disable(emitter)
+        disable(network_name, frame_name)
       end
     )
   end

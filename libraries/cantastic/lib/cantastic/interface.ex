@@ -1,5 +1,5 @@
 defmodule Cantastic.Interface do
-  alias Cantastic.{FrameSpecification, Receiver, Emitter, ConfigurationStore}
+  alias Cantastic.{FrameSpecification, Receiver, Emitter, ConfigurationStore, ReceivedFrameWatcher}
   require Logger
 
   @can_domain 29
@@ -16,18 +16,34 @@ defmodule Cantastic.Interface do
       }
     end)
 
-    receivers = configure_receivers(interface_specs)
-    emitters  = configure_emitters(interface_specs)
-    receivers ++ emitters
+    receivers_and_watchers = configure_receivers_and_watchers(interface_specs)
+    emitters               = configure_emitters(interface_specs)
+    receivers_and_watchers ++ emitters
   end
 
-  def configure_receivers(interface_specs) do
+  def configure_receivers_and_watchers(interface_specs) do
     interface_specs
     |> Enum.map(fn (%{network_name: network_name, network_config: network_config, socket: socket}) ->
-      process_name                  = receiver_process_name(network_name)
+      receiver_process_name         = receiver_process_name(network_name)
       received_frame_specifications = compute_frame_specifications((network_config[:received_frames] || []), network_name)
-      Supervisor.child_spec({Receiver, [process_name, network_name, socket, received_frame_specifications]}, id: process_name)
+      watchers = received_frame_specifications
+      |> Enum.map(fn({id, frame_specification}) ->
+        arguments = %{
+          process_name: received_frame_watcher_process_name(network_name, frame_specification.name),
+          frame_specification: frame_specification,
+          network_name: network_name
+        }
+        Supervisor.child_spec({ReceivedFrameWatcher, arguments}, id: arguments.process_name)
+      end)
+      arguments = %{
+        process_name: receiver_process_name,
+        network_name: network_name,
+        socket: socket,
+        frame_specifications: received_frame_specifications
+      }
+      watchers ++ [Supervisor.child_spec({Receiver, arguments}, id: arguments.process_name)]
     end)
+    |> List.flatten()
   end
 
   def configure_emitters(interface_specs) do
@@ -48,14 +64,21 @@ defmodule Cantastic.Interface do
     |> List.flatten
   end
 
-  def receiver_process_name(network_name) do
+  defp process_name_prefix(network_name) do
     network_name = network_name |> Atom.to_string()
-    "Cantastic#{network_name |> String.capitalize()}Receiver" |> String.to_atom
+    "Cantastic#{network_name |> Macro.camelize()}"
+  end
+
+  def receiver_process_name(network_name) do
+    "#{process_name_prefix(network_name)}Receiver" |> String.to_atom
   end
 
   def emitter_process_name(network_name, frame_name) do
-    network_name = network_name |> Atom.to_string()
-    "Cantastic#{network_name |> String.capitalize()}#{frame_name |> String.capitalize()}Emitter" |> String.to_atom
+    "#{process_name_prefix(network_name)}#{frame_name |> Macro.camelize()}Emitter" |> String.to_atom
+  end
+
+  def received_frame_watcher_process_name(network_name, frame_name) do
+    "#{process_name_prefix(network_name)}#{frame_name |> Macro.camelize()}ReceivedFrameWatcher" |> String.to_atom
   end
 
   defp initialize_socket(interface, bitrate, setup_can_interfaces) do

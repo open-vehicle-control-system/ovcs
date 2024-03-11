@@ -3,12 +3,12 @@ defmodule Cantastic.Receiver do
   alias Cantastic.{Signal, FrameSpecification, Frame, Interface, ConfigurationStore}
   require Logger
 
-  def start_link([process_name | args_tail] = _args) do
-    GenServer.start_link(__MODULE__, args_tail, name: process_name)
+  def start_link(%{process_name: process_name} = args) do
+    GenServer.start_link(__MODULE__, args, name: process_name)
   end
 
   @impl true
-  def init([network_name, socket, frame_specifications]) do
+  def init(%{process_name:  _, frame_specifications: frame_specifications, socket: socket, network_name: network_name}) do
     receive_frame()
     {:ok,
       %{
@@ -28,7 +28,7 @@ defmodule Cantastic.Receiver do
       signal
     end)
     frame = %{frame | name: frame_specification.name}
-    send_signals_to_frame_handler(frame_specification.frame_handlers, frame, signals)
+    send_to_frame_handlers(frame_specification.frame_handlers, frame, signals)
     receive_frame()
     {:noreply, state}
   end
@@ -76,8 +76,8 @@ defmodule Cantastic.Receiver do
     end
   end
 
-  defp send_signals_to_frame_handler(_frame_handlers, _frame, []), do: nil
-  defp send_signals_to_frame_handler(frame_handlers, frame, signals) do
+  defp send_to_frame_handlers(_frame_handlers, _frame, []), do: nil
+  defp send_to_frame_handlers(frame_handlers, frame, signals) do
     frame_handlers |> Enum.each(fn (frame_handler) ->
       Process.send(frame_handler, {:handle_frame, frame, signals}, [])
     end)
