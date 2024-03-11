@@ -27,7 +27,7 @@ defmodule Cantastic.Interface do
       receiver_process_name         = receiver_process_name(network_name)
       received_frame_specifications = compute_frame_specifications((network_config[:received_frames] || []), network_name)
       watchers = received_frame_specifications
-      |> Enum.map(fn({id, frame_specification}) ->
+      |> Enum.map(fn({_id, frame_specification}) ->
         arguments = %{
           process_name: received_frame_watcher_process_name(network_name, frame_specification.name),
           frame_specification: frame_specification,
@@ -96,7 +96,7 @@ defmodule Cantastic.Interface do
     end)
   end
 
-  defp setup_can_interface(interface, bitrate, setup_can_interfaces \\ false, retry_number \\ 0)
+  defp setup_can_interface(interface, bitrate, setup_can_interfaces, retry_number \\ 0)
   defp setup_can_interface(interface, _bitrate, _setup_can_interfaces, 40) do
     Logger.error("Could not open CAN bus interface #{interface}")
   end
