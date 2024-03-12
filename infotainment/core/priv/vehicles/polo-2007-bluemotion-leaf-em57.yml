@@ -52,6 +52,21 @@ can_networks:
               0x01: neutral
               0x02: reverse
               0x03: parking
+      - name: vms_status
+        id: 0x1A0
+        frequency: 100
+        signals:
+          - name: status
+            kind: enum
+            value_start: 0
+            value_length: 8
+            mapping:
+              0x00: ok
+              0x01: warning
+              0x02: failure
+          - name: counter
+            value_start: 8
+            value_length: 8
     received_frames:
       - name: contactors_status
         id: 0x101
@@ -200,12 +215,45 @@ can_networks:
         id: 0x1DA
         frequency: 10
         signals:
+          - name: inverter_output_voltage # DBC not sure
+            value_start: 0
+            value_length: 8
+            scale: 2
+            unit: V
+          - name: em57_effective_torque
+            endianness: big
+            sign: signed
+            value_start: 21
+            value_length: 11
+            scale: 0.5
+            unit: N/m
           - name: em57_rotations_per_minute
             endianness: big
             sign: signed
             value_start: 32
             value_length: 16
             unit: rpm
+      - name: inverter_temperatures
+        id: 0x55A
+        frequency: 10
+        signals:
+          - name: inverter_communication_board_temperature
+            value_start: 8
+            value_length: 8
+            unit: C
+          - name: insulated_gate_bipolar_transistor_temperature
+            value_start: 16
+            value_length: 8
+            unit: C
+          - name: insulated_gate_bipolar_transistor_board_temperature
+            value_start: 24
+            value_length: 8
+            unit: C
+          - name: motor_temperature
+            value_start: 32
+            value_length: 8
+            unit: C
+
   polo_drive: 
     bitrate: 500000
     emitted_frames:
@@ -338,6 +386,8 @@ can_networks:
               0x8B: start_engine
       - name: abs_status
         id: 0x5A0
+        frequency: 20
+        allowed_frequency_leeway: 20
         signals:
           - name: speed
             unit: km/h
