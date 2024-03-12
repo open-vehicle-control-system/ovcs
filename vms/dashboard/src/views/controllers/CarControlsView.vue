@@ -61,19 +61,20 @@
       ];
 
       function toggleCalibration(calibrationEnabled){
-        let carControlsStore = useCarControls()
+        let carControlsStore = useCarControls();
         CalibrationService.post_calibration_enabled(calibrationEnabled).then((response) => {
           carControlsStore.$patch(response.data)
-          return CalibrationService.fetch_calibration_data();
-        })
-        .then((response) => carControlsStore.$patch(response.data));
+        });
       };
 
       onMounted(() => {
-        let carControlsStore = useCarControls()
-        CalibrationService.fetch_calibration_data().then((response) => carControlsStore.$patch(response.data));
+        let carControlsStore = useCarControls();
 
-        let vmsDashboardSocket = new Socket(import.meta.env.VITE_BASE_WS + "/sockets/dashboard", {})
+        CalibrationService.fetch_calibration_data().then(
+          (response) => carControlsStore.$patch(response.data)
+        );
+
+        let vmsDashboardSocket = new Socket(import.meta.env.VITE_BASE_WS + "/sockets/dashboard", {});
         vmsDashboardSocket.connect();
         let carControlsChannel = vmsDashboardSocket.channel("car-controls", {})
 
