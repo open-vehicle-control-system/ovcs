@@ -1,6 +1,6 @@
 defmodule Cantastic.Receiver do
   use GenServer
-  alias Cantastic.{Signal, FrameSpecification, Frame, Interface, ConfigurationStore}
+  alias Cantastic.{Signal, FrameSpecification, Frame, Interface, ConfigurationStore, ReceivedFrameWatcher}
   require Logger
 
   def start_link(%{process_name: process_name} = args) do
@@ -9,7 +9,7 @@ defmodule Cantastic.Receiver do
 
   @impl true
   def init(%{process_name:  _, frame_specifications: frame_specifications, socket: socket, network_name: network_name}) do
-    receive_frame()
+    receive_frame(200)
     {:ok,
       %{
         network_name: network_name,
@@ -53,13 +53,15 @@ defmodule Cantastic.Receiver do
   end
 
   @impl true
-  def handle_cast({:subscribe, frame_handler, frame_names}, state) do
+  def handle_cast({:subscribe, frame_handler, frame_names, opts}, state) do
     frame_names = case frame_names do
       "*"   -> frame_names(state)
       [_|_] -> frame_names
     end
+    subscribe_to_errors = opts[:errors] == true
     state = frame_names |> Enum.reduce(state, fn(frame_name, new_state) ->
       {:ok, frame_specification} = find_frame_specification_by_name(state.frame_specifications, frame_name)
+      if subscribe_to_errors, do: :ok = ReceivedFrameWatcher.subscribe(state.network_name, frame_name, frame_handler)
       frame_handlers = [frame_handler | frame_specification.frame_handlers]
       put_in(new_state, [:frame_specifications, frame_specification.id, :frame_handlers], frame_handlers)
     end)
@@ -83,19 +85,19 @@ defmodule Cantastic.Receiver do
     end)
   end
 
-  defp receive_frame do
-    Process.send_after(self(), :receive_frame, 0)
+  defp receive_frame(delay \\ 0) do
+    Process.send_after(self(), :receive_frame, delay)
   end
 
-  def subscribe(frame_handler) do
+  def subscribe(frame_handler, opts \\ %{errors: true}) do
     ConfigurationStore.networks()|> Enum.each(fn (network) ->
       receiver =  Interface.receiver_process_name(network.network_name)
-      GenServer.cast(receiver, {:subscribe, frame_handler, "*"})
+      GenServer.cast(receiver, {:subscribe, frame_handler, "*", opts})
     end)
   end
-  def subscribe(frame_handler, network_name, frame_names) do
+  def subscribe(frame_handler, network_name, frame_names, opts \\ %{errors: true}) do
     receiver =  Interface.receiver_process_name(network_name)
-    GenServer.cast(receiver, {:subscribe, frame_handler, frame_names})
+    GenServer.cast(receiver, {:subscribe, frame_handler, frame_names, opts})
   end
 
   def frame_names(state) do

@@ -8,7 +8,7 @@ defmodule Cantastic.ReceivedFrameWatcher do
 
   @impl true
   def init(%{process_name:  _, frame_specification: frame_specification, network_name: network_name}) do
-    :ok = Cantastic.Receiver.subscribe(self(), network_name, [frame_specification.name])
+    :ok = Cantastic.Receiver.subscribe(self(), network_name, [frame_specification.name], errors: false)
     {:ok,
       %{
         watching_timer: nil,
@@ -17,7 +17,9 @@ defmodule Cantastic.ReceivedFrameWatcher do
         frame_name: frame_specification.name,
         frame_handlers: frame_specification.frame_handlers,
         frame_frequency: frame_specification.frequency,
-        frame_allowed_frequency_leeway: frame_specification.allowed_frequency_leeway
+        frame_allowed_frequency_leeway: frame_specification.allowed_frequency_leeway,
+        allowed_missing_frames: frame_specification.allowed_missing_frames,
+        missed_frame_count: 0
       }
     }
   end
@@ -27,11 +29,14 @@ defmodule Cantastic.ReceivedFrameWatcher do
     now          = DateTime.utc_now()
     diff         = DateTime.diff(now, state.frame_received_at, :millisecond)
     allowed_diff = state.frame_frequency + state.frame_allowed_frequency_leeway
-    case diff > allowed_diff do
-      true ->
+    case {diff > allowed_diff, state.missed_frame_count} do
+      {true, count} when count > state.allowed_missing_frames ->
         send_to_frame_handlers(state.frame_handlers, state.frame_name)
         {:noreply, state}
-      false -> {:noreply, state}
+      {true, count} ->
+        {:noreply, %{state | missed_frame_count: count + 1}}
+      {false, _count} ->
+        {:noreply, %{state | missed_frame_count: 0}}
     end
   end
 
@@ -42,10 +47,14 @@ defmodule Cantastic.ReceivedFrameWatcher do
   end
 
   defp send_to_frame_handlers(frame_handlers, frame_name) do
-    #TODO add subscribe mechanism
     frame_handlers |> Enum.each(fn (frame_handler) ->
       Process.send(frame_handler, {:handle_missing_frame, frame_name}, [])
     end)
+  end
+
+  @impl true
+  def handle_call({:subscribe, frame_handler}, _from, state) do
+    {:reply, :ok, %{state | frame_handlers: [frame_handler | state.frame_handlers]}}
   end
 
   @impl true
@@ -70,6 +79,11 @@ defmodule Cantastic.ReceivedFrameWatcher do
         {:ok, _} = :timer.cancel(watching_timer)
         {:reply, :ok, %{state | watching_timer: nil}}
     end
+  end
+
+  def subscribe(network_name, frame_name, frame_handler) do
+    watcher = Interface.received_frame_watcher_process_name(network_name, frame_name)
+    GenServer.call(watcher, {:subscribe, frame_handler})
   end
 
   def enable(network_name, frame_name) do

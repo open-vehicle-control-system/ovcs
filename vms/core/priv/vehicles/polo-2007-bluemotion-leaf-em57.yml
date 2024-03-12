@@ -338,6 +338,8 @@ can_networks:
               0x8B: start_engine
       - name: abs_status
         id: 0x5A0
+        frequency: 20
+        allowed_frequency_leeway: 20
         signals:
           - name: speed
             unit: km/h

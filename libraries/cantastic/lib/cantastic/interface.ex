@@ -41,7 +41,7 @@ defmodule Cantastic.Interface do
         socket: socket,
         frame_specifications: received_frame_specifications
       }
-      watchers ++ [Supervisor.child_spec({Receiver, arguments}, id: arguments.process_name)]
+      [Supervisor.child_spec({Receiver, arguments}, id: arguments.process_name)] ++ watchers
     end)
     |> List.flatten()
   end

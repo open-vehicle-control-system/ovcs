@@ -54,8 +54,7 @@ defmodule VmsCore.Controllers.ContactorsController do
   end
 
   def handle_info({:handle_missing_frame,  frame_name}, state) do
-    IO.inspect "))))))"
-    Logger.warning("Frame #{frame_name} not emitted anymore")
+    Logger.warning("Frame ovcs.#{frame_name} not emitted anymore")
     {:noreply, state}
   end
 
