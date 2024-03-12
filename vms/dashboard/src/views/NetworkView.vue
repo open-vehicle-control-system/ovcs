@@ -1,20 +1,3 @@
-<script setup>
-
-import { ref } from 'vue'
-import { Socket } from 'phoenix'
-
-import { useNetworkInterfaces } from "../stores/network_interfaces.js"
-
-const networkInterfaces = useNetworkInterfaces()
-
-const statuses = {
-  UNKNOWN: 'text-gray-500 bg-gray-100/10',
-  UP: 'text-green-400 bg-green-400/10',
-  DOWN: 'text-rose-400 bg-rose-400/10',
-}
-
-</script>
-
 <template>
   <div class="px-4 sm:px-6 lg:px-8">
     <h1 class="text-xl">Network</h1>
@@ -159,25 +142,41 @@ const statuses = {
 </template>
 
 <script>
+import { onMounted } from 'vue'
+import { Socket } from 'phoenix'
+
+import { useNetworkInterfaces } from "../stores/network_interfaces.js"
+
 export default {
   name: "Network",
   components: {
   },
-  mounted: () => {
-    let networkInterfacesStore = useNetworkInterfaces()
-    let vmsDashboardSocket = new Socket(import.meta.env.VITE_BASE_WS + "/sockets/dashboard", {})
-    vmsDashboardSocket.connect();
-    let networkInterfaces = vmsDashboardSocket.channel("network-interfaces", {})
+  setup(){
+    const networkInterfaces = useNetworkInterfaces()
 
-    networkInterfaces.on("updated", payload => {
-      networkInterfacesStore.$patch(payload);
-      networkInterfacesStore.computeInterfacesLoad();
-    })
+    const statuses = {
+      UNKNOWN: 'text-gray-500 bg-gray-100/10',
+      UP: 'text-green-400 bg-green-400/10',
+      DOWN: 'text-rose-400 bg-rose-400/10',
+    }
+    onMounted(() => {
+      let networkInterfacesStore = useNetworkInterfaces()
+      let vmsDashboardSocket = new Socket(import.meta.env.VITE_BASE_WS + "/sockets/dashboard", {})
+      vmsDashboardSocket.connect();
+      let networkInterfaces = vmsDashboardSocket.channel("network-interfaces", {})
 
-    networkInterfaces.join().receive("ok", () => {})
-  },
-  methods: {
-  },
+      networkInterfaces.on("updated", payload => {
+        networkInterfacesStore.$patch(payload);
+        networkInterfacesStore.computeInterfacesLoad();
+      })
+
+      networkInterfaces.join().receive("ok", () => {})
+    });
+
+    return {
+      networkInterfaces,
+      statuses
+    }
+  }
 };
-
 </script>
