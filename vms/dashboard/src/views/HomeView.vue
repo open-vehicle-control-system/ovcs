@@ -6,13 +6,7 @@
 
 <script>
 export default {
-  name: "Home",
-  components: {
-  },
-  mounted: () => {
-  },
-  methods: {
-  },
+  name: "Home"
 };
 
 </script>
