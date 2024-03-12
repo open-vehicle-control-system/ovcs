@@ -7,7 +7,7 @@ defmodule VmsCore.VwPolo.IgnitionLock do
 
   @impl true
   def init(_) do
-    Cantastic.Receiver.subscribe(self(), @network_name, [@key_status_frame_name])
+    Cantastic.Receiver.subscribe(self(), @network_name, @key_status_frame_name)
     {:ok, %{
       key_status: nil
     }}

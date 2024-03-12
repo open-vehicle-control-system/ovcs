@@ -17,14 +17,14 @@ defmodule VmsCore.Controllers.ControlsController do
 
   @impl true
   def init(_) do
-    :ok = Receiver.subscribe(self(), @network_name, [@car_controls_status_frame_name])
+    :ok = Receiver.subscribe(self(), @network_name, @car_controls_status_frame_name)
     :ok = Emitter.configure(@network_name, @selected_gear_frame_name, %{
       parameters_builder_function: &gear_status_frame_parameters/1,
       initial_data: %{
         @selected_gear => "parking"
       }
     })
-    :ok = Emitter.batch_enable(@network_name, [@selected_gear_frame_name])
+    :ok = Emitter.enable(@network_name, @selected_gear_frame_name)
     {
       :ok, %{
         car_controls: %{
@@ -45,8 +45,8 @@ defmodule VmsCore.Controllers.ControlsController do
     }
   end
 
-  defp gear_status_frame_parameters(state) do
-    {:ok, state.data, state}
+  defp gear_status_frame_parameters(emitter_state) do
+    {:ok, emitter_state.data, emitter_state}
   end
 
   @impl true

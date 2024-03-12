@@ -8,7 +8,7 @@ defmodule Cantastic.ReceivedFrameWatcher do
 
   @impl true
   def init(%{process_name:  _, frame_specification: frame_specification, network_name: network_name}) do
-    :ok = Cantastic.Receiver.subscribe(self(), network_name, [frame_specification.name], errors: false)
+    :ok = Cantastic.Receiver.subscribe(self(), network_name, [frame_specification.name])
     {:ok,
       %{
         watching_timer: nil,
@@ -81,34 +81,39 @@ defmodule Cantastic.ReceivedFrameWatcher do
     end
   end
 
+  def subscribe(network_name, frame_names, frame_handler) when is_list(frame_names) do
+    frame_names |> Enum.each(
+      fn (frame_name) ->
+        subscribe(network_name, frame_name, frame_handler)
+      end
+    )
+  end
   def subscribe(network_name, frame_name, frame_handler) do
     watcher = Interface.received_frame_watcher_process_name(network_name, frame_name)
     GenServer.call(watcher, {:subscribe, frame_handler})
   end
 
-  def enable(network_name, frame_name) do
-    watcher = Interface.received_frame_watcher_process_name(network_name, frame_name)
-    GenServer.call(watcher, :enable)
-  end
-
-  def disable(network_name, frame_name) do
-    watcher = Interface.received_frame_watcher_process_name(network_name, frame_name)
-    GenServer.call(watcher, :disable)
-  end
-
-  def batch_enable(network_name, frame_names) do
+  def enable(network_name, frame_names) when is_list(frame_names) do
     frame_names |> Enum.each(
       fn (frame_name) ->
         enable(network_name, frame_name)
       end
     )
   end
+  def enable(network_name, frame_name) do
+    watcher = Interface.received_frame_watcher_process_name(network_name, frame_name)
+    GenServer.call(watcher, :enable)
+  end
 
-  def batch_disable(network_name, frame_names) do
+  def disable(network_name, frame_names) when is_list(frame_names) do
     frame_names |> Enum.each(
       fn (frame_name) ->
         disable(network_name, frame_name)
       end
     )
+  end
+  def disable(network_name, frame_name) do
+    watcher = Interface.received_frame_watcher_process_name(network_name, frame_name)
+    GenServer.call(watcher, :disable)
   end
 end

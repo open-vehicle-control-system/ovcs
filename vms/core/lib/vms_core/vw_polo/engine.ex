@@ -21,21 +21,21 @@ defmodule VmsCore.VwPolo.Engine do
     GenServer.start_link(__MODULE__, nil, name: __MODULE__)
   end
 
-  defp status_frame_parameters_builder(state) do
-    {:ok, state.data, state}
+  defp status_frame_parameters_builder(emitter_state) do
+    {:ok, emitter_state.data, emitter_state}
   end
 
   def rpm(rpm) do
-    :ok = Emitter.update(@network_name, @engine_status_frame_name, fn (state) ->
-      state |> put_in([:data, "engine_rotations_per_minute"], rpm)
+    :ok = Emitter.update(@network_name, @engine_status_frame_name, fn (emitter_state) ->
+      emitter_state |> put_in([:data, "engine_rotations_per_minute"], rpm)
     end)
   end
 
   def on() do
-    Emitter.batch_enable(@network_name, [@engine_status_frame_name])
+    Emitter.enable(@network_name, @engine_status_frame_name)
   end
 
   def off() do
-    Emitter.batch_disable(@network_name, [@engine_status_frame_name])
+    Emitter.disable(@network_name, @engine_status_frame_name)
   end
 end

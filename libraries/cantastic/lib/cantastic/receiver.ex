@@ -89,15 +89,20 @@ defmodule Cantastic.Receiver do
     Process.send_after(self(), :receive_frame, delay)
   end
 
-  def subscribe(frame_handler, opts \\ %{errors: true}) do
+  def subscribe(frame_handler, opts \\ %{errors: false}) do
     ConfigurationStore.networks()|> Enum.each(fn (network) ->
       receiver =  Interface.receiver_process_name(network.network_name)
       GenServer.cast(receiver, {:subscribe, frame_handler, "*", opts})
     end)
   end
-  def subscribe(frame_handler, network_name, frame_names, opts \\ %{errors: true}) do
+
+  def subscribe(frame_handler, network_name, frame_names, opts \\ %{errors: false})
+  def subscribe(frame_handler, network_name, frame_names, opts) when is_list(frame_names) do
     receiver =  Interface.receiver_process_name(network_name)
     GenServer.cast(receiver, {:subscribe, frame_handler, frame_names, opts})
+  end
+  def subscribe(frame_handler, network_name, frame_names, opts) do
+    subscribe(frame_handler, network_name, [frame_names], opts)
   end
 
   def frame_names(state) do

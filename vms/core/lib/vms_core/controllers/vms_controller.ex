@@ -12,14 +12,14 @@ defmodule VmsCore.Controllers.VmsController do
 
   @impl true
   def init(_) do
-    :ok = Cantastic.Receiver.subscribe(self(), @network_name, [@status_frame_name])
+    :ok = Cantastic.Receiver.subscribe(self(), @network_name, @status_frame_name)
     :ok = Emitter.configure(@network_name, @status_request_frame_name, %{
       parameters_builder_function: &vms_relays_status_request_frame_parameters/1,
       initial_data: %{
         @inverter_relay => false,
       }
     })
-    Emitter.batch_enable(@network_name, [@status_request_frame_name])
+    Emitter.enable(@network_name, @status_request_frame_name)
     {:ok, %{
       inverter_relay_enabled: false
     }}
@@ -29,8 +29,8 @@ defmodule VmsCore.Controllers.VmsController do
     GenServer.start_link(__MODULE__, nil, name: __MODULE__)
   end
 
-  defp vms_relays_status_request_frame_parameters(state) do
-    {:ok, state.data, state}
+  defp vms_relays_status_request_frame_parameters(emitter_state) do
+    {:ok, emitter_state.data, emitter_state}
   end
 
   @impl true
@@ -56,8 +56,8 @@ defmodule VmsCore.Controllers.VmsController do
   end
 
   defp actuate_relay(relay_name, enable) do
-    Emitter.update(@network_name, @status_request_frame_name, fn (state) ->
-      state |> put_in([:data, relay_name], enable)
+    Emitter.update(@network_name, @status_request_frame_name, fn (emitter_state) ->
+      emitter_state |> put_in([:data, relay_name], enable)
     end)
   end
 end

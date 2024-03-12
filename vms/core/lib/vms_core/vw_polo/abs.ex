@@ -9,7 +9,7 @@ defmodule VmsCore.VwPolo.Abs do
 
   @impl true
   def init(_) do
-    :ok = Cantastic.Receiver.subscribe(self(), @network_name, [@abs_status_frame_name])
+    :ok = Cantastic.Receiver.subscribe(self(), @network_name, @abs_status_frame_name)
     #:ok = Cantastic.ReceivedFrameWatcher.enable(@network_name, @abs_status_frame_name)
     {:ok, %{
       speed: 0

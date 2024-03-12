@@ -5,6 +5,8 @@ defmodule VmsCore.Vehicle do
 
   @loop_sleep 10
 
+
+
   def start_link(args) do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
   end

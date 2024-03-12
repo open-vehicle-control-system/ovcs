@@ -22,7 +22,7 @@ defmodule VmsCore.Controllers.ContactorsController do
 
   @impl true
   def init(_) do
-    :ok = Cantastic.Receiver.subscribe(self(), @network_name, [@status_frame_name])
+    :ok = Cantastic.Receiver.subscribe(self(), @network_name, @status_frame_name)
     :ok = Emitter.configure(@network_name, @status_request_frame_name, %{
       parameters_builder_function: &contactors_state_request_frame_parameters/1,
       initial_data: %{
@@ -31,7 +31,7 @@ defmodule VmsCore.Controllers.ContactorsController do
         @precharge_contactor     => false
       }
     })
-    :ok = Emitter.batch_enable(@network_name, [@status_request_frame_name])
+    :ok = Emitter.enable(@network_name, @status_request_frame_name)
     {:ok, %{
       main_negative_contactor_enabled: false,
       main_positive_contactor_enabled: false,
@@ -39,8 +39,8 @@ defmodule VmsCore.Controllers.ContactorsController do
     }}
   end
 
-  defp contactors_state_request_frame_parameters(state) do
-    {:ok, state.data, state}
+  defp contactors_state_request_frame_parameters(emitter_state) do
+    {:ok, emitter_state.data, emitter_state}
   end
 
   @impl true
@@ -51,11 +51,6 @@ defmodule VmsCore.Controllers.ContactorsController do
         precharge_contactor_enabled: precharge_contactor_enabled
       }
     }
-  end
-
-  def handle_info({:handle_missing_frame,  frame_name}, state) do
-    Logger.warning("Frame ovcs.#{frame_name} not emitted anymore")
-    {:noreply, state}
   end
 
   @impl true
@@ -120,8 +115,8 @@ defmodule VmsCore.Controllers.ContactorsController do
   end
 
   defp actuate_contactor(contactor_name, enable) do
-    Emitter.update(@network_name, @status_request_frame_name, fn (state) ->
-      state |> put_in([:data, contactor_name], enable)
+    Emitter.update(@network_name, @status_request_frame_name, fn (emitter_state) ->
+      emitter_state |> put_in([:data, contactor_name], enable)
     end)
   end
 end

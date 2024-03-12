@@ -24,7 +24,8 @@ defmodule VmsCore.Application do
       {VmsCore.IgnitionLock, []},
       {VmsCore.Inverter, []},
       {VmsCore.Vehicle, []},
-      {VmsCore.NetworkInterfacesMonitor, []}
+      {VmsCore.NetworkInterfacesMonitor, []},
+      {VmsCore.Status, []}
     ]
 
     opts = [strategy: :one_for_one, name: VmsCore.Supervisor]

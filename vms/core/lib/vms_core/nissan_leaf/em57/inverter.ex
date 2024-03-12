@@ -13,7 +13,7 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
   @impl true
   def init(_) do
     :ok = init_emitters()
-    Cantastic.Receiver.subscribe(self(), @network_name, [@inverter_status_frame_name])
+    Cantastic.Receiver.subscribe(self(), @network_name, @inverter_status_frame_name)
     {:ok, %{
       rpm: 0
     }}
@@ -59,41 +59,41 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
     {:noreply, %{state | rpm: rpm}}
   end
 
-  def alive_frame_parameters_builder(state) do
-    {:ok, nil, state}
+  def alive_frame_parameters_builder(emitter_state) do
+    {:ok, nil, emitter_state}
   end
 
-  def torque_frame_parameters_builder(state) do
-    counter = state.data["counter"]
+  def torque_frame_parameters_builder(emitter_state) do
+    counter = emitter_state.data["counter"]
     parameters = %{
-      "torque" => state.data["torque"],
+      "torque" => emitter_state.data["torque"],
       "counter" => Util.shifted_counter(counter),
       "crc" => &Util.crc8/1
     }
 
-    state = state |> put_in([:data, "counter"], Util.counter(counter + 1))
-    {:ok, parameters, state}
+    emitter_state = emitter_state |> put_in([:data, "counter"], Util.counter(counter + 1))
+    {:ok, parameters, emitter_state}
   end
 
-  def status_frame_parameters_builder(state) do
-    counter = state.data["counter"]
+  def status_frame_parameters_builder(emitter_state) do
+    counter = emitter_state.data["counter"]
     parameters = %{
-      "gear" => state.data["gear"],
+      "gear" => emitter_state.data["gear"],
       "heartbeat" => rem(counter, 2),
       "counter" => Util.counter(counter),
       "crc" => &Util.crc8/1
     }
 
-    state = state |> put_in([:data, "counter"], Util.counter(counter + 1))
-    {:ok, parameters, state}
+    emitter_state = emitter_state |> put_in([:data, "counter"], Util.counter(counter + 1))
+    {:ok, parameters, emitter_state}
   end
 
   def on() do
-    Emitter.batch_enable(@network_name, [@vms_alive_frame_name, @vms_torque_request_frame_name, @vms_status_frame_name])
+    Emitter.enable(@network_name, [@vms_alive_frame_name, @vms_torque_request_frame_name, @vms_status_frame_name])
   end
 
   def off() do
-    Emitter.batch_disable(@network_name, [@vms_alive_frame_name, @vms_torque_request_frame_name, @vms_status_frame_name])
+    Emitter.disable(@network_name, [@vms_alive_frame_name, @vms_torque_request_frame_name, @vms_status_frame_name])
   end
 
   def throttle(percentage_throttle, gear) do
@@ -103,8 +103,8 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
       _ -> {0, 0}
     end
     torque = factor * percentage_throttle * max_torque
-    :ok = Emitter.update(@network_name, @vms_torque_request_frame_name, fn (state) ->
-      state |> put_in([:data, "torque"], torque)
+    :ok = Emitter.update(@network_name, @vms_torque_request_frame_name, fn (emitter_state) ->
+      emitter_state |> put_in([:data, "torque"], torque)
     end)
   end
 

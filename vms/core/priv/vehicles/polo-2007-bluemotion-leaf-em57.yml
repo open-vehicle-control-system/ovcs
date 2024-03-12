@@ -52,6 +52,21 @@ can_networks:
               0x01: neutral
               0x02: reverse
               0x03: parking
+      - name: vms_status
+        id: 0x1A0
+        frequency: 100
+        signals:
+          - name: status
+            kind: enum
+            value_start: 0
+            value_length: 8
+            mapping:
+              0x00: ok
+              0x01: warning
+              0x02: failure
+          - name: counter
+            value_start: 8
+            value_length: 8
     received_frames:
       - name: contactors_status
         id: 0x101
