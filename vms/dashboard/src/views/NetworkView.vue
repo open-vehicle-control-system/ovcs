@@ -56,4 +56,4 @@ export default {
     }
   }
 };
-</script>../components/network_interfaces/network_interface_statistics.vue
+</script>
