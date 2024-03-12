@@ -17,53 +17,13 @@
               </SwitchGroup>
             </dd>
           </div>
-          <div class="pt-6 sm:flex">
-            <dt class="font-medium text-gray-900 sm:w-64 sm:flex-none sm:pr-6">Low raw throttle value A</dt>
-            <dd class="mt-1 flex justify-between gap-x-6 sm:mt-0 sm:flex-auto">
-              <div class="text-gray-900">{{ carControls.low_raw_throttle_a }}</div>
-            </dd>
-          </div>
-          <div class="pt-6 sm:flex">
-            <dt class="font-medium text-gray-900 sm:w-64 sm:flex-none sm:pr-6">High raw throttle value A</dt>
-            <dd class="mt-1 flex justify-between gap-x-6 sm:mt-0 sm:flex-auto">
-              <div class="text-gray-900">{{ carControls.high_raw_throttle_a }}</div>
-            </dd>
-          </div>
-          <div class="pt-6 sm:flex">
-            <dt class="font-medium text-gray-900 sm:w-64 sm:flex-none sm:pr-6">Low raw throttle value B</dt>
-            <dd class="mt-1 flex justify-between gap-x-6 sm:mt-0 sm:flex-auto">
-              <div class="text-gray-900">{{ carControls.low_raw_throttle_b }}</div>
-            </dd>
-          </div>
-          <div class="pt-6 sm:flex">
-            <dt class="font-medium text-gray-900 sm:w-64 sm:flex-none sm:pr-6">High raw throttle value B</dt>
-            <dd class="mt-1 flex justify-between gap-x-6 sm:mt-0 sm:flex-auto">
-              <div class="text-gray-900">{{ carControls.high_raw_throttle_b }}</div>
-            </dd>
-          </div>
-          <div class="pt-6 sm:flex">
-            <dt class="font-medium text-gray-900 sm:w-64 sm:flex-none sm:pr-6">Requested Gear</dt>
-            <dd class="mt-1 flex justify-between gap-x-6 sm:mt-0 sm:flex-auto">
-              <div class="text-gray-900">{{ carControls.requested_gear }}</div>
-            </dd>
-          </div>
-          <div class="pt-6 sm:flex">
-            <dt class="font-medium text-gray-900 sm:w-64 sm:flex-none sm:pr-6">Throttle</dt>
-            <dd class="mt-1 flex justify-between gap-x-6 sm:mt-0 sm:flex-auto">
-              <div class="text-gray-900">{{ carControls.throttle }}</div>
-            </dd>
-          </div>
-          <div class="pt-6 sm:flex">
-            <dt class="font-medium text-gray-900 sm:w-64 sm:flex-none sm:pr-6">Throttle A</dt>
-            <dd class="mt-1 flex justify-between gap-x-6 sm:mt-0 sm:flex-auto">
-              <div class="text-gray-900">{{ carControls.raw_throttle_a }}</div>
-            </dd>
-          </div>
-          <div class="pt-6 sm:flex">
-            <dt class="font-medium text-gray-900 sm:w-64 sm:flex-none sm:pr-6">Throttle B</dt>
-            <dd class="mt-1 flex justify-between gap-x-6 sm:mt-0 sm:flex-auto">
-              <div class="text-gray-900">{{ carControls.raw_throttle_b }}</div>
-            </dd>
+          <div v-for="key in Object.keys(carControls.$state)">
+            <div class="pt-6 sm:flex">
+              <dt class="font-medium text-gray-900 sm:w-64 sm:flex-none sm:pr-6">{{ key }}</dt>
+              <dd class="mt-1 flex justify-between gap-x-6 sm:mt-0 sm:flex-auto">
+                <div class="text-gray-900">{{ carControls[key] }}</div>
+              </dd>
+            </div>
           </div>
         </dl>
       </div>
@@ -77,7 +37,7 @@
   import { Switch, SwitchGroup, SwitchLabel } from '@headlessui/vue'
   import { Socket } from 'phoenix'
   import { useCarControls } from "../../stores/car_controls.js"
-  import CalibrationHelpers from "../../helpers/calibration_helpers.js"
+  import CalibrationService from "../../services/calibration_service.js"
   import { ref, onMounted } from 'vue'
 
   import RealTimeLineChart from "../../components/charts/RealTimeLineChart.vue"
@@ -104,16 +64,16 @@
 
       function toggleCalibration(calibrationEnabled){
         let carControlsStore = useCarControls()
-        CalibrationHelpers.post_calibration_enabled(calibrationEnabled).then((response) => {
+        CalibrationService.post_calibration_enabled(calibrationEnabled).then((response) => {
           carControlsStore.$patch(response.data)
-          return CalibrationHelpers.fetch_calibration_data();
+          return CalibrationService.fetch_calibration_data();
         })
         .then((response) => carControlsStore.$patch(response.data));
       };
 
       onMounted(() => {
         let carControlsStore = useCarControls()
-        CalibrationHelpers.fetch_calibration_data().then((response) => carControlsStore.$patch(response.data));
+        CalibrationService.fetch_calibration_data().then((response) => carControlsStore.$patch(response.data));
 
         let vmsDashboardSocket = new Socket(import.meta.env.VITE_BASE_WS + "/sockets/dashboard", {})
         vmsDashboardSocket.connect();
