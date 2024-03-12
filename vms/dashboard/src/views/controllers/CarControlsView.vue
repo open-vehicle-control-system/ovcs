@@ -17,13 +17,11 @@
               </SwitchGroup>
             </dd>
           </div>
-          <div v-for="key in Object.keys(carControls.$state)">
-            <div class="pt-6 sm:flex">
-              <dt class="font-medium text-gray-900 sm:w-64 sm:flex-none sm:pr-6">{{ key }}</dt>
-              <dd class="mt-1 flex justify-between gap-x-6 sm:mt-0 sm:flex-auto">
-                <div class="text-gray-900">{{ carControls[key] }}</div>
-              </dd>
-            </div>
+          <div v-for="key in Object.keys(carControls.$state)" class="pt-6 sm:flex">
+            <dt class="font-medium text-gray-900 sm:w-64 sm:flex-none sm:pr-6">{{ key }}</dt>
+            <dd class="mt-1 flex justify-between gap-x-6 sm:mt-0 sm:flex-auto">
+              <div class="text-gray-900">{{ carControls[key] }}</div>
+            </dd>
           </div>
         </dl>
       </div>
