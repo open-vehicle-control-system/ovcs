@@ -1,4 +1,4 @@
-defmodule VmsApiWeb.CarControlsSocket do
+defmodule VmsApiWeb.DashboardSocket do
   use Phoenix.Socket
 
   channel "car-controls", VmsApiWeb.DashboardChannel

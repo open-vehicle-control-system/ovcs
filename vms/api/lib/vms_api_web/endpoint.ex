@@ -21,7 +21,7 @@ defmodule VmsApiWeb.Endpoint do
     gzip: false,
     only: VmsApiWeb.static_paths()
 
-  socket "/sockets/dashboard", VmsApiWeb.CarControlsSocket,
+  socket "/sockets/dashboard", VmsApiWeb.DashboardSocket,
     websocket: true,
     longpoll: false
 
