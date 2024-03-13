@@ -1,10 +1,11 @@
 <script>
 import VueApexCharts from "vue3-apexcharts";
 import { defineStore } from 'pinia'
+import { ref } from 'vue'
 
-export default{  
+export default{
   name: "RealTimeLineChart",
-  props: ['title', 'series', 'id', 'serieMaxSize'],
+  props: ['title', 'series', 'id', 'serieMaxSize', 'chartInterval', 'ymax'],
   components: {
     apexchart: VueApexCharts
   },
@@ -31,6 +32,29 @@ export default{
       }
     });
 
+    // Defines chart options
+    let options = ref({
+      chart: {
+        id: props.id,
+        type: "line",
+        zoom: {
+          enabled: false,
+          type: "xy",
+          autoScaleYaxis: false
+        }
+      },
+      yaxis: {
+        tickAmount: 5,
+        forceNiceScale: true,
+      },
+      xaxis: {
+        type: 'datetime',
+        labels: {
+          show: false
+        }
+      }
+    });
+
     let seriesStore = useChartStore();
     let series = seriesStore.series;
 
@@ -39,25 +63,18 @@ export default{
       newSeriesValues.forEach(newSerieValue => {
         seriesStore.pushToSerie(newSerieValue["name"], newSerieValue["value"]);
       });
-      window.dispatchEvent(new Event('resize'));
     };
 
-    // Defines chart oprions
-    let options = {
-      chart: {
-        id: props.id,
-        type: "line",
-      },
-      stroke: {
-        curve: 'smooth'
-      },
-      xaxis: {
-        type: 'datetime'
-      }
+    function setYMax(max){
+      options.value = {
+        ...options.value,
+        yaxis: {max: max, min: 0, tickAmount: 5, forceNiceScale: true}
+      };
     };
 
     return {
       pushSeriesData,
+      setYMax,
       series,
       options
     }

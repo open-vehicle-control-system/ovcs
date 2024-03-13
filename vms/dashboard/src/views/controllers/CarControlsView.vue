@@ -28,7 +28,7 @@
     </div>
   </form>
 
-  <RealTimeLineChart ref="throttleChart" :title="chartTitle" :series="series" :id="chartId" serieMaxSize=20></RealTimeLineChart>
+  <RealTimeLineChart ref="throttleChart" :title="chartTitle" :series="series" :id="chartId" :serieMaxSize="serieMaxSize" :chartInterval="chartInterval"></RealTimeLineChart>
 </template>
 
 <script>
@@ -36,6 +36,7 @@
   import { Socket } from 'phoenix'
   import { useCarControls } from "../../stores/car_controls.js"
   import CalibrationService from "../../services/calibration_service.js"
+  import CarControlsService from "../../services/car_controls_service.js"
   import { ref, onMounted } from 'vue'
 
   import RealTimeLineChart from "../../components/charts/RealTimeLineChart.vue"
@@ -50,11 +51,13 @@
     },
     setup(){
       const carControls = useCarControls();
-
       const chartTitle    = "Real-time Throttle Chart";
       const chartId       = "realtime-throttle-chart";
       const throttleChart = ref();
+      const chartInterval = 50;
+      const serieMaxSize  = 300;
 
+      let carControlsStore = useCarControls();
       let series = [
         {name: "Throttle A", data: []},
         {name: "Throttle B", data: []}
@@ -68,25 +71,29 @@
       };
 
       onMounted(() => {
-        let carControlsStore = useCarControls();
-
-        CalibrationService.fetch_calibration_data().then(
-          (response) => carControlsStore.$patch(response.data)
-        );
-
         let vmsDashboardSocket = new Socket(import.meta.env.VITE_BASE_WS + "/sockets/dashboard", {});
         vmsDashboardSocket.connect();
         let carControlsChannel = vmsDashboardSocket.channel("car-controls", {})
+
+        CalibrationService.fetch_calibration_data().then(
+          (response) => {
+            carControlsStore.$patch(response.data)
+            throttleChart.value.setYMax(carControlsStore.raw_max_throttle)
+          }
+        );
 
         carControlsChannel.on("updated", payload => {
           carControlsStore.$patch(payload);
           throttleChart.value.pushSeriesData([
             {name: "Throttle A", value: payload.raw_throttle_a},
             {name: "Throttle B", value: payload.raw_throttle_b}
-        ]);
+          ]);
         })
 
-        carControlsChannel.join().receive("ok", () => {})
+        CarControlsService.set_transmission_interval(chartInterval).then(
+          (_response) => carControlsChannel.join().receive("ok", () => {})
+        )
+
       });
 
       return {
@@ -95,6 +102,8 @@
         chartId,
         chartTitle,
         throttleChart,
+        chartInterval,
+        serieMaxSize,
         toggleCalibration
       }
     }
