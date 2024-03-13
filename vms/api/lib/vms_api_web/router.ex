@@ -10,6 +10,7 @@ defmodule VmsApiWeb.Router do
     get "/status", StatusController, :show
     post "/calibration", CalibrationController, :create
     get "/calibration", CalibrationController, :show
+    post "/car-controls-settings", CarControlsSettingsController, :create
     resources "/samples", SamplesController, only: [:index, :create, :show, :update, :delete]
   end
 
