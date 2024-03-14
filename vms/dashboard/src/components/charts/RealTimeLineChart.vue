@@ -17,7 +17,7 @@ export default{
         serieMaxSize: props.serieMaxSize
       }),
       actions: {
-        pushToSerie(name, value){
+        pushToSerie(name, value, timestamp){
           let index = this.series.findIndex((serie) => {
             return serie.name == name
           });
@@ -25,7 +25,7 @@ export default{
             if(this.series[index].data.length >= this.serieMaxSize){
               this.series[index].data.shift()
             }
-            let timestamp = Date.now();
+
             this.series[index].data.push([timestamp, value]);
           }
         }
@@ -61,7 +61,8 @@ export default{
     // Defines component exposed functions
     function pushSeriesData(newSeriesValues) {
       newSeriesValues.forEach(newSerieValue => {
-        seriesStore.pushToSerie(newSerieValue["name"], newSerieValue["value"]);
+        let timestamp = Date.now();
+        seriesStore.pushToSerie(newSerieValue["name"], newSerieValue["value"], timestamp);
       });
     };
 
