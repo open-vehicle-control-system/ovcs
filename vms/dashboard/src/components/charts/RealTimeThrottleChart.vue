@@ -8,10 +8,11 @@ import { ref } from "vue"
 
 export default{
     name: "RealTimeThrottleChart",
+    props: ["carControls"],
     components: {
         RealTimeLineChart,
     },
-    setup(){
+    setup(props){
         const chartTitle    = "Real-time Throttle Chart";
         const chartId       = "realtime-throttle-chart";
         const throttleChart = ref();
@@ -20,6 +21,8 @@ export default{
         const throttleALabel = "Throttle A"
         const throttleBLabel = "Throttle B"
         const throttleLabel  = "Throttle"
+
+        const carControls = props.carControls
 
         let series = [
             {name: throttleALabel, data: []},
@@ -45,6 +48,11 @@ export default{
                 {name: throttleLabel, value: payload.throttle}
             ]);
         }
+
+        carControls.$subscribe((mutation, state) => {
+            setMaxRawThrottle(state.raw_max_throttle);
+            updateSeries(state);
+        })
 
         return {
             series,

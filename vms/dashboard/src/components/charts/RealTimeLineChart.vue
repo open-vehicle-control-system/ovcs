@@ -67,8 +67,8 @@ export default{
       let index = options.value.yaxis.findIndex((serie) => {
         return serie.seriesName == seriesName
       });
-      if(index >= 0){
-        let yaxis = options.value.yaxis
+      let yaxis = options.value.yaxis;
+      if(index >= 0 && yaxis[index]["max"] != max){
         yaxis[index]["max"] = max
         options.value = {
           ...options.value,

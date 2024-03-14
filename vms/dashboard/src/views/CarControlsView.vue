@@ -28,7 +28,7 @@
     </div>
   </form>
 
-  <RealTimeThrottleChart ref="realTimeThrottleChart"></RealTimeThrottleChart>
+  <RealTimeThrottleChart ref="realTimeThrottleChart" :carControls="carControls"></RealTimeThrottleChart>
 </template>
 
 <script>
@@ -68,13 +68,11 @@
         CalibrationService.fetch_calibration_data().then(
           (response) => {
             carControls.$patch(response.data)
-            realTimeThrottleChart.value.setMaxRawThrottle(carControls.raw_max_throttle);
           }
         );
 
         carControlsChannel.on("updated", payload => {
           carControls.$patch(payload);
-          realTimeThrottleChart.value.updateSeries(payload);
         })
 
         carControlsChannel.join().receive("ok", () => {});
