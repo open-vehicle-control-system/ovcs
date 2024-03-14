@@ -28,7 +28,7 @@
     </div>
   </form>
 
-  <RealTimeLineChart ref="throttleChart" :title="chartTitle" :series="series" :id="chartId" :serieMaxSize="serieMaxSize" :chartInterval="chartInterval" :yaxis="yaxis"></RealTimeLineChart>
+  <RealTimeThrottleChart ref="realTimeThrottleChart"></RealTimeThrottleChart>
 </template>
 
 <script>
@@ -38,45 +38,25 @@
   import CalibrationService from "../services/calibration_service.js"
   import { ref, onMounted } from 'vue'
 
-  import RealTimeLineChart from "../components/charts/RealTimeLineChart.vue"
+  import RealTimeThrottleChart from "../components/charts/RealTimeThrottleChart.vue"
 
   export default {
     name: "CarControls",
     components: {
-      RealTimeLineChart,
+      RealTimeThrottleChart,
       Switch,
       SwitchGroup,
       SwitchLabel
     },
     setup(){
       const carControls = useCarControls();
-      const chartTitle    = "Real-time Throttle Chart";
-      const chartId       = "realtime-throttle-chart";
-      const throttleChart = ref();
+
+      const realTimeThrottleChart = ref();
       const chartInterval = 50;
-      const serieMaxSize  = 300;
-
-      const throttleALabel = "Throttle A"
-      const throttleBLabel = "Throttle B"
-      const throttleLabel  = "Throttle"
-
-      let carControlsStore = useCarControls();
-      let series = [
-        {name: throttleALabel, data: []},
-        {name: throttleBLabel, data: []},
-        {name: throttleLabel, data: []}
-      ];
-
-      let yaxis = [
-        { seriesName: throttleALabel, tickAmount: 5, forceNiceScale: true, min: 0 },
-        { seriesName: throttleBLabel, tickAmount: 5, forceNiceScale: true, min: 0, show: false },
-        { seriesName: throttleLabel, tickAmount: 10, forceNiceScale: true, opposite: true, max: 1, min: 0 }
-      ]
 
       function toggleCalibration(calibrationEnabled){
-        let carControlsStore = useCarControls();
         CalibrationService.post_calibration_enabled(calibrationEnabled).then((response) => {
-          carControlsStore.$patch(response.data)
+          carControls.$patch(response.data)
         });
       };
 
@@ -87,19 +67,14 @@
 
         CalibrationService.fetch_calibration_data().then(
           (response) => {
-            carControlsStore.$patch(response.data)
-            throttleChart.value.setYaxisMaxForSerie(throttleALabel, carControlsStore.raw_max_throttle);
-            throttleChart.value.setYaxisMaxForSerie(throttleBLabel, carControlsStore.raw_max_throttle);
+            carControls.$patch(response.data)
+            realTimeThrottleChart.value.setMaxRawThrottle(carControls.raw_max_throttle);
           }
         );
 
         carControlsChannel.on("updated", payload => {
-          carControlsStore.$patch(payload);
-          throttleChart.value.pushSeriesData([
-            {name: throttleALabel, value: payload.raw_throttle_a},
-            {name: throttleBLabel, value: payload.raw_throttle_b},
-            {name: throttleLabel, value: payload.throttle}
-          ]);
+          carControls.$patch(payload);
+          realTimeThrottleChart.value.updateSeries(payload);
         })
 
         carControlsChannel.join().receive("ok", () => {});
@@ -108,13 +83,7 @@
 
       return {
         carControls,
-        series,
-        chartId,
-        chartTitle,
-        throttleChart,
-        chartInterval,
-        serieMaxSize,
-        yaxis,
+        realTimeThrottleChart,
         toggleCalibration
       }
     }
