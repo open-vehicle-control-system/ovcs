@@ -55,7 +55,7 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
   end
 
   @impl true
-  def handle_info({:handle_frame,  _frame, [%{value: rpm}] = _signals}, state) do
+  def handle_info({:handle_frame,  _frame, [_, _, %{value: rpm}] = _signals}, state) do
     {:noreply, %{state | rpm: rpm}}
   end
 
