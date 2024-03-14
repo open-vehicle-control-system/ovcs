@@ -28,7 +28,7 @@
     </div>
   </form>
 
-  <RealTimeLineChart ref="throttleChart" :title="chartTitle" :series="series" :id="chartId" :serieMaxSize="serieMaxSize" :chartInterval="chartInterval"></RealTimeLineChart>
+  <RealTimeLineChart ref="throttleChart" :title="chartTitle" :series="series" :id="chartId" :serieMaxSize="serieMaxSize" :chartInterval="chartInterval" :yaxis="yaxis"></RealTimeLineChart>
 </template>
 
 <script>
@@ -57,11 +57,22 @@
       const chartInterval = 50;
       const serieMaxSize  = 300;
 
+      const throttleALabel = "Throttle A"
+      const throttleBLabel = "Throttle B"
+      const throttleLabel  = "Throttle"
+
       let carControlsStore = useCarControls();
       let series = [
-        {name: "Throttle A", data: []},
-        {name: "Throttle B", data: []}
+        {name: throttleALabel, data: []},
+        {name: throttleBLabel, data: []},
+        {name: throttleLabel, data: []}
       ];
+
+      let yaxis = [
+        { seriesName: throttleALabel, tickAmount: 5, forceNiceScale: true, min: 0 },
+        { seriesName: throttleBLabel, tickAmount: 5, forceNiceScale: true, min: 0, show: false },
+        { seriesName: throttleLabel, tickAmount: 10, forceNiceScale: true, opposite: true, max: 1, min: 0 }
+      ]
 
       function toggleCalibration(calibrationEnabled){
         let carControlsStore = useCarControls();
@@ -78,15 +89,17 @@
         CalibrationService.fetch_calibration_data().then(
           (response) => {
             carControlsStore.$patch(response.data)
-            throttleChart.value.setYMax(carControlsStore.raw_max_throttle)
+            throttleChart.value.setYaxisMaxForSerie(throttleALabel, carControlsStore.raw_max_throttle);
+            throttleChart.value.setYaxisMaxForSerie(throttleBLabel, carControlsStore.raw_max_throttle);
           }
         );
 
         carControlsChannel.on("updated", payload => {
           carControlsStore.$patch(payload);
           throttleChart.value.pushSeriesData([
-            {name: "Throttle A", value: payload.raw_throttle_a},
-            {name: "Throttle B", value: payload.raw_throttle_b}
+            {name: throttleALabel, value: payload.raw_throttle_a},
+            {name: throttleBLabel, value: payload.raw_throttle_b},
+            {name: throttleLabel, value: payload.throttle}
           ]);
         })
 
@@ -104,6 +117,7 @@
         throttleChart,
         chartInterval,
         serieMaxSize,
+        yaxis,
         toggleCalibration
       }
     }
