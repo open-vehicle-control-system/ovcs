@@ -33,7 +33,7 @@
 
 <script>
   import { Switch, SwitchGroup, SwitchLabel } from '@headlessui/vue'
-  import { Socket } from 'phoenix'
+  import { vmsDashboardSocket } from '../services/socket_service.js'
   import { useCarControls } from "../stores/car_controls.js"
   import CalibrationService from "../services/calibration_service.js"
   import { ref, onMounted } from 'vue'
@@ -61,22 +61,17 @@
       };
 
       onMounted(() => {
-        let vmsDashboardSocket = new Socket(import.meta.env.VITE_BASE_WS + "/sockets/dashboard", {});
-        vmsDashboardSocket.connect();
         let carControlsChannel = vmsDashboardSocket.channel("car-controls", {interval: chartInterval})
+        carControlsChannel.on("updated", payload => {
+          carControls.$patch(payload);
+        });
+        carControlsChannel.join().receive("ok", () => {});
 
         CalibrationService.fetch_calibration_data().then(
           (response) => {
             carControls.$patch(response.data)
           }
         );
-
-        carControlsChannel.on("updated", payload => {
-          carControls.$patch(payload);
-        })
-
-        carControlsChannel.join().receive("ok", () => {});
-
       });
 
       return {
