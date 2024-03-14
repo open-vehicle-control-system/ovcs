@@ -1,18 +1,17 @@
 <template>
-  <RealTimeLineChart ref="throttleChart" :title="chartTitle" :series="series" :id="chartId" :serieMaxSize="serieMaxSize" :chartInterval="chartInterval" :yaxis="yaxis"></RealTimeLineChart>
+  <RealTimeLineChart ref="throttleChart" :title="chartTitle" :series="series" :id="chartId" :serieMaxSize="serieMaxSize" :yaxis="yaxis"></RealTimeLineChart>
 </template>
 
 <script>
 import RealTimeLineChart from "./RealTimeLineChart.vue"
-
 import { ref } from "vue"
 
 export default{
     name: "RealTimeThrottleChart",
-    components: [
-        RealTimeLineChart
-    ],
-    setup(props){
+    components: {
+        RealTimeLineChart,
+    },
+    setup(){
         const chartTitle    = "Real-time Throttle Chart";
         const chartId       = "realtime-throttle-chart";
         const throttleChart = ref();

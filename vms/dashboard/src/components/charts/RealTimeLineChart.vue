@@ -5,7 +5,7 @@ import { ref } from 'vue'
 
 export default{
   name: "RealTimeLineChart",
-  props: ['title', 'series', 'id', 'serieMaxSize', 'chartInterval', 'yaxis'],
+  props: ['title', 'series', 'id', 'serieMaxSize', 'yaxis'],
   components: {
     apexchart: VueApexCharts
   },
@@ -56,7 +56,7 @@ export default{
     let series = seriesStore.series;
 
     // Defines component exposed functions
-    function pushSeriesData(newSeriesValues) {
+    function pushSeriesData(newSeriesValues){
       newSeriesValues.forEach(newSerieValue => {
         let timestamp = Date.now();
         seriesStore.pushToSerie(newSerieValue["name"], newSerieValue["value"], timestamp);
