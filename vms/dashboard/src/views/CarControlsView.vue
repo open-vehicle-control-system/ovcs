@@ -34,12 +34,12 @@
 <script>
   import { Switch, SwitchGroup, SwitchLabel } from '@headlessui/vue'
   import { Socket } from 'phoenix'
-  import { useCarControls } from "../../stores/car_controls.js"
-  import CalibrationService from "../../services/calibration_service.js"
-  import CarControlsService from "../../services/car_controls_service.js"
+  import { useCarControls } from "../stores/car_controls.js"
+  import CalibrationService from "../services/calibration_service.js"
+  import CarControlsService from "../services/car_controls_service.js"
   import { ref, onMounted } from 'vue'
 
-  import RealTimeLineChart from "../../components/charts/RealTimeLineChart.vue"
+  import RealTimeLineChart from "../components/charts/RealTimeLineChart.vue"
 
   export default {
     name: "CarControls",
