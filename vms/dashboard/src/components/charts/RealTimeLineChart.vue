@@ -5,7 +5,7 @@ import { ref } from 'vue'
 
 export default{
   name: "RealTimeLineChart",
-  props: ['title', 'series', 'id', 'serieMaxSize', 'chartInterval', 'ymax'],
+  props: ['title', 'series', 'id', 'serieMaxSize', 'chartInterval', 'yaxis'],
   components: {
     apexchart: VueApexCharts
   },
@@ -43,10 +43,7 @@ export default{
           autoScaleYaxis: false
         }
       },
-      yaxis: {
-        tickAmount: 5,
-        forceNiceScale: true,
-      },
+      yaxis: props.yaxis,
       xaxis: {
         type: 'datetime',
         labels: {
@@ -66,16 +63,23 @@ export default{
       });
     };
 
-    function setYMax(max){
-      options.value = {
-        ...options.value,
-        yaxis: {max: max, min: 0, tickAmount: 5, forceNiceScale: true}
+    function setYaxisMaxForSerie(seriesName, max){
+      let index = options.value.yaxis.findIndex((serie) => {
+        return serie.seriesName == seriesName
+      });
+      if(index >= 0){
+        let yaxis = options.value.yaxis
+        yaxis[index]["max"] = max
+        options.value = {
+          ...options.value,
+          yaxis: yaxis
+        }
       };
     };
 
     return {
       pushSeriesData,
-      setYMax,
+      setYaxisMaxForSerie,
       series,
       options
     }
