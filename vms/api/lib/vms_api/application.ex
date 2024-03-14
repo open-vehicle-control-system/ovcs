@@ -19,7 +19,6 @@ defmodule VmsApi.Application do
       # {VmsApi.Worker, arg},
       # Start to serve requests, typically the last entry
       VmsApiWeb.Endpoint,
-      {VmsApi.CarControlsDispatcher, []},
       {VmsApi.NetworkInterfacesStatusDispatcher, []}
     ]
 

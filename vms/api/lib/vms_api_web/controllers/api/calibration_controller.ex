@@ -2,7 +2,7 @@ defmodule VmsApiWeb.Api.CalibrationController do
   use VmsApiWeb, :controller
 
   def show(conn, _params) do
-    {_status, calibration_data} = JSON.encode(VmsCore.Controllers.ControlsController.get_calibration_data())
+    {_status, calibration_data} = JSON.encode(VmsCore.Controllers.ControlsController.car_controls_state())
     conn
     |> put_resp_header("content-type", "application/json; charset=utf-8")
     |> send_resp(200, calibration_data)

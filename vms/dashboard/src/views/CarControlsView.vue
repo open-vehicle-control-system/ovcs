@@ -84,7 +84,7 @@
       onMounted(() => {
         let vmsDashboardSocket = new Socket(import.meta.env.VITE_BASE_WS + "/sockets/dashboard", {});
         vmsDashboardSocket.connect();
-        let carControlsChannel = vmsDashboardSocket.channel("car-controls", {})
+        let carControlsChannel = vmsDashboardSocket.channel("car-controls", {interval: chartInterval})
 
         CalibrationService.fetch_calibration_data().then(
           (response) => {
@@ -103,9 +103,7 @@
           ]);
         })
 
-        CarControlsService.set_transmission_interval(chartInterval).then(
-          (_response) => carControlsChannel.join().receive("ok", () => {})
-        )
+        carControlsChannel.join().receive("ok", () => {});
 
       });
 
@@ -122,4 +120,4 @@
       }
     }
   };
-</script>../stores/car_controls.js../services/calibration_service.js../services/car_controls_service.js./CarControlsView.vue/index.js
+</script>

@@ -9,7 +9,6 @@ defmodule VmsCore.Controllers.ControlsController do
   @car_controls_status_frame_name "car_controls_status"
   @selected_gear_frame_name "gear_status"
   @selected_gear "selected_gear"
-  @car_controls_update_default_interval_ms 1000
 
   def start_link(_) do
     GenServer.start_link(__MODULE__, nil, name: __MODULE__)
@@ -38,22 +37,9 @@ defmodule VmsCore.Controllers.ControlsController do
           raw_throttle_a: 0,
           raw_throttle_b: 0,
           requested_gear: "parking",
-        },
-        last_dashboard_updated_at: :os.system_time(:millisecond),
-        clients: [],
-        car_controls_update_interval_ms: @car_controls_update_default_interval_ms,
-        loop_started: false
+        }
       }
     }
-  end
-
-  @impl true
-  def handle_cast({:subscribe, client}, state) do
-    {:noreply, %{state | clients: [client | state.clients]}}
-  end
-
-  def subscribe(client) do
-    GenServer.cast(__MODULE__, {:subscribe, client})
   end
 
   @impl true
@@ -104,12 +90,6 @@ defmodule VmsCore.Controllers.ControlsController do
   end
 
   @impl true
-  def handle_info(:notify_clients, state) do
-    notify_clients(state)
-    {:noreply, state}
-  end
-
-  @impl true
   def handle_call(:throttle, _from, state) do
     {:reply, state.car_controls.throttle, state}
   end
@@ -126,20 +106,7 @@ defmodule VmsCore.Controllers.ControlsController do
   end
 
   @impl true
-  def handle_call({:set_interval, interval}, _from, state) do
-    state = %{state | car_controls_update_interval_ms: interval}
-    state = case state.loop_started do
-      false ->
-        schedule_work(interval)
-        %{state | loop_started: true }
-      _ ->
-        state
-    end
-    {:reply, :ok, state}
-  end
-
-  @impl true
-  def handle_call(:get_state, _from, state) do
+  def handle_call(:car_controls_state, _from, state) do
     {:reply, state.car_controls, state}
   end
 
@@ -181,23 +148,8 @@ defmodule VmsCore.Controllers.ControlsController do
     GenServer.call(__MODULE__, :disable_calibration)
   end
 
-  def get_calibration_data() do
-    GenServer.call(__MODULE__, :get_state)
-  end
-
-  def set_interval(interval) do
-    GenServer.call(__MODULE__, {:set_interval, interval})
-  end
-
-  def notify_clients(state) do
-    now = :os.system_time(:millisecond)
-    if (state.car_controls_update_interval_ms > 0 && state.last_dashboard_updated_at + state.car_controls_update_interval_ms) < now do
-      state.clients |> Enum.each(fn (client) ->
-        state = %{state | last_dashboard_updated_at: now}
-        GenServer.cast(client, {:updated, state.car_controls})
-      end)
-      schedule_work(state.car_controls_update_interval_ms)
-    end
+  def car_controls_state() do
+    GenServer.call(__MODULE__, :car_controls_state)
   end
 
   defp get_calibration_value_for_key(key) do
@@ -225,9 +177,5 @@ defmodule VmsCore.Controllers.ControlsController do
 
   defp gear_status_frame_parameters(emitter_state) do
     {:ok, emitter_state.data, emitter_state}
-  end
-
-  defp schedule_work(interval) do
-    Process.send_after(self(), :notify_clients, interval)
   end
 end

@@ -1,15 +1,21 @@
 defmodule VmsApiWeb.CarControlsChannel do
   use VmsApiWeb, :channel
+  alias VmsCore.Controllers.ControlsController
 
   intercept ["update"]
 
   @impl true
   def join("car-controls", payload, socket) do
-    if authorized?(payload) do
-      {:ok, socket}
-    else
-      {:error, %{reason: "unauthorized"}}
-    end
+    send(self(), :push_car_controls_state)
+    {:ok, timer} = :timer.send_interval(payload["interval"], :push_car_controls_state)
+    socket = %{socket | assigns: %{ timer: timer}}
+    {:ok, socket}
+  end
+
+  def handle_info(:push_car_controls_state, socket) do
+    car_controls_state = ControlsController.car_controls_state()
+    push(socket, "updated", car_controls_state)
+    {:noreply, socket}
   end
 
   @impl true
@@ -24,13 +30,7 @@ defmodule VmsApiWeb.CarControlsChannel do
   end
 
   @impl true
-  def handle_out("update", payload, socket) do
-    push(socket, "updated", payload)
-    {:noreply, socket}
-  end
-
-  # Add authorization logic here as required.
-  defp authorized?(_payload) do
-    true
+  def terminate(_, socket) do
+    {:ok, _} = :timer.cancel(socket.assigns.timer)
   end
 end
