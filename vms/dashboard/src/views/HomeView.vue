@@ -1,9 +1,41 @@
 <template>
-  <div class="grid grid-cols-2 gap-10">
+  <div class="grid grid-cols-3 gap-10">
+    <div class="p-5 border-solid border rounded border-gray-300 shadow-md">
+      <h2 class="text-base">Vehicle information</h2>
+      <table class="min-w-full divide-y divide-gray-300">
+        <tbody class="divide-y divide-gray-200 bg-white">
+          <tr>
+            <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">Selected Gear</td>
+            <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 text-right">{{ vehicle.selected_gear }}</td>
+          </tr>
+          <tr>
+            <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">Key status</td>
+            <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 text-right">{{ vehicle.key_status }}</td>
+          </tr>
+          <tr>
+            <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">Speed</td>
+            <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 text-right">{{ vehicle.speed }} kph</td>
+          </tr>
+          <tr>
+            <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">RPM</td>
+            <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 text-right">{{ inverter.rpm }}</td>
+          </tr>
+          <tr>
+            <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">Output voltage</td>
+            <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 text-right">{{ inverter.output_voltage }}V</td>
+          </tr>
+          <tr>
+            <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">Motor temperature</td>
+            <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 text-right">{{ inverter.motor_temperature }}C</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
     <RealTimeThrottleChart ref="realTimeThrottleChart" :carControls="carControls"></RealTimeThrottleChart>
     <RealTimeTorqueChart ref="realTimeTorqueChart" :inverter="inverter"></RealTimeTorqueChart>
     <RealTimeTemperatureChart ref="realTimeTemperatureChart" :inverter="inverter"></RealTimeTemperatureChart>
     <RealTimeRpmVoltageChart ref="realTimeRpmVoltageChart" :inverter="inverter"></RealTimeRpmVoltageChart>
+    <RealTimeSpeedChart ref="realTimeSpeedChart" :vehicle="vehicle"></RealTimeSpeedChart>
   </div>
 </template>
 
@@ -18,6 +50,7 @@ import RealTimeThrottleChart from "../components/charts/RealTimeThrottleChart.vu
 import RealTimeTorqueChart from "../components/charts/RealTimeTorqueChart.vue"
 import RealTimeTemperatureChart from "../components/charts/RealTimeTemperatureChart.vue"
 import RealTimeRpmVoltageChart from "../components/charts/RealTimeRpmVoltageChart.vue"
+import RealTimeSpeedChart from "../components/charts/RealTimeSpeedChart.vue"
 
 
 export default {
@@ -26,7 +59,8 @@ export default {
     RealTimeThrottleChart,
     RealTimeTorqueChart,
     RealTimeTemperatureChart,
-    RealTimeRpmVoltageChart
+    RealTimeRpmVoltageChart,
+    RealTimeSpeedChart
   },
   setup(){
     const carControls = useCarControls();
@@ -42,7 +76,8 @@ export default {
 
     return {
       carControls,
-      inverter
+      inverter,
+      vehicle
     }
   }
 };
