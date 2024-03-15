@@ -3,6 +3,7 @@
     <RealTimeThrottleChart ref="realTimeThrottleChart" :carControls="carControls"></RealTimeThrottleChart>
     <RealTimeTorqueChart ref="realTimeTorqueChart" :inverter="inverter"></RealTimeTorqueChart>
     <RealTimeTemperatureChart ref="realTimeTemperatureChart" :inverter="inverter"></RealTimeTemperatureChart>
+    <RealTimeRpmVoltageChart ref="realTimeRpmVoltageChart" :inverter="inverter"></RealTimeRpmVoltageChart>
   </div>
 </template>
 
@@ -16,6 +17,7 @@ import { onMounted } from 'vue'
 import RealTimeThrottleChart from "../components/charts/RealTimeThrottleChart.vue"
 import RealTimeTorqueChart from "../components/charts/RealTimeTorqueChart.vue"
 import RealTimeTemperatureChart from "../components/charts/RealTimeTemperatureChart.vue"
+import RealTimeRpmVoltageChart from "../components/charts/RealTimeRpmVoltageChart.vue"
 
 
 export default {
@@ -23,7 +25,8 @@ export default {
   components: {
     RealTimeThrottleChart,
     RealTimeTorqueChart,
-    RealTimeTemperatureChart
+    RealTimeTemperatureChart,
+    RealTimeRpmVoltageChart
   },
   setup(){
     const carControls = useCarControls();
