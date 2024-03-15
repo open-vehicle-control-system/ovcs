@@ -10,7 +10,6 @@ defmodule VmsCore.VwPolo.Abs do
   @impl true
   def init(_) do
     :ok = Cantastic.Receiver.subscribe(self(), @network_name, @abs_status_frame_name)
-    #:ok = Cantastic.ReceivedFrameWatcher.enable(@network_name, @abs_status_frame_name)
     {:ok, %{
       speed: 0
     }}
@@ -25,14 +24,9 @@ defmodule VmsCore.VwPolo.Abs do
     {:noreply, %{state | speed: speed}}
   end
 
-  def handle_info({:handle_missing_frame,  frame_name}, state) do
-    Logger.warning("Frame #{@network_name}.#{frame_name} not emitted anymore")
-    {:noreply, state}
-  end
-
   @impl true
   def handle_call(:speed, _from, state) do
-    {:reply, state.speed, state}
+    {:reply, {:ok, state.speed}, state}
   end
 
   def speed() do

@@ -26,13 +26,14 @@ defmodule VmsCore.Vehicle do
       |> handle_ignition()
       |> handle_gear()
       |> handle_throttle()
-      |> handle_rpm()
+      |> handle_rotation_per_minute()
     loop()
     {:noreply, state}
   end
 
   defp handle_ignition(state) do
-    case {state.ignition_started, IgnitionLock.key_status()} do
+    {:ok, key_status} = IgnitionLock.key_status()
+    case {state.ignition_started, key_status} do
       {false, "start_engine"} -> start_ignition(state)
       {true, "off"}           -> shutdown(state)
       {true, "key_engaged"}   -> shutdown(state)
@@ -41,27 +42,36 @@ defmodule VmsCore.Vehicle do
   end
 
   defp handle_gear(state) do
-    requested_gear = ControlsController.requested_gear()
-    selected_gear  = state.selected_gear
-    speed          = Abs.speed()
-    throttle       = ControlsController.throttle()
-    case {selected_gear, requested_gear, speed < 1.0, throttle < 0.1} do # TODO check safe throttle
-      {"parking", "parking", _, _} -> state
-      {"reverse", "reverse", _, _} -> state
-      {"neutral", "neutral", _, _} -> state
-      {"drive", "drive", _, _}     -> state
-      {_, "parking", true, true}   -> select_gear("parking", state)
-      {_, "reverse", true, true}   -> select_gear("reverse", state)
-      {"neutral", "drive", _, _}   -> select_gear("drive", state)
-      {_, "drive", true, true}     -> select_gear("drive", state)
-      {_, "neutral", _, _}         -> select_gear("neutral", state)
-      _                            -> state
+    with {:ok, requested_gear} <- ControlsController.requested_gear(),
+         selected_gear         <- state.selected_gear,
+         {:ok, speed}          <- Abs.speed(),
+         {:ok, throttle}       <- ControlsController.throttle()
+    do
+      case {selected_gear, requested_gear, speed < 1.0, throttle < 0.1} do # TODO check safe throttle
+        {"parking", "parking", _, _} -> state
+        {"reverse", "reverse", _, _} -> state
+        {"neutral", "neutral", _, _} -> state
+        {"drive", "drive", _, _}     -> state
+        {_, "parking", true, true}   -> select_gear("parking", state)
+        {_, "reverse", true, true}   -> select_gear("reverse", state)
+        {"neutral", "drive", _, _}   -> select_gear("drive", state)
+        {_, "drive", true, true}     -> select_gear("drive", state)
+        {_, "neutral", _, _}         -> select_gear("neutral", state)
+        _                            -> state
+      end
+    else
+      :unexpected -> :unexpected
     end
   end
 
-  defp handle_rpm(state) do
-    :ok = Inverter.rpm() |> abs() |> VmsCore.VwPolo.Engine.rpm()
-    state
+  defp handle_rotation_per_minute(state) do
+    with {:ok, rotation_per_minute} <- Inverter.rotation_per_minute(),
+         :ok        <- abs(rotation_per_minute) |> VmsCore.VwPolo.Engine.rotation_per_minute()
+    do
+      state
+    else
+      :unexpected -> :unexpected
+    end
   end
 
   defp handle_throttle(state) do
@@ -77,8 +87,13 @@ defmodule VmsCore.Vehicle do
   end
 
   defp apply_throttle(state) do
-    :ok = ControlsController.throttle() |> Inverter.throttle(state.selected_gear)
-    state
+    with {:ok, throttle} <- ControlsController.throttle(),
+         :ok             <- Inverter.throttle(throttle, state.selected_gear)
+    do
+      state
+    else
+      :unexpected -> :unexpected
+    end
   end
 
   defp start_ignition(state) do
@@ -111,7 +126,7 @@ defmodule VmsCore.Vehicle do
 
   @impl true
   def handle_call(:selected_gear, _from, state) do
-    {:reply, state.selected_gear, state}
+    {:reply, {:ok, state.selected_gear}, state}
   end
 
   def selected_gear() do
@@ -134,11 +149,11 @@ defmodule VmsCore.Vehicle do
   end
 
   def test_enable_calibration_mode() do
-    ControlsController.enable_calibration_mode()
+    :ok = ControlsController.enable_calibration_mode()
   end
 
   def test_disable_calibration_mode() do
-    ControlsController.disable_calibration_mode()
+    :ok = ControlsController.disable_calibration_mode()
   end
 
   def enable_debugger() do

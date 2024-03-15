@@ -56,7 +56,7 @@ defmodule VmsCore.Controllers.ContactorsController do
   @impl true
   def handle_call(:ready_to_drive?,  _from, state) do
     ready = !state.precharge_contactor_enabled && state.main_negative_contactor_enabled && state.main_positive_contactor_enabled
-    {:reply, ready, state}
+    {:reply, {:ok, ready}, state}
   end
 
   def ready_to_drive?() do

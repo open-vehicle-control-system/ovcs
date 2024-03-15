@@ -10,14 +10,14 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
   @vms_alive_frame_name "vms_alive"
   @vms_torque_request_frame_name "vms_torque_request"
   @vms_status_frame_name "vms_status"
-  @max_rpm 6000 # documented max rpm, on init the inverter is returning very high invalid values
+  @max_rotation_per_minute 6000 # documented max rpm, on init the inverter is returning very high invalid values
 
   @impl true
   def init(_) do
     :ok = init_emitters()
     Receiver.subscribe(self(), @network_name, [@inverter_status_frame_name, @inverter_temperatures_frame_name])
     {:ok, %{
-      rpm: 0,
+      rotation_per_minute: 0,
       output_voltage: 0,
       effective_torque: 0,
       requested_torque: 0,
@@ -55,21 +55,21 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
   end
 
   @impl true
-  def handle_call(:rpm, _from, state) do
-    {:reply, state.rpm, state}
+  def handle_call(:rotation_per_minute, _from, state) do
+    {:reply, {:ok, state.rotation_per_minute}, state}
   end
 
   @impl true
   def handle_call(:inverter_state, _from, state) do
-    {:reply, %{
-      rpm: state.rpm,
+    {:reply, {:ok, %{
+      rotation_per_minute: state.rotation_per_minute,
       requested_torque: state.requested_torque,
       output_voltage: state.output_voltage,
       inverter_communication_board_temperature: state.inverter_communication_board_temperature,
       insulated_gate_bipolar_transistor_temperature: state.insulated_gate_bipolar_transistor_temperature,
       insulated_gate_bipolar_transistor_board_temperature: state.insulated_gate_bipolar_transistor_board_temperature,
       motor_temperature: state.motor_temperature
-    }, state}
+    }}, state}
   end
 
   @impl true
@@ -87,14 +87,14 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
   end
 
   @impl true
-  def handle_info({:handle_frame,  %Frame{name: @inverter_status_frame_name}, [%{value: output_voltage}, %{value: effective_torque}, %{value: rpm}] = _signals}, state) do
-    rpm = case rpm do
-      value when value > @max_rpm -> 0
+  def handle_info({:handle_frame,  %Frame{name: @inverter_status_frame_name}, [%{value: output_voltage}, %{value: effective_torque}, %{value: rotation_per_minute}] = _signals}, state) do
+    rotation_per_minute = case rotation_per_minute do
+      value when value > @max_rotation_per_minute -> 0
       value -> value
     end
     {:noreply, %{
       state |
-        rpm: rpm,
+        rotation_per_minute: rotation_per_minute,
         effective_torque: effective_torque,
         output_voltage: output_voltage
       }
@@ -165,8 +165,8 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
     GenServer.call(__MODULE__, :inverter_state)
   end
 
-  def rpm() do
-    GenServer.call(__MODULE__, :rpm)
+  def rotation_per_minute() do
+    GenServer.call(__MODULE__, :rotation_per_minute)
   end
 
   def ready_to_drive?() do

@@ -28,7 +28,7 @@ defmodule VmsCore.VwPolo.IgnitionLock do
 
   @impl true
   def handle_call(:key_status, _from, state) do
-    {:reply, state.key_status, state}
+    {:reply, {:ok, state.key_status}, state}
   end
 
   def key_status() do

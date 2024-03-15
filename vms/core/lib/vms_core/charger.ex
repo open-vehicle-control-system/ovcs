@@ -9,5 +9,4 @@ defmodule VmsCore.Charger do
   def start_link(_) do
     GenServer.start_link(__MODULE__, nil, name: __MODULE__)
   end
-
 end

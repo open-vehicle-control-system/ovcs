@@ -40,7 +40,7 @@ defmodule VmsCore.Controllers.VmsController do
 
   @impl true
   def handle_call(:ready_to_drive?,  _from, state) do
-    {:reply, state.inverter_relay_enabled, state}
+    {:reply, {:ok, state.inverter_relay_enabled}, state}
   end
 
   def ready_to_drive?() do

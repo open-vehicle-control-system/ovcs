@@ -25,9 +25,9 @@ defmodule VmsCore.VwPolo.Engine do
     {:ok, emitter_state.data, emitter_state}
   end
 
-  def rpm(rpm) do
+  def rotation_per_minute(rotation_per_minute) do
     :ok = Emitter.update(@network_name, @engine_status_frame_name, fn (emitter_state) ->
-      emitter_state |> put_in([:data, "engine_rotations_per_minute"], rpm)
+      emitter_state |> put_in([:data, "engine_rotations_per_minute"], rotation_per_minute)
     end)
   end
 

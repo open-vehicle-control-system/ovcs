@@ -6,6 +6,7 @@ defmodule VmsCore.Inverter do
 
   defdelegate throttle(percentage_torque, selected_gear), to: Em57.Inverter
   defdelegate inverter_state(), to: Em57.Inverter
+  defdelegate rotation_per_minute(), to: Em57.Inverter
 
   @impl true
   def init(_) do
@@ -46,10 +47,6 @@ defmodule VmsCore.Inverter do
 
   def off() do
     GenServer.cast(__MODULE__, :off)
-  end
-
-  def rpm() do
-    Em57.Inverter.rpm()
   end
 
   def ready_to_drive?() do

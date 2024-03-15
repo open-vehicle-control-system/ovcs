@@ -91,12 +91,12 @@ defmodule VmsCore.Controllers.ControlsController do
 
   @impl true
   def handle_call(:throttle, _from, state) do
-    {:reply, state.car_controls.throttle, state}
+    {:reply, {:ok, state.car_controls.throttle}, state}
   end
 
   @impl true
   def handle_call(:requested_gear, _from, state) do
-    {:reply, state.car_controls.requested_gear, state}
+    {:reply, {:ok, state.car_controls.requested_gear}, state}
   end
 
   @impl true
@@ -107,7 +107,7 @@ defmodule VmsCore.Controllers.ControlsController do
 
   @impl true
   def handle_call(:car_controls_state, _from, state) do
-    {:reply, state.car_controls, state}
+    {:reply, {:ok, state.car_controls}, state}
   end
 
   @impl true
@@ -129,6 +129,10 @@ defmodule VmsCore.Controllers.ControlsController do
   @impl true
   def handle_call(:disable_calibration, _from, %{car_controls: %{calibration_status: "started"}} = state) do
     state = put_in(state, [:car_controls, :calibration_status], "disabled")
+    {:reply, :ok, state}
+  end
+  @impl true
+  def handle_call(:disable_calibration, _from, state) do
     {:reply, :ok, state}
   end
 
