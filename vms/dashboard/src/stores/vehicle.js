@@ -6,14 +6,4 @@ export const useVehicle = defineStore('vehicle', {
         speed: 0,
         key_status: "off"
     }),
-    actions: {
-        init(socket, interval, channelName){
-            let that = this
-            let channel = socket.channel(channelName, {interval: interval})
-            channel.on("updated", payload => {
-                that.$patch(payload)
-            })
-            channel.join().receive("ok", () => {});
-        },
-    }
 })

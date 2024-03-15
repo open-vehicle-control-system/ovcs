@@ -18,14 +18,4 @@ export const useCarControls = defineStore('carControls', {
         calibrationEnabled: (state) =>
             state.calibration_status == "in_progress" || state.calibration_status == "started"
     },
-    actions: {
-        init(socket, interval, channelName){
-            let that = this
-            let channel = socket.channel(channelName, {interval: interval})
-            channel.on("updated", payload => {
-                that.$patch(payload)
-            })
-            channel.join().receive("ok", () => {});
-        },
-    }
 })
