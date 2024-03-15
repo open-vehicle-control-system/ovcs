@@ -109,6 +109,15 @@ defmodule VmsCore.Vehicle do
     Process.send_after(self(), :loop, @loop_sleep)
   end
 
+  @impl true
+  def handle_call(:selected_gear, _from, state) do
+    {:reply, state.selected_gear, state}
+  end
+
+  def selected_gear() do
+    GenServer.call(__MODULE__, :selected_gear)
+  end
+
   # ---- Test functions ----
   def test_shutdown() do
     :ok = Inverter.off()

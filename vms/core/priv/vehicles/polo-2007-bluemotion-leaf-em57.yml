@@ -126,9 +126,9 @@ can_networks:
               0x01: neutral
               0x02: reverse
               0x03: parking
-  leaf_drive: 
+  leaf_drive:
     bitrate: 500000
-    emitted_frames: 
+    emitted_frames:
       - name: vms_alive
         id: 0x50B
         frequency: 100
@@ -147,7 +147,7 @@ can_networks:
             value_start: 0
             value_length: 16
             value: 0x6E6E
-          - name: torque
+          - name: requested_torque
             sign: signed
             endianness: big
             value_start: 16
@@ -210,12 +210,12 @@ can_networks:
           - name: crc
             value_start: 56
             value_length: 8
-    received_frames: 
+    received_frames:
       - name: inverter_status
         id: 0x1DA
         frequency: 10
         signals:
-          - name: inverter_output_voltage # DBC not sure
+          - name: inverter_output_voltage
             value_start: 0
             value_length: 8
             scale: 2
@@ -254,7 +254,7 @@ can_networks:
             value_length: 8
             unit: C
 
-  polo_drive: 
+  polo_drive:
     bitrate: 500000
     emitted_frames:
       - name: engine_status
@@ -277,7 +277,7 @@ can_networks:
             value_start: 32
             value_length: 32
             value: 0x00000000
-    received_frames: 
+    received_frames:
       - name: car_status
         id: 0x470
         signals:
@@ -368,7 +368,7 @@ can_networks:
             value_start: 8
             value_length: 8
             mapping: # 8 seems to be the state when the car boots and is already open
-              0x00: open 
+              0x00: open
               0x01: car_switch_closed
               0x04: key_closed
               0x08: open

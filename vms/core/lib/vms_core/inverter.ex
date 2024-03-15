@@ -5,6 +5,7 @@ defmodule VmsCore.Inverter do
   alias VmsCore.VwPolo
 
   defdelegate throttle(percentage_torque, selected_gear), to: Em57.Inverter
+  defdelegate inverter_state(), to: Em57.Inverter
 
   @impl true
   def init(_) do
