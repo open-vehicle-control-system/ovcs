@@ -32,9 +32,9 @@ export default {
     const chartInterval = 100;
 
     onMounted(() => {
-      carControls.init(vmsDashboardSocket, chartInterval)
-      inverter.init(vmsDashboardSocket, chartInterval)
-      vehicle.init(vmsDashboardSocket, chartInterval)
+      carControls.init(vmsDashboardSocket, chartInterval, "car-controls")
+      inverter.init(vmsDashboardSocket, chartInterval, "inverter")
+      vehicle.init(vmsDashboardSocket, chartInterval, "vehicle")
     });
 
     return {

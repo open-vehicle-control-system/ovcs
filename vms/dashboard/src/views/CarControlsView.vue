@@ -61,7 +61,7 @@
       };
 
       onMounted(() => {
-        carControls.init(vmsDashboardSocket, chartInterval)
+        carControls.init(vmsDashboardSocket, chartInterval, "car-controls")
 
         CalibrationService.fetch_calibration_data().then(
           (response) => {

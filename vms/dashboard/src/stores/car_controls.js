@@ -1,8 +1,6 @@
 import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 
-const channelName = "car-controls"
-
 export const useCarControls = defineStore('carControls', {
     state: () => ({
         calibration_status: "disabled",
@@ -21,7 +19,7 @@ export const useCarControls = defineStore('carControls', {
             state.calibration_status == "in_progress" || state.calibration_status == "started"
     },
     actions: {
-        init(socket, interval){
+        init(socket, interval, channelName){
             let that = this
             let channel = socket.channel(channelName, {interval: interval})
             channel.on("updated", payload => {

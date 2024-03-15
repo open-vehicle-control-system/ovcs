@@ -1,7 +1,5 @@
 import { defineStore } from 'pinia'
 
-const channelName = "vehicle"
-
 export const useVehicle = defineStore('vehicle', {
     state: () => ({
         selected_gear: "parking",
@@ -9,7 +7,7 @@ export const useVehicle = defineStore('vehicle', {
         key_status: "off"
     }),
     actions: {
-        init(socket, interval){
+        init(socket, interval, channelName){
             let that = this
             let channel = socket.channel(channelName, {interval: interval})
             channel.on("updated", payload => {
