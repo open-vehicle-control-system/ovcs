@@ -19,7 +19,7 @@
   </div>
 </template>
 
-<script>
+<script setup>
 import { onMounted } from 'vue'
 import { Socket } from 'phoenix'
 
@@ -28,32 +28,19 @@ import NetworkInterfacesList from "../components/network_interfaces/List.vue"
 
 import { useNetworkInterfaces } from "../stores/network_interfaces.js"
 
-export default {
-  name: "Network",
-  components: {
-    NetworkInterfacesList,
-    NetworkInterfaceStatistics
-  },
-  setup(){
-    const networkInterfaces = useNetworkInterfaces()
+const networkInterfaces = useNetworkInterfaces()
 
-    onMounted(() => {
-      let networkInterfacesStore = useNetworkInterfaces()
-      let vmsDashboardSocket = new Socket(import.meta.env.VITE_BASE_WS + "/sockets/dashboard", {})
-      vmsDashboardSocket.connect();
-      let networkInterfaces = vmsDashboardSocket.channel("network-interfaces", {})
+onMounted(() => {
+  let networkInterfacesStore = useNetworkInterfaces()
+  let vmsDashboardSocket = new Socket(import.meta.env.VITE_BASE_WS + "/sockets/dashboard", {})
+  vmsDashboardSocket.connect();
+  let networkInterfaces = vmsDashboardSocket.channel("network-interfaces", {})
 
-      networkInterfaces.on("updated", payload => {
-        networkInterfacesStore.$patch(payload);
-        networkInterfacesStore.computeInterfacesLoad();
-      })
+  networkInterfaces.on("updated", payload => {
+    networkInterfacesStore.$patch(payload);
+    networkInterfacesStore.computeInterfacesLoad();
+  })
 
-      networkInterfaces.join().receive("ok", () => {})
-    });
-
-    return {
-      networkInterfaces,
-    }
-  }
-};
+  networkInterfaces.join().receive("ok", () => {})
+});
 </script>
