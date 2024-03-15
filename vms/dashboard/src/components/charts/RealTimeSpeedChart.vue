@@ -20,15 +20,15 @@ export default{
         const max           = 200;
         const min           = 0;
 
-        const speed = "SPeed"
+        const speed = "Speed"
         const vehicle = props.vehicle
 
         let series = [
-            {name: speed, data: []}
+            { name: speed, data: [], type: 'line', showSymbol: false}
         ];
 
         let yaxis = [
-            { seriesName: speed, tickAmount: 5, forceNiceScale: true, min: min, max: max}
+            { label: speed, serieName: speed, type: 'value', min: min, max: max}
         ];
 
         function updateSeries(payload){

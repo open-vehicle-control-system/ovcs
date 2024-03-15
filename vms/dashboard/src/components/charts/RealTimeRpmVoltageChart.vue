@@ -17,7 +17,7 @@ export default{
         const chartId         = "realtime-rmp-voltage-chart";
         const rpmVoltageChart = ref();
         const serieMaxSize    = 300;
-        const voltageMax      = 500;
+        const voltageMax      = 600;
         const maxRPM          = 7000;
 
         const rpm = "RPM"
@@ -26,13 +26,13 @@ export default{
         const inverter = props.inverter
 
         let series = [
-            {name: rpm, data: []},
-            {name: voltage, data: []}
+            {name: rpm, data: [], type: 'line', showSymbol: false},
+            {name: voltage, data: [], type: 'line', showSymbol: false, yAxisIndex: 1}
         ];
 
         let yaxis = [
-            { seriesName: rpm, tickAmount: 5, forceNiceScale: true, max: maxRPM, min: 0 },
-            { seriesName: voltage, tickAmount: 10, forceNiceScale: true, opposite: true, max: voltageMax, min: 0 }
+            { label: rpm, serieName: rpm, type: 'value', max: maxRPM, min: 0 },
+            { label: voltage, serieName: voltage, type: 'value', max: voltageMax, min: 0 }
         ];
 
         function updateSeries(payload){

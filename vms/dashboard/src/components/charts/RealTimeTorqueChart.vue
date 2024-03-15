@@ -25,18 +25,17 @@ export default{
         const inverter = props.inverter
 
         let series = [
-            {name: effectiveTorque, data: []},
-            {name: requestedTorque, data: []}
+            {name: effectiveTorque, data: [], type: 'line', showSymbol: false},
+            {name: requestedTorque, data: [], type: 'line', showSymbol: false}
         ];
 
         let yaxis = [
-            { seriesName: effectiveTorque, tickAmount: 5, forceNiceScale: true, min: min },
-            { seriesName: requestedTorque, tickAmount: 5, forceNiceScale: true, min: min, show: false }
+            { label: "Effective & Requested", serieName: effectiveTorque, type: 'value', min: min, max: max }
         ];
 
         function setMax(max) {
-            torqueChart.value.setYaxisMaxForSerie(effectiveTorque, max);
-            torqueChart.value.setYaxisMaxForSerie(requestedTorque, max);
+            torqueChart.value.setMax(effectiveTorque, max);
+            torqueChart.value.setMax(requestedTorque, max);
         }
 
         function updateSeries(payload){

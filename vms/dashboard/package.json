@@ -10,12 +10,12 @@
     "test:unit": "vitest"
   },
   "dependencies": {
-    "apexcharts": "^3.46.0",
     "dotenv": "^16.4.5",
+    "echarts": "^5.5.0",
     "pinia": "^2.1.7",
     "vue": "^3.4.15",
-    "vue-router": "^4.2.5",
-    "vue3-apexcharts": "^1.5.2"
+    "vue-echarts": "^6.6.9",
+    "vue-router": "^4.2.5"
   },
   "devDependencies": {
     "@headlessui/vue": "^1.7.19",

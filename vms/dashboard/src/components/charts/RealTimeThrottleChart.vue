@@ -20,25 +20,25 @@ export default{
 
         const throttleALabel = "Throttle A"
         const throttleBLabel = "Throttle B"
+        const throttleABLabel = "Throttle A&B"
         const throttleLabel  = "Throttle"
 
         const carControls = props.carControls
 
         let series = [
-            {name: throttleALabel, data: []},
-            {name: throttleBLabel, data: []},
-            {name: throttleLabel, data: []}
+            {name: throttleALabel, data: [], type: 'line', showSymbol: false},
+            {name: throttleBLabel, data: [], type: 'line', showSymbol: false},
+            {name: throttleLabel, data: [], type: 'line', showSymbol: false, yAxisIndex: 1}
         ];
 
         let yaxis = [
-            { seriesName: throttleALabel, tickAmount: 5, forceNiceScale: true, min: 0 },
-            { seriesName: throttleBLabel, tickAmount: 5, forceNiceScale: true, min: 0, show: false },
-            { seriesName: throttleLabel, tickAmount: 10, forceNiceScale: true, opposite: true, max: 1, min: 0 }
+            { label: throttleABLabel, serieName: throttleALabel, type: 'value' },
+            { label: throttleLabel, serieName: throttleLabel, type: 'value', position: 'right' }
         ];
 
         function setMaxRawThrottle(max) {
-            throttleChart.value.setYaxisMaxForSerie(throttleALabel, max);
-            throttleChart.value.setYaxisMaxForSerie(throttleBLabel, max);
+            console.log(max)
+            throttleChart.value.setMax(throttleALabel, max);
         }
 
         function updateSeries(payload){
@@ -50,7 +50,7 @@ export default{
         }
 
         carControls.$subscribe((mutation, state) => {
-            setMaxRawThrottle(state.raw_max_throttle);
+            setMaxRawThrottle(state.rawMaxThrottle);
             updateSeries(state);
         })
 

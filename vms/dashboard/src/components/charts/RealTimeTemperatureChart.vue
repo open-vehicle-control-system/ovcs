@@ -27,24 +27,18 @@ export default{
         const inverter = props.inverter
 
         let series = [
-            {name: inverterCommunicationBoardTemperature, data: []},
-            {name: insulatedGateBipolarTransistorTemperature, data: []},
-            {name: insulatedGateBipolarTransistorBoardTemperature, data: []},
-            {name: motorTemperature, data: []}
+            {name: inverterCommunicationBoardTemperature, data: [], type: 'line', showSymbol: false},
+            {name: insulatedGateBipolarTransistorTemperature, data: [], type: 'line', showSymbol: false},
+            {name: insulatedGateBipolarTransistorBoardTemperature, data: [], type: 'line', showSymbol: false},
+            {name: motorTemperature, data: [], type: 'line', showSymbol: false}
         ];
 
         let yaxis = [
-            { seriesName: inverterCommunicationBoardTemperature, tickAmount: 5, forceNiceScale: true, min: min },
-            { seriesName: insulatedGateBipolarTransistorTemperature, tickAmount: 5, forceNiceScale: true, min: min, show: false },
-            { seriesName: insulatedGateBipolarTransistorBoardTemperature, tickAmount: 5, forceNiceScale: true, min: min, show: false },
-            { seriesName: motorTemperature, tickAmount: 5, forceNiceScale: true, min: min, show: false },
+            { label: "Temperature °C", serieName: inverterCommunicationBoardTemperature, type: 'value', min: min },
         ];
 
         function setMax(max) {
-            temperatureChart.value.setYaxisMaxForSerie(inverterCommunicationBoardTemperature, max);
-            temperatureChart.value.setYaxisMaxForSerie(insulatedGateBipolarTransistorTemperature, max);
-            temperatureChart.value.setYaxisMaxForSerie(insulatedGateBipolarTransistorBoardTemperature, max);
-            temperatureChart.value.setYaxisMaxForSerie(motorTemperature, max);
+            temperatureChart.value.setMax(inverterCommunicationBoardTemperature, max);
         }
 
         function updateSeries(payload){
