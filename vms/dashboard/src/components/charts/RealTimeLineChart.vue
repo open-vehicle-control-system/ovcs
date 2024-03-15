@@ -91,7 +91,7 @@ export default{
 </script>
 
 <template>
-    <div>
+    <div class="p-5 border-solid border-2 rounded border-indigo-200 shadow-l">
         <h2>{{ title }}</h2>
         <apexchart :options="options" :series="series"></apexchart>
     </div>
