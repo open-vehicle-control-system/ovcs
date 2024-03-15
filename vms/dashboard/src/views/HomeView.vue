@@ -32,24 +32,9 @@ export default {
     const chartInterval = 100;
 
     onMounted(() => {
-      let carControlsChannel = vmsDashboardSocket.channel("car-controls", {interval: chartInterval})
-      carControlsChannel.on("updated", payload => {
-        carControls.$patch(payload);
-      });
-
-      let inverterChannel = vmsDashboardSocket.channel("inverter", {interval: chartInterval})
-      inverterChannel.on("updated", payload => {
-        inverter.$patch(payload)
-      });
-
-      let vehicleChannel = vmsDashboardSocket.channel("vehicle", {interval: chartInterval})
-      vehicleChannel.on("updated", payload => {
-        vehicle.$patch(payload)
-      });
-
-      carControlsChannel.join().receive("ok", () => {});
-      inverterChannel.join().receive("ok", () => {});
-      vehicleChannel.join().receive("ok", () => {});
+      carControls.init(vmsDashboardSocket, chartInterval)
+      inverter.init(vmsDashboardSocket, chartInterval)
+      vehicle.init(vmsDashboardSocket, chartInterval)
     });
 
     return {

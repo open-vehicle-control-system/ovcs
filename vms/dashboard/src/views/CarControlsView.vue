@@ -61,11 +61,7 @@
       };
 
       onMounted(() => {
-        let carControlsChannel = vmsDashboardSocket.channel("car-controls", {interval: chartInterval})
-        carControlsChannel.on("updated", payload => {
-          carControls.$patch(payload);
-        });
-        carControlsChannel.join().receive("ok", () => {});
+        carControls.init(vmsDashboardSocket, chartInterval)
 
         CalibrationService.fetch_calibration_data().then(
           (response) => {

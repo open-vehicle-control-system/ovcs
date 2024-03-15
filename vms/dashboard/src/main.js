@@ -9,8 +9,9 @@ import router from './router'
 import VueApexCharts from "vue3-apexcharts";
 
 const app = createApp(App)
+const pinia = createPinia()
 
-app.use(createPinia())
+app.use(pinia)
 app.use(VueApexCharts);
 app.use(router)
 
