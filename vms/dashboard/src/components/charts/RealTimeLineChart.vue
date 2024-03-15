@@ -46,6 +46,9 @@ export default{
           show: false,
         }
       },
+      theme: {
+        palette: "palette4"
+      },
       yaxis: props.yaxis,
       xaxis: {
         type: 'datetime',
@@ -91,7 +94,7 @@ export default{
 </script>
 
 <template>
-    <div class="p-5 border-solid border-2 rounded border-indigo-200 shadow-l">
+    <div class="p-5 border-solid border rounded border-gray-300 shadow-md">
         <h2>{{ title }}</h2>
         <apexchart :options="options" :series="series"></apexchart>
     </div>
