@@ -33,7 +33,7 @@ export default{
 
         let yaxis = [
             { label: throttleABLabel, serieName: throttleALabel, type: 'value' },
-            { label: throttleLabel, serieName: throttleLabel, type: 'value', position: 'right' }
+            { label: throttleLabel, serieName: throttleLabel, type: 'value', position: 'right', max: 1 }
         ];
 
         function setMaxRawThrottle(max) {
