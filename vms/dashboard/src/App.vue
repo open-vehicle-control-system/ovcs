@@ -84,49 +84,30 @@
   </div>
 </template>
 
-<script>
-import { RouterView } from 'vue-router'
-import { useRouter } from 'vue-router'
+<script setup>
+  import { RouterView } from 'vue-router'
+  import { useRouter } from 'vue-router'
 
-import { ref } from 'vue'
-import { Dialog, DialogPanel } from '@headlessui/vue'
-import {
-  TransitionChild,
-  TransitionRoot,
-} from '@headlessui/vue'
-import {
-  Bars3Icon,
-  HomeIcon,
-  GlobeAltIcon,
-  AdjustmentsVerticalIcon,
-  XMarkIcon,
-} from '@heroicons/vue/24/outline'
-
-
-export default {
-  name: "Home",
-  components: {
-    TransitionRoot,
+  import { ref } from 'vue'
+  import { Dialog, DialogPanel } from '@headlessui/vue'
+  import {
     TransitionChild,
-    Dialog,
-    DialogPanel,
+    TransitionRoot,
+  } from '@headlessui/vue'
+  import {
+    Bars3Icon,
+    HomeIcon,
+    GlobeAltIcon,
+    AdjustmentsVerticalIcon,
     XMarkIcon,
-    Bars3Icon
-  },
-  setup(){
-    const sidebarOpen = ref(false)
-    let router = useRouter()
-    let currentRouteName = router.options.history.location
-    let navigation = [
-      { name: 'Dashboard', href: '/', icon: HomeIcon, current: currentRouteName == '/' },
-      { name: 'Network', href: '/network', icon: GlobeAltIcon, current: currentRouteName == '/network' },
-      { name: 'Car Controls', href: '/car-controls', icon: AdjustmentsVerticalIcon, current: currentRouteName == '/car-controls' },
-    ]
+  } from '@heroicons/vue/24/outline'
 
-    return {
-      sidebarOpen,
-      navigation
-    }
-  }
-};
+  const sidebarOpen = ref(false)
+  let router = useRouter()
+  let currentRouteName = router.options.history.location
+  let navigation = [
+    { name: 'Dashboard', href: '/', icon: HomeIcon, current: currentRouteName == '/' },
+    { name: 'Network', href: '/network', icon: GlobeAltIcon, current: currentRouteName == '/network' },
+    { name: 'Car Controls', href: '/car-controls', icon: AdjustmentsVerticalIcon, current: currentRouteName == '/car-controls' },
+  ]
 </script>
