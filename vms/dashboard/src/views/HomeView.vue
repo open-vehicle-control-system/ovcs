@@ -6,6 +6,7 @@
 import { vmsDashboardSocket } from '../services/socket_service.js'
 import { useCarControls } from "../stores/car_controls.js"
 import { useInverter } from "../stores/inverter.js"
+import { useVehicle } from "../stores/vehicle.js"
 import { onMounted } from 'vue'
 
 import RealTimeThrottleChart from "../components/charts/RealTimeThrottleChart.vue"
@@ -18,7 +19,8 @@ export default {
   setup(){
     const carControls = useCarControls();
     const inverter = useInverter();
-    const chartInterval = 50;
+    const vehicle = useVehicle();
+    const chartInterval = 1000;
 
     onMounted(() => {
       let carControlsChannel = vmsDashboardSocket.channel("car-controls", {interval: chartInterval})
@@ -31,8 +33,14 @@ export default {
         inverter.$patch(payload)
       });
 
+      let vehicleChannel = vmsDashboardSocket.channel("vehicle", {interval: chartInterval})
+      vehicleChannel.on("updated", payload => {
+        vehicle.$patch(payload)
+      });
+
       carControlsChannel.join().receive("ok", () => {});
       inverterChannel.join().receive("ok", () => {});
+      vehicleChannel.join().receive("ok", () => {});
     });
 
     return {
