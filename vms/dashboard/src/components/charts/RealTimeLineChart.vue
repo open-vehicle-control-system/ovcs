@@ -104,6 +104,7 @@ const option = ref({
     show: true,
     type: 'plain',
     bottom: 10,
+    icon: "circle",
     data: seriesStore.series.map((serie) => { return serie.name })
   },
   animation: false,
