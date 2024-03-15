@@ -3,6 +3,9 @@ defmodule VmsApiWeb.DashboardSocket do
 
   channel "car-controls", VmsApiWeb.CarControlsChannel
   channel "network-interfaces", VmsApiWeb.NetworkInterfacesChannel
+  channel "inverter", VmsApiWeb.InverterChannel
+  channel "vehicle", VmsApiWeb.VehicleChannel
+
 
   @impl true
   def connect(_params, socket, _connect_info) do
