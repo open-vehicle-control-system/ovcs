@@ -12,6 +12,7 @@ defmodule VmsApiWeb.CarControlsChannel do
     {:ok, socket}
   end
 
+  @impl true
   def handle_info(:push_car_controls_state, socket) do
     car_controls_state = ControlsController.car_controls_state()
     push(socket, "updated", car_controls_state)
