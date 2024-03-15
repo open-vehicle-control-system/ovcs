@@ -5,7 +5,7 @@ defmodule VmsApiWeb.VehicleChannel do
   intercept ["update"]
 
   @impl true
-  def join("inverter", payload, socket) do
+  def join("vehicle", payload, socket) do
     send(self(), :push_vehicle_state)
     {:ok, timer} = :timer.send_interval(payload["interval"], :push_vehicle_state)
     socket = %{socket | assigns: %{ timer: timer}}
