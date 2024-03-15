@@ -14,13 +14,14 @@ defmodule VmsApiWeb.InverterChannel do
 
   @impl true
   def handle_info(:push_inverter_state, socket) do
-    inverter_state = Inverter.inverter_state()
-    push(socket, "updated", inverter_state)
+    {:ok, inverter_state} = Inverter.inverter_state()
+    view = VmsApiWeb.Api.InverterStateJSON.render("inverter_state.json", %{inverter_state: inverter_state})
+    push(socket, "updated", view)
     {:noreply, socket}
   end
 
   @impl true
-  def terminate(_, socket) do
-    {:ok, _} = :timer.cancel(socket.assigns.timer)
+  def terminate(_, %{assigns: %{timer: timer}}) do
+    {:ok, _} = :timer.cancel(timer)
   end
 end

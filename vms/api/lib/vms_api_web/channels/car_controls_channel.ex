@@ -8,30 +8,19 @@ defmodule VmsApiWeb.CarControlsChannel do
   def join("car-controls", payload, socket) do
     send(self(), :push_car_controls_state)
     {:ok, timer} = :timer.send_interval(payload["interval"], :push_car_controls_state)
-    socket = %{socket | assigns: %{ timer: timer}}
-    {:ok, socket}
+    {:ok, socket |> assign(:timer, timer)}
   end
 
   @impl true
   def handle_info(:push_car_controls_state, socket) do
-    car_controls_state = ControlsController.car_controls_state()
-    push(socket, "updated", car_controls_state)
+    {:ok, car_controls} = ControlsController.car_controls_state()
+    view = VmsApiWeb.Api.CarControlsJSON.render("car_controls.json", %{car_controls: car_controls})
+    push(socket, "updated", view)
     {:noreply, socket}
   end
 
   @impl true
-  def handle_in("ping", payload, socket) do
-    {:reply, {:ok, payload}, socket}
-  end
-
-  @impl true
-  def handle_in("shout", payload, socket) do
-    broadcast(socket, "shout", payload)
-    {:noreply, socket}
-  end
-
-  @impl true
-  def terminate(_, socket) do
-    {:ok, _} = :timer.cancel(socket.assigns.timer)
+  def terminate(_, %{assigns: %{timer: timer}}) do
+    {:ok, _} = :timer.cancel(timer)
   end
 end

@@ -2,23 +2,25 @@ defmodule VmsApiWeb.Api.CalibrationController do
   use VmsApiWeb, :controller
 
   def show(conn, _params) do
-    {_status, calibration_data} = JSON.encode(VmsCore.Controllers.ControlsController.car_controls_state())
+    {:ok, car_controls} = VmsCore.Controllers.ControlsController.car_controls_state()
     conn
-    |> put_resp_header("content-type", "application/json; charset=utf-8")
-    |> send_resp(200, calibration_data)
+    |> put_status(:ok)
+    |> render("show.json", %{calibration_status: car_controls.calibration_status})
   end
 
   def create(conn, %{"calibrationModeEnabled" => true} = _params) do
     :ok = VmsCore.Controllers.ControlsController.enable_calibration_mode()
+    {:ok, car_controls} = VmsCore.Controllers.ControlsController.car_controls_state()
     conn
-    |> put_resp_header("content-type", "application/json; charset=utf-8")
-    |> send_resp(200, "{\"calibration_status\":\"started\"}")
+    |> put_status(:ok)
+    |> render("create.json", %{calibration_status: car_controls.calibration_status})
   end
 
   def create(conn, %{"calibrationModeEnabled" => false} = _params) do
     :ok = VmsCore.Controllers.ControlsController.disable_calibration_mode()
+    {:ok, car_controls} = VmsCore.Controllers.ControlsController.car_controls_state()
     conn
-    |> put_resp_header("content-type", "application/json; charset=utf-8")
-    |> send_resp(200, "{\"calibration_status\":\"disabled\"}")
+    |> put_status(:ok)
+    |> render("create.json", %{calibration_status: car_controls.calibration_status})
   end
 end
