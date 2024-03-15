@@ -7,10 +7,7 @@ defmodule VmsApiWeb.Router do
 
   scope "/api", VmsApiWeb.Api do
     pipe_through :api
-    get "/status", StatusController, :show
-    post "/calibration", CalibrationController, :create
-    get "/calibration", CalibrationController, :show
-    resources "/samples", SamplesController, only: [:index, :create, :show, :update, :delete]
+    resources "/calibration", CalibrationController, only: [:create, :show], singleton: true
   end
 
   # Enable LiveDashboard in development
