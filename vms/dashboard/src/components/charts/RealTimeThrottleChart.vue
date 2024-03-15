@@ -13,7 +13,7 @@ export default{
         RealTimeLineChart,
     },
     setup(props){
-        const chartTitle    = "Real-time Throttle Chart";
+        const chartTitle    = "Throttle";
         const chartId       = "realtime-throttle-chart";
         const throttleChart = ref();
         const serieMaxSize  = 300;

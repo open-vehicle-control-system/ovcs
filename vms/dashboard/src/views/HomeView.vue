@@ -1,7 +1,9 @@
 <template>
+  <div class="grid grid-cols-2 gap-10">
     <RealTimeThrottleChart ref="realTimeThrottleChart" :carControls="carControls"></RealTimeThrottleChart>
     <RealTimeTorqueChart ref="realTimeTorqueChart" :inverter="inverter"></RealTimeTorqueChart>
     <RealTimeTemperatureChart ref="realTimeTemperatureChart" :inverter="inverter"></RealTimeTemperatureChart>
+  </div>
 </template>
 
 <script>

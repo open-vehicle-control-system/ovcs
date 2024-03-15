@@ -13,7 +13,7 @@ export default{
         RealTimeLineChart,
     },
     setup(props){
-        const chartTitle    = "Real-time Torque Chart";
+        const chartTitle    = "Torque";
         const chartId       = "realtime-torque-chart";
         const torqueChart   = ref();
         const serieMaxSize  = 300;

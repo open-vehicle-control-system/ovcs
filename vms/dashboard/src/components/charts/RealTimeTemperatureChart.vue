@@ -13,7 +13,7 @@ export default{
         RealTimeLineChart,
     },
     setup(props){
-        const chartTitle    = "Real-time Temperature Chart";
+        const chartTitle    = "Temperature";
         const chartId       = "realtime-temperature-chart";
         const temperatureChart   = ref();
         const serieMaxSize  = 300;

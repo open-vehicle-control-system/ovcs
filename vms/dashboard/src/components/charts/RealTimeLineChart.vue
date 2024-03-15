@@ -41,6 +41,9 @@ export default{
           enabled: false,
           type: "xy",
           autoScaleYaxis: false
+        },
+        toolbar: {
+          show: false,
         }
       },
       yaxis: props.yaxis,
