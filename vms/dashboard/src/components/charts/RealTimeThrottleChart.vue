@@ -37,7 +37,6 @@ export default{
         ];
 
         function setMaxRawThrottle(max) {
-            console.log(max)
             throttleChart.value.setMax(throttleALabel, max);
         }
 
