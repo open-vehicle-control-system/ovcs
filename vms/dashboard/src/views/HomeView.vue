@@ -1,6 +1,7 @@
 <template>
     <RealTimeThrottleChart ref="realTimeThrottleChart" :carControls="carControls"></RealTimeThrottleChart>
     <RealTimeTorqueChart ref="realTimeTorqueChart" :inverter="inverter"></RealTimeTorqueChart>
+    <RealTimeTemperatureChart ref="realTimeTemperatureChart" :inverter="inverter"></RealTimeTemperatureChart>
 </template>
 
 <script>
@@ -12,18 +13,21 @@ import { onMounted } from 'vue'
 
 import RealTimeThrottleChart from "../components/charts/RealTimeThrottleChart.vue"
 import RealTimeTorqueChart from "../components/charts/RealTimeTorqueChart.vue"
+import RealTimeTemperatureChart from "../components/charts/RealTimeTemperatureChart.vue"
+
 
 export default {
   name: "Home",
   components: {
     RealTimeThrottleChart,
-    RealTimeTorqueChart
+    RealTimeTorqueChart,
+    RealTimeTemperatureChart
   },
   setup(){
     const carControls = useCarControls();
     const inverter = useInverter();
     const vehicle = useVehicle();
-    const chartInterval = 50;
+    const chartInterval = 100;
 
     onMounted(() => {
       let carControlsChannel = vmsDashboardSocket.channel("car-controls", {interval: chartInterval})
