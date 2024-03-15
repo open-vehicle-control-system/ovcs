@@ -31,7 +31,7 @@
   <RealTimeThrottleChart ref="realTimeThrottleChart" :carControls="carControls"></RealTimeThrottleChart>
 </template>
 
-<script>
+<script setup>
   import { Switch, SwitchGroup, SwitchLabel } from '@headlessui/vue'
   import { vmsDashboardSocket } from '../services/socket_service.js'
   import { useCarControls } from "../stores/car_controls.js"
@@ -40,41 +40,28 @@
 
   import RealTimeThrottleChart from "../components/charts/RealTimeThrottleChart.vue"
 
-  export default {
-    name: "CarControls",
-    components: {
-      RealTimeThrottleChart,
-      Switch,
-      SwitchGroup,
-      SwitchLabel
-    },
-    setup(){
-      const carControls = useCarControls();
+  const carControls = useCarControls();
 
-      const realTimeThrottleChart = ref();
-      const chartInterval = 50;
+  const realTimeThrottleChart = ref();
+  const chartInterval = 50;
 
-      function toggleCalibration(calibrationEnabled){
-        CalibrationService.post_calibration_enabled(calibrationEnabled).then((response) => {
-          carControls.$patch(response.data)
-        });
-      };
-
-      onMounted(() => {
-        carControls.init(vmsDashboardSocket, chartInterval, "car-controls")
-
-        CalibrationService.fetch_calibration_data().then(
-          (response) => {
-            carControls.$patch(response.data)
-          }
-        );
-      });
-
-      return {
-        carControls,
-        realTimeThrottleChart,
-        toggleCalibration
-      }
-    }
+  function toggleCalibration(calibrationEnabled){
+    CalibrationService.post_calibration_enabled(calibrationEnabled).then((response) => {
+      carControls.$patch(response.data)
+    });
   };
+
+  onMounted(() => {
+    carControls.init(vmsDashboardSocket, chartInterval, "car-controls")
+
+    CalibrationService.fetch_calibration_data().then(
+      (response) => {
+        carControls.$patch(response.data)
+      }
+    );
+  });
+
+  defineExpose({
+    toggleCalibration
+  })
 </script>
