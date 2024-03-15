@@ -49,10 +49,10 @@ export default{
 
         function updateSeries(payload){
             temperatureChart.value.pushSeriesData([
-                {name: inverterCommunicationBoardTemperature, value: payload.inverter_communication_board_temperature},
-                {name: insulatedGateBipolarTransistorTemperature, value: payload.insulated_gate_bipolar_transistor_temperature},
-                {name: insulatedGateBipolarTransistorBoardTemperature, value: payload.insulated_gate_bipolar_transistor_board_temperature},
-                {name: motorTemperature, value: payload.motor_temperature},
+                {name: inverterCommunicationBoardTemperature, value: payload.inverterCommunicationBoardTemperature},
+                {name: insulatedGateBipolarTransistorTemperature, value: payload.insulatedGateBipolarTransistorTemperature},
+                {name: insulatedGateBipolarTransistorBoardTemperature, value: payload.insulatedGateBipolarTransistorBoardTemperature},
+                {name: motorTemperature, value: payload.motorTemperature},
             ]);
         }
 

@@ -41,8 +41,8 @@ export default{
 
         function updateSeries(payload){
             torqueChart.value.pushSeriesData([
-                {name: effectiveTorque, value: payload.effective_torque},
-                {name: requestedTorque, value: payload.requested_torque}
+                {name: effectiveTorque, value: payload.effectiveTorque},
+                {name: requestedTorque, value: payload.requestedTorque}
             ]);
         }
 

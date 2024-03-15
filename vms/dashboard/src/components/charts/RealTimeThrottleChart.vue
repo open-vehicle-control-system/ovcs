@@ -43,8 +43,8 @@ export default{
 
         function updateSeries(payload){
             throttleChart.value.pushSeriesData([
-                {name: throttleALabel, value: payload.raw_throttle_a},
-                {name: throttleBLabel, value: payload.raw_throttle_b},
+                {name: throttleALabel, value: payload.rawThrottleA},
+                {name: throttleBLabel, value: payload.rawThrottleB},
                 {name: throttleLabel, value: payload.throttle}
             ]);
         }

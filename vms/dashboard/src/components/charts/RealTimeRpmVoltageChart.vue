@@ -37,8 +37,8 @@ export default{
 
         function updateSeries(payload){
             rpmVoltageChart.value.pushSeriesData([
-                {name: rpm, value: payload.rpm},
-                {name: voltage, value: payload.output_voltage}
+                {name: rpm, value: payload.rotationPerMinute},
+                {name: voltage, value: payload.outputVoltage}
             ]);
         }
 

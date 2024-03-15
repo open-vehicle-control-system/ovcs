@@ -6,11 +6,11 @@
         <tbody class="divide-y divide-gray-200 bg-white">
           <tr>
             <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">Selected Gear</td>
-            <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 text-right">{{ vehicle.selected_gear }}</td>
+            <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 text-right">{{ vehicle.selectedGear }}</td>
           </tr>
           <tr>
             <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">Key status</td>
-            <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 text-right">{{ vehicle.key_status }}</td>
+            <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 text-right">{{ vehicle.keyStatus }}</td>
           </tr>
           <tr>
             <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">Speed</td>
@@ -18,15 +18,15 @@
           </tr>
           <tr>
             <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">RPM</td>
-            <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 text-right">{{ inverter.rpm }}</td>
+            <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 text-right">{{ inverter.rotationPerMinute }}</td>
           </tr>
           <tr>
             <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">Output voltage</td>
-            <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 text-right">{{ inverter.output_voltage }}V</td>
+            <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 text-right">{{ inverter.outputVoltage }}V</td>
           </tr>
           <tr>
             <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">Motor temperature</td>
-            <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 text-right">{{ inverter.motor_temperature }}C</td>
+            <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 text-right">{{ inverter.motorTemperature }}C</td>
           </tr>
         </tbody>
       </table>
