@@ -39,7 +39,7 @@
   </div>
 </template>
 
-<script>
+<script setup>
 import { vmsDashboardSocket } from '../services/socket_service.js'
 import { useCarControls } from "../stores/car_controls.js"
 import { useInverter } from "../stores/inverter.js"
@@ -52,34 +52,14 @@ import RealTimeTemperatureChart from "../components/charts/RealTimeTemperatureCh
 import RealTimeRpmVoltageChart from "../components/charts/RealTimeRpmVoltageChart.vue"
 import RealTimeSpeedChart from "../components/charts/RealTimeSpeedChart.vue"
 
+const carControls = useCarControls();
+const inverter = useInverter();
+const vehicle = useVehicle();
+const chartInterval = 100;
 
-export default {
-  name: "Home",
-  components: {
-    RealTimeThrottleChart,
-    RealTimeTorqueChart,
-    RealTimeTemperatureChart,
-    RealTimeRpmVoltageChart,
-    RealTimeSpeedChart
-  },
-  setup(){
-    const carControls = useCarControls();
-    const inverter = useInverter();
-    const vehicle = useVehicle();
-    const chartInterval = 100;
-
-    onMounted(() => {
-      carControls.init(vmsDashboardSocket, chartInterval, "car-controls")
-      inverter.init(vmsDashboardSocket, chartInterval, "inverter")
-      vehicle.init(vmsDashboardSocket, chartInterval, "vehicle")
-    });
-
-    return {
-      carControls,
-      inverter,
-      vehicle
-    }
-  }
-};
-
+onMounted(() => {
+  carControls.init(vmsDashboardSocket, chartInterval, "car-controls")
+  inverter.init(vmsDashboardSocket, chartInterval, "inverter")
+  vehicle.init(vmsDashboardSocket, chartInterval, "vehicle")
+});
 </script>
