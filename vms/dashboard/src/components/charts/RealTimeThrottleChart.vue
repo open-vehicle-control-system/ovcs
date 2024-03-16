@@ -16,7 +16,7 @@
     const throttleALabel = "Throttle A"
     const throttleBLabel = "Throttle B"
     const throttleABLabel = "Throttle A&B"
-    const throttleLabel  = "Throttle"
+    const throttleLabel  = "Computed Throttle"
 
     const carControls = props.carControls
 
@@ -27,8 +27,8 @@
     ];
 
     let yaxis = [
-        { label: throttleABLabel, serieName: throttleALabel },
-        { label: throttleLabel, serieName: throttleLabel, position: 'right', max: 1 }
+        { label: throttleABLabel, serieName: throttleALabel, unit: "raw" },
+        { label: throttleLabel, serieName: throttleLabel, position: 'right', max: 1, unit: "computed" }
     ];
 
     function setMaxRawThrottle(max) {
