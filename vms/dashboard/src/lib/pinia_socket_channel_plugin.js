@@ -1,8 +1,11 @@
 export const PiniaSocketChannelPlugin = context => {
-    let init = function(socket, interval, channelName){
+    let init = function(socket, interval, channelName, callback){
         let that = this
         let channel = socket.channel(channelName, {interval: interval})
         channel.on("updated", payload => {
+            if(callback){
+                callback(that);
+            };
             that.$patch(payload.attributes)
         })
         channel.join().receive("ok", () => {});
