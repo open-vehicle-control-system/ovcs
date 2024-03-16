@@ -28,11 +28,6 @@
         { serieName: effectiveTorque, label: "Nm", min: min, max: max }
     ];
 
-    function setMax(max) {
-        torqueChart.value.setMax(effectiveTorque, max);
-        torqueChart.value.setMax(requestedTorque, max);
-    }
-
     function updateSeries(payload){
         torqueChart.value.pushSeriesData([
             {name: effectiveTorque, value: payload.effectiveTorque},
@@ -41,7 +36,6 @@
     }
 
     inverter.$subscribe((mutation, state) => {
-        setMax(max);
         updateSeries(state);
     })
 </script>

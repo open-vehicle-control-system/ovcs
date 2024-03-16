@@ -29,12 +29,8 @@
     ];
 
     let yaxis = [
-        { serieName: inverterCommunicationBoardTemperature, label: "°C", min: min },
+        { serieName: inverterCommunicationBoardTemperature, label: "°C", min: min, max: max },
     ];
-
-    function setMax(max) {
-        temperatureChart.value.setMax(inverterCommunicationBoardTemperature, max);
-    }
 
     function updateSeries(payload){
         temperatureChart.value.pushSeriesData([
@@ -46,7 +42,6 @@
     }
 
     inverter.$subscribe((mutation, state) => {
-        setMax(max);
         updateSeries(state);
     })
 </script>

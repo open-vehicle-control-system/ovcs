@@ -31,7 +31,7 @@
         { serieName: throttleLabel, position: 'right', max: 1, label: "Computed" }
     ];
 
-    function setMaxRawThrottle(max) {
+    function setMax(max) {
         throttleChart.value.setMax(throttleALabel, max);
     }
 
@@ -44,7 +44,7 @@
     }
 
     carControls.$subscribe((mutation, state) => {
-        setMaxRawThrottle(state.rawMaxThrottle);
+        setMax(state.rawMaxThrottle);
         updateSeries(state);
     })
 </script>
