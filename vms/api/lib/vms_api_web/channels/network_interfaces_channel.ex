@@ -10,7 +10,7 @@ defmodule VmsApiWeb.NetworkInterfacesChannel do
 
   @impl true
   def handle_out("update", payload, socket) do
-    push(socket, "updated", %{ interfaces: payload})
+    push(socket, "updated", %{ attributes: %{interfaces: payload}})
     {:noreply, socket}
   end
 end
