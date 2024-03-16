@@ -84,17 +84,7 @@
 </div>
 </template>
 
-<script>
-export default{
-    name: "NetworkInterfaceStatistics",
-    props: ['networkInterface'],
-    setup(props){
-        const networkInterface = props.networkInterface;
-
-        return {
-            networkInterface
-        }
-    }
-}
-
+<script setup>
+    const props = defineProps(['networkInterface'])
+    const networkInterface = props.networkInterface;
 </script>

@@ -2,54 +2,37 @@
   <RealTimeLineChart ref="speedChart" :title="chartTitle" :series="series" :id="chartId" :serieMaxSize="serieMaxSize" :yaxis="yaxis"></RealTimeLineChart>
 </template>
 
-<script>
-import RealTimeLineChart from "./RealTimeLineChart.vue"
-import { ref } from "vue"
+<script setup>
+    import RealTimeLineChart from "./RealTimeLineChart.vue"
+    import { ref } from "vue"
 
-export default{
-    name: "RealTimeSpeedChart",
-    props: ["vehicle"],
-    components: {
-        RealTimeLineChart,
-    },
-    setup(props){
-        const chartTitle    = "Speed";
-        const chartId       = "realtime-speed-chart";
-        const speedChart   = ref();
-        const serieMaxSize  = 300;
-        const max           = 200;
-        const min           = 0;
+    const props = defineProps(['vehicle'])
 
-        const speed = "Speed"
-        const vehicle = props.vehicle
+    const chartTitle    = "Speed";
+    const chartId       = "realtime-speed-chart";
+    const speedChart   = ref();
+    const serieMaxSize  = 300;
+    const max           = 200;
+    const min           = 0;
 
-        let series = [
-            { name: speed, data: []}
-        ];
+    const speed = "Speed"
+    const vehicle = props.vehicle
 
-        let yaxis = [
-            { label: speed, serieName: speed, unit: "kph", min: min, max: max}
-        ];
+    let series = [
+        { name: speed, data: []}
+    ];
 
-        function updateSeries(payload){
-            speedChart.value.pushSeriesData([
-                {name: speed, value: payload.speed},
-            ]);
-        }
+    let yaxis = [
+        { label: speed, serieName: speed, unit: "kph", min: min, max: max}
+    ];
 
-        vehicle.$subscribe((mutation, state) => {
-            updateSeries(state);
-        })
-
-        return {
-            series,
-            chartId,
-            chartTitle,
-            speedChart,
-            serieMaxSize,
-            yaxis,
-            updateSeries
-        }
+    function updateSeries(payload){
+        speedChart.value.pushSeriesData([
+            {name: speed, value: payload.speed},
+        ]);
     }
-}
+
+    vehicle.$subscribe((mutation, state) => {
+        updateSeries(state);
+    })
 </script>

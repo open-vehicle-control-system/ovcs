@@ -40,26 +40,26 @@
 </template>
 
 <script setup>
-import { vmsDashboardSocket } from '../services/socket_service.js'
-import { useCarControls } from "../stores/car_controls.js"
-import { useInverter } from "../stores/inverter.js"
-import { useVehicle } from "../stores/vehicle.js"
-import { onMounted } from 'vue'
+  import { vmsDashboardSocket } from '../services/socket_service.js'
+  import { useCarControls } from "../stores/car_controls.js"
+  import { useInverter } from "../stores/inverter.js"
+  import { useVehicle } from "../stores/vehicle.js"
+  import { onMounted } from 'vue'
 
-import RealTimeThrottleChart from "../components/charts/RealTimeThrottleChart.vue"
-import RealTimeTorqueChart from "../components/charts/RealTimeTorqueChart.vue"
-import RealTimeTemperatureChart from "../components/charts/RealTimeTemperatureChart.vue"
-import RealTimeRpmVoltageChart from "../components/charts/RealTimeRpmVoltageChart.vue"
-import RealTimeSpeedChart from "../components/charts/RealTimeSpeedChart.vue"
+  import RealTimeThrottleChart from "../components/charts/RealTimeThrottleChart.vue"
+  import RealTimeTorqueChart from "../components/charts/RealTimeTorqueChart.vue"
+  import RealTimeTemperatureChart from "../components/charts/RealTimeTemperatureChart.vue"
+  import RealTimeRpmVoltageChart from "../components/charts/RealTimeRpmVoltageChart.vue"
+  import RealTimeSpeedChart from "../components/charts/RealTimeSpeedChart.vue"
 
-const carControls = useCarControls();
-const inverter = useInverter();
-const vehicle = useVehicle();
-const chartInterval = 100;
+  const carControls = useCarControls();
+  const inverter = useInverter();
+  const vehicle = useVehicle();
+  const chartInterval = 100;
 
-onMounted(() => {
-  carControls.init(vmsDashboardSocket, chartInterval, "car-controls")
-  inverter.init(vmsDashboardSocket, chartInterval, "inverter")
-  vehicle.init(vmsDashboardSocket, chartInterval, "vehicle")
-});
+  onMounted(() => {
+    carControls.init(vmsDashboardSocket, chartInterval, "car-controls")
+    inverter.init(vmsDashboardSocket, chartInterval, "inverter")
+    vehicle.init(vmsDashboardSocket, chartInterval, "vehicle")
+  });
 </script>

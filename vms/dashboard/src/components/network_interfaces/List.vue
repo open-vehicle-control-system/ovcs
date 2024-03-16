@@ -40,24 +40,12 @@
     </div>
 </template>
 
-<script>
-export default{
-    name: "NetworkInterfaceList",
-    props: ["networkInterfaces"],
-    setup(props) {
-        let networkInterfaces = props.networkInterfaces;
-
-        const statuses = {
-            UNKNOWN: 'text-gray-500 bg-gray-100/10',
-            UP: 'text-green-400 bg-green-400/10',
-            DOWN: 'text-rose-400 bg-rose-400/10',
-        }
-
-        return {
-            networkInterfaces,
-            statuses
-        }
+<script setup>
+    const props = defineProps(['networkInterfaces'])
+    const statuses = {
+        UNKNOWN: 'text-gray-500 bg-gray-100/10',
+        UP: 'text-green-400 bg-green-400/10',
+        DOWN: 'text-rose-400 bg-rose-400/10',
     }
-}
-
+    let networkInterfaces = props.networkInterfaces;
 </script>

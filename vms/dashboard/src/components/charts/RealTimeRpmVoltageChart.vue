@@ -2,59 +2,42 @@
   <RealTimeLineChart ref="rpmVoltageChart" :title="chartTitle" :series="series" :id="chartId" :serieMaxSize="serieMaxSize" :yaxis="yaxis"></RealTimeLineChart>
 </template>
 
-<script>
-import RealTimeLineChart from "./RealTimeLineChart.vue"
-import { ref } from "vue"
+<script setup>
+    import RealTimeLineChart from "./RealTimeLineChart.vue"
+    import { ref } from "vue"
 
-export default{
-    name: "RealTimeThrottleChart",
-    props: ["inverter"],
-    components: {
-        RealTimeLineChart,
-    },
-    setup(props){
-        const chartTitle      = "RPM & Voltage";
-        const chartId         = "realtime-rmp-voltage-chart";
-        const rpmVoltageChart = ref();
-        const serieMaxSize    = 300;
-        const voltageMax      = 600;
-        const maxRPM          = 7000;
+    const props = defineProps(['inverter'])
 
-        const rpm = "RPM"
-        const voltage  = "Voltage"
+    const chartTitle      = "RPM & Voltage";
+    const chartId         = "realtime-rmp-voltage-chart";
+    const rpmVoltageChart = ref();
+    const serieMaxSize    = 300;
+    const voltageMax      = 600;
+    const maxRPM          = 7000;
 
-        const inverter = props.inverter
+    const rpm = "RPM"
+    const voltage  = "Voltage"
 
-        let series = [
-            {name: rpm, data: []},
-            {name: voltage, data: [], yAxisIndex: 1}
-        ];
+    const inverter = props.inverter
 
-        let yaxis = [
-            { label: rpm, serieName: rpm, unit: "rpm", max: maxRPM, min: 0 },
-            { label: voltage, serieName: voltage, unit: "V", max: voltageMax, min: 0 }
-        ];
+    let series = [
+        {name: rpm, data: []},
+        {name: voltage, data: [], yAxisIndex: 1}
+    ];
 
-        function updateSeries(payload){
-            rpmVoltageChart.value.pushSeriesData([
-                {name: rpm, value: payload.rotationPerMinute},
-                {name: voltage, value: payload.outputVoltage}
-            ]);
-        }
+    let yaxis = [
+        { label: rpm, serieName: rpm, unit: "rpm", max: maxRPM, min: 0 },
+        { label: voltage, serieName: voltage, unit: "V", max: voltageMax, min: 0 }
+    ];
 
-        inverter.$subscribe((mutation, state) => {
-            updateSeries(state);
-        })
-
-        return {
-            series,
-            chartId,
-            chartTitle,
-            rpmVoltageChart,
-            serieMaxSize,
-            yaxis,
-            updateSeries
-        }
+    function updateSeries(payload){
+        rpmVoltageChart.value.pushSeriesData([
+            {name: rpm, value: payload.rotationPerMinute},
+            {name: voltage, value: payload.outputVoltage}
+        ]);
     }
-}
+
+    inverter.$subscribe((mutation, state) => {
+        updateSeries(state);
+    })
 </script>
