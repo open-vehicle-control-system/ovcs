@@ -15,7 +15,6 @@
 
     const throttleALabel = "Throttle A"
     const throttleBLabel = "Throttle B"
-    const throttleABLabel = "Throttle A&B"
     const throttleLabel  = "Computed Throttle"
 
     const carControls = props.carControls
