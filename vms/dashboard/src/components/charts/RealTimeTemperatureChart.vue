@@ -27,14 +27,14 @@ export default{
         const inverter = props.inverter
 
         let series = [
-            {name: inverterCommunicationBoardTemperature, data: [], type: 'line', showSymbol: false},
-            {name: insulatedGateBipolarTransistorTemperature, data: [], type: 'line', showSymbol: false},
-            {name: insulatedGateBipolarTransistorBoardTemperature, data: [], type: 'line', showSymbol: false},
-            {name: motorTemperature, data: [], type: 'line', showSymbol: false}
+            {name: inverterCommunicationBoardTemperature, data: []},
+            {name: insulatedGateBipolarTransistorTemperature, data: []},
+            {name: insulatedGateBipolarTransistorBoardTemperature, data: []},
+            {name: motorTemperature, data: []}
         ];
 
         let yaxis = [
-            { label: "Temperature °C", serieName: inverterCommunicationBoardTemperature, type: 'value', min: min },
+            { label: "Temperature °C", serieName: inverterCommunicationBoardTemperature, unit: "°C", min: min },
         ];
 
         function setMax(max) {

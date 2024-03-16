@@ -40,7 +40,11 @@ provide(THEME_KEY, "light");
 
 const useChartStore = defineStore(props.id, {
   state: () => ({
-    series: props.series,
+    series: props.series.map((serie) => {
+      serie["type"] = "line",
+      serie["showSymbol"] = false;
+      return serie
+    }),
     serieMaxSize: props.serieMaxSize
   }),
   actions: {
@@ -61,6 +65,19 @@ const useChartStore = defineStore(props.id, {
 
 let seriesStore = useChartStore();
 
+let yAxis = props.yaxis.map((yaxis) => {
+  if(yaxis.unit){
+    yaxis["name"] = yaxis.unit;
+  };
+  yaxis["type"] = "value";
+  yaxis["nameLocation"] = "end";
+  yaxis["nameTextStyle"] = {
+    align: "right",
+    padding: 10
+  }
+  return yaxis;
+})
+
 const pushSeriesData = (newSeriesValues) => {
   newSeriesValues.forEach(newSerieValue => {
     let timestamp = Date.now();
@@ -72,12 +89,12 @@ const setMax = (name, max) => {
   let index = option.value.yAxis.findIndex((serie) => {
     return serie.serieName == name
   });
-  let yAxis = option.value.yAxis;
-  if(index >= 0 && yAxis[index] && yAxis[index]["max"] != max){
-    yAxis[index]["max"] = max
+  let yaxis = option.value.yAxis;
+  if(index >= 0 && yaxis[index] && yaxis[index]["max"] != max){
+    yaxis[index]["max"] = max
     option.value = {
       ...option.value,
-      yAxis: yAxis
+      yAxis: yaxis
     }
   };
 };
@@ -114,7 +131,7 @@ const option = ref({
       show: false
     }
   },
-  yAxis: props.yaxis,
+  yAxis: yAxis,
   series: seriesStore.series
 });
 </script>

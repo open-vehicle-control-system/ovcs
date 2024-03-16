@@ -26,13 +26,13 @@ export default{
         const inverter = props.inverter
 
         let series = [
-            {name: rpm, data: [], type: 'line', showSymbol: false},
-            {name: voltage, data: [], type: 'line', showSymbol: false, yAxisIndex: 1}
+            {name: rpm, data: []},
+            {name: voltage, data: [], yAxisIndex: 1}
         ];
 
         let yaxis = [
-            { label: rpm, serieName: rpm, type: 'value', max: maxRPM, min: 0 },
-            { label: voltage, serieName: voltage, type: 'value', max: voltageMax, min: 0 }
+            { label: rpm, serieName: rpm, unit: "rpm", max: maxRPM, min: 0 },
+            { label: voltage, serieName: voltage, unit: "V", max: voltageMax, min: 0 }
         ];
 
         function updateSeries(payload){

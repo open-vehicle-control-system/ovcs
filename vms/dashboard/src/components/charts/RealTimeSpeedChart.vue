@@ -24,11 +24,11 @@ export default{
         const vehicle = props.vehicle
 
         let series = [
-            { name: speed, data: [], type: 'line', showSymbol: false}
+            { name: speed, data: []}
         ];
 
         let yaxis = [
-            { label: speed, serieName: speed, type: 'value', min: min, max: max}
+            { label: speed, serieName: speed, unit: "kph", min: min, max: max}
         ];
 
         function updateSeries(payload){

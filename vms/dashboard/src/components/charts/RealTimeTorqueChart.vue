@@ -25,12 +25,12 @@ export default{
         const inverter = props.inverter
 
         let series = [
-            {name: effectiveTorque, data: [], type: 'line', showSymbol: false},
-            {name: requestedTorque, data: [], type: 'line', showSymbol: false}
+            {name: effectiveTorque, data: []},
+            {name: requestedTorque, data: []}
         ];
 
         let yaxis = [
-            { label: "Effective & Requested", serieName: effectiveTorque, type: 'value', min: min, max: max }
+            { label: "Effective & Requested", serieName: effectiveTorque, unit: "Nm", min: min, max: max }
         ];
 
         function setMax(max) {

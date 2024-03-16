@@ -26,14 +26,14 @@ export default{
         const carControls = props.carControls
 
         let series = [
-            {name: throttleALabel, data: [], type: 'line', showSymbol: false},
-            {name: throttleBLabel, data: [], type: 'line', showSymbol: false},
-            {name: throttleLabel, data: [], type: 'line', showSymbol: false, yAxisIndex: 1}
+            {name: throttleALabel, data: []},
+            {name: throttleBLabel, data: []},
+            {name: throttleLabel, data: [], yAxisIndex: 1}
         ];
 
         let yaxis = [
-            { label: throttleABLabel, serieName: throttleALabel, type: 'value' },
-            { label: throttleLabel, serieName: throttleLabel, type: 'value', position: 'right', max: 1 }
+            { label: throttleABLabel, serieName: throttleALabel },
+            { label: throttleLabel, serieName: throttleLabel, position: 'right', max: 1 }
         ];
 
         function setMaxRawThrottle(max) {
