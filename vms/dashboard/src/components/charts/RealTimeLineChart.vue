@@ -43,6 +43,11 @@
       series: props.series.map((serie) => {
         serie["type"] = "line",
         serie["showSymbol"] = false;
+        if(serie.data){
+          serie["data"] = data;
+        } else {
+          serie["data"] = [];
+        }
         return serie
       }),
       serieMaxSize: props.serieMaxSize
@@ -100,9 +105,9 @@
   };
 
   onMounted(() => {
-      window.addEventListener('resize', () => {
-        chart.value.resize()
-      } )
+    window.addEventListener('resize', () => {
+      chart.value.resize()
+    } )
   })
   onUnmounted(() => {
       window.removeEventListener('resize', () => {})

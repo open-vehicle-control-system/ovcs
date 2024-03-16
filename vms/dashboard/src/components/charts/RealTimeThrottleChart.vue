@@ -20,14 +20,14 @@
     const carControls = props.carControls
 
     let series = [
-        {name: throttleALabel, data: []},
-        {name: throttleBLabel, data: []},
-        {name: throttleLabel, data: [], yAxisIndex: 1}
+        {name: throttleALabel},
+        {name: throttleBLabel},
+        {name: throttleLabel, yAxisIndex: 1}
     ];
 
     let yaxis = [
-        { serieName: throttleALabel, label: "Raw" },
-        { serieName: throttleLabel, position: 'right', max: 1, label: "Computed" }
+        {serieName: throttleALabel, label: "Raw"},
+        {serieName: throttleLabel, position: 'right', max: 1, label: "Computed"}
     ];
 
     function setMax(max) {

@@ -18,9 +18,7 @@
     const speed = "Speed"
     const vehicle = props.vehicle
 
-    let series = [
-        { name: speed, data: []}
-    ];
+    let series = [{name: speed}];
 
     let yaxis = [
         {serieName: speed, label: "kph", min: min, max: max}

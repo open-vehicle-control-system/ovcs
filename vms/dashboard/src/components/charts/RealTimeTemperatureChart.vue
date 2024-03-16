@@ -22,14 +22,14 @@
     const inverter = props.inverter
 
     let series = [
-        {name: inverterCommunicationBoardTemperature, data: []},
-        {name: insulatedGateBipolarTransistorTemperature, data: []},
-        {name: insulatedGateBipolarTransistorBoardTemperature, data: []},
-        {name: motorTemperature, data: []}
+        {name: inverterCommunicationBoardTemperature},
+        {name: insulatedGateBipolarTransistorTemperature},
+        {name: insulatedGateBipolarTransistorBoardTemperature},
+        {name: motorTemperature}
     ];
 
     let yaxis = [
-        { serieName: inverterCommunicationBoardTemperature, label: "°C", min: min, max: max },
+        {serieName: inverterCommunicationBoardTemperature, label: "°C", min: min, max: max},
     ];
 
     function updateSeries(payload){

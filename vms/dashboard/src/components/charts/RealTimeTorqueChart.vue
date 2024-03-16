@@ -19,14 +19,9 @@
     const requestedTorque = "Requested Torque"
     const inverter = props.inverter
 
-    let series = [
-        {name: effectiveTorque, data: []},
-        {name: requestedTorque, data: []}
-    ];
+    let series = [{name: effectiveTorque}, {name: requestedTorque}];
 
-    let yaxis = [
-        { serieName: effectiveTorque, label: "Nm", min: min, max: max }
-    ];
+    let yaxis = [{serieName: effectiveTorque, label: "Nm", min: min, max: max}];
 
     function updateSeries(payload){
         torqueChart.value.pushSeriesData([

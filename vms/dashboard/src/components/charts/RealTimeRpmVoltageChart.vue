@@ -20,10 +20,7 @@
 
     const inverter = props.inverter
 
-    let series = [
-        {name: rpm, data: []},
-        {name: voltage, data: [], yAxisIndex: 1}
-    ];
+    let series = [{name: rpm}, {name: voltage, yAxisIndex: 1}];
 
     let yaxis = [
         { serieName: rpm, label: "rpm", max: maxRPM, min: 0 },
