@@ -21,7 +21,7 @@
 
 <script setup>
   import { onMounted } from 'vue'
-  import { Socket } from 'phoenix'
+  import { vmsDashboardSocket } from '../services/socket_service.js'
 
   import NetworkInterfaceStatistics from "../components/network_interfaces/Statistics.vue"
   import NetworkInterfacesList from "../components/network_interfaces/List.vue"
@@ -29,18 +29,11 @@
   import { useNetworkInterfaces } from "../stores/network_interfaces.js"
 
   const networkInterfaces = useNetworkInterfaces()
+  const chartInterval = 1000;
 
   onMounted(() => {
-    let networkInterfacesStore = useNetworkInterfaces()
-    let vmsDashboardSocket = new Socket(import.meta.env.VITE_BASE_WS + "/sockets/dashboard", {})
-    vmsDashboardSocket.connect();
-    let networkInterfaces = vmsDashboardSocket.channel("network-interfaces", {})
-
-    networkInterfaces.on("updated", payload => {
-      networkInterfacesStore.$patch(payload);
-      networkInterfacesStore.computeInterfacesLoad();
+    networkInterfaces.init(vmsDashboardSocket, chartInterval, "network-interfaces", (store) => {
+      store.computeInterfacesLoad();
     })
-
-    networkInterfaces.join().receive("ok", () => {})
   });
 </script>
