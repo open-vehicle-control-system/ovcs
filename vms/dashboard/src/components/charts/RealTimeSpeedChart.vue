@@ -23,7 +23,7 @@
     ];
 
     let yaxis = [
-        { label: speed, serieName: speed, unit: "kph", min: min, max: max}
+        {serieName: speed, label: "kph", min: min, max: max}
     ];
 
     function updateSeries(payload){

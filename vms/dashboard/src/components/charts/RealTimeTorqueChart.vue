@@ -25,7 +25,7 @@
     ];
 
     let yaxis = [
-        { label: "Effective & Requested", serieName: effectiveTorque, unit: "Nm", min: min, max: max }
+        { serieName: effectiveTorque, label: "Nm", min: min, max: max }
     ];
 
     function setMax(max) {

@@ -29,7 +29,7 @@
     ];
 
     let yaxis = [
-        { label: "Temperature °C", serieName: inverterCommunicationBoardTemperature, unit: "°C", min: min },
+        { serieName: inverterCommunicationBoardTemperature, label: "°C", min: min },
     ];
 
     function setMax(max) {

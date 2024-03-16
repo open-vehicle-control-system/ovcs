@@ -66,8 +66,8 @@
   let seriesStore = useChartStore();
 
   let yAxis = props.yaxis.map((yaxis) => {
-    if(yaxis.unit){
-      yaxis["name"] = yaxis.unit;
+    if(yaxis.label){
+      yaxis["name"] = yaxis.label;
     };
     yaxis["type"] = "value";
     yaxis["nameLocation"] = "end";

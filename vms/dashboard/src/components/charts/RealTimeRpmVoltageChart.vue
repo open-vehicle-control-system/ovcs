@@ -26,8 +26,8 @@
     ];
 
     let yaxis = [
-        { label: rpm, serieName: rpm, unit: "rpm", max: maxRPM, min: 0 },
-        { label: voltage, serieName: voltage, unit: "V", max: voltageMax, min: 0 }
+        { serieName: rpm, label: "rpm", max: maxRPM, min: 0 },
+        { serieName: voltage, label: "V", max: voltageMax, min: 0 }
     ];
 
     function updateSeries(payload){

@@ -27,8 +27,8 @@
     ];
 
     let yaxis = [
-        { label: throttleABLabel, serieName: throttleALabel, unit: "raw" },
-        { label: throttleLabel, serieName: throttleLabel, position: 'right', max: 1, unit: "computed" }
+        { serieName: throttleALabel, label: "Raw" },
+        { serieName: throttleLabel, position: 'right', max: 1, label: "Computed" }
     ];
 
     function setMaxRawThrottle(max) {
