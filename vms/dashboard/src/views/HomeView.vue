@@ -1,4 +1,11 @@
 <template>
+  <div class="grid grid-cols-6 gap-10 pb-5">
+    <div v-for="emitter in systemStatus.failedEmitters" class="p-5 rounded-md animate-blinkingBg p-4 border-solid border rounded border-gray-300 shadow-md">
+      <div class="flex items-center gap-x-3">
+        <span class="text-red-800">{{ emitter }} not present</span>
+      </div>
+    </div>
+  </div>
   <div class="grid grid-cols-3 gap-10">
     <div class="p-5 border-solid border rounded border-gray-300 shadow-md">
       <h2 class="text-base">Vehicle information</h2>
@@ -44,6 +51,7 @@
   import { useCarControls } from "../stores/car_controls.js"
   import { useInverter } from "../stores/inverter.js"
   import { useVehicle } from "../stores/vehicle.js"
+  import { useSystemStatus } from "../stores/system_status.js"
   import { onMounted } from 'vue'
 
   import RealTimeThrottleChart from "../components/charts/RealTimeThrottleChart.vue"
@@ -55,11 +63,13 @@
   const carControls = useCarControls();
   const inverter = useInverter();
   const vehicle = useVehicle();
+  const systemStatus = useSystemStatus();
   const chartInterval = 100;
 
   onMounted(() => {
     carControls.init(vmsDashboardSocket, chartInterval, "car-controls")
     inverter.init(vmsDashboardSocket, chartInterval, "inverter")
     vehicle.init(vmsDashboardSocket, chartInterval, "vehicle")
+    systemStatus.init(vmsDashboardSocket, chartInterval, "system-status")
   });
 </script>
