@@ -81,8 +81,8 @@
   };
 
   const setMax = (name, max) => {
-    let index = option.value.yAxis.findIndex((serie) => serie.serieName == name);
     let yaxis = option.value.yAxis;
+    let index = yaxis.findIndex((serie) => serie.serieName == name);
     if(index >= 0 && yaxis[index] && yaxis[index].max != max){
       yaxis[index].max = max
       option.value = {
