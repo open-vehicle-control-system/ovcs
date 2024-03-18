@@ -16,7 +16,7 @@
     const min           = -50;
 
     const inverterCommunicationBoardTemperature = "Inverter Board"
-    const insulatedGateBipolarTransistorTemperature = "IBGT"
+    const insulatedGateBipolarTransistorTemperature = "IGBT"
     const insulatedGateBipolarTransistorBoardTemperature = "IGBT Board"
     const motorTemperature = "Motor"
     const inverter = props.inverter
