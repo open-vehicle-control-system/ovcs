@@ -40,28 +40,21 @@
 
   const useChartStore = defineStore(props.id, {
     state: () => ({
-      series: props.series.map((serie) => {
-        serie["type"] = "line",
-        serie["showSymbol"] = false;
-        if(serie.data){
-          serie["data"] = data;
-        } else {
-          serie["data"] = [];
-        }
-        return serie
-      }),
+      series: props.series.map((serie) => ({
+        ...serie,
+        type: "line",
+        showSymbol: false,
+        data: serie.data || []
+      })),
       serieMaxSize: props.serieMaxSize
     }),
     actions: {
       pushToSerie(name, value, timestamp){
-        let index = this.series.findIndex((serie) => {
-          return serie.name == name
-        });
+        let index = this.series.findIndex((serie) => serie.name == name);
         if(index >= 0){
           if(this.series[index].data.length >= this.serieMaxSize){
             this.series[index].data.shift()
           }
-
           this.series[index].data.push([timestamp, value]);
         }
       }
@@ -71,16 +64,13 @@
   let seriesStore = useChartStore();
 
   let yAxis = props.yaxis.map((yaxis) => {
-    if(yaxis.label){
-      yaxis["name"] = yaxis.label;
-    };
-    yaxis["type"] = "value";
-    yaxis["nameLocation"] = "end";
-    yaxis["nameTextStyle"] = {
-      align: "right",
-      padding: 10
+    return {
+      ...yaxis,
+      name: yaxis.label,
+      type: "value",
+      nameLocation: "end",
+      nameTextStyle: {align: "right", padding: 10}
     }
-    return yaxis;
   })
 
   const pushSeriesData = (newSeriesValues) => {
@@ -91,12 +81,10 @@
   };
 
   const setMax = (name, max) => {
-    let index = option.value.yAxis.findIndex((serie) => {
-      return serie.serieName == name
-    });
+    let index = option.value.yAxis.findIndex((serie) => serie.serieName == name);
     let yaxis = option.value.yAxis;
-    if(index >= 0 && yaxis[index] && yaxis[index]["max"] != max){
-      yaxis[index]["max"] = max
+    if(index >= 0 && yaxis[index] && yaxis[index].max != max){
+      yaxis[index].max = max
       option.value = {
         ...option.value,
         yAxis: yaxis
