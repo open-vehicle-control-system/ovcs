@@ -74,8 +74,8 @@
   })
 
   const pushSeriesData = (newSeriesValues) => {
+    let timestamp = Date.now();
     newSeriesValues.forEach(newSerieValue => {
-      let timestamp = Date.now();
       seriesStore.pushToSerie(newSerieValue["name"], newSerieValue["value"], timestamp);
     });
   };
