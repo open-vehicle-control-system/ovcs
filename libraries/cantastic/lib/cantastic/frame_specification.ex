@@ -12,15 +12,15 @@ defmodule Cantastic.FrameSpecification do
     :name,
     :network_name,
     :frequency,
-    :signal_specifications,
     :frame_handlers,
     :allowed_frequency_leeway,
-    :allowed_missing_frames
+    :allowed_missing_frames,
+    :signal_specifications
   ]
 
-  def from_frame_specification(network_name, yaml_frame_specification) do
+  def from_yaml(network_name, yaml_frame_specification) do
     yaml_signal_specifications   = yaml_frame_specification[:signals] || []
-    {:ok, signal_specifications} = compute_signal_specifications(yaml_frame_specification.id, yaml_frame_specification.name, yaml_signal_specifications)
+    {:ok, signal_specifications} = signal_specifications(yaml_frame_specification.id, yaml_frame_specification.name, yaml_signal_specifications)
     frame_specification          = %Cantastic.FrameSpecification{
       id: yaml_frame_specification.id,
       name: yaml_frame_specification.name,
@@ -34,10 +34,10 @@ defmodule Cantastic.FrameSpecification do
     {:ok, frame_specification}
   end
 
-  defp compute_signal_specifications(frame_id, frame_name, yaml_signal_specifications) do
+  defp signal_specifications(frame_id, frame_name, yaml_signal_specifications) do
     computed = yaml_signal_specifications
     |> Enum.map(fn (yaml_signal_specification) ->
-      {:ok, signal_specifications} = SignalSpecification.from_signal_specification(frame_id, frame_name, yaml_signal_specification)
+      {:ok, signal_specifications} = SignalSpecification.from_yaml(frame_id, frame_name, yaml_signal_specification)
       signal_specifications
     end)
     {:ok, computed}

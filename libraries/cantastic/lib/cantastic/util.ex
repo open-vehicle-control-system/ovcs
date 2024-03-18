@@ -32,7 +32,9 @@ defmodule Cantastic.Util do
     <<integer::big-integer-size(size)>>
   end
 
-  def integer_to_bin_little(integer, size \\ 16) do
+  def integer_to_bin_little(integer, size \\ 16)
+  def integer_to_bin_little(nil, _size), do: nil
+  def integer_to_bin_little(integer, size) do
     <<integer::little-integer-size(size)>>
   end
 end

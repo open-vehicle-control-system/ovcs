@@ -41,7 +41,7 @@ defmodule Cantastic.ReceivedFrameWatcher do
   end
 
   @impl true
-  def handle_info({:handle_frame,  _frame, _signals}, state) do
+  def handle_info({:handle_frame,  _frame}, state) do
     now = DateTime.utc_now()
     {:noreply, %{state | frame_received_at: now}}
   end

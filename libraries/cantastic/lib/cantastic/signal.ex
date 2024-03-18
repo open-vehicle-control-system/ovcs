@@ -11,7 +11,26 @@ defmodule Cantastic.Signal do
     "[Signal] #{signal.frame_name}.#{signal.name} = #{signal.value}"
   end
 
-  def from_frame_for_specification(frame, signal_specification) do
+  def build_raw(raw_data, signal_specification, value) do
+    value = case is_function(value, 1) do
+      true -> value.(raw_data)
+      false -> value
+    end
+    case signal_specification.kind do
+      "static" -> signal_specification.value
+      "integer" ->
+        int = round((value / signal_specification.scale) - signal_specification.offset)
+        case signal_specification.endianness do
+          "little" ->
+            <<int::little-integer-size(signal_specification.value_length)>>
+          "big"    ->
+            <<int::big-integer-size(signal_specification.value_length)>>
+        end
+      "enum" -> signal_specification.reverse_mapping[value]
+    end
+  end
+
+  def interpret(frame, signal_specification) do
     signal = %Cantastic.Signal{
       name: signal_specification.name,
       frame_name: signal_specification.frame_name,

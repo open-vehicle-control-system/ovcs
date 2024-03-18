@@ -18,7 +18,7 @@ defmodule Cantastic.SignalSpecification do
     :value
   ]
 
-  def from_signal_specification(frame_id, frame_name, yaml_signal_specification) do
+  def from_yaml(frame_id, frame_name, yaml_signal_specification) do
     value_length         = yaml_signal_specification.value_length
     signal_specification = %Cantastic.SignalSpecification{
       name: yaml_signal_specification.name,
@@ -37,25 +37,6 @@ defmodule Cantastic.SignalSpecification do
       value: yaml_signal_specification[:value] |> Util.integer_to_bin_big(value_length)
     }
     {:ok, signal_specification}
-  end
-
-  def instantiate_raw(raw_data, signal_specification, value) do
-    value = case is_function(value, 1) do
-      true -> value.(raw_data)
-      false -> value
-    end
-    case signal_specification.kind do
-      "static" -> signal_specification.value
-      "integer" ->
-        int = round((value / signal_specification.scale) - signal_specification.offset)
-        case signal_specification.endianness do
-          "little" ->
-            <<int::little-integer-size(signal_specification.value_length)>>
-          "big"    ->
-            <<int::big-integer-size(signal_specification.value_length)>>
-        end
-      "enum" -> signal_specification.reverse_mapping[value]
-    end
   end
 
   defp compute_mapping(nil, _value_length), do: nil

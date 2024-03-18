@@ -1,6 +1,6 @@
 defmodule Cantastic.Receiver do
   use GenServer
-  alias Cantastic.{Signal, FrameSpecification, Frame, Interface, ConfigurationStore, ReceivedFrameWatcher}
+  alias Cantastic.{Frame, Interface, ConfigurationStore, ReceivedFrameWatcher}
   require Logger
 
   def start_link(%{process_name: process_name} = args) do
@@ -21,14 +21,12 @@ defmodule Cantastic.Receiver do
 
   @impl true
   def handle_info(:receive_frame, state) do
-    {:ok, frame} = receive_one_frame(state.network_name, state.socket)
-    frame_specification = (state.frame_specifications[frame.id] || %FrameSpecification{})
-    signals = (frame_specification.signal_specifications || []) |> Enum.map(fn(signal_specification) ->
-      {:ok, signal} =  Signal.from_frame_for_specification(frame, signal_specification)
-      signal
-    end)
-    frame = %{frame | name: frame_specification.name}
-    send_to_frame_handlers(frame_specification.frame_handlers, frame, signals)
+    {:ok, frame}        = receive_one_frame(state.network_name, state.socket)
+    frame_specification = state.frame_specifications[frame.id]
+    if not is_nil(frame_specification) do
+      {:ok, frame} = Frame.interpret(frame, frame_specification)
+      send_to_frame_handlers(frame_specification.frame_handlers, frame)
+    end
     receive_frame()
     {:noreply, state}
   end
@@ -78,10 +76,9 @@ defmodule Cantastic.Receiver do
     end
   end
 
-  defp send_to_frame_handlers(_frame_handlers, _frame, []), do: nil
-  defp send_to_frame_handlers(frame_handlers, frame, signals) do
+  defp send_to_frame_handlers(frame_handlers, frame) do
     frame_handlers |> Enum.each(fn (frame_handler) ->
-      Process.send(frame_handler, {:handle_frame, frame, signals}, [])
+      Process.send(frame_handler, {:handle_frame, frame}, [])
     end)
   end
 

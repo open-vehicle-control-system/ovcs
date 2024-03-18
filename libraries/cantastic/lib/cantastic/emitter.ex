@@ -24,8 +24,7 @@ defmodule Cantastic.Emitter do
   @impl true
   def handle_info(:send_frame, state) do
     {:ok, parameters, state} = state.parameters_builder_function.(state)
-    frame = Frame.build_from_specification(state.frame_specification, parameters)
-    raw_frame = Frame.to_bin(frame)
+    {:ok, raw_frame}         = Frame.build_raw(state.frame_specification, parameters)
     :socket.send(state.socket, raw_frame)
     {:noreply, state}
   end

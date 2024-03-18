@@ -1,29 +1,45 @@
 defmodule Cantastic.Frame do
-  alias Cantastic.{Util, SignalSpecification}
+  alias Cantastic.{Util, Signal}
 
-  defstruct [:id, :name, :data_length, :raw_data, :network_name]
+  defstruct [
+    :id,
+    :name,
+    :data_length,
+    :raw_data,
+    :network_name,
+    created_at: DateTime.utc_now(),
+    signals: %{},
+  ]
 
-  def build(id: id, network_name: network_name, raw_data: raw_data) do
-    %Cantastic.Frame{
-      id: id,
-      network_name: network_name,
+  def build_raw(frame_specification, parameters) do
+    {:ok, raw_data, data_length} = build_raw_data(frame_specification, parameters)
+    frame = %__MODULE__{
+      id: frame_specification.id,
+      network_name: frame_specification.network_name,
       raw_data: raw_data,
-      data_length: byte_size(raw_data)
+      data_length: data_length
     }
+    {:ok, to_raw(frame)}
   end
 
-  def build_from_specification(frame_specification, parameters) do
-    raw_data = build_raw_data_from_specification(frame_specification, parameters)
-    Cantastic.Frame.build(id: frame_specification.id, network_name: frame_specification.network_name, raw_data: raw_data)
-  end
-
-  def build_raw_data_from_specification(frame_specification, parameters) do
-    frame_specification.signal_specifications
+  defp build_raw_data(frame_specification, parameters) do
+    raw_data = frame_specification.signal_specifications
     |> Enum.reduce(<<>>, fn (signal_specification, raw_data) ->
-      value = (parameters || %{})[signal_specification.name]
-      raw_signal = SignalSpecification.instantiate_raw(raw_data, signal_specification, value)
+      value      = (parameters || %{})[signal_specification.name]
+      raw_signal = Signal.build_raw(raw_data, signal_specification, value)
       <<raw_data::bitstring, raw_signal::bitstring>>
     end)
+    data_length = byte_size(raw_data)
+    {:ok, raw_data, data_length}
+  end
+
+  def interpret(frame, frame_specification) do
+    signals = frame_specification.signal_specifications |> Enum.reduce(%{}, fn(signal_specification, acc) ->
+      {:ok, signal} =  Signal.interpret(frame, signal_specification)
+      put_in(acc, [signal.name], signal)
+    end)
+    frame = %{frame | name: frame_specification.name, signals: signals}
+    {:ok, frame}
   end
 
   def to_string(frame) do
@@ -42,7 +58,7 @@ defmodule Cantastic.Frame do
     |> Enum.join(" ")
   end
 
-  def to_bin(frame) do
+  defp to_raw(frame) do
     padding = 8 - frame.data_length
     << frame.id::little-integer-size(16),
       0::2 * 8,

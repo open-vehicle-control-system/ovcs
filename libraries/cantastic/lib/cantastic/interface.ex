@@ -91,7 +91,7 @@ defmodule Cantastic.Interface do
   defp compute_frame_specifications(yaml_frame_specifications, network_name) do
     yaml_frame_specifications
     |> Enum.reduce(%{}, fn(yaml_frame_specification, frame_specifications) ->
-      {:ok, frame_specification} = FrameSpecification.from_frame_specification(network_name, yaml_frame_specification)
+      {:ok, frame_specification} = FrameSpecification.from_yaml(network_name, yaml_frame_specification)
       frame_specifications |> Map.put(frame_specification.id, frame_specification)
     end)
   end
