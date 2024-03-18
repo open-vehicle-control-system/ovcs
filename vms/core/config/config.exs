@@ -33,3 +33,5 @@ config :logger, :console,
   format: "$time $metadata[$level] $message\n",
   metadata: [:request_id],
   level: (System.get_env("LOG_LEVEL") || "debug") |> String.to_atom()
+
+config :vms_core, :load_debugger_dependencies, true

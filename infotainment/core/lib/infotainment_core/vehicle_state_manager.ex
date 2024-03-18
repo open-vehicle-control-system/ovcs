@@ -34,15 +34,15 @@ defmodule InfotainmentCore.VehicleStateManager do
   end
 
   @impl true
-  def handle_info({:handle_frame,  _frame, signals}, state) do
+  def handle_info({:handle_frame,  frame}, state) do
     last_updated_at = state.signals.updated_at
-    new_signals_state = signals |> Enum.reduce(state.signals, fn(signal, signals_state) ->
+    new_signals_state = frame.signals |> Enum.reduce(state.signals, fn({signal_name, signal}, signals_state) ->
       Logger.debug(Cantastic.Signal.to_string(signal))
-      current_signal = signals_state[signal.name]
+      current_signal = signals_state[signal_name]
       case is_nil(current_signal) || current_signal.value != signal.value do
         true ->
           signals_state
-          |> Map.put(signal.name, signal)
+          |> Map.put(signal_name, signal)
           |> Map.put(:updated_at, now())
           false ->
             signals_state

@@ -2,7 +2,7 @@ defmodule VmsCore.Controllers.ContactorsController do
   use GenServer
 
   require Logger
-  alias Cantastic.Emitter
+  alias Cantastic.{Frame, Signal, Emitter}
 
   @network_name :ovcs
   @status_request_frame_name "contactors_status_request"
@@ -44,7 +44,13 @@ defmodule VmsCore.Controllers.ContactorsController do
   end
 
   @impl true
-  def handle_info({:handle_frame,  _frame, [%{value: main_negative_contactor_enabled}, %{value: main_positive_contactor_enabled}, %{value: precharge_contactor_enabled}] = _signals}, state) do
+  def handle_info({:handle_frame, %Frame{signals: signals}}, state) do
+    %{
+      "main_negative_contactor_enabled" => %Signal{value: main_negative_contactor_enabled},
+      "main_positive_contactor_enabled" => %Signal{value: main_positive_contactor_enabled},
+      "precharge_contactor_enabled"     => %Signal{value: precharge_contactor_enabled}
+    } = signals
+
     {:noreply, %{state |
         main_negative_contactor_enabled: main_negative_contactor_enabled,
         main_positive_contactor_enabled: main_positive_contactor_enabled,

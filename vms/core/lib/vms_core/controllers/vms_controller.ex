@@ -1,7 +1,7 @@
 defmodule VmsCore.Controllers.VmsController do
   use GenServer
 
-  alias Cantastic.Emitter
+  alias Cantastic.{Frame, Signal, Emitter}
 
   @network_name :ovcs
 
@@ -34,7 +34,8 @@ defmodule VmsCore.Controllers.VmsController do
   end
 
   @impl true
-  def handle_info({:handle_frame,  _frame, [%{value: inverter_relay_enabled}] = _signals}, state) do
+  def handle_info({:handle_frame,  %Frame{signals: signals}}, state) do
+    %{"inverter_relay_enabled" => %Signal{value: inverter_relay_enabled}} = signals
     {:noreply, %{state | inverter_relay_enabled: inverter_relay_enabled}}
   end
 

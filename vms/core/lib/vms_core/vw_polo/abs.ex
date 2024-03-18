@@ -2,6 +2,7 @@ defmodule VmsCore.VwPolo.Abs do
   use GenServer
 
   require Logger
+  alias Cantastic.{Frame, Signal}
 
   @network_name :polo_drive
 
@@ -20,7 +21,8 @@ defmodule VmsCore.VwPolo.Abs do
   end
 
   @impl true
-  def handle_info({:handle_frame,  _frame, [%{value: speed}] = _signals}, state) do
+  def handle_info({:handle_frame,  %Frame{signals: signals}}, state) do
+    %{"speed" => %Signal{value: speed}} = signals
     {:noreply, %{state | speed: speed}}
   end
 

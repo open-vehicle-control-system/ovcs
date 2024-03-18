@@ -108,7 +108,7 @@ can_networks:
         id: 0x200
         frequency: 10
         signals:
-          - name: max_raw_throttle
+          - name: raw_max_throttle
             value_start: 0
             value_length: 16
           - name: raw_throttle_a

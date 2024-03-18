@@ -2,7 +2,7 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
   use GenServer
 
   alias VmsCore.NissanLeaf.Util
-  alias Cantastic.{Emitter, Receiver, Frame}
+  alias Cantastic.{Emitter, Receiver, Frame, Signal}
 
   @network_name :leaf_drive
   @inverter_status_frame_name "inverter_status"
@@ -87,7 +87,13 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
   end
 
   @impl true
-  def handle_info({:handle_frame,  %Frame{name: @inverter_status_frame_name}, [%{value: output_voltage}, %{value: effective_torque}, %{value: rotation_per_minute}] = _signals}, state) do
+  def handle_info({:handle_frame,  %Frame{name: @inverter_status_frame_name, signals: signals}}, state) do
+    %{
+      "inverter_output_voltage" => %Signal{value: output_voltage},
+      "em57_effective_torque" => %Signal{value: effective_torque},
+      "em57_rotations_per_minute" => %Signal{value: rotation_per_minute},
+    } = signals
+
     rotation_per_minute = case rotation_per_minute do
       value when value > @max_rotation_per_minute -> 0
       value -> value
@@ -102,13 +108,13 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
   end
 
   @impl true
-  def handle_info({:handle_frame,  %Frame{name: @inverter_temperatures_frame_name}, signals}, state) do
-    [
-      %{value: inverter_communication_board_temperature},
-      %{value: insulated_gate_bipolar_transistor_temperature},
-      %{value: insulated_gate_bipolar_transistor_board_temperature},
-      %{value: motor_temperature}
-    ] = signals
+  def handle_info({:handle_frame,  %Frame{name: @inverter_temperatures_frame_name, signals: signals}}, state) do
+    %{
+      "inverter_communication_board_temperature"            => %Signal{value: inverter_communication_board_temperature},
+      "insulated_gate_bipolar_transistor_temperature"       => %Signal{value: insulated_gate_bipolar_transistor_temperature},
+      "insulated_gate_bipolar_transistor_board_temperature" => %Signal{value: insulated_gate_bipolar_transistor_board_temperature},
+      "motor_temperature"                                    => %Signal{value: motor_temperature}
+    } = signals
 
     {:noreply, %{
       state |

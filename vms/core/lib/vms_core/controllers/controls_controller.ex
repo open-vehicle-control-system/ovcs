@@ -1,7 +1,7 @@
 defmodule VmsCore.Controllers.ControlsController do
   import Ecto.Query
   use GenServer
-  alias Cantastic.{Receiver, Emitter}
+  alias Cantastic.{Receiver, Emitter, Frame, Signal}
   alias VmsCore.{Repo, ControlsCalibration}
   require Logger
 
@@ -43,13 +43,14 @@ defmodule VmsCore.Controllers.ControlsController do
   end
 
   @impl true
-  def handle_info({:handle_frame, _frame, [raw_max_throttle | _] = _signals}, %{car_controls: %{calibration_status: "started"}} = state) do
-   state = Map.replace(state, :car_controls, %{
+  def handle_info({:handle_frame, %Frame{signals: signals}}, %{car_controls: %{calibration_status: "started"}} = state) do
+    %{"raw_max_throttle" => %Signal{value: raw_max_throttle}} = signals
+    state = Map.replace(state, :car_controls, %{
       throttle: 0, # Makes sure no throttle during
       requested_gear: "parking",
-      raw_max_throttle: raw_max_throttle.value,
-      low_raw_throttle_a: trunc(raw_max_throttle.value),
-      low_raw_throttle_b: trunc(raw_max_throttle.value),
+      raw_max_throttle: raw_max_throttle,
+      low_raw_throttle_a: trunc(raw_max_throttle),
+      low_raw_throttle_b: trunc(raw_max_throttle),
       high_raw_throttle_a: 0,
       high_raw_throttle_b: 0,
       raw_throttle_a: 0,
@@ -60,15 +61,21 @@ defmodule VmsCore.Controllers.ControlsController do
   end
 
   @impl true
-  def handle_info({:handle_frame, _frame, [raw_max_throttle, raw_throttle_a, raw_throttle_b, _] = _signals}, %{car_controls: %{calibration_status: "in_progress"}} = state) do
+  def handle_info({:handle_frame, %Frame{signals: signals}}, %{car_controls: %{calibration_status: "in_progress"}} = state) do
+    %{
+      "raw_max_throttle" => %Signal{value: raw_max_throttle},
+      "raw_throttle_a"   => %Signal{value: raw_throttle_a},
+      "raw_throttle_b"   => %Signal{value: raw_throttle_b}
+    } = signals
+
     state = Map.replace(state, :car_controls, %{
       throttle: 0, # Makes sure no throttle during calibration
       requested_gear: "parking",
-      raw_max_throttle: raw_max_throttle.value,
-      low_raw_throttle_a: Enum.min([state.car_controls.low_raw_throttle_a, trunc(raw_throttle_a.value)]),
-      low_raw_throttle_b: Enum.min([state.car_controls.low_raw_throttle_b, trunc(raw_throttle_b.value)]),
-      high_raw_throttle_a: Enum.max([state.car_controls.high_raw_throttle_a, trunc(raw_throttle_a.value)]),
-      high_raw_throttle_b: Enum.max([state.car_controls.high_raw_throttle_b, trunc(raw_throttle_b.value)]),
+      raw_max_throttle: raw_max_throttle,
+      low_raw_throttle_a: Enum.min([state.car_controls.low_raw_throttle_a, trunc(raw_throttle_a)]),
+      low_raw_throttle_b: Enum.min([state.car_controls.low_raw_throttle_b, trunc(raw_throttle_b)]),
+      high_raw_throttle_a: Enum.max([state.car_controls.high_raw_throttle_a, trunc(raw_throttle_a)]),
+      high_raw_throttle_b: Enum.max([state.car_controls.high_raw_throttle_b, trunc(raw_throttle_b)]),
       raw_throttle_a: 0,
       raw_throttle_b: 0,
       calibration_status: "in_progress"
@@ -77,15 +84,21 @@ defmodule VmsCore.Controllers.ControlsController do
   end
 
   @impl true
-  def handle_info({:handle_frame, _frame, [_, raw_throttle_a, raw_throttle_b, requested_gear] = _signals}, %{car_controls: %{calibration_status: "disabled"}} = state) do
+  def handle_info({:handle_frame, %Frame{signals: signals}}, %{car_controls: %{calibration_status: "disabled"}} = state) do
+    %{
+      "requested_gear" => %Signal{value: requested_gear},
+      "raw_throttle_a" => %Signal{value: raw_throttle_a},
+      "raw_throttle_b" => %Signal{value: raw_throttle_b},
+    } = signals
+
     throttle = if state.car_controls.high_raw_throttle_a <= state.car_controls.low_raw_throttle_a || state.car_controls.high_raw_throttle_b <= state.car_controls.low_raw_throttle_b do
       Logger.warning("Throttle has not been calibrated yet or has calibration errors so no throttle, vms should force calibration")
       0
     else
-      compute_throttle_from_raw_value(raw_throttle_a.value, state)
+      compute_throttle_from_raw_value(raw_throttle_a, state)
     end
-    state = put_in(state, [:car_controls, :throttle], throttle) |> put_in([:car_controls, :requested_gear], requested_gear.value)
-      |> put_in([:car_controls, :raw_throttle_a], raw_throttle_a.value) |> put_in([:car_controls, :raw_throttle_b], raw_throttle_b.value)
+    state = put_in(state, [:car_controls, :throttle], throttle) |> put_in([:car_controls, :requested_gear], requested_gear)
+      |> put_in([:car_controls, :raw_throttle_a], raw_throttle_a) |> put_in([:car_controls, :raw_throttle_b], raw_throttle_b)
     {:noreply, state}
   end
 

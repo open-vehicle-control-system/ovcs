@@ -155,11 +155,4 @@ defmodule VmsCore.Vehicle do
   def test_disable_calibration_mode() do
     :ok = ControlsController.disable_calibration_mode()
   end
-
-  def enable_debugger() do
-    Mix.ensure_application!(:wx)
-    Mix.ensure_application!(:runtime_tools)
-    Mix.ensure_application!(:observer)
-    :observer.start()
-  end
 end

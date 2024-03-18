@@ -32,7 +32,7 @@ defmodule InfotainmentCore.SystemInformationManager do
       interface["addr_info"] != [] && interface["ifname"] != "lo"
     end) |> Enum.map(
       fn interface ->
-        local_interface = Enum.filter interface["addr_info"], fn address ->
+        Enum.filter interface["addr_info"], fn address ->
           address["family"] == "inet"
         end
       end

@@ -5,6 +5,10 @@ defmodule VmsCore.Application do
 
   @impl true
   def start(_type, _args) do
+    if Application.get_env(:vms_core, :load_debugger_dependencies) do
+      load_debugger_dependencies()
+    end
+
     children = [
       VmsCore.Repo,
       {Ecto.Migrator,
@@ -35,5 +39,11 @@ defmodule VmsCore.Application do
   defp skip_migrations?() do
     # By default, sqlite migrations are run when using a release
     System.get_env("RELEASE_NAME") != nil
+  end
+
+  defp load_debugger_dependencies do
+    Mix.ensure_application!(:wx)
+    Mix.ensure_application!(:runtime_tools)
+    Mix.ensure_application!(:observer)
   end
 end
