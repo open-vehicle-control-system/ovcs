@@ -31,7 +31,7 @@ defmodule Cantastic.ReceivedFrameWatcher do
     allowed_diff = state.frame_frequency + state.frame_allowed_frequency_leeway
     case {diff > allowed_diff, state.missed_frame_count} do
       {true, count} when count > state.allowed_missing_frames ->
-        send_to_frame_handlers(state.frame_handlers, state.frame_name)
+        send_to_frame_handlers(state.frame_handlers, state.network_name, state.frame_name)
         {:noreply, state}
       {true, count} ->
         {:noreply, %{state | missed_frame_count: count + 1}}
@@ -46,9 +46,9 @@ defmodule Cantastic.ReceivedFrameWatcher do
     {:noreply, %{state | frame_received_at: now}}
   end
 
-  defp send_to_frame_handlers(frame_handlers, frame_name) do
+  defp send_to_frame_handlers(frame_handlers, network_name, frame_name) do
     frame_handlers |> Enum.each(fn (frame_handler) ->
-      Process.send(frame_handler, {:handle_missing_frame, frame_name}, [])
+      Process.send(frame_handler, {:handle_missing_frame, network_name, frame_name}, [])
     end)
   end
 

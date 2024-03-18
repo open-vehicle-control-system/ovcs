@@ -23,9 +23,13 @@ defmodule VmsCore.Status do
     enable_watchers()
     {:ok, %{
       status: "ok",
-      failed_frames: %{}
+      failed_frames: %{},
+      frame_emitters: %{
+        "contactors_status" => "contactors_controller",
+        "vms_relays_status" => "vms_controller",
+        "car_controls_status" => "controls_controller"
       }
-    }
+    }}
   end
 
   def start_link(_) do
@@ -33,16 +37,16 @@ defmodule VmsCore.Status do
   end
 
   @impl true
-  def handle_info({:handle_missing_frame,  frame_name}, state) do
+  def handle_info({:handle_missing_frame,  network_name, frame_name}, state) do
     case state.failed_frames[frame_name] do
       nil ->
-        Logger.warning("Frame ovcs.#{frame_name} not received anymore")
+        Logger.warning("Frame #{network_name}.#{frame_name} not received anymore")
         Emitter.update(@network_name, @vms_status_frame_name, fn (emitter_state) ->
           emitter_state |> put_in([:data, @status_parameter], "failure")
         end)
         state = state
         |> put_in([:status], "failure")
-        |> put_in([:failed_frames, frame_name], true)
+        |> put_in([:failed_frames, frame_name], %{emitter: state.frame_emitters[frame_name]})
         {:noreply, state}
       _ ->
         {:noreply, state}
@@ -70,8 +74,17 @@ defmodule VmsCore.Status do
     {:reply, {:ok, state.status}, state}
   end
 
+  @impl true
+  def handle_call(:failed_frames, _from, state) do
+    {:reply, {:ok, state.failed_frames}, state}
+  end
+
   def status() do
     GenServer.call(__MODULE__, :status)
+  end
+
+  def failed_frames() do
+    GenServer.call(__MODULE__, :failed_frames)
   end
 
   def enable_watchers() do

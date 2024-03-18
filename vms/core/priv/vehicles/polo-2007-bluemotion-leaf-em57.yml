@@ -63,7 +63,7 @@ can_networks:
             mapping:
               0x00: ok
               0x01: warning
-              0x02: failure
+              0xFF: failure
           - name: counter
             value_start: 8
             value_length: 8
