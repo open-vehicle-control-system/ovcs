@@ -64,7 +64,7 @@
   const inverter = useInverter();
   const vehicle = useVehicle();
   const systemStatus = useSystemStatus();
-  const chartInterval = 100;
+  const chartInterval = 70;
 
   onMounted(() => {
     carControls.init(vmsDashboardSocket, chartInterval, "car-controls")

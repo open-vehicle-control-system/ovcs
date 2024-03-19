@@ -79,6 +79,10 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
       "reverse" -> {20, -1}
       _ -> {0, 0}
     end
+    percentage_throttle = case percentage_throttle do
+      value when value < 0.05 -> 0
+      value -> value
+    end
     requested_torque = factor * percentage_throttle * max_torque
     :ok = Emitter.update(@network_name, @vms_torque_request_frame_name, fn (emitter_state) ->
       emitter_state |> put_in([:data, "requested_torque"], requested_torque)

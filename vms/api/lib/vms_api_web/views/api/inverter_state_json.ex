@@ -6,7 +6,7 @@ defmodule VmsApiWeb.Api.InverterStateJSON do
       type: "inverterState",
       id:    "inverterState",
       attributes: %{
-        rotationPerMinute: inverter_state.rotation_per_minute,
+        rotationPerMinute: abs(inverter_state.rotation_per_minute),
         requestedTorque: inverter_state.requested_torque,
         outputVoltage: inverter_state.output_voltage,
         inverterCommunicationBoardTemperature: inverter_state.inverter_communication_board_temperature,
