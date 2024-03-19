@@ -75,7 +75,7 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
   @impl true
   def handle_call({:throttle, percentage_throttle, gear}, _from, state) do
     {max_torque, factor} = case gear do
-      "drive" -> {50, 1} #TODO store in DB
+      "drive" -> {50, 1} # TODO store in DB
       "reverse" -> {20, -1}
       _ -> {0, 0}
     end
@@ -176,6 +176,6 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
   end
 
   def ready_to_drive?() do
-    true # Should check inverter can messages for actual status
+    {:ok, true} # TODO Should check inverter can messages for actual status
   end
 end

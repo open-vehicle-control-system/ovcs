@@ -50,6 +50,8 @@ defmodule VmsCore.Inverter do
   end
 
   def ready_to_drive?() do
-    VmsController.ready_to_drive?() && Em57.Inverter.ready_to_drive?()
+    {:ok, vms_controller_ready} = VmsController.ready_to_drive?()
+    {:ok, inverter_ready}       = Em57.Inverter.ready_to_drive?()
+    {:ok, vms_controller_ready && inverter_ready}
   end
 end

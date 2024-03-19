@@ -107,7 +107,9 @@ defmodule VmsCore.Vehicle do
   end
 
   defp ready_to_drive?(state) do
-    state.ignition_started && Inverter.ready_to_drive?() && BatteryManagementSystem.ready_to_drive?()
+    {:ok, bms_ready}      = BatteryManagementSystem.ready_to_drive?()
+    {:ok, inverter_ready} = Inverter.ready_to_drive?()
+    state.ignition_started && bms_ready && inverter_ready
   end
 
   defp shutdown(state) do
