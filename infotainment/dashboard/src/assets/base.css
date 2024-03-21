@@ -59,7 +59,7 @@
 }
 
 body {
-  min-height: 100vh;
+  height: 100%;
   color: var(--color-text);
   background: var(--color-background);
   transition:
@@ -83,4 +83,5 @@ body {
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  overflow: auto;
 }

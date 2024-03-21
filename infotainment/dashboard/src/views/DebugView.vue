@@ -1,15 +1,5 @@
-<script setup>
-import { storeToRefs } from 'pinia'
-import { useMetricsStore } from "../stores/metrics.js"
-import { systemInformationStore } from "../stores/system_information.js"
-import { Socket } from 'phoenix'
-import KioskBoard from '../kioskboard'
-const { metrics } = storeToRefs(useMetricsStore())
-const { data } = storeToRefs(systemInformationStore())
-</script>
-
 <template>
-  <div>
+  <div class="bg-gray-800 opacity-90 p-16 rounded-md">
     <div class="px-4 sm:px-0">
       <h3 class="text-3xl font-semibold leading-7 text-gray-900 dark:text-gray-200">
         System Information
@@ -52,64 +42,60 @@ const { data } = storeToRefs(systemInformationStore())
     </div>
   </div>
 </template>
-<script>
-export default {
-  name: "App",
-  components: {
-  },
-  mounted: () => {
-    let store = useMetricsStore()
-    let systemStore = systemInformationStore()
-    let dashboardSocket = new Socket("ws://localhost:4001/sockets/dashboard", {})
-    dashboardSocket.connect()
-    let metricsChannel = dashboardSocket.channel("debug-metrics", {})
-    let systemInformationChannel = dashboardSocket.channel("system-information", {})
 
+<script setup>
+import { onMounted } from 'vue'
+import { storeToRefs } from 'pinia'
+import { useMetricsStore } from "../stores/metrics.js"
+import { systemInformationStore } from "../stores/system_information.js"
+import { Socket } from 'phoenix'
+const { metrics } = storeToRefs(useMetricsStore())
+const { data } = storeToRefs(systemInformationStore())
 
-    metricsChannel.on("updated", payload => {
-      store.$patch(payload)
-    })
+onMounted(() => {
+  let store = useMetricsStore()
+  let systemStore = systemInformationStore()
+  let dashboardSocket = new Socket("ws://localhost:4001/sockets/dashboard", {})
+  dashboardSocket.connect()
+  let metricsChannel = dashboardSocket.channel("debug-metrics", {})
+  let systemInformationChannel = dashboardSocket.channel("system-information", {})
 
-    systemInformationChannel.on("updated", payload => {
-      console.log(payload);
-      systemStore.$patch(payload)
-    })
+  metricsChannel.on("updated", payload => {
+    store.$patch(payload)
+  })
 
-    metricsChannel.join()
-      .receive("ok", () => {})
+  systemInformationChannel.on("updated", payload => {
+    systemStore.$patch(payload)
+  })
 
-    systemInformationChannel.join()
-      .receive("ok", () => {})
+  metricsChannel.join()
+    .receive("ok", () => {})
 
+  systemInformationChannel.join()
+    .receive("ok", () => {})
+});
 
-    KioskBoard.run(".js-keyboard")
-  },
-  data: () => ({
-  }),
-  methods: {
-    humanizeKey: (key) => {
-      return key.replace(/([A-Z])/g, ' $1').replace(/^./, (str) => {
-        return str.toUpperCase();
-      })
-    },
+function humanizeKey(key) {
+  return key.replace(/([A-Z])/g, ' $1').replace(/^./, (str) => {
+    return str.toUpperCase();
+  })
+};
 
-    formatValue: (value, unit) => {
-      let formattedValue;
-      switch(unit) {
-        case "celcius":
-          formattedValue = value + " " + "°C"
-          break
-        case "m/s":
-          formattedValue = value + " " + unit + " (" + value*(18/5)+ " " + "km/h)"
-          break
-        case null:
-          formattedValue = value
-          break
-        default:
-          formattedValue = value + " " + unit
-      }
-      return formattedValue;
-    }
-  },
+function formatValue(value, unit) {
+  let formattedValue;
+  switch(unit) {
+    case "celcius":
+      formattedValue = value + " " + "°C"
+      break
+    case "m/s":
+      formattedValue = value + " " + unit + " (" + value*(18/5)+ " " + "km/h)"
+      break
+    case null:
+      formattedValue = value
+      break
+    default:
+      formattedValue = value + " " + unit
+  }
+  return formattedValue;
 };
 </script>
