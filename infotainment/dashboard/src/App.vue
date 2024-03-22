@@ -14,8 +14,8 @@ let router = useRouter()
 let currentRouteName = router.options.history.location
 
 const navigation = [
-  { name: 'Radio', href: '/radio', icon: RadioIcon, color: "bg-red-400", current: currentRouteName == '/radio' },
-  { name: 'Settings', href: '/settings', icon: CogIcon, color: "bg-amber-400", current: currentRouteName == '/settings' },
+  //{ name: 'Radio', href: '/radio', icon: RadioIcon, color: "bg-red-400", current: currentRouteName == '/radio' },
+  //{ name: 'Settings', href: '/settings', icon: CogIcon, color: "bg-amber-400", current: currentRouteName == '/settings' },
   { name: 'Debug', href: '/debug', icon: BugAntIcon,  color: "bg-green-400", current: currentRouteName == '/debug' },
 ]
 
