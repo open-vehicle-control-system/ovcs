@@ -51,13 +51,9 @@ const computeDoorsScore = function(state) {
             rightScore.value += rightDoors[door.id]
         }
     })
-
-    console.log(leftScore.value)
-    console.log(rightScore.value)
 }
 
 store.$subscribe((_mutation, state) => {
-    console.log("changed")
     computeDoorsScore(state)
 })
 </script>
