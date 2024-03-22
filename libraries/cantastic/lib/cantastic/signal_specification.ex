@@ -1,9 +1,11 @@
 defmodule Cantastic.SignalSpecification do
   alias Cantastic.Util
+  alias Decimal, as: D
 
   defstruct [
     :name,
     :kind,
+    :precision,
     :frame_id,
     :frame_name,
     :value_start,
@@ -24,7 +26,8 @@ defmodule Cantastic.SignalSpecification do
       name: yaml_signal_specification.name,
       frame_id: frame_id,
       frame_name: frame_name,
-      kind: yaml_signal_specification[:kind] || "integer",
+      kind: yaml_signal_specification[:kind] || "decimal",
+      precision: yaml_signal_specification[:precision] || 2,
       sign: yaml_signal_specification[:sign] || "unsigned",
       value_start: yaml_signal_specification.value_start,
       value_length: value_length,
@@ -32,8 +35,8 @@ defmodule Cantastic.SignalSpecification do
       mapping: compute_mapping(yaml_signal_specification[:mapping], value_length),
       reverse_mapping: compute_reverse_mapping(yaml_signal_specification[:mapping], value_length),
       unit: yaml_signal_specification[:unit],
-      scale: (yaml_signal_specification[:scale] || 1) + 0.0,
-      offset: yaml_signal_specification[:offset] || 0,
+      scale: D.new(yaml_signal_specification[:scale] || "1"),
+      offset: D.new(yaml_signal_specification[:offset] || "0"),
       value: yaml_signal_specification[:value] |> Util.integer_to_bin_big(value_length)
     }
     {:ok, signal_specification}

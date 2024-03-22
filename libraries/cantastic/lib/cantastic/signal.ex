@@ -1,4 +1,6 @@
 defmodule Cantastic.Signal do
+  alias Decimal, as: D
+
   defstruct [
     :name,
     :frame_name,
@@ -19,19 +21,27 @@ defmodule Cantastic.Signal do
     case signal_specification.kind do
       "static" -> signal_specification.value
       "integer" ->
-        int = round((value / signal_specification.scale) - signal_specification.offset)
-        case signal_specification.endianness do
-          "little" ->
-            <<int::little-integer-size(signal_specification.value_length)>>
-          "big"    ->
-            <<int::big-integer-size(signal_specification.value_length)>>
-        end
+        build_raw_decimal(signal_specification, Decimal.new(value))
+      "decimal" ->
+        build_raw_decimal(signal_specification, value)
       "enum" -> signal_specification.reverse_mapping[value]
     end
   end
 
+  defp build_raw_decimal(signal_specification, value) do
+    scaled    = value |> Decimal.div(signal_specification.scale)
+    offsetted = scaled |> Decimal.sub(signal_specification.offset)
+    int       = offsetted |> Decimal.round() |> Decimal.to_integer()
+    case signal_specification.endianness do
+      "little" ->
+        <<int::little-integer-size(signal_specification.value_length)>>
+      "big"    ->
+        <<int::big-integer-size(signal_specification.value_length)>>
+    end
+  end
+
   def interpret(frame, signal_specification) do
-    signal = %Cantastic.Signal{
+    signal = %__MODULE__{
       name: signal_specification.name,
       frame_name: signal_specification.frame_name,
       kind: signal_specification.kind,
@@ -49,23 +59,13 @@ defmodule Cantastic.Signal do
         "static" ->
           <<_head::size(head_length), val::bitstring-size(value_length), _tail::size(tail_length)>> = raw_data
           val
+        "decimal" ->
+          interpret_decimal(raw_data, signal_specification, head_length, value_length, tail_length)
+          |> D.round(signal_specification.precision)
         "integer" ->
-            int = case {signal_specification.endianness, signal_specification.sign} do
-              {"little", "signed"} ->
-                <<_head::size(head_length), val::little-signed-integer-size(value_length), _tail::size(tail_length)>> = raw_data
-                val
-              {"little", "unsigned"} ->
-                <<_head::size(head_length), val::little-unsigned-integer-size(value_length), _tail::size(tail_length)>> = raw_data
-                val
-              {"big", "signed"} ->
-                <<_head::size(head_length), val::big-signed-integer-size(value_length), _tail::size(tail_length)>> = raw_data
-                val
-              {"big", "unsigned"} ->
-                <<_head::size(head_length), val::big-unsigned-integer-size(value_length), _tail::size(tail_length)>> = raw_data
-                val
-            end
-
-          round((int * signal_specification.scale) + signal_specification.offset)
+          interpret_decimal(raw_data, signal_specification, head_length, value_length, tail_length)
+          |> D.round()
+          |> D.to_integer()
         "enum" ->
           <<_head::size(head_length), val::bitstring-size(value_length), _tail::size(tail_length)>> = raw_data
           signal_specification.mapping[val]
@@ -75,5 +75,23 @@ defmodule Cantastic.Signal do
       error in MatchError ->
         {:error, error}
     end
+  end
+
+  defp interpret_decimal(raw_data, signal_specification, head_length, value_length, tail_length) do
+    int = case {signal_specification.endianness, signal_specification.sign} do
+      {"little", "signed"} ->
+        <<_head::size(head_length), val::little-signed-integer-size(value_length), _tail::size(tail_length)>> = raw_data
+        val
+      {"little", "unsigned"} ->
+        <<_head::size(head_length), val::little-unsigned-integer-size(value_length), _tail::size(tail_length)>> = raw_data
+        val
+      {"big", "signed"} ->
+        <<_head::size(head_length), val::big-signed-integer-size(value_length), _tail::size(tail_length)>> = raw_data
+        val
+      {"big", "unsigned"} ->
+        <<_head::size(head_length), val::big-unsigned-integer-size(value_length), _tail::size(tail_length)>> = raw_data
+        val
+    end
+    D.new(int) |> D.mult(signal_specification.scale) |> D.add(signal_specification.offset)
   end
 end
