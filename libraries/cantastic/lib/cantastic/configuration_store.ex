@@ -5,7 +5,7 @@ defmodule Cantastic.ConfigurationStore do
     networks = compute_networks()
     state = %{
       networks: networks,
-      setup_can_interfaces: Application.get_env(:cantastic, :setup_can_interfaces),
+      setup_can_interfaces: Application.get_env(:cantastic, :setup_can_interfaces) || false,
       socketcand_ip_interface: Application.get_env(:cantastic, :socketcand_ip_interface) || "eth0",
       enable_socketcand: Application.get_env(:cantastic, :enable_socketcand) || false,
     }
