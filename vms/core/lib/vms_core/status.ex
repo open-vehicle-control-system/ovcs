@@ -2,12 +2,13 @@ defmodule VmsCore.Status do
   use GenServer
   require Logger
 
-  alias Cantastic.{Emitter, ReceivedFrameWatcher}
+  alias Cantastic.{Emitter, ReceivedFrameWatcher, Frame, Signal}
 
   @network_name :ovcs
   @vms_status_frame_name "vms_status"
   @status_parameter "status"
   @counter_parameter "counter"
+  @key_status_frame_name "key_status"
 
   @impl true
   def init(_) do
@@ -20,14 +21,17 @@ defmodule VmsCore.Status do
     })
     :ok = Emitter.enable(@network_name, @vms_status_frame_name)
     :ok = ReceivedFrameWatcher.subscribe(@network_name, ["contactors_status", "vms_relays_status", "car_controls_status"], self())
+    :ok = Cantastic.Receiver.subscribe(self(), :polo_drive, @key_status_frame_name)
+    :ok = ReceivedFrameWatcher.subscribe(:polo_drive, "abs_status", self())
     enable_watchers()
     {:ok, %{
       status: "ok",
       failed_frames: %{},
       frame_emitters: %{
-        "contactors_status" => "contactors_controller",
-        "vms_relays_status" => "vms_controller",
-        "car_controls_status" => "controls_controller"
+        "contactors_status"   => "Contactors Ctrl",
+        "vms_relays_status"   => "VMS Ctrl",
+        "car_controls_status" => "Controls Ctrl",
+        "abs_status"          => "ABS Ctrl"
       }
     }}
   end
@@ -56,6 +60,18 @@ defmodule VmsCore.Status do
   @impl true
   def handle_info(:enable_watchers, state) do
     :ok = ReceivedFrameWatcher.enable(@network_name, ["contactors_status", "vms_relays_status", "car_controls_status"])
+    {:noreply, state}
+  end
+
+  @impl true
+  def handle_info({:handle_frame, %Frame{signals: signals}}, state) do
+    %{"key_state" => %Signal{value: key_status}} = signals
+    case key_status do
+      "off" ->
+        :ok = ReceivedFrameWatcher.disable(:polo_drive, "abs_status")
+      _ ->
+        :ok = ReceivedFrameWatcher.enable(:polo_drive, "abs_status")
+    end
     {:noreply, state}
   end
 

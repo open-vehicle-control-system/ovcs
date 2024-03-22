@@ -223,6 +223,7 @@ can_networks:
         frequency: 10
         signals:
           - name: inverter_output_voltage
+            kind: integer
             value_start: 0
             value_length: 8
             scale: "2"
@@ -235,6 +236,7 @@ can_networks:
             scale: "0.5"
             unit: N/m
           - name: em57_rotations_per_minute
+            kind: integer
             endianness: big
             sign: signed
             value_start: 32
@@ -245,18 +247,22 @@ can_networks:
         frequency: 10
         signals:
           - name: inverter_communication_board_temperature
+            kind: integer
             value_start: 8
             value_length: 8
             unit: C
           - name: insulated_gate_bipolar_transistor_temperature
+            kind: integer
             value_start: 16
             value_length: 8
             unit: C
           - name: insulated_gate_bipolar_transistor_board_temperature
+            kind: integer
             value_start: 24
             value_length: 8
             unit: C
           - name: motor_temperature
+            kind: integer
             value_start: 32
             value_length: 8
             unit: C
@@ -274,6 +280,7 @@ can_networks:
             value_length: 16
             value: 0x0000
           - name: engine_rotations_per_minute
+            kind: integer
             unit: rpm
             value_start: 16
             value_length: 16
@@ -393,7 +400,6 @@ can_networks:
       - name: abs_status
         id: 0x5A0
         frequency: 20
-        allowed_frequency_leeway: 20
         signals:
           - name: speed
             unit: km/h

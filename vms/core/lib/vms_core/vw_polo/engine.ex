@@ -1,7 +1,6 @@
 defmodule VmsCore.VwPolo.Engine do
   use GenServer
   alias Cantastic.Emitter
-  alias Decimal, as: D
 
   @network_name :polo_drive
 
@@ -12,7 +11,7 @@ defmodule VmsCore.VwPolo.Engine do
     :ok = Emitter.configure(@network_name, @engine_status_frame_name, %{
       parameters_builder_function: &status_frame_parameters_builder/1,
       initial_data: %{
-        "engine_rotations_per_minute" => D.new(0)
+        "engine_rotations_per_minute" => 0
       }
     })
     {:ok, %{}}

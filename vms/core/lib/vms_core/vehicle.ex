@@ -1,12 +1,11 @@
 defmodule VmsCore.Vehicle do
   use GenServer
   require Logger
-  alias VmsCore.{Inverter, BatteryManagementSystem, Abs, IgnitionLock, Controllers.ControlsController}
+  alias VmsCore.{Inverter, BatteryManagementSystem, IgnitionLock, Controllers.ControlsController}
   alias Decimal, as: D
 
   @loop_sleep 10
-
-
+  @gear_shift_throttle_limit D.new("0.01")
 
   def start_link(args) do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
@@ -45,20 +44,19 @@ defmodule VmsCore.Vehicle do
   defp handle_gear(state) do
     with {:ok, requested_gear} <- ControlsController.requested_gear(),
          selected_gear         <- state.selected_gear,
-         {:ok, speed}          <- Abs.speed(),
          {:ok, throttle}       <- ControlsController.throttle()
     do
-      case {selected_gear, requested_gear, speed < 1.0, throttle < 0.1} do # TODO check safe throttle
-        {"parking", "parking", _, _} -> state
-        {"reverse", "reverse", _, _} -> state
-        {"neutral", "neutral", _, _} -> state
-        {"drive", "drive", _, _}     -> state
-        {_, "parking", true, true}   -> select_gear("parking", state)
-        {_, "reverse", true, true}   -> select_gear("reverse", state)
-        {"neutral", "drive", _, _}   -> select_gear("drive", state)
-        {_, "drive", true, true}     -> select_gear("drive", state)
-        {_, "neutral", _, _}         -> select_gear("neutral", state)
-        _                            -> state
+      case {selected_gear, requested_gear, D.lt?(throttle, @gear_shift_throttle_limit)} do
+        {"parking", "parking", _} -> state
+        {"reverse", "reverse", _} -> state
+        {"neutral", "neutral", _} -> state
+        {"drive", "drive", _}     -> state
+        {_, "parking", true}      -> select_gear("parking", state)
+        {_, "reverse", true}      -> select_gear("reverse", state)
+        {"neutral", "drive", _}   -> select_gear("drive", state)
+        {_, "drive", true}        -> select_gear("drive", state)
+        {_, "neutral", _}         -> select_gear("neutral", state)
+        _                         -> state
       end
     else
       :unexpected -> :unexpected
@@ -67,7 +65,7 @@ defmodule VmsCore.Vehicle do
 
   defp handle_rotation_per_minute(state) do
     with {:ok, rotation_per_minute} <- Inverter.rotation_per_minute(),
-         :ok        <- D.abs(rotation_per_minute) |> VmsCore.VwPolo.Engine.rotation_per_minute()
+         :ok        <- abs(rotation_per_minute) |> VmsCore.VwPolo.Engine.rotation_per_minute()
     do
       state
     else

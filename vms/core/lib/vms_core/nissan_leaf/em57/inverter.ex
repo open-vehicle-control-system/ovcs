@@ -22,7 +22,7 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
     :ok = init_emitters()
     Receiver.subscribe(self(), @network_name, [@inverter_status_frame_name, @inverter_temperatures_frame_name])
     {:ok, %{
-      rotation_per_minute: @zero,
+      rotation_per_minute: 0,
       output_voltage: @zero,
       effective_torque: @zero,
       requested_torque: @zero,
