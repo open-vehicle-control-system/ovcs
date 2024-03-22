@@ -1,9 +1,11 @@
 <template>
-    <div class="grid grid-cols-8">
-        <div v-for="item in navigation" :key="item.name" class="text-center">
-            <a :href="item.href" class="text-white  gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold text-center">
-            <component :is="item.icon" class="h-28 w-28 shrink-0 text-center launchpad-icon" aria-hidden="true" />
-            <p class="text-center">{{ item.name }}</p>
+    <div class="grid grid-cols-6 gap-2">
+        <div v-for="item in navigation" :key="item.name" class="h-24 w-24 text-center">
+            <a :href="item.href" class="text-black rounded-md text-sm leading-6 font-semibold text-center">
+                <div :class="[item.color, 'rounded rounded-3xl p-2']">
+                    <component :is="item.icon" class="h-20 w-20 text-center stroke-1 launchpad-icon" aria-hidden="true" />
+                </div>
+                <p class="text-center p-3 text-white">{{ item.name }}</p>
             </a>
         </div>
     </div>
@@ -18,6 +20,7 @@ const navigation = props.navigation;
 .launchpad-icon{
     display: block;
     margin: auto;
+
 }
 
 main{

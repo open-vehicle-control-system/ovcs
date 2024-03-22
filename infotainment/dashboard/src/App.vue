@@ -6,16 +6,17 @@ import {
   BugAntIcon,
   Squares2X2Icon,
   RadioIcon,
-  CogIcon
+  CogIcon,
+  HomeIcon
 } from '@heroicons/vue/24/outline'
 
 let router = useRouter()
 let currentRouteName = router.options.history.location
 
 const navigation = [
-  { name: 'Radio', href: '/radio', icon: RadioIcon, current: currentRouteName == '/radio' },
-  { name: 'Settings', href: '/settings', icon: CogIcon, current: currentRouteName == '/settings' },
-  { name: 'Debug', href: '/debug', icon: BugAntIcon, current: currentRouteName == '/debug' },
+  { name: 'Radio', href: '/radio', icon: RadioIcon, color: "bg-red-400", current: currentRouteName == '/radio' },
+  { name: 'Settings', href: '/settings', icon: CogIcon, color: "bg-amber-400", current: currentRouteName == '/settings' },
+  { name: 'Debug', href: '/debug', icon: BugAntIcon,  color: "bg-green-400", current: currentRouteName == '/debug' },
 ]
 
 let currentTime = ref("")
@@ -45,6 +46,9 @@ onBeforeUnmount(() => {
         </div>
         <nav class="flex flex-1 flex-col">
           <ul role="list" class="flex flex-1 flex-col gap-y-7">
+            <a href="/" class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold">
+              <HomeIcon class="text-white h-20 w-16" />
+            </a>
           </ul>
           <div>
             <a href="/launchpad" class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold">
