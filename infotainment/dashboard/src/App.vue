@@ -13,8 +13,8 @@ let router = useRouter()
 let currentRouteName = router.options.history.location
 
 const navigation = [
-  //{ name: 'Radio', href: '/radio', icon: RadioIcon, current: currentRouteName == '/radio' },
-  //{ name: 'Settings', href: '/settings', icon: CogIcon, current: currentRouteName == '/settings' },
+  { name: 'Radio', href: '/radio', icon: RadioIcon, current: currentRouteName == '/radio' },
+  { name: 'Settings', href: '/settings', icon: CogIcon, current: currentRouteName == '/settings' },
   { name: 'Debug', href: '/debug', icon: BugAntIcon, current: currentRouteName == '/debug' },
 ]
 
@@ -47,7 +47,7 @@ onBeforeUnmount(() => {
           <ul role="list" class="flex flex-1 flex-col gap-y-7">
           </ul>
           <div>
-            <a href="/" class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold">
+            <a href="/launchpad" class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold">
               <Squares2X2Icon class="text-white h-20 w-16" />
             </a>
           </div>
@@ -55,8 +55,8 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <main class="py-8 lg:pl-32 overflow-y-auto">
-      <div class="sm:px-6 lg:px-8">
+    <main class="pl-32 overflow-y-auto">
+      <div class="py-8 px-8 h-full">
         <RouterView :navigation="navigation" />
       </div>
     </main>
