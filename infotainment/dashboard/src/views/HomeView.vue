@@ -1,21 +1,21 @@
 <template>
     <div class="grid grid-row-4 grid-cols-12 gap-8">
         <div class="row-span-2 col-span-2 bg-gray-800 opacity-90 p-6 font-extrabold rounded-md text-3xl text-white table">
-            <div class="h-20 w-20 text-center align-middle table-cell bg-gray-700 opacity-99 rounded-md table-row">
-                <span class="leading-5 align-middle table-cell">P</span>
+            <div :class="[store.selectedGear == 'parking' ? 'bg-gray-700 opacity-99 rounded-md' : '', 'table-row']">
+                <span class="h-20 w-20 leading-5 align-middle table-cell text-center">P</span>
             </div>
-            <div class="table-row">
+            <div :class="[store.selectedGear == 'reverse' ? 'bg-gray-700 opacity-99 rounded-md' : '', 'table-row']">
                 <span class="h-20 w-20 leading-5 align-middle table-cell text-center">R</span>
             </div>
-            <div class="table-row">
+            <div :class="[store.selectedGear == 'neutral' ? 'bg-gray-700 opacity-99 rounded-md' : '', 'table-row']">
                 <span class="h-20 w-20 leading-5 align-middle table-cell text-center">N</span>
             </div>
-            <div class="table-row">
+            <div :class="[store.selectedGear == 'drive' ? 'bg-gray-700 opacity-99 rounded-md' : '', 'table-row']">
                 <span class="h-20 w-20 leading-5 align-middle table-cell text-center">D</span>
             </div>
         </div>
         <div class="row-span-2 col-span-5 bg-gray-800 opacity-90 rounded-md p-0">
-            <RealTimeSpeedGauge :metrics="useMetrics" id="speed-gauge"/>
+            <RealTimeSpeedGauge :metrics="store" id="speed-gauge"/>
         </div>
         <div class="row-span-2 col-span-5 bg-gray-800 opacity-90 rounded-md p-8">
         </div>
@@ -53,14 +53,12 @@
 import RealTimeSpeedGauge from "../components/gauges/RealtimeSpeedGauge.vue";
 
 import { onMounted } from 'vue'
-import { storeToRefs } from 'pinia'
 import { useMetricsStore } from "../stores/metrics.js"
 import { Socket } from 'phoenix'
-const useMetrics = useMetricsStore()
-const { metrics } = storeToRefs(useMetrics)
+
+const store = useMetricsStore()
 
 onMounted(() => {
-  let store = useMetricsStore()
   let dashboardSocket = new Socket("ws://localhost:4001/sockets/dashboard", {})
   dashboardSocket.connect()
   let metricsChannel = dashboardSocket.channel("debug-metrics", {})
