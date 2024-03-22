@@ -14,11 +14,10 @@
                 <span class="h-20 w-20 leading-5 align-middle table-cell text-center">D</span>
             </div>
         </div>
-        <div class="row-span-2 col-span-10 bg-gray-800 opacity-90 rounded-md p-8">
-            <div class="grid grid-cols-2 gap-20">
-            <RealTimeGauge />
-            <RealTimeGauge />
-            </div>
+        <div class="row-span-2 col-span-5 bg-gray-800 opacity-90 rounded-md p-0">
+            <RealTimeSpeedGauge :metrics="useMetrics" id="speed-gauge"/>
+        </div>
+        <div class="row-span-2 col-span-5 bg-gray-800 opacity-90 rounded-md p-8">
         </div>
         <div class="bg-gray-800 col-span-6 opacity-90 rounded-md">
             <h2 class="text-white p-4">Battery level</h2>
@@ -51,7 +50,29 @@
 </template>
 
 <script setup>
-import RealTimeGauge from "../components/gauges/RealtimeGauge.vue";
+import RealTimeSpeedGauge from "../components/gauges/RealtimeSpeedGauge.vue";
+
+import { onMounted } from 'vue'
+import { storeToRefs } from 'pinia'
+import { useMetricsStore } from "../stores/metrics.js"
+import { Socket } from 'phoenix'
+const useMetrics = useMetricsStore()
+const { metrics } = storeToRefs(useMetrics)
+
+onMounted(() => {
+  let store = useMetricsStore()
+  let dashboardSocket = new Socket("ws://localhost:4001/sockets/dashboard", {})
+  dashboardSocket.connect()
+  let metricsChannel = dashboardSocket.channel("debug-metrics", {})
+
+  metricsChannel.on("updated", payload => {
+    store.$patch(payload)
+  })
+
+  metricsChannel.join()
+    .receive("ok", () => {})
+});
+
 </script>
 
 <style scoped>
