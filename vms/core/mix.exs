@@ -29,7 +29,7 @@ defmodule VmsCore.MixProject do
       {:crc, "~> 0.10"},
       {:ecto_sql, "~> 3.10"},
       {:ecto_sqlite3, ">= 0.0.0"},
-      {:json, "~> 1.4"}
+      {:decimal, "~> 2.1.1"}
     ]
   end
 end

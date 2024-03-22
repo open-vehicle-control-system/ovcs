@@ -3,6 +3,7 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
 
   alias VmsCore.NissanLeaf.Util
   alias Cantastic.{Emitter, Receiver, Frame, Signal}
+  alias Decimal, as: D
 
   @network_name :leaf_drive
   @inverter_status_frame_name "inverter_status"
@@ -11,20 +12,24 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
   @vms_torque_request_frame_name "vms_torque_request"
   @vms_status_frame_name "vms_status"
   @max_rotation_per_minute 6000 # documented max rpm, on init the inverter is returning very high invalid values
+  @zero D.new(0)
+  @drive_max_torque D.new(5) # TODO store in DB
+  @reverse_max_torque D.new(-5)
+  @effective_throttle_threshold D.new("0.05")
 
   @impl true
   def init(_) do
     :ok = init_emitters()
     Receiver.subscribe(self(), @network_name, [@inverter_status_frame_name, @inverter_temperatures_frame_name])
     {:ok, %{
-      rotation_per_minute: 0,
-      output_voltage: 0,
-      effective_torque: 0,
-      requested_torque: 0,
-      inverter_communication_board_temperature: 0,
-      insulated_gate_bipolar_transistor_temperature: 0,
-      insulated_gate_bipolar_transistor_board_temperature: 0,
-      motor_temperature: 0
+      rotation_per_minute: @zero,
+      output_voltage: @zero,
+      effective_torque: @zero,
+      requested_torque: @zero,
+      inverter_communication_board_temperature: @zero,
+      insulated_gate_bipolar_transistor_temperature: @zero,
+      insulated_gate_bipolar_transistor_board_temperature: @zero,
+      motor_temperature: @zero
     }}
   end
 
@@ -40,7 +45,7 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
     :ok = Emitter.configure(@network_name, @vms_torque_request_frame_name, %{
       parameters_builder_function: &torque_frame_parameters_builder/1,
       initial_data: %{
-        "requested_torque" => 0,
+        "requested_torque" => @zero,
         "counter" => 0
       }
     })
@@ -64,6 +69,7 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
     {:reply, {:ok, %{
       rotation_per_minute: state.rotation_per_minute,
       requested_torque: state.requested_torque,
+      effective_torque: state.effective_torque,
       output_voltage: state.output_voltage,
       inverter_communication_board_temperature: state.inverter_communication_board_temperature,
       insulated_gate_bipolar_transistor_temperature: state.insulated_gate_bipolar_transistor_temperature,
@@ -74,16 +80,16 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
 
   @impl true
   def handle_call({:throttle, percentage_throttle, gear}, _from, state) do
-    {max_torque, factor} = case gear do
-      "drive" -> {50, 1} # TODO store in DB
-      "reverse" -> {20, -1}
-      _ -> {0, 0}
+    max_torque= case gear do
+      "drive"   -> @drive_max_torque
+      "reverse" -> @reverse_max_torque
+      _         -> @zero
     end
-    percentage_throttle = case percentage_throttle do
-      value when value < 0.05 -> 0
-      value -> value
+    percentage_throttle = case D.lt?(percentage_throttle, @effective_throttle_threshold)  do
+      true  -> @zero
+      false -> percentage_throttle
     end
-    requested_torque = factor * percentage_throttle * max_torque
+    requested_torque = D.mult(percentage_throttle, max_torque)
     :ok = Emitter.update(@network_name, @vms_torque_request_frame_name, fn (emitter_state) ->
       emitter_state |> put_in([:data, "requested_torque"], requested_torque)
     end)
@@ -98,9 +104,9 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
       "em57_rotations_per_minute" => %Signal{value: rotation_per_minute},
     } = signals
 
-    rotation_per_minute = case rotation_per_minute do
-      value when value > @max_rotation_per_minute -> 0
-      value -> value
+    rotation_per_minute = case D.gt?(rotation_per_minute, @max_rotation_per_minute) do
+      true  -> @zero
+      false -> rotation_per_minute
     end
     {:noreply, %{
       state |
@@ -117,7 +123,7 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
       "inverter_communication_board_temperature"            => %Signal{value: inverter_communication_board_temperature},
       "insulated_gate_bipolar_transistor_temperature"       => %Signal{value: insulated_gate_bipolar_transistor_temperature},
       "insulated_gate_bipolar_transistor_board_temperature" => %Signal{value: insulated_gate_bipolar_transistor_board_temperature},
-      "motor_temperature"                                    => %Signal{value: motor_temperature}
+      "motor_temperature"                                   => %Signal{value: motor_temperature}
     } = signals
 
     {:noreply, %{

@@ -4,6 +4,7 @@ defmodule VmsCore.Controllers.ControlsController do
   alias Cantastic.{Receiver, Emitter, Frame, Signal}
   alias VmsCore.{Repo, ControlsCalibration}
   require Logger
+  alias Decimal, as: D
 
   @network_name :ovcs
   @car_controls_status_frame_name "car_controls_status"
@@ -49,8 +50,8 @@ defmodule VmsCore.Controllers.ControlsController do
       throttle: 0, # Makes sure no throttle during
       requested_gear: "parking",
       raw_max_throttle: raw_max_throttle,
-      low_raw_throttle_a: trunc(raw_max_throttle),
-      low_raw_throttle_b: trunc(raw_max_throttle),
+      low_raw_throttle_a: raw_max_throttle,
+      low_raw_throttle_b: raw_max_throttle,
       high_raw_throttle_a: 0,
       high_raw_throttle_b: 0,
       raw_throttle_a: 0,
@@ -72,10 +73,10 @@ defmodule VmsCore.Controllers.ControlsController do
       throttle: 0, # Makes sure no throttle during calibration
       requested_gear: "parking",
       raw_max_throttle: raw_max_throttle,
-      low_raw_throttle_a: Enum.min([state.car_controls.low_raw_throttle_a, trunc(raw_throttle_a)]),
-      low_raw_throttle_b: Enum.min([state.car_controls.low_raw_throttle_b, trunc(raw_throttle_b)]),
-      high_raw_throttle_a: Enum.max([state.car_controls.high_raw_throttle_a, trunc(raw_throttle_a)]),
-      high_raw_throttle_b: Enum.max([state.car_controls.high_raw_throttle_b, trunc(raw_throttle_b)]),
+      low_raw_throttle_a: Enum.min([state.car_controls.low_raw_throttle_a, raw_throttle_a]),
+      low_raw_throttle_b: Enum.min([state.car_controls.low_raw_throttle_b, raw_throttle_b]),
+      high_raw_throttle_a: Enum.max([state.car_controls.high_raw_throttle_a, raw_throttle_a]),
+      high_raw_throttle_b: Enum.max([state.car_controls.high_raw_throttle_b, raw_throttle_b]),
       raw_throttle_a: 0,
       raw_throttle_b: 0,
       calibration_status: "in_progress"
@@ -186,10 +187,9 @@ defmodule VmsCore.Controllers.ControlsController do
   end
 
   defp compute_throttle_from_raw_value(value, state) do
-    Float.round(
-      (trunc(value) - state.car_controls.low_raw_throttle_a)/(state.car_controls.high_raw_throttle_a - state.car_controls.low_raw_throttle_a),
-      2
-    )
+    D.sub(value, state.car_controls.low_raw_throttle_a)
+    |> D.div(D.sub(state.car_controls.high_raw_throttle_a, state.car_controls.low_raw_throttle_a))
+    |> D.round(2)
   end
 
   defp gear_status_frame_parameters(emitter_state) do

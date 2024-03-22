@@ -27,7 +27,7 @@ defmodule VmsCore.NetworkInterfacesMonitor do
   def handle_info(:update_interfaces_status, state) do
     schedule_worker()
     {interfaces_as_json, 0} = System.cmd("ip", ["--json", "-details", "-s", "-s", "address", "show"])
-    {:ok, interfaces}       = JSON.decode(interfaces_as_json)
+    {:ok, interfaces}       = Jason.decode(interfaces_as_json)
     state = Map.put(state, :interfaces, interfaces)
     state.clients |> Enum.each(fn (client) ->
       GenServer.cast(client, {:interfaces_status_updated, state.interfaces})

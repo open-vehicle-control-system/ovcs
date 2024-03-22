@@ -2,6 +2,7 @@ defmodule VmsCore.Vehicle do
   use GenServer
   require Logger
   alias VmsCore.{Inverter, BatteryManagementSystem, Abs, IgnitionLock, Controllers.ControlsController}
+  alias Decimal, as: D
 
   @loop_sleep 10
 
@@ -66,7 +67,7 @@ defmodule VmsCore.Vehicle do
 
   defp handle_rotation_per_minute(state) do
     with {:ok, rotation_per_minute} <- Inverter.rotation_per_minute(),
-         :ok        <- abs(rotation_per_minute) |> VmsCore.VwPolo.Engine.rotation_per_minute()
+         :ok        <- D.abs(rotation_per_minute) |> VmsCore.VwPolo.Engine.rotation_per_minute()
     do
       state
     else

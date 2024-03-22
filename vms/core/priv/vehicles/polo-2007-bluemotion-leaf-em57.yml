@@ -109,12 +109,15 @@ can_networks:
         frequency: 10
         signals:
           - name: raw_max_throttle
+            kind: integer
             value_start: 0
             value_length: 16
           - name: raw_throttle_a
+            kind: integer
             value_start: 16
             value_length: 16
           - name: raw_throttle_b
+            kind: integer
             value_start: 32
             value_length: 16
           - name: requested_gear
@@ -152,7 +155,7 @@ can_networks:
             endianness: big
             value_start: 16
             value_length: 12
-            scale: 0.25
+            scale: "0.25"
             unit: N/m
           - name: filler
             kind: static
@@ -160,6 +163,7 @@ can_networks:
             value_length: 4
             value: 0x00
           - name: counter
+            kind: integer
             value_start: 32
             value_length: 8
           - name: suffix
@@ -196,6 +200,7 @@ can_networks:
           - name: heartbeat
             value_start: 24
             value_length: 8
+            kind: integer
             mapping:
               0x55: 0
               0xAA: 1
@@ -205,9 +210,11 @@ can_networks:
             value_length: 16
             value: 0xC000
           - name: counter
+            kind: integer
             value_start: 48
             value_length: 8
           - name: crc
+            kind: integer
             value_start: 56
             value_length: 8
     received_frames:
@@ -218,14 +225,14 @@ can_networks:
           - name: inverter_output_voltage
             value_start: 0
             value_length: 8
-            scale: 2
+            scale: "2"
             unit: V
           - name: em57_effective_torque
             endianness: big
             sign: signed
             value_start: 21
             value_length: 11
-            scale: 0.5
+            scale: "0.5"
             unit: N/m
           - name: em57_rotations_per_minute
             endianness: big
@@ -267,11 +274,10 @@ can_networks:
             value_length: 16
             value: 0x0000
           - name: engine_rotations_per_minute
-            kind: integer
             unit: rpm
             value_start: 16
             value_length: 16
-            scale: 0.25
+            scale: "0.25"
           - name: filler2
             kind: static
             value_start: 32
@@ -380,7 +386,7 @@ can_networks:
             value_start: 0
             value_length: 8
             mapping:
-              0x00: 'off'
+              0x00: "off"
               0x01: key_engaged
               0x87: contact_on
               0x8B: start_engine
@@ -393,7 +399,7 @@ can_networks:
             unit: km/h
             value_start: 8
             value_length: 16
-            scale: 0.0075
+            scale: "0.0075"
   polo_comfort:
     bitrate: 100000
     received_frames:
@@ -405,7 +411,7 @@ can_networks:
             value_start: 0
             value_length: 8
             mapping:
-              0x00: 'off'
+              0x00: "off"
               0x01: key_engaged
               0x87: contact_on
               0x8B: start_engine

@@ -12,8 +12,8 @@
     const chartId       = "realtime-torque-chart";
     const torqueChart   = ref();
     const serieMaxSize  = 300;
-    const max           = 300;
-    const min           = -50;
+    const max           = 5;
+    const min           = -5;
 
     const effectiveTorque = "Effective Torque"
     const requestedTorque = "Requested Torque"
