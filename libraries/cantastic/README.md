@@ -3,7 +3,7 @@
 Cantastic is an Elixir library to interact with CAN/Bus via lib_socket_can (Linux only).
 It does all the heavy lifting of parsing the incoming frames and sending the outgoing ones at the right frequencies.
 
-/!\ Disclaimer: this library is still at a very early development stage. Breaking change can be introduced at any time.
+/!\ This library is still at a very early development stage. Do NOT use it in production projects yet.
 
 ## Installation
 
