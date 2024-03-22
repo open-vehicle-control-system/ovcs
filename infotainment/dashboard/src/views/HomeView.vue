@@ -1,32 +1,22 @@
 <template>
     <div class="grid grid-row-4 grid-cols-12 gap-8">
-        <div class="row-span-2 col-span-2 bg-gray-800 opacity-90 p-6 font-extrabold rounded-md text-3xl text-white table">
-            <div :class="[store.selectedGear == 'parking' ? 'bg-gray-700 opacity-99 rounded-md' : '', 'table-row']">
-                <span class="h-20 w-20 leading-5 align-middle table-cell text-center">P</span>
-            </div>
-            <div :class="[store.selectedGear == 'reverse' ? 'bg-gray-700 opacity-99 rounded-md' : '', 'table-row']">
-                <span class="h-20 w-20 leading-5 align-middle table-cell text-center">R</span>
-            </div>
-            <div :class="[store.selectedGear == 'neutral' ? 'bg-gray-700 opacity-99 rounded-md' : '', 'table-row']">
-                <span class="h-20 w-20 leading-5 align-middle table-cell text-center">N</span>
-            </div>
-            <div :class="[store.selectedGear == 'drive' ? 'bg-gray-700 opacity-99 rounded-md' : '', 'table-row']">
-                <span class="h-20 w-20 leading-5 align-middle table-cell text-center">D</span>
-            </div>
+        <div class="row-span-2 col-span-2 bg-gray-800 opacity-90 font-extrabold rounded-3xl">
+            <GearSelector :store="store" if="gear-selector"></GearSelector>
         </div>
-        <div class="row-span-2 col-span-5 bg-gray-800 opacity-90 rounded-md p-0">
-            <RealTimeSpeedGauge :metrics="store" id="speed-gauge"/>
+        <div class="row-span-2 col-span-5 bg-gray-800 opacity-90 rounded-3xl pt-8">
+            <RealTimeSpeedGauge :metrics="store" id="speed-gauge"></RealTimeSpeedGauge>
         </div>
-        <div class="row-span-2 col-span-5 bg-gray-800 opacity-90 rounded-md p-8">
+        <div class="row-span-2 col-span-5 bg-gray-800 opacity-90 rounded-3xl p-8 pl-12">
+            <DoorsVizualizer :metrics="store" id="doors"></DoorsVizualizer>
         </div>
-        <div class="bg-gray-800 col-span-6 opacity-90 rounded-md">
+        <div class="bg-gray-800 col-span-6 opacity-90 rounded-3xl">
             <h2 class="text-white p-4">Battery level</h2>
             <div class="batteryContainer p-4">
                 <div class="batteryOuter"><div id="batteryLevel"></div></div>
                 <div class="batteryBump"></div>
             </div>
         </div>
-        <div class="bg-gray-800 col-span-6 opacity-90 rounded-md text-white">
+        <div class="bg-gray-800 col-span-6 opacity-90 rounded-3xl text-white">
             <div class="grid grid-rows-2 gap-4 h-full">
                 <div class="grid grid-cols-2 gap-4">
                     <div class="inline p-8">
@@ -51,6 +41,8 @@
 
 <script setup>
 import RealTimeSpeedGauge from "../components/gauges/RealtimeSpeedGauge.vue";
+import GearSelector from "../components/controls/GearSelector.vue";
+import DoorsVizualizer from "../components/doors/DoorsVizualizer.vue";
 
 import { onMounted } from 'vue'
 import { useMetricsStore } from "../stores/metrics.js"
