@@ -1,40 +1,19 @@
 <template>
     <div class="grid grid-row-4 grid-cols-12 gap-8">
         <div class="row-span-2 col-span-2 bg-gray-800 opacity-90 font-extrabold rounded-3xl">
-            <GearSelector :store="store" if="gear-selector"></GearSelector>
+            <GearSelector :store="store"></GearSelector>
         </div>
-        <div class="row-span-2 col-span-5 bg-gray-800 opacity-90 rounded-3xl pt-8">
-            <RealTimeSpeedGauge :metrics="store" id="speed-gauge"></RealTimeSpeedGauge>
+        <div class="row-span-2 col-span-5 bg-gray-800 opacity-90 rounded-3xl">
+            <RealTimeSpeedGauge :metrics="store"></RealTimeSpeedGauge>
         </div>
-        <div class="row-span-2 col-span-5 bg-gray-800 opacity-90 rounded-3xl p-8 pl-12">
-            <DoorsVizualizer :metrics="store" id="doors"></DoorsVizualizer>
+        <div class="row-span-2 col-span-5 bg-gray-800 opacity-90 rounded-3xl">
+            <CarVizualizer :metrics="store"></CarVizualizer>
         </div>
-        <div class="bg-gray-800 col-span-6 opacity-90 rounded-3xl">
-            <h2 class="text-white p-4">Battery level</h2>
-            <div class="batteryContainer p-4">
-                <div class="batteryOuter"><div id="batteryLevel"></div></div>
-                <div class="batteryBump"></div>
-            </div>
+        <div class="bg-gray-800 row-span-1 col-span-6 opacity-90 rounded-3xl">
+            <BatteryMonitor></BatteryMonitor>
         </div>
         <div class="bg-gray-800 col-span-6 opacity-90 rounded-3xl text-white">
-            <div class="grid grid-rows-2 gap-4 h-full">
-                <div class="grid grid-cols-2 gap-4">
-                    <div class="inline p-8">
-                        Image
-                    </div>
-                    <div class="inline p-8">
-                        <h3>Tippik (DAB+)</h3>
-                        <h4>Green Day: Basket Case</h4>
-                    </div>
-                </div>
-
-                <div class="bg-black p-6">
-                    <div class="inline">Back</div>
-                    <div class="inline">Play</div>
-                    <div class="inline">Pause</div>
-                    <div class="inline">Forward</div>
-                </div>
-            </div>
+            <MusicPlayer></MusicPlayer>
         </div>
     </div>
 </template>
@@ -42,7 +21,9 @@
 <script setup>
 import RealTimeSpeedGauge from "../components/gauges/RealtimeSpeedGauge.vue";
 import GearSelector from "../components/controls/GearSelector.vue";
-import DoorsVizualizer from "../components/doors/DoorsVizualizer.vue";
+import CarVizualizer from "../components/doors/CarVizualizer.vue";
+import BatteryMonitor from "../components/gauges/BatteryMonitor.vue"
+import MusicPlayer from "../components/music/MusicPlayer.vue"
 
 import { onMounted } from 'vue'
 import { useMetricsStore } from "../stores/metrics.js"
