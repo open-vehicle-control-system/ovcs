@@ -90,8 +90,8 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
       false -> percentage_throttle
     end
     requested_torque = D.mult(percentage_throttle, max_torque)
-    :ok = Emitter.update(@network_name, @vms_torque_request_frame_name, fn (emitter_state) ->
-      emitter_state |> put_in([:data, "requested_torque"], requested_torque)
+    :ok = Emitter.update(@network_name, @vms_torque_request_frame_name, fn (data) ->
+      %{data | "requested_torque" => requested_torque}
     end)
     {:reply, :ok, %{state | requested_torque: requested_torque}}
   end
@@ -140,29 +140,29 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
     {:ok, nil, emitter_state}
   end
 
-  def torque_frame_parameters_builder(emitter_state) do
-    counter = emitter_state.data["counter"]
+  def torque_frame_parameters_builder(data) do
+    counter = data["counter"]
     parameters = %{
-      "requested_torque" => emitter_state.data["requested_torque"],
+      "requested_torque" => data["requested_torque"],
       "counter" => Util.shifted_counter(counter),
       "crc" => &Util.crc8/1
     }
 
-    emitter_state = emitter_state |> put_in([:data, "counter"], Util.counter(counter + 1))
-    {:ok, parameters, emitter_state}
+    data = %{data | "counter" => Util.counter(counter + 1)}
+    {:ok, parameters, data}
   end
 
-  def status_frame_parameters_builder(emitter_state) do
-    counter = emitter_state.data["counter"]
+  def status_frame_parameters_builder(data) do
+    counter = data["counter"]
     parameters = %{
-      "gear" => emitter_state.data["gear"],
+      "gear" => data["gear"],
       "heartbeat" => rem(counter, 2),
       "counter" => Util.counter(counter),
       "crc" => &Util.crc8/1
     }
 
-    emitter_state = emitter_state |> put_in([:data, "counter"], Util.counter(counter + 1))
-    {:ok, parameters, emitter_state}
+    data = %{data | "counter" => Util.counter(counter + 1)}
+    {:ok, parameters, data}
   end
 
   def on() do

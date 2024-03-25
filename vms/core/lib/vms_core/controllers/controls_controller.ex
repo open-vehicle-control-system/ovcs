@@ -98,8 +98,11 @@ defmodule VmsCore.Controllers.ControlsController do
     else
       compute_throttle_from_raw_value(raw_throttle_a, state)
     end
-    state = put_in(state, [:car_controls, :throttle], throttle) |> put_in([:car_controls, :requested_gear], requested_gear)
-      |> put_in([:car_controls, :raw_throttle_a], raw_throttle_a) |> put_in([:car_controls, :raw_throttle_b], raw_throttle_b)
+    state = state
+      |> put_in([:car_controls, :throttle], throttle)
+      |> put_in([:car_controls, :requested_gear], requested_gear)
+      |> put_in([:car_controls, :raw_throttle_a], raw_throttle_a)
+      |> put_in([:car_controls, :raw_throttle_b], raw_throttle_b)
     {:noreply, state}
   end
 
@@ -126,7 +129,7 @@ defmodule VmsCore.Controllers.ControlsController do
 
   @impl true
   def handle_call(:disable_calibration, _from, %{car_controls: %{calibration_status: "in_progress"}} = state) do
-    with {:ok, _} <- set_calibration_value_for_key("low_raw_throttle_a", state.car_controls.low_raw_throttle_a),
+    with  {:ok, _} <- set_calibration_value_for_key("low_raw_throttle_a", state.car_controls.low_raw_throttle_a),
           {:ok, _} <- set_calibration_value_for_key("low_raw_throttle_b", state.car_controls.low_raw_throttle_b),
           {:ok, _} <- set_calibration_value_for_key("high_raw_throttle_a", state.car_controls.high_raw_throttle_a),
           {:ok, _} <- set_calibration_value_for_key("high_raw_throttle_b", state.car_controls.high_raw_throttle_b),
@@ -181,8 +184,8 @@ defmodule VmsCore.Controllers.ControlsController do
   end
 
   def select_gear(gear) do
-    :ok = Emitter.update(@network_name, @selected_gear_frame_name, fn (state) ->
-      state |> put_in([:data,  @selected_gear], gear)
+    :ok = Emitter.update(@network_name, @selected_gear_frame_name, fn (data) ->
+      %{data | @selected_gear => gear}
     end)
   end
 
@@ -192,7 +195,7 @@ defmodule VmsCore.Controllers.ControlsController do
     |> D.round(2)
   end
 
-  defp gear_status_frame_parameters(emitter_state) do
-    {:ok, emitter_state.data, emitter_state}
+  defp gear_status_frame_parameters(data) do
+    {:ok, data, data}
   end
 end

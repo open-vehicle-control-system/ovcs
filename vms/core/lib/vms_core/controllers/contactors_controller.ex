@@ -39,8 +39,8 @@ defmodule VmsCore.Controllers.ContactorsController do
     }}
   end
 
-  defp contactors_state_request_frame_parameters(emitter_state) do
-    {:ok, emitter_state.data, emitter_state}
+  defp contactors_state_request_frame_parameters(data) do
+    {:ok, data, data}
   end
 
   @impl true
@@ -121,8 +121,8 @@ defmodule VmsCore.Controllers.ContactorsController do
   end
 
   defp actuate_contactor(contactor_name, enable) do
-    Emitter.update(@network_name, @status_request_frame_name, fn (emitter_state) ->
-      emitter_state |> put_in([:data, contactor_name], enable)
+    Emitter.update(@network_name, @status_request_frame_name, fn (data) ->
+      %{data | contactor_name => enable}
     end)
   end
 end

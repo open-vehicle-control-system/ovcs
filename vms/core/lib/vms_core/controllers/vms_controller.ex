@@ -29,8 +29,8 @@ defmodule VmsCore.Controllers.VmsController do
     GenServer.start_link(__MODULE__, nil, name: __MODULE__)
   end
 
-  defp vms_relays_status_request_frame_parameters(emitter_state) do
-    {:ok, emitter_state.data, emitter_state}
+  defp vms_relays_status_request_frame_parameters(data) do
+    {:ok, data, data}
   end
 
   @impl true
@@ -57,8 +57,8 @@ defmodule VmsCore.Controllers.VmsController do
   end
 
   defp actuate_relay(relay_name, enable) do
-    Emitter.update(@network_name, @status_request_frame_name, fn (emitter_state) ->
-      emitter_state |> put_in([:data, relay_name], enable)
+    Emitter.update(@network_name, @status_request_frame_name, fn (data) ->
+      %{data | relay_name => enable}
     end)
   end
 end

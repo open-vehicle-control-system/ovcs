@@ -45,8 +45,8 @@ defmodule VmsCore.Status do
     case state.failed_frames[frame_name] do
       nil ->
         Logger.warning("Frame #{network_name}.#{frame_name} not received anymore")
-        Emitter.update(@network_name, @vms_status_frame_name, fn (emitter_state) ->
-          emitter_state |> put_in([:data, @status_parameter], "failure")
+        Emitter.update(@network_name, @vms_status_frame_name, fn (data) ->
+          %{data | @status_parameter => "failure"}
         end)
         state = state
         |> put_in([:status], "failure")
@@ -75,14 +75,11 @@ defmodule VmsCore.Status do
     {:noreply, state}
   end
 
-  defp vms_status_frame_parameter_builder(emitter_state) do
-    counter = emitter_state.data[@counter_parameter]
-    parameters = %{
-      @status_parameter => emitter_state.data[@status_parameter],
-      @counter_parameter => VmsCore.NissanLeaf.Util.counter(counter)
-    }
-    emitter_state = emitter_state |> put_in([:data, @counter_parameter], VmsCore.NissanLeaf.Util.counter(counter + 1))
-    {:ok, parameters, emitter_state}
+  defp vms_status_frame_parameter_builder(data) do
+    counter    = data[@counter_parameter]
+    parameters = data
+    data       = %{data | @counter_parameter => VmsCore.NissanLeaf.Util.counter(counter + 1)}
+    {:ok, parameters, data}
   end
 
   @impl true
