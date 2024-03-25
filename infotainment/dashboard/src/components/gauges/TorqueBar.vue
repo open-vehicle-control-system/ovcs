@@ -38,20 +38,20 @@ defineExpose({
     <div class="mb-8">
       <div class="bg-stroke bg-green-400 relative h-6 w-3/12 inline-block">
         <div
-          class="bg-gray-400 absolute top-0 left-0 h-full"
+          class="bg-gray-700 absolute top-0 left-0 h-full"
           :style="{ width: `${item.charge}%` }"
         ></div>
 
       </div>
-      <div class="bg-stroke bg-gray-400 relative h-6 w-8/12 inline-block ml-1">
+      <div class="bg-stroke bg-gray-700 relative h-6 w-8/12 inline-block ml-1">
         <div
           class="bg-cyan-400 absolute top-0 left-0 h-full"
           :style="{ width: `${item.power}%` }"
         ></div>
 
       </div>
-      <span class="text-gray-200 mt-20 text-lg">Charge</span>
-      <span class="text-gray-200 ml-7 text-lg">Power</span>
+      <span class="text-gray-400 mt-20 text-lg">Charge</span>
+      <span class="text-gray-400 ml-7 text-lg">Power</span>
     </div>
   </div>
 </template>
