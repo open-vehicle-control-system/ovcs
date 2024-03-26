@@ -42,7 +42,7 @@ defmodule VmsCore.Vehicle do
   end
 
   defp handle_gear(state) do
-    with {:ok, requested_gear} <- ControlsController.requested_gear(),
+    with {:ok, requested_gear} <- gear_control_module().requested_gear(),
          selected_gear         <- state.selected_gear,
          {:ok, throttle}       <- ControlsController.throttle()
     do
@@ -132,6 +132,10 @@ defmodule VmsCore.Vehicle do
 
   def selected_gear() do
     GenServer.call(__MODULE__, :selected_gear)
+  end
+
+  defp gear_control_module() do
+    Application.get_env(:vms_core, :gear_control_module)
   end
 
   # ---- Test functions ----

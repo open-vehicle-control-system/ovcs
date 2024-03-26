@@ -35,3 +35,4 @@ config :logger, :console,
   level: (System.get_env("LOG_LEVEL") || "debug") |> String.to_atom()
 
 config :vms_core, :load_debugger_dependencies, true
+config :vms_core, :gear_control_module, (if System.get_env("GEAR_CONTROL_MODULE") == "infotainment" do VmsCore.Infotainment else VmsCore.Controllers.ControlsController end)
