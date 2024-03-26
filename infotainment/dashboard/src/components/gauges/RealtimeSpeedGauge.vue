@@ -111,13 +111,15 @@
 
   metrics.$subscribe((_mutation, state) => {
     let speed = state.metrics.find((metric) => metric.id === "speed")
-    serie = {
-      ...serie,
-      data: [
-        { value: speed.attributes.value }
-      ]
+    if(speed && speed.attributes){
+      serie = {
+        ...serie,
+        data: [
+          { value: speed.attributes.value }
+        ]
+      }
+      option.value.series = [serie]
     }
-    option.value.series = [serie]
 
     getTorque(state)
     torqueBar.value.updateTorque(torque.value)

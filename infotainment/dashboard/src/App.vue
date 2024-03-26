@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onBeforeMount, onBeforeUnmount } from 'vue'
+import { ref, onBeforeMount, onBeforeUnmount, onMounted } from 'vue'
 import {RouterView } from 'vue-router'
 import { useRouter } from 'vue-router'
 import {
@@ -13,6 +13,8 @@ import {
 import IconVolumeUp from './components/icons/IconVolumeUp.vue'
 import IconVolumeDown from './components/icons/IconVolumeDown.vue'
 
+import axios from 'axios'
+
 let router = useRouter()
 let currentRouteName = router.options.history.location
 
@@ -24,15 +26,27 @@ const navigation = [
 
 let currentTime = ref("")
 let currentDate = ref("")
+let volumeLevel = ref("")
 
 function setCurrentTime(){
   currentTime.value = new Date().toLocaleString("fr-BE", {timeStyle: "medium"});
   currentDate.value = new Date().toLocaleString("fr-BE", {dateStyle: "medium"});
 }
 
+const getVolumeLevel = function(){
+  axios.get("http://localhost:4001/api/volume").then((response) => {
+    volumeLevel.value = response.data["volume"]
+    console.log(JSON.parse(response.data))
+  })
+}
+
 onBeforeMount(() => {
   setCurrentTime();
   setInterval(setCurrentTime, 1000);
+})
+
+onMounted(() => {
+  getVolumeLevel()
 })
 
 onBeforeUnmount(() => {
@@ -55,7 +69,7 @@ onBeforeUnmount(() => {
         <div class="row-span-3">
           <div class="container p-8 h-60">
             <div class="barcontainer h-60">
-              <div class="bar h-10">
+              <div class="bar" id="volumeBar">
               </div>
             </div>
           </div>
@@ -105,6 +119,7 @@ main {
   position: absolute;
   bottom: 0;
   width: 24px;
+  height: v-bind(volumeLevel);
   box-sizing: border-box;
   animation: grow 1.5s ease-out forwards;
   transform-origin: bottom;
