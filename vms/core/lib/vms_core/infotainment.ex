@@ -1,7 +1,7 @@
 defmodule VmsCore.Infotainment do
   use GenServer
 
-  alias Cantastic.{Receiver, Emitter, Frame, Signal}
+  alias Cantastic.{Receiver, Frame, Signal}
 
   @network_name :ovcs
   @infotainment_status_frame_name "infotainment_status"

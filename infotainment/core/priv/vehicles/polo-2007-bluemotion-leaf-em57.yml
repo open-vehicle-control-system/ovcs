@@ -40,11 +40,17 @@ can_networks:
             value_length: 8
             mapping:
               0x00: ok
-              0x01: warning
               0xFF: failure
+          - name: ready_to_drive
+            kind: enum
+            value_start: 8
+            value_length: 8
+            mapping:
+              0x00: false
+              0x01: true
           - name: counter
             kind: integer
-            value_start: 8
+            value_start: 16
             value_length: 8
   polo_drive:
     bitrate: 500000

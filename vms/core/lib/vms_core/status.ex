@@ -9,6 +9,7 @@ defmodule VmsCore.Status do
   @status_parameter "status"
   @counter_parameter "counter"
   @key_status_frame_name "key_status"
+  @ready_to_drive_parameter "ready_to_drive"
 
   @impl true
   def init(_) do
@@ -16,7 +17,8 @@ defmodule VmsCore.Status do
       parameters_builder_function: &vms_status_frame_parameter_builder/1,
       initial_data: %{
         @status_parameter => "ok",
-        @counter_parameter => 0
+        @counter_parameter => 0,
+        @ready_to_drive_parameter => false
       }
     })
     :ok = Emitter.enable(@network_name, @vms_status_frame_name)
@@ -92,12 +94,24 @@ defmodule VmsCore.Status do
     {:reply, {:ok, state.failed_frames}, state}
   end
 
+  @impl true
+  def handle_call({:ready_to_drive, ready_to_drive}, _from, state) do
+    :ok = Emitter.update(@network_name, @vms_status_frame_name, fn (data) ->
+      %{data | @ready_to_drive_parameter => ready_to_drive}
+    end)
+    {:reply, :ok, state}
+  end
+
   def status() do
     GenServer.call(__MODULE__, :status)
   end
 
   def failed_frames() do
     GenServer.call(__MODULE__, :failed_frames)
+  end
+
+  def ready_to_drive(ready_to_drive) do
+    GenServer.call(__MODULE__, {:ready_to_drive, ready_to_drive})
   end
 
   def enable_watchers() do

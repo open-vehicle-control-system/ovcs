@@ -1,7 +1,7 @@
 defmodule VmsCore.Vehicle do
   use GenServer
   require Logger
-  alias VmsCore.{Inverter, BatteryManagementSystem, IgnitionLock, Controllers.ControlsController}
+  alias VmsCore.{Inverter, BatteryManagementSystem, IgnitionLock, Controllers.ControlsController, Status}
   alias Decimal, as: D
 
   @loop_sleep 10
@@ -16,13 +16,15 @@ defmodule VmsCore.Vehicle do
     loop()
     {:ok, %{
       ignition_started: false,
-      selected_gear: "parking"
+      selected_gear: "parking",
+      ready_to_drive?: false
     }}
   end
 
   @impl true
   def handle_info(:loop, state) do
     state = state
+      |> handle_ready_to_drive()
       |> handle_ignition()
       |> handle_gear()
       |> handle_throttle()
@@ -74,9 +76,19 @@ defmodule VmsCore.Vehicle do
   end
 
   defp handle_throttle(state) do
-    case ready_to_drive?(state) do
+    case state.ready_to_drive? do
       true -> apply_throttle(state)
       _    -> state
+    end
+  end
+
+  defp handle_ready_to_drive(state) do
+    ready_to_drive? = ready_to_drive?(state)
+    case state.ready_to_drive? == ready_to_drive? do
+      true  -> state
+      false ->
+        :ok = Status.ready_to_drive(ready_to_drive?)
+        %{state | ready_to_drive?: ready_to_drive?}
     end
   end
 
