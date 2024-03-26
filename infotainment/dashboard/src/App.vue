@@ -1,32 +1,52 @@
 <script setup>
-import { ref, onBeforeMount, onBeforeUnmount } from 'vue'
+import { ref, onBeforeMount, onBeforeUnmount, onMounted } from 'vue'
 import {RouterView } from 'vue-router'
 import { useRouter } from 'vue-router'
 import {
   BugAntIcon,
   Squares2X2Icon,
   RadioIcon,
-  CogIcon
+  CogIcon,
+  HomeIcon
 } from '@heroicons/vue/24/outline'
+
+import IconVolumeUp from './components/icons/IconVolumeUp.vue'
+import IconVolumeDown from './components/icons/IconVolumeDown.vue'
+
+import axios from 'axios'
 
 let router = useRouter()
 let currentRouteName = router.options.history.location
 
 const navigation = [
-  //{ name: 'Radio', href: '/radio', icon: RadioIcon, current: currentRouteName == '/radio' },
-  //{ name: 'Settings', href: '/settings', icon: CogIcon, current: currentRouteName == '/settings' },
-  { name: 'Debug', href: '/debug', icon: BugAntIcon, current: currentRouteName == '/debug' },
+  //{ name: 'Radio', href: '/radio', icon: RadioIcon, color: "bg-red-400", current: currentRouteName == '/radio' },
+  //{ name: 'Settings', href: '/settings', icon: CogIcon, color: "bg-amber-400", current: currentRouteName == '/settings' },
+  { name: 'Debug', href: '/debug', icon: BugAntIcon,  color: "bg-green-400", current: currentRouteName == '/debug' },
 ]
 
 let currentTime = ref("")
+let currentDate = ref("")
+let volumeLevel = ref("")
 
 function setCurrentTime(){
-  currentTime.value = new Date().toLocaleString("fr-BE");
+  currentTime.value = new Date().toLocaleString("fr-BE", {timeStyle: "medium"});
+  currentDate.value = new Date().toLocaleString("fr-BE", {dateStyle: "medium"});
+}
+
+const getVolumeLevel = function(){
+  axios.get("http://localhost:4001/api/volume").then((response) => {
+    volumeLevel.value = response.data["volume"]
+    console.log(JSON.parse(response.data))
+  })
 }
 
 onBeforeMount(() => {
   setCurrentTime();
   setInterval(setCurrentTime, 1000);
+})
+
+onMounted(() => {
+  getVolumeLevel()
 })
 
 onBeforeUnmount(() => {
@@ -36,27 +56,37 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="geometric-bg">
-    <div class="lg:pl-32 dark:bg-gray-800 opacity-60 text-gray-900 dark:text-gray-400"><h3 id="clock" class="text-xl text-center">{{ currentTime }}</h3></div>
-    <!-- Static sidebar for desktop -->
-    <div class="lg:fixed lg:inset-y-0 lg:z-50 lg:flex lg:w-51 lg:flex-col">
+    <div class="fixed inset-y-0 z-50 flex w-51 grow">
       <!-- Sidebar component, swap this element with another sidebar if you like -->
-      <div class="flex grow flex-col gap-y-5 bg-indigo-600 dark:bg-gray-900 px-6">
-        <div class="flex h-1 items-center">
+      <div class="grid  grid-rows-9 bg-gray-900 px-4">
+        <div class="pt-12 items-center row-span-2">
+          <p class="text-2xl text-center text-white">{{ currentTime }}</p>
+          <p  class="text-md text-center text-white">{{ currentDate }}</p>
         </div>
-        <nav class="flex flex-1 flex-col">
-          <ul role="list" class="flex flex-1 flex-col gap-y-7">
-          </ul>
-          <div>
-            <a href="/" class="group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold">
-              <Squares2X2Icon class="text-white h-20 w-16" />
-            </a>
+        <div class="row-span-1 p-3">
+          <IconVolumeUp></IconVolumeUp>
+        </div>
+        <div class="row-span-3">
+          <div class="container p-8 h-60">
+            <div class="barcontainer h-60">
+              <div class="bar" id="volumeBar">
+              </div>
+            </div>
           </div>
-        </nav>
+        </div>
+        <div class="row-span-2 p-3 pt-10">
+          <IconVolumeDown></IconVolumeDown>
+        </div>
+        <div class="p-3">
+          <a :href="[ currentRouteName == '/launchpad' ? '/' : '/launchpad']" class="text-sm font-semibold inline-block align-bottom">
+            <Squares2X2Icon class="text-white h-16 w-16" />
+          </a>
+        </div>
       </div>
     </div>
 
-    <main class="py-8 lg:pl-32 overflow-y-auto">
-      <div class="sm:px-6 lg:px-8">
+    <main class="pl-32 overflow-y-auto">
+      <div class="py-8 px-8 h-full">
         <RouterView :navigation="navigation" />
       </div>
     </main>
@@ -76,5 +106,22 @@ onBeforeUnmount(() => {
 
 main {
   height: 100vh;
+}
+
+.barcontainer{
+  background-color: #374151;
+  position: relative;
+  width: 24px;
+}
+
+.bar{
+  background-color: #06b6d4;
+  position: absolute;
+  bottom: 0;
+  width: 24px;
+  height: v-bind(volumeLevel);
+  box-sizing: border-box;
+  animation: grow 1.5s ease-out forwards;
+  transform-origin: bottom;
 }
 </style>

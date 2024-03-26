@@ -134,14 +134,14 @@ can_networks:
         frequency: 20
         signals:
           - name: requested_gear
-              kind: enum
-              value_start: 0
-              value_length: 8
-              mapping:
-                0x00: drive
-                0x01: neutral
-                0x02: reverse
-                0x03: parking
+            kind: enum
+            value_start: 0
+            value_length: 8
+            mapping:
+              0x00: drive
+              0x01: neutral
+              0x02: reverse
+              0x03: parking
   leaf_drive:
     bitrate: 500000
     emitted_frames:

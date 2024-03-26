@@ -21,8 +21,8 @@ defmodule VmsCore.VwPolo.Engine do
     GenServer.start_link(__MODULE__, nil, name: __MODULE__)
   end
 
-  defp status_frame_parameters_builder(emitter_state) do
-    {:ok, emitter_state.data, emitter_state}
+  defp status_frame_parameters_builder(data) do
+    {:ok, data, data}
   end
 
   def rotation_per_minute(rotation_per_minute) do

@@ -37,7 +37,6 @@ defmodule InfotainmentApiWeb.Endpoint do
     cookie_key: "request_logger"
 
   plug Plug.RequestId
-  plug CORSPlug, origin: ["*"]
   plug Plug.Telemetry, event_prefix: [:phoenix, :endpoint]
 
   plug Plug.Parsers,
@@ -48,6 +47,6 @@ defmodule InfotainmentApiWeb.Endpoint do
   plug Plug.MethodOverride
   plug Plug.Head
   plug Plug.Session, @session_options
-
+  plug CORSPlug
   plug InfotainmentApiWeb.Router
 end

@@ -20,7 +20,6 @@ defmodule InfotainmentApiWeb.DebugMetricsChannel do
   end
 
   def handle_out("update", signals, socket) do
-    Logger.debug("Channel will output event")
     push(socket, "updated", render_metrics(signals))
     {:noreply, socket}
   end

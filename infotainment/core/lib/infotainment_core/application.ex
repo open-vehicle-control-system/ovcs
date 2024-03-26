@@ -14,6 +14,8 @@ defmodule InfotainmentCore.Application do
       #  skip: skip_migrations?()},
       {InfotainmentCore.VehicleStateManager, []},
       {InfotainmentCore.SystemInformationManager, []},
+      {InfotainmentCore.Status, []},
+
     ]
 
     opts = [strategy: :one_for_one, name: InfotainmentCore.Supervisor]

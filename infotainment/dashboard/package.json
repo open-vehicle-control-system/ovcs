@@ -13,10 +13,12 @@
   "dependencies": {
     "@headlessui/vue": "^1.7.16",
     "@heroicons/vue": "^2.0.18",
+    "axios": "^1.6.8",
     "kioskboard": "^2.3.0",
     "phoenix": "^1.7.10",
     "pinia": "^2.1.7",
     "vue": "^3.3.4",
+    "vue-echarts": "^6.6.9",
     "vue-router": "^4.2.5"
   },
   "devDependencies": {

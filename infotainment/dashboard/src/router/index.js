@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import DebugView from '../views/DebugView.vue'
+import HomeView from '../views/HomeView.vue'
 import LaunchpadView from '../views/LaunchpadView.vue'
 
 const router = createRouter({
@@ -11,10 +12,15 @@ const router = createRouter({
       component: DebugView
     },
     {
-      path: '/',
-      name: 'home',
+      path: '/launchpad',
+      name: 'launchpad',
       component: LaunchpadView
     },
+    {
+      path: '/',
+      name: "home",
+      component: HomeView
+    }
   ]
 })
 

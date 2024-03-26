@@ -5,6 +5,16 @@ export const useMetricsStore = defineStore('metrics', {
   state: () => ({
     metrics: [],
   }),
-  actions: {
+  getters: {
+    selectedGear: (state) => {
+      let gear = state.metrics.find((metric) => {
+        return metric.id == "selected_gear"
+      })
+      if(gear){
+        return gear.attributes.value
+      } else {
+        return "parking"
+      }
+    }
   }
 })
