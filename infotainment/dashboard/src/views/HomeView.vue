@@ -32,7 +32,7 @@ import { Socket } from 'phoenix'
 const store = useMetricsStore()
 
 onMounted(() => {
-  let dashboardSocket = new Socket("ws://localhost:4001/sockets/dashboard", {})
+  let dashboardSocket = new Socket(import.meta.env.VITE_BASE_WS+ "/sockets/dashboard", {})
   dashboardSocket.connect()
   let metricsChannel = dashboardSocket.channel("debug-metrics", {})
 

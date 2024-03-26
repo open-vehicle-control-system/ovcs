@@ -22,7 +22,7 @@ const props = defineProps(["store"])
 const store = props.store
 
 const requestGear = function(gear){
-    axios.post("http://localhost:4001/api/gear-selector", {gear: gear}).then((response) => {
+    axios.post(import.meta.env.VITE_BASE_URL + "/api/gear-selector", {gear: gear}).then((response) => {
     })
 }
 

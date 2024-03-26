@@ -34,7 +34,7 @@ function setCurrentTime(){
 }
 
 const getVolumeLevel = function(){
-  axios.get("http://localhost:4001/api/volume").then((response) => {
+  axios.get(import.meta.env.VITE_BASE_URL + "/api/volume").then((response) => {
     volumeLevel.value = response.data["volume"]
     console.log(JSON.parse(response.data))
   })
@@ -95,7 +95,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .geometric-bg {
-    background-image: url("./launchpad_background.svg");
+    background-image: url("/images/launchpad_background.svg");
     height: 100%;
 
     /* Center and scale the image nicely */

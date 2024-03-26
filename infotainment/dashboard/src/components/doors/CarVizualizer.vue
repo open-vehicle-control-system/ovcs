@@ -21,17 +21,17 @@ import IconTrunk from '../icons/IconTrunk.vue'
 const props = defineProps(["metrics"])
 const store = props.metrics
 const leftDoorsAssets = {
-    0: "./all_closed_left.png",
-    1: "./front_left_open.png",
-    2: "./rear_left_open.png",
-    3: "./all_open_left.png"
+    0: "/images/all_closed_left.png",
+    1: "/images/front_left_open.png",
+    2: "/images/rear_left_open.png",
+    3: "/images/all_open_left.png"
 }
 
 const rightDoorsAssets = {
-    0: "./all_closed_right.png",
-    1: "./front_right_open.png",
-    2: "./rear_right_open.png",
-    3: "./all_open_right.png"
+    0: "/images/all_closed_right.png",
+    1: "/images/front_right_open.png",
+    2: "/images/rear_right_open.png",
+    3: "/images/all_open_right.png"
 }
 
 let leftScore = ref(0)

@@ -2,7 +2,7 @@
     <div class="grid grid-rows-3 gap-4 h-full">
         <div class="grid grid-cols-3 row-span-2">
             <div class="inline pl-12 mt-8">
-                <img src="/tipik.png" />
+                <img src="/images/tipik.png" />
             </div>
             <div class="inline col-span-2 p-4 ml-6">
                 <h3 class="text-3xl mt-6">Tipik</h3>

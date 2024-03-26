@@ -43,6 +43,7 @@ can_networks:
               0x01: warning
               0xFF: failure
           - name: counter
+            kind: integer
             value_start: 8
             value_length: 8
   polo_drive:

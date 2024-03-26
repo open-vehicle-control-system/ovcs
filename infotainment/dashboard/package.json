@@ -14,6 +14,7 @@
     "@headlessui/vue": "^1.7.16",
     "@heroicons/vue": "^2.0.18",
     "axios": "^1.6.8",
+    "dotenv": "^16.4.5",
     "kioskboard": "^2.3.0",
     "phoenix": "^1.7.10",
     "pinia": "^2.1.7",
