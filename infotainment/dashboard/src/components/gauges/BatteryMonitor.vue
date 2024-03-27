@@ -4,15 +4,15 @@
         <div class="grid grid-rows-3">
             <div class="p-2 ml-4">
                 <IconBattery class="w-8 h8 inline-block"></IconBattery>
-                <span class="text-gray-200 inline-block ml-4">67km</span>
+                <span class="text-gray-200 inline-block ml-4">-</span>
             </div>
             <div class="p-2 ml-5">
                 <IconElectricity class="w-6 h6 inline-block"></IconElectricity>
-                <span class="text-gray-200 inline-block ml-5">13kwh/100km</span>
+                <span class="text-gray-200 inline-block ml-5">-</span>
             </div>
             <div class="p-2 ml-4">
                 <IconCharging class="w-8 h8 inline-block"></IconCharging>
-                <span class="text-gray-200 inline-block ml-4">46min left</span>
+                <span class="text-gray-200 inline-block ml-4">-</span>
             </div>
         </div>
     </div>
@@ -38,7 +38,7 @@
 
     const gaugeData = [
         {
-            value: 20,
+            value: 0,
             name: 'Charge',
             detail: {
                 valueAnimation: true,
