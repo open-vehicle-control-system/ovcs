@@ -36,7 +36,6 @@ function setCurrentTime(){
 const getVolumeLevel = function(){
   axios.get(import.meta.env.VITE_BASE_URL + "/api/volume").then((response) => {
     volumeLevel.value = response.data["volume"]
-    console.log(JSON.parse(response.data))
   })
 }
 

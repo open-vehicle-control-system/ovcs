@@ -7,13 +7,13 @@
             <RealTimeSpeedGauge :metrics="store"></RealTimeSpeedGauge>
         </div>
         <div class="row-span-2 col-span-5 bg-gray-800 opacity-90 rounded-3xl">
-            <CarVizualizer :metrics="store"></CarVizualizer>
+            <CarOverview :metrics="store"></CarOverview>
         </div>
         <div class="bg-gray-800 row-span-1 col-span-6 opacity-90 rounded-3xl">
             <BatteryMonitor></BatteryMonitor>
         </div>
         <div class="bg-gray-800 col-span-6 opacity-90 rounded-3xl text-white">
-            <MusicPlayer></MusicPlayer>
+            <Player></Player>
         </div>
     </div>
 </template>
@@ -21,9 +21,9 @@
 <script setup>
 import RealTimeSpeedGauge from "../components/gauges/RealtimeSpeedGauge.vue";
 import GearSelector from "../components/controls/GearSelector.vue";
-import CarVizualizer from "../components/doors/CarVizualizer.vue";
+import CarOverview from "../components/car/CarOverview.vue";
 import BatteryMonitor from "../components/gauges/BatteryMonitor.vue"
-import MusicPlayer from "../components/music/MusicPlayer.vue"
+import Player from "../components/multimedia/Player.vue"
 
 import { onMounted } from 'vue'
 import { useMetricsStore } from "../stores/metrics.js"

@@ -12,7 +12,7 @@
 </template>
 
 <script setup>
-import {ref} from 'vue'
+import {onMounted, ref} from 'vue'
 import IconBeams from '../icons/IconBeams.vue'
 import IconHandbrake from '../icons/IconHandbrake.vue'
 import IconEngine from '../icons/IconEngine.vue'
@@ -54,27 +54,23 @@ const checkHandbrake = function(state) {
 }
 
 const checkEngineStatus = function(state) {
-    let inverterRelayEnabled = store.metrics.filter((metric) => {
-        return metric.id == "inverter_relay_enabled"
+    let readyToDrive = store.metrics.filter((metric) => {
+        return metric.id == "ready_to_drive"
     })[0].attributes.value
 
-    let mainPositiveContactorEnabled = store.metrics.filter((metric) => {
-        return metric.id == "main_positive_contactor_enabled"
+    let vmsStatus = store.metrics.filter((metric) => {
+        return metric.id == "status"
     })[0].attributes.value
 
-    let mainNegativeContactorEnabled = store.metrics.filter((metric) => {
-        return metric.id == "main_negative_contactor_enabled"
-    })[0].attributes.value
+    console.log(readyToDrive)
 
-    let precharcheContactorEnabled = store.metrics.filter((metric) => {
-        return metric.id == "precharge_contactor_enabled"
-    })[0].attributes.value
-
-    if(inverterRelayEnabled && mainPositiveContactorEnabled && mainNegativeContactorEnabled){
+    if(vmsStatus != "failure" && readyToDrive){
         engineStatus.value = "ready"
-    } else if (precharcheContactorEnabled){
-        engineStatus.value = "starting"
-    } else if (!inverterRelayEnabled && !mainPositiveContactorEnabled && !mainNegativeContactorEnabled && !precharcheContactorEnabled){
+    } else if (vmsStatus != "failure" && !readyToDrive){
+        engineStatus.value = "warning"
+    } else if (vmsStatus == "failure"){
+        engineStatus.value = "error"
+    } else {
         engineStatus.value = "off"
     }
 

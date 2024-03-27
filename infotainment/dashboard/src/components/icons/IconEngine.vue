@@ -17,7 +17,7 @@ const props = defineProps(["engineStatus"])
 
 const statuses = {
     "off": "stroke-gray-500 fill-gray-500",
-    "starting": "stroke-amber-500 fill-amber-500",
+    "warning": "stroke-amber-500 fill-amber-500",
     "ready": "stroke-green-500 fill-green-500",
     "error": "stroke-red-500 fill-red-500"
 }

@@ -1,10 +1,7 @@
 <template>
   <div class="relative h-full w-full">
     <v-chart ref="gauge" class="chart absolute" :option="option" :id="props.id" />
-    <div class="absolute bottom-52 left-44 text-gray-500 text-4xl">{{ unit }}</div>
-    <div class="absolute bottom-0 left-2 w-full">
-      <TorqueBar ref="torqueBar" :torque="torque"></TorqueBar>
-    </div>
+    <div class="absolute bottom-8 left-44 text-gray-500 text-4xl">{{ unit }}</div>
   </div>
 </template>
 
@@ -14,7 +11,6 @@
   import VChart, { THEME_KEY } from "vue-echarts";
   import { CanvasRenderer } from 'echarts/renderers'
   import { ref, provide, } from "vue"
-  import TorqueBar from "../gauges/TorqueBar.vue"
 
   const props = defineProps(["metrics", "id"])
 
@@ -33,16 +29,8 @@
   let unit = "km/h";
   let torque = ref(0);
 
-  const getTorque = function(store) {
-    torque.value = store.metrics.filter((metric) => {
-        return metric.id == "em57_effective_torque"
-    })[0].attributes.value
-  }
-
   let serie = {
       type: 'gauge',
-      startAngle: 180,
-      endAngle: 0,
       min: 0,
       max: 240,
       splitNumber: 6,
@@ -59,9 +47,10 @@
         width: 24
       },
       pointer: {
-        show: false,
+        show: true,
       },
       axisLine: {
+        show: true,
         roundCap: false,
         color: "#eee",
         lineStyle: {
@@ -72,10 +61,10 @@
         }
       },
       axisTick: {
-        show: false
+        show: true
       },
       splitLine: {
-        show: false
+        show: true
       },
       axisLabel: {
         show: false
@@ -98,7 +87,7 @@
             fontSize: 100,
             fontWeight: 'bolder',
             color: '#eee',
-            padding: [70, 0, 0, 0]
+            padding: [440, 0, 0, 0]
           }
         }
       },
@@ -120,9 +109,6 @@
       }
       option.value.series = [serie]
     }
-
-    getTorque(state)
-    torqueBar.value.updateTorque(torque.value)
   })
 
   const option = ref({
