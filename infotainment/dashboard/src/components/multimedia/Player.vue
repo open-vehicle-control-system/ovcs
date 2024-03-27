@@ -2,20 +2,20 @@
     <div class="grid grid-rows-3 gap-4 h-full">
         <div class="grid grid-cols-3 row-span-2">
             <div class="inline pl-12 mt-8">
-                <img src="/images/tipik.png" />
+                <IconMusic class="h-32 stroke-gray-600 fill-gray-600"></IconMusic>
             </div>
-            <div class="inline col-span-2 p-4 ml-6">
-                <h3 class="text-3xl mt-6">Tipik</h3>
-                <p class="text-2xl">Green Day</p>
-                <p class="text-xl">Basket Case</p>
+            <div class="inline col-span-2 p-4 ml-6 text-gray-700">
+                <h3 class="text-3xl mt-6">No media</h3>
+                <p class="text-2xl">-</p>
+                <p class="text-xl">-</p>
             </div>
         </div>
 
         <div class="grid grid-cols-4 p-2">
-            <IconPrevious class="h-12 m-auto"></IconPrevious>
-            <IconPlay class="h-12 m-auto"></IconPlay>
-            <IconPause class="h-12 m-auto"></IconPause>
-            <IconNext class="h-12 m-auto"></IconNext>
+            <IconPrevious class="h-12 m-auto stroke-gray-700 fill-gray-700"></IconPrevious>
+            <IconPlay class="h-12 m-auto stroke-gray-700 fill-gray-700"></IconPlay>
+            <IconPause class="h-12 m-auto stroke-gray-700 fill-gray-700"></IconPause>
+            <IconNext class="h-12 m-auto stroke-gray-700 fill-gray-700"></IconNext>
         </div>
     </div>
 </template>
