@@ -5,7 +5,7 @@ defmodule VmsCore.Vehicle do
   alias Decimal, as: D
 
   @loop_sleep 10
-  @gear_shift_throttle_limit D.new("0.01")
+  @gear_shift_throttle_limit D.new("0.05")
 
   def start_link(args) do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)

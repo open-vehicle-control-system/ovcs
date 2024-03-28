@@ -11,7 +11,7 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
   @vms_alive_frame_name "vms_alive"
   @vms_torque_request_frame_name "vms_torque_request"
   @vms_status_frame_name "vms_status"
-  @max_rotation_per_minute 6000 # documented max rpm, on init the inverter is returning very high invalid values
+  @max_rotation_per_minute 10000
   @zero D.new(0)
   @drive_max_torque D.new(5) # TODO store in DB
   @reverse_max_torque D.new(-5)
@@ -105,7 +105,7 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
     } = signals
 
     rotation_per_minute = case D.gt?(rotation_per_minute, @max_rotation_per_minute) do
-      true  -> @zero
+      true  -> 0
       false -> rotation_per_minute
     end
     {:noreply, %{
