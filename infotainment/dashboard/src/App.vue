@@ -49,7 +49,7 @@ onBeforeUnmount(() => {
           <p  class="text-md text-center text-white">{{ currentDate }}</p>
         </div>
         <div class="row-span-6">
-          <VolumeControl></VolumeControl>
+          <!--<VolumeControl></VolumeControl>-->
         </div>
         <div class="p-3">
           <a :href="[ currentRouteName == '/launchpad' ? '/' : '/launchpad']" class="text-sm font-semibold inline-block align-bottom">
