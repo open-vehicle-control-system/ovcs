@@ -16,5 +16,17 @@ export const useMetricsStore = defineStore('metrics', {
         return "parking"
       }
     }
+  },
+  actions: {
+    getValueById(metricId) {
+      let metric = this.metrics.find((metric) => {
+        return metric.id == metricId
+      })
+      if(metric){
+        return metric.attributes.value
+      } else {
+        return undefined
+      }
+    }
   }
 })
