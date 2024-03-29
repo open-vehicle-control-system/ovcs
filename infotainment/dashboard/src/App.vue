@@ -25,8 +25,8 @@ let currentTime = ref("")
 let currentDate = ref("")
 
 function setCurrentTime(){
-  currentTime.value = new Date().toLocaleString("fr-BE", {timeStyle: "medium"});
-  currentDate.value = new Date().toLocaleString("fr-BE", {dateStyle: "medium"});
+  currentTime.value = new Date().toLocaleString("fr-BE", {timeStyle: "short"});
+  currentDate.value = new Date().toLocaleString("fr-BE", {dateStyle: "short"});
 }
 
 onBeforeMount(() => {
