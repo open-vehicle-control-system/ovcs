@@ -10,10 +10,7 @@ import {
   HomeIcon
 } from '@heroicons/vue/24/outline'
 
-import IconVolumeUp from './components/icons/IconVolumeUp.vue'
-import IconVolumeDown from './components/icons/IconVolumeDown.vue'
-
-import axios from 'axios'
+import VolumeControl from './components/multimedia/VolumeControl.vue'
 
 let router = useRouter()
 let currentRouteName = router.options.history.location
@@ -26,26 +23,15 @@ const navigation = [
 
 let currentTime = ref("")
 let currentDate = ref("")
-let volumeLevel = ref("")
 
 function setCurrentTime(){
   currentTime.value = new Date().toLocaleString("fr-BE", {timeStyle: "medium"});
   currentDate.value = new Date().toLocaleString("fr-BE", {dateStyle: "medium"});
 }
 
-const getVolumeLevel = function(){
-  axios.get(import.meta.env.VITE_BASE_URL + "/api/volume").then((response) => {
-    volumeLevel.value = response.data["volume"]
-  })
-}
-
 onBeforeMount(() => {
   setCurrentTime();
   setInterval(setCurrentTime, 1000);
-})
-
-onMounted(() => {
-  getVolumeLevel()
 })
 
 onBeforeUnmount(() => {
@@ -62,19 +48,8 @@ onBeforeUnmount(() => {
           <p class="text-2xl text-center text-white">{{ currentTime }}</p>
           <p  class="text-md text-center text-white">{{ currentDate }}</p>
         </div>
-        <div class="row-span-1 p-3">
-          <IconVolumeUp></IconVolumeUp>
-        </div>
-        <div class="row-span-3">
-          <div class="container p-8 h-60">
-            <div class="barcontainer h-60">
-              <div class="bar" id="volumeBar">
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="row-span-2 p-3 pt-10">
-          <IconVolumeDown></IconVolumeDown>
+        <div class="row-span-6">
+          <VolumeControl></VolumeControl>
         </div>
         <div class="p-3">
           <a :href="[ currentRouteName == '/launchpad' ? '/' : '/launchpad']" class="text-sm font-semibold inline-block align-bottom">
@@ -105,22 +80,5 @@ onBeforeUnmount(() => {
 
 main {
   height: 100vh;
-}
-
-.barcontainer{
-  background-color: #374151;
-  position: relative;
-  width: 24px;
-}
-
-.bar{
-  background-color: #06b6d4;
-  position: absolute;
-  bottom: 0;
-  width: 24px;
-  height: v-bind(volumeLevel);
-  box-sizing: border-box;
-  animation: grow 1.5s ease-out forwards;
-  transform-origin: bottom;
 }
 </style>
