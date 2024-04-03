@@ -1,10 +1,10 @@
 <template>
     <div class="grid grid-row-4 grid-cols-12 gap-8">
         <div class="row-span-2 col-span-2 bg-gray-800 opacity-90 font-extrabold rounded-3xl">
-            <GearSelector :store="store"></GearSelector>
+            <GearSelector></GearSelector>
         </div>
         <div class="row-span-2 col-span-5 bg-gray-800 opacity-90 rounded-3xl">
-            <RealTimeSpeedGauge :metrics="store"></RealTimeSpeedGauge>
+            <RealTimeSpeedGauge></RealTimeSpeedGauge>
         </div>
         <div class="row-span-2 col-span-5 bg-gray-800 opacity-90 rounded-3xl">
             <CarOverview :metrics="store"></CarOverview>
@@ -27,21 +27,10 @@ import Player from "../components/multimedia/Player.vue"
 
 import { onMounted } from 'vue'
 import { useMetricsStore } from "../stores/metrics.js"
-import { Socket } from 'phoenix'
 
 const store = useMetricsStore()
 
 onMounted(() => {
-  let dashboardSocket = new Socket(import.meta.env.VITE_BASE_WS+ "/sockets/dashboard", {})
-  dashboardSocket.connect()
-  let metricsChannel = dashboardSocket.channel("debug-metrics", {})
-
-  metricsChannel.on("updated", payload => {
-    store.$patch(payload)
-  })
-
-  metricsChannel.join()
-    .receive("ok", () => {})
 });
 
 </script>
