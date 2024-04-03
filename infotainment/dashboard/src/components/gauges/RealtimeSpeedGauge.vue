@@ -11,13 +11,32 @@
   import VChart, { THEME_KEY } from "vue-echarts";
   import { CanvasRenderer } from 'echarts/renderers'
   import { ref, provide, } from "vue"
+  import { infotainmentSocket } from '../../services/socket_service.js'
 
-  const props = defineProps(["metrics", "id"])
+  const props = defineProps(["id"])
+  const refreshIntervalms = 1000
 
   const gauge = ref("gauge")
   const torqueBar = ref("torqueBar")
+  let speed = ref(0)
+  let unit = ref("km/h");
 
-  const metrics = props.metrics
+  let speedChannel = infotainmentSocket.channel("speed", {interval: refreshIntervalms})
+
+  speedChannel.on("updated", payload => {
+    speed.value = payload["speed"]
+    unit.value  = payload["unit"]
+    serie = {
+      ...serie,
+      data: [
+        { value: speed.value }
+      ]
+    }
+    option.value.series = [serie]
+  })
+
+  speedChannel.join()
+    .receive("ok", () => {})
 
   use([
     GaugeChart,
@@ -25,9 +44,6 @@
   ])
 
   provide(THEME_KEY, "light");
-
-  let unit = "km/h";
-  let torque = ref(0);
 
   let serie = {
       type: 'gauge',
@@ -98,18 +114,6 @@
       ]
     }
 
-  metrics.$subscribe((_mutation, state) => {
-    let speed = state.metrics.find((metric) => metric.id === "speed")
-    if(speed && speed.attributes){
-      serie = {
-        ...serie,
-        data: [
-          { value: speed.attributes.value }
-        ]
-      }
-      option.value.series = [serie]
-    }
-  })
 
   const option = ref({
     series: [serie]});
