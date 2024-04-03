@@ -14,7 +14,7 @@ defmodule InfotainmentApiWeb.CarOverviewChannel do
   end
 
   def handle_info(:push_car_overview, socket) do
-    car_overview = VehicleStateManager.get_car_overview()
+    {:ok, car_overview} = VehicleStateManager.get_car_overview()
     push(socket, "updated", car_overview)
     {:noreply, socket}
   end
