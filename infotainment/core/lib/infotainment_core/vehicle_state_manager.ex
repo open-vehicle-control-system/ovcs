@@ -29,6 +29,38 @@ defmodule InfotainmentCore.VehicleStateManager do
   end
 
   @impl true
+  def handle_call(:get_speed, _from, state) do
+    speed_signal = state.signals["speed"]
+    case speed_signal do
+      nil ->
+        {:reply, %{speed: 0, unit: "km/h"}, state}
+      _ ->
+        {:reply, %{speed: speed_signal.attributes.value, unit: speed_signal.attributes.unit}, state}
+    end
+  end
+
+  @impl true
+  def handle_call(:get_car_overview, _from, state) do
+    metrics = %{
+      rear_left_door_open: convert_to_map(state.signals["rear_left_door_open"]),
+      front_left_door_open: convert_to_map(state.signals["front_left_door_open"]),
+      rear_right_door_open: convert_to_map(state.signals["rear_right_door_open"]),
+      front_right_door_open: convert_to_map(state.signals["front_right_door_open"]),
+      beam_active: convert_to_map(state.signals["beam_active"]),
+      trunk_door_open: convert_to_map(state.signals["trunk_door_open"]),
+      handbrake_engaged: convert_to_map(state.signals["handbrake_engaged"]),
+      ready_to_drive: convert_to_map(state.signals["ready_to_drive"]),
+      vms_status: convert_to_map(state.signals["vms_status"])
+    }
+    {:reply, metrics, state}
+  end
+
+  defp convert_to_map(nil), do: nil
+  defp convert_to_map(signal) do
+    %{value: signal.value, unit: signal.unit}
+  end
+
+  @impl true
   def handle_cast({:subscribe, client}, state) do
     {:noreply, %{state | clients: [client | state.clients]}}
   end
@@ -62,6 +94,14 @@ defmodule InfotainmentCore.VehicleStateManager do
       defp signals_only(signals) do
         signals
         |> Map.drop([:updated_at])
+      end
+
+      def get_speed() do
+        GenServer.call(__MODULE__, :get_speed)
+      end
+
+      def get_car_overview() do
+        GenServer.call(__MODULE__, :get_car_overview)
       end
 
       def signals() do
