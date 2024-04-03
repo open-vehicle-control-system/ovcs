@@ -48,17 +48,15 @@ import { onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useMetricsStore } from "../stores/metrics.js"
 import { systemInformationStore } from "../stores/system_information.js"
-import { Socket } from 'phoenix'
+import { infotainmentSocket } from '../services/socket_service.js'
 const { metrics } = storeToRefs(useMetricsStore())
 const { data } = storeToRefs(systemInformationStore())
 
 onMounted(() => {
   let store = useMetricsStore()
   let systemStore = systemInformationStore()
-  let dashboardSocket = new Socket(import.meta.env.VITE_BASE_WS+ "/sockets/dashboard", {})
-  dashboardSocket.connect()
-  let metricsChannel = dashboardSocket.channel("debug-metrics", {})
-  let systemInformationChannel = dashboardSocket.channel("system-information", {})
+  let metricsChannel = infotainmentSocket.channel("debug-metrics", {})
+  let systemInformationChannel = infotainmentSocket.channel("system-information", {})
 
   metricsChannel.on("updated", payload => {
     store.$patch(payload)
