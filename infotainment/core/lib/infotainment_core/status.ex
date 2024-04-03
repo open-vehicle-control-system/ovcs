@@ -70,6 +70,10 @@ defmodule InfotainmentCore.Status do
       last_gear_update_at: Time.utc_now()
     }}
   end
+  @impl true
+  def handle_call(:get_selected_gear, _from, state) do
+    {:reply, {:ok, state.selected_gear}, state}
+  end
 
   defp infotainment_status_frame_parameter_builder(data) do
     {:ok, data, data}
@@ -81,5 +85,9 @@ defmodule InfotainmentCore.Status do
 
   def request_gear(gear) do
     GenServer.call(__MODULE__, {:request_gear, gear})
+  end
+
+  def get_selected_gear() do
+    GenServer.call(__MODULE__, :get_selected_gear)
   end
 end
