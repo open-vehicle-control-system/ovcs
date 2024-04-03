@@ -42,21 +42,23 @@ defmodule InfotainmentCore.VehicleStateManager do
   @impl true
   def handle_call(:get_car_overview, _from, state) do
     metrics = %{
-      rear_left_door_open: convert_to_map(state.signals["rear_left_door_open"]),
-      front_left_door_open: convert_to_map(state.signals["front_left_door_open"]),
-      rear_right_door_open: convert_to_map(state.signals["rear_right_door_open"]),
-      front_right_door_open: convert_to_map(state.signals["front_right_door_open"]),
-      beam_active: convert_to_map(state.signals["beam_active"]),
-      trunk_door_open: convert_to_map(state.signals["trunk_door_open"]),
-      handbrake_engaged: convert_to_map(state.signals["handbrake_engaged"]),
-      ready_to_drive: convert_to_map(state.signals["ready_to_drive"]),
-      vms_status: convert_to_map(state.signals["vms_status"])
+      rear_left_door_open: convert_to_map(state.signals["rear_left_door_open"], false, nil),
+      front_left_door_open: convert_to_map(state.signals["front_left_door_open"], false, nil),
+      rear_right_door_open: convert_to_map(state.signals["rear_right_door_open"], false, nil),
+      front_right_door_open: convert_to_map(state.signals["front_right_door_open"], false, nil),
+      beam_active: convert_to_map(state.signals["beam_active"], false, nil),
+      trunk_door_open: convert_to_map(state.signals["trunk_door_open"], false, nil),
+      handbrake_engaged: convert_to_map(state.signals["handbrake_engaged"], false, nil),
+      ready_to_drive: convert_to_map(state.signals["ready_to_drive"], false, nil),
+      vms_status: convert_to_map(state.signals["vms_status"], "off", nil)
     }
-    {:reply, metrics, state}
+    {:reply, {:ok, metrics}, state}
   end
 
-  defp convert_to_map(nil), do: nil
-  defp convert_to_map(signal) do
+  defp convert_to_map(nil, default_value, default_unit) do
+    %{value: default_value, unit: default_unit}
+  end
+  defp convert_to_map(signal, _, _) do
     %{value: signal.value, unit: signal.unit}
   end
 
