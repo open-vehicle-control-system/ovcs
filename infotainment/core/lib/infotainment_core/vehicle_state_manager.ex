@@ -35,7 +35,7 @@ defmodule InfotainmentCore.VehicleStateManager do
       nil ->
         {:reply, %{speed: 0, unit: "km/h"}, state}
       _ ->
-        {:reply, %{speed: speed_signal.attributes.value, unit: speed_signal.attributes.unit}, state}
+        {:reply, %{speed: speed_signal.value, unit: speed_signal.unit}, state}
     end
   end
 
