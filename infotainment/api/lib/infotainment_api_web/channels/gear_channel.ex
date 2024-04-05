@@ -14,7 +14,7 @@ defmodule InfotainmentApiWeb.GearChannel do
   end
 
   def handle_info(:push_selected_gear, socket) do
-    {:ok, gear} = Status.get_selected_gear()
+    {:ok, gear} = Status.selected_gear()
     push(socket, "updated", %{gear: gear})
     {:noreply, socket}
   end

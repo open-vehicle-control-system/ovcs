@@ -48,10 +48,9 @@ defmodule InfotainmentCore.Status do
       :ok = Emitter.update(@network_name, @infotainment_status_frame_name, fn (data) ->
         %{data | @requested_gear_parameter => selected_gear}
       end)
-      {:noreply, %{state | requested_gear: selected_gear}}
-    else
-      {:noreply, state}
+      state = %{state | requested_gear: selected_gear}
     end
+    {:noreply, %{state | selected_gear: selected_gear}}
   end
 
   @impl true
@@ -71,7 +70,7 @@ defmodule InfotainmentCore.Status do
     }}
   end
   @impl true
-  def handle_call(:get_selected_gear, _from, state) do
+  def handle_call(:selected_gear, _from, state) do
     {:reply, {:ok, state.selected_gear}, state}
   end
 
@@ -87,7 +86,7 @@ defmodule InfotainmentCore.Status do
     GenServer.call(__MODULE__, {:request_gear, gear})
   end
 
-  def get_selected_gear() do
-    GenServer.call(__MODULE__, :get_selected_gear)
+  def selected_gear() do
+    GenServer.call(__MODULE__, :selected_gear)
   end
 end
