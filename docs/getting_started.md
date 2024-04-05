@@ -14,9 +14,9 @@
 
 ## Setting up your local directories with system images
 
-OVCS is being developed on Raspberry PI 4 and the base system image for the ECU module and the Infotainment module are available in a seperate repositories:
-* OVCS Infotainment system image: https://github.com/Spin42/ovcs_infotainment_system_rpi4
-* OVCS ECU system image: https://github.com/Spin42/ovcs_ecu_system_rpi4
+OVCS is being developed on Raspberry PI 4 and the base system image for the VMS module and the Infotainment module are available in a seperate repositories:
+* OVCS Infotainment system image: https://github.com/open-vehicle-control-system/ovcs_infotainment_system_rpi4
+* OVCS VMS system image: https://github.com/open-vehicle-control-system/ovcs_vms_system_rpi4
 
 These system images must be cloned in the parent folder of this repository.
 
@@ -26,7 +26,7 @@ We recommend the following directory structure:
 └── ovcs_base
     ├── ovcs
     ├── ovcs_infotainment_system_rpi4
-    └── ovcs_ecu_system_rpi4
+    └── ovcs_vms_system_rpi4
 ```
 
 In order to end up with this structure, run the following in a directoy of your choosing:
@@ -34,9 +34,9 @@ In order to end up with this structure, run the following in a directoy of your 
 ```
 mkdir ovcs_base
 cd ovcs_base
-git clone https://github.com/Spin42/ovcs.git
-git clone https://github.com/Spin42/ovcs_infotainment_system_rpi4.git
-git clone https://github.com/Spin42/ovcs_ecu_system_rpi4.git
+git clone https://github.com/open-vehicle-control-system/ovcs.git
+git clone https://github.com/open-vehicle-control-system/ovcs_infotainment_system_rpi4.git
+git clone https://github.com/open-vehicle-control-system/ovcs_vms_system_rpi4.git
 ```
 
 Next: [Applications](./applications.md)

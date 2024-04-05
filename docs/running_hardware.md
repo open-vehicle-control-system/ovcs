@@ -5,12 +5,12 @@ Currently supported hardware:
 | Component    | Hardware platform | Supported |
 |--------------|-------------------|----------------|
 | Infotainment | Raspberry Pi 4    |:white_check_mark:|
-| ECU          | Raspberry Pi 4    |:white_check_mark:|
+| VMS          | Raspberry Pi 4    |:white_check_mark:|
 | Controller   | Arduino R4 Minima |:white_check_mark:|
 
 ## Firmware code
 
-OVCS uses the [Nerves Project](https://github.com/nerves-project) to build the firmware of the ECU and Infotainment systems. In theory, any system supported by Nerves should be able to run our OVCS firmware code.
+OVCS uses the [Nerves Project](https://github.com/nerves-project) to build the firmware of the VMS and Infotainment systems. In theory, any system supported by Nerves should be able to run our OVCS firmware code.
 
 For the Controller, we use basic Arduino C++, which means you will need to upload it to your arduinos using the [Arduino IDE](https://www.arduino.cc/en/software) or [Platform.io](https://platformio.org/).
 
@@ -18,7 +18,7 @@ Our controllers don't use the internal CAN bus of the Arduino R4 Minima, to rema
 
 ## Configuring firmware targets
 
-By default, the Infotainment and ECU targets are set to our custom raspberry pi 4 systems. You can see an example of this by looking into the `mix.exs` file in `ovcs_infotainment_firmware`:
+By default, the Infotainment and VMS targets are set to our custom raspberry pi 4 systems. You can see an example of this by looking into the `mix.exs` file in `ovcs_infotainment_firmware`:
 
 ```elixir
 # ovcs_infotainment_firmware/mix.exs
@@ -59,9 +59,5 @@ OVCS provides some basic scripts to make your life easier.
 
 | Script                            | Purpose             |
 |-----------------------------------|---------------------|
-| ./build_ecu.sh | Builds the firmware for the ECU        |
-| ./build_infotainment | Packages the backend and frontend application for the Infotainment and builds the firmware  |
-| ./burn_ecu.sh | Burns the latest build of the ECU firware on the inserted SDCard |
-| ./burn_infotainment | Burns the latest build of the Infotainment firmware on the inserted SDCard |
-| ./upload_ecu_over_usb.sh | Uploads the latest ECU built firmware to the USB connected device |
-| ./upload_infotainment_over_usb.sh | Uploads the the latest Infotainment firmware to the USB connected device |
+| ./ovcs-cli build vms/infotainment | Builds the firmware for the VMS/Infotainment     |
+| ./ovcs-cli upload vms/infotainment |  Uploads the latest VMS/Infotainment built firmware to the USB connected device |

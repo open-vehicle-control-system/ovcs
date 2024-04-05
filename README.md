@@ -21,11 +21,7 @@ OVCS is provided as is an without any warranty. Use it at your own risk. It is n
     * `./ovcs-cli burn [vms|infotainment]` to burn the firmwares on a SD card
     * `./ovcs-cli upload [vms|infotainment] [optional: host|ip address]` to upload the firmwares on the target
 
-## Table of content
+## Doc
 
-1. [Getting started](./getting_started.md)
-2. [Applications](./applications.md)
-3. [Testing Can messages](./testing_can_messages.md)
-4. [Hardware architecture](./hardware_architecture.md)
-5. [Running on hardware](./running_hardware.md)
+You will find the documentation [here](https://github.com/open-vehicle-control-system/ovcs/blob/main/docs/README.md)
 
