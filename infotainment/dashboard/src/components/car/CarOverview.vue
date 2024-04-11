@@ -20,7 +20,7 @@ import Doors from "./Doors.vue"
 import { infotainmentSocket } from '../../services/socket_service.js'
 import axios from 'axios'
 
-const refreshIntervalms = 1000
+const refreshIntervalms = 70
 let engineStatus = ref("off")
 let trunkOpen = ref(false)
 let beamsActive = ref(false)
@@ -36,10 +36,13 @@ const leftDoors = [1, 2]
 const rightDoors = [1, 2]
 
 const overviewToRefs = function(overview) {
-    engineStatus.value = overview.vms_status.value
+    engineStatus.value = overview.ready_to_drive.value
     trunkOpen.value = overview.trunk_door_open.value
     beamsActive.value = overview.beam_active.value
     handbrakeEngaged.value = overview.handbrake_engaged.value
+
+    leftScore.value = 0
+    rightScore.value = 0
 
     leftDoorsStatuses.value = [
         overview.front_left_door_open.value,

@@ -9,12 +9,12 @@
   import { use } from 'echarts/core'
   import { GaugeChart } from 'echarts/charts'
   import VChart, { THEME_KEY } from "vue-echarts";
-  import { CanvasRenderer } from 'echarts/renderers'
+  import { SVGRenderer } from 'echarts/renderers'
   import { ref, provide, } from "vue"
   import { infotainmentSocket } from '../../services/socket_service.js'
 
   const props = defineProps(["id"])
-  const refreshIntervalms = 1000
+  const refreshIntervalms = 50
 
   const gauge = ref("gauge")
   const torqueBar = ref("torqueBar")
@@ -40,7 +40,7 @@
 
   use([
     GaugeChart,
-    CanvasRenderer
+    SVGRenderer
   ])
 
   provide(THEME_KEY, "light");
@@ -50,6 +50,7 @@
       min: 0,
       max: 240,
       splitNumber: 6,
+      animation: false,
       itemStyle: {
         color: '#4b19a7',
         shadowColor: 'rgba(75,25,167,0.45)',
@@ -94,7 +95,7 @@
         height: 40,
         borderRadius: 8,
         offsetCenter: [0, '-50%'],
-        valueAnimation: true,
+        valueAnimation: false,
         formatter: function (value) {
           return '{value|' + value.toFixed(0) + '}';
         },

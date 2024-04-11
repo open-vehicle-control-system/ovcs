@@ -1,12 +1,10 @@
 <template>
-        <img :src="[leftDoorsAssets[leftScore]]" class="w-1/3 text-center inline-block"/>
-        <img :src="[rightDoorsAssets[rightScore]]" class="w-1/3 text-center inline-block"/>
+        <img :src="leftDoorsAssets[props.leftScore]" class="w-1/3 text-center inline-block"/>
+        <img :src="rightDoorsAssets[props.rightScore]" class="w-1/3 text-center inline-block"/>
 </template>
 
 <script setup>
 const props = defineProps(["leftScore", "rightScore"])
-const leftScore = props.leftScore
-const rightScore = props.rightScore
 
 const leftDoorsAssets = {
     0: "/images/all_closed_left.png",
