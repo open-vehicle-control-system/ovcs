@@ -22,7 +22,8 @@ disable_splash=1
 # This, along with the Raspberry Pi "x" firmware is needed for the camera
 # to work. The Raspberry Pi "x" firmware is selected via the Buildroot
 # configuration. See Target packages->Hardware handling->Firmware.
-gpu_mem=192
+# gpu_mem=192
+total_mem=2048
 
 # Enable I2C and SPI
 dtparam=i2c_arm=on
@@ -37,14 +38,14 @@ dtoverlay=mcp2515,spi1-0=true,oscillator=8000000,interrupt=25
 dtparam=audio=on
 
 # Automatically load overlays for detected cameras
-camera_auto_detect=1
+# camera_auto_detect=1
 
 # Automatically load overlays for detected DSI displays
-display_auto_detect=1
+# display_auto_detect=1
 
 # Enable DRM VC4 V3D driver
 dtoverlay=vc4-kms-v3d
-max_framebuffers=2
+max_framebuffers=1
 
 # Disable compensation for displays with overscan
 disable_overscan=1
@@ -68,5 +69,5 @@ enable_uart=1
 # Raspberry Pi CM4-only settings
 
 # For the CM4 I/O board, USB is disabled by default. This enables it.
-dtoverlay=dwc2,dr_mode=host
+# dtoverlay=dwc2,dr_mode=host
 
