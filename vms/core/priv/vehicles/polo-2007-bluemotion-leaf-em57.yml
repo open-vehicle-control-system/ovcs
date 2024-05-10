@@ -237,6 +237,62 @@ can_networks:
             kind: integer
             value_start: 56
             value_length: 8
+      - name: charger_command
+        id: 0x1DC
+        frequency: 10
+        signals:
+          - name: discharge_power_limit
+            endianness: big
+            value_start: 0
+            value_length: 10
+            scale: "0.25"
+            unit: kW
+          - name: charge_power_limit
+            endianness: big
+            value_start: 10
+            value_length: 10
+            scale: "0.25"
+            unit: kW
+          - name: max_power_for_charger
+            endianness: big
+            value_start: 20
+            value_length: 10
+            scale: "0.1"
+            offset: -10
+            unit: kW
+          - name: power_status_filler
+            kind: static
+            value_start: 30
+            value_length: 2
+            value: 0x0001
+          - name: max_uprate_filler
+            kind: static
+            value_start: 32
+            value_length: 3
+            value: 0x0001
+          - name: code_condition_filler
+            kind: static
+            value_start: 35
+            value_length: 3
+            value: 0x0001
+          - name: code1_filler
+            kind: static
+            value_start: 38
+            value_length: 8
+            value: 0x0001
+          - name: code2_filler
+            kind: static
+            value_start: 46
+            value_length: 8
+            value: 0x0001
+          - name: counter
+            kind: integer
+            value_start: 54
+            value_length: 2
+          - name: crc
+            kind: integer
+            value_start: 56
+            value_length: 8
     received_frames:
       - name: inverter_status
         id: 0x1DA
@@ -286,7 +342,42 @@ can_networks:
             value_start: 32
             value_length: 8
             unit: C
-
+      - name: charger_status
+        id: 0x1DA
+        frequency: 10
+        signals:
+          - name: charge_power
+            endianness: big
+            value_start: 7
+            value_length: 9
+            scale: "0.1"
+            unit: kW
+          - name: ac_voltage
+            kind: enum
+            value_start: 27
+            value_length: 2
+            mapping:
+              0x00: 0
+              0x01: 110
+              0x02: 240
+              0x03: error
+            unit: V
+          - name: charging_state
+            kind: enum
+            value_start: 41
+            value_length: 6
+            mapping:
+              0x01: iddle_or_quick_charge
+              0x02: finished
+              0x04: charging_or_interrupted
+              0x07: iddle
+              0x0C: plugged_in_on_waiting_timer
+          - name: maximum_charge_power
+            endianness: big
+            scale: "0.1"
+            unit: kW
+            value_start: 47
+            value_length: 9
   polo_drive:
     bitrate: 500000
     emitted_frames:
@@ -441,3 +532,178 @@ can_networks:
               0x01: key_engaged
               0x87: contact_on
               0x8B: start_engine
+  orion_bms:
+    bitrate: 500000
+    emitted_frames:
+      - name: bms_requests
+        id: 0x6C1
+        frequency: 10
+        signals:
+          - name: ac_input_voltage
+            value_start: 0
+            value_length: 16
+            kind: integer
+          - name: counter
+            kind: integer
+            value_start: 16
+            value_length: 8
+    received_frames:
+      - name: bms_status_1
+        id: 0x6B0
+        frequency: 8
+        signals:
+          - name: pack_current
+            value_start: 0
+            value_length: 16
+            scale: "0.1"
+            unit: A
+          - name: pack_instant_voltage
+            value_start: 16
+            value_length: 16
+            scale: "0.1"
+            unit: V
+          - name: discharge_relay_enabled
+            value_start: 32
+            value_length: 1
+            kind: enum
+            mapping:
+              0x00: False
+              0x01: True
+          - name: charge_relay_enabled
+            value_start: 33
+            value_length: 1
+            kind: enum
+            mapping:
+              0x00: False
+              0x01: True
+          - name: charger_safety_relay_enabled
+            value_start: 34
+            value_length: 1
+            kind: enum
+            mapping:
+              0x00: False
+              0x01: True
+          - name: malfunction_relay_enabled
+            value_start: 35
+            value_length: 1
+            kind: enum
+            mapping:
+              0x00: False
+              0x01: True
+          - name: multipurpose_input_1_enabled
+            value_start: 36
+            value_length: 1
+            kind: enum
+            mapping:
+              0x00: False
+              0x01: True
+          - name: always_on_status_enabled
+            value_start: 37
+            value_length: 1
+            kind: enum
+            mapping:
+              0x00: False
+              0x01: True
+          - name: is_ready_status_enabled
+            value_start: 38
+            value_length: 1
+            kind: enum
+            mapping:
+              0x00: False
+              0x01: True
+          - name: is_charging_status_enabled
+            value_start: 39
+            value_length: 1
+            kind: enum
+            mapping:
+              0x00: False
+              0x01: True
+          - name: multipurpose_input_2_enabled
+            value_start: 40
+            value_length: 1
+            kind: enum
+            mapping:
+              0x00: False
+              0x01: True
+          - name: multipurpose_input_3_enabled
+            value_start: 41
+            value_length: 1
+            kind: enum
+            mapping:
+              0x00: False
+              0x01: True
+          - name: multipurpose_output_2_enabled
+            value_start: 43
+            value_length: 1
+            kind: enum
+            mapping:
+              0x00: False
+              0x01: True
+          - name: multipurpose_output_3_enabled
+            value_start: 44
+            value_length: 1
+            kind: enum
+            mapping:
+              0x00: False
+              0x01: True
+          - name: multipurpose_output_4_enabled
+            value_start: 45
+            value_length: 1
+            kind: enum
+            mapping:
+              0x00: False
+              0x01: True
+          - name: multipurpose_enable_status_enabled
+            value_start: 46
+            value_length: 1
+            kind: enum
+            mapping:
+              0x00: False
+              0x01: True
+          - name: multipurpose_output_1_enabled
+            value_start: 47
+            value_length: 1
+            kind: enum
+            mapping:
+              0x00: False
+              0x01: True
+          - name: charge_interlock_enabled
+            value_start: 48
+            value_length: 1
+            kind: enum
+            mapping:
+              0x00: False
+              0x01: True
+          - name: current_failsafe_enabled
+            value_start: 49
+            value_length: 1
+            kind: enum
+            mapping:
+              0x00: False
+              0x01: True
+          - name: voltage_failsafe_enabled
+            value_start: 50
+            value_length: 1
+            kind: enum
+            mapping:
+              0x00: False
+              0x01: True
+          - name: input_power_supply_failsafe_enabled
+            value_start: 51
+            value_length: 1
+            kind: enum
+            mapping:
+              0x00: False
+              0x01: True
+      - name: bms_status_2
+        id: 0x6B1
+        frequency: 8
+        signals:
+          - name: charge_current_limit
+            value_start: 0
+            value_length: 16
+            unit: kW
+          - name: discharge_current_limit
+            value_start: 16
+            value_length: 16
+            unit: kW
