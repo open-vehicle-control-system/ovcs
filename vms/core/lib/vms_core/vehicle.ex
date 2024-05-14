@@ -1,11 +1,12 @@
 defmodule VmsCore.Vehicle do
   use GenServer
   require Logger
-  alias VmsCore.{Inverter, BatteryManagementSystem, IgnitionLock, Controllers.ControlsController, Status}
+  alias VmsCore.{Inverter, BatteryManagementSystem, IgnitionLock, Controllers.ControlsController, Status, Charger}
   alias Decimal, as: D
 
   @loop_sleep 10
   @gear_shift_throttle_limit D.new("0.05")
+  @zero D.new(0)
 
   def start_link(args) do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
@@ -17,7 +18,9 @@ defmodule VmsCore.Vehicle do
     {:ok, %{
       ignition_started: false,
       selected_gear: "parking",
-      ready_to_drive?: false
+      ready_to_drive?: false,
+      allowed_discharge_power: @zero,
+      allowed_charge_power: @zero
     }}
   end
 
@@ -29,6 +32,7 @@ defmodule VmsCore.Vehicle do
       |> handle_gear()
       |> handle_throttle()
       |> handle_rotation_per_minute()
+      |> handle_charge()
     loop()
     {:noreply, state}
   end
@@ -82,6 +86,21 @@ defmodule VmsCore.Vehicle do
     end
   end
 
+  defp handle_charge(state) do
+    with  {:ok, ac_voltage}                                    <- Charger.ac_voltage(),
+          :ok                                                  <- BatteryManagementSystem.ac_input_voltage(ac_voltage),
+          {:ok, allowed_charge_power, allowed_discharge_power} <- BatteryManagementSystem.allowed_power(),
+          :ok                                                  <- Charger.maximum_power_for_charger(allowed_charge_power)
+    do
+      %{state |
+        allowed_charge_power: allowed_charge_power,
+        allowed_discharge_power: allowed_discharge_power
+      }
+    else
+      :unexpected -> :unexpected
+    end
+  end
+
   defp handle_ready_to_drive(state) do
     ready_to_drive? = ready_to_drive?(state)
     case state.ready_to_drive? == ready_to_drive? do
@@ -99,7 +118,7 @@ defmodule VmsCore.Vehicle do
 
   defp apply_throttle(state) do
     with {:ok, throttle} <- ControlsController.throttle(),
-         :ok             <- Inverter.throttle(throttle, state.selected_gear)
+         :ok             <- Inverter.throttle(throttle, state.selected_gear, state.allowed_discharge_power)
     do
       state
     else

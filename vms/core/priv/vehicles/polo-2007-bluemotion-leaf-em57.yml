@@ -242,18 +242,22 @@ can_networks:
         frequency: 10
         signals:
           - name: discharge_power_limit
+            kind: static
             endianness: big
             value_start: 0
             value_length: 10
             scale: "0.25"
             unit: kW
+            value: 0x0000
           - name: charge_power_limit
+            kind: static
             endianness: big
             value_start: 10
             value_length: 10
             scale: "0.25"
             unit: kW
-          - name: max_power_for_charger
+            value: 0x0000
+          - name: maximum_power_for_charger
             endianness: big
             value_start: 20
             value_length: 10
@@ -535,7 +539,7 @@ can_networks:
   orion_bms:
     bitrate: 500000
     emitted_frames:
-      - name: bms_requests
+      - name: bms_command
         id: 0x6C1
         frequency: 10
         signals:
@@ -545,7 +549,7 @@ can_networks:
             kind: integer
           - name: counter
             kind: integer
-            value_start: 16
+            value_start: 8
             value_length: 8
     received_frames:
       - name: bms_status_1
@@ -699,11 +703,11 @@ can_networks:
         id: 0x6B1
         frequency: 8
         signals:
-          - name: charge_current_limit
+          - name: charge_max_power
             value_start: 0
             value_length: 16
             unit: kW
-          - name: discharge_current_limit
+          - name: discharge_max_power
             value_start: 16
             value_length: 16
             unit: kW

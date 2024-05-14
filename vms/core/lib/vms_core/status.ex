@@ -25,6 +25,7 @@ defmodule VmsCore.Status do
     :ok = ReceivedFrameWatcher.subscribe(@network_name, ["contactors_status", "vms_relays_status", "car_controls_status"], self())
     :ok = Cantastic.Receiver.subscribe(self(), :polo_drive, @key_status_frame_name)
     :ok = ReceivedFrameWatcher.subscribe(:polo_drive, "abs_status", self())
+    :ok = ReceivedFrameWatcher.subscribe(:orion_bms, "bms_status_1", self())
     enable_watchers()
     {:ok, %{
       status: "ok",
@@ -33,7 +34,8 @@ defmodule VmsCore.Status do
         "contactors_status"   => "Contactors Ctrl",
         "vms_relays_status"   => "VMS Ctrl",
         "car_controls_status" => "Controls Ctrl",
-        "abs_status"          => "ABS Ctrl"
+        "abs_status"          => "ABS Ctrl",
+        "bms_status_1"        => "BMS Ctrl"
       }
     }}
   end
@@ -62,6 +64,7 @@ defmodule VmsCore.Status do
   @impl true
   def handle_info(:enable_watchers, state) do
     :ok = ReceivedFrameWatcher.enable(@network_name, ["contactors_status", "vms_relays_status", "car_controls_status"])
+    :ok = ReceivedFrameWatcher.enable(:orion_bms, ["bms_status_1"])
     {:noreply, state}
   end
 
