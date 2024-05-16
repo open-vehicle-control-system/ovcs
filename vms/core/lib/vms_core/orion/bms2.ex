@@ -16,8 +16,8 @@ defmodule VmsCore.Orion.Bms2 do
     :ok = Receiver.subscribe(self(), @network_name, [@bms_status_1_frame_name, @bms_status_2_frame_name])
     :ok = Emitter.enable(@network_name, @bms_command_frame_name)
     {:ok, %{
-      charge_current_limit: @zero,
-      discharge_current_limit: @zero,
+      charge_max_power: @zero,
+      discharge_max_power: @zero,
       pack_current: @zero,
       pack_instant_voltage: @zero,
       discharge_relay_enabled: false,
@@ -62,13 +62,13 @@ defmodule VmsCore.Orion.Bms2 do
   @impl true
   def handle_info({:handle_frame, %Frame{name: @bms_status_2_frame_name, signals: signals}}, state) do
     %{
-      "charge_current_limit"    => %Signal{value: charge_current_limit},
-      "discharge_current_limit" => %Signal{value: discharge_current_limit}
+      "charge_max_power"    => %Signal{value: charge_max_power},
+      "discharge_max_power" => %Signal{value: discharge_max_power}
     } = signals
     {:noreply, %{
       state |
-        charge_current_limit: charge_current_limit,
-        discharge_current_limit: discharge_current_limit
+        charge_max_power: charge_max_power,
+        discharge_max_power: discharge_max_power
       }
     }
   end
@@ -80,15 +80,14 @@ defmodule VmsCore.Orion.Bms2 do
 
   @impl true
   def handle_call(:allowed_power, _from, state) do
-    {:reply, {:ok, state.charge_current_limit, state.discharge_current_limit}, state}
+    {:reply, {:ok, state.charge_max_power, state.discharge_max_power}, state}
   end
 
   defp init_emitters() do
     :ok = Emitter.configure(@network_name, @bms_command_frame_name, %{
       parameters_builder_function: &bms_command_frame_parameters_builder/1,
       initial_data: %{
-        "ac_input_voltage" => 0,
-        "counter" => 0
+        "ac_input_voltage" => 0
       }
     })
     :ok
@@ -97,10 +96,8 @@ defmodule VmsCore.Orion.Bms2 do
   def bms_command_frame_parameters_builder(data) do
     counter = data["counter"]
     parameters = %{
-      "ac_input_voltage" => data["ac_input_voltage"],
-      "counter" => Util.counter(counter),
+      "ac_input_voltage" => data["ac_input_voltage"]
     }
-    data = %{data | "counter" => Util.counter(counter + 1)}
     {:ok, parameters, data}
   end
 
