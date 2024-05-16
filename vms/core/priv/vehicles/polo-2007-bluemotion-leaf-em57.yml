@@ -347,7 +347,7 @@ can_networks:
             value_length: 8
             unit: C
       - name: charger_status
-        id: 0x1DA
+        id: 0x390
         frequency: 10
         signals:
           - name: charge_power

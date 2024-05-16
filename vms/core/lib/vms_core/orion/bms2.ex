@@ -1,6 +1,5 @@
 defmodule VmsCore.Orion.Bms2 do
   use GenServer
-  alias VmsCore.Orion.Util
   alias Cantastic.{Emitter, Receiver, Frame, Signal}
   alias Decimal, as: D
 
@@ -94,7 +93,6 @@ defmodule VmsCore.Orion.Bms2 do
   end
 
   def bms_command_frame_parameters_builder(data) do
-    counter = data["counter"]
     parameters = %{
       "ac_input_voltage" => data["ac_input_voltage"]
     }
