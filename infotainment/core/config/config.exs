@@ -23,7 +23,7 @@ vehicle = System.get_env("VEHICLE") || "polo-2007-bluemotion-leaf-em57"
 config :infotainment_core, :vehicle, vehicle
 
 config :cantastic,
-  can_networks: (System.get_env("CAN_NETWORKS") || "ovcs:vcan0,polo_drive:vcan2"),
+  can_networks: (System.get_env("CAN_NETWORKS") || "ovcs:vcan0,polo_drive:vcan1"),
   setup_can_interfaces: (System.get_env("SETUP_CAN_INTERFACES") == "true" || false),
   otp_app: :infotainment_core,
   priv_can_config_path: "vehicles/#{vehicle}.yml"
