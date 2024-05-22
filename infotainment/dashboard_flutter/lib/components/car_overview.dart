@@ -1,44 +1,51 @@
+import 'package:dashboard_flutter/components/car_view.dart';
+import 'package:dashboard_flutter/components/icons/icons.dart';
+import 'package:dashboard_flutter/services/socket_service.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/svg.dart';
+import 'package:phoenix_socket/phoenix_socket.dart';
 
-const String handBrakeIconPath = "assets/images/handbrake.svg";
-final Widget handBrakeIcon = SvgPicture.asset(
-  handBrakeIconPath,
-  colorFilter: const ColorFilter.mode(Color(0XFF64748b), BlendMode.srcIn),
-  height: 60,
-  width: 60,
-  semanticsLabel: 'Handbrake'
-);
-
-const String beamsIconPath = "assets/images/beams.svg";
-final Widget beamsIcon = SvgPicture.asset(
-  beamsIconPath,
-  colorFilter: const ColorFilter.mode(Color(0XFF64748b), BlendMode.srcIn),
-  height: 60,
-  width: 60,
-  semanticsLabel: 'Beams'
-);
-
-const String trunkPath = "assets/images/trunk.svg";
-final Widget trunkIcon = SvgPicture.asset(
-  trunkPath,
-  colorFilter: const ColorFilter.mode(Color(0XFF64748b), BlendMode.srcIn),
-  height: 60,
-  width: 60,
-  semanticsLabel: 'Trunk'
-);
-
-const String enginePath = "assets/images/engine.svg";
-final Widget engineIcon = SvgPicture.asset(
-  enginePath,
-  colorFilter: const ColorFilter.mode(Color(0XFF64748b), BlendMode.srcIn),
-  height: 60,
-  width: 60,
-  semanticsLabel: 'Trunk'
-);
-
-class CarOverview extends StatelessWidget {
+class CarOverview extends StatefulWidget {
   const CarOverview({super.key});
+
+  @override
+  State<CarOverview> createState() => _CarOverviewState();
+}
+
+class _CarOverviewState extends State<CarOverview> {
+
+  PhoenixChannel? _channel;
+
+  Widget handBrakeIcon = OvcsIcons.handBrakeOffSvg;
+  Widget beamsIcon = OvcsIcons.beamsOffSvg;
+  Widget trunkIcon = OvcsIcons.trunkClosedSvg;
+  Widget engineIcon = OvcsIcons.engineOffSvg;
+
+  AssetImage carLeftView = CarView.allClosedLeft;
+  AssetImage carRightView = CarView.allClosedRight;
+
+  _CarOverviewState() {
+    PhoenixSocket socket = SocketService.socket;
+    _channel = socket.addChannel(topic: 'car-overview', parameters: {"interval": 500});
+
+    socket.openStream.listen((event) {
+      setState(() {
+        _channel?.join();
+      });
+    });
+
+    _channel?.messages.listen( (event){
+      if(event.topic == "car-overview" && event.payload!.containsKey("vms_status")){
+        setState(() {
+          handBrakeIcon = OvcsIcons.toggleHandrakeIcon(event);
+          beamsIcon = OvcsIcons.toggleBeamsIcon(event);
+          trunkIcon = OvcsIcons.toggleTrunkIcon(event);
+          engineIcon = OvcsIcons.toggleEngineIcon(event);
+          carLeftView = CarView.updateLeftView(event);
+          carRightView = CarView.updateRightView(event);
+        },);
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context){
@@ -52,20 +59,24 @@ class CarOverview extends StatelessWidget {
         borderRadius: BorderRadius.circular(30)
       ),
       child: Column(children: [
-        const Expanded(
+         Expanded(
           flex: 8,
           child: Row(
             children: [
               Expanded(
                 child:
                   Image(
-                    alignment: Alignment(1.0, 0.0),
-                    image: AssetImage("assets/images/all_closed_left.png"))),
+                    alignment: const Alignment(1.0, 0.0),
+                    image: carLeftView
+                  )
+                ),
               Expanded(
                 child:
                   Image(
-                    alignment: Alignment(-1.0, 0.0),
-                    image: AssetImage("assets/images/all_closed_right.png")))
+                    alignment: const Alignment(-1.0, 0.0),
+                    image: carRightView
+                  )
+                )
             ]
           )
         ),
