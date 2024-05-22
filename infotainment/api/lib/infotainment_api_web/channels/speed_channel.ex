@@ -8,7 +8,6 @@ defmodule InfotainmentApiWeb.SpeedChannel do
 
   def join("speed", payload, socket) do
     send(self(), :push_speed)
-    Logger.debug("Joined speed")
     {:ok, timer} = :timer.send_interval(payload["interval"], :push_speed)
     socket = %{socket | assigns: %{ timer: timer}}
     {:ok, socket}
@@ -16,7 +15,6 @@ defmodule InfotainmentApiWeb.SpeedChannel do
 
   def handle_info(:push_speed, socket) do
     speed_metric = VehicleStateManager.get_speed()
-    Logger.debug("Speed is #{speed_metric.speed}")
     push(socket, "updated", %{speed: speed_metric.speed, unit: speed_metric.unit})
     {:noreply, socket}
   end
