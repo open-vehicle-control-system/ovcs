@@ -1,7 +1,48 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
-class SideBar extends StatelessWidget{
+
+String getTime() {
+  String hours = DateTime.now().hour.toString().padLeft(2, '0');
+  String minutes = DateTime.now().minute.toString().padLeft(2, '0');
+  String seconds = DateTime.now().second.toString().padLeft(2, '0');
+  String currentTime = '$hours:$minutes:$seconds';
+  return currentTime;
+}
+
+String getDate() {
+  String day = DateTime.now().day.toString().padLeft(2, '0');
+  String month = DateTime.now().month.toString().padLeft(2, '0');
+  String year = DateTime.now().year.toString();
+  String currentDate = '$day/$month/$year';
+  return currentDate;
+}
+
+class SideBar extends StatefulWidget {
   const SideBar({super.key});
+
+  @override
+  State<SideBar> createState() => _SideBarState();
+}
+
+class _SideBarState extends State<SideBar> {
+  String timeVar = getTime();
+  String dateVar = getDate();
+  late Timer _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 1), _incrementCounter);
+  }
+
+  void _incrementCounter(Timer timer) {
+    setState(() {
+      timeVar = getTime();
+      dateVar = getDate();
+    });
+  }
 
   @override
   Widget build(BuildContext context){
@@ -12,10 +53,10 @@ class SideBar extends StatelessWidget{
           children: [
             Container(
               padding: const EdgeInsets.all(20.0) ,
-              child: const Column(
+              child: Column(
                 children: [
-                  Text("13:50", style: TextStyle(fontSize: 16, color: Colors.white, decoration: TextDecoration.none, fontWeight: FontWeight.w400),),
-                  Text("14/05/2024", style: TextStyle(fontSize: 16, color: Colors.white, decoration: TextDecoration.none, fontWeight: FontWeight.w400))
+                  Text(timeVar, style: const TextStyle(fontSize: 16, color: Colors.white, decoration: TextDecoration.none, fontWeight: FontWeight.w400),),
+                  Text(dateVar, style: const TextStyle(fontSize: 16, color: Colors.white, decoration: TextDecoration.none, fontWeight: FontWeight.w400))
                 ]
               )
             ),
