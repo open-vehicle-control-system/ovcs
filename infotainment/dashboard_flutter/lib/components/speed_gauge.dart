@@ -1,10 +1,7 @@
-
+import 'package:dashboard_flutter/services/socket_service.dart';
 import 'package:flutter/material.dart';
-import 'dart:async';
-import 'package:flutter/foundation.dart';
-import 'package:stream_channel/stream_channel.dart';
-import 'package:syncfusion_flutter_gauges/gauges.dart';
 import 'package:phoenix_socket/phoenix_socket.dart';
+import 'package:syncfusion_flutter_gauges/gauges.dart';
 
 class SpeedGauge extends StatefulWidget {
   const SpeedGauge({super.key});
@@ -15,15 +12,28 @@ class SpeedGauge extends StatefulWidget {
 
 class _SpeedGaugeState extends State<SpeedGauge> {
 
-  int currentSpeed = 0;
+  double currentSpeed = 0.0;
+  String unit = "km/h";
+
+  PhoenixChannel? _channel;
 
   _SpeedGaugeState() {
-    final channel = WebSocketChannel.connect(
-      Uri.parse("ws://127.0.0.1:4001/dashboard"),
-    );
+    PhoenixSocket socket = SocketService.socket;
+    _channel = socket.addChannel(topic: 'speed', parameters: {"interval": 50});
 
-    channel.stream.listen( (message) {
-      print("received message: $message");
+    socket.openStream.listen((event) {
+      setState(() {
+        _channel?.join();
+      });
+    });
+
+    _channel?.messages.listen( (event){
+      if(event.topic == "speed" && event.payload!.containsKey("speed")){
+        setState(() {
+          currentSpeed = double.parse(event.payload?["speed"]);
+          unit = event.payload?["unit"];
+        });
+      }
     });
   }
 
@@ -63,7 +73,7 @@ class _SpeedGaugeState extends State<SpeedGauge> {
               pointers: <GaugePointer>[
                 RangePointer(
                     width: 30,
-                    value: currentSpeed.toDouble(),
+                    value: currentSpeed,
                     gradient: const SweepGradient(colors: <Color>[
                       Color(0xFF8b5cf6),
                       Color(0xFF7c3aed),
@@ -83,7 +93,7 @@ class _SpeedGaugeState extends State<SpeedGauge> {
               annotations: <GaugeAnnotation>[
                 GaugeAnnotation(
                     verticalAlignment: GaugeAlignment.center,
-                    widget: Text(currentSpeed.toString(),
+                    widget: Text(currentSpeed.toInt().toString(),
                           style: const TextStyle(
                               fontSize: 100,
                               fontWeight: FontWeight.bold,
@@ -94,10 +104,10 @@ class _SpeedGaugeState extends State<SpeedGauge> {
                     angle: 90,
                     positionFactor: 0
                   ),
-                  const GaugeAnnotation(
+                  GaugeAnnotation(
                     verticalAlignment: GaugeAlignment.near,
-                    widget: Text("km/h",
-                      style: TextStyle(
+                    widget: Text(unit,
+                      style: const TextStyle(
                         fontSize: 30,
                         fontWeight: FontWeight.bold,
                         color: Colors.grey,
