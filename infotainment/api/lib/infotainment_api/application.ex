@@ -18,8 +18,7 @@ defmodule InfotainmentApi.Application do
       # Start a worker by calling: InfotainmentApi.Worker.start_link(arg)
       # {InfotainmentApi.Worker, arg},
       # Start to serve requests, typically the last entry
-      InfotainmentApiWeb.Endpoint,
-      {InfotainmentApi.SignalDispatcher, []}
+      InfotainmentApiWeb.Endpoint
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html

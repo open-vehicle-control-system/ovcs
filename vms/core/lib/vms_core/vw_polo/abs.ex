@@ -1,5 +1,6 @@
 defmodule VmsCore.VwPolo.Abs do
   use GenServer
+  alias Decimal, as: D
 
   require Logger
   alias Cantastic.{Frame, Signal}
@@ -7,12 +8,13 @@ defmodule VmsCore.VwPolo.Abs do
   @network_name :polo_drive
 
   @abs_status_frame_name "abs_status"
+  @zero D.new(0)
 
   @impl true
   def init(_) do
     :ok = Cantastic.Receiver.subscribe(self(), @network_name, @abs_status_frame_name)
     {:ok, %{
-      speed: 0
+      speed: @zero
     }}
   end
 
