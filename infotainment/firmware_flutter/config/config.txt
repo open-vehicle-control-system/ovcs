@@ -30,9 +30,7 @@ dtparam=i2c_arm=on
 dtparam=spi=on
 
 dtoverlay=spi0-2cs
-dtoverlay=spi1-1cs
 dtoverlay=mcp2515-can0,oscillator=8000000,interrupt=22
-dtoverlay=mcp2515,spi1-0=true,oscillator=8000000,interrupt=25
 
 # Enable audio (loads snd_bcm3825)
 dtparam=audio=on

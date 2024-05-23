@@ -115,7 +115,7 @@ config :infotainment_api,
 # Configures the endpoint
 config :infotainment_api, InfotainmentApiWeb.Endpoint,
   url: [host: "localhost"],
-  http: [port: 4000],
+  http: [port: 4001],
   secret_key_base: System.get_env("SECRET_KEY_BASE"),
   check_origin: false,
   # Start the server since we're running in a release instead of through `mix`
@@ -144,7 +144,7 @@ vehicle = System.get_env("VEHICLE") || "polo-2007-bluemotion-leaf-em57"
 config :infotainment_core, :vehicle, vehicle
 
 config :cantastic,
-  can_networks: "ovcs:can0,polo_drive:can1",
+  can_networks: "ovcs:can0",
   setup_can_interfaces: true,
   otp_app: :infotainment_core,
   priv_can_config_path: "vehicles/#{vehicle}.yml"
