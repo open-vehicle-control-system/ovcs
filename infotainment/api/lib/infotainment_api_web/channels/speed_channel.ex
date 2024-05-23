@@ -2,7 +2,7 @@ defmodule InfotainmentApiWeb.SpeedChannel do
   use Phoenix.Channel
   require Logger
 
-  alias InfotainmentCore.VehicleStateManager
+  alias InfotainmentCore.Status
 
   intercept ["update"]
 
@@ -14,8 +14,8 @@ defmodule InfotainmentApiWeb.SpeedChannel do
   end
 
   def handle_info(:push_speed, socket) do
-    speed_metric = VehicleStateManager.get_speed()
-    push(socket, "updated", %{speed: speed_metric.speed, unit: speed_metric.unit})
+    {:ok, speed} = Status.speed()
+    push(socket, "updated", %{speed: speed})
     {:noreply, socket}
   end
 
