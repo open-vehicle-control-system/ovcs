@@ -31,7 +31,6 @@ class _SpeedGaugeState extends State<SpeedGauge> {
       if(event.topic == "speed" && event.payload!.containsKey("speed")){
         setState(() {
           currentSpeed = double.parse(event.payload?["speed"]);
-          unit = event.payload?["unit"];
         });
       }
     });
