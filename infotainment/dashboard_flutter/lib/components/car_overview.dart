@@ -51,7 +51,7 @@ class _CarOverviewState extends State<CarOverview> {
   Widget build(BuildContext context){
     return Container(
       width: MediaQuery.of(context).size.width * 0.37,
-      height: MediaQuery.of(context).size.width * 0.32,
+      height: MediaQuery.of(context).size.width * 0.38,
       margin: const EdgeInsets.all(10.0),
       padding: const EdgeInsets.all(20.0),
       decoration: BoxDecoration(

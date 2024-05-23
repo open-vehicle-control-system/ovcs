@@ -40,7 +40,7 @@ class _SpeedGaugeState extends State<SpeedGauge> {
   @override
   Widget build(BuildContext context){
     return Container(
-      height: MediaQuery.of(context).size.width * 0.32,
+      height: MediaQuery.of(context).size.width * 0.38,
       width: MediaQuery.of(context).size.width * 0.37,
       margin: const EdgeInsets.all(10.0),
       padding: const EdgeInsets.only(left: 20.0, right: 20.0, top: 30.0),
