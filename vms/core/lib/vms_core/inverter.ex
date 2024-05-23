@@ -4,7 +4,7 @@ defmodule VmsCore.Inverter do
   alias VmsCore.NissanLeaf.Em57
   alias VmsCore.VwPolo
 
-  defdelegate throttle(percentage_torque, selected_gear), to: Em57.Inverter
+  defdelegate throttle(percentage_torque, selected_gear, allowed_discharge_power), to: Em57.Inverter
   defdelegate inverter_state(), to: Em57.Inverter
   defdelegate rotation_per_minute(), to: Em57.Inverter
 

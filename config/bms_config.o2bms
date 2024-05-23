@@ -1,0 +1,875 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<java version="1.8.0_411" class="java.beans.XMLDecoder">
+ <object class="bmsapp.DefaultProfile" id="DefaultProfile0">
+  <void property="balanceDelay">
+   <int>80</int>
+  </void>
+  <void property="balanceDeltaVoltage">
+   <int>100</int>
+  </void>
+  <void property="balanceDuration">
+   <int>1200</int>
+  </void>
+  <void property="balanceVoltage">
+   <int>39000</int>
+  </void>
+  <void property="batteryTypeId">
+   <int>1400</int>
+  </void>
+  <void property="bmsSettings1">
+   <int>288</int>
+  </void>
+  <void property="canbus2Frequency">
+   <int>3</int>
+  </void>
+  <void property="canbusFrequency">
+   <int>2</int>
+  </void>
+  <void property="captestHighCellvTolerance">
+   <int>750</int>
+  </void>
+  <void property="captestLowCellvTolerance">
+   <int>750</int>
+  </void>
+  <void property="cclTemperatureTable">
+   <void index="7">
+    <double>42.0</double>
+   </void>
+   <void index="8">
+    <double>87.0</double>
+   </void>
+   <void index="9">
+    <double>132.0</double>
+   </void>
+   <void index="10">
+    <double>132.0</double>
+   </void>
+   <void index="11">
+    <double>132.0</double>
+   </void>
+   <void index="12">
+    <double>132.0</double>
+   </void>
+   <void index="13">
+    <double>132.0</double>
+   </void>
+   <void index="14">
+    <double>132.0</double>
+   </void>
+   <void index="15">
+    <double>132.0</double>
+   </void>
+   <void index="16">
+    <double>132.0</double>
+   </void>
+   <void index="17">
+    <double>102.0</double>
+   </void>
+   <void index="18">
+    <double>72.0</double>
+   </void>
+   <void index="19">
+    <double>42.0</double>
+   </void>
+   <void index="20">
+    <double>12.0</double>
+   </void>
+  </void>
+  <void property="chargeRelayCurrentRestoreDelay">
+   <int>1</int>
+  </void>
+  <void property="chargeRelayVoltageRestoreDelay">
+   <int>1</int>
+  </void>
+  <void property="chargedSOC">
+   <int>95</int>
+  </void>
+  <void property="currentSensorDivider1">
+   <int>2184</int>
+  </void>
+  <void property="currentSensorDivider2">
+   <int>327</int>
+  </void>
+  <void property="currentSensorMaxAmps">
+   <int>6000</int>
+  </void>
+  <void property="currentSensorMinAmps">
+   <int>8</int>
+  </void>
+  <void property="currentSensorSelected">
+   <int>2</int>
+  </void>
+  <void property="currentSensorSwitchChan">
+   <int>1638</int>
+  </void>
+  <void property="currentSensorType">
+   <int>3</int>
+  </void>
+  <void id="BmsProfile$ProfileCustomFlagArray0" property="customFlags">
+   <void id="BmsProfile$ProfileCustomFlag0" index="0">
+    <void property="typeMatrix">
+     <void index="0">
+      <int>10</int>
+     </void>
+     <void index="1">
+      <int>15</int>
+     </void>
+     <void index="2">
+      <int>14</int>
+     </void>
+     <void index="3">
+      <int>16</int>
+     </void>
+    </void>
+   </void>
+  </void>
+  <void id="BmsProfile$ProfileCustomMessageArray0" property="customMessages">
+   <void id="BmsProfile$ProfileCustomMessage0" index="0">
+    <void property="flagMatrix">
+     <void index="0">
+      <int>132</int>
+     </void>
+     <void index="1">
+      <int>68</int>
+     </void>
+     <void index="2">
+      <int>132</int>
+     </void>
+     <void index="3">
+      <int>68</int>
+     </void>
+     <void index="4">
+      <int>64</int>
+     </void>
+     <void index="5">
+      <int>128</int>
+     </void>
+     <void index="7">
+      <int>64</int>
+     </void>
+    </void>
+    <void property="id">
+     <int>1712</int>
+    </void>
+    <void property="length">
+     <int>8</int>
+    </void>
+    <void property="typeMatrix">
+     <void index="0">
+      <int>12</int>
+     </void>
+     <void index="2">
+      <int>13</int>
+     </void>
+     <void index="4">
+      <int>15</int>
+     </void>
+     <void index="5">
+      <int>4</int>
+     </void>
+     <void index="7">
+      <int>3</int>
+     </void>
+    </void>
+   </void>
+   <void id="BmsProfile$ProfileCustomMessage1" index="1">
+    <void property="flagMatrix">
+     <void index="0">
+      <int>128</int>
+     </void>
+     <void index="1">
+      <int>128</int>
+     </void>
+    </void>
+    <void property="frequency">
+     <int>12</int>
+    </void>
+    <void property="length">
+     <int>8</int>
+    </void>
+    <void property="messageFlags">
+     <int>192</int>
+    </void>
+    <void property="offMatrix">
+     <void index="7">
+      <int>1721</int>
+     </void>
+    </void>
+    <void property="typeMatrix">
+     <void index="0">
+      <int>11</int>
+     </void>
+     <void index="2">
+      <int>10</int>
+     </void>
+     <void index="4">
+      <int>40</int>
+     </void>
+     <void index="5">
+      <int>41</int>
+     </void>
+     <void index="7">
+      <int>2</int>
+     </void>
+    </void>
+   </void>
+   <void id="BmsProfile$ProfileCustomMessage2" index="2">
+    <void property="flagMatrix">
+     <void index="0">
+      <int>132</int>
+     </void>
+     <void index="1">
+      <int>68</int>
+     </void>
+     <void index="2">
+      <int>132</int>
+     </void>
+     <void index="3">
+      <int>68</int>
+     </void>
+    </void>
+    <void property="id">
+     <int>1713</int>
+    </void>
+    <void property="length">
+     <int>4</int>
+    </void>
+    <void property="typeMatrix">
+     <void index="0">
+      <int>26</int>
+     </void>
+     <void index="2">
+      <int>27</int>
+     </void>
+    </void>
+   </void>
+   <void id="BmsProfile$ProfileCustomMessage3" index="3">
+    <void property="flagMatrix">
+     <void index="0">
+      <int>128</int>
+     </void>
+     <void index="1">
+      <int>64</int>
+     </void>
+     <void index="2">
+      <int>64</int>
+     </void>
+    </void>
+    <void property="frequency">
+     <int>1</int>
+    </void>
+    <void property="id">
+     <int>1729</int>
+    </void>
+    <void property="length">
+     <int>3</int>
+    </void>
+    <void property="messageFlags">
+     <int>198</int>
+    </void>
+    <void property="typeMatrix">
+     <void index="0">
+      <int>9</int>
+     </void>
+     <void index="2">
+      <int>16</int>
+     </void>
+    </void>
+   </void>
+  </void>
+  <void id="BmsProfile$ProfileCustomModeArray0" property="customModes">
+   <void index="0">
+    <void property="exitHighMode">
+     <int>1</int>
+    </void>
+    <void property="exitHighSoc">
+     <int>74</int>
+    </void>
+   </void>
+  </void>
+  <void property="dclTemperatureTable">
+   <void index="5">
+    <double>38.0</double>
+   </void>
+   <void index="6">
+    <double>78.0</double>
+   </void>
+   <void index="7">
+    <double>118.0</double>
+   </void>
+   <void index="8">
+    <double>158.0</double>
+   </void>
+   <void index="9">
+    <double>198.0</double>
+   </void>
+   <void index="10">
+    <double>198.0</double>
+   </void>
+   <void index="11">
+    <double>198.0</double>
+   </void>
+   <void index="12">
+    <double>198.0</double>
+   </void>
+   <void index="13">
+    <double>198.0</double>
+   </void>
+   <void index="14">
+    <double>198.0</double>
+   </void>
+   <void index="15">
+    <double>198.0</double>
+   </void>
+   <void index="16">
+    <double>198.0</double>
+   </void>
+   <void index="17">
+    <double>153.0</double>
+   </void>
+   <void index="18">
+    <double>108.0</double>
+   </void>
+   <void index="19">
+    <double>63.0</double>
+   </void>
+   <void index="20">
+    <double>18.0</double>
+   </void>
+  </void>
+  <void property="defaultMode">
+   <int>1</int>
+  </void>
+  <void property="depletedSOC">
+   <int>10</int>
+  </void>
+  <void property="derateHighSOCAmperage">
+   <int>13</int>
+  </void>
+  <void property="derateHighSOCStart">
+   <int>95</int>
+  </void>
+  <void property="derateHighTempCCLAmperage">
+   <int>6</int>
+  </void>
+  <void property="derateHighTempCCLStart">
+   <int>40</int>
+  </void>
+  <void property="derateHighTempDCLAmperage">
+   <int>9</int>
+  </void>
+  <void property="derateHighTempDCLStart">
+   <int>40</int>
+  </void>
+  <void property="derateLowSOCAmperage">
+   <int>13</int>
+  </void>
+  <void property="derateLowSOCStart">
+   <int>10</int>
+  </void>
+  <void property="derateLowTempCCLAmperage">
+   <int>9</int>
+  </void>
+  <void property="derateLowTempCCLStart">
+   <int>5</int>
+  </void>
+  <void property="derateLowTempDCLAmperage">
+   <int>8</int>
+  </void>
+  <void property="derateLowTempDCLStart">
+   <int>5</int>
+  </void>
+  <void property="dischargeRelayCurrentRestoreDelay">
+   <int>1</int>
+  </void>
+  <void property="dischargeRelayVoltageRestoreDelay">
+   <int>1</int>
+  </void>
+  <void property="driftDelay">
+   <int>10</int>
+  </void>
+  <void id="BmsProfile$ProfileSOCDriftArray0" property="driftPoints">
+   <void index="0">
+    <void property="driftUpProhibit">
+     <boolean>true</boolean>
+    </void>
+    <void property="socPercent">
+     <int>16389</int>
+    </void>
+    <void property="voltage">
+     <int>35000</int>
+    </void>
+   </void>
+   <void index="1">
+    <void property="driftUpProhibit">
+     <boolean>true</boolean>
+    </void>
+    <void property="socPercent">
+     <int>16396</int>
+    </void>
+    <void property="voltage">
+     <int>36000</int>
+    </void>
+   </void>
+   <void index="2">
+    <void property="driftDownProhibit">
+     <boolean>true</boolean>
+    </void>
+    <void property="socPercent">
+     <int>32833</int>
+    </void>
+    <void property="voltage">
+     <int>40000</int>
+    </void>
+   </void>
+   <void index="3">
+    <void property="driftDownProhibit">
+     <boolean>true</boolean>
+    </void>
+    <void property="socPercent">
+     <int>32863</int>
+    </void>
+    <void property="voltage">
+     <int>41500</int>
+    </void>
+   </void>
+   <void index="4">
+    <void property="driftUpProhibit">
+     <boolean>true</boolean>
+    </void>
+    <void property="socPercent">
+     <int>16399</int>
+    </void>
+    <void property="voltage">
+     <int>36500</int>
+    </void>
+   </void>
+   <void index="5">
+    <void property="driftDownProhibit">
+     <boolean>true</boolean>
+    </void>
+    <void property="socPercent">
+     <int>32848</int>
+    </void>
+    <void property="voltage">
+     <int>40600</int>
+    </void>
+   </void>
+  </void>
+  <void property="extendedBalancingMinimumVoltage">
+   <int>50000</int>
+  </void>
+  <void property="fanDeltaTemperature">
+   <int>3</int>
+  </void>
+  <void property="fanErrorPercent">
+   <int>20</int>
+  </void>
+  <void property="fanFrequency">
+   <int>5000</int>
+  </void>
+  <void property="fanMaxChargingSpeed">
+   <int>6</int>
+  </void>
+  <void property="fanMaxReadySpeed">
+   <int>6</int>
+  </void>
+  <void property="faultResistanceTable">
+   <void index="0">
+    <double>2804.0</double>
+   </void>
+   <void index="1">
+    <double>2228.0</double>
+   </void>
+   <void index="2">
+    <double>1750.0</double>
+   </void>
+   <void index="3">
+    <double>1362.0</double>
+   </void>
+   <void index="4">
+    <double>1050.0</double>
+   </void>
+   <void index="5">
+    <double>804.0</double>
+   </void>
+   <void index="6">
+    <double>612.0</double>
+   </void>
+   <void index="7">
+    <double>466.0</double>
+   </void>
+   <void index="8">
+    <double>358.0</double>
+   </void>
+   <void index="9">
+    <double>278.0</double>
+   </void>
+   <void index="10">
+    <double>222.0</double>
+   </void>
+   <void index="11">
+    <double>191.0</double>
+   </void>
+   <void index="12">
+    <double>179.0</double>
+   </void>
+   <void index="13">
+    <double>179.0</double>
+   </void>
+   <void index="14">
+    <double>179.0</double>
+   </void>
+   <void index="15">
+    <double>179.0</double>
+   </void>
+   <void index="16">
+    <double>179.0</double>
+   </void>
+   <void index="17">
+    <double>179.0</double>
+   </void>
+   <void index="18">
+    <double>179.0</double>
+   </void>
+   <void index="19">
+    <double>179.0</double>
+   </void>
+   <void index="20">
+    <double>179.0</double>
+   </void>
+   <void index="21">
+    <double>179.0</double>
+   </void>
+   <void index="22">
+    <double>179.0</double>
+   </void>
+   <void index="23">
+    <double>179.0</double>
+   </void>
+   <void index="24">
+    <double>179.0</double>
+   </void>
+  </void>
+  <void property="hotPackTemperature">
+   <int>60</int>
+  </void>
+  <void property="intresDCMultiplier">
+   <int>15</int>
+  </void>
+  <void property="intresDelay">
+   <int>360</int>
+  </void>
+  <void property="intresEvalBasePercent">
+   <int>40</int>
+  </void>
+  <void property="intresEvalCompPercent">
+   <int>20</int>
+  </void>
+  <void property="intresEvalTimeout">
+   <int>50</int>
+  </void>
+  <void property="intresMinBaseAmps">
+   <int>40</int>
+  </void>
+  <void property="intresMinCompAmps">
+   <int>20</int>
+  </void>
+  <void property="isolationClipping">
+   <int>3700</int>
+  </void>
+  <void property="isolationThreshold">
+   <int>3200</int>
+  </void>
+  <void property="j1772DefaultAcVoltage">
+   <int>240</int>
+  </void>
+  <void property="j1772MinAcCurrent">
+   <int>6</int>
+  </void>
+  <void property="j1772ShutoffDelay">
+   <int>100</int>
+  </void>
+  <void property="j1939Address">
+   <int>243</int>
+  </void>
+  <void property="maxCclTemperature">
+   <int>60</int>
+  </void>
+  <void property="maxChargeAmperage">
+   <int>33</int>
+  </void>
+  <void property="maxChargeCellVoltage">
+   <int>42000</int>
+  </void>
+  <void property="maxChargePackVoltage">
+   <int>9500</int>
+  </void>
+  <void property="maxChargeRelayReenableCount">
+   <int>3</int>
+  </void>
+  <void property="maxDclTemperature">
+   <int>60</int>
+  </void>
+  <void property="maxDischargeRelayReenableCount">
+   <int>3</int>
+  </void>
+  <void property="maximumCCL">
+   <int>132</int>
+  </void>
+  <void property="maximumCellVoltage">
+   <int>42000</int>
+  </void>
+  <void property="maximumDCL">
+   <int>198</int>
+  </void>
+  <void property="maximumDacCCL">
+   <int>132</int>
+  </void>
+  <void property="maximumDacDCL">
+   <int>198</int>
+  </void>
+  <void property="maximumOperatingTemp">
+   <int>60</int>
+  </void>
+  <void property="maximumPackVoltage">
+   <int>9500</int>
+  </void>
+  <void property="minCclTemperature">
+   <int>-10</int>
+  </void>
+  <void property="minDclTemperature">
+   <int>-20</int>
+  </void>
+  <void property="minimumBalanceVoltage">
+   <int>38000</int>
+  </void>
+  <void property="minimumCellVoltage">
+   <int>25000</int>
+  </void>
+  <void property="minimumChargeCellVoltage">
+   <int>18000</int>
+  </void>
+  <void property="minimumFanTemperature">
+   <int>28</int>
+  </void>
+  <void property="minimumOperatingCCLTemp">
+   <int>-10</int>
+  </void>
+  <void property="minimumOperatingDCLTemp">
+   <int>-20</int>
+  </void>
+  <void property="minimumParallelModules">
+   <int>1</int>
+  </void>
+  <void property="minimumSOH">
+   <int>50</int>
+  </void>
+  <void property="mpeHighTemperature">
+   <int>85</int>
+  </void>
+  <void property="mpeLowTemperature">
+   <int>-40</int>
+  </void>
+  <void property="mpeType">
+   <int>138</int>
+  </void>
+  <void property="mpi1Type">
+   <int>4</int>
+  </void>
+  <void property="mpi2Type">
+   <int>4</int>
+  </void>
+  <void property="mpo2HighTemperature">
+   <int>85</int>
+  </void>
+  <void property="mpo2LowTemperature">
+   <int>-40</int>
+  </void>
+  <void property="mpo2Type">
+   <int>10</int>
+  </void>
+  <void property="mpo3HighTemperature">
+   <int>85</int>
+  </void>
+  <void property="mpo3LowTemperature">
+   <int>-40</int>
+  </void>
+  <void property="mpo3Type">
+   <int>10</int>
+  </void>
+  <void property="mpo4HighTemperature">
+   <int>85</int>
+  </void>
+  <void property="mpo4LowTemperature">
+   <int>-40</int>
+  </void>
+  <void property="mpo4Type">
+   <int>10</int>
+  </void>
+  <void property="mpoHighTemperature">
+   <int>85</int>
+  </void>
+  <void property="mpoLowTemperature">
+   <int>-40</int>
+  </void>
+  <void property="nominalVoltage">
+   <int>37000</int>
+  </void>
+  <void property="obd2EcuId">
+   <int>2019</int>
+  </void>
+  <void property="parallelStrings">
+   <int>1</int>
+  </void>
+  <void property="peakCclOffset">
+   <int>13</int>
+  </void>
+  <void property="peakDclOffset">
+   <int>19</int>
+  </void>
+  <void property="peakDecCclTime">
+   <int>30</int>
+  </void>
+  <void property="peakDecDclTime">
+   <int>30</int>
+  </void>
+  <void property="peakIncCclTime">
+   <int>10</int>
+  </void>
+  <void property="peakIncDclTime">
+   <int>10</int>
+  </void>
+  <void property="peakIncRelayCclTime">
+   <int>10</int>
+  </void>
+  <void property="peakIncRelayDclTime">
+   <int>10</int>
+  </void>
+  <void property="populatedThermistors">
+   <int>255</int>
+  </void>
+  <void property="profileStr">
+   <string>0203000007E300000019C8A41061A80FA00000251C000000000000008400C60000000000000021A410251C000000413D00000A6203000A5F320A0D050805095F0D28092806000064985804B000501C03000000007701010A0A5A130D0A0A1E1E00000000010E740C80000008880000014700000666177000080001681400140F1428002832060600000000000000008400C600947000007D01012000040000000000000000000000000000000000000000000000000000D8550A00000000D8550A00000000D8550A00000000D8558A00000000D85504000000000005783C0000000003030D343AF9010101010A0A0A0000F33CEC3CF60006000002EE02EEFF000000000000000000000000F001000000000000C3500000000000000000000000004650000000000000000000006400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000026004E0076009E00C600C600C600C600C600C600C600C60099006C003F001200000000000000000000000000000000000000000000002A00570084008400840084008400840084008400660048002A000C00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004A00000100000000000000000000000000000000000000000000000000000000000000000000000000000000000AF408B406D60552041A0324026401D20166011600DE00BF00B300B300B300B300B300B300B300B300B300B300B300B300B30000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000057A045A036B02A9020D0192013200E900B3008B006F005B004E00460040003C0039003700370038003D003D003D003D003D00000000000000000000000000000000000000000000000000400588B8400C8CA080419C40805FA21C400F8E9480509E9800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000A0F0E10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006B00008000084448444408000400C000D000F0400030000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000100010001000100010001000100010001000100010001000100010001000000000C0800C080800000000000000B000A0028290002000000000000000000000000000006B900000000000000000000000000000000000000000000000000000000000000000001000100010001000100010001000100010001000100010001000100010001000006B10004000084448444000000001A001B00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000100010001000100010001000100010001000100010001000100010001000006C1010300C68040400000000000090010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010001000100010001000100010001000100010001000100010001000100010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000100010001000100010001000100010001000100010001000100010001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100010001000100010001000100010001000100010001000100010001000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010001000100010001000100010001000100010001000100010001000100010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000100010001000100010001000100010001000100010001000100010001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100010001000100010001000100010001000100010001000100010001000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010001000100010001000100010001000100010001000100010001000100010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000100010001000100010001000100010001000100010001000100010001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100010001000100010001000100010001000100010001000100010001000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010001000100010001000100010001000100010001000100010001000100010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000100010001000100010001000100010001000100010001000100010001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100010001000100010001000100010001000100010001000100010001000100007659</string>
+  </void>
+  <void property="relaysPopulated">
+   <int>119</int>
+  </void>
+  <void property="resistanceTable">
+   <void index="0">
+    <double>1402.0</double>
+   </void>
+   <void index="1">
+    <double>1114.0</double>
+   </void>
+   <void index="2">
+    <double>875.0</double>
+   </void>
+   <void index="3">
+    <double>681.0</double>
+   </void>
+   <void index="4">
+    <double>525.0</double>
+   </void>
+   <void index="5">
+    <double>402.0</double>
+   </void>
+   <void index="6">
+    <double>306.0</double>
+   </void>
+   <void index="7">
+    <double>233.0</double>
+   </void>
+   <void index="8">
+    <double>179.0</double>
+   </void>
+   <void index="9">
+    <double>139.0</double>
+   </void>
+   <void index="10">
+    <double>111.0</double>
+   </void>
+   <void index="11">
+    <double>91.0</double>
+   </void>
+   <void index="12">
+    <double>78.0</double>
+   </void>
+   <void index="13">
+    <double>70.0</double>
+   </void>
+   <void index="14">
+    <double>64.0</double>
+   </void>
+   <void index="15">
+    <double>60.0</double>
+   </void>
+   <void index="16">
+    <double>57.0</double>
+   </void>
+   <void index="17">
+    <double>55.0</double>
+   </void>
+   <void index="18">
+    <double>55.0</double>
+   </void>
+   <void index="19">
+    <double>56.0</double>
+   </void>
+   <void index="20">
+    <double>61.0</double>
+   </void>
+   <void index="21">
+    <double>61.0</double>
+   </void>
+   <void index="22">
+    <double>61.0</double>
+   </void>
+   <void index="23">
+    <double>61.0</double>
+   </void>
+   <void index="24">
+    <double>61.0</double>
+   </void>
+  </void>
+  <void property="simulatedPack100SOC">
+   <int>98</int>
+  </void>
+  <void property="simulatedPackAmphours">
+   <int>65</int>
+  </void>
+  <void property="simulatedPackStartSOC">
+   <int>61</int>
+  </void>
+  <void property="simulatedPackZeroSOC">
+   <int>10</int>
+  </void>
+  <void property="thermResistanceChecksum">
+   <int>15097</int>
+  </void>
+  <void property="thermistorBvalue">
+   <int>3380</int>
+  </void>
+  <void property="totalAmphours">
+   <int>6600</int>
+  </void>
+  <void property="voltageDerateCclTime">
+   <int>1</int>
+  </void>
+  <void property="voltageDerateDclTime">
+   <int>1</int>
+  </void>
+  <void property="voltageDerateFailTime">
+   <int>90</int>
+  </void>
+  <void property="voltageRestoreCclTime">
+   <int>10</int>
+  </void>
+  <void property="voltageRestoreDclTime">
+   <int>10</int>
+  </void>
+  <void property="weakcellVariance">
+   <int>4000</int>
+  </void>
+ </object>
+</java>

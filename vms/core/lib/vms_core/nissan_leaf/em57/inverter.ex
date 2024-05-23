@@ -13,9 +13,12 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
   @vms_status_frame_name "vms_status"
   @max_rotation_per_minute 10000
   @zero D.new(0)
+  @one D.new(1)
   @drive_max_torque D.new(5) # TODO store in DB
   @reverse_max_torque D.new(-5)
   @effective_throttle_threshold D.new("0.05")
+  @motor_max_power D.new("80")
+  @motor_max_torque D.new("250")
 
   @impl true
   def init(_) do
@@ -79,17 +82,23 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
   end
 
   @impl true
-  def handle_call({:throttle, percentage_throttle, gear}, _from, state) do
+  def handle_call({:throttle, percentage_throttle, gear, allowed_discharge_power}, _from, state) do
+    allowed_max_torque = D.div(allowed_discharge_power, @motor_max_power) |> D.min(@one) |> D.mult(@motor_max_torque)
+
     max_torque= case gear do
-      "drive"   -> @drive_max_torque
-      "reverse" -> @reverse_max_torque
-      _         -> @zero
+      "drive"   ->
+        Decimal.min(@drive_max_torque, allowed_max_torque)
+      "reverse" ->
+        Decimal.max(@reverse_max_torque, allowed_max_torque)
+      _         ->
+        @zero
     end
     percentage_throttle = case D.lt?(percentage_throttle, @effective_throttle_threshold)  do
       true  -> @zero
       false -> percentage_throttle
     end
     requested_torque = D.mult(percentage_throttle, max_torque)
+
     :ok = Emitter.update(@network_name, @vms_torque_request_frame_name, fn (data) ->
       %{data | "requested_torque" => requested_torque}
     end)
@@ -173,8 +182,8 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
     Emitter.disable(@network_name, [@vms_alive_frame_name, @vms_torque_request_frame_name, @vms_status_frame_name])
   end
 
-  def throttle(percentage_throttle, gear) do
-    GenServer.call(__MODULE__, {:throttle, percentage_throttle, gear})
+  def throttle(percentage_throttle, gear, discharge_max_power) do
+    GenServer.call(__MODULE__, {:throttle, percentage_throttle, gear, discharge_max_power})
   end
 
   def inverter_state() do

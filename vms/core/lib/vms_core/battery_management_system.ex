@@ -1,8 +1,11 @@
 defmodule VmsCore.BatteryManagementSystem do
   use GenServer
   alias VmsCore.Controllers.ContactorsController
+  alias VmsCore.Orion
 
-  defdelegate ready_to_drive?, to: ContactorsController
+
+  defdelegate allowed_power(), to: Orion.Bms2
+  defdelegate ac_input_voltage(ac_input_voltage), to: Orion.Bms2
 
   @impl true
   def init(_) do
@@ -40,5 +43,11 @@ defmodule VmsCore.BatteryManagementSystem do
 
   def high_voltage_off() do
     GenServer.cast(__MODULE__, :high_voltage_off)
+  end
+
+  def ready_to_drive?() do
+    {:ok, contactors_controller_ready} = ContactorsController.ready_to_drive?()
+    {:ok, bms_ready}                   = Orion.Bms2.ready_to_drive?()
+    {:ok, contactors_controller_ready && bms_ready}
   end
 end

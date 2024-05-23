@@ -184,8 +184,8 @@ defmodule VmsCore.Controllers.ControlsController do
   end
 
   def select_gear(gear) do
-    :ok = Emitter.update(@network_name, @selected_gear_frame_name, fn (data) ->
-      %{data | @selected_gear => gear}
+    :ok = Cantastic.Emitter.update(:ovcs, "gear_status", fn (data) ->
+      %{data | "gear" => gear}
     end)
   end
 
