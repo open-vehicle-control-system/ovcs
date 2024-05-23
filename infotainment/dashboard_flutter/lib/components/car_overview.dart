@@ -34,7 +34,7 @@ class _CarOverviewState extends State<CarOverview> {
     });
 
     _channel?.messages.listen( (event){
-      if(event.topic == "car-overview" && event.payload!.containsKey("vms_status")){
+      if(event.topic == "car-overview" && event.payload!.containsKey("handbrake_engaged")){
         setState(() {
           handBrakeIcon = OvcsIcons.toggleHandrakeIcon(event);
           beamsIcon = OvcsIcons.toggleBeamsIcon(event);
