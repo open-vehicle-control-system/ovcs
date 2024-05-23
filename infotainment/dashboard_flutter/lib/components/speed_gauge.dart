@@ -96,7 +96,7 @@ class _SpeedGaugeState extends State<SpeedGauge> {
                     widget: Text(currentSpeed.toInt().toString(),
                           style: const TextStyle(
                               fontSize: 100,
-                              fontWeight: FontWeight.bold,
+                              fontFamily: 'Lato',
                               color: Colors.white,
                               decoration: TextDecoration.none,
                             )
@@ -109,7 +109,7 @@ class _SpeedGaugeState extends State<SpeedGauge> {
                     widget: Text(unit,
                       style: const TextStyle(
                         fontSize: 30,
-                        fontWeight: FontWeight.bold,
+                        fontFamily: 'Lato',
                         color: Colors.grey,
                         decoration: TextDecoration.none,
                         height: 6.0

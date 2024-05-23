@@ -55,8 +55,8 @@ class _SideBarState extends State<SideBar> {
               padding: const EdgeInsets.all(20.0) ,
               child: Column(
                 children: [
-                  Text(timeVar, style: const TextStyle(fontSize: 16, color: Colors.white, decoration: TextDecoration.none, fontWeight: FontWeight.w400),),
-                  Text(dateVar, style: const TextStyle(fontSize: 16, color: Colors.white, decoration: TextDecoration.none, fontWeight: FontWeight.w400))
+                  Text(timeVar, style: const TextStyle(fontSize: 16, color: Colors.white, decoration: TextDecoration.none, fontFamily: 'Lato'),),
+                  Text(dateVar, style: const TextStyle(fontSize: 16, color: Colors.white, decoration: TextDecoration.none, fontFamily: 'Lato'))
                 ]
               )
             ),
