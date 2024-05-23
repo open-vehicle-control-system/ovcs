@@ -54,7 +54,7 @@ class _GearSelectorState extends State<GearSelector> {
   Widget build(BuildContext context){
     return Container(
       width: MediaQuery.of(context).size.width * 0.1,
-      height: MediaQuery.of(context).size.width * 0.32,
+      height: MediaQuery.of(context).size.width * 0.38,
       margin: const EdgeInsets.all(10.0),
       padding: const EdgeInsets.all(20.0),
       decoration: BoxDecoration(
@@ -66,7 +66,7 @@ class _GearSelectorState extends State<GearSelector> {
           TextButton(
             onPressed: () { requestGear("parking"); },
             style: TextButton.styleFrom(
-              fixedSize: const Size(90, 90),
+              fixedSize: const Size(90, 110),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(20),
               ),
@@ -78,7 +78,7 @@ class _GearSelectorState extends State<GearSelector> {
           TextButton(
             onPressed: () { requestGear("reverse"); },
             style: TextButton.styleFrom(
-              fixedSize: const Size(90, 90),
+              fixedSize: const Size(90, 110),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(20),
               ),
@@ -90,7 +90,7 @@ class _GearSelectorState extends State<GearSelector> {
           TextButton(
             onPressed: () { requestGear("neutral"); },
             style: TextButton.styleFrom(
-              fixedSize: const Size(90, 90),
+              fixedSize: const Size(90, 110),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(20),
               ),
@@ -102,7 +102,7 @@ class _GearSelectorState extends State<GearSelector> {
           TextButton(
             onPressed: () { requestGear("drive"); },
             style: TextButton.styleFrom(
-              fixedSize: const Size(90, 90),
+              fixedSize: const Size(90, 110),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(20),
               ),
