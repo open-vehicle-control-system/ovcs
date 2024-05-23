@@ -8,6 +8,7 @@ defmodule InfotainmentApiWeb.SpeedChannel do
 
   def join("speed", payload, socket) do
     send(self(), :push_speed)
+    Logger.debug("Joined speed")
     {:ok, timer} = :timer.send_interval(payload["interval"], :push_speed)
     socket = %{socket | assigns: %{ timer: timer}}
     {:ok, socket}
