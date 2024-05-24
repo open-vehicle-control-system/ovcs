@@ -168,27 +168,4 @@ defmodule VmsCore.Vehicle do
   defp gear_control_module() do
     Application.get_env(:vms_core, :gear_control_module)
   end
-
-  # ---- Test functions ----
-  def test_shutdown() do
-    :ok = Inverter.off()
-    :ok = BatteryManagementSystem.high_voltage_off()
-  end
-
-  def test_key_status() do
-    IgnitionLock.key_status()
-  end
-
-  def test_ignition() do
-    :ok = Inverter.on()
-    :ok = BatteryManagementSystem.high_voltage_on()
-  end
-
-  def test_enable_calibration_mode() do
-    :ok = ControlsController.enable_calibration_mode()
-  end
-
-  def test_disable_calibration_mode() do
-    :ok = ControlsController.disable_calibration_mode()
-  end
 end
