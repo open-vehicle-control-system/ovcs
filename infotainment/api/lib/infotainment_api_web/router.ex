@@ -7,7 +7,6 @@ defmodule InfotainmentApiWeb.Router do
 
   scope "/api", InfotainmentApiWeb.Api do
     pipe_through :api
-    get "/car-overview", StatusController, :show
     post "/gear-selector", GearSelectorController, :post
     post "/volume", VolumeController, :post
     get "/volume", VolumeController, :show
@@ -29,9 +28,5 @@ defmodule InfotainmentApiWeb.Router do
 
       live_dashboard "/dashboard", metrics: InfotainmentApiWeb.Telemetry
     end
-  end
-
-  scope "/", InfotainmentApiWeb do
-    get "/*path", HomeController, :index
   end
 end

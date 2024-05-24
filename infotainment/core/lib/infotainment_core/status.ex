@@ -57,11 +57,13 @@ defmodule InfotainmentCore.Status do
   @impl true
   def handle_info({:handle_frame, %Frame{name: @gear_status_frame_name, signals: signals}}, state) do
     %{@selected_gear_parameter => %Signal{value: selected_gear}} = signals
-    if selected_gear != state.requested_gear && Time.diff(Time.utc_now(), state.last_gear_update_at) > @gear_selection_delay do
+    state = if selected_gear != state.requested_gear && Time.diff(Time.utc_now(), state.last_gear_update_at) > @gear_selection_delay do
       :ok = Emitter.update(@network_name, @infotainment_status_frame_name, fn (data) ->
         %{data | @requested_gear_parameter => selected_gear}
       end)
-      state = %{state | requested_gear: selected_gear}
+      %{state | requested_gear: selected_gear}
+    else
+      state
     end
     {:noreply, %{state | selected_gear: selected_gear}}
   end
