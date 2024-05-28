@@ -27,8 +27,7 @@ echo "#########################"
 echo "Add flutter to your path."
 echo "PATH=$FLUTTER_INSTALL_PATH:\$PATH"
 echo "#########################"
-
-rm flutter_linux_3.19.0-stable.tar.xz
-
 echo "Installing flutterpi_tool"
 dart pub global activate flutterpi_tool 0.3.0
+echo "Cleaning up..."
+rm flutter_linux_3.19.0-stable.tar.xz
