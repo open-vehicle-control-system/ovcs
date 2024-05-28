@@ -7,5 +7,6 @@ cd infotainment/dashboard
 flutterpi_tool build --arch=arm64 --release
 cp -rf build/flutter_assets ../firmware/rootfs_overlay/var/
 cd ../firmware
+mix deps.get
 mix firmware
 
