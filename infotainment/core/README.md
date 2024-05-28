@@ -19,3 +19,18 @@ Documentation can be generated with [ExDoc](https://github.com/elixir-lang/ex_do
 and published on [HexDocs](https://hexdocs.pm). Once published, the docs can
 be found at <https://hexdocs.pm/core>.
 
+
+# Input requirements
+
+## Battery
+
+- State of Charge (%)
+- Charging status (true/false)
+- Charging info
+  - KwH
+  - Time to 100% ?
+
+- Pack state of Health (%)
+
+- Regenerative current (later)
+- Car autonomy (how many km, later)
