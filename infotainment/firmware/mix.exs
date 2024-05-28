@@ -55,10 +55,10 @@ defmodule OvcsInfotainmentFirmwareFlutter.MixProject do
       # changes to your application are needed.
       {
         :ovcs_infotainment_flutter_system_rpi4,
-        path: "../../../ovcs_infotainment_flutter_system_rpi4",
+        github: "open-vehicle-control-system/ovcs_infotainment_flutter_system_rpi4",
         runtime: false,
         targets: :ovcs_infotainment_flutter_system_rpi4,
-        nerves: [compile: true]
+        nerves: [compile: false],
       },
     ]
   end
