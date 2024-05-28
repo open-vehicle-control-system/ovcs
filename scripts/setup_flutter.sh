@@ -2,7 +2,7 @@
 
 set -e
 
-FLUTTER_INSTALL_PATH=${1:-~/flutter}
+FLUTTER_INSTALL_PATH=${1:-~/}
 
 echo "Installing dependencies..."
 
@@ -25,9 +25,9 @@ tar -xf flutter_linux_3.19.0-stable.tar.xz \
 
 echo "#########################"
 echo "Add flutter to your path."
-echo "PATH=$FLUTTER_INSTALL_PATH:\$PATH"
+echo "PATH=$FLUTTER_INSTALL_PATH/flutter/bin:\$PATH"
 echo "#########################"
 echo "Installing flutterpi_tool"
-dart pub global activate flutterpi_tool 0.3.0
+$FLUTTER_INSTALL_PATH/flutter/bin/dart pub global activate flutterpi_tool 0.3.0
 echo "Cleaning up..."
 rm flutter_linux_3.19.0-stable.tar.xz
