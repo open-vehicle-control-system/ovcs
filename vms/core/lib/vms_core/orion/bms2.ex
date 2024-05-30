@@ -24,7 +24,10 @@ defmodule VmsCore.Orion.Bms2 do
       charger_safety_relay_enabled: false,
       malfunction_relay_enabled: false,
       charge_interlock_enabled: false,
-      is_ready_status_enabled: false
+      is_ready_status_enabled: false,
+      adaptative_state_of_charge: @zero,
+      state_of_health: @zero,
+      output_power: @zero
     }}
   end
 
@@ -61,13 +64,19 @@ defmodule VmsCore.Orion.Bms2 do
   @impl true
   def handle_info({:handle_frame, %Frame{name: @bms_status_2_frame_name, signals: signals}}, state) do
     %{
-      "charge_max_power"    => %Signal{value: charge_max_power},
-      "discharge_max_power" => %Signal{value: discharge_max_power}
+      "charge_max_power"           => %Signal{value: charge_max_power},
+      "discharge_max_power"        => %Signal{value: discharge_max_power},
+      "adaptative_state_of_charge" => %Signal{value: adaptative_state_of_charge},
+      "state_of_health"            => %Signal{value: state_of_health},
+      "output_power"               => %Signal{value: output_power},
     } = signals
     {:noreply, %{
       state |
         charge_max_power: charge_max_power,
-        discharge_max_power: discharge_max_power
+        discharge_max_power: discharge_max_power,
+        adaptative_state_of_charge: adaptative_state_of_charge,
+        state_of_health: state_of_health,
+        output_power: output_power
       }
     }
   end
@@ -80,6 +89,11 @@ defmodule VmsCore.Orion.Bms2 do
   @impl true
   def handle_call(:allowed_power, _from, state) do
     {:reply, {:ok, state.charge_max_power, state.discharge_max_power}, state}
+  end
+
+  @impl true
+  def handle_call(:status, _from, state) do
+    {:reply, {:ok, state}, state}
   end
 
   defp init_emitters() do
@@ -105,6 +119,10 @@ defmodule VmsCore.Orion.Bms2 do
 
   def allowed_power() do
     GenServer.call(__MODULE__, :allowed_power)
+  end
+
+  def status() do
+    GenServer.call(__MODULE__, :status)
   end
 
   def ac_input_voltage(ac_input_voltage) do

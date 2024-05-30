@@ -60,6 +60,42 @@ can_networks:
             value_start: 0
             value_length: 16
             scale: "0.0075"
+      - name: bms_status
+        id: 0x60B
+        frequency: 100
+        signals:
+          - name: adaptative_state_of_charge
+            unit: %
+            value_start: 0
+            value_length: 8
+          - name: operating_mode
+            value_start: 8
+            value_length: 2
+            kind: enum
+            mapping:
+              0x00: power
+              0x01: charging
+          - name: instant_consumption
+            value_start: 10
+            value_length: 8
+            unit: kWh/100Km
+          - name: state_of_health
+            unit: %
+            value_start: 18
+            value_length: 8
+          - name: autonomy
+            unit: Km
+            value_start: 26
+            value_length: 16
+          - name: charging_power
+            unit: Kw
+            value_start: 42
+            value_length: 6
+          - name: filler
+            kind: static
+            value_start: 50
+            value_length: 6
+            value: 0x00
       - name: passenger_compartment_status
         id: 0x60D
         signals:
