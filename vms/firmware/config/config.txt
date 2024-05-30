@@ -30,9 +30,29 @@ dtparam=spi=on
 
 dtoverlay=spi0-2cs
 dtoverlay=spi1-1cs
-dtoverlay=mcp2515-can0,oscillator=8000000,interrupt=22
-dtoverlay=mcp2515-can1,oscillator=8000000,interrupt=25
-dtoverlay=mcp2515,spi1-0=true,oscillator=8000000,interrupt=26
+
+#Name:   mcp251xfd
+#Info:   Configures the MCP251XFD CAN controller family
+#        For devices on spi1 or spi2, the interfaces should be enabled
+#        with one of the spi1-1/2/3cs and/or spi2-1/2/3cs overlays.
+#Load:   dtoverlay=mcp251xfd,<param>=<val>
+#Params: spi<n>-<m>              Configure device at spi<n>, cs<m>
+#                                (boolean, required)
+#
+#        oscillator              Clock frequency for the CAN controller (Hz)
+#
+#        speed                   Maximum SPI frequence (Hz)
+#
+#        interrupt               GPIO for interrupt signal
+#
+#        rx_interrupt            GPIO for RX interrupt signal (nINT1) (optional)
+#
+#        xceiver_enable          GPIO for CAN transceiver enable (optional)
+#
+#        xceiver_active_high     specifiy if CAN transceiver enable pin is
+#                                active high (optional, default: active low)
+
+dtoverlay=mcp251xfd,spi0-0,oscillator=4000000,interrupt=22
 
 # Enable audio (loads snd_bcm3825)
 dtparam=audio=on
