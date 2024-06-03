@@ -39,7 +39,6 @@ defmodule VmsCore.BatteryManagementSystem do
       "autonomy" => @zero,
       "charging_power" => charging_power(status.pack_current, status.pack_instant_voltage, status.charge_interlock_enabled)
     }
-    IO.inspect parameters
     {:ok, parameters, parameters}
   end
 
