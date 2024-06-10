@@ -1,0 +1,26 @@
+---
+name: contactors_status_request
+id: 0x100
+frequency: 20
+signals:
+  - name: main_negative_contactor_enabled
+    kind: enum
+    value_start: 0
+    value_length: 8
+    mapping:
+      0x00: false
+      0x01: true
+  - name: main_positive_contactor_enabled
+    kind: enum
+    value_start: 8
+    value_length: 8
+    mapping:
+      0x00: false
+      0x01: true
+  - name: precharge_contactor_enabled
+    kind: enum
+    value_start: 16
+    value_length: 8
+    mapping:
+      0x00: false
+      0x01: true

@@ -1,0 +1,10 @@
+---
+bitrate: 500000
+emitted_frames:
+  - import!:frames/infotainment_status.yml
+received_frames:
+  - import!:frames/gear_status.yml
+  - import!:frames/vms_status.yml
+  - import!:frames/abs_status.yml
+  - import!:frames/bms_status.yml
+  - import!:frames/passenger_compartment_status.yml

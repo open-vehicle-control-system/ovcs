@@ -1,0 +1,59 @@
+---
+name: passenger_compartment_status
+id: 0x60D
+frequency: 100
+signals:
+  - name: front_left_door_open
+    kind: enum
+    value_start: 0
+    value_length: 1
+    mapping:
+      0x00: false
+      0x01: true
+  - name: front_right_door_open
+    kind: enum
+    value_start: 1
+    value_length: 1
+    mapping:
+      0x00: false
+      0x01: true
+  - name: rear_left_door_open
+    kind: enum
+    value_start: 2
+    value_length: 1
+    mapping:
+      0x00: false
+      0x01: true
+  - name: rear_right_door_open
+    kind: enum
+    value_start: 3
+    value_length: 1
+    mapping:
+      0x00: false
+      0x01: true
+  - name: trunk_door_open
+    kind: enum
+    value_start: 4
+    value_length: 1
+    mapping:
+      0x00: false
+      0x01: true
+  - name: beam_active
+    kind: enum
+    value_start: 5
+    value_length: 1
+    mapping:
+      0x00: false
+      0x01: true
+  - name: handbrake_engaged
+    kind: enum
+    value_start: 6
+    value_length: 1
+    mapping:
+      0x00: false
+      0x01: true
+  - name: filler
+    kind: static
+    value_start: 7
+    value_length: 1
+    value: 0x00
