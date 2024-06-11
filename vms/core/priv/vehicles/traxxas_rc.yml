@@ -1,3 +1,0 @@
----
-can_networks:
-  ovcs: import!:can/ovcs/ovcs.yml

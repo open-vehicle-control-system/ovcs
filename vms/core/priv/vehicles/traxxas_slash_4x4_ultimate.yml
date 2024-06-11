@@ -1,0 +1,9 @@
+---
+can_networks:
+  ovcs:
+    bitrate: 500000
+    emitted_frames:
+      - import!:ovcs/frames/0x1A0_vms_status.yml
+      - import!:ovcs/frames/0x60D_passenger_compartment_status.yml
+    received_frames:
+      - import!:ovcs/frames/0x200_car_controls_status.yml
