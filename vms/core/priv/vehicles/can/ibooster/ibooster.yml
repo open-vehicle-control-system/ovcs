@@ -102,6 +102,7 @@ can_networks:
           - name: vehicle_speed # /!\ In ocelod, P_EST_MAX_QF is ored with the 6th bit of vehicle speed /!\ (see line 632)
             value_start: 26
             value_length: 14
+            scale: 1.777777778 # based on ESP_vehicleSpeed = ((current_speed*16) / 9), but, not sure current_speed is in Km/h
           - name: filler2 # VEHICLE_QF(=1) | (IGNITION_ON(=0) << 3U); in Ocelot
             kind: static
             value: 0x01
@@ -120,7 +121,7 @@ can_networks:
             kind: integer
             value_start: 0
             value_length: 8
-          - name: counter # can2_count_out_1 & COUNTER_CYCLE;
+          - name: counter
             kind: integer
             value_start: 8
             value_length: 8
