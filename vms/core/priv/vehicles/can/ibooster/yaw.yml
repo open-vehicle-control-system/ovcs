@@ -1,0 +1,74 @@
+---
+bitrate: 500000
+received_frames:
+  - name: rod_status
+    id: 0x38E
+    signals:
+      - name: checksum
+        kind: integer
+        value_start: 0
+        value_length: 8
+      - name: counter
+        kind: integer
+        value_start: 8
+        value_length: 8
+      - name: output_rod_target # The brake is considered to be applied when output_rod_target is greater than 575mm or brake_status.driver_brake_applied is true (or brake_status.brake_sensor_fault is true to assume worst case scenario)
+        unit: mm
+        value_start: 24
+        value_length: 10
+  - name: brake_status
+    id: 0x38F
+    signals:
+      - name: checksum
+        kind: integer
+        value_start: 0
+        value_length: 8
+      - name: counter
+        kind: integer
+        value_start: 8
+        value_length: 8
+      - name: driver_brake_applied
+        kind: enum
+        value_start: 16
+        value_length: 1
+        mapping:
+          0x00: False
+          0x01: True
+      - name: brake_sensor_fault
+        kind: enum
+        value_start: 17
+        value_length: 1
+        mapping:
+          0x00: False
+          0x01: True
+      - name: ibooster_error
+        kind: enum
+        value_start: 19
+        value_length: 3
+        mapping:
+          0x07: false
+          0x00: true # To be refined with concrete values, we only know that 0x07 means "ok"
+  - name: ibooster_status
+    id: 0x39D
+    signals:
+      - name: status
+        kind: enum
+        value_start: 9
+        value_length: 3
+        mapping:
+          0x00: 'off'
+          0x01: init
+          0x02: failure
+          0x03: diagnostic
+          0x04: active_good_check
+          0x05: ready
+          0x06: actuation
+      - name: driver_brake_apply
+        kind: enum
+        value_start: 22
+        value_length: 2
+        mapping:
+          0x00: not_init_or_off
+          0x01: brakes_not_applied
+          0x02: driver_applying_brake
+          0x03: fault

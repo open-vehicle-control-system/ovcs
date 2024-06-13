@@ -33,7 +33,8 @@ defmodule VmsCore.Application do
       {VmsCore.Vehicle, []},
       {VmsCore.NetworkInterfacesMonitor, []},
       {VmsCore.Status, []},
-      {VmsCore.Infotainment, []}
+      {VmsCore.Infotainment, []},
+      {VmsCore.Bosch.IboosterGen2, []}
     ]
 
     opts = [strategy: :one_for_one, name: VmsCore.Supervisor]
