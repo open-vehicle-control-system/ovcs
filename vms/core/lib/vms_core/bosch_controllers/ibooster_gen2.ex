@@ -17,9 +17,9 @@ defmodule VmsCore.Bosch.IboosterGen2 do
 
   @impl true
   def init(_) do
-    #:ok = init_emitters()
+    :ok = init_emitters()
     :ok = Receiver.subscribe(self(), @yaw_network_name, [@rod_status_frame_name, @brake_status_frame_name, @ibooster_status_frame_name])
-    #:ok = Emitter.enable(@ibooster_status_frame_name, [@vehicle_status_frame_name, @brake_request_frame_name, @vehicle_alive_frame_name])
+    :ok = Emitter.enable(@vehicle_network_name, [@vehicle_status_frame_name])
     {:ok, %{
       output_rod_target: 0,
       driver_brake_applied: false,
@@ -45,7 +45,7 @@ defmodule VmsCore.Bosch.IboosterGen2 do
   end
 
   @impl true
-  def handle_info({:handle_frame, %Frame{name: @brake_status_frame_name, signals: signals} = frame}, state) do
+  def handle_info({:handle_frame, %Frame{name: @brake_status_frame_name, signals: signals}}, state) do
     %{
       "driver_brake_applied" => %Signal{value: driver_brake_applied},
       "brake_sensor_fault" => %Signal{value: brake_sensor_fault},
@@ -61,7 +61,7 @@ defmodule VmsCore.Bosch.IboosterGen2 do
   end
 
   @impl true
-  def handle_info({:handle_frame, %Frame{name: @ibooster_status_frame_name, signals: signals}=frame}, state) do
+  def handle_info({:handle_frame, %Frame{name: @ibooster_status_frame_name, signals: signals}}, state) do
 
     %{
       "status" => %Signal{value: status},
@@ -82,5 +82,48 @@ defmodule VmsCore.Bosch.IboosterGen2 do
 
   def state() do
     GenServer.call(__MODULE__, :state)
+  end
+
+
+  defp init_emitters() do
+    :ok = Emitter.configure(@vehicle_network_name, @vehicle_status_frame_name, %{
+      parameters_builder_function: &vehicle_status_frame_parameters_builder/1,
+      initial_data: %{
+        "vehicle_speed" => 0,
+        "counter" => 0
+      }
+    })
+    :ok
+  end
+
+  def vehicle_status_frame_parameters_builder(data) do
+    counter = data["counter"]
+    parameters = %{
+      "vehicle_speed" => 0,
+      "counter" => counter(counter),
+      "crc" => &crc8/1
+    }
+
+    data = %{data | "counter" => counter(counter + 1)}
+    {:ok, parameters, data}
+  end
+
+
+  defp crc8(raw_data) do
+    CRC.calculate(
+      raw_data,
+      %{
+        width: 8,
+        poly: 0x1D,
+        init: 0xFF,
+        refin: false,
+        refout: false,
+        xorout: 0xFF
+      }
+    )
+  end
+
+  defp counter(value) do
+    rem(value, 16)
   end
 end
