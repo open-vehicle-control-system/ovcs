@@ -41,6 +41,7 @@ emitted_frames:
         value_length: 16
         value: 0x4401
       - name: crc
+        kind: checksum
         value_start: 56
         value_length: 8
   - name: vms_status
@@ -83,7 +84,7 @@ emitted_frames:
         value_start: 48
         value_length: 8
       - name: crc
-        kind: integer
+        kind: checksum
         value_start: 56
         value_length: 8
   - name: charger_command
@@ -143,7 +144,7 @@ emitted_frames:
         value_start: 54
         value_length: 2
       - name: crc
-        kind: integer
+        kind: checksum
         value_start: 56
         value_length: 8
 received_frames:

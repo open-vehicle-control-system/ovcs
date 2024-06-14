@@ -185,7 +185,7 @@ defmodule VmsCore.Controllers.ControlsController do
 
   def select_gear(gear) do
     :ok = Cantastic.Emitter.update(:ovcs, "gear_status", fn (data) ->
-      %{data | "gear" => gear}
+      %{data | @selected_gear => gear}
     end)
   end
 
