@@ -19,7 +19,7 @@ defmodule VmsCore.Bosch.IboosterGen2 do
   def init(_) do
     :ok = init_emitters()
     :ok = Receiver.subscribe(self(), @yaw_network_name, [@rod_status_frame_name, @brake_status_frame_name, @ibooster_status_frame_name])
-    :ok = Emitter.enable(@vehicle_network_name, [@vehicle_status_frame_name])
+    :ok = Emitter.enable(@vehicle_network_name, [@vehicle_status_frame_name, @vehicle_alive_frame_name, @brake_request_frame_name])
     {:ok, %{
       output_rod_target: 0,
       driver_brake_applied: false,
@@ -84,6 +84,17 @@ defmodule VmsCore.Bosch.IboosterGen2 do
     GenServer.call(__MODULE__, :state)
   end
 
+  def set_q_target_ext(value) do
+    :ok = Emitter.update(@vehicle_network_name, @brake_request_frame_name, fn (data) ->
+      %{data | "q_target_ext" => value}
+    end)
+  end
+
+  def set_q_target_ext_qf(value) do
+    :ok = Emitter.update(@vehicle_network_name, @brake_request_frame_name, fn (data) ->
+      %{data | "q_target_ext_qf" => value}
+    end)
+  end
 
   defp init_emitters() do
     :ok = Emitter.configure(@vehicle_network_name, @vehicle_status_frame_name, %{
@@ -93,10 +104,24 @@ defmodule VmsCore.Bosch.IboosterGen2 do
         "counter" => 0
       }
     })
+    :ok = Emitter.configure(@vehicle_network_name, @vehicle_alive_frame_name, %{
+      parameters_builder_function: &vehicle_alive_frame_parameters_builder/1,
+      initial_data: %{
+        "counter" => 0
+      }
+    })
+    :ok = Emitter.configure(@vehicle_network_name, @brake_request_frame_name, %{
+      parameters_builder_function: &brake_request_frame_parameters_builder/1,
+      initial_data: %{
+        "counter" => 0,
+        "q_target_ext" => 32256,
+        "q_target_ext_qf" => true
+      }
+    })
     :ok
   end
 
-  def vehicle_status_frame_parameters_builder(data) do
+  defp vehicle_status_frame_parameters_builder(data) do
     counter = data["counter"]
     parameters = %{
       "vehicle_speed" => 0,
@@ -108,6 +133,29 @@ defmodule VmsCore.Bosch.IboosterGen2 do
     {:ok, parameters, data}
   end
 
+  defp vehicle_alive_frame_parameters_builder(data) do
+    counter = data["counter"]
+    parameters = %{
+      "counter" => counter(counter),
+      "crc" => &crc8/1
+    }
+
+    data = %{data | "counter" => counter(counter + 1)}
+    {:ok, parameters, data}
+  end
+
+  defp brake_request_frame_parameters_builder(data) do
+    counter = data["counter"]
+    parameters = %{
+      "counter" => counter(counter),
+      "q_target_ext" =>  data["q_target_ext"],
+      "q_target_ext_qf" => data["q_target_ext_qf"],
+      "crc" => &crc8/1
+    }
+
+    data = %{data | "counter" => counter(counter + 1)}
+    {:ok, parameters, data}
+  end
 
   defp crc8(raw_data) do
     CRC.calculate(

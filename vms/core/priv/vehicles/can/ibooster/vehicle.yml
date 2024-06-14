@@ -3,7 +3,7 @@ bitrate: 500000
 received_frames:
   # - name: ibooster_alert_matrix -> Multiplexed frame containing 175 flags. Not supported in cantastic yet.
   #   id: 0x35D
-  # - name: ibooster_info -> uild and bootloader info, not really interesting
+  # - name: ibooster_info -> build and bootloader info, not really interesting
   #   id: 0x32D
 emitted_frames:
   - name: vehicle_status # Validated
@@ -26,7 +26,7 @@ emitted_frames:
       - name: vehicle_speed # /!\ In ocelod, P_EST_MAX_QF is ored with the 6th bit of vehicle speed /!\ (see line 632)
         value_start: 26
         value_length: 14
-        scale: "1.777777778" # based on ESP_vehicleSpeed = ((current_speed*16) / 9), but, not sure current_speed is in Km/h
+        scale: "1.777777778" # based on "ESP_vehicleSpeed = ((current_speed*16) / 9)", but, not sure current_speed is in Km/h
       - name: filler2 # VEHICLE_QF(=1) | (IGNITION_ON(=0) << 3U); in Ocelot
         kind: static
         value: 0x01
@@ -60,17 +60,22 @@ emitted_frames:
         value_start: 25
         value_length: 3
       # Int, 32256 (0x7e00) by default
-      # 0x7e00 = min rod position, 0x8200 = max brake (not sure)
+      # 0x7e00 = min rod position = 32256, 0x8200 = max brake (not sure) = 33280
       # Set to default when driver_brake_applied
-      - name: q_target_ext
+      - name: q_target_ext # quantity target external? target break level based on external factors?
         value_start: 28
         value_length: 16
+        kind: integer
       # Boolean, false by default,
       # set to true when PID loop start, set to true again in relative mode, set to false when not relative nor pid mode
       # Set to false when driver brake applied
-      - name: q_target_ext_qf
+      - name: q_target_ext_qf # quantity target quality factor? wheter to measure the quality factor of q_target_ext?
         value_start: 44
         value_length: 4
+        kind: enum
+        mapping:
+          0x00: False
+          0x01: True
       - name: filler2
         kind: static
         value: 0x00
