@@ -8,12 +8,14 @@ defmodule VmsCore.Bosch.IboosterGen2 do
   @brake_status_frame_name "brake_status"
   @ibooster_status_frame_name "ibooster_status"
 
-  @vehicle_network_name :ibooster_vehicle
+  @vehicle_network_name :ibooster_yaw
   @vehicle_status_frame_name "vehicle_status"
   @brake_request_frame_name "brake_request"
   @vehicle_alive_frame_name "vehicle_alive"
 
-  @zero D.new(0)
+# vehicle_status_frame_name -> Party 1?
+# @brake_request_frame_name -> party 2
+# @vehicle_alive_frame_name -> party 3?
 
   @impl true
   def init(_) do
@@ -90,6 +92,12 @@ defmodule VmsCore.Bosch.IboosterGen2 do
     end)
   end
 
+  def set_speed(value) do
+    :ok = Emitter.update(@vehicle_network_name, @vehicle_status_frame_name, fn (data) ->
+      %{data | "vehicle_speed" => value}
+    end)
+  end
+
   def set_q_target_ext_qf(value) do
     :ok = Emitter.update(@vehicle_network_name, @brake_request_frame_name, fn (data) ->
       %{data | "q_target_ext_qf" => value}
@@ -117,6 +125,19 @@ defmodule VmsCore.Bosch.IboosterGen2 do
         "q_target_ext" => 32256,
         "q_target_ext_qf" => true
       }
+    })
+
+    :ok = Emitter.configure(@vehicle_network_name, "test_esp_info", %{
+      parameters_builder_function: fn(data) -> {:ok, data, data} end,
+      initial_data: %{ }
+    })
+    :ok = Emitter.configure(@vehicle_network_name, "test_esp_b", %{
+      parameters_builder_function: fn(data) -> {:ok, data, data} end,
+      initial_data: %{ }
+    })
+    :ok = Emitter.configure(@vehicle_network_name, "test_esp_status", %{
+      parameters_builder_function: fn(data) -> {:ok, data, data} end,
+      initial_data: %{ }
     })
     :ok
   end

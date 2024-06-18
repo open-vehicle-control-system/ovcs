@@ -108,3 +108,31 @@ emitted_frames:
         value: 0x00
         value_start: 56
         value_length: 8
+  - name: test_esp_status
+    id: 0x91
+    frequency: 10
+    signals:
+      - name: static
+        kind: static
+        value: 0x00
+        value_start: 0
+        value_length: 64
+  - name: test_esp_b
+    id: 0x9B
+    frequency: 10
+    signals:
+      - name: static
+        kind: static
+        value: 0x00
+        value_start: 0
+        value_length: 64
+  - name: test_esp_info
+    id: 0x328
+    frequency: 10
+    signals:
+      - name: static
+        kind: static
+        value: 0x00
+        value_start: 0
+        value_length: 64
+        
