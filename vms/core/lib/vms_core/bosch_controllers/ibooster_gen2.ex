@@ -13,9 +13,13 @@ defmodule VmsCore.Bosch.IboosterGen2 do
   @brake_request_frame_name "brake_request"
   @vehicle_alive_frame_name "vehicle_alive"
 
-# vehicle_status_frame_name -> Party 1?
+# vehicle_status_frame_name -> Party 1
 # @brake_request_frame_name -> party 2
-# @vehicle_alive_frame_name -> party 3?
+# @vehicle_alive_frame_name -> party 3
+
+# max flow rate 0x9200 -> ml/s
+# zero point flow rate 0x7e00
+# min flow rate 0x6A00
 
   @impl true
   def init(_) do
@@ -86,21 +90,9 @@ defmodule VmsCore.Bosch.IboosterGen2 do
     GenServer.call(__MODULE__, :state)
   end
 
-  def set_q_target_ext(value) do
+  def set_flow_rate(value) do
     :ok = Emitter.update(@vehicle_network_name, @brake_request_frame_name, fn (data) ->
-      %{data | "q_target_ext" => value}
-    end)
-  end
-
-  def set_speed(value) do
-    :ok = Emitter.update(@vehicle_network_name, @vehicle_status_frame_name, fn (data) ->
-      %{data | "vehicle_speed" => value}
-    end)
-  end
-
-  def set_q_target_ext_qf(value) do
-    :ok = Emitter.update(@vehicle_network_name, @brake_request_frame_name, fn (data) ->
-      %{data | "q_target_ext_qf" => value}
+      %{data | "flow_rate" => value}
     end)
   end
 
@@ -108,7 +100,6 @@ defmodule VmsCore.Bosch.IboosterGen2 do
     :ok = Emitter.configure(@vehicle_network_name, @vehicle_status_frame_name, %{
       parameters_builder_function: &vehicle_status_frame_parameters_builder/1,
       initial_data: %{
-        "vehicle_speed" => 0,
         "counter" => 0
       }
     })
@@ -122,22 +113,8 @@ defmodule VmsCore.Bosch.IboosterGen2 do
       parameters_builder_function: &brake_request_frame_parameters_builder/1,
       initial_data: %{
         "counter" => 0,
-        "q_target_ext" => 32256,
-        "q_target_ext_qf" => true
+        "flow_rate" => 32256,
       }
-    })
-
-    :ok = Emitter.configure(@vehicle_network_name, "test_esp_info", %{
-      parameters_builder_function: fn(data) -> {:ok, data, data} end,
-      initial_data: %{ }
-    })
-    :ok = Emitter.configure(@vehicle_network_name, "test_esp_b", %{
-      parameters_builder_function: fn(data) -> {:ok, data, data} end,
-      initial_data: %{ }
-    })
-    :ok = Emitter.configure(@vehicle_network_name, "test_esp_status", %{
-      parameters_builder_function: fn(data) -> {:ok, data, data} end,
-      initial_data: %{ }
     })
     :ok
   end
@@ -145,8 +122,7 @@ defmodule VmsCore.Bosch.IboosterGen2 do
   defp vehicle_status_frame_parameters_builder(data) do
     counter = data["counter"]
     parameters = %{
-      "vehicle_speed" => 0,
-      "counter" => counter(counter),
+      "counter" => counter(counter) + 64,
       "crc" => &crc8/1
     }
 
@@ -168,9 +144,8 @@ defmodule VmsCore.Bosch.IboosterGen2 do
   defp brake_request_frame_parameters_builder(data) do
     counter = data["counter"]
     parameters = %{
-      "counter" => counter(counter),
-      "q_target_ext" =>  data["q_target_ext"],
-      "q_target_ext_qf" => data["q_target_ext_qf"],
+      "counter" => counter(counter) + 64,
+      "flow_rate" =>  data["flow_rate"],
       "crc" => &crc8/1
     }
 

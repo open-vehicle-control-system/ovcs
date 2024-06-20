@@ -1,93 +1,71 @@
 ---
 bitrate: 500000
 emitted_frames:
-  - name: vehicle_status # Validated
+  - name: vehicle_status
     id: 0x38B
-    frequency: 10 # Not verified, 20ms mentionned in comment
+    frequency: 10
     signals:
-      - name: crc # lut_checksum(dat, 8, crc8_lut_1d);
+      - name: crc
         kind: checksum
         value_start: 0
         value_length: 8
-      - name: counter # cycling between 0 to 15 (0x0F)
+      - name: counter
         kind: integer
         value_start: 8
         value_length: 8
-      - name: filler1 # P_EST_MAX + 2 zeros in Ocelot
+      - name: filler0
         kind: static
         value: 0x00
         value_start: 16
-        value_length: 16
-
-  - name: brake_request
-    id: 0x38C
-    frequency: 10 # Frequency unknown and undocummented
-    signals:
-      - name: crc
-        kind: checksum
-        value_start: 0
-        value_length: 8
-      - name: counter
-        kind: integer
-        value_start: 8
-        value_length: 8
-      # Int, 32256 (0x7e00) by default
-      # 0x7e00 = min rod position = 32256, 0x8200 = max brake (not sure) = 33280
-      # Set to default when driver_brake_applied
-      - name: q_target_ext # quantity target external? target break level based on external factors?
-        value_start: 16
-        value_length: 16
-        kind: integer
-  - name: vehicle_alive # Validated
-    id: 0x38D
-    frequency: 10 # Frequency unknown and undocummented
-    signals:
-      - name: crc
-        kind: checksum
-        value_start: 0
-        value_length: 8
-      - name: counter
-        kind: integer
-        value_start: 8
         value_length: 8
       - name: filler1
         kind: static
+        value: 0x05
+        value_start: 24
+        value_length: 8
+  - name: brake_request
+    id: 0x38C
+    frequency: 10
+    signals:
+      - name: crc
+        kind: checksum
+        value_start: 0
+        value_length: 8
+      - name: counter
+        kind: integer
+        value_start: 8
+        value_length: 8
+      - name: flow_rate
+        value_start: 16
+        value_length: 16
+        kind: integer
+  - name: vehicle_alive
+    id: 0x38D
+    frequency: 10
+    signals:
+      - name: crc
+        kind: checksum
+        value_start: 0
+        value_length: 8
+      - name: counter
+        kind: integer
+        value_start: 8
+        value_length: 8
+      - name: filler0
+        kind: static
         value: 0x00
         value_start: 16
-        value_length: 32
+        value_length: 24
+      - name: filler1
+        kind: static
+        value: 0x50
+        value_start: 40
+        value_length: 8
       - name: filler2
         kind: static
-        value: 0x20
+        value: 0x47
         value_start: 48
         value_length: 8
-  - name: test_esp_status
-    id: 0x91
-    frequency: 10
-    signals:
-      - name: static
-        kind: static
-        value: 0x00
-        value_start: 0
-        value_length: 64
-  - name: test_esp_b
-    id: 0x9B
-    frequency: 10
-    signals:
-      - name: static
-        kind: static
-        value: 0x00
-        value_start: 0
-        value_length: 64
-  - name: test_esp_info
-    id: 0x328
-    frequency: 10
-    signals:
-      - name: static
-        kind: static
-        value: 0x00
-        value_start: 0
-        value_length: 64
-        
 received_frames:
   - name: rod_status
     id: 0x38E
