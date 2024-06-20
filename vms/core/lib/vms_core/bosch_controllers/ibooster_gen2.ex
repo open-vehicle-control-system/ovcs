@@ -3,12 +3,9 @@ defmodule VmsCore.Bosch.IboosterGen2 do
   alias Cantastic.{Emitter, Receiver, Frame, Signal}
   alias Decimal, as: D
 
-  @yaw_network_name :ibooster_yaw
-  @rod_status_frame_name "rod_status"
+  @network_name :ibooster_yaw
   @brake_status_frame_name "brake_status"
   @ibooster_status_frame_name "ibooster_status"
-
-  @vehicle_network_name :ibooster_yaw
   @vehicle_status_frame_name "vehicle_status"
   @brake_request_frame_name "brake_request"
   @vehicle_alive_frame_name "vehicle_alive"
@@ -24,30 +21,21 @@ defmodule VmsCore.Bosch.IboosterGen2 do
   @impl true
   def init(_) do
     :ok = init_emitters()
-    :ok = Receiver.subscribe(self(), @yaw_network_name, [@rod_status_frame_name, @brake_status_frame_name, @ibooster_status_frame_name])
-    :ok = Emitter.enable(@vehicle_network_name, [@vehicle_status_frame_name, @vehicle_alive_frame_name, @brake_request_frame_name])
+    :ok = Receiver.subscribe(self(), @network_name, [@brake_status_frame_name, @ibooster_status_frame_name])
+    :ok = Emitter.enable(@network_name, [@vehicle_status_frame_name, @vehicle_alive_frame_name, @brake_request_frame_name])
     {:ok, %{
-      output_rod_target: 0,
       driver_brake_applied: false,
       brake_sensor_fault: false,
       ibooster_error: false,
       status: "off",
-      driver_brake_apply: "not_init_or_off"
+      driver_brake_apply: "not_init_or_off",
+      internal_state: "no_mode_active",
+      rod_position: 0
     }}
   end
 
   def start_link(_) do
     GenServer.start_link(__MODULE__, nil, name: __MODULE__)
-  end
-
-  @impl true
-  def handle_info({:handle_frame, %Frame{name: @rod_status_frame_name, signals: signals}}, state) do
-      %{"output_rod_target" => %Signal{value: output_rod_target}} = signals
-      {:noreply, %{
-        state |
-        output_rod_target: output_rod_target,
-      }
-    }
   end
 
   @impl true
@@ -71,12 +59,16 @@ defmodule VmsCore.Bosch.IboosterGen2 do
 
     %{
       "status" => %Signal{value: status},
-      "driver_brake_apply" => %Signal{value: driver_brake_apply}
+      "driver_brake_apply" => %Signal{value: driver_brake_apply},
+      "internal_state" => %Signal{value: internal_state},
+      "rod_position" => %Signal{value: rod_position}
     } = signals
     {:noreply, %{
       state |
         status: status,
         driver_brake_apply: driver_brake_apply,
+        internal_state: internal_state,
+        rod_position: rod_position
       }
     }
   end
@@ -91,29 +83,47 @@ defmodule VmsCore.Bosch.IboosterGen2 do
   end
 
   def set_flow_rate(value) do
-    :ok = Emitter.update(@vehicle_network_name, @brake_request_frame_name, fn (data) ->
+    :ok = Emitter.update(@network_name, @brake_request_frame_name, fn (data) ->
       %{data | "flow_rate" => value}
     end)
   end
 
+  def activate_external_request() do
+    set_external_request(@brake_request_frame_name, true)
+    set_external_request(@vehicle_status_frame_name, true)
+  end
+
+  def deactivate_external_request() do
+    set_external_request(@brake_request_frame_name, false)
+    set_external_request(@vehicle_status_frame_name, false)
+  end
+
+  defp set_external_request(frame_name, value) do
+    :ok = Emitter.update(@network_name, frame_name, fn (data) ->
+      %{data | "external_request" => value}
+    end)
+  end
+
   defp init_emitters() do
-    :ok = Emitter.configure(@vehicle_network_name, @vehicle_status_frame_name, %{
+    :ok = Emitter.configure(@network_name, @vehicle_status_frame_name, %{
       parameters_builder_function: &vehicle_status_frame_parameters_builder/1,
       initial_data: %{
-        "counter" => 0
+        "counter" => 0,
+        "external_request" => false
       }
     })
-    :ok = Emitter.configure(@vehicle_network_name, @vehicle_alive_frame_name, %{
+    :ok = Emitter.configure(@network_name, @vehicle_alive_frame_name, %{
       parameters_builder_function: &vehicle_alive_frame_parameters_builder/1,
       initial_data: %{
         "counter" => 0
       }
     })
-    :ok = Emitter.configure(@vehicle_network_name, @brake_request_frame_name, %{
+    :ok = Emitter.configure(@network_name, @brake_request_frame_name, %{
       parameters_builder_function: &brake_request_frame_parameters_builder/1,
       initial_data: %{
         "counter" => 0,
         "flow_rate" => 32256,
+        "external_request" => false
       }
     })
     :ok
@@ -122,7 +132,8 @@ defmodule VmsCore.Bosch.IboosterGen2 do
   defp vehicle_status_frame_parameters_builder(data) do
     counter = data["counter"]
     parameters = %{
-      "counter" => counter(counter) + 64,
+      "counter" => counter(counter),
+      "external_request" =>  data["external_request"],
       "crc" => &crc8/1
     }
 
@@ -144,8 +155,9 @@ defmodule VmsCore.Bosch.IboosterGen2 do
   defp brake_request_frame_parameters_builder(data) do
     counter = data["counter"]
     parameters = %{
-      "counter" => counter(counter) + 64,
-      "flow_rate" =>  data["flow_rate"],
+      "counter" => counter(counter),
+      "flow_rate" => data["flow_rate"],
+      "external_request" => data["external_request"],
       "crc" => &crc8/1
     }
 

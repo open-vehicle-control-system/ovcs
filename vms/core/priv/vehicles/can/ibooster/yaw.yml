@@ -9,20 +9,33 @@ emitted_frames:
         kind: checksum
         value_start: 0
         value_length: 8
-      - name: counter
-        kind: integer
-        value_start: 8
-        value_length: 8
       - name: filler0
         kind: static
-        value: 0x00
-        value_start: 16
-        value_length: 8
+        value_start: 8
+        value_length: 1
+        value: 0
+      - name: external_request
+        kind: enum
+        value_start: 9
+        value_length: 1
+        mapping:
+          0x01: true
+          0x00: false
       - name: filler1
         kind: static
-        value: 0x05
-        value_start: 24
-        value_length: 8
+        value_start: 10
+        value_length: 2
+        value: 0
+      - name: counter
+        kind: integer
+        value_start: 12
+        value_length: 4
+      - name: filler2
+        kind: static
+        value: 0x0005
+        value_start: 16
+        value_length: 16
+
   - name: brake_request
     id: 0x38C
     frequency: 10
@@ -31,10 +44,27 @@ emitted_frames:
         kind: checksum
         value_start: 0
         value_length: 8
+      - name: filler0
+        kind: static
+        value_start: 8
+        value_length: 1
+        value: 0
+      - name: external_request
+        kind: enum
+        value_start: 9
+        value_length: 1
+        mapping:
+          0x01: true
+          0x00: false
+      - name: filler1
+        kind: static
+        value_start: 10
+        value_length: 2
+        value: 0
       - name: counter
         kind: integer
-        value_start: 8
-        value_length: 8
+        value_start: 12
+        value_length: 4
       - name: flow_rate
         value_start: 16
         value_length: 16
@@ -47,41 +77,21 @@ emitted_frames:
         kind: checksum
         value_start: 0
         value_length: 8
-      - name: counter
-        kind: integer
-        value_start: 8
-        value_length: 8
       - name: filler0
         kind: static
         value: 0x00
-        value_start: 16
-        value_length: 24
-      - name: filler1
-        kind: static
-        value: 0x50
-        value_start: 40
-        value_length: 8
-      - name: filler2
-        kind: static
-        value: 0x47
-        value_start: 48
-        value_length: 8
-received_frames:
-  - name: rod_status
-    id: 0x38E
-    signals:
-      - name: crc
-        kind: integer
-        value_start: 0
-        value_length: 8
+        value_start: 8
+        value_length: 4
       - name: counter
         kind: integer
-        value_start: 8
-        value_length: 8
-      - name: output_rod_target # The brake is considered to be applied when output_rod_target is greater than 575mm or brake_status.driver_brake_applied is true (or brake_status.brake_sensor_fault is true to assume worst case scenario)
-        unit: mm
-        value_start: 24
-        value_length: 10
+        value_start: 12
+        value_length: 4
+      - name: filler1
+        kind: static
+        value: 0x0000005047
+        value_start: 16
+        value_length: 40
+received_frames:
   - name: brake_status
     id: 0x38F
     signals:
@@ -117,9 +127,17 @@ received_frames:
   - name: ibooster_status
     id: 0x39D
     signals:
+      - name: crc
+        kind: integer
+        value_start: 0
+        value_length: 8
+      - name: counter
+        kind: integer
+        value_start: 8
+        value_length: 4
       - name: status
         kind: enum
-        value_start: 9
+        value_start: 12
         value_length: 3
         mapping:
           0x00: 'off'
@@ -131,10 +149,29 @@ received_frames:
           0x06: actuation
       - name: driver_brake_apply
         kind: enum
-        value_start: 22
+        value_start: 16
         value_length: 2
         mapping:
           0x00: not_init_or_off
           0x01: brakes_not_applied
           0x02: driver_applying_brake
           0x03: fault
+      - name: internal_state
+        kind: enum
+        value_start: 18
+        value_length: 3
+        mapping:
+          0x00: no_mode_active
+          0x01: pre_drive_check
+          0x02: local_brake_request
+          0x03: external_brake_request
+          0x04: diagnostic
+          0x05: transition_to_iddle
+          0x06: post_drive_check
+      - name: rod_position
+        kind: integer
+        value_start: 21
+        value_length: 12
+        scale: "0.015625"
+        unit: mm
+        offset: -5
