@@ -92,38 +92,6 @@ emitted_frames:
         value_start: 16
         value_length: 40
 received_frames:
-  - name: brake_status
-    id: 0x38F
-    signals:
-      - name: crc
-        kind: integer
-        value_start: 0
-        value_length: 8
-      - name: counter
-        kind: integer
-        value_start: 8
-        value_length: 8
-      - name: driver_brake_applied
-        kind: enum
-        value_start: 16
-        value_length: 1
-        mapping:
-          0x00: False
-          0x01: True
-      - name: brake_sensor_fault
-        kind: enum
-        value_start: 17
-        value_length: 1
-        mapping:
-          0x00: False
-          0x01: True
-      - name: ibooster_error
-        kind: enum
-        value_start: 19
-        value_length: 3
-        mapping:
-          0x07: false
-          0x00: true # To be refined with concrete values, we only know that 0x07 means "ok"
   - name: ibooster_status
     id: 0x39D
     signals:
@@ -131,13 +99,9 @@ received_frames:
         kind: integer
         value_start: 0
         value_length: 8
-      - name: counter
-        kind: integer
-        value_start: 8
-        value_length: 4
       - name: status
         kind: enum
-        value_start: 12
+        value_start: 9
         value_length: 3
         mapping:
           0x00: 'off'
@@ -147,9 +111,13 @@ received_frames:
           0x04: active_good_check
           0x05: ready
           0x06: actuation
+      - name: counter
+        kind: integer
+        value_start: 12
+        value_length: 4
       - name: driver_brake_apply
         kind: enum
-        value_start: 16
+        value_start: 22
         value_length: 2
         mapping:
           0x00: not_init_or_off
@@ -158,7 +126,7 @@ received_frames:
           0x03: fault
       - name: internal_state
         kind: enum
-        value_start: 18
+        value_start: 19
         value_length: 3
         mapping:
           0x00: no_mode_active
@@ -169,8 +137,14 @@ received_frames:
           0x05: transition_to_iddle
           0x06: post_drive_check
       - name: rod_position
-        kind: integer
-        value_start: 21
+        endianness: big
+        value_start:
+          - start: 16
+            length: 3
+          - start: 24
+            length: 8
+          - start: 39
+            length: 1
         value_length: 12
         scale: "0.015625"
         unit: mm
