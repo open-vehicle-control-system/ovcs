@@ -1,0 +1,118 @@
+---
+anchors:
+  digital_pin_configuration: &digital_pin_configuration
+    kind: enum
+    value_length: 2
+    mapping:
+      0x00: disabled
+      0x01: read_only
+      0x02: write_only
+      0x03: read_write
+  other_pin_configuration: &other_pin_configuration
+    kind: enum
+    value_length: 1
+    mapping:
+      0x00: disabled
+      0x01: enabled
+name: controller_configuration # only emitted while adopting a new controller
+id: 0x700
+frequency: 100
+signals:
+  - name: controller_id
+    kind: integer
+    value_start: 0
+    value_length: 5
+  - name: filler0
+    kind: static
+    value_start: 5
+    value_length: 3
+    value: 0x00
+  - name: digital_pin0
+    value_start: 8
+    <<: *digital_pin_configuration
+  - name: digital_pin1
+    value_start: 10
+    <<: *digital_pin_configuration
+  - name: digital_pin2
+    value_start: 12
+    <<: *digital_pin_configuration
+  - name: digital_pin3
+    value_start: 14
+    <<: *digital_pin_configuration
+  - name: digital_pin4
+    value_start: 16
+    <<: *digital_pin_configuration
+  - name: digital_pin5
+    value_start: 18
+    <<: *digital_pin_configuration
+  - name: digital_pin6
+    value_start: 20
+    <<: *digital_pin_configuration
+  - name: digital_pin7
+    value_start: 22
+    <<: *digital_pin_configuration
+  - name: digital_pin8
+    value_start: 24
+    <<: *digital_pin_configuration
+  - name: digital_pin9
+    value_start: 26
+    <<: *digital_pin_configuration
+  - name: digital_pin10
+    value_start: 28
+    <<: *digital_pin_configuration
+  - name: digital_pin11
+    value_start: 30
+    <<: *digital_pin_configuration
+  - name: digital_pin12
+    value_start: 32
+    <<: *digital_pin_configuration
+  - name: digital_pin13
+    value_start: 34
+    <<: *digital_pin_configuration
+  - name: digital_pin14
+    value_start: 36
+    <<: *digital_pin_configuration
+  - name: digital_pin15
+    value_start: 38
+    <<: *digital_pin_configuration
+  - name: digital_pin16
+    value_start: 40
+    <<: *digital_pin_configuration
+  - name: digital_pin17
+    value_start: 42
+    <<: *digital_pin_configuration
+  - name: digital_pin18
+    value_start: 44
+    <<: *digital_pin_configuration
+  - name: digital_pin19
+    value_start: 46
+    <<: *digital_pin_configuration
+  - name: digital_pin20
+    value_start: 48
+    <<: *digital_pin_configuration
+  - name: pwm_pin0
+    value_start: 50
+    <<: *other_pin_configuration
+  - name: pwm_pin1
+    value_start: 51
+    <<: *other_pin_configuration
+  - name: pwm_pin2
+    value_start: 52
+    <<: *other_pin_configuration
+  - name: dac_pin0
+    value_start: 53
+    <<: *other_pin_configuration
+  - name: analog_pin0
+    value_start: 54
+    <<: *other_pin_configuration
+  - name: analog_pin1
+    value_start: 55
+    <<: *other_pin_configuration
+  - name: analog_pin2
+    value_start: 56
+    <<: *other_pin_configuration
+  - name: filler1
+    kind: static
+    value_start: 57
+    value_length: 7
+    value: 0x00

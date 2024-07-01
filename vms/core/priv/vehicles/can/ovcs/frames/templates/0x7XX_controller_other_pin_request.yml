@@ -1,0 +1,21 @@
+---
+anchors:
+  pin_parameters: &pin_parameters
+    kind: integer
+    value_length: 12
+name: controller_other_pin_request
+id: 0x7XX
+frequency: 10
+signals:
+  - name: pwm_pin0_request
+    value_start: 0
+    <<: *pin_parameters
+  - name: pwm_pin1_request
+    value_start: 12
+    <<: *pin_parameters
+  - name: pwm_pin2_request
+    value_start: 24
+    <<: *pin_parameters
+  - name: dac_pin0_request
+    value_start: 36
+    <<: *pin_parameters
