@@ -4,6 +4,7 @@
 #include <SPI.h>
 #include <EEPROM.h>
 #include <CRC32.h>
+#include <main.h>
 
 #define ON 1
 #define OFF 0
@@ -14,10 +15,6 @@
 #define ADOPTION_FRAME_ID 0x700
 #define CONFIGURATION_EEPROM_ADDRESS 0
 #define CONFIGURATION_CRC_EEPROM_ADDRESS 64
-#define ALIVE_FRAME_ID_MASK 0x700
-#define DIGITAL_PIN_REQUEST_FRAME_ID_MASK 0x701
-#define OTHER_PIN_REQUEST_FRAME_ID_MASK 0x702
-#define DIGITAL_AND_ANALOG_PIN_STATUS_FRAME_ID_MASK 0x703
 #define CONFIGURATION_BYTE_SIZE 8
 
 MCP23008 I2C_MOSFET_1(0x27);
@@ -30,9 +27,7 @@ ACAN2517 can (MCP2517_CS, SPI, MCP2517_INT) ;
 
 unsigned long pinStatusSendTimestamp = 0;
 unsigned long now = 0;
-uint16_t controllerId;
-uint64_t digitalPinConfiguration;
-uint8_t  otherPinConfiguration;
+Configuration configuration;
 uint32_t digital_pin_request = 0;
 
 uint16_t aliveFrameId;
@@ -146,6 +141,11 @@ void sendPinStatuses() {
   // send can frame
 }
 
+Configuration interpretRawConfiguration(uint8_t rawConfiguration[8]) {
+  Configuration configuration(rawConfiguration);
+  return configuration;
+}
+
 uint16_t computeFrameId(uint8_t controllerId, uint16_t mask) {
   uint16_t shiftedId = controllerId << 3;
   return shiftedId | mask;
@@ -154,16 +154,15 @@ void loadConfiguration() {
   uint32_t crc;
   uint32_t configurationCrc;
   size_t configurationByteSize = 8;
-  uint8_t configuration [8];
-  EEPROM.get(CONFIGURATION_EEPROM_ADDRESS, configuration);
+  uint8_t rawConfiguration [8];
+  EEPROM.get(CONFIGURATION_EEPROM_ADDRESS, rawConfiguration);
   EEPROM.get(CONFIGURATION_CRC_EEPROM_ADDRESS, configurationCrc);
-  crc = CRC32::calculate(configuration, CONFIGURATION_BYTE_SIZE);
+  crc = CRC32::calculate(rawConfiguration, CONFIGURATION_BYTE_SIZE);
   if (crc == configurationCrc) {
+    configuration = interpretRawConfiguration(rawConfiguration);
+    Serial.println(configuration.controllerId);
+    Serial.println(configuration.digitalAndAnalogPinStatusFrameId);
     Serial.println("Saved configuration loaded, ready!");
-    aliveFrameId                     = computeFrameId(controllerId, ALIVE_FRAME_ID_MASK);
-    digitalPinRequestFrameId         = computeFrameId(controllerId, DIGITAL_PIN_REQUEST_FRAME_ID_MASK);
-    otherPinRequestFrameId           = computeFrameId(controllerId, OTHER_PIN_REQUEST_FRAME_ID_MASK);
-    digitalAndAnalogPinStatusFrameId = computeFrameId(controllerId, DIGITAL_AND_ANALOG_PIN_STATUS_FRAME_ID_MASK);
     ready                            = true;
   } else {
     ready = false;

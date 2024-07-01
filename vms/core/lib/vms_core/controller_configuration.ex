@@ -36,7 +36,6 @@ defmodule VmsCore.ControllerConfiguration do
     parameters = data["configurations"][data["current_controller"]]
     {:ok, parameters, data}
   end
-
   defp controller_configurations() do
     %{
       "front_controller" => %{
