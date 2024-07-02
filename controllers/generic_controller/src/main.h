@@ -1,42 +1,24 @@
-#define DIGITAL_PIN_DISABLED 0
-#define DIGITAL_PIN_READ_ONLY 1
-#define DIGITAL_PIN_WRITE_ONLY 2
-#define DIGITAL_PIN_READ_WRITE 3
+#ifndef MAIN_H
+#define MAIN_H
 
-#define ALIVE_FRAME_ID_MASK 0x700
-#define DIGITAL_PIN_REQUEST_FRAME_ID_MASK 0x701
-#define OTHER_PIN_REQUEST_FRAME_ID_MASK 0x702
-#define DIGITAL_AND_ANALOG_PIN_STATUS_FRAME_ID_MASK 0x703
+#include <Arduino.h>
+#include <ACAN2517.h>
+#include <SPI.h>
+#include <EEPROM.h>
+#include <CRC32.h>
 
-class DigitalPinConfiguration {
-  public : uint8_t status;
-};
+#define ON 1
+#define OFF 0
+#define OUTPUT_PIN_MODE 0x00
+#define I2C_CLOCK_FREQUENCY 100000
+#define PIN_STATUS_FRAME_FREQUENCY_MS 10
+#define ADOPTION_BUTTON_PIN 2
+#define ADOPTION_FRAME_ID 0x700
+#define CONFIGURATION_EEPROM_ADDRESS 0
+#define CONFIGURATION_CRC_EEPROM_ADDRESS 64
+#define CONFIGURATION_BYTE_SIZE 8
 
-class OtherPinConfiguration {
-  public : bool  enabled;
-};
+static const byte MCP2517_CS  = 10;
+static const byte MCP2517_INT = 3;
 
-class Configuration {
-  public :
-    uint8_t  controllerId;
-    DigitalPinConfiguration digitalPinConfigurations [21];
-    OtherPinConfiguration pwmPinConfigurations [3];
-    OtherPinConfiguration dacPinConfiguration;
-    OtherPinConfiguration analogPinConfigurations [3];
-    uint16_t aliveFrameId;
-    uint16_t   digitalPinRequestFrameId;
-    uint16_t otherPinRequestFrameId;
-    uint16_t digitalAndAnalogPinStatusFrameId;
-    Configuration() {};
-    Configuration(uint8_t rawConfiguration [8]) {
-      controllerId = rawConfiguration[0] >> 3;
-      aliveFrameId                     = computeFrameId(ALIVE_FRAME_ID_MASK);
-      digitalPinRequestFrameId         = computeFrameId(DIGITAL_PIN_REQUEST_FRAME_ID_MASK);
-      otherPinRequestFrameId           = computeFrameId(OTHER_PIN_REQUEST_FRAME_ID_MASK);
-      digitalAndAnalogPinStatusFrameId = computeFrameId(DIGITAL_AND_ANALOG_PIN_STATUS_FRAME_ID_MASK);
-    };
-    uint16_t computeFrameId(uint16_t mask) {
-      uint16_t shiftedId = controllerId << 3;
-      return shiftedId | mask;
-    };
-};
+#endif

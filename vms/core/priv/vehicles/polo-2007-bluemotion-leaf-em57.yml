@@ -11,6 +11,7 @@ can_networks:
       - import!:can/ovcs/frames/0x60B_bms_status.yml
       - import!:can/ovcs/frames/0x600_gear_status.yml
       - import!:can/ovcs/frames/0x700_controller_configuration.yml
+      - import!:can/ovcs/frames/0x701_front_controller_digital_pin_request.yml
     received_frames:
       - import!:can/ovcs/frames/0x101_contactors_status.yml
       - import!:can/ovcs/frames/0x111_vms_relay_status.yml

@@ -1,27 +1,5 @@
-#include <Arduino.h>
-#include "MCP23008.h"
-#include <ACAN2517.h>
-#include <SPI.h>
-#include <EEPROM.h>
-#include <CRC32.h>
 #include <main.h>
-
-#define ON 1
-#define OFF 0
-#define OUTPUT_PIN_MODE 0x00
-#define I2C_CLOCK_FREQUENCY 100000
-#define PIN_STATUS_FRAME_FREQUENCY_MS 10
-#define ADOPTION_BUTTON_PIN 2
-#define ADOPTION_FRAME_ID 0x700
-#define CONFIGURATION_EEPROM_ADDRESS 0
-#define CONFIGURATION_CRC_EEPROM_ADDRESS 64
-#define CONFIGURATION_BYTE_SIZE 8
-
-MCP23008 I2C_MOSFET_1(0x27);
-MCP23008 I2C_MOSFET_2(0x26);
-
-static const byte MCP2517_CS  = 10;
-static const byte MCP2517_INT = 3;
+#include <configuration.h>
 
 ACAN2517 can (MCP2517_CS, SPI, MCP2517_INT) ;
 
@@ -30,10 +8,6 @@ unsigned long now = 0;
 Configuration configuration;
 uint32_t digital_pin_request = 0;
 
-uint16_t aliveFrameId;
-uint16_t digitalPinRequestFrameId;
-uint16_t otherPinRequestFrameId;
-uint16_t digitalAndAnalogPinStatusFrameId;
 
 bool waitingAdoption = false;
 bool ready = false;
@@ -56,16 +30,10 @@ void initializeSerial() {
   }
 }
 
-void initializeMosfetBoard(MCP23008 mosfet) {
-  mosfet.begin();
-  mosfet.pinMode8(OUTPUT_PIN_MODE);
-  mosfet.write8(0x00);
-};
-
-void initializeMosfetBoards() {
+void initializeI2C() {
   Wire.begin();
-  initializeMosfetBoard(I2C_MOSFET_1);
-  initializeMosfetBoard(I2C_MOSFET_2);
+  MOSFETBoard1.begin();
+  MOSFETBoard2.begin();
   Wire.setClock(I2C_CLOCK_FREQUENCY);
 }
 
@@ -73,7 +41,7 @@ void initializeCan() {
   SPI.begin ();
   ACAN2517Settings settings (ACAN2517Settings::OSC_40MHz, 500UL * 1000UL);
   settings.mDriverTransmitFIFOSize = 1;
-  settings.mDriverReceiveFIFOSize = 1;
+  settings.mDriverReceiveFIFOSize  = 1;
   const uint32_t errorCode = can.begin (settings, [] { can.isr () ; });
   if (errorCode == 0) {
     Serial.println("CAN Ready");
@@ -85,7 +53,9 @@ void initializeCan() {
 
 void receiveFrame() {
   if (can.available()) {
-    can.receive(receivedFrame) ;
+    can.receive(receivedFrame);
+  } else {
+    receivedFrame = CANMessage();
   }
 }
 
@@ -106,15 +76,27 @@ void initializeAdoptionButton() {
 
 void storeConfiguration(CANMessage frame) {
   uint32_t crc = CRC32::calculate(frame.data, CONFIGURATION_BYTE_SIZE);
-  Serial.println("Saving");
-  Serial.println(crc);
-  EEPROM.put(CONFIGURATION_EEPROM_ADDRESS, frame.data64);
+  EEPROM.put(CONFIGURATION_EEPROM_ADDRESS, frame.data);
   EEPROM.put(CONFIGURATION_CRC_EEPROM_ADDRESS, crc);
   adoptedSinceLastBoot = true;
 }
 
 void setDigitalPins(CANMessage receivedFrame) {
-  // Write digital pin values based on writeable pins in config + digital pin request in receivedFrame
+  uint8_t pinNumber = 0;
+  for(uint8_t byteNumber = 0; byteNumber < 3; byteNumber++) {
+    for (uint8_t i = 1; i < 8; i++) {
+      if (pinNumber < 21) {
+        DigitalPin digitalPin = configuration.digitalPins[pinNumber];
+        if (digitalPin.writeable()) {
+          bool value = receivedFrame.data[byteNumber] >> 8 - i & 1;
+          digitalPin.write(value);
+        }
+        pinNumber++;
+      } else {
+        i = 8;
+      }
+    }
+  };
 }
 
 void setOtherPins(CANMessage receivedFrame) {
@@ -127,9 +109,9 @@ void send_pin_status_frame() {
   now = millis();
   if (pinStatusSendTimestamp + PIN_STATUS_FRAME_FREQUENCY_MS <= now) {
     pinStatusSendTimestamp = now;
-    frame.id = digitalAndAnalogPinStatusFrameId;
-    frame.len = 8;
-    frame.data[0] = 0xFF; // Fill with data
+    frame.id               = configuration.digitalAndAnalogPinStatusFrameId;
+    frame.len              = 8;
+    frame.data[0]          = 0xFF; // Fill with data
    can_send(frame);
   }
 }
@@ -141,11 +123,6 @@ void sendPinStatuses() {
   // send can frame
 }
 
-Configuration interpretRawConfiguration(uint8_t rawConfiguration[8]) {
-  Configuration configuration(rawConfiguration);
-  return configuration;
-}
-
 uint16_t computeFrameId(uint8_t controllerId, uint16_t mask) {
   uint16_t shiftedId = controllerId << 3;
   return shiftedId | mask;
@@ -153,17 +130,14 @@ uint16_t computeFrameId(uint8_t controllerId, uint16_t mask) {
 void loadConfiguration() {
   uint32_t crc;
   uint32_t configurationCrc;
-  size_t configurationByteSize = 8;
   uint8_t rawConfiguration [8];
   EEPROM.get(CONFIGURATION_EEPROM_ADDRESS, rawConfiguration);
   EEPROM.get(CONFIGURATION_CRC_EEPROM_ADDRESS, configurationCrc);
   crc = CRC32::calculate(rawConfiguration, CONFIGURATION_BYTE_SIZE);
   if (crc == configurationCrc) {
-    configuration = interpretRawConfiguration(rawConfiguration);
-    Serial.println(configuration.controllerId);
-    Serial.println(configuration.digitalAndAnalogPinStatusFrameId);
-    Serial.println("Saved configuration loaded, ready!");
-    ready                            = true;
+    configuration = Configuration(rawConfiguration);
+    Serial.println("Saved configuration valid, ready!");
+    ready = true;
   } else {
     ready = false;
     Serial.println("Saved configuration invalid, adoption required to continue.");
@@ -181,8 +155,9 @@ void setup()
   initializeSerial();
   initializeAdoptionButton();
   initializeCan();
-  initializeMosfetBoards();
+  initializeI2C();
   loadConfiguration();
+
 }
 
 void loop () {
@@ -191,9 +166,9 @@ void loop () {
     Serial.println("--> Adoption started <--");
     adoptConfiguration(receivedFrame);
   } else if (ready) {
-    if (receivedFrame.id == digitalPinRequestFrameId) {
+    if (receivedFrame.id == configuration.digitalPinRequestFrameId) {
       setDigitalPins(receivedFrame);
-    } else if (receivedFrame.id == otherPinRequestFrameId) {
+    } else if (receivedFrame.id == configuration.otherPinRequestFrameId) {
       setOtherPins(receivedFrame);
     }
     sendPinStatuses();
