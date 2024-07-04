@@ -1,5 +1,40 @@
 #include <configuration.h>
 
+bool Configuration::load() {
+  uint32_t crc;
+  uint32_t configurationCrc;
+  uint8_t storedConfiguration [8];
+  EEPROM.get(CONFIGURATION_EEPROM_ADDRESS, storedConfiguration);
+  EEPROM.get(CONFIGURATION_CRC_EEPROM_ADDRESS, configurationCrc);
+  crc = CRC32::calculate(storedConfiguration, CONFIGURATION_BYTE_SIZE);
+  if (crc == configurationCrc) {
+    rawConfiguration = storedConfiguration;
+    computeControllerId();
+    computeFrameIds();
+    computeDigitalPins();
+    computePwmPins();
+    computeDacPin();
+    computeAnalogPins();
+    Serial.println("> EEPROM configuration valid, ready!");
+    print();
+    return true;
+  } else {
+    Serial.println("> EEPROM configuration invalid, adoption required!");
+    return false;
+  }
+};
+
+void Configuration::store(CANMessage frame) {
+  uint32_t crc = CRC32::calculate(frame.data , CONFIGURATION_BYTE_SIZE);
+  EEPROM.put(CONFIGURATION_EEPROM_ADDRESS, frame.data);
+  EEPROM.put(CONFIGURATION_CRC_EEPROM_ADDRESS, crc);
+};
+
+void Configuration::storeAndApply(CANMessage frame) {
+  store(frame);
+  load();
+};
+
 void Configuration::computeControllerId() {
   controllerId = rawConfiguration[0] >> 3;
 };
@@ -17,25 +52,45 @@ void Configuration::computeDigitalPins() {
   for(uint8_t byteNumber = 1; byteNumber < 7; byteNumber++) {
     for (uint8_t i = 2; i < 9; i = i + 2) {
       if (pinNumber < 21) {
-        uint8_t value          = (rawConfiguration[byteNumber] >> (8 - i)) & 3;
+        uint8_t value          = (rawConfiguration[byteNumber] >> (8 - i)) & 0b11;
         uint8_t board          = digitalPinMapping[pinNumber][0];
         uint8_t physicalPin    = digitalPinMapping[pinNumber][1];
         digitalPins[pinNumber] = DigitalPin(value, board, physicalPin);
         pinNumber++;
+      } else {
+        i = 9;
       }
     }
   };
 };
+
 void Configuration::computePwmPins() {
-  pwmPins[0] = OtherPin(rawConfiguration[6] >> 5 & 1, D5);
-  pwmPins[1] = OtherPin(rawConfiguration[6] >> 4 & 1, D6);
-  pwmPins[2] = OtherPin(rawConfiguration[6] >> 3 & 1, D9);
+  pwmPins[0] = OtherPin(rawConfiguration[6] >> 5 & 0b1, D5);
+  pwmPins[1] = OtherPin(rawConfiguration[6] >> 4 & 0b1, D6);
+  pwmPins[2] = OtherPin(rawConfiguration[6] >> 3 & 0b1, D9);
 };
+
 void Configuration::computeDacPin() {
-  dacPin = OtherPin(rawConfiguration[6] >> 2 & 1, A0);
+  dacPin = OtherPin(rawConfiguration[6] >> 2 & 0b1, A0);
 };
+
 void Configuration::computeAnalogPins() {
-  analogPins[0] = OtherPin(rawConfiguration[6] >> 1 & 1, A1);
-  analogPins[1] = OtherPin(rawConfiguration[6]  & 1, A2);
-  analogPins[2] = OtherPin(rawConfiguration[7] >> 7 & 1, A3);
+  analogPins[0] = OtherPin(rawConfiguration[6] >> 1 & 0b1, A1);
+  analogPins[1] = OtherPin(rawConfiguration[6]  & 0b1, A2);
+  analogPins[2] = OtherPin(rawConfiguration[7] >> 7 & 0b1, A3);
+};
+
+void Configuration::print() {
+  Serial.println(">>>>> Current Configuration");
+  Serial.print("> Controller ID: ");
+  Serial.println(controllerId);
+  Serial.print("> Alive frame ID: 0x");
+  Serial.println(aliveFrameId, HEX);
+  Serial.print("> Digital PIN request frame ID: 0x");
+  Serial.println(digitalPinRequestFrameId, HEX);
+  Serial.print("> Other PIN request frame ID: 0x");
+  Serial.println(otherPinRequestFrameId, HEX);
+  Serial.print("> Digital and analog PIN status frame ID: 0x");
+  Serial.println(digitalAndAnalogPinStatusFrameId, HEX);
+  Serial.println("<<<<<< Current Configuration");
 };
