@@ -66,7 +66,10 @@ defmodule VmsCore.FrontController do
       %{data | "pwm_pin" <> pin_number <> "_duty_cycle" => duty_cycle}
     end)
   end
-end
-4094
 
-111111111110
+  def set_dac(duty_cycle) do
+    :ok = Emitter.update(@network_name, @other_pin_request_frame_name, fn (data) ->
+      %{data | "dac_pin0_duty_cycle" => duty_cycle}
+    end)
+  end
+end

@@ -80,7 +80,13 @@ void Controller::setPwmPins() {
 };
 
 void Controller::setDacPin() {
-  // Write dac pin values based on writeable pins in config + other pin request in receivedFrame
+  uint16_t dutyCycle;
+  DacPin dacPin = configuration.dacPin;
+
+  if (dacPin.enabled) {
+    dutyCycle =  (can.receivedFrame.data[5] & 0b00001111) << 8 | (can.receivedFrame.data[4] & 0b00001111) << 4 | (can.receivedFrame.data[5] & 0b11110000) >> 4  ;
+    dacPin.write(dutyCycle);
+  }
 };
 
 void Controller::emitPinStatuses() {
