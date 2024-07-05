@@ -25,7 +25,8 @@ class Controller {
     void setup();
     void adoptConfiguration();
     void setDigitalPins();
-    void setOtherPins();
+    void setPwmPins();
+    void setDacPin();
     void sendPinStatuses();
     bool isReady();
     void loop();

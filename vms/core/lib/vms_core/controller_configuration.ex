@@ -62,7 +62,7 @@ defmodule VmsCore.ControllerConfiguration do
         "digital_pin19" => "read_write",
         "digital_pin20" => "disabled",
         "pwm_pin0" => "enabled",
-        "pwm_pin1" => "disabled",
+        "pwm_pin1" => "enabled",
         "pwm_pin2" => "enabled",
         "dac_pin0" => "enabled",
         "analog_pin0" => "enabled",

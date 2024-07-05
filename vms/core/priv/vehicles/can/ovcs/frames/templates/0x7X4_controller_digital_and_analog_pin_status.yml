@@ -1,75 +1,87 @@
 ---
 anchors:
-  pin_parameters: &pin_parameters
+  digital_pin_parameters: &digital_pin_parameters
     kind: enum
     value_length: 1
     mapping:
       0x00: false
       0x01: true
-name: controller_digital_pin_request
-id: 0x7XX
+  analog_pin_parameters: &analog_pin_parameters
+    kind: integer
+    value_length: 14
+name: controller_digital_and_analog_pin_status
+id: 0x7X4
 frequency: 10
 signals:
   - name: digital_pin0_enabled
     value_start: 0
-    <<: *pin_parameters
+    <<: *digital_pin_parameters
   - name: digital_pin1_enabled
     value_start: 1
-    <<: *pin_parameters
+    <<: *digital_pin_parameters
   - name: digital_pin2_enabled
     value_start: 2
-    <<: *pin_parameters
+    <<: *digital_pin_parameters
   - name: digital_pin3_enabled
     value_start: 3
-    <<: *pin_parameters
+    <<: *digital_pin_parameters
   - name: digital_pin4_enabled
     value_start: 4
-    <<: *pin_parameters
+    <<: *digital_pin_parameters
   - name: digital_pin5_enabled
     value_start: 5
-    <<: *pin_parameters
+    <<: *digital_pin_parameters
   - name: digital_pin6_enabled
     value_start: 6
-    <<: *pin_parameters
+    <<: *digital_pin_parameters
   - name: digital_pin7_enabled
     value_start: 7
-    <<: *pin_parameters
+    <<: *digital_pin_parameters
   - name: digital_pin8_enabled
     value_start: 8
-    <<: *pin_parameters
+    <<: *digital_pin_parameters
   - name: digital_pin9_enabled
     value_start: 9
-    <<: *pin_parameters
+    <<: *digital_pin_parameters
   - name: digital_pin10_enabled
     value_start: 10
-    <<: *pin_parameters
+    <<: *digital_pin_parameters
   - name: digital_pin11_enabled
     value_start: 11
-    <<: *pin_parameters
+    <<: *digital_pin_parameters
   - name: digital_pin12_enabled
     value_start: 12
-    <<: *pin_parameters
+    <<: *digital_pin_parameters
   - name: digital_pin13_enabled
     value_start: 13
-    <<: *pin_parameters
+    <<: *digital_pin_parameters
   - name: digital_pin14_enabled
     value_start: 14
-    <<: *pin_parameters
+    <<: *digital_pin_parameters
   - name: digital_pin15_enabled
     value_start: 15
-    <<: *pin_parameters
+    <<: *digital_pin_parameters
   - name: digital_pin16_enabled
     value_start: 16
-    <<: *pin_parameters
+    <<: *digital_pin_parameters
   - name: digital_pin17_enabled
     value_start: 17
-    <<: *pin_parameters
+    <<: *digital_pin_parameters
   - name: digital_pin18_enabled
     value_start: 18
-    <<: *pin_parameters
+    <<: *digital_pin_parameters
   - name: digital_pin19_enabled
     value_start: 19
-    <<: *pin_parameters
+    <<: *digital_pin_parameters
   - name: digital_pin20_enabled
     value_start: 20
-    <<: *pin_parameters
+    <<: *digital_pin_parameters
+  - name: analog_pin0_value
+    value_start: 21
+    <<: *analog_pin_parameters
+  - name: analog_pin1_value
+    value_start: 35
+    <<: *analog_pin_parameters
+  - name: analog_pin2_value
+    value_start: 49
+    <<: *analog_pin_parameters

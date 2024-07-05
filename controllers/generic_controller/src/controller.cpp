@@ -19,6 +19,7 @@ void Controller::setup() {
   initializeSerial();
   can.begin();
   initializeI2C();
+  analogWriteResolution(12);
   if (configuration.load()) {
     ready = true;
   } else {
@@ -53,8 +54,33 @@ void Controller::setDigitalPins() {
   };
 };
 
-void Controller::setOtherPins() {
-  // Write other pin values based on writeable pins in config + other pin request in receivedFrame
+// |    0   |      1     |    2    |    3    |      4     |    5    |
+// |11111111| 1111 - 1111| 11111111| 11111111| 1111 - 1111| 11111111|
+// |        P0     |      P1       |        P2      |     DAC       |
+void Controller::setPwmPins() {
+  uint16_t dutyCycle;
+  PwmPin pwmPin;
+  pwmPin = configuration.pwmPins[0];
+  if (pwmPin.enabled) {
+    dutyCycle = (can.receivedFrame.data[1] & 0b11110000) << 4 | can.receivedFrame.data[0];
+    pwmPin.write(dutyCycle);
+  }
+
+  pwmPin = configuration.pwmPins[1];
+  if (pwmPin.enabled) {
+    dutyCycle =  (can.receivedFrame.data[2] & 0b00001111) << 8 | (can.receivedFrame.data[1] & 0b00001111) << 4 | (can.receivedFrame.data[2] & 0b11110000) >> 4  ;
+    pwmPin.write(dutyCycle);
+  }
+
+  pwmPin = configuration.pwmPins[2];
+  if (pwmPin.enabled) {
+    dutyCycle = (can.receivedFrame.data[4] & 0b11110000) << 4 | can.receivedFrame.data[3];
+    pwmPin.write(dutyCycle);
+  }
+};
+
+void Controller::setDacPin() {
+  // Write dac pin values based on writeable pins in config + other pin request in receivedFrame
 };
 
 void Controller::emitPinStatuses() {
@@ -73,7 +99,8 @@ void Controller::loop() {
     if (can.receivedFrame.id == configuration.digitalPinRequestFrameId) {
       setDigitalPins();
     } else if (can.receivedFrame.id == configuration.otherPinRequestFrameId) {
-      setOtherPins();
+      setPwmPins();
+      setDacPin();
     }
     emitPinStatuses();
     can.emitAlive(configuration.aliveFrameId);

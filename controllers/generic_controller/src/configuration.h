@@ -2,7 +2,9 @@
 #define CONFIGURATION_H
 #include <Arduino.h>
 #include <digital_pin.h>
-#include <other_pin.h>
+#include <pwm_pin.h>
+#include <dac_pin.h>
+#include <analog_pin.h>
 #include <CRC32.h>
 #include <EEPROM.h>
 #include <ACAN2517.h>
@@ -20,9 +22,9 @@ class Configuration {
     uint8_t* rawConfiguration;
     uint8_t  controllerId;
     DigitalPin digitalPins [21];
-    OtherPin pwmPins [3];
-    OtherPin dacPin;
-    OtherPin analogPins [3];
+    PwmPin pwmPins [3];
+    DacPin dacPin;
+    AnalogPin analogPins [3];
     uint16_t aliveFrameId;
     uint16_t digitalPinRequestFrameId;
     uint16_t otherPinRequestFrameId;

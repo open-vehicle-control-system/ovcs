@@ -4,11 +4,12 @@ defmodule VmsCore.FrontController do
 
   @network_name :ovcs
   @digital_pin_request_frame_name "front_controller_digital_pin_request"
+  @other_pin_request_frame_name "front_controller_other_pin_request"
 
   @impl true
   def init(_) do
     :ok = Emitter.configure(@network_name, @digital_pin_request_frame_name, %{
-      parameters_builder_function: &digital_pin_request_frame_parameter_builder/1,
+      parameters_builder_function: &pin_request_frame_parameter_builder/1,
       initial_data: %{
           "digital_pin0_enabled" => false,
           "digital_pin1_enabled" => false,
@@ -33,7 +34,16 @@ defmodule VmsCore.FrontController do
           "digital_pin20_enabled" => false,
       }
     })
-    Emitter.enable(@network_name, @digital_pin_request_frame_name)
+    :ok = Emitter.configure(@network_name, @other_pin_request_frame_name, %{
+      parameters_builder_function: &pin_request_frame_parameter_builder/1,
+      initial_data: %{
+          "pwm_pin0_duty_cycle" => 0,
+          "pwm_pin1_duty_cycle" => 0,
+          "pwm_pin2_duty_cycle" => 0,
+          "dac_pin0_duty_cycle" => 0
+      }
+    })
+    Emitter.enable(@network_name, [@digital_pin_request_frame_name, @other_pin_request_frame_name])
     {:ok, %{}}
   end
 
@@ -41,7 +51,7 @@ defmodule VmsCore.FrontController do
     GenServer.start_link(__MODULE__, nil, name: __MODULE__)
   end
 
-  defp digital_pin_request_frame_parameter_builder(data) do
+  defp pin_request_frame_parameter_builder(data) do
     {:ok, data, data}
   end
 
@@ -50,4 +60,13 @@ defmodule VmsCore.FrontController do
       %{data | "digital_pin" <> pin_number <> "_enabled" => value}
     end)
   end
+
+  def set_pwm(pin_number, duty_cycle) do
+    :ok = Emitter.update(@network_name, @other_pin_request_frame_name, fn (data) ->
+      %{data | "pwm_pin" <> pin_number <> "_duty_cycle" => duty_cycle}
+    end)
+  end
 end
+4094
+
+111111111110

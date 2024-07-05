@@ -3,19 +3,19 @@ anchors:
   pin_parameters: &pin_parameters
     kind: integer
     value_length: 12
-name: controller_other_pin_request
-id: 0x7XX
+name: front_controller_other_pin_request
+id: 0x703
 frequency: 10
 signals:
-  - name: pwm_pin0_request
+  - name: pwm_pin0_duty_cycle
     value_start: 0
     <<: *pin_parameters
-  - name: pwm_pin1_request
+  - name: pwm_pin1_duty_cycle
     value_start: 12
     <<: *pin_parameters
-  - name: pwm_pin2_request
+  - name: pwm_pin2_duty_cycle
     value_start: 24
     <<: *pin_parameters
-  - name: dac_pin0_request
+  - name: dac_pin0_duty_cycle
     value_start: 36
     <<: *pin_parameters
