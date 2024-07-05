@@ -54,9 +54,6 @@ void Controller::setDigitalPins() {
   };
 };
 
-// |    0   |      1     |    2    |    3    |      4     |    5    |
-// |11111111| 1111 - 1111| 11111111| 11111111| 1111 - 1111| 11111111|
-// |        P0     |      P1       |        P2      |     DAC       |
 void Controller::setPwmPins() {
   uint16_t dutyCycle;
   PwmPin pwmPin;
