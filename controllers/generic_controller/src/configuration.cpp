@@ -82,15 +82,71 @@ void Configuration::computeAnalogPins() {
 
 void Configuration::print() {
   Serial.println(">>>>> Current Configuration");
+
+  Serial.print("> Raw configuration: ");
+  for (uint8_t i = 0; i < 8; i++) {
+    rawConfiguration[i] <= 0xF ? Serial.print("0") : Serial.print("");
+    Serial.print(rawConfiguration[i], HEX);
+    i == 7 ? Serial.println("") : Serial.print(" ");
+  }
+
   Serial.print("> Controller ID: ");
   Serial.println(controllerId);
+
   Serial.print("> Alive frame ID: 0x");
   Serial.println(aliveFrameId, HEX);
+
   Serial.print("> Digital PIN request frame ID: 0x");
   Serial.println(digitalPinRequestFrameId, HEX);
+
   Serial.print("> Other PIN request frame ID: 0x");
   Serial.println(otherPinRequestFrameId, HEX);
+
   Serial.print("> Digital and analog PIN status frame ID: 0x");
   Serial.println(digitalAndAnalogPinStatusFrameId, HEX);
+
+  Serial.print("> Digital Pins: ");
+  for(uint8_t i = 0; i < 21; i++) {
+    Serial.print(i);
+    Serial.print(": ");
+    switch (digitalPins[i].status) {
+      case DIGITAL_PIN_DISABLED:
+        Serial.print("_");
+        break;
+      case DIGITAL_PIN_READ_ONLY:
+        Serial.print("R");
+        break;
+      case DIGITAL_PIN_WRITE_ONLY:
+        Serial.print("W");
+        break;
+      case DIGITAL_PIN_READ_WRITE:
+        Serial.print("RW");
+        break;
+    }
+    Serial.print(" | ");
+  }
+  Serial.println("");
+
+  Serial.print("> PWM Output Pins: ");
+  for(uint8_t i = 0; i < 3; i++) {
+    Serial.print(i);
+    Serial.print(": ");
+    pwmPins[i].enabled ? Serial.print("ON") : Serial.print("OFF");
+    Serial.print(" | ");
+  }
+  Serial.println("");
+
+  Serial.print("> DAC Output Pin: ");
+  dacPin.enabled ? Serial.print("ON") : Serial.print("OFF");
+  Serial.println("");
+
+  Serial.print("> Analog Input Pins: ");
+  for(uint8_t i = 0; i < 3; i++) {
+    Serial.print(i);
+    Serial.print(": ");
+    analogPins[i].enabled ? Serial.print("ON") : Serial.print("OFF");
+    Serial.print(" | ");
+  }
+  Serial.println("");
   Serial.println("<<<<<< Current Configuration");
 };

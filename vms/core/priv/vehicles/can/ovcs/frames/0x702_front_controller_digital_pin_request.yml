@@ -7,7 +7,7 @@ anchors:
       0x00: false
       0x01: true
 name: front_controller_digital_pin_request
-id: 0x701
+id: 0x702
 frequency: 10
 signals:
   - name: digital_pin0_enabled

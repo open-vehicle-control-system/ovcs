@@ -29,6 +29,7 @@ class Controller {
     void sendPinStatuses();
     bool isReady();
     void loop();
+    void emitPinStatuses();
 };
 
 #endif

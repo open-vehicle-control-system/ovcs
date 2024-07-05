@@ -28,3 +28,16 @@ void Can::emit(CANMessage frame) {
     Serial.println ("CAN emit failure") ;
   }
 };
+
+void Can::emitAlive(uint16_t aliveFrameId) {
+  unsigned long now = millis();
+  if(aliveEmittingTimestamp + ALIVE_FRAME_FREQUENCY_MS <= now){
+    aliveEmittingTimestamp = now;
+    CANMessage frame;
+    frame.id      = aliveFrameId;
+    frame.len     = 1;
+    frame.data[0] = aliveCounter;
+    aliveCounter  = (aliveCounter + 1) % 3;
+    emit(frame);
+  }
+};

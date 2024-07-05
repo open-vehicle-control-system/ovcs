@@ -57,7 +57,7 @@ void Controller::setOtherPins() {
   // Write other pin values based on writeable pins in config + other pin request in receivedFrame
 };
 
-void Controller::sendPinStatuses() {
+void Controller::emitPinStatuses() {
   // read Digital Pin based on configuration
   // read analog pins based on configuration
   // create can frame
@@ -75,6 +75,7 @@ void Controller::loop() {
     } else if (can.receivedFrame.id == configuration.otherPinRequestFrameId) {
       setOtherPins();
     }
-    sendPinStatuses();
+    emitPinStatuses();
+    can.emitAlive(configuration.aliveFrameId);
   }
 };
