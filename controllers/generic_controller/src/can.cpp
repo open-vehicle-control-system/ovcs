@@ -41,3 +41,20 @@ void Can::emitAlive(uint16_t aliveFrameId) {
     emit(frame);
   }
 };
+
+void Can::emitdigitalAndAnalogPinsStatus(uint16_t digitalAndAnalogPinStatusesFrameId, uint8_t digitalPinsStatus [21], uint16_t analogPinsStatus [3]) {
+  unsigned long now = millis();
+  if(digitalAndAnalogPinStatusesTimestamp + DIGITAL_AND_ANALOG_PINS_STATUS_FRAME_FREQUENCY_MS <= now){
+    digitalAndAnalogPinStatusesTimestamp = now;
+    CANMessage frame;
+    frame.id  = digitalAndAnalogPinStatusesFrameId;
+    frame.len = 8;
+    for(uint8_t i=0; i < 21; i++) {
+      uint8_t frameNumber = i / 8;
+      uint8_t bitNumber   = 7 - (i % 8);
+      bitWrite(frame.data[frameNumber], bitNumber, digitalPinsStatus[i]);
+    }
+
+    emit(frame);
+  }
+};

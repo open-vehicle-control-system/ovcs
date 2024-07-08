@@ -6,6 +6,7 @@
 #include <SPI.h>
 
 #define ALIVE_FRAME_FREQUENCY_MS 100
+#define DIGITAL_AND_ANALOG_PINS_STATUS_FRAME_FREQUENCY_MS 10
 
 static const byte MCP2517_CS  = 10;
 static const byte MCP2517_INT = 3;
@@ -14,6 +15,8 @@ static ACAN2517 acan          = ACAN2517(MCP2517_CS, SPI, MCP2517_INT);
 class Can {
   public :
     unsigned long aliveEmittingTimestamp;
+    unsigned long digitalAndAnalogPinStatusesTimestamp;
+
     CANMessage receivedFrame;
     uint8_t aliveCounter;
 
@@ -25,6 +28,7 @@ class Can {
     void receive();
     void emit(CANMessage frame);
     void emitAlive(uint16_t aliveFrameId);
+    void emitdigitalAndAnalogPinsStatus(uint16_t digitalAndAnalogPinsStatusFrameId, uint8_t digitalPinsStatus[21], uint16_t analogPinsStatus[3]);
 };
 
 #endif

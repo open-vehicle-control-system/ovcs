@@ -10,6 +10,8 @@
 
 #define I2C_CLOCK_FREQUENCY 100000
 #define ADOPTION_FRAME_ID 0x700
+#define ANALOG_READ_RESOLUTION 14
+#define ANALOG_WRITE_RESOLUTION 12
 
 class Controller {
   public :
@@ -27,6 +29,8 @@ class Controller {
     void setDigitalPins();
     void setPwmPins();
     void setDacPin();
+    uint8_t* readDigitalPins();
+    uint16_t* readAnalogPins();
     void sendPinStatuses();
     bool isReady();
     void loop();

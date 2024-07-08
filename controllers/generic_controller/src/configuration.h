@@ -28,7 +28,7 @@ class Configuration {
     uint16_t aliveFrameId;
     uint16_t digitalPinRequestFrameId;
     uint16_t otherPinRequestFrameId;
-    uint16_t digitalAndAnalogPinStatusFrameId;
+    uint16_t digitalAndAnalogPinsStatusFrameId;
 
     Configuration() {};
     Configuration(uint8_t initialRawConfiguration [8]) {

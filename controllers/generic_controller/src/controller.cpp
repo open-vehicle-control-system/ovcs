@@ -19,7 +19,8 @@ void Controller::setup() {
   initializeSerial();
   can.begin();
   initializeI2C();
-  analogWriteResolution(12);
+  analogReadResolution(ANALOG_READ_RESOLUTION);
+  analogWriteResolution(ANALOG_WRITE_RESOLUTION);
   if (configuration.load()) {
     ready = true;
   } else {
@@ -86,11 +87,32 @@ void Controller::setDacPin() {
   }
 };
 
+uint8_t* Controller::readDigitalPins() {
+  static uint8_t digitalPinsStatus[21]  = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+  for (uint8_t i=0; i<21; i++) {
+    DigitalPin digitalPin = configuration.digitalPins[i];
+    if (digitalPin.readable()) {
+      digitalPinsStatus[i] = digitalPin.read();
+    }
+  }
+  return digitalPinsStatus;
+};
+
+uint16_t* Controller::readAnalogPins() {
+  static uint16_t analogPinsStatus [3]  = {0, 0, 0};
+  for (uint8_t i=0; i<3; i++) {
+    AnalogPin analogPin = configuration.analogPins[i];
+    if (analogPin.readable()) {
+      analogPinsStatus[i] = analogPin.read();
+    }
+  }
+  return analogPinsStatus;
+};
+
 void Controller::emitPinStatuses() {
-  // read Digital Pin based on configuration
-  // read analog pins based on configuration
-  // create can frame
-  // send can frame
+  uint8_t* digitalPinsStatus = readDigitalPins();
+  uint16_t* analogPinsStatus = readAnalogPins();
+  can.emitdigitalAndAnalogPinsStatus(configuration.digitalAndAnalogPinsStatusFrameId, digitalPinsStatus, analogPinsStatus);
 };
 
 void Controller::loop() {

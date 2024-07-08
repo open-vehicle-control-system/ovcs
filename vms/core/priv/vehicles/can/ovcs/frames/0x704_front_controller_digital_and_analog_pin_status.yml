@@ -9,8 +9,8 @@ anchors:
   analog_pin_parameters: &analog_pin_parameters
     kind: integer
     value_length: 14
-name: controller_digital_and_analog_pin_status
-id: 0x7X4
+name: front_controller_digital_and_analog_pin_status
+id: 0x704
 frequency: 10
 signals:
   - name: digital_pin0_enabled
@@ -85,9 +85,3 @@ signals:
   - name: analog_pin2_value
     value_start: 49
     <<: *analog_pin_parameters
-
-  #  0  1 2  3  4  5  6  7
-  #  0  8 16 24 32 40 48 56
-
-  #  0 1 2 3 4 5 6 7 | 8 9 10 11 12 13
-

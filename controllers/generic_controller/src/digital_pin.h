@@ -58,6 +58,7 @@ class DigitalPin {
     bool writeable();
     bool readable();
     void write(bool value) ;
+    uint8_t read();
 };
 
 #endif

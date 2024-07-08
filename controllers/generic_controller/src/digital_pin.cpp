@@ -1,22 +1,24 @@
 #include <digital_pin.h>
 
 void DigitalPin::initPhysicalPin() {
-  switch (board) {
-    case MAIN_BOARD_ID:
-      pinMode(physicalPin, physicalPinMode());
-      break;
-    case MOSFET_0_ID:
-      MOSFETBoard1.pinMode1(physicalPin, physicalPinMode());
-      if (writeable()) {
-        MOSFETBoard1.write1(physicalPin, 0);
-      }
-      break;
-    case MOSFET_1_ID:
-      MOSFETBoard2.pinMode1(physicalPin, physicalPinMode());
-      if (writeable()) {
-        MOSFETBoard2.write1(physicalPin, 0);
-      }
-      break;
+  if (writeable() || readable()){
+    switch (board) {
+      case MAIN_BOARD_ID:
+        pinMode(physicalPin, physicalPinMode());
+        break;
+      case MOSFET_0_ID:
+        MOSFETBoard1.pinMode1(physicalPin, physicalPinMode());
+        if (writeable()) {
+          MOSFETBoard1.write1(physicalPin, 0);
+        }
+        break;
+      case MOSFET_1_ID:
+        MOSFETBoard2.pinMode1(physicalPin, physicalPinMode());
+        if (writeable()) {
+          MOSFETBoard2.write1(physicalPin, 0);
+        }
+        break;
+    }
   }
 };
 
@@ -46,6 +48,20 @@ void DigitalPin::write(bool value) {
       break;
     case MOSFET_1_ID:
       MOSFETBoard2.write1(physicalPin, value);
+      break;
+  }
+};
+
+uint8_t DigitalPin::read() {
+  switch (board) {
+    case MAIN_BOARD_ID:
+      digitalRead(physicalPin);
+      break;
+    case MOSFET_0_ID:
+      MOSFETBoard1.read1(physicalPin);
+      break;
+    case MOSFET_1_ID:
+      MOSFETBoard2.read1(physicalPin);
       break;
   }
 };

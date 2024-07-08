@@ -41,10 +41,10 @@ void Configuration::computeControllerId() {
 
 void Configuration::computeFrameIds() {
   uint16_t shiftedId = controllerId << 3;
-  aliveFrameId                     = shiftedId | ALIVE_FRAME_ID_MASK;
-  digitalPinRequestFrameId         = shiftedId | DIGITAL_PIN_REQUEST_FRAME_ID_MASK;
-  otherPinRequestFrameId           = shiftedId | OTHER_PIN_REQUEST_FRAME_ID_MASK;
-  digitalAndAnalogPinStatusFrameId = shiftedId | DIGITAL_AND_ANALOG_PIN_STATUS_FRAME_ID_MASK;
+  aliveFrameId                      = shiftedId | ALIVE_FRAME_ID_MASK;
+  digitalPinRequestFrameId          = shiftedId | DIGITAL_PIN_REQUEST_FRAME_ID_MASK;
+  otherPinRequestFrameId            = shiftedId | OTHER_PIN_REQUEST_FRAME_ID_MASK;
+  digitalAndAnalogPinsStatusFrameId = shiftedId | DIGITAL_AND_ANALOG_PIN_STATUS_FRAME_ID_MASK;
 };
 
 void Configuration::computeDigitalPins() {
@@ -103,7 +103,7 @@ void Configuration::print() {
   Serial.println(otherPinRequestFrameId, HEX);
 
   Serial.print("> Digital and analog PIN status frame ID: 0x");
-  Serial.println(digitalAndAnalogPinStatusFrameId, HEX);
+  Serial.println(digitalAndAnalogPinsStatusFrameId, HEX);
 
   Serial.print("> Digital Pins: ");
   for(uint8_t i = 0; i < 21; i++) {
