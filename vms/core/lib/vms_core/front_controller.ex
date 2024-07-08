@@ -1,10 +1,11 @@
 defmodule VmsCore.FrontController do
   use GenServer
-  alias Cantastic.{Emitter}
+  alias Cantastic.{Emitter, Frame}
 
   @network_name :ovcs
   @digital_pin_request_frame_name "front_controller_digital_pin_request"
   @other_pin_request_frame_name "front_controller_other_pin_request"
+  @digital_and_analog_pins_status_frame_name "front_controller_digital_and_analog_pins_status"
 
   @impl true
   def init(_) do
@@ -44,11 +45,21 @@ defmodule VmsCore.FrontController do
       }
     })
     Emitter.enable(@network_name, [@digital_pin_request_frame_name, @other_pin_request_frame_name])
+    ok = Cantastic.Receiver.subscribe(self(), @network_name, @digital_and_analog_pins_status_frame_name)
     {:ok, %{}}
   end
 
   def start_link(_) do
     GenServer.start_link(__MODULE__, nil, name: __MODULE__)
+  end
+
+  @impl true
+  def handle_info({:handle_frame,  %Frame{signals: signals}}, state) do
+    IO.inspect "----------"
+    IO.inspect signals["analog_pin0_value"].value
+    IO.inspect signals["analog_pin1_value"].value
+    IO.inspect signals["analog_pin2_value"].value
+    {:noreply, state}
   end
 
   defp pin_request_frame_parameter_builder(data) do

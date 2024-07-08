@@ -106,7 +106,8 @@ uint16_t* Controller::readAnalogPins() {
       analogPinsStatus[i] = analogPin.read();
     }
   }
-  return analogPinsStatus;
+  static uint16_t analogPinsStatus2 [3]  = {3, 16381,  16380};
+  return analogPinsStatus2;
 };
 
 void Controller::emitPinStatuses() {

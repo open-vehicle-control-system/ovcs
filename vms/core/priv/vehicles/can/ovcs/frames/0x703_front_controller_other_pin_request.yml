@@ -19,3 +19,13 @@ signals:
   - name: dac_pin0_duty_cycle
     value_start: 36
     <<: *pin_parameters
+  - name: test
+    value_start: 48
+    value_length: 14
+    kind: static
+    value: 16382
+  - name: test1
+    value_start: 62
+    value_length: 2
+    kind: static
+    value: 0

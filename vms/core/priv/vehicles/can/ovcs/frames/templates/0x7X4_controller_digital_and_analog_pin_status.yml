@@ -85,9 +85,13 @@ signals:
   - name: analog_pin2_value
     value_start: 49
     <<: *analog_pin_parameters
+  - name: filler0
+    value_start: 63
+    value_length: 1
+    value: 0
 
   #  0  1 2  3  4  5  6  7
   #  0  8 16 24 32 40 48 56
 
-  #  0 1 2 3 4 5 6 7 | 8 9 10 11 12 13
-
+  #  0 1 2 3 4 5 6 7 | 8 9 10 11 12 13 (14) (15)
+  #      1 2 3 4 5 6   7 8 9  10 11 12  13   14

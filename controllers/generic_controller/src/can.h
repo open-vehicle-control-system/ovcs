@@ -28,6 +28,7 @@ class Can {
     void receive();
     void emit(CANMessage frame);
     void emitAlive(uint16_t aliveFrameId);
+    uint8_t extractBits(uint16_t source, uint16_t mask, uint8_t shiftRight);
     void emitdigitalAndAnalogPinsStatus(uint16_t digitalAndAnalogPinsStatusFrameId, uint8_t digitalPinsStatus[21], uint16_t analogPinsStatus[3]);
 };
 
