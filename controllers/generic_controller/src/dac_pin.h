@@ -7,5 +7,6 @@ class DacPin: public OtherPin {
       pinMode(initialPhysicalPin, OUTPUT);
     };
 
+    bool writeable();
     void writeIfAllowed(uint16_t value);
 };

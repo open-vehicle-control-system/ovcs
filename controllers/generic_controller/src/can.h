@@ -17,11 +17,7 @@ static ACAN2517 acan = ACAN2517(SPI_CAN_CS, SPI, SPI_CAN_INT); // declared outsi
 
 class Can {
   public :
-    unsigned long aliveEmittingTimestamp;
-    unsigned long digitalAndAnalogPinStatusesTimestamp;
-
     CANMessage receivedFrame;
-    uint8_t aliveCounter;
 
     Can() {
       aliveCounter = 0;
@@ -29,12 +25,18 @@ class Can {
 
     void begin();
     void receive();
-    void emit(CANMessage frame);
     void emitAlive(uint16_t aliveFrameId);
     bool* parseDigitalPinRequest();
     OtherPinDutyCycles parseOtherPinRequest();
-    uint8_t extractBits(uint16_t source, uint16_t mask, uint8_t shiftRight);
     void emitdigitalAndAnalogPinsStatus(uint16_t digitalAndAnalogPinsStatusFrameId, uint8_t digitalPinsStatus[21], uint16_t analogPinsStatus[3]);
+
+  private:
+    unsigned long aliveEmittingTimestamp;
+    unsigned long digitalAndAnalogPinStatusesTimestamp;
+    uint8_t aliveCounter;
+
+    void emit(CANMessage frame);
+    uint8_t extractBits(uint16_t source, uint16_t mask, uint8_t shiftRight);
 };
 
 #endif

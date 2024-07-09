@@ -19,8 +19,6 @@
 
 class Configuration {
   public :
-    uint8_t* rawConfiguration;
-    uint8_t  controllerId;
     DigitalPin digitalPins [21];
     PwmPin pwmPins [3];
     DacPin dacPin;
@@ -29,12 +27,19 @@ class Configuration {
     uint16_t digitalPinRequestFrameId;
     uint16_t otherPinRequestFrameId;
     uint16_t digitalAndAnalogPinsStatusFrameId;
+    bool load();
+    void storeAndApply(CANMessage frame);
 
     Configuration() {};
     Configuration(uint8_t initialRawConfiguration [8]) {
       rawConfiguration = initialRawConfiguration;
     };
 
+
+  private:
+    uint8_t  controllerId;
+    uint8_t* rawConfiguration;
+    void store(CANMessage frame);
     void computeControllerId();
     void computeFrameIds();
     void computeDigitalPins();
@@ -42,9 +47,6 @@ class Configuration {
     void computeDacPin();
     void computeAnalogPins();
     void print();
-    void store(CANMessage framen);
-    void storeAndApply(CANMessage frame);
-    bool load();
 };
 
 #endif

@@ -4,7 +4,7 @@
 #include <Arduino.h>
 
 struct OtherPinDutyCycles{
-    uint16_t dacDutyCycle;
+    uint16_t dacDutyCycle = 0;
     uint16_t pwmDutyCyles [3] = {0, 0, 0};
 };
 

@@ -4,15 +4,16 @@
 #include <Arduino.h>
 
 class OtherPin {
-  public :
-    bool  enabled;
-    uint8_t physicalPin;
+  public:
     OtherPin() {};
     OtherPin(bool initialEnabled, uint8_t initialPhysicalPin) {
       enabled     = initialEnabled;
       physicalPin = initialPhysicalPin;
     };
-    bool writeable();
+
+  protected :
+    bool  enabled;
+    uint8_t physicalPin;
 };
 
 #endif

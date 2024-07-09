@@ -43,10 +43,7 @@ const uint8_t digitalPinMapping [21][2] = {
 };
 
 class DigitalPin {
-  public :
-    uint8_t status;
-    uint8_t board;
-    uint8_t physicalPin;
+  public:
     DigitalPin() {};
     DigitalPin(uint8_t initialStatus, uint8_t initialBoard, uint8_t initialPhysicalPin) {
       status       = initialStatus;
@@ -54,12 +51,19 @@ class DigitalPin {
       physicalPin = initialPhysicalPin;
       initPhysicalPin();
     };
-    void initPhysicalPin();
-    uint8_t physicalPinMode();
-    bool writeable();
-    bool readable();
     void writeIfAllowed(bool value) ;
     uint8_t readIfAllowed();
+    bool writeable();
+    bool readable();
+
+  private:
+    uint8_t status;
+    uint8_t board;
+    uint8_t physicalPin;
+
+    void initPhysicalPin();
+    uint8_t physicalPinMode();
+
 };
 
 #endif

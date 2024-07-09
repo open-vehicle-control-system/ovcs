@@ -15,24 +15,26 @@
 #define ANALOG_WRITE_RESOLUTION 12
 
 class Controller {
-  public :
+  public:
+    Controller() {
+      ready = false;
+    };
+    void setup();
+    void loop();
+
+  private :
     bool ready;
     AdoptionButton adoptionButton;
     Can can;
     Configuration configuration;
-    Controller() {
-      ready = false;
-    };
     void initializeSerial();
     void initializeI2C();
-    void setup();
-    void adoptConfiguration();
     void writeDigitalPins();
     void writeOtherPins();
     uint8_t* readDigitalPins();
     uint16_t* readAnalogPins();
     bool isReady();
-    void loop();
+    void adoptConfiguration();
     void emitPinStatuses();
     void emitFrames();
 };

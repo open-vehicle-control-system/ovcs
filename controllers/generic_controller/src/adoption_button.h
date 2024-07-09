@@ -7,8 +7,6 @@
 
 class AdoptionButton {
   public :
-    bool adoptedSinceLastBoot;
-    bool waitingAdoption;
     AdoptionButton() {
       pinMode(ADOPTION_BUTTON_PIN, INPUT);
       adoptedSinceLastBoot = false;
@@ -17,6 +15,10 @@ class AdoptionButton {
 
     bool isWaitingAdoption();
     void validateAdoption();
+
+  private:
+    bool adoptedSinceLastBoot;
+    bool waitingAdoption;
 };
 
 #endif

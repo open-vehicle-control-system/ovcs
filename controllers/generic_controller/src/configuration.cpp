@@ -76,7 +76,7 @@ void Configuration::computeDacPin() {
 
 void Configuration::computeAnalogPins() {
   analogPins[0] = AnalogPin(rawConfiguration[6] >> 1 & 0b1, A1);
-  analogPins[1] = AnalogPin(rawConfiguration[6]  & 0b1, A2);
+  analogPins[1] = AnalogPin(rawConfiguration[6] & 0b1, A2);
   analogPins[2] = AnalogPin(rawConfiguration[7] >> 7 & 0b1, A3);
 };
 
@@ -107,21 +107,17 @@ void Configuration::print() {
 
   Serial.print("> Digital Pins: ");
   for(uint8_t i = 0; i < 21; i++) {
+    DigitalPin digitalPin = digitalPins[i];
     Serial.print(i);
     Serial.print(": ");
-    switch (digitalPins[i].status) {
-      case DIGITAL_PIN_DISABLED:
-        Serial.print("_");
-        break;
-      case DIGITAL_PIN_READ_ONLY:
-        Serial.print("R");
-        break;
-      case DIGITAL_PIN_WRITE_ONLY:
-        Serial.print("W");
-        break;
-      case DIGITAL_PIN_READ_WRITE:
-        Serial.print("RW");
-        break;
+    if (digitalPin.writeable() && digitalPin.readable()) {
+      Serial.print("RW");
+    } else if (digitalPin.writeable()) {
+      Serial.print("W");
+    } else if (digitalPin.readable()) {
+      Serial.print("R");
+    } else {
+      Serial.print("_");
     }
     Serial.print(" | ");
   }
@@ -131,20 +127,20 @@ void Configuration::print() {
   for(uint8_t i = 0; i < 3; i++) {
     Serial.print(i);
     Serial.print(": ");
-    pwmPins[i].enabled ? Serial.print("ON") : Serial.print("OFF");
+    pwmPins[i].writeable() ? Serial.print("ON") : Serial.print("OFF");
     Serial.print(" | ");
   }
   Serial.println("");
 
   Serial.print("> DAC Output Pin: ");
-  dacPin.enabled ? Serial.print("ON") : Serial.print("OFF");
+  dacPin.writeable() ? Serial.print("ON") : Serial.print("OFF");
   Serial.println("");
 
   Serial.print("> Analog Input Pins: ");
   for(uint8_t i = 0; i < 3; i++) {
     Serial.print(i);
     Serial.print(": ");
-    analogPins[i].enabled ? Serial.print("ON") : Serial.print("OFF");
+    analogPins[i].readable() ? Serial.print("ON") : Serial.print("OFF");
     Serial.print(" | ");
   }
   Serial.println("");
