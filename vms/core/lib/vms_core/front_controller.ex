@@ -55,10 +55,6 @@ defmodule VmsCore.FrontController do
 
   @impl true
   def handle_info({:handle_frame,  %Frame{signals: signals}}, state) do
-    IO.inspect "----------"
-    IO.inspect signals["analog_pin0_value"].value
-    IO.inspect signals["analog_pin1_value"].value
-    IO.inspect signals["analog_pin2_value"].value
     {:noreply, state}
   end
 

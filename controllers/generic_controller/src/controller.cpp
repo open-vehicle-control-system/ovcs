@@ -20,7 +20,7 @@ bool Controller::isReady() {
 };
 
 void Controller::adoptConfiguration() {
-  configuration.storeAndApply(can.receivedFrame);
+  configuration.storeAndApply(can.receivedFrame.data);
   adoptionButton.validateAdoption();
 };
 

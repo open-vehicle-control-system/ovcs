@@ -7,14 +7,13 @@
 #include <analog_pin.h>
 #include <CRC32.h>
 #include <EEPROM.h>
-#include <ACAN2517.h>
 
 #define ALIVE_FRAME_ID_MASK 0x701
 #define DIGITAL_PIN_REQUEST_FRAME_ID_MASK 0x702
 #define OTHER_PIN_REQUEST_FRAME_ID_MASK 0x703
 #define DIGITAL_AND_ANALOG_PIN_STATUS_FRAME_ID_MASK 0x704
 #define CONFIGURATION_EEPROM_ADDRESS 0
-#define CONFIGURATION_CRC_EEPROM_ADDRESS 64
+#define CONFIGURATION_CRC_EEPROM_ADDRESS 8
 #define CONFIGURATION_BYTE_SIZE 8
 
 class Configuration {
@@ -28,18 +27,17 @@ class Configuration {
     uint16_t otherPinRequestFrameId;
     uint16_t digitalAndAnalogPinsStatusFrameId;
     bool load();
-    void storeAndApply(CANMessage frame);
+    void storeAndApply(uint8_t newConfiguration[8]);
 
     Configuration() {};
     Configuration(uint8_t initialRawConfiguration [8]) {
       rawConfiguration = initialRawConfiguration;
     };
 
-
   private:
     uint8_t  controllerId;
     uint8_t* rawConfiguration;
-    void store(CANMessage frame);
+    void store(uint8_t newConfiguration[8]);
     void computeControllerId();
     void computeFrameIds();
     void computeDigitalPins();

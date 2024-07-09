@@ -2,12 +2,9 @@
 #define CONTROLLER_H
 
 #include <Arduino.h>
-#include <ACAN2517.h>
-#include <digital_pin.h>
 #include <adoption_button.h>
 #include <can.h>
 #include <configuration.h>
-#include <other_pin_duty_cycle.h>
 
 #define I2C_CLOCK_FREQUENCY 100000
 #define ADOPTION_FRAME_ID 0x700

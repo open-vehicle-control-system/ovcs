@@ -24,14 +24,17 @@ bool Configuration::load() {
   }
 };
 
-void Configuration::store(CANMessage frame) {
-  uint32_t crc = CRC32::calculate(frame.data , CONFIGURATION_BYTE_SIZE);
-  EEPROM.put(CONFIGURATION_EEPROM_ADDRESS, frame.data);
+void Configuration::store(uint8_t newConfiguration[8]) {
+  for(uint8_t i = 0; i < 8; i++) {
+    EEPROM.update(CONFIGURATION_EEPROM_ADDRESS + i, newConfiguration[i]);
+  }
+
+  uint32_t crc = CRC32::calculate(newConfiguration , CONFIGURATION_BYTE_SIZE);
   EEPROM.put(CONFIGURATION_CRC_EEPROM_ADDRESS, crc);
 };
 
-void Configuration::storeAndApply(CANMessage frame) {
-  store(frame);
+void Configuration::storeAndApply(uint8_t newConfiguration[8]) {
+  store(newConfiguration);
   load();
 };
 

@@ -6,6 +6,7 @@ void Can::begin() {
   ACAN2517Settings settings (CAN_OSCILLATOR, CAN_BITRATE);
   settings.mDriverTransmitFIFOSize = 1;
   settings.mDriverReceiveFIFOSize  = 1;
+
   const uint32_t errorCode = acan.begin (settings, [] { acan.isr () ; });
   if (errorCode == 0) {
     Serial.println("> CAN Ready");

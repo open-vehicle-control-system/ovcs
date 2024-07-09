@@ -1,44 +1,66 @@
 # Generic Controller
 
-This is a generic arduino controller.
+This is a generic arduino controller allowing the VMS to actuate relays, read digital and analog inputs, activate PWM and DAC over the CAN network without having to program the arduino boards with a custom firwmare for each use case.
 
-## Lifecycle
+## Pin Mapping:
 
-- VMS start controller initialization process by sending the following frame every 100ms:
-  - 0x700 |  6 bit controller id | ...
-- Controller is adopting the id when user is pushing button on digital pin D2
+### Reserved
 
+| Physical Pin | OVCS Usage |
+| -------- | ------- |
+| D2 | Adopt button |
+| D3 | SPI CAN INT |
+| D10 | SPI CAN CS |
+| D11 | SPI CAN COPI |
+| D12 | SPI CAN CIPO |
+| D13 | SPI CAN SCK |
+| A4 | I2C SDA - MOSFET |
+| A5 | I2C SCL - MOSFET |
 
-## Pins
+### Digital
 
-- 2x I2C module  8 out (digital) (hardware adress 3 bits)
-- 6 analog inputs
-- 14 digital I/O
+| Physical Pin | OVCS Pin |
+| -------- | ------- |
+| D0  | 0 |
+| D1  | 1 |
+| D4  | 2 |
+| D7  | 3 |
+| D8  | 4 |
+| MOSFET0-0  | 5 |
+| MOSFET0-1  | 6 |
+| MOSFET0-2  | 7 |
+| MOSFET0-3  | 8 |
+| MOSFET0-4  | 9 |
+| MOSFET0-5  | 10 |
+| MOSFET0-6  | 11 |
+| MOSFET0-7  | 12 |
+| MOSFET1-0  | 13 |
+| MOSFET1-1  | 14 |
+| MOSFET1-2  | 15 |
+| MOSFET1-3  | 16 |
+| MOSFET1-4  | 17 |
+| MOSFET1-5  | 18 |
+| MOSFET1-6  | 19 |
+| MOSFET1-7  | 20 |
 
-## Available Pins
+### PWM
 
-Since SPI is using for the CAN module and I2C for the MOSFET modules and 1 digital pin is used for the adoption button, we have the following pins to be configured:
+| Physical Pin | OVCS Pin |
+| -------- | ------- |
+| D5  | 0 |
+| D6  | 1 |
+| D9  | 2 |
 
-- Digital, 24 pins:
-  - 8 Pin on the Arduino itself: D0, D1, D4, D5, D6, D7, D8, D9
-  - 8 Pin on the Mosfet 1
-  - 8 Pin on the Mosfet 2
-- Analog,
-  - 4 pins on the Arduino itself
-### Digital pin configuration
+### DAC
 
-- The 24 digital pins must be be configured as off (00),  read-only (01) or write-only (10) read-write(11)
-  - 6 bytes: 11 11 11 11 11 11 11 11 11 11 11
-- D5, D6 and D9 could also be used as output PWM (By default, the resolution is 8 bit (0-255), You can use analogWriteResolution() to change this, supporting up to 12 bit (0-4096) resolution)
+| Physical Pin | OVCS Pin |
+| -------- | ------- |
+| A0  | 0 |
 
-- The 4 analog pins must be configured as active (1) or not
-  - 4 bits 1111
-- A0 could be used as an output DAC (with a default resolution of 8 bits, up to 12 bits)
+### Analog
 
-
-
-
-1 message de status avec les 21 digital + 3 analog
-
-1 message de write digital
-1 message de write PWM + DAC
+| Physical Pin | OVCS Pin |
+| -------- | ------- |
+| A1  | 0 |
+| A2  | 1 |
+| A3  | 2 |

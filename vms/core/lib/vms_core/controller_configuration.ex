@@ -65,8 +65,8 @@ defmodule VmsCore.ControllerConfiguration do
         "pwm_pin1" => "enabled",
         "pwm_pin2" => "enabled",
         "dac_pin0" => "enabled",
-        "analog_pin0" => "enabled",
-        "analog_pin1" => "disabled",
+        "analog_pin0" => "disabled",
+        "analog_pin1" => "enabled",
         "analog_pin2" => "enabled"
       }
     }
