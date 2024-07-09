@@ -1,5 +1,7 @@
 #include <dac_pin.h>
 
-void DacPin::write(uint16_t dutyCycle) {
-  analogWrite(physicalPin, dutyCycle);
+void DacPin::writeIfAllowed(uint16_t dutyCycle) {
+  if(writeable()){
+    analogWrite(physicalPin, dutyCycle);
+  }
 };

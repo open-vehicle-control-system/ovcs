@@ -7,6 +7,7 @@
 #include <adoption_button.h>
 #include <can.h>
 #include <configuration.h>
+#include <other_pin_duty_cycle.h>
 
 #define I2C_CLOCK_FREQUENCY 100000
 #define ADOPTION_FRAME_ID 0x700
@@ -26,15 +27,14 @@ class Controller {
     void initializeI2C();
     void setup();
     void adoptConfiguration();
-    void setDigitalPins();
-    void setPwmPins();
-    void setDacPin();
+    void writeDigitalPins();
+    void writeOtherPins();
     uint8_t* readDigitalPins();
     uint16_t* readAnalogPins();
-    void sendPinStatuses();
     bool isReady();
     void loop();
     void emitPinStatuses();
+    void emitFrames();
 };
 
 #endif

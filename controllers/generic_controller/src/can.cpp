@@ -1,4 +1,5 @@
 #include <can.h>
+#include "controller.h"
 
 void Can::begin() {
   SPI.begin ();
@@ -53,7 +54,7 @@ void Can::emitdigitalAndAnalogPinsStatus(uint16_t digitalAndAnalogPinStatusesFra
     for(uint8_t i = 0; i < 21; i++) {
       uint8_t frameNumber = i / 8;
       uint8_t bitNumber   = 7 - (i % 8);
-      bitWrite(frame.data[frameNumber], bitNumber, 1);
+      bitWrite(frame.data[frameNumber], bitNumber, digitalPinsStatus[i]);
     }
 
     frame.data[2] = frame.data[2]                                              | extractBits(analogPinsStatus[0], 0b00000011100000, 5);
@@ -66,6 +67,34 @@ void Can::emitdigitalAndAnalogPinsStatus(uint16_t digitalAndAnalogPinStatusesFra
     emit(frame);
   }
 };
+
+
+bool* Can::parseDigitalPinRequest() {
+  static bool digitalPinRequest[21] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+  uint8_t pinNumber = 0;
+  for(uint8_t byteNumber = 0; byteNumber < 3; byteNumber++) {
+    for (uint8_t i = 1; i < 8; i++) {
+      if (pinNumber < 21) {
+        digitalPinRequest[pinNumber] = (receivedFrame.data[byteNumber] >> 8 - i & 0b1);
+        pinNumber++;
+      } else {
+        i = 8;
+      }
+    }
+  }
+  return digitalPinRequest;
+};
+
+OtherPinDutyCycles Can::parseOtherPinRequest() {
+  OtherPinDutyCycles otherPinDutyCycles;
+
+  otherPinDutyCycles.pwmDutyCyles[0] = extractBits(receivedFrame.data[1], 0b11110000, 4) << 8 | receivedFrame.data[0];
+  otherPinDutyCycles.pwmDutyCyles[1] = extractBits(receivedFrame.data[2], 0b00001111, 0) << 8 | extractBits(receivedFrame.data[1], 0b00001111, 0) << 4 |  extractBits(receivedFrame.data[2], 0b11110000, 4);
+  otherPinDutyCycles.pwmDutyCyles[2] = extractBits(receivedFrame.data[4], 0b11110000, 4) << 4 | receivedFrame.data[3];
+  otherPinDutyCycles.dacDutyCycle    = extractBits(receivedFrame.data[5], 0b00001111, 0) << 8 | extractBits(receivedFrame.data[4], 0b00001111, 0) << 4 |  extractBits(receivedFrame.data[5], 0b11110000, 4);
+
+  return otherPinDutyCycles;
+}
 
 uint8_t Can::extractBits(uint16_t source, uint16_t mask, uint8_t shiftRight) {
   return (source & mask) >> shiftRight;

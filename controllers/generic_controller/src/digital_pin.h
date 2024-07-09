@@ -12,10 +12,11 @@
 #define DIGITAL_PIN_READ_ONLY 1
 #define DIGITAL_PIN_WRITE_ONLY 2
 #define DIGITAL_PIN_READ_WRITE 3
+#define MOSFET_1_ADDRESS 0x27
+#define MOSFET_2_ADDRESS 0x26
 
-
-static MCP23008 MOSFETBoard1 = MCP23008(0x27);
-static MCP23008 MOSFETBoard2 = MCP23008(0x26);
+static MCP23008 MOSFETBoard1 = MCP23008(MOSFET_1_ADDRESS);
+static MCP23008 MOSFETBoard2 = MCP23008(MOSFET_2_ADDRESS);
 
 const uint8_t digitalPinMapping [21][2] = {
   {MAIN_BOARD_ID, D0},
@@ -57,8 +58,8 @@ class DigitalPin {
     uint8_t physicalPinMode();
     bool writeable();
     bool readable();
-    void write(bool value) ;
-    uint8_t read();
+    void writeIfAllowed(bool value) ;
+    uint8_t readIfAllowed();
 };
 
 #endif

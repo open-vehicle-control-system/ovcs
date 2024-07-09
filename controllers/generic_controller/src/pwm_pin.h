@@ -6,6 +6,5 @@ class PwmPin: public OtherPin {
     PwmPin(bool initialEnabled, uint8_t initialPhysicalPin) : OtherPin(initialEnabled, initialPhysicalPin) {
       pinMode(initialPhysicalPin, OUTPUT);
     };
-
-    void write(uint16_t value);
+    void writeIfAllowed(uint16_t dutyCycle);
 };

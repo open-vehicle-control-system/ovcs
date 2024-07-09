@@ -9,9 +9,10 @@ class OtherPin {
     uint8_t physicalPin;
     OtherPin() {};
     OtherPin(bool initialEnabled, uint8_t initialPhysicalPin) {
-      enabled = initialEnabled;
+      enabled     = initialEnabled;
       physicalPin = initialPhysicalPin;
     };
+    bool writeable();
 };
 
 #endif

@@ -38,30 +38,36 @@ bool DigitalPin::readable() {
   return status == DIGITAL_PIN_READ_ONLY || status == DIGITAL_PIN_READ_WRITE;
 };
 
-void DigitalPin::write(bool value) {
-  switch (board) {
-    case MAIN_BOARD_ID:
-      digitalWrite(physicalPin, value);
-      break;
-    case MOSFET_0_ID:
-      MOSFETBoard1.write1(physicalPin, value);
-      break;
-    case MOSFET_1_ID:
-      MOSFETBoard2.write1(physicalPin, value);
-      break;
+void DigitalPin::writeIfAllowed(bool value) {
+  if (writeable()) {
+    switch (board) {
+      case MAIN_BOARD_ID:
+        digitalWrite(physicalPin, value);
+        break;
+      case MOSFET_0_ID:
+        MOSFETBoard1.write1(physicalPin, value);
+        break;
+      case MOSFET_1_ID:
+        MOSFETBoard2.write1(physicalPin, value);
+        break;
+    }
   }
 };
 
-uint8_t DigitalPin::read() {
-  switch (board) {
-    case MAIN_BOARD_ID:
-      digitalRead(physicalPin);
-      break;
-    case MOSFET_0_ID:
-      MOSFETBoard1.read1(physicalPin);
-      break;
-    case MOSFET_1_ID:
-      MOSFETBoard2.read1(physicalPin);
-      break;
+uint8_t DigitalPin::readIfAllowed() {
+  if (readable()) {
+    switch (board) {
+      case MAIN_BOARD_ID:
+        return digitalRead(physicalPin);
+        break;
+      case MOSFET_0_ID:
+        return MOSFETBoard1.read1(physicalPin);
+        break;
+      case MOSFET_1_ID:
+        return MOSFETBoard2.read1(physicalPin);
+        break;
+    }
+  } else {
+    return 0;
   }
 };
