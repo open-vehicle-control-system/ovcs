@@ -8,6 +8,7 @@ using namespace fakeit;
 #include <DacPinTest.h>
 #include <AnalogPinTest.h>
 #include <AdoptionButtonTest.h>
+#include <DigitalPinTest.h>
 
 
 #define RUN_TEST_GROUP(TEST) \
@@ -32,5 +33,6 @@ int main()
   RUN_TEST_GROUP(DacPinTests);
   RUN_TEST_GROUP(AnalogPinTests);
   RUN_TEST_GROUP(AdoptionButtonTests);
+  RUN_TEST_GROUP(DigitalPinTests);
   return UNITY_END();
 }

@@ -55,10 +55,22 @@ void Configuration::computeDigitalPins() {
   for(uint8_t byteNumber = 1; byteNumber < 7; byteNumber++) {
     for (uint8_t i = 2; i < 9; i = i + 2) {
       if (pinNumber < 21) {
-        uint8_t value          = (rawConfiguration[byteNumber] >> (8 - i)) & 0b11;
-        uint8_t board          = digitalPinMapping[pinNumber][0];
+        uint8_t status         = (rawConfiguration[byteNumber] >> (8 - i)) & 0b11;
+        uint8_t boardId        = digitalPinMapping[pinNumber][0];
         uint8_t physicalPin    = digitalPinMapping[pinNumber][1];
-        digitalPins[pinNumber] = DigitalPin(value, board, physicalPin);
+        AbstractBoard* board;
+        switch (boardId) {
+          case MAIN_BOARD_ID:
+            board = mainBoard;
+            break;
+          case MOSFET_0_ID:
+            board = mosfetBoard1;
+            break;
+          case MOSFET_1_ID:
+            board = mosfetBoard2;
+            break;
+        }
+        digitalPins[pinNumber] = DigitalPin(status, board, physicalPin);
         pinNumber++;
       } else {
         i = 9;

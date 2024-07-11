@@ -9,10 +9,8 @@ void Controller::initializeSerial() {
 };
 
 void Controller::initializeI2C() {
-  Wire.begin();
-  MOSFETBoard1.begin();
-  MOSFETBoard2.begin();
-  Wire.setClock(I2C_CLOCK_FREQUENCY);
+  mosfetBoard1->begin();
+  mosfetBoard2->begin();
 };
 
 bool Controller::isReady() {
