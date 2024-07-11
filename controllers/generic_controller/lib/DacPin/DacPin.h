@@ -6,8 +6,8 @@
 class DacPin: public OtherPin {
   public:
     DacPin() {};
-    DacPin(bool initialEnabled, uint8_t initialPhysicalPin) : OtherPin(initialEnabled, initialPhysicalPin) {
-      pinMode(initialPhysicalPin, OUTPUT);
+    DacPin(bool enabled, uint8_t physicalPin) : OtherPin(enabled, physicalPin) {
+      pinMode(physicalPin, OUTPUT);
     };
 
     bool writeable();

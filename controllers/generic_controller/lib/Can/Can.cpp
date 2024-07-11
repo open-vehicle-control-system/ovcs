@@ -33,21 +33,21 @@ void Can::emit(CANMessage frame) {
 
 void Can::emitAlive(uint16_t aliveFrameId) {
   unsigned long now = millis();
-  if(aliveEmittingTimestamp + ALIVE_FRAME_FREQUENCY_MS <= now){
-    aliveEmittingTimestamp = now;
+  if(_aliveEmittingTimestamp + ALIVE_FRAME_FREQUENCY_MS <= now){
+    _aliveEmittingTimestamp = now;
     CANMessage frame;
     frame.id      = aliveFrameId;
     frame.len     = 1;
-    frame.data[0] = aliveCounter;
-    aliveCounter  = (aliveCounter + 1) % 3;
+    frame.data[0] = _aliveCounter;
+    _aliveCounter  = (_aliveCounter + 1) % 3;
     emit(frame);
   }
 };
 
 void Can::emitdigitalAndAnalogPinsStatus(uint16_t digitalAndAnalogPinStatusesFrameId, uint8_t digitalPinsStatus [21], uint16_t analogPinsStatus [3]) {
   unsigned long now = millis();
-  if(digitalAndAnalogPinStatusesTimestamp + DIGITAL_AND_ANALOG_PINS_STATUS_FRAME_FREQUENCY_MS <= now){
-    digitalAndAnalogPinStatusesTimestamp = now;
+  if(_digitalAndAnalogPinStatusesTimestamp + DIGITAL_AND_ANALOG_PINS_STATUS_FRAME_FREQUENCY_MS <= now){
+    _digitalAndAnalogPinStatusesTimestamp = now;
     CANMessage frame;
     frame.id  = digitalAndAnalogPinStatusesFrameId;
     frame.len = 8;

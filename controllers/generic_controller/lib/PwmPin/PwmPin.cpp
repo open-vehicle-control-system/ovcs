@@ -1,11 +1,11 @@
 #include <PwmPin.h>
 
 bool PwmPin::writeable() {
-  return enabled;
+  return _enabled;
 };
 
 void PwmPin::writeIfAllowed(uint16_t dutyCycle) {
   if (writeable()) {
-    analogWrite(physicalPin, dutyCycle);
+    analogWrite(_physicalPin, dutyCycle);
   }
 };

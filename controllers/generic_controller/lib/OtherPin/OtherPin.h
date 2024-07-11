@@ -6,14 +6,14 @@
 class OtherPin {
   public:
     OtherPin() {};
-    OtherPin(bool initialEnabled, uint8_t initialPhysicalPin) {
-      enabled     = initialEnabled;
-      physicalPin = initialPhysicalPin;
+    OtherPin(bool enabled, uint8_t physicalPin) {
+      _enabled     = enabled;
+      _physicalPin = physicalPin;
     };
 
   protected :
-    bool  enabled;
-    uint8_t physicalPin;
+    bool  _enabled;
+    uint8_t _physicalPin;
 };
 
 #endif

@@ -9,18 +9,18 @@ class AdoptionButton {
   public :
     AdoptionButton() {
       pinMode(ADOPTION_BUTTON_PIN, INPUT);
-      waitingAdoption      = false;
-      adopted              = false;
-      buttonWasPressed    = false;
+      _waitingAdoption  = false;
+      _adopted          = false;
+      _buttonWasPressed = false;
     };
 
     bool isWaitingAdoption();
     void validateAdoption();
 
   private:
-    bool waitingAdoption;
-    bool adopted;
-    bool buttonWasPressed;
+    bool _waitingAdoption;
+    bool _adopted;
+    bool _buttonWasPressed;
 };
 
 #endif

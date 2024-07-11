@@ -47,31 +47,31 @@ const uint8_t digitalPinMapping [21][2] = {
 
 class Configuration {
   public :
-    DigitalPin digitalPins [21];
-    PwmPin pwmPins [3];
-    DacPin dacPin;
-    AnalogPin analogPins [3];
-    uint16_t aliveFrameId;
-    uint16_t digitalPinRequestFrameId;
-    uint16_t otherPinRequestFrameId;
-    uint16_t digitalAndAnalogPinsStatusFrameId;
+    DigitalPin _digitalPins [21];
+    PwmPin _pwmPins [3];
+    DacPin _dacPin;
+    AnalogPin _analogPins [3];
+    uint16_t _aliveFrameId;
+    uint16_t _digitalPinRequestFrameId;
+    uint16_t _otherPinRequestFrameId;
+    uint16_t _digitalAndAnalogPinsStatusFrameId;
     bool load();
     void storeAndApply(uint8_t newConfiguration[8]);
 
 
     Configuration() {};
-    Configuration(AbstractBoard* initialMosfetBoard1, AbstractBoard* initialMosfetBoard2, AbstractBoard* iniitalMainBoard) {
-      mosfetBoard1 = initialMosfetBoard1;
-      mosfetBoard2 = initialMosfetBoard2;
-      mainBoard = iniitalMainBoard;
+    Configuration(AbstractBoard* mosfetBoard1, AbstractBoard* mosfetBoard2, AbstractBoard* mainBoard) {
+      _mosfetBoard1 = mosfetBoard1;
+      _mosfetBoard2 = mosfetBoard2;
+      _mainBoard    = mainBoard;
     };
 
   private:
-    uint8_t  controllerId;
-    uint8_t* rawConfiguration;
-    AbstractBoard* mosfetBoard1;
-    AbstractBoard* mosfetBoard2;
-    AbstractBoard* mainBoard;
+    uint8_t  _controllerId;
+    uint8_t* _rawConfiguration;
+    AbstractBoard* _mosfetBoard1;
+    AbstractBoard* _mosfetBoard2;
+    AbstractBoard* _mainBoard;
     void store(uint8_t newConfiguration[8]);
     void computeControllerId();
     void computeFrameIds();

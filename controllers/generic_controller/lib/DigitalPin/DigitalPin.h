@@ -12,10 +12,10 @@
 class DigitalPin {
   public:
     DigitalPin() {};
-    DigitalPin(uint8_t initialStatus, AbstractBoard* initialBoard, uint8_t initialPhysicalPin) {
-      status      = initialStatus;
-      board       = initialBoard;
-      physicalPin = initialPhysicalPin;
+    DigitalPin(uint8_t status, AbstractBoard* board, uint8_t physicalPin) {
+      _status      = status;
+      _board       = board;
+      _physicalPin = physicalPin;
       initPhysicalPin();
     };
     void writeIfAllowed(bool value) ;
@@ -24,12 +24,11 @@ class DigitalPin {
     bool readable();
 
   private:
-    uint8_t status;
-    AbstractBoard* board;
-    uint8_t physicalPin;
+    uint8_t _status;
+    AbstractBoard* _board;
+    uint8_t _physicalPin;
 
     void initPhysicalPin();
-
 };
 
 #endif

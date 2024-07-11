@@ -8,7 +8,7 @@ bool Configuration::load() {
   EEPROM.get(CONFIGURATION_CRC_EEPROM_ADDRESS, configurationCrc);
   crc = CRC32::calculate(storedConfiguration, CONFIGURATION_BYTE_SIZE);
   if (crc == configurationCrc) {
-    rawConfiguration = storedConfiguration;
+    _rawConfiguration = storedConfiguration;
     computeControllerId();
     computeFrameIds();
     computeDigitalPins();
@@ -39,15 +39,15 @@ void Configuration::storeAndApply(uint8_t newConfiguration[8]) {
 };
 
 void Configuration::computeControllerId() {
-  controllerId = rawConfiguration[0] >> 3;
+  _controllerId = _rawConfiguration[0] >> 3;
 };
 
 void Configuration::computeFrameIds() {
-  uint16_t shiftedId = controllerId << 3;
-  aliveFrameId                      = shiftedId | ALIVE_FRAME_ID_MASK;
-  digitalPinRequestFrameId          = shiftedId | DIGITAL_PIN_REQUEST_FRAME_ID_MASK;
-  otherPinRequestFrameId            = shiftedId | OTHER_PIN_REQUEST_FRAME_ID_MASK;
-  digitalAndAnalogPinsStatusFrameId = shiftedId | DIGITAL_AND_ANALOG_PIN_STATUS_FRAME_ID_MASK;
+  uint16_t shiftedId = _controllerId << 3;
+  _aliveFrameId                      = shiftedId | ALIVE_FRAME_ID_MASK;
+  _digitalPinRequestFrameId          = shiftedId | DIGITAL_PIN_REQUEST_FRAME_ID_MASK;
+  _otherPinRequestFrameId            = shiftedId | OTHER_PIN_REQUEST_FRAME_ID_MASK;
+  _digitalAndAnalogPinsStatusFrameId = shiftedId | DIGITAL_AND_ANALOG_PIN_STATUS_FRAME_ID_MASK;
 };
 
 void Configuration::computeDigitalPins() {
@@ -55,22 +55,22 @@ void Configuration::computeDigitalPins() {
   for(uint8_t byteNumber = 1; byteNumber < 7; byteNumber++) {
     for (uint8_t i = 2; i < 9; i = i + 2) {
       if (pinNumber < 21) {
-        uint8_t status         = (rawConfiguration[byteNumber] >> (8 - i)) & 0b11;
+        uint8_t status         = (_rawConfiguration[byteNumber] >> (8 - i)) & 0b11;
         uint8_t boardId        = digitalPinMapping[pinNumber][0];
         uint8_t physicalPin    = digitalPinMapping[pinNumber][1];
         AbstractBoard* board;
         switch (boardId) {
           case MAIN_BOARD_ID:
-            board = mainBoard;
+            board = _mainBoard;
             break;
           case MOSFET_0_ID:
-            board = mosfetBoard1;
+            board = _mosfetBoard1;
             break;
           case MOSFET_1_ID:
-            board = mosfetBoard2;
+            board = _mosfetBoard2;
             break;
         }
-        digitalPins[pinNumber] = DigitalPin(status, board, physicalPin);
+        _digitalPins[pinNumber] = DigitalPin(status, board, physicalPin);
         pinNumber++;
       } else {
         i = 9;
@@ -80,19 +80,19 @@ void Configuration::computeDigitalPins() {
 };
 
 void Configuration::computePwmPins() {
-  pwmPins[0] = PwmPin(rawConfiguration[6] >> 5 & 0b1, D5);
-  pwmPins[1] = PwmPin(rawConfiguration[6] >> 4 & 0b1, D6);
-  pwmPins[2] = PwmPin(rawConfiguration[6] >> 3 & 0b1, D9);
+  _pwmPins[0] = PwmPin(_rawConfiguration[6] >> 5 & 0b1, D5);
+  _pwmPins[1] = PwmPin(_rawConfiguration[6] >> 4 & 0b1, D6);
+  _pwmPins[2] = PwmPin(_rawConfiguration[6] >> 3 & 0b1, D9);
 };
 
 void Configuration::computeDacPin() {
-  dacPin = DacPin(rawConfiguration[6] >> 2 & 0b1, A0);
+  _dacPin = DacPin(_rawConfiguration[6] >> 2 & 0b1, A0);
 };
 
 void Configuration::computeAnalogPins() {
-  analogPins[0] = AnalogPin(rawConfiguration[6] >> 1 & 0b1, A1);
-  analogPins[1] = AnalogPin(rawConfiguration[6] & 0b1, A2);
-  analogPins[2] = AnalogPin(rawConfiguration[7] >> 7 & 0b1, A3);
+  _analogPins[0] = AnalogPin(_rawConfiguration[6] >> 1 & 0b1, A1);
+  _analogPins[1] = AnalogPin(_rawConfiguration[6] & 0b1, A2);
+  _analogPins[2] = AnalogPin(_rawConfiguration[7] >> 7 & 0b1, A3);
 };
 
 void Configuration::print() {
@@ -100,29 +100,29 @@ void Configuration::print() {
 
   Serial.print("> Raw configuration: ");
   for (uint8_t i = 0; i < 8; i++) {
-    rawConfiguration[i] <= 0xF ? Serial.print("0") : Serial.print("");
-    Serial.print(rawConfiguration[i], HEX);
+    _rawConfiguration[i] <= 0xF ? Serial.print("0") : Serial.print("");
+    Serial.print(_rawConfiguration[i], HEX);
     i == 7 ? Serial.println("") : Serial.print(" ");
   }
 
   Serial.print("> Controller ID: ");
-  Serial.println(controllerId);
+  Serial.println(_controllerId);
 
   Serial.print("> Alive frame ID: 0x");
-  Serial.println(aliveFrameId, HEX);
+  Serial.println(_aliveFrameId, HEX);
 
   Serial.print("> Digital PIN request frame ID: 0x");
-  Serial.println(digitalPinRequestFrameId, HEX);
+  Serial.println(_digitalPinRequestFrameId, HEX);
 
   Serial.print("> Other PIN request frame ID: 0x");
-  Serial.println(otherPinRequestFrameId, HEX);
+  Serial.println(_otherPinRequestFrameId, HEX);
 
   Serial.print("> Digital and analog PIN status frame ID: 0x");
-  Serial.println(digitalAndAnalogPinsStatusFrameId, HEX);
+  Serial.println(_digitalAndAnalogPinsStatusFrameId, HEX);
 
   Serial.print("> Digital Pins: ");
   for(uint8_t i = 0; i < 21; i++) {
-    DigitalPin digitalPin = digitalPins[i];
+    DigitalPin digitalPin = _digitalPins[i];
     Serial.print(i);
     Serial.print(": ");
     if (digitalPin.writeable() && digitalPin.readable()) {
@@ -142,20 +142,20 @@ void Configuration::print() {
   for(uint8_t i = 0; i < 3; i++) {
     Serial.print(i);
     Serial.print(": ");
-    pwmPins[i].writeable() ? Serial.print("ON") : Serial.print("OFF");
+    _pwmPins[i].writeable() ? Serial.print("ON") : Serial.print("OFF");
     Serial.print(" | ");
   }
   Serial.println("");
 
   Serial.print("> DAC Output Pin: ");
-  dacPin.writeable() ? Serial.print("ON") : Serial.print("OFF");
+  _dacPin.writeable() ? Serial.print("ON") : Serial.print("OFF");
   Serial.println("");
 
   Serial.print("> Analog Input Pins: ");
   for(uint8_t i = 0; i < 3; i++) {
     Serial.print(i);
     Serial.print(": ");
-    analogPins[i].readable() ? Serial.print("ON") : Serial.print("OFF");
+    _analogPins[i].readable() ? Serial.print("ON") : Serial.print("OFF");
     Serial.print(" | ");
   }
   Serial.println("");

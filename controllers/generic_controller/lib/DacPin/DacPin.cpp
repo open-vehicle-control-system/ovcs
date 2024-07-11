@@ -1,11 +1,11 @@
 #include <DacPin.h>
 
 bool DacPin::writeable() {
-  return enabled;
+  return _enabled;
 };
 
 void DacPin::writeIfAllowed(uint16_t dutyCycle) {
   if (writeable()) {
-    analogWrite(physicalPin, dutyCycle);
+    analogWrite(_physicalPin, dutyCycle);
   }
 };

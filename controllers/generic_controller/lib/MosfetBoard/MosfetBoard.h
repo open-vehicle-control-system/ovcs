@@ -9,8 +9,7 @@ class MosfetBoard: public AbstractBoard {
   public:
 
     MosfetBoard(uint8_t address){
-      board = MCP23008(address);
-      _address = address;
+      _board = MCP23008(address);
     };
 
     bool begin();
@@ -19,9 +18,7 @@ class MosfetBoard: public AbstractBoard {
     uint8_t digitalRead(uint8_t pin);
 
   private:
-    MCP23008 board = MCP23008(0x20); // TODO Why is this required?
-    uint8_t _address;
-
+    MCP23008 _board = MCP23008(0x20); // TODO Why is this required?
 };
 
 #endif

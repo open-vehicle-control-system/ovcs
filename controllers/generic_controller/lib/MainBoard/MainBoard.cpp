@@ -1,7 +1,6 @@
     #include <MainBoard.h>
 
-    bool MainBoard::begin() {
-    };
+    bool MainBoard::begin() {};
 
     void MainBoard::pinMode(uint8_t pin, uint8_t mode) {
       pinMode(pin, mode);

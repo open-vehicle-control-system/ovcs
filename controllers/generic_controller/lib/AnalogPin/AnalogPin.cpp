@@ -1,12 +1,12 @@
 #include <AnalogPin.h>
 
 bool AnalogPin::readable() {
-  return enabled;
+  return _enabled;
 };
 
 uint8_t AnalogPin::readIfAllowed() {
   if (readable()) {
-    return analogRead(physicalPin);
+    return analogRead(_physicalPin);
   } else {
     return 0;
   }

@@ -20,7 +20,7 @@ class Can {
     CANMessage receivedFrame;
 
     Can() {
-      aliveCounter = 0;
+      _aliveCounter = 0;
     };
 
     void begin();
@@ -31,9 +31,9 @@ class Can {
     void emitdigitalAndAnalogPinsStatus(uint16_t digitalAndAnalogPinsStatusFrameId, uint8_t digitalPinsStatus[21], uint16_t analogPinsStatus[3]);
 
   private:
-    unsigned long aliveEmittingTimestamp;
-    unsigned long digitalAndAnalogPinStatusesTimestamp;
-    uint8_t aliveCounter;
+    uint8_t _aliveCounter;
+    unsigned long _aliveEmittingTimestamp;
+    unsigned long _digitalAndAnalogPinStatusesTimestamp;
 
     void emit(CANMessage frame);
     uint8_t extractBits(uint16_t source, uint16_t mask, uint8_t shiftRight);

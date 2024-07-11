@@ -1,18 +1,18 @@
 #include <AdoptionButton.h>
 
 bool AdoptionButton::isWaitingAdoption() {
-  if (!waitingAdoption) {
+  if (!_waitingAdoption) {
     bool buttonPressed = digitalRead(ADOPTION_BUTTON_PIN) == HIGH;
-    if(buttonPressed && !buttonWasPressed){
-      waitingAdoption = true;
-      adopted = false;
+    if(buttonPressed && !_buttonWasPressed){
+      _waitingAdoption = true;
+      _adopted         = false;
     }
-    buttonWasPressed = buttonPressed;
+    _buttonWasPressed = buttonPressed;
   }
-  return waitingAdoption;
+  return _waitingAdoption;
 };
 
 void AdoptionButton::validateAdoption() {
-  adopted         = true;
-  waitingAdoption = false;
+  _adopted         = true;
+  _waitingAdoption = false;
 };

@@ -13,24 +13,24 @@
 
 class Controller {
   public:
-    Controller(AbstractBoard* initialMainBoard, AbstractBoard* initialMosfetBoard1, AbstractBoard* initialMosfetBoard2){
-      ready         = false;
-      mainBoard     = initialMainBoard;
-      mosfetBoard1  = initialMosfetBoard1;
-      mosfetBoard2  = initialMosfetBoard2;
-      configuration = Configuration(mosfetBoard1, mosfetBoard2, initialMosfetBoard2);
+    Controller(AbstractBoard* mainBoard, AbstractBoard* mosfetBoard1, AbstractBoard* mosfetBoard2){
+      _ready         = false;
+      _mainBoard     = mainBoard;
+      _mosfetBoard1  = mosfetBoard1;
+      _mosfetBoard2  = mosfetBoard2;
+      _configuration = Configuration(mosfetBoard1, mosfetBoard2, mosfetBoard2);
     };
     void setup();
     void loop();
 
   private :
-    bool ready;
-    AbstractBoard* mosfetBoard1;
-    AbstractBoard* mosfetBoard2;
-    AbstractBoard* mainBoard;
-    AdoptionButton adoptionButton;
-    Can can;
-    Configuration configuration;
+    bool _ready;
+    AbstractBoard* _mosfetBoard1;
+    AbstractBoard* _mosfetBoard2;
+    AbstractBoard* _mainBoard;
+    AdoptionButton _adoptionButton;
+    Can _can;
+    Configuration _configuration;
     void initializeSerial();
     void initializeI2C();
     void writeDigitalPins();

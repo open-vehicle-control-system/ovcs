@@ -11,10 +11,6 @@ class MainBoard: public AbstractBoard {
     void pinMode(uint8_t pin, uint8_t mode);
     void digitalWrite(uint8_t pin, uint8_t value);
     uint8_t digitalRead(uint8_t pin);
-
-  private:
-    MCP23008 board = MCP23008(0x20); // TODO Why is this required?
-
 };
 
 #endif

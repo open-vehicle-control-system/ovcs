@@ -9,38 +9,38 @@ void Controller::initializeSerial() {
 };
 
 void Controller::initializeI2C() {
-  mosfetBoard1->begin();
-  mosfetBoard2->begin();
+  _mosfetBoard1->begin();
+  _mosfetBoard2->begin();
 };
 
 bool Controller::isReady() {
-  return ready;
+  return _ready;
 };
 
 void Controller::adoptConfiguration() {
-  configuration.storeAndApply(can.receivedFrame.data);
-  adoptionButton.validateAdoption();
+  _configuration.storeAndApply(_can.receivedFrame.data);
+  _adoptionButton.validateAdoption();
 };
 
 void Controller::writeDigitalPins() {
-  bool* digitalPinsRequest = can.parseDigitalPinRequest();
+  bool* digitalPinsRequest = _can.parseDigitalPinRequest();
   for (uint8_t i = 0; i < 21; i++) {
-    configuration.digitalPins[i].writeIfAllowed(digitalPinsRequest[i]);
+    _configuration._digitalPins[i].writeIfAllowed(digitalPinsRequest[i]);
   }
 };
 
 void Controller::writeOtherPins() {
-  OtherPinDutyCycles otherPinDutyCycles = can.parseOtherPinRequest();
+  OtherPinDutyCycles otherPinDutyCycles = _can.parseOtherPinRequest();
   for (uint8_t i = 0; i < 3; i++) {
-    configuration.pwmPins[i].writeIfAllowed(otherPinDutyCycles.pwmDutyCyles[i]);
+    _configuration._pwmPins[i].writeIfAllowed(otherPinDutyCycles.pwmDutyCyles[i]);
   }
-  configuration.dacPin.writeIfAllowed(otherPinDutyCycles.dacDutyCycle);
+  _configuration._dacPin.writeIfAllowed(otherPinDutyCycles.dacDutyCycle);
 };
 
 uint8_t* Controller::readDigitalPins() {
   static uint8_t digitalPinsStatus[21]  = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
   for (uint8_t i=0; i<21; i++) {
-    digitalPinsStatus[i] = configuration.digitalPins[i].readIfAllowed();
+    digitalPinsStatus[i] = _configuration._digitalPins[i].readIfAllowed();
   }
   return digitalPinsStatus;
 };
@@ -48,7 +48,7 @@ uint8_t* Controller::readDigitalPins() {
 uint16_t* Controller::readAnalogPins() {
   static uint16_t analogPinsStatus [3]  = {0, 0, 0};
   for (uint8_t i=0; i<3; i++) {
-    AnalogPin analogPin = configuration.analogPins[i];
+    AnalogPin analogPin = _configuration._analogPins[i];
     analogPinsStatus[i] = analogPin.readIfAllowed();
   }
   return analogPinsStatus;
@@ -57,36 +57,36 @@ uint16_t* Controller::readAnalogPins() {
 void Controller::emitPinStatuses() {
   uint8_t* digitalPinsStatus = readDigitalPins();
   uint16_t* analogPinsStatus = readAnalogPins();
-  can.emitdigitalAndAnalogPinsStatus(configuration.digitalAndAnalogPinsStatusFrameId, digitalPinsStatus, analogPinsStatus);
+  _can.emitdigitalAndAnalogPinsStatus(_configuration._digitalAndAnalogPinsStatusFrameId, digitalPinsStatus, analogPinsStatus);
 };
 
 void Controller::emitFrames() {
   emitPinStatuses();
-  can.emitAlive(configuration.aliveFrameId);
+  _can.emitAlive(_configuration._aliveFrameId);
 };
 
 void Controller::setup() {
   initializeSerial();
-  can.begin();
+  _can.begin();
   initializeI2C();
   analogReadResolution(ANALOG_READ_RESOLUTION);
   analogWriteResolution(ANALOG_WRITE_RESOLUTION);
-  if (configuration.load()) {
-    ready = true;
+  if (_configuration.load()) {
+    _ready = true;
   } else {
-    ready = false;
+    _ready = false;
   }
 };
 
 void Controller::loop() {
-  can.receive();
-  if (adoptionButton.isWaitingAdoption() && can.receivedFrame.id == ADOPTION_FRAME_ID) {
+  _can.receive();
+  if (_adoptionButton.isWaitingAdoption() && _can.receivedFrame.id == ADOPTION_FRAME_ID) {
     Serial.println("--> Adoption started <--");
     adoptConfiguration();
   } else if (isReady()) {
-    if (can.receivedFrame.id == configuration.digitalPinRequestFrameId) {
+    if (_can.receivedFrame.id == _configuration._digitalPinRequestFrameId) {
       writeDigitalPins();
-    } else if (can.receivedFrame.id == configuration.otherPinRequestFrameId) {
+    } else if (_can.receivedFrame.id == _configuration._otherPinRequestFrameId) {
       writeOtherPins();
     }
     emitFrames();
