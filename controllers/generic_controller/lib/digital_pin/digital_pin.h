@@ -2,7 +2,7 @@
 #define DIGITAL_PIN_H
 
 #include <Arduino.h>
-#include "MCP23008.h"
+#include <MCP23008.h>
 
 #define MAIN_BOARD_ID 0
 #define MOSFET_0_ID 1

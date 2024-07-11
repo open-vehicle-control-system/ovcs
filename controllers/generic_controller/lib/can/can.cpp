@@ -1,5 +1,5 @@
 #include <can.h>
-#include "controller.h"
+#include <controller.h>
 
 void Can::begin() {
   SPI.begin ();

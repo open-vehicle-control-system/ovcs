@@ -1,3 +1,6 @@
+#ifndef PWM_PIN_H
+#define PWM_PIN_H
+
 #include <other_pin.h>
 
 class PwmPin: public OtherPin {
@@ -9,3 +12,5 @@ class PwmPin: public OtherPin {
     bool writeable();
     void writeIfAllowed(uint16_t dutyCycle);
 };
+
+#endif

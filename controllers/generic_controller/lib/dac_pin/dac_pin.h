@@ -1,3 +1,6 @@
+#ifndef DAC_PIN_H
+#define DAC_PIN_H
+
 #include <other_pin.h>
 
 class DacPin: public OtherPin {
@@ -10,3 +13,5 @@ class DacPin: public OtherPin {
     bool writeable();
     void writeIfAllowed(uint16_t value);
 };
+
+#endif

@@ -1,3 +1,6 @@
+#ifndef ANALOG_PIN_H
+#define ANALOG_PIN_H
+
 #include <other_pin.h>
 
 class AnalogPin: public OtherPin {
@@ -7,3 +10,5 @@ class AnalogPin: public OtherPin {
     bool readable();
     uint8_t read();
 };
+
+#endif
