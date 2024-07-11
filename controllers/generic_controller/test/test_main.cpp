@@ -5,6 +5,8 @@
 using namespace fakeit;
 
 #include <PwmPinTest.h>
+#include <DacPinTest.h>
+
 
 #define RUN_TEST_GROUP(TEST) \
     if (!std::getenv("TEST_GROUP") || (strcmp(#TEST, std::getenv("TEST_GROUP")) == 0)) { \
@@ -25,5 +27,6 @@ int main()
 {
   UNITY_BEGIN(); // IMPORTANT LINE!
   RUN_TEST_GROUP(PwmPinTests);
+  RUN_TEST_GROUP(DacPinTests);
   return UNITY_END();
 }
