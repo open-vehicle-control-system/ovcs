@@ -51,9 +51,7 @@ uint16_t* Controller::readAnalogPins() {
   static uint16_t analogPinsStatus [3]  = {0, 0, 0};
   for (uint8_t i=0; i<3; i++) {
     AnalogPin analogPin = configuration.analogPins[i];
-    if (analogPin.readable()) {
-      analogPinsStatus[i] = analogPin.read();
-    }
+    analogPinsStatus[i] = analogPin.readIfAllowed();
   }
   return analogPinsStatus;
 };

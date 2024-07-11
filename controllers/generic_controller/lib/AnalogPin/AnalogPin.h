@@ -8,7 +8,7 @@ class AnalogPin: public OtherPin {
     AnalogPin() {};
     AnalogPin(bool initialEnabled, uint8_t initialPhysicalPin) : OtherPin(initialEnabled, initialPhysicalPin) {};
     bool readable();
-    uint8_t read();
+    uint8_t readIfAllowed();
 };
 
 #endif

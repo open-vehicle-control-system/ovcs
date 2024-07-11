@@ -4,6 +4,10 @@ bool AnalogPin::readable() {
   return enabled;
 };
 
-uint8_t AnalogPin::read() {
-  return analogRead(physicalPin);
+uint8_t AnalogPin::readIfAllowed() {
+  if (readable()) {
+    return analogRead(physicalPin);
+  } else {
+    return 0;
+  }
 };
