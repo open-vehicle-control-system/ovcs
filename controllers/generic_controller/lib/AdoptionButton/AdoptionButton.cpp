@@ -2,11 +2,12 @@
 
 bool AdoptionButton::isWaitingAdoption() {
   if (!waitingAdoption) {
-    bool adoptionRequested = digitalRead(ADOPTION_BUTTON_PIN) == HIGH;
-    if(adoptionRequested){
+    bool buttonPressed = digitalRead(ADOPTION_BUTTON_PIN) == HIGH;
+    if(buttonPressed && !buttonWasPressed){
       waitingAdoption = true;
       adopted = false;
     }
+    buttonWasPressed = buttonPressed;
   }
   return waitingAdoption;
 };

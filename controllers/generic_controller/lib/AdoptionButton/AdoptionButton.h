@@ -11,6 +11,7 @@ class AdoptionButton {
       pinMode(ADOPTION_BUTTON_PIN, INPUT);
       waitingAdoption      = false;
       adopted              = false;
+      buttonWasPressed    = false;
     };
 
     bool isWaitingAdoption();
@@ -19,6 +20,7 @@ class AdoptionButton {
   private:
     bool waitingAdoption;
     bool adopted;
+    bool buttonWasPressed;
 };
 
 #endif
