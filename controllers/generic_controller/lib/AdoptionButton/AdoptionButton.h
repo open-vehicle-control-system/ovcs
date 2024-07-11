@@ -9,16 +9,16 @@ class AdoptionButton {
   public :
     AdoptionButton() {
       pinMode(ADOPTION_BUTTON_PIN, INPUT);
-      adoptedSinceLastBoot = false;
       waitingAdoption      = false;
+      adopted              = false;
     };
 
     bool isWaitingAdoption();
     void validateAdoption();
 
   private:
-    bool adoptedSinceLastBoot;
     bool waitingAdoption;
+    bool adopted;
 };
 
 #endif
