@@ -1,4 +1,4 @@
-#include <analog_pin.h>
+#include <AnalogPin.h>
 
 bool AnalogPin::readable() {
   return enabled;

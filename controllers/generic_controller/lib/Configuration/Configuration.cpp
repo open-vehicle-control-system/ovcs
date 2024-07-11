@@ -1,4 +1,4 @@
-#include <configuration.h>
+#include <Configuration.h>
 
 bool Configuration::load() {
   uint32_t crc;

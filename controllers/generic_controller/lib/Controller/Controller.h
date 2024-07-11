@@ -2,9 +2,9 @@
 #define CONTROLLER_H
 
 #include <Arduino.h>
-#include <adoption_button.h>
-#include <can.h>
-#include <configuration.h>
+#include <AdoptionButton.h>
+#include <Can.h>
+#include <Configuration.h>
 
 #define I2C_CLOCK_FREQUENCY 100000
 #define ADOPTION_FRAME_ID 0x700

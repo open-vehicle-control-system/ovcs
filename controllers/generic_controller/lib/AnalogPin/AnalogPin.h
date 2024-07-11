@@ -1,7 +1,7 @@
 #ifndef ANALOG_PIN_H
 #define ANALOG_PIN_H
 
-#include <other_pin.h>
+#include <OtherPin.h>
 
 class AnalogPin: public OtherPin {
   public:

@@ -1,5 +1,5 @@
 #include <Arduino.h>
-#include <pwm_pin.h>
+#include <PwmPin.h>
 
 namespace PwmPinTests{
     void testWriteIfAllowedWhenNotAllowed(){

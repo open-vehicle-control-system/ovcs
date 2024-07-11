@@ -1,7 +1,7 @@
 #ifndef DAC_PIN_H
 #define DAC_PIN_H
 
-#include <other_pin.h>
+#include <OtherPin.h>
 
 class DacPin: public OtherPin {
   public:

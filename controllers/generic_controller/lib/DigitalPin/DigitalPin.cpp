@@ -1,4 +1,4 @@
-#include <digital_pin.h>
+#include <DigitalPin.h>
 
 void DigitalPin::initPhysicalPin() {
   if (writeable() || readable()){

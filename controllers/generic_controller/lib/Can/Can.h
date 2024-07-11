@@ -4,7 +4,7 @@
 #include <Arduino.h>
 #include <ACAN2517.h>
 #include <SPI.h>
-#include <other_pin_duty_cycle.h>
+#include <OtherPinDutyCycle.h>
 
 #define ALIVE_FRAME_FREQUENCY_MS 100
 #define DIGITAL_AND_ANALOG_PINS_STATUS_FRAME_FREQUENCY_MS 10

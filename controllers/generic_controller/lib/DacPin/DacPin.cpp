@@ -1,4 +1,4 @@
-#include <dac_pin.h>
+#include <DacPin.h>
 
 bool DacPin::writeable() {
   return enabled;

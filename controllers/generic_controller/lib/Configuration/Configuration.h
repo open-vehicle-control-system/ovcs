@@ -1,10 +1,10 @@
 #ifndef CONFIGURATION_H
 #define CONFIGURATION_H
 #include <Arduino.h>
-#include <digital_pin.h>
-#include <pwm_pin.h>
-#include <dac_pin.h>
-#include <analog_pin.h>
+#include <DigitalPin.h>
+#include <PwmPin.h>
+#include <DacPin.h>
+#include <AnalogPin.h>
 #include <CRC32.h>
 #include <EEPROM.h>
 

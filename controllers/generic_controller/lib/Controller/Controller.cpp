@@ -1,4 +1,4 @@
-#include <controller.h>
+#include <Controller.h>
 
 void Controller::initializeSerial() {
   Serial.begin(115200);

@@ -1,4 +1,4 @@
-#include <pwm_pin.h>
+#include <PwmPin.h>
 
 bool PwmPin::writeable() {
   return enabled;

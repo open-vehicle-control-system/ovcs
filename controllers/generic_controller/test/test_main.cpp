@@ -4,7 +4,7 @@
 
 using namespace fakeit;
 
-#include <pwm_pin_test.h>
+#include <PwmPinTest.h>
 
 #define RUN_TEST_GROUP(TEST) \
     if (!std::getenv("TEST_GROUP") || (strcmp(#TEST, std::getenv("TEST_GROUP")) == 0)) { \

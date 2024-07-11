@@ -1,4 +1,4 @@
-#include <adoption_button.h>
+#include <AdoptionButton.h>
 
 bool AdoptionButton::isWaitingAdoption() {
   if (adoptedSinceLastBoot) {
