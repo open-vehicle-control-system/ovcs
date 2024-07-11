@@ -11,11 +11,6 @@
     };
 
     void MosfetBoard::digitalWrite(uint8_t pin, uint8_t value) {
-      if (value == 1) {
-        Serial.println("MOSFET");
-        Serial.println(pin);
-        Serial.println(value);
-      }
       _board.write1(pin, value);
     };
 
