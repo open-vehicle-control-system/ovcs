@@ -6,4 +6,4 @@ void MockBoard::pinMode(uint8_t pin, uint8_t mode) {};
 
 void MockBoard::digitalWrite(uint8_t pin, uint8_t value) {};
 
-uint8_t MockBoard::digitalRead(uint8_t pin) { return 0; };
+uint8_t MockBoard::digitalRead(uint8_t pin) { return 1; };

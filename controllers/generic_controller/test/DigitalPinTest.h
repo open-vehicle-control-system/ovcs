@@ -75,14 +75,56 @@ namespace DigitalPinTests{
         Verify(Method(spy, digitalWrite).Using(3, 0)).Exactly(1);
     }
 
+    void tesDigitalReadIfAllowedWhenDisabled() {
+        MockBoard mockBoard = MockBoard();
+        DigitalPin digitalPin = DigitalPin(0, &mockBoard, 0);
+        Mock<MockBoard> spy(mockBoard);
+        When(Method(spy, digitalRead)).Return(1);
+        digitalPin.readIfAllowed();
+        Verify(Method(spy, digitalRead)).Exactly(0);
+    }
+
+    void testDigitalReadIfAllowedWhenReadOnly() {
+        MockBoard mockBoard = MockBoard();
+        DigitalPin digitalPin = DigitalPin(1, &mockBoard, 0);
+        Mock<MockBoard> spy(mockBoard);
+        When(Method(spy, digitalRead)).Return(1);
+        digitalPin.readIfAllowed();
+        Verify(Method(spy, digitalRead)).Exactly(1);
+    }
+
+    void testDigitalReadIfAllowedWhenWriteOnly() {
+        MockBoard mockBoard = MockBoard();
+        DigitalPin digitalPin = DigitalPin(2, &mockBoard, 0);
+        Mock<MockBoard> spy(mockBoard);
+        When(Method(spy, digitalRead)).Return(1);
+        digitalPin.readIfAllowed();
+        Verify(Method(spy, digitalRead)).Exactly(0);
+    }
+
+     void testDigitalReadIfAllowedWhenReadWrite() {
+        MockBoard mockBoard = MockBoard();
+        DigitalPin digitalPin = DigitalPin(3, &mockBoard, 0);
+        Mock<MockBoard> spy(mockBoard);
+        When(Method(spy, digitalRead)).Return(1);
+        digitalPin.readIfAllowed();
+        Verify(Method(spy, digitalRead)).Exactly(1);
+    }
+
     void run_tests(void){
         RUN_TEST(tesDigitalInitializationWhenDisabled);
         RUN_TEST(tesDigitalInitializationWhenWriteOnly);
         RUN_TEST(tesDigitalInitializationWhenReadOnly);
         RUN_TEST(tesDigitalInitializationWhenReadWrite);
+
         RUN_TEST(tesDigitalWriteIfAllowedWhenDisabled);
         RUN_TEST(testDigitalWriteIfAllowedWhenReadOnly);
         RUN_TEST(testDigitalWriteIfAllowedWhenWriteOnly);
         RUN_TEST(testDigitalWriteIfAllowedWhenReadWrite);
+
+        RUN_TEST(tesDigitalReadIfAllowedWhenDisabled);
+        RUN_TEST(testDigitalReadIfAllowedWhenReadOnly);
+        RUN_TEST(testDigitalReadIfAllowedWhenWriteOnly);
+        RUN_TEST(testDigitalReadIfAllowedWhenReadWrite);
     }
 }
