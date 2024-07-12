@@ -4,11 +4,12 @@
 
 using namespace fakeit;
 
-#include <PwmPinTest.h>
-#include <DacPinTest.h>
-#include <AnalogPinTest.h>
-#include <AdoptionButtonTest.h>
-#include <DigitalPinTest.h>
+#include <PwmPinTests.h>
+#include <DacPinTests.h>
+#include <AnalogPinTests.h>
+#include <AdoptionButtonTests.h>
+#include <DigitalPinTests.h>
+#include <ConfigurationTests.h>
 
 
 #define RUN_TEST_GROUP(TEST) \
@@ -34,5 +35,6 @@ int main()
   RUN_TEST_GROUP(AnalogPinTests);
   RUN_TEST_GROUP(AdoptionButtonTests);
   RUN_TEST_GROUP(DigitalPinTests);
+  RUN_TEST_GROUP(ConfigurationTests);
   return UNITY_END();
 }

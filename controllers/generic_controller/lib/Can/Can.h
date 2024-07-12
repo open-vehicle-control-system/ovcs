@@ -17,7 +17,7 @@ static ACAN2517 acan = ACAN2517(SPI_CAN_CS, SPI, SPI_CAN_INT); // declared outsi
 
 class Can {
   public :
-    CANMessage receivedFrame;
+    CANMessage _receivedFrame;
 
     Can() {
       _aliveCounter = 0;

@@ -13,12 +13,12 @@
 
 class Controller {
   public:
-    Controller(AbstractBoard* mainBoard, AbstractBoard* mosfetBoard1, AbstractBoard* mosfetBoard2){
+    Controller(AbstractBoard* mainBoard, AbstractBoard* mosfetBoard1, AbstractBoard* mosfetBoard2, AbstractCrc* crc){
       _ready         = false;
       _mainBoard     = mainBoard;
       _mosfetBoard1  = mosfetBoard1;
       _mosfetBoard2  = mosfetBoard2;
-      _configuration = Configuration(mosfetBoard1, mosfetBoard2, mosfetBoard2);
+      _configuration = Configuration(mosfetBoard1, mosfetBoard2, mosfetBoard2, crc);
     };
     void setup();
     void loop();

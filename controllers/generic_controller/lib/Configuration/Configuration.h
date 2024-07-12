@@ -8,6 +8,7 @@
 #include <CRC32.h>
 #include <EEPROM.h>
 #include <AbstractBoard.h>
+#include <AbstractCrc.h>
 
 #define ALIVE_FRAME_ID_MASK 0x701
 #define DIGITAL_PIN_REQUEST_FRAME_ID_MASK 0x702
@@ -60,10 +61,11 @@ class Configuration {
 
 
     Configuration() {};
-    Configuration(AbstractBoard* mosfetBoard1, AbstractBoard* mosfetBoard2, AbstractBoard* mainBoard) {
+    Configuration(AbstractBoard* mosfetBoard1, AbstractBoard* mosfetBoard2, AbstractBoard* mainBoard, AbstractCrc* crc) {
       _mosfetBoard1 = mosfetBoard1;
       _mosfetBoard2 = mosfetBoard2;
       _mainBoard    = mainBoard;
+      _crc          = crc;
     };
 
   private:
@@ -72,6 +74,7 @@ class Configuration {
     AbstractBoard* _mosfetBoard1;
     AbstractBoard* _mosfetBoard2;
     AbstractBoard* _mainBoard;
+    AbstractCrc* _crc;
     void store(uint8_t newConfiguration[8]);
     void computeControllerId();
     void computeFrameIds();

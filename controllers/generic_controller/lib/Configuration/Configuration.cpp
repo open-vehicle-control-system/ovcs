@@ -6,7 +6,7 @@ bool Configuration::load() {
   uint8_t storedConfiguration [8];
   EEPROM.get(CONFIGURATION_EEPROM_ADDRESS, storedConfiguration);
   EEPROM.get(CONFIGURATION_CRC_EEPROM_ADDRESS, configurationCrc);
-  crc = CRC32::calculate(storedConfiguration, CONFIGURATION_BYTE_SIZE);
+  crc = _crc->crc32(storedConfiguration, CONFIGURATION_BYTE_SIZE);
   if (crc == configurationCrc) {
     _rawConfiguration = storedConfiguration;
     computeControllerId();
@@ -29,7 +29,7 @@ void Configuration::store(uint8_t newConfiguration[8]) {
     EEPROM.update(CONFIGURATION_EEPROM_ADDRESS + i, newConfiguration[i]);
   }
 
-  uint32_t crc = CRC32::calculate(newConfiguration , CONFIGURATION_BYTE_SIZE);
+  uint32_t crc = _crc->crc32(newConfiguration , CONFIGURATION_BYTE_SIZE);
   EEPROM.put(CONFIGURATION_CRC_EEPROM_ADDRESS, crc);
 };
 

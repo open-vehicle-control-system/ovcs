@@ -18,7 +18,7 @@ bool Controller::isReady() {
 };
 
 void Controller::adoptConfiguration() {
-  _configuration.storeAndApply(_can.receivedFrame.data);
+  _configuration.storeAndApply(_can._receivedFrame.data);
   _adoptionButton.validateAdoption();
 };
 
@@ -80,13 +80,13 @@ void Controller::setup() {
 
 void Controller::loop() {
   _can.receive();
-  if (_adoptionButton.isWaitingAdoption() && _can.receivedFrame.id == ADOPTION_FRAME_ID) {
+  if (_adoptionButton.isWaitingAdoption() && _can._receivedFrame.id == ADOPTION_FRAME_ID) {
     Serial.println("--> Adoption started <--");
     adoptConfiguration();
   } else if (isReady()) {
-    if (_can.receivedFrame.id == _configuration._digitalPinRequestFrameId) {
+    if (_can._receivedFrame.id == _configuration._digitalPinRequestFrameId) {
       writeDigitalPins();
-    } else if (_can.receivedFrame.id == _configuration._otherPinRequestFrameId) {
+    } else if (_can._receivedFrame.id == _configuration._otherPinRequestFrameId) {
       writeOtherPins();
     }
     emitFrames();

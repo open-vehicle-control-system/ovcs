@@ -18,9 +18,9 @@ void Can::begin() {
 
 void Can::receive() {
   if (acan.available()) {
-    acan.receive(receivedFrame);
+    acan.receive(_receivedFrame);
   } else {
-    receivedFrame.id = 0;
+    _receivedFrame.id = 0;
   }
 };
 
@@ -76,7 +76,7 @@ bool* Can::parseDigitalPinRequest() {
   for(uint8_t byteNumber = 0; byteNumber < 3; byteNumber++) {
     for (uint8_t i = 1; i < 8; i++) {
       if (pinNumber < 21) {
-        digitalPinRequest[pinNumber] = (receivedFrame.data[byteNumber] >> 8 - i & 0b1);
+        digitalPinRequest[pinNumber] = (_receivedFrame.data[byteNumber] >> 8 - i & 0b1);
         pinNumber++;
       } else {
         i = 8;
@@ -89,10 +89,10 @@ bool* Can::parseDigitalPinRequest() {
 OtherPinDutyCycles Can::parseOtherPinRequest() {
   OtherPinDutyCycles otherPinDutyCycles;
 
-  otherPinDutyCycles.pwmDutyCyles[0] = extractBits(receivedFrame.data[1], 0b11110000, 4) << 8 | receivedFrame.data[0];
-  otherPinDutyCycles.pwmDutyCyles[1] = extractBits(receivedFrame.data[2], 0b00001111, 0) << 8 | extractBits(receivedFrame.data[1], 0b00001111, 0) << 4 |  extractBits(receivedFrame.data[2], 0b11110000, 4);
-  otherPinDutyCycles.pwmDutyCyles[2] = extractBits(receivedFrame.data[4], 0b11110000, 4) << 4 | receivedFrame.data[3];
-  otherPinDutyCycles.dacDutyCycle    = extractBits(receivedFrame.data[5], 0b00001111, 0) << 8 | extractBits(receivedFrame.data[4], 0b00001111, 0) << 4 |  extractBits(receivedFrame.data[5], 0b11110000, 4);
+  otherPinDutyCycles.pwmDutyCyles[0] = extractBits(_receivedFrame.data[1], 0b11110000, 4) << 8 | _receivedFrame.data[0];
+  otherPinDutyCycles.pwmDutyCyles[1] = extractBits(_receivedFrame.data[2], 0b00001111, 0) << 8 | extractBits(_receivedFrame.data[1], 0b00001111, 0) << 4 |  extractBits(_receivedFrame.data[2], 0b11110000, 4);
+  otherPinDutyCycles.pwmDutyCyles[2] = extractBits(_receivedFrame.data[4], 0b11110000, 4) << 4 | _receivedFrame.data[3];
+  otherPinDutyCycles.dacDutyCycle    = extractBits(_receivedFrame.data[5], 0b00001111, 0) << 8 | extractBits(_receivedFrame.data[4], 0b00001111, 0) << 4 |  extractBits(_receivedFrame.data[5], 0b11110000, 4);
 
   return otherPinDutyCycles;
 }
