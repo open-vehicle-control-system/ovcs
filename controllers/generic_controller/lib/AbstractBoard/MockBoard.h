@@ -1,10 +1,12 @@
-#ifndef MAIN_BOARD_H
-#define MAIN_BOARD_H
+#ifndef MOCK_BOARD_H
+#define MOCK_BOARD_H
 
 #include <AbstractBoard.h>
 
-class MainBoard: public AbstractBoard {
+class MockBoard: public AbstractBoard {
   public:
+    MockBoard(){};
+    MockBoard(uint8_t address){};
     bool begin();
     void pinMode(uint8_t pin, uint8_t mode);
     void digitalWrite(uint8_t pin, uint8_t value);
