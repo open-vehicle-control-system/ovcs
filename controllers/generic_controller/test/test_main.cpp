@@ -1,7 +1,6 @@
 #include <unity.h>
 #include <fakeit.hpp>
 #include <Arduino.h>
-
 using namespace fakeit;
 
 #include <PwmPinTests.h>

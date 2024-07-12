@@ -5,7 +5,6 @@
 #include <PwmPin.h>
 #include <DacPin.h>
 #include <AnalogPin.h>
-#include <CRC32.h>
 #include <EEPROM.h>
 #include <AbstractBoard.h>
 #include <AbstractCrc.h>
