@@ -4,21 +4,19 @@ can_networks:
     bitrate: 500000
     emitted_frames:
       - import!:can/ovcs/frames/0x100_contactors_status_request.yml
-      - import!:can/ovcs/frames/0x110_vms_relays_status_request.yml
       - import!:can/ovcs/frames/0x1A0_vms_status.yml
       - import!:can/ovcs/frames/0x60A_abs_status.yml
       - import!:can/ovcs/frames/0x60D_passenger_compartment_status.yml
       - import!:can/ovcs/frames/0x60B_bms_status.yml
       - import!:can/ovcs/frames/0x600_gear_status.yml
       - import!:can/ovcs/frames/0x700_controller_configuration.yml
-      - import!:can/ovcs/frames/0x702_front_controller_digital_pin_request.yml
-      - import!:can/ovcs/frames/0x703_front_controller_other_pin_request.yml
+      - import!:can/ovcs/frames/0x702_front_controller_request.yml
     received_frames:
       - import!:can/ovcs/frames/0x101_contactors_status.yml
-      - import!:can/ovcs/frames/0x111_vms_relay_status.yml
       - import!:can/ovcs/frames/0x200_car_controls_status.yml
       - import!:can/ovcs/frames/0x201_infotainment_status.yml
-      - import!:can/ovcs/frames/0x704_front_controller_digital_and_analog_pins_status.yml
+      - import!:can/ovcs/frames/0x701_front_controller_alive.yml
+      - import!:can/ovcs/frames/0x704_front_controller_status.yml
   leaf_drive: import!:can/leaf_drive/leaf_drive.yml
   polo_drive: import!:can/polo_drive/polo_drive.yml
   orion_bms: import!:can/orion_bms/orion_bms.yml

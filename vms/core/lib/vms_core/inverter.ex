@@ -1,6 +1,6 @@
 defmodule VmsCore.Inverter do
   use GenServer
-  alias VmsCore.Controllers.VmsController
+  alias VmsCore.Controllers.FrontController
   alias VmsCore.NissanLeaf.Em57
   alias VmsCore.VwPolo
 
@@ -19,7 +19,7 @@ defmodule VmsCore.Inverter do
 
   @impl true
   def handle_cast(:on, state) do
-    with  :ok <- VmsController.switch_on_inverter_relay(),
+    with  :ok <- FrontController.switch_on_inverter(),
           :ok <- Em57.Inverter.on(),
           :ok <- VwPolo.Engine.on()
     do
@@ -32,7 +32,7 @@ defmodule VmsCore.Inverter do
   @impl true
   def handle_cast(:off, state) do
     with :ok <- VwPolo.Engine.off(),
-         :ok <- VmsController.switch_off_inverter_relay(),
+         :ok <- FrontController.switch_off_inverter(),
          :ok <- Em57.Inverter.off()
     do
       {:noreply, state}
@@ -50,7 +50,7 @@ defmodule VmsCore.Inverter do
   end
 
   def ready_to_drive?() do
-    {:ok, vms_controller_ready} = VmsController.ready_to_drive?()
+    {:ok, vms_controller_ready} = FrontController.ready_to_drive?()
     {:ok, inverter_ready}       = Em57.Inverter.ready_to_drive?()
     {:ok, vms_controller_ready && inverter_ready}
   end

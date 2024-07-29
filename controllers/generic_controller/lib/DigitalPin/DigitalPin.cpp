@@ -25,7 +25,7 @@ void DigitalPin::writeIfAllowed(bool value) {
 
 uint8_t DigitalPin::readIfAllowed() {
   if (readable()) {
-    _board->digitalRead(_physicalPin);
+    return _board->digitalRead(_physicalPin);
   }
   return 0;
 };

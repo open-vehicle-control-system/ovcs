@@ -1,0 +1,18 @@
+---
+anchors:
+  digital_pin_parameters: &digital_pin_parameters
+    kind: enum
+    value_length: 1
+    mapping:
+      0x00: false
+      0x01: true
+name: front_controller_status
+id: 0x704
+frequency: 10
+signals:
+  - name: inverter_enabled
+    value_start: 5
+    <<: *digital_pin_parameters
+  - name: water_pump_enabled
+    value_start: 6
+    <<: *digital_pin_parameters

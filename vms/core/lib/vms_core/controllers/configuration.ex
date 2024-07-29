@@ -1,4 +1,4 @@
-defmodule VmsCore.ControllerConfiguration do
+defmodule VmsCore.Controllers.Configuration do
   use GenServer
   alias Cantastic.{Emitter}
 
@@ -21,14 +21,14 @@ defmodule VmsCore.ControllerConfiguration do
     GenServer.start_link(__MODULE__, nil, name: __MODULE__)
   end
 
-  def start(controller_name) do
+  def start_adoption(controller_name) do
     :ok = Emitter.update(@network_name, @configuration_frame_name, fn (data) ->
       %{data | "current_controller" => controller_name}
     end)
     Emitter.enable(@network_name, @configuration_frame_name)
   end
 
-  def stop() do
+  def stop_adoption() do
     Emitter.disable(@network_name, @configuration_frame_name)
   end
 
@@ -41,33 +41,33 @@ defmodule VmsCore.ControllerConfiguration do
       "front_controller" => %{
         "controller_id" => 0,
         "digital_pin0" => "disabled",
-        "digital_pin1" => "read_only",
-        "digital_pin2" => "write_only",
-        "digital_pin3" => "read_write",
+        "digital_pin1" => "disabled",
+        "digital_pin2" => "disabled",
+        "digital_pin3" => "disabled",
         "digital_pin4" => "disabled",
         "digital_pin5" => "read_write",
-        "digital_pin6" => "write_only",
-        "digital_pin7" => "read_write",
+        "digital_pin6" => "read_write",
+        "digital_pin7" => "disabled",
         "digital_pin8" => "disabled",
-        "digital_pin9" => "read_only",
-        "digital_pin10" => "write_only",
-        "digital_pin11" => "read_write",
+        "digital_pin9" => "disabled",
+        "digital_pin10" => "disabled",
+        "digital_pin11" => "disabled",
         "digital_pin12" => "disabled",
-        "digital_pin13" => "read_only",
-        "digital_pin14" => "write_only",
-        "digital_pin15" => "read_write",
+        "digital_pin13" => "disabled",
+        "digital_pin14" => "disabled",
+        "digital_pin15" => "disabled",
         "digital_pin16" => "disabled",
-        "digital_pin17" => "read_only",
-        "digital_pin18" => "write_only",
-        "digital_pin19" => "read_write",
+        "digital_pin17" => "disabled",
+        "digital_pin18" => "disabled",
+        "digital_pin19" => "disabled",
         "digital_pin20" => "disabled",
-        "pwm_pin0" => "enabled",
-        "pwm_pin1" => "enabled",
-        "pwm_pin2" => "enabled",
-        "dac_pin0" => "enabled",
+        "pwm_pin0" => "disabled",
+        "pwm_pin1" => "disabled",
+        "pwm_pin2" => "disabled",
+        "dac_pin0" => "disabled",
         "analog_pin0" => "disabled",
-        "analog_pin1" => "enabled",
-        "analog_pin2" => "enabled"
+        "analog_pin1" => "disabled",
+        "analog_pin2" => "disabled"
       }
     }
   end

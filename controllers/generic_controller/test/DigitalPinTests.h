@@ -80,8 +80,9 @@ namespace DigitalPinTests{
         DigitalPin digitalPin = DigitalPin(0, &mockBoard, 0);
         Mock<MockBoard> spy(mockBoard);
         When(Method(spy, digitalRead)).Return(1);
-        digitalPin.readIfAllowed();
+        uint8_t result = digitalPin.readIfAllowed();
         Verify(Method(spy, digitalRead)).Exactly(0);
+        TEST_ASSERT_EQUAL_INT8 (0, result);
     }
 
     void testDigitalReadIfAllowedWhenReadOnly() {
@@ -89,8 +90,9 @@ namespace DigitalPinTests{
         DigitalPin digitalPin = DigitalPin(1, &mockBoard, 0);
         Mock<MockBoard> spy(mockBoard);
         When(Method(spy, digitalRead)).Return(1);
-        digitalPin.readIfAllowed();
+        uint8_t result = digitalPin.readIfAllowed();
         Verify(Method(spy, digitalRead)).Exactly(1);
+        TEST_ASSERT_EQUAL_INT8 (1, result);
     }
 
     void testDigitalReadIfAllowedWhenWriteOnly() {
@@ -98,8 +100,9 @@ namespace DigitalPinTests{
         DigitalPin digitalPin = DigitalPin(2, &mockBoard, 0);
         Mock<MockBoard> spy(mockBoard);
         When(Method(spy, digitalRead)).Return(1);
-        digitalPin.readIfAllowed();
+        uint8_t result = digitalPin.readIfAllowed();
         Verify(Method(spy, digitalRead)).Exactly(0);
+        TEST_ASSERT_EQUAL_INT8 (0, result);
     }
 
      void testDigitalReadIfAllowedWhenReadWrite() {
@@ -107,8 +110,19 @@ namespace DigitalPinTests{
         DigitalPin digitalPin = DigitalPin(3, &mockBoard, 0);
         Mock<MockBoard> spy(mockBoard);
         When(Method(spy, digitalRead)).Return(1);
-        digitalPin.readIfAllowed();
+        uint8_t result = digitalPin.readIfAllowed();
         Verify(Method(spy, digitalRead)).Exactly(1);
+        TEST_ASSERT_EQUAL_INT8 (1, result);
+    }
+
+    void test0ValueDigitalReadIfAllowedWhenReadWrite() {
+        MockBoard mockBoard = MockBoard();
+        DigitalPin digitalPin = DigitalPin(3, &mockBoard, 0);
+        Mock<MockBoard> spy(mockBoard);
+        When(Method(spy, digitalRead)).Return(0);
+        uint8_t result = digitalPin.readIfAllowed();
+        Verify(Method(spy, digitalRead)).Exactly(1);
+        TEST_ASSERT_EQUAL_INT8 (0, result);
     }
 
     void run_tests(void){
@@ -126,5 +140,6 @@ namespace DigitalPinTests{
         RUN_TEST(testDigitalReadIfAllowedWhenReadOnly);
         RUN_TEST(testDigitalReadIfAllowedWhenWriteOnly);
         RUN_TEST(testDigitalReadIfAllowedWhenReadWrite);
+        RUN_TEST(test0ValueDigitalReadIfAllowedWhenReadWrite);
     }
 }

@@ -17,7 +17,6 @@ defmodule VmsCore.Application do
       {VmsCore.VwPolo.Engine, []},
       {VmsCore.Controllers.ControlsController, []},
       {VmsCore.Controllers.ContactorsController, []},
-      {VmsCore.Controllers.VmsController, []},
       {VmsCore.VwPolo.Abs, []},
       {VmsCore.VwPolo.PassengerCompartment, []},
       {VmsCore.VwPolo.IgnitionLock, []},
@@ -35,8 +34,8 @@ defmodule VmsCore.Application do
       {VmsCore.Status, []},
       {VmsCore.Infotainment, []},
       {VmsCore.Bosch.IboosterGen2, []},
-      {VmsCore.ControllerConfiguration, []},
-      {VmsCore.FrontController, []}
+      {VmsCore.Controllers.Configuration, []},
+      {VmsCore.Controllers.FrontController, []}
     ]
 
     opts = [strategy: :one_for_one, name: VmsCore.Supervisor]
