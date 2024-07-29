@@ -16,7 +16,6 @@ defmodule VmsCore.Application do
         skip: skip_migrations?()},
       {VmsCore.VwPolo.Engine, []},
       {VmsCore.Controllers.ControlsController, []},
-      {VmsCore.Controllers.ContactorsController, []},
       {VmsCore.VwPolo.Abs, []},
       {VmsCore.VwPolo.PassengerCompartment, []},
       {VmsCore.VwPolo.IgnitionLock, []},
@@ -35,7 +34,8 @@ defmodule VmsCore.Application do
       {VmsCore.Infotainment, []},
       {VmsCore.Bosch.IboosterGen2, []},
       {VmsCore.Controllers.Configuration, []},
-      {VmsCore.Controllers.FrontController, []}
+      {VmsCore.Controllers.FrontController, []},
+      {VmsCore.Controllers.RearController, []}
     ]
 
     opts = [strategy: :one_for_one, name: VmsCore.Supervisor]

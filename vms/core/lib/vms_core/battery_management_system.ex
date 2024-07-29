@@ -1,6 +1,6 @@
 defmodule VmsCore.BatteryManagementSystem do
   use GenServer
-  alias VmsCore.Controllers.ContactorsController
+  alias VmsCore.Controllers.RearController
   alias VmsCore.Orion
   alias Cantastic.Emitter
   alias Decimal, as: D
@@ -62,7 +62,7 @@ defmodule VmsCore.BatteryManagementSystem do
 
   @impl true
   def handle_cast(:high_voltage_on, state) do
-    with :ok <- ContactorsController.on()
+    with :ok <- RearController.switch_on_high_voltage()
     do
       {:noreply, state}
     else
@@ -72,7 +72,7 @@ defmodule VmsCore.BatteryManagementSystem do
 
   @impl true
   def handle_cast(:high_voltage_off, state) do
-    with :ok <- ContactorsController.off()
+    with :ok <- RearController.switch_off_high_voltage()
     do
       {:noreply, state}
     else
@@ -90,7 +90,7 @@ defmodule VmsCore.BatteryManagementSystem do
   end
 
   def ready_to_drive?() do
-    {:ok, contactors_controller_ready} = ContactorsController.ready_to_drive?()
+    {:ok, contactors_controller_ready} = RearController.ready_to_drive?()
     {:ok, bms_ready}                   = Orion.Bms2.ready_to_drive?()
     {:ok, contactors_controller_ready && bms_ready}
   end

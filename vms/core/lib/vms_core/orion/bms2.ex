@@ -45,7 +45,7 @@ defmodule VmsCore.Orion.Bms2 do
       "charger_safety_relay_enabled" => %Signal{value: charger_safety_relay_enabled},
       "malfunction_relay_enabled"    => %Signal{value: malfunction_relay_enabled},
       "charge_interlock_enabled"     => %Signal{value: charge_interlock_enabled},
-      "is_ready_status_enabled"     => %Signal{value: is_ready_status_enabled}
+      "is_ready_status_enabled"      => %Signal{value: is_ready_status_enabled}
     } = signals
     {:noreply, %{
       state |
