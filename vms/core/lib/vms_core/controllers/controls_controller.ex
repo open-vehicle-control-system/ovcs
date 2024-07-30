@@ -7,9 +7,8 @@ defmodule VmsCore.Controllers.ControlsController do
   alias Decimal, as: D
 
   @network_name :ovcs
-  @car_controls_status_frame_name "car_controls_status"
-  @selected_gear_frame_name "gear_status"
-  @selected_gear "selected_gear"
+  @controls_controller_status_frame_name "controls_controller_status"
+  @raw_max_throttle 16383
 
   def start_link(_) do
     GenServer.start_link(__MODULE__, nil, name: __MODULE__)
@@ -17,27 +16,19 @@ defmodule VmsCore.Controllers.ControlsController do
 
   @impl true
   def init(_) do
-    :ok = Receiver.subscribe(self(), @network_name, @car_controls_status_frame_name)
-    :ok = Emitter.configure(@network_name, @selected_gear_frame_name, %{
-      parameters_builder_function: &gear_status_frame_parameters/1,
-      initial_data: %{
-        @selected_gear => "parking"
-      }
-    })
-    :ok = Emitter.enable(@network_name, @selected_gear_frame_name)
+    :ok = Receiver.subscribe(self(), @network_name, @controls_controller_status_frame_name)
     {
       :ok, %{
         car_controls: %{
           throttle: 0,
           calibration_status: "disabled",
-          raw_max_throttle: get_calibration_value_for_key("raw_max_throttle"),
+          raw_max_throttle: @raw_max_throttle,
           high_raw_throttle_a: get_calibration_value_for_key("high_raw_throttle_a"),
           high_raw_throttle_b: get_calibration_value_for_key("high_raw_throttle_b"),
           low_raw_throttle_a: get_calibration_value_for_key("low_raw_throttle_a"),
           low_raw_throttle_b: get_calibration_value_for_key("low_raw_throttle_b"),
           raw_throttle_a: 0,
           raw_throttle_b: 0,
-          requested_gear: "parking",
         }
       }
     }
@@ -48,7 +39,6 @@ defmodule VmsCore.Controllers.ControlsController do
     %{"raw_max_throttle" => %Signal{value: raw_max_throttle}} = signals
     state = Map.replace(state, :car_controls, %{
       throttle: 0, # Makes sure no throttle during
-      requested_gear: "parking",
       raw_max_throttle: raw_max_throttle,
       low_raw_throttle_a: raw_max_throttle,
       low_raw_throttle_b: raw_max_throttle,
@@ -71,7 +61,6 @@ defmodule VmsCore.Controllers.ControlsController do
 
     state = Map.replace(state, :car_controls, %{
       throttle: 0, # Makes sure no throttle during calibration
-      requested_gear: "parking",
       raw_max_throttle: raw_max_throttle,
       low_raw_throttle_a: Enum.min([state.car_controls.low_raw_throttle_a, raw_throttle_a]),
       low_raw_throttle_b: Enum.min([state.car_controls.low_raw_throttle_b, raw_throttle_b]),
@@ -87,7 +76,6 @@ defmodule VmsCore.Controllers.ControlsController do
   @impl true
   def handle_info({:handle_frame, %Frame{signals: signals}}, %{car_controls: %{calibration_status: "disabled"}} = state) do
     %{
-      "requested_gear" => %Signal{value: requested_gear},
       "raw_throttle_a" => %Signal{value: raw_throttle_a},
       "raw_throttle_b" => %Signal{value: raw_throttle_b},
     } = signals
@@ -100,7 +88,6 @@ defmodule VmsCore.Controllers.ControlsController do
     end
     state = state
       |> put_in([:car_controls, :throttle], throttle)
-      |> put_in([:car_controls, :requested_gear], requested_gear)
       |> put_in([:car_controls, :raw_throttle_a], raw_throttle_a)
       |> put_in([:car_controls, :raw_throttle_b], raw_throttle_b)
     {:noreply, state}
@@ -109,11 +96,6 @@ defmodule VmsCore.Controllers.ControlsController do
   @impl true
   def handle_call(:throttle, _from, state) do
     {:reply, {:ok, state.car_controls.throttle}, state}
-  end
-
-  @impl true
-  def handle_call(:requested_gear, _from, state) do
-    {:reply, {:ok, state.car_controls.requested_gear}, state}
   end
 
   @impl true
@@ -157,10 +139,6 @@ defmodule VmsCore.Controllers.ControlsController do
     GenServer.call(__MODULE__, :throttle)
   end
 
-  def requested_gear() do
-    GenServer.call(__MODULE__, :requested_gear)
-  end
-
   def enable_calibration_mode() do
     GenServer.call(__MODULE__, :enable_calibration)
   end
@@ -183,19 +161,9 @@ defmodule VmsCore.Controllers.ControlsController do
     %ControlsCalibration{key: key, value: value} |> Repo.insert()
   end
 
-  def select_gear(gear) do
-    :ok = Cantastic.Emitter.update(:ovcs, "gear_status", fn (data) ->
-      %{data | @selected_gear => gear}
-    end)
-  end
-
   defp compute_throttle_from_raw_value(value, state) do
     D.sub(value, state.car_controls.low_raw_throttle_a)
     |> D.div(D.sub(state.car_controls.high_raw_throttle_a, state.car_controls.low_raw_throttle_a))
     |> D.round(2)
-  end
-
-  defp gear_status_frame_parameters(data) do
-    {:ok, data, data}
   end
 end

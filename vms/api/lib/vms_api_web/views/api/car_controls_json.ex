@@ -15,7 +15,6 @@ defmodule VmsApiWeb.Api.CarControlsJSON do
         lowRawThrottleB: car_controls.low_raw_throttle_b,
         rawThrottleA: car_controls.raw_throttle_a,
         rawThrottleB: car_controls.raw_throttle_b,
-        requestedGear: car_controls.requested_gear,
       }
     }
   end

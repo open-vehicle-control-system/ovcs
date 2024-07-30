@@ -1,0 +1,15 @@
+---
+anchors:
+  analog_pin_parameters: &analog_pin_parameters
+    kind: integer
+    value_length: 14
+name: controls_controller_status
+id: 0x714
+frequency: 10
+signals:
+  - name: raw_throttle_a
+    value_start: 21
+    <<: *analog_pin_parameters
+  - name: raw_throttle_b
+    value_start: 35
+    <<: *analog_pin_parameters
