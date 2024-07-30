@@ -1,2 +1,0 @@
-# OVCS  contactors controller
-
