@@ -4,8 +4,8 @@
 #include <Arduino.h>
 #include <Crc.h>
 
-#define MOSFET_1_ADDRESS 0x27
-#define MOSFET_2_ADDRESS 0x26
+#define MOSFET_1_ADDRESS 0x20
+#define MOSFET_2_ADDRESS 0x21
 
 MainBoard mainBoard      = MainBoard();
 MosfetBoard mosfetBoard1 = MosfetBoard(MOSFET_1_ADDRESS);
