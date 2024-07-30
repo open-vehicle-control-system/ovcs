@@ -112,6 +112,7 @@ defmodule VmsCore.Vehicle do
   end
 
   defp select_gear(gear, state) do
+    :ok = ControlsController.select_gear(gear)
     %{state | selected_gear: gear}
   end
 

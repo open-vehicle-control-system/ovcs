@@ -22,7 +22,7 @@ defmodule VmsCore.Status do
       }
     })
     :ok = Emitter.enable(@network_name, @vms_status_frame_name)
-    :ok = ReceivedFrameWatcher.subscribe(@network_name, ["car_controls_status", "front_controller_alive", "rear_controller_alive"], self())
+    :ok = ReceivedFrameWatcher.subscribe(@network_name, ["controls_controller_alive", "front_controller_alive", "rear_controller_alive"], self())
     :ok = Cantastic.Receiver.subscribe(self(), :polo_drive, @key_status_frame_name)
     :ok = ReceivedFrameWatcher.subscribe(:polo_drive, "abs_status", self())
     :ok = ReceivedFrameWatcher.subscribe(:orion_bms, "bms_status_1", self())
@@ -31,11 +31,11 @@ defmodule VmsCore.Status do
       status: "ok",
       failed_frames: %{},
       frame_emitters: %{
-        "car_controls_status"    => "Controls Ctrl",
-        "abs_status"             => "ABS Ctrl",
-        "bms_status_1"           => "BMS Ctrl",
-        "front_controller_alive" => "Front Ctrl",
-        "rear_controller_alive"  => "Rear Ctrl"
+        "controls_controller_alive" => "Controls Ctrl",
+        "abs_status"                => "ABS Ctrl",
+        "bms_status_1"              => "BMS Ctrl",
+        "front_controller_alive"    => "Front Ctrl",
+        "rear_controller_alive"     => "Rear Ctrl"
       }
     }}
   end
@@ -63,7 +63,7 @@ defmodule VmsCore.Status do
 
   @impl true
   def handle_info(:enable_watchers, state) do
-    :ok = ReceivedFrameWatcher.enable(@network_name, ["car_controls_status", "front_controller_alive", "front_controller_alive"])
+    :ok = ReceivedFrameWatcher.enable(@network_name, ["controls_controller_alive", "rear_controller_alive", "front_controller_alive"])
     :ok = ReceivedFrameWatcher.enable(:orion_bms, ["bms_status_1"])
     {:noreply, state}
   end
