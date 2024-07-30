@@ -102,7 +102,7 @@ defmodule VmsCore.Controllers.Configuration do
       },
       "controls_controller" => %{
         "controller_id" => 2,
-        "digital_pin0" => "disabled",
+        "digital_pin0" => "write_only",
         "digital_pin1" => "disabled",
         "digital_pin2" => "disabled",
         "digital_pin3" => "disabled",
@@ -123,7 +123,7 @@ defmodule VmsCore.Controllers.Configuration do
         "digital_pin18" => "disabled",
         "digital_pin19" => "disabled",
         "digital_pin20" => "disabled",
-        "pwm_pin0" => "disabled",
+        "pwm_pin0" => "enabled",
         "pwm_pin1" => "disabled",
         "pwm_pin2" => "disabled",
         "dac_pin0" => "disabled",

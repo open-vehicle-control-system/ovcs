@@ -8,6 +8,14 @@ defmodule VmsCore.Controllers.ControlsController do
 
   @network_name :ovcs
   @controls_controller_status_frame_name "controls_controller_status"
+  @controls_controller_pwm_request_frame_name "controls_controller_pwm_request"
+  @controls_controller_request_frame_name "controls_controller_request"
+  @selected_gear_frame_name "gear_status"
+  @selected_gear "selected_gear"
+
+  @steering_column_motor_step_duty_cycle "steering_column_motor_step_duty_cycle"
+  @steering_column_motor_direction "steering_column_motor_direction"
+
   @raw_max_throttle 16383
 
   def start_link(_) do
@@ -17,6 +25,29 @@ defmodule VmsCore.Controllers.ControlsController do
   @impl true
   def init(_) do
     :ok = Receiver.subscribe(self(), @network_name, @controls_controller_status_frame_name)
+    :ok = Emitter.configure(@network_name, @controls_controller_pwm_request_frame_name, %{
+      parameters_builder_function: &controls_controller_pwm_request_frame_parameters/1,
+      initial_data: %{
+        @steering_column_motor_step_duty_cycle => 0,
+      }
+    })
+    :ok = Emitter.configure(@network_name, @controls_controller_request_frame_name, %{
+      parameters_builder_function: &controls_controller_request_frame_parameters/1,
+      initial_data: %{
+        @steering_column_motor_direction => "clockwise",
+      }
+    })
+    :ok = Emitter.configure(@network_name, @selected_gear_frame_name, %{
+      parameters_builder_function: &gear_status_frame_parameters/1,
+      initial_data: %{
+        @selected_gear => "parking"
+      }
+    })
+    :ok = Emitter.enable(@network_name, [
+      @controls_controller_pwm_request_frame_name,
+      @controls_controller_request_frame_name,
+      @selected_gear_frame_name
+    ])
     {
       :ok, %{
         car_controls: %{
@@ -32,6 +63,18 @@ defmodule VmsCore.Controllers.ControlsController do
         }
       }
     }
+  end
+
+  defp controls_controller_pwm_request_frame_parameters(data) do
+    {:ok, data, data}
+  end
+
+  defp controls_controller_request_frame_parameters(data) do
+    {:ok, data, data}
+  end
+
+  defp gear_status_frame_parameters(data) do
+    {:ok, data, data}
   end
 
   @impl true
@@ -161,9 +204,24 @@ defmodule VmsCore.Controllers.ControlsController do
     %ControlsCalibration{key: key, value: value} |> Repo.insert()
   end
 
+  def select_gear(gear) do
+    :ok = Cantastic.Emitter.update(:ovcs, "gear_status", fn (data) ->
+      %{data | @selected_gear => gear}
+    end)
+  end
+
   defp compute_throttle_from_raw_value(value, state) do
     D.sub(value, state.car_controls.low_raw_throttle_a)
     |> D.div(D.sub(state.car_controls.high_raw_throttle_a, state.car_controls.low_raw_throttle_a))
     |> D.round(2)
+  end
+
+  def set_duty_cycle(duty_cycle, direction \\ "clockwise") do
+    Emitter.update(@network_name, @controls_controller_pwm_request_frame_name, fn (data) ->
+      %{data | @steering_column_motor_step_duty_cycle => duty_cycle}
+    end)
+    Emitter.update(@network_name, @controls_controller_request_frame_name, fn (data) ->
+      %{data | @steering_column_motor_direction => direction}
+    end)
   end
 end
