@@ -19,6 +19,9 @@ bool DigitalPin::readable() {
 
 void DigitalPin::writeIfAllowed(bool value) {
   if (writeable()) {
+    // Serial.print("PIN");
+    // Serial.print(_physicalPin);
+    // Serial.println(value);
     _board->digitalWrite(_physicalPin, value);
   }
 };

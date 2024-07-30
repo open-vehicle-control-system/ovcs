@@ -53,11 +53,10 @@ void Can::emitdigitalAndAnalogPinsStatus(uint16_t digitalAndAnalogPinStatusesFra
     frame.len = 8;
 
     for(uint8_t i = 0; i < 21; i++) {
-      uint8_t frameNumber = i / 8;
+      uint8_t byteNumber = i / 8;
       uint8_t bitNumber   = 7 - (i % 8);
-      bitWrite(frame.data[frameNumber], bitNumber, digitalPinsStatus[i]);
+      bitWrite(frame.data[byteNumber], bitNumber, digitalPinsStatus[i]);
     }
-
     frame.data[2] = frame.data[2]                                              | extractBits(analogPinsStatus[0], 0b00000011100000, 5);
     frame.data[3] = extractBits(analogPinsStatus[0], 0b00000000011111, 0) << 3 | extractBits(analogPinsStatus[0], 0b11100000000000, 11);
     frame.data[4] = extractBits(analogPinsStatus[0], 0b00011100000000, 8) << 5 | extractBits(analogPinsStatus[1], 0b00000011111000, 3);
@@ -73,16 +72,12 @@ void Can::emitdigitalAndAnalogPinsStatus(uint16_t digitalAndAnalogPinStatusesFra
 bool* Can::parseDigitalPinRequest() {
   static bool digitalPinRequest[21] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
   uint8_t pinNumber = 0;
-  for(uint8_t byteNumber = 0; byteNumber < 3; byteNumber++) {
-    for (uint8_t i = 1; i < 8; i++) {
-      if (pinNumber < 21) {
-        digitalPinRequest[pinNumber] = (_receivedFrame.data[byteNumber] >> 8 - i & 0b1);
-        pinNumber++;
-      } else {
-        i = 8;
-      }
-    }
+  for(uint8_t i = 0; i < 21; i++) {
+    uint8_t byteNumber = i / 8;
+    uint8_t bitNumber   = 7 - (i % 8);
+    digitalPinRequest[i] = bitRead(_receivedFrame.data[byteNumber], bitNumber);
   }
+
   return digitalPinRequest;
 };
 

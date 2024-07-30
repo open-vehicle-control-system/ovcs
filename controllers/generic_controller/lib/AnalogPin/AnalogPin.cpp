@@ -4,7 +4,7 @@ bool AnalogPin::readable() {
   return _enabled;
 };
 
-uint8_t AnalogPin::readIfAllowed() {
+uint16_t AnalogPin::readIfAllowed() {
   if (readable()) {
     return analogRead(_physicalPin);
   } else {
