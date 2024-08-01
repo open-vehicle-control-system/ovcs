@@ -29,7 +29,7 @@ total_mem=2048
 dtparam=i2c_arm=on
 dtparam=spi=on
 
-dtoverlay=spi0-2cs
+dtoverlay=spi0-1cs
 
 #Name:   mcp251xfd
 #Info:   Configures the MCP251XFD CAN controller family
