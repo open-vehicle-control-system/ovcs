@@ -34,6 +34,8 @@ set -e
 DESTINATION=$1
 FILENAME="$2"
 
+export MIX_TARGET=ovcs_vms_system_rpi4
+
 help() {
   echo
   echo "upload.sh [destination IP] [Path to .fw file]"
