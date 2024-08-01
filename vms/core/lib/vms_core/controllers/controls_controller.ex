@@ -17,6 +17,8 @@ defmodule VmsCore.Controllers.ControlsController do
   @steering_column_motor_direction "steering_column_motor_direction"
 
   @raw_max_throttle 16383
+  @throttle_resolution D.new("0.000305194")
+  @throttle_tolerance D.new("0.01") # 10 mV
 
   def start_link(_) do
     GenServer.start_link(__MODULE__, nil, name: __MODULE__)
@@ -134,6 +136,10 @@ defmodule VmsCore.Controllers.ControlsController do
       |> put_in([:car_controls, :raw_throttle_a], raw_throttle_a)
       |> put_in([:car_controls, :raw_throttle_b], raw_throttle_b)
     {:noreply, state}
+  end
+
+  defp validate_raw_throttle(raw_throttle_a, raw_throttle_b, state) do
+    0b11111111111111
   end
 
   @impl true
