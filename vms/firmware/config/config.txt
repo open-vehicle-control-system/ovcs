@@ -52,7 +52,7 @@ dtoverlay=spi1-1cs
 #        xceiver_active_high     specifiy if CAN transceiver enable pin is
 #                                active high (optional, default: active low)
 
-dtoverlay=mcp251xfd,spi0-0,oscillator=4000000,interrupt=22
+dtoverlay=mcp251xfd,spi0-0,oscillator=40000000,interrupt=22
 
 # Enable audio (loads snd_bcm3825)
 dtparam=audio=on
