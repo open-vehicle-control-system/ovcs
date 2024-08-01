@@ -48,7 +48,7 @@ help() {
   exit 1
 }
 
-[ -n "$DESTINATION" ] || DESTINATION=nerves.local
+[ -n "$DESTINATION" ] || DESTINATION=ovcs-vms.local
 if [ -z "$FILENAME" ]; then
   [ -n "$MIX_TARGET" ] || MIX_TARGET=rpi0
   [ -n "$MIX_ENV" ] || MIX_ENV=dev
