@@ -1,4 +1,4 @@
-defmodule InfotainmentFirmwareFlutter do
+defmodule InfotainmentFirmware do
   @moduledoc """
   Documentation for NervesOvcs.
   """

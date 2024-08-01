@@ -1,7 +1,7 @@
-defmodule OvcsInfotainmentFirmwareFlutter.MixProject do
+defmodule OvcsInfotainmentFirmware.MixProject do
   use Mix.Project
 
-  @app :infotainment_firmware_flutter
+  @app :infotainment_firmware
   @version "0.1.0"
   @all_targets [
     :ovcs_infotainment_flutter_system_rpi4
@@ -23,7 +23,7 @@ defmodule OvcsInfotainmentFirmwareFlutter.MixProject do
   # Run "mix help compile.app" to learn about applications.
   def application do
     [
-      mod: {InfotainmentFirmwareFlutter.Application, []},
+      mod: {InfotainmentFirmware.Application, []},
       extra_applications: [:logger, :runtime_tools]
     ]
   end
