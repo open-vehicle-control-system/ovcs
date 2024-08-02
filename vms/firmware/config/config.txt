@@ -98,15 +98,15 @@ dtoverlay=spi3-2cs
 #        xceiver_active_high     specifiy if CAN transceiver enable pin is
 #                                active high (optional, default: active low)
 
-dtoverlay=mcp251xfd,spi0-0,oscillator=40000000,interrupt=4,cs0_pin=8
-dtoverlay=mcp251xfd,spi0-1,oscillator=40000000,interrupt=14,cs1_pin=7
+dtoverlay=mcp251xfd,spi0-0,oscillator=40000000,interrupt=4 # cs_pin=8
+dtoverlay=mcp251xfd,spi0-1,oscillator=40000000,interrupt=14 # cs_pin=7
 
-dtoverlay=mcp251xfd,spi1-0,oscillator=40000000,interrupt=5,cs0_pin=18
-dtoverlay=mcp251xfd,spi1-1,oscillator=40000000,interrupt=6,cs1_pin=17
-dtoverlay=mcp251xfd,spi1-2,oscillator=40000000,interrupt=12,cs2_pin=16
+dtoverlay=mcp251xfd,spi1-0,oscillator=40000000,interrupt=5 # cs_pin=18
+dtoverlay=mcp251xfd,spi1-1,oscillator=40000000,interrupt=6 # cs_pin=17
+dtoverlay=mcp251xfd,spi1-2,oscillator=40000000,interrupt=12 # cs_pin=16
 
-dtoverlay=mcp251xfd,spi3-0,oscillator=40000000,interrupt=22,cs0_pin=0
-dtoverlay=mcp251xfd,spi3-1,oscillator=40000000,interrupt=23,cs1_pin=24
+dtoverlay=mcp251xfd,spi3-0,oscillator=40000000,interrupt=22 # cs_pin=0
+dtoverlay=mcp251xfd,spi3-1,oscillator=40000000,interrupt=23 # cs_pin=24
 
 # Enable audio (loads snd_bcm3825)
 dtparam=audio=on

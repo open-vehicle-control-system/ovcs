@@ -1,0 +1,44 @@
+---
+name: vms_status
+id: 0x11A
+frequency: 10
+signals:
+  - name: gear
+    kind: enum
+    value_start: 0
+    value_length: 8
+    mapping:
+      0x00: parking
+      0x02: reverse
+      0x03: neutral
+      0x04: drive
+  - name: filler1
+    kind: static
+    value_start: 8
+    value_length: 8
+    value: 0x40
+  - name: steering_wheel_butoon
+    kind: static
+    value_start: 16
+    value_length: 8
+    value: 0x0
+  - name: heartbeat
+    value_start: 24
+    value_length: 8
+    kind: integer
+    mapping:
+      0x55: 0
+      0xAA: 1
+  - name: filler2
+    kind: static
+    value_start: 32
+    value_length: 16
+    value: 0xC000
+  - name: counter
+    kind: integer
+    value_start: 48
+    value_length: 8
+  - name: crc
+    kind: checksum
+    value_start: 56
+    value_length: 8

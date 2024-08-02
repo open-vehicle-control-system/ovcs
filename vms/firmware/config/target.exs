@@ -149,7 +149,7 @@ config :vms_core, VmsCore.Repo,
   stacktrace: true,
   show_sensitive_data_on_connection_error: true
 
-vehicle = System.get_env("VEHICLE") || "polo-2007-bluemotion-leaf-em57"
+vehicle = System.get_env("VEHICLE") || "ovcs1"
 
 config :vms_core, :vehicle, vehicle
 config :vms_core, :gear_control_module, (if System.get_env("GEAR_CONTROL_MODULE") == "infotainment" do VmsCore.Infotainment else VmsCore.Controllers.ControlsController end)

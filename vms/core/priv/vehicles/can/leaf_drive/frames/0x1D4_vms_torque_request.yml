@@ -1,0 +1,35 @@
+---
+name: vms_torque_request
+id: 0x1D4
+frequency: 10
+signals:
+  - name: prefix
+    kind: static
+    value_start: 0
+    value_length: 16
+    value: 0x6E6E
+  - name: requested_torque
+    sign: signed
+    endianness: big
+    value_start: 16
+    value_length: 12
+    scale: "0.25"
+    unit: N/m
+  - name: filler
+    kind: static
+    value_start: 28
+    value_length: 4
+    value: 0x00
+  - name: counter
+    kind: integer
+    value_start: 32
+    value_length: 8
+  - name: suffix
+    kind: static
+    value_start: 40
+    value_length: 16
+    value: 0x4401
+  - name: crc
+    kind: checksum
+    value_start: 56
+    value_length: 8

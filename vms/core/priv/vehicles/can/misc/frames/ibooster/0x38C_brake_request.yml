@@ -1,0 +1,34 @@
+---
+name: brake_request
+id: 0x38C
+frequency: 10
+signals:
+  - name: crc
+    kind: checksum
+    value_start: 0
+    value_length: 8
+  - name: filler0
+    kind: static
+    value_start: 8
+    value_length: 1
+    value: 0
+  - name: external_request
+    kind: enum
+    value_start: 9
+    value_length: 1
+    mapping:
+      0x01: true
+      0x00: false
+  - name: filler1
+    kind: static
+    value_start: 10
+    value_length: 2
+    value: 0
+  - name: counter
+    kind: integer
+    value_start: 12
+    value_length: 4
+  - name: flow_rate
+    value_start: 16
+    value_length: 16
+    kind: integer

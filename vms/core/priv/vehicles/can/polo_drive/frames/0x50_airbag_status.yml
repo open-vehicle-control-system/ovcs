@@ -1,0 +1,18 @@
+---
+name: airbags_status
+id: 0x50
+signals:
+  - name: in_car_airbag_system_online
+    kind: enum
+    value_start: 0
+    value_length: 8
+    mapping:
+      0x00: true
+      0x02: false
+  - name: passenger_airbag_online
+    kind: enum
+    value_start: 8
+    value_length: 8
+    mapping: # Missing 0x08 mapping, unknown meaning
+      0x09: true
+      0xB: false

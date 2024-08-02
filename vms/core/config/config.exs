@@ -18,12 +18,12 @@ config :vms_core, VmsCore.Repo,
   stacktrace: true,
   show_sensitive_data_on_connection_error: true
 
-vehicle = System.get_env("VEHICLE") || "polo-2007-bluemotion-leaf-em57"
+vehicle = System.get_env("VEHICLE") || "ovcs1"
 
 config :vms_core, :vehicle, vehicle
 
 config :cantastic,
-  can_networks: (System.get_env("CAN_NETWORKS") || "ovcs:vcan0,leaf_drive:vcan1,polo_drive:vcan2,orion_bms:vcan3,ibooster_yaw:vcan4"),
+  can_networks: (System.get_env("CAN_NETWORKS") || "ovcs:vcan0,leaf_drive:vcan1,polo_drive:vcan2,orion_bms:vcan3,misc:vcan4"),
   setup_can_interfaces: (System.get_env("SETUP_CAN_INTERFACES") == "true" || false),
   otp_app: :vms_core,
   priv_can_config_path: "vehicles/#{vehicle}.yml"

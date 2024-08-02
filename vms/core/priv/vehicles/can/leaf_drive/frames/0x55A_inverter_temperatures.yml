@@ -1,0 +1,25 @@
+---
+name: inverter_temperatures
+id: 0x55A
+frequency: 10
+signals:
+  - name: inverter_communication_board_temperature
+    kind: integer
+    value_start: 8
+    value_length: 8
+    unit: C
+  - name: insulated_gate_bipolar_transistor_temperature
+    kind: integer
+    value_start: 16
+    value_length: 8
+    unit: C
+  - name: insulated_gate_bipolar_transistor_board_temperature
+    kind: integer
+    value_start: 24
+    value_length: 8
+    unit: C
+  - name: motor_temperature
+    kind: integer
+    value_start: 32
+    value_length: 8
+    unit: C

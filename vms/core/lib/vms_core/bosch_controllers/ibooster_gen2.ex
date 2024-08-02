@@ -3,7 +3,7 @@ defmodule VmsCore.Bosch.IboosterGen2 do
   alias Cantastic.{Emitter, Receiver, Frame, Signal}
   alias Decimal, as: D
 
-  @network_name :ibooster_yaw
+  @network_name :misc
   @brake_status_frame_name "brake_status"
   @ibooster_status_frame_name "ibooster_status"
   @vehicle_status_frame_name "vehicle_status"

@@ -18,7 +18,7 @@ config :infotainment_core, InfotainmentCore.Repo,
   stacktrace: true,
   show_sensitive_data_on_connection_error: true
 
-vehicle = System.get_env("VEHICLE") || "polo-2007-bluemotion-leaf-em57"
+vehicle = System.get_env("VEHICLE") || "ovcs1"
 
 config :infotainment_core, :vehicle, vehicle
 

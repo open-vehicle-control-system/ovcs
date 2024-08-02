@@ -1,0 +1,10 @@
+---
+name: vms_alive
+id: 0x50B
+frequency: 100
+signals:
+  - name: unknown
+    kind: static
+    value_start: 0
+    value_length: 56
+    value: 0x000006C0000000

@@ -1,0 +1,60 @@
+---
+can_networks:
+  ovcs:
+    bitrate: 500000
+    emitted_frames:
+      - import!:can/ovcs/frames/0x1A0_vms_status.yml
+      - import!:can/ovcs/frames/0x60A_abs_status.yml
+      - import!:can/ovcs/frames/0x60D_passenger_compartment_status.yml
+      - import!:can/ovcs/frames/0x60B_bms_status.yml
+      - import!:can/ovcs/frames/0x600_gear_status.yml
+      - import!:can/ovcs/frames/0x700_controller_configuration.yml
+      - import!:can/ovcs/frames/0x702_front_controller_request.yml
+      - import!:can/ovcs/frames/0x70A_rear_controller_request.yml
+      - import!:can/ovcs/frames/0x712_controls_controller_request.yml
+      - import!:can/ovcs/frames/0x713_controls_controller_pwm_request.yml
+    received_frames:
+      - import!:can/ovcs/frames/0x201_infotainment_status.yml
+      - import!:can/ovcs/frames/0x701_front_controller_alive.yml
+      - import!:can/ovcs/frames/0x709_rear_controller_alive.yml
+      - import!:can/ovcs/frames/0x704_front_controller_status.yml
+      - import!:can/ovcs/frames/0x70C_rear_controller_status.yml
+      - import!:can/ovcs/frames/0x711_controls_controller_alive.yml
+      - import!:can/ovcs/frames/0x714_controls_controller_status.yml
+  misc: # IBooster and power steering pump
+    bitrate: 500000
+    emitted_frames:
+      - import!:can/misc/frames/ibooster/0x38B_vehicle_status.yml
+      - import!:can/misc/frames/ibooster/0x38C_brake_request.yml
+      - import!:can/misc/frames/ibooster/0x38D_vehicle_alive.yml
+    received_frames:
+      - import!:can/misc/frames/ibooster/0x39D_ibooster_status.yml
+  orion_bms:
+    bitrate: 500000
+    emitted_frames:
+      - import!:can/orion_bms/frames/0x6C1_bms_command.yml
+    received_frames:
+      - import!:can/orion_bms/frames/0x6B0_bms_status_1.yml
+      - import!:can/orion_bms/frames/0x6B1_bms_status_2.yml
+  leaf_drive:
+    bitrate: 500000
+    emitted_frames:
+      - import!:can/leaf_drive/frames/0x50B_vms_alive.yml
+      - import!:can/leaf_drive/frames/0x1D4_vms_torque_request.yml
+      - import!:can/leaf_drive/frames/0x11A_vms_status.yml
+      - import!:can/leaf_drive/frames/0x1DC_charger_command.yml
+    received_frames:
+      - import!:can/leaf_drive/frames/0x1DA_inverter_status.yml
+      - import!:can/leaf_drive/frames/0x55A_inverter_temperatures.yml
+      - import!:can/leaf_drive/frames/0x390_charger_status.yml
+  polo_drive:
+    bitrate: 500000
+    emitted_frames:
+      - import!:can/polo_drive/frames/0x280_engine_status.yml
+    received_frames:
+      - import!:can/polo_drive/frames/0x470_car_status.yml
+      - import!:can/polo_drive/frames/0x50_airbag_status.yml
+      - import!:can/polo_drive/frames/0x320_handbrake_status.yml
+      - import!:can/polo_drive/frames/0x591_lock_status.yml
+      - import!:can/polo_drive/frames/0x570_key_status.yml
+      - import!:can/polo_drive/frames/0x5A0_abs_status.yml

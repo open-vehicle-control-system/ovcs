@@ -1,0 +1,10 @@
+---
+name: abs_status
+id: 0x5A0
+frequency: 20
+signals:
+  - name: speed
+    unit: km/h
+    value_start: 8
+    value_length: 16
+    scale: "0.0075"

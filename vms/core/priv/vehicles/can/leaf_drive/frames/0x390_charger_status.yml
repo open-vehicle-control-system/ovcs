@@ -1,0 +1,37 @@
+---
+name: charger_status
+id: 0x390
+frequency: 10
+signals:
+  - name: charge_power
+    endianness: big
+    value_start: 7
+    value_length: 9
+    scale: "0.1"
+    unit: kW
+  - name: ac_voltage
+    kind: enum
+    value_start: 27
+    value_length: 2
+    mapping:
+      0x00: 0
+      0x01: 110
+      0x02: 240
+      0x03: error
+    unit: V
+  - name: charging_state
+    kind: enum
+    value_start: 41
+    value_length: 6
+    mapping:
+      0x01: iddle_or_quick_charge
+      0x02: finished
+      0x04: charging_or_interrupted
+      0x07: iddle
+      0x0C: plugged_in_on_waiting_timer
+  - name: maximum_charge_power
+    endianness: big
+    scale: "0.1"
+    unit: kW
+    value_start: 47
+    value_length: 9

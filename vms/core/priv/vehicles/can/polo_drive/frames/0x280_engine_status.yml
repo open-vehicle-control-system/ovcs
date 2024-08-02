@@ -1,0 +1,21 @@
+---
+name: engine_status
+id: 0x280
+frequency: 100
+signals:
+  - name: filler1
+    kind: static
+    value_start: 0
+    value_length: 16
+    value: 0x0000
+  - name: engine_rotations_per_minute
+    kind: integer
+    unit: rpm
+    value_start: 16
+    value_length: 16
+    scale: "0.25"
+  - name: filler2
+    kind: static
+    value_start: 32
+    value_length: 32
+    value: 0x00000000

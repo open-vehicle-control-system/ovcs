@@ -139,10 +139,10 @@ config :logger, :console,
 # Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, Jason
 
-vehicle = System.get_env("VEHICLE") || "polo-2007-bluemotion-leaf-em57"
+vehicle = System.get_env("VEHICLE") || "ovcs1"
 
 config :infotainment_core, :vehicle, vehicle
-
+config :infotainment_core, :test, true
 config :cantastic,
   can_networks: "ovcs:can0",
   setup_can_interfaces: true,

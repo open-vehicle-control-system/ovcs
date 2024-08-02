@@ -1,0 +1,13 @@
+---
+name: key_status
+id: 0x570
+signals:
+  - name: key_state
+    kind: enum
+    value_start: 0
+    value_length: 8
+    mapping:
+      0x00: "off"
+      0x01: key_engaged
+      0x87: contact_on
+      0x8B: start_engine

@@ -1,0 +1,22 @@
+name: vehicle_alive
+id: 0x38D
+frequency: 10
+signals:
+  - name: crc
+    kind: checksum
+    value_start: 0
+    value_length: 8
+  - name: filler0
+    kind: static
+    value: 0x00
+    value_start: 8
+    value_length: 4
+  - name: counter
+    kind: integer
+    value_start: 12
+    value_length: 4
+  - name: filler1
+    kind: static
+    value: 0x0000005047
+    value_start: 16
+    value_length: 40

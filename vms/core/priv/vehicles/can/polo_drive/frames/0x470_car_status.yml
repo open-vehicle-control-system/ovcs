@@ -1,0 +1,56 @@
+---
+name: car_status
+id: 0x470
+signals:
+  - name: front_left_door_open
+    kind: enum
+    value_start: 15
+    value_length: 1
+    mapping:
+      0x00: false
+      0x01: true
+  - name: front_right_door_open
+    kind: enum
+    value_start: 14
+    value_length: 1
+    mapping:
+      0x00: false
+      0x01: true
+  - name: rear_left_door_open
+    kind: enum
+    value_start: 13
+    value_length: 1
+    mapping:
+      0x00: false
+      0x01: true
+  - name: rear_right_door_open
+    kind: enum
+    value_start: 12
+    value_length: 1
+    mapping:
+      0x00: false
+      0x01: true
+  - name: trunk_door_open
+    kind: enum
+    value_start: 10
+    value_length: 1
+    mapping:
+      0x00: false
+      0x01: true
+  - name: beam_active
+    kind: enum
+    value_start: 16
+    value_length: 8
+    mapping:
+      0x00: false
+      0x64: true
+  - name: warning_lights_active
+    kind: enum
+    value_start: 0
+    value_length: 8
+    mapping: # 0:False, 8:WarningActiveOff, 11:WarningActiveOn, 1:leftActive, 2:rightActive
+      0x00: false
+      0x01: false
+      0x02: false
+      0x08: true
+      0x0B: true

@@ -1,0 +1,13 @@
+---
+name: lock_status
+id: 0x591
+signals:
+  - name: lock_state
+    kind: enum
+    value_start: 8
+    value_length: 8
+    mapping: # 8 seems to be the state when the car boots and is already open
+      0x00: open
+      0x01: car_switch_closed
+      0x04: key_closed
+      0x08: open

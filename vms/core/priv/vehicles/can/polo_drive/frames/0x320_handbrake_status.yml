@@ -1,0 +1,11 @@
+---
+name: handbrake_status
+id: 0x320
+signals:
+  - name: handbrake_engaged
+    kind: enum
+    value_start: 8
+    value_length: 8
+    mapping:
+      0x00: false
+      0x02: true
