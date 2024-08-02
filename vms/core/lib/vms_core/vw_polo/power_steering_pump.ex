@@ -1,39 +1,41 @@
 defmodule VmsCore.VwPolo.PowerSteeringPump do
   use GenServer
-  alias Cantastic.{Frame, Signal}
+  alias Cantastic.{Emitter}
 
   @network_name :misc
 
-  @key_status_frame_name "key_status"
+  @engine_status_frame_name "engine_status"
 
   @impl true
   def init(_) do
-    Cantastic.Receiver.subscribe(self(), @network_name, @key_status_frame_name)
-    {:ok, %{
-      key_status: "off"
-    }}
+    :ok = Emitter.configure(@network_name, @engine_status_frame_name, %{
+      parameters_builder_function: &status_frame_parameters_builder/1,
+      initial_data: %{
+        "engine_rotations_per_minute" => 0
+      }
+    })
+    {:ok, %{}}
   end
 
   def start_link(_) do
     GenServer.start_link(__MODULE__, nil, name: __MODULE__)
   end
 
-  # off
-  # key_engaged
-  # contact_on
-  # start_engine
-  @impl true
-  def handle_info({:handle_frame, %Frame{signals: signals}}, state) do
-    %{"key_state" => %Signal{value: key_status}} = signals
-    {:noreply, %{state | key_status: key_status}}
+  defp status_frame_parameters_builder(data) do
+    {:ok, data, data}
   end
 
-  @impl true
-  def handle_call(:key_status, _from, state) do
-    {:reply, {:ok, state.key_status}, state}
+  def rotation_per_minute(rotation_per_minute) do
+    :ok = Emitter.update(@network_name, @engine_status_frame_name, fn (data) ->
+      %{data | "engine_rotations_per_minute" => rotation_per_minute}
+    end)
   end
 
-  def key_status() do
-    GenServer.call(__MODULE__, :key_status)
+  def on() do
+    Emitter.enable(@network_name, @engine_status_frame_name)
+  end
+
+  def off() do
+    Emitter.disable(@network_name, @engine_status_frame_name)
   end
 end

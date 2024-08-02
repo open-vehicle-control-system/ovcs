@@ -35,7 +35,8 @@ defmodule VmsCore.Application do
       {VmsCore.Bosch.IboosterGen2, []},
       {VmsCore.Controllers.Configuration, []},
       {VmsCore.Controllers.FrontController, []},
-      {VmsCore.Controllers.RearController, []}
+      {VmsCore.Controllers.RearController, []},
+      {VmsCore.VwPolo.PowerSteeringPump, []}
     ]
 
     opts = [strategy: :one_for_one, name: VmsCore.Supervisor]
