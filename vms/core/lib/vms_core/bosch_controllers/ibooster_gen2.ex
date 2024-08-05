@@ -4,15 +4,15 @@ defmodule VmsCore.Bosch.IboosterGen2 do
   alias Decimal, as: D
 
   @network_name :misc
-  @brake_status_frame_name "brake_status"
+
   @ibooster_status_frame_name "ibooster_status"
   @vehicle_status_frame_name "vehicle_status"
   @brake_request_frame_name "brake_request"
   @vehicle_alive_frame_name "vehicle_alive"
 
-  @min_flow_rate 27136 # 0x6A00
+  #@min_flow_rate 27136 # 0x6A00
   @zero_point_flow_rate 32256 # 0x7e00
-  @max_flow_rate 37376 # 0x9200
+  #@max_flow_rate 37376 # 0x9200
   @flow_rate_range  5120
 
   @zero D.new(0)
