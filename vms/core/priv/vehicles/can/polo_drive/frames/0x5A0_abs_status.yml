@@ -3,6 +3,9 @@ name: abs_status
 id: 0x5A0
 frequency: 20
 signals:
+  - name: filler0
+    value_start: 0
+    value_length: 8
   - name: speed
     unit: km/h
     value_start: 8
