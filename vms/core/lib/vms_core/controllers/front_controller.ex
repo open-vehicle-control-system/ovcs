@@ -15,7 +15,7 @@ defmodule VmsCore.Controllers.FrontController do
   def init(_) do
     :ok = Cantastic.Receiver.subscribe(self(), @network_name, @front_controller_status_frame_name)
     :ok = Emitter.configure(@network_name, @front_controller_request_frame_name, %{
-      parameters_builder_function: &front_controller_request_frame_parameters/1,
+      parameters_builder_function: :default,
       initial_data: %{
         @inverter_enabled   => false,
         @water_pump_enabled => false
@@ -30,10 +30,6 @@ defmodule VmsCore.Controllers.FrontController do
 
   def start_link(_) do
     GenServer.start_link(__MODULE__, nil, name: __MODULE__)
-  end
-
-  defp front_controller_request_frame_parameters(data) do
-    {:ok, data, data}
   end
 
   @impl true

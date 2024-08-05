@@ -26,19 +26,19 @@ defmodule VmsCore.Controllers.ControlsController do
   def init(_) do
     :ok = Receiver.subscribe(self(), @network_name, @controls_controller_status_frame_name)
     :ok = Emitter.configure(@network_name, @controls_controller_pwm_request_frame_name, %{
-      parameters_builder_function: &controls_controller_pwm_request_frame_parameters/1,
+      parameters_builder_function: :default,
       initial_data: %{
         @steering_column_motor_step_duty_cycle => 0,
       }
     })
     :ok = Emitter.configure(@network_name, @controls_controller_request_frame_name, %{
-      parameters_builder_function: &controls_controller_request_frame_parameters/1,
+      parameters_builder_function: :default,
       initial_data: %{
         @steering_column_motor_direction => "clockwise",
       }
     })
     :ok = Emitter.configure(@network_name, @selected_gear_frame_name, %{
-      parameters_builder_function: &gear_status_frame_parameters/1,
+      parameters_builder_function: :default,
       initial_data: %{
         @selected_gear => "parking"
       }
@@ -63,18 +63,6 @@ defmodule VmsCore.Controllers.ControlsController do
         }
       }
     }
-  end
-
-  defp controls_controller_pwm_request_frame_parameters(data) do
-    {:ok, data, data}
-  end
-
-  defp controls_controller_request_frame_parameters(data) do
-    {:ok, data, data}
-  end
-
-  defp gear_status_frame_parameters(data) do
-    {:ok, data, data}
   end
 
   @impl true

@@ -42,7 +42,7 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
 
   defp init_emitters() do
     :ok = Emitter.configure(@network_name, @vms_alive_frame_name, %{
-      parameters_builder_function: &alive_frame_parameters_builder/1,
+      parameters_builder_function: :default,
       initial_data: nil
     })
     :ok = Emitter.configure(@network_name, @vms_torque_request_frame_name, %{
@@ -143,10 +143,6 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
         motor_temperature: motor_temperature
       }
     }
-  end
-
-  def alive_frame_parameters_builder(emitter_state) do
-    {:ok, nil, emitter_state}
   end
 
   def torque_frame_parameters_builder(data) do

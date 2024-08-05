@@ -9,7 +9,7 @@ defmodule VmsCore.VwPolo.Engine do
   @impl true
   def init(_) do
     :ok = Emitter.configure(@network_name, @engine_status_frame_name, %{
-      parameters_builder_function: &status_frame_parameters_builder/1,
+      parameters_builder_function: :default,
       initial_data: %{
         "engine_rotations_per_minute" => 0
       }
@@ -19,10 +19,6 @@ defmodule VmsCore.VwPolo.Engine do
 
   def start_link(_) do
     GenServer.start_link(__MODULE__, nil, name: __MODULE__)
-  end
-
-  defp status_frame_parameters_builder(data) do
-    {:ok, data, data}
   end
 
   def rotation_per_minute(rotation_per_minute) do

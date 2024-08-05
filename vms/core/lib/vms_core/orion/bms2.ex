@@ -98,19 +98,12 @@ defmodule VmsCore.Orion.Bms2 do
 
   defp init_emitters() do
     :ok = Emitter.configure(@network_name, @bms_command_frame_name, %{
-      parameters_builder_function: &bms_command_frame_parameters_builder/1,
+      parameters_builder_function: :default,
       initial_data: %{
         "ac_input_voltage" => 0
       }
     })
     :ok
-  end
-
-  def bms_command_frame_parameters_builder(data) do
-    parameters = %{
-      "ac_input_voltage" => data["ac_input_voltage"]
-    }
-    {:ok, parameters, data}
   end
 
   def ready_to_drive?() do

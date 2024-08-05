@@ -21,7 +21,7 @@ defmodule VmsCore.Controllers.RearController do
   def init(_) do
     :ok = Cantastic.Receiver.subscribe(self(), @network_name, @rear_controller_status_frame_name)
     :ok = Emitter.configure(@network_name, @rear_controller_request_frame_name, %{
-      parameters_builder_function: &rear_controller_request_frame_parameters/1,
+      parameters_builder_function: :default,
       initial_data: %{
         @main_negative_contactor   => false,
         @main_positive_contactor => false,
@@ -42,10 +42,6 @@ defmodule VmsCore.Controllers.RearController do
 
   def start_link(_) do
     GenServer.start_link(__MODULE__, nil, name: __MODULE__)
-  end
-
-  defp rear_controller_request_frame_parameters(data) do
-    {:ok, data, data}
   end
 
   @impl true
