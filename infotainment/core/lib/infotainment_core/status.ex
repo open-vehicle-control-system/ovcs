@@ -20,7 +20,7 @@ defmodule InfotainmentCore.Status do
   @impl true
   def init(_) do
     :ok = Emitter.configure(@network_name, @infotainment_status_frame_name, %{
-      parameters_builder_function: &infotainment_status_frame_parameter_builder/1,
+      parameters_builder_function: :default,
       initial_data: %{
         @requested_gear_parameter => "parking",
       }
@@ -177,10 +177,6 @@ defmodule InfotainmentCore.Status do
       ready_to_drive: state.ready_to_drive
     }
     {:reply, {:ok, overview}, state}
-  end
-
-  defp infotainment_status_frame_parameter_builder(data) do
-    {:ok, data, data}
   end
 
   defp enable_watchers() do
