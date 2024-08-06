@@ -4,13 +4,11 @@ defmodule InfotainmentFirmware.Application do
   @moduledoc false
 
   use Application
+  require Logger
 
   @impl true
   def start(_type, _args) do
     opts = [strategy: :rest_for_one, name: Example.Supervisor]
-
-    Process.sleep(10_000)
-
     children = [
       {NervesFlutterpi,
         flutter_app_dir: "/var/flutter_assets",
