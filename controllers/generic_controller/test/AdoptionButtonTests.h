@@ -5,6 +5,7 @@ namespace AdoptionButtonTests{
     void testWaitingForAdoptionWhenButtonPressed(){
         When(Method(ArduinoFake(), pinMode)).AlwaysReturn();
         When(Method(ArduinoFake(), digitalRead)).AlwaysReturn(1);
+        When(OverloadedMethod(ArduinoFake(Serial), println, size_t(const char c[]))).AlwaysReturn();
         AdoptionButton button = AdoptionButton();
         bool result = button.isWaitingAdoption();
         Verify(Method(ArduinoFake(), pinMode).Using(2, INPUT)).Exactly(1);
@@ -25,6 +26,8 @@ namespace AdoptionButtonTests{
     void testNotWaitingAdoptionAfterAdoptionValidated(){
         When(Method(ArduinoFake(), pinMode)).AlwaysReturn();
         When(Method(ArduinoFake(), digitalRead)).Return(1);
+        When(OverloadedMethod(ArduinoFake(Serial), println, size_t(const char c[]))).AlwaysReturn();
+
         AdoptionButton button = AdoptionButton();
         bool result = button.isWaitingAdoption();
         TEST_ASSERT_TRUE(result);
@@ -37,6 +40,8 @@ namespace AdoptionButtonTests{
     void testDontReadoptWhenButtonIsLongPressed(){
         When(Method(ArduinoFake(), pinMode)).AlwaysReturn();
         When(Method(ArduinoFake(), digitalRead)).AlwaysReturn(1);
+        When(OverloadedMethod(ArduinoFake(Serial), println, size_t(const char c[]))).AlwaysReturn();
+
         AdoptionButton button = AdoptionButton();
         bool result = button.isWaitingAdoption();
         TEST_ASSERT_TRUE(result);
@@ -48,6 +53,8 @@ namespace AdoptionButtonTests{
     void testAllowReadoptionAfterButtonReleasedAndPressed(){
         When(Method(ArduinoFake(), pinMode)).AlwaysReturn();
         When(Method(ArduinoFake(), digitalRead)).Return(1);
+        When(OverloadedMethod(ArduinoFake(Serial), println, size_t(const char c[]))).AlwaysReturn();
+
         AdoptionButton button = AdoptionButton();
         bool result = button.isWaitingAdoption();
         TEST_ASSERT_TRUE(result);
