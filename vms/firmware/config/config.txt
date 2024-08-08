@@ -25,79 +25,14 @@ disable_splash=1
 gpu_mem=192
 
 # Enable I2C and SPI
-dtparam=i2c_arm=on
-dtparam=spi=on
-
-# Name:   spi0-2cs
-# Info:   Change the CS pins for SPI0
-# Load:   dtoverlay=spi0-2cs,<param>=<val>
-# Params: cs0_pin                 GPIO pin for CS0 (default 8)
-#         cs1_pin                 GPIO pin for CS1 (default 7)
-#         no_miso                 Don't claim and use the MISO pin (9), freeing
-#                                 it for other uses.
+dtparam=i2c_arm=off
+#dtparam=i2s=on
+#dtparam=spi=on
 
 dtoverlay=spi0-2cs
-
-# Name:   spi1-3cs
-# Info:   Enables spi1 with three chip select (CS) lines and associated spidev
-#         dev nodes. The gpio pin numbers for the CS lines and spidev device node
-#         creation are configurable.
-#         N.B.: spi1 is not accessible on old Pis without a 40-pin header.
-# Load:   dtoverlay=spi1-3cs,<param>=<val>
-# Params: cs0_pin                 GPIO pin for CS0 (default 18 - BCM SPI1_CE0).
-#         cs1_pin                 GPIO pin for CS1 (default 17 - BCM SPI1_CE1).
-#         cs2_pin                 GPIO pin for CS2 (default 16 - BCM SPI1_CE2).
-#         cs0_spidev              Set to 'off' to stop the creation of a
-#                                 userspace device node /dev/spidev1.0 (default
-#                                 is 'on' or enabled).
-#         cs1_spidev              Set to 'off' to stop the creation of a
-#                                 userspace device node /dev/spidev1.1 (default
-#                                 is 'on' or enabled).
-#         cs2_spidev              Set to 'off' to stop the creation of a
-#                                 userspace device node /dev/spidev1.2 (default
-#                                 is 'on' or enabled).
-
 dtoverlay=spi1-3cs
 
-# Name:   spi3-2cs
-# Info:   Enables spi3 on GPIO2 1-3 with two chip select (CS) lines and
-#         associated spidev dev nodes. The gpio pin numbers for the CS lines and
-#         spidev device node creation are configurable. BCM2711 only,
-#         spi3-2cs-pi5 is substituted on Pi 5.
-# Load:   dtoverlay=spi3-2cs,<param>=<val>
-# Params: cs0_pin                 GPIO pin for CS0 (default 0 - BCM SPI3_CE0).
-#         cs1_pin                 GPIO pin for CS1 (default 24 - BCM SPI3_CE1).
-#         cs0_spidev              Set to 'off' to prevent the creation of a
-#                                 userspace device node /dev/spidev3.0 (default
-#                                 is 'on' or enabled).
-#         cs1_spidev              Set to 'off' to prevent the creation of a
-#                                 userspace device node /dev/spidev3.1 (default
-#                                 is 'on' or enabled).
-
-dtoverlay=spi3-2cs
-
-#Name:   mcp251xfd
-#Info:   Configures the MCP251XFD CAN controller family
-#        For devices on spi1 or spi2, the interfaces should be enabled
-#        with one of the spi1-1/2/3cs and/or spi2-1/2/3cs overlays.
-#Load:   dtoverlay=mcp251xfd,<param>=<val>
-#Params: spi<n>-<m>              Configure device at spi<n>, cs<m>
-#                                (boolean, required)
-#
-#        oscillator
-    Clock frequency for the CAN controller (Hz)
-#
-#        speed                   Maximum SPI frequence (Hz)
-#
-#        interrupt               GPIO for interrupt signal
-#
-#        rx_interrupt            GPIO for RX interrupt signal (nINT1) (optional)
-#
-#        xceiver_enable          GPIO for CAN transceiver enable (optional)
-#
-#        xceiver_active_high     specifiy if CAN transceiver enable pin is
-#                                active high (optional, default: active low)
-
+#dtoverlay=spi3-2cs
 dtoverlay=mcp251xfd,spi0-0,oscillator=40000000,interrupt=4 # cs_pin=8
 dtoverlay=mcp251xfd,spi0-1,oscillator=40000000,interrupt=14 # cs_pin=7
 
@@ -105,17 +40,18 @@ dtoverlay=mcp251xfd,spi1-0,oscillator=40000000,interrupt=5 # cs_pin=18
 dtoverlay=mcp251xfd,spi1-1,oscillator=40000000,interrupt=6 # cs_pin=17
 dtoverlay=mcp251xfd,spi1-2,oscillator=40000000,interrupt=12 # cs_pin=16
 
-dtoverlay=mcp251xfd,spi3-0,oscillator=40000000,interrupt=22 # cs_pin=0
-dtoverlay=mcp251xfd,spi3-1,oscillator=40000000,interrupt=23 # cs_pin=24
+# Using SPI3-2CS requires to create a custom DTBO for MCP251XFD
+# dtoverlay=mcp251xfd,spi3-0,oscillator=40000000,interrupt=22 # cs_pin=0
+# dtoverlay=mcp251xfd,spi3-1,oscillator=40000000,interrupt=23 # cs_pin=24
 
 # Enable audio (loads snd_bcm3825)
-dtparam=audio=on
+dtparam=audio=off
 
 # Automatically load overlays for detected cameras
-camera_auto_detect=1
+camera_auto_detect=0
 
 # Automatically load overlays for detected DSI displays
-display_auto_detect=1
+display_auto_detect=0
 
 # Enable DRM VC4 V3D driver
 dtoverlay=vc4-kms-v3d
@@ -137,7 +73,7 @@ dtoverlay=dwc2
 dtoverlay=ramoops
 
 # Enable the UART (/dev/ttyS0)
-enable_uart=1
+enable_uart=0
 
 [cm4]
 # Raspberry Pi CM4-only settings

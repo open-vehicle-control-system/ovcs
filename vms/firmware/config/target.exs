@@ -154,8 +154,11 @@ vehicle = System.get_env("VEHICLE") || "ovcs1"
 config :vms_core, :vehicle, vehicle
 config :vms_core, :gear_control_module, (if System.get_env("GEAR_CONTROL_MODULE") == "infotainment" do VmsCore.Infotainment else VmsCore.Controllers.ControlsController end)
 
+#"ovcs:can0,leaf_drive:can1,polo_drive:can2,orion_bms:can3,misc:can4"
+
 config :cantastic,
-  can_networks: "ovcs:can0,leaf_drive:can1,polo_drive:can2",
+  can_networks: (System.get_env("SPI_MAPPINGS") || "ovcs:spi0.0,leaf_drive:spi0.1,polo_drive:spi1.0,orion_bms:spi1.1,misc:spi1.2"),
+  can_network_parser: VmsFirmware.Util.NetworkParser,
   setup_can_interfaces: true,
   otp_app: :vms_core,
   priv_can_config_path: "vehicles/#{vehicle}.yml",
