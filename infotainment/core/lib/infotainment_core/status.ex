@@ -53,7 +53,8 @@ defmodule InfotainmentCore.Status do
       instant_consumption: @zero,
       state_of_health: @zero,
       autonomy: @zero,
-      charging_power: @zero
+      charging_power: @zero,
+      vms_missing: false
     }}
   end
 
@@ -63,8 +64,12 @@ defmodule InfotainmentCore.Status do
 
   @impl true
   def handle_info({:handle_missing_frame,  network_name, frame_name}, state) do
-    Logger.warning("Frame #{network_name}.#{frame_name} is missing")
-    {:noreply, state}
+    if not state.vms_missing do
+      Logger.warning("Frame #{network_name}.#{frame_name} is missing")
+      {:noreply, %{state | vms_missing: true}}
+    else
+      {:noreply, state}
+    end
   end
 
   @impl true

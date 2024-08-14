@@ -144,7 +144,7 @@ vehicle = System.get_env("VEHICLE") || "ovcs1"
 config :infotainment_core, :vehicle, vehicle
 config :infotainment_core, :test, true
 config :cantastic,
-  can_networks: "ovcs:can0",
+  can_network_mappings: [{"ovcs", "can0"}],
   setup_can_interfaces: true,
   otp_app: :infotainment_core,
   priv_can_config_path: "vehicles/#{vehicle}.yml"
