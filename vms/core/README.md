@@ -3,7 +3,7 @@
 ## Run
 
 ```
-$  mix run --no-halt 
+$  mix run --no-halt
 ```
 
 ## Requirements
@@ -13,7 +13,7 @@ $  mix run --no-halt
 * CAN/Bus
 * drive/neutral/reverse
 * Ignition input
-* Brake input? 
+* Brake input?
 * Throttle pedal (6 lines on Resolve VCU)
 * Power delivery module (PDM) ? (5 lines on Resolve VCU)
 * Inverter ? (2 lines on Resolve VCU)
@@ -34,7 +34,7 @@ $  mix run --no-halt
 
 - There are three modes of regen off, 1 and 2. To change regen strength press the drive button while in the Drive mode. Regen is turned off when the SOC is above 80%.
 
-- There is an option to max charge the car to 80% for increased longevity of the battery pack. To turn it off or on simply push down the Neutral button during charging. After that “80% max” should be displayed like the picture to the left. 
+- There is an option to max charge the car to 80% for increased longevity of the battery pack. To turn it off or on simply push down the Neutral button during charging. After that “80% max” should be displayed like the picture to the left.
 
 - Relevant certifications: EMC tested & ECE - R10 Certified!
 

@@ -131,6 +131,37 @@ defmodule VmsCore.Controllers.Configuration do
         "analog_pin1" => "enabled",
         "analog_pin2" => "disabled"
       },
+      "test_controller" => %{
+        "controller_id" => 31,
+        "digital_pin0" => "read_write",
+        "digital_pin1" => "read_write",
+        "digital_pin2" => "read_write",
+        "digital_pin3" => "read_write",
+        "digital_pin4" => "read_write",
+        "digital_pin5" => "read_write",
+        "digital_pin6" => "read_write",
+        "digital_pin7" => "read_write",
+        "digital_pin8" => "disabled",
+        "digital_pin9" => "read_write",
+        "digital_pin10" => "read_write",
+        "digital_pin11" => "read_write",
+        "digital_pin12" => "read_write",
+        "digital_pin13" => "disabled",
+        "digital_pin14" => "disabled",
+        "digital_pin15" => "disabled",
+        "digital_pin16" => "disabled",
+        "digital_pin17" => "disabled",
+        "digital_pin18" => "disabled",
+        "digital_pin19" => "disabled",
+        "digital_pin20" => "disabled",
+        "pwm_pin0" => "disabled",
+        "pwm_pin1" => "disabled",
+        "pwm_pin2" => "disabled",
+        "dac_pin0" => "disabled",
+        "analog_pin0" => "disabled",
+        "analog_pin1" => "disabled",
+        "analog_pin2" => "disabled"
+      },
     }
   end
 end
