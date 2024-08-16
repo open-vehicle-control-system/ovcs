@@ -60,19 +60,19 @@ class Configuration {
 
 
     Configuration() {};
-    Configuration(AbstractBoard* mosfetBoard1, AbstractBoard* mosfetBoard2, AbstractBoard* mainBoard, AbstractCrc* crc) {
+    Configuration(AbstractBoard* mainBoard, AbstractBoard* mosfetBoard1, AbstractBoard* mosfetBoard2, AbstractCrc* crc) {
+      _mainBoard    = mainBoard;
       _mosfetBoard1 = mosfetBoard1;
       _mosfetBoard2 = mosfetBoard2;
-      _mainBoard    = mainBoard;
       _crc          = crc;
     };
 
   private:
     uint8_t  _controllerId;
     uint8_t* _rawConfiguration;
+    AbstractBoard* _mainBoard;
     AbstractBoard* _mosfetBoard1;
     AbstractBoard* _mosfetBoard2;
-    AbstractBoard* _mainBoard;
     AbstractCrc* _crc;
     void store(uint8_t newConfiguration[8]);
     void computeControllerId();

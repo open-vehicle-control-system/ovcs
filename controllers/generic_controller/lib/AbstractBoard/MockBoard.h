@@ -8,8 +8,8 @@ class MockBoard: public AbstractBoard {
     MockBoard(){};
     MockBoard(uint8_t address){};
     bool begin();
-    void pinMode(uint8_t pin, uint8_t mode);
-    void digitalWrite(uint8_t pin, uint8_t value);
+    void pinMode(uint8_t pin, PinMode mode);
+    void digitalWrite(uint8_t pin, PinStatus status);
     uint8_t digitalRead(uint8_t pin);
 };
 

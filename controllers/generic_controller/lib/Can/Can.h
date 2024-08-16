@@ -26,7 +26,7 @@ class Can {
     void begin();
     void receive();
     void emitAlive(uint16_t aliveFrameId);
-    bool* parseDigitalPinRequest();
+    PinStatus* parseDigitalPinRequest();
     OtherPinDutyCycles parseOtherPinRequest();
     void emitdigitalAndAnalogPinsStatus(uint16_t digitalAndAnalogPinsStatusFrameId, uint8_t digitalPinsStatus[21], uint16_t analogPinsStatus[3]);
 

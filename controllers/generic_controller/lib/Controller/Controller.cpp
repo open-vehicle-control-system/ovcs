@@ -23,7 +23,7 @@ void Controller::adoptConfiguration() {
 };
 
 void Controller::writeDigitalPins() {
-  bool* digitalPinsRequest = _can.parseDigitalPinRequest();
+  PinStatus* digitalPinsRequest = _can.parseDigitalPinRequest();
   for (uint8_t i = 0; i < 21; i++) {
     _configuration._digitalPins[i].writeIfAllowed(digitalPinsRequest[i]);
   }

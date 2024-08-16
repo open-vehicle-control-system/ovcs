@@ -6,12 +6,12 @@
       Wire.setClock(I2C_CLOCK_FREQUENCY);
     };
 
-    void MosfetBoard::pinMode(uint8_t pin, uint8_t mode) {
+    void MosfetBoard::pinMode(uint8_t pin, PinMode mode) {
       _board.pinMode1(pin, mode);
     };
 
-    void MosfetBoard::digitalWrite(uint8_t pin, uint8_t value) {
-      _board.write1(pin, value);
+    void MosfetBoard::digitalWrite(uint8_t pin, PinStatus status) {
+      _board.write1(pin, status);
     };
 
     uint8_t MosfetBoard::digitalRead(uint8_t pin) {

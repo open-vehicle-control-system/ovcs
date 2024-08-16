@@ -69,13 +69,13 @@ void Can::emitdigitalAndAnalogPinsStatus(uint16_t digitalAndAnalogPinStatusesFra
 };
 
 
-bool* Can::parseDigitalPinRequest() {
-  static bool digitalPinRequest[21] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+PinStatus* Can::parseDigitalPinRequest() {
+  static PinStatus digitalPinRequest[21] = {LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW};
   uint8_t pinNumber = 0;
   for(uint8_t i = 0; i < 21; i++) {
     uint8_t byteNumber = i / 8;
     uint8_t bitNumber   = 7 - (i % 8);
-    digitalPinRequest[i] = bitRead(_receivedFrame.data[byteNumber], bitNumber);
+    digitalPinRequest[i] = bitRead(_receivedFrame.data[byteNumber], bitNumber) == 0 ? LOW : HIGH;
   }
 
   return digitalPinRequest;

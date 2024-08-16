@@ -18,16 +18,16 @@ class Controller {
       _mainBoard     = mainBoard;
       _mosfetBoard1  = mosfetBoard1;
       _mosfetBoard2  = mosfetBoard2;
-      _configuration = Configuration(mosfetBoard1, mosfetBoard2, mosfetBoard2, crc);
+      _configuration = Configuration(mainBoard, mosfetBoard1, mosfetBoard2, crc);
     };
     void setup();
     void loop();
 
   private :
     bool _ready;
+    AbstractBoard* _mainBoard;
     AbstractBoard* _mosfetBoard1;
     AbstractBoard* _mosfetBoard2;
-    AbstractBoard* _mainBoard;
     AdoptionButton _adoptionButton;
     Can _can;
     Configuration _configuration;

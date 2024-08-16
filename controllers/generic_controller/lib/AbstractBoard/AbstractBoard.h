@@ -9,8 +9,8 @@ class AbstractBoard {
     AbstractBoard(){};
     AbstractBoard(uint8_t address){};
     virtual bool begin() = 0;
-    virtual void pinMode(uint8_t pin, uint8_t mode) = 0;
-    virtual void digitalWrite(uint8_t pin, uint8_t value) = 0;
+    virtual void pinMode(uint8_t pin, PinMode mode) = 0;
+    virtual void digitalWrite(uint8_t pin, PinStatus status) = 0;
     virtual uint8_t digitalRead(uint8_t pin) = 0;
 };
 
