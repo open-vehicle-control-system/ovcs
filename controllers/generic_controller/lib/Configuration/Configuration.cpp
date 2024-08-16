@@ -63,11 +63,11 @@ void Configuration::computeDigitalPins() {
           case MAIN_BOARD_ID:
             board = _mainBoard;
             break;
-          case MOSFET_0_ID:
-            board = _mosfetBoard1;
+          case EXPANSION_BOARD_ID_1:
+            board = _expansionBoard1;
             break;
-          case MOSFET_1_ID:
-            board = _mosfetBoard2;
+          case EXPANSION_BOARD_ID_2:
+            board = _expansionBoard2;
             break;
         }
         _digitalPins[pinNumber] = DigitalPin(status, board, physicalPin);

@@ -10,7 +10,7 @@ class MockBoard: public AbstractBoard {
     bool begin();
     void pinMode(uint8_t pin, PinMode mode);
     void digitalWrite(uint8_t pin, PinStatus status);
-    uint8_t digitalRead(uint8_t pin);
+    PinStatus digitalRead(uint8_t pin);
 };
 
 #endif

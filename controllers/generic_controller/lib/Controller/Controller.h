@@ -13,12 +13,12 @@
 
 class Controller {
   public:
-    Controller(AbstractBoard* mainBoard, AbstractBoard* mosfetBoard1, AbstractBoard* mosfetBoard2, AbstractCrc* crc){
-      _ready         = false;
-      _mainBoard     = mainBoard;
-      _mosfetBoard1  = mosfetBoard1;
-      _mosfetBoard2  = mosfetBoard2;
-      _configuration = Configuration(mainBoard, mosfetBoard1, mosfetBoard2, crc);
+    Controller(AbstractBoard* mainBoard, AbstractBoard* expansionBoard1, AbstractBoard* expansionBoard2, AbstractCrc* crc){
+      _ready           = false;
+      _mainBoard       = mainBoard;
+      _expansionBoard1 = expansionBoard1;
+      _expansionBoard2 = expansionBoard2;
+      _configuration   = Configuration(mainBoard, expansionBoard1, expansionBoard2, crc);
     };
     void setup();
     void loop();
@@ -26,8 +26,8 @@ class Controller {
   private :
     bool _ready;
     AbstractBoard* _mainBoard;
-    AbstractBoard* _mosfetBoard1;
-    AbstractBoard* _mosfetBoard2;
+    AbstractBoard* _expansionBoard1;
+    AbstractBoard* _expansionBoard2;
     AdoptionButton _adoptionButton;
     Can _can;
     Configuration _configuration;
@@ -35,7 +35,7 @@ class Controller {
     void initializeI2C();
     void writeDigitalPins();
     void writeOtherPins();
-    uint8_t* readDigitalPins();
+    PinStatus* readDigitalPins();
     uint16_t* readAnalogPins();
     bool isReady();
     void adoptConfiguration();

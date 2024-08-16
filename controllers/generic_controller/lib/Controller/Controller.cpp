@@ -9,8 +9,8 @@ void Controller::initializeSerial() {
 };
 
 void Controller::initializeI2C() {
-  _mosfetBoard1->begin();
-  _mosfetBoard2->begin();
+  _expansionBoard1->begin();
+  _expansionBoard2->begin();
 };
 
 bool Controller::isReady() {
@@ -37,8 +37,8 @@ void Controller::writeOtherPins() {
   _configuration._dacPin.writeIfAllowed(otherPinDutyCycles.dacDutyCycle);
 };
 
-uint8_t* Controller::readDigitalPins() {
-  static uint8_t digitalPinsStatus[21]  = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+PinStatus* Controller::readDigitalPins() {
+  static PinStatus digitalPinsStatus[21]  = {LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW};
   for (uint8_t i=0; i<21; i++) {
     digitalPinsStatus[i] = _configuration._digitalPins[i].readIfAllowed();
   }
@@ -55,7 +55,7 @@ uint16_t* Controller::readAnalogPins() {
 };
 
 void Controller::emitPinStatuses() {
-  uint8_t* digitalPinsStatus = readDigitalPins();
+  PinStatus* digitalPinsStatus = readDigitalPins();
   uint16_t* analogPinsStatus = readAnalogPins();
   _can.emitdigitalAndAnalogPinsStatus(_configuration._digitalAndAnalogPinsStatusFrameId, digitalPinsStatus, analogPinsStatus);
 };

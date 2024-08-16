@@ -10,6 +10,6 @@
       ::digitalWrite(pin, status);
     };
 
-    uint8_t MainBoard::digitalRead(uint8_t pin) {
+    PinStatus MainBoard::digitalRead(uint8_t pin) {
       return ::digitalRead(pin);
     };

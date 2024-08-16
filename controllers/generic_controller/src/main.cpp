@@ -1,18 +1,18 @@
 #include <Controller.h>
-#include <MosfetBoard.h>
+#include <ExpansionBoard.h>
 #include <MainBoard.h>
 #include <Arduino.h>
 #include <Crc.h>
 
-#define MOSFET_1_ADDRESS 0x20
-#define MOSFET_2_ADDRESS 0x21
+#define EXPANSION_BOARD_ADDRESS_1 0x20
+#define EXPANSION_BOARD_ADDRESS_2 0x21
 
-MainBoard mainBoard      = MainBoard();
-MosfetBoard mosfetBoard1 = MosfetBoard(MOSFET_1_ADDRESS);
-MosfetBoard mosfetBoard2 = MosfetBoard(MOSFET_2_ADDRESS);
-Crc crc                  = Crc();
+MainBoard mainBoard            = MainBoard();
+ExpansionBoard expansionBoard1 = ExpansionBoard(EXPANSION_BOARD_ADDRESS_1);
+ExpansionBoard expansionBoard2 = ExpansionBoard(EXPANSION_BOARD_ADDRESS_2);
+Crc crc                        = Crc();
 
-Controller controller = Controller(&mainBoard, &mosfetBoard1, &mosfetBoard2, &crc);
+Controller controller = Controller(&mainBoard, &expansionBoard1, &expansionBoard2, &crc);
 
 void setup() {
   controller.setup();

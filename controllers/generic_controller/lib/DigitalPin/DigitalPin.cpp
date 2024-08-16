@@ -24,9 +24,9 @@ void DigitalPin::writeIfAllowed(PinStatus status) {
   }
 };
 
-uint8_t DigitalPin::readIfAllowed() {
+PinStatus DigitalPin::readIfAllowed() {
   if (readable()) {
     return _board->digitalRead(_physicalPin);
   }
-  return 0;
+  return LOW;
 };

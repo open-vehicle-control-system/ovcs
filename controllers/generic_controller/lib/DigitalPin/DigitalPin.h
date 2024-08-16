@@ -19,7 +19,7 @@ class DigitalPin {
       initPhysicalPin();
     };
     void writeIfAllowed(PinStatus value);
-    uint8_t readIfAllowed();
+    PinStatus readIfAllowed();
     bool writeable();
     bool readable();
 

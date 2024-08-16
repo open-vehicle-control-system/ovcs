@@ -28,7 +28,7 @@ class Can {
     void emitAlive(uint16_t aliveFrameId);
     PinStatus* parseDigitalPinRequest();
     OtherPinDutyCycles parseOtherPinRequest();
-    void emitdigitalAndAnalogPinsStatus(uint16_t digitalAndAnalogPinsStatusFrameId, uint8_t digitalPinsStatus[21], uint16_t analogPinsStatus[3]);
+    void emitdigitalAndAnalogPinsStatus(uint16_t digitalAndAnalogPinsStatusFrameId, PinStatus digitalPinsStatus[21], uint16_t analogPinsStatus[3]);
 
   private:
     uint8_t _aliveCounter;

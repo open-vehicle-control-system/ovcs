@@ -14,8 +14,8 @@ This is a generic arduino controller allowing the VMS to actuate relays, read di
 | D11 | SPI CAN COPI |
 | D12 | SPI CAN CIPO |
 | D13 | SPI CAN SCK |
-| A4 | I2C SDA - MOSFET |
-| A5 | I2C SCL - MOSFET |
+| A4 | I2C SDA - EXPANSION BOARDS |
+| A5 | I2C SCL - EXPANSION BOARDS |
 
 ### Digital
 
@@ -26,22 +26,22 @@ This is a generic arduino controller allowing the VMS to actuate relays, read di
 | D4  | 2 |
 | D7  | 3 |
 | D8  | 4 |
-| MOSFET0-0  | 5 |
-| MOSFET0-1  | 6 |
-| MOSFET0-2  | 7 |
-| MOSFET0-3  | 8 |
-| MOSFET0-4  | 9 |
-| MOSFET0-5  | 10 |
-| MOSFET0-6  | 11 |
-| MOSFET0-7  | 12 |
-| MOSFET1-0  | 13 |
-| MOSFET1-1  | 14 |
-| MOSFET1-2  | 15 |
-| MOSFET1-3  | 16 |
-| MOSFET1-4  | 17 |
-| MOSFET1-5  | 18 |
-| MOSFET1-6  | 19 |
-| MOSFET1-7  | 20 |
+| EXPANSION_BOARD_0-0  | 5 |
+| EXPANSION_BOARD_0-1  | 6 |
+| EXPANSION_BOARD_0-2  | 7 |
+| EXPANSION_BOARD_0-3  | 8 |
+| EXPANSION_BOARD_0-4  | 9 |
+| EXPANSION_BOARD_0-5  | 10 |
+| EXPANSION_BOARD_0-6  | 11 |
+| EXPANSION_BOARD_0-7  | 12 |
+| EXPANSION_BOARD_1-0  | 13 |
+| EXPANSION_BOARD_1-1  | 14 |
+| EXPANSION_BOARD_1-2  | 15 |
+| EXPANSION_BOARD_1-3  | 16 |
+| EXPANSION_BOARD_1-4  | 17 |
+| EXPANSION_BOARD_1-5  | 18 |
+| EXPANSION_BOARD_1-6  | 19 |
+| EXPANSION_BOARD_1-7  | 20 |
 
 ### PWM
 

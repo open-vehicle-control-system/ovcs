@@ -18,8 +18,8 @@
 #define CONFIGURATION_BYTE_SIZE 8
 
 #define MAIN_BOARD_ID 0
-#define MOSFET_0_ID 1
-#define MOSFET_1_ID 2
+#define EXPANSION_BOARD_ID_1 1
+#define EXPANSION_BOARD_ID_2 2
 
 const uint8_t digitalPinMapping [21][2] = {
   {MAIN_BOARD_ID, D0},
@@ -27,22 +27,22 @@ const uint8_t digitalPinMapping [21][2] = {
   {MAIN_BOARD_ID, D4},
   {MAIN_BOARD_ID, D7},
   {MAIN_BOARD_ID, D8},
-  {MOSFET_0_ID, 0},
-  {MOSFET_0_ID, 1},
-  {MOSFET_0_ID, 2},
-  {MOSFET_0_ID, 3},
-  {MOSFET_0_ID, 4},
-  {MOSFET_0_ID, 5},
-  {MOSFET_0_ID, 6},
-  {MOSFET_0_ID, 7},
-  {MOSFET_1_ID, 0},
-  {MOSFET_1_ID, 1},
-  {MOSFET_1_ID, 2},
-  {MOSFET_1_ID, 3},
-  {MOSFET_1_ID, 4},
-  {MOSFET_1_ID, 5},
-  {MOSFET_1_ID, 6},
-  {MOSFET_1_ID, 7},
+  {EXPANSION_BOARD_ID_1, 0},
+  {EXPANSION_BOARD_ID_1, 1},
+  {EXPANSION_BOARD_ID_1, 2},
+  {EXPANSION_BOARD_ID_1, 3},
+  {EXPANSION_BOARD_ID_1, 4},
+  {EXPANSION_BOARD_ID_1, 5},
+  {EXPANSION_BOARD_ID_1, 6},
+  {EXPANSION_BOARD_ID_1, 7},
+  {EXPANSION_BOARD_ID_2, 0},
+  {EXPANSION_BOARD_ID_2, 1},
+  {EXPANSION_BOARD_ID_2, 2},
+  {EXPANSION_BOARD_ID_2, 3},
+  {EXPANSION_BOARD_ID_2, 4},
+  {EXPANSION_BOARD_ID_2, 5},
+  {EXPANSION_BOARD_ID_2, 6},
+  {EXPANSION_BOARD_ID_2, 7},
 };
 
 class Configuration {
@@ -60,19 +60,19 @@ class Configuration {
 
 
     Configuration() {};
-    Configuration(AbstractBoard* mainBoard, AbstractBoard* mosfetBoard1, AbstractBoard* mosfetBoard2, AbstractCrc* crc) {
-      _mainBoard    = mainBoard;
-      _mosfetBoard1 = mosfetBoard1;
-      _mosfetBoard2 = mosfetBoard2;
-      _crc          = crc;
+    Configuration(AbstractBoard* mainBoard, AbstractBoard* expansionBoard1, AbstractBoard* expansionBoard2, AbstractCrc* crc) {
+      _mainBoard       = mainBoard;
+      _expansionBoard1 = expansionBoard1;
+      _expansionBoard2 = expansionBoard2;
+      _crc             = crc;
     };
 
   private:
     uint8_t  _controllerId;
     uint8_t* _rawConfiguration;
     AbstractBoard* _mainBoard;
-    AbstractBoard* _mosfetBoard1;
-    AbstractBoard* _mosfetBoard2;
+    AbstractBoard* _expansionBoard1;
+    AbstractBoard* _expansionBoard2;
     AbstractCrc* _crc;
     void store(uint8_t newConfiguration[8]);
     void computeControllerId();
