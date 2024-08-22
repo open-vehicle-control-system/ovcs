@@ -9,10 +9,10 @@ void Can::begin() {
 
   const uint32_t errorCode = acan.begin (settings, [] { acan.isr () ; });
   if (errorCode == 0) {
-    Serial.println("> CAN Ready");
+    DPRINTLN("> CAN Ready");
   } else {
-    Serial.print ("> CAN Configuration error 0x");
-    Serial.println (errorCode, HEX);
+    DPRINT("> CAN Configuration error 0x");
+    DPRINTLN(errorCode, HEX);
   }
 };
 
@@ -27,7 +27,7 @@ void Can::receive() {
 void Can::emit(CANMessage frame) {
   const bool ok = acan.tryToSend (frame) ;
   if (!ok) {
-    Serial.println ("CAN emit failure") ;
+    DPRINTLN("CAN emit failure") ;
   }
 };
 

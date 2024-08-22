@@ -1,11 +1,13 @@
 #include <Controller.h>
 
 void Controller::initializeSerial() {
-  Serial.begin(115200);
-  Serial.println(__FILE__);
-  while (!Serial) {
-    delay (50) ;
-  }
+  #if DEBUG
+    Serial.begin(115200);
+    Serial.println(__FILE__);
+    while (!Serial) {
+      delay (50) ;
+    }
+  #endif
 };
 
 void Controller::initializeI2C() {
@@ -83,7 +85,7 @@ void Controller::setup() {
 void Controller::loop() {
   _can.receive();
   if (_adoptionButton.isWaitingAdoption() && _can._receivedFrame.id == ADOPTION_FRAME_ID) {
-    Serial.println("--> Adoption started <--");
+    DPRINTLN("--> Adoption started <--");
     adoptConfiguration();
   } else if (isReady()) {
     if (_can._receivedFrame.id == _configuration._digitalPinRequestFrameId) {

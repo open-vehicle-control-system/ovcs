@@ -15,11 +15,11 @@ bool Configuration::load() {
     computePwmPins();
     computeDacPin();
     computeAnalogPins();
-    Serial.println("> EEPROM configuration valid, ready!");
+    DPRINTLN("> EEPROM configuration valid, ready!");
     print();
     return true;
   } else {
-    Serial.println("> EEPROM configuration invalid, adoption required!");
+    DPRINTLN("> EEPROM configuration invalid, adoption required!");
     return false;
   }
 };
@@ -96,68 +96,70 @@ void Configuration::computeAnalogPins() {
 };
 
 void Configuration::print() {
-  Serial.println(">>>>> Current Configuration");
+  #if DEBUG
+    Serial.println(">>>>> Current Configuration");
 
-  Serial.print("> Raw configuration: ");
-  for (uint8_t i = 0; i < 8; i++) {
-    _rawConfiguration[i] <= 0xF ? Serial.print("0") : Serial.print("");
-    Serial.print(_rawConfiguration[i], HEX);
-    i == 7 ? Serial.println("") : Serial.print(" ");
-  }
-
-  Serial.print("> Controller ID: ");
-  Serial.println(_controllerId);
-
-  Serial.print("> Alive frame ID: 0x");
-  Serial.println(_aliveFrameId, HEX);
-
-  Serial.print("> Digital PIN request frame ID: 0x");
-  Serial.println(_digitalPinRequestFrameId, HEX);
-
-  Serial.print("> Other PIN request frame ID: 0x");
-  Serial.println(_otherPinRequestFrameId, HEX);
-
-  Serial.print("> Digital and analog PIN status frame ID: 0x");
-  Serial.println(_digitalAndAnalogPinsStatusFrameId, HEX);
-
-  Serial.print("> Digital Pins: ");
-  for(uint8_t i = 0; i < 21; i++) {
-    DigitalPin digitalPin = _digitalPins[i];
-    Serial.print(i);
-    Serial.print(": ");
-    if (digitalPin.writeable() && digitalPin.readable()) {
-      Serial.print("RW");
-    } else if (digitalPin.writeable()) {
-      Serial.print("W");
-    } else if (digitalPin.readable()) {
-      Serial.print("R");
-    } else {
-      Serial.print("_");
+    Serial.print("> Raw configuration: ");
+    for (uint8_t i = 0; i < 8; i++) {
+      _rawConfiguration[i] <= 0xF ? Serial.print("0") : Serial.print("");
+      Serial.print(_rawConfiguration[i], HEX);
+      i == 7 ? Serial.println("") : Serial.print(" ");
     }
-    Serial.print(" | ");
-  }
-  Serial.println("");
 
-  Serial.print("> PWM Output Pins: ");
-  for(uint8_t i = 0; i < 3; i++) {
-    Serial.print(i);
-    Serial.print(": ");
-    _pwmPins[i].writeable() ? Serial.print("ON") : Serial.print("OFF");
-    Serial.print(" | ");
-  }
-  Serial.println("");
+    Serial.print("> Controller ID: ");
+    Serial.println(_controllerId);
 
-  Serial.print("> DAC Output Pin: ");
-  _dacPin.writeable() ? Serial.print("ON") : Serial.print("OFF");
-  Serial.println("");
+    Serial.print("> Alive frame ID: 0x");
+    Serial.println(_aliveFrameId, HEX);
 
-  Serial.print("> Analog Input Pins: ");
-  for(uint8_t i = 0; i < 3; i++) {
-    Serial.print(i);
-    Serial.print(": ");
-    _analogPins[i].readable() ? Serial.print("ON") : Serial.print("OFF");
-    Serial.print(" | ");
-  }
-  Serial.println("");
-  Serial.println("<<<<<< Current Configuration");
+    Serial.print("> Digital PIN request frame ID: 0x");
+    Serial.println(_digitalPinRequestFrameId, HEX);
+
+    Serial.print("> Other PIN request frame ID: 0x");
+    Serial.println(_otherPinRequestFrameId, HEX);
+
+    Serial.print("> Digital and analog PIN status frame ID: 0x");
+    Serial.println(_digitalAndAnalogPinsStatusFrameId, HEX);
+
+    Serial.print("> Digital Pins: ");
+    for(uint8_t i = 0; i < 21; i++) {
+      DigitalPin digitalPin = _digitalPins[i];
+      Serial.print(i);
+      Serial.print(": ");
+      if (digitalPin.writeable() && digitalPin.readable()) {
+        Serial.print("RW");
+      } else if (digitalPin.writeable()) {
+        Serial.print("W");
+      } else if (digitalPin.readable()) {
+        Serial.print("R");
+      } else {
+        Serial.print("_");
+      }
+      Serial.print(" | ");
+    }
+    Serial.println("");
+
+    Serial.print("> PWM Output Pins: ");
+    for(uint8_t i = 0; i < 3; i++) {
+      Serial.print(i);
+      Serial.print(": ");
+      _pwmPins[i].writeable() ? Serial.print("ON") : Serial.print("OFF");
+      Serial.print(" | ");
+    }
+    Serial.println("");
+
+    Serial.print("> DAC Output Pin: ");
+    _dacPin.writeable() ? Serial.print("ON") : Serial.print("OFF");
+    Serial.println("");
+
+    Serial.print("> Analog Input Pins: ");
+    for(uint8_t i = 0; i < 3; i++) {
+      Serial.print(i);
+      Serial.print(": ");
+      _analogPins[i].readable() ? Serial.print("ON") : Serial.print("OFF");
+      Serial.print(" | ");
+    }
+    Serial.println("");
+    Serial.println("<<<<<< Current Configuration");
+  #endif
 };
