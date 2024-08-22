@@ -61,3 +61,26 @@ OVCS provides some basic scripts to make your life easier.
 |-----------------------------------|---------------------|
 | ./ovcs-cli build vms/infotainment | Builds the firmware for the VMS/Infotainment     |
 | ./ovcs-cli upload vms/infotainment |  Uploads the latest VMS/Infotainment built firmware to the USB connected device |
+
+## Customizing CAN interfaces.
+
+You can customize the CAN, VCAN or SPI interface to be used for each CAN network using the `CAN_NETWORK_MAPPINGS` environment variable (locally or when building the the target firmware).
+
+### Running the VMS locally with custom CAN and VCAN interfaces:
+
+```sh
+$ cd vms/api
+$ CAN_NETWORK_MAPPINGS=ovcs:can0,leaf_drive:vcan1,polo_drive:vcan2,orion_bms:vcan3,misc:vcan4 iex -S mix phx.server
+```
+
+### Building a VMS firmware with custom VCAN and SPI interfaces:
+
+```sh
+$ CAN_NETWORK_MAPPINGS=ovcs:spi0.0,leaf_drive:vcan0,polo_drive:vcan1,orion_bms:vcan2,misc:vcan3 ./ovcs-cli build vms
+```
+
+### Uploading the VMS:
+
+```sh
+$ ./ovcs-cli upload vms
+```
