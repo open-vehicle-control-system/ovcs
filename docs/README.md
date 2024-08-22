@@ -22,3 +22,4 @@ OVCS is provided as is an without any warranty. Use it at your own risk. It is n
 3. [Testing Can messages](./testing_can_messages.md)
 4. [Hardware architecture](./hardware_architecture.md)
 5. [Running on hardware](./running_hardware.md)
+6. [Testing generic controller](./testing_generic_controller.md)

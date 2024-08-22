@@ -20,7 +20,7 @@ $ CAN_NETWORK_MAPPINGS=ovcs:can0,leaf_drive:vcan1,polo_drive:vcan2,orion_bms:vca
 
 ### Emit the adoption frame (CAN also be run on the VMS host itself)
 
-```sh
+```elixir
 iex(1)> VmsCore.Controllers.Configuration.start_adoption("test_controller")
 :ok
 ```
@@ -34,21 +34,21 @@ Press the adoption button on the controller itself
 
 * Enable ALL digital pins (Main board + 2 expansion boards):
 
-```sh
+```elixir
 iex(1)> VmsCore.Controllers.TestController.on()
 :ok
 ```
 
 * Disable ALL digital pins (Main board + 2 expansion boards):
 
-```sh
+```elixir
 iex(1)> VmsCore.Controllers.TestController.off()
 :ok
 ```
 
 * Enable/Disable a specific digital pin:
 
-```sh
+```elixir
 iex(1)> VmsCore.Controllers.TestController.on(5)
 :ok
 iex(1)> VmsCore.Controllers.TestController.off(5)

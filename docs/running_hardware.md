@@ -84,3 +84,5 @@ $ CAN_NETWORK_MAPPINGS=ovcs:spi0.0,leaf_drive:vcan0,polo_drive:vcan1,orion_bms:v
 ```sh
 $ ./ovcs-cli upload vms
 ```
+
+Next: [Testing generic controller](./testing_generic_controller.md)
