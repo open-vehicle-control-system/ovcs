@@ -1,9 +1,7 @@
     #include <ExpansionBoard.h>
 
     bool ExpansionBoard::begin() {
-      Wire.begin();
       _board.begin();
-      Wire.setClock(I2C_CLOCK_FREQUENCY);
     };
 
     void ExpansionBoard::pinMode(uint8_t pin, PinMode mode) {

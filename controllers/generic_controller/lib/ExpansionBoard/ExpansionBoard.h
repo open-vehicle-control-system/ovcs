@@ -3,7 +3,6 @@
 
 #include <AbstractBoard.h>
 #include <MCP23008.h>
-#define I2C_CLOCK_FREQUENCY 100000
 
 class ExpansionBoard: public AbstractBoard {
   public:

@@ -6,10 +6,12 @@
 #include <Can.h>
 #include <Configuration.h>
 #include <AbstractBoard.h>
+#include <Wire.h>
 
 #define ADOPTION_FRAME_ID 0x700
 #define ANALOG_READ_RESOLUTION 14
 #define ANALOG_WRITE_RESOLUTION 12
+#define I2C_CLOCK_FREQUENCY 100000
 
 class Controller {
   public:

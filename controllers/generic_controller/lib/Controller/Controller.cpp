@@ -9,8 +9,10 @@ void Controller::initializeSerial() {
 };
 
 void Controller::initializeI2C() {
+  Wire.begin();
   _expansionBoard1->begin();
   _expansionBoard2->begin();
+  Wire.setClock(I2C_CLOCK_FREQUENCY);
 };
 
 bool Controller::isReady() {
