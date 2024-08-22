@@ -2,6 +2,7 @@
 #define CAN_H
 
 #include <Arduino.h>
+#include <Debug.h>
 #include <ACAN2517.h>
 #include <SPI.h>
 #include <OtherPinDutyCycle.h>

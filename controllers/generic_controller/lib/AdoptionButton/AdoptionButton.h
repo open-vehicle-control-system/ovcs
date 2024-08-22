@@ -2,6 +2,7 @@
 #define ADOPTION_BUTTON_H
 
 #include <Arduino.h>
+#include <Debug.h>
 
 #define ADOPTION_BUTTON_PIN 2
 

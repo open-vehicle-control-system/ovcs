@@ -4,7 +4,7 @@ bool AdoptionButton::isWaitingAdoption() {
   if (!_waitingAdoption) {
     bool buttonPressed = digitalRead(ADOPTION_BUTTON_PIN) == HIGH;
     if(buttonPressed && !_buttonWasPressed){
-      Serial.println("> Adoption pending...");
+      DPRINTLN("> Adoption pending...");
       _waitingAdoption = true;
       _adopted         = false;
     }
