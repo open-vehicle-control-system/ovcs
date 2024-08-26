@@ -1,7 +1,7 @@
 defmodule VmsCore.Vehicle do
   use GenServer
   require Logger
-  alias VmsCore.{Inverter, BatteryManagementSystem, IgnitionLock, Controllers.ControlsController, Status, Charger}
+  alias VmsCore.{Inverter, BatteryManagementSystem, IgnitionLock, Controllers.ControlsController, Status, Charger, BreakingSystem}
   alias Decimal, as: D
 
   @loop_sleep 10
@@ -127,7 +127,8 @@ defmodule VmsCore.Vehicle do
   end
 
   defp start_ignition(state) do
-    with :ok <- Inverter.on(),
+    with :ok <- BreakingSystem.on(),
+         :ok <- Inverter.on(),
          :ok <- BatteryManagementSystem.high_voltage_on()
     do
       %{state | ignition_started: true}
@@ -139,11 +140,13 @@ defmodule VmsCore.Vehicle do
   defp ready_to_drive?(state) do
     {:ok, bms_ready}      = BatteryManagementSystem.ready_to_drive?()
     {:ok, inverter_ready} = Inverter.ready_to_drive?()
-    state.ignition_started && bms_ready && inverter_ready
+    {:ok, breaking_system_ready} = BreakingSystem.ready_to_drive?()
+    state.ignition_started && bms_ready && inverter_ready && breaking_system_ready
   end
 
   defp shutdown(state) do
-    with :ok <- Inverter.off(),
+    with :ok <- BreakingSystem.off(),
+         :ok <- Inverter.off(),
          :ok <- BatteryManagementSystem.high_voltage_off()
     do
       %{state | ignition_started: false}

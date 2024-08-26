@@ -16,3 +16,6 @@ signals:
   - name: water_pump_enabled
     value_start: 6
     <<: *digital_pin_parameters
+  - name: ibooster_enabled
+    value_start: 7
+    <<: *digital_pin_parameters

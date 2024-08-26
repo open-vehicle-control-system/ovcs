@@ -21,7 +21,6 @@ defmodule VmsCore.Bosch.IboosterGen2 do
   def init(_) do
     :ok = init_emitters()
     :ok = Receiver.subscribe(self(), @network_name, [@ibooster_status_frame_name])
-    :ok = Emitter.enable(@network_name, [@vehicle_status_frame_name, @vehicle_alive_frame_name, @brake_request_frame_name])
     {:ok, %{
       status: "off",
       driver_brake_apply: "not_init_or_off",
@@ -57,8 +56,18 @@ defmodule VmsCore.Bosch.IboosterGen2 do
     {:reply, {:ok, state}, state}
   end
 
+  @impl true
+  def handle_call(:ready_to_drive?, _from, state) do
+    ready = state.status == "ready" || state.status == "actuation" || state.status == "active_good_check"
+    {:reply, {:ok, ready}, state}
+  end
+
   def state() do
     GenServer.call(__MODULE__, :state)
+  end
+
+  def ready_to_drive?() do
+    GenServer.call(__MODULE__, :ready_to_drive?)
   end
 
   def set_flow_rate(percent) do
@@ -84,6 +93,14 @@ defmodule VmsCore.Bosch.IboosterGen2 do
     :ok = Emitter.update(@network_name, frame_name, fn (data) ->
       %{data | "external_request" => value}
     end)
+  end
+
+  def on() do
+    :ok = Emitter.enable(@network_name, [@vehicle_status_frame_name, @vehicle_alive_frame_name, @brake_request_frame_name])
+  end
+
+  def off() do
+    :ok = Emitter.disable(@network_name, [@vehicle_status_frame_name, @vehicle_alive_frame_name, @brake_request_frame_name])
   end
 
   defp init_emitters() do

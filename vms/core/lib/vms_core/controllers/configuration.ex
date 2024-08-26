@@ -47,7 +47,7 @@ defmodule VmsCore.Controllers.Configuration do
         "digital_pin4" => "disabled",
         "digital_pin5" => "read_write",
         "digital_pin6" => "read_write",
-        "digital_pin7" => "disabled",
+        "digital_pin7" => "read_write",
         "digital_pin8" => "disabled",
         "digital_pin9" => "disabled",
         "digital_pin10" => "disabled",

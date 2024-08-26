@@ -21,8 +21,11 @@ signals:
   - name: water_pump_enabled
     value_start: 6
     <<: *pin_parameters
-  - name: filler1
+  - name: ibooster_enabled
     value_start: 7
-    value_length: 57
+    <<: *pin_parameters
+  - name: filler1
+    value_start: 8
+    value_length: 56
     kind: static
     value: 0

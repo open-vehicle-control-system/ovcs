@@ -9,6 +9,7 @@ defmodule VmsCore.Controllers.FrontController do
   @front_controller_status_frame_name "front_controller_status"
   @inverter_enabled "inverter_enabled"
   @water_pump_enabled "water_pump_enabled"
+  @ibooster_enabled "ibooster_enabled"
 
 
   @impl true
@@ -18,13 +19,15 @@ defmodule VmsCore.Controllers.FrontController do
       parameters_builder_function: :default,
       initial_data: %{
         @inverter_enabled   => false,
-        @water_pump_enabled => false
+        @water_pump_enabled => false,
+        @ibooster_enabled => false
       }
     })
     Emitter.enable(@network_name, @front_controller_request_frame_name)
     {:ok, %{
       inverter_enabled: false,
-      water_pump_enabled: false
+      water_pump_enabled: false,
+      ibooster_enabled: false
     }}
   end
 
@@ -36,11 +39,13 @@ defmodule VmsCore.Controllers.FrontController do
   def handle_info({:handle_frame,  %Frame{signals: signals}}, state) do
     %{
       @inverter_enabled  => %Signal{value: inverter_enabled},
-      @water_pump_enabled => %Signal{value: water_pump_enabled}
+      @water_pump_enabled => %Signal{value: water_pump_enabled},
+      @ibooster_enabled => %Signal{value: ibooster_enabled}
     } = signals
     {:noreply, %{state |
       inverter_enabled: inverter_enabled,
-      water_pump_enabled: water_pump_enabled
+      water_pump_enabled: water_pump_enabled,
+      ibooster_enabled: ibooster_enabled
     }}
   end
 
@@ -60,6 +65,14 @@ defmodule VmsCore.Controllers.FrontController do
 
   def switch_off_inverter() do
     actuate_relay(@inverter_enabled, false)
+  end
+
+  def switch_on_ibooster() do
+    actuate_relay(@ibooster_enabled, true)
+  end
+
+  def switch_off_ibooster() do
+    actuate_relay(@ibooster_enabled, false)
   end
 
   def switch_on_water_pump() do
