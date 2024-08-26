@@ -1,0 +1,32 @@
+---
+name: lws_status
+id: 0x2B0
+frequency: 10
+signals:
+  - name: steering_wheel_angle
+    value_start: 0
+    value_length: 16
+  - name: steering_wheel_angular_speed
+    value_start: 16
+    value_length: 8
+  - name: steering_wheel_trimming_valid
+    value_start: 29
+    value_length: 1
+    kind: enum
+    mapping:
+      0x01: true
+      0x00: false
+  - name: steering_wheel_calibration_valid
+    value_start: 30
+    value_length: 1
+    kind: enum
+    mapping:
+      0x01: true
+      0x00: false
+  - name: steering_wheel_sensor_ready
+    value_start: 31
+    value_length: 1
+    kind: enum
+    mapping:
+      0x01: true
+      0x00: false

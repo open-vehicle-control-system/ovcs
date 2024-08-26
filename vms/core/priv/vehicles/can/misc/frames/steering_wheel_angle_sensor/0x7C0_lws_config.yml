@@ -1,0 +1,26 @@
+---
+# A zero adjustment is needed before using the sensor for the first time.
+# To do so, reset the calibration with CCW = 0x05. After resetting the calibration, a new calibration needs to be started with CCW = 0x03.
+# The sensor is now newly calibrated and can be used immediately.
+# Source: https://www.bosch-motorsport.de/content/downloads/Raceparts/en-GB/54425995191962507.html#/Tabs=54439179/
+name: lws_config
+id: 0x7C0
+frequency: 10
+signals:
+  - name: filler0
+    kind: static
+    value_start: 0
+    value_length: 5
+    value: 0
+  - name: command
+    value_start: 5
+    value_length: 3
+    kind: enum
+    mapping:
+      0x03: set_angle_zero
+      0x05: reset_angle_calibration_status
+  - name: filler1
+    kind: static
+    value_start: 8
+    value_length: 8
+    value: 0

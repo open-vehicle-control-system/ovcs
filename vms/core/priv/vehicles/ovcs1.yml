@@ -33,8 +33,10 @@ can_networks:
       - import!:can/misc/frames/ibooster/0x38D_vehicle_alive.yml
       - import!:can/polo_drive/frames/0x280_engine_status.yml
       - import!:can/polo_drive/frames/0x5A0_abs_status.yml
+      - import!:can/misc/frames/steering_wheel_angle_sensor/0x7C0_lws_config.yml
     received_frames:
       - import!:can/misc/frames/ibooster/0x39D_ibooster_status.yml
+      - import!:can/misc/frames/steering_wheel_angle_sensor/0x2B0_lws_status.yml
   orion_bms:
     bitrate: 500000
     emitted_frames:
