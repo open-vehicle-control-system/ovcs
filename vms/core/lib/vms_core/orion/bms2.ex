@@ -13,7 +13,6 @@ defmodule VmsCore.Orion.Bms2 do
   def init(_) do
     :ok = init_emitters()
     :ok = Receiver.subscribe(self(), @network_name, [@bms_status_1_frame_name, @bms_status_2_frame_name])
-    :ok = Emitter.enable(@network_name, @bms_command_frame_name)
     {:ok, %{
       charge_max_power: @zero,
       discharge_max_power: @zero,
@@ -96,6 +95,18 @@ defmodule VmsCore.Orion.Bms2 do
     {:reply, {:ok, state}, state}
   end
 
+  @impl true
+  def handle_call(:on, _from, state) do
+    :ok = Emitter.enable(@network_name, @bms_command_frame_name)
+    {:reply, :ok, state}
+  end
+
+  @impl true
+  def handle_call(:off, _from, state) do
+    :ok = Emitter.disable(@network_name, @bms_command_frame_name)
+    {:reply, :ok, state}
+  end
+
   defp init_emitters() do
     :ok = Emitter.configure(@network_name, @bms_command_frame_name, %{
       parameters_builder_function: :default,
@@ -116,6 +127,14 @@ defmodule VmsCore.Orion.Bms2 do
 
   def status() do
     GenServer.call(__MODULE__, :status)
+  end
+
+  def on() do
+    GenServer.call(__MODULE__, :on)
+  end
+
+  def off() do
+    GenServer.call(__MODULE__, :off)
   end
 
   def ac_input_voltage(ac_input_voltage) do
