@@ -1,7 +1,13 @@
 ---
 name: handbrake_status
 id: 0x320
+frequency: 20
 signals:
+  - name: filler0
+    kind: static
+    value_start: 0
+    value_length: 8
+    value: 0
   - name: handbrake_engaged
     kind: enum
     value_start: 8
@@ -9,3 +15,8 @@ signals:
     mapping:
       0x00: false
       0x02: true
+  - name: filler1
+    kind: static
+    value_start: 16
+    value_length: 48
+    value: 0

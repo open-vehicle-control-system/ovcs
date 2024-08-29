@@ -6,9 +6,18 @@ signals:
   - name: steering_wheel_angle
     value_start: 0
     value_length: 16
+    sign: signed
+    scale: "0.1"
   - name: steering_wheel_angular_speed
     value_start: 16
     value_length: 8
+    scale: "4"
+  - name: sf1_5?
+    value_start: 24
+    value_length: 5
+  - name: sf1_5?
+    value_start: 24
+    value_length: 5
   - name: steering_wheel_trimming_valid
     value_start: 29
     value_length: 1
@@ -30,3 +39,11 @@ signals:
     mapping:
       0x01: true
       0x00: false
+  - name: checksum
+    value_start: 32
+    value_length: 4
+    kind: integer
+  - name: counter
+    value_start: 36
+    value_length: 4
+    kind: integer
