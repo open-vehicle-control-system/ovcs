@@ -67,12 +67,11 @@ defmodule VmsCore.Controllers.ControlsController do
 
   @impl true
   def handle_info({:handle_frame, %Frame{signals: signals}}, %{car_controls: %{calibration_status: "started"}} = state) do
-    %{"raw_max_throttle" => %Signal{value: raw_max_throttle}} = signals
     state = Map.replace(state, :car_controls, %{
       throttle: 0, # Makes sure no throttle during
-      raw_max_throttle: raw_max_throttle,
-      low_raw_throttle_a: raw_max_throttle,
-      low_raw_throttle_b: raw_max_throttle,
+      raw_max_throttle: @raw_max_throttle ,
+      low_raw_throttle_a: @raw_max_throttle ,
+      low_raw_throttle_b: @raw_max_throttle ,
       high_raw_throttle_a: 0,
       high_raw_throttle_b: 0,
       raw_throttle_a: 0,
@@ -85,14 +84,13 @@ defmodule VmsCore.Controllers.ControlsController do
   @impl true
   def handle_info({:handle_frame, %Frame{signals: signals}}, %{car_controls: %{calibration_status: "in_progress"}} = state) do
     %{
-      "raw_max_throttle" => %Signal{value: raw_max_throttle},
-      "raw_throttle_a"   => %Signal{value: raw_throttle_a},
-      "raw_throttle_b"   => %Signal{value: raw_throttle_b}
+      "raw_throttle_a" => %Signal{value: raw_throttle_a},
+      "raw_throttle_b" => %Signal{value: raw_throttle_b}
     } = signals
 
     state = Map.replace(state, :car_controls, %{
       throttle: 0, # Makes sure no throttle during calibration
-      raw_max_throttle: raw_max_throttle,
+      raw_max_throttle: @raw_max_throttle,
       low_raw_throttle_a: Enum.min([state.car_controls.low_raw_throttle_a, raw_throttle_a]),
       low_raw_throttle_b: Enum.min([state.car_controls.low_raw_throttle_b, raw_throttle_b]),
       high_raw_throttle_a: Enum.max([state.car_controls.high_raw_throttle_a, raw_throttle_a]),
