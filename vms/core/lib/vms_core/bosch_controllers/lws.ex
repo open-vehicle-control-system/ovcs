@@ -68,7 +68,7 @@ defmodule VmsCore.Bosch.Lws do
     end)
     :ok = Emitter.enable(@network_name, @lws_config_frame_name)
     :timer.sleep(1000)
-    :ok = Emitter.enable(@network_name, @lws_config_frame_name)
+    :ok = Emitter.disable(@network_name, @lws_config_frame_name)
   end
 
   def set_angle_0 do
@@ -77,6 +77,6 @@ defmodule VmsCore.Bosch.Lws do
     end)
     :ok = Emitter.enable(@network_name, @lws_config_frame_name)
     :timer.sleep(1000)
-    :ok = Emitter.enable(@network_name, @lws_config_frame_name)
+    :ok = Emitter.disable(@network_name, @lws_config_frame_name)
   end
 end
