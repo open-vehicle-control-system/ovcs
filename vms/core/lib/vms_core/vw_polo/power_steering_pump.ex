@@ -3,14 +3,16 @@ defmodule VmsCore.VwPolo.PowerSteeringPump do
   alias Cantastic.{Emitter, Frame, Receiver}
 
   @polo_network_name :polo_drive
-  @abs_status_frame_name "abs_status"
+  @handbrake_status_frame_name "handbrake_status"
 
   @network_name :misc
   @engine_status_frame_name "engine_status"
 
   @impl true
-  def handle_info({:handle_frame,  %Frame{name: @abs_status_frame_name} = frame}, state) do
-    :ok = Emitter.forward(@network_name, frame)
+  def handle_info({:handle_frame,  %Frame{name: @handbrake_status_frame_name} = frame}, state) do
+    if state.on do
+      :ok = Emitter.forward(@network_name, frame)
+    end
     {:noreply, state}
   end
 
@@ -22,8 +24,8 @@ defmodule VmsCore.VwPolo.PowerSteeringPump do
         "engine_rotations_per_minute" => 0
       }
     })
-    :ok = Receiver.subscribe(self(), @polo_network_name, @abs_status_frame_name)
-    {:ok, %{}}
+    :ok = Receiver.subscribe(self(), @polo_network_name, @handbrake_status_frame_name)
+    {:ok, %{on: false}}
   end
 
   def start_link(_) do
@@ -36,11 +38,23 @@ defmodule VmsCore.VwPolo.PowerSteeringPump do
     end)
   end
 
-  def on() do
+  @impl true
+  def handle_call(:on, _from, state) do
     Emitter.enable(@network_name, @engine_status_frame_name)
+    {:reply, :ok, %{state | on: true}}
+  end
+
+  @impl true
+  def handle_call(:off, _from, state) do
+    Emitter.disable(@network_name, @engine_status_frame_name)
+    {:reply, :ok, %{state | on: false}}
+  end
+
+  def on() do
+    GenServer.call(__MODULE__, :on)
   end
 
   def off() do
-    Emitter.disable(@network_name, @engine_status_frame_name)
+    GenServer.call(__MODULE__, :off)
   end
 end
