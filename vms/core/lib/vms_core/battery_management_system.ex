@@ -62,7 +62,9 @@ defmodule VmsCore.BatteryManagementSystem do
 
   @impl true
   def handle_cast(:high_voltage_on, state) do
-    with :ok <- RearController.switch_on_high_voltage()
+    with  :ok <- RearController.switch_on_bms_ready(),
+          :ok <- Orion.Bms2.on(),
+          :ok <- RearController.switch_on_high_voltage()
     do
       {:noreply, state}
     else
@@ -72,7 +74,9 @@ defmodule VmsCore.BatteryManagementSystem do
 
   @impl true
   def handle_cast(:high_voltage_off, state) do
-    with :ok <- RearController.switch_off_high_voltage()
+    with  :ok <- RearController.switch_off_high_voltage(),
+          :ok <- Orion.Bms2.off(),
+          :ok <- RearController.switch_off_bms_ready()
     do
       {:noreply, state}
     else
