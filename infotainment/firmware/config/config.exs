@@ -23,6 +23,11 @@ config :nerves, source_date_epoch: "1698084254"
 config :nerves, :firmware,
   fwup_conf: "config/fwup.conf"
 
+config :nerves, :erlinit,
+  pre_run_exec: "sh /splash.sh &",
+  ctty: "3",
+  warn_unused_tty: false
+
 if Mix.target() == :host do
   import_config "host.exs"
 else
