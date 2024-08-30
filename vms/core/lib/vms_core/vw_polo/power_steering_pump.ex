@@ -11,7 +11,7 @@ defmodule VmsCore.VwPolo.PowerSteeringPump do
   @impl true
   def handle_info({:handle_frame,  %Frame{name: @handbrake_status_frame_name} = frame}, state) do
     if state.on do
-      :ok = Emitter.forward(@network_name, frame)
+      Emitter.forward(@network_name, frame)
     end
     {:noreply, state}
   end
