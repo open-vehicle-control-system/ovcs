@@ -10,6 +10,7 @@
                 <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Interface</th>
                 <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">SPI Interface</th>
                 <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">State</th>
+                <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Bitrate</th>
                 <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Tx queue length</th>
                 <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Load</th>
                 </tr>
@@ -27,6 +28,7 @@
                     <span>{{ networkInterface.attributes.statistics.operstate }}</span>
                     </div>
                 </td>
+                <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{{ networkInterface.attributes.bitrate }}</td>
                 <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{{ networkInterface.attributes.statistics.txqlen }}</td>
                 <td v-if="networkInterfaces.statistics[networkInterface.attributes.statistics.ifindex]" class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                     <div class="inline-block bg-gray-200 rounded-full h-2.5 dark:bg-gray-100 w-20">
