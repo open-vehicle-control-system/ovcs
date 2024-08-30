@@ -66,7 +66,7 @@ defmodule VmsCore.Controllers.ControlsController do
   end
 
   @impl true
-  def handle_info({:handle_frame, %Frame{signals: signals}}, %{car_controls: %{calibration_status: "started"}} = state) do
+  def handle_info({:handle_frame, %Frame{signals: _signals}}, %{car_controls: %{calibration_status: "started"}} = state) do
     state = Map.replace(state, :car_controls, %{
       throttle: 0, # Makes sure no throttle during
       raw_max_throttle: @raw_max_throttle ,

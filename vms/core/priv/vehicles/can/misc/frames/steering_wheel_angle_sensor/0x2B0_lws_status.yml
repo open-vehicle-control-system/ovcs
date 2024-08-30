@@ -12,12 +12,6 @@ signals:
     value_start: 16
     value_length: 8
     scale: "4"
-  - name: sf1_5?
-    value_start: 24
-    value_length: 5
-  - name: sf1_5?
-    value_start: 24
-    value_length: 5
   - name: steering_wheel_trimming_valid
     value_start: 29
     value_length: 1
@@ -40,10 +34,10 @@ signals:
       0x01: true
       0x00: false
   - name: checksum
+    kind: integer
     value_start: 32
     value_length: 4
-    kind: integer
   - name: counter
+    kind: integer
     value_start: 36
     value_length: 4
-    kind: integer

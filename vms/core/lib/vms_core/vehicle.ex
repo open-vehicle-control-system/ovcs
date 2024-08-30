@@ -6,6 +6,7 @@ defmodule VmsCore.Vehicle do
 
   @loop_sleep 10
   @gear_shift_throttle_limit D.new("0.05")
+  @gear_shift_speed_limit D.new("1")
   @zero D.new(0)
 
   def start_link(args) do
@@ -50,19 +51,22 @@ defmodule VmsCore.Vehicle do
   defp handle_gear(state) do
     with {:ok, requested_gear} <- gear_control_module().requested_gear(),
          selected_gear         <- state.selected_gear,
-         {:ok, throttle}       <- ControlsController.throttle()
+         {:ok, throttle}       <- ControlsController.throttle(),
+         {:ok, speed}          <- VmsCore.VwPolo.Abs.speed()
     do
-      case {selected_gear, requested_gear, D.lt?(throttle, @gear_shift_throttle_limit)} do
-        {"parking", "parking", _} -> state
-        {"reverse", "reverse", _} -> state
-        {"neutral", "neutral", _} -> state
-        {"drive", "drive", _}     -> state
-        {_, "parking", true}      -> select_gear("parking", state)
-        {_, "reverse", true}      -> select_gear("reverse", state)
-        {"neutral", "drive", _}   -> select_gear("drive", state)
-        {_, "drive", true}        -> select_gear("drive", state)
-        {_, "neutral", _}         -> select_gear("neutral", state)
-        _                         -> state
+      throttle_near_zero = D.lt?(throttle, @gear_shift_throttle_limit)
+      speed_near_zero    = D.abs(speed) |> D.lt?(@gear_shift_speed_limit)
+      ready_to_drive     = state.ready_to_drive?
+      case {selected_gear, requested_gear, throttle_near_zero && speed_near_zero, ready_to_drive} do
+        {"parking", "parking", _, _} -> state
+        {"reverse", "reverse", _, _} -> state
+        {"neutral", "neutral", _, _} -> state
+        {"drive", "drive", _, _}     -> state
+        {_, "parking", true, _}      -> select_gear("parking", state)
+        {_, "reverse", true, true}   -> select_gear("reverse", state)
+        {_, "drive", true, true}     -> select_gear("drive", state)
+        {_, "neutral", _, _}         -> select_gear("neutral", state)
+        _                            -> state
       end
     else
       :unexpected -> :unexpected

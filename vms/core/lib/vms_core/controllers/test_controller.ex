@@ -1,7 +1,7 @@
 defmodule VmsCore.Controllers.TestController do
   use GenServer
 
-  alias Cantastic.{Frame, Signal, Emitter}
+  alias Cantastic.{Frame, Emitter}
 
   @network_name :ovcs
 

@@ -23,7 +23,14 @@ vehicle = System.get_env("VEHICLE") || "ovcs1"
 config :infotainment_core, :vehicle, vehicle
 
 config :cantastic,
-  can_networks: (System.get_env("CAN_NETWORKS") || "ovcs:vcan0"),
+  can_network_mappings: fn() ->
+    (System.get_env("CAN_NETWORK_MAPPINGS") || "ovcs:vcan0")
+    |> String.split(",", trim: true)
+    |> Enum.map(fn(i) ->
+      [network_name, can_interface] = i |> String.split(":", trim: true)
+      {network_name, can_interface}
+    end)
+  end,
   setup_can_interfaces: (System.get_env("SETUP_CAN_INTERFACES") == "true" || false),
   otp_app: :infotainment_core,
   priv_can_config_path: "vehicles/#{vehicle}.yml"
