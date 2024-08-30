@@ -29,7 +29,7 @@ defmodule VmsCore.Application do
       {VmsCore.IgnitionLock, []},
       {VmsCore.Inverter, []},
       {VmsCore.Vehicle, []},
-      {VmsCore.NetworkInterfacesMonitor, []},
+      {VmsCore.NetworkInterfacesManager, []},
       {VmsCore.Status, []},
       {VmsCore.Infotainment, []},
       {VmsCore.Bosch.IboosterGen2, []},
