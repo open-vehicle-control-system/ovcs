@@ -3,7 +3,7 @@ import { defineStore } from 'pinia'
 
 export const useNetworkInterfaces = defineStore('networkInterfaces', {
     state: () => ({
-        interfaces: [],
+        data: [],
         statistics: {}
     }),
     getters: {
@@ -35,8 +35,8 @@ export const useNetworkInterfaces = defineStore('networkInterfaces', {
             this.statistics[ifindex]["load"] = 0;
         },
         computeInterfacesLoad(){
-            for(let i = 0; i < this.interfaces.length; i++){
-                let networkInterface = this.interfaces[i];
+            for(let i = 0; i < this.data.length; i++){
+                let networkInterface = this.data[i].attributes.statistics;
                 if(networkInterface.linkinfo && networkInterface.linkinfo.info_data && networkInterface.linkinfo.info_data.bittiming){
                     if(this.statistics[networkInterface.ifindex] == undefined){
                         this.setupStatisticsForInterface(networkInterface.ifindex);

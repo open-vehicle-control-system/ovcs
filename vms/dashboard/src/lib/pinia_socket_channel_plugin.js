@@ -6,7 +6,11 @@ export const PiniaSocketChannelPlugin = context => {
             if(callback){
                 callback(that);
             };
-            that.$patch(payload.attributes)
+            if (payload.data !== undefined) {
+                that.$patch(payload)
+            } else {
+                that.$patch(payload.attributes)
+            }
         })
         channel.join().receive("ok", () => {});
     };

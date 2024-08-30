@@ -10,7 +10,7 @@
 
             <h3 class="text-base mt-10">Interfaces traffic</h3>
             <div class="space-y-10 mt-10">
-              <NetworkInterfaceStatistics v-for="networkInterface in networkInterfaces.interfaces" :key="networkInterface.ifname" :networkInterface="networkInterface"></NetworkInterfaceStatistics>
+              <NetworkInterfaceStatistics v-for="networkInterface in networkInterfaces.data" :key="networkInterface.interfaceName" :networkInterface="networkInterface"></NetworkInterfaceStatistics>
             </div>
           </div>
         </div>
