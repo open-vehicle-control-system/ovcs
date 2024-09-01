@@ -24,7 +24,7 @@ config :nerves, :firmware,
   fwup_conf: "config/fwup.conf"
 
 config :nerves, :erlinit,
-  pre_run_exec: "sh /splash.sh &",
+  pre_run_exec: "sh /splash.sh",
   ctty: "tty1",
   warn_unused_tty: false
 
