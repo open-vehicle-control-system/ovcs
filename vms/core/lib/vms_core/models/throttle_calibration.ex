@@ -1,7 +1,7 @@
-defmodule VmsCore.ControlsCalibration do
+defmodule VmsCore.ThrottleCalibration do
   use Ecto.Schema
 
-  schema "ControlsCalibration" do
+  schema "throttle_calibrations" do
     field :key, :string
     field :value, :integer
     timestamps()

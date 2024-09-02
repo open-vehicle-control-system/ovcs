@@ -1,7 +1,8 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import HomeView from '../views/HomeView.vue'
 import NetworkView from '../views/NetworkView.vue'
-import CarControlsView from '../views/CarControlsView.vue'
+import ThrottleView from '../views/ThrottleView.vue'
+import SteeringView from '../views/SteeringView.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -17,9 +18,14 @@ const router = createRouter({
       component: NetworkView
     },
     {
-      path: '/car-controls',
-      name: 'car controls',
-      component: CarControlsView
+      path: '/throttle',
+      name: 'throttle',
+      component: ThrottleView
+    },
+    {
+      path: '/steering',
+      name: 'steering',
+      component: SteeringView
     }
   ]
 })

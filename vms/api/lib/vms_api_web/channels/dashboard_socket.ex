@@ -2,6 +2,7 @@ defmodule VmsApiWeb.DashboardSocket do
   use Phoenix.Socket
 
   channel "throttle", VmsApiWeb.ThrottleChannel
+  channel "steering", VmsApiWeb.SteeringChannel
   channel "network-interfaces", VmsApiWeb.NetworkInterfacesChannel
   channel "inverter", VmsApiWeb.InverterChannel
   channel "vehicle", VmsApiWeb.VehicleChannel

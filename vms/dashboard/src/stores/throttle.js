@@ -1,7 +1,7 @@
 import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 
-export const useCarControls = defineStore('carControls', {
+export const useThrottle = defineStore('throttle', {
     state: () => ({
         calibrationStatus: "disabled",
         rawMaxThrottle: 0,

@@ -1,23 +1,23 @@
 <template>
-  <RealTimeLineChart ref="throttleChart" :title="chartTitle" :series="series" :id="chartId" :serieMaxSize="serieMaxSize" :yaxis="yaxis"></RealTimeLineChart>
+  <RealTimeLineChart ref="steeringChart" :title="chartTitle" :series="series" :id="chartId" :serieMaxSize="serieMaxSize" :yaxis="yaxis"></RealTimeLineChart>
 </template>
 
 <script setup>
     import RealTimeLineChart from "./RealTimeLineChart.vue"
     import { ref } from "vue"
 
-    const props = defineProps(['carControls'])
+    const props = defineProps(['throttle'])
 
-    const chartTitle    = "Throttle";
-    const chartId       = "realtime-throttle-chart";
-    const throttleChart = ref();
+    const chartTitle    = "Steering";
+    const chartId       = "realtime-steering-chart";
+    const steeringChart = ref();
     const serieMaxSize  = 300;
 
     const throttleALabel = "Throttle A"
     const throttleBLabel = "Throttle B"
     const throttleLabel  = "Computed Throttle"
 
-    const carControls = props.carControls
+    const throttle = props.throttle
 
     let series = [
         {name: throttleALabel},
@@ -42,7 +42,7 @@
         ]);
     }
 
-    carControls.$subscribe((mutation, state) => {
+    throttle.$subscribe((mutation, state) => {
         setMax(state.rawMaxThrottle);
         updateSeries(state);
     })

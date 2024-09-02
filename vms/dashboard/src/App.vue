@@ -47,6 +47,7 @@
   let navigation = [
     { name: 'Dashboard', href: '/', icon: HomeIcon, current: currentRouteName == '/' },
     { name: 'Network', href: '/network', icon: GlobeAltIcon, current: currentRouteName == '/network' },
-    { name: 'Car Controls', href: '/car-controls', icon: AdjustmentsVerticalIcon, current: currentRouteName == '/car-controls' },
+    { name: 'Throttle', href: '/throttle', icon: AdjustmentsVerticalIcon, current: currentRouteName == '/throttle' },
+    { name: 'Steering', href: '/steering', icon: AdjustmentsVerticalIcon, current: currentRouteName == '/steering' },
   ]
 </script>

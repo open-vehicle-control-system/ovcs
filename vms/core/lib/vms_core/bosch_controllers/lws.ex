@@ -57,25 +57,32 @@ defmodule VmsCore.Bosch.Lws do
     {:reply, {:ok, state}, state}
   end
 
-  def state() do
+  def status() do
     GenServer.call(__MODULE__, :state)
   end
 
-  def reset_angle_calibration_status do
+
+  def calibrate_angle_0 do
+    :ok = reset_angle_calibration_status()
+    :timer.sleep(500)
+    :ok = set_angle_0()
+  end
+
+  defp reset_angle_calibration_status do
     :ok = Emitter.update(@network_name, @lws_config_frame_name, fn (data) ->
       %{data | "command" => "reset_angle_calibration_status"}
     end)
     :ok = Emitter.enable(@network_name, @lws_config_frame_name)
-    :timer.sleep(1000)
+    :timer.sleep(500)
     :ok = Emitter.disable(@network_name, @lws_config_frame_name)
   end
 
-  def set_angle_0 do
+  defp set_angle_0 do
     :ok = Emitter.update(@network_name, @lws_config_frame_name, fn (data) ->
       %{data | "command" => "set_angle_zero"}
     end)
     :ok = Emitter.enable(@network_name, @lws_config_frame_name)
-    :timer.sleep(1000)
+    :timer.sleep(500)
     :ok = Emitter.disable(@network_name, @lws_config_frame_name)
   end
 end

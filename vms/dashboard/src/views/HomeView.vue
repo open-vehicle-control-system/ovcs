@@ -38,7 +38,7 @@
         </tbody>
       </table>
     </div>
-    <RealTimeThrottleChart ref="realTimeThrottleChart" :carControls="carControls"></RealTimeThrottleChart>
+    <RealTimeThrottleChart ref="realTimeThrottleChart" :throttle="throttle"></RealTimeThrottleChart>
     <RealTimeTorqueChart ref="realTimeTorqueChart" :inverter="inverter"></RealTimeTorqueChart>
     <RealTimeTemperatureChart ref="realTimeTemperatureChart" :inverter="inverter"></RealTimeTemperatureChart>
     <RealTimeRpmVoltageChart ref="realTimeRpmVoltageChart" :inverter="inverter"></RealTimeRpmVoltageChart>
@@ -48,7 +48,7 @@
 
 <script setup>
   import { vmsDashboardSocket } from '../services/socket_service.js'
-  import { useCarControls } from "../stores/car_controls.js"
+  import { useThrottle } from "../stores/throttle.js"
   import { useInverter } from "../stores/inverter.js"
   import { useVehicle } from "../stores/vehicle.js"
   import { useSystemStatus } from "../stores/system_status.js"
@@ -60,14 +60,14 @@
   import RealTimeRpmVoltageChart from "../components/charts/RealTimeRpmVoltageChart.vue"
   import RealTimeSpeedChart from "../components/charts/RealTimeSpeedChart.vue"
 
-  const carControls = useCarControls();
+  const throttle = useThrottle();
   const inverter = useInverter();
   const vehicle = useVehicle();
   const systemStatus = useSystemStatus();
   const chartInterval = 70;
 
   onMounted(() => {
-    carControls.init(vmsDashboardSocket, chartInterval, "car-controls")
+    throttle.init(vmsDashboardSocket, chartInterval, "throttle")
     inverter.init(vmsDashboardSocket, chartInterval, "inverter")
     vehicle.init(vmsDashboardSocket, chartInterval, "vehicle")
     systemStatus.init(vmsDashboardSocket, chartInterval, "system-status")
