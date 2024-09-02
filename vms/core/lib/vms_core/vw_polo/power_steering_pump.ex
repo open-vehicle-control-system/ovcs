@@ -10,9 +10,7 @@ defmodule VmsCore.VwPolo.PowerSteeringPump do
 
   @impl true
   def handle_info({:handle_frame,  %Frame{name: @handbrake_status_frame_name} = frame}, state) do
-    if state.on do
-      Emitter.forward(@network_name, frame)
-    end
+    Emitter.forward(@network_name, frame)
     {:noreply, state}
   end
 
@@ -25,7 +23,8 @@ defmodule VmsCore.VwPolo.PowerSteeringPump do
       }
     })
     :ok = Receiver.subscribe(self(), @polo_network_name, @handbrake_status_frame_name)
-    {:ok, %{on: false}}
+    Emitter.enable(@network_name, @engine_status_frame_name)
+    {:ok, %{}}
   end
 
   def start_link(_) do
@@ -40,14 +39,14 @@ defmodule VmsCore.VwPolo.PowerSteeringPump do
 
   @impl true
   def handle_call(:on, _from, state) do
-    Emitter.enable(@network_name, @engine_status_frame_name)
-    {:reply, :ok, %{state | on: true}}
+    rotation_per_minute(1500)
+    {:reply, :ok, state}
   end
 
   @impl true
   def handle_call(:off, _from, state) do
-    Emitter.disable(@network_name, @engine_status_frame_name)
-    {:reply, :ok, %{state | on: false}}
+    rotation_per_minute(0)
+    {:reply, :ok, state}
   end
 
   def on() do

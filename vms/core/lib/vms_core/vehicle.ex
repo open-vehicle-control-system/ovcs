@@ -62,9 +62,15 @@ defmodule VmsCore.Vehicle do
         {"reverse", "reverse", _, _} -> state
         {"neutral", "neutral", _, _} -> state
         {"drive", "drive", _, _}     -> state
-        {_, "parking", true, _}      -> select_gear("parking", state)
-        {_, "reverse", true, true}   -> select_gear("reverse", state)
-        {_, "drive", true, true}     -> select_gear("drive", state)
+        {_, "parking", true, _}      ->
+          VmsCore.VwPolo.PowerSteeringPump.off()
+          select_gear("parking", state)
+        {_, "reverse", true, true}   ->
+          VmsCore.VwPolo.PowerSteeringPump.on()
+          select_gear("reverse", state)
+        {_, "drive", true, true}     ->
+          VmsCore.VwPolo.PowerSteeringPump.on()
+          select_gear("drive", state)
         {_, "neutral", _, _}         -> select_gear("neutral", state)
         _                            -> state
       end
@@ -149,7 +155,8 @@ defmodule VmsCore.Vehicle do
   end
 
   defp shutdown(state) do
-    with :ok <- BreakingSystem.off(),
+    with :ok <- VmsCore.VwPolo.PowerSteeringPump.off(),
+         :ok <- BreakingSystem.off(),
          :ok <- Inverter.off(),
          :ok <- BatteryManagementSystem.high_voltage_off()
     do

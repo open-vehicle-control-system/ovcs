@@ -63,7 +63,6 @@ defmodule VmsCore.Bosch.Lws do
 
   def reset_angle_calibration_status do
     :ok = Emitter.update(@network_name, @lws_config_frame_name, fn (data) ->
-      IO.inspect data
       %{data | "command" => "reset_angle_calibration_status"}
     end)
     :ok = Emitter.enable(@network_name, @lws_config_frame_name)
