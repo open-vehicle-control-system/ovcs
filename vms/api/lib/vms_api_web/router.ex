@@ -7,7 +7,7 @@ defmodule VmsApiWeb.Router do
 
   scope "/api", VmsApiWeb.Api do
     pipe_through :api
-    resources "/calibration", CalibrationController, only: [:create, :show], singleton: true
+    resources "/throttle-calibration", ThrottleCalibrationController, only: [:create, :show], singleton: true
   end
 
   # Enable LiveDashboard in development

@@ -1,11 +1,11 @@
-defmodule VmsApiWeb.CarControlsChannel do
+defmodule VmsApiWeb.ThrottleChannel do
   use VmsApiWeb, :channel
   alias VmsCore.Controllers.ControlsController
 
   intercept ["update"]
 
   @impl true
-  def join("car-controls", payload, socket) do
+  def join("throttle", payload, socket) do
     send(self(), :push_car_controls_state)
     {:ok, timer} = :timer.send_interval(payload["interval"], :push_car_controls_state)
     {:ok, socket |> assign(:timer, timer)}
@@ -13,8 +13,8 @@ defmodule VmsApiWeb.CarControlsChannel do
 
   @impl true
   def handle_info(:push_car_controls_state, socket) do
-    {:ok, car_controls} = ControlsController.car_controls_state()
-    view = VmsApiWeb.Api.CarControlsJSON.render("car_controls.json", %{car_controls: car_controls})
+    {:ok, throttle} = ControlsController.car_controls_state()
+    view = VmsApiWeb.Api.ThrottleJSON.render("throttle.json", %{throttle: throttle})
     push(socket, "updated", view)
     {:noreply, socket}
   end
