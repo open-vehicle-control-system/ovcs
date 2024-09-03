@@ -8,7 +8,7 @@ defmodule InfotainmentFirmware.Application do
 
   @impl true
   def start(_type, _args) do
-    opts = [strategy: :rest_for_one, name: Example.Supervisor]
+    opts = [strategy: :one_for_one, name: Example.Supervisor]
     children = [
       {NervesFlutterpi,
         flutter_app_dir: "/var/flutter_assets",

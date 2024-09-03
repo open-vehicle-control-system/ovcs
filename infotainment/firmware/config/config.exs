@@ -25,7 +25,7 @@ config :nerves, :firmware,
 
 config :nerves, :erlinit,
   pre_run_exec: "sh /splash.sh",
-  ctty: "tty1",
+  ctty: "tty3",
   warn_unused_tty: false
 
 if Mix.target() == :host do

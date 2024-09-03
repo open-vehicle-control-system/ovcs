@@ -46,7 +46,7 @@ defmodule OvcsInfotainmentFirmware.MixProject do
       {:vintage_net_wifi, "~> 0.11.7", targets: @all_targets},
       {:plug_cowboy, "~> 2.0"},
       {:nerves_flutterpi, github: "Spin42/nerves_flutterpi"},
-      {:infotainment_api, path: "../api", targets: @all_targets, env: Mix.env()},
+      #{:infotainment_api, path: "../api", targets: @all_targets, env: Mix.env()},
 
       # Dependencies for specific targets
       # NOTE: It's generally low risk and recommended to follow minor version
@@ -55,10 +55,11 @@ defmodule OvcsInfotainmentFirmware.MixProject do
       # changes to your application are needed.
       {
         :ovcs_infotainment_flutter_system_rpi4,
-        github: "open-vehicle-control-system/ovcs_infotainment_flutter_system_rpi4",
+        path: "../../../ovcs_infotainment_flutter_system_rpi4",
+        #github: "open-vehicle-control-system/ovcs_infotainment_flutter_system_rpi4",
         runtime: false,
         targets: :ovcs_infotainment_flutter_system_rpi4,
-        nerves: [compile: false],
+        nerves: [compile: true],
       },
     ]
   end
