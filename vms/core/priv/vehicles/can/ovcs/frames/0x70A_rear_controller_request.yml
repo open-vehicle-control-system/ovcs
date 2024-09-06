@@ -1,6 +1,6 @@
 ---
 anchors:
-  pin_parameters: &pin_parameters
+  digital_pin_parameters: &digital_pin_parameters
     kind: enum
     value_length: 1
     mapping:
@@ -17,19 +17,19 @@ signals:
     value: 0
   - name: main_negative_contactor_enabled
     value_start: 5
-    <<: *pin_parameters
+    <<: *digital_pin_parameters
   - name: main_positive_contactor_enabled
     value_start: 6
-    <<: *pin_parameters
+    <<: *digital_pin_parameters
   - name: precharge_contactor_enabled
     value_start: 7
-    <<: *pin_parameters
+    <<: *digital_pin_parameters
   - name: bms_ready_enabled
     value_start: 8
-    <<: *pin_parameters
+    <<: *digital_pin_parameters
   - name: bms_charge_enabled
     value_start: 9
-    <<: *pin_parameters
+    <<: *digital_pin_parameters
   - name: filler1
     value_start: 10
     value_length: 54

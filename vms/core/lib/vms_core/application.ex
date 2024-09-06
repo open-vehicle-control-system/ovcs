@@ -39,7 +39,8 @@ defmodule VmsCore.Application do
       {VmsCore.VwPolo.PowerSteeringPump, []},
       {VmsCore.Controllers.TestController, []},
       {VmsCore.Bosch.Lws, []},
-      {VmsCore.BreakingSystem, []}
+      {VmsCore.BreakingSystem, []},
+      {VmsCore.SteeringColumn, []}
     ]
 
     opts = [strategy: :one_for_one, name: VmsCore.Supervisor]

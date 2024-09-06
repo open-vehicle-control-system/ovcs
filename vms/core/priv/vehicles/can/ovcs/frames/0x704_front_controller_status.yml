@@ -19,3 +19,6 @@ signals:
   - name: ibooster_enabled
     value_start: 7
     <<: *digital_pin_parameters
+  - name: steering_column_motor_enabled
+    value_start: 8
+    <<: *digital_pin_parameters

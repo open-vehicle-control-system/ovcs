@@ -15,32 +15,32 @@ defmodule VmsCore.BreakingSystem do
   end
 
   @impl true
-  def handle_cast(:on, state) do
+  def handle_call(:on, _from, state) do
     with  :ok <- FrontController.switch_on_ibooster(),
           :ok <- IboosterGen2.on()
     do
-      {:noreply, state}
+      {:reply, :ok, state}
     else
       :unexpected -> :unexpected
     end
   end
 
   @impl true
-  def handle_cast(:off, state) do
+  def handle_call(:off, _from, state) do
     with  :ok <- FrontController.switch_off_ibooster(),
           :ok <- IboosterGen2.off()
     do
-      {:noreply, state}
+      {:reply, :ok, state}
     else
       :unexpected -> :unexpected
     end
   end
 
   def on() do
-    GenServer.cast(__MODULE__, :on)
+    GenServer.call(__MODULE__, :on)
   end
 
   def off() do
-    GenServer.cast(__MODULE__, :off)
+    GenServer.call(__MODULE__, :off)
   end
 end

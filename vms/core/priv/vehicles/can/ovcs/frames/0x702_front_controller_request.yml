@@ -1,6 +1,6 @@
 ---
 anchors:
-  pin_parameters: &pin_parameters
+  digital_pin_parameters: &digital_pin_parameters
     kind: enum
     value_length: 1
     mapping:
@@ -17,15 +17,18 @@ signals:
     value: 0
   - name: inverter_enabled
     value_start: 5
-    <<: *pin_parameters
+    <<: *digital_pin_parameters
   - name: water_pump_enabled
     value_start: 6
-    <<: *pin_parameters
+    <<: *digital_pin_parameters
   - name: ibooster_enabled
     value_start: 7
-    <<: *pin_parameters
-  - name: filler1
+    <<: *digital_pin_parameters
+  - name: steering_column_motor_enabled
     value_start: 8
-    value_length: 56
+    <<: *digital_pin_parameters
+  - name: filler1
+    value_start: 9
+    value_length: 55
     kind: static
     value: 0

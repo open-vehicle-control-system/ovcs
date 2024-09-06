@@ -14,8 +14,8 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
   @max_rotation_per_minute 10000
   @zero D.new(0)
   @one D.new(1)
-  @drive_max_torque D.new(5) # TODO store in DB
-  @reverse_max_torque D.new(-5)
+  @drive_max_torque D.new(30) # TODO store in DB
+  @reverse_max_torque D.new(-15)
   @effective_throttle_threshold D.new("0.05")
   @motor_max_power D.new("80")
   @motor_max_torque D.new("250")
@@ -83,15 +83,22 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
 
   @impl true
   def handle_call({:throttle, percentage_throttle, gear, allowed_discharge_power}, _from, state) do
-    allowed_max_torque = D.div(allowed_discharge_power, @motor_max_power) |> D.min(@one) |> D.mult(@motor_max_torque)
+    # --- TODO reactivate when BMS implmented ---
+    # allowed_max_torque = D.div(allowed_discharge_power, @motor_max_power) |> D.min(@one) |> D.mult(@motor_max_torque)
+
+    # max_torque= case gear do
+    #   "drive"   ->
+    #     Decimal.min(@drive_max_torque, allowed_max_torque)
+    #   "reverse" ->
+    #     Decimal.max(@reverse_max_torque, allowed_max_torque)
+    #   _         ->
+    #     @zero
+    # end
 
     max_torque= case gear do
-      "drive"   ->
-        Decimal.min(@drive_max_torque, allowed_max_torque)
-      "reverse" ->
-        Decimal.max(@reverse_max_torque, allowed_max_torque)
-      _         ->
-        @zero
+      "drive"   -> @drive_max_torque
+      "reverse" -> @reverse_max_torque
+      _         -> @zero
     end
     percentage_throttle = case D.lt?(percentage_throttle, @effective_throttle_threshold)  do
       true  -> @zero

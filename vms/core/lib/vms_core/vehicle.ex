@@ -1,7 +1,7 @@
 defmodule VmsCore.Vehicle do
   use GenServer
   require Logger
-  alias VmsCore.{Inverter, BatteryManagementSystem, IgnitionLock, Controllers.ControlsController, Status, Charger, BreakingSystem}
+  alias VmsCore.{Inverter, BatteryManagementSystem, IgnitionLock, Controllers.ControlsController, Status, Charger, BreakingSystem, Controllers.RearController}
   alias Decimal, as: D
 
   @loop_sleep 10
@@ -21,7 +21,8 @@ defmodule VmsCore.Vehicle do
       selected_gear: "parking",
       ready_to_drive?: false,
       allowed_discharge_power: @zero,
-      allowed_charge_power: @zero
+      allowed_charge_power: @zero,
+      demo_mode: false
     }}
   end
 
@@ -90,7 +91,7 @@ defmodule VmsCore.Vehicle do
   end
 
   defp handle_throttle(state) do
-    case state.ready_to_drive? do
+    case state.ready_to_drive? && !state.demo_mode do
       true -> apply_throttle(state)
       _    -> state
     end
@@ -148,10 +149,11 @@ defmodule VmsCore.Vehicle do
   end
 
   defp ready_to_drive?(state) do
-    {:ok, bms_ready}      = BatteryManagementSystem.ready_to_drive?()
+    #{:ok, bms_ready}      = BatteryManagementSystem.ready_to_drive?() TODO when BMS is configured
     {:ok, inverter_ready} = Inverter.ready_to_drive?()
     {:ok, breaking_system_ready} = BreakingSystem.ready_to_drive?()
-    state.ignition_started && bms_ready && inverter_ready && breaking_system_ready
+    {:ok, rear_controller_ready} = RearController.ready_to_drive?()
+    state.ignition_started  && inverter_ready && breaking_system_ready && rear_controller_ready  ## && bms_ready
   end
 
   defp shutdown(state) do
@@ -181,5 +183,59 @@ defmodule VmsCore.Vehicle do
 
   defp gear_control_module() do
     Application.get_env(:vms_core, :gear_control_module)
+  end
+
+  @impl true
+  def handle_call(:enable_demo, _from, state) do
+    {:reply, :ok, %{state | demo_mode: true}}
+  end
+
+  def enable_demo() do
+    GenServer.call(__MODULE__, :enable_demo)
+  end
+
+  @impl true
+  def handle_call(:disable_demo, _from, state) do
+    {:reply, :ok, %{state | demo_mode: false}}
+  end
+
+  def disable_demo() do
+    GenServer.call(__MODULE__, :disable_demo)
+  end
+
+  def demo(throttle \\ D.new(0), steering \\ 500, flow_rate \\ 10) do
+    VmsCore.Vehicle.enable_demo()
+    :timer.sleep(50)
+    Logger.info("Start demo")
+    VmsCore.SteeringColumn.on(40, "clockwise") # stop
+    VmsCore.Bosch.IboosterGen2.activate_external_request()
+    Logger.info("Start throttle")
+
+    Enum.each(1..10, fn i ->
+      Logger.info("Set throttle to : #{D.div(throttle, D.new(11 - i))}")
+      Inverter.throttle(throttle, "drive", 0)
+      :timer.sleep(500)
+    end)
+
+    Logger.info("Start steering clockwise")
+    VmsCore.SteeringColumn.on(steering, "clockwise")
+    :timer.sleep(3000)
+    Logger.info("Start steering counter clockwise")
+    VmsCore.SteeringColumn.on(steering, "counter_clockwise")
+    :timer.sleep(3000)
+    Logger.info("Stop steering clockwise")
+    VmsCore.SteeringColumn.on(40, "clockwise")
+    Logger.info("Stop throttle")
+    Inverter.throttle(0, "drive", 0)
+    :timer.sleep(1000)
+    Logger.info("Start breaking")
+    VmsCore.Bosch.IboosterGen2.set_flow_rate(flow_rate)
+    :timer.sleep(5000)
+    Logger.info("Stop breaking")
+    VmsCore.Bosch.IboosterGen2.set_flow_rate(0)
+
+    VmsCore.SteeringColumn.off()
+    VmsCore.Bosch.IboosterGen2.deactivate_external_request()
+    VmsCore.Vehicle.disable_demo()
   end
 end

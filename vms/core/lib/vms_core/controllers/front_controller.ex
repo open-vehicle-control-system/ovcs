@@ -10,6 +10,7 @@ defmodule VmsCore.Controllers.FrontController do
   @inverter_enabled "inverter_enabled"
   @water_pump_enabled "water_pump_enabled"
   @ibooster_enabled "ibooster_enabled"
+  @steering_column_motor_enabled "steering_column_motor_enabled"
 
 
   @impl true
@@ -20,14 +21,16 @@ defmodule VmsCore.Controllers.FrontController do
       initial_data: %{
         @inverter_enabled   => false,
         @water_pump_enabled => false,
-        @ibooster_enabled => false
+        @ibooster_enabled => false,
+        @steering_column_motor_enabled => false
       }
     })
     Emitter.enable(@network_name, @front_controller_request_frame_name)
     {:ok, %{
       inverter_enabled: false,
       water_pump_enabled: false,
-      ibooster_enabled: false
+      ibooster_enabled: false,
+      steering_column_motor_enabled: false
     }}
   end
 
@@ -40,12 +43,14 @@ defmodule VmsCore.Controllers.FrontController do
     %{
       @inverter_enabled  => %Signal{value: inverter_enabled},
       @water_pump_enabled => %Signal{value: water_pump_enabled},
-      @ibooster_enabled => %Signal{value: ibooster_enabled}
+      @ibooster_enabled => %Signal{value: ibooster_enabled},
+      @steering_column_motor_enabled => %Signal{value: steering_column_motor_enabled}
     } = signals
     {:noreply, %{state |
       inverter_enabled: inverter_enabled,
       water_pump_enabled: water_pump_enabled,
-      ibooster_enabled: ibooster_enabled
+      ibooster_enabled: ibooster_enabled,
+      steering_column_motor_enabled: steering_column_motor_enabled
     }}
   end
 
@@ -81,6 +86,14 @@ defmodule VmsCore.Controllers.FrontController do
 
   def switch_off_water_pump() do
     actuate_relay(@water_pump_enabled, false)
+  end
+
+  def switch_on_steering_column_motor() do
+    actuate_relay(@steering_column_motor_enabled, true)
+  end
+
+  def switch_off_steering_column_motor() do
+    actuate_relay(@steering_column_motor_enabled, false)
   end
 
   defp actuate_relay(relay_name, enable) do

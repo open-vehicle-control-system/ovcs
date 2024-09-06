@@ -15,7 +15,8 @@ defmodule VmsCore.Controllers.ControlsController do
 
   @steering_column_motor_step_duty_cycle "steering_column_motor_step_duty_cycle"
   @steering_column_motor_direction "steering_column_motor_direction"
-
+  @min_steering_column_motor_step_duty_cycle 0 + 5
+  @max_steering_column_motor_step_duty_cycle 4095 - 5
   @raw_max_throttle 16383
 
   def start_link(_) do
@@ -28,7 +29,7 @@ defmodule VmsCore.Controllers.ControlsController do
     :ok = Emitter.configure(@network_name, @controls_controller_pwm_request_frame_name, %{
       parameters_builder_function: :default,
       initial_data: %{
-        @steering_column_motor_step_duty_cycle => 0,
+        @steering_column_motor_step_duty_cycle => @min_steering_column_motor_step_duty_cycle,
       }
     })
     :ok = Emitter.configure(@network_name, @controls_controller_request_frame_name, %{
@@ -50,6 +51,8 @@ defmodule VmsCore.Controllers.ControlsController do
     ])
     {
       :ok, %{
+        steering_column_motor_direction: "clockwise",
+        steering_column_motor_in_alarm: false,
         car_controls: %{
           throttle: 0,
           throttle_calibration_status: "disabled",
@@ -107,6 +110,8 @@ defmodule VmsCore.Controllers.ControlsController do
     %{
       "raw_throttle_a" => %Signal{value: raw_throttle_a},
       "raw_throttle_b" => %Signal{value: raw_throttle_b},
+      "steering_column_motor_direction" => %Signal{value: steering_column_motor_direction},
+      "steering_column_motor_in_alarm" => %Signal{value: steering_column_motor_in_alarm}
     } = signals
 
     throttle = if state.car_controls.high_raw_throttle_a <= state.car_controls.low_raw_throttle_a || state.car_controls.high_raw_throttle_b <= state.car_controls.low_raw_throttle_b do
@@ -116,6 +121,8 @@ defmodule VmsCore.Controllers.ControlsController do
       compute_throttle_from_raw_value(raw_throttle_a, state)
     end
     state = state
+      |> put_in([:steering_column_motor_direction], steering_column_motor_direction)
+      |> put_in([:steering_column_motor_in_alarm], steering_column_motor_in_alarm)
       |> put_in([:car_controls, :throttle], throttle)
       |> put_in([:car_controls, :raw_throttle_a], raw_throttle_a)
       |> put_in([:car_controls, :raw_throttle_b], raw_throttle_b)
@@ -202,7 +209,9 @@ defmodule VmsCore.Controllers.ControlsController do
     |> D.round(2)
   end
 
-  def set_duty_cycle(duty_cycle, direction \\ "clockwise") do
+  def set_steering_column_motor(duty_cycle, direction) do
+    duty_cycle = max(@min_steering_column_motor_step_duty_cycle, duty_cycle)
+      |> min(@max_steering_column_motor_step_duty_cycle)
     Emitter.update(@network_name, @controls_controller_pwm_request_frame_name, fn (data) ->
       %{data | @steering_column_motor_step_duty_cycle => duty_cycle}
     end)

@@ -3,10 +3,22 @@ anchors:
   analog_pin_parameters: &analog_pin_parameters
     kind: integer
     value_length: 14
+  digital_pin_parameters: &digital_pin_parameters
+    kind: enum
+    value_length: 1
+    mapping:
+      0x00: false
+      0x01: true
 name: controls_controller_status
 id: 0x714
 frequency: 10
 signals:
+  - name: steering_column_motor_direction
+    value_start: 3
+    <<: *digital_pin_parameters
+  - name: steering_column_motor_in_alarm
+    value_start: 4
+    <<: *digital_pin_parameters
   - name: raw_throttle_a
     value_start: 21
     <<: *analog_pin_parameters
