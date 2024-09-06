@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 
 
@@ -29,19 +27,10 @@ class SideBar extends StatefulWidget {
 class _SideBarState extends State<SideBar> {
   String timeVar = getTime();
   String dateVar = getDate();
-  late Timer _timer;
 
   @override
   void initState() {
     super.initState();
-    _timer = Timer.periodic(const Duration(seconds: 1), _incrementCounter);
-  }
-
-  void _incrementCounter(Timer timer) {
-    setState(() {
-      timeVar = getTime();
-      dateVar = getDate();
-    });
   }
 
   @override
