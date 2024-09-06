@@ -34,7 +34,7 @@ set -e
 DESTINATION=$1
 FILENAME="$2"
 
-export MIX_TARGET=ovcs_infotainment_flutter_system_rpi4
+export MIX_TARGET=ovcs_infotainment_flutter_system_rpi5
 
 help() {
   echo
