@@ -101,34 +101,34 @@ config :mdns_lite,
 # of this file so it overrides the configuration defined above.
 # Uncomment to use target specific configurations
 # Configure your database
-#config :infotainment_api, InfotainmentApi.Repo,
-#  database: "/data/infotainment_api/infotainment_api.db",
-#  pool_size: 5,
-#  stacktrace: true,
-#  show_sensitive_data_on_connection_error: true
+config :infotainment_api, InfotainmentApi.Repo,
+  database: "/data/infotainment_api/infotainment_api.db",
+  pool_size: 5,
+  stacktrace: true,
+  show_sensitive_data_on_connection_error: true
 
 # Configures the endpoint
-#config :infotainment_api,
-#  ecto_repos: [InfotainmentApi.Repo],
-#  generators: [timestamp_type: :utc_datetime]
+config :infotainment_api,
+  ecto_repos: [InfotainmentApi.Repo],
+  generators: [timestamp_type: :utc_datetime]
 
 # Configures the endpoint
-#config :infotainment_api, InfotainmentApiWeb.Endpoint,
-# url: [host: "localhost"],
-#  http: [port: 4001],
-#  secret_key_base: System.get_env("SECRET_KEY_BASE"),
-#  check_origin: false,
+config :infotainment_api, InfotainmentApiWeb.Endpoint,
+  url: [host: "localhost"],
+  http: [port: 4001],
+  secret_key_base: System.get_env("SECRET_KEY_BASE"),
+  check_origin: false,
   # Start the server since we're running in a release instead of through `mix`
-#  server: true,
+  server: true,
   # Nerves root filesystem is read-only, so disable the code reloader
-#  code_reloader: false,
-#  adapter: Phoenix.Endpoint.Cowboy2Adapter,
-#  render_errors: [
-#    formats: [json: InfotainmentApiWeb.ErrorJSON],
-#    layout: false
-#  ],
-#  pubsub_server: InfotainmentApi.PubSub,
-#  live_view: [signing_salt: System.get_env("SIGNING_SALT")]
+  code_reloader: false,
+  adapter: Phoenix.Endpoint.Cowboy2Adapter,
+  render_errors: [
+    formats: [json: InfotainmentApiWeb.ErrorJSON],
+    layout: false
+  ],
+  pubsub_server: InfotainmentApi.PubSub,
+  live_view: [signing_salt: System.get_env("SIGNING_SALT")]
 
 # Configures Elixir's Logger
 config :logger, :console,
@@ -139,13 +139,13 @@ config :logger, :console,
 # Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, Jason
 
-#vehicle = System.get_env("VEHICLE") || "ovcs1"
+vehicle = System.get_env("VEHICLE") || "ovcs1"
 
-#config :infotainment_core, :vehicle, vehicle
-#config :infotainment_core, :test, true
-#config :cantastic,
-#  can_network_mappings: [{"ovcs", "can0"}],
-#  setup_can_interfaces: true,
-#  otp_app: :infotainment_core,
-#  priv_can_config_path: "vehicles/#{vehicle}.yml"
+config :infotainment_core, :vehicle, vehicle
+config :infotainment_core, :test, true
+config :cantastic,
+  can_network_mappings: [{"ovcs", "can0"}],
+  setup_can_interfaces: true,
+  otp_app: :infotainment_core,
+  priv_can_config_path: "vehicles/#{vehicle}.yml"
 # import_config "#{Mix.target()}.exs"
