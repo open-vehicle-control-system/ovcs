@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 
 import 'package:dashboard_flutter/components/battery_overview.dart';
 import 'package:dashboard_flutter/components/car_overview.dart';
-import 'package:dashboard_flutter/components/gear_selecror.dart';
-import 'package:dashboard_flutter/components/multimedia_player.dart';
+import 'package:dashboard_flutter/components/gear_selector.dart';
+import 'package:dashboard_flutter/components/ovcs_status.dart';
 import 'package:dashboard_flutter/components/speed_gauge.dart';
 
 class DashboardContent extends StatelessWidget {
@@ -34,7 +34,7 @@ class DashboardContent extends StatelessWidget {
           Row(
             children: [
               BatteryOverview(),
-              MultimediaPlayer()
+              OvcsStatus()
             ]
           )
         ]

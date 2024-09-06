@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-class MultimediaPlayer extends StatelessWidget {
-  const MultimediaPlayer({super.key});
+class OvcsStatus extends StatelessWidget {
+  const OvcsStatus({super.key});
 
   @override
   Widget build(BuildContext context){
