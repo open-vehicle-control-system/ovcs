@@ -9,21 +9,18 @@
 # https://github.com/raspberrypi/documentation/blob/master/configuration/device-tree.md
 # https://github.com/raspberrypi/firmware/blob/master/boot/overlays/README
 
-# Enable 64-bit support
-arm_64bit=1
-
 # We always use the same names. The variant is selected in fwup.conf.
 start_file=start4.elf
 fixup_file=fixup4.dat
 
 # Disable the boot rainbow
-# disable_splash=1
+disable_splash=1
 
 # This, along with the Raspberry Pi "x" firmware is needed for the camera
 # to work. The Raspberry Pi "x" firmware is selected via the Buildroot
 # configuration. See Target packages->Hardware handling->Firmware.
-# gpu_mem=192
-total_mem=2048
+gpu_mem=192
+#total_mem=2048
 
 # Enable I2C and SPI
 dtparam=i2c_arm=on
@@ -61,11 +58,15 @@ dtparam=audio=on
 # camera_auto_detect=1
 
 # Automatically load overlays for detected DSI displays
-# display_auto_detect=0
+display_auto_detect=1
 
 # Enable DRM VC4 V3D driver
 dtoverlay=vc4-kms-v3d
-max_framebuffers=1
+max_framebuffers=2
+disable_fw_kms_setup=1
+
+# Run in 64-bit mode
+arm_64bit=1
 
 # Disable compensation for displays with overscan
 disable_overscan=1
@@ -74,6 +75,8 @@ disable_overscan=1
 # NOTE: check that the overlay that you specify is in the boot partition or
 #       this won't work.
 #dtoverlay=w1-gpio-pullup,gpiopin=4
+
+arm_boost=1
 
 # Support USB gadget mode on the USB-C port
 dtoverlay=dwc2
@@ -84,10 +87,4 @@ dtoverlay=ramoops
 
 # Enable the UART (/dev/ttyS0)
 enable_uart=1
-
-[cm4]
-# Raspberry Pi CM4-only settings
-
-# For the CM4 I/O board, USB is disabled by default. This enables it.
-# dtoverlay=dwc2,dr_mode=host
 
