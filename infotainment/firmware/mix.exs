@@ -4,15 +4,15 @@ defmodule OvcsInfotainmentFirmware.MixProject do
   @app :infotainment_firmware
   @version "0.1.0"
   @all_targets [
-    :ovcs_infotainment_flutter_system_rpi4
+    :ovcs_infotainment_flutter_system_rpi5
   ]
 
   def project do
     [
       app: @app,
       version: @version,
-      elixir: "~> 1.11",
-      archives: [nerves_bootstrap: "~> 1.12"],
+      elixir: "~> 1.17",
+      archives: [nerves_bootstrap: "~> 1.13"],
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       releases: [{@app, release()}],
@@ -34,19 +34,19 @@ defmodule OvcsInfotainmentFirmware.MixProject do
       # Dependencies for all targets
       {:nerves, "~> 1.10", runtime: false},
       {:shoehorn, "~> 0.9.1"},
-      {:ring_logger, "~> 0.10.0"},
-      {:toolshed, "~> 0.3.0"},
+      {:ring_logger, "~> 0.11.0"},
+      {:toolshed, "~> 0.4.0"},
 
       # Allow Nerves.Runtime on host to support development, testing and CI.
       # See config/host.exs for usage.
       {:nerves_runtime, "~> 0.13.0"},
 
       # Dependencies for all targets except :host
-      {:nerves_pack, "~> 0.7.0", targets: @all_targets},
+      {:nerves_pack, "~> 0.7.1", targets: @all_targets},
       {:vintage_net_wifi, "~> 0.11.7", targets: @all_targets},
       {:plug_cowboy, "~> 2.0"},
       {:nerves_flutterpi, github: "Spin42/nerves_flutterpi"},
-      #{:infotainment_api, path: "../api", targets: @all_targets, env: Mix.env()},
+      {:infotainment_api, path: "../api", targets: @all_targets, env: Mix.env()},
 
       # Dependencies for specific targets
       # NOTE: It's generally low risk and recommended to follow minor version
@@ -54,11 +54,10 @@ defmodule OvcsInfotainmentFirmware.MixProject do
       # version updates, please review their release notes in case
       # changes to your application are needed.
       {
-        :ovcs_infotainment_flutter_system_rpi4,
-        path: "../../../ovcs_infotainment_flutter_system_rpi4",
-        #github: "open-vehicle-control-system/ovcs_infotainment_flutter_system_rpi4",
+        :ovcs_infotainment_flutter_system_rpi5,
+        github: "open-vehicle-control-system/ovcs_infotainment_flutter_system_rpi5",
         runtime: false,
-        targets: :ovcs_infotainment_flutter_system_rpi4,
+        targets: :ovcs_infotainment_flutter_system_rpi5,
         nerves: [compile: true],
       },
     ]
