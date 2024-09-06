@@ -24,8 +24,8 @@
     ];
 
     let yaxis = [
-        {serieName: angleLabel, label: "°"},
-        {serieName: angularSpeedLabel, position: 'right', max: 1, label: "°/s"}
+        {serieName: angleLabel, min: -780, max: 780, label: "°"},
+        {serieName: angularSpeedLabel, position: 'right', min: 0, max: 2500, label: "°/s"}
     ];
 
     function setMax(max) {
@@ -40,7 +40,6 @@
     }
 
     steering.$subscribe((mutation, state) => {
-        setMax(780);
         updateSeries(state);
     })
 </script>
