@@ -34,7 +34,6 @@ class _OvcsStatusState extends State<OvcsStatus> {
     });
 
     _channel?.messages.listen( (event){
-      String jsonsDataString = event.payload.toString();
       if(event.topic == "status" && event.payload!.containsKey("attributes")){
         setState(() {
           vmsMissing = event.payload!["attributes"]["vms_missing"];
