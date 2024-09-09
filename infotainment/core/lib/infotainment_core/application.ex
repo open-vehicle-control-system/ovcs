@@ -14,7 +14,8 @@ defmodule InfotainmentCore.Application do
       #  skip: skip_migrations?()},
       {InfotainmentCore.VehicleStatus, []},
       {InfotainmentCore.ComponentsAlive, []},
-      {InfotainmentCore.ContactorsStatus, []}
+      {InfotainmentCore.ContactorsStatus, []},
+      {InfotainmentCore.Temperature, []}
 
     ]
 
