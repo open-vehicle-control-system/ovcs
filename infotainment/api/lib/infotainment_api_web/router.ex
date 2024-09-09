@@ -8,6 +8,8 @@ defmodule InfotainmentApiWeb.Router do
   scope "/api", InfotainmentApiWeb.Api do
     pipe_through :api
     post "/gear-selector", GearSelectorController, :post
+    post "/volume", VolumeController, :post
+    get "/volume", VolumeController, :show
   end
 
 
