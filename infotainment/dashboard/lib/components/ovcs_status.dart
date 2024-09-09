@@ -105,6 +105,7 @@ class _ComponentStatusBox extends State<ComponentStatusBox> {
     color: Color.fromRGBO(238, 155, 117, 1),
     decoration: TextDecoration.none,
     height: 1,
+    fontFamily: 'Lato',
   );
 
   static const TextStyle textOff = TextStyle(
@@ -112,6 +113,7 @@ class _ComponentStatusBox extends State<ComponentStatusBox> {
     color: Color.fromRGBO(238, 155, 117, 0.3),
     decoration: TextDecoration.none,
     height: 1,
+    fontFamily: 'Lato',
   );
 
   static BoxDecoration boxOn = BoxDecoration(
