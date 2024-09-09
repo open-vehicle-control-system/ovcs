@@ -48,6 +48,14 @@ defmodule InfotainmentApiWeb do
     end
   end
 
+  def view do
+    quote do
+      use Phoenix.View, root: "lib/infotainment_api_web/templates",
+                        namespace: InfotainmentApiWeb
+      alias  InfotainmentApiWeb.Router.Helpers, as: Routes
+    end
+  end
+
   def verified_routes do
     quote do
       use Phoenix.VerifiedRoutes,
