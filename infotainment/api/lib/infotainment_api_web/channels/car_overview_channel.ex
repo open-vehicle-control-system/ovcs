@@ -2,7 +2,7 @@ defmodule InfotainmentApiWeb.CarOverviewChannel do
   use Phoenix.Channel
   require Logger
 
-  alias InfotainmentCore.Status
+  alias InfotainmentCore.VehicleStatus
 
   intercept ["update"]
 
@@ -14,7 +14,7 @@ defmodule InfotainmentApiWeb.CarOverviewChannel do
   end
 
   def handle_info(:push_car_overview, socket) do
-    {:ok, car_overview} = Status.car_overview()
+    {:ok, car_overview} = VehicleStatus.car_overview()
     push(socket, "updated", car_overview)
     {:noreply, socket}
   end
