@@ -1,5 +1,3 @@
-import 'dart:developer';
-
 import 'package:flutter/material.dart';
 import 'package:dashboard_flutter/services/socket_service.dart';
 import 'package:phoenix_socket/phoenix_socket.dart';
@@ -37,7 +35,6 @@ class _OvcsStatusState extends State<OvcsStatus> {
 
     _channel?.messages.listen( (event){
       String jsonsDataString = event.payload.toString();
-      log(jsonsDataString);
       if(event.topic == "status" && event.payload!.containsKey("attributes")){
         setState(() {
           vmsMissing = event.payload!["attributes"]["vms_missing"];
