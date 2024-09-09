@@ -52,6 +52,7 @@ ThemeData _buildTheme(brightness) {
   var baseTheme = ThemeData(
     useMaterial3: true,
     colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+    scaffoldBackgroundColor: Colors.black.withOpacity(0)
   );
 
   return baseTheme.copyWith(
