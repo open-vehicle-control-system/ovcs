@@ -12,7 +12,9 @@ defmodule InfotainmentCore.Application do
       #{Ecto.Migrator,
       #  repos: Application.fetch_env!(:vms_core, :ecto_repos),
       #  skip: skip_migrations?()},
-      {InfotainmentCore.Status, []},
+      {InfotainmentCore.VehicleStatus, []},
+      {InfotainmentCore.ComponentsAlive, []},
+      {InfotainmentCore.ContactorsStatus, []}
 
     ]
 

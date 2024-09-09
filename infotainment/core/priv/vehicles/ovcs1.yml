@@ -11,3 +11,8 @@ can_networks:
       - import!:can/ovcs/frames/0x60A_abs_status.yml
       - import!:can/ovcs/frames/0x60B_bms_status.yml
       - import!:can/ovcs/frames/0x60D_passenger_compartment_status.yml
+      - import!:can/ovcs/frames/0x701_front_controller_alive.yml
+      - import!:can/ovcs/frames/0x704_front_controller_status.yml
+      - import!:can/ovcs/frames/0x709_rear_controller_alive.yml
+      - import!:can/ovcs/frames/0x70C_rear_controller_status.yml
+      - import!:can/ovcs/frames/0x711_controls_controller_alive.yml

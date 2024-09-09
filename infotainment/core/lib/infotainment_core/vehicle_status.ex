@@ -1,4 +1,4 @@
-defmodule InfotainmentCore.Status do
+defmodule InfotainmentCore.VehicleStatus do
   use GenServer
   require Logger
 
@@ -9,9 +9,8 @@ defmodule InfotainmentCore.Status do
   @infotainment_status_frame_name "infotainment_status"
   @abs_status_frame_name "abs_status"
   @passenger_compartment_status_frame_name "passenger_compartment_status"
-  @vms_status_frame_name "vms_status"
   @gear_status_frame_name "gear_status"
-  @bms_status_frame_name "bms_status"
+  @vms_status_frame_name "vms_status"
   @requested_gear_parameter "requested_gear"
   @selected_gear_parameter "selected_gear"
   @gear_selection_delay 1
@@ -26,13 +25,11 @@ defmodule InfotainmentCore.Status do
       }
     })
     :ok = Emitter.enable(@network_name, @infotainment_status_frame_name)
-    :ok = ReceivedFrameWatcher.subscribe(@network_name, @vms_status_frame_name, self())
     :ok = Cantastic.Receiver.subscribe(self(), @network_name, [
       @vms_status_frame_name,
       @gear_status_frame_name,
       @abs_status_frame_name,
       @passenger_compartment_status_frame_name,
-      @bms_status_frame_name
     ])
     enable_watchers()
     {:ok, %{
@@ -48,28 +45,11 @@ defmodule InfotainmentCore.Status do
       handbrake_engaged: false,
       speed: @zero,
       ready_to_drive: false,
-      state_of_charge: @zero,
-      operating_mode: "power",
-      instant_consumption: @zero,
-      state_of_health: @zero,
-      autonomy: @zero,
-      charging_power: @zero,
-      vms_missing: false
     }}
   end
 
   def start_link(_) do
     GenServer.start_link(__MODULE__, nil, name: __MODULE__)
-  end
-
-  @impl true
-  def handle_info({:handle_missing_frame,  network_name, frame_name}, state) do
-    if not state.vms_missing do
-      Logger.warning("Frame #{network_name}.#{frame_name} is missing")
-      {:noreply, %{state | vms_missing: true}}
-    else
-      {:noreply, state}
-    end
   end
 
   @impl true
@@ -122,33 +102,6 @@ defmodule InfotainmentCore.Status do
   end
 
   @impl true
-  def handle_info({:handle_frame, %Frame{name: @bms_status_frame_name, signals: signals}}, state) do
-    %{
-      "adaptative_state_of_charge" => %Signal{value: state_of_charge},
-      "operating_mode" => %Signal{value: operating_mode},
-      "instant_consumption" => %Signal{value: instant_consumption},
-      "state_of_health" => %Signal{value: state_of_health},
-      "autonomy" => %Signal{value: autonomy},
-      "charging_power" => %Signal{value: charging_power}
-    } = signals
-    {:noreply, %{state |
-        state_of_charge: state_of_charge,
-        operating_mode: operating_mode,
-        instant_consumption: instant_consumption,
-        state_of_health: state_of_health,
-        autonomy: autonomy,
-        charging_power: charging_power
-      }
-    }
-  end
-
-  @impl true
-  def handle_info(:enable_watchers, state) do
-    :ok = ReceivedFrameWatcher.enable(@network_name, @vms_status_frame_name)
-    {:noreply, state}
-  end
-
-  @impl true
   def handle_call({:request_gear, gear}, _from, state) do
     :ok = Emitter.update(@network_name, @infotainment_status_frame_name, fn (data) ->
       %{data | @requested_gear_parameter => gear}
@@ -162,7 +115,6 @@ defmodule InfotainmentCore.Status do
   def handle_call(:selected_gear, _from, state) do
     {:reply, {:ok, state.selected_gear}, state}
   end
-
 
   @impl true
   def handle_call(:speed, _from, state) do
@@ -186,6 +138,12 @@ defmodule InfotainmentCore.Status do
 
   defp enable_watchers() do
     Process.send_after(self(), :enable_watchers, 5000)
+  end
+
+  @impl true
+  def handle_info(:enable_watchers, state) do
+    :ok = ReceivedFrameWatcher.enable(@network_name, @vms_status_frame_name)
+    {:noreply, state}
   end
 
   def request_gear(gear) do
