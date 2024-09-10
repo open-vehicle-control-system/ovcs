@@ -24,7 +24,9 @@ defmodule OvcsInfotainmentFirmware.MixProject do
   def application do
     [
       mod: {InfotainmentFirmware.Application, []},
-      extra_applications: [:logger, :runtime_tools]
+      included_applications: [:infotainment_api],
+      extra_applications: [:logger, :runtime_tools],
+      start_phases: [{:load_and_start_apps, []}]
     ]
   end
 
@@ -46,7 +48,7 @@ defmodule OvcsInfotainmentFirmware.MixProject do
       {:vintage_net_wifi, "~> 0.11.7", targets: @all_targets},
       {:plug_cowboy, "~> 2.0"},
       {:nerves_flutterpi, github: "Spin42/nerves_flutterpi"},
-      {:infotainment_api, path: "../api", targets: @all_targets, env: Mix.env()},
+      {:infotainment_api, path: "../api", targets: @all_targets, env: Mix.env(), runtime: false},
 
       # Dependencies for specific targets
       # NOTE: It's generally low risk and recommended to follow minor version
