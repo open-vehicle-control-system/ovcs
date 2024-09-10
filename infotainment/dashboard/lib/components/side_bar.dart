@@ -1,6 +1,5 @@
 import 'package:dashboard_flutter/services/socket_service.dart';
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:phoenix_socket/phoenix_socket.dart';
 
 String getTime() {
@@ -68,7 +67,7 @@ class _SideBarState extends State<SideBar> {
                     const Icon(
                       Icons.memory_outlined,
                       color: Colors.white,
-                      size: 20
+                      size: 16
                     ),
                     Text(temperature.toString(), style: const TextStyle(fontSize: 16, color: Colors.white, decoration: TextDecoration.none, fontFamily: 'Lato')),
                     const Text("°C", style: TextStyle(fontSize: 16, color: Colors.white, decoration: TextDecoration.none, fontFamily: 'Lato'))
