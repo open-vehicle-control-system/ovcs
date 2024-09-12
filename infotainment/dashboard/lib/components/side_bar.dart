@@ -69,7 +69,7 @@ class _SideBarState extends State<SideBar> {
                       color: Colors.white,
                       size: 16
                     ),
-                    Text(temperature.toString(), style: const TextStyle(fontSize: 16, color: Colors.white, decoration: TextDecoration.none, fontFamily: 'Lato')),
+                    Text(temperature.toStringAsFixed(1), style: const TextStyle(fontSize: 16, color: Colors.white, decoration: TextDecoration.none, fontFamily: 'Lato')),
                     const Text("°C", style: TextStyle(fontSize: 16, color: Colors.white, decoration: TextDecoration.none, fontFamily: 'Lato'))
                   ],),
                   )
