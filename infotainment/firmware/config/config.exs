@@ -24,7 +24,7 @@ config :nerves, :firmware,
   fwup_conf: "config/fwup.conf"
 
 config :nerves, :erlinit,
-  ctty: "tty1",
+  ctty: "tty3",
   warn_unused_tty: false
 
 if Mix.target() == :host do
