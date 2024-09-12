@@ -13,7 +13,7 @@ defmodule InfotainmentApiWeb.Api.StatusJSON do
         inverter_missing: status.inverter_missing,
         controls_controller_missing: status.controls_controller_missing,
         main_negative_off: status.main_negative_off,
-        main_positive_off: status.main_negative_off,
+        main_positive_off: status.main_positive_off,
         precharge_off: status.precharge_off,
       }
     }
