@@ -30,7 +30,8 @@ defmodule InfotainmentFirmware.Application do
         Logger.warning("#{application} could not start, continuing without it.")
     end
 
-    Supervisor.start_link([], [])
+    opts = [strategy: :one_for_one]
+    Supervisor.start_link([], opts)
   end
 
   def target() do
