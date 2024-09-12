@@ -15,7 +15,7 @@ defmodule InfotainmentApiWeb.TemperatureChannel do
 
   def handle_info(:push_temperature, socket) do
     {:ok, temperature} = Temperature.temperature()
-    push(socket, "updated", %{temperature: temperature})
+    push(socket, "updated", temperature)
     {:noreply, socket}
   end
 
