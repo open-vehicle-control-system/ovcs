@@ -23,3 +23,5 @@ if Mix.target() == :host do
 else
   import_config "target.exs"
 end
+
+config :rclex, ros2_message_types: ["std_msgs/msg/String"]
