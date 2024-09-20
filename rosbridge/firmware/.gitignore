@@ -17,3 +17,5 @@
 erl_crash.dump
 
 .env.exs
+
+.ros2

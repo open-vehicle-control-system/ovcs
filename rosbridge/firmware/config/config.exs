@@ -8,6 +8,8 @@ import Config
 # Enable the Nerves integration with Mix
 Application.start(:nerves_bootstrap)
 
+config :rclex, ros2_message_types: ["std_msgs/msg/String"]
+
 # Customize non-Elixir parts of the firmware. See
 # https://hexdocs.pm/nerves/advanced-configuration.html for details.
 
@@ -23,5 +25,3 @@ if Mix.target() == :host do
 else
   import_config "target.exs"
 end
-
-config :rclex, ros2_message_types: ["std_msgs/msg/String"]

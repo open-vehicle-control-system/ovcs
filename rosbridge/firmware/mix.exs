@@ -49,7 +49,7 @@ defmodule OvcsRosBridgeFirmware.MixProject do
       # bumps to Nerves systems. Since these include Linux kernel and Erlang
       # version updates, please review their release notes in case
       # changes to your application are needed.
-      {:rclex, github: "rclex/rclex"},
+      {:rclex, github: "rclex/rclex", tag: "v0.11.0"},
       {
         :ovcs_vms_system_rpi4,
         github: "open-vehicle-control-system/ovcs_vms_system_rpi4",
