@@ -4,6 +4,7 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
   alias VmsCore.NissanLeaf.Util
   alias Cantastic.{Emitter, Receiver, Frame, Signal}
   alias Decimal, as: D
+  alias VmsCore.PubSub
 
   @network_name :leaf_drive
   @inverter_status_frame_name "inverter_status"
@@ -119,11 +120,9 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
       "em57_effective_torque" => %Signal{value: effective_torque},
       "em57_rotations_per_minute" => %Signal{value: rotation_per_minute},
     } = signals
+    rotation_per_minute = abs(rotation_per_minute)
 
-    rotation_per_minute = case D.gt?(rotation_per_minute, @max_rotation_per_minute) do
-      true  -> 0
-      false -> rotation_per_minute
-    end
+    PubSub.broadcast("metrics", %PubSub.MetricMessage{name: :rotation_per_minute, value: rotation_per_minute, source: __MODULE__})
     {:noreply, %{
       state |
         rotation_per_minute: rotation_per_minute,
