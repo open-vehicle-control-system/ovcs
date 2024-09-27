@@ -1,21 +1,16 @@
 defmodule VmsCore.VwPolo.Abs do
   use GenServer
   alias Decimal, as: D
+  alias VmsCore.PubSub
 
   require Logger
   alias Cantastic.{Frame, Signal}
-
-  @network_name :polo_drive
-
-  @abs_status_frame_name "abs_status"
   @zero D.new(0)
 
   @impl true
   def init(_) do
-    :ok = Cantastic.Receiver.subscribe(self(), @network_name, @abs_status_frame_name)
-    {:ok, %{
-      speed: @zero
-    }}
+    :ok = Cantastic.Receiver.subscribe(self(), :polo_drive, "abs_status")
+    {:ok, %{}}
   end
 
   def start_link(_) do
@@ -25,15 +20,7 @@ defmodule VmsCore.VwPolo.Abs do
   @impl true
   def handle_info({:handle_frame,  %Frame{signals: signals}}, state) do
     %{"speed" => %Signal{value: speed}} = signals
-    {:noreply, %{state | speed: speed}}
-  end
-
-  @impl true
-  def handle_call(:speed, _from, state) do
-    {:reply, {:ok, state.speed}, state}
-  end
-
-  def speed() do
-    GenServer.call(__MODULE__, :speed)
+    PubSub.broadcast("metrics", %PubSub.MetricMessage{name: :speed, value: speed, source: __MODULE__})
+    {:noreply, state}
   end
 end

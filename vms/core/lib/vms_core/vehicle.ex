@@ -5,8 +5,6 @@ defmodule VmsCore.Vehicle do
   alias Decimal, as: D
 
   @loop_sleep 10
-  @gear_shift_throttle_limit D.new("0.05")
-  @gear_shift_speed_limit D.new("1")
   @zero D.new(0)
 
   def start_link(args) do
@@ -33,7 +31,6 @@ defmodule VmsCore.Vehicle do
     state = state
       |> handle_ready_to_drive()
       |> handle_ignition()
-      |> handle_gear()
       |> handle_throttle()
       |> handle_charge()
     loop()
@@ -47,37 +44,6 @@ defmodule VmsCore.Vehicle do
       {true, "off"}           -> shutdown(state)
       {true, "key_engaged"}   -> shutdown(state)
       _                       -> state
-    end
-  end
-
-  defp handle_gear(state) do
-    with {:ok, requested_gear} <- gear_control_module().requested_gear(),
-         selected_gear         <- state.selected_gear,
-         {:ok, throttle}       <- ControlsController.throttle(),
-         {:ok, speed}          <- VmsCore.VwPolo.Abs.speed()
-    do
-      throttle_near_zero = D.lt?(throttle, @gear_shift_throttle_limit)
-      speed_near_zero    = D.abs(speed) |> D.lt?(@gear_shift_speed_limit)
-      ready_to_drive     = state.ready_to_drive?
-      case {selected_gear, requested_gear, throttle_near_zero && speed_near_zero, ready_to_drive} do
-        {"parking", "parking", _, _} -> state
-        {"reverse", "reverse", _, _} -> state
-        {"neutral", "neutral", _, _} -> state
-        {"drive", "drive", _, _}     -> state
-        {_, "parking", true, _}      ->
-          VmsCore.VwPolo.PowerSteeringPump.off()
-          select_gear("parking", state)
-        {_, "reverse", true, true}   ->
-          VmsCore.VwPolo.PowerSteeringPump.on()
-          select_gear("reverse", state)
-        {_, "drive", true, true}     ->
-          VmsCore.VwPolo.PowerSteeringPump.on()
-          select_gear("drive", state)
-        {_, "neutral", _, _}         -> select_gear("neutral", state)
-        _                            -> state
-      end
-    else
-      :unexpected -> :unexpected
     end
   end
 
@@ -111,11 +77,6 @@ defmodule VmsCore.Vehicle do
         :ok = Status.ready_to_drive(ready_to_drive?)
         %{state | ready_to_drive?: ready_to_drive?}
     end
-  end
-
-  defp select_gear(gear, state) do
-    :ok = ControlsController.select_gear(gear)
-    %{state | selected_gear: gear}
   end
 
   defp apply_throttle(state) do
@@ -174,59 +135,5 @@ defmodule VmsCore.Vehicle do
 
   defp gear_control_module() do
     Application.get_env(:vms_core, :gear_control_module)
-  end
-
-  @impl true
-  def handle_call(:enable_demo, _from, state) do
-    {:reply, :ok, %{state | demo_mode: true}}
-  end
-
-  def enable_demo() do
-    GenServer.call(__MODULE__, :enable_demo)
-  end
-
-  @impl true
-  def handle_call(:disable_demo, _from, state) do
-    {:reply, :ok, %{state | demo_mode: false}}
-  end
-
-  def disable_demo() do
-    GenServer.call(__MODULE__, :disable_demo)
-  end
-
-  def demo(throttle \\ D.new(0), steering \\ 500, flow_rate \\ 10) do
-    VmsCore.Vehicle.enable_demo()
-    :timer.sleep(50)
-    Logger.info("Start demo")
-    VmsCore.SteeringColumn.on(40, "clockwise") # stop
-    VmsCore.Bosch.IboosterGen2.activate_external_request()
-    Logger.info("Start throttle")
-
-    Enum.each(1..10, fn i ->
-      Logger.info("Set throttle to : #{D.div(throttle, D.new(11 - i))}")
-      Inverter.throttle(throttle, "drive", 0)
-      :timer.sleep(500)
-    end)
-
-    Logger.info("Start steering clockwise")
-    VmsCore.SteeringColumn.on(steering, "clockwise")
-    :timer.sleep(3000)
-    Logger.info("Start steering counter clockwise")
-    VmsCore.SteeringColumn.on(steering, "counter_clockwise")
-    :timer.sleep(3000)
-    Logger.info("Stop steering clockwise")
-    VmsCore.SteeringColumn.on(40, "clockwise")
-    Logger.info("Stop throttle")
-    Inverter.throttle(0, "drive", 0)
-    :timer.sleep(1000)
-    Logger.info("Start breaking")
-    VmsCore.Bosch.IboosterGen2.set_flow_rate(flow_rate)
-    :timer.sleep(5000)
-    Logger.info("Stop breaking")
-    VmsCore.Bosch.IboosterGen2.set_flow_rate(0)
-
-    VmsCore.SteeringColumn.off()
-    VmsCore.Bosch.IboosterGen2.deactivate_external_request()
-    VmsCore.Vehicle.disable_demo()
   end
 end

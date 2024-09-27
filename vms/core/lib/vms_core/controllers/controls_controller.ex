@@ -5,13 +5,12 @@ defmodule VmsCore.Controllers.ControlsController do
   alias VmsCore.{Repo, ThrottleCalibration}
   require Logger
   alias Decimal, as: D
+  alias VmsCore.PubSub
 
   @network_name :ovcs
   @controls_controller_status_frame_name "controls_controller_status"
   @controls_controller_pwm_request_frame_name "controls_controller_pwm_request"
   @controls_controller_request_frame_name "controls_controller_request"
-  @selected_gear_frame_name "gear_status"
-  @selected_gear "selected_gear"
 
   @steering_column_motor_step_duty_cycle "steering_column_motor_step_duty_cycle"
   @steering_column_motor_direction "steering_column_motor_direction"
@@ -38,16 +37,9 @@ defmodule VmsCore.Controllers.ControlsController do
         @steering_column_motor_direction => "clockwise",
       }
     })
-    :ok = Emitter.configure(@network_name, @selected_gear_frame_name, %{
-      parameters_builder_function: :default,
-      initial_data: %{
-        @selected_gear => "parking"
-      }
-    })
     :ok = Emitter.enable(@network_name, [
       @controls_controller_pwm_request_frame_name,
-      @controls_controller_request_frame_name,
-      @selected_gear_frame_name
+      @controls_controller_request_frame_name
     ])
     {
       :ok, %{
@@ -120,6 +112,7 @@ defmodule VmsCore.Controllers.ControlsController do
     else
       compute_throttle_from_raw_value(raw_throttle_a, state)
     end
+    PubSub.broadcast("metrics", %PubSub.MetricMessage{name: :requested_throttle, value: throttle})
     state = state
       |> put_in([:steering_column_motor_direction], steering_column_motor_direction)
       |> put_in([:steering_column_motor_in_alarm], steering_column_motor_in_alarm)
@@ -197,11 +190,6 @@ defmodule VmsCore.Controllers.ControlsController do
     %ThrottleCalibration{key: key, value: value} |> Repo.insert()
   end
 
-  def select_gear(gear) do
-    :ok = Cantastic.Emitter.update(:ovcs, "gear_status", fn (data) ->
-      %{data | @selected_gear => gear}
-    end)
-  end
 
   defp compute_throttle_from_raw_value(value, state) do
     D.sub(value, state.car_controls.low_raw_throttle_a)
