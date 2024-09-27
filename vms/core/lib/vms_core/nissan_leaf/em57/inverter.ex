@@ -14,8 +14,8 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
   @max_rotation_per_minute 10000
   @zero D.new(0)
   @one D.new(1)
-  @drive_max_torque D.new(30) # TODO store in DB
-  @reverse_max_torque D.new(-15)
+  @drive_max_torque D.new(100) # TODO store in DB
+  @reverse_max_torque D.new(-100)
   @effective_throttle_threshold D.new("0.05")
   @motor_max_power D.new("80")
   @motor_max_torque D.new("250")

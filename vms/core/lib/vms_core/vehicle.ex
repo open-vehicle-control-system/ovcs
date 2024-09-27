@@ -22,7 +22,8 @@ defmodule VmsCore.Vehicle do
       ready_to_drive?: false,
       allowed_discharge_power: @zero,
       allowed_charge_power: @zero,
-      demo_mode: false
+      demo_mode: false,
+      charging: false
     }}
   end
 
