@@ -6,12 +6,12 @@ defmodule VmsCore.VwPolo.Dashboard do
 
   @network_name :polo_drive
 
-  @engine_status_frame_name "engine_status"
+  @engine_status_frame_name ""
   @max_rotation_per_minute 10000
 
   @impl true
   def init(_) do
-    :ok = Emitter.configure(@network_name, @engine_status_frame_name, %{
+    :ok = Emitter.configure(:polo_drive, "engine_status", %{
       parameters_builder_function: :default,
       initial_data: %{
         "engine_rotations_per_minute" => 0
@@ -31,17 +31,17 @@ defmodule VmsCore.VwPolo.Dashboard do
       true  -> 0
       false -> rotation_per_minute
     end
-    :ok = Emitter.update(@network_name, @engine_status_frame_name, fn (data) ->
+    :ok = Emitter.update(:polo_drive, "engine_status", fn (data) ->
       %{data | "engine_rotations_per_minute" => rotation_per_minute}
     end)
     {:noreply, state}
   end
 
   def on() do
-    Emitter.enable(@network_name, @engine_status_frame_name)
+    Emitter.enable(:polo_drive, "engine_status")
   end
 
   def off() do
-    Emitter.disable(@network_name, @engine_status_frame_name)
+    Emitter.disable(:polo_drive, "engine_status")
   end
 end

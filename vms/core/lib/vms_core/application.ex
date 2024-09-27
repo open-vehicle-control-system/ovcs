@@ -26,7 +26,6 @@ defmodule VmsCore.Application do
       {VmsCore.NissanLeaf.Em57.Inverter, []},
       {VmsCore.BatteryManagementSystem, []},
       {VmsCore.Charger, []},
-      {VmsCore.Abs, []},
       {VmsCore.PassengerCompartment, []},
       {VmsCore.IgnitionLock, []},
       {VmsCore.Inverter, []},
