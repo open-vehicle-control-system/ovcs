@@ -15,6 +15,7 @@ defmodule VmsCore.Vehicle do
 
   @impl true
   def init(_) do
+
     loop()
     {:ok, %{
       ignition_started: false,
@@ -34,7 +35,6 @@ defmodule VmsCore.Vehicle do
       |> handle_ignition()
       |> handle_gear()
       |> handle_throttle()
-      |> handle_rotation_per_minute()
       |> handle_charge()
     loop()
     {:noreply, state}
@@ -76,16 +76,6 @@ defmodule VmsCore.Vehicle do
         {_, "neutral", _, _}         -> select_gear("neutral", state)
         _                            -> state
       end
-    else
-      :unexpected -> :unexpected
-    end
-  end
-
-  defp handle_rotation_per_minute(state) do
-    with {:ok, rotation_per_minute} <- Inverter.rotation_per_minute(),
-         :ok        <- abs(rotation_per_minute) |> VmsCore.VwPolo.Engine.rotation_per_minute()
-    do
-      state
     else
       :unexpected -> :unexpected
     end

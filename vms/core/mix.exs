@@ -29,7 +29,8 @@ defmodule VmsCore.MixProject do
       {:crc, "~> 0.10"},
       {:ecto_sql, "~> 3.10"},
       {:ecto_sqlite3, ">= 0.0.0"},
-      {:decimal, "~> 2.1.1"}
+      {:decimal, "~> 2.1.1"},
+      {:phoenix_pubsub, "~> 2.0"}
     ]
   end
 end
