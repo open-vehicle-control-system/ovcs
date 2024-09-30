@@ -1,6 +1,6 @@
 ---
 name: controller_alive
-id: 0x7X1
+id: 0x701
 frequency: 100
 signals:
   - name: counter

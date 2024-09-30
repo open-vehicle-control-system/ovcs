@@ -10,7 +10,7 @@ anchors:
     kind: integer
     value_length: 14
 name: controller_digital_and_analog_pin_status
-id: 0x7X4
+id: 0x704
 frequency: 10
 signals:
   - name: digital_pin0_enabled
@@ -89,9 +89,3 @@ signals:
     value_start: 63
     value_length: 1
     value: 0
-
-  #  0  1 2  3  4  5  6  7
-  #  0  8 16 24 32 40 48 56
-
-  #  0 1 2 3 4 5 6 7 | 8 9 10 11 12 13 (14) (15)
-  #      1 2 3 4 5 6   7 8 9  10 11 12  13   14
