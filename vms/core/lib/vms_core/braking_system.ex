@@ -1,4 +1,4 @@
-defmodule VmsCore.BreakingSystem do
+defmodule VmsCore.BrakingSystem do
   use GenServer
   alias VmsCore.Controllers.FrontController
   alias VmsCore.Bosch.IboosterGen2

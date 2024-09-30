@@ -1,4 +1,4 @@
-defmodule VmsCore.GearBox do
+defmodule VmsCore.GearSelector do
   use GenServer
   alias VmsCore.PubSub
   alias Decimal, as: D
