@@ -21,7 +21,7 @@ defmodule VmsCore.Inverter do
   def handle_cast(:on, state) do
     with  :ok <- FrontController.switch_on_inverter(),
           :ok <- Em57.Inverter.on(),
-          :ok <- VwPolo.Engine.on()
+          :ok <- VwPolo.Dashboard.on()
     do
       {:noreply, state}
     else
@@ -31,7 +31,7 @@ defmodule VmsCore.Inverter do
 
   @impl true
   def handle_cast(:off, state) do
-    with :ok <- VwPolo.Engine.off(),
+    with :ok <- VwPolo.Dashboard.off(),
          :ok <- FrontController.switch_off_inverter(),
          :ok <- Em57.Inverter.off()
     do

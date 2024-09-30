@@ -15,7 +15,8 @@ defmodule VmsApiWeb.InverterChannel do
   @impl true
   def handle_info(:push_inverter_state, socket) do
     {:ok, inverter_state} = Inverter.inverter_state()
-    view = VmsApiWeb.Api.InverterStateJSON.render("inverter_state.json", %{inverter_state: inverter_state})
+    {:ok, metrics} = VmsCore.Metrics.current()
+    view = VmsApiWeb.Api.InverterStateJSON.render("inverter_state.json", %{inverter_state: inverter_state, metrics: metrics})
     push(socket, "updated", view)
     {:noreply, socket}
   end
