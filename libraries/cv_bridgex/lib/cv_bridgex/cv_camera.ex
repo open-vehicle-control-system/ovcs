@@ -35,10 +35,19 @@ defmodule CvBridgex.CvCamera do
   end
 
   @impl true
+  def handle_call(:get_latest_picture, _from, state) do
+    {:reply, {:ok, state.latest_picture}, state}
+  end
+
+  @impl true
   def handle_info(:take_picture, state) do
-    picture = Evision.VideoCapture.read(state.camera)
-    if state.loop_active do
-      take_picture(@delay)
+    picture = case state.loop_active do
+      true ->
+        picture = Evision.VideoCapture.read(state.camera)
+        take_picture(@delay)
+        picture
+      false ->
+        nil
     end
     {:noreply, %{state | latest_picture: picture}}
   end
@@ -49,6 +58,10 @@ defmodule CvBridgex.CvCamera do
 
   def start() do
     GenServer.call(__MODULE__, :start)
+  end
+
+  def get_latest_picture() do
+    GenServer.call(__MODULE__, :get_latest_picture)
   end
 
   defp get_camera() do

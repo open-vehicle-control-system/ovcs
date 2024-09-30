@@ -6,7 +6,8 @@ defmodule CvBridgex.Application do
   @impl true
   def start(_type, _args) do
     children = [
-      {CvBridgex.CvCamera, []}
+      {CvBridgex.CvCamera, []},
+      {CvBridgex.RosImageEmitter, []}
     ]
 
     opts = [strategy: :one_for_one, name: CvBridgex.Supervisor]
