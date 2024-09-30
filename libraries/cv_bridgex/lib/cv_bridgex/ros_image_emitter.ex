@@ -17,9 +17,9 @@ defmodule CvBridgex.RosImageEmitter do
   def init(_args) do
     Rclex.start_node("camera")
     Rclex.start_publisher(SensorMsgs.Msg.Image, "/camera", "camera")
-    send_picture(@delay)
+    send_message(@delay)
     {:ok, %{
-      latest_picture: nil,
+      latest_message: nil,
       loop_active: true
     }}
   end
@@ -33,23 +33,23 @@ defmodule CvBridgex.RosImageEmitter do
   @impl true
   def handle_call(:start, _from, state) do
     state = %{state | loop_active: true}
-    send_picture(@delay)
+    send_message(@delay)
     {:reply, {:ok, state}, state}
   end
 
   @impl true
-  def handle_info(:send_picture, state) do
+  def handle_info(:send_message, state) do
     {:ok, cv_picture} = CvCamera.get_latest_picture()
     case cv_picture do
       nil ->
-        {:noreply, %{state | latest_picture: nil, loop_active: false}}
+        {:noreply, %{state | latest_message: nil, loop_active: false}}
       _ ->
-        ros_picture = create_ros_picture(cv_picture)
+        message = create_ros_image_message(cv_picture)
         if state.loop_active do
-          #Rclex.publish(ros_picture, "/camera", "camera")
-          send_picture(@delay)
+          #Rclex.publish(message, "/camera", "camera")
+          send_message(@delay)
         end
-        {:noreply, %{state | latest_picture: ros_picture}}
+        {:noreply, %{state | latest_message: message}}
     end
   end
 
@@ -61,11 +61,11 @@ defmodule CvBridgex.RosImageEmitter do
     GenServer.call(__MODULE__, :start)
   end
 
-  defp send_picture(delay) do
-    Process.send_after(self(), :send_picture, delay)
+  defp send_message(delay) do
+    Process.send_after(self(), :send_message, delay)
   end
 
-  defp create_ros_picture(cv_picture) do
+  defp create_ros_image_message(cv_picture) do
     stamp         = struct(Rclex.Pkgs.BuiltinInterfaces.Msg.Time, %{sec: :os.system_time(:second), nanosec: :os.system_time(:nanosecond)})
     frame_id      = "OVCS"
     height        = cv_picture.shape |> elem(0)
