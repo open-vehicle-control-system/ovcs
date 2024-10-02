@@ -2,7 +2,7 @@ defmodule CvBridgex.CvCamera do
   use GenServer
   require Logger
 
-  @delay 1000
+  @delay 30
 
   def start_link(args) do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
