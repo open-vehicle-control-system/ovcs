@@ -71,7 +71,6 @@ defmodule CvBridgex.RosImageEmitter do
     height        = cv_picture.shape |> elem(0)
     width         = cv_picture.shape |> elem(1)
     encoding      = "#{cv_picture.type |> elem(1)}#{cv_picture.type |> elem(0) |> to_string |> String.capitalize()}C#{cv_picture.channels}"
-    #encoding      = "BGR8"
     is_bigendian  = 0
     step          = (cv_picture.shape |> elem(2)) * (cv_picture.shape |> elem(1))
     data          = cv_picture |> Cv.Mat.to_binary()
