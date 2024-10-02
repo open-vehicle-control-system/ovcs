@@ -7,7 +7,7 @@ defmodule CvBridgex.RosImageEmitter do
   alias Rclex.Pkgs.StdMsgs
   alias Evision, as: Cv
 
-  @delay 1000
+  @delay 30
 
   def start_link(args) do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
@@ -46,7 +46,7 @@ defmodule CvBridgex.RosImageEmitter do
       _ ->
         message = create_ros_image_message(cv_picture)
         if state.loop_active do
-          #Rclex.publish(message, "/camera", "camera")
+          Rclex.publish(message, "/camera", "camera")
           send_message(@delay)
         end
         {:noreply, %{state | latest_message: message}}
@@ -66,24 +66,24 @@ defmodule CvBridgex.RosImageEmitter do
   end
 
   defp create_ros_image_message(cv_picture) do
-    stamp         = struct(Rclex.Pkgs.BuiltinInterfaces.Msg.Time, %{sec: :os.system_time(:second), nanosec: :os.system_time(:nanosecond)})
+    stamp         = %Rclex.Pkgs.BuiltinInterfaces.Msg.Time{sec: :os.timestamp() |> elem(1), nanosec: :os.timestamp() |> elem(2)}
     frame_id      = "OVCS"
     height        = cv_picture.shape |> elem(0)
     width         = cv_picture.shape |> elem(1)
     encoding      = "#{cv_picture.type |> elem(1)}#{cv_picture.type |> elem(0) |> to_string |> String.capitalize()}C#{cv_picture.channels}"
-    #encoding      = "bgr8"
-    is_bigendian  = false
+    #encoding      = "BGR8"
+    is_bigendian  = 0
     step          = (cv_picture.shape |> elem(2)) * (cv_picture.shape |> elem(1))
-    data          = (cv_picture |> Cv.Mat.to_binary() |> :binary.bin_to_list() |> IO.chardata_to_string())
-    Logger.info(cv_picture)
-    struct(SensorMsgs.Msg.Image, %{
-      header: struct(StdMsgs.Msg.Header, %{ stamp: stamp, frame_id: frame_id }),
+    data          = cv_picture |> Cv.Mat.to_binary()
+
+    %Rclex.Pkgs.SensorMsgs.Msg.Image{
+      header: %Rclex.Pkgs.StdMsgs.Msg.Header{stamp: stamp, frame_id: frame_id},
       height: height,
       width: width,
       encoding: encoding,
       is_bigendian: is_bigendian,
       step: step,
       data: data
-    })
+    }
   end
 end
