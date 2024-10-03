@@ -54,7 +54,9 @@ defmodule VmsCore.Application do
         power_relay_pin: 5
       }},
       {VmsCore.BatteryManagementSystem, []},
-      {VmsCore.PassengerCompartment, []},
+      {VmsCore.PassengerCompartment, %{
+        passenger_compartement_source: VmsCore.VwPolo.PassengerCompartment
+      }},
       {VmsCore.NetworkInterfacesManager, []},
       {VmsCore.Status, []},
       {VmsCore.Infotainment, []},

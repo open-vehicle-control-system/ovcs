@@ -3,15 +3,19 @@ defmodule VmsCore.VwPolo.PassengerCompartment do
 
   require Logger
   alias Cantastic.{Frame, Signal}
+  alias VmsCore.Bus
 
   @network_name :polo_drive
 
   @car_status_frame_name "car_status"
   @handbrake_status_frame_name "handbrake_status"
 
+  @loop_period 10
+
   @impl true
   def init(_) do
     :ok = Cantastic.Receiver.subscribe(self(), @network_name, [@car_status_frame_name, @handbrake_status_frame_name])
+    {:ok, timer} = :timer.send_interval(@loop_period, :loop)
     {:ok, %{
       front_left_door_open: false,
       front_right_door_open: false,
@@ -19,12 +23,26 @@ defmodule VmsCore.VwPolo.PassengerCompartment do
       rear_right_door_open: false,
       trunk_door_open: false,
       beam_active: false,
-      handbrake_engaged: false
+      handbrake_engaged: false,
+      loop_timer: timer
     }}
   end
 
   def start_link(_) do
     GenServer.start_link(__MODULE__, nil, name: __MODULE__)
+  end
+
+  @impl true
+  def handle_info(:loop, state) do
+    Bus.broadcast("messages", %Bus.Message{name: :front_left_door_open, value: state.front_left_door_open, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :front_right_door_open, value: state.front_right_door_open, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :rear_left_door_open, value: state.rear_left_door_open, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :rear_right_door_open, value: state.rear_right_door_open, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :trunk_door_open, value: state.trunk_door_open, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :beam_active, value: state.beam_active, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :handbrake_engaged, value: state.handbrake_engaged, source: __MODULE__})
+
+    {:noreply, state}
   end
 
   @impl true
@@ -49,18 +67,9 @@ defmodule VmsCore.VwPolo.PassengerCompartment do
   end
 
   @impl true
-  def handle_info({:handle_frame,  %Frame{name:  @handbrake_status_frame_name, signals: signals}}, state) do
+  def handle_info({:handle_frame, %Frame{name:  @handbrake_status_frame_name, signals: signals}}, state) do
     %{"handbrake_engaged" => %Signal{value: handbrake_engaged}} = signals
     {:noreply, %{state | handbrake_engaged: handbrake_engaged}
   }
-  end
-
-  @impl true
-  def handle_call(:status, _from, state) do
-    {:reply, {:ok, state}, state}
-  end
-
-  def status() do
-    GenServer.call(__MODULE__, :status)
   end
 end
