@@ -4,7 +4,7 @@ defmodule VmsCore.ThrottlePedal do
   alias VmsCore.{Repo, ThrottleCalibration}
   require Logger
   alias Decimal, as: D
-  alias VmsCore.PubSub
+  alias VmsCore.Bus
 
 
   @raw_max_throttle 16383
@@ -51,7 +51,7 @@ defmodule VmsCore.ThrottlePedal do
     {:ok, raw_throttle_b} = VmsCore.Controllers.GenericController.get_analog_value(state.controller, state.throttle_b_pin)
 
     state = handle_throttle(%{state | raw_throttle_a: raw_throttle_a, raw_throttle_b: raw_throttle_b})
-    PubSub.broadcast("metrics", %PubSub.MetricMessage{name: :requested_throttle, value: state.requested_throttle, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :requested_throttle, value: state.requested_throttle, source: __MODULE__})
     {:noreply, state}
   end
 

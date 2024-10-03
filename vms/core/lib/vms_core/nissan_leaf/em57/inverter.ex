@@ -4,7 +4,7 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
   alias VmsCore.NissanLeaf.Util
   alias Cantastic.{Emitter, Receiver, Frame, Signal}
   alias Decimal, as: D
-  alias VmsCore.PubSub
+  alias VmsCore.Bus
 
   @network_name :leaf_drive
   @inverter_status_frame_name "inverter_status"
@@ -21,10 +21,18 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
   @motor_max_power D.new("80")
   @motor_max_torque D.new("250")
 
+  @loop_period 10
+
+  def start_link(args) do
+    GenServer.start_link(__MODULE__, args, name: __MODULE__)
+  end
+
   @impl true
-  def init(_) do
+  def init(%{requested_throttle_source: requested_throttle_source, selected_gear_source: selected_gear_source}) do
     :ok = init_emitters()
     Receiver.subscribe(self(), @network_name, [@inverter_status_frame_name, @inverter_temperatures_frame_name])
+    Bus.subscribe("messages")
+    {:ok, timer} = :timer.send_interval(@loop_period, :loop)
     {:ok, %{
       rotation_per_minute: 0,
       output_voltage: @zero,
@@ -33,12 +41,13 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
       inverter_communication_board_temperature: @zero,
       insulated_gate_bipolar_transistor_temperature: @zero,
       insulated_gate_bipolar_transistor_board_temperature: @zero,
-      motor_temperature: @zero
+      motor_temperature: @zero,
+      requested_throttle_source: requested_throttle_source,
+      selected_gear_source: selected_gear_source,
+      requested_throttle: @zero,
+      selected_gear: "parking",
+      loop_timer: timer
     }}
-  end
-
-  def start_link(_) do
-    GenServer.start_link(__MODULE__, nil, name: __MODULE__)
   end
 
   defp init_emitters() do
@@ -63,66 +72,46 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
     :ok
   end
 
-  @impl true
-  def handle_call(:rotation_per_minute, _from, state) do
-    {:reply, {:ok, state.rotation_per_minute}, state}
+  def handle_info(%VmsCore.Bus.Message{name: :requested_throttle, value: requested_throttle, source: source}, state) when source == state.requested_throttle_source do
+    {:noreply, %{state | requested_throttle: requested_throttle}}
+  end
+
+  def handle_info(%VmsCore.Bus.Message{name: :selected_gear, value: selected_gear, source: source}, state) when source == state.selected_gear_source do
+    {:noreply, %{state | selected_gear: selected_gear}}
+  end
+
+  def handle_info(%Bus.Message{}, state) do # TODO, replace Bus ?
+    {:noreply, state}
   end
 
   @impl true
-  def handle_call(:inverter_state, _from, state) do
-    {:reply, {:ok, %{
-      rotation_per_minute: state.rotation_per_minute,
-      requested_torque: state.requested_torque,
-      effective_torque: state.effective_torque,
-      output_voltage: state.output_voltage,
-      inverter_communication_board_temperature: state.inverter_communication_board_temperature,
-      insulated_gate_bipolar_transistor_temperature: state.insulated_gate_bipolar_transistor_temperature,
-      insulated_gate_bipolar_transistor_board_temperature: state.insulated_gate_bipolar_transistor_board_temperature,
-      motor_temperature: state.motor_temperature
-    }}, state}
-  end
-
-  @impl true
-  def handle_call({:throttle, percentage_throttle, gear, allowed_discharge_power}, _from, state) do
-    # --- TODO reactivate when BMS implmented ---
-    # allowed_max_torque = D.div(allowed_discharge_power, @motor_max_power) |> D.min(@one) |> D.mult(@motor_max_torque)
-
-    # max_torque= case gear do
-    #   "drive"   ->
-    #     Decimal.min(@drive_max_torque, allowed_max_torque)
-    #   "reverse" ->
-    #     Decimal.max(@reverse_max_torque, allowed_max_torque)
-    #   _         ->
-    #     @zero
-    # end
-
-    max_torque= case gear do
+  def handle_info(:loop, state) do
+    max_torque = case state.selected_gear do
       "drive"   -> @drive_max_torque
       "reverse" -> @reverse_max_torque
       _         -> @zero
     end
-    percentage_throttle = case D.lt?(percentage_throttle, @effective_throttle_threshold)  do
+    requested_throttle = case D.lt?(state.requested_throttle, @effective_throttle_threshold)  do
       true  -> @zero
-      false -> percentage_throttle
+      false -> state.requested_throttle
     end
-    requested_torque = D.mult(percentage_throttle, max_torque)
+    requested_torque = D.mult(requested_throttle, max_torque)
 
     :ok = Emitter.update(@network_name, @vms_torque_request_frame_name, fn (data) ->
       %{data | "requested_torque" => requested_torque}
     end)
-    {:reply, :ok, %{state | requested_torque: requested_torque}}
+    broadcast_metrics(state)
+    {:noreply, %{state | requested_torque: requested_torque}}
   end
 
   @impl true
-  def handle_info({:handle_frame,  %Frame{name: @inverter_status_frame_name, signals: signals}}, state) do
+  def handle_info({:handle_frame, %Frame{name: @inverter_status_frame_name, signals: signals}}, state) do
     %{
       "inverter_output_voltage" => %Signal{value: output_voltage},
       "em57_effective_torque" => %Signal{value: effective_torque},
       "em57_rotations_per_minute" => %Signal{value: rotation_per_minute},
     } = signals
     rotation_per_minute = abs(rotation_per_minute)
-
-    PubSub.broadcast("metrics", %PubSub.MetricMessage{name: :rotation_per_minute, value: rotation_per_minute, source: __MODULE__})
     {:noreply, %{
       state |
         rotation_per_minute: rotation_per_minute,
@@ -133,7 +122,7 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
   end
 
   @impl true
-  def handle_info({:handle_frame,  %Frame{name: @inverter_temperatures_frame_name, signals: signals}}, state) do
+  def handle_info({:handle_frame, %Frame{name: @inverter_temperatures_frame_name, signals: signals}}, state) do
     %{
       "inverter_communication_board_temperature"            => %Signal{value: inverter_communication_board_temperature},
       "insulated_gate_bipolar_transistor_temperature"       => %Signal{value: insulated_gate_bipolar_transistor_temperature},
@@ -149,6 +138,16 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
         motor_temperature: motor_temperature
       }
     }
+  end
+
+  defp broadcast_metrics(state) do
+    Bus.broadcast("messages", %Bus.Message{name: :rotation_per_minute, value: state.rotation_per_minute, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :effective_torque, value: state.effective_torque, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :output_voltage, value: state.output_voltage, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :inverter_communication_board_temperature, value: state.inverter_communication_board_temperature, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :insulated_gate_bipolar_transistor_temperature, value: state.insulated_gate_bipolar_transistor_temperature, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :insulated_gate_bipolar_transistor_board_temperature, value: state.insulated_gate_bipolar_transistor_board_temperature, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :motor_temperature, value: state.motor_temperature, source: __MODULE__})
   end
 
   def torque_frame_parameters_builder(data) do
@@ -184,19 +183,4 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
     Emitter.disable(@network_name, [@vms_alive_frame_name, @vms_torque_request_frame_name, @vms_status_frame_name])
   end
 
-  def throttle(percentage_throttle, gear, discharge_max_power) do
-    GenServer.call(__MODULE__, {:throttle, percentage_throttle, gear, discharge_max_power})
-  end
-
-  def inverter_state() do
-    GenServer.call(__MODULE__, :inverter_state)
-  end
-
-  def rotation_per_minute() do
-    GenServer.call(__MODULE__, :rotation_per_minute)
-  end
-
-  def ready_to_drive?() do
-    {:ok, true} # TODO Should check inverter can messages for actual status
-  end
 end

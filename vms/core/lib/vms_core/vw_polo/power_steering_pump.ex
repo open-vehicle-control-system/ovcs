@@ -1,11 +1,11 @@
 defmodule VmsCore.VwPolo.PowerSteeringPump do
   use GenServer
   alias Cantastic.{Emitter, Frame, Receiver}
-  alias VmsCore.PubSub
+  alias VmsCore.Bus
 
   @impl true
   def init(_) do
-    PubSub.subscribe("commands")
+    Bus.subscribe("messages")
     :ok = Receiver.subscribe(self(), :polo_drive, "handbrake_status")
     :ok = Emitter.configure(:misc, "engine_status", %{
       parameters_builder_function: :default,
@@ -26,12 +26,15 @@ defmodule VmsCore.VwPolo.PowerSteeringPump do
     Emitter.forward(:misc, frame)
     {:noreply, state}
   end
-  def handle_info(%PubSub.CommandMessage{name: :select_gear, value: selected_gear}, state) do
+  def handle_info(%Bus.Message{name: :selected_gear, value: selected_gear}, state) do
     case selected_gear do
       :parking -> rotation_per_minute(0)
       :drive   -> rotation_per_minute(1500)
       :reverse -> rotation_per_minute(1500)
     end
+    {:noreply, state}
+  end
+  def handle_info(%Bus.Message{}, state) do # TODO, replace Bus ?
     {:noreply, state}
   end
 

@@ -1,6 +1,6 @@
 defmodule VmsCore.VwPolo.Abs do
   use GenServer
-  alias VmsCore.PubSub
+  alias VmsCore.Bus
 
   require Logger
   alias Cantastic.{Frame, Signal}
@@ -18,7 +18,7 @@ defmodule VmsCore.VwPolo.Abs do
   @impl true
   def handle_info({:handle_frame,  %Frame{signals: signals}}, state) do
     %{"speed" => %Signal{value: speed}} = signals
-    PubSub.broadcast("metrics", %PubSub.MetricMessage{name: :speed, value: speed, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :speed, value: speed, source: __MODULE__})
     {:noreply, state}
   end
 end

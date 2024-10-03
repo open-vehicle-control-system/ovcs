@@ -1,4 +1,4 @@
-defmodule VmsCore.PubSub do
+defmodule VmsCore.Bus do
   def subscribe(topic) do
     Phoenix.PubSub.subscribe(VmsCore.Bus, topic)
   end

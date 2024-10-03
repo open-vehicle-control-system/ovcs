@@ -1,17 +1,26 @@
 defmodule VmsCore.GearSelector do
   use GenServer
-  alias VmsCore.PubSub
+  alias VmsCore.Bus
   alias Decimal, as: D
   alias Cantastic.Emitter
 
   @gear_shift_throttle_limit D.new("0.05")
   @gear_shift_speed_limit D.new("1")
   @zero D.new(0)
+  @loop_period 10
+
+  def start_link(args) do
+    GenServer.start_link(__MODULE__, args, name: __MODULE__)
+  end
 
   @impl true
-  def init(_) do
-    PubSub.subscribe("metrics")
-    PubSub.subscribe("commands")
+  def init(%{
+    requested_gear_source: requested_gear_source,
+    ready_to_drive_source: ready_to_drive_source,
+    requested_throttle_source: requested_throttle_source,
+    speed_source: speed_source})
+  do
+    Bus.subscribe("messages")
     :ok = Emitter.configure(:ovcs, "gear_status", %{
       parameters_builder_function: :default,
       initial_data: %{
@@ -19,51 +28,51 @@ defmodule VmsCore.GearSelector do
       },
       enable: true
     })
-
+    {:ok, timer} = :timer.send_interval(@loop_period, :loop)
     {:ok, %{
       selected_gear: :parking,
       requested_throttle: @zero,
       speeed: @zero,
-      ready_to_drive: false
+      ready_to_drive: false,
+      loop_timer: timer,
+      requested_gear_source: requested_gear_source,
+      ready_to_drive_source: ready_to_drive_source,
+      speed_source: speed_source,
+      requested_throttle_source: requested_throttle_source
     }}
   end
 
-  def start_link(_) do
-    GenServer.start_link(__MODULE__, nil, name: __MODULE__)
+  @impl true
+  def handle_info(:loop, state) do
+    Bus.broadcast("messages", %Bus.Message{name: :selected_gear, value: state.selected_gear, source: __MODULE__})
+    {:noreply, state}
   end
 
   @impl true
-  def handle_info(%PubSub.MetricMessage{name: :requested_gear, value: requested_gear}, state) do
+  def handle_info(%Bus.Message{name: :requested_gear, value: requested_gear, source: source}, state) when source == state.requested_gear_source do
     state = case validate_requested_gear(state.selected_gear, requested_gear) do
       :no_change -> state
       {:change, selected_gear} ->
         :ok = Cantastic.Emitter.update(:ovcs, "gear_status", fn (data) ->
           %{data | "selected_gear" => "#{selected_gear}"}
         end)
-        PubSub.broadcast("commands", %PubSub.CommandMessage{name: :select_gear, value: selected_gear, previous_value: state.selected_gear, source: __MODULE__})
         %{state | selected_gear: selected_gear}
     end
     {:noreply,state}
   end
 
   @impl true
-  def handle_info(%PubSub.MetricMessage{name: :requested_throttle, value: requested_throttle}, state) do
+  def handle_info(%Bus.Message{name: :requested_throttle, value: requested_throttle, source: source}, state) when source == state.requested_throttle_source do
     {:noreply, %{state | requested_throttle: requested_throttle}}
   end
-  def handle_info(%PubSub.MetricMessage{name: :speed, value: speed}, state) do
+  def handle_info(%Bus.Message{name: :speed, value: speed, source: source}, state) when source == state.speed_source do
     {:noreply, %{state | speed: speed}}
   end
-  def handle_info(%PubSub.CommandMessage{name: :change_ready_to_drive_status, value: ready_to_drive}, state) do
+  def handle_info(%Bus.Message{name: :ready_to_drive, value: ready_to_drive, source: source}, state) when source == state.ready_to_drive_source  do
     {:noreply, %{state | ready_to_drive: ready_to_drive}}
   end
-
-  @impl true
-  def handle_call(:current, _from, state) do
-    {:reply, {:ok, state}, state}
-  end
-
-  def current() do
-    GenServer.call(__MODULE__, :current)
+  def handle_info(%Bus.Message{}, state) do # TODO, replace Bus ?
+    {:noreply, state}
   end
 
   defp validate_requested_gear(state, requested_gear) do

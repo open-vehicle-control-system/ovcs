@@ -2,7 +2,7 @@ defmodule VmsCore.Controllers.GenericController do
   use GenServer
 
   alias Cantastic.{Frame, Emitter}
-  alias VmsCore.PubSub
+  alias VmsCore.Bus
 
   @digital_pins %{
     "digital_pin0_enabled" => false,
