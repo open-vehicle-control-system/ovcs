@@ -18,8 +18,14 @@ defmodule VmsCore.Application do
       {VmsCore.Metrics, []},
       {VmsCore.VwPolo.Dashboard, []},
       {VmsCore.GearSelector, []},
-      %{id: VmsCore.Controllers.ControlsController, start: {VsVmsCore.Controllers.GenericController, :start_link, [%{process_name:  VmsCore.Controllers.ControlsController, control_digital_pins: control_digital_pins, control_other_pins: control_other_pins}]},
-      {VmsCore.GearSelector, [%{controller: VmsCore.Controllers.ControlsController, throttle_a_pin: 0, throttle_b_pin: 1}]},
+      %{
+        id: VmsCore.Controllers.ControlsController,
+        start: {
+          VmsCore.Controllers.GenericController,
+          :start_link, [%{process_name:  VmsCore.Controllers.ControlsController, control_digital_pins: true, control_other_pins: true}]
+        }
+      },
+      {VmsCore.ThrottlePedal, %{controller: VmsCore.Controllers.ControlsController, throttle_a_pin: 0, throttle_b_pin: 1}},
       {VmsCore.VwPolo.Abs, []},
       {VmsCore.VwPolo.PassengerCompartment, []},
       {VmsCore.VwPolo.IgnitionLock, []},
@@ -40,7 +46,6 @@ defmodule VmsCore.Application do
       {VmsCore.Controllers.FrontController, []},
       {VmsCore.Controllers.RearController, []},
       {VmsCore.VwPolo.PowerSteeringPump, []},
-      {VmsCore.Controllers.TestController, []},
       {VmsCore.Bosch.Lws, []},
       {VmsCore.BrakingSystem, []},
       {VmsCore.SteeringColumn, []}

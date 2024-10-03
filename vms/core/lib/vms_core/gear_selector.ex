@@ -2,6 +2,7 @@ defmodule VmsCore.GearSelector do
   use GenServer
   alias VmsCore.PubSub
   alias Decimal, as: D
+  alias Cantastic.Emitter
 
   @gear_shift_throttle_limit D.new("0.05")
   @gear_shift_speed_limit D.new("1")
@@ -55,6 +56,8 @@ defmodule VmsCore.GearSelector do
   def handle_info(%PubSub.CommandMessage{name: :change_ready_to_drive_status, value: ready_to_drive}, state) do
     {:noreply, %{state | ready_to_drive: ready_to_drive}}
   end
+
+  @impl true
   def handle_call(:current, _from, state) do
     {:reply, {:ok, state}, state}
   end
