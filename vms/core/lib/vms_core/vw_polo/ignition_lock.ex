@@ -20,7 +20,7 @@ defmodule VmsCore.VwPolo.IgnitionLock do
 
   @impl true
   def handle_info(:loop, state) do
-    VmsCore.Bus.broadcast("messages", %VmsCore.Bus.Message{name: :contact, value: state.contact})
+    VmsCore.Bus.broadcast("messages", %VmsCore.Bus.Message{name: :contact, value: state.contact, source: __MODULE__})
     {:noreply, state}
   end
 
