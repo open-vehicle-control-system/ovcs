@@ -1,4 +1,4 @@
-defmodule VmsCore.PubSub.MetricMessage do
+defmodule VmsCore.Bus.Message do
   defstruct [
     :name,
     :value,

@@ -15,9 +15,13 @@ defmodule VmsCore.Application do
         repos: Application.fetch_env!(:vms_core, :ecto_repos),
         skip: skip_migrations?()},
       {Phoenix.PubSub, name: VmsCore.Bus},
-      {VmsCore.Metrics, []},
       {VmsCore.VwPolo.Dashboard, []},
-      {VmsCore.GearSelector, []},
+      {VmsCore.GearSelector, %{
+        requested_gear_source: VmsCore.Infotainment,
+        ready_to_drive_source: VmsCore.Vehicle.OVCS1,
+        speed_source: VmsCore.VwPolo.Abs,
+        requested_throttle_source: VmsCore.ThrottlePedal
+      }},
       %{
         id: VmsCore.Controllers.ControlsController,
         start: {
@@ -25,13 +29,20 @@ defmodule VmsCore.Application do
           :start_link, [%{process_name:  VmsCore.Controllers.ControlsController, control_digital_pins: true, control_other_pins: true}]
         }
       },
-      {VmsCore.ThrottlePedal, %{controller: VmsCore.Controllers.ControlsController, throttle_a_pin: 0, throttle_b_pin: 1}},
+      {VmsCore.ThrottlePedal, %{
+        controller: VmsCore.Controllers.ControlsController,
+        throttle_a_pin: 0,
+        throttle_b_pin: 1
+      }},
       {VmsCore.VwPolo.Abs, []},
       {VmsCore.VwPolo.PassengerCompartment, []},
       {VmsCore.VwPolo.IgnitionLock, []},
       {VmsCore.NissanLeaf.Em57.Charger, []},
       {VmsCore.Orion.Bms2, []},
-      {VmsCore.NissanLeaf.Em57.Inverter, []},
+      {VmsCore.NissanLeaf.Em57.Inverter, %{
+        selected_gear_source: VmsCore.GearSelector,
+        requested_throttle_source: VmsCore.ThrottlePedal
+      }},
       {VmsCore.BatteryManagementSystem, []},
       {VmsCore.Charger, []},
       {VmsCore.PassengerCompartment, []},

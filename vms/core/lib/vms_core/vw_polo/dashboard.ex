@@ -2,7 +2,7 @@ defmodule VmsCore.VwPolo.Dashboard do
   use GenServer
   alias Cantastic.Emitter
   alias Decimal, as: D
-  alias VmsCore.PubSub
+  alias VmsCore.Bus
 
   @max_rotation_per_minute 10000
 
@@ -14,7 +14,7 @@ defmodule VmsCore.VwPolo.Dashboard do
         "engine_rotations_per_minute" => 0
       }
     })
-    PubSub.subscribe("metrics")
+    Bus.subscribe("messages")
     {:ok, %{}}
   end
 
@@ -23,7 +23,7 @@ defmodule VmsCore.VwPolo.Dashboard do
   end
 
   @impl true
-  def handle_info(%PubSub.MetricMessage{name: :rotation_per_minute, value: rotation_per_minute}, state) do
+  def handle_info(%Bus.Message{name: :rotation_per_minute, value: rotation_per_minute}, state) do
     rotation_per_minute = case D.gt?(rotation_per_minute, @max_rotation_per_minute) do
       true  -> 0
       false -> rotation_per_minute
@@ -31,6 +31,9 @@ defmodule VmsCore.VwPolo.Dashboard do
     :ok = Emitter.update(:polo_drive, "engine_status", fn (data) ->
       %{data | "engine_rotations_per_minute" => rotation_per_minute}
     end)
+    {:noreply, state}
+  end
+  def handle_info(%Bus.Message{}, state) do # TODO, replace Bus ?
     {:noreply, state}
   end
 
