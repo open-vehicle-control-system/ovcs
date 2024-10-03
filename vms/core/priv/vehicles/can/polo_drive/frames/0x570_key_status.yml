@@ -7,7 +7,7 @@ signals:
     value_start: 0
     value_length: 8
     mapping:
-      0x00: "off"
+      0x00: contact_off
       0x01: key_engaged
       0x87: contact_on
       0x8B: start_engine
