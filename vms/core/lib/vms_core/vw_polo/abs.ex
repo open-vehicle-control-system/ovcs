@@ -5,10 +5,16 @@ defmodule VmsCore.VwPolo.Abs do
   require Logger
   alias Cantastic.{Frame, Signal}
 
+  @loop_period 10
+
   @impl true
   def init(_) do
     :ok = Cantastic.Receiver.subscribe(self(), :polo_drive, "abs_status")
-    {:ok, %{}}
+    {:ok, timer} = :timer.send_interval(@loop_period, :loop)
+    {:ok, %{
+      loop_timer: timer,
+      speed: 0
+    }}
   end
 
   def start_link(_) do
@@ -16,9 +22,14 @@ defmodule VmsCore.VwPolo.Abs do
   end
 
   @impl true
+  def handle_info(:loop, state) do
+    Bus.broadcast("messages", %Bus.Message{name: :speed, value: state.speed, source: __MODULE__})
+    {:noreply, state}
+  end
+
+  @impl true
   def handle_info({:handle_frame,  %Frame{signals: signals}}, state) do
     %{"speed" => %Signal{value: speed}} = signals
-    Bus.broadcast("messages", %Bus.Message{name: :speed, value: speed, source: __MODULE__})
-    {:noreply, state}
+    {:noreply, %{state | speed: speed}}
   end
 end
