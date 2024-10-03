@@ -32,7 +32,7 @@ defmodule VmsCore.GearSelector do
     {:ok, %{
       selected_gear: :parking,
       requested_throttle: @zero,
-      speeed: @zero,
+      speed: @zero,
       ready_to_drive: false,
       loop_timer: timer,
       requested_gear_source: requested_gear_source,
