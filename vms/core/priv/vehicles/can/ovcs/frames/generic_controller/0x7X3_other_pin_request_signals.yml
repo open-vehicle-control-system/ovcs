@@ -1,0 +1,17 @@
+---
+- name: pwm_pin0_duty_cycle
+  value_start: 0
+  kind: integer
+  value_length: 12
+- name: pwm_pin1_duty_cycle
+  value_start: 12
+  kind: integer
+  value_length: 12
+- name: pwm_pin2_duty_cycle
+  value_start: 24
+  kind: integer
+  value_length: 12
+- name: dac_pin0_duty_cycle
+  value_start: 36
+  kind: integer
+  value_length: 12

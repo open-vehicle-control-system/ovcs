@@ -1,11 +1,9 @@
 defmodule VmsCore.VwPolo.Abs do
   use GenServer
-  alias Decimal, as: D
   alias VmsCore.PubSub
 
   require Logger
   alias Cantastic.{Frame, Signal}
-  @zero D.new(0)
 
   @impl true
   def init(_) do

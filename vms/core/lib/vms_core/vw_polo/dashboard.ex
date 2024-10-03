@@ -4,9 +4,6 @@ defmodule VmsCore.VwPolo.Dashboard do
   alias Decimal, as: D
   alias VmsCore.PubSub
 
-  @network_name :polo_drive
-
-  @engine_status_frame_name ""
   @max_rotation_per_minute 10000
 
   @impl true

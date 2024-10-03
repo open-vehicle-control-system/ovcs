@@ -1,0 +1,5 @@
+---
+name: controls_controller_digital_pin_request
+id: 0x712
+frequency: 10
+signals: import!:generic_controller/0x7X2_digital_pin_request_signals.yml

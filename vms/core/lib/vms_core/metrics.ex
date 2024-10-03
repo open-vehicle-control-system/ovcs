@@ -5,9 +5,7 @@ defmodule VmsCore.Metrics do
   @impl true
   def init(_) do
     PubSub.subscribe("metrics")
-    {:ok, %{
-      rotation_per_minute: 0
-    }}
+    {:ok, %{}}
   end
 
   def start_link(_) do
@@ -16,7 +14,7 @@ defmodule VmsCore.Metrics do
 
   @impl true
   def handle_info(%PubSub.MetricMessage{name: name, value: value}, state) do
-    {:noreply, %{state | name => value}}
+    {:noreply, state |> Map.put(name, value)}
   end
 
   @impl true

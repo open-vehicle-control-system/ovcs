@@ -1,7 +1,7 @@
 defmodule VmsCore.Vehicle do
   use GenServer
   require Logger
-  alias VmsCore.{Inverter, BatteryManagementSystem, IgnitionLock, Controllers.ControlsController, Status, Charger, Controllers.RearController}
+  alias VmsCore.{Inverter, BatteryManagementSystem, IgnitionLock, Controllers.ControlsController}
   alias Decimal, as: D
 
   @loop_sleep 10
@@ -21,7 +21,7 @@ defmodule VmsCore.Vehicle do
     state = state
       |> handle_ignition()
       |> handle_throttle()
-    loop()
+    #loop()
     {:noreply, state}
   end
 
