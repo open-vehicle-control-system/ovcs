@@ -46,7 +46,6 @@ defmodule VmsCore.Application do
       {VmsCore.BatteryManagementSystem, []},
       {VmsCore.Charger, []},
       {VmsCore.PassengerCompartment, []},
-      {VmsCore.IgnitionLock, []},
       {VmsCore.Inverter, []},
       {VmsCore.Vehicle, []},
       {VmsCore.NetworkInterfacesManager, []},
