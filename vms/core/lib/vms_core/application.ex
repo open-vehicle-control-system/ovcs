@@ -54,9 +54,7 @@ defmodule VmsCore.Application do
         power_relay_pin: 5
       }},
       {VmsCore.BatteryManagementSystem, []},
-      {VmsCore.Charger, []},
       {VmsCore.PassengerCompartment, []},
-      {VmsCore.Inverter, []},
       {VmsCore.NetworkInterfacesManager, []},
       {VmsCore.Status, []},
       {VmsCore.Infotainment, []},
