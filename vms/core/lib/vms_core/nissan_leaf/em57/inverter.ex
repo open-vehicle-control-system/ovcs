@@ -28,7 +28,13 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
   end
 
   @impl true
-  def init(%{requested_throttle_source: requested_throttle_source, selected_gear_source: selected_gear_source}) do
+  def init(%{
+    requested_throttle_source: requested_throttle_source,
+    selected_gear_source: selected_gear_source,
+    contact_source: contact_source,
+    controller: controller,
+    power_relay_pin: power_relay_pin})
+  do
     :ok = init_emitters()
     Receiver.subscribe(self(), @network_name, [@inverter_status_frame_name, @inverter_temperatures_frame_name])
     Bus.subscribe("messages")
@@ -44,9 +50,14 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
       motor_temperature: @zero,
       requested_throttle_source: requested_throttle_source,
       selected_gear_source: selected_gear_source,
+      contact_source: contact_source,
       requested_throttle: @zero,
       selected_gear: "parking",
-      loop_timer: timer
+      contact: :off,
+      loop_timer: timer,
+      enabled: false,
+      controller: controller,
+      power_relay_pin: power_relay_pin
     }}
   end
 
@@ -80,12 +91,39 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
     {:noreply, %{state | selected_gear: selected_gear}}
   end
 
+  def handle_info(%VmsCore.Bus.Message{name: :contact, value: contact, source: source}, state) when source == state.contact_source do
+    {:noreply, %{state | contact: contact}}
+  end
+
   def handle_info(%Bus.Message{}, state) do # TODO, replace Bus ?
     {:noreply, state}
   end
 
   @impl true
   def handle_info(:loop, state) do
+    state = state
+      |> toggle_inverter()
+      |> apply_torque()
+      |> emit_metrics()
+
+    {:noreply, state}
+  end
+
+  defp toggle_inverter(state) do
+    case {state.enabled, state.contact} do
+      {false, :on} ->
+        :ok = Emitter.enable(@network_name, [@vms_alive_frame_name, @vms_torque_request_frame_name, @vms_status_frame_name])
+        :ok = VmsCore.Controllers.GenericController.set_digital_value(state.controller, state.power_relay_pin, true)
+        %{state | enabled: true}
+      {true, :off} ->
+        :ok = Emitter.disable(@network_name, [@vms_alive_frame_name, @vms_torque_request_frame_name, @vms_status_frame_name])
+        :ok = VmsCore.Controllers.GenericController.set_digital_value(state.controller, state.power_relay_pin, false)
+        %{state | enabled: false}
+      _ -> state
+    end
+  end
+
+  defp apply_torque(state) do
     max_torque = case state.selected_gear do
       "drive"   -> @drive_max_torque
       "reverse" -> @reverse_max_torque
@@ -100,8 +138,19 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
     :ok = Emitter.update(@network_name, @vms_torque_request_frame_name, fn (data) ->
       %{data | "requested_torque" => requested_torque}
     end)
-    broadcast_metrics(state)
-    {:noreply, %{state | requested_torque: requested_torque}}
+
+    %{state | requested_torque: requested_torque}
+  end
+
+  defp emit_metrics(state) do
+    Bus.broadcast("messages", %Bus.Message{name: :rotation_per_minute, value: state.rotation_per_minute, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :effective_torque, value: state.effective_torque, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :output_voltage, value: state.output_voltage, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :inverter_communication_board_temperature, value: state.inverter_communication_board_temperature, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :insulated_gate_bipolar_transistor_temperature, value: state.insulated_gate_bipolar_transistor_temperature, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :insulated_gate_bipolar_transistor_board_temperature, value: state.insulated_gate_bipolar_transistor_board_temperature, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :motor_temperature, value: state.motor_temperature, source: __MODULE__})
+    state
   end
 
   @impl true
@@ -140,16 +189,6 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
     }
   end
 
-  defp broadcast_metrics(state) do
-    Bus.broadcast("messages", %Bus.Message{name: :rotation_per_minute, value: state.rotation_per_minute, source: __MODULE__})
-    Bus.broadcast("messages", %Bus.Message{name: :effective_torque, value: state.effective_torque, source: __MODULE__})
-    Bus.broadcast("messages", %Bus.Message{name: :output_voltage, value: state.output_voltage, source: __MODULE__})
-    Bus.broadcast("messages", %Bus.Message{name: :inverter_communication_board_temperature, value: state.inverter_communication_board_temperature, source: __MODULE__})
-    Bus.broadcast("messages", %Bus.Message{name: :insulated_gate_bipolar_transistor_temperature, value: state.insulated_gate_bipolar_transistor_temperature, source: __MODULE__})
-    Bus.broadcast("messages", %Bus.Message{name: :insulated_gate_bipolar_transistor_board_temperature, value: state.insulated_gate_bipolar_transistor_board_temperature, source: __MODULE__})
-    Bus.broadcast("messages", %Bus.Message{name: :motor_temperature, value: state.motor_temperature, source: __MODULE__})
-  end
-
   def torque_frame_parameters_builder(data) do
     counter = data["counter"]
     parameters = %{
@@ -174,13 +213,4 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
     data = %{data | "counter" => Util.counter(counter + 1)}
     {:ok, parameters, data}
   end
-
-  def on() do
-    Emitter.enable(@network_name, [@vms_alive_frame_name, @vms_torque_request_frame_name, @vms_status_frame_name])
-  end
-
-  def off() do
-    Emitter.disable(@network_name, [@vms_alive_frame_name, @vms_torque_request_frame_name, @vms_status_frame_name])
-  end
-
 end

@@ -29,6 +29,13 @@ defmodule VmsCore.Application do
           :start_link, [%{process_name:  VmsCore.Controllers.ControlsController, control_digital_pins: true, control_other_pins: true}]
         }
       },
+      %{
+        id: VmsCore.Controllers.FrontController,
+        start: {
+          VmsCore.Controllers.GenericController,
+          :start_link, [%{process_name:  VmsCore.Controllers.FrontController, control_digital_pins: true, control_other_pins: false}]
+        }
+      },
       {VmsCore.ThrottlePedal, %{
         controller: VmsCore.Controllers.ControlsController,
         throttle_a_pin: 0,
@@ -41,24 +48,27 @@ defmodule VmsCore.Application do
       {VmsCore.Orion.Bms2, []},
       {VmsCore.NissanLeaf.Em57.Inverter, %{
         selected_gear_source: VmsCore.GearSelector,
-        requested_throttle_source: VmsCore.ThrottlePedal
+        requested_throttle_source: VmsCore.ThrottlePedal,
+        contact_source: VmsCore.VwPolo.IgnitionLock,
+        controller: VmsCore.Controllers.FrontController,
+        power_relay_pin: 5
       }},
       {VmsCore.BatteryManagementSystem, []},
       {VmsCore.Charger, []},
       {VmsCore.PassengerCompartment, []},
       {VmsCore.Inverter, []},
-      {VmsCore.Vehicle, []},
       {VmsCore.NetworkInterfacesManager, []},
       {VmsCore.Status, []},
       {VmsCore.Infotainment, []},
       {VmsCore.Bosch.IboosterGen2, []},
       {VmsCore.Controllers.Configuration, []},
-      {VmsCore.Controllers.FrontController, []},
-      {VmsCore.Controllers.RearController, []},
       {VmsCore.VwPolo.PowerSteeringPump, []},
       {VmsCore.Bosch.Lws, []},
       {VmsCore.BrakingSystem, []},
-      {VmsCore.SteeringColumn, []}
+      {VmsCore.SteeringColumn, []},
+      {VmsCore.Vehicles.OVCS1, %{
+        contact_source: VmsCore.VwPolo.IgnitionLock
+      }},
     ]
 
     opts = [strategy: :one_for_one, name: VmsCore.Supervisor]

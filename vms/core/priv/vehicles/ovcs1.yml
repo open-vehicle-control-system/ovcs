@@ -9,7 +9,7 @@ can_networks:
       - import!:can/ovcs/frames/0x60B_bms_status.yml
       - import!:can/ovcs/frames/0x600_gear_status.yml
       - import!:can/ovcs/frames/0x700_controller_configuration.yml
-      - import!:can/ovcs/frames/0x702_front_controller_request.yml
+      - import!:can/ovcs/frames/0x702_front_controller_digital_pin_request.yml
       - import!:can/ovcs/frames/0x70A_rear_controller_request.yml
       - import!:can/ovcs/frames/0x712_controls_controller_digital_pin_request.yml
       - import!:can/ovcs/frames/0x713_controls_controller_other_pin_request.yml
@@ -19,7 +19,7 @@ can_networks:
       - import!:can/ovcs/frames/0x201_infotainment_status.yml
       - import!:can/ovcs/frames/0x701_front_controller_alive.yml
       - import!:can/ovcs/frames/0x709_rear_controller_alive.yml
-      - import!:can/ovcs/frames/0x704_front_controller_status.yml
+      - import!:can/ovcs/frames/0x704_front_controller_digital_and_analog_pin_status.yml
       - import!:can/ovcs/frames/0x70C_rear_controller_status.yml
       - import!:can/ovcs/frames/0x711_controls_controller_alive.yml
       - import!:can/ovcs/frames/0x714_controls_controller_digital_and_analog_pin_status.yml
