@@ -4,7 +4,6 @@ defmodule VmsCore.Status do
 
   alias Cantastic.{Emitter, ReceivedFrameWatcher, Frame, Signal}
 
-  @network_name :ovcs
   @vms_status_frame_name "vms_status"
   @status_parameter "status"
   @counter_parameter "counter"
@@ -13,7 +12,7 @@ defmodule VmsCore.Status do
 
   @impl true
   def init(_) do
-    :ok = Emitter.configure(@network_name, @vms_status_frame_name, %{
+    :ok = Emitter.configure(:ovcs, @vms_status_frame_name, %{
       parameters_builder_function: &vms_status_frame_parameter_builder/1,
       initial_data: %{
         @status_parameter => "ok",
@@ -21,8 +20,8 @@ defmodule VmsCore.Status do
         @ready_to_drive_parameter => false
       }
     })
-    :ok = Emitter.enable(@network_name, @vms_status_frame_name)
-    :ok = ReceivedFrameWatcher.subscribe(@network_name, ["controls_controller_alive", "front_controller_alive", "rear_controller_alive"], self())
+    :ok = Emitter.enable(:ovcs, @vms_status_frame_name)
+    :ok = ReceivedFrameWatcher.subscribe(:ovcs, ["controls_controller_alive", "front_controller_alive", "rear_controller_alive"], self())
     :ok = Cantastic.Receiver.subscribe(self(), :polo_drive, @key_status_frame_name)
     :ok = ReceivedFrameWatcher.subscribe(:polo_drive, "abs_status", self())
     :ok = ReceivedFrameWatcher.subscribe(:orion_bms, "bms_status_1", self())
@@ -49,7 +48,7 @@ defmodule VmsCore.Status do
     case state.failed_frames[frame_name] do
       nil ->
         Logger.warning("Frame #{network_name}.#{frame_name} not received anymore")
-        Emitter.update(@network_name, @vms_status_frame_name, fn (data) ->
+        Emitter.update(:ovcs, @vms_status_frame_name, fn (data) ->
           %{data | @status_parameter => "failure"}
         end)
         state = state
@@ -63,7 +62,7 @@ defmodule VmsCore.Status do
 
   @impl true
   def handle_info(:enable_watchers, state) do
-    :ok = ReceivedFrameWatcher.enable(@network_name, ["controls_controller_alive", "rear_controller_alive", "front_controller_alive"])
+    :ok = ReceivedFrameWatcher.enable(:ovcs, ["controls_controller_alive", "rear_controller_alive", "front_controller_alive"])
     :ok = ReceivedFrameWatcher.enable(:orion_bms, ["bms_status_1"])
     {:noreply, state}
   end
@@ -99,7 +98,7 @@ defmodule VmsCore.Status do
 
   @impl true
   def handle_call({:ready_to_drive, ready_to_drive}, _from, state) do
-    :ok = Emitter.update(@network_name, @vms_status_frame_name, fn (data) ->
+    :ok = Emitter.update(:ovcs, @vms_status_frame_name, fn (data) ->
       %{data | @ready_to_drive_parameter => ready_to_drive}
     end)
     {:reply, :ok, state}

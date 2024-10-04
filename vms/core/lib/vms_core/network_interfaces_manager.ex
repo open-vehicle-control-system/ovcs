@@ -2,12 +2,12 @@ defmodule VmsCore.NetworkInterfacesManager do
   use GenServer
   require Logger
 
-  def start_link(args) do
-    GenServer.start_link(__MODULE__, args, name: __MODULE__)
+  def start_link(_) do
+    GenServer.start_link(__MODULE__, nil, name: __MODULE__)
   end
 
   @impl true
-  def init(_args) do
+  def init(_) do
     network_interfaces = Cantastic.ConfigurationStore.networks() |> Enum.map(fn (network_interface) ->
       spi_interface_name = case network_interface.labels do
         [spi_interface: spi_interface_name] -> spi_interface_name

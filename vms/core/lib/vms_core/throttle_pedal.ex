@@ -90,8 +90,6 @@ defmodule VmsCore.ThrottlePedal do
   def handle_call(:enable_throttle_calibration, _from, state) do
     {:reply, :ok, %{state | throttle_calibration_status: "started"}}
   end
-
-  @impl true
   def handle_call(:disable_throttle_calibration, _from, %{throttle_calibration_status: "in_progress"} = state) do
     with  {:ok, _} <- set_throttle_calibration_value_for_key("low_raw_throttle_a", state.low_raw_throttle_a),
           {:ok, _} <- set_throttle_calibration_value_for_key("low_raw_throttle_b", state.low_raw_throttle_b),
@@ -103,11 +101,9 @@ defmodule VmsCore.ThrottlePedal do
       {:error, error} -> {:error, error}
     end
   end
-  @impl true
   def handle_call(:disable_throttle_calibration, _from, %{throttle_calibration_status: "started"} = state) do
     {:reply, :ok, %{state | throttle_calibration_status: "disabled"}}
   end
-  @impl true
   def handle_call(:disable_throttle_calibration, _from, state) do
     {:reply, :ok, state}
   end
@@ -119,7 +115,6 @@ defmodule VmsCore.ThrottlePedal do
   def disable_throttle_calibration_mode() do
     GenServer.call(__MODULE__, :disable_throttle_calibration)
   end
-
 
   defp get_throttle_calibration_value_for_key(key) do
     record = from(cc in ThrottleCalibration, where: cc.key == ^key, limit: 1, order_by: [desc: :inserted_at])

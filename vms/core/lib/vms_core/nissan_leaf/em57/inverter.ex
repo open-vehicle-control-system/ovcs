@@ -174,7 +174,7 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
     state
   end
 
-  def torque_frame_parameters_builder(data) do
+  defp torque_frame_parameters_builder(data) do
     counter = data["counter"]
     parameters = %{
       "requested_torque" => data["requested_torque"],
@@ -186,7 +186,7 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
     {:ok, parameters, data}
   end
 
-  def status_frame_parameters_builder(data) do
+  defp status_frame_parameters_builder(data) do
     counter = data["counter"]
     parameters = %{
       "gear" => data["gear"],

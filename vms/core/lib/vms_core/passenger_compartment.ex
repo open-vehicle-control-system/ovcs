@@ -43,14 +43,14 @@ defmodule VmsCore.PassengerCompartment do
   def handle_info(:loop, state) do
     :ok = Emitter.update(:ovcs, "passenger_compartment_status", fn (data) ->
       %{data |
-      "front_left_door_open" => state.front_left_door_open,
-      "front_right_door_open" => state.front_right_door_open,
-      "rear_left_door_open" => state.rear_left_door_open,
-      "rear_right_door_open" => state.rear_right_door_open,
-      "trunk_door_open" => state.trunk_door_open,
-      "beam_active" => state.beam_active,
-      "handbrake_engaged" => state.handbrake_engaged
-    }
+        "front_left_door_open" => state.front_left_door_open,
+        "front_right_door_open" => state.front_right_door_open,
+        "rear_left_door_open" => state.rear_left_door_open,
+        "rear_right_door_open" => state.rear_right_door_open,
+        "trunk_door_open" => state.trunk_door_open,
+        "beam_active" => state.beam_active,
+        "handbrake_engaged" => state.handbrake_engaged
+      }
     end)
     {:noreply, state}
   end
