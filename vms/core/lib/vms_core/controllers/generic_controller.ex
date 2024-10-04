@@ -2,7 +2,6 @@ defmodule VmsCore.Controllers.GenericController do
   use GenServer
 
   alias Cantastic.{Frame, Emitter}
-  alias VmsCore.Bus
 
   @digital_pins %{
     "digital_pin0_enabled" => false,
@@ -53,8 +52,8 @@ defmodule VmsCore.Controllers.GenericController do
   def init(%{process_name:  process_name, control_digital_pins: control_digital_pins, control_other_pins: control_other_pins}) do
     alive_frame_name                         = compute_frame_name(process_name, "alive")
     digital_and_analog_pin_status_frame_name = compute_frame_name(process_name, "digital_and_analog_pin_status")
-    digital_pin_request_frame_name           = compute_frame_name(process_name,  "digital_pin_request")
-    other_pin_request_frame_name             = compute_frame_name(process_name,  "other_pin_request")
+    digital_pin_request_frame_name           = compute_frame_name(process_name, "digital_pin_request")
+    other_pin_request_frame_name             = compute_frame_name(process_name, "other_pin_request")
 
     :ok = Cantastic.Receiver.subscribe(self(), :ovcs, [alive_frame_name, digital_and_analog_pin_status_frame_name])
 

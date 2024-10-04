@@ -7,12 +7,16 @@ defmodule VmsCore.VwPolo.Dashboard do
   @max_rotation_per_minute 10000
   @loop_period 10
 
+  def start_link(args) do
+    GenServer.start_link(__MODULE__, args, name: __MODULE__)
+  end
+
   @impl true
-  def init(_) do
+  def init(%{contact_source: contact_source, rotation_per_minute_source: rotation_per_minute_source}) do
     :ok = Emitter.configure(:polo_drive, "engine_status", %{
       parameters_builder_function: :default,
       initial_data: %{
-        "engine_rotations_per_minute" => 0
+        "rotations_per_minute" => 0
       }
     })
     {:ok, timer} = :timer.send_interval(@loop_period, :loop)
@@ -20,40 +24,35 @@ defmodule VmsCore.VwPolo.Dashboard do
     {:ok, %{
       loop_timer: timer,
       contact: :off,
-      enabled: false
+      enabled: false,
+      contact_source: contact_source,
+      rotation_per_minute_source: rotation_per_minute_source
     }}
-  end
-
-  def start_link(_) do
-    GenServer.start_link(__MODULE__, nil, name: __MODULE__)
   end
 
   @impl true
   def handle_info(:loop, state) do
     case {state.enabled, state.contact} do
-      :on ->
+      {false, :on} ->
         Emitter.enable(:polo_drive, "engine_status")
-        %{state | enabled: true}
+        {:noreply, %{state | enabled: true}}
       {true, :off} ->
         Emitter.disable(:polo_drive, "engine_status")
-        %{state | enabled: false}
-      _ -> state
+        {:noreply, %{state | enabled: false}}
+      _ ->
+        {:noreply, state}
     end
-      {:noreply, state}
   end
-
-  def handle_info(%VmsCore.Bus.Message{name: :contact, value: contact, source: source}, state) when source == state.contact_source do
+  def handle_info(%Bus.Message{name: :contact, value: contact, source: source}, state) when source == state.contact_source do
     {:noreply, %{state | contact: contact}}
   end
-
-  @impl true
-  def handle_info(%Bus.Message{name: :rotation_per_minute, value: rotation_per_minute}, state) do
+  def handle_info(%Bus.Message{name: :rotation_per_minute, value: rotation_per_minute, source: source}, state) when source == state.rotation_per_minute_source do
     rotation_per_minute = case D.gt?(rotation_per_minute, @max_rotation_per_minute) do
       true  -> 0
       false -> rotation_per_minute
     end
     :ok = Emitter.update(:polo_drive, "engine_status", fn (data) ->
-      %{data | "engine_rotations_per_minute" => rotation_per_minute}
+      %{data | "rotations_per_minute" => rotation_per_minute}
     end)
     {:noreply, state}
   end

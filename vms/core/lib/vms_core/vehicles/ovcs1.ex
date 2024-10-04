@@ -1,6 +1,6 @@
 defmodule VmsCore.Vehicles.OVCS1 do
   use GenServer
-  alias Cantastic.{Frame, Signal}
+  alias VmsCore.Bus
 
   @loop_period 10
 
@@ -25,7 +25,7 @@ defmodule VmsCore.Vehicles.OVCS1 do
     {:noreply, state}
   end
 
-  def handle_info(%VmsCore.Bus.Message{name: :contact, value: contact, source: source}, state) when source == state.contact_source do
+  def handle_info(%Bus.Message{name: :contact, value: contact, source: source}, state) when source == state.contact_source do
     {:noreply, %{state | contact: contact}}
   end
 

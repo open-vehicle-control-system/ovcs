@@ -15,7 +15,10 @@ defmodule VmsCore.Application do
         repos: Application.fetch_env!(:vms_core, :ecto_repos),
         skip: skip_migrations?()},
       {Phoenix.PubSub, name: VmsCore.Bus},
-      {VmsCore.VwPolo.Dashboard, []},
+      {VmsCore.VwPolo.Dashboard, %{
+        contact_source: VmsCore.VwPolo.IgnitionLock,
+        rotation_per_minute_source: VmsCore.NissanLeaf.Em57.Inverter
+      }},
       {VmsCore.GearSelector, %{
         requested_gear_source: VmsCore.Infotainment,
         ready_to_drive_source: VmsCore.Vehicle.OVCS1,
@@ -41,7 +44,10 @@ defmodule VmsCore.Application do
         throttle_a_pin: 0,
         throttle_b_pin: 1
       }},
-      {VmsCore.VwPolo.Abs, []},
+      {VmsCore.VwPolo.Abs, %{
+        contact_source: VmsCore.VwPolo.IgnitionLock,
+        rotation_per_minute_source: VmsCore.NissanLeaf.Em57.Inverter
+      }},
       {VmsCore.VwPolo.PassengerCompartment, []},
       {VmsCore.VwPolo.IgnitionLock, []},
       {VmsCore.NissanLeaf.Em57.Charger, []},
@@ -62,7 +68,9 @@ defmodule VmsCore.Application do
       {VmsCore.Infotainment, []},
       {VmsCore.Bosch.IboosterGen2, []},
       {VmsCore.Controllers.Configuration, []},
-      {VmsCore.VwPolo.PowerSteeringPump, []},
+      {VmsCore.VwPolo.PowerSteeringPump, %{
+        selected_gear_source: VmsCore.GearSelector
+      }},
       {VmsCore.Bosch.Lws, []},
       {VmsCore.BrakingSystem, []},
       {VmsCore.SteeringColumn, []},

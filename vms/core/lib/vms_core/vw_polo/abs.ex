@@ -4,8 +4,10 @@ defmodule VmsCore.VwPolo.Abs do
 
   require Logger
   alias Cantastic.{Frame, Signal}
+  alias Decimal, as: D
 
   @loop_period 10
+  @zero D.new(0)
 
   @impl true
   def init(_) do
@@ -13,7 +15,7 @@ defmodule VmsCore.VwPolo.Abs do
     {:ok, timer} = :timer.send_interval(@loop_period, :loop)
     {:ok, %{
       loop_timer: timer,
-      speed: 0
+      speed: @zero
     }}
   end
 

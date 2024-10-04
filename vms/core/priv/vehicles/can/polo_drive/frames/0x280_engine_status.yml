@@ -8,7 +8,7 @@ signals:
     value_start: 0
     value_length: 16
     value: 0x0000
-  - name: engine_rotations_per_minute
+  - name: rotations_per_minute
     kind: integer
     unit: rpm
     value_start: 16
