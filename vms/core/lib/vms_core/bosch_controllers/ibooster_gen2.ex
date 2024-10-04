@@ -20,6 +20,7 @@ defmodule VmsCore.Bosch.IboosterGen2 do
   def init(%{contact_source: contact_source}) do
     :ok = init_emitters()
     :ok = Receiver.subscribe(self(), :misc, ["ibooster_status"])
+    Bus.subscribe("messages")
     {:ok, timer} = :timer.send_interval(@loop_period, :loop)
     {:ok, %{
       status: "off",
@@ -29,7 +30,7 @@ defmodule VmsCore.Bosch.IboosterGen2 do
       loop_timer: timer,
       enabled: false,
       contact_source: contact_source,
-      contact: false
+      contact: :off
     }}
   end
 
@@ -81,6 +82,13 @@ defmodule VmsCore.Bosch.IboosterGen2 do
         rod_position: rod_position
       }
     }
+  end
+
+  def handle_info(%VmsCore.Bus.Message{name: :contact, value: contact, source: source}, state) when source == state.contact_source do
+    {:noreply, %{state | contact: contact}}
+  end
+  def handle_info(%Bus.Message{}, state) do # TODO, replace Bus ?
+    {:noreply, state}
   end
 
   defp toggle_ibooster(state) do
