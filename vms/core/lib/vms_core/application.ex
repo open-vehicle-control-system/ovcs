@@ -15,34 +15,35 @@ defmodule VmsCore.Application do
         repos: Application.fetch_env!(:vms_core, :ecto_repos),
         skip: skip_migrations?()},
       {Phoenix.PubSub, name: VmsCore.Bus},
-      {VmsCore.VwPolo.Dashboard, %{
-        contact_source: VmsCore.VwPolo.IgnitionLock,
-        rotation_per_minute_source: VmsCore.NissanLeaf.Em57.Inverter
-      }},
-      {VmsCore.GearSelector, %{
-        requested_gear_source: VmsCore.Infotainment,
-        ready_to_drive_source: VmsCore.Vehicle.OVCS1,
-        speed_source: VmsCore.VwPolo.Abs,
-        requested_throttle_source: VmsCore.ThrottlePedal
-      }},
+
+      # Controllers
       %{
         id: VmsCore.Controllers.ControlsController,
         start: {
           VmsCore.Controllers.GenericController,
-          :start_link, [%{process_name:  VmsCore.Controllers.ControlsController, control_digital_pins: true, control_other_pins: true}]
+          :start_link, [%{
+            process_name: VmsCore.Controllers.ControlsController,
+            control_digital_pins: true,
+            control_other_pins: true
+          }]
         }
       },
       %{
         id: VmsCore.Controllers.FrontController,
         start: {
           VmsCore.Controllers.GenericController,
-          :start_link, [%{process_name:  VmsCore.Controllers.FrontController, control_digital_pins: true, control_other_pins: false}]
+          :start_link, [%{
+            process_name: VmsCore.Controllers.FrontController,
+            control_digital_pins: true,
+            control_other_pins: false
+          }]
         }
       },
-      {VmsCore.ThrottlePedal, %{
-        controller: VmsCore.Controllers.ControlsController,
-        throttle_a_pin: 0,
-        throttle_b_pin: 1
+
+      # VwPolo
+      {VmsCore.VwPolo.Dashboard, %{
+        contact_source: VmsCore.VwPolo.IgnitionLock,
+        rotation_per_minute_source: VmsCore.NissanLeaf.Em57.Inverter
       }},
       {VmsCore.VwPolo.Abs, %{
         contact_source: VmsCore.VwPolo.IgnitionLock,
@@ -50,8 +51,12 @@ defmodule VmsCore.Application do
       }},
       {VmsCore.VwPolo.PassengerCompartment, []},
       {VmsCore.VwPolo.IgnitionLock, []},
+      {VmsCore.VwPolo.PowerSteeringPump, %{
+        selected_gear_source: VmsCore.GearSelector
+      }},
+
+      # NissanLeaf
       {VmsCore.NissanLeaf.Em57.Charger, []},
-      {VmsCore.Orion.Bms2, []},
       {VmsCore.NissanLeaf.Em57.Inverter, %{
         selected_gear_source: VmsCore.GearSelector,
         requested_throttle_source: VmsCore.ThrottlePedal,
@@ -59,24 +64,41 @@ defmodule VmsCore.Application do
         controller: VmsCore.Controllers.FrontController,
         power_relay_pin: 5
       }},
-      {VmsCore.BatteryManagementSystem, []},
+
+      # Orion
+      {VmsCore.Orion.Bms2, []},
+
+      #Bosch
+      {VmsCore.Bosch.IboosterGen2, []},
+      {VmsCore.Bosch.Lws, []},
+
+      # OVCS
+      {VmsCore.GearSelector, %{
+        requested_gear_source: VmsCore.Infotainment,
+        ready_to_drive_source: VmsCore.Vehicle.OVCS1,
+        speed_source: VmsCore.VwPolo.Abs,
+        requested_throttle_source: VmsCore.ThrottlePedal
+      }},
+      {VmsCore.ThrottlePedal, %{
+        controller: VmsCore.Controllers.ControlsController,
+        throttle_a_pin: 0,
+        throttle_b_pin: 1
+      }},
       {VmsCore.PassengerCompartment, %{
         passenger_compartement_source: VmsCore.VwPolo.PassengerCompartment
       }},
+      {VmsCore.Infotainment, []},
       {VmsCore.NetworkInterfacesManager, []},
       {VmsCore.Status, []},
-      {VmsCore.Infotainment, []},
-      {VmsCore.Bosch.IboosterGen2, []},
       {VmsCore.Controllers.Configuration, []},
-      {VmsCore.VwPolo.PowerSteeringPump, %{
-        selected_gear_source: VmsCore.GearSelector
-      }},
-      {VmsCore.Bosch.Lws, []},
       {VmsCore.BrakingSystem, []},
       {VmsCore.SteeringColumn, []},
+      {VmsCore.BatteryManagementSystem, []},
+
+      # Vehicle
       {VmsCore.Vehicles.OVCS1, %{
         contact_source: VmsCore.VwPolo.IgnitionLock
-      }},
+      }}
     ]
 
     opts = [strategy: :one_for_one, name: VmsCore.Supervisor]
