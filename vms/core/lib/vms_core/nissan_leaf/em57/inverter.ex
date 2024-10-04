@@ -32,7 +32,7 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
     {:ok, timer} = :timer.send_interval(@loop_period, :loop)
     {:ok, %{
       rotation_per_minute: 0,
-      output_voltage: @zero,
+      inverter_output_voltage: @zero,
       effective_torque: @zero,
       requested_torque: @zero,
       inverter_communication_board_temperature: @zero,
@@ -99,7 +99,7 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
 
   def handle_info({:handle_frame, %Frame{name: "inverter_status", signals: signals}}, state) do
     %{
-      "inverter_output_voltage" => %Signal{value: output_voltage},
+      "inverter_output_voltage" => %Signal{value: inverter_output_voltage},
       "effective_torque"        => %Signal{value: effective_torque},
       "rotations_per_minute"    => %Signal{value: rotation_per_minute},
     } = signals
@@ -108,7 +108,7 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
       state |
         rotation_per_minute: rotation_per_minute,
         effective_torque: effective_torque,
-        output_voltage: output_voltage
+        inverter_output_voltage: inverter_output_voltage
       }
     }
   end
@@ -166,7 +166,7 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
   defp emit_metrics(state) do
     Bus.broadcast("messages", %Bus.Message{name: :rotation_per_minute, value: state.rotation_per_minute, source: __MODULE__})
     Bus.broadcast("messages", %Bus.Message{name: :effective_torque, value: state.effective_torque, source: __MODULE__})
-    Bus.broadcast("messages", %Bus.Message{name: :output_voltage, value: state.output_voltage, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :inverter_output_voltage, value: state.inverter_output_voltage, source: __MODULE__})
     Bus.broadcast("messages", %Bus.Message{name: :inverter_communication_board_temperature, value: state.inverter_communication_board_temperature, source: __MODULE__})
     Bus.broadcast("messages", %Bus.Message{name: :insulated_gate_bipolar_transistor_temperature, value: state.insulated_gate_bipolar_transistor_temperature, source: __MODULE__})
     Bus.broadcast("messages", %Bus.Message{name: :insulated_gate_bipolar_transistor_board_temperature, value: state.insulated_gate_bipolar_transistor_board_temperature, source: __MODULE__})

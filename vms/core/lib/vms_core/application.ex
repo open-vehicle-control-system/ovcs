@@ -17,6 +17,18 @@ defmodule VmsCore.Application do
       {Phoenix.PubSub, name: VmsCore.Bus},
 
       # Controllers
+      {VmsCore.Controllers.Configuration, []},
+      %{
+        id: VmsCore.Controllers.FrontController,
+        start: {
+          VmsCore.Controllers.GenericController,
+          :start_link, [%{
+            process_name: VmsCore.Controllers.FrontController,
+            control_digital_pins: true,
+            control_other_pins: false
+          }]
+        }
+      },
       %{
         id: VmsCore.Controllers.ControlsController,
         start: {
@@ -29,11 +41,11 @@ defmodule VmsCore.Application do
         }
       },
       %{
-        id: VmsCore.Controllers.FrontController,
+        id: VmsCore.Controllers.RearController,
         start: {
           VmsCore.Controllers.GenericController,
           :start_link, [%{
-            process_name: VmsCore.Controllers.FrontController,
+            process_name: VmsCore.Controllers.RearController,
             control_digital_pins: true,
             control_other_pins: false
           }]
@@ -94,8 +106,15 @@ defmodule VmsCore.Application do
       {VmsCore.Infotainment, []},
       {VmsCore.NetworkInterfacesManager, []},
       {VmsCore.Status, []},
-      {VmsCore.Controllers.Configuration, []},
-      {VmsCore.BatteryManagementSystem, []},
+      {VmsCore.HighVoltageContactors, %{
+        contact_source: VmsCore.VwPolo.IgnitionLock,
+        inverter_output_voltage_source: VmsCore.NissanLeaf.Em57.Inverter,
+        required_precharge_output_voltage: Decimal.new(300),
+        controller: VmsCore.Controllers.RearController,
+        main_negative_relay_pin: 5,
+        main_positive_relay_pin: 6,
+        precharge_relay_pin: 7
+      }},
 
       # Vehicle
       {VmsCore.Vehicles.OVCS1, %{
