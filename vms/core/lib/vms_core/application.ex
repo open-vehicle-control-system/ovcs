@@ -69,7 +69,11 @@ defmodule VmsCore.Application do
       {VmsCore.Orion.Bms2, []},
 
       #Bosch
-      {VmsCore.Bosch.IboosterGen2, []},
+      {VmsCore.Bosch.IboosterGen2, %{
+        contact_source: VmsCore.VwPolo.IgnitionLock,
+        controller: VmsCore.Controllers.FrontController,
+        power_relay_pin: 7
+      }},
       {VmsCore.Bosch.Lws, []},
 
       # OVCS
@@ -91,8 +95,6 @@ defmodule VmsCore.Application do
       {VmsCore.NetworkInterfacesManager, []},
       {VmsCore.Status, []},
       {VmsCore.Controllers.Configuration, []},
-      {VmsCore.BrakingSystem, []},
-      {VmsCore.SteeringColumn, []},
       {VmsCore.BatteryManagementSystem, []},
 
       # Vehicle

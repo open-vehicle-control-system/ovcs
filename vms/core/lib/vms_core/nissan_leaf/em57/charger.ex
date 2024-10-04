@@ -9,6 +9,10 @@ defmodule VmsCore.NissanLeaf.Em57.Charger do
   @charger_command_frame_name "charger_command"
   @zero D.new(0)
 
+  def start_link(_) do
+    GenServer.start_link(__MODULE__, nil, name: __MODULE__)
+  end
+
   @impl true
   def init(_) do
     :ok = init_emitters()
@@ -20,8 +24,15 @@ defmodule VmsCore.NissanLeaf.Em57.Charger do
     }}
   end
 
-  def start_link(_) do
-    GenServer.start_link(__MODULE__, nil, name: __MODULE__)
+  defp init_emitters() do
+    :ok = Emitter.configure(@network_name, @charger_command_frame_name, %{
+      parameters_builder_function: &charger_command_frame_parameters_builder/1,
+      initial_data: %{
+        "maximum_power_for_charger" => @zero,
+        "counter" => 0
+      }
+    })
+    :ok
   end
 
   @impl true
@@ -38,18 +49,7 @@ defmodule VmsCore.NissanLeaf.Em57.Charger do
     }
   end
 
-  defp init_emitters() do
-    :ok = Emitter.configure(@network_name, @charger_command_frame_name, %{
-      parameters_builder_function: &charger_command_frame_parameters_builder/1,
-      initial_data: %{
-        "maximum_power_for_charger" => @zero,
-        "counter" => 0
-      }
-    })
-    :ok
-  end
-
-  def charger_command_frame_parameters_builder(data) do
+  defp charger_command_frame_parameters_builder(data) do
     counter = data["counter"]
     parameters = %{
       "maximum_power_for_charger" => data["maximum_power_for_charger"],
