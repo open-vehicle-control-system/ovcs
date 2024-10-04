@@ -48,20 +48,18 @@ defmodule VmsCore.GearSelector do
     {:noreply, state}
   end
 
-  @impl true
   def handle_info(%Bus.Message{name: :requested_gear, value: requested_gear, source: source}, state) when source == state.requested_gear_source do
-    state = case validate_requested_gear(state.selected_gear, requested_gear) do
-      :no_change -> state
+    case validate_requested_gear(state, requested_gear) do
       {:change, selected_gear} ->
         :ok = Cantastic.Emitter.update(:ovcs, "gear_status", fn (data) ->
           %{data | "selected_gear" => "#{selected_gear}"}
         end)
-        %{state | selected_gear: selected_gear}
+        {:noreply,%{state | selected_gear: selected_gear}}
+      :no_change ->
+        {:noreply, state}
     end
-    {:noreply,state}
   end
 
-  @impl true
   def handle_info(%Bus.Message{name: :requested_throttle, value: requested_throttle, source: source}, state) when source == state.requested_throttle_source do
     {:noreply, %{state | requested_throttle: requested_throttle}}
   end

@@ -130,7 +130,6 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
     }
   end
 
-
   defp toggle_inverter(state) do
     case {state.enabled, state.contact} do
       {false, :on} ->
