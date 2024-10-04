@@ -4,17 +4,11 @@ defmodule VmsCore.VwPolo.PassengerCompartment do
   require Logger
   alias Cantastic.{Frame, Signal}
   alias VmsCore.Bus
-
-  @network_name :polo_drive
-
-  @car_status_frame_name "car_status"
-  @handbrake_status_frame_name "handbrake_status"
-
   @loop_period 10
 
   @impl true
   def init(_) do
-    :ok = Cantastic.Receiver.subscribe(self(), @network_name, [@car_status_frame_name, @handbrake_status_frame_name])
+    :ok = Cantastic.Receiver.subscribe(self(), :polo_drive, ["car_status", "handbrake_status"])
     {:ok, timer} = :timer.send_interval(@loop_period, :loop)
     {:ok, %{
       front_left_door_open: false,
@@ -41,12 +35,11 @@ defmodule VmsCore.VwPolo.PassengerCompartment do
     Bus.broadcast("messages", %Bus.Message{name: :trunk_door_open, value: state.trunk_door_open, source: __MODULE__})
     Bus.broadcast("messages", %Bus.Message{name: :beam_active, value: state.beam_active, source: __MODULE__})
     Bus.broadcast("messages", %Bus.Message{name: :handbrake_engaged, value: state.handbrake_engaged, source: __MODULE__})
-
     {:noreply, state}
   end
 
   @impl true
-  def handle_info({:handle_frame,  %Frame{name:  @car_status_frame_name, signals: signals}}, state) do
+  def handle_info({:handle_frame,  %Frame{name:  "car_status", signals: signals}}, state) do
     %{
       "front_left_door_open" => %Signal{value: front_left_door_open},
       "front_right_door_open" => %Signal{value: front_right_door_open},
@@ -56,18 +49,17 @@ defmodule VmsCore.VwPolo.PassengerCompartment do
       "beam_active" => %Signal{value: beam_active},
     } = signals
     {:noreply, %{state |
-        front_left_door_open: front_left_door_open,
-        front_right_door_open: front_right_door_open,
-        rear_left_door_open: rear_left_door_open,
-        rear_right_door_open: rear_right_door_open,
-        trunk_door_open: trunk_door_open,
-        beam_active: beam_active
-      }
-    }
+      front_left_door_open: front_left_door_open,
+      front_right_door_open: front_right_door_open,
+      rear_left_door_open: rear_left_door_open,
+      rear_right_door_open: rear_right_door_open,
+      trunk_door_open: trunk_door_open,
+      beam_active: beam_active
+    }}
   end
 
   @impl true
-  def handle_info({:handle_frame, %Frame{name:  @handbrake_status_frame_name, signals: signals}}, state) do
+  def handle_info({:handle_frame, %Frame{name:  "handbrake_status", signals: signals}}, state) do
     %{"handbrake_engaged" => %Signal{value: handbrake_engaged}} = signals
     {:noreply, %{state | handbrake_engaged: handbrake_engaged}
   }

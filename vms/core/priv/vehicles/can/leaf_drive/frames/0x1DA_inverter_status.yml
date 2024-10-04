@@ -9,14 +9,14 @@ signals:
     value_length: 8
     scale: "2"
     unit: V
-  - name: em57_effective_torque
+  - name: effective_torque
     endianness: big
     sign: signed
     value_start: 21
     value_length: 11
     scale: "0.5"
     unit: N/m
-  - name: em57_rotations_per_minute
+  - name: rotations_per_minute
     kind: integer
     endianness: big
     sign: signed
