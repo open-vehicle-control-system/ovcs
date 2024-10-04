@@ -4,15 +4,16 @@ defmodule CvBridgex.CvCamera do
 
   @delay 30
 
-  def start_link(args) do
-    GenServer.start_link(__MODULE__, args, name: __MODULE__)
+  def start_link(%{process_name: process_name} = args) do
+    GenServer.start_link(__MODULE__, args, name: process_name)
   end
 
   @impl true
-  def init(_args) do
+  def init(%{process_name: _process_name, device: device} = _args) do
     take_picture(@delay)
-    camera = get_camera()
+    camera = get_camera(device)
     {:ok, %{
+      device_id: device,
       camera: camera,
       latest_picture: nil,
       loop_active: true
@@ -28,7 +29,7 @@ defmodule CvBridgex.CvCamera do
 
   @impl true
   def handle_call(:start, _from, state) do
-    camera = get_camera()
+    camera = get_camera(state.device_id)
     state = %{state | camera: camera, loop_active: true}
     take_picture(@delay)
     {:reply, {:ok, state}, state}
@@ -52,20 +53,20 @@ defmodule CvBridgex.CvCamera do
     {:noreply, %{state | latest_picture: picture}}
   end
 
-  def stop() do
-    GenServer.call(__MODULE__, :stop)
+  def stop(process_name) do
+    GenServer.call(process_name, :stop)
   end
 
-  def start() do
-    GenServer.call(__MODULE__, :start)
+  def start(process_name) do
+    GenServer.call(process_name, :start)
   end
 
-  def get_latest_picture() do
-    GenServer.call(__MODULE__, :get_latest_picture)
+  def get_latest_picture(process_name) do
+    GenServer.call(process_name, :get_latest_picture)
   end
 
-  defp get_camera() do
-    Evision.VideoCapture.videoCapture(0) # Assumes for now that there is only one cam connected
+  defp get_camera(device_id) do
+    Evision.VideoCapture.videoCapture(device_id)
   end
 
   defp take_picture(delay) do
