@@ -9,6 +9,7 @@ defmodule OvcsRosBridgeFirmware.Application do
   def start(_type, _args) do
     children =
       [
+        {CvBridgex.Application, []}
         # Children for all targets
         # Starts a worker by calling: OvcsRosBridgeFirmware.Worker.start_link(arg)
         # {OvcsRosBridgeFirmware.Worker, arg},

@@ -50,13 +50,15 @@ defmodule OvcsRosBridgeFirmware.MixProject do
       # version updates, please review their release notes in case
       # changes to your application are needed.
       {:ovcs_ros_bridge_core, path: "../core", targets: @all_targets, env: Mix.env()},
-      {:rclex, github: "rclex/rclex", tag: "v0.11.0"},
+      {:cv_bridgex, path: "../../libraries/cv_bridgex"},
+      {:rclex, github: "rclex/rclex"},
+      {:observer_cli, "~> 1.7"},
       {
         :ovcs_vms_system_rpi4,
-        github: "open-vehicle-control-system/ovcs_vms_system_rpi4",
+        path: "../../../ovcs_vms_system_rpi4",
         runtime: false,
         targets: :ovcs_vms_system_rpi4,
-        nerves: [compile: false]
+        nerves: [compile: true]
       },
     ]
   end

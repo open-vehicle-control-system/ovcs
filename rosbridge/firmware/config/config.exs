@@ -8,7 +8,26 @@ import Config
 # Enable the Nerves integration with Mix
 Application.start(:nerves_bootstrap)
 
-config :rclex, ros2_message_types: ["std_msgs/msg/String"]
+config :rclex,
+  ros2_message_types: [
+    "sensor_msgs/msg/Image", "std_msgs/msg/Header"
+  ]
+
+  config :cv_bridgex,
+    cameras: [
+      %{
+        process_name: FrontLeftCamera,
+        device_id: 0,
+        topic: "/front_left_camera",
+        capture_backend: :opencv
+      },
+      %{
+        process_name: FrontRightCamera,
+        device_id: 2,
+        topic: "/front_right_camera",
+        capture_backend: :opencv
+      }
+    ]
 
 # Customize non-Elixir parts of the firmware. See
 # https://hexdocs.pm/nerves/advanced-configuration.html for details.
