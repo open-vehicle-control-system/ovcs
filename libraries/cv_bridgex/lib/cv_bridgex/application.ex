@@ -11,7 +11,7 @@ defmodule CvBridgex.Application do
         id: camera.process_name,
         start: {
           CvBridgex.CvCamera,
-          :start_link, [%{process_name: camera.process_name, device: camera.device_id}]
+          :start_link, [%{process_name: camera.process_name, device: camera.device_id, capture_backend: camera.capture_backend}]
         }
       }
     end)

@@ -7,7 +7,7 @@ defmodule CvBridgex.RosImageEmitter do
   alias Rclex.Pkgs.BuiltinInterfaces
   alias Evision, as: Cv
 
-  @delay 30
+  @delay 5
 
   def start_link(args) do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
@@ -42,9 +42,14 @@ defmodule CvBridgex.RosImageEmitter do
   @impl true
   def handle_info(:send_messages, state) do
     Enum.each(state.cameras, fn camera ->
-      {:ok, cv_picture} = GenServer.call(camera.process_name, :get_latest_picture)
-      message = create_ros_image_message(cv_picture)
-      Rclex.publish(message, camera.topic, "cameras")
+      {:ok, cv_picture} = GenServer.call(camera.process_name, :get_latest_picture, 30000)
+      case cv_picture do
+        nil ->
+          false
+        _ ->
+          message = create_ros_image_message(cv_picture)
+          Rclex.publish(message, camera.topic, "cameras")
+      end
     end)
     send_messages(@delay)
     {:noreply, state}

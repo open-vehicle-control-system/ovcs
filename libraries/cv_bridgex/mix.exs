@@ -15,7 +15,7 @@ defmodule CvBridgex.MixProject do
   def application do
     [
       extra_applications: [:logger],
-      mod: {CvBridgex.Application, []}
+      #mod: {CvBridgex.Application, []}
     ]
   end
 
@@ -23,6 +23,7 @@ defmodule CvBridgex.MixProject do
   defp deps do
     [
       {:evision, "~> 0.2"},
+      {:xav, github: "elixir-webrtc/xav"},
       {:rclex, github: "rclex/rclex"}
       # {:dep_from_hexpm, "~> 0.3.0"},
       # {:dep_from_git, git: "https://github.com/elixir-lang/my_dep.git", tag: "0.1.0"}
