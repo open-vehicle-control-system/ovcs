@@ -68,7 +68,6 @@ defmodule VmsCore.Application do
       }},
 
       # NissanLeaf
-      {VmsCore.NissanLeaf.Em57.Charger, []},
       {VmsCore.NissanLeaf.Em57.Inverter, %{
         selected_gear_source: VmsCore.GearSelector,
         requested_throttle_source: VmsCore.ThrottlePedal,
@@ -76,9 +75,6 @@ defmodule VmsCore.Application do
         controller: VmsCore.Controllers.FrontController,
         power_relay_pin: 5
       }},
-
-      # Orion
-      {VmsCore.Orion.Bms2, []},
 
       #Bosch
       {VmsCore.Bosch.IboosterGen2, %{
