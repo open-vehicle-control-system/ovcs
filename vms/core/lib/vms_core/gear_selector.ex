@@ -51,6 +51,8 @@ defmodule VmsCore.GearSelector do
   def handle_info(%Bus.Message{name: :requested_gear, value: requested_gear, source: source}, state) when source == state.requested_gear_source do
     case validate_requested_gear(state, requested_gear) do
       {:change, selected_gear} ->
+        IO.inspect "SLEC"
+        IO.inspect selected_gear
         :ok = Cantastic.Emitter.update(:ovcs, "gear_status", fn (data) ->
           %{data | "selected_gear" => "#{selected_gear}"}
         end)
@@ -78,7 +80,7 @@ defmodule VmsCore.GearSelector do
     speed_near_zero    = D.abs(state.speed) |> D.lt?(@gear_shift_speed_limit)
     ready_to_drive     = state.ready_to_drive
     selected_gear      = state.selected_gear
-
+    #IO.inspect {selected_gear, requested_gear, throttle_near_zero && speed_near_zero, ready_to_drive}
     case {selected_gear, requested_gear, throttle_near_zero && speed_near_zero, ready_to_drive} do
       {:parking, :parking, _, _} -> :no_change
       {:reverse, :reverse, _, _} -> :no_change
