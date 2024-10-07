@@ -119,7 +119,7 @@ defmodule VmsCore.ThrottlePedal do
   defp get_throttle_calibration_value_for_key(key) do
     record = from(cc in ThrottleCalibration, where: cc.key == ^key, limit: 1, order_by: [desc: :inserted_at])
     |> Repo.one()
-    Map.get(record || %{}, :value, 0) # Returns 0 if no calibration data found
+    Map.get(record || %{}, :value, 0)
   end
 
   defp set_throttle_calibration_value_for_key(key, value) do
