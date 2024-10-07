@@ -25,7 +25,7 @@ defmodule VmsCore.VwPolo.IgnitionLock do
   end
 
   @impl true
-  def handle_info({:handle_frame, %Frame{signals: signals}}, state) do
+  def handle_info({:handle_frame, %Frame{signals: signals} = frame}, state) do
     %{"key_state" => %Signal{value: key_status}} = signals
     contact = case key_status do
       "contact_off" -> :off
