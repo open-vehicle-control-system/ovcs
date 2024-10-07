@@ -119,6 +119,7 @@ defmodule VmsCore.Vehicles.OVCS1 do
   defp emit_metrics(state) do
     Bus.broadcast("messages", %Bus.Message{name: :ready_to_drive, value: state.ready_to_drive, source: __MODULE__})
     Bus.broadcast("messages", %Bus.Message{name: :vms_status, value: state.vms_status, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :failed_frames, value: state.failed_frames, source: __MODULE__})
     state
   end
 

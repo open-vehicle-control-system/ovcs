@@ -1,6 +1,5 @@
 defmodule VmsCore.SteeringColumn do
   use GenServer
-  alias VmsCore.Bus
 
   @loop_period 10
   @min_duty_cycle 0 + 5
@@ -76,10 +75,10 @@ defmodule VmsCore.SteeringColumn do
     end
   end
 
+  @impl true
   def handle_call({:activate, duty_cycle, direction}, _from, state) do
     {:reply, :ok, %{state | enable: true, duty_cycle: duty_cycle, direction: direction}}
   end
-
   def handle_call(:deactivate, _from, state) do
     {:reply, :ok, %{state | enable: false, duty_cycle: @min_duty_cycle}}
   end

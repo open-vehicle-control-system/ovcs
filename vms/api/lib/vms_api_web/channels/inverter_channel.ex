@@ -1,6 +1,5 @@
 defmodule VmsApiWeb.InverterChannel do
   use VmsApiWeb, :channel
-  alias VmsCore.Inverter
 
   intercept ["update"]
 
@@ -14,9 +13,8 @@ defmodule VmsApiWeb.InverterChannel do
 
   @impl true
   def handle_info(:push_inverter_state, socket) do
-    {:ok, inverter_state} = Inverter.inverter_state()
-    {:ok, metrics} = VmsCore.Metrics.current()
-    view = VmsApiWeb.Api.InverterStateJSON.render("inverter_state.json", %{inverter_state: inverter_state, metrics: metrics})
+    {:ok, inverter_state} = VmsCore.Vehicles.Metrics.metrics(VmsCore.NissanLeaf.Em57.Inverter)
+    view = VmsApiWeb.Api.InverterStateJSON.render("inverter_state.json", %{inverter_state: inverter_state})
     push(socket, "updated", view)
     {:noreply, socket}
   end

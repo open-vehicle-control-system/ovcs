@@ -50,8 +50,10 @@ defmodule VmsCore.ThrottlePedal do
     {:ok, raw_throttle_a} = VmsCore.Controllers.GenericController.get_analog_value(state.controller, state.throttle_a_pin)
     {:ok, raw_throttle_b} = VmsCore.Controllers.GenericController.get_analog_value(state.controller, state.throttle_b_pin)
 
-    state = handle_throttle(%{state | raw_throttle_a: raw_throttle_a, raw_throttle_b: raw_throttle_b})
-    Bus.broadcast("messages", %Bus.Message{name: :requested_throttle, value: state.requested_throttle, source: __MODULE__})
+    state =
+      %{state | raw_throttle_a: raw_throttle_a, raw_throttle_b: raw_throttle_b}
+      |> handle_throttle()
+      |> emit_metrics()
     {:noreply, state}
   end
 
@@ -86,11 +88,25 @@ defmodule VmsCore.ThrottlePedal do
     %{state | requested_throttle: requested_throttle}
   end
 
+  def emit_metrics(state) do
+    Bus.broadcast("messages", %Bus.Message{name: :requested_throttle, value: state.requested_throttle, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :throttle_calibration_status, value: state.throttle_calibration_status, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :raw_max_throttle, value: state.raw_max_throttle, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :high_raw_throttle_a, value: state.high_raw_throttle_a, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :high_raw_throttle_b, value: state.high_raw_throttle_b, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :low_raw_throttle_a, value: state.low_raw_throttle_a, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :low_raw_throttle_b, value: state.low_raw_throttle_b, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :raw_throttle_a, value: state.raw_throttle_a, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :raw_throttle_b, value: state.raw_throttle_b, source: __MODULE__})
+    state
+  end
+
   @impl true
-  def handle_call(:enable_throttle_calibration, _from, state) do
+  def handle_call(:enable_calibration_mode, _from, state) do
     {:reply, :ok, %{state | throttle_calibration_status: "started"}}
   end
-  def handle_call(:disable_throttle_calibration, _from, %{throttle_calibration_status: "in_progress"} = state) do
+
+  def handle_call(:disable_calibration_mode, _from, %{throttle_calibration_status: "in_progress"} = state) do
     with  {:ok, _} <- set_throttle_calibration_value_for_key("low_raw_throttle_a", state.low_raw_throttle_a),
           {:ok, _} <- set_throttle_calibration_value_for_key("low_raw_throttle_b", state.low_raw_throttle_b),
           {:ok, _} <- set_throttle_calibration_value_for_key("high_raw_throttle_a", state.high_raw_throttle_a),
@@ -101,19 +117,16 @@ defmodule VmsCore.ThrottlePedal do
       {:error, error} -> {:error, error}
     end
   end
-  def handle_call(:disable_throttle_calibration, _from, %{throttle_calibration_status: "started"} = state) do
+  def handle_call(:disable_calibration_mode, _from, state) do
     {:reply, :ok, %{state | throttle_calibration_status: "disabled"}}
   end
-  def handle_call(:disable_throttle_calibration, _from, state) do
-    {:reply, :ok, state}
+
+  def enable_calibration_mode() do
+    GenServer.call(__MODULE__, :enable_calibration_mode)
   end
 
-  def enable_throttle_calibration_mode() do
-    GenServer.call(__MODULE__, :enable_throttle_calibration)
-  end
-
-  def disable_throttle_calibration_mode() do
-    GenServer.call(__MODULE__, :disable_throttle_calibration)
+  def disable_calibration_mode() do
+    GenServer.call(__MODULE__, :disable_calibration_mode)
   end
 
   defp get_throttle_calibration_value_for_key(key) do
