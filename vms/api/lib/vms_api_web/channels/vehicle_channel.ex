@@ -1,6 +1,5 @@
 defmodule VmsApiWeb.VehicleChannel do
   use VmsApiWeb, :channel
-  alias VmsCore.{Vehicle, IgnitionLock, Abs}
 
   intercept ["update"]
 
@@ -14,14 +13,14 @@ defmodule VmsApiWeb.VehicleChannel do
 
   @impl true
   def handle_info(:push_vehicle_state, socket) do
-    with {:ok, selected_gear} <- Vehicle.selected_gear(),
-         {:ok, speed}         <- Abs.speed(),
-         {:ok, key_status}    <- IgnitionLock.key_status()
+    with {:ok, %{selected_gear: selected_gear}} <- VmsCore.Vehicles.Metrics.metrics(VmsCore.GearSelector),
+         {:ok, %{speed: speed}}                 <- VmsCore.Vehicles.Metrics.metrics(VmsCore.VwPolo.Abs),
+         {:ok, %{contact: contact}}             <- VmsCore.Vehicles.Metrics.metrics(VmsCore.VwPolo.IgnitionLock)
     do
       assigns = %{
         selected_gear: selected_gear,
         speed: speed,
-        key_status: key_status
+        key_status: contact
       }
       view = VmsApiWeb.Api.VehicleStateJSON.render("vehicle_state.json", assigns)
       push(socket, "updated", view)

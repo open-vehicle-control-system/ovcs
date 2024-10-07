@@ -123,7 +123,8 @@ defmodule VmsCore.Application do
       }},
 
       # Vehicle
-      {VmsCore.Vehicles.OVCS1, []}
+      {VmsCore.Vehicles.OVCS1, []},
+      {VmsCore.Vehicles.Metrics, []}
     ]
 
     opts = [strategy: :one_for_one, name: VmsCore.Supervisor]

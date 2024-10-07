@@ -172,6 +172,7 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
 
   defp emit_metrics(state) do
     Bus.broadcast("messages", %Bus.Message{name: :rotation_per_minute, value: state.rotation_per_minute, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :requested_torque, value: state.requested_torque, source: __MODULE__})
     Bus.broadcast("messages", %Bus.Message{name: :effective_torque, value: state.effective_torque, source: __MODULE__})
     Bus.broadcast("messages", %Bus.Message{name: :inverter_output_voltage, value: state.inverter_output_voltage, source: __MODULE__})
     Bus.broadcast("messages", %Bus.Message{name: :inverter_communication_board_temperature, value: state.inverter_communication_board_temperature, source: __MODULE__})

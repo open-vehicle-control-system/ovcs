@@ -6,7 +6,7 @@ defmodule VmsApiWeb.Api.ThrottleJSON do
       type: "throttle",
       id:    "throttle",
       attributes: %{
-        throttle: throttle.throttle,
+        throttle: throttle.requested_throttle,
         calibrationStatus: throttle.throttle_calibration_status,
         rawMaxThrottle: throttle.raw_max_throttle,
         highRawThrottleA: throttle.high_raw_throttle_a,
