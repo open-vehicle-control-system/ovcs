@@ -4,7 +4,7 @@ defmodule OvcsRosBridgeFirmware.MixProject do
   @app :ovcs_ros_bridge_firmware
   @version "0.1.0"
   @all_targets [
-    :ovcs_vms_system_rpi4
+    :ovcs_rosbridge_system_rpi4
   ]
 
   def project do
@@ -54,10 +54,10 @@ defmodule OvcsRosBridgeFirmware.MixProject do
       {:rclex, github: "rclex/rclex"},
       {:observer_cli, "~> 1.7"},
       {
-        :ovcs_vms_system_rpi4,
-        path: "../../../ovcs_vms_system_rpi4",
+        :ovcs_rosbridge_system_rpi4,
+        path: "../../../ovcs_rosbridge_system_rpi4",
         runtime: false,
-        targets: :ovcs_vms_system_rpi4,
+        targets: :ovcs_rosbridge_system_rpi4,
         nerves: [compile: true]
       },
     ]
