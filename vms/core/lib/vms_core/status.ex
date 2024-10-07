@@ -40,9 +40,9 @@ defmodule VmsCore.Status do
 
   @impl true
   def handle_info(:loop, state) do
-    state
-    |> update_vms_status()
-    |> update_ready_to_drive()
+    state = state
+      |> update_vms_status()
+      |> update_ready_to_drive()
 
     {:noreply, state}
   end
