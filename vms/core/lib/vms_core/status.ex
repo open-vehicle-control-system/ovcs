@@ -1,122 +1,89 @@
 defmodule VmsCore.Status do
   use GenServer
-  require Logger
 
-  alias Cantastic.{Emitter, ReceivedFrameWatcher, Frame, Signal}
+  alias VmsCore.Bus
 
-  @vms_status_frame_name "vms_status"
-  @status_parameter "status"
-  @counter_parameter "counter"
-  @key_status_frame_name "key_status"
-  @ready_to_drive_parameter "ready_to_drive"
+  alias Cantastic.Emitter
+
+  @loop_period 10
+
+  def start_link(args) do
+    GenServer.start_link(__MODULE__, args, name: __MODULE__)
+  end
 
   @impl true
-  def init(_) do
-    :ok = Emitter.configure(:ovcs, @vms_status_frame_name, %{
+  def init(%{
+    ready_to_drive_source: ready_to_drive_source,
+    vms_status_source: vms_status_source})
+  do
+    :ok = Emitter.configure(:ovcs, "vms_status", %{
       parameters_builder_function: &vms_status_frame_parameter_builder/1,
       initial_data: %{
-        @status_parameter => "ok",
-        @counter_parameter => 0,
-        @ready_to_drive_parameter => false
-      }
+        "status" => "ok",
+        "counter" => 0,
+        "ready_to_drive" => false
+      },
+      enable: true
     })
-    :ok = Emitter.enable(:ovcs, @vms_status_frame_name)
-    :ok = ReceivedFrameWatcher.subscribe(:ovcs, ["controls_controller_alive", "front_controller_alive", "rear_controller_alive"], self())
-    :ok = Cantastic.Receiver.subscribe(self(), :polo_drive, @key_status_frame_name)
-    :ok = ReceivedFrameWatcher.subscribe(:polo_drive, "abs_status", self())
-    :ok = ReceivedFrameWatcher.subscribe(:orion_bms, "bms_status_1", self())
-    enable_watchers()
+    Bus.subscribe("messages")
+    {:ok, timer} = :timer.send_interval(@loop_period, :loop)
     {:ok, %{
-      status: "ok",
-      failed_frames: %{},
-      frame_emitters: %{
-        "controls_controller_alive" => "Controls Ctrl",
-        "abs_status"                => "ABS Ctrl",
-        "bms_status_1"              => "BMS Ctrl",
-        "front_controller_alive"    => "Front Ctrl",
-        "rear_controller_alive"     => "Rear Ctrl"
-      }
+      vms_status: "ok",
+      emitted_vms_status: "ok",
+      ready_to_drive: false,
+      emitted_ready_to_drive: false,
+      ready_to_drive_source: ready_to_drive_source,
+      vms_status_source: vms_status_source,
+      loop_timer: timer
     }}
   end
 
-  def start_link(_) do
-    GenServer.start_link(__MODULE__, nil, name: __MODULE__)
+  @impl true
+  def handle_info(:loop, state) do
+    state
+    |> update_vms_status()
+    |> update_ready_to_drive()
+
+    {:noreply, state}
   end
 
-  @impl true
-  def handle_info({:handle_missing_frame,  network_name, frame_name}, state) do
-    case state.failed_frames[frame_name] do
-      nil ->
-        Logger.warning("Frame #{network_name}.#{frame_name} not received anymore")
-        Emitter.update(:ovcs, @vms_status_frame_name, fn (data) ->
-          %{data | @status_parameter => "failure"}
+  def handle_info(%Bus.Message{name: :ready_to_drive, value: ready_to_drive, source: source}, state) when source == state.ready_to_drive_source do
+    {:noreply, %{state | ready_to_drive: ready_to_drive}}
+  end
+  def handle_info(%Bus.Message{name: :vms_status, value: vms_status, source: source}, state) when source == state.vms_status_source do
+    {:noreply, %{state | vms_status: vms_status}}
+  end
+  def handle_info(%Bus.Message{}, state) do # TODO, replace Bus ?
+    {:noreply, state}
+  end
+
+
+  defp update_vms_status(state) do
+    case state.emitted_vms_status == state.vms_status do
+      true -> state
+      false ->
+        :ok = Emitter.update(:ovcs, "vms_status", fn (data) ->
+          %{data | "status" => state.vms_status}
         end)
-        state = state
-        |> put_in([:status], "failure")
-        |> put_in([:failed_frames, frame_name], %{emitter: state.frame_emitters[frame_name]})
-        {:noreply, state}
-      _ ->
-        {:noreply, state}
+        %{state | emitted_vms_status: state.vms_status}
     end
   end
 
-  @impl true
-  def handle_info(:enable_watchers, state) do
-    :ok = ReceivedFrameWatcher.enable(:ovcs, ["controls_controller_alive", "rear_controller_alive", "front_controller_alive"])
-    :ok = ReceivedFrameWatcher.enable(:orion_bms, ["bms_status_1"])
-    {:noreply, state}
-  end
-
-  @impl true
-  def handle_info({:handle_frame, %Frame{signals: signals}}, state) do
-    %{"key_state" => %Signal{value: key_status}} = signals
-    case key_status do
-      "off" ->
-        :ok = ReceivedFrameWatcher.disable(:polo_drive, "abs_status")
-      _ ->
-        :ok = ReceivedFrameWatcher.enable(:polo_drive, "abs_status")
+  defp update_ready_to_drive(state) do
+    case state.emitted_ready_to_drive == state.ready_to_drive do
+      true -> state
+      false ->
+        :ok = Emitter.update(:ovcs, "vms_status", fn (data) ->
+          %{data | "ready_to_drive" => state.ready_to_drive}
+        end)
+        %{state | emitted_ready_to_drive: state.ready_to_drive}
     end
-    {:noreply, state}
   end
 
   defp vms_status_frame_parameter_builder(data) do
-    counter    = data[@counter_parameter]
+    counter    = data["counter"]
     parameters = data
-    data       = %{data | @counter_parameter => VmsCore.NissanLeaf.Util.counter(counter + 1)}
+    data       = %{data | "counter" => VmsCore.NissanLeaf.Util.counter(counter + 1)}
     {:ok, parameters, data}
-  end
-
-  @impl true
-  def handle_call(:status, _from, state) do
-    {:reply, {:ok, state.status}, state}
-  end
-
-  @impl true
-  def handle_call(:failed_frames, _from, state) do
-    {:reply, {:ok, state.failed_frames}, state}
-  end
-
-  @impl true
-  def handle_call({:ready_to_drive, ready_to_drive}, _from, state) do
-    :ok = Emitter.update(:ovcs, @vms_status_frame_name, fn (data) ->
-      %{data | @ready_to_drive_parameter => ready_to_drive}
-    end)
-    {:reply, :ok, state}
-  end
-
-  def status() do
-    GenServer.call(__MODULE__, :status)
-  end
-
-  def failed_frames() do
-    GenServer.call(__MODULE__, :failed_frames)
-  end
-
-  def ready_to_drive(ready_to_drive) do
-    GenServer.call(__MODULE__, {:ready_to_drive, ready_to_drive})
-  end
-
-  def enable_watchers() do
-    Process.send_after(self(), :enable_watchers, 5000)
   end
 end

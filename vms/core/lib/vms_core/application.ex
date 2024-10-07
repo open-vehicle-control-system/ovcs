@@ -101,7 +101,6 @@ defmodule VmsCore.Application do
       }},
       {VmsCore.Infotainment, []},
       {VmsCore.NetworkInterfacesManager, []},
-      {VmsCore.Status, []},
       {VmsCore.HighVoltageContactors, %{
         contact_source: VmsCore.VwPolo.IgnitionLock,
         inverter_output_voltage_source: VmsCore.NissanLeaf.Em57.Inverter,
@@ -111,11 +110,13 @@ defmodule VmsCore.Application do
         main_positive_relay_pin: 6,
         precharge_relay_pin: 7
       }},
+      {VmsCore.Status, %{
+        ready_to_drive_source: VmsCore.Vehicles.OVCS1,
+        vms_status_source: VmsCore.Vehicles.OVCS1
+      }},
 
       # Vehicle
-      {VmsCore.Vehicles.OVCS1, %{
-        contact_source: VmsCore.VwPolo.IgnitionLock
-      }}
+      {VmsCore.Vehicles.OVCS1, []}
     ]
 
     opts = [strategy: :one_for_one, name: VmsCore.Supervisor]
