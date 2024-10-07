@@ -87,20 +87,15 @@ defmodule VmsCore.Vehicles.OVCS1 do
   defp update_igntion_started(state) do
     case {state.ignition_started, state.contact} do
       {false, :start} ->
-        IO.inspect "START------------------------------------"
         %{state | ignition_started: true}
       {true, :off} ->
-        IO.inspect "STOP------------------------------------"
         %{state | ignition_started: false}
       _ ->
-        IO.inspect state
         state
     end
   end
 
   defp check_ready_to_drive(state) do
-    #IO.inspect "ign: #{state.ignition_started}, HVC: #{state.high_voltage_contactors_ready_to_drive}, INV: #{state.inverter_ready_to_drive}, BRK: #{state.braking_system_ready_to_drive}"
-    IO.inspect state
     ready_to_drive = state.ignition_started &&
       state.high_voltage_contactors_ready_to_drive &&
       state.inverter_ready_to_drive &&
