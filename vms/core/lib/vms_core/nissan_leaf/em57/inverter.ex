@@ -48,7 +48,8 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
       loop_timer: timer,
       enabled: false,
       controller: controller,
-      power_relay_pin: power_relay_pin
+      power_relay_pin: power_relay_pin,
+      ready_to_drive: false
     }}
   end
 
@@ -79,6 +80,7 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
     state = state
       |> toggle_inverter()
       |> apply_torque()
+      |> check_ready_to_drive()
       |> emit_metrics()
 
     {:noreply, state}
@@ -163,6 +165,11 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
     %{state | requested_torque: requested_torque}
   end
 
+  defp check_ready_to_drive(state) do
+    {:ok, power_relay_enabled} = VmsCore.Controllers.GenericController.get_digital_value(state.controller, state.power_relay_pin)
+    %{state | ready_to_drive: power_relay_enabled && state.enabled}
+  end
+
   defp emit_metrics(state) do
     Bus.broadcast("messages", %Bus.Message{name: :rotation_per_minute, value: state.rotation_per_minute, source: __MODULE__})
     Bus.broadcast("messages", %Bus.Message{name: :effective_torque, value: state.effective_torque, source: __MODULE__})
@@ -171,6 +178,7 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
     Bus.broadcast("messages", %Bus.Message{name: :insulated_gate_bipolar_transistor_temperature, value: state.insulated_gate_bipolar_transistor_temperature, source: __MODULE__})
     Bus.broadcast("messages", %Bus.Message{name: :insulated_gate_bipolar_transistor_board_temperature, value: state.insulated_gate_bipolar_transistor_board_temperature, source: __MODULE__})
     Bus.broadcast("messages", %Bus.Message{name: :motor_temperature, value: state.motor_temperature, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :ready_to_drive, value: state.ready_to_drive, source: __MODULE__})
     state
   end
 

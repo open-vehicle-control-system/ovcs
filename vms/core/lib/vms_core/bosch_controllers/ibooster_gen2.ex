@@ -17,7 +17,11 @@ defmodule VmsCore.Bosch.IboosterGen2 do
   end
 
   @impl true
-  def init(%{contact_source: contact_source}) do
+  def init(%{
+    contact_source: contact_source,
+    controller: controller,
+    power_relay_pin: power_relay_pin})
+  do
     :ok = init_emitters()
     :ok = Receiver.subscribe(self(), :misc, ["ibooster_status"])
     Bus.subscribe("messages")
@@ -30,7 +34,10 @@ defmodule VmsCore.Bosch.IboosterGen2 do
       loop_timer: timer,
       enabled: false,
       contact_source: contact_source,
-      contact: :off
+      contact: :off,
+      ready_to_drive: false,
+      controller: controller,
+      power_relay_pin: power_relay_pin
     }}
   end
 
@@ -63,6 +70,7 @@ defmodule VmsCore.Bosch.IboosterGen2 do
   def handle_info(:loop, state) do
     state = state
       |> toggle_ibooster()
+      |> check_ready_to_drive()
       |> emit_metrics()
     {:noreply, state}
   end
@@ -105,6 +113,12 @@ defmodule VmsCore.Bosch.IboosterGen2 do
     end
   end
 
+  defp check_ready_to_drive(state) do
+    {:ok, power_relay_enabled} = VmsCore.Controllers.GenericController.get_digital_value(state.controller, state.power_relay_pin)
+    ready_to_drive = power_relay_enabled && state.enabled && state.status in ["ready" ,"actuation", "active_good_check"]
+    %{state | ready_to_drive: ready_to_drive}
+  end
+
   def activate_external_request() do
     set_external_request("brake_request", true)
     set_external_request("vehicle_status", true)
@@ -135,6 +149,7 @@ defmodule VmsCore.Bosch.IboosterGen2 do
     Bus.broadcast("messages", %Bus.Message{name: :driver_brake_apply, value: state.driver_brake_apply, source: __MODULE__})
     Bus.broadcast("messages", %Bus.Message{name: :internal_state, value: state.internal_state, source: __MODULE__})
     Bus.broadcast("messages", %Bus.Message{name: :rod_position, value: state.rod_position, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :ready_to_drive, value: state.ready_to_drive, source: __MODULE__})
     state
   end
 
