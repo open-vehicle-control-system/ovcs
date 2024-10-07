@@ -5,16 +5,13 @@ config :rclex,
     "sensor_msgs/msg/Image", "std_msgs/msg/Header"
   ]
 
-  config :cv_bridgex,
-    cameras: [
-      %{
-        process_name: FrontLeftCamera,
-        device_id: 0,
-        topic: "/front_left_camera"
-      },
-      %{
-        process_name: FrontRightCamera,
-        device_id: 2,
-        topic: "/front_right_camera"
-      }
-    ]
+config :cv_bridgex,
+  cameras: [
+    %{
+      process_name: TestCamera,
+      emitter_process_name: TestCameraEmitter,
+      device_id: 0,
+      topic: "test_camera",
+      capture_backend: :opencv
+    }
+  ]

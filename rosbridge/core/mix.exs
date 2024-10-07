@@ -22,7 +22,7 @@ defmodule OvcsRosBridgeCore.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:rclex, github: "rclex/rclex", tag: "v0.11.0"},
+      #{:rclex, github: "rclex/rclex"},
     ]
   end
 end
