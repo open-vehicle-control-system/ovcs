@@ -110,6 +110,13 @@ defmodule VmsCore.Application do
         main_positive_relay_pin: 6,
         precharge_relay_pin: 7
       }},
+      {VmsCore.SteeringColumn, %{
+        power_relay_controller: VmsCore.Controllers.FrontController,
+        power_relay_pin: 8,
+        actuation_controller: VmsCore.Controllers.ControlsController,
+        direction_pin: 3,
+        pwm_pin: 0
+      }},
       {VmsCore.Status, %{
         ready_to_drive_source: VmsCore.Vehicles.OVCS1,
         vms_status_source: VmsCore.Vehicles.OVCS1
