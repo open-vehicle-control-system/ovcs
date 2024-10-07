@@ -11,3 +11,5 @@ signals:
       0x01: key_engaged
       0x87: contact_on
       0x8B: start_engine
+      0x05: contact_on # seems to be an intermediary state between contact_on and start_engine.
+      0x83: contact_on # seems to be an intermediary state between contact_on and start_engine.
