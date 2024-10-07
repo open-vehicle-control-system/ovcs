@@ -38,7 +38,8 @@ defmodule VmsCore.HighVoltageContactors do
       loop_timer: timer,
       main_negative_relay_enabled: false,
       main_positive_relay_enabled: false,
-      precharge_relay_enabled: false
+      precharge_relay_enabled: false,
+      ready_to_drive: false
     }}
   end
 
@@ -46,7 +47,7 @@ defmodule VmsCore.HighVoltageContactors do
   def handle_info(:loop, state) do
     state = state
       |> toggle_contactors()
-      |> fetch_status()
+      |> check_ready_to_drive()
       |> emit_metrics()
     {:noreply, state}
   end
@@ -77,21 +78,19 @@ defmodule VmsCore.HighVoltageContactors do
     end
   end
 
-  defp fetch_status(state) do
+  defp check_ready_to_drive(state) do
     {:ok, main_negative_relay_enabled} = VmsCore.Controllers.GenericController.get_digital_value(state.controller, state.main_negative_relay_pin)
     {:ok, main_positive_relay_enabled} = VmsCore.Controllers.GenericController.get_digital_value(state.controller, state.main_positive_relay_pin)
     {:ok, precharge_relay_enabled}     = VmsCore.Controllers.GenericController.get_digital_value(state.controller, state.precharge_relay_pin)
-    %{state |
-      main_negative_relay_enabled: main_negative_relay_enabled,
-      main_positive_relay_enabled: main_positive_relay_enabled,
-      precharge_relay_enabled: precharge_relay_enabled
-    }
+    ready_to_drive = main_negative_relay_enabled && main_positive_relay_enabled && !precharge_relay_enabled
+    %{state | ready_to_drive: ready_to_drive}
   end
 
   defp emit_metrics(state) do
     Bus.broadcast("messages", %Bus.Message{name: :main_negative_relay_enabled, value: state.main_negative_relay_enabled, source: __MODULE__})
     Bus.broadcast("messages", %Bus.Message{name: :main_positive_relay_enabled, value: state.main_positive_relay_enabled, source: __MODULE__})
     Bus.broadcast("messages", %Bus.Message{name: :precharge_relay_enabled, value: state.precharge_relay_enabled, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :ready_to_drive, value: state.ready_to_drive, source: __MODULE__})
     state
   end
 
