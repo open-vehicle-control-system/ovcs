@@ -1,10 +1,8 @@
 defmodule VmsCore.HighVoltageContactors do
   use GenServer
-  alias Decimal, as: D
   alias VmsCore.Bus
 
   @loop_period 10
-  @zero D.new(0)
   @relay_operating_delay 50
 
   def start_link(args) do
@@ -31,7 +29,7 @@ defmodule VmsCore.HighVoltageContactors do
       main_positive_relay_pin: main_positive_relay_pin,
       precharge_relay_pin: precharge_relay_pin,
       status: :off,
-      inverter_output_voltage: @zero,
+      inverter_output_voltage: 0,
       inverter_output_voltage_source: inverter_output_voltage_source,
       required_precharge_output_voltage: required_precharge_output_voltage,
       precharge_ending_timestamp: 0,
@@ -63,6 +61,7 @@ defmodule VmsCore.HighVoltageContactors do
   end
 
   defp toggle_contactors(state) do
+    state.required_precharge_output_voltage
     now = System.system_time(:millisecond)
     case {state.status, state.contact, state.inverter_output_voltage, state.precharge_ending_timestamp} do
       {:off, :start, _, _} ->

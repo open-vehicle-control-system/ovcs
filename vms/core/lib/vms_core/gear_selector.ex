@@ -31,6 +31,7 @@ defmodule VmsCore.GearSelector do
     {:ok, timer} = :timer.send_interval(@loop_period, :loop)
     {:ok, %{
       selected_gear: :parking,
+      requested_gear: :parking,
       requested_throttle: @zero,
       speed: @zero,
       ready_to_drive: false,
@@ -44,22 +45,16 @@ defmodule VmsCore.GearSelector do
 
   @impl true
   def handle_info(:loop, state) do
-    Bus.broadcast("messages", %Bus.Message{name: :selected_gear, value: state.selected_gear, source: __MODULE__})
+    state = state
+      |> select_gear()
+      |> emit_metrics()
+
     {:noreply, state}
   end
 
   def handle_info(%Bus.Message{name: :requested_gear, value: requested_gear, source: source}, state) when source == state.requested_gear_source do
-    case validate_requested_gear(state, requested_gear) do
-      {:change, selected_gear} ->
-        :ok = Cantastic.Emitter.update(:ovcs, "gear_status", fn (data) ->
-          %{data | "selected_gear" => "#{selected_gear}"}
-        end)
-        {:noreply,%{state | selected_gear: selected_gear}}
-      :no_change ->
-        {:noreply, state}
-    end
+    {:noreply, %{state | requested_gear: requested_gear}}
   end
-
   def handle_info(%Bus.Message{name: :requested_throttle, value: requested_throttle, source: source}, state) when source == state.requested_throttle_source do
     {:noreply, %{state | requested_throttle: requested_throttle}}
   end
@@ -73,21 +68,32 @@ defmodule VmsCore.GearSelector do
     {:noreply, state}
   end
 
-  defp validate_requested_gear(state, requested_gear) do
+  defp select_gear(state) do
     throttle_near_zero = D.lt?(state.requested_throttle, @gear_shift_throttle_limit)
     speed_near_zero    = D.abs(state.speed) |> D.lt?(@gear_shift_speed_limit)
-    ready_to_drive     = state.ready_to_drive
-    selected_gear      = state.selected_gear
-    case {selected_gear, requested_gear, throttle_near_zero && speed_near_zero, ready_to_drive} do
-      {:parking, :parking, _, _} -> :no_change
-      {:reverse, :reverse, _, _} -> :no_change
-      {:neutral, :neutral, _, _} -> :no_change
-      {:drive, :drive, _, _}     -> :no_change
-      {_, :parking, true, _}     -> {:change, :parking}
-      {_, :reverse, true, true}  -> {:change, :reverse}
-      {_, :drive, true, true}    -> {:change, :drive}
-      {_, :neutral, _, _}        -> {:change, :neutral}
-      _                          -> :no_change
+    throttle_and_speed_near_zero = throttle_near_zero && speed_near_zero
+    case {state.selected_gear, state.requested_gear, throttle_and_speed_near_zero, state.ready_to_drive} do
+      {:parking, :parking, _, _} -> state
+      {:reverse, :reverse, _, _} -> state
+      {:neutral, :neutral, _, _} -> state
+      {:drive, :drive, _, _}     -> state
+      {_, :parking, true, _}     -> apply_requested_gear(state, :parking)
+      {_, :reverse, true, true}  -> apply_requested_gear(state, :reverse)
+      {_, :drive, true, true}    -> apply_requested_gear(state, :drive)
+      {_, :neutral, _, _}        -> apply_requested_gear(state, :neutral)
+      _                          -> state
     end
+  end
+
+  defp emit_metrics(state) do
+    Bus.broadcast("messages", %Bus.Message{name: :selected_gear, value: state.selected_gear, source: __MODULE__})
+    state
+  end
+
+  defp apply_requested_gear(state, requested_gear) do
+    :ok = Cantastic.Emitter.update(:ovcs, "gear_status", fn (data) ->
+      %{data | "selected_gear" => "#{requested_gear}"}
+    end)
+    %{state | selected_gear: requested_gear}
   end
 end

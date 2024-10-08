@@ -31,7 +31,7 @@ defmodule VmsCore.VwPolo.PowerSteeringPump do
     {:ok, timer} = :timer.send_interval(@loop_period, :loop)
     {:ok, %{
       loop_timer: timer,
-      selected_gear: "parking",
+      selected_gear: :parking,
       selected_gear_source: selected_gear_source,
       enabled: false
     }}

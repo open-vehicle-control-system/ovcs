@@ -15,7 +15,7 @@ defmodule VmsCore.Infotainment do
     :ok = Receiver.subscribe(self(), :ovcs, "infotainment_status")
     {:ok, timer} = :timer.send_interval(@loop_period, :loop)
     {:ok, %{
-      requested_gear: "parking",
+      requested_gear: :parking,
       loop_timer: timer
     }}
   end
@@ -29,6 +29,6 @@ defmodule VmsCore.Infotainment do
 
   def handle_info({:handle_frame, %Frame{signals: signals}}, state) do
     %{"requested_gear" => %Signal{value: requested_gear}} = signals
-    {:noreply, %{state | requested_gear: requested_gear}}
+    {:noreply, %{state | requested_gear: String.to_atom(requested_gear)}}
   end
 end
