@@ -87,7 +87,7 @@ defmodule VmsCore.Application do
       # OVCS
       {VmsCore.GearSelector, %{
         requested_gear_source: VmsCore.Infotainment,
-        ready_to_drive_source: VmsCore.Vehicle.OVCS1,
+        ready_to_drive_source: VmsCore.Vehicles.OVCS1,
         speed_source: VmsCore.VwPolo.Abs,
         requested_throttle_source: VmsCore.ThrottlePedal
       }},
@@ -104,7 +104,7 @@ defmodule VmsCore.Application do
       {VmsCore.HighVoltageContactors, %{
         contact_source: VmsCore.VwPolo.IgnitionLock,
         inverter_output_voltage_source: VmsCore.NissanLeaf.Em57.Inverter,
-        required_precharge_output_voltage: Decimal.new(300),
+        required_precharge_output_voltage: 300,
         controller: VmsCore.Controllers.RearController,
         main_negative_relay_pin: 5,
         main_positive_relay_pin: 6,
@@ -121,12 +121,17 @@ defmodule VmsCore.Application do
         ready_to_drive_source: VmsCore.Vehicles.OVCS1,
         vms_status_source: VmsCore.Vehicles.OVCS1
       }},
-
+      {VmsCore.Speed, %{
+        speed_source: VmsCore.VwPolo.Abs
+      }},
       # Vehicle
       {VmsCore.Vehicles.OVCS1, []},
       {VmsCore.Vehicles.Metrics, []}
     ]
-
+    children =  case Application.get_env(:vms_core, :socketcand_only) do
+      true -> []
+      false -> children
+    end
     opts = [strategy: :one_for_one, name: VmsCore.Supervisor]
     Supervisor.start_link(children, opts)
   end

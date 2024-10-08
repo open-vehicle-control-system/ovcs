@@ -2,8 +2,8 @@ defmodule VmsCore.SteeringColumn do
   use GenServer
 
   @loop_period 10
-  @min_duty_cycle 0 + 5
-  @max_duty_cycle 4095 - 5
+  @min_duty_cycle 0 + 40
+  @max_duty_cycle 4095 - 40
   @direction_mapping %{clockwise: true, counter_clockwise: false}
 
 
@@ -50,8 +50,8 @@ defmodule VmsCore.SteeringColumn do
       {false, true} ->
         :ok = VmsCore.Controllers.GenericController.set_digital_value(state.power_relay_controller, state.power_relay_pin, true)
         %{state | enabled: true}
-      {true, :off} ->
-        :ok = VmsCore.Controllers.GenericController.set_digital_value(state.power_relay_controller, state.power_relay_pin, true)
+      {true, false} ->
+        :ok = VmsCore.Controllers.GenericController.set_digital_value(state.power_relay_controller, state.power_relay_pin, false)
         %{state | enabled: false}
       _ -> state
     end
@@ -80,7 +80,7 @@ defmodule VmsCore.SteeringColumn do
     {:reply, :ok, %{state | enable: true, duty_cycle: duty_cycle, direction: direction}}
   end
   def handle_call(:deactivate, _from, state) do
-    {:reply, :ok, %{state | enable: false, duty_cycle: @min_duty_cycle}}
+    {:reply, :ok, %{state | enable: false}}
   end
 
   def activate(duty_cycle, direction) do

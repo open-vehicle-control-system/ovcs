@@ -84,8 +84,8 @@ defmodule VmsCore.Controllers.GenericController do
 
   @impl true
   def handle_info({:handle_frame,  %Frame{name: name, signals: signals}}, state) when name == state.digital_and_analog_pin_status_frame_name do
-    pins = signals |> Enum.reduce(%{}, fn (signal, pins) ->
-      %{pins | signal.name => signal.value}
+    pins = signals |> Enum.reduce(%{}, fn ({_, signal}, pins) ->
+      Map.put(pins, signal.name, signal.value)
     end)
     {:noreply, %{state | pins: pins}}
   end
@@ -136,7 +136,7 @@ defmodule VmsCore.Controllers.GenericController do
   end
 
   def set_pwm_duty_cycle(controller, pin, duty_cycle) do
-    GenServer.call(controller, {:set_pwm_value, pin, duty_cycle})
+    GenServer.call(controller, {:set_pwm_duty_cycle, pin, duty_cycle})
   end
 
   def set_dac_duty_cycle(controller, duty_cycle) do

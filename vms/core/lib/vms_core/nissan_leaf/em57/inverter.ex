@@ -9,7 +9,9 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
   @zero D.new(0)
   #@motor_max_torque D.new("250")
   #@motor_max_power D.new("80")
-  @drive_max_torque D.new(100) # TODO store in DB
+  @max_torque 100
+  @drive_max_torque D.new(@max_torque) # TODO store in DB
+  @reverse_max_torque D.new(-@max_torque)
   @effective_throttle_threshold D.new("0.05")
 
   @loop_period 10
@@ -32,7 +34,7 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
     {:ok, timer} = :timer.send_interval(@loop_period, :loop)
     {:ok, %{
       rotation_per_minute: 0,
-      inverter_output_voltage: @zero,
+      inverter_output_voltage: 0,
       effective_torque: @zero,
       requested_torque: @zero,
       inverter_communication_board_temperature: @zero,
@@ -43,7 +45,7 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
       selected_gear_source: selected_gear_source,
       contact_source: contact_source,
       requested_throttle: @zero,
-      selected_gear: "parking",
+      selected_gear: :parking,
       contact: :off,
       loop_timer: timer,
       enabled: false,
@@ -148,8 +150,8 @@ defmodule VmsCore.NissanLeaf.Em57.Inverter do
 
   defp apply_torque(state) do
     max_torque = case state.selected_gear do
-      "drive"   -> @drive_max_torque
-      "reverse" -> -@drive_max_torque
+      :drive   -> @drive_max_torque
+      :reverse -> @reverse_max_torque
       _         -> @zero
     end
     requested_throttle = case D.lt?(state.requested_throttle, @effective_throttle_threshold)  do

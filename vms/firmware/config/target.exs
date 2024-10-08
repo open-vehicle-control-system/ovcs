@@ -165,3 +165,5 @@ config :cantastic,
   priv_can_config_path: "vehicles/#{vehicle}.yml",
   enable_socketcand: true,
   socketcand_ip_interface: "wlan0"
+
+config :vms_core, :socketcand_only, true
