@@ -22,26 +22,8 @@ defmodule VmsCore.Bosch.IboosterGen2 do
     controller: controller,
     power_relay_pin: power_relay_pin})
   do
-    :ok = init_emitters()
     :ok = Receiver.subscribe(self(), :misc, ["ibooster_status"])
     Bus.subscribe("messages")
-    {:ok, timer} = :timer.send_interval(@loop_period, :loop)
-    {:ok, %{
-      status: "off",
-      driver_brake_apply: "not_init_or_off",
-      internal_state: "no_mode_active",
-      rod_position: @zero,
-      loop_timer: timer,
-      enabled: false,
-      contact_source: contact_source,
-      contact: :off,
-      ready_to_drive: false,
-      controller: controller,
-      power_relay_pin: power_relay_pin
-    }}
-  end
-
-  defp init_emitters() do
     :ok = Emitter.configure(:misc, "vehicle_status", %{
       parameters_builder_function: &vehicle_status_frame_parameters_builder/1,
       initial_data: %{
@@ -63,7 +45,20 @@ defmodule VmsCore.Bosch.IboosterGen2 do
         "external_request" => false
       }
     })
-    :ok
+    {:ok, timer} = :timer.send_interval(@loop_period, :loop)
+    {:ok, %{
+      status: "off",
+      driver_brake_apply: "not_init_or_off",
+      internal_state: "no_mode_active",
+      rod_position: @zero,
+      loop_timer: timer,
+      enabled: false,
+      contact_source: contact_source,
+      contact: :off,
+      ready_to_drive: false,
+      controller: controller,
+      power_relay_pin: power_relay_pin
+    }}
   end
 
   @impl true
@@ -103,10 +98,10 @@ defmodule VmsCore.Bosch.IboosterGen2 do
     case {state.enabled, state.contact} do
       {false, :on} ->
         :ok = VmsCore.Controllers.GenericController.set_digital_value(state.controller, state.power_relay_pin, true)
-        :ok = Emitter.enable(:leaf_drive, ["vehicle_status", "vehicle_alive", "brake_request"])
+        :ok = Emitter.enable(:misc, ["vehicle_status", "vehicle_alive", "brake_request"])
         %{state | enabled: true}
       {true, :off} ->
-        :ok = Emitter.disable(:leaf_drive, ["vehicle_status", "vehicle_alive", "brake_request"])
+        :ok = Emitter.disable(:misc, ["vehicle_status", "vehicle_alive", "brake_request"])
         :ok = VmsCore.Controllers.GenericController.set_digital_value(state.controller, state.power_relay_pin, false)
         %{state | enabled: false}
       _ -> state
