@@ -166,4 +166,4 @@ config :cantastic,
   enable_socketcand: true,
   socketcand_ip_interface: "wlan0"
 
-config :vms_core, :socketcand_only, true
+config :vms_core, :socketcand_only, System.get_env("SOCKETCAND_ONLY") == "true"
