@@ -51,14 +51,13 @@ defmodule OvcsRosBridgeFirmware.MixProject do
       # changes to your application are needed.
       {:ovcs_ros_bridge_core, path: "../core", targets: @all_targets, env: Mix.env()},
       {:cv_bridgex, path: "../../libraries/cv_bridgex"},
-      {:rclex, github: "rclex/rclex"},
+      {:rclex, github: "rclex/rclex", branch: "modify-binary-handling"},
       {:observer_cli, "~> 1.7"},
       {
         :ovcs_rosbridge_system_rpi4,
-        path: "../../../ovcs_rosbridge_system_rpi4",
+        github: "open-vehicle-control-system/ovcs_rosbridge_system_rpi4",
         runtime: false,
-        targets: :ovcs_rosbridge_system_rpi4,
-        nerves: [compile: true]
+        targets: :ovcs_rosbridge_system_rpi4
       },
     ]
   end
