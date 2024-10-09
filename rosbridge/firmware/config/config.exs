@@ -17,15 +17,15 @@ config :cv_bridgex,
   cameras: [
     %{
       process_name: FrontLeftCamera,
-      emitter_process_name: FrontLeftCameraEmitter,
-      device_id: 0,
+      device: 0,
       topic: "front_left_camera",
+      props: %{width: 640, height: 480, fps: 30, buffersize: 2}
     },
     %{
       process_name: FrontRightCamera,
-      emitter_process_name: FrontRightCameraEmitter,
-      device_id: 2,
+      device: 2,
       topic: "front_right_camera",
+      props: %{width: 640, height: 480, fps: 30, buffersize: 2}
     }
   ]
 
