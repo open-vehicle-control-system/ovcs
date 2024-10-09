@@ -12,7 +12,7 @@ defmodule CvBridgex.CvCamera do
   end
 
   @impl true
-  def init(%{process_name: _process_name, device: device, topic: topic, props: props} = _args) do
+  def init(%{process_name: _process_name, device: device, topic: topic, frame_id: frame_id, props: props} = _args) do
     camera = get_opencv_camera(device, props)
     start_ros_node_and_publisher(topic)
     start_timer(props)
@@ -20,6 +20,7 @@ defmodule CvBridgex.CvCamera do
       device: device,
       camera: camera,
       topic: topic,
+      frame_id: frame_id,
       props: props
     }}
   end
@@ -45,7 +46,8 @@ defmodule CvBridgex.CvCamera do
 
   defp start_ros_node_and_publisher(topic) do
     :ok = Rclex.start_node(topic)
-    :ok = Rclex.start_publisher(Rclex.Pkgs.SensorMsgs.Msg.Image, "/#{topic}", topic, qos: Rclex.QoS.profile_sensor_data())
+    :ok = Rclex.start_publisher(Rclex.Pkgs.SensorMsgs.Msg.Image, "/#{topic}_raw", topic, qos: Rclex.QoS.profile_sensor_data())
+    :ok = Rclex.start_publisher(Rclex.Pkgs.SensorMsgs.Msg.CompressedImage, "/#{topic}_compressed", topic, qos: Rclex.QoS.profile_sensor_data())
   end
 
   defp start_timer(props) do
@@ -76,8 +78,12 @@ defmodule CvBridgex.CvCamera do
       nil ->
         Logger.warning("No picture in buffer")
       _ ->
-        message = create_ros_image_message(picture)
-        Rclex.publish(message, "/#{state.topic}", state.topic)
+        format = ".jpg"
+        compressed_picture = Evision.imencode(format, picture)
+        message = create_ros_image_message(picture, state)
+        compressed_message = create_ros_compressed_image_message(compressed_picture, format, state)
+        Rclex.publish(message, "/#{state.topic}_raw", state.topic)
+        Rclex.publish(compressed_message, "/#{state.topic}_compressed", state.topic)
     end
   end
 
@@ -95,9 +101,9 @@ defmodule CvBridgex.CvCamera do
     end
   end
 
-  defp create_ros_image_message(picture) do
+  defp create_ros_image_message(picture, state) do
     stamp         = %Rclex.Pkgs.BuiltinInterfaces.Msg.Time{sec: :os.timestamp() |> elem(1), nanosec: :os.timestamp() |> elem(2)}
-    frame_id      = "OVCS"
+    frame_id      = state.frame_id || state.topic
     height        = picture.shape |> elem(0)
     width         = picture.shape |> elem(1)
     encoding      = "#{picture.type |> elem(1)}#{picture.type |> elem(0) |> to_string |> String.capitalize()}C#{picture.channels}"
@@ -113,6 +119,16 @@ defmodule CvBridgex.CvCamera do
       is_bigendian: is_bigendian,
       step: step,
       data: data
+    }
+  end
+
+  defp create_ros_compressed_image_message(compressed_picture, format, state) do
+    stamp         = %Rclex.Pkgs.BuiltinInterfaces.Msg.Time{sec: :os.timestamp() |> elem(1), nanosec: :os.timestamp() |> elem(2)}
+    frame_id      = state.frame_id || state.topic
+    %Rclex.Pkgs.SensorMsgs.Msg.CompressedImage{
+      header: %Rclex.Pkgs.StdMsgs.Msg.Header{stamp: stamp, frame_id: frame_id},
+      format: format,
+      data: compressed_picture
     }
   end
 end
