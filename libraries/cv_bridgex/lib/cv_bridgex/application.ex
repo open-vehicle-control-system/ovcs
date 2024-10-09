@@ -17,6 +17,7 @@ defmodule CvBridgex.Application do
             process_name: camera.process_name,
             device:       camera.device,
             topic:        camera.topic,
+            frame_id:     camera.frame_id,
             props:        Map.get(camera, :props, nil)
           }]
         },
