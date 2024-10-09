@@ -9,9 +9,8 @@ config :cv_bridgex,
   cameras: [
     %{
       process_name: TestCamera,
-      emitter_process_name: TestCameraEmitter,
-      device_id: 0,
+      device: 0,
       topic: "test_camera",
-      capture_backend: :opencv
+      props: %{width: 640, height: 480, fps: 30, buffersize: 2}
     }
   ]
