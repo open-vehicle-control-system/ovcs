@@ -19,13 +19,13 @@ config :cv_bridgex,
       process_name: FrontLeftCamera,
       device: 0,
       topic: "front_left_camera",
-      props: %{width: 640, height: 480, fps: 30, buffersize: 2}
+      props: %{width: 640, height: 480, fps: 30}
     },
     %{
       process_name: FrontRightCamera,
       device: 2,
       topic: "front_right_camera",
-      props: %{width: 640, height: 480, fps: 30, buffersize: 2}
+      props: %{width: 640, height: 480, fps: 30}
     }
   ]
 
