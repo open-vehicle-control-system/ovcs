@@ -2,7 +2,10 @@ defmodule CvBridgex.CvCamera do
   use GenServer
   require Logger
 
-  @loop_period 34
+  @default_fps    25
+  @default_width  640
+  @default_height 480
+  @default_buffer_size 2
 
   def start_link(%{process_name: process_name} = args) do
     GenServer.start_link(__MODULE__, args, name: process_name)
@@ -11,9 +14,8 @@ defmodule CvBridgex.CvCamera do
   @impl true
   def init(%{process_name: _process_name, device: device, topic: topic, props: props} = _args) do
     camera = get_opencv_camera(device, props)
-    :ok = Rclex.start_node(topic)
-    :ok = Rclex.start_publisher(Rclex.Pkgs.SensorMsgs.Msg.Image, "/#{topic}", topic, qos: Rclex.QoS.profile_sensor_data())
-    {:ok, _timer} = :timer.send_interval(@loop_period, :loop)
+    start_ros_node_and_publisher(topic)
+    start_timer(props)
     {:ok, %{
       device: device,
       camera: camera,
@@ -30,12 +32,42 @@ defmodule CvBridgex.CvCamera do
 
   defp get_opencv_camera(device, props) do
     camera = Evision.VideoCapture.videoCapture(device, apiPreference: Evision.VideoCaptureAPIs.cv_CAP_V4L)
-    Evision.VideoCapture.set(camera, Evision.VideoCaptureProperties.cv_CAP_PROP_FOURCC, Evision.VideoWriter.fourcc(List.first(~c"M"), List.first(~c"J"), List.first(~c"P"), List.first(~c"G")))
-    Evision.VideoCapture.set(camera, Evision.VideoCaptureProperties.cv_CAP_PROP_BUFFERSIZE, props.buffersize || 2)
-    Evision.VideoCapture.set(camera, Evision.VideoCaptureProperties.cv_CAP_PROP_FPS, props.fps || 30)
-    Evision.VideoCapture.set(camera, Evision.VideoCaptureProperties.cv_CAP_PROP_FRAME_WIDTH, props.width || 640)
-    Evision.VideoCapture.set(camera, Evision.VideoCaptureProperties.cv_CAP_PROP_FRAME_HEIGHT, props.height || 480)
+    mjpg = Evision.VideoWriter.fourcc(List.first(~c"M"), List.first(~c"J"), List.first(~c"P"), List.first(~c"G"))
+    true = Evision.VideoCapture.set(camera, Evision.VideoCaptureProperties.cv_CAP_PROP_FOURCC, mjpg)
+    case props do
+      nil ->
+        true
+      _ ->
+        set_camera_props(camera, props)
+    end
     camera
+  end
+
+  defp start_ros_node_and_publisher(topic) do
+    :ok = Rclex.start_node(topic)
+    :ok = Rclex.start_publisher(Rclex.Pkgs.SensorMsgs.Msg.Image, "/#{topic}", topic, qos: Rclex.QoS.profile_sensor_data())
+  end
+
+  defp start_timer(props) do
+    fps = case props do
+      nil ->
+        @default_fps
+      _ ->
+        Map.get(props, :fps, @default_fps)
+    end
+    loop_timer = (1000/fps) |> ceil |> trunc
+    {:ok, _timer} = :timer.send_interval(loop_timer, :loop)
+  end
+
+  defp set_camera_props(camera, props) do
+    buffersize = Map.get(props, :buffersize, @default_buffer_size)
+    fps        = Map.get(props, :fps, @default_fps)
+    width      = Map.get(props, :width, @default_width)
+    height     = Map.get(props, :height, @default_height)
+    true = Evision.VideoCapture.set(camera, Evision.VideoCaptureProperties.cv_CAP_PROP_BUFFERSIZE, buffersize)
+    true = Evision.VideoCapture.set(camera, Evision.VideoCaptureProperties.cv_CAP_PROP_FPS, fps)
+    true = Evision.VideoCapture.set(camera, Evision.VideoCaptureProperties.cv_CAP_PROP_FRAME_WIDTH, width)
+    true = Evision.VideoCapture.set(camera, Evision.VideoCaptureProperties.cv_CAP_PROP_FRAME_HEIGHT, height)
   end
 
   defp capture_and_send_picture(state) do

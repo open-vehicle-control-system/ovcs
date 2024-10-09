@@ -13,7 +13,12 @@ defmodule CvBridgex.Application do
         id: camera.process_name,
         start: {
           CvBridgex.CvCamera,
-          :start_link, [%{process_name: camera.process_name, device: camera.device, topic: camera.topic, props: camera.props}]
+          :start_link, [%{
+            process_name: camera.process_name,
+            device:       camera.device,
+            topic:        camera.topic,
+            props:        Map.get(camera, :props, nil)
+          }]
         },
       }
     end)
