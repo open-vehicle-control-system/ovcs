@@ -13,21 +13,21 @@ config :rclex,
     "sensor_msgs/msg/Image", "sensor_msgs/msg/CompressedImage", "std_msgs/msg/Header"
   ]
 
-config :cv_bridgex,
+config :rclex_cam,
   cameras: [
     %{
       process_name: FrontLeftCamera,
       device: 0,
       topic: "front_left_camera",
       frame_id: "camera1",
-      props: %{width: 640, height: 480, fps: 30}
+      props: %{width: 1280, height: 720, fps: 30}
     },
     %{
       process_name: FrontRightCamera,
       device: 2,
       topic: "front_right_camera",
       frame_id: "camera2",
-      props: %{width: 640, height: 480, fps: 30}
+      props: %{width: 1280, height: 720, fps: 30}
     }
   ]
 

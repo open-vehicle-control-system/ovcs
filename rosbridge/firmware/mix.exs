@@ -49,8 +49,7 @@ defmodule OvcsRosBridgeFirmware.MixProject do
       # bumps to Nerves systems. Since these include Linux kernel and Erlang
       # version updates, please review their release notes in case
       # changes to your application are needed.
-      {:ovcs_ros_bridge_core, path: "../core", targets: @all_targets, env: Mix.env()},
-      {:cv_bridgex, path: "../../libraries/cv_bridgex"},
+      {:rclex_cam, path: "../rclex_cam", targets: @all_targets, env: Mix.env()},
       {:rclex, github: "rclex/rclex", branch: "modify-binary-handling"},
       {:observer_cli, "~> 1.7"},
       {
