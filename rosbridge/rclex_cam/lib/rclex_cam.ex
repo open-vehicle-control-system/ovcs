@@ -1,6 +1,6 @@
-defmodule CvBridgex do
+defmodule RclexCam do
   @moduledoc """
-  Documentation for `CvBridgex`.
+  Documentation for `RclexCam`.
   """
 
   @doc """
@@ -8,7 +8,7 @@ defmodule CvBridgex do
 
   ## Examples
 
-      iex> CvBridgex.hello()
+      iex> RclexCam.hello()
       :world
 
   """

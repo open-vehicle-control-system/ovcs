@@ -5,7 +5,7 @@ config :rclex,
     "sensor_msgs/msg/Image", "std_msgs/msg/Header"
   ]
 
-config :cv_bridgex,
+config :rclex_cam,
   cameras: [
     %{
       process_name: TestCamera,

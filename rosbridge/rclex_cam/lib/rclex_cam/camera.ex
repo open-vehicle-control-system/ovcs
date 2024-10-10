@@ -1,4 +1,4 @@
-defmodule CvBridgex.CvCamera do
+defmodule RclexCam.Camera do
   use GenServer
   require Logger
 

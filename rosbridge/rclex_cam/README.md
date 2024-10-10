@@ -1,21 +1,21 @@
-# CvBridgex
+# RclexCam
 
 **TODO: Add description**
 
 ## Installation
 
 If [available in Hex](https://hex.pm/docs/publish), the package can be installed
-by adding `cv_bridgex` to your list of dependencies in `mix.exs`:
+by adding `rclex_cam` to your list of dependencies in `mix.exs`:
 
 ```elixir
 def deps do
   [
-    {:cv_bridgex, "~> 0.1.0"}
+    {:rclex_cam, "~> 0.1.0"}
   ]
 end
 ```
 
 Documentation can be generated with [ExDoc](https://github.com/elixir-lang/ex_doc)
 and published on [HexDocs](https://hexdocs.pm). Once published, the docs can
-be found at <https://hexdocs.pm/cv_bridgex>.
+be found at <https://hexdocs.pm/rclex_cam>.
 
