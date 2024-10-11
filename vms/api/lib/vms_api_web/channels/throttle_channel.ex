@@ -1,5 +1,7 @@
 defmodule VmsApiWeb.ThrottleChannel do
   use VmsApiWeb, :channel
+  alias VmsCore.Metrics
+  alias VmsCore.Components.OVCS.ThrottlePedal
 
   intercept ["update"]
 
@@ -12,7 +14,7 @@ defmodule VmsApiWeb.ThrottleChannel do
 
   @impl true
   def handle_info(:push_car_controls_state, socket) do
-    {:ok, throttle} =  VmsCore.Vehicles.Metrics.metrics(VmsCore.ThrottlePedal)
+    {:ok, throttle} =  Metrics.metrics(ThrottlePedal)
     view = VmsApiWeb.Api.ThrottleJSON.render("throttle.json", %{throttle: throttle})
     push(socket, "updated", view)
     {:noreply, socket}

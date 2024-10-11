@@ -149,10 +149,9 @@ config :vms_core, VmsCore.Repo,
   stacktrace: true,
   show_sensitive_data_on_connection_error: true
 
-vehicle = System.get_env("VEHICLE") || "ovcs1"
+vehicle = (System.get_env("VEHICLE") || "OVCS1")
 
 config :vms_core, :vehicle, vehicle
-config :vms_core, :gear_control_module, VmsCore.Infotainment
 
 config :cantastic,
   can_network_mappings: {
@@ -162,7 +161,7 @@ config :cantastic,
   },
   setup_can_interfaces: true,
   otp_app: :vms_core,
-  priv_can_config_path: "vehicles/#{vehicle}.yml",
+  priv_can_config_path: "can/vehicles/#{Macro.underscore(vehicle)}.yml",
   enable_socketcand: true,
   socketcand_ip_interface: "wlan0"
 
