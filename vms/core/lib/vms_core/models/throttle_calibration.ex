@@ -1,4 +1,4 @@
-defmodule VmsCore.ThrottleCalibration do
+defmodule VmsCore.Models.ThrottleCalibration do
   use Ecto.Schema
 
   schema "throttle_calibrations" do

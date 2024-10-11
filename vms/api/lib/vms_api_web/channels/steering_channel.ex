@@ -1,5 +1,7 @@
 defmodule VmsApiWeb.SteeringChannel do
   use VmsApiWeb, :channel
+  alias VmsCore.Metrics
+  alias VmsCore.Components.Bosch.LWS
 
   intercept ["update"]
 
@@ -12,7 +14,7 @@ defmodule VmsApiWeb.SteeringChannel do
 
   @impl true
   def handle_info(:push_steering_state, socket) do
-    {:ok, lws_status} = VmsCore.Vehicles.Metrics.metrics(VmsCore.Bosch.Lws)
+    {:ok, lws_status} = Metrics.metrics(LWS)
     view = VmsApiWeb.Api.SteeringJSON.render("steering.json", %{lws_status: lws_status})
     push(socket, "updated", view)
     {:noreply, socket}

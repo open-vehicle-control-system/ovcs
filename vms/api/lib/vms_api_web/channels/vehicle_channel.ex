@@ -1,5 +1,7 @@
 defmodule VmsApiWeb.VehicleChannel do
   use VmsApiWeb, :channel
+  alias VmsCore.Metrics
+  alias VmsCore.Components.{Managers.Gear, Volkswagen.Polo9N.ABS, Volkswagen.Polo9N.IgnitionLock}
 
   intercept ["update"]
 
@@ -13,9 +15,9 @@ defmodule VmsApiWeb.VehicleChannel do
 
   @impl true
   def handle_info(:push_vehicle_state, socket) do
-    with {:ok, %{selected_gear: selected_gear}} <- VmsCore.Vehicles.Metrics.metrics(VmsCore.GearSelector),
-         {:ok, %{speed: speed}}                 <- VmsCore.Vehicles.Metrics.metrics(VmsCore.VwPolo.Abs),
-         {:ok, %{contact: contact}}             <- VmsCore.Vehicles.Metrics.metrics(VmsCore.VwPolo.IgnitionLock)
+    with {:ok, %{selected_gear: selected_gear}} <- Metrics.metrics(Gear),
+         {:ok, %{speed: speed}}                 <- Metrics.metrics(ABS),
+         {:ok, %{contact: contact}}             <- Metrics.metrics(IgnitionLock)
     do
       assigns = %{
         selected_gear: selected_gear,

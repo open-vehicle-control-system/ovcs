@@ -1,8 +1,6 @@
 defmodule VmsCore.Status do
   use GenServer
-
   alias VmsCore.Bus
-
   alias Cantastic.Emitter
 
   @loop_period 10
@@ -83,7 +81,11 @@ defmodule VmsCore.Status do
   defp vms_status_frame_parameter_builder(data) do
     counter    = data["counter"]
     parameters = data
-    data       = %{data | "counter" => VmsCore.NissanLeaf.Util.counter(counter + 1)}
+    data       = %{data | "counter" => counter(counter + 1)}
     {:ok, parameters, data}
+  end
+
+  defp counter(value) do
+    rem(value, 4)
   end
 end

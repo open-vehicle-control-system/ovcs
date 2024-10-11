@@ -1,5 +1,7 @@
 defmodule VmsApiWeb.SystemStatusChannel do
   use VmsApiWeb, :channel
+  alias VmsCore.Metrics
+  alias VmsCore.Vehicles.OVCS1
 
   intercept ["update"]
 
@@ -13,7 +15,7 @@ defmodule VmsApiWeb.SystemStatusChannel do
 
   @impl true
   def handle_info(:push_system_status_state, socket) do
-    {:ok, vehicle_status} = VmsCore.Vehicles.Metrics.metrics(VmsCore.Vehicles.OVCS1)
+    {:ok, vehicle_status} = Metrics.metrics(OVCS1)
     view = VmsApiWeb.Api.SystemStatusStateJSON.render("system_status_state.json", %{vehicle_status: vehicle_status})
     push(socket, "updated", view)
     {:noreply, socket}

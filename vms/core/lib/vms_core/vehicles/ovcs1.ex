@@ -3,6 +3,7 @@ defmodule VmsCore.Vehicles.OVCS1 do
   require Logger
   alias VmsCore.Bus
   alias Cantastic.ReceivedFrameWatcher
+  alias VmsCore.Components.{Volkswagen.Polo9N.IgnitionLock, OVCS.HighVoltageContactors, Nissan.LeafZE0.Inverter, Bosch.IBoosterGen2}
 
   @loop_period 10
 
@@ -48,16 +49,16 @@ defmodule VmsCore.Vehicles.OVCS1 do
     {:noreply, state}
   end
 
-  def handle_info(%Bus.Message{name: :contact, value: contact, source: VmsCore.VwPolo.IgnitionLock}, state) do
+  def handle_info(%Bus.Message{name: :contact, value: contact, source: IgnitionLock}, state) do
     {:noreply, %{state | contact: contact}}
   end
-  def handle_info(%Bus.Message{name: :ready_to_drive, value: ready_to_drive, source: VmsCore.HighVoltageContactors}, state) do
+  def handle_info(%Bus.Message{name: :ready_to_drive, value: ready_to_drive, source: HighVoltageContactors}, state) do
     {:noreply, %{state | high_voltage_contactors_ready_to_drive: ready_to_drive}}
   end
-  def handle_info(%Bus.Message{name: :ready_to_drive, value: ready_to_drive, source: VmsCore.NissanLeaf.Em57.Inverter}, state) do
+  def handle_info(%Bus.Message{name: :ready_to_drive, value: ready_to_drive, source: Inverter}, state) do
     {:noreply, %{state | inverter_ready_to_drive: ready_to_drive}}
   end
-  def handle_info(%Bus.Message{name: :ready_to_drive, value: ready_to_drive, source: VmsCore.Bosch.IboosterGen2}, state) do
+  def handle_info(%Bus.Message{name: :ready_to_drive, value: ready_to_drive, source: IBoosterGen2}, state) do
     {:noreply, %{state | braking_system_ready_to_drive: ready_to_drive}}
   end
   def handle_info(%Bus.Message{}, state) do # TODO, replace Bus ?
