@@ -1,4 +1,7 @@
 defmodule VmsCore.NetworkInterfaces do
+  @moduledoc """
+    Expose CAN networks interfaces and statistics
+  """
   use GenServer
   require Logger
   alias Cantastic.ConfigurationStore

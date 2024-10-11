@@ -1,4 +1,7 @@
 defmodule VmsCore.Components.Nissan.Util do
+  @moduledoc """
+   Nissan ZE0 CAN utils
+  """
   import Bitwise
 
   def crc8(raw_data) do

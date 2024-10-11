@@ -1,7 +1,10 @@
 defmodule VmsCore.Components.OVCS.GenericController do
+  @moduledoc """
+    Generic controller based on an Arduino R4 Minima
+  """
   use GenServer
 
-  alias Cantastic.{Frame, Emitter, Receiver}
+  alias Cantastic.{Emitter, Frame, Receiver}
   alias VmsCore.Application
 
   @digital_pins %{
@@ -43,7 +46,6 @@ defmodule VmsCore.Components.OVCS.GenericController do
     "analog_pin1_value" => 0,
     "analog_pin2_value" => 0
   }
-
 
   def start_link(%{process_name: process_name} = args) do
     GenServer.start_link(__MODULE__, args, name: process_name)
@@ -160,7 +162,7 @@ defmodule VmsCore.Components.OVCS.GenericController do
     })
   end
 
-  def stop_adoption() do
+  def stop_adoption do
     Emitter.disable(:ovcs, "controller_configuration")
   end
 

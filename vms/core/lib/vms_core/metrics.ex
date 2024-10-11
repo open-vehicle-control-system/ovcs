@@ -1,4 +1,7 @@
 defmodule VmsCore.Metrics do
+  @moduledoc """
+    Aggregate all metrics emmited on the VMS bus
+  """
   use GenServer
   alias VmsCore.Bus
 

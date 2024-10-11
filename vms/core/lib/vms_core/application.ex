@@ -27,7 +27,7 @@ defmodule VmsCore.Application do
     Supervisor.start_link(children, opts)
   end
 
-  defp skip_migrations?() do
+  defp skip_migrations? do
     # By default, sqlite migrations are run when using a release
     System.get_env("RELEASE_NAME") != nil
   end
@@ -38,7 +38,7 @@ defmodule VmsCore.Application do
     Mix.ensure_application!(:observer)
   end
 
-  def vehicle_compposer() do
+  def vehicle_compposer do
     VmsCore.Vehicles
       |> Module.concat(Application.get_env(:vms_core, :vehicle))
       |> Module.concat(Composer)

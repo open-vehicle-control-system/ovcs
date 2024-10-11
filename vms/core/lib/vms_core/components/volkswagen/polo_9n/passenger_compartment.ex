@@ -1,8 +1,11 @@
 defmodule VmsCore.Components.Volkswagen.Polo9N.PassengerCompartment do
+  @moduledoc """
+    Polo passenger compartment
+  """
   use GenServer
 
   require Logger
-  alias Cantastic.{Frame, Signal, Receiver}
+  alias Cantastic.{Frame, Receiver, Signal}
   alias VmsCore.Bus
   @loop_period 10
 

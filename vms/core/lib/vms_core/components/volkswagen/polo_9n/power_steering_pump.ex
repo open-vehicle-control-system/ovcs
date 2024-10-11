@@ -1,6 +1,9 @@
 defmodule VmsCore.Components.Volkswagen.Polo9N.PowerSteeringPump do
+  @moduledoc """
+    Polo power steering pump
+  """
   use GenServer
-  alias Cantastic.{Emitter}
+  alias Cantastic.Emitter
   alias VmsCore.Bus
 
   @loop_period 10

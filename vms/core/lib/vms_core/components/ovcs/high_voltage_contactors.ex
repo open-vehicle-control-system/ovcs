@@ -1,4 +1,7 @@
 defmodule VmsCore.Components.OVCS.HighVoltageContactors do
+  @moduledoc """
+    EV high voltage contactors with precharge, using a generic controller
+  """
   use GenServer
   alias VmsCore.{Bus, Components.OVCS.GenericController}
 

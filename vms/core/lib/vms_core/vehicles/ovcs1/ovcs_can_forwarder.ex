@@ -1,8 +1,11 @@
 defmodule VmsCore.Vehicles.OVCS1.OVCSCANForwarder do
+  @moduledoc """
+    Forward the required metrics on the OVCS CAN bus
+  """
   use GenServer
   alias Cantastic.Emitter
-  alias VmsCore.Bus
   alias Decimal, as: D
+  alias VmsCore.Bus
 
   @loop_period 100
   @zero D.new(0)

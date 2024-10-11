@@ -1,9 +1,12 @@
 defmodule VmsCore.Components.Volkswagen.Polo9N.ABS do
+  @moduledoc """
+    Polo ABS
+  """
   use GenServer
   alias VmsCore.Bus
 
   require Logger
-  alias Cantastic.{Frame, Signal, Receiver}
+  alias Cantastic.{Frame, Receiver, Signal}
   alias Decimal, as: D
 
   @loop_period 10
