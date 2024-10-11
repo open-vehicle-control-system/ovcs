@@ -1,7 +1,8 @@
 defmodule VmsApiWeb.VehicleChannel do
   use VmsApiWeb, :channel
+  alias VmsCore.Components.{Volkswagen.Polo9N.ABS, Volkswagen.Polo9N.IgnitionLock}
   alias VmsCore.Metrics
-  alias VmsCore.Components.{Managers.Gear, Volkswagen.Polo9N.ABS, Volkswagen.Polo9N.IgnitionLock}
+  alias VmsCore.Managers.Gear
 
   intercept ["update"]
 
