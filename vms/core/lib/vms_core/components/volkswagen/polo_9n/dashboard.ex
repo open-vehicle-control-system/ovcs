@@ -1,10 +1,13 @@
 defmodule VmsCore.Components.Volkswagen.Polo9N.Dashboard do
+  @moduledoc """
+    Polo dashboard
+  """
   use GenServer
   alias Cantastic.Emitter
   alias Decimal, as: D
   alias VmsCore.Bus
 
-  @max_rotation_per_minute 10000
+  @max_rotation_per_minute 10_000
   @loop_period 10
 
   def start_link(args) do

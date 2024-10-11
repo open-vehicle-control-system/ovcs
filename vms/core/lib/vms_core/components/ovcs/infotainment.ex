@@ -1,7 +1,10 @@
 defmodule VmsCore.Components.OVCS.Infotainment do
+  @moduledoc """
+    OVCS Infotainment touchscreen module
+  """
   use GenServer
 
-  alias Cantastic.{Receiver, Frame, Signal}
+  alias Cantastic.{Frame, Receiver, Signal}
   alias VmsCore.Bus
 
   @loop_period 10
@@ -19,7 +22,6 @@ defmodule VmsCore.Components.OVCS.Infotainment do
       loop_timer: timer
     }}
   end
-
 
   @impl true
   def handle_info(:loop, state) do

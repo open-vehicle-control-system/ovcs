@@ -1,12 +1,15 @@
 defmodule VmsCore.Components.Bosch.IBoosterGen2 do
+  @moduledoc """
+   Tesla Model3 I Booster Gen2
+  """
   use GenServer
-  alias Cantastic.{Emitter, Receiver, Frame, Signal}
+  alias Cantastic.{Emitter, Frame, Receiver, Signal}
   alias Decimal, as: D
   alias VmsCore.{Bus, Components.OVCS.GenericController}
 
-  #@min_flow_rate 27136 # 0x6A00
-  @zero_point_flow_rate 32256 # 0x7e00
-  #@max_flow_rate 37376 # 0x9200
+  #@min_flow_rate 27_136 # 0x6A00
+  @zero_point_flow_rate 32_256 # 0x7e00
+  #@max_flow_rate 37_376 # 0x9200
   @flow_rate_range  5120
 
   @zero D.new(0)
@@ -110,17 +113,17 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
 
   defp check_ready_to_drive(state) do
     {:ok, power_relay_enabled} = GenericController.get_digital_value(state.controller, state.power_relay_pin)
-    ready_to_drive = power_relay_enabled && state.enabled && state.status in ["ready" ,"actuation", "active_good_check"]
+    ready_to_drive = power_relay_enabled && state.enabled && state.status in ["ready", "actuation", "active_good_check"]
     %{state | ready_to_drive: ready_to_drive}
   end
 
-  def activate_external_request() do
+  def activate_external_request do
     set_external_request("brake_request", true)
     set_external_request("vehicle_status", true)
     set_flow_rate(0)
   end
 
-  def deactivate_external_request() do
+  def deactivate_external_request do
     set_external_request("brake_request", false)
     set_external_request("vehicle_status", false)
     set_flow_rate(0)

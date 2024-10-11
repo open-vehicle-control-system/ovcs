@@ -1,6 +1,9 @@
 defmodule VmsCore.Components.Volkswagen.Polo9N.IgnitionLock do
+  @moduledoc """
+    Polo ignition lock
+  """
   use GenServer
-  alias Cantastic.{Frame, Signal, Receiver}
+  alias Cantastic.{Frame, Receiver, Signal}
   alias VmsCore.Bus
 
   @loop_period 10

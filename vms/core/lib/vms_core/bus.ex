@@ -1,4 +1,7 @@
 defmodule VmsCore.Bus do
+  @moduledoc """
+    VMS internal bus allowing to decouple the different modules and reuse them in multiple vehicles
+  """
   def subscribe(topic) do
     Phoenix.PubSub.subscribe(VmsCore.Bus, topic)
   end

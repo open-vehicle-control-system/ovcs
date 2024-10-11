@@ -1,4 +1,7 @@
 defmodule VmsCore.Components.OVCS.SteeringColumn do
+  @moduledoc """
+    OVCS custom steering column using a stepper motor, generic controller and modified VW steering column
+  """
   use GenServer
   alias VmsCore.Components.OVCS.GenericController
 
@@ -6,7 +9,6 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
   @min_duty_cycle 0 + 40
   @max_duty_cycle 4095 - 40
   @direction_mapping %{clockwise: true, counter_clockwise: false}
-
 
   def start_link(args) do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
@@ -89,7 +91,7 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
     GenServer.call(__MODULE__, {:activate, duty_cycle, direction})
   end
 
-  def deactivate() do
+  def deactivate do
     GenServer.call(__MODULE__, :deactivate)
   end
 end

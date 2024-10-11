@@ -1,6 +1,9 @@
 defmodule VmsCore.Components.Bosch.LWS do
+  @moduledoc """
+    Bosch Motosport LWS steering angle sensor
+  """
   use GenServer
-  alias Cantastic.{Emitter, Receiver, Frame, Signal}
+  alias Cantastic.{Emitter, Frame, Receiver, Signal}
   alias Decimal, as: D
   alias VmsCore.Bus
 

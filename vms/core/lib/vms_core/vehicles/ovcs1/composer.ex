@@ -1,8 +1,16 @@
 defmodule VmsCore.Vehicles.OVCS1.Composer do
-  alias VmsCore.Components.{OVCS, Volkswagen.Polo9N, Nissan.LeafZE0, Bosch}
+  @moduledoc """
+    Combine all the modules require to run the OVCS1 car
+  """
+  alias VmsCore.Components.{
+    Bosch,
+    Nissan.LeafZE0,
+    OVCS,
+    Volkswagen.Polo9N
+  }
   alias VmsCore.{Managers, Vehicles}
 
-  def children() do
+  def children do
     [
       # Controllers
       %{
@@ -113,7 +121,7 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
     ]
   end
 
-  def generic_controllers() do
+  def generic_controllers do
     %{
       OVCS.FrontController => %{
         "controller_id" => 0,

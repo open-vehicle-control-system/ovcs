@@ -1,9 +1,17 @@
 defmodule VmsCore.Vehicles.OVCS1 do
+  @moduledoc """
+    Implements the OVCS1 specific logic (when is the vehicle ready, ...)
+  """
   use GenServer
   require Logger
   alias VmsCore.Bus
+  alias VmsCore.Components.{
+    Bosch.IBoosterGen2,
+    Nissan.LeafZE0.Inverter,
+    OVCS.HighVoltageContactors,
+    Volkswagen.Polo9N.IgnitionLock,
+  }
   alias Cantastic.ReceivedFrameWatcher
-  alias VmsCore.Components.{Volkswagen.Polo9N.IgnitionLock, OVCS.HighVoltageContactors, Nissan.LeafZE0.Inverter, Bosch.IBoosterGen2}
 
   @loop_period 10
 
@@ -124,7 +132,7 @@ defmodule VmsCore.Vehicles.OVCS1 do
     state
   end
 
-  defp enable_watchers() do
+  defp enable_watchers do
     Process.send_after(self(), :enable_watchers, 5000)
   end
 end

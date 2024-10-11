@@ -1,11 +1,19 @@
 defmodule  VmsCore.Components.OVCS.ThrottlePedal do
+  @moduledoc """
+    CAN throttle pedal using an analogic one + a generic controller
+  """
   import Ecto.Query
   use GenServer
-  alias VmsCore.{Repo, Models.ThrottleCalibration, Bus, Components.OVCS.GenericController}
+  alias VmsCore.{
+    Bus,
+    Components.OVCS.GenericController,
+    Models.ThrottleCalibration,
+    Repo
+  }
   require Logger
   alias Decimal, as: D
 
-  @raw_max_throttle 16383
+  @raw_max_throttle 16_383
   @zero D.new(0)
   @loop_period 10
 
@@ -119,11 +127,11 @@ defmodule  VmsCore.Components.OVCS.ThrottlePedal do
     {:reply, :ok, %{state | throttle_calibration_status: "disabled"}}
   end
 
-  def enable_calibration_mode() do
+  def enable_calibration_mode do
     GenServer.call(__MODULE__, :enable_calibration_mode)
   end
 
-  def disable_calibration_mode() do
+  def disable_calibration_mode do
     GenServer.call(__MODULE__, :disable_calibration_mode)
   end
 

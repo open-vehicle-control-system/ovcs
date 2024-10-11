@@ -1,8 +1,11 @@
 defmodule VmsCore.Managers.Gear do
+  @moduledoc """
+    Decide which gear should be selected based on the requested one and the other constraints
+  """
   use GenServer
-  alias VmsCore.Bus
-  alias Decimal, as: D
   alias Cantastic.Emitter
+  alias Decimal, as: D
+  alias VmsCore.Bus
 
   @gear_shift_throttle_limit D.new("0.05")
   @gear_shift_speed_limit D.new("1")

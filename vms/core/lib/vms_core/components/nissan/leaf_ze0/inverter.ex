@@ -1,9 +1,16 @@
 defmodule VmsCore.Components.Nissan.LeafZE0.Inverter do
+  @moduledoc """
+    Nissan Leaf ZE0/EM57 Inverter
+  """
   use GenServer
 
-  alias Cantastic.{Emitter, Receiver, Frame, Signal}
+  alias Cantastic.{Emitter,  Frame, Receiver, Signal}
   alias Decimal, as: D
-  alias VmsCore.{Bus, Components.OVCS.GenericController, Components.Nissan.Util}
+  alias VmsCore.{
+    Bus,
+    Components.Nissan.Util,
+    Components.OVCS.GenericController
+  }
 
   @zero D.new(0)
   #@motor_max_torque D.new("250")
@@ -27,7 +34,24 @@ defmodule VmsCore.Components.Nissan.LeafZE0.Inverter do
     controller: controller,
     power_relay_pin: power_relay_pin})
   do
-    :ok = init_emitters()
+    :ok = Emitter.configure(:leaf_drive, "vms_alive", %{
+      parameters_builder_function: :default,
+      initial_data: nil
+    })
+    :ok = Emitter.configure(:leaf_drive, "vms_torque_request", %{
+      parameters_builder_function: &torque_frame_parameters_builder/1,
+      initial_data: %{
+        "requested_torque" => @zero,
+        "counter" => 0
+      }
+    })
+    :ok = Emitter.configure(:leaf_drive, "vms_status", %{
+      parameters_builder_function: &status_frame_parameters_builder/1,
+      initial_data: %{
+        "gear" => "drive",
+        "counter" => 0
+      }
+    })
     Receiver.subscribe(self(), :leaf_drive, ["inverter_status", "inverter_temperatures"])
     Bus.subscribe("messages")
     {:ok, timer} = :timer.send_interval(@loop_period, :loop)
@@ -52,28 +76,6 @@ defmodule VmsCore.Components.Nissan.LeafZE0.Inverter do
       power_relay_pin: power_relay_pin,
       ready_to_drive: false
     }}
-  end
-
-  defp init_emitters() do
-    :ok = Emitter.configure(:leaf_drive, "vms_alive", %{
-      parameters_builder_function: :default,
-      initial_data: nil
-    })
-    :ok = Emitter.configure(:leaf_drive, "vms_torque_request", %{
-      parameters_builder_function: &torque_frame_parameters_builder/1,
-      initial_data: %{
-        "requested_torque" => @zero,
-        "counter" => 0
-      }
-    })
-    :ok = Emitter.configure(:leaf_drive, "vms_status", %{
-      parameters_builder_function: &status_frame_parameters_builder/1,
-      initial_data: %{
-        "gear" => "drive",
-        "counter" => 0
-      }
-    })
-    :ok
   end
 
   @impl true

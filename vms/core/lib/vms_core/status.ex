@@ -1,7 +1,10 @@
 defmodule VmsCore.Status do
+  @moduledoc """
+    VMS status
+  """
   use GenServer
-  alias VmsCore.Bus
   alias Cantastic.Emitter
+  alias VmsCore.Bus
 
   @loop_period 10
 
@@ -54,7 +57,6 @@ defmodule VmsCore.Status do
   def handle_info(%Bus.Message{}, state) do # TODO, replace Bus ?
     {:noreply, state}
   end
-
 
   defp update_vms_status(state) do
     case state.emitted_vms_status == state.vms_status do
