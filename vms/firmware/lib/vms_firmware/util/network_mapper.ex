@@ -18,7 +18,7 @@ defmodule VmsFirmware.Util.NetworkMapper do
       [] ->
         Logger.info("Waiting for SPI #{spi_interface} device to be ready...")
         receive do
-          %PropertyTable.Event{table: NervesUEvent, property: _, value: %{"ifindex" => _, "interface" => can_interface, "subsystem" => "net"}} = value ->
+          %PropertyTable.Event{table: NervesUEvent, property: _, value: %{"ifindex" => _, "interface" => can_interface, "subsystem" => "net"}} ->
             Logger.info("SPI interface #{spi_interface} is ready and assigned to: #{network_name} => #{can_interface}")
             {network_name, can_interface, labels: [spi_interface: spi_interface]}
         after
