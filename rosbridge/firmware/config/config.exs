@@ -25,14 +25,15 @@ config :rclex_cam,
       frame_id: "camera1",
       props: %{width: 640, height: 480, fps: 30}
     },
-    %{
-      process_name: FrontRightCamera,
-      device: 2,
-      topic: "front_right_camera",
-      frame_id: "camera2",
-      props: %{width: 640, height: 480, fps: 30}
-    }
-  ]
+    #%{
+    #  process_name: FrontRightCamera,
+    #  device: 2,
+    #  topic: "front_right_camera",
+    #  frame_id: "camera2",
+    #  props: %{width: 640, height: 480, fps: 30}
+    #}
+  ],
+  orchestrator: OvcsRosBridgeFirmware.NetworkWatcher
 
 # Customize non-Elixir parts of the firmware. See
 # https://hexdocs.pm/nerves/advanced-configuration.html for details.
