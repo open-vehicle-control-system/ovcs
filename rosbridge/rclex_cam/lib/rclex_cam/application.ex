@@ -6,9 +6,9 @@ defmodule RclexCam.Application do
   use Application
 
   @impl true
-  def start(_type, args) do
-    IO.inspect(args)
+  def start(_type, _args) do
     cameras = Application.get_env(:rclex_cam, :cameras)
+    orchestrator = Application.get_env(:rclex_cam, :orchestrator)
     children = Enum.map(cameras, fn camera ->
       %{
         id: camera.process_name,
@@ -19,7 +19,8 @@ defmodule RclexCam.Application do
             device:       camera.device,
             topic:        camera.topic,
             frame_id:     camera.frame_id,
-            props:        Map.get(camera, :props, nil)
+            props:        Map.get(camera, :props, nil),
+            orchestrator: orchestrator
           }]
         },
       }

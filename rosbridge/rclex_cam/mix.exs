@@ -15,7 +15,7 @@ defmodule RclexCam.MixProject do
   def application do
     [
       extra_applications: [:logger],
-      #mod: {RclexCam.Application, []}
+      mod: {RclexCam.Application, []}
     ]
   end
 

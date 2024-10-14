@@ -6,14 +6,21 @@ defmodule RclexCam.Camera do
   @default_width  640
   @default_height 480
   @default_buffer_size 2
+  @orchestrator_timer 500
 
   def start_link(%{process_name: process_name} = args) do
     GenServer.start_link(__MODULE__, args, name: process_name)
   end
 
   @impl true
-  def init(%{process_name: _process_name, device: device, topic: topic, frame_id: frame_id, props: props} = _args) do
+  def init(%{process_name: _process_name, device: device, topic: topic, frame_id: frame_id, props: props, orchestrator: orchestrator} = _args) do
     camera = get_opencv_camera(device, props)
+
+    unless orchestrator == nil do
+      {:ok,_pid} = orchestrator.start_link([])
+      wait_until_orchestrator_says_its_safe(orchestrator)
+    end
+
     start_ros_node_and_publisher(topic)
     start_timer(props)
     {:ok, %{
@@ -21,7 +28,8 @@ defmodule RclexCam.Camera do
       camera: camera,
       topic: topic,
       frame_id: frame_id,
-      props: props
+      props: props,
+      orchestrator: orchestrator
     }}
   end
 
@@ -130,5 +138,13 @@ defmodule RclexCam.Camera do
       format: format,
       data: compressed_picture
     }
+  end
+
+  defp wait_until_orchestrator_says_its_safe(orchestrator) do
+    if orchestrator.safe?() == {:ok, false} do
+      Logger.debug("Waiting for orchestrator to say it's safe to run...")
+      Process.sleep(@orchestrator_timer)
+      wait_until_orchestrator_says_its_safe(orchestrator)
+    end
   end
 end
