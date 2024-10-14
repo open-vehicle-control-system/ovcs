@@ -17,7 +17,7 @@ defmodule RclexCam.Camera do
     camera = get_opencv_camera(device, props)
 
     unless orchestrator == nil do
-      {:ok,_pid} = orchestrator.start_link([])
+      orchestrator.start_link([])
       wait_until_orchestrator_says_its_safe(orchestrator)
     end
 
