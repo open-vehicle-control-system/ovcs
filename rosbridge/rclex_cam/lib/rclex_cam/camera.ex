@@ -82,8 +82,8 @@ defmodule RclexCam.Camera do
         compressed_picture = Evision.imencode(format, picture)
         message = create_ros_image_message(picture, state)
         compressed_message = create_ros_compressed_image_message(compressed_picture, format, state)
-        Rclex.publish(message, "/#{state.topic}_raw", state.topic)
-        Rclex.publish(compressed_message, "/#{state.topic}_compressed", state.topic)
+        :ok = Rclex.publish(message, "/#{state.topic}_raw", state.topic)
+        :ok = Rclex.publish(compressed_message, "/#{state.topic}_compressed", state.topic)
     end
   end
 

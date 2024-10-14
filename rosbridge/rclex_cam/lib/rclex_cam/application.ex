@@ -6,7 +6,8 @@ defmodule RclexCam.Application do
   use Application
 
   @impl true
-  def start(_type, _args) do
+  def start(_type, args) do
+    IO.inspect(args)
     cameras = Application.get_env(:rclex_cam, :cameras)
     children = Enum.map(cameras, fn camera ->
       %{
