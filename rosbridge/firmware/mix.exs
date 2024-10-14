@@ -49,6 +49,7 @@ defmodule OvcsRosBridgeFirmware.MixProject do
       # bumps to Nerves systems. Since these include Linux kernel and Erlang
       # version updates, please review their release notes in case
       # changes to your application are needed.
+      {:rclex_teleop, path: "../rclex_teleop"},
       {:rclex_cam, path: "../rclex_cam"},
       {:rclex, github: "rclex/rclex", branch: "modify-binary-handling"},
       {:observer_cli, "~> 1.7"},

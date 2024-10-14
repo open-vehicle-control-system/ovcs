@@ -35,6 +35,9 @@ config :rclex_cam,
   ],
   orchestrator: OvcsRosBridgeFirmware.NetworkWatcher
 
+config :rclex_teleop,
+  orchestrator: OvcsRosBridgeFirmware.NetworkWatcher
+
 # Customize non-Elixir parts of the firmware. See
 # https://hexdocs.pm/nerves/advanced-configuration.html for details.
 
