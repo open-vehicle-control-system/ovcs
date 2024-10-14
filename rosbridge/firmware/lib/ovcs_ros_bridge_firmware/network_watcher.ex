@@ -17,8 +17,22 @@ defmodule OvcsRosBridgeFirmware.NetworkWatcher do
     }}
   end
 
+  @impl true
+  def handle_call(:safe, _from, state) do
+    case state.status do
+      :connected ->
+        {:reply, {:ok, true}, state}
+      :disconnected ->
+        {:reply, {:ok, false}, state}
+    end
+  end
+
   defp start_timer do
     {:ok, _timer} = :timer.send_interval(@timer, :loop)
+  end
+
+  def safe? do
+    GenServer.call(__MODULE__, :safe)
   end
 
   @impl true
