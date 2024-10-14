@@ -28,10 +28,10 @@ defmodule OvcsRosBridgeFirmware.NetworkWatcher do
     case gateway do
       nil ->
         Logger.warning("Network disconnected...")
-        state = %{state | status: :disconneted}
+        state = %{state | status: :disconnected}
         {:noreply, state}
       _ ->
-        if(state.status == :disconneted) do
+        if(state.status == :disconnected) do
           Logger.info("Network connected")
         end
         state = %{state | status: :connected}
