@@ -20,7 +20,7 @@ defmodule RclexCam.Application do
             topic:        camera.topic,
             frame_id:     camera.frame_id,
             props:        Map.get(camera, :props, nil),
-            orchestrator: Map.get(camera, :orchestrator, nil)
+            orchestrator: orchestrator
           }]
         },
       }
