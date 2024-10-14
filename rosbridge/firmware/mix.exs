@@ -51,7 +51,7 @@ defmodule OvcsRosBridgeFirmware.MixProject do
       # changes to your application are needed.
       {:rclex_teleop, path: "../rclex_teleop"},
       {:rclex_cam, path: "../rclex_cam"},
-      {:rclex, github: "rclex/rclex", branch: "modify-binary-handling"},
+      {:rclex, github: "rclex/rclex"},
       {:observer_cli, "~> 1.7"},
       {
         :ovcs_rosbridge_system_rpi4,
