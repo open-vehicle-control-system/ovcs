@@ -7,6 +7,17 @@ if config_env() in [:dev, :test, :prod] do
   end
 end
 
+vehicle      = (System.get_env("VEHICLE") || "OVCS1")
+vehicle_path = Macro.underscore(vehicle)
+vehicle_host = "#{vehicle_path |> String.replace("_", "-")}-vms"
+
+default_can_mapping = case vehicle do
+  "OVCS1" -> "ovcs:spi0.0,leaf_drive:spi0.1,polo_drive:spi1.0,orion_bms:spi1.1,misc:spi1.2"
+  "OVCSMini" -> "ovcs:spi0.0"
+end
+
+config :vms_core, :vehicle, vehicle
+
 # Use Ringlogger as the logger backend and remove :console.
 # See https://hexdocs.pm/ring_logger/readme.html for more information on
 # configuring ring_logger.
@@ -74,7 +85,7 @@ config :mdns_lite,
   # because otherwise any of the devices may respond to nerves.local leading to
   # unpredictable behavior.
 
-  hosts: [:hostname, "ovcs-vms"],
+  hosts: [:hostname, vehicle_host],
   ttl: 120,
 
   # Advertise the following services over mDNS.
@@ -116,7 +127,7 @@ config :vms_api, VmsApi.Repo,
 
 # Configures the endpoint
 config :vms_api, VmsApiWeb.Endpoint,
-  url: [host: "nerves.local"],
+  url: [host: vehicle_host],
   http: [port: 4000],
   secret_key_base: System.get_env("SECRET_KEY_BASE"),
   check_origin: false,
@@ -149,19 +160,15 @@ config :vms_core, VmsCore.Repo,
   stacktrace: true,
   show_sensitive_data_on_connection_error: true
 
-vehicle = (System.get_env("VEHICLE") || "OVCS1")
-
-config :vms_core, :vehicle, vehicle
-
 config :cantastic,
   can_network_mappings: {
     VmsFirmware.Util.NetworkMapper,
     :can_network_mappings,
-    [(System.get_env("CAN_NETWORK_MAPPINGS") || "ovcs:spi0.0,leaf_drive:spi0.1,polo_drive:spi1.0,orion_bms:spi1.1,misc:spi1.2")]
+    [(System.get_env("CAN_NETWORK_MAPPINGS") || default_can_mapping)]
   },
   setup_can_interfaces: true,
   otp_app: :vms_core,
-  priv_can_config_path: "can/vehicles/#{Macro.underscore(vehicle)}.yml",
+  priv_can_config_path: "can/vehicles/#{vehicle_path}.yml",
   enable_socketcand: true,
   socketcand_ip_interface: "wlan0"
 

@@ -1,0 +1,12 @@
+---
+can_networks:
+  ovcs:
+    bitrate: 500000
+    emitted_frames:
+      - import!:../components/ovcs/0x1A0_vms_status.yml
+      - import!:../components/ovcs/0x700_controller_configuration.yml
+      - import!:ovcs_mini/generic_controller/0x702_main_controller_digital_pin_request.yml
+      - import!:ovcs_mini/generic_controller/0x703_main_controller_other_pin_request.yml
+    received_frames:
+      - import!:ovcs_mini/generic_controller/0x701_main_controller_alive.yml
+      - import!:ovcs_mini/generic_controller/0x704_main_controller_digital_and_analog_pin_status.yml

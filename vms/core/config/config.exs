@@ -22,9 +22,14 @@ vehicle = (System.get_env("VEHICLE") || "OVCS1")
 
 config :vms_core, :vehicle, vehicle
 
+default_can_mapping = case vehicle do
+  "OVCS1" -> "ovcs:vcan0,leaf_drive:vcan1,polo_drive:vcan2,orion_bms:vcan3,misc:vcan4"
+  "OVCSMini" -> "ovcs:vcan0"
+end
+
 config :cantastic,
   can_network_mappings: fn() ->
-    (System.get_env("CAN_NETWORK_MAPPINGS") || "ovcs:vcan0,leaf_drive:vcan1,polo_drive:vcan2,orion_bms:vcan3,misc:vcan4")
+    (System.get_env("CAN_NETWORK_MAPPINGS") || default_can_mapping)
     |> String.split(",", trim: true)
     |> Enum.map(fn(i) ->
       [network_name, can_interface] = i |> String.split(":", trim: true)

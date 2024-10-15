@@ -1,5 +1,0 @@
----
-name: rear_controller_digital_and_analog_pin_status
-id: 0x70C
-frequency: 10
-signals: import!:generic_controller/0x7X4_digital_and_analog_pin_status_signals.yml

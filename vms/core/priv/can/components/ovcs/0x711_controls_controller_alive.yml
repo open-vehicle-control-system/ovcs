@@ -1,5 +1,0 @@
----
-name: controls_controller_alive
-id: 0x711
-frequency: 100
-signals: import!:generic_controller/0x7X1_alive_signals.yml
