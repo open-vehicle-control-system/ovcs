@@ -2,12 +2,25 @@
 
 This is a generic arduino controller allowing the VMS to actuate relays, read digital and analog inputs, activate PWM and DAC over the CAN network without having to program the arduino boards with a custom firwmare for each use case.
 
-## Pin Mapping:
+## Controller ID
+
+Controller ID is defined during adoption and used to derive the CAN message IDS:
+
+`Message ID = 0b00000111AAAAABBB`
+
+Where
+
+* AAAAA represents the controller id bits, meaning that we can have up to 32 controllers on one CAN network
+* BBB represents the message ID itself, allowing up to 7 messages per controller (emitted or received), 000 is reserved for the adoption frame.
+
+## Pin Mapping
 
 ### Reserved
 
 | Physical Pin | OVCS Usage |
 | -------- | ------- |
+| D0  | UART receive |
+| D1  | UART send |
 | D2 | Adopt button |
 | D3 | SPI CAN INT |
 | D10 | SPI CAN CS |
@@ -21,27 +34,26 @@ This is a generic arduino controller allowing the VMS to actuate relays, read di
 
 | Physical Pin | OVCS Pin |
 | -------- | ------- |
-| D0  | 0 |
-| D1  | 1 |
-| D4  | 2 |
-| D7  | 3 |
-| D8  | 4 |
-| EXPANSION_BOARD_0-0  | 5 |
-| EXPANSION_BOARD_0-1  | 6 |
-| EXPANSION_BOARD_0-2  | 7 |
-| EXPANSION_BOARD_0-3  | 8 |
-| EXPANSION_BOARD_0-4  | 9 |
-| EXPANSION_BOARD_0-5  | 10 |
-| EXPANSION_BOARD_0-6  | 11 |
-| EXPANSION_BOARD_0-7  | 12 |
-| EXPANSION_BOARD_1-0  | 13 |
-| EXPANSION_BOARD_1-1  | 14 |
-| EXPANSION_BOARD_1-2  | 15 |
-| EXPANSION_BOARD_1-3  | 16 |
-| EXPANSION_BOARD_1-4  | 17 |
-| EXPANSION_BOARD_1-5  | 18 |
-| EXPANSION_BOARD_1-6  | 19 |
-| EXPANSION_BOARD_1-7  | 20 |
+
+| D4  | 0 |
+| D7  | 1 |
+| D8  | 2 |
+| EXPANSION_BOARD_0-0  | 3 |
+| EXPANSION_BOARD_0-1  | 4 |
+| EXPANSION_BOARD_0-2  | 5 |
+| EXPANSION_BOARD_0-3  | 6 |
+| EXPANSION_BOARD_0-4  | 7 |
+| EXPANSION_BOARD_0-5  | 8 |
+| EXPANSION_BOARD_0-6  | 9 |
+| EXPANSION_BOARD_0-7  | 10 |
+| EXPANSION_BOARD_1-0  | 11 |
+| EXPANSION_BOARD_1-1  | 12 |
+| EXPANSION_BOARD_1-2  | 13 |
+| EXPANSION_BOARD_1-3  | 14 |
+| EXPANSION_BOARD_1-4  | 15 |
+| EXPANSION_BOARD_1-5  | 16 |
+| EXPANSION_BOARD_1-6  | 17 |
+| EXPANSION_BOARD_1-7  | 18 |
 
 ### PWM
 

@@ -132,20 +132,6 @@
   mapping:
     0x00: false
     0x01: true
-- name: digital_pin19_enabled
-  value_start: 19
-  kind: enum
-  value_length: 1
-  mapping:
-    0x00: false
-    0x01: true
-- name: digital_pin20_enabled
-  value_start: 20
-  kind: enum
-  value_length: 1
-  mapping:
-    0x00: false
-    0x01: true
 - name: analog_pin0_value
   value_start: 21
   kind: integer
@@ -159,6 +145,6 @@
   kind: integer
   value_length: 14
 - name: filler0
-  value_start: 63
-  value_length: 1
+  value_start: 61
+  value_length: 3
   value: 0
