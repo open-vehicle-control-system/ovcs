@@ -18,8 +18,6 @@ defmodule VmsCore.PID do
             previous_setpoint: nil,
             output: nil
 
-
-
   def new(config \\ []) do
     default = %__MODULE__{}
     default |> Map.merge(config |> Enum.into(%{}))

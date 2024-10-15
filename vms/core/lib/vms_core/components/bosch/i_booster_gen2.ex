@@ -9,13 +9,13 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
 
   @zero D.new(0)
 
-  @min_flow_rate 27_136 # 0x6A00
+  #@min_flow_rate 27_136 # 0x6A00
   @zero_point_flow_rate 32_256 # 0x7e00
-  @max_flow_rate 37_376 # 0x9200
+  #@max_flow_rate 37_376 # 0x9200
   @flow_rate_range  5120
 
   @min_rod_position @zero # TODO check in practice
-  @max_rod_position D.new(40) # TODO check in practice
+  @max_rod_position D.new("16.56")  # TODO check in practice
   @rod_position_range @max_rod_position |> D.sub(@min_rod_position)
 
 
@@ -154,8 +154,9 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
   end
 
   defp actuate(state) when state.automatic_mode_enabled do
-    pid = PID.iterate(state.pid, state.rod_position_target, state.rod_position)
-    set_flow_rate(pid.output)
+    pid       = PID.iterate(state.pid, state.rod_position_target, state.rod_position)
+    flow_rate = @zero_point_flow_rate |> D.add(pid.output)
+    set_flow_rate(flow_rate)
     %{state | pid: pid}
   end
   defp actuate(state), do: state
@@ -165,8 +166,8 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
       kp: @pid_kp,
       ki: @pid_ki,
       kd: @pid_kd,
-      minimum_output: @min_flow_rate,
-      maximum_output: @max_flow_rate,
+      minimum_output: -@flow_rate_range,
+      maximum_output: @flow_rate_range,
       reset_derivative_when_setpoint_changes: true
     )
   end
@@ -280,5 +281,24 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
 
   def deactivate_brake_request do
     GenServer.call(__MODULE__, :deactivate_brake_request)
+  end
+
+  def test_activate_external_request do
+    set_external_request("brake_request", true)
+    set_external_request("vehicle_status", true)
+    set_flow_rate(@zero_point_flow_rate)
+  end
+
+  def test_deactivate_external_request do
+    set_external_request("brake_request", false)
+    set_external_request("vehicle_status", false)
+    set_flow_rate(@zero_point_flow_rate)
+  end
+
+  def test_set_flow_rate(percent) do
+    value = percent |> D.mult(@flow_rate_range) |> D.add(@zero_point_flow_rate)
+    :ok = Emitter.update(:misc, "brake_request", fn (data) ->
+      %{data | "flow_rate" => value}
+    end)
   end
 end

@@ -64,7 +64,6 @@ defmodule VmsCore.Components.OVCS.HighVoltageContactors do
   end
 
   defp toggle_contactors(state) do
-    state.required_precharge_output_voltage
     now = System.system_time(:millisecond)
     case {state.status, state.contact, state.inverter_output_voltage, state.precharge_ending_timestamp} do
       {:off, :start, _, _} ->
