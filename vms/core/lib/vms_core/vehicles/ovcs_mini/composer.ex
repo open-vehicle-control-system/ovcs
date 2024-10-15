@@ -39,7 +39,7 @@ defmodule VmsCore.Vehicles.OVCSMini.Composer do
     %{
       OVCS.MainController => %{
         "controller_id" => 0,
-        "digital_pin0" => "disabled",
+        "digital_pin0" => "read_write",
         "digital_pin1" => "disabled",
         "digital_pin2" => "disabled",
         "digital_pin3" => "disabled",
