@@ -146,5 +146,5 @@
   value_length: 14
 - name: filler0
   value_start: 61
-  value_length: 3
+  value_length: 2
   value: 0

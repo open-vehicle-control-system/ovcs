@@ -54,7 +54,7 @@ void Configuration::computeDigitalPins() {
   uint8_t pinNumber = 0;
   for(uint8_t byteNumber = 1; byteNumber < 7; byteNumber++) {
     for (uint8_t i = 2; i < 9; i = i + 2) {
-      if (pinNumber < 21) {
+      if (pinNumber < 19) {
         uint8_t status         = (_rawConfiguration[byteNumber] >> (8 - i)) & 0b11;
         uint8_t boardId        = digitalPinMapping[pinNumber][0];
         uint8_t physicalPin    = digitalPinMapping[pinNumber][1];
@@ -122,7 +122,7 @@ void Configuration::print() {
     Serial.println(_digitalAndAnalogPinsStatusFrameId, HEX);
 
     Serial.print("> Digital Pins: ");
-    for(uint8_t i = 0; i < 21; i++) {
+    for(uint8_t i = 0; i < 19; i++) {
       DigitalPin digitalPin = _digitalPins[i];
       Serial.print(i);
       Serial.print(": ");

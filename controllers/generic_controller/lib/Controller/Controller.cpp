@@ -28,7 +28,7 @@ void Controller::adoptConfiguration() {
 
 void Controller::writeDigitalPins() {
   PinStatus* digitalPinsRequest = _can.parseDigitalPinRequest();
-  for (uint8_t i = 0; i < 21; i++) {
+  for (uint8_t i = 0; i < 19; i++) {
     _configuration._digitalPins[i].writeIfAllowed(digitalPinsRequest[i]);
   }
 };
@@ -42,8 +42,8 @@ void Controller::writeOtherPins() {
 };
 
 PinStatus* Controller::readDigitalPins() {
-  static PinStatus digitalPinsStatus[21]  = {LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW};
-  for (uint8_t i=0; i<21; i++) {
+  static PinStatus digitalPinsStatus[19]  = {LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW};
+  for (uint8_t i=0; i < 19; i++) {
     digitalPinsStatus[i] = _configuration._digitalPins[i].readIfAllowed();
   }
   return digitalPinsStatus;
