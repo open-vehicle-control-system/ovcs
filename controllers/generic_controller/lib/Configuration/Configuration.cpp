@@ -48,6 +48,10 @@ void Configuration::computeFrameIds() {
   _digitalPinRequestFrameId          = shiftedId | DIGITAL_PIN_REQUEST_FRAME_ID_MASK;
   _otherPinRequestFrameId            = shiftedId | OTHER_PIN_REQUEST_FRAME_ID_MASK;
   _digitalAndAnalogPinsStatusFrameId = shiftedId | DIGITAL_AND_ANALOG_PIN_STATUS_FRAME_ID_MASK;
+  _externalPwm0RequestFrameId        = shiftedId | EXTERNAL_PWM0_REQUEST_FRAME_ID_MASK;
+  _externalPwm1RequestFrameId        = shiftedId | EXTERNAL_PWM1_REQUEST_FRAME_ID_MASK;
+  _externalPwm2RequestFrameId        = shiftedId | EXTERNAL_PWM2_REQUEST_FRAME_ID_MASK;
+  _externalPwm3RequestFrameId        = shiftedId | EXTERNAL_PWM3_REQUEST_FRAME_ID_MASK;
 };
 
 void Configuration::computeDigitalPins() {
@@ -120,6 +124,18 @@ void Configuration::print() {
 
     Serial.print("> Digital and analog PIN status frame ID: 0x");
     Serial.println(_digitalAndAnalogPinsStatusFrameId, HEX);
+
+    Serial.print("> External PWM0 request frame ID: 0x");
+    Serial.println(_externalPwm0RequestFrameId, HEX);
+
+    Serial.print("> External PWM1 request frame ID: 0x");
+    Serial.println(_externalPwm1RequestFrameId, HEX);
+
+    Serial.print("> External PWM2 request frame ID: 0x");
+    Serial.println(_externalPwm2RequestFrameId, HEX);
+
+    Serial.print("> External PWM3 request frame ID: 0x");
+    Serial.println(_externalPwm3RequestFrameId, HEX);
 
     Serial.print("> Digital Pins: ");
     for(uint8_t i = 0; i < 19; i++) {

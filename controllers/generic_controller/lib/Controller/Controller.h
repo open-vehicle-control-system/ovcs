@@ -37,7 +37,8 @@ class Controller {
     void initializeI2C();
     void writeDigitalPins();
     void writeOtherPins();
-    PinStatus* readDigitalPins();
+    void setExternalPwm(uint32_t frameId);
+    PinStatus *readDigitalPins();
     uint16_t* readAnalogPins();
     bool isReady();
     void adoptConfiguration();

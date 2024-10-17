@@ -14,6 +14,10 @@
 #define DIGITAL_PIN_REQUEST_FRAME_ID_MASK 0x702
 #define OTHER_PIN_REQUEST_FRAME_ID_MASK 0x703
 #define DIGITAL_AND_ANALOG_PIN_STATUS_FRAME_ID_MASK 0x704
+#define EXTERNAL_PWM0_REQUEST_FRAME_ID_MASK 0x705
+#define EXTERNAL_PWM1_REQUEST_FRAME_ID_MASK 0x706
+#define EXTERNAL_PWM2_REQUEST_FRAME_ID_MASK 0x707
+#define EXTERNAL_PWM3_REQUEST_FRAME_ID_MASK 0x708
 #define CONFIGURATION_EEPROM_ADDRESS 0
 #define CONFIGURATION_CRC_EEPROM_ADDRESS 8
 #define CONFIGURATION_BYTE_SIZE 8
@@ -54,6 +58,10 @@ class Configuration {
     uint16_t _digitalPinRequestFrameId;
     uint16_t _otherPinRequestFrameId;
     uint16_t _digitalAndAnalogPinsStatusFrameId;
+    uint16_t _externalPwm0RequestFrameId;
+    uint16_t _externalPwm1RequestFrameId;
+    uint16_t _externalPwm2RequestFrameId;
+    uint16_t _externalPwm3RequestFrameId;
     bool load();
     void storeAndApply(uint8_t newConfiguration[8]);
 
