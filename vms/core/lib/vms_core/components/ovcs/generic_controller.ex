@@ -27,8 +27,6 @@ defmodule VmsCore.Components.OVCS.GenericController do
     "digital_pin16_enabled" => false,
     "digital_pin17_enabled" => false,
     "digital_pin18_enabled" => false,
-    "digital_pin19_enabled" => false,
-    "digital_pin20_enabled" => false
   }
 
   @pwm_pins %{

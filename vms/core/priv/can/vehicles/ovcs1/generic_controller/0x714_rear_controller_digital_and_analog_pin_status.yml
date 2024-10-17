@@ -1,5 +1,5 @@
 ---
 name: rear_controller_digital_and_analog_pin_status
-id: 0x70C
+id: 0x714
 frequency: 10
 signals: import!:../../../components/ovcs/generic_controller/0x7X4_digital_and_analog_pin_status_signals.yml

@@ -133,15 +133,15 @@
     0x00: false
     0x01: true
 - name: analog_pin0_value
-  value_start: 21
+  value_start: 19
   kind: integer
   value_length: 14
 - name: analog_pin1_value
-  value_start: 35
+  value_start: 33
   kind: integer
   value_length: 14
 - name: analog_pin2_value
-  value_start: 49
+  value_start: 47
   kind: integer
   value_length: 14
 - name: filler0

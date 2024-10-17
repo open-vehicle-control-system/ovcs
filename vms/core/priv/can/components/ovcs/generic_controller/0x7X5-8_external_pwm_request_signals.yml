@@ -1,9 +1,9 @@
 ---
-- name: external_pwm0_duty_cycle
+- name: external_pwm_duty_cycle
   value_start: 0
   kind: integer
   value_length: 16
-- name: external_pwm0_frequency
+- name: external_pwm_frequency
   value_start: 16
   kind: integer
   value_length: 24
