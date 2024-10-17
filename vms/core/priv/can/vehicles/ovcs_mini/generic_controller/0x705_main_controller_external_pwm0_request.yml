@@ -1,0 +1,5 @@
+---
+name: main_controller_external_pwm0_request
+id: 0x705
+frequency: 10
+signals: import!:../../../components/ovcs/generic_controller/0x7X5-8_external_pwm_request_signals.yml

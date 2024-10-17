@@ -1,5 +1,5 @@
 ---
 name: controls_controller_alive
-id: 0x711
+id: 0x721
 frequency: 100
 signals: import!:../../../components/ovcs/generic_controller/0x7X1_alive_signals.yml
