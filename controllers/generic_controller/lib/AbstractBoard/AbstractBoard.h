@@ -1,6 +1,10 @@
 #ifndef ABSTRACT_BOARD_H
 #define ABSTRACT_BOARD_H
 
+#ifdef LOCAL_TEST
+  #include <TestTypes.h>
+#endif
+
 #include <Arduino.h>
 
 class AbstractBoard {

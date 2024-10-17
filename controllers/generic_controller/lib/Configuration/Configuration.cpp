@@ -39,11 +39,11 @@ void Configuration::storeAndApply(uint8_t newConfiguration[8]) {
 };
 
 void Configuration::computeControllerId() {
-  _controllerId = _rawConfiguration[0] >> 3;
+  _controllerId = _rawConfiguration[0] >> 4;
 };
 
 void Configuration::computeFrameIds() {
-  uint16_t shiftedId = _controllerId << 3;
+  uint16_t shiftedId = _controllerId << 4;
   _aliveFrameId                      = shiftedId | ALIVE_FRAME_ID_MASK;
   _digitalPinRequestFrameId          = shiftedId | DIGITAL_PIN_REQUEST_FRAME_ID_MASK;
   _otherPinRequestFrameId            = shiftedId | OTHER_PIN_REQUEST_FRAME_ID_MASK;
