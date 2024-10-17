@@ -9,6 +9,7 @@
 #include <EEPROM.h>
 #include <AbstractBoard.h>
 #include <AbstractCrc.h>
+#include <ExternalPwm.h>
 
 #define ALIVE_FRAME_ID_MASK 0x701
 #define DIGITAL_PIN_REQUEST_FRAME_ID_MASK 0x702
@@ -54,6 +55,7 @@ class Configuration {
     PwmPin _pwmPins [3];
     DacPin _dacPin;
     AnalogPin _analogPins [3];
+    ExternalPwm _externalPwm [4];
     uint16_t _aliveFrameId;
     uint16_t _digitalPinRequestFrameId;
     uint16_t _otherPinRequestFrameId;
