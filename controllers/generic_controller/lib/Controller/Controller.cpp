@@ -41,8 +41,10 @@ void Controller::writeOtherPins() {
   _configuration._dacPin.writeIfAllowed(otherPinDutyCycles.dacDutyCycle);
 };
 
-void Controller::setExternalPwm(uint32_t frameId) {
-  //
+void Controller::setExternalPwm() {
+  ExternalPwm externalPwmRequest = _can.parseExternalPwmRequest();
+  ExternalPwm externalPwm = _configuration._externalPwms[externalPwmRequest.pwmId()];
+  externalPwm.updateIfNeeded(externalPwmRequest);
 };
 
 PinStatus* Controller::readDigitalPins() {
@@ -101,7 +103,7 @@ void Controller::loop() {
         _can._receivedFrame.id == _configuration._externalPwm1RequestFrameId ||
         _can._receivedFrame.id == _configuration._externalPwm2RequestFrameId ||
         _can._receivedFrame.id == _configuration._externalPwm3RequestFrameId) {
-      setExternalPwm(_can._receivedFrame.id);
+      setExternalPwm();
     }
     emitFrames();
   }

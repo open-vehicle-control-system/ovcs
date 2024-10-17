@@ -6,6 +6,7 @@
 #include <ACAN2517.h>
 #include <SPI.h>
 #include <OtherPinDutyCycle.h>
+#include <ExternalPwm.h>
 
 #define ALIVE_FRAME_FREQUENCY_MS 100
 #define DIGITAL_AND_ANALOG_PINS_STATUS_FRAME_FREQUENCY_MS 10
@@ -29,6 +30,7 @@ class Can {
     void emitAlive(uint16_t aliveFrameId);
     PinStatus* parseDigitalPinRequest();
     OtherPinDutyCycles parseOtherPinRequest();
+    ExternalPwm parseExternalPwmRequest();
     void emitdigitalAndAnalogPinsStatus(uint16_t digitalAndAnalogPinsStatusFrameId, PinStatus digitalPinsStatus[19], uint16_t analogPinsStatus[3]);
 
   private:
@@ -38,6 +40,7 @@ class Can {
 
     void emit(CANMessage frame);
     uint8_t extractBits(uint16_t source, uint16_t mask, uint8_t shiftRight);
+    uint8_t computeExternalPwmId();
 };
 
 #endif

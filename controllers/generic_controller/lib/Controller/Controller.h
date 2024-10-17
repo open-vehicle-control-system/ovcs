@@ -7,6 +7,7 @@
 #include <Configuration.h>
 #include <AbstractBoard.h>
 #include <Wire.h>
+#include <ExternalPwm.h>
 
 #define ADOPTION_FRAME_ID 0x700
 #define ANALOG_READ_RESOLUTION 14
@@ -37,7 +38,7 @@ class Controller {
     void initializeI2C();
     void writeDigitalPins();
     void writeOtherPins();
-    void setExternalPwm(uint32_t frameId);
+    void setExternalPwm();
     PinStatus *readDigitalPins();
     uint16_t* readAnalogPins();
     bool isReady();
