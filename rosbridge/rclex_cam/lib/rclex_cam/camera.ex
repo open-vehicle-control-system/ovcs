@@ -13,7 +13,7 @@ defmodule RclexCam.Camera do
   end
 
   @impl true
-  def init(%{process_name: _process_name, device: device, topic: topic, frame_id: frame_id, props: props, orchestrator: orchestrator} = _args) do
+  def init(%{process_name: _process_name, device: device, topic: topic, frame_id: frame_id, props: props, orchestrator: orchestrator, info: info} = _args) do
     camera = get_opencv_camera(device, props)
 
     unless orchestrator == nil do
@@ -29,7 +29,8 @@ defmodule RclexCam.Camera do
       topic: topic,
       frame_id: frame_id,
       props: props,
-      orchestrator: orchestrator
+      orchestrator: orchestrator,
+      info: info
     }}
   end
 
@@ -41,10 +42,10 @@ defmodule RclexCam.Camera do
 
   defp get_opencv_camera(device, props) do
     camera = Evision.VideoCapture.videoCapture(device, apiPreference: Evision.VideoCaptureAPIs.cv_CAP_V4L)
-    mjpg = Evision.VideoWriter.fourcc(List.first(~c"M"), List.first(~c"J"), List.first(~c"P"), List.first(~c"G"))
-    true = Evision.VideoCapture.set(camera, Evision.VideoCaptureProperties.cv_CAP_PROP_FOURCC, mjpg)
+    #mjpg = Evision.VideoWriter.fourcc(List.first(~c"M"), List.first(~c"J"), List.first(~c"P"), List.first(~c"G"))
+    #true = Evision.VideoCapture.set(camera, Evision.VideoCaptureProperties.cv_CAP_PROP_FOURCC, mjpg)
     case props do
-      nil ->
+      %{} ->
         true
       _ ->
         set_camera_props(camera, props)
@@ -56,11 +57,12 @@ defmodule RclexCam.Camera do
     :ok = Rclex.start_node(topic)
     :ok = Rclex.start_publisher(Rclex.Pkgs.SensorMsgs.Msg.Image, "/#{topic}_raw", topic, qos: Rclex.QoS.profile_sensor_data())
     :ok = Rclex.start_publisher(Rclex.Pkgs.SensorMsgs.Msg.CompressedImage, "/#{topic}_compressed", topic, qos: Rclex.QoS.profile_sensor_data())
+    :ok = Rclex.start_publisher(Rclex.Pkgs.SensorMsgs.Msg.CameraInfo, "/#{topic}_camera_info", topic, qos: Rclex.QoS.profile_sensor_data())
   end
 
   defp start_timer(props) do
     fps = case props do
-      nil ->
+      %{} ->
         @default_fps
       _ ->
         Map.get(props, :fps, @default_fps)
@@ -90,8 +92,10 @@ defmodule RclexCam.Camera do
         compressed_picture = Evision.imencode(format, picture)
         message = create_ros_image_message(picture, state)
         compressed_message = create_ros_compressed_image_message(compressed_picture, format, state)
+        camera_info = create_ros_camera_info_message(state)
         :ok = Rclex.publish(message, "/#{state.topic}_raw", state.topic)
         :ok = Rclex.publish(compressed_message, "/#{state.topic}_compressed", state.topic)
+        :ok = Rclex.publish(camera_info, "/#{state.topic}_camera_info", state.topic)
     end
   end
 
@@ -137,6 +141,29 @@ defmodule RclexCam.Camera do
       header: %Rclex.Pkgs.StdMsgs.Msg.Header{stamp: stamp, frame_id: frame_id},
       format: format,
       data: compressed_picture
+    }
+  end
+
+  defp create_ros_camera_info_message(state) do
+    stamp         = %Rclex.Pkgs.BuiltinInterfaces.Msg.Time{sec: :os.timestamp() |> elem(1), nanosec: :os.timestamp() |> elem(2)}
+    frame_id      = state.frame_id || state.topic
+    %Rclex.Pkgs.SensorMsgs.Msg.CameraInfo{
+      header: %Rclex.Pkgs.StdMsgs.Msg.Header{stamp: stamp, frame_id: frame_id},
+      height: Map.get(state.props, :height, @default_height),
+      width: Map.get(state.props, :width, @default_width),
+      distortion_model: Map.get(state.info, :distortion_model, "plumb_bob"),
+      d: state.info.distortion_coefficients,
+      k: state.info.camera_matrix,
+      r: state.info.rectification_matrix,
+      p: state.info.projection_matrix,
+      binning_x: 1,
+      binning_y: 1,
+      roi: %Rclex.Pkgs.SensorMsgs.Msg.RegionOfInterest{
+        x_offset: 0, y_offset: 0,
+        height: Map.get(state.props, :height, @default_height),
+        width: Map.get(state.props, :width, @default_width),
+        do_rectify: false
+      }
     }
   end
 
