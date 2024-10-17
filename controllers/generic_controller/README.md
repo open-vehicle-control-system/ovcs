@@ -10,8 +10,8 @@ Controller ID is defined during adoption and used to derive the CAN message IDS:
 
 Where
 
-* AAAAA represents the controller id bits, meaning that we can have up to 32 controllers on one CAN network
-* BBB represents the message ID itself, allowing up to 7 messages per controller (emitted or received), 000 is reserved for the adoption frame.
+* `AAAAA` represents the controller id bits, meaning that we can have up to 32 controllers on one CAN network
+* `BBB` represents the message ID itself, allowing up to 7 messages per controller (emitted or received), 000 is reserved for the adoption frame.
 
 ## Pin Mapping
 
