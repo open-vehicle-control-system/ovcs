@@ -22,9 +22,7 @@
 #define EXPANSION_BOARD_ID_1 1
 #define EXPANSION_BOARD_ID_2 2
 
-const uint8_t digitalPinMapping [21][2] = {
-  {MAIN_BOARD_ID, D0},
-  {MAIN_BOARD_ID, D1},
+const uint8_t digitalPinMapping [19][2] = {
   {MAIN_BOARD_ID, D4},
   {MAIN_BOARD_ID, D7},
   {MAIN_BOARD_ID, D8},
@@ -48,7 +46,7 @@ const uint8_t digitalPinMapping [21][2] = {
 
 class Configuration {
   public :
-    DigitalPin _digitalPins [21];
+    DigitalPin _digitalPins [19];
     PwmPin _pwmPins [3];
     DacPin _dacPin;
     AnalogPin _analogPins [3];

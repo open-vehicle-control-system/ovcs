@@ -2,7 +2,6 @@
 #define PWM_PIN_H
 
 #include <OtherPin.h>
-#include <pwm.h>
 
 class PwmPin: public OtherPin {
   public:
