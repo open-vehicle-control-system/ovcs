@@ -1,16 +1,16 @@
 ---
-- name: external_pwm_duty_cycle
-  value_start: 0
-  kind: integer
-  value_length: 16
-- name: external_pwm_frequency
-  value_start: 16
-  kind: integer
-  value_length: 16
 - name: external_pwm_enabled
-  value_start: 32
+  value_start: 0
   kind: enum
   value_length: 8
   mapping:
     0x00: false
     0x01: true
+- name: external_pwm_duty_cycle
+  value_start: 8
+  kind: integer
+  value_length: 16
+- name: external_pwm_frequency
+  value_start: 24
+  kind: integer
+  value_length: 16

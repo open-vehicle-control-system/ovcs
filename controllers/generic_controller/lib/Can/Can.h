@@ -40,7 +40,6 @@ class Can {
 
     void emit(CANMessage frame);
     uint8_t extractBits(uint16_t source, uint16_t mask, uint8_t shiftRight);
-    uint8_t computeExternalPwmId();
 };
 
 #endif

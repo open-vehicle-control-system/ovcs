@@ -7,6 +7,7 @@
 #include <Configuration.h>
 #include <AbstractBoard.h>
 #include <Wire.h>
+#include "SerialTransfer.h"
 #include <ExternalPwm.h>
 
 #define ADOPTION_FRAME_ID 0x700

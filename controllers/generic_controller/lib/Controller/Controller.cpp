@@ -8,6 +8,7 @@ void Controller::initializeSerial() {
       delay (50) ;
     }
   #endif
+  Serial1.begin(115200); // UART Communication with PIC32
 };
 
 void Controller::initializeI2C() {
