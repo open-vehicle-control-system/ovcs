@@ -7,12 +7,12 @@
 #define EXPANSION_BOARD_ADDRESS_1 0x20
 #define EXPANSION_BOARD_ADDRESS_2 0x21
 
-MainBoard mainBoard            = MainBoard();
-ExpansionBoard expansionBoard1 = ExpansionBoard(EXPANSION_BOARD_ADDRESS_1);
-ExpansionBoard expansionBoard2 = ExpansionBoard(EXPANSION_BOARD_ADDRESS_2);
-Crc crc                        = Crc();
+MainBoard      mainBoard        = MainBoard();
+ExpansionBoard expansionBoard1  = ExpansionBoard(EXPANSION_BOARD_ADDRESS_1);
+ExpansionBoard expansionBoard2  = ExpansionBoard(EXPANSION_BOARD_ADDRESS_2);
+Crc            configurationCrc = Crc();
 
-Controller controller = Controller(&mainBoard, &expansionBoard1, &expansionBoard2, &crc);
+Controller controller = Controller(&mainBoard, &expansionBoard1, &expansionBoard2, &configurationCrc);
 
 void setup() {
   controller.setup();

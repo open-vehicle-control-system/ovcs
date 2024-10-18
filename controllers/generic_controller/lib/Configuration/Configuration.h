@@ -55,7 +55,7 @@ class Configuration {
     PwmPin _pwmPins [3];
     DacPin _dacPin;
     AnalogPin _analogPins [3];
-    ExternalPwm _externalPwm [4];
+    ExternalPwm _externalPwms [4];
     uint16_t _aliveFrameId;
     uint16_t _digitalPinRequestFrameId;
     uint16_t _otherPinRequestFrameId;
@@ -90,6 +90,7 @@ class Configuration {
     void computePwmPins();
     void computeDacPin();
     void computeAnalogPins();
+    void computeExternalPwms();
     void print();
 };
 

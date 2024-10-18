@@ -15,6 +15,7 @@ bool Configuration::load() {
     computePwmPins();
     computeDacPin();
     computeAnalogPins();
+    computeExternalPwms();
     DPRINTLN("> EEPROM configuration valid, ready!");
     print();
     return true;
@@ -97,6 +98,13 @@ void Configuration::computeAnalogPins() {
   _analogPins[0] = AnalogPin(_rawConfiguration[6] >> 1 & 0b1, A1);
   _analogPins[1] = AnalogPin(_rawConfiguration[6] & 0b1, A2);
   _analogPins[2] = AnalogPin(_rawConfiguration[7] >> 7 & 0b1, A3);
+};
+
+void Configuration::computeExternalPwms() {
+  _externalPwms[0] = ExternalPwm(0);
+  _externalPwms[1] = ExternalPwm(1);
+  _externalPwms[2] = ExternalPwm(2);
+  _externalPwms[3] = ExternalPwm(3);
 };
 
 void Configuration::print() {

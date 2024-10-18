@@ -93,17 +93,14 @@ OtherPinDutyCycles Can::parseOtherPinRequest() {
   return otherPinDutyCycles;
 }
 
-ExternalPwm parseExternalPwmRequest() {
-  uint8_t pwmId = computeExternalPwmId();
-  ExternalPwm externalPwm = ExternalPwm(pwmId, enabled, dutyCycle, frequency);
-}
+ExternalPwm Can::parseExternalPwmRequest() {
+  uint8_t  pwmId     = (_receivedFrame.id & 0b1111) - 5;
+  bool     enabled   = _receivedFrame.data[0];
+  uint16_t dutyCycle = _receivedFrame.data[2] << 8 | _receivedFrame.data[1];
+  uint16_t frequency = _receivedFrame.data[4] << 8 | _receivedFrame.data[3];
+  return ExternalPwm(pwmId, enabled, dutyCycle, frequency);
+};
 
 uint8_t Can::extractBits(uint16_t source, uint16_t mask, uint8_t shiftRight) {
   return (source & mask) >> shiftRight;
-};
-
-uint8_t Can::computeExternalPwmId() {
-  uint8_t pwmId = (_receivedFrame.id && 0b1111) - 5;
-
-
 };
