@@ -84,35 +84,29 @@ signals:
   - name: digital_pin18
     value_start: 44
     <<: *digital_pin_configuration
-  - name: digital_pin19
-    value_start: 46
-    <<: *digital_pin_configuration
-  - name: digital_pin20
-    value_start: 48
-    <<: *digital_pin_configuration
   - name: pwm_pin0
-    value_start: 50
+    value_start: 46
     <<: *other_pin_configuration
   - name: pwm_pin1
-    value_start: 51
+    value_start: 47
     <<: *other_pin_configuration
   - name: pwm_pin2
-    value_start: 52
+    value_start: 48
     <<: *other_pin_configuration
   - name: dac_pin0
-    value_start: 53
+    value_start: 49
     <<: *other_pin_configuration
   - name: analog_pin0
-    value_start: 54
+    value_start: 50
     <<: *other_pin_configuration
   - name: analog_pin1
-    value_start: 55
+    value_start: 51
     <<: *other_pin_configuration
   - name: analog_pin2
-    value_start: 56
+    value_start: 52
     <<: *other_pin_configuration
   - name: filler1
     kind: static
-    value_start: 57
-    value_length: 7
+    value_start: 53
+    value_length: 11
     value: 0x00

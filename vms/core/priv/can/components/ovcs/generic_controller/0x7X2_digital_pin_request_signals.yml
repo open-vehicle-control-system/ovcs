@@ -135,6 +135,6 @@
     0x01: true
 - name: filler0
   value_start: 19
-  value_length: 6
+  value_length: 5
   kind: static
   value: 0

@@ -50,12 +50,17 @@ defmodule VmsCore.Components.OVCS.GenericController do
   end
 
   @impl true
-  def init(%{process_name:  process_name, control_digital_pins: control_digital_pins, control_other_pins: control_other_pins}) do
+  def init(%{process_name:  process_name, control_digital_pins: control_digital_pins, control_other_pins: control_other_pins, enabled_external_pwms: enabled_external_pwms}) do
     alive_frame_name                         = compute_frame_name(process_name, "alive")
     digital_and_analog_pin_status_frame_name = compute_frame_name(process_name, "digital_and_analog_pin_status")
     digital_pin_request_frame_name           = compute_frame_name(process_name, "digital_pin_request")
     other_pin_request_frame_name             = compute_frame_name(process_name, "other_pin_request")
-
+    external_pwm_request_frame_names         = [
+      compute_frame_name(process_name, "external_pwm0_request"),
+      compute_frame_name(process_name, "external_pwm1_request"),
+      compute_frame_name(process_name, "external_pwm2_request"),
+      compute_frame_name(process_name, "external_pwm3_request")
+    ]
     :ok = Receiver.subscribe(self(), :ovcs, [alive_frame_name, digital_and_analog_pin_status_frame_name])
 
     if control_digital_pins do
@@ -73,12 +78,25 @@ defmodule VmsCore.Components.OVCS.GenericController do
         enable: true
       })
     end
+    enabled_external_pwms |> Enum.each(fn(pwm_id) ->
+      :ok = Emitter.configure(:ovcs, external_pwm_request_frame_names |> Enum.at(pwm_id), %{
+        parameters_builder_function: :default,
+        initial_data: %{
+          "enabled" => false,
+          "duty_cycle" => 0,
+          "frequency" => 0
+        },
+        enable: true
+      })
+    end)
     {:ok, %{
       process_name: process_name,
       alive_frame_name: alive_frame_name,
       digital_and_analog_pin_status_frame_name: digital_and_analog_pin_status_frame_name,
       digital_pin_request_frame_name: digital_pin_request_frame_name,
       other_pin_request_frame_name: other_pin_request_frame_name,
+      external_pwm_request_frame_names: external_pwm_request_frame_names,
+      enabled_external_pwms: enabled_external_pwms,
       pins: @digital_pins |> Map.merge(@analog_pins)
     }}
   end
@@ -113,6 +131,18 @@ defmodule VmsCore.Components.OVCS.GenericController do
   end
 
   @impl true
+  def handle_call({:set_external_pwm, pwm_id, enabled, duty_cycle, frequency},  _from, state) do
+    :ok = Emitter.update(:ovcs, state.external_pwm_request_frame_names |> Enum.at(pwm_id), fn (data) ->
+      %{data |
+      "enabled" => enabled,
+      "duty_cycle" => duty_cycle,
+      "frequency" => frequency
+    }
+    end)
+    {:reply, :ok, state}
+  end
+
+  @impl true
   def handle_call({:set_dac_duty_cycle, duty_cycle},  _from, state) do
     :ok = Emitter.update(:ovcs, state.other_pin_request_frame_name, fn (data) ->
       %{data | "dac_pin0_duty_cycle" => duty_cycle}
@@ -142,6 +172,10 @@ defmodule VmsCore.Components.OVCS.GenericController do
 
   def set_dac_duty_cycle(controller, duty_cycle) do
     GenServer.call(controller, {:set_dac_value, duty_cycle})
+  end
+
+  def set_external_pwm(controller, pwm_id, enabled, duty_cycle, frequency) do
+    GenServer.call(controller, {:set_external_pwm, pwm_id, enabled, duty_cycle, frequency})
   end
 
   def get_analog_value(controller, pin) do

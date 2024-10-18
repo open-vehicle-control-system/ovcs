@@ -20,7 +20,8 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
           :start_link, [%{
             process_name: OVCS.FrontController,
             control_digital_pins: true,
-            control_other_pins: false
+            control_other_pins: false,
+            enabled_external_pwms: []
           }]
         }
       },
@@ -31,7 +32,8 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
           :start_link, [%{
             process_name: OVCS.ControlsController,
             control_digital_pins: true,
-            control_other_pins: true
+            control_other_pins: true,
+            enabled_external_pwms: []
           }]
         }
       },
@@ -42,7 +44,8 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
           :start_link, [%{
             process_name: OVCS.RearController,
             control_digital_pins: true,
-            control_other_pins: false
+            control_other_pins: false,
+            enabled_external_pwms: []
           }]
         }
       },
@@ -68,14 +71,14 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
         requested_throttle_source: OVCS.ThrottlePedal,
         contact_source: Polo9N.IgnitionLock,
         controller: OVCS.FrontController,
-        power_relay_pin: 5
+        power_relay_pin: 3
       }},
 
       #Bosch
       {Bosch.IBoosterGen2, %{
         contact_source: Polo9N.IgnitionLock,
         controller: OVCS.FrontController,
-        power_relay_pin: 7
+        power_relay_pin: 5
       }},
       {Bosch.LWS, []},
 
@@ -101,15 +104,15 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
         inverter_output_voltage_source: LeafZE0.Inverter,
         required_precharge_output_voltage: 300,
         controller: OVCS.RearController,
-        main_negative_relay_pin: 5,
-        main_positive_relay_pin: 6,
-        precharge_relay_pin: 7
+        main_negative_relay_pin: 3,
+        main_positive_relay_pin: 4,
+        precharge_relay_pin: 5
       }},
       {OVCS.SteeringColumn, %{
         power_relay_controller: OVCS.FrontController,
-        power_relay_pin: 8,
+        power_relay_pin: 6,
         actuation_controller: OVCS.ControlsController,
-        direction_pin: 3,
+        direction_pin: 1,
         pwm_pin: 0
       }},
       {VmsCore.Status, %{
@@ -144,8 +147,6 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
         "digital_pin16" => "disabled",
         "digital_pin17" => "disabled",
         "digital_pin18" => "disabled",
-        "digital_pin19" => "disabled",
-        "digital_pin20" => "disabled",
         "pwm_pin0" => "disabled",
         "pwm_pin1" => "disabled",
         "pwm_pin2" => "disabled",
@@ -175,8 +176,6 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
         "digital_pin16" => "disabled",
         "digital_pin17" => "disabled",
         "digital_pin18" => "disabled",
-        "digital_pin19" => "disabled",
-        "digital_pin20" => "disabled",
         "pwm_pin0" => "disabled",
         "pwm_pin1" => "disabled",
         "pwm_pin2" => "disabled",
@@ -206,8 +205,6 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
         "digital_pin16" => "disabled",
         "digital_pin17" => "disabled",
         "digital_pin18" => "disabled",
-        "digital_pin19" => "disabled",
-        "digital_pin20" => "disabled",
         "pwm_pin0" => "enabled",
         "pwm_pin1" => "disabled",
         "pwm_pin2" => "disabled",

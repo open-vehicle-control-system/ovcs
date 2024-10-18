@@ -15,7 +15,8 @@ defmodule VmsCore.Vehicles.OVCSMini.Composer do
           :start_link, [%{
             process_name: OVCS.MainController,
             control_digital_pins: true,
-            control_other_pins: true
+            control_other_pins: true,
+            enabled_external_pwms: [0, 1]
           }]
         }
       },
@@ -39,7 +40,7 @@ defmodule VmsCore.Vehicles.OVCSMini.Composer do
     %{
       OVCS.MainController => %{
         "controller_id" => 0,
-        "digital_pin0" => "read_write",
+        "digital_pin0" => "disabled",
         "digital_pin1" => "disabled",
         "digital_pin2" => "disabled",
         "digital_pin3" => "disabled",
@@ -58,8 +59,6 @@ defmodule VmsCore.Vehicles.OVCSMini.Composer do
         "digital_pin16" => "disabled",
         "digital_pin17" => "disabled",
         "digital_pin18" => "disabled",
-        "digital_pin19" => "disabled",
-        "digital_pin20" => "disabled",
         "pwm_pin0" => "disabled",
         "pwm_pin1" => "disabled",
         "pwm_pin2" => "disabled",
