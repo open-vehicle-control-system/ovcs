@@ -3,7 +3,7 @@ defmodule VmsCore.Vehicles.OVCSMini.Composer do
     Combine all the modules require to run the OVCS1 car
   """
   alias VmsCore.Components.{OVCS, Traxxas}
-  alias VmsCore.{Vehicles}
+  alias VmsCore.{Managers, Vehicles}
 
   def children do
     [
@@ -29,11 +29,14 @@ defmodule VmsCore.Vehicles.OVCSMini.Composer do
       # }},
       {Traxxas.Steering, %{
         controller: OVCS.MainController,
-        external_pwm_id: 0
+        external_pwm_id: 0,
+        requested_steering_source: VmsCore.SteeringSOURCE #TODO implement
       }},
       {Traxxas.Throttle, %{
         controller: OVCS.MainController,
-        external_pwm_id: 1
+        external_pwm_id: 1,
+        requested_throttle_source: VmsCore.ThrottleSOURCE,  #TODO implement
+        selected_gear_source: Managers.Gear
       }},
       {VmsCore.Status, %{
         ready_to_drive_source: Vehicles.OVCSMini,

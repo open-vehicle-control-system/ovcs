@@ -89,13 +89,13 @@ defmodule VmsCore.Components.Nissan.LeafZE0.Inverter do
     {:noreply, state}
   end
 
-  def handle_info(%VmsCore.Bus.Message{name: :requested_throttle, value: requested_throttle, source: source}, state) when source == state.requested_throttle_source do
+  def handle_info(%Bus.Message{name: :requested_throttle, value: requested_throttle, source: source}, state) when source == state.requested_throttle_source do
     {:noreply, %{state | requested_throttle: requested_throttle}}
   end
-  def handle_info(%VmsCore.Bus.Message{name: :selected_gear, value: selected_gear, source: source}, state) when source == state.selected_gear_source do
+  def handle_info(%Bus.Message{name: :selected_gear, value: selected_gear, source: source}, state) when source == state.selected_gear_source do
     {:noreply, %{state | selected_gear: selected_gear}}
   end
-  def handle_info(%VmsCore.Bus.Message{name: :contact, value: contact, source: source}, state) when source == state.contact_source do
+  def handle_info(%Bus.Message{name: :contact, value: contact, source: source}, state) when source == state.contact_source do
     {:noreply, %{state | contact: contact}}
   end
   def handle_info(%Bus.Message{}, state) do # TODO, replace Bus ?
