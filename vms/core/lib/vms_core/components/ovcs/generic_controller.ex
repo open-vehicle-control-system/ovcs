@@ -6,6 +6,8 @@ defmodule VmsCore.Components.OVCS.GenericController do
 
   alias Cantastic.{Emitter, Frame, Receiver}
   alias VmsCore.Application
+  @pwm_duty_cycle_range 65_536
+  alias Decimal, as: D
 
   @digital_pins %{
     "digital_pin0_enabled" => false,
@@ -131,7 +133,8 @@ defmodule VmsCore.Components.OVCS.GenericController do
   end
 
   @impl true
-  def handle_call({:set_external_pwm, pwm_id, enabled, duty_cycle, frequency},  _from, state) do
+  def handle_call({:set_external_pwm, pwm_id, enabled, duty_cycle_percentage, frequency},  _from, state) do
+    duty_cycle = duty_cycle_percentage |> D.mult(@pwm_duty_cycle_range)
     :ok = Emitter.update(:ovcs, state.external_pwm_request_frame_names |> Enum.at(pwm_id), fn (data) ->
       %{data |
       "enabled" => enabled,
@@ -174,8 +177,8 @@ defmodule VmsCore.Components.OVCS.GenericController do
     GenServer.call(controller, {:set_dac_value, duty_cycle})
   end
 
-  def set_external_pwm(controller, pwm_id, enabled, duty_cycle, frequency) do
-    GenServer.call(controller, {:set_external_pwm, pwm_id, enabled, duty_cycle, frequency})
+  def set_external_pwm(controller, pwm_id, enabled, duty_cycle_percentage, frequency) do
+    GenServer.call(controller, {:set_external_pwm, pwm_id, enabled, duty_cycle_percentage, frequency})
   end
 
   def get_analog_value(controller, pin) do

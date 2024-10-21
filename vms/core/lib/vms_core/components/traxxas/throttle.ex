@@ -6,7 +6,6 @@ defmodule VmsCore.Components.Traxxas.Throttle do
   alias VmsCore.Components.OVCS.GenericController
 
   @loop_period 10
-  @pwm_duty_cycle_range 65_536
   @pwm_frequency 100
 
   def start_link(args) do

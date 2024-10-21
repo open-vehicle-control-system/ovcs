@@ -7,7 +7,6 @@ defmodule VmsCore.Components.Traxxas.Steering do
   alias VmsCore.Components.OVCS.GenericController
 
   @loop_period 10
-  @pwm_duty_cycle_range 65_536
   @pwm_frequency 100
   @center_duty_cycle_percentage D.new("0.15")
   @duty_cycle_percentage_range D.new("0.05")
@@ -40,12 +39,11 @@ defmodule VmsCore.Components.Traxxas.Steering do
   end
 
   defp steer(state) do
-    case state.requested_steering == state.steering  do
+    case state.steering == state.requested_steering  do
       true -> state
       false ->
         duty_cycle_percentage = state.requested_steering |> D.mult(@duty_cycle_percentage_range) |> D.add(@center_duty_cycle_percentage)
-        duty_cycle            = duty_cycle_percentage |> D.mult(@pwm_duty_cycle_range)
-        :ok                   = GenericController.set_external_pwm(state.controller, state.external_pwm_id, true, duty_cycle, @pwm_frequency)
+        :ok = GenericController.set_external_pwm(state.controller, state.external_pwm_id, true, duty_cycle_percentage, @pwm_frequency)
         %{state | steering: state.requested_steering}
     end
   end
