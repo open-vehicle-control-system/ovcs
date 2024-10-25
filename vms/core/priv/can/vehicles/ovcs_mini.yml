@@ -11,3 +11,5 @@ can_networks:
     received_frames:
       - import!:ovcs_mini/generic_controller/0x701_main_controller_alive.yml
       - import!:ovcs_mini/generic_controller/0x704_main_controller_digital_and_analog_pin_status.yml
+      - import!:../components/ovcs/0x2A0_remote_control_channels0.yml
+      - import!:../components/ovcs/0x2A1_remote_control_channels1.yml
