@@ -21,7 +21,6 @@ defmodule VmsCore.Components.Traxxas.Throttle do
   def init(%{
     controller: controller,
     external_pwm_id: external_pwm_id,
-    selected_gear_source: selected_gear_source,
     requested_throttle_source: requested_throttle_source})
   do
     Bus.subscribe("messages")
@@ -32,8 +31,6 @@ defmodule VmsCore.Components.Traxxas.Throttle do
       external_pwm_id: external_pwm_id,
       requested_throttle_source: requested_throttle_source,
       requested_throttle: @zero,
-      selected_gear_source: selected_gear_source,
-      selected_gear: "parking",
       throttle: @zero
     }}
   end
@@ -46,9 +43,6 @@ defmodule VmsCore.Components.Traxxas.Throttle do
   end
   def handle_info(%Bus.Message{name: :requested_throttle, value: requested_throttle, source: source}, state) when source == state.requested_throttle_source do
     {:noreply, %{state | requested_throttle: requested_throttle}}
-  end
-  def handle_info(%Bus.Message{name: :selected_gear, value: selected_gear, source: source}, state) when source == state.selected_gear_source do
-    {:noreply, %{state | selected_gear: selected_gear}}
   end
   def handle_info(%Bus.Message{}, state) do # TODO, replace Bus ?
     {:noreply, state}
