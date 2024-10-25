@@ -64,3 +64,4 @@ can_networks:
       - import!:../components/volkswagen/polo_9n/0x591_lock_status.yml
       - import!:../components/volkswagen/polo_9n/0x570_key_status.yml
       - import!:../components/volkswagen/polo_9n/0x5A0_abs_status.yml
+      - import!:../components/volkswagen/polo_9n/0x4A0_wheels_speed.yml

@@ -1,0 +1,24 @@
+---
+name: wheels_speed
+id: 0x4A0
+signals:
+  - name: front_left_wheel_speed # TODO verify that this is the right wheel order
+    unit: km/h
+    value_start: 0
+    value_length: 16
+    scale: "0.005836"
+  - name: front_right_wheel_speed # TODO verify that this is the right wheel order
+    unit: km/h
+    value_start: 16
+    value_length: 16
+    scale: "0.005836"
+  - name: rear_left_wheel_speed # TODO verify that this is the right wheel order + that rear wheels are acutally available
+    unit: km/h
+    value_start: 32
+    value_length: 16
+    scale: "0.005836"
+  - name: rear_right_wheel_speed # TODO verify that this is the right wheel order + that rear wheels are acutally available
+    unit: km/h
+    value_start: 48
+    value_length: 16
+    scale: "0.005836"
