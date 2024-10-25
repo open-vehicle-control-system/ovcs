@@ -31,7 +31,7 @@ defmodule VmsCore.Components.OVCS.RadioControl.Throttle do
       loop_timer: timer,
       channel_frame_name: channel_frame_name,
       channel_name: "channel#{radio_control_channel}",
-      raw_channel: 0,
+      raw_channel: @center_value,
       requested_throttle: @zero
     }}
   end
