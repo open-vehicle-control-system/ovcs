@@ -13,6 +13,7 @@ defmodule VmsCore.Components.OVCS.RadioControl.Steering do
   @center_value 1500
   @max_value 2000
   @range 500
+  @tolerated_drift 10
 
   def start_link(args) do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
@@ -21,7 +22,7 @@ defmodule VmsCore.Components.OVCS.RadioControl.Steering do
   @impl true
   def init(%{radio_control_channel: radio_control_channel}) do
     channel_frame_index = case radio_control_channel do
-      channel when channel < 4 -> 0
+      channel when channel < 5 -> 0
       _ -> 1
     end
     channel_frame_name = "radio_control_channels#{channel_frame_index}"
@@ -46,12 +47,17 @@ defmodule VmsCore.Components.OVCS.RadioControl.Steering do
 
   def handle_info({:handle_frame, %Frame{name: name, signals: signals}}, state) when name == state.channel_frame_name do
     raw_channel = signals[state.channel_name]
-    {:noreply, %{state | raw_channel: raw_channel}}
+    cond do
+      raw_channel > @max_value + @tolerated_drift -> {:noreply, state}
+      raw_channel < @min_value - @tolerated_drift -> {:noreply, state}
+      true ->
+        sanitized_raw_channel = raw_channel |> D.min(@max_value) |> D.max(@min_value)
+        {:noreply, %{state | raw_channel: sanitized_raw_channel}}
+    end
   end
 
   defp compute_steering(state) do
-    sanitized_raw_channel = state.raw_channel |> D.min(@max_value) |> D.max(@min_value)
-    requested_steering    = sanitized_raw_channel |> D.sub(@center_value) |> D.div(@range)
+    requested_steering = state.raw_channel |> D.sub(@center_value) |> D.div(@range)
     %{state | requested_steering: requested_steering}
   end
 
