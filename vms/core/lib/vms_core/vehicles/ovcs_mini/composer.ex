@@ -21,10 +21,10 @@ defmodule VmsCore.Vehicles.OVCSMini.Composer do
         }
       },
       {OVCS.RadioControl.Steering, %{
-        radio_control_channel: 0
+        radio_control_channel: 4
       }},
       {OVCS.RadioControl.Throttle, %{
-        radio_control_channel: 1
+        radio_control_channel: 3
       }},
       {Traxxas.Steering, %{
         controller: OVCS.MainController,
