@@ -20,9 +20,9 @@ disable_splash=1
 gpu_mem=192
 
 # Enable I2C, SPI, and audio
-dtparam=i2c_arm=on
+#dtparam=i2c_arm=on
 dtparam=spi=on
-dtparam=audio=on
+#dtparam=audio=on
 
 # Automatically load overlays for detected cameras
 camera_auto_detect=1
@@ -32,7 +32,18 @@ camera_auto_detect=1
 #       this won't work.
 #dtoverlay=w1-gpio-pullup,gpiopin=4
 dtoverlay=dwc2
-dtoverlay=sc16is752-spi1
+
+#Name:   sc16is752-spi1
+#Info:   Overlay for the NXP SC16IS752 Dual UART with SPI Interface
+#        Enables the chip on SPI1.
+#        N.B.: spi1 is only accessible on devices with a 40pin header, eg:
+#              A+, B+, Zero and PI2 B; as well as the Compute Module.
+#
+#Load:   dtoverlay=sc16is752-spi1,<param>=<val>
+#Params: int_pin                 GPIO used for IRQ (default 24)
+#        xtal                    On-board crystal frequency (default 14745600)
+
+dtoverlay=sc16is752-spi1,xtal=14756000
 dtoverlay=mcp251xfd,spi0-0,oscillator=40000000,interrupt=4 # cs_pin=8
 
 # The ramoops overlay works with the pstore driver to preserve crash
@@ -41,11 +52,11 @@ dtoverlay=ramoops
 
 # Enable the UART (/dev/ttyAMA0) on the RPi0.
 enable_uart=1
-dtoverlay=miniuart-bt
+#dtoverlay=miniuart-bt
 # Set the GPU frequency so that the MiniUART (/dev/ttyS0) can be used for
 # Bluetooth. This has a small performance impact. See
 # https://www.raspberrypi.org/documentation/computers/config_txt.html#overclocking.
-core_freq=250
+#core_freq=250
 
 # The active LED is active low instead of active high like other Raspberry Pis
 dtparam=act_led_activelow=on
@@ -58,3 +69,7 @@ dtparam=act_led_trigger=heartbeat
 # To turn the LED completely off comment out the previous line and uncomment
 # the next.
 #dtparam=act_led_trigger=none
+
+arm_freq=1100
+core_freq=450
+over_voltage=6

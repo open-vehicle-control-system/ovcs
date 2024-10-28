@@ -81,7 +81,7 @@ config :mdns_lite,
   # because otherwise any of the devices may respond to nerves.local leading to
   # unpredictable behavior.
 
-  hosts: [:hostname, "nerves"],
+  hosts: [:hostname, Application.get_env(:radio_control_bridge, :vehicle_host) |> IO.inspect()],
   ttl: 120,
 
   # Advertise the following services over mDNS.
@@ -112,7 +112,7 @@ config :mdns_lite,
 config :express_lrs,
   interface: %{
     uart_port: "ttySC0",
-    uart_baud_rate: 420_000,
+    uart_baud_rate: 460_800
   },
   enabled: true
 
@@ -124,4 +124,5 @@ config :msp_osd,
   enabled: true
 
  config :cantastic,
-  setup_can_interfaces: true
+  setup_can_interfaces: true,
+  can_network_mappings: [{"ovcs", "can0"}]
