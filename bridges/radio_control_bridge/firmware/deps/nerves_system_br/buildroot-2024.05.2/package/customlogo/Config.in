@@ -1,0 +1,17 @@
+config BR2_PACKAGE_CUSTOMLOGO
+	bool "Custom logo"
+	help
+	  Change linux boot logo with your own graphics.
+	  Can be used as an early bootsplash.
+
+	  Requires a pre-installed imagemagick on the host system if
+	  the logo is not in the clut224.ppm format.
+
+if BR2_PACKAGE_CUSTOMLOGO
+
+config BR2_PACKAGE_CUSTOMLOGO_PATH
+	string "image file path"
+	help
+	  This image will be used as custom logo.
+
+endif

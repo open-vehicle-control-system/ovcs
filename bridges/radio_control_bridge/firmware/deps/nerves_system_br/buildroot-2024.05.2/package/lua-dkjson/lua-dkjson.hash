@@ -1,0 +1,5 @@
+# computed by luarocks/buildroot
+sha256  f6101a0e77ca857ec20799f6b998a600b04c8dd09b27c445ea09f29695bfffb0  dkjson-2.7-1.src.rock
+
+# locally computed
+sha256  9d46e06db7feb8fd68f73bd024c8a2c04807629e16f396880860d151b60a3ed1  dkjson-2.7/readme.txt
