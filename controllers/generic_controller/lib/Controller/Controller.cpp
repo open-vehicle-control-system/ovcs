@@ -8,7 +8,10 @@ void Controller::initializeSerial() {
       delay (50) ;
     }
   #endif
-  Serial1.begin(115200); // UART Communication with PIC32
+}
+void Controller::initializeSerialTransfer() {
+  Serial1.begin(115200);
+  _serialTransfer->begin(Serial1);
 };
 
 void Controller::initializeI2C() {
@@ -44,7 +47,7 @@ void Controller::writeOtherPins() {
 
 void Controller::setExternalPwm() {
   ExternalPwm externalPwmRequest = _can.parseExternalPwmRequest();
-  ExternalPwm externalPwm = _configuration._externalPwms[externalPwmRequest.pwmId()];
+  ExternalPwm& externalPwm = _configuration._externalPwms[externalPwmRequest.pwmId()];
   externalPwm.updateIfNeeded(externalPwmRequest);
 };
 
@@ -78,6 +81,7 @@ void Controller::emitFrames() {
 
 void Controller::setup() {
   initializeSerial();
+  initializeSerialTransfer();
   _can.begin();
   initializeI2C();
   analogReadResolution(ANALOG_READ_RESOLUTION);

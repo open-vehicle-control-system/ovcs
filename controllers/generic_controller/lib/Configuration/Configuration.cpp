@@ -101,10 +101,10 @@ void Configuration::computeAnalogPins() {
 };
 
 void Configuration::computeExternalPwms() {
-  _externalPwms[0] = ExternalPwm(0);
-  _externalPwms[1] = ExternalPwm(1);
-  _externalPwms[2] = ExternalPwm(2);
-  _externalPwms[3] = ExternalPwm(3);
+  _externalPwms[0] = ExternalPwm(0, _serialTransfert);
+  _externalPwms[1] = ExternalPwm(1, _serialTransfert);
+  _externalPwms[2] = ExternalPwm(2, _serialTransfert);
+  _externalPwms[3] = ExternalPwm(3, _serialTransfert);
 };
 
 void Configuration::print() {

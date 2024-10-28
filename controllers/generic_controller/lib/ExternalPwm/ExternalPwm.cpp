@@ -16,21 +16,19 @@ uint16_t ExternalPwm::frequency() {
   return _frequency;
 };
 
-void ExternalPwm::updateIfNeeded(ExternalPwm externalPwmRequest) {
-  if (
-      externalPwmRequest.enabled() != _enabled ||
-      externalPwmRequest.dutyCycle() != _dutyCycle ||
-      externalPwmRequest.frequency() != _frequency) {
-    _enabled = externalPwmRequest.enabled();
-    _dutyCycle = externalPwmRequest.dutyCycle();
-    _frequency = externalPwmRequest.frequency();
-    SerialTransfer serialTransfer;
+void ExternalPwm::updateIfNeeded(ExternalPwm& externalPwm) {
+  // if (
+  //     externalPwm.enabled() != _enabled ||
+  //     externalPwm.dutyCycle() != _dutyCycle ||
+  //     externalPwm.frequency() != _frequency) {
+    _enabled = externalPwm.enabled();
+    _dutyCycle = externalPwm.dutyCycle();
+    _frequency = externalPwm.frequency();
     uint16_t sendSize = 0;
-    sendSize = serialTransfer.txObj(_pwmId, sendSize);
-    sendSize = serialTransfer.txObj(_enabled, sendSize);
-    sendSize = serialTransfer.txObj(_dutyCycle, sendSize);
-    sendSize = serialTransfer.txObj(_frequency, sendSize);
-
-    serialTransfer.sendData(sendSize, SET_PWM_COMMAND_ID);
-  }
+    sendSize = _serialTransfer->txObj(_pwmId, sendSize);
+    sendSize = _serialTransfer->txObj(_enabled, sendSize);
+    sendSize = _serialTransfer->txObj(_dutyCycle, sendSize);
+    sendSize = _serialTransfer->txObj(_frequency, sendSize);
+    _serialTransfer->sendData(sendSize, SET_PWM_COMMAND_ID);
+ // }
 };

@@ -11,8 +11,15 @@ MainBoard      mainBoard        = MainBoard();
 ExpansionBoard expansionBoard1  = ExpansionBoard(EXPANSION_BOARD_ADDRESS_1);
 ExpansionBoard expansionBoard2  = ExpansionBoard(EXPANSION_BOARD_ADDRESS_2);
 Crc            configurationCrc = Crc();
+SerialTransfer serialTransfer   = SerialTransfer();
 
-Controller controller = Controller(&mainBoard, &expansionBoard1, &expansionBoard2, &configurationCrc);
+Controller controller = Controller(
+  &mainBoard,
+  &expansionBoard1,
+  &expansionBoard2,
+  &configurationCrc,
+  &serialTransfer
+);
 
 void setup() {
   controller.setup();

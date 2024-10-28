@@ -7,7 +7,7 @@ defmodule VmsCore.Components.Traxxas.Steering do
   alias VmsCore.Bus
   alias VmsCore.Components.OVCS.GenericController
 
-  @loop_period 10
+  @loop_period 1
   @pwm_frequency 100
   @center_duty_cycle_percentage D.new("0.15")
   @duty_cycle_percentage_range D.new("0.05")
@@ -23,6 +23,7 @@ defmodule VmsCore.Components.Traxxas.Steering do
     external_pwm_id: external_pwm_id,
     requested_steering_source: requested_steering_source})
   do
+    Bus.subscribe("messages")
     {:ok, timer} = :timer.send_interval(@loop_period, :loop)
     {:ok, %{
       loop_timer: timer,
@@ -38,7 +39,6 @@ defmodule VmsCore.Components.Traxxas.Steering do
   def handle_info(:loop, state) do
     state = state
       |> steer()
-      |> Logger.debug
     {:noreply, state}
   end
   def handle_info(%Bus.Message{name: :requested_steering, value: requested_steering, source: source}, state) when source == state.requested_steering_source do
@@ -49,10 +49,11 @@ defmodule VmsCore.Components.Traxxas.Steering do
   end
 
   defp steer(state) do
-    case state.steering == state.requested_steering  do
+    case D.eq?(state.steering, state.requested_steering)  do
       true -> state
       false ->
         duty_cycle_percentage = state.requested_steering |> D.mult(@duty_cycle_percentage_range) |> D.add(@center_duty_cycle_percentage)
+        IO.inspect duty_cycle_percentage
         :ok = GenericController.set_external_pwm(state.controller, state.external_pwm_id, true, duty_cycle_percentage, @pwm_frequency)
         %{state | steering: state.requested_steering}
     end

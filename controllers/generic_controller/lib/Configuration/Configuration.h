@@ -69,11 +69,18 @@ class Configuration {
 
 
     Configuration() {};
-    Configuration(AbstractBoard* mainBoard, AbstractBoard* expansionBoard1, AbstractBoard* expansionBoard2, AbstractCrc* crc) {
+    Configuration(
+      AbstractBoard* mainBoard,
+      AbstractBoard* expansionBoard1,
+      AbstractBoard* expansionBoard2,
+      AbstractCrc* crc,
+      SerialTransfer* serialTransfert
+    ) {
       _mainBoard       = mainBoard;
       _expansionBoard1 = expansionBoard1;
       _expansionBoard2 = expansionBoard2;
       _crc             = crc;
+      _serialTransfert = serialTransfert;
     };
 
   private:
@@ -83,6 +90,7 @@ class Configuration {
     AbstractBoard* _expansionBoard1;
     AbstractBoard* _expansionBoard2;
     AbstractCrc* _crc;
+    SerialTransfer* _serialTransfert;
     void store(uint8_t newConfiguration[8]);
     void computeControllerId();
     void computeFrameIds();

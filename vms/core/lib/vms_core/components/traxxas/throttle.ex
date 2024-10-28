@@ -49,7 +49,7 @@ defmodule VmsCore.Components.Traxxas.Throttle do
   end
 
   defp apply_throttle(state) do
-    case state.throttle == state.requested_throttle  do
+    case D.eq?(state.throttle, state.requested_throttle)  do
       true -> state
       false ->
         duty_cycle_percentage = state.requested_throttle |> D.mult(@duty_cycle_percentage_range) |> D.add(@neutral_duty_cycle_percentage)
