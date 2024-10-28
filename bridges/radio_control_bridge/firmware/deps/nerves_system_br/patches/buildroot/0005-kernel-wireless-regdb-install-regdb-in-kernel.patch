@@ -1,0 +1,114 @@
+From 9deb8fa7ca8bc042cf3203869db3314b2181b46e Mon Sep 17 00:00:00 2001
+From: Frank Hunleth <fhunleth@troodon-software.com>
+Date: Mon, 9 May 2016 13:21:56 -0400
+Subject: [PATCH] kernel-wireless-regdb: install regdb in kernel
+
+This kernel extension makes the CONFIG_CFG80211_INTERNAL_REGDB kernel
+option work by installing a wireless regulatory database into
+net/wireless/db.txt.
+---
+ linux/Config.ext.in                                  |  8 ++++++++
+ linux/linux-ext-kernel-wireless-regdb.mk             | 12 ++++++++++++
+ package/Config.in                                    |  1 +
+ package/kernel-wireless-regdb/Config.in              |  9 +++++++++
+ .../kernel-wireless-regdb/kernel-wireless-regdb.hash |  1 +
+ .../kernel-wireless-regdb/kernel-wireless-regdb.mk   | 12 ++++++++++++
+ 6 files changed, 43 insertions(+)
+ create mode 100644 linux/linux-ext-kernel-wireless-regdb.mk
+ create mode 100644 package/kernel-wireless-regdb/Config.in
+ create mode 120000 package/kernel-wireless-regdb/kernel-wireless-regdb.hash
+ create mode 100644 package/kernel-wireless-regdb/kernel-wireless-regdb.mk
+
+diff --git a/linux/Config.ext.in b/linux/Config.ext.in
+index 1f6f3ef7a4..c7dbe50a57 100644
+--- a/linux/Config.ext.in
++++ b/linux/Config.ext.in
+@@ -157,6 +157,14 @@ config BR2_LINUX_KERNEL_EXT_AUFS_VERSION
+ 
+ endif # aufs
+ 
++# kernel-wireless-regdb
++config BR2_LINUX_KERNEL_EXT_KERNEL_WIRELESS_REGDB
++	bool "Wireless regulatory database"
++	select BR2_PACKAGE_KERNEL_WIRELESS_REGDB
++	help
++	  Install the wireless regulatory database into the kernel
++	  to support the CONFIG_CFG80211_INTERNAL_REGDB option.
++
+ # kernel extensions from br2-external trees, if any
+ source "$BR2_BASE_DIR/.br2-external.in.linux"
+ 
+diff --git a/linux/linux-ext-kernel-wireless-regdb.mk b/linux/linux-ext-kernel-wireless-regdb.mk
+new file mode 100644
+index 0000000000..3cec0cd9d8
+--- /dev/null
++++ b/linux/linux-ext-kernel-wireless-regdb.mk
+@@ -0,0 +1,12 @@
++################################################################################
++# Linux wireless-regdb extension
++#
++# Patch the linux kernel with the latest wireless-regdb database.
++# This enables the CONFIG_CFG80211_INTERNAL_REGDB kernel option.
++################################################################################
++
++LINUX_EXTENSIONS += kernel-wireless-regdb
++
++define KERNEL_WIRELESS_REGDB_PREPARE_KERNEL
++	cp -pf $(KERNEL_WIRELESS_REGDB_DIR)/db.txt $(LINUX_DIR)/net/wireless/db.txt
++endef
+diff --git a/package/Config.in b/package/Config.in
+index 594622373f..a7ffa3e033 100644
+--- a/package/Config.in
++++ b/package/Config.in
+@@ -2358,6 +2358,7 @@ endif
+ 	source "package/iwd/Config.in"
+ 	source "package/janus-gateway/Config.in"
+ 	source "package/keepalived/Config.in"
++	source "package/kernel-wireless-regdb/Config.in"
+ 	source "package/kismet/Config.in"
+ 	source "package/knock/Config.in"
+ 	source "package/ksmbd-tools/Config.in"
+diff --git a/package/kernel-wireless-regdb/Config.in b/package/kernel-wireless-regdb/Config.in
+new file mode 100644
+index 0000000000..8a54a21e0e
+--- /dev/null
++++ b/package/kernel-wireless-regdb/Config.in
+@@ -0,0 +1,9 @@
++config BR2_PACKAGE_KERNEL_WIRELESS_REGDB
++	bool "kernel-wireless-regdb"
++	help
++	  Wireless regulatory database.
++
++	  Wireless regulatory database for the kernel. The database
++	  lists allowed radio frequencies for each local jurisdiction.
++
++	  http://linuxwireless.org/en/developers/Regulatory
+diff --git a/package/kernel-wireless-regdb/kernel-wireless-regdb.hash b/package/kernel-wireless-regdb/kernel-wireless-regdb.hash
+new file mode 120000
+index 0000000000..2b8d905ac3
+--- /dev/null
++++ b/package/kernel-wireless-regdb/kernel-wireless-regdb.hash
+@@ -0,0 +1 @@
++../wireless-regdb/wireless-regdb.hash
+\ No newline at end of file
+diff --git a/package/kernel-wireless-regdb/kernel-wireless-regdb.mk b/package/kernel-wireless-regdb/kernel-wireless-regdb.mk
+new file mode 100644
+index 0000000000..21689d55f8
+--- /dev/null
++++ b/package/kernel-wireless-regdb/kernel-wireless-regdb.mk
+@@ -0,0 +1,12 @@
++################################################################################
++#
++# kernel-wireless-regdb
++#
++################################################################################
++
++KERNEL_WIRELESS_REGDB_SOURCE = wireless-regdb-$(WIRELESS_REGDB_VERSION).tar.xz
++KERNEL_WIRELESS_REGDB_SITE = http://kernel.org/pub/software/network/wireless-regdb
++KERNEL_WIRELESS_REGDB_LICENSE = ISC
++KERNEL_WIRELESS_REGDB_LICENSE_FILES = LICENSE
++
++$(eval $(generic-package))
+-- 
+2.34.1
+

@@ -1,0 +1,28 @@
+From 655d36b1daeea6d8bae5c27dc6c3a0f8c956aa62 Mon Sep 17 00:00:00 2001
+From: Frank Hunleth <fhunleth@troodon-software.com>
+Date: Sun, 27 Mar 2022 08:40:06 -0400
+Subject: [PATCH] erlang: don't install to target
+
+This requires mix release configurations to copy ERTS to the release.
+This isn't a big deal since it's been done for years in the Nerves
+tooling, but just discarded when assembling the release since ERTS was
+already on the target.
+---
+ package/erlang/erlang.mk | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/package/erlang/erlang.mk b/package/erlang/erlang.mk
+index 8f18bc87b0..8131144b9b 100644
+--- a/package/erlang/erlang.mk
++++ b/package/erlang/erlang.mk
+@@ -45,6 +45,7 @@ ERLANG_LICENSE_FILES = LICENSE.txt
+ ERLANG_CPE_ID_VENDOR = erlang
+ ERLANG_CPE_ID_PRODUCT = erlang\/otp
+ ERLANG_INSTALL_STAGING = YES
++ERLANG_INSTALL_TARGET = NO
+ 
+ # Patched erts/aclocal.m4
+ define ERLANG_RUN_AUTOCONF
+-- 
+2.34.1
+

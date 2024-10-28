@@ -1,0 +1,540 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR BSD-2-Clause)
+/*
+ * Copyright (C) 2020 embedded brains GmbH.
+ */
+
+/dts-v1/;
+#include "imx6ull.dtsi"
+#include "imx6ull-phytec-phycore-som.dtsi"
+
+/ {
+	model = "GRiSP2";
+	compatible = "embeddedbrains,grisp2", "phytec,imx6ull-pcl063-emmc", "fsl,imx6ull";
+
+	gpio_leds_grisp2: leds {
+		pinctrl-names = "default";
+		pinctrl-0 = <&pinctrl_gpioleds_grisp2>;
+		compatible = "gpio-leds";
+
+		grisp-rgb1-red {
+			gpios = <&gpio5 0 GPIO_ACTIVE_HIGH>;
+		};
+		grisp-rgb1-green {
+			gpios = <&gpio5 1 GPIO_ACTIVE_HIGH>;
+		};
+		grisp-rgb1-blue {
+			gpios = <&gpio5 2 GPIO_ACTIVE_HIGH>;
+		};
+		grisp-rgb2-red {
+			gpios = <&gpio5 3 GPIO_ACTIVE_HIGH>;
+		};
+		grisp-rgb2-green {
+			gpios = <&gpio5 5 GPIO_ACTIVE_HIGH>;
+		};
+		grisp-rgb2-blue {
+			gpios = <&gpio5 9 GPIO_ACTIVE_HIGH>;
+		};
+	};
+
+	reg_usb1: regulator-usb1 {
+		compatible = "regulator-fixed";
+		pinctrl-names = "default";
+		pinctrl-0 = <&pinctrl_usb1_en>;
+		gpio = <&gpio2 8 GPIO_ACTIVE_HIGH>;
+
+		regulator-name = "usb1";
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+		enable-active-high;
+
+		status = "okay";
+	};
+
+	reg_usb2: regulator-usb2 {
+		compatible = "regulator-fixed";
+		pinctrl-names = "default";
+		pinctrl-0 = <&pinctrl_usb2_en>;
+		gpio = <&gpio3 16 GPIO_ACTIVE_HIGH>;
+
+		regulator-name = "usb2";
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+
+		status = "okay";
+	};
+
+	pmod_i2c: pmod-i2c {
+		pinctrl-names = "default", "gpio";
+		pinctrl-0 = <&pinctrl_i2c2>;
+		pinctrl-1 = <&pinctrl_i2c2_gpio>;
+		status = "okay";
+
+		/* I2C mode */
+		grisp,i2c-alias = "i2c1"; /* use with i2c_bus_register_imx */
+		grisp,int-gpios = <&gpio1 8 GPIO_ACTIVE_HIGH>;
+		grisp,reset-gpios = <&gpio1 9 GPIO_ACTIVE_HIGH>;
+
+		/* GPIO mode */
+		grisp,gpios =
+			<&gpio1 8 GPIO_ACTIVE_HIGH>, /* X1403.1 */
+			<&gpio1 9 GPIO_ACTIVE_HIGH>, /* X1403.2 */
+			<&gpio1 30 GPIO_ACTIVE_HIGH>, /* X1403.3 */
+			<&gpio1 31 GPIO_ACTIVE_HIGH>; /* X1403.4 */
+	};
+
+	pmod_spi: pmod-spi {
+		pinctrl-names = "default", "gpio";
+		pinctrl-0 = <&pinctrl_spi0>;
+		pinctrl-1 = <&pinctrl_spi0_gpio>;
+		status = "okay";
+
+		/* SPI mode */
+		grisp,spi-alias = "spi0"; /* use with spi_bus_register_imx */
+		grisp,int-gpios = <&gpio4 19 GPIO_ACTIVE_HIGH>;
+
+		/* GPIO mode */
+		grisp,gpios =
+			<&gpio3 10 GPIO_ACTIVE_HIGH>, /* X1402.1 */
+			<&gpio4 27 GPIO_ACTIVE_HIGH>, /* X1402.2 */
+			<&gpio4 28 GPIO_ACTIVE_HIGH>, /* X1402.3 */
+			<&gpio4 25 GPIO_ACTIVE_HIGH>, /* X1402.4 */
+			<&gpio4 19 GPIO_ACTIVE_HIGH>, /* X1402.7 */
+			<&gpio4 24 GPIO_ACTIVE_HIGH>, /* X1402.8 */
+			<&gpio3 11 GPIO_ACTIVE_HIGH>, /* X1402.9 */
+			<&gpio3 12 GPIO_ACTIVE_HIGH>, /* X1402.10 */
+			<&gpio4 26 GPIO_ACTIVE_HIGH>; /* X1401.1 */
+	};
+
+	pmod_gpio: pmod-gpio {
+		pinctrl-names = "default";
+		pinctrl-0 = <&pinctrl_gpio_pmod>;
+		status = "okay";
+
+		grisp,gpios =
+			<&gpio1 1 GPIO_ACTIVE_HIGH>, /* X1404.1 */
+			<&gpio1 5 GPIO_ACTIVE_HIGH>, /* X1404.2 */
+			<&gpio1 3 GPIO_ACTIVE_HIGH>, /* X1404.3 */
+			<&gpio1 4 GPIO_ACTIVE_HIGH>, /* X1404.4 */
+			<&gpio1 20 GPIO_ACTIVE_HIGH>, /* X1404.7 */
+			<&gpio3 7 GPIO_ACTIVE_HIGH>, /* X1404.8 */
+			<&gpio1 22 GPIO_ACTIVE_HIGH>, /* X1404.9 */
+			<&gpio1 23 GPIO_ACTIVE_HIGH>; /* X1404.10 */
+	};
+
+	pmod_uart: pmod-uart {
+		pinctrl-names = "default", "gpio";
+		pinctrl-0 = <&pinctrl_uart4>;
+		pinctrl-1 = <&pinctrl_uart4_gpio>;
+		status = "okay";
+
+		/* UART mode */
+		grisp,uartdev = "/dev/ttyS3";
+
+		/* GPIO mode */
+		grisp,gpios =
+			<&gpio3 2 GPIO_ACTIVE_HIGH>, /* X1405.1 */
+			<&gpio3 0 GPIO_ACTIVE_HIGH>, /* X1405.2 */
+			<&gpio3 1 GPIO_ACTIVE_HIGH>, /* X1405.3 */
+			<&gpio3 3 GPIO_ACTIVE_HIGH>, /* X1405.4 */
+			<&gpio3 4 GPIO_ACTIVE_HIGH>, /* X1405.7 */
+			<&gpio3 5 GPIO_ACTIVE_HIGH>, /* X1405.8 */
+			<&gpio3 6 GPIO_ACTIVE_HIGH>, /* X1405.9 */
+			<&gpio1 21 GPIO_ACTIVE_HIGH>; /* X1405.10 */
+	};
+
+	pin_gpio: pin-gpio {
+		pinctrl-names = "default";
+		pinctrl-0 = <&pinctrl_gpio_pins>;
+		status = "okay";
+
+		grisp,gpios =
+			<&gpio1 24 GPIO_ACTIVE_HIGH>, /* X1300.3 */
+			<&gpio1 25 GPIO_ACTIVE_HIGH>, /* X1300.4 */
+			<&gpio1 26 GPIO_ACTIVE_HIGH>, /* X1300.5 */
+			<&gpio1 27 GPIO_ACTIVE_HIGH>, /* X1300.6 */
+			<&gpio4 16 GPIO_ACTIVE_HIGH>, /* X1301.3 */
+			<&gpio4 17 GPIO_ACTIVE_HIGH>, /* X1301.4 */
+			<&gpio4 18 GPIO_ACTIVE_HIGH>, /* X1301.5 */
+			<&gpio4 20 GPIO_ACTIVE_HIGH>, /* X1301.6 */
+			<&gpio4 21 GPIO_ACTIVE_HIGH>, /* X1301.7 */
+			<&gpio4 22 GPIO_ACTIVE_HIGH>, /* X1301.8 */
+			<&gpio4 23 GPIO_ACTIVE_HIGH>, /* X1301.9 */
+			<&gpio2 10 GPIO_ACTIVE_HIGH>, /* X1301.10 */
+			<&gpio2 11 GPIO_ACTIVE_HIGH>, /* X1301.11 */
+			<&gpio2 12 GPIO_ACTIVE_HIGH>, /* X1301.12 */
+			<&gpio2 13 GPIO_ACTIVE_HIGH>, /* X1301.13 */
+			<&gpio2 14 GPIO_ACTIVE_HIGH>; /* X1301.14 */
+	};
+
+	jumper: jumper-keys {
+		pinctrl-names = "default";
+		pinctrl-0 = <&pinctrl_jumper>;
+		status = "okay";
+
+		grisp,gpios =
+			<&gpio3 8 GPIO_ACTIVE_HIGH>, /* JUMPER1 */
+			<&gpio3 9 GPIO_ACTIVE_HIGH>, /* JUMPER2 */
+			<&gpio3 13 GPIO_ACTIVE_HIGH>, /* JUMPER3 */
+			<&gpio3 14 GPIO_ACTIVE_HIGH>, /* JUMPER4 */
+			<&gpio3 15 GPIO_ACTIVE_HIGH>; /* JUMPER5 */
+	};
+};
+
+&fec1 {
+	status = "okay";
+};
+
+&ethphy1 {
+	status = "okay";
+};
+
+&i2c1 {
+	status = "okay";
+
+	ds2482s: onewire_master@18 {
+		compatible = "maxim,ds2482s";
+		reg = <0x18>;
+		status = "okay";
+	};
+	at24mac402_eeprom: eeprom@57 {
+		compatible = "atmel,24c02";
+		reg = <0x57>;
+		status = "okay";
+	};
+	at24mac402_eui: eeprom@5f {
+		compatible = "atmel,at24mac402-eui";
+		reg = <0x5f>;
+		status = "okay";
+	};
+	atecc608: cryptoauth@36 {
+		compatible = "microchip,atecc608", "atmel,at24c16";
+		reg = <0x36>;
+		status = "okay";
+	};
+};
+
+&i2c2 {
+	clock-frequency = <100000>;
+	status = "okay";
+};
+
+&usbotg1 {
+	pinctrl-names = "default";
+	dr_mode = "host";
+	vbus-supply = <&reg_usb1>;
+	/* This removes the warning about not specifying anything for over-current handling */
+	disable-over-current;
+	status = "okay";
+};
+
+&usbotg2 {
+	dr_mode = "host";
+	vbus-supply = <&reg_usb2>;
+	disable-over-current;
+	status = "okay";
+};
+
+&usdhc1 {
+	pinctrl-names = "default", "state_100mhz", "state_200mhz";
+	pinctrl-0 = <&pinctrl_usdhc1>;
+	pinctrl-1 = <&pinctrl_usdhc1_100mhz>;
+	pinctrl-2 = <&pinctrl_usdhc1_200mhz>;
+	cd-gpios = <&gpio1 19 GPIO_ACTIVE_HIGH>;
+	no-1-8-v;
+	keep-power-in-suspend;
+	wakeup-source;
+	status = "okay";
+};
+
+&usdhc2 {
+	pinctrl-names = "default";
+	non-removable;
+	wakeup-source;
+	status = "okay";
+};
+
+&uart4 {
+	status = "okay";
+};
+
+&ecspi1 {
+	status = "okay";
+
+	cs-gpios = <&gpio4 26 GPIO_ACTIVE_HIGH>,
+		   <&gpio3 10 GPIO_ACTIVE_HIGH>,
+		   <&gpio3 11 GPIO_ACTIVE_HIGH>,
+		   <&gpio3 12 GPIO_ACTIVE_HIGH>;
+};
+
+&iomuxc {
+	pinctrl_i2c2: i2c2grp {
+		fsl,pins = <
+			MX6UL_PAD_UART5_TX_DATA__I2C2_SCL	0x4001b830	/* SCL_2; X1400.1; X1403.3 */
+			MX6UL_PAD_UART5_RX_DATA__I2C2_SDA	0x4001b830	/* SDA_2; X1400.3; X1403.4 */
+			MX6UL_PAD_GPIO1_IO08__GPIO1_IO08	0x3008		/* I2C_2_INT; X1403.1  */
+			MX6UL_PAD_GPIO1_IO09__GPIO1_IO09	0x3008		/* I2C_2_RESET; X1403.2  */
+		>;
+	};
+
+	pinctrl_i2c2_gpio: i2c2gpiogrp {
+		fsl,pins = <
+			MX6UL_PAD_UART5_TX_DATA__GPIO1_IO30	0x3008		/* SCL_2; X1400.1; X1403.3 */
+			MX6UL_PAD_UART5_RX_DATA__GPIO1_IO31	0x3008		/* SDA_2; X1400.3; X1403.4 */
+			MX6UL_PAD_GPIO1_IO08__GPIO1_IO08	0x3008		/* I2C_2_INT; X1403.1  */
+			MX6UL_PAD_GPIO1_IO09__GPIO1_IO09	0x3008		/* I2C_2_RESET; X1403.2  */
+		>;
+	};
+
+	pinctrl_usb1_en: usb1engrp {
+		fsl,pins = <
+			MX6UL_PAD_ENET2_RX_DATA0__GPIO2_IO08	0x08
+		>;
+	};
+
+	pinctrl_usb2_en: usb2engrp {
+		fsl,pins = <
+			MX6UL_PAD_LCD_DATA11__GPIO3_IO16	0x08
+		>;
+	};
+
+	pinctrl_usdhc1: usdhc1grp {
+		fsl,pins = <
+			MX6UL_PAD_SD1_CMD__USDHC1_CMD		0x17059
+			MX6UL_PAD_SD1_CLK__USDHC1_CLK		0x10059
+			MX6UL_PAD_SD1_DATA0__USDHC1_DATA0	0x17059
+			MX6UL_PAD_SD1_DATA1__USDHC1_DATA1	0x17059
+			MX6UL_PAD_SD1_DATA2__USDHC1_DATA2	0x17059
+			MX6UL_PAD_SD1_DATA3__USDHC1_DATA3	0x17059
+			MX6UL_PAD_UART1_RTS_B__GPIO1_IO19	0x17059
+		>;
+	};
+
+	pinctrl_usdhc1_100mhz: usdhc1grp100mhz {
+		fsl,pins = <
+			MX6UL_PAD_SD1_CMD__USDHC1_CMD		0x170b9
+			MX6UL_PAD_SD1_CLK__USDHC1_CLK		0x100b9
+			MX6UL_PAD_SD1_DATA0__USDHC1_DATA0	0x170b9
+			MX6UL_PAD_SD1_DATA1__USDHC1_DATA1	0x170b9
+			MX6UL_PAD_SD1_DATA2__USDHC1_DATA2	0x170b9
+			MX6UL_PAD_SD1_DATA3__USDHC1_DATA3	0x170b9
+			MX6UL_PAD_UART1_RTS_B__GPIO1_IO19	0x17059
+		>;
+	};
+
+	pinctrl_usdhc1_200mhz: usdhc1grp200mhz {
+		fsl,pins = <
+			MX6UL_PAD_SD1_CMD__USDHC1_CMD		0x170f9
+			MX6UL_PAD_SD1_CLK__USDHC1_CLK		0x100f9
+			MX6UL_PAD_SD1_DATA0__USDHC1_DATA0	0x170f9
+			MX6UL_PAD_SD1_DATA1__USDHC1_DATA1	0x170f9
+			MX6UL_PAD_SD1_DATA2__USDHC1_DATA2	0x170f9
+			MX6UL_PAD_SD1_DATA3__USDHC1_DATA3	0x170f9
+			MX6UL_PAD_UART1_RTS_B__GPIO1_IO19	0x17059
+		>;
+	};
+
+	pinctrl_spi0: spi0grp {
+		fsl,pins = <
+			MX6UL_PAD_CSI_DATA04__ECSPI1_SCLK	0x8	/* SPI_SCK; X1401.4; X1402.4 */
+			MX6UL_PAD_CSI_DATA06__ECSPI1_MOSI	0x8	/* SPI_MOSI; X1401.2; X1402.2 */
+			MX6UL_PAD_CSI_DATA07__ECSPI1_MISO	0x2000	/* SPI_MISO; X1401.3; X1402.3 */
+			MX6UL_PAD_CSI_DATA05__GPIO4_IO26	0x8	/* SPI_SS0 ; X1401.1 */
+			MX6UL_PAD_LCD_DATA05__GPIO3_IO10	0x8	/* SPI_SS1 ; X1402.1 */
+			MX6UL_PAD_LCD_DATA06__GPIO3_IO11	0x8	/* SPI_SS2 ; X1402.9 */
+			MX6UL_PAD_LCD_DATA07__GPIO3_IO12	0x8	/* SPI_SS3 ; X1402.10 */
+			MX6UL_PAD_CSI_DATA03__GPIO4_IO24	0x8	/* SPI_RESET ; X1402.8 */
+			MX6UL_PAD_CSI_VSYNC__GPIO4_IO19		0x8	/* SPI_INT ; X1402.7 */
+		>;
+	};
+
+	pinctrl_spi0_gpio: spi0gpiogrp {
+		fsl,pins = <
+			MX6UL_PAD_CSI_DATA04__GPIO4_IO25	0x3008	/* SPI_SCK; X1401.4; X1402.4 */
+			MX6UL_PAD_CSI_DATA06__GPIO4_IO27	0x3008	/* SPI_MOSI; X1401.2; X1402.2 */
+			MX6UL_PAD_CSI_DATA07__GPIO4_IO28	0x3008	/* SPI_MISO; X1401.3; X1402.3 */
+			MX6UL_PAD_CSI_DATA05__GPIO4_IO26	0x3008	/* SPI_SS0 ; X1401.1 */
+			MX6UL_PAD_LCD_DATA05__GPIO3_IO10	0x3008	/* SPI_SS1 ; X1402.1 */
+			MX6UL_PAD_LCD_DATA06__GPIO3_IO11	0x3008	/* SPI_SS2 ; X1402.9 */
+			MX6UL_PAD_LCD_DATA07__GPIO3_IO12	0x3008	/* SPI_SS3 ; X1402.10 */
+			MX6UL_PAD_CSI_DATA03__GPIO4_IO24	0x3008	/* SPI_RESET ; X1402.8 */
+			MX6UL_PAD_CSI_VSYNC__GPIO4_IO19		0x3008	/* SPI_INT ; X1402.7 */
+		>;
+	};
+
+	pinctrl_uart4: uart4grp {
+		fsl,pins = <
+			MX6UL_PAD_LCD_HSYNC__UART4_DCE_CTS	0x1b008	/* CTS_4; X1405.1  */
+			MX6UL_PAD_LCD_CLK__UART4_DCE_TX		0x1b008	/* TXD_4; X1405.2  */
+			MX6UL_PAD_LCD_ENABLE__UART4_DCE_RX	0x1b008	/* RXD_4; X1405.3  */
+			MX6UL_PAD_LCD_VSYNC__UART4_DCE_RTS	0x1b008	/* RTS_4; X1405.4  */
+			MX6UL_PAD_LCD_RESET__GPIO3_IO04		0x3008	/* GPIO3_04; X1405.7  */
+			MX6UL_PAD_LCD_DATA00__GPIO3_IO05	0x3008	/* GPIO3_05; X1405.8  */
+			MX6UL_PAD_LCD_DATA01__GPIO3_IO06	0x3008	/* GPIO3_06; X1405.9  */
+			MX6UL_PAD_UART2_RX_DATA__GPIO1_IO21	0x3008	/* GPIO1_21; X1405.10 */
+		>;
+	};
+
+	pinctrl_uart4_gpio: uart4gpiogrp {
+		fsl,pins = <
+			MX6UL_PAD_LCD_HSYNC__GPIO3_IO02		0x3008	/* CTS_4; X1405.1  */
+			MX6UL_PAD_LCD_CLK__GPIO3_IO00		0x3008	/* TXD_4; X1405.2  */
+			MX6UL_PAD_LCD_ENABLE__GPIO3_IO01	0x3008	/* RXD_4; X1405.3  */
+			MX6UL_PAD_LCD_VSYNC__GPIO3_IO03		0x3008	/* RTS_4; X1405.4  */
+			MX6UL_PAD_LCD_RESET__GPIO3_IO04		0x3008	/* GPIO3_04; X1405.7  */
+			MX6UL_PAD_LCD_DATA00__GPIO3_IO05	0x3008	/* GPIO3_05; X1405.8  */
+			MX6UL_PAD_LCD_DATA01__GPIO3_IO06	0x3008	/* GPIO3_06; X1405.9  */
+			MX6UL_PAD_UART2_RX_DATA__GPIO1_IO21	0x3008	/* GPIO1_21; X1405.10 */
+		>;
+	};
+
+	pinctrl_gpioleds_grisp2: gpioledsgrisp2grp {
+		fsl,pins = <
+			MX6UL_PAD_SNVS_TAMPER0__GPIO5_IO00	0x00088
+			MX6UL_PAD_SNVS_TAMPER1__GPIO5_IO01	0x00088
+			MX6UL_PAD_SNVS_TAMPER2__GPIO5_IO02	0x00088
+			MX6UL_PAD_SNVS_TAMPER3__GPIO5_IO03	0x00088
+			MX6UL_PAD_SNVS_TAMPER5__GPIO5_IO05	0x00088
+			MX6UL_PAD_SNVS_TAMPER9__GPIO5_IO09	0x00088
+		>;
+	};
+
+	pinctrl_gpio_pmod: gpiopmodgrp {
+		fsl,pins = <
+			MX6UL_PAD_GPIO1_IO01__GPIO1_IO01	0x3008 /* DIO1/AN1; X1404.1  */
+			MX6UL_PAD_GPIO1_IO05__GPIO1_IO05	0x3008 /* DIO2/AN2; X1404.2  */
+			MX6UL_PAD_GPIO1_IO03__GPIO1_IO03	0x3008 /* DIO3/AN3; X1404.3  */
+			MX6UL_PAD_GPIO1_IO04__GPIO1_IO04	0x3008 /* DIO4/AN4; X1404.4  */
+			MX6UL_PAD_UART2_TX_DATA__GPIO1_IO20	0x3008 /* DIO5; X1404.7  */
+			MX6UL_PAD_LCD_DATA02__GPIO3_IO07	0x3008 /* DIO6; X1404.8  */
+			MX6UL_PAD_UART2_CTS_B__GPIO1_IO22	0x3008 /* DIO7; X1404.9  */
+			MX6UL_PAD_UART2_RTS_B__GPIO1_IO23	0x3008 /* DIO8; X1404.10 */
+		>;
+	};
+
+	pinctrl_jumper: jumpergrp {
+		fsl,pins = <
+			MX6UL_PAD_LCD_DATA03__GPIO3_IO08	0x7000 /* JUMPER1 */
+			MX6UL_PAD_LCD_DATA04__GPIO3_IO09	0x7000 /* JUMPER2 */
+			MX6UL_PAD_LCD_DATA08__GPIO3_IO13	0x7000 /* JUMPER3 */
+			MX6UL_PAD_LCD_DATA09__GPIO3_IO14	0x7000 /* JUMPER4 */
+			MX6UL_PAD_LCD_DATA10__GPIO3_IO15	0x7000 /* JUMPER5 */
+		>;
+	};
+
+	pinctrl_gpio_pins: gpiopinsgrp {
+		fsl,pins = <
+			MX6UL_PAD_UART3_TX_DATA__GPIO1_IO24	0x3008 /* GPIO1_IO24; X1300.3 */
+			MX6UL_PAD_UART3_RX_DATA__GPIO1_IO25	0x3008 /* GPIO1_IO25; X1300.4 */
+			MX6UL_PAD_UART3_CTS_B__GPIO1_IO26	0x3008 /* GPIO1_IO26; X1300.5 */
+			MX6UL_PAD_UART3_RTS_B__GPIO1_IO27	0x3008 /* GPIO1_IO27; X1300.6 */
+
+			MX6UL_PAD_NAND_DQS__GPIO4_IO16		0x3008 /* GPIO4_IO16; X1301.3 */
+			MX6UL_PAD_CSI_MCLK__GPIO4_IO17		0x3008 /* GPIO4_IO17; X1301.4 */
+			MX6UL_PAD_CSI_PIXCLK__GPIO4_IO18	0x3008 /* GPIO4_IO18; X1301.5 */
+			MX6UL_PAD_CSI_HSYNC__GPIO4_IO20		0x3008 /* GPIO4_IO20; X1301.6 */
+			MX6UL_PAD_CSI_DATA00__GPIO4_IO21	0x3008 /* GPIO4_IO21; X1301.7 */
+			MX6UL_PAD_CSI_DATA01__GPIO4_IO22	0x3008 /* GPIO4_IO22; X1301.8 */
+			MX6UL_PAD_CSI_DATA02__GPIO4_IO23	0x3008 /* GPIO4_IO23; X1301.9 */
+			MX6UL_PAD_ENET2_RX_EN__GPIO2_IO10	0x3008 /* GPIO2_IO10; X1301.10 */
+			MX6UL_PAD_ENET2_TX_DATA0__GPIO2_IO11	0x3008 /* GPIO2_IO11; X1301.11 */
+			MX6UL_PAD_ENET2_TX_DATA1__GPIO2_IO12	0x3008 /* GPIO2_IO12; X1301.12 */
+			MX6UL_PAD_ENET2_TX_EN__GPIO2_IO13	0x3008 /* GPIO2_IO13; X1301.13 */
+			MX6UL_PAD_ENET2_TX_CLK__GPIO2_IO14	0x3008 /* GPIO2_IO14; X1301.14 */
+		>;
+	};
+};
+
+/*
+ * Nerves additions
+ */
+#include <dt-bindings/leds/common.h>
+
+&gpio_leds_grisp2 {
+        /* Provide LEDs with colors and functions to be consistent with Linux conventions */
+	grisp-rgb1-red {
+		function = LED_FUNCTION_INDICATOR;
+		function-enumerator = <1>;
+		color = <LED_COLOR_ID_RED>;
+	};
+	grisp-rgb1-green {
+		function = LED_FUNCTION_INDICATOR;
+		function-enumerator = <1>;
+		color = <LED_COLOR_ID_GREEN>;
+	};
+	grisp-rgb1-blue {
+		function = LED_FUNCTION_INDICATOR;
+		function-enumerator = <1>;
+		color = <LED_COLOR_ID_BLUE>;
+	};
+	grisp-rgb2-red {
+		function = LED_FUNCTION_INDICATOR;
+		function-enumerator = <2>;
+		color = <LED_COLOR_ID_RED>;
+	};
+	grisp-rgb2-green {
+		function = LED_FUNCTION_INDICATOR;
+		function-enumerator = <2>;
+		color = <LED_COLOR_ID_GREEN>;
+	};
+	grisp-rgb2-blue {
+		function = LED_FUNCTION_INDICATOR;
+		function-enumerator = <2>;
+		color = <LED_COLOR_ID_BLUE>;
+	};
+};
+
+/* Allow GPIOs to be accessible to userland */
+&jumper {
+	/delete-property/ grisp,gpios;
+};
+&pmod_gpio {
+	/delete-property/ grisp,gpios;
+};
+&pin_gpio {
+	/delete-property/ grisp,gpios;
+};
+/* Associate pinmux settings for PMOD I/O */
+&uart4 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_uart4>;
+	status = "okay";
+};
+&i2c2 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_i2c2>;
+	status = "okay";
+};
+&ecspi1 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_spi0>;
+	status = "okay";
+	/* Fake SPI devices for /dev/spidev support */
+	spidev@0 {
+		compatible = "menlo,m53cpld";
+		spi-max-frequency = <25000000>;
+		reg = <0>;
+	};
+	spidev@1 {
+		compatible = "menlo,m53cpld";
+		spi-max-frequency = <25000000>;
+		reg = <1>;
+	};
+};
+/ {
+	rmem: reserved-memory {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+
+		ramoops: ramoops@8ff00000 {
+			compatible = "ramoops";
+			/* Barebox uses 0x8fe00000 and up */
+			reg = <0x8f000000 0x100000>; /* 1 MB */
+			ecc-size = <16>;
+			record-size = <0x20000>; /* 128kB */
+			console-size = <0x20000>;
+			ftrace-size = <0>;
+			pmsg-size = <0x20000>;
+		};
+	};
+};

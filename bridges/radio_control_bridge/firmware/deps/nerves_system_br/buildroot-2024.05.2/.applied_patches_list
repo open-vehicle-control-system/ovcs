@@ -1,0 +1,14 @@
+/home/loo/Development/OVCS/ovcs/bridges/radio_control_bridge/firmware/deps/nerves_system_br/patches/buildroot/0001-erlang-clean-up-target-installation.patch
+/home/loo/Development/OVCS/ovcs/bridges/radio_control_bridge/firmware/deps/nerves_system_br/patches/buildroot/0002-mtools-Disable-iconv-use-on-target.patch
+/home/loo/Development/OVCS/ovcs/bridges/radio_control_bridge/firmware/deps/nerves_system_br/patches/buildroot/0003-NERVES_DEFCONFIG_DIR-support.patch
+/home/loo/Development/OVCS/ovcs/bridges/radio_control_bridge/firmware/deps/nerves_system_br/patches/buildroot/0004-Add-customizable-linux-logo.patch
+/home/loo/Development/OVCS/ovcs/bridges/radio_control_bridge/firmware/deps/nerves_system_br/patches/buildroot/0005-kernel-wireless-regdb-install-regdb-in-kernel.patch
+/home/loo/Development/OVCS/ovcs/bridges/radio_control_bridge/firmware/deps/nerves_system_br/patches/buildroot/0006-erlang-force-configure-options.patch
+/home/loo/Development/OVCS/ovcs/bridges/radio_control_bridge/firmware/deps/nerves_system_br/patches/buildroot/0007-erlang-support-OTP-21-27.patch
+/home/loo/Development/OVCS/ovcs/bridges/radio_control_bridge/firmware/deps/nerves_system_br/patches/buildroot/0008-erlang-don-t-install-to-target.patch
+/home/loo/Development/OVCS/ovcs/bridges/radio_control_bridge/firmware/deps/nerves_system_br/patches/buildroot/0009-rpi-firmware-support-custom-version-selection.patch
+/home/loo/Development/OVCS/ovcs/bridges/radio_control_bridge/firmware/deps/nerves_system_br/patches/buildroot/0010-Revert-package-libp11-bump-to-version-0.4.12.patch
+/home/loo/Development/OVCS/ovcs/bridges/radio_control_bridge/firmware/deps/nerves_system_br/patches/buildroot/0011-toolchain-external-refine-support-library-search-to-.patch
+/home/loo/Development/OVCS/ovcs/bridges/radio_control_bridge/firmware/deps/nerves_system_br/patches/buildroot/0012-fwup-bump-to-v1.10.1.patch
+/home/loo/Development/OVCS/ovcs/bridges/radio_control_bridge/firmware/deps/nerves_system_br/patches/buildroot/0013-uboot-support-alternative-TEE-filenames.patch
+/home/loo/Development/OVCS/ovcs/bridges/radio_control_bridge/firmware/deps/nerves_system_br/patches/buildroot/0014-Install-Linux-headers-to-staging.patch

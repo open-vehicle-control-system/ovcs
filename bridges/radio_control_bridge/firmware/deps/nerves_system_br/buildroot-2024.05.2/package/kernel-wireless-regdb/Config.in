@@ -1,0 +1,9 @@
+config BR2_PACKAGE_KERNEL_WIRELESS_REGDB
+	bool "kernel-wireless-regdb"
+	help
+	  Wireless regulatory database.
+
+	  Wireless regulatory database for the kernel. The database
+	  lists allowed radio frequencies for each local jurisdiction.
+
+	  http://linuxwireless.org/en/developers/Regulatory

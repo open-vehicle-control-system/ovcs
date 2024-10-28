@@ -1,0 +1,97 @@
+From 20dc2a6c82650cf2ce90f495e79456e188802f06 Mon Sep 17 00:00:00 2001
+From: Frank Hunleth <fhunleth@troodon-software.com>
+Date: Mon, 16 Jan 2023 17:06:35 +0000
+Subject: [PATCH] mangopi: enable leds, spi and i2c0
+
+---
+ arch/riscv/dts/sun20i-d1-mangopi-mq-pro.dts | 77 +++++++++++++++++++++
+ 1 file changed, 77 insertions(+)
+
+diff --git a/arch/riscv/dts/sun20i-d1-mangopi-mq-pro.dts b/arch/riscv/dts/sun20i-d1-mangopi-mq-pro.dts
+index a7149baf..16b24db7 100644
+--- a/arch/riscv/dts/sun20i-d1-mangopi-mq-pro.dts
++++ b/arch/riscv/dts/sun20i-d1-mangopi-mq-pro.dts
+@@ -167,3 +167,80 @@
+ 	usb0_vbus-supply = <&reg_vcc>;
+ 	status = "okay";
+ };
++
++&pwm {
++	pinctrl-0 = <&pwm2_pd18_pin>;
++	pinctrl-names = "default";
++	status = "okay";
++};
++
++&ledc {
++        pinctrl-0 = <&ledc_pc0_pin>;
++        pinctrl-names = "default";
++        status = "okay";
++
++        multi-led@0 {
++                reg = <0x0>;
++                color = <LED_COLOR_ID_RGB>;
++                function = LED_FUNCTION_STATUS;
++        };
++};
++
++&pio {
++	i2c0_pg12_pins: i2c0-pg12-pins {
++		pins = "PG12", "PG13";
++		function = "i2c0";
++	};
++
++	spi1_clock_and_data_pd_pins: spi1-clock-and-data-pd-pins {
++		pins = "PD11", "PD12", "PD13";
++		function = "spi1";
++	};
++
++	spi1_cs_pd_pins: spi1-cs-pd-pins {
++		pins = "PD10", "PD15";
++		function = "gpio_out";
++	};
++};
++
++&spi1 {
++	/* SPI-1 Notes
++	 *
++	 * 1. Using the SPI controller to set the chip select pins didn't work for either
++	 *    chip select. CS0 (PD10) would go low during the transaction, but would also
++	 *    go low 2s after the transaction (matches runtime PM timer). I couldn't get
++	 *    CS1 (PD15) to work.
++	 * 2. CS0 (PD10) and CS1 (PD15) are configured as GPIO outputs. DBI-DCX(PD14) was
++	 *    removed from pinctrl and is available for other uses now.
++	 * 3. The use of "rohm,dh2228fv" for the spidev devices is just used to get the
++	 *    usermode access.
++	 */
++	pinctrl-0 = <&spi1_clock_and_data_pd_pins>;
++	pinctrl-1 = <&spi1_cs_pd_pins>;
++	pinctrl-names = "default";
++	status = "okay";
++	num-cs = <2>;
++	cs-gpios = <&pio 3 10 GPIO_ACTIVE_HIGH>, <&pio 3 15 GPIO_ACTIVE_HIGH>; /* PD10 and PD15 */
++
++	spidev0: spidev@0 {
++		compatible = "rohm,dh2228fv";
++		reg = <0>;
++		#address-cells = <1>;
++		#size-cells = <0>;
++		spi-max-frequency = <100000000>;
++	};
++
++	spidev1: spidev@1 {
++		compatible = "rohm,dh2228fv";
++		reg = <1>;
++		#address-cells = <1>;
++		#size-cells = <0>;
++		spi-max-frequency = <100000000>;
++	};
++};
++
++&i2c0 {
++	pinctrl-0 = <&i2c0_pg12_pins>;
++	pinctrl-names = "default";
++	status = "okay";
++};
+-- 
+2.34.1
+

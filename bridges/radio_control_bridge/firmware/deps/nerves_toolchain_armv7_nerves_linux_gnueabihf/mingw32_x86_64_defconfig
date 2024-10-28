@@ -1,0 +1,2 @@
+CT_CANADIAN=y
+CT_HOST="arm-linux-gnueabihf"

@@ -1,0 +1,80 @@
+From d60282a2f18494b5cb254264413c79c9987bf537 Mon Sep 17 00:00:00 2001
+From: Frank Hunleth <fhunleth@troodon-software.com>
+Date: Wed, 4 Jan 2017 17:30:48 -0500
+Subject: [PATCH] Fix Linux headers build on OSX for x86
+
+---
+ ...ot-build-the-Linux-kernels-relocs-utility.patch | 26 +++++++++++++++++++++
+ ...t-build-the-Linux-kernel-s-relocs-utility.patch | 27 ++++++++++++++++++++++
+ 2 files changed, 53 insertions(+)
+ create mode 100644 patches/linux/3.4.110/100-Do-not-build-the-Linux-kernels-relocs-utility.patch
+ create mode 100644 patches/linux/4.4.3/100-Do-not-build-the-Linux-kernel-s-relocs-utility.patch
+
+diff --git a/patches/linux/3.4.110/100-Do-not-build-the-Linux-kernels-relocs-utility.patch b/patches/linux/3.4.110/100-Do-not-build-the-Linux-kernels-relocs-utility.patch
+new file mode 100644
+index 0000000..ac83cf3
+--- /dev/null
++++ b/patches/linux/3.4.110/100-Do-not-build-the-Linux-kernels-relocs-utility.patch
+@@ -0,0 +1,26 @@
++From ad5672200cc0e64b57c4e356d1ae0e083aacfac5 Mon Sep 17 00:00:00 2001
++From: Frank Hunleth <fhunleth@troodon-software.com>
++Date: Sat, 9 Jan 2016 23:14:45 -0500
++Subject: [PATCH] Do not build the Linux kernels relocs utility
++
++This utility isn't needed for building headers and it breaks the build on OSX.
++---
++ arch/x86/Makefile | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++diff --git a/arch/x86/Makefile b/arch/x86/Makefile
++index f1276aa..759eb68 100644
++--- a/arch/x86/Makefile
+++++ b/arch/x86/Makefile
++@@ -135,7 +135,7 @@ KBUILD_CFLAGS += $(mflags-y)
++ KBUILD_AFLAGS += $(mflags-y)
++ 
++ archscripts:
++-	$(Q)$(MAKE) $(build)=arch/x86/tools relocs
+++	#$(Q)$(MAKE) $(build)=arch/x86/tools relocs
++ 
++ ###
++ # Syscall table generation
++-- 
++2.5.4 (Apple Git-61)
++
+diff --git a/patches/linux/4.4.3/100-Do-not-build-the-Linux-kernel-s-relocs-utility.patch b/patches/linux/4.4.3/100-Do-not-build-the-Linux-kernel-s-relocs-utility.patch
+new file mode 100644
+index 0000000..6ef054f
+--- /dev/null
++++ b/patches/linux/4.4.3/100-Do-not-build-the-Linux-kernel-s-relocs-utility.patch
+@@ -0,0 +1,27 @@
++From 881330cd98ad5c239f6f5c905c16fe4cbe08a7a1 Mon Sep 17 00:00:00 2001
++From: Frank Hunleth <fhunleth@troodon-software.com>
++Date: Wed, 4 Jan 2017 17:25:36 -0500
++Subject: [PATCH] Do not build the Linux kernel's relocs utility
++
++this utility isn't needed for building headers and it breaks the build
++on OSX.
++---
++ arch/x86/Makefile | 2 +-
++ 1 file changed, 1 insertion(+), 1 deletion(-)
++
++diff --git a/arch/x86/Makefile b/arch/x86/Makefile
++index 4086abc..29de17a 100644
++--- a/arch/x86/Makefile
+++++ b/arch/x86/Makefile
++@@ -190,7 +190,7 @@ KBUILD_CFLAGS += $(mflags-y)
++ KBUILD_AFLAGS += $(mflags-y)
++ 
++ archscripts: scripts_basic
++-	$(Q)$(MAKE) $(build)=arch/x86/tools relocs
+++	#$(Q)$(MAKE) $(build)=arch/x86/tools relocs
++ 
++ ###
++ # Syscall table generation
++-- 
++2.10.1 (Apple Git-78)
++
+-- 
+2.10.1 (Apple Git-78)
+

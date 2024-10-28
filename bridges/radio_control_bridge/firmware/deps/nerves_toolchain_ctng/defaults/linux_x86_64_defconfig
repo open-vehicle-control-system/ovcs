@@ -1,0 +1,13 @@
+CT_CONFIG_VERSION="4"
+CT_TARBALLS_BUILDROOT_LAYOUT=y
+# Work around an issue with arguments taking up too much memory due to long
+# paths. See "build.sh" for the other part of this workaround.
+CT_WORK_DIR="/tmp/ctng-work"
+CT_PREFIX_DIR="../x-tools/${CT_TARGET}"
+CT_STATIC_TOOLCHAIN=y
+CT_TARGET_VENDOR="nerves"
+# CT_CC_GCC_LTO_ZSTD is not set
+CT_CC_GCC_LIBGOMP=y
+CT_CC_GCC_BUILD_ID=y
+CT_CC_LANG_CXX=y
+CT_CC_LANG_FORTRAN=y

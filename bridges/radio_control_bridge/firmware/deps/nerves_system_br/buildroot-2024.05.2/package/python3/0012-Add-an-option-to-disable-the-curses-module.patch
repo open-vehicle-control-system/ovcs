@@ -1,0 +1,61 @@
+From d843bceff915b2a50b36a9db8552e0db5bd90f6d Mon Sep 17 00:00:00 2001
+From: Thomas Petazzoni <thomas.petazzoni@free-electrons.com>
+Date: Wed, 22 Feb 2017 17:31:51 -0800
+Subject: [PATCH] Add an option to disable the curses module
+
+Signed-off-by: Thomas Petazzoni <thomas.petazzoni@free-electrons.com>
+Signed-off-by: Samuel Martin <s.martin49@gmail.com>
+[ Andrey Smirnov: ported to Python 3.6 ]
+Signed-off-by: Andrey Smirnov <andrew.smirnov@gmail.com>
+[ Adam Duskett: ported to Python 3.10.0 ]
+Signed-off-by: Adam Duskett <aduskett@gmail.com>
+---
+ Makefile.pre.in | 4 +++-
+ configure.ac    | 9 +++++++++
+ 2 files changed, 12 insertions(+), 1 deletion(-)
+
+diff --git a/Makefile.pre.in b/Makefile.pre.in
+index 6ab184fe5f8..09408c3471f 100644
+--- a/Makefile.pre.in
++++ b/Makefile.pre.in
+@@ -1918,7 +1918,6 @@ LIBSUBDIRS=	asyncio \
+ 		concurrent concurrent/futures \
+ 		csv \
+ 		ctypes ctypes/macholib \
+-		curses \
+ 		dbm \
+ 		distutils distutils/command \
+ 		email email/mime \
+@@ -2084,6 +2083,9 @@ TESTSUBDIRS += tkinter/test tkinter/test/test_tkinter \
+ 	tkinter/test/test_ttk
+ endif
+ 
++ifeq (@CURSES@,yes)
++LIBSUBDIRS += curses
++endif
+ 
+ TEST_MODULES=@TEST_MODULES@
+ libinstall:	all $(srcdir)/Modules/xxmodule.c
+diff --git a/configure.ac b/configure.ac
+index 342b295bcdd..5d52c813ba6 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -4240,6 +4240,15 @@ if test "$TK" = "no"; then
+    DISABLED_EXTENSIONS="${DISABLED_EXTENSIONS} _tkinter"
+ fi
+ 
++AC_SUBST(CURSES)
++AC_ARG_ENABLE(curses,
++	AS_HELP_STRING([--disable-curses], [disable curses]),
++	[ CURSES="${enableval}" ], [ CURSES=yes ])
++
++if test "$CURSES" = "no"; then
++   DISABLED_EXTENSIONS="${DISABLED_EXTENSIONS} _curses _curses_panel"
++fi
++
+ AC_SUBST(PYDOC)
+ 
+ AC_ARG_ENABLE(pydoc,
+-- 
+2.44.0
+

@@ -1,0 +1,100 @@
+config BR2_PACKAGE_HOST_ERLANG_ARCH_SUPPORTS
+	bool
+	default y if BR2_HOSTARCH = "aarch64"
+	default y if BR2_HOSTARCH = "x86_64"
+	default y if BR2_HOSTARCH = "x86"
+
+config BR2_PACKAGE_ERLANG_ARCH_SUPPORTS
+	bool
+	# see HOWTO/INSTALL.md for Erlang's supported platforms
+	# when using its native atomic ops implementation or gcc's
+	# __atomic_* builtins
+	default y if BR2_i386 || BR2_x86_64 || BR2_powerpc || \
+		BR2_sparc_v9 || BR2_arm || BR2_aarch64 || BR2_mipsel || \
+		BR2_RISCV_64
+	# erlang needs host-erlang
+	depends on BR2_PACKAGE_HOST_ERLANG_ARCH_SUPPORTS
+
+comment "erlang needs a glibc or musl toolchain w/ dynamic library, threads, wchar"
+	depends on BR2_USE_MMU # fork()
+	depends on BR2_PACKAGE_ERLANG_ARCH_SUPPORTS
+	depends on BR2_STATIC_LIBS || !BR2_TOOLCHAIN_HAS_THREADS \
+		|| !BR2_USE_WCHAR || BR2_TOOLCHAIN_USES_UCLIBC
+
+config BR2_PACKAGE_ERLANG
+	bool "erlang"
+	depends on BR2_USE_MMU # fork()
+	depends on BR2_USE_WCHAR
+	depends on !BR2_STATIC_LIBS
+	depends on BR2_TOOLCHAIN_HAS_THREADS
+	depends on !BR2_TOOLCHAIN_USES_UCLIBC
+	depends on BR2_PACKAGE_ERLANG_ARCH_SUPPORTS
+	select BR2_PACKAGE_ZLIB
+	help
+	  Erlang is a programming language used to build massively
+	  scalable soft real-time systems with requirements on high
+	  availability. Some of its uses are in telecoms, banking,
+	  e-commerce, computer telephony and instant messaging.
+	  Erlang's runtime system has built-in support for
+	  concurrency, distribution and fault tolerance.
+
+	  http://www.erlang.org
+
+if BR2_PACKAGE_ERLANG
+
+choice
+	bool "Erlang/OTP version"
+	default BR2_PACKAGE_ERLANG_27
+	help
+	  Select the Erlang/OTP version
+
+config BR2_PACKAGE_ERLANG_20
+	bool "Erlang/OTP 20"
+	help
+	  Use Erlang/OTP 20 (release may not include latest patches)
+
+config BR2_PACKAGE_ERLANG_21
+	bool "Erlang/OTP 21"
+	help
+	  Use Erlang/OTP 21 (release may not include latest patches)
+
+config BR2_PACKAGE_ERLANG_22
+	bool "Erlang/OTP 22"
+	help
+	  Use Erlang/OTP 22 (release may not include latest patches)
+
+config BR2_PACKAGE_ERLANG_23
+	bool "Erlang/OTP 23"
+	help
+	  Use Erlang/OTP 23 (release may not include latest patches)
+
+config BR2_PACKAGE_ERLANG_24
+	bool "Erlang/OTP 24"
+	help
+	  Use Erlang/OTP 24 (release may not include latest patches)
+
+config BR2_PACKAGE_ERLANG_25
+	bool "Erlang/OTP 25"
+	help
+	  Use Erlang/OTP 25 (release may not include latest patches)
+
+config BR2_PACKAGE_ERLANG_26
+	bool "Erlang/OTP 26"
+	help
+	  Use Erlang/OTP 26 (release may not include latest patches)
+
+config BR2_PACKAGE_ERLANG_27
+	bool "Erlang/OTP 27"
+	help
+	  Use the latest Erlang/OTP 27 release
+endchoice
+
+config BR2_PACKAGE_ERLANG_MEGACO
+	bool "install megaco application"
+	help
+	  The Megaco application is a framework for building
+	  applications on top of the Megaco/H.248 protocol. It is
+	  approximately 14MB in size so if you do not need it then
+	  it is recommended not to enable it.
+
+endif # BR2_PACKAGE_ERLANG
