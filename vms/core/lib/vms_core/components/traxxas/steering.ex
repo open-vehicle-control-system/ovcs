@@ -38,6 +38,7 @@ defmodule VmsCore.Components.Traxxas.Steering do
   def handle_info(:loop, state) do
     state = state
       |> steer()
+      |> Logger.debug
     {:noreply, state}
   end
   def handle_info(%Bus.Message{name: :requested_steering, value: requested_steering, source: source}, state) when source == state.requested_steering_source do
