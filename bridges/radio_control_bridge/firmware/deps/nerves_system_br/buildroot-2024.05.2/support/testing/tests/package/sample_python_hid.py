@@ -1,3 +1,0 @@
-import hid
-
-hid.enumerate()

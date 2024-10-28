@@ -1,6 +1,0 @@
-config BR2_PACKAGE_BOARDID
-	bool "boardid"
-	help
-	  Print out a platform-specific board serial number
-
-	  https://github.com/nerves-project/boardid

@@ -1,7 +1,0 @@
-config BR2_PACKAGE_PYTHON_TCOLORPY
-	bool "python-tcolorpy"
-	help
-	  Tcolopy is a Python library to apply true color for
-	  terminal text.
-
-	  https://github.com/thombashi/tcolorpy

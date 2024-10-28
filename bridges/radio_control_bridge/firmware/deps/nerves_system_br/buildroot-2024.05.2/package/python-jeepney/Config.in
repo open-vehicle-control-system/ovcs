@@ -1,6 +1,0 @@
-config BR2_PACKAGE_PYTHON_JEEPNEY
-	bool "python-jeepney"
-	help
-	  Low-level, pure Python DBus protocol wrapper.
-
-	  https://gitlab.com/takluyver/jeepney

@@ -1,7 +1,0 @@
-config BR2_PACKAGE_PYTHON_TRAFARET
-	bool "python-trafaret"
-	help
-	  Ultimate transformation library that supports validation,
-	  contexts and aiohttp.
-
-	  https://github.com/Deepwalker/trafaret/

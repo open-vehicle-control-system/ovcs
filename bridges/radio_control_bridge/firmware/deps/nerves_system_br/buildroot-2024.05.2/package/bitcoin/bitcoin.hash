@@ -1,7 +1,0 @@
-# Hash from: https://bitcoincore.org/bin/bitcoin-core-26.2/SHA256SUMS
-# After checking pgp signature from:
-# https://bitcoincore.org/bin/bitcoin-core-26.2/SHA256SUMS.asc
-sha256  78d59418741f45cbdaa9bf20ebc49a5e95ff9f7172f72fc78d14307eaf341b3c  bitcoin-26.2.tar.gz
-
-# Hash for license file
-sha256  a6331cd1f889397adfc0c3b0535682a20950c6cf8e5c712e9997a15ce98324e1  COPYING

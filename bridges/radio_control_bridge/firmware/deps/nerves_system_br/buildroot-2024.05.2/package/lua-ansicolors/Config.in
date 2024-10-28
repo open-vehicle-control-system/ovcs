@@ -1,6 +1,0 @@
-config BR2_PACKAGE_LUA_ANSICOLORS
-	bool "lua-ansicolors"
-	help
-	  Library for color Manipulation.
-
-	  https://github.com/kikito/ansicolors.lua
