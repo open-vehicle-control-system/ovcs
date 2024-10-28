@@ -1,6 +1,0 @@
-config BR2_PACKAGE_PYTHON_MULTIPART
-	bool "python-multipart"
-	help
-	  A streaming multipart parser for Python.
-
-	  https://github.com/andrew-d/python-multipart

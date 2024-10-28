@@ -1,6 +1,0 @@
-config BR2_PACKAGE_PYTHON_DECOUPLE
-	bool "python-decouple"
-	help
-	  Strict separation of settings from code.
-
-	  http://github.com/henriquebastos/python-decouple/

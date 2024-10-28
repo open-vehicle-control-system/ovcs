@@ -1,6 +1,0 @@
-config BR2_PACKAGE_LUA_CONCISESERIALIZATION
-	bool "lua-conciseserialization"
-	help
-	  a pure Lua implementation of CBOR / RFC8949.
-
-	  https://fperrad.frama.io/lua-ConciseSerialization/

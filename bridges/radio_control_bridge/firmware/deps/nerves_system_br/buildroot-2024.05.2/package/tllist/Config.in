@@ -1,6 +1,0 @@
-config BR2_PACKAGE_TLLIST
-	bool "tllist"
-	help
-	  A C header file only implementation of a typed linked list.
-
-	  https://codeberg.org/dnkl/tllist

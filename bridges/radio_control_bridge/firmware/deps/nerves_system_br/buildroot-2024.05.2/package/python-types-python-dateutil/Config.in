@@ -1,6 +1,0 @@
-config BR2_PACKAGE_PYTHON_TYPES_PYTHON_DATEUTIL
-	bool "python-types-python-dateutil"
-	help
-	  Typing stubs for python-dateutil.
-
-	  https://github.com/python/typeshed

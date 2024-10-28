@@ -1,6 +1,0 @@
-config BR2_PACKAGE_PYTHON_VALIDATORS
-	bool "python-validators"
-	help
-	  Python Data Validation for Humans.
-
-	  https://python-validators.github.io/validators
