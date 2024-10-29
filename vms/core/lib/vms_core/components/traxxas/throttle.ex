@@ -52,9 +52,9 @@ defmodule VmsCore.Components.Traxxas.Throttle do
     case D.eq?(state.throttle, state.requested_throttle)  do
       true -> state
       false ->
-        duty_cycle_percentage = state.requested_throttle |> D.mult(@duty_cycle_percentage_range) |> D.add(@neutral_duty_cycle_percentage)
-        exponantial_throttle_percentage = duty_cycle_percentage |> D.mult(duty_cycle_percentage) |> D.mult(duty_cycle_percentage)
-        :ok = GenericController.set_external_pwm(state.controller, state.external_pwm_id, true, exponantial_throttle_percentage, @pwm_frequency)
+        exponential_requested_throttle = state.requested_throttle |> D.abs() |> D.mult(state.requested_throttle)
+        duty_cycle_percentage          = exponential_requested_throttle |> D.mult(@duty_cycle_percentage_range) |> D.add(@neutral_duty_cycle_percentage)
+        :ok                            = GenericController.set_external_pwm(state.controller, state.external_pwm_id, true, duty_cycle_percentage, @pwm_frequency)
         %{state | throttle: state.requested_throttle}
     end
   end
