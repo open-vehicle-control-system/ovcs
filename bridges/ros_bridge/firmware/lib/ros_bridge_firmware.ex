@@ -1,6 +1,6 @@
-defmodule OvcsRosBridgeFirmware do
+defmodule ROSBridgeFirmware do
   @moduledoc """
-  Documentation for `OvcsRosBridgeFirmware`.
+  Documentation for `ROSBridgeFirmware`.
   """
 
   @doc """
@@ -8,7 +8,7 @@ defmodule OvcsRosBridgeFirmware do
 
   ## Examples
 
-      iex> OvcsRosBridgeFirmware.hello()
+      iex> ROSBridgeFirmware.hello()
       :world
 
   """

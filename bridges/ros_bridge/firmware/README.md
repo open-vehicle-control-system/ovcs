@@ -1,4 +1,4 @@
-# OvcsRosBridgeFirmware
+# ROSBridgeFirmware
 
 **TODO: Add description**
 

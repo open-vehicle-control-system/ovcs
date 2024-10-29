@@ -1,4 +1,4 @@
-defmodule OvcsRosBridgeFirmware.Application do
+defmodule ROSBridgeFirmware.Application do
   # See https://hexdocs.pm/elixir/Application.html
   # for more information on OTP Applications
   @moduledoc false
@@ -12,13 +12,13 @@ defmodule OvcsRosBridgeFirmware.Application do
     children =
       [
         # Children for all targets
-        # Starts a worker by calling: OvcsRosBridgeFirmware.Worker.start_link(arg)
-        # {OvcsRosBridgeFirmware.Worker, arg},
+        # Starts a worker by calling: ROSBridgeFirmware.Worker.start_link(arg)
+        # {ROSBridgeFirmware.Worker, arg},
       ] ++ children(Nerves.Runtime.mix_target())
 
     # See https://hexdocs.pm/elixir/Supervisor.html
     # for other strategies and supported options
-    opts = [strategy: :one_for_one, name: OvcsRosBridgeFirmware.Supervisor]
+    opts = [strategy: :one_for_one, name: ROSBridgeFirmware.Supervisor]
     Supervisor.start_link(children, opts)
   end
 
@@ -26,16 +26,16 @@ defmodule OvcsRosBridgeFirmware.Application do
   defp children(:host) do
     [
       # Children that only run on the host
-      # Starts a worker by calling: OvcsRosBridgeFirmware.Worker.start_link(arg)
-      # {OvcsRosBridgeFirmware.Worker, arg},
+      # Starts a worker by calling: ROSBridgeFirmware.Worker.start_link(arg)
+      # {ROSBridgeFirmware.Worker, arg},
     ]
   end
 
   defp children(_target) do
     [
       # Children for all targets except host
-      # Starts a worker by calling: OvcsRosBridgeFirmware.Worker.start_link(arg)
-      # {OvcsRosBridgeFirmware.Worker, arg},
+      # Starts a worker by calling: ROSBridgeFirmware.Worker.start_link(arg)
+      # {ROSBridgeFirmware.Worker, arg},
     ]
   end
 end

@@ -8,6 +8,14 @@ import Config
 # Enable the Nerves integration with Mix
 Application.start(:nerves_bootstrap)
 
+vehicle      = (System.get_env("VEHICLE") || "OVCS1")
+vehicle_path = Macro.underscore(vehicle)
+vehicle_host = "#{vehicle_path |> String.replace("_", "-")}-ros-bridge"
+
+config :ros_bridge_firmware,
+  vehicle: vehicle,
+  vehicle_host: vehicle_host
+
 config :rclex,
   ros2_message_types: [
     "std_msgs/msg/Header",
@@ -41,10 +49,10 @@ config :rclex_cam,
     #  props: %{width: 640, height: 480, fps: 30}
     #}
   ],
-  orchestrator: OvcsRosBridgeFirmware.NetworkWatcher
+  orchestrator: ROSBridgeFirmware.NetworkWatcher
 
 config :rclex_teleop,
-  orchestrator: OvcsRosBridgeFirmware.NetworkWatcher
+  orchestrator: ROSBridgeFirmware.NetworkWatcher
 
 # Customize non-Elixir parts of the firmware. See
 # https://hexdocs.pm/nerves/advanced-configuration.html for details.

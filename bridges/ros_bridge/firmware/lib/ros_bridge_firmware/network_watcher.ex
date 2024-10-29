@@ -1,4 +1,4 @@
-defmodule OvcsRosBridgeFirmware.NetworkWatcher do
+defmodule ROSBridgeFirmware.NetworkWatcher do
   use GenServer
 
   require Logger

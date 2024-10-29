@@ -1,7 +1,7 @@
-defmodule OvcsRosBridgeFirmware.MixProject do
+defmodule ROSBridgeFirmware.MixProject do
   use Mix.Project
 
-  @app :ovcs_ros_bridge_firmware
+  @app :ros_bridge_firmware
   @version "0.1.0"
   @all_targets [
     :ovcs_rosbridge_system_rpi4
@@ -24,7 +24,7 @@ defmodule OvcsRosBridgeFirmware.MixProject do
   def application do
     [
       extra_applications: [:logger, :runtime_tools],
-      mod: {OvcsRosBridgeFirmware.Application, []}
+      mod: {ROSBridgeFirmware.Application, []}
     ]
   end
 
@@ -49,8 +49,8 @@ defmodule OvcsRosBridgeFirmware.MixProject do
       # bumps to Nerves systems. Since these include Linux kernel and Erlang
       # version updates, please review their release notes in case
       # changes to your application are needed.
-      {:rclex_teleop, path: "../rclex_teleop"},
-      {:rclex_cam, path: "../rclex_cam"},
+      #{:rclex_teleop, path: "../../../libraries/rclex_teleop"},
+      #{:rclex_cam, path: "../../../libraries/rclex_cam"},
       {:rclex, github: "rclex/rclex"},
       {:observer_cli, "~> 1.7"},
       {
