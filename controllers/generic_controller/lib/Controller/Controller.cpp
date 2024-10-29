@@ -48,7 +48,7 @@ void Controller::writeOtherPins() {
 void Controller::setExternalPwm() {
   ExternalPwm externalPwmRequest = _can.parseExternalPwmRequest();
   ExternalPwm& externalPwm = _configuration._externalPwms[externalPwmRequest.pwmId()];
-  externalPwm.updateIfNeeded(externalPwmRequest);
+  externalPwm.update(externalPwmRequest);
 };
 
 PinStatus* Controller::readDigitalPins() {
@@ -62,7 +62,7 @@ PinStatus* Controller::readDigitalPins() {
 uint16_t* Controller::readAnalogPins() {
   static uint16_t analogPinsStatus [3]  = {0, 0, 0};
   for (uint8_t i=0; i<3; i++) {
-    AnalogPin analogPin = _configuration._analogPins[i];
+    AnalogPin& analogPin = _configuration._analogPins[i];
     analogPinsStatus[i] = analogPin.readIfAllowed();
   }
   return analogPinsStatus;

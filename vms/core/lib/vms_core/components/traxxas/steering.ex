@@ -7,7 +7,7 @@ defmodule VmsCore.Components.Traxxas.Steering do
   alias VmsCore.Bus
   alias VmsCore.Components.OVCS.GenericController
 
-  @loop_period 1
+  @loop_period 10
   @pwm_frequency 100
   @center_duty_cycle_percentage D.new("0.15")
   @duty_cycle_percentage_range D.new("0.05")

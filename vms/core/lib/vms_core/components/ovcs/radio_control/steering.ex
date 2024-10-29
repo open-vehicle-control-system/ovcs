@@ -7,7 +7,7 @@ defmodule VmsCore.Components.OVCS.RadioControl.Steering do
   alias Decimal, as: D
   alias VmsCore.Bus
 
-  @loop_period 1
+  @loop_period 10
   @zero D.new(0)
   @min_value 1000
   @center_value 1500

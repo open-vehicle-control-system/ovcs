@@ -21,7 +21,7 @@ class ExternalPwm {
       _frequency = frequency;
     };
     uint8_t pwmId();
-    void updateIfNeeded(ExternalPwm& externalPwm);
+    void update(ExternalPwm& externalPwm);
     bool enabled();
     uint16_t dutyCycle();
     uint16_t frequency();
