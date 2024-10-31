@@ -12,10 +12,6 @@ vehicle      = (System.get_env("VEHICLE") || "OVCS1")
 vehicle_path = Macro.underscore(vehicle)
 vehicle_host = "#{vehicle_path |> String.replace("_", "-")}-ros-bridge"
 
-config :ros_bridge_firmware,
-  vehicle: vehicle,
-  vehicle_host: vehicle_host
-
 config :rclex,
   ros2_message_types: [
     "std_msgs/msg/Header",
@@ -25,14 +21,16 @@ config :rclex,
     "geometry_msgs/msg/Twist",
   ]
 
-config :rclex_cam,
+config :ros_bridge_firmware,
+  vehicle: vehicle,
+  vehicle_host: vehicle_host,
   cameras: [
     %{
       process_name: FrontLeftCamera,
       device: 0,
       topic: "front_left_camera",
       frame_id: "camera1",
-      props: %{width: 640, height: 480, fps: 30},
+      props: %{width: 640, height: 480, fps: 5},
       info: %{
         camera_matrix: [438.783367, 0.000000, 305.593336, 0.000000, 437.302876, 243.738352, 0.000000, 0.000000, 1.000000],
         distortion_model: "plumb_bob",
@@ -49,9 +47,6 @@ config :rclex_cam,
     #  props: %{width: 640, height: 480, fps: 30}
     #}
   ],
-  orchestrator: ROSBridgeFirmware.NetworkWatcher
-
-config :rclex_teleop,
   orchestrator: ROSBridgeFirmware.NetworkWatcher
 
 # Customize non-Elixir parts of the firmware. See

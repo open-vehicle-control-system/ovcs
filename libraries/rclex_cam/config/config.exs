@@ -2,9 +2,11 @@ import Config
 
 config :rclex,
   ros2_message_types: [
+    "std_msgs/msg/Header",
     "sensor_msgs/msg/Image",
+    "sensor_msgs/msg/CompressedImage",
     "sensor_msgs/msg/CameraInfo",
-    "std_msgs/msg/Header"
+    "geometry_msgs/msg/Twist",
   ]
 
 config :rclex_cam,

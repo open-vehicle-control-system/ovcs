@@ -1,4 +1,5 @@
 defmodule RclexCam do
+
   @moduledoc """
   Documentation for `RclexCam`.
   """

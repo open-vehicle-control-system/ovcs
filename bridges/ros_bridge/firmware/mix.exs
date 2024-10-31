@@ -37,21 +37,12 @@ defmodule ROSBridgeFirmware.MixProject do
       {:ring_logger, "~> 0.11.0"},
       {:toolshed, "~> 0.4.0"},
 
-      # Allow Nerves.Runtime on host to support development, testing and CI.
-      # See config/host.exs for usage.
       {:nerves_runtime, "~> 0.13.0"},
 
       # Dependencies for all targets except :host
       {:nerves_pack, "~> 0.7.1", targets: @all_targets},
-
-      # Dependencies for specific targets
-      # NOTE: It's generally low risk and recommended to follow minor version
-      # bumps to Nerves systems. Since these include Linux kernel and Erlang
-      # version updates, please review their release notes in case
-      # changes to your application are needed.
-      #{:rclex_teleop, path: "../../../libraries/rclex_teleop"},
-      #{:rclex_cam, path: "../../../libraries/rclex_cam"},
-      {:rclex, github: "rclex/rclex"},
+      {:evision, "~> 0.2"},
+      {:rclex, "~> 0.11.2"},
       {:observer_cli, "~> 1.7"},
       {
         :ovcs_rosbridge_system_rpi4,

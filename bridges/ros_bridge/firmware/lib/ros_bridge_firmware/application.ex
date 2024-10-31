@@ -9,33 +9,38 @@ defmodule ROSBridgeFirmware.Application do
 
   @impl true
   def start(_type, _args) do
-    children =
-      [
-        # Children for all targets
-        # Starts a worker by calling: ROSBridgeFirmware.Worker.start_link(arg)
-        # {ROSBridgeFirmware.Worker, arg},
-      ] ++ children(Nerves.Runtime.mix_target())
+    cameras = Application.get_env(:ros_bridge_firmware, :cameras)
+    orchestrator = Application.get_env(:ros_bridge_firmware, :orchestrator)
+    # camera_children = Enum.map(cameras, fn camera ->
+    #   %{
+    #     id: camera.process_name,
+    #     start: {
+    #       ROSBridgeFirmware.Camera,
+    #       :start_link, [%{
+    #         process_name: camera.process_name,
+    #         device:       camera.device,
+    #         topic:        camera.topic,
+    #         frame_id:     camera.frame_id,
+    #         props:        Map.get(camera, :props, %{}),
+    #         orchestrator: orchestrator,
+    #         info:         Map.get(camera, :info, %{})
+    #       }]
+    #     },
+    #   }
+    # end)
+    # teleop_child = %{
+    #   id: ROSBridgeFirmware.Teleop,
+    #   start: {
+    #     ROSBridgeFirmware.Teleop,
+    #     :start_link, [%{
+    #       orchestrator: orchestrator
+    #     }]
+    #   }
+    # }
 
-    # See https://hexdocs.pm/elixir/Supervisor.html
-    # for other strategies and supported options
+    # children = camera_children ++ [teleop_child]
+    children = []
     opts = [strategy: :one_for_one, name: ROSBridgeFirmware.Supervisor]
     Supervisor.start_link(children, opts)
-  end
-
-  # List all child processes to be supervised
-  defp children(:host) do
-    [
-      # Children that only run on the host
-      # Starts a worker by calling: ROSBridgeFirmware.Worker.start_link(arg)
-      # {ROSBridgeFirmware.Worker, arg},
-    ]
-  end
-
-  defp children(_target) do
-    [
-      # Children for all targets except host
-      # Starts a worker by calling: ROSBridgeFirmware.Worker.start_link(arg)
-      # {ROSBridgeFirmware.Worker, arg},
-    ]
   end
 end

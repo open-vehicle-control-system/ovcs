@@ -7,7 +7,13 @@ defmodule RclexCam.MixProject do
       version: "0.1.0",
       elixir: "~> 1.17",
       start_permanent: Mix.env() == :prod,
-      deps: deps()
+      deps: deps(),
+      aliases: [
+        compile: ["rclex.gen.msgs", "compile"]
+      ]
+
+
+      # deps/rclex/scripts/prepare_ros2_resources.exs
     ]
   end
 
@@ -23,7 +29,7 @@ defmodule RclexCam.MixProject do
   defp deps do
     [
       {:evision, "~> 0.2"},
-      {:rclex, github: "rclex/rclex"},
+      {:rclex, github: "open-vehicle-control-system/rclex"},
       # {:dep_from_hexpm, "~> 0.3.0"},
       # {:dep_from_git, git: "https://github.com/elixir-lang/my_dep.git", tag: "0.1.0"}
     ]

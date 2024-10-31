@@ -31,7 +31,7 @@ config :nerves, :erlinit, update_clock: true
 # * See https://hexdocs.pm/nerves_ssh/readme.html for general SSH configuration
 # * See https://hexdocs.pm/ssh_subsystem_fwup/readme.html for firmware updates
 config :nerves_ssh,
-  authorized_keys: System.get_env("AUTHORIZED_SSH_KEYS") |> String.split(",")
+  authorized_keys: System.get_env("AUTHORIZED_SSH_KEYS", "") |> String.split(",")
 
 # Configure the network using vintage_net
 #
@@ -71,7 +71,7 @@ config :mdns_lite,
   # because otherwise any of the devices may respond to nerves.local leading to
   # unpredictable behavior.
 
-  hosts: [:hostname, Application.get_env(:ros_bridge_firmware, :vehicle_host)],
+  hosts: [:hostname, Application.get_env(:ros_bridge_firmware, :vehicle_host) |> IO.inspect(label: "HOSST--------------------")],
   ttl: 120,
 
   # Advertise the following services over mDNS.
