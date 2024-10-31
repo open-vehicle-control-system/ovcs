@@ -42,7 +42,8 @@ defmodule ROSBridgeFirmware.MixProject do
       # Dependencies for all targets except :host
       {:nerves_pack, "~> 0.7.1", targets: @all_targets},
       {:evision, "~> 0.2"},
-      {:rclex, "~> 0.11.2"},
+      # {:rclex, "~> 0.11.2"},
+      {:rclex, github: "open-vehicle-control-system/rclex"},
       {:observer_cli, "~> 1.7"},
       {
         :ovcs_rosbridge_system_rpi4,

@@ -71,7 +71,7 @@ config :mdns_lite,
   # because otherwise any of the devices may respond to nerves.local leading to
   # unpredictable behavior.
 
-  hosts: [:hostname, Application.get_env(:ros_bridge_firmware, :vehicle_host) |> IO.inspect(label: "HOSST--------------------")],
+  hosts: [:hostname, Application.get_env(:ros_bridge_firmware, :vehicle_host)],
   ttl: 120,
 
   # Advertise the following services over mDNS.

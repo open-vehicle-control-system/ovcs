@@ -7,13 +7,12 @@ BASEDIR=$(dirname $0)
 
 cd $BASEDIR/../firmware
 
-# rm -rf rootfs_overlay/opt/ros
+rm -rf rootfs_overlay/opt/ros
 mix deps.get
 echo "Prepare ROS2 resources"
-# mix rclex.prep.ros2 --arch arm64v8
-# ./deps/rclex/scripts/prepare_ros2_resources.exs
-# mkdir -p rootfs_overlay/opt/ros/$ROS_DISTRO
-# cp -r deps/rclex/.ros2/$ROS_ARCH/opt/ros/$ROS_DISTRO rootfs_overlay/opt/ros/$ROS_DISTRO
+./deps/rclex/scripts/prepare_ros2_resources.exs
+mkdir -p rootfs_overlay/opt/ros/$ROS_DISTRO
+cp -r deps/rclex/.ros2/$ROS_ARCH/opt/ros/$ROS_DISTRO/* rootfs_overlay/opt/ros/$ROS_DISTRO
 echo "Generate ROS2 messages"
 mix rclex.gen.msgs
 echo "Firmware"
