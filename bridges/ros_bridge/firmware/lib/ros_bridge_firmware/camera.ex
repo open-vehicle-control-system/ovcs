@@ -42,8 +42,8 @@ defmodule ROSBridgeFirmware.Camera do
 
   defp get_opencv_camera(device, props) do
     camera = Evision.VideoCapture.videoCapture(device, apiPreference: Evision.VideoCaptureAPIs.cv_CAP_V4L)
-    #mjpg = Evision.VideoWriter.fourcc(List.first(~c"M"), List.first(~c"J"), List.first(~c"P"), List.first(~c"G"))
-    #true = Evision.VideoCapture.set(camera, Evision.VideoCaptureProperties.cv_CAP_PROP_FOURCC, mjpg)
+    mjpg = Evision.VideoWriter.fourcc(List.first(~c"M"), List.first(~c"J"), List.first(~c"P"), List.first(~c"G"))
+    true = Evision.VideoCapture.set(camera, Evision.VideoCaptureProperties.cv_CAP_PROP_FOURCC, mjpg)
     case props do
       %{} ->
         true
