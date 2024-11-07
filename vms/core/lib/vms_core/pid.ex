@@ -31,7 +31,7 @@ defmodule VmsCore.PID do
     error          = setpoint |> D.sub(measurement)
     previous_error = cond do
       is_nil(pid.previous_error) -> error
-      pid.reset_derivative_whenset_point_changes && pid.previous_setpoint != setpoint -> error
+      pid.reset_derivative_when_setpoint_changes && pid.previous_setpoint != setpoint -> error
       true -> pid.previous_error
     end
 
