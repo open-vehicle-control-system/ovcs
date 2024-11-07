@@ -11,9 +11,19 @@ defmodule VmsCoreTest do
     assert %PID{} = PID.new()
   end
 
-  test "proportional control" do
-    pid = PID.new(kp: D.new("0.2")) |> PID.iterate(@zero, @one)
-    assert pid.output |> D.equal?(D.new("0.2"))
+  test "proportional control with measurement to zero" do
+    pid = PID.new(kp: @one) |> PID.iterate(@zero, @one)
+    assert pid.output |> D.equal?(@one)
+  end
+
+  test "proportional control with measurement halfway" do
+    pid = PID.new(kp: @one) |> PID.iterate(D.new("0.5"), @one)
+    assert pid.output |> D.equal?(D.new("0.5"))
+  end
+
+  test "proportional control with measurement at setpoint" do
+    pid = PID.new(kp: @one) |> PID.iterate(@one, @one)
+    assert pid.output |> D.equal?(D.new("0"))
   end
 
   test "initial derivative term should be zero" do
