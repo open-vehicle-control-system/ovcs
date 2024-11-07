@@ -6,6 +6,7 @@ defmodule VmsCoreTest do
 
   @zero D.new(0)
   @one D.new(1)
+  @minus_one D.new(-1)
 
   test "new/1 creates a new PID" do
     assert %PID{} = PID.new()
@@ -23,6 +24,21 @@ defmodule VmsCoreTest do
 
   test "proportional control with measurement at setpoint" do
     pid = PID.new(kp: @one) |> PID.iterate(@one, @one)
+    assert pid.output |> D.equal?(D.new("0"))
+  end
+
+  test "proportional control with measurement to zero and negative setpoint" do
+    pid = PID.new(kp: @one) |> PID.iterate(@zero, @minus_one)
+    assert pid.output |> D.equal?(@minus_one)
+  end
+
+  test "proportional control with measurement halfway and negative setpoint" do
+    pid = PID.new(kp: @one) |> PID.iterate(D.new("-0.5"), @minus_one)
+    assert pid.output |> D.equal?(D.new("-0.5"))
+  end
+
+  test "proportional control with measurement at setpoint and negative setpoint" do
+    pid = PID.new(kp: @one) |> PID.iterate(@minus_one, @minus_one)
     assert pid.output |> D.equal?(D.new("0"))
   end
 
