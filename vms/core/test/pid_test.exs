@@ -42,9 +42,31 @@ defmodule VmsCoreTest do
     assert pid.output |> D.equal?(D.new("0"))
   end
 
+  test "derivative control converges" do
+    setpoint = @one
+    pid = PID.new(kp: D.new("0.08"), kd: D.new("0.1"))
+    pid_output = Enum.reduce(0..100, D.new("0.0"), fn x, acc ->
+      Process.sleep(10)
+      pid = PID.iterate(pid, acc, setpoint)
+      pid.output |> D.add(acc)
+    end)
+    assert D.round(pid_output) |> D.equal?(@one)
+  end
+
   test "initial derivative term should be zero" do
     pid = PID.new(kd: D.new(1)) |> PID.iterate(@zero, @one)
     assert pid.output |> D.equal?(0)
+  end
+
+  test "integral control converges" do
+    setpoint = @one
+    pid = PID.new(kp: D.new("0.08"), ki: D.new("2.0"))
+    pid_output = Enum.reduce(0..100, D.new("0.0"), fn x, acc ->
+      Process.sleep(10)
+      pid = PID.iterate(pid, acc, setpoint)
+      pid.output |> D.add(acc)
+    end)
+    assert D.round(pid_output) |> D.equal?(@one)
   end
 
   test "initial integral term should be based on the minimum elapsed time" do
