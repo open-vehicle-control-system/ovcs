@@ -5,7 +5,7 @@ defmodule InfotainmentCore.ContactorsStatus do
   alias Cantastic.{ReceivedFrameWatcher, Frame, Signal}
 
   @network_name :ovcs
-  @rear_controller_status_frame_name "rear_controller_status"
+  @rear_controller_status_frame_name "rear_controller_digital_and_analog_pin_status"
 
   @impl true
   def init(_) do
@@ -41,9 +41,9 @@ defmodule InfotainmentCore.ContactorsStatus do
   @impl true
   def handle_info({:handle_frame, %Frame{name: @rear_controller_status_frame_name, signals: signals}}, state) do
     %{
-      "main_negative_contactor_enabled" => %Signal{value: main_negative_on},
-      "main_positive_contactor_enabled" => %Signal{value: main_positive_on},
-      "precharge_contactor_enabled" => %Signal{value: precharge_on},
+      "digital_pin3_enabled" => %Signal{value: main_negative_on},
+      "digital_pin4_enabled" => %Signal{value: main_positive_on},
+      "digital_pin5_enabled" => %Signal{value: precharge_on},
     } = signals
     {:noreply, %{state |
         main_negative_off: !main_negative_on,

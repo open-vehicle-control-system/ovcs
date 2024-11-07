@@ -57,7 +57,7 @@ void Configuration::computeFrameIds() {
 
 void Configuration::computeDigitalPins() {
   uint8_t pinNumber = 0;
-  for(uint8_t byteNumber = 1; byteNumber < 7; byteNumber++) {
+  for(uint8_t byteNumber = 1; byteNumber < 6; byteNumber++) {
     for (uint8_t i = 2; i < 9; i = i + 2) {
       if (pinNumber < 19) {
         uint8_t status         = (_rawConfiguration[byteNumber] >> (8 - i)) & 0b11;
@@ -85,19 +85,19 @@ void Configuration::computeDigitalPins() {
 };
 
 void Configuration::computePwmPins() {
-  _pwmPins[0] = PwmPin(_rawConfiguration[6] >> 5 & 0b1, D5);
-  _pwmPins[1] = PwmPin(_rawConfiguration[6] >> 4 & 0b1, D6);
-  _pwmPins[2] = PwmPin(_rawConfiguration[6] >> 3 & 0b1, D9);
+  _pwmPins[0] = PwmPin(_rawConfiguration[5] >> 1 & 0b1, D5);
+  _pwmPins[1] = PwmPin(_rawConfiguration[5] & 0b1, D6);
+  _pwmPins[2] = PwmPin(_rawConfiguration[6] >> 7 & 0b1, D9);
 };
 
 void Configuration::computeDacPin() {
-  _dacPin = DacPin(_rawConfiguration[6] >> 2 & 0b1, A0);
+  _dacPin = DacPin(_rawConfiguration[6] >> 6 & 0b1, A0);
 };
 
 void Configuration::computeAnalogPins() {
-  _analogPins[0] = AnalogPin(_rawConfiguration[6] >> 1 & 0b1, A1);
-  _analogPins[1] = AnalogPin(_rawConfiguration[6] & 0b1, A2);
-  _analogPins[2] = AnalogPin(_rawConfiguration[7] >> 7 & 0b1, A3);
+  _analogPins[0] = AnalogPin(_rawConfiguration[6] >> 5 & 0b1, A1);
+  _analogPins[1] = AnalogPin(_rawConfiguration[6] >> 4 & 0b1, A2);
+  _analogPins[2] = AnalogPin(_rawConfiguration[6] >> 3 & 0b1, A3);
 };
 
 void Configuration::computeExternalPwms() {

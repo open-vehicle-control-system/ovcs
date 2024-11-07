@@ -1,0 +1,5 @@
+---
+name: test_controller_external_pwm2_request
+id: 0x737
+frequency: 10
+signals: import!:../../../components/ovcs/generic_controller/0x7X5-8_external_pwm_request_signals.yml

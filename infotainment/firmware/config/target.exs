@@ -7,6 +7,11 @@ if config_env() in [:dev, :test, :prod] do
   end
 end
 
+vehicle      = (System.get_env("VEHICLE") || "OVCS1")
+vehicle_path = Macro.underscore(vehicle)
+vehicle_host = "#{vehicle_path |> String.replace("_", "-")}-infotainment"
+
+config :infotainment_core, :vehicle, vehicle
 
 # Use Ringlogger as the logger backend and remove :console.
 # See https://hexdocs.pm/ring_logger/readme.html for more information on
@@ -75,7 +80,7 @@ config :mdns_lite,
   # because otherwise any of the devices may respond to nerves.local leading to
   # unpredictable behavior.
 
-  hosts: [:hostname, "ovcs-infotainment"],
+  hosts: [:hostname, vehicle_host],
   ttl: 120,
 
   # Advertise the following services over mDNS.
@@ -114,7 +119,7 @@ config :infotainment_api,
 
 # Configures the endpoint
 config :infotainment_api, InfotainmentApiWeb.Endpoint,
-  url: [host: "localhost"],
+  url: [host: vehicle_host],
   http: [port: 4001],
   secret_key_base: System.get_env("SECRET_KEY_BASE"),
   check_origin: false,
@@ -139,13 +144,9 @@ config :logger, :console,
 # Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, Jason
 
-vehicle = System.get_env("VEHICLE") || "ovcs1"
-
-config :infotainment_core, :vehicle, vehicle
-config :infotainment_core, :test, true
 config :cantastic,
   can_network_mappings: [{"ovcs", "can0"}],
   setup_can_interfaces: true,
   otp_app: :infotainment_core,
-  priv_can_config_path: "vehicles/#{vehicle}.yml"
+  priv_can_config_path: "#{vehicle_path}.yml"
 # import_config "#{Mix.target()}.exs"

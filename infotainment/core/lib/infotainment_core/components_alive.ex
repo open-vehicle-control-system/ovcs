@@ -8,7 +8,7 @@ defmodule InfotainmentCore.ComponentsAlive do
   @bms_status_frame_name "bms_status"
   @vms_status_frame_name "vms_status"
   @front_controller_alive_frame_name "front_controller_alive"
-  @front_controller_status_frame_name "front_controller_status"
+  @front_controller_status_frame_name "front_controller_digital_and_analog_pin_status"
   @rear_controller_alive_frame_name "rear_controller_alive"
   @controls_controller_alive_frame_name "controls_controller_alive"
 
@@ -65,7 +65,7 @@ defmodule InfotainmentCore.ComponentsAlive do
   @impl true
   def handle_info({:handle_frame, %Frame{name: @front_controller_status_frame_name, signals: signals}}, state) do
     %{
-      "inverter_enabled" => %Signal{value: inverter_enabled},
+      "digital_pin3_enabled" => %Signal{value: inverter_enabled},
     } = signals
     {:noreply, %{state |
         inverter_missing: !inverter_enabled,

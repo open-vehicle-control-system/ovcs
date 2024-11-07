@@ -49,6 +49,18 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
           }]
         }
       },
+      %{
+        id: OVCS.TestController,
+        start: {
+          OVCS.GenericController,
+          :start_link, [%{
+            process_name: OVCS.TestController,
+            control_digital_pins: true,
+            control_other_pins: true,
+            enabled_external_pwms: [0,1,2,3]
+          }]
+        }
+      },
 
       # VwPolo
       {Polo9N.Dashboard, %{
@@ -131,12 +143,12 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
         "digital_pin0" => "disabled",
         "digital_pin1" => "disabled",
         "digital_pin2" => "disabled",
-        "digital_pin3" => "disabled",
-        "digital_pin4" => "disabled",
+        "digital_pin3" => "read_write",
+        "digital_pin4" => "read_write",
         "digital_pin5" => "read_write",
         "digital_pin6" => "read_write",
-        "digital_pin7" => "read_write",
-        "digital_pin8" => "read_write",
+        "digital_pin7" => "disabled",
+        "digital_pin8" => "disabled",
         "digital_pin9" => "disabled",
         "digital_pin10" => "disabled",
         "digital_pin11" => "disabled",
@@ -160,13 +172,13 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
         "digital_pin0" => "disabled",
         "digital_pin1" => "disabled",
         "digital_pin2" => "disabled",
-        "digital_pin3" => "disabled",
-        "digital_pin4" => "disabled",
+        "digital_pin3" => "read_write",
+        "digital_pin4" => "read_write",
         "digital_pin5" => "read_write",
         "digital_pin6" => "read_write",
         "digital_pin7" => "read_write",
-        "digital_pin8" => "read_write",
-        "digital_pin9" => "read_write",
+        "digital_pin8" => "disabled",
+        "digital_pin9" => "disabled",
         "digital_pin10" => "disabled",
         "digital_pin11" => "disabled",
         "digital_pin12" => "disabled",
@@ -190,7 +202,7 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
         "digital_pin1" => "disabled",
         "digital_pin2" => "disabled",
         "digital_pin3" => "read_write",
-        "digital_pin4" => "read_only",
+        "digital_pin4" => "disabled",
         "digital_pin5" => "disabled",
         "digital_pin6" => "disabled",
         "digital_pin7" => "disabled",
@@ -212,6 +224,35 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
         "analog_pin0" => "enabled",
         "analog_pin1" => "enabled",
         "analog_pin2" => "disabled"
+      },
+      OVCS.TestController => %{
+        "controller_id" => 3,
+        "digital_pin0" => "read_write",
+        "digital_pin1" => "read_write",
+        "digital_pin2" => "read_write",
+        "digital_pin3" => "read_write",
+        "digital_pin4" => "read_write",
+        "digital_pin5" => "read_write",
+        "digital_pin6" => "read_write",
+        "digital_pin7" => "read_write",
+        "digital_pin8" => "read_write",
+        "digital_pin9" => "read_write",
+        "digital_pin10" => "read_write",
+        "digital_pin11" => "read_write",
+        "digital_pin12" => "read_write",
+        "digital_pin13" => "read_write",
+        "digital_pin14" => "read_write",
+        "digital_pin15" => "read_write",
+        "digital_pin16" => "read_write",
+        "digital_pin17" => "read_write",
+        "digital_pin18" => "read_write",
+        "pwm_pin0" => "enabled",
+        "pwm_pin1" => "enabled",
+        "pwm_pin2" => "enabled",
+        "dac_pin0" => "enabled",
+        "analog_pin0" => "enabled",
+        "analog_pin1" => "enabled",
+        "analog_pin2" => "enabled"
       }
     }
   end
