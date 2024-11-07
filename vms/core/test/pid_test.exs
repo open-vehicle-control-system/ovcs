@@ -42,10 +42,21 @@ defmodule VmsCoreTest do
     assert pid.output |> D.equal?(D.new("0"))
   end
 
+  test "proporional control converges" do
+    setpoint = @one
+    pid = PID.new(kp: D.new("0.08"))
+    pid_output = Enum.reduce(0..100, D.new("0.0"), fn _x, acc ->
+      Process.sleep(10)
+      pid = PID.iterate(pid, acc, setpoint)
+      pid.output |> D.add(acc)
+    end)
+    assert D.round(pid_output) |> D.equal?(@one)
+  end
+
   test "derivative control converges" do
     setpoint = @one
-    pid = PID.new(kp: D.new("0.08"), kd: D.new("0.1"))
-    pid_output = Enum.reduce(0..100, D.new("0.0"), fn x, acc ->
+    pid = PID.new(kp: D.new("0.08"), kd: D.new("1.0"))
+    pid_output = Enum.reduce(0..100, D.new("0.0"), fn _x, acc ->
       Process.sleep(10)
       pid = PID.iterate(pid, acc, setpoint)
       pid.output |> D.add(acc)
@@ -61,7 +72,7 @@ defmodule VmsCoreTest do
   test "integral control converges" do
     setpoint = @one
     pid = PID.new(kp: D.new("0.08"), ki: D.new("2.0"))
-    pid_output = Enum.reduce(0..100, D.new("0.0"), fn x, acc ->
+    pid_output = Enum.reduce(0..100, D.new("0.0"), fn _x, acc ->
       Process.sleep(10)
       pid = PID.iterate(pid, acc, setpoint)
       pid.output |> D.add(acc)
