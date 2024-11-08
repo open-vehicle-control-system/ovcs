@@ -1,5 +1,0 @@
----
-name: controls_controller_other_pin_request
-id: 0x723
-frequency: 10
-signals: import!:../../../components/ovcs/generic_controller/0x7X3_other_pin_request_signals.yml

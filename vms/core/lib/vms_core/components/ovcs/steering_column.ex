@@ -4,10 +4,12 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
   """
   use GenServer
   alias VmsCore.Components.OVCS.GenericController
+  alias Decimal, as: D
 
   @loop_period 10
-  @min_duty_cycle 0 + 40
-  @max_duty_cycle 4095 - 40
+  @min_frequency 100
+  @frequency_range 300
+  @duty_cycle_percentage D.new("0.5")
   @direction_mapping %{clockwise: true, counter_clockwise: false}
 
   def start_link(args) do
@@ -20,7 +22,7 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
     power_relay_pin: power_relay_pin,
     actuation_controller: actuation_controller,
     direction_pin: direction_pin,
-    pwm_pin: pwm_pin})
+    external_pwm_id: external_pwm_id})
   do
     {:ok, timer} = :timer.send_interval(@loop_period, :loop)
     {:ok, %{
@@ -31,9 +33,9 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
       actuation_controller: actuation_controller,
       power_relay_pin: power_relay_pin,
       direction_pin: direction_pin,
-      pwm_pin: pwm_pin,
-      emitted_duty_cycle: @min_duty_cycle,
-      duty_cycle: @min_duty_cycle,
+      external_pwm_id: external_pwm_id,
+      emitted_frequency: @min_frequency,
+      frequency: @min_frequency,
       emitted_direction: :clockwise,
       direction: :clockwise
     }}
@@ -44,7 +46,7 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
     state = state
       |> toggle_motor()
       |> set_direction()
-      |> set_duty_cycle()
+      |> set_speed()
     {:noreply, state}
   end
 
@@ -69,26 +71,35 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
     end
   end
 
-  defp set_duty_cycle(state) do
-    case state.emitted_duty_cycle == state.duty_cycle  do
+  defp set_speed(state) do
+    frequency = state.frequency
+    case state.emitted_frequency == frequency  do
       true -> state
       false ->
-        :ok = GenericController.set_pwm_duty_cycle(state.actuation_controller, state.pwm_pin,  state.duty_cycle)
-        %{state | emitted_duty_cycle: state.duty_cycle}
+        enabled = frequency |> D.gt?(@min_frequency)
+        :ok = GenericController.set_external_pwm(state.actuation_controller, state.external_pwm_id, enabled, @duty_cycle_percentage, frequency)
+        %{state | emitted_frequency: frequency}
     end
   end
 
   @impl true
-  def handle_call({:activate, duty_cycle, direction}, _from, state) do
-    {:reply, :ok, %{state | enable: true, duty_cycle: duty_cycle, direction: direction}}
+  def handle_call({:actuate, motor_speed_percentage}, _from, state) do
+    direction = case motor_speed_percentage |> D.lt?(0) do
+      true -> :counter_clockwise
+      false -> :clockwise
+    end
+    frequency = motor_speed_percentage
+      |> D.abs()
+      |> D.mult(@frequency_range)
+      |> D.add(@min_frequency)
+    {:reply, :ok, %{state | enable: true, frequency: frequency, direction: direction}}
   end
   def handle_call(:deactivate, _from, state) do
-    {:reply, :ok, %{state | enable: false}}
+    {:reply, :ok, %{state | enable: false, frequency: @min_frequency}}
   end
 
-  def activate(duty_cycle, direction) do
-    duty_cycle = max(@min_duty_cycle, duty_cycle) |> min(@max_duty_cycle)
-    GenServer.call(__MODULE__, {:activate, duty_cycle, direction})
+  def actuate(motor_speed_percentage) do
+    GenServer.call(__MODULE__, {:actuate, motor_speed_percentage})
   end
 
   def deactivate do
