@@ -14,12 +14,14 @@
     const serieMaxSize  = 300;
 
     const angleLabel = "Angle"
+    const desiredAngleLabel = "Desired Angle"
     const angularSpeedLabel = "Angular Speed"
 
     const steering = props.steering
 
     let series = [
         {name: angleLabel},
+        {name: desiredAngleLabel},
         {name: angularSpeedLabel}
     ];
 
@@ -35,6 +37,7 @@
     function updateSeries(payload){
         steeringChart.value.pushSeriesData([
             {name: angleLabel, value: payload.lwsAngle},
+            {name: desiredAngleLabel, value: payload.desiredAngle},
             {name: angularSpeedLabel, value: payload.lwsAngularSpeed}
         ]);
     }

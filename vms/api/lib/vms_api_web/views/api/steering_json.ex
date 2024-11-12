@@ -10,7 +10,8 @@ defmodule VmsApiWeb.Api.SteeringJSON do
         lwsAngularSpeed: lws_status.angular_speed,
         lwsTrimmingValid: lws_status.trimming_valid,
         lwsCalibrationValid: lws_status.calibration_valid,
-        lwsSensorReady: lws_status.sensor_ready
+        lwsSensorReady: lws_status.sensor_ready,
+        desiredAngle: lws_status.desired_angle
       }
     }
   end
