@@ -1,6 +1,7 @@
 defmodule VmsCore.PID do
   alias Decimal, as: D
   @zero D.new(0)
+  require Logger
 
   defstruct kp: @zero,
             ki: @zero,
@@ -40,6 +41,7 @@ defmodule VmsCore.PID do
     derivative_term   = error |> D.sub(previous_error) |> D.div(elapsed_time_seconds) |> D.mult(pid.kd)
     output_raw        = proportional_term |> D.add(integral_term) |> D.add(derivative_term)
     output            = output_raw |> D.max(pid.minimum_output) |> D.min(pid.maximum_output)
+    Logger.debug("E: #{error |> Decimal.round(4)} - P: #{proportional_term |> Decimal.round(4)} - I: #{integral_term |> Decimal.round(4)} - D: #{derivative_term |> Decimal.round(4)} - O: #{output |> Decimal.round(4)}")
 
     %{pid |
       previous_error: error,
