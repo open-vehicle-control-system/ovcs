@@ -92,7 +92,6 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
         controller: OVCS.FrontController,
         power_relay_pin: 5
       }},
-      {Bosch.LWS, []},
 
       # OVCS
       {Managers.Gear, %{

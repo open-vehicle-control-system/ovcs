@@ -6,7 +6,7 @@ defmodule VmsCore.Components.OVCS.GenericController do
 
   alias Cantastic.{Emitter, Frame, Receiver}
   alias VmsCore.Application
-  @pwm_duty_cycle_range 65_536
+  @pwm_duty_cycle_range 65_535
   alias Decimal, as: D
 
   @digital_pins %{
