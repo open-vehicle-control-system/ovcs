@@ -15,7 +15,7 @@ defmodule VmsCore.Components.Nissan.LeafZE0.Inverter do
   @zero D.new(0)
   #@motor_max_torque D.new("250")
   #@motor_max_power D.new("80")
-  @max_torque 100
+  @max_torque 30
   @drive_max_torque D.new(@max_torque) # TODO store in DB
   @reverse_max_torque D.new(-@max_torque)
   @effective_throttle_threshold D.new("0.05")
@@ -28,7 +28,8 @@ defmodule VmsCore.Components.Nissan.LeafZE0.Inverter do
 
   @impl true
   def init(%{
-    requested_throttle_source: requested_throttle_source,
+    manual_requested_throttle_source: manual_requested_throttle_source,
+    automatic_requested_throttle_source: automatic_requested_throttle_source,
     selected_gear_source: selected_gear_source,
     contact_source: contact_source,
     controller: controller,
@@ -64,7 +65,9 @@ defmodule VmsCore.Components.Nissan.LeafZE0.Inverter do
       insulated_gate_bipolar_transistor_temperature: @zero,
       insulated_gate_bipolar_transistor_board_temperature: @zero,
       motor_temperature: @zero,
-      requested_throttle_source: requested_throttle_source,
+      manual_requested_throttle_source: manual_requested_throttle_source,
+      automatic_requested_throttle_source: automatic_requested_throttle_source,
+      requested_throttle_source: manual_requested_throttle_source,
       selected_gear_source: selected_gear_source,
       contact_source: contact_source,
       requested_throttle: @zero,
@@ -74,7 +77,9 @@ defmodule VmsCore.Components.Nissan.LeafZE0.Inverter do
       enabled: false,
       controller: controller,
       power_relay_pin: power_relay_pin,
-      ready_to_drive: false
+      ready_to_drive: false,
+      automatic_mode_enabled: false,
+      enable_automatic_mode: false
     }}
   end
 
@@ -82,6 +87,7 @@ defmodule VmsCore.Components.Nissan.LeafZE0.Inverter do
   def handle_info(:loop, state) do
     state = state
       |> toggle_inverter()
+      |> toggle_automatic_mode()
       |> apply_torque()
       |> check_ready_to_drive()
       |> emit_metrics()
@@ -149,6 +155,17 @@ defmodule VmsCore.Components.Nissan.LeafZE0.Inverter do
     end
   end
 
+  defp toggle_automatic_mode(state) do
+    cond do
+      state.enable_automatic_mode && !state.automatic_mode_enabled ->
+        %{state | automatic_mode_enabled: true, requested_throttle_source: state.automatic_requested_throttle_source}
+      !state.enable_automatic_mode && state.automatic_mode_enabled ->
+        %{state | automatic_mode_enabled: false, requested_throttle_source: state.manual_requested_throttle_source}
+      true ->
+        state
+    end
+  end
+
   defp apply_torque(state) do
     max_torque = case state.selected_gear do
       :drive   -> @drive_max_torque
@@ -183,6 +200,8 @@ defmodule VmsCore.Components.Nissan.LeafZE0.Inverter do
     Bus.broadcast("messages", %Bus.Message{name: :insulated_gate_bipolar_transistor_board_temperature, value: state.insulated_gate_bipolar_transistor_board_temperature, source: __MODULE__})
     Bus.broadcast("messages", %Bus.Message{name: :motor_temperature, value: state.motor_temperature, source: __MODULE__})
     Bus.broadcast("messages", %Bus.Message{name: :ready_to_drive, value: state.ready_to_drive, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :requested_throttle, value: state.requested_throttle, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :requested_throttle_source, value: state.requested_throttle_source, source: __MODULE__})
     state
   end
 
@@ -209,5 +228,21 @@ defmodule VmsCore.Components.Nissan.LeafZE0.Inverter do
 
     data = %{data | "counter" => Util.counter(counter + 1)}
     {:ok, parameters, data}
+  end
+
+  @impl true
+  def handle_call(:activate_automatic_mode, _from, state) do
+    {:reply, :ok, %{state | enable_automatic_mode: true}}
+  end
+  def handle_call(:deactivate_automatic_mode, _from, state) do
+    {:reply, :ok, %{state | enable_automatic_mode: false, requested_torque: @zero}}
+  end
+
+  def test_activate_automatic_mode do
+    GenServer.call(__MODULE__, :activate_automatic_mode)
+  end
+
+  def test_deactivate_automatic_mode do
+    GenServer.call(__MODULE__, :deactivate_automatic_mode)
   end
 end

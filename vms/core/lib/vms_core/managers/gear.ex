@@ -18,7 +18,10 @@ defmodule VmsCore.Managers.Gear do
 
   @impl true
   def init(%{
-    requested_gear_source: requested_gear_source,
+    manual_requested_gear_source: manual_requested_gear_source,
+    radio_requested_gear_source: radio_requested_gear_source,
+    selected_control_level_source: selected_control_level_source,
+    default_control_level: default_control_level,
     ready_to_drive_source: ready_to_drive_source,
     requested_throttle_source: requested_throttle_source,
     speed_source: speed_source})
@@ -34,15 +37,20 @@ defmodule VmsCore.Managers.Gear do
     {:ok, timer} = :timer.send_interval(@loop_period, :loop)
     {:ok, %{
       selected_gear: :parking,
-      requested_gear: :parking,
-      requested_throttle: @zero,
+      manual_requested_gear: :parking,
+      radio_requested_gear: :parking,
+      manual_requested_throttle: @zero,
+      radio_requested_throttle: @zero,
       speed: @zero,
       ready_to_drive: false,
       loop_timer: timer,
-      requested_gear_source: requested_gear_source,
+      selected_control_level_source: selected_control_level_source,
+      manual_requested_gear_source: manual_requested_gear_source,
+      radio_requested_gear_source: radio_requested_gear_source,
       ready_to_drive_source: ready_to_drive_source,
       speed_source: speed_source,
-      requested_throttle_source: requested_throttle_source
+      requested_throttle_source: requested_throttle_source,
+      selected_control_level: default_control_level
     }}
   end
 
@@ -55,11 +63,20 @@ defmodule VmsCore.Managers.Gear do
     {:noreply, state}
   end
 
-  def handle_info(%Bus.Message{name: :requested_gear, value: requested_gear, source: source}, state) when source == state.requested_gear_source do
-    {:noreply, %{state | requested_gear: requested_gear}}
+  def handle_info(%Bus.Message{name: :selected_control_level, value: selected_control_level, source: source}, state) when source == state.selected_control_level_source do
+    {:noreply, %{state | selected_control_level: selected_control_level}}
   end
-  def handle_info(%Bus.Message{name: :requested_throttle, value: requested_throttle, source: source}, state) when source == state.requested_throttle_source do
-    {:noreply, %{state | requested_throttle: requested_throttle}}
+  def handle_info(%Bus.Message{name: :requested_gear, value: requested_gear, source: source}, state) when source == state.manual_requested_gear_source do
+    {:noreply, %{state | manual_requested_gear: requested_gear}}
+  end
+  def handle_info(%Bus.Message{name: :requested_gear, value: requested_gear, source: source}, state) when source == state.radio_requested_gear_source do
+    {:noreply, %{state | radio_requested_gear: requested_gear}}
+  end
+  def handle_info(%Bus.Message{name: :requested_throttle, value: requested_throttle, source: source}, state) when source == state.manual_requested_throttle_source do
+    {:noreply, %{state | manual_requested_throttle: requested_throttle}}
+  end
+  def handle_info(%Bus.Message{name: :requested_throttle, value: requested_throttle, source: source}, state) when source == state.radio_requested_throttle_source do
+    {:noreply, %{state | radio_requested_throttle: requested_throttle}}
   end
   def handle_info(%Bus.Message{name: :speed, value: speed, source: source}, state) when source == state.speed_source do
     {:noreply, %{state | speed: speed}}
@@ -72,10 +89,18 @@ defmodule VmsCore.Managers.Gear do
   end
 
   defp select_gear(state) do
-    throttle_near_zero = D.lt?(state.requested_throttle, @gear_shift_throttle_limit)
+    requested_throttle = case state.selected_control_level do
+      :manual -> state.manual_requested_throttle
+      :radio -> state.radio_requested_throttle
+    end
+    throttle_near_zero = D.lt?(requested_throttle, @gear_shift_throttle_limit)
     speed_near_zero    = D.abs(state.speed) |> D.lt?(@gear_shift_speed_limit)
     throttle_and_speed_near_zero = throttle_near_zero && speed_near_zero
-    case {state.selected_gear, state.requested_gear, throttle_and_speed_near_zero, state.ready_to_drive} do
+    requested_gear = case state.selected_control_level do
+      :manual -> state.manual_requested_gear
+      :radio -> state.radio_requested_gear
+    end
+    case {state.selected_gear, requested_gear, throttle_and_speed_near_zero, state.ready_to_drive} do
       {:parking, :parking, _, _} -> state
       {:reverse, :reverse, _, _} -> state
       {:neutral, :neutral, _, _} -> state

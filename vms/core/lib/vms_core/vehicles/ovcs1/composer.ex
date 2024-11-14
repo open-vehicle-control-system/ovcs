@@ -80,7 +80,8 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
       # NissanLeaf
       {LeafZE0.Inverter, %{
         selected_gear_source: Managers.Gear,
-        requested_throttle_source: OVCS.ThrottlePedal,
+        manual_requested_throttle_source: OVCS.ThrottlePedal,
+        automatic_requested_throttle_source: OVCS.RadioControl.Throttle,
         contact_source: Polo9N.IgnitionLock,
         controller: OVCS.FrontController,
         power_relay_pin: 3
@@ -96,15 +97,29 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
 
       # OVCS
       {OVCS.RadioControl.Steering, %{
-        radio_control_channel: 4
+        radio_control_channel: 1
       }},
       {OVCS.RadioControl.Throttle, %{
-        radio_control_channel: 3
+        radio_control_channel: 2
+      }},
+      {OVCS.RadioControl.ControlLevel, %{
+        radio_control_channel: 5
+      }},
+      {OVCS.RadioControl.Gear, %{
+        radio_control_channel: 6
+      }},
+      {Managers.ControlLevel, %{
+        requested_control_level_source: OVCS.RadioControl.ControlLevel,
+        manual_driver_brake_apply_source: Bosch.IBoosterGen2,
+        default_control_level: :manual
       }},
       {Managers.Gear, %{
-        requested_gear_source: OVCS.Infotainment,
+        manual_requested_gear_source: OVCS.Infotainment,
+        radio_requested_gear_source: OVCS.RadioControl.Gear,
+        selected_control_level_source: Managers.ControlLevel,
         ready_to_drive_source: Vehicles.OVCS1,
         speed_source: Polo9N.ABS,
+        default_control_level: :manual,
         requested_throttle_source: OVCS.ThrottlePedal
       }},
       {OVCS.ThrottlePedal, %{

@@ -20,7 +20,7 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
   @rod_position_range @max_rod_position |> D.sub(@min_rod_position)
 
 
-  @kp D.new("0.08")
+  @kp D.new(250)
   @ki D.new(0)
   @kd D.new(0)
 
