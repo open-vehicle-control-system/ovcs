@@ -88,6 +88,7 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
 
       #Bosch
       {Bosch.IBoosterGen2, %{
+        requested_throttle_source: OVCS.RadioControl.Throttle,
         contact_source: Polo9N.IgnitionLock,
         controller: OVCS.FrontController,
         power_relay_pin: 5
@@ -96,6 +97,9 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
       # OVCS
       {OVCS.RadioControl.Steering, %{
         radio_control_channel: 4
+      }},
+      {OVCS.RadioControl.Throttle, %{
+        radio_control_channel: 3
       }},
       {Managers.Gear, %{
         requested_gear_source: OVCS.Infotainment,

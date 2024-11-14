@@ -3,6 +3,7 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
    Tesla Model3 IBooster Gen2
   """
   use GenServer
+  require Logger
   alias Cantastic.{Emitter, Frame, Receiver, Signal}
   alias Decimal, as: D
   alias VmsCore.{Bus, Components.OVCS.GenericController, PID}
@@ -19,9 +20,9 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
   @rod_position_range @max_rod_position |> D.sub(@min_rod_position)
 
 
-  @pid_kp D.new(2)
-  @pid_ki D.new("0.2")
-  @pid_kd D.new("0.03")
+  @kp D.new("0.08")
+  @ki D.new(0)
+  @kd D.new(0)
 
   @zero D.new(0)
   @loop_period 10
@@ -32,6 +33,7 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
 
   @impl true
   def init(%{
+    requested_throttle_source: requested_throttle_source,
     contact_source: contact_source,
     controller: controller,
     power_relay_pin: power_relay_pin})
@@ -64,18 +66,25 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
       status: "off",
       driver_brake_apply: "not_init_or_off",
       internal_state: "no_mode_active",
-      rod_position: @zero,
+      rod_position: @min_rod_position,
+      flow_rate: @zero,
       loop_timer: timer,
       enabled: false,
+      requested_throttle_source: requested_throttle_source,
+      requested_throttle: @zero,
       contact_source: contact_source,
       contact: :off,
       ready_to_drive: false,
       controller: controller,
       power_relay_pin: power_relay_pin,
       pid: nil,
-      rod_position_target: @zero,
+      rod_position_target: @min_rod_position,
       automatic_mode_enabled: false,
-      enable_automatic_mode: false
+      enable_automatic_mode: false,
+      requested_braking: @zero,
+      kp: @kp,
+      ki: @ki,
+      kd: @kd
     }}
   end
 
@@ -85,6 +94,8 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
       |> toggle_ibooster()
       |> check_ready_to_drive()
       |> toggle_automatic_mode()
+      |> set_requested_braking()
+      |> set_rod_position_target()
       |> actuate()
       |> emit_metrics()
     {:noreply, state}
@@ -109,6 +120,9 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
 
   def handle_info(%VmsCore.Bus.Message{name: :contact, value: contact, source: source}, state) when source == state.contact_source do
     {:noreply, %{state | contact: contact}}
+  end
+  def handle_info(%Bus.Message{name: :requested_throttle, value: requested_throttle, source: source}, state) when source == state.requested_throttle_source do
+    {:noreply, %{state | requested_throttle: requested_throttle}}
   end
   def handle_info(%Bus.Message{}, state) do # TODO, replace Bus ?
     {:noreply, state}
@@ -138,11 +152,12 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
 
   defp toggle_automatic_mode(state) do
     cond do
-      state.automatic_mode_enabled && state.driver_brake_apply ->
+      state.automatic_mode_enabled && state.driver_brake_apply in ["driver_applying_brake", "fault"] ->
+        Logger.warning("IBooster automatic mode deactivating because driver applied brake")
         deactivate_external_request()
         %{state | enable_automatic_mode: false, automatic_mode_enabled: false}
       state.enable_automatic_mode && !state.automatic_mode_enabled ->
-        pid = init_pid()
+        pid = init_pid(state)
         activate_external_request()
         %{state | pid: pid, automatic_mode_enabled: true}
       !state.enable_automatic_mode && state.automatic_mode_enabled ->
@@ -153,20 +168,35 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
     end
   end
 
+  defp set_requested_braking(state) when state.automatic_mode_enabled == true do
+    requested_braking = case state.requested_throttle |> D.gt?(@zero) do
+      true -> @zero
+      false -> state.requested_throttle |> D.abs()
+    end
+    %{state | requested_braking: requested_braking}
+  end
+  defp set_requested_braking(state), do: state
+
+  defp set_rod_position_target(state) when state.automatic_mode_enabled == true do
+    rod_position_target = state.requested_braking |> D.mult(@rod_position_range)
+    %{state | rod_position_target: rod_position_target}
+  end
+  defp set_rod_position_target(state), do: state
+
   defp actuate(state) when state.automatic_mode_enabled do
-    pid       = PID.iterate(state.pid, state.rod_position_target, state.rod_position)
+    pid       = PID.iterate(state.pid, state.rod_position, state.rod_position_target)
     flow_rate = @zero_point_flow_rate |> D.add(pid.output)
     set_flow_rate(flow_rate)
-    %{state | pid: pid}
+    %{state | pid: pid, flow_rate: flow_rate}
   end
   defp actuate(state), do: state
 
-  defp init_pid do
+  defp init_pid(state) do
     PID.new(
-      kp: @pid_kp,
-      ki: @pid_ki,
-      kd: @pid_kd,
-      minimum_output: -@flow_rate_range,
+      kp: state.kp,
+      ki: state.ki,
+      kd: state.kd,
+      minimum_output: D.sub(@zero, @flow_rate_range),
       maximum_output: @flow_rate_range,
       reset_derivative_when_setpoint_changes: true
     )
@@ -201,6 +231,8 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
     Bus.broadcast("messages", %Bus.Message{name: :driver_brake_apply, value: state.driver_brake_apply, source: __MODULE__})
     Bus.broadcast("messages", %Bus.Message{name: :internal_state, value: state.internal_state, source: __MODULE__})
     Bus.broadcast("messages", %Bus.Message{name: :rod_position, value: state.rod_position, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :rod_position_target, value: state.rod_position_target, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :flow_rate, value: state.flow_rate, source: __MODULE__})
     Bus.broadcast("messages", %Bus.Message{name: :ready_to_drive, value: state.ready_to_drive, source: __MODULE__})
     state
   end
@@ -259,46 +291,27 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
     rem(value, 16)
   end
 
-  @impl true
-  def handle_call({:brake_request, braking_request},  _from, state) do
-    {:reply, :ok, %{state |
-      enable_automatic_mode: true,
-      rod_position_target: braking_request |> D.mult(@rod_position_range)
-    }}
-  end
 
   @impl true
-  def handle_call(:deactivate_brake_request,  _from, state) do
-    {:reply, :ok, %{state |
-      enable_automatic_mode: false,
-      rod_position_target: @min_rod_position
-    }}
+  def handle_call({:set_pid_parameters, %{kp: kp, ki: ki, kd: kd}}, _from, state) do
+    {:reply, :ok, %{state | kp: kp, ki: ki, kd: kd}}
+  end
+  def handle_call(:activate_automatic_mode, _from, state) do
+    {:reply, :ok, %{state | enable_automatic_mode: true}}
+  end
+  def handle_call(:deactivate_automatic_mode, _from, state) do
+    {:reply, :ok, %{state | enable_automatic_mode: false, requested_braking: @zero}}
   end
 
-  def brake_request(braking_request) do
-    GenServer.call(__MODULE__, {:brake_request, braking_request})
+  def test_activate_automatic_mode do
+    GenServer.call(__MODULE__, :activate_automatic_mode)
   end
 
-  def deactivate_brake_request do
-    GenServer.call(__MODULE__, :deactivate_brake_request)
+  def test_deactivate_automatic_mode do
+    GenServer.call(__MODULE__, :deactivate_automatic_mode)
   end
 
-  def test_activate_external_request do
-    set_external_request("brake_request", true)
-    set_external_request("vehicle_status", true)
-    set_flow_rate(@zero_point_flow_rate)
-  end
-
-  def test_deactivate_external_request do
-    set_external_request("brake_request", false)
-    set_external_request("vehicle_status", false)
-    set_flow_rate(@zero_point_flow_rate)
-  end
-
-  def test_set_flow_rate(percent) do
-    value = percent |> D.mult(@flow_rate_range) |> D.add(@zero_point_flow_rate)
-    :ok = Emitter.update(:misc, "brake_request", fn (data) ->
-      %{data | "flow_rate" => value}
-    end)
+  def test_set_pid_parameters(%{kp: kp, ki: ki, kd: kd}) do
+    GenServer.call(__MODULE__, {:set_pid_parameters, %{kp: kp, ki: ki, kd: kd}})
   end
 end
