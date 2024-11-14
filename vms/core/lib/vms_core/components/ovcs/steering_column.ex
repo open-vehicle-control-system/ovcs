@@ -15,11 +15,12 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
   @duty_cycle_percentage D.new("0.5")
   @direction_mapping %{clockwise: true, counter_clockwise: false}
 
-  @kp D.new("0.04")
-  @ki D.new("0.01")
-  @kd D.new("0")
-  @minimum_steering_angle D.new("-400")
-  @maximum_steering_angle D.new("400")
+  @kp Decimal.new("0.08")
+  @ki D.new(0) #Decimal.new("0.04")
+  @kd D.new(0) #Decimal.new("0.005")
+  @steering_angle_range D.new(400)
+  @minimum_steering_angle D.new(-420)
+  @maximum_steering_angle D.new(420)
 
   def start_link(args) do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
@@ -27,6 +28,7 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
 
   @impl true
   def init(%{
+    requested_steering_source: requested_steering_source,
     power_relay_controller: power_relay_controller,
     power_relay_pin: power_relay_pin,
     actuation_controller: actuation_controller,
@@ -40,6 +42,7 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
       }
     })
     :ok = Receiver.subscribe(self(), :misc, ["lws_status"])
+    Bus.subscribe("messages")
     {:ok, timer} = :timer.send_interval(@loop_period, :loop)
     {:ok, %{
       loop_timer: timer,
@@ -50,6 +53,8 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
       sensor_ready: false,
       power_relay_controller: power_relay_controller,
       actuation_controller: actuation_controller,
+      requested_steering_source: requested_steering_source,
+      requested_steering: @zero,
       power_relay_pin: power_relay_pin,
       direction_pin: direction_pin,
       external_pwm_id: external_pwm_id,
@@ -60,16 +65,20 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
       enable_automatic_mode: false,
       desired_angle: @zero,
       target_motor_speed_percentage: @zero,
-      kp: @zero,
-      kd: @zero,
-      ki: @zero
+      kp: @kp,
+      ki: @ki,
+      kd: @kd
     }}
-  end
+end
 
   @impl true
   def handle_info(:loop, state) do
     state = state
       |> toggle_automatic_mode()
+      |> safety_deactivation()
+      |> set_desired_angle()
+      |> set_motor_speed_percentage()
+      |> set_motor_direction()
       |> actuate()
       |> emit_metrics()
     {:noreply, state}
@@ -94,6 +103,13 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
     }
   end
 
+  def handle_info(%Bus.Message{name: :requested_steering, value: requested_steering, source: source}, state) when source == state.requested_steering_source do
+    {:noreply, %{state | requested_steering: requested_steering}}
+  end
+  def handle_info(%Bus.Message{}, state) do # TODO, replace Bus ?
+    {:noreply, state}
+  end
+
   defp toggle_automatic_mode(state) do
     cond do
       state.enable_automatic_mode && !state.automatic_mode_enabled ->
@@ -108,44 +124,58 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
     end
   end
 
-  defp actuate(state) do
-    case state.automatic_mode_enabled do
-      true ->
-        if state.angle |> D.lt?(@maximum_steering_angle) && state.angle |> D.gt?(@minimum_steering_angle) do
-          pid = PID.iterate(state.pid, state.angle, state.desired_angle)
-          target_motor_speed_percentage = pid.output
-          state = %{state | pid: pid, target_motor_speed_percentage: target_motor_speed_percentage}
-
-          direction = case target_motor_speed_percentage |> D.lt?(0) do
-            true -> :counter_clockwise
-            false -> :clockwise
-          end
-          state = case state.emitted_direction == direction  do
-            true -> state
-            false ->
-              :ok = GenericController.set_digital_value(state.actuation_controller, state.direction_pin,  @direction_mapping[direction])
-              %{state | emitted_direction: direction}
-          end
-
-          frequency = target_motor_speed_percentage
-            |> D.abs()
-            |> D.mult(@frequency_range)
-
-          state = case state.emitted_frequency == frequency  do
-            true -> state
-            false ->
-              enabled = frequency |> D.gt?(0)
-              :ok = GenericController.set_external_pwm(state.actuation_controller, state.external_pwm_id, enabled, @duty_cycle_percentage, frequency)
-              %{state | emitted_frequency: frequency}
-          end
-          state
-        else
-          Logger.error("ALERT DEACTVATION")
-          %{state | enable_automatic_mode: false}
-        end
-      false -> state
+  defp safety_deactivation(state) when state.automatic_mode_enabled == true do
+    if state.angle |> D.lt?(@maximum_steering_angle) && state.angle |> D.gt?(@minimum_steering_angle) do
+      state
+    else
+      Logger.error("ALERT DEACTVATION")
+      %{state | enable_automatic_mode: false}
     end
   end
+  defp safety_deactivation(state), do: state
+
+  defp set_desired_angle(state) when state.automatic_mode_enabled == true do
+    desired_angle = state.requested_steering |> D.mult(@steering_angle_range)
+    %{state | desired_angle: desired_angle}
+  end
+  defp set_desired_angle(state), do: state
+
+  defp set_motor_speed_percentage(state) when state.automatic_mode_enabled == true do
+    pid = PID.iterate(state.pid, state.angle, state.desired_angle)
+    target_motor_speed_percentage = pid.output
+    %{state | pid: pid, target_motor_speed_percentage: target_motor_speed_percentage}
+  end
+  defp set_motor_speed_percentage(state), do: state
+
+  defp set_motor_direction(state) when state.automatic_mode_enabled == true do
+    direction = case state.target_motor_speed_percentage |> D.lt?(0) do
+      true -> :counter_clockwise
+      false -> :clockwise
+    end
+
+    case state.emitted_direction == direction  do
+      true -> state
+      false ->
+        :ok = GenericController.set_digital_value(state.actuation_controller, state.direction_pin,  @direction_mapping[direction])
+        %{state | emitted_direction: direction}
+    end
+  end
+  defp set_motor_direction(state), do: state
+
+  defp actuate(state) when state.automatic_mode_enabled == true do
+    frequency = state.target_motor_speed_percentage
+      |> D.abs()
+      |> D.mult(@frequency_range)
+
+    case state.emitted_frequency == frequency  do
+      true -> state
+      false ->
+        enabled = frequency |> D.gt?(0)
+        :ok = GenericController.set_external_pwm(state.actuation_controller, state.external_pwm_id, enabled, @duty_cycle_percentage, frequency)
+        %{state | emitted_frequency: frequency}
+    end
+  end
+  defp actuate(state), do: state
 
   defp init_pid(state) do
     PID.new(
@@ -157,20 +187,14 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
   end
 
   @impl true
-  def handle_call({:test_set_angle, %{angle: angle, kp: kp, kd: kd, ki: ki}}, _from, state) do
-    {:reply, :ok, %{state | enable_automatic_mode: true, desired_angle: angle, kp: kp, kd: kd, ki: ki}}
+  def handle_call({:set_pid_parameters, %{kp: kp, ki: ki, kd: kd}}, _from, state) do
+    {:reply, :ok, %{state | kp: kp, ki: ki, kd: kd}}
   end
-  def handle_call(:deactivate, _from, state) do
+  def handle_call(:activate_automatic_mode, _from, state) do
+    {:reply, :ok, %{state | enable_automatic_mode: true}}
+  end
+  def handle_call(:deactivate_automatic_mode, _from, state) do
     {:reply, :ok, %{state | enable_automatic_mode: false, target_motor_speed_percentage: @zero}}
-  end
-
-  def test_set_angle(%{angle: _angle, kp: _kp, kd: _kd, ki: _ki} = params) do
-    #TODO set min/max
-    GenServer.call(__MODULE__, {:test_set_angle, params})
-  end
-
-  def deactivate do
-    GenServer.call(__MODULE__, :deactivate)
   end
 
   defp emit_metrics(state) do
@@ -206,5 +230,17 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
     :ok = Emitter.enable(:misc, "lws_config")
     :timer.sleep(500)
     :ok = Emitter.disable(:misc, "lws_config")
+  end
+
+  def test_activate_automatic_mode do
+    GenServer.call(__MODULE__, :activate_automatic_mode)
+  end
+
+  def test_deactivate_automatic_mode do
+    GenServer.call(__MODULE__, :deactivate_automatic_mode)
+  end
+
+  def test_set_pid_parameters(%{kp: kp, ki: ki, kd: kd}) do
+    GenServer.call(__MODULE__, {:set_pid_parameters, %{kp: kp, ki: ki, kd: kd}})
   end
 end

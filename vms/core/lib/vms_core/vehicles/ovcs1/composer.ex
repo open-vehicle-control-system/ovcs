@@ -94,6 +94,9 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
       }},
 
       # OVCS
+      {OVCS.RadioControl.Steering, %{
+        radio_control_channel: 4
+      }},
       {Managers.Gear, %{
         requested_gear_source: OVCS.Infotainment,
         ready_to_drive_source: Vehicles.OVCS1,
@@ -120,6 +123,7 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
         precharge_relay_pin: 5
       }},
       {OVCS.SteeringColumn, %{
+        requested_steering_source: OVCS.RadioControl.Steering,
         power_relay_controller: OVCS.FrontController,
         power_relay_pin: 6,
         actuation_controller: OVCS.ControlsController,
