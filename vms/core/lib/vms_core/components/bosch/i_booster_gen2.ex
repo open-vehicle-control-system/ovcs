@@ -33,7 +33,7 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
 
   @impl true
   def init(%{
-    requested_throttle_source: requested_throttle_source,
+    selected_control_level_source: selected_control_level_source,
     contact_source: contact_source,
     controller: controller,
     power_relay_pin: power_relay_pin})
@@ -70,7 +70,9 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
       flow_rate: @zero,
       loop_timer: timer,
       enabled: false,
-      requested_throttle_source: requested_throttle_source,
+      selected_control_level_source: selected_control_level_source,
+      selected_control_level: nil,
+      requested_throttle_source: nil,
       requested_throttle: @zero,
       contact_source: contact_source,
       contact: :off,
@@ -80,7 +82,6 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
       pid: nil,
       rod_position_target: @min_rod_position,
       automatic_mode_enabled: false,
-      enable_automatic_mode: false,
       requested_braking: @zero,
       kp: @kp,
       ki: @ki,
@@ -118,6 +119,15 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
     }
   end
 
+  def handle_info(%Bus.Message{name: :selected_control_level, value: selected_control_level, source: source}, state) when source == state.selected_control_level_source do
+    {:noreply, %{state | selected_control_level: selected_control_level}}
+  end
+  def handle_info(%Bus.Message{name: :requested_throttle_source, value: requested_throttle_source, source: source}, state) when source == state.selected_control_level_source do
+    {:noreply, %{state | requested_throttle_source: requested_throttle_source}}
+  end
+  def handle_info(%Bus.Message{name: :requested_throttle, value: requested_throttle, source: source}, state) when source == state.requested_throttle_source do
+    {:noreply, %{state | requested_throttle: requested_throttle}}
+  end
   def handle_info(%VmsCore.Bus.Message{name: :contact, value: contact, source: source}, state) when source == state.contact_source do
     {:noreply, %{state | contact: contact}}
   end
@@ -151,16 +161,13 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
   end
 
   defp toggle_automatic_mode(state) do
+    enable_automatic_mode = state.selected_control_level == :radio
     cond do
-      state.automatic_mode_enabled && state.driver_brake_apply in ["driver_applying_brake", "fault"] ->
-        Logger.warning("IBooster automatic mode deactivating because driver applied brake")
-        deactivate_external_request()
-        %{state | enable_automatic_mode: false, automatic_mode_enabled: false}
-      state.enable_automatic_mode && !state.automatic_mode_enabled ->
+      enable_automatic_mode && !state.automatic_mode_enabled ->
         pid = init_pid(state)
         activate_external_request()
         %{state | pid: pid, automatic_mode_enabled: true}
-      !state.enable_automatic_mode && state.automatic_mode_enabled ->
+      !enable_automatic_mode && state.automatic_mode_enabled ->
         deactivate_external_request()
         %{state | automatic_mode_enabled: false}
       true ->
@@ -291,24 +298,9 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
     rem(value, 16)
   end
 
-
   @impl true
   def handle_call({:set_pid_parameters, %{kp: kp, ki: ki, kd: kd}}, _from, state) do
     {:reply, :ok, %{state | kp: kp, ki: ki, kd: kd}}
-  end
-  def handle_call(:activate_automatic_mode, _from, state) do
-    {:reply, :ok, %{state | enable_automatic_mode: true}}
-  end
-  def handle_call(:deactivate_automatic_mode, _from, state) do
-    {:reply, :ok, %{state | enable_automatic_mode: false, requested_braking: @zero}}
-  end
-
-  def test_activate_automatic_mode do
-    GenServer.call(__MODULE__, :activate_automatic_mode)
-  end
-
-  def test_deactivate_automatic_mode do
-    GenServer.call(__MODULE__, :deactivate_automatic_mode)
   end
 
   def test_set_pid_parameters(%{kp: kp, ki: ki, kd: kd}) do

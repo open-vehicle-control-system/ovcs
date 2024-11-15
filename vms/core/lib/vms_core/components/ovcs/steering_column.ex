@@ -19,8 +19,6 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
   @ki D.new(0) #Decimal.new("0.04")
   @kd D.new(0) #Decimal.new("0.005")
   @steering_angle_range D.new(400)
-  @minimum_steering_angle D.new(-420)
-  @maximum_steering_angle D.new(420)
 
   def start_link(args) do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
@@ -28,7 +26,7 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
 
   @impl true
   def init(%{
-    requested_steering_source: requested_steering_source,
+    selected_control_level_source: selected_control_level_source,
     power_relay_controller: power_relay_controller,
     power_relay_pin: power_relay_pin,
     actuation_controller: actuation_controller,
@@ -53,7 +51,7 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
       sensor_ready: false,
       power_relay_controller: power_relay_controller,
       actuation_controller: actuation_controller,
-      requested_steering_source: requested_steering_source,
+      requested_steering_source: nil,
       requested_steering: @zero,
       power_relay_pin: power_relay_pin,
       direction_pin: direction_pin,
@@ -62,9 +60,10 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
       emitted_direction: nil,
       pid: nil,
       automatic_mode_enabled: false,
-      enable_automatic_mode: false,
       desired_angle: @zero,
       target_motor_speed_percentage: @zero,
+      selected_control_level_source: selected_control_level_source,
+      selected_control_level: nil,
       kp: @kp,
       ki: @ki,
       kd: @kd
@@ -75,7 +74,6 @@ end
   def handle_info(:loop, state) do
     state = state
       |> toggle_automatic_mode()
-      |> safety_deactivation()
       |> set_desired_angle()
       |> set_motor_speed_percentage()
       |> set_motor_direction()
@@ -103,6 +101,12 @@ end
     }
   end
 
+  def handle_info(%Bus.Message{name: :selected_control_level, value: selected_control_level, source: source}, state) when source == state.selected_control_level_source do
+    {:noreply, %{state | selected_control_level: selected_control_level}}
+  end
+  def handle_info(%Bus.Message{name: :requested_steering_source, value: requested_steering_source, source: source}, state) when source == state.selected_control_level_source do
+    {:noreply, %{state | requested_steering_source: requested_steering_source}}
+  end
   def handle_info(%Bus.Message{name: :requested_steering, value: requested_steering, source: source}, state) when source == state.requested_steering_source do
     {:noreply, %{state | requested_steering: requested_steering}}
   end
@@ -111,28 +115,19 @@ end
   end
 
   defp toggle_automatic_mode(state) do
+    enable_automatic_mode = state.selected_control_level == :radio
     cond do
-      state.enable_automatic_mode && !state.automatic_mode_enabled ->
+      enable_automatic_mode && !state.automatic_mode_enabled ->
         pid = init_pid(state)
         :ok = GenericController.set_digital_value(state.power_relay_controller, state.power_relay_pin, true)
         %{state | pid: pid, automatic_mode_enabled: true}
-      !state.enable_automatic_mode && state.automatic_mode_enabled ->
+      !enable_automatic_mode && state.automatic_mode_enabled ->
         :ok = GenericController.set_digital_value(state.power_relay_controller, state.power_relay_pin, false)
         %{state | automatic_mode_enabled: false}
       true ->
         state
     end
   end
-
-  defp safety_deactivation(state) when state.automatic_mode_enabled == true do
-    if state.angle |> D.lt?(@maximum_steering_angle) && state.angle |> D.gt?(@minimum_steering_angle) do
-      state
-    else
-      Logger.error("ALERT DEACTVATION")
-      %{state | enable_automatic_mode: false}
-    end
-  end
-  defp safety_deactivation(state), do: state
 
   defp set_desired_angle(state) when state.automatic_mode_enabled == true do
     desired_angle = state.requested_steering |> D.mult(@steering_angle_range)
@@ -190,12 +185,6 @@ end
   def handle_call({:set_pid_parameters, %{kp: kp, ki: ki, kd: kd}}, _from, state) do
     {:reply, :ok, %{state | kp: kp, ki: ki, kd: kd}}
   end
-  def handle_call(:activate_automatic_mode, _from, state) do
-    {:reply, :ok, %{state | enable_automatic_mode: true}}
-  end
-  def handle_call(:deactivate_automatic_mode, _from, state) do
-    {:reply, :ok, %{state | enable_automatic_mode: false, target_motor_speed_percentage: @zero}}
-  end
 
   defp emit_metrics(state) do
     Bus.broadcast("messages", %Bus.Message{name: :angle, value: state.angle, source: __MODULE__})
@@ -230,14 +219,6 @@ end
     :ok = Emitter.enable(:misc, "lws_config")
     :timer.sleep(500)
     :ok = Emitter.disable(:misc, "lws_config")
-  end
-
-  def test_activate_automatic_mode do
-    GenServer.call(__MODULE__, :activate_automatic_mode)
-  end
-
-  def test_deactivate_automatic_mode do
-    GenServer.call(__MODULE__, :deactivate_automatic_mode)
   end
 
   def test_set_pid_parameters(%{kp: kp, ki: ki, kd: kd}) do

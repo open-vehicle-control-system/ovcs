@@ -1,5 +1,4 @@
-#channel 5 - deactivated E8 03 - activated D0 07
-defmodule VmsCore.Components.OVCS.RadioControl.ControlLevel do
+defmodule VmsCore.Components.OVCS.RadioControl.RequestedControlLevel do
   @moduledoc """
     Control control level based on radio control's input
   """

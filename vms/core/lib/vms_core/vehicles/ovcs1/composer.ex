@@ -79,9 +79,8 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
 
       # NissanLeaf
       {LeafZE0.Inverter, %{
+        selected_control_level_source: Managers.ControlLevel,
         selected_gear_source: Managers.Gear,
-        manual_requested_throttle_source: OVCS.ThrottlePedal,
-        automatic_requested_throttle_source: OVCS.RadioControl.Throttle,
         contact_source: Polo9N.IgnitionLock,
         controller: OVCS.FrontController,
         power_relay_pin: 3
@@ -89,7 +88,7 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
 
       #Bosch
       {Bosch.IBoosterGen2, %{
-        requested_throttle_source: OVCS.RadioControl.Throttle,
+        selected_control_level_source: Managers.ControlLevel,
         contact_source: Polo9N.IgnitionLock,
         controller: OVCS.FrontController,
         power_relay_pin: 5
@@ -102,25 +101,33 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
       {OVCS.RadioControl.Throttle, %{
         radio_control_channel: 2
       }},
-      {OVCS.RadioControl.ControlLevel, %{
+      {OVCS.RadioControl.RequestedControlLevel, %{
         radio_control_channel: 5
       }},
       {OVCS.RadioControl.Gear, %{
         radio_control_channel: 6
       }},
       {Managers.ControlLevel, %{
-        requested_control_level_source: OVCS.RadioControl.ControlLevel,
+        requested_control_level_source: OVCS.RadioControl.RequestedControlLevel,
+        requested_gear_sources: %{
+          manual: OVCS.Infotainment,
+          radio: OVCS.RadioControl.Gear
+        },
+        requested_throttle_sources: %{
+          manual: OVCS.ThrottlePedal,
+          radio: OVCS.RadioControl.Throttle
+        },
+        requested_steering_sources: %{
+          manual: nil,
+          radio: OVCS.RadioControl.Steering
+        },
         manual_driver_brake_apply_source: Bosch.IBoosterGen2,
         default_control_level: :manual
       }},
       {Managers.Gear, %{
-        manual_requested_gear_source: OVCS.Infotainment,
-        radio_requested_gear_source: OVCS.RadioControl.Gear,
         selected_control_level_source: Managers.ControlLevel,
         ready_to_drive_source: Vehicles.OVCS1,
         speed_source: Polo9N.ABS,
-        default_control_level: :manual,
-        requested_throttle_source: OVCS.ThrottlePedal
       }},
       {OVCS.ThrottlePedal, %{
         controller: OVCS.ControlsController,
@@ -142,7 +149,7 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
         precharge_relay_pin: 5
       }},
       {OVCS.SteeringColumn, %{
-        requested_steering_source: OVCS.RadioControl.Steering,
+        selected_control_level_source: Managers.ControlLevel,
         power_relay_controller: OVCS.FrontController,
         power_relay_pin: 6,
         actuation_controller: OVCS.ControlsController,

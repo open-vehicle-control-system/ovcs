@@ -28,8 +28,7 @@ defmodule VmsCore.Components.Nissan.LeafZE0.Inverter do
 
   @impl true
   def init(%{
-    manual_requested_throttle_source: manual_requested_throttle_source,
-    automatic_requested_throttle_source: automatic_requested_throttle_source,
+    selected_control_level_source: selected_control_level_source,
     selected_gear_source: selected_gear_source,
     contact_source: contact_source,
     controller: controller,
@@ -65,9 +64,8 @@ defmodule VmsCore.Components.Nissan.LeafZE0.Inverter do
       insulated_gate_bipolar_transistor_temperature: @zero,
       insulated_gate_bipolar_transistor_board_temperature: @zero,
       motor_temperature: @zero,
-      manual_requested_throttle_source: manual_requested_throttle_source,
-      automatic_requested_throttle_source: automatic_requested_throttle_source,
-      requested_throttle_source: manual_requested_throttle_source,
+      selected_control_level_source: selected_control_level_source,
+      requested_throttle_source: nil,
       selected_gear_source: selected_gear_source,
       contact_source: contact_source,
       requested_throttle: @zero,
@@ -77,9 +75,7 @@ defmodule VmsCore.Components.Nissan.LeafZE0.Inverter do
       enabled: false,
       controller: controller,
       power_relay_pin: power_relay_pin,
-      ready_to_drive: false,
-      automatic_mode_enabled: false,
-      enable_automatic_mode: false
+      ready_to_drive: false
     }}
   end
 
@@ -87,7 +83,6 @@ defmodule VmsCore.Components.Nissan.LeafZE0.Inverter do
   def handle_info(:loop, state) do
     state = state
       |> toggle_inverter()
-      |> toggle_automatic_mode()
       |> apply_torque()
       |> check_ready_to_drive()
       |> emit_metrics()
@@ -95,6 +90,9 @@ defmodule VmsCore.Components.Nissan.LeafZE0.Inverter do
     {:noreply, state}
   end
 
+  def handle_info(%Bus.Message{name: :requested_throttle_source, value: requested_throttle_source, source: source}, state) when source == state.selected_control_level_source do
+    {:noreply, %{state | requested_throttle_source: requested_throttle_source}}
+  end
   def handle_info(%Bus.Message{name: :requested_throttle, value: requested_throttle, source: source}, state) when source == state.requested_throttle_source do
     {:noreply, %{state | requested_throttle: requested_throttle}}
   end
@@ -152,17 +150,6 @@ defmodule VmsCore.Components.Nissan.LeafZE0.Inverter do
         :ok = GenericController.set_digital_value(state.controller, state.power_relay_pin, false)
         %{state | enabled: false}
       _ -> state
-    end
-  end
-
-  defp toggle_automatic_mode(state) do
-    cond do
-      state.enable_automatic_mode && !state.automatic_mode_enabled ->
-        %{state | automatic_mode_enabled: true, requested_throttle_source: state.automatic_requested_throttle_source}
-      !state.enable_automatic_mode && state.automatic_mode_enabled ->
-        %{state | automatic_mode_enabled: false, requested_throttle_source: state.manual_requested_throttle_source}
-      true ->
-        state
     end
   end
 
@@ -228,21 +215,5 @@ defmodule VmsCore.Components.Nissan.LeafZE0.Inverter do
 
     data = %{data | "counter" => Util.counter(counter + 1)}
     {:ok, parameters, data}
-  end
-
-  @impl true
-  def handle_call(:activate_automatic_mode, _from, state) do
-    {:reply, :ok, %{state | enable_automatic_mode: true}}
-  end
-  def handle_call(:deactivate_automatic_mode, _from, state) do
-    {:reply, :ok, %{state | enable_automatic_mode: false, requested_torque: @zero}}
-  end
-
-  def test_activate_automatic_mode do
-    GenServer.call(__MODULE__, :activate_automatic_mode)
-  end
-
-  def test_deactivate_automatic_mode do
-    GenServer.call(__MODULE__, :deactivate_automatic_mode)
   end
 end
