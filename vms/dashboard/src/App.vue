@@ -38,16 +38,23 @@
   import { ref } from 'vue'
   import {
     HomeIcon,
-    GlobeAltIcon,
-    AdjustmentsVerticalIcon,
+    ExclamationCircleIcon,
+    ArrowPathIcon,
+    WifiIcon,
+    Battery50Icon,
+    ChevronUpDownIcon,
   } from '@heroicons/vue/24/outline'
+import { ChevronDoubleRightIcon } from '@heroicons/vue/20/solid';
 
   let router = useRouter()
   let currentRouteName = router.options.history.location
   let navigation = [
     { name: 'Dashboard', href: '/', icon: HomeIcon, current: currentRouteName == '/' },
-    { name: 'Network', href: '/network', icon: GlobeAltIcon, current: currentRouteName == '/network' },
-    { name: 'Throttle', href: '/throttle', icon: AdjustmentsVerticalIcon, current: currentRouteName == '/throttle' },
-    { name: 'Steering', href: '/steering', icon: AdjustmentsVerticalIcon, current: currentRouteName == '/steering' },
+    { name: 'Networks', href: '/networks', icon: WifiIcon, current: currentRouteName == '/networks' },
+    { name: 'Throttle', href: '/throttle', icon: ChevronDoubleRightIcon, current: currentRouteName == '/throttle' },
+    { name: 'Steering', href: '/steering', icon: ArrowPathIcon, current: currentRouteName == '/steering' },
+    { name: 'Braking', href: '/braking', icon: ExclamationCircleIcon, current: currentRouteName == '/braking' },
+    { name: 'Gear', href: '/gear', icon: ChevronUpDownIcon, current: currentRouteName == '/gear'},
+    { name: 'Energy', href: '/energy', icon: Battery50Icon, current: currentRouteName == '/energy'}
   ]
 </script>

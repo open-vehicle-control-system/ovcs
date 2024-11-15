@@ -13,15 +13,15 @@
         <tbody class="divide-y divide-gray-200 bg-white">
           <tr>
             <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">Selected Gear</td>
-            <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 text-right">{{ vehicle.selectedGear }}</td>
+            <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 text-right">{{ vehicleInformation.selectedGear }}</td>
           </tr>
           <tr>
             <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">Key status</td>
-            <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 text-right">{{ vehicle.keyStatus }}</td>
+            <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 text-right">{{ vehicleInformation.keyStatus }}</td>
           </tr>
           <tr>
             <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">Speed</td>
-            <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 text-right">{{ vehicle.speed }} kph</td>
+            <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 text-right">{{ vehicleInformation.speed }} kph</td>
           </tr>
           <tr>
             <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">RPM</td>
@@ -42,7 +42,7 @@
     <RealTimeTorqueChart ref="realTimeTorqueChart" :inverter="inverter"></RealTimeTorqueChart>
     <RealTimeTemperatureChart ref="realTimeTemperatureChart" :inverter="inverter"></RealTimeTemperatureChart>
     <RealTimeRpmVoltageChart ref="realTimeRpmVoltageChart" :inverter="inverter"></RealTimeRpmVoltageChart>
-    <RealTimeSpeedChart ref="realTimeSpeedChart" :vehicle="vehicle"></RealTimeSpeedChart>
+    <RealTimeSpeedChart ref="realTimeSpeedChart" :vehicleInformation="vehicleInformation"></RealTimeSpeedChart>
   </div>
 </template>
 
@@ -50,6 +50,7 @@
   import { vmsDashboardSocket } from '../services/socket_service.js'
   import { useThrottle } from "../stores/throttle.js"
   import { useInverter } from "../stores/inverter.js"
+  import { useVehicleInformation } from "../stores/vehicle_information.js"
   import { useVehicle } from "../stores/vehicle.js"
   import { useSystemStatus } from "../stores/system_status.js"
   import { onMounted } from 'vue'
@@ -60,16 +61,18 @@
   import RealTimeRpmVoltageChart from "../components/charts/RealTimeRpmVoltageChart.vue"
   import RealTimeSpeedChart from "../components/charts/RealTimeSpeedChart.vue"
 
+  const vehicle = useVehicle();
   const throttle = useThrottle();
   const inverter = useInverter();
-  const vehicle = useVehicle();
+  const vehicleInformation = useVehicleInformation();
   const systemStatus = useSystemStatus();
   const chartInterval = 70;
 
   onMounted(() => {
+    vehicle.init()
     throttle.init(vmsDashboardSocket, chartInterval, "throttle")
     inverter.init(vmsDashboardSocket, chartInterval, "inverter")
-    vehicle.init(vmsDashboardSocket, chartInterval, "vehicle")
+    vehicleInformation.init(vmsDashboardSocket, chartInterval, "vehicle-information")
     systemStatus.init(vmsDashboardSocket, chartInterval, "system-status")
   });
 </script>

@@ -1,6 +1,6 @@
 <template>
   <div class="px-4 sm:px-6 lg:px-8">
-    <h1 class="text-xl">Network</h1>
+    <h1 class="text-xl">Networks</h1>
     <form>
       <div class="space-y-12">
         <div class="border-b border-gray-900/10 pb-12">

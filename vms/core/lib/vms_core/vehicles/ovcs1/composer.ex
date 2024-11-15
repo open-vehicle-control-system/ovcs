@@ -165,6 +165,17 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
     ]
   end
 
+  def dashboard_features() do
+    %{
+      networks: true,
+      throttle: true,
+      steering: true,
+      braking: true,
+      gear: true,
+      energy: false,
+    }
+  end
+
   def generic_controllers do
     %{
       OVCS.FrontController => %{

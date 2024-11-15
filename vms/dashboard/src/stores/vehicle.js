@@ -2,8 +2,11 @@ import { defineStore } from 'pinia'
 
 export const useVehicle = defineStore('vehicle', {
     state: () => ({
-        selectedGear: "parking",
-        speed: 0,
-        keyStatus: "off"
+        networks: false,
+        throttle: false,
+        steering: false,
+        braking: false,
+        gear: false,
+        energy: false
     }),
 })

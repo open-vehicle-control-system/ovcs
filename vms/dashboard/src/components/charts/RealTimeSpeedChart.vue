@@ -6,7 +6,7 @@
     import RealTimeLineChart from "./RealTimeLineChart.vue"
     import { ref } from "vue"
 
-    const props = defineProps(['vehicle'])
+    const props = defineProps(['vehicleInformation'])
 
     const chartTitle    = "Speed";
     const chartId       = "realtime-speed-chart";
@@ -16,7 +16,7 @@
     const min           = 0;
 
     const speed = "Speed"
-    const vehicle = props.vehicle
+    const vehicleInformation = props.vehicleInformation
 
     let series = [{name: speed}];
 
@@ -30,7 +30,7 @@
         ]);
     }
 
-    vehicle.$subscribe((mutation, state) => {
+    vehicleInformation.$subscribe((mutation, state) => {
         updateSeries(state);
     })
 </script>

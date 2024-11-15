@@ -7,6 +7,7 @@ defmodule VmsApiWeb.Router do
 
   scope "/api", VmsApiWeb.Api do
     pipe_through :api
+    resources "/vehicle", VehicleController, only: [:show], singleton: true
     resources "/throttle-calibration", ThrottleCalibrationController, only: [:create, :show], singleton: true
     resources "/steering-angle-sensor-calibration", SteeringAngleSensorCalibrationController, only: [:create], singleton: true
   end

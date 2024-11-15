@@ -1,4 +1,4 @@
-defmodule VmsApiWeb.VehicleChannel do
+defmodule VmsApiWeb.VehicleInformationChannel do
   use VmsApiWeb, :channel
   alias VmsCore.Components.{Volkswagen.Polo9N.ABS, Volkswagen.Polo9N.IgnitionLock}
   alias VmsCore.Metrics
@@ -7,7 +7,7 @@ defmodule VmsApiWeb.VehicleChannel do
   intercept ["update"]
 
   @impl true
-  def join("vehicle", payload, socket) do
+  def join("vehicle-information", payload, socket) do
     send(self(), :push_vehicle_state)
     {:ok, timer} = :timer.send_interval(payload["interval"], :push_vehicle_state)
     socket       = %{socket | assigns: %{ timer: timer}}

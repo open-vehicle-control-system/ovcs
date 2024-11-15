@@ -5,7 +5,7 @@ defmodule VmsApiWeb.DashboardSocket do
   channel "steering", VmsApiWeb.SteeringChannel
   channel "network-interfaces", VmsApiWeb.NetworkInterfacesChannel
   channel "inverter", VmsApiWeb.InverterChannel
-  channel "vehicle", VmsApiWeb.VehicleChannel
+  channel "vehicle-information", VmsApiWeb.VehicleInformationChannel
   channel "system-status", VmsApiWeb.SystemStatusChannel
 
 
