@@ -165,6 +165,35 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
     ]
   end
 
+  def dashboard_configuration do
+    %{
+      vehicle: %{
+        name: "OVCS1",
+        pages: %{
+         "steering-column" => %{
+            name: "Steering Column",
+            blocks: %{
+              "status" => %{
+                order: 0,
+                name: "Status",
+                type: :table,
+                metrics: [
+                  %{module: OVCS.SteeringColumn, name: :angle},
+                  %{module: OVCS.SteeringColumn, name: :desired_angle}
+                ]
+              },
+              "pid-chart" => %{
+                order: 1,
+                name: "PID Chart",
+                type: "lineChart"
+              }
+            }
+          }
+        }
+      }
+    }
+  end
+
   def generic_controllers do
     %{
       OVCS.FrontController => %{
