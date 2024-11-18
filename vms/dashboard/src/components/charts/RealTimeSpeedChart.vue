@@ -1,12 +1,12 @@
 <template>
-  <RealTimeLineChart ref="speedChart" :title="chartTitle" :series="series" :id="chartId" :serieMaxSize="serieMaxSize" :yaxis="yaxis"></RealTimeLineChart>
+  <RealTimeLineChart ref="speedChart" :title="chartTitle" :series="series" :id="chartId" :serieMaxSize="serieMaxSize" :yaxis="yaxis" :interval="interval"></RealTimeLineChart>
 </template>
 
 <script setup>
     import RealTimeLineChart from "./RealTimeLineChart.vue"
     import { ref } from "vue"
 
-    const props = defineProps(['vehicle'])
+    const props = defineProps(['vehicle', 'interval'])
 
     const chartTitle    = "Speed";
     const chartId       = "realtime-speed-chart";
@@ -14,6 +14,7 @@
     const serieMaxSize  = 300;
     const max           = 200;
     const min           = 0;
+    const interval        = props.interval;
 
     const speed = "Speed"
     const vehicle = props.vehicle

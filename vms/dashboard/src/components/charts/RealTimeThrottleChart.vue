@@ -1,17 +1,18 @@
 <template>
-    <RealTimeLineChart ref="throttleChart" :title="chartTitle" :series="series" :id="chartId" :serieMaxSize="serieMaxSize" :yaxis="yaxis"></RealTimeLineChart>
+    <RealTimeLineChart ref="throttleChart" :title="chartTitle" :series="series" :id="chartId" :serieMaxSize="serieMaxSize" :yaxis="yaxis" :interval="interval"></RealTimeLineChart>
   </template>
 
   <script setup>
       import RealTimeLineChart from "./RealTimeLineChart.vue"
       import { ref } from "vue"
 
-      const props = defineProps(['throttle'])
+      const props = defineProps(['throttle', 'interval'])
 
       const chartTitle    = "Throttle";
       const chartId       = "realtime-throttle-chart";
       const throttleChart = ref();
       const serieMaxSize  = 300;
+      const interval        = props.interval;
 
       const throttleALabel = "Throttle A"
       const throttleBLabel = "Throttle B"

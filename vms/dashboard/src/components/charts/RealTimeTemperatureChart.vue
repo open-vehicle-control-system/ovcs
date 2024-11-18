@@ -1,12 +1,12 @@
 <template>
-  <RealTimeLineChart ref="temperatureChart" :title="chartTitle" :series="series" :id="chartId" :serieMaxSize="serieMaxSize" :yaxis="yaxis"></RealTimeLineChart>
+  <RealTimeLineChart ref="temperatureChart" :title="chartTitle" :series="series" :id="chartId" :serieMaxSize="serieMaxSize" :yaxis="yaxis" :interval="interval"></RealTimeLineChart>
 </template>
 
 <script setup>
     import RealTimeLineChart from "./RealTimeLineChart.vue"
     import { ref } from "vue"
 
-    const props = defineProps(['inverter'])
+    const props = defineProps(['inverter', 'interval'])
 
     const chartTitle    = "Temperature";
     const chartId       = "realtime-temperature-chart";
@@ -14,6 +14,7 @@
     const serieMaxSize  = 300;
     const max           = 200;
     const min           = -50;
+    const interval        = props.interval;
 
     const inverterCommunicationBoardTemperature = "Inverter Board"
     const insulatedGateBipolarTransistorTemperature = "IGBT"

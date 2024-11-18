@@ -1,17 +1,18 @@
 <template>
-  <RealTimeLineChart ref="steeringChart" :title="chartTitle" :series="series" :id="chartId" :serieMaxSize="serieMaxSize" :yaxis="yaxis"></RealTimeLineChart>
+  <RealTimeLineChart ref="steeringChart" :title="chartTitle" :series="series" :id="chartId" :serieMaxSize="serieMaxSize" :yaxis="yaxis" :interval="interval"></RealTimeLineChart>
 </template>
 
 <script setup>
     import RealTimeLineChart from "./RealTimeLineChart.vue"
     import { ref } from "vue"
 
-    const props = defineProps(['steering'])
+    const props = defineProps(['steering', 'interval'])
 
     const chartTitle    = "Steering";
     const chartId       = "realtime-steering-chart";
     const steeringChart = ref();
     const serieMaxSize  = 300;
+    const interval        = props.interval;
 
     const angleLabel = "Angle"
     const desiredAngleLabel = "Desired Angle"

@@ -32,9 +32,11 @@
     CanvasRenderer
   ])
 
-  const props = defineProps(['title', 'series', 'id', 'serieMaxSize', 'yaxis'])
+  const props = defineProps(['title', 'series', 'id', 'serieMaxSize', 'yaxis', 'interval'])
   const id = props.id
   const chart = ref()
+  const interval = props.interval
+  const now = Date.now()
 
   provide(THEME_KEY, "light");
 
@@ -44,7 +46,7 @@
         ...serie,
         type: "line",
         showSymbol: false,
-        data: serie.data || []
+        data: serie.data || Array.from({length: props.serieMaxSize}, (e, i) => [now - interval * (props.serieMaxSize - i), 0 ])
       })),
       serieMaxSize: props.serieMaxSize
     }),

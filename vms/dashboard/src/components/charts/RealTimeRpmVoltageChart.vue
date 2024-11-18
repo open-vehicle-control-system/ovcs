@@ -1,12 +1,12 @@
 <template>
-  <RealTimeLineChart ref="rpmVoltageChart" :title="chartTitle" :series="series" :id="chartId" :serieMaxSize="serieMaxSize" :yaxis="yaxis"></RealTimeLineChart>
+  <RealTimeLineChart ref="rpmVoltageChart" :title="chartTitle" :series="series" :id="chartId" :serieMaxSize="serieMaxSize" :yaxis="yaxis" :interval="interval"></RealTimeLineChart>
 </template>
 
 <script setup>
     import RealTimeLineChart from "./RealTimeLineChart.vue"
     import { ref } from "vue"
 
-    const props = defineProps(['inverter'])
+    const props = defineProps(['inverter', 'interval'])
 
     const chartTitle      = "RPM & Voltage";
     const chartId         = "realtime-rmp-voltage-chart";
@@ -14,6 +14,7 @@
     const serieMaxSize    = 300;
     const voltageMax      = 600;
     const maxRPM          = 7000;
+    const interval        = props.interval;
 
     const rpm = "RPM"
     const voltage  = "Voltage"

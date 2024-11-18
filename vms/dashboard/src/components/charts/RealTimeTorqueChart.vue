@@ -1,12 +1,12 @@
 <template>
-  <RealTimeLineChart ref="torqueChart" :title="chartTitle" :series="series" :id="chartId" :serieMaxSize="serieMaxSize" :yaxis="yaxis"></RealTimeLineChart>
+  <RealTimeLineChart ref="torqueChart" :title="chartTitle" :series="series" :id="chartId" :serieMaxSize="serieMaxSize" :yaxis="yaxis" :interval="interval"></RealTimeLineChart>
 </template>
 
 <script setup>
     import RealTimeLineChart from "./RealTimeLineChart.vue"
     import { ref } from "vue"
 
-    const props = defineProps(['inverter'])
+    const props = defineProps(['inverter', 'interval'])
 
     const chartTitle    = "Torque";
     const chartId       = "realtime-torque-chart";
@@ -14,6 +14,7 @@
     const serieMaxSize  = 300;
     const max           = 100;
     const min           = -100;
+    const interval        = props.interval;
 
     const effectiveTorque = "Effective Torque"
     const requestedTorque = "Requested Torque"

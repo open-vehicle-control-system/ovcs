@@ -38,11 +38,11 @@
         </tbody>
       </table>
     </div>
-    <RealTimeThrottleChart ref="realTimeThrottleChart" :throttle="throttle"></RealTimeThrottleChart>
-    <RealTimeTorqueChart ref="realTimeTorqueChart" :inverter="inverter"></RealTimeTorqueChart>
-    <RealTimeTemperatureChart ref="realTimeTemperatureChart" :inverter="inverter"></RealTimeTemperatureChart>
-    <RealTimeRpmVoltageChart ref="realTimeRpmVoltageChart" :inverter="inverter"></RealTimeRpmVoltageChart>
-    <RealTimeSpeedChart ref="realTimeSpeedChart" :vehicle="vehicle"></RealTimeSpeedChart>
+    <RealTimeThrottleChart ref="realTimeThrottleChart" :throttle="throttle" :interval="chartInterval"></RealTimeThrottleChart>
+    <RealTimeTorqueChart ref="realTimeTorqueChart" :inverter="inverter" :interval="chartInterval"></RealTimeTorqueChart>
+    <RealTimeTemperatureChart ref="realTimeTemperatureChart" :inverter="inverter" :interval="chartInterval"></RealTimeTemperatureChart>
+    <RealTimeRpmVoltageChart ref="realTimeRpmVoltageChart" :inverter="inverter" :interval="chartInterval"></RealTimeRpmVoltageChart>
+    <RealTimeSpeedChart ref="realTimeSpeedChart" :vehicle="vehicle" :interval="chartInterval"></RealTimeSpeedChart>
   </div>
 </template>
 
