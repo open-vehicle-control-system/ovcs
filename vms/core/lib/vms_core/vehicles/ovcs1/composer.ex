@@ -176,6 +176,15 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
          "steering-column" => %{
             name: "Steering Column",
             blocks: %{
+              # "calibration" => %{
+              #   order: -1,
+              #   name: "Calibration",
+              #   type: "calibrations",
+              #   actions: [
+              #     %{type: "initial_value", name: "Save steering wheel 0°", module: OVCS.SteeringColumn},
+              #     %{type: "boundaries", name: "Calibrate steering wheels boundaries", module: OVCS.SteeringColumn, status_metric_name: :calibration_status}
+              #   ]
+              # },
               "status" => %{
                 order: 0,
                 name: "Status",
