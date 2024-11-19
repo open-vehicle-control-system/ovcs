@@ -1,5 +1,4 @@
 <template>
-  <div class="px-4 sm:px-6 lg:px-8">
     <h1 class="text-xl">Network</h1>
     <form>
       <div class="space-y-12">
@@ -16,7 +15,6 @@
         </div>
       </div>
     </form>
-  </div>
 </template>
 
 <script setup>

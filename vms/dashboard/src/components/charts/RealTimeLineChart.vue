@@ -1,8 +1,6 @@
 <template>
-  <div class="p-5 border-solid border rounded border-gray-300 shadow-md">
     <h2>{{ title }}</h2>
     <v-chart ref="chart" class="chart" :option="option" :id="id" />
-  </div>
 </template>
 
 <script setup>
@@ -32,11 +30,13 @@
     CanvasRenderer
   ])
 
-  const props = defineProps(['title', 'series', 'id', 'serieMaxSize', 'yaxis', 'interval'])
+  const props = defineProps(['title', 'series', 'id', 'serieMaxSize', 'yaxis', 'interval', 'store'])
   const id = props.id
   const chart = ref()
   const interval = props.interval
   const now = Date.now()
+  const store = props.store
+  const series = props.series
 
   provide(THEME_KEY, "light");
 
@@ -97,7 +97,7 @@
   onMounted(() => {
     window.addEventListener('resize', () => {
       chart.value.resize()
-    } )
+    })
   })
   onUnmounted(() => {
       window.removeEventListener('resize', () => {})
@@ -129,6 +129,18 @@
     yAxis: yAxis,
     series: seriesStore.series
   });
+
+  if(store){
+    store.$subscribe((mutation, state) => {
+      series.forEach((serie) => {
+        if(state.data[serie.metric.module]){
+          pushSeriesData([
+            {name: serie.name, value: state.data[serie.metric.module][serie.metric.name]}
+          ])
+        }
+      })
+    })
+  }
 </script>
 
 <style scoped>

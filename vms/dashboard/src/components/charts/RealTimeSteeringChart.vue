@@ -1,5 +1,7 @@
 <template>
-  <RealTimeLineChart ref="steeringChart" :title="chartTitle" :series="series" :id="chartId" :serieMaxSize="serieMaxSize" :yaxis="yaxis" :interval="interval"></RealTimeLineChart>
+    <div class="p-5 border-solid border rounded border-gray-300 shadow-md">
+        <RealTimeLineChart ref="steeringChart" :title="chartTitle" :series="series" :id="chartId" :serieMaxSize="serieMaxSize" :yaxis="yaxis" :interval="interval"></RealTimeLineChart>
+    </div>
 </template>
 
 <script setup>
