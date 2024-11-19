@@ -12,7 +12,9 @@ defmodule VmsApiWeb.Api.VehicleJSON do
       type: "vehicle",
       id:    "vehicle",
       attributes: %{
-        name: vehicle.name
+        name: vehicle.name,
+        refreshInterval: vehicle.refresh_interval,
+        mainColor: vehicle.main_color
       }
     }
   end

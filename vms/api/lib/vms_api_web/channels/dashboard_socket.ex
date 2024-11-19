@@ -7,6 +7,7 @@ defmodule VmsApiWeb.DashboardSocket do
   channel "inverter", VmsApiWeb.InverterChannel
   channel "vehicle", VmsApiWeb.VehicleChannel
   channel "system-status", VmsApiWeb.SystemStatusChannel
+  channel "metrics", VmsApiWeb.MetricsChannel
 
 
   @impl true
