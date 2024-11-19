@@ -3,9 +3,7 @@ defmodule VmsApiWeb.Api.MetricsJSON do
 
   def render("metrics.json", %{metrics: metrics}) do
     %{
-      type: "metrics",
-      id:    "metrics",
-      attributes: metrics
+      data: metrics
     }
   end
 end
