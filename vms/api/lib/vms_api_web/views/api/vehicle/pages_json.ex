@@ -12,7 +12,8 @@ defmodule VmsApiWeb.Api.Vehicle.PagesJSON do
       type: "page",
       id:    page_id,
       attributes: %{
-        name: page.name
+        name: page.name,
+        icon: page[:icon]
       }
     }
   end
