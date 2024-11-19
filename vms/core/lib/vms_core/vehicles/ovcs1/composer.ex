@@ -181,8 +181,8 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
                 name: "Status",
                 type: "table",
                 metrics: [
-                  %{module: OVCS.SteeringColumn, name: :angle, unit: "°"},
-                  %{module: OVCS.SteeringColumn, name: :desired_angle, unit: "°"}
+                  %{module: OVCS.SteeringColumn, name: :angle, unit: "°", display_name: "Angle"},
+                  %{module: OVCS.SteeringColumn, name: :desired_angle, unit: "°", display_name: "Desired Angle"}
                 ]
               },
               "pid-chart" => %{
@@ -192,11 +192,11 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
                 refresh_interval: refresh_interval,
                 y_axis: [
                   %{min: -780, max: 780, label: "°", series: [
-                    %{name: "Angle", metric: %{module: OVCS.SteeringColumn, name: :angle, unit: "°"}},
-                    %{name: "Desired Angle", metric: %{module: OVCS.SteeringColumn, name: :desired_angle, unit: "°"}}
+                    %{name: "Angle", metric: %{module: OVCS.SteeringColumn, name: :angle}},
+                    %{name: "Desired Angle", metric: %{module: OVCS.SteeringColumn, name: :desired_angle}}
                   ]},
                   %{position: "right", min: 0, max: 2500, label: "°/s", series: [
-                    %{name: "Angular Speed", metric: %{module: OVCS.SteeringColumn, name: :angular_speed, unit: "°/s"}}
+                    %{name: "Angular Speed", metric: %{module: OVCS.SteeringColumn, name: :angular_speed}}
                   ]}
                 ]
               }

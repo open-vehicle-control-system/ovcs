@@ -42,10 +42,18 @@ defmodule VmsApiWeb.Api.Vehicle.Page.BlocksJSON do
   end
 
   def render("serie.json", %{serie: serie}) do
-    %{name: serie.name, metric: render_one(serie.metric, __MODULE__, "metric.json", as: :metric)}
+    %{
+      name: serie.name,
+      metric: render_one(serie.metric, __MODULE__, "metric.json", as: :metric)
+    }
   end
 
   def render("metric.json", %{metric: metric}) do
-    %{module: metric.module, name: metric.name, unit: metric.unit}
+    %{
+      module: metric.module,
+      name: metric.name,
+      unit: metric[:unit],
+      displayName: metric[:display_name]
+    }
   end
 end
