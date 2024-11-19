@@ -8,12 +8,44 @@ defmodule VmsApiWeb.Api.Vehicle.Page.BlocksJSON do
   end
 
   def render("block.json", %{block: {block_id, block}}) do
+    attributes =  %{
+      name: block.name,
+      subtype: block.type
+    } |> Map.merge(render_one(block, __MODULE__, "#{block.type}_block_attributes.json", as: :block))
     %{
       type: "block",
       id:    block_id,
-      attributes: %{
-        name: block.name
-      }
+      attributes: attributes
     }
+  end
+
+  def render("table_block_attributes.json", %{block: block}) do
+    %{
+      metrics: render_many(block.metrics, __MODULE__, "metric.json", as: :metric)
+    }
+  end
+
+  def render("lineChart_block_attributes.json", %{block: block}) do
+    %{
+      refreshInterval: block.refresh_interval,
+      yAxis: render_many(block.y_axis, __MODULE__, "y_axis.json", as: :y_axis)
+    }
+  end
+
+  def render("y_axis.json", %{y_axis: y_axis}) do
+    %{
+      min: y_axis.min,
+      max: y_axis.max,
+      label: y_axis.label,
+      series: y_axis.series
+    }
+  end
+
+  def render("serie.json", %{serie: serie}) do
+    %{name: serie.name, metric: render_one(serie.metric, __MODULE__, "metric.json", as: :metric)}
+  end
+
+  def render("metric.json", %{metric: metric}) do
+    %{module: metric.module, name: metric.name, unit: metric.unit}
   end
 end

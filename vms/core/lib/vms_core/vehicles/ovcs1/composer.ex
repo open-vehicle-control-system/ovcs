@@ -169,6 +169,7 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
     %{
       vehicle: %{
         name: "OVCS1",
+        color: "#",
         pages: %{
          "steering-column" => %{
             name: "Steering Column",
@@ -176,16 +177,26 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
               "status" => %{
                 order: 0,
                 name: "Status",
-                type: :table,
+                type: "table",
                 metrics: [
-                  %{module: OVCS.SteeringColumn, name: :angle},
-                  %{module: OVCS.SteeringColumn, name: :desired_angle}
+                  %{module: OVCS.SteeringColumn, name: :angle, unit: "°"},
+                  %{module: OVCS.SteeringColumn, name: :desired_angle, unit: "°"}
                 ]
               },
               "pid-chart" => %{
                 order: 1,
                 name: "PID Chart",
-                type: "lineChart"
+                type: "lineChart",
+                refresh_interval: 70,
+                y_axis: [
+                  %{min: -780, max: 780, label: "°", series: [
+                    %{name: "Angle", metric: %{module: OVCS.SteeringColumn, name: :angle, unit: "°"}},
+                    %{name: "Desired Angle", metric: %{module: OVCS.SteeringColumn, name: :desired_angle, unit: "°"}}
+                  ]},
+                  %{position: "right", min: 0, max: 2500, label: "°/s", series: [
+                    %{name: "Angular Speed", metric: %{module: OVCS.SteeringColumn, name: :angular_speed, unit: "°/s"}}
+                  ]}
+                ]
               }
             }
           }
