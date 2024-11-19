@@ -1,7 +1,6 @@
 defmodule VmsApiWeb.MetricsChannel do
   use VmsApiWeb, :channel
   alias VmsCore.Metrics
-  alias VmsCore.Components.OVCS.SteeringColumn
 
   intercept ["update"]
 
@@ -9,15 +8,34 @@ defmodule VmsApiWeb.MetricsChannel do
   def join("metrics", payload, socket) do
     send(self(), :push_metrics)
     {:ok, timer} = :timer.send_interval(payload["interval"], :push_metrics)
-    {:ok, socket |> assign(:timer, timer)}
+    socket = socket
+      |> assign(:timer, timer)
+      |> assign(:metrics, %{})
+    {:ok,socket}
+  end
+
+  def handle_in("subscribe", %{"module" => module, "name" => name}, %Phoenix.Socket{assigns: assigns} = socket) do
+    module = module |> String.to_existing_atom
+    name   = name |> String.to_existing_atom
+    assigns = case assigns.metrics[module] do
+      nil -> assigns |> put_in([:metrics, module], %{})
+      _ -> assigns
+    end
+    assigns = assigns |> put_in([:metrics, module, name], true)
+    {:noreply, %{socket | assigns: assigns}}
+  end
+
+  @impl true
+  def handle_in("unsubscribe", %{"module" => module, "name" => name}, %Phoenix.Socket{assigns: assigns} = socket) do
+    module = module |> String.to_existing_atom
+    name   = name |> String.to_existing_atom
+    assigns = assigns |> pop_in([:metrics, module, name])
+    {:noreply, %{socket | assigns: assigns}}
   end
 
   @impl true
   def handle_info(:push_metrics, socket) do
-    {:ok, steering} =  Metrics.metrics(SteeringColumn)
-    metrics = %{
-      SteeringColumn => steering
-    }
+    {:ok, metrics} = Metrics.filtered_metrics(socket.assigns.metrics)
     view = VmsApiWeb.Api.MetricsJSON.render("metrics.json", %{metrics: metrics})
     push(socket, "updated", view)
     {:noreply, socket}
