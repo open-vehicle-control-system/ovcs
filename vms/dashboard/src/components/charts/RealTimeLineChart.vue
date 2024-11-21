@@ -135,7 +135,7 @@
       series.forEach((serie) => {
         if(state.data[serie.metric.module]){
           pushSeriesData([
-            {name: serie.name, value: state.data[serie.metric.module][serie.metric.name]}
+            {name: serie.name, value: state.data[serie.metric.module][serie.metric.key]}
           ])
         }
       })

@@ -175,22 +175,31 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
          "steering-column" => %{
             name: "Steering Column",
             blocks: %{
-              # "calibration" => %{
-              #   order: -1,
-              #   name: "Calibration",
-              #   type: "calibrations",
-              #   actions: [
-              #     %{type: "initial_value", name: "Save steering wheel 0°", module: OVCS.SteeringColumn},
-              #     %{type: "boundaries", name: "Calibrate steering wheels boundaries", module: OVCS.SteeringColumn, status_metric_name: :calibration_status}
-              #   ]
-              # },
+              "calibration" => %{
+                order: -1,
+                name: "Calibration",
+                type: "calibration",
+                values: [
+                  %{
+                    name: "Save steering wheel 0°",
+                    type: "initial",
+                    module: OVCS.SteeringColumn
+                  },
+                  %{
+                    name: "Calibrate steering wheels boundaries",
+                    type: "boundaries",
+                    module: OVCS.SteeringColumn,
+                    status_metric_key: :calibration_status
+                  }
+                ]
+              },
               "status" => %{
                 order: 0,
                 name: "Status",
                 type: "table",
                 metrics: [
-                  %{module: OVCS.SteeringColumn, name: :angle, unit: "°", display_name: "Angle"},
-                  %{module: OVCS.SteeringColumn, name: :desired_angle, unit: "°", display_name: "Desired Angle"}
+                  %{name: "Angle", module: OVCS.SteeringColumn, key: :angle, unit: "°"},
+                  %{name: "Desired Angle", module: OVCS.SteeringColumn, key: :desired_angle, unit: "°"}
                 ]
               },
               "pid-chart" => %{
@@ -200,11 +209,11 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
                 serie_max_size: 300,
                 y_axis: [
                   %{min: -780, max: 780, label: "°", series: [
-                    %{name: "Angle", metric: %{module: OVCS.SteeringColumn, name: :angle}},
-                    %{name: "Desired Angle", metric: %{module: OVCS.SteeringColumn, name: :desired_angle}}
+                    %{name: "Angle", metric: %{module: OVCS.SteeringColumn, key: :angle}},
+                    %{name: "Desired Angle", metric: %{module: OVCS.SteeringColumn, key: :desired_angle}}
                   ]},
                   %{position: "right", min: 0, max: 2500, label: "°/s", series: [
-                    %{name: "Angular Speed", metric: %{module: OVCS.SteeringColumn, name: :angular_speed}}
+                    %{name: "Angular Speed", metric: %{module: OVCS.SteeringColumn, key: :angular_speed}}
                   ]}
                 ]
               }

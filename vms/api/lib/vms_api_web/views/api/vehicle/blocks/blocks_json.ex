@@ -19,6 +19,12 @@ defmodule VmsApiWeb.Api.Vehicle.Page.BlocksJSON do
     }
   end
 
+  def render("calibration_block_attributes.json", %{block: block}) do
+    %{
+      values: render_many(block.values, __MODULE__, "calibration_values.json", as: :value)
+    }
+  end
+
   def render("table_block_attributes.json", %{block: block}) do
     %{
       metrics: render_many(block.metrics, __MODULE__, "metric.json", as: :metric)
@@ -51,9 +57,18 @@ defmodule VmsApiWeb.Api.Vehicle.Page.BlocksJSON do
   def render("metric.json", %{metric: metric}) do
     %{
       module: metric.module,
-      name: metric.name,
+      key: metric.key,
       unit: metric[:unit],
-      displayName: metric[:display_name]
+      name: metric[:name]
+    }
+  end
+
+  def render("calibration_values.json", %{value: value}) do
+    %{
+      name: value.name,
+      type: value.type,
+      module: value.module,
+      statusMetricKey: value[:status_metric_key]
     }
   end
 end

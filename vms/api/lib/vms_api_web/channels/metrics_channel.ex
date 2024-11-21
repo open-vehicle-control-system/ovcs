@@ -14,22 +14,22 @@ defmodule VmsApiWeb.MetricsChannel do
     {:ok,socket}
   end
 
-  def handle_in("subscribe", %{"module" => module, "name" => name}, %Phoenix.Socket{assigns: assigns} = socket) do
+  def handle_in("subscribe", %{"module" => module, "key" => key}, %Phoenix.Socket{assigns: assigns} = socket) do
     module = module |> String.to_existing_atom
-    name   = name |> String.to_existing_atom
+    key   = key |> String.to_existing_atom
     assigns = case assigns.metrics[module] do
       nil -> assigns |> put_in([:metrics, module], %{})
       _ -> assigns
     end
-    assigns = assigns |> put_in([:metrics, module, name], true)
+    assigns = assigns |> put_in([:metrics, module, key], true)
     {:noreply, %{socket | assigns: assigns}}
   end
 
   @impl true
-  def handle_in("unsubscribe", %{"module" => module, "name" => name}, %Phoenix.Socket{assigns: assigns} = socket) do
+  def handle_in("unsubscribe", %{"module" => module, "key" => key}, %Phoenix.Socket{assigns: assigns} = socket) do
     module = module |> String.to_existing_atom
-    name   = name |> String.to_existing_atom
-    assigns = assigns |> pop_in([:metrics, module, name])
+    key   = key |> String.to_existing_atom
+    assigns = assigns |> pop_in([:metrics, module, key])
     {:noreply, %{socket | assigns: assigns}}
   end
 

@@ -43,11 +43,11 @@
         response.data.data.forEach((block) => {
             if(block.attributes.subtype === 'lineChart'){
                 block.attributes.yAxis.map((axis) => axis.series).flat(1).forEach((serie) => {
-                    metricsStore.subscribeToMetric({module: serie.metric.module, name: serie.metric.name})
+                    metricsStore.subscribeToMetric(serie.metric)
                 })
             } else if(block.attributes.subtype === 'table'){
                 block.attributes.metrics.forEach((metric) => {
-                    metricsStore.subscribeToMetric({module: metric.module, name: metric.name})
+                    metricsStore.subscribeToMetric(metric)
                 })
             }
         })
