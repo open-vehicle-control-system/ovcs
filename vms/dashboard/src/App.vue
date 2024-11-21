@@ -67,7 +67,7 @@
   VehiculeService.getVehiclePages().then((response) => {
     response.data.data.forEach((page) => {
       let href = "/" + page.id;
-      let icon = page.attributes.icon || GlobeAltIcon
+      let icon = eval(page.attributes.icon) || GlobeAltIcon
       navigation.value.push(
         {name: page.attributes.name, href: href, icon: icon}
       );

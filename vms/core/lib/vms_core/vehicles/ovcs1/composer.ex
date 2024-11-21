@@ -174,6 +174,7 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
         pages: %{
          "steering-column" => %{
             name: "Steering Column",
+            icon: "GlobeAltIcon",
             blocks: %{
               "calibration" => %{
                 order: -1,
