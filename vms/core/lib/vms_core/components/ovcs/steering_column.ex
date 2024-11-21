@@ -197,6 +197,10 @@ end
     state
   end
 
+  def calibrate(type) when type == "initial" do
+    calibrate_angle_0()
+  end
+
   def calibrate_angle_0 do
     :ok = reset_angle_calibration_status()
     :timer.sleep(500)

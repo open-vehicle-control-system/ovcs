@@ -127,6 +127,27 @@ defmodule  VmsCore.Components.OVCS.ThrottlePedal do
     {:reply, :ok, %{state | throttle_calibration_status: "disabled"}}
   end
 
+  def handle_call({:calibrate, _type}, _from, state) do
+    case state.throttle_calibration_status do
+      "disabled" ->
+        {:reply, :ok, %{state | throttle_calibration_status: "started"}}
+      _ ->
+        with  {:ok, _} <- set_throttle_calibration_value_for_key("low_raw_throttle_a", state.low_raw_throttle_a),
+          {:ok, _} <- set_throttle_calibration_value_for_key("low_raw_throttle_b", state.low_raw_throttle_b),
+          {:ok, _} <- set_throttle_calibration_value_for_key("high_raw_throttle_a", state.high_raw_throttle_a),
+          {:ok, _} <- set_throttle_calibration_value_for_key("high_raw_throttle_b", state.high_raw_throttle_b)
+        do
+          {:reply, :ok, %{state | throttle_calibration_status: "disabled", calibrated: calibrated?(state)}}
+        else
+          {:error, error} -> {:error, error}
+        end
+    end
+  end
+
+  def calibrate(type) when type == "boundaries" do
+    GenServer.call(__MODULE__, {:calibrate, type})
+  end
+
   def enable_calibration_mode do
     GenServer.call(__MODULE__, :enable_calibration_mode)
   end

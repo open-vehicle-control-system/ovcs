@@ -186,10 +186,10 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
                     module: OVCS.SteeringColumn
                   },
                   %{
-                    name: "Calibrate steering wheels boundaries",
+                    name: "Calibrate throttle boundaries",
                     type: "boundaries",
-                    module: OVCS.SteeringColumn,
-                    status_metric_key: :calibration_status
+                    module: OVCS.ThrottlePedal,
+                    status_metric_key: :throttle_calibration_status
                   }
                 ]
               },
