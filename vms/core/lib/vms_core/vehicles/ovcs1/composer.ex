@@ -166,18 +166,105 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
   end
 
   def dashboard_configuration do
+    throttle_chart = %{
+      order: 1,
+      name: "Throttle",
+      type: "lineChart",
+      serie_max_size: 300,
+      y_axis: [
+        %{min: 0, max: OVCS.ThrottlePedal.raw_max_throttle(), label: "Raw", series: [
+          %{name: "Throttle A", metric: %{module: OVCS.ThrottlePedal, key: :raw_throttle_a}},
+          %{name: "Throttle B", metric: %{module: OVCS.ThrottlePedal, key: :raw_throttle_b}}
+        ]},
+        %{position: "right", min: 0, max: 1, label: "Computed", series: [
+          %{name: "Computed Throttle", metric: %{module: OVCS.ThrottlePedal, key: :requested_throttle}}
+        ]}
+      ]
+    }
+
     %{
       vehicle: %{
         name: "OVCS1",
         main_color: "#CCCCCC",
         refresh_interval: 70,
         pages: %{
-         "steering-column" => %{
+          "dashboard" => %{
+            name: "Dashboard",
+            icon: "HomeIcon",
+            blocks: %{
+              "vehicle-information" => %{
+                order: 0,
+                name: "Vehicle Information",
+                type: "table",
+                metrics: [
+                  %{name: "Selected Gear", module: Managers.Gear, key: :selected_gear},
+                  %{name: "Key Status", module: Polo9N.IgnitionLock, key: :contact},
+                  %{name: "Speed", module: Polo9N.ABS, key: :speed, unit: "kph"},
+                  %{name: "RPM", module: LeafZE0.Inverter, key: :rotation_per_minute},
+                  %{name: "Output Voltage", module: LeafZE0.Inverter, key: :inverter_output_voltage, unit: "V"},
+                  %{name: "Motor temperature", module: LeafZE0.Inverter, key: :motor_temperature, unit: "°C"}
+                ]
+              },
+              "throttle" => throttle_chart,
+              "torque" => %{
+                order: 2,
+                name: "Torque",
+                type: "lineChart",
+                serie_max_size: 300,
+                y_axis: [
+                  %{min: LeafZE0.Inverter.reverse_max_torque(), max: LeafZE0.Inverter.drive_max_torque(), label: "Nm", series: [
+                    %{name: "Effective Torque", metric: %{module: LeafZE0.Inverter, key: :effective_torque}},
+                    %{name: "Requested Torque", metric: %{module: LeafZE0.Inverter, key: :requested_torque}}
+                  ]}
+                ]
+              },
+              "temperature" => %{
+                order: 3,
+                name: "Temperature",
+                type: "lineChart",
+                serie_max_size: 300,
+                y_axis: [
+                  %{min: -50, max: 200, label: "°C", series: [
+                    %{name: "Inverter Board", metric: %{module: LeafZE0.Inverter, key: :inverter_communication_board_temperature}},
+                    %{name: "IGBT", metric: %{module: LeafZE0.Inverter, key: :insulated_gate_bipolar_transistor_temperature}},
+                    %{name: "IGBT Board", metric: %{module: LeafZE0.Inverter, key: :insulated_gate_bipolar_transistor_board_temperature}},
+                    %{name: "Motor", metric: %{module: LeafZE0.Inverter, key: :motor_temperature}},
+                  ]}
+                ]
+              },
+              "rpm-voltage" => %{
+                order: 4,
+                name: "RPM & Voltage",
+                type: "lineChart",
+                serie_max_size: 300,
+                y_axis: [
+                  %{min: 0, max: 10000, label: "RPM", series: [
+                    %{name: "RPM", metric: %{module: LeafZE0.Inverter, key: :rotation_per_minute}}
+                  ]},
+                  %{position: "right", min: 0, max: 400, label: "V", series: [
+                    %{name: "Voltage", metric: %{module: LeafZE0.Inverter, key: :inverter_output_voltage}}
+                  ]}
+                ]
+              },
+              "speed" => %{
+                order: 5,
+                name: "Speed",
+                type: "lineChart",
+                serie_max_size: 300,
+                y_axis: [
+                  %{min: 0, max: 200, label: "kph", series: [
+                    %{name: "Speed", metric: %{module: Polo9N.ABS, key: :speed}},
+                  ]}
+                ]
+              }
+            }
+          },
+          "steering-column" => %{
             name: "Steering Column",
-            icon: "GlobeAltIcon",
+            icon: "ArrowPathIcon",
             blocks: %{
               "calibration" => %{
-                order: -1,
+                order: 0,
                 name: "Calibration",
                 type: "calibration",
                 values: [
@@ -185,12 +272,6 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
                     name: "Save steering wheel 0°",
                     type: "initial",
                     module: OVCS.SteeringColumn
-                  },
-                  %{
-                    name: "Calibrate throttle boundaries",
-                    type: "boundaries",
-                    module: OVCS.ThrottlePedal,
-                    status_metric_key: :throttle_calibration_status
                   }
                 ]
               },
@@ -200,7 +281,11 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
                 type: "table",
                 metrics: [
                   %{name: "Angle", module: OVCS.SteeringColumn, key: :angle, unit: "°"},
-                  %{name: "Desired Angle", module: OVCS.SteeringColumn, key: :desired_angle, unit: "°"}
+                  %{name: "Desired Angle", module: OVCS.SteeringColumn, key: :desired_angle, unit: "°"},
+                  %{name: "Angular Speed", module: OVCS.SteeringColumn, key: :angular_speed, unit: "°/s"},
+                  %{name: "Trimming Valid", module: OVCS.SteeringColumn, key: :trimming_valid},
+                  %{name: "Calibration Valid", module: OVCS.SteeringColumn, key: :calibration_valid},
+                  %{name: "Sensor Ready", module: OVCS.SteeringColumn, key: :sensor_ready},
                 ]
               },
               "pid-chart" => %{
@@ -218,6 +303,40 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
                   ]}
                 ]
               }
+            }
+          },
+          "throttle" => %{
+            name: "Throttle",
+            icon: "ChevronUpDownIcon",
+            blocks: %{
+              "calibration" => %{
+                order: 0,
+                name: "Calibration",
+                type: "calibration",
+                values: [%{
+                    name: "Calibrate throttle boundaries",
+                    type: "boundaries",
+                    module: OVCS.ThrottlePedal,
+                    status_metric_key: :throttle_calibration_status
+                  }
+                ]
+              },
+              "status" => %{
+                order: 1,
+                name: "Status",
+                type: "table",
+                metrics: [
+                  %{name: "Raw Max Throttle", module: OVCS.ThrottlePedal, key: :raw_max_throttle},
+                  %{name: "Low Raw Throttle A", module: OVCS.ThrottlePedal, key: :low_raw_throttle_a},
+                  %{name: "Low Raw Throttle B", module: OVCS.ThrottlePedal, key: :low_raw_throttle_b},
+                  %{name: "High Raw Throttle A", module: OVCS.ThrottlePedal, key: :high_raw_throttle_a},
+                  %{name: "High Raw Throttle B", module: OVCS.ThrottlePedal, key: :high_raw_throttle_b},
+                  %{name: "Raw Throttle A", module: OVCS.ThrottlePedal, key: :raw_throttle_a},
+                  %{name: "Raw Throttle B", module: OVCS.ThrottlePedal, key: :raw_throttle_b},
+                  %{name: "Requested Throttle", module: OVCS.ThrottlePedal, key: :requested_throttle},
+                ]
+              },
+              "throttle-chart" => throttle_chart
             }
           }
         }

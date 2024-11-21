@@ -44,15 +44,12 @@
     HomeIcon,
     GlobeAltIcon,
     AdjustmentsVerticalIcon,
+    ArrowPathIcon,
+    ChevronUpDownIcon
   } from '@heroicons/vue/24/outline'
 
   let router = useRouter()
-  let navigation = ref([
-    { name: 'Dashboard', href: '/', icon: HomeIcon },
-    { name: 'Network', href: '/network', icon: GlobeAltIcon },
-    { name: 'Throttle', href: '/throttle', icon: AdjustmentsVerticalIcon },
-    { name: 'Steering', href: '/steering', icon: AdjustmentsVerticalIcon },
-  ])
+  let navigation = ref([])
 
   let vehicleName = ref()
   let refreshInterval = ref()
@@ -82,6 +79,7 @@
         }
       })
     });
+    navigation.value.push({ name: 'Network', href: '/network', icon: GlobeAltIcon });
   });
 
 </script>

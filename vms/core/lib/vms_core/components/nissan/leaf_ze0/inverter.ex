@@ -216,4 +216,12 @@ defmodule VmsCore.Components.Nissan.LeafZE0.Inverter do
     data = %{data | "counter" => Util.counter(counter + 1)}
     {:ok, parameters, data}
   end
+
+  def drive_max_torque do
+    @drive_max_torque
+  end
+
+  def reverse_max_torque do
+    @reverse_max_torque
+  end
 end

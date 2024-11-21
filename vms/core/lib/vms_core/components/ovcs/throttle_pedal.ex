@@ -169,4 +169,8 @@ defmodule  VmsCore.Components.OVCS.ThrottlePedal do
   defp calibrated?(state) do
     state.high_raw_throttle_a > state.low_raw_throttle_a && state.high_raw_throttle_b > state.low_raw_throttle_b
   end
+
+  def raw_max_throttle do
+    @raw_max_throttle
+  end
 end
