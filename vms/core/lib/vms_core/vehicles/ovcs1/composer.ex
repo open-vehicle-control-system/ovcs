@@ -166,12 +166,11 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
   end
 
   def dashboard_configuration do
-    refresh_interval = 70
     %{
       vehicle: %{
         name: "OVCS1",
         main_color: "#CCCCCC",
-        refresh_interval: refresh_interval,
+        refresh_interval: 70,
         pages: %{
          "steering-column" => %{
             name: "Steering Column",
@@ -198,7 +197,7 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
                 order: 1,
                 name: "PID Chart",
                 type: "lineChart",
-                refresh_interval: refresh_interval,
+                serie_max_size: 300,
                 y_axis: [
                   %{min: -780, max: 780, label: "°", series: [
                     %{name: "Angle", metric: %{module: OVCS.SteeringColumn, name: :angle}},

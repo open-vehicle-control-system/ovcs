@@ -3,7 +3,16 @@
     <div class="grid grid-cols-3 gap-10">
         <div v-for="block in blocks">
             <div v-if="block.attributes.subtype === 'lineChart'" class="p-5 border-solid border rounded border-gray-300 shadow-md">
-                <RealTimeLineChart :ref="block.id" :title="block.attributes.name" :series="block.attributes.yAxis.map((axis) => axis.series).flat(1)" :id="block.id" :serieMaxSize=300 :yaxis="block.attributes.yAxis" :interval="refreshInterval" :store="metricsStore"></RealTimeLineChart>
+                <RealTimeLineChart
+                    :ref="block.id"
+                    :title="block.attributes.name"
+                    :series="block.attributes.yAxis.map((axis, index) => axis.series.map((serie) => {serie.yAxisIndex = index; return serie})).flat(1)"
+                    :id="block.id"
+                    :serieMaxSize="block.attributes.serieMaxSize"
+                    :yaxis="block.attributes.yAxis"
+                    :interval="refreshInterval"
+                    :store="metricsStore">
+                </RealTimeLineChart>
             </div>
             <div v-if="block.attributes.subtype === 'table'">
                 <RealTimeTable :title="block.attributes.name" :metrics="block.attributes.metrics" :interval="refreshInterval" :store="metricsStore"></RealTimeTable>
@@ -32,8 +41,8 @@
         blocks.value = response.data.data
         metricsStore.init(vmsDashboardSocket, refreshInterval.value, "metrics")
         response.data.data.forEach((block) => {
-            if(block.attributes.subtype === 'linearChart'){
-                block.attributes.yAxis.map((axis) => axis.series).forEach((serie) => {
+            if(block.attributes.subtype === 'lineChart'){
+                block.attributes.yAxis.map((axis) => axis.series).flat(1).forEach((serie) => {
                     metricsStore.subscribeToMetric({module: serie.metric.module, name: serie.metric.name})
                 })
             } else if(block.attributes.subtype === 'table'){
