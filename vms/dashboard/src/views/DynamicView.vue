@@ -2,6 +2,9 @@
     <h1 class="text-xl">{{ title }}</h1>
     <div class="grid grid-cols-3 gap-10">
         <div v-for="block in blocks">
+            <div v-if="block.attributes.subtype === 'calibration'">
+                <CalibrationTable :title="block.attributes.name" :values="block.attributes.values" :store="metricsStore"></CalibrationTable>
+            </div>
             <div v-if="block.attributes.subtype === 'lineChart'" class="p-5 border-solid border rounded border-gray-300 shadow-md">
                 <RealTimeLineChart
                     :ref="block.id"
@@ -28,6 +31,7 @@
     import VehiculeService from "../services/vehicle_service.js"
     import RealTimeLineChart from '@/components/charts/RealTimeLineChart.vue';
     import RealTimeTable from '@/components/tables/RealTimeTable.vue';
+    import CalibrationTable from '@/components/tables/CalibrationTable.vue';
 
     const props = defineProps(['title', 'id', 'refreshInterval'])
     const title = props.title
@@ -48,6 +52,12 @@
             } else if(block.attributes.subtype === 'table'){
                 block.attributes.metrics.forEach((metric) => {
                     metricsStore.subscribeToMetric(metric)
+                })
+            } else if(block.attributes.subtype === 'calibration'){
+                block.attributes.values.forEach((value) => {
+                    if(value.statusMetricKey){
+                        metricsStore.subscribeToMetric({module: value.module, key: value.statusMetricKey})
+                    }
                 })
             }
         })
