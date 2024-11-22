@@ -27,9 +27,9 @@ defmodule VmsApiWeb.MetricsChannel do
 
   @impl true
   def handle_in("unsubscribe", %{"module" => module, "key" => key}, %Phoenix.Socket{assigns: assigns} = socket) do
-    module = module |> String.to_existing_atom
-    key   = key |> String.to_existing_atom
-    assigns = assigns |> pop_in([:metrics, module, key])
+    module                 = module |> String.to_existing_atom
+    key                    = key |> String.to_existing_atom
+    {_metric_key, assigns} = assigns |> pop_in([:metrics, module, key])
     {:noreply, %{socket | assigns: assigns}}
   end
 

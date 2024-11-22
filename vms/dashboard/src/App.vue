@@ -47,13 +47,20 @@
     ArrowPathIcon,
     ChevronUpDownIcon
   } from '@heroicons/vue/24/outline'
-
+  function importIcon() {
+    HomeIcon
+    AdjustmentsVerticalIcon
+    ArrowPathIcon
+    ChevronUpDownIcon
+  }
+  importIcon()
   let router = useRouter()
   let navigation = ref([])
 
   let vehicleName = ref()
   let refreshInterval = ref()
   let style = ref()
+
 
   VehiculeService.getVehicle().then((response) => {
     vehicleName.value = response.data.data.attributes.name
@@ -64,7 +71,7 @@
   VehiculeService.getVehiclePages().then((response) => {
     response.data.data.forEach((page) => {
       let href = "/" + page.id;
-      let icon = eval(page.attributes.icon) || GlobeAltIcon
+      let icon = GlobeAltIcon
       navigation.value.push(
         {name: page.attributes.name, href: href, icon: icon}
       );
