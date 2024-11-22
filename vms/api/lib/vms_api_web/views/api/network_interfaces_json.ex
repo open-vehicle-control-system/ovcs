@@ -1,7 +1,6 @@
 defmodule VmsApiWeb.Api.NetworkInterfacesJSON do
   use VmsApiWeb, :view
 
-
   def render("network_interfaces.json", %{network_interfaces: network_interfaces}) do
     %{
       data: render_many(network_interfaces, __MODULE__, "network_interface.json", as: :network_interface)
