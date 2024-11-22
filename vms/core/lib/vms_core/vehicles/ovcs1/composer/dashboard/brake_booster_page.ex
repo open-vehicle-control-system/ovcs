@@ -1,15 +1,15 @@
-defmodule VmsCore.Vehicles.OVCS1.Composer.Dashboard.BrakingPage do
+defmodule VmsCore.Vehicles.OVCS1.Composer.Dashboard.BrakeBoosterPage do
   alias  VmsCore.Components.Bosch.IBoosterGen2
 
   def definition(order: order) do
     %{
-      name: "Braking",
+      name: "Brake Booster",
       icon: "ExclamationCircleIcon",
       order: order,
       blocks: %{
         "status" => %{
           order: 0,
-          name: "I Booster Gen 2 Status",
+          name: "Status",
           type: "table",
           metrics: [
             %{name: "Status", module: IBoosterGen2, key: :status},

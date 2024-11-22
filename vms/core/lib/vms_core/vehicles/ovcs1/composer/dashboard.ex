@@ -11,7 +11,7 @@ defmodule VmsCore.Vehicles.OVCS1.Composer.Dashboard do
           "dashboard"       => Dashboard.DashboardPage.definition(order: 0),
           "steering-column" => Dashboard.SteeringColumnPage.definition(order: 1),
           "throttle-pedal"  => Dashboard.ThrottlePedalPage.definition(order: 2),
-          "braking"         => Dashboard.BrakingPage.definition(order: 3),
+          "brake-booster"   => Dashboard.BrakeBoosterPage.definition(order: 3),
           "inverter"        => Dashboard.InverterPage.definition(order: 4),
           "radio-control"   => Dashboard.RadioControlPage.definition(order: 5),
         }
