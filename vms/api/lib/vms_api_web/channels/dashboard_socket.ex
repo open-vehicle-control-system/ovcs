@@ -1,14 +1,9 @@
 defmodule VmsApiWeb.DashboardSocket do
   use Phoenix.Socket
 
-  channel "throttle", VmsApiWeb.ThrottleChannel
-  channel "steering", VmsApiWeb.SteeringChannel
   channel "network-interfaces", VmsApiWeb.NetworkInterfacesChannel
-  channel "inverter", VmsApiWeb.InverterChannel
   channel "vehicle", VmsApiWeb.VehicleChannel
-  channel "system-status", VmsApiWeb.SystemStatusChannel
   channel "metrics", VmsApiWeb.MetricsChannel
-
 
   @impl true
   def connect(_params, socket, _connect_info) do
