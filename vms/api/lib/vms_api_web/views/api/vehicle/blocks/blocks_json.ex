@@ -10,7 +10,8 @@ defmodule VmsApiWeb.Api.Vehicle.Page.BlocksJSON do
   def render("block.json", %{block: {block_id, block}}) do
     attributes =  %{
       name: block.name,
-      subtype: block.type
+      subtype: block.type,
+      fullWidth: block[:full_width]
     } |> Map.merge(render_one(block, __MODULE__, "#{block.type}_block_attributes.json", as: :block))
     %{
       type: "block",
@@ -33,7 +34,6 @@ defmodule VmsApiWeb.Api.Vehicle.Page.BlocksJSON do
 
   def render("lineChart_block_attributes.json", %{block: block}) do
     %{
-      fullWidth: block[:full_width],
       serieMaxSize: block.serie_max_size,
       yAxis: render_many(block.y_axis, __MODULE__, "y_axis.json", as: :y_axis)
     }

@@ -7,10 +7,10 @@
             </div>
             <div v-if="block.attributes.subtype === 'lineChart'">
                 <RealTimeLineChart
-                    :ref="block.id"
+                    :ref="id + '-' + block.id"
                     :title="block.attributes.name"
                     :series="block.attributes.yAxis.map((axis, index) => axis.series.map((serie) => {serie.yAxisIndex = index; return serie})).flat(1)"
-                    :id="block.id"
+                    :id="id + '-' + block.id"
                     :serieMaxSize="block.attributes.serieMaxSize"
                     :yaxis="block.attributes.yAxis"
                     :interval="refreshInterval"

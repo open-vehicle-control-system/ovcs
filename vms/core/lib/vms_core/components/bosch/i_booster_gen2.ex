@@ -241,6 +241,8 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
     Bus.broadcast("messages", %Bus.Message{name: :rod_position_target, value: state.rod_position_target, source: __MODULE__})
     Bus.broadcast("messages", %Bus.Message{name: :flow_rate, value: state.flow_rate, source: __MODULE__})
     Bus.broadcast("messages", %Bus.Message{name: :ready_to_drive, value: state.ready_to_drive, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :automatic_mode_enabled, value: state.ready_to_drive, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :requested_braking, value: state.ready_to_drive, source: __MODULE__})
     state
   end
 
@@ -305,5 +307,13 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
 
   def test_set_pid_parameters(%{kp: kp, ki: ki, kd: kd}) do
     GenServer.call(__MODULE__, {:set_pid_parameters, %{kp: kp, ki: ki, kd: kd}})
+  end
+
+  def min_rod_position do
+    @min_rod_position
+  end
+
+  def max_rod_position do
+    @max_rod_position
   end
 end

@@ -9,10 +9,11 @@ defmodule VmsCore.Vehicles.OVCS1.Composer.Dashboard.DashboardPage do
   alias VmsCore.Vehicles.OVCS1.Composer.Dashboard.Blocks
   alias VmsCore.Vehicles.OVCS1
 
-  def definition do
+  def definition(order: order) do
     %{
       name: "Dashboard",
       icon: "HomeIcon",
+      order: order,
       blocks: %{
         "vehicle-information" => %{
           order: 0,
@@ -29,7 +30,7 @@ defmodule VmsCore.Vehicles.OVCS1.Composer.Dashboard.DashboardPage do
             %{name: "Motor temperature", module: LeafZE0.Inverter, key: :motor_temperature, unit: "°C"}
           ]
         },
-        "throttle" => Blocks.ThrottleChart.definition(order: 1),
+        "throttle" => Blocks.ThrottleChart.definition(order: 1, full_width: false),
         "torque" => Blocks.TorqueChart.definition(order: 2, full_width: false),
         "Modules Status" => %{
           order: 3,

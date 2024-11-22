@@ -1,10 +1,11 @@
 defmodule VmsCore.Vehicles.OVCS1.Composer.Dashboard.SteeringColumnPage do
   alias VmsCore.Components.OVCS.SteeringColumn
 
-  def definition do
+  def definition(order: order) do
     %{
       name: "Steering Column",
       icon: "ArrowPathIcon",
+      order: order,
       blocks: %{
         "calibration" => %{
           order: 0,
@@ -29,6 +30,7 @@ defmodule VmsCore.Vehicles.OVCS1.Composer.Dashboard.SteeringColumnPage do
             %{name: "Trimming Valid", module: SteeringColumn, key: :trimming_valid},
             %{name: "Calibration Valid", module: SteeringColumn, key: :calibration_valid},
             %{name: "Sensor Ready", module: SteeringColumn, key: :sensor_ready},
+            %{name: "Automatic Mode Enabled", module: SteeringColumn, key: :automatic_mode_enabled},
           ]
         },
         "pid-chart" => %{

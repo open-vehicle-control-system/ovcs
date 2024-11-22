@@ -1,10 +1,11 @@
 defmodule VmsCore.Vehicles.OVCS1.Composer.Dashboard.RadioControlPage do
   alias  VmsCore.Components.OVCS.RadioControl
 
-  def definition do
+  def definition(order: order) do
     %{
       name: "Radio Control",
       icon: "WifiIcon",
+      order: order,
       blocks: %{
         "status" => %{
           order: 0,

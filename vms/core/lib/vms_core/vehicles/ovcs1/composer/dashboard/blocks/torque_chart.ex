@@ -1,7 +1,7 @@
 defmodule VmsCore.Vehicles.OVCS1.Composer.Dashboard.Blocks.TorqueChart do
   alias VmsCore.Components.Nissan.LeafZE0.Inverter
 
-  def definition([order: order, full_width: full_width]) do
+  def definition(order: order, full_width: full_width) do
     %{
       order: order,
       name: "Torque",

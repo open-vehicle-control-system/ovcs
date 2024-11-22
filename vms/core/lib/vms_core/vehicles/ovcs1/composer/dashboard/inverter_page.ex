@@ -2,10 +2,11 @@ defmodule VmsCore.Vehicles.OVCS1.Composer.Dashboard.InverterPage do
   alias VmsCore.Components.Nissan.LeafZE0.Inverter
   alias VmsCore.Vehicles.OVCS1.Composer.Dashboard.Blocks
 
-  def definition do
+  def definition(order: order) do
     %{
       name: "Inverter",
       icon: "BoltIcon",
+      order: order,
       blocks: %{
         "status" => %{
           order: 0,

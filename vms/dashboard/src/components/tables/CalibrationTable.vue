@@ -3,7 +3,7 @@
     <table class="min-w-full divide-y divide-gray-300">
     <tbody class="divide-y divide-gray-200 bg-white">
         <tr v-for="value in values">
-            <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{{ value.name }}</td>
+            <td class="whitespace-nowrap px-3 py-4 text-sm font-bold text-gray-600">{{ value.name }}</td>
             <td v-if="value.type === 'initial'"  class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 text-right">
               <button type="button" @click="calibrate(value)" :class="[value.calibrationOngoing ? 'bg-gray-200' : colorTheme.bgColor, colorTheme.onHoverColor + ' inline-flex items-center gap-x-2 rounded-md px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600']" >
                 Set

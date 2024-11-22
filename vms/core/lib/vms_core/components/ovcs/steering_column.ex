@@ -194,6 +194,7 @@ end
     Bus.broadcast("messages", %Bus.Message{name: :sensor_ready, value: state.sensor_ready, source: __MODULE__})
     Bus.broadcast("messages", %Bus.Message{name: :desired_angle, value: state.desired_angle, source: __MODULE__})
     Bus.broadcast("messages", %Bus.Message{name: :target_motor_speed_percentage, value: state.target_motor_speed_percentage, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :automatic_mode_enabled, value: state.automatic_mode_enabled, source: __MODULE__})
     state
   end
 

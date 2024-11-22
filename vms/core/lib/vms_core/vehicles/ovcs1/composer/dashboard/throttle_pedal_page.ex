@@ -2,10 +2,11 @@ defmodule VmsCore.Vehicles.OVCS1.Composer.Dashboard.ThrottlePedalPage do
   alias VmsCore.Components.OVCS.ThrottlePedal
   alias VmsCore.Vehicles.OVCS1.Composer.Dashboard.Blocks
 
-  def definition do
+  def definition(order: order) do
     %{
       name: "Throttle Pedal",
       icon: "ChevronUpDownIcon",
+      order: order,
       blocks: %{
         "calibration" => %{
           order: 0,
@@ -34,7 +35,7 @@ defmodule VmsCore.Vehicles.OVCS1.Composer.Dashboard.ThrottlePedalPage do
             %{name: "Raw Max Throttle", module: ThrottlePedal, key: :raw_max_throttle},
           ]
         },
-        "throttle-chart" => Blocks.ThrottleChart.definition(order: 1)
+        "throttle-chart" => Blocks.ThrottleChart.definition(order: 1, full_width: true),
       }
     }
   end
