@@ -3,7 +3,7 @@
     <div  class="grid grid-flow-row grid-cols-3 gap-10">
         <div v-for="block in blocks" :class="[block.attributes.fullWidth ? 'col-span-3' : 'col-span-1', 'p-5 border-solid border rounded border-gray-300 shadow-md']">
             <div v-if="block.attributes.subtype === 'calibration'">
-                <CalibrationTable :title="block.attributes.name" :values="block.attributes.values" :store="metricsStore"></CalibrationTable>
+                <CalibrationTable :title="block.attributes.name" :values="block.attributes.values" :store="metricsStore" :colorTheme="colorTheme"></CalibrationTable>
             </div>
             <div v-if="block.attributes.subtype === 'lineChart'">
                 <RealTimeLineChart
@@ -33,11 +33,12 @@
     import RealTimeTable from '@/components/tables/RealTimeTable.vue';
     import CalibrationTable from '@/components/tables/CalibrationTable.vue';
 
-    const props = defineProps(['title', 'id', 'refreshInterval'])
+    const props = defineProps(['title', 'id', 'refreshInterval', 'colorTheme'])
     const title = props.title
     const id = props.id
     const refreshInterval = props.refreshInterval
     const metricsStore = useMetrics()
+    const colorTheme = props.colorTheme
 
     let blocks = ref()
 

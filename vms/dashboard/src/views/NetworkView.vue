@@ -26,6 +26,8 @@
 
   import { useNetworkInterfaces } from "../stores/network_interfaces.js"
 
+  const props = defineProps(['colorTheme'])
+
   const networkInterfaces = useNetworkInterfaces()
   const chartInterval = 1000;
 

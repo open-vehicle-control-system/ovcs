@@ -14,6 +14,15 @@ export default {
       }
     },
   },
+  safelist: [
+    {
+      pattern: /bg-(orange|red|blue|indigo|gray|green|amber|rose|teal)-(200|600|700)/,
+      variants: ['lg', 'hover', 'focus', 'lg:hover'],
+    },
+    {
+      pattern: /text-(orange|red|blue|indigo|gray|green|amber|rose|teal)-(200|600|700)/,
+    }
+  ],
   plugins: [
     import('@tailwindcss/forms'),
   ],
