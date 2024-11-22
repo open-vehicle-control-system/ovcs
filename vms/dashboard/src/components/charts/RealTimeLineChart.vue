@@ -96,7 +96,8 @@
 
   onMounted(() => {
     window.addEventListener('resize', () => {
-      chart.value.resize()
+      if(chart.value)
+        chart.value.resize()
     })
   })
   onUnmounted(() => {
