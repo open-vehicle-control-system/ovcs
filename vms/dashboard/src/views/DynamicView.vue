@@ -1,11 +1,11 @@
 <template>
     <h1 class="text-xl">{{ title }}</h1>
-    <div class="grid grid-cols-3 gap-10">
-        <div v-for="block in blocks">
+    <div  class="grid grid-flow-row grid-cols-3 gap-10">
+        <div v-for="block in blocks" :class="[block.attributes.fullWidth ? 'col-span-3' : 'col-span-1', 'p-5 border-solid border rounded border-gray-300 shadow-md']">
             <div v-if="block.attributes.subtype === 'calibration'">
                 <CalibrationTable :title="block.attributes.name" :values="block.attributes.values" :store="metricsStore"></CalibrationTable>
             </div>
-            <div v-if="block.attributes.subtype === 'lineChart'" class="p-5 border-solid border rounded border-gray-300 shadow-md">
+            <div v-if="block.attributes.subtype === 'lineChart'">
                 <RealTimeLineChart
                     :ref="block.id"
                     :title="block.attributes.name"
