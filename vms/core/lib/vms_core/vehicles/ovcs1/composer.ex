@@ -292,6 +292,7 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
                 order: 1,
                 name: "PID Chart",
                 type: "lineChart",
+                full_width: true,
                 serie_max_size: 300,
                 y_axis: [
                   %{min: -780, max: 780, label: "°", series: [

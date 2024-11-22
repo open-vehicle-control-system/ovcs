@@ -33,6 +33,7 @@ defmodule VmsApiWeb.Api.Vehicle.Page.BlocksJSON do
 
   def render("lineChart_block_attributes.json", %{block: block}) do
     %{
+      fullWidth: block[:full_width],
       serieMaxSize: block.serie_max_size,
       yAxis: render_many(block.y_axis, __MODULE__, "y_axis.json", as: :y_axis)
     }
