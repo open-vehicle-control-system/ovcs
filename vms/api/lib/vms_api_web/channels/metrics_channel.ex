@@ -6,10 +6,9 @@ defmodule VmsApiWeb.MetricsChannel do
 
   @impl true
   def join("metrics", payload, socket) do
-    send(self(), :push_metrics)
-    {:ok, timer} = :timer.send_interval(payload["interval"], :push_metrics)
     socket = socket
-      |> assign(:timer, timer)
+      |> assign(:timer_interval, payload["interval"])
+      |> assign(:timer, nil)
       |> assign(:metrics, %{})
     {:ok,socket}
   end
@@ -22,6 +21,12 @@ defmodule VmsApiWeb.MetricsChannel do
       _ -> assigns
     end
     assigns = assigns |> put_in([:metrics, module, key], true)
+    assigns = case assigns.timer do
+      nil ->
+        {:ok, timer} = :timer.send_interval(assigns.timer_interval, :push_metrics)
+        %{assigns | timer: timer}
+      _ -> assigns
+    end
     {:noreply, %{socket | assigns: assigns}}
   end
 
@@ -30,6 +35,18 @@ defmodule VmsApiWeb.MetricsChannel do
     module                 = module |> String.to_existing_atom
     key                    = key |> String.to_existing_atom
     {_metric_key, assigns} = assigns |> pop_in([:metrics, module, key])
+    assigns = case assigns.metrics[module] == %{} do
+      true ->
+        {_module_name, assigns} = assigns |> pop_in([:metrics, module])
+        assigns
+      false -> assigns
+    end
+    assigns = cond do
+      assigns.metrics == %{} && !is_nil(assigns.timer) ->
+        {:ok, _} = :timer.cancel(assigns.timer)
+        %{assigns | timer: nil}
+      true -> assigns
+    end
     {:noreply, %{socket | assigns: assigns}}
   end
 
@@ -42,6 +59,7 @@ defmodule VmsApiWeb.MetricsChannel do
   end
 
   @impl true
+  def terminate(_, %Phoenix.Socket{assigns: %{timer: nil}}), do: nil
   def terminate(_, %Phoenix.Socket{assigns: %{timer: timer}}) do
     {:ok, _} = :timer.cancel(timer)
   end
