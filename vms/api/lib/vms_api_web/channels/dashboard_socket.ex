@@ -2,7 +2,6 @@ defmodule VmsApiWeb.DashboardSocket do
   use Phoenix.Socket
 
   channel "network-interfaces", VmsApiWeb.NetworkInterfacesChannel
-  channel "vehicle", VmsApiWeb.VehicleChannel
   channel "metrics", VmsApiWeb.MetricsChannel
 
   @impl true
