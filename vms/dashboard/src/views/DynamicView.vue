@@ -25,7 +25,7 @@
 </template>
 
 <script setup>
-    import { onMounted, onUpdated, ref } from 'vue'
+    import { ref, onMounted, onUnmounted } from 'vue'
     import { useMetrics } from "../stores/metrics.js"
     import { vmsDashboardSocket } from '../services/socket_service.js'
     import VehiculeService from "../services/vehicle_service.js"
@@ -41,25 +41,38 @@
 
     let blocks = ref()
 
-    VehiculeService.getVehiclePageBlocks(id).then((response) => {
-        blocks.value = response.data.data
-        metricsStore.init(vmsDashboardSocket, refreshInterval.value, "metrics")
-        response.data.data.forEach((block) => {
-            if(block.attributes.subtype === 'lineChart'){
-                block.attributes.yAxis.map((axis) => axis.series).flat(1).forEach((serie) => {
-                    metricsStore.subscribeToMetric(serie.metric)
-                })
-            } else if(block.attributes.subtype === 'table'){
-                block.attributes.metrics.forEach((metric) => {
-                    metricsStore.subscribeToMetric(metric)
-                })
-            } else if(block.attributes.subtype === 'calibration'){
-                block.attributes.values.forEach((value) => {
-                    if(value.statusMetricKey){
-                        metricsStore.subscribeToMetric({module: value.module, key: value.statusMetricKey})
-                    }
-                })
-            }
-        })
+    onMounted(() => {
+        VehiculeService.getVehiclePageBlocks(id).then((response) => {
+            blocks.value = response.data.data
+            metricsStore.init(vmsDashboardSocket, refreshInterval.value, "metrics")
+            response.data.data.forEach((block) => {
+                if(block.attributes.subtype === 'lineChart'){
+                    block.attributes.yAxis.map((axis) => axis.series).flat(1).forEach((serie) => {
+                        metricsStore.subscribeToMetric(serie.metric)
+                    })
+                } else if(block.attributes.subtype === 'table'){
+                    block.attributes.metrics.forEach((metric) => {
+                        metricsStore.subscribeToMetric(metric)
+                    })
+                } else if(block.attributes.subtype === 'calibration'){
+                    block.attributes.values.forEach((value) => {
+                        if(value.statusMetricKey){
+                            metricsStore.subscribeToMetric({module: value.module, key: value.statusMetricKey})
+                        }
+                    })
+                }
+            })
+        });
     });
+
+    onUnmounted(() => {
+        Object.keys(metricsStore.data).forEach((module) => {
+            let metrics = metricsStore.data[module]
+            let statusMetricsKeys = Object.keys(metrics)
+            statusMetricsKeys.forEach((statusMetricKey) => {
+                metricsStore.unsubscribeToMetric({module: module, key: statusMetricKey})
+            })
+        })
+    })
+
 </script>

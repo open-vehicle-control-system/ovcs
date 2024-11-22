@@ -19,6 +19,11 @@ export const PiniaSocketChannelPlugin = context => {
     let subscribeToMetric = function(metric){
         channel.push("subscribe", metric)
     }
+
+    let unsubscribeToMetric = function(metric){
+        channel.push("unsubscribe", metric)
+    }
     context.store.init = init;
     context.store.subscribeToMetric = subscribeToMetric;
+    context.store.unsubscribeToMetric = unsubscribeToMetric;
   }
