@@ -12,7 +12,7 @@
             <ul role="list" class="-mx-2 space-y-1">
               <li v-for="item in navigation" :key="item.name">
                 <RouterLink :to="item.href" active-class="bg-indigo-700 text-white" class="text-indigo-200 hover:text-white hover:bg-indigo-700 group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold">
-                  <component :is="item.icon" active-class="text-white" class="text-indigo-200 group-hover:text-white h-6 w-6 shrink-0" aria-hidden="true" />
+                  <component :is="heroicons[item.icon]" active-class="text-white" class="text-indigo-200 group-hover:text-white h-6 w-6 shrink-0" aria-hidden="true" />
                   {{ item.name }}
                 </RouterLink>
               </li>
@@ -35,58 +35,30 @@
 
 <script setup>
   import { RouterView, RouterLink } from 'vue-router'
-  import { useRouter } from 'vue-router'
-  import DynamicView from './views/DynamicView.vue'
   import VehiculeService from "./services/vehicle_service.js"
 
   import { ref } from 'vue'
-  import {
-    HomeIcon,
-    GlobeAltIcon,
-    AdjustmentsVerticalIcon,
-    ArrowPathIcon,
-    ChevronUpDownIcon
-  } from '@heroicons/vue/24/outline'
-  function importIcon() {
-    HomeIcon
-    AdjustmentsVerticalIcon
-    ArrowPathIcon
-    ChevronUpDownIcon
-  }
-  importIcon()
-  let router = useRouter()
-  let navigation = ref([])
+  import * as heroicons from '@heroicons/vue/24/outline'
 
+  let navigation = ref([])
   let vehicleName = ref()
-  let refreshInterval = ref()
   let style = ref()
 
 
   VehiculeService.getVehicle().then((response) => {
     vehicleName.value = response.data.data.attributes.name
-    refreshInterval.value = response.data.data.attributes.refreshInterval
     style.value = "background-color: " + response.data.data.attributes.mainColor
   });
 
   VehiculeService.getVehiclePages().then((response) => {
     response.data.data.forEach((page) => {
       let href = "/" + page.id;
-      let icon = GlobeAltIcon
+      let icon = page.attributes.icon || "GlobeAltIcon"
       navigation.value.push(
         {name: page.attributes.name, href: href, icon: icon}
       );
-      router.addRoute({
-        component: DynamicView,
-        name: page.id,
-        path: href,
-        props: {
-          title: page.attributes.name,
-          id: page.id,
-          refreshInterval: refreshInterval
-        }
-      })
-    });
-    navigation.value.push({ name: 'Network', href: '/network', icon: GlobeAltIcon });
+    })
+    navigation.value.push({ name: 'Network', href: '/network', icon: "GlobeAltIcon" });
   });
 
 </script>
