@@ -44,15 +44,15 @@
   let vehicleName = ref()
   let style = ref()
 
-
   VehiculeService.getVehicle().then((response) => {
     vehicleName.value = response.data.data.attributes.name
     style.value = "background-color: " + response.data.data.attributes.mainColor
   });
 
   VehiculeService.getVehiclePages().then((response) => {
-    response.data.data.forEach((page) => {
-      let href = "/" + page.id;
+    let pages = response.data.data
+    pages.forEach((page) => {
+      let href = pages.indexOf(page) === 0 ? "/" : "/" + page.id
       let icon = page.attributes.icon || "GlobeAltIcon"
       navigation.value.push(
         {name: page.attributes.name, href: href, icon: icon}

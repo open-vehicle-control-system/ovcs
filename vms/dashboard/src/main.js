@@ -21,8 +21,9 @@ VehiculeService.getVehicle().then((response) => {
 });
 
 VehiculeService.getVehiclePages().then((response) => {
-    response.data.data.forEach((page) => {
-        let href = "/" + page.id;
+    let pages = response.data.data
+    pages.forEach((page) => {
+        let href = pages.indexOf(page) === 0 ? "/" : "/" + page.id
         router.addRoute({
             component: DynamicView,
             name: page.id,
