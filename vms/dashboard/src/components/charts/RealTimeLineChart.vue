@@ -135,8 +135,9 @@
     store.$subscribe((mutation, state) => {
       pushSeriesData(
         series.map((serie) => {
-          return {name: serie.name, value: state.data[serie.metric.module][serie.metric.key]}
-        })
+          if(state.data[serie.metric.module])
+            return {name: serie.name, value: state.data[serie.metric.module][serie.metric.key]}
+        }).filter((metric) => metric != undefined)
       )
     })
   }
