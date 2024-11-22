@@ -42,7 +42,7 @@ defmodule VmsApiWeb.MetricsChannel do
   end
 
   @impl true
-  def terminate(_, %{assigns: %{timer: timer}}) do
-    {:ok, _} = :timer.cancel(timer)
+  def terminate(_, %Phoenix.Socket{assigns: {_status, params}}) do
+    {:ok, _} = :timer.cancel(params.timer)
   end
 end
