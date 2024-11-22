@@ -132,13 +132,11 @@
 
   if(store){
     store.$subscribe((mutation, state) => {
-      series.forEach((serie) => {
-        if(state.data[serie.metric.module]){
-          pushSeriesData([
-            {name: serie.name, value: state.data[serie.metric.module][serie.metric.key]}
-          ])
-        }
-      })
+      pushSeriesData(
+        series.map((serie) => {
+          return {name: serie.name, value: state.data[serie.metric.module][serie.metric.key]}
+        })
+      )
     })
   }
 </script>
