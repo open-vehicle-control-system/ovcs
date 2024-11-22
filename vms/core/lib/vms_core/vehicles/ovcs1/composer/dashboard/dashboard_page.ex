@@ -1,10 +1,13 @@
 defmodule VmsCore.Vehicles.OVCS1.Composer.Dashboard.DashboardPage do
   alias VmsCore.Components.{
+    Bosch,
     Nissan.LeafZE0,
-    Volkswagen.Polo9N
+    Volkswagen.Polo9N,
+    OVCS
   }
   alias VmsCore.{Managers}
   alias VmsCore.Vehicles.OVCS1.Composer.Dashboard.Blocks
+  alias VmsCore.Vehicles.OVCS1
 
   def definition do
     %{
@@ -16,6 +19,8 @@ defmodule VmsCore.Vehicles.OVCS1.Composer.Dashboard.DashboardPage do
           name: "Vehicle Information",
           type: "table",
           metrics: [
+            %{name: "Control Level", module: Managers.ControlLevel, key: :selected_control_level},
+            %{name: "Manual Control forced", module: Managers.ControlLevel, key: :forced_to_manual},
             %{name: "Selected Gear", module: Managers.Gear, key: :selected_gear},
             %{name: "Key Status", module: Polo9N.IgnitionLock, key: :contact},
             %{name: "Speed", module: Polo9N.ABS, key: :speed, unit: "kph"},
@@ -25,34 +30,24 @@ defmodule VmsCore.Vehicles.OVCS1.Composer.Dashboard.DashboardPage do
           ]
         },
         "throttle" => Blocks.ThrottleChart.definition(order: 1),
-        "torque" => %{
-          order: 2,
-          name: "Torque",
-          type: "lineChart",
-          serie_max_size: 300,
-          y_axis: [
-            %{min: LeafZE0.Inverter.reverse_max_torque(), max: LeafZE0.Inverter.drive_max_torque(), label: "Nm", series: [
-              %{name: "Effective Torque", metric: %{module: LeafZE0.Inverter, key: :effective_torque}},
-              %{name: "Requested Torque", metric: %{module: LeafZE0.Inverter, key: :requested_torque}}
-            ]}
-          ]
-        },
-        "temperature" => %{
+        "torque" => Blocks.TorqueChart.definition(order: 2, full_width: false),
+        "Modules Status" => %{
           order: 3,
-          name: "Temperature",
-          type: "lineChart",
-          serie_max_size: 300,
-          y_axis: [
-            %{min: -50, max: 200, label: "°C", series: [
-              %{name: "Inverter Board", metric: %{module: LeafZE0.Inverter, key: :inverter_communication_board_temperature}},
-              %{name: "IGBT", metric: %{module: LeafZE0.Inverter, key: :insulated_gate_bipolar_transistor_temperature}},
-              %{name: "IGBT Board", metric: %{module: LeafZE0.Inverter, key: :insulated_gate_bipolar_transistor_board_temperature}},
-              %{name: "Motor", metric: %{module: LeafZE0.Inverter, key: :motor_temperature}},
-            ]}
+          name: "Ready to drive",
+          type: "table",
+          metrics: [
+            %{name: "VMS Status", module: OVCS1, key: :vms_status},
+            %{name: "OVCS1 ready", module: OVCS1, key: :ready_to_drive},
+            %{name: "Inverter ready", module: LeafZE0.Inverter, key: :ready_to_drive},
+            %{name: "I Booster ready", module: Bosch.IBoosterGen2, key: :ready_to_drive},
+            %{name: "Contactors ready", module: OVCS.HighVoltageContactors, key: :ready_to_drive},
+            %{name: "Main Negative contactor enabled", module: OVCS.HighVoltageContactors, key: :main_negative_relay_enabled},
+            %{name: "Main Positive contactor enabledy", module: OVCS.HighVoltageContactors, key: :main_positive_relay_enabled},
+            %{name: "Precharge contactor enabled", module: OVCS.HighVoltageContactors, key: :precharge_relay_enabled},
           ]
         },
         "rpm-voltage" => %{
-          order: 4,
+          order: 5,
           name: "RPM & Voltage",
           type: "lineChart",
           serie_max_size: 300,
@@ -66,7 +61,7 @@ defmodule VmsCore.Vehicles.OVCS1.Composer.Dashboard.DashboardPage do
           ]
         },
         "speed" => %{
-          order: 5,
+          order: 6,
           name: "Speed",
           type: "lineChart",
           serie_max_size: 300,

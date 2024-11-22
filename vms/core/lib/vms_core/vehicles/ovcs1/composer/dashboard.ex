@@ -10,7 +10,9 @@ defmodule VmsCore.Vehicles.OVCS1.Composer.Dashboard do
         pages: %{
           "dashboard"       => Dashboard.DashboardPage.definition(),
           "steering-column" => Dashboard.SteeringColumnPage.definition(),
-          "throttle"        => Dashboard.ThrottlePage.definition()
+          "throttle-pedal"  => Dashboard.ThrottlePedalPage.definition(),
+          "inverter"        => Dashboard.InverterPage.definition(),
+          "radio-control"   => Dashboard.RadioControlPage.definition(),
         }
       }
     }

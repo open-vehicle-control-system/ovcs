@@ -1,10 +1,10 @@
-defmodule VmsCore.Vehicles.OVCS1.Composer.Dashboard.ThrottlePage do
+defmodule VmsCore.Vehicles.OVCS1.Composer.Dashboard.ThrottlePedalPage do
   alias VmsCore.Components.OVCS.ThrottlePedal
   alias VmsCore.Vehicles.OVCS1.Composer.Dashboard.Blocks
 
   def definition do
     %{
-      name: "Throttle",
+      name: "Throttle Pedal",
       icon: "ChevronUpDownIcon",
       blocks: %{
         "calibration" => %{
@@ -24,14 +24,14 @@ defmodule VmsCore.Vehicles.OVCS1.Composer.Dashboard.ThrottlePage do
           name: "Status",
           type: "table",
           metrics: [
-            %{name: "Raw Max Throttle", module: ThrottlePedal, key: :raw_max_throttle},
+            %{name: "Requested Throttle", module: ThrottlePedal, key: :requested_throttle},
+            %{name: "Raw Throttle A", module: ThrottlePedal, key: :raw_throttle_a},
+            %{name: "Raw Throttle B", module: ThrottlePedal, key: :raw_throttle_b},
             %{name: "Low Raw Throttle A", module: ThrottlePedal, key: :low_raw_throttle_a},
             %{name: "Low Raw Throttle B", module: ThrottlePedal, key: :low_raw_throttle_b},
             %{name: "High Raw Throttle A", module: ThrottlePedal, key: :high_raw_throttle_a},
             %{name: "High Raw Throttle B", module: ThrottlePedal, key: :high_raw_throttle_b},
-            %{name: "Raw Throttle A", module: ThrottlePedal, key: :raw_throttle_a},
-            %{name: "Raw Throttle B", module: ThrottlePedal, key: :raw_throttle_b},
-            %{name: "Requested Throttle", module: ThrottlePedal, key: :requested_throttle},
+            %{name: "Raw Max Throttle", module: ThrottlePedal, key: :raw_max_throttle},
           ]
         },
         "throttle-chart" => Blocks.ThrottleChart.definition(order: 1)

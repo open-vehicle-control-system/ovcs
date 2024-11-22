@@ -23,7 +23,6 @@ defmodule VmsCore.Vehicles.OVCS1 do
   def init(_) do
     Bus.subscribe("messages")
     :ok = ReceivedFrameWatcher.subscribe(:ovcs, ["controls_controller_alive", "front_controller_alive", "rear_controller_alive"], self())
-    :ok = ReceivedFrameWatcher.subscribe(:polo_drive, "abs_status", self())
     enable_watchers()
     {:ok, timer} = :timer.send_interval(@loop_period, :loop)
     {:ok, %{
@@ -38,7 +37,6 @@ defmodule VmsCore.Vehicles.OVCS1 do
       vms_status: "ok",
       failed_frames: %{},
       frame_emitters: %{
-        "abs_status"                => "ABS Ctrl",
         "controls_controller_alive" => "Controls Ctrl",
         "front_controller_alive"    => "Front Ctrl",
         "rear_controller_alive"     => "Rear Ctrl"
@@ -51,7 +49,6 @@ defmodule VmsCore.Vehicles.OVCS1 do
     state = state
       |> update_igntion_started()
       |> check_ready_to_drive()
-      |> update_frame_watchers()
       |> emit_metrics()
 
     {:noreply, state}
@@ -110,19 +107,6 @@ defmodule VmsCore.Vehicles.OVCS1 do
       state.inverter_ready_to_drive &&
       state.braking_system_ready_to_drive
     %{state | ready_to_drive: ready_to_drive}
-  end
-
-  defp update_frame_watchers(state) do
-    case {state.contact, state.abs_watcher_enabled} do
-      {:on, false} ->
-        ReceivedFrameWatcher.enable(:polo_drive, "abs_status")
-        %{state | abs_watcher_enabled: true}
-      {:off, true} ->
-        ReceivedFrameWatcher.disable(:polo_drive, "abs_status")
-        %{state | abs_watcher_enabled: false}
-      _ ->
-        state
-    end
   end
 
   defp emit_metrics(state) do
