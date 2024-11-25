@@ -1,4 +1,6 @@
 defmodule VmsCore.Vehicles.OVCS1.Composer.GenericController do
+  alias VmsCore.Components.OVCS
+
   def generic_controllers do
     %{
       OVCS.FrontController => %{
