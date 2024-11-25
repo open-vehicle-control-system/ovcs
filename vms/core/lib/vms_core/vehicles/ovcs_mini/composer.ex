@@ -4,7 +4,7 @@ defmodule VmsCore.Vehicles.OVCSMini.Composer do
   """
 
   alias VmsCore.Components.{OVCS, Traxxas}
-  alias VmsCore.{Vehicles}
+  alias VmsCore.{Vehicles, Vehicles.OVCSMini}
 
   defdelegate generic_controllers, to:  Vehicles.OVCSMini.Composer.GenericController
   defdelegate dashboard_configuration, to:  Vehicles.OVCSMini.Composer.Dashboard
@@ -13,11 +13,11 @@ defmodule VmsCore.Vehicles.OVCSMini.Composer do
     [
       # Controllers
       %{
-        id: OVCS.MainController,
+        id: OVCSMini.MainController,
         start: {
           OVCS.GenericController,
           :start_link, [%{
-            process_name: OVCS.MainController,
+            process_name: OVCSMini.MainController,
             control_digital_pins: true,
             control_other_pins: false,
             enabled_external_pwms: [0, 1]
@@ -31,12 +31,12 @@ defmodule VmsCore.Vehicles.OVCSMini.Composer do
         radio_control_channel: 2
       }},
       {Traxxas.Steering, %{
-        controller: OVCS.MainController,
+        controller: OVCSMini.MainController,
         external_pwm_id: 0,
         requested_steering_source: OVCS.RadioControl.Steering
       }},
       {Traxxas.Throttle, %{
-        controller: OVCS.MainController,
+        controller: OVCSMini.MainController,
         external_pwm_id: 1,
         requested_throttle_source: OVCS.RadioControl.Throttle
       }},

@@ -11,17 +11,17 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
     OVCS,
     Volkswagen.Polo9N
   }
-  alias VmsCore.{Managers, Vehicles}
+  alias VmsCore.{Managers, Vehicles, Vehicles.OVCS1}
 
   def children do
     [
       # Controllers
       %{
-        id: OVCS.FrontController,
+        id: OVCS1.FrontController,
         start: {
           OVCS.GenericController,
           :start_link, [%{
-            process_name: OVCS.FrontController,
+            process_name: OVCS1.FrontController,
             control_digital_pins: true,
             control_other_pins: false,
             enabled_external_pwms: []
@@ -29,11 +29,11 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
         }
       },
       %{
-        id: OVCS.ControlsController,
+        id: OVCS1.ControlsController,
         start: {
           OVCS.GenericController,
           :start_link, [%{
-            process_name: OVCS.ControlsController,
+            process_name: OVCS1.ControlsController,
             control_digital_pins: true,
             control_other_pins: false,
             enabled_external_pwms: [0]
@@ -41,29 +41,17 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
         }
       },
       %{
-        id: OVCS.RearController,
+        id: OVCS1.RearController,
         start: {
           OVCS.GenericController,
           :start_link, [%{
-            process_name: OVCS.RearController,
+            process_name: OVCS1.RearController,
             control_digital_pins: true,
             control_other_pins: false,
             enabled_external_pwms: []
           }]
         }
       },
-      # %{
-      #   id: OVCS.TestController,
-      #   start: {
-      #     OVCS.GenericController,
-      #     :start_link, [%{
-      #       process_name: OVCS.TestController,
-      #       control_digital_pins: true,
-      #       control_other_pins: true,
-      #       enabled_external_pwms: [0,1,2,3]
-      #     }]
-      #   }
-      # },
 
       # VwPolo
       {Polo9N.Dashboard, %{
@@ -85,7 +73,7 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
         selected_control_level_source: Managers.ControlLevel,
         selected_gear_source: Managers.Gear,
         contact_source: Polo9N.IgnitionLock,
-        controller: OVCS.FrontController,
+        controller: OVCS1.FrontController,
         power_relay_pin: 3
       }},
 
@@ -93,7 +81,7 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
       {Bosch.IBoosterGen2, %{
         selected_control_level_source: Managers.ControlLevel,
         contact_source: Polo9N.IgnitionLock,
-        controller: OVCS.FrontController,
+        controller: OVCS1.FrontController,
         power_relay_pin: 5
       }},
 
@@ -133,7 +121,7 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
         speed_source: Polo9N.ABS,
       }},
       {OVCS.ThrottlePedal, %{
-        controller: OVCS.ControlsController,
+        controller: OVCS1.ControlsController,
         throttle_a_pin: 0,
         throttle_b_pin: 1
       }},
@@ -146,16 +134,16 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
         contact_source: Polo9N.IgnitionLock,
         inverter_output_voltage_source: LeafZE0.Inverter,
         required_precharge_output_voltage: 300,
-        controller: OVCS.RearController,
+        controller: OVCS1.RearController,
         main_negative_relay_pin: 3,
         main_positive_relay_pin: 4,
         precharge_relay_pin: 5
       }},
       {OVCS.SteeringColumn, %{
         selected_control_level_source: Managers.ControlLevel,
-        power_relay_controller: OVCS.FrontController,
+        power_relay_controller: OVCS1.FrontController,
         power_relay_pin: 6,
-        actuation_controller: OVCS.ControlsController,
+        actuation_controller: OVCS1.ControlsController,
         direction_pin: 1,
         external_pwm_id: 0
       }},

@@ -1,7 +1,9 @@
 defmodule VmsCore.Vehicles.OVCSMini.Composer.GenericController do
+  alias VmsCore.Vehicles.OVCSMini
+
   def generic_controllers do
     %{
-      OVCS.MainController => %{
+      OVCSMini.MainController => %{
         "controller_id" => 0,
         "digital_pin0" => "disabled",
         "digital_pin1" => "disabled",

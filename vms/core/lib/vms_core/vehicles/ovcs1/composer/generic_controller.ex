@@ -1,9 +1,9 @@
 defmodule VmsCore.Vehicles.OVCS1.Composer.GenericController do
-  alias VmsCore.Components.OVCS
+  alias VmsCore.Vehicles.OVCS1
 
   def generic_controllers do
     %{
-      OVCS.FrontController => %{
+      OVCS1.FrontController => %{
         "controller_id" => 0,
         "digital_pin0" => "disabled",
         "digital_pin1" => "disabled",
@@ -32,7 +32,7 @@ defmodule VmsCore.Vehicles.OVCS1.Composer.GenericController do
         "analog_pin1" => "disabled",
         "analog_pin2" => "disabled"
       },
-      OVCS.RearController => %{
+      OVCS1.RearController => %{
         "controller_id" => 1,
         "digital_pin0" => "disabled",
         "digital_pin1" => "disabled",
@@ -61,7 +61,7 @@ defmodule VmsCore.Vehicles.OVCS1.Composer.GenericController do
         "analog_pin1" => "disabled",
         "analog_pin2" => "disabled"
       },
-      OVCS.ControlsController => %{
+      OVCS1.ControlsController => %{
         "controller_id" => 2,
         "digital_pin0" => "disabled",
         "digital_pin1" => "read_write",
@@ -89,36 +89,7 @@ defmodule VmsCore.Vehicles.OVCS1.Composer.GenericController do
         "analog_pin0" => "enabled",
         "analog_pin1" => "enabled",
         "analog_pin2" => "disabled"
-      },
-      # OVCS.TestController => %{
-      #   "controller_id" => 3,
-      #   "digital_pin0" => "read_write",
-      #   "digital_pin1" => "read_write",
-      #   "digital_pin2" => "read_write",
-      #   "digital_pin3" => "read_write",
-      #   "digital_pin4" => "read_write",
-      #   "digital_pin5" => "read_write",
-      #   "digital_pin6" => "read_write",
-      #   "digital_pin7" => "read_write",
-      #   "digital_pin8" => "read_write",
-      #   "digital_pin9" => "read_write",
-      #   "digital_pin10" => "read_write",
-      #   "digital_pin11" => "read_write",
-      #   "digital_pin12" => "read_write",
-      #   "digital_pin13" => "read_write",
-      #   "digital_pin14" => "read_write",
-      #   "digital_pin15" => "read_write",
-      #   "digital_pin16" => "read_write",
-      #   "digital_pin17" => "read_write",
-      #   "digital_pin18" => "read_write",
-      #   "pwm_pin0" => "enabled",
-      #   "pwm_pin1" => "enabled",
-      #   "pwm_pin2" => "enabled",
-      #   "dac_pin0" => "enabled",
-      #   "analog_pin0" => "enabled",
-      #   "analog_pin1" => "enabled",
-      #   "analog_pin2" => "enabled"
-      # }
+      }
     }
   end
 end
