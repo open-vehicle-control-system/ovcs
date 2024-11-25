@@ -12,6 +12,7 @@ defmodule VmsCore.Vehicles.OVCS1.Composer.Dashboard.GenericControllersPage do
           name: "Front Controller Satus",
           type: "table",
           metrics: [
+            %{name: "Alive?", module: OVCS.FrontController, key: :is_alive},
             %{name: "Requested Inverter Relay Enabled", module: OVCS.FrontController, key: :requested_digital_pin3_enabled},
             %{name: "Received Inverter Relay Enabled", module: OVCS.FrontController, key: :received_digital_pin3_enabled},
 
@@ -30,6 +31,7 @@ defmodule VmsCore.Vehicles.OVCS1.Composer.Dashboard.GenericControllersPage do
           name: "Controls Controller Satus",
           type: "table",
           metrics: [
+            %{name: "Alive?", module: OVCS.ControlsController, key: :is_alive},
             %{name: "Requested Steering Column PWM Enabled", module: OVCS.ControlsController, key: :requested_external_pwm0_enabled},
             %{name: "Requested Steering Column PWM Duty Cycle", module: OVCS.ControlsController, key: :requested_external_pwm0_duty_cycle, unit: "%"},
             %{name: "Requested Steering Column PWM frequency", module: OVCS.ControlsController, key: :requested_external_pwm0_frequency, unit: "Hz"},
@@ -44,6 +46,8 @@ defmodule VmsCore.Vehicles.OVCS1.Composer.Dashboard.GenericControllersPage do
           name: "Rear Controller Satus",
           type: "table",
           metrics: [
+            %{name: "Alive?", module: OVCS.RearController, key: :is_alive},
+
             %{name: "Requested Main Negative Relay Enabled", module: OVCS.RearController, key: :requested_digital_pin3_enabled},
             %{name: "Received Main Negative Relay Enabled", module: OVCS.RearController, key: :received_digital_pin3_enabled},
 

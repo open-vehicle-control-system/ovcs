@@ -4,7 +4,7 @@ defmodule VmsCore.Components.OVCS.GenericController do
   """
   use GenServer
 
-  alias Cantastic.{Emitter, Frame, Receiver}
+  alias Cantastic.{Emitter, Frame, Receiver, ReceivedFrameWatcher}
   alias VmsCore.{Application, Bus}
   @pwm_duty_cycle_range 65_535
   alias Decimal, as: D
@@ -80,6 +80,7 @@ defmodule VmsCore.Components.OVCS.GenericController do
       compute_frame_name(process_name, "external_pwm3_request")
     ]
     :ok = Receiver.subscribe(self(), :ovcs, [alive_frame_name, digital_and_analog_pin_status_frame_name])
+    :ok = ReceivedFrameWatcher.enable(:ovcs, alive_frame_name)
 
     if control_digital_pins do
       :ok = Emitter.configure(:ovcs, digital_pin_request_frame_name, %{
@@ -288,6 +289,8 @@ defmodule VmsCore.Components.OVCS.GenericController do
       value = state.requested_pins[name]
       Bus.broadcast("messages", %Bus.Message{name: "requested_#{name}" |> String.to_atom(), value: value, source: state.process_name})
     end)
+    {:ok, is_alive} = ReceivedFrameWatcher.is_alive?(:ovcs, state.alive_frame_name)
+    Bus.broadcast("messages", %Bus.Message{name: :is_alive, value: is_alive, source: state.process_name})
     state
   end
 end

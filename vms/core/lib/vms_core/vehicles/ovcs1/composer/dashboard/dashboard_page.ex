@@ -39,6 +39,9 @@ defmodule VmsCore.Vehicles.OVCS1.Composer.Dashboard.DashboardPage do
           metrics: [
             %{name: "VMS Status", module: OVCS1, key: :vms_status},
             %{name: "OVCS1 ready", module: OVCS1, key: :ready_to_drive},
+            %{name: "Front Controller alive", module: OVCS.FrontController, key: :is_alive},
+            %{name: "Controls Controller alive", module: OVCS.ControlsController, key: :is_alive},
+            %{name: "Rear Controller alive", module: OVCS.RearController, key: :is_alive},
             %{name: "Inverter ready", module: LeafZE0.Inverter, key: :ready_to_drive},
             %{name: "I Booster ready", module: Bosch.IBoosterGen2, key: :ready_to_drive},
             %{name: "Contactors ready", module: OVCS.HighVoltageContactors, key: :ready_to_drive},
