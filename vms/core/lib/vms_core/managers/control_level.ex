@@ -28,7 +28,7 @@ defmodule VmsCore.Managers.ControlLevel do
       requested_steering_sources: requested_steering_sources,
       requested_control_level_source: requested_control_level_source,
       manual_driver_brake_apply_source: manual_driver_brake_apply_source,
-      manual_driver_brake_apply: true,
+      manual_driver_brake_apply: nil,
       forced_to_manual: false,
       requested_control_level: nil,
       selected_control_level: default_control_level,
@@ -61,12 +61,12 @@ defmodule VmsCore.Managers.ControlLevel do
 
   defp select_control_level(state) when not is_nil(state.requested_control_level_source) do
     cond do
-      state.requested_control_level == :radio && state.manual_driver_brake_apply == true ->
+      state.requested_control_level == :radio && state.manual_driver_brake_apply in ["driver_applying_brake", "fault", "not_init_or_off"] ->
         %{state | selected_control_level: :manual, forced_to_manual: true}
       state.requested_control_level == :radio && state.selected_control_level == :manual && !state.forced_to_manual ->
         %{state | selected_control_level: :radio}
       state.requested_control_level == :manual && state.selected_control_level == :radio ->
-        %{state |forced_to_manual: false, selected_control_level: :manual}
+        %{state | forced_to_manual: false, selected_control_level: :manual}
       true -> state
     end
   end
