@@ -243,6 +243,8 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
     Bus.broadcast("messages", %Bus.Message{name: :ready_to_drive, value: state.ready_to_drive, source: __MODULE__})
     Bus.broadcast("messages", %Bus.Message{name: :automatic_mode_enabled, value: state.automatic_mode_enabled, source: __MODULE__})
     Bus.broadcast("messages", %Bus.Message{name: :requested_braking, value: state.requested_braking, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :requested_throttle_source, value: state.requested_throttle_source, source: __MODULE__})
+
     state
   end
 

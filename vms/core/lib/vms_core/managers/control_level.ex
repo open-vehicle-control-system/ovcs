@@ -66,6 +66,8 @@ defmodule VmsCore.Managers.ControlLevel do
       state.requested_control_level == :radio && state.selected_control_level == :manual && !state.forced_to_manual ->
         %{state | selected_control_level: :radio}
       state.requested_control_level == :manual && state.selected_control_level == :radio ->
+        %{state | selected_control_level: :manual}
+      state.requested_control_level == :manual && state.selected_control_level == :manual && state.forced_to_manual ->
         %{state | forced_to_manual: false, selected_control_level: :manual}
       true -> state
     end

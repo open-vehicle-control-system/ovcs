@@ -13,6 +13,7 @@ defmodule VmsCore.Vehicles.OVCS1.Composer.Dashboard.BrakeBoosterPage do
           type: "table",
           metrics: [
             %{name: "Status", module: IBoosterGen2, key: :status},
+            %{name: "Requested Throttle Source", module: IBoosterGen2, key: :requested_throttle_source},
             %{name: "Driver brake apply?", module: IBoosterGen2, key: :driver_brake_apply},
             %{name: "Internal State", module: IBoosterGen2, key: :internal_state},
             %{name: "Rod Position", module: IBoosterGen2, key: :rod_position, unit: "mm"},
