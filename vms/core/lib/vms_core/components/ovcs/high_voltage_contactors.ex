@@ -88,9 +88,6 @@ defmodule VmsCore.Components.OVCS.HighVoltageContactors do
   end
 
   defp emit_metrics(state) do
-    Bus.broadcast("messages", %Bus.Message{name: :main_negative_relay_enabled, value: state.main_negative_relay_enabled, source: __MODULE__})
-    Bus.broadcast("messages", %Bus.Message{name: :main_positive_relay_enabled, value: state.main_positive_relay_enabled, source: __MODULE__})
-    Bus.broadcast("messages", %Bus.Message{name: :precharge_relay_enabled, value: state.precharge_relay_enabled, source: __MODULE__})
     Bus.broadcast("messages", %Bus.Message{name: :ready_to_drive, value: state.ready_to_drive, source: __MODULE__})
     state
   end

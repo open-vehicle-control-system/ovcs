@@ -45,9 +45,9 @@ defmodule VmsCore.Vehicles.OVCS1.Composer.Dashboard.DashboardPage do
             %{name: "Inverter ready", module: LeafZE0.Inverter, key: :ready_to_drive},
             %{name: "I Booster ready", module: Bosch.IBoosterGen2, key: :ready_to_drive},
             %{name: "Contactors ready", module: OVCS.HighVoltageContactors, key: :ready_to_drive},
-            %{name: "Main Negative contactor enabled", module: OVCS.HighVoltageContactors, key: :main_negative_relay_enabled},
-            %{name: "Main Positive contactor enabledy", module: OVCS.HighVoltageContactors, key: :main_positive_relay_enabled},
-            %{name: "Precharge contactor enabled", module: OVCS.HighVoltageContactors, key: :precharge_relay_enabled},
+            %{name: "Main Negative contactor enabled", module: OVCS1.RearController, key: :received_digital_pin3_enabled},
+            %{name: "Main Positive contactor enabled", module: OVCS1.RearController, key: :received_digital_pin4_enabled},
+            %{name: "Precharge contactor enabled", module: OVCS1.RearController, key: :received_digital_pin5_enabled}
           ]
         },
         "rpm-voltage" => %{
