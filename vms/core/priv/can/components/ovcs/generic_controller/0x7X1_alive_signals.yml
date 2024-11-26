@@ -3,3 +3,25 @@
   kind: integer
   value_start: 0
   value_length: 8
+- name: expansion_board1_last_error
+  kind: enum
+  value_start: 8
+  value_length: 8
+  mapping:
+      0x00: OK
+      0x81: PIN_ERROR
+      0x82: I2C_ERROR
+      0x83: VALUE_ERROR
+      0x84: PORT_ERROR
+      0xFF: REGISTER_OR_INVALID_READ_ERROR
+- name: expansion_board2_last_error
+  kind: enum
+  value_start: 16
+  value_length: 8
+  mapping:
+      0x00: OK
+      0x81: PIN_ERROR
+      0x82: I2C_ERROR
+      0x83: VALUE_ERROR
+      0x84: PORT_ERROR
+      0xFF: REGISTER_OR_INVALID_READ_ERROR

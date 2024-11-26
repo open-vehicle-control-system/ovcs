@@ -4,6 +4,10 @@
       _board.begin();
     };
 
+    uint8_t ExpansionBoard::lastError() {
+      _board.lastError();
+    };
+
     void ExpansionBoard::pinMode(uint8_t pin, PinMode mode) {
       _board.pinMode1(pin, mode);
     };

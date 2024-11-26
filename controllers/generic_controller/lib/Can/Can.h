@@ -27,7 +27,7 @@ class Can {
 
     void begin();
     void receive();
-    void emitAlive(uint16_t aliveFrameId);
+    void emitAlive(uint16_t aliveFrameId, uint8_t expansionBoard1LastError, uint8_t expansionBoard2LastError);
     PinStatus* parseDigitalPinRequest();
     OtherPinDutyCycles parseOtherPinRequest();
     ExternalPwm parseExternalPwmRequest();

@@ -13,6 +13,8 @@ defmodule VmsCore.Vehicles.OVCS1.Composer.Dashboard.GenericControllersPage do
           type: "table",
           metrics: [
             %{name: "Alive?", module: OVCS1.FrontController, key: :is_alive},
+            %{name: "Exp. Board1 Last Error", module: OVCS1.FrontController, key: :expansion_board1_last_error},
+
             %{name: "Requested Inverter Relay Enabled", module: OVCS1.FrontController, key: :requested_digital_pin3_enabled},
             %{name: "Received Inverter Relay Enabled", module: OVCS1.FrontController, key: :received_digital_pin3_enabled},
 
@@ -47,6 +49,8 @@ defmodule VmsCore.Vehicles.OVCS1.Composer.Dashboard.GenericControllersPage do
           type: "table",
           metrics: [
             %{name: "Alive?", module: OVCS1.RearController, key: :is_alive},
+            %{name: "Exp. Board1 Last Error", module: OVCS1.FrontController, key: :expansion_board1_last_error},
+            %{name: "Exp. Board2 Last Error", module: OVCS1.FrontController, key: :expansion_board2_last_error},
 
             %{name: "Requested Main Negative Relay Enabled", module: OVCS1.RearController, key: :requested_digital_pin3_enabled},
             %{name: "Received Main Negative Relay Enabled", module: OVCS1.RearController, key: :received_digital_pin3_enabled},

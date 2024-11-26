@@ -76,7 +76,9 @@ void Controller::emitPinStatuses() {
 
 void Controller::emitFrames() {
   emitPinStatuses();
-  _can.emitAlive(_configuration._aliveFrameId);
+  uint8_t expansionBoard1LastError = _expansionBoard1->lastError();
+  uint8_t expansionBoard2LastError = _expansionBoard2->lastError();
+  _can.emitAlive(_configuration._aliveFrameId, expansionBoard1LastError, expansionBoard2LastError);
 };
 
 void Controller::setup() {

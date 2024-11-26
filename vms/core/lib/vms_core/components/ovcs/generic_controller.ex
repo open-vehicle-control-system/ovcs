@@ -4,7 +4,7 @@ defmodule VmsCore.Components.OVCS.GenericController do
   """
   use GenServer
 
-  alias Cantastic.{Emitter, Frame, Receiver, ReceivedFrameWatcher}
+  alias Cantastic.{Emitter, Frame, Signal, Receiver, ReceivedFrameWatcher}
   alias VmsCore.{Application, Bus}
   @pwm_duty_cycle_range 65_535
   alias Decimal, as: D
@@ -154,7 +154,9 @@ defmodule VmsCore.Components.OVCS.GenericController do
       control_digital_pins: control_digital_pins,
       control_other_pins: control_other_pins,
       requested_pin_names: requested_pin_names,
-      received_pin_names: received_pin_names
+      received_pin_names: received_pin_names,
+      expansion_board1_last_error: nil,
+      expansion_board2_last_error: nil
     }}
   end
 
@@ -174,8 +176,16 @@ defmodule VmsCore.Components.OVCS.GenericController do
   end
 
   @impl true
-  def handle_info({:handle_frame,  %Frame{name: name} = _frame}, state) when name == state.alive_frame_name do
-    {:noreply, state}
+  def handle_info({:handle_frame,  %Frame{name: name, signals: signals} = _frame}, state) when name == state.alive_frame_name do
+    %{
+      "expansion_board1_last_error" => %Signal{value: expansion_board1_last_error},
+      "expansion_board2_last_error" => %Signal{value: expansion_board2_last_error}
+    } = signals
+
+    {:noreply, %{state |
+      expansion_board1_last_error: expansion_board1_last_error,
+      expansion_board2_last_error: expansion_board2_last_error
+    }}
   end
 
   @impl true
@@ -211,7 +221,7 @@ defmodule VmsCore.Components.OVCS.GenericController do
     pin_name = "external_pwm#{pwm_id}"
     requested_pins = %{state.requested_pins |
       "#{pin_name}_enabled" => enabled,
-      "#{pin_name}_duty_cycle" => duty_cycle,
+      "#{pin_name}_duty_cycle" => duty_cycle_percentage,
       "#{pin_name}_frequency" => frequency
     }
     {:reply, :ok, %{state | requested_pins: requested_pins}}
@@ -291,6 +301,8 @@ defmodule VmsCore.Components.OVCS.GenericController do
     end)
     {:ok, is_alive} = ReceivedFrameWatcher.is_alive?(:ovcs, state.alive_frame_name)
     Bus.broadcast("messages", %Bus.Message{name: :is_alive, value: is_alive, source: state.process_name})
+    Bus.broadcast("messages", %Bus.Message{name: :expansion_board1_last_error, value: state.expansion_board1_last_error, source: state.process_name})
+    Bus.broadcast("messages", %Bus.Message{name: :expansion_board2_last_error, value: state.expansion_board2_last_error, source: state.process_name})
     state
   end
 end

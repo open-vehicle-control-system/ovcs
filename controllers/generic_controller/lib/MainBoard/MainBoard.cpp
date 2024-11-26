@@ -1,6 +1,8 @@
     #include <MainBoard.h>
 
-    bool MainBoard::begin() { return true; };
+    bool MainBoard::begin() { return true; }
+
+    uint8_t MainBoard::lastError() { return 0; };
 
     void MainBoard::pinMode(uint8_t pin, PinMode mode) {
       ::pinMode(pin, mode);

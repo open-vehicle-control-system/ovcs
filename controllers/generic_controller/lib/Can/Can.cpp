@@ -31,15 +31,17 @@ void Can::emit(CANMessage frame) {
   }
 };
 
-void Can::emitAlive(uint16_t aliveFrameId) {
+void Can::emitAlive(uint16_t aliveFrameId, uint8_t expansionBoard1LastError, uint8_t expansionBoard2LastError) {
   unsigned long now = millis();
   if(_aliveEmittingTimestamp + ALIVE_FRAME_FREQUENCY_MS <= now){
     _aliveEmittingTimestamp = now;
     CANMessage frame;
     frame.id      = aliveFrameId;
-    frame.len     = 1;
+    frame.len     = 3;
     frame.data[0] = _aliveCounter;
-    _aliveCounter  = (_aliveCounter + 1) % 3;
+    frame.data[1] = expansionBoard1LastError;
+    frame.data[2] = expansionBoard2LastError;
+    _aliveCounter = (_aliveCounter + 1) % 3;
     emit(frame);
   }
 };

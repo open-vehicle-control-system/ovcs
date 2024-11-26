@@ -12,6 +12,7 @@ class ExpansionBoard: public AbstractBoard {
     };
 
     bool begin();
+    uint8_t lastError();
     void pinMode(uint8_t pin, PinMode mode);
     void digitalWrite(uint8_t pin, PinStatus status);
     PinStatus digitalRead(uint8_t pin);
