@@ -23,16 +23,29 @@ let store = props.store
 
 const displayValue = (store, metric) => {
     let value = store.data[metric.module][metric.key]
-    if(value === true){
-        return emojiIndex.findEmoji(":white_check_mark:").native
-    } else if(value === false) {
-        return emojiIndex.findEmoji(":x:").native
+    if(typeof(value) === "boolean"){
+        return renderBoolean(value);
+    } else if(typeof(value) === "number"){
+        return renderNumber(value, metric);
     } else {
-        console.log(metric.unit)
         let displayValue = store.data[metric.module][metric.key]
         metric.unit != null? displayValue = displayValue + " " + metric.unit : undefined
         return displayValue
     }
+}
+
+const renderBoolean = (value) => {
+    if(value === true){
+        return emojiIndex.findEmoji(":white_check_mark:").native
+    } else if(value === false) {
+        return emojiIndex.findEmoji(":x:").native
+    }
+}
+
+const renderNumber = (value, metric) => {
+    let displayValue = Math.round(value*100)/100
+    metric.unit != null? displayValue = displayValue + " " + metric.unit : undefined
+    return displayValue
 }
 
 </script>
