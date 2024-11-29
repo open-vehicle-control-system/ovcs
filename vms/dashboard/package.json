@@ -12,7 +12,6 @@
   "dependencies": {
     "dotenv": "^16.4.5",
     "echarts": "^5.5.0",
-    "emoji-mart-vue-fast": "^15.0.3",
     "pinia": "^2.1.7",
     "vue": "^3.4.15",
     "vue-echarts": "^6.6.9",
