@@ -39,7 +39,7 @@
 
   import { ref } from 'vue'
   import * as heroicons from '@heroicons/vue/24/outline'
-import { color } from 'echarts';
+  import { color } from 'echarts';
 
   let navigation = ref([])
   let vehicleName = ref()
