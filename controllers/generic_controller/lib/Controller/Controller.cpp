@@ -95,6 +95,25 @@ void Controller::emitFrames(uint8_t expansionBoard1LastError, uint8_t expansionB
   }
 };
 
+void Controller::shutdown() {
+  _shutdown = true;
+  // TODO: Do something
+};
+
+void Controller::watchVms() {
+  unsigned long now = millis();
+  if(_can._receivedFrame.id == _configuration._vmsAliveFrameId){
+    if(_latestVmsAliveTimestamp == 0){
+      _latestVmsAliveTimestamp = now;
+    } else if(_shutdown == true){
+      _shutdown = false;
+      // TODO: Do something
+    }
+  } else if(_latestVmsAliveTimestamp + _vmsAliveTimeoutMs < now){
+    shutdown();
+  }
+}
+
 void Controller::setup() {
 
   initializeSerial();
@@ -147,5 +166,6 @@ void Controller::loop() {
     uint8_t expansionBoard1LastError = verifyExpansionBoardErrors(1);
     uint8_t expansionBoard2LastError = verifyExpansionBoardErrors(2);
     emitFrames(expansionBoard1LastError, expansionBoard2LastError);
+    watchVms();
   }
 };

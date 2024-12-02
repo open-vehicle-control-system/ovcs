@@ -27,10 +27,13 @@ class Controller {
       SerialTransfer* serialTransfer
     ){
       _ready           = false;
+      _shutdown        = false;
       _mainBoard       = mainBoard;
       _expansionBoard1 = expansionBoard1;
       _expansionBoard2 = expansionBoard2;
       _serialTransfer  = serialTransfer;
+      _vmsAliveTimeoutMs = 200;
+      _latestVmsAliveTimestamp = 0;
       _configuration   = Configuration(mainBoard, expansionBoard1, expansionBoard2, crc, serialTransfer);
       _aliveEmittingTimestamp = 0;
       _digitalAndAnalogPinStatusesTimestamp = 0;
@@ -40,6 +43,9 @@ class Controller {
 
   private :
     bool _ready;
+    bool _shutdown;
+    uint8_t _vmsAliveTimeoutMs;
+    unsigned long _latestVmsAliveTimestamp;
     AbstractBoard* _mainBoard;
     AbstractBoard* _expansionBoard1;
     AbstractBoard* _expansionBoard2;
@@ -62,6 +68,8 @@ class Controller {
     void emitPinStatuses();
     void emitFrames(uint8_t expansionBoard1LastError, uint8_t expansionBoard2LastError);
     uint8_t verifyExpansionBoardErrors(uint8_t boardId);
+    void watchVms();
+    void shutdown();
 };
 
 #endif
