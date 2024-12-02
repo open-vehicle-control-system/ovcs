@@ -45,12 +45,25 @@ void Controller::writeDigitalPins() {
   }
 };
 
+void Controller::shutdownAllDigitalPins(){
+  for (uint8_t i = 0; i < 19; i++) {
+    _configuration._digitalPins[i].writeIfAllowed(LOW);
+  }
+};
+
 void Controller::writeOtherPins() {
   OtherPinDutyCycles otherPinDutyCycles = _can.parseOtherPinRequest();
   for (uint8_t i = 0; i < 3; i++) {
     _configuration._pwmPins[i].writeIfAllowed(otherPinDutyCycles.pwmDutyCyles[i]);
   }
   _configuration._dacPin.writeIfAllowed(otherPinDutyCycles.dacDutyCycle);
+};
+
+void Controller::shutdownAllOtherPins(){
+  for (uint8_t i = 0; i < 3; i++) {
+    _configuration._pwmPins[i].writeIfAllowed(LOW);
+  }
+  _configuration._dacPin.writeIfAllowed(LOW);
 };
 
 void Controller::setExternalPwm() {
@@ -108,7 +121,8 @@ void Controller::watchVms() {
 
     if(_vmsValidFramesWindow == 0){
       _status = FAILSAFE;
-      // TODO: Do something
+      shutdownAllDigitalPins();
+      shutdownAllOtherPins();
     } else {
       _status = READY;
     }
@@ -152,18 +166,20 @@ void Controller::loop() {
   if (_adoptionButton.isWaitingAdoption() && _can._receivedFrame.id == ADOPTION_FRAME_ID) {
     DPRINTLN("--> Adoption started <--");
     adoptConfiguration();
-  } else if (isReady()) {
-    if (_can._receivedFrame.id == _configuration._digitalPinRequestFrameId) {
-      writeDigitalPins();
-    } else if (_can._receivedFrame.id == _configuration._otherPinRequestFrameId) {
-      writeOtherPins();
-    } else if (
-        _can._receivedFrame.id == _configuration._externalPwm0RequestFrameId ||
-        _can._receivedFrame.id == _configuration._externalPwm1RequestFrameId ||
-        _can._receivedFrame.id == _configuration._externalPwm2RequestFrameId ||
-        _can._receivedFrame.id == _configuration._externalPwm3RequestFrameId) {
-      setExternalPwm();
-    }
+  } else{
+    if (isReady()) {
+      if (_can._receivedFrame.id == _configuration._digitalPinRequestFrameId) {
+        writeDigitalPins();
+      } else if (_can._receivedFrame.id == _configuration._otherPinRequestFrameId) {
+        writeOtherPins();
+      } else if (
+          _can._receivedFrame.id == _configuration._externalPwm0RequestFrameId ||
+          _can._receivedFrame.id == _configuration._externalPwm1RequestFrameId ||
+          _can._receivedFrame.id == _configuration._externalPwm2RequestFrameId ||
+          _can._receivedFrame.id == _configuration._externalPwm3RequestFrameId) {
+        setExternalPwm();
+      }
+    };
     uint8_t expansionBoard1LastError = verifyExpansionBoardErrors(1);
     uint8_t expansionBoard2LastError = verifyExpansionBoardErrors(2);
     emitFrames(expansionBoard1LastError, expansionBoard2LastError);

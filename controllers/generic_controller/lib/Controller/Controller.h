@@ -66,7 +66,9 @@ class Controller {
     void initializeSerialTransfer();
     void initializeI2C();
     void writeDigitalPins();
+    void shutdownAllDigitalPins();
     void writeOtherPins();
+    void shutdownAllOtherPins();
     void setExternalPwm();
     PinStatus *readDigitalPins();
     uint16_t* readAnalogPins();
