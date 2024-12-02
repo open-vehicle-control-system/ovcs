@@ -76,6 +76,13 @@ void Configuration::computeDigitalPins() {
             break;
         }
         _digitalPins[pinNumber] = DigitalPin(status, board, physicalPin);
+        if (_digitalPins[pinNumber].readable() || _digitalPins[pinNumber].writeable()) {
+          if(boardId == EXPANSION_BOARD_ID_1) {
+            _expansionBoard1InUse = true;
+          } else if (boardId == EXPANSION_BOARD_ID_2) {
+            _expansionBoard1InUse = true;
+          }
+        }
         pinNumber++;
       } else {
         i = 9;

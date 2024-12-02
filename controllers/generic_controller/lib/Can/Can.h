@@ -8,8 +8,6 @@
 #include <OtherPinDutyCycle.h>
 #include <ExternalPwm.h>
 
-#define ALIVE_FRAME_FREQUENCY_MS 100
-#define DIGITAL_AND_ANALOG_PINS_STATUS_FRAME_FREQUENCY_MS 10
 #define CAN_BITRATE 500UL * 1000UL
 #define CAN_OSCILLATOR ACAN2517Settings::OSC_40MHz
 #define SPI_CAN_CS 10
@@ -35,9 +33,6 @@ class Can {
 
   private:
     uint8_t _aliveCounter;
-    unsigned long _aliveEmittingTimestamp;
-    unsigned long _digitalAndAnalogPinStatusesTimestamp;
-
     void emit(CANMessage frame);
     uint8_t extractBits(uint16_t source, uint16_t mask, uint8_t shiftRight);
 };

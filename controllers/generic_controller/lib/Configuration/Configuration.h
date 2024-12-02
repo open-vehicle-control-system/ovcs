@@ -64,9 +64,10 @@ class Configuration {
     uint16_t _externalPwm1RequestFrameId;
     uint16_t _externalPwm2RequestFrameId;
     uint16_t _externalPwm3RequestFrameId;
+    bool _expansionBoard1InUse;
+    bool _expansionBoard2InUse;
     bool load();
     void storeAndApply(uint8_t newConfiguration[8]);
-
 
     Configuration() {};
     Configuration(
@@ -81,6 +82,8 @@ class Configuration {
       _expansionBoard2 = expansionBoard2;
       _crc             = crc;
       _serialTransfert = serialTransfert;
+      _expansionBoard1InUse = false;
+      _expansionBoard2InUse = false;
     };
 
   private:

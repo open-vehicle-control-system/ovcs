@@ -32,43 +32,35 @@ void Can::emit(CANMessage frame) {
 };
 
 void Can::emitAlive(uint16_t aliveFrameId, uint8_t expansionBoard1LastError, uint8_t expansionBoard2LastError) {
-  unsigned long now = millis();
-  if(_aliveEmittingTimestamp + ALIVE_FRAME_FREQUENCY_MS <= now){
-    _aliveEmittingTimestamp = now;
-    CANMessage frame;
-    frame.id      = aliveFrameId;
-    frame.len     = 3;
-    frame.data[0] = _aliveCounter;
-    frame.data[1] = expansionBoard1LastError;
-    frame.data[2] = expansionBoard2LastError;
-    _aliveCounter = (_aliveCounter + 1) % 3;
-    emit(frame);
-  }
+  CANMessage frame;
+  frame.id      = aliveFrameId;
+  frame.len     = 3;
+  frame.data[0] = _aliveCounter;
+  frame.data[1] = expansionBoard1LastError;
+  frame.data[2] = expansionBoard2LastError;
+  _aliveCounter = (_aliveCounter + 1) % 3;
+  emit(frame);
 };
 
 void Can::emitdigitalAndAnalogPinsStatus(uint16_t digitalAndAnalogPinStatusesFrameId, PinStatus digitalPinsStatus [19], uint16_t analogPinsStatus [3]) {
-  unsigned long now = millis();
-  if(_digitalAndAnalogPinStatusesTimestamp + DIGITAL_AND_ANALOG_PINS_STATUS_FRAME_FREQUENCY_MS <= now){
-    _digitalAndAnalogPinStatusesTimestamp = now;
-    CANMessage frame;
-    frame.id  = digitalAndAnalogPinStatusesFrameId;
-    frame.len = 8;
+  CANMessage frame;
+  frame.id  = digitalAndAnalogPinStatusesFrameId;
+  frame.len = 8;
 
-    for(uint8_t i = 0; i < 19; i++) {
-      uint8_t byteNumber = i / 8;
-      uint8_t bitNumber  = 7 - (i % 8);
-      bitWrite(frame.data[byteNumber], bitNumber, digitalPinsStatus[i] == HIGH ? 1 : 0);
-    }
-
-    frame.data[2] = frame.data[2]                                              | extractBits(analogPinsStatus[0], 0b00000011111000, 3);
-    frame.data[3] = extractBits(analogPinsStatus[0], 0b00000000000111, 0) << 5 | extractBits(analogPinsStatus[0], 0b11111000000000, 9);
-    frame.data[4] = extractBits(analogPinsStatus[0], 0b00000100000000, 8) << 7 | extractBits(analogPinsStatus[1], 0b00000011111110, 1);
-    frame.data[5] = extractBits(analogPinsStatus[1], 0b00000000000001, 0) << 7 | extractBits(analogPinsStatus[1], 0b11111100000000, 8);
-    frame.data[6] = extractBits(analogPinsStatus[2], 0b00000011111111, 0);
-    frame.data[7] = extractBits(analogPinsStatus[2], 0b11111100000000, 8) << 2;
-
-    emit(frame);
+  for(uint8_t i = 0; i < 19; i++) {
+    uint8_t byteNumber = i / 8;
+    uint8_t bitNumber  = 7 - (i % 8);
+    bitWrite(frame.data[byteNumber], bitNumber, digitalPinsStatus[i] == HIGH ? 1 : 0);
   }
+
+  frame.data[2] = frame.data[2]                                              | extractBits(analogPinsStatus[0], 0b00000011111000, 3);
+  frame.data[3] = extractBits(analogPinsStatus[0], 0b00000000000111, 0) << 5 | extractBits(analogPinsStatus[0], 0b11111000000000, 9);
+  frame.data[4] = extractBits(analogPinsStatus[0], 0b00000100000000, 8) << 7 | extractBits(analogPinsStatus[1], 0b00000011111110, 1);
+  frame.data[5] = extractBits(analogPinsStatus[1], 0b00000000000001, 0) << 7 | extractBits(analogPinsStatus[1], 0b11111100000000, 8);
+  frame.data[6] = extractBits(analogPinsStatus[2], 0b00000011111111, 0);
+  frame.data[7] = extractBits(analogPinsStatus[2], 0b11111100000000, 8) << 2;
+
+  emit(frame);
 };
 
 

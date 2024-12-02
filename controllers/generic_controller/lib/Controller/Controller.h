@@ -14,6 +14,8 @@
 #define ANALOG_READ_RESOLUTION 14
 #define ANALOG_WRITE_RESOLUTION 12
 #define I2C_CLOCK_FREQUENCY 100000
+#define ALIVE_FRAME_FREQUENCY_MS 100
+#define DIGITAL_AND_ANALOG_PINS_STATUS_FRAME_FREQUENCY_MS 10
 
 class Controller {
   public:
@@ -30,6 +32,8 @@ class Controller {
       _expansionBoard2 = expansionBoard2;
       _serialTransfer  = serialTransfer;
       _configuration   = Configuration(mainBoard, expansionBoard1, expansionBoard2, crc, serialTransfer);
+      _aliveEmittingTimestamp = 0;
+      _digitalAndAnalogPinStatusesTimestamp = 0;
     };
     void setup();
     void loop();
@@ -43,6 +47,8 @@ class Controller {
     AdoptionButton _adoptionButton;
     Can _can;
     Configuration _configuration;
+    unsigned long _aliveEmittingTimestamp;
+    unsigned long _digitalAndAnalogPinStatusesTimestamp;
     void initializeSerial();
     void initializeSerialTransfer();
     void initializeI2C();
@@ -54,8 +60,8 @@ class Controller {
     bool isReady();
     void adoptConfiguration();
     void emitPinStatuses();
-    void emitFrames();
-
+    void emitFrames(uint8_t expansionBoard1LastError, uint8_t expansionBoard2LastError);
+    uint8_t verifyExpansionBoardErrors(uint8_t boardId);
 };
 
 #endif
