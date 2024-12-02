@@ -31,13 +31,14 @@ void Can::emit(CANMessage frame) {
   }
 };
 
-void Can::emitAlive(uint16_t aliveFrameId, uint8_t expansionBoard1LastError, uint8_t expansionBoard2LastError) {
+void Can::emitAlive(uint16_t aliveFrameId, uint8_t expansionBoard1LastError, uint8_t expansionBoard2LastError, uint8_t status) {
   CANMessage frame;
   frame.id      = aliveFrameId;
   frame.len     = 3;
   frame.data[0] = _aliveCounter;
   frame.data[1] = expansionBoard1LastError;
   frame.data[2] = expansionBoard2LastError;
+  frame.data[3] = status;
   _aliveCounter = (_aliveCounter + 1) % 3;
   emit(frame);
 };

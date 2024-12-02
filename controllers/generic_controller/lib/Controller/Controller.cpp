@@ -29,7 +29,7 @@ void Controller::initializeI2C() {
 };
 
 bool Controller::isReady() {
-  return _ready;
+  return _status == READY;
 };
 
 void Controller::adoptConfiguration() {
@@ -91,26 +91,27 @@ void Controller::emitFrames(uint8_t expansionBoard1LastError, uint8_t expansionB
 
   if(_aliveEmittingTimestamp + ALIVE_FRAME_FREQUENCY_MS <= now){
     _aliveEmittingTimestamp = now;
-    _can.emitAlive(_configuration._aliveFrameId, expansionBoard1LastError, expansionBoard2LastError);
+    _can.emitAlive(_configuration._aliveFrameId, expansionBoard1LastError, expansionBoard2LastError, _status);
   }
-};
-
-void Controller::shutdown() {
-  _shutdown = true;
-  // TODO: Do something
 };
 
 void Controller::watchVms() {
   unsigned long now = millis();
   if(_can._receivedFrame.id == _configuration._vmsAliveFrameId){
-    if(_latestVmsAliveTimestamp == 0){
-      _latestVmsAliveTimestamp = now;
-    } else if(_shutdown == true){
-      _shutdown = false;
-      // TODO: Do something
+    _latestVmsAliveTimestamp = now;
+
+    if(_latestVmsAliveTimestamp + VMS_ALIVE_MS < now){
+      _vmsValidFramesWindow = max(0, _vmsValidFramesWindow - 1);
+    } else {
+      _vmsValidFramesWindow = min(VMS_VALID_FRAMES_WINDOW_SIZE, _vmsValidFramesWindow + 1);
     }
-  } else if(_latestVmsAliveTimestamp + _vmsAliveTimeoutMs < now){
-    shutdown();
+
+    if(_vmsValidFramesWindow == 0){
+      _status = FAILSAFE;
+      // TODO: Do something
+    } else {
+      _status = READY;
+    }
   }
 }
 
@@ -123,9 +124,9 @@ void Controller::setup() {
   analogWriteResolution(ANALOG_WRITE_RESOLUTION);
   if (_configuration.load()) {
     initializeI2C();
-    _ready = true;
+    _status = READY;
   } else {
-    _ready = false;
+    _status = ADOPTION_REQUIRED;
   }
 };
 
