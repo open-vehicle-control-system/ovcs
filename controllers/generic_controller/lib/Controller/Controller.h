@@ -18,6 +18,8 @@
 #define DIGITAL_AND_ANALOG_PINS_STATUS_FRAME_FREQUENCY_MS 10
 #define VMS_ALIVE_MS 100
 #define VMS_VALID_FRAMES_WINDOW_SIZE 4
+#define TOLERANCE_MS 10
+#define MAX_I2C_RETRY 4
 
 #define STARTING 0
 #define READY 1
@@ -39,8 +41,8 @@ class Controller {
       _expansionBoard1 = expansionBoard1;
       _expansionBoard2 = expansionBoard2;
       _serialTransfer  = serialTransfer;
-      _latestVmsAliveTimestamp = 0;
-      _vmsValidFramesWindow = 0;
+      _i2cErrorCount = 0;
+      _vmsValidFramesWindow = 4;
       _configuration   = Configuration(mainBoard, expansionBoard1, expansionBoard2, crc, serialTransfer);
       _aliveEmittingTimestamp = 0;
       _digitalAndAnalogPinStatusesTimestamp = 0;
@@ -55,6 +57,7 @@ class Controller {
     uint8_t _vmsValidFramesWindow;
     AbstractBoard* _mainBoard;
     AbstractBoard* _expansionBoard1;
+    uint8_t _i2cErrorCount;
     AbstractBoard* _expansionBoard2;
     SerialTransfer* _serialTransfer;
     AdoptionButton _adoptionButton;
@@ -64,20 +67,22 @@ class Controller {
     unsigned long _digitalAndAnalogPinStatusesTimestamp;
     void initializeSerial();
     void initializeSerialTransfer();
-    void initializeI2C();
+    bool initializeI2C();
     void writeDigitalPins();
     void shutdownAllDigitalPins();
     void writeOtherPins();
     void shutdownAllOtherPins();
     void setExternalPwm();
+    void disablePwm();
     PinStatus *readDigitalPins();
     uint16_t* readAnalogPins();
     bool isReady();
     void adoptConfiguration();
+    void shutdown();
     void emitPinStatuses();
-    void emitFrames(uint8_t expansionBoard1LastError, uint8_t expansionBoard2LastError);
+    void emitAlive(uint8_t expansionBoard1LastError, uint8_t expansionBoard2LastError);
     uint8_t verifyExpansionBoardErrors(uint8_t boardId);
-    void watchVms();
+    void watchVms(uint8_t expansionBoard1LastError, uint8_t expansionBoard2LastError);
 };
 
 #endif
