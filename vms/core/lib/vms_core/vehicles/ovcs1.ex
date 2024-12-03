@@ -117,6 +117,6 @@ defmodule VmsCore.Vehicles.OVCS1 do
   end
 
   defp enable_watchers do
-    Process.send_after(self(), :enable_watchers, 5000)
+    Process.send_after(self(), :enable_watchers, 30_000)
   end
 end

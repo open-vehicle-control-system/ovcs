@@ -155,6 +155,7 @@ defmodule VmsCore.Components.OVCS.GenericController do
       control_other_pins: control_other_pins,
       requested_pin_names: requested_pin_names,
       received_pin_names: received_pin_names,
+      status: nil,
       expansion_board1_last_error: nil,
       expansion_board2_last_error: nil
     }}
@@ -178,11 +179,13 @@ defmodule VmsCore.Components.OVCS.GenericController do
   @impl true
   def handle_info({:handle_frame,  %Frame{name: name, signals: signals} = _frame}, state) when name == state.alive_frame_name do
     %{
+      "status"                      => %Signal{value: status},
       "expansion_board1_last_error" => %Signal{value: expansion_board1_last_error},
       "expansion_board2_last_error" => %Signal{value: expansion_board2_last_error}
     } = signals
 
     {:noreply, %{state |
+      status: status,
       expansion_board1_last_error: expansion_board1_last_error,
       expansion_board2_last_error: expansion_board2_last_error
     }}
@@ -301,6 +304,7 @@ defmodule VmsCore.Components.OVCS.GenericController do
     end)
     {:ok, is_alive} = ReceivedFrameWatcher.is_alive?(:ovcs, state.alive_frame_name)
     Bus.broadcast("messages", %Bus.Message{name: :is_alive, value: is_alive, source: state.process_name})
+    Bus.broadcast("messages", %Bus.Message{name: :status, value: state.status, source: state.process_name})
     Bus.broadcast("messages", %Bus.Message{name: :expansion_board1_last_error, value: state.expansion_board1_last_error, source: state.process_name})
     Bus.broadcast("messages", %Bus.Message{name: :expansion_board2_last_error, value: state.expansion_board2_last_error, source: state.process_name})
     state

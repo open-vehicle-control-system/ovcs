@@ -13,6 +13,8 @@ defmodule VmsCore.Vehicles.OVCS1.Composer.Dashboard.GenericControllersPage do
           type: "table",
           metrics: [
             %{name: "Alive?", module: OVCS1.FrontController, key: :is_alive},
+            %{name: "Status", module: OVCS1.FrontController, key: :status},
+
             %{name: "Exp. Board1 Last Error", module: OVCS1.FrontController, key: :expansion_board1_last_error},
 
             %{name: "Requested Inverter Relay Enabled", module: OVCS1.FrontController, key: :requested_digital_pin3_enabled},
@@ -34,6 +36,7 @@ defmodule VmsCore.Vehicles.OVCS1.Composer.Dashboard.GenericControllersPage do
           type: "table",
           metrics: [
             %{name: "Alive?", module: OVCS1.ControlsController, key: :is_alive},
+            %{name: "Status", module: OVCS1.ControlsController, key: :status},
             %{name: "Steering Column PWM Enabled", module: OVCS1.ControlsController, key: :requested_external_pwm0_enabled},
             %{name: "Steering Column PWM Duty Cycle", module: OVCS1.ControlsController, key: :requested_external_pwm0_duty_cycle, unit: "%"},
             %{name: "Steering Column PWM frequency", module: OVCS1.ControlsController, key: :requested_external_pwm0_frequency, unit: "Hz"},
@@ -49,6 +52,8 @@ defmodule VmsCore.Vehicles.OVCS1.Composer.Dashboard.GenericControllersPage do
           type: "table",
           metrics: [
             %{name: "Alive?", module: OVCS1.RearController, key: :is_alive},
+            %{name: "Status", module: OVCS1.RearController, key: :status},
+
             %{name: "Exp. Board1 Last Error", module: OVCS1.RearController, key: :expansion_board1_last_error},
             %{name: "Exp. Board2 Last Error", module: OVCS1.RearController, key: :expansion_board2_last_error},
 

@@ -120,20 +120,16 @@ void Controller::shutdown(ControllerStatus controllerStatus){
   shutdownAllDigitalPins();
   shutdownAllOtherPins();
   disablePwm();
-  DPRINT("Shutting down with error: ");
+  DPRINT("Shutting down with error code: ");
   DPRINTLN(controllerStatus, HEX);
 }
 
 void Controller::watchVms() {
   unsigned long now = millis();
-
-  if(now > VMS_ALLOWED_BOOT_TIME && _latestVmsAliveTimestamp + (VMS_ALIVE_MS + TOLERANCE_MS) * 4 > now){
+  bool booting_period_finished = now > VMS_ALLOWED_BOOT_TIME;
+  if (booting_period_finished && _latestVmsAliveTimestamp + (VMS_ALIVE_MS + TOLERANCE_MS) * 4 < now){
     shutdown(VMS_MISSING_ERROR);
   } else if (_can._receivedFrame.id == VMS_ALIVE_FRAME_ID) {
-    Serial.println(_can._receivedFrame.data[0]);
-    Serial.println(_can._receivedFrame.data[1]);
-    Serial.println(_can._receivedFrame.data[2]);
-
     Vms vms = _can.parseVmsAliveFrame();
     if(_latestVmsAliveTimestamp + VMS_ALIVE_MS + TOLERANCE_MS > now){
       _vmsValidFramesWindow = min(VMS_VALID_FRAMES_WINDOW_SIZE, _vmsValidFramesWindow + 1);
@@ -143,12 +139,6 @@ void Controller::watchVms() {
 
     _latestVmsAliveTimestamp = now;
     uint8_t nextVmsAliveCounter = (_vmsAliveFrameCounter + 1) % 4;
-    Serial.print("VMS Counter: ");
-    Serial.print(vms.counter);
-    Serial.print(" latestCounter: ");
-    Serial.print(_vmsAliveFrameCounter);
-    Serial.print(" next :");
-    Serial.println(nextVmsAliveCounter);
     if(_vmsValidFramesWindow == 0) {
       shutdown(VMS_LATENCY_ERROR);
     } else if (vms.status == FAILURE) {
