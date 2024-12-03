@@ -153,6 +153,19 @@ defmodule VmsCore.Components.Nissan.LeafZE0.Inverter do
     end
   end
 
+  def test_controller(on \\ false) do
+    GenericController.set_digital_value(VmsCore.Vehicles.OVCS1.FrontController, 0, on)
+    GenericController.set_digital_value(VmsCore.Vehicles.OVCS1.FrontController, 1, on)
+    GenericController.set_digital_value(VmsCore.Vehicles.OVCS1.FrontController, 2, on)
+    GenericController.set_digital_value(VmsCore.Vehicles.OVCS1.FrontController, 3, on)
+    GenericController.set_digital_value(VmsCore.Vehicles.OVCS1.FrontController, 4, on)
+    GenericController.set_digital_value(VmsCore.Vehicles.OVCS1.FrontController, 5, on)
+    GenericController.set_digital_value(VmsCore.Vehicles.OVCS1.FrontController, 6, on)
+    GenericController.set_digital_value(VmsCore.Vehicles.OVCS1.FrontController, 7, on)
+    :timer.sleep(500)
+    #test_controller(!on)
+  end
+
   defp apply_torque(state) do
     max_torque = case state.selected_gear do
       :drive   -> @drive_max_torque

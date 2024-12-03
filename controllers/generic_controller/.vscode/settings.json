@@ -1,6 +1,7 @@
 {
   "files.associations": {
     "*.ex": "elixir",
-    "*.tcc": "cpp"
+    "*.tcc": "cpp",
+    "limits": "cpp"
   }
 }
