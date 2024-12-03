@@ -23,6 +23,7 @@ class ExternalPwm {
     uint8_t pwmId();
     void update(ExternalPwm& externalPwm);
     bool enabled();
+    void disable();
     uint16_t dutyCycle();
     uint16_t frequency();
   private:

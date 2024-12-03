@@ -31,13 +31,14 @@ void Can::emit(CANMessage frame) {
   }
 };
 
-void Can::emitAlive(uint16_t aliveFrameId, uint8_t expansionBoard1LastError, uint8_t expansionBoard2LastError) {
+void Can::emitAlive(uint16_t aliveFrameId, uint8_t expansionBoard1LastError, uint8_t expansionBoard2LastError, ControllerStatus status) {
   CANMessage frame;
   frame.id      = aliveFrameId;
-  frame.len     = 3;
+  frame.len     = 4;
   frame.data[0] = _aliveCounter;
-  frame.data[1] = expansionBoard1LastError;
-  frame.data[2] = expansionBoard2LastError;
+  frame.data[1] = (uint8_t)status;
+  frame.data[2] = expansionBoard1LastError;
+  frame.data[3] = expansionBoard2LastError;
   _aliveCounter = (_aliveCounter + 1) % 3;
   emit(frame);
 };
@@ -85,7 +86,7 @@ OtherPinDutyCycles Can::parseOtherPinRequest() {
   otherPinDutyCycles.dacDutyCycle    = extractBits(_receivedFrame.data[5], 0b00001111, 0) << 8 | extractBits(_receivedFrame.data[4], 0b00001111, 0) << 4 |  extractBits(_receivedFrame.data[5], 0b11110000, 4);
 
   return otherPinDutyCycles;
-}
+};
 
 ExternalPwm Can::parseExternalPwmRequest() {
   uint8_t  pwmId     = (_receivedFrame.id & 0b1111) - 5;
@@ -93,6 +94,15 @@ ExternalPwm Can::parseExternalPwmRequest() {
   uint16_t dutyCycle = _receivedFrame.data[2] << 8 | _receivedFrame.data[1];
   uint16_t frequency = _receivedFrame.data[4] << 8 | _receivedFrame.data[3];
   return ExternalPwm(pwmId, enabled, dutyCycle, frequency);
+};
+
+Vms Can::parseVmsAliveFrame() {
+  Vms vms;
+  vms.status       = (VmsStatus)_receivedFrame.data[0];
+  vms.readyToDrive = _receivedFrame.data[1];
+  vms.counter      = _receivedFrame.data[2];
+
+  return vms;
 };
 
 uint8_t Can::extractBits(uint16_t source, uint16_t mask, uint8_t shiftRight) {

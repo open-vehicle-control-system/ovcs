@@ -8,6 +8,12 @@ bool ExternalPwm::enabled() {
   return _enabled;
 };
 
+void ExternalPwm::disable() {
+  _dutyCycle = 0;
+  _frequency = 0;
+  _enabled = false;
+};
+
 uint16_t ExternalPwm::dutyCycle() {
   return _dutyCycle;
 };

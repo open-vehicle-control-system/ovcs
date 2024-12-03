@@ -14,22 +14,24 @@ void Controller::initializeSerialTransfer() {
   _serialTransfer->begin(Serial1);
 };
 
-void Controller::initializeI2C() {
+bool Controller::initializeI2C() {
   if (_configuration._expansionBoard1InUse || _configuration._expansionBoard2InUse)  {
     Wire.end();
     Wire.begin();
+    bool connected = false;
     if (_configuration._expansionBoard1InUse)  {
-      _expansionBoard1->begin();
+      connected = _expansionBoard1->begin();
     }
-    if (_configuration._expansionBoard2InUse)  {
-      _expansionBoard2->begin();
+    if (_configuration._expansionBoard2InUse && connected)  {
+      connected = _expansionBoard2->begin();
     }
     Wire.setClock(I2C_CLOCK_FREQUENCY);
+    return connected;
   }
 };
 
 bool Controller::isReady() {
-  return _ready;
+  return _status == READY;
 };
 
 void Controller::adoptConfiguration() {
@@ -45,6 +47,12 @@ void Controller::writeDigitalPins() {
   }
 };
 
+void Controller::shutdownAllDigitalPins(){
+  for (uint8_t i = 0; i < 19; i++) {
+    _configuration._digitalPins[i].writeIfAllowed(LOW);
+  }
+};
+
 void Controller::writeOtherPins() {
   OtherPinDutyCycles otherPinDutyCycles = _can.parseOtherPinRequest();
   for (uint8_t i = 0; i < 3; i++) {
@@ -53,10 +61,23 @@ void Controller::writeOtherPins() {
   _configuration._dacPin.writeIfAllowed(otherPinDutyCycles.dacDutyCycle);
 };
 
+void Controller::shutdownAllOtherPins(){
+  for (uint8_t i = 0; i < 3; i++) {
+    _configuration._pwmPins[i].writeIfAllowed(0);
+  }
+  _configuration._dacPin.writeIfAllowed(0);
+};
+
 void Controller::setExternalPwm() {
   ExternalPwm externalPwmRequest = _can.parseExternalPwmRequest();
   ExternalPwm& externalPwm = _configuration._externalPwms[externalPwmRequest.pwmId()];
   externalPwm.update(externalPwmRequest);
+};
+
+void Controller::disablePwm() {
+  for (uint8_t i = 0; i < 4; i++) {
+    _configuration._externalPwms[i].disable();
+  }
 };
 
 PinStatus* Controller::readDigitalPins() {
@@ -77,26 +98,75 @@ uint16_t* Controller::readAnalogPins() {
 };
 
 void Controller::emitPinStatuses() {
-  PinStatus* digitalPinsStatus = readDigitalPins();
-  uint16_t* analogPinsStatus = readAnalogPins();
-  _can.emitdigitalAndAnalogPinsStatus(_configuration._digitalAndAnalogPinsStatusFrameId, digitalPinsStatus, analogPinsStatus);
-};
-
-void Controller::emitFrames(uint8_t expansionBoard1LastError, uint8_t expansionBoard2LastError) {
   unsigned long now = millis();
   if(_digitalAndAnalogPinStatusesTimestamp + DIGITAL_AND_ANALOG_PINS_STATUS_FRAME_FREQUENCY_MS <= now){
     _digitalAndAnalogPinStatusesTimestamp = now;
-    emitPinStatuses();
-  }
-
-  if(_aliveEmittingTimestamp + ALIVE_FRAME_FREQUENCY_MS <= now){
-    _aliveEmittingTimestamp = now;
-    _can.emitAlive(_configuration._aliveFrameId, expansionBoard1LastError, expansionBoard2LastError);
+    PinStatus* digitalPinsStatus = readDigitalPins();
+    uint16_t* analogPinsStatus = readAnalogPins();
+    _can.emitdigitalAndAnalogPinsStatus(_configuration._digitalAndAnalogPinsStatusFrameId, digitalPinsStatus, analogPinsStatus);
   }
 };
 
-void Controller::setup() {
+void Controller::emitAlive(uint8_t expansionBoard1LastError, uint8_t expansionBoard2LastError) {
+  unsigned long now = millis();
+  if(_aliveEmittingTimestamp + ALIVE_FRAME_FREQUENCY_MS <= now){
+    _aliveEmittingTimestamp = now;
+    _can.emitAlive(_configuration._aliveFrameId, expansionBoard1LastError, expansionBoard2LastError, _status);
+  }
+};
 
+void Controller::shutdown(ControllerStatus controllerStatus){
+  _status = controllerStatus;
+  shutdownAllDigitalPins();
+  shutdownAllOtherPins();
+  disablePwm();
+  DPRINT("Shutting down with error: ");
+  DPRINTLN(controllerStatus, HEX);
+}
+
+void Controller::watchVms() {
+  unsigned long now = millis();
+
+  if(now > VMS_ALLOWED_BOOT_TIME && _latestVmsAliveTimestamp + (VMS_ALIVE_MS + TOLERANCE_MS) * 4 > now){
+    shutdown(VMS_MISSING_ERROR);
+  } else if (_can._receivedFrame.id == VMS_ALIVE_FRAME_ID) {
+    Serial.println(_can._receivedFrame.data[0]);
+    Serial.println(_can._receivedFrame.data[1]);
+    Serial.println(_can._receivedFrame.data[2]);
+
+    Vms vms = _can.parseVmsAliveFrame();
+    if(_latestVmsAliveTimestamp + VMS_ALIVE_MS + TOLERANCE_MS > now){
+      _vmsValidFramesWindow = min(VMS_VALID_FRAMES_WINDOW_SIZE, _vmsValidFramesWindow + 1);
+    } else {
+      _vmsValidFramesWindow = max(0, _vmsValidFramesWindow - 1);
+    }
+
+    _latestVmsAliveTimestamp = now;
+    uint8_t nextVmsAliveCounter = (_vmsAliveFrameCounter + 1) % 4;
+    Serial.print("VMS Counter: ");
+    Serial.print(vms.counter);
+    Serial.print(" latestCounter: ");
+    Serial.print(_vmsAliveFrameCounter);
+    Serial.print(" next :");
+    Serial.println(nextVmsAliveCounter);
+    if(_vmsValidFramesWindow == 0) {
+      shutdown(VMS_LATENCY_ERROR);
+    } else if (vms.status == FAILURE) {
+      shutdown(VMS_FAILURE_ERROR);
+    } else if (_vmsAliveFrameCounter != 255 && vms.counter != nextVmsAliveCounter) {
+      shutdown(VMS_COUNTER_MISMATCH_ERROR);
+    }
+    _vmsAliveFrameCounter = vms.counter;
+  }
+}
+
+void Controller::watchExpansionBoards(uint8_t expansionBoard1LastError, uint8_t expansionBoard2LastError) {
+  if(expansionBoard1LastError != 0 || expansionBoard2LastError != 0){
+    shutdown(EXPANSION_BOARDS_ERROR);
+  }
+}
+
+void Controller::setup() {
   initializeSerial();
   initializeSerialTransfer();
   _can.begin();
@@ -104,9 +174,9 @@ void Controller::setup() {
   analogWriteResolution(ANALOG_WRITE_RESOLUTION);
   if (_configuration.load()) {
     initializeI2C();
-    _ready = true;
+    _status = READY;
   } else {
-    _ready = false;
+    _status = ADOPTION_REQUIRED;
   }
 };
 
@@ -117,14 +187,23 @@ uint8_t Controller::verifyExpansionBoardErrors(uint8_t boardId) {
   } else if (boardId == 2 && _configuration._expansionBoard2InUse) {
     lastError = _expansionBoard2->lastError();
   }
-  if (lastError != 0 ) {
-    DPRINT("I2C Error for expansion board");
+   unsigned long now = millis();
+  if (lastError != 0) {
+    _lastI2cErrorTimestamp = now;
+    DPRINT("I2C Error for expansion board ");
     DPRINT(boardId);
     DPRINT(": ");
     DPRINTLN(lastError, HEX);
-    initializeI2C();
+    if(_i2cRetryCount < MAX_I2C_RETRY){
+      initializeI2C();
+      _i2cRetryCount += 1;
+    } else {
+      return lastError;
+    }
+  } else if (_lastI2cErrorTimestamp + ALLOWED_I2C_ERROR_TIMEFRAME < now ) {
+    _i2cRetryCount = 0;
   }
-  return lastError;
+  return 0;
 };
 
 void Controller::loop() {
@@ -132,20 +211,25 @@ void Controller::loop() {
   if (_adoptionButton.isWaitingAdoption() && _can._receivedFrame.id == ADOPTION_FRAME_ID) {
     DPRINTLN("--> Adoption started <--");
     adoptConfiguration();
-  } else if (isReady()) {
-    if (_can._receivedFrame.id == _configuration._digitalPinRequestFrameId) {
-      writeDigitalPins();
-    } else if (_can._receivedFrame.id == _configuration._otherPinRequestFrameId) {
-      writeOtherPins();
-    } else if (
-        _can._receivedFrame.id == _configuration._externalPwm0RequestFrameId ||
-        _can._receivedFrame.id == _configuration._externalPwm1RequestFrameId ||
-        _can._receivedFrame.id == _configuration._externalPwm2RequestFrameId ||
-        _can._receivedFrame.id == _configuration._externalPwm3RequestFrameId) {
-      setExternalPwm();
-    }
+  } else{
     uint8_t expansionBoard1LastError = verifyExpansionBoardErrors(1);
     uint8_t expansionBoard2LastError = verifyExpansionBoardErrors(2);
-    emitFrames(expansionBoard1LastError, expansionBoard2LastError);
+    if (isReady()) {
+      if (_can._receivedFrame.id == _configuration._digitalPinRequestFrameId) {
+        writeDigitalPins();
+      } else if (_can._receivedFrame.id == _configuration._otherPinRequestFrameId) {
+        writeOtherPins();
+      } else if (
+          _can._receivedFrame.id == _configuration._externalPwm0RequestFrameId ||
+          _can._receivedFrame.id == _configuration._externalPwm1RequestFrameId ||
+          _can._receivedFrame.id == _configuration._externalPwm2RequestFrameId ||
+          _can._receivedFrame.id == _configuration._externalPwm3RequestFrameId) {
+        setExternalPwm();
+      };
+      emitPinStatuses();
+      watchVms();
+      watchExpansionBoards(expansionBoard1LastError, expansionBoard2LastError);
+    };
+    emitAlive(expansionBoard1LastError, expansionBoard2LastError);
   }
 };

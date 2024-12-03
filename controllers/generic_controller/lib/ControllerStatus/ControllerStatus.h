@@ -1,0 +1,15 @@
+#ifndef CONTROLLER_STATUS_H
+#define CONTROLLER_STATUS_H
+
+enum ControllerStatus {
+    STARTING = 0,
+    ADOPTION_REQUIRED = 1,
+    READY = 2,
+    VMS_MISSING_ERROR = 3,
+    VMS_LATENCY_ERROR = 4,
+    VMS_COUNTER_MISMATCH_ERROR = 5,
+    VMS_FAILURE_ERROR = 6,
+    EXPANSION_BOARDS_ERROR = 7
+};
+
+#endif

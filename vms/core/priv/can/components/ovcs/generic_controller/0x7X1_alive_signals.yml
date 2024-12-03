@@ -3,9 +3,22 @@
   kind: integer
   value_start: 0
   value_length: 8
-- name: expansion_board1_last_error
+- name: status
   kind: enum
   value_start: 8
+  value_length: 8
+  mapping:
+      0x00: STARTING
+      0x01: ADOPTION_REQUIRED
+      0x02: READY
+      0x03: VMS_MISSING_ERROR
+      0x04: VMS_LATENCY_ERROR
+      0x05: VMS_COUNTER_MISMATCH_ERROR
+      0x06: VMS_FAILURE_ERROR
+      0x07: EXPANSION_BOARDS_ERROR
+- name: expansion_board1_last_error
+  kind: enum
+  value_start: 16
   value_length: 8
   mapping:
       0x00: OK
@@ -21,7 +34,7 @@
       0xFF: REGISTER_OR_INVALID_READ_ERROR
 - name: expansion_board2_last_error
   kind: enum
-  value_start: 16
+  value_start: 24
   value_length: 8
   mapping:
       0x00: OK
