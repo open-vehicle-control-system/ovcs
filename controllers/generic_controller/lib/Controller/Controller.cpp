@@ -115,32 +115,54 @@ void Controller::emitAlive(uint8_t expansionBoard1LastError, uint8_t expansionBo
   }
 };
 
-void Controller::shutdown(){
+void Controller::shutdown(ControllerStatus controllerStatus){
+  _status = controllerStatus;
   shutdownAllDigitalPins();
   shutdownAllOtherPins();
   disablePwm();
+  DPRINT("Shutting down with error: ");
+  DPRINTLN(controllerStatus, HEX);
 }
 
-void Controller::watchVms(uint8_t expansionBoard1LastError, uint8_t expansionBoard2LastError) {
+void Controller::watchVms() {
   unsigned long now = millis();
-  if(_can._receivedFrame.id == _configuration._vmsAliveFrameId){
-    _latestVmsAliveTimestamp = now;
 
+  if(now > VMS_ALLOWED_BOOT_TIME && _latestVmsAliveTimestamp + (VMS_ALIVE_MS + TOLERANCE_MS) * 4 > now){
+    shutdown(VMS_MISSING_ERROR);
+  } else if (_can._receivedFrame.id == VMS_ALIVE_FRAME_ID) {
+    Serial.println(_can._receivedFrame.data[0]);
+    Serial.println(_can._receivedFrame.data[1]);
+    Serial.println(_can._receivedFrame.data[2]);
+
+    Vms vms = _can.parseVmsAliveFrame();
     if(_latestVmsAliveTimestamp + VMS_ALIVE_MS + TOLERANCE_MS > now){
       _vmsValidFramesWindow = min(VMS_VALID_FRAMES_WINDOW_SIZE, _vmsValidFramesWindow + 1);
     } else {
       _vmsValidFramesWindow = max(0, _vmsValidFramesWindow - 1);
     }
 
-    if(expansionBoard1LastError != 0 || expansionBoard2LastError != 0){
-      _status = ERROR;
-      shutdown();
+    _latestVmsAliveTimestamp = now;
+    uint8_t nextVmsAliveCounter = (_vmsAliveFrameCounter + 1) % 4;
+    Serial.print("VMS Counter: ");
+    Serial.print(vms.counter);
+    Serial.print(" latestCounter: ");
+    Serial.print(_vmsAliveFrameCounter);
+    Serial.print(" next :");
+    Serial.println(nextVmsAliveCounter);
+    if(_vmsValidFramesWindow == 0) {
+      shutdown(VMS_LATENCY_ERROR);
+    } else if (vms.status == FAILURE) {
+      shutdown(VMS_FAILURE_ERROR);
+    } else if (_vmsAliveFrameCounter != 255 && vms.counter != nextVmsAliveCounter) {
+      shutdown(VMS_COUNTER_MISMATCH_ERROR);
     }
+    _vmsAliveFrameCounter = vms.counter;
+  }
+}
 
-    if(_vmsValidFramesWindow == 0){ //|| vmsStatus  == "ok"){
-      _status = FAILSAFE;
-      shutdown();
-    }
+void Controller::watchExpansionBoards(uint8_t expansionBoard1LastError, uint8_t expansionBoard2LastError) {
+  if(expansionBoard1LastError != 0 || expansionBoard2LastError != 0){
+    shutdown(EXPANSION_BOARDS_ERROR);
   }
 }
 
@@ -165,21 +187,21 @@ uint8_t Controller::verifyExpansionBoardErrors(uint8_t boardId) {
   } else if (boardId == 2 && _configuration._expansionBoard2InUse) {
     lastError = _expansionBoard2->lastError();
   }
+   unsigned long now = millis();
   if (lastError != 0) {
-    _i2cErrorCount += 1;
-    DPRINT("I2C Error for expansion board");
+    _lastI2cErrorTimestamp = now;
+    DPRINT("I2C Error for expansion board ");
     DPRINT(boardId);
     DPRINT(": ");
     DPRINTLN(lastError, HEX);
-    if(_i2cErrorCount < MAX_I2C_RETRY){
-      if(initializeI2C()){
-        _i2cErrorCount = max(0, _i2cErrorCount - 1);
-      } else {
-        _i2cErrorCount += 1;
-      };
+    if(_i2cRetryCount < MAX_I2C_RETRY){
+      initializeI2C();
+      _i2cRetryCount += 1;
     } else {
       return lastError;
     }
+  } else if (_lastI2cErrorTimestamp + ALLOWED_I2C_ERROR_TIMEFRAME < now ) {
+    _i2cRetryCount = 0;
   }
   return 0;
 };
@@ -192,7 +214,6 @@ void Controller::loop() {
   } else{
     uint8_t expansionBoard1LastError = verifyExpansionBoardErrors(1);
     uint8_t expansionBoard2LastError = verifyExpansionBoardErrors(2);
-
     if (isReady()) {
       if (_can._receivedFrame.id == _configuration._digitalPinRequestFrameId) {
         writeDigitalPins();
@@ -206,8 +227,9 @@ void Controller::loop() {
         setExternalPwm();
       };
       emitPinStatuses();
+      watchVms();
+      watchExpansionBoards(expansionBoard1LastError, expansionBoard2LastError);
     };
     emitAlive(expansionBoard1LastError, expansionBoard2LastError);
-    watchVms(expansionBoard1LastError, expansionBoard2LastError);
   }
 };

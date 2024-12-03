@@ -7,6 +7,8 @@
 #include <SPI.h>
 #include <OtherPinDutyCycle.h>
 #include <ExternalPwm.h>
+#include <Vms.h>
+#include <ControllerStatus.h>
 
 #define CAN_BITRATE 500UL * 1000UL
 #define CAN_OSCILLATOR ACAN2517Settings::OSC_40MHz
@@ -25,10 +27,11 @@ class Can {
 
     void begin();
     void receive();
-    void emitAlive(uint16_t aliveFrameId, uint8_t expansionBoard1LastError, uint8_t expansionBoard2LastError, uint8_t status);
+    void emitAlive(uint16_t aliveFrameId, uint8_t expansionBoard1LastError, uint8_t expansionBoard2LastError, ControllerStatus status);
     PinStatus* parseDigitalPinRequest();
     OtherPinDutyCycles parseOtherPinRequest();
     ExternalPwm parseExternalPwmRequest();
+    Vms parseVmsAliveFrame();
     void emitdigitalAndAnalogPinsStatus(uint16_t digitalAndAnalogPinsStatusFrameId, PinStatus digitalPinsStatus[19], uint16_t analogPinsStatus[3]);
 
   private:

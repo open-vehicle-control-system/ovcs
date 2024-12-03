@@ -53,7 +53,6 @@ void Configuration::computeFrameIds() {
   _externalPwm1RequestFrameId        = shiftedId | EXTERNAL_PWM1_REQUEST_FRAME_ID_MASK;
   _externalPwm2RequestFrameId        = shiftedId | EXTERNAL_PWM2_REQUEST_FRAME_ID_MASK;
   _externalPwm3RequestFrameId        = shiftedId | EXTERNAL_PWM3_REQUEST_FRAME_ID_MASK;
-  _vmsAliveFrameId                   = shiftedId | VMS_ALIVE_FRAME_ID_MASK;
 };
 
 void Configuration::computeDigitalPins() {
