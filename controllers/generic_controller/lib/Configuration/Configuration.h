@@ -20,6 +20,7 @@
 #define EXTERNAL_PWM2_REQUEST_FRAME_ID_MASK 0x707
 #define EXTERNAL_PWM3_REQUEST_FRAME_ID_MASK 0x708
 #define VMS_ALIVE_FRAME_ID 0x1A0
+#define VMS_COMMAND_FRAME_ID 0x1AA
 #define CONFIGURATION_EEPROM_ADDRESS 0
 #define CONFIGURATION_CRC_EEPROM_ADDRESS 8
 #define CONFIGURATION_BYTE_SIZE 8
@@ -70,6 +71,7 @@ class Configuration {
 
     bool load();
     void storeAndApply(uint8_t newConfiguration[8]);
+    void initializePhysicalPins();
 
     Configuration() {};
     Configuration(

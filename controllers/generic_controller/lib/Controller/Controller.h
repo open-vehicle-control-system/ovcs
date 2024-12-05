@@ -69,7 +69,9 @@ class Controller {
 
     void initializeSerial();
     void initializeSerialTransfer();
-    bool initializeI2C();
+    void initializeI2C();
+    void initializeExpansionBoards();
+    void resetExpansionBoards();
     void writeDigitalPins();
     void shutdownAllDigitalPins();
     void writeOtherPins();
@@ -86,6 +88,7 @@ class Controller {
     uint8_t verifyExpansionBoardErrors(uint8_t boardId);
     void watchVms();
     void watchExpansionBoards(uint8_t expansionBoard1LastError, uint8_t expansionBoard2LastError);
+    void handleVmsCommandFrame();
 };
 
 #endif

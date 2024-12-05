@@ -105,6 +105,12 @@ Vms Can::parseVmsAliveFrame() {
   return vms;
 };
 
+VmsCommand Can::parseVmsCommandFrame() {
+  VmsCommand vmsCommand;
+  vmsCommand.command = (Command)_receivedFrame.data[0];
+  return vmsCommand;
+};
+
 uint8_t Can::extractBits(uint16_t source, uint16_t mask, uint8_t shiftRight) {
   return (source & mask) >> shiftRight;
 };

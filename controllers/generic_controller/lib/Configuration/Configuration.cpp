@@ -114,6 +114,13 @@ void Configuration::computeExternalPwms() {
   _externalPwms[3] = ExternalPwm(3, _serialTransfert);
 };
 
+void Configuration::initializePhysicalPins() {
+  int length = sizeof(_digitalPins)/sizeof(_digitalPins[0]);
+  for (uint8_t i = 0; i < length; i++) {
+    _digitalPins[i].initializePhysicalPin();
+  }
+};
+
 void Configuration::print() {
   #if DEBUG
     Serial.println(">>>>> Current Configuration");

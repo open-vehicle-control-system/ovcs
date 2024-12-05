@@ -16,19 +16,17 @@ class DigitalPin {
       _status      = status;
       _board       = board;
       _physicalPin = physicalPin;
-      initPhysicalPin();
     };
     void writeIfAllowed(PinStatus value);
     PinStatus readIfAllowed();
     bool writeable();
     bool readable();
+    void initializePhysicalPin();
 
   private:
     uint8_t _status;
     AbstractBoard* _board;
     uint8_t _physicalPin;
-
-    void initPhysicalPin();
 };
 
 #endif

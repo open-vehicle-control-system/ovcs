@@ -14,19 +14,24 @@ void Controller::initializeSerialTransfer() {
   _serialTransfer->begin(Serial1);
 };
 
-bool Controller::initializeI2C() {
-  if (_configuration._expansionBoard1InUse || _configuration._expansionBoard2InUse)  {
-    Wire.end();
-    Wire.begin();
-    bool connected = false;
-    if (_configuration._expansionBoard1InUse)  {
-      connected = _expansionBoard1->begin();
-    }
-    if (_configuration._expansionBoard2InUse && connected)  {
-      connected = _expansionBoard2->begin();
-    }
-    Wire.setClock(I2C_CLOCK_FREQUENCY);
-    return connected;
+void Controller::resetExpansionBoards() {
+  Wire.end();
+  initializeI2C();
+  initializeExpansionBoards();
+  _configuration.initializePhysicalPins();
+};
+
+void Controller::initializeI2C() {
+  Wire.begin();
+  Wire.setClock(I2C_CLOCK_FREQUENCY);
+};
+
+void Controller::initializeExpansionBoards() {
+  if (_configuration._expansionBoard1InUse)  {
+    _expansionBoard1->begin();
+  }
+  if (_configuration._expansionBoard2InUse)  {
+    _expansionBoard2->begin();
   }
 };
 
@@ -36,7 +41,8 @@ bool Controller::isReady() {
 
 void Controller::adoptConfiguration() {
   _configuration.storeAndApply(_can._receivedFrame.data);
-  initializeI2C();
+  initializeExpansionBoards();
+  _configuration.initializePhysicalPins();
   _adoptionButton.validateAdoption();
 };
 
@@ -143,9 +149,9 @@ void Controller::watchVms() {
       shutdown(VMS_LATENCY_ERROR);
     } else if (vms.status == FAILURE) {
       shutdown(VMS_FAILURE_ERROR);
-    } else if (_vmsAliveFrameCounter != 255 && vms.counter != nextVmsAliveCounter) {
-      shutdown(VMS_COUNTER_MISMATCH_ERROR);
-    }
+    } // else if (_vmsAliveFrameCounter != 255 && vms.counter != nextVmsAliveCounter) {
+    //   shutdown(VMS_COUNTER_MISMATCH_ERROR);
+    // }
     _vmsAliveFrameCounter = vms.counter;
   }
 }
@@ -156,17 +162,10 @@ void Controller::watchExpansionBoards(uint8_t expansionBoard1LastError, uint8_t 
   }
 }
 
-void Controller::setup() {
-  initializeSerial();
-  initializeSerialTransfer();
-  _can.begin();
-  analogReadResolution(ANALOG_READ_RESOLUTION);
-  analogWriteResolution(ANALOG_WRITE_RESOLUTION);
-  if (_configuration.load()) {
-    initializeI2C();
-    _status = READY;
-  } else {
-    _status = ADOPTION_REQUIRED;
+void Controller::handleVmsCommandFrame() {
+  VmsCommand vmsCommand = _can.parseVmsCommandFrame();
+  if (vmsCommand.command == RESET_GENERIC_CONTROLLERS) {
+     _status = READY;
   }
 };
 
@@ -185,7 +184,7 @@ uint8_t Controller::verifyExpansionBoardErrors(uint8_t boardId) {
     DPRINT(": ");
     DPRINTLN(lastError, HEX);
     if(_i2cRetryCount < MAX_I2C_RETRY){
-      initializeI2C();
+      resetExpansionBoards();
       _i2cRetryCount += 1;
     } else {
       return lastError;
@@ -196,11 +195,29 @@ uint8_t Controller::verifyExpansionBoardErrors(uint8_t boardId) {
   return 0;
 };
 
+void Controller::setup() {
+  initializeSerial();
+  initializeSerialTransfer();
+  initializeI2C();
+  _can.begin();
+  analogReadResolution(ANALOG_READ_RESOLUTION);
+  analogWriteResolution(ANALOG_WRITE_RESOLUTION);
+  if (_configuration.load()) {
+    initializeExpansionBoards();
+    _configuration.initializePhysicalPins();
+    _status = READY;
+  } else {
+    _status = ADOPTION_REQUIRED;
+  }
+};
+
 void Controller::loop() {
   _can.receive();
-  if (_adoptionButton.isWaitingAdoption() && _can._receivedFrame.id == ADOPTION_FRAME_ID) {
-    DPRINTLN("--> Adoption started <--");
-    adoptConfiguration();
+  if (_adoptionButton.isWaitingAdoption()) {
+    if (_can._receivedFrame.id == ADOPTION_FRAME_ID) {
+      DPRINTLN("--> Adoption started <--");
+      adoptConfiguration();
+    }
   } else{
     uint8_t expansionBoard1LastError = verifyExpansionBoardErrors(1);
     uint8_t expansionBoard2LastError = verifyExpansionBoardErrors(2);
@@ -219,6 +236,10 @@ void Controller::loop() {
       emitPinStatuses();
       watchVms();
       watchExpansionBoards(expansionBoard1LastError, expansionBoard2LastError);
+    } else {
+      if (_can._receivedFrame.id == VMS_COMMAND_FRAME_ID) {
+        handleVmsCommandFrame();
+      }
     };
     emitAlive(expansionBoard1LastError, expansionBoard2LastError);
   }

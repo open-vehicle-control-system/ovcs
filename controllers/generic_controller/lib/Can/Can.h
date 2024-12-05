@@ -9,6 +9,7 @@
 #include <ExternalPwm.h>
 #include <Vms.h>
 #include <ControllerStatus.h>
+#include <VmsCommand.h>
 
 #define CAN_BITRATE 500UL * 1000UL
 #define CAN_OSCILLATOR ACAN2517Settings::OSC_40MHz
@@ -32,6 +33,7 @@ class Can {
     OtherPinDutyCycles parseOtherPinRequest();
     ExternalPwm parseExternalPwmRequest();
     Vms parseVmsAliveFrame();
+    VmsCommand parseVmsCommandFrame();
     void emitdigitalAndAnalogPinsStatus(uint16_t digitalAndAnalogPinsStatusFrameId, PinStatus digitalPinsStatus[19], uint16_t analogPinsStatus[3]);
 
   private:

@@ -1,6 +1,6 @@
 #include <DigitalPin.h>
 
-void DigitalPin::initPhysicalPin() {
+void DigitalPin::initializePhysicalPin() {
   if (writeable()) {
     _board->pinMode(_physicalPin, OUTPUT);
     _board->digitalWrite(_physicalPin, LOW);
@@ -20,6 +20,7 @@ bool DigitalPin::readable() {
 
 void DigitalPin::writeIfAllowed(PinStatus status) {
   if (writeable()) {
+    // _board->pinMode(_physicalPin, (PinMode)1);
     _board->digitalWrite(_physicalPin, status);
   }
 };
