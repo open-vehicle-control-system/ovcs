@@ -4,14 +4,14 @@ defmodule VmsCore.Vehicles.OVCS1 do
   """
   use GenServer
   require Logger
-  alias VmsCore.Bus
+  alias VmsCore.{Bus, Status}
   alias VmsCore.Components.{
     Bosch.IBoosterGen2,
     Nissan.LeafZE0.Inverter,
     OVCS.HighVoltageContactors,
     Volkswagen.Polo9N.IgnitionLock,
   }
-  alias Cantastic.ReceivedFrameWatcher
+  alias VmsCore.Vehicles.OVCS1.{FrontController, ControlsController, RearController}
 
   @loop_period 10
 
@@ -22,8 +22,6 @@ defmodule VmsCore.Vehicles.OVCS1 do
   @impl true
   def init(_) do
     Bus.subscribe("messages")
-    :ok = ReceivedFrameWatcher.subscribe(:ovcs, ["controls_controller_alive", "front_controller_alive", "rear_controller_alive"], self())
-    enable_watchers()
     {:ok, timer} = :timer.send_interval(@loop_period, :loop)
     {:ok, %{
       loop_timer: timer,
@@ -33,14 +31,14 @@ defmodule VmsCore.Vehicles.OVCS1 do
       high_voltage_contactors_ready_to_drive: false,
       inverter_ready_to_drive: false,
       braking_system_ready_to_drive: false,
-      abs_watcher_enabled: false,
+      front_controller_status: nil,
+      front_controller_is_alive: false,
+      controls_controller_status: nil,
+      controls_controller_is_alive: false,
+      rear_controller_status: nil,
+      rear_controller_is_alive: false,
+      resetting: false,
       vms_status: "ok",
-      failed_frames: %{},
-      frame_emitters: %{
-        "controls_controller_alive" => "Controls Ctrl",
-        "front_controller_alive"    => "Front Ctrl",
-        "rear_controller_alive"     => "Rear Ctrl"
-      }
     }}
   end
 
@@ -48,7 +46,8 @@ defmodule VmsCore.Vehicles.OVCS1 do
   def handle_info(:loop, state) do
     state = state
       |> update_igntion_started()
-      |> check_ready_to_drive()
+      |> compute_ready_to_drive()
+      |> compute_vms_status()
       |> emit_metrics()
 
     {:noreply, state}
@@ -66,27 +65,28 @@ defmodule VmsCore.Vehicles.OVCS1 do
   def handle_info(%Bus.Message{name: :ready_to_drive, value: ready_to_drive, source: IBoosterGen2}, state) do
     {:noreply, %{state | braking_system_ready_to_drive: ready_to_drive}}
   end
+  def handle_info(%Bus.Message{name: :status, value: status, source: FrontController}, state)  do
+    {:noreply, %{state | front_controller_status: status}}
+  end
+  def handle_info(%Bus.Message{name: :is_alive, value: is_alive, source: FrontController}, state)  do
+    {:noreply, %{state | front_controller_is_alive: is_alive}}
+  end
+  def handle_info(%Bus.Message{name: :status, value: status, source: ControlsController}, state)  do
+    {:noreply, %{state | controls_controller_status: status}}
+  end
+  def handle_info(%Bus.Message{name: :is_alive, value: is_alive, source: ControlsController}, state)  do
+    {:noreply, %{state | controls_controller_is_alive: is_alive}}
+  end
+  def handle_info(%Bus.Message{name: :status, value: status, source: RearController}, state)  do
+    {:noreply, %{state | rear_controller_status: status}}
+  end
+  def handle_info(%Bus.Message{name: :is_alive, value: is_alive, source: RearController}, state)  do
+    {:noreply, %{state | rear_controller_is_alive: is_alive}}
+  end
+  def handle_info(%Bus.Message{name: :resetting, value: resetting, source: Status}, state)  do
+    {:noreply, %{state | resetting: resetting}}
+  end
   def handle_info(%Bus.Message{}, state) do # TODO, replace Bus ?
-    {:noreply, state}
-  end
-
-  @impl true
-  def handle_info({:handle_missing_frame,  network_name, frame_name}, state) do
-    case state.failed_frames[frame_name] do
-      nil ->
-        Logger.warning("Frame #{network_name}.#{frame_name} not received anymore")
-        state = state
-          |> put_in([:vms_status], "failure")
-          |> put_in([:failed_frames, frame_name], %{emitter: state.frame_emitters[frame_name]})
-          {:noreply, state}
-      _ ->
-        {:noreply, state}
-    end
-  end
-
-  @impl true
-  def handle_info(:enable_watchers, state) do
-    :ok = ReceivedFrameWatcher.enable(:ovcs, ["controls_controller_alive", "rear_controller_alive", "front_controller_alive"])
     {:noreply, state}
   end
 
@@ -101,22 +101,34 @@ defmodule VmsCore.Vehicles.OVCS1 do
     end
   end
 
-  defp check_ready_to_drive(state) do
-    ready_to_drive = state.ignition_started &&
+  defp compute_ready_to_drive(state) do
+    ready_to_drive = state.vms_status == "ok" &&
+      state.ignition_started &&
       state.high_voltage_contactors_ready_to_drive &&
       state.inverter_ready_to_drive &&
       state.braking_system_ready_to_drive
     %{state | ready_to_drive: ready_to_drive}
   end
 
+  defp  compute_vms_status(state) do
+    vms_is_ok = state.resetting || (
+      state.vms_status == "ok" &&
+      state.front_controller_is_alive &&
+      state.controls_controller_is_alive &&
+      state.rear_controller_is_alive &&
+      state.front_controller_status == "ok" &&
+      state.controls_controller_status == "ok" &&
+      state.rear_controller_status == "ok"
+    )
+    case vms_is_ok do
+      true -> %{state | vms_status: "ok"}
+      false -> %{state | vms_status: "failure"}
+    end
+  end
+
   defp emit_metrics(state) do
     Bus.broadcast("messages", %Bus.Message{name: :ready_to_drive, value: state.ready_to_drive, source: __MODULE__})
     Bus.broadcast("messages", %Bus.Message{name: :vms_status, value: state.vms_status, source: __MODULE__})
-    Bus.broadcast("messages", %Bus.Message{name: :failed_frames, value: state.failed_frames, source: __MODULE__})
     state
-  end
-
-  defp enable_watchers do
-    Process.send_after(self(), :enable_watchers, 30_000)
   end
 end

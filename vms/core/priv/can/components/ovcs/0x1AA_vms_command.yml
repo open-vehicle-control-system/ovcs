@@ -1,0 +1,11 @@
+---
+name: vms_command
+id: 0x1AA
+frequency: 10
+signals:
+  - name: command
+    value_start: 0
+    value_length: 8
+    kind: enum
+    mapping:
+      0x01: reset_generic_controllers

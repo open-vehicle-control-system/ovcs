@@ -5,6 +5,7 @@
 
 enum VmsStatus {
     OK = 0,
+    RESETTING = 1,
     FAILURE = 0xFF
 };
 
