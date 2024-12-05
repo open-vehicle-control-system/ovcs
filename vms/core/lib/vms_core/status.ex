@@ -98,7 +98,7 @@ defmodule VmsCore.Status do
   defp emit_vms_command_if_required(state) do
     cond do
       state.resetting && !state.reset_generic_controllers_frame_enabled ->
-        :ok = Emitter.update(:ovcs, "vms_status", fn (data) ->
+        :ok = Emitter.update(:ovcs, "vms_command", fn (data) ->
           %{data | "command" => "reset_generic_controllers"}
         end)
         Emitter.enable(:ovcs, "vms_command")
