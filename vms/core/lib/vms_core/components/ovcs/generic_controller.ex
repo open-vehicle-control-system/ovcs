@@ -276,6 +276,13 @@ defmodule VmsCore.Components.OVCS.GenericController do
     GenServer.call(controller, {:get_digital_value, pin})
   end
 
+  def trigger_action("adopt", params) do
+    controller_name = params["controller_name"] |> String.to_existing_atom
+    start_adoption(controller_name)
+    :timer.sleep(1000)
+    stop_adoption()
+  end
+
   def start_adoption(controller_name) do
     :ok = Emitter.configure(:ovcs, "controller_configuration", %{
       parameters_builder_function: :default,

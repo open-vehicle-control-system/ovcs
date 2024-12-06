@@ -14,7 +14,7 @@ defmodule VmsApiWeb.Router do
         resources "/blocks", BlocksController, only: [:index]
       end
     end
-    resources "/calibration", CalibrationController, only: [:create], singleton: true
+    resources "/actions", ActionsController, only: [:create]
   end
 
   # Enable LiveDashboard in development

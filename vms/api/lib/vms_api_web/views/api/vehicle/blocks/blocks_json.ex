@@ -20,15 +20,10 @@ defmodule VmsApiWeb.Api.Vehicle.Page.BlocksJSON do
     }
   end
 
-  def render("calibration_block_attributes.json", %{block: block}) do
-    %{
-      values: render_many(block.values, __MODULE__, "calibration_values.json", as: :value)
-    }
-  end
 
   def render("table_block_attributes.json", %{block: block}) do
     %{
-      metrics: render_many(block.metrics, __MODULE__, "metric.json", as: :metric)
+      rows: render_many(block.rows, __MODULE__, "row.json", as: :row)
     }
   end
 
@@ -55,21 +50,34 @@ defmodule VmsApiWeb.Api.Vehicle.Page.BlocksJSON do
     }
   end
 
+  def render("row.json", %{row: row}) do
+    case row.type do
+      :metric -> render_one(row, __MODULE__, "metric.json", as: :metric)
+      :action -> render_one(row, __MODULE__, "action.json", as: :action)
+    end
+  end
+
   def render("metric.json", %{metric: metric}) do
     %{
+
+      name: metric[:name],
+      type: :metric,
       module: metric.module,
       key: metric.key,
       unit: metric[:unit],
-      name: metric[:name]
     }
   end
 
-  def render("calibration_values.json", %{value: value}) do
+  def render("action.json", %{action: action}) do
     %{
-      name: value.name,
-      type: value.type,
-      module: value.module,
-      statusMetricKey: value[:status_metric_key]
+      name: action.name,
+      type: :action,
+      inputType: action.input_type,
+      inputName: action[:input_name] || action.name,
+      module: action.module,
+      action: action.action,
+      extraParameters: action[:extra_parameters] || %{},
+      statusMetricKey: action[:status_metric_key]
     }
   end
 end

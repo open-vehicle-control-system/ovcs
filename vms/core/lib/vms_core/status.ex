@@ -126,9 +126,9 @@ defmodule VmsCore.Status do
     {:reply, :ok, %{state | resetting: false}}
   end
 
-  def reset_status() do
+  def trigger_action("reset_status", _params) do
     GenServer.call(__MODULE__, :start_reset_mode);
-    :timer.sleep(500)
+    :timer.sleep(1000)
     GenServer.call(__MODULE__, :stop_reset_mode)
   end
 

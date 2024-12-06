@@ -8,31 +8,20 @@ defmodule VmsCore.Vehicles.OVCS1.Composer.Dashboard.ThrottlePedalPage do
       icon: "ChevronUpDownIcon",
       order: order,
       blocks: %{
-        "calibration" => %{
-          order: 0,
-          name: "Calibration",
-          type: "calibration",
-          values: [%{
-              name: "Calibrate throttle boundaries",
-              type: "boundaries",
-              module: ThrottlePedal,
-              status_metric_key: :throttle_calibration_status
-            }
-          ]
-        },
         "status" => %{
           order: 1,
           name: "Status",
           type: "table",
-          metrics: [
-            %{name: "Requested Throttle", module: ThrottlePedal, key: :requested_throttle},
-            %{name: "Raw Throttle A", module: ThrottlePedal, key: :raw_throttle_a},
-            %{name: "Raw Throttle B", module: ThrottlePedal, key: :raw_throttle_b},
-            %{name: "Low Raw Throttle A", module: ThrottlePedal, key: :low_raw_throttle_a},
-            %{name: "Low Raw Throttle B", module: ThrottlePedal, key: :low_raw_throttle_b},
-            %{name: "High Raw Throttle A", module: ThrottlePedal, key: :high_raw_throttle_a},
-            %{name: "High Raw Throttle B", module: ThrottlePedal, key: :high_raw_throttle_b},
-            %{name: "Raw Max Throttle", module: ThrottlePedal, key: :raw_max_throttle},
+          rows: [
+            %{type: :action, name: "Calibrate throttle boundaries", input_type: :toggle, input_name: "Set", module: ThrottlePedal, action: "calibrate_boundaries", status_metric_key: :throttle_calibration_ongoing},
+            %{type: :metric, name: "Requested Throttle", module: ThrottlePedal, key: :requested_throttle},
+            %{type: :metric, name: "Raw Throttle A", module: ThrottlePedal, key: :raw_throttle_a},
+            %{type: :metric, name: "Raw Throttle B", module: ThrottlePedal, key: :raw_throttle_b},
+            %{type: :metric, name: "Low Raw Throttle A", module: ThrottlePedal, key: :low_raw_throttle_a},
+            %{type: :metric, name: "Low Raw Throttle B", module: ThrottlePedal, key: :low_raw_throttle_b},
+            %{type: :metric, name: "High Raw Throttle A", module: ThrottlePedal, key: :high_raw_throttle_a},
+            %{type: :metric, name: "High Raw Throttle B", module: ThrottlePedal, key: :high_raw_throttle_b},
+            %{type: :metric, name: "Raw Max Throttle", module: ThrottlePedal, key: :raw_max_throttle},
           ]
         },
         "throttle-chart" => Blocks.ThrottleChart.definition(order: 1, full_width: true),

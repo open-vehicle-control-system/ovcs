@@ -97,6 +97,7 @@ defmodule  VmsCore.Components.OVCS.ThrottlePedal do
   def emit_metrics(state) do
     Bus.broadcast("messages", %Bus.Message{name: :requested_throttle, value: state.requested_throttle, source: __MODULE__})
     Bus.broadcast("messages", %Bus.Message{name: :throttle_calibration_status, value: state.throttle_calibration_status, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :throttle_calibration_ongoing, value: state.throttle_calibration_status != "disabled", source: __MODULE__})
     Bus.broadcast("messages", %Bus.Message{name: :raw_max_throttle, value: state.raw_max_throttle, source: __MODULE__})
     Bus.broadcast("messages", %Bus.Message{name: :high_raw_throttle_a, value: state.high_raw_throttle_a, source: __MODULE__})
     Bus.broadcast("messages", %Bus.Message{name: :high_raw_throttle_b, value: state.high_raw_throttle_b, source: __MODULE__})
@@ -144,8 +145,8 @@ defmodule  VmsCore.Components.OVCS.ThrottlePedal do
     end
   end
 
-  def calibrate(type) when type == "boundaries" do
-    GenServer.call(__MODULE__, {:calibrate, type})
+  def trigger_action("calibrate_boundaries", _params) do
+    GenServer.call(__MODULE__, {:calibrate, "calibrate_boundaries"})
   end
 
   def enable_calibration_mode do

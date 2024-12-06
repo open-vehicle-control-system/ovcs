@@ -12,14 +12,14 @@ defmodule VmsCore.Vehicles.OVCS1.Composer.Dashboard.InverterPage do
           order: 0,
           name: "Status",
           type: "table",
-          metrics: [
-            %{name: "Requested Throttle Source", module: Inverter, key: :requested_throttle_source},
-            %{name: "Requested Throttle", module: Inverter, key: :requested_throttle, unit: "%"},
-            %{name: "Requested Torque", module: Inverter, key: :requested_torque, unit: "N/m"},
-            %{name: "Effective Torque", module: Inverter, key: :effective_torque, unit: "N/m"},
-            %{name: "RPM", module: Inverter, key: :rotation_per_minute},
-            %{name: "Output Voltage", module: Inverter, key: :inverter_output_voltage, unit: "V"},
-            %{name: "Motor temperature", module: Inverter, key: :motor_temperature, unit: "°C"}
+          rows: [
+            %{type: :metric, name: "Requested Throttle Source", module: Inverter, key: :requested_throttle_source},
+            %{type: :metric, name: "Requested Throttle", module: Inverter, key: :requested_throttle, unit: "%"},
+            %{type: :metric, name: "Requested Torque", module: Inverter, key: :requested_torque, unit: "N/m"},
+            %{type: :metric, name: "Effective Torque", module: Inverter, key: :effective_torque, unit: "N/m"},
+            %{type: :metric, name: "RPM", module: Inverter, key: :rotation_per_minute},
+            %{type: :metric, name: "Output Voltage", module: Inverter, key: :inverter_output_voltage, unit: "V"},
+            %{type: :metric, name: "Motor temperature", module: Inverter, key: :motor_temperature, unit: "°C"}
           ]
         },
         "temperature" => %{

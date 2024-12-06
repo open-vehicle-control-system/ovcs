@@ -7,30 +7,19 @@ defmodule VmsCore.Vehicles.OVCS1.Composer.Dashboard.SteeringColumnPage do
       icon: "ArrowPathIcon",
       order: order,
       blocks: %{
-        "calibration" => %{
-          order: 0,
-          name: "Calibration",
-          type: "calibration",
-          values: [
-            %{
-              name: "Save steering wheel 0°",
-              type: "initial",
-              module: SteeringColumn
-            }
-          ]
-        },
         "status" => %{
           order: 0,
           name: "Status",
           type: "table",
-          metrics: [
-            %{name: "Angle", module: SteeringColumn, key: :angle, unit: "°"},
-            %{name: "Desired Angle", module: SteeringColumn, key: :desired_angle, unit: "°"},
-            %{name: "Angular Speed", module: SteeringColumn, key: :angular_speed, unit: "°/s"},
-            %{name: "Trimming Valid", module: SteeringColumn, key: :trimming_valid},
-            %{name: "Calibration Valid", module: SteeringColumn, key: :calibration_valid},
-            %{name: "Sensor Ready", module: SteeringColumn, key: :sensor_ready},
-            %{name: "Automatic Mode Enabled", module: SteeringColumn, key: :automatic_mode_enabled},
+          rows: [
+            %{type: :action, name: "Save steering wheel 0°", input_type: :button, input_name: "Save", module: SteeringColumn, action: "calibrate_angle_0"},
+            %{type: :metric, name: "Angle", module: SteeringColumn, key: :angle, unit: "°"},
+            %{type: :metric, name: "Desired Angle", module: SteeringColumn, key: :desired_angle, unit: "°"},
+            %{type: :metric, name: "Angular Speed", module: SteeringColumn, key: :angular_speed, unit: "°/s"},
+            %{type: :metric, name: "Trimming Valid", module: SteeringColumn, key: :trimming_valid},
+            %{type: :metric, name: "Calibration Valid", module: SteeringColumn, key: :calibration_valid},
+            %{type: :metric, name: "Sensor Ready", module: SteeringColumn, key: :sensor_ready},
+            %{type: :metric, name: "Automatic Mode Enabled", module: SteeringColumn, key: :automatic_mode_enabled},
           ]
         },
         "pid-chart" => %{

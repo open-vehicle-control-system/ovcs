@@ -2,9 +2,6 @@
     <h1 class="text-xl">{{ title }}</h1>
     <div  class="grid grid-flow-row grid-cols-3 gap-10">
         <div v-for="block in blocks" :class="[block.attributes.fullWidth ? 'col-span-3' : 'col-span-1', 'p-5 border-solid border rounded border-gray-300 shadow-md']">
-            <div v-if="block.attributes.subtype === 'calibration'">
-                <CalibrationTable :title="block.attributes.name" :values="block.attributes.values" :store="metricsStore" :colorTheme="colorTheme"></CalibrationTable>
-            </div>
             <div v-if="block.attributes.subtype === 'lineChart'">
                 <RealTimeLineChart
                     :ref="id + '-' + block.id"
@@ -18,7 +15,7 @@
                 </RealTimeLineChart>
             </div>
             <div v-if="block.attributes.subtype === 'table'">
-                <RealTimeTable :title="block.attributes.name" :metrics="block.attributes.metrics" :interval="refreshInterval" :store="metricsStore"></RealTimeTable>
+                <RealTimeTable :title="block.attributes.name" :rows="block.attributes.rows" :interval="refreshInterval" :store="metricsStore" :colorTheme="colorTheme"></RealTimeTable>
             </div>
         </div>
     </div>
@@ -31,7 +28,6 @@
     import VehiculeService from "../services/vehicle_service.js"
     import RealTimeLineChart from '@/components/charts/RealTimeLineChart.vue';
     import RealTimeTable from '@/components/tables/RealTimeTable.vue';
-    import CalibrationTable from '@/components/tables/CalibrationTable.vue';
 
     const props = defineProps(['title', 'id', 'refreshInterval', 'colorTheme'])
     const title = props.title
@@ -52,13 +48,11 @@
                         metricsStore.subscribeToMetric(serie.metric)
                     })
                 } else if(block.attributes.subtype === 'table'){
-                    block.attributes.metrics.forEach((metric) => {
-                        metricsStore.subscribeToMetric(metric)
-                    })
-                } else if(block.attributes.subtype === 'calibration'){
-                    block.attributes.values.forEach((value) => {
-                        if(value.statusMetricKey){
-                            metricsStore.subscribeToMetric({module: value.module, key: value.statusMetricKey})
+                    block.attributes.rows.forEach((row) => {
+                        if (row.type == "metric") {
+                            metricsStore.subscribeToMetric({module: row.module, key: row.key})
+                        } else if (row.type == "action" && row.statusMetricKey) {
+                            metricsStore.subscribeToMetric({module: row.module, key: row.statusMetricKey})
                         }
                     })
                 }
@@ -69,9 +63,9 @@
     onUnmounted(() => {
         Object.keys(metricsStore.data).forEach((module) => {
             let metrics = metricsStore.data[module]
-            let statusMetricsKeys = Object.keys(metrics)
-            statusMetricsKeys.forEach((statusMetricKey) => {
-                metricsStore.unsubscribeToMetric({module: module, key: statusMetricKey})
+            let keys = Object.keys(metrics)
+            keys.forEach((key) => {
+                metricsStore.unsubscribeToMetric({module: module, key: key})
             })
         })
     })

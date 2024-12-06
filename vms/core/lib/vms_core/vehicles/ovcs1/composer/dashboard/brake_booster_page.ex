@@ -11,16 +11,16 @@ defmodule VmsCore.Vehicles.OVCS1.Composer.Dashboard.BrakeBoosterPage do
           order: 0,
           name: "Status",
           type: "table",
-          metrics: [
-            %{name: "Status", module: IBoosterGen2, key: :status},
-            %{name: "Requested Throttle Source", module: IBoosterGen2, key: :requested_throttle_source},
-            %{name: "Driver brake apply?", module: IBoosterGen2, key: :driver_brake_apply},
-            %{name: "Internal State", module: IBoosterGen2, key: :internal_state},
-            %{name: "Rod Position", module: IBoosterGen2, key: :rod_position, unit: "mm"},
-            %{name: "Target Rod Position", module: IBoosterGen2, key: :rod_position_target, unit: "mm"},
-            %{name: "Flow Rate", module: IBoosterGen2, key: :flow_rate, unit: "ml/s"},
-            %{name: "Automatic Mode Enabled", module: IBoosterGen2, key: :automatic_mode_enabled},
-            %{name: "Requested Braking", module: IBoosterGen2, key: :requested_braking, unit: "%"},
+          rows: [
+            %{type: :metric, name: "Status", module: IBoosterGen2, key: :status},
+            %{type: :metric, name: "Requested Throttle Source", module: IBoosterGen2, key: :requested_throttle_source},
+            %{type: :metric, name: "Driver brake apply?", module: IBoosterGen2, key: :driver_brake_apply},
+            %{type: :metric, name: "Internal State", module: IBoosterGen2, key: :internal_state},
+            %{type: :metric, name: "Rod Position", module: IBoosterGen2, key: :rod_position, unit: "mm"},
+            %{type: :metric, name: "Target Rod Position", module: IBoosterGen2, key: :rod_position_target, unit: "mm"},
+            %{type: :metric, name: "Flow Rate", module: IBoosterGen2, key: :flow_rate, unit: "ml/s"},
+            %{type: :metric, name: "Automatic Mode Enabled", module: IBoosterGen2, key: :automatic_mode_enabled},
+            %{type: :metric, name: "Requested Braking", module: IBoosterGen2, key: :requested_braking, unit: "%"},
           ]
         },
         "pid-chart" => %{
