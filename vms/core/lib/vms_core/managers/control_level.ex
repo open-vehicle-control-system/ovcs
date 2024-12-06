@@ -18,7 +18,9 @@ defmodule VmsCore.Managers.ControlLevel do
     requested_throttle_sources: requested_throttle_sources,
     requested_steering_sources: requested_steering_sources,
     manual_driver_brake_apply_source: manual_driver_brake_apply_source,
-    default_control_level: default_control_level})
+    default_control_level: default_control_level,
+    ready_to_drive_source: ready_to_drive_source,
+    contact_source: contact_source})
   do
     Bus.subscribe("messages")
     {:ok, timer} = :timer.send_interval(@loop_period, :loop)
@@ -35,8 +37,11 @@ defmodule VmsCore.Managers.ControlLevel do
       loop_timer: timer,
       requested_gear_source: requested_gear_sources[default_control_level],
       requested_throttle_source: requested_throttle_sources[default_control_level],
-      requested_steering_source: requested_steering_sources[default_control_level]
-    }}
+      requested_steering_source: requested_steering_sources[default_control_level],
+      ready_to_drive_source: ready_to_drive_source,
+      contact_source: contact_source,
+      ready_to_drive: false,
+      contact: nil}}
   end
 
   @impl true
@@ -55,20 +60,33 @@ defmodule VmsCore.Managers.ControlLevel do
   def handle_info(%Bus.Message{name: :driver_brake_apply, value: driver_brake_apply, source: source}, state) when source == state.manual_driver_brake_apply_source do
     {:noreply, %{state | manual_driver_brake_apply: driver_brake_apply}}
   end
+  def handle_info(%Bus.Message{name: :ready_to_drive, value: ready_to_drive, source: source}, state) when source == state.ready_to_drive_source  do
+    {:noreply, %{state | ready_to_drive: ready_to_drive}}
+  end
+  def handle_info(%Bus.Message{name: :contact, value: contact, source: source}, state) when source == state.contact_source do
+    {:noreply, %{state | contact: contact}}
+  end
   def handle_info(%Bus.Message{}, state) do # TODO, replace Bus ?
     {:noreply, state}
   end
 
   defp select_control_level(state) when not is_nil(state.requested_control_level_source) do
+    contact                 = state.contact
+    ready_to_drive          = state.ready_to_drive
+    selected_control_level  = state.selected_control_level
+    requested_control_level = state.requested_control_level
+
     cond do
-      state.requested_control_level == :radio && state.manual_driver_brake_apply in ["driver_applying_brake", "fault", "not_init_or_off"] ->
+      selected_control_level == :radio && contact == :off ->
         %{state | selected_control_level: :manual, forced_to_manual: true}
-      state.requested_control_level == :radio && state.selected_control_level == :manual && !state.forced_to_manual ->
+      selected_control_level == :radio && manual_driver_brake_apply in ["driver_applying_brake", "fault", "not_init_or_off"] ->
+        %{state | selected_control_level: :manual, forced_to_manual: true}
+      requested_control_level == :radio && selected_control_level == :manual && !forced_to_manual && ready_to_drive ->
         %{state | selected_control_level: :radio}
-      state.requested_control_level == :manual && state.selected_control_level == :radio ->
+      requested_control_level == :manual && selected_control_level == :radio ->
         %{state | selected_control_level: :manual}
-      state.requested_control_level == :manual && state.selected_control_level == :manual && state.forced_to_manual ->
-        %{state | forced_to_manual: false, selected_control_level: :manual}
+      requested_control_level == :manual && selected_control_level == :manual && forced_to_manual ->
+        %{state | forced_to_manual: false}
       true -> state
     end
   end

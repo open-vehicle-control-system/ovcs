@@ -113,7 +113,9 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
           radio: OVCS.RadioControl.Steering
         },
         manual_driver_brake_apply_source: Bosch.IBoosterGen2,
-        default_control_level: :manual
+        default_control_level: :manual,
+        ready_to_drive_source: Vehicles.OVCS1,
+        contact_source: Polo9N.IgnitionLock
       }},
       {Managers.Gear, %{
         selected_control_level_source: Managers.ControlLevel,
