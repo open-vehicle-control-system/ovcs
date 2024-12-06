@@ -119,6 +119,7 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
         selected_control_level_source: Managers.ControlLevel,
         ready_to_drive_source: Vehicles.OVCS1,
         speed_source: Polo9N.ABS,
+        contact_source: Polo9N.IgnitionLock
       }},
       {OVCS.ThrottlePedal, %{
         controller: OVCS1.ControlsController,

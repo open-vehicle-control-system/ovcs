@@ -20,7 +20,8 @@ defmodule VmsCore.Managers.Gear do
   def init(%{
     selected_control_level_source: selected_control_level_source,
     ready_to_drive_source: ready_to_drive_source,
-    speed_source: speed_source})
+    speed_source: speed_source,
+    contact_source: contact_source})
   do
     Bus.subscribe("messages")
     :ok = Emitter.configure(:ovcs, "gear_status", %{
@@ -42,7 +43,9 @@ defmodule VmsCore.Managers.Gear do
       requested_throttle_source: nil,
       requested_gear_source: nil,
       ready_to_drive_source: ready_to_drive_source,
-      speed_source: speed_source
+      speed_source: speed_source,
+      contact_source: contact_source,
+      contact: nil
     }}
   end
 
@@ -72,24 +75,36 @@ defmodule VmsCore.Managers.Gear do
   def handle_info(%Bus.Message{name: :ready_to_drive, value: ready_to_drive, source: source}, state) when source == state.ready_to_drive_source  do
     {:noreply, %{state | ready_to_drive: ready_to_drive}}
   end
+  def handle_info(%Bus.Message{name: :contact, value: contact, source: source}, state) when source == state.contact_source do
+    {:noreply, %{state | contact: contact}}
+  end
   def handle_info(%Bus.Message{}, state) do # TODO, replace Bus ?
     {:noreply, state}
   end
 
   defp select_gear(state) do
-    throttle_near_zero = D.lt?(state.requested_throttle, @gear_shift_throttle_limit)
-    speed_near_zero    = D.abs(state.speed) |> D.lt?(@gear_shift_speed_limit)
+    contact                      = state.contact
+    requested_gear               = state.requested_gear
+    selected_gear                = state.selected_gear
+    ready_to_drive               = state.ready_to_drive
+    speed_near_zero              = D.abs(state.speed) |> D.lt?(@gear_shift_speed_limit)
+    throttle_near_zero           = D.lt?(state.requested_throttle, @gear_shift_throttle_limit)
     throttle_and_speed_near_zero = throttle_near_zero && speed_near_zero
-    case {state.selected_gear, state.requested_gear, throttle_and_speed_near_zero, state.ready_to_drive} do
-      {:parking, :parking, _, _} -> state
-      {:reverse, :reverse, _, _} -> state
-      {:neutral, :neutral, _, _} -> state
-      {:drive, :drive, _, _}     -> state
-      {_, :parking, true, _}     -> apply_requested_gear(state, :parking)
-      {_, :reverse, true, true}  -> apply_requested_gear(state, :reverse)
-      {_, :drive, true, true}    -> apply_requested_gear(state, :drive)
-      {_, :neutral, _, _}        -> apply_requested_gear(state, :neutral)
-      _                          -> state
+
+    cond do
+      requested_gear in [:reverse, :drive, :neutral] && contact == :off ->
+        apply_gear(state, :parking)
+      requested_gear in [:reverse, :drive] && !ready_to_drive ->
+        apply_gear(state, :neutral)
+      requested_gear == :neutral && selected_gear != :neutral ->
+        apply_gear(state, :neutral)
+      requested_gear == :parking && selected_gear != :parking && throttle_and_speed_near_zero ->
+        apply_gear(state, :parking)
+      requested_gear == :reverse && selected_gear != :reverse && throttle_and_speed_near_zero && ready_to_drive ->
+        apply_gear(state, :reverse)
+      requested_gear == :drive && selected_gear != :drive && throttle_and_speed_near_zero && ready_to_drive ->
+        apply_gear(state, :drive)
+      true -> state
     end
   end
 
@@ -98,10 +113,10 @@ defmodule VmsCore.Managers.Gear do
     state
   end
 
-  defp apply_requested_gear(state, requested_gear) do
+  defp apply_gear(state, gear) do
     :ok = Emitter.update(:ovcs, "gear_status", fn (data) ->
-      %{data | "selected_gear" => "#{requested_gear}"}
+      %{data | "selected_gear" => "#{gear}"}
     end)
-    %{state | selected_gear: requested_gear}
+    %{state | selected_gear: gear}
   end
 end
