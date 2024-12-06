@@ -92,17 +92,17 @@ defmodule VmsCore.Managers.Gear do
     throttle_and_speed_near_zero = throttle_near_zero && speed_near_zero
 
     cond do
-      requested_gear in [:reverse, :drive, :neutral] && contact == :off ->
+      contact == :off && selected_gear != :parking ->
         apply_gear(state, :parking)
-      requested_gear in [:reverse, :drive] && !ready_to_drive ->
+      !ready_to_drive && selected_gear in [:reverse, :drive] ->
         apply_gear(state, :neutral)
-      requested_gear == :neutral && selected_gear != :neutral ->
-        apply_gear(state, :neutral)
-      requested_gear == :parking && selected_gear != :parking && throttle_and_speed_near_zero ->
+      selected_gear != :parking  && requested_gear == :parking && throttle_and_speed_near_zero ->
         apply_gear(state, :parking)
-      requested_gear == :reverse && selected_gear != :reverse && throttle_and_speed_near_zero && ready_to_drive ->
+      selected_gear != :neutral && requested_gear == :neutral && ready_to_drive ->
+        apply_gear(state, :neutral)
+      selected_gear != :reverse && requested_gear == :reverse &&  throttle_and_speed_near_zero && ready_to_drive ->
         apply_gear(state, :reverse)
-      requested_gear == :drive && selected_gear != :drive && throttle_and_speed_near_zero && ready_to_drive ->
+      selected_gear != :drive && requested_gear == :drive &&  throttle_and_speed_near_zero && ready_to_drive ->
         apply_gear(state, :drive)
       true -> state
     end
