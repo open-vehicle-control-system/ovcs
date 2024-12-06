@@ -71,10 +71,14 @@ defmodule VmsCore.Managers.ControlLevel do
   end
 
   defp select_control_level(state) when not is_nil(state.requested_control_level_source) do
-    contact                 = state.contact
-    ready_to_drive          = state.ready_to_drive
-    selected_control_level  = state.selected_control_level
-    requested_control_level = state.requested_control_level
+    %{
+      contact: contact,
+      ready_to_drive: ready_to_drive,
+      forced_to_manual: forced_to_manual,
+      requested_control_level: requested_control_level,
+      selected_control_level: selected_control_level,
+      manual_driver_brake_apply: manual_driver_brake_apply
+    } = state
 
     cond do
       selected_control_level == :radio && contact == :off ->

@@ -83,26 +83,30 @@ defmodule VmsCore.Managers.Gear do
   end
 
   defp select_gear(state) do
-    contact                      = state.contact
-    requested_gear               = state.requested_gear
-    selected_gear                = state.selected_gear
-    ready_to_drive               = state.ready_to_drive
-    speed_near_zero              = D.abs(state.speed) |> D.lt?(@gear_shift_speed_limit)
-    throttle_near_zero           = D.lt?(state.requested_throttle, @gear_shift_throttle_limit)
-    throttle_and_speed_near_zero = throttle_near_zero && speed_near_zero
+    %{
+      contact: contact,
+      requested_gear: requested_gear,
+      selected_gear: selected_gear,
+      ready_to_drive: ready_to_drive,
+      speed: speed,
+      requested_throttle: requested_throttle
+    } = state
+
+    speed_near_zero    = D.abs(speed) |> D.lt?(@gear_shift_speed_limit)
+    throttle_near_zero = D.lt?(requested_throttle, @gear_shift_throttle_limit)
 
     cond do
       contact == :off && selected_gear != :parking ->
         apply_gear(state, :parking)
       !ready_to_drive && selected_gear in [:reverse, :drive] ->
         apply_gear(state, :neutral)
-      selected_gear != :parking  && requested_gear == :parking && throttle_and_speed_near_zero ->
+      selected_gear != :parking  && requested_gear == :parking && speed_near_zero && throttle_near_zero ->
         apply_gear(state, :parking)
       selected_gear != :neutral && requested_gear == :neutral && ready_to_drive ->
         apply_gear(state, :neutral)
-      selected_gear != :reverse && requested_gear == :reverse &&  throttle_and_speed_near_zero && ready_to_drive ->
+      selected_gear != :reverse && requested_gear == :reverse &&  speed_near_zero && throttle_near_zero && ready_to_drive ->
         apply_gear(state, :reverse)
-      selected_gear != :drive && requested_gear == :drive &&  throttle_and_speed_near_zero && ready_to_drive ->
+      selected_gear != :drive && requested_gear == :drive &&  speed_near_zero && throttle_near_zero && ready_to_drive ->
         apply_gear(state, :drive)
       true -> state
     end
