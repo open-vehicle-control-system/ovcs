@@ -279,10 +279,10 @@ packages:
     dependency: "direct main"
     description:
       name: phoenix_socket
-      sha256: "2d56ffde59875673bffdabd1f709307ab34b317bd868402e3d3a61c23c333b1b"
+      sha256: "6f1a355177eb1bf61b388407cf18f200fdf06bc5c1d9d05ac87cdd8a27d3ddd6"
       url: "https://pub.dev"
     source: hosted
-    version: "0.7.4"
+    version: "0.7.6"
   platform:
     dependency: transitive
     description:
@@ -432,14 +432,22 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.5.1"
+  web_socket:
+    dependency: transitive
+    description:
+      name: web_socket
+      sha256: "3c12d96c0c9a4eec095246debcea7b86c0324f22df69893d538fcc6f1b8cce83"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.1.6"
   web_socket_channel:
     dependency: transitive
     description:
       name: web_socket_channel
-      sha256: "58c6666b342a38816b2e7e50ed0f1e261959630becd4c879c4f26bfa14aa5a42"
+      sha256: "9f187088ed104edd8662ca07af4b124465893caf063ba29758f97af57e61da8f"
       url: "https://pub.dev"
     source: hosted
-    version: "2.4.5"
+    version: "3.0.1"
   win32:
     dependency: transitive
     description:

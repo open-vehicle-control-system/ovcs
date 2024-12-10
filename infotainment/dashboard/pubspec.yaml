@@ -37,7 +37,7 @@ dependencies:
   cupertino_icons: ^1.0.6
   syncfusion_flutter_gauges: 25.1.40
   flutter_svg: ^2.0.10+1
-  phoenix_socket: ^0.7.4
+  phoenix_socket: ^0.7.6
   google_fonts: ^6.2.0
 
 dev_dependencies:
