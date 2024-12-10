@@ -20,7 +20,7 @@ defmodule VmsCore.Status do
     :ok = Emitter.configure(:ovcs, "vms_status", %{
       parameters_builder_function: &vms_status_frame_parameter_builder/1,
       initial_data: %{
-        "status" => "ok",
+        "status" => "OK",
         "counter" => 0,
         "ready_to_drive" => false
       },
@@ -35,8 +35,8 @@ defmodule VmsCore.Status do
     Bus.subscribe("messages")
     {:ok, timer} = :timer.send_interval(@loop_period, :loop)
     {:ok, %{
-      vms_status: "ok",
-      emitted_vms_status: "ok",
+      vms_status: "OK",
+      emitted_vms_status: "OK",
       ready_to_drive: false,
       emitted_ready_to_drive: false,
       ready_to_drive_source: ready_to_drive_source,
@@ -70,11 +70,11 @@ defmodule VmsCore.Status do
 
   defp update_vms_status(state) do
     cond do
-      state.resetting && state.emitted_vms_status != "resetting" ->
+      state.resetting && state.emitted_vms_status != "RESETTING" ->
         :ok = Emitter.update(:ovcs, "vms_status", fn (data) ->
-          %{data | "status" => "resetting"}
+          %{data | "status" => "RESETTING"}
         end)
-        %{state | emitted_vms_status: "resetting"}
+        %{state | emitted_vms_status: "RESETTING"}
       state.emitted_vms_status != state.vms_status ->
         :ok = Emitter.update(:ovcs, "vms_status", fn (data) ->
           %{data | "status" => state.vms_status}

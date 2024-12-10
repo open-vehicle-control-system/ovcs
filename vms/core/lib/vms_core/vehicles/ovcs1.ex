@@ -38,7 +38,7 @@ defmodule VmsCore.Vehicles.OVCS1 do
       rear_controller_status: nil,
       rear_controller_is_alive: false,
       resetting: false,
-      vms_status: "ok",
+      vms_status: "OK",
     }}
   end
 
@@ -102,7 +102,7 @@ defmodule VmsCore.Vehicles.OVCS1 do
   end
 
   defp compute_ready_to_drive(state) do
-    ready_to_drive = state.vms_status == "ok" &&
+    ready_to_drive = state.vms_status == "OK" &&
       state.ignition_started &&
       state.high_voltage_contactors_ready_to_drive &&
       state.inverter_ready_to_drive &&
@@ -112,17 +112,17 @@ defmodule VmsCore.Vehicles.OVCS1 do
 
   defp  compute_vms_status(state) do
     vms_is_ok = state.resetting || (
-      state.vms_status == "ok" &&
+      state.vms_status == "OK" &&
       state.front_controller_is_alive &&
       state.controls_controller_is_alive &&
       state.rear_controller_is_alive &&
-      state.front_controller_status == "ok" &&
-      state.controls_controller_status == "ok" &&
-      state.rear_controller_status == "ok"
+      state.front_controller_status == "OK" &&
+      state.controls_controller_status == "OK" &&
+      state.rear_controller_status == "OK"
     )
     case vms_is_ok do
-      true -> %{state | vms_status: "ok"}
-      false -> %{state | vms_status: "failure"}
+      true -> %{state | vms_status: "OK"}
+      false -> %{state | vms_status: "FAILURE"}
     end
   end
 
