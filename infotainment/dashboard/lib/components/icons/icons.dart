@@ -75,7 +75,7 @@ class OvcsIcons {
   );
 
   static SvgPicture toggleHandrakeIcon(Message event){
-    if(event.payload?["handbrake_engaged"]){
+    if(event.payload?["handbrakeEngaged"]){
       return OvcsIcons.handBrakeOnSvg;
     } else {
       return OvcsIcons.handBrakeOffSvg;
@@ -83,7 +83,7 @@ class OvcsIcons {
   }
 
   static SvgPicture toggleBeamsIcon(Message event){
-    if(event.payload?["beam_active"]){
+    if(event.payload?["beamActive"]){
       return OvcsIcons.beamsOnSvg;
     } else {
       return OvcsIcons.beamsOffSvg;
@@ -91,7 +91,7 @@ class OvcsIcons {
   }
 
   static SvgPicture toggleTrunkIcon(Message event){
-    if(event.payload?["trunk_door_open"]){
+    if(event.payload?["trunkDoorOpen"]){
       return OvcsIcons.trunkOpenSvg;
     } else {
       return OvcsIcons.trunkClosedSvg;
@@ -99,7 +99,7 @@ class OvcsIcons {
   }
 
   static SvgPicture toggleEngineIcon(Message event){
-    if(event.payload?["ready_to_drive"]){
+    if(event.payload?["readyToDrive"]){
       return OvcsIcons.engineReadySvg;
     } else {
       return OvcsIcons.engineOffSvg;

@@ -44,7 +44,7 @@ class _SideBarState extends State<SideBar> {
     _channel?.messages.listen( (event){
       if(event.topic == "temperature" && event.payload!.containsKey("temperature")){
         setState(() {
-          temperature = event.payload!["temperature"];
+          temperature = double.parse(event.payload!["temperature"]);
         });
       }
     });

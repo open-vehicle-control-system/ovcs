@@ -12,39 +12,33 @@ class OvcsStatus extends StatefulWidget {
 
 class _OvcsStatusState extends State<OvcsStatus> {
 
-  bool vmsMissing = true;
-  bool frontControllerMissing = true;
-  bool rearControllerMissing = true;
-  bool controlsControllerMissing = true;
-  bool inverterMissing = true;
-  bool bmsMissing = true;
-  bool mainNegativeOff = true;
-  bool mainPositiveOff = true;
-  bool preChargeOff = true;
+  String vmsStatus = "MISSING";
+  String frontControlerStatus = "MISSING";
+  String rearControllerStatus = "MISSING";
+  String controlsControllerStatus = "MISSING";
+  String bmsStatus = "MISSING";
+  bool inverterEnabled = false;
+  bool mainNegativeContactorEnabled = false;
+  bool mainPositiveContactorEnabled = false;
+  bool prechargeContactorEnabled = false;
 
   PhoenixChannel? _channel;
   _OvcsStatusState() {
     PhoenixSocket socket = SocketService.socket;
-    _channel = socket.addChannel(topic: 'status', parameters: {"interval": 100});
-
-    socket.openStream.listen((event) {
-      setState(() {
-        _channel?.join();
-      });
-    });
+    _channel = socket.addChannel(topic: 'status', parameters: {"interval": 50});
 
     _channel?.messages.listen( (event){
       if(event.topic == "status" && event.payload!.containsKey("attributes")){
         setState(() {
-          vmsMissing = event.payload!["attributes"]["vms_missing"];
-          frontControllerMissing = event.payload!["attributes"]["front_controller_missing"];
-          rearControllerMissing = event.payload!["attributes"]["rear_controller_missing"];
-          controlsControllerMissing = event.payload!["attributes"]["controls_controller_missing"];
-          inverterMissing = event.payload!["attributes"]["inverter_missing"];
-          bmsMissing = event.payload!["attributes"]["bms_missing"];
-          mainNegativeOff = event.payload!["attributes"]["main_negative_off"];
-          mainPositiveOff = event.payload!["attributes"]["main_positive_off"];
-          preChargeOff = event.payload!["attributes"]["precharge_off"];
+          vmsStatus = event.payload!["attributes"]["vmsStatus"];
+          frontControlerStatus = event.payload!["attributes"]["frontControlerStatus"];
+          rearControllerStatus = event.payload!["attributes"]["rearControllerStatus"];
+          controlsControllerStatus = event.payload!["attributes"]["controlsControllerStatus"];
+          inverterEnabled = event.payload!["attributes"]["inverterEnabled"];
+          bmsStatus = event.payload!["attributes"]["bmsStatus"];
+          mainNegativeContactorEnabled = event.payload!["attributes"]["mainNegativeContactorEnabled"];
+          mainPositiveContactorEnabled = event.payload!["attributes"]["mainPositiveContactorEnabled"];
+          prechargeContactorEnabled = event.payload!["attributes"]["prechargeContactorEnabled"];
         });
       }
     });
@@ -65,23 +59,23 @@ class _OvcsStatusState extends State<OvcsStatus> {
         children: [
           Column(
             children: [
-              ComponentStatusBox(name: "Vehicle Management System", missing: vmsMissing),
-              ComponentStatusBox(name: "Front Controler", missing: frontControllerMissing),
-              ComponentStatusBox(name: "Rear Controler", missing: rearControllerMissing),
+              ComponentStatusBox(name: "Vehicle Management System", status: vmsStatus),
+              ComponentStatusBox(name: "Front Controler", status: frontControlerStatus),
+              ComponentStatusBox(name: "Rear Controler", status: rearControllerStatus),
             ],
           ),
           Column(
             children: [
-              ComponentStatusBox(name: "Controls Controler", missing: controlsControllerMissing),
-              ComponentStatusBox(name: "BMS", missing: bmsMissing),
-              ComponentStatusBox(name: "Inverter enabled", missing: inverterMissing),
+              ComponentStatusBox(name: "Controls Controler", status: controlsControllerStatus),
+              ComponentStatusBox(name: "BMS", status: bmsStatus),
+              ComponentStatusBox(name: "Inverter enabled", status: inverterEnabled.toString()),
             ]
           ),
           Column(
             children: [
-              ComponentStatusBox(name: "Main Negative", missing: mainNegativeOff),
-              ComponentStatusBox(name: "Main Positive", missing: mainPositiveOff),
-              ComponentStatusBox(name: "Precharge", missing: preChargeOff),
+              ComponentStatusBox(name: "Main Negative", status: mainNegativeContactorEnabled.toString()),
+              ComponentStatusBox(name: "Main Positive", status: mainPositiveContactorEnabled.toString()),
+              ComponentStatusBox(name: "Precharge", status: prechargeContactorEnabled.toString()),
             ]
           ),
         ],
@@ -92,14 +86,36 @@ class _OvcsStatusState extends State<OvcsStatus> {
 
 class ComponentStatusBox extends StatefulWidget {
   final String name;
-  final bool missing;
-  const ComponentStatusBox({super.key,required this.name, required this.missing});
+  final String status;
+  const ComponentStatusBox({super.key,required this.name, required this.status});
 
   @override
   State<ComponentStatusBox> createState() => _ComponentStatusBox();
 }
 
 class _ComponentStatusBox extends State<ComponentStatusBox> {
+  BoxDecoration getBoxDecorationForStatus(String status) {
+    switch(status){
+      case "MISSING" || "false":
+        return boxOff;
+      case "OK" || "true":
+        return boxOn;
+      default:
+        return boxError;
+    };
+  }
+
+    TextStyle getTextStyleForStatus(String status) {
+    switch(status){
+      case "MISSING" || "false":
+        return textOff;
+      case "OK" || "true":
+        return textOn;
+      default:
+        return textError;
+    };
+  }
+
   static const TextStyle textOn = TextStyle(
     fontSize: 16,
     color: Color.fromRGBO(238, 155, 117, 1),
@@ -116,6 +132,14 @@ class _ComponentStatusBox extends State<ComponentStatusBox> {
     fontFamily: 'Lato',
   );
 
+  static const TextStyle textError = TextStyle(
+    fontSize: 16,
+    color: Color.fromRGBO(188, 48, 53, 1),
+    decoration: TextDecoration.none,
+    height: 1,
+    fontFamily: 'Lato',
+  );
+
   static BoxDecoration boxOn = BoxDecoration(
     border: Border.all(color: const Color.fromRGBO(238, 155, 117, 1), width: 2),
     borderRadius: BorderRadius.circular(10)
@@ -126,14 +150,19 @@ class _ComponentStatusBox extends State<ComponentStatusBox> {
     borderRadius: BorderRadius.circular(10)
   );
 
+  static BoxDecoration boxError = BoxDecoration(
+    border: Border.all(color: const Color.fromRGBO(188, 48, 53, 1), width: 2),
+    borderRadius: BorderRadius.circular(10)
+  );
+
   @override
   Widget build(BuildContext context){
     return Container(
       margin: const EdgeInsets.all(7),
       width: 162,
       height: 64,
-      decoration: widget.missing? boxOff : boxOn,
-      child: Center(child: Text(widget.name, style: widget.missing? textOff : textOn, textAlign: TextAlign.center)),
+      decoration: getBoxDecorationForStatus(widget.status),
+      child: Center(child: Text(widget.name, style: getTextStyleForStatus(widget.status), textAlign: TextAlign.center)),
     );
   }
 }

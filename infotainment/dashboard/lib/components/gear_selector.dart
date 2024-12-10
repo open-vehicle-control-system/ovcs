@@ -20,18 +20,12 @@ class _GearSelectorState extends State<GearSelector> {
 
   _GearSelectorState() {
     PhoenixSocket socket = SocketService.socket;
-    _channel = socket.addChannel(topic: 'gear', parameters: {"interval": 50});
-
-    socket.openStream.listen((event) {
-      setState(() {
-        _channel?.join();
-      });
-    });
+    _channel = socket.addChannel(topic: 'status', parameters: {"interval": 50});
 
     _channel?.messages.listen( (event){
-      if(event.topic == "gear" && event.payload!.containsKey("gear")){
+      if(event.topic == "status" && event.payload!.containsKey("selectedGear")){
         setState(() {
-          gear = event.payload?["gear"];
+          gear = event.payload?["selectedGear"];
         });
       }
     });

@@ -13,11 +13,11 @@ class CarView{
 
     static AssetImage updateLeftView(Message event){
       var payload = event.payload;
-      if(payload?["front_left_door_open"] && payload?["rear_left_door_open"]){
+      if(payload?["frontLeftDoor_open"] && payload?["rearLeftDoorOpen"]){
         return allOpenLeft;
-      } else if(payload?["front_left_door_open"] && !payload?["rear_left_door_open"]){
+      } else if(payload?["frontLeftDoorOpen"] && !payload?["rearLeftDoorOpen"]){
         return frontOpenLeft;
-      } else if(!payload?["front_left_door_open"] && payload?["rear_left_door_open"]){
+      } else if(!payload?["frontLeftDoorOpen"] && payload?["rearLeftDoorOpen"]){
         return rearOpenLeft;
       } else {
         return allClosedLeft;
@@ -26,11 +26,11 @@ class CarView{
 
     static AssetImage updateRightView(Message event){
       var payload = event.payload;
-      if(payload?["front_right_door_open"] && payload?["rear_right_door_open"]){
+      if(payload?["frontRightDoorOpen"] && payload?["rearRightDoorOpen"]){
         return allOpenRight;
-      } else if(payload?["front_right_door_open"] && !payload?["rear_right_door_open"]){
+      } else if(payload?["frontRightDoorOpen"] && !payload?["rearRightDoorOpen"]){
         return frontOpenRight;
-      } else if(!payload?["front_right_door_open"] && payload?["rear_right_door_open"]){
+      } else if(!payload?["frontRightDoorOpen"] && payload?["rearRightDoorOpen"]){
         return rearOpenRight;
       } else {
         return allClosedRight;

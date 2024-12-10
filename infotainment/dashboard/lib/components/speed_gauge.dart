@@ -19,7 +19,7 @@ class _SpeedGaugeState extends State<SpeedGauge> {
 
   _SpeedGaugeState() {
     PhoenixSocket socket = SocketService.socket;
-    _channel = socket.addChannel(topic: 'speed', parameters: {"interval": 50});
+    _channel = socket.addChannel(topic: 'status', parameters: {"interval": 50});
 
     socket.openStream.listen((event) {
       setState(() {
@@ -28,7 +28,7 @@ class _SpeedGaugeState extends State<SpeedGauge> {
     });
 
     _channel?.messages.listen( (event){
-      if(event.topic == "speed" && event.payload!.containsKey("speed")){
+      if(event.topic == "status" && event.payload!.containsKey("speed")){
         setState(() {
           currentSpeed = double.parse(event.payload?["speed"]);
         });

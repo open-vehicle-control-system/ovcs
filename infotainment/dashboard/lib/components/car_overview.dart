@@ -25,16 +25,10 @@ class _CarOverviewState extends State<CarOverview> {
 
   _CarOverviewState() {
     PhoenixSocket socket = SocketService.socket;
-    _channel = socket.addChannel(topic: 'car-overview', parameters: {"interval": 500});
-
-    socket.openStream.listen((event) {
-      setState(() {
-        _channel?.join();
-      });
-    });
+    _channel = socket.addChannel(topic: 'status', parameters: {"interval": 50});
 
     _channel?.messages.listen( (event){
-      if(event.topic == "car-overview" && event.payload!.containsKey("handbrake_engaged")){
+      if(event.topic == "status" && event.payload!.containsKey("handbrakeEngaged")){
         setState(() {
           handBrakeIcon = OvcsIcons.toggleHandrakeIcon(event);
           beamsIcon = OvcsIcons.toggleBeamsIcon(event);
