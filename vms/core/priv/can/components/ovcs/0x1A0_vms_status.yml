@@ -8,9 +8,9 @@ signals:
     value_start: 0
     value_length: 8
     mapping:
-      0x00: ok
-      0x01: resetting
-      0xFF: failure
+      0x00: OK
+      0x01: RESETTING
+      0xFF: FAILURE
   - name: ready_to_drive
     kind: enum
     value_start: 8

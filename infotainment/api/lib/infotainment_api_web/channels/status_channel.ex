@@ -2,8 +2,7 @@ defmodule InfotainmentApiWeb.StatusChannel do
   use Phoenix.Channel
   require Logger
 
-  alias InfotainmentCore.ComponentsAlive
-  alias InfotainmentCore.ContactorsStatus
+  alias InfotainmentCore.VehicleStatus
 
   intercept ["update"]
 
@@ -15,10 +14,8 @@ defmodule InfotainmentApiWeb.StatusChannel do
   end
 
   def handle_info(:push_status, socket) do
-    {:ok, components_alive} = ComponentsAlive.status()
-    {:ok, contactors_status} = ContactorsStatus.status()
-    merge = Map.merge(components_alive, contactors_status)
-    view = InfotainmentApiWeb.Api.StatusJSON.render("status.json", merge)
+    {:ok, status} = VehicleStatus.status()
+    view = InfotainmentApiWeb.Api.StatusJSON.render("status.json", status)
     push(socket, "updated", view)
     {:noreply, socket}
   end

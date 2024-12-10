@@ -2,37 +2,35 @@ defmodule InfotainmentCore.VehicleStatus do
   use GenServer
   require Logger
 
-  alias Cantastic.{Emitter, ReceivedFrameWatcher, Frame, Signal}
+  alias Cantastic.{Emitter, Receiver, ReceivedFrameWatcher, Frame, Signal}
   alias Decimal, as: D
 
-  @network_name :ovcs
-  @infotainment_status_frame_name "infotainment_status"
-  @abs_status_frame_name "abs_status"
-  @passenger_compartment_status_frame_name "passenger_compartment_status"
-  @gear_status_frame_name "gear_status"
-  @vms_status_frame_name "vms_status"
-  @requested_gear_parameter "requested_gear"
-  @selected_gear_parameter "selected_gear"
+  @loop_period 10
   @gear_selection_delay 1
   @zero D.new(0)
 
+  @status_frame_names ["bms_status", "vms_status", "front_controller_alive", "controls_controller_alive", "rear_controller_alive"]
+
   @impl true
   def init(_) do
-    :ok = Emitter.configure(@network_name, @infotainment_status_frame_name, %{
+    :ok = Emitter.configure(:ovcs, "infotainment_status", %{
       parameters_builder_function: :default,
       initial_data: %{
-        @requested_gear_parameter => "parking",
-      }
+        "requested_gear" => "parking",
+      },
+      enable: true
     })
-    :ok = Emitter.enable(@network_name, @infotainment_status_frame_name)
-    :ok = Cantastic.Receiver.subscribe(self(), @network_name, [
-      @vms_status_frame_name,
-      @gear_status_frame_name,
-      @abs_status_frame_name,
-      @passenger_compartment_status_frame_name,
+    :ok = ReceivedFrameWatcher.enable(:ovcs, @status_frame_names)
+    :ok = Receiver.subscribe(self(), :ovcs, @status_frame_names ++ [
+      "front_controller_digital_and_analog_pin_status",
+      "rear_controller_digital_and_analog_pin_status",
+      "gear_status",
+      "abs_status",
+      "passenger_compartment_status"
     ])
-    enable_watchers()
+    {:ok, timer} = :timer.send_interval(@loop_period, :loop)
     {:ok, %{
+      loop_timer: timer,
       requested_gear: "parking",
       selected_gear: "parking",
       last_gear_update_at: Time.utc_now(),
@@ -45,6 +43,25 @@ defmodule InfotainmentCore.VehicleStatus do
       handbrake_engaged: false,
       speed: @zero,
       ready_to_drive: false,
+      inverter_enabled: false,
+      main_negative_contactor_enabled: false,
+      main_positive_contactor_enabled: true,
+      precharge_contactor_enabled: true,
+      vms_is_alive: false,
+      bms_is_alive: false,
+      front_controler_is_alive: false,
+      controls_controller_is_alive: false,
+      rear_controller_is_alive: false,
+      vms_status: "MISSING",
+      bms_status: "MISSING",
+      front_controller_status: "MISSING",
+      controls_controller_status: "MISSING",
+      rear_controller_status: "MISSING",
+      vms_computed_status: "MISSING",
+      bms_computed_status: "MISSING",
+      front_controler_computed_status: "MISSING",
+      controls_controller_computed_status: "MISSING",
+      rear_controller_computed_status: "MISSING"
     }}
   end
 
@@ -53,11 +70,17 @@ defmodule InfotainmentCore.VehicleStatus do
   end
 
   @impl true
-  def handle_info({:handle_frame, %Frame{name: @gear_status_frame_name, signals: signals}}, state) do
-    %{@selected_gear_parameter => %Signal{value: selected_gear}} = signals
+  def handle_info(:loop, state) do
+    state = state
+      |> compute_components_statuses()
+    {:noreply, state}
+  end
+
+  def handle_info({:handle_frame, %Frame{name: "gear_status", signals: signals}}, state) do
+    %{"selected_gear" => %Signal{value: selected_gear}} = signals
     state = if selected_gear != state.requested_gear && Time.diff(Time.utc_now(), state.last_gear_update_at) > @gear_selection_delay do
-      :ok = Emitter.update(@network_name, @infotainment_status_frame_name, fn (data) ->
-        %{data | @requested_gear_parameter => selected_gear}
+      :ok = Emitter.update(:ovcs, "infotainment_status", fn (data) ->
+        %{data | "requested_gear" => selected_gear}
       end)
       %{state | requested_gear: selected_gear}
     else
@@ -66,20 +89,38 @@ defmodule InfotainmentCore.VehicleStatus do
     {:noreply, %{state | selected_gear: selected_gear}}
   end
 
-  @impl true
-  def handle_info({:handle_frame, %Frame{name: @abs_status_frame_name, signals: signals}}, state) do
+  def handle_info({:handle_frame, %Frame{name: "abs_status", signals: signals}}, state) do
     %{"speed" => %Signal{value: speed}} = signals
     {:noreply, %{state | speed: speed}}
   end
 
-  @impl true
-  def handle_info({:handle_frame, %Frame{name: @vms_status_frame_name, signals: signals}}, state) do
-    %{"ready_to_drive" => %Signal{value: ready_to_drive}} = signals
-    {:noreply, %{state | ready_to_drive: ready_to_drive}}
+  def handle_info({:handle_frame, %Frame{name: "vms_status", signals: signals}}, state) do
+    %{
+      "ready_to_drive" => %Signal{value: ready_to_drive},
+      "status" => %Signal{value: status}
+    } = signals
+    {:noreply, %{state |
+      ready_to_drive: ready_to_drive,
+      vms_status: status
+    }}
   end
 
-  @impl true
-  def handle_info({:handle_frame, %Frame{name: @passenger_compartment_status_frame_name, signals: signals}}, state) do
+  def handle_info({:handle_frame, %Frame{name: "front_controller_alive", signals: signals}}, state) do
+    %{"status" => %Signal{value: status}} = signals
+    {:noreply, %{state | front_controller_status: status}}
+  end
+
+  def handle_info({:handle_frame, %Frame{name: "controls_controller_alive", signals: signals}}, state) do
+    %{"status" => %Signal{value: status}} = signals
+    {:noreply, %{state | controls_controller_status: status}}
+  end
+
+  def handle_info({:handle_frame, %Frame{name: "rear_controller_alive", signals: signals}}, state) do
+    %{"status" => %Signal{value: status}} = signals
+    {:noreply, %{state | rear_controller_status: status}}
+  end
+
+  def handle_info({:handle_frame, %Frame{name: "passenger_compartment_status", signals: signals}}, state) do
     %{
       "front_left_door_open" => %Signal{value: front_left_door_open},
       "front_right_door_open" => %Signal{value: front_right_door_open},
@@ -101,64 +142,79 @@ defmodule InfotainmentCore.VehicleStatus do
     }
   end
 
-  @impl true
-  def handle_call({:request_gear, gear}, _from, state) do
-    :ok = Emitter.update(@network_name, @infotainment_status_frame_name, fn (data) ->
-      %{data | @requested_gear_parameter => gear}
-    end)
-    {:reply, {:ok, gear}, %{state |
-      requested_gear: gear,
-      last_gear_update_at: Time.utc_now()
+  def handle_info({:handle_frame, %Frame{name: "front_controller_digital_and_analog_pin_status", signals: signals}}, state) do
+    %{"digital_pin3_enabled" => %Signal{value: inverter_enabled}} = signals
+    {:noreply, %{state | inverter_enabled: inverter_enabled}}
+  end
+
+  def handle_info({:handle_frame, %Frame{name: "rear_controller_digital_and_analog_pin_status", signals: signals}}, state) do
+    %{
+      "digital_pin3_enabled" => %Signal{value: main_negative_contactor_enabled},
+      "digital_pin4_enabled" => %Signal{value: main_positive_contactor_enabled},
+      "digital_pin5_enabled" => %Signal{value: precharge_contactor_enabled},
+    } = signals
+
+    {:noreply, %{state |
+      main_negative_contactor_enabled: main_negative_contactor_enabled,
+      main_positive_contactor_enabled: main_positive_contactor_enabled,
+      precharge_contactor_enabled: precharge_contactor_enabled,
     }}
   end
-  @impl true
-  def handle_call(:selected_gear, _from, state) do
-    {:reply, {:ok, state.selected_gear}, state}
-  end
 
-  @impl true
-  def handle_call(:speed, _from, state) do
-    {:reply, {:ok, state.speed}, state}
-  end
+  defp compute_components_statuses(state) do
+    {:ok, vms_is_alive} = ReceivedFrameWatcher.is_alive?(:ovcs, "vms_status")
+    {:ok, bms_is_alive}                 = ReceivedFrameWatcher.is_alive?(:ovcs, "bms_status")
+    {:ok, front_controler_is_alive}     = ReceivedFrameWatcher.is_alive?(:ovcs, "front_controller_alive")
+    {:ok, controls_controller_is_alive} = ReceivedFrameWatcher.is_alive?(:ovcs, "controls_controller_alive")
+    {:ok, rear_controller_is_alive}     = ReceivedFrameWatcher.is_alive?(:ovcs, "rear_controller_alive")
 
-  @impl true
-  def handle_call(:car_overview, _from, state) do
-    overview = %{
-      front_left_door_open: state.front_left_door_open,
-      front_right_door_open: state.front_right_door_open,
-      rear_left_door_open: state.rear_left_door_open,
-      rear_right_door_open: state.rear_right_door_open,
-      trunk_door_open: state.trunk_door_open,
-      beam_active: state.beam_active,
-      handbrake_engaged: state.handbrake_engaged,
-      ready_to_drive: state.ready_to_drive
+    %{state |
+      vms_computed_status: if vms_is_alive do state.vms_status else "MISSING" end,
+      bms_computed_status: if bms_is_alive do state.bms_status else "MISSING" end,
+      front_controler_computed_status: if front_controler_is_alive do state.front_controller_status else "MISSING" end,
+      controls_controller_computed_status: if controls_controller_is_alive do state.controls_controller_status else "MISSING" end,
+      rear_controller_computed_status: if rear_controller_is_alive do state.rear_controller_status else "MISSING" end,
     }
-    {:reply, {:ok, overview}, state}
-  end
-
-  defp enable_watchers() do
-    Process.send_after(self(), :enable_watchers, 5000)
   end
 
   @impl true
-  def handle_info(:enable_watchers, state) do
-    :ok = ReceivedFrameWatcher.enable(@network_name, @vms_status_frame_name)
-    {:noreply, state}
+  def handle_call({:request_gear, gear}, _from, state) do
+    :ok = Emitter.update(:ovcs, "infotainment_status", fn (data) ->
+      %{data | "requested_gear" => gear}
+    end)
+    {:reply, {:ok, gear}, %{state | requested_gear: gear, last_gear_update_at: Time.utc_now()}}
+  end
+
+  def handle_call(:status, _from, state) do
+    status = state |> Map.take([
+      :selected_gear,
+      :front_left_door_open,
+      :front_right_door_open,
+      :rear_left_door_open,
+      :rear_right_door_open,
+      :trunk_door_open,
+      :beam_active,
+      :handbrake_engaged,
+      :speed,
+      :ready_to_drive,
+      :inverter_enabled,
+      :main_negative_contactor_enabled,
+      :main_positive_contactor_enabled,
+      :precharge_contactor_enabled,
+      :vms_computed_status,
+      :bms_computed_status,
+      :front_controler_computed_status,
+      :controls_controller_computed_status,
+      :rear_controller_computed_status,
+    ])
+    {:reply, {:ok, status}, state}
   end
 
   def request_gear(gear) do
     GenServer.call(__MODULE__, {:request_gear, gear})
   end
 
-  def selected_gear() do
-    GenServer.call(__MODULE__, :selected_gear)
-  end
-
-  def speed() do
-    GenServer.call(__MODULE__, :speed)
-  end
-
-  def car_overview() do
-    GenServer.call(__MODULE__, :car_overview)
+  def status() do
+    GenServer.call(__MODULE__, :status)
   end
 end

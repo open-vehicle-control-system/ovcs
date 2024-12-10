@@ -13,8 +13,6 @@ defmodule InfotainmentCore.Application do
       #  repos: Application.fetch_env!(:vms_core, :ecto_repos),
       #  skip: skip_migrations?()},
       {InfotainmentCore.VehicleStatus, []},
-      {InfotainmentCore.ComponentsAlive, []},
-      {InfotainmentCore.ContactorsStatus, []},
       {InfotainmentCore.Temperature, []}
 
     ]
