@@ -142,8 +142,6 @@ void Controller::watchVms() {
     } else {
       _vmsValidFramesWindow = max(0, _vmsValidFramesWindow - 1);
     }
-
-    _latestVmsAliveTimestamp = now;
     uint8_t nextVmsAliveCounter = (_vmsAliveFrameCounter + 1) % 4;
     if(_vmsValidFramesWindow == 0) {
       shutdown(VMS_LATENCY_ERROR);
@@ -213,6 +211,9 @@ void Controller::setup() {
 
 void Controller::loop() {
   _can.receive();
+  if (_can._receivedFrame.id == VMS_ALIVE_FRAME_ID) {
+    _latestVmsAliveTimestamp = millis();
+  }
   if (_adoptionButton.isWaitingAdoption()) {
     if (_can._receivedFrame.id == ADOPTION_FRAME_ID) {
       DPRINTLN("--> Adoption started <--");
