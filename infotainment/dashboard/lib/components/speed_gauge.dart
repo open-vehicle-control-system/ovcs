@@ -28,9 +28,9 @@ class _SpeedGaugeState extends State<SpeedGauge> {
     });
 
     _channel?.messages.listen( (event){
-      if(event.topic == "status" && event.payload!.containsKey("speed")){
+      if(event.topic == "status" && event.payload!.containsKey("attributes")){
         setState(() {
-          currentSpeed = double.parse(event.payload?["speed"]);
+          currentSpeed = double.parse(event.payload?["attributes"]["speed"]);
         });
       }
     });

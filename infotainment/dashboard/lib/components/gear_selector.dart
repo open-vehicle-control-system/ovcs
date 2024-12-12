@@ -23,9 +23,9 @@ class _GearSelectorState extends State<GearSelector> {
     _channel = socket.addChannel(topic: 'status', parameters: {"interval": 50});
 
     _channel?.messages.listen( (event){
-      if(event.topic == "status" && event.payload!.containsKey("selectedGear")){
+      if(event.topic == "status" && event.payload!.containsKey("attributes")){
         setState(() {
-          gear = event.payload?["selectedGear"];
+          gear = event.payload?["attributes"]["selectedGear"];
         });
       }
     });

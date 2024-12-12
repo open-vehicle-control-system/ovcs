@@ -28,7 +28,7 @@ class _CarOverviewState extends State<CarOverview> {
     _channel = socket.addChannel(topic: 'status', parameters: {"interval": 50});
 
     _channel?.messages.listen( (event){
-      if(event.topic == "status" && event.payload!.containsKey("handbrakeEngaged")){
+      if(event.topic == "status" && event.payload!.containsKey("attributes")){
         setState(() {
           handBrakeIcon = OvcsIcons.toggleHandrakeIcon(event);
           beamsIcon = OvcsIcons.toggleBeamsIcon(event);
