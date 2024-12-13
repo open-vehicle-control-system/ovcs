@@ -37,7 +37,7 @@ defmodule RadioControlBridgeFirmware.MixProject do
       {:ring_logger, "~> 0.11.0"},
       {:toolshed, "~> 0.4.0"},
       {:express_lrs, path: "../../../libraries/express_lrs"},
-      {:msp_osd, path: "../../../libraries/msp_osd", runtime: false},
+      {:msp_osd, path: "../../../libraries/msp_osd"},
       {:cantastic, path: "../../../libraries/cantastic"},
       {:observer_cli, "~> 1.8"},
 

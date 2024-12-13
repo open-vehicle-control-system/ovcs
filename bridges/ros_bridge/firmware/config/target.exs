@@ -25,6 +25,8 @@ config :shoehorn, init: [:nerves_runtime, :nerves_pack]
 
 # Advance the system clock on devices without real-time clocks.
 config :nerves, :erlinit, update_clock: true
+config :nerves, :erlinit, hostname_pattern: "ovcs-mini-ros-bridge" #Application.get_env(:ros_bridge_firmware, :vehicle_host)
+config :nerves, :erlinit, env: "LD_LIBRARY_PATH=/opt/ros/humble/lib"
 
 # Configure the device for SSH IEx prompt access and firmware updates
 #
@@ -59,7 +61,8 @@ config :vintage_net,
         ]
      },
      ipv4: %{method: :dhcp}
-   }}
+   }
+  }
   ]
 
 config :mdns_lite,

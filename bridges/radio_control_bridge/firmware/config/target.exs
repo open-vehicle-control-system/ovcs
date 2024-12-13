@@ -18,6 +18,7 @@ config :shoehorn, init: [:nerves_runtime, :nerves_pack]
 
 # Advance the system clock on devices without real-time clocks.
 config :nerves, :erlinit, update_clock: true
+config :nerves, :erlinit, hostname_pattern: Application.get_env(:radio_control_bridge_firmware, :vehicle_host)
 
 # Configure the device for SSH IEx prompt access and firmware updates
 #

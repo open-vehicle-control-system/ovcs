@@ -25,11 +25,11 @@ config :express_lrs,
     uart_port: "ttyUSB0",
     uart_baud_rate: 460_800
   },
-  enabled: true
+  enabled: false
 
 config :msp_osd,
   interface: %{
     uart_port: "ttyUSB0",
     uart_baud_rate: 115_200,
   },
-  enabled: false
+  enabled: true
