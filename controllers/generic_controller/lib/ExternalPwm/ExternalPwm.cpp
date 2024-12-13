@@ -18,7 +18,7 @@ uint16_t ExternalPwm::dutyCycle() {
   return _dutyCycle;
 };
 
-uint16_t ExternalPwm::frequency() {
+uint32_t ExternalPwm::frequency() {
   return _frequency;
 };
 
@@ -31,6 +31,6 @@ void ExternalPwm::update(ExternalPwm& externalPwm) {
   sendSize = _serialTransfer->txObj(_pwmId, sendSize);
   sendSize = _serialTransfer->txObj(_enabled, sendSize);
   sendSize = _serialTransfer->txObj(_dutyCycle, sendSize);
-  sendSize = _serialTransfer->txObj(_frequency, sendSize);
+  sendSize = _serialTransfer->txObj(_frequency, sendSize, 3);
   _serialTransfer->sendData(sendSize, SET_PWM_COMMAND_ID);
 };

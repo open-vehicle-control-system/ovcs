@@ -14,7 +14,7 @@ class ExternalPwm {
       _frequency = 0;
       _serialTransfer = serialTransfer;
     };
-    ExternalPwm(uint8_t pwmId, bool enabled, uint16_t dutyCycle, uint16_t frequency) {
+    ExternalPwm(uint8_t pwmId, bool enabled, uint16_t dutyCycle, uint32_t frequency) {
       _pwmId     = pwmId;
       _enabled   = enabled;
       _dutyCycle = dutyCycle;
@@ -25,12 +25,12 @@ class ExternalPwm {
     bool enabled();
     void disable();
     uint16_t dutyCycle();
-    uint16_t frequency();
+    uint32_t frequency();
   private:
     uint8_t _pwmId;
     bool _enabled;
     uint16_t _dutyCycle;
-    uint16_t _frequency;
+    uint32_t _frequency;
     SerialTransfer* _serialTransfer;
 };
 

@@ -92,7 +92,7 @@ ExternalPwm Can::parseExternalPwmRequest() {
   uint8_t  pwmId     = (_receivedFrame.id & 0b1111) - 5;
   bool     enabled   = _receivedFrame.data[0];
   uint16_t dutyCycle = _receivedFrame.data[2] << 8 | _receivedFrame.data[1];
-  uint16_t frequency = _receivedFrame.data[4] << 8 | _receivedFrame.data[3];
+  uint32_t frequency = _receivedFrame.data[5] << 16 | _receivedFrame.data[4] << 8 | _receivedFrame.data[3];
   return ExternalPwm(pwmId, enabled, dutyCycle, frequency);
 };
 

@@ -13,4 +13,4 @@
 - name: frequency
   value_start: 24
   kind: integer
-  value_length: 16
+  value_length: 24
