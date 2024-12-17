@@ -28,8 +28,8 @@ can_networks:
       - import!:ovcs1/generic_controller/0x714_rear_controller_digital_and_analog_pin_status.yml
       - import!:ovcs1/generic_controller/0x721_controls_controller_alive.yml
       - import!:ovcs1/generic_controller/0x724_controls_controller_digital_and_analog_pin_status.yml
-      - import!:ovcs1/generic_controller/0x731_test_controller_alive.yml
-      - import!:ovcs1/generic_controller/0x734_test_controller_digital_and_analog_pin_status.yml
+      # - import!:ovcs1/generic_controller/0x731_test_controller_alive.yml
+      # - import!:ovcs1/generic_controller/0x734_test_controller_digital_and_analog_pin_status.yml
       - import!:../components/ovcs/0x2A0_radio_control_channels0.yml
       - import!:../components/ovcs/0x2A1_radio_control_channels1.yml
   misc:

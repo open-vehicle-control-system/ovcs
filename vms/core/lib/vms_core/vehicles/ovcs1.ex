@@ -23,6 +23,7 @@ defmodule VmsCore.Vehicles.OVCS1 do
   def init(_) do
     Bus.subscribe("messages")
     {:ok, timer} = :timer.send_interval(@loop_period, :loop)
+    Process.send_after(self(), :finish_boot_period, 5000)
     {:ok, %{
       loop_timer: timer,
       ready_to_drive: false,
@@ -37,6 +38,7 @@ defmodule VmsCore.Vehicles.OVCS1 do
       controls_controller_is_alive: false,
       rear_controller_status: nil,
       rear_controller_is_alive: false,
+      booting: true,
       resetting: false,
       vms_status: "OK",
     }}
@@ -90,6 +92,10 @@ defmodule VmsCore.Vehicles.OVCS1 do
     {:noreply, state}
   end
 
+  def handle_info(:finish_boot_period, state) do # TODO, replace Bus ?
+    {:noreply, %{state | booting: false}}
+  end
+
   defp update_igntion_started(state) do
     case {state.ignition_started, state.contact} do
       {false, :start} ->
@@ -111,7 +117,7 @@ defmodule VmsCore.Vehicles.OVCS1 do
   end
 
   defp  compute_vms_status(state) do
-    vms_is_ok = state.resetting || (
+    vms_is_ok = state.booting || state.resetting || (
       state.vms_status == "OK" &&
       state.front_controller_is_alive &&
       state.controls_controller_is_alive &&
@@ -119,7 +125,7 @@ defmodule VmsCore.Vehicles.OVCS1 do
       state.front_controller_status == "OK" &&
       state.controls_controller_status == "OK" &&
       state.rear_controller_status == "OK"
-    )
+      )
     case vms_is_ok do
       true -> %{state | vms_status: "OK"}
       false -> %{state | vms_status: "FAILURE"}
