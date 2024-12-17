@@ -2,6 +2,8 @@
 name: vms_status
 id: 0x1A0
 frequency: 100
+allowed_frequency_leeway: 50
+allowed_missing_frames: 10
 signals:
   - name: status
     kind: enum
