@@ -80,7 +80,7 @@ void Controller::setExternalPwm() {
   externalPwm.update(externalPwmRequest);
 };
 
-void Controller::disablePwm() {
+void Controller::disableExternalPwms() {
   for (uint8_t i = 0; i < 4; i++) {
     _configuration._externalPwms[i].disable();
   }
@@ -125,7 +125,7 @@ void Controller::shutdown(ControllerStatus controllerStatus){
   _status = controllerStatus;
   shutdownAllDigitalPins();
   shutdownAllOtherPins();
-  disablePwm();
+  disableExternalPwms();
   DPRINT("Shutting down with error code: ");
   DPRINTLN(controllerStatus, HEX);
 }
@@ -215,6 +215,9 @@ void Controller::loop() {
     _latestVmsAliveTimestamp = millis();
   }
   if (_adoptionButton.isWaitingAdoption()) {
+    if (_status != ADOPTION_REQUIRED) {
+      shutdown(ADOPTION_REQUIRED);
+    }
     if (_can._receivedFrame.id == ADOPTION_FRAME_ID) {
       DPRINTLN("--> Adoption started <--");
       adoptConfiguration();

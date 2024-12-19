@@ -12,6 +12,10 @@ void ExternalPwm::disable() {
   _dutyCycle = 0;
   _frequency = 0;
   _enabled = false;
+  for(uint8_t i = 0; i < 10; i++) {
+    update(*this);
+    delay(10);
+  }
 };
 
 uint16_t ExternalPwm::dutyCycle() {

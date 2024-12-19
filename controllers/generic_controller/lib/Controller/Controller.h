@@ -77,7 +77,7 @@ class Controller {
     void writeOtherPins();
     void shutdownAllOtherPins();
     void setExternalPwm();
-    void disablePwm();
+    void disableExternalPwms();
     PinStatus *readDigitalPins();
     uint16_t* readAnalogPins();
     bool isReady();
