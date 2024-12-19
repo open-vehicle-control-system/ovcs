@@ -4,8 +4,8 @@ defmodule VmsCore.Vehicles.OVCSMini do
   """
   use GenServer
   require Logger
-  alias VmsCore.Bus
-  alias Cantastic.ReceivedFrameWatcher
+  alias VmsCore.{Bus, Status}
+  alias VmsCore.Vehicles.OVCSMini.MainController
 
   @loop_period 10
 
@@ -16,17 +16,16 @@ defmodule VmsCore.Vehicles.OVCSMini do
   @impl true
   def init(_) do
     Bus.subscribe("messages")
-    :ok = ReceivedFrameWatcher.subscribe(:ovcs, ["main_controller_alive"], self())
-    enable_watchers()
+    Process.send_after(self(), :finish_boot_period, 5000)
     {:ok, timer} = :timer.send_interval(@loop_period, :loop)
     {:ok, %{
       loop_timer: timer,
-      ready_to_drive: false,
-      vms_status: "ok",
-      failed_frames: %{},
-      frame_emitters: %{
-        "main_controller_alive" => "Rear Ctrl"
-      }
+      ready_to_drive: true,
+      vms_status: "OK",
+      main_controller_status: nil,
+      main_controller_is_alive: false,
+      booting: true,
+      resetting: false,
     }}
   end
 
@@ -34,33 +33,40 @@ defmodule VmsCore.Vehicles.OVCSMini do
   def handle_info(:loop, state) do
     state = state
       |> check_ready_to_drive()
+      |> compute_vms_status()
       |> emit_metrics()
 
     {:noreply, state}
   end
 
+  def handle_info(%Bus.Message{name: :status, value: status, source: MainController}, state)  do
+    {:noreply, %{state | main_controller_status: status}}
+  end
+  def handle_info(%Bus.Message{name: :is_alive, value: is_alive, source: MainController}, state)  do
+    {:noreply, %{state | main_controller_is_alive: is_alive}}
+  end
+  def handle_info(%Bus.Message{name: :resetting, value: resetting, source: Status}, state)  do
+    {:noreply, %{state | resetting: resetting}}
+  end
   def handle_info(%Bus.Message{}, state) do # TODO, replace Bus ?
     {:noreply, state}
   end
 
-  @impl true
-  def handle_info({:handle_missing_frame,  network_name, frame_name}, state) do
-    case state.failed_frames[frame_name] do
-      nil ->
-        Logger.warning("Frame #{network_name}.#{frame_name} not received anymore")
-        state = state
-          |> put_in([:vms_status], "failure")
-          |> put_in([:failed_frames, frame_name], %{emitter: state.frame_emitters[frame_name]})
-          {:noreply, state}
-      _ ->
-        {:noreply, state}
-    end
+  def handle_info(:finish_boot_period, state) do
+    {:noreply, %{state | booting: false}}
   end
 
-  @impl true
-  def handle_info(:enable_watchers, state) do
-    :ok = ReceivedFrameWatcher.enable(:ovcs, ["main_controller_alive"])
-    {:noreply, state}
+
+  defp  compute_vms_status(state) do
+    vms_is_ok = state.booting || state.resetting || (
+      state.vms_status == "OK" &&
+      state.main_controller_is_alive &&
+      state.main_controller_status == "OK"
+      )
+    case vms_is_ok do
+      true -> %{state | vms_status: "OK"}
+      false -> %{state | vms_status: "FAILURE"}
+    end
   end
 
   defp check_ready_to_drive(state) do
@@ -71,11 +77,6 @@ defmodule VmsCore.Vehicles.OVCSMini do
   defp emit_metrics(state) do
     Bus.broadcast("messages", %Bus.Message{name: :ready_to_drive, value: state.ready_to_drive, source: __MODULE__})
     Bus.broadcast("messages", %Bus.Message{name: :vms_status, value: state.vms_status, source: __MODULE__})
-    Bus.broadcast("messages", %Bus.Message{name: :failed_frames, value: state.failed_frames, source: __MODULE__})
     state
-  end
-
-  defp enable_watchers do
-    Process.send_after(self(), :enable_watchers, 5000)
   end
 end

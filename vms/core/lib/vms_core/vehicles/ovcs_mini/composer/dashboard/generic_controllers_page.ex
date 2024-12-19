@@ -1,5 +1,6 @@
 defmodule VmsCore.Vehicles.OVCSMini.Composer.Dashboard.GenericControllersPage do
   alias VmsCore.Vehicles.OVCSMini
+  alias VmsCore.Components.OVCS.GenericController
 
   def definition(order: order) do
     %{
@@ -11,16 +12,19 @@ defmodule VmsCore.Vehicles.OVCSMini.Composer.Dashboard.GenericControllersPage do
           order: 1,
           name: "Main Controller Satus",
           type: "table",
-          metrics: [
-            %{name: "Alive?", module: OVCSMini.MainController, key: :is_alive},
+          rows: [
+            %{type: :action, name: "Adopt", input_type: :button, module: GenericController, action: "adopt", extra_parameters: %{controller_name: OVCSMini.MainController}},
 
-            %{name: "Steering PWM Enabled", module: OVCSMini.MainController, key: :requested_external_pwm0_enabled},
-            %{name: "Steering PWM Duty Cycle", module: OVCSMini.MainController, key: :requested_external_pwm0_duty_cycle, unit: "%"},
-            %{name: "Steering PWM frequency", module: OVCSMini.MainController, key: :requested_external_pwm0_frequency, unit: "Hz"},
+            %{type: :metric, name: "Alive?", module: OVCSMini.MainController, key: :is_alive},
+            %{type: :metric, name: "Status", module: OVCSMini.MainController, key: :status},
 
-            %{name: "Throttle PWM Enabled", module: OVCSMini.MainController, key: :requested_external_pwm1_enabled},
-            %{name: "Throttle PWM Duty Cycle", module: OVCSMini.MainController, key: :requested_external_pwm1_duty_cycle, unit: "%"},
-            %{name: "Throttle PWM frequency", module: OVCSMini.MainController, key: :requested_external_pwm1_frequency, unit: "Hz"},
+            %{type: :metric, name: "Steering PWM Enabled", module: OVCSMini.MainController, key: :requested_external_pwm0_enabled},
+            %{type: :metric, name: "Steering PWM Duty Cycle", module: OVCSMini.MainController, key: :requested_external_pwm0_duty_cycle, unit: "%"},
+            %{type: :metric, name: "Steering PWM frequency", module: OVCSMini.MainController, key: :requested_external_pwm0_frequency, unit: "Hz"},
+
+            %{type: :metric, name: "Throttle PWM Enabled", module: OVCSMini.MainController, key: :requested_external_pwm1_enabled},
+            %{type: :metric, name: "Throttle PWM Duty Cycle", module: OVCSMini.MainController, key: :requested_external_pwm1_duty_cycle, unit: "%"},
+            %{type: :metric, name: "Throttle PWM frequency", module: OVCSMini.MainController, key: :requested_external_pwm1_frequency, unit: "Hz"},
           ]
         }
       }

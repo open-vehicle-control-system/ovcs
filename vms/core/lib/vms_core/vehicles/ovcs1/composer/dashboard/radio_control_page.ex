@@ -24,7 +24,7 @@ defmodule VmsCore.Vehicles.OVCS1.Composer.Dashboard.RadioControlPage do
           type: "lineChart",
           serie_max_size: 300,
           y_axis: [
-            %{min: 0, max: 1, label: "%", series: [
+            %{min: -1, max: 1, label: "%", series: [
               %{name: "Requested Steering", metric: %{module: RadioControl.Steering, key: :requested_steering}},
               %{name: "Requested Throttle", metric: %{module: RadioControl.Throttle, key: :requested_throttle}}
             ]}

@@ -32,7 +32,7 @@ defmodule VmsCore.Vehicles.OVCS1.Composer.Dashboard.DashboardPage do
         },
         "throttle" => Blocks.ThrottleChart.definition(order: 1, full_width: false),
         "torque" => Blocks.TorqueChart.definition(order: 2, full_width: false),
-        "Modules Status" => %{
+        "status" => %{
           order: 3,
           name: "Ready to drive",
           type: "table",

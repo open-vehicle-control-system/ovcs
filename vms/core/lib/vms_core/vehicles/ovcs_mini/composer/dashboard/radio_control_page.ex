@@ -12,11 +12,11 @@ defmodule VmsCore.Vehicles.OVCSMini.Composer.Dashboard.RadioControlPage do
           order: 0,
           name: "Status",
           type: "table",
-          metrics: [
-            %{name: "Requested Control Level", module: RadioControl.RequestedControlLevel, key: :requested_control_level},
-            %{name: "Requested Gear", module: RadioControl.Gear, key: :requested_gear},
-            %{name: "Requested Steering", module: RadioControl.Steering, key: :requested_steering},
-            %{name: "Requested Throttle", module: RadioControl.Throttle, key: :requested_throttle}
+          rows: [
+            %{type: :metric, name: "Requested Control Level", module: RadioControl.RequestedControlLevel, key: :requested_control_level},
+            %{type: :metric, name: "Requested Gear", module: RadioControl.Gear, key: :requested_gear},
+            %{type: :metric, name: "Requested Steering", module: RadioControl.Steering, key: :requested_steering},
+            %{type: :metric, name: "Requested Throttle", module: RadioControl.Throttle, key: :requested_throttle}
           ]
         },
         "steering-and-throttle" => RadioControlThrottleAndSteeringBlock.definition(order: 1, full_width: false)
