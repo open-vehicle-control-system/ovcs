@@ -86,6 +86,8 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
       }},
 
       # OVCS
+      {OVCS.Ros2Control.Steering, %{}},
+      {OVCS.Ros2Control.Throttle, %{}},
       {OVCS.RadioControl.Steering, %{
         radio_control_channel: 1
       }},
