@@ -36,7 +36,7 @@ defmodule ROSBridgeFirmware.MixProject do
       {:shoehorn, "~> 0.9.1"},
       {:ring_logger, "~> 0.11.0"},
       {:toolshed, "~> 0.4.0"},
-
+      {:cantastic, path: "../../../libraries/cantastic"},
       {:nerves_runtime, "~> 0.13.0"},
 
       # Dependencies for all targets except :host
