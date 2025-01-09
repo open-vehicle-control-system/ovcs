@@ -1,0 +1,17 @@
+---
+can_networks:
+  ovcs:
+    bitrate: 500000
+    emitted_frames:
+      - name: ros2_control
+        id: 0x3A0
+        frequency: 10
+        signals:
+          - name: linear
+            kind: integer
+            value_start: 0
+            value_length: 16
+          - name: angular
+            kind: integer
+            value_start: 16
+            value_length: 16

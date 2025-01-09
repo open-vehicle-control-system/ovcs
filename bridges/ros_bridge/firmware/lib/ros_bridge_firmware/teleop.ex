@@ -23,7 +23,7 @@ defmodule ROSBridgeFirmware.Teleop do
     :ok = Rclex.start_node("teleop")
     :ok = Rclex.start_subscription(&velocity_callback/1, Rclex.Pkgs.GeometryMsgs.Msg.Twist, "/cmd_vel", "teleop")
 
-    :ok = Emitter.configure(:ovcs, "ros_control", %{
+    :ok = Emitter.configure(:ovcs, "ros2_control", %{
       parameters_builder_function: :default,
       initial_data: %{
         "linear" => 0,
@@ -37,8 +37,8 @@ defmodule ROSBridgeFirmware.Teleop do
 
   defp velocity_callback(message) do
     linear_speed = message.linear.x
-    angular_speed = message.angular.z
-    :ok = Emitter.update(:ovcs, "ros_control", fn (data) ->
+    angular_speed = message.angular.yaw
+    :ok = Emitter.update(:ovcs, "ros2_control", fn (data) ->
       %{data |
         "linear" => linear_speed,
         "angular" => angular_speed
