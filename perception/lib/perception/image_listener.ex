@@ -31,9 +31,9 @@ defmodule Perception.ImageListener do
 
   def handle_image(message) do
     state = GenServer.call(__MODULE__, :get_state)
-    compressed_picture = Perception.LaneDetector.render(message.data)
+    polygon_picture = Perception.LaneDetector.render(message.data)
     format = ".jpg"
-    compressed_message = create_ros_compressed_image_message(compressed_picture, format, state)
+    compressed_message = create_ros_compressed_image_message(polygon_picture, format, state)
     :ok = Rclex.publish(compressed_message, state.output_lane_topic, state.node_name)
   end
 
