@@ -1,0 +1,7 @@
+251c3dbd61c370ab273001d5e41282b5d84400ce5364602d8b78f71ceafa7525  xla_extension-0.8.0-aarch64-darwin-cpu.tar.gz
+39f85b378632eedfacf96f8d8d88086e75c3c3dbf60fd473957cd7041425cc6d  xla_extension-0.8.0-aarch64-linux-gnu-cpu.tar.gz
+1cd883d5cd1af0659abd769f77d11093957c729ab6b0a37c15422f596d562011  xla_extension-0.8.0-aarch64-linux-gnu-cuda12.tar.gz
+e4c1c3220bebdfb5cdf888aa35f16a6a7c5a1f30a1fbf9685309747dfc695e37  xla_extension-0.8.0-x86_64-darwin-cpu.tar.gz
+a34cada5da359475a0d35e00f0b93727e26fd78d7ea220686a10930c0567e224  xla_extension-0.8.0-x86_64-linux-gnu-cpu.tar.gz
+adb76446025f2ad8933d289c09a4ee691532ee5e5ec4642c056cdf6b4df97908  xla_extension-0.8.0-x86_64-linux-gnu-cuda12.tar.gz
+f72c80deb92d81e15a5dd6bf4af7a17b0d08a9cbead92aa893d9dadf50534c39  xla_extension-0.8.0-x86_64-linux-gnu-tpu.tar.gz
