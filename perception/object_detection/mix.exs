@@ -21,8 +21,17 @@ defmodule ObjectDetection.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      # {:dep_from_hexpm, "~> 0.3.0"},
-      # {:dep_from_git, git: "https://github.com/elixir-lang/my_dep.git", tag: "0.1.0"}
+      {:yolo, ">= 0.0.0"},
+      {:yolo_fast_nms, ">= 0.0.0"},
+      {:nx, github: "elixir-nx/nx", sparse: "nx", override: true, branch: "main"},
+      {:exla, github: "elixir-nx/exla", sparse: "exla", override: true, branch: "main"},
+      {:image, "~> 0.54"},
+      {:evision, "~> 0.2.0",
+        override: true,
+        system_env: [
+          "EVISION_PREFER_PRECOMPILED": "false",
+          "CMAKE_OPENCV_OPTIONS": "-D WITH VTK=OFF"
+        ]},
     ]
   end
 end
