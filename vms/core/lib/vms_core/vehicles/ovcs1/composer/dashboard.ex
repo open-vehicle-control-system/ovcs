@@ -13,8 +13,9 @@ defmodule VmsCore.Vehicles.OVCS1.Composer.Dashboard do
           "throttle-pedal"      => Dashboard.ThrottlePedalPage.definition(order: 2),
           "brake-booster"       => Dashboard.BrakeBoosterPage.definition(order: 3),
           "inverter"            => Dashboard.InverterPage.definition(order: 4),
-          "radio-control"       => Dashboard.RadioControlPage.definition(order: 5),
-          "generic-controllers" => Dashboard.GenericControllersPage.definition(order: 6),
+          "battery"             => Dashboard.BatteryPage.definition(order: 5),
+          "radio-control"       => Dashboard.RadioControlPage.definition(order: 6),
+          "generic-controllers" => Dashboard.GenericControllersPage.definition(order: 7),
         }
       }
     }

@@ -15,7 +15,7 @@ defmodule VmsCore.Components.Nissan.LeafZE0.Inverter do
   @zero D.new(0)
   #@motor_max_torque D.new("250")
   #@motor_max_power D.new("80")
-  @max_torque 30
+  @max_torque 100
   @drive_max_torque D.new(@max_torque) # TODO store in DB
   @reverse_max_torque D.new(-@max_torque)
   @effective_throttle_threshold D.new("0.05")

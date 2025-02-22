@@ -9,7 +9,8 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
     Bosch,
     Nissan.LeafZE0,
     OVCS,
-    Volkswagen.Polo9N
+    Volkswagen.Polo9N,
+    Orion
   }
   alias VmsCore.{Managers, Vehicles, Vehicles.OVCS1}
 
@@ -73,8 +74,16 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
         selected_control_level_source: Managers.ControlLevel,
         selected_gear_source: Managers.Gear,
         contact_source: Polo9N.IgnitionLock,
-        controller: OVCS1.FrontController,
-        power_relay_pin: 3
+        controller: OVCS1.RearController,
+        power_relay_pin: 7
+      }},
+      {LeafZE0.Charger, %{
+        maximum_power_for_charger_source: Orion.Bms2
+      }},
+
+      # Orion
+      {Orion.Bms2, %{
+        ac_input_voltage_source: LeafZE0.Charger
       }},
 
       #Bosch

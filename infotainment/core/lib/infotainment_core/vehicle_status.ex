@@ -22,7 +22,6 @@ defmodule InfotainmentCore.VehicleStatus do
     })
     :ok = ReceivedFrameWatcher.enable(:ovcs, @status_frame_names)
     :ok = Receiver.subscribe(self(), :ovcs, @status_frame_names ++ [
-      "front_controller_digital_and_analog_pin_status",
       "rear_controller_digital_and_analog_pin_status",
       "gear_status",
       "abs_status",
@@ -142,22 +141,19 @@ defmodule InfotainmentCore.VehicleStatus do
     }
   end
 
-  def handle_info({:handle_frame, %Frame{name: "front_controller_digital_and_analog_pin_status", signals: signals}}, state) do
-    %{"digital_pin3_enabled" => %Signal{value: inverter_enabled}} = signals
-    {:noreply, %{state | inverter_enabled: inverter_enabled}}
-  end
-
   def handle_info({:handle_frame, %Frame{name: "rear_controller_digital_and_analog_pin_status", signals: signals}}, state) do
     %{
       "digital_pin3_enabled" => %Signal{value: main_negative_contactor_enabled},
       "digital_pin4_enabled" => %Signal{value: main_positive_contactor_enabled},
       "digital_pin5_enabled" => %Signal{value: precharge_contactor_enabled},
+      "digital_pin7_enabled" => %Signal{value: inverter_enabled},
     } = signals
 
     {:noreply, %{state |
       main_negative_contactor_enabled: main_negative_contactor_enabled,
       main_positive_contactor_enabled: main_positive_contactor_enabled,
       precharge_contactor_enabled: precharge_contactor_enabled,
+      inverter_enabled: inverter_enabled
     }}
   end
 
