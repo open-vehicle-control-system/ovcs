@@ -15,7 +15,7 @@ defmodule VmsCore.Vehicles.OVCS1.Composer.Dashboard.BatteryPage do
             %{type: :metric, name: "Charging State", module: Charger, key: :charging_state},
             %{type: :metric, name: "AC Voltage", module: Charger, key: :ac_voltage, unit: "V"},
             %{type: :metric, name: "Charge Power", module: Charger, key: :charge_power, unit: "kW"},
-            %{type: :metric, name: "Maximum Charge Power", module: Charger, key: :charge_power, unit: "kW"}
+            %{type: :metric, name: "Maximum Charge Power", module: Charger, key: :maximum_charge_power, unit: "kW"}
           ]
         },
       }

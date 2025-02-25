@@ -26,8 +26,8 @@ defmodule VmsCore.Components.Orion.Bms2 do
     {:ok, timer} = :timer.send_interval(@loop_period, :loop)
     {:ok, %{
       loop_timer: timer,
-      pack_current: nil,
-      pack_instant_voltage: nil,
+      pack_current: @zero,
+      pack_instant_voltage: @zero,
       discharge_relay_enabled: nil,
       charge_relay_enabled: nil,
       charger_safety_relay_enabled: nil,
@@ -84,64 +84,64 @@ defmodule VmsCore.Components.Orion.Bms2 do
     %{
       "pack_current" => %Signal{value: pack_current},
       "pack_instant_voltage" => %Signal{value: pack_instant_voltage},
-      "discharge_relay_enabled" => %Signal{value: discharge_relay_enabled},
-      "charge_relay_enabled" => %Signal{value: charge_relay_enabled},
-      "charger_safety_relay_enabled" => %Signal{value: charger_safety_relay_enabled},
-      "malfunction_relay_enabled" => %Signal{value: malfunction_relay_enabled},
-      "multipurpose_input_1_enabled" => %Signal{value: multipurpose_input_1_enabled},
-      "always_on_status_enabled" => %Signal{value: always_on_status_enabled},
-      "is_ready_status_enabled" => %Signal{value: is_ready_status_enabled},
-      "is_charging_status_enabled" => %Signal{value: is_charging_status_enabled},
-      "multipurpose_input_2_enabled" => %Signal{value: multipurpose_input_2_enabled},
-      "multipurpose_input_3_enabled" => %Signal{value: multipurpose_input_3_enabled},
-      "multipurpose_output_2_enabled" => %Signal{value: multipurpose_output_2_enabled},
-      "multipurpose_output_3_enabled" => %Signal{value: multipurpose_output_3_enabled},
-      "multipurpose_output_4_enabled" => %Signal{value: multipurpose_output_4_enabled},
-      "multipurpose_enable_status_enabled" => %Signal{value: multipurpose_enable_status_enabled},
-      "multipurpose_output_1_enabled" => %Signal{value: multipurpose_output_1_enabled},
-      "charge_interlock_enabled" => %Signal{value: charge_interlock_enabled},
-      "current_failsafe_enabled" => %Signal{value: current_failsafe_enabled},
-      "voltage_failsafe_enabled" => %Signal{value: voltage_failsafe_enabled},
-      "input_power_supply_failsafe_enabled" => %Signal{value: input_power_supply_failsafe_enabled}
+      # "discharge_relay_enabled" => %Signal{value: discharge_relay_enabled},
+      # "charge_relay_enabled" => %Signal{value: charge_relay_enabled},
+      # "charger_safety_relay_enabled" => %Signal{value: charger_safety_relay_enabled},
+      # "malfunction_relay_enabled" => %Signal{value: malfunction_relay_enabled},
+      # "multipurpose_input_1_enabled" => %Signal{value: multipurpose_input_1_enabled},
+      # "always_on_status_enabled" => %Signal{value: always_on_status_enabled},
+      # "is_ready_status_enabled" => %Signal{value: is_ready_status_enabled},
+      # "is_charging_status_enabled" => %Signal{value: is_charging_status_enabled},
+      # "multipurpose_input_2_enabled" => %Signal{value: multipurpose_input_2_enabled},
+      # "multipurpose_input_3_enabled" => %Signal{value: multipurpose_input_3_enabled},
+      # "multipurpose_output_2_enabled" => %Signal{value: multipurpose_output_2_enabled},
+      # "multipurpose_output_3_enabled" => %Signal{value: multipurpose_output_3_enabled},
+      # "multipurpose_output_4_enabled" => %Signal{value: multipurpose_output_4_enabled},
+      # "multipurpose_enable_status_enabled" => %Signal{value: multipurpose_enable_status_enabled},
+      # "multipurpose_output_1_enabled" => %Signal{value: multipurpose_output_1_enabled},
+      # "charge_interlock_enabled" => %Signal{value: charge_interlock_enabled},
+      # "current_failsafe_enabled" => %Signal{value: current_failsafe_enabled},
+      # "voltage_failsafe_enabled" => %Signal{value: voltage_failsafe_enabled},
+      # "input_power_supply_failsafe_enabled" => %Signal{value: input_power_supply_failsafe_enabled}
     } = signals
     {:noreply, %{state |
       pack_current: pack_current,
       pack_instant_voltage: pack_instant_voltage,
-      discharge_relay_enabled: discharge_relay_enabled,
-      charge_relay_enabled: charge_relay_enabled,
-      charger_safety_relay_enabled: charger_safety_relay_enabled,
-      malfunction_relay_enabled: malfunction_relay_enabled,
-      multipurpose_input_1_enabled: multipurpose_input_1_enabled,
-      always_on_status_enabled: always_on_status_enabled,
-      is_ready_status_enabled: is_ready_status_enabled,
-      is_charging_status_enabled: is_charging_status_enabled,
-      multipurpose_input_2_enabled: multipurpose_input_2_enabled,
-      multipurpose_input_3_enabled: multipurpose_input_3_enabled,
-      multipurpose_output_2_enabled: multipurpose_output_2_enabled,
-      multipurpose_output_3_enabled: multipurpose_output_3_enabled,
-      multipurpose_output_4_enabled: multipurpose_output_4_enabled,
-      multipurpose_enable_status_enabled: multipurpose_enable_status_enabled,
-      multipurpose_output_1_enabled: multipurpose_output_1_enabled,
-      charge_interlock_enabled: charge_interlock_enabled,
-      current_failsafe_enabled: current_failsafe_enabled,
-      voltage_failsafe_enabled: voltage_failsafe_enabled,
-      input_power_supply_failsafe_enabled: input_power_supply_failsafe_enabled
+      # discharge_relay_enabled: discharge_relay_enabled,
+      # charge_relay_enabled: charge_relay_enabled,
+      # charger_safety_relay_enabled: charger_safety_relay_enabled,
+      # malfunction_relay_enabled: malfunction_relay_enabled,
+      # multipurpose_input_1_enabled: multipurpose_input_1_enabled,
+      # always_on_status_enabled: always_on_status_enabled,
+      # is_ready_status_enabled: is_ready_status_enabled,
+      # is_charging_status_enabled: is_charging_status_enabled,
+      # multipurpose_input_2_enabled: multipurpose_input_2_enabled,
+      # multipurpose_input_3_enabled: multipurpose_input_3_enabled,
+      # multipurpose_output_2_enabled: multipurpose_output_2_enabled,
+      # multipurpose_output_3_enabled: multipurpose_output_3_enabled,
+      # multipurpose_output_4_enabled: multipurpose_output_4_enabled,
+      # multipurpose_enable_status_enabled: multipurpose_enable_status_enabled,
+      # multipurpose_output_1_enabled: multipurpose_output_1_enabled,
+      # charge_interlock_enabled: charge_interlock_enabled,
+      # current_failsafe_enabled: current_failsafe_enabled,
+      # voltage_failsafe_enabled: voltage_failsafe_enabled,
+      # input_power_supply_failsafe_enabled: input_power_supply_failsafe_enabled
     }}
   end
   def handle_info({:handle_frame,  %Frame{name: "bms_status_2", signals: signals}}, state) do
     %{
       "charge_max_power" => %Signal{value: charge_max_power},
-      "discharge_max_power" => %Signal{value: discharge_max_power},
-      "adaptative_state_of_charge" => %Signal{value: adaptative_state_of_charge},
-      "state_of_health" => %Signal{value: state_of_health},
-      "output_power" => %Signal{value: output_power},
+      # "discharge_max_power" => %Signal{value: discharge_max_power},
+      # "adaptative_state_of_charge" => %Signal{value: adaptative_state_of_charge},
+      # "state_of_health" => %Signal{value: state_of_health},
+      # "output_power" => %Signal{value: output_power},
     } = signals
     {:noreply, %{state |
       charge_max_power: charge_max_power,
-      discharge_max_power: discharge_max_power,
-      adaptative_state_of_charge: adaptative_state_of_charge,
-      state_of_health: state_of_health,
-      output_power: output_power
+      # discharge_max_power: discharge_max_power,
+      # adaptative_state_of_charge: adaptative_state_of_charge,
+      # state_of_health: state_of_health,
+      # output_power: output_power
     }}
   end
 
@@ -159,6 +159,8 @@ defmodule VmsCore.Components.Orion.Bms2 do
 
   defp emit_metrics(state) do
     Bus.broadcast("messages", %Bus.Message{name: :maximum_power_for_charger, value: state.charge_max_power, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :pack_current, value: state.pack_current, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :pack_instant_voltage, value: state.pack_instant_voltage, source: __MODULE__})
     state
   end
 end

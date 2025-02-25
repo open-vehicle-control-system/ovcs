@@ -4,21 +4,17 @@ id: 0x1DC
 frequency: 10
 signals:
   - name: discharge_power_limit
-    kind: static
     endianness: big
     value_start: 0
     value_length: 10
     scale: "0.25"
     unit: kW
-    value: 0x0000
   - name: charge_power_limit
-    kind: static
     endianness: big
     value_start: 10
     value_length: 10
     scale: "0.25"
     unit: kW
-    value: 0x0000
   - name: maximum_power_for_charger
     endianness: big
     value_start: 20

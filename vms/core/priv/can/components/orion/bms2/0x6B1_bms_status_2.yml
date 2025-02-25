@@ -11,15 +11,15 @@ signals:
     value_start: 16
     value_length: 16
     unit: kW
-  - name: adaptative_state_of_charge
-    value_start: 32
-    value_length: 8
-    unit: %
-  - name: state_of_health
-    value_start: 40
-    value_length: 8
-    unit: %
-  - name: output_power
-    value_start: 32
-    value_length: 16
-    unit: kW
+  # - name: adaptative_state_of_charge
+  #   value_start: 32
+  #   value_length: 8
+  #   unit: %
+  # - name: state_of_health
+  #   value_start: 40
+  #   value_length: 8
+  #   unit: %
+  # - name: output_power
+  #   value_start: 32
+  #   value_length: 16
+  #   unit: kW

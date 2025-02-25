@@ -58,6 +58,8 @@ can_networks:
       - import!:../components/nissan/leaf_ze0/0x1D4_vms_torque_request.yml
       - import!:../components/nissan/leaf_ze0/0x11A_vms_status.yml
       - import!:../components/nissan/leaf_ze0/0x1DC_charger_command.yml
+      - import!:../components/nissan/leaf_ze0/0x1DB_nissan_bms_status_1.yml
+      - import!:../components/nissan/leaf_ze0/0x1F2_nissan_bms_status_2.yml
     received_frames:
       - import!:../components/nissan/leaf_ze0/0x1DA_inverter_status.yml
       - import!:../components/nissan/leaf_ze0/0x55A_inverter_temperatures.yml
