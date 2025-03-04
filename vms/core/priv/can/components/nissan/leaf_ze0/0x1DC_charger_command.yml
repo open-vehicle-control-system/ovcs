@@ -16,6 +16,7 @@ signals:
     scale: "0.25"
     unit: kW
   - name: maximum_power_for_charger
+    sign: signed
     endianness: big
     value_start: 20
     value_length: 10

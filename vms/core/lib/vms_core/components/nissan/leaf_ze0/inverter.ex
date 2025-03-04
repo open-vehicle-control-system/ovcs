@@ -48,7 +48,7 @@ defmodule VmsCore.Components.Nissan.LeafZE0.Inverter do
     :ok = Emitter.configure(:leaf_drive, "vms_status", %{
       parameters_builder_function: &status_frame_parameters_builder/1,
       initial_data: %{
-        "gear" => "drive",
+        "gear" => "parking",
         "counter" => 0
       }
     })

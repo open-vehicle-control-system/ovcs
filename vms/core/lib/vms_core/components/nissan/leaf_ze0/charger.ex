@@ -21,9 +21,9 @@ defmodule VmsCore.Components.Nissan.LeafZE0.Charger do
     :ok = Emitter.configure(:leaf_drive, "charger_command", %{
       parameters_builder_function: &charger_command_frame_parameters_builder/1,
       initial_data: %{
-        "maximum_power_for_charger" => D.new("15"),
+        "maximum_power_for_charger" => D.new("27.3"),
         "counter" => 0,
-        "charge_power_limit" => D.new("19"),
+        "charge_power_limit" => D.new("40"),
         "discharge_power_limit" => D.new("110")
       },
       enable: true
@@ -42,6 +42,23 @@ defmodule VmsCore.Components.Nissan.LeafZE0.Charger do
       initial_data: %{
         "counter" => 0
       },
+      enable: true
+    })
+    :ok = Emitter.configure(:leaf_drive, "lithium_battery_controller_status", %{
+      parameters_builder_function: &lithium_battery_controller_status_frame_parameters_builder/1,
+      initial_data: %{
+        "counter" => 0
+      },
+      enable: true
+    })
+    :ok = Emitter.configure(:leaf_drive, "lithium_battery_controller_status2", %{
+      parameters_builder_function: :default,
+      initial_data: %{},
+      enable: true
+    })
+    :ok = Emitter.configure(:leaf_drive, "lithium_battery_controller_status3", %{
+      parameters_builder_function: :default,
+      initial_data: %{},
       enable: true
     })
     Bus.subscribe("messages")
@@ -171,7 +188,7 @@ defmodule VmsCore.Components.Nissan.LeafZE0.Charger do
       {:ok, parameters, data}
    end
 
-  def charger_command_frame_parameters_builder(data) do
+   def charger_command_frame_parameters_builder(data) do
     counter = data["counter"]
     parameters = %{
       "charge_power_limit" => data["charge_power_limit"],
@@ -183,4 +200,15 @@ defmodule VmsCore.Components.Nissan.LeafZE0.Charger do
     data = %{data | "counter" => Util.counter(counter + 1)}
     {:ok, parameters, data}
   end
+
+  def lithium_battery_controller_status_frame_parameters_builder(data) do
+    counter = data["counter"]
+    parameters = %{
+      "counter" => Util.counter(counter),
+      "crc" => &Util.crc8/1
+    }
+    data = %{data | "counter" => Util.counter(counter + 1)}
+    {:ok, parameters, data}
+  end
+
 end

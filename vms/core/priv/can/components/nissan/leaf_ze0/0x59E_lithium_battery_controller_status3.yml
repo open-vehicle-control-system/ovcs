@@ -1,0 +1,10 @@
+---
+name: lithium_battery_controller_status3
+id: 0x59E
+frequency: 500
+signals:
+  - name: filler0
+    kind: static
+    value_start: 0
+    value_length: 64
+    value: 0x00000B94C0000000

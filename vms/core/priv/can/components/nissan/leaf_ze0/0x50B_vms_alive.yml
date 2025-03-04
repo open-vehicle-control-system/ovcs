@@ -7,4 +7,4 @@ signals:
     kind: static
     value_start: 0
     value_length: 56
-    value: 0x000006C0000000
+    value: 0x000006C0000000 # Alternative to test: 000000C0000000

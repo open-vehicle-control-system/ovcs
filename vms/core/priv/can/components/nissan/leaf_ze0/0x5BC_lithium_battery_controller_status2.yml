@@ -1,0 +1,10 @@
+---
+name: lithium_battery_controller_status2
+id: 0x5BC
+frequency: 100
+signals:
+  - name: filler0
+    kind: static
+    value_start: 0
+    value_length: 64
+    value: 0x3D80F064B0010032

@@ -1,13 +1,13 @@
 ---
-name: nissan_bms_status_2
-id: 0x1F2
-frequency: 10
+name: lithium_battery_controller_status
+id: 0x55B
+frequency: 100
 signals:
-  - name: filler1
-    kind: static
+  - name: filler0
     value_start: 0
     value_length: 48
-    value: 0x30A020AC003C
+    kind: static
+    value: 0xA440AA00DFC0
   - name: counter
     kind: integer
     value_start: 48
