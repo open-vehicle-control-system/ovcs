@@ -46,9 +46,19 @@ signals:
     value_length: 2
     kind: static
     value: 0x1
-  - name: filler1
+  - name: voltage_latch
     value_start: 31
-    value_length: 23
+    value_length: 1
+    kind: static
+    value: 0x01
+  - name: usable_soc
+    value_start: 32
+    value_length: 8
+    kind: static
+    value: 0x2B
+  - name: filler1
+    value_start: 40
+    value_length: 14
     kind: static
     value: 0x0
   - name: counter

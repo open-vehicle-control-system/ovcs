@@ -48,7 +48,7 @@ defmodule VmsCore.Components.Nissan.LeafZE0.Inverter do
     :ok = Emitter.configure(:leaf_drive, "vms_status", %{
       parameters_builder_function: &status_frame_parameters_builder/1,
       initial_data: %{
-        "gear" => "parking",
+        "gear" => "charging",
         "counter" => 0
       }
     })
@@ -209,7 +209,7 @@ defmodule VmsCore.Components.Nissan.LeafZE0.Inverter do
     counter = data["counter"]
     parameters = %{
       "requested_torque" => data["requested_torque"],
-      "counter" => Util.shifted_counter(counter),
+      "counter" => Util.counter(counter),
       "crc" => &Util.crc8/1
     }
 
@@ -219,9 +219,16 @@ defmodule VmsCore.Components.Nissan.LeafZE0.Inverter do
 
   defp status_frame_parameters_builder(data) do
     counter = data["counter"]
+    heartbeat = case Util.counter(counter) do
+      0 -> 0
+      1 -> 1
+      2 -> 1
+      3 -> 0
+    end
     parameters = %{
       "gear" => data["gear"],
-      "heartbeat" => rem(counter, 2),
+      "heartbeat" => heartbeat,
+      "heartbeat1" => Util.counter(counter),
       "counter" => Util.counter(counter),
       "crc" => &Util.crc8/1
     }

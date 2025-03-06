@@ -20,15 +20,21 @@ signals:
     value_start: 28
     value_length: 4
     value: 0x00
+
   - name: counter
-    kind: integer
     value_start: 32
     value_length: 8
+    kind: enum
+    mapping:
+      0x42: 0
+      0xb2: 1
+      0xC2: 2
+      0x02: 3
   - name: suffix
     kind: static
     value_start: 40
     value_length: 16
-    value: 0x4401
+    value: 0x06E0 #0x4401
   - name: crc
     kind: checksum
     value_start: 56

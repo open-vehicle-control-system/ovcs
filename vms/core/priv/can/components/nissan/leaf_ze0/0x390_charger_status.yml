@@ -24,10 +24,10 @@ signals:
     value_start: 41
     value_length: 6
     mapping:
-      0x01: iddle_or_quick_charge
+      0x01: idle_or_quick_charge
       0x02: finished
       0x04: charging_or_interrupted
-      0x07: iddle
+      0x07: idle
       0x0C: plugged_in_on_waiting_timer
   - name: maximum_charge_power
     endianness: big

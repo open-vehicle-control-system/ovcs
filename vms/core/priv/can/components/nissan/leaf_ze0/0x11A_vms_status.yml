@@ -9,6 +9,7 @@ signals:
     value_length: 8
     mapping:
       0x00: parking
+      0x01: charging
       0x02: reverse
       0x03: neutral
       0x04: drive
@@ -16,24 +17,33 @@ signals:
     kind: static
     value_start: 8
     value_length: 8
-    value: 0x40
+    value: 0x80
   - name: steering_wheel_butoon
     kind: static
     value_start: 16
     value_length: 8
-    value: 0x0
+    value: 0x00
   - name: heartbeat
     value_start: 24
     value_length: 8
-    kind: integer
+    kind: enum
     mapping:
-      0x55: 0
-      0xAA: 1
-  - name: filler2
-    kind: static
+      0xAA: 0
+      0x55: 1
+  - name: heartbeat1
     value_start: 32
-    value_length: 16
-    value: 0xC000
+    value_length: 8
+    kind: enum
+    mapping:
+      0xC0: 0
+      0x00: 1
+      0x40: 2
+      0x80: 3
+  - name: filler3
+    kind: static
+    value_start: 40
+    value_length: 8
+    value: 0x00
   - name: counter
     kind: integer
     value_start: 48

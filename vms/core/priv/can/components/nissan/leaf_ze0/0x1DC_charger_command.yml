@@ -28,30 +28,15 @@ signals:
     value_start: 30
     value_length: 2
     value: 0x0001
-  - name: max_uprate_filler
+  - name: filler0
     kind: static
     value_start: 32
-    value_length: 3
-    value: 0x0001
-  - name: code_condition_filler
-    kind: static
-    value_start: 35
-    value_length: 3
-    value: 0x0001
-  - name: code1_filler
-    kind: static
-    value_start: 38
-    value_length: 8
-    value: 0x0001
-  - name: code2_filler
-    kind: static
-    value_start: 46
-    value_length: 8
-    value: 0x0001
+    value_length: 16
+    value: 0x00
   - name: counter
     kind: integer
-    value_start: 54
-    value_length: 2
+    value_start: 48
+    value_length: 8
   - name: crc
     kind: checksum
     value_start: 56
