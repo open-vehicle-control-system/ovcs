@@ -131,10 +131,10 @@ defmodule VmsCore.Components.Nissan.LeafZE0.Inverter do
 
     {:noreply, %{
       state |
-        inverter_communication_board_temperature: inverter_communication_board_temperature,
-        insulated_gate_bipolar_transistor_temperature: insulated_gate_bipolar_transistor_temperature,
-        insulated_gate_bipolar_transistor_board_temperature: insulated_gate_bipolar_transistor_board_temperature,
-        motor_temperature: motor_temperature
+        inverter_communication_board_temperature: fahrenheit_to_celcius(inverter_communication_board_temperature),
+        insulated_gate_bipolar_transistor_temperature: fahrenheit_to_celcius(insulated_gate_bipolar_transistor_temperature),
+        insulated_gate_bipolar_transistor_board_temperature: fahrenheit_to_celcius(insulated_gate_bipolar_transistor_board_temperature),
+        motor_temperature: fahrenheit_to_celcius(motor_temperature)
       }
     }
   end
@@ -243,5 +243,10 @@ defmodule VmsCore.Components.Nissan.LeafZE0.Inverter do
 
   def reverse_max_torque do
     @reverse_max_torque
+  end
+
+  defp fahrenheit_to_celcius(fahrenheit) do
+    shifted = fahrenheit - 32
+    D.div(shifted, D.new("1.8")) |> D.round()
   end
 end
