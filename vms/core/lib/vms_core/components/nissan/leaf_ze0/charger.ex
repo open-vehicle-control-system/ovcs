@@ -138,7 +138,7 @@ defmodule VmsCore.Components.Nissan.LeafZE0.Charger do
     case state.pack_current != state.emitted_pack_current do
       true ->
         :ok = Emitter.update(:leaf_drive, "nissan_bms_status_1", fn (data) ->
-          %{data | "current" => D.abs(state.pack_current)}
+          %{data | "current" => state.pack_current}
         end)
         %{state | emitted_pack_current: state.pack_current}
       _ ->

@@ -5,6 +5,7 @@ frequency: 10
 signals:
   - name: current
     endianness: big
+    sign: signed
     value_start: 0
     value_length: 11
     scale: "0.5"
