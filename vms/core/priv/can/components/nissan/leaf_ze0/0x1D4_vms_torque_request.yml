@@ -20,7 +20,6 @@ signals:
     value_start: 28
     value_length: 4
     value: 0x00
-
   - name: counter
     value_start: 32
     value_length: 8
@@ -36,6 +35,11 @@ signals:
     value_length: 16
     value: 0x06E0 #0x4401
   - name: crc
-    kind: checksum
     value_start: 56
     value_length: 8
+    kind: enum
+    mapping:
+      0x0D: 0
+      0xC1: 1
+      0xD6: 2
+      0xCA: 3

@@ -3,69 +3,15 @@ name: nissan_bms_status_1
 id: 0x1DB
 frequency: 10
 signals:
-  - name: current
-    endianness: big
-    sign: signed
+  - name: filler0
+    kind: static
     value_start: 0
-    value_length: 11
-    scale: "0.5"
-    unit: "A"
-  - name: relay_cut_request
-    endianness: big
-    value_start: 11
-    value_length: 2
-    kind: static
-    value: 0x0
-  - name: failsafe_status
-    value_start: 13
-    value_length: 3
-    kind: static
-    value: 0x000
-  - name: total_voltage
-    endianness: big
-    value_start: 16
-    value_length: 10
-    scale: "0.5"
-    unit: "V"
-  - name: main_relay_on
-    value_start: 26
-    value_length: 1
-    kind: static
-    value: 0x1
-  - name: full_charge
-    value_start: 27
-    value_length: 1
-    kind: static
-    value: 0x0
-  - name: charge_interlock
-    value_start: 28
-    value_length: 1
-    kind: static
-    value: 0x1
-  - name: discharge_power_status
-    value_start: 29
-    value_length: 2
-    kind: static
-    value: 0x1
-  - name: voltage_latch
-    value_start: 31
-    value_length: 1
-    kind: static
-    value: 0x01
-  - name: usable_soc
-    value_start: 32
-    value_length: 8
-    kind: static
-    value: 0x2B
-  - name: filler1
-    value_start: 40
-    value_length: 14
-    kind: static
-    value: 0x0
+    value_length: 48
+    value: 0x0120BEAB2B00
   - name: counter
     kind: integer
-    value_start: 54
-    value_length: 2
+    value_start: 48
+    value_length: 8
   - name: crc
     kind: checksum
     value_start: 56

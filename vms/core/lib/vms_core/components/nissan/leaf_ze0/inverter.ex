@@ -36,21 +36,24 @@ defmodule VmsCore.Components.Nissan.LeafZE0.Inverter do
   do
     :ok = Emitter.configure(:leaf_drive, "vms_alive", %{
       parameters_builder_function: :default,
-      initial_data: nil
+      initial_data: nil,
+      enable: true
     })
     :ok = Emitter.configure(:leaf_drive, "vms_torque_request", %{
       parameters_builder_function: &torque_frame_parameters_builder/1,
       initial_data: %{
         "requested_torque" => @zero,
         "counter" => 0
-      }
+      },
+      enable: true
     })
     :ok = Emitter.configure(:leaf_drive, "vms_status", %{
       parameters_builder_function: &status_frame_parameters_builder/1,
       initial_data: %{
         "gear" => "charging",
         "counter" => 0
-      }
+      },
+      enable: true
     })
     Receiver.subscribe(self(), :leaf_drive, ["inverter_status", "inverter_temperatures"])
     Bus.subscribe("messages")
@@ -143,10 +146,10 @@ defmodule VmsCore.Components.Nissan.LeafZE0.Inverter do
     case {state.enabled, state.contact} do
       {false, :on} ->
         :ok = GenericController.set_digital_value(state.controller, state.power_relay_pin, true)
-        :ok = Emitter.enable(:leaf_drive, ["vms_alive", "vms_torque_request", "vms_status"])
+        #:ok = Emitter.enable(:leaf_drive, ["vms_alive", "vms_torque_request", "vms_status"])
         %{state | enabled: true}
       {true, :off} ->
-        :ok = Emitter.disable(:leaf_drive, ["vms_alive", "vms_torque_request", "vms_status"])
+        #:ok = Emitter.disable(:leaf_drive, ["vms_alive", "vms_torque_request", "vms_status"])
         :ok = GenericController.set_digital_value(state.controller, state.power_relay_pin, false)
         %{state | enabled: false}
       _ -> state
@@ -210,7 +213,7 @@ defmodule VmsCore.Components.Nissan.LeafZE0.Inverter do
     parameters = %{
       "requested_torque" => data["requested_torque"],
       "counter" => Util.counter(counter),
-      "crc" => &Util.crc8/1
+      "crc" => Util.counter(counter)
     }
 
     data = %{data | "counter" => Util.counter(counter + 1)}

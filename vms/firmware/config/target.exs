@@ -170,6 +170,6 @@ config :cantastic,
   otp_app: :vms_core,
   priv_can_config_path: "can/vehicles/#{vehicle_path}.yml",
   enable_socketcand: true,
-  socketcand_ip_interface: "wlan0"
+  socketcand_ip_interface: "eth0"
 
 config :vms_core, :socketcand_only, System.get_env("SOCKETCAND_ONLY") == "true"
