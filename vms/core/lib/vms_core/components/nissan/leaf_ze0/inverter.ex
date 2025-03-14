@@ -48,7 +48,7 @@ defmodule VmsCore.Components.Nissan.LeafZE0.Inverter do
     :ok = Emitter.configure(:leaf_drive, "vms_status", %{
       parameters_builder_function: &status_frame_parameters_builder/1,
       initial_data: %{
-        "gear" => "charging",
+        "gear" => "drive",
         "counter" => 0
       }
     })
@@ -170,7 +170,7 @@ defmodule VmsCore.Components.Nissan.LeafZE0.Inverter do
     max_torque = case state.selected_gear do
       :drive   -> @drive_max_torque
       :reverse -> @reverse_max_torque
-      _         -> @zero
+      _        -> @zero
     end
     requested_throttle = case D.lt?(state.requested_throttle, @effective_throttle_threshold)  do
       true  -> @zero
@@ -209,7 +209,7 @@ defmodule VmsCore.Components.Nissan.LeafZE0.Inverter do
     counter = data["counter"]
     parameters = %{
       "requested_torque" => data["requested_torque"],
-      "counter" => Util.counter(counter),
+      "counter" => Util.shifted_counter(counter),
       "crc" => &Util.crc8/1
     }
 

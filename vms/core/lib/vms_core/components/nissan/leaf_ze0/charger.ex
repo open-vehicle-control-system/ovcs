@@ -1,6 +1,7 @@
 defmodule VmsCore.Components.Nissan.LeafZE0.Charger do
   @moduledoc """
     Nissan Leaf ZE0/EM57 Charger
+    !! WIP implementation, does not work yet (charge is not starting) !!
   """
   use GenServer
 

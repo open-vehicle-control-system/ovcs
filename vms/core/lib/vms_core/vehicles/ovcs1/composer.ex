@@ -77,9 +77,6 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
         controller: OVCS1.RearController,
         power_relay_pin: 7
       }},
-      {LeafZE0.Charger, %{
-        maximum_power_for_charger_source: Orion.Bms2
-      }},
 
       # Orion
       {Orion.Bms2, %{

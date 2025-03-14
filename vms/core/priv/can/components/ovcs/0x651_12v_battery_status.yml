@@ -1,0 +1,10 @@
+---
+name: 12v_battery_status
+id: 0x651
+frequency: 100
+signals:
+  - name: battery_voltage
+    value_start: 0
+    value_length: 16
+    scale: "0.1"
+    unit: V
