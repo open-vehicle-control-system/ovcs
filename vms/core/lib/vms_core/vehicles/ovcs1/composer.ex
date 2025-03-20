@@ -7,7 +7,7 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
 
   alias VmsCore.Components.{
     Bosch,
-    Nissan.LeafZE0,
+    Nissan.LeafAZE0,
     OVCS,
     Volkswagen.Polo9N,
     Orion,
@@ -58,11 +58,11 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
       # VwPolo
       {Polo9N.Dashboard, %{
         contact_source: Polo9N.IgnitionLock,
-        rotation_per_minute_source: LeafZE0.Inverter
+        rotation_per_minute_source: LeafAZE0.Inverter
       }},
       {Polo9N.ABS, %{
         contact_source: Polo9N.IgnitionLock,
-        rotation_per_minute_source: LeafZE0.Inverter
+        rotation_per_minute_source: LeafAZE0.Inverter
       }},
       {Polo9N.PassengerCompartment, []},
       {Polo9N.IgnitionLock, []},
@@ -71,7 +71,7 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
       }},
 
       # NissanLeaf
-      {LeafZE0.Inverter, %{
+      {LeafAZE0.Inverter, %{
         selected_control_level_source: Managers.ControlLevel,
         selected_gear_source: Managers.Gear,
         contact_source: Polo9N.IgnitionLock,
@@ -81,7 +81,7 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
 
       # Orion
       {Orion.Bms2, %{
-        ac_input_voltage_source: LeafZE0.Charger
+        ac_input_voltage_source: LeafAZE0.Charger
       }},
 
       #EVPT
@@ -145,7 +145,7 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
       {OVCS.Infotainment, []},
       {OVCS.HighVoltageContactors, %{
         contact_source: Polo9N.IgnitionLock,
-        inverter_output_voltage_source: LeafZE0.Inverter,
+        inverter_output_voltage_source: LeafAZE0.Inverter,
         required_precharge_output_voltage: 300,
         controller: OVCS1.RearController,
         main_negative_relay_pin: 3,

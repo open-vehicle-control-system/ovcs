@@ -1,7 +1,7 @@
 defmodule VmsCore.Vehicles.OVCS1.Composer.Dashboard.DashboardPage do
   alias VmsCore.Components.{
     Bosch,
-    Nissan.LeafZE0,
+    Nissan.LeafAZE0,
     Volkswagen.Polo9N,
     OVCS
   }
@@ -25,9 +25,9 @@ defmodule VmsCore.Vehicles.OVCS1.Composer.Dashboard.DashboardPage do
             %{type: :metric, name: "Selected Gear", module: Managers.Gear, key: :selected_gear},
             %{type: :metric, name: "Key Status", module: Polo9N.IgnitionLock, key: :contact},
             %{type: :metric, name: "Speed", module: Polo9N.ABS, key: :speed, unit: "kph"},
-            %{type: :metric, name: "RPM", module: LeafZE0.Inverter, key: :rotation_per_minute},
-            %{type: :metric, name: "Output Voltage", module: LeafZE0.Inverter, key: :inverter_output_voltage, unit: "V"},
-            %{type: :metric, name: "Motor temperature", module: LeafZE0.Inverter, key: :motor_temperature, unit: "°C"}
+            %{type: :metric, name: "RPM", module: LeafAZE0.Inverter, key: :rotation_per_minute},
+            %{type: :metric, name: "Output Voltage", module: LeafAZE0.Inverter, key: :inverter_output_voltage, unit: "V"},
+            %{type: :metric, name: "Motor temperature", module: LeafAZE0.Inverter, key: :motor_temperature, unit: "°C"}
           ]
         },
         "throttle" => Blocks.ThrottleChart.definition(order: 1, full_width: false),
@@ -43,7 +43,7 @@ defmodule VmsCore.Vehicles.OVCS1.Composer.Dashboard.DashboardPage do
             %{type: :metric, name: "Front Controller alive", module: OVCS1.FrontController, key: :is_alive},
             %{type: :metric, name: "Controls Controller alive", module: OVCS1.ControlsController, key: :is_alive},
             %{type: :metric, name: "Rear Controller alive", module: OVCS1.RearController, key: :is_alive},
-            %{type: :metric, name: "Inverter ready", module: LeafZE0.Inverter, key: :ready_to_drive},
+            %{type: :metric, name: "Inverter ready", module: LeafAZE0.Inverter, key: :ready_to_drive},
             %{type: :metric, name: "I Booster ready", module: Bosch.IBoosterGen2, key: :ready_to_drive},
             %{type: :metric, name: "Contactors ready", module: OVCS.HighVoltageContactors, key: :ready_to_drive},
             %{type: :metric, name: "Main Negative contactor enabled", module: OVCS1.RearController, key: :received_digital_pin3_enabled},
@@ -58,10 +58,10 @@ defmodule VmsCore.Vehicles.OVCS1.Composer.Dashboard.DashboardPage do
           serie_max_size: 300,
           y_axis: [
             %{min: 0, max: 10000, label: "RPM", series: [
-              %{name: "RPM", metric: %{module: LeafZE0.Inverter, key: :rotation_per_minute}}
+              %{name: "RPM", metric: %{module: LeafAZE0.Inverter, key: :rotation_per_minute}}
             ]},
             %{position: "right", min: 0, max: 400, label: "V", series: [
-              %{name: "Voltage", metric: %{module: LeafZE0.Inverter, key: :inverter_output_voltage}}
+              %{name: "Voltage", metric: %{module: LeafAZE0.Inverter, key: :inverter_output_voltage}}
             ]}
           ]
         },

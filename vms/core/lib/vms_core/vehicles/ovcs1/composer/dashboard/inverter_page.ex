@@ -1,5 +1,5 @@
 defmodule VmsCore.Vehicles.OVCS1.Composer.Dashboard.InverterPage do
-  alias VmsCore.Components.Nissan.LeafZE0.Inverter
+  alias VmsCore.Components.Nissan.LeafAZE0.Inverter
   alias VmsCore.Vehicles.OVCS1.Composer.Dashboard.Blocks
 
   def definition(order: order) do

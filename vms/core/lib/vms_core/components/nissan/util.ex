@@ -1,6 +1,6 @@
 defmodule VmsCore.Components.Nissan.Util do
   @moduledoc """
-   Nissan ZE0 CAN utils
+   Nissan AZE0 CAN utils
   """
   import Bitwise
 

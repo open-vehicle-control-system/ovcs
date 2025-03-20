@@ -1,6 +1,6 @@
-defmodule VmsCore.Components.Nissan.LeafZE0.Charger do
+defmodule VmsCore.Components.Nissan.LeafAZE0.Charger do
   @moduledoc """
-    Nissan Leaf ZE0/EM57 Charger
+    Nissan Leaf AZE0/EM57 Charger
     !! WIP implementation, does not work yet (charge is not starting) !!
   """
   use GenServer

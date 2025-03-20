@@ -1,6 +1,6 @@
-defmodule VmsCore.Components.Nissan.LeafZE0.Inverter do
+defmodule VmsCore.Components.Nissan.LeafAZE0.Inverter do
   @moduledoc """
-    Nissan Leaf ZE0/EM57 Inverter
+    Nissan Leaf AZE0/EM57 Inverter
   """
   use GenServer
 

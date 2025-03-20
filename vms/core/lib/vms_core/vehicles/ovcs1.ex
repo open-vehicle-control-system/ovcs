@@ -7,7 +7,7 @@ defmodule VmsCore.Vehicles.OVCS1 do
   alias VmsCore.{Bus, Status}
   alias VmsCore.Components.{
     Bosch.IBoosterGen2,
-    Nissan.LeafZE0.Inverter,
+    Nissan.LeafAZE0.Inverter,
     OVCS.HighVoltageContactors,
     Volkswagen.Polo9N.IgnitionLock,
   }
