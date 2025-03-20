@@ -164,6 +164,9 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
         ready_to_drive_source: Vehicles.OVCS1,
         vms_status_source: Vehicles.OVCS1
       }},
+      {VmsCore.Components.OVCS.Status, %{
+        bms_status_source: Orion.Bms2
+      }},
       # Vehicle
       {Vehicles.OVCS1, []},
     ]

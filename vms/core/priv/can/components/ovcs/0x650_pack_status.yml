@@ -1,7 +1,7 @@
 ---
 name: pack_status
 id: 0x650
-frequency: 20
+frequency: 100
 signals:
   - name: pack_current
     sign: signed
@@ -14,12 +14,12 @@ signals:
     value_length: 16
     scale: "0.1"
     unit: V
-  - name: state_of_charge
+  - name: pack_state_of_charge
     value_start: 32
     value_length: 8
     scale: "0.5"
     unit: V
-  - name: average_temperature
+  - name: pack_average_temperature
     value_start: 40
     value_length: 8
     unit: C
@@ -30,14 +30,14 @@ signals:
     mapping:
       0x00: false
       0x01: true
-  - name: charge_interlock
+  - name: charge_interlock_enabled
     value_start: 49
     value_length: 1
     kind: enum
     mapping:
       0x00: false
       0x01: true
-  - name: balancing # whether the battery pack is currently performing balancing
+  - name: balancing_active # whether the battery pack is currently performing balancing
     value_start: 50
     value_length: 1
     kind: enum

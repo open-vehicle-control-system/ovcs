@@ -7,7 +7,9 @@ defmodule VmsCore.Components.Orion.Bms2 do
 
   require Logger
   alias Cantastic.{Frame, Receiver, Signal}
+  alias Decimal, as: D
 
+  @zero D.new(0)
   @loop_period 10
 
   @impl true
@@ -16,21 +18,21 @@ defmodule VmsCore.Components.Orion.Bms2 do
     {:ok, timer} = :timer.send_interval(@loop_period, :loop)
     {:ok, %{
       loop_timer: timer,
-      pack_current: nil,
-      pack_voltage: nil,
-      pack_state_of_charge: nil,
-      j1772_plug_state: nil,
-      twelve_volt_battery_voltage: nil,
-      pack_lowest_temperature: nil,
-      pack_highest_temperature: nil,
-      pack_average_temperature: nil,
-      is_charging_source_enabled: nil,
-      is_ready_source_enabled: nil,
-      charger_safety_relay_enabled: nil,
-      discharge_relay_enabled: nil,
-      charge_interlock_enabled: nil,
-      balancing_active: nil,
-      malfunction_indicator_active: nil
+      pack_current: @zero,
+      pack_voltage: @zero,
+      pack_state_of_charge: @zero,
+      j1772_plug_state: "disconnected",
+      twelve_volt_battery_voltage: @zero,
+      pack_lowest_temperature: @zero,
+      pack_highest_temperature: @zero,
+      pack_average_temperature: @zero,
+      is_charging_source_enabled: false,
+      is_ready_source_enabled: false,
+      charger_safety_relay_enabled: false,
+      discharge_relay_enabled: false,
+      charge_interlock_enabled: false,
+      balancing_active: false,
+      bms_error: false
     }}
   end
 
@@ -82,7 +84,7 @@ defmodule VmsCore.Components.Orion.Bms2 do
       "discharge_relay_enabled" => %Signal{value: discharge_relay_enabled},
       "charge_interlock_enabled" => %Signal{value: charge_interlock_enabled},
       "balancing_active" => %Signal{value: balancing_active},
-      "malfunction_indicator_active" => %Signal{value: malfunction_indicator_active}
+      "malfunction_indicator_active" => %Signal{value: bms_error}
     } = signals
     {:noreply, %{state |
       is_charging_source_enabled: is_charging_source_enabled,
@@ -91,7 +93,7 @@ defmodule VmsCore.Components.Orion.Bms2 do
       discharge_relay_enabled: discharge_relay_enabled,
       charge_interlock_enabled: charge_interlock_enabled,
       balancing_active: balancing_active,
-      malfunction_indicator_active: malfunction_indicator_active
+      bms_error: bms_error
     }}
   end
 
@@ -110,7 +112,7 @@ defmodule VmsCore.Components.Orion.Bms2 do
     Bus.broadcast("messages", %Bus.Message{name: :discharge_relay_enabled, value: state.discharge_relay_enabled, source: __MODULE__})
     Bus.broadcast("messages", %Bus.Message{name: :charge_interlock_enabled, value: state.charge_interlock_enabled, source: __MODULE__})
     Bus.broadcast("messages", %Bus.Message{name: :balancing_active, value: state.balancing_active, source: __MODULE__})
-    Bus.broadcast("messages", %Bus.Message{name: :malfunction_indicator_active, value: state.malfunction_indicator_active, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :bms_error, value: state.bms_error, source: __MODULE__})
     state
   end
 end

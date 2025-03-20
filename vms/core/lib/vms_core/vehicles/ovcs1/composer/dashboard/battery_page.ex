@@ -27,7 +27,7 @@ defmodule VmsCore.Vehicles.OVCS1.Composer.Dashboard.BatteryPage do
             %{type: :metric, name: "Discharge relay enabled", module: Bms2, key: :discharge_relay_enabled},
             %{type: :metric, name: "Charge interlock enabled", module: Bms2, key: :charge_interlock_enabled},
             %{type: :metric, name: "Balancing active", module: Bms2, key: :balancing_active},
-            %{type: :metric, name: "Malfunction indicator active", module: Bms2, key: :malfunction_indicator_active}
+            %{type: :metric, name: "Error?", module: Bms2, key: :bms_error}
           ]
         },
         "charger-status" => %{
