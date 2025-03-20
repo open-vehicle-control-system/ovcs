@@ -10,7 +10,8 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
     Nissan.LeafZE0,
     OVCS,
     Volkswagen.Polo9N,
-    Orion
+    Orion,
+    Evpt
   }
   alias VmsCore.{Managers, Vehicles, Vehicles.OVCS1}
 
@@ -82,6 +83,9 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
       {Orion.Bms2, %{
         ac_input_voltage_source: LeafZE0.Charger
       }},
+
+      #EVPT
+      {Evpt.Evpt23Charger, %{}},
 
       #Bosch
       {Bosch.IBoosterGen2, %{

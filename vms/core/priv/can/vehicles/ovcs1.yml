@@ -45,6 +45,7 @@ can_networks:
     received_frames:
       - import!:../components/orion/bms2/0x6B0_bms_status_1.yml
       - import!:../components/orion/bms2/0x6B1_bms_status_2.yml
+      - import!:../components/evpt/evpt23/0x18FF50E5_charger_status.yml
   leaf_drive:
     bitrate: 500000
     emitted_frames:

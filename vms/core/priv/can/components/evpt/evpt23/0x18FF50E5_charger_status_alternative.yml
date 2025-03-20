@@ -1,0 +1,51 @@
+---
+name: charger_status
+id: 0x18FF50E5
+frequency: 1000
+signals:
+  - name: output_voltage
+    endianness: big
+    value_start: 0
+    value_length: 16
+    scale: "0.1"
+    unit: V
+  - name: output_current
+    value_start: 16
+    value_length: 16
+    scale: "0.1"
+    unit: A
+  - name: communication_timeout_failure
+    value_start: 35
+    value_length: 1
+    kind: enum
+    mapping:
+      0x00: False
+      0x01: True
+  - name: battery_disconnected_or_reverse_connection_protection_enabled
+    value_start: 36
+    value_length: 1
+    kind: enum
+    mapping:
+      0x00: False
+      0x01: True
+  - name: ac_voltage_over_protection_enabled
+    value_start: 37
+    value_length: 1
+    kind: enum
+    mapping:
+      0x00: False
+      0x01: True
+  - name: charger_over_temperature_protection_enabled
+    value_start: 38
+    value_length: 1
+    kind: enum
+    mapping:
+      0x00: False
+      0x01: True
+  - name: hardware_failure
+    value_start: 39
+    value_length: 1
+    kind: enum
+    mapping:
+      0x00: False
+      0x01: True
