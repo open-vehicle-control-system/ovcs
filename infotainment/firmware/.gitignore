@@ -19,3 +19,5 @@ erl_crash.dump
 .env.exs
 
 rootfs_overlay/var/*
+
+priv/flutter_app/**/*
