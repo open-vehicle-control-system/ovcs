@@ -11,7 +11,7 @@ can_networks:
       - import!:../components/ovcs/0x700_controller_configuration.yml
       - import!:../components/ovcs/0x1AA_vms_command.yml
       - import!:../components/ovcs/0x650_pack_status.yml
-      - import!:../components/ovcs/0x651_12v_battery_status.yml
+      - import!:../components/ovcs/0x651_twelve_volt_battery_status.yml
       - import!:ovcs1/generic_controller/0x702_front_controller_digital_pin_request.yml
       - import!:ovcs1/generic_controller/0x712_rear_controller_digital_pin_request.yml
       - import!:ovcs1/generic_controller/0x722_controls_controller_digital_pin_request.yml
@@ -40,11 +40,10 @@ can_networks:
       - import!:../components/bosch/lws/0x2B0_lws_status.yml
   orion_bms:
     bitrate: 500000
-    emitted_frames:
-      - import!:../components/orion/bms2/0x6C1_bms_command.yml
     received_frames:
       - import!:../components/orion/bms2/0x6B0_bms_status_1.yml
       - import!:../components/orion/bms2/0x6B1_bms_status_2.yml
+      - import!:../components/orion/bms2/0x6B2_bms_status_3.yml
       - import!:../components/evpt/evpt23/0x18FF50E5_charger_status.yml
   leaf_drive:
     bitrate: 500000

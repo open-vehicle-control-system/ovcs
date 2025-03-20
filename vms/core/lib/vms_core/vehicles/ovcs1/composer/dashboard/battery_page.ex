@@ -1,5 +1,6 @@
 defmodule VmsCore.Vehicles.OVCS1.Composer.Dashboard.BatteryPage do
   alias VmsCore.Components.Evpt.Evpt23Charger
+  alias VmsCore.Components.Orion.Bms2
 
   def definition(order: order) do
     %{
@@ -7,7 +8,29 @@ defmodule VmsCore.Vehicles.OVCS1.Composer.Dashboard.BatteryPage do
       icon: "Battery50Icon",
       order: order,
       blocks: %{
-        "status" => %{
+        "bms-status" => %{
+          order: 0,
+          name: "BMS Status",
+          type: "table",
+          rows: [
+            %{type: :metric, name: "Pack current", module: Bms2, key: :pack_current, unit: "A"},
+            %{type: :metric, name: "Pack voltage", module: Bms2, key: :pack_voltage, unit: "V"},
+            %{type: :metric, name: "Pack SOC", module: Bms2, key: :pack_state_of_charge, unit: "%"},
+            %{type: :metric, name: "J1772 plug state", module: Bms2, key: :j1772_plug_state},
+            %{type: :metric, name: "12V battery voltage", module: Bms2, key: :twelve_volt_battery_voltage, unit: "V"},
+            %{type: :metric, name: "Pack lowest temperature", module: Bms2, key: :pack_lowest_temperature, unit: "°C"},
+            %{type: :metric, name: "Pack highest temperature", module: Bms2, key: :pack_highest_temperature, unit: "°C"},
+            %{type: :metric, name: "Pack average temperature", module: Bms2, key: :pack_average_temperature, unit: "°C"},
+            %{type: :metric, name: "Is charging source enabled", module: Bms2, key: :is_charging_source_enabled},
+            %{type: :metric, name: "Is ready source enabled", module: Bms2, key: :is_ready_source_enabled},
+            %{type: :metric, name: "Charger safety relay enabled", module: Bms2, key: :charger_safety_relay_enabled},
+            %{type: :metric, name: "Discharge relay enabled", module: Bms2, key: :discharge_relay_enabled},
+            %{type: :metric, name: "Charge interlock enabled", module: Bms2, key: :charge_interlock_enabled},
+            %{type: :metric, name: "Balancing active", module: Bms2, key: :balancing_active},
+            %{type: :metric, name: "Malfunction indicator active", module: Bms2, key: :malfunction_indicator_active}
+          ]
+        },
+        "charger-status" => %{
           order: 0,
           name: "Charger Status",
           type: "table",

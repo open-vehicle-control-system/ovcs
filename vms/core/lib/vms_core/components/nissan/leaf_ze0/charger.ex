@@ -84,7 +84,7 @@ defmodule VmsCore.Components.Nissan.LeafZE0.Charger do
   @impl true
   def handle_info(:loop, state) do
     state = state
-      #|> handle_maximum_charge_power()
+      |> handle_maximum_charge_power()
       |> handle_pack_current()
       |> handle_pack_instant_voltage()
       |> emit_metrics()

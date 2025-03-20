@@ -1,25 +1,29 @@
 ---
 name: bms_status_2
 id: 0x6B1
-frequency: 8
+frequency: 104
 signals:
-  - name: charge_max_power
+  - name: twelve_volt_battery_voltage
     value_start: 0
     value_length: 16
-    unit: kW
-  - name: discharge_max_power
+    scale: "0.1"
+    unit: V
+  - name: pack_lowest_temperature
     value_start: 16
-    value_length: 16
-    unit: kW
-  # - name: adaptative_state_of_charge
-  #   value_start: 32
-  #   value_length: 8
-  #   unit: %
-  # - name: state_of_health
-  #   value_start: 40
-  #   value_length: 8
-  #   unit: %
-  # - name: output_power
-  #   value_start: 32
-  #   value_length: 16
-  #   unit: kW
+    value_length: 8
+    unit: C
+  - name: pack_highest_temperature
+    value_start: 24
+    value_length: 8
+    unit: C
+  - name: pack_average_temperature
+    value_start: 32
+    value_length: 8
+    unit: C
+  - name: counter
+    value_start: 40
+    value_length: 8
+  - name: checksum
+    kind: checksum
+    value_start: 48
+    value_length: 8

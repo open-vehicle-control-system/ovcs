@@ -1,0 +1,156 @@
+---
+
+#Bit #15 (0x8000): Multi-Purpose Output #1 signal status
+#Bit #14 (0x4000): Multi-Purpose Enable signal status
+#Bit #13 (0x2000): Multi-Purpose Output #4 signal status
+#Bit #12 (0x1000): Multi-Purpose Output #3 signal status
+#Bit #11 (0x0800): Multi-Purpose Output #2 signal status
+#Bit #10 (0x0400): Charge Mode status
+#Bit #9 (0x0200): Multi-Purpose Input #3 signal status
+#Bit #7 (0x80): Is-Charging input status
+#Bit #6 (0x40): Is-Ready input status
+#Bit #8 (0x0100): Multi-Purpose Input #2 signal status
+#Bit #5 (0x20): Always-on signal status
+#Bit #4 (0x10): Multi-Purpose Input signal status
+#Bit #3 (0x08): Malfunction indicator active (DTC status)
+#Bit #2 (0x04): Charger safety enabled
+#Bit #1 (0x02): Charge relay enabled
+#Bit #0 (0x01): Discharge relay enabled
+
+name: bms_status_3
+id: 0x6B2
+frequency: 104
+signals:
+  - name: multi_purpose_ouput1_enabled
+    value_start: 0
+    value_length: 1
+    kind: enum
+    mapping:
+      0x00: False
+      0x01: True
+  - name: multi_purpose_enable_signal_enabled
+    value_start: 1
+    value_length: 1
+    kind: enum
+    mapping:
+      0x00: False
+      0x01: True
+  - name: multi_purpose_ouput4_enabled
+    value_start: 2
+    value_length: 1
+    kind: enum
+    mapping:
+      0x00: False
+      0x01: True
+  - name: multi_purpose_ouput3_enabled
+    value_start: 3
+    value_length: 1
+    kind: enum
+    mapping:
+      0x00: False
+      0x01: True
+  - name: multi_purpose_ouput2_enabled
+    value_start: 4
+    value_length: 1
+    kind: enum
+    mapping:
+      0x00: False
+      0x01: True
+  - name: charge_mode_status
+    value_start: 5
+    value_length: 1
+    kind: enum
+    mapping:
+      0x00: False
+      0x01: True
+  - name: multi_purpose_input3_enabled
+    value_start: 6
+    value_length: 1
+    kind: enum
+    mapping:
+      0x00: False
+      0x01: True
+  - name: is_charging_source_enabled
+    value_start: 7
+    value_length: 1
+    kind: enum
+    mapping:
+      0x00: False
+      0x01: True
+  - name: is_ready_source_enabled
+    value_start: 8
+    value_length: 1
+    kind: enum
+    mapping:
+      0x00: False
+      0x01: True
+  - name: multi_purpose_input2_enabled
+    value_start: 9
+    value_length: 1
+    kind: enum
+    mapping:
+      0x00: False
+      0x01: True
+  - name: always_on_source_enabled
+    value_start: 10
+    value_length: 1
+    kind: enum
+    mapping:
+      0x00: False
+      0x01: True
+  - name: multi_purpose_input1_enabled
+    value_start: 11
+    value_length: 1
+    kind: enum
+    mapping:
+      0x00: False
+      0x01: True
+  - name: malfunction_indicator_active
+    value_start: 12
+    value_length: 1
+    kind: enum
+    mapping:
+      0x00: False
+      0x01: True
+  - name: charger_safety_relay_enabled
+    value_start: 13
+    value_length: 1
+    kind: enum
+    mapping:
+      0x00: False
+      0x01: True
+  - name: charge_relay_enabled
+    value_start: 14
+    value_length: 1
+    kind: enum
+    mapping:
+      0x00: False
+      0x01: True
+  - name: discharge_relay_enabled
+    value_start: 15
+    value_length: 1
+    kind: enum
+    mapping:
+      0x00: False
+      0x01: True
+  - name: charge_interlock_enabled
+    value_start: 16
+    value_length: 1
+    kind: enum
+    mapping:
+      0x00: False
+      0x01: True
+  - name: balancing_active
+    value_start: 17
+    value_length: 1
+    kind: enum
+    mapping:
+      0x00: False
+      0x01: True
+  - name: counter
+    value_start: 24
+    value_length: 8
+  - name: checksum
+    kind: checksum
+    value_start: 32
+    value_length: 8

@@ -7,10 +7,8 @@ defmodule VmsCore.Components.Evpt.Evpt23Charger do
 
   require Logger
   alias Cantastic.{Frame, Receiver, Signal}
-  alias Decimal, as: D
 
   @loop_period 10
-  @zero D.new(0)
 
   @impl true
   def init(_) do

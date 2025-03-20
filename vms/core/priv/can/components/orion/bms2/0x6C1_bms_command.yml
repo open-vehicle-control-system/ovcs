@@ -1,9 +1,0 @@
----
-name: bms_command
-id: 0x6C1
-frequency: 8
-signals:
-  - name: ac_input_voltage
-    value_start: 0
-    value_length: 16
-    kind: integer

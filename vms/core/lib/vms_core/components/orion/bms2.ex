@@ -6,55 +6,31 @@ defmodule VmsCore.Components.Orion.Bms2 do
   alias VmsCore.Bus
 
   require Logger
-  alias Cantastic.{Emitter, Frame, Receiver, Signal}
-  alias Decimal, as: D
+  alias Cantastic.{Frame, Receiver, Signal}
 
   @loop_period 10
-  @zero D.new(0)
 
   @impl true
-  def init(%{ac_input_voltage_source: ac_input_voltage_source}) do
-    :ok = Emitter.configure(:orion_bms, "bms_command", %{
-      parameters_builder_function: :default,
-      initial_data: %{
-        "ac_input_voltage" => 0
-      },
-      enable: true
-    })
-    Bus.subscribe("messages")
-    :ok = Receiver.subscribe(self(), :orion_bms, ["bms_status_1", "bms_status_2"])
+  def init(_) do
+    :ok = Receiver.subscribe(self(), :orion_bms, ["bms_status_1", "bms_status_2", "bms_status_3"])
     {:ok, timer} = :timer.send_interval(@loop_period, :loop)
     {:ok, %{
       loop_timer: timer,
-      pack_current: @zero,
-      pack_instant_voltage: @zero,
-      discharge_relay_enabled: nil,
-      charge_relay_enabled: nil,
+      pack_current: nil,
+      pack_voltage: nil,
+      pack_state_of_charge: nil,
+      j1772_plug_state: nil,
+      twelve_volt_battery_voltage: nil,
+      pack_lowest_temperature: nil,
+      pack_highest_temperature: nil,
+      pack_average_temperature: nil,
+      is_charging_source_enabled: nil,
+      is_ready_source_enabled: nil,
       charger_safety_relay_enabled: nil,
-      malfunction_relay_enabled: nil,
-      multipurpose_input_1_enabled: nil,
-      always_on_status_enabled: nil,
-      is_ready_status_enabled: nil,
-      is_charging_status_enabled: nil,
-      multipurpose_input_2_enabled: nil,
-      multipurpose_input_3_enabled: nil,
-      multipurpose_output_2_enabled: nil,
-      multipurpose_output_3_enabled: nil,
-      multipurpose_output_4_enabled: nil,
-      multipurpose_enable_status_enabled: nil,
-      multipurpose_output_1_enabled: nil,
+      discharge_relay_enabled: nil,
       charge_interlock_enabled: nil,
-      current_failsafe_enabled: nil,
-      voltage_failsafe_enabled: nil,
-      input_power_supply_failsafe_enabled: nil,
-      charge_max_power: @zero,
-      discharge_max_power: nil,
-      adaptative_state_of_charge: nil,
-      state_of_health: nil,
-      output_power: nil,
-      ac_input_voltage_source: ac_input_voltage_source,
-      ac_input_voltage: 0,
-      emitted_ac_input_voltage: 0
+      balancing_active: nil,
+      malfunction_indicator_active: nil
     }}
   end
 
@@ -62,20 +38,10 @@ defmodule VmsCore.Components.Orion.Bms2 do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
   end
 
-
   @impl true
   def handle_info(:loop, state) do
     state = state
-      |> handle_ac_input_voltage()
       |> emit_metrics()
-
-    {:noreply, state}
-  end
-
-  def handle_info(%Bus.Message{name: :ac_voltage, value: ac_voltage, source: source}, state) when source == state.ac_input_voltage_source do
-    {:noreply, %{state | ac_input_voltage: ac_voltage}}
-  end
-  def handle_info(%Bus.Message{}, state) do # TODO, replace Bus ?
     {:noreply, state}
   end
 
@@ -83,84 +49,68 @@ defmodule VmsCore.Components.Orion.Bms2 do
   def handle_info({:handle_frame,  %Frame{name: "bms_status_1", signals: signals}}, state) do
     %{
       "pack_current" => %Signal{value: pack_current},
-      "pack_instant_voltage" => %Signal{value: pack_instant_voltage},
-      # "discharge_relay_enabled" => %Signal{value: discharge_relay_enabled},
-      # "charge_relay_enabled" => %Signal{value: charge_relay_enabled},
-      # "charger_safety_relay_enabled" => %Signal{value: charger_safety_relay_enabled},
-      # "malfunction_relay_enabled" => %Signal{value: malfunction_relay_enabled},
-      # "multipurpose_input_1_enabled" => %Signal{value: multipurpose_input_1_enabled},
-      # "always_on_status_enabled" => %Signal{value: always_on_status_enabled},
-      # "is_ready_status_enabled" => %Signal{value: is_ready_status_enabled},
-      # "is_charging_status_enabled" => %Signal{value: is_charging_status_enabled},
-      # "multipurpose_input_2_enabled" => %Signal{value: multipurpose_input_2_enabled},
-      # "multipurpose_input_3_enabled" => %Signal{value: multipurpose_input_3_enabled},
-      # "multipurpose_output_2_enabled" => %Signal{value: multipurpose_output_2_enabled},
-      # "multipurpose_output_3_enabled" => %Signal{value: multipurpose_output_3_enabled},
-      # "multipurpose_output_4_enabled" => %Signal{value: multipurpose_output_4_enabled},
-      # "multipurpose_enable_status_enabled" => %Signal{value: multipurpose_enable_status_enabled},
-      # "multipurpose_output_1_enabled" => %Signal{value: multipurpose_output_1_enabled},
-      # "charge_interlock_enabled" => %Signal{value: charge_interlock_enabled},
-      # "current_failsafe_enabled" => %Signal{value: current_failsafe_enabled},
-      # "voltage_failsafe_enabled" => %Signal{value: voltage_failsafe_enabled},
-      # "input_power_supply_failsafe_enabled" => %Signal{value: input_power_supply_failsafe_enabled}
+      "pack_voltage" => %Signal{value: pack_voltage},
+      "pack_adaptative_state_of_charge" => %Signal{value: pack_adaptative_state_of_charge},
+      "j1772_plug_state" => %Signal{value: j1772_plug_state}
     } = signals
     {:noreply, %{state |
       pack_current: pack_current,
-      pack_instant_voltage: pack_instant_voltage,
-      # discharge_relay_enabled: discharge_relay_enabled,
-      # charge_relay_enabled: charge_relay_enabled,
-      # charger_safety_relay_enabled: charger_safety_relay_enabled,
-      # malfunction_relay_enabled: malfunction_relay_enabled,
-      # multipurpose_input_1_enabled: multipurpose_input_1_enabled,
-      # always_on_status_enabled: always_on_status_enabled,
-      # is_ready_status_enabled: is_ready_status_enabled,
-      # is_charging_status_enabled: is_charging_status_enabled,
-      # multipurpose_input_2_enabled: multipurpose_input_2_enabled,
-      # multipurpose_input_3_enabled: multipurpose_input_3_enabled,
-      # multipurpose_output_2_enabled: multipurpose_output_2_enabled,
-      # multipurpose_output_3_enabled: multipurpose_output_3_enabled,
-      # multipurpose_output_4_enabled: multipurpose_output_4_enabled,
-      # multipurpose_enable_status_enabled: multipurpose_enable_status_enabled,
-      # multipurpose_output_1_enabled: multipurpose_output_1_enabled,
-      # charge_interlock_enabled: charge_interlock_enabled,
-      # current_failsafe_enabled: current_failsafe_enabled,
-      # voltage_failsafe_enabled: voltage_failsafe_enabled,
-      # input_power_supply_failsafe_enabled: input_power_supply_failsafe_enabled
+      pack_voltage: pack_voltage,
+      pack_state_of_charge: pack_adaptative_state_of_charge,
+      j1772_plug_state: j1772_plug_state
     }}
   end
   def handle_info({:handle_frame,  %Frame{name: "bms_status_2", signals: signals}}, state) do
     %{
-      "charge_max_power" => %Signal{value: charge_max_power},
-      # "discharge_max_power" => %Signal{value: discharge_max_power},
-      # "adaptative_state_of_charge" => %Signal{value: adaptative_state_of_charge},
-      # "state_of_health" => %Signal{value: state_of_health},
-      # "output_power" => %Signal{value: output_power},
+      "twelve_volt_battery_voltage" => %Signal{value: twelve_volt_battery_voltage},
+      "pack_lowest_temperature" => %Signal{value: pack_lowest_temperature},
+      "pack_highest_temperature" => %Signal{value: pack_highest_temperature},
+      "pack_average_temperature" => %Signal{value: pack_average_temperature}
     } = signals
     {:noreply, %{state |
-      charge_max_power: charge_max_power,
-      # discharge_max_power: discharge_max_power,
-      # adaptative_state_of_charge: adaptative_state_of_charge,
-      # state_of_health: state_of_health,
-      # output_power: output_power
+      twelve_volt_battery_voltage: twelve_volt_battery_voltage,
+      pack_lowest_temperature: pack_lowest_temperature,
+      pack_highest_temperature: pack_highest_temperature,
+      pack_average_temperature: pack_average_temperature
+    }}
+  end
+  def handle_info({:handle_frame,  %Frame{name: "bms_status_3", signals: signals}}, state) do
+    %{
+      "is_charging_source_enabled" => %Signal{value: is_charging_source_enabled},
+      "is_ready_source_enabled" => %Signal{value: is_ready_source_enabled},
+      "charger_safety_relay_enabled" => %Signal{value: charger_safety_relay_enabled},
+      "discharge_relay_enabled" => %Signal{value: discharge_relay_enabled},
+      "charge_interlock_enabled" => %Signal{value: charge_interlock_enabled},
+      "balancing_active" => %Signal{value: balancing_active},
+      "malfunction_indicator_active" => %Signal{value: malfunction_indicator_active}
+    } = signals
+    {:noreply, %{state |
+      is_charging_source_enabled: is_charging_source_enabled,
+      is_ready_source_enabled: is_ready_source_enabled,
+      charger_safety_relay_enabled: charger_safety_relay_enabled,
+      discharge_relay_enabled: discharge_relay_enabled,
+      charge_interlock_enabled: charge_interlock_enabled,
+      balancing_active: balancing_active,
+      malfunction_indicator_active: malfunction_indicator_active
     }}
   end
 
-  defp handle_ac_input_voltage(state) do
-    case state.ac_input_voltage != state.emitted_ac_input_voltage do
-      true ->
-        :ok = Emitter.update(:orion_bms, "bms_command", fn (data) ->
-          %{data | "ac_input_voltage" => state.ac_input_voltage}
-        end)
-        %{state | emitted_ac_input_voltage: state.ac_input_voltage}
-      _ ->
-        state
-    end
-  end
-
   defp emit_metrics(state) do
-    Bus.broadcast("messages", %Bus.Message{name: :maximum_power_for_charger, value: state.charge_max_power, source: __MODULE__})
     Bus.broadcast("messages", %Bus.Message{name: :pack_current, value: state.pack_current, source: __MODULE__})
-    Bus.broadcast("messages", %Bus.Message{name: :pack_instant_voltage, value: state.pack_instant_voltage, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :pack_voltage, value: state.pack_voltage, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :pack_state_of_charge, value: state.pack_state_of_charge, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :j1772_plug_state, value: state.j1772_plug_state, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :twelve_volt_battery_voltage, value: state.twelve_volt_battery_voltage, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :pack_lowest_temperature, value: state.pack_lowest_temperature, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :pack_highest_temperature, value: state.pack_highest_temperature, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :pack_average_temperature, value: state.pack_average_temperature, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :is_charging_source_enabled, value: state.is_charging_source_enabled, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :is_ready_source_enabled, value: state.is_ready_source_enabled, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :charger_safety_relay_enabled, value: state.charger_safety_relay_enabled, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :discharge_relay_enabled, value: state.discharge_relay_enabled, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :charge_interlock_enabled, value: state.charge_interlock_enabled, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :balancing_active, value: state.balancing_active, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :malfunction_indicator_active, value: state.malfunction_indicator_active, source: __MODULE__})
     state
   end
 end

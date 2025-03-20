@@ -1,5 +1,5 @@
 ---
-name: 12v_battery_status
+name: twelve_volt_battery_status
 id: 0x651
 frequency: 100
 signals:
