@@ -4,7 +4,7 @@ defmodule OvcsInfotainmentFirmware.MixProject do
   @app :infotainment_firmware
   @version "0.1.0"
   @all_targets [
-    :ovcs_infotainment_flutter_system_rpi5
+    :ovcs_base_can_system_rpi5
   ]
 
   def project do
@@ -47,8 +47,8 @@ defmodule OvcsInfotainmentFirmware.MixProject do
       {:nerves_pack, "~> 0.7.1", targets: @all_targets},
       {:vintage_net_wifi, "~> 0.11.7", targets: @all_targets},
       {:plug_cowboy, "~> 2.0"},
-      {:nerves_flutterpi, github: "Spin42/nerves_flutterpi"},
-      {:infotainment_api, path: "../api", targets: @all_targets, env: Mix.env(), runtime: false},
+      {:infotainment_api, path: "../api", targets: @all_targets, env: Mix.env(), runtime: true},
+      {:nerves_flutter_support, "~> 1.0.0"},
 
       # Dependencies for specific targets
       # NOTE: It's generally low risk and recommended to follow minor version
@@ -56,11 +56,11 @@ defmodule OvcsInfotainmentFirmware.MixProject do
       # version updates, please review their release notes in case
       # changes to your application are needed.
       {
-        :ovcs_infotainment_flutter_system_rpi5,
-        github: "open-vehicle-control-system/ovcs_infotainment_flutter_system_rpi5",
+        :ovcs_base_can_system_rpi5,
+        github: "open-vehicle-control-system/ovcs_base_can_system_rpi5",
         runtime: false,
-        targets: :ovcs_infotainment_flutter_system_rpi5,
-        nerves: [compile: true],
+        targets: :ovcs_base_can_system_rpi5,
+        nerves: [compile: false],
       },
     ]
   end
@@ -72,8 +72,9 @@ defmodule OvcsInfotainmentFirmware.MixProject do
       # See https://hexdocs.pm/nerves_pack/readme.html#erlang-distribution
       cookie: "#{@app}_cookie",
       include_erts: &Nerves.Release.erts/0,
-      steps: [&Nerves.Release.init/1, :assemble],
-      strip_beams: Mix.env() == :prod or [keep: ["Docs"]]
+      steps: [&Nerves.Release.init/1, &NervesFlutterSupport.InstallRuntime.run/1, &NervesFlutterSupport.BuildFlutterApp.run/1, :assemble],
+      strip_beams: Mix.env() == :prod or [keep: ["Docs"]],
+      flutter: [project_dir: Path.expand("../dashboard/")]
     ]
   end
 end
