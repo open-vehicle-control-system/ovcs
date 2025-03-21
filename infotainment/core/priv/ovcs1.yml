@@ -9,8 +9,9 @@ can_networks:
       - import!:can/components/ovcs/0x600_gear_status.yml
       - import!:can/components/ovcs/0x1A0_vms_status.yml
       - import!:can/components/ovcs/0x60A_abs_status.yml
-      - import!:can/components/ovcs/0x60B_bms_status.yml
       - import!:can/components/ovcs/0x60D_passenger_compartment_status.yml
+      - import!:can/components/ovcs/0x650_pack_status.yml
+      - import!:can/components/ovcs/0x651_twelve_volt_battery_status.yml
       - import!:can/vehicles/ovcs1/generic_controller/0x701_front_controller_alive.yml
       - import!:can/vehicles/ovcs1/generic_controller/0x704_front_controller_digital_and_analog_pin_status.yml
       - import!:can/vehicles/ovcs1/generic_controller/0x711_rear_controller_alive.yml
