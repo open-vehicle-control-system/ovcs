@@ -14,6 +14,21 @@ defmodule InfotainmentFirmware.Application do
     Supervisor.start_link(children, opts)
   end
 
+  @impl true
+  def start_phase(:load_and_start_apps, _start_type, _args) do
+    load_and_start_apps(:infotainment_api)
+  end
+
+  def load_and_start_apps(application) do
+    case Application.ensure_all_started(application) do
+      {:ok, _} ->
+        Logger.info("#{application} started successfully!")
+      {:error, :nomatch} ->
+        Logger.warning("#{application} could not start, continuing without it.")
+    end
+    :ok
+  end
+
   defp children(:host) do
     []
   end

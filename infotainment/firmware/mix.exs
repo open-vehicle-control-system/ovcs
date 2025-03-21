@@ -47,7 +47,7 @@ defmodule OvcsInfotainmentFirmware.MixProject do
       {:nerves_pack, "~> 0.7.1", targets: @all_targets},
       {:vintage_net_wifi, "~> 0.11.7", targets: @all_targets},
       {:plug_cowboy, "~> 2.0"},
-      {:infotainment_api, path: "../api", targets: @all_targets, env: Mix.env(), runtime: true},
+      {:infotainment_api, path: "../api", targets: @all_targets, env: Mix.env(), runtime: false},
       {:nerves_flutter_support, "~> 1.0.0"},
 
       # Dependencies for specific targets
