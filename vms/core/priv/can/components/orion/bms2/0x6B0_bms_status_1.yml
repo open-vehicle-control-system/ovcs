@@ -33,6 +33,6 @@ signals:
     value_start: 48
     value_length: 8
   - name: checksum
-    kind: checksum
+    kind: integer
     value_start: 54
     value_length: 8

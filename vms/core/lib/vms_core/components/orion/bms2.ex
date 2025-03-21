@@ -10,6 +10,7 @@ defmodule VmsCore.Components.Orion.Bms2 do
   alias Decimal, as: D
 
   @zero D.new(0)
+  @one D.new(1)
   @loop_period 10
 
   @impl true
@@ -70,7 +71,7 @@ defmodule VmsCore.Components.Orion.Bms2 do
       "pack_average_temperature" => %Signal{value: pack_average_temperature}
     } = signals
     {:noreply, %{state |
-      twelve_volt_battery_voltage: twelve_volt_battery_voltage,
+      twelve_volt_battery_voltage: D.add(twelve_volt_battery_voltage, @one), # Add one volt to compensate the internal BMS' diode
       pack_lowest_temperature: pack_lowest_temperature,
       pack_highest_temperature: pack_highest_temperature,
       pack_average_temperature: pack_average_temperature
