@@ -9,7 +9,7 @@ defmodule InfotainmentCore.VehicleStatus do
   @gear_selection_delay 1
   @zero D.new(0)
 
-  @status_frame_names ["bms_status", "vms_status", "front_controller_alive", "controls_controller_alive", "rear_controller_alive"]
+  @status_frame_names ["vms_status", "front_controller_alive", "controls_controller_alive", "rear_controller_alive"]
 
   @impl true
   def init(_) do
@@ -25,7 +25,9 @@ defmodule InfotainmentCore.VehicleStatus do
       "rear_controller_digital_and_analog_pin_status",
       "gear_status",
       "abs_status",
-      "passenger_compartment_status"
+      "passenger_compartment_status",
+      "pack_status",
+      "twelve_volt_battery_status"
     ])
     {:ok, timer} = :timer.send_interval(@loop_period, :loop)
     {:ok, %{
@@ -52,15 +54,20 @@ defmodule InfotainmentCore.VehicleStatus do
       controls_controller_is_alive: false,
       rear_controller_is_alive: false,
       vms_status: "MISSING",
-      bms_status: "MISSING",
       front_controller_status: "MISSING",
       controls_controller_status: "MISSING",
       rear_controller_status: "MISSING",
       vms_computed_status: "MISSING",
-      bms_computed_status: "MISSING",
       front_controler_computed_status: "MISSING",
       controls_controller_computed_status: "MISSING",
-      rear_controller_computed_status: "MISSING"
+      rear_controller_computed_status: "MISSING",
+      pack_voltage: @zero,
+      pack_state_of_charge: @zero,
+      pack_average_temperature: @zero,
+      pack_is_charging: false,
+      pack_current: @zero,
+      twelve_volt_battery_status: @zero,
+      j1772_plug_state: "disconnected"
     }}
   end
 
@@ -157,16 +164,38 @@ defmodule InfotainmentCore.VehicleStatus do
     }}
   end
 
+  def handle_info({:handle_frame, %Frame{name: "pack_status", signals: signals}}, state) do
+    %{
+      "pack_voltage" => %Signal{value: pack_voltage},
+      "pack_state_of_charge" => %Signal{value: pack_state_of_charge},
+      "pack_average_temperature" => %Signal{value: pack_average_temperature},
+      "is_charging" => %Signal{value: pack_is_charging},
+      "pack_current" => %Signal{value: pack_current},
+      "j1772_plug_state" => %Signal{value: j1772_plug_state}
+    } = signals
+    {:noreply, %{state |
+      pack_voltage: pack_voltage,
+      pack_state_of_charge: pack_state_of_charge,
+      pack_average_temperature: pack_average_temperature,
+      pack_is_charging: pack_is_charging,
+      pack_current: pack_current,
+      j1772_plug_state: j1772_plug_state
+    }}
+  end
+
+  def handle_info({:handle_frame, %Frame{name: "twelve_volt_battery_status", signals: signals}}, state) do
+    %{"battery_voltage" => %Signal{value: twelve_volt_battery_status}} = signals
+    {:noreply, %{state | twelve_volt_battery_status: twelve_volt_battery_status}}
+  end
+
   defp compute_components_statuses(state) do
     {:ok, vms_is_alive} = ReceivedFrameWatcher.is_alive?(:ovcs, "vms_status")
-    {:ok, bms_is_alive}                 = ReceivedFrameWatcher.is_alive?(:ovcs, "bms_status")
     {:ok, front_controler_is_alive}     = ReceivedFrameWatcher.is_alive?(:ovcs, "front_controller_alive")
     {:ok, controls_controller_is_alive} = ReceivedFrameWatcher.is_alive?(:ovcs, "controls_controller_alive")
     {:ok, rear_controller_is_alive}     = ReceivedFrameWatcher.is_alive?(:ovcs, "rear_controller_alive")
 
     %{state |
       vms_computed_status: if vms_is_alive do state.vms_status else "MISSING" end,
-      bms_computed_status: if bms_is_alive do state.bms_status else "MISSING" end,
       front_controler_computed_status: if front_controler_is_alive do state.front_controller_status else "MISSING" end,
       controls_controller_computed_status: if controls_controller_is_alive do state.controls_controller_status else "MISSING" end,
       rear_controller_computed_status: if rear_controller_is_alive do state.rear_controller_status else "MISSING" end,
@@ -198,10 +227,17 @@ defmodule InfotainmentCore.VehicleStatus do
       :main_positive_contactor_enabled,
       :precharge_contactor_enabled,
       :vms_computed_status,
-      :bms_computed_status,
       :front_controler_computed_status,
       :controls_controller_computed_status,
       :rear_controller_computed_status,
+      :rear_controller_computed_status,
+      :pack_voltage,
+      :pack_state_of_charge,
+      :pack_average_temperature,
+      :pack_is_charging,
+      :pack_current,
+      :twelve_volt_battery_status,
+      :j1772_plug_state
     ])
     {:reply, {:ok, status}, state}
   end
