@@ -34,7 +34,7 @@ set -e
 DESTINATION=$1
 FILENAME="$2"
 
-export MIX_TARGET=ovcs_infotainment_flutter_system_rpi5
+export MIX_TARGET=ovcs_base_can_system_rpi5
 
 help() {
   echo
@@ -48,7 +48,7 @@ help() {
   exit 1
 }
 
-[ -n "$DESTINATION" ] || DESTINATION=ovcs-infotainment.local
+[ -n "$DESTINATION" ] || DESTINATION=ovcs1-infotainment.local
 if [ -z "$FILENAME" ]; then
   [ -n "$MIX_TARGET" ] || MIX_TARGET=rpi0
   [ -n "$MIX_ENV" ] || MIX_ENV=dev

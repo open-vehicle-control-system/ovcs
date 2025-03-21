@@ -36,7 +36,7 @@ defmodule InfotainmentFirmware.Application do
       # The `:app_name` matches this application, since it contains the AOT bundle at `priv/flutter_app`.
       # See the doc annotation for `create_child/1` for all valid options.
       NervesFlutterSupport.Flutter.Engine.create_child(
-        app_name: :ovcs_infotainment,
+        app_name: :infotainment_firmware,
         env: launch_env
       )
     ]
