@@ -1,7 +1,7 @@
 ---
 name: charger_status
 id: 0x18FF50E5
-frequency: 500
+frequency: 1000
 signals:
   - name: output_voltage
     endianness: big
@@ -14,27 +14,6 @@ signals:
     value_length: 16
     scale: "0.1"
     unit: A
-  - name: battery_voltage_too_high
-    value_start: 32
-    value_length: 1
-    kind: enum
-    mapping:
-      0x00: False
-      0x01: True
-  - name: fan_fault
-    value_start: 33
-    value_length: 1
-    kind: enum
-    mapping:
-      0x00: False
-      0x01: True
-  - name: vcc_output_failure
-    value_start: 34
-    value_length: 1
-    kind: enum
-    mapping:
-      0x00: False
-      0x01: True
   - name: communication_timeout_failure
     value_start: 35
     value_length: 1
@@ -42,7 +21,7 @@ signals:
     mapping:
       0x00: False
       0x01: True
-  - name: battery_reverse_connection_protection_enabled
+  - name: battery_disconnected_or_reverse_connection_protection_enabled
     value_start: 36
     value_length: 1
     kind: enum
@@ -70,64 +49,3 @@ signals:
     mapping:
       0x00: False
       0x01: True
-  - name: battery_voltage_missing
-    value_start: 40
-    value_length: 1
-    kind: enum
-    mapping:
-      0x00: False
-      0x01: True
-  - name: charger_is_limitting_current
-    value_start: 41
-    value_length: 1
-    kind: enum
-    mapping:
-      0x00: False
-      0x01: True
-  - name: vcc_enabled
-    value_start: 42
-    value_length: 1
-    kind: enum
-    mapping:
-      0x00: False
-      0x01: True
-  - name: unknown_flag
-    value_start: 43
-    value_length: 1
-    kind: enum
-    mapping:
-      0x00: False
-      0x01: True
-  - name: charging_type
-    value_start: 44
-    value_length: 1
-    kind: enum
-    mapping:
-      0x00: constant_current
-      0x01: constant_voltage
-  - name: mode
-    value_start: 45
-    value_length: 1
-    kind: enum
-    mapping:
-      0x00: discharge
-      0x01: charge
-  - name: load_type
-    value_start: 46
-    value_length: 1
-    kind: enum
-    mapping:
-      0x00: battery_load
-      0x01: resistance_load
-  - name: charging
-    value_start: 47
-    value_length: 1
-    kind: enum
-    mapping:
-      0x00: False
-      0x01: True
-  - name: charger_temperature
-    value_start: 48
-    value_length: 8
-    kind: integer
-    offset: 40
