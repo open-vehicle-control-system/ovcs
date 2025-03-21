@@ -21,10 +21,16 @@ defmodule InfotainmentApiWeb.Api.StatusJSON do
         mainPositiveContactorEnabled: status.main_positive_contactor_enabled,
         prechargeContactorEnabled: status.precharge_contactor_enabled,
         vmsStatus: status.vms_computed_status,
-        bmsStatus: status.bms_computed_status,
         frontControlerStatus: status.front_controler_computed_status,
         controlsControllerStatus: status.controls_controller_computed_status,
         rearControllerStatus: status.rear_controller_computed_status,
+        packVoltage: status.pack_voltage,
+        packStateOfCharge: status.pack_state_of_charge,
+        packAverageTemperature: status.pack_average_temperature,
+        packIsCharging: status.pack_is_charging,
+        packCurrent: status.pack_current,
+        twelveVoltBatteryStatus: status.twelve_volt_battery_status,
+        j1772PlugState: status.j1772_plug_state
       }
     }
   end
