@@ -29,6 +29,7 @@ class _SideBarState extends State<SideBar> {
   String timeVar = getTime();
   String dateVar = getDate();
   double temperature = 0.0;
+  String twelveVoltBatteryStatus = "0.0";
 
   PhoenixChannel? _channel;
   _SideBarState() {
@@ -45,6 +46,11 @@ class _SideBarState extends State<SideBar> {
       if(event.topic == "temperature" && event.payload!.containsKey("temperature")){
         setState(() {
           temperature = event.payload!["temperature"];
+        });
+      }
+      if(event.topic == "status" && event.payload!.containsKey("attributes")){
+        setState(() {
+          twelveVoltBatteryStatus = event.payload!["attributes"]["twelveVoltBatteryStatus"];
         });
       }
     });
@@ -71,6 +77,11 @@ class _SideBarState extends State<SideBar> {
                     ),
                     Text(temperature.toStringAsFixed(1), style: const TextStyle(fontSize: 16, color: Colors.white, decoration: TextDecoration.none, fontFamily: 'Lato')),
                     const Text("°C", style: TextStyle(fontSize: 16, color: Colors.white, decoration: TextDecoration.none, fontFamily: 'Lato'))
+                  ],),
+                  ),
+                  Padding(padding: const EdgeInsets.all(12), child: Row(children: [
+                    Text(twelveVoltBatteryStatus, style: const TextStyle(fontSize: 16, color: Colors.white, decoration: TextDecoration.none, fontFamily: 'Lato')),
+                    const Text("V", style: TextStyle(fontSize: 16, color: Colors.white, decoration: TextDecoration.none, fontFamily: 'Lato'))
                   ],),
                   )
                 ]
