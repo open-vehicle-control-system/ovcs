@@ -32,9 +32,11 @@ class _SideBarState extends State<SideBar> {
   String twelveVoltBatteryStatus = "0.0";
 
   PhoenixChannel? _channel;
+  PhoenixChannel? _statusChannel;
   _SideBarState() {
     PhoenixSocket socket = SocketService.socket;
     _channel = socket.addChannel(topic: 'temperature', parameters: {"interval": 1000});
+    _statusChannel = socket.addChannel(topic: 'status', parameters: {"interval": 1000});
 
     socket.openStream.listen((event) {
       setState(() {
@@ -48,6 +50,9 @@ class _SideBarState extends State<SideBar> {
           temperature = event.payload!["temperature"];
         });
       }
+    });
+
+    _statusChannel?.messages.listen((event) {
       if(event.topic == "status" && event.payload!.containsKey("attributes")){
         setState(() {
           twelveVoltBatteryStatus = event.payload!["attributes"]["twelveVoltBatteryStatus"];
