@@ -102,7 +102,7 @@ class _ComponentStatusBox extends State<ComponentStatusBox> {
         return boxOn;
       default:
         return boxError;
-    };
+    }
   }
 
     TextStyle getTextStyleForStatus(String status) {
@@ -113,7 +113,7 @@ class _ComponentStatusBox extends State<ComponentStatusBox> {
         return textOn;
       default:
         return textError;
-    };
+    }
   }
 
   static const TextStyle textOn = TextStyle(
