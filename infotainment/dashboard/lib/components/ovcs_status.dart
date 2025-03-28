@@ -35,7 +35,7 @@ class _OvcsStatusState extends State<OvcsStatus> {
           rearControllerStatus = event.payload!["attributes"]["rearControllerStatus"];
           controlsControllerStatus = event.payload!["attributes"]["controlsControllerStatus"];
           inverterEnabled = event.payload!["attributes"]["inverterEnabled"];
-          bmsStatus = event.payload!["attributes"]["bmsStatus"];
+          bmsStatus = "MISSING"; //TO CHANGE WHEN BMS IS FULLY OPERATIONAL
           mainNegativeContactorEnabled = event.payload!["attributes"]["mainNegativeContactorEnabled"];
           mainPositiveContactorEnabled = event.payload!["attributes"]["mainPositiveContactorEnabled"];
           prechargeContactorEnabled = event.payload!["attributes"]["prechargeContactorEnabled"];
