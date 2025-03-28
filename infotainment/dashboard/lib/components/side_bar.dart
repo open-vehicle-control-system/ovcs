@@ -85,6 +85,11 @@ class _SideBarState extends State<SideBar> {
                   ],),
                   ),
                   Padding(padding: const EdgeInsets.all(12), child: Row(children: [
+                    const Icon(
+                      Icons.battery_charging_full,
+                      color: Colors.white,
+                      size: 16
+                    ),
                     Text(twelveVoltBatteryStatus, style: const TextStyle(fontSize: 16, color: Colors.white, decoration: TextDecoration.none, fontFamily: 'Lato')),
                     const Text("V", style: TextStyle(fontSize: 16, color: Colors.white, decoration: TextDecoration.none, fontFamily: 'Lato'))
                   ],),
