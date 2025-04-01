@@ -4,7 +4,7 @@ defmodule RadioControlBridgeFirmware.MixProject do
   @app :radio_control_bridge_firmware
   @version "0.1.0"
   @all_targets [
-    :ovcs_bridge_system_rpi3a
+    :ovcs_base_can_system_rpi3a
   ]
 
   def project do
@@ -49,12 +49,12 @@ defmodule RadioControlBridgeFirmware.MixProject do
       {:nerves_pack, "~> 0.7.1", targets: @all_targets},
 
       {
-        :ovcs_bridge_system_rpi3a,
-        path: "../../../../ovcs_bridge_system_rpi3a",
+        :ovcs_base_can_system_rpi3a,
+        github: "open-vehicle-control-system/ovcs_base_can_system_rpi3a",
         runtime: false,
-        targets: :ovcs_bridge_system_rpi3a,
-        nerves: [compile: true]
-      }
+        targets: :ovcs_base_can_system_rpi3a,
+        nerves: [compile: false],
+      },
 
     ]
   end
