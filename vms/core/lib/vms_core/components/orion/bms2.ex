@@ -3,8 +3,10 @@ defmodule VmsCore.Components.Orion.Bms2 do
     Orion BMS
   """
   use GenServer
-  alias VmsCore.Bus
-
+  alias VmsCore.{
+    Bus,
+    Components.OVCS.GenericController
+  }
   require Logger
   alias Cantastic.{Frame, Receiver, Signal}
   alias Decimal, as: D
@@ -14,9 +16,14 @@ defmodule VmsCore.Components.Orion.Bms2 do
   @loop_period 10
 
   @impl true
-  def init(_) do
+  def init(%{
+    controller: controller,
+    ready_relay_pin: ready_relay_pin})
+  do
     :ok = Receiver.subscribe(self(), :orion_bms, ["bms_status_1", "bms_status_2", "bms_status_3"])
+    {:ok, _} = :timer.send_after(0, :start)
     {:ok, timer} = :timer.send_interval(@loop_period, :loop)
+
     {:ok, %{
       loop_timer: timer,
       pack_current: @zero,
@@ -33,12 +40,20 @@ defmodule VmsCore.Components.Orion.Bms2 do
       discharge_relay_enabled: false,
       charge_interlock_enabled: false,
       balancing_active: false,
-      bms_error: false
+      bms_error: false,
+      controller: controller,
+      ready_relay_pin: ready_relay_pin
     }}
   end
 
   def start_link(args) do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
+  end
+
+  @impl true
+  def handle_info(:start, state) do
+    :ok = GenericController.set_digital_value(state.controller, state.ready_relay_pin, true)
+    {:noreply, state}
   end
 
   @impl true

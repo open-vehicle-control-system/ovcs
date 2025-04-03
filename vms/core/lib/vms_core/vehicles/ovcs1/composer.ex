@@ -81,7 +81,8 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
 
       # Orion
       {Orion.Bms2, %{
-        ac_input_voltage_source: LeafAZE0.Charger
+        controller: OVCS1.RearController,
+        ready_relay_pin: 6
       }},
 
       #EVPT
