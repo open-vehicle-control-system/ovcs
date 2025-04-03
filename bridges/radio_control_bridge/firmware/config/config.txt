@@ -24,7 +24,8 @@ dtparam=i2c_arm=on
 dtparam=spi=on
 dtparam=audio=on
 
-dtoverlay=sc16is752-spi1,xtal=14756000
+
+dtoverlay=sc16is752-spi1
 dtoverlay=mcp251xfd,spi0-0,oscillator=40000000,interrupt=4 # cs_pin=8
 
 # Automatically load overlays for detected cameras

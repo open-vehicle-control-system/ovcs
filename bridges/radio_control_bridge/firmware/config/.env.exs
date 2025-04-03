@@ -1,5 +1,8 @@
-System.put_env("WIFI_SSID", "OVCS")
-System.put_env("WIFI_PSK", "V8WEjwiU3zHw")
+# System.put_env("WIFI_SSID", "OVCS")
+# System.put_env("WIFI_PSK", "V8WEjwiU3zHw")
+System.put_env("WIFI_SSID", "OVCS-Mini")
+System.put_env("WIFI_PSK", "OVCS-Mini")
+
 System.put_env("AUTHORIZED_SSH_KEYS", Enum.join([
   "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICF1a6Pj8MCGEGsoDx6t0IWcKbXrQ3Jr/QSRXRVk80q2 thibault@spin42.com",
   "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOgM6eTRgK/EZmcjy7OHd+/LEuLYE19/MgkiwBcmygek marc.lainez@gmail.com",

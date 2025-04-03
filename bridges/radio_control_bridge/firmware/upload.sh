@@ -32,7 +32,6 @@
 set -e
 
 export MIX_TARGET=ovcs_base_can_system_rpi3a
-
 DESTINATION=$1
 FILENAME="$2"
 
