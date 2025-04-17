@@ -1,0 +1,82 @@
+#!ruby
+
+require "optparse"
+require "open3"
+
+COMMANDS = [
+  "build",
+  "burn",
+  "upload"
+]
+
+VEHICLES = {
+  "ovcs1"     => "OVCS1",
+  "ovcs-mini" => "OVCSMini"
+}
+
+APPLICATIONS = {
+  "vms"                  => "vms",
+  "infotainment"         => "infotainment",
+  "radio-control-bridge" => "bridges/radio_control_bridge",
+  "ros-bridge"           => "bridges/radio_control_bridge"
+}
+
+options = {}
+
+def stop(parser, message)
+  puts "!! #{message}"
+  puts
+  puts parser.help
+  exit(-1)
+end
+
+def compute_host(vehicle, application)
+  "#{vehicle}-#{application}.local"
+end
+
+parser = OptionParser.new do |parser|
+  parser.banner = "Usage: ./ovcs --command [COMMAND] --vehicle [VEHICLE] --application [APP] (--host [HOST] --file [FILE])"
+  parser.on("-c", "--command [COMMAND]", String, "Command to perform: #{COMMANDS.join(" | ")}") do |command|
+    stop(parser, "Invalid --command #{command}") unless COMMANDS.include?(command)
+    command
+  end
+
+  parser.on("-v", "--vehicle [VEHICLE]", String, "Target vehicle: #{VEHICLES.keys.join(" | ")}") do |vehicle|
+    stop(parser, "Invalid --vehicle #{vehicle}") unless VEHICLES.keys.include?(vehicle)
+    vehicle
+  end
+
+  parser.on("-a", "--application [APP]", String, "App to run: #{APPLICATIONS.keys.join(" | ")}") do |application|
+    stop(parser, "Invalid --application #{application}") unless APPLICATIONS.keys.include?(application)
+    application
+  end
+
+  parser.on("-h", "--host [HOST]", String, "Optional: Target host, e.g.  nerves.local") do |host|
+    stop(parser, "Invalid --host #{host}") if !host.nil? && host.strip == ""
+    host
+  end
+
+  parser.on("-f", "--file [FILE]", String, "Optional: custom firmware file to push to target host, e.g.  custom.fw") do |file|
+    stop(parser, "Invalid --file #{file}") if file.nil? && file.strip == ""
+    file
+  end
+end
+
+parser.parse!(into: options)
+
+stop(parser, "Missing --command") if options[:command].nil?
+stop(parser, "Missing --vehicle") if options[:vehicle].nil?
+stop(parser, "Missing --application") if options[:application].nil?
+
+firmware_directory = "#{__dir__}/#{APPLICATIONS[options[:application]]}/firmware"
+script             = "./#{options[:command]}.sh"
+
+if options[:command] == "upload"
+  host = options[:host] || compute_host(options[:vehicle], options[:application])
+  script += " #{host}"
+  if !options[:file].nil?
+    script += " #{options[:file]}"
+  end
+end
+
+Open3.pipeline("VEHICLE=#{VEHICLES[options[:vehicle]]} #{script}", chdir: firmware_directory)
