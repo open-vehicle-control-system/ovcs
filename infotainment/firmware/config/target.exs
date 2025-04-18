@@ -53,22 +53,7 @@ config :vintage_net,
     %{
       type: VintageNetEthernet,
       ipv4: %{method: :dhcp}
-    }},
-    {"wlan0",
-      %{
-        type: VintageNetWiFi,
-        vintage_net_wifi: %{
-          networks: [
-            %{
-              key_mgmt: :wpa_psk,
-              ssid: System.get_env("WIFI_SSID"),
-              psk: System.get_env("WIFI_PSK")
-            }
-          ]
-      },
-      ipv4: %{method: :dhcp}
-    }
-    }
+    }}
   ]
 
 config :mdns_lite,
@@ -150,3 +135,5 @@ config :cantastic,
   otp_app: :infotainment_core,
   priv_can_config_path: "#{vehicle_path}.yml"
 # import_config "#{Mix.target()}.exs"
+
+config :nerves, :erlinit, hostname_pattern: vehicle_host

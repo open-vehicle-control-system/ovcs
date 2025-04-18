@@ -18,7 +18,10 @@ config :shoehorn, init: [:nerves_runtime, :nerves_pack]
 
 # Advance the system clock on devices without real-time clocks.
 config :nerves, :erlinit, update_clock: true
-config :nerves, :erlinit, hostname_pattern: Application.get_env(:radio_control_bridge_firmware, :vehicle_host)
+
+vehicle      = (System.get_env("VEHICLE") || "OVCS1")
+vehicle_path = Macro.underscore(vehicle)
+vehicle_host = "#{vehicle_path |> String.replace("_", "-")}-radio-control-bridge"
 
 # Configure the device for SSH IEx prompt access and firmware updates
 #
@@ -82,7 +85,7 @@ config :mdns_lite,
   # because otherwise any of the devices may respond to nerves.local leading to
   # unpredictable behavior.
 
-  hosts: [:hostname, Application.get_env(:radio_control_bridge_firmware, :vehicle_host)],
+  hosts: [:hostname, vehicle_host],
   ttl: 120,
 
   # Advertise the following services over mDNS.
@@ -127,3 +130,5 @@ config :msp_osd,
  config :cantastic,
   setup_can_interfaces: true,
   can_network_mappings: [{"ovcs", "can0"}]
+
+  config :nerves, :erlinit, hostname_pattern: vehicle_host
