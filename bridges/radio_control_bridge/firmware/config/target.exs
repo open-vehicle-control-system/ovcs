@@ -1,5 +1,12 @@
 import Config
 
+if config_env() in [:dev, :test, :prod] do
+  for path <- [".env.exs", ".env.#{config_env()}.exs"] do
+    path = Path.join(__DIR__, "..") |> Path.join("config") |> Path.join(path) |> Path.expand()
+    if File.exists?(path), do: import_config(path)
+  end
+end
+
 # Use Ringlogger as the logger backend and remove :console.
 # See https://hexdocs.pm/ring_logger/readme.html for more information on
 # configuring ring_logger.
@@ -40,9 +47,9 @@ if keys == [],
     log into the Nerves device and update firmware on it using ssh.
     See your project's config.exs for this error message.
     """)
-
+IO.inspect System.get_env("AUTHORIZED_SSH_KEYS")
 config :nerves_ssh,
-  authorized_keys: Enum.map(keys, &File.read!/1)
+  authorized_keys: System.get_env("AUTHORIZED_SSH_KEYS") |> String.split(",")
 
 # Configure the network using vintage_net
 #
