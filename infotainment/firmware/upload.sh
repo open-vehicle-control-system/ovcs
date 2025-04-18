@@ -34,8 +34,6 @@ set -e
 DESTINATION=$1
 FILENAME="$2"
 
-export MIX_TARGET=ovcs_base_can_system_rpi5
-
 help() {
   echo
   echo "upload.sh [destination IP] [Path to .fw file]"
@@ -48,7 +46,7 @@ help() {
   exit 1
 }
 
-[ -n "$DESTINATION" ] || DESTINATION=ovcs1-infotainment.local
+[ -n "$DESTINATION" ] || DESTINATION=nerves.local
 if [ -z "$FILENAME" ]; then
   [ -n "$MIX_TARGET" ] || MIX_TARGET=rpi0
   [ -n "$MIX_ENV" ] || MIX_ENV=dev
