@@ -45,6 +45,8 @@ defmodule OvcsInfotainmentFirmware.MixProject do
 
       # Dependencies for all targets except :host
       {:nerves_pack, "~> 0.7.1", targets: @all_targets},
+      {:vintage_net, "~> 0.13"},
+      {:vintage_net_ethernet, "~> 0.11"},
       {:plug_cowboy, "~> 2.0"},
       {:infotainment_api, path: "../api", targets: @all_targets, env: Mix.env(), runtime: false},
       {:nerves_flutter_support, "~> 1.0.0"},
