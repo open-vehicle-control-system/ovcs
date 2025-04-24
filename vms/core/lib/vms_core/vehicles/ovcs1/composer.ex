@@ -161,6 +161,12 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
         direction_pin: 1,
         external_pwm_id: 0
       }},
+      {OVCS.WaterPump, %{
+        controller:  OVCS1.FrontController,
+        power_relay_pin: 4,
+        selected_gear_source: Managers.Gear
+      }},
+
       {VmsCore.Status, %{
         ready_to_drive_source: Vehicles.OVCS1,
         vms_status_source: Vehicles.OVCS1
