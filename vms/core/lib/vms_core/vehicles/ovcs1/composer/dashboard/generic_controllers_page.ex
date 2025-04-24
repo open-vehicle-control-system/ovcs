@@ -20,8 +20,8 @@ defmodule VmsCore.Vehicles.OVCS1.Composer.Dashboard.GenericControllersPage do
 
             %{type: :metric, name: "Exp. Board1 Last Error", module: OVCS1.FrontController, key: :expansion_board1_last_error},
 
-            %{type: :metric, name: "Requested Inverter Relay Enabled", module: OVCS1.FrontController, key: :requested_digital_pin3_enabled},
-            %{type: :metric, name: "Received Inverter Relay Enabled", module: OVCS1.FrontController, key: :received_digital_pin3_enabled},
+            %{type: :metric, name: "Requested Fake Oil Sensor Relay Enabled", module: OVCS1.FrontController, key: :requested_digital_pin3_enabled},
+            %{type: :metric, name: "Received Fake Oil Sensor Relay Enabled", module: OVCS1.FrontController, key: :received_digital_pin3_enabled},
 
             %{type: :metric, name: "Requested Water Pump Relay Enabled", module: OVCS1.FrontController, key: :requested_digital_pin4_enabled},
             %{type: :metric, name: "Received Water Pump Relay Enabled", module: OVCS1.FrontController, key: :received_digital_pin4_enabled},
@@ -74,7 +74,13 @@ defmodule VmsCore.Vehicles.OVCS1.Composer.Dashboard.GenericControllersPage do
             %{type: :metric, name: "Received Main Positive Relay Enabled", module: OVCS1.RearController, key: :received_digital_pin4_enabled},
 
             %{type: :metric, name: "Requested Precharge Relay Enabled", module: OVCS1.RearController, key: :requested_digital_pin5_enabled},
-            %{type: :metric, name: "Received Precharge Relay Enabled", module: OVCS1.RearController, key: :received_digital_pin5_enabled}
+            %{type: :metric, name: "Received Precharge Relay Enabled", module: OVCS1.RearController, key: :received_digital_pin5_enabled},
+
+            %{type: :metric, name: "Requested BMS Ready Relay Enabled", module: OVCS1.RearController, key: :requested_digital_pin6_enabled},
+            %{type: :metric, name: "Received BMS Ready Relay Enabled", module: OVCS1.RearController, key: :received_digital_pin6_enabled},
+
+            %{type: :metric, name: "Requested Inverter Relay Enabled", module: OVCS1.RearController, key: :requested_digital_pin7_enabled},
+            %{type: :metric, name: "Received Inverter Relay Enabled", module: OVCS1.RearController, key: :received_digital_pin7_enabled}
           ]
         }
       }
