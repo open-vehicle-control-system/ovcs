@@ -47,7 +47,7 @@ if keys == [],
     log into the Nerves device and update firmware on it using ssh.
     See your project's config.exs for this error message.
     """)
-IO.inspect System.get_env("AUTHORIZED_SSH_KEYS")
+
 config :nerves_ssh,
   authorized_keys: System.get_env("AUTHORIZED_SSH_KEYS") |> String.split(",")
 

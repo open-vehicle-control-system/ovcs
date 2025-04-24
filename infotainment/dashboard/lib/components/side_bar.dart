@@ -36,7 +36,7 @@ class _SideBarState extends State<SideBar> {
   _SideBarState() {
     PhoenixSocket socket = SocketService.socket;
     _channel = socket.addChannel(topic: 'temperature', parameters: {"interval": 1000});
-    _statusChannel = socket.addChannel(topic: 'status', parameters: {"interval": 1000});
+    _statusChannel = socket.addChannel(topic: 'status', parameters: {"interval": 50});
 
     socket.openStream.listen((event) {
       setState(() {

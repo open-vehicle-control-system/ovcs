@@ -2,7 +2,7 @@
 ---
 can_networks:
   ovcs:
-    bitrate: 500000
+    bitrate: 1000000
     emitted_frames:
       - import!:can/components/ovcs/0x201_infotainment_status.yml
     received_frames:
