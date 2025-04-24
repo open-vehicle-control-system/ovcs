@@ -69,6 +69,11 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
       {Polo9N.PowerSteeringPump, %{
         selected_gear_source: Managers.Gear
       }},
+      {Polo9N.FakeOilPressureSensor, %{
+        controller: OVCS1.FrontController,
+        relay_pin: 3,
+        rotation_per_minute_source: LeafAZE0.Inverter
+      }},
 
       # NissanLeaf
       {LeafAZE0.Inverter, %{
