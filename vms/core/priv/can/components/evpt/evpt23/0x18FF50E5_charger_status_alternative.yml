@@ -10,6 +10,7 @@ signals:
     scale: "0.1"
     unit: V
   - name: output_current
+    endianness: big
     value_start: 16
     value_length: 16
     scale: "0.1"
