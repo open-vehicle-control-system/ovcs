@@ -8,7 +8,7 @@ defmodule VmsCore.Components.Orion.Bms2 do
     Components.OVCS.GenericController
   }
   require Logger
-  alias Cantastic.{Frame, Receiver, Signal}
+  alias Cantastic.{Frame, Receiver, ReceivedFrameWatcher, Signal}
   alias Decimal, as: D
 
   @zero D.new(0)
@@ -21,6 +21,7 @@ defmodule VmsCore.Components.Orion.Bms2 do
     ready_relay_pin: ready_relay_pin})
   do
     :ok = Receiver.subscribe(self(), :orion_bms, ["bms_status_1", "bms_status_2", "bms_status_3"])
+    :ok = ReceivedFrameWatcher.enable(:orion_bms, "bms_status_1")
     {:ok, _} = :timer.send_after(0, :start)
     {:ok, timer} = :timer.send_interval(@loop_period, :loop)
 
@@ -114,6 +115,8 @@ defmodule VmsCore.Components.Orion.Bms2 do
   end
 
   defp emit_metrics(state) do
+    {:ok, is_alive} = ReceivedFrameWatcher.is_alive?(:orion_bms, "bms_status_1")
+    Bus.broadcast("messages", %Bus.Message{name: :is_alive, value: is_alive, source: __MODULE__})
     Bus.broadcast("messages", %Bus.Message{name: :pack_current, value: state.pack_current, source: __MODULE__})
     Bus.broadcast("messages", %Bus.Message{name: :pack_voltage, value: state.pack_voltage, source: __MODULE__})
     Bus.broadcast("messages", %Bus.Message{name: :pack_state_of_charge, value: state.pack_state_of_charge, source: __MODULE__})

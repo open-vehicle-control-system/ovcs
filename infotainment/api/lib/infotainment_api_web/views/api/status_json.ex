@@ -21,6 +21,7 @@ defmodule InfotainmentApiWeb.Api.StatusJSON do
         mainPositiveContactorEnabled: status.main_positive_contactor_enabled,
         prechargeContactorEnabled: status.precharge_contactor_enabled,
         vmsStatus: status.vms_computed_status,
+        bmsStatus: status.bms_computed_status,
         frontControlerStatus: status.front_controler_computed_status,
         controlsControllerStatus: status.controls_controller_computed_status,
         rearControllerStatus: status.rear_controller_computed_status,

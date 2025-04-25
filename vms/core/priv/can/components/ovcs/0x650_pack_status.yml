@@ -51,8 +51,15 @@ signals:
     mapping:
       0x00: false
       0x01: true
-  - name: j1772_plug_state
+  - name: bms_is_alive
     value_start: 52
+    value_length: 1
+    kind: enum
+    mapping:
+      0x00: false
+      0x01: true
+  - name: j1772_plug_state
+    value_start: 53
     value_length: 3
     kind: enum
     mapping:
@@ -62,7 +69,7 @@ signals:
       0x03: ready
       0x04: charging
   - name: filler0
-    value_start: 55
-    value_length: 9
+    value_start: 56
+    value_length: 8
     kind: static
     value: 0

@@ -50,6 +50,7 @@ defmodule InfotainmentCore.VehicleStatus do
       precharge_contactor_enabled: false,
       vms_is_alive: false,
       bms_is_alive: false,
+      bms_error: false,
       front_controler_is_alive: false,
       controls_controller_is_alive: false,
       rear_controller_is_alive: false,
@@ -58,6 +59,7 @@ defmodule InfotainmentCore.VehicleStatus do
       controls_controller_status: "MISSING",
       rear_controller_status: "MISSING",
       vms_computed_status: "MISSING",
+      bms_computed_status: "MISSING",
       front_controler_computed_status: "MISSING",
       controls_controller_computed_status: "MISSING",
       rear_controller_computed_status: "MISSING",
@@ -171,15 +173,20 @@ defmodule InfotainmentCore.VehicleStatus do
       "pack_average_temperature" => %Signal{value: pack_average_temperature},
       "is_charging" => %Signal{value: pack_is_charging},
       "pack_current" => %Signal{value: pack_current},
-      "j1772_plug_state" => %Signal{value: j1772_plug_state}
+      "j1772_plug_state" => %Signal{value: j1772_plug_state},
+      "bms_error" => %Signal{value: bms_error},
+      "bms_is_alive" => %Signal{value: bms_is_alive}
     } = signals
+
     {:noreply, %{state |
       pack_voltage: pack_voltage,
       pack_state_of_charge: pack_state_of_charge,
       pack_average_temperature: pack_average_temperature,
       pack_is_charging: pack_is_charging,
       pack_current: pack_current,
-      j1772_plug_state: j1772_plug_state
+      j1772_plug_state: j1772_plug_state,
+      bms_error: bms_error,
+      bms_is_alive: bms_is_alive
     }}
   end
 
@@ -189,13 +196,18 @@ defmodule InfotainmentCore.VehicleStatus do
   end
 
   defp compute_components_statuses(state) do
-    {:ok, vms_is_alive} = ReceivedFrameWatcher.is_alive?(:ovcs, "vms_status")
+    {:ok, vms_is_alive}                 = ReceivedFrameWatcher.is_alive?(:ovcs, "vms_status")
     {:ok, front_controler_is_alive}     = ReceivedFrameWatcher.is_alive?(:ovcs, "front_controller_alive")
     {:ok, controls_controller_is_alive} = ReceivedFrameWatcher.is_alive?(:ovcs, "controls_controller_alive")
     {:ok, rear_controller_is_alive}     = ReceivedFrameWatcher.is_alive?(:ovcs, "rear_controller_alive")
 
     %{state |
       vms_computed_status: if vms_is_alive do state.vms_status else "MISSING" end,
+      bms_computed_status: cond do
+        !state.bms_is_alive -> "MISSING"
+        state.bms_error -> "FAILURE"
+        true -> "OK"
+      end,
       front_controler_computed_status: if front_controler_is_alive do state.front_controller_status else "MISSING" end,
       controls_controller_computed_status: if controls_controller_is_alive do state.controls_controller_status else "MISSING" end,
       rear_controller_computed_status: if rear_controller_is_alive do state.rear_controller_status else "MISSING" end,
@@ -227,6 +239,7 @@ defmodule InfotainmentCore.VehicleStatus do
       :main_positive_contactor_enabled,
       :precharge_contactor_enabled,
       :vms_computed_status,
+      :bms_computed_status,
       :front_controler_computed_status,
       :controls_controller_computed_status,
       :rear_controller_computed_status,

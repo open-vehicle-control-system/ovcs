@@ -27,6 +27,7 @@ defmodule VmsCore.Components.OVCS.Status do
         "charge_interlock_enabled" => false,
         "balancing_active" => false,
         "bms_error" => false,
+        "bms_is_alive" => false,
         "j1772_plug_state" => "disconnected"
       },
       enable: true
@@ -51,6 +52,7 @@ defmodule VmsCore.Components.OVCS.Status do
       charge_interlock_enabled: false,
       balancing_active: false,
       bms_error: false,
+      bms_is_alive: false,
       j1772_plug_state: "disconnected",
       twelve_volt_battery_voltage: @zero,
       pack_status_frame_requires_update: false,
@@ -121,6 +123,12 @@ end
       pack_status_frame_requires_update: state.pack_status_frame_requires_update || bms_error != state.bms_error
     }}
   end
+  def handle_info(%Bus.Message{name: :is_alive, value: bms_is_alive, source: source}, state) when source == state.bms_status_source do
+    {:noreply, %{state |
+      bms_is_alive: bms_is_alive,
+      pack_status_frame_requires_update: state.pack_status_frame_requires_update || bms_is_alive != state.bms_is_alive
+    }}
+  end
   def handle_info(%Bus.Message{name: :twelve_volt_battery_voltage, value: twelve_volt_battery_voltage, source: source}, state) when source == state.bms_status_source do
     {:noreply, %{state |
       twelve_volt_battery_voltage: twelve_volt_battery_voltage,
@@ -143,6 +151,7 @@ end
             "is_charging" => state.charger_safety_relay_enabled && D.lt?(state.pack_current, @zero),
             "charge_interlock_enabled" => state.charge_interlock_enabled,
             "balancing_active" => state.balancing_active,
+            "bms_is_alive" => state.bms_is_alive,
             "bms_error" => state.bms_error,
             "j1772_plug_state" => state.j1772_plug_state
           }
