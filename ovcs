@@ -18,7 +18,7 @@ APPLICATIONS = {
   "vms"                  => "vms",
   "infotainment"         => "infotainment",
   "radio-control-bridge" => "bridges/radio_control_bridge",
-  "ros-bridge"           => "bridges/radio_control_bridge"
+  "ros-bridge"           => "bridges/ros_bridge"
 }
 
 options = {}
