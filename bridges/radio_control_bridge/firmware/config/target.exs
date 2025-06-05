@@ -134,8 +134,8 @@ config :msp_osd,
   },
   enabled: true
 
- config :cantastic,
+config :cantastic,
   setup_can_interfaces: true,
   can_network_mappings: [{"ovcs", "can0"}]
 
-  config :nerves, :erlinit, hostname_pattern: vehicle_host
+config :nerves, :erlinit, hostname_pattern: vehicle_host
