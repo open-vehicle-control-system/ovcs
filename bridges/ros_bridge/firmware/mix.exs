@@ -44,9 +44,9 @@ defmodule ROSBridgeFirmware.MixProject do
 
       # {:rclex, path: "../../../libraries/rclex"},
       # {:rclex, github: "loicvigneron/rclex"},
-      # {:rclex, "~> 0.12.0"},
-      # {:muontrap, "~> 1.6.1"},
-      {:zenohex, "~> 0.3.2"},
+      {:rclex, "~> 0.12.0"},
+      {:muontrap, "~> 1.6.1"},
+
 
       {:circuits_i2c, "~> 2.0"},
       {:observer_cli, "~> 1.7"},
