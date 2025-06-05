@@ -25,15 +25,31 @@ config :shoehorn, init: [:nerves_runtime, :nerves_pack]
 
 # Advance the system clock on devices without real-time clocks.
 config :nerves, :erlinit, update_clock: true
-config :nerves, :erlinit, hostname_pattern: "ovcs-mini-ros-bridge" #Application.get_env(:ros_bridge_firmware, :vehicle_host)
-config :nerves, :erlinit, env: "LD_LIBRARY_PATH=/opt/ros/humble/lib"
+
+vehicle      = (System.get_env("VEHICLE") || "OVCS1")
+vehicle_path = Macro.underscore(vehicle)
+vehicle_host = "#{vehicle_path |> String.replace("_", "-")}-ros-bridge"
 
 # Configure the device for SSH IEx prompt access and firmware updates
 #
 # * See https://hexdocs.pm/nerves_ssh/readme.html for general SSH configuration
 # * See https://hexdocs.pm/ssh_subsystem_fwup/readme.html for firmware updates
+
+keys =
+  System.user_home!()
+  |> Path.join(".ssh/id_{rsa,ecdsa,ed25519}.pub")
+  |> Path.wildcard()
+
+if keys == [],
+  do:
+    Mix.raise("""
+    No SSH public keys found in ~/.ssh. An ssh authorized key is needed to
+    log into the Nerves device and update firmware on it using ssh.
+    See your project's config.exs for this error message.
+    """)
+
 config :nerves_ssh,
-  authorized_keys: System.get_env("AUTHORIZED_SSH_KEYS", "") |> String.split(",")
+  authorized_keys: System.get_env("AUTHORIZED_SSH_KEYS") |> String.split(",")
 
 # Configure the network using vintage_net
 #
@@ -48,21 +64,69 @@ config :vintage_net,
      %{
        type: VintageNetEthernet,
        ipv4: %{method: :dhcp}
-     }},
-    {"wlan0", %{
-      type: VintageNetWiFi,
-      vintage_net_wifi: %{
-        networks: [
-          %{
-            key_mgmt: :wpa_psk,
-            ssid: System.get_env("WIFI_SSID"),
-            psk: System.get_env("WIFI_PSK")
-          }
-        ]
-     },
-     ipv4: %{method: :dhcp}
-   }
-  }
+     }
+    },
+    # {"wlan0",
+    #   %{
+    #     type: VintageNetWiFi,
+    #     vintage_net_wifi: %{
+    #       networks: [
+    #         %{
+    #           mode: :ap,
+    #           ssid: "test ssid",
+    #           key_mgmt: :none
+    #         }
+    #       ]
+    #     },
+    #     ipv4: %{
+    #       method: :static,
+    #       address: "192.168.24.1",
+    #       netmask: "255.255.255.0"
+    #     },
+    #     dhcpd: %{
+    #       start: "192.168.24.2",
+    #       end: "192.168.24.10",
+    #       options: %{
+    #         dns: ["1.1.1.1", "1.0.0.1"],
+    #         subnet: "255.255.255.0",
+    #         router: ["192.168.24.1"]
+    #       }
+    #     }
+    #   }
+    # },
+    # # {"wlan1", %{
+    # #   type: VintageNetWiFi,
+    # #   vintage_net_wifi: %{
+    # #     networks: [
+    # #       %{
+    # #         key_mgmt: :wpa_psk,
+    # #         ssid: System.get_env("WIFI_SSID"),
+    # #         psk: System.get_env("WIFI_PSK")
+    # #       }
+    # #     ]
+    # #   },
+    # #   ipv4: %{method: :dhcp}
+    # # }},
+    # # {"wlan1", %{
+    # #   type: VintageNetWiFi,
+    # #   vintage_net_wifi: %{
+    # #     networks: [
+    # #       %{
+    # #         key_mgmt: :wpa_psk,
+    # #         ssid: System.get_env("WIFI_SSID"),
+    # #         psk: System.get_env("WIFI_PSK")
+    # #       }
+    # #     ]
+    # #   },
+    # #   ipv4: %{method: :dhcp}
+    # # }},
+    # # { "br0", %{
+    # #   type: VintageNetBridge,
+    # #   ipv4: %{method: :dhcp},
+    # #   vintage_net_bridge: %{
+    # #     interfaces: ["eth0", "wlan0"]
+    # #   }
+    # # }}
   ]
 
 config :mdns_lite,
@@ -74,7 +138,7 @@ config :mdns_lite,
   # because otherwise any of the devices may respond to nerves.local leading to
   # unpredictable behavior.
 
-  hosts: [:hostname, Application.get_env(:ros_bridge_firmware, :vehicle_host)],
+  hosts: [:hostname, vehicle_host],
   ttl: 120,
 
   # Advertise the following services over mDNS.
@@ -101,3 +165,11 @@ config :mdns_lite,
 # Uncomment to use target specific configurations
 
 # import_config "#{Mix.target()}.exs"
+
+config :cantastic,
+setup_can_interfaces: true,
+can_network_mappings: [{"ovcs", "can0"}]
+
+config :nerves, :erlinit, hostname_pattern: vehicle_host
+config :nerves, :erlinit, env: "LD_LIBRARY_PATH=/opt/ros/jazzy/lib;ROS_DISTRO=jazzy;RMW_IMPLEMENTATION=rmw_cyclonedds_cpp;CYCLONEDDS_URI=file:///etc/cyclonedds.xml"
+config :nerves, :erlinit, ctty: "ttyAMA10"

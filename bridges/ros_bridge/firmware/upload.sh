@@ -31,12 +31,9 @@
 
 set -e
 
+export MIX_TARGET=ovcs_bridges_system_rpi5
 DESTINATION=$1
 FILENAME="$2"
-
-export MIX_TARGET=ovcs_rosbridge_system_rpi4
-export ROS_DISTRO=humble
-export ROS_DIR=/opt/ros/humble
 
 help() {
   echo
@@ -50,7 +47,7 @@ help() {
   exit 1
 }
 
-[ -n "$DESTINATION" ] || DESTINATION=ovcs-rosbridge.local
+[ -n "$DESTINATION" ] || DESTINATION=nerves.local
 if [ -z "$FILENAME" ]; then
   [ -n "$MIX_TARGET" ] || MIX_TARGET=rpi0
   [ -n "$MIX_ENV" ] || MIX_ENV=dev

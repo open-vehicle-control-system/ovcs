@@ -1,15 +1,16 @@
 #!/bin/bash
-export MIX_TARGET=ovcs_rosbridge_system_rpi4
-export ROS_DISTRO=humble
-export ROS_ARCH=arm64v8
+export MIX_TARGET=ovcs_bridges_system_rpi5
+export ROS_DISTRO=jazzy
+# export ROS_ARCH=arm64v8
+# export ZENOH_ENDPOINT_IP=172.16.0.63
 
-rm -rf rootfs_overlay/opt/ros
+# unset ROS_DIR
+# unset ROS_INSTALL_FROM_SOURCE
+
 mix deps.get
-echo "Prepare ROS2 resources"
-./deps/rclex/scripts/prepare_ros2_resources.exs
-mkdir -p rootfs_overlay/opt/ros/$ROS_DISTRO
-cp -r deps/rclex/.ros2/$ROS_ARCH/opt/ros/$ROS_DISTRO/* rootfs_overlay/opt/ros/$ROS_DISTRO
-echo "Generate ROS2 messages"
-mix rclex.gen.msgs
+# echo "Prepare ROS2 resources"
+# mix rclex.prep.ros2 --arch arm64v8
+# echo "Generate ROS2 messages"
+# mix rclex.gen.msgs
 echo "Firmware"
 mix firmware

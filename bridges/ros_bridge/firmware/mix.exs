@@ -4,7 +4,7 @@ defmodule ROSBridgeFirmware.MixProject do
   @app :ros_bridge_firmware
   @version "0.1.0"
   @all_targets [
-    :ovcs_rosbridge_system_rpi4
+    :ovcs_bridges_system_rpi5
   ]
 
   def project do
@@ -41,16 +41,27 @@ defmodule ROSBridgeFirmware.MixProject do
 
       # Dependencies for all targets except :host
       {:nerves_pack, "~> 0.7.1", targets: @all_targets},
-      {:evision, "~> 0.2"},
-      # {:rclex, "~> 0.11.2"},
-      {:rclex, github: "open-vehicle-control-system/rclex"},
+
+      # {:rclex, path: "../../../libraries/rclex"},
+      # {:rclex, github: "loicvigneron/rclex"},
+      # {:rclex, "~> 0.12.0"},
+      # {:muontrap, "~> 1.6.1"},
+      {:zenohex, "~> 0.3.2"},
+
+      {:circuits_i2c, "~> 2.0"},
       {:observer_cli, "~> 1.7"},
+      # {
+      #   :ovcs_rosbridge_system_rpi4,
+      #   github: "open-vehicle-control-system/ovcs_rosbridge_system_rpi4",
+      #   runtime: false,
+      #   targets: :ovcs_rosbridge_system_rpi4
+      # },
       {
-        :ovcs_rosbridge_system_rpi4,
-        github: "open-vehicle-control-system/ovcs_rosbridge_system_rpi4",
+        :ovcs_bridges_system_rpi5,
+        github: "open-vehicle-control-system/ovcs_bridges_system_rpi5",
         runtime: false,
-        targets: :ovcs_rosbridge_system_rpi4
-      },
+        targets: :ovcs_bridges_system_rpi5
+      }
     ]
   end
 

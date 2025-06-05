@@ -1,0 +1,16 @@
+FROM arm64v8/ros:jazzy-ros-core
+
+# RUN echo "deb [trusted=yes] https://download.eclipse.org/zenoh/debian-repo/ /" | tee -a /etc/apt/sources.list > /dev/null && \
+#     apt update && \
+#     apt-get install -y zenoh-bridge-ros2dds
+RUN apt-get update && apt-get install -y git clang curl llvm-dev libclang-dev build-essential
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
+    . "$HOME/.cargo/env"
+
+WORKDIR /root
+ENV PATH="/root/.cargo/bin:${PATH}"
+RUN git clone https://github.com/eclipse-zenoh/zenoh-plugin-ros2dds.git
+
+RUN cd zenoh-plugin-ros2dds && \
+    cargo build --release
