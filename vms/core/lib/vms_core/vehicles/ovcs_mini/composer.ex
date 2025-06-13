@@ -24,6 +24,9 @@ defmodule VmsCore.Vehicles.OVCSMini.Composer do
           }]
         }
       },
+      {OVCS.ROSControl.Steering, %{}},
+      {OVCS.ROSControl.Throttle, %{}},
+      {OVCS.ROSControl.Direction, %{}},
       {OVCS.RadioControl.Steering, %{
         radio_control_channel: 1
       }},
@@ -48,6 +51,4 @@ defmodule VmsCore.Vehicles.OVCSMini.Composer do
       {Vehicles.OVCSMini, []},
     ]
   end
-
-
 end
