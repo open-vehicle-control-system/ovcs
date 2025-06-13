@@ -23,7 +23,8 @@ defmodule ROSBridgeFirmware.Application do
   def children(:host) do
     [
       {BNO085.Dummy, []},
-      {ZenohMQTTRos2.Dispatcher, []}
+      # {ZenohMQTTRos2.Dispatcher, []},
+      {ROSBridgeFirmware.JoyMessageForwarder, []}
     ]
   end
 

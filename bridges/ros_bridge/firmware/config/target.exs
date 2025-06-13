@@ -167,8 +167,8 @@ config :mdns_lite,
 # import_config "#{Mix.target()}.exs"
 
 config :cantastic,
-setup_can_interfaces: true,
-can_network_mappings: [{"ovcs", "can0"}]
+  setup_can_interfaces: true,
+  can_network_mappings: [{"ovcs", "can0"}]
 
 config :nerves, :erlinit, hostname_pattern: vehicle_host
 config :nerves, :erlinit, env: "LD_LIBRARY_PATH=/opt/ros/jazzy/lib;ROS_DISTRO=jazzy;RMW_IMPLEMENTATION=rmw_cyclonedds_cpp;CYCLONEDDS_URI=file:///etc/cyclonedds.xml"

@@ -1,0 +1,7 @@
+---
+can_networks:
+  ovcs:
+    bitrate: 1000000
+    emitted_frames:
+      - import!:can/components/ovcs/0x2B0_ros_control0.yml
+      - import!:can/components/ovcs/0x2B1_ros_control1.yml

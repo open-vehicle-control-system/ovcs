@@ -42,7 +42,7 @@ defmodule ROSBridgeFirmware.MixProject do
 
       {:cowlib, "~> 2.7.0", override: true},
       {:emqtt, "~> 1.10"},
-
+      {:cantastic, path: "../../../libraries/cantastic"},
 
       {:circuits_i2c, "~> 2.0"},
       {:observer_cli, "~> 1.7"},

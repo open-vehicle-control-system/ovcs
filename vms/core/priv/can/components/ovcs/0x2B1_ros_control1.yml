@@ -1,0 +1,13 @@
+---
+name: ros_control1
+id: 0x2B1
+frequency: 10
+signals:
+  - name: throttle
+    value_start: 0
+    value_length: 32
+    sign: signed
+  - name: steering
+    value_start: 32
+    value_length: 32
+    sign: signed

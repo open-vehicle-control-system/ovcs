@@ -1,0 +1,24 @@
+---
+name: ros_control0
+id: 0x2B0
+frequency: 10
+signals:
+  - name: control_level
+    kind: enum
+    value_start: 0
+    value_length: 2
+    mapping:
+      0x00: joy
+      0x01: auto
+  - name: direction
+    kind: enum
+    value_start: 2
+    value_length: 1
+    mapping:
+      0x00: forward
+      0x01: backward
+  - name: filler0
+    kind: static
+    value_start: 3
+    value_length: 5
+    value: 0x00
