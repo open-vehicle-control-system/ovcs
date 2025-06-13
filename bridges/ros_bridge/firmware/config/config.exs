@@ -12,14 +12,6 @@ vehicle      = (System.get_env("VEHICLE") || "OVCS1")
 vehicle_path = Macro.underscore(vehicle)
 vehicle_host = "#{vehicle_path |> String.replace("_", "-")}-ros-bridge"
 
-config :rclex,
-  ros2_message_types: [
-    "std_msgs/msg/String",
-    "sensor_msgs/msg/Joy",
-    "geometry_msgs/msg/Twist",
-    "sensor_msgs/msg/Imu"
-  ]
-
 config :nerves, :firmware, rootfs_overlay: "rootfs_overlay"
 config :nerves, :firmware, fwup_conf: "config/fwup.conf"
 

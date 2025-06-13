@@ -31,7 +31,6 @@ defmodule ROSBridgeFirmware.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      # Dependencies for all targets
       {:nerves, "~> 1.10", runtime: false},
       {:shoehorn, "~> 0.9.1"},
       {:ring_logger, "~> 0.11.0"},
@@ -39,13 +38,10 @@ defmodule ROSBridgeFirmware.MixProject do
 
       {:nerves_runtime, "~> 0.13.0"},
 
-      # Dependencies for all targets except :host
       {:nerves_pack, "~> 0.7.1", targets: @all_targets},
 
-      # {:rclex, path: "../../../libraries/rclex"},
-      # {:rclex, github: "loicvigneron/rclex"},
-      {:rclex, "~> 0.12.0"},
-      {:muontrap, "~> 1.6.1"},
+      {:cowlib, "~> 2.7.0", override: true},
+      {:emqtt, "~> 1.10"},
 
 
       {:circuits_i2c, "~> 2.0"},
