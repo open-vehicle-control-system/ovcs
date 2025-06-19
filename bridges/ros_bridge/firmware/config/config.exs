@@ -18,7 +18,6 @@ config :nerves, :firmware, fwup_conf: "config/fwup.conf"
 config :nerves, source_date_epoch: "1726737919"
 
 config :ros_bridge_firmware, target: Mix.target()
-config :ros_bridge_firmware, zenoh_endpoint_ip: "172.16.0.63"
 
 config :cantastic,
   can_network_mappings: [{"ovcs", "vcan0"}],

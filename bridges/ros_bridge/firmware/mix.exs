@@ -4,6 +4,7 @@ defmodule ROSBridgeFirmware.MixProject do
   @app :ros_bridge_firmware
   @version "0.1.0"
   @all_targets [
+    :ovcs_base_can_system_rpi4,
     :ovcs_bridges_system_rpi5
   ]
 
@@ -20,7 +21,6 @@ defmodule ROSBridgeFirmware.MixProject do
     ]
   end
 
-  # Run "mix help compile.app" to learn about applications.
   def application do
     [
       extra_applications: [:logger, :runtime_tools],
@@ -28,30 +28,25 @@ defmodule ROSBridgeFirmware.MixProject do
     ]
   end
 
-  # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
       {:nerves, "~> 1.10", runtime: false},
       {:shoehorn, "~> 0.9.1"},
       {:ring_logger, "~> 0.11.0"},
       {:toolshed, "~> 0.4.0"},
-
       {:nerves_runtime, "~> 0.13.0"},
-
       {:nerves_pack, "~> 0.7.1", targets: @all_targets},
-
       {:cowlib, "~> 2.7.0", override: true},
       {:emqtt, "~> 1.10"},
       {:cantastic, path: "../../../libraries/cantastic"},
-
       {:circuits_i2c, "~> 2.0"},
       {:observer_cli, "~> 1.7"},
-      # {
-      #   :ovcs_rosbridge_system_rpi4,
-      #   github: "open-vehicle-control-system/ovcs_rosbridge_system_rpi4",
-      #   runtime: false,
-      #   targets: :ovcs_rosbridge_system_rpi4
-      # },
+      {
+        :ovcs_base_can_system_rpi4,
+        github: "open-vehicle-control-system/ovcs_base_can_system_rpi4",
+        runtime: false,
+        targets: :ovcs_base_can_system_rpi4
+      },
       {
         :ovcs_bridges_system_rpi5,
         github: "open-vehicle-control-system/ovcs_bridges_system_rpi5",
@@ -64,8 +59,6 @@ defmodule ROSBridgeFirmware.MixProject do
   def release do
     [
       overwrite: true,
-      # Erlang distribution is not started automatically.
-      # See https://hexdocs.pm/nerves_pack/readme.html#erlang-distribution
       cookie: "#{@app}_cookie",
       include_erts: &Nerves.Release.erts/0,
       steps: [&Nerves.Release.init/1, :assemble],

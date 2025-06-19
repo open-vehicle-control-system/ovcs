@@ -19,3 +19,5 @@ config :nerves_runtime,
        "a.nerves_fw_platform" => "host",
        "a.nerves_fw_version" => "0.0.0"
      }}
+
+config :ros_bridge_firmware, zenoh_endpoint_ip: "127.0.0.1"

@@ -31,7 +31,7 @@
 
 set -e
 
-export MIX_TARGET=ovcs_bridges_system_rpi5
+export MIX_TARGET=ovcs_base_can_system_rpi4
 DESTINATION=$1
 FILENAME="$2"
 
