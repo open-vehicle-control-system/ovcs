@@ -2,9 +2,21 @@ defmodule BNO085.Dummy do
   use GenServer
   require Logger
 
+  @accelerometer_cargo %{header: %{continuation: true, channel: 3, sequence_number: 145, cargo_length: 19}, reports: [%{id: 251, base_delta: 5}, %{id: 1, name: "accelerometer", status: 2, z: 2412, y: -39, x: -216, delay: 0, sequence_number: 72}]}
+  @uncalibrated_gyroscope_cargo %{header: %{continuation: true, channel: 3, sequence_number: 45, cargo_length: 25}, reports: [%{id: 251, base_delta: 21}, %{id: 7, name: "uncalibrated_gyroscope", status: 0, z: 2, y: 0, x: -2, delay: 0, sequence_number: 150, x_bias: -2, y_bias: 0, z_bias: 2}]}
+  @calibrated_gyroscope_cargo %{header: %{continuation: true, channel: 3, sequence_number: 25, cargo_length: 19}, reports: [%{id: 251, base_delta: 23}, %{id: 2, name: "calibrated_gyroscope", status: 0, z: 0, y: 1, x: 1, delay: 0, sequence_number: 12}]}
+  @cargos [@accelerometer_cargo, @uncalibrated_gyroscope_cargo, @calibrated_gyroscope_cargo]
+  @accelerometer_report 0x01
+  @calibrated_gyroscope_report 0x02
+  @uncalibrated_gyroscope_report 0x07
+  @published_report_ids [@accelerometer_report , @calibrated_gyroscope_report, @uncalibrated_gyroscope_report]
+
   @impl true
   def init(_args) do
-    {:ok, %{}}
+    {:ok, _} = :timer.send_interval(10, :loop)
+    {:ok, %{
+      listeners: []
+    }}
   end
 
   def start_link(_opts) do
@@ -12,39 +24,33 @@ defmodule BNO085.Dummy do
     GenServer.start_link(__MODULE__, %{}, name: __MODULE__)
   end
 
-  def request_product_id(state) do
-    # send_command(state, @sensor_hub_control_channel, << @product_id_request, 0x00 >> )
-  end
-
-  def enable_accelerometer(state) do
-    # send_command(state, @sensor_hub_control_channel, << @set_feature_request, @accelerometer_report, 0x00, 0x00, 0x00, 0x60, 0xEA, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 >>)
-  end
-
-  def enable_uncalibrated_gyroscope(state) do
-    # send_command(state, @sensor_hub_control_channel, << @set_feature_request, @uncalibrated_gyroscope_report, 0x00, 0x00, 0x00, 0x60, 0xEA, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 >>)
-  end
-
-  def enable_calibrated_gyroscope(state) do
-    # send_command(state, @sensor_hub_control_channel, << @set_feature_request, @calibrated_gyroscope_report, 0x00, 0x00, 0x00, 0x60, 0xEA, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 >>)
-  end
   @impl true
-  def handle_cast(:test, state) do
-    request_product_id(state)
-    # enable_accelerometer(state)
-    # enable_uncalibrated_gyroscope(state)
-    # enable_calibrated_gyroscope(state)
+  def handle_info(:loop, state) do
+    @cargos |> Enum.each(fn cargo ->
+      cargo.reports |> Enum.each(fn report ->
+        if Enum.member?(@published_report_ids, report.id) do
+          state.listeners |> Enum.each(fn listener ->
+            GenServer.cast(listener, {:bno085_sensor_message, report})
+          end)
+        end
+      end)
+    end)
     {:noreply, state}
   end
 
-  def handle_cast(:reset, state) do
-    # send_command(state, @executable_channel, << 0x01 >>)
-    {:noreply, state}
+  def handle_cast({:register_listener, listener}, state) do
+    {:noreply, %{state | listeners: state.listeners ++ [listener]}}
+  end
+
+  def enable_all_sensors do
+    :ok
+  end
+
+  def request_product_id do
+    :ok
+  end
+
+  def register_listener(listener) do
+    GenServer.cast(__MODULE__, {:register_listener, listener})
   end
 end
-
-# {:ok, pid} = GenServer.start_link(BNO085.I2C, [])
-# GenServer.cast(pid, :reset)
-# Process.sleep(2000)
-# GenServer.cast(pid, :test)
-# Process.sleep(20000)
-# GenServer.stop(pid)

@@ -18,18 +18,22 @@ defmodule BNO085.I2C do
   @inport_sensor_reports_channel 0x03
   @wake_inport_sensor_reports_channel 0x04
   @gyro_rotation_vector_channel 0x05
+  @published_report_ids [@accelerometer_report , @calibrated_gyroscope_report, @uncalibrated_gyroscope_report]
 
   @impl true
   def init(_args) do
     {:ok, i2c} = Circuits.I2C.open("i2c-1")
     :ok = GenServer.cast(self(), :reset)
     {:ok, _} = :timer.send_interval(10, :loop)
-    {:ok, %{i2c: i2c}}
+    {:ok, %{
+      i2c: i2c,
+      listeners: []
+    }}
   end
 
-  def start_link(_opts) do
-    Logger.debug("Starting #{__MODULE__}")
-    GenServer.start_link(__MODULE__, %{}, name: __MODULE__)
+  def start_link(args) do
+    Logger.debug("Starting #{__MODULE__}...")
+    GenServer.start_link(__MODULE__, args, name: __MODULE__)
   end
 
   defp parse_report(<< report_id::integer, report_data::binary >> = report_bytes, @inport_sensor_reports_channel)
@@ -45,6 +49,7 @@ defmodule BNO085.I2C do
     >> = report_data
     {:ok, %{
       id: report_id,
+      name: "calibrated_gyroscope",
       sequence_number: sequence_number,
       status: status,
       delay: delay,
@@ -69,6 +74,7 @@ defmodule BNO085.I2C do
     >> = report_data
     {:ok, %{
       id: report_id,
+      name: "uncalibrated_gyroscope",
       sequence_number: sequence_number,
       status: status,
       delay: delay,
@@ -104,6 +110,7 @@ defmodule BNO085.I2C do
     >> = report_data
     {:ok, %{
       id: report_id,
+      name: "accelerometer",
       sequence_number: sequence_number,
       status: status,
       delay: delay,
@@ -144,6 +151,7 @@ defmodule BNO085.I2C do
     >> = report_data
     {:ok, %{
       id: report_id,
+      name: "product_id_response",
       reset_cause: reset_cause,
       part_number: sw_part_number,
       software_version: "#{sw_version_major}.#{sw_version_minor}.#{sw_patch}",
@@ -160,8 +168,7 @@ defmodule BNO085.I2C do
     }, rest}
   end
   defp parse_report(report, channel) do
-    IO.inspect("Unknown report and channel #{channel}:")
-    report |> IO.inspect
+    Logger.warning("#{__MODULE__} unknown report and channel #{channel}: #{inspect report}")
     {:ok, nil, nil}
   end
 
@@ -197,7 +204,7 @@ defmodule BNO085.I2C do
     {:ok, header} = parse_header_bytes(<< chb1::8, chb2::8, chb3::8, chb4::8 >>)
     case header.channel do
       @shtp_command_channel ->
-        # IO.inspect("Skip cargo on channel 0")
+        Logger.debug("#{__MODULE__} skip cargo on channel 0")
         {:ok, nil}
       channel ->
         {:ok, reports} = parse_reports(report_bytes, channel)
@@ -217,16 +224,28 @@ defmodule BNO085.I2C do
         {:ok, %{cargo_length: cargo_length} = _header} when cargo_length > 0 ->
           {:ok, cargo_bytes} = Circuits.I2C.read(state.i2c, @address, cargo_length)
           {:ok, cargo} = parse_cargo(cargo_bytes)
-          cargo |> IO.inspect(label: "cargo")
+          case cargo do
+            nil ->
+              Logger.warning("#{__MODULE__} skip empty cargo")
+            _ ->
+              Logger.debug("#{__MODULE__} cargo #{inspect cargo}")
+              cargo.reports |> Enum.each(fn report ->
+                if Enum.member?(@published_report_ids, report.id) && cargo.header.channel == @inport_sensor_reports_channel do
+                  state.listeners |> Enum.each(fn listener ->
+                    GenServer.cast(listener, {:bno085_sensor_message, report})
+                  end)
+                end
+              end)
+          end
 
           {:noreply, state}
         _ ->
-          IO.inspect("Header parsing error: #{header_bytes}")
+          Logger.error("#{__MODULE__} header parsing error: #{header_bytes}")
           {:noreply, state}
       end
     else
-      {:error, _error} ->
-        # IO.inspect("I2C error: #{error |> inspect}")
+      {:error, error} ->
+        Logger.error("#{__MODULE__} I2C error: #{error |> inspect}")
         {:noreply, state}
     end
   end
@@ -236,40 +255,51 @@ defmodule BNO085.I2C do
     << cargo_length_msb::8, cargo_length_lsb::8 >> = << cargo_length::16 >>
     sequence_number = 0x01
     cargo = << cargo_length_lsb, cargo_length_msb, channel, sequence_number, data::binary>>
+    Logger.debug("#{__MODULE__} send command #{inspect cargo}")
     Circuits.I2C.write(state.i2c, @address, cargo)
   end
 
-  def request_product_id(state) do
-    Logger.debug("#{__MODULE__} reset")
-    send_command(state, @sensor_hub_control_channel, << @product_id_request, 0x00 >> )
-  end
-
-  def enable_accelerometer(state) do
-    Logger.debug("#{__MODULE__} enable accelerometer")
-    send_command(state, @sensor_hub_control_channel, << @set_feature_request, @accelerometer_report, 0x00, 0x00, 0x00, 0x60, 0xEA, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 >>)
-  end
-
-  def enable_uncalibrated_gyroscope(state) do
-    Logger.debug("#{__MODULE__} enable uncalibrated gyroscope")
-    send_command(state, @sensor_hub_control_channel, << @set_feature_request, @uncalibrated_gyroscope_report, 0x00, 0x00, 0x00, 0x60, 0xEA, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 >>)
-  end
-
-  def enable_calibrated_gyroscope(state) do
-    Logger.debug("#{__MODULE__} enable calibrated gyroscope")
-    send_command(state, @sensor_hub_control_channel, << @set_feature_request, @calibrated_gyroscope_report, 0x00, 0x00, 0x00, 0x60, 0xEA, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 >>)
-  end
-
   @impl true
-  def handle_cast(:start, state) do
-    request_product_id(state)
-    enable_accelerometer(state)
-    enable_uncalibrated_gyroscope(state)
-    # enable_calibrated_gyroscope(state)
-    {:noreply, state}
-  end
-
   def handle_cast(:reset, state) do
     send_command(state, @executable_channel, << 0x01 >>)
     {:noreply, state}
+  end
+
+  @impl true
+  def handle_cast(:request_product_id, state) do
+    send_command(state, @sensor_hub_control_channel, << @product_id_request, 0x00 >> )
+    {:noreply, state}
+  end
+
+  @impl true
+  def handle_cast({:enable, sensor}, state) do
+    report_id = case sensor do
+      :accelerometer -> @accelerometer_report
+      :uncalibrated_gyroscope -> @uncalibrated_gyroscope_report
+      :calibrated_gyroscope -> @calibrated_gyroscope_report
+    end
+    Logger.debug("#{__MODULE__} enable #{sensor}")
+    send_command(state, @sensor_hub_control_channel, << @set_feature_request, report_id, 0x00, 0x00, 0x00, 0x60, 0xEA, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 >>)
+    {:noreply, state}
+  end
+
+  def handle_cast({:register_listener, listener}, state) do
+    {:noreply, %{state | listeners: state.listeners ++ [listener]}}
+  end
+
+  def enable_all_sensors do
+    :ok = GenServer.cast(__MODULE__, {:enable, :accelerometer})
+    :ok = GenServer.cast(__MODULE__, {:enable, :uncalibrated_gyroscope})
+    :ok = GenServer.cast(__MODULE__, {:enable, :calibrated_gyroscope})
+    :ok
+  end
+
+  def request_product_id do
+    :ok = GenServer.cast(__MODULE__, :request_product_id)
+    :ok
+  end
+
+  def register_listener(listener) do
+    GenServer.cast(__MODULE__, {:register_listener, listener})
   end
 end
