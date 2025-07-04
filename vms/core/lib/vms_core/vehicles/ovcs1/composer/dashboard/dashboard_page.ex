@@ -21,7 +21,7 @@ defmodule VmsCore.Vehicles.OVCS1.Composer.Dashboard.DashboardPage do
           type: "table",
           rows: [
             %{type: :metric, name: "Control Level", module: Managers.ControlLevel, key: :selected_control_level},
-            %{type: :metric, name: "Manual Control forced", module: Managers.ControlLevel, key: :forced_to_manual},
+            %{type: :metric, name: "Control level forced", module: Managers.ControlLevel, key: :control_level_forced},
             %{type: :metric, name: "Selected Gear", module: Managers.Gear, key: :selected_gear},
             %{type: :metric, name: "Key Status", module: Polo9N.IgnitionLock, key: :contact},
             %{type: :metric, name: "Speed", module: Polo9N.ABS, key: :speed, unit: "kph"},

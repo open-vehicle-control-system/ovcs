@@ -13,7 +13,7 @@ defmodule VmsCore.Vehicles.OVCS1.Composer.Dashboard.RadioControlPage do
           type: "table",
           rows: [
             %{type: :metric, name: "Requested Control Level", module: RadioControl.RequestedControlLevel, key: :requested_control_level},
-            %{type: :metric, name: "Requested Gear", module: RadioControl.Gear, key: :requested_gear},
+            %{type: :metric, name: "Requested Direction", module: RadioControl.Direction, key: :requested_direction},
             %{type: :metric, name: "Requested Steering", module: RadioControl.Steering, key: :requested_steering},
             %{type: :metric, name: "Requested Throttle", module: RadioControl.Throttle, key: :requested_throttle}
           ]

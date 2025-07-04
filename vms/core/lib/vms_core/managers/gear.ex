@@ -42,6 +42,7 @@ defmodule VmsCore.Managers.Gear do
       selected_control_level_source: selected_control_level_source,
       requested_throttle_source: nil,
       requested_gear_source: nil,
+      requested_direction_source: nil,
       ready_to_drive_source: ready_to_drive_source,
       speed_source: speed_source,
       contact_source: contact_source,
@@ -60,10 +61,20 @@ defmodule VmsCore.Managers.Gear do
   def handle_info(%Bus.Message{name: :requested_gear_source, value: requested_gear_source, source: source}, state) when source == state.selected_control_level_source do
     {:noreply, %{state | requested_gear_source: requested_gear_source}}
   end
+  def handle_info(%Bus.Message{name: :requested_direction_source, value: requested_direction_source, source: source}, state) when source == state.selected_control_level_source do
+    {:noreply, %{state | requested_direction_source: requested_direction_source}}
+  end
   def handle_info(%Bus.Message{name: :requested_throttle_source, value: requested_throttle_source, source: source}, state) when source == state.selected_control_level_source do
     {:noreply, %{state | requested_throttle_source: requested_throttle_source}}
   end
-  def handle_info(%Bus.Message{name: :requested_gear, value: requested_gear, source: source}, state) when source == state.requested_gear_source do
+  def handle_info(%Bus.Message{name: :requested_gear, value: requested_gear, source: source}, state) when source == state.requested_gear_source and is_nil(state.requested_direction_source) do
+    {:noreply, %{state | requested_gear: requested_gear}}
+  end
+  def handle_info(%Bus.Message{name: :requested_direction, value: requested_direction, source: source}, state) when source == state.requested_direction_source and is_nil(state.requested_gear_source) do
+    requested_gear = case requested_direction do
+      :forward -> :drive
+      :backward -> :reverse
+    end
     {:noreply, %{state | requested_gear: requested_gear}}
   end
   def handle_info(%Bus.Message{name: :requested_throttle, value: requested_throttle, source: source}, state) when source == state.requested_throttle_source do

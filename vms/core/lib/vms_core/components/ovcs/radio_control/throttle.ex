@@ -33,7 +33,8 @@ defmodule VmsCore.Components.OVCS.RadioControl.Throttle do
       channel_frame_name: channel_frame_name,
       channel_name: "channel#{radio_control_channel}",
       raw_channel: @center_value,
-      requested_throttle: @zero
+      requested_throttle: @zero,
+      radio_breaking: false
     }}
   end
 
@@ -48,8 +49,10 @@ defmodule VmsCore.Components.OVCS.RadioControl.Throttle do
   def handle_info({:handle_frame, %Frame{name: name, signals: signals}}, state) when name == state.channel_frame_name do
     raw_channel = signals[state.channel_name].value
     cond do
-      raw_channel > @max_value + @tolerated_drift -> {:noreply, state}
-      raw_channel < @min_value - @tolerated_drift -> {:noreply, state}
+      raw_channel > @max_value + @tolerated_drift ->
+        {:noreply, state}
+      raw_channel < @min_value - @tolerated_drift ->
+        {:noreply, state}
       true ->
         sanitized_raw_channel = raw_channel |> D.min(@max_value) |> D.max(@min_value)
         {:noreply, %{state | raw_channel: sanitized_raw_channel}}
@@ -58,11 +61,17 @@ defmodule VmsCore.Components.OVCS.RadioControl.Throttle do
 
   defp compute_throttle(state) do
     requested_throttle = state.raw_channel |> D.sub(@center_value) |> D.div(@range)
-    %{state | requested_throttle: requested_throttle}
+    radio_breaking     = state.requested_throttle |> D.lt?(@zero)
+
+    %{state |
+      requested_throttle: requested_throttle,
+      radio_breaking: radio_breaking
+    }
   end
 
   defp emit(state) do
     Bus.broadcast("messages", %Bus.Message{name: :requested_throttle, value: state.requested_throttle, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :radio_breaking, value: state.radio_breaking, source: __MODULE__})
     state
   end
 end

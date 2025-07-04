@@ -1,6 +1,6 @@
-defmodule VmsCore.Components.OVCS.RadioControl.Gear do
+defmodule VmsCore.Components.OVCS.RadioControl.Direction do
   @moduledoc """
-    Control requested gear based on radio control's input
+    Control direction based on radio control's input
   """
 
   use GenServer
@@ -9,8 +9,8 @@ defmodule VmsCore.Components.OVCS.RadioControl.Gear do
 
   @loop_period 10
   @default_value 1000
-  @value_mapping %{1000 => :drive, 2000 => :reverse}
-  @default_requested_gear @value_mapping[@default_value]
+  @value_mapping %{1000 => :forward, 2000 => :backward}
+  @default_direction @value_mapping[@default_value]
 
   def start_link(args) do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
@@ -30,14 +30,14 @@ defmodule VmsCore.Components.OVCS.RadioControl.Gear do
       channel_frame_name: channel_frame_name,
       channel_name: "channel#{radio_control_channel}",
       raw_channel: @default_value,
-      requested_gear:  @default_requested_gear
+      requested_direction:  @default_direction
     }}
   end
 
   @impl true
   def handle_info(:loop, state) do
     state = state
-      |> compute_requested_gear()
+      |> compute_direction()
       |> emit()
     {:noreply, state}
   end
@@ -47,13 +47,13 @@ defmodule VmsCore.Components.OVCS.RadioControl.Gear do
     {:noreply, %{state | raw_channel: raw_channel}}
   end
 
-  defp compute_requested_gear(state) do
-    requested_gear = @value_mapping[state.raw_channel] || @default_requested_gear
-    %{state | requested_gear: requested_gear}
+  defp compute_direction(state) do
+    direction = @value_mapping[state.raw_channel] || @default_direction
+    %{state | requested_direction: direction}
   end
 
   defp emit(state) do
-    Bus.broadcast("messages", %Bus.Message{name: :requested_gear, value: state.requested_gear, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :requested_direction, value: state.requested_direction, source: __MODULE__})
     state
   end
 end
