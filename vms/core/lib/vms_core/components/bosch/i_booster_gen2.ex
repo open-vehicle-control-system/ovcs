@@ -83,6 +83,7 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
       rod_position_target: @min_rod_position,
       automatic_mode_enabled: false,
       requested_braking: @zero,
+      manual_breaking: false,
       kp: @kp,
       ki: @ki,
       kd: @kd
@@ -113,6 +114,7 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
       state |
         status: status,
         driver_brake_apply: driver_brake_apply,
+        manual_breaking: driver_brake_apply in ["driver_applying_brake", "fault", "not_init_or_off"],
         internal_state: internal_state,
         rod_position: rod_position
       }
@@ -236,6 +238,7 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
   defp emit_metrics(state) do
     Bus.broadcast("messages", %Bus.Message{name: :status, value: state.status, source: __MODULE__})
     Bus.broadcast("messages", %Bus.Message{name: :driver_brake_apply, value: state.driver_brake_apply, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :manual_breaking, value: state.manual_breaking, source: __MODULE__})
     Bus.broadcast("messages", %Bus.Message{name: :internal_state, value: state.internal_state, source: __MODULE__})
     Bus.broadcast("messages", %Bus.Message{name: :rod_position, value: state.rod_position, source: __MODULE__})
     Bus.broadcast("messages", %Bus.Message{name: :rod_position_target, value: state.rod_position_target, source: __MODULE__})

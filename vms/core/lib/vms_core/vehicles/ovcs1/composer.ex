@@ -111,27 +111,39 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
       {OVCS.RadioControl.RequestedControlLevel, %{
         radio_control_channel: 5
       }},
-      {OVCS.RadioControl.Gear, %{
+      {OVCS.RadioControl.Direction, %{
         radio_control_channel: 6
       }},
+      {OVCS.ROSControl.Steering, %{}},
+      {OVCS.ROSControl.Throttle, %{}},
+      {OVCS.ROSControl.Direction, %{}},
       {Managers.ControlLevel, %{
         requested_control_level_source: OVCS.RadioControl.RequestedControlLevel,
         requested_gear_sources: %{
           manual: OVCS.Infotainment,
-          radio: OVCS.RadioControl.Gear
+          radio: nil,
+          autonomous: nil
+        },
+        requested_direction_sources: %{
+          manual: nil,
+          radio: OVCS.RadioControl.Direction,
+          autonomous: ROSControl.Direction
         },
         requested_throttle_sources: %{
           manual: OVCS.ThrottlePedal,
-          radio: OVCS.RadioControl.Throttle
+          radio: OVCS.RadioControl.Throttle,
+          autonomous: ROSControl.Throttle
         },
         requested_steering_sources: %{
           manual: nil,
-          radio: OVCS.RadioControl.Steering
+          radio: OVCS.RadioControl.Steering,
+          autonomous: ROSControl.Steering
         },
-        manual_driver_brake_apply_source: Bosch.IBoosterGen2,
+        manual_breaking_source: Bosch.IBoosterGen2,
+        radio_breaking_source: OVCS.RadioControl.Throttle,
         default_control_level: :manual,
         ready_to_drive_source: Vehicles.OVCS1,
-        contact_source: Polo9N.IgnitionLock
+        speed_source: Polo9N.ABS,
       }},
       {Managers.Gear, %{
         selected_control_level_source: Managers.ControlLevel,

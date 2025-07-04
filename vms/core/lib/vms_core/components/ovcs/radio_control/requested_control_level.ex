@@ -9,7 +9,7 @@ defmodule VmsCore.Components.OVCS.RadioControl.RequestedControlLevel do
 
   @loop_period 10
   @default_value 1000
-  @value_mapping %{1000 => :manual, 2000 => :radio}
+  @value_mapping %{1000 => :manual, 1500 => :radio, 2000 => :autonomous}
   @default_requested_control_level @value_mapping[@default_value]
 
   def start_link(args) do

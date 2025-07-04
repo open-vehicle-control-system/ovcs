@@ -1,5 +1,4 @@
 defmodule VmsCore.Vehicles.OVCSMini.Composer.Dashboard.DashboardPage do
-  alias VmsCore.Vehicles.OVCSMini.Composer.Dashboard.Blocks
   alias VmsCore.Vehicles.OVCSMini
   alias VmsCore.{Status}
 

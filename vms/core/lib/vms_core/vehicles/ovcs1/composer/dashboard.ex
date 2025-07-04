@@ -15,7 +15,8 @@ defmodule VmsCore.Vehicles.OVCS1.Composer.Dashboard do
           "inverter"            => Dashboard.InverterPage.definition(order: 4),
           "battery"             => Dashboard.BatteryPage.definition(order: 5),
           "radio-control"       => Dashboard.RadioControlPage.definition(order: 6),
-          "generic-controllers" => Dashboard.GenericControllersPage.definition(order: 7),
+          "ros-control"       => Dashboard.ROSControlPage.definition(order: 7),
+          "generic-controllers" => Dashboard.GenericControllersPage.definition(order: 8),
         }
       }
     }
