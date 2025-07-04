@@ -36,12 +36,12 @@ defmodule VmsCore.Vehicles.OVCSMini.Composer do
       {Traxxas.Steering, %{
         controller: OVCSMini.MainController,
         external_pwm_id: 0,
-        requested_steering_source: OVCS.RadioControl.Steering
+        requested_steering_source: OVCS.ROSControl.Steering
       }},
       {Traxxas.Throttle, %{
         controller: OVCSMini.MainController,
         external_pwm_id: 1,
-        requested_throttle_source: OVCS.RadioControl.Throttle
+        requested_throttle_source: OVCS.ROSControl.Throttle
       }},
       {VmsCore.Status, %{
         ready_to_drive_source: Vehicles.OVCSMini,

@@ -174,4 +174,4 @@ config :nerves, :erlinit, hostname_pattern: vehicle_host
 config :nerves, :erlinit, env: "LD_LIBRARY_PATH=/opt/ros/jazzy/lib;ROS_DISTRO=jazzy;RMW_IMPLEMENTATION=rmw_cyclonedds_cpp;CYCLONEDDS_URI=file:///etc/cyclonedds.xml"
 config :nerves, :erlinit, ctty: "ttyAMA10"
 
-config :ros_bridge_firmware, zenoh_endpoint_ip: "172.16.0.91"
+config :ros_bridge_firmware, zenoh_endpoint_ip: "10.0.2.177"

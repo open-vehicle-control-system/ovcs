@@ -27,7 +27,7 @@ gpu_mem=192
 dtparam=i2c_arm=on
 dtparam=spi=on
 
-dtoverlay=spi0-2cs
+dtoverlay=spi0-1cs
 dtoverlay=mcp251xfd,spi0-0,oscillator=40000000,interrupt=4 # cs_pin=8
 
 # Enable audio (loads snd_bcm3825)

@@ -9,7 +9,7 @@ defmodule VmsCore.Components.OVCS.ROSControl.Throttle do
 
   @loop_period 10
   @zero D.new(0)
-  @range 65535
+  @range 2**31 - 1
 
   def start_link(args) do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
