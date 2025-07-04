@@ -17,7 +17,7 @@ defmodule ROSBridgeFirmware.Application do
       {BNO085.Dummy, []},
       {ZenohMQTTRos2.Dispatcher, []},
       {ROSBridgeFirmware.JoyInterpreter, []},
-      {ROSBridgeFirmware.ImuPublisher, [bno085_module: BNO085.Dummy]}
+      # {ROSBridgeFirmware.ImuPublisher, [bno085_module: BNO085.Dummy]}
     ]
   end
 

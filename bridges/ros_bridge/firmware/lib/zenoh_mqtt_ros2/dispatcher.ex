@@ -14,9 +14,9 @@ defmodule ZenohMQTTRos2.Dispatcher do
 
   @impl true
   def init(_opts) do
-    zenoh_endpoint_ip = Application.get_env(:ros_bridge_firmware, :zenoh_endpoint_ip)
+    zenoh_endpoint_ip = Application.get_env(:ros_bridge_firmware, :zenoh_endpoint_ip) |> IO.inspect
     client_id = "zenoh_mqtt_ros2_dispatcher_#{:rand.uniform(1000)}"
-
+    :timer.sleep(5000)
     {:ok, pid} = :emqtt.start_link([
       {:host, zenoh_endpoint_ip},
       {:port, 1883},
@@ -42,7 +42,7 @@ defmodule ZenohMQTTRos2.Dispatcher do
 
   @impl true
   def handle_info({:publish, %{topic: topic, payload: payload}}, state) do
-    Logger.debug("#{__MODULE__} received on topic: #{topic}")
+    # Logger.debug("#{__MODULE__} received on topic: #{topic}")
 
     {:ok, parsed_message, _rest} =
       case extract_message_type(topic) do

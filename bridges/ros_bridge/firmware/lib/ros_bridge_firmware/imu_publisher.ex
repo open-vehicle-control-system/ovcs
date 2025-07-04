@@ -15,7 +15,7 @@ defmodule ROSBridgeFirmware.ImuPublisher do
   @impl true
   def init([bno085_module: bno085_module]) do
     bno085_module.register_listener(self())
-    bno085_module.enable_all_sensors()
+    # bno085_module.enable_all_sensors()
     {:ok, %State{bno085_module: bno085_module}}
   end
 

@@ -19,8 +19,7 @@ defmodule VmsCore.Vehicles.OVCSMini.Composer.Dashboard.DashboardPage do
             %{type: :metric, name: "OVCSMini ready", module: OVCSMini, key: :ready_to_drive},
             %{type: :metric, name: "Main Controller Alive", module: OVCSMini.MainController, key: :is_alive},
           ]
-        },
-        "throttle" => Blocks.RadioControlThrottleAndSteeringBlock.definition(order: 1, full_width: false)
+        }
       }
     }
   end

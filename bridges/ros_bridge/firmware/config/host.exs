@@ -21,3 +21,7 @@ config :nerves_runtime,
      }}
 
 config :ros_bridge_firmware, zenoh_endpoint_ip: "127.0.0.1"
+
+config :logger, Logger,
+  application_levels: %{emqtt: :warning},
+  level: :warning

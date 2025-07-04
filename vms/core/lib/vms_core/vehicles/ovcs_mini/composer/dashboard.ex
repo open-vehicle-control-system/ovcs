@@ -10,7 +10,8 @@ defmodule VmsCore.Vehicles.OVCSMini.Composer.Dashboard do
         pages: %{
           "dashboard"       => Dashboard.DashboardPage.definition(order: 0),
           "radio-control"   => Dashboard.RadioControlPage.definition(order: 1),
-          "generic-controllers" => Dashboard.GenericControllersPage.definition(order: 2),
+          "ros-control"   => Dashboard.ROSControlPage.definition(order: 2),
+          "generic-controllers" => Dashboard.GenericControllersPage.definition(order: 3),
         }
       }
     }

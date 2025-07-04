@@ -7,7 +7,10 @@ defmodule ROSBridgeFirmware.JoyInterpreter do
   alias Cantastic.Emitter
 
   require Logger
+  alias Decimal, as: D
   use GenServer
+
+  @max_value 2**31 - 1
 
   @impl true
   def init(_) do
@@ -22,8 +25,8 @@ defmodule ROSBridgeFirmware.JoyInterpreter do
     :ok = Emitter.configure(:ovcs, "ros_control1", %{
       parameters_builder_function: :default,
       initial_data: %{
-        "throttle" => 0,
-        "steering" => 0
+        "throttle" => D.new(0),
+        "steering" => D.new(0)
       },
       enable: true
     })
@@ -39,13 +42,13 @@ defmodule ROSBridgeFirmware.JoyInterpreter do
 
   @impl true
   def handle_info({:mqtt_message, {topic, message}}, state) do
-    Logger.debug("#{__MODULE__} #{inspect message}")
-    # :ok = Emitter.update(:ovcs, "ros_control1", fn (data) ->
-    #   data |> IO.inspect
-    #   %{data |
-    #     "steering" => message.axes |> Enum.at(0)
-    #   }
-    # end)
+    # Logger.debug("#{__MODULE__} #{inspect message}")
+    :ok = Emitter.update(:ovcs, "ros_control1", fn (data) ->
+      %{data |
+        "steering" => message.axes |> Enum.at(0) |> D.from_float |> D.mult(-@max_value),
+        "throttle" => message.axes |> Enum.at(1) |> D.from_float |> D.mult(@max_value)
+      }
+    end)
     {:noreply, state}
   end
 end
