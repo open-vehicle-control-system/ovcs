@@ -4,8 +4,9 @@ Currently supported hardware:
 
 | Component    | Hardware platform | Supported |
 |--------------|-------------------|----------------|
-| Infotainment | Raspberry Pi 4    |:white_check_mark:|
+| Infotainment | Raspberry Pi 5    |:white_check_mark:|
 | VMS          | Raspberry Pi 4    |:white_check_mark:|
+| Bridges      | Raspberrt Pi 5    |:white_check_mark:|
 | Controller   | Arduino R4 Minima |:white_check_mark:|
 
 ## Firmware code
@@ -18,38 +19,34 @@ Our controllers don't use the internal CAN bus of the Arduino R4 Minima, to rema
 
 ## Configuring firmware targets
 
-By default, the Infotainment and VMS targets are set to our custom raspberry pi 4 systems. You can see an example of this by looking into the `mix.exs` file in `ovcs_infotainment_firmware`:
+By default, the Infotainment and VMS targets are set to our custom raspberry pi systems. You can see an example of this by looking into the `mix.exs` file in `ovcs_infotainment_firmware`:
 
 ```elixir
 # ovcs_infotainment_firmware/mix.exs
 defmodule OvcsInfotainmentFirmware.MixProject do
   use Mix.Project
 
-  @app :ovcs_infotainment_firmware
+  @app :infotainment_firmware
   @version "0.1.0"
   @all_targets [
-    :rpi4, :ovcs_infotainment_system_rpi4
+    :ovcs_base_can_system_rpi5
   ]
 
-  # ...
-  defp deps do
-    # Dependencies for specific targets
-    # NOTE: It's generally low risk and recommended to follow minor version
-    # bumps to Nerves systems. Since these include Linux kernel and Erlang
-    # version updates, please review their release notes in case
-    # changes to your application are needed.
-    {
-    :ovcs_infotainment_system_rpi4,
-    path: "../../ovcs_infotainment_system_rpi4",
-    runtime: false,
-    targets: :ovcs_infotainment_system_rpi4,
-    nerves: [compile: true]
-    },
-  ]
-end
+  def project do
+    [
+      app: @app,
+      version: @version,
+      elixir: "~> 1.17",
+      archives: [nerves_bootstrap: "~> 1.13"],
+      start_permanent: Mix.env() == :prod,
+      deps: deps(),
+      releases: [{@app, release()}],
+      preferred_cli_target: [run: :host, test: :host]
+    ]
+  end
 ```
 
-If you are trying to run the infotainment on an unsupported system, you will need to change the references to `ovcs_infotainment_system_rpi4` so that it references your own custom system.
+If you are trying to run the infotainment on an unsupported system, you will need to change the references to `ovcs_base_can_system_rpi5` so that it references your own custom system.
 
 For more documentation on linking our firmware to a different system, please consult the [Nerves Project documentation on custom systems](https://hexdocs.pm/nerves/customizing-systems.html).
 
@@ -57,10 +54,19 @@ For more documentation on linking our firmware to a different system, please con
 
 OVCS provides some basic scripts to make your life easier.
 
+```
+Usage: ./ovcs --command [COMMAND] --vehicle [VEHICLE] --application [APP] (--host [HOST] --file [FILE])
+    -c, --command [COMMAND]          Command to perform: build | burn | upload
+    -v, --vehicle [VEHICLE]          Target vehicle: ovcs1 | ovcs-mini
+    -a, --application [APP]          App to run: vms | infotainment | radio-control-bridge | ros-bridge
+    -h, --host [HOST]                Optional: Target host, e.g.  nerves.local
+    -f, --file [FILE]                Optional: custom firmware file to push to target host, e.g.  custom.fw
+```
+
 | Script                            | Purpose             |
 |-----------------------------------|---------------------|
-| ./ovcs-cli build vms/infotainment | Builds the firmware for the VMS/Infotainment     |
-| ./ovcs-cli upload vms/infotainment |  Uploads the latest VMS/Infotainment built firmware to the USB connected device |
+| ./ovcs -c build -a infotainment -v ovcs1 | Builds the firmware for the Infotainment and for the OVCS1 vehicle |
+| ./ovcs -c build -a vms -v ovcs_mini |  Builds the firmware for the VMS and for the OVCS Mini vehicle |
 
 ## Customizing CAN interfaces.
 
@@ -82,7 +88,7 @@ $ CAN_NETWORK_MAPPINGS=ovcs:spi0.0,leaf_drive:vcan0,polo_drive:vcan1,orion_bms:v
 ### Uploading the VMS:
 
 ```sh
-$ ./ovcs-cli upload vms
+$ ./ovcs -c upload -a infotainment -v ovcs1
 ```
 
 Next: [Testing generic controller](./testing_generic_controllers.md)

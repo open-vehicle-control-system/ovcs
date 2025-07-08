@@ -69,7 +69,6 @@ Where
 
 | Physical Pin | OVCS Pin |
 | -------- | ------- |
-
 | D4  | 0 |
 | D7  | 1 |
 | D8  | 2 |

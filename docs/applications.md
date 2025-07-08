@@ -9,8 +9,9 @@ These applications are the backend and frontend parts of the infotainment system
 Here is a description of the relevant directories containing the OVCS applications:
 
 ```
+- bridges: Radio control bridge and ROS2 bridge components, written in Elixir.
 - infotainment: Infotainment system application written in Elixir with a in car UI written with Phoenix and Vue.js.
-- vms: Vehicle Managment System, written in pure Elixir, with a debug UI writtent with Pheonix and Vue.js.
+- vms: Vehicle Managment System, written in pure Elixir, with a debug UI written with Pheonix and Vue.js.
 ```
 
 ## Dependencies

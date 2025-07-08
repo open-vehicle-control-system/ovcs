@@ -7,9 +7,9 @@ OVCS stands for Open Vehicule Control system. It is a set of open-hardware and o
 OVCS is based on simple, off-the-shelve components to make it affordable and accessible to people with no to limited knowledge about the embedded computing world.
 
 OVCS can help you:
-* Retrofit a car or any other vehicule by providing an easy to modify system to interact with the vehicule's CAN buses
 * Create a dashboard for any kind of vehicule using high-level web technologies such as the  Phoenix framework and Vue.js
 * Make multiple components from different vehicule brands work together by aggregating the different CAN buses and providing a standardized set of CAN messages on the OVCS CAN bus.
+* Retrofit a car or any other vehicule by providing an easy to modify system to interact with the vehicule's CAN buses
 
 ## Disclaimer
 

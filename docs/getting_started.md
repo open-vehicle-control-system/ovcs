@@ -25,8 +25,9 @@ We recommend the following directory structure:
 ```
 └── ovcs_base
     ├── ovcs
-    ├── ovcs_infotainment_system_rpi4
-    └── ovcs_vms_system_rpi4
+    ├── ovcs_base_can_system_rpi4
+    ├── ovcs_base_can_system_rpi5
+    └── ovcs_base_can_system_rpi3a
 ```
 
 In order to end up with this structure, run the following in a directoy of your choosing:
@@ -35,8 +36,9 @@ In order to end up with this structure, run the following in a directoy of your 
 mkdir ovcs_base
 cd ovcs_base
 git clone https://github.com/open-vehicle-control-system/ovcs.git
-git clone https://github.com/open-vehicle-control-system/ovcs_infotainment_system_rpi4.git
-git clone https://github.com/open-vehicle-control-system/ovcs_vms_system_rpi4.git
+git clone https://github.com/open-vehicle-control-system/ovcs_base_can_system_rpi4
+git clone https://github.com/open-vehicle-control-system/ovcs_base_can_system_rpi5
+git clone https://github.com/open-vehicle-control-system/ovcs_base_can_system_rpi3a
 ```
 
 Next: [Applications](./applications.md)
