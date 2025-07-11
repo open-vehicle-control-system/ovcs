@@ -14,6 +14,7 @@ vehicle_host = "#{vehicle_path |> String.replace("_", "-")}-vms"
 default_can_mapping = case vehicle do
   "OVCS1" -> "ovcs:spi0.0,leaf_drive:spi0.1,polo_drive:spi1.0,orion_bms:spi1.1,misc:spi1.2"
   "OVCSMini" -> "ovcs:spi0.0"
+  "OBD2" -> "obd2:spi0.0"
 end
 
 config :vms_core, :vehicle, vehicle

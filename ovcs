@@ -11,7 +11,8 @@ COMMANDS = [
 
 VEHICLES = {
   "ovcs1"     => "OVCS1",
-  "ovcs-mini" => "OVCSMini"
+  "ovcs-mini" => "OVCSMini",
+  "obd2" => "OBD2"
 }
 
 APPLICATIONS = {

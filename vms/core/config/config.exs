@@ -25,6 +25,7 @@ config :vms_core, :vehicle, vehicle
 default_can_mapping = case vehicle do
   "OVCS1" -> "ovcs:vcan0,leaf_drive:vcan1,polo_drive:vcan2,orion_bms:vcan3,misc:vcan4"
   "OVCSMini" -> "ovcs:vcan0"
+  "OBD2" -> "obd2:vcan0"
 end
 
 config :cantastic,

@@ -1,0 +1,27 @@
+---
+name: response
+id: 0x7E8
+frequency: 50
+signals:
+  - name: data_length
+    kind: integer
+    value_start: 0
+    value_length: 8
+  - name: mode
+    kind: enum
+    value_start: 8
+    value_length: 8
+    mapping:
+      0x41: current
+  - name: pid
+    kind: enum
+    value_start: 16
+    value_length: 8
+    mapping:
+      0x0C: rotation_per_minute
+      0x0D: speed
+  - name: value
+    kind: integer
+    endianness: big
+    value_start: 24
+    value_length: 16
