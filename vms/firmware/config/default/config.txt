@@ -27,22 +27,10 @@ gpu_mem=192
 # Enable I2C and SPI
 dtparam=i2c_arm=off
 #dtparam=i2s=on
-#dtparam=spi=on
 
-dtoverlay=spi0-2cs
-dtoverlay=spi1-3cs
-#dtoverlay=spi3-2cs
-
-dtoverlay=mcp251xfd,spi0-0,oscillator=40000000,interrupt=4 # cs_pin=8
-dtoverlay=mcp251xfd,spi0-1,oscillator=40000000,interrupt=14 # cs_pin=7
-
-dtoverlay=mcp251xfd,spi1-0,oscillator=40000000,interrupt=5 # cs_pin=18
-dtoverlay=mcp251xfd,spi1-1,oscillator=40000000,interrupt=6 # cs_pin=17
-dtoverlay=mcp251xfd,spi1-2,oscillator=40000000,interrupt=12 # cs_pin=16
-
-# Using SPI3-2CS requires to create a custom DTBO for MCP251XFD
-# dtoverlay=mcp251xfd,spi3-0,oscillator=40000000,interrupt=22 # cs_pin=0
-# dtoverlay=mcp251xfd,spi3-1,oscillator=40000000,interrupt=23 # cs_pin=24 => Not working on prototyping board (GPIO 24)
+dtparam=spi=on
+dtoverlay=mcp2515-can0,oscillator=16000000,interrupt=23
+dtoverlay=spi-bcm2835-overlay
 
 # Enable audio (loads snd_bcm3825)
 dtparam=audio=off
