@@ -60,21 +60,21 @@ config :nerves_ssh,
          type: VintageNetEthernet,
          ipv4: %{method: :dhcp}
        }},
-      {"wlan0",
-        %{
-          type: VintageNetWiFi,
-          vintage_net_wifi: %{
-            networks: [
-              %{
-                key_mgmt: :wpa_psk,
-                ssid: System.get_env("WIFI_SSID"),
-                psk: System.get_env("WIFI_PSK")
-              }
-            ]
-          },
-          ipv4: %{method: :dhcp}
-        }
-      }
+      # {"wlan0",
+      #   %{
+      #     type: VintageNetWiFi,
+      #     vintage_net_wifi: %{
+      #       networks: [
+      #         %{
+      #           key_mgmt: :wpa_psk,
+      #           ssid: System.get_env("WIFI_SSID"),
+      #           psk: System.get_env("WIFI_PSK")
+      #         }
+      #       ]
+      #     },
+      #     ipv4: %{method: :dhcp}
+      #   }
+      # }
     ]
 
 config :mdns_lite,
