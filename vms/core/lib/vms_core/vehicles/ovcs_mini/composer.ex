@@ -43,6 +43,10 @@ defmodule VmsCore.Vehicles.OVCSMini.Composer do
         external_pwm_id: 1,
         requested_throttle_source: OVCS.ROSControl.Throttle
       }},
+      {Traxxas.Motor, %{
+        controller: OVCSMini.MainController,
+        rotation_per_minute_pin: 0,
+      }},
       {VmsCore.Status, %{
         ready_to_drive_source: Vehicles.OVCSMini,
         vms_status_source: Vehicles.OVCSMini

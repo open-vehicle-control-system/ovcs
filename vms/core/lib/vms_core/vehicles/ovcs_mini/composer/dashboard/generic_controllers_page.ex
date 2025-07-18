@@ -25,6 +25,8 @@ defmodule VmsCore.Vehicles.OVCSMini.Composer.Dashboard.GenericControllersPage do
             %{type: :metric, name: "Throttle PWM Enabled", module: OVCSMini.MainController, key: :requested_external_pwm1_enabled},
             %{type: :metric, name: "Throttle PWM Duty Cycle", module: OVCSMini.MainController, key: :requested_external_pwm1_duty_cycle, unit: "%"},
             %{type: :metric, name: "Throttle PWM frequency", module: OVCSMini.MainController, key: :requested_external_pwm1_frequency, unit: "Hz"},
+
+            %{type: :metric, name: "Motor RPM", module: OVCSMini.MainController, key: :received_analog_pin0_value},
           ]
         }
       }

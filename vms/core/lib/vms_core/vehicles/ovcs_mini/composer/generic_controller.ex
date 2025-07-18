@@ -28,7 +28,7 @@ defmodule VmsCore.Vehicles.OVCSMini.Composer.GenericController do
         "pwm_pin1" => "disabled",
         "pwm_pin2" => "disabled",
         "dac_pin0" => "disabled",
-        "analog_pin0" => "disabled",
+        "analog_pin0" => "enabled",
         "analog_pin1" => "disabled",
         "analog_pin2" => "disabled"
       }
