@@ -11,7 +11,7 @@
 #include <ControllerStatus.h>
 #include <VmsCommand.h>
 
-#define CAN_BITRATE 1000UL * 1000UL
+#define CAN_BITRATE 500UL * 1000UL
 #define CAN_OSCILLATOR ACAN2517Settings::OSC_40MHz
 #define SPI_CAN_CS 10
 #define SPI_CAN_INT 3
