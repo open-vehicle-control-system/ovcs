@@ -20,8 +20,11 @@ config :nerves, :firmware, rootfs_overlay: "rootfs_overlay"
 
 config :nerves, source_date_epoch: "1708002919"
 
+# Change fwup.conf path if needed
 config :nerves, :firmware,
-  fwup_conf: "config/fwup.conf"
+  fwup_conf: "config/default/fwup.conf"
+#config :nerves, :firmware,
+#  fwup_conf: "config/obd2_waveshare_2can_hat/fwup.conf"
 
 if Mix.target() == :host do
   import_config "host.exs"
