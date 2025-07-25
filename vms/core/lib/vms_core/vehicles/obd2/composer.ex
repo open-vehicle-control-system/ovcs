@@ -9,6 +9,18 @@ defmodule VmsCore.Vehicles.OBD2.Composer do
 
   def children do
     [
+      %{
+        id: VmsCore.Vehicles.OBD2.Request,
+        start: {
+          Cantastic.ISOTPRequest,
+          :start_link, [%{
+            process_name: VmsCore.Vehicles.OBD2.Request,
+            can_interface: "can1",
+            request_frame_id: 0x7DF,
+            response_frame_id: 0x7E8
+          }]
+        }
+      },
       # Vehicle
       {Vehicles.OBD2, []},
     ]

@@ -17,63 +17,37 @@ defmodule VmsCore.Vehicles.OBD2 do
 
   @impl true
   def init(_) do
-    :ok = Receiver.subscribe(self(), :obd2, ["response"])
-    :ok = Emitter.configure(:obd2, "command", %{
-      parameters_builder_function: :default,
-      initial_data: %{
-        "data_length" => 0x02,
-        "mode" => "current",
-        "pid" => "rotation_per_minute"
-      }
-    })
     {:ok, timer} = :timer.send_interval(@loop_period, :loop)
     {:ok, %{
       loop_timer: timer,
       rotation_per_minute: @zero,
-      speed: @zero,
-      current_pid: "rotation_per_minute"
+      speed: @zero
     }}
   end
 
   @impl true
   def handle_info(:loop, state) do
     state = state
-      |> emit_commands()
+      |> request()
       |> emit_metrics()
 
     {:noreply, state}
   end
 
-  def handle_info({:handle_frame, %Frame{name: "response", signals: %{"pid" => %Signal{value: "rotation_per_minute"}} = signals}}, state) do
-    %{"value" => %Signal{value: value}} = signals
-    {:noreply, %{
-      state |
-        rotation_per_minute: value |> D.mult("0.25")
-      }
-    }
-  end
+  defp request(state) do
+    request = <<0x010C0D::big-integer-size(24)>>
+    {:ok, response} = Cantastic.ISOTPRequest.send(VmsCore.Vehicles.OBD2.Request, request)
+    <<
+      0x41::integer-size(8), # Mode
+      0x0C::integer-size(8), # RPM PID
+      rpm_value::integer-big-size(16), # RPM value
+      0x0D::integer-size(8), # Speed PID
+      speed_value::integer-big-size(8),
+    >> = response
+    rotation_per_minute =  rpm_value |> D.mult("0.25")
+    speed = D.new(speed_value)
 
-  def handle_info({:handle_frame, %Frame{name: "response", signals: %{"pid" => %Signal{value: "speed"}} = signals}}, state) do
-    %{"value" => %Signal{raw_value: raw_value}} = signals
-    <<value::little-integer-size(8), _::binary>> = raw_value
-    {:noreply, %{
-      state |
-        speed: D.new(value)
-      }
-    }
-  end
-
-  defp emit_commands(state) do
-    :ok = Emitter.update(:obd2, "command", fn (data) ->
-      %{data | "pid" => state.current_pid}
-    end)
-    Emitter.send_frame(:obd2, "command")
-
-    next_pid = case state.current_pid do
-      "speed" -> "rotation_per_minute"
-      "rotation_per_minute" -> "speed"
-    end
-    %{state | current_pid: next_pid}
+    %{state | rotation_per_minute: rotation_per_minute, speed: speed}
   end
 
   defp emit_metrics(state) do
