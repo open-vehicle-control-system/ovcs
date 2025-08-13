@@ -20,6 +20,10 @@ if System.get_env("PHX_SERVER") do
   config :infotainment_api, InfotainmentApiWeb.Endpoint, server: true
 end
 
+config :infotainment_api, :vehicle,
+  (System.get_env("VEHICLE") || "OVCS1")
+  |> String.to_atom()
+
 if config_env() == :prod do
   database_path =
     System.get_env("DATABASE_PATH") ||

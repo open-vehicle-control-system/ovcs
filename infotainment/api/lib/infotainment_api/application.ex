@@ -7,6 +7,13 @@ defmodule InfotainmentApi.Application do
 
   @impl true
   def start(_type, _args) do
+
+    unless Application.get_env(:infotainment_api, :vehicle) do
+      Application.put_env(:infotainment_api, :vehicle,
+        (System.get_env("VEHICLE") || "OVCS1") |> String.to_atom()
+      )
+    end
+
     children = [
       InfotainmentApiWeb.Telemetry,
       InfotainmentApi.Repo,

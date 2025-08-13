@@ -1,4 +1,4 @@
-defmodule InfotainmentApiWeb.Api.StatusJSON do
+defmodule InfotainmentApiWeb.Api.OVCS1.StatusJSON do
   use InfotainmentApiWeb, :view
 
   def render("status.json", status) do
