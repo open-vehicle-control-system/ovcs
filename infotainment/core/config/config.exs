@@ -24,7 +24,7 @@ config :infotainment_core, :vehicle, vehicle
 
 config :cantastic,
   can_network_mappings: fn() ->
-    (System.get_env("CAN_NETWORK_MAPPINGS") || "ovcs:vcan0")
+    (System.get_env("CAN_NETWORK_MAPPINGS") || "ovcs:vcan1")
     |> String.split(",", trim: true)
     |> Enum.map(fn(i) ->
       [network_name, can_interface] = i |> String.split(":", trim: true)
