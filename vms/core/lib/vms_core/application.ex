@@ -9,7 +9,7 @@ defmodule VmsCore.Application do
       load_debugger_dependencies()
     end
 
-    vehicle_children = vehicle_compposer().children()
+    vehicle_children = vehicle_composer().children()
     children = [
       VmsCore.Repo,
       {Ecto.Migrator,
@@ -38,7 +38,7 @@ defmodule VmsCore.Application do
     Mix.ensure_application!(:observer)
   end
 
-  def vehicle_compposer do
+  def vehicle_composer do
     VmsCore.Vehicles
       |> Module.concat(Application.get_env(:vms_core, :vehicle))
       |> Module.concat(Composer)
