@@ -1,0 +1,13 @@
+---
+name: obd2_status
+id: 0x800
+frequency: 50
+signals:
+  - name: speed
+    unit: km/h
+    value_start: 0
+    value_length: 16
+  - name: rotation_per_minute
+    unit: rpm
+    value_start: 16
+    value_length: 16

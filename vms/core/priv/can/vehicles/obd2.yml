@@ -1,5 +1,9 @@
 ---
 can_networks:
+  ovcs:
+    bitrate: 500000
+    emitted_frames:
+      - import!:../components/obd2/0x800_obd2_status.yml
   obd2:
     bitrate: 500000
     emitted_frames:
