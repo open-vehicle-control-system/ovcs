@@ -1,0 +1,14 @@
+---
+name: current_speed_and_rotation_per_minute
+request_frame_id: 0x7DF
+response_frame_id: 0x7E8
+frequency: 20
+mode: 0x01
+parameters:
+  - name: rotation_per_minute
+    id: 0x0C
+    value_length: 16
+    scale: "0.25"
+  - name: speed
+    id: 0x0D
+    value_length: 8

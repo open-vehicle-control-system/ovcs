@@ -6,7 +6,5 @@ can_networks:
       - import!:../components/obd2/0x800_obd2_status.yml
   obd2:
     bitrate: 500000
-    emitted_frames:
-      #- import!:../components/obd2/0x7DF_command.yml
-    received_frames:
-      #- import!:../components/obd2/0x7E8_response.yml
+    obd2_requests:
+      - import!:../components/obd2/current_speed_and_rotation_per_minute_request.yml
