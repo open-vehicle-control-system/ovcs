@@ -6,7 +6,7 @@ defmodule VmsCore.Vehicles.OBD2 do
   require Logger
   alias VmsCore.{Bus}
   alias Decimal, as: D
-  alias Cantastic.{Signal, Receiver, Emitter, Frame}
+  alias Cantastic.OBD2
 
   @zero D.new(0)
   @loop_period 20
@@ -18,6 +18,9 @@ defmodule VmsCore.Vehicles.OBD2 do
   @impl true
   def init(_) do
     {:ok, timer} = :timer.send_interval(@loop_period, :loop)
+    OBD2.Request.subscribe(self(), :obd2, "current_speed_and_rotation_per_minute")
+    OBD2.Request.enable(:obd2, "current_speed_and_rotation_per_minute")
+
     {:ok, %{
       loop_timer: timer,
       rotation_per_minute: @zero,
@@ -28,26 +31,23 @@ defmodule VmsCore.Vehicles.OBD2 do
   @impl true
   def handle_info(:loop, state) do
     state = state
-      |> request()
+      #|> request()
       |> emit_metrics()
 
     {:noreply, state}
   end
 
-  defp request(state) do
-    request = <<0x010C0D::big-integer-size(24)>>
-    {:ok, response} = Cantastic.ISOTPRequest.send(VmsCore.Vehicles.OBD2.Request, request)
-    <<
-      0x41::integer-size(8), # Mode
-      0x0C::integer-size(8), # RPM PID
-      rpm_value::integer-big-size(16), # RPM value
-      0x0D::integer-size(8), # Speed PID
-      speed_value::integer-big-size(8),
-    >> = response
-    rotation_per_minute =  rpm_value |> D.mult("0.25")
-    speed = D.new(speed_value)
-
-    %{state | rotation_per_minute: rotation_per_minute, speed: speed}
+  def handle_info({:handle_obd2_response, %OBD2.Response{request_name: "current_speed_and_rotation_per_minute", parameters: parameters}}, state) do
+    %{
+      "rotation_per_minute" => %OBD2.Parameter{value: rotation_per_minute},
+      "speed"               => %OBD2.Parameter{value: speed}
+    } = parameters
+    {:noreply, %{
+      state |
+        rotation_per_minute: rotation_per_minute,
+        speed: speed
+      }
+    }
   end
 
   defp emit_metrics(state) do
