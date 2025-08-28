@@ -1,5 +1,5 @@
-import 'package:dashboard_flutter/components/dashboard_content.dart';
-import 'package:dashboard_flutter/components/side_bar.dart';
+import 'package:dashboard_flutter/components/home_selector.dart';
+import 'package:dashboard_flutter/components/side_bar_selector.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -20,9 +20,9 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      title: 'OVCS Infotainment',
       theme: _buildTheme(Brightness.dark),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      home: const MyHomePage(title: 'OVCS Infotainment'),
     );
   }
 }
@@ -39,10 +39,10 @@ class _MyHomePageState extends State<MyHomePage> {
 
   @override
   Widget build(BuildContext context) {
-    return const Row(
+    return Row(
       children: [
-        SideBar(),
-        DashboardContent()
+        getSidebarWidget(),
+        getHomeWidget()
       ]
     );
   }

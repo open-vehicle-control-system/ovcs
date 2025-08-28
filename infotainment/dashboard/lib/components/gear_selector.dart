@@ -13,17 +13,15 @@ class GearSelector extends StatefulWidget {
 }
 
 class _GearSelectorState extends State<GearSelector> {
-
   String gear = "parking";
-
   PhoenixChannel? _channel;
 
   _GearSelectorState() {
     PhoenixSocket socket = SocketService.socket;
     _channel = socket.addChannel(topic: 'status', parameters: {"interval": 50});
 
-    _channel?.messages.listen( (event){
-      if(event.topic == "status" && event.payload!.containsKey("attributes")){
+    _channel?.messages.listen((event) {
+      if (event.topic == "status" && event.payload!.containsKey("attributes")) {
         setState(() {
           gear = event.payload?["attributes"]["selectedGear"];
         });
@@ -35,77 +33,56 @@ class _GearSelectorState extends State<GearSelector> {
     const apiUrl = "http://localhost:4001/api/gear-selector";
     await http.post(
       Uri.parse(apiUrl),
-      headers: <String, String>{
-        'Content-Type': 'application/json; charset=UTF-8',
-      },
-      body: jsonEncode(<String, String>{
-        'gear': gear,
-      }),
+      headers: <String, String>{'Content-Type': 'application/json; charset=UTF-8'},
+      body: jsonEncode(<String, String>{'gear': gear}),
     );
   }
 
   @override
-  Widget build(BuildContext context){
-    return Container(
-      width: MediaQuery.of(context).size.width * 0.1,
-      height: MediaQuery.of(context).size.width * 0.38,
-      margin: const EdgeInsets.all(10.0),
-      padding: const EdgeInsets.all(20.0),
-      decoration: BoxDecoration(
-        color: const Color(0xD9111827),
-        borderRadius: BorderRadius.circular(30)
+  Widget build(BuildContext context) {
+    return AspectRatio(
+      aspectRatio: 0.8, // height slightly larger than width
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          double size = constraints.biggest.shortestSide;
+
+          double buttonHeight = constraints.maxHeight / 4.5;
+          double buttonWidth = constraints.maxWidth * 0.9;
+          double fontSize = buttonHeight * 0.5;
+
+          return Container(
+            padding: EdgeInsets.all(constraints.maxWidth * 0.05),
+            decoration: BoxDecoration(
+              color: const Color(0xD9111827),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _gearButton("P", "parking", buttonWidth, buttonHeight, fontSize),
+                _gearButton("R", "reverse", buttonWidth, buttonHeight, fontSize),
+                _gearButton("N", "neutral", buttonWidth, buttonHeight, fontSize),
+                _gearButton("D", "drive", buttonWidth, buttonHeight, fontSize),
+              ],
+            ),
+          );
+        },
       ),
-      child: Column(
-        children:[
-          TextButton(
-            onPressed: () { requestGear("parking"); },
-            style: TextButton.styleFrom(
-              fixedSize: const Size(90, 110),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-              ),
-              backgroundColor: gear == "parking" ? Color(0x40FFFFFF) : Color(0x00FFFFFF)
-            ),
-            child: const Text("P", style: TextStyle(fontSize: 36, color: Colors.white, decoration: TextDecoration.none))
-          ),
+    );
+  }
 
-          TextButton(
-            onPressed: () { requestGear("reverse"); },
-            style: TextButton.styleFrom(
-              fixedSize: const Size(90, 110),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-              ),
-              backgroundColor: gear == "reverse" ? Color(0x40FFFFFF) : Color(0x00FFFFFF)
-            ),
-            child: const Text("R", style: TextStyle(fontSize: 36, color: Colors.white, decoration: TextDecoration.none))
-          ),
-
-          TextButton(
-            onPressed: () { requestGear("neutral"); },
-            style: TextButton.styleFrom(
-              fixedSize: const Size(90, 110),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-              ),
-              backgroundColor: gear == "neutral" ? Color(0x40FFFFFF) : Color(0x00FFFFFF)
-            ),
-            child: const Text("N", style: TextStyle(fontSize: 36, color: Colors.white, decoration: TextDecoration.none))
-          ),
-
-          TextButton(
-            onPressed: () { requestGear("drive"); },
-            style: TextButton.styleFrom(
-              fixedSize: const Size(90, 110),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-              ),
-              backgroundColor: gear == "drive" ? Color(0x40FFFFFF) : Color(0x00FFFFFF)
-            ),
-            child: const Text("D", style: TextStyle(fontSize: 36, color: Colors.white, decoration: TextDecoration.none))
-          ),
-        ]
-      )
+  Widget _gearButton(String label, String value, double width, double height, double fontSize) {
+    return TextButton(
+      onPressed: () => requestGear(value),
+      style: TextButton.styleFrom(
+        fixedSize: Size(width, height),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(width * 0.2)),
+        backgroundColor: gear == value ? const Color(0x40FFFFFF) : Colors.transparent,
+      ),
+      child: Text(
+        label,
+        style: TextStyle(fontSize: fontSize, color: Colors.white, decoration: TextDecoration.none),
+      ),
     );
   }
 }

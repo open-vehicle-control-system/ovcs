@@ -45,10 +45,13 @@ class _SideBarState extends State<SideBar> {
     });
 
     _channel?.messages.listen( (event){
-      if(event.topic == "temperature" && event.payload!.containsKey("temperature")){
-        setState(() {
-          temperature = event.payload!["temperature"];
-        });
+      if (event.topic == "temperature" && event.payload!.containsKey("temperature")) {
+        final tempValue = event.payload!["temperature"];
+        if (tempValue is double) {
+          setState(() {
+            temperature = tempValue;
+          });
+        }
       }
     });
 
