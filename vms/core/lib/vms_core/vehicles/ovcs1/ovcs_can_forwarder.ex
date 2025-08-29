@@ -30,10 +30,11 @@ defmodule VmsCore.Vehicles.OVCS1.OVCSCANForwarder do
       },
       enable: true
     })
-    :ok = Emitter.configure(:ovcs, "abs_status", %{
+    :ok = Emitter.configure(:ovcs, "drivetrain_status", %{
       parameters_builder_function: :default,
       initial_data: %{
         "speed" => @zero,
+        "rotation_per_minute" => @zero
       },
       enable: true
     })
@@ -106,7 +107,7 @@ defmodule VmsCore.Vehicles.OVCS1.OVCSCANForwarder do
     case state.emitted_speed == state.speed do
       true -> state
       false ->
-        :ok = Emitter.update(:ovcs, "abs_status", fn (data) ->
+        :ok = Emitter.update(:ovcs, "drivetrain_status", fn (data) ->
           %{data | "speed" => state.speed}
         end)
         %{state | emitted_speed: state.speed}

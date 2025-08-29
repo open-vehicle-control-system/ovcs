@@ -3,4 +3,4 @@ can_networks:
   ovcs:
     bitrate: 500000
     received_frames:
-      - import!:can/components/obd2/0x800_obd2_status.yml
+      - import!:can/components/ovcs/0x60A_drivetrain_status.yml

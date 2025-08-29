@@ -97,7 +97,7 @@ defmodule InfotainmentCore.Vehicles.OVCS1 do
     {:noreply, %{state | selected_gear: selected_gear}}
   end
 
-  def handle_info({:handle_frame, %Frame{name: "abs_status", signals: signals}}, state) do
+  def handle_info({:handle_frame, %Frame{name: "drivetrain_status", signals: signals}}, state) do
     %{"speed" => %Signal{value: speed}} = signals
     {:noreply, %{state | speed: speed}}
   end
