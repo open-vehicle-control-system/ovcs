@@ -9,9 +9,7 @@ defmodule VmsCore.Vehicles.OBD2.Composer do
 
   def children do
     [
-      # Vehicle
-      {VmsCore.Components.OBD2.Status, []},
-      {Vehicles.OBD2, []},
+      {Vehicles.OBD2, []}
     ]
   end
 

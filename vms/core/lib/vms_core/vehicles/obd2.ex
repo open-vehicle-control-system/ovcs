@@ -6,7 +6,7 @@ defmodule VmsCore.Vehicles.OBD2 do
   require Logger
   alias VmsCore.{Bus}
   alias Decimal, as: D
-  alias Cantastic.OBD2
+  alias Cantastic.{OBD2, Emitter}
 
   @zero D.new(0)
   @loop_period 20
@@ -18,20 +18,31 @@ defmodule VmsCore.Vehicles.OBD2 do
   @impl true
   def init(_) do
     {:ok, timer} = :timer.send_interval(@loop_period, :loop)
+    :ok = Emitter.configure(:ovcs, "drivetrain_status", %{
+      parameters_builder_function: :default,
+      initial_data: %{
+        "speed" => @zero,
+        "rotation_per_minute" => @zero,
+      },
+      enable: true
+    })
     OBD2.Request.subscribe(self(), :obd2, "current_speed_and_rotation_per_minute")
     OBD2.Request.enable(:obd2, "current_speed_and_rotation_per_minute")
 
     {:ok, %{
       loop_timer: timer,
+      speed: @zero,
+      speed_requires_update: false,
       rotation_per_minute: @zero,
-      speed: @zero
+      rotation_per_minute_requires_update: false,
     }}
   end
 
   @impl true
   def handle_info(:loop, state) do
     state = state
-      #|> request()
+      |> handle_speed_status()
+      |> handle_rotation_per_minute_status()
       |> emit_metrics()
 
     {:noreply, state}
@@ -45,9 +56,39 @@ defmodule VmsCore.Vehicles.OBD2 do
     {:noreply, %{
       state |
         rotation_per_minute: rotation_per_minute,
-        speed: speed
+        rotation_per_minute_requires_update: state.rotation_per_minute_requires_update || rotation_per_minute != state.rotation_per_minute,
+        speed: speed,
+        speed_requires_update: state.speed_requires_update || speed != state.speed
       }
     }
+  end
+
+  defp handle_speed_status(state) do
+    case state.speed_requires_update do
+      true ->
+        :ok = Emitter.update(:ovcs, "drivetrain_status", fn (data) ->
+          %{data |
+            "speed" => state.speed,
+          }
+        end)
+        %{state | speed_requires_update: false}
+      false ->
+        state
+    end
+  end
+
+  defp handle_rotation_per_minute_status(state) do
+    case state.rotation_per_minute_requires_update do
+      true ->
+        :ok = Emitter.update(:ovcs, "drivetrain_status", fn (data) ->
+          %{data |
+            "rotation_per_minute" => state.rotation_per_minute,
+          }
+        end)
+        %{state | rotation_per_minute_requires_update: false}
+      false ->
+        state
+    end
   end
 
   defp emit_metrics(state) do

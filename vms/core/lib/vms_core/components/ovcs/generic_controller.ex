@@ -108,7 +108,7 @@ defmodule VmsCore.Components.OVCS.GenericController do
         enable: true
       })
     end)
-    enabled_pin_names = Application.vehicle_compposer().generic_controllers()[process_name] |> Enum.flat_map(fn({key, value}) ->
+    enabled_pin_names = Application.vehicle_composer().generic_controllers()[process_name] |> Enum.flat_map(fn({key, value}) ->
       case value != "disabled" do
         true -> case key do
          "digital_pin" <> _ -> [key <> "_enabled"]
@@ -286,7 +286,7 @@ defmodule VmsCore.Components.OVCS.GenericController do
   def start_adoption(controller_name) do
     :ok = Emitter.configure(:ovcs, "controller_configuration", %{
       parameters_builder_function: :default,
-      initial_data: Application.vehicle_compposer().generic_controllers()[controller_name],
+      initial_data: Application.vehicle_composer().generic_controllers()[controller_name],
       enable: true
     })
   end

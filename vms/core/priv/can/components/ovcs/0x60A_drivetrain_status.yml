@@ -1,12 +1,13 @@
 ---
-name: obd2_status
-id: 0x800
-frequency: 50
+name: drivetrain_status
+id: 0x60A
+frequency: 20
 signals:
   - name: speed
     unit: km/h
     value_start: 0
     value_length: 16
+    scale: "0.0075"
   - name: rotation_per_minute
     unit: rpm
     value_start: 16
