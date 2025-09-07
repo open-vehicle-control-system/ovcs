@@ -4,7 +4,7 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Inverter do
   """
   use GenServer
 
-  alias Cantastic.{Emitter,  Frame, Receiver, Signal}
+  alias Cantastic.{Emitter, Frame, Receiver, Signal}
   alias Decimal, as: D
   alias VmsCore.{
     Bus,
