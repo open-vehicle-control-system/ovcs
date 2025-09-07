@@ -23,9 +23,9 @@
 
 <script setup>
     import { ref, onMounted, onUnmounted } from 'vue'
-    import { useMetrics } from "../stores/metrics.js"
-    import { vmsDashboardSocket } from '../services/socket_service.js'
-    import VehiculeService from "../services/vehicle_service.js"
+    import { useMetrics } from "@/stores/metrics.js"
+    import { vmsDashboardSocket } from '@/services/socket_service.js'
+    import VehiculeService from "@/services/vehicle_service.js"
     import RealTimeLineChart from '@/components/charts/RealTimeLineChart.vue';
     import RealTimeTable from '@/components/tables/RealTimeTable.vue';
 
