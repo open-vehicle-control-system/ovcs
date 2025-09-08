@@ -13,7 +13,7 @@
 * Install Nerves: See https://hexdocs.pm/nerves/installation.html
 * Install can-utils: `sudo apt install can-utils`
 
-## Local environment setup (MacOs)
+## Local environment VM setup (MacOs & Linux) - WIP
 
 OVCS relies on the vcan module which allows you to create virtual can interfaces. This is a linux only kernel module, that can only be found in "non cloud image" kernels. Therefore, in order to use OVCS on your mac, you will need to use a full fledged VM. We recommend using Ubuntu through multipass for this.
 
