@@ -12,6 +12,7 @@
 * Install Ruby: `asdf plugin add ruby && asdf install ruby 3.3.5 && asdf set ruby 3.3.5 --home`
 * Install Nerves: See https://hexdocs.pm/nerves/installation.html
 * Install can-utils: `sudo apt install can-utils`
+* Clone OVCS wherever you'd like
 
 ## Local environment VM setup (MacOs & Linux) - WIP
 
@@ -22,6 +23,7 @@ OVCS relies on the vcan module which allows you to create virtual can interfaces
 * Run `multipass shell` to get access to a shell in your VM.
 * Set your system according to your needs
 * Set the ubuntu user passwd with `sudo passwd ubuntu`
+* (Mac only) In order to avoid issues with permissions and symlinks when creating nerves images, it is recommanded to clone ovcs in the VM itself and then setup an NFS share with the host so you can use your favorite editor in MacOs.
 * Follow the regular installation process above
 
 ## Setting up your local directories with system images
