@@ -24,7 +24,7 @@ defmodule InfotainmentCore.Vehicles.OVCS1 do
     :ok = Receiver.subscribe(self(), :ovcs, @status_frame_names ++ [
       "rear_controller_digital_and_analog_pin_status",
       "gear_status",
-      "abs_status",
+      "drivetrain_status",
       "passenger_compartment_status",
       "pack_status",
       "twelve_volt_battery_status"
