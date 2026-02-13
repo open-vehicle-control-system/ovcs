@@ -1,2 +1,6 @@
 .env.exs
 .tool-versions
+doc/
+*.db
+*.db-shm
+*.db-wal
