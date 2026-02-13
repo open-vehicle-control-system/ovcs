@@ -262,4 +262,9 @@ defmodule InfotainmentCore.Vehicles.OVCS1 do
   def status() do
     GenServer.call(__MODULE__, :status)
   end
+
+  def trigger_action("request_gear", %{"gear" => gear}) do
+    {:ok, _gear} = request_gear(gear)
+    :ok
+  end
 end

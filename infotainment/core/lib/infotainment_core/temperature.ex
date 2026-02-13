@@ -28,4 +28,8 @@ defmodule InfotainmentCore.Temperature do
   def temperature do
     GenServer.call(__MODULE__, :temperature)
   end
+
+  def status do
+    temperature()
+  end
 end
