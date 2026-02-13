@@ -1,33 +1,171 @@
-# OVCS Hardware
+# OVCS Hardware Architecture
 
-OVCS is based on several hardware components. Some needing high reliability and redundency.
+## Design Principles
 
-In order to keep costs of making an OVCS development kit, we deliberately use off-the-shelve componenets and try to bind OVCS as little as possible to a specific platform.
+OVCS hardware is designed around three core principles:
 
-The first iteration of OVCS has been built on the following hardware:
+1. **CAN bus isolation** -- Components from different manufacturers may use conflicting CAN message IDs. OVCS isolates each manufacturer's bus and bridges them through the VMS.
+2. **Off-the-shelf components** -- OVCS deliberately uses affordable, widely available hardware (Raspberry Pi, Arduino) to keep the development kit accessible.
+
+## Hardware Components
+
+### Computing Devices
+
+| Device | Role | CAN Connectivity |
+|--------|------|------------------|
+| **Raspberry Pi 4** | Vehicle Management System (VMS) | Connected to all CAN buses via custom SPI CAN hub |
+| **Raspberry Pi 5** | Infotainment system | Connected to the OVCS CAN bus |
+| **Raspberry Pi 3A** | Radio control bridge | Connected to the OVCS CAN bus |
+| **Raspberry Pi 4/5** | ROS2 bridge | Connected to the OVCS CAN bus |
+| **Arduino R4 Minima** (x3 for OVCS1) | Generic controllers (front, rear, controls) | Connected to the OVCS CAN bus |
+
+### CAN Bus Interface Hardware
+
+- **Custom Raspberry Pi CAN bus HATs** -- SPI-to-CAN interface boards for connecting the Raspberry Pi to CAN networks.
+- **Custom multi-CAN SPI board** -- A hub board that provides the VMS access to multiple CAN buses over a single SPI interface, enabling the VMS to communicate with all isolated bus segments.
+
+### Vehicle-Specific Components (OVCS1)
+
+| Component | Manufacturer | Purpose |
+|-----------|-------------|---------|
+| Leaf AZE0 Inverter + Motor | Nissan | Electric drivetrain (motor control, regenerative braking) |
+| NV200 Battery Cells | Nissan | High-voltage battery pack (custom aluminum enclosures) |
+| iBooster Gen2 | Bosch | Electronic brake booster (replaces vacuum-assisted brakes) |
+| LWS Steering Angle Sensor | Bosch | Steering position feedback |
+| BMS2 | Orion | Battery management system (cell monitoring, balancing, protection) |
+| EVPT23 | EVPT | On-board charger |
+| Polo 9N Systems | Volkswagen | ABS, dashboard/cluster, ignition lock, power steering pump |
+
+## High-Level Architecture
+
+The VMS sits at the center of the architecture, connected to all CAN buses. Each bus segment is isolated to prevent message ID conflicts between components from different manufacturers.
 
 ```
-- Raspberry Pi4 8Go RAM
-- Arduino R4 Minima
-- Custom Raspberry Pi Canbus hats
-- Custom built multi CAN spi board
+                                +-------------------+
+                                |   Infotainment    |
+                                |   RPi 5 + Screen  |
+                                +--------+----------+
+                                         |
+                                    OVCS CAN Bus (1 Mbps)
+                                         |
++------------------+         +-----------+-----------+         +------------------+
+| Radio Control    |         |                       |         | ROS Bridge       |
+| Bridge (RPi 3A) +---------+    VMS (RPi 4)        +---------+ (RPi 4/5)       |
++------------------+         |                       |         +------------------+
+                             +-+---+---+---+---+---+-+
+                               |   |   |   |   |
+           +-------------------+   |   |   |   +-------------------+
+           |                       |   |   |                       |
+      Leaf Drive CAN          Polo Drive  Orion BMS CAN       Misc CAN
+      (500 kbps)              CAN         (500 kbps)          (500 kbps)
+           |                (500 kbps)         |                   |
+    +------+------+              |        +----+----+      +------+------+
+    | Leaf Inverter|       +-----+----+   | Orion   |      | iBooster   |
+    | Leaf Charger |       | Polo ABS |   | BMS2    |      | LWS Sensor |
+    +--------------+       | Polo     |   | EVPT23  |      +------------+
+                           | Dashboard|   | Charger |
+                           | Ignition |   +---------+
+                           +----------+
+
+                                    OVCS CAN Bus
+                                         |
+                   +---------------------+---------------------+
+                   |                     |                     |
+            +------+------+      +------+------+      +------+------+
+            |    Front     |      |    Rear     |      |  Controls   |
+            |  Controller  |      |  Controller |      |  Controller |
+            | (Arduino R4) |      | (Arduino R4)|      | (Arduino R4)|
+            +------+-------+      +------+------+      +------+------+
+                   |                     |                     |
+            Relays, sensors,       Relays, sensors,      Steering PWM,
+            contactors, etc.       water pump, etc.      throttle DAC, etc.
 ```
 
-## High level architecture
+![OVCS architecture](./assets/ovcs_architecture.png)
 
-In order to easily be connected to any vehicule and any components, we need to account for multiple factors:
+## CAN Bus Network Topology
 
-* Can messages coming on the same CAN bus from components of different manufacturers might conflict with each other, so we need to isolate them from each other
-* The OVCS VMS is a critical piece of the system. In order to ensure the maximum possible reliability, we need to foreseen redundency for this component.
-* A lot of components won't necessarily be connected to the vehicule CAN bus anymore, or newer components will be installed (for instance, a different throttling pedal), we therefore need to foresee some "controllers" for these.
+OVCS1 uses five isolated CAN bus segments:
 
-With these constraints in mind, we designed OVCS to have the following components:
+| Network | Bitrate | Purpose | Connected Components |
+|---------|---------|---------|---------------------|
+| `ovcs` | 1 Mbps | Internal OVCS communication | VMS, Infotainment, Controllers, Radio Control Bridge, ROS Bridge |
+| `leaf_drive` | 500 kbps | Nissan Leaf drivetrain | Leaf Inverter, Leaf Charger |
+| `polo_drive` | 500 kbps | Original VW Polo systems | ABS, Dashboard, Ignition Lock, Airbag |
+| `orion_bms` | 500 kbps | Battery management | Orion BMS2, EVPT23 Charger |
+| `misc` | 500 kbps | Additional components | Bosch iBooster, Bosch LWS Steering Sensor |
 
-* The VMS: The main control unit. This is the central brain, connected to all CAN Buses.
-* The Infotainment: The in-car unit to show relevant information on a screen as well as offer some control functions.
-* The CAN Bus hub: All can buses are connected and accessible via an SPI interface by the VMS. We chose to create a seperate hub using the standard SPI interface instead of using multiple Raspberry Pi hats to allow for the VMS to use a different hardware platform than the Raspberry Pi.
-* The controllers: These are single purpose components aimed at interfacing on the can bus. They allow to mon,itor and control a specific component in the car and interface with the relevant CAN bus.
+The OVCS CAN bus runs at 1 Mbps to accommodate the higher traffic volume from all OVCS-internal components (controllers, bridges, infotainment). External buses run at the standard 500 kbps required by their respective components.
 
-![OVCS architecture example](./assets/ovcs_architecture.png "OVCS architecture example")
+### CAN Bus Configuration
 
-Next: [Running on hardware](./running_hardware.md)
+CAN frame specifications are defined in YAML files under `vms/core/priv/can/`:
+
+```
+priv/can/
++-- vehicles/
+|   +-- ovcs1.yml                    # OVCS1 vehicle CAN topology (which frames on which bus)
+|   +-- ovcs_mini.yml                # OVCS Mini CAN topology
+|   +-- obd2.yml                     # OBD2 mode CAN topology
+|   +-- ovcs1/generic_controller/    # OVCS1-specific controller frame definitions
+|   +-- ovcs_mini/generic_controller/
++-- components/
+    +-- bosch/i_booster_gen2/        # iBooster frame definitions
+    +-- bosch/lws/                   # Steering angle sensor frames
+    +-- evpt/evpt23/                 # Charger frames
+    +-- nissan/leaf_aze0/            # Leaf inverter and charger frames
+    +-- orion/bms2/                  # Battery management frames
+    +-- ovcs/                        # OVCS internal frames and generic controller templates
+    +-- ovcs/generic_controller/     # Shared signal definitions (alive, digital pins, analog, PWM)
+    +-- volkswagen/polo_9n/          # Polo ABS, dashboard, key, lock, wheels frames
+    +-- obd2/                        # OBD2 diagnostic frames
+```
+
+Vehicle YAML files (e.g., `ovcs1.yml`) define the complete CAN topology: which CAN networks exist, their bitrate, and which frames are emitted and received on each network. Frame definitions are imported from the component-level YAML files.
+
+## Generic Controllers
+
+OVCS uses Arduino R4 Minima boards as generic, configurable I/O controllers. They are "generic" because a single firmware runs on all controllers -- the specific pin assignments and behavior are configured over the CAN bus via an **adoption process**.
+
+### OVCS1 Controllers
+
+| Controller | CAN ID Range | Purpose |
+|-----------|-------------|---------|
+| Front Controller (`0x70x`) | `0x701`-`0x704` | High-voltage contactors, front sensors and relays |
+| Rear Controller (`0x71x`) | `0x711`-`0x714` | Water pump, rear sensors and relays |
+| Controls Controller (`0x72x`) | `0x721`-`0x725` | Steering column PWM, throttle pedal DAC, control inputs |
+| Test Controller (`0x73x`) | `0x731`-`0x738` | Development and testing (all pin types) |
+
+### Adoption Process
+
+1. A new (unconfigured) controller connects to the OVCS CAN bus and broadcasts its status as `ADOPTION_REQUIRED`.
+2. The VMS initiates an adoption by sending a configuration frame (`0x700`) with pin assignments.
+3. The operator presses the physical adoption button on the Arduino to confirm.
+4. The controller stores its configuration in EEPROM and begins normal operation.
+5. On subsequent boots, the controller loads its configuration from EEPROM and starts immediately.
+
+### Supported Pin Types
+
+| Pin Type | Description | CAN Frame |
+|----------|-------------|-----------|
+| Digital Output | On/off control (relays, contactors) | `0x7X2` (request) / `0x7X4` (status) |
+| Analog Input | Sensor readings (0-16383 range, 14-bit) | `0x7X4` (status) |
+| PWM Output | Variable duty cycle (0-4095, 12-bit) | `0x7X3` (request) |
+| DAC Output | Analog voltage output (0-4095, 12-bit) | `0x7X3` (request) |
+| External PWM | PWM via SPI expansion boards (16-bit duty, 24-bit freq) | `0x7X5`-`0x7X8` (request) |
+
+## OVCS Mini Hardware
+
+The OVCS Mini uses the same software stack on a Traxxas 4WD RC car chassis:
+
+| Component | Hardware |
+|-----------|----------|
+| VMS | Raspberry Pi 4 |
+| Controller | Arduino R4 Minima (single "main" controller) |
+| Motor | Traxxas brushless motor (controlled via external PWM) |
+| Steering | Traxxas servo (controlled via external PWM) |
+| Radio Control | ExpressLRS receiver via Radio Control Bridge (RPi 3A) |
+
+The OVCS Mini uses a single CAN bus (`ovcs` at 500 kbps) since there are no third-party automotive components requiring isolation.
+
+Next: [Running on Hardware](./running_hardware.md)

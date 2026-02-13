@@ -1,70 +1,310 @@
-# OVCS applications
+# OVCS Applications
 
-## Introduction
+## Overview
 
-OVCS is composed of several applications that can be ran on a host machine without the target hardware present.
+OVCS is composed of several independent applications organized in a monorepo. Each application is a standalone Elixir Mix project (or a C++/JavaScript/Dart project) with its own dependencies, configuration, and build pipeline. They reference each other via relative `path:` dependencies -- this is **not** an Elixir umbrella project.
 
-These applications are the backend and frontend parts of the infotainment system and the VMS module.
+All Elixir applications can be run on a host machine without the target hardware present, using virtual CAN interfaces for local development and testing.
 
-Here is a description of the relevant directories containing the OVCS applications:
+## Application Architecture
+
+Each major system (VMS, Infotainment) follows a three-layer architecture:
 
 ```
-- bridges: Radio control bridge and ROS2 bridge components, written in Elixir.
-- infotainment: Infotainment system application written in Elixir with a in car UI written with Phoenix and Vue.js.
-- vms: Vehicle Managment System, written in pure Elixir, with a debug UI written with Pheonix and Vue.js.
++------------+     +------------+     +----------------+
+|  Firmware  | --> |    API     | --> |     Core       |
+| (Nerves)   |     | (Phoenix)  |     | (Business      |
+|            |     |            |     |  Logic)        |
++------------+     +------+-----+     +--------+-------+
+                          |                    |
+                    +-----+------+      +------+-------+
+                    |  Dashboard |      |  Cantastic   |
+                    | (Vue/Dart) |      | (CAN lib)    |
+                    +------------+      +--------------+
 ```
+
+- **Core** -- Pure Elixir library containing business logic, component drivers, vehicle composers, and CAN bus configuration. No web dependencies.
+- **API** -- Phoenix application providing a JSON REST API and WebSocket channels for the dashboard. Depends on Core.
+- **Dashboard** -- Frontend application (Vue.js for VMS, Flutter for Infotainment) that connects to the API via HTTP and WebSocket.
+- **Firmware** -- Nerves firmware project that packages the API (and transitively, Core) into a deployable image for the target Raspberry Pi.
+
+## Vehicle Management System (VMS)
+
+The VMS is the central brain of the vehicle. It translates and orchestrates all vehicle components, making parts from different manufacturers work together seamlessly. For example, the RPM displayed on the original VW Polo instrument cluster comes from the Nissan Leaf motor.
+
+### VMS Core (`vms/core/`)
+
+| | |
+|---|---|
+| **Module** | `VmsCore` |
+| **App name** | `:vms_core` |
+| **Key deps** | `cantastic`, `ecto_sqlite3`, `phoenix_pubsub`, `crc` |
+
+The core library contains:
+
+- **Component drivers** (`lib/vms_core/components/`) -- GenServer processes that manage communication with specific hardware components over CAN bus:
+  - `Bosch.IBoosterGen2` -- Brake booster control
+  - `Nissan.LeafAze0.Inverter` -- Electric motor inverter
+  - `Nissan.LeafAze0.Charger` -- On-board charger
+  - `Orion.Bms2` -- Battery management system
+  - `Volkswagen.Polo9n.*` -- ABS, dashboard, ignition lock, power steering pump, etc.
+  - `Ovcs.GenericController` -- Custom Arduino controller driver
+  - `Ovcs.ThrottlePedal`, `Ovcs.SteeringColumn`, `Ovcs.HighVoltageContactors`, etc.
+  - `Ovcs.RadioControl.*` -- RC transmitter control (throttle, steering, direction)
+  - `Ovcs.RosControl.*` -- ROS2 autonomous control
+  - `Traxxas.*` -- RC car motor, steering, and throttle (for OVCS Mini)
+- **Vehicle composers** (`lib/vms_core/vehicles/`) -- Define which components and CAN configurations to load for a specific vehicle:
+  - `VmsCore.Vehicles.Ovcs1.Composer` -- Full-size Polo EV conversion
+  - `VmsCore.Vehicles.OvcsMini.Composer` -- Traxxas RC car platform
+  - `VmsCore.Vehicles.Obd2.Composer` -- OBD2 diagnostic mode
+- **Managers** (`lib/vms_core/managers/`) -- Higher-level logic for gear management and control level switching.
+- **Bus** (`lib/vms_core/bus.ex`) -- PubSub-based event bus for inter-process communication.
+- **Metrics** (`lib/vms_core/metrics.ex`) -- Collects and broadcasts vehicle metrics for the dashboard.
+- **PID controller** (`lib/vms_core/pid.ex`) -- Generic PID controller implementation used for motor control loops.
+- **CAN configurations** (`priv/can/`) -- YAML files defining CAN frame specifications for each component and vehicle.
+
+### VMS API (`vms/api/`)
+
+| | |
+|---|---|
+| **Module** | `VmsApi` |
+| **App name** | `:vms_api` |
+| **Key deps** | `phoenix`, `vms_core`, `bandit`, `cors_plug` |
+
+A Phoenix 1.7 JSON API server that exposes vehicle data and control actions:
+
+- **REST endpoints** -- Vehicle status, page/block layout for the dashboard, and action dispatch.
+- **WebSocket channels** -- Real-time metrics streaming (`MetricsChannel`) and network interface monitoring (`NetworkInterfacesChannel`) via Phoenix Channels.
+- **LiveDashboard** -- Available in development mode at `/dev/dashboard` for Erlang VM introspection.
+
+API routes:
+
+```
+GET  /api/vehicle           -- Vehicle status and info
+GET  /api/vehicle/pages     -- Dashboard page layout
+GET  /api/vehicle/pages/:id/blocks -- Blocks for a specific page
+POST /api/actions           -- Dispatch control actions
+```
+
+### VMS Dashboard (`vms/dashboard/`)
+
+| | |
+|---|---|
+| **Technology** | Vue.js 3, Vite, ECharts, TailwindCSS, Pinia |
+| **Package** | `dashboard` (private npm package) |
+
+A real-time single-page application for monitoring and debugging the vehicle during development:
+
+- Dynamic pages and blocks driven by the API layout system
+- Real-time line charts for metrics (throttle, torque, RPM, etc.)
+- Real-time data tables for component status
+- Network interface monitoring
+- Connects to the VMS API via Phoenix WebSocket channels
+
+### VMS Firmware (`vms/firmware/`)
+
+| | |
+|---|---|
+| **Module** | `VmsFirmware` |
+| **App name** | `:vms_firmware` |
+| **Target** | Raspberry Pi 4 (`ovcs_base_can_system_rpi4`) |
+
+Nerves firmware image that packages the VMS API (and Core) for deployment to a Raspberry Pi 4. Uses a [custom Nerves system](https://github.com/open-vehicle-control-system/ovcs_base_can_system_rpi4) with CAN bus support via SPI.
+
+## Infotainment System
+
+The infotainment system provides the in-car user interface on a 10-inch touchscreen. It allows the driver to select gears, view vehicle status, monitor battery health, and adjust settings.
+
+### Infotainment Core (`infotainment/core/`)
+
+| | |
+|---|---|
+| **Module** | `InfotainmentCore` |
+| **App name** | `:infotainment_core` |
+| **Key deps** | `cantastic`, `ecto_sqlite3`, `json` |
+
+Similar in structure to VMS Core but focused on the infotainment UI:
+
+- **Vehicle composers** -- Define pages and blocks for the touchscreen UI (gear selector, speed gauge, battery overview, status grid, etc.)
+- **Layout validator** -- Validates the page/block layout configuration.
+- **Temperature** -- Handles temperature sensor data.
+- **Time settings** -- Manages system time preferences (persisted via SQLite).
+
+### Infotainment API (`infotainment/api/`)
+
+| | |
+|---|---|
+| **Module** | `InfotainmentApi` |
+| **App name** | `:infotainment_api` |
+| **Key deps** | `phoenix`, `infotainment_core`, `plug_cowboy` |
+
+A Phoenix 1.7 JSON API server with the same page/block layout pattern as the VMS API, but serving the Flutter dashboard. Includes WebSocket channels for real-time metrics updates.
+
+### Infotainment Dashboard (`infotainment/dashboard/`)
+
+| | |
+|---|---|
+| **Technology** | Flutter / Dart (SDK 3.6.1) |
+| **Package** | `dashboard_flutter` |
+
+A native Linux application built with Flutter, designed to run on the Raspberry Pi 5's touchscreen. Features:
+
+- Gear selector interface
+- Speed gauge
+- Battery overview
+- Component status grid
+- Settings management
+- Connects to the Infotainment API via the `phoenix_socket` Dart package
+
+### Infotainment Firmware (`infotainment/firmware/`)
+
+| | |
+|---|---|
+| **Module** | `InfotainmentFirmware` |
+| **App name** | `:infotainment_firmware` |
+| **Target** | Raspberry Pi 5 (`ovcs_base_can_system_rpi5`) |
+
+Nerves firmware image that packages the Infotainment API and the Flutter dashboard for deployment. Uses [`nerves_flutter_support`](https://hex.pm/packages/nerves_flutter_support) to compile and include the Flutter app in the firmware image, and a [custom Nerves system](https://github.com/open-vehicle-control-system/ovcs_base_can_system_rpi5) with CAN bus and display support.
+
+## Bridges
+
+Bridges are dedicated Nerves devices that provide specific communication capabilities to the OVCS network.
+
+### Radio Control Bridge (`bridges/radio_control_bridge/firmware/`)
+
+| | |
+|---|---|
+| **Module** | `RadioControlBridgeFirmware` |
+| **App name** | `:radio_control_bridge_firmware` |
+| **Target** | Raspberry Pi 3A (`ovcs_base_can_system_rpi3a`) |
+| **Key deps** | `cantastic`, `express_lrs`, `msp_osd` |
+
+Enables remote control of the vehicle using a MAVLink-compatible RC transmitter (such as ExpressLRS hardware). It:
+
+- Receives MAVLink RC channel data via `MavlinkForwarder`
+- Forwards MSP OSD telemetry data back to the transmitter via `MspOsdForwarder`
+- Translates RC inputs into CAN messages on the OVCS CAN bus
+
+### ROS Bridge (`bridges/ros_bridge/firmware/`)
+
+| | |
+|---|---|
+| **Module** | `ROSBridgeFirmware` |
+| **App name** | `:ros_bridge_firmware` |
+| **Target** | Raspberry Pi 4/5 (`ovcs_base_can_system_rpi4`, `ovcs_bridges_system_rpi5`) |
+| **Key deps** | `cantastic`, `emqtt`, `circuits_i2c` |
+
+Provides integration with ROS2 for autonomous driving research. It:
+
+- Publishes IMU data from a BNO085 sensor via I2C (`ImuPublisher`)
+- Interprets joystick messages from ROS2 (`JoyInterpreter`)
+- Communicates with the ROS2 ecosystem via Zenoh/MQTT bridge (`ZenohMQTTRos2.Dispatcher`)
+
+## Controllers
+
+### Generic Controller (`controllers/generic_controller/`)
+
+| | |
+|---|---|
+| **Technology** | C++ / PlatformIO |
+| **Target** | Arduino R4 Minima |
+
+A single, configurable firmware for Arduino-based controllers that interface with specific vehicle components via CAN bus. Features:
+
+- **Adoption process** -- Controllers receive their pin configuration from the VMS over the OVCS CAN bus (no hardcoded pin assignments)
+- **Supported pin types** -- Digital output, analog input, DAC output, PWM output, external PWM (via expansion boards)
+- **Expansion boards** -- Support for additional I/O via SPI-connected expansion boards
+- **CRC validation** -- All CAN messages are CRC-protected for reliability
+
+Build configurations (defined in `platformio.ini`):
+- `uno_r4_minima_prod` -- Production build
+- `uno_r4_minima_debug` -- Debug build with serial output
+- `local_test` -- Unit tests (Unity test framework)
+
+## Shared Libraries
+
+### Cantastic (`libraries/cantastic/`)
+
+| | |
+|---|---|
+| **Module** | `Cantastic` |
+| **App name** | `:cantastic` |
+| **Key deps** | `yaml_elixir`, `jason`, `decimal` |
+
+The foundational CAN bus communication library used by all Elixir applications. See the [Cantastic README](../libraries/cantastic/README.md) for details.
+
+Key capabilities:
+- YAML-driven CAN frame and signal specification
+- Raw CAN socket communication via Linux SocketCAN (`AF_CAN`)
+- Frame emission (`Emitter`) and reception (`Receiver`)
+- Signal encoding/decoding with support for big-endian, little-endian, signed/unsigned, and scaled values
+- ISO-TP multi-frame protocol support (`IsotpRequest`)
+- `socketcand` support for remote CAN debugging over the network
+- Received frame monitoring and watchdog (`ReceivedFrameWatcher`)
 
 ## Dependencies
 
-Since OVCS relies on the CAN bus, you will need to make sure you have `libsocketcan` in your kernel and `can-utils`installed on your host machine. That way, you can create virtual can devices on your host which will allow you to run the software locally.
+Since OVCS relies on the CAN bus, you need `libsocketcan` kernel support and `can-utils` installed on your host machine. This allows you to create virtual CAN devices for local development.
 
-We provide a script to setup your local machine called `build_arduino_can.sh`:
+### Setting up CAN interfaces
 
-```
-#!/bin/sh
-#sudo apt-get install can-utils
-#sudo modprobe can
-#sudo modprobe can_raw
-sudo ip link set down can0
-sudo ip link set down can1
-sudo ip link set can0 type can bitrate 1000000
-sudo ip link set can1 type can bitrate 1000000
-sudo ip link set up can0
-sudo ip link set up can1
+For **virtual** CAN interfaces (local development):
+
+```sh
+./scripts/setup_virtual_can.sh
 ```
 
-You can run this script with the following command in your ovcs parent folder: `./build_arduino_can.sh`.
+For **physical** CAN interfaces (real hardware):
 
-If your system is not setup to support can yet, you should uncomment the 3 first lines of this script so all necessary packages and modules get loaded properly.
+```sh
+./scripts/setup_can.sh
+```
 
-```
-sudo apt-get install can-utils
-sudo modprobe can
-sudo modprobe can_raw
-```
+### Environment variables
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `CAN_NETWORK_MAPPINGS` | Maps CAN network names to interfaces | `ovcs:can0,leaf_drive:vcan1,polo_drive:vcan2` |
+| `VEHICLE` | Vehicle configuration to use | `OVCS1`, `OVCSMini`, `OBD2` |
+| `SETUP_CAN_INTERFACE` | Skip automatic CAN interface setup | `true` |
 
 ## Local Development
 
-* Run `mix phx.server` in the  `infotainment/api` folder to run the Phoenix app.
-    * The CAN/BUS networks to be used can be configured with `export CAN_NETWORKS=drive:vcan0,confort:vcan1`
-    * If the "ip link" command requires "sudo", you should configure the CAN networks manully and set the `SETUP_CAN_INTERFACE` environnment variable to `true`
-    * The vehicle configuration to use ba be configured with `VEHICLE=polo-2007-bluemotion`
+### Running the VMS
 
-* Run `npm run dev` in the `infotainment/dashboard` folder to run the Vue.js app.
+```sh
+# Terminal 1: Setup virtual CAN interfaces
+./scripts/setup_virtual_can.sh
 
-## Elixir x libsocketcan binding ([Source](https://elixirforum.com/t/erlang-socket-module-for-socketcan-on-nerves-device/57294))
+# Terminal 2: Start the VMS API
+cd vms/api
+mix deps.get
+mix phx.server
 
-You have to open an [erlang socket](https://www.erlang.org/doc/man/socket) with the following args:
-
-* Domain: 29 == [AF_CAN](https://github.com/linux-can/linux/blob/56cfd2507d3e720f4b1dbf9513e00680516a0826/include/linux/socket.h#L193)
-* Type: :raw
-* Protocol: 1 ==  [CAN_RAW](https://github.com/linux-can/linux/blob/56cfd2507d3e720f4b1dbf9513e00680516a0826/include/uapi/linux/can.h#L154)
-
-```elixir
-{:ok, sock} = :socket.open(29, :raw, 1)
-{:ok, ifindex} = :socket.ioctl(sock, :gifindex, 'can0') # Single quotes matters, you need a charlist not a binary
-addr = <<0::size(16)-little, ifindex::size(32)-little, 0::size(32), 0::size(32), 0::size(64)>>
-:socket.bind(sock, %{:family => 29, :addr => addr})
+# Terminal 3: Start the VMS debug dashboard
+cd vms/dashboard
+npm install
+npm run dev
 ```
 
-Next: [Testing with can messages](./testing_can_messages.md)
+### Running the Infotainment
+
+```sh
+# Terminal 1: Start the Infotainment API
+cd infotainment/api
+mix deps.get
+mix phx.server
+
+# Terminal 2: Start the Flutter dashboard (requires Flutter SDK)
+cd infotainment/dashboard
+flutter run -d linux
+```
+
+### Running with custom CAN mappings
+
+```sh
+cd vms/api
+CAN_NETWORK_MAPPINGS=ovcs:can0,leaf_drive:vcan1,polo_drive:vcan2,orion_bms:vcan3,misc:vcan4 iex -S mix phx.server
+```
+
+Next: [Testing CAN Messages](./testing_can_messages.md)
