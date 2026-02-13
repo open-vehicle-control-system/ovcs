@@ -1,116 +1,119 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:phoenix_socket/phoenix_socket.dart';
-import 'package:dashboard_flutter/services/socket_service.dart';
+import 'package:dashboard_flutter/services/metrics_service.dart';
 
 /// A thin, semi-transparent status bar displayed at the top of the screen.
 ///
 /// Shows the current time, CPU temperature, and 12V battery voltage.
-/// Uses the existing temperature and status channels directly since
-/// these are system-level metrics outside the composable page system.
+/// Uses MetricsService to subscribe to time settings, temperature, and
+/// vehicle metrics via the composable WebSocket channel.
 class StatusBar extends StatefulWidget {
-  const StatusBar({super.key});
+  final String vehicleName;
+
+  const StatusBar({super.key, required this.vehicleName});
 
   @override
   State<StatusBar> createState() => _StatusBarState();
 }
 
 class _StatusBarState extends State<StatusBar> {
-  String _time = _formatTime();
-  String _date = _formatDate();
-  double _temperature = 0.0;
-  String _twelveVoltBattery = '0.0';
+  final MetricsService _metricsService = MetricsService();
   Timer? _clockTimer;
 
-  PhoenixChannel? _tempChannel;
-  PhoenixChannel? _statusChannel;
+  static const String _timeSettingsModule = 'Elixir.InfotainmentCore.TimeSettings';
+  static const String _temperatureModule = 'Elixir.InfotainmentCore.Temperature';
+  late final String _vehicleModule;
 
-  static String _formatTime() {
-    final now = DateTime.now();
-    return '${now.hour.toString().padLeft(2, '0')}:'
-        '${now.minute.toString().padLeft(2, '0')}';
-  }
-
-  static String _formatDate() {
-    final now = DateTime.now();
-    return '${now.day.toString().padLeft(2, '0')}/'
-        '${now.month.toString().padLeft(2, '0')}/'
-        '${now.year}';
-  }
+  String _time = '';
+  String _date = '';
 
   @override
   void initState() {
     super.initState();
+    _vehicleModule = 'Elixir.InfotainmentCore.Vehicles.${widget.vehicleName}';
+
+    // Subscribe to time settings, temperature, and vehicle metrics
+    _metricsService.subscribe(_timeSettingsModule, 'time_format');
+    _metricsService.subscribe(_timeSettingsModule, 'date_format');
+    _metricsService.subscribe(_temperatureModule, 'temperature');
+    _metricsService.subscribe(_vehicleModule, 'twelve_volt_battery_status');
+
+    _metricsService.addListener(_onMetricsUpdate);
 
     // Update clock every second
+    _updateClock();
     _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) {
-        setState(() {
-          _time = _formatTime();
-          _date = _formatDate();
-        });
-      }
+      _updateClock();
     });
+  }
 
-    final socket = SocketService.socket;
-
-    _tempChannel = socket.addChannel(
-      topic: 'temperature',
-      parameters: {'interval': 1000},
-    );
-    _statusChannel = socket.addChannel(
-      topic: 'status',
-      parameters: {'interval': 50},
-    );
-
-    socket.openStream.listen((_) {
-      _tempChannel?.join();
-      _statusChannel?.join();
-    });
-
-    if (socket.isOpen) {
-      _tempChannel?.join();
-      _statusChannel?.join();
+  void _onMetricsUpdate() {
+    if (mounted) {
+      setState(() {
+        _updateClock();
+      });
     }
+  }
 
-    _tempChannel?.messages.listen((event) {
-      if (event.topic == 'temperature' &&
-          event.payload != null &&
-          event.payload!.containsKey('temperature')) {
-        if (mounted) {
-          setState(() {
-            _temperature = (event.payload!['temperature'] as num).toDouble();
-          });
-        }
-      }
-    });
+  void _updateClock() {
+    final now = DateTime.now();
+    final timeFormat = _metricsService.getValue(_timeSettingsModule, 'time_format')?.toString() ?? '24h';
+    final dateFormat = _metricsService.getValue(_timeSettingsModule, 'date_format')?.toString() ?? 'DD/MM/YYYY';
 
-    _statusChannel?.messages.listen((event) {
-      if (event.topic == 'status' &&
-          event.payload != null &&
-          event.payload!.containsKey('attributes')) {
-        if (mounted) {
-          setState(() {
-            _twelveVoltBattery =
-                event.payload!['attributes']['twelveVoltBatteryStatus']
-                    ?.toString() ??
-                    '0.0';
-          });
-        }
-      }
+    setState(() {
+      _time = _formatTime(now, timeFormat);
+      _date = _formatDate(now, dateFormat);
     });
+  }
+
+  String _formatTime(DateTime now, String format) {
+    if (format == '12h') {
+      final hour = now.hour == 0 ? 12 : (now.hour > 12 ? now.hour - 12 : now.hour);
+      final amPm = now.hour >= 12 ? 'PM' : 'AM';
+      return '${hour.toString().padLeft(2, '0')}:'
+          '${now.minute.toString().padLeft(2, '0')} $amPm';
+    }
+    return '${now.hour.toString().padLeft(2, '0')}:'
+        '${now.minute.toString().padLeft(2, '0')}';
+  }
+
+  String _formatDate(DateTime now, String format) {
+    switch (format) {
+      case 'MM/DD/YYYY':
+        return '${now.month.toString().padLeft(2, '0')}/'
+            '${now.day.toString().padLeft(2, '0')}/'
+            '${now.year}';
+      case 'YYYY-MM-DD':
+        return '${now.year}-'
+            '${now.month.toString().padLeft(2, '0')}-'
+            '${now.day.toString().padLeft(2, '0')}';
+      default: // DD/MM/YYYY
+        return '${now.day.toString().padLeft(2, '0')}/'
+            '${now.month.toString().padLeft(2, '0')}/'
+            '${now.year}';
+    }
   }
 
   @override
   void dispose() {
     _clockTimer?.cancel();
-    _tempChannel?.leave();
-    _statusChannel?.leave();
+    _metricsService.removeListener(_onMetricsUpdate);
+    _metricsService.unsubscribe(_timeSettingsModule, 'time_format');
+    _metricsService.unsubscribe(_timeSettingsModule, 'date_format');
+    _metricsService.unsubscribe(_temperatureModule, 'temperature');
+    _metricsService.unsubscribe(_vehicleModule, 'twelve_volt_battery_status');
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final temperature = _metricsService.getValue(_temperatureModule, 'temperature');
+    final tempStr = temperature != null
+        ? '${(temperature as num).toStringAsFixed(1)}\u00B0C'
+        : '0.0\u00B0C';
+    final twelveVolt = _metricsService.getValue(_vehicleModule, 'twelve_volt_battery_status');
+    final batteryStr = twelveVolt != null ? '${twelveVolt}V' : '0.0V';
+
     return Container(
       height: 36,
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -144,7 +147,7 @@ class _StatusBarState extends State<StatusBar> {
           const Icon(Icons.memory, color: Colors.grey, size: 14),
           const SizedBox(width: 4),
           Text(
-            '${_temperature.toStringAsFixed(1)}\u00B0C',
+            tempStr,
             style: const TextStyle(
               color: Colors.white,
               fontSize: 12,
@@ -156,7 +159,7 @@ class _StatusBarState extends State<StatusBar> {
           const Icon(Icons.battery_std, color: Colors.grey, size: 14),
           const SizedBox(width: 4),
           Text(
-            '${_twelveVoltBattery}V',
+            batteryStr,
             style: const TextStyle(
               color: Colors.white,
               fontSize: 12,

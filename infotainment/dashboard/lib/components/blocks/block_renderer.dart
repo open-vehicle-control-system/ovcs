@@ -7,6 +7,7 @@ import 'package:dashboard_flutter/components/blocks/gear_selector_block.dart';
 import 'package:dashboard_flutter/components/blocks/car_overview_block.dart';
 import 'package:dashboard_flutter/components/blocks/battery_overview_block.dart';
 import 'package:dashboard_flutter/components/blocks/status_grid_block.dart';
+import 'package:dashboard_flutter/components/blocks/time_settings_block.dart';
 
 /// Routes a [BlockConfig] to the appropriate block renderer widget
 /// based on its `subtype`, and wraps it with the global block style.
@@ -47,6 +48,8 @@ class BlockRenderer extends StatelessWidget {
         return BatteryOverviewBlock(block: block, metricsService: metricsService);
       case 'statusGrid':
         return StatusGridBlock(block: block, metricsService: metricsService);
+      case 'timeSettings':
+        return TimeSettingsBlock(block: block, metricsService: metricsService);
       default:
         return Center(
           child: Text(

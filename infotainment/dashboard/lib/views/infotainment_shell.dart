@@ -80,11 +80,11 @@ class _InfotainmentShellState extends State<InfotainmentShell> {
             ),
 
           // Layer 2: Status bar at the top
-          const Positioned(
+          Positioned(
             top: 0,
             left: 0,
             right: 0,
-            child: StatusBar(),
+            child: StatusBar(vehicleName: widget.vehicleConfig.name),
           ),
 
           // Layer 3: Launcher button (bottom-left)

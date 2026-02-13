@@ -17,7 +17,8 @@ defmodule InfotainmentCore.Vehicles.OBD2.Composer.Infotainment do
           margin: 10
         },
         pages: %{
-          "dashboard" => Infotainment.DashboardPage.definition(order: 0)
+          "dashboard" => Infotainment.DashboardPage.definition(order: 0),
+          "settings" => Infotainment.SettingsPage.definition(order: 1)
         }
       }
     }
