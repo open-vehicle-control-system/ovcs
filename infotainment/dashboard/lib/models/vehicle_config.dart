@@ -24,6 +24,26 @@ class BlockStyle {
   }
 }
 
+class SidebarConfig {
+  final double width;
+  final String? backgroundColor;
+
+  SidebarConfig({
+    required this.width,
+    this.backgroundColor,
+  });
+
+  factory SidebarConfig.fromJson(Map<String, dynamic>? json) {
+    if (json == null) {
+      return SidebarConfig(width: 100);
+    }
+    return SidebarConfig(
+      width: (json['width'] as num?)?.toDouble() ?? 100,
+      backgroundColor: json['backgroundColor'] as String?,
+    );
+  }
+}
+
 class VehicleConfig {
   final String name;
   final String mainColor;
@@ -32,6 +52,7 @@ class VehicleConfig {
   final int gridRows;
   final String? backgroundImage;
   final BlockStyle blockStyle;
+  final SidebarConfig sidebar;
 
   VehicleConfig({
     required this.name,
@@ -41,6 +62,7 @@ class VehicleConfig {
     required this.gridRows,
     this.backgroundImage,
     required this.blockStyle,
+    required this.sidebar,
   });
 
   factory VehicleConfig.fromJson(Map<String, dynamic> json) {
@@ -52,7 +74,10 @@ class VehicleConfig {
       gridColumns: attrs['gridColumns'] as int,
       gridRows: attrs['gridRows'] as int,
       backgroundImage: attrs['backgroundImage'] as String?,
-      blockStyle: BlockStyle.fromJson(attrs['blockStyle'] as Map<String, dynamic>?),
+      blockStyle:
+          BlockStyle.fromJson(attrs['blockStyle'] as Map<String, dynamic>?),
+      sidebar:
+          SidebarConfig.fromJson(attrs['sidebar'] as Map<String, dynamic>?),
     );
   }
 }

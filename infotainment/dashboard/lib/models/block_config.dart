@@ -39,6 +39,8 @@ class BlockConfig {
   final String id;
   final String name;
   final String subtype;
+  final int column;
+  final int row;
   final int columns;
   final int rows;
   final List<MetricRef> metrics;
@@ -49,6 +51,8 @@ class BlockConfig {
     required this.id,
     required this.name,
     required this.subtype,
+    required this.column,
+    required this.row,
     required this.columns,
     required this.rows,
     required this.metrics,
@@ -59,16 +63,20 @@ class BlockConfig {
   factory BlockConfig.fromJson(Map<String, dynamic> json) {
     final attrs = json['attributes'] as Map<String, dynamic>;
     final metricsList = (attrs['metrics'] as List<dynamic>?)
-        ?.map((m) => MetricRef.fromJson(m as Map<String, dynamic>))
-        .toList() ?? [];
+            ?.map((m) => MetricRef.fromJson(m as Map<String, dynamic>))
+            .toList() ??
+        [];
     final actionsList = (attrs['actions'] as List<dynamic>?)
-        ?.map((a) => ActionRef.fromJson(a as Map<String, dynamic>))
-        .toList() ?? [];
+            ?.map((a) => ActionRef.fromJson(a as Map<String, dynamic>))
+            .toList() ??
+        [];
 
     return BlockConfig(
       id: json['id'] as String,
       name: attrs['name'] as String,
       subtype: attrs['subtype'] as String,
+      column: (attrs['column'] as int?) ?? 0,
+      row: (attrs['row'] as int?) ?? 0,
       columns: attrs['columns'] as int,
       rows: attrs['rows'] as int,
       metrics: metricsList,

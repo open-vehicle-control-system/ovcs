@@ -3,14 +3,13 @@ import 'package:dashboard_flutter/models/vehicle_config.dart';
 import 'package:dashboard_flutter/models/page_config.dart';
 import 'package:dashboard_flutter/views/dynamic_page.dart';
 import 'package:dashboard_flutter/components/launcher_screen.dart';
-import 'package:dashboard_flutter/components/status_bar.dart';
+import 'package:dashboard_flutter/components/side_bar.dart';
 
 /// The main composable shell for the infotainment app.
 ///
 /// Layout:
-///   - Fullscreen DynamicPage for the active page
-///   - Thin status bar at the top (time, temperature, 12V battery)
-///   - Launcher button in the bottom-left corner
+///   - Left sidebar (time, date, temperature, 12V battery, launcher button)
+///   - DynamicPage content area filling the remaining width
 ///   - Launcher overlay (CarPlay-style grid of page icons)
 class InfotainmentShell extends StatefulWidget {
   final VehicleConfig vehicleConfig;
@@ -33,16 +32,19 @@ class _InfotainmentShellState extends State<InfotainmentShell> {
   @override
   void initState() {
     super.initState();
-    // Default to the first page
     _activePageId = widget.pages.isNotEmpty ? widget.pages.first.id : '';
   }
 
   void _openLauncher() {
-    setState(() { _launcherOpen = true; });
+    setState(() {
+      _launcherOpen = true;
+    });
   }
 
   void _closeLauncher() {
-    setState(() { _launcherOpen = false; });
+    setState(() {
+      _launcherOpen = false;
+    });
   }
 
   void _selectPage(String pageId) {
@@ -68,33 +70,30 @@ class _InfotainmentShellState extends State<InfotainmentShell> {
       backgroundColor: Colors.black,
       body: Stack(
         children: [
-          // Layer 1: Active page content (fullscreen)
-          if (activePage != null)
-            Positioned.fill(
-              child: DynamicPage(
-                key: ValueKey(_activePageId),
-                pageId: _activePageId,
-                vehicleConfig: widget.vehicleConfig,
-                backgroundImage: activePage.backgroundImage,
+          // Layer 1: Main layout — sidebar + content
+          Row(
+            children: [
+              // Left sidebar
+              SideBar(
+                vehicleName: widget.vehicleConfig.name,
+                sidebarConfig: widget.vehicleConfig.sidebar,
+                onLauncherPressed: _openLauncher,
               ),
-            ),
-
-          // Layer 2: Status bar at the top
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: StatusBar(vehicleName: widget.vehicleConfig.name),
+              // Content area
+              Expanded(
+                child: activePage != null
+                    ? DynamicPage(
+                        key: ValueKey(_activePageId),
+                        pageId: _activePageId,
+                        vehicleConfig: widget.vehicleConfig,
+                        backgroundImage: activePage.backgroundImage,
+                      )
+                    : const SizedBox.shrink(),
+              ),
+            ],
           ),
 
-          // Layer 3: Launcher button (bottom-left)
-          Positioned(
-            bottom: 20,
-            left: 20,
-            child: _LauncherButton(onPressed: _openLauncher),
-          ),
-
-          // Layer 4: Launcher overlay
+          // Layer 2: Launcher overlay (fullscreen, above everything)
           if (_launcherOpen)
             Positioned.fill(
               child: LauncherScreen(
@@ -105,36 +104,6 @@ class _InfotainmentShellState extends State<InfotainmentShell> {
               ),
             ),
         ],
-      ),
-    );
-  }
-}
-
-class _LauncherButton extends StatelessWidget {
-  final VoidCallback onPressed;
-
-  const _LauncherButton({required this.onPressed});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onPressed,
-      child: Container(
-        width: 56,
-        height: 56,
-        decoration: BoxDecoration(
-          color: const Color(0xCC1F2937),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: const Color(0x33FFFFFF),
-            width: 1,
-          ),
-        ),
-        child: const Icon(
-          Icons.apps_rounded,
-          color: Colors.white,
-          size: 28,
-        ),
       ),
     );
   }

@@ -6,8 +6,9 @@ import 'package:dashboard_flutter/services/metrics_service.dart';
 import 'package:dashboard_flutter/components/blocks/block_renderer.dart';
 
 /// A dynamic page that fetches its block layout from the API
-/// and renders blocks on a grid, applying the vehicle's global
-/// block_style and the page/vehicle background_image.
+/// and renders blocks on a grid using explicit column/row positions,
+/// applying the vehicle's global block_style and the page/vehicle
+/// background_image.
 class DynamicPage extends StatefulWidget {
   final String pageId;
   final String? backgroundImage;
@@ -84,12 +85,12 @@ class _DynamicPageState extends State<DynamicPage> {
   @override
   Widget build(BuildContext context) {
     // Resolve background: page-level overrides vehicle-level
-    final bgImage = widget.backgroundImage ?? widget.vehicleConfig.backgroundImage;
+    final bgImage =
+        widget.backgroundImage ?? widget.vehicleConfig.backgroundImage;
 
     return Container(
       width: double.infinity,
       height: double.infinity,
-      padding: const EdgeInsets.all(5.0),
       decoration: bgImage != null
           ? BoxDecoration(
               image: DecorationImage(
@@ -110,28 +111,34 @@ class _DynamicPageState extends State<DynamicPage> {
     final gridRows = widget.vehicleConfig.gridRows;
     final blockStyle = widget.vehicleConfig.blockStyle;
 
-    final screenWidth = MediaQuery.of(context).size.width;
-    final screenHeight = MediaQuery.of(context).size.height;
-    // Account for sidebar width (~100px based on current layout)
-    final contentWidth = screenWidth - 100;
-    final cellWidth = contentWidth / gridColumns;
-    final cellHeight = screenHeight / gridRows;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final contentWidth = constraints.maxWidth;
+        final contentHeight = constraints.maxHeight;
+        final cellWidth = contentWidth / gridColumns;
+        final cellHeight = contentHeight / gridRows;
 
-    return Wrap(
-      children: _blocks!.map((block) {
-        final blockWidth = cellWidth * block.columns;
-        final blockHeight = cellHeight * block.rows;
+        return Stack(
+          children: _blocks!.map((block) {
+            final left = block.column * cellWidth;
+            final top = block.row * cellHeight;
+            final blockWidth = block.columns * cellWidth;
+            final blockHeight = block.rows * cellHeight;
 
-        return SizedBox(
-          width: blockWidth,
-          height: blockHeight,
-          child: BlockRenderer(
-            block: block,
-            metricsService: _metricsService,
-            blockStyle: blockStyle,
-          ),
+            return Positioned(
+              left: left,
+              top: top,
+              width: blockWidth,
+              height: blockHeight,
+              child: BlockRenderer(
+                block: block,
+                metricsService: _metricsService,
+                blockStyle: blockStyle,
+              ),
+            );
+          }).toList(),
         );
-      }).toList(),
+      },
     );
   }
 }
