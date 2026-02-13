@@ -9,8 +9,9 @@ defmodule InfotainmentCore.Application do
   def start(_type, _args) do
     vehicle_children = vehicle_composer().children()
     children = [
-      #InfotainmentCore.Repo,
-      {InfotainmentCore.Temperature, []}
+      InfotainmentCore.Repo,
+      {InfotainmentCore.Temperature, []},
+      {InfotainmentCore.TimeSettings, []}
     ] ++ vehicle_children
 
     opts = [strategy: :one_for_one, name: InfotainmentCore.Supervisor]
