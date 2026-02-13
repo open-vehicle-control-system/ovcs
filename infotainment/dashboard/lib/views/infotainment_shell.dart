@@ -10,7 +10,7 @@ import 'package:dashboard_flutter/components/side_bar.dart';
 /// Layout:
 ///   - Left sidebar (time, date, temperature, 12V battery, launcher button)
 ///   - DynamicPage content area filling the remaining width
-///   - Launcher overlay (CarPlay-style grid of page icons)
+///   - Launcher overlay with fade+scale transition
 class InfotainmentShell extends StatefulWidget {
   final VehicleConfig vehicleConfig;
   final List<PageConfig> pages;
@@ -25,33 +25,73 @@ class InfotainmentShell extends StatefulWidget {
   State<InfotainmentShell> createState() => _InfotainmentShellState();
 }
 
-class _InfotainmentShellState extends State<InfotainmentShell> {
+class _InfotainmentShellState extends State<InfotainmentShell>
+    with SingleTickerProviderStateMixin {
   late String _activePageId;
-  bool _launcherOpen = false;
+  bool _launcherVisible = false;
+
+  late final AnimationController _launcherAnimController;
+  late final Animation<double> _fadeAnimation;
+  late final Animation<double> _scaleAnimation;
+
+  static const Duration _animDuration = Duration(milliseconds: 250);
 
   @override
   void initState() {
     super.initState();
     _activePageId = widget.pages.isNotEmpty ? widget.pages.first.id : '';
+
+    _launcherAnimController = AnimationController(
+      vsync: this,
+      duration: _animDuration,
+    );
+
+    _fadeAnimation = CurvedAnimation(
+      parent: _launcherAnimController,
+      curve: Curves.easeOut,
+      reverseCurve: Curves.easeIn,
+    );
+
+    _scaleAnimation = Tween<double>(begin: 0.92, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _launcherAnimController,
+        curve: Curves.easeOutCubic,
+        reverseCurve: Curves.easeInCubic,
+      ),
+    );
+
+    _launcherAnimController.addStatusListener((status) {
+      if (status == AnimationStatus.dismissed) {
+        setState(() {
+          _launcherVisible = false;
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _launcherAnimController.dispose();
+    super.dispose();
   }
 
   void _openLauncher() {
     setState(() {
-      _launcherOpen = true;
+      _launcherVisible = true;
     });
+    _launcherAnimController.forward();
   }
 
   void _closeLauncher() {
-    setState(() {
-      _launcherOpen = false;
-    });
+    _launcherAnimController.reverse();
+    // _launcherVisible set to false by the status listener when dismissed
   }
 
   void _selectPage(String pageId) {
     setState(() {
       _activePageId = pageId;
-      _launcherOpen = false;
     });
+    _closeLauncher();
   }
 
   PageConfig? get _activePage {
@@ -93,14 +133,20 @@ class _InfotainmentShellState extends State<InfotainmentShell> {
             ],
           ),
 
-          // Layer 2: Launcher overlay (fullscreen, above everything)
-          if (_launcherOpen)
+          // Layer 2: Launcher overlay with fade + scale transition
+          if (_launcherVisible)
             Positioned.fill(
-              child: LauncherScreen(
-                pages: widget.pages,
-                activePageId: _activePageId,
-                onPageSelected: _selectPage,
-                onClose: _closeLauncher,
+              child: FadeTransition(
+                opacity: _fadeAnimation,
+                child: ScaleTransition(
+                  scale: _scaleAnimation,
+                  child: LauncherScreen(
+                    pages: widget.pages,
+                    activePageId: _activePageId,
+                    onPageSelected: _selectPage,
+                    onClose: _closeLauncher,
+                  ),
+                ),
               ),
             ),
         ],
