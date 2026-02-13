@@ -1,11 +1,13 @@
 defmodule InfotainmentCore.Vehicles.OVCS1.Composer.Infotainment.Blocks.GearSelectorBlock do
   alias InfotainmentCore.Vehicles.OVCS1
 
-  def definition(order: order, columns: columns, rows: rows) do
+  def definition(order: order, column: column, row: row, columns: columns, rows: rows) do
     %{
       order: order,
       name: "Gear Selector",
       type: "gearSelector",
+      column: column,
+      row: row,
       columns: columns,
       rows: rows,
       metrics: [

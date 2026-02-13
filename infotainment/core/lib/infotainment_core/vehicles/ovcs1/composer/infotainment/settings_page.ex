@@ -7,7 +7,8 @@ defmodule InfotainmentCore.Vehicles.OVCS1.Composer.Infotainment.SettingsPage do
       icon: "settings",
       order: order,
       blocks: %{
-        "time-settings" => Blocks.TimeSettingsBlock.definition(order: 0, columns: 12, rows: 4)
+        "time-settings" =>
+          Blocks.TimeSettingsBlock.definition(order: 0, column: 0, row: 0, columns: 12, rows: 4)
       }
     }
   end

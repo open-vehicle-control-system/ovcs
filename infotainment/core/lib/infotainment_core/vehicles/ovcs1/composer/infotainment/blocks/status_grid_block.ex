@@ -1,11 +1,13 @@
 defmodule InfotainmentCore.Vehicles.OVCS1.Composer.Infotainment.Blocks.StatusGridBlock do
   alias InfotainmentCore.Vehicles.OVCS1
 
-  def definition(order: order, columns: columns, rows: rows) do
+  def definition(order: order, column: column, row: row, columns: columns, rows: rows) do
     %{
       order: order,
       name: "System Status",
       type: "statusGrid",
+      column: column,
+      row: row,
       columns: columns,
       rows: rows,
       metrics: [
@@ -17,7 +19,7 @@ defmodule InfotainmentCore.Vehicles.OVCS1.Composer.Infotainment.Blocks.StatusGri
         %{module: OVCS1, key: :inverter_enabled, label: "Inverter enabled"},
         %{module: OVCS1, key: :main_negative_contactor_enabled, label: "Main Negative"},
         %{module: OVCS1, key: :main_positive_contactor_enabled, label: "Main Positive"},
-        %{module: OVCS1, key: :precharge_contactor_enabled, label: "Precharge"},
+        %{module: OVCS1, key: :precharge_contactor_enabled, label: "Precharge"}
       ]
     }
   end

@@ -1,11 +1,13 @@
 defmodule InfotainmentCore.Vehicles.OVCS1.Composer.Infotainment.Blocks.TimeSettingsBlock do
   alias InfotainmentCore.TimeSettings
 
-  def definition(order: order, columns: columns, rows: rows) do
+  def definition(order: order, column: column, row: row, columns: columns, rows: rows) do
     %{
       order: order,
       name: "Time Settings",
       type: "timeSettings",
+      column: column,
+      row: row,
       columns: columns,
       rows: rows,
       metrics: [
