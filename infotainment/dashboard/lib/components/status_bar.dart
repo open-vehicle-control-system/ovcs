@@ -20,8 +20,10 @@ class _StatusBarState extends State<StatusBar> {
   final MetricsService _metricsService = MetricsService();
   Timer? _clockTimer;
 
-  static const String _timeSettingsModule = 'Elixir.InfotainmentCore.TimeSettings';
-  static const String _temperatureModule = 'Elixir.InfotainmentCore.Temperature';
+  static const String _timeSettingsModule =
+      'Elixir.InfotainmentCore.TimeSettings';
+  static const String _temperatureModule =
+      'Elixir.InfotainmentCore.Temperature';
   late final String _vehicleModule;
 
   String _time = '';
@@ -57,8 +59,14 @@ class _StatusBarState extends State<StatusBar> {
 
   void _updateClock() {
     final now = DateTime.now();
-    final timeFormat = _metricsService.getValue(_timeSettingsModule, 'time_format')?.toString() ?? '24h';
-    final dateFormat = _metricsService.getValue(_timeSettingsModule, 'date_format')?.toString() ?? 'DD/MM/YYYY';
+    final timeFormat = _metricsService
+            .getValue(_timeSettingsModule, 'time_format')
+            ?.toString() ??
+        '24h';
+    final dateFormat = _metricsService
+            .getValue(_timeSettingsModule, 'date_format')
+            ?.toString() ??
+        'DD/MM/YYYY';
 
     setState(() {
       _time = _formatTime(now, timeFormat);
@@ -68,7 +76,8 @@ class _StatusBarState extends State<StatusBar> {
 
   String _formatTime(DateTime now, String format) {
     if (format == '12h') {
-      final hour = now.hour == 0 ? 12 : (now.hour > 12 ? now.hour - 12 : now.hour);
+      final hour =
+          now.hour == 0 ? 12 : (now.hour > 12 ? now.hour - 12 : now.hour);
       final amPm = now.hour >= 12 ? 'PM' : 'AM';
       return '${hour.toString().padLeft(2, '0')}:'
           '${now.minute.toString().padLeft(2, '0')} $amPm';
@@ -107,11 +116,16 @@ class _StatusBarState extends State<StatusBar> {
 
   @override
   Widget build(BuildContext context) {
-    final temperature = _metricsService.getValue(_temperatureModule, 'temperature');
+    final temperatureRaw =
+        _metricsService.getValue(_temperatureModule, 'temperature');
+    final temperature = temperatureRaw is num
+        ? temperatureRaw
+        : num.tryParse(temperatureRaw?.toString() ?? '');
     final tempStr = temperature != null
-        ? '${(temperature as num).toStringAsFixed(1)}\u00B0C'
+        ? '${temperature.toStringAsFixed(1)}\u00B0C'
         : '0.0\u00B0C';
-    final twelveVolt = _metricsService.getValue(_vehicleModule, 'twelve_volt_battery_status');
+    final twelveVolt =
+        _metricsService.getValue(_vehicleModule, 'twelve_volt_battery_status');
     final batteryStr = twelveVolt != null ? '${twelveVolt}V' : '0.0V';
 
     return Container(

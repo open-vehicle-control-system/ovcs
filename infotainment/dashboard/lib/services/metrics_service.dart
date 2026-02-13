@@ -65,7 +65,7 @@ class MetricsService extends ChangeNotifier {
     });
 
     // If socket is already open, join immediately
-    if (socket.isOpen) {
+    if (socket.isConnected) {
       _joinChannel();
     }
 
@@ -87,7 +87,7 @@ class MetricsService extends ChangeNotifier {
 
   void _joinChannel() {
     if (_joined) return;
-    _channel?.join().then((_) {
+    _channel?.join().future.then((_) {
       _joined = true;
       // Re-subscribe to all previously registered metrics
       for (final metricKey in _subscribedKeys) {
