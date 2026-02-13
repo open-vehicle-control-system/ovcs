@@ -4,6 +4,7 @@ defmodule InfotainmentApiWeb.DashboardSocket do
   ## Channels
   channel "status", InfotainmentApiWeb.StatusChannel
   channel "temperature", InfotainmentApiWeb.TemperatureChannel
+  channel "metrics", InfotainmentApiWeb.MetricsChannel
 
   def connect(_params, socket) do
     {:ok, socket}

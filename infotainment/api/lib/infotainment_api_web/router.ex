@@ -8,9 +8,15 @@ defmodule InfotainmentApiWeb.Router do
   scope "/api", InfotainmentApiWeb.Api do
     pipe_through :api
     post "/gear-selector", GearSelectorController, :post
+    resources "/vehicle", VehicleController, only: [:show], singleton: true
+    scope "/vehicle", Vehicle do
+      resources "/pages", PagesController, only: [:index]
+      scope "/pages/:page_id", Page, as: :page do
+        resources "/blocks", BlocksController, only: [:index]
+      end
+    end
+    resources "/actions", ActionsController, only: [:create]
   end
-
-
 
   # Enable LiveDashboard in development
   if Application.compile_env(:infotainment_api, :dev_routes) do
