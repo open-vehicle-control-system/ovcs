@@ -1,8 +1,8 @@
 defmodule InfotainmentCore.Vehicles.OBD2.Composer.Infotainment do
   alias InfotainmentCore.Vehicles.OBD2.Composer.Infotainment
 
-  @grid_columns 12
-  @grid_rows 4
+  @grid_columns 24
+  @grid_rows 8
 
   def infotainment_configuration do
     pages = %{

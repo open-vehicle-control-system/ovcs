@@ -9,7 +9,7 @@ defmodule InfotainmentCore.Vehicles.OBD2.Composer.Infotainment.DashboardPage do
       order: order,
       blocks: %{
         "speed-gauge" =>
-          Blocks.SpeedGaugeBlock.definition(order: 0, column: 0, row: 0, columns: 6, rows: 4)
+          Blocks.SpeedGaugeBlock.definition(order: 0, column: 0, row: 0, columns: 12, rows: 8)
       }
     }
   end
