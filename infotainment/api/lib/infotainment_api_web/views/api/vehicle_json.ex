@@ -10,7 +10,7 @@ defmodule InfotainmentApiWeb.Api.VehicleJSON do
   def render("vehicle.json", %{vehicle: vehicle}) do
     %{
       type: "vehicle",
-      id:    "vehicle",
+      id: "vehicle",
       attributes: %{
         name: vehicle.name,
         refreshInterval: vehicle.refresh_interval,
@@ -18,12 +18,23 @@ defmodule InfotainmentApiWeb.Api.VehicleJSON do
         gridColumns: vehicle.grid_columns,
         gridRows: vehicle.grid_rows,
         backgroundImage: vehicle[:background_image],
+        sidebar: render_sidebar(vehicle[:sidebar]),
         blockStyle: render_block_style(vehicle[:block_style])
       }
     }
   end
 
+  defp render_sidebar(nil), do: nil
+
+  defp render_sidebar(sidebar) do
+    %{
+      width: sidebar[:width],
+      backgroundColor: sidebar[:background_color]
+    }
+  end
+
   defp render_block_style(nil), do: nil
+
   defp render_block_style(style) do
     %{
       backgroundColor: style[:background_color],
