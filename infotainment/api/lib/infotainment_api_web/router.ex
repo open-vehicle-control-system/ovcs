@@ -7,7 +7,6 @@ defmodule InfotainmentApiWeb.Router do
 
   scope "/api", InfotainmentApiWeb.Api do
     pipe_through :api
-    post "/gear-selector", GearSelectorController, :post
     resources "/vehicle", VehicleController, only: [:show], singleton: true
     scope "/vehicle", Vehicle do
       resources "/pages", PagesController, only: [:index]
