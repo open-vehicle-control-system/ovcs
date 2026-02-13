@@ -20,11 +20,22 @@ config :nerves, :firmware, rootfs_overlay: "rootfs_overlay"
 
 config :nerves, source_date_epoch: "1708002919"
 
-# Change fwup.conf path if needed
-config :nerves, :firmware,
-  fwup_conf: "config/default/fwup.conf"
-#config :nerves, :firmware,
-#  fwup_conf: "config/obd2_waveshare_2can_hat/fwup.conf"
+fwup_conf =
+  case System.get_env("VEHICLE") do
+    "OVCS1" -> "config/default/fwup.conf"
+    "OBD2" -> "config/obd2_waveshare_2can_hat/fwup.conf"
+    vehicle ->
+      Mix.raise("""
+      Vehicle "#{vehicle}" is not supported by VMS firmware.
+
+      Supported vehicles: OVCS1, OBD2
+
+      Set the VEHICLE environment variable to a supported vehicle, e.g.:
+        VEHICLE=OVCS1 mix firmware
+      """)
+  end
+
+config :nerves, :firmware, fwup_conf: fwup_conf
 
 if Mix.target() == :host do
   import_config "host.exs"

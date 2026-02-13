@@ -1,29 +1,22 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:dashboard_flutter/models/vehicle_config.dart';
 import 'package:dashboard_flutter/services/metrics_service.dart';
 
-/// A vertical sidebar displayed on the left side of the screen.
+/// A thin, semi-transparent status bar displayed at the top of the screen.
 ///
-/// Shows the current time, date, CPU temperature, 12V battery voltage,
-/// and a launcher button at the bottom. Replaces the old horizontal StatusBar.
-class SideBar extends StatefulWidget {
+/// Shows the current time, CPU temperature, and 12V battery voltage.
+/// Uses MetricsService to subscribe to time settings, temperature, and
+/// vehicle metrics via the composable WebSocket channel.
+class StatusBar extends StatefulWidget {
   final String vehicleName;
-  final SidebarConfig sidebarConfig;
-  final VoidCallback onLauncherPressed;
 
-  const SideBar({
-    super.key,
-    required this.vehicleName,
-    required this.sidebarConfig,
-    required this.onLauncherPressed,
-  });
+  const StatusBar({super.key, required this.vehicleName});
 
   @override
-  State<SideBar> createState() => _SideBarState();
+  State<StatusBar> createState() => _StatusBarState();
 }
 
-class _SideBarState extends State<SideBar> {
+class _StatusBarState extends State<StatusBar> {
   final MetricsService _metricsService = MetricsService();
   Timer? _clockTimer;
 
@@ -41,6 +34,7 @@ class _SideBarState extends State<SideBar> {
     super.initState();
     _vehicleModule = 'Elixir.InfotainmentCore.Vehicles.${widget.vehicleName}';
 
+    // Subscribe to time settings, temperature, and vehicle metrics
     _metricsService.subscribe(_timeSettingsModule, 'time_format');
     _metricsService.subscribe(_timeSettingsModule, 'date_format');
     _metricsService.subscribe(_temperatureModule, 'temperature');
@@ -48,6 +42,7 @@ class _SideBarState extends State<SideBar> {
 
     _metricsService.addListener(_onMetricsUpdate);
 
+    // Update clock every second
     _updateClock();
     _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       _updateClock();
@@ -119,21 +114,6 @@ class _SideBarState extends State<SideBar> {
     super.dispose();
   }
 
-  Color _parseSidebarColor() {
-    final colorStr = widget.sidebarConfig.backgroundColor;
-    if (colorStr != null && colorStr.length >= 6) {
-      final value = int.tryParse(colorStr, radix: 16);
-      if (value != null) {
-        // If 8 chars, it includes alpha; otherwise default to full opacity
-        if (colorStr.length == 8) {
-          return Color(value);
-        }
-        return Color(0xFF000000 | value);
-      }
-    }
-    return const Color(0xCC1F2937);
-  }
-
   @override
   Widget build(BuildContext context) {
     final temperatureRaw =
@@ -149,52 +129,37 @@ class _SideBarState extends State<SideBar> {
     final batteryStr = twelveVolt != null ? '${twelveVolt}V' : '0.0V';
 
     return Container(
-      width: widget.sidebarConfig.width,
-      decoration: BoxDecoration(
-        color: _parseSidebarColor(),
-        border: const Border(
-          right: BorderSide(
-            color: Color(0x33FFFFFF),
-            width: 1,
-          ),
-        ),
+      height: 36,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: const BoxDecoration(
+        color: Color(0x99000000),
       ),
-      child: Column(
+      child: Row(
         children: [
-          const SizedBox(height: 16),
-          // Clock
+          // Time + date on the left
           Text(
             _time,
             style: const TextStyle(
               color: Colors.white,
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
+              fontSize: 14,
               fontFamily: 'Lato',
               decoration: TextDecoration.none,
             ),
           ),
-          const SizedBox(height: 4),
-          // Date
+          const SizedBox(width: 8),
           Text(
             _date,
             style: const TextStyle(
               color: Colors.grey,
-              fontSize: 11,
+              fontSize: 12,
               fontFamily: 'Lato',
               decoration: TextDecoration.none,
             ),
           ),
-          const SizedBox(height: 24),
-          // Divider
-          Container(
-            width: 40,
-            height: 1,
-            color: const Color(0x33FFFFFF),
-          ),
-          const SizedBox(height: 24),
-          // CPU Temperature
-          const Icon(Icons.memory, color: Colors.grey, size: 18),
-          const SizedBox(height: 4),
+          const Spacer(),
+          // System info on the right
+          const Icon(Icons.memory, color: Colors.grey, size: 14),
+          const SizedBox(width: 4),
           Text(
             tempStr,
             style: const TextStyle(
@@ -204,10 +169,9 @@ class _SideBarState extends State<SideBar> {
               decoration: TextDecoration.none,
             ),
           ),
-          const SizedBox(height: 16),
-          // 12V Battery
-          const Icon(Icons.battery_std, color: Colors.grey, size: 18),
-          const SizedBox(height: 4),
+          const SizedBox(width: 16),
+          const Icon(Icons.battery_std, color: Colors.grey, size: 14),
+          const SizedBox(width: 4),
           Text(
             batteryStr,
             style: const TextStyle(
@@ -215,31 +179,6 @@ class _SideBarState extends State<SideBar> {
               fontSize: 12,
               fontFamily: 'Lato',
               decoration: TextDecoration.none,
-            ),
-          ),
-          const Spacer(),
-          // Launcher button at the bottom
-          Padding(
-            padding: const EdgeInsets.only(bottom: 20),
-            child: GestureDetector(
-              onTap: widget.onLauncherPressed,
-              child: Container(
-                width: 56,
-                height: 56,
-                decoration: BoxDecoration(
-                  color: const Color(0x33FFFFFF),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: const Color(0x33FFFFFF),
-                    width: 1,
-                  ),
-                ),
-                child: const Icon(
-                  Icons.apps_rounded,
-                  color: Colors.white,
-                  size: 28,
-                ),
-              ),
             ),
           ),
         ],
