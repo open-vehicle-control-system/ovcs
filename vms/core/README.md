@@ -236,7 +236,6 @@ The VMS Core starts as a dependency of the VMS API (Phoenix). The `VEHICLE` env 
 
 - **HV contactor precharge sequence** — Prevents inrush current damage by following negative → precharge → (wait for voltage equalization) → positive → disable precharge
 - **VMS heartbeat watchdog** — Arduino controllers shut down all outputs if the VMS heartbeat (`0x1A0`) is missing for too long
-- **Controller reset** — VMS can remotely reset controllers from error states via command frame (`0x1AA`)
 - **Gear shift safety** — Gear manager enforces speed and throttle constraints before allowing shifts
 - **Manual brake override** — Pressing the brake pedal in radio/autonomous mode can override to manual control
 - **5-second boot grace period** — Controller status checks are skipped during initial boot to allow hardware initialization

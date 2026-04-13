@@ -4,7 +4,7 @@
 
 | Component | Hardware Platform | Status |
 |-----------|-------------------|--------|
-| VMS | Raspberry Pi 4 (8GB) | Supported |
+| VMS | Raspberry Pi 4 | Supported |
 | Infotainment | Raspberry Pi 5 | Supported |
 | Radio Control Bridge | Raspberry Pi 3A | Supported |
 | ROS Bridge | Raspberry Pi 4 / 5 | Supported |
