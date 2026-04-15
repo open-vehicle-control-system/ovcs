@@ -7,7 +7,9 @@ defmodule OvcsCli do
   from each vehicle package's `OvcsVehicle` implementation.
   """
 
-  alias OvcsCli.{Commands, Vehicles}
+  alias OvcsCli.{Commands, Prompt, Vehicles}
+
+  @applications ~w(vms infotainment radio-control-bridge ros-bridge)
 
   def main(argv) do
     vehicles = Vehicles.list(repo_root())
@@ -44,16 +46,20 @@ defmodule OvcsCli do
       {[:doctor], _} ->
         Commands.Doctor.run(repo_root())
 
-      {[:build], %{args: %{vehicle: v, application: a}}} ->
+      {[:build], %{args: args}} ->
+        {v, a} = resolve_vehicle_app(args, vehicle_names)
         Commands.Build.run(repo_root(), v, a)
 
-      {[:burn], %{args: %{vehicle: v, application: a}}} ->
+      {[:burn], %{args: args}} ->
+        {v, a} = resolve_vehicle_app(args, vehicle_names)
         Commands.Burn.run(repo_root(), v, a)
 
-      {[:upload], %{args: %{vehicle: v, application: a}, options: opts}} ->
+      {[:upload], %{args: args, options: opts}} ->
+        {v, a} = resolve_vehicle_app(args, vehicle_names)
         Commands.Upload.run(repo_root(), v, a, opts)
 
-      {[:clean], %{args: %{vehicle: v, application: a}}} ->
+      {[:clean], %{args: args}} ->
+        {v, a} = resolve_vehicle_app(args, vehicle_names)
         Commands.Clean.run(repo_root(), v, a)
 
       _ ->
@@ -113,8 +119,9 @@ defmodule OvcsCli do
     [
       vehicle: [
         value_name: "VEHICLE",
-        help: "Vehicle directory: #{Enum.join(vehicles, " | ")}",
-        required: true,
+        help:
+          "Vehicle directory (#{Enum.join(vehicles, " | ")}). Prompts if omitted.",
+        required: false,
         parser: fn value ->
           if value in vehicles do
             {:ok, value}
@@ -125,19 +132,24 @@ defmodule OvcsCli do
       ],
       application: [
         value_name: "APPLICATION",
-        help: "Application: vms | infotainment | radio-control-bridge | ros-bridge",
-        required: true,
+        help:
+          "Application (#{Enum.join(@applications, " | ")}). Prompts if omitted.",
+        required: false,
         parser: fn value ->
-          case value do
-            "vms" -> {:ok, value}
-            "infotainment" -> {:ok, value}
-            "radio-control-bridge" -> {:ok, value}
-            "ros-bridge" -> {:ok, value}
-            other -> {:error, "unknown application #{inspect(other)}"}
+          if value in @applications do
+            {:ok, value}
+          else
+            {:error, "unknown application #{inspect(value)} (known: #{Enum.join(@applications, ", ")})"}
           end
         end
       ]
     ]
+  end
+
+  defp resolve_vehicle_app(%{vehicle: v, application: a}, vehicles) do
+    vehicle = v || Prompt.choose!("vehicle", vehicles)
+    application = a || Prompt.choose!("application", @applications)
+    {vehicle, application}
   end
 
   @doc false
