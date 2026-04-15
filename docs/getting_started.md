@@ -16,7 +16,7 @@ OVCS is developed on Linux. macOS users need a Linux VM (see [macOS setup](#loca
 | Node.js | 24+ | VMS debug dashboard (Vue.js) | mise |
 | Ruby | 3.3+ | historical scripts | mise |
 | Python | 3.12+ | PlatformIO + misc tooling | mise |
-| [Flutter](https://flutter.dev/docs/get-started/install) | 3.27.4 | Infotainment dashboard | mise |
+| [Flutter](https://flutter.dev/docs/get-started/install) | 3.32.8 | Infotainment dashboard | mise |
 | can-utils | Latest | CAN bus utilities (`cansend`, `candump`, `canplayer`) | system package |
 | `fwup` | Latest | Nerves firmware image packager | system package |
 | `libsocketcan-dev` | Latest | Cantastic native CAN bindings | system package (firmware builds only) |

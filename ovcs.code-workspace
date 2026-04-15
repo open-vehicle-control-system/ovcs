@@ -23,8 +23,8 @@
       "**/.dart_tool": true,
       "**/.pio": true
     },
-    "dart.flutterSdkPath": "/home/loo/.local/share/mise/installs/flutter/3.27.4",
-    "dart.sdkPath": "/home/loo/.local/share/mise/installs/flutter/3.27.4/bin/cache/dart-sdk",
+    "dart.flutterSdkPath": "/home/loo/.local/share/mise/installs/flutter/3.32.8",
+    "dart.sdkPath": "/home/loo/.local/share/mise/installs/flutter/3.32.8/bin/cache/dart-sdk",
     "platformio-ide.customPATH": "/home/loo/.local/share/mise/installs/python/3.12.13/bin",
     "platformio-ide.useBuiltinPython": false,
     "elixirLS.envVariables": {

@@ -141,7 +141,7 @@ A Phoenix 1.7 JSON API server with the same page/block layout pattern as the VMS
 
 | | |
 |---|---|
-| **Technology** | Flutter / Dart (SDK 3.27.4) |
+| **Technology** | Flutter / Dart (SDK 3.32.8) |
 | **Package** | `dashboard_flutter` |
 
 A native Linux application built with Flutter, designed to run on the Raspberry Pi 5's touchscreen. Features:

@@ -49,7 +49,7 @@ defmodule OvcsInfotainmentFirmware.MixProject do
       {:vintage_net_ethernet, "~> 0.11"},
       {:plug_cowboy, "~> 2.0"},
       {:infotainment_api, path: "../api", targets: @all_targets, env: Mix.env(), runtime: false},
-      {:nerves_flutter_support, "~> 1.0.0"},
+      {:nerves_flutter_support, "~> 1.3"},
 
       # Dependencies for specific targets
       # NOTE: It's generally low risk and recommended to follow minor version
