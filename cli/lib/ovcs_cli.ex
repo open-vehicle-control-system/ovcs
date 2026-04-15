@@ -32,7 +32,8 @@ defmodule OvcsCli do
           ],
           build: build_spec(vehicle_names),
           burn: burn_spec(vehicle_names),
-          upload: upload_spec(vehicle_names)
+          upload: upload_spec(vehicle_names),
+          clean: clean_spec(vehicle_names)
         ]
       )
 
@@ -52,6 +53,9 @@ defmodule OvcsCli do
       {[:upload], %{args: %{vehicle: v, application: a}, options: opts}} ->
         Commands.Upload.run(repo_root(), v, a, opts)
 
+      {[:clean], %{args: %{vehicle: v, application: a}}} ->
+        Commands.Clean.run(repo_root(), v, a)
+
       _ ->
         Optimus.parse!(optimus, ["--help"])
     end
@@ -69,6 +73,14 @@ defmodule OvcsCli do
     [
       name: "burn",
       about: "Burn firmware to an SD card for a vehicle/application",
+      args: vehicle_and_application_args(vehicles)
+    ]
+  end
+
+  defp clean_spec(vehicles) do
+    [
+      name: "clean",
+      about: "Remove build artifacts for a vehicle/application",
       args: vehicle_and_application_args(vehicles)
     ]
   end
