@@ -99,29 +99,37 @@ The OVCS CAN bus runs at 1 Mbps to accommodate the higher traffic volume from al
 
 ### CAN Bus Configuration
 
-CAN frame specifications are defined in YAML files under each Elixir app's `priv/can/` directory (e.g. `vms/core/priv/can/`, `infotainment/core/priv/can/`):
+Shared component-level CAN frame and signal specifications live in the [`libraries/ovcs_can`](../libraries/ovcs_can) library. Each consuming Elixir app (`vms/core`, `infotainment/core`) keeps its own vehicle topology entry points locally.
 
 ```
-priv/can/
-+-- vehicles/
-|   +-- ovcs1.yml                    # OVCS1 vehicle CAN topology (which frames on which bus)
-|   +-- ovcs_mini.yml                # OVCS Mini CAN topology
-|   +-- obd2.yml                     # OBD2 mode CAN topology
-|   +-- ovcs1/generic_controller/    # OVCS1-specific controller frame definitions
-|   +-- ovcs_mini/generic_controller/
-+-- components/
-    +-- bosch/i_booster_gen2/        # iBooster frame definitions
-    +-- bosch/lws/                   # Steering angle sensor frames
-    +-- evpt/evpt23/                 # Charger frames
-    +-- nissan/leaf_aze0/            # Leaf inverter and charger frames
-    +-- orion/bms2/                  # Battery management frames
-    +-- ovcs/                        # OVCS internal frames and generic controller templates
-    +-- ovcs/generic_controller/     # Shared signal definitions (alive, digital pins, analog, PWM)
-    +-- volkswagen/polo_9n/          # Polo ABS, dashboard, key, lock, wheels frames
-    +-- obd2/                        # OBD2 diagnostic frames
+libraries/ovcs_can/priv/can/components/
++-- bosch/i_booster_gen2/            # iBooster frame definitions
++-- bosch/lws/                       # Steering angle sensor frames
++-- evpt/evpt23/                     # Charger frames
++-- nissan/leaf_aze0/                # Leaf inverter and charger frames
++-- orion/bms2/                      # Battery management frames
++-- ovcs/                            # OVCS internal frames and generic controller templates
++-- volkswagen/polo_9n/              # Polo ABS, dashboard, key, lock, wheels frames
++-- obd2/                            # OBD2 diagnostic frames
+
+vms/core/priv/can/vehicles/
++-- ovcs1.yml                        # OVCS1 vehicle CAN topology (full)
++-- ovcs_mini.yml                    # OVCS Mini CAN topology (full)
++-- obd2.yml                         # OBD2 mode CAN topology (full)
++-- ovcs1/generic_controller/        # OVCS1 per-controller frame wirings
++-- ovcs_mini/generic_controller/    # OVCS Mini per-controller frame wirings
+
+infotainment/core/priv/
++-- ovcs1.yml                        # narrow topology: only frames the dashboard consumes
++-- obd2.yml
++-- can/vehicles/ovcs1/generic_controller/  # subset of per-controller frames needed by the dashboard
 ```
 
-Vehicle YAML files (e.g., `ovcs1.yml`) define the complete CAN topology: which CAN networks exist, their bitrate, and which frames are emitted and received on each network. Frame definitions are imported from the component-level YAML files.
+Vehicle entry-point YAMLs differ between apps (VMS needs the full topology; infotainment only subscribes to the frames it renders) and use Cantastic's cross-app import syntax to pull shared component specs from the library:
+
+```yaml
+- import!:@ovcs_can:can/components/ovcs/0x1A0_vms_status.yml
+```
 
 ## Generic Controllers
 

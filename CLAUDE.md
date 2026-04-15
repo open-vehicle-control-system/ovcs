@@ -21,7 +21,7 @@ Prefer updating these docs over duplicating their content here.
 
 - Polyglot **monorepo** (Elixir/Nerves, Phoenix, Vue, Flutter, C++/Arduino, Ruby). Not an Elixir umbrella — each Elixir app is a standalone Mix project with `path:` deps to siblings.
 - Strict layer split in `{vms,infotainment}`: `core` (business logic + CAN, no web deps) ← `api` (Phoenix) ← `firmware` (Nerves); `dashboard` talks to `api` over HTTP + Phoenix Channels. Put logic in the layer it belongs to.
-- CAN frames/signals live in `priv/can/*.yml` (consumed by the `libraries/cantastic` library). Add/modify signals in YAML, not in hand-rolled encode/decode.
+- Shared per-component CAN frame/signal YAMLs live in `libraries/ovcs_can/priv/can/components/`. Per-app vehicle topology YAMLs (and per-vehicle controller wirings) live in each core's `priv/` and import shared components via `import!:@ovcs_can:can/components/...` (a Cantastic cross-app import extension). Add/modify signals in YAML, not in hand-rolled encode/decode.
 - Vehicle selection is runtime via `VEHICLE` (`OVCS1` | `OVCSMini` | `OBD2`); each vehicle has a `Composer` module that picks components + CAN configs.
 - Run `./scripts/setup_virtual_can.sh` (host dev) or `./scripts/setup_can.sh` (hardware) before starting any Elixir app locally.
 - Toolchain is pinned in `mise.toml` — run `mise install` at the repo root.

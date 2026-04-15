@@ -23,6 +23,7 @@ defmodule InfotainmentCore.MixProject do
   defp deps do
     [
       {:cantastic, path: "../../libraries/cantastic"},
+      {:ovcs_can, path: "../../libraries/ovcs_can"},
       {:json, "~> 1.4"},
       {:ecto_sql, "~> 3.10"},
       {:ecto_sqlite3, ">= 0.0.0"}

@@ -167,25 +167,20 @@ VmsCore.Application
 
 ## CAN Configuration
 
-CAN frame definitions are stored as YAML files in `priv/can/`:
+Vehicle CAN topology files live in `priv/can/vehicles/`:
 
 ```
-priv/can/
-├── vehicles/
-│   ├── ovcs1.yml          # OVCS1 network topology (imports component frames)
-│   ├── ovcs_mini.yml      # OVCS Mini topology
-│   └── obd2.yml           # OBD2 diagnostic topology
-├── components/
-│   ├── nissan/leaf_aze0/  # Leaf inverter and charger frames
-│   ├── bosch/             # iBooster, LWS steering sensor frames
-│   ├── orion/bms2/        # BMS frames
-│   ├── evpt/evpt23/       # Charger frames
-│   ├── volkswagen/polo_9n/ # ABS, dashboard, key, lock, wheel frames
-│   ├── ovcs/              # VMS status, commands, generic controller templates
-│   └── obd2/              # OBD-II diagnostic frames
+priv/can/vehicles/
+├── ovcs1.yml          # OVCS1 network topology
+├── ovcs_mini.yml      # OVCS Mini topology
+└── obd2.yml           # OBD2 diagnostic topology
 ```
 
-Vehicle YAML files compose the full CAN topology by importing per-component frame definitions via Cantastic's `import!:` directive.
+Shared per-component frame and signal definitions live in the [`ovcs_can`](../../libraries/ovcs_can) library under `priv/can/components/`. Per-vehicle controller wirings stay here under `vehicles/<vehicle>/generic_controller/`. Vehicle topology YAMLs import components from the library via Cantastic's cross-app import syntax:
+
+```yaml
+- import!:@ovcs_can:can/components/ovcs/0x1A0_vms_status.yml
+```
 
 ## Dashboard System
 

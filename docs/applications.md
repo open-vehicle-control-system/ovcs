@@ -61,7 +61,7 @@ The core library contains:
 - **Bus** (`lib/vms_core/bus.ex`) -- PubSub-based event bus for inter-process communication.
 - **Metrics** (`lib/vms_core/metrics.ex`) -- Collects and broadcasts vehicle metrics for the dashboard.
 - **PID controller** (`lib/vms_core/pid.ex`) -- Generic PID controller implementation used for motor control loops.
-- **CAN configurations** (`priv/can/`) -- YAML files defining CAN frame specifications for each component and vehicle. Each Elixir app that speaks CAN (e.g. `vms/core`, `infotainment/core`) has its own `priv/can/` with the same `vehicles/` + `components/` layout.
+- **CAN configurations** (`priv/can/vehicles/`) -- YAML files defining this app's vehicle CAN topology. Shared frame and signal specs live in the [`ovcs_can`](#ovcs-can-librariesovcs_can) library and are referenced via Cantastic's `import!:@ovcs_can:...` syntax.
 
 ### VMS API (`vms/api/`)
 
@@ -222,6 +222,15 @@ Build configurations (defined in `platformio.ini`):
 - `local_test` -- Unit tests (Unity test framework)
 
 ## Shared Libraries
+
+### OvcsCan (`libraries/ovcs_can/`)
+
+| | |
+|---|---|
+| **Module** | `OvcsCan` |
+| **App name** | `:ovcs_can` |
+
+A data-only library holding the shared CAN component frame and signal YAML definitions consumed by `vms/core` and `infotainment/core`. Contains no runtime logic -- only YAML under `priv/can/components/`. Vehicle topology entry points and per-vehicle controller wirings stay inside each consuming app.
 
 ### Cantastic (`libraries/cantastic/`)
 
