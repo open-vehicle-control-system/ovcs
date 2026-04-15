@@ -140,7 +140,8 @@ See the full [Getting Started guide](./docs/getting_started.md) for detailed ins
 
 - Linux (or a Linux VM on macOS -- see [getting started](./docs/getting_started.md))
 - [mise](https://mise.jdx.dev/) version manager — provides Erlang, Elixir, Node, Ruby, Python, Flutter
-- System packages: `can-utils`, `fwup`, `libsocketcan-dev` (`sudo apt install -y can-utils fwup libsocketcan-dev`)
+- System packages: `sudo apt install -y can-utils libsocketcan-dev`
+- `fwup`: not in apt — grab the `.deb` from [fwup releases](https://github.com/fwup-home/fwup/releases) (or `brew install fwup` on macOS)
 - One-time setup: `mise install && mise run cli` (the bootstrap hook runs automatically)
 - Run `./ovcs doctor` to verify the full toolchain
 - [Nerves](https://hexdocs.pm/nerves/installation.html) system images cloned alongside this repo (for firmware builds)

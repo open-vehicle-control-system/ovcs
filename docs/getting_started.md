@@ -60,14 +60,23 @@ From now on, `cd`-ing into the project activates the pinned versions automatical
 ### 4. Install system-level tools
 
 ```sh
-sudo apt install -y can-utils fwup libsocketcan-dev
+sudo apt install -y can-utils libsocketcan-dev
 ```
 
 - `can-utils` provides `cansend`, `candump`, `canplayer`, and the rest. The Linux kernel modules `can` and `can_raw` are required and are included in standard (non-cloud) kernels.
-- `fwup` is the firmware image packager Nerves calls during `mix firmware`.
 - `libsocketcan-dev` is only needed when building for physical CAN targets (i.e. the Pi firmwares); it supplies the native headers Cantastic links against.
 
-On macOS: `brew install fwup can-utils` (there's no `libsocketcan` on macOS — firmware builds happen inside the Linux VM).
+`fwup` is the firmware image packager Nerves calls during `mix firmware`. It is **not** in the Debian/Ubuntu repos — install the latest `.deb` from the project's GitHub releases:
+
+```sh
+version=1.15.0
+arch=$(dpkg --print-architecture)
+curl -L -o /tmp/fwup.deb \
+  "https://github.com/fwup-home/fwup/releases/download/v${version}/fwup_${version}_${arch}.deb"
+sudo dpkg -i /tmp/fwup.deb
+```
+
+On macOS: `brew install fwup can-utils` (`fwup` is in homebrew; there's no `libsocketcan` on macOS — firmware builds happen inside the Linux VM).
 
 ### 5. Clone the repository
 
