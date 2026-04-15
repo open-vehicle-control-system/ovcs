@@ -172,7 +172,15 @@ These system images are only needed if you want to build and deploy firmware to 
 
 The CLI reads the vehicle's `default_can_mapping(:host)` and creates only the vcan interfaces that vehicle actually needs. It's idempotent: a second run on the same vehicle is a no-op. You'll be prompted for your sudo password the first time.
 
-### 2. Test the VMS
+### 2. Boot the vehicle locally
+
+```sh
+./ovcs run ovcs1              # provisions vcan + runs `iex -S mix` in the vehicle
+```
+
+This is the shortcut for "set up CAN, then start everything." `./ovcs run` boots the vehicle as its own Mix app with VMS + infotainment endpoints + any host-compatible bridges in one BEAM. Use `Ctrl-C Ctrl-C` to exit.
+
+If you prefer running pieces separately:
 
 ```sh
 cd vms/api
@@ -180,7 +188,7 @@ VEHICLE=Ovcs1 mix deps.get
 VEHICLE=Ovcs1 mix phx.server
 ```
 
-The VMS API should start and be accessible at `http://localhost:4000`. The `VEHICLE` env var is mandatory — it selects which vehicle package's composer wires the supervision tree and CAN topology. Use `Ovcs1`, `OvcsMini`, or `Obd2` (the top-level module name of the vehicle package).
+Either way the VMS API lands at `http://localhost:4000`. The `VEHICLE` env var is mandatory for the split form — it selects which vehicle package's composer wires the supervision tree and CAN topology. Use `Ovcs1`, `OvcsMini`, or `Obd2` (the top-level module name of the vehicle package).
 
 ### 3. Test the VMS dashboard
 

@@ -14,13 +14,12 @@ defmodule RosBridge do
 
   if Mix.target() == :host do
     @impl OvcsBridge
-    def children do
-      [
-        {BNO085.Dummy, []},
-        {ZenohMQTTRos2.Dispatcher, []},
-        {JoyInterpreter, []}
-      ]
-    end
+    # Host children stay minimal — no Zenoh dispatcher (needs an
+    # MQTT broker reachable on localhost) and no JoyInterpreter
+    # (needs Zenoh). Run the full ROS stack via `./ovcs build <v>
+    # ros` on a real target, or spin up Mosquitto + boot the
+    # bridges firmware separately.
+    def children, do: []
   else
     @impl OvcsBridge
     def children do

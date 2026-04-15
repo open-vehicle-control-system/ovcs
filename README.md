@@ -138,15 +138,18 @@ See the [Getting Started guide](./docs/getting_started.md) for full prerequisite
 Once the setup is done:
 
 ```sh
-# Start the VMS API (in one terminal)
-./ovcs can setup ovcs1
-cd vms/api && VEHICLE=Ovcs1 mix phx.server
+# Provision vcan interfaces and boot the whole vehicle in one BEAM
+./ovcs run ovcs1                         # VMS + infotainment + bridges
 
 # Start the VMS debug dashboard (in another terminal)
 cd vms/dashboard && npm install && npm run dev
 ```
 
-See [Applications](./docs/applications.md) for more details.
+`ovcs run` starts each vehicle package as its own Mix app (VMS core
++ Phoenix API on :4000, infotainment core + Phoenix API on :4001 when
+present, plus any host-compatible bridges from `bridge_firmwares/0`).
+See [Applications](./docs/applications.md) for more details and the
+per-side breakdown if you prefer running pieces separately.
 
 ## Deploy
 
@@ -154,7 +157,7 @@ Build, burn, or OTA-upload firmware via the `ovcs` CLI:
 
 ```sh
 ./ovcs vehicles                          # list discovered vehicles and their Nerves targets
-./ovcs build  ovcs1 vms                  # also: infotainment | radio-control-bridge | ros-bridge
+./ovcs build  ovcs1 vms                  # also: infotainment | <bridge-firmware-id>
 ./ovcs burn   ovcs1 vms
 ./ovcs upload ovcs1 vms [--host HOST] [--file FILE]
 ```

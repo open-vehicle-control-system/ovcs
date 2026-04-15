@@ -10,6 +10,9 @@ defmodule InfotainmentCore.Application do
     vehicle_children = vehicle_composer().children()
     children = [
       InfotainmentCore.Repo,
+      {Ecto.Migrator,
+        repos: Application.fetch_env!(:infotainment_core, :ecto_repos),
+        skip: skip_migrations?()},
       {InfotainmentCore.Temperature, []},
       {InfotainmentCore.TimeSettings, []}
     ] ++ bus_relay_children() ++ vehicle_children
@@ -20,6 +23,14 @@ defmodule InfotainmentCore.Application do
 
   def vehicle_composer do
     Application.fetch_env!(:infotainment_core, :vehicle)
+  end
+
+  defp skip_migrations? do
+    # By default, sqlite migrations run when using a release;
+    # skip when running via iex/mix (host dev) unless explicitly
+    # opted in, since dev workflows may want to control when
+    # schema changes.
+    System.get_env("RELEASE_NAME") == nil and System.get_env("SKIP_MIGRATIONS") != "false"
   end
 
   # Opt-in MQTT bus relay — started only when the vehicle's

@@ -8,11 +8,20 @@ defmodule RadioControlBridge do
 
   alias RadioControlBridge.MavlinkForwarder
 
-  @impl OvcsBridge
-  def children do
-    [
-      {MavlinkForwarder, nil}
-    ]
+  if Mix.target() == :host do
+    @impl OvcsBridge
+    # MavlinkForwarder needs an ExpressLRS UART to register with,
+    # which isn't available when running in a host BEAM (e.g.
+    # `cd vehicles/<v> && iex -S mix`). Return no children so the
+    # bridge stays dormant locally; the full flow runs on-target.
+    def children, do: []
+  else
+    @impl OvcsBridge
+    def children do
+      [
+        {MavlinkForwarder, nil}
+      ]
+    end
   end
 
   @impl OvcsBridge

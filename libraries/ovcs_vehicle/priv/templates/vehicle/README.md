@@ -10,10 +10,23 @@ contract consulted by `vms_core`<%= if @infotainment do %> and
 
 ## Quick start
 
+### Run locally (single BEAM)
+
 ```sh
-../../ovcs build <%= @name %> vms            # build VMS firmware<%= if @infotainment do %>
-../../ovcs build <%= @name %> infotainment   # build infotainment firmware<% end %>
-../../ovcs can setup <%= @name %>            # provision host vcan interfaces
+../../ovcs run <%= @name %>            # provisions vcan + `iex -S mix` in this dir
+```
+
+Boots VMS<%= if @infotainment do %> + infotainment<% end %> + any host-compatible bridges from
+`bridge_firmwares/0` in one BEAM sharing the node-local `OvcsBus`
+(no broker needed). VMS API on `http://localhost:4000`<%= if @infotainment do %>,
+infotainment API on `http://localhost:4001`<% end %>. Ctrl-C Ctrl-C to exit.
+
+### Build + flash firmware
+
+```sh
+../../ovcs build <%= @name %> vms            # VMS firmware<%= if @infotainment do %>
+../../ovcs build <%= @name %> infotainment   # infotainment firmware<% end %>
+../../ovcs can setup <%= @name %>            # provision host vcan interfaces (also done by `run`)
 ```
 
 See [`docs/running_hardware.md`](../../docs/running_hardware.md) for burn
@@ -24,6 +37,8 @@ See [`docs/running_hardware.md`](../../docs/running_hardware.md) for burn
 | Path | What it is | You will edit |
 |------|-----------|---------------|
 | `lib/<%= @name %>.ex` | `OvcsVehicle` impl — name, composers, Nerves targets | Rarely |
+| `lib/<%= @name %>/application.ex` | Local-dev `Application` — installed only when `Mix.target() == :host`, delegates to `OvcsVehicle.LocalSupervisor` | Rarely |
+| `config/config.exs` | Compile-time config for `iex -S mix` (composers, cantastic, endpoints) | When you rewire buses / endpoints |
 | `lib/<%= @name %>/vms.ex` | VMS-side vehicle GenServer (ready-to-drive, status) | Per-vehicle state machine |
 | `lib/<%= @name %>/vms/composer.ex` | `VmsCore.Vehicle` impl — supervision children, CAN config | **Heavily** — prune components |
 | `lib/<%= @name %>/vms/composer/dashboard*` | VMS dashboard pages + blocks | Match what you kept in `children/0` |<%= if @infotainment do %>

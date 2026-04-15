@@ -40,9 +40,10 @@ defmodule BridgeFirmware.MixProject do
       {:nerves_pack, "~> 0.7.1", targets: @all_targets},
       {:ovcs_bridge, path: "../../libraries/ovcs_bridge"},
 
-      # emqtt wants cowlib ~> 2.7 but Nerves pulls ~> 2.13; pin the
-      # older version since it's what the MQTT stack is tested with.
-      {:cowlib, "~> 2.7.0", override: true},
+      # Align cowlib across emqtt (~> 2.7) and the Nerves stack
+      # (~> 2.13). Widened from 2.7 so the host-dev BEAM can bundle
+      # ros_bridge alongside Phoenix (which needs ~> 2.16).
+      {:cowlib, "~> 2.13", override: true},
 
       # Bridge libraries — enumerated here rather than pulled in
       # transitively through the active vehicle (à la vms/api's

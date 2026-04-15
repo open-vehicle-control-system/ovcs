@@ -42,7 +42,8 @@ defmodule OvcsCli do
           upload: upload_spec(vehicle_names),
           clean: clean_spec(vehicle_names),
           can: can_spec(vehicle_names),
-          vehicle: vehicle_spec()
+          vehicle: vehicle_spec(),
+          run: run_spec(vehicle_names)
         ]
       )
 
@@ -82,6 +83,10 @@ defmodule OvcsCli do
 
       {[:vehicle, :new], %{args: %{name: name}, options: opts, flags: flags}} ->
         Commands.VehicleNew.run(repo_root(), name, Map.merge(opts, flags))
+
+      {[:run], %{args: %{vehicle: v}}} ->
+        vehicle = v || Prompt.choose!("vehicle", vehicle_names)
+        Commands.Run.run(repo_root(), vehicle)
 
       {[:vehicle], _} ->
         Optimus.parse!(optimus, ["help", "vehicle"])
@@ -188,6 +193,25 @@ defmodule OvcsCli do
               multiple: false
             ]
           ]
+        ]
+      ]
+    ]
+  end
+
+  defp run_spec(vehicles) do
+    [
+      name: "run",
+      about: "Provision vcan + boot the vehicle locally in one BEAM (iex -S mix)",
+      args: [
+        vehicle: [
+          value_name: "VEHICLE",
+          help: "Vehicle directory (prompts if omitted)",
+          required: false,
+          parser: fn value ->
+            if value in vehicles,
+              do: {:ok, value},
+              else: {:error, "unknown vehicle #{inspect(value)}"}
+          end
         ]
       ]
     ]

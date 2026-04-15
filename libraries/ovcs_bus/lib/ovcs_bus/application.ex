@@ -8,6 +8,9 @@ defmodule OvcsBus.Application do
       {Phoenix.PubSub, name: OvcsBus}
     ]
 
-    Supervisor.start_link(children, strategy: :one_for_one, name: OvcsBus.Supervisor)
+    # Phoenix.PubSub with `name: OvcsBus` auto-names its own
+    # supervisor `OvcsBus.Supervisor` (via `Module.concat(name,
+    # "Supervisor")`), so we can't reuse that atom here.
+    Supervisor.start_link(children, strategy: :one_for_one, name: OvcsBus.RootSupervisor)
   end
 end

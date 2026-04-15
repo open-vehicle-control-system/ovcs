@@ -297,41 +297,57 @@ For **physical** CAN interfaces (real hardware), Cantastic brings them up at boo
 
 ## Local Development
 
-### Running the VMS
+Each vehicle package (`vehicles/<name>`) is itself a runnable Mix
+app on host. Its `Application` module (installed only when
+`Mix.target() == :host`) delegates to
+`OvcsVehicle.LocalSupervisor`, which walks `bridge_firmwares/0` and
+starts the host-compatible bridges. VMS + infotainment cores
+auto-start via their own OTP apps (transitive deps).
+
+### One-command boot (recommended)
 
 ```sh
-# Terminal 1: Setup the vehicle's virtual CAN interfaces
-./ovcs can setup ovcs1
-
-# Terminal 2: Start the VMS API
-cd vms/api
-mix deps.get
-mix phx.server
-
-# Terminal 3: Start the VMS debug dashboard
-cd vms/dashboard
-npm install
-npm run dev
+./ovcs run ovcs1     # or ovcs_mini, obd2
 ```
 
-### Running the Infotainment
+`./ovcs run` provisions the vcan interfaces the vehicle declares,
+then execs `iex -S mix` inside `vehicles/<vehicle>/` with a tty-
+inherited child. You get:
+
+- **VMS API + debug dashboard backend** on `http://localhost:4000`
+- **Infotainment API** on `http://localhost:4001` (vehicles that
+  implement `infotainment/0`)
+- **Host-compatible bridges** registered dormant (no hardware on
+  the host, so their `children/0` return `[]`)
+
+All in one BEAM sharing the node-local `OvcsBus` — no MQTT broker
+needed for dev.
+
+Dashboards run separately:
 
 ```sh
-# Terminal 1: Start the Infotainment API
-cd infotainment/api
-mix deps.get
-mix phx.server
-
-# Terminal 2: Start the Flutter dashboard (requires Flutter SDK)
-cd infotainment/dashboard
-flutter run -d linux
+cd vms/dashboard && npm install && npm run dev
+cd infotainment/dashboard && flutter run -d linux
 ```
 
-### Running with custom CAN mappings
+### Running pieces in isolation
+
+Sometimes you only want VMS (say you're iterating on a component)
+or only infotainment. Boot each side from its Phoenix app with the
+`VEHICLE` env var:
 
 ```sh
-cd vms/api
-CAN_NETWORK_MAPPINGS=ovcs:can0,leaf_drive:vcan1,polo_drive:vcan2,orion_bms:vcan3,misc:vcan4 iex -S mix phx.server
+cd vms/api && VEHICLE=Ovcs1 mix phx.server
+cd infotainment/api && VEHICLE=Ovcs1 mix phx.server
+```
+
+### Custom CAN mappings
+
+Override the default host mapping by setting `CAN_NETWORK_MAPPINGS`
+before `./ovcs run` (or the per-side `mix phx.server`):
+
+```sh
+CAN_NETWORK_MAPPINGS=ovcs:can0,leaf_drive:vcan1,polo_drive:vcan2,orion_bms:vcan3,misc:vcan4 ./ovcs run ovcs1
 ```
 
 Next: [Testing CAN Messages](./testing_can_messages.md)
