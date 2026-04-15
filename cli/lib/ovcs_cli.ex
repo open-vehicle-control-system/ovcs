@@ -26,6 +26,10 @@ defmodule OvcsCli do
             name: "vehicles",
             about: "List discovered vehicles and their Nerves targets"
           ],
+          doctor: [
+            name: "doctor",
+            about: "Verify toolchain and vehicle packages"
+          ],
           build: build_spec(vehicle_names),
           burn: burn_spec(vehicle_names),
           upload: upload_spec(vehicle_names)
@@ -35,6 +39,9 @@ defmodule OvcsCli do
     case Optimus.parse!(optimus, argv) do
       {[:vehicles], _} ->
         Commands.Vehicles.run(repo_root(), vehicles)
+
+      {[:doctor], _} ->
+        Commands.Doctor.run(repo_root())
 
       {[:build], %{args: %{vehicle: v, application: a}}} ->
         Commands.Build.run(repo_root(), v, a)
