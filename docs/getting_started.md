@@ -78,15 +78,18 @@ git clone https://github.com/open-vehicle-control-system/ovcs.git
 cd ovcs
 ```
 
-### 6. Bootstrap Elixir and the CLI
+### 6. Build the CLI and verify
 
 Once inside the repo:
 
 ```sh
-mise run bootstrap   # installs hex, rebar, and the nerves_bootstrap Mix archive
+mise install         # installs language runtimes + runs the bootstrap hook
+                     # (hex, rebar, nerves_bootstrap) automatically
 mise run cli         # builds the `./ovcs` CLI escript
 ./ovcs doctor        # verify everything
 ```
+
+The `mise install` postinstall hook runs `mise run bootstrap` for you — hex, rebar, and the `nerves_bootstrap` Mix archive get installed against whichever Elixir mise has just put in place. If you ever reinstall Elixir (`mise install elixir@...`) the same hook fires, so the archive stays in sync.
 
 `./ovcs doctor` checks every required binary, the `nerves_bootstrap` archive, `libsocketcan` headers, and each vehicle package's metadata. Green across the board means you're ready.
 
