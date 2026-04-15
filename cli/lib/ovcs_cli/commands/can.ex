@@ -107,7 +107,29 @@ defmodule OvcsCli.Commands.Can do
     done
     """
 
-    OvcsCli.Shell.exec!("sudo bash -c #{shell_quote(script)}")
+    ensure_sudo_cached!()
+    OvcsCli.Shell.exec!("sudo -n bash -c #{shell_quote(script)}")
+  end
+
+  # Escripts can't forward a tty to child processes (BEAM gives ports pipes,
+  # not terminals), so `sudo` can't prompt for a password from inside the
+  # escript. We require the user's session to already have cached sudo
+  # credentials (`sudo -n true` succeeds). If not, tell them to run `sudo -v`
+  # first.
+  defp ensure_sudo_cached! do
+    case System.cmd("sudo", ["-n", "true"], stderr_to_stdout: true) do
+      {_, 0} ->
+        :ok
+
+      _ ->
+        IO.puts("")
+        IO.puts(IO.ANSI.yellow() <> "sudo credentials are not cached." <> IO.ANSI.reset())
+        IO.puts("Run the following in this terminal, then re-run the previous ovcs command:")
+        IO.puts("")
+        IO.puts("    " <> IO.ANSI.cyan() <> "sudo -v" <> IO.ANSI.reset())
+        IO.puts("")
+        System.halt(1)
+    end
   end
 
   defp shell_quote(s), do: "'" <> String.replace(s, "'", "'\\''") <> "'"
