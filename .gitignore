@@ -4,3 +4,8 @@ doc/
 *.db
 *.db-shm
 *.db-wal
+_build/
+deps/
+.elixir_ls/
+erl_crash.dump
+*.ez

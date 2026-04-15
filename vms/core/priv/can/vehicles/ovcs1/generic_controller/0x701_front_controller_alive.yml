@@ -1,7 +1,0 @@
----
-name: front_controller_alive
-id: 0x701
-frequency: 100
-allowed_frequency_leeway: 200
-allowed_missing_frames: 10
-signals: import!:@ovcs_can:can/components/ovcs/generic_controller/0x7X1_alive_signals.yml

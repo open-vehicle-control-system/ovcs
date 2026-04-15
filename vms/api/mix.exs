@@ -48,6 +48,7 @@ defmodule VmsApi.MixProject do
       {:cors_plug, "~> 3.0.3"},
       {:json, "~> 1.4"},
       {:vms_core, path: "../core"},
+      {:ovcs1, path: "../../vehicles/ovcs1"},
     ]
   end
 

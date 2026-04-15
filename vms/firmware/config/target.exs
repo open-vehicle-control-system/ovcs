@@ -11,10 +11,10 @@ vehicle_name = (System.get_env("VEHICLE") || "OVCS1")
 vehicle_path = Macro.underscore(vehicle_name)
 vehicle_host = "#{vehicle_path |> String.replace("_", "-")}-vms"
 
-vehicle_module = case vehicle_name do
-  "OVCS1" -> VmsCore.Vehicles.OVCS1.Composer
-  "OVCSMini" -> VmsCore.Vehicles.OVCSMini.Composer
-  "OBD2" -> VmsCore.Vehicles.OBD2.Composer
+{vehicle_module, cantastic_otp_app, cantastic_priv_path} = case vehicle_name do
+  "OVCS1"    -> {Ovcs1.Vms.Composer,              :ovcs1,    "can/vms.yml"}
+  "OVCSMini" -> {VmsCore.Vehicles.OVCSMini.Composer, :vms_core, "can/vehicles/ovcs_mini.yml"}
+  "OBD2"     -> {VmsCore.Vehicles.OBD2.Composer,  :vms_core, "can/vehicles/obd2.yml"}
 end
 
 default_can_mapping = case vehicle_name do
@@ -174,8 +174,8 @@ config :cantastic,
     [(System.get_env("CAN_NETWORK_MAPPINGS") || default_can_mapping)]
   },
   setup_can_interfaces: true,
-  otp_app: :vms_core,
-  priv_can_config_path: "can/vehicles/#{vehicle_path}.yml",
+  otp_app: cantastic_otp_app,
+  priv_can_config_path: cantastic_priv_path,
   enable_socketcand: true,
   socketcand_ip_interface: "eth0"
 

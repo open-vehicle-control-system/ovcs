@@ -11,9 +11,9 @@ vehicle_name = (System.get_env("VEHICLE") || "OVCS1")
 vehicle_path = Macro.underscore(vehicle_name)
 vehicle_host = "#{vehicle_path |> String.replace("_", "-")}-infotainment"
 
-vehicle_module = case vehicle_name do
-  "OVCS1" -> InfotainmentCore.Vehicles.OVCS1.Composer
-  "OBD2" -> InfotainmentCore.Vehicles.OBD2.Composer
+{vehicle_module, cantastic_otp_app, cantastic_priv_path} = case vehicle_name do
+  "OVCS1" -> {Ovcs1.Infotainment.Composer,                :ovcs1,             "can/infotainment.yml"}
+  "OBD2"  -> {InfotainmentCore.Vehicles.OBD2.Composer,    :infotainment_core, "obd2.yml"}
 end
 
 config :infotainment_core, :vehicle, vehicle_module
@@ -137,8 +137,8 @@ config :phoenix, :json_library, Jason
 config :cantastic,
   can_network_mappings: [{"ovcs", "can0"}],
   setup_can_interfaces: true,
-  otp_app: :infotainment_core,
-  priv_can_config_path: "#{vehicle_path}.yml"
+  otp_app: cantastic_otp_app,
+  priv_can_config_path: cantastic_priv_path
 # import_config "#{Mix.target()}.exs"
 
 config :nerves, :erlinit, hostname_pattern: vehicle_host
