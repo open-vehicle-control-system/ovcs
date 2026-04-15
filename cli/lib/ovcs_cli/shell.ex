@@ -25,14 +25,14 @@ defmodule OvcsCli.Shell do
   end
 
   @doc """
-  Runs `cmd` connected directly to the user's tty (stdin inherited), so
-  prompts from `sudo`, `ssh`, etc. reach the user. Output is not captured
-  — it's written straight to the terminal.
+  Runs `cmd` such that prompts from `sudo`, `ssh`, etc. can reach the
+  user. Sudo opens `/dev/tty` directly for the password, so we just need
+  to avoid redirecting stderr. Stdout streams back and is echoed.
   """
   def exec!(cmd) when is_binary(cmd) do
     IO.puts(IO.ANSI.cyan() <> "→ #{cmd}" <> IO.ANSI.reset())
 
-    port = Port.open({:spawn, cmd}, [:nouse_stdio, :exit_status])
+    port = Port.open({:spawn, cmd}, [:binary, :exit_status, :use_stdio])
     await_exit(port)
   end
 
