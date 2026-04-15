@@ -69,10 +69,7 @@ sudo apt install -y can-utils libsocketcan-dev
 `fwup` is the firmware image packager Nerves calls during `mix firmware`. It is **not** in the Debian/Ubuntu repos — install the latest `.deb` from the project's GitHub releases:
 
 ```sh
-version=1.15.0
-arch=$(dpkg --print-architecture)
-curl -L -o /tmp/fwup.deb \
-  "https://github.com/fwup-home/fwup/releases/download/v${version}/fwup_${version}_${arch}.deb"
+curl -L -o /tmp/fwup.deb "https://github.com/fwup-home/fwup/releases/download/v1.15.0/fwup_1.15.0_$(dpkg --print-architecture).deb"
 sudo dpkg -i /tmp/fwup.deb
 ```
 
