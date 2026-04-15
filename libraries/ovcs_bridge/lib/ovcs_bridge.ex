@@ -14,7 +14,7 @@ defmodule OvcsBridge do
   in `ovcs_bridge` brings `ovcs_bus` along, so a bridge child can
   `OvcsBus.subscribe("messages")` / `OvcsBus.broadcast/2` exactly
   like any `vms_core` component. Cross-firmware traffic goes through
-  `OvcsBus.Relay.Mqtt` when the vehicle's `bridge_firmwares/0` entry
+  `OvcsBus.Mqtt.Relay` when the vehicle's `bridge_firmwares/0` entry
   declares `:bus_relay` opts.
 
   Keep the behaviour tight — anything vehicle-specific belongs in
@@ -28,7 +28,7 @@ defmodule OvcsBridge do
   Optional — bus message names this bridge publishes or consumes on
   the shared relay. The supervisor unions these across every bridge
   bundled in a firmware and passes them as `:topics` to
-  `OvcsBus.Relay.Mqtt` (each name becomes an MQTT topic
+  `OvcsBus.Mqtt.Relay` (each name becomes an MQTT topic
   `<topic_prefix>/<name>`), so each bridge library travels with its
   own message contract instead of making the vehicle restate it.
   """

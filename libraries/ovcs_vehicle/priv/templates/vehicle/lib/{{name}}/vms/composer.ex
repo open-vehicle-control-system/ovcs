@@ -28,7 +28,7 @@ defmodule <%= @module %>.Vms.Composer do
   def default_can_mapping(:target), do: "ovcs:spi0.0"
 
   # Optional — host the MQTT broker for the vehicle. Requires the
-  # mosquitto binary in the Nerves rootfs; see OvcsBus.Broker.
+  # mosquitto binary in the Nerves rootfs; see OvcsBus.Mqtt.Broker.
   #
   # @impl VmsCore.Vehicle
   # def bus_broker do

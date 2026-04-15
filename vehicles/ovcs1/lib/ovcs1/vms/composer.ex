@@ -20,7 +20,7 @@ defmodule Ovcs1.Vms.Composer do
 
   # Uncomment to have the VMS firmware host the MQTT broker that
   # the other firmwares' relays connect to. Requires mosquitto in
-  # the Nerves system rootfs — see OvcsBus.Broker moduledoc.
+  # the Nerves system rootfs — see OvcsBus.Mqtt.Broker moduledoc.
   #
   # @impl VmsCore.Vehicle
   # def bus_broker do

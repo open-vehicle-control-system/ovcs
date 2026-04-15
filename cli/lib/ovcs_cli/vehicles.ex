@@ -33,9 +33,24 @@ defmodule OvcsCli.Vehicles do
   """
   @spec nerves_target(t(), :vms | :infotainment) :: String.t() | nil
   def nerves_target(%__MODULE__{module: module, path: path}, side) do
-    snippet =
-      ~s|case function_exported?(#{module}, :nerves_target, 1) and #{module}.nerves_target(:#{side}) do | <>
-        ~s|false -> :ok; target -> IO.write(to_string(target)) end|
+    # A vehicle may implement `nerves_target/1` for only a subset of
+    # sides (e.g. OvcsMini only defines the `:vms` clause, no
+    # `:infotainment`). `function_exported?` only tells us the
+    # function arity exists, not that a given clause matches —
+    # calling a missing clause would raise FunctionClauseError,
+    # make the `mix run` exit non-zero, and push us into the
+    # deps-refetch retry path on every `ovcs vehicles` call.
+    # Wrap the call in try/rescue so a missing clause just reports
+    # "no target for this side" (stdout stays empty → nil return).
+    snippet = """
+    if function_exported?(#{module}, :nerves_target, 1) do
+      try do
+        IO.write(to_string(#{module}.nerves_target(:#{side})))
+      rescue
+        FunctionClauseError -> :ok
+      end
+    end
+    """
 
     run_snippet(path, snippet)
   end

@@ -20,9 +20,9 @@ OVCS is developed on Linux. macOS users need a Linux VM (see [macOS setup](#loca
 | can-utils | Latest | CAN bus utilities (`cansend`, `candump`, `canplayer`) | system package |
 | `fwup` | Latest | Nerves firmware image packager | system package |
 | `libsocketcan-dev` | Latest | Cantastic native CAN bindings | system package (firmware builds only) |
-| `cmake` | Latest | Host-compile native MQTT (`quicer` via `emqtt`) | system package |
+| `cmake` | Latest | Host-compile `quicer` (ros_bridge's MQTT transport via `emqtt`) | system package |
 | `libmnl-dev` | Latest | Host-compile `nerves_uevent` native | system package |
-| `mosquitto` | Latest | MQTT broker spawned by `OvcsBus.Broker` when the VMS hosts the bus | system package |
+| `mosquitto` | Latest | MQTT broker spawned by `OvcsBus.Mqtt.Broker` when the VMS hosts the bus | system package |
 | `nerves_bootstrap` | Latest | Nerves Mix archive | `mise run bootstrap` |
 | [PlatformIO](https://platformio.org/) | Latest | Arduino controller firmware | mise (via pipx + uv) |
 
@@ -57,9 +57,9 @@ sudo apt install -y can-utils libsocketcan-dev cmake libmnl-dev mosquitto
 
 - `can-utils` provides `cansend`, `candump`, `canplayer`, and the rest. The Linux kernel modules `can` and `can_raw` are required and are included in standard (non-cloud) kernels.
 - `libsocketcan-dev` is only needed when building for physical CAN targets (i.e. the Pi firmwares); it supplies the native headers Cantastic links against.
-- `cmake` is needed to host-compile `quicer` (MQTT via `emqtt`, pulled in by `ros_bridge` and `ovcs_bus`).
+- `cmake` is needed to host-compile `quicer` (the MQTT transport NIF used by `ros_bridge`'s Zenoh/ROS2 dispatcher via `emqtt`). `OvcsBus.Mqtt.Relay` uses Tortoise311 — pure Elixir, no native deps — so the bus itself doesn't need any of this; `cmake` is only needed if you build `ros_bridge`.
 - `libmnl-dev` is needed to host-compile `nerves_uevent` (transitively pulled in by firmware deps).
-- `mosquitto` provides the broker binary spawned by `OvcsBus.Broker`. `OvcsBus.Broker` binds `1884` by default so it won't clash if you've kept Mosquitto's bundled systemd unit running on `1883`; otherwise `sudo systemctl disable --now mosquitto` to free the default port if you want the OVCS-supervised instance to take its place.
+- `mosquitto` provides the broker binary spawned by `OvcsBus.Mqtt.Broker`. `OvcsBus.Mqtt.Broker` binds `1884` by default so it won't clash if you've kept Mosquitto's bundled systemd unit running on `1883`; otherwise `sudo systemctl disable --now mosquitto` to free the default port if you want the OVCS-supervised instance to take its place.
 
 `fwup` is the firmware image packager Nerves calls during `mix firmware`. It is **not** in the Debian/Ubuntu repos — install the latest `.deb` from the project's GitHub releases:
 

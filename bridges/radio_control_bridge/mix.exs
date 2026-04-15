@@ -18,7 +18,6 @@ defmodule RadioControlBridge.MixProject do
   defp deps do
     [
       {:ovcs_bridge, path: "../../libraries/ovcs_bridge"},
-      {:cantastic, path: "../../libraries/cantastic"},
       {:express_lrs, path: "../../libraries/express_lrs"},
       {:msp_osd, path: "../../libraries/msp_osd"}
     ]

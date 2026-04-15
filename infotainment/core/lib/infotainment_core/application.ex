@@ -31,7 +31,7 @@ defmodule InfotainmentCore.Application do
     if function_exported?(composer, :bus_relay, 0) do
       case composer.bus_relay() do
         nil -> []
-        opts -> [{OvcsBus.Relay.Mqtt, opts}]
+        opts -> [{OvcsBus.Mqtt.Relay, opts}]
       end
     else
       []

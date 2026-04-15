@@ -38,18 +38,24 @@ defmodule BridgeFirmware.MixProject do
       {:observer_cli, "~> 1.8"},
       {:nerves_runtime, "~> 0.13.0"},
       {:nerves_pack, "~> 0.7.1", targets: @all_targets},
-      {:cantastic, path: "../../libraries/cantastic"},
-      {:ovcs_vehicle, path: "../../libraries/ovcs_vehicle"},
       {:ovcs_bridge, path: "../../libraries/ovcs_bridge"},
 
       # emqtt wants cowlib ~> 2.7 but Nerves pulls ~> 2.13; pin the
       # older version since it's what the MQTT stack is tested with.
       {:cowlib, "~> 2.7.0", override: true},
 
-      # Bridge libraries — each gated to the Nerves targets it
-      # supports so we don't drag e.g. ros_bridge's emqtt/quicer
-      # chain into a rpi3a radio-control build. Extend the target
-      # lists here as bridges gain new SoC support.
+      # Bridge libraries — enumerated here rather than pulled in
+      # transitively through the active vehicle (à la vms/api's
+      # dynamic vehicle_dep). Keeping them explicit here means
+      # bridge code stays out of vms/firmware / infotainment/firmware
+      # releases: both of those transitively dep on the vehicle, and
+      # target-gating wouldn't save us when MIX_TARGET matches (e.g.
+      # both VMS and ros_bridge build for rpi4).
+      #
+      # Each lib is gated to the Nerves targets it supports so a
+      # rpi3a build doesn't drag ros_bridge's emqtt/quicer chain in.
+      # Extend the target lists as bridges gain new SoC support, or
+      # add a new bridge by listing it here + target gates.
       {:radio_control_bridge,
        path: "../radio_control_bridge",
        targets: [:ovcs_base_can_system_rpi3a]},

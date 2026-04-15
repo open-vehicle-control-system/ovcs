@@ -18,7 +18,6 @@ defmodule RosBridge.MixProject do
   defp deps do
     [
       {:ovcs_bridge, path: "../../libraries/ovcs_bridge"},
-      {:cantastic, path: "../../libraries/cantastic"},
       {:cowlib, "~> 2.7.0", override: true},
       {:emqtt, "~> 1.10"},
       {:circuits_i2c, "~> 2.0"}

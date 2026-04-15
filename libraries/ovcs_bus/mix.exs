@@ -21,7 +21,12 @@ defmodule OvcsBus.MixProject do
   defp deps do
     [
       {:phoenix_pubsub, "~> 2.1"},
-      {:emqtt, "~> 1.10"},
+      # Tortoise311: pure-Elixir MQTT 3.1.1 client, no native deps.
+      # Chosen over emqtt because quicer (emqtt's QUIC NIF) doesn't
+      # cross-compile on Nerves toolchains.
+      {:tortoise311, "~> 0.12"},
+      # MuonTrap: supervised OS processes. Used by OvcsBus.Broker to
+      # host a Mosquitto daemon. Cross-compiles fine on Nerves.
       {:muontrap, "~> 1.0"}
     ]
   end

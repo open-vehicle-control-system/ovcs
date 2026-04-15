@@ -50,7 +50,7 @@ end
   firmware's supervision tree when the bridge is bundled.
 - `relay_messages/0` — optional; `OvcsBridge.Supervisor` unions
   these across every bundled bridge and passes them to
-  `OvcsBus.Relay.Mqtt` as `:topics`.
+  `OvcsBus.Mqtt.Relay` as `:topics`.
 
 ## Runtime
 
@@ -60,7 +60,7 @@ config.exs` from `VEHICLE` + `BRIDGE_FIRMWARE_ID`), looks up the
 matching entry in `vehicle.bridge_firmwares/0`, and:
 
 1. flat-maps `children/0` from every bundled bridge module;
-2. starts `OvcsBus.Relay.Mqtt` when the entry has `:bus_relay`
+2. starts `OvcsBus.Mqtt.Relay` when the entry has `:bus_relay`
    (broker/identity from the vehicle, topics unioned from each
    bridge's `relay_messages/0` unless the vehicle overrides);
 3. runs everything under `:one_for_one`.
@@ -84,3 +84,17 @@ lib/
   queries for the active bridge firmware entry.
 - `ovcs_bus` — bundles the local pub/sub bus + relay, available
   to every bridge library that transitively depends on this one.
+
+## Why bridge libs are listed in `bridges/firmware/mix.exs`
+
+Unlike the VMS firmware (`vms/api/mix.exs` pulls the active vehicle
+via `System.get_env("VEHICLE")` → path dep), the bridges firmware
+enumerates bridge libraries explicitly. If bridges were instead
+pulled in through the vehicle, they'd bleed into `vms/firmware` and
+`infotainment/firmware` releases — both transitively depend on the
+vehicle, and target-gating can't separate them when `MIX_TARGET`
+matches (e.g. VMS and `ros_bridge` both build for rpi4). Keeping
+bridge libs enumerated here keeps the VMS/infotainment releases
+lean at the cost of a shared-firmware touch when a new bridge is
+added. Target-gating still prevents e.g. rpi3a builds from pulling
+ros_bridge's MQTT/Zenoh chain.

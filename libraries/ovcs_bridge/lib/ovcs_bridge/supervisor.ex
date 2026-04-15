@@ -14,7 +14,7 @@ defmodule OvcsBridge.Supervisor do
     * looks up the entry in the vehicle's `bridge_firmwares/0` map;
     * collects `children/0` from every bundled bridge module listed
       in that entry;
-    * optionally starts `OvcsBus.Relay.Mqtt` when the entry has a
+    * optionally starts `OvcsBus.Mqtt.Relay` when the entry has a
       `:bus_relay` key.
 
   The firmware's `Application` becomes a thin wrapper that just
@@ -64,7 +64,7 @@ defmodule OvcsBridge.Supervisor do
         if topics == [] do
           []
         else
-          [{OvcsBus.Relay.Mqtt, Keyword.put(opts, :topics, topics)}]
+          [{OvcsBus.Mqtt.Relay, Keyword.put(opts, :topics, topics)}]
         end
     end
   end

@@ -49,7 +49,7 @@ defmodule VmsCore.Application do
     if function_exported?(composer, :bus_relay, 0) do
       case composer.bus_relay() do
         nil -> []
-        opts -> [{OvcsBus.Relay.Mqtt, opts}]
+        opts -> [{OvcsBus.Mqtt.Relay, opts}]
       end
     else
       []
@@ -58,14 +58,13 @@ defmodule VmsCore.Application do
 
   # Opt-in MQTT broker — started only when the vehicle's VMS
   # composer implements `bus_broker/0` and returns non-nil opts.
-  # This is the broker all other firmwares' relays connect to.
   defp bus_broker_children do
     composer = vehicle_composer()
 
     if function_exported?(composer, :bus_broker, 0) do
       case composer.bus_broker() do
         nil -> []
-        opts -> [{OvcsBus.Broker, opts}]
+        opts -> [{OvcsBus.Mqtt.Broker, opts}]
       end
     else
       []

@@ -40,14 +40,14 @@ are free-form strings — add more if you need fan-out isolation.
 
 ## Cross-firmware relay (MQTT)
 
-`OvcsBus.Relay.Mqtt` mirrors selected messages between the local
+`OvcsBus.Mqtt.Relay` mirrors selected messages between the local
 bus and an MQTT broker so multiple firmwares on the vehicle LAN
 share one logical bus.
 
 Opts (map or keyword list):
 
 ```elixir
-{OvcsBus.Relay.Mqtt,
+{OvcsBus.Mqtt.Relay,
  broker: [host: "ovcs1-vms.local", port: 1884, username: "…", password: "…"],
  client_id: "ovcs1-vms",
  topic_prefix: "ovcs/ovcs1/bus",
@@ -95,13 +95,15 @@ hub. Topology on a vehicle running all three sides:
                              └─────────────────────────────┘
 ```
 
-Each `OvcsBus.Relay.Mqtt` instance:
+Each `OvcsBus.Mqtt.Relay` instance:
 
-1. **Connects** to the broker at boot via `:emqtt.connect/1` using
-   the `:broker` keyword list (host, port, username, password,
-   keepalive — all standard emqtt opts). The broker address is a
-   mDNS hostname by convention (e.g. `ovcs1-vms.local`), resolved
-   by `mdns_lite` on the vehicle LAN, so no static IPs are needed.
+1. **Connects** to the broker at boot via `Tortoise311.Connection`
+   using the `:broker` keyword list (host, port, optional
+   `:user_name` / `:password` / `:keep_alive`). The broker address
+   is a mDNS hostname by convention (e.g. `ovcs1-vms.local`),
+   resolved by `mdns_lite` on the vehicle LAN, so no static IPs are
+   needed. Tortoise311 is pure Elixir (MQTT 3.1.1, no native deps),
+   so this module cross-compiles cleanly on every Nerves target.
 2. **Subscribes** to `<topic_prefix>/<name>` on the broker for
    every name in the relay's topic list (QoS 0). The broker then
    fans out any message published to that topic to all subscribed
@@ -115,14 +117,13 @@ Each `OvcsBus.Relay.Mqtt` instance:
    with `[:safe]`, tagged `:relay_origin = :mqtt`, and
    `local_broadcast`-ed on the subscribing firmware's bus.
 
-Reconnection, backoff, and keepalive are handled by `emqtt`; if
-the broker goes down the local bus keeps working unchanged, and
-the relay reconnects automatically when the broker returns.
+Reconnection, backoff, and keepalive are handled by Tortoise311;
+if the broker goes down the local bus keeps working unchanged,
+and the relay reconnects automatically when the broker returns.
 Messages published during a broker outage are not queued anywhere
-(QoS 0 with an empty retain flag) — intentional, since stale
-status is worse than none. Raise QoS or flip `retain: true` in
-the broker opts only for messages where delivery-after-reconnect
-is genuinely desired.
+(QoS 0) — intentional, since stale status is worse than none.
+Raise QoS in the opts for messages where delivery-after-reconnect
+is genuinely desired (Tortoise311 supports QoS 0/1).
 
 ### Choosing topics and client ids
 
@@ -134,7 +135,7 @@ is genuinely desired.
   `<vehicle>-<side-or-bridge-id>`, e.g. `ovcs1-vms`,
   `ovcs1-infotainment`, `ovcs1-radio-control`.
 
-### Broker hosting — `OvcsBus.Broker`
+### Broker hosting — `OvcsBus.Mqtt.Broker`
 
 One firmware per vehicle runs the broker. By convention that's the
 VMS — which is why the default hostname in examples is
@@ -150,7 +151,7 @@ end
 ```
 
 `VmsCore.Application` reads `bus_broker/0` and adds
-`{OvcsBus.Broker, opts}` to the VMS supervision tree. The broker
+`{OvcsBus.Mqtt.Broker, opts}` to the VMS supervision tree. The broker
 module spawns `mosquitto -c <generated-config>` via `MuonTrap`, so
 a crash is restarted automatically. A minimal listener +
 allow-anonymous config is written at boot; override via `:config`
@@ -172,14 +173,16 @@ lib/
   ovcs_bus/
     application.ex         — starts Phoenix.PubSub(name: OvcsBus)
     message.ex             — %OvcsBus.Message{} struct
-    relay.ex               — relay contract moduledoc
-    relay/mqtt.ex          — emqtt-backed cross-bus relay
+    mqtt.ex                — OvcsBus.Mqtt moduledoc (grouping)
+    mqtt/relay.ex          — Tortoise311-backed cross-bus relay
+    mqtt/broker.ex         — MuonTrap-supervised Mosquitto broker
 ```
 
 ## Dependencies
 
-- `phoenix_pubsub` — the underlying registry.
-- `emqtt` — MQTT client for the relay. Pulled in unconditionally so
-  `OvcsBus.Relay.Mqtt` is always available; target builds link
-  `quicer` through the Nerves toolchain, host builds need `cmake`
-  + `libmnl-dev` (see `docs/getting_started.md`).
+- `phoenix_pubsub` — the underlying pub/sub registry.
+- `tortoise311` — pure-Elixir MQTT 3.1.1 client for the relay. No
+  native deps, cross-compiles on every Nerves target.
+- `muontrap` — supervised OS processes. Used by
+  `OvcsBus.Mqtt.Broker` to host the Mosquitto daemon; cross-compiles
+  fine on Nerves.

@@ -14,7 +14,7 @@ defmodule InfotainmentCore.Vehicle do
   @callback default_can_mapping(:host | :target) :: String.t()
 
   @doc """
-  Optional — opts passed to `OvcsBus.Relay.Mqtt` so this vehicle's
+  Optional — opts passed to `OvcsBus.Mqtt.Relay` so this vehicle's
   infotainment side relays selected bus messages to a shared MQTT
   broker. Return `nil` (or omit the callback) to skip the relay.
   """

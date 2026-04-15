@@ -18,7 +18,8 @@ defmodule OvcsBridge.MixProject do
   defp deps do
     [
       {:ovcs_vehicle, path: "../ovcs_vehicle"},
-      {:ovcs_bus, path: "../ovcs_bus"}
+      {:ovcs_bus, path: "../ovcs_bus"},
+      {:cantastic, path: "../cantastic"}
     ]
   end
 end
