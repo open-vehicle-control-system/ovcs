@@ -8,11 +8,14 @@ if config_env() in [:dev, :test, :prod] do
 end
 
 vehicle_name = System.get_env("VEHICLE") || raise "VEHICLE env var is required for firmware builds"
-vehicle = Module.concat([vehicle_name])
-vms = vehicle.vms()
-vehicle_host = "#{vehicle_name |> Macro.underscore() |> String.replace("_", "-")}-vms"
+vehicle_dir = Macro.underscore(vehicle_name)
+vehicle_host = "#{vehicle_dir |> String.replace("_", "-")}-vms"
+# target.exs runs before deps are compiled, so we can only form module atoms
+# and use path conventions here. Vehicle-function-dependent config (like the
+# CAN network mapping default) lives in runtime.exs.
+vms_composer = Module.concat([vehicle_name, "Vms", "Composer"])
 
-config :vms_core, :vehicle, vms
+config :vms_core, :vehicle, vms_composer
 
 # Use Ringlogger as the logger backend and remove :console.
 # See https://hexdocs.pm/ring_logger/readme.html for more information on
@@ -38,7 +41,7 @@ config :nerves, :erlinit, update_clock: true
 # * See https://hexdocs.pm/nerves_ssh/readme.html for general SSH configuration
 # * See https://hexdocs.pm/ssh_subsystem_fwup/readme.html for firmware updates
 config :nerves_ssh,
-  authorized_keys: System.get_env("AUTHORIZED_SSH_KEYS") |> String.split(",")
+  authorized_keys: (System.get_env("AUTHORIZED_SSH_KEYS") || "") |> String.split(",", trim: true)
 
 
   # Configure the network using vintage_net
@@ -157,14 +160,9 @@ config :vms_core, VmsCore.Repo,
   show_sensitive_data_on_connection_error: true
 
 config :cantastic,
-  can_network_mappings: {
-    VmsFirmware.Util.NetworkMapper,
-    :can_network_mappings,
-    [(System.get_env("CAN_NETWORK_MAPPINGS") || vms.default_can_mapping(:target))]
-  },
   setup_can_interfaces: true,
-  otp_app: vehicle.can_config_otp_app(),
-  priv_can_config_path: vms.can_config_path(),
+  otp_app: String.to_atom(vehicle_dir),
+  priv_can_config_path: "can/vms.yml",
   enable_socketcand: true,
   socketcand_ip_interface: "eth0"
 

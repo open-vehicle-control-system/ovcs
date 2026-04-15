@@ -8,11 +8,13 @@ if config_env() in [:dev, :test, :prod] do
 end
 
 vehicle_name = System.get_env("VEHICLE") || raise "VEHICLE env var is required for firmware builds"
-vehicle = Module.concat([vehicle_name])
-infotainment = vehicle.infotainment()
-vehicle_host = "#{vehicle_name |> Macro.underscore() |> String.replace("_", "-")}-infotainment"
+vehicle_dir = Macro.underscore(vehicle_name)
+vehicle_host = "#{vehicle_dir |> String.replace("_", "-")}-infotainment"
+# target.exs runs before deps are compiled. Only atom/path-based config here;
+# vehicle-function-dependent config lives in runtime.exs.
+infotainment_composer = Module.concat([vehicle_name, "Infotainment", "Composer"])
 
-config :infotainment_core, :vehicle, infotainment
+config :infotainment_core, :vehicle, infotainment_composer
 
 # Use Ringlogger as the logger backend and remove :console.
 # See https://hexdocs.pm/ring_logger/readme.html for more information on
@@ -131,17 +133,9 @@ config :logger, :console,
 config :phoenix, :json_library, Jason
 
 config :cantastic,
-  can_network_mappings: fn ->
-    (System.get_env("CAN_NETWORK_MAPPINGS") || infotainment.default_can_mapping(:target))
-    |> String.split(",", trim: true)
-    |> Enum.map(fn i ->
-      [network_name, can_interface] = i |> String.split(":", trim: true)
-      {network_name, can_interface}
-    end)
-  end,
   setup_can_interfaces: true,
-  otp_app: vehicle.can_config_otp_app(),
-  priv_can_config_path: infotainment.can_config_path()
+  otp_app: String.to_atom(vehicle_dir),
+  priv_can_config_path: "can/infotainment.yml"
 # import_config "#{Mix.target()}.exs"
 
 config :nerves, :erlinit, hostname_pattern: vehicle_host
