@@ -115,40 +115,46 @@ defmodule OvcsCli do
     ]
   end
 
+  # Both positional args accept *either* a vehicle dir or an application name.
+  # We sort them out in resolve_vehicle_app/2 so order doesn't matter —
+  # `./ovcs build vms` prompts for a vehicle; `./ovcs build ovcs1` prompts
+  # for an application; `./ovcs build vms ovcs1` is the same as
+  # `./ovcs build ovcs1 vms`.
   defp vehicle_and_application_args(vehicles) do
+    parser = fn value ->
+      cond do
+        value in vehicles -> {:ok, value}
+        value in @applications -> {:ok, value}
+        true ->
+          {:error,
+           "unknown token #{inspect(value)}; expected a vehicle " <>
+             "(#{Enum.join(vehicles, ", ")}) or an application " <>
+             "(#{Enum.join(@applications, ", ")})"}
+      end
+    end
+
     [
-      vehicle: [
-        value_name: "VEHICLE",
-        help:
-          "Vehicle directory (#{Enum.join(vehicles, " | ")}). Prompts if omitted.",
+      first: [
+        value_name: "VEHICLE|APP",
+        help: "Vehicle or application. Order doesn't matter; missing one is prompted.",
         required: false,
-        parser: fn value ->
-          if value in vehicles do
-            {:ok, value}
-          else
-            {:error, "unknown vehicle #{inspect(value)} (known: #{Enum.join(vehicles, ", ")})"}
-          end
-        end
+        parser: parser
       ],
-      application: [
-        value_name: "APPLICATION",
-        help:
-          "Application (#{Enum.join(@applications, " | ")}). Prompts if omitted.",
+      second: [
+        value_name: "VEHICLE|APP",
+        help: "The other of vehicle/application.",
         required: false,
-        parser: fn value ->
-          if value in @applications do
-            {:ok, value}
-          else
-            {:error, "unknown application #{inspect(value)} (known: #{Enum.join(@applications, ", ")})"}
-          end
-        end
+        parser: parser
       ]
     ]
   end
 
-  defp resolve_vehicle_app(%{vehicle: v, application: a}, vehicles) do
-    vehicle = v || Prompt.choose!("vehicle", vehicles)
-    application = a || Prompt.choose!("application", @applications)
+  defp resolve_vehicle_app(%{first: first, second: second}, vehicles) do
+    values = [first, second] |> Enum.reject(&is_nil/1)
+
+    vehicle = Enum.find(values, &(&1 in vehicles)) || Prompt.choose!("vehicle", vehicles)
+    application = Enum.find(values, &(&1 in @applications)) || Prompt.choose!("application", @applications)
+
     {vehicle, application}
   end
 
