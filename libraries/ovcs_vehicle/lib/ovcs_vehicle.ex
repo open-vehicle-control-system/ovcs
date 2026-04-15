@@ -14,4 +14,6 @@ defmodule OvcsVehicle do
   @callback infotainment() :: module()
   @callback can_config_otp_app() :: atom()
   @callback nerves_target(:vms | :infotainment) :: atom()
+
+  @optional_callbacks [infotainment: 0]
 end

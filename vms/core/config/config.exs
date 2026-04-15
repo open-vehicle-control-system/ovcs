@@ -21,9 +21,9 @@ config :vms_core, VmsCore.Repo,
 vehicle_name = (System.get_env("VEHICLE") || "OVCS1")
 
 {vehicle_module, cantastic_otp_app, cantastic_priv_path} = case vehicle_name do
-  "OVCS1"    -> {Ovcs1.Vms.Composer,              :ovcs1,    "can/vms.yml"}
-  "OVCSMini" -> {VmsCore.Vehicles.OVCSMini.Composer, :vms_core, "can/vehicles/ovcs_mini.yml"}
-  "OBD2"     -> {VmsCore.Vehicles.OBD2.Composer,  :vms_core, "can/vehicles/obd2.yml"}
+  "OVCS1"    -> {Ovcs1.Vms.Composer,    :ovcs1,      "can/vms.yml"}
+  "OVCSMini" -> {OvcsMini.Vms.Composer, :ovcs_mini,  "can/vms.yml"}
+  "OBD2"     -> {Obd2.Vms.Composer,     :obd2,       "can/vms.yml"}
 end
 
 config :vms_core, :vehicle, vehicle_module

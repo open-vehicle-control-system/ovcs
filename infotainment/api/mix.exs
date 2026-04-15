@@ -47,6 +47,7 @@ defmodule InfotainmentApi.MixProject do
       {:cors_plug, "~> 3.0"},
       {:infotainment_core, path: "../core"},
       {:ovcs1, path: "../../vehicles/ovcs1"},
+      {:obd2, path: "../../vehicles/obd2"},
     ]
   end
 

@@ -21,8 +21,8 @@ config :infotainment_core, InfotainmentCore.Repo,
 vehicle_name = (System.get_env("VEHICLE") || "OVCS1")
 
 {vehicle_module, cantastic_otp_app, cantastic_priv_path} = case vehicle_name do
-  "OVCS1" -> {Ovcs1.Infotainment.Composer,                :ovcs1,             "can/infotainment.yml"}
-  "OBD2"  -> {InfotainmentCore.Vehicles.OBD2.Composer,    :infotainment_core, "obd2.yml"}
+  "OVCS1" -> {Ovcs1.Infotainment.Composer, :ovcs1, "can/infotainment.yml"}
+  "OBD2"  -> {Obd2.Infotainment.Composer,  :obd2,  "can/infotainment.yml"}
 end
 
 config :infotainment_core, :vehicle, vehicle_module

@@ -49,6 +49,8 @@ defmodule VmsApi.MixProject do
       {:json, "~> 1.4"},
       {:vms_core, path: "../core"},
       {:ovcs1, path: "../../vehicles/ovcs1"},
+      {:ovcs_mini, path: "../../vehicles/ovcs_mini"},
+      {:obd2, path: "../../vehicles/obd2"},
     ]
   end
 
