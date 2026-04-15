@@ -41,7 +41,7 @@ config :nerves, :erlinit, update_clock: true
 # * See https://hexdocs.pm/ssh_subsystem_fwup/readme.html for firmware updates
 
 config :nerves_ssh,
-  authorized_keys: System.get_env("AUTHORIZED_SSH_KEYS") |> String.split(",")
+  authorized_keys: (System.get_env("AUTHORIZED_SSH_KEYS") || "") |> String.split(",", trim: true)
 
 # Configure the network using vintage_net
 #
