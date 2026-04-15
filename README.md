@@ -134,50 +134,30 @@ ovcs/
 
 ## Quick Start
 
-See the full [Getting Started guide](./docs/getting_started.md) for detailed instructions.
+See the [Getting Started guide](./docs/getting_started.md) for full prerequisites and setup (Linux / VM, mise, system packages, fwup, bootstrap, verification).
 
-### Prerequisites
-
-- Linux (or a Linux VM on macOS -- see [getting started](./docs/getting_started.md))
-- [mise](https://mise.jdx.dev/) version manager — provides Erlang, Elixir, Node, Ruby, Python, Flutter
-- System packages: `sudo apt install -y can-utils libsocketcan-dev`
-- `fwup`: not in apt — grab the `.deb` from [fwup releases](https://github.com/fwup-home/fwup/releases) (or `brew install fwup` on macOS)
-- One-time setup: `mise install && mise run cli` (the bootstrap hook runs automatically)
-- Run `./ovcs doctor` to verify the full toolchain
-- [Nerves](https://hexdocs.pm/nerves/installation.html) system images cloned alongside this repo (for firmware builds)
-
-### Running locally
+Once the setup is done:
 
 ```sh
-# Setup virtual CAN interfaces
-./scripts/setup_virtual_can.sh
-
 # Start the VMS API (in one terminal)
-cd vms/api
-mix deps.get
-mix phx.server
+./scripts/setup_virtual_can.sh
+cd vms/api && VEHICLE=Ovcs1 mix phx.server
 
 # Start the VMS debug dashboard (in another terminal)
-cd vms/dashboard
-npm install
-npm run dev
+cd vms/dashboard && npm install && npm run dev
 ```
 
-See [Applications](./docs/applications.md) for more details on running each component.
+See [Applications](./docs/applications.md) for more details.
 
 ## Deploy
 
-Build, burn, or upload firmware using the `ovcs` CLI tool:
+Build, burn, or OTA-upload firmware via the `ovcs` CLI:
 
 ```sh
-# Build firmware
-./ovcs -c build -a [vms|infotainment|radio-control-bridge|ros-bridge] -v [ovcs1|ovcs-mini]
-
-# Burn to SD card
-./ovcs -c burn -a [vms|infotainment] -v [ovcs1|ovcs-mini]
-
-# Upload over the network
-./ovcs -c upload -a [vms|infotainment] -v [ovcs1|ovcs-mini] -h [host|ip]
+./ovcs vehicles                          # list discovered vehicles and their Nerves targets
+./ovcs build  ovcs1 vms                  # also: infotainment | radio-control-bridge | ros-bridge
+./ovcs burn   ovcs1 vms
+./ovcs upload ovcs1 vms [--host HOST] [--file FILE]
 ```
 
 ## Presentations and Media
