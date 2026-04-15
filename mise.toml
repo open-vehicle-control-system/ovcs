@@ -13,5 +13,9 @@ python  = "3.12"
 RUBY_BUILD_ATTESTATION_VERIFY = "false"
 
 # Example runtime env; uncomment and adjust as needed.
-# VEHICLE = "OVCS1"
+# VEHICLE = "Ovcs1"
 # CAN_NETWORK_MAPPINGS = "ovcs:can0,leaf_drive:vcan1,polo_drive:vcan2,orion_bms:vcan3,misc:vcan4"
+
+[tasks.cli]
+description = "Build the ovcs CLI escript"
+run = "cd cli && mix deps.get && mix escript.build"
