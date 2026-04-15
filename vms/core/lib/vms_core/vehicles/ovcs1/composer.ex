@@ -2,7 +2,11 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
   @moduledoc """
     Combine all the modules required to run the OVCS1 car
   """
+  @behaviour VmsCore.Vehicle
+
+  @impl VmsCore.Vehicle
   defdelegate generic_controllers, to:  VmsCore.Vehicles.OVCS1.Composer.GenericController
+  @impl VmsCore.Vehicle
   defdelegate dashboard_configuration, to:  VmsCore.Vehicles.OVCS1.Composer.Dashboard
 
   alias VmsCore.Components.{
@@ -15,6 +19,7 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
   }
   alias VmsCore.{Managers, Vehicles, Vehicles.OVCS1}
 
+  @impl VmsCore.Vehicle
   def children do
     [
       # Controllers
