@@ -98,7 +98,7 @@ The `-L` flag outputs in the log file format compatible with `canplayer`.
 
 ## Understanding CAN Frame Definitions
 
-CAN frame specifications are defined in YAML files under `vms/core/priv/can/`. Each YAML file defines a frame's CAN ID, data length, and the signals packed within it.
+CAN frame specifications are defined in YAML files. Shared per-component specs live in [`libraries/ovcs_can/priv/can/components/`](../libraries/ovcs_can/priv/can/components); each vehicle's CAN topology (which frames run on which networks) lives in its package under `vehicles/<name>/priv/can/{vms,infotainment}.yml`. Each YAML file defines a frame's CAN ID, data length, and the signals packed within it.
 
 For example, a signal definition:
 
@@ -133,7 +133,7 @@ sudo modprobe vcan
 
 Check that:
 1. The VMS API is running with the correct `CAN_NETWORK_MAPPINGS` pointing to your virtual interfaces.
-2. The `VEHICLE` environment variable is set to the correct vehicle (e.g., `OVCS1`).
+2. The `VEHICLE` environment variable is set to the vehicle package's top-level module name (e.g., `Ovcs1`, `OvcsMini`, `Obd2`).
 3. You are sending messages on the correct virtual interface for the CAN network you want to target.
 
 Next: [Hardware Architecture](./hardware_architecture.md)

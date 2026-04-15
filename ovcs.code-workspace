@@ -22,7 +22,39 @@
       "**/node_modules": true,
       "**/.dart_tool": true,
       "**/.pio": true
-    }
+    },
+    "dart.flutterSdkPath": "/home/loo/.local/share/mise/installs/flutter/3.27.4",
+    "dart.sdkPath": "/home/loo/.local/share/mise/installs/flutter/3.27.4/bin/cache/dart-sdk",
+    "platformio-ide.customPATH": "/home/loo/.local/share/mise/installs/python/3.12.13/bin",
+    "platformio-ide.useBuiltinPython": false,
+    "elixirLS.envVariables": {
+      "PATH": "/home/loo/.local/share/mise/shims:${env:PATH}"
+    },
+    "terminal.integrated.env.linux": {
+      "PATH": "/home/loo/.local/share/mise/shims:${env:PATH}"
+    },
+    "cSpell.words": [
+      "cansend",
+      "candump",
+      "canplayer",
+      "cantastic",
+      "ebin",
+      "EVPT",
+      "evpt",
+      "iBooster",
+      "infotainment",
+      "libsocketcan",
+      "mavlink",
+      "mise",
+      "nerves",
+      "ovcs",
+      "socketcan",
+      "socketcand",
+      "traxxas",
+      "vcan",
+      "volkswagen",
+      "yamerl"
+    ]
   },
   "extensions": {
     "recommendations": [

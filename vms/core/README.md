@@ -224,10 +224,10 @@ Each vehicle's Composer defines a declarative dashboard configuration consumed b
 
 ```sh
 cd vms/api
-VEHICLE=OVCS1 CAN_NETWORK_MAPPINGS=ovcs:vcan0,leaf_drive:vcan1,polo_drive:vcan2,orion_bms:vcan3,misc:vcan4 iex -S mix phx.server
+VEHICLE=Ovcs1 iex -S mix phx.server
 ```
 
-The VMS Core starts as a dependency of the VMS API (Phoenix). The `VEHICLE` env var is required.
+The VMS Core starts as a dependency of the VMS API (Phoenix). The `VEHICLE` env var (the top-level vehicle module name, e.g. `Ovcs1`) is required; `CAN_NETWORK_MAPPINGS` defaults to whatever `default_can_mapping(:host)` returns on the vehicle's VMS composer and only needs to be set to override it.
 
 ## Key Safety Features
 

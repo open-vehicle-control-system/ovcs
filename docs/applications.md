@@ -248,7 +248,7 @@ Defines the top-level behaviour every vehicle package implements.
 | **Module** | `OvcsCan` |
 | **App name** | `:ovcs_can` |
 
-A data-only library holding the shared CAN component frame and signal YAML definitions consumed by `vms/core` and `infotainment/core`. Contains no runtime logic -- only YAML under `priv/can/components/`. Vehicle topology entry points and per-vehicle controller wirings stay inside each consuming app.
+A data-only library holding the shared CAN component frame and signal YAML definitions consumed by vehicle packages. Contains no runtime logic -- only YAML under `priv/can/components/`. Vehicle topology entry points (`vms.yml`, `infotainment.yml`) and per-vehicle controller wirings live inside each vehicle package's `priv/can/` and import shared components from here via `import!:@ovcs_can:can/components/...`.
 
 ### Cantastic (`libraries/cantastic/`)
 
@@ -292,7 +292,7 @@ For **physical** CAN interfaces (real hardware):
 | Variable | Description | Example |
 |----------|-------------|---------|
 | `CAN_NETWORK_MAPPINGS` | Maps CAN network names to interfaces | `ovcs:can0,leaf_drive:vcan1,polo_drive:vcan2` |
-| `VEHICLE` | Vehicle configuration to use | `OVCS1`, `OVCSMini`, `OBD2` |
+| `VEHICLE` | Top-level vehicle module name (case-sensitive) | `Ovcs1`, `OvcsMini`, `Obd2` |
 | `SETUP_CAN_INTERFACE` | Skip automatic CAN interface setup | `true` |
 
 ## Local Development

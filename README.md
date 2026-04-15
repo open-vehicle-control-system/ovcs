@@ -65,16 +65,22 @@ This is a monorepo containing multiple independent applications:
 ```
 ovcs/
 +-- vms/                        Vehicle Management System
-|   +-- core/                     Elixir library - VMS business logic, component drivers, vehicle composers
+|   +-- core/                     Elixir library - VMS platform + component drivers (no vehicle code)
 |   +-- api/                      Phoenix JSON API + WebSocket server for the debug dashboard
 |   +-- dashboard/                Vue.js real-time debug dashboard (Vite + ECharts + TailwindCSS)
 |   +-- firmware/                 Nerves firmware targeting Raspberry Pi 4
 |
 +-- infotainment/               Infotainment System
-|   +-- core/                     Elixir library - infotainment business logic, layout, pages
+|   +-- core/                     Elixir library - infotainment platform (no vehicle code)
 |   +-- api/                      Phoenix JSON API + WebSocket server for the Flutter dashboard
 |   +-- dashboard/                Flutter/Dart in-car touchscreen application
 |   +-- firmware/                 Nerves firmware targeting Raspberry Pi 5
+|
++-- vehicles/                   Vehicle Packages (pluggable)
+|   +-- ovcs1/                    Full-size Polo EV conversion
+|   +-- ovcs_mini/                Traxxas RC car platform
+|   +-- obd2/                     OBD-II diagnostic mode
+|   Each bundles its VMS + infotainment composers and CAN topology.
 |
 +-- bridges/                    Communication Bridges
 |   +-- radio_control_bridge/     MAVLink RC transmitter bridge (Nerves on RPi 3A)
@@ -85,6 +91,8 @@ ovcs/
 |
 +-- libraries/                  Shared Libraries
 |   +-- cantastic/                CAN bus communication library (Elixir, SocketCAN)
+|   +-- ovcs_can/                 Shared CAN component frame/signal YAMLs
+|   +-- ovcs_vehicle/             OvcsVehicle top-level behaviour for vehicle packages
 |
 +-- scripts/                    Utility Scripts
 |   +-- setup_can.sh              Setup physical CAN interfaces
