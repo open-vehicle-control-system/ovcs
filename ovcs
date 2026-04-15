@@ -15,6 +15,14 @@ VEHICLES = {
   "obd2" => "OBD2"
 }
 
+# Keep in sync with each vehicle package's `nerves_target/1` callback.
+# See vehicles/<name>/lib/<name>.ex.
+MIX_TARGETS = {
+  "ovcs1"     => { "vms" => "ovcs_base_can_system_rpi4", "infotainment" => "ovcs_base_can_system_rpi5" },
+  "ovcs-mini" => { "vms" => "ovcs_base_can_system_rpi4" },
+  "obd2"      => { "vms" => "ovcs_base_can_system_rpi4", "infotainment" => "ovcs_base_can_system_rpi5" }
+}
+
 APPLICATIONS = {
   "vms"                  => "vms",
   "infotainment"         => "infotainment",
@@ -80,4 +88,8 @@ if options[:command] == "upload"
   end
 end
 
-Open3.pipeline("VEHICLE=#{VEHICLES[options[:vehicle]]} #{script}", chdir: firmware_directory)
+env = "VEHICLE=#{VEHICLES[options[:vehicle]]}"
+target = MIX_TARGETS.dig(options[:vehicle], options[:application])
+env += " MIX_TARGET=#{target}" if target
+
+Open3.pipeline("#{env} #{script}", chdir: firmware_directory)
