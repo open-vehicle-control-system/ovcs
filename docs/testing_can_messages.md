@@ -4,7 +4,7 @@ OVCS relies on CAN bus communication. During local development, you can simulate
 
 ## Prerequisites
 
-- Virtual CAN interfaces must be running: `./scripts/setup_virtual_can.sh`
+- Virtual CAN interfaces must be running: `./ovcs can setup <vehicle>`
 - The VMS or Infotainment API must be started (see [Applications](./applications.md))
 - `can-utils` must be installed: `sudo apt install can-utils`
 
@@ -118,7 +118,7 @@ See the [Hardware Architecture](./hardware_architecture.md#can-bus-configuration
 Virtual CAN interfaces are not set up. Run:
 
 ```sh
-./scripts/setup_virtual_can.sh
+./ovcs can setup <vehicle>   # e.g. ovcs1 | ovcs_mini | obd2
 ```
 
 If `vcan` module loading fails, you may need to load the kernel modules first:

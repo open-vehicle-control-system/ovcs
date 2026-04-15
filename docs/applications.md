@@ -278,10 +278,10 @@ Since OVCS relies on the CAN bus, you need `libsocketcan` kernel support and `ca
 For **virtual** CAN interfaces (local development):
 
 ```sh
-./scripts/setup_virtual_can.sh
+./ovcs can setup <vehicle>
 ```
 
-For **physical** CAN interfaces (real hardware):
+For **physical** CAN interfaces (real hardware), Cantastic brings them up at boot via `setup_can_interfaces: true` in the firmware's Cantastic config. For manual setup while SSH'd onto a device:
 
 ```sh
 ./scripts/setup_can.sh
@@ -300,8 +300,8 @@ For **physical** CAN interfaces (real hardware):
 ### Running the VMS
 
 ```sh
-# Terminal 1: Setup virtual CAN interfaces
-./scripts/setup_virtual_can.sh
+# Terminal 1: Setup the vehicle's virtual CAN interfaces
+./ovcs can setup ovcs1
 
 # Terminal 2: Start the VMS API
 cd vms/api

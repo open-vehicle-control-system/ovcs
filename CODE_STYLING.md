@@ -93,6 +93,6 @@ match what you see unless you have a reason to do otherwise.
 - Hardcoded paths to another app's `priv/`. Use `:code.priv_dir/1` or the
   `@<otp_app>:...` Cantastic import syntax.
 - Tests that mock Cantastic. Exercise the real configuration store with
-  virtual CAN (`./scripts/setup_virtual_can.sh`).
+  virtual CAN (`./ovcs can setup <vehicle>`).
 - Docs that restate `CODE_STYLING.md`.
   Link to them instead.

@@ -167,7 +167,7 @@ These system images are only needed if you want to build and deploy firmware to 
 ./ovcs can status ovcs1       # check which interfaces are up
 ```
 
-The CLI reads the vehicle's `default_can_mapping(:host)` and creates only the vcan interfaces that vehicle actually needs. It's idempotent: a second run on the same vehicle is a no-op. You'll be prompted for your sudo password the first time; `scripts/setup_virtual_can.sh` remains as a non-CLI fallback that creates `vcan0..vcan5` unconditionally.
+The CLI reads the vehicle's `default_can_mapping(:host)` and creates only the vcan interfaces that vehicle actually needs. It's idempotent: a second run on the same vehicle is a no-op. You'll be prompted for your sudo password the first time.
 
 ### 2. Test the VMS
 

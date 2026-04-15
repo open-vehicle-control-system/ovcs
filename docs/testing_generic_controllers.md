@@ -22,11 +22,9 @@ The `VmsCore.Controllers.TestController` module provides convenience functions t
 Start the physical CAN interface for the OVCS bus and virtual CAN interfaces for the remaining buses:
 
 ```sh
-./scripts/setup_can.sh
-./scripts/setup_virtual_can.sh
+./scripts/setup_can.sh          # physical can0 for the OVCS bus
+./ovcs can setup ovcs1          # virtual vcan1..vcan4 for leaf_drive, polo_drive, orion_bms, misc
 ```
-
-This creates `can0` (physical, for the OVCS bus) and `vcan1`-`vcan4` (virtual, for leaf_drive, polo_drive, orion_bms, misc).
 
 ### 2. Start the VMS
 

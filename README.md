@@ -95,11 +95,10 @@ ovcs/
 |   +-- ovcs_vehicle/             OvcsVehicle top-level behaviour for vehicle packages
 |
 +-- scripts/                    Utility Scripts
-|   +-- setup_can.sh              Setup physical CAN interfaces
-|   +-- setup_virtual_can.sh      Setup virtual CAN interfaces for local development
-|   +-- setup_flutter.sh          Flutter environment setup
-|   +-- bind_remote_can.rb        Bind to remote CAN interfaces over network
-|   +-- faker.rb                  Generate fake CAN data for testing
+|   +-- setup_can.sh              Physical CAN setup on hardware (manual fallback)
+|   +-- bind_remote_can.rb        Mirror a remote Nerves device's CAN bus over socketcand
+|   +-- faker.rb                  Generate fake OVCS1 CAN frames for dev
+|   +-- sleep_loop.rb             Toggle ignition frames in a loop for testing
 |
 +-- config/                     Global Configuration
 |   +-- bms_config.o2bms          Orion BMS2 configuration

@@ -161,9 +161,9 @@ This configures `can0` and `can1` at 500 kbps. Edit the script to adjust bitrate
 For virtual CAN interfaces (local development):
 
 ```sh
-./scripts/setup_virtual_can.sh
+./ovcs can setup <vehicle>
 ```
 
-This creates `vcan0` through `vcan5`.
+The CLI reads the vehicle's `default_can_mapping(:host)` and creates only the vcan interfaces that vehicle actually needs.
 
 Next: [Testing Generic Controllers](./testing_generic_controllers.md)
