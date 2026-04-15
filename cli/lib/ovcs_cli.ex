@@ -12,6 +12,7 @@ defmodule OvcsCli do
   @applications ~w(vms infotainment radio-control-bridge ros-bridge)
 
   def main(argv) do
+    argv = normalize_help(argv)
     vehicles = Vehicles.list(repo_root())
     vehicle_names = Enum.map(vehicles, & &1.dir)
 
@@ -67,8 +68,22 @@ defmodule OvcsCli do
         vehicle = v || Prompt.choose!("vehicle", vehicle_names)
         Commands.Can.setup(repo_root(), vehicle)
 
+      {[:can], _} ->
+        Optimus.parse!(optimus, ["help", "can"])
+
       _ ->
         Optimus.parse!(optimus, ["--help"])
+    end
+  end
+
+  # Rewrite `./ovcs <sub> [subsub] --help` (and `-h`) into
+  # `./ovcs help <sub> [subsub]` so the nested help path works uniformly
+  # whichever convention the user reaches for.
+  defp normalize_help(argv) do
+    case Enum.split_with(argv, &(&1 in ["--help", "-h"])) do
+      {[], _} -> argv
+      {_, rest} when rest == [] -> ["--help"]
+      {_, rest} -> ["help" | rest]
     end
   end
 
