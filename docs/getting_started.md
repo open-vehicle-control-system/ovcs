@@ -8,17 +8,20 @@ OVCS is developed on Linux. macOS users need a Linux VM (see [macOS setup](#loca
 
 ### Required Software
 
-| Tool | Version | Purpose |
-|------|---------|---------|
-| [mise](https://mise.jdx.dev/) | Latest | Version manager for Erlang, Elixir, Node.js, Ruby, Flutter, Python |
-| Erlang/OTP | 27.3+ | Runtime for Elixir |
-| Elixir | 1.17+ | Primary programming language |
-| Node.js | 24+ | VMS debug dashboard (Vue.js) |
-| Ruby | 3.3+ | CLI build tool (`ovcs` script) |
-| can-utils | Latest | CAN bus utilities (`cansend`, `candump`, `canplayer`) |
-| [Nerves](https://hexdocs.pm/nerves/installation.html) | Latest | Required only for building firmware images |
-| [Flutter](https://flutter.dev/docs/get-started/install) | 3.27.4 | Required only for the infotainment dashboard |
-| [PlatformIO](https://platformio.org/) | Latest | Required only for building Arduino controller firmware |
+| Tool | Version | Purpose | Managed by |
+|------|---------|---------|------------|
+| [mise](https://mise.jdx.dev/) | Latest | Version manager for language runtimes | you (one-time install) |
+| Erlang/OTP | 27.3+ | Runtime for Elixir | mise |
+| Elixir | 1.17+ | Primary programming language | mise |
+| Node.js | 24+ | VMS debug dashboard (Vue.js) | mise |
+| Ruby | 3.3+ | historical scripts | mise |
+| Python | 3.12+ | PlatformIO + misc tooling | mise |
+| [Flutter](https://flutter.dev/docs/get-started/install) | 3.27.4 | Infotainment dashboard | mise |
+| can-utils | Latest | CAN bus utilities (`cansend`, `candump`, `canplayer`) | system package |
+| `fwup` | Latest | Nerves firmware image packager | system package |
+| `libsocketcan-dev` | Latest | Cantastic native CAN bindings | system package (firmware builds only) |
+| `nerves_bootstrap` | Latest | Nerves Mix archive | `mise run bootstrap` |
+| [PlatformIO](https://platformio.org/) | Latest | Arduino controller firmware (optional) | your choice |
 
 ## Linux Setup
 
@@ -54,25 +57,42 @@ mise install
 
 From now on, `cd`-ing into the project activates the pinned versions automatically.
 
-### 4. Install CAN utilities
+### 4. Install system-level tools
 
 ```sh
-sudo apt install can-utils
+sudo apt install -y can-utils fwup libsocketcan-dev
 ```
 
-The `can-utils` package provides `cansend`, `candump`, `canplayer`, and other tools for working with CAN bus interfaces. The Linux kernel modules `can` and `can_raw` are required and are included in standard (non-cloud) kernels.
+- `can-utils` provides `cansend`, `candump`, `canplayer`, and the rest. The Linux kernel modules `can` and `can_raw` are required and are included in standard (non-cloud) kernels.
+- `fwup` is the firmware image packager Nerves calls during `mix firmware`.
+- `libsocketcan-dev` is only needed when building for physical CAN targets (i.e. the Pi firmwares); it supplies the native headers Cantastic links against.
 
-### 5. Install Nerves (optional, for firmware builds)
+On macOS: `brew install fwup can-utils` (there's no `libsocketcan` on macOS — firmware builds happen inside the Linux VM).
 
-Follow the [Nerves installation guide](https://hexdocs.pm/nerves/installation.html). This is only needed if you plan to build firmware images for Raspberry Pi targets.
-
-### 6. Clone the repository
+### 5. Clone the repository
 
 ```sh
 mkdir ovcs_base
 cd ovcs_base
 git clone https://github.com/open-vehicle-control-system/ovcs.git
+cd ovcs
 ```
+
+### 6. Bootstrap Elixir and the CLI
+
+Once inside the repo:
+
+```sh
+mise run bootstrap   # installs hex, rebar, and the nerves_bootstrap Mix archive
+mise run cli         # builds the `./ovcs` CLI escript
+./ovcs doctor        # verify everything
+```
+
+`./ovcs doctor` checks every required binary, the `nerves_bootstrap` archive, `libsocketcan` headers, and each vehicle package's metadata. Green across the board means you're ready.
+
+### 7. Install custom Nerves systems (only for firmware builds)
+
+If you plan to build and deploy firmware to physical hardware, follow the [Nerves installation guide](https://hexdocs.pm/nerves/installation.html) for the additional tooling (e.g. `squashfs-tools`, `fakeroot`) and clone the OVCS Nerves systems — see the [System Images](#setting-up-system-images-for-firmware-builds) section below.
 
 ## macOS / VM Setup
 
@@ -146,11 +166,11 @@ This creates virtual CAN interfaces (`vcan0` through `vcan5`) that simulate phys
 
 ```sh
 cd vms/api
-mix deps.get
-mix phx.server
+VEHICLE=Ovcs1 mix deps.get
+VEHICLE=Ovcs1 mix phx.server
 ```
 
-The VMS API should start and be accessible at `http://localhost:4000`.
+The VMS API should start and be accessible at `http://localhost:4000`. The `VEHICLE` env var is mandatory — it selects which vehicle package's composer wires the supervision tree and CAN topology. Use `Ovcs1`, `OvcsMini`, or `Obd2` (the top-level module name of the vehicle package).
 
 ### 3. Test the VMS dashboard
 
