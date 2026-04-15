@@ -1,5 +1,27 @@
 import Config
 
+vehicle_name = System.get_env("VEHICLE")
+
+if vehicle_name do
+  vehicle = Module.concat([vehicle_name])
+  vms = vehicle.vms()
+
+  config :vms_core, :vehicle, vms
+
+  config :cantastic,
+    can_network_mappings: fn ->
+      (System.get_env("CAN_NETWORK_MAPPINGS") || vms.default_can_mapping(:host))
+      |> String.split(",", trim: true)
+      |> Enum.map(fn i ->
+        [network_name, can_interface] = i |> String.split(":", trim: true)
+        {network_name, can_interface}
+      end)
+    end,
+    setup_can_interfaces: (System.get_env("SETUP_CAN_INTERFACES") == "true" || false),
+    otp_app: vehicle.can_config_otp_app(),
+    priv_can_config_path: vms.can_config_path()
+end
+
 # config/runtime.exs is executed for all environments, including
 # during releases. It is executed after compilation and before the
 # system starts, so it is typically used to load production configuration

@@ -18,6 +18,10 @@ defmodule OvcsMini.Vms.Composer do
   def can_config_path, do: "can/vms.yml"
 
   @impl VmsCore.Vehicle
+  def default_can_mapping(:host), do: "ovcs:vcan0"
+  def default_can_mapping(:target), do: "ovcs:spi0.0"
+
+  @impl VmsCore.Vehicle
   def children do
     [
       # Controllers

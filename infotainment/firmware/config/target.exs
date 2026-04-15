@@ -7,16 +7,12 @@ if config_env() in [:dev, :test, :prod] do
   end
 end
 
-vehicle_name = (System.get_env("VEHICLE") || "OVCS1")
-vehicle_path = Macro.underscore(vehicle_name)
-vehicle_host = "#{vehicle_path |> String.replace("_", "-")}-infotainment"
+vehicle_name = System.get_env("VEHICLE") || raise "VEHICLE env var is required for firmware builds"
+vehicle = Module.concat([vehicle_name])
+infotainment = vehicle.infotainment()
+vehicle_host = "#{vehicle_name |> Macro.underscore() |> String.replace("_", "-")}-infotainment"
 
-{vehicle_module, cantastic_otp_app, cantastic_priv_path} = case vehicle_name do
-  "OVCS1" -> {Ovcs1.Infotainment.Composer, :ovcs1, "can/infotainment.yml"}
-  "OBD2"  -> {Obd2.Infotainment.Composer,  :obd2,  "can/infotainment.yml"}
-end
-
-config :infotainment_core, :vehicle, vehicle_module
+config :infotainment_core, :vehicle, infotainment
 
 # Use Ringlogger as the logger backend and remove :console.
 # See https://hexdocs.pm/ring_logger/readme.html for more information on
@@ -135,10 +131,17 @@ config :logger, :console,
 config :phoenix, :json_library, Jason
 
 config :cantastic,
-  can_network_mappings: [{"ovcs", "can0"}],
+  can_network_mappings: fn ->
+    (System.get_env("CAN_NETWORK_MAPPINGS") || infotainment.default_can_mapping(:target))
+    |> String.split(",", trim: true)
+    |> Enum.map(fn i ->
+      [network_name, can_interface] = i |> String.split(":", trim: true)
+      {network_name, can_interface}
+    end)
+  end,
   setup_can_interfaces: true,
-  otp_app: cantastic_otp_app,
-  priv_can_config_path: cantastic_priv_path
+  otp_app: vehicle.can_config_otp_app(),
+  priv_can_config_path: infotainment.can_config_path()
 # import_config "#{Mix.target()}.exs"
 
 config :nerves, :erlinit, hostname_pattern: vehicle_host

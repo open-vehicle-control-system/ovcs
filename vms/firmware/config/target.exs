@@ -7,23 +7,12 @@ if config_env() in [:dev, :test, :prod] do
   end
 end
 
-vehicle_name = (System.get_env("VEHICLE") || "OVCS1")
-vehicle_path = Macro.underscore(vehicle_name)
-vehicle_host = "#{vehicle_path |> String.replace("_", "-")}-vms"
+vehicle_name = System.get_env("VEHICLE") || raise "VEHICLE env var is required for firmware builds"
+vehicle = Module.concat([vehicle_name])
+vms = vehicle.vms()
+vehicle_host = "#{vehicle_name |> Macro.underscore() |> String.replace("_", "-")}-vms"
 
-{vehicle_module, cantastic_otp_app, cantastic_priv_path} = case vehicle_name do
-  "OVCS1"    -> {Ovcs1.Vms.Composer,    :ovcs1,      "can/vms.yml"}
-  "OVCSMini" -> {OvcsMini.Vms.Composer, :ovcs_mini,  "can/vms.yml"}
-  "OBD2"     -> {Obd2.Vms.Composer,     :obd2,       "can/vms.yml"}
-end
-
-default_can_mapping = case vehicle_name do
-  "OVCS1" -> "ovcs:spi0.0,leaf_drive:spi0.1,polo_drive:spi1.0,orion_bms:spi1.1,misc:spi1.2"
-  "OVCSMini" -> "ovcs:spi0.0"
-  "OBD2" -> "obd2:spi0.0"
-end
-
-config :vms_core, :vehicle, vehicle_module
+config :vms_core, :vehicle, vms
 
 # Use Ringlogger as the logger backend and remove :console.
 # See https://hexdocs.pm/ring_logger/readme.html for more information on
@@ -171,11 +160,11 @@ config :cantastic,
   can_network_mappings: {
     VmsFirmware.Util.NetworkMapper,
     :can_network_mappings,
-    [(System.get_env("CAN_NETWORK_MAPPINGS") || default_can_mapping)]
+    [(System.get_env("CAN_NETWORK_MAPPINGS") || vms.default_can_mapping(:target))]
   },
   setup_can_interfaces: true,
-  otp_app: cantastic_otp_app,
-  priv_can_config_path: cantastic_priv_path,
+  otp_app: vehicle.can_config_otp_app(),
+  priv_can_config_path: vms.can_config_path(),
   enable_socketcand: true,
   socketcand_ip_interface: "eth0"
 

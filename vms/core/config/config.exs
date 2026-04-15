@@ -18,34 +18,9 @@ config :vms_core, VmsCore.Repo,
   stacktrace: true,
   show_sensitive_data_on_connection_error: true
 
-vehicle_name = (System.get_env("VEHICLE") || "OVCS1")
-
-{vehicle_module, cantastic_otp_app, cantastic_priv_path} = case vehicle_name do
-  "OVCS1"    -> {Ovcs1.Vms.Composer,    :ovcs1,      "can/vms.yml"}
-  "OVCSMini" -> {OvcsMini.Vms.Composer, :ovcs_mini,  "can/vms.yml"}
-  "OBD2"     -> {Obd2.Vms.Composer,     :obd2,       "can/vms.yml"}
-end
-
-config :vms_core, :vehicle, vehicle_module
-
-default_can_mapping = case vehicle_name do
-  "OVCS1" -> "ovcs:vcan0,leaf_drive:vcan1,polo_drive:vcan2,orion_bms:vcan3,misc:vcan4"
-  "OVCSMini" -> "ovcs:vcan0"
-  "OBD2" -> "obd2:vcan0,ovcs:vcan1"
-end
-
-config :cantastic,
-  can_network_mappings: fn() ->
-    (System.get_env("CAN_NETWORK_MAPPINGS") || default_can_mapping)
-    |> String.split(",", trim: true)
-    |> Enum.map(fn(i) ->
-      [network_name, can_interface] = i |> String.split(":", trim: true)
-      {network_name, can_interface}
-    end)
-  end,
-  setup_can_interfaces: (System.get_env("SETUP_CAN_INTERFACES") == "true" || false),
-  otp_app: cantastic_otp_app,
-  priv_can_config_path: cantastic_priv_path
+# Vehicle selection (composer module + Cantastic path + CAN mappings) lives
+# in config/runtime.exs because it needs the vehicle package's modules to be
+# compiled and loadable.
 
 # Configures Elixir's Logger
 config :logger, :console,

@@ -45,10 +45,18 @@ defmodule InfotainmentApi.MixProject do
       {:dns_cluster, "~> 0.1.1"},
       {:plug_cowboy, "~> 2.5"},
       {:cors_plug, "~> 3.0"},
-      {:infotainment_core, path: "../core"},
-      {:ovcs1, path: "../../vehicles/ovcs1"},
-      {:obd2, path: "../../vehicles/obd2"},
+      {:infotainment_core, path: "../core"}
+      | vehicle_dep()
     ]
+  end
+
+  defp vehicle_dep do
+    case System.get_env("VEHICLE") do
+      nil -> []
+      name ->
+        dir = Macro.underscore(name)
+        [{String.to_atom(dir), path: "../../vehicles/#{dir}"}]
+    end
   end
 
   # Aliases are shortcuts or tasks specific to the current project.

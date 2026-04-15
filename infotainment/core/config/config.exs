@@ -18,27 +18,9 @@ config :infotainment_core, InfotainmentCore.Repo,
   stacktrace: true,
   show_sensitive_data_on_connection_error: true
 
-vehicle_name = (System.get_env("VEHICLE") || "OVCS1")
-
-{vehicle_module, cantastic_otp_app, cantastic_priv_path} = case vehicle_name do
-  "OVCS1" -> {Ovcs1.Infotainment.Composer, :ovcs1, "can/infotainment.yml"}
-  "OBD2"  -> {Obd2.Infotainment.Composer,  :obd2,  "can/infotainment.yml"}
-end
-
-config :infotainment_core, :vehicle, vehicle_module
-
-config :cantastic,
-  can_network_mappings: fn() ->
-    (System.get_env("CAN_NETWORK_MAPPINGS") || "ovcs:vcan1")
-    |> String.split(",", trim: true)
-    |> Enum.map(fn(i) ->
-      [network_name, can_interface] = i |> String.split(":", trim: true)
-      {network_name, can_interface}
-    end)
-  end,
-  setup_can_interfaces: (System.get_env("SETUP_CAN_INTERFACES") == "true" || false),
-  otp_app: cantastic_otp_app,
-  priv_can_config_path: cantastic_priv_path
+# Vehicle selection (composer module + Cantastic path + CAN mappings) lives
+# in config/runtime.exs because it needs the vehicle package's modules to be
+# compiled and loadable.
 
 
 # Configures Elixir's Logger

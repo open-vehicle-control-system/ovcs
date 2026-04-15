@@ -15,6 +15,10 @@ defmodule Ovcs1.Infotainment.Composer do
   def can_config_path, do: "can/infotainment.yml"
 
   @impl InfotainmentCore.Vehicle
+  def default_can_mapping(:host), do: "ovcs:vcan1"
+  def default_can_mapping(:target), do: "ovcs:can0"
+
+  @impl InfotainmentCore.Vehicle
   def children do
     [
       {Ovcs1.Infotainment, []}

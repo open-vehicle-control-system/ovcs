@@ -11,6 +11,7 @@ defmodule InfotainmentCore.Vehicle do
   @callback infotainment_configuration() :: map()
   @callback can_config_otp_app() :: atom()
   @callback can_config_path() :: String.t()
+  @callback default_can_mapping(:host | :target) :: String.t()
 
   @optional_callbacks [infotainment_configuration: 0]
 end

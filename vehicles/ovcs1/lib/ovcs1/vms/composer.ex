@@ -14,6 +14,10 @@ defmodule Ovcs1.Vms.Composer do
   @impl VmsCore.Vehicle
   def can_config_path, do: "can/vms.yml"
 
+  @impl VmsCore.Vehicle
+  def default_can_mapping(:host), do: "ovcs:vcan0,leaf_drive:vcan1,polo_drive:vcan2,orion_bms:vcan3,misc:vcan4"
+  def default_can_mapping(:target), do: "ovcs:spi0.0,leaf_drive:spi0.1,polo_drive:spi1.0,orion_bms:spi1.1,misc:spi1.2"
+
   alias VmsCore.Components.{
     Bosch,
     Nissan.LeafAZE0,

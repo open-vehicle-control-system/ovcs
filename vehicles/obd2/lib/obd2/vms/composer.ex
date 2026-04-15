@@ -15,6 +15,10 @@ defmodule Obd2.Vms.Composer do
   def can_config_path, do: "can/vms.yml"
 
   @impl VmsCore.Vehicle
+  def default_can_mapping(:host), do: "obd2:vcan0,ovcs:vcan1"
+  def default_can_mapping(:target), do: "obd2:spi0.0,ovcs:spi0.1"
+
+  @impl VmsCore.Vehicle
   def children do
     [
       {Vms, []}
