@@ -10,7 +10,7 @@ OVCS is developed on Linux. macOS users need a Linux VM (see [macOS setup](#loca
 
 | Tool | Version | Purpose |
 |------|---------|---------|
-| [asdf](https://asdf-vm.com/) | Latest | Version manager for Erlang, Elixir, Node.js, Ruby |
+| [mise](https://mise.jdx.dev/) | Latest | Version manager for Erlang, Elixir, Node.js, Ruby, Flutter, Python |
 | Erlang/OTP | 27.3+ | Runtime for Elixir |
 | Elixir | 1.17+ | Primary programming language |
 | Node.js | 24+ | VMS debug dashboard (Vue.js) |
@@ -22,41 +22,39 @@ OVCS is developed on Linux. macOS users need a Linux VM (see [macOS setup](#loca
 
 ## Linux Setup
 
-### 1. Install asdf
-
-Install asdf dependencies first (see [asdf docs](https://asdf-vm.com/guide/getting-started.html#_1-install-dependencies)), then install asdf itself:
+### 1. Install mise
 
 ```sh
-git clone https://github.com/asdf-vm/asdf.git ~/.asdf
-# or: brew install asdf
+curl https://mise.run | sh
+echo 'eval "$(~/.local/bin/mise activate zsh)"' >> ~/.zshrc   # or bash/fish
+exec $SHELL
 ```
 
-### 2. Install language runtimes
+See the [mise installation docs](https://mise.jdx.dev/getting-started.html) for other shells and package-manager installs.
+
+### 2. Install build dependencies
+
+Erlang and Ruby are built from source by mise, so the system needs the usual C toolchain and dev headers. On Debian/Ubuntu:
 
 ```sh
-# Erlang
-asdf plugin add erlang https://github.com/asdf-vm/asdf-erlang.git
-asdf install erlang 27.3.4.2
-asdf set erlang 27.3.4.2 --home
-
-# Elixir
-asdf plugin add elixir https://github.com/asdf-vm/asdf-elixir.git
-asdf install elixir 1.17
-asdf set elixir 1.17 --home
-
-# Node.js
-asdf plugin add nodejs https://github.com/asdf-vm/asdf-nodejs.git
-asdf install nodejs 24.7.0
-asdf set nodejs 24.7.0 --home
-
-# Ruby (for the ovcs CLI tool)
-sudo apt install libffi-dev libyaml-dev
-asdf plugin add ruby
-asdf install ruby 3.3.5
-asdf set ruby 3.3.5 --home
+sudo apt install -y build-essential autoconf m4 \
+  libncurses-dev libssl-dev libffi-dev libyaml-dev zlib1g-dev \
+  libwxgtk3.2-dev libgl1-mesa-dev libglu1-mesa-dev libpng-dev \
+  libssh-dev unixodbc-dev xsltproc fop libxml2-utils
 ```
 
-### 3. Install CAN utilities
+### 3. Install language runtimes
+
+The repo ships a `mise.toml` pinning every required runtime (Erlang, Elixir, Node, Ruby, Flutter, Python). From the repo root:
+
+```sh
+mise trust
+mise install
+```
+
+From now on, `cd`-ing into the project activates the pinned versions automatically.
+
+### 4. Install CAN utilities
 
 ```sh
 sudo apt install can-utils
@@ -64,11 +62,11 @@ sudo apt install can-utils
 
 The `can-utils` package provides `cansend`, `candump`, `canplayer`, and other tools for working with CAN bus interfaces. The Linux kernel modules `can` and `can_raw` are required and are included in standard (non-cloud) kernels.
 
-### 4. Install Nerves (optional, for firmware builds)
+### 5. Install Nerves (optional, for firmware builds)
 
 Follow the [Nerves installation guide](https://hexdocs.pm/nerves/installation.html). This is only needed if you plan to build firmware images for Raspberry Pi targets.
 
-### 5. Clone the repository
+### 6. Clone the repository
 
 ```sh
 mkdir ovcs_base

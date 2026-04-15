@@ -131,7 +131,7 @@ See the full [Getting Started guide](./docs/getting_started.md) for detailed ins
 ### Prerequisites
 
 - Linux (or a Linux VM on macOS -- see [getting started](./docs/getting_started.md))
-- [asdf](https://asdf-vm.com/) version manager
+- [mise](https://mise.jdx.dev/) version manager
 - Erlang 27.3+, Elixir 1.17+, Node.js 24+, Ruby 3.3+
 - `can-utils` and `libsocketcan` kernel support
 - [Nerves](https://hexdocs.pm/nerves/installation.html) (for firmware builds)
