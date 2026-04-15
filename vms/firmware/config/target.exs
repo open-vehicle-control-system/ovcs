@@ -7,17 +7,23 @@ if config_env() in [:dev, :test, :prod] do
   end
 end
 
-vehicle      = (System.get_env("VEHICLE") || "OVCS1")
-vehicle_path = Macro.underscore(vehicle)
+vehicle_name = (System.get_env("VEHICLE") || "OVCS1")
+vehicle_path = Macro.underscore(vehicle_name)
 vehicle_host = "#{vehicle_path |> String.replace("_", "-")}-vms"
 
-default_can_mapping = case vehicle do
+vehicle_module = case vehicle_name do
+  "OVCS1" -> VmsCore.Vehicles.OVCS1.Composer
+  "OVCSMini" -> VmsCore.Vehicles.OVCSMini.Composer
+  "OBD2" -> VmsCore.Vehicles.OBD2.Composer
+end
+
+default_can_mapping = case vehicle_name do
   "OVCS1" -> "ovcs:spi0.0,leaf_drive:spi0.1,polo_drive:spi1.0,orion_bms:spi1.1,misc:spi1.2"
   "OVCSMini" -> "ovcs:spi0.0"
   "OBD2" -> "obd2:spi0.0"
 end
 
-config :vms_core, :vehicle, vehicle
+config :vms_core, :vehicle, vehicle_module
 
 # Use Ringlogger as the logger backend and remove :console.
 # See https://hexdocs.pm/ring_logger/readme.html for more information on

@@ -18,9 +18,14 @@ config :infotainment_core, InfotainmentCore.Repo,
   stacktrace: true,
   show_sensitive_data_on_connection_error: true
 
-vehicle = (System.get_env("VEHICLE") || "OVCS1")
+vehicle_name = (System.get_env("VEHICLE") || "OVCS1")
 
-config :infotainment_core, :vehicle, vehicle
+vehicle_module = case vehicle_name do
+  "OVCS1" -> InfotainmentCore.Vehicles.OVCS1.Composer
+  "OBD2" -> InfotainmentCore.Vehicles.OBD2.Composer
+end
+
+config :infotainment_core, :vehicle, vehicle_module
 
 config :cantastic,
   can_network_mappings: fn() ->
@@ -33,7 +38,7 @@ config :cantastic,
   end,
   setup_can_interfaces: (System.get_env("SETUP_CAN_INTERFACES") == "true" || false),
   otp_app: :infotainment_core,
-  priv_can_config_path: "#{Macro.underscore(vehicle)}.yml"
+  priv_can_config_path: "#{Macro.underscore(vehicle_name)}.yml"
 
 
 # Configures Elixir's Logger

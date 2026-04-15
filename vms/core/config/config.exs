@@ -18,11 +18,17 @@ config :vms_core, VmsCore.Repo,
   stacktrace: true,
   show_sensitive_data_on_connection_error: true
 
-vehicle = (System.get_env("VEHICLE") || "OVCS1")
+vehicle_name = (System.get_env("VEHICLE") || "OVCS1")
 
-config :vms_core, :vehicle, vehicle
+vehicle_module = case vehicle_name do
+  "OVCS1" -> VmsCore.Vehicles.OVCS1.Composer
+  "OVCSMini" -> VmsCore.Vehicles.OVCSMini.Composer
+  "OBD2" -> VmsCore.Vehicles.OBD2.Composer
+end
 
-default_can_mapping = case vehicle do
+config :vms_core, :vehicle, vehicle_module
+
+default_can_mapping = case vehicle_name do
   "OVCS1" -> "ovcs:vcan0,leaf_drive:vcan1,polo_drive:vcan2,orion_bms:vcan3,misc:vcan4"
   "OVCSMini" -> "ovcs:vcan0"
   "OBD2" -> "obd2:vcan0,ovcs:vcan1"
@@ -39,7 +45,7 @@ config :cantastic,
   end,
   setup_can_interfaces: (System.get_env("SETUP_CAN_INTERFACES") == "true" || false),
   otp_app: :vms_core,
-  priv_can_config_path: "can/vehicles/#{Macro.underscore(vehicle)}.yml"
+  priv_can_config_path: "can/vehicles/#{Macro.underscore(vehicle_name)}.yml"
 
 # Configures Elixir's Logger
 config :logger, :console,

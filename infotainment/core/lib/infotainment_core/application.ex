@@ -19,8 +19,6 @@ defmodule InfotainmentCore.Application do
   end
 
   def vehicle_composer do
-    InfotainmentCore.Vehicles
-      |> Module.concat(Application.get_env(:infotainment_core, :vehicle))
-      |> Module.concat(Composer)
+    Application.fetch_env!(:infotainment_core, :vehicle)
   end
 end

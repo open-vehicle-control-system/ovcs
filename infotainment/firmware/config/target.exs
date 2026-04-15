@@ -7,11 +7,16 @@ if config_env() in [:dev, :test, :prod] do
   end
 end
 
-vehicle      = (System.get_env("VEHICLE") || "OVCS1")
-vehicle_path = Macro.underscore(vehicle)
+vehicle_name = (System.get_env("VEHICLE") || "OVCS1")
+vehicle_path = Macro.underscore(vehicle_name)
 vehicle_host = "#{vehicle_path |> String.replace("_", "-")}-infotainment"
 
-config :infotainment_core, :vehicle, vehicle
+vehicle_module = case vehicle_name do
+  "OVCS1" -> InfotainmentCore.Vehicles.OVCS1.Composer
+  "OBD2" -> InfotainmentCore.Vehicles.OBD2.Composer
+end
+
+config :infotainment_core, :vehicle, vehicle_module
 
 # Use Ringlogger as the logger backend and remove :console.
 # See https://hexdocs.pm/ring_logger/readme.html for more information on

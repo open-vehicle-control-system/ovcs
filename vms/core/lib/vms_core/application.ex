@@ -39,8 +39,6 @@ defmodule VmsCore.Application do
   end
 
   def vehicle_composer do
-    VmsCore.Vehicles
-      |> Module.concat(Application.get_env(:vms_core, :vehicle))
-      |> Module.concat(Composer)
+    Application.fetch_env!(:vms_core, :vehicle)
   end
 end
