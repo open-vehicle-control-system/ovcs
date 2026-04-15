@@ -37,7 +37,42 @@ defmodule OvcsCli.Vehicles do
       ~s|case function_exported?(#{module}, :nerves_target, 1) and #{module}.nerves_target(:#{side}) do | <>
         ~s|false -> :ok; target -> IO.write(to_string(target)) end|
 
-    case System.cmd("sh", ["-c", "mix run --no-start --no-deps-check -e #{escape(snippet)} 2>/dev/null"],
+    run_snippet(path, snippet)
+  end
+
+  @doc """
+  Return the list of host CAN interface names the vehicle needs (by
+  parsing each side's `default_can_mapping(:host)`). E.g. for Ovcs1
+  this yields `["vcan0", "vcan1", "vcan2", "vcan3", "vcan4"]` for VMS
+  plus the infotainment side.
+  """
+  @spec host_can_interfaces(t()) :: [String.t()]
+  def host_can_interfaces(%__MODULE__{module: module, path: path}) do
+    snippet = """
+    m = #{module}
+    sides =
+      [m.vms()] ++
+        if function_exported?(m, :infotainment, 0), do: [m.infotainment()], else: []
+    sides
+    |> Enum.map(& &1.default_can_mapping(:host))
+    |> Enum.join(",")
+    |> String.split(",", trim: true)
+    |> Enum.map(fn kv -> kv |> String.split(":", trim: true) |> List.last() end)
+    |> Enum.uniq()
+    |> Enum.join("\\n")
+    |> IO.puts()
+    """
+
+    case run_snippet(path, snippet) do
+      nil -> []
+      output -> String.split(output, "\n", trim: true)
+    end
+  end
+
+  defp run_snippet(path, snippet) do
+    case System.cmd(
+           "sh",
+           ["-c", "mix run --no-start --no-deps-check -e #{escape(snippet)} 2>/dev/null"],
            cd: path,
            env: [{"MIX_ENV", "dev"}]
          ) do

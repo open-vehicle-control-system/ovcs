@@ -35,7 +35,8 @@ defmodule OvcsCli do
           build: build_spec(vehicle_names),
           burn: burn_spec(vehicle_names),
           upload: upload_spec(vehicle_names),
-          clean: clean_spec(vehicle_names)
+          clean: clean_spec(vehicle_names),
+          can: can_spec(vehicle_names)
         ]
       )
 
@@ -62,6 +63,10 @@ defmodule OvcsCli do
         {v, a} = resolve_vehicle_app(args, vehicle_names)
         Commands.Clean.run(repo_root(), v, a)
 
+      {[:can, :setup], %{args: %{vehicle: v}}} ->
+        vehicle = v || Prompt.choose!("vehicle", vehicle_names)
+        Commands.Can.setup(repo_root(), vehicle)
+
       _ ->
         Optimus.parse!(optimus, ["--help"])
     end
@@ -80,6 +85,31 @@ defmodule OvcsCli do
       name: "burn",
       about: "Burn firmware to an SD card for a vehicle/application",
       args: vehicle_and_application_args(vehicles)
+    ]
+  end
+
+  defp can_spec(vehicles) do
+    [
+      name: "can",
+      about: "Host CAN helpers",
+      subcommands: [
+        setup: [
+          name: "setup",
+          about: "Create + bring up the vcan interfaces a vehicle needs",
+          args: [
+            vehicle: [
+              value_name: "VEHICLE",
+              help: "Vehicle directory (prompts if omitted)",
+              required: false,
+              parser: fn value ->
+                if value in vehicles,
+                  do: {:ok, value},
+                  else: {:error, "unknown vehicle #{inspect(value)}"}
+              end
+            ]
+          ]
+        ]
+      ]
     ]
   end
 
