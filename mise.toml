@@ -5,6 +5,8 @@ node    = "24"
 ruby    = "3.3"
 flutter = "3.32.8"
 python  = "3.12"
+uv      = "latest"
+"pipx:platformio" = "latest"
 
 [env]
 # Work around a ruby-build 20260412 bug on Ubuntu 26.04 where the Rekor

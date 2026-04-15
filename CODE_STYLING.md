@@ -94,5 +94,5 @@ match what you see unless you have a reason to do otherwise.
   `@<otp_app>:...` Cantastic import syntax.
 - Tests that mock Cantastic. Exercise the real configuration store with
   virtual CAN (`./scripts/setup_virtual_can.sh`).
-- Docs that restate `CODE_STYLING.md` or `docs/vehicle_extraction_plan.md`.
+- Docs that restate `CODE_STYLING.md`.
   Link to them instead.

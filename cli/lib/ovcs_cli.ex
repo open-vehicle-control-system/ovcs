@@ -68,6 +68,10 @@ defmodule OvcsCli do
         vehicle = v || Prompt.choose!("vehicle", vehicle_names)
         Commands.Can.setup(repo_root(), vehicle)
 
+      {[:can, :status], %{args: %{vehicle: v}}} ->
+        vehicle = v || Prompt.choose!("vehicle", vehicle_names)
+        Commands.Can.status(repo_root(), vehicle)
+
       {[:can], _} ->
         Optimus.parse!(optimus, ["help", "can"])
 
@@ -104,6 +108,19 @@ defmodule OvcsCli do
   end
 
   defp can_spec(vehicles) do
+    vehicle_arg = [
+      vehicle: [
+        value_name: "VEHICLE",
+        help: "Vehicle directory (prompts if omitted)",
+        required: false,
+        parser: fn value ->
+          if value in vehicles,
+            do: {:ok, value},
+            else: {:error, "unknown vehicle #{inspect(value)}"}
+        end
+      ]
+    ]
+
     [
       name: "can",
       about: "Host CAN helpers",
@@ -111,18 +128,12 @@ defmodule OvcsCli do
         setup: [
           name: "setup",
           about: "Create + bring up the vcan interfaces a vehicle needs",
-          args: [
-            vehicle: [
-              value_name: "VEHICLE",
-              help: "Vehicle directory (prompts if omitted)",
-              required: false,
-              parser: fn value ->
-                if value in vehicles,
-                  do: {:ok, value},
-                  else: {:error, "unknown vehicle #{inspect(value)}"}
-              end
-            ]
-          ]
+          args: vehicle_arg
+        ],
+        status: [
+          name: "status",
+          about: "Report which vcan interfaces a vehicle needs and whether they're up",
+          args: vehicle_arg
         ]
       ]
     ]

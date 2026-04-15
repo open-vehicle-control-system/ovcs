@@ -140,7 +140,7 @@ Once the setup is done:
 
 ```sh
 # Start the VMS API (in one terminal)
-./scripts/setup_virtual_can.sh
+./ovcs can setup ovcs1
 cd vms/api && VEHICLE=Ovcs1 mix phx.server
 
 # Start the VMS debug dashboard (in another terminal)

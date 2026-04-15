@@ -19,6 +19,10 @@ Before making changes, read the relevant docs rather than rediscovering the proj
 
 Prefer updating these docs over duplicating their content here.
 
+## Workflow rules
+
+- **Don't commit until the user validates.** Make the edits, run whatever sanity checks are possible locally, and stop. Wait for the user to confirm the change works on their end before running `git commit`. Small follow-up tweaks can be squashed into the eventual commit.
+
 ## Repo-specific notes for Claude
 
 - Polyglot **monorepo** (Elixir/Nerves, Phoenix, Vue, Flutter, C++/Arduino, Ruby). Not an Elixir umbrella — each Elixir app is a standalone Mix project with `path:` deps to siblings.

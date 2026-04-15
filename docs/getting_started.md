@@ -21,7 +21,7 @@ OVCS is developed on Linux. macOS users need a Linux VM (see [macOS setup](#loca
 | `fwup` | Latest | Nerves firmware image packager | system package |
 | `libsocketcan-dev` | Latest | Cantastic native CAN bindings | system package (firmware builds only) |
 | `nerves_bootstrap` | Latest | Nerves Mix archive | `mise run bootstrap` |
-| [PlatformIO](https://platformio.org/) | Latest | Arduino controller firmware (optional) | your choice |
+| [PlatformIO](https://platformio.org/) | Latest | Arduino controller firmware | mise (via pipx + uv) |
 
 ## Linux Setup
 
@@ -163,11 +163,11 @@ These system images are only needed if you want to build and deploy firmware to 
 ### 1. Set up virtual CAN interfaces
 
 ```sh
-cd ovcs
-./scripts/setup_virtual_can.sh
+./ovcs can setup ovcs1        # or ovcs_mini, obd2
+./ovcs can status ovcs1       # check which interfaces are up
 ```
 
-This creates virtual CAN interfaces (`vcan0` through `vcan5`) that simulate physical CAN buses.
+The CLI reads the vehicle's `default_can_mapping(:host)` and creates only the vcan interfaces that vehicle actually needs. It's idempotent: a second run on the same vehicle is a no-op. You'll be prompted for your sudo password the first time; `scripts/setup_virtual_can.sh` remains as a non-CLI fallback that creates `vcan0..vcan5` unconditionally.
 
 ### 2. Test the VMS
 
