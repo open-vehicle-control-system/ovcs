@@ -4,7 +4,7 @@ defmodule Obd2.Vms do
   """
   use GenServer
   require Logger
-  alias VmsCore.{Bus}
+  alias OvcsBus, as: Bus
   alias Decimal, as: D
   alias Cantastic.{OBD2, Emitter}
 

@@ -6,7 +6,8 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
   require Logger
   alias Cantastic.{Emitter, Frame, Receiver, Signal}
   alias Decimal, as: D
-  alias VmsCore.{Bus, Components.OVCS.GenericController, PID}
+  alias OvcsBus, as: Bus
+  alias VmsCore.{Components.OVCS.GenericController, PID}
 
   @zero D.new(0)
 
@@ -130,7 +131,7 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
   def handle_info(%Bus.Message{name: :requested_throttle, value: requested_throttle, source: source}, state) when source == state.requested_throttle_source do
     {:noreply, %{state | requested_throttle: requested_throttle}}
   end
-  def handle_info(%VmsCore.Bus.Message{name: :contact, value: contact, source: source}, state) when source == state.contact_source do
+  def handle_info(%OvcsBus.Message{name: :contact, value: contact, source: source}, state) when source == state.contact_source do
     {:noreply, %{state | contact: contact}}
   end
   def handle_info(%Bus.Message{name: :requested_throttle, value: requested_throttle, source: source}, state) when source == state.requested_throttle_source do

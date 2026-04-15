@@ -32,6 +32,17 @@ defmodule Ovcs1 do
         target: :ovcs_base_can_system_rpi4,
         bridges: [RosBridge],
         default_can_mapping: %{host: "ovcs:vcan0", target: "ovcs:spi0.0"}
+        # Uncomment alongside the VMS/infotainment composers once the
+        # broker is up so this bridge firmware joins the same relay.
+        # Topics default to the union of each bundled bridge's
+        # relay_topics/0 (no need to list them here unless you want
+        # to override).
+        #
+        # bus_relay: %{
+        #   broker: [host: "ovcs1-vms.local", port: 1884],
+        #   client_id: "ovcs1-ros",
+        #   topic_prefix: "ovcs/ovcs1/bus"
+        # }
       }
     }
   end

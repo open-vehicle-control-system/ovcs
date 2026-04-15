@@ -3,8 +3,8 @@ defmodule VmsCore.Components.OVCS.WaterPump do
     Generic waterpump relay control
   """
   use GenServer
+  alias OvcsBus, as: Bus
   alias VmsCore.{
-    Bus,
     Components.OVCS.GenericController
   }
 

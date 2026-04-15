@@ -3,11 +3,11 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Inverter do
     Nissan Leaf AZE0/EM57 Inverter
   """
   use GenServer
+  alias OvcsBus, as: Bus
 
   alias Cantastic.{Emitter, Frame, Receiver, Signal}
   alias Decimal, as: D
   alias VmsCore.{
-    Bus,
     Components.Nissan.Util,
     Components.OVCS.GenericController
   }

@@ -4,7 +4,7 @@ defmodule VmsCore.Status do
   """
   use GenServer
   alias Cantastic.Emitter
-  alias VmsCore.Bus
+  alias OvcsBus, as: Bus
 
   @loop_period 10
 

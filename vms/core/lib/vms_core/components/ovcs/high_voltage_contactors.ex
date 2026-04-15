@@ -3,7 +3,8 @@ defmodule VmsCore.Components.OVCS.HighVoltageContactors do
     EV high voltage contactors with precharge, using a generic controller
   """
   use GenServer
-  alias VmsCore.{Bus, Components.OVCS.GenericController}
+  alias OvcsBus, as: Bus
+  alias VmsCore.{Components.OVCS.GenericController}
 
   @loop_period 10
   @relay_operating_delay 50

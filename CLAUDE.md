@@ -14,7 +14,7 @@ Before making changes, read the relevant docs rather than rediscovering the proj
 - [docs/hardware_architecture.md](./docs/hardware_architecture.md) — physical topology, CAN networks, controllers.
 - [docs/running_hardware.md](./docs/running_hardware.md) — build/burn/upload via the top-level `ovcs` Ruby CLI, runtime env vars (`VEHICLE`, `CAN_NETWORK_MAPPINGS`).
 - [docs/testing_can_messages.md](./docs/testing_can_messages.md), [docs/testing_generic_controllers.md](./docs/testing_generic_controllers.md) — CAN + controller testing.
-- [WIRING.md](./WIRING.md) — OVCS1 wiring.
+- [vehicles/ovcs1/WIRING.md](./vehicles/ovcs1/WIRING.md) — OVCS1 wiring.
 
 Prefer updating these docs over duplicating their content here.
 

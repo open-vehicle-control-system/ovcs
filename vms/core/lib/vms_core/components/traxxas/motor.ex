@@ -3,7 +3,7 @@ defmodule VmsCore.Components.Traxxas.Motor do
     Traxxas' motor feedback
   """
   use GenServer
-  alias VmsCore.Bus
+  alias OvcsBus, as: Bus
 
   @loop_period 10
 

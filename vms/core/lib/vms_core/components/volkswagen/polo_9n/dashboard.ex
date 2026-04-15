@@ -5,7 +5,7 @@ defmodule VmsCore.Components.Volkswagen.Polo9N.Dashboard do
   use GenServer
   alias Cantastic.Emitter
   alias Decimal, as: D
-  alias VmsCore.Bus
+  alias OvcsBus, as: Bus
 
   @max_rotation_per_minute 10_000
   @loop_period 10

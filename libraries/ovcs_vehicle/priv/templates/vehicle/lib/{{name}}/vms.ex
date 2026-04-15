@@ -5,13 +5,14 @@ defmodule <%= @module %>.Vms do
 
   Extend this module to track whatever state `<%= @upper %>`'s VMS needs:
   - listen for CAN frames via `Cantastic.Receiver.subscribe/3`
-  - listen for internal messages via `VmsCore.Bus.subscribe/1`
+  - listen for internal messages via `OvcsBus.subscribe/1`
   - decide `ready_to_drive` and `vms_status` on a periodic loop
   - broadcast state changes back on the bus for dashboards to pick up
   """
   use GenServer
   require Logger
-  alias VmsCore.{Bus, Status}
+  alias OvcsBus, as: Bus
+  alias VmsCore.{Status}
   alias <%= @module %>.Vms.ExampleController
 
   @loop_period 20

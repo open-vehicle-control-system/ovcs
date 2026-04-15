@@ -28,8 +28,15 @@ defmodule <%= @module %> do
   #     "radio_control" => %{
   #       target: :ovcs_base_can_system_rpi3a,
   #       bridges: [RadioControlBridge],
-  #       default_can_mapping: %{host: "ovcs:vcan0", target: "ovcs:spi0.0"}
-  #       # can_config_path: "can/bridges/radio_control.yml"  # optional override
+  #       default_can_mapping: %{host: "ovcs:vcan0", target: "ovcs:spi0.0"},
+  #       # can_config_path: "can/bridges/radio_control.yml",  # optional override
+  #       # Topics default to the union of each bundled bridge's
+  #       # relay_topics/0; override with :topics if needed.
+  #       # bus_relay: %{
+  #       #   broker: [host: "<%= @name %>-vms.local", port: 1884],
+  #       #   client_id: "<%= @name %>-radio-control",
+  #       #   topic_prefix: "ovcs/<%= @name %>/bus"
+  #       # }
   #     }
   #   }
   # end

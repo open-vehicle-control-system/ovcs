@@ -5,7 +5,7 @@ defmodule VmsCore.Components.OVCS.RadioControl.RequestedControlLevel do
 
   use GenServer
   alias Cantastic.{Receiver, Frame}
-  alias VmsCore.Bus
+  alias OvcsBus, as: Bus
 
   @loop_period 10
   @default_value 1000

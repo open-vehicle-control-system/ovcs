@@ -16,7 +16,7 @@ Welcome to the Open Vehicle Control System documentation. For a high-level overv
 
 - [Hardware Architecture](./hardware_architecture.md) -- Hardware design principles, component layout, CAN bus isolation strategy, and the role of each physical device.
 - [Running on Hardware](./running_hardware.md) -- Supported hardware platforms, firmware configuration, deployment scripts, and CAN interface customization.
-- [Wiring Reference](../WIRING.md) -- Pin-level wiring notes for the Leaf harness, iBooster, steering pump, and Polo CAN bus.
+- [OVCS1 Wiring Reference](../vehicles/ovcs1/WIRING.md) -- Pin-level wiring notes for the OVCS1 vehicle (Leaf harness, iBooster, steering pump, Polo CAN bus).
 
 ### Development and Testing
 
@@ -41,19 +41,34 @@ cantastic (shared CAN bus library)
   +-- ros_bridge_firmware (RPi 4/5)
 ```
 
+### Shared Libraries
+
+Cross-cutting Elixir libraries under `libraries/`. Each one has its
+own README with usage, design notes, and API.
+
+| Library | Path | Module | README |
+|---------|------|--------|--------|
+| OvcsVehicle | `libraries/ovcs_vehicle/` | `OvcsVehicle` | [README](../libraries/ovcs_vehicle/README.md) — vehicle-package behaviour + `ovcs vehicle new` scaffold |
+| OvcsCan | `libraries/ovcs_can/` | `OvcsCan` | [README](../libraries/ovcs_can/README.md) — shared CAN frame YAMLs (`import!:@ovcs_can:…`) |
+| OvcsBus | `libraries/ovcs_bus/` | `OvcsBus` | [README](../libraries/ovcs_bus/README.md) — local pub/sub + MQTT relay + broker |
+| OvcsBridge | `libraries/ovcs_bridge/` | `OvcsBridge` | [README](../libraries/ovcs_bridge/README.md) — bridge-library contract + firmware supervisor |
+| Cantastic | `libraries/cantastic/` | `Cantastic` | [README](../libraries/cantastic/README.md) — CAN bus library (SocketCAN, YAML config, frame encoding/decoding) |
+| ExpressLRS | `libraries/express_lrs/` | `ExpressLrs` | [README](../libraries/express_lrs/README.md) — ExpressLRS MAVLink decoder (used by `radio_control_bridge`) |
+| MspOsd | `libraries/msp_osd/` | `MspOsd` | [README](../libraries/msp_osd/README.md) — MSP OSD protocol library |
+
 ### Elixir Applications
 
 | Application | Path | Module | Description |
 |-------------|------|--------|-------------|
-| Cantastic | `libraries/cantastic/` | `Cantastic` | CAN bus communication library (SocketCAN, YAML config, frame encoding/decoding) |
 | VMS Core | `vms/core/` | `VmsCore` | Vehicle management business logic, component drivers, vehicle composers |
 | VMS API | `vms/api/` | `VmsApi` | Phoenix JSON API + WebSocket for the debug dashboard |
 | VMS Firmware | `vms/firmware/` | `VmsFirmware` | Nerves firmware image for Raspberry Pi 4 |
 | Infotainment Core | `infotainment/core/` | `InfotainmentCore` | Infotainment business logic, UI layout, pages and blocks |
 | Infotainment API | `infotainment/api/` | `InfotainmentApi` | Phoenix JSON API + WebSocket for the Flutter dashboard |
 | Infotainment Firmware | `infotainment/firmware/` | `InfotainmentFirmware` | Nerves firmware image for Raspberry Pi 5 |
-| Radio Control Bridge | `bridges/radio_control_bridge/firmware/` | `RadioControlBridgeFirmware` | MAVLink/ExpressLRS RC bridge (Nerves on RPi 3A) |
-| ROS Bridge | `bridges/ros_bridge/firmware/` | `ROSBridgeFirmware` | ROS2/Zenoh bridge with IMU (Nerves on RPi 4/5) |
+| Bridges Firmware | `bridges/firmware/` | `BridgeFirmware` | Shared Nerves image, parameterised per vehicle to bundle N bridge libraries |
+| Radio Control Bridge | `bridges/radio_control_bridge/` | `RadioControlBridge` | MAVLink/ExpressLRS RC bridge library (hosted by `bridges/firmware`) |
+| ROS Bridge | `bridges/ros_bridge/` | `RosBridge` | ROS2/Zenoh bridge with IMU (hosted by `bridges/firmware`) |
 
 ### Non-Elixir Components
 

@@ -15,10 +15,9 @@ defmodule VmsCore.Application do
       {Ecto.Migrator,
         repos: Application.fetch_env!(:vms_core, :ecto_repos),
         skip: skip_migrations?()},
-      {Phoenix.PubSub, name: VmsCore.Bus},
       {VmsCore.Metrics, []},
       {VmsCore.NetworkInterfaces, []},
-    ]
+    ] ++ bus_broker_children() ++ bus_relay_children()
     children =  case Application.get_env(:vms_core, :socketcand_only) do
       true -> []
       false -> children ++ vehicle_children
@@ -40,5 +39,36 @@ defmodule VmsCore.Application do
 
   def vehicle_composer do
     Application.fetch_env!(:vms_core, :vehicle)
+  end
+
+  # Opt-in MQTT bus relay — started only when the vehicle's VMS
+  # composer implements `bus_relay/0` and returns non-nil opts.
+  defp bus_relay_children do
+    composer = vehicle_composer()
+
+    if function_exported?(composer, :bus_relay, 0) do
+      case composer.bus_relay() do
+        nil -> []
+        opts -> [{OvcsBus.Relay.Mqtt, opts}]
+      end
+    else
+      []
+    end
+  end
+
+  # Opt-in MQTT broker — started only when the vehicle's VMS
+  # composer implements `bus_broker/0` and returns non-nil opts.
+  # This is the broker all other firmwares' relays connect to.
+  defp bus_broker_children do
+    composer = vehicle_composer()
+
+    if function_exported?(composer, :bus_broker, 0) do
+      case composer.bus_broker() do
+        nil -> []
+        opts -> [{OvcsBus.Broker, opts}]
+      end
+    else
+      []
+    end
   end
 end

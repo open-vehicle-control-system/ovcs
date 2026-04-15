@@ -33,6 +33,7 @@
   "ovcs_base_can_system_rpi3a": {:git, "https://github.com/open-vehicle-control-system/ovcs_base_can_system_rpi3a.git", "acaa571a03b01ffaec95d905b0f8edd908faf4d9", []},
   "ovcs_base_can_system_rpi4": {:git, "https://github.com/open-vehicle-control-system/ovcs_base_can_system_rpi4.git", "d6f2d5675c6733ba375c8f254be9acdb36a50922", []},
   "ovcs_bridges_system_rpi5": {:git, "https://github.com/open-vehicle-control-system/ovcs_bridges_system_rpi5.git", "ca8d5c55959c7d27d7d9bccc38601ad47a1a14e4", []},
+  "phoenix_pubsub": {:hex, :phoenix_pubsub, "2.2.0", "ff3a5616e1bed6804de7773b92cbccfc0b0f473faf1f63d7daf1206c7aeaaa6f", [:mix], [], "hexpm", "adc313a5bf7136039f63cfd9668fde73bba0765e0614cba80c06ac9460ff3e96"},
   "property_table": {:hex, :property_table, "0.3.3", "7a31cc1c6d9e0a532787f56bee6d9a6067205d9c24c6d64e8ba851837d59f297", [:mix], [], "hexpm", "738a1584ab56237443e0fccaa0cf4a1da058c0c992948bcd73fed1a99de5696e"},
   "quicer": {:hex, :quicer, "0.2.15", "775fcfa09c9ce5a4a00d23c1c8b1e81cd361ebc847e43bb766efac4373cdb1b8", [:rebar3], [{:snabbkaffe, "1.0.10", [hex: :snabbkaffe, repo: "hexpm", optional: false]}], "hexpm", "52236d9384a541341706bcae438e81b209fa21d2045d3df317f8ba5beda6a8e5"},
   "recon": {:hex, :recon, "2.5.6", "9052588e83bfedfd9b72e1034532aee2a5369d9d9343b61aeb7fbce761010741", [:mix, :rebar3], [], "hexpm", "96c6799792d735cc0f0fd0f86267e9d351e63339cbe03df9d162010cefc26bb0"},

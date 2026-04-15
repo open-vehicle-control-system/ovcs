@@ -3,8 +3,8 @@ defmodule VmsCore.Components.Volkswagen.Polo9N.FakeOilPressureSensor do
     Fale oil pressure indicator sensor to avoid alerts on the original dashboard
   """
   use GenServer
+  alias OvcsBus, as: Bus
   alias VmsCore.{
-    Bus,
     Components.OVCS.GenericController
   }
 

@@ -3,7 +3,7 @@ defmodule VmsCore.Components.Evpt.Evpt23Charger do
     EVPT23 Charger
   """
   use GenServer
-  alias VmsCore.Bus
+  alias OvcsBus, as: Bus
 
   require Logger
   alias Cantastic.{Frame, Receiver, Signal}

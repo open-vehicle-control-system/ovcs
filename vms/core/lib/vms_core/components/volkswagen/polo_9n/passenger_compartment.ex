@@ -6,7 +6,7 @@ defmodule VmsCore.Components.Volkswagen.Polo9N.PassengerCompartment do
 
   require Logger
   alias Cantastic.{Frame, Receiver, Signal}
-  alias VmsCore.Bus
+  alias OvcsBus, as: Bus
   @loop_period 10
 
   @impl true

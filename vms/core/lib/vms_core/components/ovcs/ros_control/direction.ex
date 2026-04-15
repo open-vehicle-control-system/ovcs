@@ -5,7 +5,7 @@ defmodule VmsCore.Components.OVCS.ROSControl.Direction do
 
   use GenServer
   alias Cantastic.{Receiver, Frame, Signal}
-  alias VmsCore.Bus
+  alias OvcsBus, as: Bus
 
   @loop_period 10
   @default_value "forward"

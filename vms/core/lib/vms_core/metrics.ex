@@ -3,7 +3,7 @@ defmodule VmsCore.Metrics do
     Aggregate all metrics emmited on the VMS bus
   """
   use GenServer
-  alias VmsCore.Bus
+  alias OvcsBus, as: Bus
 
   def start_link(_) do
     GenServer.start_link(__MODULE__, nil, name: __MODULE__)

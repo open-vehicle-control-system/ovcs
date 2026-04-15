@@ -5,7 +5,7 @@ defmodule VmsCore.Components.OVCS.Infotainment do
   use GenServer
 
   alias Cantastic.{Frame, Receiver, Signal}
-  alias VmsCore.Bus
+  alias OvcsBus, as: Bus
 
   @loop_period 10
 

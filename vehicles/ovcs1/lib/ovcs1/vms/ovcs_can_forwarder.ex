@@ -5,7 +5,7 @@ defmodule Ovcs1.Vms.OVCSCANForwarder do
   use GenServer
   alias Cantastic.Emitter
   alias Decimal, as: D
-  alias VmsCore.Bus
+  alias OvcsBus, as: Bus
 
   @loop_period 100
   @zero D.new(0)

@@ -3,7 +3,7 @@ defmodule VmsCore.Managers.ControlLevel do
     Decide which control level should be selected based on the requested one and the other constraints
   """
   use GenServer
-  alias VmsCore.Bus
+  alias OvcsBus, as: Bus
   alias Decimal, as: D
 
   @loop_period 10

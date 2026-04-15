@@ -3,8 +3,8 @@ defmodule VmsCore.Components.Orion.Bms2 do
     Orion BMS
   """
   use GenServer
+  alias OvcsBus, as: Bus
   alias VmsCore.{
-    Bus,
     Components.OVCS.GenericController
   }
   require Logger

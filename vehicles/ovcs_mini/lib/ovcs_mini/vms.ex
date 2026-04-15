@@ -4,7 +4,8 @@ defmodule OvcsMini.Vms do
   """
   use GenServer
   require Logger
-  alias VmsCore.{Bus, Status}
+  alias OvcsBus, as: Bus
+  alias VmsCore.{Status}
   alias OvcsMini.Vms.MainController
 
   @loop_period 10

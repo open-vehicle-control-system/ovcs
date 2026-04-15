@@ -63,11 +63,11 @@ System.put_env("VEHICLE_FIRMWARE_DIR", vehicle_firmware_dir)
 
 config :nerves, :firmware, fwup_conf: resolve_firmware_file.("fwup.conf")
 
-# Handoff to runtime.exs via env — avoids compile-time coupling on
-# the vehicle module's bridge_firmwares/0.
-config :bridge_firmware,
+# Handoff to runtime.exs + OvcsBridge.Supervisor via env — avoids
+# compile-time coupling on the vehicle module's bridge_firmwares/0.
+config :ovcs_bridge,
   vehicle: vehicle_name,
-  bridge_firmware_id: bridge_firmware_id
+  firmware_id: bridge_firmware_id
 
 # CAN: the vehicle ships the per-firmware YAML at
 # priv/can/bridges/<id>.yml unless its bridge_firmwares/0 entry

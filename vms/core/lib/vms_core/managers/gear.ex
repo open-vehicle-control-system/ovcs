@@ -5,7 +5,7 @@ defmodule VmsCore.Managers.Gear do
   use GenServer
   alias Cantastic.Emitter
   alias Decimal, as: D
-  alias VmsCore.Bus
+  alias OvcsBus, as: Bus
 
   @gear_shift_throttle_limit D.new("0.05")
   @gear_shift_speed_limit D.new("1")

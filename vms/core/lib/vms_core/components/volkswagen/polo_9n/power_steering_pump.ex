@@ -4,7 +4,7 @@ defmodule VmsCore.Components.Volkswagen.Polo9N.PowerSteeringPump do
   """
   use GenServer
   alias Cantastic.Emitter
-  alias VmsCore.Bus
+  alias OvcsBus, as: Bus
 
   @loop_period 10
   @disabling_rotation_per_minute 0

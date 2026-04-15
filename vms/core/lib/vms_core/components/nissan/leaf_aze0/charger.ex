@@ -6,7 +6,7 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Charger do
   use GenServer
 
   alias Cantastic.{Emitter, Frame, Receiver, Signal}
-  alias VmsCore.Bus
+  alias OvcsBus, as: Bus
   alias VmsCore.Components.Nissan.Util
   alias Decimal, as: D
 

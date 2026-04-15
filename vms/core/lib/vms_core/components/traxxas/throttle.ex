@@ -4,7 +4,7 @@ defmodule VmsCore.Components.Traxxas.Throttle do
   """
   use GenServer
   alias Decimal, as: D
-  alias VmsCore.Bus
+  alias OvcsBus, as: Bus
   alias VmsCore.Components.OVCS.GenericController
 
   @loop_period 10

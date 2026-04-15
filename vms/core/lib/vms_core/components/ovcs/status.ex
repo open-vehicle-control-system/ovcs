@@ -3,7 +3,7 @@ defmodule VmsCore.Components.OVCS.Status do
     OVCS Status module emitting metrics in the OVCS format
   """
   use GenServer
-  alias VmsCore.Bus
+  alias OvcsBus, as: Bus
   alias Cantastic.{Emitter}
   alias Decimal, as: D
 

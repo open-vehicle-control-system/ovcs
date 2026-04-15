@@ -3,7 +3,7 @@ defmodule VmsCore.Components.Volkswagen.Polo9N.ABS do
     Polo ABS
   """
   use GenServer
-  alias VmsCore.Bus
+  alias OvcsBus, as: Bus
 
   require Logger
   alias Cantastic.{Frame, Receiver, Signal}

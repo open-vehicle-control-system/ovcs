@@ -5,7 +5,8 @@ defmodule VmsCore.Components.OVCS.GenericController do
   use GenServer
 
   alias Cantastic.{Emitter, Frame, Signal, Receiver, ReceivedFrameWatcher}
-  alias VmsCore.{Application, Bus}
+  alias OvcsBus, as: Bus
+  alias VmsCore.Application
   @pwm_duty_cycle_range 65_535
   alias Decimal, as: D
   @loop_period 50

@@ -4,8 +4,8 @@ defmodule  VmsCore.Components.OVCS.ThrottlePedal do
   """
   import Ecto.Query
   use GenServer
+  alias OvcsBus, as: Bus
   alias VmsCore.{
-    Bus,
     Components.OVCS.GenericController,
     Models.ThrottleCalibration,
     Repo

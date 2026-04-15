@@ -42,6 +42,10 @@ defmodule BridgeFirmware.MixProject do
       {:ovcs_vehicle, path: "../../libraries/ovcs_vehicle"},
       {:ovcs_bridge, path: "../../libraries/ovcs_bridge"},
 
+      # emqtt wants cowlib ~> 2.7 but Nerves pulls ~> 2.13; pin the
+      # older version since it's what the MQTT stack is tested with.
+      {:cowlib, "~> 2.7.0", override: true},
+
       # Bridge libraries — each gated to the Nerves targets it
       # supports so we don't drag e.g. ros_bridge's emqtt/quicer
       # chain into a rpi3a radio-control build. Extend the target

@@ -5,7 +5,7 @@ defmodule VmsCore.Components.OVCS.RadioControl.Throttle do
   use GenServer
   alias Cantastic.{Receiver, Frame}
   alias Decimal, as: D
-  alias VmsCore.Bus
+  alias OvcsBus, as: Bus
 
   @loop_period 10
   @zero D.new(0)
