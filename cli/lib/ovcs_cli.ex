@@ -9,7 +9,11 @@ defmodule OvcsCli do
 
   alias OvcsCli.{Commands, Prompt, Vehicles}
 
-  @applications ~w(vms infotainment radio-control-bridge ros-bridge)
+  # Static applications are always valid for every vehicle. Bridge
+  # firmware ids are declared per-vehicle via
+  # `OvcsVehicle.bridge_firmwares/0` and discovered lazily in
+  # `resolve_vehicle_app/2`.
+  @static_applications Commands.Firmware.static_applications()
 
   def main(argv) do
     argv = normalize_help(argv)
@@ -221,21 +225,26 @@ defmodule OvcsCli do
     ]
   end
 
-  # Both positional args accept *either* a vehicle dir or an application name.
-  # We sort them out in resolve_vehicle_app/2 so order doesn't matter —
-  # `./ovcs build vms` prompts for a vehicle; `./ovcs build ovcs1` prompts
-  # for an application; `./ovcs build vms ovcs1` is the same as
-  # `./ovcs build ovcs1 vms`.
+  # Both positional args accept *either* a vehicle dir or an application
+  # name (vms/infotainment or a bridge_firmwares/0 key). Bridge ids are
+  # vehicle-dependent, so parsing just enforces a snake/kebab-case shape
+  # and final validation happens in resolve_vehicle_app/2 once the
+  # vehicle is known.
+  @app_token ~r/^[a-z][a-z0-9_-]*$/
+
   defp vehicle_and_application_args(vehicles) do
     parser = fn value ->
       cond do
-        value in vehicles -> {:ok, value}
-        value in @applications -> {:ok, value}
+        value in vehicles ->
+          {:ok, value}
+
+        Regex.match?(@app_token, value) ->
+          {:ok, value}
+
         true ->
           {:error,
            "unknown token #{inspect(value)}; expected a vehicle " <>
-             "(#{Enum.join(vehicles, ", ")}) or an application " <>
-             "(#{Enum.join(@applications, ", ")})"}
+             "(#{Enum.join(vehicles, ", ")}) or an application id"}
       end
     end
 
@@ -255,14 +264,41 @@ defmodule OvcsCli do
     ]
   end
 
-  defp resolve_vehicle_app(%{first: first, second: second}, vehicles) do
+  defp resolve_vehicle_app(%{first: first, second: second}, vehicle_dirs) do
     values = [first, second] |> Enum.reject(&is_nil/1)
+    vehicle_dir = Enum.find(values, &(&1 in vehicle_dirs)) || Prompt.choose!("vehicle", vehicle_dirs)
 
-    vehicle = Enum.find(values, &(&1 in vehicles)) || Prompt.choose!("vehicle", vehicles)
-    application = Enum.find(values, &(&1 in @applications)) || Prompt.choose!("application", @applications)
+    vehicle = Vehicles.list(repo_root()) |> Enum.find(&(&1.dir == vehicle_dir))
+    valid_apps = Commands.Firmware.applications_for(vehicle)
+    remaining = Enum.reject(values, &(&1 == vehicle_dir))
 
-    {vehicle, application}
+    application =
+      case Enum.find(remaining, &(&1 in valid_apps)) do
+        nil ->
+          case remaining do
+            [] -> Prompt.choose!("application", valid_apps)
+            [bad | _] ->
+              IO.puts(
+                IO.ANSI.red() <>
+                  "Unknown application #{inspect(bad)} for vehicle #{vehicle_dir}.\n" <>
+                  "Valid: #{Enum.join(valid_apps, ", ")}" <>
+                  IO.ANSI.reset()
+              )
+
+              System.halt(1)
+          end
+
+        app ->
+          app
+      end
+
+    {vehicle_dir, application}
   end
+
+  # Silence "module attribute unused" when resolve_vehicle_app doesn't
+  # reference @static_applications directly (kept for documentation
+  # and future help text).
+  _ = @static_applications
 
   @doc false
   def repo_root do

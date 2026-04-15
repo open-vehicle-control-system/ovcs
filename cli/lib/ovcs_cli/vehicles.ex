@@ -69,6 +69,43 @@ defmodule OvcsCli.Vehicles do
     end
   end
 
+  @doc """
+  Query the vehicle's `bridge_firmwares/0` callback. Returns a map of
+  `firmware_id => %{target: atom_string}`, or `%{}` if the callback
+  isn't implemented.
+  """
+  @spec bridge_firmwares(t()) :: %{String.t() => %{target: String.t()}}
+  def bridge_firmwares(%__MODULE__{module: module, path: path}) do
+    # Code.ensure_loaded ensures function_exported? sees the module;
+    # in `mix run -e`, modules are only lazy-loaded on first reference.
+    snippet = """
+    m = #{module}
+    Code.ensure_loaded(m)
+    if function_exported?(m, :bridge_firmwares, 0) do
+      m.bridge_firmwares()
+      |> Enum.map(fn {id, entry} -> "\#{id}\\t\#{entry[:target]}" end)
+      |> Enum.join("\\n")
+      |> IO.puts()
+    end
+    """
+
+    case run_snippet(path, snippet) do
+      nil ->
+        %{}
+
+      output ->
+        output
+        |> String.split("\n", trim: true)
+        |> Enum.flat_map(fn line ->
+          case String.split(line, "\t", parts: 2) do
+            [id, target] -> [{id, %{target: target}}]
+            _ -> []
+          end
+        end)
+        |> Enum.into(%{})
+    end
+  end
+
   defp run_snippet(path, snippet) do
     # First attempt: no-deps-check / no-stderr-noise for the common
     # case where deps are already fetched and compiled.

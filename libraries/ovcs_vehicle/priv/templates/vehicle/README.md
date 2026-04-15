@@ -77,7 +77,38 @@ inverter, BMS, brake booster, body CAN, etc. See
 [`docs/testing_can_messages.md`](../../docs/testing_can_messages.md) for
 how to exercise frames.
 
-### 4. Nerves targets
+### 4. Bridge firmwares (optional)
+
+Bridges (radio-control, ROS, …) are opt-in per vehicle. To add one,
+uncomment the `bridge_firmwares/0` callback in `lib/<%= @name %>.ex`
+and list the bridges you want bundled into each image:
+
+```elixir
+def bridge_firmwares do
+  %{
+    "radio_control" => %{
+      target: :ovcs_base_can_system_rpi3a,
+      bridges: [RadioControlBridge],
+      default_can_mapping: %{host: "ovcs:vcan0", target: "ovcs:spi0.0"}
+    }
+  }
+end
+```
+
+Each map key becomes its own build target:
+
+```sh
+../../ovcs build <%= @name %> radio_control
+```
+
+Each bridge firmware needs a CAN topology YAML — by convention at
+`priv/can/bridges/<firmware_id>.yml` (override the path with
+`:can_config_path` in the entry). The shared `bridges/firmware` image
+reads `VEHICLE` + `BRIDGE_FIRMWARE_ID` at boot and only supervises
+the bridges listed in that entry, so one vehicle can run several
+bridge firmwares in parallel on different SoCs.
+
+### 5. Nerves targets
 
 Set at scaffold time:
 
@@ -85,8 +116,8 @@ Set at scaffold time:
 <%= if @infotainment do %>- `infotainment` → `:<%= @infotainment_target %>`
 <% end %>
 Change the `nerves_target/1` clauses in `lib/<%= @name %>.ex` if you
-move to different boards. Bridge apps (radio-control, ROS) can be
-added as extra clauses once their targets are defined.
+move to different boards. Bridge firmware targets are declared inside
+each entry of `bridge_firmwares/0` (see section 4).
 
 Shared firmware defaults for each Nerves target live in
 [`vms/firmware/targets/<target>/`](../../vms/firmware/targets)<%= if @infotainment do %>

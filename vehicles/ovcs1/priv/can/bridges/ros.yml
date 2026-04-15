@@ -1,0 +1,9 @@
+---
+# CAN topology for the `ros` bridge firmware on OVCS1.
+# Emits ROS2-derived control messages onto the OVCS bus.
+can_networks:
+  ovcs:
+    bitrate: 500000
+    emitted_frames:
+      - import!:@ovcs_can:can/components/ovcs/0x2B0_ros_control0.yml
+      - import!:@ovcs_can:can/components/ovcs/0x2B1_ros_control1.yml

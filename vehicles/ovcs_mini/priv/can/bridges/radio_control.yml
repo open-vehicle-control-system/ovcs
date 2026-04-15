@@ -1,0 +1,8 @@
+---
+# CAN topology for the `radio_control` bridge firmware on OVCS Mini.
+can_networks:
+  ovcs:
+    bitrate: 500000
+    emitted_frames:
+      - import!:@ovcs_can:can/components/ovcs/0x2A0_radio_control_channels0.yml
+      - import!:@ovcs_can:can/components/ovcs/0x2A1_radio_control_channels1.yml
