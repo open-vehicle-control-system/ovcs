@@ -107,10 +107,7 @@ defmodule OvcsCli.Commands.Can do
     done
     """
 
-    OvcsCli.Shell.run!("sudo bash -c #{shell_quote(script)}",
-      dir: File.cwd!(),
-      env: %{}
-    )
+    OvcsCli.Shell.exec!("sudo bash -c #{shell_quote(script)}")
   end
 
   defp shell_quote(s), do: "'" <> String.replace(s, "'", "'\\''") <> "'"
