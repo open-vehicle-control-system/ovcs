@@ -7,6 +7,7 @@ Guidance for Claude Code working in this repository.
 Before making changes, read the relevant docs rather than rediscovering the project from the code:
 
 - [README.md](./README.md) — high-level overview and prerequisites.
+- [CODE_STYLING.md](./CODE_STYLING.md) — conventions to match when editing: layout, naming, Elixir idioms, config placement, shell scripts, CAN YAML, and anti-patterns to avoid. Read this before non-trivial changes.
 - [docs/README.md](./docs/README.md) — index of all guides.
 - [docs/getting_started.md](./docs/getting_started.md) — toolchain setup (mise, CAN, Nerves).
 - [docs/applications.md](./docs/applications.md) — what each app/library is and how the layers fit together (VMS + Infotainment: firmware / api / core / dashboard).
