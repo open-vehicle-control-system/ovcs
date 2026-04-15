@@ -9,6 +9,8 @@ defmodule InfotainmentCore.Vehicle do
 
   @callback children() :: [:supervisor.child_spec() | {module(), term()} | module()]
   @callback infotainment_configuration() :: map()
+  @callback can_config_otp_app() :: atom()
+  @callback can_config_path() :: String.t()
 
   @optional_callbacks [infotainment_configuration: 0]
 end

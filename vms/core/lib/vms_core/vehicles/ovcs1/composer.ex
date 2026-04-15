@@ -9,6 +9,11 @@ defmodule VmsCore.Vehicles.OVCS1.Composer do
   @impl VmsCore.Vehicle
   defdelegate dashboard_configuration, to:  VmsCore.Vehicles.OVCS1.Composer.Dashboard
 
+  @impl VmsCore.Vehicle
+  def can_config_otp_app, do: :vms_core
+  @impl VmsCore.Vehicle
+  def can_config_path, do: "can/vehicles/ovcs1.yml"
+
   alias VmsCore.Components.{
     Bosch,
     Nissan.LeafAZE0,

@@ -10,6 +10,11 @@ defmodule VmsCore.Vehicles.OBD2.Composer do
   defdelegate dashboard_configuration, to:  Vehicles.OBD2.Composer.Dashboard
 
   @impl VmsCore.Vehicle
+  def can_config_otp_app, do: :vms_core
+  @impl VmsCore.Vehicle
+  def can_config_path, do: "can/vehicles/obd2.yml"
+
+  @impl VmsCore.Vehicle
   def children do
     [
       {Vehicles.OBD2, []}

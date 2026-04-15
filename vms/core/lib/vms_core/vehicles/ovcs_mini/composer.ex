@@ -13,6 +13,11 @@ defmodule VmsCore.Vehicles.OVCSMini.Composer do
   defdelegate dashboard_configuration, to:  Vehicles.OVCSMini.Composer.Dashboard
 
   @impl VmsCore.Vehicle
+  def can_config_otp_app, do: :vms_core
+  @impl VmsCore.Vehicle
+  def can_config_path, do: "can/vehicles/ovcs_mini.yml"
+
+  @impl VmsCore.Vehicle
   def children do
     [
       # Controllers

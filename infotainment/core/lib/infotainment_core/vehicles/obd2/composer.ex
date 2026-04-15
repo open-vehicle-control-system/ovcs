@@ -10,6 +10,11 @@ defmodule InfotainmentCore.Vehicles.OBD2.Composer do
   defdelegate infotainment_configuration, to: OBD2.Composer.Infotainment
 
   @impl InfotainmentCore.Vehicle
+  def can_config_otp_app, do: :infotainment_core
+  @impl InfotainmentCore.Vehicle
+  def can_config_path, do: "obd2.yml"
+
+  @impl InfotainmentCore.Vehicle
   def children do
     [
       {InfotainmentCore.Vehicles.OBD2, []}
