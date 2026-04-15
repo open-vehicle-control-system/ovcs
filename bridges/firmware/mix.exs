@@ -42,12 +42,16 @@ defmodule BridgeFirmware.MixProject do
       {:ovcs_vehicle, path: "../../libraries/ovcs_vehicle"},
       {:ovcs_bridge, path: "../../libraries/ovcs_bridge"},
 
-      # Bridge libraries — available for vehicles to declare in
-      # their bridge_firmwares/0 map. The runtime supervisor only
-      # starts children from the bridges actually listed, so bundling
-      # an unused bridge here doesn't cost anything.
-      {:radio_control_bridge, path: "../radio_control_bridge"},
-      {:ros_bridge, path: "../ros_bridge"},
+      # Bridge libraries — each gated to the Nerves targets it
+      # supports so we don't drag e.g. ros_bridge's emqtt/quicer
+      # chain into a rpi3a radio-control build. Extend the target
+      # lists here as bridges gain new SoC support.
+      {:radio_control_bridge,
+       path: "../radio_control_bridge",
+       targets: [:ovcs_base_can_system_rpi3a]},
+      {:ros_bridge,
+       path: "../ros_bridge",
+       targets: [:ovcs_base_can_system_rpi4, :ovcs_bridges_system_rpi5]},
 
       # Nerves systems (one per supported target).
       {

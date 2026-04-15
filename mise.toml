@@ -25,7 +25,7 @@ experimental = true
 [hooks]
 # Runs automatically after `mise install`, so the Mix archive setup stays in
 # lockstep with whichever Elixir version mise has just put in place.
-postinstall = "mise run bootstrap"
+postinstall = "mise run bootstrap && mise run libraries"
 
 [tasks.bootstrap]
 description = "One-time Elixir + Nerves setup (hex, rebar, nerves_bootstrap archive)"
@@ -33,6 +33,24 @@ run = """
 mix local.hex --force
 mix local.rebar --force
 mix archive.install hex nerves_bootstrap --force
+"""
+
+# External libraries live in their own repos and are sideloaded into
+# `libraries/` (see libraries/.gitignore). This task clones any that
+# are missing; existing clones are left alone so you can pull/edit
+# them without the task stomping.
+[tasks.libraries]
+description = "Clone external libraries (cantastic, express_lrs, msp_osd) into libraries/"
+run = """
+set -e
+for lib in cantastic express_lrs msp_osd; do
+  if [ ! -d "libraries/$lib/.git" ]; then
+    echo "→ cloning $lib"
+    git clone "https://github.com/open-vehicle-control-system/$lib.git" "libraries/$lib"
+  else
+    echo "✓ $lib already cloned"
+  fi
+done
 """
 
 [tasks.cli]

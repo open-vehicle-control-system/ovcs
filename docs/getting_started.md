@@ -46,18 +46,7 @@ sudo apt install -y build-essential autoconf m4 \
   libssh-dev unixodbc-dev xsltproc fop libxml2-utils
 ```
 
-### 3. Install language runtimes
-
-The repo ships a `mise.toml` pinning every required runtime (Erlang, Elixir, Node, Ruby, Flutter, Python). From the repo root:
-
-```sh
-mise trust
-mise install
-```
-
-From now on, `cd`-ing into the project activates the pinned versions automatically.
-
-### 4. Install system-level tools
+### 3. Install system-level tools
 
 ```sh
 sudo apt install -y can-utils libsocketcan-dev
@@ -75,25 +64,33 @@ sudo dpkg -i /tmp/fwup.deb
 
 On macOS: `brew install fwup can-utils` (`fwup` is in homebrew; there's no `libsocketcan` on macOS — firmware builds happen inside the Linux VM).
 
-### 5. Clone the repository
+### 4. Clone the repository
 
 ```sh
 git clone https://github.com/open-vehicle-control-system/ovcs.git
 cd ovcs
 ```
 
-### 6. Build the CLI and verify
+### 5. Install language runtimes
 
-Once inside the repo:
+The repo ships a `mise.toml` pinning every required runtime (Erlang, Elixir, Node, Ruby, Flutter, Python). From inside the repo:
 
 ```sh
-mise install         # installs language runtimes + runs the bootstrap hook
-                     # (hex, rebar, nerves_bootstrap) automatically
+mise trust
+mise install        # installs language runtimes and runs the postinstall hook:
+                    # - bootstrap: hex, rebar, nerves_bootstrap Mix archive
+                    # - libraries: clones cantastic, express_lrs, msp_osd
+                    #              into libraries/ (skipped if already present)
+```
+
+From now on, `cd`-ing into the project activates the pinned versions automatically. The `mise install` postinstall hook runs `mise run bootstrap && mise run libraries` for you. If you ever reinstall Elixir (`mise install elixir@...`) the same hook fires, so the archive and the sideloaded libraries stay in sync — existing clones are left alone, so local edits in `libraries/cantastic/`, etc. are preserved.
+
+### 6. Build the CLI and verify
+
+```sh
 mise run cli         # builds the `./ovcs` CLI escript
 ./ovcs doctor        # verify everything
 ```
-
-The `mise install` postinstall hook runs `mise run bootstrap` for you — hex, rebar, and the `nerves_bootstrap` Mix archive get installed against whichever Elixir mise has just put in place. If you ever reinstall Elixir (`mise install elixir@...`) the same hook fires, so the archive stays in sync.
 
 `./ovcs doctor` checks every required binary, the `nerves_bootstrap` archive, `libsocketcan` headers, and each vehicle package's metadata. Green across the board means you're ready.
 
