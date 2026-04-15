@@ -17,7 +17,7 @@ OVCS is developed on Linux. macOS users need a Linux VM (see [macOS setup](#loca
 | Ruby | 3.3+ | CLI build tool (`ovcs` script) |
 | can-utils | Latest | CAN bus utilities (`cansend`, `candump`, `canplayer`) |
 | [Nerves](https://hexdocs.pm/nerves/installation.html) | Latest | Required only for building firmware images |
-| [Flutter](https://flutter.dev/docs/get-started/install) | 3.6+ | Required only for the infotainment dashboard |
+| [Flutter](https://flutter.dev/docs/get-started/install) | 3.27.4 | Required only for the infotainment dashboard |
 | [PlatformIO](https://platformio.org/) | Latest | Required only for building Arduino controller firmware |
 
 ## Linux Setup

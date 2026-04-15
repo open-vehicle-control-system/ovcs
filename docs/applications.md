@@ -61,7 +61,7 @@ The core library contains:
 - **Bus** (`lib/vms_core/bus.ex`) -- PubSub-based event bus for inter-process communication.
 - **Metrics** (`lib/vms_core/metrics.ex`) -- Collects and broadcasts vehicle metrics for the dashboard.
 - **PID controller** (`lib/vms_core/pid.ex`) -- Generic PID controller implementation used for motor control loops.
-- **CAN configurations** (`priv/can/`) -- YAML files defining CAN frame specifications for each component and vehicle.
+- **CAN configurations** (`priv/can/`) -- YAML files defining CAN frame specifications for each component and vehicle. Each Elixir app that speaks CAN (e.g. `vms/core`, `infotainment/core`) has its own `priv/can/` with the same `vehicles/` + `components/` layout.
 
 ### VMS API (`vms/api/`)
 
@@ -144,7 +144,7 @@ A Phoenix 1.7 JSON API server with the same page/block layout pattern as the VMS
 
 | | |
 |---|---|
-| **Technology** | Flutter / Dart (SDK 3.6.1) |
+| **Technology** | Flutter / Dart (SDK 3.27.4) |
 | **Package** | `dashboard_flutter` |
 
 A native Linux application built with Flutter, designed to run on the Raspberry Pi 5's touchscreen. Features:

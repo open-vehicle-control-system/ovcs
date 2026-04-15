@@ -99,7 +99,7 @@ The OVCS CAN bus runs at 1 Mbps to accommodate the higher traffic volume from al
 
 ### CAN Bus Configuration
 
-CAN frame specifications are defined in YAML files under `vms/core/priv/can/`:
+CAN frame specifications are defined in YAML files under each Elixir app's `priv/can/` directory (e.g. `vms/core/priv/can/`, `infotainment/core/priv/can/`):
 
 ```
 priv/can/
