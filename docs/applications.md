@@ -23,7 +23,7 @@ Each major system (VMS, Infotainment) follows a three-layer architecture:
                     +------------+      +--------------+
 ```
 
-- **Core** -- Pure Elixir library containing business logic, component drivers, vehicle composers, and CAN bus configuration. No web dependencies.
+- **Core** -- Pure Elixir library containing business logic, component drivers, and the `VmsCore.Vehicle` / `InfotainmentCore.Vehicle` behaviours. No vehicle-specific code lives here; each vehicle is its own package under `vehicles/`. No web dependencies.
 - **API** -- Phoenix application providing a JSON REST API and WebSocket channels for the dashboard. Depends on Core.
 - **Dashboard** -- Frontend application (Vue.js for VMS, Flutter for Infotainment) that connects to the API via HTTP and WebSocket.
 - **Firmware** -- Nerves firmware project that packages the API (and transitively, Core) into a deployable image for the target Raspberry Pi.
@@ -53,15 +53,12 @@ The core library contains:
   - `Ovcs.RadioControl.*` -- RC transmitter control (throttle, steering, direction)
   - `Ovcs.RosControl.*` -- ROS2 autonomous control
   - `Traxxas.*` -- RC car motor, steering, and throttle (for OVCS Mini)
-- **Vehicle composers** (`lib/vms_core/vehicles/`) -- Define which components and CAN configurations to load for a specific vehicle:
-  - `VmsCore.Vehicles.Ovcs1.Composer` -- Full-size Polo EV conversion
-  - `VmsCore.Vehicles.OvcsMini.Composer` -- Traxxas RC car platform
-  - `VmsCore.Vehicles.Obd2.Composer` -- OBD2 diagnostic mode
+- **Vehicle behaviour** (`lib/vms_core/vehicle.ex`) -- Contract each vehicle's VMS composer must implement (`children/0`, `dashboard_configuration/0`, `generic_controllers/0`, `can_config_otp_app/0`, `can_config_path/0`). The configured composer is resolved via `Application.get_env(:vms_core, :vehicle)` and comes from a vehicle package (e.g. `Ovcs1.Vms.Composer`).
 - **Managers** (`lib/vms_core/managers/`) -- Higher-level logic for gear management and control level switching.
 - **Bus** (`lib/vms_core/bus.ex`) -- PubSub-based event bus for inter-process communication.
 - **Metrics** (`lib/vms_core/metrics.ex`) -- Collects and broadcasts vehicle metrics for the dashboard.
 - **PID controller** (`lib/vms_core/pid.ex`) -- Generic PID controller implementation used for motor control loops.
-- **CAN configurations** (`priv/can/vehicles/`) -- YAML files defining this app's vehicle CAN topology. Shared frame and signal specs live in the [`ovcs_can`](#ovcs-can-librariesovcs_can) library and are referenced via Cantastic's `import!:@ovcs_can:...` syntax.
+- **CAN configurations** -- Live inside each vehicle package (`vehicles/<name>/priv/can/{vms,infotainment}.yml`). Shared frame and signal specs live in the [`ovcs_can`](#ovcs-can-librariesovcs_can) library and are referenced via Cantastic's `import!:@ovcs_can:...` syntax.
 
 ### VMS API (`vms/api/`)
 
@@ -221,7 +218,28 @@ Build configurations (defined in `platformio.ini`):
 - `uno_r4_minima_debug` -- Debug build with serial output
 - `local_test` -- Unit tests (Unity test framework)
 
+## Vehicles (`vehicles/`)
+
+Each vehicle is a standalone Mix application that bundles both its VMS and infotainment sides. A vehicle's top-level module implements the `OvcsVehicle` behaviour and exposes `vms/0`, `infotainment/0`, `can_config_otp_app/0`, and `nerves_target/1`:
+
+| Package | App | Top-level module |
+|---------|-----|------------------|
+| `vehicles/ovcs1/` | `:ovcs1` | `Ovcs1` |
+| `vehicles/ovcs_mini/` | `:ovcs_mini` | `OvcsMini` (no infotainment side) |
+| `vehicles/obd2/` | `:obd2` | `Obd2` |
+
+The side-specific composers (`Ovcs1.Vms.Composer`, `Ovcs1.Infotainment.Composer`, etc.) implement `VmsCore.Vehicle` / `InfotainmentCore.Vehicle`. Consumers reference only the top-level module in their config and dispatch through it — this prevents the two sides from drifting.
+
 ## Shared Libraries
+
+### OvcsVehicle (`libraries/ovcs_vehicle/`)
+
+| | |
+|---|---|
+| **Module** | `OvcsVehicle` |
+| **App name** | `:ovcs_vehicle` |
+
+Defines the top-level behaviour every vehicle package implements.
 
 ### OvcsCan (`libraries/ovcs_can/`)
 

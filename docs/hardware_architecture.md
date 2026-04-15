@@ -99,7 +99,7 @@ The OVCS CAN bus runs at 1 Mbps to accommodate the higher traffic volume from al
 
 ### CAN Bus Configuration
 
-Shared component-level CAN frame and signal specifications live in the [`libraries/ovcs_can`](../libraries/ovcs_can) library. Each consuming Elixir app (`vms/core`, `infotainment/core`) keeps its own vehicle topology entry points locally.
+Shared component-level CAN frame and signal specifications live in the [`libraries/ovcs_can`](../libraries/ovcs_can) library. Each vehicle bundles its own topology YAMLs (VMS and infotainment) inside its package under `vehicles/<name>/priv/can/`.
 
 ```
 libraries/ovcs_can/priv/can/components/
@@ -112,20 +112,13 @@ libraries/ovcs_can/priv/can/components/
 +-- volkswagen/polo_9n/              # Polo ABS, dashboard, key, lock, wheels frames
 +-- obd2/                            # OBD2 diagnostic frames
 
-vms/core/priv/can/vehicles/
-+-- ovcs1.yml                        # OVCS1 vehicle CAN topology (full)
-+-- ovcs_mini.yml                    # OVCS Mini CAN topology (full)
-+-- obd2.yml                         # OBD2 mode CAN topology (full)
-+-- ovcs1/generic_controller/        # OVCS1 per-controller frame wirings
-+-- ovcs_mini/generic_controller/    # OVCS Mini per-controller frame wirings
-
-infotainment/core/priv/
-+-- ovcs1.yml                        # narrow topology: only frames the dashboard consumes
-+-- obd2.yml
-+-- can/vehicles/ovcs1/generic_controller/  # subset of per-controller frames needed by the dashboard
+vehicles/<name>/priv/can/
++-- vms.yml                          # full CAN topology read by vms_core
++-- infotainment.yml                 # narrow CAN topology read by infotainment_core (optional)
++-- generic_controller/              # per-vehicle controller frame wirings
 ```
 
-Vehicle entry-point YAMLs differ between apps (VMS needs the full topology; infotainment only subscribes to the frames it renders) and use Cantastic's cross-app import syntax to pull shared component specs from the library:
+The two topology YAMLs differ per side (VMS needs every frame; infotainment only subscribes to what the dashboard renders). Both import shared component specs from the library via Cantastic's cross-app syntax:
 
 ```yaml
 - import!:@ovcs_can:can/components/ovcs/0x1A0_vms_status.yml

@@ -8,22 +8,24 @@ VMS Core is built around four key patterns:
 
 ### 1. Vehicle Composer
 
-Each supported vehicle has a **Composer** module that defines which components to start:
+Vehicles live outside `vms_core` in their own Mix packages under `vehicles/`. Each vehicle's VMS side implements the `VmsCore.Vehicle` behaviour:
 
 ```
-VmsCore.Vehicles.<VEHICLE>.Composer
-├── children/0          → List of child specs for the OTP supervisor
-├── generic_controllers/0 → Pin configurations for Arduino controllers
-└── dashboard_configuration/0 → UI layout for the web dashboard
+VmsCore.Vehicle (behaviour)
+├── children/0                → List of child specs for the OTP supervisor
+├── generic_controllers/0     → Pin configurations for Arduino controllers (optional)
+├── dashboard_configuration/0 → UI layout for the web dashboard (optional)
+├── can_config_otp_app/0      → OTP app owning the CAN YAMLs
+└── can_config_path/0         → Path to the YAML inside that app's priv/
 ```
 
-The `VEHICLE` environment variable selects the composer at startup. Supported vehicles:
+The `VEHICLE` environment variable selects which vehicle package's composer is wired in at startup. Supported vehicles:
 
-| Vehicle | Module | Description |
-|---------|--------|-------------|
-| `OVCS1` | `VmsCore.Vehicles.OVCS1.Composer` | Full-size VW Polo EV conversion |
-| `OVCSMini` | `VmsCore.Vehicles.OVCSMini.Composer` | Traxxas RC car platform |
-| `OBD2` | `VmsCore.Vehicles.OBD2.Composer` | Read-only OBD-II diagnostic mode |
+| Vehicle | Package | VMS Composer module |
+|---------|---------|---------------------|
+| `OVCS1` | `vehicles/ovcs1` | `Ovcs1.Vms.Composer` |
+| `OVCSMini` | `vehicles/ovcs_mini` | `OvcsMini.Vms.Composer` |
+| `OBD2` | `vehicles/obd2` | `Obd2.Vms.Composer` |
 
 ### 2. Component Pattern
 
@@ -167,16 +169,16 @@ VmsCore.Application
 
 ## CAN Configuration
 
-Vehicle CAN topology files live in `priv/can/vehicles/`:
+Vehicle CAN topology files live in each vehicle package's `priv/can/`:
 
 ```
-priv/can/vehicles/
-├── ovcs1.yml          # OVCS1 network topology
-├── ovcs_mini.yml      # OVCS Mini topology
-└── obd2.yml           # OBD2 diagnostic topology
+vehicles/<name>/priv/can/
+├── vms.yml                 # read by vms_core
+├── infotainment.yml        # read by infotainment_core (optional)
+└── generic_controller/     # per-vehicle controller frame wirings
 ```
 
-Shared per-component frame and signal definitions live in the [`ovcs_can`](../../libraries/ovcs_can) library under `priv/can/components/`. Per-vehicle controller wirings stay here under `vehicles/<vehicle>/generic_controller/`. Vehicle topology YAMLs import components from the library via Cantastic's cross-app import syntax:
+Shared per-component frame and signal definitions live in the [`ovcs_can`](../../libraries/ovcs_can) library under `priv/can/components/`. Vehicle topology YAMLs import components from the library via Cantastic's cross-app import syntax:
 
 ```yaml
 - import!:@ovcs_can:can/components/ovcs/0x1A0_vms_status.yml
