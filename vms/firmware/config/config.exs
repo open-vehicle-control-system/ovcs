@@ -30,6 +30,13 @@ vehicle_name =
     """)
 
 vehicle_dir = Macro.underscore(vehicle_name)
+vehicle_firmware_dir =
+  Path.expand("../../../vehicles/#{vehicle_dir}/priv/firmware/vms", __DIR__)
+
+# fwup.conf references siblings (config.txt etc.) via ${VEHICLE_FIRMWARE_DIR};
+# stash the absolute path so fwup can resolve host-path values regardless of
+# where Nerves runs it from.
+System.put_env("VEHICLE_FIRMWARE_DIR", vehicle_firmware_dir)
 
 config :nerves, :firmware,
   fwup_conf: "../../vehicles/#{vehicle_dir}/priv/firmware/vms/fwup.conf"

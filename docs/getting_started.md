@@ -78,8 +78,6 @@ On macOS: `brew install fwup can-utils` (`fwup` is in homebrew; there's no `libs
 ### 5. Clone the repository
 
 ```sh
-mkdir ovcs_base
-cd ovcs_base
 git clone https://github.com/open-vehicle-control-system/ovcs.git
 cd ovcs
 ```
