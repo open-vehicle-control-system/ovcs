@@ -13,12 +13,13 @@ defmodule OvcsCli.MixProject do
   end
 
   def application do
-    [extra_applications: [:logger]]
+    [extra_applications: [:logger, :eex, :mix]]
   end
 
   defp deps do
     [
-      {:optimus, "~> 0.5"}
+      {:optimus, "~> 0.5"},
+      {:ovcs_vehicle, path: "../libraries/ovcs_vehicle"}
     ]
   end
 end

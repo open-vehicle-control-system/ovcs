@@ -37,7 +37,8 @@ defmodule OvcsCli do
           burn: burn_spec(vehicle_names),
           upload: upload_spec(vehicle_names),
           clean: clean_spec(vehicle_names),
-          can: can_spec(vehicle_names)
+          can: can_spec(vehicle_names),
+          vehicle: vehicle_spec()
         ]
       )
 
@@ -74,6 +75,12 @@ defmodule OvcsCli do
 
       {[:can], _} ->
         Optimus.parse!(optimus, ["help", "can"])
+
+      {[:vehicle, :new], %{args: %{name: name}, options: opts, flags: flags}} ->
+        Commands.VehicleNew.run(repo_root(), name, Map.merge(opts, flags))
+
+      {[:vehicle], _} ->
+        Optimus.parse!(optimus, ["help", "vehicle"])
 
       _ ->
         Optimus.parse!(optimus, ["--help"])
@@ -134,6 +141,49 @@ defmodule OvcsCli do
           name: "status",
           about: "Report which vcan interfaces a vehicle needs and whether they're up",
           args: vehicle_arg
+        ]
+      ]
+    ]
+  end
+
+  defp vehicle_spec do
+    [
+      name: "vehicle",
+      about: "Vehicle package helpers",
+      subcommands: [
+        new: [
+          name: "new",
+          about: "Scaffold a new vehicle package from the bundled template",
+          args: [
+            name: [
+              value_name: "NAME",
+              help: "New vehicle directory name (snake_case)",
+              required: true
+            ]
+          ],
+          options: [
+            vms_target: [
+              value_name: "TARGET",
+              long: "--vms-target",
+              help: "Nerves target system for the VMS firmware",
+              default: "ovcs_base_can_system_rpi4",
+              required: false
+            ],
+            infotainment_target: [
+              value_name: "TARGET",
+              long: "--infotainment-target",
+              help: "Nerves target system for the infotainment firmware",
+              default: "ovcs_base_can_system_rpi5",
+              required: false
+            ]
+          ],
+          flags: [
+            no_infotainment: [
+              long: "--no-infotainment",
+              help: "Scaffold a VMS-only vehicle (skip the infotainment side)",
+              multiple: false
+            ]
+          ]
         ]
       ]
     ]

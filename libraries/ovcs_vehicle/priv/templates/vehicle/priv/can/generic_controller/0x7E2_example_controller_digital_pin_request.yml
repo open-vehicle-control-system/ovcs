@@ -1,0 +1,9 @@
+---
+# Example generic_controller digital-pin request frame — the VMS emits
+# this on 0x7X2 to command digital outputs on the controller. Drop
+# this file (and its reference in vms.yml) if your controller has no
+# digital outputs to drive.
+name: example_controller_digital_pin_request
+id: 0x7E2
+frequency: 10
+signals: import!:@ovcs_can:can/components/ovcs/generic_controller/0x7X2_digital_pin_request_signals.yml

@@ -70,12 +70,54 @@ defmodule OvcsCli.Vehicles do
   end
 
   defp run_snippet(path, snippet) do
-    case System.cmd(
-           "sh",
-           ["-c", "mix run --no-start --no-deps-check -e #{escape(snippet)} 2>/dev/null"],
+    # First attempt: no-deps-check / no-stderr-noise for the common
+    # case where deps are already fetched and compiled.
+    quiet = "mix run --no-start --no-deps-check -e #{escape(snippet)} 2>/dev/null"
+
+    case System.cmd("sh", ["-c", quiet], cd: path, env: [{"MIX_ENV", "dev"}]) do
+      {"", 0} -> nil
+      {output, 0} -> String.trim(output)
+      _ -> retry_with_deps(path, snippet)
+    end
+  end
+
+  # Fallback: a freshly scaffolded vehicle has no deps yet, so the
+  # first quiet invocation fails silently. Fetch + compile visibly,
+  # then re-run the snippet quietly so the returned output is just
+  # the snippet's IO.puts value — not compile noise.
+  defp retry_with_deps(path, snippet) do
+    IO.puts(
+      IO.ANSI.faint() <>
+        "Preparing vehicle #{Path.relative_to_cwd(path)} (first run)…" <>
+        IO.ANSI.reset()
+    )
+
+    with :ok <- run_mix(path, ["deps.get"]),
+         :ok <- run_mix(path, ["compile"]) do
+      run_snippet_quiet(path, snippet)
+    else
+      {:error, output} ->
+        IO.puts(IO.ANSI.red() <> output <> IO.ANSI.reset())
+        nil
+    end
+  end
+
+  defp run_mix(path, args) do
+    case System.cmd("mix", args,
            cd: path,
-           env: [{"MIX_ENV", "dev"}]
+           env: [{"MIX_ENV", "dev"}],
+           stderr_to_stdout: true,
+           into: IO.stream(:stdio, :line)
          ) do
+      {_, 0} -> :ok
+      {output, _} -> {:error, to_string(output)}
+    end
+  end
+
+  defp run_snippet_quiet(path, snippet) do
+    cmd = "mix run --no-start --no-deps-check -e #{escape(snippet)} 2>/dev/null"
+
+    case System.cmd("sh", ["-c", cmd], cd: path, env: [{"MIX_ENV", "dev"}]) do
       {"", 0} -> nil
       {output, 0} -> String.trim(output)
       _ -> nil

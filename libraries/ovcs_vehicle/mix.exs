@@ -12,6 +12,6 @@ defmodule OvcsVehicle.MixProject do
   end
 
   def application do
-    [extra_applications: [:logger]]
+    [extra_applications: [:logger, :eex, :mix]]
   end
 end
