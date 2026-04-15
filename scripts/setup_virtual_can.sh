@@ -1,29 +1,60 @@
-#!/bin/bash
-sudo modprobe vcan
+#!/usr/bin/env bash
+#
+# Bring up vcan0..vcan5 for local OVCS development.
+#
+# Idempotent: if an interface already exists and is UP nothing happens
+# and no sudo prompt is triggered. Only the missing/down interfaces are
+# touched, and only then is sudo invoked.
+#
+set -euo pipefail
 
-sudo ip link set down vcan0
-sudo ip link add dev vcan0 type vcan
-sudo ip link set up vcan0
+INTERFACES=(vcan0 vcan1 vcan2 vcan3 vcan4 vcan5)
 
-sudo ip link set down vcan1
-sudo ip link add dev vcan1 type vcan
-sudo ip link set up vcan1
+needs_module() {
+  ! lsmod 2>/dev/null | awk '{print $1}' | grep -qx vcan
+}
 
-sudo ip link set down vcan2
-sudo ip link add dev vcan2 type vcan
-sudo ip link set up vcan2
+iface_missing() {
+  ! ip link show "$1" >/dev/null 2>&1
+}
 
-sudo ip link set down vcan3
-sudo ip link add dev vcan3 type vcan
-sudo ip link set up vcan3
+iface_down() {
+  [[ "$(ip -br link show "$1" 2>/dev/null | awk '{print $2}')" != "UP" ]]
+}
 
-sudo ip link set down vcan4
-sudo ip link add dev vcan4 type vcan
-sudo ip link set up vcan4
+# Dry-run pass: collect work so we can prompt sudo at most once, and skip
+# sudo entirely if nothing is needed.
+actions=()
+needs_module && actions+=("load vcan module")
+for iface in "${INTERFACES[@]}"; do
+  if iface_missing "$iface"; then
+    actions+=("create $iface")
+  elif iface_down "$iface"; then
+    actions+=("bring up $iface")
+  fi
+done
 
-sudo ip link set down vcan5
-sudo ip link add dev vcan5 type vcan
-sudo ip link set up vcan5
+if [[ ${#actions[@]} -eq 0 ]]; then
+  echo "Virtual CAN interfaces already up — nothing to do."
+  exit 0
+fi
 
-echo "You can now listen to the virtual can inferface using: $ candump -tz vcanXX"
-echo "You can send test frames with: $ cansend vcan0 123#00FFAA5501020304"
+echo "Will run as root:"
+printf "  - %s\n" "${actions[@]}"
+
+sudo bash -c "
+  set -e
+  if ! lsmod | awk '{print \$1}' | grep -qx vcan; then
+    modprobe vcan
+  fi
+  for iface in ${INTERFACES[*]}; do
+    if ! ip link show \"\$iface\" >/dev/null 2>&1; then
+      ip link add dev \"\$iface\" type vcan
+    fi
+    ip link set up \"\$iface\"
+  done
+"
+
+echo "Virtual CAN interfaces ready: ${INTERFACES[*]}"
+echo "Listen: candump -tz vcan0"
+echo "Send:   cansend vcan0 123#00FFAA5501020304"
