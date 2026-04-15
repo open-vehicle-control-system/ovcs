@@ -1,6 +1,5 @@
 {
   "folders": [
-    { "name": "ovcs (root)", "path": "." },
     { "name": "vms/core", "path": "vms/core" },
     { "name": "vms/api", "path": "vms/api" },
     { "name": "vms/dashboard", "path": "vms/dashboard" },
@@ -9,10 +8,18 @@
     { "name": "infotainment/api", "path": "infotainment/api" },
     { "name": "infotainment/dashboard", "path": "infotainment/dashboard" },
     { "name": "infotainment/firmware", "path": "infotainment/firmware" },
+    { "name": "vehicles/ovcs1", "path": "vehicles/ovcs1" },
+    { "name": "vehicles/ovcs_mini", "path": "vehicles/ovcs_mini" },
+    { "name": "vehicles/obd2", "path": "vehicles/obd2" },
     { "name": "bridges/radio_control_bridge", "path": "bridges/radio_control_bridge" },
     { "name": "bridges/ros_bridge", "path": "bridges/ros_bridge" },
     { "name": "controllers/generic_controller", "path": "controllers/generic_controller" },
-    { "name": "libraries/cantastic", "path": "libraries/cantastic" }
+    { "name": "libraries/cantastic", "path": "libraries/cantastic" },
+    { "name": "libraries/ovcs_can", "path": "libraries/ovcs_can" },
+    { "name": "libraries/ovcs_vehicle", "path": "libraries/ovcs_vehicle" },
+    { "name": "cli", "path": "cli" },
+    { "name": "docs", "path": "docs" },
+    { "name": "scripts", "path": "scripts" }
   ],
   "settings": {
     "files.exclude": {
