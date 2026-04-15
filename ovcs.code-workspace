@@ -1,0 +1,45 @@
+{
+  "folders": [
+    { "name": "ovcs (root)", "path": "." },
+    { "name": "vms/core", "path": "vms/core" },
+    { "name": "vms/api", "path": "vms/api" },
+    { "name": "vms/dashboard", "path": "vms/dashboard" },
+    { "name": "vms/firmware", "path": "vms/firmware" },
+    { "name": "infotainment/core", "path": "infotainment/core" },
+    { "name": "infotainment/api", "path": "infotainment/api" },
+    { "name": "infotainment/dashboard", "path": "infotainment/dashboard" },
+    { "name": "infotainment/firmware", "path": "infotainment/firmware" },
+    { "name": "bridges/radio_control_bridge", "path": "bridges/radio_control_bridge" },
+    { "name": "bridges/ros_bridge", "path": "bridges/ros_bridge" },
+    { "name": "controllers/generic_controller", "path": "controllers/generic_controller" },
+    { "name": "libraries/cantastic", "path": "libraries/cantastic" }
+  ],
+  "settings": {
+    "files.exclude": {
+      "**/_build": true,
+      "**/deps": true,
+      "**/.elixir_ls": true,
+      "**/node_modules": true,
+      "**/.dart_tool": true,
+      "**/.pio": true
+    }
+  },
+  "extensions": {
+    "recommendations": [
+      "jakebecker.elixir-ls",
+      "phoenixframework.phoenix",
+      "vue.volar",
+      "dbaeumer.vscode-eslint",
+      "esbenp.prettier-vscode",
+      "bradlc.vscode-tailwindcss",
+      "dart-code.dart-code",
+      "dart-code.flutter",
+      "platformio.platformio-ide",
+      "ms-vscode.cpptools",
+      "rebornix.ruby",
+      "redhat.vscode-yaml",
+      "tamasfe.even-better-toml",
+      "editorconfig.editorconfig"
+    ]
+  }
+}
