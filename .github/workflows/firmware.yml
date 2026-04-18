@@ -10,12 +10,6 @@ concurrency:
   group: firmware-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  # Opt actions/checkout, actions/cache, jdx/mise-action off of the
-  # deprecated Node.js 20 runtime. Remove once those actions ship a
-  # Node 24 release we can pin to.
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   build:
     name: ${{ matrix.app }} · ${{ matrix.target }}
@@ -41,7 +35,7 @@ jobs:
       run:
         working-directory: ${{ matrix.app }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: ./.github/actions/setup-mise
 
@@ -52,7 +46,7 @@ jobs:
             build-essential automake autoconf git squashfs-tools ssh-askpass \
             pkg-config curl unzip libssl-dev libmnl-dev
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: |
             ${{ matrix.app }}/deps
@@ -72,7 +66,7 @@ jobs:
           echo "path=$fw" >> "$GITHUB_OUTPUT"
           echo "name=$(basename "$fw")" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: firmware-${{ matrix.app }}-${{ matrix.target }}
           path: ${{ matrix.app }}/${{ steps.locate.outputs.path }}
