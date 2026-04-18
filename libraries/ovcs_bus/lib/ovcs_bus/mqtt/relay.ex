@@ -158,8 +158,14 @@ defmodule OvcsBus.Mqtt.Relay.Handler do
   @impl true
   def terminate(_reason, _state), do: :ok
 
+  # Producers on each side of the bus publish fields as atoms (gear
+  # states, control modes, status keys, etc.) that the peer hasn't
+  # necessarily materialised yet. `:safe` rejects any such atom and
+  # the whole message gets dropped — so we decode without it. Safe on
+  # a closed vehicle LAN with only OVCS producers; revisit if the
+  # broker is ever exposed.
   defp decode(payload) do
-    {:ok, :erlang.binary_to_term(payload, [:safe])}
+    {:ok, :erlang.binary_to_term(payload)}
   rescue
     _ -> {:error, :bad_payload}
   end
