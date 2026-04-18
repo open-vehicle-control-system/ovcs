@@ -3,6 +3,7 @@ erlang  = "27.3"
 elixir  = "1.17"
 node    = "24"
 ruby    = "3.3"
+rust    = "1.90"
 flutter = "3.32.8"
 python  = "3.12"
 uv      = "latest"
@@ -54,5 +55,5 @@ done
 """
 
 [tasks.cli]
-description = "Build the ovcs CLI escript"
-run = "cd cli && mix deps.get && mix escript.build"
+description = "Build the ovcs CLI (Rust release binary → cli/ovcs)"
+run = "cd cli && cargo build --release && strip --strip-all target/release/ovcs && cp target/release/ovcs ovcs && chmod +x ovcs"
