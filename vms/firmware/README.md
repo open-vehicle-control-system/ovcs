@@ -1,32 +1,55 @@
-# VmsFirmware
+# VMS Firmware
 
-**TODO: Add description**
+Nerves firmware image for the Vehicle Management System. Wraps
+[`vms_api`](../api) (and transitively [`vms_core`](../core) + the active
+vehicle package) into a deployable image for the Raspberry Pi 4.
 
-## Targets
+See [`docs/applications.md`](../../docs/applications.md) for how this layer
+fits with `core` / `api` / `dashboard`, and
+[`docs/running_hardware.md`](../../docs/running_hardware.md) for burn + OTA
+flows.
 
-Nerves applications produce images for hardware targets based on the
-`MIX_TARGET` environment variable. If `MIX_TARGET` is unset, `mix` builds an
-image that runs on the host (e.g., your laptop). This is useful for executing
-logic tests, running utilities, and debugging. Other targets are represented by
-a short name like `rpi3` that maps to a Nerves system image for that platform.
-All of this logic is in the generated `mix.exs` and may be customized. For more
-information about targets see:
+## Target
 
-https://hexdocs.pm/nerves/targets.html#content
+Default `MIX_TARGET`: `ovcs_base_can_system_rpi4` — a
+[custom Nerves system](https://github.com/open-vehicle-control-system/ovcs_base_can_system_rpi4)
+with CAN bus support (SPI-to-CAN) and the kernel modules the VMS needs.
 
-## Getting Started
+Per-target defaults (`fwup.conf`, `config.txt`, `cmdline.txt`) live under
+`targets/<target>/`. A vehicle can override any of them by dropping files
+into its own `vehicles/<name>/priv/firmware/vms/`; the build prefers the
+per-vehicle file when present.
 
-To start your Nerves app:
-  * `export MIX_TARGET=my_target` or prefix every command with
-    `MIX_TARGET=my_target`. For example, `MIX_TARGET=rpi3`
-  * Install dependencies with `mix deps.get`
-  * Create firmware with `mix firmware`
-  * Burn to an SD card with `mix burn`
+## Building
 
-## Learn more
+Preferred, from the repo root:
 
-  * Official docs: https://hexdocs.pm/nerves/getting-started.html
-  * Official website: https://nerves-project.org/
-  * Forum: https://elixirforum.com/c/nerves-forum
-  * Discussion Slack elixir-lang #nerves ([Invite](https://elixir-slackin.herokuapp.com/))
-  * Source: https://github.com/nerves-project/nerves
+```sh
+./ovcs build ovcs1 vms          # also: ovcs_mini, any vehicle dir
+./ovcs burn   ovcs1 vms         # write to SD card
+./ovcs upload ovcs1 vms [--host HOST] [--file FILE]
+./ovcs clean  ovcs1 vms
+```
+
+The CLI resolves the vehicle module, sets `VEHICLE` + `MIX_TARGET` (reading
+`nerves_target(:vms)` off the vehicle module), and delegates to `build.sh`
+/ `burn.sh` / `upload.sh` / `clean.sh` in this directory.
+
+Invoking the scripts directly also works — `build.sh` requires `VEHICLE`
+and defaults `MIX_TARGET` to `ovcs_base_can_system_rpi4`. It builds the
+Vue.js dashboard (`../dashboard`) first, then runs `mix firmware`. The
+resulting `.fw` lands in `_build/${MIX_TARGET}_dev/nerves/images/`.
+
+## Required env vars
+
+| Variable | Required | Purpose |
+|----------|:-:|---------|
+| `VEHICLE` | yes | Top-level vehicle module (`Ovcs1`, `OvcsMini`, …) — picked up by `vms_api`'s `config/runtime.exs` and wired into the supervision tree |
+| `MIX_TARGET` | no | Nerves target atom (default: `ovcs_base_can_system_rpi4`) |
+
+## Changing hardware target
+
+Edit `mix.exs` to swap the custom system dep if you need to deploy on a
+different board. Follow the
+[Nerves custom-systems guide](https://hexdocs.pm/nerves/customizing-systems.html)
+and see `docs/running_hardware.md` for the list of systems OVCS publishes.

@@ -1,18 +1,61 @@
-# VmsApi
+# VMS API
 
-To start your Phoenix server:
+Phoenix 1.7 JSON + WebSocket server that exposes the VMS Core to the debug
+dashboard. Thin layer — all logic lives in [`vms_core`](../core); controllers
+and channels just route HTTP/WebSocket traffic to it.
 
-  * Run `mix setup` to install and setup dependencies
-  * Start Phoenix endpoint with `mix phx.server` or inside IEx with `iex -S mix phx.server`
+See [`docs/applications.md`](../../docs/applications.md) for the three-layer
+(`core` ← `api` ← `firmware`) architecture this app sits in.
 
-Now you can visit [`localhost:4000`](http://localhost:4000) from your browser.
+## Endpoints
 
-Ready to run in production? Please [check our deployment guides](https://hexdocs.pm/phoenix/deployment.html).
+### REST
 
-## Learn more
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/api/vehicle` | Vehicle metadata (name, main color, refresh interval) |
+| `GET` | `/api/vehicle/pages` | Dashboard page list |
+| `GET` | `/api/vehicle/pages/:page_id/blocks` | Blocks rendered on a given page |
+| `POST` | `/api/actions` | Dispatch a control action to a component |
 
-  * Official website: https://www.phoenixframework.org/
-  * Guides: https://hexdocs.pm/phoenix/overview.html
-  * Docs: https://hexdocs.pm/phoenix
-  * Forum: https://elixirforum.com/c/phoenix-forum
-  * Source: https://github.com/phoenixframework/phoenix
+Page/block layout comes from the active vehicle's composer
+(`<Vehicle>.Vms.Composer.dashboard_configuration/0`).
+
+### WebSocket
+
+Phoenix socket mounted at `/sockets/dashboard`. Channels:
+
+| Topic | Purpose |
+|-------|---------|
+| `metrics` | Streams `VmsCore.Metrics` updates for module/key pairs the client subscribes to |
+| `network-interfaces` | Streams `VmsCore.NetworkInterfaces` state (TX/RX stats, bus state) |
+
+### Dev-only
+
+- `/dev/dashboard` — Phoenix LiveDashboard (Erlang VM introspection)
+
+## Running locally
+
+```sh
+cd vms/api
+VEHICLE=Ovcs1 mix phx.server      # or iex -S mix phx.server
+```
+
+Lands at `http://localhost:4000`. For the full vehicle-package boot (VMS +
+infotainment + host-compatible bridges in one BEAM), prefer
+`./ovcs run <vehicle>` from the repo root — see
+[`docs/getting_started.md`](../../docs/getting_started.md).
+
+## Required env vars
+
+| Variable | Required | Purpose |
+|----------|:-:|---------|
+| `VEHICLE` | yes | Top-level vehicle module (`Ovcs1`, `OvcsMini`, `Obd2`) — selects the VMS composer wired into the supervision tree |
+| `CAN_NETWORK_MAPPINGS` | no | Override the vehicle's `default_can_mapping(:host)` (format: `name:iface,name:iface,...`) |
+
+## Dependencies
+
+Path deps: [`vms_core`](../core), [`cantastic`](../../libraries/cantastic),
+[`ovcs_can`](../../libraries/ovcs_can), [`ovcs_bus`](../../libraries/ovcs_bus),
+[`ovcs_vehicle`](../../libraries/ovcs_vehicle). The active vehicle package
+under `vehicles/<name>/` is resolved at runtime from `VEHICLE`.

@@ -13,8 +13,8 @@ OVCS is developed on Linux. macOS users need a Linux VM (see [macOS setup](#loca
 | [mise](https://mise.jdx.dev/) | Latest | Version manager for language runtimes | you (one-time install) |
 | Erlang/OTP | 27.3+ | Runtime for Elixir | mise |
 | Elixir | 1.17+ | Primary programming language | mise |
-| Node.js | 24+ | VMS debug dashboard (Vue.js) | mise |
-| Ruby | 3.3+ | historical scripts | mise |
+| Node.js | 24+ | `ovcs` CLI runtime + VMS debug dashboard (Vue.js) | mise |
+| Ruby | 3.3+ | Utility scripts under `scripts/` (e.g. `bind_remote_can.rb`, `faker.rb`) | mise |
 | Python | 3.12+ | PlatformIO + misc tooling | mise |
 | [Flutter](https://flutter.dev/docs/get-started/install) | 3.32.8 | Infotainment dashboard | mise |
 | can-utils | Latest | CAN bus utilities (`cansend`, `candump`, `canplayer`) | system package |
@@ -94,7 +94,7 @@ From now on, `cd`-ing into the project activates the pinned versions automatical
 ### 6. Build the CLI and verify
 
 ```sh
-mise run cli         # builds the `./ovcs` CLI escript
+mise run cli         # bundles ./ovcs (Node.js) — cli/ && npm install && npm run build
 ./ovcs doctor        # verify everything
 ```
 

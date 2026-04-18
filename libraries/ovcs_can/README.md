@@ -7,11 +7,12 @@ This library contains no runtime logic — only YAML data under
 `priv/can/components/`: per-component frame specs (Bosch, Nissan, Orion,
 OVCS-internal, Volkswagen, etc.) grouped by manufacturer.
 
-Vehicle topology YAMLs (`ovcs1.yml`, `ovcs_mini.yml`, `obd2.yml`) and
-per-vehicle controller wirings (`vehicles/<vehicle>/generic_controller/`)
-stay inside each consuming app because they differ between apps (VMS needs
-the full CAN topology; the infotainment dashboard only subscribes to the
-frames it actually renders).
+Vehicle topology YAMLs live inside each vehicle package at
+`vehicles/<name>/priv/can/{vms,infotainment}.yml`, with per-vehicle
+controller wirings alongside them under
+`vehicles/<name>/priv/can/generic_controller/`. Each side has its own
+topology because VMS needs the full CAN topology while infotainment only
+subscribes to the frames it actually renders.
 
 Entry-point YAMLs reference this library via Cantastic's cross-app import
 syntax:

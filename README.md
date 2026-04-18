@@ -92,7 +92,12 @@ ovcs/
 +-- libraries/                  Shared Libraries
 |   +-- cantastic/                CAN bus communication library (Elixir, SocketCAN)
 |   +-- ovcs_can/                 Shared CAN component frame/signal YAMLs
-|   +-- ovcs_vehicle/             OvcsVehicle top-level behaviour for vehicle packages
+|   +-- ovcs_vehicle/             OvcsVehicle top-level behaviour + scaffold
+|   +-- ovcs_bus/                 Node-local pub/sub + optional MQTT relay/broker
+|   +-- ovcs_bridge/              Behaviour + supervisor for bridge libraries
+|   +-- ovcs_control/             PID controller + input filters
+|   +-- express_lrs/              MAVLink v2 telemetry reader (ExpressLRS)
+|   +-- msp_osd/                  MSP / DisplayPort OSD stack for MSP-compatible VTXs
 |
 +-- scripts/                    Utility Scripts
 |   +-- setup_can.sh              Physical CAN setup on hardware (manual fallback)

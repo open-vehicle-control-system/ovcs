@@ -1,4 +1,13 @@
-# Wiring
+# OVCS1 Wiring Reference
+
+Pin-level notes for the donor harnesses and custom looms on the OVCS1
+(2007 VW Polo → Nissan Leaf AZE0 EV conversion). Kept terse on purpose —
+one section per harness, one bullet per wire. Expand as new connections
+are added; do not move this file out of the vehicle package.
+
+For the physical topology (which bus runs at what bitrate, which Pi owns
+which connector), see
+[`docs/hardware_architecture.md`](../../docs/hardware_architecture.md).
 
 ## Leaf harness
 

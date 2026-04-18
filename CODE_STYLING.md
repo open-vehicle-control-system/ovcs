@@ -27,7 +27,7 @@ match what you see unless you have a reason to do otherwise.
   `Macro.camelize(dir)` (`Ovcs1`, `OvcsMini`, `Obd2`).
 - **Side composers:** `<Vehicle>.Vms.Composer`, `<Vehicle>.Infotainment.Composer`.
 - **`VEHICLE` env var** takes the **module** name (`Ovcs1`), not the directory
-  name. The `ovcs` CLI converts `-v ovcs1` to `VEHICLE=Ovcs1`.
+  name. The `ovcs` CLI converts the positional `ovcs1` argument to `VEHICLE=Ovcs1`.
 
 ## Elixir
 

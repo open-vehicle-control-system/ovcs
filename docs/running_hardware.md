@@ -46,20 +46,18 @@ To use a different system, replace `:ovcs_base_can_system_rpi5` with your custom
 
 ## Building and Deploying Firmware
 
-OVCS provides the `ovcs` CLI tool at the repository root for building, burning, and uploading firmware.
+OVCS provides the `ovcs` CLI tool at the repository root (a Node.js bundle under `cli/ovcs.js`, symlinked to `./ovcs`) for building, burning, and uploading firmware. See [`cli/README.md`](../cli/README.md) for the full command reference and implementation notes.
 
 ### CLI Usage
 
 ```
-Usage: ./ovcs --command [COMMAND] --vehicle [VEHICLE] --application [APP] (--host [HOST] --file [FILE])
-
-Options:
-    -c, --command [COMMAND]     Command: build | burn | upload
-    -v, --vehicle [VEHICLE]     Vehicle: ovcs1 | ovcs-mini
-    -a, --application [APP]     App: vms | infotainment | radio-control-bridge | ros-bridge
-    -h, --host [HOST]           Optional: target host (e.g., nerves.local)
-    -f, --file [FILE]           Optional: custom firmware file (e.g., custom.fw)
+./ovcs <command> <vehicle> <app> [options]
 ```
+
+- `<vehicle>` is the snake_case directory name under `vehicles/` (e.g. `ovcs1`, `ovcs_mini`, `obd2`).
+- `<app>` is `vms`, `infotainment`, or any bridge firmware id declared in the vehicle's `bridge_firmwares/0` callback (e.g. `radio_control`, `ros`).
+- Positional args for `build` / `burn` / `clean` / `upload` are order-independent. Missing values prompt interactively; on a non-tty stdin the command exits with status 2.
+- Run `./ovcs --help` or `./ovcs <command> --help` for the full option list.
 
 ### Build
 
@@ -67,16 +65,16 @@ Build a firmware image for a specific application and vehicle:
 
 ```sh
 # Build VMS firmware for OVCS1
-./ovcs -c build -a vms -v ovcs1
+./ovcs build ovcs1 vms
 
 # Build Infotainment firmware for OVCS1
-./ovcs -c build -a infotainment -v ovcs1
+./ovcs build ovcs1 infotainment
 
 # Build VMS firmware for OVCS Mini
-./ovcs -c build -a vms -v ovcs-mini
+./ovcs build ovcs_mini vms
 
-# Build Radio Control Bridge
-./ovcs -c build -a radio-control-bridge -v ovcs1
+# Build a bridge firmware declared in the vehicle (e.g. radio_control)
+./ovcs build ovcs1 radio_control
 ```
 
 ### Burn to SD card
@@ -84,8 +82,8 @@ Build a firmware image for a specific application and vehicle:
 Write the firmware image to an SD card (requires the SD card to be inserted):
 
 ```sh
-./ovcs -c burn -a vms -v ovcs1
-./ovcs -c burn -a infotainment -v ovcs1
+./ovcs burn ovcs1 vms
+./ovcs burn ovcs1 infotainment
 ```
 
 ### Upload over the network
@@ -94,13 +92,13 @@ Push a firmware update to a running Nerves device over SSH:
 
 ```sh
 # Upload to the default host
-./ovcs -c upload -a vms -v ovcs1
+./ovcs upload ovcs1 vms
 
 # Upload to a specific host
-./ovcs -c upload -a infotainment -v ovcs1 -h 192.168.1.100
+./ovcs upload ovcs1 infotainment --host 192.168.1.100
 
 # Upload a custom firmware file
-./ovcs -c upload -a vms -v ovcs1 -f path/to/custom.fw
+./ovcs upload ovcs1 vms --file path/to/custom.fw
 ```
 
 ## Customizing CAN Interfaces
@@ -135,7 +133,7 @@ CAN_NETWORK_MAPPINGS=ovcs:can0,leaf_drive:vcan1,polo_drive:vcan2,orion_bms:vcan3
 
 ```sh
 CAN_NETWORK_MAPPINGS=ovcs:spi0.0,leaf_drive:vcan0,polo_drive:vcan1,orion_bms:vcan2,misc:vcan3 \
-  ./ovcs -c build -a vms -v ovcs1
+  ./ovcs build ovcs1 vms
 ```
 
 ### Available CAN networks

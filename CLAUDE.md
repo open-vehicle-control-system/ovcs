@@ -12,7 +12,7 @@ Before making changes, read the relevant docs rather than rediscovering the proj
 - [docs/getting_started.md](./docs/getting_started.md) — toolchain setup (mise, CAN, Nerves).
 - [docs/applications.md](./docs/applications.md) — what each app/library is and how the layers fit together (VMS + Infotainment: firmware / api / core / dashboard).
 - [docs/hardware_architecture.md](./docs/hardware_architecture.md) — physical topology, CAN networks, controllers.
-- [docs/running_hardware.md](./docs/running_hardware.md) — build/burn/upload via the top-level `ovcs` Ruby CLI, runtime env vars (`VEHICLE`, `CAN_NETWORK_MAPPINGS`).
+- [docs/running_hardware.md](./docs/running_hardware.md) — build/burn/upload via the top-level `ovcs` Node.js/TypeScript CLI (source in `cli/src/`, bundled to `cli/ovcs.js`), runtime env vars (`VEHICLE`, `CAN_NETWORK_MAPPINGS`).
 - [docs/testing_can_messages.md](./docs/testing_can_messages.md), [docs/testing_generic_controllers.md](./docs/testing_generic_controllers.md) — CAN + controller testing.
 - [vehicles/ovcs1/WIRING.md](./vehicles/ovcs1/WIRING.md) — OVCS1 wiring.
 
@@ -28,6 +28,6 @@ Prefer updating these docs over duplicating their content here.
 - Strict layer split in `{vms,infotainment}`: `core` (platform + component drivers, no web deps) ← `api` (Phoenix) ← `firmware` (Nerves); `dashboard` talks to `api` over HTTP + Phoenix Channels. Put logic in the layer it belongs to.
 - **Vehicles are their own packages under `vehicles/<name>/`** — each bundles a VMS composer, an infotainment composer (optional), and its CAN topology YAMLs. A vehicle's top-level module implements `OvcsVehicle` and exposes `vms/0` + `infotainment/0`. `vms_core` and `infotainment_core` contain zero vehicle-specific code.
 - Shared per-component CAN frame/signal YAMLs live in `libraries/ovcs_can/priv/can/components/`. Vehicle topology YAMLs live in `vehicles/<name>/priv/can/{vms,infotainment}.yml` and import shared components via `import!:@ovcs_can:can/components/...` (Cantastic cross-app import syntax).
-- Vehicle selection is runtime via the `VEHICLE` env var, whose value is the top-level module name of the vehicle package (e.g. `Ovcs1`, `OvcsMini`, `Obd2`). Each api's `config/runtime.exs` resolves the module and calls `.vms()` / `.infotainment()` — no hardcoded vehicle list anywhere in `vms_core`/`infotainment_core`/api/firmware. The `ovcs` CLI accepts `-v ovcs1` (directory name) and converts.
+- Vehicle selection is runtime via the `VEHICLE` env var, whose value is the top-level module name of the vehicle package (e.g. `Ovcs1`, `OvcsMini`, `Obd2`). Each api's `config/runtime.exs` resolves the module and calls `.vms()` / `.infotainment()` — no hardcoded vehicle list anywhere in `vms_core`/`infotainment_core`/api/firmware. The `ovcs` CLI takes the directory name as a positional arg (e.g. `./ovcs build ovcs1 vms`) and converts it to the module name.
 - Run `./ovcs can setup <vehicle>` (host dev) or `./scripts/setup_can.sh` (physical-hardware fallback) before starting any Elixir app locally.
 - Toolchain is pinned in `mise.toml` — run `mise install` at the repo root.
