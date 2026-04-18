@@ -13,7 +13,8 @@ OVCS is developed on Linux. macOS users need a Linux VM (see [macOS setup](#loca
 | [mise](https://mise.jdx.dev/) | Latest | Version manager for language runtimes | you (one-time install) |
 | Erlang/OTP | 27.3+ | Runtime for Elixir | mise |
 | Elixir | 1.17+ | Primary programming language | mise |
-| Node.js | 24+ | `ovcs` CLI runtime + VMS debug dashboard (Vue.js) | mise |
+| Rust | 1.90+ | Compiles the top-level `ovcs` CLI (native binary at `cli/ovcs`) | mise |
+| Node.js | 24+ | VMS debug dashboard (Vue.js) | mise |
 | Ruby | 3.3+ | Utility scripts under `scripts/` (e.g. `bind_remote_can.rb`, `faker.rb`) | mise |
 | Python | 3.12+ | PlatformIO + misc tooling | mise |
 | [Flutter](https://flutter.dev/docs/get-started/install) | 3.32.8 | Infotainment dashboard | mise |
@@ -27,6 +28,8 @@ OVCS is developed on Linux. macOS users need a Linux VM (see [macOS setup](#loca
 | [PlatformIO](https://platformio.org/) | Latest | Arduino controller firmware | mise (via pipx + uv) |
 
 ## Linux Setup
+
+Steps 1, 4, 5, 6, and 7 are OS-agnostic. Steps 2 and 3 (system packages) are written for Debian/Ubuntu; if you're on an **atomic Fedora (Bluefin, Silverblue, Kinoite, Bazzite, …)**, skip to [Bluefin / Fedora Silverblue (atomic)](#bluefin--fedora-silverblue-atomic) — it replaces steps 2 and 3 with a toolbox-based flow.
 
 ### 1. Install mise
 
@@ -52,9 +55,11 @@ sudo apt install -y build-essential autoconf m4 \
 ### 3. Install system-level tools
 
 ```sh
-sudo apt install -y can-utils libsocketcan-dev cmake libmnl-dev mosquitto
+sudo apt install -y git can-utils libsocketcan-dev cmake libmnl-dev mosquitto kmod
 ```
 
+- `git` is needed by `mise run libraries` to clone the sideloaded `cantastic` / `express_lrs` / `msp_osd` / `ovcs_control` repos. Most host distros ship it already; fresh containers (distrobox, VMs) do not.
+- `kmod` provides `lsmod` / `modprobe`, which `./ovcs can setup` and `./ovcs run` call to load the `vcan` kernel module. Standard on host distros; not included in the minimal Ubuntu container image.
 - `can-utils` provides `cansend`, `candump`, `canplayer`, and the rest. The Linux kernel modules `can` and `can_raw` are required and are included in standard (non-cloud) kernels.
 - `libsocketcan-dev` is only needed when building for physical CAN targets (i.e. the Pi firmwares); it supplies the native headers Cantastic links against.
 - `cmake` is needed to host-compile `quicer` (the MQTT transport NIF used by `ros_bridge`'s Zenoh/ROS2 dispatcher via `emqtt`). `OvcsBus.Mqtt.Relay` uses Tortoise311 — pure Elixir, no native deps — so the bus itself doesn't need any of this; `cmake` is only needed if you build `ros_bridge`.
@@ -69,6 +74,77 @@ sudo dpkg -i /tmp/fwup.deb
 ```
 
 On macOS: `brew install fwup can-utils` (`fwup` is in homebrew; there's no `libsocketcan` on macOS — firmware builds happen inside the Linux VM).
+
+### Bluefin / Fedora Silverblue (atomic)
+
+> This subsection replaces steps 2 and 3 above when you're on an immutable Fedora variant (Bluefin, Silverblue, Kinoite, Bazzite, uBlue, …). Continue with step 4 once you're done here.
+
+Atomic Fedora images are read-only at `/usr`, so do all development work inside an **Ubuntu distrobox** — a rootless podman container that shares your `$HOME`, display, and devices with the host. Using an Ubuntu image (instead of a Fedora toolbox) means the `apt` commands in steps 2 and 3 above, plus the `fwup` `.deb` install, apply verbatim.
+
+**All CAN kernel/network setup must happen on the host** — a rootless distrobox can't do any of it, and `--privileged` doesn't change that. Module insertion (`modprobe`) needs true root, not user-namespace caps. Interface creation (`ip link add … type vcan`) needs `CAP_NET_ADMIN` over the host net namespace, which rootless "fake root" doesn't grant even though the container shares the host net namespace. Once the host has loaded `vcan` and created the interfaces, the container just *uses* them — CAN socket I/O from inside the distrobox works against host-created `vcan` interfaces without any extra privileges.
+
+That's why the OVCS CLI's `./ovcs can setup` and `./ovcs run` will *appear* to run their sudo block but then fail with `modprobe: Operation not permitted` or `RTNETLINK answers: Operation not permitted` on Bluefin. The fix is to provision the interfaces up-front on the host so the CLI's "already up — nothing to do" branch hits.
+
+Run this on the host, **once**, as a one-time persistent setup:
+
+```sh
+# Load the vcan module now and on every boot.
+sudo modprobe vcan
+echo vcan | sudo tee /etc/modules-load.d/vcan.conf
+
+# Create vcan0..vcan4 now and on every boot via a systemd one-shot.
+sudo tee /etc/systemd/system/ovcs-vcan.service >/dev/null <<'EOF'
+[Unit]
+Description=Create virtual CAN interfaces for OVCS
+After=systemd-modules-load.service
+Requires=systemd-modules-load.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c 'for i in 0 1 2 3 4; do ip link add dev vcan$$i type vcan 2>/dev/null || true; ip link set up vcan$$i; done'
+
+[Install]
+WantedBy=multi-user.target
+EOF
+sudo systemctl daemon-reload
+sudo systemctl enable --now ovcs-vcan.service
+```
+
+`ip -br link show | grep vcan` should now show five `vcan0`…`vcan4` interfaces in `UP` state. Adjust the loop range if a future vehicle needs more interfaces.
+
+The container itself needs no special flags — CAN socket I/O, `mix`, `fwup`, `mise`, and `cargo` all work in a plain rootless distrobox:
+
+```sh
+distrobox create --name ovcs --image ubuntu:24.04
+distrobox enter ovcs
+```
+
+> If you later run firmware burns from inside the container (`fwup` writing to an SD card / USB), you may need to pass device access with e.g. `--additional-flags "--device /dev/bus/usb"` at create time — revisit when you get there.
+
+From this point on, every command in this guide runs **inside the container** — `mise install`, `./ovcs …`, `mix`, `npm`, CAN tooling, everything. The repo clone lives in your shared `$HOME`, so no files move. `sudo` is passwordless inside distrobox.
+
+**mise must be (re)installed inside the container.** On Bluefin the host `mise` is typically a Homebrew binary at `/home/linuxbrew/.linuxbrew/bin/mise`, and that path is not mounted into distroboxes. Run the step-1 installer again inside the container so a container-local binary lands at `~/.local/bin/mise` (the host still uses its own Homebrew `mise` — they don't conflict because the host shell resolves `mise` as a function pointing to `$__MISE_EXE`). After installing, wire the activation hook into the container's bash init so runtimes (Elixir, Node, Python, …) are on `PATH` automatically:
+
+```sh
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+echo 'eval "$(mise activate bash)"' >> ~/.bashrc
+exec bash
+```
+
+`mise activate` is preferred over a raw shims-on-`PATH` export because it also picks up `[env]` blocks in `mise.toml`, handles per-directory tool-version switches, and surfaces auto-install hints. If you'd rather keep things minimal (e.g. you never use `mise use`), `export PATH="$HOME/.local/share/mise/shims:$PATH"` on its own is enough to make `./ovcs doctor` pass.
+
+> `distrobox enter` drops you into bash by default when your host login shell (e.g. zsh) isn't present in the Ubuntu image. Add the same lines to `~/.zshrc` only if you install and use zsh inside the container — otherwise the host's `~/.zshrc` (which activates Homebrew `mise`) is irrelevant here.
+
+Now go back and run steps 2, 3, 4, 5, 6 (and 7 if you need firmware builds) as written.
+
+If you want any binary produced by these steps (e.g. `fwup`, `cansend`, `./ovcs`) callable from the host shell, export it once:
+
+```sh
+distrobox-export --bin /usr/local/bin/fwup --export-path ~/.local/bin
+```
+
+Continue with [step 4 (Clone the repository)](#4-clone-the-repository) — inside the container.
 
 ### 4. Clone the repository
 
@@ -94,7 +170,7 @@ From now on, `cd`-ing into the project activates the pinned versions automatical
 ### 6. Build the CLI and verify
 
 ```sh
-mise run cli         # bundles ./ovcs (Node.js) — cli/ && npm install && npm run build
+mise run cli         # builds ./ovcs (Rust release binary via `cargo build --release`)
 ./ovcs doctor        # verify everything
 ```
 
