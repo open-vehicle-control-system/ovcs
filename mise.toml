@@ -40,10 +40,10 @@ mix archive.install hex nerves_bootstrap --force
 # are missing; existing clones are left alone so you can pull/edit
 # them without the task stomping.
 [tasks.libraries]
-description = "Clone external libraries (cantastic, express_lrs, msp_osd) into libraries/"
+description = "Clone external libraries (cantastic, express_lrs, msp_osd, ovcs_control) into libraries/"
 run = """
 set -e
-for lib in cantastic express_lrs msp_osd; do
+for lib in cantastic express_lrs msp_osd ovcs_control; do
   if [ ! -d "libraries/$lib/.git" ]; then
     echo "→ cloning $lib"
     git clone "https://github.com/open-vehicle-control-system/$lib.git" "libraries/$lib"
