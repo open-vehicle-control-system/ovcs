@@ -10,3 +10,5 @@ deps/
 erl_crash.dump
 *.ez
 cli/ovcs
+.claude/*
+!.claude/settings.json
