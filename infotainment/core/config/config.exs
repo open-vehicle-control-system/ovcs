@@ -22,7 +22,6 @@ config :infotainment_core, InfotainmentCore.Repo,
 # in config/runtime.exs because it needs the vehicle package's modules to be
 # compiled and loadable.
 
-
 # Configures Elixir's Logger
 config :logger, :console,
   format: "$time $metadata[$level] $message\n",

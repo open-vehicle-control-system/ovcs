@@ -50,7 +50,9 @@ config :infotainment_api, InfotainmentApiWeb.Endpoint,
 config :infotainment_api, dev_routes: true
 
 # Do not include metadata nor timestamps in development logs
-config :logger, :console, format: "[$level] $message\n", level: (System.get_env("LOG_LEVEL") || "debug") |> String.to_atom()
+config :logger, :console,
+  format: "[$level] $message\n",
+  level: (System.get_env("LOG_LEVEL") || "debug") |> String.to_atom()
 
 # Set a higher stacktrace during development. Avoid configuring such
 # in production as building large stacktraces may be expensive.

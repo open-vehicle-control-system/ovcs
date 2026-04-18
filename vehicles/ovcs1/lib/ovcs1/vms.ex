@@ -5,7 +5,7 @@ defmodule Ovcs1.Vms do
   use GenServer
   require Logger
   alias OvcsBus, as: Bus
-  alias VmsCore.{Status}
+  alias VmsCore.Status
   alias VmsCore.Components.{
     Bosch.IBoosterGen2,
     Nissan.LeafAZE0.Inverter,

@@ -1,7 +1,6 @@
 defmodule VmsApi.MixProject do
   use Mix.Project
 
-
   def project do
     [
       app: :vms_api,
@@ -55,7 +54,9 @@ defmodule VmsApi.MixProject do
 
   defp vehicle_dep do
     case System.get_env("VEHICLE") do
-      nil -> []
+      nil ->
+        []
+
       name ->
         dir = Macro.underscore(name)
         [{String.to_atom(dir), path: "../../vehicles/#{dir}"}]

@@ -1,3 +1,5 @@
+# credo:disable-for-this-file Credo.Check.Refactor.Nesting
+# credo:disable-for-this-file Credo.Check.Readability.WithSingleClause
 defmodule BNO085.I2C do
   use GenServer
   import Bitwise

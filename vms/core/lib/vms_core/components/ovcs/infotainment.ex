@@ -17,15 +17,22 @@ defmodule VmsCore.Components.OVCS.Infotainment do
   def init(_) do
     :ok = Receiver.subscribe(self(), :ovcs, "infotainment_status")
     {:ok, timer} = :timer.send_interval(@loop_period, :loop)
-    {:ok, %{
-      requested_gear: :parking,
-      loop_timer: timer
-    }}
+
+    {:ok,
+     %{
+       requested_gear: :parking,
+       loop_timer: timer
+     }}
   end
 
   @impl true
   def handle_info(:loop, state) do
-    Bus.broadcast("messages", %Bus.Message{name: :requested_gear, value: state.requested_gear, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{
+      name: :requested_gear,
+      value: state.requested_gear,
+      source: __MODULE__
+    })
+
     {:noreply, state}
   end
 

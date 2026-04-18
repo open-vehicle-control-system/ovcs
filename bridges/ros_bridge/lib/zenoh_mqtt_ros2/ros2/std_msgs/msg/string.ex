@@ -4,10 +4,9 @@ defmodule Ros2.StdMsgs.Msg.String do
 
   defstruct data: ""
 
-  def parse(<<sequence::little-unsigned-integer-32, payload::binary>>) do
-    with {:ok, string, payload} <- parse_string(payload) do
-      {:ok, %__MODULE__{data: string}, payload}
-    else
+  def parse(<<_sequence::little-unsigned-integer-32, payload::binary>>) do
+    case parse_string(payload) do
+      {:ok, string, payload} -> {:ok, %__MODULE__{data: string}, payload}
       error -> error
     end
   end

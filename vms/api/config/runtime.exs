@@ -17,7 +17,7 @@ if vehicle_name do
         {network_name, can_interface}
       end)
     end,
-    setup_can_interfaces: (System.get_env("SETUP_CAN_INTERFACES") == "true" || false),
+    setup_can_interfaces: System.get_env("SETUP_CAN_INTERFACES") == "true" || false,
     otp_app: vehicle.can_config_otp_app(),
     priv_can_config_path: vms.can_config_path()
 end

@@ -3,7 +3,8 @@ defmodule VmsApiWeb.Api.Vehicle.PagesController do
 
   def index(conn, _params) do
     vehicle_composer = VmsCore.Application.vehicle_composer()
-    pages            = vehicle_composer.dashboard_configuration().vehicle.pages
+    pages = vehicle_composer.dashboard_configuration().vehicle.pages
+
     conn
     |> put_status(:ok)
     |> render("index.json", %{pages: pages})

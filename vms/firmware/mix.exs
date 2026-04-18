@@ -42,7 +42,7 @@ defmodule VmsFirmware.MixProject do
         github: "open-vehicle-control-system/ovcs_base_can_system_rpi4",
         runtime: false,
         targets: :ovcs_base_can_system_rpi4,
-        nerves: [compile: false],
+        nerves: [compile: false]
       },
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
     ]

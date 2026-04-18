@@ -18,31 +18,38 @@ defmodule VmsCore.Components.OVCS.RadioControl.Direction do
 
   @impl true
   def init(%{radio_control_channel: radio_control_channel}) do
-    channel_frame_index = case radio_control_channel do
-      channel when channel < 5 -> 0
-      _ -> 1
-    end
+    channel_frame_index =
+      case radio_control_channel do
+        channel when channel < 5 -> 0
+        _ -> 1
+      end
+
     channel_frame_name = "radio_control_channels#{channel_frame_index}"
     :ok = Receiver.subscribe(self(), :ovcs, channel_frame_name)
     {:ok, timer} = :timer.send_interval(@loop_period, :loop)
-    {:ok, %{
-      loop_timer: timer,
-      channel_frame_name: channel_frame_name,
-      channel_name: "channel#{radio_control_channel}",
-      raw_channel: @default_value,
-      requested_direction:  @default_direction
-    }}
+
+    {:ok,
+     %{
+       loop_timer: timer,
+       channel_frame_name: channel_frame_name,
+       channel_name: "channel#{radio_control_channel}",
+       raw_channel: @default_value,
+       requested_direction: @default_direction
+     }}
   end
 
   @impl true
   def handle_info(:loop, state) do
-    state = state
+    state =
+      state
       |> compute_direction()
       |> emit()
+
     {:noreply, state}
   end
 
-  def handle_info({:handle_frame, %Frame{name: name, signals: signals}}, state) when name == state.channel_frame_name do
+  def handle_info({:handle_frame, %Frame{name: name, signals: signals}}, state)
+      when name == state.channel_frame_name do
     raw_channel = signals[state.channel_name].value
     {:noreply, %{state | raw_channel: raw_channel}}
   end
@@ -53,7 +60,12 @@ defmodule VmsCore.Components.OVCS.RadioControl.Direction do
   end
 
   defp emit(state) do
-    Bus.broadcast("messages", %Bus.Message{name: :requested_direction, value: state.requested_direction, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{
+      name: :requested_direction,
+      value: state.requested_direction,
+      source: __MODULE__
+    })
+
     state
   end
 end

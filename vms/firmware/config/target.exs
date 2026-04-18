@@ -7,7 +7,9 @@ if config_env() in [:dev, :test, :prod] do
   end
 end
 
-vehicle_name = System.get_env("VEHICLE") || raise "VEHICLE env var is required for firmware builds"
+vehicle_name =
+  System.get_env("VEHICLE") || raise "VEHICLE env var is required for firmware builds"
+
 vehicle_dir = Macro.underscore(vehicle_name)
 vehicle_host = "#{vehicle_dir |> String.replace("_", "-")}-vms"
 # target.exs runs before deps are compiled, so we can only form module atoms
@@ -43,37 +45,36 @@ config :nerves, :erlinit, update_clock: true
 config :nerves_ssh,
   authorized_keys: (System.get_env("AUTHORIZED_SSH_KEYS") || "") |> String.split(",", trim: true)
 
-
-  # Configure the network using vintage_net
-  #
-  # Update regulatory_domain to your 2-letter country code E.g., "US"
-  #
-  # See https://github.com/nerves-networking/vintage_net for more information
-  config :vintage_net,
-    regulatory_domain: "00",
-    config: [
-      {"usb0", %{type: VintageNetDirect}},
-      {"eth0",
-       %{
-         type: VintageNetEthernet,
-         ipv4: %{method: :dhcp}
-       }},
-      # {"wlan0",
-      #   %{
-      #     type: VintageNetWiFi,
-      #     vintage_net_wifi: %{
-      #       networks: [
-      #         %{
-      #           key_mgmt: :wpa_psk,
-      #           ssid: System.get_env("WIFI_SSID"),
-      #           psk: System.get_env("WIFI_PSK")
-      #         }
-      #       ]
-      #     },
-      #     ipv4: %{method: :dhcp}
-      #   }
-      # }
-    ]
+# Configure the network using vintage_net
+#
+# Update regulatory_domain to your 2-letter country code E.g., "US"
+#
+# See https://github.com/nerves-networking/vintage_net for more information
+config :vintage_net,
+  regulatory_domain: "00",
+  config: [
+    {"usb0", %{type: VintageNetDirect}},
+    {"eth0",
+     %{
+       type: VintageNetEthernet,
+       ipv4: %{method: :dhcp}
+     }}
+    # {"wlan0",
+    #   %{
+    #     type: VintageNetWiFi,
+    #     vintage_net_wifi: %{
+    #       networks: [
+    #         %{
+    #           key_mgmt: :wpa_psk,
+    #           ssid: System.get_env("WIFI_SSID"),
+    #           psk: System.get_env("WIFI_PSK")
+    #         }
+    #       ]
+    #     },
+    #     ipv4: %{method: :dhcp}
+    #   }
+    # }
+  ]
 
 config :mdns_lite,
   # The `hosts` key specifies what hostnames mdns_lite advertises.  `:hostname`

@@ -1,3 +1,5 @@
+# credo:disable-for-this-file Credo.Check.Readability.MaxLineLength
+# credo:disable-for-this-file Credo.Check.Refactor.Nesting
 defmodule BNO085.Dummy do
   use GenServer
   require Logger

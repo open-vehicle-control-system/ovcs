@@ -5,7 +5,7 @@ defmodule OvcsMini.Vms do
   use GenServer
   require Logger
   alias OvcsBus, as: Bus
-  alias VmsCore.{Status}
+  alias VmsCore.Status
   alias OvcsMini.Vms.MainController
 
   @loop_period 10
@@ -57,8 +57,7 @@ defmodule OvcsMini.Vms do
     {:noreply, %{state | booting: false}}
   end
 
-
-  defp  compute_vms_status(state) do
+  defp compute_vms_status(state) do
     vms_is_ok = state.booting || state.resetting || (
       state.vms_status == "OK" &&
       state.main_controller_is_alive &&

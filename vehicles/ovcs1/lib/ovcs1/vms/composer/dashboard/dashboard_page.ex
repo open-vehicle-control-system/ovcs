@@ -57,7 +57,7 @@ defmodule Ovcs1.Vms.Composer.Dashboard.DashboardPage do
           type: "lineChart",
           serie_max_size: 300,
           y_axis: [
-            %{min: 0, max: 10000, label: "RPM", series: [
+            %{min: 0, max: 10_000, label: "RPM", series: [
               %{name: "RPM", metric: %{module: LeafAZE0.Inverter, key: :rotation_per_minute}}
             ]},
             %{position: "right", min: 0, max: 400, label: "V", series: [

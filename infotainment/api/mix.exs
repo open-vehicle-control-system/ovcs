@@ -53,7 +53,9 @@ defmodule InfotainmentApi.MixProject do
 
   defp vehicle_dep do
     case System.get_env("VEHICLE") do
-      nil -> []
+      nil ->
+        []
+
       name ->
         dir = Macro.underscore(name)
         [{String.to_atom(dir), path: "../../vehicles/#{dir}"}]

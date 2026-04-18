@@ -1,5 +1,4 @@
 defmodule Obd2.Infotainment.Composer.Infotainment.DashboardPage do
-  alias Obd2.Infotainment
   alias Obd2.Infotainment.Composer.Infotainment.Blocks
 
   def definition(order: order) do

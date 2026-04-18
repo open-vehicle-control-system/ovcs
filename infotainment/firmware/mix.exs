@@ -61,7 +61,7 @@ defmodule OvcsInfotainmentFirmware.MixProject do
         github: "open-vehicle-control-system/ovcs_base_can_system_rpi5",
         runtime: false,
         targets: :ovcs_base_can_system_rpi5,
-        nerves: [compile: false],
+        nerves: [compile: false]
       },
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
     ]
@@ -74,7 +74,12 @@ defmodule OvcsInfotainmentFirmware.MixProject do
       # See https://hexdocs.pm/nerves_pack/readme.html#erlang-distribution
       cookie: "#{@app}_cookie",
       include_erts: &Nerves.Release.erts/0,
-      steps: [&Nerves.Release.init/1, &NervesFlutterSupport.InstallRuntime.run/1, &NervesFlutterSupport.BuildFlutterApp.run/1, :assemble],
+      steps: [
+        &Nerves.Release.init/1,
+        &NervesFlutterSupport.InstallRuntime.run/1,
+        &NervesFlutterSupport.BuildFlutterApp.run/1,
+        :assemble
+      ],
       strip_beams: Mix.env() == :prod or [keep: ["Docs"]],
       flutter: [project_dir: Path.expand("../dashboard/")]
     ]

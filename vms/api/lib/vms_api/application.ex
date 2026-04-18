@@ -9,8 +9,8 @@ defmodule VmsApi.Application do
   def start(_type, _args) do
     children = [
       VmsApiWeb.Telemetry,
-      #VmsApi.Repo,
-      #{Ecto.Migrator,
+      # VmsApi.Repo,
+      # {Ecto.Migrator,
       #  repos: Application.fetch_env!(:vms_api, :ecto_repos),
       #  skip: skip_migrations?()},
       {DNSCluster, query: Application.get_env(:vms_api, :dns_cluster_query) || :ignore},
@@ -18,7 +18,7 @@ defmodule VmsApi.Application do
       # Start a worker by calling: VmsApi.Worker.start_link(arg)
       # {VmsApi.Worker, arg},
       # Start to serve requests, typically the last entry
-      VmsApiWeb.Endpoint,
+      VmsApiWeb.Endpoint
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html
@@ -35,8 +35,8 @@ defmodule VmsApi.Application do
     :ok
   end
 
-  #defp skip_migrations?() do
-    # By default, sqlite migrations are run when using a release
+  # defp skip_migrations?() do
+  # By default, sqlite migrations are run when using a release
   #  System.get_env("RELEASE_NAME") != nil
-  #end
+  # end
 end

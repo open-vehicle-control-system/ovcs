@@ -9,7 +9,7 @@ defmodule VmsCore.Components.OVCS.ROSControl.Steering do
 
   @loop_period 10
   @zero D.new(0)
-  @range 2**31 - 1
+  @range 2 ** 31 - 1
 
   def start_link(args) do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
@@ -19,18 +19,22 @@ defmodule VmsCore.Components.OVCS.ROSControl.Steering do
   def init(_) do
     :ok = Receiver.subscribe(self(), :ovcs, "ros_control1")
     {:ok, timer} = :timer.send_interval(@loop_period, :loop)
-    {:ok, %{
-      loop_timer: timer,
-      raw_value: 0,
-      requested_steering: @zero
-    }}
+
+    {:ok,
+     %{
+       loop_timer: timer,
+       raw_value: 0,
+       requested_steering: @zero
+     }}
   end
 
   @impl true
   def handle_info(:loop, state) do
-    state = state
+    state =
+      state
       |> compute_steering()
       |> emit()
+
     {:noreply, state}
   end
 
@@ -45,7 +49,12 @@ defmodule VmsCore.Components.OVCS.ROSControl.Steering do
   end
 
   defp emit(state) do
-    Bus.broadcast("messages", %Bus.Message{name: :requested_steering, value: state.requested_steering, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{
+      name: :requested_steering,
+      value: state.requested_steering,
+      source: __MODULE__
+    })
+
     state
   end
 end

@@ -10,18 +10,22 @@ defmodule VmsCore.Application do
     end
 
     vehicle_children = vehicle_composer().children()
-    children = [
-      VmsCore.Repo,
-      {Ecto.Migrator,
-        repos: Application.fetch_env!(:vms_core, :ecto_repos),
-        skip: skip_migrations?()},
-      {VmsCore.Metrics, []},
-      {VmsCore.NetworkInterfaces, []},
-    ] ++ bus_broker_children() ++ bus_relay_children()
-    children =  case Application.get_env(:vms_core, :socketcand_only) do
-      true -> []
-      false -> children ++ vehicle_children
-    end
+
+    children =
+      [
+        VmsCore.Repo,
+        {Ecto.Migrator,
+         repos: Application.fetch_env!(:vms_core, :ecto_repos), skip: skip_migrations?()},
+        {VmsCore.Metrics, []},
+        {VmsCore.NetworkInterfaces, []}
+      ] ++ bus_broker_children() ++ bus_relay_children()
+
+    children =
+      case Application.get_env(:vms_core, :socketcand_only) do
+        true -> []
+        false -> children ++ vehicle_children
+      end
+
     opts = [strategy: :one_for_one, name: VmsCore.Supervisor]
     Supervisor.start_link(children, opts)
   end

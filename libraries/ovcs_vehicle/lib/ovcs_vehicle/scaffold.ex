@@ -146,7 +146,6 @@ defmodule OvcsVehicle.Scaffold do
     String.replace(rel, "{{name}}", Keyword.fetch!(assigns, :name))
   end
 
-
   # Skip paths that belong to a side the caller disabled. Infotainment
   # files live under any path component starting with "infotainment"
   # (e.g. `lib/{{name}}/infotainment.ex`, `lib/{{name}}/infotainment/…`,

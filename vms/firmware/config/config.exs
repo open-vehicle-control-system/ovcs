@@ -26,16 +26,16 @@ config :nerves, source_date_epoch: "1708002919"
 # Firmware cross-compile (Mix.target() != :host) still enforces.
 vehicle_name =
   System.get_env("VEHICLE") ||
-    (if Mix.target() == :host do
-       "Ovcs1"
-     else
-       Mix.raise("""
-       VEHICLE env var is required for VMS firmware builds.
+    if Mix.target() == :host do
+      "Ovcs1"
+    else
+      Mix.raise("""
+      VEHICLE env var is required for VMS firmware builds.
 
-       Set it to the vehicle package's top-level module name, e.g.:
-         VEHICLE=Ovcs1 mix firmware
-       """)
-     end)
+      Set it to the vehicle package's top-level module name, e.g.:
+        VEHICLE=Ovcs1 mix firmware
+      """)
+    end
 
 vehicle_dir = Macro.underscore(vehicle_name)
 target = Mix.target() |> to_string()

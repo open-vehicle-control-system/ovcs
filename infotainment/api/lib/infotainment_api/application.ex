@@ -7,9 +7,10 @@ defmodule InfotainmentApi.Application do
 
   @impl true
   def start(_type, _args) do
-
     unless Application.get_env(:infotainment_api, :vehicle) do
-      Application.put_env(:infotainment_api, :vehicle,
+      Application.put_env(
+        :infotainment_api,
+        :vehicle,
         (System.get_env("VEHICLE") || "OVCS1") |> String.to_atom()
       )
     end
@@ -18,8 +19,7 @@ defmodule InfotainmentApi.Application do
       InfotainmentApiWeb.Telemetry,
       InfotainmentApi.Repo,
       {Ecto.Migrator,
-        repos: Application.fetch_env!(:infotainment_api, :ecto_repos),
-        skip: skip_migrations?()},
+       repos: Application.fetch_env!(:infotainment_api, :ecto_repos), skip: skip_migrations?()},
       {DNSCluster, query: Application.get_env(:infotainment_api, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: InfotainmentApi.PubSub},
       # Start a worker by calling: InfotainmentApi.Worker.start_link(arg)

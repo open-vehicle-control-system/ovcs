@@ -21,7 +21,7 @@ defmodule OvcsCli.Vehicles do
   end
 
   @doc "Derive the top-level Elixir module name from the snake_case dir name."
-  def module_for(dir), do: dir |> String.split("_") |> Enum.map(&String.capitalize/1) |> Enum.join()
+  def module_for(dir), do: dir |> String.split("_") |> Enum.map_join(&String.capitalize/1)
 
   @doc """
   Query a vehicle's `nerves_target/1` via a `mix run --no-start` spawn. Returns

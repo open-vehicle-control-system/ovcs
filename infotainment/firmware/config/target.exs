@@ -7,7 +7,9 @@ if config_env() in [:dev, :test, :prod] do
   end
 end
 
-vehicle_name = System.get_env("VEHICLE") || raise "VEHICLE env var is required for firmware builds"
+vehicle_name =
+  System.get_env("VEHICLE") || raise "VEHICLE env var is required for firmware builds"
+
 vehicle_dir = Macro.underscore(vehicle_name)
 vehicle_host = "#{vehicle_dir |> String.replace("_", "-")}-infotainment"
 # target.exs runs before deps are compiled. Only atom/path-based config here;
@@ -53,10 +55,10 @@ config :vintage_net,
   config: [
     {"usb0", %{type: VintageNetDirect}},
     {"eth0",
-    %{
-      type: VintageNetEthernet,
-      ipv4: %{method: :dhcp}
-    }}
+     %{
+       type: VintageNetEthernet,
+       ipv4: %{method: :dhcp}
+     }}
   ]
 
 config :mdns_lite,
@@ -136,6 +138,7 @@ config :cantastic,
   setup_can_interfaces: true,
   otp_app: String.to_atom(vehicle_dir),
   priv_can_config_path: "can/infotainment.yml"
+
 # import_config "#{Mix.target()}.exs"
 
 config :nerves, :erlinit, hostname_pattern: vehicle_host

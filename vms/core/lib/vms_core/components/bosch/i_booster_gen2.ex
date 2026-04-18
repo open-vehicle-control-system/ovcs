@@ -11,15 +11,17 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
 
   @zero D.new(0)
 
-  #@min_flow_rate 27_136 # 0x6A00
-  @zero_point_flow_rate 32_256 # 0x7e00
-  #@max_flow_rate 37_376 # 0x9200
-  @flow_rate_range  5120
+  # @min_flow_rate 27_136 # 0x6A00
+  # 0x7e00
+  @zero_point_flow_rate 32_256
+  # @max_flow_rate 37_376 # 0x9200
+  @flow_rate_range 5120
 
-  @min_rod_position @zero # TODO check in practice
-  @max_rod_position D.new("16.56")  # TODO check in practice
+  # TODO check in practice
+  @min_rod_position @zero
+  # TODO check in practice
+  @max_rod_position D.new("16.56")
   @rod_position_range @max_rod_position |> D.sub(@min_rod_position)
-
 
   @kp D.new(250)
   @ki D.new(0)
@@ -34,66 +36,76 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
 
   @impl true
   def init(%{
-    selected_control_level_source: selected_control_level_source,
-    contact_source: contact_source,
-    controller: controller,
-    power_relay_pin: power_relay_pin})
-  do
+        selected_control_level_source: selected_control_level_source,
+        contact_source: contact_source,
+        controller: controller,
+        power_relay_pin: power_relay_pin
+      }) do
     :ok = Receiver.subscribe(self(), :misc, ["ibooster_status"])
     Bus.subscribe("messages")
-    :ok = Emitter.configure(:misc, "vehicle_status", %{
-      parameters_builder_function: &vehicle_status_frame_parameters_builder/1,
-      initial_data: %{
-        "counter" => 0,
-        "external_request" => false
-      }
-    })
-    :ok = Emitter.configure(:misc, "vehicle_alive", %{
-      parameters_builder_function: &vehicle_alive_frame_parameters_builder/1,
-      initial_data: %{
-        "counter" => 0
-      }
-    })
-    :ok = Emitter.configure(:misc, "brake_request", %{
-      parameters_builder_function: &brake_request_frame_parameters_builder/1,
-      initial_data: %{
-        "counter" => 0,
-        "flow_rate" => @zero_point_flow_rate,
-        "external_request" => false
-      }
-    })
+
+    :ok =
+      Emitter.configure(:misc, "vehicle_status", %{
+        parameters_builder_function: &vehicle_status_frame_parameters_builder/1,
+        initial_data: %{
+          "counter" => 0,
+          "external_request" => false
+        }
+      })
+
+    :ok =
+      Emitter.configure(:misc, "vehicle_alive", %{
+        parameters_builder_function: &vehicle_alive_frame_parameters_builder/1,
+        initial_data: %{
+          "counter" => 0
+        }
+      })
+
+    :ok =
+      Emitter.configure(:misc, "brake_request", %{
+        parameters_builder_function: &brake_request_frame_parameters_builder/1,
+        initial_data: %{
+          "counter" => 0,
+          "flow_rate" => @zero_point_flow_rate,
+          "external_request" => false
+        }
+      })
+
     {:ok, timer} = :timer.send_interval(@loop_period, :loop)
-    {:ok, %{
-      status: "off",
-      driver_brake_apply: "not_init_or_off",
-      internal_state: "no_mode_active",
-      rod_position: @min_rod_position,
-      flow_rate: @zero,
-      loop_timer: timer,
-      enabled: false,
-      selected_control_level_source: selected_control_level_source,
-      selected_control_level: nil,
-      requested_throttle_source: nil,
-      requested_throttle: @zero,
-      contact_source: contact_source,
-      contact: :off,
-      ready_to_drive: false,
-      controller: controller,
-      power_relay_pin: power_relay_pin,
-      pid: nil,
-      rod_position_target: @min_rod_position,
-      automatic_mode_enabled: false,
-      requested_braking: @zero,
-      manual_breaking: false,
-      kp: @kp,
-      ki: @ki,
-      kd: @kd
-    }}
+
+    {:ok,
+     %{
+       status: "off",
+       driver_brake_apply: "not_init_or_off",
+       internal_state: "no_mode_active",
+       rod_position: @min_rod_position,
+       flow_rate: @zero,
+       loop_timer: timer,
+       enabled: false,
+       selected_control_level_source: selected_control_level_source,
+       selected_control_level: nil,
+       requested_throttle_source: nil,
+       requested_throttle: @zero,
+       contact_source: contact_source,
+       contact: :off,
+       ready_to_drive: false,
+       controller: controller,
+       power_relay_pin: power_relay_pin,
+       pid: nil,
+       rod_position_target: @min_rod_position,
+       automatic_mode_enabled: false,
+       requested_braking: @zero,
+       manual_breaking: false,
+       kp: @kp,
+       ki: @ki,
+       kd: @kd
+     }}
   end
 
   @impl true
   def handle_info(:loop, state) do
-    state = state
+    state =
+      state
       |> toggle_ibooster()
       |> check_ready_to_drive()
       |> toggle_automatic_mode()
@@ -101,6 +113,7 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
       |> set_rod_position_target()
       |> actuate()
       |> emit_metrics()
+
     {:noreply, state}
   end
 
@@ -111,33 +124,66 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
       "internal_state" => %Signal{value: internal_state},
       "rod_position" => %Signal{value: rod_position}
     } = signals
-    {:noreply, %{
-      state |
-        status: status,
-        driver_brake_apply: driver_brake_apply,
-        manual_breaking: driver_brake_apply in ["driver_applying_brake", "fault", "not_init_or_off"],
-        internal_state: internal_state,
-        rod_position: rod_position
-      }
-    }
+
+    {:noreply,
+     %{
+       state
+       | status: status,
+         driver_brake_apply: driver_brake_apply,
+         manual_breaking:
+           driver_brake_apply in ["driver_applying_brake", "fault", "not_init_or_off"],
+         internal_state: internal_state,
+         rod_position: rod_position
+     }}
   end
 
-  def handle_info(%Bus.Message{name: :selected_control_level, value: selected_control_level, source: source}, state) when source == state.selected_control_level_source do
+  def handle_info(
+        %Bus.Message{
+          name: :selected_control_level,
+          value: selected_control_level,
+          source: source
+        },
+        state
+      )
+      when source == state.selected_control_level_source do
     {:noreply, %{state | selected_control_level: selected_control_level}}
   end
-  def handle_info(%Bus.Message{name: :requested_throttle_source, value: requested_throttle_source, source: source}, state) when source == state.selected_control_level_source do
+
+  def handle_info(
+        %Bus.Message{
+          name: :requested_throttle_source,
+          value: requested_throttle_source,
+          source: source
+        },
+        state
+      )
+      when source == state.selected_control_level_source do
     {:noreply, %{state | requested_throttle_source: requested_throttle_source}}
   end
-  def handle_info(%Bus.Message{name: :requested_throttle, value: requested_throttle, source: source}, state) when source == state.requested_throttle_source do
+
+  def handle_info(
+        %Bus.Message{name: :requested_throttle, value: requested_throttle, source: source},
+        state
+      )
+      when source == state.requested_throttle_source do
     {:noreply, %{state | requested_throttle: requested_throttle}}
   end
-  def handle_info(%OvcsBus.Message{name: :contact, value: contact, source: source}, state) when source == state.contact_source do
+
+  def handle_info(%OvcsBus.Message{name: :contact, value: contact, source: source}, state)
+      when source == state.contact_source do
     {:noreply, %{state | contact: contact}}
   end
-  def handle_info(%Bus.Message{name: :requested_throttle, value: requested_throttle, source: source}, state) when source == state.requested_throttle_source do
+
+  def handle_info(
+        %Bus.Message{name: :requested_throttle, value: requested_throttle, source: source},
+        state
+      )
+      when source == state.requested_throttle_source do
     {:noreply, %{state | requested_throttle: requested_throttle}}
   end
-  def handle_info(%Bus.Message{}, state) do # TODO, replace Bus ?
+
+  # TODO, replace Bus ?
+  def handle_info(%Bus.Message{}, state) do
     {:noreply, state}
   end
 
@@ -148,57 +194,73 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
         :ok = GenericController.set_digital_value(state.controller, state.power_relay_pin, true)
         :ok = Emitter.enable(:misc, ["vehicle_status", "vehicle_alive", "brake_request"])
         %{state | enabled: true}
+
       {true, :off} ->
         deactivate_external_request()
         :ok = Emitter.disable(:misc, ["vehicle_status", "vehicle_alive", "brake_request"])
         :ok = GenericController.set_digital_value(state.controller, state.power_relay_pin, false)
         %{state | enabled: false}
-      _ -> state
+
+      _ ->
+        state
     end
   end
 
   defp check_ready_to_drive(state) do
-    {:ok, power_relay_enabled} = GenericController.get_digital_value(state.controller, state.power_relay_pin)
-    ready_to_drive = power_relay_enabled && state.enabled && state.status in ["ready", "actuation", "active_good_check"]
+    {:ok, power_relay_enabled} =
+      GenericController.get_digital_value(state.controller, state.power_relay_pin)
+
+    ready_to_drive =
+      power_relay_enabled && state.enabled &&
+        state.status in ["ready", "actuation", "active_good_check"]
+
     %{state | ready_to_drive: ready_to_drive}
   end
 
   defp toggle_automatic_mode(state) do
     enable_automatic_mode = state.selected_control_level == :radio
+
     cond do
       enable_automatic_mode && !state.automatic_mode_enabled ->
         pid = init_pid(state)
         activate_external_request()
         %{state | pid: pid, automatic_mode_enabled: true}
+
       !enable_automatic_mode && state.automatic_mode_enabled ->
         deactivate_external_request()
         %{state | automatic_mode_enabled: false}
+
       true ->
         state
     end
   end
 
   defp set_requested_braking(state) when state.automatic_mode_enabled == true do
-    requested_braking = case state.requested_throttle |> D.gt?(@zero) do
-      true -> @zero
-      false -> state.requested_throttle |> D.abs()
-    end
+    requested_braking =
+      case state.requested_throttle |> D.gt?(@zero) do
+        true -> @zero
+        false -> state.requested_throttle |> D.abs()
+      end
+
     %{state | requested_braking: requested_braking}
   end
+
   defp set_requested_braking(state), do: state
 
   defp set_rod_position_target(state) when state.automatic_mode_enabled == true do
     rod_position_target = state.requested_braking |> D.mult(@rod_position_range)
     %{state | rod_position_target: rod_position_target}
   end
+
   defp set_rod_position_target(state), do: state
 
   defp actuate(state) when state.automatic_mode_enabled do
-    pid       = PID.iterate(state.pid, state.rod_position, state.rod_position_target)
+    pid = PID.iterate(state.pid, state.rod_position, state.rod_position_target)
     flow_rate = @zero_point_flow_rate |> D.add(pid.output)
     set_flow_rate(flow_rate)
     %{state | pid: pid, flow_rate: flow_rate}
   end
+
   defp actuate(state), do: state
 
   defp init_pid(state) do
@@ -225,38 +287,91 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
   end
 
   defp set_flow_rate(flow_rate) do
-    :ok = Emitter.update(:misc, "brake_request", fn (data) ->
-      %{data | "flow_rate" => flow_rate}
-    end)
+    :ok =
+      Emitter.update(:misc, "brake_request", fn data ->
+        %{data | "flow_rate" => flow_rate}
+      end)
   end
 
   defp set_external_request(frame_name, value) do
-    :ok = Emitter.update(:misc, frame_name, fn (data) ->
-      %{data | "external_request" => value}
-    end)
+    :ok =
+      Emitter.update(:misc, frame_name, fn data ->
+        %{data | "external_request" => value}
+      end)
   end
 
   defp emit_metrics(state) do
     Bus.broadcast("messages", %Bus.Message{name: :status, value: state.status, source: __MODULE__})
-    Bus.broadcast("messages", %Bus.Message{name: :driver_brake_apply, value: state.driver_brake_apply, source: __MODULE__})
-    Bus.broadcast("messages", %Bus.Message{name: :manual_breaking, value: state.manual_breaking, source: __MODULE__})
-    Bus.broadcast("messages", %Bus.Message{name: :internal_state, value: state.internal_state, source: __MODULE__})
-    Bus.broadcast("messages", %Bus.Message{name: :rod_position, value: state.rod_position, source: __MODULE__})
-    Bus.broadcast("messages", %Bus.Message{name: :rod_position_target, value: state.rod_position_target, source: __MODULE__})
-    Bus.broadcast("messages", %Bus.Message{name: :flow_rate, value: state.flow_rate, source: __MODULE__})
-    Bus.broadcast("messages", %Bus.Message{name: :ready_to_drive, value: state.ready_to_drive, source: __MODULE__})
-    Bus.broadcast("messages", %Bus.Message{name: :automatic_mode_enabled, value: state.automatic_mode_enabled, source: __MODULE__})
-    Bus.broadcast("messages", %Bus.Message{name: :requested_braking, value: state.requested_braking, source: __MODULE__})
-    Bus.broadcast("messages", %Bus.Message{name: :requested_throttle_source, value: state.requested_throttle_source, source: __MODULE__})
+
+    Bus.broadcast("messages", %Bus.Message{
+      name: :driver_brake_apply,
+      value: state.driver_brake_apply,
+      source: __MODULE__
+    })
+
+    Bus.broadcast("messages", %Bus.Message{
+      name: :manual_breaking,
+      value: state.manual_breaking,
+      source: __MODULE__
+    })
+
+    Bus.broadcast("messages", %Bus.Message{
+      name: :internal_state,
+      value: state.internal_state,
+      source: __MODULE__
+    })
+
+    Bus.broadcast("messages", %Bus.Message{
+      name: :rod_position,
+      value: state.rod_position,
+      source: __MODULE__
+    })
+
+    Bus.broadcast("messages", %Bus.Message{
+      name: :rod_position_target,
+      value: state.rod_position_target,
+      source: __MODULE__
+    })
+
+    Bus.broadcast("messages", %Bus.Message{
+      name: :flow_rate,
+      value: state.flow_rate,
+      source: __MODULE__
+    })
+
+    Bus.broadcast("messages", %Bus.Message{
+      name: :ready_to_drive,
+      value: state.ready_to_drive,
+      source: __MODULE__
+    })
+
+    Bus.broadcast("messages", %Bus.Message{
+      name: :automatic_mode_enabled,
+      value: state.automatic_mode_enabled,
+      source: __MODULE__
+    })
+
+    Bus.broadcast("messages", %Bus.Message{
+      name: :requested_braking,
+      value: state.requested_braking,
+      source: __MODULE__
+    })
+
+    Bus.broadcast("messages", %Bus.Message{
+      name: :requested_throttle_source,
+      value: state.requested_throttle_source,
+      source: __MODULE__
+    })
 
     state
   end
 
   defp vehicle_status_frame_parameters_builder(data) do
     counter = data["counter"]
+
     parameters = %{
       "counter" => counter(counter),
-      "external_request" =>  data["external_request"],
+      "external_request" => data["external_request"],
       "crc" => &crc8/1
     }
 
@@ -266,6 +381,7 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
 
   defp vehicle_alive_frame_parameters_builder(data) do
     counter = data["counter"]
+
     parameters = %{
       "counter" => counter(counter),
       "crc" => &crc8/1
@@ -277,6 +393,7 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
 
   defp brake_request_frame_parameters_builder(data) do
     counter = data["counter"]
+
     parameters = %{
       "counter" => counter(counter),
       "flow_rate" => data["flow_rate"],

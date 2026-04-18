@@ -8,14 +8,15 @@ defmodule InfotainmentCore.Application do
   @impl true
   def start(_type, _args) do
     vehicle_children = vehicle_composer().children()
-    children = [
-      InfotainmentCore.Repo,
-      {Ecto.Migrator,
-        repos: Application.fetch_env!(:infotainment_core, :ecto_repos),
-        skip: skip_migrations?()},
-      {InfotainmentCore.Temperature, []},
-      {InfotainmentCore.TimeSettings, []}
-    ] ++ bus_relay_children() ++ vehicle_children
+
+    children =
+      [
+        InfotainmentCore.Repo,
+        {Ecto.Migrator,
+         repos: Application.fetch_env!(:infotainment_core, :ecto_repos), skip: skip_migrations?()},
+        {InfotainmentCore.Temperature, []},
+        {InfotainmentCore.TimeSettings, []}
+      ] ++ bus_relay_children() ++ vehicle_children
 
     opts = [strategy: :one_for_one, name: InfotainmentCore.Supervisor]
     Supervisor.start_link(children, opts)

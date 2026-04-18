@@ -1,6 +1,6 @@
 defmodule OvcsMini.Vms.Composer.Dashboard.DashboardPage do
   alias OvcsMini.Vms
-  alias VmsCore.{Status}
+  alias VmsCore.Status
 
   def definition(order: order) do
     %{

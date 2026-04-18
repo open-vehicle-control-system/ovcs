@@ -14,7 +14,8 @@ defmodule ZenohMQTTRos2.Dispatcher do
 
   @impl true
   def init(_opts) do
-    zenoh_endpoint_ip = Application.get_env(:ros_bridge_firmware, :zenoh_endpoint_ip) |> IO.inspect
+    zenoh_endpoint_ip = Application.get_env(:ros_bridge_firmware, :zenoh_endpoint_ip)
+    Logger.debug("zenoh endpoint: #{inspect(zenoh_endpoint_ip)}")
     client_id = "zenoh_mqtt_ros2_dispatcher_#{:rand.uniform(1000)}"
     :timer.sleep(5000)
     {:ok, pid} = :emqtt.start_link([
@@ -53,7 +54,7 @@ defmodule ZenohMQTTRos2.Dispatcher do
         {:ok, "std_msgs/msg/string"} ->
           Ros2.StdMsgs.Msg.String.parse(payload)
         _ ->
-          IO.inspect(topic, label: "Unknown topic")
+          Logger.debug("Unknown topic: #{inspect(topic)}")
           :unknown
       end
 
@@ -82,7 +83,9 @@ defmodule ZenohMQTTRos2.Dispatcher do
   def handle_call({:start_subscriber, topic}, {from, _tag}, state) do
     {:ok, _, _} = :emqtt.subscribe(state.mqtt_pid, [{topic <> "#", 0}])
     subscribers = state.subscribers |> Map.update(topic, [from], fn subs -> subs ++ [from] end)
-    {:reply, :ok, %{state | subscribers: subscribers} |> IO.inspect}
+    new_state = %{state | subscribers: subscribers}
+    Logger.debug("subscribers: #{inspect(new_state)}")
+    {:reply, :ok, new_state}
   end
 
   def start_subscriber(topic) do

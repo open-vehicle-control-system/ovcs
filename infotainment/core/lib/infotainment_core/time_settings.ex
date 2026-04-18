@@ -22,11 +22,13 @@ defmodule InfotainmentCore.TimeSettings do
   @impl true
   def init(_) do
     settings = load_or_create_settings()
-    {:ok, %{
-      timezone: settings.timezone,
-      time_format: settings.time_format,
-      date_format: settings.date_format
-    }}
+
+    {:ok,
+     %{
+       timezone: settings.timezone,
+       time_format: settings.time_format,
+       date_format: settings.date_format
+     }}
   end
 
   @impl true
@@ -73,7 +75,9 @@ defmodule InfotainmentCore.TimeSettings do
 
   defp load_or_create_settings do
     case Repo.all(TimeSetting) do
-      [settings | _] -> settings
+      [settings | _] ->
+        settings
+
       [] ->
         %TimeSetting{
           timezone: @defaults.timezone,
@@ -94,6 +98,7 @@ defmodule InfotainmentCore.TimeSettings do
           date_format: state.date_format
         })
         |> Repo.update!()
+
       [] ->
         %TimeSetting{
           timezone: state.timezone,

@@ -17,7 +17,7 @@ if vehicle_name do
         {network_name, can_interface}
       end)
     end,
-    setup_can_interfaces: (System.get_env("SETUP_CAN_INTERFACES") == "true" || false),
+    setup_can_interfaces: System.get_env("SETUP_CAN_INTERFACES") == "true" || false,
     otp_app: vehicle.can_config_otp_app(),
     priv_can_config_path: infotainment.can_config_path()
 end
@@ -42,9 +42,10 @@ if System.get_env("PHX_SERVER") do
   config :infotainment_api, InfotainmentApiWeb.Endpoint, server: true
 end
 
-config :infotainment_api, :vehicle,
-  (System.get_env("VEHICLE") || "OVCS1")
-  |> String.to_atom()
+config :infotainment_api,
+       :vehicle,
+       (System.get_env("VEHICLE") || "OVCS1")
+       |> String.to_atom()
 
 if config_env() == :prod do
   database_path =

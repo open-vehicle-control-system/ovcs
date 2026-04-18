@@ -42,6 +42,7 @@ defmodule Obd2.Infotainment do
     }
   end
 
+  @impl true
   def handle_call(:status, _from, state) do
     status = state |> Map.take([
       :speed,
