@@ -15,4 +15,9 @@ defmodule Obd2 do
   @impl OvcsVehicle
   def nerves_target(:vms), do: :ovcs_base_can_system_rpi4
   def nerves_target(:infotainment), do: :ovcs_base_can_system_rpi5
+
+  @broker_host (if Mix.target() == :host, do: "localhost", else: "obd2-vms.local")
+
+  @doc false
+  def broker_host, do: @broker_host
 end

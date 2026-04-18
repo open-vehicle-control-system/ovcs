@@ -45,10 +45,13 @@ defmodule OvcsInfotainmentFirmware.MixProject do
 
       # Dependencies for all targets except :host
       {:nerves_pack, "~> 0.7.1", targets: @all_targets},
-      {:vintage_net, "~> 0.13"},
-      {:vintage_net_ethernet, "~> 0.11"},
+      {:vintage_net, "~> 0.13", targets: @all_targets},
+      {:vintage_net_ethernet, "~> 0.11", targets: @all_targets},
       {:plug_cowboy, "~> 2.0"},
-      {:infotainment_api, path: "../api", targets: @all_targets, env: Mix.env(), runtime: false},
+      {:infotainment_api, path: "../api", runtime: false},
+      # Infotainment YAMLs reference `import!:@ovcs_can:...` shared
+      # frame definitions, so the app must be loaded in the BEAM.
+      {:ovcs_can, path: "../../libraries/ovcs_can"},
       {:nerves_flutter_support, "~> 1.3"},
 
       # Dependencies for specific targets

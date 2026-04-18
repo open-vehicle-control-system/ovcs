@@ -1,26 +1,11 @@
 import Config
 
-vehicle_name = System.get_env("VEHICLE")
-
-if vehicle_name do
-  vehicle = Module.concat([vehicle_name])
-  vms = vehicle.vms()
-
-  config :vms_core, :vehicle, vms
-
-  config :cantastic,
-    can_network_mappings: fn ->
-      (System.get_env("CAN_NETWORK_MAPPINGS") || vms.default_can_mapping(:host))
-      |> String.split(",", trim: true)
-      |> Enum.map(fn i ->
-        [network_name, can_interface] = i |> String.split(":", trim: true)
-        {network_name, can_interface}
-      end)
-    end,
-    setup_can_interfaces: System.get_env("SETUP_CAN_INTERFACES") == "true" || false,
-    otp_app: vehicle.can_config_otp_app(),
-    priv_can_config_path: vms.can_config_path()
-end
+# NOTE: `vms_api` is never a top-level Mix project in the OVCS run/build
+# flow — it's always loaded as a dep of `vms_firmware`, whose own
+# `config/runtime.exs` configures the vehicle composer + Cantastic
+# before any app starts. This file only runs if `vms_api` is built
+# directly (e.g. `cd vms/api && mix phx.server`) and just ships the
+# prod-release secrets block expected by Phoenix deployments.
 
 # config/runtime.exs is executed for all environments, including
 # during releases. It is executed after compilation and before the

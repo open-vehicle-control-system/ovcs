@@ -16,6 +16,15 @@ defmodule <%= @module %> do
   def nerves_target(:vms), do: :<%= @vms_target %>
 <%= if @infotainment do %>  def nerves_target(:infotainment), do: :<%= @infotainment_target %>
 <% end %>
+  # MQTT broker lives on the VMS firmware. Host dev splits into
+  # multiple BEAMs on the same machine, so peers connect to
+  # `localhost`; on Nerves each firmware is its own device and peers
+  # reach the VMS via mDNS.
+  @broker_host (if Mix.target() == :host, do: "localhost", else: "<%= @name %>-vms.local")
+
+  @doc false
+  def broker_host, do: @broker_host
+
   # Bridge firmwares — optional. Uncomment and populate to declare one
   # or more bridge firmware images for this vehicle. Each entry becomes
   # its own build target: `./ovcs build <%= @name %> <firmware-id>`.
@@ -30,13 +39,11 @@ defmodule <%= @module %> do
   #       bridges: [RadioControlBridge],
   #       default_can_mapping: %{host: "ovcs:vcan0", target: "ovcs:spi0.0"},
   #       # can_config_path: "can/bridges/radio_control.yml",  # optional override
-  #       # Topics default to the union of each bundled bridge's
-  #       # relay_topics/0; override with :topics if needed.
-  #       # bus_relay: %{
-  #       #   broker: [host: "<%= @name %>-vms.local", port: 1884],
-  #       #   client_id: "<%= @name %>-radio-control",
-  #       #   topic_prefix: "ovcs/<%= @name %>/bus"
-  #       # }
+  #       bus_relay: %{
+  #         broker: [host: @broker_host, port: 1884],
+  #         client_id: "<%= @name %>-bridge-radio_control",
+  #         topic_prefix: "ovcs/<%= @name %>/bus"
+  #       }
   #     }
   #   }
   # end

@@ -1,24 +1,22 @@
-# This file is responsible for configuring your application and its
-# dependencies.
+# Compile-time configuration for the VMS firmware.
 #
-# This configuration file is loaded before any dependency and is restricted to
-# this project.
+# Parameterised by one env var:
+#   VEHICLE — top-level module name of the vehicle package (e.g. "Ovcs1").
+#
+# Runtime resolution of the VMS composer happens in `runtime.exs` so we
+# can dereference the vehicle module after `Code.prepend_path`.
 import Config
 
-# Enable the Nerves integration with Mix
 Application.start(:nerves_bootstrap)
 
-config :firmware, target: Mix.target()
-
-# Customize non-Elixir parts of the firmware. See
-# https://hexdocs.pm/nerves/advanced-configuration.html for details.
-
-config :nerves, :firmware, rootfs_overlay: "rootfs_overlay"
-
-# Set the SOURCE_DATE_EPOCH date for reproducible builds.
-# See https://reproducible-builds.org/docs/source-date-epoch/ for more information
-
-config :nerves, source_date_epoch: "1708002919"
+# The blocks below configure Nerves-only apps (`:nerves`, `:nerves_ssh`,
+# `:vintage_net`, `:mdns_lite`, `:shoehorn`, plus `:logger` with
+# RingLogger as primary). On host they aren't in the dep tree and Mix
+# would warn for each at boot, so gate them behind the target.
+if Mix.target() != :host do
+  config :nerves, :firmware, rootfs_overlay: "rootfs_overlay"
+  config :nerves, source_date_epoch: "1708002919"
+end
 
 # Host-target mix commands (deps.get, test, compile) don't need a pinned
 # vehicle — runtime.exs short-circuits the vehicle-specific block when
@@ -46,10 +44,6 @@ target = Mix.target() |> to_string()
 # its own file when it needs to override (e.g. a different CAN transceiver
 # on the same SoC). Per-file fallback: vehicle's priv/firmware/vms/<file>
 # wins when present, otherwise the shared target copy is used.
-# Nerves' `fwup_conf` must be a path relative to the firmware app
-# (vms/firmware/), otherwise it gets concatenated to the project dir.
-# Keep both candidate paths relative; `VEHICLE_FIRMWARE_DIR` is set
-# absolute because fwup.conf's `host-path` values aren't rebased.
 vehicle_override_rel = "../../vehicles/#{vehicle_dir}/priv/firmware/vms"
 target_default_rel = "targets/#{target}"
 
@@ -62,8 +56,6 @@ resolve_firmware_file = fn file ->
     else: Path.join(target_default_rel, file)
 end
 
-# fwup.conf references siblings (config.txt etc.) via ${VEHICLE_FIRMWARE_DIR};
-# stash the absolute path so fwup can resolve host-path values.
 vehicle_firmware_dir =
   if File.exists?(Path.join(vehicle_override_abs, "config.txt")),
     do: vehicle_override_abs,
@@ -72,6 +64,19 @@ vehicle_firmware_dir =
 System.put_env("VEHICLE_FIRMWARE_DIR", vehicle_firmware_dir)
 
 config :nerves, :firmware, fwup_conf: resolve_firmware_file.("fwup.conf")
+
+# Handoff to runtime.exs — runtime.exs picks this up to resolve the
+# composer and wire :vms_core + :cantastic.
+config :vms_firmware, vehicle: vehicle_name
+
+# Cantastic: on firmware it owns CAN interface setup; on host the CLI
+# (`ensure_host_can`) provisions vcan interfaces and rootless
+# containers can't `ip link` anyway.
+config :cantastic,
+  setup_can_interfaces: Mix.target() != :host,
+  otp_app: String.to_atom(vehicle_dir),
+  enable_socketcand: Mix.target() != :host,
+  socketcand_ip_interface: "eth0"
 
 if Mix.target() == :host do
   import_config "host.exs"

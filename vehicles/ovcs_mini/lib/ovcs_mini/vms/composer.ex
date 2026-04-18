@@ -21,17 +21,18 @@ defmodule OvcsMini.Vms.Composer do
   def default_can_mapping(:host), do: "ovcs:vcan0"
   def default_can_mapping(:target), do: "ovcs:spi0.0"
 
-  # Uncomment once a broker is running on the vehicle LAN.
-  #
-  # @impl VmsCore.Vehicle
-  # def bus_relay do
-  #   %{
-  #     broker: [host: "ovcs-mini-vms.local", port: 1884],
-  #     client_id: "ovcs-mini-vms",
-  #     topic_prefix: "ovcs/ovcs_mini/bus",
-  #     topics: [:ready_to_drive, :vms_status]
-  #   }
-  # end
+  @impl VmsCore.Vehicle
+  def bus_broker, do: %{port: 1884}
+
+  @impl VmsCore.Vehicle
+  def bus_relay do
+    %{
+      broker: [host: OvcsMini.broker_host(), port: 1884],
+      client_id: "ovcs-mini-vms",
+      topic_prefix: "ovcs/ovcs_mini/bus",
+      topics: [:ready_to_drive, :vms_status]
+    }
+  end
 
   @impl VmsCore.Vehicle
   def children do

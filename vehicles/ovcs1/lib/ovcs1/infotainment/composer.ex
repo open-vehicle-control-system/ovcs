@@ -25,16 +25,13 @@ defmodule Ovcs1.Infotainment.Composer do
     ]
   end
 
-  # Uncomment once a broker is running on the vehicle LAN. Point at
-  # the same broker as the VMS side so both buses share the feed.
-  #
-  # @impl InfotainmentCore.Vehicle
-  # def bus_relay do
-  #   %{
-  #     broker: [host: "ovcs1-vms.local", port: 1884],
-  #     client_id: "ovcs1-infotainment",
-  #     topic_prefix: "ovcs/ovcs1/bus",
-  #     topics: [:ready_to_drive, :vms_status, :selected_gear, :speed]
-  #   }
-  # end
+  @impl InfotainmentCore.Vehicle
+  def bus_relay do
+    %{
+      broker: [host: Ovcs1.broker_host(), port: 1884],
+      client_id: "ovcs1-infotainment",
+      topic_prefix: "ovcs/ovcs1/bus",
+      topics: [:ready_to_drive, :vms_status, :selected_gear, :speed]
+    }
+  end
 end

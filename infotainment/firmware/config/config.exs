@@ -1,24 +1,24 @@
-# This file is responsible for configuring your application and its
-# dependencies.
+# Compile-time configuration for the infotainment firmware.
 #
-# This configuration file is loaded before any dependency and is restricted to
-# this project.
+# Parameterised by one env var:
+#   VEHICLE — top-level module name of the vehicle package (e.g. "Ovcs1").
+#
+# Runtime resolution of the infotainment composer happens in
+# `runtime.exs` so we can dereference the vehicle module after
+# `Code.prepend_path`.
 import Config
 
-# Enable the Nerves integration with Mix
 Application.start(:nerves_bootstrap)
 
-config :infotainment_firmware, target: Mix.target()
-
-# Customize non-Elixir parts of the firmware. See
-# https://hexdocs.pm/nerves/advanced-configuration.html for details.
-
-config :nerves, :firmware, rootfs_overlay: "rootfs_overlay"
-
-# Set the SOURCE_DATE_EPOCH date for reproducible builds.
-# See https://reproducible-builds.org/docs/source-date-epoch/ for more information
-
-config :nerves, source_date_epoch: "1698084254"
+# The blocks below configure Nerves-only apps (`:nerves`, `:nerves_ssh`,
+# `:vintage_net`, `:mdns_lite`, `:shoehorn`, plus `:logger` with
+# RingLogger as primary). On host they aren't in the dep tree and Mix
+# would warn for each at boot, so gate them behind the target.
+if Mix.target() != :host do
+  config :nerves, :firmware, rootfs_overlay: "rootfs_overlay"
+  config :nerves, source_date_epoch: "1698084254"
+  config :nerves, :erlinit, ctty: "tty3", warn_unused_tty: false
+end
 
 # Host-target mix commands (deps.get, test, compile) don't need a pinned
 # vehicle — runtime.exs short-circuits the vehicle-specific block when
@@ -40,10 +40,6 @@ vehicle_name =
 vehicle_dir = Macro.underscore(vehicle_name)
 target = Mix.target() |> to_string()
 
-# Same per-file fallback as vms/firmware. Nerves' `fwup_conf` must be
-# a path relative to the firmware app (infotainment/firmware/); keep
-# both candidates relative and set VEHICLE_FIRMWARE_DIR absolute for
-# fwup.conf's host-path values.
 vehicle_override_rel = "../../vehicles/#{vehicle_dir}/priv/firmware/infotainment"
 target_default_rel = "targets/#{target}"
 
@@ -65,9 +61,15 @@ System.put_env("VEHICLE_FIRMWARE_DIR", vehicle_firmware_dir)
 
 config :nerves, :firmware, fwup_conf: resolve_firmware_file.("fwup.conf")
 
-config :nerves, :erlinit,
-  ctty: "tty3",
-  warn_unused_tty: false
+# Handoff to runtime.exs.
+config :infotainment_firmware, vehicle: vehicle_name
+
+# Cantastic: on firmware it owns CAN interface setup; on host the CLI
+# (`ensure_host_can`) provisions vcan interfaces.
+config :cantastic,
+  setup_can_interfaces: Mix.target() != :host,
+  otp_app: String.to_atom(vehicle_dir),
+  enable_socketcand: false
 
 if Mix.target() == :host do
   import_config "host.exs"

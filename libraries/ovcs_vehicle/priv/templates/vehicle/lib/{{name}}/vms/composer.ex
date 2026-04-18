@@ -27,27 +27,20 @@ defmodule <%= @module %>.Vms.Composer do
   def default_can_mapping(:host), do: "ovcs:vcan0"
   def default_can_mapping(:target), do: "ovcs:spi0.0"
 
-  # Optional — host the MQTT broker for the vehicle. Requires the
-  # mosquitto binary in the Nerves rootfs; see OvcsBus.Mqtt.Broker.
-  #
-  # @impl VmsCore.Vehicle
-  # def bus_broker do
-  #   %{port: 1884}
-  # end
+  # The VMS firmware hosts the MQTT broker for the vehicle; every
+  # other firmware connects to it.
+  @impl VmsCore.Vehicle
+  def bus_broker, do: %{port: 1884}
 
-  # Optional — relay selected bus messages to an MQTT broker so the
-  # VMS, infotainment, and bridge firmwares share one logical bus.
-  # Uncomment once the broker is reachable (hosted above or external).
-  #
-  # @impl VmsCore.Vehicle
-  # def bus_relay do
-  #   %{
-  #     broker: [host: "<%= @name %>-vms.local", port: 1884],
-  #     client_id: "<%= @name %>-vms",
-  #     topic_prefix: "ovcs/<%= @name %>/bus",
-  #     topics: [:ready_to_drive, :vms_status]
-  #   }
-  # end
+  @impl VmsCore.Vehicle
+  def bus_relay do
+    %{
+      broker: [host: <%= @module %>.broker_host(), port: 1884],
+      client_id: "<%= @name %>-vms",
+      topic_prefix: "ovcs/<%= @name %>/bus",
+      topics: [:ready_to_drive, :vms_status]
+    }
+  end
 
   @impl VmsCore.Vehicle
   def children do

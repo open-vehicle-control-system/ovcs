@@ -39,6 +39,9 @@ defmodule BridgeFirmware.MixProject do
       {:nerves_runtime, "~> 0.13.0"},
       {:nerves_pack, "~> 0.7.1", targets: @all_targets},
       {:ovcs_bridge, path: "../../libraries/ovcs_bridge"},
+      # Bridge CAN YAMLs often `import!:@ovcs_can:...` shared frame
+      # definitions, so the app must be loaded in every bridge BEAM.
+      {:ovcs_can, path: "../../libraries/ovcs_can"},
 
       # Align cowlib across emqtt (~> 2.7) and the Nerves stack
       # (~> 2.13). Widened from 2.7 so the host-dev BEAM can bundle
@@ -59,10 +62,10 @@ defmodule BridgeFirmware.MixProject do
       # add a new bridge by listing it here + target gates.
       {:radio_control_bridge,
        path: "../radio_control_bridge",
-       targets: [:ovcs_base_can_system_rpi3a]},
+       targets: [:host, :ovcs_base_can_system_rpi3a]},
       {:ros_bridge,
        path: "../ros_bridge",
-       targets: [:ovcs_base_can_system_rpi4, :ovcs_bridges_system_rpi5]},
+       targets: [:host, :ovcs_base_can_system_rpi4, :ovcs_bridges_system_rpi5]},
 
       # Nerves systems (one per supported target).
       {
