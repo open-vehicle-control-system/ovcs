@@ -84,7 +84,8 @@ defmodule BridgeFirmware.MixProject do
         github: "open-vehicle-control-system/ovcs_bridges_system_rpi5",
         runtime: false,
         targets: :ovcs_bridges_system_rpi5
-      }
+      },
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
 
       # Bridge libraries are added as each is migrated out of its
       # legacy bridges/<name>/firmware/ project. The supervisor only

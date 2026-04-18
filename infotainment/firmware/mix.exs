@@ -63,6 +63,7 @@ defmodule OvcsInfotainmentFirmware.MixProject do
         targets: :ovcs_base_can_system_rpi5,
         nerves: [compile: false],
       },
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
     ]
   end
 

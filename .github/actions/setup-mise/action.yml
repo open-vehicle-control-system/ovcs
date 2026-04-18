@@ -1,0 +1,17 @@
+name: Setup mise toolchain
+description: >
+  Install mise, run `mise install` (pulls Erlang/Elixir/Node/Flutter/Ruby/Python/
+  PlatformIO from mise.toml) and clone the sideloaded Elixir libraries under
+  `libraries/` via the mise `libraries` task.
+
+runs:
+  using: composite
+  steps:
+    - uses: jdx/mise-action@v2
+      with:
+        experimental: true
+        cache: true
+
+    - name: Show toolchain
+      shell: bash
+      run: mise ls

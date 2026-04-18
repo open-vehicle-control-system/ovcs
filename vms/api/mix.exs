@@ -47,7 +47,8 @@ defmodule VmsApi.MixProject do
       {:bandit, "~> 1.2"},
       {:cors_plug, "~> 3.0.3"},
       {:json, "~> 1.4"},
-      {:vms_core, path: "../core"}
+      {:vms_core, path: "../core"},
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
       | vehicle_dep()
     ]
   end
@@ -72,7 +73,7 @@ defmodule VmsApi.MixProject do
       setup: ["deps.get", "ecto.setup"],
       "ecto.setup": ["ecto.create", "ecto.migrate", "run priv/repo/seeds.exs"],
       "ecto.reset": ["ecto.drop", "ecto.setup"],
-      test: ["ecto.create --quiet", "ecto.migrate --quiet", "test"]
+      test: ["ecto.create --quiet", "ecto.migrate --quiet", "test --no-start"]
     ]
   end
 end

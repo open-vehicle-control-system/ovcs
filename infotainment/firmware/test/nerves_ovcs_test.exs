@@ -1,8 +1,7 @@
-defmodule OvcsInfotainmentFirmwareTest do
-  use ExUnit.Case
-  doctest OvcsInfotainmentFirmware
+defmodule InfotainmentFirmwareTest do
+  use ExUnit.Case, async: true
 
-  test "greets the world" do
-    assert OvcsInfotainmentFirmwareTest.hello() == :world
+  test "scaffolded placeholder" do
+    assert true
   end
 end

@@ -2,7 +2,7 @@ import Config
 
 vehicle_name = System.get_env("VEHICLE")
 
-if vehicle_name do
+if vehicle_name && config_env() != :test do
   vehicle = Module.concat([vehicle_name])
   infotainment = vehicle.infotainment()
   mapping_string =

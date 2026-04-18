@@ -27,7 +27,8 @@ defmodule OvcsBus.MixProject do
       {:tortoise311, "~> 0.12"},
       # MuonTrap: supervised OS processes. Used by OvcsBus.Broker to
       # host a Mosquitto daemon. Cross-compiles fine on Nerves.
-      {:muontrap, "~> 1.0"}
+      {:muontrap, "~> 1.0"},
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
     ]
   end
 end

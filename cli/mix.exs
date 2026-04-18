@@ -19,7 +19,8 @@ defmodule OvcsCli.MixProject do
   defp deps do
     [
       {:optimus, "~> 0.5"},
-      {:ovcs_vehicle, path: "../libraries/ovcs_vehicle"}
+      {:ovcs_vehicle, path: "../libraries/ovcs_vehicle"},
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
     ]
   end
 end

@@ -2,7 +2,7 @@ import Config
 
 vehicle_name = System.get_env("VEHICLE")
 
-if vehicle_name do
+if vehicle_name && config_env() != :test do
   vehicle = Module.concat([vehicle_name])
   vms = vehicle.vms()
   mapping_string = System.get_env("CAN_NETWORK_MAPPINGS") || vms.default_can_mapping(:target)

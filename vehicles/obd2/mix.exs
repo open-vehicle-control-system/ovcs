@@ -26,7 +26,8 @@ defmodule Obd2.MixProject do
       {:ovcs_can, path: "../../libraries/ovcs_can"},
       {:cantastic, path: "../../libraries/cantastic"},
       {:vms_core, path: "../../vms/core"},
-      {:infotainment_core, path: "../../infotainment/core"}
+      {:infotainment_core, path: "../../infotainment/core"},
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
     ] ++ local_dev_deps()
   end
 

@@ -19,7 +19,8 @@ defmodule RadioControlBridge.MixProject do
     [
       {:ovcs_bridge, path: "../../libraries/ovcs_bridge"},
       {:express_lrs, path: "../../libraries/express_lrs"},
-      {:msp_osd, path: "../../libraries/msp_osd"}
+      {:msp_osd, path: "../../libraries/msp_osd"},
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
     ]
   end
 end

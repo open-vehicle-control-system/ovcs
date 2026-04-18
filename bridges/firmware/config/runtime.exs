@@ -3,7 +3,7 @@ import Config
 vehicle_name = System.get_env("VEHICLE")
 bridge_firmware_id = System.get_env("BRIDGE_FIRMWARE_ID")
 
-if vehicle_name && bridge_firmware_id do
+if vehicle_name && bridge_firmware_id && config_env() != :test do
   vehicle = Module.concat([vehicle_name])
   entry = Map.fetch!(vehicle.bridge_firmwares(), bridge_firmware_id)
 

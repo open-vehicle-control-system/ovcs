@@ -20,14 +20,22 @@ config :nerves, :firmware, rootfs_overlay: "rootfs_overlay"
 
 config :nerves, source_date_epoch: "1698084254"
 
+# Host-target mix commands (deps.get, test, compile) don't need a pinned
+# vehicle — runtime.exs short-circuits the vehicle-specific block when
+# config_env() == :test, and the stub below is never acted on at :host.
+# Firmware cross-compile (Mix.target() != :host) still enforces.
 vehicle_name =
   System.get_env("VEHICLE") ||
-    Mix.raise("""
-    VEHICLE env var is required for infotainment firmware builds.
+    (if Mix.target() == :host do
+       "Ovcs1"
+     else
+       Mix.raise("""
+       VEHICLE env var is required for infotainment firmware builds.
 
-    Set it to the vehicle package's top-level module name, e.g.:
-      VEHICLE=Ovcs1 mix firmware
-    """)
+       Set it to the vehicle package's top-level module name, e.g.:
+         VEHICLE=Ovcs1 mix firmware
+       """)
+     end)
 
 vehicle_dir = Macro.underscore(vehicle_name)
 target = Mix.target() |> to_string()

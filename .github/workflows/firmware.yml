@@ -1,0 +1,74 @@
+name: Firmware
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+concurrency:
+  group: firmware-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.app }} · ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - app: vms/firmware
+            target: ovcs_base_can_system_rpi4
+          - app: infotainment/firmware
+            target: ovcs_base_can_system_rpi5
+          - app: bridges/firmware
+            target: ovcs_base_can_system_rpi3a
+          - app: bridges/firmware
+            target: ovcs_base_can_system_rpi4
+          - app: bridges/firmware
+            target: ovcs_bridges_system_rpi5
+    env:
+      MIX_TARGET: ${{ matrix.target }}
+      MIX_ENV: prod
+    defaults:
+      run:
+        working-directory: ${{ matrix.app }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-mise
+
+      - name: Install Nerves system build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential automake autoconf git squashfs-tools ssh-askpass \
+            pkg-config curl unzip libssl-dev libmnl-dev
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ${{ matrix.app }}/deps
+            ${{ matrix.app }}/_build
+            ~/.nerves
+          key: nerves-${{ matrix.app }}-${{ matrix.target }}-${{ hashFiles(format('{0}/mix.lock', matrix.app)) }}
+          restore-keys: |
+            nerves-${{ matrix.app }}-${{ matrix.target }}-
+
+      - run: mix deps.get
+      - run: mix firmware
+
+      - name: Locate firmware artifact
+        id: locate
+        run: |
+          fw=$(ls _build/${{ matrix.target }}_${MIX_ENV}/nerves/images/*.fw | head -n1)
+          echo "path=$fw" >> "$GITHUB_OUTPUT"
+          echo "name=$(basename "$fw")" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware-${{ matrix.app }}-${{ matrix.target }}
+          path: ${{ matrix.app }}/${{ steps.locate.outputs.path }}
+          if-no-files-found: error
+          retention-days: 30

@@ -25,7 +25,8 @@ defmodule OvcsMini.MixProject do
       {:ovcs_vehicle, path: "../../libraries/ovcs_vehicle"},
       {:ovcs_can, path: "../../libraries/ovcs_can"},
       {:cantastic, path: "../../libraries/cantastic"},
-      {:vms_core, path: "../../vms/core"}
+      {:vms_core, path: "../../vms/core"},
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
     ] ++ local_dev_deps()
   end
 

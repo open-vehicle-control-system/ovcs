@@ -22,3 +22,10 @@ config :logger, level: :warning
 
 # Initialize plugs at runtime for faster test compilation
 config :phoenix, :plug_init_mode, :runtime
+
+# Stub cantastic so its Application can boot without a real CAN topology.
+# `read_configuration/0` is skipped because no `priv_can_config_path` is set,
+# and `can_network_mappings: fn -> [] end` short-circuits the mapping loop.
+config :cantastic,
+  can_network_mappings: fn -> [] end,
+  otp_app: :vms_api

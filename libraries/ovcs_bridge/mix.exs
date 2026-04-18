@@ -19,7 +19,8 @@ defmodule OvcsBridge.MixProject do
     [
       {:ovcs_vehicle, path: "../ovcs_vehicle"},
       {:ovcs_bus, path: "../ovcs_bus"},
-      {:cantastic, path: "../cantastic"}
+      {:cantastic, path: "../cantastic"},
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
     ]
   end
 end

@@ -17,20 +17,32 @@ config :firmware, target: Mix.target()
 config :nerves, :firmware, rootfs_overlay: "rootfs_overlay"
 config :nerves, source_date_epoch: "1729155399"
 
+# Host-target mix commands (deps.get, test, compile) don't need a pinned
+# vehicle/firmware-id — runtime.exs short-circuits the vehicle-specific
+# block when config_env() == :test, and the stubs below are never acted on
+# at :host. Firmware cross-compile (Mix.target() != :host) still enforces.
 vehicle_name =
   System.get_env("VEHICLE") ||
-    Mix.raise("""
-    VEHICLE env var is required for bridge firmware builds.
-    Set it to the vehicle package's top-level module name, e.g.:
-      VEHICLE=Ovcs1 BRIDGE_FIRMWARE_ID=radio_control mix firmware
-    """)
+    (if Mix.target() == :host do
+       "Ovcs1"
+     else
+       Mix.raise("""
+       VEHICLE env var is required for bridge firmware builds.
+       Set it to the vehicle package's top-level module name, e.g.:
+         VEHICLE=Ovcs1 BRIDGE_FIRMWARE_ID=radio_control mix firmware
+       """)
+     end)
 
 bridge_firmware_id =
   System.get_env("BRIDGE_FIRMWARE_ID") ||
-    Mix.raise("""
-    BRIDGE_FIRMWARE_ID env var is required for bridge firmware builds.
-    Set it to a key from the vehicle's bridge_firmwares/0 map.
-    """)
+    (if Mix.target() == :host do
+       "radio_control"
+     else
+       Mix.raise("""
+       BRIDGE_FIRMWARE_ID env var is required for bridge firmware builds.
+       Set it to a key from the vehicle's bridge_firmwares/0 map.
+       """)
+     end)
 
 vehicle_dir = Macro.underscore(vehicle_name)
 target = Mix.target() |> to_string()
