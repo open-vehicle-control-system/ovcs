@@ -10,6 +10,12 @@ concurrency:
   group: firmware-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # Opt actions/checkout, actions/cache, jdx/mise-action off of the
+  # deprecated Node.js 20 runtime. Remove once those actions ship a
+  # Node 24 release we can pin to.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build:
     name: ${{ matrix.app }} · ${{ matrix.target }}
