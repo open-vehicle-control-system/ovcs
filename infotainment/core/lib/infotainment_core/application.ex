@@ -27,11 +27,8 @@ defmodule InfotainmentCore.Application do
   end
 
   defp skip_migrations? do
-    # By default, sqlite migrations run when using a release;
-    # skip when running via iex/mix (host dev) unless explicitly
-    # opted in, since dev workflows may want to control when
-    # schema changes.
-    System.get_env("RELEASE_NAME") == nil and System.get_env("SKIP_MIGRATIONS") != "false"
+    # By default, sqlite migrations are run when using a release
+    System.get_env("RELEASE_NAME") != nil
   end
 
   # Opt-in MQTT bus relay — started only when the vehicle's
