@@ -54,7 +54,7 @@ own README with usage, design notes, and API.
 | OvcsBridge | `libraries/ovcs_bridge/` | `OvcsBridge` | [README](../libraries/ovcs_bridge/README.md) — bridge-library contract + firmware supervisor |
 | Cantastic | `libraries/cantastic/` | `Cantastic` | [README](../libraries/cantastic/README.md) — CAN bus library (SocketCAN, YAML config, frame encoding/decoding) |
 | ExpressLRS | `libraries/express_lrs/` | `ExpressLrs` | [README](../libraries/express_lrs/README.md) — ExpressLRS MAVLink decoder (used by `radio_control_bridge`) |
-| MspOsd | `libraries/msp_osd/` | `MspOsd` | [README](../libraries/msp_osd/README.md) — MSP OSD protocol library |
+| MspOsd | `libraries/msp_osd/` | `MspOsd` | [README](../libraries/msp_osd/README.md) — MSP + DisplayPort stack (v1 jumbo / v2 / v2-over-v1) for pushing OSD to HDZero/Walksnail/DJI VTX |
 
 ### Elixir Applications
 
