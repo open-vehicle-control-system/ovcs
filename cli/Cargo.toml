@@ -20,6 +20,8 @@ crossterm = "0.28"
 regex = "1.11"
 glob = "0.3"
 ansi-to-tui = "7"
+russh = "0.54"
+tokio = { version = "1.42", features = ["rt", "macros", "io-util", "net", "time", "sync"] }
 
 [profile.release]
 opt-level = 3

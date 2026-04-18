@@ -3,6 +3,7 @@ use anyhow::Result;
 use crate::firmware;
 use crate::resolve_args::resolve_vehicle_app;
 use crate::shell;
+use crate::vehicles;
 
 pub fn run(
     first: Option<String>,
@@ -14,9 +15,7 @@ pub fn run(
     let res = firmware::resolve(&args.vehicle, &args.application)?;
     let cwd = args.repo_root.join(&res.firmware_dir);
 
-    let host = host.unwrap_or_else(|| {
-        format!("{}-{}.local", args.vehicle.dir.replace('_', "-"), args.application)
-    });
+    let host = host.unwrap_or_else(|| vehicles::host_for(&args.vehicle.dir, &args.application));
     let mut argv: Vec<&str> = vec!["./upload.sh", &host];
     if let Some(ref f) = file {
         argv.push(f);

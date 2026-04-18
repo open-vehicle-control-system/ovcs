@@ -63,9 +63,14 @@ enum Commands {
         #[command(subcommand)]
         action: VehicleAction,
     },
-    /// Provision vcan + boot the vehicle locally in a split TUI
-    /// (left: live logs, right: iex --remsh into the running node)
+    /// Provision vcan + boot one BEAM per role (vms, infotainment, each
+    /// bridge) against a VMS-hosted localhost mosquitto, mirroring the
+    /// deployed topology. Attach with `./ovcs attach` from another
+    /// terminal for logs + IEx.
     Run { vehicle: Option<String> },
+    /// Attach a split TUI (merged per-node logs + IEx shell) to a running
+    /// vehicle — either the local dev BEAM or the N deployed Nerves devices.
+    Attach { vehicle: Option<String> },
 }
 
 #[derive(Subcommand)]
@@ -121,5 +126,6 @@ fn main() -> Result<()> {
             } => commands::vehicle_new::run(name, vms_target, infotainment_target, no_infotainment),
         },
         Commands::Run { vehicle } => commands::run::run(vehicle),
+        Commands::Attach { vehicle } => commands::attach::run(vehicle),
     }
 }
