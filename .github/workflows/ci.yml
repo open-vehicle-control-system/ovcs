@@ -20,6 +20,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-mise
+      - name: Install system deps for Nerves NIFs
+        # Needed for the firmware projects in the loop below: their
+        # transitive deps include nerves_uevent, which has a C NIF.
+        run: sudo apt-get update && sudo apt-get install -y libmnl-dev
       - name: mix format --check-formatted (all projects)
         shell: bash
         run: |
