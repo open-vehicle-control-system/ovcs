@@ -12,10 +12,15 @@ import Config
 
 Application.start(:nerves_bootstrap)
 
-config :firmware, target: Mix.target()
+# The blocks below configure Nerves-only apps (`:nerves`, `:nerves_ssh`,
+# `:vintage_net`, `:mdns_lite`, `:shoehorn`, plus `:logger` with
+# RingLogger as primary). On host they aren't in the dep tree and Mix
+# would warn for each at boot, so gate them behind the target.
 
-config :nerves, :firmware, rootfs_overlay: "rootfs_overlay"
-config :nerves, source_date_epoch: "1729155399"
+if Mix.target() != :host do
+  config :nerves, :firmware, rootfs_overlay: "rootfs_overlay"
+  config :nerves, source_date_epoch: "1729155399"
+end
 
 # Host-target mix commands (deps.get, test, compile) don't need a pinned
 # vehicle/firmware-id — runtime.exs short-circuits the vehicle-specific
@@ -85,37 +90,42 @@ config :ovcs_bridge,
 # priv/can/bridges/<id>.yml unless its bridge_firmwares/0 entry
 # overrides :can_config_path. Resolution happens in runtime.exs so
 # we can read the vehicle module.
+# On firmware Cantastic owns vcan/can interface setup; on host the CLI
+# (`ensure_host_can`) provisions them and rootless containers can't
+# `ip link` anyway — so this is target-only.
 config :cantastic,
-  setup_can_interfaces: true,
+  setup_can_interfaces: Mix.target() != :host,
   otp_app: String.to_atom(vehicle_dir),
   enable_socketcand: false
 
-vehicle_host =
-  "#{vehicle_dir |> String.replace("_", "-")}-bridge-#{bridge_firmware_id |> String.replace("_", "-")}"
+if Mix.target() != :host do
+  vehicle_host =
+    "#{vehicle_dir |> String.replace("_", "-")}-bridge-#{bridge_firmware_id |> String.replace("_", "-")}"
 
-config :logger, backends: [RingLogger]
-config :shoehorn, init: [:nerves_runtime, :nerves_pack]
-config :nerves, :erlinit, update_clock: true, hostname_pattern: vehicle_host
+  config :logger, backends: [RingLogger]
+  config :shoehorn, init: [:nerves_runtime, :nerves_pack]
+  config :nerves, :erlinit, update_clock: true, hostname_pattern: vehicle_host
 
-config :nerves_ssh,
-  authorized_keys:
-    (System.get_env("AUTHORIZED_SSH_KEYS") || "") |> String.split(",", trim: true)
+  config :nerves_ssh,
+    authorized_keys:
+      (System.get_env("AUTHORIZED_SSH_KEYS") || "") |> String.split(",", trim: true)
 
-config :vintage_net,
-  regulatory_domain: "00",
-  config: [
-    {"usb0", %{type: VintageNetDirect}},
-    {"eth0", %{type: VintageNetEthernet, ipv4: %{method: :dhcp}}}
-  ]
+  config :vintage_net,
+    regulatory_domain: "00",
+    config: [
+      {"usb0", %{type: VintageNetDirect}},
+      {"eth0", %{type: VintageNetEthernet, ipv4: %{method: :dhcp}}}
+    ]
 
-config :mdns_lite,
-  hosts: [:hostname, vehicle_host],
-  ttl: 120,
-  services: [
-    %{protocol: "ssh", transport: "tcp", port: 22},
-    %{protocol: "sftp-ssh", transport: "tcp", port: 22},
-    %{protocol: "epmd", transport: "tcp", port: 4369}
-  ]
+  config :mdns_lite,
+    hosts: [:hostname, vehicle_host],
+    ttl: 120,
+    services: [
+      %{protocol: "ssh", transport: "tcp", port: 22},
+      %{protocol: "sftp-ssh", transport: "tcp", port: 22},
+      %{protocol: "epmd", transport: "tcp", port: 4369}
+    ]
+end
 
 if Mix.target() == :host do
   import_config "host.exs"

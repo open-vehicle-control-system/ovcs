@@ -297,12 +297,13 @@ For **physical** CAN interfaces (real hardware), Cantastic brings them up at boo
 
 ## Local Development
 
-Each vehicle package (`vehicles/<name>`) is itself a runnable Mix
-app on host. Its `Application` module (installed only when
-`Mix.target() == :host`) delegates to
-`OvcsVehicle.LocalSupervisor`, which walks `bridge_firmwares/0` and
-starts the host-compatible bridges. VMS + infotainment cores
-auto-start via their own OTP apps (transitive deps).
+The vehicle package (`vehicles/<name>`) is metadata + composers
+only — it has no `Application` module and no runtime dependencies
+on the api/firmware/bridge projects. Each firmware project
+(`vms/firmware`, `infotainment/firmware`, `bridges/firmware`) is
+parameterised by `VEHICLE` (and, for bridges, `BRIDGE_FIRMWARE_ID`)
+and loads the vehicle's compiled ebin via `Code.prepend_path` at
+boot.
 
 ### One-command boot (recommended)
 
@@ -311,17 +312,20 @@ auto-start via their own OTP apps (transitive deps).
 ```
 
 `./ovcs run` provisions the vcan interfaces the vehicle declares,
-then execs `iex -S mix` inside `vehicles/<vehicle>/` with a tty-
-inherited child. You get:
+then spawns one BEAM per firmware from its own project directory
+(`MIX_TARGET=host`). You get:
 
-- **VMS API + debug dashboard backend** on `http://localhost:4000`
-- **Infotainment API** on `http://localhost:4001` (vehicles that
-  implement `infotainment/0`)
-- **Host-compatible bridges** registered dormant (no hardware on
-  the host, so their `children/0` return `[]`)
-
-All in one BEAM sharing the node-local `OvcsBus` — no MQTT broker
-needed for dev.
+- **VMS API + debug dashboard backend** on `http://localhost:4000`,
+  in the `<vehicle>-vms` BEAM.
+- **Infotainment API** on `http://localhost:4001`, in the
+  `<vehicle>-infotainment` BEAM (vehicles that implement
+  `infotainment/0`).
+- **One BEAM per bridge firmware**, named `<vehicle>-bridge-<id>`,
+  running the bridge's `children/0` against host-side vcan.
+- **An MQTT broker** on `localhost:1884` (supervised by the VMS
+  BEAM via `OvcsBus.Mqtt.Broker`) with each BEAM's
+  `OvcsBus.Mqtt.Relay` connected to it — the same cross-firmware
+  bus you get in deployed mode.
 
 Dashboards run separately:
 

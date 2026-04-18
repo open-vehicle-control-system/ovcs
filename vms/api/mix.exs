@@ -48,19 +48,7 @@ defmodule VmsApi.MixProject do
       {:json, "~> 1.4"},
       {:vms_core, path: "../core"},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
-      | vehicle_dep()
     ]
-  end
-
-  defp vehicle_dep do
-    case System.get_env("VEHICLE") do
-      nil ->
-        []
-
-      name ->
-        dir = Macro.underscore(name)
-        [{String.to_atom(dir), path: "../../vehicles/#{dir}"}]
-    end
   end
 
   # Aliases are shortcuts or tasks specific to the current project.

@@ -12,7 +12,7 @@ defmodule VmsFirmware.MixProject do
       app: @app,
       version: @version,
       elixir: "~> 1.11",
-      archives: [nerves_bootstrap: "~> 1.12"],
+      archives: [nerves_bootstrap: "~> 1.13"],
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       releases: [{@app, release()}],
@@ -31,12 +31,15 @@ defmodule VmsFirmware.MixProject do
     [
       {:nerves, "~> 1.10", runtime: false},
       {:shoehorn, "~> 0.9.1"},
-      {:ring_logger, "~> 0.10.0"},
-      {:toolshed, "~> 0.3.0"},
-      {:observer_cli, "~> 1.7"},
+      {:ring_logger, "~> 0.11.0"},
+      {:toolshed, "~> 0.4.0"},
+      {:observer_cli, "~> 1.8"},
       {:nerves_runtime, "~> 0.13.0"},
       {:nerves_pack, "~> 0.7.0", targets: @all_targets},
-      {:vms_api, path: "../api", targets: @all_targets, env: Mix.env()},
+      {:vms_api, path: "../api"},
+      # VMS YAMLs reference `import!:@ovcs_can:...` shared frame
+      # definitions, so the app must be loaded in the BEAM.
+      {:ovcs_can, path: "../../libraries/ovcs_can"},
       {
         :ovcs_base_can_system_rpi4,
         github: "open-vehicle-control-system/ovcs_base_can_system_rpi4",

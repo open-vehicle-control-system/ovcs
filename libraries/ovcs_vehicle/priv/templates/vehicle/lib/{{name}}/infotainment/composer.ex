@@ -24,16 +24,13 @@ defmodule <%= @module %>.Infotainment.Composer do
     ]
   end
 
-  # Optional — same broker as the VMS side so both firmwares share
-  # the bus feed. Uncomment once the broker is running.
-  #
-  # @impl InfotainmentCore.Vehicle
-  # def bus_relay do
-  #   %{
-  #     broker: [host: "<%= @name %>-vms.local", port: 1884],
-  #     client_id: "<%= @name %>-infotainment",
-  #     topic_prefix: "ovcs/<%= @name %>/bus",
-  #     topics: [:ready_to_drive, :vms_status]
-  #   }
-  # end
+  @impl InfotainmentCore.Vehicle
+  def bus_relay do
+    %{
+      broker: [host: <%= @module %>.broker_host(), port: 1884],
+      client_id: "<%= @name %>-infotainment",
+      topic_prefix: "ovcs/<%= @name %>/bus",
+      topics: [:ready_to_drive, :vms_status]
+    }
+  end
 end

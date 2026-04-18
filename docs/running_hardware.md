@@ -101,6 +101,55 @@ Push a firmware update to a running Nerves device over SSH:
 ./ovcs upload ovcs1 vms --file path/to/custom.fw
 ```
 
+## Running and attaching at runtime
+
+### Local run mirrors deployed: one BEAM per firmware
+
+`./ovcs run <vehicle>` boots the full deployed topology on one host:
+
+- One BEAM per role: `<vehicle>-vms`, `<vehicle>-infotainment`, and `<vehicle>-bridge-<id>` per bridge firmware. Each BEAM runs the corresponding firmware project (`vms/firmware`, `infotainment/firmware`, `bridges/firmware`) directly against `MIX_TARGET=host`.
+- A mosquitto broker on `localhost:1884`, started by the VMS BEAM via `OvcsBus.Mqtt.Broker` — same mechanism as deployed. Every other BEAM connects to it via `OvcsBus.Mqtt.Relay`.
+- CAN interfaces are shared host-wide (same vcan0/vcan1/… visible to every BEAM), so `./ovcs can setup` once covers all roles.
+
+Output is line-prefixed per role (`[vms] …`, `[infotainment] …`, `[bridge-ros] …`). For the aggregated split-pane TUI, run `./ovcs attach <vehicle>` in another terminal — it auto-detects the local BEAMs via epmd (node snames starting with `<vehicle>-`) and lights up the same multi-node view used for deployed vehicles.
+
+**Prereqs**: `mosquitto` must be on `PATH` inside the distrobox (it already is in the provisioned `ovcs` distrobox). No other setup needed.
+
+### `./ovcs run` vs `./ovcs attach`
+
+The CLI separates **booting** a vehicle from **observing / driving** it:
+
+- `./ovcs run <vehicle>` — provisions vcan and spawns one BEAM per firmware. Streams raw stdout (line-prefixed per role) to the tty. No TUI, no IEx. Ctrl-C stops all of them.
+- `./ovcs attach <vehicle>` — split-pane TUI that connects to a running vehicle, aggregates logs per node, and exposes an IEx shell on each. Auto-detects:
+  - **Deployed** (preferred, if reachable): SSHes to each expected Nerves device via `<vehicle>-vms.local` / `<vehicle>-infotainment.local` / `<vehicle>-bridge-<id>.local`, streams logs via `RingLogger.attach()`, and opens an interactive IEx channel per device.
+  - **Local dev BEAMs** (fallback): if no device hostnames resolve, it finds every epmd registration matching `<vehicle>-*` and opens one `iex --remsh` per BEAM, the same TUI layout as deployed.
+  - Otherwise: exits with a clear error.
+
+### Typical flow
+
+```sh
+# Terminal A (dev host)
+./ovcs run ovcs1
+
+# Terminal B (same laptop, or a laptop on the vehicle's LAN when deployed)
+./ovcs attach ovcs1
+```
+
+### TUI hotkeys
+
+- `Tab` — switch focus between the logs pane (left) and the IEx pane (right).
+- `Ctrl-N` / `Ctrl-P` — cycle which device the IEx pane drives (deployed mode, multiple devices).
+- `F1` … `F9` — jump directly to the Nth device.
+- Logs pane: `↑`/`↓`, `PgUp`/`PgDn`, `g`/`G`, `Home`/`End` — scroll / follow tail.
+- IEx pane: `Enter` evaluates, `↑`/`↓` walks command history, `Esc` returns focus to logs.
+- `Ctrl-C` or `q` — quit attach (the source BEAM / remote devices keep running).
+
+### Prerequisites for deployed attach
+
+- The host's SSH key must be in every firmware's `AUTHORIZED_SSH_KEYS` env at boot (same key that makes `./ovcs upload` work). `attach` authenticates via `ssh-agent` — make sure your agent is running and holds the key (`ssh-add -l` to check).
+- Devices must be reachable on the LAN via mDNS (`<vehicle>-<side>.local`). Verify with `ping ovcs1-vms.local` before attaching.
+- Non-Nerves bridges (e.g. Arduino generic controllers) have no SSH / IEx — they are skipped automatically.
+
 ## Customizing CAN Interfaces
 
 The `CAN_NETWORK_MAPPINGS` environment variable maps logical CAN network names to physical or virtual interfaces. This is used both for local development and when building firmware.
