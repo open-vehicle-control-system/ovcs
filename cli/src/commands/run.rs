@@ -1,16 +1,15 @@
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Context, Result, anyhow};
 use owo_colors::OwoColorize;
-use std::io::{BufRead, BufReader};
+use std::collections::HashMap;
+use std::io::{BufRead, BufReader, Write};
+use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
-use std::sync::mpsc::{self, Sender};
 use std::thread;
-use std::time::{Duration, Instant};
 
 use crate::commands::can::ensure_host_can;
-use crate::commands::run_ui::{self, Msg};
 use crate::prompt::choose;
 use crate::repo_root::repo_root;
-use crate::vehicles;
+use crate::vehicles::{self, Vehicle};
 
 pub fn run(vehicle_arg: Option<String>) -> Result<()> {
     let root = repo_root()?;
@@ -27,168 +26,187 @@ pub fn run(vehicle_arg: Option<String>) -> Result<()> {
 
     ensure_host_can(&vehicle)?;
 
-    let cwd = root.join("vehicles").join(&vehicle.dir);
-    let hostname = hostname_short()?;
-    let cookie = "ovcs".to_string();
-    let app_node = format!("ovcs_{}", vehicle.dir);
-    let shell_node = format!("ovcs_dbg_{}", std::process::id());
+    let roles = enumerate_roles(&root, &vehicle)?;
+    if roles.is_empty() {
+        anyhow::bail!("no roles to spawn for vehicle {}", vehicle.dir);
+    }
 
     println!();
     println!("{}", "Booting vehicle locally…".bold());
     println!(
-        "{}{}",
-        format!("→ elixir --sname {} -S mix run --no-halt", app_node).cyan(),
-        format!("  (cd {})", cwd.display()).dimmed()
+        "{}",
+        format!("→ {} BEAMs + mosquitto on :1884", roles.len()).cyan()
     );
+    for r in &roles {
+        println!(
+            "{}",
+            format!("   • {}-{}  (cd {})", vehicle.dir, r.label, short_path(&r.cwd, &root))
+                .dimmed()
+        );
+    }
+    println!(
+        "{}",
+        "Attach a shell with `./ovcs attach` in another terminal. Ctrl-C to stop.".dimmed()
+    );
+    println!();
 
-    let (tx, rx) = mpsc::channel::<Msg>();
+    let mut children: Vec<(String, Child)> = Vec::new();
 
-    // Start the app: mix run --no-halt (no iex prompt — clean stdout).
-    let mut app = Command::new("elixir")
-        .args([
-            "--sname", &app_node,
-            "--cookie", &cookie,
+    for role in &roles {
+        let sname = format!("{}-{}", vehicle.dir, sname_safe(&role.label));
+        let mut cmd = Command::new("elixir");
+        cmd.args([
+            "--sname", &sname,
+            "--cookie", "ovcs",
             "-S", "mix", "run", "--no-halt",
         ])
-        .current_dir(&cwd)
+        .current_dir(&role.cwd)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .spawn()
-        .context("failed to spawn elixir")?;
+        .env("VEHICLE", &vehicle.module);
+        for (k, v) in &role.env {
+            cmd.env(k, v);
+        }
+        let mut child = cmd
+            .spawn()
+            .with_context(|| format!("failed to spawn elixir for role {}", role.label))?;
 
-    let app_stdout = app.stdout.take().unwrap();
-    let app_stderr = app.stderr.take().unwrap();
-    spawn_reader(app_stdout, tx.clone(), Msg::LogLine);
-    spawn_reader(app_stderr, tx.clone(), Msg::LogLine);
+        let stdout = child.stdout.take().unwrap();
+        let stderr = child.stderr.take().unwrap();
+        let label_out = role.label.clone();
+        let label_err = role.label.clone();
+        thread::spawn(move || prefix_stream(stdout, &label_out, std::io::stdout()));
+        thread::spawn(move || prefix_stream(stderr, &label_err, std::io::stderr()));
 
-    // Tell the UI when the app exits unexpectedly.
-    {
-        let tx = tx.clone();
-        let app_pid = app.id();
-        thread::spawn(move || {
-            // Poll the /proc entry; simpler than juggling the Child across threads.
-            loop {
-                thread::sleep(Duration::from_millis(500));
-                if !pid_alive(app_pid) {
-                    let _ = tx.send(Msg::AppExited);
-                    return;
+        children.push((role.label.clone(), child));
+    }
+
+    // Wait for any child to exit — typically Ctrl-C propagates to the whole
+    // process group, so they'll all go down together. Then reap the rest.
+    loop {
+        let mut all_dead = true;
+        for (_label, child) in children.iter_mut() {
+            match child.try_wait() {
+                Ok(Some(_)) => {}
+                Ok(None) => {
+                    all_dead = false;
                 }
+                Err(_) => {}
             }
+        }
+        if all_dead {
+            break;
+        }
+        thread::sleep(std::time::Duration::from_millis(200));
+    }
+
+    Ok(())
+}
+
+struct Role {
+    /// Label used for the sname suffix and the log prefix (e.g. "vms",
+    /// "infotainment", "bridge-radio_control").
+    label: String,
+    /// Directory to `cd` into before spawning the BEAM.
+    cwd: PathBuf,
+    /// Additional env vars on top of VEHICLE.
+    env: Vec<(String, String)>,
+}
+
+fn enumerate_roles(root: &std::path::Path, vehicle: &Vehicle) -> Result<Vec<Role>> {
+    let mut roles = Vec::new();
+
+    // VMS: every vehicle has exactly one.
+    roles.push(Role {
+        label: "vms".into(),
+        cwd: root.join("vms").join("firmware"),
+        env: Vec::new(),
+    });
+
+    if vehicles::has_infotainment(vehicle).unwrap_or(false) {
+        roles.push(Role {
+            label: "infotainment".into(),
+            cwd: root.join("infotainment").join("firmware"),
+            env: Vec::new(),
         });
     }
 
-    // Wait for the BEAM node to register with EPMD before spawning remsh.
-    let full_node = format!("{}@{}", app_node, hostname);
-    if let Err(e) = wait_for_node(&app_node, Duration::from_secs(30), &tx) {
-        let _ = app.kill();
-        bail!("BEAM node {} didn't come up: {}", full_node, e);
-    }
-
-    // Start the remote shell. `stdbuf -oL -eL` forces line buffering so
-    // responses show up immediately in the UI — without a tty, iex
-    // otherwise block-buffers its stdout.
-    let mut shell = Command::new("stdbuf")
-        .args([
-            "-oL", "-eL",
-            "iex",
-            "--sname", &shell_node,
-            "--cookie", &cookie,
-            "--remsh", &full_node,
-        ])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .context("failed to spawn iex --remsh")?;
-
-    let shell_stdout = shell.stdout.take().unwrap();
-    let shell_stderr = shell.stderr.take().unwrap();
-    spawn_reader(shell_stdout, tx.clone(), Msg::ShellLine);
-    spawn_reader(shell_stderr, tx.clone(), Msg::ShellLine);
-    let shell_stdin = shell.stdin.take().unwrap();
-
-    // Hand off to the UI. On exit we kill both children.
-    let ui_result = run_ui::run(rx, shell_stdin, &full_node);
-
-    let _ = shell.kill();
-    let _ = shell.wait();
-    // SIGINT the BEAM first (gives OTP time to shut down cleanly);
-    // if still alive after a second, SIGKILL.
-    let _ = send_sigint(&app);
-    let deadline = Instant::now() + Duration::from_secs(2);
-    loop {
-        match app.try_wait() {
-            Ok(Some(_)) => break,
-            Ok(None) if Instant::now() >= deadline => {
-                let _ = app.kill();
-                let _ = app.wait();
-                break;
-            }
-            Ok(None) => thread::sleep(Duration::from_millis(100)),
-            Err(_) => break,
+    // Each bridge firmware entry → one BEAM at bridges/firmware, with
+    // BRIDGE_FIRMWARE_ID picking the entry and CAN_NETWORK_MAPPINGS
+    // overridden to the host-side mapping (runtime.exs defaults to the
+    // target mapping otherwise, which doesn't apply on dev host).
+    let bridges = vehicles::bridge_firmwares(vehicle).unwrap_or_default();
+    let host_mappings = bridge_host_mappings(vehicle).unwrap_or_default();
+    let bridges_cwd = root.join("bridges").join("firmware");
+    for (id, _fw) in bridges {
+        let mut env = vec![("BRIDGE_FIRMWARE_ID".to_string(), id.clone())];
+        if let Some(mapping) = host_mappings.get(&id) {
+            env.push(("CAN_NETWORK_MAPPINGS".to_string(), mapping.clone()));
         }
+        roles.push(Role {
+            label: format!("bridge-{}", id),
+            cwd: bridges_cwd.clone(),
+            env,
+        });
     }
 
-    ui_result
+    Ok(roles)
 }
 
-fn spawn_reader<R, F>(reader: R, tx: Sender<Msg>, wrap: F)
+/// Ask the vehicle module for each bridge's host-side CAN mapping so the
+/// shared bridges/firmware runtime.exs can pick it up via env.
+fn bridge_host_mappings(vehicle: &Vehicle) -> Result<HashMap<String, String>> {
+    let snippet = format!(
+        r##"
+m = {module}
+Code.ensure_loaded(m)
+if function_exported?(m, :bridge_firmwares, 0) do
+  m.bridge_firmwares()
+  |> Enum.map(fn {{id, entry}} ->
+    host = get_in(entry, [:default_can_mapping, :host]) || ""
+    "#{{id}}\t#{{host}}"
+  end)
+  |> Enum.join("\n")
+  |> IO.puts()
+end
+"##,
+        module = vehicle.module,
+    );
+    match vehicles::run_snippet_public(&vehicle.path, &snippet)? {
+        None => Ok(HashMap::new()),
+        Some(output) => {
+            let mut map = HashMap::new();
+            for line in output.lines().filter(|l| !l.is_empty()) {
+                if let Some((id, mapping)) = line.split_once('\t') {
+                    if !mapping.is_empty() {
+                        map.insert(id.to_string(), mapping.to_string());
+                    }
+                }
+            }
+            Ok(map)
+        }
+    }
+}
+
+fn prefix_stream<R, W>(reader: R, label: &str, mut sink: W)
 where
     R: std::io::Read + Send + 'static,
-    F: Fn(String) -> Msg + Send + 'static,
+    W: Write + Send + 'static,
 {
-    thread::spawn(move || {
-        let buf = BufReader::new(reader);
-        for line in buf.lines().map_while(|l| l.ok()) {
-            if tx.send(wrap(line)).is_err() {
-                break;
-            }
-        }
-    });
-}
-
-fn hostname_short() -> Result<String> {
-    let out = Command::new("hostname")
-        .arg("-s")
-        .output()
-        .context("failed to invoke hostname -s")?;
-    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
-}
-
-fn pid_alive(pid: u32) -> bool {
-    std::path::Path::new(&format!("/proc/{}", pid)).exists()
-}
-
-fn wait_for_node(short_name: &str, timeout: Duration, tx: &Sender<Msg>) -> Result<()> {
-    let _ = tx.send(Msg::LogLine(format!(
-        "[ovcs] waiting for BEAM node {} to register with epmd…",
-        short_name
-    )));
-    let start = Instant::now();
-    let needle = format!("name {} at", short_name);
-    loop {
-        if let Ok(out) = Command::new("epmd").arg("-names").output() {
-            let s = String::from_utf8_lossy(&out.stdout);
-            if s.contains(&needle) {
-                let _ = tx.send(Msg::LogLine(
-                    "[ovcs] node registered; opening remote shell".to_string(),
-                ));
-                return Ok(());
-            }
-        }
-        if start.elapsed() > timeout {
-            bail!("timed out after {:?}", timeout);
-        }
-        thread::sleep(Duration::from_millis(250));
+    let buf = BufReader::new(reader);
+    for line in buf.lines().map_while(|l| l.ok()) {
+        let _ = writeln!(sink, "[{}] {}", label, line);
+        let _ = sink.flush();
     }
 }
 
-fn send_sigint(child: &Child) -> std::io::Result<()> {
-    // libc-free SIGINT via /bin/kill; acceptable for a single one-shot.
-    let pid = child.id();
-    Command::new("kill")
-        .args(["-INT", &pid.to_string()])
-        .status()
-        .map(|_| ())
+fn sname_safe(label: &str) -> String {
+    label.replace('_', "-")
+}
+
+fn short_path(p: &std::path::Path, root: &std::path::Path) -> String {
+    p.strip_prefix(root)
+        .map(|r| r.display().to_string())
+        .unwrap_or_else(|_| p.display().to_string())
 }

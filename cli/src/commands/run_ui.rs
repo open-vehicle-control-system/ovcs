@@ -1,31 +1,45 @@
 use anyhow::Result;
 use ansi_to_tui::IntoText;
+use crossterm::ExecutableCommand;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
-use crossterm::ExecutableCommand;
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Paragraph};
+use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
 use regex::Regex;
-use std::collections::VecDeque;
-use std::io::{self, Stdout, Write};
-use std::process::ChildStdin;
-use std::sync::mpsc::{Receiver, TryRecvError};
+use std::collections::{HashMap, VecDeque};
+use std::io::{self, Stdout};
+use std::sync::mpsc::{Receiver, Sender, TryRecvError};
 use std::time::Duration;
 
 const LOG_CAP: usize = 4000;
 const SHELL_CAP: usize = 2000;
 const HISTORY_CAP: usize = 500;
 
+/// Messages pushed to the TUI from the transport backends (SSH task or
+/// local remsh reader threads).
 pub enum Msg {
-    LogLine(String),
-    ShellLine(String),
-    AppExited,
+    /// One log line from a remote node's log channel.
+    Log { node: String, line: String },
+    /// One line of IEx output from a node's interactive shell channel.
+    Shell { node: String, line: String },
+    /// Node finished setup and its shell/log channels are live.
+    NodeUp(String),
+    /// Node is gone (connection lost, ssh exited, etc.).
+    NodeDown(String),
+}
+
+/// Per-node handle the TUI holds onto — one sender per interactive shell,
+/// keyed by node name. Dropping the sender signals the worker to close the
+/// channel.
+pub struct NodeHandle {
+    pub name: String,
+    pub stdin: Sender<String>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -34,9 +48,17 @@ enum Focus {
     Shell,
 }
 
-struct State {
-    logs: VecDeque<Line<'static>>,
+struct NodeState {
+    color: Color,
+    up: bool,
+    stdin: Option<Sender<String>>,
     shell_out: VecDeque<Line<'static>>,
+}
+
+struct State {
+    nodes: Vec<String>,
+    by_node: HashMap<String, NodeState>,
+    logs: VecDeque<Line<'static>>,
     input: String,
     cursor: usize,
     history: Vec<String>,
@@ -46,17 +68,44 @@ struct State {
     log_follow: bool,
     shell_scroll: u16,
     shell_follow: bool,
-    app_exited: bool,
+    current: String,
     quit: bool,
-    node: String,
     prompt_re: Regex,
 }
 
+const PALETTE: &[Color] = &[
+    Color::Cyan,
+    Color::Yellow,
+    Color::Green,
+    Color::Magenta,
+    Color::LightBlue,
+    Color::LightRed,
+    Color::LightGreen,
+    Color::LightMagenta,
+];
+
 impl State {
-    fn new(node: String) -> Self {
+    fn new(handles: Vec<NodeHandle>) -> Self {
+        let mut nodes = Vec::new();
+        let mut by_node = HashMap::new();
+        for (i, h) in handles.into_iter().enumerate() {
+            let color = PALETTE[i % PALETTE.len()];
+            by_node.insert(
+                h.name.clone(),
+                NodeState {
+                    color,
+                    up: false,
+                    stdin: Some(h.stdin),
+                    shell_out: VecDeque::with_capacity(SHELL_CAP),
+                },
+            );
+            nodes.push(h.name);
+        }
+        let current = nodes.first().cloned().unwrap_or_default();
         Self {
+            nodes,
+            by_node,
             logs: VecDeque::with_capacity(LOG_CAP),
-            shell_out: VecDeque::with_capacity(SHELL_CAP),
             input: String::new(),
             cursor: 0,
             history: Vec::new(),
@@ -66,45 +115,70 @@ impl State {
             log_follow: true,
             shell_scroll: 0,
             shell_follow: true,
-            app_exited: false,
+            current,
             quit: false,
-            node,
             prompt_re: Regex::new(r"^(iex|\.{3})\(\d+\)>\s?").unwrap(),
         }
     }
 
-    fn push_log(&mut self, raw: String) {
+    fn push_log(&mut self, node: &str, raw: String) {
+        let color = self
+            .by_node
+            .get(node)
+            .map(|n| n.color)
+            .unwrap_or(Color::White);
+        let tag = Span::styled(
+            format!("[{}] ", node),
+            Style::default().fg(color).add_modifier(Modifier::BOLD),
+        );
+        let body = parse_ansi_line(&raw);
+        let mut spans = vec![tag];
+        spans.extend(body.spans);
         if self.logs.len() == LOG_CAP {
             self.logs.pop_front();
         }
-        self.logs.push_back(parse_ansi_line(&raw));
+        self.logs.push_back(Line::from(spans));
     }
 
-    fn push_shell(&mut self, raw: String) {
-        // Strip iex prompt prefixes (we echo our own "❯ " for typed input).
+    fn push_shell(&mut self, node: &str, raw: String) {
         let cleaned = self.prompt_re.replace(&raw, "").into_owned();
-        if self.shell_out.len() == SHELL_CAP {
-            self.shell_out.pop_front();
+        if let Some(n) = self.by_node.get_mut(node) {
+            if n.shell_out.len() == SHELL_CAP {
+                n.shell_out.pop_front();
+            }
+            n.shell_out.push_back(parse_ansi_line(&cleaned));
         }
-        self.shell_out.push_back(parse_ansi_line(&cleaned));
     }
 
     fn push_shell_echo(&mut self, line: Line<'static>) {
-        if self.shell_out.len() == SHELL_CAP {
-            self.shell_out.pop_front();
+        if let Some(n) = self.by_node.get_mut(&self.current) {
+            if n.shell_out.len() == SHELL_CAP {
+                n.shell_out.pop_front();
+            }
+            n.shell_out.push_back(line);
         }
-        self.shell_out.push_back(line);
+    }
+
+    fn cycle(&mut self, delta: isize) {
+        if self.nodes.len() < 2 {
+            return;
+        }
+        let idx = self.nodes.iter().position(|n| n == &self.current).unwrap_or(0) as isize;
+        let len = self.nodes.len() as isize;
+        let next = ((idx + delta).rem_euclid(len)) as usize;
+        self.current = self.nodes[next].clone();
+        self.shell_follow = true;
+    }
+
+    fn jump(&mut self, idx: usize) {
+        if let Some(name) = self.nodes.get(idx) {
+            self.current = name.clone();
+            self.shell_follow = true;
+        }
     }
 }
 
-/// Parse a byte string containing ANSI escape sequences into a single styled
-/// `Line`. Strips terminal escapes we don't understand, and carriage returns
-/// which otherwise render as column-reset glitches inside Ratatui. Falls back
-/// to a raw plain-text Line on parse failure.
 fn parse_ansi_line(raw: &str) -> Line<'static> {
-    // CR without LF (progress bars, spinners) would move the cursor to column 0
-    // in a real terminal; Ratatui doesn't honor that, so we drop them to keep
-    // the line width stable.
     let cleaned: String = raw.chars().filter(|&c| c != '\r').collect();
     match cleaned.into_text() {
         Ok(text) => text
@@ -116,13 +190,13 @@ fn parse_ansi_line(raw: &str) -> Line<'static> {
     }
 }
 
-pub fn run(rx: Receiver<Msg>, mut shell_stdin: ChildStdin, node: &str) -> Result<()> {
+pub fn run(rx: Receiver<Msg>, nodes: Vec<NodeHandle>) -> Result<()> {
     let mut stdout = io::stdout();
     enable_raw_mode()?;
     stdout.execute(EnterAlternateScreen)?;
     let mut terminal = Terminal::new(CrosstermBackend::new(stdout))?;
 
-    let result = event_loop(&mut terminal, rx, &mut shell_stdin, node.to_string());
+    let result = event_loop(&mut terminal, rx, nodes);
 
     let _ = disable_raw_mode();
     let _ = terminal.backend_mut().execute(LeaveAlternateScreen);
@@ -134,20 +208,27 @@ pub fn run(rx: Receiver<Msg>, mut shell_stdin: ChildStdin, node: &str) -> Result
 fn event_loop(
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
     rx: Receiver<Msg>,
-    shell_stdin: &mut ChildStdin,
-    node: String,
+    nodes: Vec<NodeHandle>,
 ) -> Result<()> {
-    let mut state = State::new(node);
+    let mut state = State::new(nodes);
 
     loop {
-        // Drain any pending messages (non-blocking).
         loop {
             match rx.try_recv() {
-                Ok(Msg::LogLine(l)) => state.push_log(l),
-                Ok(Msg::ShellLine(l)) => state.push_shell(l),
-                Ok(Msg::AppExited) => {
-                    state.app_exited = true;
-                    state.push_log("[ovcs] BEAM exited".to_string());
+                Ok(Msg::Log { node, line }) => state.push_log(&node, line),
+                Ok(Msg::Shell { node, line }) => state.push_shell(&node, line),
+                Ok(Msg::NodeUp(node)) => {
+                    if let Some(n) = state.by_node.get_mut(&node) {
+                        n.up = true;
+                    }
+                    state.push_log(&node, "[ovcs] connected".to_string());
+                }
+                Ok(Msg::NodeDown(node)) => {
+                    if let Some(n) = state.by_node.get_mut(&node) {
+                        n.up = false;
+                        n.stdin = None;
+                    }
+                    state.push_log(&node, "[ovcs] disconnected".to_string());
                 }
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => break,
@@ -159,7 +240,7 @@ fn event_loop(
         if event::poll(Duration::from_millis(50))? {
             if let Event::Key(key) = event::read()? {
                 if key.kind == KeyEventKind::Press {
-                    handle_key(&mut state, key.code, key.modifiers, shell_stdin)?;
+                    handle_key(&mut state, key.code, key.modifiers)?;
                 }
             }
         }
@@ -174,7 +255,6 @@ fn event_loop(
 
 fn render(f: &mut ratatui::Frame, state: &State) {
     let area = f.area();
-
     let outer = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(1), Constraint::Length(1)])
@@ -191,46 +271,73 @@ fn render(f: &mut ratatui::Frame, state: &State) {
 }
 
 fn render_logs(f: &mut ratatui::Frame, area: Rect, state: &State) {
-    let title = if state.app_exited {
-        format!(" logs ({}) [EXITED] ", state.node)
-    } else {
-        format!(" logs ({}) ", state.node)
-    };
+    let up = state.by_node.values().filter(|n| n.up).count();
+    let total = state.nodes.len();
+    let title = format!(" logs  [{}/{} up] ", up, total);
     let block = Block::default()
         .title(title)
         .borders(Borders::ALL)
         .border_style(focus_style(state, Focus::Log));
 
     let inner_h = area.height.saturating_sub(2) as usize;
-    let total = state.logs.len();
+    let inner_w = area.width.saturating_sub(2) as usize;
+    let total_lines = state.logs.len();
     let start = if state.log_follow {
-        total.saturating_sub(inner_h)
+        visible_start(&state.logs, inner_h, inner_w)
     } else {
         state
             .log_scroll
-            .min(total.saturating_sub(inner_h) as u16) as usize
+            .min(total_lines.saturating_sub(inner_h) as u16) as usize
     };
 
-    let lines: Vec<Line> = state
-        .logs
-        .iter()
-        .skip(start)
-        .take(inner_h)
-        .cloned()
-        .collect();
+    // Pass the tail of entries from `start` onward — ratatui wraps them
+    // top-down; any overflow past `inner_h` visual rows is clipped at the
+    // bottom, which matches the stored order (newest last).
+    let lines: Vec<Line> = state.logs.iter().skip(start).cloned().collect();
 
-    // No wrap: long lines truncate at the pane's right edge. Each stored
-    // Line maps to exactly one visual row, so scroll math stays simple.
-    let p = Paragraph::new(lines).block(block);
+    let p = Paragraph::new(lines)
+        .block(block)
+        .wrap(Wrap { trim: false });
     f.render_widget(p, area);
 }
 
+/// Walk stored lines from newest to oldest, summing visual rows each would
+/// occupy at width `inner_w` with wrap enabled. Stop when the next line
+/// would overflow `inner_h`. Returns the index of the first stored line to
+/// render so that the newest entries remain visible at the pane bottom.
+fn visible_start(lines: &VecDeque<Line<'static>>, inner_h: usize, inner_w: usize) -> usize {
+    if inner_h == 0 || inner_w == 0 || lines.is_empty() {
+        return lines.len();
+    }
+    let mut rows = 0usize;
+    for (rev_i, line) in lines.iter().rev().enumerate() {
+        let w = line.width().max(1);
+        let taken = w.div_ceil(inner_w).max(1);
+        if rows + taken > inner_h {
+            return lines.len() - rev_i;
+        }
+        rows += taken;
+    }
+    0
+}
+
 fn render_shell(f: &mut ratatui::Frame, area: Rect, state: &State) {
-    // One bordered box for the whole remsh pane. Output flows top-down;
-    // the current input is pinned as the last interior row, so typing
-    // feels like a live REPL prompt instead of a separate widget.
+    let current_color = state
+        .by_node
+        .get(&state.current)
+        .map(|n| n.color)
+        .unwrap_or(Color::Cyan);
+    let up_badge = if state.by_node.get(&state.current).map(|n| n.up).unwrap_or(false) {
+        ""
+    } else {
+        "  [disconnected]"
+    };
+    let title = format!(" iex — {}{} ", state.current, up_badge);
     let block = Block::default()
-        .title(" iex --remsh ")
+        .title(Span::styled(
+            title,
+            Style::default().fg(current_color).add_modifier(Modifier::BOLD),
+        ))
         .borders(Borders::ALL)
         .border_style(focus_style(state, Focus::Shell));
     let inner = block.inner(area);
@@ -244,28 +351,33 @@ fn render_shell(f: &mut ratatui::Frame, area: Rect, state: &State) {
     let out_area = rows[0];
     let input_area = rows[1];
 
+    let empty = VecDeque::new();
+    let shell_out = state
+        .by_node
+        .get(&state.current)
+        .map(|n| &n.shell_out)
+        .unwrap_or(&empty);
+
     let inner_h = out_area.height as usize;
-    let total = state.shell_out.len();
+    let inner_w = out_area.width as usize;
+    let total = shell_out.len();
     let start = if state.shell_follow {
-        total.saturating_sub(inner_h)
+        visible_start(shell_out, inner_h, inner_w)
     } else {
         state
             .shell_scroll
             .min(total.saturating_sub(inner_h) as u16) as usize
     };
 
-    let out_lines: Vec<Line> = state
-        .shell_out
-        .iter()
-        .skip(start)
-        .take(inner_h)
-        .cloned()
-        .collect();
+    let out_lines: Vec<Line> = shell_out.iter().skip(start).cloned().collect();
 
-    f.render_widget(Paragraph::new(out_lines), out_area);
+    f.render_widget(
+        Paragraph::new(out_lines).wrap(Wrap { trim: false }),
+        out_area,
+    );
 
     let input_line = Line::from(vec![
-        Span::styled("❯ ", Style::default().fg(Color::Cyan)),
+        Span::styled("❯ ", Style::default().fg(current_color)),
         Span::raw(state.input.clone()),
     ]);
     f.render_widget(Paragraph::new(input_line), input_area);
@@ -282,10 +394,17 @@ fn render_status(f: &mut ratatui::Frame, area: Rect, state: &State) {
         Focus::Log => "log",
         Focus::Shell => "shell",
     };
-    let help = format!(
-        " [{}] Tab=switch  ↑↓=scroll/history  Enter=eval  Esc=log focus  Ctrl-C/q=quit ",
-        focus_label
-    );
+    let help = if state.nodes.len() > 1 {
+        format!(
+            " [{}] Tab=pane  Ctrl-N/P=shell node  F1..F9=jump  Enter=eval  Ctrl-C/q=quit ",
+            focus_label
+        )
+    } else {
+        format!(
+            " [{}] Tab=pane  ↑↓=scroll/history  Enter=eval  Ctrl-C/q=quit ",
+            focus_label
+        )
+    };
     let p = Paragraph::new(Line::from(Span::styled(
         help,
         Style::default().fg(Color::Black).bg(Color::Cyan),
@@ -303,16 +422,24 @@ fn focus_style(state: &State, f: Focus) -> Style {
     }
 }
 
-fn handle_key(
-    state: &mut State,
-    code: KeyCode,
-    mods: KeyModifiers,
-    shell_stdin: &mut ChildStdin,
-) -> Result<()> {
-    // Global: Ctrl-C quits from anywhere.
+fn handle_key(state: &mut State, code: KeyCode, mods: KeyModifiers) -> Result<()> {
     if matches!(code, KeyCode::Char('c')) && mods.contains(KeyModifiers::CONTROL) {
         state.quit = true;
         return Ok(());
+    }
+    if matches!(code, KeyCode::Char('n')) && mods.contains(KeyModifiers::CONTROL) {
+        state.cycle(1);
+        return Ok(());
+    }
+    if matches!(code, KeyCode::Char('p')) && mods.contains(KeyModifiers::CONTROL) {
+        state.cycle(-1);
+        return Ok(());
+    }
+    if let KeyCode::F(n) = code {
+        if (1..=9).contains(&n) {
+            state.jump((n - 1) as usize);
+            return Ok(());
+        }
     }
     if code == KeyCode::Tab {
         state.focus = match state.focus {
@@ -324,7 +451,7 @@ fn handle_key(
 
     match state.focus {
         Focus::Log => handle_log(state, code),
-        Focus::Shell => handle_shell(state, code, shell_stdin)?,
+        Focus::Shell => handle_shell(state, code)?,
     }
     Ok(())
 }
@@ -361,18 +488,26 @@ fn handle_log(state: &mut State, code: KeyCode) {
     }
 }
 
-fn handle_shell(state: &mut State, code: KeyCode, shell_stdin: &mut ChildStdin) -> Result<()> {
+fn handle_shell(state: &mut State, code: KeyCode) -> Result<()> {
     match code {
         KeyCode::Esc => state.focus = Focus::Log,
         KeyCode::Enter => {
             let line = std::mem::take(&mut state.input);
             state.cursor = 0;
             state.history_idx = None;
-            writeln!(shell_stdin, "{}", line)?;
-            shell_stdin.flush()?;
+            if let Some(n) = state.by_node.get(&state.current) {
+                if let Some(tx) = &n.stdin {
+                    let _ = tx.send(format!("{}\n", line));
+                }
+            }
             if !line.is_empty() {
+                let color = state
+                    .by_node
+                    .get(&state.current)
+                    .map(|n| n.color)
+                    .unwrap_or(Color::Cyan);
                 let echo = Line::from(vec![
-                    Span::styled("❯ ", Style::default().fg(Color::Cyan)),
+                    Span::styled("❯ ", Style::default().fg(color)),
                     Span::raw(line.clone()),
                 ]);
                 state.push_shell_echo(echo);
@@ -389,7 +524,6 @@ fn handle_shell(state: &mut State, code: KeyCode, shell_stdin: &mut ChildStdin) 
         }
         KeyCode::Backspace => {
             if state.cursor > 0 {
-                // Step back one char boundary.
                 let mut new = state.cursor;
                 while new > 0 && !state.input.is_char_boundary(new - 1) {
                     new -= 1;

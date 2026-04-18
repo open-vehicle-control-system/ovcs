@@ -95,6 +95,22 @@ sides
     }
 }
 
+pub fn host_for(vehicle_dir: &str, side: &str) -> String {
+    format!("{}-{}.local", vehicle_dir.replace('_', "-"), side)
+}
+
+pub fn has_infotainment(vehicle: &Vehicle) -> Result<bool> {
+    let snippet = format!(
+        r#"
+m = {module}
+Code.ensure_loaded(m)
+IO.write(if function_exported?(m, :infotainment, 0), do: "yes", else: "no")
+"#,
+        module = vehicle.module,
+    );
+    Ok(matches!(run_snippet(&vehicle.path, &snippet)?, Some(s) if s.trim() == "yes"))
+}
+
 pub fn bridge_firmwares(vehicle: &Vehicle) -> Result<HashMap<String, BridgeFirmware>> {
     let snippet = format!(
         r##"
@@ -124,6 +140,10 @@ end
         }
     }
     Ok(map)
+}
+
+pub fn run_snippet_public(path: &Path, snippet: &str) -> Result<Option<String>> {
+    run_snippet(path, snippet)
 }
 
 fn run_snippet(path: &Path, snippet: &str) -> Result<Option<String>> {

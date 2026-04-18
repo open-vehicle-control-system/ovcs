@@ -1,3 +1,4 @@
+pub mod attach;
 pub mod build;
 pub mod burn;
 pub mod can;
