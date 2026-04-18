@@ -38,7 +38,9 @@ jobs:
           for dir in "${dirs[@]}"; do
             if [ -f "$dir/.formatter.exs" ]; then
               echo "→ $dir"
-              (cd "$dir" && mix format --check-formatted)
+              # deps.get is required for projects whose .formatter.exs
+              # uses `import_deps:` (Phoenix/Ecto APIs).
+              (cd "$dir" && mix deps.get > /dev/null && mix format --check-formatted)
             fi
           done
 
@@ -76,6 +78,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-mise
+      - name: Install system deps for Nerves NIFs
+        if: contains(matrix.project, 'firmware')
+        run: sudo apt-get update && sudo apt-get install -y libmnl-dev
       - uses: actions/cache@v4
         with:
           path: |
