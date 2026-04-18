@@ -139,6 +139,12 @@ defmodule OvcsBus.Mqtt.Relay.Handler do
         tagged = %{msg | relay_origin: :mqtt}
         OvcsBus.broadcast(state.bus_topic, tagged)
 
+      {:ok, other} ->
+        # Any other term published to a mirrored topic: drop silently so
+        # a misconfigured producer can't crash the handler (and, through
+        # Tortoise311, tear the connection down).
+        Logger.warning("OvcsBus.Mqtt.Relay: drop non-Message term: #{inspect(other)}")
+
       {:error, reason} ->
         Logger.warning("OvcsBus.Mqtt.Relay: drop payload: #{inspect(reason)}")
     end
