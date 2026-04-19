@@ -40,6 +40,7 @@ defmodule BNO085.Dummy do
     {:noreply, state}
   end
 
+  @impl true
   def handle_cast({:register_listener, listener}, state) do
     {:noreply, %{state | listeners: state.listeners ++ [listener]}}
   end
