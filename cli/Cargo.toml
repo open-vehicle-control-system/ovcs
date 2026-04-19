@@ -23,6 +23,7 @@ ansi-to-tui = "7"
 russh = "0.54"
 tokio = { version = "1.42", features = ["rt", "macros", "io-util", "net", "time", "sync"] }
 libc = "0.2"
+indicatif = "0.18.4"
 
 [profile.release]
 opt-level = 3

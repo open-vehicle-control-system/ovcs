@@ -7,6 +7,7 @@ mod prompt;
 mod repo_root;
 mod resolve_args;
 mod shell;
+mod ui;
 mod vehicles;
 
 #[derive(Parser)]
@@ -64,9 +65,9 @@ enum Commands {
         action: VehicleAction,
     },
     /// Provision vcan + boot one BEAM per role (vms, infotainment, each
-    /// bridge) against a VMS-hosted localhost mosquitto, mirroring the
-    /// deployed topology. Attach with `./ovcs attach` from another
-    /// terminal for logs + IEx.
+    /// bridge), all joined by OvcsBus.Cluster (Erlang distribution),
+    /// mirroring the deployed topology. Attach with `./ovcs attach`
+    /// from another terminal for logs + IEx.
     Run { vehicle: Option<String> },
     /// Attach a split TUI (merged per-node logs + IEx shell) to a running
     /// vehicle — either the local dev BEAM or the N deployed Nerves devices.
