@@ -42,24 +42,22 @@ defmodule BridgeFirmware.MixProject do
       # Bridge CAN YAMLs often `import!:@ovcs_can:...` shared frame
       # definitions, so the app must be loaded in every bridge BEAM.
       {:ovcs_can, path: "../../libraries/ovcs_can"},
+      # `OvcsVehicle.Firmware.resolve_vehicle/3` is used from
+      # `config/runtime.exs` to prepend the vehicle's ebin.
+      {:ovcs_vehicle, path: "../../libraries/ovcs_vehicle"},
 
       # Align cowlib across emqtt (~> 2.7) and the Nerves stack
       # (~> 2.13). Widened from 2.7 so the host-dev BEAM can bundle
       # ros_bridge alongside Phoenix (which needs ~> 2.16).
       {:cowlib, "~> 2.13", override: true},
 
-      # Bridge libraries — enumerated here rather than pulled in
-      # transitively through the active vehicle (à la vms/api's
-      # dynamic vehicle_dep). Keeping them explicit here means
-      # bridge code stays out of vms/firmware / infotainment/firmware
-      # releases: both of those transitively dep on the vehicle, and
-      # target-gating wouldn't save us when MIX_TARGET matches (e.g.
-      # both VMS and ros_bridge build for rpi4).
-      #
-      # Each lib is gated to the Nerves targets it supports so a
-      # rpi3a build doesn't drag ros_bridge's emqtt/quicer chain in.
-      # Extend the target lists as bridges gain new SoC support, or
-      # add a new bridge by listing it here + target gates.
+      # Bridge libraries — enumerated explicitly here (vehicles load
+      # at runtime via Code.prepend_path, not as a Mix dep, so they
+      # can't pull bridge libs in transitively). Each lib is gated to
+      # the Nerves targets it supports so a rpi3a build doesn't drag
+      # ros_bridge's emqtt/quicer chain in. Extend the target lists as
+      # bridges gain new SoC support, or add a new bridge by listing
+      # it here + target gates.
       {:radio_control_bridge,
        path: "../radio_control_bridge",
        targets: [:host, :ovcs_base_can_system_rpi3a]},

@@ -1,15 +1,13 @@
 import Config
 
-vehicle_name = Application.compile_env(:infotainment_firmware, :vehicle) || System.get_env("VEHICLE")
+vehicle =
+  OvcsVehicle.Firmware.resolve_vehicle(
+    __DIR__,
+    config_env(),
+    Application.compile_env(:infotainment_firmware, :vehicle)
+  )
 
-if vehicle_name do
-  dir = Macro.underscore(vehicle_name)
-  ebin = Path.expand("../../../vehicles/#{dir}/_build/#{config_env()}/lib/#{dir}/ebin", __DIR__)
-  Code.prepend_path(ebin)
-end
-
-if vehicle_name && config_env() != :test do
-  vehicle = Module.concat([vehicle_name])
+if vehicle && config_env() != :test do
   infotainment = vehicle.infotainment()
 
   config :infotainment_core, :vehicle, infotainment

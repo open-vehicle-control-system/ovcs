@@ -1,20 +1,17 @@
 import Config
 
-vehicle_name = Application.compile_env(:vms_firmware, :vehicle) || System.get_env("VEHICLE")
+# Read VEHICLE, prepend the vehicle's compiled ebin to the code path,
+# and return the module. Nerves target builds ship the vehicle inside
+# the release; `Code.prepend_path` on an already-registered directory
+# is a cheap no-op.
+vehicle =
+  OvcsVehicle.Firmware.resolve_vehicle(
+    __DIR__,
+    config_env(),
+    Application.compile_env(:vms_firmware, :vehicle)
+  )
 
-# Split-mode host runs us from `vms/firmware/` without pulling the
-# vehicle as a Mix dep — add its compiled ebin before we dereference
-# the module. Nerves target builds ship the vehicle inside the release,
-# but `Code.prepend_path` on a directory that's already on the path is
-# a cheap no-op.
-if vehicle_name do
-  dir = Macro.underscore(vehicle_name)
-  ebin = Path.expand("../../../vehicles/#{dir}/_build/#{config_env()}/lib/#{dir}/ebin", __DIR__)
-  Code.prepend_path(ebin)
-end
-
-if vehicle_name && config_env() != :test do
-  vehicle = Module.concat([vehicle_name])
+if vehicle && config_env() != :test do
   vms = vehicle.vms()
 
   config :vms_core, :vehicle, vms
