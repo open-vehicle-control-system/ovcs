@@ -220,15 +220,15 @@ Build configurations (defined in `platformio.ini`):
 
 ## Vehicles (`vehicles/`)
 
-Each vehicle is a standalone Mix application that bundles both its VMS and infotainment sides. A vehicle's top-level module implements the `OvcsVehicle` behaviour and exposes `vms/0`, `infotainment/0`, `can_config_otp_app/0`, and `nerves_target/1`:
+Each vehicle is a standalone Mix application that bundles its VMS side, optional infotainment side, and optional bridge firmware declarations. A vehicle's top-level module implements the `OvcsVehicle` behaviour and exposes `name/0`, `vms/0`, optional `infotainment/0`, optional `bridge_firmwares/0`, `can_config_otp_app/0`, and `nerves_target/1`:
 
 | Package | App | Top-level module |
 |---------|-----|------------------|
 | `vehicles/ovcs1/` | `:ovcs1` | `Ovcs1` |
 | `vehicles/ovcs_mini/` | `:ovcs_mini` | `OvcsMini` (no infotainment side) |
-| `vehicles/obd2/` | `:obd2` | `Obd2` |
+| `vehicles/obd2/` | `:obd2` | `Obd2` (no bridges) |
 
-The side-specific composers (`Ovcs1.Vms.Composer`, `Ovcs1.Infotainment.Composer`, etc.) implement `VmsCore.Vehicle` / `InfotainmentCore.Vehicle`. Consumers reference only the top-level module in their config and dispatch through it — this prevents the two sides from drifting.
+The side-specific composers (`Ovcs1.Vms.Composer`, `Ovcs1.Infotainment.Composer`, etc.) implement `VmsCore.Vehicle` / `InfotainmentCore.Vehicle`. Each firmware's `runtime.exs` writes the composer (not the top-level module) to `:vms_core, :vehicle` / `:infotainment_core, :vehicle`; the top-level module is the discovery entry point from which composers are fetched. See [Vehicle Parameterisation](./vehicle_parameterisation.md) for the full wiring.
 
 ## Shared Libraries
 
@@ -298,12 +298,16 @@ For **physical** CAN interfaces (real hardware), Cantastic brings them up at boo
 ## Local Development
 
 The vehicle package (`vehicles/<name>`) is metadata + composers
-only — it has no `Application` module and no runtime dependencies
-on the api/firmware/bridge projects. Each firmware project
-(`vms/firmware`, `infotainment/firmware`, `bridges/firmware`) is
-parameterised by `VEHICLE` (and, for bridges, `BRIDGE_FIRMWARE_ID`)
-and loads the vehicle's compiled ebin via `Code.prepend_path` at
-boot.
+only — it has no `Application` module. It *does* Mix-dep on
+`vms_firmware`, `infotainment_firmware` (when the vehicle has an
+infotainment side), and `bridge_firmware` (when it declares bridges),
+so that one `mix compile` under the vehicle directory builds every
+firmware it needs into its own `_build` tree. The dep direction is
+**vehicle → firmware**, never the reverse; each firmware reaches the
+vehicle at boot via `Code.prepend_path`, not as a Mix dep. Each
+firmware project (`vms/firmware`, `infotainment/firmware`,
+`bridges/firmware`) is parameterised by `VEHICLE` (and, for bridges,
+`BRIDGE_FIRMWARE_ID`) via `OvcsVehicle.Firmware.resolve_vehicle/3`.
 
 ### One-command boot (recommended)
 
