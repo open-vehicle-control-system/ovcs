@@ -18,8 +18,6 @@ defmodule BNO085.I2C do
   @executable_channel 0x01
   @sensor_hub_control_channel 0x02
   @inport_sensor_reports_channel 0x03
-  @wake_inport_sensor_reports_channel 0x04
-  @gyro_rotation_vector_channel 0x05
   @published_report_ids [@accelerometer_report , @calibrated_gyroscope_report, @uncalibrated_gyroscope_report]
 
   @impl true

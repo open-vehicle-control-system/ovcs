@@ -142,31 +142,43 @@ jobs:
       - run: mix test --no-start
 
   elixir-compile:
-    name: Elixir · host compile · ${{ matrix.vehicle }}
+    # `mix compile --warnings-as-errors` only applies to the current
+    # project, not its path deps — so compiling vehicles here wouldn't
+    # catch warnings in e.g. ros_bridge / radio_control_bridge even
+    # though they're pulled in transitively via bridge_firmware. Each
+    # bridge lib needs its own matrix entry.
+    name: Elixir · host compile · ${{ matrix.project }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        vehicle: [ovcs1, ovcs_mini, obd2]
+        project:
+          - vehicles/ovcs1
+          - vehicles/ovcs_mini
+          - vehicles/obd2
+          - bridges/firmware
+          - bridges/radio_control_bridge
+          - bridges/ros_bridge
     env:
       MIX_ENV: dev
     defaults:
       run:
-        working-directory: vehicles/${{ matrix.vehicle }}
+        working-directory: ${{ matrix.project }}
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup-mise
       - name: Install system deps for Nerves NIFs
-        # Vehicles transitively depend on the firmware projects, whose
-        # nerves_uevent NIF needs libmnl.
+        # Vehicles / firmware projects transitively depend on
+        # nerves_uevent, whose NIF needs libmnl.
+        if: startsWith(matrix.project, 'vehicles/') || contains(matrix.project, 'firmware')
         run: sudo apt-get update && sudo apt-get install -y libmnl-dev
       - uses: actions/cache@v5
         with:
           path: |
-            vehicles/${{ matrix.vehicle }}/deps
-            vehicles/${{ matrix.vehicle }}/_build
-          key: compile-${{ matrix.vehicle }}-${{ hashFiles(format('vehicles/{0}/mix.lock', matrix.vehicle)) }}
-          restore-keys: compile-${{ matrix.vehicle }}-
+            ${{ matrix.project }}/deps
+            ${{ matrix.project }}/_build
+          key: compile-${{ matrix.project }}-${{ hashFiles(format('{0}/mix.lock', matrix.project)) }}
+          restore-keys: compile-${{ matrix.project }}-
       - run: mix deps.get
       - run: mix compile --warnings-as-errors
 

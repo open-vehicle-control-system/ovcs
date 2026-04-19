@@ -6,8 +6,6 @@ defmodule RadioControlBridge do
   """
   @behaviour OvcsBridge
 
-  alias RadioControlBridge.MavlinkForwarder
-
   if Mix.target() == :host do
     @impl OvcsBridge
     # MavlinkForwarder needs an ExpressLRS UART to register with,
@@ -19,7 +17,7 @@ defmodule RadioControlBridge do
     @impl OvcsBridge
     def children do
       [
-        {MavlinkForwarder, nil}
+        {RadioControlBridge.MavlinkForwarder, nil}
       ]
     end
   end

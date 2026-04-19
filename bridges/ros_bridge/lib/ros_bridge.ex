@@ -10,8 +10,6 @@ defmodule RosBridge do
   """
   @behaviour OvcsBridge
 
-  alias RosBridge.{ImuPublisher, JoyInterpreter}
-
   if Mix.target() == :host do
     @impl OvcsBridge
     # Host children stay minimal — no Zenoh dispatcher (needs an
@@ -26,8 +24,8 @@ defmodule RosBridge do
       [
         {BNO085.I2C, []},
         {ZenohMQTTRos2.Dispatcher, []},
-        {JoyInterpreter, []},
-        {ImuPublisher, [bno085_module: BNO085.I2C]}
+        {RosBridge.JoyInterpreter, []},
+        {RosBridge.ImuPublisher, [bno085_module: BNO085.I2C]}
       ]
     end
   end
