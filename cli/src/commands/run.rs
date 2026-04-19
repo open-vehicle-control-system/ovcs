@@ -36,7 +36,11 @@ pub fn run(vehicle_arg: Option<String>) -> Result<()> {
     println!("{}", "Booting vehicle locally…".bold());
     println!(
         "{}",
-        format!("→ {} BEAMs + mosquitto on :1884", roles.len()).cyan()
+        format!(
+            "→ {} BEAMs joined by OvcsBus.Cluster (Erlang distribution)",
+            roles.len()
+        )
+        .cyan()
     );
     for r in &roles {
         println!(
@@ -55,6 +59,12 @@ pub fn run(vehicle_arg: Option<String>) -> Result<()> {
         "Attach a shell with `./ovcs attach` in another terminal. Ctrl-C to stop.".dimmed()
     );
     println!();
+
+    // Each unique firmware directory (vms/firmware, infotainment/firmware,
+    // bridges/firmware) needs `mix deps.get` once before any BEAM spawned
+    // from it will compile. Run this first-and-synchronously so missing deps
+    // surface as a single clean error rather than N parallel failures.
+    ensure_deps(&roles)?;
 
     let mut children: Vec<(String, Child)> = Vec::new();
 
@@ -173,6 +183,53 @@ fn enumerate_roles(root: &std::path::Path, vehicle: &Vehicle) -> Result<Vec<Role
             })
         })
         .collect()
+}
+
+/// Run `mix deps.get` once per unique firmware directory in `roles`.
+/// Inherits stdio so the user sees the fetch output directly. If any dep
+/// fetch fails we bail before spawning any BEAM.
+fn ensure_deps(roles: &[Role]) -> Result<()> {
+    let mut seen: std::collections::HashSet<PathBuf> = Default::default();
+    for role in roles {
+        if !seen.insert(role.cwd.clone()) {
+            continue;
+        }
+
+        let label = role
+            .cwd
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("firmware");
+        let parent_label = role
+            .cwd
+            .parent()
+            .and_then(|p| p.file_name())
+            .and_then(|s| s.to_str())
+            .unwrap_or("");
+        let display = if parent_label.is_empty() {
+            label.to_string()
+        } else {
+            format!("{}/{}", parent_label, label)
+        };
+
+        println!("{}", format!("• mix deps.get in {}", display).dimmed());
+
+        let status = Command::new("mix")
+            .arg("deps.get")
+            .current_dir(&role.cwd)
+            .status()
+            .with_context(|| format!("failed to invoke mix in {}", role.cwd.display()))?;
+
+        if !status.success() {
+            anyhow::bail!(
+                "mix deps.get failed in {} (exit {:?})",
+                role.cwd.display(),
+                status.code()
+            );
+        }
+    }
+    println!();
+    Ok(())
 }
 
 /// Ask the vehicle module for each bridge's host-side CAN mapping so the
