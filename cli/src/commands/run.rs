@@ -92,11 +92,13 @@ pub fn run(vehicle_arg: Option<String>) -> Result<()> {
         children.push((role.label.clone(), child));
     }
 
-    // Happy path: Ctrl-C propagates SIGINT to the whole process group, all
-    // BEAMs shut down, we reap them and exit. Crash path: if any child dies
-    // early (BEAM crash, compile failure, …), don't leave the others
-    // running — propagate SIGINT to each survivor so they exit the same
-    // way they would under an actual Ctrl-C.
+    // Happy path: Ctrl-C propagates SIGINT to the whole process group; the
+    // Rust parent exits, the BEAMs are reaped by their parents' death. Crash
+    // path: if any child dies early (BEAM crash, compile failure, …), don't
+    // leave the others running — send SIGTERM to each survivor so BEAM runs
+    // `init:stop/0` and shuts down cleanly. (SIGINT would trip the BEAM's
+    // JCL break handler and leave each child sitting at an interactive
+    // prompt.)
     let mut propagated = false;
     loop {
         let mut any_dead = false;
@@ -117,9 +119,9 @@ pub fn run(vehicle_arg: Option<String>) -> Result<()> {
         }
         if any_dead && !propagated {
             for (_label, child) in children.iter() {
-                // try_wait has set the exit status on the already-dead children;
-                // ignore ESRCH on them and only signal the live ones.
-                unsafe { libc::kill(child.id() as libc::pid_t, libc::SIGINT) };
+                // try_wait has set the exit status on already-dead children;
+                // kill(2) on a reaped pid returns ESRCH, which we ignore.
+                unsafe { libc::kill(child.id() as libc::pid_t, libc::SIGTERM) };
             }
             propagated = true;
         }
