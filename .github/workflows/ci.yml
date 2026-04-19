@@ -81,7 +81,9 @@ jobs:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup-mise
       - name: Install system deps for Nerves NIFs
-        if: contains(matrix.project, 'firmware')
+        # Firmware projects and vehicles (transitive firmware deps) both
+        # need libmnl-dev for nerves_uevent's NIF.
+        if: contains(matrix.project, 'firmware') || startsWith(matrix.project, 'vehicles/')
         run: sudo apt-get update && sudo apt-get install -y libmnl-dev
       - uses: actions/cache@v5
         with:
@@ -125,7 +127,9 @@ jobs:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup-mise
       - name: Install system deps for Nerves NIFs
-        if: contains(matrix.project, 'firmware')
+        # Firmware projects and vehicles (transitive firmware deps) both
+        # need libmnl-dev for nerves_uevent's NIF.
+        if: contains(matrix.project, 'firmware') || startsWith(matrix.project, 'vehicles/')
         run: sudo apt-get update && sudo apt-get install -y libmnl-dev
       - uses: actions/cache@v5
         with:
@@ -152,6 +156,10 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup-mise
+      - name: Install system deps for Nerves NIFs
+        # Vehicles transitively depend on the firmware projects, whose
+        # nerves_uevent NIF needs libmnl.
+        run: sudo apt-get update && sudo apt-get install -y libmnl-dev
       - uses: actions/cache@v5
         with:
           path: |
@@ -171,6 +179,10 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup-mise
+      - name: Install rustfmt + clippy
+        # mise's rust install pulls rustc + cargo via rustup, but not
+        # the rustfmt / clippy components.
+        run: rustup component add rustfmt clippy
       - uses: actions/cache@v5
         with:
           path: |
