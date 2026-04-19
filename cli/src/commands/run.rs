@@ -58,11 +58,12 @@ pub fn run(vehicle_arg: Option<String>) -> Result<()> {
     );
     println!();
 
-    // Each unique firmware directory (vms/firmware, infotainment/firmware,
-    // bridges/firmware) needs `mix deps.get` once before any BEAM spawned
-    // from it will compile. Run this first-and-synchronously so missing deps
-    // surface as a single clean error rather than N parallel failures.
-    ensure_deps(&roles)?;
+    // Warm up each unique firmware directory's `_build/dev/` via its own
+    // `build.sh MIX_TARGET=host` — same script the deployed flow uses,
+    // just in host mode. Keeps prep logic (deps.get + compile, plus any
+    // future firmware-project-specific steps) in one place per firmware
+    // rather than split between the script and the CLI.
+    ensure_built(&roles, &vehicle)?;
 
     let mut children: Vec<(String, Child)> = Vec::new();
 
@@ -183,47 +184,36 @@ fn enumerate_roles(root: &std::path::Path, vehicle: &Vehicle) -> Result<Vec<Role
         .collect()
 }
 
-/// Run `mix deps.get` once per unique firmware directory in `roles`.
-/// Inherits stdio so the user sees the fetch output directly. If any dep
-/// fetch fails we bail before spawning any BEAM.
-fn ensure_deps(roles: &[Role]) -> Result<()> {
+/// Invoke `./build.sh` with `MIX_TARGET=host` once per unique firmware
+/// directory in `roles`. That script handles `mix deps.get` + `mix
+/// compile` on host mode (and `mix firmware` otherwise) — calling it
+/// here keeps build / run on the same entry point. Inherits stdio so
+/// the user sees the output directly; any non-zero exit bails before
+/// a single BEAM is spawned.
+fn ensure_built(roles: &[Role], vehicle: &Vehicle) -> Result<()> {
     let mut seen: std::collections::HashSet<PathBuf> = Default::default();
     for role in roles {
         if !seen.insert(role.cwd.clone()) {
             continue;
         }
 
-        let label = role
-            .cwd
-            .file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or("firmware");
-        let parent_label = role
-            .cwd
-            .parent()
-            .and_then(|p| p.file_name())
-            .and_then(|s| s.to_str())
-            .unwrap_or("");
-        let display = if parent_label.is_empty() {
-            label.to_string()
-        } else {
-            format!("{}/{}", parent_label, label)
-        };
+        let script = role.cwd.join("build.sh");
+        if !script.exists() {
+            anyhow::bail!(
+                "expected build.sh at {} — can't prepare host build",
+                script.display()
+            );
+        }
 
-        println!("{}", format!("• mix deps.get in {}", display).dimmed());
-
-        let status = Command::new("mix")
-            .arg("deps.get")
+        let status = Command::new(&script)
             .current_dir(&role.cwd)
+            .env("MIX_TARGET", "host")
+            .env("VEHICLE", &vehicle.module)
             .status()
-            .with_context(|| format!("failed to invoke mix in {}", role.cwd.display()))?;
+            .with_context(|| format!("failed to invoke {}", script.display()))?;
 
         if !status.success() {
-            anyhow::bail!(
-                "mix deps.get failed in {} (exit {:?})",
-                role.cwd.display(),
-                status.code()
-            );
+            anyhow::bail!("{} failed (exit {:?})", script.display(), status.code());
         }
     }
     println!();
