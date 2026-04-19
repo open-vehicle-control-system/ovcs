@@ -44,7 +44,7 @@ resulting `.fw` lands in `_build/${MIX_TARGET}_dev/nerves/images/`.
 
 | Variable | Required | Purpose |
 |----------|:-:|---------|
-| `VEHICLE` | yes | Top-level vehicle module (`Ovcs1`, `OvcsMini`, …) — picked up by `vms_api`'s `config/runtime.exs` and wired into the supervision tree |
+| `VEHICLE` | yes | Top-level vehicle module (`Ovcs1`, `OvcsMini`, …) — picked up by `vms/firmware/config/runtime.exs` via `OvcsVehicle.Firmware.resolve_vehicle/3`, which writes the VMS composer to `:vms_core, :vehicle` before `VmsCore.Application` starts |
 | `MIX_TARGET` | no | Nerves target atom (default: `ovcs_base_can_system_rpi4`) |
 
 ## Changing hardware target

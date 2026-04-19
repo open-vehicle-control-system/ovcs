@@ -55,7 +55,9 @@ see [`docs/getting_started.md`](../../docs/getting_started.md).
 
 ## Dependencies
 
-Path deps: [`vms_core`](../core), [`cantastic`](../../libraries/cantastic),
-[`ovcs_can`](../../libraries/ovcs_can), [`ovcs_bus`](../../libraries/ovcs_bus),
-[`ovcs_vehicle`](../../libraries/ovcs_vehicle). The active vehicle package
-under `vehicles/<name>/` is resolved at runtime from `VEHICLE`.
+Direct path dep: [`vms_core`](../core). Cantastic / OvcsBus / OvcsCan
+come in transitively through `vms_core`. The active vehicle package
+under `vehicles/<name>/` isn't a Mix dep — it's resolved at runtime
+from `VEHICLE` by `vms/firmware/config/runtime.exs` (via
+`OvcsVehicle.Firmware.resolve_vehicle/3`) before `VmsCore.Application`
+starts.
