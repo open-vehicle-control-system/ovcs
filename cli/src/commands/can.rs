@@ -4,6 +4,7 @@ use std::process::{Command, Stdio};
 
 use crate::prompt::choose;
 use crate::repo_root::repo_root;
+use crate::ui::{step, sub, sub_fail, sub_ok, sub_warn};
 use crate::vehicles::{self, Vehicle};
 
 fn resolve_vehicle(arg: Option<String>) -> Result<Vehicle> {
@@ -85,14 +86,10 @@ pub fn setup(arg: Option<String>) -> Result<()> {
 pub fn ensure_host_can(vehicle: &Vehicle) -> Result<()> {
     let interfaces = vehicles::host_can_interfaces(vehicle)?;
     if interfaces.is_empty() {
-        println!(
-            "{}",
-            format!(
-                "No host CAN interfaces declared by {}.default_can_mapping(:host).",
-                vehicle.module
-            )
-            .yellow()
-        );
+        step(&format!(
+            "{} declares no host CAN interfaces — nothing to do.",
+            vehicle.module
+        ));
         return Ok(());
     }
 
@@ -109,25 +106,21 @@ pub fn ensure_host_can(vehicle: &Vehicle) -> Result<()> {
     }
 
     if actions.is_empty() {
-        println!(
-            "{}",
-            format!(
-                "All virtual CAN interfaces for {} are already up — nothing to do.",
-                vehicle.module
-            )
-            .green()
-        );
+        step(&format!(
+            "All virtual CAN interfaces for {} are already up — nothing to do.",
+            vehicle.module
+        ));
         return Ok(());
     }
 
-    println!("{}", format!("{} requires:", vehicle.module).bold());
+    step(&format!("{} requires:", vehicle.module));
     for i in &interfaces {
-        println!("  - {}", i);
+        sub(i);
     }
     println!();
-    println!("{}", "Will run as root:".bold());
+    step("Will run as root:");
     for a in &actions {
-        println!("  - {}", a);
+        sub(a);
     }
     println!();
 
@@ -147,7 +140,7 @@ done
         ifaces = interfaces.join(" ")
     );
 
-    println!("{}", "→ sudo …".cyan());
+    step("Running sudo…");
     let mut cmd = Command::new("sudo");
     if sudo_cached() {
         cmd.arg("-n");
@@ -159,18 +152,18 @@ done
         .stderr(Stdio::inherit())
         .status()?;
     if !status.success() {
-        eprintln!("{}", "sudo failed".red());
+        sub_fail("sudo failed");
         std::process::exit(1);
     }
 
     println!();
-    println!(
-        "{}",
-        format!("Virtual CAN interfaces ready for {}:", vehicle.module).bold()
-    );
+    step(&format!(
+        "Virtual CAN interfaces ready for {}:",
+        vehicle.module
+    ));
     for iface in &interfaces {
         let state = iface_state_label(iface);
-        println!("  {} {}  {}", "✓".green(), iface, state.dimmed());
+        sub_ok(&format!("{}  {}", iface, state.dimmed()));
     }
     println!();
     if let Some(first) = interfaces.first() {
@@ -187,26 +180,23 @@ pub fn status(arg: Option<String>) -> Result<()> {
     let vehicle = resolve_vehicle(arg)?;
     let interfaces = vehicles::host_can_interfaces(&vehicle)?;
     if interfaces.is_empty() {
-        println!(
-            "{}",
-            format!("No host CAN interfaces declared by {}.", vehicle.module).yellow()
-        );
+        step(&format!(
+            "{} declares no host CAN interfaces.",
+            vehicle.module
+        ));
         return Ok(());
     }
-    println!(
-        "{}",
-        format!("{} host CAN interfaces:", vehicle.module).bold()
-    );
+    step(&format!("{} host CAN interfaces:", vehicle.module));
     let mut missing = 0;
     for iface in &interfaces {
         if !iface_exists(iface) {
-            println!("  {} {}  {}", "✗".red(), iface, "not created".dimmed());
+            sub_fail(&format!("{}  {}", iface, "not created".dimmed()));
             missing += 1;
         } else if !iface_up(iface) {
-            println!("  {} {}  {}", "⚠".yellow(), iface, "down".dimmed());
+            sub_warn(&format!("{}  {}", iface, "down".dimmed()));
             missing += 1;
         } else {
-            println!("  {} {}  {}", "✓".green(), iface, "up".dimmed());
+            sub_ok(&format!("{}  {}", iface, "up".dimmed()));
         }
     }
     println!();
