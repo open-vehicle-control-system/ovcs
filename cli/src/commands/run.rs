@@ -82,13 +82,20 @@ pub fn run(vehicle_arg: Option<String>) -> Result<()> {
         children.push((role.label.clone(), child));
     }
 
-    // Wait for any child to exit — typically Ctrl-C propagates to the whole
-    // process group, so they'll all go down together. Then reap the rest.
+    // Happy path: Ctrl-C propagates SIGINT to the whole process group, all
+    // BEAMs shut down, we reap them and exit. Crash path: if any child dies
+    // early (BEAM crash, compile failure, …), don't leave the others
+    // running — propagate SIGINT to each survivor so they exit the same
+    // way they would under an actual Ctrl-C.
+    let mut propagated = false;
     loop {
+        let mut any_dead = false;
         let mut all_dead = true;
         for (_label, child) in children.iter_mut() {
             match child.try_wait() {
-                Ok(Some(_)) => {}
+                Ok(Some(_)) => {
+                    any_dead = true;
+                }
                 Ok(None) => {
                     all_dead = false;
                 }
@@ -97,6 +104,14 @@ pub fn run(vehicle_arg: Option<String>) -> Result<()> {
         }
         if all_dead {
             break;
+        }
+        if any_dead && !propagated {
+            for (_label, child) in children.iter() {
+                // try_wait has set the exit status on the already-dead children;
+                // ignore ESRCH on them and only signal the live ones.
+                unsafe { libc::kill(child.id() as libc::pid_t, libc::SIGINT) };
+            }
+            propagated = true;
         }
         thread::sleep(std::time::Duration::from_millis(200));
     }
