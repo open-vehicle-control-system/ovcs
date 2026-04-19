@@ -15,6 +15,7 @@ if vehicle && config_env() != :test do
   vms = vehicle.vms()
 
   config :vms_core, :vehicle, vms
+  config :ovcs_vehicle, :module, vehicle
 
   config :cantastic,
     can_network_mappings: {

@@ -46,6 +46,7 @@ defmodule OvcsBridge.Supervisor do
 
     bridge_children = Enum.flat_map(bridges, & &1.children())
     relay_children = relay_children(entry, bridges)
+    cluster_children = cluster_child()
 
     Logger.info(
       "OvcsBridge.Supervisor starting #{vehicle_name()}/#{firmware_id()} " <>
@@ -53,7 +54,14 @@ defmodule OvcsBridge.Supervisor do
         if(relay_children == [], do: "", else: " + MQTT relay")
     )
 
-    Supervisor.init(bridge_children ++ relay_children, strategy: :one_for_one)
+    Supervisor.init(cluster_children ++ bridge_children ++ relay_children, strategy: :one_for_one)
+  end
+
+  defp cluster_child do
+    case Application.get_env(:ovcs_vehicle, :module) do
+      nil -> []
+      mod -> [{OvcsBus.Cluster, vehicle: mod}]
+    end
   end
 
   defp ensure_bridge_started(bridge_module) do

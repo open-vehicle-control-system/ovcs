@@ -11,6 +11,7 @@ if vehicle && config_env() != :test do
   infotainment = vehicle.infotainment()
 
   config :infotainment_core, :vehicle, infotainment
+  config :ovcs_vehicle, :module, vehicle
 
   config :cantastic,
     can_network_mappings: fn ->
