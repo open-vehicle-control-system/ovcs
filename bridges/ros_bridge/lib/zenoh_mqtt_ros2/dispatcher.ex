@@ -92,7 +92,7 @@ defmodule ZenohMQTTRos2.Dispatcher do
     GenServer.call(__MODULE__, {:start_subscriber, topic})
   end
 
-  def start_publisher(message_type, topic) do
+  def start_publisher(_message_type, _topic) do
   end
 
   defp extract_message_type(topic) do

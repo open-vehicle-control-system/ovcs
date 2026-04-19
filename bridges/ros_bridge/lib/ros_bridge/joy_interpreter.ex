@@ -41,7 +41,7 @@ defmodule RosBridge.JoyInterpreter do
   end
 
   @impl true
-  def handle_info({:mqtt_message, {topic, message}}, state) do
+  def handle_info({:mqtt_message, {_topic, message}}, state) do
     # Logger.debug("#{__MODULE__} #{inspect message}")
     :ok = Emitter.update(:ovcs, "ros_control1", fn (data) ->
       %{data |
