@@ -143,11 +143,7 @@ end
     Ok(map)
 }
 
-pub fn run_snippet_public(path: &Path, snippet: &str) -> Result<Option<String>> {
-    run_snippet(path, snippet)
-}
-
-fn run_snippet(path: &Path, snippet: &str) -> Result<Option<String>> {
+pub(crate) fn run_snippet(path: &Path, snippet: &str) -> Result<Option<String>> {
     let env: HashMap<String, String> =
         std::iter::once(("MIX_ENV".to_string(), "dev".to_string())).collect();
     let (code, stdout) = run_capture(

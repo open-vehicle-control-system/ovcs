@@ -8,9 +8,9 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use crate::ansi::strip_ansi;
 use crate::commands::run_ui::{self, Msg, NodeHandle};
-use crate::prompt::choose_vehicle;
-use crate::repo_root::repo_root;
+use crate::resolve_args::resolve_vehicle;
 use crate::ui::{step, sub, sub_miss, sub_ok};
 use crate::vehicles;
 
@@ -23,17 +23,25 @@ const BACKOFF_CAP: Duration = Duration::from_secs(10);
 /// Connect timeout on SSH sessions so we don't sit forever on an
 /// unresponsive host and miss shutdown signals.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+/// Initial reconnect backoff — bumps by `next_backoff` up to `BACKOFF_CAP`.
+const INITIAL_BACKOFF: Duration = Duration::from_secs(1);
+/// A session is considered "healthy" (and backoff is reset to
+/// `INITIAL_BACKOFF`) only if it stayed up this long.
+const HEALTHY_SESSION: Duration = Duration::from_secs(30);
+/// How long `run_local_node` waits on stdin before polling for
+/// child death / epmd deregistration / shutdown.
+const STDIN_RECV_TIMEOUT: Duration = Duration::from_millis(200);
+/// Interval between epmd re-checks while a local trio is up.
+const EPMD_RECHECK_INTERVAL: Duration = Duration::from_secs(1);
+/// Poll step used by `interruptible_sleep` / `interruptible_sleep_async`
+/// — the tick at which the shutdown flag is checked during backoff.
+const SHUTDOWN_POLL: Duration = Duration::from_millis(100);
+/// Poll step used by `wait_until_registered` while waiting for a BEAM
+/// to appear in epmd after boot / reconnect.
+const EPMD_REGISTER_POLL: Duration = Duration::from_millis(250);
 
 pub fn run(vehicle_arg: Option<String>) -> Result<()> {
-    let root = repo_root()?;
-    let list = vehicles::list(&root)?;
-    let vehicle = match vehicle_arg {
-        Some(dir) => list
-            .into_iter()
-            .find(|v| v.dir == dir)
-            .ok_or_else(|| anyhow!("Unknown vehicle {}", dir))?,
-        None => choose_vehicle(&list)?,
-    };
+    let vehicle = resolve_vehicle(vehicle_arg)?;
 
     step(&format!("vehicle: {} ({})", vehicle.module, vehicle.dir));
 
@@ -333,16 +341,21 @@ defmodule OvcsAttachMonitor do
   @moduledoc false
 
   # CAN traffic is observed via `candump -tz <iface>` one Port per
-  # unique vcan interface. We deliberately bypass `Cantastic.Receiver`:
-  # Cantastic only forwards frames whose ID is in a network's
-  # `received_frames` list, so its subscribers would miss every frame
-  # that same node *emits* (which on host dev is most of the traffic).
-  # candump taps the kernel CAN socket directly and sees every frame
-  # on the bus regardless of YAML declarations. Bus (OvcsBus) is still
-  # driven by a Phoenix.PubSub subscribe since it's node-local
-  # messaging, not CAN bus.
+  # unique vcan interface. We bypass `Cantastic.Receiver` — it only
+  # forwards frames whose ID is in a network's `received_frames` list
+  # and silently drops everything else (including frames the same node
+  # emits). candump taps the kernel CAN socket directly and sees every
+  # frame on the bus regardless of YAML declarations. Bus (OvcsBus)
+  # stays on a Phoenix.PubSub subscribe since it's node-local.
+  #
+  # Observed frames are decoded into named signals by looking up the
+  # Cantastic frame spec and running it through `Frame.interpret/2`,
+  # so the output reads the same way as the bus pane rather than raw
+  # hex bytes. Unknown IDs fall back to hex.
 
   def start do
+    build_spec_cache()
+
     if vms?() do
       spawn(&bus_loop/0)
     end
@@ -361,11 +374,62 @@ defmodule OvcsAttachMonitor do
 
   defp interfaces do
     try do
-      Cantastic.ConfigurationStore.networks()
-      |> Enum.map(& &1.interface)
-      |> Enum.uniq()
+      networks() |> Enum.map(& &1.interface) |> Enum.uniq()
     catch
       _, _ -> []
+    end
+  end
+
+  defp networks do
+    try do
+      Cantastic.ConfigurationStore.networks()
+    catch
+      _, _ -> []
+    end
+  end
+
+  # -- spec cache -----------------------------------------------------
+  #
+  # Each iface gets one `{network_name, %{frame_id => FrameSpecification}}`
+  # entry keyed under `:persistent_term`. We build the specs ourselves
+  # via `Cantastic.FrameSpecification.from_yaml/3` from the raw YAML
+  # blobs on `network_config` — that way we get both emitted and
+  # received frames (the Receiver GenServer state only holds received
+  # ones) and we don't depend on the Receiver having drained its
+  # mailbox, which we can't assume on host dev.
+
+  defp build_spec_cache do
+    Enum.each(networks(), fn net ->
+      emitted =
+        build_specs(net.network_name, net.network_config[:emitted_frames] || [], :emit)
+
+      received =
+        build_specs(net.network_name, net.network_config[:received_frames] || [], :receive)
+
+      :persistent_term.put({:ovcs_attach_specs, net.interface}, %{
+        network_name: net.network_name,
+        specs: Map.merge(received, emitted)
+      })
+    end)
+  end
+
+  defp build_specs(network_name, yaml_specs, direction) do
+    Enum.reduce(yaml_specs, %{}, fn yaml, acc ->
+      try do
+        {:ok, spec} = Cantastic.FrameSpecification.from_yaml(network_name, yaml, direction)
+        Map.put(acc, spec.id, spec)
+      rescue
+        _ -> acc
+      catch
+        _, _ -> acc
+      end
+    end)
+  end
+
+  defp lookup_spec(iface, id) do
+    case :persistent_term.get({:ovcs_attach_specs, iface}, nil) do
+      nil -> {to_string(iface), nil}
+      %{network_name: net, specs: specs} -> {Atom.to_string(net), Map.get(specs, id)}
     end
   end
 
@@ -436,13 +500,65 @@ defmodule OvcsAttachMonitor do
   # candump -tz produces lines like:
   #   " (0.000123)  vcan0  1A0   [8]  00 00 01 FF FF FF 7F 00"
   defp process_line(iface, line) do
-    case Regex.run(~r/^\s*\([\d.]+\)\s+\S+\s+([0-9A-Fa-f]+)\s+\[\d+\]\s*(.*)$/, line) do
-      [_, id, data] ->
-        OvcsAttachDiag.log("OVCS_CAN\t#{iface}\t0x#{String.upcase(id)}\t#{String.trim(data)}")
+    case Regex.run(~r/^\s*\([\d.]+\)\s+\S+\s+([0-9A-Fa-f]+)\s+\[(\d+)\]\s*(.*)$/, line) do
+      [_, id_hex, dlc, data_hex] ->
+        id = String.to_integer(id_hex, 16)
+        byte_number = String.to_integer(dlc)
+        raw_data = hex_bytes_to_binary(data_hex)
+        {network, spec} = lookup_spec(iface, id)
+
+        emit_frame(network, id_hex, byte_number, raw_data, data_hex, spec)
 
       _ ->
         :ok
     end
+  end
+
+  defp hex_bytes_to_binary(hex_bytes) do
+    hex_bytes
+    |> String.split()
+    |> Enum.reduce(<<>>, fn b, acc ->
+      <<acc::binary, String.to_integer(b, 16)>>
+    end)
+  end
+
+  # Build a bare Frame and let Cantastic.Frame.interpret/2 populate
+  # the signals map. Emit signals and raw hex as two separate
+  # tab-separated fields so the Rust side can toggle which half of
+  # the row is shown without reparsing. If decoding raises, signals
+  # is empty.
+  defp emit_frame(network, id_hex, _byte_number, _raw_data, data_hex, nil) do
+    OvcsAttachDiag.log(
+      "OVCS_CAN\t#{network}\t0x#{String.upcase(id_hex)}\t\t#{String.trim(data_hex)}"
+    )
+  end
+
+  defp emit_frame(network, id_hex, byte_number, raw_data, data_hex, spec) do
+    frame = %Cantastic.Frame{
+      id: String.to_integer(id_hex, 16),
+      name: spec.name,
+      network_name: String.to_atom(network),
+      byte_number: byte_number,
+      raw_data: raw_data,
+      signals: %{}
+    }
+
+    raw = String.trim(data_hex)
+
+    signals =
+      try do
+        {:ok, interpreted} = Cantastic.Frame.interpret(frame, spec)
+
+        interpreted.signals
+        |> Enum.map(fn {k, sig} -> "#{k}=#{inspect(sig.value)}" end)
+        |> Enum.join(" ")
+      rescue
+        _ -> ""
+      catch
+        _, _ -> ""
+      end
+
+    OvcsAttachDiag.log("OVCS_CAN\t#{network}\t#{spec.name}\t#{signals}\t#{raw}")
   end
 end
 
@@ -511,7 +627,7 @@ fn run_local_node(
     tx: Sender<Msg>,
     shutdown: Arc<AtomicBool>,
 ) {
-    let mut backoff = Duration::from_secs(1);
+    let mut backoff = INITIAL_BACKOFF;
     let mut attempt: u64 = 0;
 
     while !shutdown.load(Ordering::Relaxed) {
@@ -527,46 +643,14 @@ fn run_local_node(
         }
 
         match spawn_trio(&label, &full_node, pid, idx, attempt, &tx) {
-            Ok(mut trio) => {
+            Ok(trio) => {
                 // Fresh session: discard any input queued while down.
                 while stdin_rx.try_recv().is_ok() {}
 
                 let _ = tx.send(Msg::NodeUp(label.clone()));
-                let started = Instant::now();
-                let mut last_epmd = Instant::now();
-
-                // Forward stdin and watch for child death + node
-                // disappearance. `recv_timeout` gives us a wake-up so
-                // we can poll without spinning.
-                loop {
-                    if shutdown.load(Ordering::Relaxed) {
-                        break;
-                    }
-                    match stdin_rx.recv_timeout(Duration::from_millis(200)) {
-                        Ok(line) => {
-                            if trio.shell_stdin.write_all(line.as_bytes()).is_err() {
-                                break;
-                            }
-                            let _ = trio.shell_stdin.flush();
-                        }
-                        Err(RecvTimeoutError::Timeout) => {
-                            if trio.any_dead() {
-                                break;
-                            }
-                            if last_epmd.elapsed() >= Duration::from_secs(1) {
-                                last_epmd = Instant::now();
-                                if !node_registered(&full_node) {
-                                    break;
-                                }
-                            }
-                        }
-                        Err(RecvTimeoutError::Disconnected) => break,
-                    }
-                }
-
-                trio.kill_all();
-                if started.elapsed() > Duration::from_secs(30) {
-                    backoff = Duration::from_secs(1);
+                let session_elapsed = run_one_session(trio, &full_node, &stdin_rx, &shutdown);
+                if session_elapsed > HEALTHY_SESSION {
+                    backoff = INITIAL_BACKOFF;
                 }
                 let _ = tx.send(Msg::NodeDown(label.clone()));
             }
@@ -590,6 +674,50 @@ fn run_local_node(
         interruptible_sleep(backoff, &shutdown);
         backoff = next_backoff(backoff);
     }
+}
+
+/// Pump stdin into the trio's shell and watch for child death or the remote
+/// node disappearing from epmd. Returns the total session duration so the
+/// caller can decide whether to reset the reconnect backoff.
+fn run_one_session(
+    mut trio: Trio,
+    full_node: &str,
+    stdin_rx: &Receiver<String>,
+    shutdown: &Arc<AtomicBool>,
+) -> Duration {
+    let started = Instant::now();
+    let mut last_epmd = Instant::now();
+
+    // Forward stdin and watch for child death + node disappearance.
+    // `recv_timeout` gives us a wake-up so we can poll without spinning.
+    loop {
+        if shutdown.load(Ordering::Relaxed) {
+            break;
+        }
+        match stdin_rx.recv_timeout(STDIN_RECV_TIMEOUT) {
+            Ok(line) => {
+                if trio.shell_stdin.write_all(line.as_bytes()).is_err() {
+                    break;
+                }
+                let _ = trio.shell_stdin.flush();
+            }
+            Err(RecvTimeoutError::Timeout) => {
+                if trio.any_dead() {
+                    break;
+                }
+                if last_epmd.elapsed() >= EPMD_RECHECK_INTERVAL {
+                    last_epmd = Instant::now();
+                    if !node_registered(full_node) {
+                        break;
+                    }
+                }
+            }
+            Err(RecvTimeoutError::Disconnected) => break,
+        }
+    }
+
+    trio.kill_all();
+    started.elapsed()
 }
 
 /// A connected trio of remsh subprocesses plus the shell's stdin handle.
@@ -689,13 +817,12 @@ where
 }
 
 fn interruptible_sleep(total: Duration, shutdown: &AtomicBool) {
-    let step = Duration::from_millis(100);
     let start = Instant::now();
     while start.elapsed() < total {
         if shutdown.load(Ordering::Relaxed) {
             return;
         }
-        thread::sleep(step);
+        thread::sleep(SHUTDOWN_POLL);
     }
 }
 
@@ -740,7 +867,6 @@ fn node_registered(full_node: &str) -> bool {
 /// checks. Returns `false` if `shutdown` flipped before the node came
 /// up — the caller should exit in that case.
 fn wait_until_registered(full_node: &str, shutdown: &AtomicBool) -> bool {
-    let step = Duration::from_millis(250);
     loop {
         if shutdown.load(Ordering::Relaxed) {
             return false;
@@ -748,7 +874,7 @@ fn wait_until_registered(full_node: &str, shutdown: &AtomicBool) -> bool {
         if node_registered(full_node) {
             return true;
         }
-        thread::sleep(step);
+        thread::sleep(EPMD_REGISTER_POLL);
     }
 }
 
@@ -898,7 +1024,7 @@ async fn run_device_supervisor(
         }
     });
 
-    let mut backoff = Duration::from_secs(1);
+    let mut backoff = INITIAL_BACKOFF;
 
     while !shutdown.load(Ordering::Relaxed) {
         let (ain_tx, ain_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
@@ -916,10 +1042,10 @@ async fn run_device_supervisor(
                 node: label.clone(),
                 line: format!("[ovcs] session: {}", e),
             });
-        } else if started.elapsed() > Duration::from_secs(30) {
+        } else if started.elapsed() > HEALTHY_SESSION {
             // The session stayed up long enough to count as healthy;
             // reset the backoff so the next reconnect is quick.
-            backoff = Duration::from_secs(1);
+            backoff = INITIAL_BACKOFF;
         }
         let _ = tx.send(Msg::NodeDown(label.clone()));
 
@@ -941,13 +1067,12 @@ async fn run_device_supervisor(
 }
 
 async fn interruptible_sleep_async(total: Duration, shutdown: &AtomicBool) {
-    let step = Duration::from_millis(100);
     let start = tokio::time::Instant::now();
     while start.elapsed() < total {
         if shutdown.load(Ordering::Relaxed) {
             return;
         }
-        tokio::time::sleep(step).await;
+        tokio::time::sleep(SHUTDOWN_POLL).await;
     }
 }
 
@@ -962,71 +1087,10 @@ async fn run_device_once(
     mut ain_rx: tokio::sync::mpsc::UnboundedReceiver<String>,
     tx: &Sender<Msg>,
 ) -> Result<()> {
-    use russh::client;
-    use russh::keys::ssh_key::PublicKey;
     use russh::ChannelMsg;
 
-    struct H;
-    impl client::Handler for H {
-        type Error = russh::Error;
-        async fn check_server_key(&mut self, _: &PublicKey) -> Result<bool, Self::Error> {
-            Ok(true)
-        }
-    }
-
-    let config = Arc::new(client::Config::default());
-    let mut handle = tokio::time::timeout(CONNECT_TIMEOUT, client::connect(config, (host, 22), H))
-        .await
-        .with_context(|| format!("connect {} timed out after {:?}", host, CONNECT_TIMEOUT))?
-        .with_context(|| format!("connect {} failed", host))?;
-
-    // Authenticate with ssh-agent identities.
-    let mut agent = russh::keys::agent::client::AgentClient::connect_env()
-        .await
-        .context("ssh-agent unreachable — is SSH_AUTH_SOCK set?")?;
-    let identities = agent
-        .request_identities()
-        .await
-        .context("ssh-agent identities request failed")?;
-    let mut authed = false;
-    for key in identities {
-        let auth = handle
-            .authenticate_publickey_with(SSH_USER, key, None, &mut agent)
-            .await?;
-        if auth.success() {
-            authed = true;
-            break;
-        }
-    }
-    if !authed {
-        bail!("ssh auth failed for {}@{}", SSH_USER, host);
-    }
-
-    // Three channels, all shell subsystem:
-    // - logs   : RingLogger.attach + sleep, stdout feeds log pane.
-    // - shell  : interactive IEx for user input.
-    // - monitor: OvcsBus + Cantastic subscription; stdout is the stream of
-    //            tagged `OVCS_BUS` / `OVCS_CAN` lines consumed by the
-    //            bus/can panes.
-    let mut log_ch = handle.channel_open_session().await?;
-    log_ch
-        .request_pty(false, "xterm", 120, 40, 0, 0, &[])
-        .await?;
-    log_ch.request_shell(false).await?;
-    log_ch.data(LOG_INIT_SNIPPET.as_bytes()).await?;
-
-    let mut shell_ch = handle.channel_open_session().await?;
-    shell_ch
-        .request_pty(false, "xterm", 120, 40, 0, 0, &[])
-        .await?;
-    shell_ch.request_shell(false).await?;
-
-    let mut mon_ch = handle.channel_open_session().await?;
-    mon_ch
-        .request_pty(false, "xterm", 120, 40, 0, 0, &[])
-        .await?;
-    mon_ch.request_shell(false).await?;
-    mon_ch.data(MONITOR_SNIPPET.as_bytes()).await?;
+    let mut handle = connect_ssh(host).await?;
+    let (mut log_ch, mut shell_ch, mut mon_ch) = open_ssh_channels(&mut handle).await?;
 
     let _ = tx.send(Msg::NodeUp(label.to_string()));
 
@@ -1116,9 +1180,97 @@ async fn run_device_once(
     Ok(())
 }
 
+/// russh `client::Handler` that accepts any server host key. Private to
+/// attach.rs — the TUI already requires the user to have cleared the host
+/// verification via plain `ssh` once, and we can't prompt from inside a
+/// Ratatui render loop.
+struct SshAcceptAllKeys;
+
+impl russh::client::Handler for SshAcceptAllKeys {
+    type Error = russh::Error;
+    async fn check_server_key(
+        &mut self,
+        _: &russh::keys::ssh_key::PublicKey,
+    ) -> Result<bool, Self::Error> {
+        Ok(true)
+    }
+}
+
+/// Connect + authenticate an SSH session against `host` using the
+/// user's ssh-agent identities. Returns the handle the caller can open
+/// channels against. Returns a descriptive `anyhow::Error` on any
+/// failure in the connect / auth chain.
+async fn connect_ssh(host: &str) -> Result<russh::client::Handle<SshAcceptAllKeys>> {
+    let config = Arc::new(russh::client::Config::default());
+    let mut handle = tokio::time::timeout(
+        CONNECT_TIMEOUT,
+        russh::client::connect(config, (host, 22), SshAcceptAllKeys),
+    )
+    .await
+    .with_context(|| format!("connect {} timed out after {:?}", host, CONNECT_TIMEOUT))?
+    .with_context(|| format!("connect {} failed", host))?;
+
+    let mut agent = russh::keys::agent::client::AgentClient::connect_env()
+        .await
+        .context("ssh-agent unreachable — is SSH_AUTH_SOCK set?")?;
+    let identities = agent
+        .request_identities()
+        .await
+        .context("ssh-agent identities request failed")?;
+    for key in identities {
+        let auth = handle
+            .authenticate_publickey_with(SSH_USER, key, None, &mut agent)
+            .await?;
+        if auth.success() {
+            return Ok(handle);
+        }
+    }
+    bail!("ssh auth failed for {}@{}", SSH_USER, host);
+}
+
+/// Open the three session-shell channels used by `run_device_once`.
+///
+/// - logs: RingLogger.attach + sleep, stdout feeds log pane.
+/// - shell: interactive IEx for user input.
+/// - monitor: OvcsBus + Cantastic subscription; stdout is the stream of
+///   tagged `OVCS_BUS` / `OVCS_CAN` lines consumed by the bus/can panes.
+///
+/// Returns them in `(log, shell, monitor)` order so destructuring matches
+/// the order they are read in the caller's `tokio::select!` loop.
+async fn open_ssh_channels(
+    handle: &mut russh::client::Handle<SshAcceptAllKeys>,
+) -> Result<(
+    russh::Channel<russh::client::Msg>,
+    russh::Channel<russh::client::Msg>,
+    russh::Channel<russh::client::Msg>,
+)> {
+    let log_ch = handle.channel_open_session().await?;
+    log_ch
+        .request_pty(false, "xterm", 120, 40, 0, 0, &[])
+        .await?;
+    log_ch.request_shell(false).await?;
+    log_ch.data(LOG_INIT_SNIPPET.as_bytes()).await?;
+
+    let shell_ch = handle.channel_open_session().await?;
+    shell_ch
+        .request_pty(false, "xterm", 120, 40, 0, 0, &[])
+        .await?;
+    shell_ch.request_shell(false).await?;
+
+    let mon_ch = handle.channel_open_session().await?;
+    mon_ch
+        .request_pty(false, "xterm", 120, 40, 0, 0, &[])
+        .await?;
+    mon_ch.request_shell(false).await?;
+    mon_ch.data(MONITOR_SNIPPET.as_bytes()).await?;
+
+    Ok((log_ch, shell_ch, mon_ch))
+}
+
 fn split_lines(bytes: &[u8]) -> Vec<String> {
-    let s = String::from_utf8_lossy(bytes);
-    s.split('\n')
+    let output = String::from_utf8_lossy(bytes);
+    output
+        .split('\n')
         .map(|l| l.trim_end_matches('\r').to_string())
         // Logger emits ANSI colour codes — a "blank" line may carry
         // just CSI resets, so check emptiness after stripping.
@@ -1128,22 +1280,38 @@ fn split_lines(bytes: &[u8]) -> Vec<String> {
 
 // ---------- local stdio → Msg dispatch ----------
 
-fn forward_log<R: std::io::Read + Send + 'static>(reader: R, node: &str, tx: &Sender<Msg>) {
-    let buf = BufReader::new(reader);
-    for line in buf.lines().map_while(|l| l.ok()) {
-        if is_iex_noise(&line) {
-            continue;
-        }
-        if tx
-            .send(Msg::Log {
-                node: node.to_string(),
-                line,
-            })
-            .is_err()
-        {
+/// Read `reader` line by line, calling `handle_line(line, node, tx)` on
+/// each. `handle_line` returns `false` to signal the reader should
+/// stop (typically because the tx channel is gone). This is the one
+/// pump shared by log / shell / monitor pipes — the three forms differ
+/// only in their per-line decisions, which now live in dedicated
+/// `dispatch_*_line` helpers.
+fn forward_stream<Reader, Handle>(reader: Reader, node: &str, tx: &Sender<Msg>, handle_line: Handle)
+where
+    Reader: std::io::Read + Send + 'static,
+    Handle: Fn(&str, &str, &Sender<Msg>) -> bool,
+{
+    let buffered = BufReader::new(reader);
+    for line in buffered.lines().map_while(|result| result.ok()) {
+        if !handle_line(&line, node, tx) {
             break;
         }
     }
+}
+
+fn forward_log<R: std::io::Read + Send + 'static>(reader: R, node: &str, tx: &Sender<Msg>) {
+    forward_stream(reader, node, tx, dispatch_log_line);
+}
+
+fn dispatch_log_line(line: &str, node: &str, tx: &Sender<Msg>) -> bool {
+    if is_iex_noise(line) {
+        return true;
+    }
+    tx.send(Msg::Log {
+        node: node.to_string(),
+        line: line.to_string(),
+    })
+    .is_ok()
 }
 
 /// The log-side remsh is an IEx session we hijacked for log streaming — its
@@ -1162,7 +1330,7 @@ fn is_iex_noise(line: &str) -> bool {
     // leaves an invisible but non-empty string and blank "[label] " rows
     // leak into the log pane.
     let stripped = strip_ansi(line);
-    let t = stripped.trim();
+    let trimmed = stripped.trim();
     const NOISE_PREFIXES: &[&str] = &[
         "iex(",               // interactive prompt
         "iex:",               // stacktrace frame (file:line) from iex eval
@@ -1177,10 +1345,10 @@ fn is_iex_noise(line: &str) -> bool {
     // `(ring_logger 0.11.5) RingLogger.attach()` — the leading `(` isn't
     // covered by any user log line we care about, so treating bare
     // library-name-in-parens frames as noise is safe.
-    if t.is_empty() || NOISE_PREFIXES.iter().any(|p| t.starts_with(p)) {
+    if trimmed.is_empty() || NOISE_PREFIXES.iter().any(|p| trimmed.starts_with(p)) {
         return true;
     }
-    if let Some(inside) = t.strip_prefix('(') {
+    if let Some(inside) = trimmed.strip_prefix('(') {
         if let Some((lib, _)) = inside.split_once(')') {
             if is_library_tag(lib) {
                 return true;
@@ -1203,56 +1371,28 @@ fn is_library_tag(s: &str) -> bool {
         .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
 }
 
-/// Remove ANSI CSI escape sequences (`ESC [ … letter`) from `line`.
-/// Preserves non-escape characters verbatim.
-fn strip_ansi(line: &str) -> String {
-    let mut out = String::with_capacity(line.len());
-    let mut chars = line.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c == '\x1b' && chars.peek() == Some(&'[') {
-            chars.next(); // consume '['
-            for ec in chars.by_ref() {
-                if ec.is_ascii_alphabetic() {
-                    break;
-                }
-            }
-        } else {
-            out.push(c);
-        }
-    }
-    out
+fn forward_shell<R: std::io::Read + Send + 'static>(reader: R, node: &str, tx: &Sender<Msg>) {
+    forward_stream(reader, node, tx, dispatch_shell_line);
 }
 
-fn forward_shell<R: std::io::Read + Send + 'static>(reader: R, node: &str, tx: &Sender<Msg>) {
-    let buf = BufReader::new(reader);
-    for line in buf.lines().map_while(|l| l.ok()) {
-        if tx
-            .send(Msg::Shell {
-                node: node.to_string(),
-                line,
-            })
-            .is_err()
-        {
-            break;
-        }
-    }
+fn dispatch_shell_line(line: &str, node: &str, tx: &Sender<Msg>) -> bool {
+    tx.send(Msg::Shell {
+        node: node.to_string(),
+        line: line.to_string(),
+    })
+    .is_ok()
 }
 
 /// Reader thread for the monitor remsh's stdout.
 ///
 /// The snippet we injected prints one tab-separated tagged line per event:
 ///   `OVCS_BUS\t<source>\t<name>\t<inspect(value)>`
-///   `OVCS_CAN\t<network>\t<frame>\t<key=val key=val …>`
+///   `OVCS_CAN\t<network>\t<frame>\t<signals>\t<raw_hex>`
 ///
 /// Anything else (iex banner, return values from the init snippet) is noise
 /// from the remsh itself — drop it instead of polluting the log pane.
 fn forward_monitor<R: std::io::Read + Send + 'static>(reader: R, node: &str, tx: &Sender<Msg>) {
-    let buf = BufReader::new(reader);
-    for line in buf.lines().map_while(|l| l.ok()) {
-        if !dispatch_monitor_line(&line, node, tx) {
-            break;
-        }
-    }
+    forward_stream(reader, node, tx, dispatch_monitor_line);
 }
 
 /// Parse one monitor line. Returns `false` if the channel is gone and the
@@ -1263,7 +1403,10 @@ fn dispatch_monitor_line(raw: &str, node: &str, tx: &Sender<Msg>) -> bool {
     if line.is_empty() {
         return true;
     }
-    let mut parts = line.splitn(4, '\t');
+    // splitn(5) covers the widest case (OVCS_CAN carries 4 body
+    // fields); OVCS_BUS only has 3 body fields and its tail tokens
+    // are left empty, which is fine.
+    let mut parts = line.splitn(5, '\t');
     let tag = parts.next().unwrap_or("");
     match tag {
         "OVCS_BUS" => {
@@ -1282,11 +1425,13 @@ fn dispatch_monitor_line(raw: &str, node: &str, tx: &Sender<Msg>) -> bool {
             let network = parts.next().unwrap_or("").to_string();
             let frame = parts.next().unwrap_or("").to_string();
             let signals = parts.next().unwrap_or("").to_string();
+            let raw = parts.next().unwrap_or("").to_string();
             tx.send(Msg::CanFrame {
                 node: node.to_string(),
                 network,
                 frame,
                 signals,
+                raw,
             })
             .is_ok()
         }

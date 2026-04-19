@@ -1,6 +1,7 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 
+mod ansi;
 mod commands;
 mod firmware;
 mod prompt;

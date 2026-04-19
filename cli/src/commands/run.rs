@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use owo_colors::OwoColorize;
 use std::collections::HashMap;
@@ -8,23 +8,17 @@ use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
+use crate::ansi::{is_blank_after_ansi, strip_ansi};
 use crate::commands::can::ensure_host_can;
 use crate::firmware;
-use crate::prompt::choose_vehicle;
 use crate::repo_root::repo_root;
+use crate::resolve_args::resolve_vehicle;
 use crate::ui::{step, sub};
 use crate::vehicles::{self, Vehicle};
 
 pub fn run(vehicle_arg: Option<String>) -> Result<()> {
+    let vehicle = resolve_vehicle(vehicle_arg)?;
     let root = repo_root()?;
-    let list = vehicles::list(&root)?;
-    let vehicle = match vehicle_arg {
-        Some(dir) => list
-            .into_iter()
-            .find(|v| v.dir == dir)
-            .ok_or_else(|| anyhow!("Unknown vehicle {}", dir))?,
-        None => choose_vehicle(&list)?,
-    };
 
     ensure_host_can(&vehicle)?;
 
@@ -508,7 +502,7 @@ end
 "##,
         module = vehicle.module,
     );
-    match vehicles::run_snippet_public(&vehicle.path, &snippet)? {
+    match vehicles::run_snippet(&vehicle.path, &snippet)? {
         None => Ok(HashMap::new()),
         Some(output) => {
             let mut map = HashMap::new();
@@ -542,44 +536,6 @@ where
         let _ = writeln!(sink, "[{}] {}", label, line);
         let _ = sink.flush();
     }
-}
-
-fn strip_ansi(line: &str) -> String {
-    let mut out = String::with_capacity(line.len());
-    let mut chars = line.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c == '\x1b' && chars.peek() == Some(&'[') {
-            chars.next();
-            for ec in chars.by_ref() {
-                if ec.is_ascii_alphabetic() {
-                    break;
-                }
-            }
-        } else {
-            out.push(c);
-        }
-    }
-    out
-}
-
-fn is_blank_after_ansi(line: &str) -> bool {
-    // Strip CSI escape sequences (ESC `[` … letter) before checking.
-    let mut chars = line.chars().peekable();
-    let mut has_content = false;
-    while let Some(c) = chars.next() {
-        if c == '\x1b' && chars.peek() == Some(&'[') {
-            chars.next(); // consume '['
-            for ec in chars.by_ref() {
-                if ec.is_ascii_alphabetic() {
-                    break;
-                }
-            }
-        } else if !c.is_whitespace() {
-            has_content = true;
-            break;
-        }
-    }
-    !has_content
 }
 
 fn sname_safe(label: &str) -> String {
