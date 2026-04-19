@@ -27,18 +27,6 @@ defmodule <%= @module %>.Vms.Composer do
   def default_can_mapping(:host), do: "ovcs:vcan0"
   def default_can_mapping(:target), do: "ovcs:spi0.0"
 
-  # The VMS firmware hosts the MQTT broker for the vehicle; every
-  # other firmware connects to it.
-  @impl VmsCore.Vehicle
-  def bus_broker, do: %{port: 1884}
-
-  @impl VmsCore.Vehicle
-  def bus_relay do
-    OvcsVehicle.Bus.relay_opts(<%= @module %>, "<%= @name %>-vms",
-      topics: [:ready_to_drive, :vms_status]
-    )
-  end
-
   @impl VmsCore.Vehicle
   def children do
     [

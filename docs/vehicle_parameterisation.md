@@ -114,9 +114,10 @@ order:
 3. `Application.start/2` of the relevant core (`VmsCore.Application`
    or `InfotainmentCore.Application`) — reads `:*_core, :vehicle` from
    app env, calls `composer.children/0`, and supervises everything
-   under its root supervisor. Optional MQTT children come from
-   `OvcsBus.Mqtt.broker_child_from/1` /
-   `OvcsBus.Mqtt.relay_child_from/1` against the composer.
+   under its root supervisor. Also supervises `OvcsBus.Cluster`
+   (driven by `:ovcs_vehicle, :module`) which connects this BEAM to
+   its siblings over Erlang distribution — `OvcsBus.broadcast/2`
+   then reaches subscribers on every firmware in the cluster.
 
 Bridges follow the same pattern but the supervisor is
 `OvcsBridge.Supervisor` (in `libraries/ovcs_bridge/`) instead of a
@@ -136,13 +137,8 @@ The VMS composer (`<Vehicle>.Vms.Composer`) returns:
   for host vcan vs. deployed SPI.
 - `dashboard_configuration/0`, `generic_controllers/0` — dashboard
   pages and controller pinout maps (both optional).
-- `bus_broker/0` — **optional**; when present, the VMS BEAM hosts a
-  Mosquitto instance for the vehicle LAN (see [Bus wiring](#bus-wiring)).
-- `bus_relay/0` — **optional**; opts for the MQTT relay that mirrors
-  selected bus messages to the broker.
 
-The infotainment composer is the same shape, minus `bus_broker/0`
-(only the VMS side hosts the broker) and with
+The infotainment composer is the same shape with
 `infotainment_configuration/0` for the UI layout.
 
 ## Bridge firmwares
@@ -157,14 +153,12 @@ def bridge_firmwares do
     "radio_control" => %{
       target: :ovcs_base_can_system_rpi3a,
       bridges: [RadioControlBridge],
-      default_can_mapping: %{host: "ovcs:vcan0", target: "ovcs:spi0.0"},
-      bus_relay: OvcsVehicle.Bus.relay_opts(__MODULE__, "ovcs1-bridge-radio_control")
+      default_can_mapping: %{host: "ovcs:vcan0", target: "ovcs:spi0.0"}
     },
     "ros" => %{
       target: :ovcs_base_can_system_rpi4,
       bridges: [RosBridge],
-      default_can_mapping: %{host: "ovcs:vcan0", target: "ovcs:spi0.0"},
-      bus_relay: OvcsVehicle.Bus.relay_opts(__MODULE__, "ovcs1-bridge-ros")
+      default_can_mapping: %{host: "ovcs:vcan0", target: "ovcs:spi0.0"}
     }
   }
 end
@@ -174,51 +168,28 @@ Each map key becomes a build target (`./ovcs build ovcs1
 radio_control`). The shared `bridges/firmware` image is built once per
 entry; `OvcsBridge.Supervisor` reads `VEHICLE` + `BRIDGE_FIRMWARE_ID`
 at boot, looks up the entry, and supervises each listed bridge's
-`children/0` plus (optionally) an MQTT relay.
-
-Bridges as libraries (`bridges/radio_control_bridge`,
-`bridges/ros_bridge`) export `children/0` and optional
-`relay_messages/0`. The supervisor unions `relay_messages/0` across
-bundled bridges so each library travels with its own message contract
-— the vehicle doesn't restate it in `bus_relay`.
+`children/0`.
 
 ## Bus wiring
 
-Every firmware image runs a local `OvcsBus` (thin `Phoenix.PubSub`
-wrapper). Cross-firmware traffic is opt-in, via MQTT, through
-`OvcsBus.Mqtt.Relay` on each firmware connecting to a single
-`OvcsBus.Mqtt.Broker` hosted by the VMS.
+Every firmware image runs `OvcsBus` (thin `Phoenix.PubSub` wrapper)
+plus `OvcsBus.Cluster` — a boot-time helper that calls
+`Node.connect/1` against each declared peer on a retry loop until
+the vehicle's BEAMs form a distributed Erlang mesh. Once connected,
+`OvcsBus.broadcast/2` fans messages out to subscribers on every
+node via `Phoenix.PubSub.broadcast/3` — no MQTT broker, no relay
+clients, no separate protocol.
 
-To avoid restating broker host + topic prefix in every composer and
-every bridge entry, use `OvcsVehicle.Bus.relay_opts/3`:
+Peer node names come from the vehicle module's declared roles plus
+the local node's naming convention (parsed from `Node.self()`):
 
-```elixir
-# vehicles/<name>/lib/<name>/vms/composer.ex
-@impl VmsCore.Vehicle
-def bus_relay do
-  OvcsVehicle.Bus.relay_opts(<Vehicle>, "<name>-vms",
-    topics: [:ready_to_drive, :vms_status]
-  )
-end
-```
+- Host dev — `<vehicle>-<role>@<host>`, peers share `<host>`.
+- Deployed Nerves — `nerves@<vehicle>-<role>`, peers share the
+  sname `nerves` and vary by mDNS hostname.
 
-The helper reads:
-
-- `broker_host/0` — **required** on the top-level vehicle module.
-  Conventionally defined with `Mix.target()` at compile time:
-
-  ```elixir
-  @broker_host (if Mix.target() == :host, do: "localhost", else: "<name>-vms.local")
-  def broker_host, do: @broker_host
-  ```
-
-  Host dev points everyone at `localhost`; deployed Nerves devices
-  reach the VMS over mDNS.
-
-- `broker_port/0` — optional callback, defaults to `1884`.
-- `topic_prefix/0` — optional callback, defaults to `"ovcs/<dir>/bus"`
-  derived from the module name. Override if you need a non-standard
-  prefix.
+All firmware releases share `--cookie ovcs`, so no authentication
+wiring is needed beyond what `nerves_pack` already does for the
+remsh / `./ovcs attach` flow.
 
 ## Host dev vs. deployed
 
@@ -227,13 +198,13 @@ Same code path, two physical topologies:
 |  | Host dev (`./ovcs run <vehicle>`) | Deployed Nerves |
 |---|---|---|
 | BEAMs | Multiple BEAMs on one machine, one per firmware role | One BEAM per physical device |
-| Snames | `<vehicle>-vms`, `<vehicle>-infotainment`, `<vehicle>-bridge-<id>` | `nerves@<vehicle>-vms.local`, etc. |
-| Mosquitto | Started locally by the VMS BEAM (`bus_broker/0`) on `localhost:1884` | Same — hosted on the VMS device, peers reach it via mDNS |
+| Node names | `<vehicle>-<role>@<host>` (sname per role) | `nerves@<vehicle>-<role>.local` (mDNS hostname per role) |
+| Transport | Erlang distribution via loopback | Erlang distribution via mDNS over the vehicle LAN |
 | CAN interfaces | Virtual (`vcan0`, `vcan1`, …) provisioned by `./ovcs can setup` | Real SPI/CAN hardware; Cantastic sets it up at boot |
 | `VEHICLE` env | Set by the CLI when spawning each BEAM | Baked into the release via config.exs at build time |
 
-The `broker_host/0` compile-time branch (`Mix.target() == :host`) is
-the one thing that flips between the two modes.
+`OvcsBus.Cluster.peers_for/1` handles the naming split internally —
+composers don't care which mode they're in.
 
 ## Scaffolding a new vehicle
 
@@ -247,9 +218,6 @@ produces a working VMS + infotainment vehicle with:
 
 - A minimal `children/0` (one example generic controller + a vehicle
   GenServer).
-- `broker_host/0` wired with the host/deploy split.
-- Composers calling `OvcsVehicle.Bus.relay_opts/3` so bus plumbing
-  works out of the box.
 - A commented-out `bridge_firmwares/0` stub ready to uncomment.
 
 Drop components you don't need, add the ones you do, fill in the CAN

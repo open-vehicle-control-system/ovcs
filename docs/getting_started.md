@@ -23,7 +23,6 @@ OVCS is developed on Linux. macOS users need a Linux VM (see [macOS setup](#loca
 | `libsocketcan-dev` | Latest | Cantastic native CAN bindings | system package (firmware builds only) |
 | `cmake` | Latest | Host-compile `quicer` (ros_bridge's MQTT transport via `emqtt`) | system package |
 | `libmnl-dev` | Latest | Host-compile `nerves_uevent` native | system package |
-| `mosquitto` | Latest | MQTT broker spawned by `OvcsBus.Mqtt.Broker` when the VMS hosts the bus | system package |
 | `nerves_bootstrap` | Latest | Nerves Mix archive | `mise run bootstrap` |
 | [PlatformIO](https://platformio.org/) | Latest | Arduino controller firmware | mise (via pipx + uv) |
 
@@ -55,16 +54,15 @@ sudo apt install -y build-essential autoconf m4 \
 ### 3. Install system-level tools
 
 ```sh
-sudo apt install -y git can-utils libsocketcan-dev cmake libmnl-dev mosquitto kmod
+sudo apt install -y git can-utils libsocketcan-dev cmake libmnl-dev kmod
 ```
 
 - `git` is needed by `mise run libraries` to clone the sideloaded `cantastic` / `express_lrs` / `msp_osd` / `ovcs_control` repos. Most host distros ship it already; fresh containers (distrobox, VMs) do not.
 - `kmod` provides `lsmod` / `modprobe`, which `./ovcs can setup` and `./ovcs run` call to load the `vcan` kernel module. Standard on host distros; not included in the minimal Ubuntu container image.
 - `can-utils` provides `cansend`, `candump`, `canplayer`, and the rest. The Linux kernel modules `can` and `can_raw` are required and are included in standard (non-cloud) kernels.
 - `libsocketcan-dev` is only needed when building for physical CAN targets (i.e. the Pi firmwares); it supplies the native headers Cantastic links against.
-- `cmake` is needed to host-compile `quicer` (the MQTT transport NIF used by `ros_bridge`'s Zenoh/ROS2 dispatcher via `emqtt`). `OvcsBus.Mqtt.Relay` uses Tortoise311 — pure Elixir, no native deps — so the bus itself doesn't need any of this; `cmake` is only needed if you build `ros_bridge`.
+- `cmake` is needed to host-compile `quicer` (the MQTT transport NIF used by `ros_bridge`'s Zenoh/ROS2 dispatcher via `emqtt`). It's only needed if you build `ros_bridge`.
 - `libmnl-dev` is needed to host-compile `nerves_uevent` (transitively pulled in by firmware deps).
-- `mosquitto` provides the broker binary spawned by `OvcsBus.Mqtt.Broker`. `OvcsBus.Mqtt.Broker` binds `1884` by default so it won't clash if you've kept Mosquitto's bundled systemd unit running on `1883`; otherwise `sudo systemctl disable --now mosquitto` to free the default port if you want the OVCS-supervised instance to take its place.
 
 `fwup` is the firmware image packager Nerves calls during `mix firmware`. It is **not** in the Debian/Ubuntu repos — install the latest `.deb` from the project's GitHub releases:
 
@@ -254,7 +252,7 @@ The CLI reads the vehicle's `default_can_mapping(:host)` and creates only the vc
 ./ovcs run ovcs1              # provisions vcan + spawns one BEAM per firmware
 ```
 
-This is the shortcut for "set up CAN, then start everything." `./ovcs run` spawns one BEAM per declared firmware (VMS, infotainment, each bridge) from its own project directory, mirroring the deployed topology over a VMS-hosted localhost mosquitto. Attach a merged log + IEx TUI from another terminal with `./ovcs attach ovcs1`. Use `Ctrl-C` to stop.
+This is the shortcut for "set up CAN, then start everything." `./ovcs run` spawns one BEAM per declared firmware (VMS, infotainment, each bridge) from its own project directory. `OvcsBus.Cluster` stitches them into an Erlang-distribution cluster on boot — cross-BEAM messages fan out through `OvcsBus.broadcast/2` with no broker needed. Attach a merged log + IEx TUI from another terminal with `./ovcs attach ovcs1`. Use `Ctrl-C` to stop.
 
 If you prefer running pieces separately:
 

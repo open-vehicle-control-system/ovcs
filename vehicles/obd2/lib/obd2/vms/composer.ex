@@ -19,16 +19,6 @@ defmodule Obd2.Vms.Composer do
   def default_can_mapping(:target), do: "obd2:spi0.0,ovcs:spi0.1"
 
   @impl VmsCore.Vehicle
-  def bus_broker, do: %{port: 1884}
-
-  @impl VmsCore.Vehicle
-  def bus_relay do
-    OvcsVehicle.Bus.relay_opts(Obd2, "obd2-vms",
-      topics: [:ready_to_drive, :vms_status]
-    )
-  end
-
-  @impl VmsCore.Vehicle
   def children do
     [
       {Vms, []}

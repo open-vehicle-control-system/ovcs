@@ -31,13 +31,4 @@ defmodule RosBridge do
       ]
     end
   end
-
-  @impl OvcsBridge
-  def relay_messages do
-    # RosBridge's inbound (ROS2 → OVCS) and outbound (OVCS → ROS2)
-    # flow is CAN-based today. Add bus message names here as the
-    # bridge grows to publish/subscribe on OvcsBus (e.g.
-    # `:imu_sample`, `:joy_state`).
-    []
-  end
 end

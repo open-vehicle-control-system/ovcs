@@ -326,10 +326,10 @@ then spawns one BEAM per firmware from its own project directory
   `infotainment/0`).
 - **One BEAM per bridge firmware**, named `<vehicle>-bridge-<id>`,
   running the bridge's `children/0` against host-side vcan.
-- **An MQTT broker** on `localhost:1884` (supervised by the VMS
-  BEAM via `OvcsBus.Mqtt.Broker`) with each BEAM's
-  `OvcsBus.Mqtt.Relay` connected to it — the same cross-firmware
-  bus you get in deployed mode.
+- **An Erlang-distribution cluster** stitched together by
+  `OvcsBus.Cluster` — each BEAM `Node.connect/1`s the others at
+  boot, and `OvcsBus.broadcast/2` fans messages out to every node.
+  Same transport in deployed mode.
 
 Dashboards run separately:
 

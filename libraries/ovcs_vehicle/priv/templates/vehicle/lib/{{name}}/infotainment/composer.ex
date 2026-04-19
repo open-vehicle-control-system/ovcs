@@ -23,11 +23,4 @@ defmodule <%= @module %>.Infotainment.Composer do
       {<%= @module %>.Infotainment, []}
     ]
   end
-
-  @impl InfotainmentCore.Vehicle
-  def bus_relay do
-    OvcsVehicle.Bus.relay_opts(<%= @module %>, "<%= @name %>-infotainment",
-      topics: [:ready_to_drive, :vms_status]
-    )
-  end
 end

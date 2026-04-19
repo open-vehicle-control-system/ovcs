@@ -19,10 +19,7 @@ defmodule VmsCore.Application do
          repos: Application.fetch_env!(:vms_core, :ecto_repos), skip: skip_migrations?()},
         {VmsCore.Metrics, []},
         {VmsCore.NetworkInterfaces, []}
-      ] ++
-        cluster_child() ++
-        OvcsBus.Mqtt.broker_child_from(composer) ++
-        OvcsBus.Mqtt.relay_child_from(composer)
+      ] ++ cluster_child()
 
     children =
       case Application.get_env(:vms_core, :socketcand_only) do
