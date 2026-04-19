@@ -32,17 +32,19 @@ The `VEHICLE` environment variable selects which vehicle package's composer is w
 Every hardware driver is a GenServer that follows the same pattern:
 
 1. **Subscribes to CAN frames** via `Cantastic.Receiver.subscribe/3`
-2. **Subscribes to internal messages** via `VmsCore.Bus.subscribe/1`
+2. **Subscribes to internal messages** via `OvcsBus.subscribe/1`
 3. **Runs a periodic loop** (typically every 10ms) to emit CAN frames and broadcast metrics
 4. **Exposes actions** via `trigger_action/2` for dashboard control
 
-Components receive CAN data as `{:handle_frame, %Cantastic.Frame{}}` messages and internal data as `%VmsCore.Bus.Message{}` messages.
+Components receive CAN data as `{:handle_frame, %Cantastic.Frame{}}` messages and internal data as `%OvcsBus.Message{}` messages.
 
 ### 3. Bus System
 
-`VmsCore.Bus` is a Phoenix PubSub-based message bus for inter-component communication. Components broadcast metrics and listen for messages from other components:
+[`OvcsBus`](../../libraries/ovcs_bus) (shared across VMS, infotainment, and bridge firmwares) is a Phoenix PubSub-based message bus for inter-component communication. Components broadcast metrics and listen for messages from other components:
 
 ```elixir
+alias OvcsBus, as: Bus
+
 # Broadcasting a metric
 Bus.broadcast("messages", %Bus.Message{
   name: :speed,
@@ -59,6 +61,8 @@ end
 
 The `source` field enables decoupling: components don't import each other directly. Instead, they receive source module atoms through their init configuration from the Composer.
 
+Cross-firmware traffic is an opt-in overlay on top of the node-local bus: declare `bus_relay/0` on the composer and every matching message is mirrored to the vehicle's MQTT broker (see [`OvcsBus`](../../libraries/ovcs_bus) for the relay/broker design).
+
 ### 4. Manager Pattern
 
 Managers orchestrate cross-component logic:
@@ -71,15 +75,21 @@ Managers orchestrate cross-component logic:
 ```
 VmsCore.Application
 ├── VmsCore.Repo (SQLite - throttle calibration data)
-├── Phoenix.PubSub (internal message bus)
-├── VmsCore.Status (VMS heartbeat, ready-to-drive state, controller reset)
+├── Ecto.Migrator (applies pending migrations on boot)
 ├── VmsCore.Metrics (aggregates all Bus messages for dashboard/API)
 ├── VmsCore.NetworkInterfaces (CAN interface statistics)
+├── OvcsBus.Mqtt.Broker (optional, when composer defines bus_broker/0)
+├── OvcsBus.Mqtt.Relay (optional, when composer defines bus_relay/0)
 └── Vehicle Composer children (dynamic, based on VEHICLE env var):
+    ├── VmsCore.Status (VMS heartbeat, ready-to-drive, controller reset)
     ├── Components (hardware drivers)
     ├── Managers (control level, gear)
     └── Generic Controllers (Arduino I/O drivers)
 ```
+
+`OvcsBus`'s own `Phoenix.PubSub` lives under its own OTP application
+(`:ovcs_bus`) and is reachable by name from every BEAM that depends on
+the library.
 
 ## Components
 
@@ -161,8 +171,6 @@ VmsCore.Application
 |--------|------|---------|
 | `VmsCore.Status` | `status.ex` | Emits VMS heartbeat (`0x1A0`), manages ready-to-drive state, controller reset command (`0x1AA`) |
 | `VmsCore.Metrics` | `metrics.ex` | Subscribes to all Bus messages, stores latest values, exposes `metrics/0` for the API |
-| `VmsCore.Bus` | `bus.ex` | Phoenix PubSub wrapper for inter-component messaging |
-| `VmsCore.Bus.Message` | `bus/message.ex` | `%Message{name: atom, value: any, source: module}` |
 | `VmsCore.PID` | `pid.ex` | Proportional-Integral-Derivative controller using Decimal arithmetic |
 | `VmsCore.Repo` | `repo.ex` | Ecto SQLite3 repository for persistent data |
 | `VmsCore.NetworkInterfaces` | `network_interfaces.ex` | CAN interface statistics (TX/RX errors, bus state) |
