@@ -85,6 +85,7 @@ a new block type means updating both sides.
 ## Running
 
 `infotainment_core` isn't started directly — it's a dep of
-[`infotainment_api`](../api) and of each vehicle package's local
-`Application`. Use `./ovcs run <vehicle>` to boot everything in one BEAM, or
-`cd infotainment/api && VEHICLE=Ovcs1 mix phx.server` to run just this side.
+[`infotainment_api`](../api), which is itself pulled in by
+`infotainment/firmware`. Use `./ovcs run <vehicle>` to spawn the full
+set of firmware BEAMs for a vehicle, or `cd infotainment/api && VEHICLE=Ovcs1
+mix phx.server` to run just this side.
