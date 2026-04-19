@@ -15,14 +15,18 @@ defmodule Obd2.MixProject do
     [extra_applications: [:logger]]
   end
 
+  # A vehicle is "a set of firmwares": one VMS and one infotainment.
+  # Obd2 declares no bridge_firmwares/0, so it skips bridge_firmware.
+  # Depending on the firmware projects here gives the composer modules
+  # access to `VmsCore.Vehicle`, `InfotainmentCore.Vehicle`,
+  # `OvcsBus.Message`, and Cantastic — all pulled in transitively —
+  # and makes `./ovcs run obd2` self-contained against this vehicle's
+  # `_build` tree.
   defp deps do
     [
       {:ovcs_vehicle, path: "../../libraries/ovcs_vehicle"},
-      {:ovcs_can, path: "../../libraries/ovcs_can"},
-      {:cantastic, path: "../../libraries/cantastic"},
-      {:ovcs_bus, path: "../../libraries/ovcs_bus"},
-      {:vms_core, path: "../../vms/core"},
-      {:infotainment_core, path: "../../infotainment/core"},
+      {:vms_firmware, path: "../../vms/firmware"},
+      {:infotainment_firmware, path: "../../infotainment/firmware"},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
     ]
   end

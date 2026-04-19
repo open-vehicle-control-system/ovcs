@@ -19,19 +19,22 @@ defmodule <%= @module %>.MixProject do
     [extra_applications: [:logger]]
   end
 
-  # Only the libraries the composer modules themselves compile against:
-  # the OvcsVehicle behaviour, the shared CAN YAMLs, Cantastic macros,
-  # OvcsBus.Message, and the VMS/infotainment core behaviours. No api,
-  # no firmware, no bridge libs — those are pulled in by each firmware
-  # project and reach the vehicle via the runtime code-path prepend.
+  # A vehicle is "a set of firmwares": one VMS, one infotainment, and
+  # the shared bridges image (which runs one instance per entry in
+  # `bridge_firmwares/0`). Depending on the firmware projects here is
+  # what gives the composer modules access to `VmsCore.Vehicle`,
+  # `InfotainmentCore.Vehicle`, `OvcsBus.Message`, and Cantastic — all
+  # pulled in transitively — and makes `./ovcs run <%= @name %>`
+  # self-contained against this vehicle's `_build` tree. `ovcs_vehicle`
+  # supplies the top-level `OvcsVehicle` behaviour and doesn't sit in
+  # any firmware dep tree, so it stays explicit.
   defp deps do
     [
       {:ovcs_vehicle, path: "../../libraries/ovcs_vehicle"},
-      {:ovcs_can, path: "../../libraries/ovcs_can"},
-      {:cantastic, path: "../../libraries/cantastic"},
-      {:ovcs_bus, path: "../../libraries/ovcs_bus"},
-      {:vms_core, path: "../../vms/core"}<%= if @infotainment do %>,
-      {:infotainment_core, path: "../../infotainment/core"}<% end %>
+      {:vms_firmware, path: "../../vms/firmware"}<%= if @infotainment do %>,
+      {:infotainment_firmware, path: "../../infotainment/firmware"}<% end %>,
+      {:bridge_firmware, path: "../../bridges/firmware"},
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
     ]
   end
 end
