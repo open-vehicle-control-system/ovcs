@@ -58,12 +58,24 @@ defmodule BridgeFirmware.MixProject do
       # ros_bridge's emqtt/quicer chain in. Extend the target lists as
       # bridges gain new SoC support, or add a new bridge by listing
       # it here + target gates.
+      #
+      # On host dev every bridge matches (targets include `:host`), so
+      # both ros + radio_control would sit in bridge_firmware's dep
+      # tree at once and OTP would auto-start each one's Application —
+      # including the inactive bridge's supervision stack (e.g. the
+      # Mavlink Parser shows up inside the ros BEAM and spams logs).
+      # Mark them `runtime: false` on host to let `OvcsBridge.Supervisor`
+      # be the sole authority on which bridge actually boots; on target
+      # only the matching bridge is in the dep tree anyway, so OTP
+      # auto-start stays the way it was.
       {:radio_control_bridge,
        path: "../radio_control_bridge",
-       targets: [:host, :ovcs_base_can_system_rpi3a]},
+       targets: [:host, :ovcs_base_can_system_rpi3a],
+       runtime: Mix.target() != :host},
       {:ros_bridge,
        path: "../ros_bridge",
-       targets: [:host, :ovcs_base_can_system_rpi4, :ovcs_bridges_system_rpi5]},
+       targets: [:host, :ovcs_base_can_system_rpi4, :ovcs_bridges_system_rpi5],
+       runtime: Mix.target() != :host},
 
       # Nerves systems (one per supported target).
       {

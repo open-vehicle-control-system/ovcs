@@ -31,6 +31,19 @@ defmodule OvcsBridge.Supervisor do
     entry = resolve_entry!()
 
     bridges = Map.get(entry, :bridges, [])
+
+    # Start each bundled bridge's own OTP application (and its transitive
+    # deps) before touching `children/0`. On target builds this is a no-op
+    # — bridges/firmware pulls only the bridge matching `MIX_TARGET`, and
+    # OTP has already auto-started it by the time we get here. On host
+    # dev bridges/firmware pulls every bridge lib at once and declares
+    # them `runtime: false` so OTP does NOT auto-start them; otherwise
+    # the inactive bridge's Application (e.g. `ExpressLrs.Application`'s
+    # Mavlink Parser) would run inside the wrong BEAM and spam unrelated
+    # logs. Ensuring the active bridge's app here keeps the active
+    # BEAM's supervision stack identical to what it'd be on target.
+    Enum.each(bridges, &ensure_bridge_started/1)
+
     bridge_children = Enum.flat_map(bridges, & &1.children())
     relay_children = relay_children(entry, bridges)
 
@@ -41,6 +54,29 @@ defmodule OvcsBridge.Supervisor do
     )
 
     Supervisor.init(bridge_children ++ relay_children, strategy: :one_for_one)
+  end
+
+  defp ensure_bridge_started(bridge_module) do
+    _ = Code.ensure_loaded(bridge_module)
+
+    case Application.get_application(bridge_module) do
+      nil ->
+        Logger.warning(
+          "OvcsBridge.Supervisor: #{inspect(bridge_module)} has no OTP application; " <>
+            "skipping auto-start"
+        )
+
+      app ->
+        case Application.ensure_all_started(app) do
+          {:ok, _} ->
+            :ok
+
+          {:error, reason} ->
+            Logger.error(
+              "OvcsBridge.Supervisor: failed to start #{app}: #{inspect(reason)}"
+            )
+        end
+    end
   end
 
   # Start at most one relay per firmware. Broker/identity come from
