@@ -240,7 +240,6 @@ defmodule VmsCore.Components.OVCS.Status do
      }}
   end
 
-  # TODO, replace Bus ?
   def handle_info(%Bus.Message{}, state) do
     {:noreply, state}
   end

@@ -53,7 +53,6 @@ defmodule VmsCore.Components.Volkswagen.Polo9N.FakeOilPressureSensor do
     {:noreply, %{state | rotation_per_minute: rotation_per_minute}}
   end
 
-  # TODO, replace Bus ?
   def handle_info(%Bus.Message{}, state) do
     {:noreply, state}
   end

@@ -133,7 +133,6 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Charger do
     {:noreply, %{state | pack_instant_voltage: pack_instant_voltage}}
   end
 
-  # TODO, replace Bus ?
   def handle_info(%Bus.Message{}, state) do
     {:noreply, state}
   end

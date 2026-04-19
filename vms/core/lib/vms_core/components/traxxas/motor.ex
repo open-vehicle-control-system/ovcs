@@ -46,7 +46,6 @@ defmodule VmsCore.Components.Traxxas.Motor do
     {:noreply, %{state | raw_rotation_per_minute: raw_rotation_per_minute}}
   end
 
-  # TODO, replace Bus ?
   def handle_info(%Bus.Message{}, state) do
     {:noreply, state}
   end

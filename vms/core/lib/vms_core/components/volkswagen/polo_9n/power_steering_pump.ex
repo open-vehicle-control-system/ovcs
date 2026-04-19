@@ -68,7 +68,6 @@ defmodule VmsCore.Components.Volkswagen.Polo9N.PowerSteeringPump do
     {:noreply, %{state | selected_gear: selected_gear}}
   end
 
-  # TODO, replace Bus ?
   def handle_info(%Bus.Message{}, state) do
     {:noreply, state}
   end

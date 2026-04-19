@@ -131,7 +131,6 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Inverter do
     {:noreply, %{state | contact: contact}}
   end
 
-  # TODO, replace Bus ?
   def handle_info(%Bus.Message{}, state) do
     {:noreply, state}
   end

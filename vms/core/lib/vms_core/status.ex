@@ -78,7 +78,6 @@ defmodule VmsCore.Status do
     {:noreply, %{state | vms_status: vms_status}}
   end
 
-  # TODO, replace Bus ?
   def handle_info(%Bus.Message{}, state) do
     {:noreply, state}
   end

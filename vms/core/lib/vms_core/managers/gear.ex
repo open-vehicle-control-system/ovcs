@@ -145,7 +145,6 @@ defmodule VmsCore.Managers.Gear do
     {:noreply, %{state | contact: contact}}
   end
 
-  # TODO, replace Bus ?
   def handle_info(%Bus.Message{}, state) do
     {:noreply, state}
   end
