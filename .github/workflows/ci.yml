@@ -37,7 +37,6 @@ jobs:
             infotainment/core infotainment/api infotainment/firmware
             bridges/firmware bridges/radio_control_bridge bridges/ros_bridge
             vehicles/ovcs1 vehicles/ovcs_mini vehicles/obd2
-            cli
           )
           for dir in "${dirs[@]}"; do
             if [ -f "$dir/.formatter.exs" ]; then
@@ -75,7 +74,6 @@ jobs:
           - vehicles/ovcs1
           - vehicles/ovcs_mini
           - vehicles/obd2
-          - cli
     defaults:
       run:
         working-directory: ${{ matrix.project }}
@@ -120,7 +118,6 @@ jobs:
           - bridges/firmware
           - bridges/radio_control_bridge
           - bridges/ros_bridge
-          - cli
     defaults:
       run:
         working-directory: ${{ matrix.project }}
@@ -166,21 +163,29 @@ jobs:
       - run: mix compile --warnings-as-errors
 
   cli-build:
-    name: CLI · escript build
+    name: CLI · cargo build
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cli
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup-mise
       - uses: actions/cache@v5
         with:
           path: |
-            cli/deps
-            cli/_build
-          key: cli-${{ hashFiles('cli/mix.lock') }}
-          restore-keys: cli-
-      - run: mise run cli
-      - name: Ensure escript exists
-        run: test -x ./ovcs && file ./ovcs
+            ~/.cargo/registry
+            ~/.cargo/git
+            cli/target
+          key: cargo-cli-${{ hashFiles('cli/Cargo.lock') }}
+          restore-keys: cargo-cli-
+      - run: cargo fmt --check
+      - run: cargo clippy --release --all-targets -- -D warnings
+      - run: cargo build --release
+      - run: cargo test --release
+      - name: Ensure release binary exists
+        working-directory: ${{ github.workspace }}
+        run: test -x cli/target/release/ovcs && file cli/target/release/ovcs | grep -q 'ELF .* executable'
 
   vue-dashboard:
     name: Vue · vms/dashboard
