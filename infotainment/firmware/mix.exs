@@ -52,6 +52,9 @@ defmodule OvcsInfotainmentFirmware.MixProject do
       # Infotainment YAMLs reference `import!:@ovcs_can:...` shared
       # frame definitions, so the app must be loaded in the BEAM.
       {:ovcs_can, path: "../../libraries/ovcs_can"},
+      # `OvcsVehicle.Firmware.resolve_vehicle/3` is used from
+      # `config/runtime.exs` to prepend the vehicle's ebin.
+      {:ovcs_vehicle, path: "../../libraries/ovcs_vehicle"},
       {:nerves_flutter_support, "~> 1.3"},
 
       # Dependencies for specific targets

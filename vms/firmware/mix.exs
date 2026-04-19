@@ -40,6 +40,9 @@ defmodule VmsFirmware.MixProject do
       # VMS YAMLs reference `import!:@ovcs_can:...` shared frame
       # definitions, so the app must be loaded in the BEAM.
       {:ovcs_can, path: "../../libraries/ovcs_can"},
+      # `OvcsVehicle.Firmware.resolve_vehicle/3` is used from
+      # `config/runtime.exs` to prepend the vehicle's ebin.
+      {:ovcs_vehicle, path: "../../libraries/ovcs_vehicle"},
       {
         :ovcs_base_can_system_rpi4,
         github: "open-vehicle-control-system/ovcs_base_can_system_rpi4",
