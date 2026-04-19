@@ -11,6 +11,7 @@ Welcome to the Open Vehicle Control System documentation. For a high-level overv
 ### Understanding the Applications
 
 - [Applications](./applications.md) -- Description of each OVCS application (VMS, Infotainment, Bridges, Controllers), their dependencies, and how to run them locally for development.
+- [Vehicle Parameterisation](./vehicle_parameterisation.md) -- How `VEHICLE=<Module>` selects the composer, how each firmware boots against a vehicle package, the `OvcsVehicle` / `VmsCore.Vehicle` / `InfotainmentCore.Vehicle` / `OvcsBridge` contracts, and the bus helpers.
 
 ### Hardware
 
