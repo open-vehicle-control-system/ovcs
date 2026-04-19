@@ -26,11 +26,8 @@ defmodule <%= @module %>.Infotainment.Composer do
 
   @impl InfotainmentCore.Vehicle
   def bus_relay do
-    %{
-      broker: [host: <%= @module %>.broker_host(), port: 1884],
-      client_id: "<%= @name %>-infotainment",
-      topic_prefix: "ovcs/<%= @name %>/bus",
+    OvcsVehicle.Bus.relay_opts(<%= @module %>, "<%= @name %>-infotainment",
       topics: [:ready_to_drive, :vms_status]
-    }
+    )
   end
 end

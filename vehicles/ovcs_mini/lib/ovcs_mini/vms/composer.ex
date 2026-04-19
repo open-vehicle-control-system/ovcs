@@ -26,12 +26,9 @@ defmodule OvcsMini.Vms.Composer do
 
   @impl VmsCore.Vehicle
   def bus_relay do
-    %{
-      broker: [host: OvcsMini.broker_host(), port: 1884],
-      client_id: "ovcs-mini-vms",
-      topic_prefix: "ovcs/ovcs_mini/bus",
+    OvcsVehicle.Bus.relay_opts(OvcsMini, "ovcs-mini-vms",
       topics: [:ready_to_drive, :vms_status]
-    }
+    )
   end
 
   @impl VmsCore.Vehicle

@@ -22,7 +22,7 @@ defmodule <%= @module %> do
   # reach the VMS via mDNS.
   @broker_host (if Mix.target() == :host, do: "localhost", else: "<%= @name %>-vms.local")
 
-  @doc false
+  @doc "Shared by composers + `OvcsVehicle.Bus.relay_opts/3`."
   def broker_host, do: @broker_host
 
   # Bridge firmwares — optional. Uncomment and populate to declare one
@@ -39,11 +39,7 @@ defmodule <%= @module %> do
   #       bridges: [RadioControlBridge],
   #       default_can_mapping: %{host: "ovcs:vcan0", target: "ovcs:spi0.0"},
   #       # can_config_path: "can/bridges/radio_control.yml",  # optional override
-  #       bus_relay: %{
-  #         broker: [host: @broker_host, port: 1884],
-  #         client_id: "<%= @name %>-bridge-radio_control",
-  #         topic_prefix: "ovcs/<%= @name %>/bus"
-  #       }
+  #       bus_relay: OvcsVehicle.Bus.relay_opts(__MODULE__, "<%= @name %>-bridge-radio_control")
   #     }
   #   }
   # end

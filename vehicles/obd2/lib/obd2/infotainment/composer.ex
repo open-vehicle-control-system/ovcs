@@ -20,12 +20,9 @@ defmodule Obd2.Infotainment.Composer do
 
   @impl InfotainmentCore.Vehicle
   def bus_relay do
-    %{
-      broker: [host: Obd2.broker_host(), port: 1884],
-      client_id: "obd2-infotainment",
-      topic_prefix: "ovcs/obd2/bus",
+    OvcsVehicle.Bus.relay_opts(Obd2, "obd2-infotainment",
       topics: [:ready_to_drive, :vms_status]
-    }
+    )
   end
 
   @impl InfotainmentCore.Vehicle

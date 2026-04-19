@@ -33,27 +33,17 @@ defmodule Ovcs1 do
         target: :ovcs_base_can_system_rpi3a,
         bridges: [RadioControlBridge],
         default_can_mapping: %{host: "ovcs:vcan0", target: "ovcs:spi0.0"},
-        bus_relay: relay_opts("ovcs1-bridge-radio_control")
+        bus_relay: OvcsVehicle.Bus.relay_opts(__MODULE__, "ovcs1-bridge-radio_control")
       },
       "ros" => %{
         target: :ovcs_base_can_system_rpi4,
         bridges: [RosBridge],
         default_can_mapping: %{host: "ovcs:vcan0", target: "ovcs:spi0.0"},
-        bus_relay: relay_opts("ovcs1-bridge-ros")
+        bus_relay: OvcsVehicle.Bus.relay_opts(__MODULE__, "ovcs1-bridge-ros")
       }
     }
   end
 
-  defp relay_opts(client_id) do
-    %{
-      broker: [host: @broker_host, port: 1884],
-      client_id: client_id,
-      topic_prefix: "ovcs/ovcs1/bus"
-    }
-  end
-
-  # Shared between Ovcs1 itself and its VMS/infotainment composers —
-  # same broker host regardless of which BEAM is connecting.
-  @doc false
+  @doc "Shared by composers + `OvcsVehicle.Bus.relay_opts/3`."
   def broker_host, do: @broker_host
 end
