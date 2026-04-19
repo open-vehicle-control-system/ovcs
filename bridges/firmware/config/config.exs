@@ -80,8 +80,15 @@ System.put_env("VEHICLE_FIRMWARE_DIR", vehicle_firmware_dir)
 
 config :nerves, :firmware, fwup_conf: resolve_firmware_file.("fwup.conf")
 
-# Handoff to runtime.exs + OvcsBridge.Supervisor via env — avoids
-# compile-time coupling on the vehicle module's bridge_firmwares/0.
+# `OvcsBridge.Supervisor` reads both keys via `Application.get_env/2`
+# at boot. Setting them here (compile-time) bakes the values into
+# `sys.config`, which is how a released Nerves image knows its
+# vehicle/firmware-id without needing VEHICLE / BRIDGE_FIRMWARE_ID
+# in the on-device environment. On host dev each `mix run` also
+# re-evaluates this file, so an ad-hoc `VEHICLE=… BRIDGE_FIRMWARE_ID=…
+# mix run` still works. Unlike the VMS/infotainment composer DI,
+# there's no runtime.exs override: the bridge image is built for a
+# specific (vehicle, firmware_id) pair.
 config :ovcs_bridge,
   vehicle: vehicle_name,
   firmware_id: bridge_firmware_id
