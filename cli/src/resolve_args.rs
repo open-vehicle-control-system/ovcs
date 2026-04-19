@@ -1,4 +1,4 @@
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use owo_colors::OwoColorize;
 
 use crate::firmware::applications_for;
@@ -12,10 +12,7 @@ pub struct ResolvedArgs {
     pub application: String,
 }
 
-pub fn resolve_vehicle_app(
-    first: Option<String>,
-    second: Option<String>,
-) -> Result<ResolvedArgs> {
+pub fn resolve_vehicle_app(first: Option<String>, second: Option<String>) -> Result<ResolvedArgs> {
     let root = repo_root()?;
     let all = vehicles::list(&root)?;
     let names: Vec<String> = all.iter().map(|v| v.dir.clone()).collect();

@@ -1,4 +1,4 @@
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use std::path::{Path, PathBuf};
 
 pub fn repo_root() -> Result<PathBuf> {

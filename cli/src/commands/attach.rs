@@ -1,4 +1,4 @@
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{anyhow, bail, Context, Result};
 use owo_colors::OwoColorize;
 use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpStream, ToSocketAddrs};
@@ -153,7 +153,11 @@ fn find_local_beams(vehicle_dir: &str) -> Vec<(String, String)> {
     // Walk each epmd registration line of the form: `name <sname> at port ...`.
     let mut snames: Vec<String> = stdout
         .lines()
-        .filter_map(|l| l.trim().strip_prefix("name ").and_then(|s| s.split(" at").next()))
+        .filter_map(|l| {
+            l.trim()
+                .strip_prefix("name ")
+                .and_then(|s| s.split(" at").next())
+        })
         .map(|s| s.to_string())
         .collect();
     snames.sort();
@@ -290,7 +294,7 @@ fn spawn_remsh(local_sname: &str, full_node: &str) -> Result<std::process::Child
         .stderr(Stdio::piped())
         .spawn()
         .map_err(Into::into)
-    }
+}
 
 // ---------- deployed transport: SSH via russh ----------
 
@@ -371,18 +375,15 @@ async fn run_device(
     stdin_rx: Receiver<String>,
     tx: Sender<Msg>,
 ) -> Result<()> {
-    use russh::ChannelMsg;
     use russh::client;
     use russh::keys::ssh_key::PublicKey;
+    use russh::ChannelMsg;
     use std::sync::Arc;
 
     struct H;
     impl client::Handler for H {
         type Error = russh::Error;
-        async fn check_server_key(
-            &mut self,
-            _: &PublicKey,
-        ) -> Result<bool, Self::Error> {
+        async fn check_server_key(&mut self, _: &PublicKey) -> Result<bool, Self::Error> {
             Ok(true)
         }
     }
@@ -417,14 +418,16 @@ async fn run_device(
     // Two channels: one streams logs (RingLogger.attach + sleep), one hosts
     // the interactive IEx for user input. Both use the shell subsystem.
     let mut log_ch = handle.channel_open_session().await?;
-    log_ch.request_pty(false, "xterm", 120, 40, 0, 0, &[]).await?;
-    log_ch.request_shell(false).await?;
     log_ch
-        .data(&b"RingLogger.attach()\n"[..])
+        .request_pty(false, "xterm", 120, 40, 0, 0, &[])
         .await?;
+    log_ch.request_shell(false).await?;
+    log_ch.data(&b"RingLogger.attach()\n"[..]).await?;
 
     let mut shell_ch = handle.channel_open_session().await?;
-    shell_ch.request_pty(false, "xterm", 120, 40, 0, 0, &[]).await?;
+    shell_ch
+        .request_pty(false, "xterm", 120, 40, 0, 0, &[])
+        .await?;
     shell_ch.request_shell(false).await?;
 
     let _ = tx.send(Msg::NodeUp(label.to_string()));
@@ -550,12 +553,12 @@ fn forward_log<R: std::io::Read + Send + 'static>(reader: R, node: &str, tx: &Se
 fn is_iex_noise(line: &str) -> bool {
     let t = line.trim();
     const NOISE_PREFIXES: &[&str] = &[
-        "iex(",                 // interactive prompt
-        "...(",                 // continuation prompt
-        "Erlang/OTP",           // erlang banner
-        "Interactive Elixir",   // iex banner
-        ":ok",                  // return value from our init snippet
-        "Compiling ",           // mix recompile chatter under --remsh
+        "iex(",               // interactive prompt
+        "...(",               // continuation prompt
+        "Erlang/OTP",         // erlang banner
+        "Interactive Elixir", // iex banner
+        ":ok",                // return value from our init snippet
+        "Compiling ",         // mix recompile chatter under --remsh
     ];
     t.is_empty() || NOISE_PREFIXES.iter().any(|p| t.starts_with(p))
 }

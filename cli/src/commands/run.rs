@@ -1,4 +1,4 @@
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use owo_colors::OwoColorize;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
@@ -41,8 +41,13 @@ pub fn run(vehicle_arg: Option<String>) -> Result<()> {
     for r in &roles {
         println!(
             "{}",
-            format!("   • {}-{}  (cd {})", vehicle.dir, r.label, short_path(&r.cwd, &root))
-                .dimmed()
+            format!(
+                "   • {}-{}  (cd {})",
+                vehicle.dir,
+                r.label,
+                short_path(&r.cwd, &root)
+            )
+            .dimmed()
         );
     }
     println!(
@@ -57,9 +62,14 @@ pub fn run(vehicle_arg: Option<String>) -> Result<()> {
         let sname = format!("{}-{}", vehicle.dir, sname_safe(&role.label));
         let mut cmd = Command::new("elixir");
         cmd.args([
-            "--sname", &sname,
-            "--cookie", "ovcs",
-            "-S", "mix", "run", "--no-halt",
+            "--sname",
+            &sname,
+            "--cookie",
+            "ovcs",
+            "-S",
+            "mix",
+            "run",
+            "--no-halt",
         ])
         .current_dir(&role.cwd)
         .stdin(Stdio::null())
