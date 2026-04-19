@@ -26,94 +26,163 @@ pub fn run(vehicle_arg: Option<String>) -> Result<()> {
         None => choose_vehicle(&list)?,
     };
 
-    step("querying vehicle composer (mix snippet, may take a few seconds)…");
+    step(&format!("vehicle: {} ({})", vehicle.module, vehicle.dir));
+
     let expected = expected_devices(&vehicle)?;
+
     step(&format!(
-        "probing {} device{} on LAN…",
+        "probing {} device{} on LAN (TCP :22, {}ms timeout)…",
         expected.len(),
-        if expected.len() == 1 { "" } else { "s" }
+        if expected.len() == 1 { "" } else { "s" },
+        PROBE_TIMEOUT.as_millis(),
     ));
     let reachable = probe_reachable(&expected);
 
     if !reachable.is_empty() {
         step(&format!(
-            "attaching (deployed) → {}",
-            reachable
-                .iter()
-                .map(|(label, host)| format!("{}={}", label, host))
-                .collect::<Vec<_>>()
-                .join(", ")
+            "attaching (deployed) → {} device{}",
+            reachable.len(),
+            if reachable.len() == 1 { "" } else { "s" }
         ));
         attach_deployed(reachable)
     } else {
+        step("no deployed devices reachable — checking local epmd…");
         let local = find_local_beams(&vehicle.dir);
         if local.is_empty() {
+            sub("epmd has no matching BEAMs registered");
             bail!(
                 "no vehicle running — start one with `./ovcs run {}` or flash + power a firmware.",
                 vehicle.dir
             );
         }
+        for (label, node) in &local {
+            sub_ok(&format!("{:<14} → {}", label, node));
+        }
         step(&format!(
-            "attaching (local) → {}",
-            local
-                .iter()
-                .map(|(label, node)| format!("{}={}", label, node))
-                .collect::<Vec<_>>()
-                .join(", ")
+            "attaching (local) → {} BEAM{}",
+            local.len(),
+            if local.len() == 1 { "" } else { "s" }
         ));
         attach_local(local)
     }
 }
 
 fn step(msg: &str) {
-    println!("{} {}", "•".cyan().bold(), msg);
+    println!("{} {}", "▸".cyan().bold(), msg);
+}
+
+/// Sub-step bullet — neutral detail.
+fn sub(msg: &str) {
+    println!("  {} {}", "·".dimmed(), msg);
+}
+
+/// Sub-step bullet with a green check — the thing worked.
+fn sub_ok(msg: &str) {
+    println!("  {} {}", "✓".green(), msg);
+}
+
+/// Sub-step bullet with a yellow dash — the thing didn't respond.
+fn sub_miss(msg: &str) {
+    println!("  {} {}", "✗".yellow(), msg);
 }
 
 // ---------- device enumeration ----------
 
 fn expected_devices(vehicle: &vehicles::Vehicle) -> Result<Vec<(String, String)>> {
+    step("enumerating declared roles (this spawns short `mix run` probes)…");
+
     let mut out: Vec<(String, String)> = Vec::new();
-    out.push(("vms".into(), vehicles::host_for(&vehicle.dir, "vms")));
-    if vehicles::has_infotainment(vehicle).unwrap_or(false) {
-        out.push((
-            "infotainment".into(),
-            vehicles::host_for(&vehicle.dir, "infotainment"),
-        ));
-    }
-    if let Ok(bridges) = vehicles::bridge_firmwares(vehicle) {
-        for (id, fw) in bridges {
-            // Skip non-Nerves bridges (e.g. Arduino targets) — they have no
-            // nerves_ssh to attach to.
-            if fw.target.contains("arduino") {
-                continue;
-            }
-            let label = format!("bridge-{}", id);
-            let host = vehicles::host_for(&vehicle.dir, &format!("bridge-{}", id));
-            out.push((label, host));
+
+    let vms_host = vehicles::host_for(&vehicle.dir, "vms");
+    sub_ok(&format!("{:<14} {}", "vms", vms_host));
+    out.push(("vms".into(), vms_host));
+
+    match vehicles::has_infotainment(vehicle) {
+        Ok(true) => {
+            let host = vehicles::host_for(&vehicle.dir, "infotainment");
+            sub_ok(&format!("{:<14} {}", "infotainment", host));
+            out.push(("infotainment".into(), host));
         }
+        Ok(false) => sub(&format!(
+            "{:<14} skipped (vehicle declares no infotainment side)",
+            "infotainment"
+        )),
+        Err(e) => sub(&format!(
+            "{:<14} skipped ({})",
+            "infotainment",
+            e.to_string().lines().next().unwrap_or("probe failed")
+        )),
     }
+
+    match vehicles::bridge_firmwares(vehicle) {
+        Ok(bridges) if bridges.is_empty() => {
+            sub(&format!("{:<14} none declared", "bridges"));
+        }
+        Ok(bridges) => {
+            let mut ids: Vec<_> = bridges.iter().collect();
+            ids.sort_by(|a, b| a.0.cmp(b.0));
+            for (id, fw) in ids {
+                let label = format!("bridge-{}", id);
+                if fw.target.contains("arduino") {
+                    sub(&format!(
+                        "{:<14} skipped (arduino target has no SSH)",
+                        label
+                    ));
+                    continue;
+                }
+                let host = vehicles::host_for(&vehicle.dir, &format!("bridge-{}", id));
+                sub_ok(&format!("{:<14} {}", label, host));
+                out.push((label, host));
+            }
+        }
+        Err(e) => sub(&format!(
+            "{:<14} probe failed ({})",
+            "bridges",
+            e.to_string().lines().next().unwrap_or("?")
+        )),
+    }
+
     Ok(out)
 }
 
 fn probe_reachable(devices: &[(String, String)]) -> Vec<(String, String)> {
     // Probe each hostname in parallel so a slow/unreachable entry doesn't
-    // stack with the others (each adds up to PROBE_TIMEOUT).
+    // stack with the others. Each worker streams its result through a
+    // channel so we can print "reachable"/"unreachable" as soon as the
+    // probe finishes rather than after the whole batch completes.
+    let (tx, rx) = std::sync::mpsc::channel();
+
     let handles: Vec<_> = devices
         .iter()
         .cloned()
-        .map(|(label, host)| {
+        .enumerate()
+        .map(|(idx, (label, host))| {
+            let tx = tx.clone();
             thread::spawn(move || {
-                if tcp_open(&host, 22, PROBE_TIMEOUT) {
-                    Some((label, host))
-                } else {
-                    None
-                }
+                let ok = tcp_open(&host, 22, PROBE_TIMEOUT);
+                let _ = tx.send((idx, label, host, ok));
             })
         })
         .collect();
-    handles
+    drop(tx);
+
+    let mut results: Vec<Option<(String, String, bool)>> = vec![None; devices.len()];
+    for (idx, label, host, ok) in rx {
+        if ok {
+            sub_ok(&format!("{:<14} reachable", label));
+        } else {
+            sub_miss(&format!("{:<14} no response", label));
+        }
+        results[idx] = Some((label, host, ok));
+    }
+    for h in handles {
+        let _ = h.join();
+    }
+
+    results
         .into_iter()
-        .filter_map(|h| h.join().ok().flatten())
+        .flatten()
+        .filter_map(|(label, host, ok)| if ok { Some((label, host)) } else { None })
         .collect()
 }
 
@@ -203,7 +272,10 @@ fn attach_local(nodes: Vec<(String, String)>) -> Result<()> {
     let pid = std::process::id();
 
     for (idx, (label, full_node)) in nodes.iter().enumerate() {
-        step(&format!("spawning remshes for {}…", label));
+        sub(&format!(
+            "spawning log+shell remsh for {} ({})",
+            label, full_node
+        ));
 
         // Log-side remsh: RingLogger.attach + sleep, stdout feeds log pane.
         let log_sname = format!("ovcs_attach_log_{}_{}", pid, idx);
@@ -513,8 +585,10 @@ async fn run_device(
 fn split_lines(bytes: &[u8]) -> Vec<String> {
     let s = String::from_utf8_lossy(bytes);
     s.split('\n')
-        .filter(|l| !l.is_empty())
         .map(|l| l.trim_end_matches('\r').to_string())
+        // Logger emits ANSI colour codes — a "blank" line may carry
+        // just CSI resets, so check emptiness after stripping.
+        .filter(|l| !strip_ansi(l).trim().is_empty())
         .collect()
 }
 
@@ -549,7 +623,12 @@ fn forward_log<R: std::io::Read + Send + 'static>(reader: R, node: &str, tx: &Se
 /// remsh gives us. Prefix-matching is the pragmatic compromise; widen the
 /// list if a new IEx version prints a banner line we haven't seen.
 fn is_iex_noise(line: &str) -> bool {
-    let t = line.trim();
+    // Strip ANSI CSI sequences first — Logger emits colour codes around
+    // level / source / timestamp on host dev, so the naive `line.trim()`
+    // leaves an invisible but non-empty string and blank "[label] " rows
+    // leak into the log pane.
+    let stripped = strip_ansi(line);
+    let t = stripped.trim();
     const NOISE_PREFIXES: &[&str] = &[
         "iex(",               // interactive prompt
         "...(",               // continuation prompt
@@ -559,6 +638,26 @@ fn is_iex_noise(line: &str) -> bool {
         "Compiling ",         // mix recompile chatter under --remsh
     ];
     t.is_empty() || NOISE_PREFIXES.iter().any(|p| t.starts_with(p))
+}
+
+/// Remove ANSI CSI escape sequences (`ESC [ … letter`) from `line`.
+/// Preserves non-escape characters verbatim.
+fn strip_ansi(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut chars = line.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\x1b' && chars.peek() == Some(&'[') {
+            chars.next(); // consume '['
+            for ec in chars.by_ref() {
+                if ec.is_ascii_alphabetic() {
+                    break;
+                }
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
 }
 
 fn forward_shell<R: std::io::Read + Send + 'static>(reader: R, node: &str, tx: &Sender<Msg>) {
