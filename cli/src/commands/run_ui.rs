@@ -236,23 +236,21 @@ impl State {
             .get(node)
             .map(|n| n.color)
             .unwrap_or(Color::White);
-        let header = Line::from(vec![Span::styled(
-            format!("[{}/{}]", network, frame),
-            Style::default().fg(color).add_modifier(Modifier::BOLD),
-        )]);
-        let body = Line::from(vec![
-            Span::raw("    "),
+        let line = Line::from(vec![
+            Span::styled(
+                format!("{:<18}", format!("[{}/{}]", network, frame)),
+                Style::default().fg(color).add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(" "),
             Span::styled(
                 signals.to_string(),
                 Style::default().add_modifier(Modifier::DIM),
             ),
         ]);
-        for line in [header, body] {
-            if self.can.len() == CAN_CAP {
-                self.can.pop_front();
-            }
-            self.can.push_back(line);
+        if self.can.len() == CAN_CAP {
+            self.can.pop_front();
         }
+        self.can.push_back(line);
     }
 
     fn cycle(&mut self, delta: isize) {
@@ -540,14 +538,12 @@ fn render_bus(f: &mut ratatui::Frame, area: Rect, state: &State) {
 }
 
 fn render_can(f: &mut ratatui::Frame, area: Rect, state: &State) {
-    // Stored as pairs (header line + signals line); report frame count, not
-    // raw line count, so the title matches the mental model.
     let pause = if state.can_paused {
         " ❚❚ paused "
     } else {
         ""
     };
-    let title = format!(" CAN  [{}]{} ", state.can.len() / 2, pause);
+    let title = format!(" CAN  [{}]{} ", state.can.len(), pause);
     let block = Block::default()
         .title(Span::styled(title, title_style(state, Focus::Can)))
         .borders(Borders::ALL)

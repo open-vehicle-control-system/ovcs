@@ -298,7 +298,27 @@ Process.sleep(:infinity)
 /// - `OVCS_CAN\t<network>\t<frame>\t<key=val key=val …>`
 ///
 /// The Rust side splits on `\t` and dispatches to the bus / can pane.
-const MONITOR_SNIPPET: &str = r##"Enum.reduce_while(1..120, :retry, fn _, _ ->
+const MONITOR_SNIPPET: &str = r##"# Mirror every diagnostic / CAN / bus line to a per-node file so the
+# user can `cat /tmp/ovcs_attach_<node>.log` from another terminal
+# (selecting text from a ratatui pane is fiddly at best).
+:persistent_term.put(
+  :ovcs_attach_log,
+  "/tmp/ovcs_attach_#{node() |> Atom.to_string() |> String.replace(~r/[^a-zA-Z0-9_\-]/, "_")}.log"
+)
+File.write!(:persistent_term.get(:ovcs_attach_log), "", [])
+
+defmodule OvcsAttachDiag do
+  def log(line) do
+    IO.puts(line)
+    File.write!(:persistent_term.get(:ovcs_attach_log), line <> "\n", [:append])
+  end
+
+  def path, do: :persistent_term.get(:ovcs_attach_log)
+end
+
+OvcsAttachDiag.log("OVCS_CAN\t[mon]\talive\tnode=#{inspect(node())} log=#{OvcsAttachDiag.path()}")
+
+Enum.reduce_while(1..120, :retry, fn _, _ ->
   if Code.ensure_loaded?(OvcsBus.Message) and Code.ensure_loaded?(Cantastic.Frame) do
     {:halt, :ok}
   else
@@ -307,76 +327,122 @@ const MONITOR_SNIPPET: &str = r##"Enum.reduce_while(1..120, :retry, fn _, _ ->
   end
 end)
 
+OvcsAttachDiag.log("OVCS_CAN\t[mon]\tdeps_loaded\tok")
+
 defmodule OvcsAttachMonitor do
+  @moduledoc false
+
+  # CAN traffic is observed via `candump -tz <iface>` one Port per
+  # unique vcan interface. We deliberately bypass `Cantastic.Receiver`:
+  # Cantastic only forwards frames whose ID is in a network's
+  # `received_frames` list, so its subscribers would miss every frame
+  # that same node *emits* (which on host dev is most of the traffic).
+  # candump taps the kernel CAN socket directly and sees every frame
+  # on the bus regardless of YAML declarations. Bus (OvcsBus) is still
+  # driven by a Phoenix.PubSub subscribe since it's node-local
+  # messaging, not CAN bus.
+
   def start do
-    spawn(fn ->
-      vms? = String.contains?(Atom.to_string(node()), "-vms")
-      subscribe_loop(%{bus: not vms?, can: false}, 120)
-      loop()
-    end)
-  end
+    if vms?() do
+      spawn(&bus_loop/0)
+    end
 
-  # Pattern-matched retry: only calls each subscribe until it succeeds
-  # once, avoiding double-subscription (Phoenix.PubSub + Cantastic both
-  # accept duplicate registrations and would deliver each message twice).
-  defp subscribe_loop(%{bus: true, can: true} = state, _), do: state
-  defp subscribe_loop(state, 0), do: state
+    case interfaces() do
+      [] ->
+        OvcsAttachDiag.log("OVCS_CAN\t[mon]\tno_interfaces\tok")
 
-  defp subscribe_loop(state, n) do
-    state =
-      if state.bus do
-        state
-      else
-        try do
-          OvcsBus.subscribe("messages")
-          %{state | bus: true}
-        rescue
-          _ -> state
-        catch
-          _, _ -> state
-        end
-      end
-
-    state =
-      if state.can do
-        state
-      else
-        try do
-          Cantastic.Receiver.subscribe(self())
-          %{state | can: true}
-        rescue
-          _ -> state
-        catch
-          _, _ -> state
-        end
-      end
-
-    if state.bus and state.can do
-      state
-    else
-      Process.sleep(500)
-      subscribe_loop(state, n - 1)
+      ifs ->
+        OvcsAttachDiag.log("OVCS_CAN\t[mon]\tstarting\t#{Enum.join(ifs, ",")}")
+        for iface <- ifs, do: spawn(fn -> candump_loop(iface) end)
     end
   end
 
-  defp loop do
+  defp vms?, do: String.contains?(Atom.to_string(node()), "-vms")
+
+  defp interfaces do
+    try do
+      Cantastic.ConfigurationStore.networks()
+      |> Enum.map(& &1.interface)
+      |> Enum.uniq()
+    catch
+      _, _ -> []
+    end
+  end
+
+  # -- OvcsBus --------------------------------------------------------
+
+  defp bus_loop do
+    ok? =
+      Enum.reduce_while(1..120, false, fn _, _ ->
+        try do
+          OvcsBus.subscribe("messages")
+          {:halt, true}
+        rescue
+          _ -> Process.sleep(500); {:cont, false}
+        catch
+          _, _ -> Process.sleep(500); {:cont, false}
+        end
+      end)
+
+    OvcsAttachDiag.log("OVCS_BUS\t[mon]\tsubscribed\t#{ok?}")
+    bus_receive()
+  end
+
+  defp bus_receive do
     receive do
       %OvcsBus.Message{source: s, name: n, value: v} ->
-        IO.puts("OVCS_BUS\t#{inspect(s)}\t#{n}\t#{inspect(v)}")
-
-      {:handle_frame, %Cantastic.Frame{network_name: net, name: f, signals: sigs}} ->
-        pairs =
-          sigs
-          |> Enum.map(fn {k, sig} -> "#{k}=#{inspect(sig.value)}" end)
-          |> Enum.join(" ")
-
-        IO.puts("OVCS_CAN\t#{net}\t#{f}\t#{pairs}")
+        OvcsAttachDiag.log("OVCS_BUS\t#{inspect(s)}\t#{n}\t#{inspect(v)}")
 
       _ ->
         :ok
     end
 
-    loop()
+    bus_receive()
+  end
+
+  # -- candump --------------------------------------------------------
+
+  defp candump_loop(iface) do
+    candump = System.find_executable("candump") || "/usr/bin/candump"
+
+    port =
+      Port.open({:spawn_executable, candump}, [
+        :binary,
+        :exit_status,
+        :stderr_to_stdout,
+        args: ["-tz", iface]
+      ])
+
+    read_port(port, iface, "")
+  end
+
+  defp read_port(port, iface, buf) do
+    receive do
+      {^port, {:data, chunk}} ->
+        {lines, rest} = split_lines(buf <> chunk)
+        Enum.each(lines, &process_line(iface, &1))
+        read_port(port, iface, rest)
+
+      {^port, {:exit_status, code}} ->
+        OvcsAttachDiag.log("OVCS_CAN\t[mon]\tcandump_exit\t#{iface} code=#{code}")
+    end
+  end
+
+  defp split_lines(buf) do
+    parts = String.split(buf, "\n")
+    {Enum.drop(parts, -1), List.last(parts)}
+  end
+
+  # candump -tz produces lines like:
+  #   " (0.000123)  vcan0  1A0   [8]  00 00 01 FF FF FF 7F 00"
+  defp process_line(iface, line) do
+    case Regex.run(~r/^\s*\([\d.]+\)\s+\S+\s+([0-9A-Fa-f]+)\s+\[\d+\]\s*(.*)$/, line) do
+      [_, id, data] ->
+        OvcsAttachDiag.log("OVCS_CAN\t#{iface}\t0x#{String.upcase(id)}\t#{String.trim(data)}")
+
+      _ ->
+        :ok
+    end
   end
 end
 
