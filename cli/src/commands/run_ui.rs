@@ -261,17 +261,83 @@ fn render(f: &mut ratatui::Frame, state: &State) {
     let area = f.area();
     let outer = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(1), Constraint::Length(1)])
+        .constraints([
+            Constraint::Length(1), // node tab strip
+            Constraint::Min(1),
+            Constraint::Length(1), // footer
+        ])
         .split(area);
+
+    render_tabs(f, outer[0], state);
 
     let columns = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
-        .split(outer[0]);
+        .split(outer[1]);
 
     render_logs(f, columns[0], state);
     render_shell(f, columns[1], state);
-    render_status(f, outer[1], state);
+    render_status(f, outer[2], state);
+}
+
+fn render_tabs(f: &mut ratatui::Frame, area: Rect, state: &State) {
+    // One "chip" per node:  ● F1 vms   ● F2 infotainment   …
+    // Active: bold + underlined in the node's accent colour.
+    // Disconnected: hollow `○` marker + DIM.
+    let mut spans: Vec<Span<'static>> = vec![Span::raw(" ")];
+
+    for (i, name) in state.nodes.iter().enumerate() {
+        let node = state.by_node.get(name);
+        let color = node.map(|n| n.color).unwrap_or(Color::White);
+        let up = node.map(|n| n.up).unwrap_or(false);
+        let active = name == &state.current;
+
+        let dot = if up { "●" } else { "○" };
+        let fkey = format!("F{}", i + 1);
+
+        let label_style = {
+            let mut s = Style::default().fg(color);
+            if active {
+                s = s
+                    .add_modifier(Modifier::BOLD)
+                    .add_modifier(Modifier::UNDERLINED);
+            }
+            if !up {
+                s = s.add_modifier(Modifier::DIM);
+            }
+            s
+        };
+
+        let dot_style = {
+            let mut s = Style::default().fg(color);
+            if !up {
+                s = s.add_modifier(Modifier::DIM);
+            }
+            s
+        };
+
+        let fkey_style = {
+            let mut s = Style::default().add_modifier(Modifier::DIM);
+            if active {
+                s = s.add_modifier(Modifier::BOLD);
+            }
+            s
+        };
+
+        if i > 0 {
+            spans.push(Span::styled(
+                "   ",
+                Style::default().add_modifier(Modifier::DIM),
+            ));
+        }
+        spans.push(Span::styled(dot.to_string(), dot_style));
+        spans.push(Span::raw(" "));
+        spans.push(Span::styled(fkey, fkey_style));
+        spans.push(Span::raw(" "));
+        spans.push(Span::styled(name.clone(), label_style));
+    }
+
+    f.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
 fn render_logs(f: &mut ratatui::Frame, area: Rect, state: &State) {
@@ -331,17 +397,10 @@ fn render_shell(f: &mut ratatui::Frame, area: Rect, state: &State) {
         .get(&state.current)
         .map(|n| n.color)
         .unwrap_or(Color::Cyan);
-    let up_badge = if state
-        .by_node
-        .get(&state.current)
-        .map(|n| n.up)
-        .unwrap_or(false)
-    {
-        ""
-    } else {
-        "  [disconnected]"
-    };
-    let title = format!(" iex — {}{} ", state.current, up_badge);
+    // Shell pane keeps a short "iex · <node>" title as a belt-and-braces
+    // cue; the top tab strip is the primary "which node am I driving"
+    // indicator.
+    let title = format!(" iex · {} ", state.current);
     let block = Block::default()
         .title(Span::styled(
             title,
@@ -403,9 +462,12 @@ fn render_status(f: &mut ratatui::Frame, area: Rect, state: &State) {
         Focus::Log => "log",
         Focus::Shell => "shell",
     };
+    // Top tab strip already tells the user which node is active and
+    // advertises the F-key mapping, so the footer only needs the
+    // universal pane / editor / exit shortcuts.
     let help = if state.nodes.len() > 1 {
         format!(
-            " [{}] Tab=pane  Ctrl-N/P=shell node  F1..F9=jump  Enter=eval  Ctrl-C/q=quit ",
+            " [{}] Tab=pane  Ctrl-N/P=cycle node  Enter=eval  Ctrl-C/q=quit ",
             focus_label
         )
     } else {
