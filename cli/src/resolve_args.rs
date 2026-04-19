@@ -1,10 +1,26 @@
-use anyhow::{bail, Result};
+use anyhow::{anyhow, bail, Result};
 use owo_colors::OwoColorize;
 
 use crate::firmware::applications_for;
 use crate::prompt::{choose, choose_vehicle};
 use crate::repo_root::repo_root;
 use crate::vehicles::{self, Vehicle};
+
+/// Resolve a single `vehicle` argument: if `arg` matches a known
+/// directory name use that vehicle, otherwise fall back to the
+/// interactive picker. Shared by `run`, `attach`, `can setup`, and
+/// `can status` — they all front the same "pick one vehicle" UX.
+pub fn resolve_vehicle(arg: Option<String>) -> Result<Vehicle> {
+    let root = repo_root()?;
+    let list = vehicles::list(&root)?;
+    match arg {
+        Some(dir) => list
+            .into_iter()
+            .find(|v| v.dir == dir)
+            .ok_or_else(|| anyhow!("Unknown vehicle {}", dir)),
+        None => choose_vehicle(&list),
+    }
+}
 
 pub struct ResolvedArgs {
     pub repo_root: std::path::PathBuf,
