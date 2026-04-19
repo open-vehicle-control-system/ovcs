@@ -34,12 +34,9 @@ defmodule <%= @module %>.Vms.Composer do
 
   @impl VmsCore.Vehicle
   def bus_relay do
-    %{
-      broker: [host: <%= @module %>.broker_host(), port: 1884],
-      client_id: "<%= @name %>-vms",
-      topic_prefix: "ovcs/<%= @name %>/bus",
+    OvcsVehicle.Bus.relay_opts(<%= @module %>, "<%= @name %>-vms",
       topics: [:ready_to_drive, :vms_status]
-    }
+    )
   end
 
   @impl VmsCore.Vehicle

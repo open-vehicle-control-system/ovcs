@@ -27,11 +27,8 @@ defmodule Ovcs1.Infotainment.Composer do
 
   @impl InfotainmentCore.Vehicle
   def bus_relay do
-    %{
-      broker: [host: Ovcs1.broker_host(), port: 1884],
-      client_id: "ovcs1-infotainment",
-      topic_prefix: "ovcs/ovcs1/bus",
+    OvcsVehicle.Bus.relay_opts(Ovcs1, "ovcs1-infotainment",
       topics: [:ready_to_drive, :vms_status, :selected_gear, :speed]
-    }
+    )
   end
 end

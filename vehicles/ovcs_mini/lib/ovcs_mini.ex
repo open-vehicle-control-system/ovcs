@@ -17,7 +17,7 @@ defmodule OvcsMini do
 
   @broker_host (if Mix.target() == :host, do: "localhost", else: "ovcs-mini-vms.local")
 
-  @doc false
+  @doc "Shared by composers + `OvcsVehicle.Bus.relay_opts/3`."
   def broker_host, do: @broker_host
 
   @impl OvcsVehicle
@@ -27,22 +27,14 @@ defmodule OvcsMini do
         target: :ovcs_base_can_system_rpi3a,
         bridges: [RadioControlBridge],
         default_can_mapping: %{host: "ovcs:vcan0", target: "ovcs:spi0.0"},
-        bus_relay: relay_opts("ovcs-mini-bridge-radio_control")
+        bus_relay: OvcsVehicle.Bus.relay_opts(__MODULE__, "ovcs-mini-bridge-radio_control")
       },
       "ros" => %{
         target: :ovcs_base_can_system_rpi4,
         bridges: [RosBridge],
         default_can_mapping: %{host: "ovcs:vcan0", target: "ovcs:spi0.0"},
-        bus_relay: relay_opts("ovcs-mini-bridge-ros")
+        bus_relay: OvcsVehicle.Bus.relay_opts(__MODULE__, "ovcs-mini-bridge-ros")
       }
-    }
-  end
-
-  defp relay_opts(client_id) do
-    %{
-      broker: [host: @broker_host, port: 1884],
-      client_id: client_id,
-      topic_prefix: "ovcs/ovcs_mini/bus"
     }
   end
 end
