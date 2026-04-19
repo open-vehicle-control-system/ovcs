@@ -215,14 +215,11 @@ fn run_vehicle_picker(
     let mut state = ListState::default();
     state.select(Some(0));
 
-    // Each row has: module+dir, vms target, infotainment target, and —
-    // when the vehicle declares any — a "bridges" header line plus one
-    // line per bridge entry. Precompute heights so the centered pane
-    // sizes correctly.
+    // Rows: module+dir, vms, infotainment, optional single bridges line.
     let row_lines = |v: &VehicleItem| -> u16 {
         let mut n: u16 = 3; // module + vms + infotainment
         if !v.bridges.is_empty() {
-            n += 1 + v.bridges.len() as u16;
+            n += 1;
         }
         n
     };
@@ -232,71 +229,46 @@ fn run_vehicle_picker(
         terminal.draw(|f| {
             let outer_area = f.area();
 
-            // Centered content pane — ~80 wide or terminal width, whichever
-            // is smaller. Height auto from item count + chrome.
-            let content_width: u16 = 78;
+            // Pane is wide: up to 100 cols, shrunk to terminal width. Height
+            // is driven by actual item heights + small chrome (just title +
+            // footer inside the border).
+            let content_width = outer_area.width.saturating_sub(4).min(100);
             let items_height: u16 = items.iter().map(row_lines).sum::<u16>()
                 + (items.len() as u16).saturating_sub(1) * ROW_GAP;
-            let chrome_height: u16 = 9; // title stack + footer + padding
+            let chrome_height: u16 = 5; // top/bottom border (2) + top/bottom padding (2) + footer (1)
             let total_height = items_height + chrome_height;
             let area = centered(outer_area, content_width, total_height);
+
+            // Title lives on the border itself, centered.
+            let title = Line::from(vec![
+                Span::raw(" "),
+                Span::styled(
+                    "OVCS",
+                    Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                ),
+                Span::raw("  ·  "),
+                Span::styled(
+                    "select a vehicle",
+                    Style::default().add_modifier(Modifier::BOLD),
+                ),
+                Span::raw(" "),
+            ]);
 
             let outer = Block::default()
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
                 .border_style(Style::default().fg(ACCENT))
+                .title(title)
+                .title_alignment(Alignment::Center)
                 .padding(Padding::new(2, 2, 1, 1));
             let inner = outer.inner(area);
             f.render_widget(outer, area);
 
             let rows = Layout::default()
                 .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Length(1),
-                    Constraint::Length(1),
-                    Constraint::Length(1),
-                    Constraint::Min(1),
-                    Constraint::Length(1),
-                ])
+                .constraints([Constraint::Min(1), Constraint::Length(1)])
                 .split(inner);
 
-            // Title: OVCS accent + tagline. Tagline and other primary
-            // text use the terminal's default foreground (no explicit
-            // fg) so they read on both light and dark terminals —
-            // picking Color::White made them invisible on light themes.
-            f.render_widget(
-                Paragraph::new(Line::from(vec![
-                    Span::styled(
-                        "OVCS",
-                        Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
-                    ),
-                    Span::raw("  "),
-                    Span::styled(
-                        "select a vehicle",
-                        Style::default().add_modifier(Modifier::BOLD),
-                    ),
-                ]))
-                .alignment(Alignment::Center),
-                rows[0],
-            );
-
-            f.render_widget(
-                Paragraph::new(Line::from(Span::styled(
-                    format!(
-                        "{} vehicle{} discovered under vehicles/",
-                        items.len(),
-                        if items.len() == 1 { "" } else { "s" }
-                    ),
-                    dim(),
-                )))
-                .alignment(Alignment::Center),
-                rows[1],
-            );
-
-            // Blank spacer
-            f.render_widget(Paragraph::new(""), rows[2]);
-
-            // Items list
             let list_items: Vec<ListItem> = items
                 .iter()
                 .map(|v| {
@@ -313,17 +285,18 @@ fn run_vehicle_picker(
                     lines.push(row_detail("infotainment", v.info_target.as_deref()));
 
                     if !v.bridges.is_empty() {
+                        let summary = v
+                            .bridges
+                            .iter()
+                            .map(|(id, target)| format!("{} ({})", id, short_target(target)))
+                            .collect::<Vec<_>>()
+                            .join(", ");
                         lines.push(Line::from(vec![
                             Span::raw("   "),
                             Span::styled(format!("{:<13}", "bridges"), dim()),
+                            Span::styled("→ ", dim()),
+                            Span::styled(summary, Style::default().fg(ACCENT)),
                         ]));
-                        for (id, target) in &v.bridges {
-                            lines.push(Line::from(vec![
-                                Span::raw("      "),
-                                Span::styled(id.clone(), Style::default().fg(ACCENT)),
-                                Span::styled(format!("  → {}", target), dim()),
-                            ]));
-                        }
                     }
 
                     lines.push(Line::from(""));
@@ -332,13 +305,12 @@ fn run_vehicle_picker(
                 .collect();
 
             let list = List::new(list_items)
-                .highlight_style(
-                    Style::default()
-                        .add_modifier(Modifier::BOLD)
-                        .add_modifier(Modifier::REVERSED),
-                )
-                .highlight_symbol("▌ ");
-            f.render_stateful_widget(list, rows[3], &mut state);
+                // BOLD only — no REVERSED, no bg tint. Per-span palette
+                // (dim dir, cyan accent on targets) stays legible; the
+                // cyan `▌` marker is what calls out the active row.
+                .highlight_style(Style::default().add_modifier(Modifier::BOLD))
+                .highlight_symbol(" ▌ ");
+            f.render_stateful_widget(list, rows[0], &mut state);
 
             f.render_widget(
                 Paragraph::new(Line::from(Span::styled(
@@ -346,7 +318,7 @@ fn run_vehicle_picker(
                     dim(),
                 )))
                 .alignment(Alignment::Center),
-                rows[4],
+                rows[1],
             );
         })?;
 
@@ -388,6 +360,18 @@ fn row_detail(label: &str, target: Option<&str>) -> Line<'static> {
 /// disappears on dark backgrounds.
 fn dim() -> Style {
     Style::default().add_modifier(Modifier::DIM)
+}
+
+/// Strip the `ovcs_base_can_system_` / `ovcs_bridges_system_` prefix
+/// from a Nerves target atom for the compact bridges line. Returns
+/// the input unchanged if no known prefix matches.
+fn short_target(target: &str) -> String {
+    for prefix in ["ovcs_base_can_system_", "ovcs_bridges_system_"] {
+        if let Some(rest) = target.strip_prefix(prefix) {
+            return rest.to_string();
+        }
+    }
+    target.to_string()
 }
 
 // ---------- shared input handling ----------
