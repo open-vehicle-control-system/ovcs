@@ -45,12 +45,15 @@ can coexist on a dev host). For the full vehicle-package boot, prefer
 
 | Variable | Required | Purpose |
 |----------|:-:|---------|
-| `VEHICLE` | yes | Top-level vehicle module (`Ovcs1`, `OvcsMini`, …). The vehicle's `infotainment/0` must return an `InfotainmentCore.Vehicle` composer — vehicles with no head unit (e.g. `OvcsMini`, `Obd2`) don't boot this app |
+| `VEHICLE` | yes | Top-level vehicle module (`Ovcs1`, `Obd2`, …). The vehicle's `infotainment/0` must return an `InfotainmentCore.Vehicle` composer — vehicles with no head unit (e.g. `OvcsMini`) don't boot this app |
 | `CAN_NETWORK_MAPPINGS` | no | Override the vehicle's `default_can_mapping(:host)` |
 
 ## Dependencies
 
-Path deps: [`infotainment_core`](../core), [`cantastic`](../../libraries/cantastic),
-[`ovcs_can`](../../libraries/ovcs_can), [`ovcs_bus`](../../libraries/ovcs_bus),
-[`ovcs_vehicle`](../../libraries/ovcs_vehicle). The active vehicle package
-under `vehicles/<name>/` is resolved at runtime from `VEHICLE`.
+Direct path dep: [`infotainment_core`](../core). Cantastic / OvcsBus /
+OvcsCan come in transitively through `infotainment_core`. The active
+vehicle package under `vehicles/<name>/` isn't a Mix dep — it's
+resolved at runtime from `VEHICLE` by
+`infotainment/firmware/config/runtime.exs` (via
+`OvcsVehicle.Firmware.resolve_vehicle/3`) before
+`InfotainmentCore.Application` starts.
