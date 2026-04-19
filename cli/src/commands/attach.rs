@@ -8,7 +8,7 @@ use std::thread;
 use std::time::Duration;
 
 use crate::commands::run_ui::{self, Msg, NodeHandle};
-use crate::prompt::choose;
+use crate::prompt::choose_vehicle;
 use crate::repo_root::repo_root;
 use crate::vehicles;
 
@@ -18,15 +18,13 @@ const PROBE_TIMEOUT: Duration = Duration::from_millis(500);
 pub fn run(vehicle_arg: Option<String>) -> Result<()> {
     let root = repo_root()?;
     let list = vehicles::list(&root)?;
-    let names: Vec<String> = list.iter().map(|v| v.dir.clone()).collect();
-    let vehicle_dir = match vehicle_arg {
-        Some(v) => v,
-        None => choose("vehicle", &names)?,
+    let vehicle = match vehicle_arg {
+        Some(dir) => list
+            .into_iter()
+            .find(|v| v.dir == dir)
+            .ok_or_else(|| anyhow!("Unknown vehicle {}", dir))?,
+        None => choose_vehicle(&list)?,
     };
-    let vehicle = list
-        .into_iter()
-        .find(|v| v.dir == vehicle_dir)
-        .ok_or_else(|| anyhow!("Unknown vehicle {}", vehicle_dir))?;
 
     step("querying vehicle composer (mix snippet, may take a few seconds)…");
     let expected = expected_devices(&vehicle)?;

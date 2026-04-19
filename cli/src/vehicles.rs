@@ -7,6 +7,7 @@ use std::process::{Command, Stdio};
 
 use crate::shell::run_capture;
 
+#[derive(Clone)]
 pub struct Vehicle {
     pub dir: String,
     pub module: String,
