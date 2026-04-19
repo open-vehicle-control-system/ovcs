@@ -46,7 +46,7 @@ To use a different system, replace `:ovcs_base_can_system_rpi5` with your custom
 
 ## Building and Deploying Firmware
 
-OVCS provides the `ovcs` CLI tool at the repository root (a Node.js bundle under `cli/ovcs.js`, symlinked to `./ovcs`) for building, burning, and uploading firmware. See [`cli/README.md`](../cli/README.md) for the full command reference and implementation notes.
+OVCS provides the `ovcs` CLI tool at the repository root (a Rust release binary built from `cli/`, committed as `cli/ovcs` and symlinked to `./ovcs`) for building, burning, and uploading firmware. See [`cli/README.md`](../cli/README.md) for the full command reference and implementation notes.
 
 ### CLI Usage
 

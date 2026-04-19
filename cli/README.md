@@ -31,7 +31,8 @@ binary directly.
 ./ovcs can setup  <vehicle>        # create + bring up vcan interfaces (sudo)
 ./ovcs can status <vehicle>        # report vcan interface state
 ./ovcs vehicle new <name> [--vms-target T] [--infotainment-target T] [--no-infotainment]
-./ovcs run <vehicle>               # `can setup` + split TUI (logs | iex --remsh)
+./ovcs run <vehicle>               # `can setup` + spawn one BEAM per firmware, line-prefixed stdout
+./ovcs attach <vehicle>            # split-pane TUI (merged logs | iex) over SSH or local remsh
 ```
 
 Where:
@@ -74,13 +75,18 @@ cli/
     └── commands/         # one file per subcommand
 ```
 
-Ratatui drives two interactive views: the vehicle/app picker, and the
-split-pane UI for `./ovcs run`. For `run`, the CLI spawns
-`elixir --sname ovcs_<v> -S mix run --no-halt` as one child (stdout/stderr
-stream into the left log pane) and `iex --sname ... --remsh ovcs_<v>@<host>`
-as another (piped stdio — typed input goes to its stdin, responses appear
-in the right pane). No terminal emulation, no pty, no tmux — just line-in
-/ line-out over pipes, with a minimal input widget and ↑↓ history. A
-future `./ovcs stream` will reuse the same architecture for an
-`ovcs_bus` + CAN frame dashboard. One-shot views (`vehicles`, `doctor`,
-`can status`) use plain `println!` + `owo-colors`.
+`./ovcs run` and `./ovcs attach` split booting a vehicle from observing
+it. `run` provisions vcan, spawns one `elixir --sname <vehicle>-<role>
+-S mix run --no-halt` per firmware role from its own project directory,
+and line-prefixes each child's stdout/stderr (`[vms] …`, `[bridge-ros]
+…`) to the tty. It's the canonical local dev boot. `attach` is
+terminal-independent — from another shell or machine it discovers the
+running nodes (first by probing `<vehicle>-<side>.local:22` for
+deployed Nerves devices; falling back to `epmd -names` for local
+dev BEAMs) and drives a Ratatui split-pane view: merged per-node log
+stream on the left, focused IEx shell on the right, hotkeys to cycle
+which node the shell targets.
+
+Ratatui also backs the one-off vehicle/app picker used when an
+argument is missing. One-shot views (`vehicles`, `doctor`, `can
+status`) use plain `println!` + `owo-colors`.
