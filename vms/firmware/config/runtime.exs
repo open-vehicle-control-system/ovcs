@@ -33,17 +33,6 @@ if System.get_env("PHX_SERVER") do
 end
 
 if config_env() == :prod do
-  database_path =
-    System.get_env("DATABASE_PATH") ||
-      raise """
-      environment variable DATABASE_PATH is missing.
-      For example: /etc/api/api.db
-      """
-
-  config :vms_api, VmsApi.Repo,
-    database: database_path,
-    pool_size: String.to_integer(System.get_env("POOL_SIZE") || "5")
-
   secret_key_base =
     System.get_env("SECRET_KEY_BASE") ||
       raise """

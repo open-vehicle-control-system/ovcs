@@ -41,15 +41,8 @@ config :mdns_lite,
     %{protocol: "epmd", transport: "tcp", port: 4369}
   ]
 
-# Phoenix / Ecto — firmware paths (on-device SQLite) and mDNS-based host.
-config :infotainment_api, InfotainmentApi.Repo,
-  database: "/data/infotainment_api/infotainment_api.db",
-  pool_size: 5,
-  stacktrace: true,
-  show_sensitive_data_on_connection_error: true
-
+# Phoenix endpoint — firmware host (mDNS-based).
 config :infotainment_api,
-  ecto_repos: [InfotainmentApi.Repo],
   generators: [timestamp_type: :utc_datetime]
 
 config :infotainment_api, InfotainmentApiWeb.Endpoint,

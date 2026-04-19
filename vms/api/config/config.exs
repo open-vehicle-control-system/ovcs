@@ -11,7 +11,6 @@ import_config "../../core/config/config.exs"
 
 config :vms_api,
   namespace: VmsApi,
-  ecto_repos: [VmsApi.Repo],
   generators: [timestamp_type: :utc_datetime]
 
 # Configures the endpoint
