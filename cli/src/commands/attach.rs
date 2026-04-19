@@ -538,15 +538,26 @@ fn forward_log<R: std::io::Read + Send + 'static>(reader: R, node: &str, tx: &Se
 }
 
 /// The log-side remsh is an IEx session we hijacked for log streaming — its
-/// stdout carries real log events but also IEx's own banner / prompt / return
-/// values. Drop those so they don't clutter the log pane.
+/// stdout carries real log events but also IEx's own banner, continuation
+/// prompts, and return values from the init snippet. Drop those so they
+/// don't clutter the log pane.
+///
+/// Ideally we'd use `elixir -eval` against the target node instead of IEx
+/// (no banner to filter), but `RingLogger.attach()` binds to the calling
+/// process, so we need a long-lived remote process — exactly what an iex
+/// remsh gives us. Prefix-matching is the pragmatic compromise; widen the
+/// list if a new IEx version prints a banner line we haven't seen.
 fn is_iex_noise(line: &str) -> bool {
     let t = line.trim();
-    t.is_empty()
-        || t.starts_with("iex(")
-        || t.starts_with("...(")
-        || t.starts_with("Erlang/OTP")
-        || t.starts_with("Interactive Elixir")
+    const NOISE_PREFIXES: &[&str] = &[
+        "iex(",                 // interactive prompt
+        "...(",                 // continuation prompt
+        "Erlang/OTP",           // erlang banner
+        "Interactive Elixir",   // iex banner
+        ":ok",                  // return value from our init snippet
+        "Compiling ",           // mix recompile chatter under --remsh
+    ];
+    t.is_empty() || NOISE_PREFIXES.iter().any(|p| t.starts_with(p))
 }
 
 fn forward_shell<R: std::io::Read + Send + 'static>(reader: R, node: &str, tx: &Sender<Msg>) {
