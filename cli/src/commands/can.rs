@@ -1,25 +1,10 @@
-use anyhow::{bail, Result};
+use anyhow::Result;
 use owo_colors::OwoColorize;
 use std::process::{Command, Stdio};
 
-use crate::prompt::choose;
-use crate::repo_root::repo_root;
+use crate::resolve_args::resolve_vehicle;
 use crate::ui::{step, sub, sub_fail, sub_ok, sub_warn};
 use crate::vehicles::{self, Vehicle};
-
-fn resolve_vehicle(arg: Option<String>) -> Result<Vehicle> {
-    let root = repo_root()?;
-    let list = vehicles::list(&root)?;
-    let names: Vec<String> = list.iter().map(|v| v.dir.clone()).collect();
-    let vehicle_dir = match arg {
-        Some(v) => v,
-        None => choose("vehicle", &names)?,
-    };
-    match list.into_iter().find(|v| v.dir == vehicle_dir) {
-        Some(v) => Ok(v),
-        None => bail!("Unknown vehicle {}", vehicle_dir),
-    }
-}
 
 fn iface_exists(iface: &str) -> bool {
     Command::new("ip")
@@ -36,11 +21,36 @@ fn iface_exists(iface: &str) -> bool {
 fn iface_up(iface: &str) -> bool {
     match Command::new("ip").args(["link", "show", iface]).output() {
         Ok(out) if out.status.success() => {
-            let s = String::from_utf8_lossy(&out.stdout);
-            s.contains(",UP,") || s.contains("<UP,")
+            let output = String::from_utf8_lossy(&out.stdout);
+            output.contains(",UP,") || output.contains("<UP,")
         }
         _ => false,
     }
+}
+
+/// Classified state of one host CAN interface — exists? up? Used by
+/// both `setup` (to decide what to create/bring up) and `status` (to
+/// paint the ✓ / ⚠ / ✗ tree). One place to ask the kernel, two
+/// places to render it.
+struct InterfaceProbe {
+    name: String,
+    exists: bool,
+    up: bool,
+}
+
+fn probe_interfaces(interfaces: &[String]) -> Vec<InterfaceProbe> {
+    interfaces
+        .iter()
+        .map(|name| {
+            let exists = iface_exists(name);
+            let up = exists && iface_up(name);
+            InterfaceProbe {
+                name: name.clone(),
+                exists,
+                up,
+            }
+        })
+        .collect()
 }
 
 fn vcan_loaded() -> bool {
@@ -93,15 +103,16 @@ pub fn ensure_host_can(vehicle: &Vehicle) -> Result<()> {
         return Ok(());
     }
 
+    let probes = probe_interfaces(&interfaces);
     let mut actions: Vec<String> = Vec::new();
     if !vcan_loaded() {
         actions.push("load vcan module".to_string());
     }
-    for iface in &interfaces {
-        if !iface_exists(iface) {
-            actions.push(format!("create {}", iface));
-        } else if !iface_up(iface) {
-            actions.push(format!("bring up {}", iface));
+    for probe in &probes {
+        if !probe.exists {
+            actions.push(format!("create {}", probe.name));
+        } else if !probe.up {
+            actions.push(format!("bring up {}", probe.name));
         }
     }
 
@@ -187,16 +198,17 @@ pub fn status(arg: Option<String>) -> Result<()> {
         return Ok(());
     }
     step(&format!("{} host CAN interfaces:", vehicle.module));
+    let probes = probe_interfaces(&interfaces);
     let mut missing = 0;
-    for iface in &interfaces {
-        if !iface_exists(iface) {
-            sub_fail(&format!("{}  {}", iface, "not created".dimmed()));
+    for probe in &probes {
+        if !probe.exists {
+            sub_fail(&format!("{}  {}", probe.name, "not created".dimmed()));
             missing += 1;
-        } else if !iface_up(iface) {
-            sub_warn(&format!("{}  {}", iface, "down".dimmed()));
+        } else if !probe.up {
+            sub_warn(&format!("{}  {}", probe.name, "down".dimmed()));
             missing += 1;
         } else {
-            sub_ok(&format!("{}  {}", iface, "up".dimmed()));
+            sub_ok(&format!("{}  {}", probe.name, "up".dimmed()));
         }
     }
     println!();
