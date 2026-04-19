@@ -51,13 +51,25 @@ pub fn choose_vehicle(vehicles: &[Vehicle]) -> Result<Vehicle> {
 
     let items: Vec<VehicleItem> = vehicles
         .iter()
-        .map(|v| VehicleItem {
-            dir: v.dir.clone(),
-            module: v.module.clone(),
-            vms_target: crate::vehicles::nerves_target(v, "vms").ok().flatten(),
-            info_target: crate::vehicles::nerves_target(v, "infotainment")
+        .map(|v| {
+            let bridges = crate::vehicles::bridge_firmwares(v)
                 .ok()
-                .flatten(),
+                .map(|map| {
+                    let mut entries: Vec<(String, String)> =
+                        map.into_iter().map(|(id, fw)| (id, fw.target)).collect();
+                    entries.sort_by(|a, b| a.0.cmp(&b.0));
+                    entries
+                })
+                .unwrap_or_default();
+            VehicleItem {
+                dir: v.dir.clone(),
+                module: v.module.clone(),
+                vms_target: crate::vehicles::nerves_target(v, "vms").ok().flatten(),
+                info_target: crate::vehicles::nerves_target(v, "infotainment")
+                    .ok()
+                    .flatten(),
+                bridges,
+            }
         })
         .collect();
 
@@ -154,7 +166,7 @@ fn run_text_picker(
             f.render_widget(
                 Paragraph::new(Line::from(Span::styled(
                     "↑↓ navigate   ⏎ select   q / Esc cancel",
-                    Style::default().fg(Color::DarkGray),
+                    dim(),
                 )))
                 .alignment(Alignment::Center),
                 rows[1],
@@ -192,6 +204,8 @@ struct VehicleItem {
     module: String,
     vms_target: Option<String>,
     info_target: Option<String>,
+    /// (bridge_firmware_id, target) pairs, sorted by id.
+    bridges: Vec<(String, String)>,
 }
 
 fn run_vehicle_picker(
@@ -201,10 +215,17 @@ fn run_vehicle_picker(
     let mut state = ListState::default();
     state.select(Some(0));
 
-    // Each vehicle row takes 4 lines (module, dir, vms target, info
-    // target). ratatui's List renders one ListItem as one "logical" row
-    // but the item itself can be multi-line — we construct it as such.
-    const ROW_LINES: u16 = 4;
+    // Each row has: module+dir, vms target, infotainment target, and —
+    // when the vehicle declares any — a "bridges" header line plus one
+    // line per bridge entry. Precompute heights so the centered pane
+    // sizes correctly.
+    let row_lines = |v: &VehicleItem| -> u16 {
+        let mut n: u16 = 3; // module + vms + infotainment
+        if !v.bridges.is_empty() {
+            n += 1 + v.bridges.len() as u16;
+        }
+        n
+    };
     const ROW_GAP: u16 = 1;
 
     loop {
@@ -214,8 +235,8 @@ fn run_vehicle_picker(
             // Centered content pane — ~80 wide or terminal width, whichever
             // is smaller. Height auto from item count + chrome.
             let content_width: u16 = 78;
-            let items_height =
-                (items.len() as u16) * ROW_LINES + (items.len() as u16).saturating_sub(1) * ROW_GAP;
+            let items_height: u16 = items.iter().map(row_lines).sum::<u16>()
+                + (items.len() as u16).saturating_sub(1) * ROW_GAP;
             let chrome_height: u16 = 9; // title stack + footer + padding
             let total_height = items_height + chrome_height;
             let area = centered(outer_area, content_width, total_height);
@@ -239,7 +260,10 @@ fn run_vehicle_picker(
                 ])
                 .split(inner);
 
-            // Title: big OVCS wordmark + tagline
+            // Title: OVCS accent + tagline. Tagline and other primary
+            // text use the terminal's default foreground (no explicit
+            // fg) so they read on both light and dark terminals —
+            // picking Color::White made them invisible on light themes.
             f.render_widget(
                 Paragraph::new(Line::from(vec![
                     Span::styled(
@@ -249,9 +273,7 @@ fn run_vehicle_picker(
                     Span::raw("  "),
                     Span::styled(
                         "select a vehicle",
-                        Style::default()
-                            .fg(Color::White)
-                            .add_modifier(Modifier::BOLD),
+                        Style::default().add_modifier(Modifier::BOLD),
                     ),
                 ]))
                 .alignment(Alignment::Center),
@@ -265,7 +287,7 @@ fn run_vehicle_picker(
                         items.len(),
                         if items.len() == 1 { "" } else { "s" }
                     ),
-                    Style::default().fg(Color::DarkGray),
+                    dim(),
                 )))
                 .alignment(Alignment::Center),
                 rows[1],
@@ -278,28 +300,42 @@ fn run_vehicle_picker(
             let list_items: Vec<ListItem> = items
                 .iter()
                 .map(|v| {
-                    let module_line = Line::from(vec![
+                    let mut lines: Vec<Line<'static>> = Vec::new();
+                    lines.push(Line::from(vec![
                         Span::styled(
-                            &v.module,
-                            Style::default()
-                                .fg(Color::White)
-                                .add_modifier(Modifier::BOLD),
+                            v.module.clone(),
+                            Style::default().add_modifier(Modifier::BOLD),
                         ),
                         Span::raw("  "),
-                        Span::styled(format!("({})", v.dir), Style::default().fg(Color::DarkGray)),
-                    ]);
-                    let vms_line = row_detail("vms", v.vms_target.as_deref());
-                    let info_line = row_detail("infotainment", v.info_target.as_deref());
-                    let gap = Line::from("");
-                    ListItem::new(vec![module_line, vms_line, info_line, gap])
+                        Span::styled(format!("({})", v.dir), dim()),
+                    ]));
+                    lines.push(row_detail("vms", v.vms_target.as_deref()));
+                    lines.push(row_detail("infotainment", v.info_target.as_deref()));
+
+                    if !v.bridges.is_empty() {
+                        lines.push(Line::from(vec![
+                            Span::raw("   "),
+                            Span::styled(format!("{:<13}", "bridges"), dim()),
+                        ]));
+                        for (id, target) in &v.bridges {
+                            lines.push(Line::from(vec![
+                                Span::raw("      "),
+                                Span::styled(id.clone(), Style::default().fg(ACCENT)),
+                                Span::styled(format!("  → {}", target), dim()),
+                            ]));
+                        }
+                    }
+
+                    lines.push(Line::from(""));
+                    ListItem::new(lines)
                 })
                 .collect();
 
             let list = List::new(list_items)
                 .highlight_style(
                     Style::default()
-                        .bg(Color::Rgb(30, 30, 30))
-                        .add_modifier(Modifier::BOLD),
+                        .add_modifier(Modifier::BOLD)
+                        .add_modifier(Modifier::REVERSED),
                 )
                 .highlight_symbol("▌ ");
             f.render_stateful_widget(list, rows[3], &mut state);
@@ -307,7 +343,7 @@ fn run_vehicle_picker(
             f.render_widget(
                 Paragraph::new(Line::from(Span::styled(
                     "↑↓ navigate   ⏎ select   q / Esc cancel",
-                    Style::default().fg(Color::DarkGray),
+                    dim(),
                 )))
                 .alignment(Alignment::Center),
                 rows[4],
@@ -338,16 +374,20 @@ fn run_vehicle_picker(
 fn row_detail(label: &str, target: Option<&str>) -> Line<'static> {
     Line::from(vec![
         Span::raw("   "),
-        Span::styled(
-            format!("{:<13}", label),
-            Style::default().fg(Color::DarkGray),
-        ),
-        Span::styled("→ ", Style::default().fg(Color::DarkGray)),
+        Span::styled(format!("{:<13}", label), dim()),
+        Span::styled("→ ", dim()),
         match target {
             Some(t) => Span::styled(t.to_string(), Style::default().fg(ACCENT)),
-            None => Span::styled("—", Style::default().fg(Color::DarkGray)),
+            None => Span::styled("—", dim()),
         },
     ])
+}
+
+/// Terminal-default foreground with the `DIM` attribute — readable on
+/// both light and dark terminals, unlike `Color::DarkGray` which
+/// disappears on dark backgrounds.
+fn dim() -> Style {
+    Style::default().add_modifier(Modifier::DIM)
 }
 
 // ---------- shared input handling ----------
