@@ -99,7 +99,7 @@ defmodule Ovcs1.Vms.OVCSCANForwarder do
   def handle_info(%Bus.Message{name: :speed, value: speed, source: source}, state) when source == state.speed_source do
     {:noreply, %{state | speed: speed}}
   end
-  def handle_info(%Bus.Message{}, state) do # TODO, replace Bus ?
+  def handle_info(%Bus.Message{}, state) do
     {:noreply, state}
   end
 

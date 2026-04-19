@@ -75,7 +75,6 @@ defmodule VmsCore.Components.OVCS.HighVoltageContactors do
     {:noreply, %{state | inverter_output_voltage: inverter_output_voltage}}
   end
 
-  # TODO, replace Bus ?
   def handle_info(%Bus.Message{}, state) do
     {:noreply, state}
   end

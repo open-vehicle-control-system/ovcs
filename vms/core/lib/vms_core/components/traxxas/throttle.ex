@@ -54,7 +54,6 @@ defmodule VmsCore.Components.Traxxas.Throttle do
     {:noreply, %{state | requested_throttle: requested_throttle}}
   end
 
-  # TODO, replace Bus ?
   def handle_info(%Bus.Message{}, state) do
     {:noreply, state}
   end

@@ -144,7 +144,6 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
     {:noreply, %{state | requested_steering: requested_steering}}
   end
 
-  # TODO, replace Bus ?
   def handle_info(%Bus.Message{}, state) do
     {:noreply, state}
   end

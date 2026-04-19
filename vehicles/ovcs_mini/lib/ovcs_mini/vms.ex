@@ -49,7 +49,7 @@ defmodule OvcsMini.Vms do
   def handle_info(%Bus.Message{name: :resetting, value: resetting, source: Status}, state)  do
     {:noreply, %{state | resetting: resetting}}
   end
-  def handle_info(%Bus.Message{}, state) do # TODO, replace Bus ?
+  def handle_info(%Bus.Message{}, state) do
     {:noreply, state}
   end
 
