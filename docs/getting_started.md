@@ -251,10 +251,10 @@ The CLI reads the vehicle's `default_can_mapping(:host)` and creates only the vc
 ### 2. Boot the vehicle locally
 
 ```sh
-./ovcs run ovcs1              # provisions vcan + runs `iex -S mix` in the vehicle
+./ovcs run ovcs1              # provisions vcan + spawns one BEAM per firmware
 ```
 
-This is the shortcut for "set up CAN, then start everything." `./ovcs run` boots the vehicle as its own Mix app with VMS + infotainment endpoints + any host-compatible bridges in one BEAM. Use `Ctrl-C Ctrl-C` to exit.
+This is the shortcut for "set up CAN, then start everything." `./ovcs run` spawns one BEAM per declared firmware (VMS, infotainment, each bridge) from its own project directory, mirroring the deployed topology over a VMS-hosted localhost mosquitto. Attach a merged log + IEx TUI from another terminal with `./ovcs attach ovcs1`. Use `Ctrl-C` to stop.
 
 If you prefer running pieces separately:
 

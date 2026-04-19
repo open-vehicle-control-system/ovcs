@@ -41,10 +41,10 @@ cd vms/api
 VEHICLE=Ovcs1 mix phx.server      # or iex -S mix phx.server
 ```
 
-Lands at `http://localhost:4000`. For the full vehicle-package boot (VMS +
-infotainment + host-compatible bridges in one BEAM), prefer
-`./ovcs run <vehicle>` from the repo root — see
-[`docs/getting_started.md`](../../docs/getting_started.md).
+Lands at `http://localhost:4000`. For the full vehicle-package boot (one
+BEAM per firmware — VMS, infotainment, each bridge — against a
+localhost mosquitto), prefer `./ovcs run <vehicle>` from the repo root —
+see [`docs/getting_started.md`](../../docs/getting_started.md).
 
 ## Required env vars
 

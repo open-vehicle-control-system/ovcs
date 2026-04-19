@@ -143,18 +143,22 @@ See the [Getting Started guide](./docs/getting_started.md) for full prerequisite
 Once the setup is done:
 
 ```sh
-# Provision vcan interfaces and boot the whole vehicle in one BEAM
+# Provision vcan interfaces and spawn one BEAM per firmware
 ./ovcs run ovcs1                         # VMS + infotainment + bridges
 
-# Start the VMS debug dashboard (in another terminal)
+# Attach a split-pane log + IEx TUI (in another terminal)
+./ovcs attach ovcs1
+
+# Start the VMS debug dashboard (in yet another terminal)
 cd vms/dashboard && npm install && npm run dev
 ```
 
-`ovcs run` starts each vehicle package as its own Mix app (VMS core
-+ Phoenix API on :4000, infotainment core + Phoenix API on :4001 when
-present, plus any host-compatible bridges from `bridge_firmwares/0`).
-See [Applications](./docs/applications.md) for more details and the
-per-side breakdown if you prefer running pieces separately.
+`ovcs run` spawns one BEAM per declared firmware (VMS core + Phoenix
+API on :4000, infotainment core + Phoenix API on :4001 when present,
+and one BEAM per entry in `bridge_firmwares/0`) against a VMS-hosted
+localhost mosquitto — same topology as deployed. See
+[Applications](./docs/applications.md) for the per-side breakdown if
+you prefer running pieces separately.
 
 ## Deploy
 
