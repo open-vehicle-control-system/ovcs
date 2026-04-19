@@ -51,17 +51,10 @@ config :mdns_lite,
     %{protocol: "epmd", transport: "tcp", port: 4369}
   ]
 
-# Phoenix / Ecto — firmware paths (on-device SQLite) and mDNS-based host.
+# Phoenix endpoint — firmware host (mDNS-based).
 config :vms_api,
   namespace: VmsApi,
-  ecto_repos: [VmsApi.Repo],
   generators: [timestamp_type: :utc_datetime]
-
-config :vms_api, VmsApi.Repo,
-  database: "/data/vms_core.db",
-  pool_size: 5,
-  stacktrace: true,
-  show_sensitive_data_on_connection_error: true
 
 config :vms_api, VmsApiWeb.Endpoint,
   url: [host: vehicle_host],

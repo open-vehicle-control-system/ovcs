@@ -1,12 +1,5 @@
 import Config
 
-# Configure your database
-config :vms_api, VmsApi.Repo,
-  database: Path.expand("../api_dev.db", Path.dirname(__ENV__.file)),
-  pool_size: 5,
-  stacktrace: true,
-  show_sensitive_data_on_connection_error: true
-
 # For development, we disable any cache and enable
 # debugging and code reloading.
 #
