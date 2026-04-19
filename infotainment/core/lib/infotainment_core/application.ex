@@ -17,7 +17,10 @@ defmodule InfotainmentCore.Application do
          repos: Application.fetch_env!(:infotainment_core, :ecto_repos), skip: skip_migrations?()},
         {InfotainmentCore.Temperature, []},
         {InfotainmentCore.TimeSettings, []}
-      ] ++ OvcsBus.Mqtt.relay_child_from(composer) ++ vehicle_children
+      ] ++
+        cluster_child() ++
+        OvcsBus.Mqtt.relay_child_from(composer) ++
+        vehicle_children
 
     opts = [strategy: :one_for_one, name: InfotainmentCore.Supervisor]
     Supervisor.start_link(children, opts)
@@ -30,5 +33,12 @@ defmodule InfotainmentCore.Application do
   defp skip_migrations? do
     # By default, sqlite migrations are run when using a release
     System.get_env("RELEASE_NAME") != nil
+  end
+
+  defp cluster_child do
+    case Application.get_env(:ovcs_vehicle, :module) do
+      nil -> []
+      mod -> [{OvcsBus.Cluster, vehicle: mod}]
+    end
   end
 end

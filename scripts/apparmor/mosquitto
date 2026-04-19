@@ -1,0 +1,19 @@
+# Local AppArmor override for Ubuntu 26's stock mosquitto profile.
+#
+# The OVCS local dev stack spawns mosquitto via `OvcsBus.Mqtt.Broker`
+# (running inside the VMS BEAM) with a tiny generated config file —
+# `/tmp/ovcs_bus_mosquitto.conf` by default. Ubuntu's
+# `/etc/apparmor.d/mosquitto` profile only grants read access to
+# `/etc/mosquitto/conf.d/**` and `/var/lib/mosquitto/**`, so the
+# default /tmp path trips with `EACCES`.
+#
+# The stock profile ends with `include if exists <local/mosquitto>`,
+# so copying this file to `/etc/apparmor.d/local/mosquitto` and
+# reloading AppArmor grants just the one extra read.
+#
+# Install once per dev machine:
+#
+#     sudo install -m 644 scripts/apparmor/mosquitto /etc/apparmor.d/local/mosquitto
+#     sudo systemctl reload apparmor
+
+file /tmp/ovcs_bus_mosquitto.conf r,

@@ -20,6 +20,7 @@ defmodule VmsCore.Application do
         {VmsCore.Metrics, []},
         {VmsCore.NetworkInterfaces, []}
       ] ++
+        cluster_child() ++
         OvcsBus.Mqtt.broker_child_from(composer) ++
         OvcsBus.Mqtt.relay_child_from(composer)
 
@@ -46,5 +47,16 @@ defmodule VmsCore.Application do
 
   def vehicle_composer do
     Application.fetch_env!(:vms_core, :vehicle)
+  end
+
+  # Supervise `OvcsBus.Cluster` when `:ovcs_vehicle, :module` is set —
+  # each firmware's `runtime.exs` sets this to the top-level vehicle
+  # module (e.g. `Ovcs1`) whenever a vehicle is selected. Without it
+  # the cluster helper has nothing to probe for, so skip.
+  defp cluster_child do
+    case Application.get_env(:ovcs_vehicle, :module) do
+      nil -> []
+      mod -> [{OvcsBus.Cluster, vehicle: mod}]
+    end
   end
 end

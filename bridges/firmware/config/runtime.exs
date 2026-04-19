@@ -4,6 +4,8 @@ vehicle = OvcsVehicle.Firmware.resolve_vehicle(__DIR__, config_env())
 bridge_firmware_id = System.get_env("BRIDGE_FIRMWARE_ID")
 
 if vehicle && bridge_firmware_id && config_env() != :test do
+  config :ovcs_vehicle, :module, vehicle
+
   entry = Map.fetch!(vehicle.bridge_firmwares(), bridge_firmware_id)
 
   mapping_string =
