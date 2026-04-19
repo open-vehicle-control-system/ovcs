@@ -1280,6 +1280,7 @@ dependencies = [
  "clap",
  "crossterm",
  "glob",
+ "libc",
  "owo-colors",
  "ratatui",
  "regex",
