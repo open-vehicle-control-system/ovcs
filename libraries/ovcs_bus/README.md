@@ -56,16 +56,28 @@ Opts (map or keyword list):
 
 Each bus message name `X` maps to MQTT topic `<topic_prefix>/<X>`.
 Messages are serialised with `:erlang.term_to_binary/1` and decoded
-with `[:safe]`. Inbound messages are re-broadcast locally with
-`:relay_origin` set, so the outbound side skips them.
+with plain `:erlang.binary_to_term/1`. `[:safe]` is **not** used —
+producers on each side legitimately publish atoms (gear states,
+status keys, …) that the peer hasn't materialised yet, and `:safe`
+would reject the whole message. Safe on a closed vehicle LAN with
+only OVCS producers; revisit if the broker is ever exposed. Inbound
+messages are re-broadcast locally tagged `:relay_origin = :mqtt` so
+the outbound side skips them.
 
 Who starts the relay:
-- **VMS** — `VmsCore.Application` starts it when the vehicle's VMS
-  composer implements `bus_relay/0`.
+
+- **VMS** — `VmsCore.Application` calls `OvcsBus.Mqtt.relay_child_from/1`
+  on the active composer; the helper returns `[]` when `bus_relay/0`
+  isn't exported or returns `nil`, `[{Relay, opts}]` otherwise. Same
+  helper handles `bus_broker/0` via `broker_child_from/1`.
 - **Infotainment** — same via `InfotainmentCore.Application`.
 - **Bridges** — `OvcsBridge.Supervisor` reads `:bus_relay` from the
   vehicle's `bridge_firmwares/0` entry and merges topics from each
   bundled bridge's `relay_messages/0`.
+
+Composers typically build the opts via
+[`OvcsVehicle.Bus.relay_opts/3`](../ovcs_vehicle) so the broker host
+and topic prefix aren't restated at every call site.
 
 ### How nodes actually connect
 
@@ -114,8 +126,9 @@ Each `OvcsBus.Mqtt.Relay` instance:
    `:erlang.term_to_binary/1` and publishes to
    `<topic_prefix>/<name>`.
 4. **Forwards inbound**. Messages the broker delivers are decoded
-   with `[:safe]`, tagged `:relay_origin = :mqtt`, and
-   `local_broadcast`-ed on the subscribing firmware's bus.
+   with `:erlang.binary_to_term/1` (no `:safe` — see above),
+   tagged `:relay_origin = :mqtt`, and `local_broadcast`-ed on the
+   subscribing firmware's bus.
 
 Reconnection, backoff, and keepalive are handled by Tortoise311;
 if the broker goes down the local bus keeps working unchanged,
