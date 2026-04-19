@@ -75,6 +75,11 @@ pub fn run(vehicle_arg: Option<String>) -> Result<()> {
             &sname,
             "--cookie",
             "ovcs",
+            // BEAM disables `IO.ANSI` when stdout is piped; force it back
+            // on so Logger emits coloured `[info]` / `[debug]` etc. into
+            // our line-prefixing pipe.
+            "--erl",
+            "-elixir ansi_enabled true",
             "-S",
             "mix",
             "run",
@@ -260,11 +265,39 @@ where
     R: std::io::Read + Send + 'static,
     W: Write + Send + 'static,
 {
+    // Elixir's default Logger console format brackets each message with
+    // a leading and trailing newline. Piped through line-prefixing that
+    // becomes a pair of `[label] ` blanks around every log entry. Skip
+    // lines whose ANSI-stripped content is empty so the merged view
+    // stays dense.
     let buf = BufReader::new(reader);
     for line in buf.lines().map_while(|l| l.ok()) {
+        if is_blank_after_ansi(&line) {
+            continue;
+        }
         let _ = writeln!(sink, "[{}] {}", label, line);
         let _ = sink.flush();
     }
+}
+
+fn is_blank_after_ansi(line: &str) -> bool {
+    // Strip CSI escape sequences (ESC `[` … letter) before checking.
+    let mut chars = line.chars().peekable();
+    let mut has_content = false;
+    while let Some(c) = chars.next() {
+        if c == '\x1b' && chars.peek() == Some(&'[') {
+            chars.next(); // consume '['
+            for ec in chars.by_ref() {
+                if ec.is_ascii_alphabetic() {
+                    break;
+                }
+            }
+        } else if !c.is_whitespace() {
+            has_content = true;
+            break;
+        }
+    }
+    !has_content
 }
 
 fn sname_safe(label: &str) -> String {
