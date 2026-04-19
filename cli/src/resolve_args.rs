@@ -2,7 +2,7 @@ use anyhow::{bail, Result};
 use owo_colors::OwoColorize;
 
 use crate::firmware::applications_for;
-use crate::prompt::choose;
+use crate::prompt::{choose, choose_vehicle};
 use crate::repo_root::repo_root;
 use crate::vehicles::{self, Vehicle};
 
@@ -18,14 +18,14 @@ pub fn resolve_vehicle_app(first: Option<String>, second: Option<String>) -> Res
     let names: Vec<String> = all.iter().map(|v| v.dir.clone()).collect();
 
     let values: Vec<String> = [first, second].into_iter().flatten().collect();
-    let vehicle_dir = match values.iter().find(|v| names.contains(v)).cloned() {
-        Some(v) => v,
-        None => choose("vehicle", &names)?,
+    let vehicle = match values.iter().find(|v| names.contains(v)).cloned() {
+        Some(dir) => match all.iter().find(|v| v.dir == dir) {
+            Some(v) => v.clone(),
+            None => bail!("Unknown vehicle {}", dir),
+        },
+        None => choose_vehicle(&all)?,
     };
-
-    let Some(vehicle) = all.into_iter().find(|v| v.dir == vehicle_dir) else {
-        bail!("Unknown vehicle {}", vehicle_dir);
-    };
+    let vehicle_dir = vehicle.dir.clone();
 
     let valid_apps = applications_for(&vehicle)?;
     let remaining: Vec<String> = values.into_iter().filter(|v| v != &vehicle_dir).collect();
