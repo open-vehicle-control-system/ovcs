@@ -215,27 +215,28 @@ fn run_vehicle_picker(
     let mut state = ListState::default();
     state.select(Some(0));
 
-    // Rows: module+dir, vms, infotainment, optional single bridges line.
+    // Rows per vehicle: module+dir, vms, infotainment, optional bridges
+    // summary, trailing blank (as the gap before the next vehicle, or a
+    // trailing blank before the footer for the last one).
     let row_lines = |v: &VehicleItem| -> u16 {
-        let mut n: u16 = 3; // module + vms + infotainment
+        let mut n: u16 = 4; // module + vms + info + trailing blank
         if !v.bridges.is_empty() {
             n += 1;
         }
         n
     };
-    const ROW_GAP: u16 = 1;
 
     loop {
         terminal.draw(|f| {
             let outer_area = f.area();
 
             // Pane is wide: up to 100 cols, shrunk to terminal width. Height
-            // is driven by actual item heights + small chrome (just title +
-            // footer inside the border).
+            // is driven by actual item heights + minimal chrome.
             let content_width = outer_area.width.saturating_sub(4).min(100);
-            let items_height: u16 = items.iter().map(row_lines).sum::<u16>()
-                + (items.len() as u16).saturating_sub(1) * ROW_GAP;
-            let chrome_height: u16 = 5; // top/bottom border (2) + top/bottom padding (2) + footer (1)
+            let items_height: u16 = items.iter().map(row_lines).sum();
+            // 2 border + 1 footer. No internal vertical padding — the trailing
+            // blank inside each list item provides visual separation.
+            let chrome_height: u16 = 3;
             let total_height = items_height + chrome_height;
             let area = centered(outer_area, content_width, total_height);
 
@@ -260,7 +261,7 @@ fn run_vehicle_picker(
                 .border_style(Style::default().fg(ACCENT))
                 .title(title)
                 .title_alignment(Alignment::Center)
-                .padding(Padding::new(2, 2, 1, 1));
+                .padding(Padding::new(2, 2, 0, 0));
             let inner = outer.inner(area);
             f.render_widget(outer, area);
 
