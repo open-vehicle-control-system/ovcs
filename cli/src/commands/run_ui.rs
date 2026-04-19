@@ -19,6 +19,8 @@ use std::time::Duration;
 
 const LOG_CAP: usize = 4000;
 const SHELL_CAP: usize = 2000;
+const BUS_CAP: usize = 4000;
+const CAN_CAP: usize = 4000;
 const HISTORY_CAP: usize = 500;
 
 /// Messages pushed to the TUI from the transport backends (SSH task or
@@ -28,6 +30,20 @@ pub enum Msg {
     Log { node: String, line: String },
     /// One line of IEx output from a node's interactive shell channel.
     Shell { node: String, line: String },
+    /// One OvcsBus message observed on a node's monitor channel.
+    Bus {
+        node: String,
+        source: String,
+        name: String,
+        value: String,
+    },
+    /// One CAN frame observed on a node's monitor channel.
+    CanFrame {
+        node: String,
+        network: String,
+        frame: String,
+        signals: String,
+    },
     /// Node finished setup and its shell/log channels are live.
     NodeUp(String),
     /// Node is gone (connection lost, ssh exited, etc.).
@@ -35,8 +51,9 @@ pub enum Msg {
 }
 
 /// Per-node handle the TUI holds onto — one sender per interactive shell,
-/// keyed by node name. Dropping the sender signals the worker to close the
-/// channel.
+/// keyed by node name. Lives for the whole app: supervisors on the other
+/// end reconnect transparently across node death, so dropping on
+/// `NodeDown` would break every reconnect after the first.
 pub struct NodeHandle {
     pub name: String,
     pub stdin: Sender<String>,
@@ -45,13 +62,15 @@ pub struct NodeHandle {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Focus {
     Log,
+    Bus,
+    Can,
     Shell,
 }
 
 struct NodeState {
     color: Color,
     up: bool,
-    stdin: Option<Sender<String>>,
+    stdin: Sender<String>,
     shell_out: VecDeque<Line<'static>>,
 }
 
@@ -59,6 +78,8 @@ struct State {
     nodes: Vec<String>,
     by_node: HashMap<String, NodeState>,
     logs: VecDeque<Line<'static>>,
+    bus: VecDeque<Line<'static>>,
+    can: VecDeque<Line<'static>>,
     input: String,
     cursor: usize,
     history: Vec<String>,
@@ -66,6 +87,17 @@ struct State {
     focus: Focus,
     log_scroll: u16,
     log_follow: bool,
+    bus_scroll: u16,
+    bus_follow: bool,
+    /// Space-toggled freeze: while true, incoming Bus messages are
+    /// dropped so the pane contents stay exactly readable. Separate
+    /// from `bus_follow` (which just controls auto-tail vs. fixed
+    /// scroll position) so arrow-key scrolling doesn't silently drop
+    /// data.
+    bus_paused: bool,
+    can_scroll: u16,
+    can_follow: bool,
+    can_paused: bool,
     shell_scroll: u16,
     shell_follow: bool,
     current: String,
@@ -95,7 +127,7 @@ impl State {
                 NodeState {
                     color,
                     up: false,
-                    stdin: Some(h.stdin),
+                    stdin: h.stdin,
                     shell_out: VecDeque::with_capacity(SHELL_CAP),
                 },
             );
@@ -106,6 +138,8 @@ impl State {
             nodes,
             by_node,
             logs: VecDeque::with_capacity(LOG_CAP),
+            bus: VecDeque::with_capacity(BUS_CAP),
+            can: VecDeque::with_capacity(CAN_CAP),
             input: String::new(),
             cursor: 0,
             history: Vec::new(),
@@ -113,6 +147,12 @@ impl State {
             focus: Focus::Shell,
             log_scroll: 0,
             log_follow: true,
+            bus_scroll: 0,
+            bus_follow: true,
+            bus_paused: false,
+            can_scroll: 0,
+            can_follow: true,
+            can_paused: false,
             shell_scroll: 0,
             shell_follow: true,
             current,
@@ -159,6 +199,62 @@ impl State {
         }
     }
 
+    fn push_bus(&mut self, node: &str, source: &str, name: &str, value: &str) {
+        if self.bus_paused {
+            return;
+        }
+        let color = self
+            .by_node
+            .get(node)
+            .map(|n| n.color)
+            .unwrap_or(Color::White);
+        let spans = vec![
+            Span::styled(
+                format!("{:<28}", short_source(source)),
+                Style::default().fg(color).add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(" "),
+            Span::styled(
+                format!("{:<24}", name),
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(" = "),
+            Span::raw(value.to_string()),
+        ];
+        if self.bus.len() == BUS_CAP {
+            self.bus.pop_front();
+        }
+        self.bus.push_back(Line::from(spans));
+    }
+
+    fn push_can(&mut self, node: &str, network: &str, frame: &str, signals: &str) {
+        if self.can_paused {
+            return;
+        }
+        let color = self
+            .by_node
+            .get(node)
+            .map(|n| n.color)
+            .unwrap_or(Color::White);
+        let header = Line::from(vec![Span::styled(
+            format!("[{}/{}]", network, frame),
+            Style::default().fg(color).add_modifier(Modifier::BOLD),
+        )]);
+        let body = Line::from(vec![
+            Span::raw("    "),
+            Span::styled(
+                signals.to_string(),
+                Style::default().add_modifier(Modifier::DIM),
+            ),
+        ]);
+        for line in [header, body] {
+            if self.can.len() == CAN_CAP {
+                self.can.pop_front();
+            }
+            self.can.push_back(line);
+        }
+    }
+
     fn cycle(&mut self, delta: isize) {
         if self.nodes.len() < 2 {
             return;
@@ -179,6 +275,21 @@ impl State {
             self.current = name.clone();
             self.shell_follow = true;
         }
+    }
+}
+
+/// Shrink `VmsCore.Components.Volkswagen.Polo9N.ABS` → `Polo9N.ABS` so the
+/// source column of the bus pane doesn't burn half the row on the
+/// `VmsCore.Components.*` prefix every component shares.
+fn short_source(source: &str) -> String {
+    let trimmed = source.trim_matches('"');
+    const COMPONENT_PREFIX: &str = "VmsCore.Components.";
+    let dropped = trimmed.strip_prefix(COMPONENT_PREFIX).unwrap_or(trimmed);
+    let parts: Vec<&str> = dropped.split('.').collect();
+    if parts.len() > 2 {
+        parts[parts.len() - 2..].join(".")
+    } else {
+        dropped.to_string()
     }
 }
 
@@ -221,6 +332,18 @@ fn event_loop(
             match rx.try_recv() {
                 Ok(Msg::Log { node, line }) => state.push_log(&node, line),
                 Ok(Msg::Shell { node, line }) => state.push_shell(&node, line),
+                Ok(Msg::Bus {
+                    node,
+                    source,
+                    name,
+                    value,
+                }) => state.push_bus(&node, &source, &name, &value),
+                Ok(Msg::CanFrame {
+                    node,
+                    network,
+                    frame,
+                    signals,
+                }) => state.push_can(&node, &network, &frame, &signals),
                 Ok(Msg::NodeUp(node)) => {
                     if let Some(n) = state.by_node.get_mut(&node) {
                         n.up = true;
@@ -230,7 +353,6 @@ fn event_loop(
                 Ok(Msg::NodeDown(node)) => {
                     if let Some(n) = state.by_node.get_mut(&node) {
                         n.up = false;
-                        n.stdin = None;
                     }
                     state.push_log(&node, "[ovcs] disconnected".to_string());
                 }
@@ -258,33 +380,49 @@ fn event_loop(
 }
 
 fn render(f: &mut ratatui::Frame, state: &State) {
+    // Layout rationale: logs/bus/can show merged streams across every node,
+    // but the IEx shell is bound to one node at a time. Put the node
+    // selector (tab strip) directly above the shell so the scope of that
+    // selection is obvious — F1/F2/… switch which node's IEx you're
+    // driving, not what the panes above display.
     let area = f.area();
     let outer = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1), // node tab strip
-            Constraint::Min(1),
-            Constraint::Length(1), // footer
+            Constraint::Percentage(70), // upper: logs + bus + can
+            Constraint::Length(1),      // node tab strip (drives shell)
+            Constraint::Percentage(30), // shell
+            Constraint::Length(1),      // footer
         ])
         .split(area);
 
-    render_tabs(f, outer[0], state);
-
-    let columns = Layout::default()
+    let upper = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
-        .split(outer[1]);
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .split(outer[0]);
 
-    render_logs(f, columns[0], state);
-    render_shell(f, columns[1], state);
-    render_status(f, outer[2], state);
+    let right = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .split(upper[1]);
+
+    render_logs(f, upper[0], state);
+    render_bus(f, right[0], state);
+    render_can(f, right[1], state);
+    render_tabs(f, outer[1], state);
+    render_shell(f, outer[2], state);
+    render_status(f, outer[3], state);
 }
 
 fn render_tabs(f: &mut ratatui::Frame, area: Rect, state: &State) {
-    // One "chip" per node:  ● F1 vms   ● F2 infotainment   …
+    // Node selector for the IEx pane below:
+    //   IEx ▸  ● F1 vms   ● F2 infotainment   ○ F3 bridge-radio_control
     // Active: bold + underlined in the node's accent colour.
     // Disconnected: hollow `○` marker + DIM.
-    let mut spans: Vec<Span<'static>> = vec![Span::raw(" ")];
+    let mut spans: Vec<Span<'static>> = vec![
+        Span::styled(" IEx ", Style::default().add_modifier(Modifier::DIM)),
+        Span::styled("▸ ", Style::default().add_modifier(Modifier::DIM)),
+    ];
 
     for (i, name) in state.nodes.iter().enumerate() {
         let node = state.by_node.get(name);
@@ -343,9 +481,9 @@ fn render_tabs(f: &mut ratatui::Frame, area: Rect, state: &State) {
 fn render_logs(f: &mut ratatui::Frame, area: Rect, state: &State) {
     let up = state.by_node.values().filter(|n| n.up).count();
     let total = state.nodes.len();
-    let title = format!(" logs  [{}/{} up] ", up, total);
+    let title = format!(" Logs  [{}/{} up] ", up, total);
     let block = Block::default()
-        .title(title)
+        .title(Span::styled(title, title_style(state, Focus::Log)))
         .borders(Borders::ALL)
         .border_style(focus_style(state, Focus::Log));
 
@@ -369,6 +507,68 @@ fn render_logs(f: &mut ratatui::Frame, area: Rect, state: &State) {
         .block(block)
         .wrap(Wrap { trim: false });
     f.render_widget(p, area);
+}
+
+fn render_bus(f: &mut ratatui::Frame, area: Rect, state: &State) {
+    let pause = if state.bus_paused {
+        " ❚❚ paused "
+    } else {
+        ""
+    };
+    let title = format!(" Bus  [{}]{} ", state.bus.len(), pause);
+    let block = Block::default()
+        .title(Span::styled(title, title_style(state, Focus::Bus)))
+        .borders(Borders::ALL)
+        .border_style(focus_style(state, Focus::Bus));
+
+    let inner_h = area.height.saturating_sub(2) as usize;
+    let inner_w = area.width.saturating_sub(2) as usize;
+    let total = state.bus.len();
+    let start = if state.bus_follow {
+        visible_start(&state.bus, inner_h, inner_w)
+    } else {
+        state.bus_scroll.min(total.saturating_sub(inner_h) as u16) as usize
+    };
+
+    let lines: Vec<Line> = state.bus.iter().skip(start).cloned().collect();
+    f.render_widget(
+        Paragraph::new(lines)
+            .block(block)
+            .wrap(Wrap { trim: false }),
+        area,
+    );
+}
+
+fn render_can(f: &mut ratatui::Frame, area: Rect, state: &State) {
+    // Stored as pairs (header line + signals line); report frame count, not
+    // raw line count, so the title matches the mental model.
+    let pause = if state.can_paused {
+        " ❚❚ paused "
+    } else {
+        ""
+    };
+    let title = format!(" CAN  [{}]{} ", state.can.len() / 2, pause);
+    let block = Block::default()
+        .title(Span::styled(title, title_style(state, Focus::Can)))
+        .borders(Borders::ALL)
+        .border_style(focus_style(state, Focus::Can));
+
+    let inner_h = area.height.saturating_sub(2) as usize;
+    let inner_w = area.width.saturating_sub(2) as usize;
+    let total = state.can.len();
+    let start = if state.can_follow {
+        visible_start(&state.can, inner_h, inner_w)
+    } else {
+        state.can_scroll.min(total.saturating_sub(inner_h) as u16) as usize
+    };
+
+    let lines: Vec<Line> = state.can.iter().skip(start).cloned().collect();
+    f.render_widget(
+        Paragraph::new(lines)
+            .block(block)
+            .wrap(Wrap { trim: false }),
+        area,
+    );
 }
 
 /// Walk stored lines from newest to oldest, summing visual rows each would
@@ -397,10 +597,10 @@ fn render_shell(f: &mut ratatui::Frame, area: Rect, state: &State) {
         .get(&state.current)
         .map(|n| n.color)
         .unwrap_or(Color::Cyan);
-    // Shell pane keeps a short "iex · <node>" title as a belt-and-braces
-    // cue; the top tab strip is the primary "which node am I driving"
-    // indicator.
-    let title = format!(" iex · {} ", state.current);
+    // Shell pane keeps a short "IEx · <node>" title in the node's accent
+    // colour; the tab strip directly above is the primary "which node am I
+    // driving" selector.
+    let title = format!(" IEx · {} ", state.current);
     let block = Block::default()
         .title(Span::styled(
             title,
@@ -460,20 +660,27 @@ fn render_shell(f: &mut ratatui::Frame, area: Rect, state: &State) {
 fn render_status(f: &mut ratatui::Frame, area: Rect, state: &State) {
     let focus_label = match state.focus {
         Focus::Log => "log",
+        Focus::Bus => "bus",
+        Focus::Can => "can",
         Focus::Shell => "shell",
     };
-    // Top tab strip already tells the user which node is active and
-    // advertises the F-key mapping, so the footer only needs the
-    // universal pane / editor / exit shortcuts.
+    // The tab strip just above the shell advertises the F-key node map;
+    // this footer stays focused on universal pane / editor / exit bindings
+    // plus the pause hint users most often need on bus/can.
+    let pane_keys = match state.focus {
+        Focus::Bus | Focus::Can => "Space=pause  ↑↓=scroll  ",
+        Focus::Log => "↑↓=scroll  ",
+        Focus::Shell => "",
+    };
     let help = if state.nodes.len() > 1 {
         format!(
-            " [{}] Tab=pane  Ctrl-N/P=cycle node  Enter=eval  Ctrl-C/q=quit ",
-            focus_label
+            " [{}] Tab=pane  {}Ctrl-N/P=cycle node  Enter=eval  Ctrl-C/q=quit ",
+            focus_label, pane_keys
         )
     } else {
         format!(
-            " [{}] Tab=pane  ↑↓=scroll/history  Enter=eval  Ctrl-C/q=quit ",
-            focus_label
+            " [{}] Tab=pane  {}Enter=eval  Ctrl-C/q=quit ",
+            focus_label, pane_keys
         )
     };
     let p = Paragraph::new(Line::from(Span::styled(
@@ -489,7 +696,22 @@ fn focus_style(state: &State, f: Focus) -> Style {
             .fg(Color::Cyan)
             .add_modifier(Modifier::BOLD)
     } else {
-        Style::default().fg(Color::DarkGray)
+        // Use the terminal's default foreground so the border is legible on
+        // both light and dark themes — DarkGray is invisible on most light
+        // schemes and the pane loses its frame entirely.
+        Style::default()
+    }
+}
+
+/// Title style for an unfocused pane — visible but quiet. When focused, we
+/// let `border_style` on the block render the title in the focus colour.
+fn title_style(state: &State, f: Focus) -> Style {
+    if state.focus == f {
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().add_modifier(Modifier::BOLD)
     }
 }
 
@@ -514,7 +736,9 @@ fn handle_key(state: &mut State, code: KeyCode, mods: KeyModifiers) -> Result<()
     }
     if code == KeyCode::Tab {
         state.focus = match state.focus {
-            Focus::Log => Focus::Shell,
+            Focus::Log => Focus::Bus,
+            Focus::Bus => Focus::Can,
+            Focus::Can => Focus::Shell,
             Focus::Shell => Focus::Log,
         };
         return Ok(());
@@ -522,9 +746,82 @@ fn handle_key(state: &mut State, code: KeyCode, mods: KeyModifiers) -> Result<()
 
     match state.focus {
         Focus::Log => handle_log(state, code),
+        Focus::Bus => handle_pane_scroll(
+            code,
+            &state.bus,
+            &mut state.bus_scroll,
+            &mut state.bus_follow,
+            &mut state.bus_paused,
+            &mut state.quit,
+        ),
+        Focus::Can => handle_pane_scroll(
+            code,
+            &state.can,
+            &mut state.can_scroll,
+            &mut state.can_follow,
+            &mut state.can_paused,
+            &mut state.quit,
+        ),
         Focus::Shell => handle_shell(state, code)?,
     }
     Ok(())
+}
+
+fn handle_pane_scroll(
+    code: KeyCode,
+    lines: &VecDeque<Line<'static>>,
+    scroll: &mut u16,
+    follow: &mut bool,
+    paused: &mut bool,
+    quit: &mut bool,
+) {
+    match code {
+        KeyCode::Char('q') | KeyCode::Esc => *quit = true,
+        // Space toggles a hard freeze: `paused` gates the push side so
+        // messages stop entering the buffer, and `follow` goes off so the
+        // view holds its current offset instead of auto-tailing. Unpause
+        // resumes both.
+        KeyCode::Char(' ') | KeyCode::Char('p') => {
+            *paused = !*paused;
+            if *paused {
+                *follow = false;
+                // Pin scroll to the tail so the pane freezes on the
+                // messages the user was just looking at.
+                *scroll = lines.len().saturating_sub(1) as u16;
+            } else {
+                *follow = true;
+            }
+        }
+        KeyCode::Up | KeyCode::Char('k') => {
+            *follow = false;
+            *scroll = scroll.saturating_sub(1);
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            *scroll = scroll.saturating_add(1);
+            if *scroll as usize >= lines.len() {
+                *follow = true;
+            }
+        }
+        KeyCode::PageUp => {
+            *follow = false;
+            *scroll = scroll.saturating_sub(10);
+        }
+        KeyCode::PageDown => {
+            *scroll = scroll.saturating_add(10);
+            if *scroll as usize >= lines.len() {
+                *follow = true;
+            }
+        }
+        KeyCode::End | KeyCode::Char('G') => {
+            *follow = true;
+            *paused = false;
+        }
+        KeyCode::Home | KeyCode::Char('g') => {
+            *follow = false;
+            *scroll = 0;
+        }
+        _ => {}
+    }
 }
 
 fn handle_log(state: &mut State, code: KeyCode) {
@@ -567,9 +864,12 @@ fn handle_shell(state: &mut State, code: KeyCode) -> Result<()> {
             state.cursor = 0;
             state.history_idx = None;
             if let Some(n) = state.by_node.get(&state.current) {
-                if let Some(tx) = &n.stdin {
-                    let _ = tx.send(format!("{}\n", line));
-                }
+                // Always queue to the supervisor's stdin channel — the
+                // supervisor drains queued input on reconnect so stale
+                // commands typed while the node was down don't hit the
+                // fresh session. Sending while down is a no-op on the
+                // far side.
+                let _ = n.stdin.send(format!("{}\n", line));
             }
             if !line.is_empty() {
                 let color = state

@@ -4,6 +4,7 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 
 use crate::repo_root::repo_root;
+use crate::ui::step;
 use crate::vehicles;
 
 #[derive(Debug, Clone, Copy)]
@@ -98,7 +99,8 @@ const BINARIES: &[Binary] = &[
 pub fn run() -> Result<()> {
     let mut any_required_fail = false;
 
-    section("Toolchain binaries");
+    println!();
+    step("Toolchain binaries");
     for b in BINARIES {
         let mark = check_binary(b);
         match mark {
@@ -110,7 +112,8 @@ pub fn run() -> Result<()> {
         }
     }
 
-    section("Nerves bootstrap");
+    println!();
+    step("Nerves bootstrap");
     if check_nerves_bootstrap() {
         print_row(Mark::Ok, "nerves_bootstrap", "installed as Mix archive");
     } else {
@@ -122,7 +125,8 @@ pub fn run() -> Result<()> {
         any_required_fail = true;
     }
 
-    section("libsocketcan");
+    println!();
+    step("libsocketcan");
     let candidates = [
         "/usr/include/libsocketcan.h",
         "/usr/local/include/libsocketcan.h",
@@ -137,7 +141,8 @@ pub fn run() -> Result<()> {
         );
     }
 
-    section("Vehicle packages");
+    println!();
+    step("Vehicle packages");
     let root = repo_root()?;
     let list = vehicles::list(&root)?;
     if list.is_empty() {
@@ -182,11 +187,6 @@ pub fn run() -> Result<()> {
     }
     println!("{}", "All checks passed.".green());
     Ok(())
-}
-
-fn section(title: &str) {
-    println!();
-    println!("{}", title.bold());
 }
 
 fn print_row(mark: Mark, name: &str, detail: &str) {

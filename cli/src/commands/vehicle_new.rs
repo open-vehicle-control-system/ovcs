@@ -5,6 +5,7 @@ use std::path::Path;
 use std::process::Command;
 
 use crate::repo_root::repo_root;
+use crate::ui::{step, sub};
 use crate::vehicles::module_for;
 
 pub fn run(
@@ -108,14 +109,13 @@ end
         .strip_prefix(&root)
         .unwrap_or(&target_dir)
         .to_path_buf();
-    println!("{}", format!("Scaffolded {}", rel.display()).green());
     println!();
-    println!("Targets:");
-    println!("  vms          → {}", vms);
-    println!(
-        "  infotainment → {}",
+    step(&format!("Scaffolded {}", rel.display()));
+    sub(&format!("vms          → {}", vms));
+    sub(&format!(
+        "infotainment → {}",
         info.as_deref().unwrap_or("(skipped)")
-    );
+    ));
 
     warn_missing_firmware(&root, "vms", &vms)?;
     if let Some(t) = &info {
@@ -123,18 +123,12 @@ end
     }
 
     println!();
-    println!("Next steps:");
-    println!("  ./ovcs build {} vms         # build VMS firmware", raw);
+    step("Next steps:");
+    sub(&format!("./ovcs build {} vms", raw));
     if info.is_some() {
-        println!(
-            "  ./ovcs build {} infotainment # build infotainment firmware",
-            raw
-        );
+        sub(&format!("./ovcs build {} infotainment", raw));
     }
-    println!(
-        "  ./ovcs can setup {}         # provision host vcan interfaces",
-        raw
-    );
+    sub(&format!("./ovcs can setup {}", raw));
     println!();
     println!(
         "Then review lib/{}.ex and composers; prune components and",

@@ -2,12 +2,13 @@ use anyhow::Result;
 use owo_colors::OwoColorize;
 
 use crate::repo_root::repo_root;
+use crate::ui::step;
 use crate::vehicles::{self, bridge_firmwares, nerves_target};
 
 pub fn run() -> Result<()> {
     let root = repo_root()?;
     let list = vehicles::list(&root)?;
-    println!("{}", "Discovered vehicles:".bold());
+    step("Discovered vehicles:");
     println!();
     for v in &list {
         println!("  {}  ({})", v.dir.cyan(), v.module);
