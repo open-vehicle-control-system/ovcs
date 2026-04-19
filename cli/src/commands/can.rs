@@ -1,4 +1,4 @@
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use owo_colors::OwoColorize;
 use std::process::{Command, Stdio};
 
@@ -217,7 +217,10 @@ pub fn status(arg: Option<String>) -> Result<()> {
             "{}",
             format!("{} interface(s) missing or down.", missing).yellow()
         );
-        println!("{}", format!("Run: ovcs can setup {}", vehicle.dir).dimmed());
+        println!(
+            "{}",
+            format!("Run: ovcs can setup {}", vehicle.dir).dimmed()
+        );
         std::process::exit(1);
     }
     Ok(())

@@ -1,16 +1,16 @@
-use anyhow::Result;
 use ansi_to_tui::IntoText;
-use crossterm::ExecutableCommand;
+use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use crossterm::terminal::{
-    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
+    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
-use ratatui::Terminal;
+use crossterm::ExecutableCommand;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
+use ratatui::Terminal;
 use regex::Regex;
 use std::collections::{HashMap, VecDeque};
 use std::io::{self, Stdout};
@@ -163,7 +163,11 @@ impl State {
         if self.nodes.len() < 2 {
             return;
         }
-        let idx = self.nodes.iter().position(|n| n == &self.current).unwrap_or(0) as isize;
+        let idx = self
+            .nodes
+            .iter()
+            .position(|n| n == &self.current)
+            .unwrap_or(0) as isize;
         let len = self.nodes.len() as isize;
         let next = ((idx + delta).rem_euclid(len)) as usize;
         self.current = self.nodes[next].clone();
@@ -327,7 +331,12 @@ fn render_shell(f: &mut ratatui::Frame, area: Rect, state: &State) {
         .get(&state.current)
         .map(|n| n.color)
         .unwrap_or(Color::Cyan);
-    let up_badge = if state.by_node.get(&state.current).map(|n| n.up).unwrap_or(false) {
+    let up_badge = if state
+        .by_node
+        .get(&state.current)
+        .map(|n| n.up)
+        .unwrap_or(false)
+    {
         ""
     } else {
         "  [disconnected]"
@@ -336,7 +345,9 @@ fn render_shell(f: &mut ratatui::Frame, area: Rect, state: &State) {
     let block = Block::default()
         .title(Span::styled(
             title,
-            Style::default().fg(current_color).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(current_color)
+                .add_modifier(Modifier::BOLD),
         ))
         .borders(Borders::ALL)
         .border_style(focus_style(state, Focus::Shell));
@@ -364,9 +375,7 @@ fn render_shell(f: &mut ratatui::Frame, area: Rect, state: &State) {
     let start = if state.shell_follow {
         visible_start(shell_out, inner_h, inner_w)
     } else {
-        state
-            .shell_scroll
-            .min(total.saturating_sub(inner_h) as u16) as usize
+        state.shell_scroll.min(total.saturating_sub(inner_h) as u16) as usize
     };
 
     let out_lines: Vec<Line> = shell_out.iter().skip(start).cloned().collect();

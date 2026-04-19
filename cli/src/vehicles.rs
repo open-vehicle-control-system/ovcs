@@ -150,14 +150,7 @@ fn run_snippet(path: &Path, snippet: &str) -> Result<Option<String>> {
     let env: HashMap<String, String> =
         std::iter::once(("MIX_ENV".to_string(), "dev".to_string())).collect();
     let (code, stdout) = run_capture(
-        &[
-            "mix",
-            "run",
-            "--no-start",
-            "--no-deps-check",
-            "-e",
-            snippet,
-        ],
+        &["mix", "run", "--no-start", "--no-deps-check", "-e", snippet],
         path,
         &env,
     )?;
@@ -173,9 +166,7 @@ fn run_snippet(path: &Path, snippet: &str) -> Result<Option<String>> {
 }
 
 fn retry_with_deps(path: &Path, snippet: &str) -> Result<Option<String>> {
-    let rel = path
-        .strip_prefix(std::env::current_dir()?)
-        .unwrap_or(path);
+    let rel = path.strip_prefix(std::env::current_dir()?).unwrap_or(path);
     println!(
         "{}",
         format!("Preparing vehicle {} (first run)…", rel.display()).dimmed()
@@ -196,14 +187,7 @@ fn retry_with_deps(path: &Path, snippet: &str) -> Result<Option<String>> {
         }
     }
     let (code, stdout) = run_capture(
-        &[
-            "mix",
-            "run",
-            "--no-start",
-            "--no-deps-check",
-            "-e",
-            snippet,
-        ],
+        &["mix", "run", "--no-start", "--no-deps-check", "-e", snippet],
         path,
         &env,
     )?;

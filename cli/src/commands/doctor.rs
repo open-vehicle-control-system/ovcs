@@ -27,17 +27,72 @@ struct Binary {
 }
 
 const BINARIES: &[Binary] = &[
-    Binary { name: "mise",    cmd: &["mise", "--version"],    purpose: "language-runtime manager",         level: Level::Required },
-    Binary { name: "elixir",  cmd: &["elixir", "--version"],  purpose: "Elixir runtime (mise-managed)",    level: Level::Required },
-    Binary { name: "mix",     cmd: &["mix", "--version"],     purpose: "Elixir build tool",                level: Level::Required },
-    Binary { name: "node",    cmd: &["node", "--version"],    purpose: "VMS dashboard build",              level: Level::Required },
-    Binary { name: "ruby",    cmd: &["ruby", "--version"],    purpose: "historical scripts",               level: Level::Optional },
-    Binary { name: "python",  cmd: &["python", "--version"],  purpose: "PlatformIO + tooling",             level: Level::Required },
-    Binary { name: "flutter", cmd: &["flutter", "--version"], purpose: "infotainment dashboard",           level: Level::Optional },
-    Binary { name: "fwup",    cmd: &["fwup", "--version"],    purpose: "Nerves firmware packaging",        level: Level::Required },
-    Binary { name: "cansend", cmd: &["cansend"],              purpose: "can-utils",                        level: Level::Optional },
-    Binary { name: "candump", cmd: &["candump", "--version"], purpose: "can-utils",                        level: Level::Optional },
-    Binary { name: "pio",     cmd: &["pio", "--version"],     purpose: "PlatformIO (Arduino controllers)", level: Level::Optional },
+    Binary {
+        name: "mise",
+        cmd: &["mise", "--version"],
+        purpose: "language-runtime manager",
+        level: Level::Required,
+    },
+    Binary {
+        name: "elixir",
+        cmd: &["elixir", "--version"],
+        purpose: "Elixir runtime (mise-managed)",
+        level: Level::Required,
+    },
+    Binary {
+        name: "mix",
+        cmd: &["mix", "--version"],
+        purpose: "Elixir build tool",
+        level: Level::Required,
+    },
+    Binary {
+        name: "node",
+        cmd: &["node", "--version"],
+        purpose: "VMS dashboard build",
+        level: Level::Required,
+    },
+    Binary {
+        name: "ruby",
+        cmd: &["ruby", "--version"],
+        purpose: "historical scripts",
+        level: Level::Optional,
+    },
+    Binary {
+        name: "python",
+        cmd: &["python", "--version"],
+        purpose: "PlatformIO + tooling",
+        level: Level::Required,
+    },
+    Binary {
+        name: "flutter",
+        cmd: &["flutter", "--version"],
+        purpose: "infotainment dashboard",
+        level: Level::Optional,
+    },
+    Binary {
+        name: "fwup",
+        cmd: &["fwup", "--version"],
+        purpose: "Nerves firmware packaging",
+        level: Level::Required,
+    },
+    Binary {
+        name: "cansend",
+        cmd: &["cansend"],
+        purpose: "can-utils",
+        level: Level::Optional,
+    },
+    Binary {
+        name: "candump",
+        cmd: &["candump", "--version"],
+        purpose: "can-utils",
+        level: Level::Optional,
+    },
+    Binary {
+        name: "pio",
+        cmd: &["pio", "--version"],
+        purpose: "PlatformIO (Arduino controllers)",
+        level: Level::Optional,
+    },
 ];
 
 pub fn run() -> Result<()> {

@@ -1,4 +1,4 @@
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use std::collections::HashMap;
 
 use crate::vehicles::{self, Vehicle};
