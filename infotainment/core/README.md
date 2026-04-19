@@ -50,7 +50,7 @@ wiring.
 
 | Module | File | Purpose |
 |--------|------|---------|
-| `InfotainmentCore.Application` | `application.ex` | Starts the PubSub, Repo, CAN interfaces, and the active vehicle's `children/0` |
+| `InfotainmentCore.Application` | `application.ex` | Starts `InfotainmentCore.Repo` + `Ecto.Migrator`, `Temperature`, `TimeSettings`, an optional `OvcsBus.Mqtt.Relay`, and the active vehicle's `children/0` |
 | `InfotainmentCore.Vehicle` | `vehicle.ex` | Behaviour shown above |
 | `InfotainmentCore.LayoutValidator` | `layout_validator.ex` | Validates page/block layout maps before they hit the API |
 | `InfotainmentCore.Temperature` | `temperature.ex` | Cabin temperature GenServer (sensor read + broadcast) |
