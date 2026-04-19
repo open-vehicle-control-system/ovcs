@@ -7,6 +7,7 @@ use std::process::{Child, Command, Stdio};
 use std::thread;
 
 use crate::commands::can::ensure_host_can;
+use crate::firmware;
 use crate::prompt::choose;
 use crate::repo_root::repo_root;
 use crate::vehicles::{self, Vehicle};
@@ -63,8 +64,7 @@ pub fn run(vehicle_arg: Option<String>) -> Result<()> {
         .current_dir(&role.cwd)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .env("VEHICLE", &vehicle.module);
+        .stderr(Stdio::piped());
         for (k, v) in &role.env {
             cmd.env(k, v);
         }
@@ -110,48 +110,42 @@ struct Role {
     label: String,
     /// Directory to `cd` into before spawning the BEAM.
     cwd: PathBuf,
-    /// Additional env vars on top of VEHICLE.
+    /// Env vars passed to the BEAM (VEHICLE + optional
+    /// BRIDGE_FIRMWARE_ID + CAN_NETWORK_MAPPINGS).
     env: Vec<(String, String)>,
 }
 
 fn enumerate_roles(root: &std::path::Path, vehicle: &Vehicle) -> Result<Vec<Role>> {
-    let mut roles = Vec::new();
-
-    // VMS: every vehicle has exactly one.
-    roles.push(Role {
-        label: "vms".into(),
-        cwd: root.join("vms").join("firmware"),
-        env: Vec::new(),
-    });
-
-    if vehicles::has_infotainment(vehicle).unwrap_or(false) {
-        roles.push(Role {
-            label: "infotainment".into(),
-            cwd: root.join("infotainment").join("firmware"),
-            env: Vec::new(),
-        });
-    }
-
-    // Each bridge firmware entry → one BEAM at bridges/firmware, with
-    // BRIDGE_FIRMWARE_ID picking the entry and CAN_NETWORK_MAPPINGS
-    // overridden to the host-side mapping (runtime.exs defaults to the
-    // target mapping otherwise, which doesn't apply on dev host).
-    let bridges = vehicles::bridge_firmwares(vehicle).unwrap_or_default();
+    // Delegate firmware → (dir, env) resolution to `firmware::resolve`
+    // so the mapping lives in one place. We drop `MIX_TARGET` (baked in
+    // for cross-compilation, irrelevant on host dev) and layer host CAN
+    // mappings onto bridge roles.
+    let applications = firmware::applications_for(vehicle)?;
     let host_mappings = bridge_host_mappings(vehicle).unwrap_or_default();
-    let bridges_cwd = root.join("bridges").join("firmware");
-    for (id, _fw) in bridges {
-        let mut env = vec![("BRIDGE_FIRMWARE_ID".to_string(), id.clone())];
-        if let Some(mapping) = host_mappings.get(&id) {
-            env.push(("CAN_NETWORK_MAPPINGS".to_string(), mapping.clone()));
-        }
-        roles.push(Role {
-            label: format!("bridge-{}", id),
-            cwd: bridges_cwd.clone(),
-            env,
-        });
-    }
 
-    Ok(roles)
+    applications
+        .into_iter()
+        .map(|app| {
+            let res = firmware::resolve(vehicle, &app)?;
+            let label = match app.as_str() {
+                "vms" | "infotainment" => app.clone(),
+                bridge_id => format!("bridge-{}", bridge_id),
+            };
+            let mut env: Vec<(String, String)> = res
+                .env
+                .into_iter()
+                .filter(|(k, _)| k != "MIX_TARGET")
+                .collect();
+            if let Some(mapping) = host_mappings.get(&app) {
+                env.push(("CAN_NETWORK_MAPPINGS".to_string(), mapping.clone()));
+            }
+            Ok(Role {
+                label,
+                cwd: root.join(&res.firmware_dir),
+                env,
+            })
+        })
+        .collect()
 }
 
 /// Ask the vehicle module for each bridge's host-side CAN mapping so the
