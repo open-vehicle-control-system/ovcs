@@ -12,10 +12,13 @@ defmodule OvcsBridge.Supervisor do
 
   At boot the supervisor:
     * looks up the entry in the vehicle's `bridge_firmwares/0` map;
+    * supervises `OvcsBus.Cluster` so this BEAM joins the vehicle's
+      distributed-Erlang mesh;
+    * ensures each bundled bridge's OTP application is started
+      (no-op on target builds, explicit on host dev where bridges
+      are `runtime: false`);
     * collects `children/0` from every bundled bridge module listed
-      in that entry;
-    * optionally starts `OvcsBus.Mqtt.Relay` when the entry has a
-      `:bus_relay` key.
+      in that entry.
 
   The firmware's `Application` becomes a thin wrapper that just
   starts this supervisor — symmetrical to how `vms_core` and
@@ -45,16 +48,14 @@ defmodule OvcsBridge.Supervisor do
     Enum.each(bridges, &ensure_bridge_started/1)
 
     bridge_children = Enum.flat_map(bridges, & &1.children())
-    relay_children = relay_children(entry, bridges)
     cluster_children = cluster_child()
 
     Logger.info(
       "OvcsBridge.Supervisor starting #{vehicle_name()}/#{firmware_id()} " <>
-        "with #{length(bridge_children)} bridge child(ren)" <>
-        if(relay_children == [], do: "", else: " + MQTT relay")
+        "with #{length(bridge_children)} bridge child(ren)"
     )
 
-    Supervisor.init(cluster_children ++ bridge_children ++ relay_children, strategy: :one_for_one)
+    Supervisor.init(cluster_children ++ bridge_children, strategy: :one_for_one)
   end
 
   defp cluster_child do
@@ -85,43 +86,6 @@ defmodule OvcsBridge.Supervisor do
             )
         end
     end
-  end
-
-  # Start at most one relay per firmware. Broker/identity come from
-  # the vehicle (`bus_relay` in the entry); message names come from
-  # each bundled bridge's `relay_messages/0` (unioned, deduped).
-  # Vehicle can override by passing :topics explicitly in :bus_relay.
-  defp relay_children(entry, bridges) do
-    case Map.get(entry, :bus_relay) do
-      nil ->
-        []
-
-      broker_opts ->
-        opts = normalize(broker_opts)
-
-        topics =
-          case Keyword.get(opts, :topics) do
-            nil -> collect_bridge_messages(bridges)
-            explicit -> explicit
-          end
-
-        if topics == [] do
-          []
-        else
-          [{OvcsBus.Mqtt.Relay, Keyword.put(opts, :topics, topics)}]
-        end
-    end
-  end
-
-  defp normalize(%{} = opts), do: Enum.to_list(opts)
-  defp normalize(opts) when is_list(opts), do: opts
-
-  defp collect_bridge_messages(bridges) do
-    bridges
-    |> Enum.flat_map(fn bridge ->
-      if function_exported?(bridge, :relay_messages, 0), do: bridge.relay_messages(), else: []
-    end)
-    |> Enum.uniq()
   end
 
   defp resolve_entry! do

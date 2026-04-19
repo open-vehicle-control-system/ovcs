@@ -25,10 +25,4 @@ defmodule Ovcs1.Infotainment.Composer do
     ]
   end
 
-  @impl InfotainmentCore.Vehicle
-  def bus_relay do
-    OvcsVehicle.Bus.relay_opts(Ovcs1, "ovcs1-infotainment",
-      topics: [:ready_to_drive, :vms_status, :selected_gear, :speed]
-    )
-  end
 end

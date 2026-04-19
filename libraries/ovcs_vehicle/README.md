@@ -37,14 +37,10 @@ defmodule Ovcs1 do
       "radio_control" => %{
         target: :ovcs_base_can_system_rpi3a,
         bridges: [RadioControlBridge],
-        default_can_mapping: %{host: "ovcs:vcan0", target: "ovcs:spi0.0"},
-        bus_relay: OvcsVehicle.Bus.relay_opts(__MODULE__, "ovcs1-bridge-radio_control")
+        default_can_mapping: %{host: "ovcs:vcan0", target: "ovcs:spi0.0"}
       }
     }
   end
-
-  @broker_host (if Mix.target() == :host, do: "localhost", else: "ovcs1-vms.local")
-  def broker_host, do: @broker_host
 end
 ```
 
@@ -57,16 +53,11 @@ Callbacks (all required unless noted):
 | `infotainment/0` _(optional)_ | Infotainment composer module (implements `InfotainmentCore.Vehicle`) |
 | `can_config_otp_app/0` | OTP app owning the CAN YAMLs (the vehicle's own app atom) |
 | `nerves_target/1` | Nerves target atom per side (`:vms`, `:infotainment`) |
-| `bridge_firmwares/0` _(optional)_ | Map of bridge firmware id → target + bridges + can mapping + bus relay opts |
+| `bridge_firmwares/0` _(optional)_ | Map of bridge firmware id → target + bridges + can mapping |
 
 Only `vms/0` sets `:vms_core, :vehicle`; `infotainment/0` sets
 `:infotainment_core, :vehicle`. A vehicle that omits `infotainment/0`
 simply means the infotainment firmware is never built for it.
-
-The `broker_host/0` convention is a plain public function (not a
-behaviour callback) — `OvcsVehicle.Bus` reads it to construct
-relay opts. Define it with `Mix.target()` so host dev points at
-`localhost` and deployed firmwares point at `<vehicle>-vms.local`.
 
 ## Helpers
 
@@ -79,14 +70,10 @@ return the module atom (or `nil` in `MIX_ENV=test`). Without this
 step, the firmware BEAM can't dereference the vehicle module — the
 vehicle is not a Mix dep of the firmware.
 
-### `OvcsVehicle.Bus`
-
-`relay_opts/3` builds the `OvcsBus.Mqtt.Relay` opts map from the
-vehicle's `broker_host/0` plus a role-specific `client_id` and any
-extras (typically `:topics`). Composers and `bridge_firmwares/0`
-entries call it instead of restating the broker/topic tuple every
-time. See the moduledoc for the full contract (including the optional
-`broker_port/0` and `topic_prefix/0` overrides).
+Cross-firmware messaging uses `OvcsBus.Cluster` (in `ovcs_bus`) —
+each firmware's `Application` supervises one at boot and the BEAMs
+form a distributed Erlang mesh. No per-vehicle wiring is needed in
+the vehicle module.
 
 ## Scaffolding a new vehicle
 
@@ -118,7 +105,6 @@ lib/
   ovcs_vehicle.ex            — the OvcsVehicle behaviour
   ovcs_vehicle/
     firmware.ex              — resolve_vehicle/3 (for runtime.exs)
-    bus.ex                   — relay_opts/3 (for composers + bridges)
     scaffold.ex              — `ovcs vehicle new` template renderer
 priv/
   templates/vehicle/         — EEx-rendered new-vehicle template

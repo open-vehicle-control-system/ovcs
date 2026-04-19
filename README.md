@@ -156,7 +156,7 @@ cd vms/dashboard && npm install && npm run dev
 `ovcs run` spawns one BEAM per declared firmware (VMS core + Phoenix
 API on :4000, infotainment core + Phoenix API on :4001 when present,
 and one BEAM per entry in `bridge_firmwares/0`) against a VMS-hosted
-localhost mosquitto — same topology as deployed. See
+an Erlang-distribution cluster — same topology as deployed. See
 [Applications](./docs/applications.md) for the per-side breakdown if
 you prefer running pieces separately.
 

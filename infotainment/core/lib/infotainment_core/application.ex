@@ -17,10 +17,7 @@ defmodule InfotainmentCore.Application do
          repos: Application.fetch_env!(:infotainment_core, :ecto_repos), skip: skip_migrations?()},
         {InfotainmentCore.Temperature, []},
         {InfotainmentCore.TimeSettings, []}
-      ] ++
-        cluster_child() ++
-        OvcsBus.Mqtt.relay_child_from(composer) ++
-        vehicle_children
+      ] ++ cluster_child() ++ vehicle_children
 
     opts = [strategy: :one_for_one, name: InfotainmentCore.Supervisor]
     Supervisor.start_link(children, opts)

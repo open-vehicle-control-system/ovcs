@@ -18,18 +18,6 @@ defmodule Ovcs1.Vms.Composer do
   def default_can_mapping(:host), do: "ovcs:vcan0,leaf_drive:vcan1,polo_drive:vcan2,orion_bms:vcan3,misc:vcan4"
   def default_can_mapping(:target), do: "ovcs:spi0.0,leaf_drive:spi0.1,polo_drive:spi1.0,orion_bms:spi1.1,misc:spi1.2"
 
-  # The VMS firmware hosts the MQTT broker for the vehicle; every
-  # other firmware connects to it.
-  @impl VmsCore.Vehicle
-  def bus_broker, do: %{port: 1884}
-
-  @impl VmsCore.Vehicle
-  def bus_relay do
-    OvcsVehicle.Bus.relay_opts(Ovcs1, "ovcs1-vms",
-      topics: [:ready_to_drive, :vms_status, :selected_gear, :speed]
-    )
-  end
-
   alias VmsCore.Components.{
     Bosch,
     Nissan.LeafAZE0,

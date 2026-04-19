@@ -20,30 +20,19 @@ defmodule Ovcs1 do
   def nerves_target(:vms), do: :ovcs_base_can_system_rpi4
   def nerves_target(:infotainment), do: :ovcs_base_can_system_rpi5
 
-  # MQTT broker lives on the VMS firmware. Host dev splits into
-  # multiple BEAMs on the same machine, so peers connect to
-  # `localhost`; on Nerves each firmware is its own device and peers
-  # reach the VMS via mDNS.
-  @broker_host (if Mix.target() == :host, do: "localhost", else: "ovcs1-vms.local")
-
   @impl OvcsVehicle
   def bridge_firmwares do
     %{
       "radio_control" => %{
         target: :ovcs_base_can_system_rpi3a,
         bridges: [RadioControlBridge],
-        default_can_mapping: %{host: "ovcs:vcan0", target: "ovcs:spi0.0"},
-        bus_relay: OvcsVehicle.Bus.relay_opts(__MODULE__, "ovcs1-bridge-radio_control")
+        default_can_mapping: %{host: "ovcs:vcan0", target: "ovcs:spi0.0"}
       },
       "ros" => %{
         target: :ovcs_base_can_system_rpi4,
         bridges: [RosBridge],
-        default_can_mapping: %{host: "ovcs:vcan0", target: "ovcs:spi0.0"},
-        bus_relay: OvcsVehicle.Bus.relay_opts(__MODULE__, "ovcs1-bridge-ros")
+        default_can_mapping: %{host: "ovcs:vcan0", target: "ovcs:spi0.0"}
       }
     }
   end
-
-  @doc "Shared by composers + `OvcsVehicle.Bus.relay_opts/3`."
-  def broker_host, do: @broker_host
 end

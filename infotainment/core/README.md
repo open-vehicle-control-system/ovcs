@@ -38,7 +38,6 @@ Callbacks (all required unless noted):
 | `can_config_otp_app/0` | OTP app owning the CAN YAMLs (the vehicle's app atom) |
 | `can_config_path/0` | Relative path under that app's `priv/` to the infotainment CAN topology |
 | `default_can_mapping/1` | `CAN_NETWORK_MAPPINGS` used when `:host` / `:target` isn't overridden |
-| `bus_relay/0` _(optional)_ | `OvcsBus.Mqtt.Relay` opts for sharing bus messages with peer firmwares |
 
 The composer is resolved at runtime from the `VEHICLE` env var — the
 top-level vehicle module's `infotainment/0` points at this composer. See
@@ -50,7 +49,7 @@ wiring.
 
 | Module | File | Purpose |
 |--------|------|---------|
-| `InfotainmentCore.Application` | `application.ex` | Starts `InfotainmentCore.Repo` + `Ecto.Migrator`, `Temperature`, `TimeSettings`, an optional `OvcsBus.Mqtt.Relay`, and the active vehicle's `children/0` |
+| `InfotainmentCore.Application` | `application.ex` | Starts `InfotainmentCore.Repo` + `Ecto.Migrator`, `Temperature`, `TimeSettings`, `OvcsBus.Cluster`, and the active vehicle's `children/0` |
 | `InfotainmentCore.Vehicle` | `vehicle.ex` | Behaviour shown above |
 | `InfotainmentCore.LayoutValidator` | `layout_validator.ex` | Validates page/block layout maps before they hit the API |
 | `InfotainmentCore.Temperature` | `temperature.ex` | Cabin temperature GenServer (sensor read + broadcast) |

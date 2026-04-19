@@ -35,22 +35,11 @@ defmodule MyBridge do
       {MyBridge.AnotherWorker, []}
     ]
   end
-
-  @impl OvcsBridge
-  def relay_messages do
-    # OvcsBus message names this bridge publishes/consumes on the
-    # cross-firmware relay. Optional — default []; empty list
-    # means the bridge does not need a relay.
-    [:my_bridge_state]
-  end
 end
 ```
 
 - `children/0` — required; child specs added to the bridge
   firmware's supervision tree when the bridge is bundled.
-- `relay_messages/0` — optional; `OvcsBridge.Supervisor` unions
-  these across every bundled bridge and passes them to
-  `OvcsBus.Mqtt.Relay` as `:topics`.
 
 ## Runtime
 
@@ -59,15 +48,17 @@ It reads `:ovcs_bridge` app env (set by `bridges/firmware/config/
 config.exs` from `VEHICLE` + `BRIDGE_FIRMWARE_ID`), looks up the
 matching entry in `vehicle.bridge_firmwares/0`, and:
 
-1. flat-maps `children/0` from every bundled bridge module;
-2. starts `OvcsBus.Mqtt.Relay` when the entry has `:bus_relay`
-   (broker/identity from the vehicle, topics unioned from each
-   bridge's `relay_messages/0` unless the vehicle overrides);
-3. runs everything under `:one_for_one`.
+1. starts `OvcsBus.Cluster` so this BEAM joins the vehicle's
+   distributed Erlang mesh;
+2. ensures each bundled bridge's OTP application is started
+   (no-op on target; explicit on host dev where bridges are
+   `runtime: false`);
+3. flat-maps `children/0` from every bundled bridge module;
+4. runs everything under `:one_for_one`.
 
-Bridge libraries get the local `OvcsBus` (Phoenix.PubSub) for free
-— this lib depends on `ovcs_bus`, so `OvcsBus.subscribe/1` and
-`broadcast/2` work out of the box.
+Bridge libraries get cluster-wide `OvcsBus` for free — this lib
+depends on `ovcs_bus`, so `OvcsBus.subscribe/1` and `broadcast/2`
+work out of the box and reach subscribers on every peer BEAM.
 
 ## Layout
 

@@ -108,12 +108,10 @@ Push a firmware update to a running Nerves device over SSH:
 `./ovcs run <vehicle>` boots the full deployed topology on one host:
 
 - One BEAM per role: `<vehicle>-vms`, `<vehicle>-infotainment`, and `<vehicle>-bridge-<id>` per bridge firmware. Each BEAM runs the corresponding firmware project (`vms/firmware`, `infotainment/firmware`, `bridges/firmware`) directly against `MIX_TARGET=host`.
-- A mosquitto broker on `localhost:1884`, started by the VMS BEAM via `OvcsBus.Mqtt.Broker` — same mechanism as deployed. Every other BEAM connects to it via `OvcsBus.Mqtt.Relay`.
+- An Erlang-distribution cluster: each BEAM runs `OvcsBus.Cluster`, which `Node.connect/1`s the siblings at boot. `OvcsBus.broadcast/2` fans messages out cluster-wide — same transport as deployed, no broker required.
 - CAN interfaces are shared host-wide (same vcan0/vcan1/… visible to every BEAM), so `./ovcs can setup` once covers all roles.
 
 Output is line-prefixed per role (`[vms] …`, `[infotainment] …`, `[bridge-ros] …`). For the aggregated split-pane TUI, run `./ovcs attach <vehicle>` in another terminal — it auto-detects the local BEAMs via epmd (node snames starting with `<vehicle>-`) and lights up the same multi-node view used for deployed vehicles.
-
-**Prereqs**: `mosquitto` must be on `PATH` inside the distrobox (it already is in the provisioned `ovcs` distrobox). No other setup needed.
 
 ### `./ovcs run` vs `./ovcs attach`
 

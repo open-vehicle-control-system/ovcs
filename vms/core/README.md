@@ -78,8 +78,7 @@ VmsCore.Application
 ├── Ecto.Migrator (applies pending migrations on boot)
 ├── VmsCore.Metrics (aggregates all Bus messages for dashboard/API)
 ├── VmsCore.NetworkInterfaces (CAN interface statistics)
-├── OvcsBus.Mqtt.Broker (optional, when composer defines bus_broker/0)
-├── OvcsBus.Mqtt.Relay (optional, when composer defines bus_relay/0)
+├── OvcsBus.Cluster (connects this BEAM to the vehicle's other firmwares via Erlang distribution)
 └── Vehicle Composer children (dynamic, based on VEHICLE env var):
     ├── VmsCore.Status (VMS heartbeat, ready-to-drive, controller reset)
     ├── Components (hardware drivers)
