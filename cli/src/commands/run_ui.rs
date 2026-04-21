@@ -1025,7 +1025,7 @@ fn render_normal(f: &mut ratatui::Frame, area: Rect, state: &State) {
             Constraint::Percentage(70), // upper: logs + bus + can
             Constraint::Length(1),      // node tab strip (drives shell)
             Constraint::Percentage(30), // shell
-            Constraint::Length(1),      // footer
+            Constraint::Length(2),      // footer
         ])
         .split(area);
 
@@ -1056,7 +1056,7 @@ fn render_maximized(f: &mut ratatui::Frame, area: Rect, state: &State) {
         .constraints([
             Constraint::Min(1),    // focused pane
             Constraint::Length(1), // node tab strip
-            Constraint::Length(1), // footer
+            Constraint::Length(2), // footer
         ])
         .split(area);
 
@@ -1815,12 +1815,16 @@ fn render_status(f: &mut ratatui::Frame, area: Rect, state: &State) {
     // Toast overrides the footer for ~3s after an action that wants
     // feedback (Ctrl-Y copy, etc). Falls back to the key-hint line
     // when expired.
+    let bar_style = Style::default().fg(Color::White).bg(Color::DarkGray);
+
     if let Some((ref msg, at)) = state.toast {
         if at.elapsed() < TOAST_TTL {
-            let p = Paragraph::new(Line::from(Span::styled(
-                format!(" {} ", msg),
-                Style::default().fg(Color::Black).bg(Color::LightGreen),
-            )));
+            let toast_style = Style::default().fg(Color::Black).bg(Color::LightGreen);
+            let p = Paragraph::new(vec![
+                Line::from(""),
+                Line::from(format!(" {} ", msg)),
+            ])
+            .style(toast_style);
             f.render_widget(p, area);
             return;
         }
@@ -1835,18 +1839,17 @@ fn render_status(f: &mut ratatui::Frame, area: Rect, state: &State) {
         } else {
             &state.bus_filter
         };
-        let line = Line::from(vec![
-            Span::styled(" /", Style::default().fg(Color::Black).bg(Color::Yellow)),
-            Span::styled(
-                format!("{} ", text),
-                Style::default().fg(Color::Black).bg(Color::Yellow),
-            ),
-            Span::styled(
-                " Enter=apply  Esc=cancel ",
-                Style::default().fg(Color::Black).bg(Color::Cyan),
-            ),
-        ]);
-        f.render_widget(Paragraph::new(line), area);
+        let prompt_style = Style::default().fg(Color::Black).bg(Color::Yellow);
+        let p = Paragraph::new(vec![
+            Line::from(""),
+            Line::from(vec![
+                Span::styled(" /", prompt_style),
+                Span::styled(format!("{} ", text), prompt_style),
+                Span::styled(" Enter=apply  Esc=cancel ", bar_style),
+            ]),
+        ])
+        .style(bar_style);
+        f.render_widget(p, area);
         return;
     }
 
@@ -1896,10 +1899,7 @@ fn render_status(f: &mut ratatui::Frame, area: Rect, state: &State) {
             focus_label, pane_keys, fs, copy_key,
         )
     };
-    let p = Paragraph::new(Line::from(Span::styled(
-        help,
-        Style::default().fg(Color::Black).bg(Color::Cyan),
-    )));
+    let p = Paragraph::new(vec![Line::from(""), Line::from(help)]).style(bar_style);
     f.render_widget(p, area);
 }
 
