@@ -1820,11 +1820,8 @@ fn render_status(f: &mut ratatui::Frame, area: Rect, state: &State) {
     if let Some((ref msg, at)) = state.toast {
         if at.elapsed() < TOAST_TTL {
             let toast_style = Style::default().fg(Color::Black).bg(Color::LightGreen);
-            let p = Paragraph::new(vec![
-                Line::from(""),
-                Line::from(format!(" {} ", msg)),
-            ])
-            .style(toast_style);
+            let p = Paragraph::new(vec![Line::from(""), Line::from(format!(" {} ", msg))])
+                .style(toast_style);
             f.render_widget(p, area);
             return;
         }
