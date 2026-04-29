@@ -14,9 +14,9 @@
 
 ### Nerves-based components (VMS, Infotainment, Bridges)
 
-OVCS uses the [Nerves Project](https://nerves-project.org/) to build firmware for the Raspberry Pi targets. Nerves produces a complete Linux system image that boots directly into the Elixir application. In theory, any hardware platform supported by Nerves can run OVCS firmware, though you may need to provide a custom system image with CAN bus support.
+OVCS uses the [Nerves Project](https://nerves-project.org/) to build firmware for the Raspberry Pi targets. Nerves produces a complete Linux system image that boots directly into the Elixir application.
 
-OVCS uses custom Nerves systems for each target that include the necessary CAN bus kernel modules and device tree overlays:
+OVCS ships custom Nerves systems for each target that include the necessary CAN bus kernel modules and device tree overlays:
 
 | Target | Custom System | Repository |
 |--------|--------------|------------|
@@ -30,38 +30,39 @@ The generic controller firmware is built with [PlatformIO](https://platformio.or
 
 The controllers do not use the Arduino R4 Minima's internal CAN bus interface, to remain hardware-agnostic. Any Arduino-compatible board with EEPROM read/write capabilities and an external CAN transceiver should work.
 
-## Configuring Firmware Targets
+## Choosing the Nerves target
 
-By default, firmware targets are set to the OVCS custom Nerves systems. If you need to run on different hardware, update the `@all_targets` list and system dependency in the relevant `mix.exs` file.
-
-Example from `infotainment/firmware/mix.exs`:
-
-```elixir
-@all_targets [
-  :ovcs_base_can_system_rpi5
-]
-```
-
-To use a different system, replace `:ovcs_base_can_system_rpi5` with your custom system atom and update the dependency accordingly. See the [Nerves documentation on custom systems](https://hexdocs.pm/nerves/customizing-systems.html) for details.
+The Nerves target is read from the vehicle module — `vms_target/0` for the
+VMS, `infotainment_target/0` for the infotainment side, and the `:target`
+key on each `bridge_firmwares/0` entry for bridges. To deploy on different
+hardware, change those values on the vehicle module (e.g.
+`vehicles/ovcs1/lib/ovcs1.ex`) and add the matching system dep to the
+firmware project's `mix.exs`. See the
+[Nerves custom-systems guide](https://hexdocs.pm/nerves/customizing-systems.html).
 
 ## Building and Deploying Firmware
 
-OVCS provides the `ovcs` CLI tool at the repository root (a Rust release binary built from `cli/`, committed as `cli/ovcs` and symlinked to `./ovcs`) for building, burning, and uploading firmware. See [`cli/README.md`](../cli/README.md) for the full command reference and implementation notes.
+OVCS provides the `ovcs` CLI tool at the repository root for building,
+burning, and uploading firmware. The CLI is a Rust release binary built
+to `cli/ovcs` via `mise run cli`; the repo-root `./ovcs` is a symlink
+to it. The binary is gitignored — each contributor builds it locally.
+See [`cli/README.md`](../cli/README.md) for the full command reference
+and implementation notes.
 
 ### CLI Usage
 
 ```
-./ovcs <command> <vehicle> <app> [options]
+./ovcs <command> <vehicle> <role> [options]
 ```
 
 - `<vehicle>` is the snake_case directory name under `vehicles/` (e.g. `ovcs1`, `ovcs_mini`, `obd2`).
-- `<app>` is `vms`, `infotainment`, or any bridge firmware id declared in the vehicle's `bridge_firmwares/0` callback (e.g. `radio_control`, `ros`).
-- Positional args for `build` / `burn` / `clean` / `upload` are order-independent. Missing values prompt interactively; on a non-tty stdin the command exits with status 2.
+- `<role>` is `vms`, `infotainment`, or any bridge firmware id declared in the vehicle's `bridge_firmwares/0` callback (e.g. `radio_control`, `ros`).
+- Positional args for `build` / `burn` / `clean` / `upload` / `connect` are order-independent. Missing values prompt interactively; on a non-tty stdin the command exits with status 2.
 - Run `./ovcs --help` or `./ovcs <command> --help` for the full option list.
 
 ### Build
 
-Build a firmware image for a specific application and vehicle:
+Build a firmware image for a specific (vehicle, role) pair:
 
 ```sh
 # Build VMS firmware for OVCS1
@@ -236,15 +237,18 @@ CAN_NETWORK_MAPPINGS=ovcs:spi0.0,leaf_drive:vcan0,polo_drive:vcan1,orion_bms:vca
 
 ## Setting Up Physical CAN Interfaces
 
-For hardware with physical CAN transceivers:
+On Nerves devices, Cantastic configures CAN interfaces at boot via
+`setup_can_interfaces: true` in the firmware's Cantastic config — no manual
+step needed. For ad-hoc setup while SSH'd into a host, the fallback script is:
 
 ```sh
 ./scripts/setup_can.sh
 ```
 
-This configures `can0` and `can1` at 500 kbps. Edit the script to adjust bitrates or add more interfaces as needed.
+It brings `can0`, `can1`, and `can2` up at 500 kbps. Edit it to adjust
+bitrates or add interfaces.
 
-For virtual CAN interfaces (local development):
+For virtual CAN interfaces (local development), use:
 
 ```sh
 ./ovcs can setup <vehicle>
