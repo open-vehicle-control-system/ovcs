@@ -1,6 +1,6 @@
 # Generic Controller
 
-This is a generic arduino controller allowing the VMS to actuate relays, read digital and analog inputs, activate PWM and DAC over the CAN network without having to program the arduino boards with a custom firwmare for each use case.
+A generic Arduino controller that lets the VMS actuate relays, read digital and analog inputs, and drive PWM / DAC over the CAN network — without having to program each board with a use-case-specific firmware. Targets the Arduino R4 Minima.
 
 ## Controller ID
 
@@ -42,7 +42,7 @@ Where
 | 0             | 15           | 0b0000011100001111 | 0x70F        |
 | 1             | 1            | 0b0000011100010001 | 0x711        |
 | 1             | 15           | 0b0000011100011111 | 0x71F        |
-| 2             | 1            | 0b0000011100100001 | 0x711        |
+| 2             | 1            | 0b0000011100100001 | 0x721        |
 | 2             | 15           | 0b0000011100101111 | 0x72F        |
 | ...           | ...          | ...                | ...          |
 | 15            | 1            | 0b0000011111110001 | 0x7F1        |

@@ -2,10 +2,10 @@
 
 ## Design Principles
 
-OVCS hardware is designed around three core principles:
+OVCS hardware is designed around two core principles:
 
-1. **CAN bus isolation** -- Components from different manufacturers may use conflicting CAN message IDs. OVCS isolates each manufacturer's bus and bridges them through the VMS.
-2. **Off-the-shelf components** -- OVCS deliberately uses affordable, widely available hardware (Raspberry Pi, Arduino) to keep the development kit accessible.
+1. **CAN bus isolation** — components from different manufacturers may use conflicting CAN message IDs, so OVCS keeps each manufacturer's bus separate and bridges them through the VMS.
+2. **Off-the-shelf components** — Raspberry Pi and Arduino boards keep the development kit affordable and accessible.
 
 ## Hardware Components
 
