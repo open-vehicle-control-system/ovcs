@@ -1,25 +1,39 @@
 import Config
 
-if config_env() in [:dev, :test, :prod] do
-  for path <- [".env.exs", ".env.#{config_env()}.exs"] do
-    path = Path.join(__DIR__, "..") |> Path.join("config") |> Path.join(path) |> Path.expand()
-    if File.exists?(path), do: import_config(path)
-  end
-end
-
 vehicle_name =
   System.get_env("VEHICLE") || raise "VEHICLE env var is required for firmware builds"
 
 vehicle_dir = Macro.underscore(vehicle_name)
 vehicle_host = "#{vehicle_dir |> String.replace("_", "-")}-infotainment"
 
+# Per-vehicle environment overrides (SSH keys, Wi-Fi creds, Phoenix
+# secrets). Lives at `vehicles/<vehicle_dir>/.env.exs` so the same
+# values are picked up by every firmware (vms, infotainment, bridges)
+# of one vehicle. Gitignored.
+if config_env() in [:dev, :test, :prod] do
+  for filename <- [".env.exs", ".env.#{config_env()}.exs"] do
+    abs = Path.expand("../../../vehicles/#{vehicle_dir}/#{filename}", __DIR__)
+    if File.exists?(abs), do: import_config(abs)
+  end
+end
+
 config :logger, backends: [RingLogger]
 config :shoehorn, init: [:nerves_runtime, :nerves_pack]
 
-config :nerves, :erlinit, update_clock: true, hostname_pattern: vehicle_host
+# See vms/firmware/config/target.exs for why the mount target is
+# overridden to `/data` (the OVCS Nerves system's own erlinit.config
+# mounts at `/root`, but the codebase + upstream Nerves libraries
+# assume `/data`).
+config :nerves, :erlinit,
+  update_clock: true,
+  hostname_pattern: vehicle_host,
+  mount: "/dev/mmcblk0p3:/data:f2fs:nodev:"
 
 config :nerves_ssh,
-  authorized_keys: (System.get_env("AUTHORIZED_SSH_KEYS") || "") |> String.split(",", trim: true)
+  authorized_keys: (System.get_env("AUTHORIZED_SSH_KEYS") || "") |> String.split(",", trim: true),
+  # See vms/firmware/config/target.exs for why we override key_cb to
+  # :ssh_file (NervesSSH 1.3.0 / OTP 27 ed25519 tuple-format bug).
+  daemon_option_overrides: [key_cb: :ssh_file]
 
 config :vintage_net,
   regulatory_domain: "00",

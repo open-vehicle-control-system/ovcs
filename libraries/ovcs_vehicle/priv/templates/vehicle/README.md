@@ -26,7 +26,14 @@ terminal with `../../ovcs attach <%= @name %>`. Ctrl-C to stop.
 
 ### Build + flash firmware
 
+Before the first build, copy `.env.exs.example` to `.env.exs` (in this
+vehicle's directory) and fill in your SSH public key(s), Wi-Fi creds,
+and Phoenix secrets. The file is gitignored and read by every firmware
+of this vehicle (vms, infotainment, bridges) at compile time.
+
 ```sh
+cp .env.exs.example .env.exs
+$EDITOR .env.exs
 ../../ovcs build <%= @name %> vms            # VMS firmware<%= if @infotainment do %>
 ../../ovcs build <%= @name %> infotainment   # infotainment firmware<% end %>
 ../../ovcs can setup <%= @name %>            # provision host vcan interfaces (also done by `run`)
