@@ -25,7 +25,7 @@ binary directly.
 ./ovcs vehicles                    # list discovered vehicles + nerves targets
 ./ovcs doctor                      # verify toolchain + vehicle packages
 ./ovcs build   <vehicle> <app>     # build firmware (order-independent)
-./ovcs burn    <vehicle> <app>     # burn to SD card
+./ovcs burn    <vehicle> <app> [--build]   # burn to SD card; --build runs build first
 ./ovcs clean   <vehicle> <app>     # remove build artifacts
 ./ovcs upload  <vehicle> <app> [--host H] [-f|--file F]
 ./ovcs can setup  <vehicle>        # create + bring up vcan interfaces (sudo)
@@ -33,6 +33,7 @@ binary directly.
 ./ovcs vehicle new <name> [--vms-target T] [--infotainment-target T] [--no-infotainment]
 ./ovcs run <vehicle>               # `can setup` + spawn one BEAM per firmware, line-prefixed stdout
 ./ovcs attach <vehicle>            # split-pane TUI (merged logs | iex) over SSH or local remsh
+./ovcs connect <vehicle> <app> [--host H]  # plain IEx shell over SSH on a single deployed device
 ```
 
 Where:
