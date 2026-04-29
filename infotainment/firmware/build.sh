@@ -18,7 +18,10 @@ cd "$(dirname "$0")"
 
 : "${MIX_TARGET:=ovcs_base_can_system_rpi5}"
 : "${VEHICLE:?VEHICLE env var is required (e.g. Ovcs1)}"
-export MIX_TARGET VEHICLE
+# See vms/firmware/build.sh for why we override the application
+# partition target to /data.
+: "${NERVES_FW_APPLICATION_PART0_TARGET:=/data}"
+export MIX_TARGET VEHICLE NERVES_FW_APPLICATION_PART0_TARGET
 
 step() { printf "\n\033[1;36m==> %s\033[0m\n" "$*"; }
 
@@ -29,6 +32,14 @@ if [ "$MIX_TARGET" = "host" ]; then
   step "Compiling for host (VEHICLE=$VEHICLE)"
   mix compile
 else
+  # See vms/firmware/build.sh for the full rationale.
+  vehicle_dir=$(elixir -e "IO.write(Macro.underscore(\"$VEHICLE\"))")
+  step "Compiling vehicle ($VEHICLE → vehicles/$vehicle_dir, MIX_TARGET=host)"
+  (
+    cd "../../vehicles/$vehicle_dir"
+    MIX_TARGET=host mix deps.get
+    MIX_TARGET=host mix compile
+  )
   step "Assembling the Nerves firmware image (Flutter app is built in-release)"
   mix firmware
   step "Done — firmware is in _build/${MIX_TARGET}_dev/nerves/images/"

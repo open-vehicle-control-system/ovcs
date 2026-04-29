@@ -77,6 +77,12 @@ Build a firmware image for a specific application and vehicle:
 ./ovcs build ovcs1 radio_control
 ```
 
+Before the first build, copy `vehicles/<vehicle>/.env.exs.example` to
+`vehicles/<vehicle>/.env.exs` and fill in your SSH public key(s),
+Wi-Fi credentials, and Phoenix `SECRET_KEY_BASE` / `SIGNING_SALT`. The
+file is gitignored and shared by every firmware of that vehicle (vms,
+infotainment, bridges).
+
 ### Burn to SD card
 
 Write the firmware image to an SD card (requires the SD card to be inserted):
@@ -84,6 +90,9 @@ Write the firmware image to an SD card (requires the SD card to be inserted):
 ```sh
 ./ovcs burn ovcs1 vms
 ./ovcs burn ovcs1 infotainment
+
+# One-shot rebuild + burn — useful while iterating
+./ovcs burn --build ovcs1 vms
 ```
 
 ### Upload over the network
@@ -144,9 +153,22 @@ The CLI separates **booting** a vehicle from **observing / driving** it:
 
 ### Prerequisites for deployed attach
 
-- The host's SSH key must be in every firmware's `AUTHORIZED_SSH_KEYS` env at boot (same key that makes `./ovcs upload` work). `attach` authenticates via `ssh-agent` — make sure your agent is running and holds the key (`ssh-add -l` to check).
+- The host's SSH public key must be in `vehicles/<vehicle>/.env.exs`'s `AUTHORIZED_SSH_KEYS` at firmware build time (same file that powers `./ovcs upload` / `./ovcs connect`). One file per vehicle, picked up by every firmware (`vms`, `infotainment`, every bridge). Copy the gitignored starter from `vehicles/<vehicle>/.env.exs.example`.
+- Your private key must be loaded in `ssh-agent`: `attach` and `connect` authenticate through it. `ssh-add -l` to verify.
 - Devices must be reachable on the LAN via mDNS (`<vehicle>-<side>.local`). Verify with `ping ovcs1-vms.local` before attaching.
 - Non-Nerves bridges (e.g. Arduino generic controllers) have no SSH / IEx — they are skipped automatically.
+
+### `./ovcs connect` — single-device IEx
+
+For ad-hoc debugging when you don't need the full split-pane TUI:
+
+```sh
+./ovcs connect ovcs1 vms                  # IEx on the VMS Pi
+./ovcs connect ovcs1 infotainment         # IEx on the infotainment Pi
+./ovcs connect ovcs1 vms --host 192.168.10.42   # bypass mDNS with a known IP
+```
+
+Same SSH-key prerequisite as `attach`. Drops you straight into IEx (Nerves devices boot with IEx as the SSH login shell).
 
 ## Customizing CAN Interfaces
 

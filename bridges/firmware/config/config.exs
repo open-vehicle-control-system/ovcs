@@ -111,11 +111,20 @@ if Mix.target() != :host do
 
   config :logger, backends: [RingLogger]
   config :shoehorn, init: [:nerves_runtime, :nerves_pack]
-  config :nerves, :erlinit, update_clock: true, hostname_pattern: vehicle_host
+  # See vms/firmware/config/target.exs for why the mount target is
+  # overridden to `/data` (system's erlinit mounts at `/root`,
+  # codebase + upstream Nerves libs assume `/data`).
+  config :nerves, :erlinit,
+    update_clock: true,
+    hostname_pattern: vehicle_host,
+    mount: "/dev/mmcblk0p3:/data:f2fs:nodev:"
 
   config :nerves_ssh,
     authorized_keys:
-      (System.get_env("AUTHORIZED_SSH_KEYS") || "") |> String.split(",", trim: true)
+      (System.get_env("AUTHORIZED_SSH_KEYS") || "") |> String.split(",", trim: true),
+    # See vms/firmware/config/target.exs for why we override key_cb to
+    # :ssh_file (NervesSSH 1.3.0 / OTP 27 ed25519 tuple-format bug).
+    daemon_option_overrides: [key_cb: :ssh_file]
 
   config :vintage_net,
     regulatory_domain: "00",

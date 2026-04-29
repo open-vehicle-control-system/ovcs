@@ -23,7 +23,10 @@ if [ "$MIX_TARGET" = "host" ]; then
 else
   : "${BRIDGE_FIRMWARE_ID:?BRIDGE_FIRMWARE_ID env var is required (e.g. radio_control)}"
 fi
-export VEHICLE BRIDGE_FIRMWARE_ID MIX_TARGET
+# See vms/firmware/build.sh for why we override the application
+# partition target to /data.
+: "${NERVES_FW_APPLICATION_PART0_TARGET:=/data}"
+export VEHICLE BRIDGE_FIRMWARE_ID MIX_TARGET NERVES_FW_APPLICATION_PART0_TARGET
 
 step() { printf "\n\033[1;36m==> %s\033[0m\n" "$*"; }
 
@@ -34,6 +37,14 @@ if [ "$MIX_TARGET" = "host" ]; then
   step "Compiling for host (VEHICLE=$VEHICLE)"
   mix compile
 else
+  # See vms/firmware/build.sh for the full rationale.
+  vehicle_dir=$(elixir -e "IO.write(Macro.underscore(\"$VEHICLE\"))")
+  step "Compiling vehicle ($VEHICLE → vehicles/$vehicle_dir, MIX_TARGET=host)"
+  (
+    cd "../../vehicles/$vehicle_dir"
+    MIX_TARGET=host mix deps.get
+    MIX_TARGET=host mix compile
+  )
   step "Assembling the Nerves firmware image"
   mix firmware
   step "Done — firmware is in _build/${MIX_TARGET}_dev/nerves/images/"
