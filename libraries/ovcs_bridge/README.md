@@ -73,8 +73,8 @@ lib/
 
 - `ovcs_vehicle` — for the `OvcsVehicle` contract the supervisor
   queries for the active bridge firmware entry.
-- `ovcs_bus` — bundles the local pub/sub bus + relay, available
-  to every bridge library that transitively depends on this one.
+- `ovcs_bus` — cluster-wide pub/sub bus, available to every
+  bridge library that transitively depends on this one.
 
 ## Why bridge libs are listed in `bridges/firmware/mix.exs`
 

@@ -64,11 +64,11 @@ canplayer -I candumps/candump-standard-test.log vcan0=can0 vcan1=can1
 
 ### Available CAN dumps
 
-The `candumps/` directory contains recordings from various test scenarios. Use `ls candumps/` to see all available files. Notable dumps include:
-
-- `candump-standard-test.log` -- Standard driving scenario with all systems active
-- `eps_tcross_*.log` -- Electric power steering data
-- `fool_sequence_*.log` -- Specific test sequences
+The `candumps/` directory contains recordings from various test scenarios.
+Run `ls candumps/` to see all available files — names indicate the
+captured scenario (e.g. `candump-standard-test.log`,
+`candump-leaf-engine-startup-128-then-minus-3.log`,
+`candump-2025-07-OBD2-tcross.log`).
 
 ## Monitoring CAN Traffic
 

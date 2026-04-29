@@ -53,7 +53,7 @@ The core library contains:
   - `Ovcs.RadioControl.*` -- RC transmitter control (throttle, steering, direction)
   - `Ovcs.RosControl.*` -- ROS2 autonomous control
   - `Traxxas.*` -- RC car motor, steering, and throttle (for OVCS Mini)
-- **Vehicle behaviour** (`lib/vms_core/vehicle.ex`) -- Contract each vehicle's VMS composer must implement (`children/0`, `dashboard_configuration/0`, `generic_controllers/0`, `can_config_otp_app/0`, `can_config_path/0`). The configured composer is resolved via `Application.get_env(:vms_core, :vehicle)` and comes from a vehicle package (e.g. `Ovcs1.Vms.Composer`).
+- **Vehicle behaviour** (`lib/vms_core/vehicle.ex`) -- Contract each vehicle's VMS composer must implement: required `children/0`, `can_config_otp_app/0`, `can_config_path/0`, `default_can_mapping/1`; optional `dashboard_configuration/0`, `generic_controllers/0`. The configured composer is resolved via `Application.get_env(:vms_core, :vehicle)` and comes from a vehicle package (e.g. `Ovcs1.Vms.Composer`).
 - **Managers** (`lib/vms_core/managers/`) -- Higher-level logic for gear management and control level switching.
 - **Bus** (`lib/vms_core/bus.ex`) -- PubSub-based event bus for inter-process communication.
 - **Metrics** (`lib/vms_core/metrics.ex`) -- Collects and broadcasts vehicle metrics for the dashboard.
@@ -165,37 +165,47 @@ Nerves firmware image that packages the Infotainment API and the Flutter dashboa
 
 ## Bridges
 
-Bridges are dedicated Nerves devices that provide specific communication capabilities to the OVCS network.
+A **bridge** is an Elixir library (`bridges/<name>/`) that ferries data between the OVCS CAN bus and some non-CAN world (radio link, ROS2 graph, …). Bridges implement the `OvcsBridge` behaviour and are bundled into the shared `bridges/firmware/` Nerves image. A vehicle declares which bridges to build, and at which Nerves target, via its `bridge_firmwares/0` callback — one Nerves image per entry.
 
-### Radio Control Bridge (`bridges/radio_control_bridge/firmware/`)
+### Bridge Firmware (`bridges/firmware/`)
 
 | | |
 |---|---|
-| **Module** | `RadioControlBridgeFirmware` |
-| **App name** | `:radio_control_bridge_firmware` |
-| **Target** | Raspberry Pi 3A (`ovcs_base_can_system_rpi3a`) |
-| **Key deps** | `cantastic`, `express_lrs`, `msp_osd` |
+| **Module** | `BridgeFirmware` |
+| **App name** | `:bridge_firmware` |
+| **Targets** | `ovcs_base_can_system_rpi3a`, `ovcs_base_can_system_rpi4`, `ovcs_bridges_system_rpi5` |
+
+Shared Nerves image. Reads `VEHICLE` + `BRIDGE_FIRMWARE_ID` at boot,
+looks up the matching entry in the vehicle's `bridge_firmwares/0`, and
+supervises each bridge library's `children/0` under `OvcsBridge.Supervisor`.
+
+### Radio Control Bridge (`bridges/radio_control_bridge/`)
+
+| | |
+|---|---|
+| **Module** | `RadioControlBridge` |
+| **Behaviour** | `OvcsBridge` |
+| **Key deps** | `cantastic`, `express_lrs`, `msp_osd`, `ovcs_bridge` |
 
 Enables remote control of the vehicle using a MAVLink-compatible RC transmitter (such as ExpressLRS hardware). It:
 
-- Receives MAVLink RC channel data via `MavlinkForwarder`
-- Forwards MSP OSD telemetry data back to the transmitter via `MspOsdForwarder`
-- Translates RC inputs into CAN messages on the OVCS CAN bus
+- Receives MAVLink RC channel data via `MavlinkForwarder`.
+- Forwards MSP OSD telemetry data back to the transmitter via `MspOsdForwarder`.
+- Translates RC inputs into CAN messages on the OVCS CAN bus.
 
-### ROS Bridge (`bridges/ros_bridge/firmware/`)
+### ROS Bridge (`bridges/ros_bridge/`)
 
 | | |
 |---|---|
-| **Module** | `ROSBridgeFirmware` |
-| **App name** | `:ros_bridge_firmware` |
-| **Target** | Raspberry Pi 4/5 (`ovcs_base_can_system_rpi4`, `ovcs_bridges_system_rpi5`) |
-| **Key deps** | `cantastic`, `emqtt`, `circuits_i2c` |
+| **Module** | `RosBridge` |
+| **Behaviour** | `OvcsBridge` |
+| **Key deps** | `cantastic`, `emqtt`, `circuits_i2c`, `ovcs_bridge` |
 
 Provides integration with ROS2 for autonomous driving research. It:
 
-- Publishes IMU data from a BNO085 sensor via I2C (`ImuPublisher`)
-- Interprets joystick messages from ROS2 (`JoyInterpreter`)
-- Communicates with the ROS2 ecosystem via Zenoh/MQTT bridge (`ZenohMQTTRos2.Dispatcher`)
+- Publishes IMU data from a BNO085 sensor via I2C (`ImuPublisher`).
+- Interprets joystick messages from ROS2 (`JoyInterpreter`).
+- Communicates with the ROS2 ecosystem via Zenoh/MQTT bridge (`ZenohMQTTRos2.Dispatcher`).
 
 ## Controllers
 
@@ -220,7 +230,7 @@ Build configurations (defined in `platformio.ini`):
 
 ## Vehicles (`vehicles/`)
 
-Each vehicle is a standalone Mix application that bundles its VMS side, optional infotainment side, and optional bridge firmware declarations. A vehicle's top-level module implements the `OvcsVehicle` behaviour and exposes `name/0`, `vms/0`, optional `infotainment/0`, optional `bridge_firmwares/0`, `can_config_otp_app/0`, `vms_target/0`, and optional `infotainment_target/0`:
+Each vehicle is a standalone Mix application that bundles its VMS side, optional infotainment side, and optional bridge firmware declarations. A vehicle's top-level module implements the `OvcsVehicle` behaviour and exposes `name/0`, `vms/0`, `can_config_otp_app/0`, `vms_target/0`, plus optional `infotainment/0`, `infotainment_target/0`, and `bridge_firmwares/0`:
 
 | Package | App | Top-level module |
 |---------|-----|------------------|
@@ -291,9 +301,9 @@ For **physical** CAN interfaces (real hardware), Cantastic brings them up at boo
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `CAN_NETWORK_MAPPINGS` | Maps CAN network names to interfaces | `ovcs:can0,leaf_drive:vcan1,polo_drive:vcan2` |
 | `VEHICLE` | Top-level vehicle module name (case-sensitive) | `Ovcs1`, `OvcsMini`, `Obd2` |
-| `SETUP_CAN_INTERFACE` | Skip automatic CAN interface setup | `true` |
+| `CAN_NETWORK_MAPPINGS` | Override the vehicle's `default_can_mapping(:host)` | `ovcs:can0,leaf_drive:vcan1,polo_drive:vcan2` |
+| `BRIDGE_FIRMWARE_ID` | (bridge firmware only) Picks one entry from the vehicle's `bridge_firmwares/0` | `radio_control` |
 
 ## Local Development
 

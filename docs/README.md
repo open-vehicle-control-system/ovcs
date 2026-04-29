@@ -1,28 +1,28 @@
 # OVCS Documentation
 
-Welcome to the Open Vehicle Control System documentation. For a high-level overview of the project, see the [main README](../README.md).
+Index for the Open Vehicle Control System guides. For a high-level project overview, see the [main README](../README.md).
 
 ## Guides
 
-### Getting Started
+### Getting started
 
-- [Getting Started](./getting_started.md) -- Prerequisites, environment setup, cloning the repository, and directory structure for system images.
+- [Getting Started](./getting_started.md) — prerequisites, mise + system packages, fwup, repo bootstrap, virtual CAN, dev verification.
 
-### Understanding the Applications
+### Understanding the codebase
 
-- [Applications](./applications.md) -- Description of each OVCS application (VMS, Infotainment, Bridges, Controllers), their dependencies, and how to run them locally for development.
-- [Vehicle Parameterisation](./vehicle_parameterisation.md) -- How `VEHICLE=<Module>` selects the composer, how each firmware boots against a vehicle package, the `OvcsVehicle` / `VmsCore.Vehicle` / `InfotainmentCore.Vehicle` / `OvcsBridge` contracts, and the bus helpers.
+- [Applications](./applications.md) — what each app and library is, how the layers fit together, and how to run them.
+- [Vehicle Parameterisation](./vehicle_parameterisation.md) — how `VEHICLE` selects a composer, how each firmware boots against a vehicle package, and the four behaviours in play (`OvcsVehicle`, `VmsCore.Vehicle`, `InfotainmentCore.Vehicle`, `OvcsBridge`).
 
 ### Hardware
 
-- [Hardware Architecture](./hardware_architecture.md) -- Hardware design principles, component layout, CAN bus isolation strategy, and the role of each physical device.
-- [Running on Hardware](./running_hardware.md) -- Supported hardware platforms, firmware configuration, deployment scripts, and CAN interface customization.
-- [OVCS1 Wiring Reference](../vehicles/ovcs1/WIRING.md) -- Pin-level wiring notes for the OVCS1 vehicle (Leaf harness, iBooster, steering pump, Polo CAN bus).
+- [Hardware Architecture](./hardware_architecture.md) — design principles, component layout, CAN bus topology and bitrates.
+- [Running on Hardware](./running_hardware.md) — Nerves targets, the `ovcs` CLI for build / burn / OTA upload, attach / connect for runtime debugging.
+- [OVCS1 Wiring Reference](../vehicles/ovcs1/WIRING.md) — pin-level wiring for the OVCS1 vehicle (Leaf harness, iBooster, steering pump, Polo CAN bus).
 
-### Development and Testing
+### Development and testing
 
-- [Testing CAN Messages](./testing_can_messages.md) -- Simulating CAN traffic with `cansend` and replaying CAN dumps for local development.
-- [Testing Generic Controllers](./testing_generic_controllers.md) -- Adopting a controller, testing digital I/O, and using `VmsCore.Controllers.TestController`.
+- [Testing CAN Messages](./testing_can_messages.md) — simulating CAN traffic with `cansend` and replaying captures from `candumps/`.
+- [Testing Generic Controllers](./testing_generic_controllers.md) — adopting a generic Arduino controller and verifying it from the dashboard or IEx.
 
 ## Architecture Reference
 
@@ -37,10 +37,13 @@ cantastic (shared CAN bus library)
   |
   +-- infotainment_core -> infotainment_api -> infotainment_firmware (RPi 5)
   |
-  +-- radio_control_bridge_firmware (RPi 3A)
-  |
-  +-- ros_bridge_firmware (RPi 4/5)
+  +-- ovcs_bridge --+-> radio_control_bridge --+--> bridge_firmware
+                    +-> ros_bridge ------------+    (RPi 3A / 4 / 5)
 ```
+
+The shared `bridge_firmware` Nerves image hosts whichever bridge libraries
+the active vehicle declares in `bridge_firmwares/0`. One image per entry —
+see [Vehicle Parameterisation](./vehicle_parameterisation.md).
 
 ### Shared Libraries
 
@@ -51,7 +54,7 @@ own README with usage, design notes, and API.
 |---------|------|--------|--------|
 | OvcsVehicle | `libraries/ovcs_vehicle/` | `OvcsVehicle` | [README](../libraries/ovcs_vehicle/README.md) — vehicle-package behaviour + `ovcs vehicle new` scaffold |
 | OvcsCan | `libraries/ovcs_can/` | `OvcsCan` | [README](../libraries/ovcs_can/README.md) — shared CAN frame YAMLs (`import!:@ovcs_can:…`) |
-| OvcsBus | `libraries/ovcs_bus/` | `OvcsBus` | [README](../libraries/ovcs_bus/README.md) — local pub/sub + MQTT relay + broker |
+| OvcsBus | `libraries/ovcs_bus/` | `OvcsBus` | [README](../libraries/ovcs_bus/README.md) — cluster-wide pub/sub over Erlang distribution |
 | OvcsBridge | `libraries/ovcs_bridge/` | `OvcsBridge` | [README](../libraries/ovcs_bridge/README.md) — bridge-library contract + firmware supervisor |
 | Cantastic | `libraries/cantastic/` | `Cantastic` | [README](../libraries/cantastic/README.md) — CAN bus library (SocketCAN, YAML config, frame encoding/decoding) |
 | ExpressLRS | `libraries/express_lrs/` | `ExpressLrs` | [README](../libraries/express_lrs/README.md) — ExpressLRS MAVLink decoder (used by `radio_control_bridge`) |
@@ -67,9 +70,9 @@ own README with usage, design notes, and API.
 | Infotainment Core | `infotainment/core/` | `InfotainmentCore` | Infotainment business logic, UI layout, pages and blocks |
 | Infotainment API | `infotainment/api/` | `InfotainmentApi` | Phoenix JSON API + WebSocket for the Flutter dashboard |
 | Infotainment Firmware | `infotainment/firmware/` | `InfotainmentFirmware` | Nerves firmware image for Raspberry Pi 5 |
-| Bridges Firmware | `bridges/firmware/` | `BridgeFirmware` | Shared Nerves image, parameterised per vehicle to bundle N bridge libraries |
-| Radio Control Bridge | `bridges/radio_control_bridge/` | `RadioControlBridge` | MAVLink/ExpressLRS RC bridge library (hosted by `bridges/firmware`) |
-| ROS Bridge | `bridges/ros_bridge/` | `RosBridge` | ROS2/Zenoh bridge with IMU (hosted by `bridges/firmware`) |
+| Bridge Firmware | `bridges/firmware/` | `BridgeFirmware` | Shared Nerves image; bundles the bridge libraries the active vehicle declares in `bridge_firmwares/0` |
+| Radio Control Bridge | `bridges/radio_control_bridge/` | `RadioControlBridge` | MAVLink/ExpressLRS RC bridge library (hosted by `bridge_firmware`) |
+| ROS Bridge | `bridges/ros_bridge/` | `RosBridge` | ROS2/Zenoh bridge with IMU (hosted by `bridge_firmware`) |
 
 ### Non-Elixir Components
 

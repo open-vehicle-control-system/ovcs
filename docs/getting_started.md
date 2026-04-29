@@ -159,8 +159,9 @@ The repo ships a `mise.toml` pinning every required runtime (Erlang, Elixir, Nod
 mise trust
 mise install        # installs language runtimes and runs the postinstall hook:
                     # - bootstrap: hex, rebar, nerves_bootstrap Mix archive
-                    # - libraries: clones cantastic, express_lrs, msp_osd
-                    #              into libraries/ (skipped if already present)
+                    # - libraries: clones cantastic, express_lrs, msp_osd,
+                    #              ovcs_control into libraries/ (skipped
+                    #              if already present)
 ```
 
 From now on, `cd`-ing into the project activates the pinned versions automatically. The `mise install` postinstall hook runs `mise run bootstrap && mise run libraries` for you. If you ever reinstall Elixir (`mise install elixir@...`) the same hook fires, so the archive and the sideloaded libraries stay in sync — existing clones are left alone, so local edits in `libraries/cantastic/`, etc. are preserved.

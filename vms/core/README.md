@@ -21,11 +21,11 @@ VmsCore.Vehicle (behaviour)
 
 The `VEHICLE` environment variable selects which vehicle package's composer is wired in at startup. Supported vehicles:
 
-| Vehicle | Package | VMS Composer module |
-|---------|---------|---------------------|
-| `OVCS1` | `vehicles/ovcs1` | `Ovcs1.Vms.Composer` |
-| `OVCSMini` | `vehicles/ovcs_mini` | `OvcsMini.Vms.Composer` |
-| `OBD2` | `vehicles/obd2` | `Obd2.Vms.Composer` |
+| `VEHICLE` value | Package | VMS Composer module |
+|----------------|---------|---------------------|
+| `Ovcs1` | `vehicles/ovcs1` | `Ovcs1.Vms.Composer` |
+| `OvcsMini` | `vehicles/ovcs_mini` | `OvcsMini.Vms.Composer` |
+| `Obd2` | `vehicles/obd2` | `Obd2.Vms.Composer` |
 
 ### 2. Component Pattern
 
@@ -61,7 +61,7 @@ end
 
 The `source` field enables decoupling: components don't import each other directly. Instead, they receive source module atoms through their init configuration from the Composer.
 
-Cross-firmware traffic is an opt-in overlay on top of the node-local bus: declare `bus_relay/0` on the composer and every matching message is mirrored to the vehicle's MQTT broker (see [`OvcsBus`](../../libraries/ovcs_bus) for the relay/broker design).
+Cross-firmware traffic is automatic: every BEAM in the vehicle (VMS, infotainment, each bridge) is joined into a distributed Erlang mesh by `OvcsBus.Cluster`, so `OvcsBus.broadcast/2` reaches subscribers on every node. See [`OvcsBus`](../../libraries/ovcs_bus) for details.
 
 ### 4. Manager Pattern
 

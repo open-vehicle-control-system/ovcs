@@ -26,9 +26,9 @@ Four behaviours form the contract between firmwares and vehicles:
 | Behaviour | Where | What it is |
 |-----------|-------|------------|
 | `OvcsVehicle` | `libraries/ovcs_vehicle/lib/ovcs_vehicle.ex` | Top-level vehicle module: name, composer pointers, Nerves targets, bridge firmware map. Every `vehicles/<name>/lib/<name>.ex` implements this. |
-| `VmsCore.Vehicle` | `vms/core/lib/vms_core/vehicle.ex` | VMS composer: supervision `children/0`, CAN config, dashboard, optional `bus_relay/0` / `bus_broker/0`. Implemented by `<Vehicle>.Vms.Composer`. |
-| `InfotainmentCore.Vehicle` | `infotainment/core/lib/infotainment_core/vehicle.ex` | Infotainment composer: supervision `children/0`, CAN config, UI layout, optional `bus_relay/0`. Implemented by `<Vehicle>.Infotainment.Composer`. |
-| `OvcsBridge` | `libraries/ovcs_bridge/lib/ovcs_bridge.ex` | One per bridge **library** (not per vehicle): `children/0`, optional `relay_messages/0`. Vehicles pick which bridges to bundle via `bridge_firmwares/0`. |
+| `VmsCore.Vehicle` | `vms/core/lib/vms_core/vehicle.ex` | VMS composer: supervision `children/0`, CAN config (`can_config_otp_app/0` + `can_config_path/0` + `default_can_mapping/1`), optional `dashboard_configuration/0` + `generic_controllers/0`. Implemented by `<Vehicle>.Vms.Composer`. |
+| `InfotainmentCore.Vehicle` | `infotainment/core/lib/infotainment_core/vehicle.ex` | Infotainment composer: supervision `children/0`, CAN config, optional `infotainment_configuration/0`. Implemented by `<Vehicle>.Infotainment.Composer`. |
+| `OvcsBridge` | `libraries/ovcs_bridge/lib/ovcs_bridge.ex` | One per bridge **library** (not per vehicle): `children/0`. Vehicles pick which bridges to bundle via `bridge_firmwares/0`. |
 
 ## Vehicle package layout
 
