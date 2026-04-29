@@ -10,7 +10,7 @@ defmodule OvcsMini.Vms.Composer.Dashboard.GenericControllersPage do
       blocks: %{
         "main-controller" => %{
           order: 1,
-          name: "Main Controller Satus",
+          name: "Main Controller Status",
           type: "table",
           rows: [
             %{type: :action, name: "Adopt", input_type: :button, module: GenericController, action: "adopt", extra_parameters: %{controller_name: Vms.MainController}},

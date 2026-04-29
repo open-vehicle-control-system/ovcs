@@ -1,7 +1,7 @@
 defmodule <%= @module %>.Infotainment.Composer do
   @moduledoc """
   Wires up the infotainment supervision tree, CAN config, and UI
-  layout for `<%= @upper %>`.
+  layout for `<%= @display_name %>`.
   """
   @behaviour InfotainmentCore.Vehicle
 

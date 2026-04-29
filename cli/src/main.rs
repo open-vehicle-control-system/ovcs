@@ -49,6 +49,9 @@ enum Commands {
     },
     /// OTA-upload firmware to a running device
     Upload {
+        /// Build the firmware first, then upload (one-shot for fresh edits)
+        #[arg(long)]
+        build: bool,
         /// Target host (default: <vehicle>-<application>.local)
         #[arg(long)]
         host: Option<String>,
@@ -101,6 +104,16 @@ enum CanAction {
 
 #[derive(Subcommand)]
 enum VehicleAction {
+    /// Generate persistent SSH host keys per firmware role so device
+    /// identities stay stable across burns. Keys are gitignored under
+    /// vehicles/<dir>/priv/host_keys/.
+    HostKeys {
+        /// Vehicle directory name (snake_case). Prompts if omitted.
+        vehicle: Option<String>,
+        /// Regenerate keys even if they already exist
+        #[arg(long)]
+        force: bool,
+    },
     /// Scaffold a new vehicle package from the bundled template
     New {
         /// New vehicle directory name (snake_case)
@@ -114,6 +127,13 @@ enum VehicleAction {
         /// Scaffold a VMS-only vehicle (skip the infotainment side)
         #[arg(long)]
         no_infotainment: bool,
+        /// Skip the bridge_firmware dep (omit `bridge_firmwares/0`)
+        #[arg(long)]
+        no_bridges: bool,
+        /// Human-readable display name (e.g. "OVCS Mini").
+        /// Defaults to the snake_case name title-cased on `_`.
+        #[arg(long)]
+        display_name: Option<String>,
     },
 }
 
@@ -130,22 +150,35 @@ fn main() -> Result<()> {
         } => commands::burn::run(first, second, build),
         Commands::Clean { first, second } => commands::clean::run(first, second),
         Commands::Upload {
+            build,
             host,
             file,
             first,
             second,
-        } => commands::upload::run(first, second, host, file),
+        } => commands::upload::run(first, second, host, file, build),
         Commands::Can { action } => match action {
             CanAction::Setup { vehicle } => commands::can::setup(vehicle),
             CanAction::Status { vehicle } => commands::can::status(vehicle),
         },
         Commands::Vehicle { action } => match action {
+            VehicleAction::HostKeys { vehicle, force } => {
+                commands::vehicle_host_keys::run(vehicle, force)
+            }
             VehicleAction::New {
                 name,
                 vms_target,
                 infotainment_target,
                 no_infotainment,
-            } => commands::vehicle_new::run(name, vms_target, infotainment_target, no_infotainment),
+                no_bridges,
+                display_name,
+            } => commands::vehicle_new::run(
+                name,
+                vms_target,
+                infotainment_target,
+                no_infotainment,
+                no_bridges,
+                display_name,
+            ),
         },
         Commands::Run { vehicle } => commands::run::run(vehicle),
         Commands::Attach { vehicle } => commands::attach::run(vehicle),

@@ -13,6 +13,7 @@ defmodule Obd2 do
   @impl OvcsVehicle
   def can_config_otp_app, do: :obd2
   @impl OvcsVehicle
-  def nerves_target(:vms), do: :ovcs_base_can_system_rpi4
-  def nerves_target(:infotainment), do: :ovcs_base_can_system_rpi5
+  def vms_target, do: :ovcs_base_can_system_rpi4
+  @impl OvcsVehicle
+  def infotainment_target, do: :ovcs_base_can_system_rpi5
 end

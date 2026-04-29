@@ -32,7 +32,7 @@ Preferred, from the repo root:
 ```
 
 The CLI resolves the vehicle module, sets `VEHICLE` + `MIX_TARGET` (reading
-`nerves_target(:vms)` off the vehicle module), and delegates to `build.sh`
+`vms_target/0` off the vehicle module), and delegates to `build.sh`
 / `burn.sh` / `upload.sh` / `clean.sh` in this directory.
 
 Invoking the scripts directly also works — `build.sh` requires `VEHICLE`

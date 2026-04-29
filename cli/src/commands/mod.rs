@@ -8,5 +8,6 @@ pub mod doctor;
 pub mod run;
 pub mod run_ui;
 pub mod upload;
+pub mod vehicle_host_keys;
 pub mod vehicle_new;
 pub mod vehicles;

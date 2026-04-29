@@ -9,7 +9,7 @@ defmodule <%= @module %>.Vms.Composer.Dashboard do
   def dashboard_configuration do
     %{
       vehicle: %{
-        name: "<%= @upper %>",
+        name: "<%= @display_name %>",
         main_color: "blue",
         refresh_interval: 100,
         pages: %{

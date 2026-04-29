@@ -1,6 +1,6 @@
-# <%= @upper %>
+# <%= @display_name %>
 
-OVCS vehicle package for `<%= @upper %>`. This directory is a standalone
+OVCS vehicle package for `<%= @display_name %>`. This directory is a standalone
 Mix app implementing the [`OvcsVehicle`][ovcs_vehicle] behaviour — the
 contract consulted by `vms_core`<%= if @infotainment do %> and
 `infotainment_core`<% end %> at runtime. Select this vehicle by setting
@@ -169,9 +169,10 @@ Set at scaffold time:
 - `vms` → `:<%= @vms_target %>`
 <%= if @infotainment do %>- `infotainment` → `:<%= @infotainment_target %>`
 <% end %>
-Change the `nerves_target/1` clauses in `lib/<%= @name %>.ex` if you
-move to different boards. Bridge firmware targets are declared inside
-each entry of `bridge_firmwares/0` (see section 4).
+Change the `vms_target/0`<%= if @infotainment do %> / `infotainment_target/0`<% end %>
+callbacks in `lib/<%= @name %>.ex` if you move to different boards.
+Bridge firmware targets are declared inside each entry of
+`bridge_firmwares/0` (see section 4).
 
 Shared firmware defaults for each Nerves target live in
 [`vms/firmware/targets/<target>/`](../../vms/firmware/targets)<%= if @infotainment do %>
