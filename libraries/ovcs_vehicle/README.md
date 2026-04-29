@@ -28,8 +28,9 @@ defmodule Ovcs1 do
   @impl OvcsVehicle
   def can_config_otp_app, do: :ovcs1
   @impl OvcsVehicle
-  def nerves_target(:vms), do: :ovcs_base_can_system_rpi4
-  def nerves_target(:infotainment), do: :ovcs_base_can_system_rpi5
+  def vms_target, do: :ovcs_base_can_system_rpi4
+  @impl OvcsVehicle
+  def infotainment_target, do: :ovcs_base_can_system_rpi5
 
   @impl OvcsVehicle
   def bridge_firmwares do
@@ -52,7 +53,8 @@ Callbacks (all required unless noted):
 | `vms/0` | VMS composer module (implements `VmsCore.Vehicle`) |
 | `infotainment/0` _(optional)_ | Infotainment composer module (implements `InfotainmentCore.Vehicle`) |
 | `can_config_otp_app/0` | OTP app owning the CAN YAMLs (the vehicle's own app atom) |
-| `nerves_target/1` | Nerves target atom per side (`:vms`, `:infotainment`) |
+| `vms_target/0` | Nerves target atom for the VMS firmware |
+| `infotainment_target/0` _(optional)_ | Nerves target atom for the infotainment firmware |
 | `bridge_firmwares/0` _(optional)_ | Map of bridge firmware id → target + bridges + can mapping |
 
 Only `vms/0` sets `:vms_core, :vehicle`; `infotainment/0` sets

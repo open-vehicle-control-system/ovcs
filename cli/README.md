@@ -48,8 +48,9 @@ Where:
 
 The CLI resolves the top-level vehicle module (e.g. `Ovcs1`) by
 converting the directory name to UpperCamelCase, then queries the
-vehicle's `OvcsVehicle.nerves_target/1`, `default_can_mapping/1`, and
-`bridge_firmwares/0` callbacks via short `mix run --no-start` spawns.
+vehicle's `OvcsVehicle.vms_target/0`, `OvcsVehicle.infotainment_target/0`,
+`default_can_mapping/1`, and `bridge_firmwares/0` callbacks via short
+`mix run --no-start` spawns.
 The resolved `VEHICLE` and `MIX_TARGET` (and `BRIDGE_FIRMWARE_ID` for
 bridge firmwares) are passed to the shared firmware build scripts in
 `vms/firmware/`, `infotainment/firmware/`, and `bridges/firmware/`.

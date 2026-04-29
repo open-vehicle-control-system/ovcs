@@ -1,28 +1,38 @@
 import Config
 
-vehicle = OvcsVehicle.Firmware.resolve_vehicle(__DIR__, config_env())
-bridge_firmware_id = System.get_env("BRIDGE_FIRMWARE_ID")
+case OvcsVehicle.Firmware.resolve_bridge(
+       __DIR__,
+       config_env(),
+       System.get_env("BRIDGE_FIRMWARE_ID")
+     ) do
+  nil ->
+    :ok
 
-if vehicle && bridge_firmware_id && config_env() != :test do
-  config :ovcs_vehicle, :module, vehicle
+  {vehicle, bridge_firmware_id, entry} ->
+    config :ovcs_vehicle, :module, vehicle
 
-  entry = Map.fetch!(vehicle.bridge_firmwares(), bridge_firmware_id)
+    mapping_string =
+      System.get_env("CAN_NETWORK_MAPPINGS") ||
+        (entry[:default_can_mapping] || %{target: ""})
+        |> Map.get(:target, "")
 
-  mapping_string =
-    System.get_env("CAN_NETWORK_MAPPINGS") ||
-      (entry[:default_can_mapping] || %{target: ""})
-      |> Map.get(:target, "")
+    config :cantastic,
+      can_network_mappings: {
+        BridgeFirmware.Util.NetworkMapper,
+        :can_network_mappings,
+        [mapping_string]
+      }
 
-  config :cantastic,
-    can_network_mappings: {
-      BridgeFirmware.Util.NetworkMapper,
-      :can_network_mappings,
-      [mapping_string]
-    }
+    # Vehicle may override the per-bridge YAML path; otherwise follow
+    # the convention `can/bridges/<id>.yml`. Runtime.exs runs after
+    # host.exs / target.exs, so this is the single source of truth.
+    priv_path = entry[:can_config_path] || "can/bridges/#{bridge_firmware_id}.yml"
+    config :cantastic, priv_can_config_path: priv_path
 
-  # Vehicle may override the per-bridge YAML path; otherwise follow the
-  # convention `can/bridges/<id>.yml`. Runtime.exs runs after host.exs /
-  # target.exs, so this is the single source of truth for the path.
-  priv_path = entry[:can_config_path] || "can/bridges/#{bridge_firmware_id}.yml"
-  config :cantastic, priv_can_config_path: priv_path
+    # See `vms/firmware/config/runtime.exs` for the rationale.
+    if Application.spec(:nerves_ssh, :vsn) do
+      if dir = OvcsVehicle.Firmware.ssh_system_dir(vehicle, "bridges/#{bridge_firmware_id}") do
+        config :nerves_ssh, system_dir: String.to_charlist(dir)
+      end
+    end
 end

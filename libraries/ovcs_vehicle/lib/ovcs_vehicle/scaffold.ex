@@ -10,9 +10,13 @@ defmodule OvcsVehicle.Scaffold do
 
   Template **contents** are rendered with EEx against these assigns:
 
-      @module  — CamelCase module prefix (e.g. "Ovcs1")
-      @name    — snake_case app/dir name (e.g. "ovcs1")
-      @upper   — UPPER_CASE display name (e.g. "OVCS1")
+      @module       — CamelCase module prefix (e.g. "Ovcs1")
+      @name         — snake_case app/dir name (e.g. "ovcs1")
+      @display_name — human-readable name (e.g. "OVCS Mini")
+      @vms_target / @infotainment_target — Nerves target atoms
+      @infotainment — bool (false: skip the infotainment side)
+      @bridges      — bool (false: skip bridge_firmware dep + the
+                      `bridge_firmwares/0` block)
 
   Template **path components** use a literal `{{name}}` marker instead
   of EEx (EEx in filenames is awkward); `{{name}}` is substituted with
@@ -25,7 +29,15 @@ defmodule OvcsVehicle.Scaffold do
 
   require Mix.Generator
 
-  @type assigns :: [module: String.t(), name: String.t(), upper: String.t()]
+  @type assigns :: [
+          module: String.t(),
+          name: String.t(),
+          display_name: String.t(),
+          vms_target: String.t(),
+          infotainment_target: String.t() | nil,
+          infotainment: boolean(),
+          bridges: boolean()
+        ]
 
   @doc """
   Returns the bundled template directory, resolved either from the

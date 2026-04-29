@@ -52,18 +52,19 @@ pub fn module_for(dir: &str) -> String {
 }
 
 pub fn nerves_target(vehicle: &Vehicle, side: &str) -> Result<Option<String>> {
+    let callback = match side {
+        "vms" => "vms_target",
+        "infotainment" => "infotainment_target",
+        _ => return Ok(None),
+    };
     let snippet = format!(
         r#"
-if function_exported?({module}, :nerves_target, 1) do
-  try do
-    IO.write(to_string({module}.nerves_target(:{side})))
-  rescue
-    FunctionClauseError -> :ok
-  end
+if function_exported?({module}, :{callback}, 0) do
+  IO.write(to_string({module}.{callback}()))
 end
 "#,
         module = vehicle.module,
-        side = side,
+        callback = callback,
     );
     run_snippet(&vehicle.path, &snippet)
 }

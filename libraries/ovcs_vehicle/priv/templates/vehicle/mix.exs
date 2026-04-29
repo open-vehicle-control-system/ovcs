@@ -32,8 +32,8 @@ defmodule <%= @module %>.MixProject do
     [
       {:ovcs_vehicle, path: "../../libraries/ovcs_vehicle"},
       {:vms_firmware, path: "../../vms/firmware"}<%= if @infotainment do %>,
-      {:infotainment_firmware, path: "../../infotainment/firmware"}<% end %>,
-      {:bridge_firmware, path: "../../bridges/firmware"},
+      {:infotainment_firmware, path: "../../infotainment/firmware"}<% end %><%= if @bridges do %>,
+      {:bridge_firmware, path: "../../bridges/firmware"}<% end %>,
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
     ]
   end

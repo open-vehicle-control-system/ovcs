@@ -220,7 +220,7 @@ Build configurations (defined in `platformio.ini`):
 
 ## Vehicles (`vehicles/`)
 
-Each vehicle is a standalone Mix application that bundles its VMS side, optional infotainment side, and optional bridge firmware declarations. A vehicle's top-level module implements the `OvcsVehicle` behaviour and exposes `name/0`, `vms/0`, optional `infotainment/0`, optional `bridge_firmwares/0`, `can_config_otp_app/0`, and `nerves_target/1`:
+Each vehicle is a standalone Mix application that bundles its VMS side, optional infotainment side, and optional bridge firmware declarations. A vehicle's top-level module implements the `OvcsVehicle` behaviour and exposes `name/0`, `vms/0`, optional `infotainment/0`, optional `bridge_firmwares/0`, `can_config_otp_app/0`, `vms_target/0`, and optional `infotainment_target/0`:
 
 | Package | App | Top-level module |
 |---------|-----|------------------|

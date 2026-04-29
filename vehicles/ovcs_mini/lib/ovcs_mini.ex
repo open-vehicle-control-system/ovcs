@@ -7,13 +7,13 @@ defmodule OvcsMini do
   @behaviour OvcsVehicle
 
   @impl OvcsVehicle
-  def name, do: "OVCSMini"
+  def name, do: "OVCS Mini"
   @impl OvcsVehicle
   def vms, do: OvcsMini.Vms.Composer
   @impl OvcsVehicle
   def can_config_otp_app, do: :ovcs_mini
   @impl OvcsVehicle
-  def nerves_target(:vms), do: :ovcs_base_can_system_rpi4
+  def vms_target, do: :ovcs_base_can_system_rpi4
 
   @impl OvcsVehicle
   def bridge_firmwares do

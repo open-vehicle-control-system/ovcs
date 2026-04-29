@@ -1,7 +1,7 @@
 defmodule <%= @module %>.Vms.Composer do
   @moduledoc """
   Wires up the VMS supervision tree, CAN config, dashboard, and
-  generic_controller map for `<%= @upper %>`.
+  generic_controller map for `<%= @display_name %>`.
 
   This is the main place you'll edit as the vehicle gains real
   hardware. `children/0` is the supervision tree — add a child spec

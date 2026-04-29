@@ -1,30 +1,40 @@
 import Config
 
-# Read VEHICLE, prepend the vehicle's compiled ebin to the code path,
-# and return the module. Nerves target builds ship the vehicle inside
-# the release; `Code.prepend_path` on an already-registered directory
-# is a cheap no-op.
-vehicle =
-  OvcsVehicle.Firmware.resolve_vehicle(
-    __DIR__,
-    config_env(),
-    Application.compile_env(:vms_firmware, :vehicle)
-  )
+# `resolve_side/4` reads VEHICLE, prepends the vehicle's compiled
+# ebin, and hands back `{vehicle, composer}`. `nil` means no VEHICLE
+# (or `MIX_ENV=test`); skip Cantastic wiring in that case.
+case OvcsVehicle.Firmware.resolve_side(
+       :vms,
+       __DIR__,
+       config_env(),
+       Application.compile_env(:vms_firmware, :vehicle)
+     ) do
+  nil ->
+    :ok
 
-if vehicle && config_env() != :test do
-  vms = vehicle.vms()
+  {vehicle, vms} ->
+    config :vms_core, :vehicle, vms
+    config :ovcs_vehicle, :module, vehicle
 
-  config :vms_core, :vehicle, vms
-  config :ovcs_vehicle, :module, vehicle
+    config :cantastic,
+      can_network_mappings: {
+        VmsFirmware.Util.NetworkMapper,
+        :can_network_mappings,
+        [System.get_env("CAN_NETWORK_MAPPINGS") || vms.default_can_mapping(:host)]
+      },
+      otp_app: vehicle.can_config_otp_app(),
+      priv_can_config_path: vms.can_config_path()
 
-  config :cantastic,
-    can_network_mappings: {
-      VmsFirmware.Util.NetworkMapper,
-      :can_network_mappings,
-      [System.get_env("CAN_NETWORK_MAPPINGS") || vms.default_can_mapping(:host)]
-    },
-    otp_app: vehicle.can_config_otp_app(),
-    priv_can_config_path: vms.can_config_path()
+    # Stable SSH host keys baked into the vehicle's priv (generated
+    # by `./ovcs vehicle host-keys`). When absent, NervesSSH falls
+    # back to its default /data path and regenerates on each fresh
+    # burn (the legacy behaviour). Skip entirely on host builds where
+    # `:nerves_ssh` isn't a dep.
+    if Application.spec(:nerves_ssh, :vsn) do
+      if dir = OvcsVehicle.Firmware.ssh_system_dir(vehicle, "vms") do
+        config :nerves_ssh, system_dir: String.to_charlist(dir)
+      end
+    end
 end
 
 # Phoenix endpoint opt-in for release builds (matches the original
