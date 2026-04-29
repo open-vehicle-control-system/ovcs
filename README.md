@@ -26,37 +26,11 @@ A smaller-scale platform, **OVCS Mini**, replicates the same software and hardwa
 
 ## Architecture Overview
 
-OVCS is designed around multiple isolated CAN buses to prevent message conflicts between components from different manufacturers. The VMS acts as the central hub, connected to all buses.
-
-```
-                          +---------------------+
-                          |    Infotainment      |
-                          |    (RPi 5 + Flutter) |
-                          +---------+-----------+
-                                    |
-                                OVCS CAN Bus
-                                    |
-+------------------+    +-----------+-----------+    +------------------+
-| Radio Control    |    |                       |    | ROS Bridge       |
-| Bridge (RPi 3A) +----+    VMS (RPi 4)        +----+ (RPi 4/5)       |
-+------------------+    |    Central Brain       |    +------------------+
-                        +-+---+---+---+---+---+-+
-                          |   |   |   |   |   |
-                    +-----+   |   |   |   |   +------+
-                    |         |   |   |   |           |
-               Leaf CAN  Polo CAN | BMS CAN    Misc CAN
-                              |
-                          OVCS CAN
-                              |
-                   +----------+----------+
-                   |          |          |
-              Controller  Controller  Controller
-              (Arduino)   (Arduino)   (Arduino)
-```
-
-See the [hardware architecture documentation](./docs/hardware_architecture.md) for more details.
+OVCS is designed around multiple isolated CAN buses, preventing message ID conflicts between components from different manufacturers. The VMS sits in the middle, connected to all buses.
 
 ![OVCS architecture](./docs/assets/ovcs_architecture.png)
+
+See [Hardware Architecture](./docs/hardware_architecture.md) for the full topology.
 
 ## Repository Structure
 
@@ -83,8 +57,9 @@ ovcs/
 |   Each bundles its VMS + infotainment composers and CAN topology.
 |
 +-- bridges/                    Communication Bridges
-|   +-- radio_control_bridge/     MAVLink RC transmitter bridge (Nerves on RPi 3A)
-|   +-- ros_bridge/               ROS2/Zenoh bridge with IMU support (Nerves on RPi 4/5)
+|   +-- firmware/                 Shared Nerves image hosting one or more bridges per build
+|   +-- radio_control_bridge/     MAVLink RC transmitter bridge library
+|   +-- ros_bridge/               ROS2/Zenoh bridge library (with BNO085 IMU)
 |
 +-- controllers/                Arduino Controllers
 |   +-- generic_controller/       PlatformIO C++ project for Arduino R4 Minima
@@ -93,24 +68,18 @@ ovcs/
 |   +-- cantastic/                CAN bus communication library (Elixir, SocketCAN)
 |   +-- ovcs_can/                 Shared CAN component frame/signal YAMLs
 |   +-- ovcs_vehicle/             OvcsVehicle top-level behaviour + scaffold
-|   +-- ovcs_bus/                 Node-local pub/sub + optional MQTT relay/broker
+|   +-- ovcs_bus/                 Cluster-wide pub/sub over Erlang distribution
 |   +-- ovcs_bridge/              Behaviour + supervisor for bridge libraries
 |   +-- ovcs_control/             PID controller + input filters
 |   +-- express_lrs/              MAVLink v2 telemetry reader (ExpressLRS)
 |   +-- msp_osd/                  MSP / DisplayPort OSD stack for MSP-compatible VTXs
 |
-+-- scripts/                    Utility Scripts
-|   +-- setup_can.sh              Physical CAN setup on hardware (manual fallback)
-|   +-- bind_remote_can.rb        Mirror a remote Nerves device's CAN bus over socketcand
-|   +-- faker.rb                  Generate fake OVCS1 CAN frames for dev
-|   +-- sleep_loop.rb             Toggle ignition frames in a loop for testing
-|
-+-- config/                     Global Configuration
-|   +-- bms_config.o2bms          Orion BMS2 configuration
-|
++-- cli/                        Rust source for the `ovcs` CLI (binary at cli/ovcs)
++-- scripts/                    Utility scripts (setup_can.sh, bind_remote_can.rb, ...)
++-- config/                     Global configuration (e.g. Orion BMS2 .o2bms)
 +-- candumps/                   CAN bus capture logs for offline testing and replay
 +-- docs/                       Project documentation
-+-- ovcs                        CLI tool for building, burning, and uploading firmware
++-- ovcs                        Symlink to cli/ovcs (built via `mise run cli`; gitignored)
 ```
 
 ## Supported Vehicles
@@ -153,12 +122,12 @@ Once the setup is done:
 cd vms/dashboard && npm install && npm run dev
 ```
 
-`ovcs run` spawns one BEAM per declared firmware (VMS core + Phoenix
-API on :4000, infotainment core + Phoenix API on :4001 when present,
-and one BEAM per entry in `bridge_firmwares/0`) against a VMS-hosted
-an Erlang-distribution cluster — same topology as deployed. See
-[Applications](./docs/applications.md) for the per-side breakdown if
-you prefer running pieces separately.
+`ovcs run` spawns one BEAM per declared firmware: VMS API on `:4000`,
+infotainment API on `:4001` (when the vehicle has an infotainment side),
+and one BEAM per entry in `bridge_firmwares/0`. They join a single
+Erlang-distribution cluster — the same topology as deployed Nerves
+devices on the vehicle LAN. See [Applications](./docs/applications.md)
+for the per-side breakdown if you prefer running pieces separately.
 
 ## Deploy
 
@@ -184,14 +153,15 @@ Subscribe to the [Spin42 Engineering YouTube channel](https://www.youtube.com/@s
 
 ## Documentation
 
-Full documentation is available in the [`docs/`](./docs/README.md) directory:
+Full documentation is in the [`docs/`](./docs/README.md) directory:
 
-1. [Getting Started](./docs/getting_started.md) -- Environment setup and installation
-2. [Applications](./docs/applications.md) -- Application descriptions and local development
-3. [Hardware Architecture](./docs/hardware_architecture.md) -- Hardware design and component overview
-4. [Running on Hardware](./docs/running_hardware.md) -- Firmware deployment and configuration
-5. [Testing CAN Messages](./docs/testing_can_messages.md) -- Simulating CAN traffic for development
-6. [Testing Generic Controllers](./docs/testing_generic_controllers.md) -- Controller adoption and I/O testing
+1. [Getting Started](./docs/getting_started.md) — environment setup and installation
+2. [Applications](./docs/applications.md) — what each app and library is, plus local-dev
+3. [Vehicle Parameterisation](./docs/vehicle_parameterisation.md) — how `VEHICLE` selects a composer and what each firmware boots
+4. [Hardware Architecture](./docs/hardware_architecture.md) — physical topology, CAN networks, controllers
+5. [Running on Hardware](./docs/running_hardware.md) — firmware build/burn/upload + runtime debugging via the `ovcs` CLI
+6. [Testing CAN Messages](./docs/testing_can_messages.md) — simulating CAN traffic
+7. [Testing Generic Controllers](./docs/testing_generic_controllers.md) — adopting + verifying generic Arduino controllers
 
 ## Disclaimer
 
