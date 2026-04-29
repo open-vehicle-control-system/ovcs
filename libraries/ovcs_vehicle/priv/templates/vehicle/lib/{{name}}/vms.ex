@@ -3,7 +3,7 @@ defmodule <%= @module %>.Vms do
   VMS-side vehicle GenServer — the example shows the shape your
   vehicle-specific state machine should take.
 
-  Extend this module to track whatever state `<%= @upper %>`'s VMS needs:
+  Extend this module to track whatever state `<%= @display_name %>`'s VMS needs:
   - listen for CAN frames via `Cantastic.Receiver.subscribe/3`
   - listen for internal messages via `OvcsBus.subscribe/1`
   - decide `ready_to_drive` and `vms_status` on a periodic loop

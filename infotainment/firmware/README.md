@@ -43,7 +43,7 @@ Preferred, from the repo root:
 ./ovcs clean  ovcs1 infotainment
 ```
 
-The CLI reads `nerves_target(:infotainment)` off the vehicle module and
+The CLI reads `infotainment_target/0` off the vehicle module and
 passes it as `MIX_TARGET`, then delegates to `build.sh` / `burn.sh` /
 `upload.sh` / `clean.sh` in this directory.
 

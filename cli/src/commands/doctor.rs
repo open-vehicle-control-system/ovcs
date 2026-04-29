@@ -3,9 +3,10 @@ use owo_colors::OwoColorize;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
+use crate::firmware::applications_for;
 use crate::repo_root::repo_root;
 use crate::ui::step;
-use crate::vehicles;
+use crate::vehicles::{self, Vehicle};
 
 #[derive(Debug, Clone, Copy)]
 enum Level {
@@ -157,7 +158,7 @@ pub fn run() -> Result<()> {
                         Mark::Error,
                         &v.dir,
                         &format!(
-                            "{}.nerves_target/1 returned nothing for either side",
+                            "{}.vms_target/0 / .infotainment_target/0 returned nothing",
                             v.module
                         ),
                     );
@@ -178,6 +179,32 @@ pub fn run() -> Result<()> {
     }
 
     println!();
+    step("Vehicle SSH host keys");
+    if list.is_empty() {
+        print_row(Mark::Warn, "vehicles/", "no vehicle packages found");
+    } else {
+        for v in &list {
+            let roles = applications_for(v).unwrap_or_default();
+            let missing = missing_host_key_roles(v, &roles);
+            if missing.is_empty() && !roles.is_empty() {
+                print_row(Mark::Ok, &v.dir, "all roles configured");
+            } else if roles.is_empty() {
+                print_row(Mark::Warn, &v.dir, "no firmware roles");
+            } else {
+                print_row(
+                    Mark::Warn,
+                    &v.dir,
+                    &format!(
+                        "missing keys for: {} — run `./ovcs vehicle host-keys {}`",
+                        missing.join(", "),
+                        v.dir
+                    ),
+                );
+            }
+        }
+    }
+
+    println!();
     if any_required_fail {
         println!("{}", "Some checks failed — see above.".yellow());
         println!(
@@ -187,6 +214,29 @@ pub fn run() -> Result<()> {
     }
     println!("{}", "All checks passed.".green());
     Ok(())
+}
+
+fn missing_host_key_roles(vehicle: &Vehicle, roles: &[String]) -> Vec<String> {
+    roles
+        .iter()
+        .filter(|role| !host_keys_present(vehicle, role))
+        .cloned()
+        .collect()
+}
+
+fn host_keys_present(vehicle: &Vehicle, role: &str) -> bool {
+    let dir = host_keys_dir(vehicle, role);
+    ["ssh_host_rsa_key", "ssh_host_ed25519_key"]
+        .iter()
+        .all(|name| dir.join(name).exists())
+}
+
+fn host_keys_dir(vehicle: &Vehicle, role: &str) -> std::path::PathBuf {
+    let base = vehicle.path.join("priv").join("host_keys");
+    match role {
+        "vms" | "infotainment" => base.join(role),
+        bridge_id => base.join("bridges").join(bridge_id),
+    }
 }
 
 fn print_row(mark: Mark, name: &str, detail: &str) {

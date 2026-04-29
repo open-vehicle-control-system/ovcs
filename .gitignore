@@ -1,4 +1,5 @@
 .env.exs
+vehicles/*/priv/host_keys/
 .tool-versions
 doc/
 *.db

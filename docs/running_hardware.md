@@ -83,6 +83,25 @@ Wi-Fi credentials, and Phoenix `SECRET_KEY_BASE` / `SIGNING_SALT`. The
 file is gitignored and shared by every firmware of that vehicle (vms,
 infotainment, bridges).
 
+### Stable SSH host keys across burns
+
+By default, every fresh SD-card burn regenerates the device's SSH host
+key, so each burn triggers OpenSSH's "REMOTE HOST IDENTIFICATION HAS
+CHANGED" warning. To avoid that, generate persistent host keys per
+firmware role once:
+
+```sh
+./ovcs vehicle host-keys ovcs1
+```
+
+This creates one rsa + ed25519 key pair per role (vms, infotainment,
+each bridge) under `vehicles/<vehicle>/priv/host_keys/<role>/`. Files
+are gitignored — each developer keeps their own. The firmware ships
+the keys inside the vehicle's app priv and points
+`:nerves_ssh, :system_dir` at them at boot, so the device's SSH
+identity stays stable across burns. Re-run with `--force` to rotate
+keys; `./ovcs doctor` flags any vehicle missing keys.
+
 ### Burn to SD card
 
 Write the firmware image to an SD card (requires the SD card to be inserted):

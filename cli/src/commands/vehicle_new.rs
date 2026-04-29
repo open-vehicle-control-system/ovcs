@@ -13,6 +13,8 @@ pub fn run(
     vms_target: String,
     infotainment_target: String,
     no_infotainment: bool,
+    no_bridges: bool,
+    display_name: Option<String>,
 ) -> Result<()> {
     let name_pat = Regex::new(r"^[a-z][a-z0-9_]*$").unwrap();
     let target_pat = Regex::new(r"^[a-z][a-z0-9_]*$").unwrap();
@@ -53,18 +55,24 @@ pub fn run(
     }
 
     let module = module_for(&raw);
+    let display = display_name
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| default_display_name(&raw));
+    let bridges = !no_bridges;
     let info_el = match &info {
         Some(t) => el_string(t),
         None => "nil".to_string(),
     };
     let assigns = format!(
-        "module: {}, name: {}, upper: {}, vms_target: {}, infotainment_target: {}, infotainment: {}",
+        "module: {}, name: {}, display_name: {}, vms_target: {}, infotainment_target: {}, infotainment: {}, bridges: {}",
         el_string(&module),
         el_string(&raw),
-        el_string(&raw.to_uppercase()),
+        el_string(&display),
         el_string(&vms),
         info_el,
         if infotainment { "true" } else { "false" },
+        if bridges { "true" } else { "false" },
     );
 
     let snippet = format!(
@@ -197,4 +205,19 @@ fn warn_missing_firmware(root: &Path, side: &str, target: &str) -> Result<()> {
 
 fn el_string(s: &str) -> String {
     format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
+}
+
+fn default_display_name(snake: &str) -> String {
+    snake
+        .split('_')
+        .filter(|s| !s.is_empty())
+        .map(|chunk| {
+            let mut chars = chunk.chars();
+            match chars.next() {
+                Some(c) => c.to_uppercase().collect::<String>() + chars.as_str(),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }

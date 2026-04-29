@@ -15,6 +15,78 @@ defmodule OvcsVehicle.Firmware do
   """
 
   @doc """
+  Resolve a side composer for `runtime.exs`.
+
+  Returns `{vehicle, composer}` when the vehicle is found and the env
+  is bootable (i.e. not `:test`), otherwise `nil`. Use it to collapse
+  the resolve + nil-check + composer-fetch shuffle each firmware's
+  `runtime.exs` would otherwise duplicate.
+
+  * `side` — `:vms` or `:infotainment`. Calls the corresponding
+    callback on the vehicle module to get the composer.
+  * `config_dir` / `config_env` — same as `resolve_vehicle/3`.
+  * `vehicle_name` — optional override (typically the firmware's
+    `Application.compile_env(...)`).
+  """
+  @spec resolve_side(:vms | :infotainment, Path.t(), atom(), String.t() | nil) ::
+          {module(), module()} | nil
+  def resolve_side(side, config_dir, config_env, vehicle_name \\ nil)
+      when side in [:vms, :infotainment] do
+    case resolve_vehicle(config_dir, config_env, vehicle_name) do
+      nil -> nil
+      _vehicle when config_env == :test -> nil
+      vehicle -> {vehicle, apply(vehicle, side, [])}
+    end
+  end
+
+  @doc """
+  Resolve a bridge entry for `bridges/firmware`'s `runtime.exs`.
+
+  Returns `{vehicle, bridge_firmware_id, entry}` when the vehicle is
+  found, the env is bootable, and the requested bridge id exists in
+  the vehicle's `bridge_firmwares/0`. Otherwise `nil`.
+  """
+  @spec resolve_bridge(Path.t(), atom(), String.t() | nil) ::
+          {module(), String.t(), map()} | nil
+  def resolve_bridge(config_dir, config_env, bridge_firmware_id) do
+    with vehicle when not is_nil(vehicle) <- resolve_vehicle(config_dir, config_env),
+         true <- config_env != :test,
+         id when is_binary(id) <- bridge_firmware_id,
+         {:ok, entry} <- Map.fetch(vehicle.bridge_firmwares(), id) do
+      {vehicle, id, entry}
+    else
+      _ -> nil
+    end
+  end
+
+  @doc """
+  Return the on-device path to a role's pre-generated SSH host keys,
+  or `nil` if the vehicle hasn't shipped any for that role.
+
+  The path is `Application.app_dir(vehicle, "priv/host_keys/<role>")`.
+  Roles match the CLI's firmware role names: `"vms"`, `"infotainment"`,
+  or `"bridges/<bridge_firmware_id>"`. When the directory exists and
+  contains at least one `ssh_host_*_key` file, callers can plug it
+  into `:nerves_ssh, :system_dir` so the firmware boots with stable
+  host keys regardless of how many times the SD card has been burned.
+
+  Returns `nil` when the vehicle hasn't run `./ovcs vehicle host-keys`,
+  letting the firmware fall back to NervesSSH's default `/data/nerves_ssh`
+  (regenerated each fresh burn — the legacy behaviour).
+  """
+  @spec ssh_system_dir(module(), String.t()) :: Path.t() | nil
+  def ssh_system_dir(vehicle, role) when is_atom(vehicle) and is_binary(role) do
+    app = vehicle.can_config_otp_app()
+    path = Application.app_dir(app, Path.join("priv/host_keys", role))
+
+    cond do
+      not File.dir?(path) -> nil
+      Path.wildcard(Path.join(path, "ssh_host_*_key")) == [] -> nil
+      true -> path
+    end
+  end
+
+  @doc """
   Resolve the configured vehicle module, if any.
 
   * `config_dir` — usually `__DIR__` from the calling `runtime.exs`
@@ -48,7 +120,7 @@ defmodule OvcsVehicle.Firmware do
         {:error, reason} -> raise "could not load vehicle app #{inspect(app)}: #{inspect(reason)}"
       end
 
-      load_vehicle_modules!(name, dir, ebin)
+      load_vehicle_modules!(dir)
       Module.concat([name])
     end
   end
@@ -99,33 +171,36 @@ defmodule OvcsVehicle.Firmware do
     end
   end
 
-  # Releases run BEAM in embedded mode: modules not declared in any
-  # app's `.app` `modules:` list are NOT loaded automatically on
-  # reference, and `code:ensure_loaded/1` refuses to load them
-  # (`{:error, :embedded}`). The vehicle's `.app` does declare its
-  # modules — but `:application.load/1` only registers the app spec,
-  # it doesn't preload modules. To survive the embedded-mode wall in
-  # `runtime.exs` (which references composer / sub-modules right after
-  # the top-level resolve), we walk the vehicle's ebin and explicitly
-  # `code:load_file/1` every `Elixir.<Name>*.beam`. `:code.load_file/1`
-  # works in embedded mode (unlike `ensure_loaded`).
-  defp load_vehicle_modules!(name, dir, ebin) do
-    prefix = "Elixir.#{name}"
+  # Releases run BEAM in embedded mode: modules don't auto-load on
+  # first reference, and `:code.ensure_loaded/1` refuses to load them
+  # (`{:error, :embedded}`). The vehicle isn't in the release's boot
+  # script either — it's added at runtime via `Code.prepend_path` —
+  # so modules in its ebin stay unloaded until something forces them.
+  # Walk the vehicle's `.app` `:modules` list (populated by Mix at
+  # compile time) and `:code.load_file/1` each one. `load_file/1`
+  # works in embedded mode (unlike `ensure_loaded`). Reading the
+  # module list from the loaded app, rather than globbing the ebin,
+  # avoids the silent miss case where a vehicle module's name doesn't
+  # start with the top-level prefix.
+  defp load_vehicle_modules!(dir) do
+    app = String.to_atom(dir)
 
-    matches =
-      Path.wildcard(Path.join(ebin, "#{prefix}*.beam"))
-      |> Enum.map(&(&1 |> Path.basename(".beam") |> String.to_atom()))
+    case :application.get_key(app, :modules) do
+      {:ok, []} ->
+        raise """
+        Vehicle app #{inspect(app)} has no modules in its .app.
 
-    if matches == [] do
-      raise """
-      No vehicle modules found in #{ebin} matching #{prefix}*.beam.
+        On host: did you run `mix compile` in vehicles/#{dir}/?
+        On firmware: did the build's `copy_vehicle_app/1` release step
+        copy the vehicle into the release's lib?
+        """
 
-      On host: did you run `mix compile` in vehicles/#{dir}/?
-      On firmware: did the build's `copy_vehicle_app/1` release step
-      copy the vehicle into the release's lib?
-      """
+      {:ok, modules} ->
+        Enum.each(modules, &:code.load_file/1)
+
+      :undefined ->
+        raise "vehicle app #{inspect(app)} not loaded; " <>
+                "resolve_vehicle/3 should have :application.load/1'd it"
     end
-
-    Enum.each(matches, &:code.load_file/1)
   end
 end

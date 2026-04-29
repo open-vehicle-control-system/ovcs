@@ -1,6 +1,6 @@
 defmodule OvcsMini.Vms.Composer do
   @moduledoc """
-    Combine all the modules require to run the OVCS1 car
+    Combine all the modules required to run the OVCS Mini car
   """
   @behaviour VmsCore.Vehicle
 

@@ -1,29 +1,36 @@
 import Config
 
-vehicle =
-  OvcsVehicle.Firmware.resolve_vehicle(
-    __DIR__,
-    config_env(),
-    Application.compile_env(:infotainment_firmware, :vehicle)
-  )
+case OvcsVehicle.Firmware.resolve_side(
+       :infotainment,
+       __DIR__,
+       config_env(),
+       Application.compile_env(:infotainment_firmware, :vehicle)
+     ) do
+  nil ->
+    :ok
 
-if vehicle && config_env() != :test do
-  infotainment = vehicle.infotainment()
+  {vehicle, infotainment} ->
+    config :infotainment_core, :vehicle, infotainment
+    config :ovcs_vehicle, :module, vehicle
 
-  config :infotainment_core, :vehicle, infotainment
-  config :ovcs_vehicle, :module, vehicle
+    config :cantastic,
+      can_network_mappings: fn ->
+        (System.get_env("CAN_NETWORK_MAPPINGS") || infotainment.default_can_mapping(:host))
+        |> String.split(",", trim: true)
+        |> Enum.map(fn i ->
+          [network_name, can_interface] = i |> String.split(":", trim: true)
+          {network_name, can_interface}
+        end)
+      end,
+      otp_app: vehicle.can_config_otp_app(),
+      priv_can_config_path: infotainment.can_config_path()
 
-  config :cantastic,
-    can_network_mappings: fn ->
-      (System.get_env("CAN_NETWORK_MAPPINGS") || infotainment.default_can_mapping(:host))
-      |> String.split(",", trim: true)
-      |> Enum.map(fn i ->
-        [network_name, can_interface] = i |> String.split(":", trim: true)
-        {network_name, can_interface}
-      end)
-    end,
-    otp_app: vehicle.can_config_otp_app(),
-    priv_can_config_path: infotainment.can_config_path()
+    # See `vms/firmware/config/runtime.exs` for the rationale.
+    if Application.spec(:nerves_ssh, :vsn) do
+      if dir = OvcsVehicle.Firmware.ssh_system_dir(vehicle, "infotainment") do
+        config :nerves_ssh, system_dir: String.to_charlist(dir)
+      end
+    end
 end
 
 if System.get_env("PHX_SERVER") do

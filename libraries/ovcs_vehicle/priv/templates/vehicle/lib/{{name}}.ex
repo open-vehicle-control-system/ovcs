@@ -1,11 +1,11 @@
 defmodule <%= @module %> do
   @moduledoc """
-  Top-level entry point for the <%= @upper %> vehicle package.
+  Top-level entry point for the <%= @display_name %> vehicle package.
   """
   @behaviour OvcsVehicle
 
   @impl OvcsVehicle
-  def name, do: "<%= @upper %>"
+  def name, do: "<%= @display_name %>"
   @impl OvcsVehicle
   def vms, do: <%= @module %>.Vms.Composer
 <%= if @infotainment do %>  @impl OvcsVehicle
@@ -13,9 +13,10 @@ defmodule <%= @module %> do
 <% end %>  @impl OvcsVehicle
   def can_config_otp_app, do: :<%= @name %>
   @impl OvcsVehicle
-  def nerves_target(:vms), do: :<%= @vms_target %>
-<%= if @infotainment do %>  def nerves_target(:infotainment), do: :<%= @infotainment_target %>
-<% end %>
+  def vms_target, do: :<%= @vms_target %>
+<%= if @infotainment do %>  @impl OvcsVehicle
+  def infotainment_target, do: :<%= @infotainment_target %>
+<% end %><%= if @bridges do %>
   # Bridge firmwares — optional. Uncomment and populate to declare one
   # or more bridge firmware images for this vehicle. Each entry becomes
   # its own build target: `./ovcs build <%= @name %> <firmware-id>`.
@@ -33,4 +34,4 @@ defmodule <%= @module %> do
   #     }
   #   }
   # end
-end
+<% end %>end
