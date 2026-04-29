@@ -36,6 +36,9 @@ enum Commands {
     },
     /// Burn firmware to an SD card for a vehicle/application
     Burn {
+        /// Build the firmware first, then burn (one-shot for fresh edits)
+        #[arg(long)]
+        build: bool,
         first: Option<String>,
         second: Option<String>,
     },
@@ -73,6 +76,19 @@ enum Commands {
     /// Attach a split TUI (merged per-node logs + IEx shell) to a running
     /// vehicle — either the local dev BEAM or the N deployed Nerves devices.
     Attach { vehicle: Option<String> },
+    /// Open an interactive IEx shell on a single deployed device over SSH.
+    ///
+    /// Targets the Nerves device's SSH-as-IEx login shell (requires the
+    /// firmware to be flashed with `AUTHORIZED_SSH_KEYS`). For the
+    /// multi-node split TUI with logs / bus / CAN panes, use `attach`.
+    Connect {
+        /// Override the target host (default: <vehicle>-<role>.local).
+        /// Useful when mDNS isn't resolving and you know the device's IP.
+        #[arg(long)]
+        host: Option<String>,
+        first: Option<String>,
+        second: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -107,7 +123,11 @@ fn main() -> Result<()> {
         Commands::Vehicles => commands::vehicles::run(),
         Commands::Doctor => commands::doctor::run(),
         Commands::Build { first, second } => commands::build::run(first, second),
-        Commands::Burn { first, second } => commands::burn::run(first, second),
+        Commands::Burn {
+            build,
+            first,
+            second,
+        } => commands::burn::run(first, second, build),
         Commands::Clean { first, second } => commands::clean::run(first, second),
         Commands::Upload {
             host,
@@ -129,5 +149,10 @@ fn main() -> Result<()> {
         },
         Commands::Run { vehicle } => commands::run::run(vehicle),
         Commands::Attach { vehicle } => commands::attach::run(vehicle),
+        Commands::Connect {
+            host,
+            first,
+            second,
+        } => commands::connect::run(first, second, host),
     }
 }
