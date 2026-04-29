@@ -51,7 +51,7 @@ pub fn resolve(vehicle: &Vehicle, application: &str) -> Result<FirmwareResolutio
             .chain(bridges.keys().cloned())
             .collect();
         bail!(
-            "Unknown application {:?} for vehicle {}.\nExpected one of: {}",
+            "Unknown role {:?} for vehicle {}.\nExpected one of: {}",
             application,
             vehicle.dir,
             valid.join(", ")

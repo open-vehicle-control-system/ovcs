@@ -18,7 +18,7 @@ use crate::vehicles::Vehicle;
 const ACCENT: Color = Color::Cyan;
 
 /// Ratatui single-select picker for short plain-text lists (used by the
-/// application picker, where each option is just a name). The richer
+/// role picker, where each option is just a name). The richer
 /// vehicle picker lives in `choose_vehicle`.
 pub fn choose(label: &str, choices: &[String]) -> Result<String> {
     if choices.is_empty() {

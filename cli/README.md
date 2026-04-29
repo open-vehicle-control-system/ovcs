@@ -11,40 +11,41 @@ cargo build --release
 ```
 
 This produces a stripped static binary at `cli/target/release/ovcs`
-(~2.8 MB). `mise run cli` does the build and copies the binary to
+(~7.5 MB). `mise run cli` does the build and copies the binary to
 `cli/ovcs`, which is what the root-level `./ovcs` symlink points at.
+`cli/ovcs` is gitignored — every contributor builds it locally.
 
 Toolchain is pinned in the repo's `mise.toml` — `mise install` at the
-repo root pulls rustc 1.90, the only runtime dependency. Contributors
-who don't need to rebuild the CLI can use the committed `cli/ovcs`
-binary directly.
+repo root pulls rustc 1.90, the only runtime dependency.
 
 ## Commands
 
 ```sh
 ./ovcs vehicles                    # list discovered vehicles + nerves targets
 ./ovcs doctor                      # verify toolchain + vehicle packages
-./ovcs build   <vehicle> <app>     # build firmware (order-independent)
-./ovcs burn    <vehicle> <app> [--build]   # burn to SD card; --build runs build first
-./ovcs clean   <vehicle> <app>     # remove build artifacts
-./ovcs upload  <vehicle> <app> [--host H] [-f|--file F]
+./ovcs build   <vehicle> <role>    # build firmware (positional args order-independent)
+./ovcs burn    <vehicle> <role> [--build]              # burn to SD card; --build runs build first
+./ovcs clean   <vehicle> <role>    # remove build artifacts
+./ovcs upload  <vehicle> <role> [--build] [--host H] [-f|--file F]
 ./ovcs can setup  <vehicle>        # create + bring up vcan interfaces (sudo)
 ./ovcs can status <vehicle>        # report vcan interface state
-./ovcs vehicle new <name> [--vms-target T] [--infotainment-target T] [--no-infotainment]
-./ovcs run <vehicle>               # `can setup` + spawn one BEAM per firmware, line-prefixed stdout
-./ovcs attach <vehicle>            # split-pane TUI (merged logs | iex) over SSH or local remsh
-./ovcs connect <vehicle> <app> [--host H]  # plain IEx shell over SSH on a single deployed device
+./ovcs vehicle new <name> [--vms-target T] [--infotainment-target T] [--no-infotainment] [--no-bridges] [--display-name DN]
+./ovcs vehicle host-keys <vehicle> [--force]          # generate stable per-role SSH host keys
+./ovcs run     <vehicle>           # `can setup` + spawn one BEAM per role, line-prefixed stdout
+./ovcs attach  <vehicle>           # split-pane TUI (merged logs / bus / can / iex) over SSH or local remsh
+./ovcs connect <vehicle> <role> [--host H]            # plain IEx shell over SSH on a single deployed device
 ```
 
 Where:
 
 - `<vehicle>` is the snake_case directory name under `vehicles/` (e.g.
   `ovcs1`, `ovcs_mini`, `obd2`).
-- `<app>` is `vms`, `infotainment`, or any bridge firmware id declared in
+- `<role>` is `vms`, `infotainment`, or any bridge firmware id declared in
   the vehicle's `bridge_firmwares/0` callback.
-- Positional args for build/burn/clean/upload are order-independent.
-  Missing values prompt interactively via a Ratatui picker; non-tty
-  stdin exits code 2.
+- Positional args for build/burn/clean/upload/connect are
+  **order-independent** — the resolver picks the vehicle out of the two
+  values and treats the other as the role. Missing values prompt
+  interactively via a Ratatui picker; non-tty stdin exits code 2.
 
 The CLI resolves the top-level vehicle module (e.g. `Ovcs1`) by
 converting the directory name to UpperCamelCase, then queries the
@@ -65,7 +66,7 @@ cli/
 ├── Cargo.toml            # package + dep list
 ├── Cargo.lock            # committed
 ├── rust-toolchain.toml   # pin to stable 1.90
-├── ovcs                  # committed release binary (gitignore-exempt)
+├── ovcs                  # built release binary (gitignored — `mise run cli` rebuilds it)
 └── src/
     ├── main.rs           # clap command enum + dispatch
     ├── repo_root.rs      # OVCS_ROOT env or climb from cwd

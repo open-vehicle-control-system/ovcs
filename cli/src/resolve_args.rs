@@ -28,12 +28,19 @@ pub struct ResolvedArgs {
     pub application: String,
 }
 
-pub fn resolve_vehicle_app(first: Option<String>, second: Option<String>) -> Result<ResolvedArgs> {
+/// Resolve a (vehicle, role) pair from two order-independent positional
+/// args. Either or both may be omitted — missing values fall back to the
+/// interactive Ratatui picker. The struct field is still called
+/// `application` internally; user-facing strings call it the role.
+pub fn resolve_vehicle_app(
+    vehicle_arg: Option<String>,
+    role_arg: Option<String>,
+) -> Result<ResolvedArgs> {
     let root = repo_root()?;
     let all = vehicles::list(&root)?;
     let names: Vec<String> = all.iter().map(|v| v.dir.clone()).collect();
 
-    let values: Vec<String> = [first, second].into_iter().flatten().collect();
+    let values: Vec<String> = [vehicle_arg, role_arg].into_iter().flatten().collect();
     let vehicle = match values.iter().find(|v| names.contains(v)).cloned() {
         Some(dir) => match all.iter().find(|v| v.dir == dir) {
             Some(v) => v.clone(),
@@ -43,22 +50,22 @@ pub fn resolve_vehicle_app(first: Option<String>, second: Option<String>) -> Res
     };
     let vehicle_dir = vehicle.dir.clone();
 
-    let valid_apps = applications_for(&vehicle)?;
+    let valid_roles = applications_for(&vehicle)?;
     let remaining: Vec<String> = values.into_iter().filter(|v| v != &vehicle_dir).collect();
-    let application = match remaining.iter().find(|v| valid_apps.contains(v)).cloned() {
+    let application = match remaining.iter().find(|v| valid_roles.contains(v)).cloned() {
         Some(a) => a,
         None => {
             if remaining.is_empty() {
-                choose("application", &valid_apps)?
+                choose("role", &valid_roles)?
             } else {
                 let bad = &remaining[0];
                 eprintln!(
                     "{}",
                     format!(
-                        "Unknown application {:?} for vehicle {}.\nValid: {}",
+                        "Unknown role {:?} for vehicle {}.\nValid: {}",
                         bad,
                         vehicle_dir,
-                        valid_apps.join(", ")
+                        valid_roles.join(", ")
                     )
                     .red()
                 );

@@ -23,43 +23,53 @@ struct Cli {
     command: Commands,
 }
 
+/// Most subcommands take a (vehicle, role) pair where:
+/// - `vehicle` is the snake_case directory under `vehicles/` (e.g.
+///   `ovcs1`, `ovcs_mini`, `obd2`).
+/// - `role` is `vms`, `infotainment`, or any bridge firmware id declared
+///   in the vehicle's `bridge_firmwares/0` callback.
+///
+/// Both positional args are **order-independent** — the resolver picks
+/// the vehicle out of the two values and treats the other as the role.
+/// Missing values prompt interactively when stdin is a tty; on a
+/// non-tty, the command exits with status 2.
 #[derive(Subcommand)]
 enum Commands {
     /// List discovered vehicles and their Nerves targets
     Vehicles,
     /// Verify toolchain and vehicle packages
     Doctor,
-    /// Build firmware for a vehicle/application
+    /// Build firmware for a (vehicle, role) pair
     Build {
-        first: Option<String>,
-        second: Option<String>,
+        vehicle: Option<String>,
+        role: Option<String>,
     },
-    /// Burn firmware to an SD card for a vehicle/application
+    /// Burn firmware to an SD card for a (vehicle, role) pair
     Burn {
         /// Build the firmware first, then burn (one-shot for fresh edits)
         #[arg(long)]
         build: bool,
-        first: Option<String>,
-        second: Option<String>,
+        vehicle: Option<String>,
+        role: Option<String>,
     },
-    /// Remove build artifacts for a vehicle/application
+    /// Remove build artifacts for a (vehicle, role) pair
     Clean {
-        first: Option<String>,
-        second: Option<String>,
+        vehicle: Option<String>,
+        role: Option<String>,
     },
     /// OTA-upload firmware to a running device
     Upload {
         /// Build the firmware first, then upload (one-shot for fresh edits)
         #[arg(long)]
         build: bool,
-        /// Target host (default: <vehicle>-<application>.local)
+        /// Target host (default: <vehicle>-<role>.local)
         #[arg(long)]
         host: Option<String>,
         /// Custom .fw file to push
         #[arg(short = 'f', long)]
         file: Option<String>,
-        first: Option<String>,
-        second: Option<String>,
+        vehicle: Option<String>,
+        role: Option<String>,
     },
     /// Host CAN helpers
     Can {
@@ -71,26 +81,32 @@ enum Commands {
         #[command(subcommand)]
         action: VehicleAction,
     },
-    /// Provision vcan + boot one BEAM per role (vms, infotainment, each
-    /// bridge), all joined by OvcsBus.Cluster (Erlang distribution),
-    /// mirroring the deployed topology. Attach with `./ovcs attach`
-    /// from another terminal for logs + IEx.
+    /// Boot a vehicle locally — one BEAM per role
+    #[command(long_about = "\
+Provision vcan and spawn one BEAM per role (vms, infotainment, each \
+bridge), all joined by OvcsBus.Cluster (Erlang distribution), \
+mirroring the deployed topology. Attach with `./ovcs attach` from \
+another terminal for logs + IEx.")]
     Run { vehicle: Option<String> },
-    /// Attach a split TUI (merged per-node logs + IEx shell) to a running
-    /// vehicle — either the local dev BEAM or the N deployed Nerves devices.
+    /// Attach a split TUI to a running vehicle
+    #[command(long_about = "\
+Attach a split TUI (merged per-node logs + IEx shell) to a running \
+vehicle — either the local dev BEAM or the N deployed Nerves devices.")]
     Attach { vehicle: Option<String> },
-    /// Open an interactive IEx shell on a single deployed device over SSH.
-    ///
-    /// Targets the Nerves device's SSH-as-IEx login shell (requires the
-    /// firmware to be flashed with `AUTHORIZED_SSH_KEYS`). For the
-    /// multi-node split TUI with logs / bus / CAN panes, use `attach`.
+    /// Open an interactive IEx shell on a single deployed device over SSH
+    #[command(long_about = "\
+Open an interactive IEx shell on a single deployed device over SSH.
+
+Targets the Nerves device's SSH-as-IEx login shell (requires the \
+firmware to be flashed with `AUTHORIZED_SSH_KEYS`). For the multi-node \
+split TUI with logs / bus / CAN panes, use `attach`.")]
     Connect {
         /// Override the target host (default: <vehicle>-<role>.local).
         /// Useful when mDNS isn't resolving and you know the device's IP.
         #[arg(long)]
         host: Option<String>,
-        first: Option<String>,
-        second: Option<String>,
+        vehicle: Option<String>,
+        role: Option<String>,
     },
 }
 
@@ -142,20 +158,20 @@ fn main() -> Result<()> {
     match cli.command {
         Commands::Vehicles => commands::vehicles::run(),
         Commands::Doctor => commands::doctor::run(),
-        Commands::Build { first, second } => commands::build::run(first, second),
+        Commands::Build { vehicle, role } => commands::build::run(vehicle, role),
         Commands::Burn {
             build,
-            first,
-            second,
-        } => commands::burn::run(first, second, build),
-        Commands::Clean { first, second } => commands::clean::run(first, second),
+            vehicle,
+            role,
+        } => commands::burn::run(vehicle, role, build),
+        Commands::Clean { vehicle, role } => commands::clean::run(vehicle, role),
         Commands::Upload {
             build,
             host,
             file,
-            first,
-            second,
-        } => commands::upload::run(first, second, host, file, build),
+            vehicle,
+            role,
+        } => commands::upload::run(vehicle, role, host, file, build),
         Commands::Can { action } => match action {
             CanAction::Setup { vehicle } => commands::can::setup(vehicle),
             CanAction::Status { vehicle } => commands::can::status(vehicle),
@@ -184,8 +200,8 @@ fn main() -> Result<()> {
         Commands::Attach { vehicle } => commands::attach::run(vehicle),
         Commands::Connect {
             host,
-            first,
-            second,
-        } => commands::connect::run(first, second, host),
+            vehicle,
+            role,
+        } => commands::connect::run(vehicle, role, host),
     }
 }

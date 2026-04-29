@@ -12,14 +12,14 @@ const SSH_USER: &str = "root";
 const PROBE_TIMEOUT: Duration = Duration::from_millis(500);
 
 pub fn run(
-    first: Option<String>,
-    second: Option<String>,
+    vehicle: Option<String>,
+    role: Option<String>,
     host_override: Option<String>,
 ) -> Result<()> {
-    let args = resolve_vehicle_app(first, second)?;
+    let args = resolve_vehicle_app(vehicle, role)?;
     let host = host_override.unwrap_or_else(|| {
-        let side = side_for_application(&args.application);
-        vehicles::host_for(&args.vehicle.dir, &side)
+        let role_host = role_to_host_segment(&args.application);
+        vehicles::host_for(&args.vehicle.dir, &role_host)
     });
 
     step(&format!("connecting → {}@{}", SSH_USER, host));
@@ -45,11 +45,11 @@ pub fn run(
 /// `applications_for` returns `vms`, `infotainment`, and bare bridge ids.
 /// `host_for` expects bridges as `bridge-<id>` (matches `attach`'s host
 /// derivation), so map the bridge case here.
-fn side_for_application(application: &str) -> String {
-    if static_applications().contains(&application) {
-        application.to_string()
+fn role_to_host_segment(role: &str) -> String {
+    if static_applications().contains(&role) {
+        role.to_string()
     } else {
-        format!("bridge-{}", application)
+        format!("bridge-{}", role)
     }
 }
 
