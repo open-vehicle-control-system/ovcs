@@ -120,6 +120,7 @@ defmodule VmsFirmware.MixProject do
       # broken absolute symlink in the release.
       for sub <- ["ebin", "priv"] do
         sub_src = Path.join(src, sub)
+
         if File.exists?(sub_src) do
           {_, 0} = System.cmd("cp", ["-rL", sub_src, Path.join(dst, sub)])
         end
