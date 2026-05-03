@@ -22,6 +22,7 @@ Welcome to the Open Vehicle Control System documentation. For a high-level overv
 
 - [Testing CAN Messages](./testing_can_messages.md) -- Simulating CAN traffic with `cansend` and replaying CAN dumps for local development.
 - [Testing Generic Controllers](./testing_generic_controllers.md) -- Adopting a controller, testing digital I/O, and using `VmsCore.Controllers.TestController`.
+- [OBD2 Diagnostics](./obd2_diagnostics.md) -- Using OVCS as an OBD2 / KWP2000 / UDS scan tool, plus how to extend it for brand-specific Mode 22 DIDs, Mode 21 KWP2000 reads, Mode 31 routines and proprietary CAN broadcasts.
 
 ## Architecture Reference
 
