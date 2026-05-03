@@ -28,8 +28,7 @@ pub fn run(arg: Option<String>, force: bool) -> Result<()> {
     let mut kept = 0;
     for role in &roles {
         let dir = role_dir(&vehicle, role);
-        std::fs::create_dir_all(&dir)
-            .with_context(|| format!("creating {}", dir.display()))?;
+        std::fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
         sub(&format!(
             "{}  {}",
             role,
