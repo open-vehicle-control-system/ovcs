@@ -1,5 +1,5 @@
 defmodule VmsCore.Vehicles.OBD2.Composer.Dashboard.DashboardPage do
-  alias VmsCore.Vehicles.OBD2
+  alias VmsCore.Vehicles.OBD2.Diagnostics
 
   def definition(order: order) do
     %{
@@ -9,24 +9,35 @@ defmodule VmsCore.Vehicles.OBD2.Composer.Dashboard.DashboardPage do
       blocks: %{
         "vehicle-information" => %{
           order: 0,
-          name: "Vehicle Information",
+          name: "Vehicle Snapshot",
           type: "table",
           rows: [
-            %{type: :metric, name: "Speed", module: OBD2, key: :speed, unit: "kph"},
-            %{type: :metric, name: "RPM", module: OBD2, key: :rotation_per_minute},
+            %{type: :metric, name: "VIN",  module: Diagnostics, key: :vin},
+            %{type: :metric, name: "ECU name", module: Diagnostics, key: :ecu_name},
+            %{type: :metric, name: "Speed", module: Diagnostics, key: :speed, unit: "km/h"},
+            %{type: :metric, name: "RPM", module: Diagnostics, key: :rotation_per_minute},
+            %{type: :metric, name: "Throttle", module: Diagnostics, key: :throttle_position, unit: "%"},
+            %{type: :metric, name: "Engine load", module: Diagnostics, key: :engine_load, unit: "%"},
+            %{type: :metric, name: "Coolant temperature", module: Diagnostics, key: :coolant_temperature, unit: "°C"},
+            %{type: :metric, name: "Battery voltage", module: Diagnostics, key: :control_module_voltage, unit: "V"},
+            %{type: :metric, name: "Stored DTC count", module: Diagnostics, key: :stored_dtc_count},
+            %{type: :metric, name: "Pending DTC count", module: Diagnostics, key: :pending_dtc_count},
+            %{type: :metric, name: "Permanent DTC count", module: Diagnostics, key: :permanent_dtc_count},
+            %{type: :metric, name: "UDS DTC count", module: Diagnostics, key: :uds_dtc_count},
+            %{type: :metric, name: "Supported PID count", module: Diagnostics, key: :supported_pid_count}
           ]
         },
-        "rpm" => %{
+        "rpm-speed" => %{
           order: 5,
           name: "RPM & Speed",
           type: "lineChart",
           serie_max_size: 300,
           y_axis: [
             %{min: 0, max: 8000, label: "RPM", series: [
-              %{name: "RPM", metric: %{module: OBD2, key: :rotation_per_minute}}
+              %{name: "RPM", metric: %{module: Diagnostics, key: :rotation_per_minute}}
             ]},
-            %{position: "right", min: 0, max: 150, label: "kph", series: [
-              %{name: "Speed", metric: %{module: OBD2, key: :speed}}
+            %{position: "right", min: 0, max: 200, label: "km/h", series: [
+              %{name: "Speed", metric: %{module: Diagnostics, key: :speed}}
             ]}
           ]
         }

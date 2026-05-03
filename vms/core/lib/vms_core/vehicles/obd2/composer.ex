@@ -1,15 +1,18 @@
 defmodule VmsCore.Vehicles.OBD2.Composer do
   @moduledoc """
-    Combine all the modules require to run the OBD2 connector
+  OBD2 vehicle composer — wires up the diagnostic GenServers and the
+  dashboard configuration so the standard composer dispatch
+  (`VmsCore.Application.vehicle_composer/0`) picks them up.
   """
 
-  alias VmsCore.Vehicles
+  alias VmsCore.Vehicles.OBD2
 
-  defdelegate dashboard_configuration, to:  Vehicles.OBD2.Composer.Dashboard
+  defdelegate dashboard_configuration, to: OBD2.Composer.Dashboard
 
   def children do
     [
-      {Vehicles.OBD2, []}
+      {OBD2.Diagnostics, []},
+      {OBD2.Discovery, []}
     ]
   end
 
