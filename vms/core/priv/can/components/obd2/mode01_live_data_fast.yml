@@ -1,0 +1,26 @@
+---
+# Mode 01 live data, fast loop — PIDs that move on every driver input
+# (RPM, road speed, throttle, MAF). Polled at 100 ms.
+name: live_data_fast
+request_frame_id: 0x7DF
+response_frame_id: 0x7E8
+frequency: 100
+mode: 0x01
+parameters:
+  - name: rotation_per_minute
+    id: 0x0C
+    kind: decimal
+    value_length: 16
+    scale: "0.25"
+    unit: rpm
+  - name: speed
+    id: 0x0D
+    kind: integer
+    value_length: 8
+    unit: km/h
+  - name: throttle_position
+    id: 0x11
+    kind: decimal
+    value_length: 8
+    scale: "0.392156862745"
+    unit: "%"

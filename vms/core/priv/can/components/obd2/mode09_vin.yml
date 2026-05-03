@@ -1,0 +1,14 @@
+---
+# SAE J1979 Mode 0x09 PID 0x02 — Vehicle Identification Number.
+# 17 ASCII bytes; cantastic's Mode09 codec decodes it into a
+# single-element list.
+name: vehicle_info_vin
+request_frame_id: 0x7DF
+response_frame_id: 0x7E8
+frequency: 5000
+mode: 0x09
+parameters:
+  - name: vin
+    id: 0x02
+    kind: ascii
+    value_length: 136

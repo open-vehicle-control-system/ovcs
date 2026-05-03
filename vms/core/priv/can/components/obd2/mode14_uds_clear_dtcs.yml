@@ -1,0 +1,12 @@
+---
+# UDS Mode 0x14 — ClearDiagnosticInformation.
+# Modern equivalent of OBD2 Mode 0x04. Used for chassis / body / network
+# DTCs that emission-only Mode 04 doesn't reach. Disabled by default;
+# triggered on demand from the dashboard.
+name: uds_clear_dtcs
+request_frame_id: 0x7E0
+response_frame_id: 0x7E8
+frequency: 60000
+mode: 0x14
+options:
+  group_of_dtc: 0xFFFFFF

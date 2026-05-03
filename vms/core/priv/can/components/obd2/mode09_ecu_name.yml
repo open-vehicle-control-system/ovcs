@@ -1,0 +1,12 @@
+---
+# SAE J1979 Mode 0x09 PID 0x0A — ECU Name (20 ASCII bytes).
+name: vehicle_info_ecu_name
+request_frame_id: 0x7DF
+response_frame_id: 0x7E8
+frequency: 5000
+mode: 0x09
+parameters:
+  - name: ecu_name
+    id: 0x0A
+    kind: ascii
+    value_length: 160
