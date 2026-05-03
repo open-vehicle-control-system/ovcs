@@ -32,10 +32,19 @@ defmodule OvcsVehicle.Firmware do
           {module(), module()} | nil
   def resolve_side(side, config_dir, config_env, vehicle_name \\ nil)
       when side in [:vms, :infotainment] do
-    case resolve_vehicle(config_dir, config_env, vehicle_name) do
-      nil -> nil
-      _vehicle when config_env == :test -> nil
-      vehicle -> {vehicle, apply(vehicle, side, [])}
+    # Short-circuit before resolve_vehicle/3: each firmware's config.exs
+    # pins a default `:vehicle` (e.g. "Ovcs1") for host builds, so test
+    # runs would otherwise hit locate_vehicle_ebin!/3 even though no
+    # vehicle is needed — and CI doesn't compile vehicles/<dir>/.
+    cond do
+      config_env == :test ->
+        nil
+
+      vehicle = resolve_vehicle(config_dir, config_env, vehicle_name) ->
+        {vehicle, apply(vehicle, side, [])}
+
+      true ->
+        nil
     end
   end
 
@@ -49,8 +58,8 @@ defmodule OvcsVehicle.Firmware do
   @spec resolve_bridge(Path.t(), atom(), String.t() | nil) ::
           {module(), String.t(), map()} | nil
   def resolve_bridge(config_dir, config_env, bridge_firmware_id) do
-    with vehicle when not is_nil(vehicle) <- resolve_vehicle(config_dir, config_env),
-         true <- config_env != :test,
+    with true <- config_env != :test,
+         vehicle when not is_nil(vehicle) <- resolve_vehicle(config_dir, config_env),
          id when is_binary(id) <- bridge_firmware_id,
          {:ok, entry} <- Map.fetch(vehicle.bridge_firmwares(), id) do
       {vehicle, id, entry}
