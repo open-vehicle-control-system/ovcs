@@ -21,7 +21,7 @@ OVCS is developed on Linux. macOS users need a Linux VM (see [macOS setup](#loca
 | can-utils | Latest | CAN bus utilities (`cansend`, `candump`, `canplayer`) | system package |
 | `fwup` | Latest | Nerves firmware image packager | system package |
 | `libsocketcan-dev` | Latest | Cantastic native CAN bindings | system package (firmware builds only) |
-| `cmake` | Latest | Host-compile `quicer` (ros_bridge's MQTT transport via `emqtt`) | system package |
+| `cmake` | Latest | Host-compile `quicer` (pulled in by ros_bridge's `emqtt` legacy/fallback path) | system package |
 | `libmnl-dev` | Latest | Host-compile `nerves_uevent` native | system package |
 | `nerves_bootstrap` | Latest | Nerves Mix archive | `mise run bootstrap` |
 | [PlatformIO](https://platformio.org/) | Latest | Arduino controller firmware | mise (via pipx + uv) |
@@ -61,7 +61,7 @@ sudo apt install -y git can-utils libsocketcan-dev cmake libmnl-dev kmod
 - `kmod` provides `lsmod` / `modprobe`, which `./ovcs can setup` and `./ovcs run` call to load the `vcan` kernel module. Standard on host distros; not included in the minimal Ubuntu container image.
 - `can-utils` provides `cansend`, `candump`, `canplayer`, and the rest. The Linux kernel modules `can` and `can_raw` are required and are included in standard (non-cloud) kernels.
 - `libsocketcan-dev` is only needed when building for physical CAN targets (i.e. the Pi firmwares); it supplies the native headers Cantastic links against.
-- `cmake` is needed to host-compile `quicer` (the MQTT transport NIF used by `ros_bridge`'s Zenoh/ROS2 dispatcher via `emqtt`). It's only needed if you build `ros_bridge`.
+- `cmake` is needed to host-compile `quicer`, transitively pulled in by the `emqtt` dep `ros_bridge` keeps for its legacy MQTT-plugin fallback. Only needed if you build `ros_bridge`. The primary ROS 2 path is native Zenoh via `zenohex` (no `cmake` requirement of its own).
 - `libmnl-dev` is needed to host-compile `nerves_uevent` (transitively pulled in by firmware deps).
 
 `fwup` is the firmware image packager Nerves calls during `mix firmware`. It is **not** in the Debian/Ubuntu repos — install the latest `.deb` from the project's GitHub releases:
@@ -179,6 +179,17 @@ mise run cli         # builds ./ovcs (Rust release binary via `cargo build --rel
 
 If you plan to build and deploy firmware to physical hardware, follow the [Nerves installation guide](https://hexdocs.pm/nerves/installation.html) for the additional tooling (e.g. `squashfs-tools`, `fakeroot`) and clone the OVCS Nerves systems — see the [System Images](#setting-up-system-images-for-firmware-builds) section below.
 
+Before your first burn, generate stable per-role SSH host keys for the
+vehicle so SD-card reflashes don't trip the "REMOTE HOST IDENTIFICATION
+HAS CHANGED" warning:
+
+```sh
+./ovcs vehicle host-keys <vehicle>          # one-time per vehicle
+```
+
+See [`docs/running_hardware.md`](./running_hardware.md#stable-ssh-host-keys-across-burns)
+for the full flow.
+
 ## macOS / VM Setup
 
 OVCS relies on the `vcan` kernel module to create virtual CAN interfaces. This is a Linux-only kernel module available only in non-cloud-image kernels. To develop on macOS, you need a full Linux VM.
@@ -284,6 +295,20 @@ cansend vcan0 280#0000881300000000
 ```
 
 You should see the RPM value change on the dashboard (if running with the correct vehicle and CAN mappings).
+
+### 5. (Optional) Attach the multi-node TUI
+
+In another terminal, see the merged log / bus / CAN / IEx view across
+every running BEAM:
+
+```sh
+./ovcs attach ovcs1
+```
+
+`Tab` switches focus between panes; `Ctrl-N` / `Ctrl-P` (or `F1`–`F9`)
+selects which node drives the IEx pane. See
+[`docs/running_hardware.md`](./running_hardware.md#tui-hotkeys) for the
+full hotkey reference.
 
 ## Next Steps
 
