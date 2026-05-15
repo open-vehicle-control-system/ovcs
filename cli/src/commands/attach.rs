@@ -1210,13 +1210,19 @@ async fn connect_ssh(host: &str) -> Result<russh::client::Handle<SshAcceptAllKey
     .with_context(|| format!("connect {} timed out after {:?}", host, CONNECT_TIMEOUT))?
     .with_context(|| format!("connect {} failed", host))?;
 
-    let mut agent = russh::keys::agent::client::AgentClient::connect_env()
-        .await
-        .context("ssh-agent unreachable — is SSH_AUTH_SOCK set?")?;
+    let mut agent = connect_ssh_agent(host).await?;
     let identities = agent
         .request_identities()
         .await
         .context("ssh-agent identities request failed")?;
+    if identities.is_empty() {
+        bail!(
+            "ssh-agent has no identities loaded for {}@{} — `ssh-add -l` to check, \
+             or point SSH_AUTH_SOCK at the agent your `ssh` uses (e.g. 1Password)",
+            SSH_USER,
+            host
+        );
+    }
     for key in identities {
         let auth = handle
             .authenticate_publickey_with(SSH_USER, key, None, &mut agent)
@@ -1226,6 +1232,57 @@ async fn connect_ssh(host: &str) -> Result<russh::client::Handle<SshAcceptAllKey
         }
     }
     bail!("ssh auth failed for {}@{}", SSH_USER, host);
+}
+
+/// Connect to the ssh-agent that plain `ssh` would use for `host`. We
+/// shell out to `ssh -G <host>` and honour its resolved `identityagent`
+/// directive, falling back to `$SSH_AUTH_SOCK` when none is set. This
+/// matches OpenSSH's per-host `IdentityAgent` precedence, so users with
+/// e.g. `IdentityAgent ~/.1password/agent.sock` in `~/.ssh/config` get
+/// the same agent here as in their terminal.
+async fn connect_ssh_agent(
+    host: &str,
+) -> Result<russh::keys::agent::client::AgentClient<tokio::net::UnixStream>> {
+    if let Some(path) = resolve_identity_agent(host) {
+        return russh::keys::agent::client::AgentClient::connect_uds(&path)
+            .await
+            .with_context(|| format!("ssh-agent unreachable at {}", path.display()));
+    }
+    russh::keys::agent::client::AgentClient::connect_env()
+        .await
+        .context("ssh-agent unreachable — is SSH_AUTH_SOCK set, or `IdentityAgent` in ~/.ssh/config?")
+}
+
+/// Parse `ssh -G <host>`'s `identityagent` line. Returns `None` if the
+/// directive is absent, set to `none`/`SSH_AUTH_SOCK`, or `ssh` itself
+/// can't be invoked — the caller falls back to `$SSH_AUTH_SOCK`.
+fn resolve_identity_agent(host: &str) -> Option<std::path::PathBuf> {
+    let out = Command::new("ssh")
+        .arg("-G")
+        .arg(host)
+        .stderr(Stdio::null())
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let value = stdout.lines().find_map(|l| {
+        let mut it = l.splitn(2, char::is_whitespace);
+        match (it.next(), it.next()) {
+            (Some(k), Some(v)) if k.eq_ignore_ascii_case("identityagent") => Some(v.trim()),
+            _ => None,
+        }
+    })?;
+    if value.is_empty() || value.eq_ignore_ascii_case("none") || value == "SSH_AUTH_SOCK" {
+        return None;
+    }
+    let expanded = if let Some(rest) = value.strip_prefix("~/") {
+        std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(rest))?
+    } else {
+        std::path::PathBuf::from(value)
+    };
+    Some(expanded)
 }
 
 /// Open the three session-shell channels used by `run_device_once`.
