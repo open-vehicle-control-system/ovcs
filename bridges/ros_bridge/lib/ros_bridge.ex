@@ -28,8 +28,12 @@ defmodule RosBridge do
   Per-deployment config. Returns a `RosBridge.Config` struct. The
   vehicle module that bundles `RosBridge` in its `bridge_firmwares/0`
   must implement this callback (declared via `@behaviour RosBridge`).
+
+  Mirrors `default_can_mapping/1`: the host arm is for `./ovcs run`
+  (e.g. Zenoh broker on the dev box), the target arm for the deployed
+  Nerves firmware (broker reachable from the vehicle network).
   """
-  @callback ros_bridge_config() :: RosBridge.Config.t()
+  @callback ros_bridge_config(:host | :target) :: RosBridge.Config.t()
 
   if Mix.target() == :host do
     @impl OvcsBridge
@@ -42,7 +46,7 @@ defmodule RosBridge do
   else
     @impl OvcsBridge
     def children do
-      cfg = vehicle().ros_bridge_config()
+      cfg = vehicle().ros_bridge_config(:target)
 
       [
         {BNO085.I2C, []},

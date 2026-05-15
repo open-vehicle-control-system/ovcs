@@ -91,7 +91,8 @@ config :nerves, :firmware, fwup_conf: resolve_firmware_file.("fwup.conf")
 # specific (vehicle, firmware_id) pair.
 config :ovcs_bridge,
   vehicle: vehicle_name,
-  firmware_id: bridge_firmware_id
+  firmware_id: bridge_firmware_id,
+  build_target: if(Mix.target() == :host, do: :host, else: :target)
 
 # CAN: the vehicle ships the per-firmware YAML at
 # priv/can/bridges/<id>.yml unless its bridge_firmwares/0 entry
