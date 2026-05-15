@@ -16,8 +16,8 @@ pub fn run(
     host_override: Option<String>,
 ) -> Result<()> {
     let args = resolve_vehicle_app(vehicle, role)?;
-    let host = host_override
-        .unwrap_or_else(|| vehicles::host_for(&args.vehicle.dir, &args.application));
+    let host =
+        host_override.unwrap_or_else(|| vehicles::host_for(&args.vehicle.dir, &args.application));
 
     step(&format!("connecting → {}@{}", SSH_USER, host));
     if !tcp_open(&host, 22, PROBE_TIMEOUT) {
