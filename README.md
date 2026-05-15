@@ -38,17 +38,17 @@ flowchart LR
     classDef bus      fill:#f5f5f5,stroke:#666,color:#333,stroke-dasharray:3 3
     classDef external fill:#e7f6ec,stroke:#2a7a3a,color:#111
 
-    subgraph CLUSTER["Erlang-distribution mesh · OvcsBus"]
+    subgraph CLUSTER["Erlang-distribution mesh (OvcsBus)"]
         direction TB
-        VMS["**VMS**<br/>vms_firmware"]:::firmware
-        INFO["Infotainment<br/>infotainment_firmware<br/><i>optional</i>"]:::firmware
+        VMS["VMS<br/>vms_firmware"]:::firmware
+        INFO["Infotainment<br/>infotainment_firmware<br/>(optional)"]:::firmware
         BRIDGES["Bridges (0..N)<br/>bridge_firmware"]:::firmware
     end
 
     CTRL["Generic controllers (0..N)<br/>Arduino R4 Minima"]:::arduino
 
-    OVCS_BUS(["**OVCS internal CAN**"]):::bus
-    VEH_BUSES(["Vehicle CAN buses (0..N)<br/><i>isolated, per manufacturer</i>"]):::bus
+    OVCS_BUS(["OVCS internal CAN"]):::bus
+    VEH_BUSES(["Vehicle CAN buses (0..N)<br/>(isolated, per manufacturer)"]):::bus
 
     MFG["Manufacturer components<br/>(drivetrain, BMS, brakes, body, …)"]
     HEAD["In-car head-unit UI"]:::external

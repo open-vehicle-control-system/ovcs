@@ -59,23 +59,23 @@ flowchart TB
         DASH["Vue debug dashboard<br/>(developer laptop)"]:::external
     end
 
-    VMS["**VMS** · Raspberry Pi 4<br/>vms_firmware (Nerves)<br/>vms_api on :4000"]:::pi
-    INFO["Infotainment · Raspberry Pi 5<br/>infotainment_firmware (Nerves)<br/>infotainment_api on :4001<br/>Flutter touchscreen (HDMI + USB-HID)"]:::pi
-    RCB["Radio-control bridge · Raspberry Pi 3A<br/>bridge_firmware · RadioControlBridge<br/>ExpressLRS UART + MSP OSD"]:::pi
-    ROSB["ROS bridge · Raspberry Pi 4 (or 5)<br/>bridge_firmware · RosBridge<br/>zenohex + BNO085 IMU (I²C)"]:::pi
+    VMS["VMS — Raspberry Pi 4<br/>vms_firmware (Nerves)<br/>vms_api on :4000"]:::pi
+    INFO["Infotainment — Raspberry Pi 5<br/>infotainment_firmware (Nerves)<br/>infotainment_api on :4001<br/>Flutter touchscreen (HDMI + USB-HID)"]:::pi
+    RCB["Radio-control bridge — Raspberry Pi 3A<br/>bridge_firmware / RadioControlBridge<br/>ExpressLRS UART + MSP OSD"]:::pi
+    ROSB["ROS bridge — Raspberry Pi 4 (or 5)<br/>bridge_firmware / RosBridge<br/>zenohex + BNO085 IMU (I2C)"]:::pi
 
-    OVCS_BUS(["**ovcs** internal CAN · 1 Mbps"]):::internal
-    LEAF_BUS(["leaf_drive · 500 kbps"]):::vbus
-    POLO_BUS(["polo_drive · 500 kbps"]):::vbus
-    ORION_BUS(["orion_bms · 500 kbps"]):::vbus
-    MISC_BUS(["misc · 500 kbps"]):::vbus
+    OVCS_BUS(["ovcs internal CAN — 1 Mbps"]):::internal
+    LEAF_BUS(["leaf_drive — 500 kbps"]):::vbus
+    POLO_BUS(["polo_drive — 500 kbps"]):::vbus
+    ORION_BUS(["orion_bms — 500 kbps"]):::vbus
+    MISC_BUS(["misc — 500 kbps"]):::vbus
 
-    FRONT["Front controller · 0x70x<br/>HV contactors, front sensors / relays"]:::arduino
-    REAR["Rear controller · 0x71x<br/>Water pump, rear sensors / relays"]:::arduino
-    CTRLS["Controls controller · 0x72x<br/>Steering PWM, throttle DAC, inputs"]:::arduino
+    FRONT["Front controller — 0x70x<br/>HV contactors, front sensors / relays"]:::arduino
+    REAR["Rear controller — 0x71x<br/>Water pump, rear sensors / relays"]:::arduino
+    CTRLS["Controls controller — 0x72x<br/>Steering PWM, throttle DAC, inputs"]:::arduino
 
     LEAF["Nissan Leaf AZE0<br/>inverter + on-board charger"]:::leaf
-    POLO["VW Polo 9N<br/>ABS · cluster · ignition · steering pump"]:::polo
+    POLO["VW Polo 9N<br/>ABS / cluster / ignition / steering pump"]:::polo
     ORION["Orion BMS2<br/>+ EVPT23 charger"]:::orion
     BOSCH["Bosch iBooster Gen2<br/>+ LWS steering-angle sensor"]:::bosch
 
@@ -100,9 +100,9 @@ flowchart TB
     DASH  -. HTTP + WS .- VMS
 
     %% Erlang distribution between BEAMs
-    VMS  <-. OvcsBus.Cluster · dist .-> INFO
-    VMS  <-. OvcsBus.Cluster · dist .-> RCB
-    VMS  <-. OvcsBus.Cluster · dist .-> ROSB
+    VMS  <-. OvcsBus dist .-> INFO
+    VMS  <-. OvcsBus dist .-> RCB
+    VMS  <-. OvcsBus dist .-> ROSB
 ```
 
 ### How the SPI-CAN hub is wired
