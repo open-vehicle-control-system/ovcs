@@ -119,10 +119,6 @@ Each bridge runs on a dedicated Pi rather than sharing one with the VMS because:
 
 The BEAMs still join one Erlang-distribution cluster via `OvcsBus.Cluster`, so the application-level pub/sub is unified — they talk over the vehicle LAN as if they were threads in the same VM.
 
-![OVCS architecture](./assets/ovcs_architecture.png)
-
-> The PNG above is a hand-drawn rendering kept for marketing decks. The Mermaid diagram is the source of truth.
-
 ## CAN Bus Network Topology
 
 OVCS1 uses five isolated CAN bus segments:
