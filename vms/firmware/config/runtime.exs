@@ -16,11 +16,17 @@ case OvcsVehicle.Firmware.resolve_side(
     config :vms_core, :vehicle, vms
     config :ovcs_vehicle, :module, vehicle
 
+    default_can_environment =
+      Application.compile_env(:vms_firmware, :default_can_environment, :host)
+
     config :cantastic,
       can_network_mappings: {
         VmsFirmware.Util.NetworkMapper,
         :can_network_mappings,
-        [System.get_env("CAN_NETWORK_MAPPINGS") || vms.default_can_mapping(:host)]
+        [
+          System.get_env("CAN_NETWORK_MAPPINGS") ||
+            vms.default_can_mapping(default_can_environment)
+        ]
       },
       otp_app: vehicle.can_config_otp_app(),
       priv_can_config_path: vms.can_config_path()

@@ -66,8 +66,13 @@ System.put_env("VEHICLE_FIRMWARE_DIR", vehicle_firmware_dir)
 config :nerves, :firmware, fwup_conf: resolve_firmware_file.("fwup.conf")
 
 # Handoff to runtime.exs — runtime.exs picks this up to resolve the
-# composer and wire :vms_core + :cantastic.
-config :vms_firmware, vehicle: vehicle_name
+# composer and wire :vms_core + :cantastic. `default_can_environment`
+# tells runtime.exs which `default_can_mapping/1` arm to fall back to
+# when `CAN_NETWORK_MAPPINGS` isn't set: `:host` uses vcan*, `:target`
+# uses the real interfaces (spi*, can*).
+config :vms_firmware,
+  vehicle: vehicle_name,
+  default_can_environment: if(Mix.target() == :host, do: :host, else: :target)
 
 # Cantastic: on firmware it owns CAN interface setup; on host the CLI
 # (`ensure_host_can`) provisions vcan interfaces and rootless
