@@ -6,7 +6,7 @@ OVCS tackles vendor parts lock-in in transportation by redesigning the embedded 
 
 ## About
 
-OVCS was started in early 2024 by [Marc Lainez](https://github.com/mlainez), Loic Vigneron, and Thibault Poncelet at [Spin42](https://www.spin42.com/). The project was born from a desire to make vehicle embedded computing accessible using simple, off-the-shelf components and high-level programming languages.
+OVCS was started in early 2024 by [Marc Lainez](https://github.com/mlainez), [Loïc Vigneron](https://github.com/loicvigneron), and [Thibault Poncelet](https://github.com/thibaultponcelet) at [Spin42](https://www.spin42.com/). The project was born from a desire to make vehicle embedded computing accessible using simple, off-the-shelf components and high-level programming languages.
 
 The first full-size platform, **OVCS1**, is a 2007 Volkswagen Polo converted to an electric vehicle using a Nissan Leaf AZE0 drivetrain, a Bosch iBooster Gen2 brake system, an Orion BMS2 battery management system, and custom Arduino-based controllers -- all orchestrated by Elixir running on Raspberry Pis via the Nerves framework.
 
@@ -26,11 +26,76 @@ A smaller-scale platform, **OVCS Mini**, replicates the same software and hardwa
 
 ## Architecture Overview
 
-OVCS is designed around multiple isolated CAN buses, preventing message ID conflicts between components from different manufacturers. The VMS sits in the middle, connected to all buses.
+OVCS is built around two ideas:
 
-![OVCS architecture](./docs/assets/ovcs_architecture.png)
+- **Bus isolation.** Components from different manufacturers use overlapping CAN IDs, so each manufacturer's bus is kept separate. The VMS is the only node that touches all of them and bridges traffic where needed.
+- **Pluggable vehicle packages.** The cores (`vms_core`, `infotainment_core`) and firmware shells contain zero vehicle-specific code. Each vehicle is a standalone Mix package under `vehicles/<name>/` that bundles its supervision tree, CAN topology, and Nerves targets. Selecting a vehicle at boot is one env var (`VEHICLE`).
 
-See [Hardware Architecture](./docs/hardware_architecture.md) for the full topology.
+```mermaid
+flowchart TB
+    classDef pi       fill:#dde5ff,stroke:#3344aa,color:#111,stroke-width:1px
+    classDef arduino  fill:#fff1d6,stroke:#a07000,color:#111,stroke-width:1px
+    classDef bus      fill:#f5f5f5,stroke:#888,color:#444,stroke-dasharray:3 3
+    classDef external fill:#e7f6ec,stroke:#2a7a3a,color:#111,stroke-width:1px
+
+    subgraph EXT["External worlds"]
+        direction LR
+        RADIO["ExpressLRS<br/>handset"]:::external
+        ROS["ROS 2 / Foxglove<br/>(rmw_zenoh)"]:::external
+        FLUTTER["Flutter touchscreen<br/>(Pi 5 head unit)"]:::external
+        VUE["Vue debug dashboard<br/>(developer laptop)"]:::external
+    end
+
+    VMS["VMS — Raspberry Pi 4<br/>vms_firmware (Nerves)<br/>Phoenix API · :4000"]:::pi
+    INFO["Infotainment — Raspberry Pi 5<br/>infotainment_firmware (Nerves)<br/>Phoenix API · :4001"]:::pi
+    RCB["Radio-control bridge — Raspberry Pi 3A<br/>bridge_firmware (Nerves)"]:::pi
+    ROSB["ROS bridge — Raspberry Pi 4 / 5<br/>bridge_firmware (Nerves)"]:::pi
+
+    OVCS_BUS(["ovcs CAN · 1 Mbps"]):::bus
+    LEAF_BUS(["leaf_drive CAN · 500 kbps"]):::bus
+    POLO_BUS(["polo_drive CAN · 500 kbps"]):::bus
+    ORION_BUS(["orion_bms CAN · 500 kbps"]):::bus
+    MISC_BUS(["misc CAN · 500 kbps"]):::bus
+
+    FRONT["Front controller<br/>Arduino R4 · 0x70x"]:::arduino
+    REAR["Rear controller<br/>Arduino R4 · 0x71x"]:::arduino
+    CTRLS["Controls controller<br/>Arduino R4 · 0x72x"]:::arduino
+
+    LEAF["Nissan Leaf AZE0<br/>inverter + charger"]
+    POLO["VW Polo 9N<br/>ABS · dashboard · ignition"]
+    ORION["Orion BMS2<br/>+ EVPT23 charger"]
+    MISC["Bosch iBooster Gen2<br/>+ LWS steering sensor"]
+
+    %% Internal OVCS bus
+    VMS  --- OVCS_BUS
+    INFO --- OVCS_BUS
+    RCB  --- OVCS_BUS
+    ROSB --- OVCS_BUS
+    OVCS_BUS --- FRONT
+    OVCS_BUS --- REAR
+    OVCS_BUS --- CTRLS
+
+    %% Isolated component buses (VMS-only)
+    VMS --- LEAF_BUS  --- LEAF
+    VMS --- POLO_BUS  --- POLO
+    VMS --- ORION_BUS --- ORION
+    VMS --- MISC_BUS  --- MISC
+
+    %% External connections
+    RADIO   -. MAVLink / UART .-> RCB
+    ROS     -. Zenoh / Foxglove .-> ROSB
+    FLUTTER -. HTTP + WS .-> INFO
+    VUE     -. HTTP + WS .-> VMS
+
+    %% Distributed Erlang mesh
+    VMS  <-. dist · OvcsBus .-> INFO
+    VMS  <-. dist · OvcsBus .-> RCB
+    VMS  <-. dist · OvcsBus .-> ROSB
+```
+
+Across all firmwares, `OvcsBus.Cluster` joins every BEAM into a single Erlang-distribution mesh — `OvcsBus.broadcast/2` reaches subscribers on every node with no broker. Same transport on a developer laptop (`./ovcs run <vehicle>` spawns one BEAM per role) and on the deployed vehicle LAN.
+
+See [Hardware Architecture](./docs/hardware_architecture.md) for pin-level wiring + CAN IDs, and [Vehicle Parameterisation](./docs/vehicle_parameterisation.md) for the boot flow (how `VEHICLE` picks a composer and how the firmwares reach it without a Mix dep on the vehicle).
 
 ## Repository Structure
 
