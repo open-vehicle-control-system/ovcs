@@ -160,20 +160,18 @@ fn enumerate_roles(root: &std::path::Path, vehicle: &Vehicle) -> Result<Vec<Role
         .into_iter()
         .map(|app| {
             let res = firmware::resolve(vehicle, &app)?;
-            let label = match app.as_str() {
-                "vms" | "infotainment" => app.clone(),
-                bridge_id => format!("bridge-{}", bridge_id),
-            };
             let mut env: Vec<(String, String)> = res
                 .env
                 .into_iter()
                 .filter(|(k, _)| k != "MIX_TARGET")
                 .collect();
-            if let Some(mapping) = host_mappings.get(&app) {
-                env.push(("CAN_NETWORK_MAPPINGS".to_string(), mapping.clone()));
+            if let Some(id) = firmware::bridge_id(&app) {
+                if let Some(mapping) = host_mappings.get(id) {
+                    env.push(("CAN_NETWORK_MAPPINGS".to_string(), mapping.clone()));
+                }
             }
             Ok(Role {
-                label,
+                label: app,
                 cwd: root.join(&res.firmware_dir),
                 env,
             })
