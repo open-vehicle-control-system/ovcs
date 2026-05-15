@@ -1250,7 +1250,9 @@ async fn connect_ssh_agent(
     }
     russh::keys::agent::client::AgentClient::connect_env()
         .await
-        .context("ssh-agent unreachable — is SSH_AUTH_SOCK set, or `IdentityAgent` in ~/.ssh/config?")
+        .context(
+            "ssh-agent unreachable — is SSH_AUTH_SOCK set, or `IdentityAgent` in ~/.ssh/config?",
+        )
 }
 
 /// Parse `ssh -G <host>`'s `identityagent` line. Returns `None` if the
