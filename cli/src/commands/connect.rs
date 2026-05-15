@@ -3,7 +3,6 @@ use std::net::{TcpStream, ToSocketAddrs};
 use std::os::unix::process::CommandExt;
 use std::time::Duration;
 
-use crate::firmware::static_applications;
 use crate::resolve_args::resolve_vehicle_app;
 use crate::ui::{step, sub_miss, sub_ok};
 use crate::vehicles;
@@ -17,10 +16,8 @@ pub fn run(
     host_override: Option<String>,
 ) -> Result<()> {
     let args = resolve_vehicle_app(vehicle, role)?;
-    let host = host_override.unwrap_or_else(|| {
-        let role_host = role_to_host_segment(&args.application);
-        vehicles::host_for(&args.vehicle.dir, &role_host)
-    });
+    let host = host_override
+        .unwrap_or_else(|| vehicles::host_for(&args.vehicle.dir, &args.application));
 
     step(&format!("connecting → {}@{}", SSH_USER, host));
     if !tcp_open(&host, 22, PROBE_TIMEOUT) {
@@ -40,17 +37,6 @@ pub fn run(
         .arg(format!("{}@{}", SSH_USER, host))
         .exec();
     Err(err.into())
-}
-
-/// `applications_for` returns `vms`, `infotainment`, and bare bridge ids.
-/// `host_for` expects bridges as `bridge-<id>` (matches `attach`'s host
-/// derivation), so map the bridge case here.
-fn role_to_host_segment(role: &str) -> String {
-    if static_applications().contains(&role) {
-        role.to_string()
-    } else {
-        format!("bridge-{}", role)
-    }
 }
 
 fn tcp_open(host: &str, port: u16, timeout: Duration) -> bool {
