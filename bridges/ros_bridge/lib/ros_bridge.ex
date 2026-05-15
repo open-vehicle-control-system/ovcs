@@ -35,32 +35,46 @@ defmodule RosBridge do
   """
   @callback ros_bridge_config(:host | :target) :: RosBridge.Config.t()
 
+  # `Mix.target()` MUST be read at module-compile time, not at
+  # runtime: on a deployed Nerves device the Mix application isn't
+  # loaded the way it is during a build, so `Mix.target()` at runtime
+  # silently returns `:host` and the wrong vehicle config arm gets
+  # picked. Branching on the compile-time value defines two distinct
+  # `children/0` clauses, exactly one of which is in the firmware.
   if Mix.target() == :host do
     @impl OvcsBridge
-    # Host children stay minimal — no Zenoh dispatcher (needs an
-    # MQTT broker reachable on localhost) and no JoyInterpreter
-    # (needs Zenoh). Run the full ROS stack via `./ovcs build <v>
-    # bridge-ros` on a real target, or spin up Mosquitto + boot the
-    # bridges firmware separately.
-    def children, do: []
+    # Host: just the native Zenoh client so `./ovcs run` can drive the
+    # ROS publisher path against a local Zenoh router (default endpoint
+    # 127.0.0.1, override via `ZENOH_ENDPOINT_IP`). No I2C-backed IMU,
+    # no MQTT dispatcher.
+    def children do
+      cfg = vehicle().ros_bridge_config(:host)
+      [{RosBridge.ZenohClient, endpoint_ip: cfg.zenoh_endpoint_ip}]
+    end
   else
     @impl OvcsBridge
+    # Target: full bridge. ZenohMQTTRos2.Dispatcher + JoyInterpreter
+    # are disabled while the native Zenohex path is being validated;
+    # JoyInterpreter subscribes via the MQTT dispatcher so it can't
+    # run without it. Port it to RosBridge.ZenohClient before
+    # re-enabling.
     def children do
       cfg = vehicle().ros_bridge_config(:target)
 
       [
+        {RosBridge.ZenohClient, endpoint_ip: cfg.zenoh_endpoint_ip},
         {BNO085.I2C, []},
-        {ZenohMQTTRos2.Dispatcher, endpoint_ip: cfg.zenoh_endpoint_ip},
-        {RosBridge.JoyInterpreter, []},
+        # {ZenohMQTTRos2.Dispatcher, endpoint_ip: cfg.zenoh_endpoint_ip},
+        # {RosBridge.JoyInterpreter, []},
         {RosBridge.ImuPublisher, [bno085_module: BNO085.I2C]}
       ]
     end
-
-    # The vehicle module is stamped into Application env by
-    # bridges/firmware's runtime.exs (same mechanism vms_core /
-    # infotainment_core use). Fetch! rather than get_env so a
-    # misconfigured boot fails loudly instead of with a confusing
-    # nil.ros_bridge_config/0 UndefinedFunctionError.
-    defp vehicle, do: Application.fetch_env!(:ovcs_vehicle, :module)
   end
+
+  # The vehicle module is stamped into Application env by
+  # bridges/firmware's runtime.exs (same mechanism vms_core /
+  # infotainment_core use). Fetch! rather than get_env so a
+  # misconfigured boot fails loudly instead of with a confusing
+  # nil.ros_bridge_config/0 UndefinedFunctionError.
+  defp vehicle, do: Application.fetch_env!(:ovcs_vehicle, :module)
 end

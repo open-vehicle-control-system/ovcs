@@ -26,6 +26,12 @@ config :cantastic,
   otp_app: String.to_atom(vehicle_dir),
   priv_can_config_path: "can/bridges/#{bridge_firmware_id}.yml"
 
+# Bake the Zenoh router IP from the build env into application config.
+# `.env.exs` only `System.put_env`s on the build host, so without this
+# stamp the device-side `System.get_env` returns nil and the vehicle
+# config falls back to 127.0.0.1.
+config :ros_bridge, zenoh_endpoint_ip: System.get_env("ZENOH_ENDPOINT_IP", "127.0.0.1")
+
 # Override nerves_pack's default usb0+eth0 to optionally add wlan0
 # based on `WIFI_NETWORKS` (set in the vehicle's `.env.exs`). See
 # vms/firmware/config/target.exs for why this can't go through a

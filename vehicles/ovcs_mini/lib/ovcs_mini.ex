@@ -42,8 +42,12 @@ defmodule OvcsMini do
 
   @impl RosBridge
   def ros_bridge_config(:host),
-    do: %RosBridge.Config{zenoh_endpoint_ip: "127.0.0.1"}
+    do: %RosBridge.Config{
+      zenoh_endpoint_ip: System.get_env("ZENOH_ENDPOINT_IP", "127.0.0.1")
+    }
 
   def ros_bridge_config(:target),
-    do: %RosBridge.Config{zenoh_endpoint_ip: "10.0.2.177"}
+    do: %RosBridge.Config{
+      zenoh_endpoint_ip: Application.get_env(:ros_bridge, :zenoh_endpoint_ip, "127.0.0.1")
+    }
 end
