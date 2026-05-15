@@ -3,7 +3,10 @@ import Config
 case OvcsVehicle.Firmware.resolve_bridge(
        __DIR__,
        config_env(),
-       System.get_env("BRIDGE_FIRMWARE_ID")
+       System.get_env("BRIDGE_FIRMWARE_ID") ||
+         Application.compile_env(:ovcs_bridge, :firmware_id),
+       System.get_env("VEHICLE") ||
+         Application.compile_env(:ovcs_bridge, :vehicle)
      ) do
   nil ->
     :ok
