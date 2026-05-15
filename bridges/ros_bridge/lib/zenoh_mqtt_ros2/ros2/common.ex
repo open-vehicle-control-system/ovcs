@@ -1,6 +1,18 @@
 defmodule Ros2.Common do
   defmacro __using__(_opts) do
     quote do
+      # CDR encoder for strings: 4-byte LE length (including the
+      # trailing null byte), then the bytes + null, then 0-padding to
+      # the next 4-byte boundary so the next field aligns. Producing
+      # the trailing padding even when this is the last field is
+      # harmless and keeps the encoder composable.
+      def encode_string(str) when is_binary(str) do
+        bytes = str <> <<0>>
+        len = byte_size(bytes)
+        pad_size = rem(4 - rem(4 + len, 4), 4)
+        <<len::little-unsigned-integer-size(32), bytes::binary, 0::size(pad_size * 8)>>
+      end
+
       def parse_string(<<len::little-unsigned-integer-size(32), string::binary-size(len), payload::binary>>) do
         # Calculate padding to align to 4-byte boundary
         total_size = 4 + len

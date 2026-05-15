@@ -1,0 +1,91 @@
+# ROS 2 Jazzy stack for the on-vehicle Pi. Uses `rmw_zenoh_cpp` so
+# every ROS node joins the same Zenoh fabric the Elixir bridges
+# already speak to (router at $ZENOH_ENDPOINT_IP). No DDS, no
+# multicast — the container peers with the router over TCP.
+#
+# Usage (on the Pi or any dev machine):
+#   ZENOH_ENDPOINT_IP=192.168.10.95 docker compose up -d
+#
+# To get a shell with the ROS env sourced:
+#   docker compose exec ros2 bash
+#
+# Smoke test against the bridge's heartbeat:
+#   docker compose exec ros2 bash -lc \
+#     'apt-get -qq install -y zenoh-tools && z_sub -k ovcs/heartbeat'
+
+services:
+  zenohd:
+    # This host *is* the router for the OVCS fabric. The Elixir
+    # bridges (Nerves devices) connect to it at
+    # tcp/<this-host-LAN-ip>:7447; the `ros2` service below connects
+    # to it at tcp/127.0.0.1:7447 via host networking.
+    image: eclipse/zenoh:1.9.0
+    container_name: ovcs-zenohd
+    restart: unless-stopped
+    network_mode: host
+    command: ["-l", "tcp/0.0.0.0:7447"]
+
+  ros2:
+    build:
+      context: .
+      dockerfile: dockerfiles/ros2.Dockerfile
+    image: ovcs/ros2:jazzy
+    container_name: ovcs-ros2
+    restart: unless-stopped
+    depends_on:
+      - zenohd
+    # host networking sidesteps the Zenoh peer's port juggling and
+    # makes mDNS / local discovery work the same as a bare-metal install.
+    network_mode: host
+    environment:
+      RMW_IMPLEMENTATION: rmw_zenoh_cpp
+      ZENOH_SESSION_CONFIG_URI: /tmp/zenoh-session.json5
+      # Surfaced for any tooling that reads it; the actual peer
+      # endpoint lives in session.json5 (templated at compose time).
+      ZENOH_ENDPOINT_IP: ${ZENOH_ENDPOINT_IP:-127.0.0.1}
+    volumes:
+      - ./zenoh/session.json5.template:/etc/zenoh/session.json5.template:ro
+      # Drop ROS 2 packages you write here; the entrypoint sources
+      # /opt/ros/jazzy + this overlay before running `command`.
+      - ./workspace:/workspace
+    # Install rmw_zenoh + render the session config at start, then idle.
+    # Once you have actual nodes, replace the tail with `ros2 launch …`.
+    command: >
+      bash -lc '
+        set -e;
+        envsubst < /etc/zenoh/session.json5.template > /tmp/zenoh-session.json5;
+        source /opt/ros/jazzy/setup.bash;
+        echo "rmw_zenoh ready; peering with $${ZENOH_ENDPOINT_IP}:7447";
+        exec tail -f /dev/null
+      '
+
+  foxglove_bridge:
+    # WebSocket bridge that lets Foxglove Studio (https://foxglove.dev)
+    # connect to ROS 2 topics/services. Joins the same Zenoh fabric as
+    # the `ros2` service above, so anything published on the OVCS bus
+    # shows up in Foxglove. Connect Studio to ws://<host-ip>:8765.
+    build:
+      context: .
+      dockerfile: dockerfiles/foxglove_bridge.Dockerfile
+    image: ovcs/foxglove_bridge:jazzy
+    container_name: ovcs-foxglove-bridge
+    restart: unless-stopped
+    depends_on:
+      - zenohd
+    network_mode: host
+    environment:
+      RMW_IMPLEMENTATION: rmw_zenoh_cpp
+      ZENOH_SESSION_CONFIG_URI: /tmp/zenoh-session.json5
+      ZENOH_ENDPOINT_IP: ${ZENOH_ENDPOINT_IP:-127.0.0.1}
+      FOXGLOVE_BRIDGE_PORT: ${FOXGLOVE_BRIDGE_PORT:-8765}
+    volumes:
+      - ./zenoh/session.json5.template:/etc/zenoh/session.json5.template:ro
+    command: >
+      bash -lc '
+        set -e;
+        envsubst < /etc/zenoh/session.json5.template > /tmp/zenoh-session.json5;
+        source /opt/ros/jazzy/setup.bash;
+        echo "foxglove_bridge listening on ws://0.0.0.0:$${FOXGLOVE_BRIDGE_PORT}, peering with $${ZENOH_ENDPOINT_IP}:7447";
+        exec ros2 run foxglove_bridge foxglove_bridge \
+          --ros-args -p port:=$${FOXGLOVE_BRIDGE_PORT} -p address:=0.0.0.0
+      '

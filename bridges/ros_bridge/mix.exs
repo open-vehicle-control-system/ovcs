@@ -24,6 +24,7 @@ defmodule RosBridge.MixProject do
       # emqtt (declared ~> 2.7) and cowboy (declared ~> 2.16).
       {:cowlib, "~> 2.13", override: true},
       {:emqtt, "~> 1.10"},
+      {:zenohex, "~> 0.9.0"},
       {:circuits_i2c, "~> 2.0"},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
     ]
