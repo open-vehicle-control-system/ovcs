@@ -55,11 +55,12 @@ defmodule OvcsVehicle.Firmware do
   found, the env is bootable, and the requested bridge id exists in
   the vehicle's `bridge_firmwares/0`. Otherwise `nil`.
   """
-  @spec resolve_bridge(Path.t(), atom(), String.t() | nil) ::
+  @spec resolve_bridge(Path.t(), atom(), String.t() | nil, String.t() | nil) ::
           {module(), String.t(), map()} | nil
-  def resolve_bridge(config_dir, config_env, bridge_firmware_id) do
+  def resolve_bridge(config_dir, config_env, bridge_firmware_id, vehicle_name \\ nil) do
     with true <- config_env != :test,
-         vehicle when not is_nil(vehicle) <- resolve_vehicle(config_dir, config_env),
+         vehicle when not is_nil(vehicle) <-
+           resolve_vehicle(config_dir, config_env, vehicle_name),
          id when is_binary(id) <- bridge_firmware_id,
          {:ok, entry} <- Map.fetch(vehicle.bridge_firmwares(), id) do
       {vehicle, id, entry}
