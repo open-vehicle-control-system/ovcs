@@ -5,6 +5,7 @@ defmodule OvcsMini do
   OVCS Mini has no infotainment side.
   """
   @behaviour OvcsVehicle
+  @behaviour RosBridge
 
   @impl OvcsVehicle
   def name, do: "OVCS Mini"
@@ -29,5 +30,10 @@ defmodule OvcsMini do
         default_can_mapping: %{host: "ovcs:vcan0", target: "ovcs:spi0.0"}
       }
     }
+  end
+
+  @impl RosBridge
+  def ros_bridge_config do
+    %RosBridge.Config{zenoh_endpoint_ip: "10.0.2.177"}
   end
 end

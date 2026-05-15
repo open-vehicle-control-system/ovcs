@@ -19,9 +19,15 @@ defmodule <%= @module %> do
 <% end %><%= if @bridges do %>
   # Bridge firmwares — optional. Uncomment and populate to declare one
   # or more bridge firmware images for this vehicle. Each entry becomes
-  # its own build target: `./ovcs build <%= @name %> <firmware-id>`.
+  # its own build target: `./ovcs build <%= @name %> bridge-<firmware-id>`.
   # The shared `bridges/firmware` image reads VEHICLE +
   # BRIDGE_FIRMWARE_ID at boot and supervises only the bridges listed.
+  #
+  # Some bridges expose their own behaviour for per-vehicle config — e.g.
+  # bundling `RosBridge` also requires `@behaviour RosBridge` on this
+  # module + a `ros_bridge_config/0` callback returning a
+  # `%RosBridge.Config{}`. See `vehicles/ovcs_mini/lib/ovcs_mini.ex` and
+  # `vehicles/ovcs1/lib/ovcs1.ex` for the pattern.
   #
   # @impl OvcsVehicle
   # def bridge_firmwares do
