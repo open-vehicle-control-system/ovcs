@@ -83,6 +83,7 @@ class Controller {
     bool isReady();
     void adoptConfiguration();
     void shutdown(ControllerStatus controllerStatus);
+    void setStatus(ControllerStatus controllerStatus);
     void emitPinStatuses();
     void emitAlive(uint8_t expansionBoard1LastError, uint8_t expansionBoard2LastError);
     uint8_t verifyExpansionBoardErrors(uint8_t boardId);
