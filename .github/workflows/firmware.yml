@@ -57,6 +57,21 @@ jobs:
 
       - uses: ./.github/actions/setup-mise
 
+      - name: Install Flutter SDK (infotainment only)
+        if: matrix.role == 'infotainment'
+        # nerves_flutter_support's release step shells out to `flutter`
+        # and runs its own SDK-root detection by walking up from
+        # `which flutter`. mise's flutter is reachable via a shim
+        # wrapper but the wrapper path doesn't sit at the SDK root,
+        # so Flutter rejects it ("Could not get information about
+        # your Flutter install"). subosito/flutter-action lays the
+        # SDK down at a normal layout and exports FLUTTER_ROOT.
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.32.8'
+          channel: stable
+          cache: true
+
       - name: Install Nerves system build deps
         run: |
           sudo apt-get update
@@ -88,11 +103,7 @@ jobs:
 
       - name: Build firmware
         working-directory: ${{ matrix.app }}
-        # `mise exec --` activates the full mise.toml toolchain in the
-        # subprocess, so build.sh's children (in particular the
-        # `flutter` invocation by `nerves_flutter_support` during the
-        # infotainment release step) find every pinned runtime on PATH.
-        run: mise exec -- ./build.sh
+        run: ./build.sh
 
       - name: Locate firmware artifact
         id: locate
