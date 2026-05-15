@@ -60,6 +60,16 @@ jobs:
             build-essential automake autoconf git squashfs-tools ssh-askpass \
             pkg-config curl unzip libssl-dev libmnl-dev
 
+      - name: Install fwup
+        run: |
+          # Not in apt — pull the upstream .deb. Same approach as
+          # docs/getting_started.md's "Install system-level tools" step.
+          fwup_version=1.15.0
+          curl -fsSL -o /tmp/fwup.deb \
+            "https://github.com/fwup-home/fwup/releases/download/v${fwup_version}/fwup_${fwup_version}_$(dpkg --print-architecture).deb"
+          sudo dpkg -i /tmp/fwup.deb
+          fwup --version
+
       - uses: actions/cache@v5
         with:
           path: |
