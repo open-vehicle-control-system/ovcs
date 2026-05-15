@@ -15,8 +15,13 @@ pub fn applications_for(vehicle: &Vehicle) -> Result<Vec<String>> {
         }
     }
     let bridges = vehicles::bridge_firmwares(vehicle)?;
-    out.extend(bridges.into_keys());
+    out.extend(bridges.into_keys().map(|id| format!("bridge-{}", id)));
     Ok(out)
+}
+
+/// If `application` is a `bridge-<id>` role, return the bare bridge id.
+pub fn bridge_id(application: &str) -> Option<&str> {
+    application.strip_prefix("bridge-")
 }
 
 pub struct FirmwareResolution {
@@ -44,11 +49,12 @@ pub fn resolve(vehicle: &Vehicle, application: &str) -> Result<FirmwareResolutio
     }
 
     let bridges = vehicles::bridge_firmwares(vehicle)?;
-    let Some(entry) = bridges.get(application) else {
+    let id = bridge_id(application).unwrap_or("");
+    let Some(entry) = bridges.get(id) else {
         let valid: Vec<String> = static_applications()
             .iter()
             .map(|s| s.to_string())
-            .chain(bridges.keys().cloned())
+            .chain(bridges.keys().map(|k| format!("bridge-{}", k)))
             .collect();
         bail!(
             "Unknown role {:?} for vehicle {}.\nExpected one of: {}",
@@ -59,7 +65,7 @@ pub fn resolve(vehicle: &Vehicle, application: &str) -> Result<FirmwareResolutio
     };
     let mut env = HashMap::new();
     env.insert("VEHICLE".to_string(), vehicle.module.clone());
-    env.insert("BRIDGE_FIRMWARE_ID".to_string(), application.to_string());
+    env.insert("BRIDGE_FIRMWARE_ID".to_string(), id.to_string());
     env.insert("MIX_TARGET".to_string(), entry.target.clone());
     Ok(FirmwareResolution {
         firmware_dir: "bridges/firmware".to_string(),
