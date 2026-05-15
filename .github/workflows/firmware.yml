@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   build:
-    name: ${{ matrix.app }} · ${{ matrix.target }}
+    name: ${{ matrix.app }} · ${{ matrix.role }} · ${{ matrix.target }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -20,20 +20,34 @@ jobs:
         include:
           - app: vms/firmware
             target: ovcs_base_can_system_rpi4
+            vehicle: Ovcs1
+            role: vms
           - app: infotainment/firmware
             target: ovcs_base_can_system_rpi5
+            vehicle: Ovcs1
+            role: infotainment
           - app: bridges/firmware
             target: ovcs_base_can_system_rpi3a
+            vehicle: Ovcs1
+            role: radio_control
+            bridge_firmware_id: radio_control
           - app: bridges/firmware
             target: ovcs_base_can_system_rpi4
-          - app: bridges/firmware
-            target: ovcs_bridges_system_rpi5
+            vehicle: Ovcs1
+            role: ros
+            bridge_firmware_id: ros
     env:
       MIX_TARGET: ${{ matrix.target }}
-      MIX_ENV: prod
-    defaults:
-      run:
-        working-directory: ${{ matrix.app }}
+      VEHICLE: ${{ matrix.vehicle }}
+      BRIDGE_FIRMWARE_ID: ${{ matrix.bridge_firmware_id }}
+      # MIX_ENV is deliberately unset at the workflow level. `build.sh`
+      # pre-compiles the vehicle for MIX_TARGET=host in MIX_ENV=dev
+      # (the firmware's `copy_vehicle_app/1` release step expects
+      # `vehicles/<dir>/_build/dev/lib/<dir>/`). The firmware itself
+      # builds in dev too — that's what `mix firmware` produces locally
+      # when nobody sets MIX_ENV. Keeping CI aligned with `./ovcs build`
+      # avoids the `_build/<target>_prod` vs `_build/<target>_dev`
+      # path drift.
     steps:
       - uses: actions/checkout@v5
 
@@ -51,24 +65,28 @@ jobs:
           path: |
             ${{ matrix.app }}/deps
             ${{ matrix.app }}/_build
+            vehicles/${{ matrix.vehicle == 'Ovcs1' && 'ovcs1' || matrix.vehicle }}/deps
+            vehicles/${{ matrix.vehicle == 'Ovcs1' && 'ovcs1' || matrix.vehicle }}/_build
             ~/.nerves
-          key: nerves-${{ matrix.app }}-${{ matrix.target }}-${{ hashFiles(format('{0}/mix.lock', matrix.app)) }}
+          key: nerves-${{ matrix.app }}-${{ matrix.target }}-${{ matrix.role }}-${{ hashFiles(format('{0}/mix.lock', matrix.app)) }}
           restore-keys: |
-            nerves-${{ matrix.app }}-${{ matrix.target }}-
+            nerves-${{ matrix.app }}-${{ matrix.target }}-${{ matrix.role }}-
 
-      - run: mix deps.get
-      - run: mix firmware
+      - name: Build firmware
+        working-directory: ${{ matrix.app }}
+        run: ./build.sh
 
       - name: Locate firmware artifact
         id: locate
+        working-directory: ${{ matrix.app }}
         run: |
-          fw=$(ls _build/${{ matrix.target }}_${MIX_ENV}/nerves/images/*.fw | head -n1)
+          fw=$(ls _build/${{ matrix.target }}_dev/nerves/images/*.fw | head -n1)
           echo "path=$fw" >> "$GITHUB_OUTPUT"
           echo "name=$(basename "$fw")" >> "$GITHUB_OUTPUT"
 
       - uses: actions/upload-artifact@v5
         with:
-          name: firmware-${{ matrix.app }}-${{ matrix.target }}
+          name: firmware-${{ matrix.role }}-${{ matrix.target }}
           path: ${{ matrix.app }}/${{ steps.locate.outputs.path }}
           if-no-files-found: error
           retention-days: 30
