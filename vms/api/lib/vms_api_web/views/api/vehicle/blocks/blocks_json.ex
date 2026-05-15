@@ -3,23 +3,34 @@ defmodule VmsApiWeb.Api.Vehicle.Page.BlocksJSON do
 
   def render("index.json", %{blocks: blocks}) do
     %{
-      data: render_many(blocks |> Enum.sort(fn({_, %{order: order1}}, {_, %{order: order2}}) -> order1 <= order2 end), __MODULE__, "block.json", as: :block)
+      data:
+        render_many(
+          blocks
+          |> Enum.sort(fn {_, %{order: order1}}, {_, %{order: order2}} -> order1 <= order2 end),
+          __MODULE__,
+          "block.json",
+          as: :block
+        )
     }
   end
 
   def render("block.json", %{block: {block_id, block}}) do
-    attributes =  %{
-      name: block.name,
-      subtype: block.type,
-      fullWidth: block[:full_width]
-    } |> Map.merge(render_one(block, __MODULE__, "#{block.type}_block_attributes.json", as: :block))
+    attributes =
+      %{
+        name: block.name,
+        subtype: block.type,
+        fullWidth: block[:full_width]
+      }
+      |> Map.merge(
+        render_one(block, __MODULE__, "#{block.type}_block_attributes.json", as: :block)
+      )
+
     %{
       type: "block",
-      id:    block_id,
+      id: block_id,
       attributes: attributes
     }
   end
-
 
   def render("table_block_attributes.json", %{block: block}) do
     %{
@@ -59,12 +70,11 @@ defmodule VmsApiWeb.Api.Vehicle.Page.BlocksJSON do
 
   def render("metric.json", %{metric: metric}) do
     %{
-
       name: metric[:name],
       type: :metric,
       module: metric.module,
       key: metric.key,
-      unit: metric[:unit],
+      unit: metric[:unit]
     }
   end
 

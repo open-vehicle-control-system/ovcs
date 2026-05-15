@@ -1,6 +1,39 @@
 # Generic Controller
 
-This is a generic arduino controller allowing the VMS to actuate relays, read digital and analog inputs, activate PWM and DAC over the CAN network without having to program the arduino boards with a custom firwmare for each use case.
+A generic Arduino controller that lets the VMS actuate relays, read digital and analog inputs, and drive PWM / DAC over the CAN network — without having to program each board with a use-case-specific firmware. Targets the Arduino R4 Minima.
+
+For adoption and verification from the VMS side, see
+[`docs/testing_generic_controllers.md`](../../docs/testing_generic_controllers.md).
+For where each OVCS1 controller fits on the bus and which pin types it
+uses, see [`docs/hardware_architecture.md`](../../docs/hardware_architecture.md#generic-controllers).
+
+## Flashing
+
+Build / upload via PlatformIO:
+
+```sh
+pio run -e uno_r4_minima_prod -t upload
+```
+
+### Linux: USB permissions for the R4
+
+Without a udev rule, `dfu-util` fails with `LIBUSB_ERROR_ACCESS` (`Cannot open DFU device 2341:0069`). Add the rule once per host:
+
+```sh
+sudo tee /etc/udev/rules.d/60-arduino-uno-r4.rules >/dev/null <<'EOF'
+# Arduino UNO R4 Minima / WiFi — run mode
+SUBSYSTEMS=="usb", ATTRS{idVendor}=="2341", ATTRS{idProduct}=="0069", MODE="0666"
+SUBSYSTEMS=="usb", ATTRS{idVendor}=="2341", ATTRS{idProduct}=="1002", MODE="0666"
+# DFU bootloader mode
+SUBSYSTEMS=="usb", ATTRS{idVendor}=="2341", ATTRS{idProduct}=="0369", MODE="0666"
+SUBSYSTEMS=="usb", ATTRS{idVendor}=="2341", ATTRS{idProduct}=="1102", MODE="0666"
+EOF
+
+sudo udevadm control --reload-rules
+sudo udevadm trigger
+```
+
+Unplug + replug the board afterwards. Double-tap the reset button if the upload doesn't drop the board into DFU automatically.
 
 ## Controller ID
 
@@ -42,7 +75,7 @@ Where
 | 0             | 15           | 0b0000011100001111 | 0x70F        |
 | 1             | 1            | 0b0000011100010001 | 0x711        |
 | 1             | 15           | 0b0000011100011111 | 0x71F        |
-| 2             | 1            | 0b0000011100100001 | 0x711        |
+| 2             | 1            | 0b0000011100100001 | 0x721        |
 | 2             | 15           | 0b0000011100101111 | 0x72F        |
 | ...           | ...          | ...                | ...          |
 | 15            | 1            | 0b0000011111110001 | 0x7F1        |

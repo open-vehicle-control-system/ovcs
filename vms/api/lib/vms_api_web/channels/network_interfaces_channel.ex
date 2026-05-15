@@ -1,6 +1,6 @@
 defmodule VmsApiWeb.NetworkInterfacesChannel do
   use VmsApiWeb, :channel
-  alias  VmsCore.NetworkInterfaces
+  alias VmsCore.NetworkInterfaces
 
   intercept ["update"]
 
@@ -14,7 +14,12 @@ defmodule VmsApiWeb.NetworkInterfacesChannel do
   @impl true
   def handle_info(:push_network_interfaces, socket) do
     {:ok, network_interfaces} = NetworkInterfaces.network_interfaces()
-    view = VmsApiWeb.Api.NetworkInterfacesJSON.render("network_interfaces.json", %{network_interfaces: network_interfaces})
+
+    view =
+      VmsApiWeb.Api.NetworkInterfacesJSON.render("network_interfaces.json", %{
+        network_interfaces: network_interfaces
+      })
+
     push(socket, "updated", view)
     {:noreply, socket}
   end

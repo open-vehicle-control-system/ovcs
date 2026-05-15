@@ -34,7 +34,8 @@ set -e
 DESTINATION=$1
 FILENAME="$2"
 
-export MIX_TARGET=ovcs_base_can_system_rpi5
+: "${MIX_TARGET:=ovcs_base_can_system_rpi5}"
+export MIX_TARGET
 
 help() {
   echo

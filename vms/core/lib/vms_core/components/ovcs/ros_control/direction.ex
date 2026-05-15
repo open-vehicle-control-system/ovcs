@@ -5,7 +5,7 @@ defmodule VmsCore.Components.OVCS.ROSControl.Direction do
 
   use GenServer
   alias Cantastic.{Receiver, Frame, Signal}
-  alias VmsCore.Bus
+  alias OvcsBus, as: Bus
 
   @loop_period 10
   @default_value "forward"
@@ -20,16 +20,20 @@ defmodule VmsCore.Components.OVCS.ROSControl.Direction do
   def init(_) do
     :ok = Receiver.subscribe(self(), :ovcs, "ros_control0")
     {:ok, timer} = :timer.send_interval(@loop_period, :loop)
-    {:ok, %{
-      loop_timer: timer,
-      requested_direction: @default_direction
-    }}
+
+    {:ok,
+     %{
+       loop_timer: timer,
+       requested_direction: @default_direction
+     }}
   end
 
   @impl true
   def handle_info(:loop, state) do
-    state = state
+    state =
+      state
       |> emit()
+
     {:noreply, state}
   end
 
@@ -39,7 +43,12 @@ defmodule VmsCore.Components.OVCS.ROSControl.Direction do
   end
 
   defp emit(state) do
-    Bus.broadcast("messages", %Bus.Message{name: :requested_direction, value: state.requested_direction, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{
+      name: :requested_direction,
+      value: state.requested_direction,
+      source: __MODULE__
+    })
+
     state
   end
 end

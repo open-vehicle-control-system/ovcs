@@ -14,9 +14,9 @@
 
 ### Nerves-based components (VMS, Infotainment, Bridges)
 
-OVCS uses the [Nerves Project](https://nerves-project.org/) to build firmware for the Raspberry Pi targets. Nerves produces a complete Linux system image that boots directly into the Elixir application. In theory, any hardware platform supported by Nerves can run OVCS firmware, though you may need to provide a custom system image with CAN bus support.
+OVCS uses the [Nerves Project](https://nerves-project.org/) to build firmware for the Raspberry Pi targets. Nerves produces a complete Linux system image that boots directly into the Elixir application.
 
-OVCS uses custom Nerves systems for each target that include the necessary CAN bus kernel modules and device tree overlays:
+OVCS ships custom Nerves systems for each target that include the necessary CAN bus kernel modules and device tree overlays:
 
 | Target | Custom System | Repository |
 |--------|--------------|------------|
@@ -30,62 +30,89 @@ The generic controller firmware is built with [PlatformIO](https://platformio.or
 
 The controllers do not use the Arduino R4 Minima's internal CAN bus interface, to remain hardware-agnostic. Any Arduino-compatible board with EEPROM read/write capabilities and an external CAN transceiver should work.
 
-## Configuring Firmware Targets
+## Choosing the Nerves target
 
-By default, firmware targets are set to the OVCS custom Nerves systems. If you need to run on different hardware, update the `@all_targets` list and system dependency in the relevant `mix.exs` file.
-
-Example from `infotainment/firmware/mix.exs`:
-
-```elixir
-@all_targets [
-  :ovcs_base_can_system_rpi5
-]
-```
-
-To use a different system, replace `:ovcs_base_can_system_rpi5` with your custom system atom and update the dependency accordingly. See the [Nerves documentation on custom systems](https://hexdocs.pm/nerves/customizing-systems.html) for details.
+The Nerves target is read from the vehicle module — `vms_target/0` for the
+VMS, `infotainment_target/0` for the infotainment side, and the `:target`
+key on each `bridge_firmwares/0` entry for bridges. To deploy on different
+hardware, change those values on the vehicle module (e.g.
+`vehicles/ovcs1/lib/ovcs1.ex`) and add the matching system dep to the
+firmware project's `mix.exs`. See the
+[Nerves custom-systems guide](https://hexdocs.pm/nerves/customizing-systems.html).
 
 ## Building and Deploying Firmware
 
-OVCS provides the `ovcs` CLI tool at the repository root for building, burning, and uploading firmware.
+OVCS provides the `ovcs` CLI tool at the repository root for building,
+burning, and uploading firmware. The CLI is a Rust release binary built
+to `cli/ovcs` via `mise run cli`; the repo-root `./ovcs` is a symlink
+to it. The binary is gitignored — each contributor builds it locally.
+See [`cli/README.md`](../cli/README.md) for the full command reference
+and implementation notes.
 
 ### CLI Usage
 
 ```
-Usage: ./ovcs --command [COMMAND] --vehicle [VEHICLE] --application [APP] (--host [HOST] --file [FILE])
-
-Options:
-    -c, --command [COMMAND]     Command: build | burn | upload
-    -v, --vehicle [VEHICLE]     Vehicle: ovcs1 | ovcs-mini
-    -a, --application [APP]     App: vms | infotainment | radio-control-bridge | ros-bridge
-    -h, --host [HOST]           Optional: target host (e.g., nerves.local)
-    -f, --file [FILE]           Optional: custom firmware file (e.g., custom.fw)
+./ovcs <command> <vehicle> <role> [options]
 ```
+
+- `<vehicle>` is the snake_case directory name under `vehicles/` (e.g. `ovcs1`, `ovcs_mini`, `obd2`).
+- `<role>` is `vms`, `infotainment`, or any bridge firmware id declared in the vehicle's `bridge_firmwares/0` callback (e.g. `radio_control`, `ros`).
+- Positional args for `build` / `burn` / `clean` / `upload` / `connect` are order-independent. Missing values prompt interactively; on a non-tty stdin the command exits with status 2.
+- Run `./ovcs --help` or `./ovcs <command> --help` for the full option list.
 
 ### Build
 
-Build a firmware image for a specific application and vehicle:
+Build a firmware image for a specific (vehicle, role) pair:
 
 ```sh
 # Build VMS firmware for OVCS1
-./ovcs -c build -a vms -v ovcs1
+./ovcs build ovcs1 vms
 
 # Build Infotainment firmware for OVCS1
-./ovcs -c build -a infotainment -v ovcs1
+./ovcs build ovcs1 infotainment
 
 # Build VMS firmware for OVCS Mini
-./ovcs -c build -a vms -v ovcs-mini
+./ovcs build ovcs_mini vms
 
-# Build Radio Control Bridge
-./ovcs -c build -a radio-control-bridge -v ovcs1
+# Build a bridge firmware declared in the vehicle (e.g. radio_control)
+./ovcs build ovcs1 radio_control
 ```
+
+Before the first build, copy `vehicles/<vehicle>/.env.exs.example` to
+`vehicles/<vehicle>/.env.exs` and fill in your SSH public key(s),
+Wi-Fi credentials, and Phoenix `SECRET_KEY_BASE` / `SIGNING_SALT`. The
+file is gitignored and shared by every firmware of that vehicle (vms,
+infotainment, bridges).
+
+### Stable SSH host keys across burns
+
+By default, every fresh SD-card burn regenerates the device's SSH host
+key, so each burn triggers OpenSSH's "REMOTE HOST IDENTIFICATION HAS
+CHANGED" warning. To avoid that, generate persistent host keys per
+firmware role once:
+
+```sh
+./ovcs vehicle host-keys ovcs1
+```
+
+This creates one rsa + ed25519 key pair per role (vms, infotainment,
+each bridge) under `vehicles/<vehicle>/priv/host_keys/<role>/`. Files
+are gitignored — each developer keeps their own. The firmware ships
+the keys inside the vehicle's app priv and points
+`:nerves_ssh, :system_dir` at them at boot, so the device's SSH
+identity stays stable across burns. Re-run with `--force` to rotate
+keys; `./ovcs doctor` flags any vehicle missing keys.
 
 ### Burn to SD card
 
 Write the firmware image to an SD card (requires the SD card to be inserted):
 
 ```sh
-./ovcs -c burn -a vms -v ovcs1
-./ovcs -c burn -a infotainment -v ovcs1
+./ovcs burn ovcs1 vms
+./ovcs burn ovcs1 infotainment
+
+# One-shot rebuild + burn — useful while iterating
+./ovcs burn --build ovcs1 vms
 ```
 
 ### Upload over the network
@@ -94,14 +121,74 @@ Push a firmware update to a running Nerves device over SSH:
 
 ```sh
 # Upload to the default host
-./ovcs -c upload -a vms -v ovcs1
+./ovcs upload ovcs1 vms
 
 # Upload to a specific host
-./ovcs -c upload -a infotainment -v ovcs1 -h 192.168.1.100
+./ovcs upload ovcs1 infotainment --host 192.168.1.100
 
 # Upload a custom firmware file
-./ovcs -c upload -a vms -v ovcs1 -f path/to/custom.fw
+./ovcs upload ovcs1 vms --file path/to/custom.fw
 ```
+
+## Running and attaching at runtime
+
+### Local run mirrors deployed: one BEAM per firmware
+
+`./ovcs run <vehicle>` boots the full deployed topology on one host:
+
+- One BEAM per role: `<vehicle>-vms`, `<vehicle>-infotainment`, and `<vehicle>-bridge-<id>` per bridge firmware. Each BEAM runs the corresponding firmware project (`vms/firmware`, `infotainment/firmware`, `bridges/firmware`) directly against `MIX_TARGET=host`.
+- An Erlang-distribution cluster: each BEAM runs `OvcsBus.Cluster`, which `Node.connect/1`s the siblings at boot. `OvcsBus.broadcast/2` fans messages out cluster-wide — same transport as deployed, no broker required.
+- CAN interfaces are shared host-wide (same vcan0/vcan1/… visible to every BEAM), so `./ovcs can setup` once covers all roles.
+
+Output is line-prefixed per role (`[vms] …`, `[infotainment] …`, `[bridge-ros] …`). For the aggregated split-pane TUI, run `./ovcs attach <vehicle>` in another terminal — it auto-detects the local BEAMs via epmd (node snames starting with `<vehicle>-`) and lights up the same multi-node view used for deployed vehicles.
+
+### `./ovcs run` vs `./ovcs attach`
+
+The CLI separates **booting** a vehicle from **observing / driving** it:
+
+- `./ovcs run <vehicle>` — provisions vcan and spawns one BEAM per firmware. Streams raw stdout (line-prefixed per role) to the tty. No TUI, no IEx. Ctrl-C stops all of them.
+- `./ovcs attach <vehicle>` — split-pane TUI that connects to a running vehicle, aggregates logs per node, and exposes an IEx shell on each. Auto-detects:
+  - **Deployed** (preferred, if reachable): SSHes to each expected Nerves device via `<vehicle>-vms.local` / `<vehicle>-infotainment.local` / `<vehicle>-bridge-<id>.local`, streams logs via `RingLogger.attach()`, and opens an interactive IEx channel per device.
+  - **Local dev BEAMs** (fallback): if no device hostnames resolve, it finds every epmd registration matching `<vehicle>-*` and opens one `iex --remsh` per BEAM, the same TUI layout as deployed.
+  - Otherwise: exits with a clear error.
+
+### Typical flow
+
+```sh
+# Terminal A (dev host)
+./ovcs run ovcs1
+
+# Terminal B (same laptop, or a laptop on the vehicle's LAN when deployed)
+./ovcs attach ovcs1
+```
+
+### TUI hotkeys
+
+- `Tab` — switch focus between the logs pane (left) and the IEx pane (right).
+- `Ctrl-N` / `Ctrl-P` — cycle which device the IEx pane drives (deployed mode, multiple devices).
+- `F1` … `F9` — jump directly to the Nth device.
+- Logs pane: `↑`/`↓`, `PgUp`/`PgDn`, `g`/`G`, `Home`/`End` — scroll / follow tail.
+- IEx pane: `Enter` evaluates, `↑`/`↓` walks command history, `Esc` returns focus to logs.
+- `Ctrl-C` or `q` — quit attach (the source BEAM / remote devices keep running).
+
+### Prerequisites for deployed attach
+
+- The host's SSH public key must be in `vehicles/<vehicle>/.env.exs`'s `AUTHORIZED_SSH_KEYS` at firmware build time (same file that powers `./ovcs upload` / `./ovcs connect`). One file per vehicle, picked up by every firmware (`vms`, `infotainment`, every bridge). Copy the gitignored starter from `vehicles/<vehicle>/.env.exs.example`.
+- Your private key must be loaded in `ssh-agent`: `attach` and `connect` authenticate through it. `ssh-add -l` to verify.
+- Devices must be reachable on the LAN via mDNS (`<vehicle>-<side>.local`). Verify with `ping ovcs1-vms.local` before attaching.
+- Non-Nerves bridges (e.g. Arduino generic controllers) have no SSH / IEx — they are skipped automatically.
+
+### `./ovcs connect` — single-device IEx
+
+For ad-hoc debugging when you don't need the full split-pane TUI:
+
+```sh
+./ovcs connect ovcs1 vms                  # IEx on the VMS Pi
+./ovcs connect ovcs1 infotainment         # IEx on the infotainment Pi
+./ovcs connect ovcs1 vms --host 192.168.10.42   # bypass mDNS with a known IP
+```
+
+Same SSH-key prerequisite as `attach`. Drops you straight into IEx (Nerves devices boot with IEx as the SSH login shell).
 
 ## Customizing CAN Interfaces
 
@@ -135,7 +222,7 @@ CAN_NETWORK_MAPPINGS=ovcs:can0,leaf_drive:vcan1,polo_drive:vcan2,orion_bms:vcan3
 
 ```sh
 CAN_NETWORK_MAPPINGS=ovcs:spi0.0,leaf_drive:vcan0,polo_drive:vcan1,orion_bms:vcan2,misc:vcan3 \
-  ./ovcs -c build -a vms -v ovcs1
+  ./ovcs build ovcs1 vms
 ```
 
 ### Available CAN networks
@@ -150,20 +237,23 @@ CAN_NETWORK_MAPPINGS=ovcs:spi0.0,leaf_drive:vcan0,polo_drive:vcan1,orion_bms:vca
 
 ## Setting Up Physical CAN Interfaces
 
-For hardware with physical CAN transceivers:
+On Nerves devices, Cantastic configures CAN interfaces at boot via
+`setup_can_interfaces: true` in the firmware's Cantastic config — no manual
+step needed. For ad-hoc setup while SSH'd into a host, the fallback script is:
 
 ```sh
 ./scripts/setup_can.sh
 ```
 
-This configures `can0` and `can1` at 500 kbps. Edit the script to adjust bitrates or add more interfaces as needed.
+It brings `can0`, `can1`, and `can2` up at 500 kbps. Edit it to adjust
+bitrates or add interfaces.
 
-For virtual CAN interfaces (local development):
+For virtual CAN interfaces (local development), use:
 
 ```sh
-./scripts/setup_virtual_can.sh
+./ovcs can setup <vehicle>
 ```
 
-This creates `vcan0` through `vcan5`.
+The CLI reads the vehicle's `default_can_mapping(:host)` and creates only the vcan interfaces that vehicle actually needs.
 
 Next: [Testing Generic Controllers](./testing_generic_controllers.md)

@@ -1,5 +1,12 @@
 import Config
 
+# NOTE: `vms_api` is never a top-level Mix project in the OVCS run/build
+# flow — it's always loaded as a dep of `vms_firmware`, whose own
+# `config/runtime.exs` configures the vehicle composer + Cantastic
+# before any app starts. This file only runs if `vms_api` is built
+# directly (e.g. `cd vms/api && mix phx.server`) and just ships the
+# prod-release secrets block expected by Phoenix deployments.
+
 # config/runtime.exs is executed for all environments, including
 # during releases. It is executed after compilation and before the
 # system starts, so it is typically used to load production configuration

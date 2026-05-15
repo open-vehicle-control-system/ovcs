@@ -50,9 +50,11 @@ defmodule InfotainmentApiWeb do
 
   def view do
     quote do
-      use Phoenix.View, root: "lib/infotainment_api_web/templates",
-                        namespace: InfotainmentApiWeb
-      alias  InfotainmentApiWeb.Router.Helpers, as: Routes
+      use Phoenix.View,
+        root: "lib/infotainment_api_web/templates",
+        namespace: InfotainmentApiWeb
+
+      alias InfotainmentApiWeb.Router.Helpers, as: Routes
     end
   end
 

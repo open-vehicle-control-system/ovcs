@@ -45,22 +45,28 @@ defmodule VmsCoreTest do
   test "proporional control converges" do
     setpoint = @one
     pid = PID.new(kp: D.new("0.08"))
-    pid_output = Enum.reduce(0..100, D.new("0.0"), fn _x, acc ->
-      Process.sleep(10)
-      pid = PID.iterate(pid, acc, setpoint)
-      pid.output |> D.add(acc)
-    end)
+
+    pid_output =
+      Enum.reduce(0..100, D.new("0.0"), fn _x, acc ->
+        Process.sleep(10)
+        pid = PID.iterate(pid, acc, setpoint)
+        pid.output |> D.add(acc)
+      end)
+
     assert D.round(pid_output) |> D.equal?(@one)
   end
 
   test "derivative control converges" do
     setpoint = @one
     pid = PID.new(kp: D.new("0.08"), kd: D.new("1.0"))
-    pid_output = Enum.reduce(0..100, D.new("0.0"), fn _x, acc ->
-      Process.sleep(10)
-      pid = PID.iterate(pid, acc, setpoint)
-      pid.output |> D.add(acc)
-    end)
+
+    pid_output =
+      Enum.reduce(0..100, D.new("0.0"), fn _x, acc ->
+        Process.sleep(10)
+        pid = PID.iterate(pid, acc, setpoint)
+        pid.output |> D.add(acc)
+      end)
+
     assert D.round(pid_output) |> D.equal?(@one)
   end
 
@@ -72,11 +78,14 @@ defmodule VmsCoreTest do
   test "integral control converges" do
     setpoint = @one
     pid = PID.new(kp: D.new("0.08"), ki: D.new("2.0"))
-    pid_output = Enum.reduce(0..100, D.new("0.0"), fn _x, acc ->
-      Process.sleep(10)
-      pid = PID.iterate(pid, acc, setpoint)
-      pid.output |> D.add(acc)
-    end)
+
+    pid_output =
+      Enum.reduce(0..100, D.new("0.0"), fn _x, acc ->
+        Process.sleep(10)
+        pid = PID.iterate(pid, acc, setpoint)
+        pid.output |> D.add(acc)
+      end)
+
     assert D.round(pid_output) |> D.equal?(@one)
   end
 
@@ -86,12 +95,18 @@ defmodule VmsCoreTest do
   end
 
   test "output is capped by the maximum output value" do
-    pid = PID.new(kp: D.new("2"), minimum_output: D.new(-5), maximum_output: D.new(-2)) |> PID.iterate(@zero, @one)
+    pid =
+      PID.new(kp: D.new("2"), minimum_output: D.new(-5), maximum_output: D.new(-2))
+      |> PID.iterate(@zero, @one)
+
     assert pid.output |> D.equal?(-2)
   end
 
   test "output is capped by the minimum output value" do
-    pid = PID.new(kp: D.new("2"), minimum_output: D.new(5), maximum_output: D.new(10)) |> PID.iterate(@zero, @one)
+    pid =
+      PID.new(kp: D.new("2"), minimum_output: D.new(5), maximum_output: D.new(10))
+      |> PID.iterate(@zero, @one)
+
     assert pid.output |> D.equal?(5)
   end
 end

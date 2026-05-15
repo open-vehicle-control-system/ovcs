@@ -5,11 +5,11 @@ defmodule VmsCore.Components.OVCS.ROSControl.Throttle do
   use GenServer
   alias Cantastic.{Receiver, Frame, Signal}
   alias Decimal, as: D
-  alias VmsCore.Bus
+  alias OvcsBus, as: Bus
 
   @loop_period 10
   @zero D.new(0)
-  @range 2**31 - 1
+  @range 2 ** 31 - 1
 
   def start_link(args) do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
@@ -17,21 +17,24 @@ defmodule VmsCore.Components.OVCS.ROSControl.Throttle do
 
   @impl true
   def init(_) do
-
     :ok = Receiver.subscribe(self(), :ovcs, "ros_control1")
     {:ok, timer} = :timer.send_interval(@loop_period, :loop)
-    {:ok, %{
-      loop_timer: timer,
-      raw_value: 0,
-      requested_throttle: @zero
-    }}
+
+    {:ok,
+     %{
+       loop_timer: timer,
+       raw_value: 0,
+       requested_throttle: @zero
+     }}
   end
 
   @impl true
   def handle_info(:loop, state) do
-    state = state
+    state =
+      state
       |> compute_throttle()
       |> emit()
+
     {:noreply, state}
   end
 
@@ -46,7 +49,12 @@ defmodule VmsCore.Components.OVCS.ROSControl.Throttle do
   end
 
   defp emit(state) do
-    Bus.broadcast("messages", %Bus.Message{name: :requested_throttle, value: state.requested_throttle, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{
+      name: :requested_throttle,
+      value: state.requested_throttle,
+      source: __MODULE__
+    })
+
     state
   end
 end

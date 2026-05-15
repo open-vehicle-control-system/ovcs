@@ -1,12 +1,5 @@
 import Config
 
-# Configure your database
-config :vms_api, VmsApi.Repo,
-  database: Path.expand("../api_dev.db", Path.dirname(__ENV__.file)),
-  pool_size: 5,
-  stacktrace: true,
-  show_sensitive_data_on_connection_error: true
-
 # For development, we disable any cache and enable
 # debugging and code reloading.
 #
@@ -50,7 +43,9 @@ config :vms_api, VmsApiWeb.Endpoint,
 config :vms_api, dev_routes: true
 
 # Do not include metadata nor timestamps in development logs
-config :logger, :console, format: "[$level] $message\n", level: (System.get_env("LOG_LEVEL") || "debug") |> String.to_atom()
+config :logger, :console,
+  format: "[$level] $message\n",
+  level: (System.get_env("LOG_LEVEL") || "debug") |> String.to_atom()
 
 # Set a higher stacktrace during development. Avoid configuring such
 # in production as building large stacktraces may be expensive.

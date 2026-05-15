@@ -1,0 +1,6 @@
+---
+can_networks:
+  ovcs:
+    bitrate: 500000
+    received_frames:
+      - import!:@ovcs_can:can/components/ovcs/0x60A_drivetrain_status.yml

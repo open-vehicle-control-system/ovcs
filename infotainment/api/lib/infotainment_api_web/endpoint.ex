@@ -1,8 +1,10 @@
 defmodule InfotainmentApiWeb.Endpoint do
   use Phoenix.Endpoint, otp_app: :infotainment_api
+
   socket "/sockets/dashboard", InfotainmentApiWeb.DashboardSocket,
     websocket: true,
     longpoll: false
+
   # The session will be stored in the cookie and signed,
   # this means its contents can be read but not tampered with.
   # Set :encryption_salt if you would also like to encrypt it.
@@ -13,7 +15,7 @@ defmodule InfotainmentApiWeb.Endpoint do
     same_site: "Lax"
   ]
 
-  #socket "/live", Phoenix.LiveView.Socket, websocket: [connect_info: [session: @session_options]]
+  # socket "/live", Phoenix.LiveView.Socket, websocket: [connect_info: [session: @session_options]]
 
   # Serve at "/" the static files from "priv/static" directory.
   #
@@ -29,7 +31,6 @@ defmodule InfotainmentApiWeb.Endpoint do
   # :code_reloader configuration of your endpoint.
   if code_reloading? do
     plug Phoenix.CodeReloader
-    plug Phoenix.Ecto.CheckRepoStatus, otp_app: :infotainment_api
   end
 
   plug Phoenix.LiveDashboard.RequestLogger,

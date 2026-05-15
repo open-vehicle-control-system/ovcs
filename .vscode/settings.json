@@ -1,0 +1,78 @@
+{
+  "files.associations": {
+    "*.eex": "html-eex",
+    "*.heex": "phoenix-heex",
+    "*.leex": "phoenix-heex",
+    "mix.lock": "elixir",
+    "*.o2bms": "xml"
+  },
+  "files.exclude": {
+    "**/_build": true,
+    "**/deps": true,
+    "**/.elixir_ls": true,
+    "**/node_modules": true,
+    "**/.dart_tool": true,
+    "**/build": true,
+    "**/.pio": true
+  },
+  "search.exclude": {
+    "**/_build": true,
+    "**/deps": true,
+    "**/.elixir_ls": true,
+    "**/node_modules": true,
+    "**/.dart_tool": true,
+    "**/build": true,
+    "**/.pio": true,
+    "**/mix.lock": true,
+    "**/package-lock.json": true,
+    "**/pubspec.lock": true,
+    "**/candumps": true
+  },
+  "[elixir]": {
+    "editor.defaultFormatter": "JakeBecker.elixir-ls",
+    "editor.formatOnSave": true
+  },
+  "[phoenix-heex]": {
+    "editor.defaultFormatter": "JakeBecker.elixir-ls",
+    "editor.formatOnSave": true
+  },
+  "[vue]": {
+    "editor.defaultFormatter": "Vue.volar",
+    "editor.formatOnSave": true
+  },
+  "[javascript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[typescript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[dart]": {
+    "editor.defaultFormatter": "Dart-Code.dart-code",
+    "editor.formatOnSave": true,
+    "editor.rulers": [80],
+    "editor.selectionHighlight": false,
+    "editor.suggestSelection": "first",
+    "editor.tabCompletion": "onlySnippets",
+    "editor.wordBasedSuggestions": "off"
+  },
+  "elixirLS.projectDir": "",
+  "elixirLS.dialyzerEnabled": false,
+  "yaml.schemas": {},
+  "yaml.customTags": [],
+  "dart.flutterSdkPath": null,
+  "editor.tabSize": 2,
+  "editor.insertSpaces": true,
+  "editor.trimAutoWhitespace": true,
+  "files.trimTrailingWhitespace": true,
+  "files.insertFinalNewline": true,
+  "git.autoRepositoryDetection": true,
+  "git.repositoryScanMaxDepth": 4,
+  "git.detectSubmodules": true,
+  "git.detectSubmodulesLimit": 50,
+  "git.openRepositoryInParentFolders": "always",
+  "git.scanRepositories": [
+    "libraries/cantastic",
+    "libraries/msp_osd",
+    "libraries/express_lrs"
+  ]
+}

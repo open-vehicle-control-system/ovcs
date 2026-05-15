@@ -1,0 +1,23 @@
+// rmw_zenoh session config template. Each service's entrypoint runs
+// `envsubst` over this file at container start to produce the actual
+// /tmp/zenoh-session.json5 (Zenoh's config loader does not expand
+// env vars on its own).
+{
+  mode: "client",
+  connect: {
+    endpoints: ["tcp/${ZENOH_ENDPOINT_IP}:7447"],
+  },
+  scouting: {
+    // Disable multicast scouting; we want a deterministic point-to-point
+    // connection to the configured router, not LAN discovery.
+    multicast: { enabled: false },
+  },
+  transport: {
+    shared_memory: {
+      // Disabled: Docker's default /dev/shm (64 MB) is too small for
+      // Zenoh's SHM segments (ENOMEM). SHM only helps same-host peers
+      // anyway; we're a TCP client to the router.
+      enabled: false,
+    },
+  },
+}

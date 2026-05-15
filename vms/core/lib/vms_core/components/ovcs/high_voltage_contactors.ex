@@ -3,7 +3,8 @@ defmodule VmsCore.Components.OVCS.HighVoltageContactors do
     EV high voltage contactors with precharge, using a generic controller
   """
   use GenServer
-  alias VmsCore.{Bus, Components.OVCS.GenericController}
+  alias OvcsBus, as: Bus
+  alias VmsCore.{Components.OVCS.GenericController}
 
   @loop_period 10
   @relay_operating_delay 50
@@ -14,81 +15,118 @@ defmodule VmsCore.Components.OVCS.HighVoltageContactors do
 
   @impl true
   def init(%{
-    contact_source: contact_source,
-    inverter_output_voltage_source: inverter_output_voltage_source,
-    required_precharge_output_voltage: required_precharge_output_voltage,
-    controller: controller,
-    main_negative_relay_pin: main_negative_relay_pin,
-    main_positive_relay_pin: main_positive_relay_pin,
-    precharge_relay_pin: precharge_relay_pin})
-  do
+        contact_source: contact_source,
+        inverter_output_voltage_source: inverter_output_voltage_source,
+        required_precharge_output_voltage: required_precharge_output_voltage,
+        controller: controller,
+        main_negative_relay_pin: main_negative_relay_pin,
+        main_positive_relay_pin: main_positive_relay_pin,
+        precharge_relay_pin: precharge_relay_pin
+      }) do
     Bus.subscribe("messages")
     {:ok, timer} = :timer.send_interval(@loop_period, :loop)
-    {:ok, %{
-      contact_source: contact_source,
-      contact: :off,
-      controller: controller,
-      main_negative_relay_pin: main_negative_relay_pin,
-      main_positive_relay_pin: main_positive_relay_pin,
-      precharge_relay_pin: precharge_relay_pin,
-      status: :off,
-      inverter_output_voltage: 0,
-      inverter_output_voltage_source: inverter_output_voltage_source,
-      required_precharge_output_voltage: required_precharge_output_voltage,
-      precharge_ending_timestamp: 0,
-      loop_timer: timer,
-      main_negative_relay_enabled: false,
-      main_positive_relay_enabled: false,
-      precharge_relay_enabled: false,
-      ready_to_drive: false
-    }}
+
+    {:ok,
+     %{
+       contact_source: contact_source,
+       contact: :off,
+       controller: controller,
+       main_negative_relay_pin: main_negative_relay_pin,
+       main_positive_relay_pin: main_positive_relay_pin,
+       precharge_relay_pin: precharge_relay_pin,
+       status: :off,
+       inverter_output_voltage: 0,
+       inverter_output_voltage_source: inverter_output_voltage_source,
+       required_precharge_output_voltage: required_precharge_output_voltage,
+       precharge_ending_timestamp: 0,
+       loop_timer: timer,
+       main_negative_relay_enabled: false,
+       main_positive_relay_enabled: false,
+       precharge_relay_enabled: false,
+       ready_to_drive: false
+     }}
   end
 
   @impl true
   def handle_info(:loop, state) do
-    state = state
+    state =
+      state
       |> toggle_contactors()
       |> check_ready_to_drive()
       |> emit_metrics()
+
     {:noreply, state}
   end
 
-  def handle_info(%Bus.Message{name: :contact, value: contact, source: source}, state) when source == state.contact_source do
+  def handle_info(%Bus.Message{name: :contact, value: contact, source: source}, state)
+      when source == state.contact_source do
     {:noreply, %{state | contact: contact}}
   end
-  def handle_info(%Bus.Message{name: :inverter_output_voltage, value: inverter_output_voltage, source: source}, state) when source == state.inverter_output_voltage_source do
+
+  def handle_info(
+        %Bus.Message{
+          name: :inverter_output_voltage,
+          value: inverter_output_voltage,
+          source: source
+        },
+        state
+      )
+      when source == state.inverter_output_voltage_source do
     {:noreply, %{state | inverter_output_voltage: inverter_output_voltage}}
   end
-  def handle_info(%Bus.Message{}, state) do # TODO, replace Bus ?
+
+  def handle_info(%Bus.Message{}, state) do
     {:noreply, state}
   end
 
   defp toggle_contactors(state) do
     now = System.system_time(:millisecond)
-    case {state.status, state.contact, state.inverter_output_voltage, state.precharge_ending_timestamp} do
+
+    case {state.status, state.contact, state.inverter_output_voltage,
+          state.precharge_ending_timestamp} do
       {:off, :start, _, _} ->
         start_precharge(state)
-      {:starting, contact, inverter_output_voltage, _} when contact in [:on, :start] and inverter_output_voltage >= state.required_precharge_output_voltage ->
+
+      {:starting, contact, inverter_output_voltage, _}
+      when contact in [:on, :start] and
+             inverter_output_voltage >= state.required_precharge_output_voltage ->
         end_precharge(state)
-      {:precharge_complete, contact, _, precharge_ending_timestamp} when contact in [:on, :start] and precharge_ending_timestamp > now ->
+
+      {:precharge_complete, contact, _, precharge_ending_timestamp}
+      when contact in [:on, :start] and precharge_ending_timestamp > now ->
         finish_precharge(state)
+
       {status, :off, _, _} when status != :off ->
         switch_off(state)
+
       _ ->
         state
     end
   end
 
   defp check_ready_to_drive(state) do
-    {:ok, main_negative_relay_enabled} = GenericController.get_digital_value(state.controller, state.main_negative_relay_pin)
-    {:ok, main_positive_relay_enabled} = GenericController.get_digital_value(state.controller, state.main_positive_relay_pin)
-    {:ok, precharge_relay_enabled}     = GenericController.get_digital_value(state.controller, state.precharge_relay_pin)
-    ready_to_drive = main_negative_relay_enabled && main_positive_relay_enabled && !precharge_relay_enabled
+    {:ok, main_negative_relay_enabled} =
+      GenericController.get_digital_value(state.controller, state.main_negative_relay_pin)
+
+    {:ok, main_positive_relay_enabled} =
+      GenericController.get_digital_value(state.controller, state.main_positive_relay_pin)
+
+    {:ok, precharge_relay_enabled} =
+      GenericController.get_digital_value(state.controller, state.precharge_relay_pin)
+
+    ready_to_drive =
+      main_negative_relay_enabled && main_positive_relay_enabled && !precharge_relay_enabled
+
     %{state | ready_to_drive: ready_to_drive}
   end
 
   defp emit_metrics(state) do
-    Bus.broadcast("messages", %Bus.Message{name: :ready_to_drive, value: state.ready_to_drive, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{
+      name: :ready_to_drive,
+      value: state.ready_to_drive,
+      source: __MODULE__
+    })
+
     state
   end
 
@@ -119,9 +157,11 @@ defmodule VmsCore.Components.OVCS.HighVoltageContactors do
   defp enable_relay(state, relay) do
     set_relay(state, relay, true)
   end
+
   defp disable_relay(state, relay) do
     set_relay(state, relay, false)
   end
+
   defp set_relay(state, relay, value) do
     GenericController.set_digital_value(state.controller, Map.get(state, relay), value)
   end

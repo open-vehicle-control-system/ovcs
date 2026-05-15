@@ -4,7 +4,7 @@ OVCS relies on CAN bus communication. During local development, you can simulate
 
 ## Prerequisites
 
-- Virtual CAN interfaces must be running: `./scripts/setup_virtual_can.sh`
+- Virtual CAN interfaces must be running: `./ovcs can setup <vehicle>`
 - The VMS or Infotainment API must be started (see [Applications](./applications.md))
 - `can-utils` must be installed: `sudo apt install can-utils`
 
@@ -64,11 +64,11 @@ canplayer -I candumps/candump-standard-test.log vcan0=can0 vcan1=can1
 
 ### Available CAN dumps
 
-The `candumps/` directory contains recordings from various test scenarios. Use `ls candumps/` to see all available files. Notable dumps include:
-
-- `candump-standard-test.log` -- Standard driving scenario with all systems active
-- `eps_tcross_*.log` -- Electric power steering data
-- `fool_sequence_*.log` -- Specific test sequences
+The `candumps/` directory contains recordings from various test scenarios.
+Run `ls candumps/` to see all available files — names indicate the
+captured scenario (e.g. `candump-standard-test.log`,
+`candump-leaf-engine-startup-128-then-minus-3.log`,
+`candump-2025-07-OBD2-tcross.log`).
 
 ## Monitoring CAN Traffic
 
@@ -98,7 +98,7 @@ The `-L` flag outputs in the log file format compatible with `canplayer`.
 
 ## Understanding CAN Frame Definitions
 
-CAN frame specifications are defined in YAML files under `vms/core/priv/can/`. Each YAML file defines a frame's CAN ID, data length, and the signals packed within it.
+CAN frame specifications are defined in YAML files. Shared per-component specs live in [`libraries/ovcs_can/priv/can/components/`](../libraries/ovcs_can/priv/can/components); each vehicle's CAN topology (which frames run on which networks) lives in its package under `vehicles/<name>/priv/can/{vms,infotainment}.yml`. Each YAML file defines a frame's CAN ID, data length, and the signals packed within it.
 
 For example, a signal definition:
 
@@ -118,7 +118,7 @@ See the [Hardware Architecture](./hardware_architecture.md#can-bus-configuration
 Virtual CAN interfaces are not set up. Run:
 
 ```sh
-./scripts/setup_virtual_can.sh
+./ovcs can setup <vehicle>   # e.g. ovcs1 | ovcs_mini | obd2
 ```
 
 If `vcan` module loading fails, you may need to load the kernel modules first:
@@ -133,7 +133,7 @@ sudo modprobe vcan
 
 Check that:
 1. The VMS API is running with the correct `CAN_NETWORK_MAPPINGS` pointing to your virtual interfaces.
-2. The `VEHICLE` environment variable is set to the correct vehicle (e.g., `OVCS1`).
+2. The `VEHICLE` environment variable is set to the vehicle package's top-level module name (e.g., `Ovcs1`, `OvcsMini`, `Obd2`).
 3. You are sending messages on the correct virtual interface for the CAN network you want to target.
 
 Next: [Hardware Architecture](./hardware_architecture.md)

@@ -9,20 +9,24 @@ defmodule VmsCore.Application do
       load_debugger_dependencies()
     end
 
-    vehicle_children = vehicle_composer().children()
-    children = [
-      VmsCore.Repo,
-      {Ecto.Migrator,
-        repos: Application.fetch_env!(:vms_core, :ecto_repos),
-        skip: skip_migrations?()},
-      {Phoenix.PubSub, name: VmsCore.Bus},
-      {VmsCore.Metrics, []},
-      {VmsCore.NetworkInterfaces, []},
-    ]
-    children =  case Application.get_env(:vms_core, :socketcand_only) do
-      true -> []
-      false -> children ++ vehicle_children
-    end
+    composer = vehicle_composer()
+    vehicle_children = composer.children()
+
+    children =
+      [
+        VmsCore.Repo,
+        {Ecto.Migrator,
+         repos: Application.fetch_env!(:vms_core, :ecto_repos), skip: skip_migrations?()},
+        {VmsCore.Metrics, []},
+        {VmsCore.NetworkInterfaces, []}
+      ] ++ cluster_child()
+
+    children =
+      case Application.get_env(:vms_core, :socketcand_only) do
+        true -> []
+        false -> children ++ vehicle_children
+      end
+
     opts = [strategy: :one_for_one, name: VmsCore.Supervisor]
     Supervisor.start_link(children, opts)
   end
@@ -39,8 +43,17 @@ defmodule VmsCore.Application do
   end
 
   def vehicle_composer do
-    VmsCore.Vehicles
-      |> Module.concat(Application.get_env(:vms_core, :vehicle))
-      |> Module.concat(Composer)
+    Application.fetch_env!(:vms_core, :vehicle)
+  end
+
+  # Supervise `OvcsBus.Cluster` when `:ovcs_vehicle, :module` is set —
+  # each firmware's `runtime.exs` sets this to the top-level vehicle
+  # module (e.g. `Ovcs1`) whenever a vehicle is selected. Without it
+  # the cluster helper has nothing to probe for, so skip.
+  defp cluster_child do
+    case Application.get_env(:ovcs_vehicle, :module) do
+      nil -> []
+      mod -> [{OvcsBus.Cluster, vehicle: mod}]
+    end
   end
 end
