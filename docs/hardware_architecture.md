@@ -36,52 +36,92 @@ OVCS hardware is designed around two core principles:
 | EVPT23 | EVPT | On-board charger |
 | Polo 9N Systems | Volkswagen | ABS, dashboard/cluster, ignition lock, power steering pump |
 
-## High-Level Architecture
+## High-Level Architecture (OVCS1)
 
-The VMS sits at the center of the architecture, connected to all CAN buses. Each bus segment is isolated to prevent message ID conflicts between components from different manufacturers.
+The VMS sits at the centre of the topology. Every vehicle CAN bus terminates on the VMS Pi 4 via its multi-CAN SPI hub — manufacturer components on different buses never see each other's traffic, so message-ID collisions can't happen. The internal `ovcs` bus carries OVCS-only traffic (heartbeats, controller adoption, bridge ↔ VMS commands).
 
+```mermaid
+flowchart TB
+    classDef pi       fill:#dde5ff,stroke:#3344aa,color:#111
+    classDef arduino  fill:#fff1d6,stroke:#a07000,color:#111
+    classDef internal fill:#f0f4ff,stroke:#3344aa,color:#222,stroke-dasharray:4 2
+    classDef vbus     fill:#f5efe2,stroke:#a07000,color:#222,stroke-dasharray:4 2
+    classDef leaf     fill:#fef4d8,stroke:#666,color:#222
+    classDef polo     fill:#e1ecff,stroke:#2244aa,color:#222
+    classDef orion    fill:#fde2e2,stroke:#a83232,color:#222
+    classDef bosch    fill:#e2f5e2,stroke:#2a7a3a,color:#222
+    classDef external fill:#e7f6ec,stroke:#2a7a3a,color:#111
+
+    subgraph EXT[" "]
+        direction LR
+        RADIO["ExpressLRS handset<br/>MAVLink v2"]:::external
+        ROS["ROS 2 / Foxglove<br/>(rmw_zenoh)"]:::external
+        DASH["Vue debug dashboard<br/>(developer laptop)"]:::external
+    end
+
+    VMS["**VMS** · Raspberry Pi 4<br/>vms_firmware (Nerves)<br/>vms_api on :4000"]:::pi
+    INFO["Infotainment · Raspberry Pi 5<br/>infotainment_firmware (Nerves)<br/>infotainment_api on :4001<br/>Flutter touchscreen (HDMI + USB-HID)"]:::pi
+    RCB["Radio-control bridge · Raspberry Pi 3A<br/>bridge_firmware · RadioControlBridge<br/>ExpressLRS UART + MSP OSD"]:::pi
+    ROSB["ROS bridge · Raspberry Pi 4 (or 5)<br/>bridge_firmware · RosBridge<br/>zenohex + BNO085 IMU (I²C)"]:::pi
+
+    OVCS_BUS(["**ovcs** internal CAN · 1 Mbps"]):::internal
+    LEAF_BUS(["leaf_drive · 500 kbps"]):::vbus
+    POLO_BUS(["polo_drive · 500 kbps"]):::vbus
+    ORION_BUS(["orion_bms · 500 kbps"]):::vbus
+    MISC_BUS(["misc · 500 kbps"]):::vbus
+
+    FRONT["Front controller · 0x70x<br/>HV contactors, front sensors / relays"]:::arduino
+    REAR["Rear controller · 0x71x<br/>Water pump, rear sensors / relays"]:::arduino
+    CTRLS["Controls controller · 0x72x<br/>Steering PWM, throttle DAC, inputs"]:::arduino
+
+    LEAF["Nissan Leaf AZE0<br/>inverter + on-board charger"]:::leaf
+    POLO["VW Polo 9N<br/>ABS · cluster · ignition · steering pump"]:::polo
+    ORION["Orion BMS2<br/>+ EVPT23 charger"]:::orion
+    BOSCH["Bosch iBooster Gen2<br/>+ LWS steering-angle sensor"]:::bosch
+
+    %% OVCS internal bus
+    VMS  --- OVCS_BUS
+    INFO --- OVCS_BUS
+    RCB  --- OVCS_BUS
+    ROSB --- OVCS_BUS
+    OVCS_BUS --- FRONT
+    OVCS_BUS --- REAR
+    OVCS_BUS --- CTRLS
+
+    %% Per-manufacturer buses, VMS-only access
+    VMS --- LEAF_BUS  --- LEAF
+    VMS --- POLO_BUS  --- POLO
+    VMS --- ORION_BUS --- ORION
+    VMS --- MISC_BUS  --- BOSCH
+
+    %% External transports
+    RADIO -. MAVLink UART .-> RCB
+    ROS   -. native Zenoh / Foxglove .-> ROSB
+    DASH  -. HTTP + WS .- VMS
+
+    %% Erlang distribution between BEAMs
+    VMS  <-. OvcsBus.Cluster · dist .-> INFO
+    VMS  <-. OvcsBus.Cluster · dist .-> RCB
+    VMS  <-. OvcsBus.Cluster · dist .-> ROSB
 ```
-                                +-------------------+
-                                |   Infotainment    |
-                                |   RPi 5 + Screen  |
-                                +--------+----------+
-                                         |
-                                    OVCS CAN Bus (1 Mbps)
-                                         |
-+------------------+         +-----------+-----------+         +------------------+
-| Radio Control    |         |                       |         | ROS Bridge       |
-| Bridge (RPi 3A) +---------+    VMS (RPi 4)        +---------+ (RPi 4/5)       |
-+------------------+         |                       |         +------------------+
-                             +-+---+---+---+---+---+-+
-                               |   |   |   |   |
-           +-------------------+   |   |   |   +-------------------+
-           |                       |   |   |                       |
-      Leaf Drive CAN          Polo Drive  Orion BMS CAN       Misc CAN
-      (500 kbps)              CAN         (500 kbps)          (500 kbps)
-           |                (500 kbps)         |                   |
-    +------+------+              |        +----+----+      +------+------+
-    | Leaf Inverter|       +-----+----+   | Orion   |      | iBooster   |
-    | Leaf Charger |       | Polo ABS |   | BMS2    |      | LWS Sensor |
-    +--------------+       | Polo     |   | EVPT23  |      +------------+
-                           | Dashboard|   | Charger |
-                           | Ignition |   +---------+
-                           +----------+
 
-                                    OVCS CAN Bus
-                                         |
-                   +---------------------+---------------------+
-                   |                     |                     |
-            +------+------+      +------+------+      +------+------+
-            |    Front     |      |    Rear     |      |  Controls   |
-            |  Controller  |      |  Controller |      |  Controller |
-            | (Arduino R4) |      | (Arduino R4)|      | (Arduino R4)|
-            +------+-------+      +------+------+      +------+------+
-                   |                     |                     |
-            Relays, sensors,       Relays, sensors,      Steering PWM,
-            contactors, etc.       water pump, etc.      throttle DAC, etc.
-```
+### How the SPI-CAN hub is wired
+
+The VMS Pi 4 has a single SPI peripheral. The custom multi-CAN hub board fans it out to five MCP2517FD CAN controllers — one per bus shown above — each with its own transceiver. Cantastic addresses them as `spi0.0` … `spi0.4`. The OVCS internal bus runs at 1 Mbps because OVCS-internal traffic (controller adoption, heartbeats, infotainment ↔ VMS, bridges ↔ VMS) is dense; the four manufacturer buses run at the stock 500 kbps their components require.
+
+### Why every bridge SoC is its own Pi
+
+Each bridge runs on a dedicated Pi rather than sharing one with the VMS because:
+
+- **Failure isolation.** A misbehaving radio link or ROS publisher can hang its own BEAM without dragging the VMS supervision tree down.
+- **Cabling.** RC receivers live near the antenna, the ROS bridge typically rides on the autonomy stack — both are physically distant from the VMS bay.
+- **Targets.** The Pi 3A is cheap and adequate for the RC bridge; ROS needs the Pi 4/5's RAM.
+
+The BEAMs still join one Erlang-distribution cluster via `OvcsBus.Cluster`, so the application-level pub/sub is unified — they talk over the vehicle LAN as if they were threads in the same VM.
 
 ![OVCS architecture](./assets/ovcs_architecture.png)
+
+> The PNG above is a hand-drawn rendering kept for marketing decks. The Mermaid diagram is the source of truth.
 
 ## CAN Bus Network Topology
 
