@@ -12,4 +12,18 @@ enum ControllerStatus {
     EXPANSION_BOARDS_ERROR = 7
 };
 
+inline const char* controllerStatusName(ControllerStatus status) {
+  switch (status) {
+    case STARTING:                   return "STARTING";
+    case ADOPTION_REQUIRED:          return "ADOPTION_REQUIRED";
+    case READY:                      return "READY";
+    case VMS_MISSING_ERROR:          return "VMS_MISSING_ERROR";
+    case VMS_LATENCY_ERROR:          return "VMS_LATENCY_ERROR";
+    case VMS_COUNTER_MISMATCH_ERROR: return "VMS_COUNTER_MISMATCH_ERROR";
+    case VMS_FAILURE_ERROR:          return "VMS_FAILURE_ERROR";
+    case EXPANSION_BOARDS_ERROR:     return "EXPANSION_BOARDS_ERROR";
+    default:                         return "UNKNOWN";
+  }
+}
+
 #endif

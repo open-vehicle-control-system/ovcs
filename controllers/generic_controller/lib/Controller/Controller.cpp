@@ -44,6 +44,8 @@ void Controller::adoptConfiguration() {
   initializeExpansionBoards();
   _configuration.initializePhysicalPins();
   _adoptionButton.validateAdoption();
+  DPRINTLN("> Adoption applied");
+  setStatus(READY);
 };
 
 void Controller::writeDigitalPins() {
@@ -121,19 +123,33 @@ void Controller::emitAlive(uint8_t expansionBoard1LastError, uint8_t expansionBo
   }
 };
 
+void Controller::setStatus(ControllerStatus controllerStatus) {
+  if (_status != controllerStatus) {
+    DPRINT("> Status: ");
+    DPRINT(controllerStatusName(_status));
+    DPRINT(" -> ");
+    DPRINTLN(controllerStatusName(controllerStatus));
+    _status = controllerStatus;
+  }
+}
+
 void Controller::shutdown(ControllerStatus controllerStatus){
-  _status = controllerStatus;
+  setStatus(controllerStatus);
   shutdownAllDigitalPins();
   shutdownAllOtherPins();
   disableExternalPwms();
-  DPRINT("Shutting down with error code: ");
-  DPRINTLN(controllerStatus, HEX);
+  DPRINT("> Shutting down: ");
+  DPRINT(controllerStatusName(controllerStatus));
+  DPRINT(" (0x");
+  DPRINT(controllerStatus, HEX);
+  DPRINTLN(")");
 }
 
 void Controller::watchVms() {
   unsigned long now = millis();
   bool booting_period_finished = now > VMS_ALLOWED_BOOT_TIME;
   if (booting_period_finished && _latestVmsAliveTimestamp + (VMS_ALIVE_MS + TOLERANCE_MS) * 4 < now){
+    DPRINTLN("> No VMS status frame within window — shutting down");
     shutdown(VMS_MISSING_ERROR);
   } else if (_can._receivedFrame.id == VMS_ALIVE_FRAME_ID) {
     Vms vms = _can.parseVmsAliveFrame();
@@ -144,8 +160,10 @@ void Controller::watchVms() {
     }
     uint8_t nextVmsAliveCounter = (_vmsAliveFrameCounter + 1) % 4;
     if(_vmsValidFramesWindow == 0) {
+      DPRINTLN("> VMS latency window exhausted — shutting down");
       shutdown(VMS_LATENCY_ERROR);
     } else if (vms.status == FAILURE) {
+      DPRINTLN("> VMS reported FAILURE — shutting down");
       shutdown(VMS_FAILURE_ERROR);
     } // else if (_vmsAliveFrameCounter != 255 && vms.counter != nextVmsAliveCounter) {
     //   shutdown(VMS_COUNTER_MISMATCH_ERROR);
@@ -163,7 +181,8 @@ void Controller::watchExpansionBoards(uint8_t expansionBoard1LastError, uint8_t 
 void Controller::handleVmsCommandFrame() {
   VmsCommand vmsCommand = _can.parseVmsCommandFrame();
   if (vmsCommand.command == RESET_GENERIC_CONTROLLERS) {
-     _status = READY;
+     DPRINTLN("> VMS command RESET_GENERIC_CONTROLLERS received");
+     setStatus(READY);
   }
 };
 
@@ -203,9 +222,9 @@ void Controller::setup() {
   if (_configuration.load()) {
     initializeExpansionBoards();
     _configuration.initializePhysicalPins();
-    _status = READY;
+    setStatus(READY);
   } else {
-    _status = ADOPTION_REQUIRED;
+    setStatus(ADOPTION_REQUIRED);
   }
 };
 

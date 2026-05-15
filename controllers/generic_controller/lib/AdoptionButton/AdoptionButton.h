@@ -9,7 +9,7 @@
 class AdoptionButton {
   public :
     AdoptionButton() {
-      pinMode(ADOPTION_BUTTON_PIN, INPUT);
+      pinMode(ADOPTION_BUTTON_PIN, INPUT_PULLDOWN);
       _waitingAdoption  = false;
       _adopted          = false;
       _buttonWasPressed = false;
