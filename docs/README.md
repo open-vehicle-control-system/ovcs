@@ -26,24 +26,11 @@ Index for the Open Vehicle Control System guides. For a high-level project overv
 
 ## Architecture Reference
 
-OVCS is a monorepo containing multiple independent Elixir applications, a C++/PlatformIO project, and frontend apps. They are **not** an Elixir umbrella project -- each application has its own `mix.exs` and dependency tree.
-
-### Dependency Graph
-
-```
-cantastic (shared CAN bus library)
-  |
-  +-- vms_core ---------> vms_api ---------> vms_firmware (RPi 4)
-  |
-  +-- infotainment_core -> infotainment_api -> infotainment_firmware (RPi 5)
-  |
-  +-- ovcs_bridge --+-> radio_control_bridge --+--> bridge_firmware
-                    +-> ros_bridge ------------+    (RPi 3A / 4 / 5)
-```
-
-The shared `bridge_firmware` Nerves image hosts whichever bridge libraries
-the active vehicle declares in `bridge_firmwares/0`. One image per entry —
-see [Vehicle Parameterisation](./vehicle_parameterisation.md).
+OVCS is a monorepo of independent Elixir applications, a C++/PlatformIO
+project, and frontend apps — **not** an Elixir umbrella. Each app has
+its own `mix.exs`. See the [main README](../README.md#repository-structure)
+for the full directory tree and [Applications](./applications.md) for
+the dependency graph and layer breakdown.
 
 ### Shared Libraries
 
@@ -70,9 +57,9 @@ own README with usage, design notes, and API.
 | Infotainment Core | `infotainment/core/` | `InfotainmentCore` | Infotainment business logic, UI layout, pages and blocks |
 | Infotainment API | `infotainment/api/` | `InfotainmentApi` | Phoenix JSON API + WebSocket for the Flutter dashboard |
 | Infotainment Firmware | `infotainment/firmware/` | `InfotainmentFirmware` | Nerves firmware image for Raspberry Pi 5 |
-| Bridge Firmware | `bridges/firmware/` | `BridgeFirmware` | Shared Nerves image; bundles the bridge libraries the active vehicle declares in `bridge_firmwares/0` |
+| Bridge Firmware | `bridges/firmware/` | `BridgeFirmware` | Shared Nerves image (targets `:ovcs_base_can_system_rpi3a`, `:ovcs_base_can_system_rpi4`, `:ovcs_bridges_system_rpi5`); bundles the bridge libraries the active vehicle declares in `bridge_firmwares/0` |
 | Radio Control Bridge | `bridges/radio_control_bridge/` | `RadioControlBridge` | MAVLink/ExpressLRS RC bridge library (hosted by `bridge_firmware`) |
-| ROS Bridge | `bridges/ros_bridge/` | `RosBridge` | ROS2/Zenoh bridge with IMU (hosted by `bridge_firmware`) |
+| ROS Bridge | `bridges/ros_bridge/` | `RosBridge` | Native rmw_zenoh ROS 2 bridge with BNO085 IMU (hosted by `bridge_firmware`) |
 
 ### Non-Elixir Components
 
@@ -84,17 +71,9 @@ own README with usage, design notes, and API.
 
 ## External Resources
 
-### Presentations
+Presentations and video links live in the
+[main README](../README.md#presentations-and-media). Additional pointers:
 
-| Event | Date | Links |
-|-------|------|-------|
-| ElixirConf EU 2024 | April 2024 | [Video](https://www.youtube.com/watch?v=2rL5yIEUU84) -- [Slides](https://github.com/open-vehicle-control-system/presentations/tree/main/ElixirconfEU%20%2019-04-2024) |
-| Makilab | November 2024 | [Slides](https://github.com/open-vehicle-control-system/presentations/tree/main/Makilab%204-11-2024) |
-| FOSDEM 2025 | February 2025 | [Full-size car video](https://www.youtube.com/watch?v=b74WbEGoPgI) -- [RC car video](https://www.youtube.com/watch?v=KSj2oYt7g1E) -- [Slides](https://github.com/open-vehicle-control-system/presentations/tree/main/Fosdem%202-2-2025) |
-
-### Online
-
-- [YouTube: Spin42 Engineering](https://www.youtube.com/@spin42engineering) -- Video updates, demos, and build logs
 - [ElixirForum: Driving a car powered with Nerves and Elixir](https://elixirforum.com/t/driving-a-car-powered-with-nerves-and-elixir/71557) -- Project announcement and community discussion
 - [GitHub: OVCS Organization](https://github.com/open-vehicle-control-system) -- All repositories (ovcs, base systems, presentations)
 - [GitHub: Presentations](https://github.com/open-vehicle-control-system/presentations) -- Slide decks from conference talks
