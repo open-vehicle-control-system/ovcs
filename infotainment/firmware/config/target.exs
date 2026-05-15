@@ -35,16 +35,48 @@ config :nerves_ssh,
   # :ssh_file (NervesSSH 1.3.0 / OTP 27 ed25519 tuple-format bug).
   daemon_option_overrides: [key_cb: :ssh_file]
 
+# See vms/firmware/config/target.exs for why this can't go through a
+# helper module — deps aren't compiled when Mix evaluates this file.
+wifi_networks =
+  case System.get_env("WIFI_NETWORKS") do
+    blank when blank in [nil, ""] ->
+      []
+
+    src ->
+      {parsed, _} = Code.eval_string(src)
+
+      Enum.map(parsed, fn {ssid, psk} ->
+        %{key_mgmt: :wpa_psk, ssid: ssid, psk: psk}
+      end)
+  end
+
+wlan0_config =
+  case wifi_networks do
+    [] ->
+      []
+
+    networks ->
+      [
+        {"wlan0",
+         %{
+           type: VintageNetWiFi,
+           vintage_net_wifi: %{networks: networks},
+           ipv4: %{method: :dhcp}
+         }}
+      ]
+  end
+
 config :vintage_net,
   regulatory_domain: "00",
-  config: [
-    {"usb0", %{type: VintageNetDirect}},
-    {"eth0",
-     %{
-       type: VintageNetEthernet,
-       ipv4: %{method: :dhcp}
-     }}
-  ]
+  config:
+    [
+      {"usb0", %{type: VintageNetDirect}},
+      {"eth0",
+       %{
+         type: VintageNetEthernet,
+         ipv4: %{method: :dhcp}
+       }}
+    ] ++ wlan0_config
 
 config :mdns_lite,
   hosts: [:hostname, vehicle_host],

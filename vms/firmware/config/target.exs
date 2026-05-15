@@ -60,16 +60,51 @@ config :nerves_ssh,
   # (NervesSSH writes both to system_dir / user_dir respectively).
   daemon_option_overrides: [key_cb: :ssh_file]
 
+# `WIFI_NETWORKS` is set in each vehicle's `.env.exs` as an Elixir
+# list literal of `{ssid, psk}` tuples. We parse it with the built-in
+# `Code.eval_string/1` rather than going through Jason or a helper in
+# `OvcsVehicle.Firmware`: deps aren't compiled yet when Mix evaluates
+# this file (e.g. during `mix deps.get`).
+wifi_networks =
+  case System.get_env("WIFI_NETWORKS") do
+    blank when blank in [nil, ""] ->
+      []
+
+    src ->
+      {parsed, _} = Code.eval_string(src)
+
+      Enum.map(parsed, fn {ssid, psk} ->
+        %{key_mgmt: :wpa_psk, ssid: ssid, psk: psk}
+      end)
+  end
+
+wlan0_config =
+  case wifi_networks do
+    [] ->
+      []
+
+    networks ->
+      [
+        {"wlan0",
+         %{
+           type: VintageNetWiFi,
+           vintage_net_wifi: %{networks: networks},
+           ipv4: %{method: :dhcp}
+         }}
+      ]
+  end
+
 config :vintage_net,
   regulatory_domain: "00",
-  config: [
-    {"usb0", %{type: VintageNetDirect}},
-    {"eth0",
-     %{
-       type: VintageNetEthernet,
-       ipv4: %{method: :dhcp}
-     }}
-  ]
+  config:
+    [
+      {"usb0", %{type: VintageNetDirect}},
+      {"eth0",
+       %{
+         type: VintageNetEthernet,
+         ipv4: %{method: :dhcp}
+       }}
+    ] ++ wlan0_config
 
 config :mdns_lite,
   hosts: [:hostname, vehicle_host],
