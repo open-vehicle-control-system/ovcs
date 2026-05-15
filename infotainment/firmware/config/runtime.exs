@@ -13,9 +13,13 @@ case OvcsVehicle.Firmware.resolve_side(
     config :infotainment_core, :vehicle, infotainment
     config :ovcs_vehicle, :module, vehicle
 
+    default_can_environment =
+      Application.compile_env(:infotainment_firmware, :default_can_environment, :host)
+
     config :cantastic,
       can_network_mappings: fn ->
-        (System.get_env("CAN_NETWORK_MAPPINGS") || infotainment.default_can_mapping(:host))
+        (System.get_env("CAN_NETWORK_MAPPINGS") ||
+           infotainment.default_can_mapping(default_can_environment))
         |> String.split(",", trim: true)
         |> Enum.map(fn i ->
           [network_name, can_interface] = i |> String.split(":", trim: true)
