@@ -31,11 +31,15 @@ jobs:
             vehicle: Ovcs1
             role: radio_control
             bridge_firmware_id: radio_control
-          - app: bridges/firmware
-            target: ovcs_base_can_system_rpi4
-            vehicle: Ovcs1
-            role: ros
-            bridge_firmware_id: ros
+          # bridges/firmware × rpi4 (role: ros) is intentionally NOT in
+          # CI: ros_bridge's mix.exs keeps `emqtt` for the disabled
+          # legacy MQTT-plugin path, which transitively pulls in
+          # `quicer`. `quicer`'s bundled msquic + openssl hardcode
+          # x86_64 build flags (`-m64`), so they don't cross-compile
+          # to aarch64-nerves-linux-gnu. The native rmw_zenoh path is
+          # what's actually wired into the supervision tree. Re-enable
+          # this row once ros_bridge drops emqtt (or quicer learns to
+          # cross-compile).
     env:
       MIX_TARGET: ${{ matrix.target }}
       VEHICLE: ${{ matrix.vehicle }}
@@ -84,7 +88,11 @@ jobs:
 
       - name: Build firmware
         working-directory: ${{ matrix.app }}
-        run: ./build.sh
+        # `mise exec --` activates the full mise.toml toolchain in the
+        # subprocess, so build.sh's children (in particular the
+        # `flutter` invocation by `nerves_flutter_support` during the
+        # infotainment release step) find every pinned runtime on PATH.
+        run: mise exec -- ./build.sh
 
       - name: Locate firmware artifact
         id: locate
