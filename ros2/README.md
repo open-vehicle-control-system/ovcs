@@ -27,12 +27,20 @@ docker compose exec ros2 bash  # shell with ROS env pre-sourced
 ```
 
 Smoke-test against the bridge's heartbeat (published by
-`RosBridge.ZenohClient` on key `ovcs/heartbeat`):
+`RosBridge.ZenohClient` on the rmw_zenoh topic `/ovcs_heartbeat`):
 
 ```sh
-docker compose exec ros2 bash -lc \
-  'apt-get -qq install -y zenoh-tools && z_sub -k ovcs/heartbeat'
+docker compose exec ros2 bash -lc '
+  source /opt/ros/jazzy/setup.bash
+  ros2 topic list                              # should include /ovcs_heartbeat
+  ros2 topic echo /ovcs_heartbeat std_msgs/msg/String
+'
 ```
+
+The actual Zenoh keyexpr is namespaced by `rmw_zenoh`
+(`0/ovcs_heartbeat/std_msgs::msg::dds_::String_/RIHS01_…`), so a bare
+`z_sub -k ovcs_heartbeat` will not match. Use the ROS 2 CLI (above) or
+Foxglove against `ws://<host>:8765`.
 
 ## Files
 

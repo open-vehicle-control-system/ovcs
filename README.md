@@ -59,7 +59,7 @@ ovcs/
 +-- bridges/                    Communication Bridges
 |   +-- firmware/                 Shared Nerves image hosting one or more bridges per build
 |   +-- radio_control_bridge/     MAVLink RC transmitter bridge library
-|   +-- ros_bridge/               ROS2/Zenoh bridge library (with BNO085 IMU)
+|   +-- ros_bridge/               Native rmw_zenoh ROS2 bridge library (with BNO085 IMU)
 |
 +-- controllers/                Arduino Controllers
 |   +-- generic_controller/       PlatformIO C++ project for Arduino R4 Minima
@@ -103,7 +103,7 @@ ovcs/
 | Controllers | C++ / [PlatformIO](https://platformio.org/) on Arduino R4 Minima |
 | Database | SQLite via [Ecto](https://hexdocs.pm/ecto/Ecto.html) |
 | Real-time communication | Phoenix Channels (WebSocket) |
-| ROS2 integration | [Zenoh](https://zenoh.io/) + MQTT |
+| ROS2 integration | Native [Zenoh](https://zenoh.io/) via `zenohex` (rmw_zenoh wire format), [Foxglove Studio](https://foxglove.dev/) |
 
 ## Quick Start
 

@@ -18,9 +18,10 @@ contract consulted by `vms_core`<%= if @infotainment do %> and
 
 Spawns one BEAM per declared firmware — `<%= @name %>-vms`<%= if @infotainment do %>,
 `<%= @name %>-infotainment`<% end %>, and one `<%= @name %>-bridge-<id>` per
-`bridge_firmwares/0` entry — against a VMS-hosted mosquitto on
-`localhost:1884`, mirroring the deployed topology. VMS API on
-`http://localhost:4000`<%= if @infotainment do %>, infotainment API on
+`bridge_firmwares/0` entry. The BEAMs join one Erlang-distribution
+cluster via `OvcsBus.Cluster`, so `OvcsBus.broadcast/2` reaches every
+firmware with no broker required — same transport as deployed. VMS API
+on `http://localhost:4000`<%= if @infotainment do %>, infotainment API on
 `http://localhost:4001`<% end %>. Attach a split-pane log+IEx TUI from another
 terminal with `../../ovcs attach <%= @name %>`. Ctrl-C to stop.
 
@@ -131,38 +132,7 @@ reads `VEHICLE` + `BRIDGE_FIRMWARE_ID` at boot and only supervises
 the bridges listed in that entry, so one vehicle can run several
 bridge firmwares in parallel on different SoCs.
 
-### 5. Bus relay (optional)
-
-The VMS, infotainment, and each bridge firmware each run their own
-local `OvcsBus` (Phoenix.PubSub). To stitch them into a single logical
-bus across the vehicle LAN, declare `bus_relay/0` on each composer:
-
-```elixir
-# lib/<%= @name %>/vms/composer.ex
-@impl VmsCore.Vehicle
-def bus_relay do
-  %{
-    broker: [host: "<%= @name %>-vms.local", port: 1884],
-    client_id: "<%= @name %>-vms",
-    topic_prefix: "ovcs/<%= @name %>/bus",
-    topics: [:ready_to_drive, :vms_status]
-  }
-end
-```
-
-Identical shape on `lib/<%= @name %>/infotainment/composer.ex`
-(different `:client_id`) and inside each `bridge_firmwares/0` entry
-as `:bus_relay`. All sides point at the same broker + topic prefix
-so a message published locally on one bus arrives on every subscribed
-peer. Stand up an MQTT broker (Mosquitto, EMQX, …) on the VMS box;
-the commented-out stubs in the scaffold are ready to uncomment once
-the broker is reachable.
-
-Echo loops are avoided by tagging inbound messages with
-`:relay_origin` — the relay skips forwarding messages it just
-injected.
-
-### 6. Nerves targets
+### 5. Nerves targets
 
 Set at scaffold time:
 

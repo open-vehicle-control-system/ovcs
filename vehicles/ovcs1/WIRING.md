@@ -1,9 +1,15 @@
 # OVCS1 Wiring Reference
 
+> **Status: WIP.** This file currently covers the Leaf harness, iBooster,
+> steering pump, and the Polo Drive CAN only. Polo body / instrument
+> cluster / ignition / 12 V distribution / OVCS controller looms are not
+> yet captured here. Add sections as connections are confirmed on the car
+> — do not invent values.
+
 Pin-level notes for the donor harnesses and custom looms on the OVCS1
 (2007 VW Polo → Nissan Leaf AZE0 EV conversion). Kept terse on purpose —
-one section per harness, one bullet per wire. Expand as new connections
-are added; do not move this file out of the vehicle package.
+one section per harness, one bullet per wire. Do not move this file out
+of the vehicle package.
 
 For the physical topology (which bus runs at what bitrate, which Pi owns
 which connector), see

@@ -19,13 +19,10 @@ VmsCore.Vehicle (behaviour)
 └── can_config_path/0         → Path to the YAML inside that app's priv/
 ```
 
-The `VEHICLE` environment variable selects which vehicle package's composer is wired in at startup. Supported vehicles:
-
-| `VEHICLE` value | Package | VMS Composer module |
-|----------------|---------|---------------------|
-| `Ovcs1` | `vehicles/ovcs1` | `Ovcs1.Vms.Composer` |
-| `OvcsMini` | `vehicles/ovcs_mini` | `OvcsMini.Vms.Composer` |
-| `Obd2` | `vehicles/obd2` | `Obd2.Vms.Composer` |
+The `VEHICLE` environment variable selects which vehicle package's
+composer is wired in at startup. See
+[Vehicle Parameterisation](../../docs/vehicle_parameterisation.md) for
+the live list and the boot flow.
 
 ### 2. Component Pattern
 
@@ -246,4 +243,4 @@ The VMS Core starts as a dependency of the VMS API (Phoenix). The `VEHICLE` env 
 
 ## License
 
-MIT License - Copyright (c) 2024 Spin42 SRL
+See [`LICENCE.txt`](../../LICENCE.txt) at the repo root.

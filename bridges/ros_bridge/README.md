@@ -11,9 +11,9 @@ lib/
   ros_bridge.ex              # OvcsBridge behaviour + child list (host / target)
   zenoh_client.ex            # GenServer: native Zenoh publisher + rmw_zenoh liveliness
   imu_publisher.ex           # BNO085 → CAN
-  joy_interpreter.ex         # MQTT-plugin-era subscriber (currently disabled)
-  zenoh_mqtt_ros2/
-    dispatcher.ex            # MQTT-plugin path (currently disabled — kept for fallback)
+  joy_interpreter.ex         # MQTT-plugin-era subscriber (DISABLED — not in supervision tree)
+  zenoh_mqtt_ros2/             # Legacy Zenoh MQTT-plugin path (DISABLED, kept for fallback)
+    dispatcher.ex            # MQTT-plugin path (DISABLED — kept for fallback)
     ros2/                    # ROS 2 message codecs (CDR encode + parse)
       common.ex              # Shared encoder/parser primitives (encode_string, …)
       rmw_zenoh.ex           # rmw_zenoh wire-format helpers (keyexpr, payload, attachment, liveliness)

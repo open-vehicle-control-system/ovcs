@@ -2,6 +2,11 @@
 
 A generic Arduino controller that lets the VMS actuate relays, read digital and analog inputs, and drive PWM / DAC over the CAN network — without having to program each board with a use-case-specific firmware. Targets the Arduino R4 Minima.
 
+For adoption and verification from the VMS side, see
+[`docs/testing_generic_controllers.md`](../../docs/testing_generic_controllers.md).
+For where each OVCS1 controller fits on the bus and which pin types it
+uses, see [`docs/hardware_architecture.md`](../../docs/hardware_architecture.md#generic-controllers).
+
 ## Flashing
 
 Build / upload via PlatformIO:
