@@ -8,39 +8,40 @@ VMS Core is built around four key patterns:
 
 ### 1. Vehicle Composer
 
-Each supported vehicle has a **Composer** module that defines which components to start:
+Vehicles live outside `vms_core` in their own Mix packages under `vehicles/`. Each vehicle's VMS side implements the `VmsCore.Vehicle` behaviour:
 
 ```
-VmsCore.Vehicles.<VEHICLE>.Composer
-├── children/0          → List of child specs for the OTP supervisor
-├── generic_controllers/0 → Pin configurations for Arduino controllers
-└── dashboard_configuration/0 → UI layout for the web dashboard
+VmsCore.Vehicle (behaviour)
+├── children/0                → List of child specs for the OTP supervisor
+├── generic_controllers/0     → Pin configurations for Arduino controllers (optional)
+├── dashboard_configuration/0 → UI layout for the web dashboard (optional)
+├── can_config_otp_app/0      → OTP app owning the CAN YAMLs
+└── can_config_path/0         → Path to the YAML inside that app's priv/
 ```
 
-The `VEHICLE` environment variable selects the composer at startup. Supported vehicles:
-
-| Vehicle | Module | Description |
-|---------|--------|-------------|
-| `OVCS1` | `VmsCore.Vehicles.OVCS1.Composer` | Full-size VW Polo EV conversion |
-| `OVCSMini` | `VmsCore.Vehicles.OVCSMini.Composer` | Traxxas RC car platform |
-| `OBD2` | `VmsCore.Vehicles.OBD2.Composer` | Read-only OBD-II diagnostic mode |
+The `VEHICLE` environment variable selects which vehicle package's
+composer is wired in at startup. See
+[Vehicle Parameterisation](../../docs/vehicle_parameterisation.md) for
+the live list and the boot flow.
 
 ### 2. Component Pattern
 
 Every hardware driver is a GenServer that follows the same pattern:
 
 1. **Subscribes to CAN frames** via `Cantastic.Receiver.subscribe/3`
-2. **Subscribes to internal messages** via `VmsCore.Bus.subscribe/1`
+2. **Subscribes to internal messages** via `OvcsBus.subscribe/1`
 3. **Runs a periodic loop** (typically every 10ms) to emit CAN frames and broadcast metrics
 4. **Exposes actions** via `trigger_action/2` for dashboard control
 
-Components receive CAN data as `{:handle_frame, %Cantastic.Frame{}}` messages and internal data as `%VmsCore.Bus.Message{}` messages.
+Components receive CAN data as `{:handle_frame, %Cantastic.Frame{}}` messages and internal data as `%OvcsBus.Message{}` messages.
 
 ### 3. Bus System
 
-`VmsCore.Bus` is a Phoenix PubSub-based message bus for inter-component communication. Components broadcast metrics and listen for messages from other components:
+[`OvcsBus`](../../libraries/ovcs_bus) (shared across VMS, infotainment, and bridge firmwares) is a Phoenix PubSub-based message bus for inter-component communication. Components broadcast metrics and listen for messages from other components:
 
 ```elixir
+alias OvcsBus, as: Bus
+
 # Broadcasting a metric
 Bus.broadcast("messages", %Bus.Message{
   name: :speed,
@@ -57,6 +58,8 @@ end
 
 The `source` field enables decoupling: components don't import each other directly. Instead, they receive source module atoms through their init configuration from the Composer.
 
+Cross-firmware traffic is automatic: every BEAM in the vehicle (VMS, infotainment, each bridge) is joined into a distributed Erlang mesh by `OvcsBus.Cluster`, so `OvcsBus.broadcast/2` reaches subscribers on every node. See [`OvcsBus`](../../libraries/ovcs_bus) for details.
+
 ### 4. Manager Pattern
 
 Managers orchestrate cross-component logic:
@@ -69,15 +72,20 @@ Managers orchestrate cross-component logic:
 ```
 VmsCore.Application
 ├── VmsCore.Repo (SQLite - throttle calibration data)
-├── Phoenix.PubSub (internal message bus)
-├── VmsCore.Status (VMS heartbeat, ready-to-drive state, controller reset)
+├── Ecto.Migrator (applies pending migrations on boot)
 ├── VmsCore.Metrics (aggregates all Bus messages for dashboard/API)
 ├── VmsCore.NetworkInterfaces (CAN interface statistics)
+├── OvcsBus.Cluster (connects this BEAM to the vehicle's other firmwares via Erlang distribution)
 └── Vehicle Composer children (dynamic, based on VEHICLE env var):
+    ├── VmsCore.Status (VMS heartbeat, ready-to-drive, controller reset)
     ├── Components (hardware drivers)
     ├── Managers (control level, gear)
     └── Generic Controllers (Arduino I/O drivers)
 ```
+
+`OvcsBus`'s own `Phoenix.PubSub` lives under its own OTP application
+(`:ovcs_bus`) and is reachable by name from every BEAM that depends on
+the library.
 
 ## Components
 
@@ -159,33 +167,26 @@ VmsCore.Application
 |--------|------|---------|
 | `VmsCore.Status` | `status.ex` | Emits VMS heartbeat (`0x1A0`), manages ready-to-drive state, controller reset command (`0x1AA`) |
 | `VmsCore.Metrics` | `metrics.ex` | Subscribes to all Bus messages, stores latest values, exposes `metrics/0` for the API |
-| `VmsCore.Bus` | `bus.ex` | Phoenix PubSub wrapper for inter-component messaging |
-| `VmsCore.Bus.Message` | `bus/message.ex` | `%Message{name: atom, value: any, source: module}` |
 | `VmsCore.PID` | `pid.ex` | Proportional-Integral-Derivative controller using Decimal arithmetic |
 | `VmsCore.Repo` | `repo.ex` | Ecto SQLite3 repository for persistent data |
 | `VmsCore.NetworkInterfaces` | `network_interfaces.ex` | CAN interface statistics (TX/RX errors, bus state) |
 
 ## CAN Configuration
 
-CAN frame definitions are stored as YAML files in `priv/can/`:
+Vehicle CAN topology files live in each vehicle package's `priv/can/`:
 
 ```
-priv/can/
-├── vehicles/
-│   ├── ovcs1.yml          # OVCS1 network topology (imports component frames)
-│   ├── ovcs_mini.yml      # OVCS Mini topology
-│   └── obd2.yml           # OBD2 diagnostic topology
-├── components/
-│   ├── nissan/leaf_aze0/  # Leaf inverter and charger frames
-│   ├── bosch/             # iBooster, LWS steering sensor frames
-│   ├── orion/bms2/        # BMS frames
-│   ├── evpt/evpt23/       # Charger frames
-│   ├── volkswagen/polo_9n/ # ABS, dashboard, key, lock, wheel frames
-│   ├── ovcs/              # VMS status, commands, generic controller templates
-│   └── obd2/              # OBD-II diagnostic frames
+vehicles/<name>/priv/can/
+├── vms.yml                 # read by vms_core
+├── infotainment.yml        # read by infotainment_core (optional)
+└── generic_controller/     # per-vehicle controller frame wirings
 ```
 
-Vehicle YAML files compose the full CAN topology by importing per-component frame definitions via Cantastic's `import!:` directive.
+Shared per-component frame and signal definitions live in the [`ovcs_can`](../../libraries/ovcs_can) library under `priv/can/components/`. Vehicle topology YAMLs import components from the library via Cantastic's cross-app import syntax:
+
+```yaml
+- import!:@ovcs_can:can/components/ovcs/0x1A0_vms_status.yml
+```
 
 ## Dashboard System
 
@@ -227,10 +228,10 @@ Each vehicle's Composer defines a declarative dashboard configuration consumed b
 
 ```sh
 cd vms/api
-VEHICLE=OVCS1 CAN_NETWORK_MAPPINGS=ovcs:vcan0,leaf_drive:vcan1,polo_drive:vcan2,orion_bms:vcan3,misc:vcan4 iex -S mix phx.server
+VEHICLE=Ovcs1 iex -S mix phx.server
 ```
 
-The VMS Core starts as a dependency of the VMS API (Phoenix). The `VEHICLE` env var is required.
+The VMS Core starts as a dependency of the VMS API (Phoenix). The `VEHICLE` env var (the top-level vehicle module name, e.g. `Ovcs1`) is required; `CAN_NETWORK_MAPPINGS` defaults to whatever `default_can_mapping(:host)` returns on the vehicle's VMS composer and only needs to be set to override it.
 
 ## Key Safety Features
 
@@ -242,4 +243,4 @@ The VMS Core starts as a dependency of the VMS API (Phoenix). The `VEHICLE` env 
 
 ## License
 
-MIT License - Copyright (c) 2024 Spin42 SRL
+See [`LICENCE.txt`](../../LICENCE.txt) at the repo root.

@@ -23,9 +23,11 @@ defmodule InfotainmentFirmware.Application do
     case Application.ensure_all_started(application) do
       {:ok, _} ->
         Logger.info("#{application} started successfully!")
+
       {:error, :nomatch} ->
         Logger.warning("#{application} could not start, continuing without it.")
     end
+
     :ok
   end
 

@@ -1,0 +1,12 @@
+---
+# Example generic_controller "alive" heartbeat frame. Every OVCS
+# generic controller emits one on 0x7X1 so the VMS can detect that
+# the controller is still responsive. Rename to match the role this
+# controller fills in your vehicle (front_controller, bms_controller,
+# sensor_board, ...) and pick an unused 0x7X1 ID.
+name: example_controller_alive
+id: 0x7E1
+frequency: 100
+allowed_frequency_leeway: 200
+allowed_missing_frames: 10
+signals: import!:@ovcs_can:can/components/ovcs/generic_controller/0x7X1_alive_signals.yml

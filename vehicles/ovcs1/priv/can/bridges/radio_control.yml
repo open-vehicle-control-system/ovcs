@@ -1,0 +1,10 @@
+---
+# CAN topology for the `radio_control` bridge firmware on OVCS1.
+# Emits the 8 ExpressLRS RC channels on the OVCS bus as two frames;
+# the VMS picks these up via its own ovcs network.
+can_networks:
+  ovcs:
+    bitrate: 500000
+    emitted_frames:
+      - import!:@ovcs_can:can/components/ovcs/0x2A0_radio_control_channels0.yml
+      - import!:@ovcs_can:can/components/ovcs/0x2A1_radio_control_channels1.yml

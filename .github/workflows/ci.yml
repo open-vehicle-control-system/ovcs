@@ -1,0 +1,269 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  MIX_ENV: test
+
+jobs:
+  elixir-format:
+    name: Elixir · format check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup-mise
+      - name: Install system deps for Nerves NIFs
+        # Needed for the firmware projects in the loop below: their
+        # transitive deps include nerves_uevent, which has a C NIF.
+        run: sudo apt-get update && sudo apt-get install -y libmnl-dev
+      - name: mix format --check-formatted (all projects)
+        shell: bash
+        run: |
+          set -euo pipefail
+          dirs=(
+            libraries/ovcs_can
+            libraries/ovcs_vehicle
+            libraries/ovcs_bus
+            libraries/ovcs_bridge
+            vms/core vms/api vms/firmware
+            infotainment/core infotainment/api infotainment/firmware
+            bridges/firmware bridges/radio_control_bridge bridges/ros_bridge
+            vehicles/ovcs1 vehicles/ovcs_mini vehicles/obd2
+          )
+          for dir in "${dirs[@]}"; do
+            if [ -f "$dir/.formatter.exs" ]; then
+              echo "→ $dir"
+              # deps.get is required for projects whose .formatter.exs
+              # uses `import_deps:` (Phoenix/Ecto APIs).
+              (cd "$dir" && mix deps.get > /dev/null && mix format --check-formatted)
+            fi
+          done
+
+  elixir-credo:
+    # Each project runs credo against the shared root `.credo.exs`
+    # (credo doesn't auto-walk up to find a config, so --config-file is
+    # explicit). The repo adopts credo from a cold baseline — expect
+    # pre-existing warnings on the first run; triage per project.
+    name: Elixir · credo · ${{ matrix.project }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        project:
+          - libraries/ovcs_can
+          - libraries/ovcs_vehicle
+          - libraries/ovcs_bus
+          - libraries/ovcs_bridge
+          - vms/core
+          - vms/api
+          - vms/firmware
+          - infotainment/core
+          - infotainment/api
+          - infotainment/firmware
+          - bridges/firmware
+          - bridges/radio_control_bridge
+          - bridges/ros_bridge
+          - vehicles/ovcs1
+          - vehicles/ovcs_mini
+          - vehicles/obd2
+    defaults:
+      run:
+        working-directory: ${{ matrix.project }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup-mise
+      - name: Install system deps for Nerves NIFs
+        # Firmware projects and vehicles (transitive firmware deps) both
+        # need libmnl-dev for nerves_uevent's NIF.
+        if: contains(matrix.project, 'firmware') || startsWith(matrix.project, 'vehicles/')
+        run: sudo apt-get update && sudo apt-get install -y libmnl-dev
+      - uses: actions/cache@v5
+        with:
+          path: |
+            ${{ matrix.project }}/deps
+            ${{ matrix.project }}/_build
+          key: credo-${{ matrix.project }}-${{ hashFiles(format('{0}/mix.lock', matrix.project)) }}
+          restore-keys: credo-${{ matrix.project }}-
+      - run: mix deps.get
+      - run: mix credo --config-file ${{ github.workspace }}/.credo.exs
+
+  elixir-test:
+    # `--no-start` keeps cantastic (and vms_core / infotainment_core, which
+    # need a :vehicle config) from being booted as part of the dep graph.
+    # The APIs still boot their Repo explicitly in test_helper.exs so
+    # Ecto.Sandbox works; firmware projects have vehicle-specific config
+    # guarded on Mix.target() != :host / config_env() != :test.
+    name: Elixir · test · ${{ matrix.project }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        project:
+          - libraries/ovcs_can
+          - libraries/ovcs_vehicle
+          - libraries/ovcs_bus
+          - libraries/ovcs_bridge
+          - vms/core
+          - vms/api
+          - vms/firmware
+          - infotainment/core
+          - infotainment/api
+          - infotainment/firmware
+          - bridges/firmware
+          - bridges/radio_control_bridge
+          - bridges/ros_bridge
+    defaults:
+      run:
+        working-directory: ${{ matrix.project }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup-mise
+      - name: Install system deps for Nerves NIFs
+        # Firmware projects and vehicles (transitive firmware deps) both
+        # need libmnl-dev for nerves_uevent's NIF.
+        if: contains(matrix.project, 'firmware') || startsWith(matrix.project, 'vehicles/')
+        run: sudo apt-get update && sudo apt-get install -y libmnl-dev
+      - uses: actions/cache@v5
+        with:
+          path: |
+            ${{ matrix.project }}/deps
+            ${{ matrix.project }}/_build
+          key: test-${{ matrix.project }}-${{ hashFiles(format('{0}/mix.lock', matrix.project)) }}
+          restore-keys: test-${{ matrix.project }}-
+      - run: mix deps.get
+      - run: mix test --no-start
+
+  elixir-compile:
+    # `mix compile --warnings-as-errors` only applies to the current
+    # project, not its path deps — so compiling vehicles here wouldn't
+    # catch warnings in e.g. ros_bridge / radio_control_bridge even
+    # though they're pulled in transitively via bridge_firmware. Each
+    # bridge lib needs its own matrix entry.
+    name: Elixir · host compile · ${{ matrix.project }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        project:
+          - vehicles/ovcs1
+          - vehicles/ovcs_mini
+          - vehicles/obd2
+          - bridges/firmware
+          - bridges/radio_control_bridge
+          - bridges/ros_bridge
+    env:
+      MIX_ENV: dev
+    defaults:
+      run:
+        working-directory: ${{ matrix.project }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup-mise
+      - name: Install system deps for Nerves NIFs
+        # Vehicles / firmware projects transitively depend on
+        # nerves_uevent, whose NIF needs libmnl.
+        if: startsWith(matrix.project, 'vehicles/') || contains(matrix.project, 'firmware')
+        run: sudo apt-get update && sudo apt-get install -y libmnl-dev
+      - uses: actions/cache@v5
+        with:
+          path: |
+            ${{ matrix.project }}/deps
+            ${{ matrix.project }}/_build
+          key: compile-${{ matrix.project }}-${{ hashFiles(format('{0}/mix.lock', matrix.project)) }}
+          restore-keys: compile-${{ matrix.project }}-
+      - run: mix deps.get
+      - run: mix compile --warnings-as-errors
+
+  cli-build:
+    name: CLI · cargo build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cli
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup-mise
+      - name: Install rustfmt + clippy
+        # mise's rust install pulls rustc + cargo via rustup, but not
+        # the rustfmt / clippy components.
+        run: rustup component add rustfmt clippy
+      - uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            cli/target
+          key: cargo-cli-${{ hashFiles('cli/Cargo.lock') }}
+          restore-keys: cargo-cli-
+      - run: cargo fmt --check
+      - run: cargo clippy --release --all-targets -- -D warnings
+      - run: cargo build --release
+      - run: cargo test --release
+      - name: Ensure release binary exists
+        working-directory: ${{ github.workspace }}
+        run: test -x cli/target/release/ovcs && file cli/target/release/ovcs | grep -q 'ELF .* executable'
+
+  vue-dashboard:
+    name: Vue · vms/dashboard
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: vms/dashboard
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup-mise
+      - uses: actions/cache@v5
+        with:
+          path: ~/.npm
+          key: npm-vms-dashboard-${{ hashFiles('vms/dashboard/package-lock.json') }}
+          restore-keys: npm-vms-dashboard-
+      - run: npm ci
+      - run: npm run test:unit
+      - run: npm run build
+
+  flutter-dashboard:
+    name: Flutter · infotainment/dashboard
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infotainment/dashboard
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup-mise
+      - uses: actions/cache@v5
+        with:
+          path: |
+            ~/.pub-cache
+            infotainment/dashboard/.dart_tool
+          key: flutter-${{ hashFiles('infotainment/dashboard/pubspec.lock') }}
+          restore-keys: flutter-
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+
+  platformio-controller:
+    name: PlatformIO · generic_controller
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: controllers/generic_controller
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup-mise
+      - uses: actions/cache@v5
+        with:
+          path: |
+            ~/.platformio
+            controllers/generic_controller/.pio
+          key: pio-${{ hashFiles('controllers/generic_controller/platformio.ini') }}
+          restore-keys: pio-
+      - run: pio test -e local_test
+      - run: pio run -e uno_r4_minima_prod

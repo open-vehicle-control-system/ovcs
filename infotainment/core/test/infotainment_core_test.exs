@@ -1,8 +1,7 @@
 defmodule InfotainmentCoreTest do
-  use ExUnit.Case
-  doctest InfotainmentCore
+  use ExUnit.Case, async: true
 
-  test "greets the world" do
-    assert InfotainmentCore.hello() == :world
+  test "scaffolded placeholder" do
+    assert true
   end
 end

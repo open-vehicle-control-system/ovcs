@@ -2,10 +2,10 @@
 
 ## Design Principles
 
-OVCS hardware is designed around three core principles:
+OVCS hardware is designed around two core principles:
 
-1. **CAN bus isolation** -- Components from different manufacturers may use conflicting CAN message IDs. OVCS isolates each manufacturer's bus and bridges them through the VMS.
-2. **Off-the-shelf components** -- OVCS deliberately uses affordable, widely available hardware (Raspberry Pi, Arduino) to keep the development kit accessible.
+1. **CAN bus isolation** — components from different manufacturers may use conflicting CAN message IDs, so OVCS keeps each manufacturer's bus separate and bridges them through the VMS.
+2. **Off-the-shelf components** — Raspberry Pi and Arduino boards keep the development kit affordable and accessible.
 
 ## Hardware Components
 
@@ -99,29 +99,30 @@ The OVCS CAN bus runs at 1 Mbps to accommodate the higher traffic volume from al
 
 ### CAN Bus Configuration
 
-CAN frame specifications are defined in YAML files under `vms/core/priv/can/`:
+Shared component-level CAN frame and signal specifications live in the [`libraries/ovcs_can`](../libraries/ovcs_can) library. Each vehicle bundles its own topology YAMLs (VMS and infotainment) inside its package under `vehicles/<name>/priv/can/`.
 
 ```
-priv/can/
-+-- vehicles/
-|   +-- ovcs1.yml                    # OVCS1 vehicle CAN topology (which frames on which bus)
-|   +-- ovcs_mini.yml                # OVCS Mini CAN topology
-|   +-- obd2.yml                     # OBD2 mode CAN topology
-|   +-- ovcs1/generic_controller/    # OVCS1-specific controller frame definitions
-|   +-- ovcs_mini/generic_controller/
-+-- components/
-    +-- bosch/i_booster_gen2/        # iBooster frame definitions
-    +-- bosch/lws/                   # Steering angle sensor frames
-    +-- evpt/evpt23/                 # Charger frames
-    +-- nissan/leaf_aze0/            # Leaf inverter and charger frames
-    +-- orion/bms2/                  # Battery management frames
-    +-- ovcs/                        # OVCS internal frames and generic controller templates
-    +-- ovcs/generic_controller/     # Shared signal definitions (alive, digital pins, analog, PWM)
-    +-- volkswagen/polo_9n/          # Polo ABS, dashboard, key, lock, wheels frames
-    +-- obd2/                        # OBD2 diagnostic frames
+libraries/ovcs_can/priv/can/components/
++-- bosch/i_booster_gen2/            # iBooster frame definitions
++-- bosch/lws/                       # Steering angle sensor frames
++-- evpt/evpt23/                     # Charger frames
++-- nissan/leaf_aze0/                # Leaf inverter and charger frames
++-- orion/bms2/                      # Battery management frames
++-- ovcs/                            # OVCS internal frames and generic controller templates
++-- volkswagen/polo_9n/              # Polo ABS, dashboard, key, lock, wheels frames
++-- obd2/                            # OBD2 diagnostic frames
+
+vehicles/<name>/priv/can/
++-- vms.yml                          # full CAN topology read by vms_core
++-- infotainment.yml                 # narrow CAN topology read by infotainment_core (optional)
++-- generic_controller/              # per-vehicle controller frame wirings
 ```
 
-Vehicle YAML files (e.g., `ovcs1.yml`) define the complete CAN topology: which CAN networks exist, their bitrate, and which frames are emitted and received on each network. Frame definitions are imported from the component-level YAML files.
+The two topology YAMLs differ per side (VMS needs every frame; infotainment only subscribes to what the dashboard renders). Both import shared component specs from the library via Cantastic's cross-app syntax:
+
+```yaml
+- import!:@ovcs_can:can/components/ovcs/0x1A0_vms_status.yml
+```
 
 ## Generic Controllers
 

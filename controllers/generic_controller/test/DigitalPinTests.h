@@ -8,6 +8,7 @@ namespace DigitalPinTests{
         Mock<MockBoard> spy(mockBoard);
         When(Method(spy, pinMode)).Return();
         DigitalPin digitalPin = DigitalPin(0, &mockBoard, 0);
+        digitalPin.initializePhysicalPin();
         Verify(Method(spy, pinMode).Using(0, OUTPUT)).Exactly(0);
     }
 
@@ -16,6 +17,7 @@ namespace DigitalPinTests{
         Mock<MockBoard> spy(mockBoard);
         When(Method(spy, pinMode)).Return();
         DigitalPin digitalPin = DigitalPin(1, &mockBoard, 0);
+        digitalPin.initializePhysicalPin();
         Verify(Method(spy, pinMode).Using(0, INPUT)).Exactly(1);
     }
 
@@ -25,6 +27,7 @@ namespace DigitalPinTests{
         When(Method(spy, pinMode)).Return();
         When(Method(spy, digitalWrite)).Return();
         DigitalPin digitalPin = DigitalPin(2, &mockBoard, 0);
+        digitalPin.initializePhysicalPin();
         Verify(Method(spy, pinMode).Using(0, OUTPUT)).Exactly(1);
         Verify(Method(spy, digitalWrite).Using(0, 0)).Exactly(1);
     }
@@ -35,6 +38,7 @@ namespace DigitalPinTests{
         When(Method(spy, pinMode)).Return();
         When(Method(spy, digitalWrite)).Return();
         DigitalPin digitalPin = DigitalPin(3, &mockBoard, 0);
+        digitalPin.initializePhysicalPin();
         Verify(Method(spy, pinMode).Using(0, OUTPUT)).Exactly(1);
         Verify(Method(spy, digitalWrite).Using(0, 0)).Exactly(1);
     }

@@ -26,11 +26,12 @@ defmodule VmsCore.MixProject do
       # {:dep_from_git, git: "https://github.com/elixir-lang/my_dep.git", tag: "0.1.0"}
       {:jason, "~> 1.2"},
       {:cantastic, path: "../../libraries/cantastic"},
+      {:ovcs_can, path: "../../libraries/ovcs_can"},
+      {:ovcs_bus, path: "../../libraries/ovcs_bus"},
       {:crc, "~> 0.10"},
       {:ecto_sql, "~> 3.10"},
       {:ecto_sqlite3, ">= 0.0.0"},
       {:decimal, "~> 2.1.1"},
-      {:phoenix_pubsub, "~> 2.0"},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
     ]
   end

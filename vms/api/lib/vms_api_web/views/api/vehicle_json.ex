@@ -7,10 +7,10 @@ defmodule VmsApiWeb.Api.VehicleJSON do
     }
   end
 
-  def render("vehicle.json",%{vehicle: vehicle}) do
+  def render("vehicle.json", %{vehicle: vehicle}) do
     %{
       type: "vehicle",
-      id:    "vehicle",
+      id: "vehicle",
       attributes: %{
         name: vehicle.name,
         refreshInterval: vehicle.refresh_interval,

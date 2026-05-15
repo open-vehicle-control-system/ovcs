@@ -6,9 +6,9 @@ defmodule InfotainmentCore.Models.TimeSetting do
   use Ecto.Schema
 
   schema "time_settings" do
-    field :timezone, :string, default: "UTC"
-    field :time_format, :string, default: "24h"
-    field :date_format, :string, default: "DD/MM/YYYY"
+    field(:timezone, :string, default: "UTC")
+    field(:time_format, :string, default: "24h")
+    field(:date_format, :string, default: "DD/MM/YYYY")
     timestamps()
   end
 end

@@ -1,0 +1,21 @@
+## Customize flags given to the VM: http://erlang.org/doc/man/erl.html
+
++Bc
++C multi_time_warp
+-mode embedded
+-code_path_choice strict
++sbwt none
++sbwtdcpu none
++sbwtdio none
+-kernel shell_history enabled
+-heart -env HEART_BEAT_TIMEOUT 30
+
+-noshell
+-user elixir
+-run elixir start_cli
+
+-elixir ansi_enabled true
+
+-extra --no-halt
+--
+--dot-iex /etc/iex.exs

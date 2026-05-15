@@ -1,0 +1,20 @@
+{
+  "recommendations": [
+    "jakebecker.elixir-ls",
+    "phoenixframework.phoenix",
+    "vue.volar",
+    "dbaeumer.vscode-eslint",
+    "esbenp.prettier-vscode",
+    "bradlc.vscode-tailwindcss",
+    "dart-code.dart-code",
+    "dart-code.flutter",
+    "platformio.platformio-ide",
+    "ms-vscode.cpptools",
+    "rebornix.ruby",
+    "redhat.vscode-yaml",
+    "tamasfe.even-better-toml",
+    "editorconfig.editorconfig",
+    "eamodio.gitlens",
+    "streetsidesoftware.code-spell-checker"
+  ]
+}

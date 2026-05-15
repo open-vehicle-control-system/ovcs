@@ -10,7 +10,6 @@ import Config
 import_config "../../core/config/config.exs"
 
 config :infotainment_api,
-  ecto_repos: [InfotainmentApi.Repo],
   generators: [timestamp_type: :utc_datetime]
 
 # Configures the endpoint

@@ -88,7 +88,7 @@ class BatteryOverviewBlock extends StatelessWidget {
               children: [
                 _infoRow(Symbols.electric_meter, '${packVoltage}V ${packCurrent}A'),
                 const SizedBox(height: 25),
-                _infoRow(Symbols.thermostat, '${packTemp}\u00B0C'),
+                _infoRow(Symbols.thermostat, '$packTemp\u00B0C'),
                 const SizedBox(height: 25),
                 _infoRow(Symbols.bolt, packIsCharging ? 'Charging' : 'Discharging'),
                 const SizedBox(height: 25),

@@ -25,33 +25,46 @@ defmodule VmsCore.PID do
   end
 
   def iterate(pid, measurement, setpoint) do
-    time                 = System.monotonic_time(:millisecond)
-    previous_time        = pid.previous_time || time
-    elapsed_time_seconds = time |> D.sub(previous_time) |> D.div(1000) |> D.max(pid.minimum_elapsed_time)
+    time = System.monotonic_time(:millisecond)
+    previous_time = pid.previous_time || time
 
-    error          = setpoint |> D.sub(measurement)
-    previous_error = cond do
-      is_nil(pid.previous_error) -> error
-      pid.reset_derivative_when_setpoint_changes && pid.previous_setpoint != setpoint -> error
-      true -> pid.previous_error
-    end
+    elapsed_time_seconds =
+      time |> D.sub(previous_time) |> D.div(1000) |> D.max(pid.minimum_elapsed_time)
+
+    error = setpoint |> D.sub(measurement)
+
+    previous_error =
+      cond do
+        is_nil(pid.previous_error) -> error
+        pid.reset_derivative_when_setpoint_changes && pid.previous_setpoint != setpoint -> error
+        true -> pid.previous_error
+      end
 
     proportional_term = error |> D.mult(pid.kp)
-    integral_term     = error |> D.mult(elapsed_time_seconds) |> D.add(pid.integral_term) |> D.mult(pid.ki)
-    derivative_term   = error |> D.sub(previous_error) |> D.div(elapsed_time_seconds) |> D.mult(pid.kd)
-    output_raw        = proportional_term |> D.add(integral_term) |> D.add(derivative_term)
-    output            = output_raw |> D.max(pid.minimum_output) |> D.min(pid.maximum_output)
-    Logger.debug("E: #{error |> Decimal.round(4)} - P: #{proportional_term |> Decimal.round(4)} - I: #{integral_term |> Decimal.round(4)} - D: #{derivative_term |> Decimal.round(4)} - O: #{output |> Decimal.round(4)}")
 
-    %{pid |
-      previous_error: error,
-      previous_time: time,
-      previous_setpoint: setpoint,
-      previous_measurement: measurement,
-      proportional_term: proportional_term,
-      integral_term: integral_term,
-      derivative_term: derivative_term,
-      output: output
+    integral_term =
+      error |> D.mult(elapsed_time_seconds) |> D.add(pid.integral_term) |> D.mult(pid.ki)
+
+    derivative_term =
+      error |> D.sub(previous_error) |> D.div(elapsed_time_seconds) |> D.mult(pid.kd)
+
+    output_raw = proportional_term |> D.add(integral_term) |> D.add(derivative_term)
+    output = output_raw |> D.max(pid.minimum_output) |> D.min(pid.maximum_output)
+
+    Logger.debug(
+      "E: #{error |> Decimal.round(4)} - P: #{proportional_term |> Decimal.round(4)} - I: #{integral_term |> Decimal.round(4)} - D: #{derivative_term |> Decimal.round(4)} - O: #{output |> Decimal.round(4)}"
+    )
+
+    %{
+      pid
+      | previous_error: error,
+        previous_time: time,
+        previous_setpoint: setpoint,
+        previous_measurement: measurement,
+        proportional_term: proportional_term,
+        integral_term: integral_term,
+        derivative_term: derivative_term,
+        output: output
     }
   end
 end

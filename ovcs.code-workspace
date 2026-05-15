@@ -1,0 +1,74 @@
+{
+  "folders": [
+    { "name": "ovcs", "path": "." }
+  ],
+  "settings": {
+    "files.exclude": {
+      "**/_build": true,
+      "**/deps": true,
+      "**/.elixir_ls": true,
+      "**/node_modules": true,
+      "**/.dart_tool": true,
+      "**/.pio": true
+    },
+    "dart.flutterSdkPath": "/home/loo/.local/share/mise/installs/flutter/3.32.8",
+    "dart.sdkPath": "/home/loo/.local/share/mise/installs/flutter/3.32.8/bin/cache/dart-sdk",
+    "platformio-ide.customPATH": "/home/loo/.local/share/mise/installs/pipx-platformio/6.1.19/bin:/home/loo/.local/share/mise/installs/python/3.12.13/bin",
+    "platformio-ide.useBuiltinPython": false,
+    "elixirLS.envVariables": {
+      "PATH": "/home/loo/.local/share/mise/shims:${env:PATH}"
+    },
+    "terminal.integrated.env.linux": {
+      "PATH": "/home/loo/.local/share/mise/shims:${env:PATH}"
+    },
+    "cSpell.words": [
+      "bradlc",
+      "candump",
+      "canplayer",
+      "cansend",
+      "cantastic",
+      "dbaeumer",
+      "ebin",
+      "esbenp",
+      "EVPT",
+      "evpt",
+      "firmwares",
+      "iBooster",
+      "infotainment",
+      "jakebecker",
+      "libsocketcan",
+      "mavlink",
+      "mise",
+      "nerves",
+      "ovcs",
+      "phoenixframework",
+      "pipx",
+      "rebornix",
+      "socketcan",
+      "socketcand",
+      "tamasfe",
+      "traxxas",
+      "vcan",
+      "volkswagen",
+      "yamerl"
+    ]
+  },
+  "extensions": {
+    "recommendations": [
+      "jakebecker.elixir-ls",
+      "phoenixframework.phoenix",
+      "vue.volar",
+      "dbaeumer.vscode-eslint",
+      "esbenp.prettier-vscode",
+      "bradlc.vscode-tailwindcss",
+      "dart-code.dart-code",
+      "dart-code.flutter",
+      "platformio.platformio-ide",
+      "ms-vscode.cpptools",
+      "rebornix.ruby",
+      "redhat.vscode-yaml",
+      "tamasfe.even-better-toml",
+      "editorconfig.editorconfig"
+    ]
+  }
+}

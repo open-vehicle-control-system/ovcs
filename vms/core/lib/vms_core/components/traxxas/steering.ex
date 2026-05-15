@@ -4,7 +4,7 @@ defmodule VmsCore.Components.Traxxas.Steering do
   """
   use GenServer
   alias Decimal, as: D
-  alias VmsCore.Bus
+  alias OvcsBus, as: Bus
   alias VmsCore.Components.OVCS.GenericController
 
   @loop_period 10
@@ -19,51 +19,76 @@ defmodule VmsCore.Components.Traxxas.Steering do
 
   @impl true
   def init(%{
-    controller: controller,
-    external_pwm_id: external_pwm_id,
-    requested_steering_source: requested_steering_source})
-  do
+        controller: controller,
+        external_pwm_id: external_pwm_id,
+        requested_steering_source: requested_steering_source
+      }) do
     Bus.subscribe("messages")
     {:ok, timer} = :timer.send_interval(@loop_period, :loop)
-    {:ok, %{
-      loop_timer: timer,
-      controller: controller,
-      external_pwm_id: external_pwm_id,
-      requested_steering_source: requested_steering_source,
-      requested_steering: @zero,
-      steering: @zero
-    }}
+
+    {:ok,
+     %{
+       loop_timer: timer,
+       controller: controller,
+       external_pwm_id: external_pwm_id,
+       requested_steering_source: requested_steering_source,
+       requested_steering: @zero,
+       steering: @zero
+     }}
   end
 
   @impl true
   def handle_info(:loop, state) do
-    state = state
+    state =
+      state
       |> steer()
+
     {:noreply, state}
   end
-  def handle_info(%Bus.Message{name: :requested_steering, value: requested_steering, source: source}, state) when source == state.requested_steering_source do
+
+  def handle_info(
+        %Bus.Message{name: :requested_steering, value: requested_steering, source: source},
+        state
+      )
+      when source == state.requested_steering_source do
     {:noreply, %{state | requested_steering: requested_steering}}
   end
-  def handle_info(%Bus.Message{}, state) do # TODO, replace Bus ?
+
+  def handle_info(%Bus.Message{}, state) do
     {:noreply, state}
   end
 
   defp steer(state) do
-    case D.eq?(state.steering, state.requested_steering)  do
-      true -> state
+    case D.eq?(state.steering, state.requested_steering) do
+      true ->
+        state
+
       false ->
-        duty_cycle_percentage = state.requested_steering |> D.mult(@duty_cycle_percentage_range) |> D.add(@center_duty_cycle_percentage)
-        :ok = GenericController.set_external_pwm(state.controller, state.external_pwm_id, true, duty_cycle_percentage, @pwm_frequency)
+        duty_cycle_percentage =
+          state.requested_steering
+          |> D.mult(@duty_cycle_percentage_range)
+          |> D.add(@center_duty_cycle_percentage)
+
+        :ok =
+          GenericController.set_external_pwm(
+            state.controller,
+            state.external_pwm_id,
+            true,
+            duty_cycle_percentage,
+            @pwm_frequency
+          )
+
         %{state | steering: state.requested_steering}
     end
   end
 
-  #TODO remove
+  # TODO remove
   @impl true
-  def handle_call({:test_request_steering, value},  _from, state) do
+  def handle_call({:test_request_steering, value}, _from, state) do
     {:reply, :ok, %{state | requested_steering: value}}
   end
-  #TODO remove
+
+  # TODO remove
   def test_request_steering(value) do
     GenServer.call(__MODULE__, {:test_request_steering, value})
   end

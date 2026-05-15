@@ -1,23 +1,21 @@
 import Config
 
+vehicle_name =
+  System.get_env("VEHICLE") || raise "VEHICLE env var is required for firmware builds"
+
+vehicle_dir = Macro.underscore(vehicle_name)
+vehicle_host = "#{vehicle_dir |> String.replace("_", "-")}-vms"
+
+# Per-vehicle environment overrides (SSH keys, Wi-Fi creds, Phoenix
+# secrets). Lives at `vehicles/<vehicle_dir>/.env.exs` so the same
+# values are picked up by every firmware (vms, infotainment, bridges)
+# of one vehicle. Gitignored.
 if config_env() in [:dev, :test, :prod] do
-  for path <- [".env.exs", ".env.#{config_env()}.exs"] do
-    path = Path.join(__DIR__, "..") |> Path.join("config") |> Path.join(path) |> Path.expand()
-    if File.exists?(path), do: import_config(path)
+  for filename <- [".env.exs", ".env.#{config_env()}.exs"] do
+    abs = Path.expand("../../../vehicles/#{vehicle_dir}/#{filename}", __DIR__)
+    if File.exists?(abs), do: import_config(abs)
   end
 end
-
-vehicle      = (System.get_env("VEHICLE") || "OVCS1")
-vehicle_path = Macro.underscore(vehicle)
-vehicle_host = "#{vehicle_path |> String.replace("_", "-")}-vms"
-
-default_can_mapping = case vehicle do
-  "OVCS1" -> "ovcs:spi0.0,leaf_drive:spi0.1,polo_drive:spi1.0,orion_bms:spi1.1,misc:spi1.2"
-  "OVCSMini" -> "ovcs:spi0.0"
-  "OBD2" -> "obd2:spi0.0"
-end
-
-config :vms_core, :vehicle, vehicle
 
 # Use Ringlogger as the logger backend and remove :console.
 # See https://hexdocs.pm/ring_logger/readme.html for more information on
@@ -31,102 +29,97 @@ config :logger, backends: [RingLogger]
 
 config :shoehorn, init: [:nerves_runtime, :nerves_pack]
 
-# Erlinit can be configured without a rootfs_overlay. See
-# https://github.com/nerves-project/erlinit/ for more information on
-# configuring erlinit.
-
 # Advance the system clock on devices without real-time clocks.
-config :nerves, :erlinit, update_clock: true
+# `ctty: "ttyS0"` mirrors BEAM/IEx onto the UART so boot crashes are
+# visible on a serial console (kept on tty1 by default for HDMI users).
+# `mount: "/dev/mmcblk0p3:/data:..."` overrides where the OVCS Nerves
+# system mounts the writable application partition. The system's own
+# `etc/erlinit.config` mounts it at `/root`, but the rest of the
+# codebase (and every upstream Nerves library — NervesSSH, nerves_time,
+# etc.) assumes the standard `/data` convention. We prepend a `/data`
+# mount so erlinit mounts it there first; the system's `/root` mount
+# line still gets emitted but fails harmlessly (device already mounted)
+# and erlinit logs and continues. Once `ovcs_base_can_system_rpi4`'s
+# erlinit.config is updated upstream, this override can come out.
+config :nerves, :erlinit,
+  update_clock: true,
+  hostname_pattern: vehicle_host,
+  ctty: "ttyS0",
+  mount: "/dev/mmcblk0p3:/data:f2fs:nodev:"
 
-# Configure the device for SSH IEx prompt access and firmware updates
-#
-# * See https://hexdocs.pm/nerves_ssh/readme.html for general SSH configuration
-# * See https://hexdocs.pm/ssh_subsystem_fwup/readme.html for firmware updates
 config :nerves_ssh,
-  authorized_keys: System.get_env("AUTHORIZED_SSH_KEYS") |> String.split(",")
+  authorized_keys: (System.get_env("AUTHORIZED_SSH_KEYS") || "") |> String.split(",", trim: true),
+  # NervesSSH 1.3.0's hand-rolled ed25519 host key generation returns a
+  # `{:ed_pri, :ed25519, pub, priv}` tuple (per a comment in its source
+  # about an older Erlang limitation). OTP 27's :ssh expects ed25519
+  # keys as `:ECPrivateKey` records and rejects the older tuple with
+  # "No host key available". The on-disk PEM file NervesSSH writes is
+  # actually fine — `:ssh_file.host_key/2` parses it correctly. So we
+  # bypass NervesSSH's `key_cb` for `:ssh.daemon` and let OTP's default
+  # `:ssh_file` callback read the host key + authorized_keys from disk
+  # (NervesSSH writes both to system_dir / user_dir respectively).
+  daemon_option_overrides: [key_cb: :ssh_file]
 
+# `WIFI_NETWORKS` is set in each vehicle's `.env.exs` as an Elixir
+# list literal of `{ssid, psk}` tuples. We parse it with the built-in
+# `Code.eval_string/1` rather than going through Jason or a helper in
+# `OvcsVehicle.Firmware`: deps aren't compiled yet when Mix evaluates
+# this file (e.g. during `mix deps.get`).
+wifi_networks =
+  case System.get_env("WIFI_NETWORKS") do
+    blank when blank in [nil, ""] ->
+      []
 
-  # Configure the network using vintage_net
-  #
-  # Update regulatory_domain to your 2-letter country code E.g., "US"
-  #
-  # See https://github.com/nerves-networking/vintage_net for more information
-  config :vintage_net,
-    regulatory_domain: "00",
-    config: [
+    src ->
+      {parsed, _} = Code.eval_string(src)
+
+      Enum.map(parsed, fn {ssid, psk} ->
+        %{key_mgmt: :wpa_psk, ssid: ssid, psk: psk}
+      end)
+  end
+
+wlan0_config =
+  case wifi_networks do
+    [] ->
+      []
+
+    networks ->
+      [
+        {"wlan0",
+         %{
+           type: VintageNetWiFi,
+           vintage_net_wifi: %{networks: networks},
+           ipv4: %{method: :dhcp}
+         }}
+      ]
+  end
+
+config :vintage_net,
+  regulatory_domain: "00",
+  config:
+    [
       {"usb0", %{type: VintageNetDirect}},
       {"eth0",
        %{
          type: VintageNetEthernet,
          ipv4: %{method: :dhcp}
-       }},
-      # {"wlan0",
-      #   %{
-      #     type: VintageNetWiFi,
-      #     vintage_net_wifi: %{
-      #       networks: [
-      #         %{
-      #           key_mgmt: :wpa_psk,
-      #           ssid: System.get_env("WIFI_SSID"),
-      #           psk: System.get_env("WIFI_PSK")
-      #         }
-      #       ]
-      #     },
-      #     ipv4: %{method: :dhcp}
-      #   }
-      # }
-    ]
+       }}
+    ] ++ wlan0_config
 
 config :mdns_lite,
-  # The `hosts` key specifies what hostnames mdns_lite advertises.  `:hostname`
-  # advertises the device's hostname.local. For the official Nerves systems, this
-  # is "nerves-<4 digit serial#>.local".  The `"nerves"` host causes mdns_lite
-  # to advertise "nerves.local" for convenience. If more than one Nerves device
-  # is on the network, it is recommended to delete "nerves" from the list
-  # because otherwise any of the devices may respond to nerves.local leading to
-  # unpredictable behavior.
-
   hosts: [:hostname, vehicle_host],
   ttl: 120,
-
-  # Advertise the following services over mDNS.
   services: [
-    %{
-      protocol: "ssh",
-      transport: "tcp",
-      port: 22
-    },
-    %{
-      protocol: "sftp-ssh",
-      transport: "tcp",
-      port: 22
-    },
-    %{
-      protocol: "epmd",
-      transport: "tcp",
-      port: 4369
-    }
+    %{protocol: "ssh", transport: "tcp", port: 22},
+    %{protocol: "sftp-ssh", transport: "tcp", port: 22},
+    %{protocol: "epmd", transport: "tcp", port: 4369}
   ]
 
-# Import target specific config. This must remain at the bottom
-# of this file so it overrides the configuration defined above.
-# Uncomment to use target specific configurations
-
-# import_config "#{Mix.target()}.exs"
-
+# Phoenix endpoint — firmware host (mDNS-based).
 config :vms_api,
   namespace: VmsApi,
-  ecto_repos: [VmsApi.Repo],
   generators: [timestamp_type: :utc_datetime]
 
-# Configure your database
-config :vms_api, VmsApi.Repo,
-  database: "/data/vms_core.db",
-  pool_size: 5,
-  stacktrace: true,
-  show_sensitive_data_on_connection_error: true
-
-# Configures the endpoint
 config :vms_api, VmsApiWeb.Endpoint,
   url: [host: vehicle_host],
   http: [port: 4000],
@@ -142,12 +135,10 @@ config :vms_api, VmsApiWeb.Endpoint,
   live_view: [signing_salt: System.get_env("SIGNING_SALT")],
   code_reloader: false
 
-# Configures Elixir's Logger
 config :logger, :console,
   format: "$time $metadata[$level] $message\n",
   metadata: [:request_id]
 
-# Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, Jason
 
 config :vms_core,
@@ -161,18 +152,4 @@ config :vms_core, VmsCore.Repo,
   stacktrace: true,
   show_sensitive_data_on_connection_error: true
 
-config :cantastic,
-  can_network_mappings: {
-    VmsFirmware.Util.NetworkMapper,
-    :can_network_mappings,
-    [(System.get_env("CAN_NETWORK_MAPPINGS") || default_can_mapping)]
-  },
-  setup_can_interfaces: true,
-  otp_app: :vms_core,
-  priv_can_config_path: "can/vehicles/#{vehicle_path}.yml",
-  enable_socketcand: true,
-  socketcand_ip_interface: "eth0"
-
 config :vms_core, :socketcand_only, System.get_env("SOCKETCAND_ONLY") == "true"
-
-config :nerves, :erlinit, hostname_pattern: vehicle_host

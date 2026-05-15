@@ -6,47 +6,74 @@ defmodule VmsApiWeb.MetricsChannel do
 
   @impl true
   def join("metrics", payload, socket) do
-    socket = socket
+    socket =
+      socket
       |> assign(:timer_interval, payload["interval"])
       |> assign(:timer, nil)
       |> assign(:metrics, %{})
-    {:ok,socket}
+
+    {:ok, socket}
   end
 
-  def handle_in("subscribe", %{"module" => module, "key" => key}, %Phoenix.Socket{assigns: assigns} = socket) do
-    module = module |> String.to_existing_atom
-    key   = key |> String.to_existing_atom
-    assigns = case assigns.metrics[module] do
-      nil -> assigns |> put_in([:metrics, module], %{})
-      _ -> assigns
-    end
+  def handle_in(
+        "subscribe",
+        %{"module" => module, "key" => key},
+        %Phoenix.Socket{assigns: assigns} = socket
+      ) do
+    module = module |> String.to_existing_atom()
+    key = key |> String.to_existing_atom()
+
+    assigns =
+      case assigns.metrics[module] do
+        nil -> assigns |> put_in([:metrics, module], %{})
+        _ -> assigns
+      end
+
     assigns = assigns |> put_in([:metrics, module, key], true)
-    assigns = case assigns.timer do
-      nil ->
-        {:ok, timer} = :timer.send_interval(assigns.timer_interval, :push_metrics)
-        %{assigns | timer: timer}
-      _ -> assigns
-    end
+
+    assigns =
+      case assigns.timer do
+        nil ->
+          {:ok, timer} = :timer.send_interval(assigns.timer_interval, :push_metrics)
+          %{assigns | timer: timer}
+
+        _ ->
+          assigns
+      end
+
     {:noreply, %{socket | assigns: assigns}}
   end
 
   @impl true
-  def handle_in("unsubscribe", %{"module" => module, "key" => key}, %Phoenix.Socket{assigns: assigns} = socket) do
-    module                 = module |> String.to_existing_atom
-    key                    = key |> String.to_existing_atom
+  def handle_in(
+        "unsubscribe",
+        %{"module" => module, "key" => key},
+        %Phoenix.Socket{assigns: assigns} = socket
+      ) do
+    module = module |> String.to_existing_atom()
+    key = key |> String.to_existing_atom()
     {_metric_key, assigns} = assigns |> pop_in([:metrics, module, key])
-    assigns = case assigns.metrics[module] == %{} do
-      true ->
-        {_module_name, assigns} = assigns |> pop_in([:metrics, module])
-        assigns
-      false -> assigns
-    end
-    assigns = cond do
-      assigns.metrics == %{} && !is_nil(assigns.timer) ->
-        {:ok, _} = :timer.cancel(assigns.timer)
-        %{assigns | timer: nil}
-      true -> assigns
-    end
+
+    assigns =
+      case assigns.metrics[module] == %{} do
+        true ->
+          {_module_name, assigns} = assigns |> pop_in([:metrics, module])
+          assigns
+
+        false ->
+          assigns
+      end
+
+    assigns =
+      cond do
+        assigns.metrics == %{} && !is_nil(assigns.timer) ->
+          {:ok, _} = :timer.cancel(assigns.timer)
+          %{assigns | timer: nil}
+
+        true ->
+          assigns
+      end
+
     {:noreply, %{socket | assigns: assigns}}
   end
 
@@ -60,6 +87,7 @@ defmodule VmsApiWeb.MetricsChannel do
 
   @impl true
   def terminate(_, %Phoenix.Socket{assigns: %{timer: nil}}), do: nil
+
   def terminate(_, %Phoenix.Socket{assigns: %{timer: timer}}) do
     {:ok, _} = :timer.cancel(timer)
   end
