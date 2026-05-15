@@ -7,7 +7,7 @@ namespace AdoptionButtonTests{
         When(Method(ArduinoFake(), digitalRead)).AlwaysReturn(1);
         AdoptionButton button = AdoptionButton();
         bool result = button.isWaitingAdoption();
-        Verify(Method(ArduinoFake(), pinMode).Using(2, INPUT)).Exactly(1);
+        Verify(Method(ArduinoFake(), pinMode).Using(2, INPUT_PULLDOWN)).Exactly(1);
         Verify(Method(ArduinoFake(), digitalRead).Using(2)).Exactly(1);
         TEST_ASSERT_TRUE(result);
     }
@@ -17,7 +17,7 @@ namespace AdoptionButtonTests{
         When(Method(ArduinoFake(), digitalRead)).AlwaysReturn(0);
         AdoptionButton button = AdoptionButton();
         bool result = button.isWaitingAdoption();
-        Verify(Method(ArduinoFake(), pinMode).Using(2, INPUT)).Exactly(1);
+        Verify(Method(ArduinoFake(), pinMode).Using(2, INPUT_PULLDOWN)).Exactly(1);
         Verify(Method(ArduinoFake(), digitalRead).Using(2)).Exactly(1);
         TEST_ASSERT_FALSE(result);
     }
