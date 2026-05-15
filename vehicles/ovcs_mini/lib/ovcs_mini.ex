@@ -5,6 +5,7 @@ defmodule OvcsMini do
   OVCS Mini has no infotainment side.
   """
   @behaviour OvcsVehicle
+  @behaviour RadioControlBridge
   @behaviour RosBridge
 
   @impl OvcsVehicle
@@ -32,8 +33,17 @@ defmodule OvcsMini do
     }
   end
 
+  @impl RadioControlBridge
+  def radio_control_bridge_config(:host),
+    do: %RadioControlBridge.Config{uart_port: "ttyUSB0", uart_baud_rate: 460_800}
+
+  def radio_control_bridge_config(:target),
+    do: %RadioControlBridge.Config{uart_port: "ttySC0", uart_baud_rate: 460_800}
+
   @impl RosBridge
-  def ros_bridge_config do
-    %RosBridge.Config{zenoh_endpoint_ip: "10.0.2.177"}
-  end
+  def ros_bridge_config(:host),
+    do: %RosBridge.Config{zenoh_endpoint_ip: "127.0.0.1"}
+
+  def ros_bridge_config(:target),
+    do: %RosBridge.Config{zenoh_endpoint_ip: "10.0.2.177"}
 end
