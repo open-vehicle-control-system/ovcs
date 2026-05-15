@@ -98,7 +98,14 @@ sides
 }
 
 pub fn host_for(vehicle_dir: &str, side: &str) -> String {
-    format!("{}-{}.local", vehicle_dir.replace('_', "-"), side)
+    // Both halves must use dashes — the device's `:mdns_lite` advertises
+    // its hostname after replacing underscores in the vehicle dir AND in
+    // the bridge id (see bridges/firmware/config/config.exs).
+    format!(
+        "{}-{}.local",
+        vehicle_dir.replace('_', "-"),
+        side.replace('_', "-")
+    )
 }
 
 pub fn has_infotainment(vehicle: &Vehicle) -> Result<bool> {
