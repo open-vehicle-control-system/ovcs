@@ -11,8 +11,8 @@ end
 
 defmodule RosBridge do
   @moduledoc """
-  Bridge library that ferries ROS2 messages (via Zenoh/MQTT) to the
-  OVCS CAN bus and back. Hosted by the shared `bridges/firmware`
+  Bridge library that ferries ROS 2 messages (via native Zenoh) to
+  the OVCS CAN bus and back. Hosted by the shared `bridges/firmware`
   Nerves image; vehicles opt in via their `bridge_firmwares/0` map.
 
   Vehicles that bundle this bridge implement `c:ros_bridge_config/0` to
@@ -43,32 +43,46 @@ defmodule RosBridge do
   # `children/0` clauses, exactly one of which is in the firmware.
   if Mix.target() == :host do
     @impl OvcsBridge
-    # Host: just the native Zenoh client so `./ovcs run` can drive the
-    # ROS publisher path against a local Zenoh router (default endpoint
-    # 127.0.0.1, override via `ZENOH_ENDPOINT_IP`). No I2C-backed IMU,
-    # no MQTT dispatcher.
+    # Host: native Zenoh client + heartbeat + joy → CAN translator so
+    # `./ovcs run` can drive both the ROS publisher and the joy-control
+    # path against a local Zenoh router (default endpoint 127.0.0.1,
+    # override via `ZENOH_ENDPOINT_IP`). No I2C-backed IMU.
     def children do
-      cfg = vehicle().ros_bridge_config(:host)
-      [{RosBridge.ZenohClient, endpoint_ip: cfg.zenoh_endpoint_ip}]
+      config = vehicle().ros_bridge_config(:host)
+
+      [
+        {RosBridge.ZenohClient, endpoint_ip: config.zenoh_endpoint_ip},
+        heartbeat_child(),
+        {RosBridge.JoyInterpreter, []}
+      ]
     end
   else
     @impl OvcsBridge
-    # Target: full bridge. ZenohMQTTRos2.Dispatcher + JoyInterpreter
-    # are disabled while the native Zenohex path is being validated;
-    # JoyInterpreter subscribes via the MQTT dispatcher so it can't
-    # run without it. Port it to RosBridge.ZenohClient before
-    # re-enabling.
+    # Target: full bridge — Zenoh client, heartbeat, joy → CAN
+    # translator, BNO085 IMU.
     def children do
-      cfg = vehicle().ros_bridge_config(:target)
+      config = vehicle().ros_bridge_config(:target)
 
       [
-        {RosBridge.ZenohClient, endpoint_ip: cfg.zenoh_endpoint_ip},
+        {RosBridge.ZenohClient, endpoint_ip: config.zenoh_endpoint_ip},
+        heartbeat_child(),
+        {RosBridge.JoyInterpreter, []},
         {BNO085.I2C, []},
-        # {ZenohMQTTRos2.Dispatcher, endpoint_ip: cfg.zenoh_endpoint_ip},
-        # {RosBridge.JoyInterpreter, []},
         {RosBridge.ImuPublisher, [bno085_module: BNO085.I2C]}
       ]
     end
+  end
+
+  defp heartbeat_child do
+    {RosBridge.Heartbeat,
+     topic: "ovcs_heartbeat",
+     message_module: Ros2.StdMsgs.Msg.String,
+     interval_ms: 1_000,
+     build: fn counter ->
+       %Ros2.StdMsgs.Msg.String{
+         data: "heartbeat #{counter} @ #{System.system_time(:millisecond)}"
+       }
+     end}
   end
 
   # The vehicle module is stamped into Application env by

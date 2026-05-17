@@ -9,16 +9,16 @@ Hosted by `bridges/firmware`; vehicles opt in via `bridge_firmwares/0`.
 ```
 lib/
   ros_bridge.ex              # OvcsBridge behaviour + child list (host / target)
-  zenoh_client.ex            # GenServer: native Zenoh publisher + rmw_zenoh liveliness
-  imu_publisher.ex           # BNO085 → CAN
-  joy_interpreter.ex         # MQTT-plugin-era subscriber (DISABLED — not in supervision tree)
-  zenoh_mqtt_ros2/             # Legacy Zenoh MQTT-plugin path (DISABLED, kept for fallback)
-    dispatcher.ex            # MQTT-plugin path (DISABLED — kept for fallback)
-    ros2/                    # ROS 2 message codecs (CDR encode + parse)
-      common.ex              # Shared encoder/parser primitives (encode_string, …)
-      rmw_zenoh.ex           # rmw_zenoh wire-format helpers (keyexpr, payload, attachment, liveliness)
-      std_msgs/msg/string.ex # std_msgs/String + DDS type name + RIHS01 type hash
-      sensor_msgs/, geometry_msgs/, builtin_interfaces/, std_msgs/msg/header.ex
+  zenoh_client.ex            # GenServer: Zenoh session + publish/subscribe API + rmw_zenoh liveliness
+  ros_bridge/
+    heartbeat.ex             # Periodic publisher (std_msgs/String on /ovcs_heartbeat) via ZenohClient.publish/4
+    imu_publisher.ex         # BNO085 → CAN
+    joy_interpreter.ex       # ROS 2 /joy → Cantastic emitter (steering, throttle)
+  ros2/                      # ROS 2 message codecs (CDR encode + parse)
+    common.ex                # Shared encoder/parser primitives (encode_string, …)
+    rmw_zenoh.ex             # rmw_zenoh wire-format helpers (key_expr, payload, attachment, liveliness)
+    std_msgs/msg/string.ex   # std_msgs/String + DDS type name + RIHS01 type hash
+    sensor_msgs/, geometry_msgs/, builtin_interfaces/, std_msgs/msg/header.ex
 ```
 
 ## Native rmw_zenoh wire format
@@ -65,49 +65,65 @@ undeclared and the topic disappears from `ros2 topic list`.
 
 ## `RosBridge.ZenohClient`
 
-Connects to the configured Zenoh router (`tcp/<endpoint_ip>:7447` in
-client mode), declares one publisher + matching liveliness token, and
-publishes a heartbeat `std_msgs/String` every 5 s. Bounded-backoff
-reconnect (1 s → 30 s).
+A thin wrapper around a single `zenohex` session. Holds the TCP
+peering with the configured Zenoh router (`tcp/<endpoint_ip>:7447`
+in client mode), handles bounded-backoff reconnect (1 s → 30 s),
+and exposes a small API for the rest of the bridge:
 
-Default opts (overridable at `child_spec` time):
+| Function | Purpose |
+|---|---|
+| `publish(topic, message_module, message, opts \\ [])` | Cast a CDR-encoded sample. First call for a topic lazily declares the underlying Zenoh publisher + its rmw_zenoh liveliness token; subsequent calls reuse them. Publisher GID + sequence number are stable across reconnects. |
+| `subscribe(topic, message_module, pid \\ self(), opts \\ [])` | Register `pid` for `{:ros_message, {key_expr, parsed}}` deliveries. The pid is monitored — when it dies its registration is cleaned up and, if no consumers remain, the Zenoh subscriber is undeclared. |
+| `unsubscribe(topic, pid \\ self())` | Symmetric. |
 
-| Option         | Default                       |
-|----------------|-------------------------------|
-| `:topic`       | `"ovcs_heartbeat"`            |
-| `:msg_module`  | `Ros2.StdMsgs.Msg.String`     |
-| `:domain_id`   | `0`                           |
-| `:node_name`   | `"ovcs_bridge"`               |
-| `:interval_ms` | `5_000`                       |
+Init opts: `:endpoint_ip` (required), `:node_name` (default
+`"ovcs_bridge"`), `:domain_id` (default `0`). Per-topic settings
+(message module, interval, etc.) live on the *caller* — see
+`RosBridge.Heartbeat` for the smallest example.
 
 Endpoint comes from the vehicle's `RosBridge.Config.zenoh_endpoint_ip`
 — set per-vehicle in `vehicles/<v>/lib/<v>.ex`. Override at
 deployment time with `ZENOH_ENDPOINT_IP` (read at firmware build via
-`bridges/firmware/config/target.exs`, baked into Application env, then
-read at runtime by the vehicle's `ros_bridge_config(:target)`).
+`bridges/firmware/config/target.exs`, baked into Application env,
+then read at runtime by the vehicle's `ros_bridge_config(:target)`).
+
+## `RosBridge.Heartbeat`
+
+Periodic publisher built on top of `ZenohClient.publish/4`. Default
+configuration in `RosBridge.children/0` ticks a `std_msgs/String`
+onto `/ovcs_heartbeat` every 1 s so consumers can see the bridge is
+alive; the same module works for any other periodic publish (just
+pass a different `:message_module` + `:build` function in a child
+spec).
 
 ## Adding a new ROS message type
 
-1. Drop the codec under `lib/zenoh_mqtt_ros2/ros2/<pkg>/msg/<name>.ex`.
-2. Add three things alongside any existing `parse/1`:
+1. Drop the codec under `lib/ros2/<pkg>/msg/<name>.ex`.
+2. For **publishing** add three things alongside any existing
+   `parse/1`:
    - `def dds_type, do: "<pkg>::msg::dds_::<Name>_"`
    - `def type_hash, do: "RIHS01_<64-hex>"` — copy from
      `ros2 topic info -v` of any live publisher of this type.
    - `def encode(%__MODULE__{...})` returning the CDR-encoded body
      (no encapsulation header — that's added by
      `Ros2.RmwZenoh.encode_payload/1`).
-3. Use it: `RmwZenoh.key_expr/3` and `RmwZenoh.encode_payload/1` work
-   uniformly across types.
+3. For **subscribing** only `parse/1` is needed — the rmw_zenoh
+   keyexpr is matched on the `<domain>/<topic>/**` wildcard, so the
+   message's DDS type name and hash don't have to be hard-coded.
+4. Use it: `RmwZenoh.key_expr/3` and `RmwZenoh.encode_payload/1` work
+   uniformly across types for the publisher side;
+   `RosBridge.ZenohClient.subscribe/2` covers the subscriber side.
 
 The hand-rolled CDR encoders/parsers in `Ros2.Common` are growing
 ad-hoc; consolidate when you need the third or fourth message type.
 
 ## Host vs. target
 
-`Mix.target() == :host` runs only `RosBridge.ZenohClient` (no I2C-backed
-IMU, no MQTT dispatcher) so `./ovcs run` can drive the ROS publisher
-path against a local `zenohd` (see `ros2/docker-compose.yml`). On
-target the full stack runs.
+`Mix.target() == :host` runs `RosBridge.ZenohClient` and
+`RosBridge.JoyInterpreter` (no I2C-backed IMU) so `./ovcs run` can
+drive both the ROS publisher path and the joy → CAN path against a
+local `zenohd` (see `ros2/docker-compose.yml`). On target the full
+stack runs.
 
 ## Verifying end-to-end
 

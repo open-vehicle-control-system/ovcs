@@ -271,6 +271,12 @@ fn find_local_beams(vehicle_dir: &str) -> Vec<(String, String)> {
 /// case on reconnect — the supervisor spots the new registration
 /// eagerly). Retry for up to ~60s so logs start flowing as soon as the
 /// remote is ready, and keep the process alive forever once attached.
+/// Printed by the log snippet once `RingLogger.attach/0` has succeeded.
+/// The log reader drops every line it sees until this marker arrives,
+/// hiding the Nerves/IEx banner, the echoed snippet input, and the
+/// prompt that follows it.
+const LOG_READY_MARKER: &str = "OVCS_LOG_READY";
+
 const LOG_INIT_SNIPPET: &str = r#"Enum.reduce_while(1..120, :retry, fn _, _ ->
   try do
     case RingLogger.attach() do
@@ -289,6 +295,7 @@ const LOG_INIT_SNIPPET: &str = r#"Enum.reduce_while(1..120, :retry, fn _, _ ->
       {:cont, :retry}
   end
 end)
+IO.puts("OVCS_LOG_READY")
 Process.sleep(:infinity)
 "#;
 
@@ -306,25 +313,14 @@ Process.sleep(:infinity)
 /// - `OVCS_CAN\t<network>\t<frame>\t<key=val key=val …>`
 ///
 /// The Rust side splits on `\t` and dispatches to the bus / can pane.
-const MONITOR_SNIPPET: &str = r##"# Mirror every diagnostic / CAN / bus line to a per-node file so the
-# user can `cat /tmp/ovcs_attach_<node>.log` from another terminal
-# (selecting text from a ratatui pane is fiddly at best).
-:persistent_term.put(
-  :ovcs_attach_log,
-  "/tmp/ovcs_attach_#{node() |> Atom.to_string() |> String.replace(~r/[^a-zA-Z0-9_\-]/, "_")}.log"
-)
-File.write!(:persistent_term.get(:ovcs_attach_log), "", [])
-
-defmodule OvcsAttachDiag do
-  def log(line) do
-    IO.puts(line)
-    File.write!(:persistent_term.get(:ovcs_attach_log), line <> "\n", [:append])
-  end
-
-  def path, do: :persistent_term.get(:ovcs_attach_log)
+const MONITOR_SNIPPET: &str = r##"defmodule OvcsAttachDiag do
+  # On a Pi with a busy CAN bus a sync `File.write!` per message
+  # serialises the bus/can loops and the SSH pane lags seconds behind
+  # real time. Stick to `IO.puts` and rely on the TUI panes only.
+  def log(line), do: IO.puts(line)
 end
 
-OvcsAttachDiag.log("OVCS_CAN\t[mon]\talive\tnode=#{inspect(node())} log=#{OvcsAttachDiag.path()}")
+OvcsAttachDiag.log("OVCS_CAN\t[mon]\talive\tnode=#{inspect(node())}")
 
 Enum.reduce_while(1..120, :retry, fn _, _ ->
   if Code.ensure_loaded?(OvcsBus.Message) and Code.ensure_loaded?(Cantastic.Frame) do
@@ -356,7 +352,11 @@ defmodule OvcsAttachMonitor do
   def start do
     build_spec_cache()
 
-    if vms?() do
+    OvcsAttachDiag.log(
+      "OVCS_BUS\t[mon]\tnode\tself=#{inspect(node())} vms?=#{vms?()} peers=#{inspect(Node.list())} bus?=#{bus_running?()}"
+    )
+
+    if subscribe_locally?() do
       spawn(&bus_loop/0)
     end
 
@@ -371,6 +371,17 @@ defmodule OvcsAttachMonitor do
   end
 
   defp vms?, do: String.contains?(Atom.to_string(node()), "-vms")
+
+  defp bus_running?, do: Process.whereis(OvcsBus) != nil
+
+  # Subscribe locally when OvcsBus is alive AND either we're VMS (the
+  # canonical sink in a clustered host-dev setup, avoids duplicates
+  # from `OvcsBus.Cluster` fan-out) or distribution isn't started at
+  # all (deployed Nerves devices today — each BEAM is isolated, so we
+  # need a subscriber on every one to surface its local broadcasts).
+  defp subscribe_locally? do
+    bus_running?() and (vms?() or node() == :nonode@nohost)
+  end
 
   defp interfaces do
     try do
@@ -565,6 +576,50 @@ end
 OvcsAttachMonitor.start()
 Process.sleep(:infinity)
 "##;
+
+/// Wrap a multi-line Elixir snippet so it reaches the remote IEx as a
+/// series of short input lines, each well under the cooked-mode PTY
+/// line-discipline cap (`MAX_CANON` = 4096 on Linux).
+///
+/// Two constraints meet here:
+/// - IEx echoes every input line back with a prompt prefix, so we want
+///   as few input lines as possible — that pushed us to base64 the
+///   whole snippet into a single `Code.eval_string(...)` call.
+/// - For deployed attach we run over an SSH PTY in canonical mode, and
+///   a single 10 KB line is silently truncated mid-base64; the eval
+///   fails to parse and the bus/can monitor never starts. Local attach
+///   uses pipes (no line discipline) so it didn't surface there.
+///
+/// Compromise: stream the base64 payload into `/tmp/ovcs_attach.exs`
+/// in ~1 KB chunks via `File.write!`, then `Code.require_file/1` it.
+/// Each input line stays small. The monitor channel's reader only
+/// forwards `OVCS_BUS\t…` / `OVCS_CAN\t…` lines, so the echoed
+/// `File.write!` calls are dropped naturally. The log channel relies
+/// on the `OVCS_LOG_READY` gate, which still works.
+const CHUNK_BYTES: usize = 1024;
+
+fn wrap_snippet(snippet: &str, channel: &str) -> String {
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    let encoded = STANDARD.encode(snippet.as_bytes());
+    // Per-channel path so log + monitor chunked writes never interleave
+    // on the same remote BEAM.
+    let path = format!("/tmp/ovcs_attach_{}.exs", channel);
+    let mut out = String::with_capacity(encoded.len() + 256);
+    out.push_str(&format!("File.write!(\"{}\", \"\")\n", path));
+    for chunk in encoded.as_bytes().chunks(CHUNK_BYTES) {
+        let chunk_str = std::str::from_utf8(chunk).expect("base64 alphabet is ASCII");
+        out.push_str(&format!(
+            "File.write!(\"{}\", Base.decode64!(\"{}\"), [:append])\n",
+            path, chunk_str
+        ));
+    }
+    // `Code.eval_file/1`, not `Code.require_file/1`: require_file
+    // memoises by path for the BEAM's lifetime, so a second attach to
+    // the same long-lived Nerves device would no-op the load and we'd
+    // get no logs, no can, no bus.
+    out.push_str(&format!("Code.eval_file(\"{}\")\n", path));
+    out
+}
 
 fn attach_local(nodes: Vec<(String, String)>) -> Result<()> {
     let (tx, rx) = mpsc::channel::<Msg>();
@@ -771,7 +826,7 @@ fn spawn_trio(
     let log_stdout = log_child.stdout.take().unwrap();
     let log_stderr = log_child.stderr.take().unwrap();
     let mut log_stdin = log_child.stdin.take().unwrap();
-    let _ = log_stdin.write_all(LOG_INIT_SNIPPET.as_bytes());
+    let _ = log_stdin.write_all(wrap_snippet(LOG_INIT_SNIPPET, "log").as_bytes());
     let _ = log_stdin.flush();
     spawn_reader(log_stdout, label, tx, forward_log);
     spawn_reader(log_stderr, label, tx, forward_log);
@@ -793,7 +848,7 @@ fn spawn_trio(
     let mon_stdout = mon_child.stdout.take().unwrap();
     let mon_stderr = mon_child.stderr.take().unwrap();
     let mut mon_stdin = mon_child.stdin.take().unwrap();
-    let _ = mon_stdin.write_all(MONITOR_SNIPPET.as_bytes());
+    let _ = mon_stdin.write_all(wrap_snippet(MONITOR_SNIPPET, "mon").as_bytes());
     let _ = mon_stdin.flush();
     spawn_reader(mon_stdout, label, tx, forward_monitor);
     spawn_reader(mon_stderr, label, tx, forward_monitor);
@@ -1096,24 +1151,39 @@ async fn run_device_once(
 
     let label_owned = label.to_string();
     let tx_owned = tx.clone();
+    // Same readiness gate as the local `forward_log` path — drop the
+    // Nerves/IEx banner, the echoed `Code.eval_string` wrapper, and
+    // IEx's prompt until the snippet finishes attaching RingLogger
+    // and prints `OVCS_LOG_READY`. After that, `is_iex_noise` keeps
+    // any stray prompts out.
+    let mut log_ready = false;
+    let forward_log_line = |line: String, ready: &mut bool, tx: &Sender<Msg>| {
+        if !*ready {
+            if strip_ansi(&line).contains(LOG_READY_MARKER) {
+                *ready = true;
+            }
+            return;
+        }
+        if is_iex_noise(&line) {
+            return;
+        }
+        let _ = tx.send(Msg::Log {
+            node: label_owned.clone(),
+            line,
+        });
+    };
     loop {
         tokio::select! {
             maybe = log_ch.wait() => {
                 match maybe {
                     Some(ChannelMsg::Data { data }) => {
                         for line in split_lines(&data) {
-                            let _ = tx_owned.send(Msg::Log {
-                                node: label_owned.clone(),
-                                line,
-                            });
+                            forward_log_line(line, &mut log_ready, &tx_owned);
                         }
                     }
                     Some(ChannelMsg::ExtendedData { data, .. }) => {
                         for line in split_lines(&data) {
-                            let _ = tx_owned.send(Msg::Log {
-                                node: label_owned.clone(),
-                                line,
-                            });
+                            forward_log_line(line, &mut log_ready, &tx_owned);
                         }
                     }
                     Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) => break,
@@ -1308,7 +1378,9 @@ async fn open_ssh_channels(
         .request_pty(false, "xterm", 120, 40, 0, 0, &[])
         .await?;
     log_ch.request_shell(false).await?;
-    log_ch.data(LOG_INIT_SNIPPET.as_bytes()).await?;
+    log_ch
+        .data(wrap_snippet(LOG_INIT_SNIPPET, "log").as_bytes())
+        .await?;
 
     let shell_ch = handle.channel_open_session().await?;
     shell_ch
@@ -1321,7 +1393,9 @@ async fn open_ssh_channels(
         .request_pty(false, "xterm", 120, 40, 0, 0, &[])
         .await?;
     mon_ch.request_shell(false).await?;
-    mon_ch.data(MONITOR_SNIPPET.as_bytes()).await?;
+    mon_ch
+        .data(wrap_snippet(MONITOR_SNIPPET, "mon").as_bytes())
+        .await?;
 
     Ok((log_ch, shell_ch, mon_ch))
 }
@@ -1359,18 +1433,32 @@ where
 }
 
 fn forward_log<R: std::io::Read + Send + 'static>(reader: R, node: &str, tx: &Sender<Msg>) {
-    forward_stream(reader, node, tx, dispatch_log_line);
-}
-
-fn dispatch_log_line(line: &str, node: &str, tx: &Sender<Msg>) -> bool {
-    if is_iex_noise(line) {
-        return true;
+    // Suppress everything until the snippet prints LOG_READY_MARKER —
+    // that covers the Nerves/IEx banner, the echoed `Code.eval_string`
+    // input, and IEx's prompt repeat. After the marker, the normal
+    // `is_iex_noise` filter is enough.
+    let mut ready = false;
+    let buffered = BufReader::new(reader);
+    for line in buffered.lines().map_while(|r| r.ok()) {
+        if !ready {
+            if strip_ansi(&line).contains(LOG_READY_MARKER) {
+                ready = true;
+            }
+            continue;
+        }
+        if is_iex_noise(&line) {
+            continue;
+        }
+        if tx
+            .send(Msg::Log {
+                node: node.to_string(),
+                line,
+            })
+            .is_err()
+        {
+            break;
+        }
     }
-    tx.send(Msg::Log {
-        node: node.to_string(),
-        line: line.to_string(),
-    })
-    .is_ok()
 }
 
 /// The log-side remsh is an IEx session we hijacked for log streaming — its
@@ -1383,7 +1471,7 @@ fn dispatch_log_line(line: &str, node: &str, tx: &Sender<Msg>) -> bool {
 /// process, so we need a long-lived remote process — exactly what an iex
 /// remsh gives us. Prefix-matching is the pragmatic compromise; widen the
 /// list if a new IEx version prints a banner line we haven't seen.
-fn is_iex_noise(line: &str) -> bool {
+pub fn is_iex_noise(line: &str) -> bool {
     // Strip ANSI CSI sequences first — Logger emits colour codes around
     // level / source / timestamp on host dev, so the naive `line.trim()`
     // leaves an invisible but non-empty string and blank "[label] " rows
@@ -1399,6 +1487,7 @@ fn is_iex_noise(line: &str) -> bool {
         ":ok",                // return value from our init snippet
         "Compiling ",         // mix recompile chatter under --remsh
         "** (",               // leading error header from IEx evaluation
+        "Code.eval_string(",  // our remsh init wrapper, echoed by IEx
     ];
     // After the stripped.trim() above, raw stacktrace frames look like
     // `(ring_logger 0.11.5) RingLogger.attach()` — the leading `(` isn't
