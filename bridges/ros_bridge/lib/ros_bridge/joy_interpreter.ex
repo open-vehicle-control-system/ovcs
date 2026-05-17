@@ -9,11 +9,12 @@ defmodule RosBridge.JoyInterpreter do
   `sensor_msgs/Joy` sample into Cantastic emitter updates on
   `ros_control0`/`ros_control1`.
   """
-  alias RosBridge.JoyInterpreter.State
   alias Cantastic.Emitter
+  alias Decimal, as: D
+  alias Ros2.SensorMsgs.Msg.Joy
+  alias RosBridge.JoyInterpreter.State
 
   require Logger
-  alias Decimal, as: D
   use GenServer
 
   @max_value 2 ** 31 - 1
@@ -41,7 +42,7 @@ defmodule RosBridge.JoyInterpreter do
         enable: true
       })
 
-    :ok = RosBridge.ZenohClient.subscribe(@joy_topic, Ros2.SensorMsgs.Msg.Joy)
+    :ok = RosBridge.ZenohClient.subscribe(@joy_topic, Joy)
     {:ok, %State{}}
   end
 
@@ -52,15 +53,25 @@ defmodule RosBridge.JoyInterpreter do
   end
 
   @impl true
-  def handle_info({:ros_message, {_key_expr, message}}, state) do
+  def handle_info({:ros_message, {_key_expr, %Joy{axes: axes}}}, state) do
+    steering = axes |> Enum.at(0) |> D.from_float() |> D.mult(-@max_value)
+    throttle = axes |> Enum.at(1) |> D.from_float() |> D.mult(@max_value)
+
     :ok =
       Emitter.update(:ovcs, "ros_control1", fn data ->
-        %{
-          data
-          | "steering" => message.axes |> Enum.at(0) |> D.from_float() |> D.mult(-@max_value),
-            "throttle" => message.axes |> Enum.at(1) |> D.from_float() |> D.mult(@max_value)
-        }
+        %{data | "steering" => steering, "throttle" => throttle}
       end)
+
+    {:noreply, state}
+  end
+
+  # Anything else delivered as `{:ros_message, …}` is a configuration
+  # bug (wrong subscribe call somewhere): log loudly rather than
+  # silently dropping or matching on the wrong shape.
+  def handle_info({:ros_message, {key_expr, message}}, state) do
+    Logger.warning(
+      "#{__MODULE__} unexpected message on #{key_expr}: #{inspect(message)}"
+    )
 
     {:noreply, state}
   end
