@@ -120,7 +120,6 @@ ovcs/
 +-- ros2/                       Docker Compose harness for ROS 2 Jazzy + Zenoh router (peers with ros_bridge)
 +-- cli/                        Rust source for the `ovcs` CLI (binary at cli/ovcs)
 +-- scripts/                    Utility scripts (setup_can.sh, bind_remote_can.rb, ...)
-+-- config/                     Global configuration (e.g. Orion BMS2 .o2bms)
 +-- candumps/                   CAN bus capture logs for offline testing and replay
 +-- docs/                       Project documentation
 +-- ovcs                        Symlink to cli/ovcs (built via `mise run cli`; gitignored)
