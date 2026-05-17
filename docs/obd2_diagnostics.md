@@ -50,35 +50,19 @@ dashboard reads have different meanings:
 
 ## Architecture
 
-```
-            ┌──────────────────────────────────┐
-            │ vehicles/obd2/priv/can/vms.yml   │
-            │   imports per-request YAMLs       │
-            │   from libraries/ovcs_can/priv/   │
-            │   can/components/obd2/            │
-            └────────────────┬─────────────────┘
-                             │ at boot
-                             ▼
-            ┌──────────────────────────────────┐
-            │ Cantastic.Interface              │
-            │   spawns one OBD2.Request         │
-            │   GenServer per declared request  │
-            └────────────────┬─────────────────┘
-                             │ {:handle_obd2_response, …}
-                             ▼
-   ┌───────────────────────────────┐   ┌────────────────────────────┐
-   │ Obd2.Vms.Diag.   │   │ Obd2.Vms.Disc.│
-   │   subscribes to every request │   │   raw socket sniff +       │
-   │   pulses on-demand actions    │   │   Mode 22 DID walk         │
-   │   broadcasts metrics on Bus   │   │   broadcasts metrics on Bus│
-   └───────────────┬───────────────┘   └─────────────┬──────────────┘
-                   │ %Bus.Message{name, value, source}
-                   ▼
-            ┌──────────────────────────────────┐
-            │ VmsCore.Metrics                  │
-            │ → VmsApi metrics channel          │
-            │ → Vue dashboard                   │
-            └──────────────────────────────────┘
+```mermaid
+flowchart TD
+    YAML["<b>vehicles/obd2/priv/can/vms.yml</b><br/>imports per-request YAMLs from<br/>libraries/ovcs_can/priv/can/components/obd2/"]
+    CANTASTIC["<b>Cantastic.Interface</b><br/>spawns one OBD2.Request GenServer<br/>per declared request"]
+    DIAG["<b>Obd2.Vms.Diagnostics</b><br/>subscribes to every request<br/>pulses on-demand actions<br/>broadcasts metrics on Bus"]
+    DISC["<b>Obd2.Vms.Discovery</b><br/>raw socket sniff +<br/>Mode 22 DID walk<br/>broadcasts metrics on Bus"]
+    METRICS["<b>VmsCore.Metrics</b><br/>→ VmsApi metrics channel<br/>→ Vue dashboard"]
+
+    YAML -->|at boot| CANTASTIC
+    CANTASTIC -->|{:handle_obd2_response, …}| DIAG
+    CANTASTIC -.->|raw CAN frames| DISC
+    DIAG -->|%Bus.Message{name, value, source}| METRICS
+    DISC -->|%Bus.Message{name, value, source}| METRICS
 ```
 
 Two GenServers, one VMS Bus topic, the existing metrics pipeline.
