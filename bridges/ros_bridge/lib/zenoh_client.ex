@@ -321,12 +321,12 @@ defmodule RosBridge.ZenohClient do
   end
 
   defp deliver_sample(subscription, key_expr, payload) do
-    case subscription.message_module.parse(payload) do
-      {:ok, parsed, _rest} ->
-        Enum.each(subscription.subscribers, fn {pid, _ref} ->
-          send(pid, {:ros_message, {key_expr, parsed}})
-        end)
-
+    with {:ok, body} <- RmwZenoh.decode_payload(payload),
+         {:ok, parsed, _rest} <- subscription.message_module.parse(body) do
+      Enum.each(subscription.subscribers, fn {pid, _ref} ->
+        send(pid, {:ros_message, {key_expr, parsed}})
+      end)
+    else
       error ->
         Logger.warning(
           "#{__MODULE__} parse #{inspect(subscription.message_module)} on #{key_expr} " <>

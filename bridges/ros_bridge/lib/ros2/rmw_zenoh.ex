@@ -37,6 +37,16 @@ defmodule Ros2.RmwZenoh do
   def encode_payload(%module{} = message), do: @cdr_header <> module.encode(message)
 
   @doc """
+  Inverse of `encode_payload/1`: strips the 4-byte CDR encapsulation
+  header from an incoming `Zenohex.Sample.payload`, leaving just the
+  body for the message module's `parse/1`. Returns `{:ok, body}` on a
+  CDR-LE payload; rejects anything else (the only encoding we emit
+  or expect to consume).
+  """
+  def decode_payload(<<0x00, 0x01, 0x00, 0x00, body::binary>>), do: {:ok, body}
+  def decode_payload(_), do: {:error, :not_cdr_le}
+
+  @doc """
   Builds the publisher attachment per the rmw_zenoh design doc:
   8 bytes seq (i64 LE), 8 bytes source_timestamp ns (i64 LE),
   1 byte GID length (always 16), 16 bytes GID. 33 bytes total.

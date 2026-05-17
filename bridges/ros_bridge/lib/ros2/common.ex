@@ -1,4 +1,27 @@
 defmodule Ros2.Common do
+  @moduledoc """
+  CDR (Common Data Representation) encoder/parser primitives shared
+  by every `Ros2.*` message module. Injected via `use Ros2.Common`.
+
+  ## Alignment
+
+  CDR aligns each primitive to its own size, relative to the start of
+  the encapsulated body (i.e. after the 4-byte encapsulation header
+  prepended by `Ros2.RmwZenoh.encode_payload/1`). Since each
+  `encode/1` returns the body bytes only, `byte_size(buffer)` *is*
+  the current offset from the body origin — call `align_to/2` before
+  the next primitive whose alignment is larger than the running tail.
+
+  The hazards in our message set:
+
+    * `string` (4-aligned tail) → `float64` field needs an
+      `align_to(buf, 8)` step in between.
+    * `int32`/`uint32` (4) → `float64` (8) needs `align_to(buf, 8)`.
+
+  Within a homogenous `float64` sequence (e.g. covariance matrices)
+  no extra alignment is needed once the run starts on an 8-boundary.
+  """
+
   defmacro __using__(_opts) do
     quote do
       # CDR encoder for strings: 4-byte LE length (including the
@@ -56,6 +79,38 @@ defmodule Ros2.Common do
         {:ok, array, payload}
       rescue
         _ -> {:error, :malformed, :int32_array}
+      end
+
+      # ── Encoders for primitive types ──────────────────────────────
+      # Each returns the field bytes only. Callers are responsible for
+      # invoking `align_to/2` before fields whose alignment is larger
+      # than the running buffer tail.
+
+      def encode_int32(value) when is_integer(value) do
+        <<value::little-signed-integer-size(32)>>
+      end
+
+      def encode_uint32(value) when is_integer(value) do
+        <<value::little-unsigned-integer-size(32)>>
+      end
+
+      def encode_float64(value) when is_number(value) do
+        <<value::little-float-size(64)>>
+      end
+
+      # Fixed-size `float64[count]` — no length prefix. Mirrors
+      # `parse_float64_array/2`.
+      def encode_float64_array_fixed(values, count) when length(values) == count do
+        Enum.reduce(values, <<>>, fn value, acc -> acc <> encode_float64(value) end)
+      end
+
+      # Append zero-byte padding so `byte_size(buffer)` becomes a
+      # multiple of `n`. Pure — takes the in-progress body buffer,
+      # returns the padded buffer. See moduledoc for the alignment
+      # contract (origin = start of encapsulated body).
+      def align_to(buffer, n) when is_binary(buffer) and is_integer(n) and n > 0 do
+        pad = rem(n - rem(byte_size(buffer), n), n)
+        buffer <> <<0::size(pad * 8)>>
       end
     end
   end
