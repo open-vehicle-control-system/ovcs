@@ -7,11 +7,16 @@ defmodule BNO085.Dummy do
   @accelerometer_cargo %{header: %{continuation: true, channel: 3, sequence_number: 145, cargo_length: 19}, reports: [%{id: 251, base_delta: 5}, %{id: 1, name: "accelerometer", status: 2, z: 2412, y: -39, x: -216, delay: 0, sequence_number: 72}]}
   @uncalibrated_gyroscope_cargo %{header: %{continuation: true, channel: 3, sequence_number: 45, cargo_length: 25}, reports: [%{id: 251, base_delta: 21}, %{id: 7, name: "uncalibrated_gyroscope", status: 0, z: 2, y: 0, x: -2, delay: 0, sequence_number: 150, x_bias: -2, y_bias: 0, z_bias: 2}]}
   @calibrated_gyroscope_cargo %{header: %{continuation: true, channel: 3, sequence_number: 25, cargo_length: 19}, reports: [%{id: 251, base_delta: 23}, %{id: 2, name: "calibrated_gyroscope", status: 0, z: 0, y: 1, x: 1, delay: 0, sequence_number: 12}]}
-  @cargos [@accelerometer_cargo, @uncalibrated_gyroscope_cargo, @calibrated_gyroscope_cargo]
+  # Static identity-quaternion-ish rotation (i=j=k=0, real=16383 ≈ Q14 1.0)
+  # so the host stack receives a complete Imu sample without needing
+  # a hardware-attached BNO085.
+  @rotation_vector_cargo %{header: %{continuation: true, channel: 3, sequence_number: 30, cargo_length: 19}, reports: [%{id: 251, base_delta: 7}, %{id: 5, name: "rotation_vector", status: 3, sequence_number: 99, delay: 0, i: 0, j: 0, k: 0, real: 16383}]}
+  @cargos [@accelerometer_cargo, @uncalibrated_gyroscope_cargo, @calibrated_gyroscope_cargo, @rotation_vector_cargo]
   @accelerometer_report 0x01
   @calibrated_gyroscope_report 0x02
+  @rotation_vector_report 0x05
   @uncalibrated_gyroscope_report 0x07
-  @published_report_ids [@accelerometer_report , @calibrated_gyroscope_report, @uncalibrated_gyroscope_report]
+  @published_report_ids [@accelerometer_report , @calibrated_gyroscope_report, @uncalibrated_gyroscope_report, @rotation_vector_report]
 
   @impl true
   def init(_args) do

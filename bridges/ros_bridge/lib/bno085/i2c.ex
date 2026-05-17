@@ -12,13 +12,14 @@ defmodule BNO085.I2C do
   @timebase_reference_report 0xFB
   @accelerometer_report 0x01
   @calibrated_gyroscope_report 0x02
+  @rotation_vector_report 0x05
   @uncalibrated_gyroscope_report 0x07
   @command_reponse 0xF1
   @shtp_command_channel 0x00
   @executable_channel 0x01
   @sensor_hub_control_channel 0x02
   @inport_sensor_reports_channel 0x03
-  @published_report_ids [@accelerometer_report , @calibrated_gyroscope_report, @uncalibrated_gyroscope_report]
+  @published_report_ids [@accelerometer_report , @calibrated_gyroscope_report, @uncalibrated_gyroscope_report, @rotation_vector_report]
 
   @impl true
   def init(_args) do
@@ -84,6 +85,34 @@ defmodule BNO085.I2C do
       x_bias: uncalibrated_bias_axis_x,
       y_bias: uncalibrated_bias_axis_y,
       z_bias: uncalibrated_bias_axis_z
+    }, rest}
+  end
+  defp parse_report(<< report_id::integer, report_data::binary >> = report_bytes, @inport_sensor_reports_channel)
+  when report_id == @rotation_vector_report and bit_size(report_bytes) >= 14*8 do
+    # SH-2 rotation-vector report: header bytes + 5 little-endian
+    # int16s — quaternion components (i, j, k, real) in Q14, then
+    # an accuracy estimate in Q12 radians (we don't expose it).
+    <<
+      sequence_number::8,
+      status::8,
+      delay::8,
+      quaternion_i::little-signed-integer-size(16),
+      quaternion_j::little-signed-integer-size(16),
+      quaternion_k::little-signed-integer-size(16),
+      quaternion_real::little-signed-integer-size(16),
+      _accuracy_estimate::little-signed-integer-size(16),
+      rest::binary
+    >> = report_data
+    {:ok, %{
+      id: report_id,
+      name: "rotation_vector",
+      sequence_number: sequence_number,
+      status: status,
+      delay: delay,
+      i: quaternion_i,
+      j: quaternion_j,
+      k: quaternion_k,
+      real: quaternion_real
     }, rest}
   end
   defp parse_report(<< report_id::integer, report_data::binary >> = report_bytes, @inport_sensor_reports_channel)
@@ -277,6 +306,7 @@ defmodule BNO085.I2C do
       :accelerometer -> @accelerometer_report
       :uncalibrated_gyroscope -> @uncalibrated_gyroscope_report
       :calibrated_gyroscope -> @calibrated_gyroscope_report
+      :rotation_vector -> @rotation_vector_report
     end
     Logger.debug("#{__MODULE__} enable #{sensor}")
     send_command(state, @sensor_hub_control_channel, << @set_feature_request, report_id, 0x00, 0x00, 0x00, 0x60, 0xEA, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 >>)
@@ -291,6 +321,7 @@ defmodule BNO085.I2C do
     :ok = GenServer.cast(__MODULE__, {:enable, :accelerometer})
     :ok = GenServer.cast(__MODULE__, {:enable, :uncalibrated_gyroscope})
     :ok = GenServer.cast(__MODULE__, {:enable, :calibrated_gyroscope})
+    :ok = GenServer.cast(__MODULE__, {:enable, :rotation_vector})
     :ok
   end
 
