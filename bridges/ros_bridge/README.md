@@ -12,7 +12,10 @@ lib/
   zenoh_client.ex            # GenServer: Zenoh session + publish/subscribe API + rmw_zenoh liveliness
   ros_bridge/
     heartbeat.ex             # Periodic publisher (std_msgs/String on /ovcs_heartbeat) via ZenohClient.publish/4
-    imu_publisher.ex         # BNO085 → CAN
+    imu_publisher.ex         # ImuSource consumer → sensor_msgs/Imu over Zenoh
+    imu/
+      bno_adapter.ex         # %BNO085.Sample{} → %ImuSource.Reading{}
+    imu_source.ex            # ImuSource behaviour + Reading struct
     joy_interpreter.ex       # ROS 2 /joy → Cantastic emitter (steering, throttle)
   ros2/                      # ROS 2 message codecs (CDR encode + parse)
     common.ex                # Shared encoder/parser primitives (encode_string, …)
