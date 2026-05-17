@@ -25,16 +25,16 @@ defmodule Ros2.RmwZenoh do
   Builds the rmw_zenoh keyexpr for a topic. Strips the leading `/`
   from the topic to match the format rmw_zenoh's C++ side emits.
   """
-  def key_expr(domain_id, topic, msg_module) do
+  def key_expr(domain_id, topic, message_module) do
     topic = String.trim_leading(topic, "/")
-    "#{domain_id}/#{topic}/#{msg_module.dds_type()}/#{msg_module.type_hash()}"
+    "#{domain_id}/#{topic}/#{message_module.dds_type()}/#{message_module.type_hash()}"
   end
 
   @doc """
   CDR-encodes a message and prepends the encapsulation header. Result
   goes straight into `Zenohex.Publisher.put/3` as the payload.
   """
-  def encode_payload(%mod{} = msg), do: @cdr_header <> mod.encode(msg)
+  def encode_payload(%module{} = message), do: @cdr_header <> module.encode(message)
 
   @doc """
   Builds the publisher attachment per the rmw_zenoh design doc:
@@ -67,7 +67,7 @@ defmodule Ros2.RmwZenoh do
   single publisher. `<qos>` is the default reliable-volatile profile
   (`::,:,:,:,,`) — matches what rclpy emits with `qos_profile_default`.
   """
-  def liveliness_key(domain_id, zid, node_name, topic, msg_module) do
+  def liveliness_key(domain_id, zid, node_name, topic, message_module) do
     enclave = mangle("/")
     namespace = mangle("/")
     topic_m = mangle(topic_with_leading_slash(topic))
@@ -76,7 +76,7 @@ defmodule Ros2.RmwZenoh do
     qos = "::,:,:,:,,"
 
     "@ros2_lv/#{domain_id}/#{zid}/#{nid}/#{eid}/MP/#{enclave}/#{namespace}/" <>
-      "#{node_name}/#{topic_m}/#{msg_module.dds_type()}/#{msg_module.type_hash()}/#{qos}"
+      "#{node_name}/#{topic_m}/#{message_module.dds_type()}/#{message_module.type_hash()}/#{qos}"
   end
 
   defp mangle(s), do: String.replace(s, "/", "%")
