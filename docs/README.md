@@ -43,6 +43,7 @@ own README with usage, design notes, and API.
 | OvcsCan | `libraries/ovcs_can/` | `OvcsCan` | [README](../libraries/ovcs_can/README.md) — shared CAN frame YAMLs (`import!:@ovcs_can:…`) |
 | OvcsBus | `libraries/ovcs_bus/` | `OvcsBus` | [README](../libraries/ovcs_bus/README.md) — cluster-wide pub/sub over Erlang distribution |
 | OvcsBridge | `libraries/ovcs_bridge/` | `OvcsBridge` | [README](../libraries/ovcs_bridge/README.md) — bridge-library contract + firmware supervisor |
+| OvcsDrivers | `libraries/ovcs_drivers/` | `OvcsDrivers` | [README](../libraries/ovcs_drivers/README.md) — hardware chip drivers grouped by kind (`OvcsDrivers.Imu`, …); currently BNO085 |
 | Cantastic | `libraries/cantastic/` | `Cantastic` | [README](../libraries/cantastic/README.md) — CAN bus library (SocketCAN, YAML config, frame encoding/decoding) |
 | ExpressLRS | `libraries/express_lrs/` | `ExpressLrs` | [README](../libraries/express_lrs/README.md) — ExpressLRS MAVLink decoder (used by `radio_control_bridge`) |
 | MspOsd | `libraries/msp_osd/` | `MspOsd` | [README](../libraries/msp_osd/README.md) — MSP + DisplayPort stack (v1 jumbo / v2 / v2-over-v1) for pushing OSD to HDZero/Walksnail/DJI VTX |

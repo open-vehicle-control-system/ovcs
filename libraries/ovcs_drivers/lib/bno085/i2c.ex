@@ -1,9 +1,21 @@
 # credo:disable-for-this-file Credo.Check.Refactor.Nesting
 # credo:disable-for-this-file Credo.Check.Readability.WithSingleClause
 defmodule BNO085.I2C do
+  @moduledoc """
+  BNO085 driver over I²C using the SH-2 protocol. Implements the
+  `OvcsDrivers.Imu` behaviour: listeners receive
+  `{:imu_sample, %OvcsDrivers.Imu.Sample{}}` casts in SI units. Pure
+  hardware concerns — Q-point scaling, register layouts, chip-ready
+  gating all live here; framework-side translation lives in the
+  consuming application.
+  """
+  @behaviour OvcsDrivers.Imu
+
   use GenServer
   import Bitwise
   require Logger
+
+  alias OvcsDrivers.Imu.Sample
 
   @address 0x4A
   @product_id_request 0xF9
@@ -12,13 +24,25 @@ defmodule BNO085.I2C do
   @timebase_reference_report 0xFB
   @accelerometer_report 0x01
   @calibrated_gyroscope_report 0x02
+  @rotation_vector_report 0x05
   @uncalibrated_gyroscope_report 0x07
   @command_reponse 0xF1
+  @reset_complete_response 0x01
   @shtp_command_channel 0x00
   @executable_channel 0x01
   @sensor_hub_control_channel 0x02
   @inport_sensor_reports_channel 0x03
-  @published_report_ids [@accelerometer_report , @calibrated_gyroscope_report, @uncalibrated_gyroscope_report]
+  # SH-2 Q-point scaling — see the BNO085 datasheet's "Sensor report
+  # data" section. Applied here so listeners receive SI units and
+  # never have to know the chip emits fixed-point int16s.
+  @accelerometer_scale 1.0 / (1 <<< 8)
+  @gyroscope_scale 1.0 / (1 <<< 9)
+  @quaternion_scale 1.0 / (1 <<< 14)
+
+  # Reports we translate into `BNO085.Sample`s for listeners. Others
+  # (uncalibrated gyro, timebase, command responses, product-id) are
+  # still parsed for diagnostics but not broadcast.
+  @imu_sample_ids [@accelerometer_report, @calibrated_gyroscope_report, @rotation_vector_report]
 
   @impl true
   def init(_args) do
@@ -27,7 +51,13 @@ defmodule BNO085.I2C do
     {:ok, _} = :timer.send_interval(10, :loop)
     {:ok, %{
       i2c: i2c,
-      listeners: []
+      listeners: [],
+      # The chip soft-resets at boot (see :reset cast in init) and
+      # silently drops feature-enable commands during its ~150 ms
+      # reboot window. We buffer enables until we see the executable
+      # channel's "reset complete" response, then drain the queue.
+      chip_ready?: false,
+      pending_enables: []
     }}
   end
 
@@ -84,6 +114,34 @@ defmodule BNO085.I2C do
       x_bias: uncalibrated_bias_axis_x,
       y_bias: uncalibrated_bias_axis_y,
       z_bias: uncalibrated_bias_axis_z
+    }, rest}
+  end
+  defp parse_report(<< report_id::integer, report_data::binary >> = report_bytes, @inport_sensor_reports_channel)
+  when report_id == @rotation_vector_report and bit_size(report_bytes) >= 14*8 do
+    # SH-2 rotation-vector report: header bytes + 5 little-endian
+    # int16s — quaternion components (i, j, k, real) in Q14, then
+    # an accuracy estimate in Q12 radians (we don't expose it).
+    <<
+      sequence_number::8,
+      status::8,
+      delay::8,
+      quaternion_i::little-signed-integer-size(16),
+      quaternion_j::little-signed-integer-size(16),
+      quaternion_k::little-signed-integer-size(16),
+      quaternion_real::little-signed-integer-size(16),
+      _accuracy_estimate::little-signed-integer-size(16),
+      rest::binary
+    >> = report_data
+    {:ok, %{
+      id: report_id,
+      name: "rotation_vector",
+      sequence_number: sequence_number,
+      status: status,
+      delay: delay,
+      i: quaternion_i,
+      j: quaternion_j,
+      k: quaternion_k,
+      real: quaternion_real
     }, rest}
   end
   defp parse_report(<< report_id::integer, report_data::binary >> = report_bytes, @inport_sensor_reports_channel)
@@ -224,19 +282,17 @@ defmodule BNO085.I2C do
         {:ok, %{cargo_length: cargo_length} = _header} when cargo_length > 0 ->
           {:ok, cargo_bytes} = Circuits.I2C.read(state.i2c, @address, cargo_length)
           {:ok, cargo} = parse_cargo(cargo_bytes)
-          case cargo do
-            nil ->
-              Logger.warning("#{__MODULE__} skip empty cargo")
-            _ ->
-              Logger.debug("#{__MODULE__} cargo #{inspect cargo}")
-              cargo.reports |> Enum.each(fn report ->
-                if Enum.member?(@published_report_ids, report.id) && cargo.header.channel == @inport_sensor_reports_channel do
-                  state.listeners |> Enum.each(fn listener ->
-                    GenServer.cast(listener, {:bno085_sensor_message, report})
-                  end)
-                end
-              end)
-          end
+          state =
+            case cargo do
+              nil ->
+                Logger.warning("#{__MODULE__} skip empty cargo")
+                state
+
+              _ ->
+                Logger.debug("#{__MODULE__} cargo #{inspect cargo}")
+                state = handle_cargo(state, cargo)
+                state
+            end
 
           {:noreply, state}
         _ ->
@@ -248,6 +304,100 @@ defmodule BNO085.I2C do
         Logger.error("#{__MODULE__} I2C error: #{error |> inspect}")
         {:noreply, state}
     end
+  end
+
+  # Per-cargo dispatch: pull out the bits we care about (IMU sensor
+  # samples, reset-complete on the executable channel) and ignore
+  # the rest. State threading lets the reset-complete path mark the
+  # chip ready and drain any enables the publisher queued before
+  # the device finished booting.
+  defp handle_cargo(state, cargo) do
+    state =
+      Enum.reduce(cargo.reports, state, fn report, acc ->
+        cond do
+          cargo.header.channel == @inport_sensor_reports_channel and
+              report.id in @imu_sample_ids ->
+            broadcast_sample(acc, report)
+            acc
+
+          cargo.header.channel == @executable_channel and
+              report.id == @reset_complete_response and
+              not acc.chip_ready? ->
+            Logger.info("#{__MODULE__} chip ready; draining #{length(acc.pending_enables)} pending enable(s)")
+            Enum.each(acc.pending_enables, &send_enable(acc, &1))
+            %{acc | chip_ready?: true, pending_enables: []}
+
+          true ->
+            acc
+        end
+      end)
+
+    state
+  end
+
+  defp broadcast_sample(state, report) do
+    sample = build_sample(report)
+
+    if sample do
+      Enum.each(state.listeners, fn listener ->
+        GenServer.cast(listener, {:imu_sample, sample})
+      end)
+    end
+
+    :ok
+  end
+
+  # Exposed (with @doc false) so unit tests can exercise the
+  # Q-point scaling without standing up the GenServer.
+  @doc false
+  def build_sample(%{id: id, x: x, y: y, z: z}) when id == @accelerometer_report do
+    %Sample{
+      kind: :acceleration,
+      x: x * @accelerometer_scale,
+      y: y * @accelerometer_scale,
+      z: z * @accelerometer_scale
+    }
+  end
+
+  def build_sample(%{id: id, x: x, y: y, z: z}) when id == @calibrated_gyroscope_report do
+    %Sample{
+      kind: :angular_velocity,
+      x: x * @gyroscope_scale,
+      y: y * @gyroscope_scale,
+      z: z * @gyroscope_scale
+    }
+  end
+
+  def build_sample(%{id: id, i: i, j: j, k: k, real: real})
+       when id == @rotation_vector_report do
+    %Sample{
+      kind: :rotation,
+      x: i * @quaternion_scale,
+      y: j * @quaternion_scale,
+      z: k * @quaternion_scale,
+      w: real * @quaternion_scale
+    }
+  end
+
+  def build_sample(_), do: nil
+
+  defp send_enable(state, sensor) do
+    report_id =
+      case sensor do
+        :accelerometer -> @accelerometer_report
+        :uncalibrated_gyroscope -> @uncalibrated_gyroscope_report
+        :calibrated_gyroscope -> @calibrated_gyroscope_report
+        :rotation_vector -> @rotation_vector_report
+      end
+
+    Logger.debug("#{__MODULE__} enable #{sensor}")
+
+    send_command(
+      state,
+      @sensor_hub_control_channel,
+      <<@set_feature_request, report_id, 0x00, 0x00, 0x00, 0x60, 0xEA, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00>>
+    )
   end
 
   def send_command(state, channel, data) do
@@ -271,26 +421,30 @@ defmodule BNO085.I2C do
     {:noreply, state}
   end
 
+  # If the chip has finished resetting, push the feature command
+  # straight to the bus; otherwise queue it for the reset-complete
+  # handler to drain. Buffering inside the driver means callers can
+  # `enable/0` from their own init/1 without racing the chip's boot.
   @impl true
   def handle_cast({:enable, sensor}, state) do
-    report_id = case sensor do
-      :accelerometer -> @accelerometer_report
-      :uncalibrated_gyroscope -> @uncalibrated_gyroscope_report
-      :calibrated_gyroscope -> @calibrated_gyroscope_report
+    if state.chip_ready? do
+      send_enable(state, sensor)
+      {:noreply, state}
+    else
+      {:noreply, %{state | pending_enables: state.pending_enables ++ [sensor]}}
     end
-    Logger.debug("#{__MODULE__} enable #{sensor}")
-    send_command(state, @sensor_hub_control_channel, << @set_feature_request, report_id, 0x00, 0x00, 0x00, 0x60, 0xEA, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 >>)
-    {:noreply, state}
   end
 
   def handle_cast({:register_listener, listener}, state) do
     {:noreply, %{state | listeners: state.listeners ++ [listener]}}
   end
 
-  def enable_all_sensors do
+  @impl OvcsDrivers.Imu
+  def enable do
     :ok = GenServer.cast(__MODULE__, {:enable, :accelerometer})
     :ok = GenServer.cast(__MODULE__, {:enable, :uncalibrated_gyroscope})
     :ok = GenServer.cast(__MODULE__, {:enable, :calibrated_gyroscope})
+    :ok = GenServer.cast(__MODULE__, {:enable, :rotation_vector})
     :ok
   end
 
@@ -299,6 +453,7 @@ defmodule BNO085.I2C do
     :ok
   end
 
+  @impl OvcsDrivers.Imu
   def register_listener(listener) do
     GenServer.cast(__MODULE__, {:register_listener, listener})
   end

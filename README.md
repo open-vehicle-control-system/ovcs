@@ -101,7 +101,7 @@ ovcs/
 +-- bridges/                    Communication Bridges
 |   +-- firmware/                 Shared Nerves image hosting one or more bridges per build
 |   +-- radio_control_bridge/     MAVLink RC transmitter bridge library
-|   +-- ros_bridge/               Native rmw_zenoh ROS2 bridge library (with BNO085 IMU)
+|   +-- ros_bridge/               Native rmw_zenoh ROS2 bridge library
 |
 +-- controllers/                Arduino Controllers
 |   +-- generic_controller/       PlatformIO C++ project for Arduino R4 Minima
@@ -112,6 +112,7 @@ ovcs/
 |   +-- ovcs_vehicle/             OvcsVehicle top-level behaviour + scaffold
 |   +-- ovcs_bus/                 Cluster-wide pub/sub over Erlang distribution
 |   +-- ovcs_bridge/              Behaviour + supervisor for bridge libraries
+|   +-- ovcs_drivers/             Hardware chip drivers, grouped by kind (Elixir; currently BNO085 IMU)
 |   +-- ovcs_control/             PID controller + input filters
 |   +-- express_lrs/              MAVLink v2 telemetry reader (ExpressLRS)
 |   +-- msp_osd/                  MSP / DisplayPort OSD stack for MSP-compatible VTXs
