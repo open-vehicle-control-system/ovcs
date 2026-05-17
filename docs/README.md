@@ -23,6 +23,7 @@ Index for the Open Vehicle Control System guides. For a high-level project overv
 
 - [Testing CAN Messages](./testing_can_messages.md) — simulating CAN traffic with `cansend` and replaying captures from `candumps/`.
 - [Testing Generic Controllers](./testing_generic_controllers.md) — adopting a generic Arduino controller and verifying it from the dashboard or IEx.
+- [OBD2 Diagnostics](./obd2_diagnostics.md) — using OVCS as an OBD2 / KWP2000 / UDS scan tool, plus how to extend it for brand-specific Mode 22 DIDs, Mode 21 KWP2000 reads, Mode 31 routines and proprietary CAN broadcasts.
 
 ## Architecture Reference
 

@@ -1,0 +1,9 @@
+---
+# SAE J1979 Mode 0x04 — clear emission-related DTCs.
+# Disabled by default; the diagnostic GenServer enables it on demand
+# (so the bus is silent until the user clicks "Clear DTCs").
+name: clear_dtcs
+request_frame_id: 0x7DF
+response_frame_id: 0x7E8
+frequency: 60000
+mode: 0x04

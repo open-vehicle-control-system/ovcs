@@ -1,0 +1,39 @@
+---
+# SAE J1979 Mode 0x01 PID 0x00, 0x20, 0x40, 0x60, 0x80, 0xA0, 0xC0:
+# 32-bit bitmask of supported PIDs in the next 0x20 range. Used to
+# discover which Mode 01 PIDs the ECU answers without spamming PIDs
+# the ECU doesn't implement.
+name: supported_pids
+request_frame_id: 0x7DF
+response_frame_id: 0x7E8
+frequency: 5000
+mode: 0x01
+parameters:
+  - name: pids_01_to_20
+    id: 0x00
+    kind: bytes
+    value_length: 32
+  - name: pids_21_to_40
+    id: 0x20
+    kind: bytes
+    value_length: 32
+  - name: pids_41_to_60
+    id: 0x40
+    kind: bytes
+    value_length: 32
+  - name: pids_61_to_80
+    id: 0x60
+    kind: bytes
+    value_length: 32
+  - name: pids_81_to_a0
+    id: 0x80
+    kind: bytes
+    value_length: 32
+  - name: pids_a1_to_c0
+    id: 0xA0
+    kind: bytes
+    value_length: 32
+  - name: pids_c1_to_e0
+    id: 0xC0
+    kind: bytes
+    value_length: 32

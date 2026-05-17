@@ -1,0 +1,57 @@
+---
+# Mode 01 live data, slow loop — PIDs that move slowly (temperatures,
+# fuel level, voltage). Polled at 1 s.
+name: live_data_slow
+request_frame_id: 0x7DF
+response_frame_id: 0x7E8
+frequency: 1000
+mode: 0x01
+parameters:
+  - name: engine_load
+    id: 0x04
+    kind: decimal
+    value_length: 8
+    scale: "0.392156862745"
+    unit: "%"
+  - name: coolant_temperature
+    id: 0x05
+    kind: integer
+    value_length: 8
+    offset: "-40"
+    unit: "°C"
+  - name: intake_air_temperature
+    id: 0x0F
+    kind: integer
+    value_length: 8
+    offset: "-40"
+    unit: "°C"
+  - name: mass_air_flow
+    id: 0x10
+    kind: decimal
+    value_length: 16
+    scale: "0.01"
+    unit: "g/s"
+  - name: fuel_level
+    id: 0x2F
+    kind: decimal
+    value_length: 8
+    scale: "0.392156862745"
+    unit: "%"
+  - name: control_module_voltage
+    id: 0x42
+    kind: decimal
+    value_length: 16
+    scale: "0.001"
+    unit: "V"
+  - name: ambient_air_temperature
+    id: 0x46
+    kind: integer
+    value_length: 8
+    offset: "-40"
+    unit: "°C"
+  - name: oil_temperature
+    id: 0x5C
+    kind: integer
+    value_length: 8
+    offset: "-40"
+    unit: "°C"

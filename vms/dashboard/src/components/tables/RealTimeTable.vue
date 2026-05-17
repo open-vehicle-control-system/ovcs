@@ -20,7 +20,7 @@
                             </dd>
                         </SwitchGroup>
                     </td>
-                <td v-if="row.type === 'metric' && store.data[row.module]"  class="text-gray-500 text-wrap break-all whitespace-nowrap px-3 py-4 text-sm text-right ">
+                <td v-if="row.type === 'metric' && store.data[row.module]"  :class="['text-gray-500 px-3 py-4 text-sm', isMultiline(store, row) ? 'whitespace-pre-wrap break-words text-left font-mono' : 'text-wrap break-all whitespace-nowrap text-right']">
                     <component v-if="valueType(store, row) === 'check'" :is="CheckIcon" class="h-6 w-6 inline-flex"></component>
                     <component v-if="valueType(store, row) === 'xmark'" :is="XMarkIcon" class="h-6 w-6 inline-flex"></component>
                     <span v-if="valueType(store, row) === 'none'">
@@ -67,9 +67,16 @@
             let displayValue = Math.round(value*100)/100
             metric.unit != null? displayValue = displayValue + " " + metric.unit : undefined
             return displayValue
+        } else if(Array.isArray(value)){
+            return value.join(", ")
         } else {
             return value
         }
+    }
+
+    const isMultiline = (store, metric) => {
+        let value = store.data[metric.module][metric.key]
+        return typeof(value) === "string" && value.indexOf("\n") !== -1
     }
 
     const triggerAction = (action) => {
