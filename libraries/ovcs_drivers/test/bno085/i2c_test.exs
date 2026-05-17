@@ -89,7 +89,8 @@ defmodule BNO085.I2CTest do
   describe "parse_cargo/1 + build_sample/1 — full intake path" do
     test "raw accelerometer cargo bytes → fully-scaled Sample" do
       # Same accel cargo as the parse test above; result should match
-      # `BNO085.Dummy`'s static fixture once divided by Q8 = 256.
+      # `OvcsDrivers.Imu.Dummy`'s static accel fixture once divided
+      # by Q8 = 256.
       cargo = <<14, 0, 3, 0, 0x01, 1, 2, 0, 0xD0, 0xFF, 0xD9, 0xFF, 0xA8, 0xFF>>
       # Raw int16 LE: 0xFFD0 = -48, 0xFFD9 = -39, 0xFFA8 = -88.
 

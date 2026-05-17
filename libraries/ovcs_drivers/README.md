@@ -24,7 +24,7 @@ Current kinds:
 
 | Kind                  | Behaviour                | Sample / output struct          | Drivers          |
 |-----------------------|--------------------------|---------------------------------|------------------|
-| IMU                   | `OvcsDrivers.Imu`        | `OvcsDrivers.Imu.Sample`        | `BNO085.I2C`, `BNO085.Dummy` |
+| IMU                   | `OvcsDrivers.Imu`        | `OvcsDrivers.Imu.Sample`        | `BNO085.I2C` (+ `OvcsDrivers.Imu.Dummy` stub) |
 
 New kinds land alongside their first concrete driver — defining a
 behaviour with zero implementations is dead code; wait until you have
@@ -35,10 +35,11 @@ a chip driver to anchor the contract.
 ```
 lib/
   imu.ex                          # OvcsDrivers.Imu behaviour
-  imu/sample.ex                   # %OvcsDrivers.Imu.Sample{kind, x, y, z, w}
+  imu/
+    sample.ex                     # %OvcsDrivers.Imu.Sample{kind, x, y, z, w}
+    dummy.ex                      # OvcsDrivers.Imu.Dummy — kind-level fixture stub
   bno085/                         # one driver, implements OvcsDrivers.Imu
     i2c.ex
-    dummy.ex
   <next_chip>/...
 ```
 
