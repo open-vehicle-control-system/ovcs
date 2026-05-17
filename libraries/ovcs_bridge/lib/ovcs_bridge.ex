@@ -23,4 +23,22 @@ defmodule OvcsBridge do
   """
 
   @callback children() :: [:supervisor.child_spec() | {module(), term()} | module()]
+
+  @doc """
+  Optional hook invoked from `bridges/firmware`'s `config/runtime.exs`
+  before any application starts. Bridges that need to stamp
+  third-party Application env from per-vehicle config (e.g. a serial
+  protocol library that reads its UART pin once at boot) implement
+  this; the firmware host walks every bundled bridge and calls the
+  callback on whichever ones export it.
+
+  The bridge is responsible for reading its own vehicle config and
+  writing whatever env keys its dependencies expect via
+  `Application.put_env(app, key, value, persistent: true)`. Keep
+  this small — anything that can wait until `children/0` should
+  live there instead.
+  """
+  @callback apply_runtime_config(vehicle :: module(), build_target :: atom()) :: any()
+
+  @optional_callbacks apply_runtime_config: 2
 end
