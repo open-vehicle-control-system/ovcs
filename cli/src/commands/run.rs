@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 use crate::ansi::{is_blank_after_ansi, strip_ansi};
+use crate::commands::attach::is_iex_noise;
 use crate::commands::can::ensure_host_can;
 use crate::firmware;
 use crate::repo_root::repo_root;
@@ -529,6 +530,14 @@ where
     let buf = BufReader::new(reader);
     for line in buf.lines().map_while(|l| l.ok()) {
         if is_blank_after_ansi(&line) {
+            continue;
+        }
+        // When `./ovcs attach` connects, the remote BEAM's IEx echoes the
+        // remsh's typed input (our base64 init wrapper) plus its own
+        // prompt to local stdout — `run` captures that via the BEAM's
+        // pipe and would prefix it with `[label]`. Drop those lines so
+        // the run window stays free of attach plumbing.
+        if is_iex_noise(&line) {
             continue;
         }
         let _ = writeln!(sink, "[{}] {}", label, line);
