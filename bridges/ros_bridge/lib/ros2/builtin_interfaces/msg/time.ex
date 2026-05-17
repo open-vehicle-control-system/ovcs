@@ -1,4 +1,4 @@
-defmodule Ros2.BuiltinIterfaces.Msg.Time do
+defmodule Ros2.BuiltinInterfaces.Msg.Time do
   @moduledoc false
 
   defstruct sec: 0, nanosec: 0

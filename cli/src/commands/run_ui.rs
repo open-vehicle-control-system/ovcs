@@ -608,8 +608,38 @@ fn short_source(source: &str) -> String {
     }
 }
 
+fn strip_osc(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len());
+    let mut chars = raw.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\x1b' && chars.peek() == Some(&']') {
+            chars.next();
+            while let Some(c) = chars.next() {
+                if c == '\x07' {
+                    break;
+                }
+                if c == '\x1b' && chars.peek() == Some(&'\\') {
+                    chars.next();
+                    break;
+                }
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
 fn parse_ansi_line(raw: &str) -> Line<'static> {
-    let cleaned: String = raw.chars().filter(|&c| c != '\r').collect();
+    // Drop OSC sequences (ESC ] … BEL/ST) entirely — IEx's window-title
+    // updates would otherwise leak their BEL terminator and beep the
+    // host terminal — then strip stray \r and bare BEL bytes. CSI
+    // sequences are left intact for ansi_to_tui to render as colour.
+    let without_osc = strip_osc(raw);
+    let cleaned: String = without_osc
+        .chars()
+        .filter(|&c| c != '\r' && c != '\x07')
+        .collect();
     match cleaned.into_text() {
         Ok(text) => text
             .lines
