@@ -116,6 +116,7 @@ ovcs/
 |   +-- express_lrs/              MAVLink v2 telemetry reader (ExpressLRS)
 |   +-- msp_osd/                  MSP / DisplayPort OSD stack for MSP-compatible VTXs
 |
++-- ros2/                       Docker Compose harness for ROS 2 Jazzy + Zenoh router (peers with ros_bridge)
 +-- cli/                        Rust source for the `ovcs` CLI (binary at cli/ovcs)
 +-- scripts/                    Utility scripts (setup_can.sh, bind_remote_can.rb, ...)
 +-- config/                     Global configuration (e.g. Orion BMS2 .o2bms)
