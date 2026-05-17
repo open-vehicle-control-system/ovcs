@@ -46,16 +46,10 @@ defmodule BridgeFirmware.MixProject do
       # `config/runtime.exs` to prepend the vehicle's ebin.
       {:ovcs_vehicle, path: "../../libraries/ovcs_vehicle"},
 
-      # Align cowlib across emqtt (~> 2.7) and the Nerves stack
-      # (~> 2.13). Widened from 2.7 so the host-dev BEAM can bundle
-      # ros_bridge alongside Phoenix (which needs ~> 2.16).
-      {:cowlib, "~> 2.13", override: true},
-
       # Bridge libraries — enumerated explicitly here (vehicles load
       # at runtime via Code.prepend_path, not as a Mix dep, so they
       # can't pull bridge libs in transitively). Each lib is gated to
-      # the Nerves targets it supports so a rpi3a build doesn't drag
-      # ros_bridge's emqtt/quicer chain in. Extend the target lists as
+      # the Nerves targets it supports. Extend the target lists as
       # bridges gain new SoC support, or add a new bridge by listing
       # it here + target gates.
       #

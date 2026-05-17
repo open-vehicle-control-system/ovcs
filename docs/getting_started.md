@@ -21,7 +21,6 @@ OVCS is developed on Linux. macOS users need a Linux VM (see [macOS setup](#loca
 | can-utils | Latest | CAN bus utilities (`cansend`, `candump`, `canplayer`) | system package |
 | `fwup` | Latest | Nerves firmware image packager | system package |
 | `libsocketcan-dev` | Latest | Cantastic native CAN bindings | system package (firmware builds only) |
-| `cmake` | Latest | Host-compile `quicer` (pulled in by ros_bridge's `emqtt` legacy/fallback path) | system package |
 | `libmnl-dev` | Latest | Host-compile `nerves_uevent` native | system package |
 | `nerves_bootstrap` | Latest | Nerves Mix archive | `mise run bootstrap` |
 | [PlatformIO](https://platformio.org/) | Latest | Arduino controller firmware | mise (via pipx + uv) |
@@ -54,14 +53,13 @@ sudo apt install -y build-essential autoconf m4 \
 ### 3. Install system-level tools
 
 ```sh
-sudo apt install -y git can-utils libsocketcan-dev cmake libmnl-dev kmod
+sudo apt install -y git can-utils libsocketcan-dev libmnl-dev kmod
 ```
 
 - `git` is needed by `mise run libraries` to clone the sideloaded `cantastic` / `express_lrs` / `msp_osd` / `ovcs_control` repos. Most host distros ship it already; fresh containers (distrobox, VMs) do not.
 - `kmod` provides `lsmod` / `modprobe`, which `./ovcs can setup` and `./ovcs run` call to load the `vcan` kernel module. Standard on host distros; not included in the minimal Ubuntu container image.
 - `can-utils` provides `cansend`, `candump`, `canplayer`, and the rest. The Linux kernel modules `can` and `can_raw` are required and are included in standard (non-cloud) kernels.
 - `libsocketcan-dev` is only needed when building for physical CAN targets (i.e. the Pi firmwares); it supplies the native headers Cantastic links against.
-- `cmake` is needed to host-compile `quicer`, transitively pulled in by the `emqtt` dep `ros_bridge` keeps for its legacy MQTT-plugin fallback. Only needed if you build `ros_bridge`. The primary ROS 2 path is native Zenoh via `zenohex` (no `cmake` requirement of its own).
 - `libmnl-dev` is needed to host-compile `nerves_uevent` (transitively pulled in by firmware deps).
 
 `fwup` is the firmware image packager Nerves calls during `mix firmware`. It is **not** in the Debian/Ubuntu repos — install the latest `.deb` from the project's GitHub releases:

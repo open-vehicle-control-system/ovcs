@@ -15,11 +15,11 @@ defmodule Ros2.SensorMsgs.Msg.Imu do
   def parse(payload) do
     with {:ok, header, payload} <- Ros2.StdMsgs.Msg.Header.parse(payload),
          {:ok, orientation, payload} <- Ros2.GeometryMsgs.Msg.Quaternion.parse(payload),
-         {:ok, orientation_covariance, payload} <- parse_float64_array(payload),
+         {:ok, orientation_covariance, payload} <- parse_float64_array(payload, 9),
          {:ok, angular_velocity, payload} <- Ros2.GeometryMsgs.Msg.Vector3.parse(payload),
-         {:ok, angular_velocity_covariance, payload} <- parse_float64_array(payload),
+         {:ok, angular_velocity_covariance, payload} <- parse_float64_array(payload, 9),
          {:ok, linear_acceleration, payload} <- Ros2.GeometryMsgs.Msg.Vector3.parse(payload),
-         {:ok, linear_acceleration_covariance, payload} <- parse_float64_array(payload)
+         {:ok, linear_acceleration_covariance, payload} <- parse_float64_array(payload, 9)
     do
       {:ok, %__MODULE__{
         header: header,

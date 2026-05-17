@@ -199,13 +199,13 @@ Enables remote control of the vehicle using a MAVLink-compatible RC transmitter 
 |---|---|
 | **Module** | `RosBridge` |
 | **Behaviour** | `OvcsBridge` |
-| **Key deps** | `cantastic`, `zenohex`, `emqtt`, `circuits_i2c`, `ovcs_bridge` |
+| **Key deps** | `cantastic`, `zenohex`, `circuits_i2c`, `ovcs_bridge` |
 
-Provides integration with ROS2 for autonomous driving research. It:
+Provides integration with ROS 2 for autonomous driving research. It:
 
-- Publishes a `std_msgs/String` heartbeat onto the ROS2 graph natively over Zenoh / `rmw_zenoh` (`ZenohClient` + `Ros2.RmwZenoh`). See [`bridges/ros_bridge/README.md`](../bridges/ros_bridge/README.md) for the wire-format details.
+- Publishes a `std_msgs/String` heartbeat onto the ROS 2 graph natively over Zenoh / `rmw_zenoh` (`ZenohClient` + `Ros2.RmwZenoh`). See [`bridges/ros_bridge/README.md`](../bridges/ros_bridge/README.md) for the wire-format details.
+- Subscribes to the ROS 2 `joy` topic via the same `ZenohClient` and forwards `sensor_msgs/Joy` axes onto the CAN bus through `JoyInterpreter` → Cantastic emitters (`ros_control0`/`ros_control1`).
 - Publishes IMU data from a BNO085 sensor via I2C on target (`ImuPublisher`).
-- Ships a legacy Zenoh-MQTT-plugin dispatcher (`ZenohMQTTRos2.Dispatcher`) and `JoyInterpreter`, currently disabled in the supervision tree — kept for fallback while the native-Zenoh path stabilises.
 
 ## Controllers
 
