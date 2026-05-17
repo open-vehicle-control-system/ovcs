@@ -3,7 +3,7 @@ defmodule RosBridge.ZenohClient.State do
     :endpoint_ip,
     :node_name,
     :topic,
-    :msg_module,
+    :message_module,
     :domain_id,
     :key_expr,
     :gid,
@@ -13,7 +13,7 @@ defmodule RosBridge.ZenohClient.State do
     :liveliness_token,
     :timer,
     counter: 0,
-    # %{key_expr => %{topic, msg_module, pids, subscriber_id}}
+    # %{key_expr => %{topic, message_module, pids, subscriber_id}}
     subscriptions: %{}
   ]
 end
@@ -42,7 +42,7 @@ defmodule RosBridge.ZenohClient do
 
   @default_node_name "ovcs_bridge"
   @default_topic "ovcs_heartbeat"
-  @default_msg_module RosString
+  @default_message_module RosString
   @default_domain_id 0
   @default_interval_ms 5_000
   @reconnect_initial_ms 1_000
@@ -55,21 +55,21 @@ defmodule RosBridge.ZenohClient do
 
   @doc """
   Subscribe `pid` (defaults to caller) to a ROS 2 topic. Incoming
-  samples are CDR-decoded with `msg_module.parse/1` and delivered as
+  samples are CDR-decoded with `message_module.parse/1` and delivered as
   `{:ros_message, {key_expr, parsed_message}}`.
 
   Safe to call before the session is open; the subscription is
   declared on the next successful connect and re-declared after any
   reconnect.
   """
-  def subscribe(topic, msg_module, pid \\ self(), opts \\ []) do
-    GenServer.call(__MODULE__, {:subscribe, topic, msg_module, pid, opts})
+  def subscribe(topic, message_module, pid \\ self(), opts \\ []) do
+    GenServer.call(__MODULE__, {:subscribe, topic, message_module, pid, opts})
   end
 
   @impl true
   def init(opts) do
     topic = Keyword.get(opts, :topic, @default_topic)
-    msg_module = Keyword.get(opts, :msg_module, @default_msg_module)
+    message_module = Keyword.get(opts, :message_module, @default_message_module)
     domain_id = Keyword.get(opts, :domain_id, @default_domain_id)
     node_name = Keyword.get(opts, :node_name, @default_node_name)
 
@@ -77,14 +77,14 @@ defmodule RosBridge.ZenohClient do
       endpoint_ip: Keyword.fetch!(opts, :endpoint_ip),
       node_name: node_name,
       topic: topic,
-      msg_module: msg_module,
+      message_module: message_module,
       domain_id: domain_id,
       # Stable per-process GID so consecutive samples look like they
       # come from the same publisher (rmw_zenoh subscribers track this
       # to dedupe / order). Generated on init and reused across
       # reconnects.
       gid: RmwZenoh.random_gid(),
-      key_expr: RmwZenoh.key_expr(domain_id, topic, msg_module),
+      key_expr: RmwZenoh.key_expr(domain_id, topic, message_module),
       interval_ms: Keyword.get(opts, :interval_ms, @default_interval_ms)
     }
 
@@ -93,13 +93,13 @@ defmodule RosBridge.ZenohClient do
   end
 
   @impl true
-  def handle_call({:subscribe, topic, msg_module, pid, _opts}, _from, state) do
+  def handle_call({:subscribe, topic, message_module, pid, _opts}, _from, state) do
     key_expr = subscription_key_expr(state.domain_id, topic)
 
     sub =
       Map.get(state.subscriptions, key_expr, %{
         topic: topic,
-        msg_module: msg_module,
+        message_module: message_module,
         pids: [],
         subscriber_id: nil
       })
@@ -139,12 +139,12 @@ defmodule RosBridge.ZenohClient do
              zid,
              state.node_name,
              state.topic,
-             state.msg_module
+             state.message_module
            ),
          {:ok, token} <- Zenohex.Liveliness.declare_token(session, liveliness_key) do
       Logger.info(
         "#{__MODULE__} connected to tcp/#{state.endpoint_ip}:#{@zenoh_port}, " <>
-          "zid=#{zid}, publishing #{inspect(state.msg_module)} on #{state.key_expr} " <>
+          "zid=#{zid}, publishing #{inspect(state.message_module)} on #{state.key_expr} " <>
           "every #{state.interval_ms}ms"
       )
 
@@ -171,8 +171,8 @@ defmodule RosBridge.ZenohClient do
 
   def handle_info(:tick, %State{publisher: publisher} = state) when not is_nil(publisher) do
     counter = state.counter + 1
-    msg = build_message(state.msg_module, counter)
-    payload = RmwZenoh.encode_payload(msg)
+    message = build_message(state.message_module, counter)
+    payload = RmwZenoh.encode_payload(message)
     attachment = RmwZenoh.attachment(counter, System.system_time(:nanosecond), state.gid)
 
     case Zenohex.Publisher.put(publisher, payload, attachment: attachment) do
@@ -180,7 +180,7 @@ defmodule RosBridge.ZenohClient do
         Logger.info(
           "#{__MODULE__} put ##{counter} on #{state.key_expr} " <>
             "(#{byte_size(payload)}B payload + #{byte_size(attachment)}B attachment): " <>
-            inspect(msg)
+            inspect(message)
         )
 
         timer = Process.send_after(self(), :tick, state.interval_ms)
@@ -212,7 +212,7 @@ defmodule RosBridge.ZenohClient do
   def terminate(_reason, state), do: teardown(state)
 
   defp deliver_sample(sub, key_expr, payload) do
-    case sub.msg_module.parse(payload) do
+    case sub.message_module.parse(payload) do
       {:ok, parsed, _rest} ->
         Enum.each(sub.pids, fn pid ->
           send(pid, {:ros_message, {key_expr, parsed}})
@@ -220,7 +220,7 @@ defmodule RosBridge.ZenohClient do
 
       error ->
         Logger.warning(
-          "#{__MODULE__} parse #{inspect(sub.msg_module)} on #{key_expr} failed: " <>
+          "#{__MODULE__} parse #{inspect(sub.message_module)} on #{key_expr} failed: " <>
             inspect(error)
         )
     end
@@ -243,11 +243,11 @@ defmodule RosBridge.ZenohClient do
     end
   end
 
-  defp schedule_reconnect(state, backoff_ms, msg) do
+  defp schedule_reconnect(state, backoff_ms, reason) do
     next = min(backoff_ms * 2, @reconnect_max_ms)
 
     Logger.warning(
-      "#{__MODULE__} #{msg}; retrying in #{backoff_ms}ms"
+      "#{__MODULE__} #{reason}; retrying in #{backoff_ms}ms"
     )
 
     Process.send_after(self(), {:connect, next}, backoff_ms)

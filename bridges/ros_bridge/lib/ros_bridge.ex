@@ -48,10 +48,10 @@ defmodule RosBridge do
     # against a local Zenoh router (default endpoint 127.0.0.1,
     # override via `ZENOH_ENDPOINT_IP`). No I2C-backed IMU.
     def children do
-      cfg = vehicle().ros_bridge_config(:host)
+      config = vehicle().ros_bridge_config(:host)
 
       [
-        {RosBridge.ZenohClient, endpoint_ip: cfg.zenoh_endpoint_ip},
+        {RosBridge.ZenohClient, endpoint_ip: config.zenoh_endpoint_ip},
         {RosBridge.JoyInterpreter, []}
       ]
     end
@@ -60,10 +60,10 @@ defmodule RosBridge do
     # Target: full bridge — Zenoh client (publisher + subscriber),
     # joy → CAN translator, BNO085 IMU.
     def children do
-      cfg = vehicle().ros_bridge_config(:target)
+      config = vehicle().ros_bridge_config(:target)
 
       [
-        {RosBridge.ZenohClient, endpoint_ip: cfg.zenoh_endpoint_ip},
+        {RosBridge.ZenohClient, endpoint_ip: config.zenoh_endpoint_ip},
         {RosBridge.JoyInterpreter, []},
         {BNO085.I2C, []},
         {RosBridge.ImuPublisher, [bno085_module: BNO085.I2C]}
