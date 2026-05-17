@@ -1,21 +1,24 @@
-defmodule RosBridge.Imu.BnoAdapter do
+defmodule RosBridge.Imu.Adapter do
   @moduledoc """
-  Bridges a `BNO085.*` driver to `RosBridge.ImuPublisher`. Subscribes
-  to the driver, translates each `%BNO085.Sample{}` into a
-  `%RosBridge.ImuSource.Reading{}` (wrapping the SI floats in
-  `Ros2.GeometryMsgs.Msg.{Vector3, Quaternion}`), and fans it out to
-  its own listeners.
+  Generic over any `OvcsDrivers.Imu` implementation. Subscribes to
+  the driver module passed in `:driver`, translates each
+  `%OvcsDrivers.Imu.Sample{}` into a `%RosBridge.ImuSource.Reading{}`
+  (wrapping the SI floats in `Ros2.GeometryMsgs.Msg.{Vector3,
+  Quaternion}`), and fans it out to its own listeners.
 
-  This is the only module in the tree that imports both `BNO085.*`
-  and `Ros2.*` — keeping that coupling here lets the BNO driver stay
-  pure-hardware (eventually liftable into a standalone library) and
-  the publisher stay pure-ROS (knows only about `ImuSource`).
+  This is the only module in the tree that imports both
+  `OvcsDrivers.*` and `Ros2.*` — keeping that coupling here lets the
+  drivers stay pure-hardware (liftable into a standalone library)
+  and the publisher stay pure-ROS (knows only about `ImuSource`).
+
+  Swap drivers by changing the `:driver` opt; no consumer code
+  changes.
   """
   @behaviour RosBridge.ImuSource
 
   use GenServer
 
-  alias BNO085.Sample
+  alias OvcsDrivers.Imu.Sample
   alias Ros2.GeometryMsgs.Msg.Quaternion
   alias Ros2.GeometryMsgs.Msg.Vector3
   alias RosBridge.ImuSource.Reading
@@ -28,13 +31,13 @@ defmodule RosBridge.Imu.BnoAdapter do
 
   @impl true
   def init(opts) do
-    bno_module = Keyword.fetch!(opts, :bno_module)
-    bno_module.register_listener(self())
-    {:ok, %{bno_module: bno_module, listeners: []}}
+    driver = Keyword.fetch!(opts, :driver)
+    driver.register_listener(self())
+    {:ok, %{driver: driver, listeners: []}}
   end
 
   @impl true
-  def handle_cast({:bno085_sample, %Sample{} = sample}, state) do
+  def handle_cast({:imu_sample, %Sample{} = sample}, state) do
     reading = to_reading(sample)
 
     if reading do
@@ -62,7 +65,7 @@ defmodule RosBridge.Imu.BnoAdapter do
 
   @impl true
   def handle_call(:enable, _from, state) do
-    state.bno_module.enable()
+    state.driver.enable()
     {:reply, :ok, state}
   end
 
@@ -77,4 +80,6 @@ defmodule RosBridge.Imu.BnoAdapter do
   defp to_reading(%Sample{kind: :rotation, x: x, y: y, z: z, w: w}) do
     %Reading{kind: :orientation, value: %Quaternion{x: x, y: y, z: z, w: w}}
   end
+
+  defp to_reading(_), do: nil
 end

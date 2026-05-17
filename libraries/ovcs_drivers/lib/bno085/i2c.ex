@@ -2,17 +2,20 @@
 # credo:disable-for-this-file Credo.Check.Readability.WithSingleClause
 defmodule BNO085.I2C do
   @moduledoc """
-  BNO085 driver over I²C using the SH-2 protocol. Pure hardware
-  concerns — no application-framework types. Listeners receive
-  `{:bno085_sample, %BNO085.Sample{}}` casts in SI units; the
-  consuming application is responsible for shaping those into its
-  own messages.
+  BNO085 driver over I²C using the SH-2 protocol. Implements the
+  `OvcsDrivers.Imu` behaviour: listeners receive
+  `{:imu_sample, %OvcsDrivers.Imu.Sample{}}` casts in SI units. Pure
+  hardware concerns — Q-point scaling, register layouts, chip-ready
+  gating all live here; framework-side translation lives in the
+  consuming application.
   """
+  @behaviour OvcsDrivers.Imu
+
   use GenServer
   import Bitwise
   require Logger
 
-  alias BNO085.Sample
+  alias OvcsDrivers.Imu.Sample
 
   @address 0x4A
   @product_id_request 0xF9
@@ -337,7 +340,7 @@ defmodule BNO085.I2C do
 
     if sample do
       Enum.each(state.listeners, fn listener ->
-        GenServer.cast(listener, {:bno085_sample, sample})
+        GenServer.cast(listener, {:imu_sample, sample})
       end)
     end
 
@@ -433,6 +436,7 @@ defmodule BNO085.I2C do
     {:noreply, %{state | listeners: state.listeners ++ [listener]}}
   end
 
+  @impl OvcsDrivers.Imu
   def enable do
     :ok = GenServer.cast(__MODULE__, {:enable, :accelerometer})
     :ok = GenServer.cast(__MODULE__, {:enable, :uncalibrated_gyroscope})
@@ -446,6 +450,7 @@ defmodule BNO085.I2C do
     :ok
   end
 
+  @impl OvcsDrivers.Imu
   def register_listener(listener) do
     GenServer.cast(__MODULE__, {:register_listener, listener})
   end

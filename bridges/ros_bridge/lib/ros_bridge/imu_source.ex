@@ -15,21 +15,17 @@ end
 
 defmodule RosBridge.ImuSource do
   @moduledoc """
-  Behaviour separating IMU sensor drivers (`BNO085.I2C`,
-  `BNO085.Dummy`, future ones) from `RosBridge.ImuPublisher`.
+  Behaviour separating IMU sources (driver adapters, future fusion
+  pipelines) from `RosBridge.ImuPublisher`.
 
-  After `register_listener(pid)`, the driver casts
+  After `register_listener(pid)`, the source casts
   `{:imu_reading, %RosBridge.ImuSource.Reading{}}` to `pid` whenever
-  a new sample is available. Values are in SI units (m/s² for
-  linear acceleration, rad/s for angular velocity, unit-quaternion
-  components for orientation) — Q-point conversions and any other
-  hardware-specific decoding live in the driver, not the publisher.
+  a new sample is available, in ROS-shaped types (`Vector3` /
+  `Quaternion`).
 
-  `enable/0` tells the driver to start producing samples. The driver
-  owns any hardware-specific gating (e.g. waiting for a chip reset
-  to complete before issuing feature commands); callers just call
-  `enable/0` once and trust readings to arrive when the device is
-  ready.
+  `enable/0` tells the source to start producing samples. The source
+  owns any hardware-specific gating; callers just call `enable/0`
+  once and trust readings to arrive when the device is ready.
   """
 
   @callback register_listener(pid()) :: :ok
