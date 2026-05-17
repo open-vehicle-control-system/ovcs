@@ -47,6 +47,15 @@ defmodule RosBridge.ImuPublisher do
   # slow enough not to drown a downstream consumer in samples.
   @default_publish_interval_ms 20
 
+  # The BNO chip soft-resets in its own `init/1`. Feature-enable
+  # commands sent during the ~150 ms reboot window reach the I²C bus
+  # but the chip silently drops them — observed on hardware as the
+  # whole IMU publish path stalling on `latest_* = nil` forever. Wait
+  # half a second before enabling. The driver doesn't yet surface a
+  # "reset complete" notification we could synchronise on; if that
+  # lands, switch to it.
+  @sensor_enable_delay_ms 500
+
   # BNO085 SH-2 Q-point scaling — see the datasheet, section "Sensor
   # report data". Applied on intake so State always holds SI-unit
   # floats and the publish path doesn't have to know about Q-points.
@@ -75,7 +84,7 @@ defmodule RosBridge.ImuPublisher do
     }
 
     bno085_module.register_listener(self())
-    bno085_module.enable_all_sensors()
+    Process.send_after(self(), :enable_sensors, @sensor_enable_delay_ms)
     Process.send_after(self(), :tick, state.publish_interval_ms)
 
     Logger.info(
@@ -105,6 +114,11 @@ defmodule RosBridge.ImuPublisher do
   def handle_cast({:bno085_sensor_message, _other}, state), do: {:noreply, state}
 
   @impl true
+  def handle_info(:enable_sensors, state) do
+    state.bno085_module.enable_all_sensors()
+    {:noreply, state}
+  end
+
   def handle_info(:tick, %State{} = state) do
     state =
       if ready_to_publish?(state) do
