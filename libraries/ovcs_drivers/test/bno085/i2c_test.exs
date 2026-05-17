@@ -46,13 +46,13 @@ defmodule BNO085.I2CTest do
     test "extracts the quaternion + drops accuracy_estimate" do
       # 1 byte id + seq + status + delay + 4 × int16 quat + int16 accuracy
       # = 14-byte report body. cargo_length = 4 + 14 = 18.
-      # i=0, j=0, k=0, real=16383 (≈ Q14 1.0), accuracy=42 (ignored).
+      # i=0, j=0, k=0, real=16_383 (≈ Q14 1.0), accuracy=42 (ignored).
       cargo = <<18, 0, 3, 0, 0x05, 9, 3, 0, 0, 0, 0, 0, 0, 0, 0xFF, 0x3F, 42, 0>>
 
       assert {:ok, %{reports: [report]}} = I2C.parse_cargo(cargo)
       assert report.id == 0x05
       assert report.name == "rotation_vector"
-      assert {report.i, report.j, report.k, report.real} == {0, 0, 0, 16383}
+      assert {report.i, report.j, report.k, report.real} == {0, 0, 0, 16_383}
       refute Map.has_key?(report, :accuracy_estimate)
     end
   end
@@ -69,9 +69,9 @@ defmodule BNO085.I2CTest do
     end
 
     test "rotation_vector is Q14 → unit-quaternion components" do
-      # real = 16383 should land at 16383/16384 ≈ 0.99993896 — the
+      # real = 16_383 should land at 16_383/16384 ≈ 0.99993896 — the
       # exact value we see on the wire from the dummy driver.
-      raw = %{id: 0x05, name: "rotation_vector", i: 0, j: 0, k: 0, real: 16383}
+      raw = %{id: 0x05, name: "rotation_vector", i: 0, j: 0, k: 0, real: 16_383}
 
       sample = I2C.build_sample(raw)
       assert sample.kind == :rotation
