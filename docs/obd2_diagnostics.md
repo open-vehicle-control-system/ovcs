@@ -58,11 +58,11 @@ flowchart TD
     DISC["<b>Obd2.Vms.Discovery</b><br/>raw socket sniff +<br/>Mode 22 DID walk<br/>broadcasts metrics on Bus"]
     METRICS["<b>VmsCore.Metrics</b><br/>→ VmsApi metrics channel<br/>→ Vue dashboard"]
 
-    YAML -->|at boot| CANTASTIC
-    CANTASTIC -->|{:handle_obd2_response, …}| DIAG
-    CANTASTIC -.->|raw CAN frames| DISC
-    DIAG -->|%Bus.Message{name, value, source}| METRICS
-    DISC -->|%Bus.Message{name, value, source}| METRICS
+    YAML -->|"at boot"| CANTASTIC
+    CANTASTIC -->|"{:handle_obd2_response, …}"| DIAG
+    CANTASTIC -.->|"raw CAN frames"| DISC
+    DIAG -->|"%Bus.Message{name, value, source}"| METRICS
+    DISC -->|"%Bus.Message{name, value, source}"| METRICS
 ```
 
 Two GenServers, one VMS Bus topic, the existing metrics pipeline.
