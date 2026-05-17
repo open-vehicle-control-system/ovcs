@@ -1,0 +1,12 @@
+---
+# UDS Mode 0x3E — TesterPresent.
+# Sent at ~2s with suppressPosResp (0x80) to keep the extended
+# diagnostic session alive. Disabled by default; enabled by the
+# diagnostic GenServer once an extended session is open.
+name: tester_present_powertrain
+request_frame_id: 0x7E0
+response_frame_id: 0x7E8
+frequency: 2000
+mode: 0x3E
+options:
+  sub_function: 0x80

@@ -1,0 +1,14 @@
+---
+# SAE J1979 Mode 0x09 PID 0x04 — Calibration Identification.
+# Variable number of 16-byte ASCII items (one per ECU). Surfaced as a
+# list whose length matches the ECU's `num_items` byte.
+name: vehicle_info_calibration_id
+request_frame_id: 0x7DF
+response_frame_id: 0x7E8
+frequency: 5000
+mode: 0x09
+parameters:
+  - name: calibration_id
+    id: 0x04
+    kind: ascii
+    value_length: 128

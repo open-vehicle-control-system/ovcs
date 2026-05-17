@@ -1,0 +1,13 @@
+---
+# UDS Mode 0x19 — ReadDTCInformation, sub-function 0x02
+# (reportDTCByStatusMask). Returns DTCs with their ISO 14229-1 status
+# byte (confirmed / pending / test-failed-since-last-clear / …).
+# Most post-2010 ECUs answer 0x19 and not 0x03.
+name: uds_read_dtcs
+request_frame_id: 0x7E0
+response_frame_id: 0x7E8
+frequency: 2000
+mode: 0x19
+options:
+  sub_function: 0x02
+  status_mask: 0xFF

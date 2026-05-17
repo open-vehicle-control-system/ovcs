@@ -1,0 +1,9 @@
+---
+# SAE J1979 Mode 0x03 — read emission-related stored DTCs.
+# Cantastic surfaces the codes as a list of "Pxxxx" strings under
+# the parameter named "dtcs".
+name: stored_dtcs
+request_frame_id: 0x7DF
+response_frame_id: 0x7E8
+frequency: 2000
+mode: 0x03

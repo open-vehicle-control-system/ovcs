@@ -1,0 +1,8 @@
+---
+# SAE J1979 Mode 0x07 — read pending DTCs (intermittent codes
+# detected since the last clear).
+name: pending_dtcs
+request_frame_id: 0x7DF
+response_frame_id: 0x7E8
+frequency: 2000
+mode: 0x07
