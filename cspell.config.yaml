@@ -1,0 +1,357 @@
+# Workspace config for the `streetsidesoftware.code-spell-checker`
+# VS Code extension (recommended in .vscode/extensions.json).
+#
+# Add new domain vocabulary here rather than per-file `cspell:disable`
+# pragmas so the project dictionary stays diffable in PRs.
+$schema: https://raw.githubusercontent.com/streetsidesoftware/cspell/main/cspell.schema.json
+version: "0.2"
+language: en
+caseSensitive: false
+
+words:
+  # Core project / orgs / contributor names
+  - lainez
+  - loïc
+  - makilab
+  - obd
+  - ovcs
+  - ovcs1
+  - ovcscan
+  - poncelet
+  - spin42
+  - thibault
+  - vigneron
+
+  # Elixir / Erlang / Phoenix idioms not in the default dict
+  - behaviour
+  - behaviours
+  - bitstring
+  - bitwise
+  - bxor
+  - camelize
+  - capturelog
+  - charlist
+  - codepoint
+  - credo
+  - dedupe
+  - deduplicated
+  - defdelegate
+  - defmacro
+  - defmodule
+  - defp
+  - defstruct
+  - doctype
+  - ebin
+  - ecto
+  - elixirforum
+  - epmd
+  - erlinit
+  - erlef
+  - erts
+  - esbuild
+  - escript
+  - escripts
+  - iex
+  - impls
+  - mixfile
+  - mult
+  - nanosec
+  - parameterisation
+  - parameterised
+  - pids
+  - remsh
+  - ringlogger
+  - saxy
+  - serialises
+  - sname
+  - snames
+
+  # Nerves / embedded toolchain
+  - bazzite
+  - bluefin
+  - bootable
+  - displayport
+  - distrobox
+  - distroboxes
+  - fakeroot
+  - fwup
+  - kinoite
+  - mise
+  - mmcblk
+  - nerves
+  - platformio
+  - rootfs
+  - rpi
+  - rustc
+  - silverblue
+  - subcmd
+  - subcomponent
+  - subosito
+  - tmpfs
+  - uart
+
+  # ROS 2 / Zenoh / Foxglove
+  - cdr
+  - cyclonedds
+  - dds
+  - foxglove
+  - keyexpr
+  - keyexprs
+  - liveliness
+  - mcap
+  - rclpy
+  - rihs
+  - rmw
+  - rosidl
+  - rosout
+  - zenoh
+  - zenohd
+  - zenohex
+  - zid
+
+  # CAN / vehicle / drivetrain
+  - betaflight
+  - bitrate
+  - bitrates
+  - brushless
+  - btfl
+  - candump
+  - candumps
+  - canid
+  - canopen
+  - canplayer
+  - cansend
+  - cantastic
+  - cipo
+  - contactor
+  - contactors
+  - copi
+  - crcs
+  - ctrls
+  - deadband
+  - deadzone
+  - decidegrees
+  - drivability
+  - drivetrain
+  - evdev
+  - ibooster
+  - igbt
+  - inav
+  - isotp
+  - joystick
+  - kbps
+  - mavlink
+  - mbps
+  - mcrf
+  - mspv
+  - offsetted
+  - pinout
+  - precharge
+  - proporional
+  - pwms
+  - readbacks
+  - refin
+  - refout
+  - rssi
+  - shtp
+  - socketcan
+  - socketcand
+  - spoofer
+  - timebase
+  - traxxas
+  - udev
+  - vario
+  - vbat
+  - vbus
+  - walksnail
+  - waterpump
+  - xorout
+  - xpad
+
+  # Hardware / sensors
+  - accelerometer
+  - bms
+  - bno
+  - bosch
+  - dac
+  - eeprom
+  - gyro
+  - imu
+  - magnetometer
+
+  # General programming / sysadmin not in default dict
+  - apparmor
+  - autorepeat
+  - autoconf
+  - backend
+  - backends
+  - backoff
+  - ardu
+  - bashrc
+  - clfl
+  - espec
+  - evpt
+  - fale
+  - pipefail
+  - rosb
+  - tcross
+  - cgroup
+  - charset
+  - cmdline
+  - codec
+  - codecs
+  - compat
+  - composable
+  - creds
+  - ctty
+  - cors
+  - cpus
+  - csrf
+  - datetime
+  - dereference
+  - desync
+  - dgram
+  - distro
+  - distros
+  - dmesg
+  - dockerfile
+  - dpkg
+  - embedder
+  - endian
+  - endianness
+  - endiannesses
+  - enodev
+  - enoent
+  - envsubst
+  - errno
+  - firmwares
+  - fosdem
+  - gettext
+  - gifindex
+  - hashmap
+  - hostnames
+  - hotplug
+  - iface
+  - ifindex
+  - imac
+  - incompat
+  - ints
+  - json5
+  - keepalive
+  - kmod
+  - konsole
+  - libgl
+  - libglu
+  - libinput
+  - libmnl
+  - libncurses
+  - libsocketcan
+  - libssh
+  - libusb
+  - libwxgtk
+  - libyaml
+  - licence
+  - linuxbrew
+  - mdns
+  - mgmt
+  - mkdir
+  - mosquitto
+  - mqtt
+  - multiarch
+  - multicast
+  - nodev
+  - noninteractive
+  - oneshot
+  - overlayfs
+  - overlays
+  - passwordless
+  - peerings
+  - pipx
+  - preinstalled
+  - preload
+  - preloads
+  - println
+  - quic
+  - quicer
+  - ratatui
+  - rebar
+  - recvmsg
+  - reentrant
+  - reflashes
+  - replug
+  - roscli
+  - rtnetlink
+  - shoehorn
+  - setopt
+  - sideloaded
+  - siocghwtstamp
+  - siocgstamp
+  - siocgstampns
+  - siocshwtstamp
+  - snabbkaffe
+  - stateful
+  - subdomain
+  - sysv
+  - timestamping
+  - tortoise311
+  - travelling
+  - txqueuelen
+  - udevadm
+  - uevent
+  - unconfigured
+  - unioned
+  - unixodbc
+  - untrusted
+  - vcan
+  - whereis
+  - wlan
+  - wxgtk
+  - xclip
+  - xsel
+  - xsltproc
+  - zsh
+
+# Empty — populate if you want to mark specific strings as
+# always-misspelled across the repo.
+flagWords: []
+
+# Patterns to skip: things that look like words but aren't.
+ignoreRegExpList:
+  # RIHS01 ROS 2 type hashes — `RIHS01_<64-hex>`.
+  - "RIHS01_[A-Fa-f0-9]{64,}"
+  # Long hex / base64 blobs (tokens, keys, hashes).
+  - "\\b[A-Fa-f0-9]{16,}\\b"
+  - "\\b[A-Za-z0-9+/]{24,}={0,2}\\b"
+  # CSS hex colours and Elixir 0x literals.
+  - "#[0-9A-Fa-f]{3,8}\\b"
+  - "0x[0-9A-Fa-f]+"
+  # URLs and env-var references — already typical false positives.
+  - "https?://\\S+"
+  - "\\$\\{?[A-Z_][A-Z0-9_]*\\}?"
+  # ROS DDS-mangled type names like `std_msgs::msg::dds_::String_`.
+  - "\\b[a-z_]+::msg::dds_::[A-Za-z0-9_]+\\b"
+  # Generic C++-style namespaced identifiers.
+  - "\\b[A-Za-z_][A-Za-z0-9_]*(::[A-Za-z_][A-Za-z0-9_]*)+\\b"
+
+# Skip whole trees that aren't human-edited.
+ignorePaths:
+  - "**/_build/**"
+  - "**/deps/**"
+  - "**/node_modules/**"
+  - "**/.elixir_ls/**"
+  - "**/priv/static/**"
+  - "**/cli/target/**"
+  - "**/dist/**"
+  - "**/build/**"
+  - "**/*.lock"
+  - "**/mix.lock"
+  - "**/package-lock.json"
+  - "**/pnpm-lock.yaml"
+  - "**/Cargo.lock"
+  - "**/.git/**"
+  - "**/*.svg"
+  - "**/*.min.js"
+  - "**/*.min.css"
+  - "**/*.pem"
+  - "**/*.crt"
+  - "**/*.key"
