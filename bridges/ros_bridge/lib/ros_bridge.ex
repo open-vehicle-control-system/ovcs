@@ -43,32 +43,46 @@ defmodule RosBridge do
   # `children/0` clauses, exactly one of which is in the firmware.
   if Mix.target() == :host do
     @impl OvcsBridge
-    # Host: native Zenoh client + joy → CAN translator so `./ovcs run`
-    # can drive both the ROS publisher and the joy-control path
-    # against a local Zenoh router (default endpoint 127.0.0.1,
+    # Host: native Zenoh client + heartbeat + joy → CAN translator so
+    # `./ovcs run` can drive both the ROS publisher and the joy-control
+    # path against a local Zenoh router (default endpoint 127.0.0.1,
     # override via `ZENOH_ENDPOINT_IP`). No I2C-backed IMU.
     def children do
       config = vehicle().ros_bridge_config(:host)
 
       [
         {RosBridge.ZenohClient, endpoint_ip: config.zenoh_endpoint_ip},
+        heartbeat_child(),
         {RosBridge.JoyInterpreter, []}
       ]
     end
   else
     @impl OvcsBridge
-    # Target: full bridge — Zenoh client (publisher + subscriber),
-    # joy → CAN translator, BNO085 IMU.
+    # Target: full bridge — Zenoh client, heartbeat, joy → CAN
+    # translator, BNO085 IMU.
     def children do
       config = vehicle().ros_bridge_config(:target)
 
       [
         {RosBridge.ZenohClient, endpoint_ip: config.zenoh_endpoint_ip},
+        heartbeat_child(),
         {RosBridge.JoyInterpreter, []},
         {BNO085.I2C, []},
         {RosBridge.ImuPublisher, [bno085_module: BNO085.I2C]}
       ]
     end
+  end
+
+  defp heartbeat_child do
+    {RosBridge.Heartbeat,
+     topic: "ovcs_heartbeat",
+     message_module: Ros2.StdMsgs.Msg.String,
+     interval_ms: 1_000,
+     build: fn counter ->
+       %Ros2.StdMsgs.Msg.String{
+         data: "heartbeat #{counter} @ #{System.system_time(:millisecond)}"
+       }
+     end}
   end
 
   # The vehicle module is stamped into Application env by

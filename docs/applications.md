@@ -203,7 +203,8 @@ Enables remote control of the vehicle using a MAVLink-compatible RC transmitter 
 
 Provides integration with ROS 2 for autonomous driving research. It:
 
-- Publishes a `std_msgs/String` heartbeat onto the ROS 2 graph natively over Zenoh / `rmw_zenoh` (`ZenohClient` + `Ros2.RmwZenoh`). See [`bridges/ros_bridge/README.md`](../bridges/ros_bridge/README.md) for the wire-format details.
+- Holds a single Zenoh session (`ZenohClient`) and exposes a `publish/4` + `subscribe/4` API to the rest of the bridge. Handles lazy publisher / liveliness-token declaration, reconnect with stable per-publisher GIDs, and subscriber pid monitoring. See [`bridges/ros_bridge/README.md`](../bridges/ros_bridge/README.md) for the wire-format details.
+- Publishes a `std_msgs/String` heartbeat onto the ROS 2 graph every 5 s via `RosBridge.Heartbeat`, so consumers can see the BEAM is alive even when no other topic is flowing.
 - Subscribes to the ROS 2 `joy` topic via the same `ZenohClient` and forwards `sensor_msgs/Joy` axes onto the CAN bus through `JoyInterpreter` → Cantastic emitters (`ros_control0`/`ros_control1`).
 - Publishes IMU data from a BNO085 sensor via I2C on target (`ImuPublisher`).
 
