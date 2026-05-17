@@ -160,8 +160,14 @@ Once the setup is done:
 
 # Attach a split-pane log + IEx TUI (in another terminal)
 ./ovcs attach ovcs1
+```
 
-# Start the VMS debug dashboard (in yet another terminal)
+The VMS API at `http://localhost:4000/` already serves a prebuilt copy
+of the dashboard (from `vms/api/priv/static/`), so just open that URL.
+Only run the Vite dev server if you're actively editing the dashboard
+Vue source and want hot reload:
+
+```sh
 cd vms/dashboard && npm install && npm run dev
 ```
 

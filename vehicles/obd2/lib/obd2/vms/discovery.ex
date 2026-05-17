@@ -286,8 +286,7 @@ defmodule Obd2.Vms.Discovery do
   defp format_bytes(bytes) do
     bytes
     |> :binary.bin_to_list()
-    |> Enum.map(&hex(&1, 2))
-    |> Enum.join(" ")
+    |> Enum.map_join(" ", &hex(&1, 2))
   end
 
   defp hex(value, width) do
