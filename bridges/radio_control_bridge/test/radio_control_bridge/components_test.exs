@@ -49,21 +49,21 @@ defmodule RadioControlBridge.ComponentsTest do
     end
   end
 
+  defmodule FakeVehicleWithMavlink do
+    def radio_control_bridge_config(_arm) do
+      %Config{
+        components: [
+          {:mavlink_forwarder, uart_port: "ttyTEST", uart_baud_rate: 921_600}
+        ]
+      }
+    end
+  end
+
+  defmodule FakeVehicleWithoutMavlink do
+    def radio_control_bridge_config(_arm), do: %Config{components: []}
+  end
+
   describe "RadioControlBridge.apply_runtime_config/2" do
-    defmodule FakeVehicleWithMavlink do
-      def radio_control_bridge_config(_arm) do
-        %Config{
-          components: [
-            {:mavlink_forwarder, uart_port: "ttyTEST", uart_baud_rate: 921_600}
-          ]
-        }
-      end
-    end
-
-    defmodule FakeVehicleWithoutMavlink do
-      def radio_control_bridge_config(_arm), do: %Config{components: []}
-    end
-
     setup do
       # Snapshot whatever :express_lrs env may already exist (other
       # tests, dev shell, etc.) so this test's writes don't leak.
@@ -92,15 +92,15 @@ defmodule RadioControlBridge.ComponentsTest do
       refute Application.get_env(:express_lrs, :enabled)
       refute Application.get_env(:express_lrs, :interface)
     end
+  end
 
-    defp reset_express_lrs(previous) do
-      for {k, _v} <- Application.get_all_env(:express_lrs) do
-        Application.delete_env(:express_lrs, k)
-      end
+  defp reset_express_lrs(previous) do
+    for {k, _v} <- Application.get_all_env(:express_lrs) do
+      Application.delete_env(:express_lrs, k)
+    end
 
-      for {k, v} <- previous do
-        Application.put_env(:express_lrs, k, v, persistent: true)
-      end
+    for {k, v} <- previous do
+      Application.put_env(:express_lrs, k, v, persistent: true)
     end
   end
 end

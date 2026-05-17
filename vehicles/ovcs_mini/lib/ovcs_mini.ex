@@ -41,10 +41,12 @@ defmodule OvcsMini do
     do: %RadioControlBridge.Config{
       components: [
         {:mavlink_forwarder, uart_port: "ttySC0", uart_baud_rate: 460_800}
-        # MSP OSD path — declared but not enabled. Uncomment and
-        # replace the UART with the actual VTX serial line once
-        # `RadioControlBridge.MspOsdForwarder` ships a real impl.
-        # {:msp_osd_forwarder, uart_port: "ttyXXX", uart_baud_rate: 115_200}
+        # MSP OSD path — declared but not enabled. Strip the leading
+        # `# ` from the data line below and replace the UART with the
+        # actual VTX serial line once `RadioControlBridge.MspOsdForwarder`
+        # ships a real impl. (The leading comma is intentional so
+        # enabling is a clean prefix removal — no other edits needed.)
+        # , {:msp_osd_forwarder, uart_port: "ttyXXX", uart_baud_rate: 115_200}
       ]
     }
 
