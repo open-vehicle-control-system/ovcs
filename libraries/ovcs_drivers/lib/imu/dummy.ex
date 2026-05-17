@@ -1,10 +1,13 @@
-defmodule BNO085.Dummy do
+defmodule OvcsDrivers.Imu.Dummy do
   @moduledoc """
-  Host-side stand-in for `BNO085.I2C`. Implements the
-  `OvcsDrivers.Imu` behaviour, emitting one of each sample kind on a
-  10 ms loop so consumers can be exercised end-to-end without an
-  attached sensor. Same contract as the real driver — pre-scaled SI
-  units, generic envelope.
+  Kind-level fixture stub. Implements `OvcsDrivers.Imu` and emits
+  one of each `OvcsDrivers.Imu.Sample` kind on a 10 ms loop so
+  consumers can be exercised end-to-end without an attached sensor
+  — same contract as any real driver, pre-scaled SI units.
+
+  Useful for `./ovcs run` on a developer laptop and for any test
+  that wants a steady stream of plausible IMU samples without
+  spinning up real hardware.
   """
   @behaviour OvcsDrivers.Imu
 

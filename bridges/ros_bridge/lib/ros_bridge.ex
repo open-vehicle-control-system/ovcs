@@ -19,7 +19,7 @@ defmodule RosBridge do
   supply per-deployment knobs (Zenoh broker IP, etc.).
 
   Host vs. target is handled at compile time: on host we wire
-  `BNO085.Dummy` instead of `BNO085.I2C` so the IMU publish path
+  `OvcsDrivers.Imu.Dummy` instead of `BNO085.I2C` so the IMU publish path
   still runs end-to-end against a local Zenoh router without
   hardware.
   """
@@ -44,7 +44,7 @@ defmodule RosBridge do
   # `children/0` clauses, exactly one of which is in the firmware.
   if Mix.target() == :host do
     @impl OvcsBridge
-    # Host: same supervision shape as target, but `BNO085.Dummy`
+    # Host: same supervision shape as target, but `OvcsDrivers.Imu.Dummy`
     # stands in for `BNO085.I2C` so the IMU publish path is
     # exercised end-to-end without an attached sensor. Endpoint
     # defaults to 127.0.0.1; override via `ZENOH_ENDPOINT_IP`.
@@ -55,8 +55,8 @@ defmodule RosBridge do
         {RosBridge.ZenohClient, endpoint_ip: config.zenoh_endpoint_ip},
         heartbeat_child(),
         {RosBridge.JoyInterpreter, []},
-        {BNO085.Dummy, []},
-        {RosBridge.ImuPublisher, [driver: BNO085.Dummy]}
+        {OvcsDrivers.Imu.Dummy, []},
+        {RosBridge.ImuPublisher, [driver: OvcsDrivers.Imu.Dummy]}
       ]
     end
   else
