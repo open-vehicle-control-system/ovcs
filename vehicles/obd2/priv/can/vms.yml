@@ -7,4 +7,21 @@ can_networks:
   obd2:
     bitrate: 500000
     obd2_requests:
-      - import!:@ovcs_can:can/components/obd2/current_speed_and_rotation_per_minute_request.yml
+      # Mode 01 — current data
+      - import!:@ovcs_can:can/components/obd2/mode01_supported_pids.yml
+      - import!:@ovcs_can:can/components/obd2/mode01_live_data_fast.yml
+      - import!:@ovcs_can:can/components/obd2/mode01_live_data_slow.yml
+      # Mode 03 / 07 / 0A / 04 — emission DTC management
+      - import!:@ovcs_can:can/components/obd2/mode03_stored_dtcs.yml
+      - import!:@ovcs_can:can/components/obd2/mode07_pending_dtcs.yml
+      - import!:@ovcs_can:can/components/obd2/mode0a_permanent_dtcs.yml
+      - import!:@ovcs_can:can/components/obd2/mode04_clear_dtcs.yml
+      # Mode 09 — vehicle information
+      - import!:@ovcs_can:can/components/obd2/mode09_vin.yml
+      - import!:@ovcs_can:can/components/obd2/mode09_calibration_id.yml
+      - import!:@ovcs_can:can/components/obd2/mode09_ecu_name.yml
+      # UDS — extended session, DTCs, tester present
+      - import!:@ovcs_can:can/components/obd2/mode10_extended_session.yml
+      - import!:@ovcs_can:can/components/obd2/mode3e_tester_present.yml
+      - import!:@ovcs_can:can/components/obd2/mode19_uds_read_dtcs.yml
+      - import!:@ovcs_can:can/components/obd2/mode14_uds_clear_dtcs.yml

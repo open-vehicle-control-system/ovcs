@@ -1,0 +1,12 @@
+---
+# UDS Mode 0x10 — DiagnosticSessionControl.
+# Opens an extendedDiagnosticSession (0x03) on the powertrain ECU at
+# 0x7E0/0x7E8. Required before reading non-default DIDs or running
+# routines on UDS-only ECUs. Disabled by default; opened on demand.
+name: extended_session_powertrain
+request_frame_id: 0x7E0
+response_frame_id: 0x7E8
+frequency: 5000
+mode: 0x10
+options:
+  session_type: 0x03
