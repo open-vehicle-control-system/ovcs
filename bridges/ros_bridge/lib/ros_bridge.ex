@@ -18,9 +18,10 @@ defmodule RosBridge do
   Vehicles that bundle this bridge implement `c:ros_bridge_config/0` to
   supply per-deployment knobs (Zenoh broker IP, etc.).
 
-  Host vs. target is handled at compile time: on host we wire the
-  dummy BNO085 and skip the real IMU publisher so the bridge boots
-  without I2C hardware.
+  Host vs. target is handled at compile time: on host we wire
+  `BNO085.Dummy` instead of `BNO085.I2C` so the IMU publish path
+  still runs end-to-end against a local Zenoh router without
+  hardware.
   """
   @behaviour OvcsBridge
 
@@ -43,17 +44,19 @@ defmodule RosBridge do
   # `children/0` clauses, exactly one of which is in the firmware.
   if Mix.target() == :host do
     @impl OvcsBridge
-    # Host: native Zenoh client + heartbeat + joy → CAN translator so
-    # `./ovcs run` can drive both the ROS publisher and the joy-control
-    # path against a local Zenoh router (default endpoint 127.0.0.1,
-    # override via `ZENOH_ENDPOINT_IP`). No I2C-backed IMU.
+    # Host: same supervision shape as target, but `BNO085.Dummy`
+    # stands in for `BNO085.I2C` so the IMU publish path is
+    # exercised end-to-end without an attached sensor. Endpoint
+    # defaults to 127.0.0.1; override via `ZENOH_ENDPOINT_IP`.
     def children do
       config = vehicle().ros_bridge_config(:host)
 
       [
         {RosBridge.ZenohClient, endpoint_ip: config.zenoh_endpoint_ip},
         heartbeat_child(),
-        {RosBridge.JoyInterpreter, []}
+        {RosBridge.JoyInterpreter, []},
+        {BNO085.Dummy, []},
+        {RosBridge.ImuPublisher, [bno085_module: BNO085.Dummy]}
       ]
     end
   else
