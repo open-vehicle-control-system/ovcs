@@ -1,14 +1,17 @@
 defmodule BNO085.Dummy do
   @moduledoc """
-  Host-side stand-in for `BNO085.I2C`. Emits one of each
-  `BNO085.Sample` kind on a 10 ms loop so consumers can be exercised
-  end-to-end without an attached sensor. Same hardware-vocabulary
-  contract as the real driver — no ROS / framework types here.
+  Host-side stand-in for `BNO085.I2C`. Implements the
+  `OvcsDrivers.Imu` behaviour, emitting one of each sample kind on a
+  10 ms loop so consumers can be exercised end-to-end without an
+  attached sensor. Same contract as the real driver — pre-scaled SI
+  units, generic envelope.
   """
+  @behaviour OvcsDrivers.Imu
+
   use GenServer
   require Logger
 
-  alias BNO085.Sample
+  alias OvcsDrivers.Imu.Sample
 
   # Static fixture values — picked to look obviously synthetic
   # downstream (small constant tilt, no rotation, ≈ 1 g on the z
@@ -34,7 +37,7 @@ defmodule BNO085.Dummy do
   def handle_info(:loop, state) do
     Enum.each(@samples, fn sample ->
       Enum.each(state.listeners, fn listener ->
-        GenServer.cast(listener, {:bno085_sample, sample})
+        GenServer.cast(listener, {:imu_sample, sample})
       end)
     end)
 
@@ -46,9 +49,11 @@ defmodule BNO085.Dummy do
     {:noreply, %{state | listeners: state.listeners ++ [listener]}}
   end
 
+  @impl OvcsDrivers.Imu
   def register_listener(listener) do
     GenServer.cast(__MODULE__, {:register_listener, listener})
   end
 
+  @impl OvcsDrivers.Imu
   def enable, do: :ok
 end
