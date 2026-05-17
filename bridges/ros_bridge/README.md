@@ -89,12 +89,59 @@ then read at runtime by the vehicle's `ros_bridge_config(:target)`).
 
 ## `RosBridge.Heartbeat`
 
-Periodic publisher built on top of `ZenohClient.publish/4`. Default
-configuration in `RosBridge.children/0` ticks a `std_msgs/String`
-onto `/ovcs_heartbeat` every 1 s so consumers can see the bridge is
+Periodic publisher built on top of `ZenohClient.publish/4`. The
+default `:heartbeat` component ticks a `std_msgs/String` onto
+`/ovcs_heartbeat` every 1 s so consumers can see the bridge is
 alive; the same module works for any other periodic publish (just
 pass a different `:message_module` + `:build` function in a child
 spec).
+
+## Components — per-vehicle configuration
+
+`RosBridge.children/0` is **not** hardcoded. Apart from
+`ZenohClient` (always on), every other feature is a *component* the
+vehicle opts into via the `:components` field of its
+`%RosBridge.Config{}`. The bridge resolves each entry into one or
+more child specs via `RosBridge.Components.start/2`.
+
+Catalogue (extend by adding a clause to
+`lib/ros_bridge/components.ex`):
+
+| Component         | Opts                                                     | Child specs started                       |
+|-------------------|----------------------------------------------------------|-------------------------------------------|
+| `:heartbeat`      | `:interval_ms` (default `1_000`)                         | `RosBridge.Heartbeat`                     |
+| `:joy_interpreter`| —                                                        | `RosBridge.JoyInterpreter`                |
+| `:imu_publisher`  | `:driver` (required, an `OvcsDrivers.Imu` module); plus `:topic`, `:frame_id`, `:publish_interval_ms` forwarded | the driver, then `RosBridge.ImuPublisher` |
+
+Vehicle example (`vehicles/<v>/lib/<v>.ex`):
+
+```elixir
+def ros_bridge_config(:host) do
+  %RosBridge.Config{
+    zenoh_endpoint_ip: System.get_env("ZENOH_ENDPOINT_IP", "127.0.0.1"),
+    components: [
+      :heartbeat,
+      :joy_interpreter,
+      {:imu_publisher, driver: OvcsDrivers.Imu.Dummy}
+    ]
+  }
+end
+
+def ros_bridge_config(:target) do
+  %RosBridge.Config{
+    zenoh_endpoint_ip: Application.get_env(:ros_bridge, :zenoh_endpoint_ip, "127.0.0.1"),
+    components: [
+      :heartbeat,
+      :joy_interpreter,
+      {:imu_publisher, driver: BNO085.I2C}
+    ]
+  }
+end
+```
+
+A bare atom is shorthand for `{atom, []}`. An unknown component
+name raises `FunctionClauseError` at supervisor boot — typos in the
+list fail loudly rather than silently dropping a feature.
 
 ## Adding a new ROS message type
 
@@ -119,11 +166,15 @@ ad-hoc; consolidate when you need the third or fourth message type.
 
 ## Host vs. target
 
-`Mix.target() == :host` runs `RosBridge.ZenohClient` and
-`RosBridge.JoyInterpreter` (no I2C-backed IMU) so `./ovcs run` can
-drive both the ROS publisher path and the joy → CAN path against a
-local `zenohd` (see `ros2/docker-compose.yml`). On target the full
-stack runs.
+`RosBridge.children/0` passes the active arm (`:host` or `:target`,
+baked in at compile time from `Mix.target()`) to the vehicle's
+`ros_bridge_config/1`. That's where the host/target distinction
+lives: the vehicle returns whatever `:components` (and driver
+modules) make sense for each environment — typically
+`OvcsDrivers.Imu.Dummy` for `:host` so `./ovcs run` works without
+an attached sensor, `BNO085.I2C` for `:target` to talk to the real
+chip. Endpoint IP can also differ per arm (loopback router on
+host, vehicle LAN IP on target).
 
 ## Verifying end-to-end
 

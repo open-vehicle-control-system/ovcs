@@ -17,30 +17,53 @@ through `bridge_firmwares/0`.
   [`msp_osd`](../../libraries/msp_osd), so the pilot sees OVCS state on
   the goggles' OSD.
 
-## Children
+## Components — per-vehicle configuration
 
-```
-RadioControlBridge.children/0:
-  - ExpressLrs.Connector  (UART → MAVLink decoder)
-  - MavlinkForwarder      (decoded frames → OvcsBus / CAN)
-  - MspOsdForwarder       (vehicle metrics → MSP DisplayPort)
-```
+`RadioControlBridge.children/0` isn't hardcoded — every feature is a
+component the vehicle opts into via the `:components` field of its
+`%RadioControlBridge.Config{}`. The bridge resolves each entry into
+one or more child specs via `RadioControlBridge.Components.start/2`.
+
+Catalogue (extend by adding a clause to
+`lib/radio_control_bridge/components.ex`):
+
+| Component             | Opts                                                                                 | Child specs started |
+|-----------------------|--------------------------------------------------------------------------------------|---------------------|
+| `:mavlink_forwarder`  | `:uart_port`, `:uart_baud_rate` (both required) — the ExpressLRS receiver UART. Read by `bridges/firmware`'s `runtime.exs` to stamp `:express_lrs` Application env before `ExpressLrs.Application` boots. | `RadioControlBridge.MavlinkForwarder` (decoded MAVLink → CAN) |
+| `:msp_osd_forwarder`  | (none yet; will gain its own `:uart_port` / `:uart_baud_rate` when implemented — separate serial line to the VTX, not the ExpressLRS receiver) | `RadioControlBridge.MspOsdForwarder` (placeholder) |
+
+UART pins live with the component that uses them — two forwarders
+that drive separate hardware (ExpressLRS receiver vs. MSP
+DisplayPort to a VTX) don't share a single global UART field.
+`ExpressLrs.Mavlink.Connector` itself is started from
+`bridges/firmware`'s application tree once `runtime.exs` has read
+the component opts; it's not a child of this bridge.
 
 ## Vehicle-side configuration
 
 Vehicles declare RC config via the `RadioControlBridge` behaviour on
-their top-level module:
+their top-level module. The `:host` arm typically lists no
+components (no UART hardware); the `:target` arm enables
+`:mavlink_forwarder` with the Pi UART pin baked into its opts.
 
 ```elixir
 @behaviour RadioControlBridge
 
 @impl RadioControlBridge
 def radio_control_bridge_config(:host),
-  do: %RadioControlBridge.Config{uart_port: "ttyUSB0", uart_baud_rate: 460_800}
+  do: %RadioControlBridge.Config{components: []}
 
 def radio_control_bridge_config(:target),
-  do: %RadioControlBridge.Config{uart_port: "ttySC0", uart_baud_rate: 460_800}
+  do: %RadioControlBridge.Config{
+    components: [
+      {:mavlink_forwarder, uart_port: "ttySC0", uart_baud_rate: 460_800}
+    ]
+  }
 ```
+
+A bare atom is shorthand for `{atom, []}`. An unknown component
+name raises `FunctionClauseError` at supervisor boot — typos in the
+list fail loudly rather than silently dropping a feature.
 
 ## Dependencies
 
