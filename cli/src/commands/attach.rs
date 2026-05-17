@@ -1378,7 +1378,9 @@ async fn open_ssh_channels(
         .request_pty(false, "xterm", 120, 40, 0, 0, &[])
         .await?;
     log_ch.request_shell(false).await?;
-    log_ch.data(wrap_snippet(LOG_INIT_SNIPPET, "log").as_bytes()).await?;
+    log_ch
+        .data(wrap_snippet(LOG_INIT_SNIPPET, "log").as_bytes())
+        .await?;
 
     let shell_ch = handle.channel_open_session().await?;
     shell_ch
@@ -1391,7 +1393,9 @@ async fn open_ssh_channels(
         .request_pty(false, "xterm", 120, 40, 0, 0, &[])
         .await?;
     mon_ch.request_shell(false).await?;
-    mon_ch.data(wrap_snippet(MONITOR_SNIPPET, "mon").as_bytes()).await?;
+    mon_ch
+        .data(wrap_snippet(MONITOR_SNIPPET, "mon").as_bytes())
+        .await?;
 
     Ok((log_ch, shell_ch, mon_ch))
 }
