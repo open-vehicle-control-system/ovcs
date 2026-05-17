@@ -1,12 +1,25 @@
 defmodule RosBridge.Config do
   @moduledoc """
-  Per-vehicle configuration for `RosBridge`. Vehicles return one of these
-  from their `c:RosBridge.ros_config/0` callback.
+  Per-vehicle configuration for `RosBridge`. Vehicles return one of
+  these from their `c:RosBridge.ros_bridge_config/1` callback.
+
+  Two knobs:
+
+    * `:zenoh_endpoint_ip` — the Zenoh router this bridge peers with.
+    * `:components` — the list of `ros_bridge` features the vehicle
+      wants on top of the always-on `ZenohClient`. Each entry is
+      either a bare component atom (`:heartbeat`) or a `{name, opts}`
+      tuple (`{:imu_publisher, driver: BNO085.I2C}`). See
+      `RosBridge.Components` for the catalogue.
   """
   @enforce_keys [:zenoh_endpoint_ip]
-  defstruct [:zenoh_endpoint_ip]
+  defstruct [:zenoh_endpoint_ip, components: []]
 
-  @type t :: %__MODULE__{zenoh_endpoint_ip: String.t()}
+  @type component :: atom() | {atom(), keyword()}
+  @type t :: %__MODULE__{
+          zenoh_endpoint_ip: String.t(),
+          components: [component()]
+        }
 end
 
 defmodule RosBridge do
@@ -15,13 +28,12 @@ defmodule RosBridge do
   the OVCS CAN bus and back. Hosted by the shared `bridges/firmware`
   Nerves image; vehicles opt in via their `bridge_firmwares/0` map.
 
-  Vehicles that bundle this bridge implement `c:ros_bridge_config/0` to
-  supply per-deployment knobs (Zenoh broker IP, etc.).
-
-  Host vs. target is handled at compile time: on host we wire
-  `OvcsDrivers.Imu.Dummy` instead of `BNO085.I2C` so the IMU publish path
-  still runs end-to-end against a local Zenoh router without
-  hardware.
+  Vehicles that bundle this bridge implement `c:ros_bridge_config/1`,
+  returning a `RosBridge.Config` that names the Zenoh router and the
+  list of components to start (`RosBridge.Heartbeat`,
+  `RosBridge.JoyInterpreter`, `RosBridge.ImuPublisher`, …). The
+  bridge passes the active `:host`/`:target` arm so the vehicle can
+  pick different drivers / endpoints / opts per environment.
   """
   @behaviour OvcsBridge
 
@@ -30,9 +42,10 @@ defmodule RosBridge do
   vehicle module that bundles `RosBridge` in its `bridge_firmwares/0`
   must implement this callback (declared via `@behaviour RosBridge`).
 
-  Mirrors `default_can_mapping/1`: the host arm is for `./ovcs run`
-  (e.g. Zenoh broker on the dev box), the target arm for the deployed
-  Nerves firmware (broker reachable from the vehicle network).
+  The arm tag (`:host` for `./ovcs run`, `:target` for the deployed
+  Nerves firmware) lets the vehicle return a different component
+  list / driver mix per environment — e.g. `OvcsDrivers.Imu.Dummy`
+  on host, `BNO085.I2C` on target.
   """
   @callback ros_bridge_config(:host | :target) :: RosBridge.Config.t()
 
@@ -40,58 +53,26 @@ defmodule RosBridge do
   # runtime: on a deployed Nerves device the Mix application isn't
   # loaded the way it is during a build, so `Mix.target()` at runtime
   # silently returns `:host` and the wrong vehicle config arm gets
-  # picked. Branching on the compile-time value defines two distinct
-  # `children/0` clauses, exactly one of which is in the firmware.
-  if Mix.target() == :host do
-    @impl OvcsBridge
-    # Host: same supervision shape as target, but `OvcsDrivers.Imu.Dummy`
-    # stands in for `BNO085.I2C` so the IMU publish path is
-    # exercised end-to-end without an attached sensor. Endpoint
-    # defaults to 127.0.0.1; override via `ZENOH_ENDPOINT_IP`.
-    def children do
-      config = vehicle().ros_bridge_config(:host)
+  # picked. Branching on the compile-time value bakes the arm in.
+  @arm if Mix.target() == :host, do: :host, else: :target
 
-      [
-        {RosBridge.ZenohClient, endpoint_ip: config.zenoh_endpoint_ip},
-        heartbeat_child(),
-        {RosBridge.JoyInterpreter, []},
-        {OvcsDrivers.Imu.Dummy, []},
-        {RosBridge.ImuPublisher, [driver: OvcsDrivers.Imu.Dummy]}
-      ]
-    end
-  else
-    @impl OvcsBridge
-    # Target: full bridge — Zenoh client, heartbeat, joy → CAN
-    # translator, BNO085 IMU.
-    def children do
-      config = vehicle().ros_bridge_config(:target)
+  @impl OvcsBridge
+  def children do
+    config = vehicle().ros_bridge_config(@arm)
 
-      [
-        {RosBridge.ZenohClient, endpoint_ip: config.zenoh_endpoint_ip},
-        heartbeat_child(),
-        {RosBridge.JoyInterpreter, []},
-        {BNO085.I2C, []},
-        {RosBridge.ImuPublisher, [driver: BNO085.I2C]}
-      ]
-    end
+    base = [{RosBridge.ZenohClient, endpoint_ip: config.zenoh_endpoint_ip}]
+    extras = Enum.flat_map(config.components, &resolve_component/1)
+
+    base ++ extras
   end
 
-  defp heartbeat_child do
-    {RosBridge.Heartbeat,
-     topic: "ovcs_heartbeat",
-     message_module: Ros2.StdMsgs.Msg.String,
-     interval_ms: 1_000,
-     build: fn counter ->
-       %Ros2.StdMsgs.Msg.String{
-         data: "heartbeat #{counter} @ #{System.system_time(:millisecond)}"
-       }
-     end}
-  end
+  defp resolve_component(name) when is_atom(name), do: RosBridge.Components.start(name, [])
+  defp resolve_component({name, opts}) when is_atom(name), do: RosBridge.Components.start(name, opts)
 
   # The vehicle module is stamped into Application env by
   # bridges/firmware's runtime.exs (same mechanism vms_core /
   # infotainment_core use). Fetch! rather than get_env so a
   # misconfigured boot fails loudly instead of with a confusing
-  # nil.ros_bridge_config/0 UndefinedFunctionError.
+  # nil.ros_bridge_config/1 UndefinedFunctionError.
   defp vehicle, do: Application.fetch_env!(:ovcs_vehicle, :module)
 end
