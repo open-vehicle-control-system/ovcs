@@ -317,7 +317,19 @@ const MONITOR_SNIPPET: &str = r##"defmodule OvcsAttachDiag do
   # On a Pi with a busy CAN bus a sync `File.write!` per message
   # serialises the bus/can loops and the SSH pane lags seconds behind
   # real time. Stick to `IO.puts` and rely on the TUI panes only.
-  def log(line), do: IO.puts(line)
+  #
+  # When the Rust attach harness tears down the remsh, `:standard_io`
+  # terminates and every subsequent `IO.puts` raises `:terminated` —
+  # which the BEAM's logger backend would then itself try to write
+  # via the same dead stdio, cascading into a noisy crash storm. The
+  # spawned monitor processes are orphans without supervisors, so the
+  # right answer when stdio is gone is to silently exit them; the
+  # next attach attempt spawns fresh ones.
+  def log(line) do
+    IO.puts(line)
+  rescue
+    ErlangError -> exit(:normal)
+  end
 end
 
 OvcsAttachDiag.log("OVCS_CAN\t[mon]\talive\tnode=#{inspect(node())}")
