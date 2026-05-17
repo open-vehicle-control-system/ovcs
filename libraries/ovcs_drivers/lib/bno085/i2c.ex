@@ -347,7 +347,10 @@ defmodule BNO085.I2C do
     :ok
   end
 
-  defp build_sample(%{id: id, x: x, y: y, z: z}) when id == @accelerometer_report do
+  # Exposed (with @doc false) so unit tests can exercise the
+  # Q-point scaling without standing up the GenServer.
+  @doc false
+  def build_sample(%{id: id, x: x, y: y, z: z}) when id == @accelerometer_report do
     %Sample{
       kind: :acceleration,
       x: x * @accelerometer_scale,
@@ -356,7 +359,7 @@ defmodule BNO085.I2C do
     }
   end
 
-  defp build_sample(%{id: id, x: x, y: y, z: z}) when id == @calibrated_gyroscope_report do
+  def build_sample(%{id: id, x: x, y: y, z: z}) when id == @calibrated_gyroscope_report do
     %Sample{
       kind: :angular_velocity,
       x: x * @gyroscope_scale,
@@ -365,7 +368,7 @@ defmodule BNO085.I2C do
     }
   end
 
-  defp build_sample(%{id: id, i: i, j: j, k: k, real: real})
+  def build_sample(%{id: id, i: i, j: j, k: k, real: real})
        when id == @rotation_vector_report do
     %Sample{
       kind: :rotation,
@@ -376,7 +379,7 @@ defmodule BNO085.I2C do
     }
   end
 
-  defp build_sample(_), do: nil
+  def build_sample(_), do: nil
 
   defp send_enable(state, sensor) do
     report_id =
