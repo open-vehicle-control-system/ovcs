@@ -17,6 +17,11 @@ Two services:
   on port `8765` so [Foxglove Studio](https://foxglove.dev) can attach.
   Same `rmw_zenoh_cpp` config as `ros2`, so anything on the OVCS bus
   is visible. Connect Studio to `ws://<host-ip>:8765`.
+- `joy` — `ros-jazzy-joy-linux` reading a USB game controller from
+  `/dev/input/js0` (override with `JOY_DEV`) and publishing
+  `sensor_msgs/Joy` on `/joy`. The OVCS `RosBridge.JoyInterpreter`
+  subscribes to the same topic, so the controller drives
+  steering/throttle on the CAN bus end-to-end.
 
 ## Quick start
 
@@ -42,15 +47,67 @@ The actual Zenoh keyexpr is namespaced by `rmw_zenoh`
 `z_sub -k ovcs_heartbeat` will not match. Use the ROS 2 CLI (above) or
 Foxglove against `ws://<host>:8765`.
 
+### USB controller → `/joy` → CAN
+
+Plug an Xbox (or generic HID) controller into the host, then:
+
+```sh
+ls /dev/input/js*               # should show js0 — that's your default
+docker compose up -d joy        # builds the joy image on first run
+
+docker compose exec ros2 bash -lc '
+  source /opt/ros/jazzy/setup.bash
+  ros2 topic echo /joy sensor_msgs/msg/Joy   # wiggle a stick to confirm
+'
+```
+
+The OVCS `RosBridge.JoyInterpreter` subscribes to `/joy` over the same
+Zenoh fabric, so a running `./ovcs run <vehicle>` (or a Nerves bridge
+on the LAN) will see axes flow straight into the `ros_control1` CAN
+emitter — no extra config.
+
+Other controllers / non-default device:
+
+```sh
+JOY_DEV=/dev/input/js1 docker compose up -d joy
+# Or set deadzone / autorepeat:
+JOY_DEADZONE=0.1 JOY_AUTOREPEAT_RATE=50 docker compose up -d joy
+```
+
+Notes:
+
+- The host kernel's `xpad` driver creates `/dev/input/jsN` for Xbox
+  controllers out of the box on Ubuntu. If `ls /dev/input/js*` is
+  empty after plugging in, check `dmesg | tail`.
+- `/dev/input` is bind-mounted (not declared as `devices:`) and a
+  cgroup rule for char-major 13 is added, so hot-plugged controllers
+  appear in the container without a restart.
+- The service is Linux-only — `device_cgroup_rules` + bind-mounted
+  `/dev/input` does not work on Docker Desktop for macOS/Windows.
+
 ## Files
 
-- `docker-compose.yml` — `zenohd` (router) + `ros2` + `foxglove_bridge`
-  services. The `ros2` service idles by default; replace the `command:`
-  tail with `ros2 launch …` when you have actual nodes.
-- `dockerfiles/` — `ros2.Dockerfile` and `foxglove_bridge.Dockerfile`
-  bake `ros-jazzy-rmw-zenoh-cpp`, `ros-jazzy-foxglove-bridge`, and
-  `gettext-base` into the images so containers start cold without an
-  apt round-trip. Rebuild after changing them: `docker compose build`.
+- `docker-compose.yml` — declarative service definitions only (no
+  inline shell). Four services share one image: `zenohd` (the
+  upstream Zenoh router), plus `ros2` + `foxglove_bridge` + `joy`,
+  all running `ovcs/ros2:jazzy`. The `ros2` service is the one that
+  builds the image; the others reference it by tag. A YAML anchor
+  (`x-ros2-base`) factors out the env / volumes / network they all
+  share — per-service entries only declare what differs (CMD, extra
+  env, extra volumes, device wiring).
+- `Dockerfile` — single image baking `ros-jazzy-rmw-zenoh-cpp`,
+  `ros-jazzy-foxglove-bridge`, `ros-jazzy-joy-linux`, `gettext-base`,
+  and the Python `eclipse-zenoh` client. Sets a proper `ENTRYPOINT`
+  + default `CMD`; per-service launchers are picked via compose's
+  `command:` field. Rebuild after changing it: `docker compose build`.
+- `docker/` — shell scripts baked into the image:
+  - `entrypoint.sh` — shared `ENTRYPOINT`. Renders
+    `zenoh/session.json5` from the template, sources the ROS overlay,
+    then `exec "$@"`. Service-agnostic.
+  - `foxglove_bridge.sh`, `joy.sh` — per-service launcher scripts
+    (installed at `/usr/local/bin/foxglove_bridge` and
+    `/usr/local/bin/joy` respectively). The `ros2` service uses the
+    default CMD (`tail -f /dev/null`), so no script is needed.
 - `zenoh/session.json5` — Zenoh session config (client mode, connects
   to `tcp/${ZENOH_ENDPOINT_IP}:7447`, multicast scouting disabled).
 - `workspace/` — bind-mounted into the container at `/workspace`;
