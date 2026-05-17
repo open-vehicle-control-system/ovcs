@@ -1,15 +1,18 @@
 # credo:disable-for-this-file Credo.Check.Refactor.Nesting
 # credo:disable-for-this-file Credo.Check.Readability.WithSingleClause
 defmodule BNO085.I2C do
-  @behaviour RosBridge.ImuSource
-
+  @moduledoc """
+  BNO085 driver over I²C using the SH-2 protocol. Pure hardware
+  concerns — no application-framework types. Listeners receive
+  `{:bno085_sample, %BNO085.Sample{}}` casts in SI units; the
+  consuming application is responsible for shaping those into its
+  own messages.
+  """
   use GenServer
   import Bitwise
   require Logger
 
-  alias Ros2.GeometryMsgs.Msg.Quaternion
-  alias Ros2.GeometryMsgs.Msg.Vector3
-  alias RosBridge.ImuSource.Reading
+  alias BNO085.Sample
 
   @address 0x4A
   @product_id_request 0xF9
@@ -33,10 +36,10 @@ defmodule BNO085.I2C do
   @gyroscope_scale 1.0 / (1 <<< 9)
   @quaternion_scale 1.0 / (1 <<< 14)
 
-  # Reports we translate into `RosBridge.ImuSource.Reading`s for
-  # listeners. Others (uncalibrated gyro, timebase, command responses,
-  # product-id) are still parsed for diagnostics but not broadcast.
-  @imu_reading_ids [@accelerometer_report, @calibrated_gyroscope_report, @rotation_vector_report]
+  # Reports we translate into `BNO085.Sample`s for listeners. Others
+  # (uncalibrated gyro, timebase, command responses, product-id) are
+  # still parsed for diagnostics but not broadcast.
+  @imu_sample_ids [@accelerometer_report, @calibrated_gyroscope_report, @rotation_vector_report]
 
   @impl true
   def init(_args) do
@@ -310,8 +313,8 @@ defmodule BNO085.I2C do
       Enum.reduce(cargo.reports, state, fn report, acc ->
         cond do
           cargo.header.channel == @inport_sensor_reports_channel and
-              report.id in @imu_reading_ids ->
-            broadcast_reading(acc, report)
+              report.id in @imu_sample_ids ->
+            broadcast_sample(acc, report)
             acc
 
           cargo.header.channel == @executable_channel and
@@ -329,54 +332,48 @@ defmodule BNO085.I2C do
     state
   end
 
-  defp broadcast_reading(state, report) do
-    reading = build_reading(report)
+  defp broadcast_sample(state, report) do
+    sample = build_sample(report)
 
-    if reading do
+    if sample do
       Enum.each(state.listeners, fn listener ->
-        GenServer.cast(listener, {:imu_reading, reading})
+        GenServer.cast(listener, {:bno085_sample, sample})
       end)
     end
 
     :ok
   end
 
-  defp build_reading(%{id: id, x: x, y: y, z: z}) when id == @accelerometer_report do
-    %Reading{
-      kind: :linear_acceleration,
-      value: %Vector3{
-        x: x * @accelerometer_scale,
-        y: y * @accelerometer_scale,
-        z: z * @accelerometer_scale
-      }
+  defp build_sample(%{id: id, x: x, y: y, z: z}) when id == @accelerometer_report do
+    %Sample{
+      kind: :acceleration,
+      x: x * @accelerometer_scale,
+      y: y * @accelerometer_scale,
+      z: z * @accelerometer_scale
     }
   end
 
-  defp build_reading(%{id: id, x: x, y: y, z: z}) when id == @calibrated_gyroscope_report do
-    %Reading{
+  defp build_sample(%{id: id, x: x, y: y, z: z}) when id == @calibrated_gyroscope_report do
+    %Sample{
       kind: :angular_velocity,
-      value: %Vector3{
-        x: x * @gyroscope_scale,
-        y: y * @gyroscope_scale,
-        z: z * @gyroscope_scale
-      }
+      x: x * @gyroscope_scale,
+      y: y * @gyroscope_scale,
+      z: z * @gyroscope_scale
     }
   end
 
-  defp build_reading(%{id: id, i: i, j: j, k: k, real: real})
+  defp build_sample(%{id: id, i: i, j: j, k: k, real: real})
        when id == @rotation_vector_report do
-    %Reading{
-      kind: :orientation,
-      value: %Quaternion{
-        x: i * @quaternion_scale,
-        y: j * @quaternion_scale,
-        z: k * @quaternion_scale,
-        w: real * @quaternion_scale
-      }
+    %Sample{
+      kind: :rotation,
+      x: i * @quaternion_scale,
+      y: j * @quaternion_scale,
+      z: k * @quaternion_scale,
+      w: real * @quaternion_scale
     }
   end
 
-  defp build_reading(_), do: nil
+  defp build_sample(_), do: nil
 
   defp send_enable(state, sensor) do
     report_id =
@@ -436,7 +433,6 @@ defmodule BNO085.I2C do
     {:noreply, %{state | listeners: state.listeners ++ [listener]}}
   end
 
-  @impl RosBridge.ImuSource
   def enable do
     :ok = GenServer.cast(__MODULE__, {:enable, :accelerometer})
     :ok = GenServer.cast(__MODULE__, {:enable, :uncalibrated_gyroscope})
@@ -450,7 +446,6 @@ defmodule BNO085.I2C do
     :ok
   end
 
-  @impl RosBridge.ImuSource
   def register_listener(listener) do
     GenServer.cast(__MODULE__, {:register_listener, listener})
   end
