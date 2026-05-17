@@ -83,6 +83,39 @@ defmodule RadioControlBridge do
     Enum.flat_map(config.components, &resolve_component/1)
   end
 
+  @impl OvcsBridge
+  # `ExpressLrs.Application` reads its `:enabled` + `:interface`
+  # config once at boot, so the UART pin has to land in
+  # Application env *before* the app tree starts. Called from
+  # `bridges/firmware`'s `config/runtime.exs` (which knows nothing
+  # about the per-bridge contract — it just dispatches to every
+  # bundled bridge that exports this callback).
+  #
+  # Vehicles that don't enable `:mavlink_forwarder` (host arm,
+  # autonomy-only setups, etc.) produce no `:express_lrs` config —
+  # the app stays disabled.
+  def apply_runtime_config(vehicle, build_target) do
+    config = vehicle.radio_control_bridge_config(build_target)
+
+    case RadioControlBridge.Config.component_opts(config, :mavlink_forwarder) do
+      nil ->
+        :ok
+
+      opts ->
+        Application.put_env(:express_lrs, :enabled, true, persistent: true)
+
+        Application.put_env(
+          :express_lrs,
+          :interface,
+          %{
+            uart_port: Keyword.fetch!(opts, :uart_port),
+            uart_baud_rate: Keyword.fetch!(opts, :uart_baud_rate)
+          },
+          persistent: true
+        )
+    end
+  end
+
   defp resolve_component(name) when is_atom(name),
     do: RadioControlBridge.Components.start(name, [])
 

@@ -32,32 +32,17 @@ case OvcsVehicle.Firmware.resolve_bridge(
     priv_path = entry[:can_config_path] || "can/bridges/#{bridge_firmware_id}.yml"
     config :cantastic, priv_can_config_path: priv_path
 
-    # If this firmware bundles RadioControlBridge, wire express_lrs's
-    # UART connector from the `:mavlink_forwarder` component's opts.
-    # ExpressLrs.Application reads `:enabled` + `:interface` once at
-    # boot, so the config has to land here in runtime.exs (before
-    # applications start) rather than in the bridge's children/0.
-    # UART pins live with the component that uses them — the MSP
-    # DisplayPort path will eventually have its own UART under
-    # `:msp_osd_forwarder` opts, talking to a different serial line.
-    # `build_target` was captured from `Mix.target()` in config.exs
-    # so the vehicle picks the right arm of `radio_control_bridge_config/1`.
-    if Code.ensure_loaded?(RadioControlBridge) and
-         RadioControlBridge in (entry[:bridges] || []) do
-      build_target = Application.compile_env(:ovcs_bridge, :build_target, :host)
-      cfg = vehicle.radio_control_bridge_config(build_target)
+    # Let each bundled bridge stamp its own third-party Application
+    # env before the app tree starts. The host stays bridge-agnostic
+    # — it just dispatches to every bridge that exports the optional
+    # `apply_runtime_config/2` callback on `OvcsBridge`. `build_target`
+    # was captured from `Mix.target()` in config.exs so the bridge
+    # picks the right arm of its per-vehicle config.
+    build_target = Application.compile_env(:ovcs_bridge, :build_target, :host)
 
-      case RadioControlBridge.Config.component_opts(cfg, :mavlink_forwarder) do
-        nil ->
-          :ok
-
-        opts ->
-          config :express_lrs,
-            enabled: true,
-            interface: %{
-              uart_port: Keyword.fetch!(opts, :uart_port),
-              uart_baud_rate: Keyword.fetch!(opts, :uart_baud_rate)
-            }
+    for bridge <- entry[:bridges] || [] do
+      if Code.ensure_loaded?(bridge) and function_exported?(bridge, :apply_runtime_config, 2) do
+        bridge.apply_runtime_config(vehicle, build_target)
       end
     end
 
