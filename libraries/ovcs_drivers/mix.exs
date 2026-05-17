@@ -1,9 +1,9 @@
-defmodule RosBridge.MixProject do
+defmodule OvcsDrivers.MixProject do
   use Mix.Project
 
   def project do
     [
-      app: :ros_bridge,
+      app: :ovcs_drivers,
       version: "0.1.0",
       elixir: "~> 1.15",
       start_permanent: Mix.env() == :prod,
@@ -17,9 +17,10 @@ defmodule RosBridge.MixProject do
 
   defp deps do
     [
-      {:ovcs_bridge, path: "../../libraries/ovcs_bridge"},
-      {:ovcs_drivers, path: "../../libraries/ovcs_drivers"},
-      {:zenohex, "~> 0.9.0"},
+      # Each driver pulls in only the buses it actually uses. Today
+      # everything is I²C; add `:circuits_gpio` / `:circuits_spi`
+      # alongside if a SPI / GPIO driver lands here.
+      {:circuits_i2c, "~> 2.0"},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
     ]
   end

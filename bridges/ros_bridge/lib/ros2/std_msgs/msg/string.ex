@@ -1,5 +1,9 @@
 defmodule Ros2.StdMsgs.Msg.String do
-  @moduledoc false
+  @moduledoc """
+  ROS 2 `std_msgs/String`: a single length-prefixed, null-terminated
+  string. CDR encapsulation header is stripped upstream by
+  `Ros2.RmwZenoh.decode_payload/1`.
+  """
   use Ros2.Common
 
   defstruct data: ""
@@ -17,9 +21,9 @@ defmodule Ros2.StdMsgs.Msg.String do
 
   def encode(%__MODULE__{data: data}), do: encode_string(data)
 
-  def parse(<<_sequence::little-unsigned-integer-32, payload::binary>>) do
+  def parse(payload) do
     case parse_string(payload) do
-      {:ok, string, payload} -> {:ok, %__MODULE__{data: string}, payload}
+      {:ok, string, rest} -> {:ok, %__MODULE__{data: string}, rest}
       error -> error
     end
   end
