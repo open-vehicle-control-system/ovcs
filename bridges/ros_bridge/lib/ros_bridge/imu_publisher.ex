@@ -1,7 +1,7 @@
 defmodule RosBridge.ImuPublisher.State do
   @moduledoc false
   defstruct [
-    :imu_source,
+    :driver,
     :topic,
     :frame_id,
     :publish_interval_ms,
@@ -13,17 +13,17 @@ end
 
 defmodule RosBridge.ImuPublisher do
   @moduledoc """
-  Coalesces `RosBridge.ImuSource.Reading`s into `sensor_msgs/Imu`
-  samples and publishes them via `RosBridge.ZenohClient.publish/4`.
+  Coalesces samples from an `OvcsDrivers.Imu` driver into
+  `sensor_msgs/Imu` messages and publishes them via
+  `RosBridge.ZenohClient.publish/4`.
 
-  Knows nothing about the underlying sensor — any module implementing
-  the `RosBridge.ImuSource` behaviour plugs in via the `:imu_source`
-  option.
+  Knows nothing about any specific chip — any module implementing
+  the `OvcsDrivers.Imu` behaviour plugs in via the `:driver` option.
 
-  Readings arrive independently per kind; we keep the freshest of
+  Samples arrive independently per kind; we keep the freshest of
   each and publish a single coalesced `Imu` at 50 Hz. The tick is a
-  no-op until all three kinds have been seen at least once (avoids
-  emitting half-filled messages).
+  no-op until all three kinds we publish have been seen at least
+  once (avoids emitting half-filled messages).
 
   TODO: characterize the source's noise floor and populate
   `*_covariance` arrays with measured values instead of the zero
@@ -31,11 +31,13 @@ defmodule RosBridge.ImuPublisher do
   """
   use GenServer
 
+  alias OvcsDrivers.Imu.Sample
   alias Ros2.BuiltinInterfaces.Msg.Time
+  alias Ros2.GeometryMsgs.Msg.Quaternion
+  alias Ros2.GeometryMsgs.Msg.Vector3
   alias Ros2.SensorMsgs.Msg.Imu
   alias Ros2.StdMsgs.Msg.Header
   alias RosBridge.ImuPublisher.State
-  alias RosBridge.ImuSource.Reading
 
   require Logger
 
@@ -55,41 +57,46 @@ defmodule RosBridge.ImuPublisher do
 
   @impl true
   def init(opts) do
-    imu_source = Keyword.fetch!(opts, :imu_source)
+    driver = Keyword.fetch!(opts, :driver)
 
     state = %State{
-      imu_source: imu_source,
+      driver: driver,
       topic: Keyword.get(opts, :topic, @default_topic),
       frame_id: Keyword.get(opts, :frame_id, @default_frame_id),
       publish_interval_ms:
         Keyword.get(opts, :publish_interval_ms, @default_publish_interval_ms)
     }
 
-    imu_source.register_listener(self())
-    imu_source.enable()
+    driver.register_listener(self())
+    driver.enable()
     Process.send_after(self(), :tick, state.publish_interval_ms)
 
     Logger.info(
       "#{__MODULE__} publishing Ros2.SensorMsgs.Msg.Imu on " <>
         "#{state.topic} every #{state.publish_interval_ms}ms " <>
-        "(frame #{state.frame_id}, source #{inspect(imu_source)})"
+        "(frame #{state.frame_id}, driver #{inspect(driver)})"
     )
 
     {:ok, state}
   end
 
   @impl true
-  def handle_cast({:imu_reading, %Reading{kind: :linear_acceleration, value: value}}, state) do
-    {:noreply, %{state | latest_linear_acceleration: value}}
+  def handle_cast({:imu_sample, %Sample{kind: :acceleration, x: x, y: y, z: z}}, state) do
+    {:noreply, %{state | latest_linear_acceleration: %Vector3{x: x, y: y, z: z}}}
   end
 
-  def handle_cast({:imu_reading, %Reading{kind: :angular_velocity, value: value}}, state) do
-    {:noreply, %{state | latest_angular_velocity: value}}
+  def handle_cast({:imu_sample, %Sample{kind: :angular_velocity, x: x, y: y, z: z}}, state) do
+    {:noreply, %{state | latest_angular_velocity: %Vector3{x: x, y: y, z: z}}}
   end
 
-  def handle_cast({:imu_reading, %Reading{kind: :orientation, value: value}}, state) do
-    {:noreply, %{state | latest_orientation: value}}
+  def handle_cast({:imu_sample, %Sample{kind: :rotation, x: x, y: y, z: z, w: w}}, state) do
+    {:noreply, %{state | latest_orientation: %Quaternion{x: x, y: y, z: z, w: w}}}
   end
+
+  # `:magnetometer` and `:temperature` aren't part of sensor_msgs/Imu;
+  # drop them silently. A future MagneticField / Temperature publisher
+  # would register its own listener on the driver and translate them.
+  def handle_cast({:imu_sample, %Sample{}}, state), do: {:noreply, state}
 
   @impl true
   def handle_info(:tick, %State{} = state) do
