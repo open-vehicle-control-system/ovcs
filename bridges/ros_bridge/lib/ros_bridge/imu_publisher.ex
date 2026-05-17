@@ -17,8 +17,8 @@ defmodule RosBridge.ImuPublisher do
   samples and publishes them via `RosBridge.ZenohClient.publish/4`.
 
   Knows nothing about the underlying sensor — any module implementing
-  the `RosBridge.ImuSource` behaviour (see `BNO085.I2C`,
-  `BNO085.Dummy`) plugs in via the `:imu_source` option.
+  the `RosBridge.ImuSource` behaviour plugs in via the `:imu_source`
+  option.
 
   Readings arrive independently per kind; we keep the freshest of
   each and publish a single coalesced `Imu` at 50 Hz. The tick is a
