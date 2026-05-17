@@ -5,7 +5,7 @@ defmodule Ros2.StdMsgs.Msg.Header do
   defstruct stamp: nil, frame_id: ""
 
   def parse(payload) do
-    with {:ok, stamp, payload} <- Ros2.BuiltinIterfaces.Msg.Time.parse(payload),
+    with {:ok, stamp, payload} <- Ros2.BuiltinInterfaces.Msg.Time.parse(payload),
          {:ok, frame_id, payload} <- parse_string(payload)
     do
       {:ok,

@@ -30,10 +30,12 @@ defmodule Ros2.Common do
         _ -> {:error, :malformed, :string}
       end
 
-      defp parse_float64_array(<<payload::binary>>) do
-        # len |> IO.inspect(label: "LEN FLOAT")
-        len =9
-        <<floats::binary-size(len * 8), payload::binary>> = payload
+      # Fixed-size `float64[N]` array — CDR omits the length prefix
+      # for bounded arrays, so the caller passes the element count.
+      # For an unbounded `float64[]` we'd need a separate parser that
+      # reads the leading u32 length first.
+      defp parse_float64_array(payload, count) do
+        <<floats::binary-size(count * 8), payload::binary>> = payload
         array = for <<element::little-signed-float-size(64) <- floats>>, do: element
         {:ok, array, payload}
       rescue
