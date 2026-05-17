@@ -21,7 +21,9 @@ defmodule Obd2.Vms.Composer do
   @impl VmsCore.Vehicle
   def children do
     [
-      {Vms, []}
+      {Vms, []},
+      {Vms.Diagnostics, []},
+      {Vms.Discovery, []}
     ]
   end
 
