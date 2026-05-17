@@ -45,8 +45,7 @@ defmodule RosBridge.Components do
 
   def start(:imu_publisher, opts) do
     driver = Keyword.fetch!(opts, :driver)
-    publisher_opts = Keyword.put(Keyword.delete(opts, :driver), :driver, driver)
-    [{driver, []}, {RosBridge.ImuPublisher, publisher_opts}]
+    [{driver, []}, {RosBridge.ImuPublisher, opts}]
   end
 
   defp heartbeat_message(counter) do
