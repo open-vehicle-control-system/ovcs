@@ -56,8 +56,7 @@ defmodule RosBridge do
         heartbeat_child(),
         {RosBridge.JoyInterpreter, []},
         {BNO085.Dummy, []},
-        {RosBridge.Imu.Adapter, [driver: BNO085.Dummy]},
-        {RosBridge.ImuPublisher, [imu_source: RosBridge.Imu.Adapter]}
+        {RosBridge.ImuPublisher, [driver: BNO085.Dummy]}
       ]
     end
   else
@@ -72,8 +71,7 @@ defmodule RosBridge do
         heartbeat_child(),
         {RosBridge.JoyInterpreter, []},
         {BNO085.I2C, []},
-        {RosBridge.Imu.Adapter, [driver: BNO085.I2C]},
-        {RosBridge.ImuPublisher, [imu_source: RosBridge.Imu.Adapter]}
+        {RosBridge.ImuPublisher, [driver: BNO085.I2C]}
       ]
     end
   end
