@@ -33,10 +33,13 @@ case OvcsVehicle.Firmware.resolve_bridge(
     config :cantastic, priv_can_config_path: priv_path
 
     # If this firmware bundles RadioControlBridge, wire express_lrs's
-    # UART connector from the vehicle's RadioControlBridge.Config.
+    # UART connector from the `:mavlink_forwarder` component's opts.
     # ExpressLrs.Application reads `:enabled` + `:interface` once at
     # boot, so the config has to land here in runtime.exs (before
     # applications start) rather than in the bridge's children/0.
+    # UART pins live with the component that uses them — the MSP
+    # DisplayPort path will eventually have its own UART under
+    # `:msp_osd_forwarder` opts, talking to a different serial line.
     # `build_target` was captured from `Mix.target()` in config.exs
     # so the vehicle picks the right arm of `radio_control_bridge_config/1`.
     if Code.ensure_loaded?(RadioControlBridge) and
@@ -44,12 +47,18 @@ case OvcsVehicle.Firmware.resolve_bridge(
       build_target = Application.compile_env(:ovcs_bridge, :build_target, :host)
       cfg = vehicle.radio_control_bridge_config(build_target)
 
-      config :express_lrs,
-        enabled: true,
-        interface: %{
-          uart_port: cfg.uart_port,
-          uart_baud_rate: cfg.uart_baud_rate
-        }
+      case RadioControlBridge.Config.component_opts(cfg, :mavlink_forwarder) do
+        nil ->
+          :ok
+
+        opts ->
+          config :express_lrs,
+            enabled: true,
+            interface: %{
+              uart_port: Keyword.fetch!(opts, :uart_port),
+              uart_baud_rate: Keyword.fetch!(opts, :uart_baud_rate)
+            }
+      end
     end
 
     # See `vms/firmware/config/runtime.exs` for the rationale.

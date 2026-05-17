@@ -41,10 +41,14 @@ defmodule Ovcs1 do
 
   @impl RadioControlBridge
   def radio_control_bridge_config(:host),
-    do: %RadioControlBridge.Config{uart_port: "ttyUSB0", uart_baud_rate: 460_800}
+    do: %RadioControlBridge.Config{components: []}
 
   def radio_control_bridge_config(:target),
-    do: %RadioControlBridge.Config{uart_port: "ttySC0", uart_baud_rate: 460_800}
+    do: %RadioControlBridge.Config{
+      components: [
+        {:mavlink_forwarder, uart_port: "ttySC0", uart_baud_rate: 460_800}
+      ]
+    }
 
   @impl RosBridge
   def ros_bridge_config(:host),
