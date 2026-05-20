@@ -98,7 +98,8 @@ defmodule BridgeFirmware.MixProject do
         # migrating the whole fleet to OTP 28.
         tag: "v0.4.2",
         runtime: false,
-        targets: :rpi5
+        targets: :rpi5,
+        nerves: [compile: false]
       },
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
 
