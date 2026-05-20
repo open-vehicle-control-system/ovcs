@@ -165,4 +165,69 @@ defmodule RosBridge.Camera.Calibration do
       String.to_float(text <> ".0")
     end
   end
+
+  # ── writers ──────────────────────────────────────────────────
+
+  @doc """
+  Render a calibration to the `camera_calibration_parsers` YAML
+  shape that the bridge already loads from. Used to persist a
+  `sensor_msgs/CameraInfo` received via the
+  `set_camera_info` service onto disk so the next boot picks it
+  up automatically.
+
+  `camera_name` is the YAML's `camera_name:` field — informational
+  only; loads ignore it. The matrices are flat row-major lists
+  matching the struct's representation.
+  """
+  @spec to_yaml(t(), String.t()) :: String.t()
+  def to_yaml(%__MODULE__{} = calibration, camera_name) do
+    """
+    image_width: #{calibration.width}
+    image_height: #{calibration.height}
+    camera_name: #{camera_name}
+    camera_matrix:
+      rows: 3
+      cols: 3
+      data: [#{format_floats(calibration.camera_matrix)}]
+    distortion_model: #{calibration.distortion_model}
+    distortion_coefficients:
+      rows: 1
+      cols: #{length(calibration.distortion_coefficients)}
+      data: [#{format_floats(calibration.distortion_coefficients)}]
+    rectification_matrix:
+      rows: 3
+      cols: 3
+      data: [#{format_floats(calibration.rectification_matrix)}]
+    projection_matrix:
+      rows: 3
+      cols: 4
+      data: [#{format_floats(calibration.projection_matrix)}]
+    """
+  end
+
+  @doc """
+  Build a `Calibration` struct from a `sensor_msgs/CameraInfo`
+  parsed off the wire. The CameraInfo carries the same matrices
+  (k, r, p, d) but with different field names — this is a pure
+  rename.
+  """
+  @spec from_camera_info(Ros2.SensorMsgs.Msg.CameraInfo.t()) :: t()
+  def from_camera_info(%Ros2.SensorMsgs.Msg.CameraInfo{} = info) do
+    %__MODULE__{
+      width: info.width,
+      height: info.height,
+      distortion_model: info.distortion_model,
+      distortion_coefficients: info.d,
+      camera_matrix: info.k,
+      rectification_matrix: info.r,
+      projection_matrix: info.p
+    }
+  end
+
+  defp format_floats(values) do
+    Enum.map_join(values, ", ", &format_float/1)
+  end
+
+  defp format_float(value) when is_float(value), do: Float.to_string(value)
+  defp format_float(value) when is_integer(value), do: Float.to_string(value * 1.0)
 end

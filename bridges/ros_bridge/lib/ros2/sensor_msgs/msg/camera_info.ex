@@ -70,4 +70,37 @@ defmodule Ros2.SensorMsgs.Msg.CameraInfo do
     |> Kernel.<>(encode_uint32(msg.binning_y))
     |> Kernel.<>(RegionOfInterest.encode(msg.roi))
   end
+
+  def parse(payload) do
+    with {:ok, header, payload} <- Header.parse(payload),
+         <<height::little-unsigned-integer-size(32),
+           width::little-unsigned-integer-size(32),
+           payload::binary>> <- payload,
+         {:ok, distortion_model, payload} <- parse_string(payload),
+         {:ok, d, payload} <- parse_float64_sequence(payload),
+         {:ok, k, payload} <- parse_float64_array(payload, 9),
+         {:ok, r, payload} <- parse_float64_array(payload, 9),
+         {:ok, p, payload} <- parse_float64_array(payload, 12),
+         <<binning_x::little-unsigned-integer-size(32),
+           binning_y::little-unsigned-integer-size(32),
+           payload::binary>> <- payload,
+         {:ok, roi, payload} <- RegionOfInterest.parse(payload) do
+      {:ok,
+       %__MODULE__{
+         header: header,
+         height: height,
+         width: width,
+         distortion_model: distortion_model,
+         d: d,
+         k: k,
+         r: r,
+         p: p,
+         binning_x: binning_x,
+         binning_y: binning_y,
+         roi: roi
+       }, payload}
+    else
+      error -> error
+    end
+  end
 end

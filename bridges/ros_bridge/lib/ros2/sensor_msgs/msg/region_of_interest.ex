@@ -16,4 +16,24 @@ defmodule Ros2.SensorMsgs.Msg.RegionOfInterest do
       encode_uint32(roi.width) <>
       encode_bool(roi.do_rectify)
   end
+
+  def parse(<<
+        x_offset::little-unsigned-integer-size(32),
+        y_offset::little-unsigned-integer-size(32),
+        height::little-unsigned-integer-size(32),
+        width::little-unsigned-integer-size(32),
+        do_rectify::little-unsigned-integer-size(8),
+        rest::binary
+      >>) do
+    {:ok,
+     %__MODULE__{
+       x_offset: x_offset,
+       y_offset: y_offset,
+       height: height,
+       width: width,
+       do_rectify: do_rectify == 1
+     }, rest}
+  end
+
+  def parse(_), do: {:error, :malformed, :region_of_interest}
 end

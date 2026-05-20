@@ -179,6 +179,39 @@ defmodule Ros2.Common do
         pad = rem(n - rem(byte_size(buffer), n), n)
         buffer <> <<0::size(pad * 8)>>
       end
+
+      # Unbounded `float64[]` parser. Inverse of
+      # `encode_float64_sequence/1`: 4-byte LE length prefix, 4 bytes
+      # padding to reach 8-alignment, then `len` little-endian
+      # float64s. Caller must have advanced the buffer to a 4-aligned
+      # offset before invoking this.
+      defp parse_float64_sequence(<<
+             len::little-unsigned-integer-size(32),
+             _pad::binary-size(4),
+             rest::binary
+           >>) do
+        bytes_needed = len * 8
+
+        case rest do
+          <<floats::binary-size(bytes_needed), tail::binary>> ->
+            values = for <<v::little-signed-float-size(64) <- floats>>, do: v
+            {:ok, values, tail}
+
+          _ ->
+            {:error, :malformed, :float64_sequence}
+        end
+      end
+
+      defp parse_float64_sequence(_), do: {:error, :malformed, :float64_sequence}
+
+      # Strip `n` bytes of alignment padding given the current offset
+      # from the body origin. Used by parsers that need to skip CDR
+      # padding between fields of differing alignment.
+      defp consume_alignment(payload, alignment, current_offset) do
+        pad = rem(alignment - rem(current_offset, alignment), alignment)
+        <<_skip::binary-size(pad), rest::binary>> = payload
+        rest
+      end
     end
   end
 end
