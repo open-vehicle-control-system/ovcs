@@ -63,6 +63,7 @@ defmodule RosBridge.Publishers.StereoCamera do
   alias RosBridge.Camera.Frame
   alias RosBridge.StereoCamera.OpenCV
   alias RosBridge.StereoCamera.Result
+  alias RosBridge.StereoCamera.Telemetry
   alias RosBridge.Timing
   alias Ros2.SensorMsgs.Msg.CameraInfo
   alias Ros2.SensorMsgs.Msg.CompressedImage
@@ -121,7 +122,10 @@ defmodule RosBridge.Publishers.StereoCamera do
        pair_tolerance_ns: pair_tolerance_ms * 1_000_000,
        latest_left: nil,
        latest_right: nil,
-       awaiting_result: false
+       awaiting_result: false,
+       telemetry: Telemetry.new(window: 30, label: "publisher"),
+       last_result_at: nil,
+       submit_at: nil
      }}
   end
 
@@ -137,8 +141,49 @@ defmodule RosBridge.Publishers.StereoCamera do
   end
 
   def handle_cast({:stereo_result, %Result{} = result}, state) do
-    publish_stereo(state, result)
-    {:noreply, %{state | awaiting_result: false}}
+    now = System.monotonic_time(:nanosecond)
+
+    {publish_ns, _} = time(fn -> publish_stereo(state, result) end)
+
+    backend_round_trip_ns =
+      case state.submit_at do
+        nil -> 0
+        submit_at -> now - submit_at
+      end
+
+    wall_ns =
+      case state.last_result_at do
+        nil -> 0
+        last -> now - last
+      end
+
+    telemetry =
+      state.telemetry
+      |> Telemetry.record(:pub_stereo, publish_ns)
+      |> Telemetry.record(:backend_rt, backend_round_trip_ns)
+      |> Telemetry.record(:wall, wall_ns)
+      |> Telemetry.tick()
+
+    state = %{
+      state
+      | awaiting_result: false,
+        telemetry: telemetry,
+        last_result_at: now,
+        submit_at: nil
+    }
+
+    # Frames may have arrived while the backend was busy; if a
+    # fresh pair is ready now, submit immediately rather than
+    # waiting for the next `:camera_frame` cast. This closes the
+    # one-frame-period gap between result-arrival and the next
+    # pair submit.
+    {:noreply, maybe_submit_pair(state)}
+  end
+
+  defp time(fun) do
+    start = System.monotonic_time(:nanosecond)
+    value = fun.()
+    {System.monotonic_time(:nanosecond) - start, value}
   end
 
   # ── per-side image + camera_info ─────────────────────────────
@@ -151,13 +196,19 @@ defmodule RosBridge.Publishers.StereoCamera do
           frame_id: side.frame_id
         }
 
-        publish_compressed_image(side.topic_image, header, frame)
+        {publish_ns, _} =
+          time(fn -> publish_compressed_image(side.topic_image, header, frame) end)
 
         if rem(side.frame_counter, state.camera_info_interval_frames) == 0 do
           publish_camera_info(side.topic_info, header, side.camera_info, frame)
         end
 
-        put_in(state, [:sides, label, :frame_counter], side.frame_counter + 1)
+        stage = String.to_atom("pub_#{label}")
+
+        state
+        |> update_in([:telemetry], &Telemetry.record(&1, stage, publish_ns))
+        |> update_in([:telemetry], &Telemetry.bump(&1, String.to_atom("frames_#{label}")))
+        |> put_in([:sides, label, :frame_counter], side.frame_counter + 1)
 
       :error ->
         Logger.warning(
@@ -196,35 +247,47 @@ defmodule RosBridge.Publishers.StereoCamera do
 
   defp maybe_submit_pair(state) do
     case ready_pair(state) do
-      nil ->
+      :not_ready ->
         state
 
-      {_left, _right} when state.awaiting_result ->
-        state
+      {:out_of_tolerance, delta_ns} ->
+        update_in(state.telemetry, fn telemetry ->
+          telemetry
+          |> Telemetry.record(:pair_delta, delta_ns)
+          |> Telemetry.bump(:drop_tolerance)
+        end)
 
-      {left, right} ->
+      {:ok, _left, _right, delta_ns} when state.awaiting_result ->
+        update_in(state.telemetry, fn telemetry ->
+          telemetry
+          |> Telemetry.record(:pair_delta, delta_ns)
+          |> Telemetry.bump(:drop_busy)
+        end)
+
+      {:ok, left, right, delta_ns} ->
         OpenCV.submit_pair(OpenCV, left, right)
-        %{state | latest_left: nil, latest_right: nil, awaiting_result: true}
+
+        %{
+          state
+          | latest_left: nil,
+            latest_right: nil,
+            awaiting_result: true,
+            submit_at: System.monotonic_time(:nanosecond),
+            telemetry: Telemetry.record(state.telemetry, :pair_delta, delta_ns)
+        }
     end
   end
 
-  defp ready_pair(%{latest_left: nil}), do: nil
-  defp ready_pair(%{latest_right: nil}), do: nil
+  defp ready_pair(%{latest_left: nil}), do: :not_ready
+  defp ready_pair(%{latest_right: nil}), do: :not_ready
 
   defp ready_pair(%{latest_left: left, latest_right: right, pair_tolerance_ns: tolerance}) do
     delta_ns = abs(left.capture_ns - right.capture_ns)
 
     if delta_ns <= tolerance do
-      {left, right}
+      {:ok, left, right, delta_ns}
     else
-      if :rand.uniform(120) == 1 do
-        Logger.debug(
-          "#{__MODULE__}: dropping pair, |left - right| = " <>
-            "#{Float.round(delta_ns / 1_000_000, 2)} ms (tolerance #{div(tolerance, 1_000_000)} ms)"
-        )
-      end
-
-      nil
+      {:out_of_tolerance, delta_ns}
     end
   end
 
