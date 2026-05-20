@@ -1,0 +1,31 @@
+# Placeholder calibration for the OVCS Mini perception bridge LEFT
+# camera. The matrices below are sentinels — they let the topic and
+# CameraInfo type exist on the network but do NOT represent a real
+# calibration. Replace with the output of `camera_calibration` (or
+# Kalibr for stereo) before relying on `stereo_image_proc` output.
+image_width: 1280
+image_height: 720
+camera_name: stereo_left
+distortion_model: plumb_bob
+distortion_coefficients:
+  rows: 1
+  cols: 5
+  data: [0.0, 0.0, 0.0, 0.0, 0.0]
+camera_matrix:
+  rows: 3
+  cols: 3
+  data: [1000.0, 0.0, 640.0,
+         0.0, 1000.0, 360.0,
+         0.0, 0.0, 1.0]
+rectification_matrix:
+  rows: 3
+  cols: 3
+  data: [1.0, 0.0, 0.0,
+         0.0, 1.0, 0.0,
+         0.0, 0.0, 1.0]
+projection_matrix:
+  rows: 3
+  cols: 4
+  data: [1000.0, 0.0, 640.0, 0.0,
+         0.0, 1000.0, 360.0, 0.0,
+         0.0, 0.0, 1.0, 0.0]

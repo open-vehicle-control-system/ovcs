@@ -1,4 +1,4 @@
-defmodule RosBridge.ImuPublisher.State do
+defmodule RosBridge.Publishers.Imu.State do
   @moduledoc false
   defstruct [
     :driver,
@@ -11,7 +11,7 @@ defmodule RosBridge.ImuPublisher.State do
   ]
 end
 
-defmodule RosBridge.ImuPublisher do
+defmodule RosBridge.Publishers.Imu do
   @moduledoc """
   Coalesces samples from an `OvcsDrivers.Imu` driver into
   `sensor_msgs/Imu` messages and publishes them via
@@ -37,7 +37,7 @@ defmodule RosBridge.ImuPublisher do
   alias Ros2.GeometryMsgs.Msg.Vector3
   alias Ros2.SensorMsgs.Msg.Imu
   alias Ros2.StdMsgs.Msg.Header
-  alias RosBridge.ImuPublisher.State
+  alias RosBridge.Publishers.Imu.State
 
   require Logger
 

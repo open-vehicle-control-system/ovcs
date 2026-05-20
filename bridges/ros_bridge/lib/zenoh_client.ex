@@ -40,7 +40,7 @@ defmodule RosBridge.ZenohClient do
       their pids so a crashing consumer cleans up after itself.
 
   The actual ROS 2 message generation (heartbeats, IMU, etc.) lives in
-  caller GenServers — `RosBridge.Heartbeat`, `RosBridge.JoyInterpreter`,
+  caller GenServers — `RosBridge.Publishers.Heartbeat`, `RosBridge.Consumers.Joy`,
   and friends — that use the API exposed here.
   """
   use GenServer
@@ -191,10 +191,16 @@ defmodule RosBridge.ZenohClient do
 
         case Zenohex.Publisher.put(publisher.publisher_id, payload, attachment: attachment) do
           :ok ->
-            Logger.debug(
-              "#{__MODULE__} put ##{publisher.sequence_number} on #{publisher.key_expr} " <>
-                "(#{byte_size(payload)}B payload)"
-            )
+            # Sample the debug log: emit on the first put (so you
+            # see each topic come alive) and once every 30 puts
+            # after — at 30 Hz that's ~1 line/sec/topic instead of
+            # the full firehose.
+            if rem(publisher.sequence_number, 30) == 1 do
+              Logger.debug(
+                "#{__MODULE__} put ##{publisher.sequence_number} on #{publisher.key_expr} " <>
+                  "(#{byte_size(payload)}B payload)"
+              )
+            end
 
             state = put_publisher(state, topic, publisher)
             {:noreply, state}

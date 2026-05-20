@@ -4,8 +4,8 @@ defmodule RosBridge.ComponentsTest do
   alias RosBridge.Components
 
   describe "start/2 — :heartbeat" do
-    test "returns a single RosBridge.Heartbeat child spec with defaults" do
-      assert [{RosBridge.Heartbeat, opts}] = Components.start(:heartbeat, [])
+    test "returns a single RosBridge.Publishers.Heartbeat child spec with defaults" do
+      assert [{RosBridge.Publishers.Heartbeat, opts}] = Components.start(:heartbeat, [])
       assert opts[:topic] == "ovcs_heartbeat"
       assert opts[:message_module] == Ros2.StdMsgs.Msg.String
       assert opts[:interval_ms] == 1_000
@@ -13,14 +13,14 @@ defmodule RosBridge.ComponentsTest do
     end
 
     test ":interval_ms overrides the default" do
-      [{RosBridge.Heartbeat, opts}] = Components.start(:heartbeat, interval_ms: 5_000)
+      [{RosBridge.Publishers.Heartbeat, opts}] = Components.start(:heartbeat, interval_ms: 5_000)
       assert opts[:interval_ms] == 5_000
     end
   end
 
   describe "start/2 — :joy_interpreter" do
-    test "returns a single RosBridge.JoyInterpreter child spec" do
-      assert [{RosBridge.JoyInterpreter, []}] = Components.start(:joy_interpreter, [])
+    test "returns a single RosBridge.Consumers.Joy child spec" do
+      assert [{RosBridge.Consumers.Joy, []}] = Components.start(:joy_interpreter, [])
     end
   end
 
@@ -31,12 +31,12 @@ defmodule RosBridge.ComponentsTest do
 
       [driver_spec, publisher_spec] = Components.start(:imu_publisher, driver: FakeImu)
       assert driver_spec == {FakeImu, []}
-      assert {RosBridge.ImuPublisher, opts} = publisher_spec
+      assert {RosBridge.Publishers.Imu, opts} = publisher_spec
       assert opts[:driver] == FakeImu
     end
 
     test "forwards optional publisher opts (topic, frame_id, interval_ms)" do
-      [_driver_spec, {RosBridge.ImuPublisher, opts}] =
+      [_driver_spec, {RosBridge.Publishers.Imu, opts}] =
         Components.start(:imu_publisher,
           driver: RosBridge.ComponentsTest.FakeImu,
           topic: "imu/raw",
