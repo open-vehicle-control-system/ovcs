@@ -86,24 +86,19 @@ defmodule BridgeFirmware.MixProject do
         targets: :ovcs_base_can_system_rpi4,
         nerves: [compile: false]
       },
-      # Perception bridge target — placeholder. Upstream
-      # `nerves_system_rpi5` (Hex, ~> 2.0) is exactly what we want
-      # (it already ships libcamera + HailoRT), but it requires
-      # `nerves_system_br ~> 1.32`, while `ovcs_base_can_system_{rpi3a,rpi4}`
-      # hard-pin `nerves_system_br 1.29.3` (see those repos'
-      # mix.exs). To enable :rpi5 builds we need to either:
-      #   (a) bump nerves_system_br in both
-      #       open-vehicle-control-system/ovcs_base_can_system_rpi3a
-      #       and …_rpi4 to 1.32+ and cut new releases of each,
-      #       then add `{:nerves_system_rpi5, "~> 2.0", runtime: false,
-      #       targets: :rpi5}` here; or
-      #   (b) ship the perception bridge from a separate Mix
-      #       project (e.g. bridges/firmware_perception/) so it
-      #       can have its own mix.lock with br 1.32 alongside
-      #       the existing firmware.
-      # Until one of those lands, host-side dev (./ovcs run
-      # ovcs_mini) works (uses the V4L2 driver) but
-      # MIX_TARGET=rpi5 will fail with "no system registered".
+      # Perception bridge target — the OVCS Pi 5 system fork pins
+      # `nerves_system_br: 1.29.3` (matching `ovcs_base_can_system_{rpi3a,rpi4}`)
+      # so there's no version-conflict on the shared toolchain. It ships
+      # the upstream `nerves_system_rpi5` buildroot with libcamera + rpicam
+      # apps enabled (`BR2_PACKAGE_RPI_LIBCAMERA_V4L2=y`); HailoRT is not
+      # in the defconfig and would need adding for neural inference.
+      {
+        :ovcs_bridges_system_rpi5,
+        github: "open-vehicle-control-system/ovcs_bridges_system_rpi5",
+        runtime: false,
+        targets: :rpi5,
+        nerves: [compile: false]
+      },
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
 
       # Bridge libraries are added as each is migrated out of its
