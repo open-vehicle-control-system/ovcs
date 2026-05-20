@@ -549,17 +549,16 @@ defmodule RosBridge.StereoCamera.OpenCV do
       P1: Keyword.get(opts, :p1, default_p1),
       P2: Keyword.get(opts, :p2, default_p2),
       # Reject ambiguous matches (margin of best vs 2nd-best cost).
-      # Textbook sweet spot is 10 %, but with the placeholder
-      # calibration (no real rectification) the cost surface is
-      # noisier, so we start lower and tighten once we have proper
-      # epipolar geometry.
-      uniquenessRatio: Keyword.get(opts, :uniqueness_ratio, 5),
+      # 10 % is the textbook sweet spot once epipolar geometry is
+      # real; tune lower if too sparse, higher if too noisy.
+      uniquenessRatio: Keyword.get(opts, :uniqueness_ratio, 10),
       # Left-right consistency: invalidate pixels where the
       # left→right and right→left disparities disagree by more
-      # than `disp12_max_diff` px. Calibration-sensitive — without
-      # rectification, even correct matches fail the check. Off by
-      # default; flip to 1 once calibration is real.
-      disp12MaxDiff: Keyword.get(opts, :disp12_max_diff, -1),
+      # than `disp12_max_diff` px. 1 is the textbook value but
+      # requires near-perfect rectification; 2 is a pragmatic
+      # default for cameracalibrator-grade calibration (≈ 0.9 px
+      # reprojection error). Set to -1 to disable.
+      disp12MaxDiff: Keyword.get(opts, :disp12_max_diff, 2),
       # Soft-clip the x-derivative before matching; trims response
       # to high-frequency texture and large gradient regions.
       preFilterCap: Keyword.get(opts, :pre_filter_cap, 31),
