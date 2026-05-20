@@ -70,10 +70,62 @@ services:
       FOXGLOVE_BRIDGE_PORT: ${FOXGLOVE_BRIDGE_PORT:-8765}
     command: ["foxglove_bridge"]
 
+  calibrator:
+    # One-shot stereo calibration helper. Subscribes to the bridge's
+    # /stereo/{left,right}/image_raw/compressed topics (via
+    # image_transport republish to raw), then launches
+    # `cameracalibrator` — the standard ROS 2 tool with an OpenCV
+    # GUI for coverage histograms + chessboard sampling.
+    #
+    # On click "Save" the GUI writes /tmp/calibrationdata.tar.gz
+    # inside the container; the host-side ./calibration_output
+    # bind-mount below makes it appear at
+    # ros2/calibration_output/calibrationdata.tar.gz on the host.
+    # Extract → drop left.yaml + right.yaml into
+    # vehicles/ovcs_mini/priv/calibration/stereo_{left,right}.yaml.
+    #
+    # Usage (with the bridge already running and Foxglove showing
+    # the live streams):
+    #   xhost +SI:localuser:$(id -un)  # allow X access from container
+    #   docker compose run --rm calibrator
+    #
+    # The default CMD waits for the topics, starts the republishers,
+    # and launches cameracalibrator. Override the CMD to run a
+    # different ros2 command in the same container if needed.
+    <<: *ros2-base
+    container_name: ovcs-calibrator
+    # Run on demand only — `docker compose up` skips this.
+    profiles: ["calibration"]
+    environment:
+      <<: *ros2-env
+      # X display from the host. Default to :0 which covers most
+      # Linux desktops; override per-host if your DISPLAY is elsewhere.
+      DISPLAY: ${DISPLAY:-:0}
+      # Chessboard dimensions used by cameracalibrator. The defaults
+      # match the standard 9×7 ROS calibration target (count of
+      # *inner* corners), with 25 mm squares — override via env if
+      # you printed a different board.
+      CHESSBOARD_INNER_CORNERS: ${CHESSBOARD_INNER_CORNERS:-8x6}
+      CHESSBOARD_SQUARE_M: ${CHESSBOARD_SQUARE_M:-0.025}
+      # Allowed time delta (seconds) between left/right frames the
+      # calibrator will pair. Our USB cameras aren't HW-synced; 0.05
+      # is a good starting point.
+      APPROXIMATE_SYNC: ${APPROXIMATE_SYNC:-0.05}
+    volumes:
+      - ./zenoh/session.json5.template:/etc/zenoh/session.json5.template:ro
+      # X socket + Xauthority for GUI forwarding.
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${HOME}/.Xauthority:/root/.Xauthority:ro
+      # Where the GUI saves calibrationdata.tar.gz.
+      - ./calibration_output:/output
+    # No restart — this is a one-shot interactive tool.
+    restart: "no"
+    command: ["calibrator"]
+
   joy:
     # Reads a USB game controller (Xbox / generic HID) from
     # /dev/input/${JOY_DEV} on the host and republishes it as
-    # sensor_msgs/Joy on /joy. `RosBridge.JoyInterpreter` subscribes
+    # sensor_msgs/Joy on /joy. `RosBridge.Consumers.Joy` subscribes
     # to the same topic via rmw_zenoh's `0/joy/**` keyexpr, so the
     # joystick drives steering/throttle on the OVCS CAN bus end-to-end.
     #

@@ -29,6 +29,15 @@ defmodule OvcsMini do
         target: :ovcs_base_can_system_rpi4,
         bridges: [RosBridge],
         default_can_mapping: %{host: "ovcs:vcan0", target: "ovcs:spi0.0"}
+      },
+      # Perception bridge: stereo Pi cameras + Hailo inference on a
+      # Pi 5 + Hailo hat. Uses upstream nerves_system_rpi5 (libcamera
+      # and HailoRT are already in the system; see
+      # bridges/firmware/mix.exs).
+      "ros_perception" => %{
+        target: :rpi5,
+        bridges: [RosBridge],
+        default_can_mapping: %{host: "ovcs:vcan0", target: "ovcs:spi0.0"}
       }
     }
   end
@@ -51,7 +60,19 @@ defmodule OvcsMini do
     }
 
   @impl RosBridge
-  def ros_bridge_config(:host),
+  def ros_bridge_config(:host, "ros_perception"),
+    do: perception_host_config()
+
+  def ros_bridge_config(:target, "ros_perception"),
+    do: perception_target_config()
+
+  def ros_bridge_config(:host, _firmware_id),
+    do: ros_host_config()
+
+  def ros_bridge_config(:target, _firmware_id),
+    do: ros_target_config()
+
+  defp ros_host_config,
     do: %RosBridge.Config{
       zenoh_endpoint_ip: System.get_env("ZENOH_ENDPOINT_IP", "127.0.0.1"),
       components: [
@@ -61,7 +82,7 @@ defmodule OvcsMini do
       ]
     }
 
-  def ros_bridge_config(:target),
+  defp ros_target_config,
     do: %RosBridge.Config{
       zenoh_endpoint_ip: Application.get_env(:ros_bridge, :zenoh_endpoint_ip, "127.0.0.1"),
       components: [
@@ -70,4 +91,71 @@ defmodule OvcsMini do
         {:imu_publisher, driver: BNO085.I2C}
       ]
     }
+
+  defp perception_host_config do
+    %RosBridge.Config{
+      zenoh_endpoint_ip: System.get_env("ZENOH_ENDPOINT_IP", "127.0.0.1"),
+      components: [
+        :heartbeat,
+        stereo_component(RosBridge.Camera.GStreamer, :host)
+      ]
+    }
+  end
+
+  defp perception_target_config do
+    %RosBridge.Config{
+      zenoh_endpoint_ip: Application.get_env(:ros_bridge, :zenoh_endpoint_ip, "127.0.0.1"),
+      components: [
+        :heartbeat,
+        stereo_component(RosBridge.Camera.LibCamera, :target)
+      ]
+    }
+  end
+
+  # Self-contained stereo perception block. Inherits most defaults
+  # from `RosBridge.StereoCamera.Supervisor` (backend
+  # `StereoCamera.OpenCV`, topic prefix `"stereo"`, frame_ids
+  # `stereo_left` / `stereo_right`, calibration paths
+  # `<calibration_dir>/stereo_<side>.yaml`). We override resolution
+  # and SGBM parameters here to keep the disparity rate usable on a
+  # laptop CPU (≈ 2 Hz at 640×480, vs ≈ 0.7 Hz at 1280×720).
+  #
+  # Host note: each USB camera must be on a *separate* USB
+  # controller. uvcvideo reserves isochronous bandwidth on the
+  # worst-case (uncompressed) basis, so two MJPEG streams on the
+  # same USB 2 hub will fail with "Buffer pool activation failed".
+  defp stereo_component(camera_driver, arm) do
+    {:stereo_camera,
+     driver: camera_driver,
+     calibration_dir: priv_calibration_dir(),
+     # 640×480 is the standard low-bandwidth UVC mode every webcam
+     # supports natively. SGBM compute time scales roughly with
+     # `width × height × num_disparities`, so 640×480 + a tighter
+     # disparity range is the main speed knob.
+     width: 640,
+     height: 480,
+     fps: 30,
+     # Wide enough for the unsynchronized USB cameras on host;
+     # drop to 5 ms once the perception target has FSIN-tied CSI
+     # modules.
+     pair_tolerance_ms: 100,
+     # num_disparities=48 → caps the minimum visible distance at
+     # ~(f × baseline) / 48 metres but cuts the SGBM inner loop by
+     # 25 % vs the previous 64. Must stay a multiple of 16.
+     backend_opts: [num_disparities: 48, block_size: 5],
+     left: camera_addressing(arm, :left),
+     right: camera_addressing(arm, :right)}
+  end
+
+  defp camera_addressing(:host, :left), do: [device: "/dev/video2"]
+  defp camera_addressing(:host, :right), do: [device: "/dev/video0"]
+  defp camera_addressing(:target, :left), do: [camera_id: 0]
+  defp camera_addressing(:target, :right), do: [camera_id: 1]
+
+  defp priv_calibration_dir do
+    case :code.priv_dir(:ovcs_mini) do
+      {:error, :bad_name} -> "priv/calibration"
+      dir -> Path.join(List.to_string(dir), "calibration")
+    end
+  end
 end

@@ -79,7 +79,7 @@ and exposes a small API for the rest of the bridge:
 Init opts: `:endpoint_ip` (required), `:node_name` (default
 `"ovcs_bridge"`), `:domain_id` (default `0`). Per-topic settings
 (message module, interval, etc.) live on the *caller* — see
-`RosBridge.Heartbeat` for the smallest example.
+`RosBridge.Publishers.Heartbeat` for the smallest example.
 
 Endpoint comes from the vehicle's `RosBridge.Config.zenoh_endpoint_ip`
 — set per-vehicle in `vehicles/<v>/lib/<v>.ex`. Override at
@@ -87,7 +87,7 @@ deployment time with `ZENOH_ENDPOINT_IP` (read at firmware build via
 `bridges/firmware/config/target.exs`, baked into Application env,
 then read at runtime by the vehicle's `ros_bridge_config(:target)`).
 
-## `RosBridge.Heartbeat`
+## `RosBridge.Publishers.Heartbeat`
 
 Periodic publisher built on top of `ZenohClient.publish/4`. The
 default `:heartbeat` component ticks a `std_msgs/String` onto
@@ -109,9 +109,9 @@ Catalogue (extend by adding a clause to
 
 | Component         | Opts                                                     | Child specs started                       |
 |-------------------|----------------------------------------------------------|-------------------------------------------|
-| `:heartbeat`      | `:interval_ms` (default `1_000`)                         | `RosBridge.Heartbeat`                     |
-| `:joy_interpreter`| —                                                        | `RosBridge.JoyInterpreter`                |
-| `:imu_publisher`  | `:driver` (required, an `OvcsDrivers.Imu` module); plus `:topic`, `:frame_id`, `:publish_interval_ms` forwarded | the driver, then `RosBridge.ImuPublisher` |
+| `:heartbeat`      | `:interval_ms` (default `1_000`)                         | `RosBridge.Publishers.Heartbeat`                     |
+| `:joy_interpreter`| —                                                        | `RosBridge.Consumers.Joy`                |
+| `:imu_publisher`  | `:driver` (required, an `OvcsDrivers.Imu` module); plus `:topic`, `:frame_id`, `:publish_interval_ms` forwarded | the driver, then `RosBridge.Publishers.Imu` |
 
 Vehicle example (`vehicles/<v>/lib/<v>.ex`):
 

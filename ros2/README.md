@@ -19,7 +19,7 @@ Two services:
   is visible. Connect Studio to `ws://<host-ip>:8765`.
 - `joy` — `ros-jazzy-joy-linux` reading a USB game controller from
   `/dev/input/js0` (override with `JOY_DEV`) and publishing
-  `sensor_msgs/Joy` on `/joy`. The OVCS `RosBridge.JoyInterpreter`
+  `sensor_msgs/Joy` on `/joy`. The OVCS `RosBridge.Consumers.Joy`
   subscribes to the same topic, so the controller drives
   steering/throttle on the CAN bus end-to-end.
 
@@ -61,7 +61,7 @@ docker compose exec ros2 bash -lc '
 '
 ```
 
-The OVCS `RosBridge.JoyInterpreter` subscribes to `/joy` over the same
+The OVCS `RosBridge.Consumers.Joy` subscribes to `/joy` over the same
 Zenoh fabric, so a running `./ovcs run <vehicle>` (or a Nerves bridge
 on the LAN) will see axes flow straight into the `ros_control1` CAN
 emitter — no extra config.

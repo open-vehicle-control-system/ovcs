@@ -6,7 +6,7 @@ defmodule BridgeFirmware.MixProject do
   @all_targets [
     :ovcs_base_can_system_rpi3a,
     :ovcs_base_can_system_rpi4,
-    :ovcs_bridges_system_rpi5
+    :rpi5
   ]
 
   def project do
@@ -68,7 +68,7 @@ defmodule BridgeFirmware.MixProject do
        runtime: Mix.target() != :host},
       {:ros_bridge,
        path: "../ros_bridge",
-       targets: [:host, :ovcs_base_can_system_rpi4, :ovcs_bridges_system_rpi5],
+       targets: [:host, :ovcs_base_can_system_rpi4, :rpi5],
        runtime: Mix.target() != :host},
 
       # Nerves systems (one per supported target).
@@ -98,7 +98,7 @@ defmodule BridgeFirmware.MixProject do
         # migrating the whole fleet to OTP 28.
         tag: "v0.4.2",
         runtime: false,
-        targets: :ovcs_bridges_system_rpi5
+        targets: :rpi5
       },
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
 
