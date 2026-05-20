@@ -101,6 +101,11 @@ services:
       # X display from the host. Default to :0 which covers most
       # Linux desktops; override per-host if your DISPLAY is elsewhere.
       DISPLAY: ${DISPLAY:-:0}
+      # Tell Qt where to read the X auth cookie from inside the
+      # container. Always mounted at /root/.Xauthority below (the
+      # host source is parameterized to handle Wayland's XWayland
+      # cookie locations).
+      XAUTHORITY: /root/.Xauthority
       # Chessboard dimensions used by cameracalibrator. The defaults
       # match the standard 9×7 ROS calibration target (count of
       # *inner* corners), with 25 mm squares — override via env if
@@ -113,9 +118,13 @@ services:
       APPROXIMATE_SYNC: ${APPROXIMATE_SYNC:-0.05}
     volumes:
       - ./zenoh/session.json5.template:/etc/zenoh/session.json5.template:ro
-      # X socket + Xauthority for GUI forwarding.
+      # X socket + Xauthority for GUI forwarding. OVCS_XAUTHORITY
+      # is set by ros2/calibrate.sh to the real cookie location —
+      # under Wayland that's typically /run/user/$UID/.mutter-
+      # Xwaylandauth.XXXX, not ~/.Xauthority. Falls back to the
+      # legacy ~/.Xauthority for Xorg sessions.
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
-      - ${HOME}/.Xauthority:/root/.Xauthority:ro
+      - ${OVCS_XAUTHORITY:-${HOME}/.Xauthority}:/root/.Xauthority:ro
       # Where the GUI saves calibrationdata.tar.gz.
       - ./calibration_output:/output
     # No restart — this is a one-shot interactive tool.

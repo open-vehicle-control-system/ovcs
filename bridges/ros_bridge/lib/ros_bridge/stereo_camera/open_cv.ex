@@ -60,6 +60,7 @@ defmodule RosBridge.StereoCamera.OpenCV do
   alias RosBridge.Camera.Calibration
   alias RosBridge.Camera.Frame
   alias RosBridge.StereoCamera.Result
+  alias RosBridge.StereoCamera.Telemetry
 
   # SGBM's native fixed-point: stored disparity = pixels × 16.
   @disparity_fixed_point_scale 16.0
@@ -106,6 +107,21 @@ defmodule RosBridge.StereoCamera.OpenCV do
     {focal_length, baseline} = stereo_geometry(left_calibration, right_calibration)
     matcher = create_matcher(opts)
 
+    # Optional CLAHE (Contrast-Limited Adaptive Histogram
+    # Equalization) on the grayscale inputs before SGBM. Locally
+    # equalizes contrast so SGBM's gradient-based cost has more
+    # signal to work with in low-texture regions — calibration-
+    # independent, ~1 ms total at 640×480.
+    clahe =
+      if Keyword.get(opts, :clahe, true) do
+        Evision.createCLAHE(
+          clipLimit: Keyword.get(opts, :clahe_clip_limit, 2.0),
+          tileGridSize: Keyword.get(opts, :clahe_tile_grid_size, {8, 8})
+        )
+      else
+        nil
+      end
+
     rectify? = Keyword.get(opts, :rectify, true)
 
     rectification_maps =
@@ -129,7 +145,15 @@ defmodule RosBridge.StereoCamera.OpenCV do
        num_disparities: Keyword.get(opts, :num_disparities, 64),
        block_size: Keyword.get(opts, :block_size, 5),
        min_disparity: Keyword.get(opts, :min_disparity, 0),
-       rectification_maps: rectification_maps
+       rectification_maps: rectification_maps,
+       clahe: clahe,
+       post_filter: Keyword.get(opts, :post_filter, :median),
+       post_filter_ksize: Keyword.get(opts, :post_filter_ksize, 5),
+       previous_disparity: nil,
+       frame_count: 0,
+       quality_every_n: Keyword.get(opts, :quality_every_n, 5),
+       telemetry: Telemetry.new(window: 30, label: "backend"),
+       last_total_at: nil
      }}
   end
 
@@ -139,7 +163,11 @@ defmodule RosBridge.StereoCamera.OpenCV do
   end
 
   def handle_cast({:submit_pair, %Frame{} = left, %Frame{} = right}, state) do
-    case run_pipeline(left, right, state) do
+    total_start = System.monotonic_time(:nanosecond)
+
+    {result_or_error, state} = run_pipeline(left, right, state)
+
+    case result_or_error do
       {:ok, %Result{} = result} ->
         Enum.each(state.listeners, &GenServer.cast(&1, {:stereo_result, result}))
 
@@ -147,21 +175,207 @@ defmodule RosBridge.StereoCamera.OpenCV do
         Logger.warning("#{__MODULE__}: stereo pipeline failed: #{inspect(reason)}")
     end
 
-    {:noreply, state}
+    total = System.monotonic_time(:nanosecond) - total_start
+
+    telemetry =
+      state.telemetry
+      |> Telemetry.record(:total, total)
+      |> Telemetry.record(:wall, wall_since(state.last_total_at, total_start))
+      |> Telemetry.tick()
+
+    {:noreply, %{state | telemetry: telemetry, last_total_at: total_start}}
   end
+
+  defp wall_since(nil, _now), do: 0
+  defp wall_since(previous, now), do: now - previous
 
   # ── the pipeline ─────────────────────────────────────────────
 
   defp run_pipeline(%Frame{} = left_frame, %Frame{} = right_frame, state) do
-    with {:ok, left_color}  <- decode_jpeg(left_frame),
-         {:ok, right_color} <- decode_jpeg(right_frame),
-         left_rectified  = rectify_image(left_color, state.rectification_maps, :left),
-         right_rectified = rectify_image(right_color, state.rectification_maps, :right),
-         left_gray  = convert_to_grayscale(left_rectified),
-         right_gray = convert_to_grayscale(right_rectified) do
-      raw_disparity = compute_disparity(state.matcher, left_gray, right_gray)
-      {:ok, build_result(raw_disparity, left_frame, left_rectified, state)}
+    {decode_ns, decoded} =
+      time(fn ->
+        with {:ok, left} <- decode_jpeg(left_frame),
+             {:ok, right} <- decode_jpeg(right_frame),
+             do: {:ok, {left, right}}
+      end)
+
+    case decoded do
+      {:ok, {left_color, right_color}} ->
+        {rectify_ns, {left_rectified, right_rectified}} =
+          time(fn ->
+            {
+              rectify_image(left_color, state.rectification_maps, :left),
+              rectify_image(right_color, state.rectification_maps, :right)
+            }
+          end)
+
+        {gray_ns, {left_gray, right_gray}} =
+          time(fn ->
+            {convert_to_grayscale(left_rectified), convert_to_grayscale(right_rectified)}
+          end)
+
+        {clahe_ns, {left_eq, right_eq}} =
+          time(fn ->
+            {apply_clahe(state.clahe, left_gray), apply_clahe(state.clahe, right_gray)}
+          end)
+
+        {sgbm_ns, raw_disparity_unfiltered} =
+          time(fn -> compute_disparity(state.matcher, left_eq, right_eq) end)
+
+        {post_ns, raw_disparity} =
+          time(fn -> post_filter_disparity(raw_disparity_unfiltered, state) end)
+
+        frame_count = state.frame_count + 1
+        run_quality? = rem(frame_count, state.quality_every_n) == 0
+
+        {quality_ns, quality_samples} =
+          if run_quality? do
+            time(fn -> measure_quality(raw_disparity, state.previous_disparity) end)
+          else
+            {0, nil}
+          end
+
+        {pack_ns, result} =
+          time(fn -> build_result(raw_disparity, left_frame, left_rectified, state) end)
+
+        telemetry =
+          state.telemetry
+          |> Telemetry.record(:decode, decode_ns)
+          |> Telemetry.record(:rectify, rectify_ns)
+          |> Telemetry.record(:gray, gray_ns)
+          |> Telemetry.record(:clahe, clahe_ns)
+          |> Telemetry.record(:sgbm, sgbm_ns)
+          |> Telemetry.record(:post, post_ns)
+          |> Telemetry.record(:pack, pack_ns)
+          |> maybe_record_quality(quality_ns, quality_samples)
+
+        previous_disparity = if run_quality?, do: raw_disparity, else: state.previous_disparity
+
+        {{:ok, result},
+         %{
+           state
+           | telemetry: telemetry,
+             previous_disparity: previous_disparity,
+             frame_count: frame_count
+         }}
+
+      {:error, reason} ->
+        telemetry = Telemetry.record(state.telemetry, :decode, decode_ns)
+        {{:error, reason}, %{state | telemetry: telemetry}}
     end
+  end
+
+  defp time(fun) do
+    start = System.monotonic_time(:nanosecond)
+    value = fun.()
+    {System.monotonic_time(:nanosecond) - start, value}
+  end
+
+  # Cheap quality probe — all OpenCV calls, sub-millisecond. Used
+  # only for logging; result is not part of the published depth.
+  #
+  #   * valid_ratio : fraction of pixels with disparity > 0 (after
+  #     SGBM's invalid sentinel of negative values). Lower bound is
+  #     ~num_disparities/width (the leftmost band can never match);
+  #     anything below that is uniform/untextured input, anything
+  #     well above suggests a healthy stereo pair.
+  #   * mean_disp_px / std_disp_px : in actual disparity pixels
+  #     (SGBM stores ×16 fixed-point, we divide).
+  defp measure_quality(raw_disparity, previous_disparity) do
+    valid_mask = Evision.compare(raw_disparity, 0, Evision.Constant.cv_CMP_GT())
+    valid_count = Evision.countNonZero(valid_mask)
+    {h, w} = mat_hw(raw_disparity)
+    total = h * w
+    valid_ratio = if total > 0, do: 100.0 * valid_count / total, else: 0.0
+
+    {mean_px, std_px} =
+      if valid_count > 0 do
+        disp_f32 = Evision.Mat.as_type(raw_disparity, :f32)
+
+        case Evision.meanStdDev(disp_f32, mask: valid_mask) do
+          {{mean_vec, std_vec}, _opt} -> {scalar(mean_vec) / 16.0, scalar(std_vec) / 16.0}
+          {mean_vec, std_vec} -> {scalar(mean_vec) / 16.0, scalar(std_vec) / 16.0}
+        end
+      else
+        {0.0, 0.0}
+      end
+
+    # Temporal jitter: mean absolute frame-to-frame change in
+    # disparity over pixels valid in both this frame and the
+    # previous one. On a roughly-static scene this isolates
+    # algorithm noise (proper signal: 0). Reported in disparity
+    # pixels.
+    jitter_px = temporal_jitter(raw_disparity, previous_disparity, valid_mask)
+
+    %{
+      valid_ratio: valid_ratio,
+      mean_disp: mean_px,
+      std_disp: std_px,
+      jitter: jitter_px
+    }
+  end
+
+  defp temporal_jitter(_current, nil, _mask), do: 0.0
+
+  defp temporal_jitter(current, previous, valid_mask) do
+    previous_mask = Evision.compare(previous, 0, Evision.Constant.cv_CMP_GT())
+    both_valid = Evision.Mat.bitwise_and(valid_mask, previous_mask)
+
+    case Evision.countNonZero(both_valid) do
+      0 ->
+        0.0
+
+      _ ->
+        current_f32 = Evision.Mat.as_type(current, :f32)
+        previous_f32 = Evision.Mat.as_type(previous, :f32)
+        delta = Evision.absdiff(current_f32, previous_f32)
+
+        scalar(Evision.mean(delta, mask: both_valid)) / 16.0
+    end
+  end
+
+  defp mat_hw(mat) do
+    case Evision.Mat.shape(mat) do
+      {h, w} -> {h, w}
+      {h, w, _c} -> {h, w}
+    end
+  end
+
+  defp scalar(value) do
+    case value do
+      %Evision.Mat{} = mat ->
+        case Evision.Mat.to_nx(mat) |> Nx.backend_transfer() |> Nx.to_flat_list() do
+          [v | _] -> v
+          [] -> 0.0
+        end
+
+      tuple when is_tuple(tuple) and tuple_size(tuple) > 0 -> elem(tuple, 0)
+      [v | _] when is_number(v) -> v
+      [[v | _] | _] when is_number(v) -> v
+      v when is_number(v) -> v
+      _ -> 0.0
+    end
+  end
+
+  defp maybe_record_quality(telemetry, _ns, nil), do: telemetry
+
+  defp maybe_record_quality(telemetry, ns, samples) do
+    telemetry
+    |> Telemetry.record(:quality, ns)
+    |> record_quality_samples(samples)
+  end
+
+  defp record_quality_samples(telemetry, %{
+         valid_ratio: ratio,
+         mean_disp: mean,
+         std_disp: std,
+         jitter: jitter
+       }) do
+    telemetry
+    |> Telemetry.record_scalar(:valid, ratio, "%")
+    |> Telemetry.record_scalar(:mean_disp, mean, "px")
+    |> Telemetry.record_scalar(:std_disp, std, "px")
+    |> Telemetry.record_scalar(:jitter, jitter, "px")
   end
 
   # 1) JPEG bytes → BGR Mat. Returns {:error, reason} so the
@@ -190,6 +404,21 @@ defmodule RosBridge.StereoCamera.OpenCV do
   # 3) StereoSGBM only takes single-channel images.
   defp convert_to_grayscale(image) do
     Evision.cvtColor(image, Evision.Constant.cv_COLOR_BGR2GRAY())
+  end
+
+  # 3b) Optional CLAHE — when disabled (`clahe: false` in opts)
+  # the grayscale frame is passed through untouched.
+  defp apply_clahe(nil, image), do: image
+  defp apply_clahe(clahe, image), do: Evision.CLAHE.apply(clahe, image)
+
+  # 4b) Optional post-filter on the raw 16SC1 SGBM disparity.
+  # `:median` kills isolated wrong-disparity pixels (salt-and-
+  # pepper noise) — the cheapest classical fix for frame-to-frame
+  # jitter and works fine on signed-int16 input.
+  defp post_filter_disparity(disparity, %{post_filter: :none}), do: disparity
+
+  defp post_filter_disparity(disparity, %{post_filter: :median, post_filter_ksize: ksize}) do
+    Evision.medianBlur(disparity, ksize)
   end
 
   # 4) Run the matcher. Returns a CV_16S Mat: signed int16 values
@@ -246,12 +475,56 @@ defmodule RosBridge.StereoCamera.OpenCV do
   end
 
   defp create_matcher(opts) do
+    block_size = Keyword.get(opts, :block_size, 5)
+
+    # Defaults follow OpenCV's documentation recipe for SGBM:
+    #   P1 = 8 × channels × bs²   smoothness penalty for ±1 px
+    #   P2 = 32 × channels × bs²  smoothness penalty for >1 px
+    # Inputs are single-channel grayscale, so channels = 1.
+    # Without these set, SGBM has no smoothness penalty at all and
+    # produces a very speckly disparity (the OpenCV default of 0/0
+    # is essentially "block matching with extra steps").
+    default_p1 = 8 * block_size * block_size
+    default_p2 = 32 * block_size * block_size
+
     Evision.StereoSGBM.create(
       minDisparity: Keyword.get(opts, :min_disparity, 0),
       numDisparities: Keyword.get(opts, :num_disparities, 64),
-      blockSize: Keyword.get(opts, :block_size, 5)
+      blockSize: block_size,
+      mode: sgbm_mode(Keyword.get(opts, :mode, :sgbm_3way)),
+      P1: Keyword.get(opts, :p1, default_p1),
+      P2: Keyword.get(opts, :p2, default_p2),
+      # Reject ambiguous matches (margin of best vs 2nd-best cost).
+      # Textbook sweet spot is 10 %, but with the placeholder
+      # calibration (no real rectification) the cost surface is
+      # noisier, so we start lower and tighten once we have proper
+      # epipolar geometry.
+      uniquenessRatio: Keyword.get(opts, :uniqueness_ratio, 5),
+      # Left-right consistency: invalidate pixels where the
+      # left→right and right→left disparities disagree by more
+      # than `disp12_max_diff` px. Calibration-sensitive — without
+      # rectification, even correct matches fail the check. Off by
+      # default; flip to 1 once calibration is real.
+      disp12MaxDiff: Keyword.get(opts, :disp12_max_diff, -1),
+      # Soft-clip the x-derivative before matching; trims response
+      # to high-frequency texture and large gradient regions.
+      preFilterCap: Keyword.get(opts, :pre_filter_cap, 31),
+      # Speckle filter: invalidate connected components smaller
+      # than `speckleWindowSize` whose internal disparity range
+      # exceeds `speckleRange` (×16 fixed-point internally — so 32
+      # means ~2 disparity pixels).
+      speckleWindowSize: Keyword.get(opts, :speckle_window_size, 100),
+      speckleRange: Keyword.get(opts, :speckle_range, 32)
     )
   end
+
+  # SGBM aggregation modes. MODE_SGBM (5 paths) is the historical
+  # default; MODE_SGBM_3WAY trades slight quality for ~2× speed and
+  # is the right pick when we're CPU-bound at HD resolutions.
+  defp sgbm_mode(:sgbm), do: Evision.StereoSGBM.cv_MODE_SGBM()
+  defp sgbm_mode(:hh), do: Evision.StereoSGBM.cv_MODE_HH()
+  defp sgbm_mode(:sgbm_3way), do: Evision.StereoSGBM.cv_MODE_SGBM_3WAY()
+  defp sgbm_mode(:hh4), do: Evision.StereoSGBM.cv_MODE_HH4()
 
   # Rescale a calibration (originally saved at some reference
   # resolution) to the actual capture resolution. Pixel-indexed
@@ -376,33 +649,31 @@ defmodule RosBridge.StereoCamera.OpenCV do
 
   # ── result-packing internals ─────────────────────────────────
 
-  # SGBM returns CV_16S — signed int16, values are
-  # `actual_pixels × 16`, negatives are invalid matches. From
-  # one Nx pass we derive two ROS-native buffers:
+  # SGBM returns CV_16S — signed int16, values are `actual_pixels
+  # × 16`, negatives are invalid matches. We pack two ROS-native
+  # buffers entirely inside OpenCV (C++) — the previous
+  # Nx-BinaryBackend version did the same element-wise math in
+  # pure Elixir loops and dominated the pipeline (~410 ms out of
+  # 460 ms total at 640×480).
   #
   #   * 16UC1 disparity (ROS convention): same ×16 fixed-point,
-  #     invalid pixels become 0.
-  #   * 32FC1 depth (metres): `f × baseline / disparity_pixels`,
-  #     invalid pixels become NaN.
+  #     invalid pixels become 0. CV_16S's byte layout is identical
+  #     to CV_16U for non-negative values, so a single
+  #     `max(raw, 0) → to_binary` is enough.
+  #   * 32FC1 depth (metres): `depth = (f × B × 16) / disp_signed`,
+  #     invalid pixels become 0.0 (the ROS depth_image "no
+  #     measurement" convention foxglove understands).
   defp pack_disparity_and_depth(raw_disparity, focal_length, baseline) do
-    signed_tensor = Evision.Mat.to_nx(raw_disparity) |> Nx.backend_transfer()
+    disparity_clamped = Evision.max(raw_disparity, 0)
+    disparity_bytes = Evision.Mat.to_binary(disparity_clamped)
 
-    invalid_mask = Nx.less_equal(signed_tensor, 0)
+    disp_f32 = Evision.Mat.as_type(raw_disparity, :f32)
+    depth_scale = focal_length * baseline * @disparity_fixed_point_scale
+    depth_raw = Evision.divide(depth_scale, disp_f32)
+    invalid_mask = Evision.compare(raw_disparity, 0, Evision.Constant.cv_CMP_LE())
+    depth = Evision.Mat.setTo(depth_raw, 0.0, invalid_mask)
+    depth_bytes = Evision.Mat.to_binary(depth)
 
-    disparity_unsigned =
-      signed_tensor
-      |> Nx.max(0)
-      |> Nx.as_type(:u16)
-
-    disparity_in_pixels =
-      signed_tensor
-      |> Nx.as_type(:f32)
-      |> Nx.divide(@disparity_fixed_point_scale)
-
-    raw_depth = Nx.divide(focal_length * baseline, disparity_in_pixels)
-    nan_tensor = Nx.broadcast(Nx.Constants.nan(:f32), Nx.shape(raw_depth))
-    depth = Nx.select(invalid_mask, nan_tensor, raw_depth)
-
-    {Nx.to_binary(disparity_unsigned), Nx.to_binary(depth)}
+    {disparity_bytes, depth_bytes}
   end
 end

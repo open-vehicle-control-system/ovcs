@@ -142,7 +142,10 @@ defmodule OvcsMini do
      # num_disparities=48 → caps the minimum visible distance at
      # ~(f × baseline) / 48 metres but cuts the SGBM inner loop by
      # 25 % vs the previous 64. Must stay a multiple of 16.
-     backend_opts: [num_disparities: 48, block_size: 5],
+     # block_size=7 is a balanced point between bs=5 (denser
+     # coverage but jittery) and bs=9 (stable but sparse) — gives
+     # ~30 % more frame-to-frame stability for ~5 pp coverage cost.
+     backend_opts: [num_disparities: 48, block_size: 7],
      left: camera_addressing(arm, :left),
      right: camera_addressing(arm, :right)}
   end

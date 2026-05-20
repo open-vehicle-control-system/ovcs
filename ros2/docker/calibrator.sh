@@ -46,26 +46,40 @@ timeout 15 bash -c '
 }
 echo "calibrator: bridge topics found"
 
-# Republish compressed → raw on the two sides. Background processes
-# so the calibrator (foreground) can subscribe to the raw topics.
-ros2 run image_transport republish compressed \
-  in/compressed:=/stereo/left/image_raw/compressed \
-  out:=/stereo/left/image_raw &
-LEFT_REPUB_PID=$!
+# Decompress the bridge's compressed stereo feeds into raw
+# `sensor_msgs/Image` topics via a rclpy helper. We do this instead
+# of `image_transport republish` because the latter and the bridge
+# disagree on the CompressedImage rmw_zenoh type hash, so it
+# silently drops every frame. rclpy's plain subscriber path works.
+echo "calibrator: starting decompress helper"
+decompress_stereo &
+DECOMPRESS_PID=$!
+trap "kill ${DECOMPRESS_PID} 2>/dev/null || true" EXIT
 
-ros2 run image_transport republish compressed \
-  in/compressed:=/stereo/right/image_raw/compressed \
-  out:=/stereo/right/image_raw &
-RIGHT_REPUB_PID=$!
+# Wait for the helper to start publishing the raw topics before
+# launching the GUI — cameracalibrator polls subscribers at startup
+# and a missing topic means a permanently blank window.
+echo "calibrator: waiting for /stereo/{left,right}/image_calibration …"
+timeout 15 bash -c '
+  while true; do
+    list=$(ros2 topic list 2>/dev/null)
+    echo "$list" | grep -q "^/stereo/left/image_calibration$" \
+      && echo "$list" | grep -q "^/stereo/right/image_calibration$" \
+      && exit 0
+    sleep 1
+  done
+' || {
+  echo "calibrator: decompress helper never produced raw topics" >&2
+  exit 1
+}
+echo "calibrator: decompress helper ready"
 
-# Clean up the republishers on Ctrl-C or normal exit.
-trap "kill ${LEFT_REPUB_PID} ${RIGHT_REPUB_PID} 2>/dev/null || true" EXIT
+# cameracalibrator writes the tarball at a hardcoded
+# /tmp/calibrationdata.tar.gz regardless of working directory.
+# Symlink so the file actually lands in the host bind-mount under
+# /output and survives the --rm container exit.
+ln -sf /output/calibrationdata.tar.gz /tmp/calibrationdata.tar.gz
 
-# Give the republishers a moment to declare their publishers.
-sleep 2
-
-# Tell the GUI to save its tarball into the mounted /output volume
-# so the YAMLs survive when the container exits.
 cd /output
 
 echo "calibrator: launching cameracalibrator"
@@ -79,7 +93,7 @@ exec ros2 run camera_calibration cameracalibrator \
   --square "${CHESSBOARD_SQUARE_M}" \
   --approximate "${APPROXIMATE_SYNC}" \
   --no-service-check \
-  right:=/stereo/right/image_raw \
-  left:=/stereo/left/image_raw \
+  right:=/stereo/right/image_calibration \
+  left:=/stereo/left/image_calibration \
   right_camera:=/stereo/right \
   left_camera:=/stereo/left
