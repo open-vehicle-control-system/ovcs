@@ -96,4 +96,6 @@ exec ros2 run camera_calibration cameracalibrator \
   right:=/stereo/right/image_calibration \
   left:=/stereo/left/image_calibration \
   right_camera:=/stereo/right \
-  left_camera:=/stereo/left
+  left_camera:=/stereo/left \
+  left_camera/set_camera_info:=/stereo/left/set_camera_info \
+  right_camera/set_camera_info:=/stereo/right/set_camera_info
