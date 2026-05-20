@@ -1,9 +1,9 @@
-defmodule RosBridge.Heartbeat.State do
+defmodule RosBridge.Publishers.Heartbeat.State do
   @moduledoc false
   defstruct [:topic, :message_module, :interval_ms, :build, counter: 0]
 end
 
-defmodule RosBridge.Heartbeat do
+defmodule RosBridge.Publishers.Heartbeat do
   @moduledoc """
   Periodic ROS 2 publisher that ticks a caller-supplied message
   builder into `RosBridge.ZenohClient.publish/4`. Used by the bridge
@@ -13,7 +13,7 @@ defmodule RosBridge.Heartbeat do
 
   Configured at start time:
 
-      {RosBridge.Heartbeat,
+      {RosBridge.Publishers.Heartbeat,
        topic: "ovcs_heartbeat",
        message_module: Ros2.StdMsgs.Msg.String,
        interval_ms: 5_000,
@@ -23,7 +23,7 @@ defmodule RosBridge.Heartbeat do
   """
   use GenServer
 
-  alias RosBridge.Heartbeat.State
+  alias RosBridge.Publishers.Heartbeat.State
 
   require Logger
 
