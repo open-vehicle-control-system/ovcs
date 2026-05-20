@@ -34,10 +34,16 @@ defmodule OvcsMini do
       # Pi 5 + Hailo hat. Uses upstream nerves_system_rpi5 (libcamera
       # and HailoRT are already in the system; see
       # bridges/firmware/mix.exs).
+      # Perception bridge: no local CAN transceiver — it joins the
+      # bus over Zenoh on a separate Pi. The target mapping still
+      # has to satisfy Cantastic's "valid network" contract, so we
+      # point it at a virtual CAN device. Cantastic auto-creates
+      # vcan0 at boot (`ip link add dev vcan0 type vcan`), so this
+      # is zero-config on the Pi 5; no SPI/MCP251xFD wait needed.
       "ros_perception" => %{
         target: :rpi5,
         bridges: [RosBridge],
-        default_can_mapping: %{host: "ovcs:vcan0", target: "ovcs:spi0.0"}
+        default_can_mapping: %{host: "ovcs:vcan0", target: "ovcs:vcan0"}
       }
     }
   end
