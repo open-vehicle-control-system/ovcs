@@ -21,6 +21,14 @@ defmodule RosBridge.ZenohClient.State do
     #     subscriber_id
     #   }}
     subscriptions: %{},
+    # %{service_name => %{
+    #     service_module, handler, key_expr,
+    #     liveliness_key, queryable_id, liveliness_token
+    #   }}
+    # Per-service-server state. The handler is the pid that runs
+    # the request → response logic; queryable_id +
+    # liveliness_token are per-session and re-declared on reconnect.
+    services: %{},
     # Reverse index for fast :DOWN lookup: monitor_ref → {key_expr, pid}.
     monitors: %{}
   ]
@@ -100,6 +108,35 @@ defmodule RosBridge.ZenohClient do
     GenServer.call(__MODULE__, {:unsubscribe, topic, pid})
   end
 
+  @doc """
+  Register a ROS 2 **service server** on `service_name` (e.g.
+  `"/stereo/left/set_camera_info"`). The service module must
+  expose `dds_type/0`, `type_hash/0`, and a `Request.parse/1`
+  callable from the handler.
+
+  Incoming queries are forwarded to `handler_pid` as
+  `{:service_request, %{service_name, query, request_payload}}`,
+  where `query` is the raw `%Zenohex.Query{}` (so the handler can
+  pass it to `respond/3` once it has built the response).
+
+  Safe to call before the session is open; the queryable is
+  declared on the next successful connect and re-declared after any
+  reconnect.
+  """
+  def register_service(service_name, service_module, handler_pid \\ self()) do
+    GenServer.call(__MODULE__, {:register_service, service_name, service_module, handler_pid})
+  end
+
+  @doc """
+  Reply to an in-flight service query with an already-encoded
+  response payload (CDR-LE encapsulated). `service_name` is the
+  same string passed to `register_service/3`; it's used to look up
+  the data keyexpr the reply should be tagged with.
+  """
+  def respond(service_name, %Zenohex.Query{} = query, response_payload) do
+    GenServer.cast(__MODULE__, {:respond, service_name, query, response_payload})
+  end
+
   ## Callbacks
 
   @impl true
@@ -170,7 +207,66 @@ defmodule RosBridge.ZenohClient do
     end
   end
 
+  def handle_call({:register_service, service_name, service_module, handler_pid}, _from, state) do
+    service = build_service_record(state, service_name, service_module, handler_pid)
+    state = put_in(state.services[service_name], service)
+
+    state =
+      if state.session do
+        case declare_service(state, service_name, service) do
+          {:ok, state, _service} -> state
+          {:error, _reason, state} -> state
+        end
+      else
+        state
+      end
+
+    {:reply, :ok, state}
+  end
+
   @impl true
+  def handle_cast({:respond, service_name, query, response_payload}, state) do
+    case Map.get(state.services, service_name) do
+      nil ->
+        Logger.warning("#{__MODULE__} respond on unknown service #{service_name}; dropping")
+        {:noreply, state}
+
+      service ->
+        # rmw_zenoh's CDR encapsulation header on the response body.
+        cdr = <<0x00, 0x01, 0x00, 0x00>> <> response_payload
+
+        # The reply must carry an attachment that echoes the request's
+        # sequence_id so the rclpy client can match it to the call
+        # site. The request attachment layout matches our publisher
+        # attachment (see `Ros2.RmwZenoh.attachment/3`): 8 bytes seq,
+        # 8 bytes ns, 1 byte gid-len, 16 bytes gid. We echo the seq
+        # and re-stamp the timestamp; the GID we re-use as the
+        # writer-id stand-in.
+        attachment =
+          case query.attachment do
+            <<seq::little-signed-integer-size(64), _ts::binary-size(8),
+              16::unsigned-integer-size(8), gid::binary-size(16)>> ->
+              RmwZenoh.attachment(seq, System.system_time(:nanosecond), gid)
+
+            _ ->
+              # No or unparseable request attachment — synthesise one.
+              RmwZenoh.attachment(0, System.system_time(:nanosecond), :crypto.strong_rand_bytes(16))
+          end
+
+        case Zenohex.Query.reply(query.zenoh_query, service.key_expr, cdr, attachment: attachment) do
+          :ok ->
+            {:noreply, state}
+
+          {:error, reason} ->
+            Logger.warning(
+              "#{__MODULE__} reply on #{service.key_expr} failed: #{inspect(reason)}"
+            )
+
+            {:noreply, state}
+        end
+    end
+  end
+
   def handle_cast({:publish, _topic, _message_module, _message, _opts}, %State{session: nil} = state) do
     Logger.debug("#{__MODULE__} publish dropped (no session yet)")
     {:noreply, state}
@@ -237,6 +333,7 @@ defmodule RosBridge.ZenohClient do
         state = %{state | session: session}
         state = redeclare_publishers(state)
         state = redeclare_subscribers(state)
+        state = redeclare_services(state)
         {:noreply, state}
 
       {:error, reason} ->
@@ -251,6 +348,35 @@ defmodule RosBridge.ZenohClient do
 
       :no_match ->
         Logger.debug("#{__MODULE__} sample with no matching subscription: #{key_expr}")
+    end
+
+    {:noreply, state}
+  end
+
+  def handle_info(%Zenohex.Query{key_expr: key_expr} = query, state) do
+    case match_service(state.services, key_expr) do
+      {:ok, service_name, service} ->
+        request_payload =
+          case RmwZenoh.decode_payload(query.payload || <<>>) do
+            {:ok, decoded} -> decoded
+            _ -> query.payload
+          end
+
+        Logger.debug(
+          "#{__MODULE__} query on #{service_name} " <>
+            "(payload #{byte_size(query.payload || <<>>)}B, " <>
+            "attachment #{byte_size(query.attachment || <<>>)}B)"
+        )
+
+        send(
+          service.handler,
+          {:service_request,
+           %{service_name: service_name, query: query, request_payload: request_payload}}
+        )
+
+      :no_match ->
+        Logger.debug("#{__MODULE__} query with no matching service: #{key_expr}")
+        Zenohex.Query.reply_error(query.zenoh_query, "no handler")
     end
 
     {:noreply, state}
@@ -365,6 +491,87 @@ defmodule RosBridge.ZenohClient do
 
         {%{state | subscriptions: subscriptions, monitors: monitors}, subscription}
     end
+  end
+
+  ## Internals — services
+
+  defp build_service_record(state, service_name, service_module, handler_pid) do
+    key_expr = RmwZenoh.service_key_expr(state.domain_id, service_name, service_module)
+
+    %{
+      service_module: service_module,
+      handler: handler_pid,
+      key_expr: key_expr,
+      liveliness_key: nil,
+      queryable_id: nil,
+      liveliness_token: nil
+    }
+  end
+
+  defp declare_service(state, service_name, service) do
+    with {:ok, %Zenohex.Session.Info{zid: zid}} <- Zenohex.Session.info(state.session),
+         {:ok, queryable_id} <-
+           Zenohex.Session.declare_queryable(
+             state.session,
+             service.key_expr,
+             self(),
+             complete: true
+           ),
+         liveliness_key <-
+           RmwZenoh.service_liveliness_key(
+             state.domain_id,
+             zid,
+             state.node_name,
+             service_name,
+             service.service_module
+           ),
+         {:ok, liveliness_token} <-
+           Zenohex.Liveliness.declare_token(state.session, liveliness_key) do
+      Logger.info(
+        "#{__MODULE__} service #{inspect(service.service_module)} on #{service.key_expr} " <>
+          "(liveliness #{liveliness_key})"
+      )
+
+      service = %{
+        service
+        | queryable_id: queryable_id,
+          liveliness_token: liveliness_token,
+          liveliness_key: liveliness_key
+      }
+
+      state = put_in(state.services[service_name], service)
+      {:ok, state, service}
+    else
+      {:error, reason} ->
+        Logger.warning(
+          "#{__MODULE__} declare service #{service_name} failed: #{inspect(reason)}"
+        )
+
+        {:error, reason, state}
+    end
+  end
+
+  defp redeclare_services(%State{session: nil} = state), do: state
+
+  defp redeclare_services(%State{} = state) do
+    Enum.reduce(state.services, state, fn {service_name, service}, acc ->
+      service = %{service | queryable_id: nil, liveliness_token: nil}
+
+      case declare_service(acc, service_name, service) do
+        {:ok, acc, _} -> acc
+        {:error, _reason, acc} -> acc
+      end
+    end)
+  end
+
+  # The registered service key_expr is a single concrete string —
+  # match incoming query.key_expr against it exactly.
+  defp match_service(services, query_key) do
+    Enum.find_value(services, :no_match, fn {service_name, service} ->
+      if service.key_expr == query_key do
+        {:ok, service_name, service}
+      end
+    end)
   end
 
   ## Internals — publishers
@@ -492,12 +699,19 @@ defmodule RosBridge.ZenohClient do
         do: Zenohex.Subscriber.undeclare(subscription.subscriber_id)
     end)
 
+    Enum.each(state.services, fn {_name, service} ->
+      if service.liveliness_token,
+        do: Zenohex.Liveliness.undeclare_token(service.liveliness_token)
+
+      if service.queryable_id, do: Zenohex.Queryable.undeclare(service.queryable_id)
+    end)
+
     if state.session, do: Zenohex.Session.close(state.session)
     :ok
   end
 
   # Clears per-session refs without dropping the durable identity
-  # bits (gid, sequence_number, registered subscribers).
+  # bits (gid, sequence_number, registered subscribers, service handlers).
   defp drop_session(%State{} = state) do
     publishers =
       Map.new(state.publishers, fn {topic, publisher} ->
@@ -509,6 +723,11 @@ defmodule RosBridge.ZenohClient do
         {key_expr, %{subscription | subscriber_id: nil}}
       end)
 
-    %{state | session: nil, publishers: publishers, subscriptions: subscriptions}
+    services =
+      Map.new(state.services, fn {service_name, service} ->
+        {service_name, %{service | queryable_id: nil, liveliness_token: nil}}
+      end)
+
+    %{state | session: nil, publishers: publishers, subscriptions: subscriptions, services: services}
   end
 end

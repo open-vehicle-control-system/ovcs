@@ -86,9 +86,4 @@ defmodule Ros2.SensorMsgs.Msg.Imu do
   # for the same struct.
   defp byte_size_after_header(header), do: byte_size(Header.encode(header))
 
-  defp consume_alignment(payload, alignment, current_offset) do
-    pad = rem(alignment - rem(current_offset, alignment), alignment)
-    <<_skip::binary-size(pad), rest::binary>> = payload
-    rest
-  end
 end

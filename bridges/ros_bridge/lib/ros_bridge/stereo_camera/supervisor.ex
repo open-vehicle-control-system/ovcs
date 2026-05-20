@@ -118,7 +118,36 @@ defmodule RosBridge.StereoCamera.Supervisor do
       camera_driver_spec(config, :right),
       stereo_backend_spec(config),
       stereo_publisher_spec(config)
-    ]
+    ] ++ set_camera_info_specs(config)
+  end
+
+  # Per-side `set_camera_info` service server. Together they let
+  # `cameracalibrator`'s COMMIT button persist the new calibration
+  # to disk (the same YAML path the bridge loaded from at boot)
+  # and hot-reload the SGBM backend so the change takes effect
+  # without restarting.
+  defp set_camera_info_specs(config) do
+    Enum.flat_map([:left, :right], fn side ->
+      side_opts = Map.fetch!(config, side)
+      service_name = "#{config.topic_prefix}/#{side}/set_camera_info"
+
+      case Keyword.get(side_opts, :calibration_path) do
+        nil ->
+          []
+
+        path ->
+          [
+            Supervisor.child_spec(
+              {RosBridge.Services.SetCameraInfoServer,
+               service_name: service_name,
+               calibration_path: path,
+               camera_name: "#{config.topic_prefix}_#{side}",
+               reload: {OpenCV, :reload_calibration, [OpenCV]}},
+              id: {:stereo, :set_camera_info, side}
+            )
+          ]
+      end
+    end)
   end
 
   defp camera_driver_spec(config, side) do

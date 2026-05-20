@@ -78,6 +78,16 @@ defmodule RosBridge.StereoCamera.OpenCV do
   def submit_pair(server, %Frame{} = left, %Frame{} = right),
     do: GenServer.cast(server, {:submit_pair, left, right})
 
+  @doc """
+  Reload calibration + rectification maps from the side YAMLs
+  currently on disk. Used after a `set_camera_info` service call
+  rewrites them — lets the next disparity reflect the new
+  geometry without restarting the bridge.
+  """
+  def reload_calibration(server) do
+    GenServer.call(server, :reload_calibration)
+  end
+
   # ── GenServer callbacks ──────────────────────────────────────
 
   @impl true
@@ -146,6 +156,7 @@ defmodule RosBridge.StereoCamera.OpenCV do
        block_size: Keyword.get(opts, :block_size, 5),
        min_disparity: Keyword.get(opts, :min_disparity, 0),
        rectification_maps: rectification_maps,
+       rectify?: rectify?,
        clahe: clahe,
        post_filter: Keyword.get(opts, :post_filter, :median),
        post_filter_ksize: Keyword.get(opts, :post_filter_ksize, 5),
@@ -153,8 +164,51 @@ defmodule RosBridge.StereoCamera.OpenCV do
        frame_count: 0,
        quality_every_n: Keyword.get(opts, :quality_every_n, 5),
        telemetry: Telemetry.new(window: 30, label: "backend"),
-       last_total_at: nil
+       last_total_at: nil,
+       opts: opts
      }}
+  end
+
+  @impl true
+  def handle_call(:reload_calibration, _from, state) do
+    opts = state.opts
+
+    try do
+      left_raw = Calibration.load!(Keyword.fetch!(opts, :left_calibration_path))
+      right_raw = Calibration.load!(Keyword.fetch!(opts, :right_calibration_path))
+
+      actual_width = Keyword.fetch!(opts, :width)
+      actual_height = Keyword.fetch!(opts, :height)
+
+      left = scale_calibration_to(left_raw, actual_width, actual_height)
+      right = scale_calibration_to(right_raw, actual_width, actual_height)
+      {focal_length, baseline} = stereo_geometry(left, right)
+
+      maps =
+        if state.rectify? do
+          %{left: build_rectification_maps(left), right: build_rectification_maps(right)}
+        else
+          nil
+        end
+
+      Logger.info(
+        "#{__MODULE__} reloaded calibration " <>
+          "(fx=#{Float.round(focal_length, 2)} px, baseline=#{Float.round(baseline, 4)} m)"
+      )
+
+      {:reply, :ok,
+       %{
+         state
+         | focal_length: focal_length,
+           baseline: baseline,
+           rectification_maps: maps,
+           previous_disparity: nil
+       }}
+    rescue
+      error ->
+        Logger.warning("#{__MODULE__}: reload_calibration failed: #{inspect(error)}")
+        {:reply, {:error, error}, state}
+    end
   end
 
   @impl true
