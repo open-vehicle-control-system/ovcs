@@ -1,0 +1,5 @@
+# Calibration tarballs from `docker compose run --rm calibrator`.
+# Extract left.yaml + right.yaml into the vehicle's priv/calibration
+# directory; don't commit the captures themselves.
+*.tar.gz
+*.yaml

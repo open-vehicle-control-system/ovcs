@@ -1,0 +1,13 @@
+---
+# CAN topology for the `ros_perception` bridge firmware on OVCS Mini.
+#
+# The perception bridge doesn't actually use the CAN bus — it publishes
+# stereo camera images and Hailo inference outputs over Zenoh only. But
+# Cantastic auto-starts as part of `bridge_firmware`'s OTP app tree and
+# refuses to boot without a valid network configuration, so we declare
+# the same `ovcs` network as the other bridges but emit no frames.
+# Receivers + emitters wired to this BEAM stay empty; it just satisfies
+# Cantastic's start-up contract.
+can_networks:
+  ovcs:
+    bitrate: 500000

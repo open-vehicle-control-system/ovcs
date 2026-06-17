@@ -10,6 +10,12 @@ RUN apt-get update \
         ros-jazzy-rmw-zenoh-cpp \
         ros-jazzy-foxglove-bridge \
         ros-jazzy-joy-linux \
+        ros-jazzy-vision-msgs \
+        ros-jazzy-image-transport-plugins \
+        ros-jazzy-stereo-image-proc \
+        ros-jazzy-camera-calibration \
+        ros-jazzy-cv-bridge \
+        python3-opencv \
         gettext-base \
         python3-pip \
     && rm -rf /var/lib/apt/lists/* \
@@ -19,6 +25,8 @@ RUN apt-get update \
 COPY --chmod=0755 docker/entrypoint.sh         /usr/local/bin/entrypoint
 COPY --chmod=0755 docker/foxglove_bridge.sh    /usr/local/bin/foxglove_bridge
 COPY --chmod=0755 docker/joy.sh                /usr/local/bin/joy
+COPY --chmod=0755 docker/calibrator.sh         /usr/local/bin/calibrator
+COPY --chmod=0755 docker/decompress_stereo.py  /usr/local/bin/decompress_stereo
 
 ENTRYPOINT ["/usr/local/bin/entrypoint"]
 # Default CMD idles so `docker compose up ros2` keeps the container

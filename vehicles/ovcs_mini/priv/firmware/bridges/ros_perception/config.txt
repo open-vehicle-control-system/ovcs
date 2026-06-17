@@ -1,0 +1,73 @@
+# Raspberry Pi 5 boot config for OvcsMini's perception bridge.
+#
+# Override of the rpi5 default (which doesn't exist yet — see
+# bridges/firmware/mix.exs for the nerves_system_rpi5 enablement
+# blocker). Loaded when the bridge_firmware build resolves
+# vehicle_firmware_dir = this directory because config.txt is
+# present here (see bridges/firmware/config/config.exs).
+#
+# What's different from the Pi 4 ros bridge config.txt:
+#   - No mcp251xfd dtoverlay: the perception Pi connects to the
+#     bus via the shared zenoh router on another Pi, not a local
+#     CAN transceiver.
+#   - Pi 5 firmware filenames are unused: the Pi 5 bootloader is
+#     in on-board EEPROM, no start4.elf / fixup4.dat needed.
+#   - dtoverlay=imx708 on both cam0 and cam1 to enable the two
+#     Camera Module 3 sensors over CSI for stereo capture.
+#   - dtoverlay=vc4-kms-v3d-pi5 (not the rpi4 variant) for the
+#     Pi 5 video subsystem.
+#
+# Useful references:
+#   http://rptl.io/configtxt
+#   https://www.raspberrypi.com/documentation/computers/camera_software.html
+
+# Disable the boot rainbow
+disable_splash=1
+
+# Enable I2C and SPI (cameras hang off the CSI ports but libcamera
+# still probes the IMX708 over I2C for sensor configuration).
+dtparam=i2c_arm=on
+dtparam=spi=on
+
+# Camera Module 3 (IMX708) on both CSI ports. `camera_auto_detect`
+# normally handles this on a Pi running raspbian, but on Nerves
+# we declare the sensors explicitly so a missing/loose ribbon
+# fails loudly at boot rather than silently producing one-camera
+# stereo. `cam0` is the CSI port nearest the USB-C jack; `cam1`
+# is the one on the opposite side of the board.
+camera_auto_detect=0
+dtoverlay=imx708,cam0
+dtoverlay=imx708,cam1
+
+# Don't auto-load any DSI display overlay — the perception Pi is
+# headless.
+display_auto_detect=0
+
+# Enable the Pi 5 KMS video driver (vc4-kms-v3d-pi5 — note the
+# `-pi5` variant; vc4-kms-v3d is the older Pi 4 binding).
+dtoverlay=vc4-kms-v3d-pi5
+max_framebuffers=2
+
+# Don't have the firmware create an initial video= setting in
+# cmdline.txt. Use the kernel's default instead.
+disable_fw_kms_setup=1
+
+# 64-bit kernel.
+arm_64bit=1
+
+# Disable compensation for displays with overscan (no display).
+disable_overscan=1
+
+# Run as fast as firmware / board allows.
+arm_boost=1
+
+# USB gadget mode on the USB-C port (for the IEx-over-USB
+# diagnostic path Nerves provides out of the box).
+dtoverlay=dwc2
+
+# ramoops + pstore to preserve panic logs across reboots — useful
+# for debugging CSI camera issues that might oops the kernel.
+dtoverlay=ramoops
+
+# Serial console for early-boot diagnostics.
+enable_uart=1

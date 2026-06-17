@@ -1,8 +1,8 @@
-defmodule RosBridge.JoyInterpreter.State do
+defmodule RosBridge.Consumers.Joy.State do
   defstruct []
 end
 
-defmodule RosBridge.JoyInterpreter do
+defmodule RosBridge.Consumers.Joy do
   @moduledoc """
   Subscribes to the ROS 2 `joy` topic via the native-Zenoh client
   (`RosBridge.ZenohClient.subscribe/2`) and translates each
@@ -12,7 +12,7 @@ defmodule RosBridge.JoyInterpreter do
   alias Cantastic.Emitter
   alias Decimal, as: D
   alias Ros2.SensorMsgs.Msg.Joy
-  alias RosBridge.JoyInterpreter.State
+  alias RosBridge.Consumers.Joy.State
 
   require Logger
   use GenServer
