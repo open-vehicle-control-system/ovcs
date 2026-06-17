@@ -1,6 +1,7 @@
 use anyhow::{anyhow, bail, Context, Result};
 use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpStream, ToSocketAddrs};
+use std::os::unix::process::CommandExt;
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
@@ -794,6 +795,17 @@ struct Trio {
     shell_child: Child,
     mon_child: Child,
     shell_stdin: ChildStdin,
+    // The log/monitor remsh sessions are non-interactive (we inject a
+    // snippet then leave them streaming), but we must keep their stdin
+    // *open* for the whole session: closing it sends EOF, and EOF makes
+    // `iex --remsh` terminate the **remote** node's shell — which halts
+    // the `./ovcs run` BEAM. Held here, never written; the fds close only
+    // after the children are SIGKILLed in `kill_all`, by which point the
+    // remote no longer cares.
+    #[allow(dead_code)]
+    log_stdin: ChildStdin,
+    #[allow(dead_code)]
+    mon_stdin: ChildStdin,
 }
 
 impl Trio {
@@ -813,7 +825,14 @@ impl Trio {
             &mut self.shell_child,
             &mut self.mon_child,
         ] {
-            let _ = c.kill();
+            // Kill the whole process group (stdbuf → iex → beam), not just
+            // the direct child. Killing only the wrapper would orphan the
+            // remsh BEAM, which then hits EOF on its closing stdin and
+            // cleanly halts the *remote* node. A group SIGKILL drops the
+            // distribution link abruptly instead — the remote survives.
+            // The remsh is its own group leader (see `spawn_remsh`), so the
+            // pid doubles as the pgid.
+            unsafe { libc::kill(-(c.id() as libc::pid_t), libc::SIGKILL) };
             let _ = c.wait();
         }
     }
@@ -870,6 +889,8 @@ fn spawn_trio(
         shell_child,
         mon_child,
         shell_stdin,
+        log_stdin,
+        mon_stdin,
     })
 }
 
@@ -965,6 +986,9 @@ fn spawn_remsh(local_sname: &str, full_node: &str) -> Result<std::process::Child
             "--remsh",
             full_node,
         ])
+        // Own process group so `kill_all` can SIGKILL the whole
+        // stdbuf → iex → beam chain at once (the pid is the pgid).
+        .process_group(0)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
