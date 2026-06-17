@@ -1,14 +1,12 @@
 use anyhow::{Context, Result};
-use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use owo_colors::OwoColorize;
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, IsTerminal, Write};
+use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
-use std::sync::{Arc, Mutex};
 use std::thread;
 
-use crate::ansi::{is_blank_after_ansi, strip_ansi};
+use crate::ansi::is_blank_after_ansi;
+use crate::build_runner::{self, BuildLane, BuildStep};
 use crate::commands::attach::is_iex_noise;
 use crate::commands::can::ensure_host_can;
 use crate::firmware;
@@ -198,16 +196,6 @@ fn enumerate_roles(root: &std::path::Path, vehicle: &Vehicle) -> Result<Vec<Role
 fn ensure_built(roles: &[Role], vehicle: &Vehicle) -> Result<()> {
     let groups = build_groups(roles);
 
-    for g in &groups {
-        let script = g.cwd.join("build.sh");
-        if !script.exists() {
-            anyhow::bail!(
-                "expected build.sh at {} — can't prepare host build",
-                script.display()
-            );
-        }
-    }
-
     let total: usize = groups.iter().map(|g| g.roles.len()).sum();
     step(&format!(
         "Building {} role(s) across {} firmware project(s)",
@@ -215,11 +203,26 @@ fn ensure_built(roles: &[Role], vehicle: &Vehicle) -> Result<()> {
         groups.len()
     ));
 
-    if std::io::stdout().is_terminal() {
-        ensure_built_panes(&groups, vehicle)
-    } else {
-        ensure_built_plain(&groups, vehicle)
-    }
+    // Every host warm-up shares the same env (MIX_TARGET=host). A group's
+    // roles all track one shared build (one step, one pane per role); the
+    // groups themselves are separate lanes that build in parallel.
+    let lanes = groups
+        .into_iter()
+        .map(|g| BuildLane {
+            cwd: g.cwd,
+            steps: vec![BuildStep {
+                panes: g.roles,
+                env: HashMap::from([
+                    ("MIX_TARGET".to_string(), "host".to_string()),
+                    ("VEHICLE".to_string(), vehicle.module.clone()),
+                ]),
+            }],
+        })
+        .collect();
+
+    build_runner::run_parallel(lanes)?;
+    println!();
+    Ok(())
 }
 
 /// A group of roles sharing a `build.sh` (all bridges roles share
@@ -243,243 +246,6 @@ fn build_groups(roles: &[Role]) -> Vec<BuildGroup> {
         }
     }
     groups
-}
-
-fn ensure_built_panes(groups: &[BuildGroup], vehicle: &Vehicle) -> Result<()> {
-    let mp = MultiProgress::new();
-    let tag_width = groups
-        .iter()
-        .flat_map(|g| g.roles.iter())
-        .map(|r| r.len())
-        .max()
-        .unwrap_or(0);
-    // Two leading spaces line the spinner up with the `·` column of the
-    // sub() sub-items just above it, so the whole block reads as one
-    // indented "things we're doing" list.
-    let style = ProgressStyle::with_template("  {spinner:.green} {prefix:.cyan.bold}  {wide_msg}")
-        .expect("static template")
-        .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏", "✓"]);
-
-    let mut handles: Vec<thread::JoinHandle<BuildOutcome>> = Vec::new();
-    for g in groups {
-        // One spinner per role in the group so each role reads as its
-        // own line, even though they all track the same build process.
-        let bars: Vec<ProgressBar> = g
-            .roles
-            .iter()
-            .map(|role| {
-                let bar = mp.add(ProgressBar::new_spinner());
-                bar.set_style(style.clone());
-                bar.set_prefix(format!("{:<width$}", role, width = tag_width));
-                bar.set_message("starting…".to_string());
-                bar.enable_steady_tick(std::time::Duration::from_millis(100));
-                bar
-            })
-            .collect();
-        let cwd = g.cwd.clone();
-        let module = vehicle.module.clone();
-        let group_label = g.roles.join("+");
-
-        handles.push(thread::spawn(move || {
-            run_group_pane(group_label, cwd, module, bars)
-        }));
-    }
-
-    let mut first_err: Option<BuildFailure> = None;
-    for h in handles {
-        match h.join().unwrap() {
-            Ok(()) => {}
-            Err(e) => {
-                if first_err.is_none() {
-                    first_err = Some(e);
-                }
-            }
-        }
-    }
-
-    // Drop MultiProgress so subsequent eprintln! aren't tangled with
-    // its terminal state.
-    drop(mp);
-
-    if let Some(f) = first_err {
-        eprintln!();
-        eprintln!("{}", format!("── {} log ──", f.label).red().bold());
-        for line in &f.lines {
-            eprintln!("{}", line);
-        }
-        anyhow::bail!("{} failed (exit {:?})", f.label, f.code);
-    }
-
-    println!();
-    Ok(())
-}
-
-type BuildOutcome = Result<(), BuildFailure>;
-
-struct BuildFailure {
-    label: String,
-    lines: Vec<String>,
-    code: Option<i32>,
-}
-
-fn run_group_pane(
-    group_label: String,
-    cwd: PathBuf,
-    module: String,
-    bars: Vec<ProgressBar>,
-) -> BuildOutcome {
-    let script = cwd.join("build.sh");
-    let label = format!("{}:build", group_label);
-    let buf: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
-    let finish_all = |bars: &[ProgressBar], msg: String| {
-        for bar in bars {
-            bar.finish_with_message(msg.clone());
-        }
-    };
-
-    let mut child = match Command::new(&script)
-        .current_dir(&cwd)
-        .env("MIX_TARGET", "host")
-        .env("VEHICLE", &module)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-    {
-        Ok(c) => c,
-        Err(e) => {
-            let msg = format!("spawn failed: {}", e);
-            finish_all(&bars, msg.clone());
-            return Err(BuildFailure {
-                label,
-                lines: vec![msg],
-                code: None,
-            });
-        }
-    };
-
-    let stdout = child.stdout.take().unwrap();
-    let stderr = child.stderr.take().unwrap();
-
-    let bars_arc: Arc<Vec<ProgressBar>> = Arc::new(bars);
-    let b1 = Arc::clone(&bars_arc);
-    let buf1 = Arc::clone(&buf);
-    let t1 = thread::spawn(move || capture_stream(stdout, &b1, &buf1));
-    let b2 = Arc::clone(&bars_arc);
-    let buf2 = Arc::clone(&buf);
-    let t2 = thread::spawn(move || capture_stream(stderr, &b2, &buf2));
-
-    let status = child.wait();
-    let _ = t1.join();
-    let _ = t2.join();
-
-    let lines = buf.lock().unwrap().clone();
-    match status {
-        Ok(s) if s.success() => {
-            finish_all(&bars_arc, "done".green().to_string());
-            Ok(())
-        }
-        Ok(s) => {
-            finish_all(
-                &bars_arc,
-                format!("FAILED (exit {})", s.code().unwrap_or(-1))
-                    .red()
-                    .to_string(),
-            );
-            Err(BuildFailure {
-                label,
-                lines,
-                code: s.code(),
-            })
-        }
-        Err(e) => {
-            finish_all(&bars_arc, format!("wait failed: {}", e).red().to_string());
-            Err(BuildFailure {
-                label,
-                lines,
-                code: None,
-            })
-        }
-    }
-}
-
-/// Fan one build's output across every pane in its group — each role
-/// shows the same live log line, and we also buffer every line so a
-/// failed build can dump its full log afterwards.
-fn capture_stream<R>(reader: R, bars: &[ProgressBar], buf: &Arc<Mutex<Vec<String>>>)
-where
-    R: std::io::Read + Send + 'static,
-{
-    let buf_reader = BufReader::new(reader);
-    for line in buf_reader.lines().map_while(|l| l.ok()) {
-        if is_blank_after_ansi(&line) {
-            continue;
-        }
-        let stripped = strip_ansi(&line);
-        let display = stripped.trim_start().to_string();
-        for bar in bars {
-            bar.set_message(display.clone());
-        }
-        buf.lock().unwrap().push(line);
-    }
-}
-
-fn ensure_built_plain(groups: &[BuildGroup], vehicle: &Vehicle) -> Result<()> {
-    let mut handles: Vec<thread::JoinHandle<Result<()>>> = Vec::new();
-    for g in groups {
-        let cwd = g.cwd.clone();
-        let module = vehicle.module.clone();
-        // `vms` or `bridge-radio_control+bridge-ros` — the plain path
-        // reduces to a single prefix per shared build.
-        let label = format!("{}:build", g.roles.join("+"));
-        handles.push(thread::spawn(move || -> Result<()> {
-            let script = cwd.join("build.sh");
-            let mut child = Command::new(&script)
-                .current_dir(&cwd)
-                .env("MIX_TARGET", "host")
-                .env("VEHICLE", &module)
-                .stdin(Stdio::null())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .spawn()
-                .with_context(|| format!("failed to invoke {}", script.display()))?;
-
-            let stdout = child.stdout.take().unwrap();
-            let stderr = child.stderr.take().unwrap();
-            let label_out = label.clone();
-            let label_err = label.clone();
-            let t1 = thread::spawn(move || prefix_stream(stdout, &label_out, std::io::stdout()));
-            let t2 = thread::spawn(move || prefix_stream(stderr, &label_err, std::io::stderr()));
-
-            let status = child.wait()?;
-            let _ = t1.join();
-            let _ = t2.join();
-
-            if !status.success() {
-                anyhow::bail!("{} failed (exit {:?})", label, status.code());
-            }
-            Ok(())
-        }));
-    }
-
-    let mut first_err: Option<anyhow::Error> = None;
-    for h in handles {
-        match h.join().unwrap() {
-            Ok(()) => {}
-            Err(e) => {
-                if first_err.is_none() {
-                    first_err = Some(e);
-                }
-            }
-        }
-    }
-
-    if let Some(e) = first_err {
-        return Err(e);
-    }
-
-    println!();
-    Ok(())
 }
 
 /// Ask the vehicle module for each bridge's host-side CAN mapping so the

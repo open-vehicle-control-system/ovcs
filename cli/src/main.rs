@@ -2,6 +2,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 
 mod ansi;
+mod build_runner;
 mod commands;
 mod firmware;
 mod prompt;
@@ -41,6 +42,10 @@ enum Commands {
     Doctor,
     /// Build firmware for a (vehicle, role) pair
     Build {
+        /// Build every role of the vehicle (vms, infotainment, each
+        /// bridge). The role argument is ignored when set.
+        #[arg(long)]
+        all: bool,
         vehicle: Option<String>,
         role: Option<String>,
     },
@@ -158,7 +163,7 @@ fn main() -> Result<()> {
     match cli.command {
         Commands::Vehicles => commands::vehicles::run(),
         Commands::Doctor => commands::doctor::run(),
-        Commands::Build { vehicle, role } => commands::build::run(vehicle, role),
+        Commands::Build { all, vehicle, role } => commands::build::run(all, vehicle, role),
         Commands::Burn {
             build,
             vehicle,

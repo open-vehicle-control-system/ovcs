@@ -24,6 +24,7 @@ repo root pulls rustc 1.90, the only runtime dependency.
 ./ovcs vehicles                    # list discovered vehicles + nerves targets
 ./ovcs doctor                      # verify toolchain + vehicle packages
 ./ovcs build   <vehicle> <role>    # build firmware (positional args order-independent)
+./ovcs build   --all <vehicle>     # build every role of the vehicle (vms, infotainment, each bridge)
 ./ovcs burn    <vehicle> <role> [--build]              # burn to SD card; --build runs build first
 ./ovcs clean   <vehicle> <role>    # remove build artifacts
 ./ovcs upload  <vehicle> <role> [--build] [--host H] [-f|--file F]

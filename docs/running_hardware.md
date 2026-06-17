@@ -76,6 +76,10 @@ Build a firmware image for a specific (vehicle, role) pair:
 
 # Build a bridge firmware declared in the vehicle (e.g. radio_control)
 ./ovcs build ovcs1 radio_control
+
+# Build every role of a vehicle (vms, infotainment, and each bridge) in
+# one go. Stops at the first failing build.
+./ovcs build --all ovcs1
 ```
 
 Before the first build, copy `vehicles/<vehicle>/.env.exs.example` to
