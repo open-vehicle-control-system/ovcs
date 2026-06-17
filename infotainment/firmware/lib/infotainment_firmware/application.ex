@@ -32,7 +32,10 @@ defmodule InfotainmentFirmware.Application do
   end
 
   defp children(:host) do
-    []
+    # Stop nerves_uevent on host (`./ovcs run`) — its netlink port
+    # crash-loops on a dev host's coldplug uevents and isn't used off
+    # target. See `OvcsVehicle.HostUEventGuard`.
+    [OvcsVehicle.HostUEventGuard]
   end
 
   defp children(_target) do
