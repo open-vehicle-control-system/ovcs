@@ -28,6 +28,28 @@ pub struct ResolvedArgs {
     pub application: String,
 }
 
+/// Pick just the vehicle out of the two order-independent positional args,
+/// ignoring whichever value isn't a known vehicle (e.g. a stray role).
+/// Falls back to the interactive picker when neither names a vehicle.
+/// Used by `build --all`, which builds every role and so needs no role arg.
+pub fn resolve_vehicle_pair(
+    vehicle_arg: Option<String>,
+    role_arg: Option<String>,
+) -> Result<(std::path::PathBuf, Vehicle)> {
+    let root = repo_root()?;
+    let all = vehicles::list(&root)?;
+    let names: Vec<String> = all.iter().map(|v| v.dir.clone()).collect();
+    let values: Vec<String> = [vehicle_arg, role_arg].into_iter().flatten().collect();
+    let vehicle = match values.iter().find(|v| names.contains(v)).cloned() {
+        Some(dir) => match all.iter().find(|v| v.dir == dir) {
+            Some(v) => v.clone(),
+            None => bail!("Unknown vehicle {}", dir),
+        },
+        None => choose_vehicle(&all)?,
+    };
+    Ok((root, vehicle))
+}
+
 /// Resolve a (vehicle, role) pair from two order-independent positional
 /// args. Either or both may be omitted — missing values fall back to the
 /// interactive Ratatui picker. The struct field is still called
