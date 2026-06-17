@@ -3,7 +3,7 @@ use owo_colors::OwoColorize;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use crate::firmware::applications_for;
+use crate::firmware::{applications_for, bridge_id};
 use crate::resolve_args::resolve_vehicle;
 use crate::ui::{step, sub, sub_fail, sub_ok};
 use crate::vehicles::Vehicle;
@@ -79,9 +79,14 @@ pub fn run(arg: Option<String>, force: bool) -> Result<()> {
 
 fn role_dir(vehicle: &Vehicle, role: &str) -> PathBuf {
     let base = vehicle.path.join("priv").join("host_keys");
-    match role {
-        "vms" | "infotainment" => base.join(role),
-        bridge_id => base.join("bridges").join(bridge_id),
+    // Bridge roles arrive as `bridge-<id>` (from `applications_for`), but
+    // the firmware reads keys at `bridges/<id>` — bridges/firmware's
+    // config/runtime.exs calls
+    // `ssh_system_dir(vehicle, "bridges/#{bridge_firmware_id}")` with the
+    // bare id. Strip the prefix so the two paths agree.
+    match bridge_id(role) {
+        Some(id) => base.join("bridges").join(id),
+        None => base.join(role),
     }
 }
 
