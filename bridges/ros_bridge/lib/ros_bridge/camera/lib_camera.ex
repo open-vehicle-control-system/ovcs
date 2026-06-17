@@ -49,6 +49,7 @@ defmodule RosBridge.Camera.LibCamera do
     width = Keyword.get(opts, :width, 1280)
     height = Keyword.get(opts, :height, 720)
     fps = Keyword.get(opts, :fps, 30)
+    rotation = Keyword.get(opts, :rotation, 0)
 
     executable = binary_path()
 
@@ -65,7 +66,9 @@ defmodule RosBridge.Camera.LibCamera do
       "--height",
       Integer.to_string(height),
       "--fps",
-      Integer.to_string(fps)
+      Integer.to_string(fps),
+      "--rotation",
+      Integer.to_string(rotation)
     ]
 
     port =

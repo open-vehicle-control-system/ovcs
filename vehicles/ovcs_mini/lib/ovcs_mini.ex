@@ -158,8 +158,11 @@ defmodule OvcsMini do
 
   defp camera_addressing(:host, :left), do: [device: "/dev/video2"]
   defp camera_addressing(:host, :right), do: [device: "/dev/video0"]
-  defp camera_addressing(:target, :left), do: [camera_id: 0]
-  defp camera_addressing(:target, :right), do: [camera_id: 1]
+  # Perception bridge has both CSI modules mounted upside down on the
+  # OVCS Mini stereo bar — rotate 180° in-pipeline so downstream
+  # consumers (rectification + SGBM, Foxglove) see them right-way-up.
+  defp camera_addressing(:target, :left), do: [camera_id: 0, rotation: 180]
+  defp camera_addressing(:target, :right), do: [camera_id: 1, rotation: 180]
 
   defp priv_calibration_dir do
     case :code.priv_dir(:ovcs_mini) do
