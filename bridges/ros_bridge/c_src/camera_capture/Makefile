@@ -20,8 +20,18 @@ LDFLAGS  +=
 LIBCAMERA_CFLAGS := $(shell $(PKG_CONFIG) --cflags libcamera 2>/dev/null)
 LIBCAMERA_LIBS   := $(shell $(PKG_CONFIG) --libs   libcamera 2>/dev/null)
 
-CXXFLAGS += $(LIBCAMERA_CFLAGS)
-LDFLAGS  += $(LIBCAMERA_LIBS)
+# libjpeg-turbo provides the TurboJPEG API (tjCompressFromYUVPlanes)
+# we use to encode the YUV420 frames libcamera hands us into JPEG.
+# pkg-config name is `libturbojpeg`; the Buildroot package is
+# BR2_PACKAGE_JPEG (libjpeg-turbo).
+TURBOJPEG_CFLAGS := $(shell $(PKG_CONFIG) --cflags libturbojpeg 2>/dev/null)
+TURBOJPEG_LIBS   := $(shell $(PKG_CONFIG) --libs   libturbojpeg 2>/dev/null)
+ifeq ($(strip $(TURBOJPEG_LIBS)),)
+  TURBOJPEG_LIBS := -lturbojpeg
+endif
+
+CXXFLAGS += $(LIBCAMERA_CFLAGS) $(TURBOJPEG_CFLAGS)
+LDFLAGS  += $(LIBCAMERA_LIBS) $(TURBOJPEG_LIBS)
 
 SRCS := main.cpp ../common/framing.cpp
 OBJS := $(SRCS:.cpp=.o)
