@@ -30,6 +30,55 @@ defmodule BridgeFirmware.MixProject do
   end
 
   defp deps do
+    common_deps() ++ system_deps(Mix.target())
+  end
+
+  # Nerves systems live in separate per-target forks that pin different
+  # nerves_system_br versions (rpi3a/rpi4 → 1.29.3, rpi5 → 1.33.7). Mix's
+  # constraint resolver evaluates the *full* dep graph regardless of the
+  # `:targets` keyword, so listing all three at once produces a "br 1.29.3
+  # vs br 1.33.7" conflict at `mix deps.get`. Returning only the active
+  # target's system from `deps/0` keeps each MIX_TARGET's resolution
+  # independent — they get their own mix.lock entries with no cross-talk.
+  defp system_deps(:host), do: []
+
+  defp system_deps(:ovcs_base_can_system_rpi3a) do
+    [
+      {:ovcs_base_can_system_rpi3a,
+       github: "open-vehicle-control-system/ovcs_base_can_system_rpi3a",
+       runtime: false,
+       nerves: [compile: false]}
+    ]
+  end
+
+  defp system_deps(:ovcs_base_can_system_rpi4) do
+    [
+      {:ovcs_base_can_system_rpi4,
+       github: "open-vehicle-control-system/ovcs_base_can_system_rpi4",
+       runtime: false,
+       nerves: [compile: false]}
+    ]
+  end
+
+  defp system_deps(:rpi5) do
+    [
+      # OVCS Pi 5 system rebased on upstream nerves_system_rpi5 v2.0.3 with
+      # CAN tooling + IPROUTE/IPTABLES + Intel Wi-Fi 6 firmware added.
+      # Ships libcamera with PISP pipeline support (the original purpose of
+      # this perception bridge — Camera Module 3 stereo on the Pi 5 PiSP FE).
+      {:ovcs_bridges_system_rpi5,
+       github: "open-vehicle-control-system/ovcs_bridges_system_rpi5",
+       tag: "v2.0.8",
+       runtime: false,
+       nerves: [compile: false]}
+    ]
+  end
+
+  defp system_deps(other) do
+    raise "Unknown MIX_TARGET=#{other}. Add a system_deps/1 clause for it."
+  end
+
+  defp common_deps do
     [
       {:nerves, "~> 1.10", runtime: false},
       {:shoehorn, "~> 0.9.1"},
@@ -71,36 +120,6 @@ defmodule BridgeFirmware.MixProject do
        targets: [:host, :ovcs_base_can_system_rpi4, :rpi5],
        runtime: Mix.target() != :host},
 
-      # Nerves systems (one per supported target).
-      {
-        :ovcs_base_can_system_rpi3a,
-        github: "open-vehicle-control-system/ovcs_base_can_system_rpi3a",
-        runtime: false,
-        targets: :ovcs_base_can_system_rpi3a,
-        nerves: [compile: false]
-      },
-      {
-        :ovcs_base_can_system_rpi4,
-        github: "open-vehicle-control-system/ovcs_base_can_system_rpi4",
-        runtime: false,
-        targets: :ovcs_base_can_system_rpi4,
-        nerves: [compile: false]
-      },
-      {
-        :ovcs_bridges_system_rpi5,
-        github: "open-vehicle-control-system/ovcs_bridges_system_rpi5",
-        # Pin to the v0.4.2 tag (nerves_system_br 1.29.3) rather than
-        # tracking the default branch: upstream rewrote `main` to a v2.0 /
-        # OTP-28 line (nerves_system_br 1.33.7) that conflicts with the
-        # rpi3a/rpi4 base systems (still 1.29.3). A tag is a stable ref
-        # that survives history rewrites, unlike the old branch SHA which
-        # became unfetchable. Bump in lockstep with the base systems when
-        # migrating the whole fleet to OTP 28.
-        tag: "v0.4.2",
-        runtime: false,
-        targets: :rpi5,
-        nerves: [compile: false]
-      },
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
 
       # Bridge libraries are added as each is migrated out of its
