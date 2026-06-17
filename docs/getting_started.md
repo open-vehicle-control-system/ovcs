@@ -47,7 +47,7 @@ Erlang and Ruby are built from source by mise, so the system needs the usual C t
 sudo apt install -y build-essential autoconf m4 \
   libncurses-dev libssl-dev libffi-dev libyaml-dev zlib1g-dev \
   libwxgtk3.2-dev libgl1-mesa-dev libglu1-mesa-dev libpng-dev \
-  libssh-dev unixodbc-dev xsltproc fop libxml2-utils
+  libssh-dev unixodbc-dev xsltproc fop libxml2-utils pkg-config
 ```
 
 ### 3. Install system-level tools
