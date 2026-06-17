@@ -36,9 +36,12 @@ pub fn choose(label: &str, choices: &[String]) -> Result<String> {
     }
 }
 
-/// Richer vehicle picker — centered title, per-vehicle row with module
-/// atom, snake_case dir, and the nerves target for each side when we
-/// know it.
+/// Vehicle picker — centered title, one row per vehicle (module atom +
+/// snake_case dir). Deliberately metadata-free: it reads only what
+/// `vehicles::list` already globbed, so it draws instantly. Probing each
+/// vehicle's Nerves targets here would boot Mix several times per vehicle
+/// (~2s each) before the picker could even appear; `./ovcs vehicles` is
+/// the place for that detail.
 pub fn choose_vehicle(vehicles: &[Vehicle]) -> Result<Vehicle> {
     if vehicles.is_empty() {
         eprintln!(
@@ -49,31 +52,7 @@ pub fn choose_vehicle(vehicles: &[Vehicle]) -> Result<Vehicle> {
     }
     ensure_tty_or_exit("vehicle");
 
-    let items: Vec<VehicleItem> = vehicles
-        .iter()
-        .map(|v| {
-            let bridges = crate::vehicles::bridge_firmwares(v)
-                .ok()
-                .map(|map| {
-                    let mut entries: Vec<(String, String)> =
-                        map.into_iter().map(|(id, fw)| (id, fw.target)).collect();
-                    entries.sort_by(|a, b| a.0.cmp(&b.0));
-                    entries
-                })
-                .unwrap_or_default();
-            VehicleItem {
-                dir: v.dir.clone(),
-                module: v.module.clone(),
-                vms_target: crate::vehicles::nerves_target(v, "vms").ok().flatten(),
-                info_target: crate::vehicles::nerves_target(v, "infotainment")
-                    .ok()
-                    .flatten(),
-                bridges,
-            }
-        })
-        .collect();
-
-    let (result, mut terminal) = with_terminal(|term| run_vehicle_picker(term, &items))?;
+    let (result, mut terminal) = with_terminal(|term| run_vehicle_picker(term, vehicles))?;
     teardown(&mut terminal);
 
     match result? {
@@ -199,45 +178,21 @@ fn run_text_picker(
 
 // ---------- vehicle picker ----------
 
-struct VehicleItem {
-    dir: String,
-    module: String,
-    vms_target: Option<String>,
-    info_target: Option<String>,
-    /// (bridge_firmware_id, target) pairs, sorted by id.
-    bridges: Vec<(String, String)>,
-}
-
 fn run_vehicle_picker(
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
-    items: &[VehicleItem],
+    vehicles: &[Vehicle],
 ) -> Result<Option<usize>> {
     let mut state = ListState::default();
     state.select(Some(0));
-
-    // Rows per vehicle: module+dir, vms, infotainment, optional bridges
-    // summary, trailing blank (as the gap before the next vehicle, or a
-    // trailing blank before the footer for the last one).
-    let row_lines = |v: &VehicleItem| -> u16 {
-        let mut n: u16 = 4; // module + vms + info + trailing blank
-        if !v.bridges.is_empty() {
-            n += 1;
-        }
-        n
-    };
 
     loop {
         terminal.draw(|f| {
             let outer_area = f.area();
 
-            // Pane is wide: up to 100 cols, shrunk to terminal width. Height
-            // is driven by actual item heights + minimal chrome.
-            let content_width = outer_area.width.saturating_sub(4).min(100);
-            let items_height: u16 = items.iter().map(row_lines).sum();
-            // 2 border + 1 footer. No internal vertical padding — the trailing
-            // blank inside each list item provides visual separation.
-            let chrome_height: u16 = 3;
-            let total_height = items_height + chrome_height;
+            // Pane up to 60 cols, shrunk to terminal width. One line per
+            // vehicle + 2 border + 1 footer.
+            let content_width = outer_area.width.saturating_sub(4).min(60);
+            let total_height = vehicles.len() as u16 + 3;
             let area = centered(outer_area, content_width, total_height);
 
             // Title lives on the border itself, centered.
@@ -270,45 +225,21 @@ fn run_vehicle_picker(
                 .constraints([Constraint::Min(1), Constraint::Length(1)])
                 .split(inner);
 
-            let list_items: Vec<ListItem> = items
+            let list_items: Vec<ListItem> = vehicles
                 .iter()
                 .map(|v| {
-                    let mut lines: Vec<Line<'static>> = Vec::new();
-                    lines.push(Line::from(vec![
+                    ListItem::new(Line::from(vec![
                         Span::styled(
                             v.module.clone(),
                             Style::default().add_modifier(Modifier::BOLD),
                         ),
                         Span::raw("  "),
                         Span::styled(format!("({})", v.dir), dim()),
-                    ]));
-                    lines.push(row_detail("vms", v.vms_target.as_deref()));
-                    lines.push(row_detail("infotainment", v.info_target.as_deref()));
-
-                    if !v.bridges.is_empty() {
-                        let summary = v
-                            .bridges
-                            .iter()
-                            .map(|(id, target)| format!("{} ({})", id, short_target(target)))
-                            .collect::<Vec<_>>()
-                            .join(", ");
-                        lines.push(Line::from(vec![
-                            Span::raw("   "),
-                            Span::styled(format!("{:<13}", "bridges"), dim()),
-                            Span::styled("→ ", dim()),
-                            Span::styled(summary, Style::default().fg(ACCENT)),
-                        ]));
-                    }
-
-                    lines.push(Line::from(""));
-                    ListItem::new(lines)
+                    ]))
                 })
                 .collect();
 
             let list = List::new(list_items)
-                // BOLD only — no REVERSED, no bg tint. Per-span palette
-                // (dim dir, cyan accent on targets) stays legible; the
-                // cyan `▌` marker is what calls out the active row.
                 .highlight_style(Style::default().add_modifier(Modifier::BOLD))
                 .highlight_symbol(" ▌ ");
             f.render_stateful_widget(list, rows[0], &mut state);
@@ -326,17 +257,17 @@ fn run_vehicle_picker(
         if let Some(evt) = read_nav()? {
             match evt {
                 Nav::Up => {
-                    let len = items.len();
+                    let len = vehicles.len();
                     let i = state.selected().unwrap_or(0);
                     state.select(Some(if i == 0 { len - 1 } else { i - 1 }));
                 }
                 Nav::Down => {
-                    let len = items.len();
+                    let len = vehicles.len();
                     let i = state.selected().unwrap_or(0);
                     state.select(Some((i + 1) % len));
                 }
                 Nav::Home => state.select(Some(0)),
-                Nav::End => state.select(Some(items.len() - 1)),
+                Nav::End => state.select(Some(vehicles.len() - 1)),
                 Nav::Enter => return Ok(state.selected()),
                 Nav::Cancel => return Ok(None),
             }
@@ -344,35 +275,11 @@ fn run_vehicle_picker(
     }
 }
 
-fn row_detail(label: &str, target: Option<&str>) -> Line<'static> {
-    Line::from(vec![
-        Span::raw("   "),
-        Span::styled(format!("{:<13}", label), dim()),
-        Span::styled("→ ", dim()),
-        match target {
-            Some(t) => Span::styled(t.to_string(), Style::default().fg(ACCENT)),
-            None => Span::styled("—", dim()),
-        },
-    ])
-}
-
 /// Terminal-default foreground with the `DIM` attribute — readable on
 /// both light and dark terminals, unlike `Color::DarkGray` which
 /// disappears on dark backgrounds.
 fn dim() -> Style {
     Style::default().add_modifier(Modifier::DIM)
-}
-
-/// Strip the `ovcs_base_can_system_` / `ovcs_bridges_system_` prefix
-/// from a Nerves target atom for the compact bridges line. Returns
-/// the input unchanged if no known prefix matches.
-fn short_target(target: &str) -> String {
-    for prefix in ["ovcs_base_can_system_", "ovcs_bridges_system_"] {
-        if let Some(rest) = target.strip_prefix(prefix) {
-            return rest.to_string();
-        }
-    }
-    target.to_string()
 }
 
 // ---------- shared input handling ----------
