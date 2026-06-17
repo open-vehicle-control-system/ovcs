@@ -1,30 +1,20 @@
-# Placeholder calibration for the OVCS Mini perception bridge RIGHT
-# camera. See stereo_left.yaml for caveats — replace before relying
-# on `stereo_image_proc`. The projection_matrix's tx term (last
-# column row 0) should equal -fx * baseline for a real stereo rig.
-image_width: 1280
-image_height: 720
+image_width: 640
+image_height: 480
 camera_name: stereo_right
+camera_matrix:
+  rows: 3
+  cols: 3
+  data: [498.56462575974734, 0.0, 328.99178556340286, 0.0, 498.48460449737456, 250.07041497352432, 0.0, 0.0, 1.0]
 distortion_model: plumb_bob
 distortion_coefficients:
   rows: 1
   cols: 5
-  data: [0.0, 0.0, 0.0, 0.0, 0.0]
-camera_matrix:
-  rows: 3
-  cols: 3
-  data: [1000.0, 0.0, 640.0,
-         0.0, 1000.0, 360.0,
-         0.0, 0.0, 1.0]
+  data: [0.11016003534424171, -0.18576686297340012, 0.003075840895914585, 0.004339853169353198, 0.0]
 rectification_matrix:
   rows: 3
   cols: 3
-  data: [1.0, 0.0, 0.0,
-         0.0, 1.0, 0.0,
-         0.0, 0.0, 1.0]
+  data: [0.9994488216199164, 0.021578463235243903, 0.0252274233120569, -0.021626621999671688, 0.9997647759496546, 0.0016376786070731548, -0.02518615062775177, -0.0021823599020270087, 0.9996803964877045]
 projection_matrix:
   rows: 3
   cols: 4
-  data: [1000.0, 0.0, 640.0, -60.0,
-         0.0, 1000.0, 360.0, 0.0,
-         0.0, 0.0, 1.0, 0.0]
+  data: [524.8200250920598, 0.0, 323.78624725341797, -50.6886249740007, 0.0, 524.8200250920598, 253.84771537780762, 0.0, 0.0, 0.0, 1.0, 0.0]
