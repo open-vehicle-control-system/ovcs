@@ -43,7 +43,7 @@ pub fn choose_vehicle(vehicles: &[Vehicle]) -> Result<Vehicle> {
     if vehicles.is_empty() {
         eprintln!(
             "{}",
-            "No vehicles found under vehicles/. Create one with `./ovcs vehicle new <name>`.".red()
+            "No vehicles found under vehicles/. Create one with `./ovcs new <name>`.".red()
         );
         std::process::exit(1);
     }

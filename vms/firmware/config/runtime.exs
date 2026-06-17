@@ -32,7 +32,7 @@ case OvcsVehicle.Firmware.resolve_side(
       priv_can_config_path: vms.can_config_path()
 
     # Stable SSH host keys baked into the vehicle's priv (generated
-    # by `./ovcs vehicle host-keys`). When absent, NervesSSH falls
+    # by `./ovcs host-keys`). When absent, NervesSSH falls
     # back to its default /data path and regenerates on each fresh
     # burn (the legacy behaviour). Skip entirely on host builds where
     # `:nerves_ssh` isn't a dep.

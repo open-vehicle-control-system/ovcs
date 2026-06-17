@@ -23,7 +23,7 @@ side-by-side:
 | [`ovcs_bridge/`](./ovcs_bridge) | in-tree | `OvcsBridge` behaviour + supervisor for bridge libraries |
 | [`ovcs_bus/`](./ovcs_bus) | in-tree | Cluster-wide pub/sub over Erlang distribution |
 | [`ovcs_can/`](./ovcs_can) | in-tree | Shared per-component CAN frame YAMLs (no runtime logic) |
-| [`ovcs_vehicle/`](./ovcs_vehicle) | in-tree | `OvcsVehicle` behaviour + `ovcs vehicle new` scaffold |
+| [`ovcs_vehicle/`](./ovcs_vehicle) | in-tree | `OvcsVehicle` behaviour + `ovcs new` scaffold |
 
 Each library has its own README — start there for usage and design notes.
 

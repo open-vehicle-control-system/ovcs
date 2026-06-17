@@ -82,7 +82,7 @@ the vehicle module.
 Use the CLI:
 
 ```
-./ovcs vehicle new my_car \
+./ovcs new my_car \
   --vms-target ovcs_base_can_system_rpi4 \
   --infotainment-target ovcs_base_can_system_rpi5
 ```
@@ -107,7 +107,7 @@ lib/
   ovcs_vehicle.ex            — the OvcsVehicle behaviour
   ovcs_vehicle/
     firmware.ex              — resolve_vehicle/3 (for runtime.exs)
-    scaffold.ex              — `ovcs vehicle new` template renderer
+    scaffold.ex              — `ovcs new` template renderer
 priv/
   templates/vehicle/         — EEx-rendered new-vehicle template
 ```

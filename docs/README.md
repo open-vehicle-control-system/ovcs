@@ -40,7 +40,7 @@ own README with usage, design notes, and API.
 
 | Library | Path | Module | README |
 |---------|------|--------|--------|
-| OvcsVehicle | `libraries/ovcs_vehicle/` | `OvcsVehicle` | [README](../libraries/ovcs_vehicle/README.md) — vehicle-package behaviour + `ovcs vehicle new` scaffold |
+| OvcsVehicle | `libraries/ovcs_vehicle/` | `OvcsVehicle` | [README](../libraries/ovcs_vehicle/README.md) — vehicle-package behaviour + `ovcs new` scaffold |
 | OvcsCan | `libraries/ovcs_can/` | `OvcsCan` | [README](../libraries/ovcs_can/README.md) — shared CAN frame YAMLs (`import!:@ovcs_can:…`) |
 | OvcsBus | `libraries/ovcs_bus/` | `OvcsBus` | [README](../libraries/ovcs_bus/README.md) — cluster-wide pub/sub over Erlang distribution |
 | OvcsBridge | `libraries/ovcs_bridge/` | `OvcsBridge` | [README](../libraries/ovcs_bridge/README.md) — bridge-library contract + firmware supervisor |

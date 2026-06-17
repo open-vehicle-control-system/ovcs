@@ -182,7 +182,7 @@ vehicle so SD-card reflashes don't trip the "REMOTE HOST IDENTIFICATION
 HAS CHANGED" warning:
 
 ```sh
-./ovcs vehicle host-keys <vehicle>          # one-time per vehicle
+./ovcs host-keys generate <vehicle>   # one-time per vehicle
 ```
 
 See [`docs/running_hardware.md`](./running_hardware.md#stable-ssh-host-keys-across-burns)
