@@ -81,10 +81,33 @@ enum Commands {
         #[command(subcommand)]
         action: CanAction,
     },
-    /// Vehicle package helpers
-    Vehicle {
+    /// Scaffold a new vehicle package from the bundled template
+    New {
+        /// New vehicle directory name (snake_case)
+        name: String,
+        /// Nerves target system for the VMS firmware
+        #[arg(long, default_value = "ovcs_base_can_system_rpi4")]
+        vms_target: String,
+        /// Nerves target system for the infotainment firmware
+        #[arg(long, default_value = "ovcs_base_can_system_rpi5")]
+        infotainment_target: String,
+        /// Scaffold a VMS-only vehicle (skip the infotainment side)
+        #[arg(long)]
+        no_infotainment: bool,
+        /// Skip the bridge_firmware dep (omit `bridge_firmwares/0`)
+        #[arg(long)]
+        no_bridges: bool,
+        /// Human-readable display name (e.g. "OVCS Mini").
+        /// Defaults to the snake_case name title-cased on `_`.
+        #[arg(long)]
+        display_name: Option<String>,
+    },
+    /// Manage persistent SSH host keys per firmware role so device
+    /// identities stay stable across burns (gitignored under
+    /// vehicles/<dir>/priv/host_keys/)
+    HostKeys {
         #[command(subcommand)]
-        action: VehicleAction,
+        action: HostKeysAction,
     },
     /// Boot a vehicle locally — one BEAM per role
     #[command(long_about = "\
@@ -124,37 +147,38 @@ enum CanAction {
 }
 
 #[derive(Subcommand)]
-enum VehicleAction {
-    /// Generate persistent SSH host keys per firmware role so device
-    /// identities stay stable across burns. Keys are gitignored under
-    /// vehicles/<dir>/priv/host_keys/.
-    HostKeys {
+enum HostKeysAction {
+    /// Generate any missing host keys for every firmware role
+    Generate {
         /// Vehicle directory name (snake_case). Prompts if omitted.
         vehicle: Option<String>,
         /// Regenerate keys even if they already exist
         #[arg(long)]
         force: bool,
     },
-    /// Scaffold a new vehicle package from the bundled template
-    New {
-        /// New vehicle directory name (snake_case)
-        name: String,
-        /// Nerves target system for the VMS firmware
-        #[arg(long, default_value = "ovcs_base_can_system_rpi4")]
-        vms_target: String,
-        /// Nerves target system for the infotainment firmware
-        #[arg(long, default_value = "ovcs_base_can_system_rpi5")]
-        infotainment_target: String,
-        /// Scaffold a VMS-only vehicle (skip the infotainment side)
+    /// Check that every role has a complete set of host keys
+    Verify {
+        /// Vehicle directory name (snake_case). Prompts if omitted.
+        vehicle: Option<String>,
+    },
+    /// Bundle a vehicle's host keys into a shareable archive
+    Export {
+        /// Vehicle directory name (snake_case). Prompts if omitted.
+        vehicle: Option<String>,
+        /// Output archive path (default: <vehicle>-host-keys.tar.gz)
+        #[arg(short = 'o', long)]
+        out: Option<String>,
+    },
+    /// Restore a vehicle's host keys from an exported archive
+    Import {
+        /// Vehicle directory name (snake_case). Prompts if omitted.
+        vehicle: Option<String>,
+        /// Archive produced by `host-keys export`
+        #[arg(short = 'i', long = "from")]
+        from: String,
+        /// Overwrite existing keys instead of refusing
         #[arg(long)]
-        no_infotainment: bool,
-        /// Skip the bridge_firmware dep (omit `bridge_firmwares/0`)
-        #[arg(long)]
-        no_bridges: bool,
-        /// Human-readable display name (e.g. "OVCS Mini").
-        /// Defaults to the snake_case name title-cased on `_`.
-        #[arg(long)]
-        display_name: Option<String>,
+        force: bool,
     },
 }
 
@@ -181,25 +205,34 @@ fn main() -> Result<()> {
             CanAction::Setup { vehicle } => commands::can::setup(vehicle),
             CanAction::Status { vehicle } => commands::can::status(vehicle),
         },
-        Commands::Vehicle { action } => match action {
-            VehicleAction::HostKeys { vehicle, force } => {
-                commands::vehicle_host_keys::run(vehicle, force)
+        Commands::New {
+            name,
+            vms_target,
+            infotainment_target,
+            no_infotainment,
+            no_bridges,
+            display_name,
+        } => commands::vehicle_new::run(
+            name,
+            vms_target,
+            infotainment_target,
+            no_infotainment,
+            no_bridges,
+            display_name,
+        ),
+        Commands::HostKeys { action } => match action {
+            HostKeysAction::Generate { vehicle, force } => {
+                commands::vehicle_host_keys::generate(vehicle, force)
             }
-            VehicleAction::New {
-                name,
-                vms_target,
-                infotainment_target,
-                no_infotainment,
-                no_bridges,
-                display_name,
-            } => commands::vehicle_new::run(
-                name,
-                vms_target,
-                infotainment_target,
-                no_infotainment,
-                no_bridges,
-                display_name,
-            ),
+            HostKeysAction::Verify { vehicle } => commands::vehicle_host_keys::verify(vehicle),
+            HostKeysAction::Export { vehicle, out } => {
+                commands::vehicle_host_keys::export(vehicle, out)
+            }
+            HostKeysAction::Import {
+                vehicle,
+                from,
+                force,
+            } => commands::vehicle_host_keys::import(vehicle, from, force),
         },
         Commands::Run { vehicle } => commands::run::run(vehicle),
         Commands::Attach { vehicle } => commands::attach::run(vehicle),

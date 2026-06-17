@@ -195,7 +195,7 @@ pub fn run() -> Result<()> {
                     Mark::Warn,
                     &v.dir,
                     &format!(
-                        "missing keys for: {} — run `./ovcs vehicle host-keys {}`",
+                        "missing keys for: {} — run `./ovcs host-keys generate {}`",
                         missing.join(", "),
                         v.dir
                     ),

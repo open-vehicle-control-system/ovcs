@@ -96,7 +96,7 @@ CHANGED" warning. To avoid that, generate persistent host keys per
 firmware role once:
 
 ```sh
-./ovcs vehicle host-keys ovcs1
+./ovcs host-keys generate ovcs1
 ```
 
 This creates one rsa + ed25519 key pair per role (vms, infotainment,
@@ -106,6 +106,23 @@ the keys inside the vehicle's app priv and points
 `:nerves_ssh, :system_dir` at them at boot, so the device's SSH
 identity stays stable across burns. Re-run with `--force` to rotate
 keys; `./ovcs doctor` flags any vehicle missing keys.
+
+The `host-keys` group has three more subcommands:
+
+```sh
+# Check every role has a complete key set (exit 1 if not — handy as a
+# pre-burn gate).
+./ovcs host-keys verify ovcs1
+
+# Share one identity across the team: export bundles the keys into a
+# gzip tar (default ./ovcs1-host-keys.tar.gz), import restores them in
+# another checkout. The archive holds PRIVATE keys — pass it over a
+# trusted channel.
+./ovcs host-keys export ovcs1 -o ovcs1-host-keys.tar.gz
+./ovcs host-keys import ovcs1 --from ovcs1-host-keys.tar.gz
+```
+
+`import` refuses to clobber existing keys unless `--force`.
 
 ### Burn to SD card
 

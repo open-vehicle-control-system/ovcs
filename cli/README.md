@@ -30,8 +30,11 @@ repo root pulls rustc 1.90, the only runtime dependency.
 ./ovcs upload  <vehicle> <role> [--build] [--host H] [-f|--file F]
 ./ovcs can setup  <vehicle>        # create + bring up vcan interfaces (sudo)
 ./ovcs can status <vehicle>        # report vcan interface state
-./ovcs vehicle new <name> [--vms-target T] [--infotainment-target T] [--no-infotainment] [--no-bridges] [--display-name DN]
-./ovcs vehicle host-keys <vehicle> [--force]          # generate stable per-role SSH host keys
+./ovcs new <name> [--vms-target T] [--infotainment-target T] [--no-infotainment] [--no-bridges] [--display-name DN]
+./ovcs host-keys generate <vehicle> [--force] # generate stable per-role SSH host keys
+./ovcs host-keys verify   <vehicle>           # check every role has a complete key set (exit 1 if not)
+./ovcs host-keys export   <vehicle> [-o FILE] # bundle keys into a shareable archive
+./ovcs host-keys import   <vehicle> --from FILE [--force]  # restore keys from an archive
 ./ovcs run     <vehicle>           # `can setup` + spawn one BEAM per role, line-prefixed stdout
 ./ovcs attach  <vehicle>           # split-pane TUI (merged logs / bus / can / iex) over SSH or local remsh
 ./ovcs connect <vehicle> <role> [--host H]            # plain IEx shell over SSH on a single deployed device
@@ -57,7 +60,7 @@ The resolved `VEHICLE` and `MIX_TARGET` (and `BRIDGE_FIRMWARE_ID` for
 bridge firmwares) are passed to the shared firmware build scripts in
 `vms/firmware/`, `infotainment/firmware/`, and `bridges/firmware/`.
 
-`vehicle new` shells out to `OvcsVehicle.Scaffold.generate/3` in
+`new` shells out to `OvcsVehicle.Scaffold.generate/3` in
 `libraries/ovcs_vehicle/` — EEx templates stay in Elixir.
 
 ## Layout

@@ -80,7 +80,7 @@ defmodule OvcsVehicle.Firmware do
   into `:nerves_ssh, :system_dir` so the firmware boots with stable
   host keys regardless of how many times the SD card has been burned.
 
-  Returns `nil` when the vehicle hasn't run `./ovcs vehicle host-keys`,
+  Returns `nil` when the vehicle hasn't run `./ovcs host-keys`,
   letting the firmware fall back to NervesSSH's default `/data/nerves_ssh`
   (regenerated each fresh burn — the legacy behaviour).
   """

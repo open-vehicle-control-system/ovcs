@@ -209,7 +209,7 @@ composers don't care which mode they're in.
 ## Scaffolding a new vehicle
 
 ```
-./ovcs vehicle new my_car --vms-target ovcs_base_can_system_rpi4 --infotainment-target ovcs_base_can_system_rpi5
+./ovcs new my_car --vms-target ovcs_base_can_system_rpi4 --infotainment-target ovcs_base_can_system_rpi5
 ```
 
 runs `OvcsVehicle.Scaffold.generate/3` against the template at
@@ -227,7 +227,7 @@ end-to-end.
 ## Further reading
 
 - [`libraries/ovcs_vehicle/README.md`](../libraries/ovcs_vehicle/README.md)
-  — details on the `OvcsVehicle` behaviour and `ovcs vehicle new`.
+  — details on the `OvcsVehicle` behaviour and `ovcs new`.
 - [`libraries/ovcs_bus/README.md`](../libraries/ovcs_bus/README.md) —
   relay/broker design, echo avoidance, runtime config.
 - [Applications](./applications.md) — the wider layer split (core /
