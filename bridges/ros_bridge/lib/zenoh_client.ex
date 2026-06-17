@@ -22,7 +22,11 @@ defmodule RosBridge.ZenohClient.State do
     #   }}
     subscriptions: %{},
     # Reverse index for fast :DOWN lookup: monitor_ref → {key_expr, pid}.
-    monitors: %{}
+    monitors: %{},
+    # Count of publishes dropped while no session is open (heartbeat/IMU
+    # timers keep firing during reconnect). Summarised once on connect
+    # instead of logged per-drop, then reset.
+    drops_while_offline: 0
   ]
 end
 
@@ -68,10 +72,10 @@ defmodule RosBridge.ZenohClient do
   for a given topic lazily declares the underlying Zenoh publisher
   and its rmw_zenoh liveliness token; subsequent calls reuse them.
 
-  Fire-and-forget — calls before the session is connected are
-  dropped with a debug log (the heartbeat re-fires on its own timer,
-  IMU streams self-recover on the next sample). Returns `:ok`
-  immediately.
+  Fire-and-forget — calls before the session is connected are dropped
+  silently and tallied (the heartbeat re-fires on its own timer, IMU
+  streams self-recover on the next sample); the drop count is logged
+  once when the session opens. Returns `:ok` immediately.
   """
   def publish(topic, message_module, message, opts \\ []) do
     GenServer.cast(__MODULE__, {:publish, topic, message_module, message, opts})
@@ -172,8 +176,10 @@ defmodule RosBridge.ZenohClient do
 
   @impl true
   def handle_cast({:publish, _topic, _message_module, _message, _opts}, %State{session: nil} = state) do
-    Logger.debug("#{__MODULE__} publish dropped (no session yet)")
-    {:noreply, state}
+    # Fire-and-forget: drop silently and tally. Publishers re-fire on
+    # their own timers, so a per-drop log just spams while the router is
+    # unreachable. The count is summarised when the session opens.
+    {:noreply, %{state | drops_while_offline: state.drops_while_offline + 1}}
   end
 
   def handle_cast({:publish, topic, message_module, message, _opts}, state) do
@@ -228,7 +234,13 @@ defmodule RosBridge.ZenohClient do
           "#{__MODULE__} connected to tcp/#{state.endpoint_ip}:#{@zenoh_port}"
         )
 
-        state = %{state | session: session}
+        if state.drops_while_offline > 0 do
+          Logger.debug(
+            "#{__MODULE__} dropped #{state.drops_while_offline} publish(es) before session opened"
+          )
+        end
+
+        state = %{state | session: session, drops_while_offline: 0}
         state = redeclare_publishers(state)
         state = redeclare_subscribers(state)
         {:noreply, state}
