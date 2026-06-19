@@ -163,6 +163,28 @@ Push a firmware update to a running Nerves device over SSH:
 
 Output is line-prefixed per role (`[vms] …`, `[infotainment] …`, `[bridge-ros] …`). For the aggregated split-pane TUI, run `./ovcs attach <vehicle>` in another terminal — it auto-detects the local BEAMs via epmd (node snames starting with `<vehicle>-`) and lights up the same multi-node view used for deployed vehicles.
 
+#### Dev add-ons run live too
+
+Unlike a deployed device, a host run does **not** bundle a firmware's dashboard into its image. So `./ovcs run` also starts each firmware's **dev add-ons** — companion processes meant for local development — beside the BEAMs, line-prefixed as `[<firmware>-<addon>] …`.
+
+Add-ons are **declared by the firmware itself**, not hardcoded in the CLI: a firmware's top-level module exposes `dev_addons/0` returning a list of `%{name, dir, run, install, ready_marker, note}` entries (see `VmsFirmware.dev_addons/0`). After compiling each firmware on host, the CLI asks it for its add-ons (the same `mix run -e` metadata probe used for bridges) and launches each generically — it knows nothing about npm, Flutter, or ports. Adding an add-on to a firmware (or a new firmware) needs no CLI change.
+
+Today's only add-on is the **VMS dashboard** (`vms/dashboard`, Vue/Vite) → `npm run dev`. Open the URL it logs (usually `http://localhost:5173`), **not** `:4000` — only the dev server hot-reloads on `.vue` edits; `:4000` serves the last built static bundle.
+
+When `ready_marker` (e.g. `node_modules`) is absent, the CLI runs the add-on's `install` command first. Add-ons are **auxiliary**: a closed window, a missing toolchain, or a failed start is warned about and skipped — the BEAMs keep running, and a BEAM crash still tears the add-ons down with it. Pass `--no-addons` to boot only the BEAMs:
+
+```sh
+./ovcs run <vehicle> --no-addons
+```
+
+The **infotainment dashboard** (Flutter) is deliberately *not* an add-on: Flutter's hot reload is driven by keypresses on its stdin, which the multiplexed `./ovcs run` can't hand to a child. Run it in its own terminal instead, where it keeps a real TTY and full interactive hot reload (`r` / `R`):
+
+```sh
+mise run infotainment-dashboard   # cd infotainment/dashboard && flutter run -d linux
+```
+
+It talks to the infotainment API on `:4001`, so keep a `./ovcs run <vehicle>` going alongside. This needs the Flutter Linux desktop toolchain — see [getting_started.md](./getting_started.md).
+
 ### `./ovcs run` vs `./ovcs attach`
 
 The CLI separates **booting** a vehicle from **observing / driving** it:

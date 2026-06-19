@@ -57,3 +57,12 @@ done
 [tasks.cli]
 description = "Build the ovcs CLI (Rust release binary → cli/ovcs)"
 run = "cd cli && cargo build --release && strip --strip-all target/release/ovcs && cp target/release/ovcs ovcs && chmod +x ovcs"
+
+# The infotainment dashboard (Flutter) is run on its own — not as an `./ovcs
+# run` dev add-on — so it keeps a real stdin/TTY and full interactive hot
+# reload (`r` / `R`). Start `./ovcs run <vehicle>` in another terminal for
+# the BEAMs; the app talks to the infotainment API on :4001. Needs the Linux
+# desktop toolchain (see docs/getting_started.md).
+[tasks.infotainment-dashboard]
+description = "Run the infotainment Flutter dashboard locally (native window, hot reload)"
+run = "cd infotainment/dashboard && flutter run -d linux"
