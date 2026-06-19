@@ -52,6 +52,7 @@
 
   VehiculeService.getVehicle().then((response) => {
     vehicleName.value = response.data.data.attributes.name
+    document.title = vehicleName.value + " VMS"
     colorTheme.value.bgColor = "bg-"+response.data.data.attributes.mainColor+"-600"
     colorTheme.value.hoverColor = "bg-"+response.data.data.attributes.mainColor+"-700"
     colorTheme.value.onHoverColor = "hover:bg-"+response.data.data.attributes.mainColor+"-700"
