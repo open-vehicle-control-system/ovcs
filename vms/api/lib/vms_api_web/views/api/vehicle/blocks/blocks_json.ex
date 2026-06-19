@@ -87,7 +87,9 @@ defmodule VmsApiWeb.Api.Vehicle.Page.BlocksJSON do
       module: action.module,
       action: action.action,
       extraParameters: action[:extra_parameters] || %{},
-      statusMetricKey: action[:status_metric_key]
+      statusMetricKey: action[:status_metric_key],
+      hint: action[:hint],
+      step: action[:step]
     }
   end
 end

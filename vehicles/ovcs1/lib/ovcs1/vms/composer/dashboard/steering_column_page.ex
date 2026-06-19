@@ -22,8 +22,27 @@ defmodule Ovcs1.Vms.Composer.Dashboard.SteeringColumnPage do
             %{type: :metric, name: "Automatic Mode Enabled", module: SteeringColumn, key: :automatic_mode_enabled},
           ]
         },
-        "pid-chart" => %{
+        "pid-tuning" => %{
           order: 1,
+          name: "PID Tuning",
+          type: "table",
+          rows: [
+            %{type: :action, name: "Kp", hint: "Proportional — strength of immediate correction", input_type: :number, step: "0.01", input_name: "Set", module: SteeringColumn, action: "set_pid_parameter", extra_parameters: %{"parameter" => "kp"}, status_metric_key: :kp},
+            %{type: :action, name: "Ki", hint: "Integral — removes steady-state error", input_type: :number, step: "0.005", input_name: "Set", module: SteeringColumn, action: "set_pid_parameter", extra_parameters: %{"parameter" => "ki"}, status_metric_key: :ki},
+            %{type: :action, name: "Kd", hint: "Derivative — damps overshoot (amplifies noise)", input_type: :number, step: "0.005", input_name: "Set", module: SteeringColumn, action: "set_pid_parameter", extra_parameters: %{"parameter" => "kd"}, status_metric_key: :kd},
+          ]
+        },
+        "input-filter" => %{
+          order: 2,
+          name: "Input Filter",
+          type: "table",
+          rows: [
+            %{type: :action, name: "Deadband", hint: "Ignores input changes smaller than this", input_type: :number, step: "0.005", input_name: "Set", module: SteeringColumn, action: "set_filter_parameter", extra_parameters: %{"parameter" => "deadband"}, status_metric_key: :input_deadband},
+            %{type: :action, name: "Alpha", hint: "Smoothing 0–1 — lower is smoother but slower", input_type: :number, step: "0.05", input_name: "Set", module: SteeringColumn, action: "set_filter_parameter", extra_parameters: %{"parameter" => "alpha"}, status_metric_key: :input_alpha},
+          ]
+        },
+        "pid-chart" => %{
+          order: 3,
           name: "PID Chart",
           type: "lineChart",
           full_width: true,
