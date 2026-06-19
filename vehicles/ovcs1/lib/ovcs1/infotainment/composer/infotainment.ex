@@ -15,6 +15,7 @@ defmodule Ovcs1.Infotainment.Composer.Infotainment do
     %{
       vehicle: %{
         name: "OVCS1",
+        module: Ovcs1.Infotainment,
         main_color: "indigo",
         refresh_interval: 50,
         grid_columns: @grid_columns,

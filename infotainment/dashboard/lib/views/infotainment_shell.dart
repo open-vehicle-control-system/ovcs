@@ -115,7 +115,7 @@ class _InfotainmentShellState extends State<InfotainmentShell>
             children: [
               // Left sidebar
               SideBar(
-                vehicleName: widget.vehicleConfig.name,
+                vehicleModule: widget.vehicleConfig.module,
                 sidebarConfig: widget.vehicleConfig.sidebar,
                 onLauncherPressed: _openLauncher,
               ),

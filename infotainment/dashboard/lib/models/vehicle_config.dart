@@ -46,6 +46,7 @@ class SidebarConfig {
 
 class VehicleConfig {
   final String name;
+  final String module;
   final String mainColor;
   final int refreshInterval;
   final int gridColumns;
@@ -56,6 +57,7 @@ class VehicleConfig {
 
   VehicleConfig({
     required this.name,
+    required this.module,
     required this.mainColor,
     required this.refreshInterval,
     required this.gridColumns,
@@ -69,6 +71,7 @@ class VehicleConfig {
     final attrs = json['attributes'] as Map<String, dynamic>;
     return VehicleConfig(
       name: attrs['name'] as String,
+      module: attrs['module'] as String,
       mainColor: attrs['mainColor'] as String,
       refreshInterval: attrs['refreshInterval'] as int,
       gridColumns: attrs['gridColumns'] as int,

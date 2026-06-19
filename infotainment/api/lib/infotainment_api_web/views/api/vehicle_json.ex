@@ -13,6 +13,7 @@ defmodule InfotainmentApiWeb.Api.VehicleJSON do
       id: "vehicle",
       attributes: %{
         name: vehicle.name,
+        module: vehicle[:module],
         refreshInterval: vehicle.refresh_interval,
         mainColor: vehicle.main_color,
         gridColumns: vehicle.grid_columns,
