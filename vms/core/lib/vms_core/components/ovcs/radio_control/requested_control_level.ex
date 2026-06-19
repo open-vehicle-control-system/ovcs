@@ -11,6 +11,9 @@ defmodule VmsCore.Components.OVCS.RadioControl.RequestedControlLevel do
   @default_value 1000
   @value_mapping %{1000 => :manual, 1500 => :radio, 2000 => :autonomous}
   @default_requested_control_level @value_mapping[@default_value]
+  # RC PWM channels jitter and rarely sit exactly on 1000/1500/2000, so match
+  # any value within this margin of a known position before falling back.
+  @channel_margin 100
 
   def start_link(args) do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
@@ -56,7 +59,9 @@ defmodule VmsCore.Components.OVCS.RadioControl.RequestedControlLevel do
 
   defp compute_requested_control_level(state) do
     requested_control_level =
-      @value_mapping[state.raw_channel] || @default_requested_control_level
+      Enum.find_value(@value_mapping, @default_requested_control_level, fn {value, level} ->
+        if abs(state.raw_channel - value) <= @channel_margin, do: level
+      end)
 
     %{state | requested_control_level: requested_control_level}
   end
