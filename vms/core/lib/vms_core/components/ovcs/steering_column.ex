@@ -5,7 +5,7 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
   use GenServer
   alias VmsCore.Components.OVCS.GenericController
   alias OvcsBus, as: Bus
-  alias VmsCore.PID
+  alias OvcsControl.PID
   alias Cantastic.{Frame, Receiver, Signal, Emitter}
   alias Decimal, as: D
   require Logger
