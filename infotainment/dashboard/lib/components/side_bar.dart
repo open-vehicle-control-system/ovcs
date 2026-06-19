@@ -8,13 +8,13 @@ import 'package:dashboard_flutter/services/metrics_service.dart';
 /// Shows the current time, date, CPU temperature, 12V battery voltage,
 /// and a launcher button at the bottom. Replaces the old horizontal StatusBar.
 class SideBar extends StatefulWidget {
-  final String vehicleName;
+  final String vehicleModule;
   final SidebarConfig sidebarConfig;
   final VoidCallback onLauncherPressed;
 
   const SideBar({
     super.key,
-    required this.vehicleName,
+    required this.vehicleModule,
     required this.sidebarConfig,
     required this.onLauncherPressed,
   });
@@ -39,7 +39,7 @@ class _SideBarState extends State<SideBar> {
   @override
   void initState() {
     super.initState();
-    _vehicleModule = 'Elixir.InfotainmentCore.Vehicles.${widget.vehicleName}';
+    _vehicleModule = widget.vehicleModule;
 
     _metricsService.subscribe(_timeSettingsModule, 'time_format');
     _metricsService.subscribe(_timeSettingsModule, 'date_format');

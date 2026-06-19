@@ -8,9 +8,9 @@ import 'package:dashboard_flutter/services/metrics_service.dart';
 /// Uses MetricsService to subscribe to time settings, temperature, and
 /// vehicle metrics via the composable WebSocket channel.
 class StatusBar extends StatefulWidget {
-  final String vehicleName;
+  final String vehicleModule;
 
-  const StatusBar({super.key, required this.vehicleName});
+  const StatusBar({super.key, required this.vehicleModule});
 
   @override
   State<StatusBar> createState() => _StatusBarState();
@@ -32,7 +32,7 @@ class _StatusBarState extends State<StatusBar> {
   @override
   void initState() {
     super.initState();
-    _vehicleModule = 'Elixir.InfotainmentCore.Vehicles.${widget.vehicleName}';
+    _vehicleModule = widget.vehicleModule;
 
     // Subscribe to time settings, temperature, and vehicle metrics
     _metricsService.subscribe(_timeSettingsModule, 'time_format');

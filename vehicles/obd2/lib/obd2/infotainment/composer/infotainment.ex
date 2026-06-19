@@ -15,6 +15,7 @@ defmodule Obd2.Infotainment.Composer.Infotainment do
     %{
       vehicle: %{
         name: "OBD2",
+        module: Obd2.Infotainment,
         main_color: "gray",
         refresh_interval: 50,
         grid_columns: @grid_columns,
