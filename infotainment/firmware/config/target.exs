@@ -112,3 +112,14 @@ config :logger, :console,
   level: :debug
 
 config :phoenix, :json_library, Jason
+
+config :infotainment_core,
+  namespace: InfotainmentCore,
+  ecto_repos: [InfotainmentCore.Repo],
+  generators: [timestamp_type: :utc_datetime]
+
+config :infotainment_core, InfotainmentCore.Repo,
+  database: "/data/infotainment_core_dev.db",
+  pool_size: 5,
+  stacktrace: true,
+  show_sensitive_data_on_connection_error: true
