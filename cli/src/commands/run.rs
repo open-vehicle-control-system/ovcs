@@ -181,18 +181,18 @@ fn enumerate_roles(root: &std::path::Path, vehicle: &Vehicle) -> Result<Vec<Role
 /// Invoke `./build.sh` with `MIX_TARGET=host` once per unique firmware
 /// directory in `roles` — in parallel, one thread per firmware. Multiple
 /// roles can share a cwd (every bridge role points at `bridges/firmware`
-/// on host) so we run a single build per cwd but expose one pane per
-/// role so the user sees each role prepare separately.
+/// on host); that's ONE shared compile, shown as a single pane labelled
+/// `bridges (radio_control, ros)` rather than one per bridge.
 ///
-/// On a TTY each role gets its own live spinner pane (buildkit-style)
-/// showing the shared build's latest log line; on failure that group's
-/// full buffered output is dumped afterwards. When stdout isn't a TTY
-/// we fall back to the line-prefixed `[<role>:build] …` interleaved
-/// stream so CI logs stay greppable. `build.sh` handles `deps.get`
-/// then `compile` (host) or `firmware` (target); calling it here keeps
-/// build / run on the same entry point. Any non-zero exit bails before
-/// a single BEAM is spawned; remaining builds are allowed to finish so
-/// the user sees every failure, not just the first.
+/// On a TTY each firmware project gets a live spinner pane (buildkit-style)
+/// showing the build's latest log line; on failure that build's full
+/// buffered output is dumped afterwards. When stdout isn't a TTY we fall
+/// back to the line-prefixed `[<label>] …` interleaved stream so CI logs
+/// stay greppable. `build.sh` handles `deps.get` then `compile` (host) or
+/// `firmware` (target); calling it here keeps build / run on the same
+/// entry point. Any non-zero exit bails before a single BEAM is spawned;
+/// remaining builds are allowed to finish so the user sees every failure,
+/// not just the first.
 fn ensure_built(roles: &[Role], vehicle: &Vehicle) -> Result<()> {
     let groups = build_groups(roles);
 
@@ -203,20 +203,26 @@ fn ensure_built(roles: &[Role], vehicle: &Vehicle) -> Result<()> {
         groups.len()
     ));
 
-    // Every host warm-up shares the same env (MIX_TARGET=host). A group's
-    // roles all track one shared build (one step, one pane per role); the
-    // groups themselves are separate lanes that build in parallel.
+    // Every host warm-up shares the same env (MIX_TARGET=host). Each group
+    // is one shared build shown as ONE pane: vms/infotainment are
+    // single-role; the bridges project serves several roles from a single
+    // compile, so label it `bridges (radio_control, ros)` rather than one
+    // pane per bridge (which wrongly implied separate builds). The groups
+    // are separate lanes that build in parallel.
     let lanes = groups
         .into_iter()
-        .map(|g| BuildLane {
-            cwd: g.cwd,
-            steps: vec![BuildStep {
-                panes: g.roles,
-                env: HashMap::from([
-                    ("MIX_TARGET".to_string(), "host".to_string()),
-                    ("VEHICLE".to_string(), vehicle.module.clone()),
-                ]),
-            }],
+        .map(|g| {
+            let pane = build_pane_label(&g);
+            BuildLane {
+                cwd: g.cwd,
+                steps: vec![BuildStep {
+                    panes: vec![pane],
+                    env: HashMap::from([
+                        ("MIX_TARGET".to_string(), "host".to_string()),
+                        ("VEHICLE".to_string(), vehicle.module.clone()),
+                    ]),
+                }],
+            }
         })
         .collect();
 
@@ -246,6 +252,28 @@ fn build_groups(roles: &[Role]) -> Vec<BuildGroup> {
         }
     }
     groups
+}
+
+/// Display label for a group's single shared-build pane. Single-role
+/// groups (vms, infotainment) use the role name; a multi-role group (the
+/// bridges, which share one `bridges/firmware` compile) reads as
+/// `bridges (radio_control, ros)` so it doesn't look like separate builds.
+fn build_pane_label(group: &BuildGroup) -> String {
+    if group.roles.len() == 1 {
+        return group.roles[0].clone();
+    }
+    let family = group
+        .cwd
+        .parent()
+        .and_then(|p| p.file_name())
+        .and_then(|s| s.to_str())
+        .unwrap_or("bridges");
+    let ids: Vec<&str> = group
+        .roles
+        .iter()
+        .map(|r| r.strip_prefix("bridge-").unwrap_or(r))
+        .collect();
+    format!("{} ({})", family, ids.join(", "))
 }
 
 /// Ask the vehicle module for each bridge's host-side CAN mapping so the
