@@ -11,6 +11,9 @@ defmodule VmsCore.Components.OVCS.RadioControl.Direction do
   @default_value 1000
   @value_mapping %{1000 => :forward, 2000 => :backward}
   @default_direction @value_mapping[@default_value]
+  # RC PWM channels jitter and rarely sit exactly on 1000/2000, so match any
+  # value within this margin of a known position before falling back.
+  @channel_margin 100
 
   def start_link(args) do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
@@ -55,7 +58,11 @@ defmodule VmsCore.Components.OVCS.RadioControl.Direction do
   end
 
   defp compute_direction(state) do
-    direction = @value_mapping[state.raw_channel] || @default_direction
+    direction =
+      Enum.find_value(@value_mapping, @default_direction, fn {value, dir} ->
+        if abs(state.raw_channel - value) <= @channel_margin, do: dir
+      end)
+
     %{state | requested_direction: direction}
   end
 
