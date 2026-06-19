@@ -5,7 +5,7 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
   use GenServer
   alias VmsCore.Components.OVCS.GenericController
   alias OvcsBus, as: Bus
-  alias VmsCore.PID
+  alias OvcsControl.{PID, InputFilter}
   alias Cantastic.{Frame, Receiver, Signal, Emitter}
   alias Decimal, as: D
   require Logger
@@ -17,11 +17,14 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
   @duty_cycle_percentage D.new("0.5")
   @direction_mapping %{clockwise: true, counter_clockwise: false}
 
-  @kp Decimal.new("0.08")
-  # Decimal.new("0.04")
-  @ki D.new(0)
-  # Decimal.new("0.005")
-  @kd D.new(0)
+  @kp Decimal.new("0.07")
+  @ki Decimal.new("0.005")
+  @kd Decimal.new("0.005")
+
+  # Radio input jitter rejection (applied to requested_steering before the PID)
+  @input_deadband D.new("0")
+  @input_alpha D.new("0.2")
+
   @steering_angle_range D.new(400)
 
   def start_link(args) do
@@ -67,6 +70,7 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
        emitted_frequency: nil,
        emitted_direction: nil,
        pid: nil,
+       input_filter: nil,
        automatic_mode_enabled: false,
        desired_angle: @zero,
        target_motor_speed_percentage: @zero,
@@ -74,7 +78,9 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
        selected_control_level: nil,
        kp: @kp,
        ki: @ki,
-       kd: @kd
+       kd: @kd,
+       input_deadband: @input_deadband,
+       input_alpha: @input_alpha
      }}
   end
 
@@ -154,6 +160,7 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
     cond do
       enable_automatic_mode && !state.automatic_mode_enabled ->
         pid = init_pid(state)
+        input_filter = init_input_filter(state)
 
         :ok =
           GenericController.set_digital_value(
@@ -162,7 +169,7 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
             true
           )
 
-        %{state | pid: pid, automatic_mode_enabled: true}
+        %{state | pid: pid, input_filter: input_filter, automatic_mode_enabled: true}
 
       !enable_automatic_mode && state.automatic_mode_enabled ->
         :ok =
@@ -180,8 +187,9 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
   end
 
   defp set_desired_angle(state) when state.automatic_mode_enabled == true do
-    desired_angle = state.requested_steering |> D.mult(@steering_angle_range)
-    %{state | desired_angle: desired_angle}
+    input_filter = InputFilter.apply(state.input_filter, state.requested_steering)
+    desired_angle = input_filter.value |> D.mult(@steering_angle_range)
+    %{state | input_filter: input_filter, desired_angle: desired_angle}
   end
 
   defp set_desired_angle(state), do: state
@@ -256,9 +264,49 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
     )
   end
 
+  defp init_input_filter(state) do
+    InputFilter.new(
+      deadband: state.input_deadband,
+      alpha: state.input_alpha,
+      initial_value: state.requested_steering
+    )
+  end
+
+  defp parse_decimal(value) when is_binary(value), do: value |> String.trim() |> D.new()
+  defp parse_decimal(value) when is_integer(value), do: D.new(value)
+  defp parse_decimal(value) when is_float(value), do: D.from_float(value)
+
   @impl true
   def handle_call({:set_pid_parameters, %{kp: kp, ki: ki, kd: kd}}, _from, state) do
     {:reply, :ok, %{state | kp: kp, ki: ki, kd: kd}}
+  end
+
+  def handle_call({:set_pid_parameter, parameter, value}, _from, state)
+      when parameter in ["kp", "ki", "kd"] do
+    key = String.to_existing_atom(parameter)
+    decimal = parse_decimal(value)
+
+    # Update the stored gain (used the next time the PID is rebuilt) and, if a
+    # PID is currently running, the live struct so the change takes effect now.
+    pid = if state.pid, do: Map.put(state.pid, key, decimal), else: state.pid
+
+    {:reply, :ok, %{state | pid: pid} |> Map.put(key, decimal)}
+  end
+
+  def handle_call({:set_filter_parameter, parameter, value}, _from, state)
+      when parameter in ["deadband", "alpha"] do
+    filter_key = String.to_existing_atom(parameter)
+    state_key = String.to_existing_atom("input_" <> parameter)
+    decimal = parse_decimal(value)
+
+    # Update the stored config (used the next time the filter is rebuilt) and,
+    # if a filter is currently running, the live struct so it takes effect now.
+    input_filter =
+      if state.input_filter,
+        do: Map.put(state.input_filter, filter_key, decimal),
+        else: state.input_filter
+
+    {:reply, :ok, %{state | input_filter: input_filter} |> Map.put(state_key, decimal)}
   end
 
   defp emit_metrics(state) do
@@ -290,7 +338,7 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
 
     Bus.broadcast("messages", %Bus.Message{
       name: :desired_angle,
-      value: state.desired_angle,
+      value: state.desired_angle |> D.round(2),
       source: __MODULE__
     })
 
@@ -306,6 +354,22 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
       source: __MODULE__
     })
 
+    Bus.broadcast("messages", %Bus.Message{name: :kp, value: state.kp, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :ki, value: state.ki, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{name: :kd, value: state.kd, source: __MODULE__})
+
+    Bus.broadcast("messages", %Bus.Message{
+      name: :input_deadband,
+      value: state.input_deadband,
+      source: __MODULE__
+    })
+
+    Bus.broadcast("messages", %Bus.Message{
+      name: :input_alpha,
+      value: state.input_alpha,
+      source: __MODULE__
+    })
+
     state
   end
 
@@ -313,6 +377,19 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
     :ok = reset_angle_calibration_status()
     :timer.sleep(500)
     :ok = set_sensor_0()
+  end
+
+  # Live-tune a single PID gain (:kp, :ki or :kd) from the dashboard. Scoped to
+  # this component's GenServer only.
+  def trigger_action("set_pid_parameter", %{"parameter" => parameter, "value" => value})
+      when parameter in ["kp", "ki", "kd"] do
+    GenServer.call(__MODULE__, {:set_pid_parameter, parameter, value})
+  end
+
+  # Live-tune an input-filter parameter (:deadband or :alpha) from the dashboard.
+  def trigger_action("set_filter_parameter", %{"parameter" => parameter, "value" => value})
+      when parameter in ["deadband", "alpha"] do
+    GenServer.call(__MODULE__, {:set_filter_parameter, parameter, value})
   end
 
   defp reset_angle_calibration_status do
