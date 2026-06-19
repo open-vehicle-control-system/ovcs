@@ -2,13 +2,17 @@ defmodule OvcsBridge.Supervisor do
   @moduledoc """
   Root supervisor for an OVCS bridge firmware image.
 
-  Parameters are pulled from the `:ovcs_bridge` application
-  environment (the bridges firmware sets them from `VEHICLE` +
-  `BRIDGE_FIRMWARE_ID` at compile time):
+  Parameters come from the `VEHICLE` / `BRIDGE_FIRMWARE_ID` env vars when
+  set (each BEAM `./ovcs run` launches gets its own), falling back to the
+  `:ovcs_bridge` application environment baked at compile time:
 
       config :ovcs_bridge,
         vehicle: "Ovcs1",
         firmware_id: "radio_control"
+
+  The env-first order matters on host dev, where every bridge role shares
+  one compiled build — the baked `:firmware_id` would otherwise make all
+  bridge BEAMs run the same bridge.
 
   At boot the supervisor:
     * looks up the entry in the vehicle's `bridge_firmwares/0` map;
@@ -105,14 +109,24 @@ defmodule OvcsBridge.Supervisor do
   end
 
   defp vehicle_module do
-    name = vehicle_name() || raise "OvcsBridge: :vehicle not set in app env (set VEHICLE at build time)"
+    name = vehicle_name() || raise "OvcsBridge: :vehicle not set (set VEHICLE at build/run time)"
     Module.concat([name])
   end
 
-  defp vehicle_name, do: Application.get_env(:ovcs_bridge, :vehicle)
+  # On host (`./ovcs run`) every bridge role shares one compiled
+  # bridges/firmware build, so the compile-time `:vehicle` / `:firmware_id`
+  # are whatever VEHICLE / BRIDGE_FIRMWARE_ID happened to be set to at build
+  # time (the build.sh host defaults). Each BEAM is launched with its own
+  # env, so prefer that — otherwise both bridge BEAMs would run the same
+  # bridge. On target the env isn't present at runtime, so we fall back to
+  # the value baked per-firmware at build time. Mirrors config/runtime.exs.
+  defp vehicle_name do
+    System.get_env("VEHICLE") || Application.get_env(:ovcs_bridge, :vehicle)
+  end
 
   defp firmware_id do
-    Application.get_env(:ovcs_bridge, :firmware_id) ||
-      raise "OvcsBridge: :firmware_id not set in app env (set BRIDGE_FIRMWARE_ID at build time)"
+    System.get_env("BRIDGE_FIRMWARE_ID") ||
+      Application.get_env(:ovcs_bridge, :firmware_id) ||
+      raise "OvcsBridge: firmware id not set (set BRIDGE_FIRMWARE_ID env or :ovcs_bridge :firmware_id)"
   end
 end
