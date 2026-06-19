@@ -1329,9 +1329,24 @@ async fn connect_ssh(host: &str) -> Result<russh::client::Handle<SshAcceptAllKey
             host
         );
     }
+    // OTP 27's SSH daemon (nerves_ssh) rejects SHA-1 `ssh-rsa` signatures,
+    // which is what russh signs with when `hash_alg` is `None`. For RSA keys
+    // we must pick an `rsa-sha2-*` hash — mirroring what OpenSSH negotiates,
+    // hence why plain `ssh` works while a `None` hash here does not. Query the
+    // server's advertised algs and fall back to SHA-256 if it sent none.
+    let rsa_hash = handle
+        .best_supported_rsa_hash()
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or(Some(russh::keys::ssh_key::HashAlg::Sha256));
     for key in identities {
+        let hash_alg = match key.algorithm() {
+            russh::keys::ssh_key::Algorithm::Rsa { .. } => rsa_hash,
+            _ => None,
+        };
         let auth = handle
-            .authenticate_publickey_with(SSH_USER, key, None, &mut agent)
+            .authenticate_publickey_with(SSH_USER, key, hash_alg, &mut agent)
             .await?;
         if auth.success() {
             return Ok(handle);
