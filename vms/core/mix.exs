@@ -28,6 +28,7 @@ defmodule VmsCore.MixProject do
       {:cantastic, path: "../../libraries/cantastic"},
       {:ovcs_can, path: "../../libraries/ovcs_can"},
       {:ovcs_bus, path: "../../libraries/ovcs_bus"},
+      {:ovcs_control, path: "../../libraries/ovcs_control"},
       {:crc, "~> 0.10"},
       {:ecto_sql, "~> 3.10"},
       {:ecto_sqlite3, ">= 0.0.0"},

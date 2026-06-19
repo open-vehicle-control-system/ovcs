@@ -7,7 +7,8 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
   alias Cantastic.{Emitter, Frame, Receiver, Signal}
   alias Decimal, as: D
   alias OvcsBus, as: Bus
-  alias VmsCore.{Components.OVCS.GenericController, PID}
+  alias VmsCore.{Components.OVCS.GenericController}
+  alias OvcsControl.PID
 
   @zero D.new(0)
 
