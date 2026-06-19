@@ -10,7 +10,7 @@ defmodule Ovcs1.Vms.Composer.Dashboard.GenericControllersPage do
       blocks: %{
         "front-controller" => %{
           order: 0,
-          name: "Front Controller Satus",
+          name: "Front Controller Status",
           type: "table",
           rows: [
             %{type: :action, name: "Adopt", input_type: :button, module: GenericController, action: "adopt", extra_parameters: %{controller_name: Vms.FrontController}},
@@ -35,7 +35,7 @@ defmodule Ovcs1.Vms.Composer.Dashboard.GenericControllersPage do
         },
         "controls-controller" => %{
           order: 1,
-          name: "Controls Controller Satus",
+          name: "Controls Controller Status",
           type: "table",
           rows: [
             %{type: :action, name: "Adopt", input_type: :button, module: GenericController, action: "adopt", extra_parameters: %{controller_name: Vms.ControlsController}},
@@ -47,8 +47,8 @@ defmodule Ovcs1.Vms.Composer.Dashboard.GenericControllersPage do
             %{type: :metric, name: "Steering Column PWM Duty Cycle", module: Vms.ControlsController, key: :requested_external_pwm0_duty_cycle, unit: "%"},
             %{type: :metric, name: "Steering Column PWM frequency", module: Vms.ControlsController, key: :requested_external_pwm0_frequency, unit: "Hz"},
 
-            %{type: :metric, name: "Requested Steering Columm Clockwise Dir.", module: Vms.ControlsController, key: :requested_digital_pin1_enabled},
-            %{type: :metric, name: "Received Steering Columm Clockwise Dir.", module: Vms.ControlsController, key: :received_digital_pin1_enabled},
+            %{type: :metric, name: "Requested Steering Column Clockwise Dir.", module: Vms.ControlsController, key: :requested_digital_pin1_enabled},
+            %{type: :metric, name: "Received Steering Column Clockwise Dir.", module: Vms.ControlsController, key: :received_digital_pin1_enabled},
 
             %{type: :metric, name: "Received Raw Throttle A", module: Vms.ControlsController, key: :received_analog_pin0_value},
             %{type: :metric, name: "Received Raw Throttle B", module: Vms.ControlsController, key: :received_analog_pin1_value},
@@ -56,7 +56,7 @@ defmodule Ovcs1.Vms.Composer.Dashboard.GenericControllersPage do
         },
         "rear_controller" => %{
           order: 2,
-          name: "Rear Controller Satus",
+          name: "Rear Controller Status",
           type: "table",
           rows: [
             %{type: :action, name: "Adopt", input_type: :button, module: GenericController, action: "adopt", extra_parameters: %{controller_name: Vms.RearController}},
