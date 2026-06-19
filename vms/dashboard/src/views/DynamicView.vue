@@ -1,6 +1,6 @@
 <template>
     <h1 class="text-xl">{{ title }}</h1>
-    <div  class="grid grid-flow-row grid-cols-3 gap-10">
+    <div  class="grid grid-flow-row grid-cols-3 items-start gap-10">
         <div v-for="block in blocks" :class="[block.attributes.fullWidth ? 'col-span-3' : 'col-span-1', 'p-5 border-solid border rounded border-gray-300 shadow-md']">
             <div v-if="block.attributes.subtype === 'lineChart'">
                 <RealTimeLineChart
