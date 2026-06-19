@@ -9,7 +9,8 @@
 #   * MIX_TARGET=host — compiles the VMS app for the local machine.
 #     Used by `./ovcs run <vehicle>` to warm up `_build/dev/lib/`
 #     before spawning the BEAM. No firmware image, no dashboard
-#     bundle (serve it with `npm run dev` in another terminal).
+#     bundle — `./ovcs run` instead starts the dashboard's live dev
+#     server, declared as a dev add-on in `VmsFirmware.dev_addons/0`.
 #
 # Invoking directly: VEHICLE is required; MIX_TARGET falls back to
 # the rpi4 Nerves target.

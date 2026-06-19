@@ -151,6 +151,84 @@ end
     Ok(map)
 }
 
+/// A dev-time companion process a firmware declares via `dev_addons/0`.
+/// The CLI launches these alongside the BEAM on host runs; it stays
+/// agnostic about what they are (a Vue dev server, a Flutter app, …).
+pub struct DevAddon {
+    /// Short name, unique within the firmware (e.g. "dashboard"). Combined
+    /// with the firmware family for the log prefix.
+    pub name: String,
+    /// Directory to run in, relative to the firmware project dir.
+    pub dir: String,
+    /// Command (argv) that starts the long-running dev process.
+    pub run: Vec<String>,
+    /// Optional command (argv) to install deps on first run.
+    pub install: Option<Vec<String>>,
+    /// Optional path (relative to `dir`) whose presence means deps are
+    /// already installed — when absent and `install` is set, the CLI runs
+    /// `install` first.
+    pub ready_marker: Option<String>,
+    /// Optional one-line hint shown when the add-on starts (e.g. which URL
+    /// to open). Keeps URL/port specifics in the app, not the CLI.
+    pub note: Option<String>,
+}
+
+/// Ask a firmware project (by its directory) for the dev add-ons it
+/// declares. The firmware's top-level module is named after its OTP app
+/// (`Macro.camelize(app)`), so the same snippet works for every firmware
+/// without the CLI hardcoding module names. Firmwares with no
+/// `dev_addons/0` simply yield none.
+pub fn dev_addons(firmware_dir: &Path) -> Result<Vec<DevAddon>> {
+    let snippet = r##"
+app = Mix.Project.config()[:app]
+m = Module.concat([Macro.camelize(to_string(app))])
+Code.ensure_loaded(m)
+if function_exported?(m, :dev_addons, 0) do
+  m.dev_addons()
+  |> Enum.map(fn a ->
+    run = a |> Map.get(:run, []) |> Enum.join(" ")
+    install = a |> Map.get(:install, []) |> Enum.join(" ")
+    [
+      Map.fetch!(a, :name),
+      Map.fetch!(a, :dir),
+      run,
+      install,
+      Map.get(a, :ready_marker, ""),
+      Map.get(a, :note, "")
+    ]
+    |> Enum.join("\t")
+  end)
+  |> Enum.join("\n")
+  |> IO.puts()
+end
+"##;
+    let Some(output) = run_snippet(firmware_dir, snippet)? else {
+        return Ok(Vec::new());
+    };
+    let split = |s: &str| -> Vec<String> { s.split_whitespace().map(String::from).collect() };
+    let mut addons = Vec::new();
+    for line in output.lines().filter(|l| !l.is_empty()) {
+        let f: Vec<&str> = line.split('\t').collect();
+        if f.len() < 6 {
+            continue;
+        }
+        let run = split(f[2]);
+        if run.is_empty() {
+            continue;
+        }
+        let install = split(f[3]);
+        addons.push(DevAddon {
+            name: f[0].to_string(),
+            dir: f[1].to_string(),
+            run,
+            install: if install.is_empty() { None } else { Some(install) },
+            ready_marker: (!f[4].is_empty()).then(|| f[4].to_string()),
+            note: (!f[5].is_empty()).then(|| f[5].to_string()),
+        });
+    }
+    Ok(addons)
+}
+
 pub(crate) fn run_snippet(path: &Path, snippet: &str) -> Result<Option<String>> {
     let env: HashMap<String, String> =
         std::iter::once(("MIX_ENV".to_string(), "dev".to_string())).collect();

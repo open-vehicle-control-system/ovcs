@@ -71,6 +71,16 @@ sudo dpkg -i /tmp/fwup.deb
 
 On macOS: `brew install fwup can-utils` (`fwup` is in homebrew; there's no `libsocketcan` on macOS — firmware builds happen inside the Linux VM).
 
+### Flutter Linux desktop toolchain (for the infotainment dashboard)
+
+`mise run infotainment-dashboard` runs the infotainment dashboard locally via `flutter run -d linux`, which builds a native GTK app. That needs the Linux desktop build toolchain on top of Flutter itself. On Debian/Ubuntu:
+
+```sh
+sudo apt install -y clang cmake ninja-build libgtk-3-dev
+```
+
+(`pkg-config` is already installed in step 2.) Verify with `flutter doctor` — the **Linux toolchain** line should be a check. This toolchain is only needed for running the infotainment dashboard on the host (see [running_hardware.md](./running_hardware.md)), not for firmware builds (the deployed image bundles Flutter in-release).
+
 ### Bluefin / Fedora Silverblue (atomic)
 
 > This subsection replaces steps 2 and 3 above when you're on an immutable Fedora variant (Bluefin, Silverblue, Kinoite, Bazzite, uBlue, …). Continue with step 4 once you're done here.

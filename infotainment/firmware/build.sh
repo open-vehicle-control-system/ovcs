@@ -8,7 +8,10 @@
 #     is bundled in-release by `nerves_flutter_support`. Used by
 #     `./ovcs build <vehicle> infotainment` / `burn` / `upload`.
 #   * MIX_TARGET=host — compiles the infotainment app for the local
-#     machine (no Flutter bundling). Used by `./ovcs run <vehicle>`.
+#     machine (no Flutter bundling). Used by `./ovcs run <vehicle>`. The
+#     Flutter dashboard is run separately via `mise run
+#     infotainment-dashboard` (kept out of `./ovcs run` so it has a TTY
+#     for hot reload).
 #
 # Invoking directly: VEHICLE is required; MIX_TARGET falls back to
 # the rpi5 Nerves target.

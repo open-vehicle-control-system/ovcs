@@ -115,7 +115,12 @@ Provision vcan and spawn one BEAM per role (vms, infotainment, each \
 bridge), all joined by OvcsBus.Cluster (Erlang distribution), \
 mirroring the deployed topology. Attach with `./ovcs attach` from \
 another terminal for logs + IEx.")]
-    Run { vehicle: Option<String> },
+    Run {
+        vehicle: Option<String>,
+        /// Don't auto-start firmware dev add-ons (dashboards, …); boot only the BEAMs.
+        #[arg(long)]
+        no_addons: bool,
+    },
     /// Attach a split TUI to a running vehicle
     #[command(long_about = "\
 Attach a split TUI (merged per-node logs + IEx shell) to a running \
@@ -234,7 +239,10 @@ fn main() -> Result<()> {
                 force,
             } => commands::vehicle_host_keys::import(vehicle, from, force),
         },
-        Commands::Run { vehicle } => commands::run::run(vehicle),
+        Commands::Run {
+            vehicle,
+            no_addons,
+        } => commands::run::run(vehicle, no_addons),
         Commands::Attach { vehicle } => commands::attach::run(vehicle),
         Commands::Connect {
             host,

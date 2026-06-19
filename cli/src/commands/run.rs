@@ -12,10 +12,10 @@ use crate::commands::can::ensure_host_can;
 use crate::firmware;
 use crate::repo_root::repo_root;
 use crate::resolve_args::resolve_vehicle;
-use crate::ui::{step, sub};
+use crate::ui::{step, sub, sub_ok, sub_warn};
 use crate::vehicles::{self, Vehicle};
 
-pub fn run(vehicle_arg: Option<String>) -> Result<()> {
+pub fn run(vehicle_arg: Option<String>, no_addons: bool) -> Result<()> {
     let vehicle = resolve_vehicle(vehicle_arg)?;
     let root = repo_root()?;
 
@@ -56,7 +56,18 @@ pub fn run(vehicle_arg: Option<String>) -> Result<()> {
     // rather than split between the script and the CLI.
     ensure_built(&roles, &vehicle)?;
 
-    let mut children: Vec<(String, Child)> = Vec::new();
+    // Each firmware declares its own dev-time add-ons (companion processes
+    // started only on host runs — e.g. a dashboard's live dev server) via
+    // `dev_addons/0`. Discover them by asking each firmware project (now
+    // that it's compiled), install any missing deps, and drop any whose
+    // toolchain is absent — warned about, not fatal. `--no-addons` skips it.
+    let addons = if no_addons {
+        Vec::new()
+    } else {
+        ensure_addon_deps(discover_addons(&roles)?)
+    };
+
+    let mut procs: Vec<Proc> = Vec::new();
 
     for role in &roles {
         let sname = format!("{}-{}", vehicle.dir, sname_safe(&role.label));
@@ -94,7 +105,55 @@ pub fn run(vehicle_arg: Option<String>) -> Result<()> {
         thread::spawn(move || prefix_stream(stdout, &label_out, std::io::stdout()));
         thread::spawn(move || prefix_stream(stderr, &label_err, std::io::stderr()));
 
-        children.push((role.label.clone(), child));
+        procs.push(Proc {
+            label: role.label.clone(),
+            child,
+            critical: true,
+            reported: false,
+        });
+    }
+
+    // Dev add-ons run alongside the BEAMs but are auxiliary: a closed
+    // window or a crashed dev server must not tear the vehicle down (see
+    // the wait loop's `critical` handling below). Output is line-prefixed
+    // just like the BEAMs.
+    for a in &addons {
+        let mut cmd = Command::new(&a.run[0]);
+        cmd.args(&a.run[1..])
+            .current_dir(&a.dir)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        let mut child = match cmd.spawn() {
+            Ok(c) => c,
+            Err(e) => {
+                sub_warn(&format!(
+                    "{}: failed to start `{}` ({e}) — skipping",
+                    a.label,
+                    a.run.join(" ")
+                ));
+                continue;
+            }
+        };
+        let stdout = child.stdout.take().unwrap();
+        let stderr = child.stderr.take().unwrap();
+        let label_out = a.label.clone();
+        let label_err = a.label.clone();
+        thread::spawn(move || prefix_stream(stdout, &label_out, std::io::stdout()));
+        thread::spawn(move || prefix_stream(stderr, &label_err, std::io::stderr()));
+        match &a.note {
+            Some(note) => sub_ok(&format!("{} — {}", a.label, note)),
+            None => sub_ok(&format!("{} · {}", a.label, a.run.join(" "))),
+        }
+        procs.push(Proc {
+            label: a.label.clone(),
+            child,
+            critical: false,
+            reported: false,
+        });
+    }
+    if !addons.is_empty() {
+        println!();
     }
 
     // Happy path: Ctrl-C propagates SIGINT to the whole process group; the
@@ -104,29 +163,48 @@ pub fn run(vehicle_arg: Option<String>) -> Result<()> {
     // `init:stop/0` and shuts down cleanly. (SIGINT would trip the BEAM's
     // JCL break handler and leave each child sitting at an interactive
     // prompt.)
+    // "Dead" decisions key off the *critical* (BEAM) procs only: we exit
+    // when every BEAM is gone, and propagate a teardown when any BEAM dies.
+    // An auxiliary dashboard dying on its own is just reported once and left
+    // alone — it shouldn't bring the running vehicle down.
     let mut propagated = false;
     loop {
-        let mut any_dead = false;
-        let mut all_dead = true;
-        for (_label, child) in children.iter_mut() {
-            match child.try_wait() {
-                Ok(Some(_)) => {
-                    any_dead = true;
+        let mut critical_died = false;
+        let mut all_critical_dead = true;
+        for p in procs.iter_mut() {
+            match p.child.try_wait() {
+                Ok(Some(status)) => {
+                    if p.critical {
+                        critical_died = true;
+                    } else if !p.reported {
+                        p.reported = true;
+                        sub_warn(&format!(
+                            "{} exited ({}); vehicle still running",
+                            p.label, status
+                        ));
+                    }
                 }
                 Ok(None) => {
-                    all_dead = false;
+                    if p.critical {
+                        all_critical_dead = false;
+                    }
                 }
-                Err(_) => {}
+                Err(_) => {
+                    if p.critical {
+                        all_critical_dead = false;
+                    }
+                }
             }
         }
-        if all_dead {
+        if all_critical_dead {
             break;
         }
-        if any_dead && !propagated {
-            for (_label, child) in children.iter() {
+        if critical_died && !propagated {
+            for p in procs.iter() {
                 // try_wait has set the exit status on already-dead children;
                 // kill(2) on a reaped pid returns ESRCH, which we ignore.
-                unsafe { libc::kill(child.id() as libc::pid_t, libc::SIGTERM) };
+                // SIGTERM every survivor — including the auxiliary dashboards.
+                unsafe { libc::kill(p.child.id() as libc::pid_t, libc::SIGTERM) };
             }
             propagated = true;
         }
@@ -134,6 +212,140 @@ pub fn run(vehicle_arg: Option<String>) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// A spawned child the run loop supervises. `critical` BEAMs drive the
+/// loop's lifetime; non-critical dashboards are auxiliary.
+struct Proc {
+    label: String,
+    child: Child,
+    critical: bool,
+    /// Whether an auxiliary proc's exit has already been reported (so we log
+    /// a dashboard dying once, not every 200ms poll).
+    reported: bool,
+}
+
+/// A dev add-on resolved into a launchable form: a firmware's declared
+/// `DevAddon` with its directory made absolute and a display label.
+struct Addon {
+    /// Log prefix, `<family>-<name>` (e.g. "vms-dashboard").
+    label: String,
+    /// Absolute directory to run in.
+    dir: PathBuf,
+    /// Command (argv) that starts the dev process.
+    run: Vec<String>,
+    /// Optional install command (argv) for first run.
+    install: Option<Vec<String>>,
+    /// Optional path under `dir` whose presence means deps are installed.
+    ready_marker: Option<String>,
+    /// Optional one-line hint shown when the add-on starts.
+    note: Option<String>,
+}
+
+/// Ask each firmware project (deduped by directory) what dev add-ons it
+/// declares via `dev_addons/0`, resolving each into a launchable `Addon`.
+/// The CLI is agnostic about what they are — it just runs `run`, installing
+/// deps first when `ready_marker` is absent. Labels are prefixed with the
+/// firmware family (the firmware dir's parent — "vms", "infotainment", …)
+/// so add-ons from different firmwares don't collide in the logs.
+fn discover_addons(roles: &[Role]) -> Result<Vec<Addon>> {
+    let mut seen: Vec<PathBuf> = Vec::new();
+    let mut addons = Vec::new();
+    for role in roles {
+        if seen.contains(&role.cwd) {
+            continue;
+        }
+        seen.push(role.cwd.clone());
+        let family = role
+            .cwd
+            .parent()
+            .and_then(|p| p.file_name())
+            .and_then(|s| s.to_str())
+            .unwrap_or("addon")
+            .to_string();
+        for a in vehicles::dev_addons(&role.cwd)? {
+            let dir = role.cwd.join(&a.dir);
+            let dir = dir.canonicalize().unwrap_or(dir);
+            addons.push(Addon {
+                label: format!("{}-{}", family, a.name),
+                dir,
+                run: a.run,
+                install: a.install,
+                ready_marker: a.ready_marker,
+                note: a.note,
+            });
+        }
+    }
+    Ok(addons)
+}
+
+/// Drop add-ons whose toolchain (the `run` binary) is missing — warn, don't
+/// fail. Install deps for any whose `ready_marker` is absent, and return the
+/// launchable set. A failed install drops just that add-on; the BEAMs still
+/// boot.
+fn ensure_addon_deps(addons: Vec<Addon>) -> Vec<Addon> {
+    let mut ready = Vec::new();
+    let mut to_install = Vec::new();
+    for a in addons {
+        if !tool_available(&a.run[0]) {
+            sub_warn(&format!(
+                "{}: `{}` not found on PATH — skipping",
+                a.label, a.run[0]
+            ));
+            continue;
+        }
+        let needs_install = match (&a.ready_marker, &a.install) {
+            (Some(marker), Some(_)) => !a.dir.join(marker).exists(),
+            _ => false,
+        };
+        if needs_install {
+            to_install.push(a);
+        } else {
+            ready.push(a);
+        }
+    }
+
+    if to_install.is_empty() {
+        return ready;
+    }
+
+    step(&format!(
+        "Installing dev add-on dependencies ({} project(s))",
+        to_install.len()
+    ));
+    for a in to_install {
+        let install = a.install.clone().expect("to_install implies install set");
+        sub(&format!("{} ({})", install.join(" "), a.label));
+        let ok = Command::new(&install[0])
+            .args(&install[1..])
+            .current_dir(&a.dir)
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if ok {
+            ready.push(a);
+        } else {
+            sub_warn(&format!(
+                "{}: `{}` failed — skipping",
+                a.label,
+                install.join(" ")
+            ));
+        }
+    }
+    println!();
+    ready
+}
+
+/// Whether a CLI binary exists on PATH (spawn succeeds), mirroring the
+/// `doctor` check. We don't care about the exit code.
+fn tool_available(name: &str) -> bool {
+    Command::new(name)
+        .arg("--version")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok()
 }
 
 struct Role {
