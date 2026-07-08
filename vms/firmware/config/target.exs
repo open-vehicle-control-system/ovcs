@@ -26,8 +26,10 @@ config :logger, backends: [RingLogger]
 # Use shoehorn to start the main application. See the shoehorn
 # library documentation for more control in ordering how OTP
 # applications are started and handling failures.
+# `:nerves_hub_link` boots before the main app so a vehicle whose
+# application crashes at startup stays reachable for an OTA fix.
 
-config :shoehorn, init: [:nerves_runtime, :nerves_pack]
+config :shoehorn, init: [:nerves_runtime, :nerves_pack, :nerves_hub_link]
 
 # Advance the system clock on devices without real-time clocks.
 # `ctty: "ttyS0"` mirrors BEAM/IEx onto the UART so boot crashes are
@@ -59,6 +61,33 @@ config :nerves_ssh,
   # `:ssh_file` callback read the host key + authorized_keys from disk
   # (NervesSSH writes both to system_dir / user_dir respectively).
   daemon_option_overrides: [key_cb: :ssh_file]
+
+# NervesHub OTA updates (self-hosted instance), authenticated with the
+# product's shared secret. All three values live in the vehicle's
+# `.env.exs`; when `NERVES_HUB_HOST` is unset the app starts with no
+# children and the firmware runs fully standalone. `NERVES_HUB_HOST`
+# is the instance's device endpoint (which may be a dedicated host,
+# distinct from the web UI) — bare (`wss` on 443) or a full
+# `wss://host:port` URL.
+# Devices self-register on first connect (identified by serial number)
+# and fetch the fwup signature-verification keys from the instance, so
+# no signing keys are baked into the image.
+case System.get_env("NERVES_HUB_HOST") do
+  blank when blank in [nil, ""] ->
+    config :nerves_hub_link, connect: false
+
+  nerves_hub_host ->
+    config :nerves_hub_link,
+      host: nerves_hub_host,
+      shared_secret: [
+        product_key: System.fetch_env!("NERVES_HUB_PRODUCT_KEY"),
+        product_secret: System.fetch_env!("NERVES_HUB_PRODUCT_SECRET")
+      ],
+      # Health metrics (CPU/memory/disk) report by default; the remote
+      # IEx console is opt-in. Anyone with product access on the
+      # NervesHub instance can open a shell on the vehicle.
+      remote_iex: true
+end
 
 # `WIFI_NETWORKS` is set in each vehicle's `.env.exs` as an Elixir
 # list literal of `{ssid, psk}` tuples. We parse it with the built-in
