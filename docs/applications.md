@@ -49,6 +49,7 @@ The core library contains:
   - `Orion.Bms2` -- Battery management system
   - `Volkswagen.Polo9n.*` -- ABS, dashboard, ignition lock, power steering pump, etc.
   - `Ovcs.GenericController` -- Custom Arduino controller driver
+  - `Ovcs.Gnss` -- GNSS position receiver, broadcasts `:vehicle_position` on the bus
   - `Ovcs.ThrottlePedal`, `Ovcs.SteeringColumn`, `Ovcs.HighVoltageContactors`, etc.
   - `Ovcs.RadioControl.*` -- RC transmitter control (throttle, steering, direction)
   - `Ovcs.RosControl.*` -- ROS2 autonomous control
@@ -207,6 +208,24 @@ Provides integration with ROS 2 for autonomous driving research. It:
 - Publishes a `std_msgs/String` heartbeat onto the ROS 2 graph every 5 s via `RosBridge.Heartbeat`, so consumers can see the BEAM is alive even when no other topic is flowing.
 - Subscribes to the ROS 2 `joy` topic via the same `ZenohClient` and forwards `sensor_msgs/Joy` axes onto the CAN bus through `JoyInterpreter` → Cantastic emitters (`ros_control0`/`ros_control1`).
 - Publishes `sensor_msgs/Imu` from any `OvcsDrivers.Imu` driver via `RosBridge.ImuPublisher`. The host arm runs the kind-level `OvcsDrivers.Imu.Dummy` stub and the target arm runs `BNO085.I2C` against a physical sensor; swapping in a future ICM-20948 (or any other conforming IMU) is a one-line supervisor change.
+
+### CoT Bridge (`bridges/cot_bridge/`)
+
+| | |
+|---|---|
+| **Module** | `CotBridge` |
+| **Behaviour** | `OvcsBridge` |
+| **Key deps** | `ovcs_bridge`, `decimal` |
+
+Publishes the vehicle position as Cursor on Target (CoT) events to a
+[TAK](https://tak.gov) server, so the vehicle can be followed live from
+WebTAK / ATAK clients outside the vehicle. It:
+
+- Tracks the latest `:vehicle_position` message on `OvcsBus`, whichever VMS component broadcast it (the `Ovcs.Gnss` CAN component, a position fetched from another device over Ethernet, …).
+- Renders it periodically as a CoT `<event>` (`CotBridge.Cot`, pure and unit-tested) with contact, group, and track details.
+- Streams the events to the configured TAK endpoint over TCP, UDP, or TLS with automatic reconnection (`CotBridge.TakConnection`) — internet access is assumed on the device running this bridge.
+
+Vehicles opt in by implementing `c:CotBridge.cot_bridge_config/1` (TAK endpoint, marker identity, cadence). See [`bridges/cot_bridge/README.md`](../bridges/cot_bridge/README.md) for the data-flow, the `:vehicle_position` message contract, and an end-to-end host walkthrough.
 
 ## Controllers
 

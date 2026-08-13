@@ -70,6 +70,15 @@ defmodule BridgeFirmware.MixProject do
        path: "../ros_bridge",
        targets: [:host, :ovcs_base_can_system_rpi4, :ovcs_bridges_system_rpi5],
        runtime: Mix.target() != :host},
+      {:cot_bridge,
+       path: "../cot_bridge",
+       targets: [
+         :host,
+         :ovcs_base_can_system_rpi3a,
+         :ovcs_base_can_system_rpi4,
+         :ovcs_bridges_system_rpi5
+       ],
+       runtime: Mix.target() != :host},
 
       # Nerves systems (one per supported target).
       {

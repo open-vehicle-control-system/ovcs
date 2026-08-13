@@ -9,6 +9,7 @@ defmodule Ovcs1 do
   @behaviour OvcsVehicle
   @behaviour RadioControlBridge
   @behaviour RosBridge
+  @behaviour CotBridge
 
   @impl OvcsVehicle
   def name, do: "OVCS1"
@@ -34,6 +35,11 @@ defmodule Ovcs1 do
       "ros" => %{
         target: :ovcs_base_can_system_rpi4,
         bridges: [RosBridge],
+        default_can_mapping: %{host: "ovcs:vcan0", target: "ovcs:spi0.0"}
+      },
+      "cot" => %{
+        target: :ovcs_base_can_system_rpi4,
+        bridges: [CotBridge],
         default_can_mapping: %{host: "ovcs:vcan0", target: "ovcs:spi0.0"}
       }
     }
@@ -75,5 +81,20 @@ defmodule Ovcs1 do
         :joy_interpreter,
         {:imu_publisher, driver: BNO085.I2C}
       ]
+    }
+
+  @impl CotBridge
+  def cot_bridge_config(:host),
+    do: %CotBridge.Config{
+      tak_host: System.get_env("TAK_SERVER_HOST", "127.0.0.1"),
+      tak_port: "TAK_SERVER_PORT" |> System.get_env("8087") |> String.to_integer()
+    }
+
+  def cot_bridge_config(:target),
+    do: %CotBridge.Config{
+      tak_host: Application.get_env(:cot_bridge, :tak_host, "127.0.0.1"),
+      tak_port: Application.get_env(:cot_bridge, :tak_port, 8087),
+      protocol: Application.get_env(:cot_bridge, :protocol, :tcp),
+      ssl_options: Application.get_env(:cot_bridge, :ssl_options, [])
     }
 end

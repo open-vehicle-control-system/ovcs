@@ -90,6 +90,17 @@ words:
   - tmpfs
   - uart
 
+  # TAK / Cursor on Target / GNSS
+  - atak
+  - callsign
+  - dgnss
+  - freetakserver
+  - gnss
+  - hae
+  - takv
+  - taky
+  - webtak
+
   # ROS 2 / Zenoh / Foxglove
   - cdr
   - cyclonedds

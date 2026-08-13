@@ -1,0 +1,9 @@
+---
+# CAN topology for the `cot` bridge firmware on OVCS1.
+# The CoT bridge consumes the vehicle position over OvcsBus rather
+# than CAN, so no frames are declared — the ovcs network is still
+# named so the bridge BEAM boots with the same Cantastic wiring as
+# its siblings.
+can_networks:
+  ovcs:
+    bitrate: 500000
