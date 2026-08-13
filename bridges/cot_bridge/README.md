@@ -12,7 +12,7 @@ via `bridge_firmwares/0`.
 lib/
   cot_bridge.ex                        # OvcsBridge behaviour + Config + child list (host / target)
   cot_bridge/
-    position_tracker.ex                # OvcsBus :vehicle_position + :speed consumer → latest cache
+    position_tracker.ex                # Combines position/altitude/speed/heading per *_source knobs
     cot.ex                             # CoT <event> assigns preparation + XML escaping (unit-tested)
     cot/position_event.xml.eex         # The CoT event document shape (EEx, compiled in)
     publisher.ex                       # Periodic tick: latest position → Cot → TakConnection
@@ -22,18 +22,30 @@ lib/
 ## Data flow
 
 ```
-OvcsBus "messages" ──▶ PositionTracker ──▶ Publisher ──▶ TakConnection ──▶ TAK server ──▶ WebTAK
-  :vehicle_position       (cache)          (CoT XML)      (tcp/udp/tls)
-  :speed
+OvcsBus "messages"  ──▶ PositionTracker ──▶ Publisher ──▶ TakConnection ──▶ TAK server ──▶ WebTAK
+  :vehicle_position     (combine per        (CoT XML)      (tcp/udp/tls)
+  :altitude :speed       *_source knobs)
+  :heading
 ```
 
-The bridge never touches CAN itself: it consumes the
-`:vehicle_position` message that the VMS broadcasts on `OvcsBus`,
-whichever component produced it. Today that's
-`VmsCore.Components.OVCS.Gnss` decoding the `gnss_position` /
-`gnss_status` CAN frames; a component fetching the position from
-another device over Ethernet just has to broadcast the same message
-shape:
+The bridge never touches CAN itself and owns no data: every CoT
+parameter is combined from the bus messages of whichever component
+the vehicle names for it, following the composers' source-module
+convention. No parameter has a guaranteed owner — a GNSS receiver
+may or may not report altitude or a usable course, speed usually
+belongs to the ABS/drivetrain driver, a compass/IMU component could
+own the heading:
+
+| Parameter | Bus message | Config knob | OVCS1 source |
+|-----------|-------------|-------------|--------------|
+| position | `:vehicle_position` | `:position_source` | `OVCS.Gnss` |
+| altitude (m) | `:altitude` | `:altitude_source` | `OVCS.Gnss` |
+| speed (km/h) | `:speed` | `:speed_source` | `Polo9N.ABS` |
+| heading (°) | `:heading` | `:heading_source` | `OVCS.Gnss` (course over ground) |
+
+A knob left `nil` renders that parameter as unknown; without a fresh
+position nothing is published at all. `:vehicle_position` is the one
+composite message (half a coordinate is meaningless):
 
 ```elixir
 %OvcsBus.Message{
@@ -41,8 +53,6 @@ shape:
   value: %{
     latitude: Decimal,          # decimal degrees, WGS84
     longitude: Decimal,         # decimal degrees, WGS84
-    altitude: Decimal | nil,    # metres
-    heading: Decimal | nil,     # degrees, true north
     fix_type: atom,             # :fix_2d | :fix_3d | :dgnss
     satellite_count: integer,
     timestamp: DateTime
@@ -51,11 +61,13 @@ shape:
 }
 ```
 
-The position deliberately carries no speed: following OVCS
-conventions the vehicle speed is owned by its own component, and the
-bridge follows the `:speed` messages (km/h) of the module named by
-the vehicle's `:speed_source` config — `Polo9N.ABS` on OVCS1 — and
-merges the freshest value into the CoT track element.
+Any component broadcasting these messages can feed the bridge — the
+CAN GNSS receiver, a position fetched from another device (a phone,
+say) over Ethernet, a barometric altitude. Mind that a GNSS
+`:heading` is a course over ground derived from movement, not a
+compass heading: it's only meaningful while driving, which is fine
+for tracking a vehicle. Point `:heading_source` at a
+magnetometer/IMU component if standstill orientation matters.
 
 ## Configuration
 
@@ -71,7 +83,10 @@ def cot_bridge_config(:host),
   do: %CotBridge.Config{
     tak_host: System.get_env("TAK_SERVER_HOST", "127.0.0.1"),
     tak_port: "TAK_SERVER_PORT" |> System.get_env("8087") |> String.to_integer(),
-    speed_source: VmsCore.Components.Volkswagen.Polo9N.ABS
+    position_source: OVCS.Gnss,
+    altitude_source: OVCS.Gnss,
+    heading_source: OVCS.Gnss,
+    speed_source: Polo9N.ABS
   }
 ```
 

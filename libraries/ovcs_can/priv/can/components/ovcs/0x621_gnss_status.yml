@@ -1,7 +1,8 @@
 ---
 # No speed signal on purpose: the vehicle speed is owned by its own
 # component (e.g. the ABS driver broadcasting :speed on the bus), the
-# GNSS component only carries what has no other source.
+# GNSS component only carries what has no other source. The heading
+# is the GNSS course over ground — only meaningful while moving.
 name: gnss_status
 id: 0x621
 frequency: 10

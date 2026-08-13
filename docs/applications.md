@@ -49,7 +49,7 @@ The core library contains:
   - `Orion.Bms2` -- Battery management system
   - `Volkswagen.Polo9n.*` -- ABS, dashboard, ignition lock, power steering pump, etc.
   - `Ovcs.GenericController` -- Custom Arduino controller driver
-  - `Ovcs.Gnss` -- GNSS position receiver, broadcasts `:vehicle_position` on the bus
+  - `Ovcs.Gnss` -- GNSS position receiver, broadcasts `:vehicle_position`, `:altitude`, `:heading` on the bus
   - `Ovcs.ThrottlePedal`, `Ovcs.SteeringColumn`, `Ovcs.HighVoltageContactors`, etc.
   - `Ovcs.RadioControl.*` -- RC transmitter control (throttle, steering, direction)
   - `Ovcs.RosControl.*` -- ROS2 autonomous control
@@ -221,7 +221,7 @@ Publishes the vehicle position as Cursor on Target (CoT) events to a
 [TAK](https://tak.gov) server, so the vehicle can be followed live from
 WebTAK / ATAK clients outside the vehicle. It:
 
-- Tracks the latest `:vehicle_position` message on `OvcsBus`, whichever VMS component broadcast it (the `Ovcs.Gnss` CAN component, a position fetched from another device over Ethernet, …), and merges in the `:speed` message of the configured `:speed_source` component — vehicle speed stays owned by its own component, per OVCS conventions.
+- Combines every CoT parameter from `OvcsBus` messages per the composers' source-module convention — one config knob per parameter (`:position_source`, `:altitude_source`, `:speed_source`, `:heading_source`), so each can come from any component (the `Ovcs.Gnss` CAN component, the ABS driver, a position fetched from another device over Ethernet, …).
 - Renders it periodically as a CoT `<event>` (EEx template compiled into `CotBridge.Cot`, pure and unit-tested) with contact, group, and track details.
 - Streams the events to the configured TAK endpoint over TCP, UDP, or TLS with automatic reconnection (`CotBridge.TakConnection`) — internet access is assumed on the device running this bridge.
 

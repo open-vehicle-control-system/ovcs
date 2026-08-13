@@ -11,6 +11,8 @@ defmodule Ovcs1 do
   @behaviour RosBridge
   @behaviour CotBridge
 
+  alias VmsCore.Components.{OVCS, Volkswagen.Polo9N}
+
   @impl OvcsVehicle
   def name, do: "OVCS1"
   @impl OvcsVehicle
@@ -83,12 +85,18 @@ defmodule Ovcs1 do
       ]
     }
 
+  # Position, altitude, and heading come from the GNSS component;
+  # speed from the Polo ABS — same sources on both arms, only the
+  # TAK endpoint wiring differs.
   @impl CotBridge
   def cot_bridge_config(:host),
     do: %CotBridge.Config{
       tak_host: System.get_env("TAK_SERVER_HOST", "127.0.0.1"),
       tak_port: "TAK_SERVER_PORT" |> System.get_env("8087") |> String.to_integer(),
-      speed_source: VmsCore.Components.Volkswagen.Polo9N.ABS
+      position_source: OVCS.Gnss,
+      altitude_source: OVCS.Gnss,
+      heading_source: OVCS.Gnss,
+      speed_source: Polo9N.ABS
     }
 
   def cot_bridge_config(:target),
@@ -97,6 +105,9 @@ defmodule Ovcs1 do
       tak_port: Application.get_env(:cot_bridge, :tak_port, 8087),
       protocol: Application.get_env(:cot_bridge, :protocol, :tcp),
       ssl_options: Application.get_env(:cot_bridge, :ssl_options, []),
-      speed_source: VmsCore.Components.Volkswagen.Polo9N.ABS
+      position_source: OVCS.Gnss,
+      altitude_source: OVCS.Gnss,
+      heading_source: OVCS.Gnss,
+      speed_source: Polo9N.ABS
     }
 end

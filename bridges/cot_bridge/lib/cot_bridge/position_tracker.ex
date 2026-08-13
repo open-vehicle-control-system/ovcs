@@ -1,35 +1,46 @@
 defmodule CotBridge.PositionTracker do
   @moduledoc """
-  Caches the latest `:vehicle_position` and `:speed` messages seen on
-  `OvcsBus`.
+  Combines the CoT parameters from the vehicle's bus messages.
 
-  Position: the VMS broadcasts `%OvcsBus.Message{name: :vehicle_position}`
-  with a map value — see `VmsCore.Components.OVCS.Gnss` for the
-  canonical shape (`:latitude` / `:longitude` in decimal degrees plus
-  optional `:altitude`, `:heading`, `:fix_type`, …). Whichever
-  component produced it — CAN GNSS receiver, Ethernet fetcher — the
-  freshest value wins; the tracker doesn't discriminate on `:source`.
+  Nothing about the vehicle guarantees which component owns which
+  parameter — a GNSS receiver may or may not report altitude or a
+  usable course, speed usually belongs to the ABS/drivetrain driver,
+  a compass/IMU component could own the heading. So every parameter
+  follows the OVCS source-module convention: the vehicle names the
+  module whose messages feed it, and the tracker only accepts a
+  message when both its `:name` and `:source` match.
 
-  Speed: OVCS convention keeps the vehicle speed with its own
-  component (`:speed` messages in km/h — the ABS driver on OVCS1), so
-  the position message doesn't carry one. The tracker follows the
-  `:speed` messages of the configured `:speed_source` module and
-  merges the freshest value into the position it hands out — dropped
-  again once older than `:position_max_age_ms`, so a stalled speed
-  feed degrades the track rather than freezing it.
+  | Parameter | Bus message | Config knob |
+  |-----------|-------------|-------------|
+  | position (map: lat/lon + fix metadata) | `:vehicle_position` | `:position_source` |
+  | altitude (m) | `:altitude` | `:altitude_source` |
+  | speed (km/h) | `:speed` | `:speed_source` |
+  | heading (degrees) | `:heading` | `:heading_source` |
 
-  `latest/0` returns the merged position together with its age so the
-  publisher can stop emitting when the position feed dries up.
+  `latest/0` merges the parameters into one position map, dropping
+  any value older than `:source_max_age_ms` so a stalled source
+  degrades to "unknown" rather than freezing. Without a fresh
+  position nothing can be published at all — the other parameters
+  only decorate it.
   """
   use GenServer
 
+  require Logger
+
   alias OvcsBus, as: Bus
+
+  @message_parameters %{
+    vehicle_position: :position,
+    altitude: :altitude,
+    speed: :speed,
+    heading: :heading
+  }
 
   def start_link(config) do
     GenServer.start_link(__MODULE__, config, name: __MODULE__)
   end
 
-  @doc "Latest known position: `{:ok, position, age_ms}`, or `:no_position` before the first fix."
+  @doc "Latest merged position: `{:ok, position, age_ms}`, or `:no_position` before the first fix."
   def latest do
     GenServer.call(__MODULE__, :latest)
   end
@@ -38,47 +49,58 @@ defmodule CotBridge.PositionTracker do
   def init(config) do
     :ok = Bus.subscribe("messages")
 
-    {:ok,
-     %{
-       speed_source: config.speed_source,
-       max_age_ms: config.position_max_age_ms,
-       position: nil,
-       position_received_at: nil,
-       speed: nil,
-       speed_received_at: nil
-     }}
+    sources = %{
+      position: config.position_source,
+      altitude: config.altitude_source,
+      speed: config.speed_source,
+      heading: config.heading_source
+    }
+
+    if is_nil(sources.position) do
+      Logger.warning(
+        "#{__MODULE__} has no :position_source configured — nothing will be published"
+      )
+    end
+
+    {:ok, %{sources: sources, max_age_ms: config.source_max_age_ms, values: %{}}}
   end
 
   @impl true
-  def handle_info(%Bus.Message{name: :vehicle_position, value: position}, state)
-      when is_map(position) do
-    {:noreply, %{state | position: position, position_received_at: now()}}
-  end
+  def handle_info(%Bus.Message{name: name, value: value, source: source}, state) do
+    parameter = @message_parameters[name]
 
-  def handle_info(
-        %Bus.Message{name: :speed, value: speed, source: source},
-        %{speed_source: source} = state
-      ) do
-    {:noreply, %{state | speed: speed, speed_received_at: now()}}
+    if parameter && !is_nil(source) && source == state.sources[parameter] do
+      values = Map.put(state.values, parameter, %{value: value, received_at: now()})
+      {:noreply, %{state | values: values}}
+    else
+      {:noreply, state}
+    end
   end
-
-  def handle_info(%Bus.Message{}, state), do: {:noreply, state}
 
   @impl true
-  def handle_call(:latest, _from, %{position: nil} = state) do
-    {:reply, :no_position, state}
-  end
-
   def handle_call(:latest, _from, state) do
-    age_ms = now() - state.position_received_at
-    position = Map.put(state.position, :speed, fresh_speed(state))
-    {:reply, {:ok, position, age_ms}, state}
+    case state.values[:position] do
+      nil ->
+        {:reply, :no_position, state}
+
+      %{value: position, received_at: received_at} ->
+        merged =
+          position
+          |> Map.put(:altitude, fresh_value(state, :altitude))
+          |> Map.put(:speed, fresh_value(state, :speed))
+          |> Map.put(:heading, fresh_value(state, :heading))
+
+        {:reply, {:ok, merged, now() - received_at}, state}
+    end
   end
 
-  defp fresh_speed(%{speed: nil}), do: nil
-
-  defp fresh_speed(state) do
-    if now() - state.speed_received_at <= state.max_age_ms, do: state.speed
+  defp fresh_value(state, parameter) do
+    with %{value: value, received_at: received_at} <- state.values[parameter],
+         true <- now() - received_at <= state.max_age_ms do
+      value
+    else
+      _ -> nil
+    end
   end
 
   defp now, do: System.monotonic_time(:millisecond)

@@ -4,9 +4,9 @@ defmodule CotBridge.Publisher do
   and pushes it to the TAK server.
 
   A tick is skipped when no position has been seen yet, or when the
-  freshest one is older than `:position_max_age_ms` — the last
-  event's stale time then does its job and the marker fades on the
-  WebTAK side rather than freezing at a phantom location.
+  freshest one is older than `:source_max_age_ms` — the last event's
+  stale time then does its job and the marker fades on the WebTAK
+  side rather than freezing at a phantom location.
   """
   use GenServer
 
@@ -33,7 +33,7 @@ defmodule CotBridge.Publisher do
   @impl true
   def handle_info(:publish, %{config: config} = state) do
     case PositionTracker.latest() do
-      {:ok, position, age_ms} when age_ms <= config.position_max_age_ms ->
+      {:ok, position, age_ms} when age_ms <= config.source_max_age_ms ->
         position
         |> Cot.position_event(
           uid: config.uid,

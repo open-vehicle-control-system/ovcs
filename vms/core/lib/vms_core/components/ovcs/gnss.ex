@@ -3,18 +3,27 @@ defmodule VmsCore.Components.OVCS.Gnss do
     GNSS receiver CAN component publishing the vehicle position
 
     Decodes the `gnss_position` / `gnss_status` frames emitted by a
-    GNSS CAN component on the OVCS network and broadcasts the fused
-    fix on the bus as a single `:vehicle_position` message. Consumers
-    (e.g. the CoT bridge feeding WebTAK) subscribe to that message
-    rather than to this module, so an alternative position source —
-    say one fetched from another device over Ethernet — only has to
-    broadcast the same message shape for everything downstream to
-    keep working.
+    GNSS CAN component on the OVCS network and rebroadcasts them on
+    the bus as ordinary per-parameter messages, so consumers combine
+    them with other components' messages following the usual
+    source-module convention:
 
-    The position deliberately carries no speed: the vehicle speed is
-    owned by its own component following OVCS conventions (e.g. the
-    ABS driver broadcasting `:speed`), and consumers combine the two
-    bus messages themselves.
+    * `:vehicle_position` — map with `:latitude` / `:longitude`
+      (decimal degrees), `:fix_type`, `:satellite_count` and
+      `:timestamp`. The pair travels as one message because half a
+      coordinate is meaningless.
+    * `:altitude` — metres.
+    * `:heading` — degrees. This is the GNSS course over ground
+      (derived from movement), NOT a compass heading — it's only
+      meaningful while driving. A compass/IMU component can own
+      `:heading` for consumers that need one at standstill.
+
+    Nothing GNSS-specific leaks into the message names, so an
+    alternative source — a position fetched from another device over
+    Ethernet, a barometric altitude, … — can broadcast the same
+    messages and consumers just point their `*_source` knobs at it.
+    The vehicle speed is deliberately not broadcast here: it is owned
+    by its own component (e.g. the ABS driver).
   """
   use GenServer
 
@@ -54,12 +63,22 @@ defmodule VmsCore.Components.OVCS.Gnss do
         value: %{
           latitude: state.latitude,
           longitude: state.longitude,
-          altitude: state.altitude,
-          heading: state.heading,
           fix_type: state.fix_type,
           satellite_count: state.satellite_count,
           timestamp: state.last_position_at
         },
+        source: __MODULE__
+      })
+
+      Bus.broadcast("messages", %Bus.Message{
+        name: :altitude,
+        value: state.altitude,
+        source: __MODULE__
+      })
+
+      Bus.broadcast("messages", %Bus.Message{
+        name: :heading,
+        value: state.heading,
         source: __MODULE__
       })
     end
