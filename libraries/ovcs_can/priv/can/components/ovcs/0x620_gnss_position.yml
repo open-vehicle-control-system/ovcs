@@ -1,0 +1,19 @@
+---
+name: gnss_position
+id: 0x620
+frequency: 10
+signals:
+  - name: latitude
+    sign: signed
+    value_start: 0
+    value_length: 32
+    scale: "0.0000001"
+    precision: 7
+    unit: deg
+  - name: longitude
+    sign: signed
+    value_start: 32
+    value_length: 32
+    scale: "0.0000001"
+    precision: 7
+    unit: deg

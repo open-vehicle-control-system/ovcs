@@ -27,6 +27,8 @@ can_networks:
       - import!:@ovcs_can:can/components/ovcs/0x2A1_radio_control_channels1.yml
       - import!:@ovcs_can:can/components/ovcs/0x2B0_ros_control0.yml
       - import!:@ovcs_can:can/components/ovcs/0x2B1_ros_control1.yml
+      - import!:@ovcs_can:can/components/ovcs/0x620_gnss_position.yml
+      - import!:@ovcs_can:can/components/ovcs/0x621_gnss_status.yml
   misc:
     bitrate: 500000
     emitted_frames:

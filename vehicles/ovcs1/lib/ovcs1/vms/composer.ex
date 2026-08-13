@@ -204,6 +204,7 @@ defmodule Ovcs1.Vms.Composer do
          speed_source: Polo9N.ABS
        }},
       {OVCS.Infotainment, []},
+      {OVCS.Gnss, []},
       {OVCS.HighVoltageContactors,
        %{
          contact_source: Polo9N.IgnitionLock,
