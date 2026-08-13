@@ -2,10 +2,13 @@ defmodule CotBridge.Cot do
   @moduledoc """
   Renders Cursor on Target (CoT) `<event>` XML documents.
 
-  Pure functions — no sockets, no processes — so the wire format can
-  be unit-tested without a TAK server. Only the subset of CoT needed
-  to place a vehicle on a WebTAK map is implemented: an `a-*` point
-  event carrying `contact`, `__group`, `track`, and `takv` details.
+  The document shape lives in the EEx template next to this module
+  (`cot/position_event.xml.eex`), compiled in at build time — this
+  module only prepares (and XML-escapes) the assigns. Pure functions,
+  no sockets, no processes, so the wire format can be unit-tested
+  without a TAK server. Only the subset of CoT needed to place a
+  vehicle on a WebTAK map is implemented: an `a-*` point event
+  carrying `contact`, `__group`, `track`, and `takv` details.
 
   Caveats baked into the rendering:
 
@@ -18,16 +21,22 @@ defmodule CotBridge.Cot do
       estimates.
   """
 
+  require EEx
+
   alias Decimal, as: D
 
   # CoT convention for "value not known" on hae/ce/le.
   @unknown "9999999.0"
   @kmh_per_ms D.new("3.6")
 
+  @template Path.join(__DIR__, "cot/position_event.xml.eex")
+  @external_resource @template
+
   @doc """
   Renders a position map (see `CotBridge.PositionTracker`) as a CoT
   event document. `:latitude` / `:longitude` are required in the map;
-  `:altitude` (m), `:speed` (km/h) and `:heading` (degrees, true) are
+  `:altitude` (m), `:speed` (km/h — merged in by the tracker from the
+  vehicle's speed component) and `:heading` (degrees, true) are
   optional — absent or `nil` values degrade to the CoT unknowns.
 
   Options:
@@ -44,36 +53,25 @@ defmodule CotBridge.Cot do
     now = Keyword.get_lazy(opts, :now, fn -> DateTime.utc_now() end)
     stale = DateTime.add(now, Keyword.get(opts, :stale_after_s, 20), :second)
 
-    ~s(<?xml version="1.0" encoding="UTF-8" standalone="yes"?>) <>
-      ~s(<event version="2.0") <>
-      ~s( uid="#{escape(Keyword.fetch!(opts, :uid))}") <>
-      ~s( type="#{escape(Keyword.fetch!(opts, :cot_type))}") <>
-      ~s( how="m-g") <>
-      ~s( time="#{format_time(now)}") <>
-      ~s( start="#{format_time(now)}") <>
-      ~s( stale="#{format_time(stale)}">) <>
-      point(position) <>
-      detail(position, opts) <>
-      ~s(</event>)
+    render_position_event(
+      uid: escape(Keyword.fetch!(opts, :uid)),
+      cot_type: escape(Keyword.fetch!(opts, :cot_type)),
+      time: format_time(now),
+      stale: format_time(stale),
+      lat: escape(position.latitude),
+      lon: escape(position.longitude),
+      hae: escape(position[:altitude] || @unknown),
+      ce: @unknown,
+      le: @unknown,
+      callsign: escape(Keyword.fetch!(opts, :callsign)),
+      team: escape(Keyword.fetch!(opts, :team)),
+      role: escape(Keyword.fetch!(opts, :role)),
+      track: track(position),
+      version: version()
+    )
   end
 
-  defp point(position) do
-    ~s(<point lat="#{escape(position.latitude)}") <>
-      ~s( lon="#{escape(position.longitude)}") <>
-      ~s( hae="#{escape(position[:altitude] || @unknown)}") <>
-      ~s( ce="#{@unknown}" le="#{@unknown}"/>)
-  end
-
-  defp detail(position, opts) do
-    ~s(<detail>) <>
-      ~s(<contact callsign="#{escape(Keyword.fetch!(opts, :callsign))}"/>) <>
-      ~s(<__group name="#{escape(Keyword.fetch!(opts, :team))}") <>
-      ~s( role="#{escape(Keyword.fetch!(opts, :role))}"/>) <>
-      track(position) <>
-      ~s(<takv device="#{escape(Keyword.fetch!(opts, :uid))}") <>
-      ~s( platform="OVCS cot_bridge" os="Nerves" version="#{version()}"/>) <>
-      ~s(</detail>)
-  end
+  EEx.function_from_file(:defp, :render_position_event, @template, [:assigns], trim: true)
 
   # `track` carries speed in m/s and course in degrees true. Rendered
   # only when the position actually has a kinematic state — WebTAK
@@ -83,10 +81,12 @@ defmodule CotBridge.Cot do
     heading = position[:heading]
 
     if is_nil(speed) and is_nil(heading) do
-      ""
+      nil
     else
-      ~s(<track course="#{escape(heading || "0.0")}") <>
-        ~s( speed="#{escape(kmh_to_ms(speed) || "0.0")}"/>)
+      %{
+        course: escape(heading || "0.0"),
+        speed: escape(kmh_to_ms(speed) || "0.0")
+      }
     end
   end
 

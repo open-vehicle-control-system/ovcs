@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<event version="2.0" uid="<%= @uid %>" type="<%= @cot_type %>" how="m-g" time="<%= @time %>" start="<%= @time %>" stale="<%= @stale %>">
+  <point lat="<%= @lat %>" lon="<%= @lon %>" hae="<%= @hae %>" ce="<%= @ce %>" le="<%= @le %>"/>
+  <detail>
+    <contact callsign="<%= @callsign %>"/>
+    <__group name="<%= @team %>" role="<%= @role %>"/>
+    <%= if @track do %>
+    <track course="<%= @track.course %>" speed="<%= @track.speed %>"/>
+    <% end %>
+    <takv device="<%= @uid %>" platform="OVCS cot_bridge" os="Nerves" version="<%= @version %>"/>
+  </detail>
+</event>

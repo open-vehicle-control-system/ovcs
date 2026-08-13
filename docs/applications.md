@@ -221,8 +221,8 @@ Publishes the vehicle position as Cursor on Target (CoT) events to a
 [TAK](https://tak.gov) server, so the vehicle can be followed live from
 WebTAK / ATAK clients outside the vehicle. It:
 
-- Tracks the latest `:vehicle_position` message on `OvcsBus`, whichever VMS component broadcast it (the `Ovcs.Gnss` CAN component, a position fetched from another device over Ethernet, …).
-- Renders it periodically as a CoT `<event>` (`CotBridge.Cot`, pure and unit-tested) with contact, group, and track details.
+- Tracks the latest `:vehicle_position` message on `OvcsBus`, whichever VMS component broadcast it (the `Ovcs.Gnss` CAN component, a position fetched from another device over Ethernet, …), and merges in the `:speed` message of the configured `:speed_source` component — vehicle speed stays owned by its own component, per OVCS conventions.
+- Renders it periodically as a CoT `<event>` (EEx template compiled into `CotBridge.Cot`, pure and unit-tested) with contact, group, and track details.
 - Streams the events to the configured TAK endpoint over TCP, UDP, or TLS with automatic reconnection (`CotBridge.TakConnection`) — internet access is assumed on the device running this bridge.
 
 Vehicles opt in by implementing `c:CotBridge.cot_bridge_config/1` (TAK endpoint, marker identity, cadence). See [`bridges/cot_bridge/README.md`](../bridges/cot_bridge/README.md) for the data-flow, the `:vehicle_position` message contract, and an end-to-end host walkthrough.

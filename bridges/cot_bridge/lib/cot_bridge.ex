@@ -25,6 +25,15 @@ defmodule CotBridge.Config do
     * `:team` / `:role` — TAK group shown to other clients (defaults
       `"Cyan"` / `"Team Member"`).
 
+  Data knobs:
+
+    * `:speed_source` — module whose `:speed` bus messages (km/h)
+      feed the CoT track element, following the same source-module
+      convention as the VMS composers (e.g. the vehicle's ABS
+      driver). `nil` (default) leaves the track speed unknown — the
+      GNSS position deliberately doesn't carry one, vehicle speed
+      belongs to its own component.
+
   Publishing knobs:
 
     * `:publish_interval_ms` — how often a position event is sent
@@ -47,6 +56,7 @@ defmodule CotBridge.Config do
     cot_type: "a-f-G-E-V-C",
     team: "Cyan",
     role: "Team Member",
+    speed_source: nil,
     publish_interval_ms: 1_000,
     stale_after_s: 20,
     position_max_age_ms: 10_000
@@ -62,6 +72,7 @@ defmodule CotBridge.Config do
           cot_type: String.t(),
           team: String.t(),
           role: String.t(),
+          speed_source: module() | nil,
           publish_interval_ms: pos_integer(),
           stale_after_s: pos_integer(),
           position_max_age_ms: pos_integer()
@@ -112,7 +123,7 @@ defmodule CotBridge do
 
     [
       {CotBridge.TakConnection, config},
-      CotBridge.PositionTracker,
+      {CotBridge.PositionTracker, config},
       {CotBridge.Publisher, config}
     ]
   end

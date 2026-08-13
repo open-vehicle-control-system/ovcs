@@ -10,6 +10,11 @@ defmodule VmsCore.Components.OVCS.Gnss do
     say one fetched from another device over Ethernet — only has to
     broadcast the same message shape for everything downstream to
     keep working.
+
+    The position deliberately carries no speed: the vehicle speed is
+    owned by its own component following OVCS conventions (e.g. the
+    ABS driver broadcasting `:speed`), and consumers combine the two
+    bus messages themselves.
   """
   use GenServer
 
@@ -33,7 +38,6 @@ defmodule VmsCore.Components.OVCS.Gnss do
        latitude: nil,
        longitude: nil,
        altitude: nil,
-       speed: nil,
        heading: nil,
        fix_type: :none,
        satellite_count: 0,
@@ -51,7 +55,6 @@ defmodule VmsCore.Components.OVCS.Gnss do
           latitude: state.latitude,
           longitude: state.longitude,
           altitude: state.altitude,
-          speed: state.speed,
           heading: state.heading,
           fix_type: state.fix_type,
           satellite_count: state.satellite_count,
@@ -89,7 +92,6 @@ defmodule VmsCore.Components.OVCS.Gnss do
   def handle_info({:handle_frame, %Frame{name: "gnss_status", signals: signals}}, state) do
     %{
       "altitude" => %Signal{value: altitude},
-      "speed" => %Signal{value: speed},
       "heading" => %Signal{value: heading},
       "fix_type" => %Signal{value: fix_type},
       "satellite_count" => %Signal{value: satellite_count}
@@ -99,7 +101,6 @@ defmodule VmsCore.Components.OVCS.Gnss do
      %{
        state
        | altitude: altitude,
-         speed: speed,
          heading: heading,
          fix_type: @fix_types[fix_type] || :none,
          satellite_count: satellite_count

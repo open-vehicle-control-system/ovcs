@@ -14,6 +14,8 @@ defmodule CotBridge.CotTest do
 
   @now ~U[2026-08-13 12:00:00.000Z]
 
+  # The merged shape handed to Cot by PositionTracker: the GNSS
+  # position plus the :speed (km/h) of the vehicle's speed component.
   defp position do
     %{
       latitude: D.new("50.8503000"),

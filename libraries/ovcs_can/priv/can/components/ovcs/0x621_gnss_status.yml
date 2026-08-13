@@ -1,4 +1,7 @@
 ---
+# No speed signal on purpose: the vehicle speed is owned by its own
+# component (e.g. the ABS driver broadcasting :speed on the bus), the
+# GNSS component only carries what has no other source.
 name: gnss_status
 id: 0x621
 frequency: 10
@@ -10,23 +13,18 @@ signals:
     scale: "0.1"
     precision: 1
     unit: m
-  - name: speed
-    value_start: 16
-    value_length: 16
-    scale: "0.01"
-    unit: km/h
   - name: heading
-    value_start: 32
+    value_start: 16
     value_length: 16
     scale: "0.01"
     unit: deg
   - name: satellite_count
     kind: integer
-    value_start: 48
+    value_start: 32
     value_length: 8
   - name: fix_type
     kind: enum
-    value_start: 56
+    value_start: 40
     value_length: 3
     mapping:
       0x00: none
@@ -35,6 +33,6 @@ signals:
       0x03: dgnss
   - name: filler0
     kind: static
-    value_start: 59
+    value_start: 43
     value_length: 5
     value: 0
