@@ -75,6 +75,7 @@ defmodule BridgeFirmware.MixProject do
       {
         :ovcs_base_can_system_rpi3a,
         github: "open-vehicle-control-system/ovcs_base_can_system_rpi3a",
+        tag: "v2.0.4",
         runtime: false,
         targets: :ovcs_base_can_system_rpi3a,
         nerves: [compile: false]
@@ -82,6 +83,7 @@ defmodule BridgeFirmware.MixProject do
       {
         :ovcs_base_can_system_rpi4,
         github: "open-vehicle-control-system/ovcs_base_can_system_rpi4",
+        tag: "v2.0.4",
         runtime: false,
         targets: :ovcs_base_can_system_rpi4,
         nerves: [compile: false]
@@ -89,14 +91,10 @@ defmodule BridgeFirmware.MixProject do
       {
         :ovcs_bridges_system_rpi5,
         github: "open-vehicle-control-system/ovcs_bridges_system_rpi5",
-        # Pin to the v0.4.2 tag (nerves_system_br 1.29.3) rather than
-        # tracking the default branch: upstream rewrote `main` to a v2.0 /
-        # OTP-28 line (nerves_system_br 1.33.7) that conflicts with the
-        # rpi3a/rpi4 base systems (still 1.29.3). A tag is a stable ref
-        # that survives history rewrites, unlike the old branch SHA which
-        # became unfetchable. Bump in lockstep with the base systems when
-        # migrating the whole fleet to OTP 28.
-        tag: "v0.4.2",
+        # v2.0.8 (nerves_system_br 1.33.7) — the whole fleet is on the
+        # OTP 28 line now, so this no longer has to be held back to match
+        # the rpi3a/rpi4 base systems.
+        tag: "v2.0.8",
         runtime: false,
         targets: :ovcs_bridges_system_rpi5
       },
