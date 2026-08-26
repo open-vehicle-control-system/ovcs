@@ -60,7 +60,18 @@ defmodule RosBridge.StereoCamera.Supervisor do
   @impl true
   def init(opts) do
     config = build_config(opts)
-    Supervisor.init(child_specs(config), strategy: :one_for_one)
+    # `:rest_for_one`, not `:one_for_one`: the pipeline is wired by
+    # init-time registration (the publisher casts `register_listener`
+    # to both drivers and to the backend), and the drivers stop
+    # deliberately when their subprocess exits, so restart is a
+    # designed path. Under `:one_for_one` a restarted driver came back
+    # with `listeners: []` and never delivered another frame, and a
+    # restarted backend left the publisher `awaiting_result: true`
+    # forever, dropping every pair as `drop_busy` — both silently.
+    # Child order (drivers, backend, publisher, services) means
+    # restarting any child also restarts everything downstream of it,
+    # which re-runs the registrations.
+    Supervisor.init(child_specs(config), strategy: :rest_for_one)
   end
 
   # ── config resolution ────────────────────────────────────────
