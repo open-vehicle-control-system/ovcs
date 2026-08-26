@@ -1,6 +1,10 @@
 [tools]
-erlang  = "27.3"
-elixir  = "1.17"
+# OTP 28 to match every Nerves target: the base systems and the bridges
+# Pi 5 system all ship the OTP 28 line (nerves_system_br 1.33.7). Mix
+# refuses to cross-compile across major OTP versions, so the host pin has
+# to track the targets. See docs/toolchain_and_otp.md.
+erlang  = "28.4.1"
+elixir  = "1.19.5-otp-28"
 node    = "24"
 ruby    = "3.3"
 rust    = "1.90"
