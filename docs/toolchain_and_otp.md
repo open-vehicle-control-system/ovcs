@@ -88,9 +88,12 @@ Two consequences land squarely on this repo, and both are easy to miss:
    for the NervesHub work rather than a follow-up to it.
 2. **Every per-vehicle boot overlay needs an A/B pair.** Upstream
    replaced `cmdline.txt` with `cmdline-a.txt` + `cmdline-b.txt`
-   (rootfs on `mmcblk0p5` vs `p6`). Ten of the eleven overlays under
-   `vehicles/*/priv/firmware/**` are still single-slot; only the
-   perception bridge's has been converted.
+   (rootfs on `mmcblk0p5` vs `p6`). There are nine such overlays under
+   `vehicles/*/priv/firmware/**` on main, plus the perception bridge's
+   on its own branch. They are not interchangeable: the infotainment
+   ones use `console=tty3` with `logo.nologo`, and the radio-control
+   ones carry `brcmfmac.feature_disable`, so each pair has to be
+   derived from its own original rather than copied from a template.
 
 ### The OVCS delta each fork re-applies
 
