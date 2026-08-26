@@ -23,7 +23,7 @@ defmodule RosBridge.StereoCamera.OpenCV do
         ↓
       compute_disparity                        # SGBM → CV_16S Mat (pixels × 16)
         ↓
-      build_result                             # pack 16UC1 disparity + 32FC1 depth (metres)
+      build_result                             # pack 32FC1 disparity (px) + 32FC1 depth (m)
 
   The rectification LUT is computed once at init from each
   camera's calibration matrices (K, D, R, P) via
@@ -481,7 +481,7 @@ defmodule RosBridge.StereoCamera.OpenCV do
     Evision.StereoSGBM.compute(matcher, left_gray, right_gray)
   end
 
-  # 5) Build the Result struct: pack 16UC1 disparity + 32FC1 depth
+  # 5) Build the Result struct: pack 32FC1 disparity + 32FC1 depth
   #    + the geometry metadata downstream consumers need.
   defp build_result(raw_disparity, left_frame, reference_image, state) do
     {height, width, _channels} = Evision.Mat.shape(reference_image)
@@ -494,7 +494,7 @@ defmodule RosBridge.StereoCamera.OpenCV do
       width: width,
       height: height,
       disparity: disparity_bytes,
-      disparity_step: width * 2,
+      disparity_step: width * 4,
       depth: depth_bytes,
       depth_step: width * 4,
       focal_length: state.focal_length,
@@ -709,18 +709,23 @@ defmodule RosBridge.StereoCamera.OpenCV do
   # pure Elixir loops and dominated the pipeline (~410 ms out of
   # 460 ms total at 640×480).
   #
-  #   * 16UC1 disparity (ROS convention): same ×16 fixed-point,
-  #     invalid pixels become 0. CV_16S's byte layout is identical
-  #     to CV_16U for non-negative values, so a single
-  #     `max(raw, 0) → to_binary` is enough.
+  #   * 32FC1 disparity in true pixels — what `stereo_msgs/
+  #     DisparityImage.image` is specified to carry (and what
+  #     `stereo_image_proc` publishes). Dividing the raw CV_16S by 16
+  #     also maps SGBM's invalid sentinel, `(min_disparity − 1) × 16`,
+  #     onto `min_disparity − 1`, which is exactly the convention
+  #     consumers filter on (`disp < min_disparity`). So no clamping:
+  #     it would erase the "no match here" signal.
   #   * 32FC1 depth (metres): `depth = (f × B × 16) / disp_signed`,
   #     invalid pixels become 0.0 (the ROS depth_image "no
   #     measurement" convention foxglove understands).
   defp pack_disparity_and_depth(raw_disparity, focal_length, baseline) do
-    disparity_clamped = Evision.max(raw_disparity, 0)
-    disparity_bytes = Evision.Mat.to_binary(disparity_clamped)
-
     disp_f32 = Evision.Mat.as_type(raw_disparity, :f32)
+
+    disparity_bytes =
+      disp_f32
+      |> Evision.divide(@disparity_fixed_point_scale)
+      |> Evision.Mat.to_binary()
     depth_scale = focal_length * baseline * @disparity_fixed_point_scale
     depth_raw = Evision.divide(depth_scale, disp_f32)
     invalid_mask = Evision.compare(raw_disparity, 0, Evision.Constant.cv_CMP_LE())

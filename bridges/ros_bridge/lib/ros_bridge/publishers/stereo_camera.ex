@@ -303,7 +303,8 @@ defmodule RosBridge.Publishers.StereoCamera do
       header: header,
       height: result.height,
       width: result.width,
-      encoding: "16UC1",
+      # DisparityImage.image is a float disparity image per the spec.
+      encoding: "32FC1",
       is_bigendian: 0,
       step: result.disparity_step,
       data: result.disparity
