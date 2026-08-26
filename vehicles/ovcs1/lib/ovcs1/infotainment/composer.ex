@@ -24,5 +24,4 @@ defmodule Ovcs1.Infotainment.Composer do
       {Ovcs1.Infotainment, []}
     ]
   end
-
 end

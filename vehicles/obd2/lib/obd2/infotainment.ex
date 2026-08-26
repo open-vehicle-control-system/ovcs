@@ -18,11 +18,13 @@ defmodule Obd2.Infotainment do
   def init(_) do
     :ok = Receiver.subscribe(self(), :ovcs, ["drivetrain_status"])
     {:ok, timer} = :timer.send_interval(@loop_period, :loop)
-    {:ok, %{
-      loop_timer: timer,
-      rotation_per_minute: @zero,
-      speed: @zero,
-    }}
+
+    {:ok,
+     %{
+       loop_timer: timer,
+       rotation_per_minute: @zero,
+       speed: @zero
+     }}
   end
 
   @impl true
@@ -34,20 +36,23 @@ defmodule Obd2.Infotainment do
     %{"speed" => %Signal{value: speed}} = signals
     %{"rotation_per_minute" => %Signal{value: rotation_per_minute}} = signals
 
-    {:noreply, %{
-      state |
-        speed: D.new(speed),
-        rotation_per_minute: D.new(rotation_per_minute)
-      }
-    }
+    {:noreply,
+     %{
+       state
+       | speed: D.new(speed),
+         rotation_per_minute: D.new(rotation_per_minute)
+     }}
   end
 
   @impl true
   def handle_call(:status, _from, state) do
-    status = state |> Map.take([
-      :speed,
-      :rotation_per_minute,
-    ])
+    status =
+      state
+      |> Map.take([
+        :speed,
+        :rotation_per_minute
+      ])
+
     {:reply, {:ok, status}, state}
   end
 

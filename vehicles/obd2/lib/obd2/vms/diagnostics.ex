@@ -65,7 +65,10 @@ defmodule Obd2.Vms.Diagnostics do
   end
 
   @impl true
-  def handle_info({:handle_obd2_response, %OBD2.Response{request_name: request_name} = response}, state) do
+  def handle_info(
+        {:handle_obd2_response, %OBD2.Response{request_name: request_name} = response},
+        state
+      ) do
     state = put_in(state.last_responses[request_name], response)
 
     state =
@@ -106,25 +109,37 @@ defmodule Obd2.Vms.Diagnostics do
     state
   end
 
-  defp broadcast_metrics(%OBD2.Response{request_name: "stored_dtcs", parameters: %{"dtcs" => p}}, state) do
+  defp broadcast_metrics(
+         %OBD2.Response{request_name: "stored_dtcs", parameters: %{"dtcs" => p}},
+         state
+       ) do
     publish(:stored_dtcs, format_dtc_codes(p.value))
     publish(:stored_dtc_count, length(p.value))
     state
   end
 
-  defp broadcast_metrics(%OBD2.Response{request_name: "pending_dtcs", parameters: %{"dtcs" => p}}, state) do
+  defp broadcast_metrics(
+         %OBD2.Response{request_name: "pending_dtcs", parameters: %{"dtcs" => p}},
+         state
+       ) do
     publish(:pending_dtcs, format_dtc_codes(p.value))
     publish(:pending_dtc_count, length(p.value))
     state
   end
 
-  defp broadcast_metrics(%OBD2.Response{request_name: "permanent_dtcs", parameters: %{"dtcs" => p}}, state) do
+  defp broadcast_metrics(
+         %OBD2.Response{request_name: "permanent_dtcs", parameters: %{"dtcs" => p}},
+         state
+       ) do
     publish(:permanent_dtcs, format_dtc_codes(p.value))
     publish(:permanent_dtc_count, length(p.value))
     state
   end
 
-  defp broadcast_metrics(%OBD2.Response{request_name: "uds_read_dtcs", parameters: %{"dtc_records" => p}}, state) do
+  defp broadcast_metrics(
+         %OBD2.Response{request_name: "uds_read_dtcs", parameters: %{"dtc_records" => p}},
+         state
+       ) do
     formatted =
       p.value
       |> Enum.map(fn %{code: code, status: status} ->
@@ -137,24 +152,39 @@ defmodule Obd2.Vms.Diagnostics do
     state
   end
 
-  defp broadcast_metrics(%OBD2.Response{request_name: "vehicle_info_vin", parameters: %{"vin" => p}}, state) do
+  defp broadcast_metrics(
+         %OBD2.Response{request_name: "vehicle_info_vin", parameters: %{"vin" => p}},
+         state
+       ) do
     [vin | _] = p.value
     publish(:vin, String.trim(vin))
     state
   end
 
-  defp broadcast_metrics(%OBD2.Response{request_name: "vehicle_info_calibration_id", parameters: %{"calibration_id" => p}}, state) do
+  defp broadcast_metrics(
+         %OBD2.Response{
+           request_name: "vehicle_info_calibration_id",
+           parameters: %{"calibration_id" => p}
+         },
+         state
+       ) do
     publish(:calibration_id, p.value |> Enum.map(&String.trim/1) |> format_lines())
     state
   end
 
-  defp broadcast_metrics(%OBD2.Response{request_name: "vehicle_info_ecu_name", parameters: %{"ecu_name" => p}}, state) do
+  defp broadcast_metrics(
+         %OBD2.Response{request_name: "vehicle_info_ecu_name", parameters: %{"ecu_name" => p}},
+         state
+       ) do
     [name | _] = p.value
     publish(:ecu_name, String.trim(name))
     state
   end
 
-  defp broadcast_metrics(%OBD2.Response{request_name: "extended_session_powertrain", parameters: parameters}, state) do
+  defp broadcast_metrics(
+         %OBD2.Response{request_name: "extended_session_powertrain", parameters: parameters},
+         state
+       ) do
     %{"p2_server_max_ms" => p2, "p2_star_server_max_ms" => p2_star} = parameters
     publish(:p2_server_max_ms, p2.value)
     publish(:p2_star_server_max_ms, p2_star.value)
@@ -164,11 +194,20 @@ defmodule Obd2.Vms.Diagnostics do
 
   defp broadcast_metrics(_response, state), do: state
 
-  defp maybe_update_supported_pids(state, %OBD2.Response{request_name: "supported_pids", parameters: parameters}) do
+  defp maybe_update_supported_pids(state, %OBD2.Response{
+         request_name: "supported_pids",
+         parameters: parameters
+       }) do
     pids =
-      [{0x00, "pids_01_to_20"}, {0x20, "pids_21_to_40"}, {0x40, "pids_41_to_60"},
-       {0x60, "pids_61_to_80"}, {0x80, "pids_81_to_a0"}, {0xA0, "pids_a1_to_c0"},
-       {0xC0, "pids_c1_to_e0"}]
+      [
+        {0x00, "pids_01_to_20"},
+        {0x20, "pids_21_to_40"},
+        {0x40, "pids_41_to_60"},
+        {0x60, "pids_61_to_80"},
+        {0x80, "pids_81_to_a0"},
+        {0xA0, "pids_a1_to_c0"},
+        {0xC0, "pids_c1_to_e0"}
+      ]
       |> Enum.flat_map(fn {base, key} ->
         case parameters[key] do
           %OBD2.Parameter{raw_value: raw} -> Obd2.Vms.PidCatalog.decode_bitmask(raw, base)
