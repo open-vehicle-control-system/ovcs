@@ -17,7 +17,7 @@ The `mix.exs` target-gates the bridge libraries it pulls in:
 |--------|-------------|
 | `:ovcs_base_can_system_rpi3a` | Radio-control bridge on a Pi 3A |
 | `:ovcs_base_can_system_rpi4` | ROS bridge on a Pi 4 |
-| `:ovcs_bridges_system_rpi5` | ROS / other bridges on a Pi 5 |
+| `:rpi5` | ROS / perception bridges on a Pi 5 (system `ovcs_bridges_system_rpi5`) |
 
 Custom Nerves systems live in their own repos under
 [`open-vehicle-control-system`](https://github.com/open-vehicle-control-system).

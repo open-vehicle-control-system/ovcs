@@ -59,7 +59,7 @@ own README with usage, design notes, and API.
 | Infotainment Core | `infotainment/core/` | `InfotainmentCore` | Infotainment business logic, UI layout, pages and blocks |
 | Infotainment API | `infotainment/api/` | `InfotainmentApi` | Phoenix JSON API + WebSocket for the Flutter dashboard |
 | Infotainment Firmware | `infotainment/firmware/` | `InfotainmentFirmware` | Nerves firmware image for Raspberry Pi 5 |
-| Bridge Firmware | `bridges/firmware/` | `BridgeFirmware` | Shared Nerves image (targets `:ovcs_base_can_system_rpi3a`, `:ovcs_base_can_system_rpi4`, `:ovcs_bridges_system_rpi5`); bundles the bridge libraries the active vehicle declares in `bridge_firmwares/0` |
+| Bridge Firmware | `bridges/firmware/` | `BridgeFirmware` | Shared Nerves image (targets `:ovcs_base_can_system_rpi3a`, `:ovcs_base_can_system_rpi4`, `:rpi5`); bundles the bridge libraries the active vehicle declares in `bridge_firmwares/0` |
 | Radio Control Bridge | `bridges/radio_control_bridge/` | `RadioControlBridge` | MAVLink/ExpressLRS RC bridge library (hosted by `bridge_firmware`) |
 | ROS Bridge | `bridges/ros_bridge/` | `RosBridge` | Native rmw_zenoh ROS 2 bridge with BNO085 IMU (hosted by `bridge_firmware`) |
 
