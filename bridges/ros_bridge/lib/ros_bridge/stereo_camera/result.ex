@@ -16,11 +16,14 @@ defmodule RosBridge.StereoCamera.Result do
       stamp (essential for downstream `ApproximateTime` matchers).
     * `:width`, `:height` — disparity / depth image dimensions
       in pixels.
-    * `:disparity` — raw 16UC1 pixel bytes, row-major. Each
-      value is `actual_disparity_pixels × 16` (ROS convention,
-      matching `stereo_image_proc`).
+    * `:disparity` — raw 32FC1 pixel bytes, row-major. Each value
+      is a disparity in true pixels, which is what
+      `stereo_msgs/DisparityImage.image` carries (and what
+      `stereo_image_proc` publishes). Pixels with no match come
+      through below `:min_disparity` — the convention consumers
+      filter on — rather than clamped to 0.
     * `:disparity_step` — bytes per row of the disparity buffer
-      (`width × 2` for 16UC1).
+      (`width × 4` for 32FC1).
     * `:depth` — raw 32FC1 pixel bytes, row-major. Each value is
       the metric distance to that pixel, in metres. NaN for
       pixels with invalid disparity.
@@ -32,9 +35,10 @@ defmodule RosBridge.StereoCamera.Result do
       in metres.
     * `:min_disparity`, `:max_disparity` — search-range bounds
       used by the backend, in pixels. Goes into DisparityImage.
-    * `:delta_d` — disparity quantization step, in pixels.
-      For classic SGBM this is 1/16 (the 16UC1 fixed-point
-      resolution).
+    * `:delta_d` — disparity quantization step, in pixels. For
+      classic SGBM this is 1/16: the values are floats now, but they
+      were derived from OpenCV's ×16 fixed point, so that remains
+      the smallest representable increment.
     * `:valid_x`, `:valid_y`, `:valid_w`, `:valid_h` — pixel
       bounding box inside which disparity values are meaningful.
       For SGBM this is the region away from the image borders
