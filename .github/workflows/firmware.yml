@@ -4,6 +4,21 @@ on:
   push:
     branches: [main]
     tags: ['v*']
+  # Also on PRs that touch anything a firmware image is built from.
+  # Without this, no image was ever built before merge: a PR could go
+  # fully green and still break `Firmware` on main — the host toolchain
+  # in mise.toml has to match the OTP major each target system ships,
+  # and nothing else checks that.
+  pull_request:
+    paths:
+      - 'bridges/**'
+      - 'vms/**'
+      - 'infotainment/**'
+      - 'vehicles/**'
+      - 'libraries/**'
+      - 'mise.toml'
+      - '.github/workflows/firmware.yml'
+      - '.github/actions/setup-mise/**'
   workflow_dispatch:
 
 concurrency:
