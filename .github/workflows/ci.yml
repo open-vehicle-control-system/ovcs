@@ -14,6 +14,18 @@ env:
   MIX_ENV: test
 
 jobs:
+  lock-drift:
+    # Shared dev tooling must be locked at one version across the 17
+    # Mix projects. vms/core silently sat 10 patch versions behind on
+    # credo, which only surfaced — as an unrelated-looking
+    # Regex.CompileError — once the Elixir version moved.
+    name: Elixir · lock drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup-mise
+      - run: elixir scripts/check_lock_drift.exs
+
   elixir-format:
     name: Elixir · format check
     runs-on: ubuntu-latest
@@ -92,8 +104,8 @@ jobs:
           path: |
             ${{ matrix.project }}/deps
             ${{ matrix.project }}/_build
-          key: credo-${{ matrix.project }}-${{ hashFiles(format('{0}/mix.lock', matrix.project)) }}
-          restore-keys: credo-${{ matrix.project }}-
+          key: credo-${{ matrix.project }}-${{ hashFiles('mise.toml') }}-${{ hashFiles(format('{0}/mix.lock', matrix.project)) }}
+          restore-keys: credo-${{ matrix.project }}-${{ hashFiles('mise.toml') }}-
       - run: mix deps.get
       - run: mix credo --config-file ${{ github.workspace }}/.credo.exs
 
@@ -139,8 +151,8 @@ jobs:
           path: |
             ${{ matrix.project }}/deps
             ${{ matrix.project }}/_build
-          key: test-${{ matrix.project }}-${{ hashFiles(format('{0}/mix.lock', matrix.project)) }}
-          restore-keys: test-${{ matrix.project }}-
+          key: test-${{ matrix.project }}-${{ hashFiles('mise.toml') }}-${{ hashFiles(format('{0}/mix.lock', matrix.project)) }}
+          restore-keys: test-${{ matrix.project }}-${{ hashFiles('mise.toml') }}-
       - run: mix deps.get
       - run: mix test --no-start
 
@@ -180,8 +192,8 @@ jobs:
           path: |
             ${{ matrix.project }}/deps
             ${{ matrix.project }}/_build
-          key: compile-${{ matrix.project }}-${{ hashFiles(format('{0}/mix.lock', matrix.project)) }}
-          restore-keys: compile-${{ matrix.project }}-
+          key: compile-${{ matrix.project }}-${{ hashFiles('mise.toml') }}-${{ hashFiles(format('{0}/mix.lock', matrix.project)) }}
+          restore-keys: compile-${{ matrix.project }}-${{ hashFiles('mise.toml') }}-
       - run: mix deps.get
       - run: mix compile --warnings-as-errors
 
@@ -204,8 +216,8 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             cli/target
-          key: cargo-cli-${{ hashFiles('cli/Cargo.lock') }}
-          restore-keys: cargo-cli-
+          key: cargo-cli-${{ hashFiles('mise.toml') }}-${{ hashFiles('cli/Cargo.lock') }}
+          restore-keys: cargo-cli-${{ hashFiles('mise.toml') }}-
       - run: cargo fmt --check
       - run: cargo clippy --release --all-targets -- -D warnings
       - run: cargo build --release
@@ -226,8 +238,8 @@ jobs:
       - uses: actions/cache@v5
         with:
           path: ~/.npm
-          key: npm-vms-dashboard-${{ hashFiles('vms/dashboard/package-lock.json') }}
-          restore-keys: npm-vms-dashboard-
+          key: npm-vms-dashboard-${{ hashFiles('mise.toml') }}-${{ hashFiles('vms/dashboard/package-lock.json') }}
+          restore-keys: npm-vms-dashboard-${{ hashFiles('mise.toml') }}-
       - run: npm ci
       - run: npm run test:unit
       - run: npm run build
@@ -246,8 +258,8 @@ jobs:
           path: |
             ~/.pub-cache
             infotainment/dashboard/.dart_tool
-          key: flutter-${{ hashFiles('infotainment/dashboard/pubspec.lock') }}
-          restore-keys: flutter-
+          key: flutter-${{ hashFiles('mise.toml') }}-${{ hashFiles('infotainment/dashboard/pubspec.lock') }}
+          restore-keys: flutter-${{ hashFiles('mise.toml') }}-
       - run: flutter pub get
       - run: flutter analyze
       - run: flutter test
@@ -266,7 +278,7 @@ jobs:
           path: |
             ~/.platformio
             controllers/generic_controller/.pio
-          key: pio-${{ hashFiles('controllers/generic_controller/platformio.ini') }}
-          restore-keys: pio-
+          key: pio-${{ hashFiles('mise.toml') }}-${{ hashFiles('controllers/generic_controller/platformio.ini') }}
+          restore-keys: pio-${{ hashFiles('mise.toml') }}-
       - run: pio test -e local_test
       - run: pio run -e uno_r4_minima_prod
