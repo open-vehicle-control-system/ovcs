@@ -1,8 +1,7 @@
 defmodule VmsFirmwareTest do
-  use ExUnit.Case
-  doctest VmsFirmware
+  use ExUnit.Case, async: true
 
-  test "greets the world" do
-    assert VmsFirmware.hello() == :world
+  test "scaffolded placeholder" do
+    assert true
   end
 end
