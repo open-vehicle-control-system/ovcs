@@ -110,7 +110,8 @@ defmodule RadioControlBridge.MavlinkForwarder do
         }
       end)
 
-    {:noreply, %{state | rc_count: state.rc_count + 1, last_rc_at: System.monotonic_time(:millisecond)}}
+    {:noreply,
+     %{state | rc_count: state.rc_count + 1, last_rc_at: System.monotonic_time(:millisecond)}}
   end
 
   def handle_cast({:mavlink_message, %{name: name}}, state) do

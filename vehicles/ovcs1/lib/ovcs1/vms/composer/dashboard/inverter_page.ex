@@ -13,13 +13,48 @@ defmodule Ovcs1.Vms.Composer.Dashboard.InverterPage do
           name: "Status",
           type: "table",
           rows: [
-            %{type: :metric, name: "Requested Throttle Source", module: Inverter, key: :requested_throttle_source},
-            %{type: :metric, name: "Requested Throttle", module: Inverter, key: :requested_throttle, unit: "%"},
-            %{type: :metric, name: "Requested Torque", module: Inverter, key: :requested_torque, unit: "N/m"},
-            %{type: :metric, name: "Effective Torque", module: Inverter, key: :effective_torque, unit: "N/m"},
+            %{
+              type: :metric,
+              name: "Requested Throttle Source",
+              module: Inverter,
+              key: :requested_throttle_source
+            },
+            %{
+              type: :metric,
+              name: "Requested Throttle",
+              module: Inverter,
+              key: :requested_throttle,
+              unit: "%"
+            },
+            %{
+              type: :metric,
+              name: "Requested Torque",
+              module: Inverter,
+              key: :requested_torque,
+              unit: "N/m"
+            },
+            %{
+              type: :metric,
+              name: "Effective Torque",
+              module: Inverter,
+              key: :effective_torque,
+              unit: "N/m"
+            },
             %{type: :metric, name: "RPM", module: Inverter, key: :rotation_per_minute},
-            %{type: :metric, name: "Output Voltage", module: Inverter, key: :inverter_output_voltage, unit: "V"},
-            %{type: :metric, name: "Motor temperature", module: Inverter, key: :motor_temperature, unit: "°C"}
+            %{
+              type: :metric,
+              name: "Output Voltage",
+              module: Inverter,
+              key: :inverter_output_voltage,
+              unit: "V"
+            },
+            %{
+              type: :metric,
+              name: "Motor temperature",
+              module: Inverter,
+              key: :motor_temperature,
+              unit: "°C"
+            }
           ]
         },
         "temperature" => %{
@@ -28,15 +63,32 @@ defmodule Ovcs1.Vms.Composer.Dashboard.InverterPage do
           type: "lineChart",
           serie_max_size: 300,
           y_axis: [
-            %{min: -50, max: 200, label: "°C", series: [
-              %{name: "Inverter Board", metric: %{module: Inverter, key: :inverter_communication_board_temperature}},
-              %{name: "IGBT", metric: %{module: Inverter, key: :insulated_gate_bipolar_transistor_temperature}},
-              %{name: "IGBT Board", metric: %{module: Inverter, key: :insulated_gate_bipolar_transistor_board_temperature}},
-              %{name: "Motor", metric: %{module: Inverter, key: :motor_temperature}},
-            ]}
+            %{
+              min: -50,
+              max: 200,
+              label: "°C",
+              series: [
+                %{
+                  name: "Inverter Board",
+                  metric: %{module: Inverter, key: :inverter_communication_board_temperature}
+                },
+                %{
+                  name: "IGBT",
+                  metric: %{module: Inverter, key: :insulated_gate_bipolar_transistor_temperature}
+                },
+                %{
+                  name: "IGBT Board",
+                  metric: %{
+                    module: Inverter,
+                    key: :insulated_gate_bipolar_transistor_board_temperature
+                  }
+                },
+                %{name: "Motor", metric: %{module: Inverter, key: :motor_temperature}}
+              ]
+            }
           ]
         },
-        "torque" => Blocks.TorqueChart.definition(order: 2, full_width: true),
+        "torque" => Blocks.TorqueChart.definition(order: 2, full_width: true)
       }
     }
   end

@@ -65,6 +65,7 @@ defmodule OvcsInfotainmentFirmware.MixProject do
       {
         :ovcs_base_can_system_rpi5,
         github: "open-vehicle-control-system/ovcs_base_can_system_rpi5",
+        tag: "v2.0.4",
         runtime: false,
         targets: :ovcs_base_can_system_rpi5,
         nerves: [compile: false]
