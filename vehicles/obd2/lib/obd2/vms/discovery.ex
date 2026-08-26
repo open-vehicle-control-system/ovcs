@@ -101,11 +101,10 @@ defmodule Obd2.Vms.Discovery do
     passive_loop(socket, parent)
   end
 
-  defp parse_frame(<<id_and_flags::little-integer-size(32),
-                     byte_number::little-integer-size(8),
-                     _unused::binary-size(3),
-                     payload::binary-size(byte_number),
-                     _rest::binary>>) do
+  defp parse_frame(
+         <<id_and_flags::little-integer-size(32), byte_number::little-integer-size(8),
+           _unused::binary-size(3), payload::binary-size(byte_number), _rest::binary>>
+       ) do
     {:ok, Bitwise.band(id_and_flags, @id_mask), payload}
   end
 
@@ -143,15 +142,24 @@ defmodule Obd2.Vms.Discovery do
     {:noreply, %{state | did_socket: nil, did_scan_running: false}}
   end
 
-  def handle_info({:probe_did, [did | rest], request_id, response_id}, %{did_socket: socket} = state) do
+  def handle_info(
+        {:probe_did, [did | rest], request_id, response_id},
+        %{did_socket: socket} = state
+      ) do
     payload = <<0x22, did::big-integer-size(16)>>
+
     state =
       case Socket.send(socket, payload) do
         :ok -> receive_did_response(state, did, socket)
         {:error, _} -> state
       end
 
-    Process.send_after(self(), {:probe_did, rest, request_id, response_id}, @did_request_interval_ms)
+    Process.send_after(
+      self(),
+      {:probe_did, rest, request_id, response_id},
+      @did_request_interval_ms
+    )
+
     {:noreply, state}
   end
 
@@ -172,13 +180,22 @@ defmodule Obd2.Vms.Discovery do
       end
 
     Bus.broadcast("messages", %Bus.Message{name: :bus_traffic, value: summary, source: __MODULE__})
-    Bus.broadcast("messages", %Bus.Message{name: :bus_unique_ids, value: map_size(seen), source: __MODULE__})
+
+    Bus.broadcast("messages", %Bus.Message{
+      name: :bus_unique_ids,
+      value: map_size(seen),
+      source: __MODULE__
+    })
   end
 
   # ── Active DID scan ──────────────────────────────────────────────────
 
   @impl true
-  def handle_call({:start_did_scan, _dids, _request_id, _response_id}, _from, %{did_scan_running: true} = state) do
+  def handle_call(
+        {:start_did_scan, _dids, _request_id, _response_id},
+        _from,
+        %{did_scan_running: true} = state
+      ) do
     {:reply, {:error, :already_running}, state}
   end
 
@@ -189,7 +206,11 @@ defmodule Obd2.Vms.Discovery do
           {:ok, socket} ->
             send(self(), {:probe_did, dids, request_id, response_id})
             new_state = %{state | did_socket: socket, did_scan_running: true, did_results: %{}}
-            publish_did_status("Scanning #{length(dids)} DIDs at 0x#{hex(request_id, 3)}/0x#{hex(response_id, 3)}…")
+
+            publish_did_status(
+              "Scanning #{length(dids)} DIDs at 0x#{hex(request_id, 3)}/0x#{hex(response_id, 3)}…"
+            )
+
             {:reply, :ok, new_state}
 
           {:error, reason} ->
@@ -252,11 +273,20 @@ defmodule Obd2.Vms.Discovery do
       end
 
     Bus.broadcast("messages", %Bus.Message{name: :uds_dids, value: rendered, source: __MODULE__})
-    Bus.broadcast("messages", %Bus.Message{name: :uds_did_count, value: map_size(results), source: __MODULE__})
+
+    Bus.broadcast("messages", %Bus.Message{
+      name: :uds_did_count,
+      value: map_size(results),
+      source: __MODULE__
+    })
   end
 
   defp publish_did_status(text) do
-    Bus.broadcast("messages", %Bus.Message{name: :discovery_status, value: text, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{
+      name: :discovery_status,
+      value: text,
+      source: __MODULE__
+    })
   end
 
   defp format_did(<<>>), do: "(empty)"

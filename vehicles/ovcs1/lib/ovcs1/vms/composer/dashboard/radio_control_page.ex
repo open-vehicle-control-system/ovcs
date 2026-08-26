@@ -1,5 +1,5 @@
 defmodule Ovcs1.Vms.Composer.Dashboard.RadioControlPage do
-  alias  VmsCore.Components.OVCS.RadioControl
+  alias VmsCore.Components.OVCS.RadioControl
 
   def definition(order: order) do
     %{
@@ -12,10 +12,30 @@ defmodule Ovcs1.Vms.Composer.Dashboard.RadioControlPage do
           name: "Status",
           type: "table",
           rows: [
-            %{type: :metric, name: "Requested Control Level", module: RadioControl.RequestedControlLevel, key: :requested_control_level},
-            %{type: :metric, name: "Requested Direction", module: RadioControl.Direction, key: :requested_direction},
-            %{type: :metric, name: "Requested Steering", module: RadioControl.Steering, key: :requested_steering},
-            %{type: :metric, name: "Requested Throttle", module: RadioControl.Throttle, key: :requested_throttle}
+            %{
+              type: :metric,
+              name: "Requested Control Level",
+              module: RadioControl.RequestedControlLevel,
+              key: :requested_control_level
+            },
+            %{
+              type: :metric,
+              name: "Requested Direction",
+              module: RadioControl.Direction,
+              key: :requested_direction
+            },
+            %{
+              type: :metric,
+              name: "Requested Steering",
+              module: RadioControl.Steering,
+              key: :requested_steering
+            },
+            %{
+              type: :metric,
+              name: "Requested Throttle",
+              module: RadioControl.Throttle,
+              key: :requested_throttle
+            }
           ]
         },
         "pid-chart" => %{
@@ -24,10 +44,21 @@ defmodule Ovcs1.Vms.Composer.Dashboard.RadioControlPage do
           type: "lineChart",
           serie_max_size: 300,
           y_axis: [
-            %{min: -1, max: 1, label: "%", series: [
-              %{name: "Requested Steering", metric: %{module: RadioControl.Steering, key: :requested_steering}},
-              %{name: "Requested Throttle", metric: %{module: RadioControl.Throttle, key: :requested_throttle}}
-            ]}
+            %{
+              min: -1,
+              max: 1,
+              label: "%",
+              series: [
+                %{
+                  name: "Requested Steering",
+                  metric: %{module: RadioControl.Steering, key: :requested_steering}
+                },
+                %{
+                  name: "Requested Throttle",
+                  metric: %{module: RadioControl.Throttle, key: :requested_throttle}
+                }
+              ]
+            }
           ]
         }
       }
