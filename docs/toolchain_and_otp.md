@@ -100,21 +100,31 @@ delta over upstream is:
 
 | File | What OVCS adds |
 |---|---|
-| `nerves_defconfig` | `LIBSOCKETCAN`, `CAN_UTILS`, `SOCKETCAND`, `IPROUTE2`, `IPTABLES`, dynamic eudev; `BR2_NERVES_SYSTEM_NAME` rename |
-| `linux-*.defconfig` | `CAN`, `CAN_VCAN`, `CAN_MCP251X`, `CAN_MCP251XFD`, `SERIAL_SC16IS7XX_SPI`, `PWM_BCM2835`, `NVME` |
-| `fwup.conf.eex` | PWM device-tree overlays (`pwm`, `pwm1`, `pwm-2chan`) written to both boot slots |
-| `config.txt` | commented `dtoverlay=pwm` hint |
-| `mix.exs` | package identity, description, deps |
+| `nerves_defconfig` | `LIBSOCKETCAN`, `CAN_UTILS`, `SOCKETCAND`, `IPROUTE2`, `IPTABLES`, eudev for dynamic device nodes; `BR2_NERVES_SYSTEM_NAME` rename |
+| `linux-*.defconfig` | `CAN`, `CAN_VCAN`, `CAN_MCP251X`, `CAN_MCP251XFD`, `SERIAL_SC16IS7XX` (SPI variant on, I²C off) |
+| `mix.exs`, `VERSION`, `README.md`, `.gitignore` | package identity |
 
-Two porting notes, both places where a careless copy would break the
-build:
+Measured on `rpi4`: thirteen config lines plus identity. The PWM
+device-tree overlays, the `config.txt` PWM hint and the NVMe kernel
+option used to be carried here and are **upstream's own** as of v2.0.x —
+re-adding them would be duplication.
 
+Three traps, all of which produce a plausible-looking but wrong result:
+
+- **The forks carry their own `v1.29.x` tags**, which collide with
+  upstream's tag names. `git fetch upstream --tags` will not overwrite
+  an existing tag, so `git diff v1.29.3 main` silently compares
+  fork-to-fork and reports an empty or misleading delta. Fetch upstream
+  tags into their own namespace
+  (`git fetch upstream 'refs/tags/*:refs/tags/up/*'`) and take the base
+  from `git merge-base main upstream/main`. Getting this wrong is how
+  the PWM/NVMe rows above came to be attributed to OVCS.
 - The kernel defconfig is renamed upstream (`linux-6.6.defconfig` →
   `linux-6.12.defconfig`). The delta has to be re-applied to the new
   file, not carried over wholesale — the surrounding config moved.
-- **`fwup.conf` is generated** in v2.0.3, from `fwup.conf.eex` via a
-  mix task. The PWM overlay additions belong in the template; edits to
-  `fwup.conf` are overwritten.
+- `fwup.conf` is **generated** from `fwup.conf.eex` by a mix task in
+  v2.0.3. Nothing in the OVCS delta touches it, but if that ever
+  changes, edit the template — the output is overwritten.
 
 ### These build in CI
 
@@ -134,12 +144,13 @@ Per system repo, `rpi4` first as the pilot (it carries both `vms` and
 the `ros` bridge, so it exercises the most):
 
 1. Branch from upstream `v2.0.3`.
-2. Re-apply the delta in the table above, porting the kernel defconfig
-   onto `linux-6.12.defconfig` and the PWM overlays into
-   `fwup.conf.eex`.
+2. Re-apply the delta in the table above, porting the kernel options
+   onto `linux-6.12.defconfig`.
 3. Restore the fork's identity: `VERSION`, `mix.exs` package name,
    `BR2_NERVES_SYSTEM_NAME`, `LICENSES/`, `REUSE.toml`, `README.md`.
-4. Add `release.yml` from `ovcs_bridges_system_rpi5`.
+4. Add `release.yml` from `ovcs_bridges_system_rpi5`, with a
+   `pull_request` trigger added — see the note below on why
+   `workflow_dispatch` alone is not enough.
 5. Tag `v2.0.3-ovcs.1` (or continue the fork's own series) and let CI
    build and publish the tarball.
 6. Repeat for `rpi3a` and the infotainment `rpi5`.
@@ -158,3 +169,22 @@ Then in this repo, in one PR:
 Finally: **reflash every deployed rpi3a/rpi4/rpi5 device.** The
 partition change cannot be delivered as an OTA update, and a device
 left on the old layout cannot take the new firmware.
+
+## Getting a system built the first time
+
+`workflow_dispatch` only works once the workflow file is on the
+repository's **default** branch, so a `release.yml` introduced in a pull
+request cannot be dispatched from that pull request. The base branches of
+these forks have no workflows at all today, and no Actions run has ever
+happened in them.
+
+The way out, in order:
+
+1. Land `release.yml` on the fork's `main` on its own. It touches nothing
+   the system builds, so merging it unbuilt is safe.
+2. Then `workflow_dispatch` it against the migration branch — dispatch
+   can target any branch once the file is on the default branch.
+3. Only merge the migration once that run is green.
+
+A `pull_request` trigger is also worth keeping, so later changes are
+built before merge rather than after.
