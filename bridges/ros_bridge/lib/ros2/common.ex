@@ -1,3 +1,9 @@
+# credo:disable-for-this-file Credo.Check.Refactor.LongQuoteBlocks
+# The quote block *is* the module: `use Ros2.Common` injects the shared
+# CDR codec into each `Ros2.*` message module, several of which need the
+# parsers as private functions. Splitting it to satisfy the length check
+# would mean either exporting every codec or nesting sub-macros, both of
+# which read worse than one documented block.
 defmodule Ros2.Common do
   @moduledoc """
   CDR (Common Data Representation) encoder/parser primitives shared
