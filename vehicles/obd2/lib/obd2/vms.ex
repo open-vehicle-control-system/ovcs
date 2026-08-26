@@ -30,27 +30,36 @@ defmodule Obd2.Vms do
 
   @impl true
   def init(_) do
-    :ok = Emitter.configure(:ovcs, "drivetrain_status", %{
-      parameters_builder_function: :default,
-      initial_data: %{
-        "speed" => @zero,
-        "rotation_per_minute" => @zero
-      },
-      enable: true
-    })
+    :ok =
+      Emitter.configure(:ovcs, "drivetrain_status", %{
+        parameters_builder_function: :default,
+        initial_data: %{
+          "speed" => @zero,
+          "rotation_per_minute" => @zero
+        },
+        enable: true
+      })
+
     OBD2.Request.subscribe(self(), :obd2, "live_data_fast")
 
     {:ok, %{speed: @zero, rotation_per_minute: @zero}}
   end
 
   @impl true
-  def handle_info({:handle_obd2_response, %OBD2.Response{request_name: "live_data_fast", parameters: parameters}}, state) do
+  def handle_info(
+        {:handle_obd2_response,
+         %OBD2.Response{request_name: "live_data_fast", parameters: parameters}},
+        state
+      ) do
     speed = get_parameter(parameters, "speed", state.speed)
-    rotation_per_minute = get_parameter(parameters, "rotation_per_minute", state.rotation_per_minute)
 
-    :ok = Emitter.update(:ovcs, "drivetrain_status", fn data ->
-      %{data | "speed" => speed, "rotation_per_minute" => rotation_per_minute}
-    end)
+    rotation_per_minute =
+      get_parameter(parameters, "rotation_per_minute", state.rotation_per_minute)
+
+    :ok =
+      Emitter.update(:ovcs, "drivetrain_status", fn data ->
+        %{data | "speed" => speed, "rotation_per_minute" => rotation_per_minute}
+      end)
 
     {:noreply, %{state | speed: speed, rotation_per_minute: rotation_per_minute}}
   end

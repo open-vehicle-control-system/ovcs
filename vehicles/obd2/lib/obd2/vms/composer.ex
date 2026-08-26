@@ -7,7 +7,7 @@ defmodule Obd2.Vms.Composer do
   alias Obd2.Vms
 
   @impl VmsCore.Vehicle
-  defdelegate dashboard_configuration, to:  Obd2.Vms.Composer.Dashboard
+  defdelegate dashboard_configuration, to: Obd2.Vms.Composer.Dashboard
 
   @impl VmsCore.Vehicle
   def can_config_otp_app, do: :obd2

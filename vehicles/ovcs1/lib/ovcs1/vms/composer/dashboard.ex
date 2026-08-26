@@ -5,18 +5,19 @@ defmodule Ovcs1.Vms.Composer.Dashboard do
     %{
       vehicle: %{
         name: "OVCS1",
-        main_color: "indigo", # One of orange|red|blue|indigo|gray|green|amber|rose|teal
+        # One of orange|red|blue|indigo|gray|green|amber|rose|teal
+        main_color: "indigo",
         refresh_interval: 70,
         pages: %{
-          "dashboard"           => Dashboard.DashboardPage.definition(order: 0),
-          "steering-column"     => Dashboard.SteeringColumnPage.definition(order: 1),
-          "throttle-pedal"      => Dashboard.ThrottlePedalPage.definition(order: 2),
-          "brake-booster"       => Dashboard.BrakeBoosterPage.definition(order: 3),
-          "inverter"            => Dashboard.InverterPage.definition(order: 4),
-          "battery"             => Dashboard.BatteryPage.definition(order: 5),
-          "radio-control"       => Dashboard.RadioControlPage.definition(order: 6),
-          "ros-control"       => Dashboard.ROSControlPage.definition(order: 7),
-          "generic-controllers" => Dashboard.GenericControllersPage.definition(order: 8),
+          "dashboard" => Dashboard.DashboardPage.definition(order: 0),
+          "steering-column" => Dashboard.SteeringColumnPage.definition(order: 1),
+          "throttle-pedal" => Dashboard.ThrottlePedalPage.definition(order: 2),
+          "brake-booster" => Dashboard.BrakeBoosterPage.definition(order: 3),
+          "inverter" => Dashboard.InverterPage.definition(order: 4),
+          "battery" => Dashboard.BatteryPage.definition(order: 5),
+          "radio-control" => Dashboard.RadioControlPage.definition(order: 6),
+          "ros-control" => Dashboard.ROSControlPage.definition(order: 7),
+          "generic-controllers" => Dashboard.GenericControllersPage.definition(order: 8)
         }
       }
     }
