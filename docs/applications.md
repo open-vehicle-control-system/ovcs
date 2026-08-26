@@ -173,7 +173,7 @@ A **bridge** is an Elixir library (`bridges/<name>/`) that ferries data between 
 |---|---|
 | **Module** | `BridgeFirmware` |
 | **App name** | `:bridge_firmware` |
-| **Targets** | `ovcs_base_can_system_rpi3a`, `ovcs_base_can_system_rpi4`, `ovcs_bridges_system_rpi5` |
+| **Targets** | `ovcs_base_can_system_rpi3a`, `ovcs_base_can_system_rpi4`, `rpi5` |
 
 Shared Nerves image. Reads `VEHICLE` + `BRIDGE_FIRMWARE_ID` at boot,
 looks up the matching entry in the vehicle's `bridge_firmwares/0`, and
