@@ -239,10 +239,7 @@ fn main() -> Result<()> {
                 force,
             } => commands::vehicle_host_keys::import(vehicle, from, force),
         },
-        Commands::Run {
-            vehicle,
-            no_addons,
-        } => commands::run::run(vehicle, no_addons),
+        Commands::Run { vehicle, no_addons } => commands::run::run(vehicle, no_addons),
         Commands::Attach { vehicle } => commands::attach::run(vehicle),
         Commands::Connect {
             host,

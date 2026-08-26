@@ -221,7 +221,11 @@ end
             name: f[0].to_string(),
             dir: f[1].to_string(),
             run,
-            install: if install.is_empty() { None } else { Some(install) },
+            install: if install.is_empty() {
+                None
+            } else {
+                Some(install)
+            },
             ready_marker: (!f[4].is_empty()).then(|| f[4].to_string()),
             note: (!f[5].is_empty()).then(|| f[5].to_string()),
         });
