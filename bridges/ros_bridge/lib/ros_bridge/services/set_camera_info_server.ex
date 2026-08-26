@@ -101,11 +101,9 @@ defmodule RosBridge.Services.SetCameraInfoServer do
   defp maybe_reload(nil), do: :ok
 
   defp maybe_reload({module, function, args}) do
-    try do
-      apply(module, function, args)
-    catch
-      kind, reason ->
-        Logger.warning("#{__MODULE__}: reload callback failed #{kind}: #{inspect(reason)}")
-    end
+    apply(module, function, args)
+  catch
+    kind, reason ->
+      Logger.warning("#{__MODULE__}: reload callback failed #{kind}: #{inspect(reason)}")
   end
 end
