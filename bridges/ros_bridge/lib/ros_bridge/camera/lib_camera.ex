@@ -142,7 +142,10 @@ defmodule RosBridge.Camera.LibCamera do
        label: nil,
        width: width,
        height: height,
-       capture_ns: capture_ns,
+       # libcamera's SensorTimestamp (and the helper's steady_clock
+       # fallback) are kernel CLOCK_MONOTONIC; Frame.capture_ns is
+       # always Erlang monotonic time.
+       capture_ns: RosBridge.Timing.from_kernel_monotonic(capture_ns),
        jpeg: jpeg
      }}
   end
