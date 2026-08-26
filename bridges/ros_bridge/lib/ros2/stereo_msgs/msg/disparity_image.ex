@@ -3,7 +3,7 @@ defmodule Ros2.StereoMsgs.Msg.DisparityImage do
   ROS 2 `stereo_msgs/DisparityImage`. Field order on the wire:
 
       Header                       header
-      sensor_msgs/Image            image           # raw disparity (16UC1)
+      sensor_msgs/Image            image           # float disparity (32FC1)
       float32                      f               # focal length (pixels)
       float32                      T               # baseline (metres)
       sensor_msgs/RegionOfInterest valid_window
