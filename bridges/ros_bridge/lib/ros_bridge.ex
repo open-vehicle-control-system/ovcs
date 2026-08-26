@@ -99,13 +99,21 @@ defmodule RosBridge do
     end
   end
 
-  # The firmware id is stamped into Application env at compile time
-  # by bridges/firmware (same path that sets :vehicle). On host dev
-  # `BRIDGE_FIRMWARE_ID` may be unset; default to "ros" to preserve
-  # the historical single-bridge behaviour.
-  defp firmware_id, do: Application.get_env(:ovcs_bridge, :firmware_id, "ros")
+  # `BRIDGE_FIRMWARE_ID` first, mirroring `OvcsBridge.Supervisor`: on
+  # host every bridge role shares one compiled build, whose config
+  # bakes "radio_control" (bridges/firmware/config/config.exs), and
+  # `./ovcs run` sets the real id per BEAM. Reading only the compiled
+  # value made the perception BEAM resolve "radio_control" and start
+  # joy/IMU instead of the stereo pipeline. On target the env isn't
+  # present and the per-firmware baked value is correct; the "ros"
+  # default preserves the historical single-bridge behaviour.
+  defp firmware_id do
+    System.get_env("BRIDGE_FIRMWARE_ID") ||
+      Application.get_env(:ovcs_bridge, :firmware_id, "ros")
+  end
 
   defp resolve_component(name) when is_atom(name), do: RosBridge.Components.start(name, [])
+
   defp resolve_component({name, opts}) when is_atom(name), do: RosBridge.Components.start(name, opts)
 
   # The vehicle module is stamped into Application env by
