@@ -52,6 +52,10 @@ defmodule InfotainmentFirmware.Application do
     }
 
     [
+      # Mark the firmware valid so an A/B update sticks — the v2.0
+      # systems revert to the previous slot on next boot otherwise.
+      # See `OvcsVehicle.FirmwareValidator`.
+      OvcsVehicle.FirmwareValidator,
       # Create a child that runs the Flutter embedder.
       # The `:app_name` matches this application, since it contains the AOT bundle at `priv/flutter_app`.
       # See the doc annotation for `create_child/1` for all valid options.

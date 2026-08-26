@@ -46,6 +46,7 @@ defmodule BridgeFirmware.MixProject do
     [
       {:ovcs_base_can_system_rpi3a,
        github: "open-vehicle-control-system/ovcs_base_can_system_rpi3a",
+       tag: "v2.0.4",
        runtime: false,
        nerves: [compile: false]}
     ]
@@ -55,6 +56,7 @@ defmodule BridgeFirmware.MixProject do
     [
       {:ovcs_base_can_system_rpi4,
        github: "open-vehicle-control-system/ovcs_base_can_system_rpi4",
+       tag: "v2.0.4",
        runtime: false,
        nerves: [compile: false]}
     ]

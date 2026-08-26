@@ -16,6 +16,7 @@ Index for the Open Vehicle Control System guides. For a high-level project overv
 ### Hardware
 
 - [Hardware Architecture](./hardware_architecture.md) — design principles, component layout, CAN bus topology and bitrates.
+- [Toolchain and OTP Versions](./toolchain_and_otp.md) — why the host Elixir/OTP pin in `mise.toml` is coupled to each Nerves target's OTP version, and the two ways out of the current split.
 - [Running on Hardware](./running_hardware.md) — Nerves targets, the `ovcs` CLI for build / burn / OTA upload, attach / connect for runtime debugging.
 - [OVCS1 Wiring Reference](../vehicles/ovcs1/WIRING.md) — pin-level wiring for the OVCS1 vehicle (Leaf harness, iBooster, steering pump, Polo CAN bus).
 

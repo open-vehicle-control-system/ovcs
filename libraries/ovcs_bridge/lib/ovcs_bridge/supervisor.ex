@@ -85,9 +85,7 @@ defmodule OvcsBridge.Supervisor do
             :ok
 
           {:error, reason} ->
-            Logger.error(
-              "OvcsBridge.Supervisor: failed to start #{app}: #{inspect(reason)}"
-            )
+            Logger.error("OvcsBridge.Supervisor: failed to start #{app}: #{inspect(reason)}")
         end
     end
   end

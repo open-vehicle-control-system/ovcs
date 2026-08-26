@@ -107,12 +107,19 @@ defmodule OvcsVehicle.Scaffold do
     repo_root = Keyword.get(opts, :repo_root) || raise "repo_root is required for firmware copy"
     create_opts = Keyword.take(opts, [:force])
 
-    copy_firmware_side(target_dir, repo_root, :vms,
-      Keyword.fetch!(assigns, :vms_target), create_opts)
+    copy_firmware_side(
+      target_dir,
+      repo_root,
+      :vms,
+      Keyword.fetch!(assigns, :vms_target),
+      create_opts
+    )
 
     if Keyword.get(assigns, :infotainment, true) do
       case Keyword.get(assigns, :infotainment_target) do
-        nil -> :ok
+        nil ->
+          :ok
+
         target ->
           copy_firmware_side(target_dir, repo_root, :infotainment, target, create_opts)
       end
