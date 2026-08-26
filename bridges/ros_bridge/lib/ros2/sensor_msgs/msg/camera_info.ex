@@ -20,9 +20,19 @@ defmodule Ros2.SensorMsgs.Msg.CameraInfo do
     * After `Header` (tail 4-aligned via string padding) the two
       `uint32`s are 4-aligned naturally.
     * After `distortion_model` (string, 4-aligned tail), the unbounded
-      `float64[] D` needs its u32 length prefix at offset 4-aligned
-      (fine) and then 8-alignment before the floats.
-      `encode_float64_sequence/1` handles the 4-byte gap internally.
+      `float64[] D` needs its u32 length prefix at a 4-aligned offset
+      (fine) and then 8-alignment before the floats. How much padding
+      that takes depends on the *actual* offset — `frame_id` lengths
+      differing by one character move the prefix between the two
+      8-residues — so `append_float64_sequence/2` is buffer-aware and
+      `parse_float64_sequence/2` is told the body size.
+
+  Both the encoder and the parser assume this message starts at the
+  encapsulated-body origin, which is what makes `byte_size(buffer)` a
+  valid CDR offset. That holds for CameraInfo on its own topic and as
+  the first field of `SetCameraInfo_Request`. Embedding it at a
+  non-8-aligned offset inside some larger message would need the true
+  offset threaded in from the outermost parser.
     * The fixed `float64[9]` arrays that follow continue an 8-aligned
       run — no extra padding needed.
     * After the last `float64[12]`, two `uint32`s are 4-aligned by
@@ -62,7 +72,7 @@ defmodule Ros2.SensorMsgs.Msg.CameraInfo do
     |> Kernel.<>(encode_uint32(msg.height))
     |> Kernel.<>(encode_uint32(msg.width))
     |> Kernel.<>(encode_string(msg.distortion_model))
-    |> Kernel.<>(encode_float64_sequence(msg.d))
+    |> append_float64_sequence(msg.d)
     |> Kernel.<>(encode_float64_array_fixed(msg.k, 9))
     |> Kernel.<>(encode_float64_array_fixed(msg.r, 9))
     |> Kernel.<>(encode_float64_array_fixed(msg.p, 12))
@@ -72,18 +82,19 @@ defmodule Ros2.SensorMsgs.Msg.CameraInfo do
   end
 
   def parse(payload) do
+    # Anchors the CDR offset used for `D`'s 8-alignment (see moduledoc).
+    body_size = byte_size(payload)
+
     with {:ok, header, payload} <- Header.parse(payload),
-         <<height::little-unsigned-integer-size(32),
-           width::little-unsigned-integer-size(32),
+         <<height::little-unsigned-integer-size(32), width::little-unsigned-integer-size(32),
            payload::binary>> <- payload,
          {:ok, distortion_model, payload} <- parse_string(payload),
-         {:ok, d, payload} <- parse_float64_sequence(payload),
+         {:ok, d, payload} <- parse_float64_sequence(payload, body_size),
          {:ok, k, payload} <- parse_float64_array(payload, 9),
          {:ok, r, payload} <- parse_float64_array(payload, 9),
          {:ok, p, payload} <- parse_float64_array(payload, 12),
          <<binning_x::little-unsigned-integer-size(32),
-           binning_y::little-unsigned-integer-size(32),
-           payload::binary>> <- payload,
+           binning_y::little-unsigned-integer-size(32), payload::binary>> <- payload,
          {:ok, roi, payload} <- RegionOfInterest.parse(payload) do
       {:ok,
        %__MODULE__{

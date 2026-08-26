@@ -59,18 +59,23 @@ defmodule Ros2.Common do
         <<len::little-unsigned-integer-size(32), bytes::binary>>
       end
 
-      def parse_string(<<len::little-unsigned-integer-size(32), string::binary-size(len), payload::binary>>) do
+      def parse_string(
+            <<len::little-unsigned-integer-size(32), string::binary-size(len), payload::binary>>
+          ) do
         # Calculate padding to align to 4-byte boundary
         total_size = 4 + len
         padding = rem(4 - rem(total_size, 4), 4)
 
-        payload = case byte_size(payload) do
-          size when size > padding ->
-            <<_padding::binary-size(padding), payload::binary>> = payload
-            payload
-          _ ->
-            payload
-        end
+        payload =
+          case byte_size(payload) do
+            size when size > padding ->
+              <<_padding::binary-size(padding), payload::binary>> = payload
+              payload
+
+            _ ->
+              payload
+          end
+
         {:ok, string |> String.trim_trailing(<<0>>), payload}
       rescue
         _ -> {:error, :malformed, :string}
@@ -149,19 +154,31 @@ defmodule Ros2.Common do
         <<byte_size(bytes)::little-unsigned-integer-size(32), bytes::binary>>
       end
 
-      # Unbounded `float64[]` — 4-byte LE length prefix, 4-byte
-      # padding to reach 8-alignment (the caller must have already
-      # placed the prefix on a 4-aligned offset, which is the
-      # natural state since u32 is 4-aligned), then the run.
-      def encode_float64_sequence(values) when is_list(values) do
-        prefix = <<length(values)::little-unsigned-integer-size(32)>>
-        # The prefix is 4 bytes; align to 8 before the float run.
-        # We do this relative to a hypothetical body where the prefix
-        # has just been appended — i.e. add 4 bytes of padding.
-        body =
-          Enum.reduce(values, <<>>, fn value, acc -> acc <> encode_float64(value) end)
+      # Unbounded `float64[]` — 4-byte LE length prefix, then the
+      # float run 8-aligned. Takes the in-progress body buffer rather
+      # than returning standalone bytes: the padding depends on where
+      # the prefix actually lands, which only the buffer knows. A
+      # field-only version cannot be correct — e.g. a `frame_id` of
+      # 11 vs 12 characters shifts the prefix between the two
+      # 8-residues, needing 4 bytes of padding in one case and 0 in
+      # the other.
+      #
+      # An empty sequence gets no padding at all: Fast-CDR's
+      # `serialize_array` returns before aligning when the element
+      # count is 0, so a `float64[]` of length 0 is just the prefix.
+      def append_float64_sequence(buffer, values)
+          when is_binary(buffer) and is_list(values) do
+        buffer = buffer <> <<length(values)::little-unsigned-integer-size(32)>>
 
-        prefix <> <<0::size(4 * 8)>> <> body
+        case values do
+          [] ->
+            buffer
+
+          _ ->
+            Enum.reduce(values, align_to(buffer, 8), fn value, acc ->
+              acc <> encode_float64(value)
+            end)
+        end
       end
 
       # Unbounded sequence of an inner CDR struct. `encode_one` is a
@@ -187,19 +204,31 @@ defmodule Ros2.Common do
       end
 
       # Unbounded `float64[]` parser. Inverse of
-      # `encode_float64_sequence/1`: 4-byte LE length prefix, 4 bytes
-      # padding to reach 8-alignment, then `len` little-endian
-      # float64s. Caller must have advanced the buffer to a 4-aligned
-      # offset before invoking this.
-      defp parse_float64_sequence(<<
-             len::little-unsigned-integer-size(32),
-             _pad::binary-size(4),
-             rest::binary
-           >>) do
+      # `append_float64_sequence/2`, and it needs the same offset
+      # information the encoder had: `body_size` is the size of the
+      # full encapsulated body, so `body_size - byte_size(payload)`
+      # is the current offset from the body origin. A fixed padding
+      # skip cannot be correct for the same reason the encoder's
+      # couldn't. Zero-length sequences carry no padding.
+      defp parse_float64_sequence(payload, body_size) when is_integer(body_size) do
+        case payload do
+          <<len::little-unsigned-integer-size(32), rest::binary>> ->
+            offset_after_prefix = body_size - byte_size(payload) + 4
+            take_float64_run(rest, len, offset_after_prefix)
+
+          _ ->
+            {:error, :malformed, :float64_sequence}
+        end
+      end
+
+      defp take_float64_run(rest, 0, _offset), do: {:ok, [], rest}
+
+      defp take_float64_run(rest, len, offset) do
+        pad = rem(8 - rem(offset, 8), 8)
         bytes_needed = len * 8
 
         case rest do
-          <<floats::binary-size(bytes_needed), tail::binary>> ->
+          <<_pad::binary-size(pad), floats::binary-size(bytes_needed), tail::binary>> ->
             values = for <<v::little-signed-float-size(64) <- floats>>, do: v
             {:ok, values, tail}
 
@@ -207,8 +236,6 @@ defmodule Ros2.Common do
             {:error, :malformed, :float64_sequence}
         end
       end
-
-      defp parse_float64_sequence(_), do: {:error, :malformed, :float64_sequence}
 
       # Strip `n` bytes of alignment padding given the current offset
       # from the body origin. Used by parsers that need to skip CDR
