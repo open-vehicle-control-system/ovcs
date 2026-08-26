@@ -41,7 +41,7 @@ timeout 15 bash -c '
     sleep 1
   done
 ' || {
-  echo "calibrator: bridge topics not visible — is `./ovcs run ovcs_mini` actually running?" >&2
+  echo "calibrator: bridge topics not visible — is './ovcs run ovcs_mini' actually running?" >&2
   exit 1
 }
 echo "calibrator: bridge topics found"
