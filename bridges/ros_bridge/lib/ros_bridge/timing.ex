@@ -2,14 +2,28 @@ defmodule RosBridge.Timing do
   @moduledoc """
   Time-conversion helpers shared by every publisher in the bridge.
 
-  Camera and sensor drivers tag their samples with
-  `System.monotonic_time(:nanosecond)` — or, on the perception
-  target, libcamera's `SensorTimestamp`, which also comes from
-  `CLOCK_MONOTONIC`. Monotonic time has no relation to wall
-  clock, but every ROS message's `std_msgs/Header` expects a
-  wall-clock stamp — otherwise downstream `ApproximateTime`
-  matchers (`stereo_image_proc`, `tf2`, …) compare nonsensical
-  timestamps across topics.
+  Drivers tag their samples with `System.monotonic_time(:nanosecond)`.
+  Monotonic time has no relation to wall clock, but every ROS
+  message's `std_msgs/Header` expects a wall-clock stamp — otherwise
+  downstream `ApproximateTime` matchers (`stereo_image_proc`, `tf2`,
+  …) compare nonsensical timestamps across topics.
+
+  ## Two monotonic clocks, not one
+
+  Erlang's monotonic time is *not* the kernel's `CLOCK_MONOTONIC`: the
+  VM picks its own zero at startup, so the two differ by a large fixed
+  offset (on the order of 5.8e17 ns — about 18 years — on a typical
+  Linux boot). A timestamp from one clock projected with the other's
+  offset lands nearly two decades off, and since
+  `builtin_interfaces/Time.sec` is an int32 the result silently wraps
+  negative.
+
+  So `wallclock_of/1` and `time_message_for/1` take Erlang monotonic
+  time, and anything sourced from the kernel clock — libcamera's
+  `SensorTimestamp`, or the C++ capture helper's `steady_clock`
+  fallback, both `CLOCK_MONOTONIC` — must go through
+  `from_kernel_monotonic/1` at the driver boundary, so that
+  `Frame.capture_ns` means exactly one thing everywhere.
 
   `wallclock_of/1` projects a monotonic capture time onto wall
   clock by sampling the offset between the two clocks at call
@@ -33,6 +47,19 @@ defmodule RosBridge.Timing do
     monotonic_now = System.monotonic_time(:nanosecond)
     wallclock_now = System.system_time(:nanosecond)
     monotonic_nanoseconds + (wallclock_now - monotonic_now)
+  end
+
+  @doc """
+  Convert a kernel `CLOCK_MONOTONIC` timestamp (in nanoseconds) into
+  the Erlang monotonic timescale the rest of this module expects.
+
+  `:os.perf_counter/1` reads `CLOCK_MONOTONIC` on Linux, so sampling
+  it alongside `System.monotonic_time/1` recovers the fixed offset
+  between the two clocks. Both samples are taken microseconds apart,
+  which is well inside the jitter we already tolerate.
+  """
+  def from_kernel_monotonic(kernel_nanoseconds) when is_integer(kernel_nanoseconds) do
+    kernel_nanoseconds - :os.perf_counter(:nanosecond) + System.monotonic_time(:nanosecond)
   end
 
   @doc """
