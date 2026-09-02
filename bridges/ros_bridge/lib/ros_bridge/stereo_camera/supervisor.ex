@@ -11,6 +11,11 @@ defmodule RosBridge.StereoCamera.Supervisor do
            + `<topic_prefix>/<side>/camera_info`,
          - `<topic_prefix>/disparity` (DisparityImage),
          - `<topic_prefix>/depth/image_rect` (Image 32FC1, metres),
+         - `<topic_prefix>/depth/camera_info` — the same intrinsics as
+           the left camera, republished as a *sibling* of the depth
+           image. Consumers resolve a camera_info by convention from
+           the image's own namespace, so without this a viewer cannot
+           project the depth image and silently renders nothing,
          - `<topic_prefix>/disparity/image` (Image 32FC1, pixels) only
            when `:publish_disparity_image` is set — see below.
 
@@ -219,6 +224,7 @@ defmodule RosBridge.StereoCamera.Supervisor do
       disparity_image_topic:
         config.publish_disparity_image && "#{config.topic_prefix}/disparity/image",
       depth_topic: "#{config.topic_prefix}/depth/image_rect",
+      depth_camera_info_topic: "#{config.topic_prefix}/depth/camera_info",
       pair_tolerance_ms: config.pair_tolerance_ms
     ]
 
