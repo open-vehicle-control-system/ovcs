@@ -110,33 +110,28 @@ defmodule RosBridge.Perception.FusionTest do
     end
   end
 
-  describe "outline/2" do
-    test "produces LINE_LIST pairs that close the rectangle" do
-      points = Fusion.outline(box(10, 20, 110, 220), 1)
-
-      # 4 edges x 2 endpoints.
-      assert length(points) == 8
-
-      assert points == [
+  describe "perimeter/2" do
+    test "walks the corners once, leaving the loop to close itself" do
+      assert Fusion.perimeter(box(10, 20, 110, 220), 1) == [
                {10.0, 20.0},
                {110.0, 20.0},
-               {110.0, 20.0},
                {110.0, 220.0},
-               {110.0, 220.0},
-               {10.0, 220.0},
-               {10.0, 220.0},
-               {10.0, 20.0}
+               {10.0, 220.0}
              ]
     end
 
-    test "subdividing keeps the pair count at 8 x segments" do
-      assert length(Fusion.outline(box(0, 0, 100, 100), 4)) == 32
+    test "subdividing gives 4 x segments vertices, with no repeats" do
+      vertices = Fusion.perimeter(box(0, 0, 100, 100), 4)
+
+      assert length(vertices) == 16
+      # A repeated corner would draw a zero-length segment and, worse,
+      # mean the edge counts were wrong.
+      assert length(Enum.uniq(vertices)) == 16
     end
 
     test "subdivision points lie on the edge" do
-      [_a, b | _] = Fusion.outline(box(0, 0, 100, 0), 2)
-      # First edge halved: the midpoint of (0,0)..(100,0).
-      assert b == {50.0, 0.0}
+      [_corner, second | _] = Fusion.perimeter(box(0, 0, 100, 0), 2)
+      assert second == {50.0, 0.0}
     end
   end
 

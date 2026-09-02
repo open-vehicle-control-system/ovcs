@@ -63,18 +63,20 @@ defmodule RosBridge.Perception.Fusion do
   end
 
   @doc """
-  The outline of `box` as `LINE_LIST` vertex pairs — consecutive
-  points taken two at a time as segments.
+  The perimeter of `box` as ordered vertices for a `LINE_LOOP` — the
+  loop closes itself, so the last vertex is not repeated.
 
-  Each edge is subdivided into `segments` pieces rather than drawn as
-  one line. A straight edge in rectified pixels is a *curve* in raw
-  camera pixels, and the overlay is drawn on the raw image: measured
-  on the Mini, rectification moves a pixel by 10 on average and up to
-  23, so an edge drawn corner-to-corner visibly bows away from the
+  Each edge is subdivided into `segments` pieces rather than drawn
+  corner to corner. A straight edge in rectified pixels is a *curve*
+  in raw camera pixels, and the overlay is drawn on the raw image:
+  measured on the Mini, rectification moves a pixel by 10 on average
+  and up to 23, so an undivided edge visibly bows away from the
   object. Subdividing lets `remap/4` follow the distortion.
+
+  Returns `4 * segments` vertices.
   """
-  @spec outline(map(), pos_integer()) :: [{float(), float()}]
-  def outline(box, segments) when segments >= 1 do
+  @spec perimeter(map(), pos_integer()) :: [{float(), float()}]
+  def perimeter(box, segments) when segments >= 1 do
     corners = [
       {box.x0, box.y0},
       {box.x1, box.y0},
@@ -87,14 +89,13 @@ defmodule RosBridge.Perception.Fusion do
     |> Enum.flat_map(fn {from, to} -> subdivide(from, to, segments) end)
   end
 
-  # One edge as `segments` consecutive pairs: a..b, b..c, c..d.
+  # An edge's vertices, excluding its end corner — the next edge
+  # starts there, and repeating it would double every corner.
   defp subdivide({x0, y0}, {x1, y1}, segments) do
-    at = fn i ->
+    Enum.map(0..(segments - 1), fn i ->
       t = i / segments
       {x0 + (x1 - x0) * t, y0 + (y1 - y0) * t}
-    end
-
-    Enum.flat_map(0..(segments - 1), fn i -> [at.(i), at.(i + 1)] end)
+    end)
   end
 
   @doc """

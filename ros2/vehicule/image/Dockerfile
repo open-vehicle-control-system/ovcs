@@ -16,6 +16,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ros-jazzy-rmw-zenoh-cpp \
         ros-jazzy-foxglove-bridge \
+        ros-jazzy-foxglove-msgs \
         ros-jazzy-joy-linux \
         ros-jazzy-vision-msgs \
         ros-jazzy-image-transport-plugins \
