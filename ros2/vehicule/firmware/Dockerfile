@@ -42,4 +42,11 @@ RUN apk add --no-cache curl \
 # The kernel asks for bare filenames, so they land at the volume root.
 # iwlwifi probes long before balenaEngine starts containers, so the
 # first deploy only stages the files — the reboot is what binds them.
-CMD ["sh", "-c", "cp -v /firmware/* /extra-firmware/ && echo 'firmware staged; reboot to bind iwlwifi'"]
+#
+# Then idle instead of exiting. The work is a one-shot, but a service
+# that exits is one the supervisor keeps trying to bring back, and no
+# `restart:` value avoids that (see ../docker-compose.yml). Staying up
+# costs an idle `tail` and makes the service's state legible: running
+# means the firmware is staged. `tail -f /dev/null` rather than
+# `sleep infinity` because busybox `sleep` does not take `infinity`.
+CMD ["sh", "-c", "cp -v /firmware/* /extra-firmware/ && echo 'firmware staged; reboot to bind iwlwifi' && exec tail -f /dev/null"]

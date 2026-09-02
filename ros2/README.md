@@ -138,8 +138,9 @@ in that file lists each omission and why.
   `foxglove_bridge`, each with its own `build:` (the balena builder
   tags per service, so one service can't reference another's tag).
   Autonomy nodes join here as additional services.
-- `vehicule/firmware/Dockerfile` — one-shot service that stages the
-  AX210's `iwlwifi` blobs into balenaOS's `extra-firmware` volume.
+- `vehicule/firmware/Dockerfile` — stages the AX210's `iwlwifi` blobs
+  into balenaOS's `extra-firmware` volume, then idles rather than
+  exiting (a service that exits is one the supervisor keeps replacing).
   balenaOS ships the driver but not firmware this new, so without it
   the PCIe Wi-Fi card never binds and the access point cannot exist.
 - `vehicule/host/` — NetworkManager keyfile templates that make the Pi
