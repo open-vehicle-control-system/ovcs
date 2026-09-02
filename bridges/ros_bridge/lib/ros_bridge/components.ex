@@ -79,6 +79,18 @@ defmodule RosBridge.Components do
     [{RosBridge.Publishers.StaticTransform, opts}]
   end
 
+  def start(:hailo_detector, opts) do
+    # Two children rather than one: the Port owner is generic
+    # inference and the publisher is perception policy, and a Hailo
+    # fault should restart the Port without disturbing anything else.
+    [
+      {RosBridge.Inference.Hailo,
+       hef_path: Keyword.fetch!(opts, :hef_path),
+       score_threshold: Keyword.get(opts, :score_threshold, 0.4)},
+      {RosBridge.Publishers.Detections, Keyword.drop(opts, [:hef_path, :score_threshold])}
+    ]
+  end
+
   def start(:stereo_camera, opts) do
     # Everything :stereo_camera needs to do — start two camera
     # drivers, the SGBM backend, and the unified publisher that

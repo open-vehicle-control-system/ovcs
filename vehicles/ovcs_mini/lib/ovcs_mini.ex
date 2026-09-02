@@ -122,7 +122,10 @@ defmodule OvcsMini do
       components: [
         :heartbeat,
         stereo_transforms(),
-        stereo_component(RosBridge.Camera.LibCamera, :target)
+        stereo_component(RosBridge.Camera.LibCamera, :target),
+        # After :stereo_camera — the detector registers on that
+        # unit's backend while starting.
+        hailo_detector()
       ]
     }
   end
@@ -152,6 +155,37 @@ defmodule OvcsMini do
        }
      ]}
   end
+
+  # YOLO on the Hailo-8, fused with the stereo depth map. Target
+  # only: the accelerator is a physical card on the perception Pi, and
+  # on the host the component would start, fail to find /dev/hailo0,
+  # and log an error every boot for no benefit.
+  #
+  # Costs the stereo path nothing worth reclaiming. Inference runs on
+  # silicon that is otherwise idle at 3.3 ms a frame, and the input is
+  # the rectified left image the backend already produced — no extra
+  # decode, no extra rectify. The only shared work is a median over
+  # each box.
+  #
+  # Grayscale in, deliberately: measured on the device against
+  # ultralytics' bus.jpg, gray scored within 0.01 of colour
+  # (person 0.881 vs 0.888), so the pipeline's existing gray frame is
+  # worth exactly as much here as a colour one we would have to decode
+  # separately.
+  defp hailo_detector do
+    {:hailo_detector,
+     hef_path: Path.join(priv_models_dir(), "yolov8n.hef"),
+     # 0.4 is where a yolov8n at this resolution stops reporting
+     # furniture as animals. Measured at 480x270 the model still
+     # scores real people at 0.74-0.91, so this leaves plenty of
+     # headroom above the noise.
+     score_threshold: 0.4,
+     # The stereo unit's own frame, since boxes are positioned in its
+     # rectified pixels.
+     frame_id: "stereo_left"}
+  end
+
+  defp priv_models_dir, do: :ovcs_mini |> :code.priv_dir() |> Path.join("models")
 
   # Self-contained stereo perception block. Inherits most defaults
   # from `RosBridge.StereoCamera.Supervisor` (backend

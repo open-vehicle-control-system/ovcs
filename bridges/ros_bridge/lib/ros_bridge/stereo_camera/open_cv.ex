@@ -513,7 +513,10 @@ defmodule RosBridge.StereoCamera.OpenCV do
       valid_w: max(width - (state.min_disparity + state.num_disparities) - state.block_size, 0),
       valid_h: max(height - state.block_size, 0),
       cloud: cloud,
-      cloud_points: points
+      cloud_points: points,
+      left_rectified: reference_image,
+      depth_m: depth_m,
+      principal_point: state.principal_point
     }
   end
 

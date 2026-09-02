@@ -14,11 +14,11 @@ defmodule RosBridge.MixProject do
     ]
   end
 
-  # The camera_capture native C++ binary only builds on :rpi5 — it
-  # links libcamera, which only exists on the perception target. On
-  # every other target we skip elixir_make entirely so `mix compile`
-  # doesn't shell out to make. (Hailo inference is no longer a Port
-  # binary; the nx_hailo NIF replaces it — see deps/0.)
+  # The native C++ binaries only build on :rpi5 — camera_capture
+  # links libcamera and hailo_detect links libhailort, neither of
+  # which exists outside the perception target's sysroot. On every
+  # other target we skip elixir_make entirely so `mix compile`
+  # doesn't shell out to make.
   defp compilers do
     base = Mix.compilers()
     if Mix.target() == :rpi5, do: [:elixir_make] ++ base, else: base
