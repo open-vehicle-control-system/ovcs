@@ -15,11 +15,14 @@ defmodule RosBridge.Inference.Supervisor do
   times a minute and stops there, leaving the stereo pipeline
   untouched. Detections go away; depth does not.
 
-  `:rest_for_one` because the publisher registers with the Port owner's
-  process at `init/1` — if `Hailo` restarts, the publisher's inflight
-  sequence and reply routing refer to a process that no longer exists,
-  so it has to come back too. Not the reverse: `Hailo` knows nothing
-  about who submits to it.
+  `:rest_for_one` because a `Hailo` restart strands the publisher:
+  `Detections` holds the `Result` whose frame is at the accelerator
+  and waits for a reply keyed on its sequence number. That reply is
+  never coming, and nothing times it out on the publisher's side, so
+  it would sit holding a stale depth map and submitting frames whose
+  answers it then discards as stale. Restarting it alongside clears
+  that. Not the reverse: `Hailo` is told where to reply on every
+  call and holds nothing across one.
   """
   use Supervisor
 

@@ -444,6 +444,12 @@ defmodule RosBridge.StereoCamera.OpenCV do
 
   # 2) Apply the precomputed undistort+rectify LUT for this side.
   #    No-op when rectification is disabled (rectification_maps == nil).
+  # The `map_x` half of the left map — `CV_16SC2`, so it carries both
+  # axes interleaved and `map_y` is the interpolation table, not a
+  # coordinate. See `RosBridge.Perception.Fusion.remap/4`.
+  defp left_rectification_map(%{rectification_maps: %{left: {map_x, _map_y}}}), do: map_x
+  defp left_rectification_map(_state), do: nil
+
   defp rectify_image(image, nil, _side), do: image
 
   defp rectify_image(image, %{left: maps_left, right: maps_right}, side) do
@@ -516,7 +522,8 @@ defmodule RosBridge.StereoCamera.OpenCV do
       cloud_points: points,
       left_rectified: reference_image,
       depth_m: depth_m,
-      principal_point: state.principal_point
+      principal_point: state.principal_point,
+      rectification_map_left: left_rectification_map(state)
     }
   end
 

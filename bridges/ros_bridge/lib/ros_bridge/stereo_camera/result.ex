@@ -65,6 +65,12 @@ defmodule RosBridge.StereoCamera.Result do
       anything unprojecting a pixel to metres; the image centre is a
       close-enough-looking substitute that silently biases every
       position.
+    * `:rectification_map_left` — OpenCV's fixed-point `CV_16SC2`
+      map for the left camera, or `nil` when uncalibrated. Carried so
+      a consumer can map a rectified pixel *back* to the raw image —
+      which is what lets detection boxes be drawn on the `image_raw`
+      stream the bridge already publishes, instead of adding a second
+      rectified stream to the wire.
     * `:valid_x`, `:valid_y`, `:valid_w`, `:valid_h` — pixel
       bounding box inside which disparity values are meaningful.
       For SGBM this is the region away from the image borders
@@ -94,7 +100,13 @@ defmodule RosBridge.StereoCamera.Result do
 
   # Not enforced: a backend that has no pixels to hand on (or a test
   # building a Result by hand) should not be forced to invent them.
-  defstruct @enforce_keys ++ [left_rectified: nil, depth_m: nil, principal_point: nil]
+  defstruct @enforce_keys ++
+              [
+                left_rectified: nil,
+                depth_m: nil,
+                principal_point: nil,
+                rectification_map_left: nil
+              ]
 
   @type t :: %__MODULE__{
           capture_ns: integer(),
@@ -117,6 +129,7 @@ defmodule RosBridge.StereoCamera.Result do
           cloud_points: non_neg_integer(),
           left_rectified: Evision.Mat.t() | nil,
           depth_m: Evision.Mat.t() | nil,
-          principal_point: {float(), float()} | nil
+          principal_point: {float(), float()} | nil,
+          rectification_map_left: Evision.Mat.t() | nil
         }
 end

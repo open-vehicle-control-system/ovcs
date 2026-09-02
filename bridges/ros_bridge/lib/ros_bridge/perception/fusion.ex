@@ -62,6 +62,71 @@ defmodule RosBridge.Perception.Fusion do
     }
   end
 
+  @doc """
+  The outline of `box` as `LINE_LIST` vertex pairs — consecutive
+  points taken two at a time as segments.
+
+  Each edge is subdivided into `segments` pieces rather than drawn as
+  one line. A straight edge in rectified pixels is a *curve* in raw
+  camera pixels, and the overlay is drawn on the raw image: measured
+  on the Mini, rectification moves a pixel by 10 on average and up to
+  23, so an edge drawn corner-to-corner visibly bows away from the
+  object. Subdividing lets `remap/4` follow the distortion.
+  """
+  @spec outline(map(), pos_integer()) :: [{float(), float()}]
+  def outline(box, segments) when segments >= 1 do
+    corners = [
+      {box.x0, box.y0},
+      {box.x1, box.y0},
+      {box.x1, box.y1},
+      {box.x0, box.y1}
+    ]
+
+    corners
+    |> Enum.zip(tl(corners) ++ [hd(corners)])
+    |> Enum.flat_map(fn {from, to} -> subdivide(from, to, segments) end)
+  end
+
+  # One edge as `segments` consecutive pairs: a..b, b..c, c..d.
+  defp subdivide({x0, y0}, {x1, y1}, segments) do
+    at = fn i ->
+      t = i / segments
+      {x0 + (x1 - x0) * t, y0 + (y1 - y0) * t}
+    end
+
+    Enum.flat_map(0..(segments - 1), fn i -> [at.(i), at.(i + 1)] end)
+  end
+
+  @doc """
+  Map a rectified pixel back to its raw camera pixel, using the
+  fixed-point rectification map OpenCV produced (`CV_16SC2` —
+  interleaved int16 x, y per rectified pixel), passed in as its raw
+  binary.
+
+  This is what lets a box computed in rectified coordinates be drawn
+  on the raw image the pipeline actually publishes, rather than
+  putting a second, rectified image stream on the wire.
+
+  Out-of-range coordinates return `nil`; the caller drops that vertex
+  rather than drawing to a garbage position.
+  """
+  @spec remap(binary(), pos_integer(), pos_integer(), {number(), number()}) ::
+          {float(), float()} | nil
+  def remap(map_binary, width, height, {x, y}) do
+    column = x |> round() |> min(width - 1) |> max(0)
+    row = y |> round() |> min(height - 1) |> max(0)
+    offset = (row * width + column) * 4
+
+    case map_binary do
+      <<_skip::binary-size(offset), raw_x::little-signed-16, raw_y::little-signed-16,
+        _rest::binary>> ->
+        {raw_x / 1.0, raw_y / 1.0}
+
+      _ ->
+        nil
+    end
+  end
+
   # Shrink a span towards its centre, then clamp to the image. The
   # clamp matters: a detection cut off at the frame edge legitimately
   # has a box extending past it.

@@ -70,11 +70,15 @@ object goes.
 |---|---|---|
 | `/stereo/detections/markers` | `visualization_msgs/MarkerArray` | Foxglove's 3D panel |
 | `/stereo/detections` | `vision_msgs/Detection3DArray` | nav2 and other consumers |
+| `/stereo/left/detections` | `visualization_msgs/ImageMarker` | boxes drawn on the Image panel |
 
-Both are published because neither covers the other. Foxglove's 3D
-panel **does not support `vision_msgs`** — publishing only that puts
-the data on the wire with nothing to draw it. Markers, conversely,
-carry no class label, score or covariance in machine-readable form.
+The first two are both published because neither covers the other.
+Foxglove's 3D panel **does not support `vision_msgs`** — publishing
+only that puts the data on the wire with nothing to draw it. Markers,
+conversely, carry no class label, score or covariance in
+machine-readable form. (`ros-jazzy-vision-msgs` is installed in the
+`vehicule` image, so `foxglove_bridge` can deserialise the
+Detection3DArray too.)
 
 Each detection draws two markers: a `CUBE` coloured red-to-green by
 score, and a `TEXT_VIEW_FACING` label above it reading
@@ -82,6 +86,37 @@ score, and a `TEXT_VIEW_FACING` label above it reading
 do not flicker between frames, and ids that vanish get an explicit
 `DELETE` — otherwise a box that goes away lingers on screen and reads
 as a detection that is still there.
+
+## 2D boxes on the camera image
+
+`/stereo/left/detections` is the Image panel's annotation topic — set
+under the panel's *Annotations* section, which the checked-in layout
+already does for the left camera.
+
+**One message, every box.** ROS 2 has no `ImageMarkerArray`, and the
+Image panel takes a single message per annotation topic, so N
+detections would otherwise need N topics. `LINE_LIST` reads its
+`points` as independent pairs, so a rectangle is four pairs and any
+number of boxes fits in one marker; `outline_colors` then carries one
+colour per point, which is what keeps each box's score colour in a
+shared message.
+
+**The boxes are moved back into raw pixels first.** Detection happens
+on the rectified image, but the stream the panel shows is
+`image_raw`. Measured on the Mini those differ by ~10 px on average
+and up to 23 px on a 480-wide frame — enough that drawing rectified
+coordinates directly puts the box visibly beside the object. Each
+outline vertex is therefore mapped back through OpenCV's
+rectification map (`CV_16SC2`, read once and cached), which costs
+nothing on the wire compared with publishing a second rectified image
+stream.
+
+Because a straight edge in rectified space is a curve in raw space,
+each edge is subdivided (`:outline_segments`, default 4) and every
+vertex mapped individually — so one box is 32 points.
+
+No text labels here: `ImageMarker` has no text type. The class, score
+and distance are on the 3D panel's markers.
 
 ## Grayscale is fine
 
