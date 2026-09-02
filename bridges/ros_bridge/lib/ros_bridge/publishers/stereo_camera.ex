@@ -89,6 +89,7 @@ defmodule RosBridge.Publishers.StereoCamera do
     disparity_topic = Keyword.fetch!(opts, :disparity_topic)
     disparity_image_topic = Keyword.get(opts, :disparity_image_topic)
     depth_topic = Keyword.fetch!(opts, :depth_topic)
+    depth_camera_info_topic = Keyword.get(opts, :depth_camera_info_topic)
     left_opts = Keyword.fetch!(opts, :left)
     right_opts = Keyword.fetch!(opts, :right)
     width = Keyword.fetch!(opts, :width)
@@ -121,6 +122,7 @@ defmodule RosBridge.Publishers.StereoCamera do
        disparity_topic: disparity_topic,
        disparity_image_topic: disparity_image_topic,
        depth_topic: depth_topic,
+       depth_camera_info_topic: depth_camera_info_topic,
        # The depth + disparity outputs are anchored to the left
        # camera's frame, per ROS convention.
        stereo_frame_id: Keyword.fetch!(left_opts, :frame_id),
@@ -351,6 +353,17 @@ defmodule RosBridge.Publishers.StereoCamera do
 
     RosBridge.ZenohClient.publish(state.disparity_topic, DisparityImage, disparity_message)
     RosBridge.ZenohClient.publish(state.depth_topic, Image, depth_message)
+
+    # A depth image is only projectable with intrinsics, and consumers
+    # look for camera_info as a sibling of the image topic — ours lived
+    # only at `<prefix>/left/camera_info`, a different namespace, so
+    # viewers had no way to resolve it and drew nothing rather than
+    # complaining. The depth image is in the rectified left frame, so
+    # the left camera's info is the correct one to republish here.
+    with topic when is_binary(topic) <- state.depth_camera_info_topic,
+         {:ok, %{camera_info: %CameraInfo{} = left_info}} <- Map.fetch(state.sides, "left") do
+      RosBridge.ZenohClient.publish(topic, CameraInfo, %CameraInfo{left_info | header: header})
+    end
 
     # Same pixels as `disparity_message.image`, republished under a
     # bare `sensor_msgs/Image` type. `stereo_msgs/DisparityImage` is a
