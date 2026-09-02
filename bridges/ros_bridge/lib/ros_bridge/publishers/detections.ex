@@ -63,6 +63,7 @@ defmodule RosBridge.Publishers.Detections do
       result.
     * `:outline_segments` (`4`) — how finely each box edge is
       subdivided for the 2D overlay. See "Drawing on the raw image".
+    * `:label_font_size` (`12.0`) — 2D overlay label size, in pixels.
 
   ## Drawing on the raw image
 
@@ -87,7 +88,8 @@ defmodule RosBridge.Publishers.Detections do
   alias Ros2.StdMsgs.Msg.{ColorRGBA, Header}
   alias Ros2.VisionMsgs.Msg.{BoundingBox3D, Detection3D, Detection3DArray}
   alias Ros2.VisionMsgs.Msg.{ObjectHypothesis, ObjectHypothesisWithPose}
-  alias Ros2.VisualizationMsgs.Msg.{ImageMarker, Marker, MarkerArray}
+  alias Ros2.FoxgloveMsgs.Msg.{Color, ImageAnnotations, Point2, PointsAnnotation, TextAnnotation}
+  alias Ros2.VisualizationMsgs.Msg.{Marker, MarkerArray}
   alias RosBridge.Inference.Hailo
   alias RosBridge.Perception.Fusion
   alias RosBridge.StereoCamera.Result
@@ -111,6 +113,7 @@ defmodule RosBridge.Publishers.Detections do
   @default_marker_lifetime_ms 500
   @default_detect_every_n 1
   @default_outline_segments 4
+  @default_label_font_size 12.0
 
   @namespace "detections"
 
@@ -138,6 +141,7 @@ defmodule RosBridge.Publishers.Detections do
         |> Duration.from_milliseconds(),
       detect_every_n: Keyword.get(opts, :detect_every_n, @default_detect_every_n),
       outline_segments: Keyword.get(opts, :outline_segments, @default_outline_segments),
+      label_font_size: Keyword.get(opts, :label_font_size, @default_label_font_size),
       # The rectification map is constant, but reading a 500 KB Mat
       # to a binary every frame is not free — cache it, keyed on the
       # Mat itself so a calibration reload invalidates it.
@@ -381,43 +385,76 @@ defmodule RosBridge.Publishers.Detections do
 
   # ── 2D overlay on the raw left image ─────────────────────────────
 
-  # One ImageMarker, not one per box: ROS 2 has no ImageMarkerArray
-  # and the Image panel takes a single message per annotation topic,
-  # so every box goes into one LINE_LIST whose points are read in
-  # pairs.
+  # `foxglove_msgs/ImageAnnotations` rather than
+  # `visualization_msgs/ImageMarker`, because ImageMarker has no text
+  # type: a box drawn with it can never say what it is. Annotations
+  # carry the boxes and their labels in one message, and LINE_LOOP
+  # closes a rectangle in four points where a LINE_LIST of segment
+  # pairs needs eight.
   defp publish_overlay(positioned, header, %Result{} = result, state) do
     {map_binary, state} = rectification_map(result, state)
 
-    points =
-      positioned
-      |> Enum.flat_map(fn detection ->
-        detection.box
-        |> Fusion.outline(state.outline_segments)
-        |> Enum.map(&to_raw_pixel(&1, map_binary, result))
+    boxes =
+      Enum.map(positioned, fn detection ->
+        vertices =
+          detection.box
+          |> Fusion.perimeter(state.outline_segments)
+          |> Enum.map(&to_raw_pixel(&1, map_binary, result))
+          |> Enum.reject(&is_nil/1)
+          |> Enum.map(fn {x, y} -> %Point2{x: x, y: y} end)
+
+        %PointsAnnotation{
+          timestamp: header.stamp,
+          type: PointsAnnotation.line_loop(),
+          points: vertices,
+          outline_color: overlay_colour(detection.score),
+          outline_colors: [],
+          fill_color: %Color{a: 0.0},
+          thickness: 2.0
+        }
       end)
-      |> Enum.reject(&is_nil/1)
-      # A dropped vertex would pair the wrong points together and draw
-      # a segment across the image, so an odd count loses its tail.
-      |> drop_odd_tail()
 
-    colours = outline_colours(positioned, points, state)
+    labels =
+      Enum.map(positioned, fn detection ->
+        # Anchored just above the box's top-left corner, in raw
+        # pixels like everything else in this message.
+        {x, y} =
+          {detection.box.x0, detection.box.y0}
+          |> to_raw_pixel(map_binary, result)
+          |> Kernel.||({detection.box.x0, detection.box.y0})
 
-    RosBridge.ZenohClient.publish(state.overlay_topic, ImageMarker, %ImageMarker{
-      header: header,
-      ns: @namespace,
-      id: 0,
-      type: ImageMarker.line_list(),
-      action: ImageMarker.add(),
-      scale: 1.0,
-      outline_color: %ColorRGBA{r: 0.2, g: 0.9, b: 0.2, a: 1.0},
-      filled: 0,
-      fill_color: %ColorRGBA{a: 0.0},
-      lifetime: state.lifetime,
-      points: Enum.map(points, fn {x, y} -> %Point{x: x, y: y, z: 0.0} end),
-      outline_colors: colours
+        %TextAnnotation{
+          timestamp: header.stamp,
+          position: %Point2{x: x, y: max(y - 4.0, 10.0)},
+          text: label_text(detection),
+          font_size: state.label_font_size,
+          text_color: %Color{r: 1.0, g: 1.0, b: 1.0, a: 1.0},
+          # A dark plate behind the text, so a label over a bright
+          # part of the image is still readable.
+          background_color: %Color{r: 0.0, g: 0.0, b: 0.0, a: 0.6}
+        }
+      end)
+
+    RosBridge.ZenohClient.publish(state.overlay_topic, ImageAnnotations, %ImageAnnotations{
+      timestamp: header.stamp,
+      circles: [],
+      points: boxes,
+      texts: labels,
+      metadata: []
     })
 
     state
+  end
+
+  defp label_text(detection) do
+    "#{detection.label} #{:erlang.float_to_binary(detection.score, decimals: 2)} " <>
+      "#{:erlang.float_to_binary(detection.z, decimals: 2)}m"
+  end
+
+  # Same red-to-green ramp as the 3D markers, in foxglove_msgs/Color
+  # (float64) rather than std_msgs/ColorRGBA (float32).
+  defp overlay_colour(score) do
+    %Color{r: 1.0 - score, g: score, b: 0.15, a: 1.0}
   end
 
   # Without a calibration there is no map and no rectification, so the
@@ -428,27 +465,14 @@ defmodule RosBridge.Publishers.Detections do
     Fusion.remap(map_binary, result.width, result.height, vertex)
   end
 
-  defp drop_odd_tail(points) when rem(length(points), 2) == 0, do: points
-  defp drop_odd_tail(points), do: Enum.drop(points, -1)
-
-  # One colour per point, so each box keeps its own score colour in
-  # the shared marker. Every vertex of a box gets the same colour, and
-  # a box contributes 8 x outline_segments of them.
-  defp outline_colours(positioned, points, state) do
-    per_box = 8 * state.outline_segments
-
-    positioned
-    |> Enum.flat_map(fn detection ->
-      List.duplicate(%{colour_for(detection.score) | a: 1.0}, per_box)
-    end)
-    |> Enum.take(length(points))
-  end
-
   defp rectification_map(%Result{rectification_map_left: nil}, state) do
     {nil, state}
   end
 
-  defp rectification_map(%Result{rectification_map_left: map}, %{rectification_map: {map, binary}} = state) do
+  defp rectification_map(
+         %Result{rectification_map_left: map},
+         %{rectification_map: {map, binary}} = state
+       ) do
     {binary, state}
   end
 

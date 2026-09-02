@@ -70,7 +70,7 @@ object goes.
 |---|---|---|
 | `/stereo/detections/markers` | `visualization_msgs/MarkerArray` | Foxglove's 3D panel |
 | `/stereo/detections` | `vision_msgs/Detection3DArray` | nav2 and other consumers |
-| `/stereo/left/detections` | `visualization_msgs/ImageMarker` | boxes drawn on the Image panel |
+| `/stereo/left/detections` | `foxglove_msgs/ImageAnnotations` | labelled boxes on the Image panel |
 
 The first two are both published because neither covers the other.
 Foxglove's 3D panel **does not support `vision_msgs`** — publishing
@@ -87,36 +87,51 @@ do not flicker between frames, and ids that vanish get an explicit
 `DELETE` — otherwise a box that goes away lingers on screen and reads
 as a detection that is still there.
 
-## 2D boxes on the camera image
+## Labelled boxes on the camera image
 
 `/stereo/left/detections` is the Image panel's annotation topic — set
 under the panel's *Annotations* section, which the checked-in layout
-already does for the left camera.
+already does for the left camera. Each detection draws a `LINE_LOOP`
+box coloured red-to-green by score, with a `<class> <score>
+<distance>m` label above it on a dark backing plate.
 
-**One message, every box.** ROS 2 has no `ImageMarkerArray`, and the
-Image panel takes a single message per annotation topic, so N
-detections would otherwise need N topics. `LINE_LIST` reads its
-`points` as independent pairs, so a rectangle is four pairs and any
-number of boxes fits in one marker; `outline_colors` then carries one
-colour per point, which is what keeps each box's score colour in a
-shared message.
+**Why `foxglove_msgs` and not `visualization_msgs`.**
+`visualization_msgs/ImageMarker` was the first implementation and
+cannot carry text at all — it has no text type, so a box drawn with it
+can never say what it is. ROS 2 also has no `ImageMarkerArray`, and
+the Image panel takes one message per annotation topic, so N
+detections would have needed N topics.
+`foxglove_msgs/ImageAnnotations` solves both: boxes and labels in one
+message, and `LINE_LOOP` closes a rectangle in four points where a
+`LINE_LIST` of segment pairs needs eight.
+
+The cost is a dependency. `foxglove_msgs` is not in a ROS base
+install, so `ros-jazzy-foxglove-msgs` is installed in
+`ros2/vehicule/image/Dockerfile` — **without it `foxglove_bridge`
+cannot resolve the type and never advertises the topic**. Both the
+`vehicule` and `base` composes build from that one Dockerfile, so a
+single change covers them, but the vehicle container has to be
+redeployed (`balena push <device-ip>`) before the overlay appears.
 
 **The boxes are moved back into raw pixels first.** Detection happens
 on the rectified image, but the stream the panel shows is
 `image_raw`. Measured on the Mini those differ by ~10 px on average
 and up to 23 px on a 480-wide frame — enough that drawing rectified
 coordinates directly puts the box visibly beside the object. Each
-outline vertex is therefore mapped back through OpenCV's
-rectification map (`CV_16SC2`, read once and cached), which costs
-nothing on the wire compared with publishing a second rectified image
-stream.
+vertex is therefore mapped back through OpenCV's rectification map,
+which costs nothing on the wire compared with publishing a second
+rectified image stream.
 
-Because a straight edge in rectified space is a curve in raw space,
+That map is `CV_16SC2` — interleaved int16 pairs per rectified pixel,
+with `map_y` being the interpolation table rather than a coordinate.
+Reading it as two single-channel float maps gives a plausible-looking
+240 px mean displacement instead of the real 10.
+
+Because a straight edge in rectified space is a *curve* in raw space,
 each edge is subdivided (`:outline_segments`, default 4) and every
-vertex mapped individually — so one box is 32 points.
-
-No text labels here: `ImageMarker` has no text type. The class, score
-and distance are on the 3D panel's markers.
+vertex mapped individually — so a box is 16 vertices, and its top edge
+comes off the wire as y = 101, 101, 100, 100, 99 rather than a
+constant. That 2 px bow is the distortion being followed.
 
 ## Grayscale is fine
 
