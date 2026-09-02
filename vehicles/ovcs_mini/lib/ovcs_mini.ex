@@ -142,12 +142,21 @@ defmodule OvcsMini do
     {:stereo_camera,
      driver: camera_driver,
      calibration_dir: priv_calibration_dir(),
-     # 640×480 is the standard low-bandwidth UVC mode every webcam
-     # supports natively. SGBM compute time scales roughly with
-     # `width × height × num_disparities`, so 640×480 + a tighter
-     # disparity range is the main speed knob.
+     # 640×360 is 16:9 — the sensor's native aspect. Asking a 16:9
+     # sensor for a 4:3 buffer squeezed the full field of view into
+     # 480 rows, which showed up in the calibration as fy/fx = 1.334
+     # (anamorphic pixels) and cost 1.44x on the near clip, because
+     # rectification then inflates f from ~725 to 1046 restoring
+     # square pixels. Native aspect also means 25 % fewer pixels for
+     # SGBM, which scales with `width × height × num_disparities`.
+     #
+     # NOTE: the calibration must be redone at this resolution. The
+     # backend scales K and P from the calibration's resolution to the
+     # capture one, so nothing breaks meanwhile, but scaling cannot
+     # undo the inflated P — the near clip only improves once the
+     # cameras are recalibrated at 16:9.
      width: 640,
-     height: 480,
+     height: 360,
      fps: 30,
      # Wide enough for the unsynchronized USB cameras on host;
      # drop to 5 ms once the perception target has FSIN-tied CSI
