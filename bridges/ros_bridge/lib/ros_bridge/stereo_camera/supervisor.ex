@@ -225,6 +225,7 @@ defmodule RosBridge.StereoCamera.Supervisor do
         config.publish_disparity_image && "#{config.topic_prefix}/disparity/image",
       depth_topic: "#{config.topic_prefix}/depth/image_rect",
       depth_camera_info_topic: "#{config.topic_prefix}/depth/camera_info",
+      cloud_topic: "#{config.topic_prefix}/points",
       pair_tolerance_ms: config.pair_tolerance_ms
     ]
 

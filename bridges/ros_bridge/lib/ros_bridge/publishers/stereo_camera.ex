@@ -69,6 +69,7 @@ defmodule RosBridge.Publishers.StereoCamera do
   alias RosBridge.StereoCamera.Telemetry
   alias RosBridge.Timing
   alias Ros2.SensorMsgs.Msg.CameraInfo
+  alias Ros2.SensorMsgs.Msg.PointCloud2
   alias Ros2.SensorMsgs.Msg.CompressedImage
   alias Ros2.SensorMsgs.Msg.Image
   alias Ros2.SensorMsgs.Msg.RegionOfInterest
@@ -90,6 +91,7 @@ defmodule RosBridge.Publishers.StereoCamera do
     disparity_image_topic = Keyword.get(opts, :disparity_image_topic)
     depth_topic = Keyword.fetch!(opts, :depth_topic)
     depth_camera_info_topic = Keyword.get(opts, :depth_camera_info_topic)
+    cloud_topic = Keyword.get(opts, :cloud_topic)
     left_opts = Keyword.fetch!(opts, :left)
     right_opts = Keyword.fetch!(opts, :right)
     width = Keyword.fetch!(opts, :width)
@@ -123,6 +125,7 @@ defmodule RosBridge.Publishers.StereoCamera do
        disparity_image_topic: disparity_image_topic,
        depth_topic: depth_topic,
        depth_camera_info_topic: depth_camera_info_topic,
+       cloud_topic: cloud_topic,
        # The depth + disparity outputs are anchored to the left
        # camera's frame, per ROS convention.
        stereo_frame_id: Keyword.fetch!(left_opts, :frame_id),
@@ -380,6 +383,22 @@ defmodule RosBridge.Publishers.StereoCamera do
     # viewers had no way to resolve it and drew nothing rather than
     # complaining. The depth image is in the rectified left frame, so
     # the left camera's info is the correct one to republish here.
+    if state.cloud_topic && result.cloud && result.cloud_points > 0 do
+      RosBridge.ZenohClient.publish(state.cloud_topic, PointCloud2, %PointCloud2{
+        header: header,
+        height: 1,
+        width: result.cloud_points,
+        fields: PointCloud2.xyz_fields(),
+        is_bigendian: 0,
+        point_step: PointCloud2.point_step(),
+        row_step: result.cloud_points * PointCloud2.point_step(),
+        data: result.cloud,
+        # Unmatched pixels are dropped, not encoded as sentinels, so
+        # every point here is a real measurement.
+        is_dense: 1
+      })
+    end
+
     with topic when is_binary(topic) <- state.depth_camera_info_topic,
          {:ok, %{camera_info: %CameraInfo{} = left_info}} <- Map.fetch(state.sides, "left") do
       RosBridge.ZenohClient.publish(topic, CameraInfo, depth_camera_info(left_info, header))

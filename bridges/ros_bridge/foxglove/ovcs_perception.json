@@ -258,16 +258,16 @@
       },
       "transforms": {},
       "topics": {
-        "/stereo/depth/image_rect": {
+        "/stereo/points": {
           "visible": true,
           "colorMode": "colormap",
           "colorMap": "turbo",
-          "minValue": 550,
-          "maxValue": 3000,
-          "pointSize": 3,
-          "depthScale": 0.001
+          "colorField": "z",
+          "minValue": 0.5,
+          "maxValue": 4.0,
+          "pointSize": 3
         },
-        "/imu": {
+        "/stereo/depth/image_rect": {
           "visible": false
         }
       },
