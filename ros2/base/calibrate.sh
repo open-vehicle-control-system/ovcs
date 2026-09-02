@@ -7,11 +7,13 @@
 # Prerequisites:
 #   - `./ovcs run ovcs_mini` already streaming both cameras
 #   - X server reachable (Xorg or XWayland)
+#   - ZENOH_ENDPOINT_IP pointing at the router the bridge publishes
+#     to (see .env.example)
 #
 # Usage:
-#   ros2/calibrate.sh                           # 8x5 inner corners, 30 mm squares
-#   ros2/calibrate.sh 9x6                       # override corner count
-#   ros2/calibrate.sh 8x5 0.025                 # override corners + square size
+#   ros2/base/calibrate.sh                           # 8x6 inner corners, 30 mm squares
+#   ros2/base/calibrate.sh 9x6                       # override corner count
+#   ros2/base/calibrate.sh 8x5 0.025                 # override corners + square size
 #
 # Environment overrides (take precedence over positional args):
 #   CHESSBOARD_INNER_CORNERS=8x5
@@ -23,7 +25,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
-corners="${CHESSBOARD_INNER_CORNERS:-${1:-8x5}}"
+corners="${CHESSBOARD_INNER_CORNERS:-${1:-8x6}}"
 square="${CHESSBOARD_SQUARE_M:-${2:-0.030}}"
 approx_sync="${APPROXIMATE_SYNC:-0.05}"
 display="${DISPLAY:-:0}"

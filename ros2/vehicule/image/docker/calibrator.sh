@@ -13,11 +13,12 @@
 #      streaming (./ovcs run ovcs_mini).
 #   2. Allow X access from the container:
 #        xhost +SI:localuser:$(id -un)
-#   3. Run this service: docker compose run --rm calibrator
+#   3. Run this service: ros2/base/calibrate.sh
 #   4. Wave a chessboard (default 8x6 inner corners, 25 mm squares)
 #      until all four coverage bars are green, click CALIBRATE,
 #      wait for the solver, click SAVE.
-#   5. The tarball lands at ros2/calibration_output/calibrationdata.tar.gz
+#   5. The tarball lands at
+#      ros2/base/calibration_output/calibrationdata.tar.gz
 #      on the host. Extract → drop left.yaml + right.yaml into
 #      vehicles/ovcs_mini/priv/calibration/stereo_{left,right}.yaml.
 

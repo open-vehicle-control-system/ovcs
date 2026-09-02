@@ -29,8 +29,8 @@ components needing isolation).
 ../../ovcs run ovcs_mini                 # provision vcan + spawn VMS + bridge BEAMs
 ../../ovcs attach ovcs_mini
 ../../ovcs build ovcs_mini vms
-../../ovcs build ovcs_mini radio_control
-../../ovcs build ovcs_mini ros
+../../ovcs build ovcs_mini bridge-radio_control
+../../ovcs build ovcs_mini bridge-ros
 ```
 
 Before the first build, copy `.env.exs.example` to `.env.exs` (gitignored).
