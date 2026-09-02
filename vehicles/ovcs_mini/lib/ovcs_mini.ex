@@ -78,9 +78,14 @@ defmodule OvcsMini do
   def ros_bridge_config(:target, _firmware_id),
     do: ros_target_config()
 
+  # The Mini runs two ROS bridges on one Zenoh fabric (this one and
+  # the perception Pi), so each names its ROS node explicitly —
+  # otherwise both announce `ovcs_bridge` and the ROS graph cannot
+  # tell them apart.
   defp ros_host_config,
     do: %RosBridge.Config{
       zenoh_endpoint_ip: System.get_env("ZENOH_ENDPOINT_IP", "127.0.0.1"),
+      node_name: "ovcs_bridge_ros",
       components: [
         :heartbeat,
         :joy_interpreter,
@@ -91,6 +96,7 @@ defmodule OvcsMini do
   defp ros_target_config,
     do: %RosBridge.Config{
       zenoh_endpoint_ip: Application.get_env(:ros_bridge, :zenoh_endpoint_ip, "127.0.0.1"),
+      node_name: "ovcs_bridge_ros",
       components: [
         :heartbeat,
         :joy_interpreter,
@@ -101,6 +107,7 @@ defmodule OvcsMini do
   defp perception_host_config do
     %RosBridge.Config{
       zenoh_endpoint_ip: System.get_env("ZENOH_ENDPOINT_IP", "127.0.0.1"),
+      node_name: "ovcs_bridge_perception",
       components: [
         :heartbeat,
         stereo_component(RosBridge.Camera.GStreamer, :host)
@@ -111,6 +118,7 @@ defmodule OvcsMini do
   defp perception_target_config do
     %RosBridge.Config{
       zenoh_endpoint_ip: Application.get_env(:ros_bridge, :zenoh_endpoint_ip, "127.0.0.1"),
+      node_name: "ovcs_bridge_perception",
       components: [
         :heartbeat,
         stereo_component(RosBridge.Camera.LibCamera, :target)
