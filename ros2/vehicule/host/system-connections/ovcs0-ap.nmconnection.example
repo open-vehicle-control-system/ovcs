@@ -35,6 +35,15 @@ band=bg
 channel=11
 ssid=OVCS-Mini
 
+# proto/pairwise/group are not decoration. Left to itself
+# NetworkManager advertises WPA1 alongside WPA2 (a scan shows
+# "WPA1 WPA2 WPA3"), and a client that negotiates WPA1/TKIP is barred
+# by 802.11n from any HT rate — it falls back to 54 Mbps, which is not
+# the link you want under Foxglove. Pinning RSN + CCMP drops WPA1 and
+# TKIP entirely.
 [wifi-security]
 key-mgmt=wpa-psk
+proto=rsn
+pairwise=ccmp
+group=ccmp
 psk=CHANGE_ME_AP_PSK
