@@ -32,6 +32,25 @@
 version: '2.1'
 
 services:
+  wifi_firmware:
+    # One-shot. Stages the AX210 blobs into balenaOS's `extra-firmware`
+    # volume, which is already the host kernel's firmware_class.path —
+    # without them the PCIe Wi-Fi card never binds a driver. See
+    # ./firmware/Dockerfile for why this is a service and not a file on
+    # the host, and ./host/README.md for the network built on top of it.
+    #
+    # The volume outlives a reboot, so this only has to beat iwlwifi to
+    # it once; it stays in the release because an OS update can prune a
+    # volume no release declares.
+    build: ./firmware
+    labels:
+      io.balena.features.extra-firmware: '1'
+    # Quoted so YAML keeps it a string rather than `false`. The
+    # supervisor documents `restart` but not which values it accepts —
+    # if it rejects this it falls back to `always` and the `cp` loops
+    # harmlessly.
+    restart: 'no'
+
   zenohd:
     # The vehicle *is* the router for the OVCS fabric, so the fabric
     # survives the base station disconnecting. Everything else —
