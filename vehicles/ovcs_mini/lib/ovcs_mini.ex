@@ -66,8 +66,13 @@ defmodule OvcsMini do
     }
 
   @impl RosBridge
-  def ros_bridge_config(:host, "ros_perception"),
-    do: perception_host_config()
+  def ros_bridge_config(:host, "ros_perception") do
+    if System.get_env("OVCS_SIM") in ["1", "true"] do
+      perception_sim_config()
+    else
+      perception_host_config()
+    end
+  end
 
   def ros_bridge_config(:target, "ros_perception"),
     do: perception_target_config()
@@ -111,6 +116,31 @@ defmodule OvcsMini do
       components: [
         :heartbeat,
         stereo_component(RosBridge.Camera.GStreamer, :host)
+      ]
+    }
+  end
+
+  # The same perception stack, fed by Gazebo instead of by cameras.
+  #
+  # Only the driver changes. The SGBM backend, the rectification, the
+  # publishers and the detector are the code that runs on the car, and
+  # that is the point of simulating at all — a pipeline that behaved
+  # differently under simulation would not be evidence of anything.
+  #
+  # No `:hailo_detector`: there is no accelerator on a workstation. It
+  # would start, log that it is unavailable and publish nothing, which
+  # is correct but pointless.
+  #
+  # Chosen with VEHICLE=OvcsMini and OVCS_SIM=1, so the sim wiring
+  # cannot be selected by accident on the vehicle.
+  defp perception_sim_config do
+    %RosBridge.Config{
+      zenoh_endpoint_ip: System.get_env("ZENOH_ENDPOINT_IP", "127.0.0.1"),
+      node_name: "ovcs_bridge_perception_sim",
+      components: [
+        :heartbeat,
+        stereo_transforms(),
+        stereo_component(RosBridge.Camera.Zenoh, :sim)
       ]
     }
   end
@@ -216,7 +246,7 @@ defmodule OvcsMini do
   defp stereo_component(camera_driver, arm) do
     {:stereo_camera,
      driver: camera_driver,
-     calibration_dir: priv_calibration_dir(),
+     calibration_dir: priv_calibration_dir(arm),
      # 640×360 is 16:9 — the sensor's native aspect. Asking a 16:9
      # sensor for a 4:3 buffer squeezed the full field of view into
      # 480 rows, which showed up in the calibration as fy/fx = 1.334
@@ -304,6 +334,19 @@ defmodule OvcsMini do
   # correctly ordered pair must be entirely positive).
   defp camera_addressing(:target, :left), do: [camera_id: 1]
   defp camera_addressing(:target, :right), do: [camera_id: 0]
+
+  # In simulation the "camera" is a topic. Gazebo publishes on the
+  # same names the vehicle does, so left really is left here — the
+  # transposition that catches physical modules cannot happen.
+  defp camera_addressing(:sim, side),
+    do: [topic: "/stereo/#{side}/image_raw/compressed"]
+
+  # The simulator gets its own calibration, and must: Gazebo renders an
+  # ideal pinhole, so applying the physical lens's distortion and
+  # rectification to it warps the two views apart rather than into
+  # alignment. Measured, that dropped stereo coverage to 5.4%.
+  defp priv_calibration_dir(:sim), do: Path.join(priv_calibration_dir(), "sim")
+  defp priv_calibration_dir(_arm), do: priv_calibration_dir()
 
   defp priv_calibration_dir do
     case :code.priv_dir(:ovcs_mini) do

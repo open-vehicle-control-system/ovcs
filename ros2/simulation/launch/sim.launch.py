@@ -104,8 +104,13 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "world",
-                default_value=os.path.join(WORLDS_DIR, "empty.sdf"),
-                description="SDF world to load.",
+                default_value=os.path.join(WORLDS_DIR, "workshop.sdf"),
+                description=(
+                    "SDF world to load. `workshop.sdf` is textured and "
+                    "has obstacles at known distances, which stereo "
+                    "needs; `empty.sdf` is flat and featureless and "
+                    "will produce no disparity at all."
+                ),
             ),
             DeclareLaunchArgument(
                 "teleop",

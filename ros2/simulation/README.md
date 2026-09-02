@@ -94,6 +94,53 @@ of `drive_test.py`:
   `[-pi, pi]`, so subtracting first from last silently loses a whole
   turn, or flips its sign.
 
+## Running the perception pipeline against it
+
+The whole stereo stack — SGBM, rectification, publishers, detector —
+runs unchanged against the simulator. Only the camera driver differs:
+`RosBridge.Camera.Zenoh` subscribes to a ROS image topic and emits the
+same frames a physical driver does.
+
+```sh
+cd bridges/ros_bridge
+VEHICLE=OvcsMini OVCS_SIM=1 ZENOH_ENDPOINT_IP=127.0.0.1 iex -S mix
+```
+
+`OVCS_SIM` selects the simulated wiring, so it cannot be picked up by
+accident on the vehicle. No `:hailo_detector` there — a workstation
+has no accelerator.
+
+Measured against `workshop.sdf`: 30.3 Hz, 61.2% depth coverage, and a
+depth histogram that lands where the world says it should:
+
+```
+median 0.81 m   the 1.0 m box, front face 0.808 m from the lens
+p75    1.75 m   the 2.0 m box, front face 1.758 m
+```
+
+That agreement to a centimetre is the real test — it checks the
+geometry, not just that pixels arrived.
+
+### Two things that produce no disparity at all
+
+**An untextured world.** SGBM correlates local patches; a flat ground
+plane under a blank sky gives it nothing to correlate, and disparity
+comes back empty. `empty.sdf` is for driving tests only — use
+`workshop.sdf` for anything involving depth.
+
+**The wrong calibration.** The vehicle's own calibration is *actively
+wrong* here, and quietly so. Gazebo renders an ideal pinhole: no lens
+distortion, eyes already coplanar. Feeding it distortion coefficients
+and rectification rotations that describe a physical lens warps the
+two views apart rather than into alignment. Coverage sat at **5.4%**
+until the simulator got its own calibration
+(`vehicles/ovcs_mini/priv/calibration/sim/`), where D is zero and R is
+identity. The same scene then measured **61.2%**.
+
+The focal length in that file is still the real one, scaled to the
+capture resolution — so the simulated *optics* match the vehicle while
+the *distortion model* matches the simulator.
+
 ## Where the model came from
 
 It replaces [open-vehicle-control-system/traxxas][traxxas], which
@@ -182,13 +229,10 @@ ros2 topic echo --no-daemon /odom
 
 ## Not here yet
 
-Milestone 1 is a driveable, correctly-proportioned vehicle. No sensors
-— no stereo pair, no IMU. The next step is publishing the same topic
-contract the real vehicle does (`/stereo/left/image_raw/compressed`,
-`/stereo/*/camera_info` at 480x270, `/imu`), so the Foxglove layout
-and the Hailo detector work against the sim unchanged.
+No IMU, so `/imu` is absent and anything downstream of it is untested
+here.
 
-The simulator is also the natural place to settle the
-`base_link -> stereo_left` transform that is still a placeholder on the
-real vehicle: in simulation the camera's true position is known
-exactly.
+The camera bar's **height** is still the one unmeasured number on the
+vehicle (`camera_z`, 0.12 m, guessed). Forward offset and baseline are
+measured; height is not, in either the model or the real
+`stereo_transforms`.
