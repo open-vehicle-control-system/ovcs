@@ -34,6 +34,11 @@ defmodule RosBridge.StereoCamera.Result do
       past what a 90 mm baseline resolves.
     * `:depth_step` — bytes per row of the depth buffer
       (`width × 2` for 16UC1).
+    * `:cloud` — packed `x, y, z` float32 points in the depth image's
+      optical frame, or `nil` when cloud generation is off. Invalid
+      pixels are dropped rather than encoded, so this is a dense
+      buffer of real measurements.
+    * `:cloud_points` — how many points `:cloud` holds.
     * `:focal_length` — fx in pixels (the camera's focal length
       on the horizontal axis, from the rectified `P` matrix).
     * `:baseline` — distance between the two camera centres,
@@ -66,7 +71,9 @@ defmodule RosBridge.StereoCamera.Result do
     :valid_x,
     :valid_y,
     :valid_w,
-    :valid_h
+    :valid_h,
+    :cloud,
+    :cloud_points
   ]
   defstruct @enforce_keys
 
@@ -86,6 +93,8 @@ defmodule RosBridge.StereoCamera.Result do
           valid_x: non_neg_integer(),
           valid_y: non_neg_integer(),
           valid_w: non_neg_integer(),
-          valid_h: non_neg_integer()
+          valid_h: non_neg_integer(),
+          cloud: binary() | nil,
+          cloud_points: non_neg_integer()
         }
 end
