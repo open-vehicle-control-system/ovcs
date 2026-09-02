@@ -25,8 +25,11 @@ defmodule RosBridge.Publishers.StereoCamera do
        build a backlog.
     5. **Publish disparity + depth** when the backend returns a
        `%RosBridge.StereoCamera.Result{}`: a `stereo_msgs/DisparityImage`
-       on `:disparity_topic` and a 32FC1 `sensor_msgs/Image` on
-       `:depth_topic`. Both reuse the left frame's stamp so
+       on `:disparity_topic`, the same disparity pixels again as a
+       bare 32FC1 `sensor_msgs/Image` on `:disparity_image_topic`
+       (viewers cannot render the container type), and a 32FC1
+       `sensor_msgs/Image` of metres on `:depth_topic`. All reuse
+       the left frame's stamp so
        downstream consumers can pair them with the raw streams via
        `Header.stamp`.
 
@@ -37,7 +40,7 @@ defmodule RosBridge.Publishers.StereoCamera do
     * `:topic_prefix` — root for per-side image topics
       (`<prefix>/<side>/image_raw/compressed` and
       `<prefix>/<side>/camera_info`).
-    * `:disparity_topic`, `:depth_topic` — full Zenoh topics for
+    * `:disparity_topic`, `:disparity_image_topic`, `:depth_topic` — full Zenoh topics for
       the stereo outputs.
     * `:left`, `:right` — per-side keyword lists. Each requires
       `:frame_id` (used in every outgoing header for that side)
@@ -84,6 +87,7 @@ defmodule RosBridge.Publishers.StereoCamera do
     cameras = Keyword.fetch!(opts, :cameras)
     topic_prefix = Keyword.fetch!(opts, :topic_prefix)
     disparity_topic = Keyword.fetch!(opts, :disparity_topic)
+    disparity_image_topic = Keyword.get(opts, :disparity_image_topic)
     depth_topic = Keyword.fetch!(opts, :depth_topic)
     left_opts = Keyword.fetch!(opts, :left)
     right_opts = Keyword.fetch!(opts, :right)
@@ -115,6 +119,7 @@ defmodule RosBridge.Publishers.StereoCamera do
        },
        camera_info_interval_frames: camera_info_interval_frames,
        disparity_topic: disparity_topic,
+       disparity_image_topic: disparity_image_topic,
        depth_topic: depth_topic,
        # The depth + disparity outputs are anchored to the left
        # camera's frame, per ROS convention.
@@ -331,7 +336,10 @@ defmodule RosBridge.Publishers.StereoCamera do
       header: header,
       height: result.height,
       width: result.width,
-      encoding: "32FC1",
+      # Millimetres in uint16, the ROS depth-image convention. Half
+      # the bytes of 32FC1 metres, which is what lets it share a Zenoh
+      # session with the disparity image.
+      encoding: "16UC1",
       is_bigendian: 0,
       step: result.depth_step,
       data: result.depth
@@ -339,6 +347,20 @@ defmodule RosBridge.Publishers.StereoCamera do
 
     RosBridge.ZenohClient.publish(state.disparity_topic, DisparityImage, disparity_message)
     RosBridge.ZenohClient.publish(state.depth_topic, Image, depth_message)
+
+    # Same pixels as `disparity_message.image`, republished under a
+    # bare `sensor_msgs/Image` type. `stereo_msgs/DisparityImage` is a
+    # container — viewers match on the *topic's* type and will not
+    # reach inside it for `.image`, so Foxglove's image panel cannot
+    # render `<prefix>/disparity` at all. The bytes already exist, but
+    # the bandwidth does not: opt-in via `:publish_disparity_image`,
+    # since a third 921 KB image per frame starves the other two on a
+    # single Zenoh session. The geometry (f, T, valid_window) still
+    # only lives on the DisparityImage topic, which stays the
+    # canonical one for consumers doing maths.
+    if state.disparity_image_topic do
+      RosBridge.ZenohClient.publish(state.disparity_image_topic, Image, disparity_image)
+    end
   end
 
   # ── init helpers ─────────────────────────────────────────────

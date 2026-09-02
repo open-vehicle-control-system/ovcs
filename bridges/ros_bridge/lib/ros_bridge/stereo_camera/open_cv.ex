@@ -497,7 +497,7 @@ defmodule RosBridge.StereoCamera.OpenCV do
       disparity: disparity_bytes,
       disparity_step: width * 4,
       depth: depth_bytes,
-      depth_step: width * 4,
+      depth_step: width * 2,
       focal_length: state.focal_length,
       baseline: state.baseline,
       min_disparity: state.min_disparity / 1.0,
@@ -717,9 +717,17 @@ defmodule RosBridge.StereoCamera.OpenCV do
   #     onto `min_disparity − 1`, which is exactly the convention
   #     consumers filter on (`disp < min_disparity`). So no clamping:
   #     it would erase the "no match here" signal.
-  #   * 32FC1 depth (metres): `depth = (f × B × 16) / disp_signed`,
-  #     invalid pixels become 0.0 (the ROS depth_image "no
-  #     measurement" convention foxglove understands).
+  #   * 16UC1 depth (millimetres): `depth = (f × B × 16) / disp_signed`,
+  #     scaled to mm and clamped to 65535. Invalid pixels become 0,
+  #     the ROS depth_image "no measurement" convention.
+  #
+  #     Millimetres in uint16 rather than metres in float32 because
+  #     the two are the same information at half the bytes, and the
+  #     pair of full-size float images was too much for one Zenoh
+  #     session: published second in the same tick, 32FC1 depth was
+  #     being dropped down to ~1.2 Hz while disparity held 7 Hz.
+  #     1 mm resolution over 65 m is far past anything a 90 mm
+  #     baseline can resolve, so nothing measurable is lost.
   defp pack_disparity_and_depth(raw_disparity, focal_length, baseline) do
     disp_f32 = Evision.Mat.as_type(raw_disparity, :f32)
 
@@ -727,11 +735,21 @@ defmodule RosBridge.StereoCamera.OpenCV do
       disp_f32
       |> Evision.divide(@disparity_fixed_point_scale)
       |> Evision.Mat.to_binary()
-    depth_scale = focal_length * baseline * @disparity_fixed_point_scale
+    # metres → millimetres in the same divide, so there is no extra
+    # pass over the image.
+    depth_scale = focal_length * baseline * @disparity_fixed_point_scale * 1000.0
     depth_raw = Evision.divide(depth_scale, disp_f32)
     invalid_mask = Evision.compare(raw_disparity, 0, Evision.Constant.cv_CMP_LE())
-    depth = Evision.Mat.setTo(depth_raw, 0.0, invalid_mask)
-    depth_bytes = Evision.Mat.to_binary(depth)
+
+    depth_bytes =
+      depth_raw
+      |> Evision.Mat.setTo(0.0, invalid_mask)
+      # `as_type(:u16)` saturates rather than wrapping, so anything
+      # beyond 65.5 m pins at the ceiling instead of aliasing to a
+      # near reading — a wrong-but-far value is far safer here than a
+      # wrong-and-close one.
+      |> Evision.Mat.as_type(:u16)
+      |> Evision.Mat.to_binary()
 
     {disparity_bytes, depth_bytes}
   end
