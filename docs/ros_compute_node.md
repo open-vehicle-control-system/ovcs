@@ -269,7 +269,12 @@ means a reboot silently performs phase 2 for you.
 #### Checks
 
 ```sh
-iw reg get | grep -A1 'phy#1'        # self-managed phy took the country
+# The AX210's regulatory domain. Address the phy through the interface:
+# the phy *indices* are assigned in probe order and do swap between
+# boots — `iw reg get | grep -A1 phy#1` will happily show you the
+# onboard radio's `country 99` and read as a failure when nothing is
+# wrong.
+iw phy$(cat /sys/class/net/wlP1p1s0/phy80211/index) reg get | head -2
 iw dev wlP1p1s0 info                 # type AP, expected channel
 ip -4 addr show ovcs0                # 10.42.0.1/24
 ls /sys/class/net/ovcs0/brif/        # wlP1p1s0; plus eth0 after phase 2
@@ -373,8 +378,10 @@ Phase 1 is written but not finished. In order:
    address in `vehicles/ovcs_mini/.env.exs`, and rebuild `bridge-ros`
    and `bridge-ros_perception` once.
 
-Already done on the Mini's Pi: the AX210 has firmware and binds, the
-onboard radio is configured as the uplink, and `"country": "BE"` is in
-`config.json`.
+Already done on the Mini's Pi, and confirmed across a reboot: the
+`wifi_firmware` service stages the blobs and iwlwifi binds them at boot
+("loaded firmware version 89…", "loaded PNVM version…"), the onboard
+radio reconnects as the uplink, and `"country": "BE"` reaches the
+AX210's self-managed phy.
 
 Next: [Running on Hardware](./running_hardware.md)
