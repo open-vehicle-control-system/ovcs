@@ -12,6 +12,12 @@ flutter = "3.32.8"
 python  = "3.12"
 uv      = "latest"
 "pipx:platformio" = "latest"
+# balena CLI, for deploying the ROS compute node's containers
+# (ros2/vehicule/ → balenaOS). Pinned to the major: the CLI talks to a
+# hosted API, so patches are fine but a major bump is a decision. The
+# standalone build bundles its own Node, so it is independent of the
+# `node` pin above. See docs/ros_compute_node.md.
+balena  = "25"
 
 [env]
 # Work around a ruby-build 20260412 bug on Ubuntu 26.04 where the Rekor

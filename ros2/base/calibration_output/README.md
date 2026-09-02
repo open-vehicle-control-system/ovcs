@@ -19,7 +19,7 @@ with `docker compose exec ros2 ros2 topic list`.
    Override via env if you printed a different one:
    ```
    CHESSBOARD_INNER_CORNERS=9x6 CHESSBOARD_SQUARE_M=0.030 \
-     docker compose run --rm calibrator
+     ./calibrate.sh
    ```
 
 2. **Allow the container to draw on your X display** (host
@@ -30,7 +30,7 @@ with `docker compose exec ros2 ros2 topic list`.
 
 3. **Launch the calibrator:**
    ```
-   docker compose run --rm calibrator
+   ./calibrate.sh
    ```
    An OpenCV window appears with both camera feeds side-by-side
    and four coverage bars (X / Y / Size / Skew). Wave the
@@ -51,8 +51,8 @@ with `docker compose exec ros2 ros2 topic list`.
 6. **Extract and install:**
    ```
    tar xzf calibrationdata.tar.gz
-   cp left.yaml  ../../vehicles/ovcs_mini/priv/calibration/stereo_left.yaml
-   cp right.yaml ../../vehicles/ovcs_mini/priv/calibration/stereo_right.yaml
+   cp left.yaml  ../../../vehicles/ovcs_mini/priv/calibration/stereo_left.yaml
+   cp right.yaml ../../../vehicles/ovcs_mini/priv/calibration/stereo_right.yaml
    ```
 
 7. **Re-run the bridge.** The `Stereo.OpenCV` backend reads

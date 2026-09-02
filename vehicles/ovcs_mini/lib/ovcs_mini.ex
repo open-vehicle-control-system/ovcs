@@ -78,9 +78,14 @@ defmodule OvcsMini do
   def ros_bridge_config(:target, _firmware_id),
     do: ros_target_config()
 
+  # The Mini runs two ROS bridges on one Zenoh fabric (this one and
+  # the perception Pi), so each names its ROS node explicitly —
+  # otherwise both announce `ovcs_bridge` and the ROS graph cannot
+  # tell them apart.
   defp ros_host_config,
     do: %RosBridge.Config{
       zenoh_endpoint_ip: System.get_env("ZENOH_ENDPOINT_IP", "127.0.0.1"),
+      node_name: "ovcs_bridge_ros",
       components: [
         :heartbeat,
         :joy_interpreter,
@@ -91,6 +96,7 @@ defmodule OvcsMini do
   defp ros_target_config,
     do: %RosBridge.Config{
       zenoh_endpoint_ip: Application.get_env(:ros_bridge, :zenoh_endpoint_ip, "127.0.0.1"),
+      node_name: "ovcs_bridge_ros",
       components: [
         :heartbeat,
         :joy_interpreter,
@@ -101,6 +107,7 @@ defmodule OvcsMini do
   defp perception_host_config do
     %RosBridge.Config{
       zenoh_endpoint_ip: System.get_env("ZENOH_ENDPOINT_IP", "127.0.0.1"),
+      node_name: "ovcs_bridge_perception",
       components: [
         :heartbeat,
         stereo_component(RosBridge.Camera.GStreamer, :host)
@@ -111,6 +118,7 @@ defmodule OvcsMini do
   defp perception_target_config do
     %RosBridge.Config{
       zenoh_endpoint_ip: Application.get_env(:ros_bridge, :zenoh_endpoint_ip, "127.0.0.1"),
+      node_name: "ovcs_bridge_perception",
       components: [
         :heartbeat,
         stereo_component(RosBridge.Camera.LibCamera, :target)
@@ -145,24 +153,46 @@ defmodule OvcsMini do
      # drop to 5 ms once the perception target has FSIN-tied CSI
      # modules.
      pair_tolerance_ms: 100,
-     # num_disparities=48 → caps the minimum visible distance at
-     # ~(f × baseline) / 48 metres but cuts the SGBM inner loop by
-     # 25 % vs the previous 64. Must stay a multiple of 16.
+     # num_disparities sets the *near* clip: Z_min = (f × baseline) /
+     # num_disparities. With the calibrated f·B of 93.9 px·m, 48
+     # disparities clipped at 2.0 m — everything closer was clamped
+     # there (measured: image centre pinned at exactly 2.00 m, 5 % of
+     # valid pixels at the ceiling), which is useless on a car whose
+     # obstacles live between 0.2 and 3 m. 96 brings the clip to
+     # ~0.98 m. SGBM cost scales roughly linearly with this, so it is
+     # bought with frame rate: 128 reached 0.74 m but pushed the Pi to
+     # load 5.7 on 4 cores, dropped disparity to 3.6 Hz and starved
+     # the capture path down to 26 Hz. It also blinds the leftmost
+     # `num_disparities` columns, so 128 costs 20 % of the image width
+     # against 15 % here. The real headroom is in capturing 16:9
+     # instead of 4:3 — the anamorphic squeeze inflates rectified f
+     # from 725 to 1046, and undoing it buys the same near clip for
+     # ~1.44x fewer disparities. Must stay a multiple of 16.
      # block_size=7 is a balanced point between bs=5 (denser
      # coverage but jittery) and bs=9 (stable but sparse) — gives
      # ~30 % more frame-to-frame stability for ~5 pp coverage cost.
-     backend_opts: [num_disparities: 48, block_size: 7],
+     backend_opts: [num_disparities: 96, block_size: 7],
      left: camera_addressing(arm, :left),
      right: camera_addressing(arm, :right)}
   end
 
   defp camera_addressing(:host, :left), do: [device: "/dev/video2"]
   defp camera_addressing(:host, :right), do: [device: "/dev/video0"]
-  # Perception bridge has both CSI modules mounted upside down on the
-  # OVCS Mini stereo bar — rotate 180° in-pipeline so downstream
-  # consumers (rectification + SGBM, Foxglove) see them right-way-up.
-  defp camera_addressing(:target, :left), do: [camera_id: 0, rotation: 180]
-  defp camera_addressing(:target, :right), do: [camera_id: 1, rotation: 180]
+  # Both CSI modules are mounted right-way-up on the OVCS Mini stereo
+  # bar, so no in-pipeline rotation. They were previously upside down
+  # and carried `rotation: 180`; leaving that in place after the
+  # re-mount inverted every published frame — which the calibrator
+  # shows plainly, and which would have baked a wrong orientation into
+  # the intrinsics. Re-check this whenever the bar is re-mounted.
+  # libcamera's camera_id 0 is the physically *right* module on this
+  # bar, not the left. Verified two ways, because a transposed pair
+  # still yields a plausible-looking disparity map rather than an
+  # obvious failure: covering the left lens darkened /stereo/right,
+  # and ORB matches between the two frames put the median
+  # `x_left - x_right` at -86 px (0 of 292 matches positive, where a
+  # correctly ordered pair must be entirely positive).
+  defp camera_addressing(:target, :left), do: [camera_id: 1]
+  defp camera_addressing(:target, :right), do: [camera_id: 0]
 
   defp priv_calibration_dir do
     case :code.priv_dir(:ovcs_mini) do

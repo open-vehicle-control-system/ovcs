@@ -33,8 +33,8 @@ See the [main README](../../README.md#quick-start) and
 ../../ovcs attach ovcs1                  # split-pane log + IEx TUI (another terminal)
 ../../ovcs build ovcs1 vms               # build VMS firmware
 ../../ovcs build ovcs1 infotainment
-../../ovcs build ovcs1 radio_control
-../../ovcs build ovcs1 ros
+../../ovcs build ovcs1 bridge-radio_control
+../../ovcs build ovcs1 bridge-ros
 ```
 
 Before the first build, copy `.env.exs.example` to `.env.exs` and fill
