@@ -166,11 +166,22 @@ defmodule OvcsMini do
 
   defp camera_addressing(:host, :left), do: [device: "/dev/video2"]
   defp camera_addressing(:host, :right), do: [device: "/dev/video0"]
-  # Perception bridge has both CSI modules mounted upside down on the
-  # OVCS Mini stereo bar — rotate 180° in-pipeline so downstream
-  # consumers (rectification + SGBM, Foxglove) see them right-way-up.
-  defp camera_addressing(:target, :left), do: [camera_id: 0, rotation: 180]
-  defp camera_addressing(:target, :right), do: [camera_id: 1, rotation: 180]
+  # Both CSI modules are mounted right-way-up on the OVCS Mini stereo
+  # bar, so no in-pipeline rotation. They were previously upside down
+  # and carried `rotation: 180`; leaving that in place after the
+  # re-mount inverted every published frame — which the calibrator
+  # shows plainly, and which would have baked a wrong orientation into
+  # the intrinsics. Re-check this whenever the bar is re-mounted.
+  #
+  # libcamera's camera_id 0 is the physically *right* module here, not
+  # the left. Verified two ways, because a transposed pair still
+  # yields a plausible-looking disparity map rather than an obvious
+  # failure: covering the left lens darkened /stereo/right, and ORB
+  # matches between the two frames put the median `x_left - x_right`
+  # at -86 px (0 of 292 matches positive, where a correctly ordered
+  # pair must be entirely positive).
+  defp camera_addressing(:target, :left), do: [camera_id: 1]
+  defp camera_addressing(:target, :right), do: [camera_id: 0]
 
   defp priv_calibration_dir do
     case :code.priv_dir(:ovcs_mini) do
