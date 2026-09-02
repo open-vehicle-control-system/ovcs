@@ -44,6 +44,7 @@
   <xacro:include filename="../../common/materials.xacro" />
 
   <xacro:include filename="wheels.xacro" />
+  <xacro:include filename="sensors.xacro" />
 
   <!-- ── Measured: Traxxas Slash 4x4 specification ──────────────── -->
   <xacro:property name="wheelbase"     value="0.324" />
@@ -152,6 +153,25 @@
                        x="${half_wheelbase}" />
   <xacro:steered_wheel name="front_right" side="-1"
                        x="${half_wheelbase}" />
+
+  <!-- ── Sensors ────────────────────────────────────────────────── -->
+  <!-- Matches the real vehicle's capture: 480x270 at 30 Hz. The
+       resolution is not arbitrary — it is what the stereo pipeline was
+       tuned to, trading depth precision at range for a 0.55 m near
+       clip and half the SGBM cost. Simulating something else would
+       measure a pipeline the vehicle does not run.
+
+       The stereo pair straddles the vehicle centreline at the
+       measured 90 mm baseline. Height and forward offset are the
+       simulation's own choice, since the real ones were never
+       measured — see sensors.xacro. -->
+  <xacro:property name="baseline" value="0.090" />
+  <xacro:property name="camera_x" value="0.10" />
+  <xacro:property name="camera_z" value="0.12" />
+
+  <xacro:sim_camera name="stereo_left"  x="${camera_x}" y="${baseline / 2}"
+                    z="${camera_z}" topic="stereo/left/image_raw"
+                    width="480" height="270" fov_deg="70" rate="30" />
 
   <xacro:include filename="gazebo_ackermann.xacro" />
 </robot>
