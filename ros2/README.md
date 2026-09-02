@@ -9,7 +9,9 @@ peerings to `zenohd`.
 ros2/
 ├── vehicule/          on-vehicle stack, deployed to balenaOS
 │   ├── docker-compose.yml
-│   └── image/         the shared ROS 2 image (Dockerfile + launchers)
+│   ├── image/         the shared ROS 2 image (Dockerfile + launchers)
+│   ├── firmware/      Wi-Fi firmware staged into the host kernel
+│   └── host/          balenaOS network config (not deployed by push)
 └── base/              base-station stack, plain docker compose
     ├── docker-compose.yml
     ├── calibrate.sh
@@ -136,6 +138,14 @@ in that file lists each omission and why.
   `foxglove_bridge`, each with its own `build:` (the balena builder
   tags per service, so one service can't reference another's tag).
   Autonomy nodes join here as additional services.
+- `vehicule/firmware/Dockerfile` — one-shot service that stages the
+  AX210's `iwlwifi` blobs into balenaOS's `extra-firmware` volume.
+  balenaOS ships the driver but not firmware this new, so without it
+  the PCIe Wi-Fi card never binds and the access point cannot exist.
+- `vehicule/host/` — NetworkManager keyfile templates that make the Pi
+  the vehicle's access point, DHCP server and gateway. Host-OS config,
+  copied to the device once; `balena push` does not deploy it. See
+  [docs/ros_compute_node.md](../docs/ros_compute_node.md#networking).
 - `vehicule/image/Dockerfile` — single image baking
   `ros-jazzy-rmw-zenoh-cpp`, `ros-jazzy-foxglove-bridge`,
   `ros-jazzy-joy-linux`, `gettext-base`, the Python `eclipse-zenoh`
