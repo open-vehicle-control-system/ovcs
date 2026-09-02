@@ -10,19 +10,19 @@
 # context to sit inside the pushed source root — the base station
 # reaches across to it (`context: ../vehicule/image`), which plain
 # `docker compose` is happy to do.
-FROM ros:jazzy-ros-base
+FROM ros:lyrical-ros-base
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        ros-jazzy-rmw-zenoh-cpp \
-        ros-jazzy-foxglove-bridge \
-        ros-jazzy-foxglove-msgs \
-        ros-jazzy-joy-linux \
-        ros-jazzy-vision-msgs \
-        ros-jazzy-image-transport-plugins \
-        ros-jazzy-stereo-image-proc \
-        ros-jazzy-camera-calibration \
-        ros-jazzy-cv-bridge \
+        ros-lyrical-rmw-zenoh-cpp \
+        ros-lyrical-foxglove-bridge \
+        ros-lyrical-foxglove-msgs \
+        ros-lyrical-joy-linux \
+        ros-lyrical-vision-msgs \
+        ros-lyrical-image-transport-plugins \
+        ros-lyrical-stereo-image-proc \
+        ros-lyrical-camera-calibration \
+        ros-lyrical-cv-bridge \
         python3-opencv \
         gettext-base \
         python3-pip \

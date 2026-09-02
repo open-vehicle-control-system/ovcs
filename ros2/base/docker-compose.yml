@@ -24,7 +24,7 @@
 # rebuild four times. (The vehicle side can't use this pattern; the
 # balena builder tags per service. See ../vehicule/docker-compose.yml.)
 x-ros2-base: &ros2-base
-  image: ovcs/ros2:jazzy
+  image: ovcs/ros2:lyrical
   restart: unless-stopped
   # host networking sidesteps the Zenoh peer's port juggling and
   # makes mDNS / local discovery work the same as a bare-metal install.
@@ -61,7 +61,7 @@ services:
       dockerfile: Dockerfile
     volumes:
       # Drop ROS 2 packages you write here; the entrypoint sources
-      # /opt/ros/jazzy + this overlay before running the container CMD.
+      # /opt/ros/$ROS_DISTRO + this overlay before running the CMD.
       # Nodes that graduate to running on the car get baked into an
       # image under ros2/vehicule/ instead.
       - ./workspace:/workspace
