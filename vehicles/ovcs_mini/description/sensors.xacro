@@ -35,7 +35,7 @@
     vehicle publishes, because that is the whole point: the perception
     code should not be able to tell the difference.
   -->
-  <xacro:macro name="sim_camera" params="name x y z topic width height fov_deg rate">
+  <xacro:macro name="sim_camera" params="name x y z topic width height focal_px rate">
     <link name="${name}_link">
       <visual>
         <geometry>
@@ -89,7 +89,14 @@
              deprecated spelling.) -->
         <frame_id>${name}_optical</frame_id>
         <camera>
-          <horizontal_fov>${fov_deg * pi / 180.0}</horizontal_fov>
+          <!-- Field of view is derived from the *measured* focal
+               length rather than chosen, because it is focal length
+               that the stereo pipeline actually depends on: the near
+               clip is f*B / num_disparities and depth error goes as
+               Z^2 / (f*B). A simulator with a plausible-looking FOV
+               but the wrong f models a different camera and quietly
+               reports different depth behaviour than the vehicle. -->
+          <horizontal_fov>${2 * atan2(width / 2.0, focal_px)}</horizontal_fov>
           <image>
             <width>${width}</width>
             <height>${height}</height>

@@ -45,6 +45,7 @@ BRIDGE_TOPICS = [
     "/tf@tf2_msgs/msg/TFMessage[gz.msgs.Pose_V",
     "/joint_states@sensor_msgs/msg/JointState[gz.msgs.Model",
     "/stereo/left/camera_info@sensor_msgs/msg/CameraInfo[gz.msgs.CameraInfo",
+    "/stereo/right/camera_info@sensor_msgs/msg/CameraInfo[gz.msgs.CameraInfo",
 ]
 
 # Cameras go through `ros_gz_image image_bridge`, not the parameter
@@ -60,7 +61,7 @@ BRIDGE_TOPICS = [
 # `/compressed` JPEG variant at roughly 30 KB — the same thing the real
 # vehicle publishes, and about 13x less. Raw pixels stay inside
 # gz-transport, where they are cheap.
-CAMERA_TOPICS = ["/stereo/left/image_raw"]
+CAMERA_TOPICS = ["/stereo/left/image_raw", "/stereo/right/image_raw"]
 
 # The drive command is separate because its Gazebo-side name contains
 # the model name. AckermannSteering has no verified tag for renaming

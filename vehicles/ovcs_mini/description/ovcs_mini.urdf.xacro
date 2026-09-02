@@ -161,17 +161,43 @@
        clip and half the SGBM cost. Simulating something else would
        measure a pipeline the vehicle does not run.
 
-       The stereo pair straddles the vehicle centreline at the
-       measured 90 mm baseline. Height and forward offset are the
-       simulation's own choice, since the real ones were never
-       measured — see sensors.xacro. -->
+       Measured off the vehicle:
+
+         baseline  90 mm, straddling the centreline
+         position  120 mm behind the front axle
+
+       The front axle is half a wheelbase ahead of base_link, so the
+       bar sits at 162 - 120 = 42 mm forward of it — not the 100 mm
+       that was guessed, which put the cameras 58 mm too far forward
+       and biased every detection by that much.
+
+       The bar also carries a third, FPV camera between the two. It is
+       not modelled: nothing in the perception path reads it. -->
   <xacro:property name="baseline" value="0.090" />
-  <xacro:property name="camera_x" value="0.10" />
+
+  <!-- From the vehicle's own calibration
+       (vehicles/ovcs_mini/priv/calibration/stereo_left.yaml): the
+       rectified P gives fx = 779.55 at 640 wide, and the pipeline
+       captures at 480, so fx scales to 779.55 * 0.75 = 584.66.
+
+       That is a ~45 degree horizontal field of view, not the ~70 a
+       wide-angle module would suggest, and it is what makes the
+       simulated depth behave like the real one: f*B = 52.6, so the
+       near clip lands at 52.6 / 96 = 0.55 m — the figure the vehicle
+       was tuned to. -->
+  <xacro:property name="focal_px" value="${779.54677 * 480 / 640}" />
+  <xacro:property name="camera_x" value="${half_wheelbase - 0.120}" />
+  <!-- TODO: still unmeasured. Lens centre height above the ground. -->
   <xacro:property name="camera_z" value="0.12" />
 
+  <!-- Left is +y in REP-103. -->
   <xacro:sim_camera name="stereo_left"  x="${camera_x}" y="${baseline / 2}"
                     z="${camera_z}" topic="stereo/left/image_raw"
-                    width="480" height="270" fov_deg="70" rate="30" />
+                    width="480" height="270" focal_px="${focal_px}" rate="30" />
+
+  <xacro:sim_camera name="stereo_right" x="${camera_x}" y="${-baseline / 2}"
+                    z="${camera_z}" topic="stereo/right/image_raw"
+                    width="480" height="270" focal_px="${focal_px}" rate="30" />
 
   <xacro:include filename="gazebo_ackermann.xacro" />
 </robot>
