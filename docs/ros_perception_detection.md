@@ -107,10 +107,16 @@ docker exec ovcs-ros2 bash -lc \
 On the device:
 
 ```elixir
-RosBridge.Inference.Hailo.available?()                      # true
+RosBridge.Inference.Hailo.available?()                      # true — Port up
+RosBridge.Inference.Hailo.busy?()                           # often true; not a fault
 :sys.get_state(RosBridge.Publishers.Detections)             # frame_count, seq, published
 :sys.get_state(RosBridge.Inference.Hailo).dropped           # 0
 ```
+
+`seq` tracking `frame_count` exactly means every frame reached the
+accelerator; `dropped` climbing means it could not keep up. `busy?`
+being true is the normal state at frame rate — there is usually an
+inference in flight — so it says nothing about health on its own.
 
 An empty `MarkerArray` streaming at ~13 Hz is correct when nothing
 COCO-shaped is in front of the rig — the topic being live and the

@@ -64,9 +64,24 @@ defmodule RosBridge.Inference.Hailo do
     :exit, _ -> {:error, :unavailable}
   end
 
-  @doc "Whether the accelerator is loaded and idle."
+  @doc """
+  Whether the accelerator is loaded and answering.
+
+  Deliberately *not* "and idle". At the stereo frame rate there is
+  usually an inference in flight, so an idle-aware answer reads false
+  most of the time it is asked — which makes it useless as the health
+  check the docs point people at. Use `busy?/1` for the other
+  question.
+  """
   def available?(server \\ __MODULE__) do
     GenServer.call(server, :available?)
+  catch
+    :exit, _ -> false
+  end
+
+  @doc "Whether an inference is in flight right now."
+  def busy?(server \\ __MODULE__) do
+    GenServer.call(server, :busy?)
   catch
     :exit, _ -> false
   end
@@ -134,7 +149,11 @@ defmodule RosBridge.Inference.Hailo do
 
   @impl true
   def handle_call(:available?, _from, state) do
-    {:reply, not is_nil(state.port) and is_nil(state.inflight), state}
+    {:reply, not is_nil(state.port), state}
+  end
+
+  def handle_call(:busy?, _from, state) do
+    {:reply, not is_nil(state.inflight), state}
   end
 
   def handle_call({:detect, _seq, _mat, _reply_to}, _from, %{port: nil} = state) do
