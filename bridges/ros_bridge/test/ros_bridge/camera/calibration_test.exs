@@ -66,4 +66,47 @@ defmodule RosBridge.Camera.CalibrationTest do
     assert Calibration.parse(body).camera_matrix ==
              [0.5, -0.25, 3.0, 0.0, -0.0, 1.0e-3, 250.0, 0.0, 1.0]
   end
+
+  describe "scale_to/3" do
+    setup do
+      %{cal: Calibration.parse(@ost_style)}
+    end
+
+    test "scales pixel-indexed intrinsics and leaves the rest alone", %{cal: cal} do
+      # 640x360 -> 480x270 is the proportional resize the vehicle uses.
+      scaled = Calibration.scale_to(%{cal | width: 640, height: 360}, 480, 270)
+
+      assert scaled.width == 480
+      assert scaled.height == 270
+
+      [fx, _, cx | _] = scaled.camera_matrix
+      [ofx, _, ocx | _] = cal.camera_matrix
+      assert_in_delta fx, ofx * 0.75, 1.0e-6
+      assert_in_delta cx, ocx * 0.75, 1.0e-6
+
+      # D and R carry no pixel units.
+      assert scaled.distortion_coefficients == cal.distortion_coefficients
+      assert scaled.rectification_matrix == cal.rectification_matrix
+    end
+
+    test "preserves the baseline encoded in P[0,3] = -fx x T", %{cal: cal} do
+      right = %{cal | width: 640, height: 360, projection_matrix: [800.0, 0.0, 320.0, -72.0, 0.0, 800.0, 180.0, 0.0, 0.0, 0.0, 1.0, 0.0]}
+      scaled = Calibration.scale_to(right, 480, 270)
+
+      baseline = fn c ->
+        [fx, _, _, tx | _] = c.projection_matrix
+        -tx / fx
+      end
+
+      # fx and P[0,3] scale together, so metres come out unchanged —
+      # this is what makes reusing a calibration across resolutions
+      # legitimate.
+      assert_in_delta baseline.(scaled), baseline.(right), 1.0e-9
+    end
+
+    test "is a no-op at the same resolution", %{cal: cal} do
+      sized = %{cal | width: 640, height: 360}
+      assert Calibration.scale_to(sized, 640, 360) == sized
+    end
+  end
 end

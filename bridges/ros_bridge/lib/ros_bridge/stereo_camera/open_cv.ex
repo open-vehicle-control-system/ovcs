@@ -580,61 +580,10 @@ defmodule RosBridge.StereoCamera.OpenCV do
   defp sgbm_mode(:sgbm_3way), do: Evision.StereoSGBM.cv_MODE_SGBM_3WAY()
   defp sgbm_mode(:hh4), do: Evision.StereoSGBM.cv_MODE_HH4()
 
-  # Rescale a calibration (originally saved at some reference
-  # resolution) to the actual capture resolution. Pixel-indexed
-  # intrinsics scale linearly: a 0.5× resize halves fx, fy, cx,
-  # cy and halves every pixel-space term of P. The physical
-  # baseline encoded in `P_right[0,3] = -fx × T` is preserved
-  # because P_right[0,3] and P_right[0,0] both scale by the
-  # same factor. Distortion coefficients D and the rectification
-  # rotation R are resolution-invariant and stay untouched.
-  defp scale_calibration_to(%Calibration{} = calibration, actual_width, actual_height)
-       when actual_width > 0 and actual_height > 0 do
-    reference_width = calibration.width
-    reference_height = calibration.height
-
-    cond do
-      reference_width == 0 or reference_height == 0 ->
-        # No reference dims in the YAML — pretend it was captured
-        # at the requested resolution and trust the intrinsics.
-        %{calibration | width: actual_width, height: actual_height}
-
-      reference_width == actual_width and reference_height == actual_height ->
-        calibration
-
-      true ->
-        scale_x = actual_width / reference_width
-        scale_y = actual_height / reference_height
-
-        %{
-          calibration
-          | width: actual_width,
-            height: actual_height,
-            camera_matrix: scale_3x3(calibration.camera_matrix, scale_x, scale_y),
-            projection_matrix: scale_3x4(calibration.projection_matrix, scale_x, scale_y)
-        }
-    end
-  end
-
-  defp scale_3x3([a, b, c, d, e, f, g, h, i], scale_x, scale_y) do
-    [
-      a * scale_x, b * scale_x, c * scale_x,
-      d * scale_y, e * scale_y, f * scale_y,
-      g, h, i
-    ]
-  end
-
-  defp scale_3x4(
-         [r0c0, r0c1, r0c2, r0c3, r1c0, r1c1, r1c2, r1c3, r2c0, r2c1, r2c2, r2c3],
-         scale_x,
-         scale_y
-       ) do
-    [
-      r0c0 * scale_x, r0c1 * scale_x, r0c2 * scale_x, r0c3 * scale_x,
-      r1c0 * scale_y, r1c1 * scale_y, r1c2 * scale_y, r1c3 * scale_y,
-      r2c0, r2c1, r2c2, r2c3
-    ]
-  end
+  # Lives on the Calibration struct so the publisher can apply the
+  # same scaling to the CameraInfo it advertises.
+  defp scale_calibration_to(%Calibration{} = calibration, actual_width, actual_height),
+    do: Calibration.scale_to(calibration, actual_width, actual_height)
 
   # Precomputes the (map_x, map_y) lookup tables that
   # `Evision.remap/4` consumes. For each output pixel they give
