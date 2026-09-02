@@ -157,14 +157,35 @@ defmodule RosBridge.Camera.Calibration do
     end
   end
 
+  # Accepts every numeric spelling the calibration tools emit.
+  # `String.to_float/1` is too strict for two of them, and because
+  # `load!/1` runs inside `Stereo.OpenCV.init/1` an ArgumentError
+  # here takes the whole bridge down at boot with nothing logged:
+  #
+  #   * "0." / "1."  — cameracalibrator writes whole numbers with a
+  #     bare trailing dot, which is what `Float.parse/1` leaves as a
+  #     "." remainder.
+  #   * "1e-3"       — an exponent with no decimal point in the
+  #     mantissa; Erlang rejects it, `Float.parse/1` accepts it.
+  #
+  # Leading-dot forms (".5") are normalised first since `Float.parse/1`
+  # rejects those outright.
   defp parse_float(text) do
-    if String.contains?(text, ".") or String.contains?(text, "e") or
-         String.contains?(text, "E") do
-      String.to_float(text)
-    else
-      String.to_float(text <> ".0")
+    text = text |> String.trim() |> pad_leading_zero()
+
+    case Float.parse(text) do
+      {value, rest} when rest in ["", "."] ->
+        value
+
+      _ ->
+        raise ArgumentError,
+              "#{inspect(__MODULE__)}: cannot parse #{inspect(text)} as a float"
     end
   end
+
+  defp pad_leading_zero("." <> _ = text), do: "0" <> text
+  defp pad_leading_zero("-." <> rest), do: "-0." <> rest
+  defp pad_leading_zero(text), do: text
 
   # ── writers ──────────────────────────────────────────────────
 
