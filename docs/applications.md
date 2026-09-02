@@ -173,7 +173,7 @@ A **bridge** is an Elixir library (`bridges/<name>/`) that ferries data between 
 |---|---|
 | **Module** | `BridgeFirmware` |
 | **App name** | `:bridge_firmware` |
-| **Targets** | `ovcs_base_can_system_rpi3a`, `ovcs_base_can_system_rpi4`, `ovcs_bridges_system_rpi5` |
+| **Targets** | `ovcs_base_can_system_rpi3a`, `ovcs_base_can_system_rpi4`, `rpi5` |
 
 Shared Nerves image. Reads `VEHICLE` + `BRIDGE_FIRMWARE_ID` at boot,
 looks up the matching entry in the vehicle's `bridge_firmwares/0`, and
@@ -204,9 +204,9 @@ Enables remote control of the vehicle using a MAVLink-compatible RC transmitter 
 Provides integration with ROS 2 for autonomous driving research. It:
 
 - Holds a single Zenoh session (`ZenohClient`) and exposes a `publish/4` + `subscribe/4` API to the rest of the bridge. Handles lazy publisher / liveliness-token declaration, reconnect with stable per-publisher GIDs, and subscriber pid monitoring. See [`bridges/ros_bridge/README.md`](../bridges/ros_bridge/README.md) for the wire-format details.
-- Publishes a `std_msgs/String` heartbeat onto the ROS 2 graph every 5 s via `RosBridge.Heartbeat`, so consumers can see the BEAM is alive even when no other topic is flowing.
-- Subscribes to the ROS 2 `joy` topic via the same `ZenohClient` and forwards `sensor_msgs/Joy` axes onto the CAN bus through `JoyInterpreter` → Cantastic emitters (`ros_control0`/`ros_control1`).
-- Publishes `sensor_msgs/Imu` from any `OvcsDrivers.Imu` driver via `RosBridge.ImuPublisher`. The host arm runs the kind-level `OvcsDrivers.Imu.Dummy` stub and the target arm runs `BNO085.I2C` against a physical sensor; swapping in a future ICM-20948 (or any other conforming IMU) is a one-line supervisor change.
+- Publishes a `std_msgs/String` heartbeat onto the ROS 2 graph every 5 s via `RosBridge.Publishers.Heartbeat`, so consumers can see the BEAM is alive even when no other topic is flowing.
+- Subscribes to the ROS 2 `joy` topic via the same `ZenohClient` and forwards `sensor_msgs/Joy` axes onto the CAN bus through `RosBridge.Consumers.Joy` → Cantastic emitters (`ros_control0`/`ros_control1`).
+- Publishes `sensor_msgs/Imu` from any `OvcsDrivers.Imu` driver via `RosBridge.Publishers.Imu`. The host arm runs the kind-level `OvcsDrivers.Imu.Dummy` stub and the target arm runs `BNO085.I2C` against a physical sensor; swapping in a future ICM-20948 (or any other conforming IMU) is a one-line supervisor change.
 
 ## Controllers
 

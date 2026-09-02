@@ -90,6 +90,19 @@ words:
   - tmpfs
   - uart
 
+  # ROS compute node / immutable OS deployment
+  # `vehicule` is the deliberate French spelling used for the
+  # on-vehicle half of the ros2/ compose split.
+  - balena
+  - buildroot
+  - nixos
+  - nvme
+  - ostree
+  - podman
+  - quadlets
+  - rclcpp
+  - vehicule
+
   # ROS 2 / Zenoh / Foxglove
   - cdr
   - cyclonedds

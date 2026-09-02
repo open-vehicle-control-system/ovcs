@@ -78,14 +78,54 @@ defmodule Ros2.RmwZenoh do
   (`::,:,:,:,,`) — matches what rclpy emits with `qos_profile_default`.
   """
   def liveliness_key(domain_id, zid, node_name, topic, message_module) do
+    build_liveliness_key(domain_id, zid, node_name, topic, message_module, "MP", "::,:,:,:,,")
+  end
+
+  @doc """
+  Liveliness token for a **service server** (rmw_zenoh entity prefix
+  `SS`). Same field layout as the publisher token but with the
+  service-specific QoS profile (`::,10:,:,:,,`) — keep-last 10,
+  reliable, volatile, matching what rclpy's service servers emit.
+  Pass the service module (which must expose `dds_type/0` +
+  `type_hash/0`) as `service_module`.
+  """
+  def service_liveliness_key(domain_id, zid, node_name, service_name, service_module) do
+    build_liveliness_key(
+      domain_id,
+      zid,
+      node_name,
+      service_name,
+      service_module,
+      "SS",
+      "::,10:,:,:,,"
+    )
+  end
+
+  @doc """
+  Data keyexpr for a service queryable — same `<domain>/<name>/<type>/<hash>`
+  shape as a topic. Strips a leading `/` from the service name to
+  match rmw_zenoh's `strip_slashes` behavior.
+  """
+  def service_key_expr(domain_id, service_name, service_module) do
+    key_expr(domain_id, service_name, service_module)
+  end
+
+  defp build_liveliness_key(
+         domain_id,
+         zid,
+         node_name,
+         topic,
+         message_module,
+         entity,
+         qos
+       ) do
     enclave = mangle("/")
     namespace = mangle("/")
     topic_m = mangle(topic_with_leading_slash(topic))
     nid = 0
     eid = 0
-    qos = "::,:,:,:,,"
 
-    "@ros2_lv/#{domain_id}/#{zid}/#{nid}/#{eid}/MP/#{enclave}/#{namespace}/" <>
+    "@ros2_lv/#{domain_id}/#{zid}/#{nid}/#{eid}/#{entity}/#{enclave}/#{namespace}/" <>
       "#{node_name}/#{topic_m}/#{message_module.dds_type()}/#{message_module.type_hash()}/#{qos}"
   end
 

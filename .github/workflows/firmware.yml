@@ -100,6 +100,15 @@ jobs:
           sudo dpkg -i /tmp/fwup.deb
           fwup --version
 
+      # Two caches, deliberately with different reuse rules.
+      #
+      # deps/ and _build/ are restored ONLY on an exact key match. A
+      # prefix fallback here is actively harmful: it brings back a deps/
+      # containing the previously pinned Nerves system, and Mix then
+      # resolves to satisfy *that* checkout rather than the lockfile —
+      # which is how the OTP 28 bump first failed, with
+      # `Downgraded: nerves_system_br 1.33.7 => 1.29.3` and a system
+      # artifact that no longer matched.
       - uses: actions/cache@v5
         with:
           path: |
@@ -107,10 +116,18 @@ jobs:
             ${{ matrix.app }}/_build
             vehicles/${{ matrix.vehicle == 'Ovcs1' && 'ovcs1' || matrix.vehicle }}/deps
             vehicles/${{ matrix.vehicle == 'Ovcs1' && 'ovcs1' || matrix.vehicle }}/_build
-            ~/.nerves
-          key: nerves-${{ matrix.app }}-${{ matrix.target }}-${{ matrix.role }}-${{ hashFiles(format('{0}/mix.lock', matrix.app)) }}
+          key: nerves-build-${{ matrix.app }}-${{ matrix.target }}-${{ matrix.role }}-${{ hashFiles('mise.toml') }}-${{ hashFiles(format('{0}/mix.lock', matrix.app)) }}
+
+      # ~/.nerves holds downloaded system artifacts, named by their own
+      # content hash, so a stale entry is simply unused rather than
+      # wrong. It is worth a prefix fallback — it saves re-downloading
+      # ~300 MB — but still scoped to one toolchain.
+      - uses: actions/cache@v5
+        with:
+          path: ~/.nerves
+          key: nerves-dl-${{ matrix.target }}-${{ hashFiles('mise.toml') }}-${{ hashFiles(format('{0}/mix.lock', matrix.app)) }}
           restore-keys: |
-            nerves-${{ matrix.app }}-${{ matrix.target }}-${{ matrix.role }}-
+            nerves-dl-${{ matrix.target }}-${{ hashFiles('mise.toml') }}-
 
       - name: Build firmware
         working-directory: ${{ matrix.app }}
