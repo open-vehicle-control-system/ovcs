@@ -44,7 +44,8 @@ defmodule RosBridge.Publishers.Detections do
 
     * `:topic_prefix` (`"stereo"`) — markers go to
       `<prefix>/detections/markers`, detections to
-      `<prefix>/detections`.
+      `<prefix>/detections`, and the 2D image overlay to
+      `<prefix>/left/detections`.
     * `:frame_id` (`"<prefix>_left"`) — must match the frame the
       stereo unit stamps its depth image with, since the boxes are
       positioned in that image's pixels.
@@ -60,6 +61,22 @@ defmodule RosBridge.Publishers.Detections do
       promptly.
     * `:detect_every_n` (`1`) — run inference on every nth stereo
       result.
+    * `:outline_segments` (`4`) — how finely each box edge is
+      subdivided for the 2D overlay. See "Drawing on the raw image".
+
+  ## Drawing on the raw image
+
+  The boxes are computed in *rectified* pixels, but the image the
+  bridge publishes — and the one the Foxglove Image panel shows — is
+  `image_raw`. On the Mini those differ by 10 pixels on average and
+  up to 23 on a 480-wide frame, so drawing rectified coordinates
+  straight onto the raw image puts the box visibly beside the object.
+
+  Rather than publish a second, rectified image stream, each outline
+  vertex is mapped back through OpenCV's rectification map. A
+  straight edge in rectified space is a curve in raw space, so edges
+  are subdivided (`:outline_segments`) and each vertex mapped
+  individually.
   """
   use GenServer
 
@@ -70,7 +87,7 @@ defmodule RosBridge.Publishers.Detections do
   alias Ros2.StdMsgs.Msg.{ColorRGBA, Header}
   alias Ros2.VisionMsgs.Msg.{BoundingBox3D, Detection3D, Detection3DArray}
   alias Ros2.VisionMsgs.Msg.{ObjectHypothesis, ObjectHypothesisWithPose}
-  alias Ros2.VisualizationMsgs.Msg.{Marker, MarkerArray}
+  alias Ros2.VisualizationMsgs.Msg.{ImageMarker, Marker, MarkerArray}
   alias RosBridge.Inference.Hailo
   alias RosBridge.Perception.Fusion
   alias RosBridge.StereoCamera.Result
@@ -93,6 +110,7 @@ defmodule RosBridge.Publishers.Detections do
   @default_depth_sample_fraction 0.5
   @default_marker_lifetime_ms 500
   @default_detect_every_n 1
+  @default_outline_segments 4
 
   @namespace "detections"
 
@@ -107,6 +125,7 @@ defmodule RosBridge.Publishers.Detections do
     state = %{
       markers_topic: "#{prefix}/detections/markers",
       detections_topic: "#{prefix}/detections",
+      overlay_topic: "#{prefix}/left/detections",
       frame_id: Keyword.get(opts, :frame_id, "#{prefix}_left"),
       labels: Keyword.get(opts, :labels, @coco_labels),
       min_score: Keyword.get(opts, :min_score, @default_min_score),
@@ -118,6 +137,11 @@ defmodule RosBridge.Publishers.Detections do
         |> Keyword.get(:marker_lifetime_ms, @default_marker_lifetime_ms)
         |> Duration.from_milliseconds(),
       detect_every_n: Keyword.get(opts, :detect_every_n, @default_detect_every_n),
+      outline_segments: Keyword.get(opts, :outline_segments, @default_outline_segments),
+      # The rectification map is constant, but reading a 500 KB Mat
+      # to a binary every frame is not free — cache it, keyed on the
+      # Mat itself so a calibration reload invalidates it.
+      rectification_map: nil,
       seq: 0,
       frame_count: 0,
       # The Result whose frame is currently at the accelerator. Held
@@ -161,6 +185,19 @@ defmodule RosBridge.Publishers.Detections do
 
   def handle_cast(_message, state), do: {:noreply, state}
 
+  # Overwrites `pending` without checking it, and the reply clause
+  # matches on the current `seq` — so if a stereo result were ever
+  # processed while an inference was still outstanding, `seq` would
+  # advance and the earlier reply would be discarded as stale.
+  #
+  # `Hailo.detect/3` is what closes that today: it answers
+  # `{:error, :busy}` while an inference is in flight, so `seq` only
+  # advances on a frame that was actually accepted. Measured on the
+  # device that window never opens — `dropped: 0` across thousands of
+  # frames, because inference and publish finish well inside the
+  # ~77 ms frame period. It would open if the frame rate rose
+  # materially, and the fix then is a `seq -> Result` map with a
+  # staleness sweep rather than a single slot.
   defp submit(result, state) do
     seq = state.seq + 1
 
@@ -198,6 +235,7 @@ defmodule RosBridge.Publishers.Detections do
 
     publish_markers(positioned, header, state)
     publish_detections(positioned, header, state)
+    state = publish_overlay(positioned, header, result, state)
 
     %{
       state
@@ -219,6 +257,8 @@ defmodule RosBridge.Publishers.Detections do
 
         geometry
         |> Map.merge(%{
+          # The 2D box in rectified pixels, kept for the image overlay.
+          box: detection,
           class_id: detection.class_id,
           label: label_for(detection.class_id, state.labels),
           score: detection.score,
@@ -337,6 +377,84 @@ defmodule RosBridge.Publishers.Detections do
       Detection3DArray,
       %Detection3DArray{header: header, detections: detections}
     )
+  end
+
+  # ── 2D overlay on the raw left image ─────────────────────────────
+
+  # One ImageMarker, not one per box: ROS 2 has no ImageMarkerArray
+  # and the Image panel takes a single message per annotation topic,
+  # so every box goes into one LINE_LIST whose points are read in
+  # pairs.
+  defp publish_overlay(positioned, header, %Result{} = result, state) do
+    {map_binary, state} = rectification_map(result, state)
+
+    points =
+      positioned
+      |> Enum.flat_map(fn detection ->
+        detection.box
+        |> Fusion.outline(state.outline_segments)
+        |> Enum.map(&to_raw_pixel(&1, map_binary, result))
+      end)
+      |> Enum.reject(&is_nil/1)
+      # A dropped vertex would pair the wrong points together and draw
+      # a segment across the image, so an odd count loses its tail.
+      |> drop_odd_tail()
+
+    colours = outline_colours(positioned, points, state)
+
+    RosBridge.ZenohClient.publish(state.overlay_topic, ImageMarker, %ImageMarker{
+      header: header,
+      ns: @namespace,
+      id: 0,
+      type: ImageMarker.line_list(),
+      action: ImageMarker.add(),
+      scale: 1.0,
+      outline_color: %ColorRGBA{r: 0.2, g: 0.9, b: 0.2, a: 1.0},
+      filled: 0,
+      fill_color: %ColorRGBA{a: 0.0},
+      lifetime: state.lifetime,
+      points: Enum.map(points, fn {x, y} -> %Point{x: x, y: y, z: 0.0} end),
+      outline_colors: colours
+    })
+
+    state
+  end
+
+  # Without a calibration there is no map and no rectification, so the
+  # rectified and raw pixels are the same thing.
+  defp to_raw_pixel(vertex, nil, _result), do: vertex
+
+  defp to_raw_pixel(vertex, map_binary, %Result{} = result) do
+    Fusion.remap(map_binary, result.width, result.height, vertex)
+  end
+
+  defp drop_odd_tail(points) when rem(length(points), 2) == 0, do: points
+  defp drop_odd_tail(points), do: Enum.drop(points, -1)
+
+  # One colour per point, so each box keeps its own score colour in
+  # the shared marker. Every vertex of a box gets the same colour, and
+  # a box contributes 8 x outline_segments of them.
+  defp outline_colours(positioned, points, state) do
+    per_box = 8 * state.outline_segments
+
+    positioned
+    |> Enum.flat_map(fn detection ->
+      List.duplicate(%{colour_for(detection.score) | a: 1.0}, per_box)
+    end)
+    |> Enum.take(length(points))
+  end
+
+  defp rectification_map(%Result{rectification_map_left: nil}, state) do
+    {nil, state}
+  end
+
+  defp rectification_map(%Result{rectification_map_left: map}, %{rectification_map: {map, binary}} = state) do
+    {binary, state}
+  end
+
+  defp rectification_map(%Result{rectification_map_left: map}, state) do
+    binary = Evision.Mat.to_binary(map)
+    {binary, %{state | rectification_map: {map, binary}}}
   end
 
   defp pose_for(detection) do

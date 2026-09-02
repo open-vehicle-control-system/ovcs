@@ -11,7 +11,12 @@
         "synchronize": false,
         "rotation": 0,
         "flipHorizontal": false,
-        "flipVertical": false
+        "flipVertical": false,
+        "annotations": {
+          "/stereo/left/detections": {
+            "visible": true
+          }
+        }
       },
       "followTf": "stereo_left",
       "scene": {},
@@ -27,7 +32,7 @@
         "poseEstimateYDeviation": 0.5,
         "poseEstimateThetaDeviation": 0.26179939
       },
-      "foxglovePanelTitle": "Left camera"
+      "foxglovePanelTitle": "Left camera + boxes"
     },
     "Image!right": {
       "cameraState": {
