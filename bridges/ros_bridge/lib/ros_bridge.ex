@@ -3,7 +3,7 @@ defmodule RosBridge.Config do
   Per-vehicle configuration for `RosBridge`. Vehicles return one of
   these from their `c:RosBridge.ros_bridge_config/1` callback.
 
-  Two knobs:
+  Three knobs:
 
     * `:zenoh_endpoint_ip` — the Zenoh router this bridge peers with.
     * `:components` — the list of `ros_bridge` features the vehicle
@@ -11,13 +11,20 @@ defmodule RosBridge.Config do
       either a bare component atom (`:heartbeat`) or a `{name, opts}`
       tuple (`{:imu_publisher, driver: BNO085.I2C}`). See
       `RosBridge.Components` for the catalogue.
+    * `:node_name` — the ROS 2 node name this bridge announces in its
+      rmw_zenoh liveliness tokens. Defaults to `ZenohClient`'s
+      `"ovcs_bridge"`. Set it per firmware whenever a vehicle runs
+      more than one ROS bridge on the same fabric: two bridges sharing
+      a name collide in the ROS graph, and `ros2 node list` warns about
+      it while Foxglove merges them into one entry.
   """
   @enforce_keys [:zenoh_endpoint_ip]
-  defstruct [:zenoh_endpoint_ip, components: []]
+  defstruct [:zenoh_endpoint_ip, :node_name, components: []]
 
   @type component :: atom() | {atom(), keyword()}
   @type t :: %__MODULE__{
           zenoh_endpoint_ip: String.t(),
+          node_name: String.t() | nil,
           components: [component()]
         }
 end
@@ -75,11 +82,20 @@ defmodule RosBridge do
   def children do
     config = resolve_config()
 
-    base = [{RosBridge.ZenohClient, endpoint_ip: config.zenoh_endpoint_ip}]
+    base = [{RosBridge.ZenohClient, zenoh_client_opts(config)}]
     extras = Enum.flat_map(config.components, &resolve_component/1)
 
     base ++ extras
   end
+
+  # `:node_name` is optional — omit the key entirely when the vehicle
+  # leaves it unset so `ZenohClient` applies its own default rather
+  # than receiving an explicit nil.
+  defp zenoh_client_opts(%RosBridge.Config{node_name: nil} = config),
+    do: [endpoint_ip: config.zenoh_endpoint_ip]
+
+  defp zenoh_client_opts(%RosBridge.Config{} = config),
+    do: [endpoint_ip: config.zenoh_endpoint_ip, node_name: config.node_name]
 
   defp resolve_config do
     mod = vehicle()

@@ -81,6 +81,16 @@ Init opts: `:endpoint_ip` (required), `:node_name` (default
 (message module, interval, etc.) live on the *caller* — see
 `RosBridge.Publishers.Heartbeat` for the smallest example.
 
+`:node_name` is what the bridge announces in its rmw_zenoh liveliness
+tokens, i.e. the name `ros2 node list` and Foxglove show. Vehicles set
+it through `RosBridge.Config.node_name`; leave it unset for a vehicle
+with a single ROS bridge. **A vehicle running two bridges on one fabric
+must give each its own name** — two bridges announcing `ovcs_bridge`
+collide in the ROS graph, which `ros2 node list` reports as "nodes in
+the graph that share an exact name" and Foxglove renders as a single
+merged node. See `vehicles/ovcs_mini/lib/ovcs_mini.ex` for the two-bridge
+case (`ovcs_bridge_ros` + `ovcs_bridge_perception`).
+
 Endpoint comes from the vehicle's `RosBridge.Config.zenoh_endpoint_ip`
 — set per-vehicle in `vehicles/<v>/lib/<v>.ex`. Override at
 deployment time with `ZENOH_ENDPOINT_IP` (read at firmware build via
@@ -130,6 +140,9 @@ end
 def ros_bridge_config(:target) do
   %RosBridge.Config{
     zenoh_endpoint_ip: Application.get_env(:ros_bridge, :zenoh_endpoint_ip, "127.0.0.1"),
+    # Optional; required only when the vehicle runs more than one
+    # ROS bridge on the same Zenoh fabric.
+    node_name: "ovcs_bridge_ros",
     components: [
       :heartbeat,
       :joy_interpreter,
