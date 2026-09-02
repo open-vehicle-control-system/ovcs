@@ -180,7 +180,19 @@ defmodule OvcsMini do
      # block_size=7 is a balanced point between bs=5 (denser
      # coverage but jittery) and bs=9 (stable but sparse) — gives
      # ~30 % more frame-to-frame stability for ~5 pp coverage cost.
-     backend_opts: [num_disparities: 96, block_size: 7],
+     # Speckle filtering, tuned against the measured failure mode
+     # rather than the defaults: the map's problem is not missing
+     # pixels but confident wrong ones — isolated blobs reading
+     # 3.5 m inside a 2 m surface, from false matches on repetitive
+     # structure like shelving. A hole is honest; a phantom obstacle
+     # is not. Doubling the window and halving the tolerated internal
+     # range invalidates those blobs; costs some coverage.
+     backend_opts: [
+       num_disparities: 96,
+       block_size: 7,
+       speckle_window_size: 200,
+       speckle_range: 16
+     ],
      left: camera_addressing(arm, :left),
      right: camera_addressing(arm, :right)}
   end
