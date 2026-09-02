@@ -1,0 +1,31 @@
+# Onboard Wi-Fi as an internet feed. Entirely optional: the vehicle
+# network in ovcs0.nmconnection has its own gateway and DHCP and does
+# not depend on this. What this adds is a route off the vehicle, for
+# balena OTA updates, the cloud SSH tunnel and NTP.
+#
+# Separate phy from the AX210, so the AP's channel and this link's
+# channel do not constrain each other.
+#
+# `method=auto` and no [ipv4] address: this side takes a lease. Leave
+# it as the only default route on the box — the bridge deliberately
+# installs none.
+
+[connection]
+id=uplink
+type=wifi
+interface-name=wlan0
+
+[wifi]
+mode=infrastructure
+ssid=CHANGE_ME_UPLINK_SSID
+
+[wifi-security]
+key-mgmt=wpa-psk
+psk=CHANGE_ME_UPLINK_PSK
+
+[ipv4]
+method=auto
+
+[ipv6]
+addr-gen-mode=stable-privacy
+method=auto

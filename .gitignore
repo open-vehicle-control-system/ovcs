@@ -18,3 +18,7 @@ erl_crash.dump
 # Each is its own independent Git repo, not a submodule.
 systems/*/
 !systems/README.md
+
+# Filled-in NetworkManager keyfiles for the ROS compute node (they hold PSKs).
+# The committed templates are the .example files next to them.
+ros2/vehicule/host/system-connections/*.nmconnection

@@ -1,0 +1,40 @@
+# The AX210 as an access point, bridged into the vehicle network.
+#
+# 2.4 GHz is not a preference, it is the only option this card offers
+# here. The AX210 is a self-managed regulatory phy; under BE its table
+# marks 5 GHz ch 36-48 IR-CONCURRENT (AP only alongside a client link
+# on the same channel) and ch 52-140 DFS (needs radar detection, which
+# NetworkManager's wpa_supplicant AP mode does not do). ch 149-173 the
+# card offers at 22 dBm, but the ETSI/BE regdb caps 5725-5875 at 13 dBm
+# and 5795-5815 is the road-tolling band — not somewhere to put a
+# transmitter on a vehicle. 2.4 GHz is clean and allows HT40 in
+# 2422-2462.
+#
+# Requires `"country":"BE"` in /mnt/boot/config.json. Without a country
+# the phy sits in regulatory domain 00, where AP mode cannot beacon.
+#
+# interface-name is the AX210's stable PCI-path name. The onboard
+# Broadcom radio stays wlan0; this one is derived from its slot, so
+# probe order cannot swap them.
+#
+# channel: pick one clear of nearby APs — `nmcli device wifi list` on
+# the device shows what is around. NetworkManager 1.52 also exposes
+# 802-11-wireless.channel-width (auto yields HT20); HT40 needs ch 3-9
+# and roughly doubles throughput at the cost of spectrum.
+
+[connection]
+id=ovcs0-ap
+type=wifi
+interface-name=wlP1p1s0
+master=ovcs0
+slave-type=bridge
+
+[wifi]
+mode=ap
+band=bg
+channel=11
+ssid=OVCS-Mini
+
+[wifi-security]
+key-mgmt=wpa-psk
+psk=CHANGE_ME_AP_PSK

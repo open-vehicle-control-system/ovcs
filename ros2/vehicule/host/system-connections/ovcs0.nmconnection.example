@@ -1,0 +1,37 @@
+# The vehicle network. A bridge over eth0 + the AX210 access point, so
+# the wired Nerves bridges and the wireless base station share one L2
+# domain, one DHCP server and one gateway address.
+#
+# `method=shared` is what makes this self-contained: NetworkManager
+# assigns address1 unconditionally, spawns its own dnsmasq for DHCP+DNS,
+# and adds a MASQUERADE rule. None of that waits on an uplink — if the
+# onboard Wi-Fi (see uplink.nmconnection) is down or absent, clients
+# still get leases and full local connectivity; they just have no route
+# off the vehicle. dnsmasq serves .10-.254 out of the /24 below.
+#
+# The name matters. balenaOS's NetworkManager.conf has
+#   unmanaged-devices=...;interface-name:br*;...
+# so a bridge called br0 is invisible to NetworkManager and activation
+# fails with "device is strictly unmanaged". Anything not matching br*
+# is fine; ovcs0 is ours.
+#
+# This address is what `ZENOH_ENDPOINT_IP` should be set to — it is
+# chosen here rather than leased, so it never changes and the bridge
+# firmwares never need rebuilding for a network change.
+
+[connection]
+id=ovcs0
+type=bridge
+interface-name=ovcs0
+# Ports do not come up at boot on their own.
+autoconnect-slaves=1
+
+[bridge]
+stp=false
+
+[ipv4]
+method=shared
+address1=10.42.0.1/24
+
+[ipv6]
+method=ignore
