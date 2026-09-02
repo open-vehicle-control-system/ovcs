@@ -24,6 +24,7 @@ OVCS is developed on Linux. macOS users need a Linux VM (see [macOS setup](#loca
 | `libmnl-dev` | Latest | Host-compile `nerves_uevent` native | system package |
 | `nerves_bootstrap` | Latest | Nerves Mix archive | `mise run bootstrap` |
 | [PlatformIO](https://platformio.org/) | Latest | Arduino controller firmware | mise (via pipx + uv) |
+| [balena CLI](https://docs.balena.io/reference/balena-cli/) | 25.x | Deploys the ROS compute node's containers (see [ROS Compute Node](./ros_compute_node.md)) | mise |
 
 ## Linux Setup
 
