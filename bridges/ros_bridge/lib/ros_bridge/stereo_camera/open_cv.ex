@@ -15,11 +15,9 @@ defmodule RosBridge.StereoCamera.OpenCV do
 
   ## Pipeline (per submitted pair)
 
-      decode_jpeg                              # JPEG bytes → BGR Mat
+      decode_jpeg                              # JPEG bytes → single-channel Mat
         ↓
       rectify_image                            # apply undistortion + rectification LUT
-        ↓
-      convert_to_grayscale                     # SGBM consumes single-channel
         ↓
       compute_disparity                        # SGBM → CV_16S Mat (pixels × 16)
         ↓
@@ -254,23 +252,18 @@ defmodule RosBridge.StereoCamera.OpenCV do
       end)
 
     case decoded do
-      {:ok, {left_color, right_color}} ->
+      {:ok, {left_image, right_image}} ->
         {rectify_ns, {left_rectified, right_rectified}} =
           time(fn ->
             {
-              rectify_image(left_color, state.rectification_maps, :left),
-              rectify_image(right_color, state.rectification_maps, :right)
+              rectify_image(left_image, state.rectification_maps, :left),
+              rectify_image(right_image, state.rectification_maps, :right)
             }
-          end)
-
-        {gray_ns, {left_gray, right_gray}} =
-          time(fn ->
-            {convert_to_grayscale(left_rectified), convert_to_grayscale(right_rectified)}
           end)
 
         {clahe_ns, {left_eq, right_eq}} =
           time(fn ->
-            {apply_clahe(state.clahe, left_gray), apply_clahe(state.clahe, right_gray)}
+            {apply_clahe(state.clahe, left_rectified), apply_clahe(state.clahe, right_rectified)}
           end)
 
         {sgbm_ns, raw_disparity_unfiltered} =
@@ -296,7 +289,6 @@ defmodule RosBridge.StereoCamera.OpenCV do
           state.telemetry
           |> Telemetry.record(:decode, decode_ns)
           |> Telemetry.record(:rectify, rectify_ns)
-          |> Telemetry.record(:gray, gray_ns)
           |> Telemetry.record(:clahe, clahe_ns)
           |> Telemetry.record(:sgbm, sgbm_ns)
           |> Telemetry.record(:post, post_ns)
@@ -432,10 +424,17 @@ defmodule RosBridge.StereoCamera.OpenCV do
     |> Telemetry.record_scalar(:jitter, jitter, "px")
   end
 
-  # 1) JPEG bytes → BGR Mat. Returns {:error, reason} so the
-  #    pipeline's `with` short-circuits on a corrupt frame.
+  # 1) JPEG bytes → single-channel Mat. Returns {:error, reason} so
+  #    the pipeline's `with` short-circuits on a corrupt frame.
+  #
+  #    Grayscale rather than BGR because nothing downstream wants
+  #    colour: SGBM is single-channel, and `build_result/4` only ever
+  #    asked the reference image for its dimensions. Decoding straight
+  #    to grey also lets libjpeg skip chroma upsampling, and — the
+  #    larger saving — leaves `rectify_image/3` remapping one channel
+  #    instead of three.
   defp decode_jpeg(%Frame{jpeg: jpeg}) do
-    case Evision.imdecode(jpeg, Evision.Constant.cv_IMREAD_COLOR()) do
+    case Evision.imdecode(jpeg, Evision.Constant.cv_IMREAD_GRAYSCALE()) do
       %Evision.Mat{} = mat -> {:ok, mat}
       other -> {:error, {:imdecode_failed, other}}
     end
@@ -456,10 +455,6 @@ defmodule RosBridge.StereoCamera.OpenCV do
   end
 
   # 3) StereoSGBM only takes single-channel images.
-  defp convert_to_grayscale(image) do
-    Evision.cvtColor(image, Evision.Constant.cv_COLOR_BGR2GRAY())
-  end
-
   # 3b) Optional CLAHE — when disabled (`clahe: false` in opts)
   # the grayscale frame is passed through untouched.
   defp apply_clahe(nil, image), do: image
@@ -484,7 +479,13 @@ defmodule RosBridge.StereoCamera.OpenCV do
   # 5) Build the Result struct: pack 32FC1 disparity + 32FC1 depth
   #    + the geometry metadata downstream consumers need.
   defp build_result(raw_disparity, left_frame, reference_image, state) do
-    {height, width, _channels} = Evision.Mat.shape(reference_image)
+    # Single-channel Mats report a 2-tuple shape; the 3-tuple clause is
+    # kept so a caller passing a colour reference still works.
+    {height, width} =
+      case Evision.Mat.shape(reference_image) do
+        {h, w} -> {h, w}
+        {h, w, _channels} -> {h, w}
+      end
 
     {disparity_bytes, depth_bytes} =
       pack_disparity_and_depth(raw_disparity, state.focal_length, state.baseline)
