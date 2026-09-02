@@ -44,11 +44,28 @@ defmodule BNO085.I2C do
   # still parsed for diagnostics but not broadcast.
   @imu_sample_ids [@accelerometer_report, @calibrated_gyroscope_report, @rotation_vector_report]
 
+  # The chip announces "reset complete" at the *start* of its usable
+  # window, and silently drops feature commands sent in that instant.
+  # Draining the queue there is therefore not enough on its own: it
+  # was observed on a cold power-cycle to leave `chip_ready?: true`
+  # with an empty queue and not one report ever arriving — no error
+  # anywhere, just a topic that never appears. So we verify that the
+  # enables actually took, and re-send them if no report shows up.
+  @enable_verify_ms 500
+  @max_enable_attempts 5
+
+  # A chip that is absent, unpowered, or strapped to the other address
+  # never answers the reset, so `chip_ready?` stays false and the
+  # enable queue is never drained — the verification pass above would
+  # never even be scheduled. This is the backstop for that case.
+  @chip_ready_timeout_ms 5_000
+
   @impl true
   def init(_args) do
     {:ok, i2c} = Circuits.I2C.open("i2c-1")
     :ok = GenServer.cast(self(), :reset)
     {:ok, _} = :timer.send_interval(10, :loop)
+    Process.send_after(self(), :verify_chip_ready, @chip_ready_timeout_ms)
 
     {:ok,
      %{
@@ -59,7 +76,15 @@ defmodule BNO085.I2C do
        # reboot window. We buffer enables until we see the executable
        # channel's "reset complete" response, then drain the queue.
        chip_ready?: false,
-       pending_enables: []
+       pending_enables: [],
+       # Sensors we have asked the chip to stream. Kept after sending
+       # so the verification pass can re-send the same set.
+       requested_enables: [],
+       # Flipped by the first broadcast sample and never cleared —
+       # it is the only proof the enables were actually accepted.
+       streaming?: false,
+       enable_attempts: 0,
+       verify_ref: nil
      }}
   end
 
@@ -349,6 +374,51 @@ defmodule BNO085.I2C do
   end
 
   @impl true
+  def handle_info(:verify_chip_ready, %{chip_ready?: true} = state), do: {:noreply, state}
+
+  def handle_info(:verify_chip_ready, state) do
+    Logger.error(
+      "#{__MODULE__} no reset-complete response #{@chip_ready_timeout_ms}ms after boot — " <>
+        "#{length(state.pending_enables)} enable(s) still queued and nothing will stream. " <>
+        "Check the device answers at 0x#{Integer.to_string(@address, 16)} " <>
+        "(`Circuits.I2C.detect_devices(\"i2c-1\")`)."
+    )
+
+    {:noreply, state}
+  end
+
+  def handle_info(:verify_enables, %{streaming?: true} = state) do
+    {:noreply, %{state | verify_ref: nil}}
+  end
+
+  def handle_info(:verify_enables, %{requested_enables: []} = state) do
+    {:noreply, %{state | verify_ref: nil}}
+  end
+
+  def handle_info(:verify_enables, state) do
+    attempts = state.enable_attempts + 1
+    state = %{state | verify_ref: nil, enable_attempts: attempts}
+
+    if attempts >= @max_enable_attempts do
+      Logger.error(
+        "#{__MODULE__} no sensor reports after #{attempts} enable attempt(s) — " <>
+          "the chip is not streaming #{inspect(state.requested_enables)}. " <>
+          "Check the device answers at 0x#{Integer.to_string(@address, 16)} " <>
+          "(`Circuits.I2C.detect_devices(\"i2c-1\")`)."
+      )
+
+      {:noreply, state}
+    else
+      Logger.warning(
+        "#{__MODULE__} no sensor reports #{@enable_verify_ms}ms after enabling " <>
+          "#{inspect(state.requested_enables)}; re-sending (attempt #{attempts + 1})"
+      )
+
+      Enum.each(state.requested_enables, &send_enable(state, &1))
+      {:noreply, schedule_enable_verify(state)}
+    end
+  end
+
   def handle_info(:loop, state) do
     with {:ok, header_bytes} <- Circuits.I2C.read(state.i2c, @address, 4) do
       case parse_header_bytes(header_bytes) do
@@ -395,8 +465,7 @@ defmodule BNO085.I2C do
         cond do
           cargo.header.channel == @inport_sensor_reports_channel and
               report.id in @imu_sample_ids ->
-            broadcast_sample(acc, report)
-            acc
+            if broadcast_sample(acc, report), do: %{acc | streaming?: true}, else: acc
 
           cargo.header.channel == @executable_channel and
             report.id == @reset_complete_response and
@@ -406,7 +475,15 @@ defmodule BNO085.I2C do
             )
 
             Enum.each(acc.pending_enables, &send_enable(acc, &1))
-            %{acc | chip_ready?: true, pending_enables: []}
+
+            %{
+              acc
+              | chip_ready?: true,
+                pending_enables: [],
+                requested_enables: Enum.uniq(acc.requested_enables ++ acc.pending_enables),
+                enable_attempts: 0
+            }
+            |> schedule_enable_verify()
 
           true ->
             acc
@@ -416,6 +493,8 @@ defmodule BNO085.I2C do
     state
   end
 
+  # Returns true when a sample was actually broadcast, which is what
+  # tells `handle_cargo/2` the feature enables took effect.
   defp broadcast_sample(state, report) do
     sample = build_sample(report)
 
@@ -423,9 +502,11 @@ defmodule BNO085.I2C do
       Enum.each(state.listeners, fn listener ->
         GenServer.cast(listener, {:imu_sample, sample})
       end)
-    end
 
-    :ok
+      true
+    else
+      false
+    end
   end
 
   # Exposed (with @doc false) so unit tests can exercise the
@@ -461,6 +542,15 @@ defmodule BNO085.I2C do
   end
 
   def build_sample(_), do: nil
+
+  # Verification pass: if nothing has streamed by the time this fires,
+  # the chip swallowed the feature commands — re-send them. Gives up
+  # after @max_enable_attempts with a loud error, because the silent
+  # version of this failure is a topic that simply never appears.
+  defp schedule_enable_verify(state) do
+    if state.verify_ref, do: Process.cancel_timer(state.verify_ref)
+    %{state | verify_ref: Process.send_after(self(), :verify_enables, @enable_verify_ms)}
+  end
 
   defp send_enable(state, sensor) do
     report_id =
@@ -510,7 +600,14 @@ defmodule BNO085.I2C do
   def handle_cast({:enable, sensor}, state) do
     if state.chip_ready? do
       send_enable(state, sensor)
-      {:noreply, state}
+
+      state = %{
+        state
+        | requested_enables: Enum.uniq(state.requested_enables ++ [sensor]),
+          enable_attempts: 0
+      }
+
+      {:noreply, schedule_enable_verify(state)}
     else
       {:noreply, %{state | pending_enables: state.pending_enables ++ [sensor]}}
     end
