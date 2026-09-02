@@ -1,0 +1,85 @@
+<?xml version="1.0"?>
+<!--
+  Ackermann drive for Gazebo Jetty (gz-sim 10).
+
+  This is the part that could not be carried over from
+  open-vehicle-control-system/traxxas. That model used
+  `libgazebo_ros_ackermann_drive.so`, a **Gazebo Classic** plugin.
+  Classic is end-of-life and the plugin exists in no modern Gazebo;
+  the replacement is Gazebo's own `AckermannSteering` system, reached
+  through `ros_gz_bridge` rather than by linking ROS into the plugin.
+
+  Every geometry value below is read from the properties in
+  `ovcs_mini.urdf.xacro`, never retyped. The plugin computes odometry
+  from `wheel_radius` and `wheel_separation`, so a number that
+  disagrees with the model produces a vehicle that drives correctly
+  and *reports* the wrong distance — which is exactly the failure the
+  previous model shipped with, its 0.1 m wheels against a real 0.0548.
+
+  Tag names here were read out of the shipped
+  `libgz-sim-ackermann-steering-system.so` and the reference world
+  `worlds/ackermann_steering.sdf`, not recalled — and re-checked
+  against gz-sim 10 after the move from Harmonic, where the set turned
+  out to be unchanged. An unrecognised tag is silently ignored and the
+  car simply does not move, so guessing is expensive.
+
+  Note the absence of a `<topic>` tag: the command topic is left at
+  the system's default, `/model/ovcs_mini/cmd_vel`, and bridged to
+  `/cmd_vel` on the ROS side. `<odom_topic>`, `<tf_topic>` and
+  `<child_frame_id>` are set because they are confirmed to exist.
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <gazebo>
+    <plugin filename="gz-sim-ackermann-steering-system"
+            name="gz::sim::systems::AckermannSteering">
+
+      <!-- Shaft-driven 4WD: all four wheels are driven. `left_joint`
+           and `right_joint` are repeatable, which is how the system
+           expresses more than one driven axle. Modelling a Slash 4x4
+           as rear-drive would understate its traction and change how
+           it behaves under power in a corner. -->
+      <left_joint>front_left_wheel_joint</left_joint>
+      <left_joint>rear_left_wheel_joint</left_joint>
+      <right_joint>front_right_wheel_joint</right_joint>
+      <right_joint>rear_right_wheel_joint</right_joint>
+
+      <!-- Only the front pair steers. -->
+      <left_steering_joint>front_left_steering_joint</left_steering_joint>
+      <right_steering_joint>front_right_steering_joint</right_steering_joint>
+
+      <!-- Geometry, from the vehicle's measured specification. -->
+      <wheel_base>${wheelbase}</wheel_base>
+      <wheel_separation>${track}</wheel_separation>
+      <wheel_radius>${wheel_radius}</wheel_radius>
+
+      <!-- The kingpin axes sit inboard of the tyre centres, so this is
+           a little narrower than the track. It is what makes the two
+           front wheels take *different* angles in a turn — the whole
+           point of Ackermann geometry. ESTIMATE: the specification
+           does not publish kingpin spacing. -->
+      <kingpin_width>${track - 0.036}</kingpin_width>
+      <steering_limit>${steering_limit}</steering_limit>
+
+      <!-- ESTIMATE. A stock Slash 4x4 does roughly 30 mph; reverse is
+           geared slower. Acceleration limits keep the velocity
+           controller from stepping the wheels hard enough to spin
+           them on contact. -->
+      <min_velocity>-5.0</min_velocity>
+      <max_velocity>13.0</max_velocity>
+      <min_acceleration>-10.0</min_acceleration>
+      <max_acceleration>10.0</max_acceleration>
+
+      <odom_topic>/odom</odom_topic>
+      <tf_topic>/tf</tf_topic>
+      <child_frame_id>base_link</child_frame_id>
+      <odom_publish_frequency>50</odom_publish_frequency>
+    </plugin>
+
+    <!-- Joint positions, so robot_state_publisher can move the wheels
+         and steering in a viewer rather than showing a rigid model. -->
+    <plugin filename="gz-sim-joint-state-publisher-system"
+            name="gz::sim::systems::JointStatePublisher">
+      <topic>/joint_states</topic>
+    </plugin>
+  </gazebo>
+</robot>
