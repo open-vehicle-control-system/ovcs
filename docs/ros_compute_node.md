@@ -47,10 +47,11 @@ This is a **new Pi**, not a repurposed one:
 
 - The **VMS Pi 4** is vehicle control. Coupling it to the ROS fabric
   puts a container runtime in the safety path.
-- The **`ros_perception` Pi 5** already runs the stereo/Hailo pipeline
-  as Nerves + Elixir (`vehicles/ovcs_mini/lib/ovcs_mini.ex`,
-  `bridge_firmwares/0`). It stays as it is; it joins the fabric as a
-  client like the other bridges.
+- The **`ros_perception` Pi 5** already runs the stereo + Hailo
+  pipeline as Nerves + Elixir (`vehicles/ovcs_mini/lib/ovcs_mini.ex`,
+  `bridge_firmwares/0` — SGBM depth on the CPU, YOLO detection on the
+  accelerator; see `docs/ros_perception_detection.md`). It stays as it
+  is; it joins the fabric as a client like the other bridges.
 
 ## Operating system
 
