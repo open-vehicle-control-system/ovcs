@@ -27,7 +27,7 @@
         "poseEstimateYDeviation": 0.5,
         "poseEstimateThetaDeviation": 0.26179939
       },
-      "title": "Left camera"
+      "foxglovePanelTitle": "Left camera"
     },
     "Image!right": {
       "cameraState": {
@@ -47,7 +47,7 @@
       "transforms": {},
       "topics": {},
       "layers": {},
-      "title": "Right camera"
+      "foxglovePanelTitle": "Right camera"
     },
     "Image!depth": {
       "cameraState": {
@@ -68,7 +68,7 @@
       "transforms": {},
       "topics": {},
       "layers": {},
-      "title": "Depth (mm)"
+      "foxglovePanelTitle": "Depth (mm)"
     },
     "Plot!imu_accel": {
       "title": "IMU linear acceleration (m/s\u00b2)",
@@ -100,7 +100,8 @@
       "isSynced": true,
       "xAxisVal": "timestamp",
       "sidebarDimension": 240,
-      "followingViewWidth": 20
+      "followingViewWidth": 20,
+      "foxglovePanelTitle": "IMU acceleration"
     },
     "Plot!imu_gyro": {
       "title": "IMU angular velocity (rad/s)",
@@ -131,7 +132,8 @@
       "showPlotValuesInLegend": true,
       "isSynced": true,
       "xAxisVal": "timestamp",
-      "followingViewWidth": 20
+      "followingViewWidth": 20,
+      "foxglovePanelTitle": "IMU angular velocity"
     },
     "Plot!joy_axes": {
       "title": "Joy axes",
@@ -168,7 +170,8 @@
       "showPlotValuesInLegend": true,
       "isSynced": true,
       "xAxisVal": "timestamp",
-      "followingViewWidth": 20
+      "followingViewWidth": 20,
+      "foxglovePanelTitle": "Joy axes"
     },
     "RawMessages!heartbeat": {
       "topicPath": "/ovcs_heartbeat.data",
@@ -177,7 +180,7 @@
       "diffMethod": "custom",
       "diffTopicPath": "",
       "fontSize": 12,
-      "title": "Heartbeat"
+      "foxglovePanelTitle": "Heartbeat"
     },
     "RawMessages!disparity_geometry": {
       "topicPath": "/stereo/disparity.valid_window",
@@ -186,7 +189,7 @@
       "diffMethod": "custom",
       "diffTopicPath": "",
       "fontSize": 12,
-      "title": "Disparity geometry"
+      "foxglovePanelTitle": "Disparity geometry"
     },
     "3D!depth_cloud": {
       "cameraState": {
@@ -235,7 +238,7 @@
         }
       },
       "layers": {},
-      "title": "Point cloud"
+      "foxglovePanelTitle": "Point cloud"
     }
   },
   "globalVariables": {},
