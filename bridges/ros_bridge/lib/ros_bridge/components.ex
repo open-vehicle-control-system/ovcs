@@ -80,15 +80,11 @@ defmodule RosBridge.Components do
   end
 
   def start(:hailo_detector, opts) do
-    # Two children rather than one: the Port owner is generic
-    # inference and the publisher is perception policy, and a Hailo
-    # fault should restart the Port without disturbing anything else.
-    [
-      {RosBridge.Inference.Hailo,
-       hef_path: Keyword.fetch!(opts, :hef_path),
-       score_threshold: Keyword.get(opts, :score_threshold, 0.4)},
-      {RosBridge.Publishers.Detections, Keyword.drop(opts, [:hef_path, :score_threshold])}
-    ]
+    # One child, not two. The pair lives under its own supervisor so
+    # a detector that crashes on every frame cannot exhaust the
+    # bridge supervisor's restart budget and take the cameras with
+    # it — see `RosBridge.Inference.Supervisor`.
+    [{RosBridge.Inference.Supervisor, opts}]
   end
 
   def start(:stereo_camera, opts) do
