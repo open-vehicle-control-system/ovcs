@@ -44,7 +44,23 @@ BRIDGE_TOPICS = [
     "/odom@nav_msgs/msg/Odometry[gz.msgs.Odometry",
     "/tf@tf2_msgs/msg/TFMessage[gz.msgs.Pose_V",
     "/joint_states@sensor_msgs/msg/JointState[gz.msgs.Model",
+    "/stereo/left/camera_info@sensor_msgs/msg/CameraInfo[gz.msgs.CameraInfo",
 ]
+
+# Cameras go through `ros_gz_image image_bridge`, not the parameter
+# bridge, and the reason is bandwidth rather than tidiness.
+#
+# A 480x270 rgb8 frame is 389 KB. At 30 Hz that is 11.6 MB/s of raw
+# pixels, and putting it on the Zenoh fabric does not work: measured
+# here, a subscriber that cannot drain it that fast gets **one frame
+# every 15 seconds** — zenoh drops what the link cannot carry, so the
+# failure looks like a broken topic rather than a saturated one.
+#
+# image_bridge publishes through image_transport, which offers a
+# `/compressed` JPEG variant at roughly 30 KB — the same thing the real
+# vehicle publishes, and about 13x less. Raw pixels stay inside
+# gz-transport, where they are cheap.
+CAMERA_TOPICS = ["/stereo/left/image_raw"]
 
 # The drive command is separate because its Gazebo-side name contains
 # the model name. AckermannSteering has no verified tag for renaming
@@ -137,6 +153,19 @@ def generate_launch_description():
                 remappings=[(["/model/", vehicle, "/cmd_vel"], "/cmd_vel")],
                 output="screen",
             ),
+            # One image_bridge per camera; each offers raw and
+            # compressed, and image_transport only actually sends a
+            # transport someone has subscribed to.
+            *[
+                Node(
+                    package="ros_gz_image",
+                    executable="image_bridge",
+                    arguments=[topic],
+                    parameters=[use_sim_time],
+                    output="screen",
+                )
+                for topic in CAMERA_TOPICS
+            ],
             Node(
                 package="ros_gz_sim",
                 executable="create",
