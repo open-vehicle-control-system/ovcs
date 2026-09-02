@@ -26,7 +26,8 @@
         "poseEstimateXDeviation": 0.5,
         "poseEstimateYDeviation": 0.5,
         "poseEstimateThetaDeviation": 0.26179939
-      }
+      },
+      "title": "Left camera"
     },
     "Image!right": {
       "cameraState": {
@@ -45,7 +46,8 @@
       "scene": {},
       "transforms": {},
       "topics": {},
-      "layers": {}
+      "layers": {},
+      "title": "Right camera"
     },
     "Image!depth": {
       "cameraState": {
@@ -65,7 +67,8 @@
       "scene": {},
       "transforms": {},
       "topics": {},
-      "layers": {}
+      "layers": {},
+      "title": "Depth (mm)"
     },
     "Plot!imu_accel": {
       "title": "IMU linear acceleration (m/s\u00b2)",
@@ -173,7 +176,8 @@
       "showFullMessageForDiff": false,
       "diffMethod": "custom",
       "diffTopicPath": "",
-      "fontSize": 12
+      "fontSize": 12,
+      "title": "Heartbeat"
     },
     "RawMessages!disparity_geometry": {
       "topicPath": "/stereo/disparity.valid_window",
@@ -181,46 +185,8 @@
       "showFullMessageForDiff": false,
       "diffMethod": "custom",
       "diffTopicPath": "",
-      "fontSize": 12
-    },
-    "Image!disparity": {
-      "cameraState": {
-        "distance": 5,
-        "perspective": true
-      },
-      "imageMode": {
-        "imageTopic": "/stereo/disparity/image",
-        "calibrationTopic": "/stereo/left/camera_info",
-        "synchronize": false,
-        "minValue": 0.0,
-        "maxValue": 95.0,
-        "colorMode": "colormap",
-        "colorMap": "turbo"
-      },
-      "followTf": "stereo_left",
-      "scene": {},
-      "transforms": {},
-      "topics": {},
-      "layers": {}
-    },
-    "Image!rectified": {
-      "cameraState": {
-        "distance": 5,
-        "perspective": true
-      },
-      "imageMode": {
-        "imageTopic": "/stereo/left/image_calibration",
-        "calibrationTopic": "/stereo/left/camera_info",
-        "synchronize": false,
-        "rotation": 0,
-        "flipHorizontal": false,
-        "flipVertical": false
-      },
-      "followTf": "stereo_left",
-      "scene": {},
-      "transforms": {},
-      "topics": {},
-      "layers": {}
+      "fontSize": 12,
+      "title": "Disparity geometry"
     },
     "3D!depth_cloud": {
       "cameraState": {
@@ -266,12 +232,10 @@
           "minValue": 0.5,
           "maxValue": 4.0,
           "pointSize": 3
-        },
-        "/stereo/depth/image_rect": {
-          "visible": false
         }
       },
-      "layers": {}
+      "layers": {},
+      "title": "Point cloud"
     }
   },
   "globalVariables": {},
@@ -289,22 +253,12 @@
       },
       "second": {
         "first": "Image!depth",
-        "second": {
-          "first": "3D!depth_cloud",
-          "second": {
-            "first": "Image!rectified",
-            "second": "Image!disparity",
-            "direction": "column",
-            "splitPercentage": 50
-          },
-          "direction": "row",
-          "splitPercentage": 62
-        },
+        "second": "3D!depth_cloud",
         "direction": "row",
-        "splitPercentage": 34
+        "splitPercentage": 40
       },
       "direction": "column",
-      "splitPercentage": 48
+      "splitPercentage": 45
     },
     "second": {
       "first": {
@@ -325,9 +279,9 @@
         "splitPercentage": 40
       },
       "direction": "column",
-      "splitPercentage": 30
+      "splitPercentage": 28
     },
     "direction": "row",
-    "splitPercentage": 72
+    "splitPercentage": 74
   }
 }
