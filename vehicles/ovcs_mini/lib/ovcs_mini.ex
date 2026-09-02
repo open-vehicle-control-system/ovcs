@@ -141,16 +141,30 @@ defmodule OvcsMini do
   # while an optical frame is x right, y down, z into the image. That
   # is what the (-0.5, 0.5, -0.5, 0.5) quaternion does.
   #
-  # TODO: the translation is a placeholder. Measure the lens centre
-  # relative to the chassis origin — until then every depth reading is
-  # correctly shaped but sitting in the wrong place on the vehicle.
+  # x is measured, z is not.
+  #
+  # `base_link` sits midway between the axles, so with a 324 mm
+  # wheelbase the front axle is 162 mm ahead of it. The camera bar is
+  # 120 mm behind the front axle, which puts the lenses at
+  # 162 - 120 = 42 mm forward of base_link. The value here was 100 mm
+  # — a guess that placed the cameras 58 mm too far forward and shifted
+  # every detection on the vehicle by that much.
+  #
+  # y is 0: the bar straddles the centreline, and the pair's own 90 mm
+  # baseline is carried by the calibration, not by this transform,
+  # which locates `stereo_left` — the frame the depth image and
+  # detections are published in.
+  #
+  # TODO: z is still the original guess. Measure the lens centre height
+  # above the ground; it is the last unmeasured number in the vehicle's
+  # geometry.
   defp stereo_transforms do
     {:static_transforms,
      transforms: [
        %{
          parent: "base_link",
          child: "stereo_left",
-         translation: {0.10, 0.0, 0.12},
+         translation: {0.042, 0.0, 0.12},
          rotation: {-0.5, 0.5, -0.5, 0.5}
        }
      ]}
