@@ -7,8 +7,14 @@ doc/
 *.db-wal
 _build/
 deps/
+*.o
 .elixir_ls/
 erl_crash.dump
 *.ez
 .claude/*
 !.claude/settings.json
+
+# Nerves system forks cloned locally for development (see systems/README.md).
+# Each is its own independent Git repo, not a submodule.
+systems/*/
+!systems/README.md

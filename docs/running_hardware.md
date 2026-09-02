@@ -56,7 +56,7 @@ and implementation notes.
 ```
 
 - `<vehicle>` is the snake_case directory name under `vehicles/` (e.g. `ovcs1`, `ovcs_mini`, `obd2`).
-- `<role>` is `vms`, `infotainment`, or any bridge firmware id declared in the vehicle's `bridge_firmwares/0` callback (e.g. `radio_control`, `ros`).
+- `<role>` is `vms`, `infotainment`, or `bridge-<id>` for any bridge firmware id declared in the vehicle's `bridge_firmwares/0` callback (e.g. `bridge-radio_control`, `bridge-ros`, `bridge-ros_perception`). The `bridge-` prefix is required — a bare id is rejected, and the error lists the valid roles.
 - Positional args for `build` / `burn` / `clean` / `upload` / `connect` are order-independent. Missing values prompt interactively; on a non-tty stdin the command exits with status 2.
 - Run `./ovcs --help` or `./ovcs <command> --help` for the full option list.
 
@@ -75,7 +75,7 @@ Build a firmware image for a specific (vehicle, role) pair:
 ./ovcs build ovcs_mini vms
 
 # Build a bridge firmware declared in the vehicle (e.g. radio_control)
-./ovcs build ovcs1 radio_control
+./ovcs build ovcs1 bridge-radio_control
 
 # Build every role of a vehicle (vms, infotainment, and each bridge) in
 # one go. Stops at the first failing build.

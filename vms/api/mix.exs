@@ -42,7 +42,6 @@ defmodule VmsApi.MixProject do
       {:dns_cluster, "~> 0.1.1"},
       {:bandit, "~> 1.2"},
       {:cors_plug, "~> 3.0.3"},
-      {:json, "~> 1.4"},
       {:vms_core, path: "../core"},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
     ]
