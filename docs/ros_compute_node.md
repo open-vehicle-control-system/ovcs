@@ -360,28 +360,24 @@ one is open.
 
 ## Where the network stands
 
-Phase 1 is written but not finished. In order:
+**Phase 1 is done and proven across a reboot** on the Mini's Pi. The
+`wifi_firmware` service stages the blobs and iwlwifi binds them at boot
+("loaded firmware version 89…", "loaded PNVM version…"); `"country":
+"BE"` reaches the AX210's self-managed phy; `OVCS-Mini` comes up
+unattended on ch 11 as `WPA2 WPA3`, confirmed beaconing by scanning
+for it from the onboard radio; `ovcs0` holds `10.42.0.1/24` with
+dnsmasq leasing `.10-.254`, and a client has been given an address.
+The onboard radio reconnects as the uplink. `eth0` is untouched and
+still the default route.
 
-1. **`balena push` from `ros2/vehicule/`** so `wifi_firmware` ships,
-   then reboot and check `journalctl -k -b | grep iwlwifi` says
-   "loaded firmware" and "loaded PNVM". Until this is deployed the
-   AX210 works only for as long as nothing replaces the host rootfs.
-2. **Fill in the AP PSK** in `ovcs0-ap.nmconnection`, install it and
-   `ovcs0.nmconnection` per [Installing it](#installing-it), and
-   confirm a laptop joining `OVCS-Mini` gets a lease in `10.42.0.0/24`.
-3. **Reboot** — the acceptance test for keyfile autoconnect, which is
-   a different code path from `nmcli con up`.
-4. Decide whether HT40 is worth it. `channel-width` is auto (HT20)
+What is left:
+
+1. Decide whether HT40 is worth it. `channel-width` is auto (HT20)
    today; HT40 roughly doubles throughput for Foxglove but needs
    ch 3-9, which is where the site's other APs already are.
-5. Phase 2 — bridge `eth0`, set `ZENOH_ENDPOINT_IP` to the bridge
-   address in `vehicles/ovcs_mini/.env.exs`, and rebuild `bridge-ros`
-   and `bridge-ros_perception` once.
-
-Already done on the Mini's Pi, and confirmed across a reboot: the
-`wifi_firmware` service stages the blobs and iwlwifi binds them at boot
-("loaded firmware version 89…", "loaded PNVM version…"), the onboard
-radio reconnects as the uplink, and `"country": "BE"` reaches the
-AX210's self-managed phy.
+2. Phase 2 — bridge `eth0` per
+   [Installing it](#installing-it), set `ZENOH_ENDPOINT_IP` to the
+   bridge address in `vehicles/ovcs_mini/.env.exs`, and rebuild
+   `bridge-ros` and `bridge-ros_perception` once.
 
 Next: [Running on Hardware](./running_hardware.md)
