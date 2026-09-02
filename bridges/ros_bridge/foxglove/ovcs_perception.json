@@ -224,14 +224,14 @@
     },
     "3D!depth_cloud": {
       "cameraState": {
-        "distance": 4,
+        "distance": 4.5,
         "perspective": true,
-        "phi": 65,
-        "thetaOffset": 30,
+        "phi": 78,
+        "thetaOffset": 0,
         "targetOffset": [
+          1.5,
           0,
-          0,
-          1.5
+          0
         ],
         "target": [
           0,
@@ -245,11 +245,11 @@
           1
         ],
         "fovy": 45,
-        "near": 0.2,
-        "far": 50
+        "near": 0.1,
+        "far": 100
       },
       "followMode": "follow-pose",
-      "followTf": "stereo_left",
+      "followTf": "base_link",
       "scene": {
         "transforms": {
           "showLabel": true,
@@ -262,9 +262,10 @@
           "visible": true,
           "colorMode": "colormap",
           "colorMap": "turbo",
-          "minValue": 0.55,
-          "maxValue": 3.0,
-          "pointSize": 2
+          "minValue": 550,
+          "maxValue": 3000,
+          "pointSize": 3,
+          "depthScale": 0.001
         },
         "/imu": {
           "visible": false

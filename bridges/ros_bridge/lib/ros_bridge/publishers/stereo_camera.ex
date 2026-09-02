@@ -231,6 +231,26 @@ defmodule RosBridge.Publishers.StereoCamera do
     RosBridge.ZenohClient.publish(topic, CompressedImage, message)
   end
 
+  # The depth image is *rectified*, so its camera matrix is the
+  # rectified projection P, not the raw K. Advertising a raw K next to
+  # it is an invitation to unproject with the wrong focal length — here
+  # K.fx is 536.5 against P.fx 584.7, so a consumer that reaches for K
+  # spreads the cloud 9 % too wide. There is no unrectified version of
+  # this image for K to describe, so K is set to P's 3x3 block and the
+  # distortion coefficients zeroed: whichever a consumer picks, it gets
+  # the right answer.
+  defp depth_camera_info(%CameraInfo{p: p} = base, header) do
+    [fx, s, cx, _tx, _, fy, cy, _ty, _, _, _, _] = p
+
+    %CameraInfo{
+      base
+      | header: header,
+        k: [fx, s, cx, 0.0, fy, cy, 0.0, 0.0, 1.0],
+        d: [0.0, 0.0, 0.0, 0.0, 0.0],
+        r: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+    }
+  end
+
   defp publish_camera_info(topic, header, %CameraInfo{} = base, %Frame{width: w, height: h}) do
     # `base` was already scaled to the configured capture resolution at
     # init. Taking `max/2` with the frame's dimensions — as this did —
@@ -362,7 +382,7 @@ defmodule RosBridge.Publishers.StereoCamera do
     # the left camera's info is the correct one to republish here.
     with topic when is_binary(topic) <- state.depth_camera_info_topic,
          {:ok, %{camera_info: %CameraInfo{} = left_info}} <- Map.fetch(state.sides, "left") do
-      RosBridge.ZenohClient.publish(topic, CameraInfo, %CameraInfo{left_info | header: header})
+      RosBridge.ZenohClient.publish(topic, CameraInfo, depth_camera_info(left_info, header))
     end
 
     # Same pixels as `disparity_message.image`, republished under a
