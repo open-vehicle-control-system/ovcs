@@ -97,6 +97,23 @@ balena push <fleet>            # build on balena's builders, OTA to the fleet
 balena push <device>.local     # local mode: build on the device, no cloud
 ```
 
+A local-mode push that is interrupted — by a reboot, say — can leave
+the built image **untagged** while `local_image_<service>:latest` still
+resolves to the previous one. The supervisor then faithfully runs the
+old image, and the symptom is a fix that visibly does not take even
+though the build succeeded. Check the tag, not the build output:
+
+```sh
+balena-engine images --no-trunc --format '{{.Repository}}:{{.Tag}} -> {{.ID}}' \
+  | grep <service>
+balena-engine inspect $(balena-engine ps -aq --filter name=<service> | head -1) \
+  --format '{{json .Config.Cmd}}'
+```
+
+Local-mode pushes also leave the fleet's target state untouched, so
+nothing reaches the other devices until the same code is pushed to the
+fleet rather than to `<device>.local`.
+
 `ros2/vehicule/` is the balena **source root**. That is not cosmetic:
 `balena push` only reads a file literally named `docker-compose.yml` at
 the root of the pushed directory, and every `build:` context must sit
