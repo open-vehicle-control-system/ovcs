@@ -121,9 +121,36 @@ defmodule OvcsMini do
       node_name: "ovcs_bridge_perception",
       components: [
         :heartbeat,
+        stereo_transforms(),
         stereo_component(RosBridge.Camera.LibCamera, :target)
       ]
     }
+  end
+
+  # Where the stereo bar sits on the car. Without this, `stereo_left`
+  # is a label nothing can resolve: a consumer knows a point is 1.2 m
+  # in front of the camera but not where the camera is, so it cannot
+  # express the measurement in the car's own terms — and Foxglove's 3D
+  # panel reports the frame missing and draws nothing.
+  #
+  # The rotation is the standard body -> optical frame change, not a
+  # mounting angle: base_link is REP-103 (x forward, y left, z up)
+  # while an optical frame is x right, y down, z into the image. That
+  # is what the (-0.5, 0.5, -0.5, 0.5) quaternion does.
+  #
+  # TODO: the translation is a placeholder. Measure the lens centre
+  # relative to the chassis origin — until then every depth reading is
+  # correctly shaped but sitting in the wrong place on the vehicle.
+  defp stereo_transforms do
+    {:static_transforms,
+     transforms: [
+       %{
+         parent: "base_link",
+         child: "stereo_left",
+         translation: {0.10, 0.0, 0.12},
+         rotation: {-0.5, 0.5, -0.5, 0.5}
+       }
+     ]}
   end
 
   # Self-contained stereo perception block. Inherits most defaults
