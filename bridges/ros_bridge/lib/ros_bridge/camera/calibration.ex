@@ -187,6 +187,65 @@ defmodule RosBridge.Camera.Calibration do
   defp pad_leading_zero("-." <> rest), do: "-0." <> rest
   defp pad_leading_zero(text), do: text
 
+  @doc """
+  Rescale a calibration saved at one resolution to the resolution the
+  cameras are actually running at.
+
+  Pixel-indexed intrinsics scale linearly: a 0.5x resize halves fx,
+  fy, cx, cy and every pixel-space term of `P`. The physical baseline
+  encoded in `P_right[0,3] = -fx x T` survives because `P[0,3]` and
+  `P[0,0]` scale by the same factor. Distortion coefficients `D` and
+  the rectification rotation `R` are resolution-invariant.
+
+  Only valid for a proportional resize. Changing the *aspect* ratio
+  changes which part of the sensor is sampled and needs a fresh
+  calibration, not a rescale.
+  """
+  @spec scale_to(t(), pos_integer(), pos_integer()) :: t()
+  def scale_to(%__MODULE__{} = calibration, actual_width, actual_height)
+      when actual_width > 0 and actual_height > 0 do
+    cond do
+      calibration.width == 0 or calibration.height == 0 ->
+        # No reference dims in the YAML — trust the intrinsics as-is.
+        %{calibration | width: actual_width, height: actual_height}
+
+      calibration.width == actual_width and calibration.height == actual_height ->
+        calibration
+
+      true ->
+        scale_x = actual_width / calibration.width
+        scale_y = actual_height / calibration.height
+
+        %{
+          calibration
+          | width: actual_width,
+            height: actual_height,
+            camera_matrix: scale_3x3(calibration.camera_matrix, scale_x, scale_y),
+            projection_matrix: scale_3x4(calibration.projection_matrix, scale_x, scale_y)
+        }
+    end
+  end
+
+  defp scale_3x3([a, b, c, d, e, f, g, h, i], scale_x, scale_y) do
+    [
+      a * scale_x, b * scale_x, c * scale_x,
+      d * scale_y, e * scale_y, f * scale_y,
+      g, h, i
+    ]
+  end
+
+  defp scale_3x4(
+         [r0c0, r0c1, r0c2, r0c3, r1c0, r1c1, r1c2, r1c3, r2c0, r2c1, r2c2, r2c3],
+         scale_x,
+         scale_y
+       ) do
+    [
+      r0c0 * scale_x, r0c1 * scale_x, r0c2 * scale_x, r0c3 * scale_x,
+      r1c0 * scale_y, r1c1 * scale_y, r1c2 * scale_y, r1c3 * scale_y,
+      r2c0, r2c1, r2c2, r2c3
+    ]
+  end
+
   # ── writers ──────────────────────────────────────────────────
 
   @doc """

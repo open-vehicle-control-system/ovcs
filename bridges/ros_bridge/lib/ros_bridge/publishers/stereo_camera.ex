@@ -230,12 +230,16 @@ defmodule RosBridge.Publishers.StereoCamera do
   end
 
   defp publish_camera_info(topic, header, %CameraInfo{} = base, %Frame{width: w, height: h}) do
-    message = %CameraInfo{
-      base
-      | header: header,
-        width: max(base.width, w),
-        height: max(base.height, h)
-    }
+    # `base` was already scaled to the configured capture resolution at
+    # init. Taking `max/2` with the frame's dimensions — as this did —
+    # silently advertised the calibration's larger resolution whenever
+    # the cameras ran smaller, with intrinsics to match.
+    message =
+      if base.width == w and base.height == h do
+        %CameraInfo{base | header: header}
+      else
+        %CameraInfo{base | header: header, width: w, height: h}
+      end
 
     RosBridge.ZenohClient.publish(topic, CameraInfo, message)
   end
@@ -385,7 +389,15 @@ defmodule RosBridge.Publishers.StereoCamera do
 
   defp load_camera_info(path, width, height, side) do
     case Calibration.load(path) do
-      {:ok, calibration} ->
+      {:ok, raw} ->
+        # Advertise the geometry that matches the images we publish.
+        # The calibration YAML is saved at whatever resolution the
+        # session used; the cameras may run smaller. Publishing the
+        # unscaled intrinsics makes every consumer that projects with
+        # CameraInfo — point clouds, obstacle projection, Foxglove's
+        # 3D panel — wrong by the resolution ratio.
+        calibration = Calibration.scale_to(raw, width, height)
+
         %CameraInfo{
           width: calibration.width,
           height: calibration.height,
