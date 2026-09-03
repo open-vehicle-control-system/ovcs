@@ -15,11 +15,9 @@ defmodule RosBridge.StereoCamera.OpenCV do
 
   ## Pipeline (per submitted pair)
 
-      decode_jpeg                              # JPEG bytes → BGR Mat
+      decode_jpeg                              # JPEG bytes → single-channel Mat
         ↓
       rectify_image                            # apply undistortion + rectification LUT
-        ↓
-      convert_to_grayscale                     # SGBM consumes single-channel
         ↓
       compute_disparity                        # SGBM → CV_16S Mat (pixels × 16)
         ↓
@@ -152,6 +150,8 @@ defmodule RosBridge.StereoCamera.OpenCV do
        matcher: matcher,
        focal_length: focal_length,
        baseline: baseline,
+       principal_point: principal_point(left_calibration),
+       cloud_decimation: Keyword.get(opts, :cloud_decimation, 4),
        num_disparities: Keyword.get(opts, :num_disparities, 64),
        block_size: Keyword.get(opts, :block_size, 5),
        min_disparity: Keyword.get(opts, :min_disparity, 0),
@@ -254,23 +254,18 @@ defmodule RosBridge.StereoCamera.OpenCV do
       end)
 
     case decoded do
-      {:ok, {left_color, right_color}} ->
+      {:ok, {left_image, right_image}} ->
         {rectify_ns, {left_rectified, right_rectified}} =
           time(fn ->
             {
-              rectify_image(left_color, state.rectification_maps, :left),
-              rectify_image(right_color, state.rectification_maps, :right)
+              rectify_image(left_image, state.rectification_maps, :left),
+              rectify_image(right_image, state.rectification_maps, :right)
             }
-          end)
-
-        {gray_ns, {left_gray, right_gray}} =
-          time(fn ->
-            {convert_to_grayscale(left_rectified), convert_to_grayscale(right_rectified)}
           end)
 
         {clahe_ns, {left_eq, right_eq}} =
           time(fn ->
-            {apply_clahe(state.clahe, left_gray), apply_clahe(state.clahe, right_gray)}
+            {apply_clahe(state.clahe, left_rectified), apply_clahe(state.clahe, right_rectified)}
           end)
 
         {sgbm_ns, raw_disparity_unfiltered} =
@@ -296,7 +291,6 @@ defmodule RosBridge.StereoCamera.OpenCV do
           state.telemetry
           |> Telemetry.record(:decode, decode_ns)
           |> Telemetry.record(:rectify, rectify_ns)
-          |> Telemetry.record(:gray, gray_ns)
           |> Telemetry.record(:clahe, clahe_ns)
           |> Telemetry.record(:sgbm, sgbm_ns)
           |> Telemetry.record(:post, post_ns)
@@ -432,10 +426,17 @@ defmodule RosBridge.StereoCamera.OpenCV do
     |> Telemetry.record_scalar(:jitter, jitter, "px")
   end
 
-  # 1) JPEG bytes → BGR Mat. Returns {:error, reason} so the
-  #    pipeline's `with` short-circuits on a corrupt frame.
+  # 1) JPEG bytes → single-channel Mat. Returns {:error, reason} so
+  #    the pipeline's `with` short-circuits on a corrupt frame.
+  #
+  #    Grayscale rather than BGR because nothing downstream wants
+  #    colour: SGBM is single-channel, and `build_result/4` only ever
+  #    asked the reference image for its dimensions. Decoding straight
+  #    to grey also lets libjpeg skip chroma upsampling, and — the
+  #    larger saving — leaves `rectify_image/3` remapping one channel
+  #    instead of three.
   defp decode_jpeg(%Frame{jpeg: jpeg}) do
-    case Evision.imdecode(jpeg, Evision.Constant.cv_IMREAD_COLOR()) do
+    case Evision.imdecode(jpeg, Evision.Constant.cv_IMREAD_GRAYSCALE()) do
       %Evision.Mat{} = mat -> {:ok, mat}
       other -> {:error, {:imdecode_failed, other}}
     end
@@ -456,10 +457,6 @@ defmodule RosBridge.StereoCamera.OpenCV do
   end
 
   # 3) StereoSGBM only takes single-channel images.
-  defp convert_to_grayscale(image) do
-    Evision.cvtColor(image, Evision.Constant.cv_COLOR_BGR2GRAY())
-  end
-
   # 3b) Optional CLAHE — when disabled (`clahe: false` in opts)
   # the grayscale frame is passed through untouched.
   defp apply_clahe(nil, image), do: image
@@ -484,10 +481,19 @@ defmodule RosBridge.StereoCamera.OpenCV do
   # 5) Build the Result struct: pack 32FC1 disparity + 32FC1 depth
   #    + the geometry metadata downstream consumers need.
   defp build_result(raw_disparity, left_frame, reference_image, state) do
-    {height, width, _channels} = Evision.Mat.shape(reference_image)
 
-    {disparity_bytes, depth_bytes} =
+    # Single-channel Mats report a 2-tuple shape; the 3-tuple clause is
+    # kept so a caller passing a colour reference still works.
+    {height, width} =
+      case Evision.Mat.shape(reference_image) do
+        {h, w} -> {h, w}
+        {h, w, _channels} -> {h, w}
+      end
+
+    {disparity_bytes, depth_bytes, depth_m} =
       pack_disparity_and_depth(raw_disparity, state.focal_length, state.baseline)
+
+    {cloud, points} = build_point_cloud(depth_m, state)
 
     %Result{
       capture_ns: left_frame.capture_ns,
@@ -496,7 +502,7 @@ defmodule RosBridge.StereoCamera.OpenCV do
       disparity: disparity_bytes,
       disparity_step: width * 4,
       depth: depth_bytes,
-      depth_step: width * 4,
+      depth_step: width * 2,
       focal_length: state.focal_length,
       baseline: state.baseline,
       min_disparity: state.min_disparity / 1.0,
@@ -505,9 +511,84 @@ defmodule RosBridge.StereoCamera.OpenCV do
       valid_x: state.min_disparity + state.num_disparities,
       valid_y: div(state.block_size, 2),
       valid_w: max(width - (state.min_disparity + state.num_disparities) - state.block_size, 0),
-      valid_h: max(height - state.block_size, 0)
+      valid_h: max(height - state.block_size, 0),
+      cloud: cloud,
+      cloud_points: points
     }
   end
+
+  # Unproject the disparity into metric XYZ. A depth image needs
+  # intrinsics, a depth scale and a consumer that knows to unproject
+  # it — three things that each failed silently while getting a 3D
+  # view working. A point cloud carries explicit metres and leaves
+  # nothing to interpret.
+  #
+  # Decimated because the full grid is 12 bytes a pixel: at 480x270 and
+  # 12 Hz that is 8 MB/s on a link already carrying disparity and
+  # depth, and the session drops what it cannot drain. Every 4th pixel
+  # in each axis is ~1.2 MB/s.
+  defp build_point_cloud(_depth_m, %{cloud_decimation: d}) when d <= 0, do: {nil, 0}
+
+  # Unproject the metric depth into XYZ with explicit arithmetic
+  # rather than `reprojectImageTo3D/2` + a Q matrix. The depth Mat is
+  # already validated end to end — it matches f*T/disparity to 0.03 mm
+  # on the wire — so building on it means the only inputs are numbers
+  # this module already trusts.
+  #
+  # Decimated because the full grid is 12 bytes a pixel: 480x270 at
+  # 12 Hz is 8 MB/s on a link already carrying disparity and depth,
+  # and the session drops what it cannot drain. Sampling every 4th
+  # pixel costs ~1.2 MB/s. Intrinsics scale with the sampling, exactly
+  # as they do for a resize.
+  defp build_point_cloud(depth_m, state) do
+    {cx, cy} = state.principal_point
+    step = state.cloud_decimation
+    {height, width} = {elem(Evision.Mat.shape(depth_m), 0), elem(Evision.Mat.shape(depth_m), 1)}
+    {w, h} = {div(width, step), div(height, step)}
+
+    z = Evision.resize(depth_m, {w, h}, interpolation: Evision.Constant.cv_INTER_NEAREST())
+
+    scale = 1.0 / step
+    fx = state.focal_length * scale
+
+    x = Evision.multiply(Evision.subtract(u_grid(w, h), cx * scale), Evision.divide(z, fx))
+    y = Evision.multiply(Evision.subtract(v_grid(w, h), cy * scale), Evision.divide(z, fx))
+
+    [x, y, z]
+    |> Evision.merge()
+    |> Evision.Mat.to_binary()
+    |> pack_finite_points()
+  end
+
+  # Column / row index grids. Built per call rather than cached: at
+  # 120x67 this is 8k floats, far cheaper than the SGBM pass it sits
+  # behind, and caching would mean invalidating on every resolution
+  # change.
+  defp u_grid(w, h) do
+    row = for u <- 0..(w - 1), into: <<>>, do: <<u * 1.0::little-float-32>>
+    Evision.Mat.from_binary(:binary.copy(row, h), {:f, 32}, h, w, 1)
+  end
+
+  defp v_grid(w, h) do
+    binary = for v <- 0..(h - 1), into: <<>>, do: :binary.copy(<<v * 1.0::little-float-32>>, w)
+    Evision.Mat.from_binary(binary, {:f, 32}, h, w, 1)
+  end
+
+  # Drop the points that carry no measurement rather than encode
+  # sentinels: an unmatched pixel has depth 0, and a phantom obstacle
+  # at the origin is worse than no point at all.
+  defp pack_finite_points(binary) do
+    for <<x::little-float-32, y::little-float-32, z::little-float-32 <- binary>>,
+        z > 0.05 and z < 20.0,
+        reduce: {[], 0} do
+      {acc, n} ->
+        {[<<x::little-float-32, y::little-float-32, z::little-float-32>> | acc], n + 1}
+    end
+    |> then(fn {chunks, n} -> {chunks |> Enum.reverse() |> IO.iodata_to_binary(), n} end)
+  end
+
+  defp principal_point(%Calibration{projection_matrix: [_, _, cx, _, _, _, cy, _, _, _, _, _]}),
+    do: {cx, cy}
 
   # ── init helpers ─────────────────────────────────────────────
 
@@ -579,61 +660,10 @@ defmodule RosBridge.StereoCamera.OpenCV do
   defp sgbm_mode(:sgbm_3way), do: Evision.StereoSGBM.cv_MODE_SGBM_3WAY()
   defp sgbm_mode(:hh4), do: Evision.StereoSGBM.cv_MODE_HH4()
 
-  # Rescale a calibration (originally saved at some reference
-  # resolution) to the actual capture resolution. Pixel-indexed
-  # intrinsics scale linearly: a 0.5× resize halves fx, fy, cx,
-  # cy and halves every pixel-space term of P. The physical
-  # baseline encoded in `P_right[0,3] = -fx × T` is preserved
-  # because P_right[0,3] and P_right[0,0] both scale by the
-  # same factor. Distortion coefficients D and the rectification
-  # rotation R are resolution-invariant and stay untouched.
-  defp scale_calibration_to(%Calibration{} = calibration, actual_width, actual_height)
-       when actual_width > 0 and actual_height > 0 do
-    reference_width = calibration.width
-    reference_height = calibration.height
-
-    cond do
-      reference_width == 0 or reference_height == 0 ->
-        # No reference dims in the YAML — pretend it was captured
-        # at the requested resolution and trust the intrinsics.
-        %{calibration | width: actual_width, height: actual_height}
-
-      reference_width == actual_width and reference_height == actual_height ->
-        calibration
-
-      true ->
-        scale_x = actual_width / reference_width
-        scale_y = actual_height / reference_height
-
-        %{
-          calibration
-          | width: actual_width,
-            height: actual_height,
-            camera_matrix: scale_3x3(calibration.camera_matrix, scale_x, scale_y),
-            projection_matrix: scale_3x4(calibration.projection_matrix, scale_x, scale_y)
-        }
-    end
-  end
-
-  defp scale_3x3([a, b, c, d, e, f, g, h, i], scale_x, scale_y) do
-    [
-      a * scale_x, b * scale_x, c * scale_x,
-      d * scale_y, e * scale_y, f * scale_y,
-      g, h, i
-    ]
-  end
-
-  defp scale_3x4(
-         [r0c0, r0c1, r0c2, r0c3, r1c0, r1c1, r1c2, r1c3, r2c0, r2c1, r2c2, r2c3],
-         scale_x,
-         scale_y
-       ) do
-    [
-      r0c0 * scale_x, r0c1 * scale_x, r0c2 * scale_x, r0c3 * scale_x,
-      r1c0 * scale_y, r1c1 * scale_y, r1c2 * scale_y, r1c3 * scale_y,
-      r2c0, r2c1, r2c2, r2c3
-    ]
-  end
+  # Lives on the Calibration struct so the publisher can apply the
+  # same scaling to the CameraInfo it advertises.
+  defp scale_calibration_to(%Calibration{} = calibration, actual_width, actual_height),
+    do: Calibration.scale_to(calibration, actual_width, actual_height)
 
   # Precomputes the (map_x, map_y) lookup tables that
   # `Evision.remap/4` consumes. For each output pixel they give
@@ -716,9 +746,17 @@ defmodule RosBridge.StereoCamera.OpenCV do
   #     onto `min_disparity − 1`, which is exactly the convention
   #     consumers filter on (`disp < min_disparity`). So no clamping:
   #     it would erase the "no match here" signal.
-  #   * 32FC1 depth (metres): `depth = (f × B × 16) / disp_signed`,
-  #     invalid pixels become 0.0 (the ROS depth_image "no
-  #     measurement" convention foxglove understands).
+  #   * 16UC1 depth (millimetres): `depth = (f × B × 16) / disp_signed`,
+  #     scaled to mm and clamped to 65535. Invalid pixels become 0,
+  #     the ROS depth_image "no measurement" convention.
+  #
+  #     Millimetres in uint16 rather than metres in float32 because
+  #     the two are the same information at half the bytes, and the
+  #     pair of full-size float images was too much for one Zenoh
+  #     session: published second in the same tick, 32FC1 depth was
+  #     being dropped down to ~1.2 Hz while disparity held 7 Hz.
+  #     1 mm resolution over 65 m is far past anything a 90 mm
+  #     baseline can resolve, so nothing measurable is lost.
   defp pack_disparity_and_depth(raw_disparity, focal_length, baseline) do
     disp_f32 = Evision.Mat.as_type(raw_disparity, :f32)
 
@@ -726,12 +764,27 @@ defmodule RosBridge.StereoCamera.OpenCV do
       disp_f32
       |> Evision.divide(@disparity_fixed_point_scale)
       |> Evision.Mat.to_binary()
-    depth_scale = focal_length * baseline * @disparity_fixed_point_scale
+    # metres → millimetres in the same divide, so there is no extra
+    # pass over the image.
+    depth_scale = focal_length * baseline * @disparity_fixed_point_scale * 1000.0
     depth_raw = Evision.divide(depth_scale, disp_f32)
     invalid_mask = Evision.compare(raw_disparity, 0, Evision.Constant.cv_CMP_LE())
-    depth = Evision.Mat.setTo(depth_raw, 0.0, invalid_mask)
-    depth_bytes = Evision.Mat.to_binary(depth)
 
-    {disparity_bytes, depth_bytes}
+    depth_m =
+      depth_raw
+      |> Evision.Mat.setTo(0.0, invalid_mask)
+      |> Evision.divide(1000.0)
+
+    depth_bytes =
+      depth_raw
+      |> Evision.Mat.setTo(0.0, invalid_mask)
+      # `as_type(:u16)` saturates rather than wrapping, so anything
+      # beyond 65.5 m pins at the ceiling instead of aliasing to a
+      # near reading — a wrong-but-far value is far safer here than a
+      # wrong-and-close one.
+      |> Evision.Mat.as_type(:u16)
+      |> Evision.Mat.to_binary()
+
+    {disparity_bytes, depth_bytes, depth_m}
   end
 end

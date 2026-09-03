@@ -24,6 +24,12 @@ defmodule RosBridge.Components do
           `BNO085.I2C`, etc.)
         * `:topic`, `:frame_id`, `:publish_interval_ms` — forwarded
           to `RosBridge.Publishers.Imu` (see its defaults).
+    * `:static_transforms` — publishes the vehicle's fixed frame
+      relationships on `/tf`. Opts: `:transforms` (required, a list of
+      `%{parent:, child:, translation: {x,y,z}, rotation: {x,y,z,w}}`),
+      plus `:topic` and `:interval_ms`. Without it, frame ids in
+      message headers are labels a consumer cannot resolve — see
+      `RosBridge.Publishers.StaticTransform`.
     * `:stereo_camera` — self-contained stereo perception unit
       (cameras + per-side image/camera_info publishers + SGBM
       backend + disparity/depth publisher). All orchestration
@@ -67,6 +73,10 @@ defmodule RosBridge.Components do
   def start(:imu_publisher, opts) do
     driver = Keyword.fetch!(opts, :driver)
     [{driver, []}, {RosBridge.Publishers.Imu, opts}]
+  end
+
+  def start(:static_transforms, opts) do
+    [{RosBridge.Publishers.StaticTransform, opts}]
   end
 
   def start(:stereo_camera, opts) do

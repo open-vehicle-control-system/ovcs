@@ -5,7 +5,7 @@ defmodule RosBridge.StereoCamera.Result do
   Backends fill every field. The publisher uses it directly:
   the disparity binary becomes the body of a
   `stereo_msgs/DisparityImage`, the depth binary becomes a
-  `sensor_msgs/Image` (32FC1, metres), and the geometric metadata
+  `sensor_msgs/Image` (16UC1, millimetres), and the geometric metadata
   (`focal_length`, `baseline`, `valid_*`, …) populates the
   DisparityImage's surrounding scalars.
 
@@ -24,11 +24,21 @@ defmodule RosBridge.StereoCamera.Result do
       filter on — rather than clamped to 0.
     * `:disparity_step` — bytes per row of the disparity buffer
       (`width × 4` for 32FC1).
-    * `:depth` — raw 32FC1 pixel bytes, row-major. Each value is
-      the metric distance to that pixel, in metres. NaN for
-      pixels with invalid disparity.
+    * `:depth` — raw 16UC1 pixel bytes, row-major. Each value is
+      the metric distance to that pixel, in **millimetres**, 0 for
+      pixels with invalid disparity (the ROS depth-image "no
+      measurement" convention). uint16 mm rather than float32 m
+      because it halves the payload, and two full-size float images
+      per frame could not share one Zenoh session — the second one
+      published was dropped down to ~1.2 Hz. 1 mm over 65 m is well
+      past what a 90 mm baseline resolves.
     * `:depth_step` — bytes per row of the depth buffer
-      (`width × 4` for 32FC1).
+      (`width × 2` for 16UC1).
+    * `:cloud` — packed `x, y, z` float32 points in the depth image's
+      optical frame, or `nil` when cloud generation is off. Invalid
+      pixels are dropped rather than encoded, so this is a dense
+      buffer of real measurements.
+    * `:cloud_points` — how many points `:cloud` holds.
     * `:focal_length` — fx in pixels (the camera's focal length
       on the horizontal axis, from the rectified `P` matrix).
     * `:baseline` — distance between the two camera centres,
@@ -61,7 +71,9 @@ defmodule RosBridge.StereoCamera.Result do
     :valid_x,
     :valid_y,
     :valid_w,
-    :valid_h
+    :valid_h,
+    :cloud,
+    :cloud_points
   ]
   defstruct @enforce_keys
 
@@ -81,6 +93,8 @@ defmodule RosBridge.StereoCamera.Result do
           valid_x: non_neg_integer(),
           valid_y: non_neg_integer(),
           valid_w: non_neg_integer(),
-          valid_h: non_neg_integer()
+          valid_h: non_neg_integer(),
+          cloud: binary() | nil,
+          cloud_points: non_neg_integer()
         }
 end

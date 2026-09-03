@@ -25,8 +25,11 @@ defmodule RosBridge.Publishers.StereoCamera do
        build a backlog.
     5. **Publish disparity + depth** when the backend returns a
        `%RosBridge.StereoCamera.Result{}`: a `stereo_msgs/DisparityImage`
-       on `:disparity_topic` and a 32FC1 `sensor_msgs/Image` on
-       `:depth_topic`. Both reuse the left frame's stamp so
+       on `:disparity_topic`, the same disparity pixels again as a
+       bare 32FC1 `sensor_msgs/Image` on `:disparity_image_topic`
+       (viewers cannot render the container type), and a 32FC1
+       `sensor_msgs/Image` of metres on `:depth_topic`. All reuse
+       the left frame's stamp so
        downstream consumers can pair them with the raw streams via
        `Header.stamp`.
 
@@ -37,7 +40,7 @@ defmodule RosBridge.Publishers.StereoCamera do
     * `:topic_prefix` — root for per-side image topics
       (`<prefix>/<side>/image_raw/compressed` and
       `<prefix>/<side>/camera_info`).
-    * `:disparity_topic`, `:depth_topic` — full Zenoh topics for
+    * `:disparity_topic`, `:disparity_image_topic`, `:depth_topic` — full Zenoh topics for
       the stereo outputs.
     * `:left`, `:right` — per-side keyword lists. Each requires
       `:frame_id` (used in every outgoing header for that side)
@@ -66,6 +69,7 @@ defmodule RosBridge.Publishers.StereoCamera do
   alias RosBridge.StereoCamera.Telemetry
   alias RosBridge.Timing
   alias Ros2.SensorMsgs.Msg.CameraInfo
+  alias Ros2.SensorMsgs.Msg.PointCloud2
   alias Ros2.SensorMsgs.Msg.CompressedImage
   alias Ros2.SensorMsgs.Msg.Image
   alias Ros2.SensorMsgs.Msg.RegionOfInterest
@@ -84,7 +88,10 @@ defmodule RosBridge.Publishers.StereoCamera do
     cameras = Keyword.fetch!(opts, :cameras)
     topic_prefix = Keyword.fetch!(opts, :topic_prefix)
     disparity_topic = Keyword.fetch!(opts, :disparity_topic)
+    disparity_image_topic = Keyword.get(opts, :disparity_image_topic)
     depth_topic = Keyword.fetch!(opts, :depth_topic)
+    depth_camera_info_topic = Keyword.get(opts, :depth_camera_info_topic)
+    cloud_topic = Keyword.get(opts, :cloud_topic)
     left_opts = Keyword.fetch!(opts, :left)
     right_opts = Keyword.fetch!(opts, :right)
     width = Keyword.fetch!(opts, :width)
@@ -115,7 +122,10 @@ defmodule RosBridge.Publishers.StereoCamera do
        },
        camera_info_interval_frames: camera_info_interval_frames,
        disparity_topic: disparity_topic,
+       disparity_image_topic: disparity_image_topic,
        depth_topic: depth_topic,
+       depth_camera_info_topic: depth_camera_info_topic,
+       cloud_topic: cloud_topic,
        # The depth + disparity outputs are anchored to the left
        # camera's frame, per ROS convention.
        stereo_frame_id: Keyword.fetch!(left_opts, :frame_id),
@@ -224,13 +234,37 @@ defmodule RosBridge.Publishers.StereoCamera do
     RosBridge.ZenohClient.publish(topic, CompressedImage, message)
   end
 
-  defp publish_camera_info(topic, header, %CameraInfo{} = base, %Frame{width: w, height: h}) do
-    message = %CameraInfo{
+  # The depth image is *rectified*, so its camera matrix is the
+  # rectified projection P, not the raw K. Advertising a raw K next to
+  # it is an invitation to unproject with the wrong focal length — here
+  # K.fx is 536.5 against P.fx 584.7, so a consumer that reaches for K
+  # spreads the cloud 9 % too wide. There is no unrectified version of
+  # this image for K to describe, so K is set to P's 3x3 block and the
+  # distortion coefficients zeroed: whichever a consumer picks, it gets
+  # the right answer.
+  defp depth_camera_info(%CameraInfo{p: p} = base, header) do
+    [fx, s, cx, _tx, _, fy, cy, _ty, _, _, _, _] = p
+
+    %CameraInfo{
       base
       | header: header,
-        width: max(base.width, w),
-        height: max(base.height, h)
+        k: [fx, s, cx, 0.0, fy, cy, 0.0, 0.0, 1.0],
+        d: [0.0, 0.0, 0.0, 0.0, 0.0],
+        r: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
     }
+  end
+
+  defp publish_camera_info(topic, header, %CameraInfo{} = base, %Frame{width: w, height: h}) do
+    # `base` was already scaled to the configured capture resolution at
+    # init. Taking `max/2` with the frame's dimensions — as this did —
+    # silently advertised the calibration's larger resolution whenever
+    # the cameras ran smaller, with intrinsics to match.
+    message =
+      if base.width == w and base.height == h do
+        %CameraInfo{base | header: header}
+      else
+        %CameraInfo{base | header: header, width: w, height: h}
+      end
 
     RosBridge.ZenohClient.publish(topic, CameraInfo, message)
   end
@@ -331,7 +365,10 @@ defmodule RosBridge.Publishers.StereoCamera do
       header: header,
       height: result.height,
       width: result.width,
-      encoding: "32FC1",
+      # Millimetres in uint16, the ROS depth-image convention. Half
+      # the bytes of 32FC1 metres, which is what lets it share a Zenoh
+      # session with the disparity image.
+      encoding: "16UC1",
       is_bigendian: 0,
       step: result.depth_step,
       data: result.depth
@@ -339,6 +376,47 @@ defmodule RosBridge.Publishers.StereoCamera do
 
     RosBridge.ZenohClient.publish(state.disparity_topic, DisparityImage, disparity_message)
     RosBridge.ZenohClient.publish(state.depth_topic, Image, depth_message)
+
+    # A depth image is only projectable with intrinsics, and consumers
+    # look for camera_info as a sibling of the image topic — ours lived
+    # only at `<prefix>/left/camera_info`, a different namespace, so
+    # viewers had no way to resolve it and drew nothing rather than
+    # complaining. The depth image is in the rectified left frame, so
+    # the left camera's info is the correct one to republish here.
+    if state.cloud_topic && result.cloud && result.cloud_points > 0 do
+      RosBridge.ZenohClient.publish(state.cloud_topic, PointCloud2, %PointCloud2{
+        header: header,
+        height: 1,
+        width: result.cloud_points,
+        fields: PointCloud2.xyz_fields(),
+        is_bigendian: 0,
+        point_step: PointCloud2.point_step(),
+        row_step: result.cloud_points * PointCloud2.point_step(),
+        data: result.cloud,
+        # Unmatched pixels are dropped, not encoded as sentinels, so
+        # every point here is a real measurement.
+        is_dense: 1
+      })
+    end
+
+    with topic when is_binary(topic) <- state.depth_camera_info_topic,
+         {:ok, %{camera_info: %CameraInfo{} = left_info}} <- Map.fetch(state.sides, "left") do
+      RosBridge.ZenohClient.publish(topic, CameraInfo, depth_camera_info(left_info, header))
+    end
+
+    # Same pixels as `disparity_message.image`, republished under a
+    # bare `sensor_msgs/Image` type. `stereo_msgs/DisparityImage` is a
+    # container — viewers match on the *topic's* type and will not
+    # reach inside it for `.image`, so Foxglove's image panel cannot
+    # render `<prefix>/disparity` at all. The bytes already exist, but
+    # the bandwidth does not: opt-in via `:publish_disparity_image`,
+    # since a third 921 KB image per frame starves the other two on a
+    # single Zenoh session. The geometry (f, T, valid_window) still
+    # only lives on the DisparityImage topic, which stays the
+    # canonical one for consumers doing maths.
+    if state.disparity_image_topic do
+      RosBridge.ZenohClient.publish(state.disparity_image_topic, Image, disparity_image)
+    end
   end
 
   # ── init helpers ─────────────────────────────────────────────
@@ -363,7 +441,15 @@ defmodule RosBridge.Publishers.StereoCamera do
 
   defp load_camera_info(path, width, height, side) do
     case Calibration.load(path) do
-      {:ok, calibration} ->
+      {:ok, raw} ->
+        # Advertise the geometry that matches the images we publish.
+        # The calibration YAML is saved at whatever resolution the
+        # session used; the cameras may run smaller. Publishing the
+        # unscaled intrinsics makes every consumer that projects with
+        # CameraInfo — point clouds, obstacle projection, Foxglove's
+        # 3D panel — wrong by the resolution ratio.
+        calibration = Calibration.scale_to(raw, width, height)
+
         %CameraInfo{
           width: calibration.width,
           height: calibration.height,
