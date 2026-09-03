@@ -1302,6 +1302,41 @@ impl russh::client::Handler for SshAcceptAllKeys {
     }
 }
 
+/// The usable public key from an agent identity, or `None` to skip it.
+///
+/// russh 0.62 models agent identities as an enum — a plain public key or
+/// an OpenSSH certificate — where 0.54 handed back public keys directly.
+/// Certificates are skipped rather than guessed at: authenticating with
+/// one needs `authenticate_openssh_cert`, the vehicles do not use
+/// certificates, and 0.54 never surfaced them either, so skipping
+/// preserves the old behaviour instead of quietly changing it.
+fn agent_identity_public_key(
+    identity: russh::keys::agent::AgentIdentity,
+) -> Option<russh::keys::ssh_key::PublicKey> {
+    match identity {
+        russh::keys::agent::AgentIdentity::PublicKey { key, .. } => Some(key),
+        russh::keys::agent::AgentIdentity::Certificate { .. } => None,
+    }
+}
+
+/// The hash algorithm to sign with for `key`.
+///
+/// nerves_ssh rejects SHA-1 `ssh-rsa` signatures, which is what russh
+/// signs with when the hash is `None` — so RSA keys must carry an
+/// explicit `rsa-sha2-*` hash, mirroring what OpenSSH negotiates. That
+/// is why plain `ssh` works where a `None` hash does not. Every other
+/// algorithm (ed25519, ecdsa) has exactly one signature scheme and must
+/// be left as `None`; passing a hash there is rejected.
+fn signing_hash_for(
+    key: &russh::keys::ssh_key::PublicKey,
+    rsa_hash: Option<russh::keys::ssh_key::HashAlg>,
+) -> Option<russh::keys::ssh_key::HashAlg> {
+    match key.algorithm() {
+        russh::keys::ssh_key::Algorithm::Rsa { .. } => rsa_hash,
+        _ => None,
+    }
+}
+
 /// Connect + authenticate an SSH session against `host` using the
 /// user's ssh-agent identities. Returns the handle the caller can open
 /// channels against. Returns a descriptive `anyhow::Error` on any
@@ -1341,19 +1376,10 @@ async fn connect_ssh(host: &str) -> Result<russh::client::Handle<SshAcceptAllKey
         .flatten()
         .unwrap_or(Some(russh::keys::ssh_key::HashAlg::Sha256));
     for identity in identities {
-        // russh 0.62 models agent identities as an enum: a plain public key
-        // or an OpenSSH certificate. Only the former is usable here, and it
-        // is all 0.54 ever surfaced, so certificate identities are skipped
-        // rather than guessed at — authenticating with one needs
-        // `authenticate_openssh_cert`, which the vehicles do not use.
-        let key = match identity {
-            russh::keys::agent::AgentIdentity::PublicKey { key, .. } => key,
-            russh::keys::agent::AgentIdentity::Certificate { .. } => continue,
+        let Some(key) = agent_identity_public_key(identity) else {
+            continue;
         };
-        let hash_alg = match key.algorithm() {
-            russh::keys::ssh_key::Algorithm::Rsa { .. } => rsa_hash,
-            _ => None,
-        };
+        let hash_alg = signing_hash_for(&key, rsa_hash);
         let auth = handle
             .authenticate_publickey_with(SSH_USER, key, hash_alg, &mut agent)
             .await?;
@@ -1644,5 +1670,77 @@ fn dispatch_monitor_line(raw: &str, node: &str, tx: &Sender<Msg>) -> bool {
             .is_ok()
         }
         _ => true, // drop iex banner / return values / stray noise
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{agent_identity_public_key, signing_hash_for};
+    use russh::keys::agent::AgentIdentity;
+    use russh::keys::ssh_key::{Certificate, HashAlg, PublicKey};
+
+    // Real keys, generated with ssh-keygen. An RSA and an ed25519 key are
+    // both needed because the whole point of `signing_hash_for` is that
+    // they must be treated differently, and a certificate because russh
+    // 0.62 can hand one back where 0.54 never did.
+    const RSA_PUB: &str = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDTWmLO2CvI4j2ezTng0rokboMmTWIOlPR+0/UpKbcOnjcXdgdhJ/8VAnx0FDq+dSVFncrKOa8iAbMVwt/tKvCP1AIwAvjJBN69lI2/4lfnjqbj5g17MlRVptbvV6w2zmDcPwylfYRIrHpy/fFRlS2C5vVOkSTbTDHRKecb+xudXxgHewhniWND5CXV2v7/Cr9IzwhxZdkVQZfZD3+m6KBoNgLcTQc8Xaz+3T8zVLHiDC+xO6TTwy7EZl4NbCGiTd3kq/mwfWKmUP7eTU03lm27rF9VeKtWML/+Nz84rDwfEAJt9If2WmROZvfo4biI3eDhv/nJeTxdgBNw6aMrl3wd rsa-test";
+    const ED25519_PUB: &str =
+        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIF/eYwj/hUv77wpjCuHT3q+GEw8d/vaNbSs69AK1hQSz ed-test";
+    const ED25519_CERT: &str = "ssh-ed25519-cert-v01@openssh.com AAAAIHNzaC1lZDI1NTE5LWNlcnQtdjAxQG9wZW5zc2guY29tAAAAIBMKEKd2q57TWpdbaAz8TByhepJvF3RqwGLD58ghFnTrAAAAIF/eYwj/hUv77wpjCuHT3q+GEw8d/vaNbSs69AK1hQSzAAAAAAAAAAAAAAABAAAAB3Rlc3QtaWQAAAAIAAAABG92Y3MAAAAAapm5JAAAAABseZtkAAAAAAAAAIIAAAAVcGVybWl0LVgxMS1mb3J3YXJkaW5nAAAAAAAAABdwZXJtaXQtYWdlbnQtZm9yd2FyZGluZwAAAAAAAAAWcGVybWl0LXBvcnQtZm9yd2FyZGluZwAAAAAAAAAKcGVybWl0LXB0eQAAAAAAAAAOcGVybWl0LXVzZXItcmMAAAAAAAAAAAAAADMAAAALc3NoLWVkMjU1MTkAAAAgw2IjtmxriCcNYGvbIdJBRL1v4jGnPaMvWPRbnqBSqlcAAABTAAAAC3NzaC1lZDI1NTE5AAAAQMdGqW/z5BmuU1I/y5eJkU1kxoJ9rJyjtTrfxoC5igz3Mo40+6x4w++dlWdqwBRNTOY0p6X1jqSxBWP4bORsZAs= ed-test";
+
+    fn rsa() -> PublicKey {
+        PublicKey::from_openssh(RSA_PUB).expect("parse rsa test key")
+    }
+
+    fn ed25519() -> PublicKey {
+        PublicKey::from_openssh(ED25519_PUB).expect("parse ed25519 test key")
+    }
+
+    #[test]
+    fn rsa_keys_sign_with_the_negotiated_hash() {
+        // nerves_ssh rejects SHA-1 ssh-rsa, so an RSA key must carry an
+        // explicit rsa-sha2-* hash. Whatever the server advertised is
+        // passed straight through.
+        assert_eq!(
+            signing_hash_for(&rsa(), Some(HashAlg::Sha256)),
+            Some(HashAlg::Sha256)
+        );
+        assert_eq!(
+            signing_hash_for(&rsa(), Some(HashAlg::Sha512)),
+            Some(HashAlg::Sha512)
+        );
+    }
+
+    #[test]
+    fn non_rsa_keys_never_carry_a_hash() {
+        // ed25519 has exactly one signature scheme; passing a hash is
+        // rejected by the server. This must hold even when the server
+        // advertised an RSA hash for use with other keys.
+        assert_eq!(signing_hash_for(&ed25519(), Some(HashAlg::Sha256)), None);
+        assert_eq!(signing_hash_for(&ed25519(), None), None);
+    }
+
+    #[test]
+    fn a_public_key_identity_is_usable() {
+        let key = ed25519();
+        let identity = AgentIdentity::PublicKey {
+            key: key.clone(),
+            comment: "ed-test".to_string(),
+        };
+        assert_eq!(agent_identity_public_key(identity), Some(key));
+    }
+
+    #[test]
+    fn a_certificate_identity_is_skipped() {
+        // Authenticating with a certificate needs
+        // authenticate_openssh_cert, so it is skipped rather than fed to
+        // authenticate_publickey_with. 0.54 never surfaced certificates
+        // at all, so skipping preserves the previous behaviour.
+        let certificate = Certificate::from_openssh(ED25519_CERT).expect("parse test certificate");
+        let identity = AgentIdentity::Certificate {
+            certificate,
+            comment: "ed-test".to_string(),
+        };
+        assert_eq!(agent_identity_public_key(identity), None);
     }
 }
