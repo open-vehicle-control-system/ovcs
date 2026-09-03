@@ -102,9 +102,24 @@ runs unchanged against the simulator. Only the camera driver differs:
 same frames a physical driver does.
 
 ```sh
-cd bridges/ros_bridge
-VEHICLE=OvcsMini OVCS_SIM=1 ZENOH_ENDPOINT_IP=127.0.0.1 iex -S mix
+./ovcs can setup ovcs_mini          # once — Cantastic needs vcan0 to exist
+
+cd bridges/firmware
+VEHICLE=OvcsMini OVCS_SIM=1 ZENOH_ENDPOINT_IP=127.0.0.1 \
+  BRIDGE_FIRMWARE_ID=ros_perception CAN_NETWORK_MAPPINGS=ovcs:vcan0 \
+  iex -S mix
 ```
+
+`bridges/firmware`, not `bridges/ros_bridge`: the bridge library has no
+`config/` of its own, so `CAN_NETWORK_MAPPINGS` is never read there and
+Cantastic dies with "CAN network mappings are missing from the Cantastic
+configuratiion". The firmware project is what `./ovcs run` starts, and
+its `config/runtime.exs` is where that variable is consumed.
+
+`BRIDGE_FIRMWARE_ID` is required too. Without it `firmware_id/0` falls
+back to `"ros"`, which selects `ros_bridge_config(:host, "ros")` — the
+joy/IMU wiring — and the stereo pipeline never starts at all, with no
+error to say why.
 
 `OVCS_SIM` selects the simulated wiring, so it cannot be picked up by
 accident on the vehicle. No `:hailo_detector` there — a workstation
