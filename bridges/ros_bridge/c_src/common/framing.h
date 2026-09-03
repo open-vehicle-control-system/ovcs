@@ -1,6 +1,5 @@
-// Shared framing helpers for the camera_capture Port binary.
-// (Hailo inference uses the nx_hailo NIF, not a Port — see
-// lib/ros_bridge/inference/hailo.ex.)
+// Shared framing helpers for the Port binaries (camera_capture,
+// hailo_detect).
 //
 // The wire format on stdin/stdout is `Port.open(..., {:packet, 4})`
 // on the Elixir side — a 4-byte **big-endian** length prefix in
@@ -25,8 +24,23 @@ namespace ovcs::framing {
 // shutdown signal (the BEAM closing the Port closes stdin).
 bool read_record(std::vector<uint8_t>& out);
 
-// Write one length-prefixed record to stdout. Flushes stdout so
-// the Elixir side sees records promptly.
+// Redirect subsequent `write_record` calls to `fd` instead of
+// stdout. `hailo_detect` needs this: libhailort's logger writes to
+// stdout, and a stray `[info]` line in the middle of a record turns
+// into a bogus 4-byte length prefix and desynchronises the Port for
+// good. The fix is to hand the real stdout to the framing layer and
+// point fd 1 at stderr before HailoRT is ever touched:
+//
+//     int records = dup(STDOUT_FILENO);
+//     dup2(STDERR_FILENO, STDOUT_FILENO);
+//     ovcs::framing::set_output_fd(records);
+//
+// Callers that never initialise a chatty library (camera_capture)
+// can ignore this and keep the stdout default.
+void set_output_fd(int fd);
+
+// Write one length-prefixed record to the output fd (stdout unless
+// `set_output_fd` said otherwise).
 bool write_record(const uint8_t* data, size_t len);
 
 // Convenience: build the FRAME record payload (tag = 1) used by

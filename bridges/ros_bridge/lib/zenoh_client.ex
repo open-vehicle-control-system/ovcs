@@ -164,7 +164,11 @@ defmodule RosBridge.ZenohClient do
         topic: topic,
         message_module: message_module,
         subscribers: %{},
-        subscriber_id: nil
+        subscriber_id: nil,
+        liveliness_token: nil,
+        # Unique per entity within the session; see
+        # RmwZenoh.subscriber_liveliness_key/6.
+        eid: map_size(state.subscriptions) + 1
       })
 
     {subscription, monitors} =
@@ -184,7 +188,7 @@ defmodule RosBridge.ZenohClient do
 
     subscription =
       if state.session && is_nil(subscription.subscriber_id) do
-        declare_subscriber(state.session, key_expr, subscription)
+        declare_subscriber(state, key_expr, subscription)
       else
         subscription
       end
@@ -423,14 +427,30 @@ defmodule RosBridge.ZenohClient do
     # type in the OVCS bus, so type-hash drift between ROS distros
     # doesn't break us — the message module's `parse/1` is the only
     # type-aware step on the subscriber side.
+    #
+    # The wildcard also absorbs a change in rmw_zenoh 0.10.5: it
+    # appends a per-subscriber buffer segment to the data keyexpr
+    # (".../<hash>/_buf/<id>"), so an exact-match subscription on
+    # "<domain>/<topic>/<type>/<hash>" now receives nothing at all.
+    #
+    # The cost is that a publisher emits one copy per matched
+    # subscriber, and "/**" matches copies addressed to *other*
+    # subscribers too. With one consumer that is invisible — measured
+    # at 287 deliveries for 287 distinct frames — but a second
+    # consumer of the same topic would have this bridge handling each
+    # frame twice. If that day comes, deduplicate on the header stamp
+    # rather than narrowing the pattern, since the buffer id is not
+    # ours to predict.
     "#{domain_id}/#{String.trim_leading(topic, "/")}/**"
   end
 
-  defp declare_subscriber(session, key_expr, subscription) do
+  defp declare_subscriber(%State{session: session} = state, key_expr, subscription) do
     case Zenohex.Session.declare_subscriber(session, key_expr, self(), []) do
       {:ok, subscriber_id} ->
         Logger.info("#{__MODULE__} subscribed to #{key_expr}")
+
         %{subscription | subscriber_id: subscriber_id}
+        |> declare_subscriber_liveliness(state)
 
       {:error, reason} ->
         Logger.warning(
@@ -441,11 +461,74 @@ defmodule RosBridge.ZenohClient do
     end
   end
 
-  defp redeclare_subscribers(%State{session: session} = state) do
+  # Announce the subscription in the ROS graph.
+  #
+  # Receiving data does not require this; being *sent* data sometimes
+  # does. Publishers that only transmit when someone is listening —
+  # `image_transport`'s compressed transports, anything using
+  # `count_subscribers()` — see a bridge without this token as no
+  # subscriber at all and stay silent, which looks exactly like a dead
+  # topic.
+  #
+  # Failure is not fatal: a bridge that is invisible in the graph
+  # still receives from every ordinary publisher, so a token that
+  # cannot be declared is logged and stepped over rather than taking
+  # the subscription down with it.
+  #
+  # The token names a concrete type, so it needs `dds_type/0` and
+  # `type_hash/0` — and several message modules are subscribe-only and
+  # define neither (`sensor_msgs/Joy` among them, which is how
+  # throttle and steering reach the vehicle). Those subscriptions
+  # simply go untokenised. Calling the missing function instead would
+  # crash the whole client on the one topic that must never fail.
+  defp declare_subscriber_liveliness(subscription, %State{} = state) do
+    module = subscription.message_module
+    Code.ensure_loaded(module)
+
+    if function_exported?(module, :dds_type, 0) and function_exported?(module, :type_hash, 0) do
+      do_declare_subscriber_liveliness(subscription, state)
+    else
+      Logger.debug(
+        "#{__MODULE__} #{inspect(module)} declares no dds_type/type_hash; " <>
+          "subscribing to #{subscription.topic} without a liveliness token"
+      )
+
+      subscription
+    end
+  end
+
+  defp do_declare_subscriber_liveliness(subscription, %State{session: session} = state) do
+    with {:ok, %Zenohex.Session.Info{zid: zid}} <- Zenohex.Session.info(session),
+         liveliness_key <-
+           RmwZenoh.subscriber_liveliness_key(
+             state.domain_id,
+             zid,
+             state.node_name,
+             subscription.topic,
+             subscription.message_module,
+             subscription.eid
+           ),
+         {:ok, token} <- Zenohex.Liveliness.declare_token(session, liveliness_key) do
+      Logger.debug("#{__MODULE__} subscriber liveliness #{liveliness_key}")
+      %{subscription | liveliness_token: token}
+    else
+      error ->
+        Logger.warning(
+          "#{__MODULE__} subscriber liveliness for #{subscription.topic} failed: " <>
+            "#{inspect(error)}; lazy publishers will not see us"
+        )
+
+        subscription
+    end
+  end
+
+  defp redeclare_subscribers(%State{} = state) do
     subscriptions =
       Map.new(state.subscriptions, fn {key_expr, subscription} ->
-        subscription = %{subscription | subscriber_id: nil}
-        {key_expr, declare_subscriber(session, key_expr, subscription)}
+        # The old token belongs to the dead session; drop it so a new
+        # one is declared rather than leaking the stale handle.
+        subscription = %{subscription | subscriber_id: nil, liveliness_token: nil}
+        {key_expr, declare_subscriber(state, key_expr, subscription)}
       end)
 
     %{state | subscriptions: subscriptions}
@@ -493,6 +576,10 @@ defmodule RosBridge.ZenohClient do
           if subscribers == %{} do
             if subscription.subscriber_id do
               Zenohex.Subscriber.undeclare(subscription.subscriber_id)
+            end
+
+            if subscription.liveliness_token do
+              Zenohex.Liveliness.undeclare_token(subscription.liveliness_token)
             end
 
             Logger.info("#{__MODULE__} unsubscribed from #{key_expr} (no consumers left)")

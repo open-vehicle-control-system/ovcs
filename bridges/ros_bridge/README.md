@@ -122,6 +122,15 @@ Catalogue (extend by adding a clause to
 | `:heartbeat`      | `:interval_ms` (default `1_000`)                         | `RosBridge.Publishers.Heartbeat`                     |
 | `:joy_interpreter`| —                                                        | `RosBridge.Consumers.Joy`                |
 | `:imu_publisher`  | `:driver` (required, an `OvcsDrivers.Imu` module); plus `:topic`, `:frame_id`, `:publish_interval_ms` forwarded | the driver, then `RosBridge.Publishers.Imu` |
+| `:hailo_detector` | `:hef_path` (required); plus `:score_threshold`, `:frame_id`, `:min_score`, `:max_detections`, `:depth_sample_fraction`, `:marker_lifetime_ms`, `:detect_every_n` | `RosBridge.Inference.Supervisor` (the `hailo_detect` Port owner, then `RosBridge.Publishers.Detections`) |
+
+`:hailo_detector` requires `:stereo_camera` earlier in the same
+vehicle's list — it registers on that unit's backend and consumes its
+`Result`s. It publishes `<prefix>/detections/markers`
+(`visualization_msgs/MarkerArray`, which is what Foxglove's 3D panel
+renders) and `<prefix>/detections` (`vision_msgs/Detection3DArray`,
+for nav2 and other consumers). See
+`docs/ros_perception_detection.md`.
 
 Vehicle example (`vehicles/<v>/lib/<v>.ex`):
 

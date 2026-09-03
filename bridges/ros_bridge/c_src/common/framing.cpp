@@ -30,7 +30,11 @@ bool write_exact(int fd, const void* buf, size_t len) {
   return true;
 }
 
+int output_fd = STDOUT_FILENO;
+
 }  // namespace
+
+void set_output_fd(int fd) { output_fd = fd; }
 
 bool read_record(std::vector<uint8_t>& out) {
   uint32_t be_len = 0;
@@ -43,8 +47,8 @@ bool read_record(std::vector<uint8_t>& out) {
 
 bool write_record(const uint8_t* data, size_t len) {
   uint32_t be_len = htonl(static_cast<uint32_t>(len));
-  if (!write_exact(STDOUT_FILENO, &be_len, sizeof(be_len))) return false;
-  if (len > 0 && !write_exact(STDOUT_FILENO, data, len)) return false;
+  if (!write_exact(output_fd, &be_len, sizeof(be_len))) return false;
+  if (len > 0 && !write_exact(output_fd, data, len)) return false;
   // No fflush — we use the raw fd (write()), not stdio.
   return true;
 }

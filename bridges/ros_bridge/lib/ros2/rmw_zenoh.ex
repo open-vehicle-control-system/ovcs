@@ -82,6 +82,41 @@ defmodule Ros2.RmwZenoh do
   end
 
   @doc """
+  Liveliness token for a **subscriber** (rmw_zenoh entity prefix
+  `MS`). Same field layout as the publisher token.
+
+  Without it the bridge receives data but is **invisible in the ROS
+  graph as a consumer**, and that is not cosmetic: publishers that
+  only send when someone is listening — `image_transport`'s
+  compressed transports, and anything built on
+  `count_subscribers()` — never start. Measured against a simulated
+  camera, the compressed stream published nothing at all until a
+  separate `ros2 topic echo` provided a subscriber the publisher
+  could see; with one, the same Elixir subscription received 28.8 Hz.
+
+  Format captured live from an `rmw_zenoh_cpp` 0.10.5 subscriber,
+  the same way the publisher token was:
+
+      @ros2_lv/0/<zid>/0/4/MS/%/%/<node>/%probe_topic/std_msgs::msg::dds_::String_/RIHS01_.../::,5:,:,:,,
+
+  `eid` must be unique per entity within the session, so callers pass
+  their own counter rather than the hardcoded 0 the single publisher
+  path uses.
+  """
+  def subscriber_liveliness_key(domain_id, zid, node_name, topic, message_module, eid \\ 0) do
+    build_liveliness_key(
+      domain_id,
+      zid,
+      node_name,
+      topic,
+      message_module,
+      "MS",
+      "::,10:,:,:,,",
+      eid
+    )
+  end
+
+  @doc """
   Liveliness token for a **service server** (rmw_zenoh entity prefix
   `SS`). Same field layout as the publisher token but with the
   service-specific QoS profile (`::,10:,:,:,,`) — keep-last 10,
@@ -117,13 +152,13 @@ defmodule Ros2.RmwZenoh do
          topic,
          message_module,
          entity,
-         qos
+         qos,
+         eid \\ 0
        ) do
     enclave = mangle("/")
     namespace = mangle("/")
     topic_m = mangle(topic_with_leading_slash(topic))
     nid = 0
-    eid = 0
 
     "@ros2_lv/#{domain_id}/#{zid}/#{nid}/#{eid}/#{entity}/#{enclave}/#{namespace}/" <>
       "#{node_name}/#{topic_m}/#{message_module.dds_type()}/#{message_module.type_hash()}/#{qos}"
