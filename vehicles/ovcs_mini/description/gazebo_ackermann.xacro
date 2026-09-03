@@ -10,11 +10,21 @@
   through `ros_gz_bridge` rather than by linking ROS into the plugin.
 
   Every geometry value below is read from the properties in
-  `ovcs_mini.urdf.xacro`, never retyped. The plugin computes odometry
-  from `wheel_radius` and `wheel_separation`, so a number that
-  disagrees with the model produces a vehicle that drives correctly
-  and *reports* the wrong distance — which is exactly the failure the
-  previous model shipped with, its 0.1 m wheels against a real 0.0548.
+  `ovcs_mini.urdf.xacro`, never retyped. That matters because of the
+  failure the previous model shipped with: 0.1 m wheels declared
+  against a real 0.0548.
+
+  The shape of that failure under gz-sim 10 is the opposite of what
+  one would expect, and was measured rather than assumed (see
+  `ros2/simulation/scripts/drive_test.py`). The radius cancels in the
+  plugin — commanded speed is divided by it to get a joint velocity,
+  and the joint velocity is multiplied by it again to get odometry —
+  so `/odom` reads a flawless 1.000 m/s while the car actually crawls
+  at 0.548. The vehicle *reports* correctly and **drives** wrong.
+
+  Which means `/odom` cannot catch it. `drive_test.py` compares the
+  physical joint velocity from `/joint_states` against what odometry
+  claims, and that comparison is what fails.
 
   Tag names here were read out of the shipped
   `libgz-sim-ackermann-steering-system.so` and the reference world

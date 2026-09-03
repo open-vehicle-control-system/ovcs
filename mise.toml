@@ -68,6 +68,10 @@ done
 description = "Boot the simulator + perception pipeline and check depth geometry against the world"
 run = "cd ros2/simulation && ./verify_perception.sh"
 
+[tasks.verify-drivetrain]
+description = "Boot the simulator, drive it and check the odometry against the model geometry"
+run = "cd ros2/simulation && ./verify_drivetrain.sh"
+
 [tasks.cli]
 description = "Build the ovcs CLI (Rust release binary → cli/ovcs)"
 run = "cd cli && cargo build --release && strip --strip-all target/release/ovcs && cp target/release/ovcs ovcs && chmod +x ovcs"
