@@ -66,8 +66,13 @@ defmodule OvcsMini do
     }
 
   @impl RosBridge
-  def ros_bridge_config(:host, "ros_perception"),
-    do: perception_host_config()
+  def ros_bridge_config(:host, "ros_perception") do
+    if System.get_env("OVCS_SIM") in ["1", "true"] do
+      perception_sim_config()
+    else
+      perception_host_config()
+    end
+  end
 
   def ros_bridge_config(:target, "ros_perception"),
     do: perception_target_config()
@@ -115,6 +120,31 @@ defmodule OvcsMini do
     }
   end
 
+  # The same perception stack, fed by Gazebo instead of by cameras.
+  #
+  # Only the driver changes. The SGBM backend, the rectification, the
+  # publishers and the detector are the code that runs on the car, and
+  # that is the point of simulating at all — a pipeline that behaved
+  # differently under simulation would not be evidence of anything.
+  #
+  # No `:hailo_detector`: there is no accelerator on a workstation. It
+  # would start, log that it is unavailable and publish nothing, which
+  # is correct but pointless.
+  #
+  # Chosen with VEHICLE=OvcsMini and OVCS_SIM=1, so the sim wiring
+  # cannot be selected by accident on the vehicle.
+  defp perception_sim_config do
+    %RosBridge.Config{
+      zenoh_endpoint_ip: System.get_env("ZENOH_ENDPOINT_IP", "127.0.0.1"),
+      node_name: "ovcs_bridge_perception_sim",
+      components: [
+        :heartbeat,
+        stereo_transforms(),
+        stereo_component(RosBridge.Camera.Zenoh, :sim)
+      ]
+    }
+  end
+
   defp perception_target_config do
     %RosBridge.Config{
       zenoh_endpoint_ip: Application.get_env(:ros_bridge, :zenoh_endpoint_ip, "127.0.0.1"),
@@ -122,7 +152,10 @@ defmodule OvcsMini do
       components: [
         :heartbeat,
         stereo_transforms(),
-        stereo_component(RosBridge.Camera.LibCamera, :target)
+        stereo_component(RosBridge.Camera.LibCamera, :target),
+        # After :stereo_camera — the detector registers on that
+        # unit's backend while starting.
+        hailo_detector()
       ]
     }
   end
@@ -138,20 +171,65 @@ defmodule OvcsMini do
   # while an optical frame is x right, y down, z into the image. That
   # is what the (-0.5, 0.5, -0.5, 0.5) quaternion does.
   #
-  # TODO: the translation is a placeholder. Measure the lens centre
-  # relative to the chassis origin — until then every depth reading is
-  # correctly shaped but sitting in the wrong place on the vehicle.
+  # x is measured, z is not.
+  #
+  # `base_link` sits midway between the axles, so with a 324 mm
+  # wheelbase the front axle is 162 mm ahead of it. The camera bar is
+  # 120 mm behind the front axle, which puts the lenses at
+  # 162 - 120 = 42 mm forward of base_link. The value here was 100 mm
+  # — a guess that placed the cameras 58 mm too far forward and shifted
+  # every detection on the vehicle by that much.
+  #
+  # y is 0: the bar straddles the centreline, and the pair's own 90 mm
+  # baseline is carried by the calibration, not by this transform,
+  # which locates `stereo_left` — the frame the depth image and
+  # detections are published in.
+  #
+  # TODO: z is still the original guess. Measure the lens centre height
+  # above the ground; it is the last unmeasured number in the vehicle's
+  # geometry.
   defp stereo_transforms do
     {:static_transforms,
      transforms: [
        %{
          parent: "base_link",
          child: "stereo_left",
-         translation: {0.10, 0.0, 0.12},
+         translation: {0.042, 0.0, 0.12},
          rotation: {-0.5, 0.5, -0.5, 0.5}
        }
      ]}
   end
+
+  # YOLO on the Hailo-8, fused with the stereo depth map. Target
+  # only: the accelerator is a physical card on the perception Pi, and
+  # on the host the component would start, fail to find /dev/hailo0,
+  # and log an error every boot for no benefit.
+  #
+  # Costs the stereo path nothing worth reclaiming. Inference runs on
+  # silicon that is otherwise idle at 3.3 ms a frame, and the input is
+  # the rectified left image the backend already produced — no extra
+  # decode, no extra rectify. The only shared work is a median over
+  # each box.
+  #
+  # Grayscale in, deliberately: measured on the device against
+  # ultralytics' bus.jpg, gray scored within 0.01 of colour
+  # (person 0.881 vs 0.888), so the pipeline's existing gray frame is
+  # worth exactly as much here as a colour one we would have to decode
+  # separately.
+  defp hailo_detector do
+    {:hailo_detector,
+     hef_path: Path.join(priv_models_dir(), "yolov8n.hef"),
+     # 0.4 is where a yolov8n at this resolution stops reporting
+     # furniture as animals. Measured at 480x270 the model still
+     # scores real people at 0.74-0.91, so this leaves plenty of
+     # headroom above the noise.
+     score_threshold: 0.4,
+     # The stereo unit's own frame, since boxes are positioned in its
+     # rectified pixels.
+     frame_id: "stereo_left"}
+  end
+
+  defp priv_models_dir, do: :ovcs_mini |> :code.priv_dir() |> Path.join("models")
 
   # Self-contained stereo perception block. Inherits most defaults
   # from `RosBridge.StereoCamera.Supervisor` (backend
@@ -168,7 +246,7 @@ defmodule OvcsMini do
   defp stereo_component(camera_driver, arm) do
     {:stereo_camera,
      driver: camera_driver,
-     calibration_dir: priv_calibration_dir(),
+     calibration_dir: priv_calibration_dir(arm),
      # 640×360 is 16:9 — the sensor's native aspect. Asking a 16:9
      # sensor for a 4:3 buffer squeezed the full field of view into
      # 480 rows, which showed up in the calibration as fy/fx = 1.334
@@ -256,6 +334,19 @@ defmodule OvcsMini do
   # correctly ordered pair must be entirely positive).
   defp camera_addressing(:target, :left), do: [camera_id: 1]
   defp camera_addressing(:target, :right), do: [camera_id: 0]
+
+  # In simulation the "camera" is a topic. Gazebo publishes on the
+  # same names the vehicle does, so left really is left here — the
+  # transposition that catches physical modules cannot happen.
+  defp camera_addressing(:sim, side),
+    do: [topic: "/stereo/#{side}/image_raw/compressed"]
+
+  # The simulator gets its own calibration, and must: Gazebo renders an
+  # ideal pinhole, so applying the physical lens's distortion and
+  # rectification to it warps the two views apart rather than into
+  # alignment. Measured, that dropped stereo coverage to 5.4%.
+  defp priv_calibration_dir(:sim), do: Path.join(priv_calibration_dir(), "sim")
+  defp priv_calibration_dir(_arm), do: priv_calibration_dir()
 
   defp priv_calibration_dir do
     case :code.priv_dir(:ovcs_mini) do

@@ -26,8 +26,17 @@ defmodule Ros2.SensorMsgs.Msg.Image do
       with its own u32 length prefix (already 4-aligned) and then
       raw u8 bytes (no further alignment).
 
-  No `parse/1` — the bridge only emits Images so far. Add when
-  needed.
+  `parse/1` exists because the bridge now *consumes* images too: a
+  simulated camera in Gazebo publishes raw `sensor_msgs/Image`, and
+  `RosBridge.Camera.Zenoh` turns those into the same frames a physical
+  camera driver produces.
+
+  Parsing has to undo the same two irregularities the encoder
+  introduces — the unpadded `encoding` string, and the realignment
+  after `is_bigendian` — and the second of those depends on the offset
+  from the **body origin**, not from the start of what is left to
+  parse. That is why `parse/1` takes the whole body and tracks its
+  position through it.
   """
   use Ros2.Common
 
@@ -43,6 +52,36 @@ defmodule Ros2.SensorMsgs.Msg.Image do
 
   def dds_type, do: @dds_type
   def type_hash, do: @type_hash
+
+  @doc """
+  Parse a `sensor_msgs/Image` body (no encapsulation header — 
+  `Ros2.RmwZenoh.decode_payload/1` strips that).
+  """
+  def parse(body) when is_binary(body) do
+    with {:ok, header, rest} <- Header.parse(body),
+         <<height::little-unsigned-32, width::little-unsigned-32, rest::binary>> <- rest,
+         # `encoding` was written without trailing padding, so it must
+         # be read without skipping any.
+         <<len::little-unsigned-32, encoding::binary-size(len), rest::binary>> <- rest,
+         <<is_bigendian::little-unsigned-8, rest::binary>> <- rest,
+         rest = consume_alignment(rest, 4, byte_size(body) - byte_size(rest)),
+         <<step::little-unsigned-32, rest::binary>> <- rest,
+         <<data_length::little-unsigned-32, rest::binary>> <- rest,
+         <<data::binary-size(data_length), rest::binary>> <- rest do
+      {:ok,
+       %__MODULE__{
+         header: header,
+         height: height,
+         width: width,
+         encoding: String.trim_trailing(encoding, <<0>>),
+         is_bigendian: is_bigendian,
+         step: step,
+         data: data
+       }, rest}
+    else
+      _ -> {:error, :malformed, __MODULE__}
+    end
+  end
 
   def encode(%__MODULE__{} = image) do
     Header.encode(image.header)

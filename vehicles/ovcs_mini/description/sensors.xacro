@@ -1,0 +1,116 @@
+<?xml version="1.0"?>
+<!--
+  Simulated sensors.
+
+  Camera placement is the one thing simulation gets to be certain
+  about. On the real vehicle the `base_link` -> `stereo_left`
+  transform is still a placeholder ({0.10, 0.0, 0.12}, never
+  measured), so every depth reading is correctly shaped and sitting in
+  the wrong place on the car. Here the position is exact by
+  construction, which makes this the natural place to settle what the
+  real numbers should be.
+
+  ## Frames
+
+  Two links per camera, not one, and the reason is a 90-degree
+  disagreement between two conventions:
+
+    * a **body** frame is REP-103 — x forward, y left, z up;
+    * an **optical** frame is x right, y down, z forward.
+
+  `<name>_link` is the mount in body orientation; `<name>_optical` is
+  its optical child. Gazebo renders down the optical frame's +z, and
+  the image's `frame_id` names the optical frame, so a consumer
+  unprojecting a pixel gets a ray in the right direction. Collapsing
+  the two is the classic way to end up with a point cloud lying on its
+  side.
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!--
+    One simulated camera.
+
+    `topic` is the Gazebo-side name; `ros_gz_bridge` carries it into
+    ROS under the same name. It deliberately matches what the real
+    vehicle publishes, because that is the whole point: the perception
+    code should not be able to tell the difference.
+  -->
+  <xacro:macro name="sim_camera" params="name x y z topic width height focal_px rate">
+    <link name="${name}_link">
+      <visual>
+        <geometry>
+          <box size="0.012 0.024 0.012" />
+        </geometry>
+        <material name="grey" />
+      </visual>
+      <!-- No collision and negligible mass: a 5 g camera module on a
+           2.4 kg truck changes nothing except the solver's workload. -->
+      <xacro:inertial_box mass="0.005" x="0.012" y="0.024" z="0.012">
+        <origin xyz="0 0 0" rpy="0 0 0" />
+      </xacro:inertial_box>
+    </link>
+
+    <joint name="${name}_joint" type="fixed">
+      <parent link="chassis" />
+      <child link="${name}_link" />
+      <origin xyz="${x} ${y} ${z}" rpy="0 0 0" />
+    </joint>
+
+    <!-- Body -> optical: -90 deg about z, then -90 deg about x. -->
+    <link name="${name}_optical" />
+
+    <joint name="${name}_optical_joint" type="fixed">
+      <parent link="${name}_link" />
+      <child link="${name}_optical" />
+      <origin xyz="0 0 0" rpy="${-pi/2} 0 ${-pi/2}" />
+    </joint>
+
+    <!-- Attached to the *mount*, not the optical child, because the
+         URDF-to-SDF conversion drops links with no inertia and
+         silently reparents their <gazebo> elements — here, all the way
+         up to base_link, which puts the camera at the wrong place
+         while still rendering happily. The mount has mass, so it
+         survives.
+
+         No pose correction is needed: a Gazebo camera looks down +x
+         of its own frame, and the mount is body-oriented (x forward),
+         so it already points where the vehicle is going. Only the
+         reported frame_id has to name the optical frame, for
+         consumers that unproject pixels. -->
+    <gazebo reference="${name}_link">
+      <sensor name="${name}" type="camera">
+        <always_on>1</always_on>
+        <update_rate>${rate}</update_rate>
+        <visualize>false</visualize>
+        <topic>${topic}</topic>
+        <!-- Stamp images with the optical frame, so a consumer that
+             unprojects a pixel resolves the ray in the frame the
+             pixels were actually taken in. (`gz_frame_id` is the
+             deprecated spelling.) -->
+        <frame_id>${name}_optical</frame_id>
+        <camera>
+          <!-- Field of view is derived from the *measured* focal
+               length rather than chosen, because it is focal length
+               that the stereo pipeline actually depends on: the near
+               clip is f*B / num_disparities and depth error goes as
+               Z^2 / (f*B). A simulator with a plausible-looking FOV
+               but the wrong f models a different camera and quietly
+               reports different depth behaviour than the vehicle. -->
+          <horizontal_fov>${2 * atan2(width / 2.0, focal_px)}</horizontal_fov>
+          <image>
+            <width>${width}</width>
+            <height>${height}</height>
+            <format>R8G8B8</format>
+          </image>
+          <clip>
+            <!-- Near plane well inside the stereo near clip (0.55 m on
+                 the real rig) so the simulation is not the thing that
+                 limits close range. -->
+            <near>0.02</near>
+            <far>100.0</far>
+          </clip>
+        </camera>
+      </sensor>
+    </gazebo>
+  </xacro:macro>
+</robot>

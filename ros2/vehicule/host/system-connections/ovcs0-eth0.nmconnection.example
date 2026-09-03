@@ -1,0 +1,32 @@
+# eth0 as a port on the vehicle bridge.
+#
+# Install this LAST, and only when the vehicle is being wired up for
+# real. Until then eth0 stays an ordinary DHCP client and remains the
+# maintenance link, which is what makes it safe to bring the access
+# point up and exercise it without risking access to the device. See
+# "Phase 2" in docs/ros_compute_node.md#installing-it.
+#
+# Note that everything in /mnt/boot/system-connections/ autoconnects at
+# boot, so staging this file there early means the next reboot quietly
+# does the conversion for you.
+#
+# This replaces the DHCP client role eth0 has out of the box. Two
+# consequences worth being deliberate about:
+#
+#   * the Pi stops taking an address from whatever eth0 is plugged
+#     into, and
+#   * it starts *serving* DHCP there instead.
+#
+# So eth0 belongs on the vehicle's own switch before this is activated.
+# On an office LAN this Pi becomes a rogue DHCP server.
+#
+# autoconnect-priority outranks NetworkManager's auto-generated
+# "Wired connection 1", which otherwise competes for eth0 at boot.
+
+[connection]
+id=ovcs0-eth0
+type=ethernet
+interface-name=eth0
+master=ovcs0
+slave-type=bridge
+autoconnect-priority=100
