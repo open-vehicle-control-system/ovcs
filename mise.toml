@@ -64,6 +64,10 @@ for lib in cantastic express_lrs msp_osd ovcs_control; do
 done
 """
 
+[tasks.verify-perception]
+description = "Boot the simulator + perception pipeline and check depth geometry against the world"
+run = "cd ros2/simulation && ./verify_perception.sh"
+
 [tasks.cli]
 description = "Build the ovcs CLI (Rust release binary → cli/ovcs)"
 run = "cd cli && cargo build --release && strip --strip-all target/release/ovcs && cp target/release/ovcs ovcs && chmod +x ovcs"
