@@ -79,9 +79,31 @@ turn 2.0 m/s, 0.5 rad/s  ->  R = 3.984 m   the above, at a second point
 ```
 
 The turning radius is the interesting one: it must equal `v / omega`,
-and it exercises wheelbase, track and kingpin width together. A model
-that drives convincingly can still report distance that is wrong by a
-constant factor, which is exactly the state the previous model was in.
+and it exercises wheelbase, track and kingpin width together.
+
+```sh
+mise run verify-drivetrain            # up, drive, check, down
+KEEP_UP=1 mise run verify-drivetrain  # leave the stack up to poke at
+```
+
+### /odom cannot catch a wrong wheel radius
+
+The obvious check — drive at 1 m/s and see whether `/odom` agrees — is
+worthless, and this was measured rather than reasoned about. Setting
+`<wheel_radius>` to 0.1 against the model's real 0.0548 leaves `/odom`
+reporting a flawless 1.000 m/s while the wheels turn at 10.0 rad/s, so
+the car is really crawling at `10.0 x 0.0548 = 0.548` m/s.
+
+The radius cancels inside `AckermannSteering`: the commanded speed is
+divided by it to get a joint velocity, and the joint velocity is
+multiplied by it again to get odometry. `/odom` is a command echo, and
+the vehicle *reports* correctly while **driving** wrong — the opposite
+of what `gazebo_ackermann.xacro` used to claim.
+
+So the wheel radius is checked against `/joint_states`, which reports
+the physical joint velocity. Ground speed is that velocity times the
+real wheel radius, and it must match what odometry claims. In a good
+run the wheels turn at 18.25 rad/s and `18.25 x 0.0548 = 1.000`.
 
 Two traps in *measuring* this, both of which caught the first version
 of `drive_test.py`:
@@ -96,9 +118,9 @@ of `drive_test.py`:
 
 ## Checking perception automatically
 
-`drive_test.py` checks drivetrain geometry against the model.
-`verify_perception.sh` does the same for perception, and unlike the
-drive test it **asserts and exits non-zero**, so it can run unattended:
+`verify_perception.sh` is the perception sibling of
+`verify_drivetrain.sh`. Both assert and exit non-zero, so both run
+unattended:
 
 ```sh
 mise run verify-perception                    # stereo only
