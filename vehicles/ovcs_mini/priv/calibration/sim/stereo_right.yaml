@@ -1,0 +1,39 @@
+# Calibration for the **simulated** stereo pair, not the physical one.
+#
+# Gazebo renders an ideal pinhole camera: no lens distortion, and the
+# two eyes are already coplanar and aligned. So D is zero and R is
+# identity, which is not laziness — it is what the simulator actually
+# produces, confirmed from its own published camera_info.
+#
+# Using the real vehicle's calibration here is actively wrong, and
+# quietly so. Its distortion coefficients and rectification rotations
+# describe a physical lens; applied to images that have neither, they
+# warp the two views *apart*. Measured: stereo coverage sat at 5.4%%
+# with the real calibration and the depth histogram was nonsense.
+#
+# fx comes from the model's own focal_px property, which is itself
+# derived from the real calibration scaled to the capture resolution —
+# so the simulated optics match the vehicle's while the distortion
+# model matches the simulator's.
+#
+# Generated; do not hand-edit. See ros2/simulation/README.md.
+image_width: 480
+image_height: 270
+camera_name: sim/right
+camera_matrix:
+  rows: 3
+  cols: 3
+  data: [584.66005325, 0.0, 240.0, 0.0, 584.66013193, 135.0, 0.0, 0.0, 1.0]
+distortion_model: plumb_bob
+distortion_coefficients:
+  rows: 1
+  cols: 5
+  data: [0.0, 0.0, 0.0, 0.0, 0.0]
+rectification_matrix:
+  rows: 3
+  cols: 3
+  data: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+projection_matrix:
+  rows: 3
+  cols: 4
+  data: [584.66005325, 0.0, 240.0, -52.61940479, 0.0, 584.66013193, 135.0, 0.0, 0.0, 0.0, 1.0, 0.0]

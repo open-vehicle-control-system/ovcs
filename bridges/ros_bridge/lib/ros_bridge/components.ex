@@ -79,6 +79,14 @@ defmodule RosBridge.Components do
     [{RosBridge.Publishers.StaticTransform, opts}]
   end
 
+  def start(:hailo_detector, opts) do
+    # One child, not two. The pair lives under its own supervisor so
+    # a detector that crashes on every frame cannot exhaust the
+    # bridge supervisor's restart budget and take the cameras with
+    # it — see `RosBridge.Inference.Supervisor`.
+    [{RosBridge.Inference.Supervisor, opts}]
+  end
+
   def start(:stereo_camera, opts) do
     # Everything :stereo_camera needs to do — start two camera
     # drivers, the SGBM backend, and the unified publisher that

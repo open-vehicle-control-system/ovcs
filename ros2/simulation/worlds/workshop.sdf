@@ -1,0 +1,214 @@
+<?xml version="1.0"?>
+<!--
+  A world with something in it — specifically, something a stereo
+  matcher can actually see.
+
+  `empty.sdf` is fine for proving the vehicle drives, but it is
+  useless for perception: SGBM correlates local image patches, and a
+  featureless ground plane under a blank sky offers nothing to
+  correlate. Disparity comes back empty and it looks like a broken
+  pipeline rather than an untextured scene.
+
+  So everything here is textured with **noise**, not with a pattern.
+  That distinction matters. A checkerboard is the classic stereo trap:
+  every square looks like every other square, so the matcher finds
+  many equally good matches along the epipolar line and picks
+  confidently wrong ones. Noise is locally unique, which is exactly
+  what block matching needs.
+
+  ## Layout
+
+  The vehicle spawns at the origin facing +x. Obstacles sit at known
+  distances along that axis so depth can be *checked* rather than
+  admired — at 480x270 with a 90 mm baseline the near clip is 0.55 m
+  and precision falls off as Z², so the useful band is roughly
+  0.6-4 m. The boxes bracket it:
+
+      1.0 m   small box      inside the good range
+      2.0 m   tall box       mid range, and a person-height target
+      3.5 m   cylinder       approaching the noise floor
+      6.0 m   back wall      beyond useful precision, gives context
+
+  The 2.0 m box is 1.7 m tall on purpose: it is roughly person-sized,
+  which is what the Hailo detector is looking for.
+-->
+<sdf version="1.10">
+  <world name="workshop">
+
+    <physics name="1ms" type="ignored">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+
+    <plugin filename="gz-sim-physics-system"
+            name="gz::sim::systems::Physics" />
+    <plugin filename="gz-sim-user-commands-system"
+            name="gz::sim::systems::UserCommands" />
+    <plugin filename="gz-sim-scene-broadcaster-system"
+            name="gz::sim::systems::SceneBroadcaster" />
+    <plugin filename="gz-sim-contact-system"
+            name="gz::sim::systems::Contact" />
+
+    <!-- Without this a camera sensor loads, reports no error, and
+         publishes nothing. ogre2 falls back to software rasterisation
+         in a container with no GPU: slower, but correct. -->
+    <plugin filename="gz-sim-sensors-system"
+            name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+
+    <!-- Bright and fairly flat. Hard shadows are a stereo hazard:
+         a shadow edge is a strong feature that moves with the light
+         rather than with the geometry, and the matcher cannot tell
+         the difference. -->
+    <light type="directional" name="sun">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.9 0.9 0.9 1</diffuse>
+      <specular>0.1 0.1 0.1 1</specular>
+      <direction>-0.4 0.3 -0.9</direction>
+    </light>
+
+    <light type="directional" name="fill">
+      <cast_shadows>false</cast_shadows>
+      <pose>0 0 8 0 0 0</pose>
+      <diffuse>0.35 0.35 0.4 1</diffuse>
+      <specular>0 0 0 1</specular>
+      <direction>0.6 -0.4 -0.7</direction>
+    </light>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>60 60</size>
+            </plane>
+          </geometry>
+          <surface>
+            <friction>
+              <ode>
+                <!-- Paired with the tyres' own mu; Gazebo takes the
+                     lower of the two, so a slick floor would cancel
+                     the grip set on the wheels. -->
+                <mu>1.0</mu>
+                <mu2>1.0</mu2>
+              </ode>
+            </friction>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <!-- A textured box rather than a plane: a plane's UVs
+                 stretch the texture across its whole extent, which
+                 destroys the high-frequency detail that makes it
+                 useful here. -->
+            <box><size>60 60 0.01</size></box>
+          </geometry>
+          <material>
+            <diffuse>1 1 1 1</diffuse>
+            <pbr>
+              <metal>
+                <albedo_map>materials/textures/ground.png</albedo_map>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- 1.0 m: a low obstacle, comfortably inside the good range. -->
+    <model name="box_1m">
+      <static>true</static>
+      <pose>1.0 0 0.15 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.3 0.3 0.3</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.3 0.3 0.3</size></box></geometry>
+          <material>
+            <diffuse>1 1 1 1</diffuse>
+            <pbr>
+              <metal>
+                <albedo_map>materials/textures/noise.png</albedo_map>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- 2.0 m: person-height, offset to one side so it does not hide
+         what is behind it. -->
+    <model name="box_2m">
+      <static>true</static>
+      <pose>2.0 0.5 0.85 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.4 0.4 1.7</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.4 0.4 1.7</size></box></geometry>
+          <material>
+            <diffuse>1 1 1 1</diffuse>
+            <pbr>
+              <metal>
+                <albedo_map>materials/textures/noise.png</albedo_map>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- 3.5 m: a curved surface, where a block matcher has to cope
+         with depth changing across the patch. -->
+    <model name="cylinder_3m5">
+      <static>true</static>
+      <pose>3.5 -0.6 0.4 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><cylinder><radius>0.25</radius><length>0.8</length></cylinder></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><cylinder><radius>0.25</radius><length>0.8</length></cylinder></geometry>
+          <material>
+            <diffuse>1 1 1 1</diffuse>
+            <pbr>
+              <metal>
+                <albedo_map>materials/textures/noise.png</albedo_map>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- 6.0 m: past useful precision, but it fills the frame so the
+         upper half of the image is not empty sky. -->
+    <model name="back_wall">
+      <static>true</static>
+      <pose>6.0 0 1.25 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.2 8.0 2.5</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.2 8.0 2.5</size></box></geometry>
+          <material>
+            <diffuse>1 1 1 1</diffuse>
+            <pbr>
+              <metal>
+                <albedo_map>materials/textures/noise.png</albedo_map>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+  </world>
+</sdf>

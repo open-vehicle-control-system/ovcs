@@ -49,6 +49,28 @@ defmodule RosBridge.StereoCamera.Result do
       classic SGBM this is 1/16: the values are floats now, but they
       were derived from OpenCV's ×16 fixed point, so that remains
       the smallest representable increment.
+    * `:left_rectified` — the rectified left image as an Evision
+      `Mat`, before CLAHE. Carried so a consumer that needs pixels
+      rather than depth (the Hailo detector) does not have to decode
+      and rectify the frame a second time. A `Mat` is a refcounted
+      NIF resource, so passing it between processes costs a pointer,
+      not a copy.
+    * `:depth_m` — the same depth as `:depth`, but as a float32 `Mat`
+      in **metres** rather than packed uint16 millimetres. This is
+      what makes a 2D detection into a 3D one: the detector takes a
+      median over the box and gets a distance in the units the rest
+      of the geometry is already in.
+    * `:principal_point` — `{cx, cy}` in pixels, from the rectified
+      `P` matrix at the resolution actually published. Needed by
+      anything unprojecting a pixel to metres; the image centre is a
+      close-enough-looking substitute that silently biases every
+      position.
+    * `:rectification_map_left` — OpenCV's fixed-point `CV_16SC2`
+      map for the left camera, or `nil` when uncalibrated. Carried so
+      a consumer can map a rectified pixel *back* to the raw image —
+      which is what lets detection boxes be drawn on the `image_raw`
+      stream the bridge already publishes, instead of adding a second
+      rectified stream to the wire.
     * `:valid_x`, `:valid_y`, `:valid_w`, `:valid_h` — pixel
       bounding box inside which disparity values are meaningful.
       For SGBM this is the region away from the image borders
@@ -75,7 +97,16 @@ defmodule RosBridge.StereoCamera.Result do
     :cloud,
     :cloud_points
   ]
-  defstruct @enforce_keys
+
+  # Not enforced: a backend that has no pixels to hand on (or a test
+  # building a Result by hand) should not be forced to invent them.
+  defstruct @enforce_keys ++
+              [
+                left_rectified: nil,
+                depth_m: nil,
+                principal_point: nil,
+                rectification_map_left: nil
+              ]
 
   @type t :: %__MODULE__{
           capture_ns: integer(),
@@ -95,6 +126,10 @@ defmodule RosBridge.StereoCamera.Result do
           valid_w: non_neg_integer(),
           valid_h: non_neg_integer(),
           cloud: binary() | nil,
-          cloud_points: non_neg_integer()
+          cloud_points: non_neg_integer(),
+          left_rectified: Evision.Mat.t() | nil,
+          depth_m: Evision.Mat.t() | nil,
+          principal_point: {float(), float()} | nil,
+          rectification_map_left: Evision.Mat.t() | nil
         }
 end

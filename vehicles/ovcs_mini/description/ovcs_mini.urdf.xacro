@@ -1,0 +1,203 @@
+<?xml version="1.0"?>
+<!--
+  OVCS Mini — a Traxxas Slash 4x4 (1/10 scale short-course truck).
+
+  Every dimension the model needs is declared once, here, and derived
+  from the published Slash 4x4 specification. Nothing downstream
+  hard-codes a number: wheel placement, the Ackermann plugin's
+  geometry and the inertia tensors all read these properties, so
+  correcting a dimension corrects the whole model.
+
+  ## Where the numbers come from
+
+  Measured values, from the Traxxas specification for the Slash 4x4:
+
+    wheelbase   324 mm
+    track       296 mm (front and rear)
+    tyre        109.5 mm diameter -> 54.75 mm radius
+    envelope    568 x 296 x 193 mm (L x W x H)
+    mass        2.41 kg ready-to-run
+
+  Estimated values, marked ESTIMATE below, because the specification
+  does not publish them: tyre width, chassis-tub dimensions, ground
+  clearance, and the mass split between chassis and wheels. These are
+  the numbers to revisit first if the vehicle behaves oddly.
+
+  This supersedes open-vehicle-control-system/traxxas, whose model
+  had the wheels at 100 mm radius (nearly double the real 54.75) and
+  a 400 mm track against the real 296. Ackermann odometry is computed
+  from wheel radius and track, so both errors propagated into every
+  distance and turn rate the simulator reported.
+
+  ## Frames
+
+  `base_link` sits on the ground plane, midway between the axles, in
+  REP-103 orientation: x forward, y left, z up. Placing it at ground
+  level rather than at the chassis makes sensor offsets (the stereo
+  bar's height above the ground) read directly off the vehicle.
+-->
+<robot name="ovcs_mini" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- Shared with any other vehicle modelled here; the rest of this
+       directory is specific to the Mini. -->
+  <xacro:include filename="../../common/inertial_macros.xacro" />
+  <xacro:include filename="../../common/materials.xacro" />
+
+  <xacro:include filename="wheels.xacro" />
+  <xacro:include filename="sensors.xacro" />
+
+  <!-- ── Measured: Traxxas Slash 4x4 specification ──────────────── -->
+  <xacro:property name="wheelbase"     value="0.324" />
+  <xacro:property name="track"         value="0.296" />
+  <xacro:property name="wheel_radius"  value="0.0548" />
+  <xacro:property name="body_length"   value="0.568" />
+  <xacro:property name="body_width"    value="0.296" />
+  <xacro:property name="body_height"   value="0.193" />
+  <xacro:property name="total_mass"    value="2.41" />
+
+  <!-- ── ESTIMATE: not in the specification ─────────────────────── -->
+  <!-- Short-course tyres are wide; 45 mm is eyeballed from the tyre. -->
+  <xacro:property name="wheel_width"   value="0.045" />
+  <!-- The chassis tub, which is where the mass actually is (battery,
+       motor, ESC all sit low in it). Used for collision and inertia;
+       the body shell above it is visual only. Modelling the mass as
+       the full 193 mm envelope would put the centre of gravity about
+       twice as high as the real truck's and roll it over in the
+       first corner. -->
+  <xacro:property name="tub_length"    value="0.400" />
+  <xacro:property name="tub_width"     value="0.200" />
+  <xacro:property name="tub_height"    value="0.070" />
+  <xacro:property name="ground_clearance" value="0.030" />
+  <!-- A mounted Slash 4x4 wheel + tyre is roughly 120 g. -->
+  <xacro:property name="wheel_mass"    value="0.12" />
+  <xacro:property name="steering_mass" value="0.05" />
+
+  <!-- ── Derived ────────────────────────────────────────────────── -->
+  <xacro:property name="half_wheelbase" value="${wheelbase / 2}" />
+  <xacro:property name="half_track"     value="${track / 2}" />
+  <!-- Whatever is left of the ready-to-run mass once the rotating and
+       steering parts are accounted for. -->
+  <xacro:property name="chassis_mass"
+                  value="${total_mass - 4 * wheel_mass - 2 * steering_mass}" />
+  <xacro:property name="tub_z" value="${ground_clearance + tub_height / 2}" />
+  <!-- The visible body shell, from the top of the tub to the roof. -->
+  <xacro:property name="shell_height" value="${body_height - ground_clearance - tub_height}" />
+  <xacro:property name="shell_z"
+                  value="${ground_clearance + tub_height + shell_height / 2}" />
+
+  <!-- Steering lock. ESTIMATE: ~30 degrees is typical for this class;
+       the specification quotes a turning circle, not an angle. -->
+  <xacro:property name="steering_limit" value="0.52" />
+
+  <!-- ── base_link ──────────────────────────────────────────────── -->
+  <!-- Deliberately empty. A link with no inertia is the conventional
+       root: it is a frame, not a body, and giving it mass would
+       double-count the chassis. -->
+  <link name="base_link" />
+
+  <!-- ── Chassis ────────────────────────────────────────────────── -->
+  <joint name="chassis_joint" type="fixed">
+    <parent link="base_link" />
+    <child link="chassis" />
+    <origin xyz="0 0 0" rpy="0 0 0" />
+  </joint>
+
+  <link name="chassis">
+    <!-- The body shell: what you see, and nothing else. It carries no
+         mass and no collision, because a short-course body is a thin
+         polycarbonate shell that neither holds the truck up nor
+         weighs anything next to the drivetrain. -->
+    <visual name="shell">
+      <origin xyz="0 0 ${shell_z}" rpy="0 0 0" />
+      <geometry>
+        <box size="${body_length} ${body_width} ${shell_height}" />
+      </geometry>
+      <material name="orange" />
+    </visual>
+
+    <visual name="tub">
+      <origin xyz="0 0 ${tub_z}" rpy="0 0 0" />
+      <geometry>
+        <box size="${tub_length} ${tub_width} ${tub_height}" />
+      </geometry>
+      <material name="black" />
+    </visual>
+
+    <!-- Collision is the tub, not the shell. A tight collision volume
+         low down is both closer to what actually strikes an obstacle
+         and far kinder to the physics solver than a box spanning the
+         whole envelope. -->
+    <collision>
+      <origin xyz="0 0 ${tub_z}" rpy="0 0 0" />
+      <geometry>
+        <box size="${tub_length} ${tub_width} ${tub_height}" />
+      </geometry>
+    </collision>
+
+    <xacro:inertial_box mass="${chassis_mass}"
+                        x="${tub_length}" y="${tub_width}" z="${tub_height}">
+      <origin xyz="0 0 ${tub_z}" rpy="0 0 0" />
+    </xacro:inertial_box>
+  </link>
+
+  <!-- ── Wheels ─────────────────────────────────────────────────── -->
+  <!-- Shaft-driven 4WD, so all four are driven; only the front pair
+       steers. `side` is +1 for left and -1 for right, which is what
+       keeps y positive to the left in REP-103 — the old model had the
+       rear pair mirrored against the front. -->
+  <xacro:fixed_wheel  name="rear_left"   side="1"
+                      x="${-half_wheelbase}" />
+  <xacro:fixed_wheel  name="rear_right"  side="-1"
+                      x="${-half_wheelbase}" />
+  <xacro:steered_wheel name="front_left"  side="1"
+                       x="${half_wheelbase}" />
+  <xacro:steered_wheel name="front_right" side="-1"
+                       x="${half_wheelbase}" />
+
+  <!-- ── Sensors ────────────────────────────────────────────────── -->
+  <!-- Matches the real vehicle's capture: 480x270 at 30 Hz. The
+       resolution is not arbitrary — it is what the stereo pipeline was
+       tuned to, trading depth precision at range for a 0.55 m near
+       clip and half the SGBM cost. Simulating something else would
+       measure a pipeline the vehicle does not run.
+
+       Measured off the vehicle:
+
+         baseline  90 mm, straddling the centreline
+         position  120 mm behind the front axle
+
+       The front axle is half a wheelbase ahead of base_link, so the
+       bar sits at 162 - 120 = 42 mm forward of it — not the 100 mm
+       that was guessed, which put the cameras 58 mm too far forward
+       and biased every detection by that much.
+
+       The bar also carries a third, FPV camera between the two. It is
+       not modelled: nothing in the perception path reads it. -->
+  <xacro:property name="baseline" value="0.090" />
+
+  <!-- From the vehicle's own calibration
+       (vehicles/ovcs_mini/priv/calibration/stereo_left.yaml): the
+       rectified P gives fx = 779.55 at 640 wide, and the pipeline
+       captures at 480, so fx scales to 779.55 * 0.75 = 584.66.
+
+       That is a ~45 degree horizontal field of view, not the ~70 a
+       wide-angle module would suggest, and it is what makes the
+       simulated depth behave like the real one: f*B = 52.6, so the
+       near clip lands at 52.6 / 96 = 0.55 m — the figure the vehicle
+       was tuned to. -->
+  <xacro:property name="focal_px" value="${779.54677 * 480 / 640}" />
+  <xacro:property name="camera_x" value="${half_wheelbase - 0.120}" />
+  <!-- TODO: still unmeasured. Lens centre height above the ground. -->
+  <xacro:property name="camera_z" value="0.12" />
+
+  <!-- Left is +y in REP-103. -->
+  <xacro:sim_camera name="stereo_left"  x="${camera_x}" y="${baseline / 2}"
+                    z="${camera_z}" topic="stereo/left/image_raw"
+                    width="480" height="270" focal_px="${focal_px}" rate="30" />
+
+  <xacro:sim_camera name="stereo_right" x="${camera_x}" y="${-baseline / 2}"
+                    z="${camera_z}" topic="stereo/right/image_raw"
+                    width="480" height="270" focal_px="${focal_px}" rate="30" />
+
+  <xacro:include filename="gazebo_ackermann.xacro" />
+</robot>

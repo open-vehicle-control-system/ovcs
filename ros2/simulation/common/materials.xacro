@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<!-- Visual materials. Kept separate from geometry so a colour change
+     never touches a dimension.
+
+     Adapted from open-vehicle-control-system/traxxas
+     (description/colors.xacro). -->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <material name="white">
+    <color rgba="1 1 1 1" />
+  </material>
+
+  <material name="orange">
+    <color rgba="1 0.3 0.1 1" />
+  </material>
+
+  <material name="blue">
+    <color rgba="0.2 0.2 1 1" />
+  </material>
+
+  <material name="black">
+    <color rgba="0.1 0.1 0.1 1" />
+  </material>
+
+  <material name="grey">
+    <color rgba="0.4 0.4 0.4 1" />
+  </material>
+</robot>
