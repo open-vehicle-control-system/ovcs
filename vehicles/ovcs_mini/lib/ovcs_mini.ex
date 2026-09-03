@@ -121,9 +121,36 @@ defmodule OvcsMini do
       node_name: "ovcs_bridge_perception",
       components: [
         :heartbeat,
+        stereo_transforms(),
         stereo_component(RosBridge.Camera.LibCamera, :target)
       ]
     }
+  end
+
+  # Where the stereo bar sits on the car. Without this, `stereo_left`
+  # is a label nothing can resolve: a consumer knows a point is 1.2 m
+  # in front of the camera but not where the camera is, so it cannot
+  # express the measurement in the car's own terms — and Foxglove's 3D
+  # panel reports the frame missing and draws nothing.
+  #
+  # The rotation is the standard body -> optical frame change, not a
+  # mounting angle: base_link is REP-103 (x forward, y left, z up)
+  # while an optical frame is x right, y down, z into the image. That
+  # is what the (-0.5, 0.5, -0.5, 0.5) quaternion does.
+  #
+  # TODO: the translation is a placeholder. Measure the lens centre
+  # relative to the chassis origin — until then every depth reading is
+  # correctly shaped but sitting in the wrong place on the vehicle.
+  defp stereo_transforms do
+    {:static_transforms,
+     transforms: [
+       %{
+         parent: "base_link",
+         child: "stereo_left",
+         translation: {0.10, 0.0, 0.12},
+         rotation: {-0.5, 0.5, -0.5, 0.5}
+       }
+     ]}
   end
 
   # Self-contained stereo perception block. Inherits most defaults
@@ -142,12 +169,36 @@ defmodule OvcsMini do
     {:stereo_camera,
      driver: camera_driver,
      calibration_dir: priv_calibration_dir(),
-     # 640×480 is the standard low-bandwidth UVC mode every webcam
-     # supports natively. SGBM compute time scales roughly with
-     # `width × height × num_disparities`, so 640×480 + a tighter
-     # disparity range is the main speed knob.
-     width: 640,
-     height: 480,
+     # 640×360 is 16:9 — the sensor's native aspect. Asking a 16:9
+     # sensor for a 4:3 buffer squeezed the full field of view into
+     # 480 rows, which showed up in the calibration as fy/fx = 1.334
+     # (anamorphic pixels) and cost 1.44x on the near clip, because
+     # rectification then inflates f from ~725 to 1046 restoring
+     # square pixels. Native aspect also means 25 % fewer pixels for
+     # SGBM, which scales with `width × height × num_disparities`.
+     #
+     # 480x270 keeps that 16:9 aspect and is a pure isotropic
+     # downscale, which is why the 640x360 calibration still applies:
+     # the backend scales K and P to the capture resolution, and for a
+     # proportional resize that scaling is exact (distortion
+     # coefficients are normalised). Changing the *aspect* is what
+     # requires a fresh calibration, not changing the size.
+     #
+     # Resolution is the best lever this pipeline has, because it cuts
+     # compute and improves near range at once: f scales with width,
+     # and the near clip is (f x baseline) / num_disparities. Measured
+     # offline on identical rectified frames, coverage held at ~38-39 %
+     # across 640/560/480/400 wide — SGBM's limit here is texture, not
+     # pixel count — while cost and near clip both fell:
+     #
+     #   640x360   f*B 69.7   clip 0.73 m   SGBM ~141 ms
+     #   480x270   f*B 52.3   clip 0.55 m   SGBM  ~79 ms
+     #
+     # The price is depth precision at distance, since dZ = Z^2 dd /
+     # (f*B): about 3.8 cm at 2 m against 2.9 cm at 640 wide. Fine for
+     # deciding whether to stop for something; not fine for mapping.
+     width: 480,
+     height: 270,
      fps: 30,
      # Wide enough for the unsynchronized USB cameras on host;
      # drop to 5 ms once the perception target has FSIN-tied CSI
@@ -171,7 +222,19 @@ defmodule OvcsMini do
      # block_size=7 is a balanced point between bs=5 (denser
      # coverage but jittery) and bs=9 (stable but sparse) — gives
      # ~30 % more frame-to-frame stability for ~5 pp coverage cost.
-     backend_opts: [num_disparities: 96, block_size: 7],
+     # Speckle filtering, tuned against the measured failure mode
+     # rather than the defaults: the map's problem is not missing
+     # pixels but confident wrong ones — isolated blobs reading
+     # 3.5 m inside a 2 m surface, from false matches on repetitive
+     # structure like shelving. A hole is honest; a phantom obstacle
+     # is not. Doubling the window and halving the tolerated internal
+     # range invalidates those blobs; costs some coverage.
+     backend_opts: [
+       num_disparities: 96,
+       block_size: 7,
+       speckle_window_size: 200,
+       speckle_range: 16
+     ],
      left: camera_addressing(arm, :left),
      right: camera_addressing(arm, :right)}
   end

@@ -10,7 +10,14 @@ defmodule RosBridge.StereoCamera.Supervisor do
          - per-side `<topic_prefix>/<side>/image_raw/compressed`
            + `<topic_prefix>/<side>/camera_info`,
          - `<topic_prefix>/disparity` (DisparityImage),
-         - `<topic_prefix>/depth/image_rect` (Image 32FC1, metres).
+         - `<topic_prefix>/depth/image_rect` (Image 32FC1, metres),
+         - `<topic_prefix>/depth/camera_info` — the same intrinsics as
+           the left camera, republished as a *sibling* of the depth
+           image. Consumers resolve a camera_info by convention from
+           the image's own namespace, so without this a viewer cannot
+           project the depth image and silently renders nothing,
+         - `<topic_prefix>/disparity/image` (Image 32FC1, pixels) only
+           when `:publish_disparity_image` is set — see below.
 
   Children start in that order so each downstream child can register
   on its upstream during `init/1`.
@@ -30,6 +37,15 @@ defmodule RosBridge.StereoCamera.Supervisor do
 
     * `:width` (1280), `:height` (720), `:fps` (30) — applied to
       both camera drivers.
+    * `:publish_disparity_image` (`false`) — also publish the
+      disparity pixels as a bare `sensor_msgs/Image`, because viewers
+      match on a topic's type and cannot render the `DisparityImage`
+      container. Off by default: it is a third uncompressed 921 KB
+      image per frame, and at 640x360 / 7 Hz the three together ask
+      for ~19 MB/s from one Zenoh session. Measured on ovcs_mini,
+      turning it on dropped `depth/image_rect` from ~7 Hz to 1.3 Hz
+      while only 9.6 MB/s arrived — so this is a debugging aid to
+      switch on deliberately, not something to leave running.
     * `:topic_prefix` (`"stereo"`) — root of every topic this
       unit publishes. Also drives the default `frame_id` for each
       side (`<prefix>_left`, `<prefix>_right`).
@@ -87,6 +103,7 @@ defmodule RosBridge.StereoCamera.Supervisor do
       fps: Keyword.get(opts, :fps, @default_fps),
       topic_prefix: topic_prefix,
       pair_tolerance_ms: Keyword.get(opts, :pair_tolerance_ms, @default_pair_tolerance_ms),
+      publish_disparity_image: Keyword.get(opts, :publish_disparity_image, false),
       backend_opts: Keyword.get(opts, :backend_opts, []),
       left:
         resolve_side_opts(
@@ -204,7 +221,11 @@ defmodule RosBridge.StereoCamera.Supervisor do
       width: config.width,
       height: config.height,
       disparity_topic: "#{config.topic_prefix}/disparity",
+      disparity_image_topic:
+        config.publish_disparity_image && "#{config.topic_prefix}/disparity/image",
       depth_topic: "#{config.topic_prefix}/depth/image_rect",
+      depth_camera_info_topic: "#{config.topic_prefix}/depth/camera_info",
+      cloud_topic: "#{config.topic_prefix}/points",
       pair_tolerance_ms: config.pair_tolerance_ms
     ]
 

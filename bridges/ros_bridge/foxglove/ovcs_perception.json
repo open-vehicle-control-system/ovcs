@@ -1,13 +1,13 @@
 {
   "configById": {
     "Image!left": {
-      "cameraState": { "distance": 5, "perspective": true },
+      "cameraState": {
+        "distance": 5,
+        "perspective": true
+      },
       "imageMode": {
         "imageTopic": "/stereo/left/image_raw/compressed",
         "calibrationTopic": "/stereo/left/camera_info",
-        "annotations": {
-          "/perception/detections": { "visible": true }
-        },
         "synchronize": false,
         "rotation": 0,
         "flipHorizontal": false,
@@ -18,10 +18,22 @@
       "transforms": {},
       "topics": {},
       "layers": {},
-      "publish": { "type": "point", "poseTopic": "/move_base_simple/goal", "pointTopic": "/clicked_point", "poseEstimateTopic": "/initialpose", "poseEstimateXDeviation": 0.5, "poseEstimateYDeviation": 0.5, "poseEstimateThetaDeviation": 0.26179939 }
+      "publish": {
+        "type": "point",
+        "poseTopic": "/move_base_simple/goal",
+        "pointTopic": "/clicked_point",
+        "poseEstimateTopic": "/initialpose",
+        "poseEstimateXDeviation": 0.5,
+        "poseEstimateYDeviation": 0.5,
+        "poseEstimateThetaDeviation": 0.26179939
+      },
+      "foxglovePanelTitle": "Left camera"
     },
     "Image!right": {
-      "cameraState": { "distance": 5, "perspective": true },
+      "cameraState": {
+        "distance": 5,
+        "perspective": true
+      },
       "imageMode": {
         "imageTopic": "/stereo/right/image_raw/compressed",
         "calibrationTopic": "/stereo/right/camera_info",
@@ -34,16 +46,20 @@
       "scene": {},
       "transforms": {},
       "topics": {},
-      "layers": {}
+      "layers": {},
+      "foxglovePanelTitle": "Right camera"
     },
     "Image!depth": {
-      "cameraState": { "distance": 5, "perspective": true },
+      "cameraState": {
+        "distance": 5,
+        "perspective": true
+      },
       "imageMode": {
         "imageTopic": "/stereo/depth/image_rect",
         "calibrationTopic": "/stereo/left/camera_info",
         "synchronize": false,
-        "minValue": 0.2,
-        "maxValue": 10.0,
+        "minValue": 550,
+        "maxValue": 3000,
         "colorMode": "colormap",
         "colorMap": "turbo"
       },
@@ -51,14 +67,30 @@
       "scene": {},
       "transforms": {},
       "topics": {},
-      "layers": {}
+      "layers": {},
+      "foxglovePanelTitle": "Depth (mm)"
     },
     "Plot!imu_accel": {
-      "title": "IMU linear acceleration (m/s²)",
+      "title": "IMU linear acceleration (m/s\u00b2)",
       "paths": [
-        { "value": "/imu.linear_acceleration.x", "enabled": true, "timestampMethod": "receiveTime", "label": "ax" },
-        { "value": "/imu.linear_acceleration.y", "enabled": true, "timestampMethod": "receiveTime", "label": "ay" },
-        { "value": "/imu.linear_acceleration.z", "enabled": true, "timestampMethod": "receiveTime", "label": "az" }
+        {
+          "value": "/imu.linear_acceleration.x",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "ax"
+        },
+        {
+          "value": "/imu.linear_acceleration.y",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "ay"
+        },
+        {
+          "value": "/imu.linear_acceleration.z",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "az"
+        }
       ],
       "showXAxisLabels": true,
       "showYAxisLabels": true,
@@ -68,14 +100,30 @@
       "isSynced": true,
       "xAxisVal": "timestamp",
       "sidebarDimension": 240,
-      "followingViewWidth": 20
+      "followingViewWidth": 20,
+      "foxglovePanelTitle": "IMU acceleration"
     },
     "Plot!imu_gyro": {
       "title": "IMU angular velocity (rad/s)",
       "paths": [
-        { "value": "/imu.angular_velocity.x", "enabled": true, "timestampMethod": "receiveTime", "label": "wx" },
-        { "value": "/imu.angular_velocity.y", "enabled": true, "timestampMethod": "receiveTime", "label": "wy" },
-        { "value": "/imu.angular_velocity.z", "enabled": true, "timestampMethod": "receiveTime", "label": "wz" }
+        {
+          "value": "/imu.angular_velocity.x",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "wx"
+        },
+        {
+          "value": "/imu.angular_velocity.y",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "wy"
+        },
+        {
+          "value": "/imu.angular_velocity.z",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "wz"
+        }
       ],
       "showXAxisLabels": true,
       "showYAxisLabels": true,
@@ -84,58 +132,36 @@
       "showPlotValuesInLegend": true,
       "isSynced": true,
       "xAxisVal": "timestamp",
-      "followingViewWidth": 20
-    },
-    "3D!scene": {
-      "cameraState": {
-        "distance": 6,
-        "perspective": true,
-        "phi": 60,
-        "thetaOffset": 45,
-        "targetOffset": [0, 0, 0],
-        "target": [0, 0, 0],
-        "targetOrientation": [0, 0, 0, 1],
-        "fovy": 45,
-        "near": 0.5,
-        "far": 5000
-      },
-      "followMode": "follow-pose",
-      "followTf": "stereo_left",
-      "scene": { "transforms": { "showLabel": true, "labelSize": 0.1 } },
-      "transforms": {},
-      "topics": {
-        "/imu": { "visible": true },
-        "/perception/detections": { "visible": true }
-      },
-      "layers": {
-        "grid": { "layerId": "foxglove.Grid", "position": [0, 0, 0], "rotation": [0, 0, 0], "size": 10, "divisions": 10, "lineWidth": 1, "color": "#248eff40", "instanceId": "grid", "label": "Grid", "visible": true, "order": 1 }
-      },
-      "publish": { "type": "point", "poseTopic": "/move_base_simple/goal", "pointTopic": "/clicked_point", "poseEstimateTopic": "/initialpose", "poseEstimateXDeviation": 0.5, "poseEstimateYDeviation": 0.5, "poseEstimateThetaDeviation": 0.26179939 }
-    },
-    "RawMessages!detections": {
-      "topicPath": "/perception/detections",
-      "diffEnabled": false,
-      "showFullMessageForDiff": false,
-      "diffMethod": "custom",
-      "diffTopicPath": "",
-      "fontSize": 12
-    },
-    "Indicator!heartbeat": {
-      "path": "/ovcs_heartbeat.data",
-      "style": "background",
-      "fallbackColor": "#a0a0a0",
-      "fallbackLabel": "no heartbeat",
-      "rules": [
-        { "operator": "=", "rawValue": "", "color": "#68e562", "label": "alive" }
-      ]
+      "followingViewWidth": 20,
+      "foxglovePanelTitle": "IMU angular velocity"
     },
     "Plot!joy_axes": {
       "title": "Joy axes",
       "paths": [
-        { "value": "/joy.axes[0]", "enabled": true, "timestampMethod": "receiveTime", "label": "axis 0" },
-        { "value": "/joy.axes[1]", "enabled": true, "timestampMethod": "receiveTime", "label": "axis 1" },
-        { "value": "/joy.axes[2]", "enabled": true, "timestampMethod": "receiveTime", "label": "axis 2" },
-        { "value": "/joy.axes[3]", "enabled": true, "timestampMethod": "receiveTime", "label": "axis 3" }
+        {
+          "value": "/joy.axes[0]",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "axis 0"
+        },
+        {
+          "value": "/joy.axes[1]",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "axis 1"
+        },
+        {
+          "value": "/joy.axes[2]",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "axis 2"
+        },
+        {
+          "value": "/joy.axes[3]",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "axis 3"
+        }
       ],
       "showXAxisLabels": true,
       "showYAxisLabels": true,
@@ -144,12 +170,82 @@
       "showPlotValuesInLegend": true,
       "isSynced": true,
       "xAxisVal": "timestamp",
-      "followingViewWidth": 20
+      "followingViewWidth": 20,
+      "foxglovePanelTitle": "Joy axes"
+    },
+    "RawMessages!heartbeat": {
+      "topicPath": "/ovcs_heartbeat.data",
+      "diffEnabled": false,
+      "showFullMessageForDiff": false,
+      "diffMethod": "custom",
+      "diffTopicPath": "",
+      "fontSize": 12,
+      "foxglovePanelTitle": "Heartbeat"
+    },
+    "RawMessages!disparity_geometry": {
+      "topicPath": "/stereo/disparity.valid_window",
+      "diffEnabled": false,
+      "showFullMessageForDiff": false,
+      "diffMethod": "custom",
+      "diffTopicPath": "",
+      "fontSize": 12,
+      "foxglovePanelTitle": "Disparity geometry"
+    },
+    "3D!depth_cloud": {
+      "cameraState": {
+        "distance": 4.5,
+        "perspective": true,
+        "phi": 78,
+        "thetaOffset": 0,
+        "targetOffset": [
+          1.5,
+          0,
+          0
+        ],
+        "target": [
+          0,
+          0,
+          0
+        ],
+        "targetOrientation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "fovy": 45,
+        "near": 0.1,
+        "far": 100
+      },
+      "followMode": "follow-pose",
+      "followTf": "base_link",
+      "scene": {
+        "transforms": {
+          "showLabel": true,
+          "labelSize": 0.1
+        }
+      },
+      "transforms": {},
+      "topics": {
+        "/stereo/points": {
+          "visible": true,
+          "colorMode": "colormap",
+          "colorMap": "turbo",
+          "colorField": "z",
+          "minValue": 0.5,
+          "maxValue": 4.0,
+          "pointSize": 3
+        }
+      },
+      "layers": {},
+      "foxglovePanelTitle": "Point cloud"
     }
   },
   "globalVariables": {},
   "userNodes": {},
-  "playbackConfig": { "speed": 1 },
+  "playbackConfig": {
+    "speed": 1
+  },
   "layout": {
     "first": {
       "first": {
@@ -160,19 +256,19 @@
       },
       "second": {
         "first": "Image!depth",
-        "second": "3D!scene",
+        "second": "3D!depth_cloud",
         "direction": "row",
-        "splitPercentage": 50
+        "splitPercentage": 40
       },
       "direction": "column",
-      "splitPercentage": 55
+      "splitPercentage": 45
     },
     "second": {
       "first": {
-        "first": "Indicator!heartbeat",
-        "second": "RawMessages!detections",
+        "first": "RawMessages!heartbeat",
+        "second": "RawMessages!disparity_geometry",
         "direction": "column",
-        "splitPercentage": 18
+        "splitPercentage": 34
       },
       "second": {
         "first": "Plot!imu_accel",
@@ -180,15 +276,15 @@
           "first": "Plot!imu_gyro",
           "second": "Plot!joy_axes",
           "direction": "column",
-          "splitPercentage": 50
+          "splitPercentage": 55
         },
         "direction": "column",
-        "splitPercentage": 34
+        "splitPercentage": 40
       },
       "direction": "column",
-      "splitPercentage": 40
+      "splitPercentage": 28
     },
     "direction": "row",
-    "splitPercentage": 65
+    "splitPercentage": 74
   }
 }
