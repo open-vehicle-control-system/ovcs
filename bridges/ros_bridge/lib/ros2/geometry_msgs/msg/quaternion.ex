@@ -13,7 +13,10 @@ defmodule Ros2.GeometryMsgs.Msg.Quaternion do
     encode_float64(x) <> encode_float64(y) <> encode_float64(z) <> encode_float64(w)
   end
 
-  def parse(<<x::little-float-64, y::little-float-64, z::little-float-64, w::little-float-64, rest::binary>>) do
+  def parse(
+        <<x::little-float-64, y::little-float-64, z::little-float-64, w::little-float-64,
+          rest::binary>>
+      ) do
     {:ok, %__MODULE__{x: x, y: y, z: z, w: w}, rest}
   rescue
     _ -> {:error, :malformed, __MODULE__}

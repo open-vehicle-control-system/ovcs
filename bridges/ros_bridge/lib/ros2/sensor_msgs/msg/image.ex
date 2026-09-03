@@ -42,8 +42,15 @@ defmodule Ros2.SensorMsgs.Msg.Image do
 
   alias Ros2.StdMsgs.Msg.Header
 
-  defstruct [:header, height: 0, width: 0, encoding: "mono16",
-             is_bigendian: 0, step: 0, data: <<>>]
+  defstruct [
+    :header,
+    height: 0,
+    width: 0,
+    encoding: "mono16",
+    is_bigendian: 0,
+    step: 0,
+    data: <<>>
+  ]
 
   # Captured against ROS 2 Jazzy via `ros2 topic info -v` on an
   # rclpy publisher of `sensor_msgs/Image`. Refresh on distro bumps.

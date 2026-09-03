@@ -397,11 +397,20 @@ defmodule RosBridge.StereoCamera.OpenCV do
           [] -> 0.0
         end
 
-      tuple when is_tuple(tuple) and tuple_size(tuple) > 0 -> elem(tuple, 0)
-      [v | _] when is_number(v) -> v
-      [[v | _] | _] when is_number(v) -> v
-      v when is_number(v) -> v
-      _ -> 0.0
+      tuple when is_tuple(tuple) and tuple_size(tuple) > 0 ->
+        elem(tuple, 0)
+
+      [v | _] when is_number(v) ->
+        v
+
+      [[v | _] | _] when is_number(v) ->
+        v
+
+      v when is_number(v) ->
+        v
+
+      _ ->
+        0.0
     end
   end
 
@@ -487,7 +496,6 @@ defmodule RosBridge.StereoCamera.OpenCV do
   # 5) Build the Result struct: pack 32FC1 disparity + 32FC1 depth
   #    + the geometry metadata downstream consumers need.
   defp build_result(raw_disparity, left_frame, reference_image, state) do
-
     # Single-channel Mats report a 2-tuple shape; the 3-tuple clause is
     # kept so a caller passing a colour reference still works.
     {height, width} =
@@ -702,9 +710,15 @@ defmodule RosBridge.StereoCamera.OpenCV do
   # are the 3×3 left submatrix of the rectified projection matrix.
   defp projection_matrix_to_camera_matrix(p) when is_list(p) and length(p) == 12 do
     [
-      Enum.at(p, 0), Enum.at(p, 1), Enum.at(p, 2),
-      Enum.at(p, 4), Enum.at(p, 5), Enum.at(p, 6),
-      Enum.at(p, 8), Enum.at(p, 9), Enum.at(p, 10)
+      Enum.at(p, 0),
+      Enum.at(p, 1),
+      Enum.at(p, 2),
+      Enum.at(p, 4),
+      Enum.at(p, 5),
+      Enum.at(p, 6),
+      Enum.at(p, 8),
+      Enum.at(p, 9),
+      Enum.at(p, 10)
     ]
     |> matrix_3x3()
   end
@@ -774,6 +788,7 @@ defmodule RosBridge.StereoCamera.OpenCV do
       disp_f32
       |> Evision.divide(@disparity_fixed_point_scale)
       |> Evision.Mat.to_binary()
+
     # metres → millimetres in the same divide, so there is no extra
     # pass over the image.
     depth_scale = focal_length * baseline * @disparity_fixed_point_scale * 1000.0

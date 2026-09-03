@@ -39,8 +39,7 @@ defmodule RosBridge.Camera.MjpegStream do
           eoi ->
             frame_end = eoi + 2
 
-            <<_pre::binary-size(soi), frame::binary-size(frame_end - soi),
-              rest::binary>> = buffer
+            <<_pre::binary-size(soi), frame::binary-size(frame_end - soi), rest::binary>> = buffer
 
             split(rest, [frame | acc])
         end

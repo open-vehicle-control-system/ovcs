@@ -228,8 +228,8 @@ defmodule RosBridge.Inference.Hailo do
   defp take_detections(_rest, 0, acc), do: Enum.reverse(acc)
 
   defp take_detections(
-         <<class_id::little-16, score::little-float-32, x0::little-float-32,
-           y0::little-float-32, x1::little-float-32, y1::little-float-32, rest::binary>>,
+         <<class_id::little-16, score::little-float-32, x0::little-float-32, y0::little-float-32,
+           x1::little-float-32, y1::little-float-32, rest::binary>>,
          count,
          acc
        ) do

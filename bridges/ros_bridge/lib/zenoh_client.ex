@@ -258,7 +258,11 @@ defmodule RosBridge.ZenohClient do
 
             _ ->
               # No or unparseable request attachment — synthesise one.
-              RmwZenoh.attachment(0, System.system_time(:nanosecond), :crypto.strong_rand_bytes(16))
+              RmwZenoh.attachment(
+                0,
+                System.system_time(:nanosecond),
+                :crypto.strong_rand_bytes(16)
+              )
           end
 
         case Zenohex.Query.reply(query.zenoh_query, service.key_expr, cdr, attachment: attachment) do
@@ -275,7 +279,10 @@ defmodule RosBridge.ZenohClient do
     end
   end
 
-  def handle_cast({:publish, _topic, _message_module, _message, _opts}, %State{session: nil} = state) do
+  def handle_cast(
+        {:publish, _topic, _message_module, _message, _opts},
+        %State{session: nil} = state
+      ) do
     # Fire-and-forget: drop silently and tally. Publishers re-fire on
     # their own timers, so a per-drop log just spams while the router is
     # unreachable. The count is summarised when the session opens.
@@ -336,9 +343,7 @@ defmodule RosBridge.ZenohClient do
   def handle_info({:connect, backoff_ms}, state) do
     case open_session(state.endpoint_ip) do
       {:ok, session} ->
-        Logger.info(
-          "#{__MODULE__} connected to tcp/#{state.endpoint_ip}:#{@zenoh_port}"
-        )
+        Logger.info("#{__MODULE__} connected to tcp/#{state.endpoint_ip}:#{@zenoh_port}")
 
         if state.drops_while_offline > 0 do
           Logger.debug(
@@ -453,9 +458,7 @@ defmodule RosBridge.ZenohClient do
         |> declare_subscriber_liveliness(state)
 
       {:error, reason} ->
-        Logger.warning(
-          "#{__MODULE__} declare_subscriber #{key_expr} failed: #{inspect(reason)}"
-        )
+        Logger.warning("#{__MODULE__} declare_subscriber #{key_expr} failed: #{inspect(reason)}")
 
         subscription
     end
@@ -642,9 +645,7 @@ defmodule RosBridge.ZenohClient do
       {:ok, state, service}
     else
       {:error, reason} ->
-        Logger.warning(
-          "#{__MODULE__} declare service #{service_name} failed: #{inspect(reason)}"
-        )
+        Logger.warning("#{__MODULE__} declare service #{service_name} failed: #{inspect(reason)}")
 
         {:error, reason, state}
     end
@@ -705,7 +706,8 @@ defmodule RosBridge.ZenohClient do
              topic,
              message_module
            ),
-         {:ok, liveliness_token} <- Zenohex.Liveliness.declare_token(state.session, liveliness_key) do
+         {:ok, liveliness_token} <-
+           Zenohex.Liveliness.declare_token(state.session, liveliness_key) do
       Logger.info(
         "#{__MODULE__} publishing #{inspect(message_module)} on #{key_expr} " <>
           "(liveliness token #{liveliness_key})"
@@ -749,9 +751,7 @@ defmodule RosBridge.ZenohClient do
           acc
 
         {:error, reason, acc} ->
-          Logger.warning(
-            "#{__MODULE__} re-declare publisher #{topic} failed: #{inspect(reason)}"
-          )
+          Logger.warning("#{__MODULE__} re-declare publisher #{topic} failed: #{inspect(reason)}")
 
           acc
       end
@@ -827,6 +827,12 @@ defmodule RosBridge.ZenohClient do
         {service_name, %{service | queryable_id: nil, liveliness_token: nil}}
       end)
 
-    %{state | session: nil, publishers: publishers, subscriptions: subscriptions, services: services}
+    %{
+      state
+      | session: nil,
+        publishers: publishers,
+        subscriptions: subscriptions,
+        services: services
+    }
   end
 end

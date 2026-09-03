@@ -426,15 +426,19 @@ defmodule RosBridge.Publishers.StereoCamera do
       frame_id: Keyword.fetch!(side_opts, :frame_id),
       topic_image: "#{topic_prefix}/#{side}/image_raw/compressed",
       topic_info: "#{topic_prefix}/#{side}/camera_info",
-      camera_info: load_camera_info(Keyword.get(side_opts, :calibration_path), fallback_width, fallback_height, side),
+      camera_info:
+        load_camera_info(
+          Keyword.get(side_opts, :calibration_path),
+          fallback_width,
+          fallback_height,
+          side
+        ),
       frame_counter: 0
     }
   end
 
   defp load_camera_info(nil, width, height, side) do
-    Logger.warning(
-      "#{__MODULE__}: no calibration path for #{side}; publishing empty CameraInfo"
-    )
+    Logger.warning("#{__MODULE__}: no calibration path for #{side}; publishing empty CameraInfo")
 
     %CameraInfo{width: width, height: height}
   end
