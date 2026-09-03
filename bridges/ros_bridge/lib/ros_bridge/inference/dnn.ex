@@ -140,12 +140,23 @@ defmodule RosBridge.Inference.Dnn do
   end
 
   defp read_net(state) do
-    net = Evision.DNN.readNetFromONNX(state.model_path)
-    {backend, target, note} = resolve_target(state.target)
-    net = Evision.DNN.Net.setPreferableBackend(net, backend)
-    net = Evision.DNN.Net.setPreferableTarget(net, target)
-    Logger.info("#{__MODULE__}: #{Path.basename(state.model_path)} loaded, #{note}")
-    %{state | net: net}
+    case Evision.DNN.readNetFromONNX(state.model_path) do
+      %Evision.DNN.Net{} = net ->
+        {backend, target, note} = resolve_target(state.target)
+        net = Evision.DNN.Net.setPreferableBackend(net, backend)
+        net = Evision.DNN.Net.setPreferableTarget(net, target)
+        Logger.info("#{__MODULE__}: #{Path.basename(state.model_path)} loaded, #{note}")
+        %{state | net: net}
+
+      other ->
+        # Again a return value, not an exception.
+        Logger.error(
+          "#{__MODULE__}: could not load #{state.model_path}: " <>
+            "#{inspect(other) |> String.slice(0, 200)} — detections disabled"
+        )
+
+        state
+    end
   rescue
     error ->
       Logger.error("#{__MODULE__}: could not load #{state.model_path}: #{inspect(error)}")
@@ -205,16 +216,34 @@ defmodule RosBridge.Inference.Dnn do
         crop: false
       )
 
-    outputs =
-      state.net
-      |> Evision.DNN.Net.setInput(blob)
-      |> then(fn net -> Evision.DNN.Net.forward(net) end)
+    with %Evision.Mat{} = blob <- blob,
+         net = Evision.DNN.Net.setInput(state.net, blob),
+         outputs when not is_tuple(outputs) <- Evision.DNN.Net.forward(net),
+         %Evision.Mat{} = out <- first_output(outputs) do
+      out
+      |> Evision.Mat.to_nx()
+      |> Nx.to_flat_list()
+      |> decode(width, height, size, state.score_threshold, state.nms_threshold)
+    else
+      other ->
+        # Evision signals failure by *returning* `{:error, message}`
+        # rather than raising, so this has to be matched rather than
+        # rescued. A frame that cannot be inferred is dropped, not
+        # crashed on — same as a busy accelerator.
+        Logger.warning(
+          "#{__MODULE__}: inference failed: #{inspect(other) |> String.slice(0, 200)}"
+        )
 
-    outputs
-    |> Evision.Mat.to_nx()
-    |> Nx.to_flat_list()
-    |> decode(width, height, size, state.score_threshold, state.nms_threshold)
+        []
+    end
   end
+
+  # `Net.forward/1` answers with a *list* of Mats, one per output layer,
+  # even for a single-output model. Treating it as a Mat is the kind of
+  # mistake that only shows up the first time real inference runs.
+  defp first_output([%Evision.Mat{} = mat | _]), do: mat
+  defp first_output(%Evision.Mat{} = mat), do: mat
+  defp first_output(other), do: other
 
   defp mat_shape(mat) do
     case Evision.Mat.shape(mat) do
