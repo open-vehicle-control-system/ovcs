@@ -14,8 +14,12 @@ defmodule Ros2.SensorMsgs.Msg.PointCloud2Test do
       is_bigendian: 0,
       point_step: PointCloud2.point_step(),
       row_step: points * PointCloud2.point_step(),
-      data: for(i <- 1..max(points, 1), into: <<>>, do: <<i * 1.0::little-float-32,
-             i * 2.0::little-float-32, i * 3.0::little-float-32>>),
+      data:
+        for(
+          i <- 1..max(points, 1),
+          into: <<>>,
+          do: <<i * 1.0::little-float-32, i * 2.0::little-float-32, i * 3.0::little-float-32>>
+        ),
       is_dense: 1
     }
   end

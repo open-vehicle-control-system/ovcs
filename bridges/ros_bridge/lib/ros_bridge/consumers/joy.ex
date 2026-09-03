@@ -69,9 +69,7 @@ defmodule RosBridge.Consumers.Joy do
   # bug (wrong subscribe call somewhere): log loudly rather than
   # silently dropping or matching on the wrong shape.
   def handle_info({:ros_message, {key_expr, message}}, state) do
-    Logger.warning(
-      "#{__MODULE__} unexpected message on #{key_expr}: #{inspect(message)}"
-    )
+    Logger.warning("#{__MODULE__} unexpected message on #{key_expr}: #{inspect(message)}")
 
     {:noreply, state}
   end

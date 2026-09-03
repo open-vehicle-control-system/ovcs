@@ -133,8 +133,7 @@ defmodule RosBridge.Publishers.Detections do
       labels: Keyword.get(opts, :labels, @coco_labels),
       min_score: Keyword.get(opts, :min_score, @default_min_score),
       max_detections: Keyword.get(opts, :max_detections, @default_max_detections),
-      sample_fraction:
-        Keyword.get(opts, :depth_sample_fraction, @default_depth_sample_fraction),
+      sample_fraction: Keyword.get(opts, :depth_sample_fraction, @default_depth_sample_fraction),
       lifetime:
         opts
         |> Keyword.get(:marker_lifetime_ms, @default_marker_lifetime_ms)
@@ -282,7 +281,10 @@ defmodule RosBridge.Publishers.Detections do
       positioned
       |> Enum.with_index()
       |> Enum.flat_map(fn {detection, index} ->
-        [box_marker(detection, index, header, state), label_marker(detection, index, header, state)]
+        [
+          box_marker(detection, index, header, state),
+          label_marker(detection, index, header, state)
+        ]
       end)
 
     # Explicitly delete any id we drew last time and did not redraw.
@@ -342,8 +344,9 @@ defmodule RosBridge.Publishers.Detections do
       # height in metres.
       scale: %Vector3{x: 0.0, y: 0.0, z: 0.08},
       color: %ColorRGBA{r: 1.0, g: 1.0, b: 1.0, a: 0.9},
-      text: "#{detection.label} #{:erlang.float_to_binary(detection.score, decimals: 2)} " <>
-              "#{:erlang.float_to_binary(detection.z, decimals: 2)}m",
+      text:
+        "#{detection.label} #{:erlang.float_to_binary(detection.score, decimals: 2)} " <>
+          "#{:erlang.float_to_binary(detection.z, decimals: 2)}m",
       lifetime: state.lifetime
     }
   end
@@ -505,5 +508,4 @@ defmodule RosBridge.Publishers.Detections do
   defp principal_point(%Result{} = result) do
     {result.width / 2.0, result.height / 2.0}
   end
-
 end

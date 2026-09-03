@@ -130,7 +130,8 @@ defmodule RosBridge do
 
   defp resolve_component(name) when is_atom(name), do: RosBridge.Components.start(name, [])
 
-  defp resolve_component({name, opts}) when is_atom(name), do: RosBridge.Components.start(name, opts)
+  defp resolve_component({name, opts}) when is_atom(name),
+    do: RosBridge.Components.start(name, opts)
 
   # The vehicle module is stamped into Application env by
   # bridges/firmware's runtime.exs (same mechanism vms_core /

@@ -1,6 +1,8 @@
 import Config
 
-vehicle_name = System.get_env("VEHICLE") || raise "VEHICLE env var is required for firmware builds"
+vehicle_name =
+  System.get_env("VEHICLE") || raise "VEHICLE env var is required for firmware builds"
+
 bridge_firmware_id =
   System.get_env("BRIDGE_FIRMWARE_ID") ||
     raise "BRIDGE_FIRMWARE_ID env var is required for firmware builds"
