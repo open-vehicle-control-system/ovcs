@@ -72,6 +72,10 @@ run = "cd ros2/simulation && ./verify_perception.sh"
 description = "Boot the simulator, drive it and check the odometry against the model geometry"
 run = "cd ros2/simulation && ./verify_drivetrain.sh"
 
+[tasks.verify-nav2]
+description = "Boot the simulator + Nav2, navigate to a goal and check the commands respect Ackermann limits"
+run = "cd ros2/simulation && ./verify_nav2.sh"
+
 [tasks.fetch-models]
 description = "Download + verify the detection models (not vendored — see scripts/models.tsv for why)"
 run = "./scripts/fetch_models.sh"
