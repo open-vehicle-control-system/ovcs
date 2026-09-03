@@ -1,0 +1,261 @@
+# Nav2 for the simulated OVCS Mini.
+#
+# ## Why there is no map here
+#
+# No map_server and no AMCL. Every frame is `odom`, and both costmaps use
+# a rolling window, so the car navigates relative to where it is rather
+# than inside a prior. That keeps this configuration honest about what it
+# proves — that Nav2's velocity output can drive an Ackermann vehicle —
+# without dragging in the map/SLAM decision, which is the largest open
+# piece of the real-vehicle track.
+#
+# It also avoids publishing a fake static `map -> odom` transform, which
+# is the usual shortcut and is worse: it looks like localisation.
+#
+# ## Ackermann is not the default
+#
+# `mppi::AckermannMotionModel` clamps yaw rate to `|vx| / min_turning_r`
+# inside the sampler, so infeasible arcs are never considered rather
+# than merely penalised.
+#
+# Leaving `motion_model` unset does not silently pick something wrong —
+# it is fatal, which is the good outcome. MPPI defaults the value to the
+# instance name `diff_drive`, and with no `FollowPath.diff_drive.plugin`
+# to resolve, controller_server refuses to configure. (The plugin XML's
+# description claims Omni is "the default model when no plugin is
+# explicitly configured"; that is not what the code does. Measured.)
+#
+# What *is* silent is naming a valid but wrong model. Substituting
+# `mppi::DiffDriveMotionModel` loads cleanly and removes the radius
+# constraint entirely — see `scripts/nav2_test.py`, which exists to
+# catch exactly that.
+#
+# min_turning_r comes from the vehicle: wheelbase / tan(steering_limit)
+# = 0.324 / tan(0.52) = 0.566 m, rounded up to 0.6 for margin.
+#
+# ## The planner is not kinematically aware
+#
+# There is no `nav2_smac_planner` in the Lyrical archive, so the global
+# plan comes from NavFn — a grid search that knows nothing about turning
+# radius. The plan can therefore contain corners this car cannot drive,
+# and MPPI has to make the best of it. Acceptable in an open workshop;
+# it is a real limitation in tight spaces and the reason a Hybrid-A*
+# planner would be worth building if navigation gets ambitious.
+
+controller_server:
+  ros__parameters:
+    use_sim_time: true
+    controller_frequency: 20.0
+    # The CAN command path runs at 100 Hz (`frequency: 10` in Cantastic
+    # is a period in milliseconds), so 20 Hz here is not the bottleneck.
+    min_x_velocity_threshold: 0.001
+    min_theta_velocity_threshold: 0.001
+    failure_tolerance: 0.3
+    controller_plugins: ["FollowPath"]
+    progress_checker_plugins: ["progress_checker"]
+    goal_checker_plugins: ["goal_checker"]
+
+    progress_checker:
+      plugin: "nav2_controller::SimpleProgressChecker"
+      required_movement_radius: 0.25
+      movement_time_allowance: 15.0
+
+    goal_checker:
+      # `yaw_goal_tolerance` is deliberately huge. A car cannot rotate on
+      # the spot, so any final-heading requirement it cannot satisfy by
+      # driving leaves it stuck at the goal until the action times out.
+      # Position is what matters here; heading is whatever the approach
+      # produced.
+      plugin: "nav2_controller::SimpleGoalChecker"
+      xy_goal_tolerance: 0.30
+      yaw_goal_tolerance: 3.15
+      stateful: true
+
+    FollowPath:
+      plugin: "nav2_mppi_controller::MPPIController"
+      # `motion_model` names a plugin *instance*, and the class comes
+      # from `<instance>.plugin` — the same name-then-plugin pattern as
+      # the critics. Putting the class directly in `motion_model` fails
+      # with "No 'plugin' param for param ns!", which is a confusing way
+      # to be told you named a class where a namespace was wanted.
+      #
+      # The instance is called AckermannConstraints so `min_turning_r`
+      # keeps the parameter path it had when this was not a plugin.
+      motion_model: "AckermannConstraints"
+      AckermannConstraints:
+        plugin: "mppi::AckermannMotionModel"
+        min_turning_r: 0.6
+
+      time_steps: 40
+      model_dt: 0.05
+      batch_size: 1000
+      vx_std: 0.2
+      wz_std: 0.4
+      vx_max: 1.5
+      vx_min: -0.5
+      wz_max: 2.5
+      ax_max: 2.0
+      ax_min: -2.0
+      az_max: 3.0
+      iteration_count: 1
+      temperature: 0.3
+      gamma: 0.015
+      prune_distance: 2.0
+      transform_tolerance: 0.2
+      regenerate_noises: true
+
+      critics:
+        - "ConstraintCritic"
+        - "CostCritic"
+        - "GoalCritic"
+        - "GoalAngleCritic"
+        - "PathAlignCritic"
+        - "PathFollowCritic"
+        - "PathAngleCritic"
+        - "PreferForwardCritic"
+
+      ConstraintCritic: {enabled: true, cost_power: 1, cost_weight: 4.0}
+      GoalCritic: {enabled: true, cost_power: 1, cost_weight: 5.0, threshold_to_consider: 1.4}
+      GoalAngleCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 3.0
+        threshold_to_consider: 0.5
+      PreferForwardCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 5.0
+        threshold_to_consider: 0.5
+      CostCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 3.81
+        critical_cost: 300.0
+        consider_footprint: false
+        collision_cost: 1000000.0
+        near_goal_distance: 1.0
+      PathAlignCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 14.0
+        max_path_occupancy_ratio: 0.05
+        trajectory_point_step: 4
+        threshold_to_consider: 0.5
+        offset_from_furthest: 20
+      PathFollowCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 5.0
+        offset_from_furthest: 5
+        threshold_to_consider: 1.4
+      PathAngleCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 2.0
+        offset_from_furthest: 4
+        threshold_to_consider: 0.5
+        max_angle_to_furthest: 1.0
+
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      use_sim_time: true
+      global_frame: odom
+      robot_base_frame: base_link
+      update_frequency: 5.0
+      publish_frequency: 2.0
+      rolling_window: true
+      width: 6
+      height: 6
+      resolution: 0.05
+      # Half the diagonal of a 568 x 296 mm truck, plus a little.
+      robot_radius: 0.35
+      plugins: ["inflation_layer"]
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        cost_scaling_factor: 3.0
+        inflation_radius: 0.55
+
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      use_sim_time: true
+      global_frame: odom
+      robot_base_frame: base_link
+      update_frequency: 1.0
+      publish_frequency: 1.0
+      # Rolling, because without a map there is no fixed extent to
+      # anchor a static costmap to.
+      rolling_window: true
+      width: 30
+      height: 30
+      resolution: 0.1
+      robot_radius: 0.35
+      plugins: ["inflation_layer"]
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        cost_scaling_factor: 3.0
+        inflation_radius: 0.55
+
+planner_server:
+  ros__parameters:
+    use_sim_time: true
+    expected_planner_frequency: 1.0
+    planner_plugins: ["GridBased"]
+    GridBased:
+      plugin: "nav2_navfn_planner::NavfnPlanner"
+      tolerance: 0.5
+      use_astar: true
+      allow_unknown: true
+
+bt_navigator:
+  ros__parameters:
+    use_sim_time: true
+    global_frame: odom
+    robot_base_frame: base_link
+    odom_topic: /odom
+    transform_tolerance: 0.2
+    # Both trees are overridden, because both stock trees put Spin in
+    # their recovery branch and this vehicle cannot execute one: the
+    # behaviour runs its full duration, produces no motion, and burns a
+    # RecoveryNode retry, so a single transient planning failure is
+    # enough to abort the action.
+    default_nav_to_pose_bt_xml: /opt/ovcs/config/nav2_ackermann_bt.xml
+    default_nav_through_poses_bt_xml: /opt/ovcs/config/nav2_ackermann_through_poses_bt.xml
+
+behavior_server:
+  ros__parameters:
+    use_sim_time: true
+    local_frame: odom
+    global_frame: odom
+    robot_base_frame: base_link
+    transform_tolerance: 0.2
+    local_costmap_topic: local_costmap/costmap_raw
+    local_footprint_topic: local_costmap/published_footprint
+    cycle_frequency: 10.0
+    # `spin` is loaded but never invoked. bt_navigator resolves every
+    # action server in *both* of its trees at activation, and the stock
+    # navigate_through_poses tree references Spin — without the server
+    # present it fails with "Action server spin not available" and the
+    # whole stack refuses to come up. Keeping the server costs nothing;
+    # what matters is that no tree here calls it. See the BT XMLs.
+    behavior_plugins: ["spin", "backup", "drive_on_heading", "wait"]
+    spin:
+      plugin: "nav2_behaviors::Spin"
+    backup:
+      plugin: "nav2_behaviors::BackUp"
+    drive_on_heading:
+      plugin: "nav2_behaviors::DriveOnHeading"
+    wait:
+      plugin: "nav2_behaviors::Wait"
+
+lifecycle_manager:
+  ros__parameters:
+    use_sim_time: true
+    autostart: true
+    bond_timeout: 0.0
+    node_names:
+      - controller_server
+      - planner_server
+      - behavior_server
+      - bt_navigator

@@ -70,6 +70,17 @@ CAMERA_TOPICS = ["/stereo/left/image_raw", "/stereo/right/image_raw"]
 # ignored tag would leave the car silently immobile.
 CMD_VEL_GZ = "/cmd_vel@geometry_msgs/msg/Twist]gz.msgs.Twist"
 
+# Nav2 publishes `TwistStamped`, not `Twist` —
+# `nav2_util::TwistPublisher` defaults `enable_stamped_cmd_vel` to
+# true. One topic cannot carry both types and one `parameter_bridge`
+# cannot map two ROS topics onto the same Gazebo topic, so the
+# autonomous command gets its own ROS topic and its own bridge node,
+# feeding the same `/model/<name>/cmd_vel` that teleop does.
+#
+# Without this, a Nav2 stack that looks entirely healthy moves nothing
+# at all: the type never matches, so the bridge simply never fires.
+NAV_CMD_VEL_GZ = "/cmd_vel@geometry_msgs/msg/TwistStamped]gz.msgs.Twist"
+
 
 def generate_launch_description():
     use_sim_time = {"use_sim_time": True}
@@ -153,10 +164,23 @@ def generate_launch_description():
             Node(
                 package="ros_gz_bridge",
                 executable="parameter_bridge",
+                name="parameter_bridge",
                 arguments=BRIDGE_TOPICS
                 + [["/model/", vehicle, CMD_VEL_GZ]],
                 parameters=[use_sim_time],
                 remappings=[(["/model/", vehicle, "/cmd_vel"], "/cmd_vel")],
+                output="screen",
+            ),
+            # Second bridge, stamped, for Nav2. Named explicitly because
+            # two nodes from the same executable would otherwise collide
+            # on the default node name.
+            Node(
+                package="ros_gz_bridge",
+                executable="parameter_bridge",
+                name="parameter_bridge_nav",
+                arguments=[["/model/", vehicle, NAV_CMD_VEL_GZ]],
+                parameters=[use_sim_time],
+                remappings=[(["/model/", vehicle, "/cmd_vel"], "/cmd_vel_nav")],
                 output="screen",
             ),
             # One image_bridge per camera; each offers raw and

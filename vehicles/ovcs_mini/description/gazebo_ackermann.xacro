@@ -71,6 +71,14 @@
 
       <odom_topic>/odom</odom_topic>
       <tf_topic>/tf</tf_topic>
+      <!-- Without this the plugin derives the odometry frame from the
+           model name and publishes `ovcs_mini/odom`, which is not the
+           ROS convention and which Nav2 rejects outright: every costmap
+           logs `Invalid frame ID "odom" ... frame does not exist` and
+           never activates. `frame_id` was read out of the shipped
+           libgz-sim-ackermann-steering-system.so, like the rest of
+           these tags. -->
+      <frame_id>odom</frame_id>
       <child_frame_id>base_link</child_frame_id>
       <odom_publish_frequency>50</odom_publish_frequency>
     </plugin>
