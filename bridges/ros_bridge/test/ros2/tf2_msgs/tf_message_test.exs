@@ -37,8 +37,7 @@ defmodule Ros2.Tf2Msgs.Msg.TFMessageTest do
     # padding — the message encodes 4 bytes short and Fast CDR fails
     # with "Not enough memory in the buffer stream".
     <<_::binary-size(48), tx::little-float-64, ty::little-float-64, tz::little-float-64,
-      rx::little-float-64, ry::little-float-64, rz::little-float-64,
-      rw::little-float-64>> = body
+      rx::little-float-64, ry::little-float-64, rz::little-float-64, rw::little-float-64>> = body
 
     assert tx == 0.10
     assert ty == 0.0

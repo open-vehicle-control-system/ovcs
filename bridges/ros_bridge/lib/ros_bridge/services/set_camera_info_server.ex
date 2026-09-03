@@ -90,9 +90,7 @@ defmodule RosBridge.Services.SetCameraInfoServer do
         %Response{success: true, status_message: "ok"}
 
       {:error, reason} ->
-        Logger.warning(
-          "#{__MODULE__}[#{state.service_name}] write failed: #{inspect(reason)}"
-        )
+        Logger.warning("#{__MODULE__}[#{state.service_name}] write failed: #{inspect(reason)}")
 
         %Response{success: false, status_message: "write failed: #{inspect(reason)}"}
     end

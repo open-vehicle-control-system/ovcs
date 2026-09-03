@@ -85,5 +85,4 @@ defmodule Ros2.SensorMsgs.Msg.Imu do
   # Header — i.e. how many bytes Header.encode/1 would have produced
   # for the same struct.
   defp byte_size_after_header(header), do: byte_size(Header.encode(header))
-
 end

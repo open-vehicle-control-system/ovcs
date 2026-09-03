@@ -53,8 +53,7 @@ defmodule Ros2.RmwZenoh do
   """
   def attachment(sequence_number, source_timestamp_ns, <<_::binary-size(16)>> = gid) do
     <<sequence_number::little-signed-integer-size(64),
-      source_timestamp_ns::little-signed-integer-size(64),
-      16::unsigned-integer-size(8),
+      source_timestamp_ns::little-signed-integer-size(64), 16::unsigned-integer-size(8),
       gid::binary>>
   end
 

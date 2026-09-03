@@ -217,16 +217,18 @@ defmodule OvcsMini do
   # worth exactly as much here as a colour one we would have to decode
   # separately.
   defp hailo_detector do
-    {:hailo_detector,
-     hef_path: Path.join(priv_models_dir(), "yolov8n.hef"),
-     # 0.4 is where a yolov8n at this resolution stops reporting
-     # furniture as animals. Measured at 480x270 the model still
-     # scores real people at 0.74-0.91, so this leaves plenty of
-     # headroom above the noise.
-     score_threshold: 0.4,
-     # The stereo unit's own frame, since boxes are positioned in its
-     # rectified pixels.
-     frame_id: "stereo_left"}
+    {
+      :hailo_detector,
+      # 0.4 is where a yolov8n at this resolution stops reporting
+      # furniture as animals. Measured at 480x270 the model still
+      # scores real people at 0.74-0.91, so this leaves plenty of
+      # headroom above the noise.
+      # The stereo unit's own frame, since boxes are positioned in its
+      # rectified pixels.
+      hef_path: Path.join(priv_models_dir(), "yolov8n.hef"),
+      score_threshold: 0.4,
+      frame_id: "stereo_left"
+    }
   end
 
   defp priv_models_dir, do: :ovcs_mini |> :code.priv_dir() |> Path.join("models")
@@ -244,77 +246,79 @@ defmodule OvcsMini do
   # worst-case (uncompressed) basis, so two MJPEG streams on the
   # same USB 2 hub will fail with "Buffer pool activation failed".
   defp stereo_component(camera_driver, arm) do
-    {:stereo_camera,
-     driver: camera_driver,
-     calibration_dir: priv_calibration_dir(arm),
-     # 640×360 is 16:9 — the sensor's native aspect. Asking a 16:9
-     # sensor for a 4:3 buffer squeezed the full field of view into
-     # 480 rows, which showed up in the calibration as fy/fx = 1.334
-     # (anamorphic pixels) and cost 1.44x on the near clip, because
-     # rectification then inflates f from ~725 to 1046 restoring
-     # square pixels. Native aspect also means 25 % fewer pixels for
-     # SGBM, which scales with `width × height × num_disparities`.
-     #
-     # 480x270 keeps that 16:9 aspect and is a pure isotropic
-     # downscale, which is why the 640x360 calibration still applies:
-     # the backend scales K and P to the capture resolution, and for a
-     # proportional resize that scaling is exact (distortion
-     # coefficients are normalised). Changing the *aspect* is what
-     # requires a fresh calibration, not changing the size.
-     #
-     # Resolution is the best lever this pipeline has, because it cuts
-     # compute and improves near range at once: f scales with width,
-     # and the near clip is (f x baseline) / num_disparities. Measured
-     # offline on identical rectified frames, coverage held at ~38-39 %
-     # across 640/560/480/400 wide — SGBM's limit here is texture, not
-     # pixel count — while cost and near clip both fell:
-     #
-     #   640x360   f*B 69.7   clip 0.73 m   SGBM ~141 ms
-     #   480x270   f*B 52.3   clip 0.55 m   SGBM  ~79 ms
-     #
-     # The price is depth precision at distance, since dZ = Z^2 dd /
-     # (f*B): about 3.8 cm at 2 m against 2.9 cm at 640 wide. Fine for
-     # deciding whether to stop for something; not fine for mapping.
-     width: 480,
-     height: 270,
-     fps: 30,
-     # Wide enough for the unsynchronized USB cameras on host;
-     # drop to 5 ms once the perception target has FSIN-tied CSI
-     # modules.
-     pair_tolerance_ms: 100,
-     # num_disparities sets the *near* clip: Z_min = (f × baseline) /
-     # num_disparities. With the calibrated f·B of 93.9 px·m, 48
-     # disparities clipped at 2.0 m — everything closer was clamped
-     # there (measured: image centre pinned at exactly 2.00 m, 5 % of
-     # valid pixels at the ceiling), which is useless on a car whose
-     # obstacles live between 0.2 and 3 m. 96 brings the clip to
-     # ~0.98 m. SGBM cost scales roughly linearly with this, so it is
-     # bought with frame rate: 128 reached 0.74 m but pushed the Pi to
-     # load 5.7 on 4 cores, dropped disparity to 3.6 Hz and starved
-     # the capture path down to 26 Hz. It also blinds the leftmost
-     # `num_disparities` columns, so 128 costs 20 % of the image width
-     # against 15 % here. The real headroom is in capturing 16:9
-     # instead of 4:3 — the anamorphic squeeze inflates rectified f
-     # from 725 to 1046, and undoing it buys the same near clip for
-     # ~1.44x fewer disparities. Must stay a multiple of 16.
-     # block_size=7 is a balanced point between bs=5 (denser
-     # coverage but jittery) and bs=9 (stable but sparse) — gives
-     # ~30 % more frame-to-frame stability for ~5 pp coverage cost.
-     # Speckle filtering, tuned against the measured failure mode
-     # rather than the defaults: the map's problem is not missing
-     # pixels but confident wrong ones — isolated blobs reading
-     # 3.5 m inside a 2 m surface, from false matches on repetitive
-     # structure like shelving. A hole is honest; a phantom obstacle
-     # is not. Doubling the window and halving the tolerated internal
-     # range invalidates those blobs; costs some coverage.
-     backend_opts: [
-       num_disparities: 96,
-       block_size: 7,
-       speckle_window_size: 200,
-       speckle_range: 16
-     ],
-     left: camera_addressing(arm, :left),
-     right: camera_addressing(arm, :right)}
+    {
+      :stereo_camera,
+      # 640×360 is 16:9 — the sensor's native aspect. Asking a 16:9
+      # sensor for a 4:3 buffer squeezed the full field of view into
+      # 480 rows, which showed up in the calibration as fy/fx = 1.334
+      # (anamorphic pixels) and cost 1.44x on the near clip, because
+      # rectification then inflates f from ~725 to 1046 restoring
+      # square pixels. Native aspect also means 25 % fewer pixels for
+      # SGBM, which scales with `width × height × num_disparities`.
+      #
+      # 480x270 keeps that 16:9 aspect and is a pure isotropic
+      # downscale, which is why the 640x360 calibration still applies:
+      # the backend scales K and P to the capture resolution, and for a
+      # proportional resize that scaling is exact (distortion
+      # coefficients are normalised). Changing the *aspect* is what
+      # requires a fresh calibration, not changing the size.
+      #
+      # Resolution is the best lever this pipeline has, because it cuts
+      # compute and improves near range at once: f scales with width,
+      # and the near clip is (f x baseline) / num_disparities. Measured
+      # offline on identical rectified frames, coverage held at ~38-39 %
+      # across 640/560/480/400 wide — SGBM's limit here is texture, not
+      # pixel count — while cost and near clip both fell:
+      #
+      #   640x360   f*B 69.7   clip 0.73 m   SGBM ~141 ms
+      #   480x270   f*B 52.3   clip 0.55 m   SGBM  ~79 ms
+      #
+      # The price is depth precision at distance, since dZ = Z^2 dd /
+      # (f*B): about 3.8 cm at 2 m against 2.9 cm at 640 wide. Fine for
+      # deciding whether to stop for something; not fine for mapping.
+      # Wide enough for the unsynchronized USB cameras on host;
+      # drop to 5 ms once the perception target has FSIN-tied CSI
+      # modules.
+      # num_disparities sets the *near* clip: Z_min = (f × baseline) /
+      # num_disparities. With the calibrated f·B of 93.9 px·m, 48
+      # disparities clipped at 2.0 m — everything closer was clamped
+      # there (measured: image centre pinned at exactly 2.00 m, 5 % of
+      # valid pixels at the ceiling), which is useless on a car whose
+      # obstacles live between 0.2 and 3 m. 96 brings the clip to
+      # ~0.98 m. SGBM cost scales roughly linearly with this, so it is
+      # bought with frame rate: 128 reached 0.74 m but pushed the Pi to
+      # load 5.7 on 4 cores, dropped disparity to 3.6 Hz and starved
+      # the capture path down to 26 Hz. It also blinds the leftmost
+      # `num_disparities` columns, so 128 costs 20 % of the image width
+      # against 15 % here. The real headroom is in capturing 16:9
+      # instead of 4:3 — the anamorphic squeeze inflates rectified f
+      # from 725 to 1046, and undoing it buys the same near clip for
+      # ~1.44x fewer disparities. Must stay a multiple of 16.
+      # block_size=7 is a balanced point between bs=5 (denser
+      # coverage but jittery) and bs=9 (stable but sparse) — gives
+      # ~30 % more frame-to-frame stability for ~5 pp coverage cost.
+      # Speckle filtering, tuned against the measured failure mode
+      # rather than the defaults: the map's problem is not missing
+      # pixels but confident wrong ones — isolated blobs reading
+      # 3.5 m inside a 2 m surface, from false matches on repetitive
+      # structure like shelving. A hole is honest; a phantom obstacle
+      # is not. Doubling the window and halving the tolerated internal
+      # range invalidates those blobs; costs some coverage.
+      driver: camera_driver,
+      calibration_dir: priv_calibration_dir(arm),
+      width: 480,
+      height: 270,
+      fps: 30,
+      pair_tolerance_ms: 100,
+      backend_opts: [
+        num_disparities: 96,
+        block_size: 7,
+        speckle_window_size: 200,
+        speckle_range: 16
+      ],
+      left: camera_addressing(arm, :left),
+      right: camera_addressing(arm, :right)
+    }
   end
 
   defp camera_addressing(:host, :left), do: [device: "/dev/video2"]
