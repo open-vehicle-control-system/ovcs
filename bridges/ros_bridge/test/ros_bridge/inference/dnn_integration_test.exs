@@ -77,6 +77,42 @@ defmodule RosBridge.Inference.DnnIntegrationTest do
       refute Dnn.busy?(name)
     end
 
+    test "a frame submitted while one is in flight is dropped, not queued" do
+      # Driven through `handle_call/3` rather than the running server:
+      # `tiny_head.onnx` on a 2x2 frame finishes in microseconds, so
+      # there is no reliable way to catch the in-flight window from
+      # outside, and a test that tried would be a coin flip.
+      #
+      # The clause is what matters. `RosBridge.Inference` says a frame
+      # arriving mid-inference is dropped — queueing would add latency
+      # to a measurement whose only value is being current — and this
+      # backend answered `{:error, :busy}` never, because it used to
+      # run inference inline and so was never busy.
+      busy = %{net: :a_loaded_net, worker: {self(), make_ref()}}
+
+      assert {:reply, {:error, :busy}, ^busy} =
+               Dnn.handle_call({:detect, 1, frame(), self()}, nil, busy)
+    end
+
+    test "an inference that crashes drops its frame and leaves the backend up" do
+      # The reason the worker is spawn_monitor and not Task.async: a
+      # linked task taking the backend down would lose every later
+      # frame too, and `Detections` drives the stereo depth path from
+      # the same process.
+      name = start_backend(:cpu)
+      server = Process.whereis(name)
+
+      assert :ok = Dnn.detect(name, 1, :not_a_mat)
+      refute_receive {:inference_detections, 1, _detections}, 2_000
+
+      assert Process.alive?(server), "a crashed inference took the backend with it"
+      assert Dnn.available?(name)
+
+      # And the next frame still works, i.e. the worker slot was
+      # released rather than left occupied by a dead process.
+      assert detect_and_await(name) != []
+    end
+
     test "a frame goes in and detections come back tagged with the sequence" do
       name = start_backend(:cpu)
       detections = detect_and_await(name)

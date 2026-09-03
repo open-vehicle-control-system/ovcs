@@ -42,6 +42,21 @@ defmodule RosBridge.Inference.Dnn do
   `RosBridge.Inference`: losing detections is acceptable, taking the
   stereo depth path down with it is not.
 
+  ## Nothing here blocks the caller
+
+  `detect/3` hands the frame to a monitored child process and returns.
+  That is `RosBridge.Inference`'s contract — "asynchronous and lossy" —
+  and on the CPU target it is load-bearing rather than decorative: the
+  caller is `RosBridge.Publishers.Detections`, which drives the stereo
+  *depth* path from the same process, so a frame taking 800 ms inline
+  would stall depth for 800 ms, and one exceeding the call timeout
+  would crash `Detections` outright. A frame arriving mid-inference is
+  refused with `{:error, :busy}`; an inference that crashes drops its
+  frame and leaves the backend up.
+
+  The output decode is native rather than `Nx`, for the same class of
+  reason — see `decode/6`, where it was worth 340 ms a frame.
+
   ## Opts
 
     * `:model_path` (required) — an ONNX YOLO model. The repo ships
@@ -91,6 +106,9 @@ defmodule RosBridge.Inference.Dnn do
 
     state = %{
       net: nil,
+      worker: nil,
+      seq: nil,
+      reply_to: nil,
       target: Keyword.get(opts, :target, :cpu),
       score_threshold: Keyword.get(opts, :score_threshold, @default_score_threshold),
       nms_threshold: Keyword.get(opts, :nms_threshold, @default_nms_threshold),
@@ -101,41 +119,65 @@ defmodule RosBridge.Inference.Dnn do
     {:ok, load(state)}
   end
 
-  # Inference runs inline in the GenServer rather than in a Task: it is
-  # the only thing this process does, and running one at a time is the
-  # backpressure. `detect/3` is still a call, so a slow CPU frame
-  # blocks the caller instead of silently queueing — the caller is
-  # `Detections`, whose next frame would be dropped as `:busy` anyway.
+  # Inference runs in a monitored child process, and `detect/3` returns
+  # the moment the frame is handed over. `RosBridge.Inference` requires
+  # that — "asynchronous and lossy" — and it is not a stylistic point:
+  # the caller is `Detections`, which also drives the *stereo depth*
+  # path. A CPU frame that takes 800 ms would stall depth for 800 ms,
+  # and one that took longer than the call timeout would crash
+  # `Detections` outright, which is precisely the outcome the
+  # behaviour doc says must not happen.
+  #
+  # `spawn_monitor` rather than `Task.async`: an inference that crashes
+  # must drop its frame, not take the backend down with it, and an
+  # `async` Task is linked.
   @impl true
   def handle_call({:detect, _seq, _mat, _reply_to}, _from, %{net: nil} = state) do
     {:reply, {:error, :unavailable}, state}
   end
 
+  def handle_call({:detect, _seq, _mat, _reply_to}, _from, %{worker: {_pid, _ref}} = state) do
+    {:reply, {:error, :busy}, state}
+  end
+
   def handle_call({:detect, seq, mat, reply_to}, _from, state) do
-    detections = infer(state, mat)
-    send(reply_to, {:inference_detections, seq, detections})
-    {:reply, :ok, state}
+    parent = self()
+    worker = spawn_monitor(fn -> send(parent, {:inferred, self(), infer(state, mat)}) end)
+    {:reply, :ok, %{state | worker: worker, seq: seq, reply_to: reply_to}}
   end
 
   def handle_call(:available?, _from, state), do: {:reply, not is_nil(state.net), state}
 
-  # Never busy from the caller's point of view: `detect/3` does not
-  # return until the frame is done, so there is no window in which a
-  # second frame could arrive mid-inference.
-  def handle_call(:busy?, _from, state), do: {:reply, false, state}
+  def handle_call(:busy?, _from, state), do: {:reply, not is_nil(state.worker), state}
+
+  @impl true
+  def handle_info({:inferred, pid, detections}, %{worker: {pid, ref}} = state) do
+    Process.demonitor(ref, [:flush])
+    send(state.reply_to, {:inference_detections, state.seq, detections})
+    {:noreply, %{state | worker: nil, reply_to: nil}}
+  end
+
+  # A crashed inference drops the frame. No reply is sent, so
+  # `Detections` clears its pending frame on the next one rather than
+  # waiting on boxes that will never come.
+  def handle_info({:DOWN, ref, :process, pid, reason}, %{worker: {pid, ref}} = state) do
+    Logger.warning("#{__MODULE__}: inference process died: #{inspect(reason)} — frame dropped")
+    {:noreply, %{state | worker: nil, reply_to: nil}}
+  end
+
+  # A late message from a worker already accounted for.
+  def handle_info(_message, state), do: {:noreply, state}
 
   defp load(state) do
-    cond do
-      not File.exists?(state.model_path) ->
-        Logger.error(
-          "#{__MODULE__}: no model at #{state.model_path} — detections disabled. " <>
-            "See docs/ros_perception_detection.md for obtaining one."
-        )
+    if File.exists?(state.model_path) do
+      read_net(state)
+    else
+      Logger.error(
+        "#{__MODULE__}: no model at #{state.model_path} — detections disabled. " <>
+          "See docs/ros_perception_detection.md for obtaining one."
+      )
 
-        state
-
-      true ->
-        read_net(state)
+      state
     end
   end
 
@@ -220,10 +262,7 @@ defmodule RosBridge.Inference.Dnn do
          net = Evision.DNN.Net.setInput(state.net, blob),
          outputs when not is_tuple(outputs) <- Evision.DNN.Net.forward(net),
          %Evision.Mat{} = out <- first_output(outputs) do
-      out
-      |> Evision.Mat.to_nx()
-      |> Nx.to_flat_list()
-      |> decode(width, height, size, state.score_threshold, state.nms_threshold)
+      decode(out, width, height, size, state.score_threshold, state.nms_threshold)
     else
       other ->
         # Evision signals failure by *returning* `{:error, message}`
@@ -245,60 +284,132 @@ defmodule RosBridge.Inference.Dnn do
   defp first_output(%Evision.Mat{} = mat), do: mat
   defp first_output(other), do: other
 
+  # `Evision.Mat.shape/1` signals failure the way the rest of Evision
+  # does, by returning `{:error, message}` — which is a two-tuple, and
+  # so would match a `{height, width}` clause and put a binary into the
+  # arithmetic further down. Hence the guards.
   defp mat_shape(mat) do
     case Evision.Mat.shape(mat) do
-      {h, w} -> {h, w}
-      {h, w, _channels} -> {h, w}
+      {h, w} when is_integer(h) and is_integer(w) -> {h, w}
+      {h, w, _channels} when is_integer(h) and is_integer(w) -> {h, w}
+      _other -> {0, 0}
     end
   end
 
-  @doc false
-  # Split out and given its own tests: this is the part with no
-  # accelerator, no model and no GPU involved, and the part most likely
-  # to be silently wrong. A box that lands 20 pixels off looks
-  # plausible on screen.
-  def decode(flat, width, height, input_size, score_threshold, nms_threshold) do
-    flat
-    |> rows(input_size)
-    |> Enum.flat_map(&best_class(&1, score_threshold))
-    |> Enum.map(&to_pixels(&1, width, height, input_size))
-    |> non_max_suppression(nms_threshold)
+  @doc """
+  Turn one YOLO output into boxes in the source image's pixels.
+
+  Takes the output `Evision.Mat` — `{1, 4 + classes, anchors}` or the
+  same without the batch — rather than a flat list, for two reasons
+  that were both defects here:
+
+    * The class count has to come from the shape. It was hardcoded to
+      84 (4 box + 80 COCO classes), which made every other model — a
+      single-class person detector, a retrained head — decode as
+      nothing at all, silently, because the flat length no longer
+      divided by 84.
+
+    * The per-anchor maximum has to be taken in native code. Doing it
+      in Nx cost **340 ms** of a 397 ms decode for a real yolov8n
+      output (84 x 8400), because Nx's default backend is pure Elixir:
+      a 1.8 fps ceiling on the decode alone, against a 30 Hz stereo
+      pipeline. `Evision.reduce/4` does the same 672,000-element pass
+      in 1.7 ms. The tests had used a 2x2 input with 4 anchors and so
+      never went anywhere near it.
+
+  So OpenCV reduces, and Elixir only touches the 8,400 maxima and the
+  handful of anchors that clear the threshold.
+  """
+  def decode(out, width, height, input_size, score_threshold, nms_threshold) do
+    case attribute_major(out) do
+      {mat, attrs, anchors} ->
+        mat
+        |> candidates(attrs, anchors, score_threshold)
+        |> Enum.map(&to_pixels(&1, width, height, input_size))
+        |> non_max_suppression(nms_threshold)
+
+      :error ->
+        []
+    end
   end
 
-  # yolov8 exports `[1, 4 + classes, anchors]` — attribute-major, so
-  # every anchor's cx sits `anchors` apart from its cy, not next to it.
-  # Reading it row-major is the classic way to get boxes that look
-  # almost right.
-  defp rows(flat, _input_size) do
-    total = length(flat)
-    attrs = 84
-    anchors = div(total, attrs)
-
-    if anchors == 0 or rem(total, attrs) != 0 do
-      []
+  # `Net.forward/1` gives `{1, attrs, anchors}`. Everything below works
+  # on the 2D form, and anything that is not one of these two shapes is
+  # refused rather than decoded into nonsense.
+  defp attribute_major(out) do
+    with %Evision.Mat{} = mat <- out,
+         shape <- Evision.Mat.shape(mat),
+         {attrs, anchors} <- two_dimensional(shape),
+         true <- attrs > 4 and anchors > 0,
+         %Evision.Mat{} = flat <- reshape_2d(mat, shape, attrs, anchors) do
+      {flat, attrs, anchors}
     else
-      tensor = flat |> Nx.tensor() |> Nx.reshape({attrs, anchors})
+      _other -> :error
+    end
+  end
 
-      for a <- 0..(anchors - 1) do
-        tensor[[.., a]] |> Nx.to_flat_list()
+  defp two_dimensional({1, attrs, anchors}), do: {attrs, anchors}
+  defp two_dimensional({attrs, anchors}), do: {attrs, anchors}
+  defp two_dimensional(_other), do: :error
+
+  defp reshape_2d(mat, {_batch, _attrs, _anchors}, attrs, anchors),
+    do: Evision.Mat.reshape(mat, [attrs, anchors])
+
+  defp reshape_2d(mat, _shape, _attrs, _anchors), do: mat
+
+  # yolov8 output is attribute-major: every anchor's cx sits `anchors`
+  # elements from its cy, not next to it. Reading it row-major is the
+  # classic way to get boxes that look almost right.
+  defp candidates(mat, attrs, anchors, threshold) do
+    classes = attrs - 4
+
+    # `roi/2` takes `{x, y, width, height}`, so these are full-width
+    # row bands: the four box attributes, then every class score.
+    with %Evision.Mat{} = boxes <- Evision.Mat.roi(mat, {0, 0, anchors, 4}),
+         %Evision.Mat{} = scores <- Evision.Mat.roi(mat, {0, 4, anchors, classes}),
+         %Evision.Mat{} = maxes <- reduce_max_per_anchor(scores),
+         box_bin when is_binary(box_bin) <- Evision.Mat.to_binary(boxes),
+         score_bin when is_binary(score_bin) <- Evision.Mat.to_binary(scores),
+         max_bin when is_binary(max_bin) <- Evision.Mat.to_binary(maxes) do
+      for {score, a} <- Enum.with_index(floats(max_bin)), score >= threshold do
+        %{
+          cx: float_at(box_bin, a),
+          cy: float_at(box_bin, anchors + a),
+          w: float_at(box_bin, 2 * anchors + a),
+          h: float_at(box_bin, 3 * anchors + a),
+          score: score,
+          class_id: best_class(score_bin, a, anchors, classes)
+        }
       end
-    end
-  end
-
-  defp best_class([cx, cy, w, h | scores], threshold) do
-    {score, class_id} =
-      scores
-      |> Enum.with_index()
-      |> Enum.max_by(fn {s, _i} -> s end, fn -> {0.0, 0} end)
-
-    if score >= threshold do
-      [%{cx: cx, cy: cy, w: w, h: h, score: score, class_id: class_id}]
     else
-      []
+      _other -> []
     end
   end
 
-  defp best_class(_short_row, _threshold), do: []
+  # Along dimension 0, i.e. down the class rows, giving one maximum per
+  # anchor. This is the call that replaced 340 ms of Nx with 1.7 ms.
+  defp reduce_max_per_anchor(scores) do
+    Evision.reduce(scores, 0, Evision.Constant.cv_REDUCE_MAX(), dtype: Evision.Constant.cv_32F())
+  end
+
+  # Only ever called for an anchor that already cleared the threshold,
+  # so this walks `classes` floats a handful of times per frame rather
+  # than `classes * anchors` every time.
+  defp best_class(score_bin, anchor, anchors, classes) do
+    Enum.reduce(0..(classes - 1), {-1.0, 0}, fn class_id, {best, best_id} ->
+      score = float_at(score_bin, class_id * anchors + anchor)
+      if score > best, do: {score, class_id}, else: {best, best_id}
+    end)
+    |> elem(1)
+  end
+
+  # The output is CV_32F, so four bytes per element and a plain offset.
+  defp float_at(binary, index) do
+    <<value::float-32-little>> = binary_part(binary, index * 4, 4)
+    value
+  end
+
+  defp floats(binary), do: for(<<value::float-32-little <- binary>>, do: value)
 
   # The blob was a plain resize (`crop: false`, no letterbox), so the
   # inverse is one scale factor per axis.
