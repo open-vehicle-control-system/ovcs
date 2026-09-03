@@ -1,6 +1,6 @@
 # ROS 2 stack
 
-ROS 2 Jazzy + the Zenoh router, split across the two machines that run
+ROS 2 Lyrical + the Zenoh router, split across the two machines that run
 it. Uses `rmw_zenoh_cpp` so ROS nodes join the same Zenoh fabric the
 Elixir `ros_bridge` already speaks to — no DDS, no multicast, just TCP
 peerings to `zenohd`.
@@ -59,7 +59,7 @@ Smoke-test against the bridge's heartbeat (published by
 
 ```sh
 docker compose exec ros2 bash -lc '
-  source /opt/ros/jazzy/setup.bash
+  source /opt/ros/*/setup.bash
   ros2 topic list                              # should include /ovcs_heartbeat
   ros2 topic echo /ovcs_heartbeat std_msgs/msg/String
 '
@@ -85,7 +85,7 @@ ls /dev/input/js*               # should show js0 — that's your default
 docker compose up -d joy
 
 docker compose exec ros2 bash -lc '
-  source /opt/ros/jazzy/setup.bash
+  source /opt/ros/*/setup.bash
   ros2 topic echo /joy sensor_msgs/msg/Joy   # wiggle a stick to confirm
 '
 ```
@@ -148,8 +148,8 @@ in that file lists each omission and why.
   copied to the device once; `balena push` does not deploy it. See
   [docs/ros_compute_node.md](../docs/ros_compute_node.md#networking).
 - `vehicule/image/Dockerfile` — single image baking
-  `ros-jazzy-rmw-zenoh-cpp`, `ros-jazzy-foxglove-bridge`,
-  `ros-jazzy-joy-linux`, `gettext-base`, the Python `eclipse-zenoh`
+  `ros-lyrical-rmw-zenoh-cpp`, `ros-lyrical-foxglove-bridge`,
+  `ros-lyrical-joy-linux`, `gettext-base`, the Python `eclipse-zenoh`
   client, and the Zenoh session template. Sets a proper `ENTRYPOINT` +
   default `CMD`; per-service launchers are picked via compose's
   `command:` field. Rebuild after changing it: `docker compose build`
