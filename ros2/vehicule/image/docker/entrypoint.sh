@@ -6,7 +6,7 @@
 # line and nothing else.
 # Does only the cross-cutting setup every service needs:
 #   1. Render the Zenoh session config from its template.
-#   2. Source the ROS 2 Jazzy overlay so `ros2 …` works.
+#   2. Source the ROS 2 Lyrical overlay so `ros2 …` works.
 # Then `exec`s whatever CMD (or `docker run …` override) was passed —
 # i.e. it is service-agnostic. Per-service launch logic lives in CMD,
 # not here.

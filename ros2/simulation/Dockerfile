@@ -1,4 +1,4 @@
-# Gazebo Harmonic + ROS 2 Jazzy image for simulating the OVCS Mini.
+# Gazebo Jetty + ROS 2 Lyrical image for simulating the OVCS Mini.
 #
 # Separate from the vehicle image on purpose. This one carries Gazebo
 # and its GUI stack — hundreds of megabytes that must never end up on

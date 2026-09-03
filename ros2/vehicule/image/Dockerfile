@@ -1,4 +1,4 @@
-# Single ROS 2 Jazzy image powering every service on both sides of the
+# Single ROS 2 Lyrical image powering every service on both sides of the
 # fabric: `foxglove_bridge` on the vehicle (../docker-compose.yml) and
 # `ros2` / `joy` / `calibrator` on the base station
 # (../../base/docker-compose.yml). Each service picks its launcher via
