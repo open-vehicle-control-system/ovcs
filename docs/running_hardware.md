@@ -151,6 +151,55 @@ Push a firmware update to a running Nerves device over SSH:
 ./ovcs upload ovcs1 vms --file path/to/custom.fw
 ```
 
+### OTA updates via NervesHub (VMS)
+
+The VMS firmware ships [NervesHubLink](https://hexdocs.pm/nerves_hub_link/),
+so deployed vehicles can pull signed firmware updates from a self-hosted
+[NervesHub](https://github.com/nerves-hub/nerves_hub_web) instance instead
+of being flashed over SSH. It is opt-in per vehicle: set three variables in
+`vehicles/<vehicle>/.env.exs` before building (see the commented block in
+`.env.exs.example`):
+
+- `NERVES_HUB_HOST` — the instance's device endpoint; a bare hostname
+  (`wss` on port 443) or a full `wss://host:port` URL.
+- `NERVES_HUB_PRODUCT_KEY` / `NERVES_HUB_PRODUCT_SECRET` — the shared-secret
+  pair from the product's settings on your NervesHub instance.
+
+When `NERVES_HUB_HOST` is unset the firmware builds exactly as before and
+never phones home.
+
+**One NervesHub product per vehicle.** The build stamps
+`<Vehicle Name> - VMS` (e.g. `Ovcs Mini - VMS`) into the image's
+`meta-product`, and NervesHub only accepts firmware whose metadata
+matches the product it's uploaded to. So create one product per vehicle
+on the instance, named after the metadata, and put that product's
+shared-secret pair in that vehicle's `.env.exs`. Cross-uploads are
+rejected by the server and a device can only ever see its own vehicle's
+firmware. Publishing with the
+[`nh` CLI](https://github.com/nerves-hub/nerves_hub_cli):
+
+```sh
+./ovcs build ovcs1 vms
+nh firmware publish \
+  vms/firmware/_build/ovcs_base_can_system_rpi4_dev/nerves/images/vms_firmware.fw \
+  --product "Ovcs1 - VMS" --key <signing-key> --deploy <deployment>
+```
+
+Devices authenticate with the product shared secret and self-register on
+first connect, identified by serial number. Firmware must be signed when
+published (`nh key create <name>` makes a signing key pair and registers
+the public half on the instance; `nh firmware publish --key <name>` signs
+locally — the private key never leaves your machine). Devices fetch the
+verification keys from the instance when they connect, so nothing is
+baked into the image. Two extras are enabled:
+
+- **Health reporting** — CPU / memory / disk metrics in the NervesHub UI.
+- **Remote IEx console** — a shell on the vehicle from the NervesHub UI.
+  Anyone with product access on the instance can use it.
+
+`nerves_hub_link` is started by shoehorn before the main application, so a
+vehicle whose app crashes at boot stays reachable for an OTA fix.
+
 ## Running and attaching at runtime
 
 ### Local run mirrors deployed: one BEAM per firmware

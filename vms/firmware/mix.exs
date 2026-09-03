@@ -10,6 +10,11 @@ defmodule VmsFirmware.MixProject do
   def project do
     [
       app: @app,
+      # Stamped into the firmware image as `meta-product` (NervesHub
+      # keys firmware on it). Builds are per-vehicle, so brand the
+      # image `<Vehicle Name> - VMS` — one NervesHub product per
+      # vehicle, named accordingly.
+      name: firmware_product(),
       version: @version,
       elixir: "~> 1.11",
       archives: [nerves_bootstrap: "~> 1.13"],
@@ -27,6 +32,25 @@ defmodule VmsFirmware.MixProject do
     ]
   end
 
+  # Host-side tasks (deps.get, test, compile) may run without VEHICLE;
+  # fall back to the app name there. Firmware builds always have it
+  # (config.exs enforces).
+  defp firmware_product do
+    case System.get_env("VEHICLE") do
+      nil ->
+        to_string(@app)
+
+      vehicle ->
+        vehicle_name =
+          vehicle
+          |> Macro.underscore()
+          |> String.split("_")
+          |> Enum.map_join(" ", &String.capitalize/1)
+
+        "#{vehicle_name} - VMS"
+    end
+  end
+
   defp deps do
     [
       {:nerves, "~> 1.10", runtime: false},
@@ -36,6 +60,7 @@ defmodule VmsFirmware.MixProject do
       {:observer_cli, "~> 1.8"},
       {:nerves_runtime, "~> 0.13.0"},
       {:nerves_pack, "~> 0.7.0", targets: @all_targets},
+      {:nerves_hub_link, "~> 2.12", targets: @all_targets},
       {:vms_api, path: "../api"},
       # VMS YAMLs reference `import!:@ovcs_can:...` shared frame
       # definitions, so the app must be loaded in the BEAM.
