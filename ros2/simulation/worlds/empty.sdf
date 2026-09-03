@@ -1,0 +1,96 @@
+<?xml version="1.0"?>
+<!--
+  A flat, empty world — ground plane, sun, nothing else. The first
+  milestone is proving the vehicle's geometry and drive behave, and
+  anything else in the scene is a variable in that measurement.
+
+  The `system` plugins listed here are not optional boilerplate.
+  Gazebo Harmonic ships an empty simulator and each capability is a
+  system you opt into:
+
+    Physics          steps the simulation at all
+    UserCommands     lets `ros_gz_sim create` spawn a model
+    SceneBroadcaster publishes the scene, without which the GUI is blank
+    Contact          reports collisions, so wheels grip rather than sink
+
+  Omitting UserCommands is the classic first failure: the world loads,
+  the spawn command reports success, and no robot appears.
+-->
+<sdf version="1.10">
+  <world name="empty">
+
+    <physics name="1ms" type="ignored">
+      <!-- 1 ms steps. A 55 mm wheel at speed covers little ground per
+           step, but the steering joint is stiff and a coarser step
+           makes its PID ring. -->
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+
+    <plugin filename="gz-sim-physics-system"
+            name="gz::sim::systems::Physics" />
+    <plugin filename="gz-sim-user-commands-system"
+            name="gz::sim::systems::UserCommands" />
+    <plugin filename="gz-sim-scene-broadcaster-system"
+            name="gz::sim::systems::SceneBroadcaster" />
+    <plugin filename="gz-sim-contact-system"
+            name="gz::sim::systems::Contact" />
+
+    <!-- Without this, a camera sensor loads, reports no error, and
+         publishes nothing at all. It also needs a render engine:
+         ogre2 falls back to software rasterisation (llvmpipe) in a
+         container with no GPU, which is slow but correct. -->
+    <plugin filename="gz-sim-sensors-system"
+            name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+
+    <light type="directional" name="sun">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>100 100</size>
+            </plane>
+          </geometry>
+          <surface>
+            <friction>
+              <ode>
+                <!-- Paired with the tyres' own mu in wheels.xacro.
+                     Gazebo takes the lower of the two surfaces, so a
+                     slick ground plane would quietly cancel the grip
+                     set on the wheels. -->
+                <mu>1.0</mu>
+                <mu2>1.0</mu2>
+              </ode>
+            </friction>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>100 100</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>0.8 0.8 0.8 1</ambient>
+            <diffuse>0.8 0.8 0.8 1</diffuse>
+            <specular>0.2 0.2 0.2 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+  </world>
+</sdf>

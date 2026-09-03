@@ -1,0 +1,109 @@
+<?xml version="1.0"?>
+<!--
+  Wheel macros. Two kinds: a fixed wheel (rear, driven only) and a
+  steered wheel (front, driven and steered through a knuckle).
+
+  Both take `side` as +1 for left and -1 for right, and multiply the
+  half-track by it. Spelling the mirror out this way is what stops the
+  bug the previous model had, where the rear pair's left and right
+  were swapped relative to the front — a mistake that is invisible in
+  a symmetric render and produces a vehicle that crabs under steering.
+
+  A URDF cylinder's axis is z, and a wheel spins about y in the
+  vehicle frame, so every wheel link is rolled -90 degrees about x.
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- The rolling part, shared by both wheel kinds. -->
+  <xacro:macro name="wheel_link" params="name">
+    <link name="${name}_wheel">
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0" />
+        <geometry>
+          <cylinder length="${wheel_width}" radius="${wheel_radius}" />
+        </geometry>
+        <material name="black" />
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0" />
+        <geometry>
+          <cylinder length="${wheel_width}" radius="${wheel_radius}" />
+        </geometry>
+      </collision>
+      <xacro:inertial_cylinder mass="${wheel_mass}"
+                               length="${wheel_width}" radius="${wheel_radius}">
+        <origin xyz="0 0 0" rpy="0 0 0" />
+      </xacro:inertial_cylinder>
+    </link>
+
+    <gazebo reference="${name}_wheel">
+      <!-- Soft-compound short-course tyres on a hard floor. High
+           friction is what keeps the truck steering rather than
+           understeering into every wall.
+
+           No <material> tag: that was Gazebo Classic's Ogre script
+           syntax, and modern Gazebo warns and ignores it. Colour
+           comes from the URDF <visual> material instead. -->
+      <mu1>1.2</mu1>
+      <mu2>1.2</mu2>
+    </gazebo>
+  </xacro:macro>
+
+  <!-- Rear: driven, bolted straight to the chassis. -->
+  <xacro:macro name="fixed_wheel" params="name side x">
+    <xacro:wheel_link name="${name}" />
+
+    <joint name="${name}_wheel_joint" type="continuous">
+      <parent link="chassis" />
+      <child link="${name}_wheel" />
+      <origin xyz="${x} ${side * half_track} ${wheel_radius}"
+              rpy="${-pi/2} 0 0" />
+      <axis xyz="0 0 1" />
+      <dynamics damping="0.01" friction="0.0" />
+    </joint>
+  </xacro:macro>
+
+  <!-- Front: a steering knuckle on the chassis, with the wheel on the
+       knuckle. Two joints, because the wheel has to spin about its own
+       axle *and* swing about the kingpin, and a joint has one degree
+       of freedom. -->
+  <xacro:macro name="steered_wheel" params="name side x">
+    <link name="${name}_steering_link">
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0" />
+        <geometry>
+          <cylinder length="0.02" radius="0.012" />
+        </geometry>
+        <material name="grey" />
+      </visual>
+      <!-- No collision: the knuckle lives inside the wheel, and
+           overlapping collision geometry on a jointed pair is a
+           reliable way to make a solver misbehave. -->
+      <xacro:inertial_cylinder mass="${steering_mass}"
+                               length="0.02" radius="0.012">
+        <origin xyz="0 0 0" rpy="0 0 0" />
+      </xacro:inertial_cylinder>
+    </link>
+
+    <joint name="${name}_steering_joint" type="revolute">
+      <parent link="chassis" />
+      <child link="${name}_steering_link" />
+      <origin xyz="${x} ${side * half_track} ${wheel_radius}" rpy="0 0 0" />
+      <!-- Kingpin axis is vertical. -->
+      <axis xyz="0 0 1" />
+      <limit lower="${-steering_limit}" upper="${steering_limit}"
+             effort="10" velocity="5.0" />
+      <dynamics damping="0.05" friction="0.0" />
+    </joint>
+
+    <xacro:wheel_link name="${name}" />
+
+    <joint name="${name}_wheel_joint" type="continuous">
+      <parent link="${name}_steering_link" />
+      <child link="${name}_wheel" />
+      <origin xyz="0 0 0" rpy="${-pi/2} 0 0" />
+      <axis xyz="0 0 1" />
+      <dynamics damping="0.01" friction="0.0" />
+    </joint>
+  </xacro:macro>
+</robot>

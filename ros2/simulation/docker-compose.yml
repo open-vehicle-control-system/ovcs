@@ -1,0 +1,108 @@
+# Gazebo Jetty simulation of the OVCS Mini — a third stack beside
+# ros2/vehicule (on the car, balenaOS) and ros2/base (the operator's
+# box). This one only ever runs on a workstation.
+#
+# It speaks Zenoh like everything else, so a simulated vehicle appears
+# on the same fabric as a real one and the existing tooling — `ros2
+# topic`, Foxglove — needs no special case. Point it at the local
+# `standalone` router in ros2/base, or at a vehicle's router to run
+# the two side by side.
+#
+# Usage:
+#   docker compose --profile standalone -f ../base/docker-compose.yml up -d zenohd
+#   docker compose up -d
+#   docker compose logs -f sim
+#
+# Drive it:
+#   docker compose exec sim bash -lc \
+#     'ros2 topic pub -r 10 /cmd_vel geometry_msgs/msg/Twist \
+#        "{linear: {x: 1.0}, angular: {z: 0.3}}"'
+
+services:
+  sim:
+    build:
+      # The context is the ros2/ tree, not this directory, so the
+      # image can share the Zenoh session template and entrypoint with
+      # the vehicle image instead of keeping a second copy.
+      context: ..
+      dockerfile: simulation/Dockerfile
+    image: ovcs/sim:jetty
+    container_name: ovcs-sim
+    restart: unless-stopped
+    # Same reasoning as the other stacks: host networking keeps Zenoh
+    # peering and local discovery behaving like a bare-metal install.
+    network_mode: host
+    environment:
+      RMW_IMPLEMENTATION: rmw_zenoh_cpp
+      ZENOH_SESSION_CONFIG_URI: /tmp/zenoh-session.json5
+      ZENOH_ENDPOINT_IP: ${ZENOH_ENDPOINT_IP:-127.0.0.1}
+      # Gazebo finds meshes and models through this. Only the world
+      # directory for now — the model is spawned from
+      # /robot_description, not from the resource path.
+      GZ_SIM_RESOURCE_PATH: /opt/ovcs/worlds
+    volumes:
+      # Each vehicle's model, mounted under its own name. Models live
+      # with their vehicle (vehicles/<name>/description), so a new
+      # vehicle is a new line here plus `vehicle:=<name>` on the
+      # launch command.
+      - ../../vehicles/ovcs_mini/description:/opt/ovcs/vehicles/ovcs_mini:ro
+      # Macros shared by every model. The xacros reach it as
+      # ../../common relative to themselves, which resolves inside the
+      # container regardless of where the files sit in the repo.
+      - ./common:/opt/ovcs/common:ro
+      # Iterate on the launch file and world without rebuilding too.
+      # The image carries its own copies, so the stack still runs if
+      # this mount is dropped.
+      - ./launch:/opt/ovcs/launch:ro
+      - ./worlds:/opt/ovcs/worlds:ro
+      - ./config:/opt/ovcs/config:ro
+      - ./scripts:/opt/ovcs/scripts:ro
+    command:
+      - bash
+      - -lc
+      - "ros2 launch /opt/ovcs/launch/sim.launch.py teleop:=false"
+
+  # The gamepad, as its own service so the simulation never requires a
+  # controller to be plugged in — compose treats a missing `devices:`
+  # entry as a hard failure, which would make `up` fail on any machine
+  # without one.
+  #   docker compose --profile teleop up -d teleop
+  teleop:
+    image: ovcs/sim:jetty
+    container_name: ovcs-sim-teleop
+    profiles: ["teleop"]
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      RMW_IMPLEMENTATION: rmw_zenoh_cpp
+      ZENOH_SESSION_CONFIG_URI: /tmp/zenoh-session.json5
+      ZENOH_ENDPOINT_IP: ${ZENOH_ENDPOINT_IP:-127.0.0.1}
+    volumes:
+      - ./launch:/opt/ovcs/launch:ro
+      - ./config:/opt/ovcs/config:ro
+    devices:
+      - /dev/input/js0:/dev/input/js0
+    command:
+      - bash
+      - -lc
+      - "ros2 launch /opt/ovcs/launch/teleop.launch.py"
+
+  # Gazebo's GUI, as a separate service so the headless simulation
+  # above never depends on a display existing. Needs an X socket:
+  #   xhost +local:docker
+  #   docker compose --profile gui up -d gz-gui
+  gz-gui:
+    image: ovcs/sim:jetty
+    container_name: ovcs-sim-gui
+    profiles: ["gui"]
+    network_mode: host
+    environment:
+      ZENOH_ENDPOINT_IP: ${ZENOH_ENDPOINT_IP:-127.0.0.1}
+      DISPLAY: ${DISPLAY:-:0}
+      QT_X11_NO_MITSHM: 1
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    command:
+      - bash
+      - -lc
+      - "gz sim -g"

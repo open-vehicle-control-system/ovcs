@@ -1,0 +1,40 @@
+# Onboard Wi-Fi as an internet feed. Entirely optional: the vehicle
+# network in ovcs0.nmconnection has its own gateway and DHCP and does
+# not depend on this. What this adds is a route off the vehicle, for
+# balena OTA updates, the cloud SSH tunnel and NTP.
+#
+# Separate phy from the AX210, so the AP's channel and this link's
+# channel do not constrain each other. Note that the phy *indices* are
+# assigned in probe order and do swap between boots, so never identify
+# either radio by `phy#N` — go through the interface name.
+#
+# wlan0 is a safe pin even though the boot log can show the AX210
+# transiently claiming that name ("wlP1p1s0: renamed from wlan0"): the
+# AX210 is always renamed to its PCI-path name, so the onboard SDIO
+# radio, which has no predictable name to be given, always ends up as
+# wlan0. Add a `[match] driver=brcmfmac` section if a third radio ever
+# joins the box.
+#
+# `method=auto` and no [ipv4] address: this side takes a lease. Leave
+# it as the only default route on the box — the bridge deliberately
+# installs none.
+
+[connection]
+id=uplink
+type=wifi
+interface-name=wlan0
+
+[wifi]
+mode=infrastructure
+ssid=CHANGE_ME_UPLINK_SSID
+
+[wifi-security]
+key-mgmt=wpa-psk
+psk=CHANGE_ME_UPLINK_PSK
+
+[ipv4]
+method=auto
+
+[ipv6]
+addr-gen-mode=stable-privacy
+method=auto
