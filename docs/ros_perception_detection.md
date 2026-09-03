@@ -76,7 +76,7 @@ The first two are both published because neither covers the other.
 Foxglove's 3D panel **does not support `vision_msgs`** — publishing
 only that puts the data on the wire with nothing to draw it. Markers,
 conversely, carry no class label, score or covariance in
-machine-readable form. (`ros-jazzy-vision-msgs` is installed in the
+machine-readable form. (`ros-lyrical-vision-msgs` is installed in the
 `vehicule` image, so `foxglove_bridge` can deserialise the
 Detection3DArray too.)
 
@@ -106,7 +106,7 @@ message, and `LINE_LOOP` closes a rectangle in four points where a
 `LINE_LIST` of segment pairs needs eight.
 
 The cost is a dependency. `foxglove_msgs` is not in a ROS base
-install, so `ros-jazzy-foxglove-msgs` is installed in
+install, so `ros-lyrical-foxglove-msgs` is installed in
 `ros2/vehicule/image/Dockerfile` — **without it `foxglove_bridge`
 cannot resolve the type and never advertises the topic**. Both the
 `vehicule` and `base` composes build from that one Dockerfile, so a
@@ -149,7 +149,7 @@ From the laptop, with the `ovcs-ros2` container up:
 
 ```sh
 docker exec ovcs-ros2 bash -lc \
-  'source /opt/ros/jazzy/setup.bash; export RMW_IMPLEMENTATION=rmw_zenoh_cpp
+  'source /opt/ros/*/setup.bash; export RMW_IMPLEMENTATION=rmw_zenoh_cpp
    ros2 topic hz /stereo/detections
    ros2 topic echo /stereo/detections --once'
 ```

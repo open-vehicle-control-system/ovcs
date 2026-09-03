@@ -4,9 +4,10 @@ CDR bodies (no encapsulation header) for the message shapes exercised
 by `marker_test.exs`, `detection3d_test.exs`,
 `sensor_msgs/msg/camera_info_test.exs` and
 `stereo_msgs/disparity_image_test.exs`. They are this
-codebase's own encoder output, **validated against ROS 2 Jazzy** by
-round-tripping through `rclpy.serialization.deserialize_message` and
-checking every field came back correct.
+codebase's own encoder output, **validated against a real ROS 2
+runtime** by round-tripping through
+`rclpy.serialization.deserialize_message` and checking every field came
+back correct. Originally against Jazzy; re-verified on Lyrical.
 
 ## Why not rclpy's bytes directly
 
@@ -32,7 +33,7 @@ is deserialisation by the real ROS runtime, not arithmetic.
 ## Regenerating
 
 Needs the `ovcs-ros2` container running (`ros2/base`, image
-`ovcs/ros2:jazzy`) — it carries both `visualization_msgs` and
+`ovcs/ros2:lyrical`) — it carries both `visualization_msgs` and
 `vision_msgs`.
 
 1. Encode the fixtures with this repo's modules and dump them as
@@ -45,8 +46,12 @@ Needs the `ovcs-ros2` container running (`ros2/base`, image
    returns wrong values.
 3. Only once every entry round-trips, write the JSON here.
 
-Type hashes come from `/opt/ros/jazzy/share/<pkg>/msg/<Msg>.json` in
-the same container, never from memory, and are per-distro.
+Type hashes come from `/opt/ros/<distro>/share/<pkg>/msg/<Msg>.json` in
+the same container, never from memory. The hash is derived from the
+message *definition*, so it only changes when the definition does — not
+on every distro bump, despite the per-distro path. All seven hashes this
+bridge declares were re-checked against Lyrical after the move from
+Jazzy and every one still matched.
 
 ## The stereo vectors
 
