@@ -63,8 +63,8 @@
         "imageTopic": "/stereo/depth/image_rect",
         "calibrationTopic": "/stereo/left/camera_info",
         "synchronize": false,
-        "minValue": 550,
-        "maxValue": 3000,
+        "minValue": 600,
+        "maxValue": 4500,
         "colorMode": "colormap",
         "colorMap": "turbo"
       },
@@ -247,6 +247,24 @@
       },
       "layers": {},
       "foxglovePanelTitle": "Point cloud + detections"
+    },
+    "RawMessages!detections": {
+      "topicPath": "/stereo/detections.detections",
+      "diffEnabled": false,
+      "showFullMessageForDiff": false,
+      "diffMethod": "custom",
+      "diffTopicPath": "",
+      "fontSize": 12,
+      "foxglovePanelTitle": "Detections (class + score)"
+    },
+    "RawMessages!diagnostics": {
+      "topicPath": "/diagnostics.status",
+      "diffEnabled": false,
+      "showFullMessageForDiff": false,
+      "diffMethod": "custom",
+      "diffTopicPath": "",
+      "fontSize": 12,
+      "foxglovePanelTitle": "Diagnostics"
     }
   },
   "globalVariables": {},
@@ -273,10 +291,20 @@
     },
     "second": {
       "first": {
-        "first": "RawMessages!heartbeat",
-        "second": "RawMessages!disparity_geometry",
+        "first": {
+          "first": "RawMessages!heartbeat",
+          "second": "RawMessages!disparity_geometry",
+          "direction": "column",
+          "splitPercentage": 34
+        },
+        "second": {
+          "first": "RawMessages!detections",
+          "second": "RawMessages!diagnostics",
+          "direction": "column",
+          "splitPercentage": 60
+        },
         "direction": "column",
-        "splitPercentage": 34
+        "splitPercentage": 55
       },
       "second": {
         "first": "Plot!imu_accel",
@@ -290,7 +318,7 @@
         "splitPercentage": 40
       },
       "direction": "column",
-      "splitPercentage": 28
+      "splitPercentage": 45
     },
     "direction": "row",
     "splitPercentage": 74
