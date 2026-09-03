@@ -102,4 +102,72 @@ defmodule Ros2.SensorMsgs.Msg.CameraInfoTest do
       end
     end
   end
+
+  describe "golden bytes" do
+    # Byte-equality against `test/support/golden_cdr.json`, whose bytes
+    # were validated by deserialising them with ROS 2 — see
+    # `test/support/golden_cdr.md`. The alignment tests above prove the
+    # float run lands on an 8-boundary by our own arithmetic; these
+    # prove the whole encoding is what a real ROS peer reads back.
+    #
+    # `stereo_right` (12 chars) and `stereo_left` (11) are both here on
+    # purpose: they fall either side of an 8-residue, so the D length
+    # prefix needs 0 bytes of padding for one and 4 for the other. The
+    # original fixed-padding encoder got exactly one of them right.
+    @golden __DIR__
+            |> Path.join("../../../support/golden_cdr.json")
+            |> Path.expand()
+            |> File.read!()
+            |> Jason.decode!()
+
+    defp golden(name), do: @golden |> Map.fetch!(name) |> Base.decode16!(case: :lower)
+
+    defp golden_camera_info(frame_id, d) do
+      %CameraInfo{
+        header: %Header{
+          stamp: %Time{sec: 1_735_689_600, nanosec: 123_456_789},
+          frame_id: frame_id
+        },
+        height: 270,
+        width: 480,
+        distortion_model: "plumb_bob",
+        d: d,
+        k: [321.5, 0.0, 240.25, 0.0, 321.5, 135.75, 0.0, 0.0, 1.0],
+        r: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+        p: [321.5, 0.0, 240.25, -19.29, 0.0, 321.5, 135.75, 0.0, 0.0, 0.0, 1.0, 0.0],
+        binning_x: 0,
+        binning_y: 0,
+        roi: %RegionOfInterest{
+          x_offset: 8,
+          y_offset: 4,
+          height: 262,
+          width: 464,
+          do_rectify: false
+        }
+      }
+    end
+
+    @distortion [-0.17, 0.028, 0.0, 0.0, 0.0]
+
+    test "stereo_right (12-char frame_id, no D padding) matches ROS 2" do
+      assert CameraInfo.encode(golden_camera_info("stereo_right", @distortion)) ==
+               golden("camera_info_right")
+    end
+
+    test "stereo_left (11-char frame_id, 4 bytes of D padding) matches ROS 2" do
+      assert CameraInfo.encode(golden_camera_info("stereo_left", @distortion)) ==
+               golden("camera_info_left")
+    end
+
+    test "an empty D carries no padding at all" do
+      assert CameraInfo.encode(golden_camera_info("stereo_right", [])) ==
+               golden("camera_info_right_empty_d")
+    end
+
+    test "the golden bytes round-trip back through our parser" do
+      for name <- ["camera_info_right", "camera_info_left", "camera_info_right_empty_d"] do
+        assert {:ok, %CameraInfo{}, <<>>} = CameraInfo.parse(golden(name))
+      end
+    end
+  end
 end
