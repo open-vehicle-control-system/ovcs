@@ -137,13 +137,67 @@ defmodule OvcsMini do
     %RosBridge.Config{
       zenoh_endpoint_ip: System.get_env("ZENOH_ENDPOINT_IP", "127.0.0.1"),
       node_name: "ovcs_bridge_perception_sim",
-      components: [
-        :heartbeat,
-        stereo_transforms(),
-        stereo_component(RosBridge.Camera.Zenoh, :sim)
-      ]
+      components:
+        [
+          :heartbeat,
+          stereo_transforms(),
+          stereo_component(RosBridge.Camera.Zenoh, :sim)
+        ] ++ sim_detector()
     }
   end
+
+  # Detection on a workstation, so the sim runs the *whole* stack
+  # rather than everything-but-the-detector. Off unless a model is
+  # present: the ONNX weights are not in the repo, so the default
+  # remains a stereo-only sim rather than a detector that logs a
+  # missing file on every start.
+  #
+  # OVCS_DETECTOR picks the backend, defaulting to the DNN one when a
+  # model exists:
+  #
+  #   dnn        CPU inference
+  #   gpu        the same model through OpenCL — see
+  #              `RosBridge.Inference.Dnn` on why that is worth less on
+  #              NVIDIA than CUDA would be
+  #   stub       fabricated boxes, for testing the depth fusion and the
+  #              markers with no model at all
+  #   off        no detector
+  #
+  # `detect_every_n: 3` because CPU inference shares this machine with
+  # SGBM and Gazebo. On the car the accelerator runs every frame.
+  defp sim_detector do
+    case sim_detector_choice() do
+      :off ->
+        []
+
+      :stub ->
+        [{:detector, backend: RosBridge.Inference.Stub, frame_id: "stereo_left"}]
+
+      target ->
+        [
+          {:detector,
+           backend: RosBridge.Inference.Dnn,
+           model_path: sim_model_path(),
+           target: target,
+           score_threshold: 0.4,
+           detect_every_n: 3,
+           frame_id: "stereo_left"}
+        ]
+    end
+  end
+
+  defp sim_detector_choice do
+    case System.get_env("OVCS_DETECTOR") do
+      "gpu" -> :opencl_fp16
+      "dnn" -> :cpu
+      "stub" -> :stub
+      "off" -> :off
+      # Unset: only if the weights are actually there.
+      _ -> if File.exists?(sim_model_path()), do: :cpu, else: :off
+    end
+  end
+
+  defp sim_model_path, do: Path.join(priv_models_dir(), "yolov8n.onnx")
 
   defp perception_target_config do
     %RosBridge.Config{

@@ -192,6 +192,98 @@ identical input and output contract and is a drop-in. Anything with a
 different input size, or without in-graph NMS, is not: `hailo_detect`
 reads `HAILO_NMS_BY_CLASS` output directly and decodes no anchors.
 
+## Running the detector without a Hailo
+
+`RosBridge.Inference.Hailo` is one of three backends behind the
+`RosBridge.Inference` behaviour. The other two exist so the whole
+stack — detection included — runs on a workstation against the
+simulator, rather than everything-but-the-detector.
+
+| Backend | Where it runs | What it is for |
+|---|---|---|
+| `Inference.Hailo` | Hailo-8, via a Port | the vehicle |
+| `Inference.Dnn` | OpenCV DNN: CPU, or GPU via OpenCL | a workstation |
+| `Inference.Stub` | nowhere — fixed boxes | proving the plumbing |
+
+`Detections` cannot tell them apart: each answers `detect/3`
+asynchronously and replies `{:inference_detections, seq, detections}`
+with boxes in the submitted image's pixels. Every backend owns its own
+resize transform in both directions.
+
+### The DNN backend, CPU and GPU
+
+`:target` chooses `:cpu`, `:opencl` or `:opencl_fp16`. They are one
+module because they differ by two calls — `setPreferableBackend/2` and
+`setPreferableTarget/2` — while model loading, blob preparation, output
+decoding and NMS are identical.
+
+**CUDA is not an option with the precompiled Evision.** Every `cuda*`
+module is listed *Unavailable* in its OpenCV build, so a CUDA target
+would mean building Evision from source against CUDA + cuDNN. OpenCL
+is available and does use the GPU, but OpenCV's OpenCL DNN kernels are
+much less tuned than its CUDA ones — expect roughly 1.5–3x CPU on an
+NVIDIA card, not the 10x+ CUDA would give.
+
+Asking for OpenCL where no device is usable logs the reason and
+continues on the CPU. It does not silently pretend, because a machine
+that quietly lost its GPU should look like a log line rather than an
+unexplained slowdown.
+
+### The model is not in the repo
+
+The Hailo path ships `yolov8n.hef`; the DNN path needs the ONNX export
+of an equivalent model at `vehicles/ovcs_mini/priv/models/yolov8n.onnx`.
+It is deliberately **not committed**: YOLOv8 is AGPL-3.0, and vendoring
+~12 MB of weights under that licence into this repo is a decision for
+whoever owns the licensing, not a convenience.
+
+Until one is present the sim runs stereo-only, which is why the default
+is "no detector" rather than "a detector that logs a missing file every
+time it starts".
+
+### Choosing a backend in the simulator
+
+`OVCS_DETECTOR` selects it:
+
+```sh
+cd bridges/firmware
+VEHICLE=OvcsMini OVCS_SIM=1 OVCS_DETECTOR=gpu ZENOH_ENDPOINT_IP=127.0.0.1 \
+  BRIDGE_FIRMWARE_ID=ros_perception CAN_NETWORK_MAPPINGS=ovcs:vcan0 \
+  iex -S mix
+```
+
+| value | backend |
+|---|---|
+| unset | `Dnn` on CPU if the ONNX model exists, otherwise no detector |
+| `dnn` | `Dnn`, CPU |
+| `gpu` | `Dnn`, OpenCL FP16 |
+| `stub` | `Stub` — fabricated boxes |
+| `off` | no detector |
+
+`detect_every_n: 3` in the sim wiring, because CPU inference shares
+the machine with SGBM and Gazebo. On the car the accelerator runs every
+frame.
+
+### What the stub is actually good for
+
+It fabricates boxes, so it says nothing about detection quality — and
+it warns loudly on every start, because boxes on a screen look equally
+convincing whether or not anything detected them.
+
+What it *does* test is everything downstream of the box, none of which
+involves a neural network: the median-depth sample, the unprojection,
+the marker and `Detection3DArray` publishing. Against `workshop.sdf`
+its centred box fuses to
+
+```
+position: x 0.0  y 0.0  z 0.8088 m
+```
+
+and the world puts that box's front face 0.808 m from the lens. Correct
+to the millimetre, on the optical axis — which checks the fusion
+geometry against ground truth rather than against itself. That path was
+previously only exercisable on hardware.
+
 ## Known limitation
 
 The `base_link` → `stereo_left` translation in
