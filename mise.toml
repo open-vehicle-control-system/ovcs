@@ -64,6 +64,10 @@ for lib in cantastic express_lrs msp_osd ovcs_control; do
 done
 """
 
+[tasks.verify-nav2]
+description = "Boot the simulator + Nav2, navigate to a goal and check the commands respect Ackermann limits"
+run = "cd ros2/simulation && ./verify_nav2.sh"
+
 [tasks.cli]
 description = "Build the ovcs CLI (Rust release binary → cli/ovcs)"
 run = "cd cli && cargo build --release && strip --strip-all target/release/ovcs && cp target/release/ovcs ovcs && chmod +x ovcs"

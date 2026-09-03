@@ -227,6 +227,90 @@ to remap at the bridge if a consumer expects a bare `odom`.
 ros2 topic echo --no-daemon /odom
 ```
 
+## Navigating with Nav2
+
+```sh
+mise run verify-nav2            # up, navigate, check, down
+KEEP_UP=1 mise run verify-nav2  # leave the stack up to poke at
+
+# or by hand
+docker compose --profile nav2 up -d nav2
+docker logs -f ovcs-nav2
+```
+
+Nav2 1.5.1 in its own image (`nav2/Dockerfile`), behind a compose
+profile so a plain `up -d` stays a bare simulator. No map and no AMCL:
+every frame is `odom` and both costmaps roll. That is enough to prove
+the velocity path drives an Ackermann vehicle without taking on the
+map/SLAM question, and it avoids a fake static `map -> odom`, which is
+the usual shortcut and worse, because it looks like localisation.
+
+### Four things that each fail silently
+
+Every one of these cost a debugging cycle, so they are worth knowing
+before changing the configuration.
+
+- **Nav2 publishes `TwistStamped`.** `nav2_util::TwistPublisher`
+  defaults `enable_stamped_cmd_vel` to *true* — the doc comment in that
+  header still claims otherwise, and the code wins. The existing
+  `/cmd_vel` bridge is unstamped, so Nav2 gets its own topic
+  (`/cmd_vel_nav`) and its own bridge node feeding the same Gazebo
+  topic. Without that, a healthy-looking Nav2 moves nothing at all.
+- **`motion_model` names a plugin *instance*, not a class.** The class
+  comes from `<instance>.plugin`. Naming the class directly fails with
+  "No 'plugin' param for param ns!". Leaving `motion_model` unset is
+  fatal rather than silent, which is the good outcome: MPPI defaults it
+  to the instance name `diff_drive`, which has no `.plugin` param
+  either, so the controller refuses to configure.
+- **The odometry frame was `ovcs_mini/odom`.** The Ackermann plugin
+  derives it from the model name unless `<frame_id>` says otherwise, and
+  Nav2 rejects it: every costmap logs `Invalid frame ID "odom" ... frame
+  does not exist` and never activates.
+- **`Spin` aborts navigation on a car.** Both stock behaviour trees put
+  it in their recovery branch; an Ackermann vehicle produces no motion
+  at all from a spin command, so it runs its full duration and burns a
+  recovery slot. Both trees are overridden to drop it. The `spin`
+  *server* stays loaded, because bt_navigator resolves action servers
+  for both trees at activation and will not come up without it.
+
+### Reaching the goal proves almost nothing
+
+Gazebo's `AckermannSteering` quietly ignores commands it cannot
+execute, so a controller configured for a differential-drive robot
+still arrives — it just commands arcs the real steering could never
+cut. Measured: with `mppi::DiffDriveMotionModel` substituted in, the
+vehicle reached the tight goal *better* than the correct configuration
+did (0.30 m versus 0.53 m) while commanding a yaw rate 3.68x the
+kinematic limit.
+
+So `nav2_test.py` checks what was **commanded**, and uses two goals
+because no single goal can test both things:
+
+| goal | required arc | asserts |
+|---|---|---|
+| 3.0 m ahead, 1.0 m across | 5.00 m | arrival |
+| 0.8 m ahead, 1.4 m across | 0.93 m | the kinematic limits |
+
+An easy goal never approaches the radius limit — an unconstrained
+controller drives it at 0.74x, under the threshold, so the check
+passes. A tight goal does bite, but the *correct* configuration then
+needs to shuffle and may not arrive at all, so arrival is reported
+rather than asserted there. Each goal is asked only what it can
+answer.
+
+### Known limitations
+
+- There is no `nav2_smac_planner` in the Lyrical archive, so global
+  plans come from NavFn and are **not kinematically feasible** — they
+  can contain corners this car cannot drive, and MPPI has to carry
+  that. Fine in an open workshop; a real constraint in tight spaces.
+- `yaw_goal_tolerance` is deliberately ~pi. A car cannot rotate to a
+  commanded final heading, so requiring one leaves it stuck at the goal
+  until the action times out.
+- Nothing arbitrates between `/cmd_vel` and `/cmd_vel_nav`. Run teleop
+  or Nav2, not both — which mirrors OVCS Mini, where nothing arbitrates
+  between the radio and ROS either.
+
 ## Not here yet
 
 No IMU, so `/imu` is absent and anything downstream of it is untested
