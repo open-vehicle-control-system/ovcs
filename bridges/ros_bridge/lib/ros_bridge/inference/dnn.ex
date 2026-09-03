@@ -251,7 +251,9 @@ defmodule RosBridge.Inference.Dnn do
     size = state.input_size
 
     blob =
-      Evision.DNN.blobFromImage(mat,
+      mat
+      |> to_three_channel()
+      |> Evision.DNN.blobFromImage(
         scalefactor: 1.0 / 255.0,
         size: {size, size},
         swapRB: true,
@@ -269,11 +271,28 @@ defmodule RosBridge.Inference.Dnn do
         # rather than raising, so this has to be matched rather than
         # rescued. A frame that cannot be inferred is dropped, not
         # crashed on — same as a busy accelerator.
-        Logger.warning(
-          "#{__MODULE__}: inference failed: #{inspect(other) |> String.slice(0, 200)}"
-        )
-
+        log_inference_failure(other)
         []
+    end
+  end
+
+  # A failure that is going to happen at all happens on every frame —
+  # a channel-count mismatch, a model that will not run on the chosen
+  # target — so logging each one buries the rest of the log at the
+  # stereo rate. The first is loud; after that, one line per hundred
+  # with the count, which is enough to see it is still happening
+  # without drowning anything else.
+  @failure_log_interval 100
+
+  defp log_inference_failure(reason) do
+    count = :persistent_term.get({__MODULE__, :failures}, 0) + 1
+    :persistent_term.put({__MODULE__, :failures}, count)
+
+    if count == 1 or rem(count, @failure_log_interval) == 0 do
+      Logger.warning(
+        "#{__MODULE__}: inference failed (#{count} so far): " <>
+          "#{inspect(reason) |> String.slice(0, 200)}"
+      )
     end
   end
 
@@ -283,6 +302,26 @@ defmodule RosBridge.Inference.Dnn do
   defp first_output([%Evision.Mat{} = mat | _]), do: mat
   defp first_output(%Evision.Mat{} = mat), do: mat
   defp first_output(other), do: other
+
+  # The frame this is handed is `Result.left_rectified`, which is
+  # **grayscale**: SGBM needs single-channel input, so that is what the
+  # stereo pipeline rectifies and keeps. Every YOLO export expects
+  # three, and OpenCV does not broadcast — it refuses the graph with
+  # "Number of input channels should be multiple of 3 but got 1", once
+  # per frame, which is how this was found. Converting is a copy of a
+  # 640x480 mono frame and cheap next to the inference.
+  defp to_three_channel(mat) do
+    case Evision.Mat.shape(mat) do
+      {_height, _width} ->
+        Evision.cvtColor(mat, Evision.Constant.cv_COLOR_GRAY2BGR())
+
+      {_height, _width, 1} ->
+        Evision.cvtColor(mat, Evision.Constant.cv_COLOR_GRAY2BGR())
+
+      _already_colour ->
+        mat
+    end
+  end
 
   # `Evision.Mat.shape/1` signals failure the way the rest of Evision
   # does, by returning `{:error, message}` — which is a two-tuple, and
