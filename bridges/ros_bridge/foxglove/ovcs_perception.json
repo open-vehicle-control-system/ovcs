@@ -63,8 +63,8 @@
         "imageTopic": "/stereo/depth/image_rect",
         "calibrationTopic": "/stereo/left/camera_info",
         "synchronize": false,
-        "minValue": 550,
-        "maxValue": 3000,
+        "minValue": 600,
+        "maxValue": 4500,
         "colorMode": "colormap",
         "colorMap": "turbo"
       },
