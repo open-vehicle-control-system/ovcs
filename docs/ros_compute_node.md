@@ -38,7 +38,7 @@ both sides live in [`ros2/`](../ros2/README.md).
 
 | Item | Choice | Why |
 |---|---|---|
-| Board | Raspberry Pi 5, 8 GB | ROS 2 Jazzy + Foxglove + perception nodes want the headroom |
+| Board | Raspberry Pi 5, 8 GB | ROS 2 Lyrical + Foxglove + perception nodes want the headroom |
 | Storage | NVMe (HAT) or USB SSD | ROS images are multi-GB and container writes destroy SD cards |
 | Clock | Pi 5 RTC connector + battery, plus NTP | see [Clock](#clock) |
 | Network | the Pi *is* the vehicle network — see [Networking](#networking) | the bridges' router IP is baked into firmware, so it has to be an address we choose |

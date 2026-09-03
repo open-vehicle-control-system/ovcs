@@ -205,7 +205,7 @@ stack up:
 
 ```sh
 cd ros2/base && docker compose exec ros2 bash -lc '
-  source /opt/ros/jazzy/setup.bash
+  source /opt/ros/*/setup.bash
   ros2 topic list
   ros2 topic info -v /ovcs_heartbeat
   ros2 topic echo /ovcs_heartbeat std_msgs/msg/String

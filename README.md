@@ -117,7 +117,7 @@ ovcs/
 |   +-- express_lrs/              MAVLink v2 telemetry reader (ExpressLRS)
 |   +-- msp_osd/                  MSP / DisplayPort OSD stack for MSP-compatible VTXs
 |
-+-- ros2/                       ROS 2 Jazzy + Zenoh router compose stacks: vehicule/ (balenaOS) and base/ (dev box)
++-- ros2/                       ROS 2 Lyrical + Zenoh router compose stacks: vehicule/ (balenaOS) and base/ (dev box)
 +-- cli/                        Rust source for the `ovcs` CLI (binary at cli/ovcs)
 +-- scripts/                    Utility scripts (setup_can.sh, bind_remote_can.rb, ...)
 +-- candumps/                   CAN bus capture logs for offline testing and replay
