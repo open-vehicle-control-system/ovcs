@@ -1340,7 +1340,16 @@ async fn connect_ssh(host: &str) -> Result<russh::client::Handle<SshAcceptAllKey
         .ok()
         .flatten()
         .unwrap_or(Some(russh::keys::ssh_key::HashAlg::Sha256));
-    for key in identities {
+    for identity in identities {
+        // russh 0.62 models agent identities as an enum: a plain public key
+        // or an OpenSSH certificate. Only the former is usable here, and it
+        // is all 0.54 ever surfaced, so certificate identities are skipped
+        // rather than guessed at — authenticating with one needs
+        // `authenticate_openssh_cert`, which the vehicles do not use.
+        let key = match identity {
+            russh::keys::agent::AgentIdentity::PublicKey { key, .. } => key,
+            russh::keys::agent::AgentIdentity::Certificate { .. } => continue,
+        };
         let hash_alg = match key.algorithm() {
             russh::keys::ssh_key::Algorithm::Rsa { .. } => rsa_hash,
             _ => None,
