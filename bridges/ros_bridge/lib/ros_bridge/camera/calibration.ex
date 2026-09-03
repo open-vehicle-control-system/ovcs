@@ -56,11 +56,13 @@ defmodule RosBridge.Camera.Calibration do
         }
 
   @empty_3x3 [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-  @empty_3x4 [
-    0.0, 0.0, 0.0, 0.0,
-    0.0, 0.0, 0.0, 0.0,
-    0.0, 0.0, 0.0, 0.0
-  ]
+  # Written as rows and flattened: `mix format` puts a flat 12-element
+  # list one element per line, which loses the 3x4 shape entirely.
+  @empty_3x4 List.flatten([
+               [0.0, 0.0, 0.0, 0.0],
+               [0.0, 0.0, 0.0, 0.0],
+               [0.0, 0.0, 0.0, 0.0]
+             ])
 
   @doc """
   Load a calibration YAML. Returns `{:ok, %Calibration{}}` or
@@ -106,16 +108,14 @@ defmodule RosBridge.Camera.Calibration do
     %__MODULE__{
       width: read_integer(yaml, ~r/^image_width:\s*(\d+)/m, 0),
       height: read_integer(yaml, ~r/^image_height:\s*(\d+)/m, 0),
-      distortion_model:
-        read_string(yaml, ~r/^distortion_model:\s*"?([^"\n]+)"?/m, "plumb_bob"),
+      distortion_model: read_string(yaml, ~r/^distortion_model:\s*"?([^"\n]+)"?/m, "plumb_bob"),
       distortion_coefficients:
         read_matrix(
           yaml,
           ~r/^distortion_coefficients:.*?data:\s*\[([^\]]*)\]/ms,
           []
         ),
-      camera_matrix:
-        read_matrix(yaml, ~r/^camera_matrix:.*?data:\s*\[([^\]]*)\]/ms, @empty_3x3),
+      camera_matrix: read_matrix(yaml, ~r/^camera_matrix:.*?data:\s*\[([^\]]*)\]/ms, @empty_3x3),
       rectification_matrix:
         read_matrix(
           yaml,
@@ -228,9 +228,15 @@ defmodule RosBridge.Camera.Calibration do
 
   defp scale_3x3([a, b, c, d, e, f, g, h, i], scale_x, scale_y) do
     [
-      a * scale_x, b * scale_x, c * scale_x,
-      d * scale_y, e * scale_y, f * scale_y,
-      g, h, i
+      a * scale_x,
+      b * scale_x,
+      c * scale_x,
+      d * scale_y,
+      e * scale_y,
+      f * scale_y,
+      g,
+      h,
+      i
     ]
   end
 
@@ -240,9 +246,18 @@ defmodule RosBridge.Camera.Calibration do
          scale_y
        ) do
     [
-      r0c0 * scale_x, r0c1 * scale_x, r0c2 * scale_x, r0c3 * scale_x,
-      r1c0 * scale_y, r1c1 * scale_y, r1c2 * scale_y, r1c3 * scale_y,
-      r2c0, r2c1, r2c2, r2c3
+      r0c0 * scale_x,
+      r0c1 * scale_x,
+      r0c2 * scale_x,
+      r0c3 * scale_x,
+      r1c0 * scale_y,
+      r1c1 * scale_y,
+      r1c2 * scale_y,
+      r1c3 * scale_y,
+      r2c0,
+      r2c1,
+      r2c2,
+      r2c3
     ]
   end
 

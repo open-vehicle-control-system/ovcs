@@ -109,9 +109,7 @@ defmodule RosBridge.Camera.LibCamera do
   end
 
   def handle_info({port, {:exit_status, status}}, %{port: port} = state) do
-    Logger.error(
-      "#{__MODULE__}[#{state.label}] camera_capture exited with status #{status}"
-    )
+    Logger.error("#{__MODULE__}[#{state.label}] camera_capture exited with status #{status}")
 
     {:stop, {:camera_capture_exit, status}, state}
   end

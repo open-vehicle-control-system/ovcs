@@ -63,8 +63,7 @@ defmodule RosBridge.Publishers.Imu do
       driver: driver,
       topic: Keyword.get(opts, :topic, @default_topic),
       frame_id: Keyword.get(opts, :frame_id, @default_frame_id),
-      publish_interval_ms:
-        Keyword.get(opts, :publish_interval_ms, @default_publish_interval_ms)
+      publish_interval_ms: Keyword.get(opts, :publish_interval_ms, @default_publish_interval_ms)
     }
 
     driver.register_listener(self())

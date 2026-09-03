@@ -90,7 +90,26 @@ defmodule RosBridge.Camera.CalibrationTest do
     end
 
     test "preserves the baseline encoded in P[0,3] = -fx x T", %{cal: cal} do
-      right = %{cal | width: 640, height: 360, projection_matrix: [800.0, 0.0, 320.0, -72.0, 0.0, 800.0, 180.0, 0.0, 0.0, 0.0, 1.0, 0.0]}
+      right = %{
+        cal
+        | width: 640,
+          height: 360,
+          projection_matrix: [
+            800.0,
+            0.0,
+            320.0,
+            -72.0,
+            0.0,
+            800.0,
+            180.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0
+          ]
+      }
+
       scaled = Calibration.scale_to(right, 480, 270)
 
       baseline = fn c ->
