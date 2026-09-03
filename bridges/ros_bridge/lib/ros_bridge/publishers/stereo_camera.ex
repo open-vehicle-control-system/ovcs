@@ -23,15 +23,29 @@ defmodule RosBridge.Publishers.StereoCamera do
        pair is still being processed (`awaiting_result == true`)
        new pairs are silently dropped — we'd rather skip than
        build a backlog.
-    5. **Publish disparity + depth** when the backend returns a
-       `%RosBridge.StereoCamera.Result{}`: a `stereo_msgs/DisparityImage`
-       on `:disparity_topic`, the same disparity pixels again as a
-       bare 32FC1 `sensor_msgs/Image` on `:disparity_image_topic`
-       (viewers cannot render the container type), and a 32FC1
-       `sensor_msgs/Image` of metres on `:depth_topic`. All reuse
-       the left frame's stamp so
-       downstream consumers can pair them with the raw streams via
-       `Header.stamp`.
+    5. **Publish the stereo outputs** when the backend returns a
+       `%RosBridge.StereoCamera.Result{}`:
+
+         * `stereo_msgs/DisparityImage` on `:disparity_topic` — the
+           canonical topic, and the only one carrying the geometry
+           (`f`, `T`, `valid_window`).
+         * a 16UC1 `sensor_msgs/Image` of **millimetres** on
+           `:depth_topic`, the ROS depth-image convention.
+         * `sensor_msgs/CameraInfo` on `:depth_camera_info_topic` when
+           set — the left camera's intrinsics, since the depth image is
+           in the rectified left frame. Without a camera_info sibling a
+           viewer cannot project the depth image.
+         * `sensor_msgs/PointCloud2` on `:cloud_topic` when set and the
+           frame produced points.
+         * the disparity pixels again as a bare 32FC1
+           `sensor_msgs/Image` on `:disparity_image_topic` — only when
+           set, since viewers match on a topic's type and will not
+           reach inside the `DisparityImage` container. Opt-in for
+           bandwidth reasons; see `:publish_disparity_image` in
+           `RosBridge.StereoCamera.Supervisor`.
+
+       All reuse the left frame's stamp so downstream consumers can
+       pair them with the raw streams via `Header.stamp`.
 
   ## Required opts
 
@@ -40,8 +54,8 @@ defmodule RosBridge.Publishers.StereoCamera do
     * `:topic_prefix` — root for per-side image topics
       (`<prefix>/<side>/image_raw/compressed` and
       `<prefix>/<side>/camera_info`).
-    * `:disparity_topic`, `:disparity_image_topic`, `:depth_topic` — full Zenoh topics for
-      the stereo outputs.
+    * `:disparity_topic`, `:depth_topic` — full Zenoh topics for the
+      stereo outputs.
     * `:left`, `:right` — per-side keyword lists. Each requires
       `:frame_id` (used in every outgoing header for that side)
       and optionally `:calibration_path` (a
@@ -58,6 +72,9 @@ defmodule RosBridge.Publishers.StereoCamera do
       offset.
     * `:camera_info_interval_frames` — republish CameraInfo every
       Nth frame. Default 30 (≈ once per second at 30 fps).
+    * `:depth_camera_info_topic`, `:cloud_topic`,
+      `:disparity_image_topic` — each output is published only when
+      its topic is given; `nil` (the default) skips it.
   """
   use GenServer
   require Logger
