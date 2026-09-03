@@ -2,8 +2,9 @@
 
 CDR bodies (no encapsulation header) for the message shapes exercised
 by `marker_test.exs`, `detection3d_test.exs`,
-`sensor_msgs/msg/camera_info_test.exs` and
-`stereo_msgs/disparity_image_test.exs`. They are this
+`sensor_msgs/msg/camera_info_test.exs`,
+`stereo_msgs/disparity_image_test.exs` and
+`foxglove_msgs/image_annotations_test.exs`. They are this
 codebase's own encoder output, **validated against a real ROS 2
 runtime** by round-tripping through
 `rclpy.serialization.deserialize_message` and checking every field came
@@ -88,4 +89,28 @@ Verified by deserialising all four with `rclpy` against the live
 vehicle's ROS distro, checking every field including the empty `D`.
 Re-confirmed by reintroducing the fixed-padding encoder: 21 of the 34
 `camera_info_test.exs` assertions fail, the golden ones among them.
+
+## The annotation vectors
+
+`fox_*` cover `foxglove_msgs/ImageAnnotations` — the labelled boxes
+drawn on the camera image. They were the last wire encoders in the tree
+with no tests, and the most alignment-dependent: `TextAnnotation` puts
+a string immediately before a `float64`, `PointsAnnotation` puts a
+`uint8` before a `uint32` count before a run of `float64` pairs.
+
+One detail is worth knowing before touching them: **`foxglove_msgs`
+`Color` is `float64`**, where `std_msgs/ColorRGBA` is `float32`. A
+reasonable assumption about which one applies is wrong by four bytes
+per channel, and only a real decoder catches it — which is why these
+were validated by deserialising them with `foxglove_msgs` on the
+vehicle's ROS distro rather than by reading the IDL.
+
+`fox_text_odd` and `fox_text_even` are an 11- and a 12-character label.
+One extra character makes the message **8 bytes** longer, not 1,
+because the string field pads to 4 and then the `float64` after it
+re-aligns to 8. Detection labels vary in length by nature — "car 0.64"
+against "bicycle 0.77" — so both residues occur in normal use.
+
+`fox_points_empty` pins the empty-sequence rule from further up this
+file: no alignment padding at all when the count is zero.
 
