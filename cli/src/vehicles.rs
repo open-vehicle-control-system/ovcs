@@ -233,26 +233,56 @@ end
     Ok(addons)
 }
 
+/// Printed by every probe before its payload, so compiler chatter can be
+/// separated from the answer.
+///
+/// `mix run` compiles the project before evaluating `-e`, and that output
+/// goes to stdout: "Compiling 10 files (.ex)", "Generated ovcs_mini app".
+/// Returning raw stdout meant every caller parsed those lines as data.
+/// `host_can_interfaces` took them for interface names and `ovcs can
+/// setup` duly offered to `ip link add dev "Compiling 10 files (.ex)"`;
+/// `has_infotainment` compares the whole output to "yes", so chatter made
+/// it answer no. It only ever misbehaved on a cold build, which is why it
+/// went unnoticed.
+const PROBE_MARKER: &str = "__OVCS_PROBE__";
+
+/// Everything the probe printed after the marker, or `None` if it printed
+/// nothing. Splits on the *last* marker so a snippet that somehow emits it
+/// twice still yields the final payload.
+fn probe_payload(stdout: &str) -> Option<String> {
+    let payload = match stdout.rsplit_once(PROBE_MARKER) {
+        Some((_chatter, payload)) => payload,
+        // No marker: an older/hand-built snippet, or mix failed before
+        // evaluating. Fall back to the whole output rather than losing it.
+        None => stdout,
+    };
+    let trimmed = payload.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
 pub(crate) fn run_snippet(path: &Path, snippet: &str) -> Result<Option<String>> {
     let env: HashMap<String, String> =
         std::iter::once(("MIX_ENV".to_string(), "dev".to_string())).collect();
+    let marked = format!("IO.write(\"{PROBE_MARKER}\")\n{snippet}");
     let (code, stdout) = run_capture(
-        &["mix", "run", "--no-start", "--no-deps-check", "-e", snippet],
+        &["mix", "run", "--no-start", "--no-deps-check", "-e", &marked],
         path,
         &env,
     )?;
     if code == 0 {
-        let trimmed = stdout.trim();
-        return Ok(if trimmed.is_empty() {
-            None
-        } else {
-            Some(trimmed.to_string())
-        });
+        return Ok(probe_payload(&stdout));
     }
-    retry_with_deps(path, snippet)
+    // The retry gets the same marked snippet: it runs right after a
+    // `deps.get` + `compile`, which is precisely when the chatter this
+    // marker exists to skip is loudest.
+    retry_with_deps(path, &marked)
 }
 
-fn retry_with_deps(path: &Path, snippet: &str) -> Result<Option<String>> {
+fn retry_with_deps(path: &Path, marked: &str) -> Result<Option<String>> {
     let rel = path.strip_prefix(std::env::current_dir()?).unwrap_or(path);
     println!(
         "{}",
@@ -274,17 +304,54 @@ fn retry_with_deps(path: &Path, snippet: &str) -> Result<Option<String>> {
         }
     }
     let (code, stdout) = run_capture(
-        &["mix", "run", "--no-start", "--no-deps-check", "-e", snippet],
+        &["mix", "run", "--no-start", "--no-deps-check", "-e", marked],
         path,
         &env,
     )?;
     if code == 0 {
-        let trimmed = stdout.trim();
-        return Ok(if trimmed.is_empty() {
-            None
-        } else {
-            Some(trimmed.to_string())
-        });
+        return Ok(probe_payload(&stdout));
     }
     Ok(None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{probe_payload, PROBE_MARKER};
+
+    // The exact chatter that caused `ovcs can setup ovcs_mini` to offer
+    // to create interfaces named "Compiling 10 files (.ex)".
+    const CHATTER: &str = "Compiling 10 files (.ex)\nGenerated ovcs_mini app\n";
+
+    #[test]
+    fn compiler_chatter_before_the_marker_is_dropped() {
+        let stdout = format!("{CHATTER}{PROBE_MARKER}vcan0\n");
+        assert_eq!(probe_payload(&stdout).as_deref(), Some("vcan0"));
+    }
+
+    #[test]
+    fn a_multi_line_payload_survives_intact() {
+        let stdout = format!("{CHATTER}{PROBE_MARKER}vcan0\nvcan1\n");
+        assert_eq!(probe_payload(&stdout).as_deref(), Some("vcan0\nvcan1"));
+    }
+
+    #[test]
+    fn an_empty_payload_is_none_even_behind_chatter() {
+        // Otherwise the chatter itself reads as the answer — which is how
+        // has_infotainment came to answer "no" on a cold build.
+        let stdout = format!("{CHATTER}{PROBE_MARKER}\n");
+        assert_eq!(probe_payload(&stdout), None);
+    }
+
+    #[test]
+    fn output_without_a_marker_is_passed_through() {
+        // mix failing before it evaluates -e must not silently look like
+        // an empty answer.
+        assert_eq!(probe_payload("yes").as_deref(), Some("yes"));
+    }
+
+    #[test]
+    fn the_last_marker_wins() {
+        let stdout = format!("{PROBE_MARKER}stale{PROBE_MARKER}fresh");
+        assert_eq!(probe_payload(&stdout).as_deref(), Some("fresh"));
+    }
 }
