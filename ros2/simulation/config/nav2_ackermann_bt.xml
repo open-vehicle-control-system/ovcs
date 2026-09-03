@@ -1,0 +1,44 @@
+<!--
+  NavigateToPose for a vehicle that cannot rotate on the spot.
+
+  This is Nav2's default nav-to-pose tree with one change: the recovery
+  fallback drops `Spin`. On an Ackermann vehicle a spin command produces
+  no motion at all — `AckermannSteering` needs forward speed to generate
+  yaw — so the behaviour runs its full duration, achieves nothing, and
+  the RecoveryNode burns a retry. With Spin first in the list, a single
+  transient planning failure is enough to abort the whole action.
+
+  What remains is `Wait` (for a costmap that will clear on its own, e.g.
+  a moving obstacle) and `BackUp` (which a car genuinely can do, and
+  which is the useful recovery when it has nosed into a dead end).
+
+  ClearCostmap services stay: they cost nothing and fix the common case
+  of a stale obstacle.
+-->
+<root BTCPP_format="4" main_tree_to_execute="MainTree">
+  <BehaviorTree ID="MainTree">
+    <RecoveryNode number_of_retries="6" name="NavigateRecovery">
+      <PipelineSequence name="NavigateWithReplanning">
+        <ControllerSelector selected_controller="{selected_controller}" default_controller="FollowPath" topic_name="controller_selector"/>
+        <PlannerSelector selected_planner="{selected_planner}" default_planner="GridBased" topic_name="planner_selector"/>
+        <RateController hz="1.0">
+          <RecoveryNode number_of_retries="1" name="ComputePathToPose">
+            <ComputePathToPose goal="{goal}" path="{path}" planner_id="{selected_planner}"/>
+            <ClearEntireCostmap name="ClearGlobalCostmap-Context" service_name="global_costmap/clear_entirely_global_costmap"/>
+          </RecoveryNode>
+        </RateController>
+        <RecoveryNode number_of_retries="1" name="FollowPath">
+          <FollowPath path="{path}" controller_id="{selected_controller}"/>
+          <ClearEntireCostmap name="ClearLocalCostmap-Context" service_name="local_costmap/clear_entirely_local_costmap"/>
+        </RecoveryNode>
+      </PipelineSequence>
+      <Sequence name="RecoveryActions">
+        <ClearEntireCostmap name="ClearLocalCostmap-Subtree" service_name="local_costmap/clear_entirely_local_costmap"/>
+        <ClearEntireCostmap name="ClearGlobalCostmap-Subtree" service_name="global_costmap/clear_entirely_global_costmap"/>
+        <!-- No Spin: this vehicle cannot execute one. -->
+        <Wait wait_duration="2.0"/>
+        <BackUp backup_dist="0.30" backup_speed="0.15"/>
+      </Sequence>
+    </RecoveryNode>
+  </BehaviorTree>
+</root>
