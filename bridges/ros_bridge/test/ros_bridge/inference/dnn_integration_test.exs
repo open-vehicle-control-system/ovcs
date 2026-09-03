@@ -58,6 +58,12 @@ defmodule RosBridge.Inference.DnnIntegrationTest do
     Nx.broadcast(Nx.tensor(0, type: :u8), {2, 2, 3}) |> Evision.Mat.from_nx_2d()
   end
 
+  # What the stereo pipeline actually hands over: `left_rectified` is
+  # single-channel, because SGBM needs grayscale.
+  defp mono_frame do
+    Nx.broadcast(Nx.tensor(0, type: :u8), {2, 2, 1}) |> Evision.Mat.from_nx_2d()
+  end
+
   defp detect_and_await(name) do
     assert :ok = Dnn.detect(name, 7, frame())
     assert_receive {:inference_detections, 7, detections}, 15_000
@@ -75,6 +81,23 @@ defmodule RosBridge.Inference.DnnIntegrationTest do
       name = start_backend(:cpu)
       assert Dnn.available?(name)
       refute Dnn.busy?(name)
+    end
+
+    test "a grayscale frame infers, because that is what stereo produces" do
+      # The regression guard for a bug that only a live run found. The
+      # backend fed `Result.left_rectified` straight to
+      # `blobFromImage`, and that frame is single-channel — SGBM needs
+      # grayscale. OpenCV refuses the graph with "Number of input
+      # channels should be multiple of 3 but got 1", once per frame,
+      # so a real yolov8n would have detected nothing at all the
+      # moment the weights were dropped in.
+      name = start_backend(:cpu)
+
+      assert :ok = Dnn.detect(name, 11, mono_frame())
+      assert_receive {:inference_detections, 11, detections}, 15_000
+
+      assert detections != [],
+             "a grayscale frame produced no detections — the channel conversion is gone"
     end
 
     test "a frame submitted while one is in flight is dropped, not queued" do
