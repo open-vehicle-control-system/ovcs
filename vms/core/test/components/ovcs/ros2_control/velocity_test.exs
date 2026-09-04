@@ -53,9 +53,23 @@ defmodule VmsCore.Components.OVCS.Ros2Control.VelocityTest do
      }}
   end
 
+  # Once per test, not once per assertion. `Phoenix.PubSub.subscribe`
+  # is not idempotent: subscribing inside the helper gave the Nth call
+  # N registrations, so each broadcast delivered N copies, one was
+  # consumed and the rest queued -- and from the third call on
+  # `assert_receive` selectively matched a *previous* iteration's
+  # message. A loop over inputs then checked the input before it, and
+  # its last case was never checked at all.
+  #
+  # Each ExUnit test runs in its own process, so one subscription per
+  # test is exactly the right scope and `async: true` still holds.
+  setup do
+    OvcsBus.subscribe("messages")
+    :ok
+  end
+
   # What the component would put on the bus on its next tick.
   defp commanded(state) do
-    OvcsBus.subscribe("messages")
     {:noreply, _state} = Velocity.handle_info(:loop, state)
     assert_receive %Message{name: :requested_steering, value: steering, source: Velocity}
     assert_receive %Message{name: :requested_throttle, value: throttle, source: Velocity}

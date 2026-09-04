@@ -17,6 +17,14 @@
 # Signed, scaled integers rather than floats because Cantastic has no
 # float codec and a fixed point is enough: 1 mm/s and 1 mrad/s are far
 # finer than anything the drivetrain can act on.
+#
+# `precision` has to be stated alongside `scale`. Cantastic defaults it
+# to 2 (`SignalSpecification.from_yaml/4`), and `Signal.interpret/2`
+# rounds the decoded value to it — so a 0.001 scale without a matching
+# precision decodes to 0.01 steps, ten times coarser than the numbers
+# above, and every yaw rate under 0.005 rad/s arrives as exactly zero.
+# This is the first frame here with a scale finer than 0.01, which is
+# why no existing one needed the line.
 name: ros2_control
 id: 0x3A0
 frequency: 20
@@ -31,6 +39,7 @@ signals:
     value_length: 24
     sign: signed
     scale: "0.001"
+    precision: 3
   # Counter-clockwise is positive, matching REP-103 and therefore
   # `geometry_msgs/Twist.angular.z`.
   - name: angular
@@ -39,3 +48,4 @@ signals:
     value_length: 24
     sign: signed
     scale: "0.001"
+    precision: 3

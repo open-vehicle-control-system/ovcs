@@ -130,6 +130,12 @@ defmodule OvcsMini do
       components: [
         :heartbeat,
         :joy_interpreter,
+        # Same subscription as the host config, and it has to be here
+        # too: this is the list the burned firmware runs, so leaving it
+        # out meant nothing on the vehicle ever emitted 0x3A0 while the
+        # bench worked perfectly.
+        {:velocity_interpreter,
+         %{topic: "cmd_vel_nav", message: Ros2.GeometryMsgs.Msg.TwistStamped}},
         {:imu_publisher, driver: BNO085.I2C}
       ]
     }

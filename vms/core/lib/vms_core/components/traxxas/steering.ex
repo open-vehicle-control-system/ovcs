@@ -79,7 +79,13 @@ defmodule VmsCore.Components.Traxxas.Steering do
         %Bus.Message{name: :requested_steering, value: requested_steering, source: source},
         state
       )
-      when source == state.requested_steering_source do
+      when not is_nil(state.requested_steering_source) and
+             source == state.requested_steering_source do
+    # `not is_nil` first, and not for tidiness: %OvcsBus.Message{}
+    # defaults :source to nil, and this source is nil in every level
+    # that commands nothing. Without the check the guard reads
+    # `nil == nil` and accepts any unattributed broadcast -- a wildcard
+    # in exactly the state that is supposed to be inert.
     {:noreply, %{state | requested_steering: requested_steering}}
   end
 

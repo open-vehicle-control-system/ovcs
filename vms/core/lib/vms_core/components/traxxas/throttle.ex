@@ -79,7 +79,13 @@ defmodule VmsCore.Components.Traxxas.Throttle do
         %Bus.Message{name: :requested_throttle, value: requested_throttle, source: source},
         state
       )
-      when source == state.requested_throttle_source do
+      when not is_nil(state.requested_throttle_source) and
+             source == state.requested_throttle_source do
+    # `not is_nil` first, and not for tidiness: %OvcsBus.Message{}
+    # defaults :source to nil, and this source is nil in every level
+    # that commands nothing. Without the check the guard reads
+    # `nil == nil` and accepts any unattributed broadcast -- a wildcard
+    # in exactly the state that is supposed to be inert.
     {:noreply, %{state | requested_throttle: requested_throttle}}
   end
 
