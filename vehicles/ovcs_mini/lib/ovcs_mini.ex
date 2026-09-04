@@ -113,6 +113,12 @@ defmodule OvcsMini do
       components: [
         :heartbeat,
         :joy_interpreter,
+        # Nav2 publishes TwistStamped on /cmd_vel_nav; teleop_twist_joy
+        # publishes plain Twist on /cmd_vel. Subscribing to the stamped
+        # one keeps the joystick path on 0x2B0/0x2B1 and the planner
+        # path on 0x3A0, so both can be present without racing.
+        {:velocity_interpreter,
+         %{topic: "cmd_vel_nav", message: Ros2.GeometryMsgs.Msg.TwistStamped}},
         {:imu_publisher, driver: OvcsDrivers.Imu.Dummy}
       ]
     }
