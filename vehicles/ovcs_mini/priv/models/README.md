@@ -26,7 +26,35 @@ before a first build. The licence is why it changed anyway.
 See `docs/ros_perception_detection.md` for the licensing note in full,
 including the permissively licensed models that are drop-in candidates.
 
-## yolov8n.hef
+## nanodet_repvgg.hef — the default
+
+NanoDet-RepVGG from the Hailo model zoo, **Apache-2.0**, which is why
+it is the default: nothing about it conflicts with this repository's
+MIT licence.
+
+It is a drop-in for the YOLOv8 model below, and that was verified from
+the HEF rather than assumed. It carries the same in-graph NMS net flow
+(`HAILO_NET_FLOW_YOLOV8_NMS`), so the output is the same
+`HAILO_NMS_BY_CLASS` layout `hailo_detect` already reads; and
+`hailo_detect` derives both the input size and the class count from the
+HEF at runtime, so neither is hardcoded to YOLOv8's.
+
+Two things still need a Hailo-8 to confirm: that it loads and detects
+sensibly, and the score threshold — 0.4 was measured against yolov8n,
+not this. Failure is loud and harmless: `hailo_detect` logs and exits,
+the backend answers `{:error, :unavailable}`, and stereo depth is
+unaffected.
+
+`yolox_tiny` is also Apache-2.0 and also in the zoo, but is **not** a
+drop-in — it uses `HAILO_NET_FLOW_YOLOX_NMS`, a different postprocess
+op.
+
+## yolov8n.hef — the AGPL alternative
+
+Selected with `OVCS_HAILO_MODEL=yolov8n`. Its accuracy at this
+resolution is the measured baseline, and it is the right choice for
+anyone holding an Ultralytics Enterprise licence.
+
 
 COCO YOLOv8-nano from the Hailo model zoo, compiled for **HAILO8**
 (the 26 TOPS AI HAT+, not the 13 TOPS Hailo-8L — a HEF is built for
@@ -49,10 +77,18 @@ its Port and answers `{:error, :unavailable}` when it is absent;
 stereo depth pipeline runs on regardless — losing detections is
 acceptable, taking depth down with it is not.
 
-## Swapping the model
+## Adding another
 
-`yolov8s.hef` from the same model zoo path is the accuracy/speed step
-up and has the identical input and output contract, so it is a
-drop-in — add it to `scripts/models.tsv` and change `:hef_path` in the
-vehicle's `:hailo_detector` opts. Anything with a different input size
-or without in-graph NMS is not.
+Add it to `scripts/models.tsv` — destination, sha256, licence, URL —
+and set `OVCS_HAILO_MODEL` to its basename.
+
+What has to hold: a **square 3-channel input** and **in-graph NMS
+producing `HAILO_NMS_BY_CLASS`**. Size and class count do not, since
+`hailo_detect` reads both off the HEF. `yolov8s.hef` from the same zoo
+path is the accuracy step up and satisfies all of it. A model with a
+different NMS net flow, or none, does not — see
+`docs/ros_perception_detection.md` for what a swap would cost then.
+
+Checking is cheap and needs no device:
+
+    strings <model>.hef | grep -oE 'HAILO_NET_FLOW_[A-Z0-9_]+'
