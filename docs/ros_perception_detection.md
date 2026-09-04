@@ -185,7 +185,8 @@ bridge supervisor's budget and take the cameras down with it.
 
 ## Swapping the model
 
-`vehicles/ovcs_mini/priv/models/yolov8n.hef` is the COCO nano model
+`vehicles/ovcs_mini/priv/models/yolov8n.hef` (fetched, not committed —
+see **Model licensing**) is the COCO nano model
 compiled for **HAILO8** — a HEF is architecture-specific and will not
 load on a Hailo-8L. `yolov8s.hef` from the same model zoo path has an
 identical input and output contract and is a drop-in. Anything with a
@@ -231,11 +232,11 @@ unexplained slowdown.
 
 ### The model is not in the repo
 
-The Hailo path ships `yolov8n.hef`; the DNN path needs the ONNX export
+The Hailo path uses `yolov8n.hef`; the DNN path needs the ONNX export
 of an equivalent model at `vehicles/ovcs_mini/priv/models/yolov8n.onnx`.
-It is deliberately **not committed**: YOLOv8 is AGPL-3.0, and vendoring
-~12 MB of weights under that licence into this repo is a decision for
-whoever owns the licensing, not a convenience.
+Neither is committed, and for the same reason — see **Model licensing**
+below. `mise run fetch-models` downloads and verifies both against
+`scripts/models.tsv`.
 
 Until one is present the sim runs stereo-only, which is why the default
 is "no detector" rather than "a detector that logs a missing file every
@@ -292,3 +293,82 @@ The `base_link` → `stereo_left` translation in
 to the camera and inherits that offset relative to the car. Measuring
 the lens centre against the chassis origin is the cheapest accuracy
 win available here.
+
+## Model licensing
+
+**No model weights are committed to this repository.** `mise run
+fetch-models` downloads them and verifies each against a sha256 in
+`scripts/models.tsv`, which also records the licence of each one.
+
+### Why
+
+OVCS is MIT licensed (`LICENCE.txt`, Spin42 SRL). Ultralytics YOLOv8 is
+dual-licensed **AGPL-3.0** or a paid Enterprise licence, and Ultralytics
+asserts that covers the pretrained *weights*, not only their Python
+code.
+
+Those two do not compose in this direction. MIT tells downstream users
+they may use the work without source-disclosure obligations; AGPL-3.0
+does not permit anyone to grant that. A public MIT repository
+distributing YOLOv8-derived weights therefore makes a promise its
+licence cannot keep — anyone who took `LICENCE.txt` at face value would
+inherit an obligation nobody told them about.
+
+Fetching rather than vendoring moves that choice to the operator, who
+sees the licence printed before the download starts.
+
+### What is not affected
+
+The inference code. `Inference.Dnn` runs OpenCV's DNN module and
+`Inference.Hailo` runs the Hailo runtime; neither contains Ultralytics
+code. The decode test fixture (`test/support/tiny_head.onnx`) was
+authored from scratch for exactly this reason. The exposure is the
+weights, and only the weights.
+
+### Where this is genuinely unsettled
+
+Worth stating rather than implying more certainty than exists:
+
+  * Whether neural network weights attract copyright at all is
+    unsettled, and differs between the US and the EU.
+  * Whether a compiled `.hef` is a derivative work of the weights it
+    was built from. By analogy to compilation, probably; untested for
+    models.
+  * AGPL-3.0 §13 triggers on "interacting with users remotely through a
+    computer network". A vehicle publishing to Foxglove over Zenoh is
+    arguably not that.
+
+None of which is legal advice. If OVCS is going anywhere commercial
+with YOLOv8 specifically, that needs a real answer and an Ultralytics
+Enterprise licence is the direct route to one.
+
+### Permissively licensed alternatives
+
+The durable fix is a detector that does not raise the question. All
+Apache-2.0 unless noted:
+
+  * **YOLOX** (Megvii)
+  * **NanoDet**
+  * **DAMO-YOLO**
+  * **RT-DETR** — the original Baidu release, *not* the Ultralytics port
+  * **RF-DETR** (Roboflow), **D-FINE**
+  * **SSD-MobileNet**, **EfficientDet** — weaker, but long-supported
+  * torchvision's detectors (BSD-3)
+
+Avoid: YOLOv5/v8/v10/v11 (Ultralytics, AGPL-3.0), YOLOv6 and YOLOv7
+(GPL-3.0), YOLO-NAS (restrictive Deci licence).
+
+A swap is not free. `hailo_detect` reads `HAILO_NMS_BY_CLASS` directly
+because YOLOv8's HEF runs NMS in-graph, and `Inference.Dnn.decode/6`
+expects an attribute-major `[1, 4 + classes, anchors]` output. A model
+without in-graph NMS needs suppression adding back on the Hailo path; a
+different output layout needs `decode/6` taught about it. Both are
+bounded, and `decode/6` already derives the class count from the shape
+rather than assuming 80.
+
+### One thing fetching does not fix
+
+`yolov8n.hef` was committed at one point, so it remains in this
+repository's git history and in every existing clone. Removing it from
+`HEAD` stops further distribution but does not undo what is already
+published; that would take a history rewrite.

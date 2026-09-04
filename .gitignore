@@ -22,3 +22,9 @@ systems/*/
 # Filled-in NetworkManager keyfiles for the ROS compute node (they hold PSKs).
 # The committed templates are the .example files next to them.
 ros2/vehicule/host/system-connections/*.nmconnection
+
+# Detection model weights. Fetched by `mise run fetch-models`, never
+# vendored: OVCS is MIT and YOLOv8's weights are AGPL-3.0, which the
+# MIT grant cannot promise on behalf of. See scripts/models.tsv.
+vehicles/*/priv/models/*.hef
+vehicles/*/priv/models/*.onnx
