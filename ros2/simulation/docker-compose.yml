@@ -67,6 +67,35 @@ services:
   # entry as a hard failure, which would make `up` fail on any machine
   # without one.
   #   docker compose --profile teleop up -d teleop
+  # Nav2, behind a profile so the plain `up -d` above stays a bare
+  # simulator. Its own image rather than packages in the shared one —
+  # see nav2/Dockerfile for why.
+  #
+  #   docker compose --profile nav2 up -d nav2
+  #
+  # It drives through /cmd_vel_nav (TwistStamped), which sim.launch.py
+  # bridges separately from the unstamped /cmd_vel that teleop uses.
+  nav2:
+    build:
+      context: .
+      dockerfile: nav2/Dockerfile
+    image: ovcs/nav2:lyrical
+    container_name: ovcs-nav2
+    profiles: ["nav2"]
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      RMW_IMPLEMENTATION: rmw_zenoh_cpp
+      ZENOH_SESSION_CONFIG_URI: /tmp/zenoh-session.json5
+      ZENOH_ENDPOINT_IP: ${ZENOH_ENDPOINT_IP:-127.0.0.1}
+    volumes:
+      - ./launch:/opt/ovcs/launch:ro
+      - ./config:/opt/ovcs/config:ro
+    command:
+      - bash
+      - -lc
+      - "ros2 launch /opt/ovcs/launch/nav2.launch.py"
+
   teleop:
     image: ovcs/sim:jetty
     container_name: ovcs-sim-teleop
