@@ -5,6 +5,7 @@ defmodule OvcsMini.Vms.Composer do
   @behaviour VmsCore.Vehicle
 
   alias VmsCore.Components.{OVCS, Traxxas}
+  alias VmsCore.Managers
   alias OvcsMini.Vms
 
   @impl VmsCore.Vehicle
@@ -27,16 +28,15 @@ defmodule OvcsMini.Vms.Composer do
   # 13 m/s, but nothing has measured this one under load.
   @max_speed_m_s 5.0
 
-  # Which command path the drivetrain reads. Two exist — a joystick's
-  # normalised axes on 0x2B0/0x2B1, and a planner's velocity on 0x3A0 —
-  # and nothing arbitrates between them yet.
+  # Which ROS commander fills the `:autonomous` slot. Two exist — a
+  # gamepad's normalised axes on 0x2B0/0x2B1, and a planner's velocity
+  # on 0x3A0 — and they are different kinds of thing rather than two
+  # versions of one, so the choice stays explicit.
   #
-  # `VmsCore.Managers.ControlLevel` is what should decide this, the way
-  # it does on OVCS1: the transmitter requests a mode and brake input
-  # forces a downgrade. Until that is wired here, an environment
-  # variable makes the choice explicit and reversible rather than
-  # hardcoded. `joy` stays the default so existing behaviour is
-  # unchanged.
+  # This no longer decides *whether* ROS drives the vehicle; the
+  # transmitter's switch does, through `Managers.ControlLevel`. It only
+  # decides which ROS path `:autonomous` listens to. `joy` stays the
+  # default so existing behaviour is unchanged.
   defp drive_source do
     case System.get_env("OVCS_DRIVE_SOURCE", "joy") do
       "velocity" -> :velocity
@@ -44,17 +44,26 @@ defmodule OvcsMini.Vms.Composer do
     end
   end
 
-  defp steering_source do
+  defp autonomous_steering_source do
     case drive_source() do
       :velocity -> OVCS.Ros2Control.Velocity
       :joy -> OVCS.ROSControl.Steering
     end
   end
 
-  defp throttle_source do
+  defp autonomous_throttle_source do
     case drive_source() do
       :velocity -> OVCS.Ros2Control.Velocity
       :joy -> OVCS.ROSControl.Throttle
+    end
+  end
+
+  # A velocity carries its own sign, so the planner path needs no
+  # separate direction signal — see 0x3A0.
+  defp autonomous_direction_source do
+    case drive_source() do
+      :velocity -> nil
+      :joy -> OVCS.ROSControl.Direction
     end
   end
 
@@ -98,17 +107,76 @@ defmodule OvcsMini.Vms.Composer do
        %{
          radio_control_channel: 2
        }},
+      # A three-position switch on channel 5 *requests* a control
+      # level. The manager decides — a request is not authority, which
+      # is the whole reason it routes through `Managers.ControlLevel`
+      # rather than being read where the actuators are wired.
+      {OVCS.RadioControl.RequestedControlLevel,
+       %{
+         radio_control_channel: 5
+       }},
+      {Managers.ControlLevel,
+       %{
+         requested_control_level_source: OVCS.RadioControl.RequestedControlLevel,
+         # No gearbox on an RC truck, and no pedals — so `:manual` has
+         # no inputs at all, which makes it the useful safe position on
+         # the switch rather than a gap. Every source nil means nothing
+         # commands the vehicle.
+         requested_gear_sources: %{manual: nil, radio: nil, autonomous: nil},
+         requested_direction_sources: %{
+           manual: nil,
+           radio: nil,
+           autonomous: autonomous_direction_source()
+         },
+         requested_throttle_sources: %{
+           manual: nil,
+           radio: OVCS.RadioControl.Throttle,
+           autonomous: autonomous_throttle_source()
+         },
+         requested_steering_sources: %{
+           manual: nil,
+           radio: OVCS.RadioControl.Steering,
+           autonomous: autonomous_steering_source()
+         },
+         # No brake pedal here, so the manual-brake override has no
+         # input. Pulling the transmitter's throttle into reverse does
+         # work: `RadioControl.Throttle` reports `:radio_breaking` on a
+         # negative request, which drops `:autonomous` back to
+         # `:radio`. That is the human takeover.
+         manual_breaking_source: nil,
+         radio_breaking_source: OVCS.RadioControl.Throttle,
+         # Start in the safe position: nothing commands the vehicle
+         # until the switch says otherwise.
+         default_control_level: :manual,
+         ready_to_drive_source: Vms,
+         # KNOWN GAP. The manager only allows a change into `:radio` or
+         # `:autonomous` at a standstill, read from a `:speed`
+         # broadcast. Nothing on Mini publishes one — `Traxxas.Motor`
+         # reports `:raw_rotation_per_minute`, which is a raw
+         # `analogRead()` sample rather than a rate, because the
+         # controller firmware does no pulse counting yet.
+         #
+         # With no source the manager's speed stays at zero, so the
+         # interlock is *permissive*: mode changes are allowed at any
+         # speed. Not worse than today, where nothing arbitrates at
+         # all, but not the intended behaviour either. Closing it
+         # needs the hall sensor.
+         speed_source: nil
+       }},
+      # The manager owns the choice now, so the drivetrain follows
+      # whichever source it names rather than being wired to one
+      # commander for the life of the process.
       {Traxxas.Steering,
        %{
          controller: Vms.MainController,
          external_pwm_id: 0,
-         requested_steering_source: steering_source()
+         selected_control_level_source: Managers.ControlLevel
        }},
       {Traxxas.Throttle,
        %{
          controller: Vms.MainController,
          external_pwm_id: 1,
-         requested_throttle_source: throttle_source()
+         selected_control_level_source: Managers.ControlLevel
        }},
       {Traxxas.Motor,
        %{
