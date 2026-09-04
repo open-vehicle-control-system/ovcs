@@ -18,6 +18,7 @@ Index for the Open Vehicle Control System guides. For a high-level project overv
 - [Hardware Architecture](./hardware_architecture.md) — design principles, component layout, CAN bus topology and bitrates.
 - [Toolchain and OTP Versions](./toolchain_and_otp.md) — why the host Elixir/OTP pin in `mise.toml` is coupled to each Nerves target's OTP version, what the A/B partition layout requires of firmware, and how to follow a system fork upstream again.
 - [ROS Compute Node](./ros_compute_node.md) — the OVCS Mini's non-Nerves Pi: why it exists, the immutable OS choice (balenaOS), the vehicule/base compose split, and how it wires into the Zenoh fabric.
+- [Simulation](../ros2/simulation/README.md) — the Gazebo Jetty model of the OVCS Mini: how to run it, drive it with a gamepad, point the real perception pipeline at it, navigate it with Nav2, and the three verifiers that check depth, drivetrain and navigation against the world. **The quickest way to see this project do something without hardware.**
 - [ROS Perception Detection](./ros_perception_detection.md) — object detection on the Hailo-8: why detection and not disparity, what it costs the stereo rate, how a 2D box becomes a 3D position, and the two topics it publishes.
 - [Running on Hardware](./running_hardware.md) — Nerves targets, the `ovcs` CLI for build / burn / OTA upload, attach / connect for runtime debugging.
 - [OVCS1 Wiring Reference](../vehicles/ovcs1/WIRING.md) — pin-level wiring for the OVCS1 vehicle (Leaf harness, iBooster, steering pump, Polo CAN bus).

@@ -33,14 +33,23 @@ Adding a vehicle is a `description/` directory under it containing
 docker compose exec sim ros2 launch /opt/ovcs/launch/sim.launch.py vehicle:=<name>
 ```
 
-## Running it
+## Quickstart
+
+The simulator itself needs **Docker and Compose v2** and nothing else —
+no Nerves toolchain, no CAN interface, no vehicle. First run pulls and
+builds images, so budget a few minutes.
+
+One of the extras below wants more than that, and it is called out
+where it appears.
 
 ```sh
-# A router, if you have no vehicle on the LAN.
+cd ros2/simulation
+
+# A Zenoh router, if there is no vehicle on the LAN to peer with.
 docker compose -f ../base/docker-compose.yml --profile standalone up -d zenohd
 
-docker compose up -d
-docker compose logs -f sim
+docker compose up -d          # the simulator
+docker compose logs -f sim    # ^C once it settles
 ```
 
 Drive it:
@@ -51,18 +60,62 @@ docker compose exec sim bash -lc \
      "{linear: {x: 1.0}, angular: {z: 0.3}}"'
 ```
 
-Two things are **separate services**, so the simulation itself needs
-neither a display nor a gamepad — `docker compose up` works on a bare
-machine:
+Watch it move, in another shell:
 
 ```sh
-# gamepad
-docker compose --profile teleop up -d teleop
+docker compose exec sim bash -lc 'ros2 topic echo /odom --once'
+```
 
-# Gazebo GUI
+See it:
+
+```sh
 xhost +local:docker
 docker compose --profile gui up -d gz-gui
 ```
+
+Then, in rough order of how much each adds:
+
+| | command | what it gives you | needs |
+|---|---|---|---|
+| gamepad | `docker compose --profile teleop up -d teleop` | drive it with a stick instead of `topic pub` | a joystick at `/dev/input/js0` |
+| drivetrain | `mise run verify-drivetrain` | odometry checked against the model's geometry | Docker only |
+| navigation | `mise run verify-nav2` | Nav2 planning and driving to a goal | Docker only |
+| depth | `mise run verify-perception` | the **real** stereo pipeline, checked against the world | see below |
+
+The three `verify-*` tasks bring the whole stack up, assert, and tear
+it down, so each is a single command that either passes or tells you
+what broke. They are also the fastest way to see what this simulator is
+*for*: each one exists because it caught something that looked fine on
+screen.
+
+`verify-perception` is the one that needs more, because it runs the
+actual Elixir perception bridge rather than a ROS node — so it wants
+the `mise` toolchain (`mise install`) and a `vcan0` interface, because
+Cantastic will not start without a CAN network:
+
+```sh
+mise run cli                  # builds ./ovcs, needs Rust
+./ovcs can setup ovcs_mini    # creates vcan0, needs sudo
+```
+
+It checks for `vcan0` up front and tells you this if it is missing, so
+running it first costs nothing but a clear error.
+
+**Stop driving it before you run a `verify-*` task.** Nothing arbitrates
+`/cmd_vel`: a `topic pub` left running, or the teleop service still up,
+publishes against the verifier's own commands and it fails in a way
+that does not name the cause. `^C` the publisher, or
+`docker compose stop teleop`, first. (Nav2 uses a separate topic and
+does not collide.)
+
+Tear down with `docker compose down` here, plus
+`docker compose rm -sf zenohd` in `../base`.
+
+## The GUI and the gamepad are separate services
+
+Deliberately, so the simulation itself needs neither a display nor a
+gamepad — `docker compose up -d` works on a headless machine, which is
+what the CI-shaped `verify-*` tasks rely on.
 
 ## Verifying it
 

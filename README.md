@@ -205,12 +205,13 @@ Subscribe to the [Spin42 Engineering YouTube channel](https://www.youtube.com/@s
 Full documentation is in the [`docs/`](./docs/README.md) directory:
 
 1. [Getting Started](./docs/getting_started.md) — environment setup and installation
-2. [Applications](./docs/applications.md) — what each app and library is, plus local-dev
-3. [Vehicle Parameterisation](./docs/vehicle_parameterisation.md) — how `VEHICLE` selects a composer and what each firmware boots
-4. [Hardware Architecture](./docs/hardware_architecture.md) — physical topology, CAN networks, controllers
-5. [Running on Hardware](./docs/running_hardware.md) — firmware build/burn/upload + runtime debugging via the `ovcs` CLI
-6. [Testing CAN Messages](./docs/testing_can_messages.md) — simulating CAN traffic
-7. [Testing Generic Controllers](./docs/testing_generic_controllers.md) — adopting + verifying generic Arduino controllers
+2. [Simulation](./ros2/simulation/README.md) — drive a simulated OVCS Mini in Gazebo, no hardware needed
+3. [Applications](./docs/applications.md) — what each app and library is, plus local-dev
+4. [Vehicle Parameterisation](./docs/vehicle_parameterisation.md) — how `VEHICLE` selects a composer and what each firmware boots
+5. [Hardware Architecture](./docs/hardware_architecture.md) — physical topology, CAN networks, controllers
+6. [Running on Hardware](./docs/running_hardware.md) — firmware build/burn/upload + runtime debugging via the `ovcs` CLI
+7. [Testing CAN Messages](./docs/testing_can_messages.md) — simulating CAN traffic
+8. [Testing Generic Controllers](./docs/testing_generic_controllers.md) — adopting + verifying generic Arduino controllers
 
 ## Disclaimer
 
