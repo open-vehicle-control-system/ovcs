@@ -2,16 +2,23 @@ defmodule RosBridge.Clock do
   @moduledoc """
   What `use_sim_time` means for this bridge.
 
-  Every publisher stamps its output through
+  The stereo publishers stamp their output through
   `RosBridge.Timing.time_message_for/1`, which projects a driver's
   Erlang-monotonic capture time onto wall clock. On a vehicle that is
   right. Against a simulator it is not: Gazebo owns the clock, starts
   it at zero, and advances it with physics, so a wall-clock stamp is
   most of two decades away from everything else on the graph.
 
+  Not *every* publisher goes through `Timing`, which is worth knowing
+  before adding one to a simulation configuration:
+  `RosBridge.Publishers.Imu` builds its `%Time{}` from
+  `System.system_time/1` directly and so ignores this entirely. No
+  simulation configuration includes it today, so nothing is currently
+  wrong — but the invariant is positional rather than enforced.
+
   That mattered less than it sounds until something consumed the
-  stamps. `RosBridge.Camera.Zenoh` documents the trade-off and
-  accepted it — pairing left and right frames only needs them to agree
+  stamps. `RosBridge.Camera.Zenoh` used to document the trade-off and
+  accept it — pairing left and right frames only needs them to agree
   with *each other*. Nav2 is the first consumer that needs them to
   agree with **`/tf`**, and it does not: its costmap message filter
   drops every point cloud with
@@ -80,10 +87,27 @@ defmodule RosBridge.Clock do
 
   So this is listed first among a vehicle's simulation components, and
   blocking here means no publisher can emit a wall-clock stamp into a
-  simulator's graph. If no clock arrives within
-  the timeout below, it gives up loudly and lets the bridge run
-  on wall clock — degraded, but with a reason in the log rather than a
-  boot that never finishes.
+  simulator's graph.
+
+  ## Giving up is permanent, on purpose
+
+  If no clock arrives before the timeout, this stops following
+  `/clock` altogether — it unsubscribes, and a sample arriving later
+  is ignored.
+
+  That is deliberate and it is the uncomfortable choice. Switching to
+  simulator time *later* sounds more helpful and is worse: by then
+  wall-clock stamps are already in `tf2`'s buffer, and one of those
+  poisons it permanently for the reason above. Mixing the two
+  timescales in one run is the failure this module exists to prevent,
+  so a run that has started on wall clock finishes on wall clock.
+
+  Which makes the timeout a real deadline rather than a nicety, and
+  it is set accordingly: `docker compose up -d` returns long before
+  Gazebo has loaded a world, spawned the robot and started
+  `ros_gz_bridge` — the node that bridges `/clock` at all — so a
+  short deadline would fire during an ordinary cold boot. Override it
+  with `:acquire_timeout_ms` if a slower machine needs longer.
   """
   use GenServer
 
@@ -91,10 +115,11 @@ defmodule RosBridge.Clock do
 
   require Logger
 
-  # Gazebo publishes /clock as soon as it is up, so this only ever
-  # elapses when the simulator is absent — which is worth reporting
-  # rather than hanging on.
-  @default_acquire_timeout_ms 10_000
+  # A deadline, not a nicety — see the moduledoc. `docker compose up -d`
+  # returns before Gazebo has loaded a world and started the node that
+  # bridges /clock, so this has to outlast an ordinary cold boot. It
+  # only elapses when no simulator is coming.
+  @default_acquire_timeout_ms 60_000
 
   @persistent_key __MODULE__
   @offset_slot 1
@@ -132,49 +157,76 @@ defmodule RosBridge.Clock do
 
   @impl true
   def init(opts) do
-    timeout_ms = Keyword.get(List.wrap(opts), :acquire_timeout_ms, @default_acquire_timeout_ms)
+    # Keyword list from a plain component entry, map from one with
+    # options. `Map.new/1` takes either; `List.wrap/1` would turn a map
+    # into a one-element list and then fail.
+    opts = Map.new(opts || [])
+    timeout_ms = Map.get(opts, :acquire_timeout_ms, @default_acquire_timeout_ms)
+    # Injected so the lifecycle can be tested without a live
+    # ZenohClient — see the note on `terminate/2`.
+    subscriber = Map.get(opts, :subscriber, RosBridge.ZenohClient)
+
+    # So `terminate/2` actually runs. Without this a supervisor's
+    # ordinary `exit(pid, :shutdown)` skips it entirely, and the
+    # tracking flag below would survive this process.
+    Process.flag(:trap_exit, true)
 
     atomics = :atomics.new(2, signed: true)
     # Written once. Reads are on the publish path; writes are not.
     :persistent_term.put(@persistent_key, atomics)
 
-    :ok = RosBridge.ZenohClient.subscribe(@topic, ClockMessage)
+    :ok = subscriber.subscribe(@topic, ClockMessage)
     Logger.info("#{__MODULE__}: waiting for /#{@topic} before anything publishes a stamp")
 
-    samples = await_first_sample(atomics, timeout_ms)
-    {:ok, %{atomics: atomics, samples: samples}}
+    state = %{atomics: atomics, samples: 0, subscriber: subscriber, following: false}
+    {:ok, await_first_sample(state, timeout_ms)}
   end
 
   # A selective receive rather than a `handle_continue`: the point is
   # that no *other* process gets to publish first, and anything after
   # `init/1` returns is too late. See the moduledoc.
-  defp await_first_sample(atomics, timeout_ms) do
+  defp await_first_sample(state, timeout_ms) do
     receive do
       {:ros_message, {_key_expr, %ClockMessage{clock: clock}}} ->
-        record(atomics, clock)
+        record(state.atomics, clock)
 
         Logger.info(
           "#{__MODULE__}: simulator clock acquired at #{clock.sec}.#{clock.nanosec} — " <>
             "stamps will line up with /tf and /odom."
         )
 
-        1
+        %{state | samples: 1, following: true}
     after
       timeout_ms ->
+        # Stop listening, so a late sample cannot flip the timescale
+        # mid-run. See "Giving up is permanent" in the moduledoc.
+        :ok = state.subscriber.unsubscribe(@topic)
+
         Logger.error(
-          "#{__MODULE__}: no /#{@topic} within #{timeout_ms} ms. Continuing on wall clock, " <>
-            "which against a simulator means every stamp is decades away from /tf and " <>
-            "consumers will reject them. Is the simulator running?"
+          "#{__MODULE__}: no /#{@topic} within #{timeout_ms} ms — giving up and staying on " <>
+            "wall clock for the rest of this run, because switching timescales later " <>
+            "corrupts tf2's buffer for good. Against a simulator that means every stamp " <>
+            "is decades from /tf and consumers will reject them. Is the simulator running?"
         )
 
-        0
+        %{state | following: false}
     end
   end
 
   @impl true
-  def handle_info({:ros_message, {_key_expr, %ClockMessage{clock: clock}}}, state) do
+  def handle_info(
+        {:ros_message, {_key_expr, %ClockMessage{clock: clock}}},
+        %{following: true} = state
+      ) do
     record(state.atomics, clock)
     {:noreply, %{state | samples: state.samples + 1}}
+  end
+
+  # Arrived after the deadline, or after unsubscribing did not take
+  # effect immediately. Ignored rather than adopted — see the
+  # moduledoc.
+  def handle_info({:ros_message, {_key_expr, %ClockMessage{}}}, state) do
+    {:noreply, state}
   end
 
   def handle_info({:ros_message, {key_expr, message}}, state) do
@@ -196,11 +248,21 @@ defmodule RosBridge.Clock do
     :ok
   end
 
+  @doc """
+  Stop claiming to follow a clock nobody is updating any more.
+
+  Without this the tracking flag outlives the process, and every
+  publisher goes on projecting through an offset that is frozen at the
+  moment this stopped — silently drifting, since the simulator's clock
+  keeps moving and nothing is left to notice.
+
+  Reached only because `init/1` sets `:trap_exit`. A `GenServer` does
+  **not** get `terminate/2` from a supervisor's ordinary
+  `exit(pid, :shutdown)` otherwise, so without that flag this was
+  dead code that only the test exercised.
+  """
   @impl true
   def terminate(_reason, _state) do
-    # Stop claiming to follow a clock nobody is reading any more; the
-    # next publisher call falls back to wall clock rather than using a
-    # frozen offset.
     case :persistent_term.get(@persistent_key, nil) do
       nil -> :ok
       atomics -> :atomics.put(atomics, @tracking_slot, 0)
