@@ -44,26 +44,44 @@ defmodule RosBridge.InputWatchdog do
   staleness repeatedly, or that never recovers, is worse than none.
   """
 
-  @enforce_keys [:timeout_ms]
-  defstruct [:timeout_ms, :last_seen, stale: true]
+  @enforce_keys [:timeout_ms, :created_at]
+  defstruct [:timeout_ms, :created_at, :last_seen, stale: true, reported: false]
 
   @type t :: %__MODULE__{
           timeout_ms: pos_integer(),
+          created_at: integer(),
           last_seen: integer() | nil,
-          stale: boolean()
+          stale: boolean(),
+          reported: boolean()
         }
+
+  @typedoc """
+  What `check/1` reports.
+
+  `:silent` and `:stale` both mean nothing is arriving, and they are
+  separate because the causes have nothing in common. `:silent` is a
+  bring-up mistake -- a topic typo, the wrong `ROS_DOMAIN_ID`, a node
+  never launched -- and the only fix is at the keyboard. `:stale` is a
+  runtime loss of something that was working. A caller that does not
+  care can treat them alike; one that logs should not, because
+  "cmd_vel_nav went quiet" sends someone looking for a crash that never
+  happened.
+  """
+  @type transition :: :silent | :stale | :fresh | :unchanged
 
   @doc """
   A watchdog that starts **stale**.
 
   Starting stale rather than fresh matters: a consumer that has never
-  received an input has no business emitting a command, and the first
-  `check/1` should say so rather than waiting for a timeout to elapse
-  from a start time that meant nothing.
+  received an input has no business emitting a command, so it emits
+  none from the moment it starts.
+
+  Saying so out loud waits one `timeout_ms`, and reports `:silent`
+  rather than `:stale` — the two are different diagnoses. See `check/1`.
   """
   @spec new(pos_integer()) :: t()
   def new(timeout_ms) when is_integer(timeout_ms) and timeout_ms > 0 do
-    %__MODULE__{timeout_ms: timeout_ms}
+    %__MODULE__{timeout_ms: timeout_ms, created_at: now()}
   end
 
   @doc """
@@ -82,19 +100,39 @@ defmodule RosBridge.InputWatchdog do
   end
 
   @doc """
-  Report whether the input has *just* gone stale or *just* recovered.
+  Report whether the input has *just* gone quiet or *just* recovered.
 
-  Returns `{:stale, watchdog}` or `{:fresh, watchdog}` only on the
-  transition, and `{:unchanged, watchdog}` otherwise — so a caller can
-  act and log once per outage instead of once per tick. At a 10 ms tick
-  that is the difference between one line and a hundred a second.
+  Returns a transition only on the edge, and `{:unchanged, watchdog}`
+  otherwise — so a caller can act and log once per outage instead of
+  once per tick. At a 10 ms tick that is the difference between one
+  line and a hundred a second.
+
+  The `:silent` edge is what `new/1` promises: a fresh watchdog has
+  never seen a sample, so the very first `check/1` reports it rather
+  than falling silent itself. Before `reported` existed, `{stale: true,
+  expired: true}` matched the catch-all and a consumer whose topic
+  nobody published on said nothing at all — the one bring-up
+  misconfiguration with no diagnostic anywhere, since the CAN emitter
+  goes on sending well-formed zeros and the VMS-side watcher therefore
+  sees a healthy stream.
   """
-  @spec check(t()) :: {:stale | :fresh | :unchanged, t()}
+  @spec check(t()) :: {transition(), t()}
   def check(%__MODULE__{} = watchdog) do
-    case {watchdog.stale, expired?(watchdog)} do
-      {false, true} -> {:stale, %{watchdog | stale: true}}
-      {true, false} -> {:fresh, %{watchdog | stale: false}}
-      _unchanged -> {:unchanged, watchdog}
+    announced = fn watchdog, stale -> %{watchdog | stale: stale, reported: true} end
+
+    cond do
+      not expired?(watchdog) and (watchdog.stale or not watchdog.reported) ->
+        {:fresh, announced.(watchdog, false)}
+
+      expired?(watchdog) and is_nil(watchdog.last_seen) and not watchdog.reported and
+          startup_grace_elapsed?(watchdog) ->
+        {:silent, announced.(watchdog, true)}
+
+      expired?(watchdog) and not watchdog.stale ->
+        {:stale, announced.(watchdog, true)}
+
+      true ->
+        {:unchanged, watchdog}
     end
   end
 
@@ -106,6 +144,18 @@ defmodule RosBridge.InputWatchdog do
   """
   @spec stale?(t()) :: boolean()
   def stale?(%__MODULE__{stale: stale}), do: stale
+
+  # `:silent` is a diagnosis, so it waits before making one. A gamepad
+  # pairs after boot, Zenoh takes a moment to connect, and a planner is
+  # usually launched by hand -- reporting "nothing has published since
+  # start" on the first 50 ms tick of every normal boot would train the
+  # operator to ignore the one message that catches a topic typo.
+  #
+  # `stale: true` from creation is what keeps the vehicle safe in the
+  # meantime; this only governs when it is worth saying out loud.
+  defp startup_grace_elapsed?(%__MODULE__{created_at: created_at, timeout_ms: timeout_ms}) do
+    now() - created_at > timeout_ms
+  end
 
   defp expired?(%__MODULE__{last_seen: nil}), do: true
 

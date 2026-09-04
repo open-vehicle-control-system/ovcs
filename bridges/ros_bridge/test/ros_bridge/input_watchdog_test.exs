@@ -24,8 +24,52 @@ defmodule RosBridge.InputWatchdogTest do
       assert Watchdog.stale?(Watchdog.new(500))
     end
 
-    test "reports nothing on the first check, because it was already stale" do
-      assert {:unchanged, _} = Watchdog.check(Watchdog.new(500))
+    test "reports :silent once the startup grace has passed and nothing has arrived" do
+      # This used to assert `:unchanged`, which codified the bug it was
+      # meant to describe: `{stale: true, expired: true}` fell into the
+      # catch-all, so a consumer subscribed to a topic nobody published
+      # on reported nothing at all -- and nothing downstream could tell,
+      # because the CAN emitter goes on sending well-formed zeros.
+      watchdog = Watchdog.new(1)
+      Process.sleep(5)
+
+      assert {:silent, watchdog} = Watchdog.check(watchdog)
+      assert Watchdog.stale?(watchdog)
+    end
+
+    test "holds :silent until then, because a normal boot has not gone wrong yet" do
+      # A gamepad pairs after boot and Zenoh takes a moment to connect,
+      # so warning on the first tick of every start would make the one
+      # message that catches a topic typo worth ignoring. Emitting
+      # nothing is covered by `stale: true` from creation, which the
+      # test above asserts -- this is only about when to say so.
+      watchdog = Watchdog.new(500)
+
+      assert {:unchanged, watchdog} = Watchdog.check(watchdog)
+      assert Watchdog.stale?(watchdog)
+    end
+
+    test "says it once, not once per tick" do
+      watchdog = Watchdog.new(1)
+      Process.sleep(5)
+
+      {:silent, watchdog} = Watchdog.check(watchdog)
+      assert {:unchanged, watchdog} = Watchdog.check(watchdog)
+      assert {:unchanged, _} = Watchdog.check(watchdog)
+    end
+
+    test ":silent is not repeated as :stale once a sample has arrived and gone" do
+      # The two edges are different diagnoses -- a setup mistake versus
+      # a runtime loss -- so an input that worked and stopped must
+      # report :stale even though the watchdog was :silent before it.
+      watchdog = Watchdog.new(1)
+      Process.sleep(5)
+
+      {:silent, watchdog} = Watchdog.check(watchdog)
+      {:fresh, watchdog} = watchdog |> Watchdog.seen() |> Watchdog.check()
+
+      Process.sleep(5)
+      assert {:stale, _} = Watchdog.check(watchdog)
     end
 
     test "rejects a timeout that is not a positive duration" do

@@ -168,6 +168,21 @@ defmodule RosBridge.Consumers.Joy do
     {:noreply, state}
   end
 
+  # Nothing has ever arrived, which is a setup problem rather than a
+  # loss: the topic name, the domain id, or a `joy` node that was never
+  # started. Said once, on the first tick, because nothing downstream
+  # can tell -- the emitter keeps sending valid zeroed frames, so the
+  # VMS-side watcher sees a perfectly healthy stream.
+  defp handle_transition(:silent) do
+    Logger.warning(
+      "#{__MODULE__}: nothing has published #{@joy_topic} since start. " <>
+        "Check the topic name and ROS_DOMAIN_ID; the controller is not " <>
+        "commanding this vehicle."
+    )
+
+    zero_throttle()
+  end
+
   defp handle_transition(:stale) do
     Logger.warning(
       "#{__MODULE__}: no #{@joy_topic} sample for #{timeout_ms()} ms — throttle zeroed. " <>
@@ -178,7 +193,7 @@ defmodule RosBridge.Consumers.Joy do
   end
 
   defp handle_transition(:fresh) do
-    Logger.info("#{__MODULE__}: #{@joy_topic} is publishing again")
+    Logger.info("#{__MODULE__}: #{@joy_topic} is publishing")
     :ok
   end
 

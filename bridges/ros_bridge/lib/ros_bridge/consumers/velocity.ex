@@ -23,10 +23,26 @@ defmodule RosBridge.Consumers.Velocity do
 
   Nav2 1.5.1 publishes `geometry_msgs/TwistStamped` —
   `nav2_util::TwistPublisher` defaults `enable_stamped_cmd_vel` to
-  true. `teleop_twist_joy` publishes plain `Twist`. Both are
-  supported, chosen per subscription, because they are different
-  commanders on different topics rather than a version skew to pick a
-  side on.
+  true. `teleop_twist_joy` publishes plain `Twist`. Either can be
+  configured, because they are different commanders rather than a
+  version skew to pick a side on.
+
+  **One at a time, though.** This is a singleton: it registers under
+  `__MODULE__` and owns the single `0x3A0` emitter, so declaring two
+  `:velocity_interpreter` components gives `Supervisor.init/2` two
+  child specs with the same id and the whole bridge refuses to boot.
+  Even with distinct names they would overwrite each other's frame and
+  each watchdog would zero the other's command. One velocity commander
+  per vehicle is the actual design; the switch on channel 5 chooses
+  between the *velocity* path and the *joystick* path, not between two
+  velocity paths.
+
+  Choosing the wrong one of the two is not loud, which is why
+  `ZenohClient` warns about surplus bytes after a successful parse:
+  `Twist.parse/1` accepts any body of 48 bytes or more, so a 72-byte
+  `TwistStamped` body decodes as plausible nonsense — denormals near
+  1.0e-273 — and the vehicle ignores every command while both
+  watchdogs report a healthy stream.
 
   ## Staleness
 
@@ -144,21 +160,41 @@ defmodule RosBridge.Consumers.Velocity do
     :ok
   end
 
+  # Never received anything: a topic typo, the wrong ROS_DOMAIN_ID, or a
+  # planner that was never launched. Distinct from `:stale` because the
+  # cause is at the keyboard, not on the vehicle, and because nothing
+  # else in either hop can report it -- the emitter goes on sending
+  # well-formed zero frames, so `Cantastic.ReceivedFrameWatcher` on the
+  # VMS side sees nothing wrong.
+  defp handle_transition(:silent, state) do
+    Logger.warning(
+      "#{__MODULE__}: nothing has published #{state.topic} since start. " <>
+        "Check the topic name and ROS_DOMAIN_ID; nothing is commanding " <>
+        "this vehicle."
+    )
+
+    zero_velocity()
+  end
+
   defp handle_transition(:stale, state) do
     Logger.warning(
       "#{__MODULE__}: no #{state.topic} sample within the timeout — velocity zeroed. " <>
         "Nothing is commanding this vehicle."
     )
 
-    Emitter.update(:ovcs, @frame_name, fn data ->
-      %{data | "linear" => D.new(0), "angular" => D.new(0)}
-    end)
+    zero_velocity()
   end
 
   defp handle_transition(:fresh, state) do
-    Logger.info("#{__MODULE__}: #{state.topic} is publishing again")
+    Logger.info("#{__MODULE__}: #{state.topic} is publishing")
     :ok
   end
 
   defp handle_transition(:unchanged, _state), do: :ok
+
+  defp zero_velocity do
+    Emitter.update(:ovcs, @frame_name, fn data ->
+      %{data | "linear" => D.new(0), "angular" => D.new(0)}
+    end)
+  end
 end
