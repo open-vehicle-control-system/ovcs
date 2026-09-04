@@ -11,13 +11,14 @@ OVCS is developed on Linux. macOS users need a Linux VM (see [macOS setup](#loca
 | Tool | Version | Purpose | Managed by |
 |------|---------|---------|------------|
 | [mise](https://mise.jdx.dev/) | Latest | Version manager for language runtimes | you (one-time install) |
-| Erlang/OTP | 27.3+ | Runtime for Elixir | mise |
-| Elixir | 1.17+ | Primary programming language | mise |
+| Erlang/OTP | **28.x** (28.4.1 pinned) | Runtime for Elixir | mise |
+| Elixir | **1.19.x** (1.19.5-otp-28 pinned) | Primary programming language | mise |
 | Rust | 1.90+ | Compiles the top-level `ovcs` CLI (native binary at `cli/ovcs`) | mise |
 | Node.js | 24+ | VMS debug dashboard (Vue.js) | mise |
 | Ruby | 3.3+ | Utility scripts under `scripts/` (e.g. `bind_remote_can.rb`, `faker.rb`) | mise |
 | Python | 3.12+ | PlatformIO + misc tooling | mise |
 | [Flutter](https://flutter.dev/docs/get-started/install) | 3.32.8 | Infotainment dashboard | mise |
+| Docker + Compose v2 | Latest | The Gazebo simulator, the ROS base station, and the ROS compute node all run in containers (see [Simulation](../ros2/simulation/README.md)) | system package |
 | can-utils | Latest | CAN bus utilities (`cansend`, `candump`, `canplayer`) | system package |
 | `fwup` | Latest | Nerves firmware image packager | system package |
 | `libsocketcan-dev` | Latest | Cantastic native CAN bindings | system package (firmware builds only) |
@@ -25,6 +26,13 @@ OVCS is developed on Linux. macOS users need a Linux VM (see [macOS setup](#loca
 | `nerves_bootstrap` | Latest | Nerves Mix archive | `mise run bootstrap` |
 | [PlatformIO](https://platformio.org/) | Latest | Arduino controller firmware | mise (via pipx + uv) |
 | [balena CLI](https://docs.balena.io/reference/balena-cli/) | 25.x | Deploys the ROS compute node's containers (see [ROS Compute Node](./ros_compute_node.md)) | mise |
+
+The Erlang and Elixir entries are **exact**, not minimums. Every Nerves
+target in this repo ships the OTP 28 line, and Mix refuses to
+cross-compile across major OTP versions — so a host on OTP 27 builds
+nothing for hardware, and an Elixir older than 1.19 will not compile
+the tree. `mise install` gives you the right ones; see
+[Toolchain and OTP Versions](./toolchain_and_otp.md) for the coupling.
 
 ## Linux Setup
 
