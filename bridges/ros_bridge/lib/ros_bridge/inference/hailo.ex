@@ -18,7 +18,7 @@ defmodule RosBridge.Inference.Hailo do
   badly wrong, and queueing frames would only add latency to a
   measurement whose whole value is being current.
 
-  The caller receives `{:hailo_detections, seq, detections}` where
+  The caller receives `{:inference_detections, seq, detections}` where
   each detection is
 
       %{class_id: 0..79, score: 0.0..1.0, x0:, y0:, x1:, y1:}
@@ -39,6 +39,8 @@ defmodule RosBridge.Inference.Hailo do
   """
   use GenServer
 
+  @behaviour RosBridge.Inference
+
   require Logger
 
   @tag_detect 1
@@ -58,6 +60,7 @@ defmodule RosBridge.Inference.Hailo do
   accelerator, `{:error, :busy}` when one is already in flight, and
   `{:error, :unavailable}` when the Port never started.
   """
+  @impl RosBridge.Inference
   def detect(server \\ __MODULE__, seq, mat) do
     GenServer.call(server, {:detect, seq, mat, self()})
   catch
@@ -73,6 +76,7 @@ defmodule RosBridge.Inference.Hailo do
   check the docs point people at. Use `busy?/1` for the other
   question.
   """
+  @impl RosBridge.Inference
   def available?(server \\ __MODULE__) do
     GenServer.call(server, :available?)
   catch
@@ -80,6 +84,7 @@ defmodule RosBridge.Inference.Hailo do
   end
 
   @doc "Whether an inference is in flight right now."
+  @impl RosBridge.Inference
   def busy?(server \\ __MODULE__) do
     GenServer.call(server, :busy?)
   catch
@@ -210,7 +215,7 @@ defmodule RosBridge.Inference.Hailo do
 
   defp deliver(%{inflight: %{seq: seq} = inflight} = state, seq, detections) do
     Process.cancel_timer(inflight.timer)
-    send(inflight.reply_to, {:hailo_detections, seq, detections})
+    send(inflight.reply_to, {:inference_detections, seq, detections})
     %{state | inflight: nil}
   end
 
