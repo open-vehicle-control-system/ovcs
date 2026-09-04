@@ -44,11 +44,23 @@ defmodule RosBridge.InputWatchdog do
   staleness repeatedly, or that never recovers, is worse than none.
   """
 
+  # How long to wait before calling a never-received input a mistake
+  # rather than a slow start. See `startup_grace_elapsed?/1`.
+  @startup_grace_ms 5_000
+
   @enforce_keys [:timeout_ms, :created_at]
-  defstruct [:timeout_ms, :created_at, :last_seen, stale: true, reported: false]
+  defstruct [
+    :timeout_ms,
+    :startup_grace_ms,
+    :created_at,
+    :last_seen,
+    stale: true,
+    reported: false
+  ]
 
   @type t :: %__MODULE__{
           timeout_ms: pos_integer(),
+          startup_grace_ms: pos_integer(),
           created_at: integer(),
           last_seen: integer() | nil,
           stale: boolean(),
@@ -76,12 +88,18 @@ defmodule RosBridge.InputWatchdog do
   received an input has no business emitting a command, so it emits
   none from the moment it starts.
 
-  Saying so out loud waits one `timeout_ms`, and reports `:silent`
+  Saying so out loud waits for a startup grace, and reports `:silent`
   rather than `:stale` — the two are different diagnoses. See `check/1`.
   """
-  @spec new(pos_integer()) :: t()
-  def new(timeout_ms) when is_integer(timeout_ms) and timeout_ms > 0 do
-    %__MODULE__{timeout_ms: timeout_ms, created_at: now()}
+  @spec new(pos_integer(), pos_integer()) :: t()
+  def new(timeout_ms, startup_grace_ms \\ @startup_grace_ms)
+      when is_integer(timeout_ms) and timeout_ms > 0 and
+             is_integer(startup_grace_ms) and startup_grace_ms > 0 do
+    %__MODULE__{
+      timeout_ms: timeout_ms,
+      startup_grace_ms: startup_grace_ms,
+      created_at: now()
+    }
   end
 
   @doc """
@@ -146,15 +164,24 @@ defmodule RosBridge.InputWatchdog do
   def stale?(%__MODULE__{stale: stale}), do: stale
 
   # `:silent` is a diagnosis, so it waits before making one. A gamepad
-  # pairs after boot, Zenoh takes a moment to connect, and a planner is
-  # usually launched by hand -- reporting "nothing has published since
-  # start" on the first 50 ms tick of every normal boot would train the
-  # operator to ignore the one message that catches a topic typo.
+  # pairs after boot, a planner is usually launched by hand, and Zenoh
+  # reconnects on a backoff starting at a second -- reporting "nothing
+  # has published since start" on the first 50 ms tick of every normal
+  # boot would train the operator to ignore the one message that
+  # catches a topic typo.
+  #
+  # Its own value, not `timeout_ms`. The two measure different things:
+  # `timeout_ms` is the largest legitimate gap *between samples*,
+  # 500 ms on the joystick path, which is shorter than a Zenoh session
+  # takes to come up -- so deriving the grace from it would warn on
+  # every boot anyway. `max/2` because a slow input's timeout can
+  # exceed the grace. It is an argument to `new/2` only so a test does
+  # not have to sleep for five seconds.
   #
   # `stale: true` from creation is what keeps the vehicle safe in the
   # meantime; this only governs when it is worth saying out loud.
-  defp startup_grace_elapsed?(%__MODULE__{created_at: created_at, timeout_ms: timeout_ms}) do
-    now() - created_at > timeout_ms
+  defp startup_grace_elapsed?(%__MODULE__{} = watchdog) do
+    now() - watchdog.created_at > max(watchdog.timeout_ms, watchdog.startup_grace_ms)
   end
 
   defp expired?(%__MODULE__{last_seen: nil}), do: true

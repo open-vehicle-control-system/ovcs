@@ -30,7 +30,7 @@ defmodule RosBridge.InputWatchdogTest do
       # catch-all, so a consumer subscribed to a topic nobody published
       # on reported nothing at all -- and nothing downstream could tell,
       # because the CAN emitter goes on sending well-formed zeros.
-      watchdog = Watchdog.new(1)
+      watchdog = Watchdog.new(1, 1)
       Process.sleep(5)
 
       assert {:silent, watchdog} = Watchdog.check(watchdog)
@@ -38,19 +38,34 @@ defmodule RosBridge.InputWatchdogTest do
     end
 
     test "holds :silent until then, because a normal boot has not gone wrong yet" do
-      # A gamepad pairs after boot and Zenoh takes a moment to connect,
-      # so warning on the first tick of every start would make the one
-      # message that catches a topic typo worth ignoring. Emitting
-      # nothing is covered by `stale: true` from creation, which the
-      # test above asserts -- this is only about when to say so.
-      watchdog = Watchdog.new(500)
+      # A gamepad pairs after boot and Zenoh reconnects on a backoff
+      # starting at a second, so warning on the first tick of every
+      # start would make the one message that catches a topic typo worth
+      # ignoring. Emitting nothing is covered by `stale: true` from
+      # creation, which the test above asserts -- this is only about
+      # when to say so.
+      #
+      # The default grace, deliberately: the joystick's own 500 ms
+      # timeout is shorter than a Zenoh session takes to come up, so a
+      # grace derived from `timeout_ms` would warn on every boot. Only
+      # the tests above shorten it, and only to avoid sleeping.
+      # A 1 ms timeout with the default grace: the input is long
+      # expired, so only the grace can be holding `:silent` back. Derive
+      # the grace from `timeout_ms` again and this fires.
+      watchdog = Watchdog.new(1)
 
+      Process.sleep(5)
       assert {:unchanged, watchdog} = Watchdog.check(watchdog)
       assert Watchdog.stale?(watchdog)
     end
 
+    test "rejects a startup grace that is not a positive duration" do
+      assert_raise FunctionClauseError, fn -> Watchdog.new(500, 0) end
+      assert_raise FunctionClauseError, fn -> Watchdog.new(500, -1) end
+    end
+
     test "says it once, not once per tick" do
-      watchdog = Watchdog.new(1)
+      watchdog = Watchdog.new(1, 1)
       Process.sleep(5)
 
       {:silent, watchdog} = Watchdog.check(watchdog)
@@ -62,7 +77,7 @@ defmodule RosBridge.InputWatchdogTest do
       # The two edges are different diagnoses -- a setup mistake versus
       # a runtime loss -- so an input that worked and stopped must
       # report :stale even though the watchdog was :silent before it.
-      watchdog = Watchdog.new(1)
+      watchdog = Watchdog.new(1, 1)
       Process.sleep(5)
 
       {:silent, watchdog} = Watchdog.check(watchdog)

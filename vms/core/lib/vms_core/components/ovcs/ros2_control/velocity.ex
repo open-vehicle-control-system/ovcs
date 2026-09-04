@@ -52,6 +52,29 @@ defmodule VmsCore.Components.OVCS.Ros2Control.Velocity do
   subscription, zeroing on a missing frame. Without it a planner that
   stops publishing leaves its last velocity applied for ever.
 
+  > #### The watcher fires once per alive-episode {: .warning}
+  >
+  > This does not cover an outage that a stray frame interrupts.
+  > `ReceivedFrameWatcher` sends `handle_missing_frame` only on the
+  > alive -> dead edge, and the way back requires
+  > `!is_alive && !is_late`. Once a sender goes quiet after delivering
+  > one frame, `frame_diff` -- the gap between the last two frames
+  > received -- stays at the whole outage length, so every tick is late,
+  > `!is_alive && is_late` matches no branch, and the handler is never
+  > called again. This component's `handle_frame` clause has meanwhile
+  > stored that stray frame, so it keeps broadcasting a non-zero
+  > throttle and the last computed steering angle at 100 Hz, for the
+  > life of the process, with no further warning.
+  >
+  > The trigger is jitter, not an exotic fault: `0x3A0` declares
+  > `frequency: 20` against the fixed `allowed_frequency_leeway`
+  > default of 10, so it tolerates 50% inter-frame jitter where every
+  > other `ovcs` frame (`frequency: 10`) tolerates 100%. A loaded
+  > bridge Pi or a marginal SPI link is enough.
+  >
+  > Fixing it properly is upstream in `cantastic`. Until then, treat the
+  > zeroing here as covering a clean outage only.
+
   ## Options
 
     * `:wheelbase`, `:steering_limit` — from the vehicle's
