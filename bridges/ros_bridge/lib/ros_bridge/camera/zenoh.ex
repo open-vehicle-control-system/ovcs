@@ -44,10 +44,17 @@ defmodule RosBridge.Camera.Zenoh do
   passing it through would project to a wall-clock time nearly two
   decades wrong.
 
-  The cost is that outgoing headers carry arrival time rather than
-  simulation time, so they do not line up with `/clock`. Pairing is
-  unaffected: both sides are published together and land within a
-  millisecond of each other, far inside `:pair_tolerance_ms`.
+  That used to mean outgoing headers carried arrival time rather than
+  simulation time and so did not line up with `/clock`. It no longer
+  does: `RosBridge.Clock` keeps a monotonic-to-simulator offset, and
+  `RosBridge.Timing` projects through it, so arrival time lands on the
+  simulator's timescale without this driver having to pass a foreign
+  clock through. Frames stay on Erlang monotonic time here, which is
+  the invariant that made the conversion possible in one place.
+
+  Pairing was never affected either way: both sides are published
+  together and land within a millisecond of each other, far inside
+  `:pair_tolerance_ms`.
   """
   @behaviour RosBridge.Camera
 

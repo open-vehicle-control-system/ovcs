@@ -96,9 +96,18 @@ defmodule RosBridge.Timing do
   def time_message_for(monotonic_nanoseconds) do
     nanoseconds = ros_time_of(monotonic_nanoseconds)
 
+    # Floor division, not `div/2`. `div` and `rem` truncate toward
+    # zero, so a negative total gives a negative `nanosec` — and
+    # `Time.encode/1` writes that field as `little-unsigned-integer`,
+    # which *wraps* rather than raising: -30 ms becomes 4_264_967_296,
+    # a stamp 4.26 s in the future.
+    #
+    # Reachable now that simulator time exists. After a world reset
+    # `/clock` returns to ~0, and a frame captured just before that
+    # sample projects to a small negative number.
     %Time{
-      sec: div(nanoseconds, 1_000_000_000),
-      nanosec: rem(nanoseconds, 1_000_000_000)
+      sec: Integer.floor_div(nanoseconds, 1_000_000_000),
+      nanosec: Integer.mod(nanoseconds, 1_000_000_000)
     }
   end
 end
