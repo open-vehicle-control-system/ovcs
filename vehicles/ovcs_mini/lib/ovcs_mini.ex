@@ -277,13 +277,28 @@ defmodule OvcsMini do
       # furniture as animals. Measured at 480x270 the model still
       # scores real people at 0.74-0.91, so this leaves plenty of
       # headroom above the noise.
+      #
+      # That measurement is yolov8n's. It has *not* been re-taken for
+      # the NanoDet default, so treat 0.4 as a starting point there
+      # rather than a tuned value.
       # The stereo unit's own frame, since boxes are positioned in its
       # rectified pixels.
-      hef_path: Path.join(priv_models_dir(), "yolov8n.hef"),
+      hef_path: Path.join(priv_models_dir(), "#{hailo_model()}.hef"),
       score_threshold: 0.4,
       frame_id: "stereo_left"
     }
   end
+
+  # NanoDet-RepVGG by default, because it is Apache-2.0 and YOLOv8 is
+  # AGPL-3.0 — see the Model licensing section of
+  # docs/ros_perception_detection.md. The swap needs no code: both
+  # carry the same in-graph NMS net flow, and `hailo_detect` reads the
+  # input size and class count off the HEF rather than assuming them.
+  #
+  # `OVCS_HAILO_MODEL=yolov8n` selects the original for anyone holding
+  # an Ultralytics licence. Whatever is named here has to be in
+  # `scripts/models.tsv` so `mise run fetch-models` can fetch it.
+  defp hailo_model, do: System.get_env("OVCS_HAILO_MODEL", "nanodet_repvgg")
 
   defp priv_models_dir, do: :ovcs_mini |> :code.priv_dir() |> Path.join("models")
 

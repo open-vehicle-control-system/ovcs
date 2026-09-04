@@ -342,29 +342,75 @@ None of which is legal advice. If OVCS is going anywhere commercial
 with YOLOv8 specifically, that needs a real answer and an Ultralytics
 Enterprise licence is the direct route to one.
 
-### Permissively licensed alternatives
+### The Hailo path now defaults to a permissive model
 
-The durable fix is a detector that does not raise the question. All
-Apache-2.0 unless noted:
+**NanoDet-RepVGG**, Apache-2.0, from the same Hailo model zoo path.
+`OVCS_HAILO_MODEL=yolov8n` selects the original for anyone holding an
+Ultralytics licence.
 
-  * **YOLOX** (Megvii)
-  * **NanoDet**
-  * **DAMO-YOLO**
+It needs no code change, and that was checked rather than hoped for:
+
+  * The HEF carries **`HAILO_NET_FLOW_YOLOV8_NMS`** — the same in-graph
+    NMS net flow as `yolov8n.hef`, so the output is the same
+    `HAILO_NMS_BY_CLASS` layout `hailo_detect` already reads.
+  * `hailo_detect` derives the input size from
+    `input_vstream.get_info().shape` and the class count from
+    `nms_shape.number_of_classes`, so neither is assumed. Its only
+    hard requirement is a square 3-channel input.
+
+`yolox_tiny` is also in the zoo and also Apache-2.0, but it is **not**
+a drop-in: it carries `HAILO_NET_FLOW_YOLOX_NMS`, a different
+postprocess op. Worth knowing before reaching for the more obvious
+name.
+
+#### Still to confirm on the device
+
+Two things that need a Hailo-8 and cannot be checked from the HEF:
+
+  * That it loads and produces sensible detections. Failure here is
+    loud and harmless — `hailo_detect` logs the shape it got and exits,
+    `Inference.Hailo` answers `{:error, :unavailable}`, and stereo
+    depth is unaffected.
+  * The score threshold. 0.4 was measured against **yolov8n** at
+    480x270; it has not been re-taken for NanoDet, so treat it as a
+    starting point rather than a tuned value.
+
+### Other permissive options
+
+All Apache-2.0 unless noted. Those with a prebuilt HAILO8 HEF in model
+zoo v2.15.0 are marked, with sizes as served:
+
+  * **NanoDet-RepVGG** — in the zoo (6.7 MB). The default.
+  * **YOLOX** tiny / s-leaky — in the zoo (9.3 / 9.4 MB), different NMS op
+  * **DAMO-YOLO** tinynasL20_T — in the zoo (13.4 MB)
+  * **SSD-MobileNet v1/v2** — in the zoo (6.7 MB), weaker but long-supported
+  * **CenterNet** ResNet-v1-18, **EfficientDet-lite0** — in the zoo
   * **RT-DETR** — the original Baidu release, *not* the Ultralytics port
   * **RF-DETR** (Roboflow), **D-FINE**
-  * **SSD-MobileNet**, **EfficientDet** — weaker, but long-supported
   * torchvision's detectors (BSD-3)
 
 Avoid: YOLOv5/v8/v10/v11 (Ultralytics, AGPL-3.0), YOLOv6 and YOLOv7
-(GPL-3.0), YOLO-NAS (restrictive Deci licence).
+(GPL-3.0), YOLO-NAS (restrictive Deci licence). `yolov6n.hef` is in the
+zoo and is GPL-3.0, which is no better here than AGPL.
 
-A swap is not free. `hailo_detect` reads `HAILO_NMS_BY_CLASS` directly
-because YOLOv8's HEF runs NMS in-graph, and `Inference.Dnn.decode/6`
-expects an attribute-major `[1, 4 + classes, anchors]` output. A model
-without in-graph NMS needs suppression adding back on the Hailo path; a
-different output layout needs `decode/6` taught about it. Both are
-bounded, and `decode/6` already derives the class count from the shape
-rather than assuming 80.
+### The DNN path is still YOLOv8-shaped
+
+`Inference.Dnn.decode/6` expects an attribute-major
+`[1, 4 + classes, anchors]` output — YOLOv8's layout. It already
+derives the class count from the shape rather than assuming 80, so a
+different *size* of YOLOv8-style head works, but a genuinely different
+layout does not:
+
+  * YOLOX ONNX is anchor-major `[1, anchors, 5 + classes]` and carries
+    a separate objectness column that has to be multiplied into the
+    class score.
+  * NanoDet splits classification and box regression into separate
+    outputs and uses distribution-based box encoding.
+
+So teaching `decode/6` a second layout is the outstanding work for
+running a permissive model on the CPU/GPU backend. Bounded, and the
+tests for it already build their fixtures from raw float32 with the
+layout explicit, which is the right shape to extend.
 
 ### One thing fetching does not fix
 
