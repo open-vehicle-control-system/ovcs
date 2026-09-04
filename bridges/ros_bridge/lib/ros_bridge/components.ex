@@ -30,7 +30,7 @@ defmodule RosBridge.Components do
         * `:topic`, `:frame_id`, `:publish_interval_ms` — forwarded
           to `RosBridge.Publishers.Imu` (see its defaults).
     * `:static_transforms` — publishes the vehicle's fixed frame
-      relationships on `/tf`. Opts: `:transforms` (required, a list of
+      relationships on `/tf_static`, republished at 1 Hz. Opts: `:transforms` (required, a list of
       `%{parent:, child:, translation: {x,y,z}, rotation: {x,y,z,w}}`),
       plus `:topic` and `:interval_ms`. Without it, frame ids in
       message headers are labels a consumer cannot resolve — see
