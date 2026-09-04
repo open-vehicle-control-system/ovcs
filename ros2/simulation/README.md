@@ -94,6 +94,68 @@ of `drive_test.py`:
   `[-pi, pi]`, so subtracting first from last silently loses a whole
   turn, or flips its sign.
 
+## Checking perception automatically
+
+`drive_test.py` checks drivetrain geometry against the model.
+`verify_perception.sh` does the same for perception, and unlike the
+drive test it **asserts and exits non-zero**, so it can run unattended:
+
+```sh
+mise run verify-perception                    # stereo only
+OVCS_DETECTOR=stub mise run verify-perception  # + the depth-fusion check
+KEEP_UP=1 mise run verify-perception           # leave the stack up to poke at
+```
+
+It starts the router, the simulator and the real perception bridge,
+measures for 20 s, checks, and tears everything down.
+
+### The expected distances are derived, not recorded
+
+They come from `worlds/workshop.sdf` and
+`vehicles/ovcs_mini/description/`, so moving a box or the camera
+updates the expectation rather than silently invalidating it:
+
+```
+box_1m     x=1.0, 0.3 deep  ->  front face 0.85 m from origin
+box_2m     x=2.0, 0.4 deep  ->  1.80 m
+back_wall  x=6.0, 0.2 deep  ->  5.90 m
+camera_x = wheelbase/2 - 0.120 = 0.042 m
+```
+
+giving 0.808 m, 1.758 m and 5.858 m from the lens. A run measures:
+
+```
+  PASS  depth median: 0.810 m, world says 0.808 (tolerance 0.050)
+  PASS  depth p75: 1.754 m, world says 1.758 (tolerance 0.100)
+  PASS  depth p95 within the room: 5.847 m, back wall at 5.858
+  PASS  fused detection depth: 0.809 m, world says 0.808 (tolerance 0.050)
+```
+
+### Geometry is checked tightly, throughput is not
+
+Geometry is machine-independent: if the median depth is 0.808 m then
+the disparity scale, the rectification and the intrinsics all agree
+with the world. Throughput is not — it depends on the CPU and on
+whether Gazebo is software-rendering — so rates are checked against a
+floor low enough to mean "the pipeline is running", not a target that
+would fail on a slower machine while saying nothing about correctness.
+
+### What it catches
+
+Halving `@disparity_fixed_point_scale` in `StereoCamera.OpenCV` — a
+plausible edit, and invisible on screen because the depth image still
+looks like a depth image — fails three checks and nothing else:
+
+```
+  FAIL  depth median: 0.405 m, world says 0.808
+  FAIL  depth p75: 0.877 m, world says 1.758
+  FAIL  fused detection depth: 0.404 m, world says 0.808
+  PASS  disparity rate / encoding / coverage / point cloud
+```
+
+Rates and coverage still passing is the point: the checks discriminate
+between "slow" and "wrong".
+
 ## Running the perception pipeline against it
 
 The whole stereo stack — SGBM, rectification, publishers, detector —

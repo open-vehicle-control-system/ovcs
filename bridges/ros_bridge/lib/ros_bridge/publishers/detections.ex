@@ -59,6 +59,9 @@ defmodule RosBridge.Publishers.Detections do
       without being refreshed. Longer than the frame interval so
       markers do not flicker, short enough that a stale box goes away
       promptly.
+    * `:inference` (`RosBridge.Inference.Hailo`) — the detection
+      backend module, which is also its registered name. See
+      `RosBridge.Inference` for the contract and the alternatives.
     * `:detect_every_n` (`1`) — run inference on every nth stereo
       result.
     * `:outline_segments` (`4`) — how finely each box edge is
@@ -90,7 +93,6 @@ defmodule RosBridge.Publishers.Detections do
   alias Ros2.VisionMsgs.Msg.{ObjectHypothesis, ObjectHypothesisWithPose}
   alias Ros2.FoxgloveMsgs.Msg.{Color, ImageAnnotations, Point2, PointsAnnotation, TextAnnotation}
   alias Ros2.VisualizationMsgs.Msg.{Marker, MarkerArray}
-  alias RosBridge.Inference.Hailo
   alias RosBridge.Perception.Fusion
   alias RosBridge.StereoCamera.Result
   alias RosBridge.Timing
@@ -139,6 +141,10 @@ defmodule RosBridge.Publishers.Detections do
         |> Keyword.get(:marker_lifetime_ms, @default_marker_lifetime_ms)
         |> Duration.from_milliseconds(),
       detect_every_n: Keyword.get(opts, :detect_every_n, @default_detect_every_n),
+      # Which backend to ask, defaulting to the accelerator so the
+      # vehicle's wiring is unchanged. Doubles as the server name: every
+      # backend registers under its own module.
+      inference: Keyword.get(opts, :inference, RosBridge.Inference.Hailo),
       outline_segments: Keyword.get(opts, :outline_segments, @default_outline_segments),
       label_font_size: Keyword.get(opts, :label_font_size, @default_label_font_size),
       # The rectification map is constant, but reading a 500 KB Mat
@@ -204,9 +210,9 @@ defmodule RosBridge.Publishers.Detections do
   defp submit(result, state) do
     seq = state.seq + 1
 
-    case Hailo.detect(seq, result.left_rectified) do
+    case state.inference.detect(state.inference, seq, result.left_rectified) do
       :ok -> %{state | seq: seq, pending: result}
-      # Busy or unavailable: skip this frame silently. `Hailo` logs
+      # Busy or unavailable: skip this frame silently. The backend logs
       # the unavailable case once at startup; a per-frame log here
       # would be the loudest thing in the RingLogger.
       {:error, _reason} -> state
@@ -214,13 +220,13 @@ defmodule RosBridge.Publishers.Detections do
   end
 
   @impl true
-  def handle_info({:hailo_detections, seq, detections}, %{seq: seq, pending: pending} = state)
+  def handle_info({:inference_detections, seq, detections}, %{seq: seq, pending: pending} = state)
       when not is_nil(pending) do
     {:noreply, publish(detections, pending, %{state | pending: nil})}
   end
 
   # A reply for a frame we have stopped waiting on.
-  def handle_info({:hailo_detections, _stale, _detections}, state), do: {:noreply, state}
+  def handle_info({:inference_detections, _stale, _detections}, state), do: {:noreply, state}
 
   def handle_info(_message, state), do: {:noreply, state}
 

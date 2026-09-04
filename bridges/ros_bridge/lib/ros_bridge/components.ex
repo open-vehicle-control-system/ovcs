@@ -80,10 +80,18 @@ defmodule RosBridge.Components do
   end
 
   def start(:hailo_detector, opts) do
+    # Kept as its own name because it reads well in a vehicle's
+    # component list and because the accelerator is the default; it is
+    # `:detector` with `backend: RosBridge.Inference.Hailo`.
+    start(:detector, Keyword.put_new(opts, :backend, RosBridge.Inference.Hailo))
+  end
+
+  def start(:detector, opts) do
     # One child, not two. The pair lives under its own supervisor so
     # a detector that crashes on every frame cannot exhaust the
     # bridge supervisor's restart budget and take the cameras with
-    # it — see `RosBridge.Inference.Supervisor`.
+    # it — see `RosBridge.Inference.Supervisor`. `:backend` chooses
+    # where the arithmetic happens; see `RosBridge.Inference`.
     [{RosBridge.Inference.Supervisor, opts}]
   end
 
