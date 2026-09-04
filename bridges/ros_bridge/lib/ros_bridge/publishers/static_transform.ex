@@ -19,13 +19,36 @@ defmodule RosBridge.Publishers.StaticTransform do
             translation: {x, y, z},          # metres, REP-103: x fwd, y left, z up
             rotation: {x, y, z, w}}          # quaternion, defaults to identity
 
-    * `:topic` (`"/tf"`), `:interval_ms` (`1000`).
+    * `:topic` (`"/tf_static"`), `:interval_ms` (`1000`).
 
-  Published on `/tf` rather than `/tf_static` on purpose. Static
-  transforms conventionally rely on TRANSIENT_LOCAL durability so a
-  late-joining viewer receives the latched message; `ZenohClient`
-  publishes volatile, so that viewer would wait forever. Republishing
-  at 1 Hz costs a few hundred bytes a second and always works.
+  Published on `/tf_static`, and *republished* at 1 Hz.
+
+  Both halves matter, and the first one was got wrong here once.
+  Static transforms conventionally rely on TRANSIENT_LOCAL durability
+  so a late-joining subscriber receives the latched message;
+  `ZenohClient` publishes volatile, so that subscriber would wait for
+  ever. Republishing fixes that.
+
+  But republishing on `/tf` — which is what this used to do — trades
+  one problem for a subtler one. A transform on `/tf` is *time
+  indexed*: `tf2` stores it against its stamp and interpolates
+  between samples, and will not extrapolate past the newest one. At
+  1 Hz that leaves a window up to a second wide in which any message
+  stamped after the latest transform cannot be transformed at all.
+  Nav2's costmaps hit it immediately:
+
+      Requested time 291.444 but the latest data is at time 291.217,
+      when looking up transform from frame [stereo_left] to frame
+      [odom]
+
+  227 ms newer than the transform, and the point cloud was dropped —
+  every one of them, for the whole run.
+
+  `/tf_static` has no such window: `tf2` keeps those transforms in a
+  separate buffer with no time index, so a lookup at *any* stamp
+  succeeds. Republishing them keeps the durability fix, and being
+  timeless removes the interpolation problem the previous choice
+  introduced.
   """
   use GenServer
 
@@ -36,7 +59,7 @@ defmodule RosBridge.Publishers.StaticTransform do
   alias Ros2.Tf2Msgs.Msg.TFMessage
   alias RosBridge.Timing
 
-  @default_topic "/tf"
+  @default_topic "/tf_static"
   @default_interval_ms 1_000
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)

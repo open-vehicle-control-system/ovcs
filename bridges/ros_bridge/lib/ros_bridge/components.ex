@@ -17,6 +17,11 @@ defmodule RosBridge.Components do
         * `:interval_ms` (default `1_000`)
     * `:joy_interpreter` — `RosBridge.Consumers.Joy` subscribing to
       `/joy` and forwarding axes onto the CAN bus. No opts.
+    * `:simulator_clock` — `RosBridge.Clock`, following `/clock` so
+      published stamps use simulator time rather than wall clock.
+      **Simulation only.** Without it every stamp is wall clock, which
+      is correct on a vehicle and wrong against Gazebo — see
+      `RosBridge.Clock` for what that breaks.
     * `:imu_publisher` — starts the named driver (any
       `OvcsDrivers.Imu` implementation) followed by
       `RosBridge.Publishers.Imu`. Opts:
@@ -67,6 +72,8 @@ defmodule RosBridge.Components do
        build: &heartbeat_message/1}
     ]
   end
+
+  def start(:simulator_clock, opts), do: [{RosBridge.Clock, opts}]
 
   def start(:joy_interpreter, _opts), do: [{RosBridge.Consumers.Joy, []}]
 
