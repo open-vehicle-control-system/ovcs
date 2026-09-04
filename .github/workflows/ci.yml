@@ -135,6 +135,14 @@ jobs:
           - bridges/firmware
           - bridges/radio_control_bridge
           - bridges/ros_bridge
+          # Vehicles were missing here while the libmnl step below
+          # already special-cased them, so a test in a vehicle
+          # package never ran. `vehicles/ovcs_mini` has one now —
+          # the geometry check that keeps `geometry/0` and the
+          # simulation model in agreement.
+          - vehicles/ovcs1
+          - vehicles/ovcs_mini
+          - vehicles/obd2
     defaults:
       run:
         working-directory: ${{ matrix.project }}
