@@ -1,0 +1,19 @@
+# Python lint configuration, for `ruff check` in the ROS 2 workflow.
+#
+# Scoped to the ROS 2 stacks, which is where all of this repo's own
+# Python lives: two launch files, three test/probe scripts, and
+# `decompress_stereo.py`, which runs on the vehicle. The
+# `controllers/` tree also contains Python, but only vendored inside
+# `.pio/libdeps/`, and linting somebody else's library is noise.
+#
+# `ruff format` is deliberately *not* enforced. The only differences it
+# reports are joins of line breaks that were put in on purpose — a
+# format gate would rewrite deliberate layout to satisfy a column
+# count, which is churn rather than a defect caught. `ruff check` is
+# the half with signal: undefined names, unused imports, an `except`
+# that can never fire.
+include = ["ros2/**/*.py"]
+
+# Matches the Elixir formatter's default, which the rest of the tree is
+# written to, so one convention covers the repo.
+line-length = 98

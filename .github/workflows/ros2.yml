@@ -6,12 +6,17 @@ name: ROS 2
 # as firmware not being built on pull requests, which cost us four
 # rounds of red CI before it was closed.
 #
-# Two levels, cheapest first:
+# Three levels, cheapest first:
 #
 #   * `compose-config` validates every compose file in seconds. It
 #     catches the mistakes that are both most likely and most annoying:
 #     a typo in a service, a `${VAR:?}` with nothing to satisfy it, an
 #     invalid profile.
+#   * `lint` runs ruff over the repo's own Python. Nothing else does:
+#     the launch files, the verification scripts and
+#     `decompress_stereo.py` — which runs on the *vehicle* — are only
+#     ever parsed when something starts them, so an undefined name in
+#     an error path shipped and waited.
 #   * `image` actually builds the shared ROS image. Every service on
 #     both sides of the fabric runs it (`foxglove_bridge` on the
 #     vehicle; `ros2` / `joy` / `calibrator` on the base station), so it
@@ -28,6 +33,7 @@ on:
   pull_request:
     paths:
       - 'ros2/**'
+      - 'ruff.toml'
       - '.github/workflows/ros2.yml'
   workflow_dispatch:
 
@@ -61,6 +67,23 @@ jobs:
           # a profile is otherwise skipped entirely and never validated.
           docker compose --profile standalone --profile calibration config -q \
             || docker compose config -q
+
+  lint:
+    name: ruff
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # Pinned: an unpinned linter turns somebody else's release into a
+      # red build on an unrelated pull request.
+      - name: Install ruff
+        run: pipx install ruff==0.16.6
+
+      # Configuration, including which paths are in scope, lives in
+      # `ruff.toml` at the repo root so a local run matches this one.
+      # `ruff format` is deliberately not checked — see that file.
+      - name: ruff check
+        run: ruff check --output-format=github .
 
   image:
     name: build the shared ROS image
