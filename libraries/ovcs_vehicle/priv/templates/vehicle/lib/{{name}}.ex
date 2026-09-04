@@ -16,7 +16,33 @@ defmodule <%= @module %> do
   def vms_target, do: :<%= @vms_target %>
 <%= if @infotainment do %>  @impl OvcsVehicle
   def infotainment_target, do: :<%= @infotainment_target %>
-<% end %><%= if @bridges do %>
+<% end %>
+  # Measured physical geometry — optional, in **metres and radians**.
+  #
+  # Declare it if anything on this vehicle needs to know its shape.
+  # Kinematics is the case that forces it: turning a velocity command
+  # into a steering angle is the same arithmetic on every Ackermann
+  # vehicle and a different number on each one, so `vms_core` stays
+  # generic and takes these as composer options.
+  #
+  # Only measured quantities go here. Derived ones are functions —
+  # `OvcsVehicle.min_turning_radius/1`, `max_yaw_rate/2` — because a
+  # stored derived value is one more copy to get wrong.
+  #
+  # If this vehicle also has a simulation model, the same numbers live
+  # in its xacro and cannot be shared, so add a test asserting the two
+  # agree. See `vehicles/ovcs_mini/test/geometry_test.exs`; a wheel
+  # radius wrong by 2x shipped in that model once.
+  #
+  # @impl OvcsVehicle
+  # def geometry,
+  #   do: %{
+  #     wheelbase: 0.0,
+  #     track: 0.0,
+  #     wheel_radius: 0.0,
+  #     steering_limit: 0.0
+  #   }
+<%= if @bridges do %>
   # Bridge firmwares — optional. Uncomment and populate to declare one
   # or more bridge firmware images for this vehicle. Each entry becomes
   # its own build target: `./ovcs build <%= @name %> bridge-<firmware-id>`.

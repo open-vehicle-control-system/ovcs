@@ -12,6 +12,25 @@ defmodule OvcsMini do
   def name, do: "OVCS Mini"
   @impl OvcsVehicle
   def vms, do: OvcsMini.Vms.Composer
+  # Measured, in metres and radians. These are declared twice on
+  # purpose: here, and as `<xacro:property>` values in
+  # `description/ovcs_mini.urdf.xacro`, because xacro cannot read
+  # Elixir and the simulator needs them at model-generation time.
+  #
+  # `test/geometry_test.exs` asserts the two declarations agree, which
+  # is what makes the duplication safe rather than silent. That check
+  # is not decoration: a wheel radius wrong by 2x already shipped in
+  # this model once, drove convincingly, and reported nonsense — see
+  # `ros2/simulation/scripts/drive_test.py`.
+  @impl OvcsVehicle
+  def geometry,
+    do: %{
+      wheelbase: 0.324,
+      track: 0.296,
+      wheel_radius: 0.0548,
+      steering_limit: 0.52
+    }
+
   @impl OvcsVehicle
   def can_config_otp_app, do: :ovcs_mini
   @impl OvcsVehicle
