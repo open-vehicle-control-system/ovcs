@@ -1,3 +1,25 @@
+# `subscribe/2` is called from inside `Clock.init/1`, so `self()` there
+# is the Clock process itself — putting a sample in its mailbox before
+# the selective receive runs. That lets the real lifecycle be tested
+# without a live ZenohClient, and without poking at process state.
+defmodule RosBridge.ClockTest.AcquiringSubscriber do
+  alias Ros2.BuiltinInterfaces.Msg.Time
+  alias Ros2.RosgraphMsgs.Msg.Clock, as: ClockMessage
+
+  def subscribe(topic, _module) do
+    send(self(), {:ros_message, {topic, %ClockMessage{clock: %Time{sec: 58, nanosec: 0}}}})
+    :ok
+  end
+
+  def unsubscribe(_topic), do: :ok
+end
+
+defmodule RosBridge.ClockTest.SilentSubscriber do
+  # Never delivers, so `init/1` reaches its deadline.
+  def subscribe(_topic, _module), do: :ok
+  def unsubscribe(_topic), do: :ok
+end
+
 defmodule RosBridge.ClockTest do
   @moduledoc """
   Tests for following a simulator clock.
@@ -19,6 +41,7 @@ defmodule RosBridge.ClockTest do
 
   alias Ros2.RosgraphMsgs.Msg.Clock, as: ClockMessage
   alias RosBridge.{Clock, Timing}
+  alias RosBridge.ClockTest.{AcquiringSubscriber, SilentSubscriber}
 
   @persistent_key RosBridge.Clock
 
@@ -38,11 +61,14 @@ defmodule RosBridge.ClockTest do
     body
   end
 
-  # What `init/1` builds, without needing a ZenohClient to subscribe to.
+  # What `init/1` builds once it has acquired a clock, without needing
+  # a ZenohClient to subscribe to. `following: true` matters: samples
+  # are only adopted while following, so that a late one after the
+  # deadline cannot switch timescales mid-run.
   defp tracking_state do
     atomics = :atomics.new(2, signed: true)
     :persistent_term.put(@persistent_key, atomics)
-    %{atomics: atomics, samples: 0}
+    %{atomics: atomics, samples: 0, subscriber: SilentSubscriber, following: true}
   end
 
   defp clock_message(sec, nanosec) do
@@ -122,20 +148,69 @@ defmodule RosBridge.ClockTest do
     end
   end
 
-  describe "shutting down" do
-    test "stops claiming to follow a clock, rather than freezing the offset" do
-      state = tracking_state()
-      {:noreply, state} = Clock.handle_info(clock_message(58, 0), state)
+  describe "the real lifecycle, under a supervisor" do
+    # The first version of the shutdown test called `terminate/2` by
+    # hand, so it passed while production did nothing: a `GenServer`
+    # does not receive `terminate/2` from a supervisor's ordinary
+    # `exit(pid, :shutdown)` unless it traps exits, and `init/1` did
+    # not. Testing the callback tested the callback. These test the
+    # guarantee.
+    test "a sample delivered during init is adopted" do
+      start_supervised!({Clock, %{subscriber: AcquiringSubscriber, acquire_timeout_ms: 5_000}})
+
       assert Clock.following?()
 
-      :ok = Clock.terminate(:shutdown, state)
+      assert_in_delta Timing.ros_time_of(System.monotonic_time(:nanosecond)),
+                      58_000_000_000,
+                      100_000_000
+    end
+
+    test "a supervised stop stops the offset being used" do
+      start_supervised!({Clock, %{subscriber: AcquiringSubscriber, acquire_timeout_ms: 5_000}})
+      assert Clock.following?()
+
+      :ok = stop_supervised(Clock)
 
       refute Clock.following?(),
-             "a stopped clock left a frozen offset behind, so stamps would drift for ever"
+             "a stopped clock left a frozen offset behind, so every stamp would drift for ever"
 
-      # And Timing goes back to wall clock rather than using it.
-      stamped = Timing.ros_time_of(System.monotonic_time(:nanosecond))
-      assert_in_delta stamped, System.system_time(:nanosecond), 1_000_000_000
+      # And Timing is back on wall clock rather than using it.
+      assert_in_delta Timing.ros_time_of(System.monotonic_time(:nanosecond)),
+                      System.system_time(:nanosecond),
+                      1_000_000_000
+    end
+  end
+
+  describe "giving up is permanent" do
+    # The review finding this exists for: the deadline logged
+    # "continuing on wall clock" while the subscription stayed live, so
+    # a sample arriving later silently switched timescales mid-run —
+    # which is exactly the tf2-poisoning the blocking init prevents.
+    test "the deadline leaves it on wall clock" do
+      start_supervised!({Clock, %{subscriber: SilentSubscriber, acquire_timeout_ms: 5}})
+
+      refute Clock.following?()
+
+      assert_in_delta Timing.ros_time_of(System.monotonic_time(:nanosecond)),
+                      System.system_time(:nanosecond),
+                      1_000_000_000
+    end
+
+    test "a sample arriving after the deadline is ignored" do
+      start_supervised!({Clock, %{subscriber: SilentSubscriber, acquire_timeout_ms: 5}})
+      clock = Process.whereis(Clock)
+
+      send(
+        clock,
+        {:ros_message,
+         {"clock", %ClockMessage{clock: %Ros2.BuiltinInterfaces.Msg.Time{sec: 58, nanosec: 0}}}}
+      )
+
+      # Round-trip so the message above is definitely handled.
+      _ = :sys.get_state(clock)
+
+      refute Clock.following?(),
+             "a late /clock sample switched the timescale mid-run, which corrupts tf2 for good"
     end
   end
 
