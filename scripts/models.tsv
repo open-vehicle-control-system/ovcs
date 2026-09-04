@@ -1,0 +1,24 @@
+# Detection models fetched by scripts/fetch_models.sh, one per line.
+#
+# Deliberately not committed to this repository. OVCS is MIT licensed;
+# YOLOv8's weights are Ultralytics AGPL-3.0, and the two do not compose
+# in that direction — MIT tells downstream users they may use this
+# without source-disclosure obligations, which AGPL does not permit
+# anyone to grant. Distributing the weights here would make a promise
+# the licence cannot keep. Fetching them is the operator's choice, on
+# the operator's terms.
+#
+# See docs/ros_perception_detection.md for the licensing note in full,
+# including which permissively licensed models are drop-in candidates.
+#
+# Columns, tab-separated:
+#   destination (relative to the repo root)
+#   sha256
+#   licence
+#   url
+#
+# The sha256 is not optional. A binary fetched over the network with no
+# integrity check is a worse position than a committed one, not a
+# better one.
+
+vehicles/ovcs_mini/priv/models/yolov8n.hef	4f250daa6ac16e030cfaaf164e1cbdfe83e5852c81ae6c339c94857dd2b7b8d2	AGPL-3.0 (Ultralytics YOLOv8) — commercial use requires an Ultralytics Enterprise licence	https://hailo-model-zoo.s3.eu-west-2.amazonaws.com/ModelZoo/Compiled/v2.15.0/hailo8/yolov8n.hef
