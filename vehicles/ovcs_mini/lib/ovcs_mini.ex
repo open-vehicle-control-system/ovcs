@@ -159,6 +159,13 @@ defmodule OvcsMini do
       components:
         [
           :heartbeat,
+          # First, and only here. Gazebo owns the clock in simulation,
+          # so every stamp this bridge publishes has to be on
+          # simulator time or it will not line up with /tf and /odom —
+          # Nav2's costmaps drop point clouds that do not. On the
+          # vehicle there is no /clock and wall clock is correct, which
+          # is why this appears in no other configuration.
+          :simulator_clock,
           stereo_transforms(),
           stereo_component(RosBridge.Camera.Zenoh, :sim)
         ] ++ sim_detector()

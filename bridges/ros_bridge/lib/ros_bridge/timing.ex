@@ -30,6 +30,19 @@ defmodule RosBridge.Timing do
   time. The offset drift between successive calls is on the
   order of nanoseconds — negligible compared to the
   millisecond-scale BEAM-scheduling jitter we're removing.
+
+  ## Wall clock is not always the target
+
+  Against a simulator it is the wrong clock entirely: Gazebo owns
+  time, starts it at zero and advances it with physics, so a
+  wall-clock stamp sits most of two decades away from `/tf` and
+  `/odom` and any consumer that compares them drops the message.
+
+  So `time_message_for/1` asks `RosBridge.Clock` which timescale to
+  target. With no simulator clock being followed — a vehicle, and
+  every test — the answer is `nil` and the wall-clock path above is
+  unchanged. Drivers are unaffected either way: they keep producing
+  Erlang monotonic time and this stays the only place that converts.
   """
 
   alias Ros2.BuiltinInterfaces.Msg.Time
@@ -63,17 +76,29 @@ defmodule RosBridge.Timing do
   end
 
   @doc """
+  Convert a monotonic capture timestamp into the timescale this
+  bridge is publishing on: simulator time when a `/clock` is being
+  followed, wall clock otherwise.
+  """
+  def ros_time_of(monotonic_nanoseconds) when is_integer(monotonic_nanoseconds) do
+    case RosBridge.Clock.offset_ns() do
+      nil -> wallclock_of(monotonic_nanoseconds)
+      offset -> monotonic_nanoseconds + offset
+    end
+  end
+
+  @doc """
   Build a `builtin_interfaces/Time` message from a monotonic
   capture timestamp. Most publishers want this directly — they
   have a `frame.capture_ns` in hand and need a `%Time{sec,
   nanosec}` to drop into a `std_msgs/Header`.
   """
   def time_message_for(monotonic_nanoseconds) do
-    wallclock_nanoseconds = wallclock_of(monotonic_nanoseconds)
+    nanoseconds = ros_time_of(monotonic_nanoseconds)
 
     %Time{
-      sec: div(wallclock_nanoseconds, 1_000_000_000),
-      nanosec: rem(wallclock_nanoseconds, 1_000_000_000)
+      sec: div(nanoseconds, 1_000_000_000),
+      nanosec: rem(nanoseconds, 1_000_000_000)
     }
   end
 end
