@@ -35,8 +35,8 @@ defmodule VmsCore.Components.OVCS.RadioControl.RequestedRosCommander do
   > #### The endpoints are unverified {: .warning}
   >
   > 1000/2000 is the convention every other channel here uses, not a
-  > measurement -- the transmitter was off when this was written. Before
-  > the first planner drive, confirm with `candump` that channel 5 of
+  > measurement of this switch. Before the first planner drive, confirm
+  > with `candump` that channel 5 of
   > `0x2A1` actually reaches ~2000 in the up position. A switch that
   > tops out at 1800 sits outside `@channel_margin` and reads as
   > `:teleop` forever, silently.

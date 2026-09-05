@@ -93,9 +93,8 @@ defmodule VmsCore.Components.OVCS.Ros2Control.Velocity do
   @loop_period 10
   @zero D.new(0)
   @frame_name "ros2_control"
-  # Below this the vehicle is stopped for every purpose the drivetrain
-  # cares about, and the steering angle is undefined. It is also the
-  # resolution of the `linear` signal on the wire.
+  # The resolution of the `linear` signal on the wire: anything below it
+  # is zero, where the steering angle is undefined.
   @standstill_m_s 0.001
 
   def start_link(args) do
@@ -165,11 +164,14 @@ defmodule VmsCore.Components.OVCS.Ros2Control.Velocity do
     limit = OvcsVehicle.max_yaw_rate(geometry, linear)
     clamped = angular |> max(-limit) |> min(limit)
 
-    # A threshold, not `== 0.0`. Two reasons: `-0.0` does not match a
-    # `+0.0` pattern from OTP 27 on, and a planner sending 1e-9 m/s
-    # would otherwise divide by near-zero and produce a steering angle
-    # out of noise. Below a millimetre per second the vehicle is
-    # stopped by any measure the drivetrain can act on.
+    # This guard only exists for a linear of exactly zero (or `-0.0`,
+    # which does not match a `+0.0` pattern from OTP 27 on), where the
+    # division below is undefined. It does not define a "stopped" band:
+    # the wire resolution is 0.001, so the smallest non-zero value that
+    # can arrive is already above it, and the yaw clamp above bounds the
+    # angle to the steering limit at any non-zero speed. A frame of
+    # (0.001, 0.01) therefore commands full lock at near-zero throttle,
+    # which is the Ackermann answer rather than a discontinuity.
     if abs(linear) < @standstill_m_s do
       @zero
     else

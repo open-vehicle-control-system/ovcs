@@ -9,7 +9,8 @@ defmodule Ros2.GeometryMsgs.Msg.TwistTest do
   8-aligned; nested after a `Header` — whose trailing `frame_id`
   string pads only to 4 — that is not automatic, and how much padding
   sits between them depends on the *length of the frame id*. A
-  fixture I wrote would encode whatever I believed about that.
+  hand-built fixture encodes an assumption about that; a capture
+  encodes the fact.
 
   The captures below make one more thing explicit that no
   hand-assembled fixture would: **CDR padding is not zeroed.** In the

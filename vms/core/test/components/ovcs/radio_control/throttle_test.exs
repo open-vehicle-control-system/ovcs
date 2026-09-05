@@ -5,9 +5,9 @@ defmodule VmsCore.Components.OVCS.RadioControl.ThrottleTest do
   `radio_breaking` is not just a brake: `Managers.ControlLevel` reads it
   to drop `:ros` back to `:radio` *and* to latch `forced_control_level`,
   so the only way out is cycling the switch down through the middle
-  position. That makes a false positive expensive -- a trigger trimmed a
-  hair below centre used to make `:ros` unreachable, and re-trigger the
-  instant the operator switched back up.
+  position. That makes a false positive expensive: without a deadband a
+  trigger trimmed a hair below centre makes `:ros` unreachable, and
+  re-triggers the instant the operator switches back up.
   """
   use ExUnit.Case, async: true
 
@@ -91,9 +91,8 @@ defmodule VmsCore.Components.OVCS.RadioControl.ThrottleTest do
 
   describe "the reading is the current one" do
     test "braking is computed from this frame, not the previous tick" do
-      # It used to read `state.requested_throttle`, i.e. the value from
-      # 10 ms ago. A takeover reported one loop late is the one thing
-      # this signal must not do.
+      # A takeover reported one loop late, from the previous tick's
+      # value, is the one thing this signal must not do.
       {_throttle, breaking} = at(1000)
       assert breaking
     end

@@ -127,12 +127,13 @@ defmodule RosBridge.InputWatchdog do
 
   The `:silent` edge is what `new/1` promises: a fresh watchdog has
   never seen a sample, so the very first `check/1` reports it rather
-  than falling silent itself. Before `reported` existed, `{stale: true,
-  expired: true}` matched the catch-all and a consumer whose topic
-  nobody published on said nothing at all — the one bring-up
-  misconfiguration with no diagnostic anywhere, since the CAN emitter
-  goes on sending well-formed zeros and the VMS-side watcher therefore
-  sees a healthy stream.
+  than falling silent itself. `reported` is what makes that edge
+  exist: without it `{stale: true, expired: true}` is indistinguishable
+  from "already announced", and a consumer whose topic nobody publishes
+  on would say nothing at all — the one bring-up misconfiguration with
+  no diagnostic anywhere, since the CAN emitter goes on sending
+  well-formed zeros and the VMS-side watcher therefore sees a healthy
+  stream.
   """
   @spec check(t()) :: {transition(), t()}
   def check(%__MODULE__{} = watchdog) do

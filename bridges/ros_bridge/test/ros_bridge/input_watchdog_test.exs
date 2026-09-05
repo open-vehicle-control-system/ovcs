@@ -25,11 +25,9 @@ defmodule RosBridge.InputWatchdogTest do
     end
 
     test "reports :silent once the startup grace has passed and nothing has arrived" do
-      # This used to assert `:unchanged`, which codified the bug it was
-      # meant to describe: `{stale: true, expired: true}` fell into the
-      # catch-all, so a consumer subscribed to a topic nobody published
-      # on reported nothing at all -- and nothing downstream could tell,
-      # because the CAN emitter goes on sending well-formed zeros.
+      # `:silent`, not `:unchanged`: a consumer subscribed to a topic
+      # nobody publishes on must say so, because nothing downstream can
+      # tell -- the CAN emitter goes on sending well-formed zeros.
       watchdog = Watchdog.new(1, 1)
       Process.sleep(5)
 
