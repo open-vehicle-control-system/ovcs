@@ -28,17 +28,11 @@ defmodule Ros2.GeometryMsgs.Msg.TwistStamped do
 
   def parse(body) when is_binary(body) do
     with {:ok, header, rest} <- Header.parse(body),
-         rest <- skip_padding_to(body, rest, 8),
+         # Alignment is computed against the body origin, not against
+         # the start of this struct.
+         rest = consume_alignment(rest, 8, byte_size(body) - byte_size(rest)),
          {:ok, twist, rest} <- Twist.parse(rest) do
       {:ok, %__MODULE__{header: header, twist: twist}, rest}
     end
-  end
-
-  # How far into the body we are, so the padding is computed against
-  # the body origin rather than against the start of this struct.
-  defp skip_padding_to(body, rest, alignment) do
-    consumed = byte_size(body) - byte_size(rest)
-    padding = rem(alignment - rem(consumed, alignment), alignment)
-    binary_part(rest, padding, byte_size(rest) - padding)
   end
 end
