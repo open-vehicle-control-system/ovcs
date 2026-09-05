@@ -173,9 +173,9 @@ one, for the whole run. Moving it to `/tf_static` was the fix.
 **Both `cmd_vel` topics land on the same Gazebo topic.** The
 `AckermannSteering` plugin listens on `/model/<vehicle>/cmd_vel` and
 has no verified tag for renaming it; the two bridges remap the ROS
-side. Nothing arbitrates between them. Run teleop *or* Nav2, exactly
-as nothing arbitrates between the radio and ROS on the real Mini
-either — yet.
+side. Nothing arbitrates between them, so run teleop *or* Nav2. The
+vehicle is different: there `Managers.ControlLevel` decides who has
+authority, radio or ROS, and which ROS commander drives (section 5).
 
 ## 4. Time
 
@@ -311,13 +311,6 @@ converting those commands. Closing that gap — a Gazebo model driven by
 the VMS through a virtual CAN bus — is the obvious next step and is
 not built.
 
-> **Status.** `Consumers.Velocity`, frame `0x3A0`, `Ros2Control.Velocity`,
-> the two-axis `Managers.ControlLevel`, `RosBridge.InputWatchdog` and the
-> surplus-bytes warning described below all land with
-> [PR #55](https://github.com/open-vehicle-control-system/ovcs/pull/55).
-> On `main` today the vehicle has the joystick path only, with no input
-> watchdog on the bridge side.
-
 ### The joystick path (0x2B0, 0x2B1)
 
 `RosBridge.Consumers.Joy` subscribes to `/joy` and writes two frames:
@@ -381,16 +374,16 @@ state machine and the bench recipe are in
   accepts any body of 48 bytes or more, so a 72-byte `TwistStamped`
   body decodes as six float64s read out of the header — denormals
   near 1.0e-273 — and the vehicle ignores every command while every
-  watchdog reports a healthy stream. #55 makes the bridge warn about
-  surplus bytes after a successful parse. The simulator side has the
+  watchdog reports a healthy stream. The bridge warns about surplus
+  bytes after a successful parse, which is what catches this. The simulator side has the
   mirror-image failure: a `Twist` bridge fed `TwistStamped` simply
   never fires, and a healthy-looking Nav2 moves nothing.
 - **A quiet input leaves the last command on the bus.** `Cantastic.Emitter`
   retransmits on a timer, so a commander that stops publishing leaves
   its last value applied for ever from the VMS's point of view. The
   VMS watches the *frame* (`Cantastic.ReceivedFrameWatcher`) and zeroes
-  on loss; #55 adds the other hop, each consumer watching its own
-  *input* (`RosBridge.InputWatchdog`) and zeroing what it emits. Two
+  on loss; each consumer also watches its own *input*
+  (`RosBridge.InputWatchdog`) and zeroes what it emits. Two
   hops, because they cover different failures — the bridge dying, and
   the input dying while the bridge lives.
 
@@ -557,7 +550,7 @@ Where to go next, by what you want to understand.
 | time | `bridges/ros_bridge/lib/ros_bridge/clock.ex` | `timing.ex`, `publishers/static_transform.ex` |
 | what a vehicle's bridge runs | `vehicles/ovcs_mini/lib/ovcs_mini.ex` (`ros_bridge_config/2`) | `bridges/ros_bridge/lib/ros_bridge/components.ex` |
 | the joystick command path | `bridges/ros_bridge/lib/ros_bridge/consumers/joy.ex` | `libraries/ovcs_can/priv/can/components/ovcs/0x2B0_*.yml`, `0x2B1_*.yml` |
-| the velocity command path (PR #55) | `bridges/ros_bridge/lib/ros_bridge/consumers/velocity.ex` | `0x3A0_ros2_control.yml`, `vms/core/lib/vms_core/components/ovcs/ros2_control/velocity.ex` |
+| the velocity command path | `bridges/ros_bridge/lib/ros_bridge/consumers/velocity.ex` | `0x3A0_ros2_control.yml`, `vms/core/lib/vms_core/components/ovcs/ros2_control/velocity.ex` |
 | who commands the vehicle | [`vehicle_parameterisation.md`](./vehicle_parameterisation.md#control-levels-who-commands-and-which-ros-node) | `vms/core/lib/vms_core/managers/control_level.ex` |
 | Nav2's configuration and why | `ros2/simulation/config/nav2.yaml` (heavily commented) | `config/nav2_ackermann_bt.xml`, `scripts/nav2_test.py` |
 | the perception pipeline | [`ros_perception_detection.md`](./ros_perception_detection.md) | `bridges/ros_bridge/lib/ros_bridge/camera/zenoh.ex`, `stereo_camera/supervisor.ex` |
