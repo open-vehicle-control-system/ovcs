@@ -259,20 +259,17 @@ defmodule VmsCore.Managers.ControlLevelTest do
   end
 
   describe "source attribution" do
-    test "an unattributed message cannot impersonate an unconfigured source" do
-      # %OvcsBus.Message{} defaults :source to nil, and the bus is
-      # cluster-wide, so `source == state.speed_source` with a nil
-      # source would read as a wildcard on any vehicle that leaves that
-      # source unconfigured -- which OVCS Mini does for three of them.
-      state = manager(%{speed_source: nil, manual_breaking_source: nil})
+    test "an unattributed message never reaches the bus" do
+      # The handlers gate on `source == state.speed_source`, and the bus
+      # is cluster-wide, so a nil-source message would read as a
+      # wildcard on any vehicle that leaves that source unconfigured --
+      # which OVCS Mini does for three of them. The bus refuses it
+      # instead, so the manager never has to consider the case.
+      assert_raise ArgumentError, ~r/has no :source/, fn ->
+        OvcsBus.broadcast("messages", %Message{name: :speed, value: D.new("9.9"), source: nil})
+      end
 
-      state =
-        state
-        |> deliver(:speed, D.new("9.9"), nil)
-        |> deliver(:manual_breaking, true, nil)
-
-      assert D.eq?(state.speed, @zero)
-      refute state.manual_breaking
+      refute_receive %Message{name: :speed}, 50
     end
   end
 
@@ -293,6 +290,32 @@ defmodule VmsCore.Managers.ControlLevelTest do
         value: PlannerVelocity,
         source: ControlLevel
       }
+    end
+  end
+
+  describe "source map validation" do
+    test "a flat :ros entry is refused at init rather than on the first flip to :ros" do
+      args = %{@args | requested_throttle_sources: %{manual: nil, radio: nil, ros: Planner}}
+
+      assert_raise ArgumentError, ~r/requested_throttle_sources.*:ros.*keyed by commander/s, fn ->
+        ControlLevel.init(args)
+      end
+    end
+
+    test "an :autonomous level is refused, naming the rename" do
+      args = %{
+        @args
+        | requested_steering_sources: %{manual: nil, radio: nil, autonomous: Planner}
+      }
+
+      assert_raise ArgumentError, ~r/requested_steering_sources.*:autonomous.*:ros/s, fn ->
+        ControlLevel.init(args)
+      end
+    end
+
+    test "a :ros entry without every commander is fine: a missing key commands nothing" do
+      state = manager(%{requested_throttle_sources: %{manual: nil, radio: nil, ros: %{}}})
+      assert is_map(state)
     end
   end
 end

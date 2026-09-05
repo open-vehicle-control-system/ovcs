@@ -64,6 +64,16 @@ defmodule VmsCore.Managers.ControlLevel do
           speed_source: speed_source
         } = args
       ) do
+    Enum.each(
+      [
+        requested_gear_sources: requested_gear_sources,
+        requested_direction_sources: requested_direction_sources,
+        requested_throttle_sources: requested_throttle_sources,
+        requested_steering_sources: requested_steering_sources
+      ],
+      fn {key, sources} -> validate_sources!(key, sources) end
+    )
+
     Bus.subscribe("messages")
     {:ok, timer} = :timer.send_interval(@loop_period, :loop)
 
@@ -127,8 +137,7 @@ defmodule VmsCore.Managers.ControlLevel do
         },
         state
       )
-      when not is_nil(state.requested_control_level_source) and
-             source == state.requested_control_level_source do
+      when source == state.requested_control_level_source do
     {:noreply, %{state | requested_control_level: requested_control_level}}
   end
 
@@ -140,8 +149,7 @@ defmodule VmsCore.Managers.ControlLevel do
         },
         state
       )
-      when not is_nil(state.requested_ros_commander_source) and
-             source == state.requested_ros_commander_source do
+      when source == state.requested_ros_commander_source do
     {:noreply, %{state | requested_ros_commander: requested_ros_commander}}
   end
 
@@ -149,7 +157,7 @@ defmodule VmsCore.Managers.ControlLevel do
         %Bus.Message{name: :manual_breaking, value: manual_breaking, source: source},
         state
       )
-      when not is_nil(state.manual_breaking_source) and source == state.manual_breaking_source do
+      when source == state.manual_breaking_source do
     {:noreply, %{state | manual_breaking: manual_breaking}}
   end
 
@@ -157,7 +165,7 @@ defmodule VmsCore.Managers.ControlLevel do
         %Bus.Message{name: :radio_breaking, value: radio_breaking, source: source},
         state
       )
-      when not is_nil(state.radio_breaking_source) and source == state.radio_breaking_source do
+      when source == state.radio_breaking_source do
     {:noreply, %{state | radio_breaking: radio_breaking}}
   end
 
@@ -165,12 +173,12 @@ defmodule VmsCore.Managers.ControlLevel do
         %Bus.Message{name: :ready_to_drive, value: ready_to_drive, source: source},
         state
       )
-      when not is_nil(state.ready_to_drive_source) and source == state.ready_to_drive_source do
+      when source == state.ready_to_drive_source do
     {:noreply, %{state | ready_to_drive: ready_to_drive}}
   end
 
   def handle_info(%Bus.Message{name: :speed, value: speed, source: source}, state)
-      when not is_nil(state.speed_source) and source == state.speed_source do
+      when source == state.speed_source do
     {:noreply, %{state | speed: speed}}
   end
 
@@ -220,9 +228,9 @@ defmodule VmsCore.Managers.ControlLevel do
 
   # Nothing matched, which is fine when the request is already
   # satisfied and a real problem otherwise. The switch left in `:ros`
-  # while the vehicle sits in `:manual` is the case that used to be
-  # silent: `:ros` is only reachable *from* `:radio`, so the operator
-  # has to step down through the middle position, and nothing said so.
+  # while the vehicle sits in `:manual` is the case worth saying out
+  # loud: `:ros` is only reachable *from* `:radio`, so the operator has
+  # to step down through the middle position.
   defp log_refusal(state) do
     refusal = {state.requested_control_level, state.selected_control_level}
 
@@ -315,6 +323,31 @@ defmodule VmsCore.Managers.ControlLevel do
   # source, so the second switch cannot affect it.
   defp source_for(sources, :ros, commander), do: sources[:ros][commander]
   defp source_for(sources, level, _commander), do: sources[level]
+
+  # Checked once here rather than discovered on the first flip to
+  # `:ros`, when a mis-shaped entry would crash the manager at the loop
+  # frequency with a stack trace that never names the composer.
+  defp validate_sources!(key, sources) when is_map(sources) do
+    if Map.has_key?(sources, :autonomous) do
+      raise ArgumentError,
+            "#{inspect(key)} has an :autonomous level. The level is :ros, keyed by " <>
+              "commander: ros: %{teleop: ..., autonomous: ...}"
+    end
+
+    case Map.get(sources, :ros) do
+      ros when is_map(ros) or is_nil(ros) ->
+        :ok
+
+      other ->
+        raise ArgumentError,
+              "#{inspect(key)}[:ros] must be a map keyed by commander " <>
+                "(%{teleop: ..., autonomous: ...}), got #{inspect(other)}"
+    end
+  end
+
+  defp validate_sources!(key, sources) do
+    raise ArgumentError, "#{inspect(key)} must be a map keyed by level, got #{inspect(sources)}"
+  end
 
   defp emit_metrics(state) do
     Bus.broadcast("messages", %Bus.Message{
