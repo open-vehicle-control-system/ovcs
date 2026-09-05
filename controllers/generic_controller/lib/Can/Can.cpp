@@ -65,6 +65,18 @@ void Can::emitdigitalAndAnalogPinsStatus(uint16_t digitalAndAnalogPinStatusesFra
 };
 
 
+// Both fields little-endian, matching the YAML.
+void Can::emitPulseCounterStatus(uint16_t pulseCounterStatusFrameId, uint16_t count, uint16_t frequencyDeciHz) {
+  CANMessage frame;
+  frame.id  = pulseCounterStatusFrameId;
+  frame.len = 4;
+  frame.data[0] = count & 0xFF;
+  frame.data[1] = count >> 8;
+  frame.data[2] = frequencyDeciHz & 0xFF;
+  frame.data[3] = frequencyDeciHz >> 8;
+  emit(frame);
+};
+
 PinStatus* Can::parseDigitalPinRequest() {
   static PinStatus digitalPinRequest[19] = {LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW, LOW};
   uint8_t pinNumber = 0;

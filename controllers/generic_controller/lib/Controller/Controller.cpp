@@ -112,6 +112,15 @@ void Controller::emitPinStatuses() {
     PinStatus* digitalPinsStatus = readDigitalPins();
     uint16_t* analogPinsStatus = readAnalogPins();
     _can.emitdigitalAndAnalogPinsStatus(_configuration._digitalAndAnalogPinsStatusFrameId, digitalPinsStatus, analogPinsStatus);
+    // Only a controller with the pin enabled emits this frame; the
+    // others have no such frame declared on their bus.
+    if (_configuration._pulsePin.readable()) {
+      _can.emitPulseCounterStatus(
+        _configuration._pulseCounterStatusFrameId,
+        _configuration._pulsePin.count(),
+        _configuration._pulsePin.frequencyDeciHz()
+      );
+    }
   }
 };
 

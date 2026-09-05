@@ -143,3 +143,17 @@ Where
 | A1  | 0 |
 | A2  | 1 |
 | A3  | 2 |
+
+### Pulse counter
+
+| Physical Pin | OVCS Pin |
+| -------- | ------- |
+| A1  | 0 |
+
+Rising edges on the pin are counted by interrupt, and the frame `0x7X9`
+reports the running count (16 bits, wrapping) and the frequency in
+tenths of a hertz every 10 ms, only while the pin is enabled. The
+frequency is derived from the period between the last two edges, and
+decays to zero once no edge has arrived for a second, so 1 Hz is the
+slowest rate it reports. A1 is shared with analog input 0; when both
+are enabled in the adoption frame the pulse counter takes the pin.
