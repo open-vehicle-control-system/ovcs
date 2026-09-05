@@ -49,7 +49,7 @@ flowchart LR
         gz["Gazebo + ros_gz_bridge"]
         nav2["Nav2"]
     end
-    subgraph nerves["Nerves bridges — Elixir"]
+    subgraph elixir["Elixir bridges — Nerves on the car, a host BEAM against the sim"]
         rosbr["ros_bridge (joy, IMU)"]
         percep["ros_bridge (stereo, detector)"]
     end
@@ -142,7 +142,7 @@ The boundary between Gazebo's transport and ROS is exactly the list in
 | `/clock` | `rosgraph_msgs/Clock` | gz → ros | Gazebo | every node, `RosBridge.Clock` |
 | `/odom` | `nav_msgs/Odometry` | gz → ros | `AckermannSteering` plugin | Nav2, `drive_test.py` |
 | `/tf` | `tf2_msgs/TFMessage` | gz → ros | `AckermannSteering` (`odom → base_link`) | Nav2, Foxglove |
-| `/tf_static` | `tf2_msgs/TFMessage` | — | `RosBridge.Publishers.StaticTransform` (`base_link → stereo_left`) | Nav2, Foxglove |
+| `/tf_static` | `tf2_msgs/TFMessage` | — | `robot_state_publisher` (the URDF's fixed joints, `chassis → stereo_left_link → stereo_left_optical`) **and** `RosBridge.Publishers.StaticTransform` (`base_link → stereo_left`) | Nav2, Foxglove |
 | `/joint_states` | `sensor_msgs/JointState` | gz → ros | Gazebo | `drive_test.py` |
 | `/stereo/{left,right}/image_raw/compressed` | `sensor_msgs/CompressedImage` | gz → ros | `image_bridge` | `RosBridge.Camera.Zenoh` |
 | `/stereo/{left,right}/camera_info` | `sensor_msgs/CameraInfo` | gz → ros | Gazebo | perception bridge |
@@ -154,15 +154,21 @@ The boundary between Gazebo's transport and ROS is exactly the list in
 
 Two things in that table deserve a closer look.
 
-**Two transform sources.** Gazebo publishes `odom → base_link` on
-`/tf`, which is *time-indexed*: `tf2` stores each sample against its
-stamp and interpolates between them. The Elixir bridge publishes
-`base_link → stereo_left` on `/tf_static`, which is *timeless*: a
-lookup at any stamp succeeds. That split is deliberate. The static
-transform used to go on `/tf` at 1 Hz, which left a window up to a
-second wide in which a point cloud stamped after the newest transform
-could not be transformed at all — Nav2 dropped every one, for the
-whole run.
+**Two transform buffers, three publishers.** Gazebo publishes
+`odom → base_link` on `/tf`, which is *time-indexed*: `tf2` stores each
+sample against its stamp and interpolates between them. `/tf_static` is
+*timeless* — a lookup at any stamp succeeds — and two things publish on
+it: `robot_state_publisher` with the URDF's fixed joints, and the Elixir
+bridge with `base_link → stereo_left`, the frame its own image headers
+name. They do not collide, because the URDF's camera frames are
+`stereo_left_link` and `stereo_left_optical`, not `stereo_left`; but be
+aware that the simulated camera and the bridge describe the same
+physical sensor under different frame names.
+
+The bridge's static transform used to go on `/tf` at 1 Hz, which left a
+window up to a second wide in which a point cloud stamped after the
+newest transform could not be transformed at all — Nav2 dropped every
+one, for the whole run. Moving it to `/tf_static` was the fix.
 
 **Both `cmd_vel` topics land on the same Gazebo topic.** The
 `AckermannSteering` plugin listens on `/model/<vehicle>/cmd_vel` and
@@ -198,7 +204,7 @@ conversion lives is the design.
 sequenceDiagram
     participant GZ as Gazebo
     participant CL as RosBridge.Clock
-    participant A as ":atomics (offset_ns)"
+    participant A as offset in atomics
     participant D as Camera driver
     participant T as RosBridge.Timing
     participant P as a publisher
@@ -305,10 +311,12 @@ converting those commands. Closing that gap — a Gazebo model driven by
 the VMS through a virtual CAN bus — is the obvious next step and is
 not built.
 
-> **Status.** `Consumers.Velocity`, frame `0x3A0`, `Ros2Control.Velocity`
-> and the two-axis `Managers.ControlLevel` described below land with
+> **Status.** `Consumers.Velocity`, frame `0x3A0`, `Ros2Control.Velocity`,
+> the two-axis `Managers.ControlLevel`, `RosBridge.InputWatchdog` and the
+> surplus-bytes warning described below all land with
 > [PR #55](https://github.com/open-vehicle-control-system/ovcs/pull/55).
-> On `main` today the vehicle has the joystick path only.
+> On `main` today the vehicle has the joystick path only, with no input
+> watchdog on the bridge side.
 
 ### The joystick path (0x2B0, 0x2B1)
 
@@ -373,16 +381,18 @@ state machine and the bench recipe are in
   accepts any body of 48 bytes or more, so a 72-byte `TwistStamped`
   body decodes as six float64s read out of the header — denormals
   near 1.0e-273 — and the vehicle ignores every command while every
-  watchdog reports a healthy stream. The bridge now warns about
-  surplus bytes after a successful parse; the simulator side has the
-  mirror-image failure, where a `Twist` bridge fed `TwistStamped`
-  simply never fires and a healthy-looking Nav2 moves nothing.
+  watchdog reports a healthy stream. #55 makes the bridge warn about
+  surplus bytes after a successful parse. The simulator side has the
+  mirror-image failure: a `Twist` bridge fed `TwistStamped` simply
+  never fires, and a healthy-looking Nav2 moves nothing.
 - **A quiet input leaves the last command on the bus.** `Cantastic.Emitter`
-  retransmits on a timer, so a planner that stops publishing leaves
-  its last velocity applied for ever from the VMS's point of view.
-  Each consumer watches its own input (`RosBridge.InputWatchdog`) and
-  zeroes what it emits; the VMS watches the frame (`ReceivedFrameWatcher`).
-  Two hops, covering different failures.
+  retransmits on a timer, so a commander that stops publishing leaves
+  its last value applied for ever from the VMS's point of view. The
+  VMS watches the *frame* (`Cantastic.ReceivedFrameWatcher`) and zeroes
+  on loss; #55 adds the other hop, each consumer watching its own
+  *input* (`RosBridge.InputWatchdog`) and zeroing what it emits. Two
+  hops, because they cover different failures — the bridge dying, and
+  the input dying while the bridge lives.
 
 ## 6. Nav2, as configured here
 
@@ -476,6 +486,14 @@ Things that are not incidental:
   5.4 % until `vehicles/ovcs_mini/priv/calibration/sim/` existed with
   D = 0 and R = I. Same scene, 61.2 %.
 - **`:simulator_clock` is listed first**, and only here. Section 4.
+- **One topic name, two roles.** `Publishers.StereoCamera` republishes
+  every captured frame on `<topic_prefix>/<side>/image_raw/compressed`,
+  and the prefix is `stereo` in every configuration — so against the
+  simulator the bridge publishes onto the same name it is consuming
+  from `image_bridge`. Whether a Zenoh session hears its own
+  publications back through its subscription is not something this
+  document has verified; the measured 30 Hz suggests it does not, but
+  if the stereo rate ever looks doubled, this is where to look first.
 - **`workshop.sdf`, not `empty.sdf`, for anything involving depth.**
   SGBM correlates texture; a flat plane under a blank sky yields no
   disparity at all.
