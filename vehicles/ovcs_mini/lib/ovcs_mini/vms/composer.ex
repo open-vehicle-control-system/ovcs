@@ -28,6 +28,15 @@ defmodule OvcsMini.Vms.Composer do
   # 13 m/s, but nothing has measured this one under load.
   @max_speed_m_s 5.0
 
+  # The hall sensor's magnet turns with the motor side of the drivetrain,
+  # so wheel speed needs the ratio down to the wheel. ESTIMATE: one
+  # pulse per turn, and a stock Slash 4x4 drivetrain of roughly 10.5:1
+  # (2.72 transmission, 50/13 spur to pinion). Only the product of the
+  # two matters, and it is measured directly: roll the vehicle one wheel
+  # turn and count the pulses on `0x709`.
+  @pulses_per_revolution 1
+  @gear_ratio 10.5
+
   @impl VmsCore.Vehicle
   def children do
     [
@@ -132,21 +141,11 @@ defmodule OvcsMini.Vms.Composer do
          # bench", has the frames.
          default_control_level: :manual,
          ready_to_drive_source: Vms,
-         # KNOWN GAP. The manager only allows a change into `:radio`,
-         # into `:ros`, or into the `:autonomous` commander at a
-         # standstill, read from a `:speed` broadcast. Nothing on Mini
-         # publishes one. The motor's hall sensor is wired to the main
-         # controller's A0, but the controller reads it with a plain
-         # `analogRead()` every 10 ms, so `Traxxas.Motor` sees a
-         # sampled square wave rather than a rate: `:raw_rotation_per_minute`
-         # is an amplitude, and `:moving` is whichever phase the sample
-         # landed on.
-         #
-         # With no source the manager's speed stays at zero, so the
-         # interlock is *permissive*: mode changes are allowed at any
-         # speed. Closing it needs the controller to count pulses on
-         # that pin and put a rate on the bus.
-         speed_source: nil
+         # The standstill gate on every mode change reads this. It is
+         # exactly zero once the hall sensor has been quiet for a
+         # second, and the gear ratio above only scales what counts as
+         # moving, so an estimate there does not weaken the gate.
+         speed_source: Traxxas.Motor
        }},
       # The manager owns the choice now, so the drivetrain follows
       # whichever source it names rather than being wired to one
@@ -169,7 +168,10 @@ defmodule OvcsMini.Vms.Composer do
       {Traxxas.Motor,
        %{
          controller: Vms.MainController,
-         rotation_per_minute_pin: 0
+         pulse_pin: 0,
+         pulses_per_revolution: @pulses_per_revolution,
+         gear_ratio: @gear_ratio,
+         wheel_radius: OvcsMini.geometry().wheel_radius
        }},
       {VmsCore.Status,
        %{
