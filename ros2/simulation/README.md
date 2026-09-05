@@ -368,11 +368,12 @@ ROS.
 
 ### Known details
 
-The odometry frame comes out as `ovcs_mini/odom` while its child is
-plain `base_link` — `AckermannSteering` namespaces the parent by model
-name and there is no verified tag to override it (`<child_frame_id>`
-exists, `<frame_id>` does not). Harmless with one vehicle; something
-to remap at the bridge if a consumer expects a bare `odom`.
+The odometry frame is `odom`, child `base_link`, at 50 Hz. Left to
+itself `AckermannSteering` namespaces the parent by model name and
+publishes `ovcs_mini/odom`, which Nav2 rejects outright; `<frame_id>`
+does exist in the shipped plugin and `gazebo_ackermann.xacro` sets it.
+(An earlier version of this paragraph said the tag did not exist. It
+was read out of the `.so` since.)
 
 ### Known wrinkle
 
