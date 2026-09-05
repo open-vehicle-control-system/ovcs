@@ -39,29 +39,34 @@ namespace PulseCounterTests{
         TEST_ASSERT_EQUAL_UINT16(0, counter.frequencyDeciHz(1020000 + PULSE_TIMEOUT_US + 1));
     }
 
-    void testBounceIsIgnored(){
+    void testChatterIsIgnored(){
+        // A slow pass through the threshold: three edges within 1.5 ms
+        // count as one revolution.
         PulseCounter counter;
         counter.recordEdge(1000000);
-        counter.recordEdge(1000010);
+        counter.recordEdge(1000500);
+        counter.recordEdge(1001500);
         TEST_ASSERT_EQUAL_UINT16(1, counter.count());
         counter.recordEdge(1020000);
+        TEST_ASSERT_EQUAL_UINT16(2, counter.count());
         TEST_ASSERT_EQUAL_UINT16(500, counter.frequencyDeciHz(1020000));
     }
 
     void testCountWrapsAt16Bits(){
         PulseCounter counter;
         for (uint32_t i = 0; i < 65537; i++) {
-            counter.recordEdge(i * 1000);
+            counter.recordEdge(i * 10000);
         }
         TEST_ASSERT_EQUAL_UINT16(1, counter.count());
     }
 
-    void testFrequencySaturates(){
-        // 150 us period is 6666.6 Hz, above what 16 bits of deci-hertz hold.
+    void testFastestAcceptedPeriod(){
+        // Exactly the minimum period is accepted and reads 500 Hz, well
+        // inside 16 bits of deci-hertz.
         PulseCounter counter;
         counter.recordEdge(1000000);
-        counter.recordEdge(1000150);
-        TEST_ASSERT_EQUAL_UINT16(65535, counter.frequencyDeciHz(1000150));
+        counter.recordEdge(1000000 + PULSE_MIN_PERIOD_US);
+        TEST_ASSERT_EQUAL_UINT16(5000, counter.frequencyDeciHz(1000000 + PULSE_MIN_PERIOD_US));
     }
 
     void testMicrosWraparound(){
@@ -73,15 +78,41 @@ namespace PulseCounterTests{
         TEST_ASSERT_EQUAL_UINT16(500, counter.frequencyDeciHz(0x00004E10));
     }
 
+    void testEdgeAfterTheClockSampleIsNotAWraparound(){
+        // The clock was read one microsecond before the last edge landed.
+        PulseCounter counter;
+        counter.recordEdge(1000000);
+        counter.recordEdge(1020000);
+        TEST_ASSERT_EQUAL_UINT16(500, counter.frequencyDeciHz(1019999));
+    }
+
+    void testStaysStoppedAcrossAClockWraparound(){
+        // Parked for 71.6 minutes: the stale pair must not re-enter the
+        // timeout window when the clock comes back around.
+        PulseCounter counter;
+        counter.recordEdge(1000000);
+        counter.recordEdge(1020000);
+        TEST_ASSERT_EQUAL_UINT16(0, counter.frequencyDeciHz(1020000 + PULSE_TIMEOUT_US + 1));
+        TEST_ASSERT_EQUAL_UINT16(0, counter.frequencyDeciHz(1030000));
+        // The first edge after a stop measures the stop, not a period;
+        // the second one starts a fresh measurement.
+        counter.recordEdge(4000000);
+        TEST_ASSERT_EQUAL_UINT16(0, counter.frequencyDeciHz(4000500));
+        counter.recordEdge(4020000);
+        TEST_ASSERT_EQUAL_UINT16(500, counter.frequencyDeciHz(4020000));
+    }
+
     void run_tests(void){
+        RUN_TEST(testEdgeAfterTheClockSampleIsNotAWraparound);
+        RUN_TEST(testStaysStoppedAcrossAClockWraparound);
         RUN_TEST(testStoppedBeforeAnyEdge);
         RUN_TEST(testOneEdgeIsNotYetAFrequency);
         RUN_TEST(testFrequencyFromPeriod);
         RUN_TEST(testDecelerationReadsLowerBeforeTheTimeout);
         RUN_TEST(testStoppedAfterTheTimeout);
-        RUN_TEST(testBounceIsIgnored);
+        RUN_TEST(testChatterIsIgnored);
         RUN_TEST(testCountWrapsAt16Bits);
-        RUN_TEST(testFrequencySaturates);
+        RUN_TEST(testFastestAcceptedPeriod);
         RUN_TEST(testMicrosWraparound);
     }
 }

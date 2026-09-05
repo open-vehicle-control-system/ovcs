@@ -3,12 +3,16 @@
 
 #include <stdint.h>
 
-// No edge for this long reads as stopped. It also sets the lowest
-// frequency that can be reported: 1 Hz.
-#define PULSE_TIMEOUT_US 1000000UL
-// Edges closer than this are contact bounce or electrical noise, not a
-// hall sensor: 100 us is 10 kHz, far above anything a wheel produces.
-#define PULSE_MIN_PERIOD_US 100UL
+// No edge for this long reads as stopped. It is also the lowest
+// frequency that can be reported, 0.5 Hz, and how long after the wheels
+// stop the speed reads zero. On the Mini's spur gear 0.5 Hz is about
+// 0.2 km/h at the wheel.
+#define PULSE_TIMEOUT_US 2000000UL
+// Edges closer than this are chatter, not a revolution. A hall switch
+// passed slowly through its threshold can toggle several times in a few
+// milliseconds; 2 ms is 500 Hz, still four times what the Mini's spur
+// gear reaches at full motor speed.
+#define PULSE_MIN_PERIOD_US 2000UL
 
 // Turns the edges of a pulse train into a frequency. Pure arithmetic on
 // the caller's clock, so the interrupt handler feeds it and the tests
@@ -30,7 +34,8 @@ class PulseCounter {
     // Tenths of a hertz, 0 when stopped. The period used is the longer
     // of the last measured period and the time since the last edge, so
     // a decelerating wheel reads lower on every tick instead of holding
-    // its last speed until the timeout.
+    // its last speed until the timeout. Reads `_lastEdgeUs` and
+    // `_periodUs` as a pair, so the caller must hold interrupts off.
     uint16_t frequencyDeciHz(uint32_t nowUs);
 
   private:

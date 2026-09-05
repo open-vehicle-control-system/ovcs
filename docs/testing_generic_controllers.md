@@ -79,7 +79,7 @@ candump can0,709:7FF
 
 Bytes 0-1 are the count and bytes 2-3 the frequency in tenths of a
 hertz, both little-endian. A wheel turned by hand should step the count
-and show a frequency that falls back to zero within a second of
+and show a frequency that falls back to zero within two seconds of
 stopping.
 
 The frame layouts are in
