@@ -201,6 +201,7 @@ The OVCS Mini uses the same software stack on a Traxxas 4WD RC car chassis:
 | Controller | Arduino R4 Minima (single "main" controller) |
 | Motor | Traxxas brushless motor (controlled via external PWM) |
 | Steering | Traxxas servo (controlled via external PWM) |
+| Motor speed | Hall effect sensor on the main controller's A0, read as an analog sample; no pulse counting yet, so no speed signal |
 | Radio Control | ExpressLRS receiver via Radio Control Bridge (RPi 3A) |
 
 The OVCS Mini uses a single CAN bus (`ovcs` at 500 kbps) since there are no third-party automotive components requiring isolation.

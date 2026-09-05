@@ -134,17 +134,18 @@ defmodule OvcsMini.Vms.Composer do
          ready_to_drive_source: Vms,
          # KNOWN GAP. The manager only allows a change into `:radio`,
          # into `:ros`, or into the `:autonomous` commander at a
-         # standstill, read from a `:speed`
-         # broadcast. Nothing on Mini publishes one — `Traxxas.Motor`
-         # reports `:raw_rotation_per_minute`, which is a raw
-         # `analogRead()` sample rather than a rate, because the
-         # controller firmware does no pulse counting yet.
+         # standstill, read from a `:speed` broadcast. Nothing on Mini
+         # publishes one. The motor's hall sensor is wired to the main
+         # controller's A0, but the controller reads it with a plain
+         # `analogRead()` every 10 ms, so `Traxxas.Motor` sees a
+         # sampled square wave rather than a rate: `:raw_rotation_per_minute`
+         # is an amplitude, and `:moving` is whichever phase the sample
+         # landed on.
          #
          # With no source the manager's speed stays at zero, so the
          # interlock is *permissive*: mode changes are allowed at any
-         # speed. Not worse than today, where nothing arbitrates at
-         # all, but not the intended behaviour either. Closing it
-         # needs the hall sensor.
+         # speed. Closing it needs the controller to count pulses on
+         # that pin and put a rate on the bus.
          speed_source: nil
        }},
       # The manager owns the choice now, so the drivetrain follows
