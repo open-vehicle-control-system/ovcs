@@ -1,0 +1,26 @@
+---
+# Emitted every 10 ms, only by a controller whose pulse_pin0 is enabled.
+#
+# The controller measures the period between rising edges with an
+# interrupt and reports the frequency, so the consumer gets a rate
+# rather than a sample: an analogRead() of a hall sensor every 10 ms
+# only ever shows which phase of the square wave the sample landed on.
+# The frequency decays to zero once no edge has arrived for a second,
+# which sets the lowest reportable rate at 1 Hz.
+#
+# The count wraps at 65535 and is there for odometry and diagnostics;
+# a receiver that wants distance integrates the difference between
+# consecutive frames.
+- name: pulse_pin0_count
+  kind: integer
+  value_start: 0
+  value_length: 16
+  endianness: little
+- name: pulse_pin0_frequency
+  kind: integer
+  unit: Hz
+  value_start: 16
+  value_length: 16
+  endianness: little
+  scale: "0.1"
+  precision: 1

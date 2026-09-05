@@ -35,6 +35,7 @@ class Can {
     Vms parseVmsAliveFrame();
     VmsCommand parseVmsCommandFrame();
     void emitdigitalAndAnalogPinsStatus(uint16_t digitalAndAnalogPinsStatusFrameId, PinStatus digitalPinsStatus[19], uint16_t analogPinsStatus[3]);
+    void emitPulseCounterStatus(uint16_t pulseCounterStatusFrameId, uint16_t count, uint16_t frequencyDeciHz);
 
   private:
     uint8_t _aliveCounter;

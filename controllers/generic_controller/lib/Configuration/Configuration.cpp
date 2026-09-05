@@ -14,6 +14,7 @@ bool Configuration::load() {
     computeDigitalPins();
     computePwmPins();
     computeDacPin();
+    computePulsePin();
     computeAnalogPins();
     computeExternalPwms();
     DPRINTLN("> EEPROM configuration valid, ready!");
@@ -53,6 +54,7 @@ void Configuration::computeFrameIds() {
   _externalPwm1RequestFrameId        = shiftedId | EXTERNAL_PWM1_REQUEST_FRAME_ID_MASK;
   _externalPwm2RequestFrameId        = shiftedId | EXTERNAL_PWM2_REQUEST_FRAME_ID_MASK;
   _externalPwm3RequestFrameId        = shiftedId | EXTERNAL_PWM3_REQUEST_FRAME_ID_MASK;
+  _pulseCounterStatusFrameId         = shiftedId | PULSE_COUNTER_STATUS_FRAME_ID_MASK;
 };
 
 void Configuration::computeDigitalPins() {
@@ -101,8 +103,15 @@ void Configuration::computeDacPin() {
   _dacPin = DacPin(_rawConfiguration[6] >> 6 & 0b1, A0);
 };
 
+// A1 is shared with the pulse counter, which wins: a pin under an
+// interrupt is not also sampled as an analog input.
+void Configuration::computePulsePin() {
+  _pulsePin = PulsePin(_rawConfiguration[6] >> 2 & 0b1, A1);
+};
+
 void Configuration::computeAnalogPins() {
-  _analogPins[0] = AnalogPin(_rawConfiguration[6] >> 5 & 0b1, A1);
+  bool analogPin0Enabled = (_rawConfiguration[6] >> 5 & 0b1) && !_pulsePin.readable();
+  _analogPins[0] = AnalogPin(analogPin0Enabled, A1);
   _analogPins[1] = AnalogPin(_rawConfiguration[6] >> 4 & 0b1, A2);
   _analogPins[2] = AnalogPin(_rawConfiguration[6] >> 3 & 0b1, A3);
 };
@@ -119,6 +128,7 @@ void Configuration::initializePhysicalPins() {
   for (uint8_t i = 0; i < length; i++) {
     _digitalPins[i].initializePhysicalPin();
   }
+  _pulsePin.begin();
 };
 
 void Configuration::print() {
@@ -189,6 +199,9 @@ void Configuration::print() {
     Serial.print("> DAC Output Pin: ");
     _dacPin.writeable() ? Serial.print("ON") : Serial.print("OFF");
     Serial.println("");
+
+    Serial.print("> Pulse Counter Pin: ");
+    _pulsePin.readable() ? Serial.println("ON") : Serial.println("OFF");
 
     Serial.print("> Analog Input Pins: ");
     for(uint8_t i = 0; i < 3; i++) {

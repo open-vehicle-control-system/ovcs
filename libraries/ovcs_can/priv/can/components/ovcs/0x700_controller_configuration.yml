@@ -105,8 +105,15 @@ signals:
   - name: analog_pin2
     value_start: 52
     <<: *other_pin_configuration
+  # Edge counter on A1, the same physical pin as analog_pin0. Enabling
+  # both is invalid: the controller gives the pulse counter the pin.
+  # Bit 53 is zero in every configuration adopted before this signal
+  # existed, so those controllers keep reading it as disabled.
+  - name: pulse_pin0
+    value_start: 53
+    <<: *other_pin_configuration
   - name: filler1
     kind: static
-    value_start: 53
-    value_length: 11
+    value_start: 54
+    value_length: 10
     value: 0x00
