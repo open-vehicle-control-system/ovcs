@@ -1,0 +1,5 @@
+---
+name: main_controller_pulse_counter_status
+id: 0x709
+frequency: 10
+signals: import!:@ovcs_can:can/components/ovcs/generic_controller/0x7X9_pulse_counter_status_signals.yml
