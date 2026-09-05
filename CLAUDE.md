@@ -22,6 +22,7 @@ Prefer updating these docs over duplicating their content here.
 ## Workflow rules
 
 - **Don't commit until the user validates.** Make the edits, run whatever sanity checks are possible locally, and stop. Wait for the user to confirm the change works on their end before running `git commit`. Small follow-up tweaks can be squashed into the eventual commit.
+- **Everything written into the repository is in English.** Commit messages, PR titles and descriptions, code comments, moduledocs, docs, test names, log and error strings. The language of the conversation does not carry over: if the user switches to French, answer in French and keep writing English into the repo. These artefacts outlive the chat that produced them and are read by people who were not in it — a French commit message is not searchable alongside the rest of the history, and a French PR description cannot be reviewed by everyone the repo is open to.
 
 ## Repo-specific notes for Claude
 
