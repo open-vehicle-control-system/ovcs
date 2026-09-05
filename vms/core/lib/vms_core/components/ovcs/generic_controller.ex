@@ -49,6 +49,13 @@ defmodule VmsCore.Components.OVCS.GenericController do
     "analog_pin2_value" => 0
   }
 
+  # Reported on a frame of their own, and only by a controller whose
+  # pulse pin is enabled: the other controllers declare no such frame.
+  @pulse_pins %{
+    "pulse_pin0_count" => 0,
+    "pulse_pin0_frequency" => 0
+  }
+
   @external_pwm_pins %{
     "external_pwm0_enabled" => false,
     "external_pwm0_duty_cycle" => 0,
@@ -80,6 +87,7 @@ defmodule VmsCore.Components.OVCS.GenericController do
     digital_and_analog_pin_status_frame_name =
       compute_frame_name(process_name, "digital_and_analog_pin_status")
 
+    pulse_counter_status_frame_name = compute_frame_name(process_name, "pulse_counter_status")
     digital_pin_request_frame_name = compute_frame_name(process_name, "digital_pin_request")
     other_pin_request_frame_name = compute_frame_name(process_name, "other_pin_request")
 
@@ -90,11 +98,18 @@ defmodule VmsCore.Components.OVCS.GenericController do
       compute_frame_name(process_name, "external_pwm3_request")
     ]
 
+    controller_configuration = Application.vehicle_composer().generic_controllers()[process_name]
+    pulse_pin_enabled = controller_configuration["pulse_pin0"] == "enabled"
+
     :ok =
       Receiver.subscribe(self(), :ovcs, [
         alive_frame_name,
         digital_and_analog_pin_status_frame_name
       ])
+
+    if pulse_pin_enabled do
+      :ok = Receiver.subscribe(self(), :ovcs, pulse_counter_status_frame_name)
+    end
 
     :ok = ReceivedFrameWatcher.enable(:ovcs, alive_frame_name)
 
@@ -131,13 +146,14 @@ defmodule VmsCore.Components.OVCS.GenericController do
     end)
 
     enabled_pin_names =
-      Application.vehicle_composer().generic_controllers()[process_name]
+      controller_configuration
       |> Enum.flat_map(fn {key, value} ->
         case value != "disabled" do
           true ->
             case key do
               "digital_pin" <> _ -> [key <> "_enabled"]
               "analog_pin" <> _ -> [key <> "_value"]
+              "pulse_pin" <> _ -> [key <> "_count", key <> "_frequency"]
               "pwm_pin" <> _ -> [key <> "_duty_cycle"]
               "dac_pin" <> _ -> [key <> "_duty_cycle"]
               _ -> []
@@ -177,6 +193,7 @@ defmodule VmsCore.Components.OVCS.GenericController do
         case name do
           "digital" <> _ -> true
           "analog" <> _ -> true
+          "pulse" <> _ -> true
           _ -> false
         end
       end)
@@ -189,10 +206,11 @@ defmodule VmsCore.Components.OVCS.GenericController do
        process_name: process_name,
        alive_frame_name: alive_frame_name,
        digital_and_analog_pin_status_frame_name: digital_and_analog_pin_status_frame_name,
+       pulse_counter_status_frame_name: pulse_counter_status_frame_name,
        digital_pin_request_frame_name: digital_pin_request_frame_name,
        other_pin_request_frame_name: other_pin_request_frame_name,
        external_pwm_request_frame_names: external_pwm_request_frame_names,
-       received_pins: @digital_pins |> Map.merge(@analog_pins),
+       received_pins: @digital_pins |> Map.merge(@analog_pins) |> Map.merge(@pulse_pins),
        requested_pins:
          @digital_pins
          |> Map.merge(@pwm_pins)
@@ -218,12 +236,16 @@ defmodule VmsCore.Components.OVCS.GenericController do
     {:noreply, state}
   end
 
+  # Two frames feed `received_pins`, so each merges its own signals
+  # rather than replacing the map, or the other frame's values would be
+  # wiped 10 ms later.
   @impl true
   def handle_info({:handle_frame, %Frame{name: name, signals: signals}}, state)
-      when name == state.digital_and_analog_pin_status_frame_name do
+      when name == state.digital_and_analog_pin_status_frame_name or
+             name == state.pulse_counter_status_frame_name do
     received_pins =
       signals
-      |> Enum.reduce(%{}, fn {_, signal}, pins ->
+      |> Enum.reduce(state.received_pins, fn {_, signal}, pins ->
         Map.put(pins, signal.name, signal.value)
       end)
 
