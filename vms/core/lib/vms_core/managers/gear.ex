@@ -159,7 +159,8 @@ defmodule VmsCore.Managers.Gear do
       requested_throttle: requested_throttle
     } = state
 
-    speed_near_zero = D.abs(speed) |> D.lt?(@gear_shift_speed_limit)
+    # A nil speed is a source that has gone quiet; unknown is not near zero.
+    speed_near_zero = not is_nil(speed) and D.abs(speed) |> D.lt?(@gear_shift_speed_limit)
     throttle_near_zero = D.lt?(requested_throttle, @gear_shift_throttle_limit)
 
     cond do

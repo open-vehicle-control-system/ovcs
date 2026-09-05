@@ -107,8 +107,13 @@ defmodule VmsCore.Components.OVCS.GenericController do
         digital_and_analog_pin_status_frame_name
       ])
 
+    # Watched as well as subscribed: a controller on old firmware, or
+    # not yet re-adopted, never emits this frame, and a stale or
+    # default frequency would read as a standstill. While the frame is
+    # dead the pulse signals are broadcast as nil.
     if pulse_pin_enabled do
       :ok = Receiver.subscribe(self(), :ovcs, pulse_counter_status_frame_name)
+      :ok = ReceivedFrameWatcher.enable(:ovcs, pulse_counter_status_frame_name)
     end
 
     :ok = ReceivedFrameWatcher.enable(:ovcs, alive_frame_name)
@@ -221,6 +226,7 @@ defmodule VmsCore.Components.OVCS.GenericController do
        control_other_pins: control_other_pins,
        requested_pin_names: requested_pin_names,
        received_pin_names: received_pin_names,
+       pulse_pin_enabled: pulse_pin_enabled,
        status: nil,
        expansion_board1_last_error: nil,
        expansion_board2_last_error: nil
@@ -393,15 +399,28 @@ defmodule VmsCore.Components.OVCS.GenericController do
     Emitter.disable(:ovcs, "controller_configuration")
   end
 
+  defp pulse_frame_alive?(%{pulse_pin_enabled: false}), do: false
+
+  defp pulse_frame_alive?(state) do
+    {:ok, alive} = ReceivedFrameWatcher.is_alive?(:ovcs, state.pulse_counter_status_frame_name)
+    alive
+  end
+
   defp compute_frame_name(process_name, suffix) do
     controller_name = Macro.underscore(process_name) |> String.split("/") |> List.last()
     "#{controller_name}_#{suffix}"
   end
 
   defp emit_metrics(state) do
+    pulse_frame_alive = pulse_frame_alive?(state)
+
     state.received_pin_names
     |> Enum.each(fn name ->
-      value = state.received_pins[name]
+      value =
+        case name do
+          "pulse" <> _ when not pulse_frame_alive -> nil
+          _ -> state.received_pins[name]
+        end
 
       Bus.broadcast("messages", %Bus.Message{
         name: "received_#{name}" |> String.to_atom(),
