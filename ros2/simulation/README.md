@@ -1,5 +1,10 @@
 # simulation — the OVCS Mini in Gazebo
 
+> New here? [`docs/ros2_integration.md`](../../docs/ros2_integration.md)
+> is the map — how the simulator, ROS 2, Nav2 and the Elixir bridge fit
+> together, and which command path the simulator actually exercises.
+> This file is the manual.
+
 A Gazebo **Jetty** model of the OVCS Mini (a Traxxas Slash 4x4, 1/10
 scale short-course truck), plus the stack to run it. Third sibling to
 `ros2/vehicule` (on the car, balenaOS) and `ros2/base` (the operator's
