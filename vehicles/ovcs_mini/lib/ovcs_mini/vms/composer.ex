@@ -28,14 +28,14 @@ defmodule OvcsMini.Vms.Composer do
   # 13 m/s, but nothing has measured this one under load.
   @max_speed_m_s 5.0
 
-  # The hall sensor's magnet turns with the motor side of the drivetrain,
-  # so wheel speed needs the ratio down to the wheel. ESTIMATE: one
-  # pulse per turn, and a stock Slash 4x4 drivetrain of roughly 10.5:1
-  # (2.72 transmission, 50/13 spur to pinion). Only the product of the
-  # two matters, and it is measured directly: roll the vehicle one wheel
-  # turn and count the pulses on `0x709`.
+  # The trigger magnet sits in the spur gear, so wheel speed needs the
+  # ratio from the spur gear to the wheels: the Slash 4x4 transmission's
+  # fixed 2.72:1. The pinion does not enter into it. One magnet, one
+  # pulse per spur turn. ESTIMATE until measured: turn the spur gear by
+  # hand until a wheel completes one revolution and count the pulses on
+  # `0x709`; only the product of the two constants matters.
   @pulses_per_revolution 1
-  @gear_ratio 10.5
+  @gear_ratio 2.72
 
   @impl VmsCore.Vehicle
   def children do
@@ -142,8 +142,8 @@ defmodule OvcsMini.Vms.Composer do
          default_control_level: :manual,
          ready_to_drive_source: Vms,
          # The standstill gate on every mode change reads this. It is
-         # exactly zero once the hall sensor has been quiet for a
-         # second, and the gear ratio above only scales what counts as
+         # exactly zero once the hall sensor has been quiet for two
+         # seconds, and the gear ratio above only scales what counts as
          # moving, so an estimate there does not weaken the gate.
          speed_source: Traxxas.Motor
        }},
