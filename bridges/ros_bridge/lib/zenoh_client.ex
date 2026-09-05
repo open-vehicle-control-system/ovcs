@@ -577,12 +577,11 @@ defmodule RosBridge.ZenohClient do
   # `FunctionClauseError` from a `parse_string/1` clause that matches no
   # input, `MatchError` from an alignment helper, `ArgumentError` from a
   # `binary_part/3` given a negative length. None of those are caught by
-  # the `else` above, so they killed this GenServer -- and because
-  # consumers call `subscribe/2` only from `init/1` and every supervisor
-  # here is `:one_for_one`, it came back with an empty subscription map
-  # while the surviving consumers were never re-subscribed. One short
-  # frame on one topic left the whole bridge permanently deaf: no joy,
-  # no IMU, no heartbeat, no cameras, until the BEAM restarted.
+  # the `else` above, so without this they kill the GenServer. The
+  # bridge subtree is `:rest_for_one` (`RosBridge.children/0`), so a
+  # client crash restarts every consumer and they re-subscribe -- but a
+  # malformed frame is data, not a fault, and one publisher must not be
+  # able to restart the whole bridge at its own frequency.
   #
   # A rescue clause per parser would be whack-a-mole -- the same idiom
   # appears in `Ros2.Common.parse_string/1`, `Time.parse/1`,

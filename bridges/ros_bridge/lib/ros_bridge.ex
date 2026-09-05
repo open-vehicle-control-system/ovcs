@@ -78,6 +78,13 @@ defmodule RosBridge do
   # picked. Branching on the compile-time value bakes the arm in.
   @arm if Mix.target() == :host, do: :host, else: :target
 
+  # One `:rest_for_one` subtree with `ZenohClient` first. Consumers
+  # subscribe from `init/1` and never again, so a client that restarts
+  # alone comes back with an empty subscription map and every consumer
+  # is deaf until the BEAM restarts. Restarting everything after it is
+  # what makes a client crash recoverable. Publishers would survive
+  # either way (they re-declare lazily), but a consistent restart is
+  # simpler to reason about than a partial one.
   @impl OvcsBridge
   def children do
     config = resolve_config()
@@ -85,7 +92,15 @@ defmodule RosBridge do
     base = [{RosBridge.ZenohClient, zenoh_client_opts(config)}]
     extras = Enum.flat_map(config.components, &resolve_component/1)
 
-    base ++ extras
+    [
+      %{
+        id: RosBridge.Supervisor,
+        type: :supervisor,
+        start:
+          {Supervisor, :start_link,
+           [base ++ extras, [strategy: :rest_for_one, name: RosBridge.Supervisor]]}
+      }
+    ]
   end
 
   # `:node_name` is optional — omit the key entirely when the vehicle
