@@ -160,7 +160,10 @@ defmodule OvcsMini.Vms.Composer do
        %{
          controller: Vms.MainController,
          external_pwm_id: 1,
-         selected_control_level_source: Managers.ControlLevel
+         selected_control_level_source: Managers.ControlLevel,
+         # A velocity is a physical quantity, not a hand on a trigger:
+         # it bypasses the joystick feel curve.
+         linear_sources: [OVCS.Ros2Control.Velocity]
        }},
       {Traxxas.Motor,
        %{

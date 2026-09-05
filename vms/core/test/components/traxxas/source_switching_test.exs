@@ -151,4 +151,19 @@ defmodule VmsCore.Components.Traxxas.SourceSwitchingTest do
       assert unchanged.requested_throttle_source == @commander
     end
   end
+
+  describe "the feel curve" do
+    test "a joystick-shaped request is squared, keeping its sign" do
+      assert D.eq?(Throttle.shape(D.new("0.5"), false), D.new("0.25"))
+      assert D.eq?(Throttle.shape(D.new("-0.5"), false), D.new("-0.25"))
+      assert D.eq?(Throttle.shape(D.new("1"), false), D.new("1"))
+    end
+
+    test "a physical quantity is applied as is" do
+      # A planner asking for a fifth of full speed must get a fifth,
+      # not a twenty-fifth.
+      assert D.eq?(Throttle.shape(D.new("0.2"), true), D.new("0.2"))
+      assert D.eq?(Throttle.shape(D.new("-0.2"), true), D.new("-0.2"))
+    end
+  end
 end
