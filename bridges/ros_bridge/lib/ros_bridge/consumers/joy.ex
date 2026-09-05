@@ -1,5 +1,5 @@
 defmodule RosBridge.Consumers.Joy.State do
-  defstruct []
+  defstruct [:watchdog]
 end
 
 defmodule RosBridge.Consumers.Joy do
@@ -33,17 +33,47 @@ defmodule RosBridge.Consumers.Joy do
   So `control_value/3` clamps, and a missing axis reads as centre
   rather than as a crash. Centre is the safe reading: it commands
   neither steering nor throttle.
+
+  ## The joystick going away is not the same as the bridge going away
+
+  `Cantastic.Emitter` keeps its data in state and retransmits on a
+  timer, so once a throttle has been written the frames keep leaving
+  at 100 Hz whether or not anything is still feeding them. Unplug the
+  controller, kill the `joy` node, partition Zenoh — the CAN bus looks
+  healthy and carries a command nobody is issuing.
+
+  The VMS-side `Cantastic.ReceivedFrameWatcher` cannot see that,
+  because from its side nothing is wrong. So this consumer watches its
+  own input and zeroes the throttle when it stops arriving. See
+  `RosBridge.InputWatchdog` for the two hops and what each covers.
+
+  The default timeout is 500 ms, against samples that arrive every
+  50 ms: the base station runs `joy_linux` with
+  `autorepeat_rate` at 20 Hz, so a still controller still publishes.
+  Lower that rate and this has to rise with it.
+
+  Only the throttle is zeroed. Steering holds, for the same reason it
+  holds in `VmsCore.Components.OVCS.ROSControl.Throttle`: removing
+  propulsion is what makes the vehicle safe, while snapping the wheels
+  straight mid-corner is a new hazard rather than a mitigation.
   """
   alias Cantastic.Emitter
   alias Decimal, as: D
   alias Ros2.SensorMsgs.Msg.Joy
   alias RosBridge.Consumers.Joy.State
+  alias RosBridge.InputWatchdog
 
   require Logger
   use GenServer
 
   @max_value 2 ** 31 - 1
   @joy_topic "joy"
+  # Ten missed samples at the 20 Hz autorepeat rate. At 2 m/s that is
+  # about a metre of travel — longer than the VMS-side watcher's 50 ms,
+  # because this has to tolerate a scheduling hiccup on the operator's
+  # machine and a hop across the Zenoh fabric.
+  @default_timeout_ms 500
+  @check_period_ms 50
 
   @impl true
   def init(_) do
@@ -68,7 +98,13 @@ defmodule RosBridge.Consumers.Joy do
       })
 
     :ok = RosBridge.ZenohClient.subscribe(@joy_topic, Joy)
-    {:ok, %State{}}
+    {:ok, _timer} = :timer.send_interval(@check_period_ms, :check_input)
+
+    {:ok, %State{watchdog: InputWatchdog.new(timeout_ms())}}
+  end
+
+  defp timeout_ms do
+    Application.get_env(:ros_bridge, :joy_timeout_ms, @default_timeout_ms)
   end
 
   @spec start_link(nil) :: :ignore | {:error, any()} | {:ok, pid()}
@@ -112,7 +148,15 @@ defmodule RosBridge.Consumers.Joy do
         %{data | "steering" => steering, "throttle" => throttle}
       end)
 
-    {:noreply, state}
+    {:noreply, %{state | watchdog: InputWatchdog.seen(state.watchdog)}}
+  end
+
+  # The transition, not the state, so this logs once per outage rather
+  # than twenty times a second.
+  def handle_info(:check_input, state) do
+    {transition, watchdog} = InputWatchdog.check(state.watchdog)
+    :ok = handle_transition(transition)
+    {:noreply, %{state | watchdog: watchdog}}
   end
 
   # Anything else delivered as `{:ros_message, …}` is a configuration
@@ -122,5 +166,43 @@ defmodule RosBridge.Consumers.Joy do
     Logger.warning("#{__MODULE__} unexpected message on #{key_expr}: #{inspect(message)}")
 
     {:noreply, state}
+  end
+
+  # Nothing has ever arrived, which is a setup problem rather than a
+  # loss: the topic name, the domain id, or a `joy` node that was never
+  # started. Said once, on the first tick, because nothing downstream
+  # can tell -- the emitter keeps sending valid zeroed frames, so the
+  # VMS-side watcher sees a perfectly healthy stream.
+  defp handle_transition(:silent) do
+    Logger.warning(
+      "#{__MODULE__}: nothing has published #{@joy_topic} since start. " <>
+        "Check the topic name and ROS_DOMAIN_ID; the controller is not " <>
+        "commanding this vehicle."
+    )
+
+    zero_throttle()
+  end
+
+  defp handle_transition(:stale) do
+    Logger.warning(
+      "#{__MODULE__}: no #{@joy_topic} sample for #{timeout_ms()} ms — throttle zeroed. " <>
+        "The controller is not commanding this vehicle."
+    )
+
+    zero_throttle()
+  end
+
+  defp handle_transition(:fresh) do
+    Logger.info("#{__MODULE__}: #{@joy_topic} is publishing")
+    :ok
+  end
+
+  defp handle_transition(:unchanged), do: :ok
+
+  # Steering is left alone deliberately — see the moduledoc.
+  defp zero_throttle do
+    Emitter.update(:ovcs, "ros_control1", fn data ->
+      %{data | "throttle" => D.new(0)}
+    end)
   end
 end

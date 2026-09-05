@@ -14,6 +14,13 @@ defmodule VmsCore.Components.OVCS.RadioControl.Throttle do
   @max_value 2000
   @range 500
   @tolerated_drift 200
+  # 25 raw counts of the 500-count range. Sized for a *continuous*
+  # control at rest, which drifts by roughly 5-20 counts -- deliberately
+  # not `RequestedControlLevel`'s 100, which is sized to snap a discrete
+  # switch onto one of three endpoints and would swallow a fifth of the
+  # brake travel. Taking over from ROS by pulling the trigger needs 5%
+  # of reverse travel.
+  @breaking_threshold D.new("-0.05")
 
   def start_link(args) do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
@@ -71,7 +78,15 @@ defmodule VmsCore.Components.OVCS.RadioControl.Throttle do
 
   defp compute_throttle(state) do
     requested_throttle = state.raw_channel |> D.sub(@center_value) |> D.div(@range)
-    radio_breaking = state.requested_throttle |> D.lt?(@zero)
+
+    # From this tick's value, not `state.requested_throttle`: a brake
+    # reported one 10 ms loop late defeats a takeover signal.
+    #
+    # Against a threshold, not zero. `radio_breaking` drops the control
+    # level and latches `forced_control_level`, so a trigger trimmed a
+    # hair below centre -- 1495 raw, i.e. -0.01 -- would otherwise make
+    # `:ros` unreachable with no way back but re-centring the trim.
+    radio_breaking = requested_throttle |> D.lt?(@breaking_threshold)
 
     %{state | requested_throttle: requested_throttle, radio_breaking: radio_breaking}
   end

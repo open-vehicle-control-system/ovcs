@@ -6,3 +6,6 @@ can_networks:
     emitted_frames:
       - import!:@ovcs_can:can/components/ovcs/0x2B0_ros_control0.yml
       - import!:@ovcs_can:can/components/ovcs/0x2B1_ros_control1.yml
+      # The planner-shaped command path — see 0x3A0's own file for why
+      # it carries velocity rather than normalised axes.
+      - import!:@ovcs_can:can/components/ovcs/0x3A0_ros2_control.yml

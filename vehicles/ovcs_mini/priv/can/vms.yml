@@ -16,3 +16,4 @@ can_networks:
       - import!:@ovcs_can:can/components/ovcs/0x2A1_radio_control_channels1.yml
       - import!:@ovcs_can:can/components/ovcs/0x2B0_ros_control0.yml
       - import!:@ovcs_can:can/components/ovcs/0x2B1_ros_control1.yml
+      - import!:@ovcs_can:can/components/ovcs/0x3A0_ros2_control.yml

@@ -67,6 +67,8 @@ defmodule RosBridge.ZenohClient do
   @reconnect_initial_ms 1_000
   @reconnect_max_ms 30_000
   @zenoh_port 7447
+  @surplus_warning_period 5_000
+  @surplus_alignment_slack 8
 
   ## API
 
@@ -552,7 +554,9 @@ defmodule RosBridge.ZenohClient do
 
   defp deliver_sample(subscription, key_expr, payload) do
     with {:ok, body} <- RmwZenoh.decode_payload(payload),
-         {:ok, parsed, _rest} <- subscription.message_module.parse(body) do
+         {:ok, parsed, rest} <- parse_body(subscription.message_module, body) do
+      warn_on_surplus(subscription.message_module, key_expr, rest)
+
       Enum.each(subscription.subscribers, fn {pid, _ref} ->
         send(pid, {:ros_message, {key_expr, parsed}})
       end)
@@ -564,6 +568,73 @@ defmodule RosBridge.ZenohClient do
         )
     end
   end
+
+  # The one place every message module is entered, and therefore the
+  # one place worth making total.
+  #
+  # The parsers are built from binary pattern matches, and a body that
+  # is short or malformed raises rather than returning a tagged error:
+  # `FunctionClauseError` from a `parse_string/1` clause that matches no
+  # input, `MatchError` from an alignment helper, `ArgumentError` from a
+  # `binary_part/3` given a negative length. None of those are caught by
+  # the `else` above, so without this they kill the GenServer. The
+  # bridge subtree is `:rest_for_one` (`RosBridge.children/0`), so a
+  # client crash restarts every consumer and they re-subscribe -- but a
+  # malformed frame is data, not a fault, and one publisher must not be
+  # able to restart the whole bridge at its own frequency.
+  #
+  # A rescue clause per parser would be whack-a-mole -- the same idiom
+  # appears in `Ros2.Common.parse_string/1`, `Time.parse/1`,
+  # `Quaternion.parse/1` and every module built on them. Guarding the
+  # call site covers all of them at once, including ones not written yet.
+  defp parse_body(message_module, body) do
+    message_module.parse(body)
+  rescue
+    exception ->
+      {:error, {:parse_raised, Exception.message(exception), byte_size(body)}}
+  end
+
+  # Surplus bytes after a successful parse are the signature of the
+  # wrong message module, and the fixed-layout parsers cannot tell: a
+  # 72-byte `TwistStamped` body handed to `Twist.parse/1` reads the
+  # header's bytes as float64s and succeeds, yielding denormals near
+  # 1.0e-273 -- a vehicle that ignores every command while every
+  # watchdog reports a healthy stream.
+  #
+  # The threshold is what keeps this from crying wolf. Messages ending
+  # in a variable-length field -- `Joy`'s axes and buttons,
+  # `CompressedImage`'s data -- can carry trailing CDR alignment
+  # padding, which is at most 7 bytes for the widest primitive. Anything
+  # from 8 bytes up is a field the parser did not know about, not
+  # padding. The mismatch this exists for leaves 24.
+  #
+  # Rate-limited per key, because a mis-typed publisher sends at its own
+  # frequency rather than once.
+  defp warn_on_surplus(message_module, key_expr, rest)
+       when byte_size(rest) >= @surplus_alignment_slack do
+    now = System.monotonic_time(:millisecond)
+    key = {:surplus_warned, key_expr}
+    last = Process.get(key)
+
+    # `nil` explicitly, not a sentinel arrived at by arithmetic:
+    # `System.monotonic_time/1` has an arbitrary origin and is routinely
+    # negative, so `now - -@surplus_warning_period >= @surplus_warning_period`
+    # is false on a fresh VM and the first warning -- the one that
+    # matters -- never fires.
+    if is_nil(last) or now - last >= @surplus_warning_period do
+      Process.put(key, now)
+
+      Logger.warning(
+        "#{__MODULE__} #{inspect(message_module)} parsed #{key_expr} but left " <>
+          "#{byte_size(rest)} bytes unread, which usually means the publisher is " <>
+          "sending a different message type -- a stamped variant, most often"
+      )
+    end
+
+    :ok
+  end
+
+  defp warn_on_surplus(_message_module, _key_expr, _rest), do: :ok
 
   defp drop_subscriber(state, key_expr, subscription, pid) do
     case Map.pop(subscription.subscribers, pid) do

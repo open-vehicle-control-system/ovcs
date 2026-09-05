@@ -21,7 +21,7 @@ defmodule VmsCore.Components.Traxxas.Steering do
   def init(%{
         controller: controller,
         external_pwm_id: external_pwm_id,
-        requested_steering_source: requested_steering_source
+        selected_control_level_source: selected_control_level_source
       }) do
     Bus.subscribe("messages")
     {:ok, timer} = :timer.send_interval(@loop_period, :loop)
@@ -31,13 +31,42 @@ defmodule VmsCore.Components.Traxxas.Steering do
        loop_timer: timer,
        controller: controller,
        external_pwm_id: external_pwm_id,
-       requested_steering_source: requested_steering_source,
+       selected_control_level_source: selected_control_level_source,
+       # Starts nil: nothing commands this actuator until the manager
+       # names a source. The manager's default level does that on its
+       # first tick.
+       requested_steering_source: nil,
        requested_steering: @zero,
        steering: @zero
      }}
   end
 
   @impl true
+  def handle_info(
+        %Bus.Message{
+          name: :requested_steering_source,
+          value: requested_steering_source,
+          source: source
+        },
+        state
+      )
+      when source == state.selected_control_level_source do
+    # Zero on the way to a level that commands nothing. Without this
+    # the last request would persist — `handle_info` for
+    # `:requested_steering` gates on the source, so with no source no
+    # message matches and the actuator holds. On the throttle that
+    # means a vehicle that keeps driving after being switched to a
+    # safe level, which is the same hazard as a stale CAN frame.
+    requested = if is_nil(requested_steering_source), do: @zero, else: state.requested_steering
+
+    {:noreply,
+     %{
+       state
+       | requested_steering_source: requested_steering_source,
+         requested_steering: requested
+     }}
+  end
+
   def handle_info(:loop, state) do
     state =
       state

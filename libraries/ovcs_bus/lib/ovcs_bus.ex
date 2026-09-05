@@ -30,13 +30,27 @@ defmodule OvcsBus do
   matters across the vehicle's BEAMs — typical for component state
   broadcasts, `:ready_to_drive` updates, metrics, etc.
   """
-  def broadcast(topic, message), do: Phoenix.PubSub.broadcast(__MODULE__, topic, message)
+  def broadcast(topic, message) do
+    check_source!(message)
+    Phoenix.PubSub.broadcast(__MODULE__, topic, message)
+  end
 
   @doc """
   Deliver `message` only to subscribers on the local node. Prefer
   `broadcast/2` unless you have a specific reason to keep traffic
   off the cluster.
   """
-  def local_broadcast(topic, message),
-    do: Phoenix.PubSub.local_broadcast(__MODULE__, topic, message)
+  def local_broadcast(topic, message) do
+    check_source!(message)
+    Phoenix.PubSub.local_broadcast(__MODULE__, topic, message)
+  end
+
+  defp check_source!(%OvcsBus.Message{source: nil} = message) do
+    raise ArgumentError,
+          "OvcsBus.Message #{inspect(message.name)} has no :source. Subscribers gate on " <>
+            "the source, so an unattributed message would match a component whose " <>
+            "configured source is nil -- exactly the level that must command nothing."
+  end
+
+  defp check_source!(_message), do: :ok
 end

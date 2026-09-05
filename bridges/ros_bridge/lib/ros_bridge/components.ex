@@ -17,6 +17,13 @@ defmodule RosBridge.Components do
         * `:interval_ms` (default `1_000`)
     * `:joy_interpreter` — `RosBridge.Consumers.Joy` subscribing to
       `/joy` and forwarding axes onto the CAN bus. No opts.
+    * `:velocity_interpreter` — `RosBridge.Consumers.Velocity`
+      subscribing to a velocity-command topic (`cmd_vel` by default,
+      `geometry_msgs/TwistStamped`) and emitting `ros2_control`
+      (`0x3A0`). The planner-shaped counterpart to
+      `:joy_interpreter`: it forwards linear and angular velocity so
+      the VMS solves the kinematics once against its own geometry.
+      Options: `:topic`, `:message`, `:timeout_ms`.
     * `:simulator_clock` — `RosBridge.Clock`, following `/clock` so
       published stamps use simulator time rather than wall clock.
       **Simulation only.** Without it every stamp is wall clock, which
@@ -76,6 +83,8 @@ defmodule RosBridge.Components do
   def start(:simulator_clock, opts), do: [{RosBridge.Clock, opts}]
 
   def start(:joy_interpreter, _opts), do: [{RosBridge.Consumers.Joy, []}]
+
+  def start(:velocity_interpreter, opts), do: [{RosBridge.Consumers.Velocity, opts}]
 
   def start(:imu_publisher, opts) do
     driver = Keyword.fetch!(opts, :driver)

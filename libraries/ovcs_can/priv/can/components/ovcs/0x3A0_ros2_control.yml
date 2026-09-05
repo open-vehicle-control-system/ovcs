@@ -1,0 +1,51 @@
+---
+# Velocity command: how fast to go and how hard to turn.
+#
+# The second of two command paths into the VMS, and deliberately a
+# different abstraction from the first:
+#
+#   0x2B0/0x2B1 ros_control   normalised axes — what a *joystick* means
+#   0x3A0       ros2_control  linear + angular — what a *planner* means
+#
+# Carrying velocity rather than actuator positions means the kinematics
+# are solved once, in the VMS, against that vehicle's geometry. Any
+# commander speaks the same frame: Nav2, a remote operator, a test rig.
+# The alternative — every commander converting to steering angle
+# itself — is the same arithmetic repeated with a different wheelbase
+# constant each time.
+#
+# Signed, scaled integers rather than floats because Cantastic has no
+# float codec and a fixed point is enough: 1 mm/s and 1 mrad/s are far
+# finer than anything the drivetrain can act on.
+#
+# `precision` has to be stated alongside `scale`. Cantastic defaults it
+# to 2 (`SignalSpecification.from_yaml/4`), and `Signal.interpret/2`
+# rounds the decoded value to it — so a 0.001 scale without a matching
+# precision decodes to 0.01 steps, ten times coarser than the numbers
+# above, and every yaw rate under 0.005 rad/s arrives as exactly zero.
+# This is the first frame here with a scale finer than 0.01, which is
+# why no existing one needed the line.
+name: ros2_control
+id: 0x3A0
+frequency: 20
+signals:
+  # Forward is positive. Reverse is a negative linear velocity, not a
+  # separate direction enum — the sign is already in the number, and
+  # 0x2B0's `direction` field exists because a joystick axis has no
+  # sign convention of its own.
+  - name: linear
+    unit: m/s
+    value_start: 0
+    value_length: 24
+    sign: signed
+    scale: "0.001"
+    precision: 3
+  # Counter-clockwise is positive, matching REP-103 and therefore
+  # `geometry_msgs/Twist.angular.z`.
+  - name: angular
+    unit: rad/s
+    value_start: 24
+    value_length: 24
+    sign: signed
+    scale: "0.001"
+    precision: 3
