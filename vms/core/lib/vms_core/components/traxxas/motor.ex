@@ -11,14 +11,20 @@ defmodule VmsCore.Components.Traxxas.Motor do
       speed       = wheel rev/s · 2π · wheel_radius
 
   `:speed` is published in km/h, the unit every other `:speed` on the
-  bus uses. `:moving` is derived from it.
+  bus uses.
 
-  ## Standstill
+  ## Standstill, and not knowing
 
   The controller reports a frequency of zero once no edge has arrived
-  for a second, so `:speed` reads exactly zero at rest and
-  `Managers.ControlLevel`'s standstill gate holds. The same second sets
-  the slowest speed that reads as motion at all.
+  for two seconds, so `:speed` reads exactly zero at rest and
+  `Managers.ControlLevel`'s standstill gate holds. The same two seconds
+  set the slowest speed that reads as motion at all, about 0.2 km/h on
+  the Mini.
+
+  When the controller's pulse frame is not arriving, the generic
+  controller publishes a nil frequency and this publishes a nil speed.
+  Nil is not zero: the manager refuses mode changes it cannot prove
+  safe rather than treating silence as a standstill.
 
   ## Options
 
@@ -63,12 +69,10 @@ defmodule VmsCore.Components.Traxxas.Motor do
        controller: controller,
        frequency_name: :"received_pulse_pin#{pulse_pin}_frequency",
        pulses_per_revolution: pulses_per_revolution,
-       gear_ratio: gear_ratio,
-       wheel_radius: wheel_radius,
+       speed_factor: speed_factor(pulses_per_revolution, gear_ratio, wheel_radius),
        frequency: @zero,
        rotation_per_minute: @zero,
-       speed: @zero,
-       moving: false
+       speed: @zero
      }}
   end
 
@@ -84,41 +88,41 @@ defmodule VmsCore.Components.Traxxas.Motor do
 
   def handle_info(%Bus.Message{name: name, value: frequency, source: source}, state)
       when source == state.controller and name == state.frequency_name do
-    {:noreply, %{state | frequency: D.new(frequency)}}
+    {:noreply, %{state | frequency: frequency && D.new(frequency)}}
   end
 
   def handle_info(%Bus.Message{}, state) do
     {:noreply, state}
   end
 
-  defp compute_values(state) do
-    speed = speed_km_h(state.frequency, state)
+  defp compute_values(%{frequency: nil} = state) do
+    %{state | rotation_per_minute: nil, speed: nil}
+  end
 
+  defp compute_values(state) do
     %{
       state
       | rotation_per_minute: rotation_per_minute(state.frequency, state.pulses_per_revolution),
-        speed: speed,
-        moving: D.gt?(speed, @zero)
+        speed: speed_km_h(state.frequency, state.speed_factor)
     }
   end
 
   @doc false
   def rotation_per_minute(frequency, pulses_per_revolution) do
-    frequency |> D.mult(60) |> D.div(D.from_float(pulses_per_revolution / 1))
+    frequency |> D.mult(60) |> D.div(pulses_per_revolution)
+  end
+
+  # km/h per hertz, fixed at init: one wheel circumference per
+  # `pulses_per_revolution · gear_ratio` pulses.
+  @doc false
+  def speed_factor(pulses_per_revolution, gear_ratio, wheel_radius) do
+    wheel_circumference = 2 * :math.pi() * wheel_radius
+    D.from_float(wheel_circumference * 3.6 / (pulses_per_revolution * gear_ratio))
   end
 
   @doc false
-  def speed_km_h(frequency, %{
-        pulses_per_revolution: pulses_per_revolution,
-        gear_ratio: gear_ratio,
-        wheel_radius: wheel_radius
-      }) do
-    wheel_circumference = 2 * :math.pi() * wheel_radius
-    metres_per_pulse = wheel_circumference / (pulses_per_revolution * gear_ratio)
-
-    frequency
-    |> D.mult(D.from_float(metres_per_pulse * 3.6))
-    |> D.round(2)
+  def speed_km_h(frequency, speed_factor) do
+    frequency |> D.mult(speed_factor) |> D.round(2)
   end
 
   defp emit_metrics(state) do
@@ -129,8 +133,6 @@ defmodule VmsCore.Components.Traxxas.Motor do
     })
 
     Bus.broadcast("messages", %Bus.Message{name: :speed, value: state.speed, source: __MODULE__})
-
-    Bus.broadcast("messages", %Bus.Message{name: :moving, value: state.moving, source: __MODULE__})
 
     state
   end
