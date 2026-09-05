@@ -30,7 +30,8 @@ defmodule Ovcs1.Vms.Composer.GenericController do
         "dac_pin0" => "disabled",
         "analog_pin0" => "disabled",
         "analog_pin1" => "disabled",
-        "analog_pin2" => "disabled"
+        "analog_pin2" => "disabled",
+        "pulse_pin0" => "disabled"
       },
       Vms.RearController => %{
         "controller_id" => 1,
@@ -59,7 +60,8 @@ defmodule Ovcs1.Vms.Composer.GenericController do
         "dac_pin0" => "disabled",
         "analog_pin0" => "disabled",
         "analog_pin1" => "disabled",
-        "analog_pin2" => "disabled"
+        "analog_pin2" => "disabled",
+        "pulse_pin0" => "disabled"
       },
       Vms.ControlsController => %{
         "controller_id" => 2,
@@ -88,7 +90,8 @@ defmodule Ovcs1.Vms.Composer.GenericController do
         "dac_pin0" => "disabled",
         "analog_pin0" => "enabled",
         "analog_pin1" => "enabled",
-        "analog_pin2" => "disabled"
+        "analog_pin2" => "disabled",
+        "pulse_pin0" => "disabled"
       }
     }
   end
