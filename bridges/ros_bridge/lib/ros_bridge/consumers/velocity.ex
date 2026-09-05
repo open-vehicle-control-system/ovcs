@@ -1,5 +1,5 @@
 defmodule RosBridge.Consumers.Velocity.State do
-  defstruct [:watchdog, :topic]
+  defstruct [:watchdog, :topic, holonomic_warned: false]
 end
 
 defmodule RosBridge.Consumers.Velocity do
@@ -78,6 +78,16 @@ defmodule RosBridge.Consumers.Velocity do
   @default_topic "cmd_vel"
   @default_timeout_ms 300
   @check_period_ms 50
+  # The wire range of 0x3A0's signals: signed 24-bit at 0.001. A
+  # property of the frame, not of the vehicle -- the VMS clamps to the
+  # vehicle's own limits. Cantastic's encoder wraps an out-of-range
+  # integer silently, so an unclamped 9000 m/s (millimetres sent as
+  # metres) would arrive as -7777 m/s and be applied as full reverse.
+  @wire_limit 8_388.607
+  @wire_warning_period_ms 5_000
+  # Below this a lateral or vertical component is float noise, not a
+  # commander asserting the vehicle is holonomic.
+  @holonomic_epsilon 1.0e-6
 
   def start_link(args) do
     Logger.debug("Starting #{__MODULE__}...")
@@ -132,32 +142,64 @@ defmodule RosBridge.Consumers.Velocity do
   # sets them is asserting something about this vehicle that is not
   # true — worth saying once rather than discarding in silence.
   defp command(%Twist{linear: linear, angular: angular}, state) do
-    warn_if_holonomic(linear, angular)
+    state = warn_if_holonomic(linear, angular, state)
+    linear_x = wire_value(linear.x / 1.0, "linear")
+    angular_z = wire_value(angular.z / 1.0, "angular")
 
     :ok =
       Emitter.update(:ovcs, @frame_name, fn data ->
         %{
           data
-          | "linear" => D.from_float(linear.x / 1.0),
-            "angular" => D.from_float(angular.z / 1.0)
+          | "linear" => D.from_float(linear_x),
+            "angular" => D.from_float(angular_z)
         }
       end)
 
     %{state | watchdog: InputWatchdog.seen(state.watchdog)}
   end
 
-  defp warn_if_holonomic(linear, angular) do
-    if linear.y != 0.0 or linear.z != 0.0 or angular.x != 0.0 or angular.y != 0.0 do
+  # Once per process: a commander configured for the wrong platform
+  # sends every sample this way, and one line says it.
+  defp warn_if_holonomic(_linear, _angular, %State{holonomic_warned: true} = state), do: state
+
+  defp warn_if_holonomic(linear, angular, state) do
+    if abs(linear.y) > @holonomic_epsilon or abs(linear.z) > @holonomic_epsilon or
+         abs(angular.x) > @holonomic_epsilon or abs(angular.y) > @holonomic_epsilon do
       Logger.warning(
         "#{__MODULE__}: ignoring lateral/vertical velocity " <>
           "(linear.y=#{linear.y} linear.z=#{linear.z} " <>
           "angular.x=#{angular.x} angular.y=#{angular.y}). " <>
           "This vehicle is not holonomic; the commander may be configured " <>
-          "for a differential-drive or omni platform."
+          "for a differential-drive or omni platform. Reported once."
+      )
+
+      %{state | holonomic_warned: true}
+    else
+      state
+    end
+  end
+
+  @doc false
+  def wire_value(value, _signal) when abs(value) <= @wire_limit, do: value
+
+  # Rate-limited per signal, since a mis-scaled commander sends at its
+  # own frequency rather than once.
+  def wire_value(value, signal) do
+    now = System.monotonic_time(:millisecond)
+    key = {:wire_limit_warned, signal}
+    last = Process.get(key)
+
+    if is_nil(last) or now - last >= @wire_warning_period_ms do
+      Process.put(key, now)
+
+      Logger.warning(
+        "#{__MODULE__}: #{signal}=#{value} exceeds what #{@frame_name} can carry " <>
+          "(±#{@wire_limit}); clamped. No vehicle moves this fast -- check the " <>
+          "commander's units."
       )
     end
 
-    :ok
+    value |> max(-@wire_limit) |> min(@wire_limit)
   end
 
   # Never received anything: a topic typo, the wrong ROS_DOMAIN_ID, or a
