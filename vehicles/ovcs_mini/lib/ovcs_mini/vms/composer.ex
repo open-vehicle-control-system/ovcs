@@ -56,11 +56,11 @@ defmodule OvcsMini.Vms.Composer do
           ]
         }
       },
-      {OVCS.ROSControl.Steering, %{}},
-      {OVCS.ROSControl.Throttle, %{}},
-      {OVCS.ROSControl.Direction, %{}},
+      {OVCS.RosActuatorCommand.Steering, %{}},
+      {OVCS.RosActuatorCommand.Throttle, %{}},
+      {OVCS.RosActuatorCommand.Direction, %{}},
       # The planner-shaped command path: linear + angular velocity on
-      # 0x3A0, converted to steering and throttle here against this
+      # 0x2B1, converted to steering and throttle here against this
       # vehicle's own geometry. Started unconditionally — it emits
       # zeros until something publishes, and whether the drivetrain
       # *reads* it is the channel-5 switch's decision, below.
@@ -69,7 +69,7 @@ defmodule OvcsMini.Vms.Composer do
       # its axis and both write the same `:requested_steering`, so one of
       # the two steers the wrong way. Measure on the servo and set -1
       # here if a Nav2 left turn steers right.
-      {OVCS.Ros2Control.Velocity,
+      {OVCS.RosVelocityCommand,
        Map.merge(
          Map.take(OvcsMini.geometry(), [:wheelbase, :steering_limit]),
          %{max_speed: @max_speed_m_s, steering_sign: 1}
@@ -121,22 +121,22 @@ defmodule OvcsMini.Vms.Composer do
          # commands the vehicle.
          requested_gear_sources: %{manual: nil, radio: nil, ros: %{}},
          # A velocity carries its own sign, so the planner path needs
-         # no separate direction signal — see 0x3A0. The gamepad path
+         # no separate direction signal — see 0x2B1. The gamepad path
          # does, because its throttle axis is unsigned.
          requested_direction_sources: %{
            manual: nil,
            radio: OVCS.RadioControl.Direction,
-           ros: %{teleop: OVCS.ROSControl.Direction, autonomous: nil}
+           ros: %{teleop: OVCS.RosActuatorCommand.Direction, autonomous: nil}
          },
          requested_throttle_sources: %{
            manual: nil,
            radio: OVCS.RadioControl.Throttle,
-           ros: %{teleop: OVCS.ROSControl.Throttle, autonomous: OVCS.Ros2Control.Velocity}
+           ros: %{teleop: OVCS.RosActuatorCommand.Throttle, autonomous: OVCS.RosVelocityCommand}
          },
          requested_steering_sources: %{
            manual: nil,
            radio: OVCS.RadioControl.Steering,
-           ros: %{teleop: OVCS.ROSControl.Steering, autonomous: OVCS.Ros2Control.Velocity}
+           ros: %{teleop: OVCS.RosActuatorCommand.Steering, autonomous: OVCS.RosVelocityCommand}
          },
          # No brake pedal here, so the manual-brake override has no
          # input. Pulling the transmitter's throttle into reverse does
@@ -181,7 +181,7 @@ defmodule OvcsMini.Vms.Composer do
          selected_control_level_source: Managers.ControlLevel,
          # A velocity is a physical quantity, not a hand on a trigger:
          # it bypasses the joystick feel curve.
-         linear_sources: [OVCS.Ros2Control.Velocity]
+         linear_sources: [OVCS.RosVelocityCommand]
        }},
       {Traxxas.Motor,
        %{

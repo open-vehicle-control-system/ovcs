@@ -294,9 +294,9 @@ flowchart LR
 flowchart LR
     subgraph vehicle["On the vehicle"]
         joyn["joy node (base station)"] -->|"/joy"| cj["Consumers.Joy"]
-        cj -->|"0x2B0 0x2B1"| vms1["VMS: ROSControl.*"]
+        cj -->|"0x2B0"| vms1["VMS: RosActuatorCommand.*"]
         navv["Nav2"] -->|"/cmd_vel_nav"| cv["Consumers.Velocity"]
-        cv -->|"0x3A0"| vms2["VMS: Ros2Control.Velocity"]
+        cv -->|"0x2B1"| vms2["VMS: RosVelocityCommand"]
         vms1 --> mgr["Managers.ControlLevel"]
         vms2 --> mgr
         mgr --> trax["Traxxas.Steering / Throttle (PWM)"]
@@ -311,28 +311,28 @@ converting those commands. Closing that gap — a Gazebo model driven by
 the VMS through a virtual CAN bus — is the obvious next step and is
 not built.
 
-### The joystick path (0x2B0, 0x2B1)
+### The actuator command (0x2B0)
 
-`RosBridge.Consumers.Joy` subscribes to `/joy` and writes two frames:
-`0x2B0` carries `control_level` (`joy | auto`) and `direction`; `0x2B1`
-carries `throttle` and `steering` as signed 32-bit integers scaled from
-the gamepad's `[-1, 1]` axes. The VMS's `OVCS.ROSControl.*` components
-read them as normalised actuator requests. This is *what a joystick
-means*: positions, not physics.
+`RosBridge.Consumers.Joy` subscribes to `/joy` and writes
+`ros_actuator_command`: `steering` and `throttle` as the gamepad's
+`[-1, 1]` axes at a resolution of 0.001, a `direction` (OVCS1 needs it
+separately, since a negative throttle is regenerative braking there and
+reverse is a gear), and a `sequence`. The VMS's
+`OVCS.RosActuatorCommand.*` components read them as normalised actuator
+requests. This is *what a joystick means*: positions, not physics.
 
-Two defensive details in the consumer are there because each bit
-once: an axis outside `[-1, 1]` overflowed a 32-bit field and flipped
-sign (full left arriving as a tenth of right), and a `Joy` with fewer
-axes than expected crashed the drive path on every frame. Values are
-clamped and a missing axis reads as centre.
+Two defensive details in the consumer: an axis outside `[-1, 1]` is
+clamped, since Cantastic truncates a signed field silently and the
+value would come back with the wrong sign, and a `Joy` with fewer axes
+than expected reads as centre rather than crashing the drive path.
 
-### The velocity path (0x3A0)
+### The velocity command (0x2B1)
 
 `RosBridge.Consumers.Velocity` subscribes to a velocity topic and
-writes `0x3A0`: `linear` (m/s) and `angular` (rad/s) as signed 24-bit
-integers with `scale: 0.001, precision: 3`. This is *what a planner
-means*: a physical quantity, with the kinematics solved **once, in the
-VMS**, against that vehicle's own `geometry/0`:
+writes `ros_velocity_command`: `linear` (m/s, 0.01) and `angular`
+(rad/s, 0.001) as signed 16-bit integers, plus a `sequence`. This is
+*what a planner means*: a physical quantity, with the kinematics solved
+**once, in the VMS**, against that vehicle's own `geometry/0`:
 
 ```
 δ = atan(wheelbase · ω / v)      clamped to steering_limit
@@ -348,6 +348,18 @@ The bridge only unwraps a ROS message and emits a CAN frame. It never
 learns a wheelbase. Any commander — Nav2, a remote operator, a test
 rig — speaks the same frame and gets correct kinematics for whatever
 vehicle it is driving.
+
+### The sequence, and why both frames carry one
+
+`Cantastic.Emitter` retransmits a frame at its period whether or not
+anything new was written into it, so a frame arriving on time proves
+only that the bridge is alive. The bridge increments `sequence` once
+per ROS sample. On the VMS, `RosCommand.Freshness` treats a sequence
+that stops changing as a lost input and zeroes the throttle or the
+velocity, whichever side of the link the input was lost on, and a
+retransmitted frame is never applied as fresh input. The bridge still
+watches its own input (`RosBridge.InputWatchdog`) to zero what it
+emits and to say why, but the safety decision no longer depends on it.
 
 ### Two switches, two questions
 
@@ -379,13 +391,13 @@ state machine and the bench recipe are in
   mirror-image failure: a `Twist` bridge fed `TwistStamped` simply
   never fires, and a healthy-looking Nav2 moves nothing.
 - **A quiet input leaves the last command on the bus.** `Cantastic.Emitter`
-  retransmits on a timer, so a commander that stops publishing leaves
-  its last value applied for ever from the VMS's point of view. The
-  VMS watches the *frame* (`Cantastic.ReceivedFrameWatcher`) and zeroes
-  on loss; each consumer also watches its own *input*
-  (`RosBridge.InputWatchdog`) and zeroes what it emits. Two
-  hops, because they cover different failures — the bridge dying, and
-  the input dying while the bridge lives.
+  retransmits on a timer, so a commander that stops publishing would
+  leave its last value applied for ever from the VMS's point of view.
+  Both command frames carry a `sequence` incremented per ROS sample, and
+  the VMS zeroes the command when it stops changing, whether the bridge
+  died or the input did. The bridge also watches its own input
+  (`RosBridge.InputWatchdog`) to zero what it emits and to name the
+  cause.
 
 ## 6. Nav2, as configured here
 
@@ -549,8 +561,8 @@ Where to go next, by what you want to understand.
 | the rmw_zenoh wire format | [`bridges/ros_bridge/README.md`](../bridges/ros_bridge/README.md) | `bridges/ros_bridge/lib/ros2/rmw_zenoh.ex`, `zenoh_client.ex` |
 | time | `bridges/ros_bridge/lib/ros_bridge/clock.ex` | `timing.ex`, `publishers/static_transform.ex` |
 | what a vehicle's bridge runs | `vehicles/ovcs_mini/lib/ovcs_mini.ex` (`ros_bridge_config/2`) | `bridges/ros_bridge/lib/ros_bridge/components.ex` |
-| the joystick command path | `bridges/ros_bridge/lib/ros_bridge/consumers/joy.ex` | `libraries/ovcs_can/priv/can/components/ovcs/0x2B0_*.yml`, `0x2B1_*.yml` |
-| the velocity command path | `bridges/ros_bridge/lib/ros_bridge/consumers/velocity.ex` | `0x3A0_ros2_control.yml`, `vms/core/lib/vms_core/components/ovcs/ros2_control/velocity.ex` |
+| the actuator command path | `bridges/ros_bridge/lib/ros_bridge/consumers/joy.ex` | `libraries/ovcs_can/priv/can/components/ovcs/0x2B0_ros_actuator_command.yml`, `vms/core/lib/vms_core/components/ovcs/ros_actuator_command/` |
+| the velocity command path | `bridges/ros_bridge/lib/ros_bridge/consumers/velocity.ex` | `0x2B1_ros_velocity_command.yml`, `vms/core/lib/vms_core/components/ovcs/ros_velocity_command.ex` |
 | who commands the vehicle | [`vehicle_parameterisation.md`](./vehicle_parameterisation.md#control-levels-who-commands-and-which-ros-node) | `vms/core/lib/vms_core/managers/control_level.ex` |
 | Nav2's configuration and why | `ros2/simulation/config/nav2.yaml` (heavily commented) | `config/nav2_ackermann_bt.xml`, `scripts/nav2_test.py` |
 | the perception pipeline | [`ros_perception_detection.md`](./ros_perception_detection.md) | `bridges/ros_bridge/lib/ros_bridge/camera/zenoh.ex`, `stereo_camera/supervisor.ex` |

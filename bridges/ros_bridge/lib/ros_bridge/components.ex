@@ -19,8 +19,8 @@ defmodule RosBridge.Components do
       `/joy` and forwarding axes onto the CAN bus. No opts.
     * `:velocity_interpreter` — `RosBridge.Consumers.Velocity`
       subscribing to a velocity-command topic (`cmd_vel` by default,
-      `geometry_msgs/TwistStamped`) and emitting `ros2_control`
-      (`0x3A0`). The planner-shaped counterpart to
+      `geometry_msgs/TwistStamped`) and emitting `ros_velocity_command`
+      (`0x2B1`). The planner-shaped counterpart to
       `:joy_interpreter`: it forwards linear and angular velocity so
       the VMS solves the kinematics once against its own geometry.
       Options: `:topic`, `:message`, `:timeout_ms`.

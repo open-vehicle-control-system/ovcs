@@ -1,31 +1,38 @@
-defmodule VmsCore.Components.OVCS.Ros2Control.VelocityTest do
+defmodule VmsCore.Components.OVCS.RosVelocityCommandTest do
   @moduledoc """
   Tests for the velocity-to-drivetrain conversion.
 
   This is the arithmetic that decides where a planner's command
-  actually points the wheels, and the prototype it replaces got it
-  wrong in a way that would have been invisible on a bench: it
-  computed `(angle - max_angle) / range`, which maps a straight-ahead
-  command to **-0.5** — half lock — rather than to zero. A vehicle
-  built on that drives in a circle when told to go straight.
+  actually points the wheels. The first thing asserted is that zero
+  means zero: a normalisation of the form `(angle - max) / range` maps
+  straight ahead to half lock, and a vehicle built on that drives in a
+  circle when told to go straight.
 
-  So the first thing asserted is that zero means zero.
-
-  Driven through `handle_info/2` against a stub state, the way
-  `VmsCore.Managers.GearTest` does: `init/1` subscribes to Cantastic
-  and enables a frame watcher, neither of which exists under
-  `mix test --no-start`, and neither is what is under test.
+  Driven through `handle_info/2` against a stub state: `init/1`
+  subscribes to Cantastic, which does not exist under
+  `mix test --no-start`.
   """
   use ExUnit.Case, async: true
 
   alias Cantastic.{Frame, Signal}
   alias Decimal, as: D
   alias OvcsBus.Message
-  alias VmsCore.Components.OVCS.Ros2Control.Velocity
+  alias VmsCore.Components.OVCS.RosCommand.Freshness
+  alias VmsCore.Components.OVCS.RosVelocityCommand, as: Velocity
 
   # OVCS Mini, from `OvcsMini.geometry/0`. min_turning_radius = 0.5659 m.
   @geometry %{wheelbase: 0.324, steering_limit: 0.52}
   @max_speed 5.0
+
+  defp fresh_freshness do
+    now = System.monotonic_time(:millisecond)
+    %{Freshness.new(300, now) | sequence: 0, fresh_at: now, stale: false}
+  end
+
+  defp expired_freshness do
+    now = System.monotonic_time(:millisecond)
+    %{Freshness.new(300, now - 10_000) | sequence: 0, fresh_at: now - 10_000, stale: false}
+  end
 
   defp stub_state(overrides \\ %{}) do
     Map.merge(
@@ -34,6 +41,7 @@ defmodule VmsCore.Components.OVCS.Ros2Control.VelocityTest do
         geometry: @geometry,
         max_speed: @max_speed,
         steering_sign: 1,
+        freshness: fresh_freshness(),
         linear: D.new(0),
         angular: D.new(0),
         requested_steering: D.new(0),
@@ -43,27 +51,18 @@ defmodule VmsCore.Components.OVCS.Ros2Control.VelocityTest do
     )
   end
 
-  defp frame(linear, angular) do
+  defp frame(linear, angular, sequence \\ 1) do
     {:handle_frame,
      %Frame{
-       name: "ros2_control",
+       name: "ros_velocity_command",
        signals: %{
          "linear" => %Signal{name: "linear", value: D.from_float(linear)},
-         "angular" => %Signal{name: "angular", value: D.from_float(angular)}
+         "angular" => %Signal{name: "angular", value: D.from_float(angular)},
+         "sequence" => %Signal{name: "sequence", value: sequence}
        }
      }}
   end
 
-  # Once per test, not once per assertion. `Phoenix.PubSub.subscribe`
-  # is not idempotent: subscribing inside the helper gave the Nth call
-  # N registrations, so each broadcast delivered N copies, one was
-  # consumed and the rest queued -- and from the third call on
-  # `assert_receive` selectively matched a *previous* iteration's
-  # message. A loop over inputs then checked the input before it, and
-  # its last case was never checked at all.
-  #
-  # Each ExUnit test runs in its own process, so one subscription per
-  # test is exactly the right scope and `async: true` still holds.
   setup do
     OvcsBus.subscribe("messages")
     :ok
@@ -77,14 +76,13 @@ defmodule VmsCore.Components.OVCS.Ros2Control.VelocityTest do
     {D.to_float(steering), D.to_float(throttle)}
   end
 
-  defp drive(linear, angular) do
-    {:noreply, state} = Velocity.handle_info(frame(linear, angular), stub_state())
+  defp drive(linear, angular, overrides \\ %{}) do
+    {:noreply, state} = Velocity.handle_info(frame(linear, angular), stub_state(overrides))
     commanded(state)
   end
 
   describe "straight ahead" do
     test "zero yaw rate means zero steering" do
-      # The regression the prototype would fail: it answered -0.5 here.
       {steering, throttle} = drive(1.0, 0.0)
       assert_in_delta steering, 0.0, 1.0e-9
       assert_in_delta throttle, 0.2, 1.0e-6
@@ -99,19 +97,12 @@ defmodule VmsCore.Components.OVCS.Ros2Control.VelocityTest do
 
   describe "turning" do
     test "the steering angle follows atan(wheelbase * omega / v)" do
-      # 1 m/s at 0.5 rad/s is a 2 m arc, comfortably outside the
-      # 0.566 m minimum, so nothing clamps and the raw geometry shows.
-      #   atan(0.324 * 0.5 / 1.0) = atan(0.1620) = 0.160605 rad
-      #   0.160605 / 0.52 = 0.308855
+      # atan(0.324 * 0.5 / 1.0) / 0.52
       {steering, _} = drive(1.0, 0.5)
       assert_in_delta steering, 0.308855, 1.0e-5
     end
 
     test "halving the yaw rate for a given speed roughly halves the angle" do
-      # Not exactly halved — atan is not linear — but close at these
-      # angles, and a sign that the wheelbase is in the numerator
-      # rather than inverted.
-      #   v=2.0 omega=0.5 -> atan(0.0810) = 0.080824 -> 0.155430
       {steering, _} = drive(2.0, 0.5)
       assert_in_delta steering, 0.155430, 1.0e-5
     end
@@ -119,37 +110,32 @@ defmodule VmsCore.Components.OVCS.Ros2Control.VelocityTest do
     test "the sign follows the yaw rate" do
       {left, _} = drive(1.0, 0.5)
       {right, _} = drive(1.0, -0.5)
+      assert left > 0 and right < 0
       assert_in_delta left, -right, 1.0e-9
-      assert left > 0, "counter-clockwise should steer positive, per REP-103"
     end
 
     test "a tighter arc needs more lock" do
-      {gentle, _} = drive(2.0, 0.5)
-      {tight, _} = drive(1.0, 0.5)
+      {gentle, _} = drive(1.0, 0.5)
+      {tight, _} = drive(1.0, 1.5)
       assert tight > gentle
     end
   end
 
   describe "the steering sign" do
     test "is applied after the kinematics, so only the direction changes" do
-      state = stub_state(%{steering_sign: -1})
-      {:noreply, state} = Velocity.handle_info(frame(1.0, 0.5), state)
-      {:noreply, state} = Velocity.handle_info(:loop, state)
-      assert_receive %Message{name: :requested_steering, value: steering, source: Velocity}
-      assert_in_delta D.to_float(steering), -0.308855, 1.0e-5
+      {steering, _} = drive(1.0, 0.5, %{steering_sign: -1})
+      assert_in_delta steering, -0.308855, 1.0e-5
     end
   end
 
   describe "commands the vehicle cannot execute" do
     test "an arc tighter than the minimum radius is clamped, not refused" do
-      # At 1 m/s the achievable rate is 1/0.5659 = 1.767 rad/s. Ask for
-      # 5 and the result must be full lock, never beyond it.
       {steering, _} = drive(1.0, 5.0)
       assert_in_delta steering, 1.0, 1.0e-6
     end
 
     test "steering never leaves [-1, 1] whatever is commanded" do
-      for angular <- [-100.0, -5.0, 5.0, 100.0], linear <- [0.2, 1.0, 5.0] do
+      for linear <- [-3.0, -0.5, 0.1, 2.0, 10.0], angular <- [-20.0, -1.0, 0.3, 4.0, 50.0] do
         {steering, _} = drive(linear, angular)
 
         assert steering >= -1.0 and steering <= 1.0,
@@ -158,16 +144,12 @@ defmodule VmsCore.Components.OVCS.Ros2Control.VelocityTest do
     end
 
     test "rotating on the spot becomes standing still with the wheels straight" do
-      # The clamp does this without a special case: the achievable yaw
-      # rate at zero speed is zero, so the requested angle is zero.
       {steering, throttle} = drive(0.0, 2.0)
       assert_in_delta steering, 0.0, 1.0e-9
       assert_in_delta throttle, 0.0, 1.0e-9
     end
 
-    test "a negligible speed does not synthesise steering out of noise" do
-      # 1e-9 m/s would divide near-zero and produce an angle from
-      # rounding. Below the wire resolution the vehicle is stopped.
+    test "below the wire resolution the vehicle is stopped" do
       {steering, _} = drive(1.0e-9, 1.0)
       assert_in_delta steering, 0.0, 1.0e-9
     end
@@ -180,26 +162,29 @@ defmodule VmsCore.Components.OVCS.Ros2Control.VelocityTest do
     end
   end
 
-  describe "when the frame stops arriving" do
+  describe "when the sequence stops changing" do
     test "the velocity is zeroed" do
-      {:noreply, moving} = Velocity.handle_info(frame(2.0, 0.5), stub_state())
+      moving = stub_state(%{linear: D.from_float(2.0), angular: D.from_float(0.5)})
       {steering, throttle} = commanded(moving)
       assert throttle > 0.0 and steering > 0.0
 
-      {:noreply, expired} =
-        Velocity.handle_info({:handle_missing_frame, :ovcs, "ros2_control"}, moving)
-
+      expired = %{moving | freshness: expired_freshness()}
       assert {0.0, 0.0} = commanded(expired)
     end
 
-    test "a later frame restores control with no latch to clear" do
-      {:noreply, expired} =
-        Velocity.handle_info(
-          {:handle_missing_frame, :ovcs, "ros2_control"},
-          stub_state(%{linear: D.from_float(2.0)})
-        )
+    test "a retransmitted frame is not applied as fresh input" do
+      state = stub_state(%{linear: D.from_float(2.0)})
+      # Same sequence as the tracker already holds.
+      {:noreply, state} = Velocity.handle_info(frame(1.0, 0.0, 0), state)
+      assert D.eq?(state.linear, D.from_float(2.0))
+    end
 
-      {:noreply, recovered} = Velocity.handle_info(frame(1.0, 0.0), expired)
+    test "a later sample restores control with no latch to clear" do
+      expired = stub_state(%{linear: D.from_float(2.0), freshness: expired_freshness()})
+      {_, zeroed} = commanded(expired)
+      assert zeroed == 0.0
+
+      {:noreply, recovered} = Velocity.handle_info(frame(1.0, 0.0, 1), expired)
       {_, throttle} = commanded(recovered)
       assert_in_delta throttle, 0.2, 1.0e-6
     end

@@ -252,7 +252,7 @@ Each `requested_*_sources` map in a composer is keyed by level. The
 requested_throttle_sources: %{
   manual: OVCS.ThrottlePedal,
   radio: OVCS.RadioControl.Throttle,
-  ros: %{teleop: OVCS.ROSControl.Throttle, autonomous: OVCS.Ros2Control.Velocity}
+  ros: %{teleop: OVCS.RosActuatorCommand.Throttle, autonomous: OVCS.RosVelocityCommand}
 }
 ```
 
@@ -271,7 +271,7 @@ on OVCS Mini, where every source is `nil`, so **nothing commands the
 vehicle until channel 6 says otherwise**. On the host there is no RC
 receiver: `radio_control_bridge_config(:host)` declares no components,
 so nothing emits `0x2A1`/`0x2A0` and the level never leaves `:manual`.
-Joystick input still reaches `0x2B0`/`0x2B1` and is discarded.
+Joystick input still reaches `0x2B0` and is discarded.
 
 There is no controller on the host either, so nothing emits the pulse
 counter frame `0x709`. The generic controller publishes the pulse

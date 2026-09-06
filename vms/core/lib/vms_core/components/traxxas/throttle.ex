@@ -8,7 +8,7 @@ defmodule VmsCore.Components.Traxxas.Throttle do
   becomes a duty cycle, so small deflections give fine control and full
   deflection still gives full power. That is a property of a *hand* on
   an axis, not of the actuator: a commander that sends a physical
-  quantity -- `Ros2Control.Velocity` normalises metres per second --
+  quantity -- `RosVelocityCommand` normalises metres per second --
   expects the request applied as is, or a planner asking for a fifth of
   full speed gets a twenty-fifth.
 

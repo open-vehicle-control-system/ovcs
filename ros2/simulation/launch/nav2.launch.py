@@ -20,10 +20,11 @@ nodes, both feeding the same Gazebo topic: one `parameter_bridge`
 cannot map two ROS topics onto one Gazebo topic, and one topic cannot
 carry two ROS types.
 
-That split mirrors the vehicle's own CAN protocol, where `0x2B0`
-carries `control_level: joy | auto`. Nothing arbitrates between them
-here, exactly as nothing arbitrates on OVCS Mini today — run one or
-the other.
+That split mirrors the vehicle's own CAN protocol, where a joystick
+and a planner arrive on two different frames (`0x2B0` actuator
+command, `0x2B1` velocity command). On the vehicle the control level
+manager arbitrates between them; nothing does here — run one or the
+other.
 """
 
 from launch import LaunchDescription

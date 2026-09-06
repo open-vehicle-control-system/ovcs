@@ -1,11 +1,11 @@
 defmodule RosBridge.Consumers.Velocity.State do
-  defstruct [:watchdog, :topic, holonomic_warned: false]
+  defstruct [:watchdog, :topic, holonomic_warned: false, sequence: 0]
 end
 
 defmodule RosBridge.Consumers.Velocity do
   @moduledoc """
   Subscribes to a velocity-command topic and puts it on CAN as
-  `ros2_control` (`0x3A0`).
+  `ros_velocity_command` (`0x2B1`).
 
   The counterpart to `RosBridge.Consumers.Joy`, and deliberately a
   different abstraction. A joystick has axes; a planner has a
@@ -13,7 +13,7 @@ defmodule RosBridge.Consumers.Velocity do
   steering here — means the kinematics are solved once in the VMS,
   against that vehicle's geometry, and any commander speaks the same
   frame without knowing a wheelbase. See
-  `VmsCore.Components.OVCS.Ros2Control.Velocity`.
+  `VmsCore.Components.OVCS.RosVelocityCommand`.
 
   This is also the whole of the bridge's job in this direction:
   unwrap a ROS message and emit a CAN frame. The VMS never hears about
@@ -28,7 +28,7 @@ defmodule RosBridge.Consumers.Velocity do
   version skew to pick a side on.
 
   **One at a time, though.** This is a singleton: it registers under
-  `__MODULE__` and owns the single `0x3A0` emitter, so declaring two
+  `__MODULE__` and owns the single `0x2B1` emitter, so declaring two
   `:velocity_interpreter` components gives `Supervisor.init/2` two
   child specs with the same id and the whole bridge refuses to boot.
   Even with distinct names they would overwrite each other's frame and
@@ -47,10 +47,11 @@ defmodule RosBridge.Consumers.Velocity do
   ## Staleness
 
   `Cantastic.Emitter` retransmits on a timer, so a planner that stops
-  publishing leaves its last velocity on the bus for ever. The VMS
-  cannot tell — from its side the frames keep arriving on time. So the
-  input is watched here as well; see `RosBridge.InputWatchdog` for the
-  two hops.
+  publishing would leave its last velocity on the bus for ever. Every
+  sample increments the frame's `sequence`, which is what lets the VMS
+  tell a live input from a retransmission. The input is watched here as
+  well, to zero the emitted value and to say why; see
+  `RosBridge.InputWatchdog`.
 
   The default timeout is deliberately tighter than the joystick's
   500 ms. A planner publishes on its own control period — Nav2's
@@ -74,16 +75,16 @@ defmodule RosBridge.Consumers.Velocity do
 
   require Logger
 
-  @frame_name "ros2_control"
+  @frame_name "ros_velocity_command"
   @default_topic "cmd_vel"
   @default_timeout_ms 300
   @check_period_ms 50
-  # The wire range of 0x3A0's signals: signed 24-bit at 0.001. A
-  # property of the frame, not of the vehicle -- the VMS clamps to the
-  # vehicle's own limits. Cantastic's encoder wraps an out-of-range
-  # integer silently, so an unclamped 9000 m/s (millimetres sent as
-  # metres) would arrive as -7777 m/s and be applied as full reverse.
-  @wire_limit 8_388.607
+  # The wire range of 0x2B1's signals: signed 16-bit, linear at 0.01 and
+  # angular at 0.001. A property of the frame, not of the vehicle -- the
+  # VMS clamps to the vehicle's own limits. Cantastic's encoder wraps an
+  # out-of-range integer silently, so an unclamped 9000 m/s (millimetres
+  # sent as metres) would wrap and be applied as reverse.
+  @wire_limits %{"linear" => 327.67, "angular" => 32.767}
   @wire_warning_period_ms 5_000
   # Below this a lateral or vertical component is float noise, not a
   # commander asserting the vehicle is holonomic.
@@ -104,7 +105,7 @@ defmodule RosBridge.Consumers.Velocity do
     :ok =
       Emitter.configure(:ovcs, @frame_name, %{
         parameters_builder_function: :default,
-        initial_data: %{"linear" => D.new(0), "angular" => D.new(0)},
+        initial_data: %{"linear" => D.new(0), "angular" => D.new(0), "sequence" => 0},
         enable: true
       })
 
@@ -125,8 +126,7 @@ defmodule RosBridge.Consumers.Velocity do
 
   def handle_info(:check_input, state) do
     {transition, watchdog} = InputWatchdog.check(state.watchdog)
-    :ok = handle_transition(transition, state)
-    {:noreply, %{state | watchdog: watchdog}}
+    {:noreply, handle_transition(transition, %{state | watchdog: watchdog})}
   end
 
   def handle_info({:ros_message, {key_expr, message}}, state) do
@@ -145,17 +145,19 @@ defmodule RosBridge.Consumers.Velocity do
     state = warn_if_holonomic(linear, angular, state)
     linear_x = wire_value(linear.x / 1.0, "linear")
     angular_z = wire_value(angular.z / 1.0, "angular")
+    sequence = next_sequence(state.sequence)
 
     :ok =
       Emitter.update(:ovcs, @frame_name, fn data ->
         %{
           data
           | "linear" => D.from_float(linear_x),
-            "angular" => D.from_float(angular_z)
+            "angular" => D.from_float(angular_z),
+            "sequence" => sequence
         }
       end)
 
-    %{state | watchdog: InputWatchdog.seen(state.watchdog)}
+    %{state | watchdog: InputWatchdog.seen(state.watchdog), sequence: sequence}
   end
 
   # Once per process: a commander configured for the wrong platform
@@ -180,11 +182,20 @@ defmodule RosBridge.Consumers.Velocity do
   end
 
   @doc false
-  def wire_value(value, _signal) when abs(value) <= @wire_limit, do: value
+  def wire_value(value, signal) do
+    limit = Map.fetch!(@wire_limits, signal)
+
+    if abs(value) <= limit do
+      value
+    else
+      warn_wire_limit(value, signal, limit)
+      value |> max(-limit) |> min(limit)
+    end
+  end
 
   # Rate-limited per signal, since a mis-scaled commander sends at its
   # own frequency rather than once.
-  def wire_value(value, signal) do
+  defp warn_wire_limit(value, signal, limit) do
     now = System.monotonic_time(:millisecond)
     key = {:wire_limit_warned, signal}
     last = Process.get(key)
@@ -194,12 +205,10 @@ defmodule RosBridge.Consumers.Velocity do
 
       Logger.warning(
         "#{__MODULE__}: #{signal}=#{value} exceeds what #{@frame_name} can carry " <>
-          "(±#{@wire_limit}); clamped. No vehicle moves this fast -- check the " <>
+          "(±#{limit}); clamped. No vehicle moves this fast -- check the " <>
           "commander's units."
       )
     end
-
-    value |> max(-@wire_limit) |> min(@wire_limit)
   end
 
   # Never received anything: a topic typo, the wrong ROS_DOMAIN_ID, or a
@@ -215,7 +224,7 @@ defmodule RosBridge.Consumers.Velocity do
         "this vehicle."
     )
 
-    zero_velocity()
+    zero_velocity(state)
   end
 
   defp handle_transition(:stale, state) do
@@ -224,19 +233,29 @@ defmodule RosBridge.Consumers.Velocity do
         "Nothing is commanding this vehicle."
     )
 
-    zero_velocity()
+    zero_velocity(state)
   end
 
   defp handle_transition(:fresh, state) do
     Logger.info("#{__MODULE__}: #{state.topic} is publishing")
-    :ok
+    state
   end
 
-  defp handle_transition(:unchanged, _state), do: :ok
+  defp handle_transition(:unchanged, state), do: state
 
-  defp zero_velocity do
-    Emitter.update(:ovcs, @frame_name, fn data ->
-      %{data | "linear" => D.new(0), "angular" => D.new(0)}
-    end)
+  # The zero is a new sample as far as the VMS is concerned, so it gets
+  # a sequence.
+  defp zero_velocity(state) do
+    sequence = next_sequence(state.sequence)
+
+    :ok =
+      Emitter.update(:ovcs, @frame_name, fn data ->
+        %{data | "linear" => D.new(0), "angular" => D.new(0), "sequence" => sequence}
+      end)
+
+    %{state | sequence: sequence}
   end
+
+  @doc false
+  def next_sequence(sequence), do: rem(sequence + 1, 256)
 end

@@ -1,0 +1,39 @@
+---
+# Velocity command from the ROS bridge: what a planner means.
+#
+# The second command frame, and deliberately a different abstraction
+# from `0x2B0`: a physical quantity rather than actuator positions.
+# Carrying velocity means the kinematics are solved once, in the VMS,
+# against that vehicle's geometry, and any commander speaks the same
+# frame. Forward is positive and reverse is a negative `linear`; the
+# sign is already in the number. Counter-clockwise `angular` is
+# positive, matching REP-103 and therefore `geometry_msgs/Twist`.
+#
+# `linear` at 1 cm/s covers ±327 m/s; `angular` at 1 mrad/s covers
+# ±32 rad/s. Both are far finer than the drivetrain acts on and wide
+# enough for any vehicle here. `precision` is stated with `scale`
+# because Cantastic otherwise rounds the decoded value to two decimals.
+#
+# `sequence` increments once per ROS sample; see `0x2B0` for why.
+name: ros_velocity_command
+id: 0x2B1
+frequency: 10
+signals:
+  - name: linear
+    unit: m/s
+    value_start: 0
+    value_length: 16
+    sign: signed
+    scale: "0.01"
+    precision: 2
+  - name: angular
+    unit: rad/s
+    value_start: 16
+    value_length: 16
+    sign: signed
+    scale: "0.001"
+    precision: 3
+  - name: sequence
+    kind: integer
+    value_start: 32
+    value_length: 8

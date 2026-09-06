@@ -92,7 +92,7 @@ docker compose exec ros2 bash -lc '
 
 `RosBridge.Consumers.Joy` subscribes to `/joy` over the same Zenoh
 fabric, so a running `./ovcs run <vehicle>` (or a Nerves bridge on the
-LAN) will see axes flow straight into the `ros_control1` CAN emitter —
+LAN) will see axes flow straight into the `ros_actuator_command` CAN emitter —
 no extra config, and the controller stays in the operator's hands.
 
 Other controllers / non-default device:

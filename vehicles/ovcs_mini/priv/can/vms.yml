@@ -15,6 +15,5 @@ can_networks:
       - import!:generic_controller/0x709_main_controller_pulse_counter_status.yml
       - import!:@ovcs_can:can/components/ovcs/0x2A0_radio_control_channels0.yml
       - import!:@ovcs_can:can/components/ovcs/0x2A1_radio_control_channels1.yml
-      - import!:@ovcs_can:can/components/ovcs/0x2B0_ros_control0.yml
-      - import!:@ovcs_can:can/components/ovcs/0x2B1_ros_control1.yml
-      - import!:@ovcs_can:can/components/ovcs/0x3A0_ros2_control.yml
+      - import!:@ovcs_can:can/components/ovcs/0x2B0_ros_actuator_command.yml
+      - import!:@ovcs_can:can/components/ovcs/0x2B1_ros_velocity_command.yml

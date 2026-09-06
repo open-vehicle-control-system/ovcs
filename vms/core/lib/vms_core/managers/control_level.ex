@@ -28,7 +28,7 @@ defmodule VmsCore.Managers.ControlLevel do
       requested_throttle_sources: %{
         manual: OVCS.ThrottlePedal,
         radio: OVCS.RadioControl.Throttle,
-        ros: %{teleop: OVCS.ROSControl.Throttle, autonomous: OVCS.Ros2Control.Velocity}
+        ros: %{teleop: OVCS.RosActuatorCommand.Throttle, autonomous: OVCS.RosVelocityCommand}
       }
 
   A missing key resolves to `nil`, which means nothing commands that

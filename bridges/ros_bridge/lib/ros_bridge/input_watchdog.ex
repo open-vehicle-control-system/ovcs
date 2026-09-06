@@ -2,29 +2,16 @@ defmodule RosBridge.InputWatchdog do
   @moduledoc """
   Tells a consumer when its ROS input has gone quiet.
 
-  ## Why the bridge needs this at all
+  Both command frames carry a `sequence` the consumer increments once
+  per sample, and the VMS zeroes a command whose sequence stops
+  changing, so the safety decision is made on the vehicle side from the
+  bus alone. This watchdog is the bridge's own view of the same event:
+  it zeroes what the bridge emits, so the bus reflects reality rather
+  than a retransmitted last value, and it names the cause in the log,
+  which the VMS cannot do.
 
-  `Cantastic.ReceivedFrameWatcher` covers the CAN side: the VMS
-  notices when frames stop arriving, and `ROSControl.Throttle` zeroes
-  itself when they do. That handles the bridge dying, the BEAM
-  crashing, the CAN link being cut.
-
-  It does **not** handle the input going away while the bridge lives,
-  and that is the more likely failure. `Cantastic.Emitter` holds its
-  data in state and retransmits on a timer, so once a consumer has
-  written a throttle the frames keep leaving at the configured rate
-  whether or not anything is still feeding them. A joystick unplugged,
-  a `joy` node killed, Zenoh partitioned, a planner crashed — the CAN
-  bus looks perfectly healthy and carries a command nobody is issuing
-  any more.
-
-  So each consumer watches its own input and zeroes what it emits.
-  Two hops, and they cover different things:
-
-      input stops, bridge alive   -> this
-      bridge stops, VMS alive     -> Cantastic.ReceivedFrameWatcher
-
-  ## Picking a timeout
+      input stops, bridge alive   -> this, and the VMS via the sequence
+      bridge stops, VMS alive     -> the VMS via the sequence
 
   It has to be longer than the largest legitimate gap between samples.
   For `joy` that is knowable: the base station runs `joy_linux` with
@@ -34,8 +21,6 @@ defmodule RosBridge.InputWatchdog do
 
   Neither is a constant this module should guess, which is why the
   timeout is a required argument rather than a default living here.
-
-  ## No timers inside
 
   Deliberately pure: the caller owns its `:timer.send_interval`, calls
   `seen/1` on each sample and `check/1` on each tick. That keeps the

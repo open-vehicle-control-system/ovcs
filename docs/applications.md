@@ -51,7 +51,7 @@ The core library contains:
   - `Ovcs.GenericController` -- Custom Arduino controller driver
   - `Ovcs.ThrottlePedal`, `Ovcs.SteeringColumn`, `Ovcs.HighVoltageContactors`, etc.
   - `Ovcs.RadioControl.*` -- RC transmitter control (throttle, steering, direction)
-  - `Ovcs.RosControl.*` -- ROS2 autonomous control
+  - `OVCS.RosActuatorCommand.*`, `OVCS.RosVelocityCommand` -- the two command paths from the ROS bridge: joystick positions and planner velocity
   - `Traxxas.*` -- RC car motor, steering, and throttle (for OVCS Mini)
 - **Vehicle behaviour** (`lib/vms_core/vehicle.ex`) -- Contract each vehicle's VMS composer must implement: required `children/0`, `can_config_otp_app/0`, `can_config_path/0`, `default_can_mapping/1`; optional `dashboard_configuration/0`, `generic_controllers/0`. The configured composer is resolved via `Application.get_env(:vms_core, :vehicle)` and comes from a vehicle package (e.g. `Ovcs1.Vms.Composer`).
 - **Managers** (`lib/vms_core/managers/`) -- Higher-level logic for gear management and control level switching.
@@ -205,7 +205,7 @@ Provides integration with ROS 2 for autonomous driving research. It:
 
 - Holds a single Zenoh session (`ZenohClient`) and exposes a `publish/4` + `subscribe/4` API to the rest of the bridge. Handles lazy publisher / liveliness-token declaration, reconnect with stable per-publisher GIDs, and subscriber pid monitoring. See [`bridges/ros_bridge/README.md`](../bridges/ros_bridge/README.md) for the wire-format details.
 - Publishes a `std_msgs/String` heartbeat onto the ROS 2 graph every 5 s via `RosBridge.Publishers.Heartbeat`, so consumers can see the BEAM is alive even when no other topic is flowing.
-- Subscribes to the ROS 2 `joy` topic via the same `ZenohClient` and forwards `sensor_msgs/Joy` axes onto the CAN bus through `RosBridge.Consumers.Joy` → Cantastic emitters (`ros_control0`/`ros_control1`).
+- Subscribes to the ROS 2 `joy` topic via the same `ZenohClient` and forwards `sensor_msgs/Joy` axes onto the CAN bus through `RosBridge.Consumers.Joy` → the `ros_actuator_command` Cantastic emitter.
 - Publishes `sensor_msgs/Imu` from any `OvcsDrivers.Imu` driver via `RosBridge.Publishers.Imu`. The host arm runs the kind-level `OvcsDrivers.Imu.Dummy` stub and the target arm runs `BNO085.I2C` against a physical sensor; swapping in a future ICM-20948 (or any other conforming IMU) is a one-line supervisor change.
 
 ## Controllers

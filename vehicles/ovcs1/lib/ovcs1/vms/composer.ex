@@ -153,9 +153,9 @@ defmodule Ovcs1.Vms.Composer do
        %{
          radio_control_channel: 4
        }},
-      {OVCS.ROSControl.Steering, %{}},
-      {OVCS.ROSControl.Throttle, %{}},
-      {OVCS.ROSControl.Direction, %{}},
+      {OVCS.RosActuatorCommand.Steering, %{}},
+      {OVCS.RosActuatorCommand.Throttle, %{}},
+      {OVCS.RosActuatorCommand.Direction, %{}},
       {Managers.ControlLevel,
        %{
          requested_control_level_source: OVCS.RadioControl.RequestedControlLevel,
@@ -172,17 +172,17 @@ defmodule Ovcs1.Vms.Composer do
          requested_direction_sources: %{
            manual: nil,
            radio: OVCS.RadioControl.Direction,
-           ros: %{teleop: ROSControl.Direction}
+           ros: %{teleop: RosActuatorCommand.Direction}
          },
          requested_throttle_sources: %{
            manual: OVCS.ThrottlePedal,
            radio: OVCS.RadioControl.Throttle,
-           ros: %{teleop: ROSControl.Throttle}
+           ros: %{teleop: RosActuatorCommand.Throttle}
          },
          requested_steering_sources: %{
            manual: nil,
            radio: OVCS.RadioControl.Steering,
-           ros: %{teleop: ROSControl.Steering}
+           ros: %{teleop: RosActuatorCommand.Steering}
          },
          manual_breaking_source: Bosch.IBoosterGen2,
          radio_breaking_source: OVCS.RadioControl.Throttle,
