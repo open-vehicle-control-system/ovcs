@@ -26,6 +26,26 @@ defmodule VmsCore.Components.Traxxas.SourceSwitchingTest do
 
   @manager ControlLevelManager
   @commander SomeRosCommander
+  @planner PlannerVelocity
+
+  # `set_external_pwm/5` is a `GenServer.call` on whatever the actuator
+  # was given as its controller, so a process that answers it is enough
+  # to observe what actually reaches the ESC.
+  defmodule FakeController do
+    @moduledoc false
+    use GenServer
+
+    def start_link(test), do: GenServer.start_link(__MODULE__, test)
+
+    @impl true
+    def init(test), do: {:ok, test}
+
+    @impl true
+    def handle_call({:set_external_pwm, id, enabled, duty_cycle, frequency}, _from, test) do
+      send(test, {:pwm, id, enabled, duty_cycle, frequency})
+      {:reply, :ok, test}
+    end
+  end
 
   defp steering_state(overrides \\ %{}) do
     Map.merge(
@@ -50,6 +70,7 @@ defmodule VmsCore.Components.Traxxas.SourceSwitchingTest do
         external_pwm_id: 1,
         selected_control_level_source: @manager,
         requested_throttle_source: @commander,
+        linear_sources: [],
         requested_throttle: D.new("0.6"),
         throttle: D.new(0)
       },
@@ -156,6 +177,34 @@ defmodule VmsCore.Components.Traxxas.SourceSwitchingTest do
   end
 
   describe "the feel curve" do
+    test "a switch between a shaped and a linear source still reaches the ESC" do
+      # The request does not move, only the shaping does, so a cache
+      # keyed on the request would hold the ESC at the previous curve.
+      {:ok, controller} = FakeController.start_link(self())
+
+      state =
+        throttle_state(%{
+          controller: controller,
+          linear_sources: [@planner],
+          requested_throttle: D.new("0.4")
+        })
+
+      {:noreply, state} = Throttle.handle_info(:loop, state)
+      assert_received {:pwm, _id, _enabled, shaped_duty_cycle, _frequency}
+
+      {:noreply, state} =
+        Throttle.handle_info(
+          source_message(:requested_throttle_source, @planner, @manager),
+          state
+        )
+
+      {:noreply, _state} = Throttle.handle_info(:loop, state)
+      assert_received {:pwm, _id, _enabled, linear_duty_cycle, _frequency}
+
+      refute D.eq?(shaped_duty_cycle, linear_duty_cycle),
+             "the ESC stayed on the previous source's shaping"
+    end
+
     test "a joystick-shaped request is squared, keeping its sign" do
       assert D.eq?(Throttle.shape(D.new("0.5"), false), D.new("0.25"))
       assert D.eq?(Throttle.shape(D.new("-0.5"), false), D.new("-0.25"))

@@ -103,15 +103,22 @@ defmodule VmsCore.Components.Traxxas.Throttle do
     {:noreply, state}
   end
 
+  # `throttle` holds what was last written to the ESC, not what was last
+  # requested. The two differ: the same request maps to a different duty
+  # cycle depending on whether its source is shaped, so a switch between
+  # a shaped and a linear commander at an unchanged request still has to
+  # reach the PWM.
   defp apply_throttle(state) do
-    case D.eq?(state.throttle, state.requested_throttle) do
+    throttle =
+      shape(state.requested_throttle, state.requested_throttle_source in state.linear_sources)
+
+    case D.eq?(state.throttle, throttle) do
       true ->
         state
 
       false ->
         duty_cycle_percentage =
-          state.requested_throttle
-          |> shape(state.requested_throttle_source in state.linear_sources)
+          throttle
           |> D.mult(@duty_cycle_percentage_range)
           |> D.add(@neutral_duty_cycle_percentage)
 
@@ -124,7 +131,7 @@ defmodule VmsCore.Components.Traxxas.Throttle do
             @pwm_frequency
           )
 
-        %{state | throttle: state.requested_throttle}
+        %{state | throttle: throttle}
     end
   end
 
