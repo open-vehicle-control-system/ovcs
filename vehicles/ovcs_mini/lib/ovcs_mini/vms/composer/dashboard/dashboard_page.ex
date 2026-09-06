@@ -49,6 +49,12 @@ defmodule OvcsMini.Vms.Composer.Dashboard.DashboardPage do
               module: Managers.ControlLevel,
               key: :selected_ros_commander
             },
+            %{
+              type: :metric,
+              name: "Control Level Forced",
+              module: Managers.ControlLevel,
+              key: :control_level_forced
+            },
             %{type: :metric, name: "Speed", module: Traxxas.Motor, key: :speed, unit: "km/h"},
             %{
               type: :metric,
