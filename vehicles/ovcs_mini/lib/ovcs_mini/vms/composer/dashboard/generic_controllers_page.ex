@@ -1,7 +1,6 @@
 defmodule OvcsMini.Vms.Composer.Dashboard.GenericControllersPage do
   alias OvcsMini.Vms
   alias VmsCore.Components.OVCS.GenericController
-  alias VmsCore.Components.Traxxas
 
   def definition(order: order) do
     %{
@@ -66,23 +65,16 @@ defmodule OvcsMini.Vms.Composer.Dashboard.GenericControllersPage do
             },
             %{
               type: :metric,
-              name: "Hall sensor frequency",
+              name: "Pulse counter frequency",
               module: Vms.MainController,
               key: :received_pulse_pin0_frequency,
               unit: "Hz"
             },
             %{
               type: :metric,
-              name: "Motor RPM",
-              module: Traxxas.Motor,
-              key: :rotation_per_minute
-            },
-            %{
-              type: :metric,
-              name: "Speed",
-              module: Traxxas.Motor,
-              key: :speed,
-              unit: "km/h"
+              name: "Pulse counter count",
+              module: Vms.MainController,
+              key: :received_pulse_pin0_count
             }
           ]
         }

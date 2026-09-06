@@ -1,5 +1,7 @@
 defmodule OvcsMini.Vms.Composer.Dashboard.DashboardPage do
   alias OvcsMini.Vms
+  alias VmsCore.Components.Traxxas
+  alias VmsCore.Managers
   alias VmsCore.Status
 
   def definition(order: order) do
@@ -27,6 +29,55 @@ defmodule OvcsMini.Vms.Composer.Dashboard.DashboardPage do
               name: "Main Controller Alive",
               module: Vms.MainController,
               key: :is_alive
+            }
+          ]
+        },
+        "drivetrain" => %{
+          order: 1,
+          name: "Drivetrain",
+          type: "table",
+          rows: [
+            %{
+              type: :metric,
+              name: "Selected Control Level",
+              module: Managers.ControlLevel,
+              key: :selected_control_level
+            },
+            %{
+              type: :metric,
+              name: "Selected ROS Commander",
+              module: Managers.ControlLevel,
+              key: :selected_ros_commander
+            },
+            %{type: :metric, name: "Speed", module: Traxxas.Motor, key: :speed, unit: "km/h"},
+            %{
+              type: :metric,
+              name: "Motor RPM",
+              module: Traxxas.Motor,
+              key: :rotation_per_minute
+            }
+          ]
+        },
+        "speed-and-rpm" => %{
+          order: 2,
+          name: "Speed & RPM",
+          type: "lineChart",
+          serie_max_size: 300,
+          y_axis: [
+            %{
+              min: 0,
+              max: 30,
+              label: "km/h",
+              series: [%{name: "Speed", metric: %{module: Traxxas.Motor, key: :speed}}]
+            },
+            %{
+              position: "right",
+              min: 0,
+              max: 10_000,
+              label: "RPM",
+              series: [
+                %{name: "Motor RPM", metric: %{module: Traxxas.Motor, key: :rotation_per_minute}}
+              ]
             }
           ]
         }
