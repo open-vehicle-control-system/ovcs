@@ -172,17 +172,17 @@ defmodule Ovcs1.Vms.Composer do
          requested_direction_sources: %{
            manual: nil,
            radio: OVCS.RadioControl.Direction,
-           ros: %{teleop: RosActuatorCommand.Direction}
+           ros: %{teleop: OVCS.RosActuatorCommand.Direction}
          },
          requested_throttle_sources: %{
            manual: OVCS.ThrottlePedal,
            radio: OVCS.RadioControl.Throttle,
-           ros: %{teleop: RosActuatorCommand.Throttle}
+           ros: %{teleop: OVCS.RosActuatorCommand.Throttle}
          },
          requested_steering_sources: %{
            manual: nil,
            radio: OVCS.RadioControl.Steering,
-           ros: %{teleop: RosActuatorCommand.Steering}
+           ros: %{teleop: OVCS.RosActuatorCommand.Steering}
          },
          manual_breaking_source: Bosch.IBoosterGen2,
          radio_breaking_source: OVCS.RadioControl.Throttle,
