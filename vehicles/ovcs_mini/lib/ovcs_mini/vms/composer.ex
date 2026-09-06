@@ -77,22 +77,33 @@ defmodule OvcsMini.Vms.Composer do
        %{
          radio_control_channel: 2
        }},
-      # Two switches, two questions. Channel 3 says who has authority,
+      # Two switches, two questions. Channel 6 says who has authority,
       # channel 5 says which ROS node commands when ROS does — see
       # `Managers.ControlLevel`. Both only *request*; the manager
       # decides, which is the whole reason they route through it rather
       # than being read where the actuators are wired.
       #
-      # Channel 3 for authority, with 4 left free for direction, is the
-      # OVCS1 convention — so a transmitter set up for one vehicle
-      # reads the same way on the other.
+      # This is the Mini transmitter's layout over ExpressLRS: sticks on
+      # 1 and 2, switches from 5 up, 3 and 4 unused. Channel 5 is the
+      # link's 2-position arm channel and cannot carry a middle
+      # position, so the three-position level goes on 6 and the
+      # two-position commander takes 5. OVCS1 puts the level on 3 and
+      # direction on 4; docs/vehicle_parameterisation.md has both.
       {OVCS.RadioControl.RequestedControlLevel,
        %{
-         radio_control_channel: 3
+         radio_control_channel: 6
        }},
       {OVCS.RadioControl.RequestedRosCommander,
        %{
          radio_control_channel: 5
+       }},
+      # Wired and published, but no actuator on the Mini reads a
+      # direction: reverse is a negative throttle here. It is the radio
+      # direction source so the value shows up on the bus and the
+      # dashboard, and so a drivetrain that needs it can take it later.
+      {OVCS.RadioControl.Direction,
+       %{
+         radio_control_channel: 7
        }},
       {Managers.ControlLevel,
        %{
@@ -108,7 +119,7 @@ defmodule OvcsMini.Vms.Composer do
          # does, because its throttle axis is unsigned.
          requested_direction_sources: %{
            manual: nil,
-           radio: nil,
+           radio: OVCS.RadioControl.Direction,
            ros: %{teleop: OVCS.ROSControl.Direction, autonomous: nil}
          },
          requested_throttle_sources: %{
@@ -134,7 +145,7 @@ defmodule OvcsMini.Vms.Composer do
          #
          # On the host bench that means nothing commands it at all:
          # `radio_control_bridge_config(:host)` declares no components,
-         # so nothing emits 0x2A0/0x2A1, channel 3 stays at its default
+         # so nothing emits 0x2A0/0x2A1, channel 6 stays at its default
          # 1000, and joystick input on 0x2B0/0x2B1 is discarded with no
          # log. Synthesise the switches with `cansend` --
          # docs/vehicle_parameterisation.md, "Driving on the host
