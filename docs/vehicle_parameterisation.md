@@ -197,10 +197,13 @@ remsh / `./ovcs attach` flow.
 reads two independent switches on the RC transmitter, because
 authority and autonomy are different questions:
 
-| Component | Values | Channel on Mini | Channel on OVCS1 |
-|---|---|---|---|
-| `OVCS.RadioControl.RequestedControlLevel` | `:manual` / `:radio` / `:ros` | 6 | 3 |
-| `OVCS.RadioControl.RequestedRosCommander` | `:teleop` / `:autonomous` | 5 | not wired |
+| Component | Values |
+|---|---|
+| `OVCS.RadioControl.RequestedControlLevel` | `:manual` / `:radio` / `:ros` |
+| `OVCS.RadioControl.RequestedRosCommander` | `:teleop` / `:autonomous` |
+
+Which transmitter channel each one reads is per vehicle; the layout
+table below is the single place that records it.
 
 `:ros` means the vehicle takes its commands from the ROS bridge. It
 does **not** mean the vehicle is driving itself: a human on a gamepad
@@ -231,12 +234,14 @@ Switch positions are 1000, 1500 and 2000 µs with a margin of 100. A
 position outside every margin falls back to the safe one: `:manual` for
 the level, `:teleop` for the commander, `:forward` for direction.
 
-The Mini's link is ExpressLRS, and that fixes part of the layout:
-channel 5 is the link's arm channel, sent with every packet as a
-2-position value of 1000 or 2000 whatever switch drives it, so it can
-never carry a middle position. Channels 6 to 11 are 3-bit in the
-default Hybrid switch mode and do give 1000, 1500 and 2000. That is why
-the three-position level is on 6 and the two-position commander on 5.
+The Mini's link is ExpressLRS in MAVLink link mode, which forces the
+Hybrid switch mode, and that fixes part of the layout: channel 5 is the
+link's arm channel, sent with every packet as a 2-position value of
+1000 or 2000 whatever switch drives it, so it can never carry a middle
+position. In Hybrid mode channels 6 to 11 are 3-bit and do give 1000,
+1500 and 2000; of those only 6 to 8 reach the bus, since `0x2A1`
+carries channels 5 to 8. That is why the three-position level is on 6
+and the two-position commander on 5.
 
 ### The source maps
 
@@ -268,10 +273,25 @@ receiver: `radio_control_bridge_config(:host)` declares no components,
 so nothing emits `0x2A1`/`0x2A0` and the level never leaves `:manual`.
 Joystick input still reaches `0x2B0`/`0x2B1` and is discarded.
 
-So a bench session needs the switches synthesised. `0x2A0` carries
-channels 1-4 as little-endian `uint16`, two bytes each; `0x2A1`
-carries 5-8 the same way. 1500 is `DC05`, 2000 is `D007`, 1000 is
-`E803`:
+There is no controller on the host either, so nothing emits the pulse
+counter frame `0x709`. The generic controller publishes the pulse
+frequency as nil while that frame is dead, `Traxxas.Motor` publishes a
+nil speed, and the manager treats an unknown speed as "not a
+standstill": every mode change is refused with `:speed_unknown`. So a
+bench session needs two things synthesised, a speed and the switches.
+
+The speed first, and it has to be a stream: the frame watcher needs
+several on-time frames to declare `0x709` alive and drops it again as
+soon as they stop. Leave this running in its own terminal; a count and
+a frequency of zero is a stationary vehicle:
+
+```bash
+cangen vcan0 -I 709 -L 4 -D 00000000 -g 10
+```
+
+Then the switches. `0x2A0` carries channels 1-4 as little-endian
+`uint16`, two bytes each; `0x2A1` carries 5-8 the same way. 1500 is
+`DC05`, 2000 is `D007`, 1000 is `E803`:
 
 ```bash
 # Steering and throttle centred (channels 1 and 2)
@@ -285,17 +305,18 @@ cansend vcan0 2A1#E803DC0500000000
 cansend vcan0 2A1#E803D00700000000
 
 # Optional: hand it to the planner rather than the gamepad
-# (channel 5 = 2000). Needs a standstill, which the host always is.
+# (channel 5 = 2000). Needs a standstill, which the zero speed
+# stream above provides.
 cansend vcan0 2A1#D007D00700000000
 ```
 
 Channels 7 and 8 read as 0 in these frames, which is outside every
-switch margin and therefore the safe fallback. The frames above are the
-Mini's layout; on OVCS1 the level is channel 3, in `0x2A0`.
+switch margin and therefore the safe fallback. The frames are the
+Mini's layout; the table above has the other vehicles'.
 
-`ready_to_drive` is hardcoded `true` on Mini (`OvcsMini.Vms`), so
-nothing else is needed there. On a vehicle whose `ready_to_drive`
-comes from contactors or an inverter, that has to be true as well.
+`ready_to_drive` is hardcoded `true` on Mini (`OvcsMini.Vms`). On a
+vehicle whose `ready_to_drive` comes from contactors or an inverter,
+that has to be true as well.
 
 ## Host dev vs. deployed
 
