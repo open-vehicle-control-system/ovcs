@@ -17,6 +17,12 @@ void PulsePin::begin() {
   if (readable()) {
     pinMode(_physicalPin, INPUT_PULLUP);
     attachInterrupt(digitalPinToInterrupt(_physicalPin), pulsePin0Isr, RISING);
+  } else {
+    // A re-adoption that disables the pin runs this without a reboot,
+    // so the interrupt and the pull-up from the previous configuration
+    // have to be undone here.
+    detachInterrupt(digitalPinToInterrupt(_physicalPin));
+    pinMode(_physicalPin, INPUT);
   }
 };
 

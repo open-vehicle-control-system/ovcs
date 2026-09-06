@@ -23,6 +23,7 @@ class PulseCounter {
       _count      = 0;
       _lastEdgeUs = 0;
       _periodUs   = 0;
+      _stopped    = true;
     };
 
     // Called from the interrupt handler with the current micros().
@@ -42,6 +43,13 @@ class PulseCounter {
     volatile uint16_t _count;
     volatile uint32_t _lastEdgeUs;
     volatile uint32_t _periodUs;
+    // Set when the timeout fires (or before any edge), cleared by the
+    // next edge, which is then not paired with the stale `_lastEdgeUs`.
+    // The two guards below cover different clocks: the timeout branch
+    // only runs while the controller is READY, and `recordEdge` only
+    // sees edges, so neither alone survives a stop that spans a
+    // wraparound of the microsecond clock.
+    volatile bool _stopped;
 };
 
 #endif

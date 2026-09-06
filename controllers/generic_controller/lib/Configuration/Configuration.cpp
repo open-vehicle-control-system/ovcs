@@ -108,11 +108,10 @@ void Configuration::computePulsePin() {
 };
 
 // A1 is shared with the pulse counter, which wins: a pin under an
-// interrupt is not also sampled as an analog input. Read from the raw
-// bit so this holds whatever order the compute functions run in.
+// interrupt is not also sampled as an analog input. `load()` computes
+// the pulse pin first.
 void Configuration::computeAnalogPins() {
-  bool pulsePinEnabled   = _rawConfiguration[6] >> 2 & 0b1;
-  bool analogPin0Enabled = (_rawConfiguration[6] >> 5 & 0b1) && !pulsePinEnabled;
+  bool analogPin0Enabled = (_rawConfiguration[6] >> 5 & 0b1) && !_pulsePin.readable();
   _analogPins[0] = AnalogPin(analogPin0Enabled, A1);
   _analogPins[1] = AnalogPin(_rawConfiguration[6] >> 4 & 0b1, A2);
   _analogPins[2] = AnalogPin(_rawConfiguration[6] >> 3 & 0b1, A3);

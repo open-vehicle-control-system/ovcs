@@ -78,12 +78,27 @@ namespace PulseCounterTests{
         TEST_ASSERT_EQUAL_UINT16(500, counter.frequencyDeciHz(0x00004E10));
     }
 
-    void testEdgeAfterTheClockSampleIsNotAWraparound(){
-        // The clock was read one microsecond before the last edge landed.
+    void testLongStopReadsAsStoppedAcrossTheWrap(){
+        // Wheel turning, then the controller leaves READY so the timeout
+        // is never evaluated, the wheel stops, and READY returns 50
+        // minutes later: the wrapped gap must read as a stop, not as
+        // the old speed.
         PulseCounter counter;
         counter.recordEdge(1000000);
         counter.recordEdge(1020000);
-        TEST_ASSERT_EQUAL_UINT16(500, counter.frequencyDeciHz(1019999));
+        TEST_ASSERT_EQUAL_UINT16(0, counter.frequencyDeciHz(1020000 + 3000000000UL));
+    }
+
+    void testOneEdgeAfterAWrappedStopIsNotMotion(){
+        // Parked past a clock wraparound, then a single nudge lands where
+        // the wrapped gap would pass for a real period.
+        PulseCounter counter;
+        counter.recordEdge(1000000);
+        counter.recordEdge(1020000);
+        TEST_ASSERT_EQUAL_UINT16(0, counter.frequencyDeciHz(1020000 + PULSE_TIMEOUT_US + 1));
+        counter.recordEdge(1020000 + 10000);  // 2^32 + 10 ms later, modulo 2^32
+        TEST_ASSERT_EQUAL_UINT16(3, counter.count());
+        TEST_ASSERT_EQUAL_UINT16(0, counter.frequencyDeciHz(1020000 + 10500));
     }
 
     void testStaysStoppedAcrossAClockWraparound(){
@@ -103,7 +118,8 @@ namespace PulseCounterTests{
     }
 
     void run_tests(void){
-        RUN_TEST(testEdgeAfterTheClockSampleIsNotAWraparound);
+        RUN_TEST(testLongStopReadsAsStoppedAcrossTheWrap);
+        RUN_TEST(testOneEdgeAfterAWrappedStopIsNotMotion);
         RUN_TEST(testStaysStoppedAcrossAClockWraparound);
         RUN_TEST(testStoppedBeforeAnyEdge);
         RUN_TEST(testOneEdgeIsNotYetAFrequency);
