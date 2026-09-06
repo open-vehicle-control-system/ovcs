@@ -21,9 +21,15 @@ defmodule OvcsMini.Vms.Composer.Dashboard.RadioControlPage do
             },
             %{
               type: :metric,
-              name: "Requested Gear",
-              module: RadioControl.Gear,
-              key: :requested_gear
+              name: "Requested ROS Commander",
+              module: RadioControl.RequestedRosCommander,
+              key: :requested_ros_commander
+            },
+            %{
+              type: :metric,
+              name: "Requested Direction",
+              module: RadioControl.Direction,
+              key: :requested_direction
             },
             %{
               type: :metric,

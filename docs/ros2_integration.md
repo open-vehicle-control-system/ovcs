@@ -355,10 +355,10 @@ vehicle it is driving.
 two independent switches on the RC transmitter because *authority* and
 *autonomy* are different questions:
 
-| Channel | Component | Values | Answers |
+| Component | Values | Answers | Channel (Mini) |
 |---|---|---|---|
-| 3 | `RadioControl.RequestedControlLevel` | `:manual / :radio / :ros` | who has authority |
-| 5 | `RadioControl.RequestedRosCommander` | `:teleop / :autonomous` | which ROS node, when ROS does |
+| `RadioControl.RequestedControlLevel` | `:manual / :radio / :ros` | who has authority | 6 |
+| `RadioControl.RequestedRosCommander` | `:teleop / :autonomous` | which ROS node, when ROS does | 5 |
 
 `:ros` means "commands come from the ROS bridge". It does not mean the
 car is driving itself — a human on a gamepad and a planner reach the
