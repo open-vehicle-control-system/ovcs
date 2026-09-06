@@ -83,12 +83,13 @@ defmodule OvcsMini.Vms.Composer do
       # decides, which is the whole reason they route through it rather
       # than being read where the actuators are wired.
       #
-      # This is the Mini transmitter's layout over ExpressLRS: sticks on
-      # 1 and 2, switches from 5 up, 3 and 4 unused. Channel 5 is the
-      # link's 2-position arm channel and cannot carry a middle
-      # position, so the three-position level goes on 6 and the
-      # two-position commander takes 5. OVCS1 puts the level on 3 and
-      # direction on 4; docs/vehicle_parameterisation.md has both.
+      # This is the Mini transmitter's layout over ExpressLRS in MAVLink
+      # link mode, which forces the Hybrid switch mode: sticks on 1 and
+      # 2, switches from 5 up, 3 and 4 unused. Channel 5 is the link's
+      # 2-position arm channel and cannot carry a middle position, so
+      # the three-position level goes on 6 and the two-position
+      # commander takes 5. docs/vehicle_parameterisation.md has the
+      # layout of every vehicle.
       {OVCS.RadioControl.RequestedControlLevel,
        %{
          radio_control_channel: 6
@@ -97,10 +98,10 @@ defmodule OvcsMini.Vms.Composer do
        %{
          radio_control_channel: 5
        }},
-      # Wired and published, but no actuator on the Mini reads a
-      # direction: reverse is a negative throttle here. It is the radio
-      # direction source so the value shows up on the bus and the
-      # dashboard, and so a drivetrain that needs it can take it later.
+      # Started so the value is published; no actuator on the Mini
+      # reads a direction, since reverse is a negative throttle here.
+      # Named as the radio source below so a drivetrain that consumes
+      # direction can be wired without touching the manager.
       {OVCS.RadioControl.Direction,
        %{
          radio_control_channel: 7
@@ -147,9 +148,10 @@ defmodule OvcsMini.Vms.Composer do
          # `radio_control_bridge_config(:host)` declares no components,
          # so nothing emits 0x2A0/0x2A1, channel 6 stays at its default
          # 1000, and joystick input on 0x2B0/0x2B1 is discarded with no
-         # log. Synthesise the switches with `cansend` --
-         # docs/vehicle_parameterisation.md, "Driving on the host
-         # bench", has the frames.
+         # log. Nothing emits the pulse counter frame either, so the
+         # speed is unknown and the manager refuses every mode change
+         # until one is synthesised. docs/vehicle_parameterisation.md,
+         # "Driving on the host bench", has the frames for both.
          default_control_level: :manual,
          ready_to_drive_source: Vms,
          # The standstill gate on every mode change reads this. It is
