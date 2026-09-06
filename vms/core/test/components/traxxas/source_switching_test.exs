@@ -1,7 +1,7 @@
 defmodule VmsCore.Components.Traxxas.SourceSwitchingTest do
   @moduledoc """
   The drivetrain follows whichever commander `Managers.ControlLevel`
-  names, and stops when it names none.
+  names, and stops propelling when it names none.
 
   That second half is the reason this file exists. The manager selects
   sources per control level, and a level with no commander — `:manual`
@@ -75,14 +75,17 @@ defmodule VmsCore.Components.Traxxas.SourceSwitchingTest do
       assert state.requested_throttle_source == nil
     end
 
-    test "zeroes the steering too, so the wheels centre" do
+    test "holds the steering, so the wheels stay where they are" do
+      # Snapping the wheels straight mid-corner is a hazard, not a
+      # mitigation. Only propulsion is removed.
       {:noreply, state} =
         Steering.handle_info(
           source_message(:requested_steering_source, nil, @manager),
           steering_state()
         )
 
-      assert D.equal?(state.requested_steering, D.new(0))
+      assert D.equal?(state.requested_steering, D.new("0.7"))
+      assert state.requested_steering_source == nil
     end
   end
 

@@ -51,20 +51,14 @@ defmodule VmsCore.Components.Traxxas.Steering do
         state
       )
       when source == state.selected_control_level_source do
-    # Zero on the way to a level that commands nothing. Without this
-    # the last request would persist — `handle_info` for
-    # `:requested_steering` gates on the source, so with no source no
-    # message matches and the actuator holds. On the throttle that
-    # means a vehicle that keeps driving after being switched to a
-    # safe level, which is the same hazard as a stale CAN frame.
-    requested = if is_nil(requested_steering_source), do: @zero, else: state.requested_steering
-
-    {:noreply,
-     %{
-       state
-       | requested_steering_source: requested_steering_source,
-         requested_steering: requested
-     }}
+    # Hold on the way to a level that commands nothing. With no source
+    # no `:requested_steering` message matches, so the wheels stay
+    # where the last commander left them. That is deliberate and the
+    # opposite of the throttle: removing propulsion is what makes the
+    # vehicle safe, while snapping the wheels straight mid-corner is a
+    # new hazard rather than a mitigation, the same policy every input
+    # watchdog in this tree applies.
+    {:noreply, %{state | requested_steering_source: requested_steering_source}}
   end
 
   def handle_info(:loop, state) do
