@@ -65,9 +65,16 @@ defmodule OvcsMini.Vms.Composer.Dashboard.GenericControllersPage do
             },
             %{
               type: :metric,
-              name: "Motor RPM",
+              name: "Pulse counter frequency",
               module: Vms.MainController,
-              key: :received_analog_pin0_value
+              key: :received_pulse_pin0_frequency,
+              unit: "Hz"
+            },
+            %{
+              type: :metric,
+              name: "Pulse counter count",
+              module: Vms.MainController,
+              key: :received_pulse_pin0_count
             }
           ]
         }

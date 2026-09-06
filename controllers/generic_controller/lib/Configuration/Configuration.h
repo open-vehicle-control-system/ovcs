@@ -6,6 +6,7 @@
 #include <PwmPin.h>
 #include <DacPin.h>
 #include <AnalogPin.h>
+#include <PulsePin.h>
 #include <EEPROM.h>
 #include <AbstractBoard.h>
 #include <AbstractCrc.h>
@@ -19,6 +20,7 @@
 #define EXTERNAL_PWM1_REQUEST_FRAME_ID_MASK 0x706
 #define EXTERNAL_PWM2_REQUEST_FRAME_ID_MASK 0x707
 #define EXTERNAL_PWM3_REQUEST_FRAME_ID_MASK 0x708
+#define PULSE_COUNTER_STATUS_FRAME_ID_MASK 0x709
 #define VMS_ALIVE_FRAME_ID 0x1A0
 #define VMS_COMMAND_FRAME_ID 0x1AA
 #define CONFIGURATION_EEPROM_ADDRESS 0
@@ -57,6 +59,7 @@ class Configuration {
     PwmPin _pwmPins [3];
     DacPin _dacPin;
     AnalogPin _analogPins [3];
+    PulsePin _pulsePin;
     ExternalPwm _externalPwms [4];
     uint16_t _aliveFrameId;
     uint16_t _digitalPinRequestFrameId;
@@ -66,6 +69,7 @@ class Configuration {
     uint16_t _externalPwm1RequestFrameId;
     uint16_t _externalPwm2RequestFrameId;
     uint16_t _externalPwm3RequestFrameId;
+    uint16_t _pulseCounterStatusFrameId;
     bool _expansionBoard1InUse;
     bool _expansionBoard2InUse;
 
@@ -105,6 +109,7 @@ class Configuration {
     void computePwmPins();
     void computeDacPin();
     void computeAnalogPins();
+    void computePulsePin();
     void computeExternalPwms();
     void print();
 };

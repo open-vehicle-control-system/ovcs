@@ -208,11 +208,11 @@ defmodule VmsCore.Managers.ControlLevel do
         %{state | selected_control_level: :manual}
 
       requested_control_level == :radio && selected_control_level != :radio &&
-        is_nil(forced_control_level) && ready_to_drive && speed |> D.eq?(@zero) ->
+        is_nil(forced_control_level) && ready_to_drive && standstill?(speed) ->
         %{state | selected_control_level: :radio}
 
       requested_control_level == :ros && selected_control_level == :radio &&
-        is_nil(forced_control_level) && speed |> D.eq?(@zero) ->
+        is_nil(forced_control_level) && standstill?(speed) ->
         %{state | selected_control_level: :ros}
 
       requested_control_level == selected_control_level &&
@@ -266,6 +266,9 @@ defmodule VmsCore.Managers.ControlLevel do
       not state.ready_to_drive ->
         :not_ready_to_drive
 
+      is_nil(state.speed) ->
+        :speed_unknown
+
       not D.eq?(state.speed, @zero) ->
         {:moving, state.speed}
 
@@ -294,7 +297,7 @@ defmodule VmsCore.Managers.ControlLevel do
       state.selected_control_level != :ros ->
         %{state | selected_ros_commander: :teleop}
 
-      state.selected_ros_commander == :teleop && D.eq?(state.speed, @zero) ->
+      state.selected_ros_commander == :teleop && standstill?(state.speed) ->
         %{state | selected_ros_commander: :autonomous}
 
       true ->
@@ -318,6 +321,13 @@ defmodule VmsCore.Managers.ControlLevel do
   end
 
   defp select_sources(state), do: state
+
+  # A speed source that has gone quiet publishes nil, and unknown is not
+  # standstill: a vehicle that cannot prove it is stopped does not get a
+  # mode change. A vehicle with no speed source at all keeps the initial
+  # zero, which is the documented permissive case.
+  defp standstill?(nil), do: false
+  defp standstill?(speed), do: D.eq?(speed, @zero)
 
   # Only `:ros` is keyed by commander. Every other level names a single
   # source, so the second switch cannot affect it.

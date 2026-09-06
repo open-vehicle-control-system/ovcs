@@ -28,6 +28,15 @@ defmodule OvcsMini.Vms.Composer do
   # 13 m/s, but nothing has measured this one under load.
   @max_speed_m_s 5.0
 
+  # The trigger magnet sits in the spur gear, so wheel speed needs the
+  # ratio from the spur gear to the wheels: the Slash 4x4 transmission's
+  # fixed 2.72:1. The pinion does not enter into it. One magnet, one
+  # pulse per spur turn. ESTIMATE until measured: turn the spur gear by
+  # hand until a wheel completes one revolution and count the pulses on
+  # `0x709`; only the product of the two constants matters.
+  @pulses_per_revolution 1
+  @gear_ratio 2.72
+
   @impl VmsCore.Vehicle
   def children do
     [
@@ -68,22 +77,34 @@ defmodule OvcsMini.Vms.Composer do
        %{
          radio_control_channel: 2
        }},
-      # Two switches, two questions. Channel 3 says who has authority,
+      # Two switches, two questions. Channel 6 says who has authority,
       # channel 5 says which ROS node commands when ROS does — see
       # `Managers.ControlLevel`. Both only *request*; the manager
       # decides, which is the whole reason they route through it rather
       # than being read where the actuators are wired.
       #
-      # Channel 3 for authority, with 4 left free for direction, is the
-      # OVCS1 convention — so a transmitter set up for one vehicle
-      # reads the same way on the other.
+      # This is the Mini transmitter's layout over ExpressLRS in MAVLink
+      # link mode, which forces the Hybrid switch mode: sticks on 1 and
+      # 2, switches from 5 up, 3 and 4 unused. Channel 5 is the link's
+      # 2-position arm channel and cannot carry a middle position, so
+      # the three-position level goes on 6 and the two-position
+      # commander takes 5. docs/vehicle_parameterisation.md has the
+      # layout of every vehicle.
       {OVCS.RadioControl.RequestedControlLevel,
        %{
-         radio_control_channel: 3
+         radio_control_channel: 6
        }},
       {OVCS.RadioControl.RequestedRosCommander,
        %{
          radio_control_channel: 5
+       }},
+      # Started so the value is published; no actuator on the Mini
+      # reads a direction, since reverse is a negative throttle here.
+      # Named as the radio source below so a drivetrain that consumes
+      # direction can be wired without touching the manager.
+      {OVCS.RadioControl.Direction,
+       %{
+         radio_control_channel: 7
        }},
       {Managers.ControlLevel,
        %{
@@ -99,7 +120,7 @@ defmodule OvcsMini.Vms.Composer do
          # does, because its throttle axis is unsigned.
          requested_direction_sources: %{
            manual: nil,
-           radio: nil,
+           radio: OVCS.RadioControl.Direction,
            ros: %{teleop: OVCS.ROSControl.Direction, autonomous: nil}
          },
          requested_throttle_sources: %{
@@ -125,28 +146,19 @@ defmodule OvcsMini.Vms.Composer do
          #
          # On the host bench that means nothing commands it at all:
          # `radio_control_bridge_config(:host)` declares no components,
-         # so nothing emits 0x2A0/0x2A1, channel 3 stays at its default
+         # so nothing emits 0x2A0/0x2A1, channel 6 stays at its default
          # 1000, and joystick input on 0x2B0/0x2B1 is discarded with no
-         # log. Synthesise the switches with `cansend` --
-         # docs/vehicle_parameterisation.md, "Driving on the host
-         # bench", has the frames.
+         # log. Nothing emits the pulse counter frame either, so the
+         # speed is unknown and the manager refuses every mode change
+         # until one is synthesised. docs/vehicle_parameterisation.md,
+         # "Driving on the host bench", has the frames for both.
          default_control_level: :manual,
          ready_to_drive_source: Vms,
-         # KNOWN GAP. The manager only allows a change into `:radio`,
-         # into `:ros`, or into the `:autonomous` commander at a
-         # standstill, read from a `:speed` broadcast. Nothing on Mini
-         # publishes one. The motor's hall sensor is wired to the main
-         # controller's A0, but the controller reads it with a plain
-         # `analogRead()` every 10 ms, so `Traxxas.Motor` sees a
-         # sampled square wave rather than a rate: `:raw_rotation_per_minute`
-         # is an amplitude, and `:moving` is whichever phase the sample
-         # landed on.
-         #
-         # With no source the manager's speed stays at zero, so the
-         # interlock is *permissive*: mode changes are allowed at any
-         # speed. Closing it needs the controller to count pulses on
-         # that pin and put a rate on the bus.
-         speed_source: nil
+         # The standstill gate on every mode change reads this. It is
+         # exactly zero once the hall sensor has been quiet for two
+         # seconds, and the gear ratio above only scales what counts as
+         # moving, so an estimate there does not weaken the gate.
+         speed_source: Traxxas.Motor
        }},
       # The manager owns the choice now, so the drivetrain follows
       # whichever source it names rather than being wired to one
@@ -169,7 +181,9 @@ defmodule OvcsMini.Vms.Composer do
       {Traxxas.Motor,
        %{
          controller: Vms.MainController,
-         rotation_per_minute_pin: 0
+         pulses_per_revolution: @pulses_per_revolution,
+         gear_ratio: @gear_ratio,
+         wheel_radius: OvcsMini.geometry().wheel_radius
        }},
       {VmsCore.Status,
        %{

@@ -12,6 +12,7 @@ can_networks:
     received_frames:
       - import!:generic_controller/0x701_main_controller_alive.yml
       - import!:generic_controller/0x704_main_controller_digital_and_analog_pin_status.yml
+      - import!:generic_controller/0x709_main_controller_pulse_counter_status.yml
       - import!:@ovcs_can:can/components/ovcs/0x2A0_radio_control_channels0.yml
       - import!:@ovcs_can:can/components/ovcs/0x2A1_radio_control_channels1.yml
       - import!:@ovcs_can:can/components/ovcs/0x2B0_ros_control0.yml

@@ -318,4 +318,32 @@ defmodule VmsCore.Managers.ControlLevelTest do
       assert is_map(state)
     end
   end
+
+  describe "an unknown speed" do
+    test "is not a standstill, so nothing arms" do
+      # The speed source publishes nil while its sensor frame is dead.
+      # Silence must not read as stopped.
+      state =
+        manager()
+        |> deliver(:ready_to_drive, true, Vms)
+        |> deliver(:speed, nil, Abs)
+        |> deliver(:requested_control_level, :radio, RadioLevel)
+        |> tick()
+
+      assert state.selected_control_level == :manual
+    end
+
+    test "is reported as the reason" do
+      log =
+        capture_log(fn ->
+          manager()
+          |> deliver(:ready_to_drive, true, Vms)
+          |> deliver(:speed, nil, Abs)
+          |> deliver(:requested_control_level, :radio, RadioLevel)
+          |> tick()
+        end)
+
+      assert log =~ ":speed_unknown"
+    end
+  end
 end

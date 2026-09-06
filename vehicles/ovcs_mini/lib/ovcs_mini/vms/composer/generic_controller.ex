@@ -28,9 +28,12 @@ defmodule OvcsMini.Vms.Composer.GenericController do
         "pwm_pin1" => "disabled",
         "pwm_pin2" => "disabled",
         "dac_pin0" => "disabled",
-        "analog_pin0" => "enabled",
+        "analog_pin0" => "disabled",
         "analog_pin1" => "disabled",
-        "analog_pin2" => "disabled"
+        "analog_pin2" => "disabled",
+        # The motor's hall sensor, on A1. Counted by interrupt on the
+        # controller and reported as a frequency; see `Traxxas.Motor`.
+        "pulse_pin0" => "enabled"
       }
     }
   end

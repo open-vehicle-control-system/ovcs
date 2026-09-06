@@ -149,7 +149,9 @@ defmodule RosBridge.ZenohClientSampleTest do
       body = :binary.copy(<<0>>, 48)
       log = capture_log(fn -> assert {:noreply, _} = sample(state(Twist), body) end)
 
-      assert log == ""
+      # Other async tests log too, so only the surplus warning is ruled
+      # out, not every line captured in the window.
+      refute log =~ "unread"
       assert_received {:ros_message, {_key, %Twist{}}}
     end
   end
