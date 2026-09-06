@@ -101,6 +101,14 @@ defmodule VmsCore.Components.OVCS.GenericController do
     controller_configuration = Application.vehicle_composer().generic_controllers()[process_name]
     pulse_pin_enabled = controller_configuration["pulse_pin0"] == "enabled"
 
+    # Both live on A1. The firmware gives the pin to the pulse counter
+    # and reports the analog input as a permanent zero, which would
+    # look like a real reading; refuse the combination here instead.
+    if pulse_pin_enabled and controller_configuration["analog_pin0"] == "enabled" do
+      raise ArgumentError,
+            "#{inspect(process_name)} enables both pulse_pin0 and analog_pin0, which share A1"
+    end
+
     :ok =
       Receiver.subscribe(self(), :ovcs, [
         alive_frame_name,

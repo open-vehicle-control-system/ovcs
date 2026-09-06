@@ -28,8 +28,8 @@ defmodule VmsCore.Components.Traxxas.Motor do
 
   ## Options
 
-    * `:controller` — the generic controller the sensor is wired to.
-    * `:pulse_pin` — its pulse pin index (`0`).
+    * `:controller` — the generic controller the sensor is wired to, on
+      its pulse pin 0, the only one a controller has.
     * `:pulses_per_revolution` — edges per turn of the shaft the magnet
       is on.
     * `:gear_ratio` — turns of that shaft per turn of the wheel.
@@ -44,72 +44,67 @@ defmodule VmsCore.Components.Traxxas.Motor do
   alias OvcsBus, as: Bus
 
   @loop_period 10
-  @zero D.new(0)
+  @frequency_name :received_pulse_pin0_frequency
 
   def start_link(args) do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
   end
 
   @impl true
-  def init(
-        %{
-          controller: controller,
-          pulses_per_revolution: pulses_per_revolution,
-          gear_ratio: gear_ratio,
-          wheel_radius: wheel_radius
-        } = args
-      ) do
+  def init(%{
+        controller: controller,
+        pulses_per_revolution: pulses_per_revolution,
+        gear_ratio: gear_ratio,
+        wheel_radius: wheel_radius
+      }) do
     Bus.subscribe("messages")
     {:ok, timer} = :timer.send_interval(@loop_period, :loop)
-    pulse_pin = Map.get(args, :pulse_pin, 0)
 
+    # Unknown until the controller says otherwise. Zero here would let
+    # the standstill gate pass before the first frequency arrives, or
+    # for ever if the controller named here never publishes one.
     {:ok,
      %{
        loop_timer: timer,
        controller: controller,
-       frequency_name: :"received_pulse_pin#{pulse_pin}_frequency",
        pulses_per_revolution: pulses_per_revolution,
        speed_factor: speed_factor(pulses_per_revolution, gear_ratio, wheel_radius),
-       frequency: @zero,
-       rotation_per_minute: @zero,
-       speed: @zero
+       rotation_per_minute: nil,
+       speed: nil
      }}
   end
 
   @impl true
   def handle_info(:loop, state) do
-    state =
-      state
-      |> compute_values()
-      |> emit_metrics()
-
-    {:noreply, state}
+    {:noreply, emit_metrics(state)}
   end
 
-  def handle_info(%Bus.Message{name: name, value: frequency, source: source}, state)
-      when source == state.controller and name == state.frequency_name do
-    {:noreply, %{state | frequency: frequency && D.new(frequency)}}
+  # Computed when the frequency arrives, not on every tick: the
+  # constants are fixed and the frequency only changes with a message.
+  def handle_info(%Bus.Message{name: @frequency_name, value: nil, source: source}, state)
+      when source == state.controller do
+    {:noreply, %{state | rotation_per_minute: nil, speed: nil}}
+  end
+
+  def handle_info(%Bus.Message{name: @frequency_name, value: frequency, source: source}, state)
+      when source == state.controller do
+    {:noreply,
+     %{
+       state
+       | rotation_per_minute: rotation_per_minute(frequency, state.pulses_per_revolution),
+         speed: speed_km_h(frequency, state.speed_factor)
+     }}
   end
 
   def handle_info(%Bus.Message{}, state) do
     {:noreply, state}
   end
 
-  defp compute_values(%{frequency: nil} = state) do
-    %{state | rotation_per_minute: nil, speed: nil}
-  end
-
-  defp compute_values(state) do
-    %{
-      state
-      | rotation_per_minute: rotation_per_minute(state.frequency, state.pulses_per_revolution),
-        speed: speed_km_h(state.frequency, state.speed_factor)
-    }
-  end
-
+  # The frequency arrives with one decimal (`0x7X9` decodes at
+  # precision 1), so the result carries one too: `6000.0`, not `6000`.
   @doc false
   def rotation_per_minute(frequency, pulses_per_revolution) do
-    frequency |> D.mult(60) |> D.div(pulses_per_revolution)
+    frequency |> D.new() |> D.mult(60) |> D.div(pulses_per_revolution)
   end
 
   # km/h per hertz, fixed at init: one wheel circumference per
@@ -122,7 +117,7 @@ defmodule VmsCore.Components.Traxxas.Motor do
 
   @doc false
   def speed_km_h(frequency, speed_factor) do
-    frequency |> D.mult(speed_factor) |> D.round(2)
+    frequency |> D.new() |> D.mult(speed_factor) |> D.round(2)
   end
 
   defp emit_metrics(state) do

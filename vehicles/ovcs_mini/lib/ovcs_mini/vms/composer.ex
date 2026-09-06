@@ -181,7 +181,6 @@ defmodule OvcsMini.Vms.Composer do
       {Traxxas.Motor,
        %{
          controller: Vms.MainController,
-         pulse_pin: 0,
          pulses_per_revolution: @pulses_per_revolution,
          gear_ratio: @gear_ratio,
          wheel_radius: OvcsMini.geometry().wheel_radius
