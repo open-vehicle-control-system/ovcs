@@ -1,6 +1,6 @@
 defmodule OvcsMini.Vms.Composer.Dashboard.DashboardPage do
   alias OvcsMini.Vms
-  alias VmsCore.Components.Traxxas
+  alias VmsCore.Components.OVCS
   alias VmsCore.Managers
   alias VmsCore.Status
 
@@ -55,12 +55,18 @@ defmodule OvcsMini.Vms.Composer.Dashboard.DashboardPage do
               module: Managers.ControlLevel,
               key: :control_level_forced
             },
-            %{type: :metric, name: "Speed", module: Traxxas.Motor, key: :speed, unit: "km/h"},
             %{
               type: :metric,
-              name: "Motor RPM",
-              module: Traxxas.Motor,
-              key: :rotation_per_minute
+              name: "Speed",
+              module: OVCS.PulseSpeedSensor,
+              key: :speed,
+              unit: "km/h"
+            },
+            %{
+              type: :metric,
+              name: "Wheel RPM",
+              module: OVCS.PulseSpeedSensor,
+              key: :wheel_rotation_per_minute
             }
           ]
         },
@@ -74,15 +80,20 @@ defmodule OvcsMini.Vms.Composer.Dashboard.DashboardPage do
               min: 0,
               max: 30,
               label: "km/h",
-              series: [%{name: "Speed", metric: %{module: Traxxas.Motor, key: :speed}}]
+              series: [%{name: "Speed", metric: %{module: OVCS.PulseSpeedSensor, key: :speed}}]
             },
             %{
               position: "right",
               min: 0,
-              max: 10_000,
+              # A wheel turning at the estimated top speed, 5 m/s on a
+              # 0.0548 m wheel, does a little under 900 rpm.
+              max: 1_000,
               label: "RPM",
               series: [
-                %{name: "Motor RPM", metric: %{module: Traxxas.Motor, key: :rotation_per_minute}}
+                %{
+                  name: "Wheel RPM",
+                  metric: %{module: OVCS.PulseSpeedSensor, key: :wheel_rotation_per_minute}
+                }
               ]
             }
           ]

@@ -1,17 +1,25 @@
-defmodule VmsCore.Components.Traxxas.Motor do
+defmodule VmsCore.Components.OVCS.PulseSpeedSensor do
   @moduledoc """
-  Motor speed from a hall effect sensor.
+  Vehicle speed from a magnet on a rotating shaft.
 
-  The sensor's pulse train is counted by the generic controller, which
-  reports a frequency on its pulse counter frame. This turns that
-  frequency into the speed of the sensed shaft and of the vehicle:
+  The sensor is a switch that closes once per turn of whatever shaft it
+  is mounted on — a spur gear, a half shaft, a wheel hub. The generic
+  controller counts its pulses by interrupt and reports a frequency on
+  its pulse counter frame. This turns that frequency into the speed of
+  the vehicle and the speed of its wheels:
 
-      shaft rpm   = frequency · 60 / pulses_per_revolution
       wheel rev/s = frequency / pulses_per_revolution / gear_ratio
+      wheel rpm   = wheel rev/s · 60
       speed       = wheel rev/s · 2π · wheel_radius
 
   `:speed` is published in km/h, the unit every other `:speed` on the
   bus uses.
+
+  Nothing here is specific to one drivetrain, and nothing here knows
+  what drives the shaft. The motor's own speed is not derivable: it
+  sits behind a pinion whose ratio is not declared anywhere and which
+  changes when the pinion is swapped. `:wheel_rotation_per_minute` is
+  what the sensed shaft can actually prove.
 
   ## Standstill, and not knowing
 
@@ -30,9 +38,9 @@ defmodule VmsCore.Components.Traxxas.Motor do
 
     * `:controller` — the generic controller the sensor is wired to, on
       its pulse pin 0, the only one a controller has.
-    * `:pulses_per_revolution` — edges per turn of the shaft the magnet
-      is on.
-    * `:gear_ratio` — turns of that shaft per turn of the wheel.
+    * `:pulses_per_revolution` — edges per turn of the sensed shaft.
+    * `:gear_ratio` — turns of the sensed shaft per turn of the wheel.
+      One when the magnet is on the wheel itself.
     * `:wheel_radius` — metres, from the vehicle's `geometry/0`.
 
   The product `pulses_per_revolution · gear_ratio` is the only thing
@@ -67,9 +75,10 @@ defmodule VmsCore.Components.Traxxas.Motor do
      %{
        loop_timer: timer,
        controller: controller,
-       pulses_per_revolution: pulses_per_revolution,
+       pulses_per_wheel_revolution:
+         pulses_per_wheel_revolution(pulses_per_revolution, gear_ratio),
        speed_factor: speed_factor(pulses_per_revolution, gear_ratio, wheel_radius),
-       rotation_per_minute: nil,
+       wheel_rotation_per_minute: nil,
        speed: nil
      }}
   end
@@ -83,7 +92,7 @@ defmodule VmsCore.Components.Traxxas.Motor do
   # constants are fixed and the frequency only changes with a message.
   def handle_info(%Bus.Message{name: @frequency_name, value: nil, source: source}, state)
       when source == state.controller do
-    {:noreply, %{state | rotation_per_minute: nil, speed: nil}}
+    {:noreply, %{state | wheel_rotation_per_minute: nil, speed: nil}}
   end
 
   def handle_info(%Bus.Message{name: @frequency_name, value: frequency, source: source}, state)
@@ -91,7 +100,8 @@ defmodule VmsCore.Components.Traxxas.Motor do
     {:noreply,
      %{
        state
-       | rotation_per_minute: rotation_per_minute(frequency, state.pulses_per_revolution),
+       | wheel_rotation_per_minute:
+           wheel_rotation_per_minute(frequency, state.pulses_per_wheel_revolution),
          speed: speed_km_h(frequency, state.speed_factor)
      }}
   end
@@ -100,11 +110,19 @@ defmodule VmsCore.Components.Traxxas.Motor do
     {:noreply, state}
   end
 
-  # The frequency arrives with one decimal (`0x7X9` decodes at
-  # precision 1), so the result carries one too: `6000.0`, not `6000`.
+  # Both constants are declared as whichever of integer or float reads
+  # best in the composer, so the product is coerced before Decimal,
+  # which takes a float or nothing.
   @doc false
-  def rotation_per_minute(frequency, pulses_per_revolution) do
-    frequency |> D.new() |> D.mult(60) |> D.div(pulses_per_revolution)
+  def pulses_per_wheel_revolution(pulses_per_revolution, gear_ratio) do
+    D.from_float(1.0 * pulses_per_revolution * gear_ratio)
+  end
+
+  # The frequency arrives with one decimal (`0x7X9` decodes at
+  # precision 1), so the result carries one too: `600.0`, not `600`.
+  @doc false
+  def wheel_rotation_per_minute(frequency, pulses_per_wheel_revolution) do
+    frequency |> D.new() |> D.mult(60) |> D.div(pulses_per_wheel_revolution) |> D.round(1)
   end
 
   # km/h per hertz, fixed at init: one wheel circumference per
@@ -122,8 +140,8 @@ defmodule VmsCore.Components.Traxxas.Motor do
 
   defp emit_metrics(state) do
     Bus.broadcast("messages", %Bus.Message{
-      name: :rotation_per_minute,
-      value: state.rotation_per_minute,
+      name: :wheel_rotation_per_minute,
+      value: state.wheel_rotation_per_minute,
       source: __MODULE__
     })
 

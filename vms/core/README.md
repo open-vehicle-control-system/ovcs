@@ -99,6 +99,7 @@ the library.
 | `Components.OVCS.SteeringColumn` | `components/ovcs/steering_column.ex` | Stepper motor steering with PID controller |
 | `Components.OVCS.WaterPump` | `components/ovcs/water_pump.ex` | Cooling water pump relay control |
 | `Components.OVCS.Infotainment` | `components/ovcs/infotainment.ex` | Infotainment CAN bridge (music control, turn signals) |
+| `Components.OVCS.PulseSpeedSensor` | `components/ovcs/pulse_speed_sensor.ex` | Vehicle and wheel speed from a shaft pulse counted by a generic controller |
 
 ### Radio Control
 
@@ -157,7 +158,6 @@ the library.
 
 | Module | Purpose |
 |--------|---------|
-| `Components.Traxxas.Motor` | Brushless motor monitoring |
 | `Components.Traxxas.Steering` | Servo steering via external PWM |
 | `Components.Traxxas.Throttle` | ESC throttle via external PWM |
 

@@ -163,7 +163,7 @@ defmodule OvcsMini.Vms.Composer do
          # exactly zero once the hall sensor has been quiet for two
          # seconds, and the gear ratio above only scales what counts as
          # moving, so an estimate there does not weaken the gate.
-         speed_source: Traxxas.Motor
+         speed_source: OVCS.PulseSpeedSensor
        }},
       # The manager owns the choice now, so the drivetrain follows
       # whichever source it names rather than being wired to one
@@ -183,7 +183,7 @@ defmodule OvcsMini.Vms.Composer do
          # it bypasses the joystick feel curve.
          linear_sources: [OVCS.RosVelocityCommand]
        }},
-      {Traxxas.Motor,
+      {OVCS.PulseSpeedSensor,
        %{
          controller: Vms.MainController,
          pulses_per_revolution: @pulses_per_revolution,
