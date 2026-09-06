@@ -258,6 +258,76 @@ defmodule VmsCore.Managers.ControlLevelTest do
     end
   end
 
+  describe "a brake that is still applied" do
+    test "refuses :radio rather than letting it through for one tick" do
+      # The force is lifted by the switch returning to :manual, not by
+      # the brake being released, so without the check the level goes
+      # to :radio, is forced back on the next tick, and oscillates at
+      # the loop frequency for as long as the switch stays there.
+      state =
+        manager()
+        |> request(:radio)
+        |> deliver(:manual_breaking, true, BrakePedal)
+        |> tick()
+
+      assert state.selected_control_level == :manual
+      assert state.forced_control_level == :manual
+
+      state = request(state, :manual)
+      assert state.forced_control_level == nil
+
+      log =
+        capture_log(fn ->
+          send(self(), {:state, request(state, :radio)})
+        end)
+
+      assert_received {:state, state}
+      assert state.selected_control_level == :manual
+      assert state.forced_control_level == nil
+      assert log =~ "manual_breaking"
+    end
+
+    test "reopens :radio once released" do
+      state =
+        manager()
+        |> request(:radio)
+        |> deliver(:manual_breaking, true, BrakePedal)
+        |> tick()
+        |> request(:manual)
+        |> request(:radio)
+
+      assert state.selected_control_level == :manual
+
+      state = state |> deliver(:manual_breaking, false, BrakePedal) |> tick()
+
+      assert state.selected_control_level == :radio
+    end
+
+    test "refuses :ros while the radio brake is the one held" do
+      # `:ros` under a held radio brake would be dropped straight back
+      # to :radio by the takeover branch.
+      state =
+        in_ros()
+        |> deliver(:radio_breaking, true, RadioThrottle)
+        |> tick()
+
+      assert state.selected_control_level == :radio
+      assert state.forced_control_level == :radio
+
+      state = request(state, :radio)
+      assert state.forced_control_level == nil
+
+      log =
+        capture_log(fn ->
+          send(self(), {:state, request(state, :ros)})
+        end)
+
+      assert_received {:state, state}
+      assert state.selected_control_level == :radio
+      assert log =~ "radio_breaking"
+    end
+  end
+
   describe "source attribution" do
     test "an unattributed message never reaches the bus" do
       # The handlers gate on `source == state.speed_source`, and the bus

@@ -208,13 +208,20 @@ defmodule VmsCore.Managers.ControlLevel do
         %{state | selected_control_level: :manual}
 
       requested_control_level == :radio && selected_control_level != :radio &&
-        is_nil(forced_control_level) && ready_to_drive && standstill?(speed) ->
+        is_nil(forced_control_level) && ready_to_drive && !manual_breaking &&
+          standstill?(speed) ->
         %{state | selected_control_level: :radio}
 
       requested_control_level == :ros && selected_control_level == :radio &&
-        is_nil(forced_control_level) && standstill?(speed) ->
+        is_nil(forced_control_level) && !manual_breaking && !radio_breaking &&
+          standstill?(speed) ->
         %{state | selected_control_level: :ros}
 
+      # The force is lifted by the switch returning to the level it was
+      # forced to, not by the brake being released, so a level whose
+      # forcing condition is still active must be refused on entry
+      # above rather than entered for the one tick it takes to force it
+      # again.
       requested_control_level == selected_control_level &&
           requested_control_level == forced_control_level ->
         %{state | forced_control_level: nil}
@@ -271,6 +278,15 @@ defmodule VmsCore.Managers.ControlLevel do
 
       not D.eq?(state.speed, @zero) ->
         {:moving, state.speed}
+
+      # A brake that is still applied would force the level straight
+      # back, so it reads as a refusal rather than as a transition
+      # followed by a correction.
+      state.manual_breaking ->
+        :manual_breaking
+
+      state.requested_control_level == :ros && state.radio_breaking ->
+        :radio_breaking
 
       state.requested_control_level == :ros && state.selected_control_level == :manual ->
         # `:ros` is only reachable from `:radio`, deliberately: it puts
