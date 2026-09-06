@@ -81,6 +81,12 @@ defmodule VmsCore.Components.OVCS.Ros2Control.Velocity do
       `geometry/0`, in metres and radians.
     * `:max_speed` — m/s at full throttle. Not geometry: it is a
       property of the motor and gearing, not a dimension.
+    * `:steering_sign` — `1` or `-1`, default `1`. REP-103 makes a
+      positive yaw rate a left turn; whether a positive
+      `requested_steering` turns this vehicle's servo left is a fact
+      about the servo and its linkage. The joystick path settles the
+      same question with the sign of its scale. Measure it on the
+      servo before the first ROS drive and set it here.
   """
   use GenServer
 
@@ -102,7 +108,13 @@ defmodule VmsCore.Components.OVCS.Ros2Control.Velocity do
   end
 
   @impl true
-  def init(%{wheelbase: wheelbase, steering_limit: steering_limit, max_speed: max_speed}) do
+  def init(%{wheelbase: wheelbase, steering_limit: steering_limit, max_speed: max_speed} = args) do
+    steering_sign = Map.get(args, :steering_sign, 1)
+
+    unless steering_sign in [1, -1] do
+      raise ArgumentError, "steering_sign must be 1 or -1, got #{inspect(steering_sign)}"
+    end
+
     :ok = Receiver.subscribe(self(), :ovcs, @frame_name, %{errors: true})
     :ok = ReceivedFrameWatcher.enable(:ovcs, @frame_name)
     {:ok, timer} = :timer.send_interval(@loop_period, :loop)
@@ -112,6 +124,7 @@ defmodule VmsCore.Components.OVCS.Ros2Control.Velocity do
        loop_timer: timer,
        geometry: %{wheelbase: wheelbase, steering_limit: steering_limit},
        max_speed: max_speed,
+       steering_sign: steering_sign,
        linear: @zero,
        angular: @zero,
        requested_steering: @zero,
@@ -152,7 +165,8 @@ defmodule VmsCore.Components.OVCS.Ros2Control.Velocity do
 
     %{
       state
-      | requested_steering: steering(linear, angular, state.geometry),
+      | requested_steering:
+          steering(linear, angular, state.geometry) |> D.mult(state.steering_sign),
         requested_throttle: throttle(linear, state.max_speed)
     }
   end

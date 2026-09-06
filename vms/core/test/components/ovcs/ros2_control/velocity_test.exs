@@ -33,6 +33,7 @@ defmodule VmsCore.Components.OVCS.Ros2Control.VelocityTest do
         loop_timer: nil,
         geometry: @geometry,
         max_speed: @max_speed,
+        steering_sign: 1,
         linear: D.new(0),
         angular: D.new(0),
         requested_steering: D.new(0),
@@ -126,6 +127,16 @@ defmodule VmsCore.Components.OVCS.Ros2Control.VelocityTest do
       {gentle, _} = drive(2.0, 0.5)
       {tight, _} = drive(1.0, 0.5)
       assert tight > gentle
+    end
+  end
+
+  describe "the steering sign" do
+    test "is applied after the kinematics, so only the direction changes" do
+      state = stub_state(%{steering_sign: -1})
+      {:noreply, state} = Velocity.handle_info(frame(1.0, 0.5), state)
+      {:noreply, state} = Velocity.handle_info(:loop, state)
+      assert_receive %Message{name: :requested_steering, value: steering, source: Velocity}
+      assert_in_delta D.to_float(steering), -0.308855, 1.0e-5
     end
   end
 

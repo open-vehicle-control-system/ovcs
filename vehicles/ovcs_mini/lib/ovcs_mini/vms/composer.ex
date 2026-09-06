@@ -64,10 +64,15 @@ defmodule OvcsMini.Vms.Composer do
       # vehicle's own geometry. Started unconditionally — it emits
       # zeros until something publishes, and whether the drivetrain
       # *reads* it is the channel-5 switch's decision, below.
+      # UNVERIFIED: whether a positive request turns this servo left, as
+      # REP-103 expects of a positive yaw rate. The joystick path inverts
+      # its axis and both write the same `:requested_steering`, so one of
+      # the two steers the wrong way. Measure on the servo and set -1
+      # here if a Nav2 left turn steers right.
       {OVCS.Ros2Control.Velocity,
        Map.merge(
          Map.take(OvcsMini.geometry(), [:wheelbase, :steering_limit]),
-         %{max_speed: @max_speed_m_s}
+         %{max_speed: @max_speed_m_s, steering_sign: 1}
        )},
       {OVCS.RadioControl.Steering,
        %{
