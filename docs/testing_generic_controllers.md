@@ -103,6 +103,12 @@ boot grace period. Confirm:
 - `CAN_NETWORK_MAPPINGS` routes `ovcs:` to the same interface the
   controller is on.
 
+A VMS reboot, and therefore every redeploy, always trips this: the
+heartbeat stops for longer than the controller tolerates. The VMS
+resets the controllers itself three seconds after it boots, so the
+error clears on its own once the new VMS is up. If a controller is
+still in this state afterwards, use the reset below.
+
 ### Controller goes to `EXPANSION_BOARDS_ERROR`
 
 - I2C wiring: SDA on A4, SCL on A5.

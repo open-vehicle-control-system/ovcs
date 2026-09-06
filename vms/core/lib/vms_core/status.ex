@@ -7,6 +7,13 @@ defmodule VmsCore.Status do
   alias OvcsBus, as: Bus
 
   @loop_period 10
+  # A generic controller shuts down when the VMS alive frame stops for
+  # about half a second, and a VMS reboot always exceeds that, so every
+  # redeploy leaves the controllers in VMS_MISSING_ERROR. The reset the
+  # dashboard button performs is done once here, after the CAN stack
+  # has had time to come up.
+  @boot_reset_delay_ms 3_000
+  @reset_duration_ms 1_000
 
   def start_link(args) do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
@@ -38,6 +45,7 @@ defmodule VmsCore.Status do
 
     Bus.subscribe("messages")
     {:ok, timer} = :timer.send_interval(@loop_period, :loop)
+    Process.send_after(self(), :start_reset_mode, @boot_reset_delay_ms)
 
     {:ok,
      %{
@@ -80,6 +88,17 @@ defmodule VmsCore.Status do
 
   def handle_info(%Bus.Message{}, state) do
     {:noreply, state}
+  end
+
+  # The boot reset: enter reset mode, leave it a second later. The same
+  # two steps the dashboard's action takes, without blocking a caller.
+  def handle_info(:start_reset_mode, state) do
+    Process.send_after(self(), :stop_reset_mode, @reset_duration_ms)
+    {:noreply, %{state | resetting: true}}
+  end
+
+  def handle_info(:stop_reset_mode, state) do
+    {:noreply, %{state | resetting: false}}
   end
 
   defp update_vms_status(state) do
