@@ -1,0 +1,53 @@
+---
+# The vehicle's own motion, emitted by the VMS for consumers that
+# integrate it — the ROS bridge's odometry publisher first of all.
+#
+# `speed` is signed: the sign is the direction of travel, taken from
+# the sign of the throttle request driving the vehicle, since a hall
+# sensor pulsing once per shaft turn cannot know which way the shaft
+# turns. `steering_angle` is the commanded angle in radians, positive
+# left per REP-103, derived from the same normalised request the
+# steering actuator consumes — commanded, not measured; the servo has
+# no feedback.
+#
+# `speed_valid` is false while the VMS itself does not know the speed
+# (the pulse counter frame is dead). An integrator must stop on false
+# rather than integrate the last value, for the same reason the VMS
+# refuses mode changes on an unknown speed: silence is not standstill.
+#
+# `sequence` increments once per fresh speed sample. `Cantastic.Emitter`
+# retransmits on a timer, so a frame arriving on time only proves the
+# VMS is alive; a sequence that stops advancing tells the consumer the
+# *data* went stale even while `speed_valid` still reads true.
+#
+# `precision` is stated with `scale` because Cantastic otherwise rounds
+# the decoded value to two decimals.
+name: vehicle_motion
+id: 0x60B
+frequency: 20
+signals:
+  - name: speed
+    unit: m/s
+    value_start: 0
+    value_length: 16
+    sign: signed
+    scale: "0.001"
+    precision: 3
+  - name: steering_angle
+    unit: rad
+    value_start: 16
+    value_length: 16
+    sign: signed
+    scale: "0.001"
+    precision: 3
+  - name: speed_valid
+    kind: enum
+    value_start: 32
+    value_length: 8
+    mapping:
+      0x00: false
+      0x01: true
+  - name: sequence
+    kind: integer
+    value_start: 40
+    value_length: 8
