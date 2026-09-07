@@ -1,4 +1,14 @@
-# Nav2 for the simulated OVCS Mini.
+# Nav2 for the OVCS Mini — the one parameter file, for the vehicle and
+# the simulator both.
+#
+# It lives under ros2/vehicule/ because balena requires everything the
+# vehicle image bakes in to sit inside the pushed source root; the
+# simulator reaches across and mounts it. The values written here are
+# the vehicle's truth — `use_sim_time: false` in particular — and the
+# launch file overlays `use_sim_time:=true` for a simulated run rather
+# than this file carrying two copies that would drift apart. If sim and
+# vehicle ever need a genuinely different value, that difference goes
+# through a launch argument, visibly, not through a fork of this file.
 #
 # ## Why there is no map here
 #
@@ -44,7 +54,7 @@
 
 controller_server:
   ros__parameters:
-    use_sim_time: true
+    use_sim_time: false
     controller_frequency: 20.0
     # The CAN command path runs at 100 Hz (`frequency: 10` in Cantastic
     # is a period in milliseconds), so 20 Hz here is not the bottleneck.
@@ -159,7 +169,7 @@ controller_server:
 local_costmap:
   local_costmap:
     ros__parameters:
-      use_sim_time: true
+      use_sim_time: false
       global_frame: odom
       robot_base_frame: base_link
       update_frequency: 5.0
@@ -179,7 +189,7 @@ local_costmap:
 global_costmap:
   global_costmap:
     ros__parameters:
-      use_sim_time: true
+      use_sim_time: false
       global_frame: odom
       robot_base_frame: base_link
       update_frequency: 1.0
@@ -199,7 +209,7 @@ global_costmap:
 
 planner_server:
   ros__parameters:
-    use_sim_time: true
+    use_sim_time: false
     expected_planner_frequency: 1.0
     planner_plugins: ["GridBased"]
     GridBased:
@@ -210,7 +220,7 @@ planner_server:
 
 bt_navigator:
   ros__parameters:
-    use_sim_time: true
+    use_sim_time: false
     global_frame: odom
     robot_base_frame: base_link
     odom_topic: /odom
@@ -225,7 +235,7 @@ bt_navigator:
 
 behavior_server:
   ros__parameters:
-    use_sim_time: true
+    use_sim_time: false
     local_frame: odom
     global_frame: odom
     robot_base_frame: base_link
@@ -251,7 +261,7 @@ behavior_server:
 
 lifecycle_manager:
   ros__parameters:
-    use_sim_time: true
+    use_sim_time: false
     autostart: true
     bond_timeout: 0.0
     node_names:

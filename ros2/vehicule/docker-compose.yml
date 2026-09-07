@@ -88,9 +88,30 @@ services:
       # such a variable overrides a literal compose `environment:`.
     command: ["foxglove_bridge"]
 
-  # Autonomy / perception ROS nodes go here as additional services,
-  # each with its own `build:` pointing at its own directory. There is
-  # no bind-mounted ./workspace on the vehicle — a node that runs on
-  # the car ships inside an image, which is the whole point of putting
-  # this on an immutable OS. Iterate against ros2/base first, then
-  # bake.
+  nav2:
+    # The planner, onboard, so autonomy survives the base station
+    # leaving — the same reason the router lives here. No profiles on
+    # balena, so it always runs; with no goal the controller commands
+    # nothing, and the VMS's control level arbitration gates whatever
+    # it commands in any case. Launch file and parameters are baked
+    # into the image from ./nav2 — the same files the simulator
+    # mounts. Context is the source root so the Dockerfile can reuse
+    # ./image's entrypoint and Zenoh template.
+    build:
+      context: .
+      dockerfile: nav2/Dockerfile
+    restart: always
+    network_mode: host
+    depends_on:
+      - zenohd
+    environment:
+      RMW_IMPLEMENTATION: rmw_zenoh_cpp
+      ZENOH_SESSION_CONFIG_URI: /tmp/zenoh-session.json5
+      ZENOH_ENDPOINT_IP: "127.0.0.1"
+
+  # Further autonomy / perception ROS nodes go here as additional
+  # services, each with its own `build:` pointing at its own
+  # directory. There is no bind-mounted ./workspace on the vehicle —
+  # a node that runs on the car ships inside an image, which is the
+  # whole point of putting this on an immutable OS. Iterate against
+  # ros2/base first, then bake.
