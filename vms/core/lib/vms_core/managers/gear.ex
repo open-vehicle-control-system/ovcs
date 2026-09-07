@@ -94,7 +94,18 @@ defmodule VmsCore.Managers.Gear do
         state
       )
       when source == state.selected_control_level_source do
-    {:noreply, %{state | requested_throttle_source: requested_throttle_source}}
+    # Zero on the way to a level that commands nothing. The
+    # `:requested_throttle` handler gates on the source, so with no
+    # source no message matches and a held positive request would keep
+    # refusing gear changes that are actually safe.
+    requested = if is_nil(requested_throttle_source), do: @zero, else: state.requested_throttle
+
+    {:noreply,
+     %{
+       state
+       | requested_throttle_source: requested_throttle_source,
+         requested_throttle: requested
+     }}
   end
 
   def handle_info(

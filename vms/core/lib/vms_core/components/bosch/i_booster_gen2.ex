@@ -159,7 +159,19 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
         state
       )
       when source == state.selected_control_level_source do
-    {:noreply, %{state | requested_throttle_source: requested_throttle_source}}
+    # Zero on the way to a level that commands nothing. The
+    # `:requested_throttle` handler gates on the source, so with no
+    # source no message matches and a held negative request would keep
+    # the automatic braking applied. The pedal is unaffected: it acts
+    # on the booster mechanically.
+    requested = if is_nil(requested_throttle_source), do: @zero, else: state.requested_throttle
+
+    {:noreply,
+     %{
+       state
+       | requested_throttle_source: requested_throttle_source,
+         requested_throttle: requested
+     }}
   end
 
   def handle_info(
