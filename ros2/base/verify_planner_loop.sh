@@ -63,10 +63,23 @@ command -v candump >/dev/null || { fail "can-utils not installed"; exit 1; }
 log "Provisioning vcan"
 (cd "$REPO" && ./cli/ovcs can setup ovcs_mini) || { fail "vcan setup failed"; exit 1; }
 
-log "Starting the Zenoh router and the vehicle's Nav2 image"
+# Nav2 is started last, on purpose. Its costmap waits for the
+# odom -> base_link transform during lifecycle activation and
+# lifecycle_manager does not retry a timed-out activation: if Nav2
+# comes up before odometry, it fails to activate and sits inactive
+# for good. On the vehicle the same race exists — the always-on Nav2
+# container against a VMS that must boot its CAN stack first — so
+# bringing odometry up before the planner is the real ordering, not
+# a test convenience. Here the router build can take a while, so it
+# is pulled/built up front (nav2 image) but the container is not run
+# until /odom and /tf are live.
+log "Starting the Zenoh router, and building the vehicle's Nav2 image"
 (cd "$HERE" && ZENOH_ENDPOINT_IP=127.0.0.1 timeout 600 docker compose \
-  --profile standalone --profile nav2 up -d zenohd ros2 nav2) \
-  || { fail "router/nav2 failed to start"; exit 1; }
+  --profile standalone up -d zenohd ros2) \
+  || { fail "router failed to start"; exit 1; }
+(cd "$HERE" && ZENOH_ENDPOINT_IP=127.0.0.1 timeout 600 docker compose \
+  --profile nav2 build nav2) \
+  || { fail "nav2 image failed to build"; exit 1; }
 
 log "Starting the host vehicle (VMS + bridges)"
 (cd "$REPO" && setsid ./cli/ovcs run ovcs_mini >/tmp/ovcs-planner-loop-run.log 2>&1) &
@@ -94,11 +107,40 @@ sleep 1; cansend vcan0 2A1#E803D00700000000
 sleep 1; cansend vcan0 2A1#D007D00700000000
 
 log "Waiting for /odom on the fabric"
-if ! (cd "$HERE" && timeout 120 docker compose exec -T ros2 bash -lc \
-  'ros2 topic echo --once /odom nav_msgs/msg/Odometry >/dev/null 2>&1'); then
+# A fresh `ros2` invocation has to bring up a Zenoh session and
+# discover the bridge's publishers by liveliness token; the first
+# single-shot echo can return before that converges. Poll rather than
+# trust one shot, and let echo resolve the type itself — an explicit
+# type errors out instead of waiting when the topic is not yet in the
+# daemon's graph.
+odom_seen=0
+for _ in $(seq 1 20); do
+  if (cd "$HERE" && timeout 20 docker compose exec -T ros2 bash -lc \
+    'source /opt/ros/lyrical/setup.bash 2>/dev/null; timeout 8 ros2 topic echo --once /odom >/dev/null 2>&1'); then
+    odom_seen=1; break
+  fi
+  sleep 3
+done
+if [ "$odom_seen" -ne 1 ]; then
   fail "/odom never appeared — bridge odometry not publishing"
   exit 1
 fi
+
+log "Confirming the odom -> base_link transform is on /tf"
+# The message alone is not enough: Nav2's costmap resolves poses
+# through the tf tree, so a /odom with no matching /tf activates
+# nothing. This is the transform Nav2 will wait for.
+if ! (cd "$HERE" && timeout 20 docker compose exec -T ros2 bash -lc \
+  'source /opt/ros/lyrical/setup.bash 2>/dev/null;
+   timeout 8 ros2 topic echo --once /tf 2>/dev/null | grep -q "child_frame_id: base_link"'); then
+  fail "/tf carries no odom -> base_link transform"
+  exit 1
+fi
+
+log "Starting Nav2 now that odometry is live"
+(cd "$HERE" && ZENOH_ENDPOINT_IP=127.0.0.1 timeout 300 docker compose \
+  --profile nav2 up -d nav2) \
+  || { fail "nav2 failed to start"; exit 1; }
 
 log "Waiting for Nav2 lifecycle bringup"
 ok=0
@@ -115,27 +157,62 @@ if [ "$ok" -ne 1 ]; then
 fi
 
 # ── check ───────────────────────────────────────────────────────────
-log "Sending a goal 2 m ahead"
-(timeout 60 docker exec ovcs-nav2-vehicle bash -lc \
+# The path splits into two claims, asserted separately because one
+# combined "goal -> nonzero 0x2B1" capture is not deterministic on a
+# bench: odom never advances (nothing moves), so Nav2's progress
+# checker aborts the goal within seconds and the controller falls
+# back to zero. The nonzero window is real but racy, so instead:
+#
+#   Leg A (planner):  a goal makes Nav2 publish nonzero on /cmd_vel_nav
+#   Leg B (bridge):   a nonzero /cmd_vel_nav becomes nonzero 0x2B1
+#
+# Together they are the whole path, each leg deterministic.
+
+log "Leg A: a goal makes Nav2 command a nonzero velocity on /cmd_vel_nav"
+(timeout 30 docker exec ovcs-nav2-vehicle bash -lc \
   'source /opt/ros/lyrical/setup.bash 2>/dev/null;
    ros2 action send_goal /navigate_to_pose nav2_msgs/action/NavigateToPose \
-     "{pose: {header: {frame_id: odom}, pose: {position: {x: 2.0}, orientation: {w: 1.0}}}}" \
+     "{pose: {header: {frame_id: odom}, pose: {position: {x: 5.0}, orientation: {w: 1.0}}}}" \
      >/dev/null 2>&1') &
-
-log "Asserting a velocity command reaches the CAN bus (0x2B1, nonzero)"
-frames=$(timeout 60 candump -n 200 vcan0,2B1:7FF 2>/dev/null)
-if [ -z "$frames" ]; then
-  fail "no 0x2B1 on the bus — the bridge is not emitting"
+sleep 2
+nav_cmd=0
+for _ in $(seq 1 8); do
+  x=$(cd "$HERE" && timeout 12 docker compose exec -T ros2 bash -lc \
+    'source /opt/ros/lyrical/setup.bash 2>/dev/null;
+     timeout 6 ros2 topic echo --once --field twist.linear.x /cmd_vel_nav 2>/dev/null' \
+    | head -1 | tr -d '[:space:]')
+  case "$x" in ""|0.0|-0.0|0) : ;; *) nav_cmd=1; break ;; esac
+  sleep 1
+done
+if [ "$nav_cmd" -ne 1 ]; then
+  fail "Nav2 never commanded a nonzero velocity on /cmd_vel_nav"
+  docker logs ovcs-nav2-vehicle 2>&1 | grep -iE "reject|abort|fail" | tail -8 >&2
   exit 1
 fi
-# candump prints "vcan0  2B1  [8]  <byte> x8"; linear and angular are
-# the first four bytes. All-zero on every frame means the bridge is
-# alive but Nav2 never commanded motion.
+
+log "Leg B: a nonzero /cmd_vel_nav reaches the CAN bus as nonzero 0x2B1"
+# Driven directly rather than through Nav2, so the assertion does not
+# depend on the progress checker leaving a command up long enough to
+# sample. This is the bridge's own conversion, the hop Gazebo bypasses.
+(timeout 15 docker compose exec -T ros2 bash -lc \
+  'source /opt/ros/lyrical/setup.bash 2>/dev/null;
+   ros2 topic pub -r 10 /cmd_vel_nav geometry_msgs/msg/TwistStamped \
+     "{header: {frame_id: base_link}, twist: {linear: {x: 0.5}, angular: {z: 0.3}}}" \
+     >/dev/null 2>&1') &
+sleep 2
+frames=$(timeout 12 candump -n 60 vcan0,2B1:7FF 2>/dev/null)
+if [ -z "$frames" ]; then
+  fail "no 0x2B1 on the bus — the velocity consumer is not emitting"
+  exit 1
+fi
+# candump prints "vcan0  2B1  [5]  <byte>..."; linear and angular are
+# the first four data bytes. All-zero everywhere means the consumer
+# received nothing or dropped it.
 if ! printf '%s\n' "$frames" \
   | awk '{ if ($4 $5 $6 $7 != "00000000") found = 1 } END { exit !found }'; then
-  fail "0x2B1 flows but every command is zero — Nav2 commanded nothing"
+  fail "0x2B1 flows but stays zero — the velocity consumer is not converting /cmd_vel_nav"
   exit 1
 fi
 
-log "The loop closes: goal -> Nav2 -> Zenoh -> bridge -> 0x2B1"
+log "The loop closes: goal -> Nav2 -> /cmd_vel_nav -> Zenoh -> bridge -> 0x2B1"
 exit 0
