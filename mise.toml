@@ -76,6 +76,10 @@ run = "cd ros2/simulation && ./verify_drivetrain.sh"
 description = "Boot the simulator + Nav2, navigate to a goal and check the commands respect Ackermann limits"
 run = "cd ros2/simulation && ./verify_nav2.sh"
 
+[tasks.verify-planner-loop]
+description = "Nav2 (the vehicle's image) against a host VMS + bridge on vcan: assert the planner's commands reach 0x2B1"
+run = "cd ros2/base && ./verify_planner_loop.sh"
+
 [tasks.fetch-models]
 description = "Download + verify the detection models (not vendored — see scripts/models.tsv for why)"
 run = "./scripts/fetch_models.sh"
