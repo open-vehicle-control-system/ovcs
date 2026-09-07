@@ -336,6 +336,13 @@ plan against a frozen pose. Everything is `odom`-frame and drifts with
 dead reckoning, which is exactly the map-less contract the Nav2
 configuration was written for.
 
+One odometry owner per fabric, enforced by configuration: against the
+simulator Gazebo's `AckermannSteering` already publishes `/odom` and
+the transform, so the Mini's host bridge drops `:odometry_publisher`
+when `OVCS_SIM` is set — two publishers would hand every consumer two
+contradictory poses, and the tf tree interpolates across both rather
+than picking a winner.
+
 ### The actuator command (0x2B0)
 
 `RosBridge.Consumers.Joy` subscribes to `/joy` and writes
