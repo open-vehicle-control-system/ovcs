@@ -104,15 +104,4 @@ defmodule VmsCore.Components.Traxxas.Steering do
         %{state | steering: state.requested_steering}
     end
   end
-
-  # TODO remove
-  @impl true
-  def handle_call({:test_request_steering, value}, _from, state) do
-    {:reply, :ok, %{state | requested_steering: value}}
-  end
-
-  # TODO remove
-  def test_request_steering(value) do
-    GenServer.call(__MODULE__, {:test_request_steering, value})
-  end
 end

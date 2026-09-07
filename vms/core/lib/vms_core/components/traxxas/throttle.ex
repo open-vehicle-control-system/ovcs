@@ -140,15 +140,4 @@ defmodule VmsCore.Components.Traxxas.Throttle do
   @doc false
   def shape(requested, true = _linear), do: requested
   def shape(requested, false), do: requested |> D.abs() |> D.mult(requested)
-
-  # TODO remove
-  @impl true
-  def handle_call({:test_request_throttle, value}, _from, state) do
-    {:reply, :ok, %{state | requested_throttle: value}}
-  end
-
-  # TODO remove
-  def test_request_throttle(value) do
-    GenServer.call(__MODULE__, {:test_request_throttle, value})
-  end
 end
