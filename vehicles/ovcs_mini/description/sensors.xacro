@@ -113,4 +113,46 @@
       </sensor>
     </gazebo>
   </xacro:macro>
+
+  <!--
+    The simulated BNO085. One link with just enough mass to survive
+    the URDF-to-SDF conversion (massless links are dropped and their
+    <gazebo> elements silently reparented — see the camera comment
+    above), and a stock Gazebo IMU sensor on it. The world must load
+    `gz-sim-imu-system`; a sensor without its system publishes
+    nothing, silently.
+
+    The topic is `imu_raw`, not `imu`, on purpose: the bridge's
+    `RosBridge.Imu.Zenoh` driver consumes this and `Publishers.Imu`
+    republishes on `/imu`, exactly as on the vehicle. One name for
+    both would have the bridge republishing onto the topic it reads.
+
+    No <noise> yet: a perfect heading. Fine while Gazebo also owns
+    the odometry; the day the bridge's dead reckoning runs against
+    the simulator, noise and bias measured from the real BNO085
+    belong here, because a drift-free heading would make that loop
+    prove less than it appears to.
+  -->
+  <xacro:macro name="sim_imu" params="name x y z rate">
+    <link name="${name}_link">
+      <xacro:inertial_box mass="0.005" x="0.014" y="0.012" z="0.002">
+        <origin xyz="0 0 0" rpy="0 0 0" />
+      </xacro:inertial_box>
+    </link>
+
+    <joint name="${name}_joint" type="fixed">
+      <parent link="base_link" />
+      <child link="${name}_link" />
+      <origin xyz="${x} ${y} ${z}" rpy="0 0 0" />
+    </joint>
+
+    <gazebo reference="${name}_link">
+      <sensor name="${name}" type="imu">
+        <always_on>1</always_on>
+        <update_rate>${rate}</update_rate>
+        <topic>imu_raw</topic>
+        <frame_id>${name}_link</frame_id>
+      </sensor>
+    </gazebo>
+  </xacro:macro>
 </robot>

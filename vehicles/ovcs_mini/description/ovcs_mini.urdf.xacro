@@ -199,5 +199,10 @@
                     z="${camera_z}" topic="stereo/right/image_raw"
                     width="480" height="270" focal_px="${focal_px}" rate="30" />
 
+  <!-- TODO: placeholder, like the camera transform — the BNO085's
+       real mounting position has not been measured. Harmless while
+       only orientation is consumed. 100 Hz is the BNO085's cadence. -->
+  <xacro:sim_imu name="imu" x="0" y="0" z="0.05" rate="100" />
+
   <xacro:include filename="gazebo_ackermann.xacro" />
 </robot>

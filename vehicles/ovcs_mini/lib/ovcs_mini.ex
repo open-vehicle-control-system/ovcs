@@ -107,6 +107,15 @@ defmodule OvcsMini do
   # otherwise both announce `ovcs_bridge` and the ROS graph cannot
   # tell them apart.
   defp ros_host_config do
+    sim? = System.get_env("OVCS_SIM") in ["1", "true"]
+
+    # Against the simulator the IMU driver is the simulated BNO085 —
+    # Gazebo publishes it on `imu_raw`, `RosBridge.Imu.Zenoh` consumes
+    # it, and `/imu` is still published by this bridge's own
+    # `Publishers.Imu`, exactly as on the vehicle. Only the driver
+    # changes, the same pattern as the cameras.
+    imu_driver = if sim?, do: RosBridge.Imu.Zenoh, else: OvcsDrivers.Imu.Dummy
+
     components = [
       :heartbeat,
       :joy_interpreter,
@@ -116,7 +125,7 @@ defmodule OvcsMini do
       # 0x2B1, so both can be present without racing.
       {:velocity_interpreter,
        %{topic: "cmd_vel_nav", message: Ros2.GeometryMsgs.Msg.TwistStamped}},
-      {:imu_publisher, driver: OvcsDrivers.Imu.Dummy}
+      {:imu_publisher, driver: imu_driver}
     ]
 
     # Against the simulator, Gazebo's AckermannSteering already
@@ -126,7 +135,7 @@ defmodule OvcsMini do
     # One odometry owner per fabric: the bench (no Gazebo) gets this
     # bridge's dead reckoning, a simulated run gets Gazebo's.
     odometry =
-      if System.get_env("OVCS_SIM") in ["1", "true"] do
+      if sim? do
         []
       else
         # After :imu_publisher, which starts the driver this listens

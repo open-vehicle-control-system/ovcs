@@ -144,6 +144,7 @@ The boundary between Gazebo's transport and ROS is exactly the list in
 | `/tf` | `tf2_msgs/TFMessage` | gz → ros | `AckermannSteering` (`odom → base_link`) | Nav2, Foxglove |
 | `/tf_static` | `tf2_msgs/TFMessage` | — | `robot_state_publisher` (the URDF's fixed joints, `chassis → stereo_left_link → stereo_left_optical`) **and** `RosBridge.Publishers.StaticTransform` (`base_link → stereo_left`) | Nav2, Foxglove |
 | `/joint_states` | `sensor_msgs/JointState` | gz → ros | Gazebo | `drive_test.py` |
+| `/imu_raw` | `sensor_msgs/Imu` | gz → ros | the model's IMU sensor | `RosBridge.Imu.Zenoh`, which republishes on `/imu` via `Publishers.Imu` — only the driver changes, as for the cameras |
 | `/stereo/{left,right}/image_raw/compressed` | `sensor_msgs/CompressedImage` | gz → ros | `image_bridge` | `RosBridge.Camera.Zenoh` |
 | `/stereo/{left,right}/camera_info` | `sensor_msgs/CameraInfo` | gz → ros | Gazebo | perception bridge |
 | `/cmd_vel` | `geometry_msgs/Twist` | ros → gz | `teleop_twist_joy`, `drive_test.py` | `AckermannSteering` |
