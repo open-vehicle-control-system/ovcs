@@ -18,6 +18,12 @@ defmodule Ros2.GeometryMsgs.Msg.Twist do
 
   defstruct linear: %Vector3{}, angular: %Vector3{}
 
+  # Six float64s, no internal padding: the buffer must be 8-aligned on
+  # entry and leaves 8-aligned.
+  def encode(%__MODULE__{linear: linear, angular: angular}) do
+    Vector3.encode(linear) <> Vector3.encode(angular)
+  end
+
   def parse(body) when is_binary(body) do
     with {:ok, linear, rest} <- Vector3.parse(body),
          {:ok, angular, rest} <- Vector3.parse(rest) do

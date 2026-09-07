@@ -119,7 +119,12 @@ defmodule OvcsMini do
         # 0x2B1, so both can be present without racing.
         {:velocity_interpreter,
          %{topic: "cmd_vel_nav", message: Ros2.GeometryMsgs.Msg.TwistStamped}},
-        {:imu_publisher, driver: OvcsDrivers.Imu.Dummy}
+        {:imu_publisher, driver: OvcsDrivers.Imu.Dummy},
+        # After :imu_publisher, which starts the driver this listens
+        # to. Reads the VMS's vehicle_motion frame off CAN and
+        # publishes /odom and odom -> base_link, which is everything
+        # Nav2 needs in the map-less setup.
+        {:odometry_publisher, driver: OvcsDrivers.Imu.Dummy}
       ]
     }
 
@@ -135,7 +140,9 @@ defmodule OvcsMini do
         # vehicle only if it is declared here as well.
         {:velocity_interpreter,
          %{topic: "cmd_vel_nav", message: Ros2.GeometryMsgs.Msg.TwistStamped}},
-        {:imu_publisher, driver: BNO085.I2C}
+        {:imu_publisher, driver: BNO085.I2C},
+        # Same ordering constraint as the host config.
+        {:odometry_publisher, driver: BNO085.I2C}
       ]
     }
 

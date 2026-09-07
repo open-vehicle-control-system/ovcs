@@ -6,3 +6,5 @@ can_networks:
     emitted_frames:
       - import!:@ovcs_can:can/components/ovcs/0x2B0_ros_actuator_command.yml
       - import!:@ovcs_can:can/components/ovcs/0x2B1_ros_velocity_command.yml
+    received_frames:
+      - import!:@ovcs_can:can/components/ovcs/0x60B_vehicle_motion.yml
