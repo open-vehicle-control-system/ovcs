@@ -43,16 +43,32 @@ both speed and wheel rpm use.
       product of the two constants matters) and drop the ESTIMATE
       comments.
 
-## 2. Verify the steering sign  ← the critical one
+## 2. Verify the steering sign  ← DONE: measured right for a left command, so `steering_sign: -1`
 
 Wrong sign + the yaw-rate clamp = a Nav2 left turn is full lock right.
 
 - [ ] Wheels off the ground, level on `:manual` so nothing propels.
-- [ ] Full stack up (VMS + ros_bridge), publish a REP-103
-      forward-and-left command:
-      `ros2 topic pub -r 10 /cmd_vel geometry_msgs/msg/TwistStamped '{twist: {linear: {x: 1.0}, angular: {z: 1.0}}}'`
+- [ ] Command a **tiny linear, large angular** so the steering goes to
+      full lock while the throttle stays negligible. The steering angle
+      is `atan(wheelbase·omega/v)` with `omega` clamped to
+      `v/min_turning_radius`; a large `omega` is clamped and the angle
+      collapses to `atan(wheelbase/min_turning_radius) = steering_limit`
+      regardless of `v`. So `linear 0.05` gives full lock with a
+      throttle of only `0.05 / max_speed` ~ 1%, below the ESC deadband —
+      the wheels do not spin. (A zero `linear` clamps `omega` to zero
+      and holds the wheels straight, so it cannot be zero.) The command
+      must reach `RosVelocityCommand`; two ways:
+      - **Through ROS** (needs the vehicle's Zenoh router up): publish
+        to `/cmd_vel_nav`, the topic the Mini's bridge subscribes to
+        (not `/cmd_vel`):
+        `ros2 topic pub -r 10 /cmd_vel_nav geometry_msgs/msg/TwistStamped '{twist: {linear: {x: 0.05}, angular: {z: 2.0}}}'`
+      - **Straight on CAN** (no ROS): inject `0x2B1` with an advancing
+        sequence so `RosCommand.Freshness` keeps it live —
+        `linear 0.05` → `0500`, `angular 2.0` → `D007`:
+        `seq=0; while true; do printf -v s '%02X' $seq; cansend can0 "2B1#0500D007$s"; seq=$(((seq+1)%256)); sleep 0.05; done`
 - [ ] Level to `:ros` (channel 6), commander to `:autonomous`
-      (channel 5); both arm at the bench's zero speed. Watch the servo.
+      (channel 5); both arm at the bench's zero speed (which needs
+      `0x709` live, i.e. the controller re-adopted). Watch the servo.
 - [ ] Steers **left** → `steering_sign: 1` is correct.
       Steers **right** → set `steering_sign: -1` in the Mini composer
       and delete the UNVERIFIED comment next to it.
