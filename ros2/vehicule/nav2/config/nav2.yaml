@@ -172,6 +172,17 @@ local_costmap:
       use_sim_time: false
       global_frame: odom
       robot_base_frame: base_link
+      # How long activation waits for the odom -> base_link transform
+      # before erroring, raised from the 60 s default. On the vehicle
+      # the always-on planner races the VMS, which must boot its CAN
+      # stack and stream 0x709 before odometry exists, and
+      # lifecycle_manager does not retry a timed-out activation — so a
+      # planner that comes up first would sit inactive for good. Five
+      # minutes covers any healthy boot; the controller re-adoption
+      # that can delay 0x709 further is a one-time setup step, not a
+      # normal boot. (Zero is not "wait forever" — it still errors;
+      # measured.)
+      initial_transform_timeout: 300.0
       update_frequency: 5.0
       publish_frequency: 2.0
       rolling_window: true
@@ -192,6 +203,7 @@ global_costmap:
       use_sim_time: false
       global_frame: odom
       robot_base_frame: base_link
+      initial_transform_timeout: 300.0
       update_frequency: 1.0
       publish_frequency: 1.0
       # Rolling, because without a map there is no fixed extent to
