@@ -36,6 +36,13 @@ defmodule RosBridge.Components do
           `BNO085.I2C`, etc.)
         * `:topic`, `:frame_id`, `:publish_interval_ms` — forwarded
           to `RosBridge.Publishers.Imu` (see its defaults).
+    * `:odometry_publisher` — `RosBridge.Publishers.Odometry`,
+      dead-reckoning `/odom` and the `odom → base_link` transform from
+      the VMS's `vehicle_motion` CAN frame and the IMU heading. Opts:
+        * `:driver` (required, module) — the **already running** IMU
+          driver; list `:imu_publisher` first, it starts the driver.
+        * `:topic`, `:odom_frame_id`, `:base_frame_id`,
+          `:publish_interval_ms`, `:stale_after_ms` — see the module.
     * `:static_transforms` — publishes the vehicle's fixed frame
       relationships on `/tf_static`, republished at 1 Hz. Opts: `:transforms` (required, a list of
       `%{parent:, child:, translation: {x,y,z}, rotation: {x,y,z,w}}`),
@@ -89,6 +96,15 @@ defmodule RosBridge.Components do
   def start(:imu_publisher, opts) do
     driver = Keyword.fetch!(opts, :driver)
     [{driver, []}, {RosBridge.Publishers.Imu, opts}]
+  end
+
+  # The driver is started by `:imu_publisher`, which must appear
+  # earlier in the vehicle's component list; this only registers a
+  # second listener on it. Starting the driver twice would collide on
+  # its registered name.
+  def start(:odometry_publisher, opts) do
+    _driver = Keyword.fetch!(opts, :driver)
+    [{RosBridge.Publishers.Odometry, opts}]
   end
 
   def start(:static_transforms, opts) do

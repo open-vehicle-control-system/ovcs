@@ -189,6 +189,18 @@ defmodule OvcsMini.Vms.Composer do
          gear_ratio: @gear_ratio,
          wheel_radius: OvcsMini.geometry().wheel_radius
        }},
+      # The vehicle's own motion on 0x60B, for the ROS bridge's
+      # odometry. The sign of the speed follows the selected throttle
+      # request, since the hall sensor cannot know the direction, and
+      # `steering_sign` must match `RosVelocityCommand`'s so the
+      # reported angle converts back to REP-103.
+      {OVCS.VehicleMotion,
+       %{
+         speed_source: OVCS.PulseSpeedSensor,
+         selected_control_level_source: Managers.ControlLevel,
+         steering_limit: OvcsMini.geometry().steering_limit,
+         steering_sign: 1
+       }},
       {VmsCore.Status,
        %{
          ready_to_drive_source: Vms,

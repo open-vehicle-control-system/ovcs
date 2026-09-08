@@ -1,4 +1,10 @@
-"""Nav2 for the simulated OVCS Mini.
+"""Nav2 for the OVCS Mini — launched identically on the vehicle, on a
+dev machine, and against the simulator.
+
+One parameter file (`config/nav2.yaml`, the vehicle's truth) and one
+switch: `use_sim_time:=true` overlays the file for a simulated run,
+because a params fork would drift and stop the simulator being
+evidence about the vehicle.
 
 Four lifecycle servers plus a manager to bring them up. Deliberately
 *not* `nav2_bringup`: there is no such package in the Lyrical archive,
@@ -34,6 +40,7 @@ from launch_ros.actions import Node
 
 CONFIG = "/opt/ovcs/config/nav2.yaml"
 
+
 # Every server is a lifecycle node; the manager transitions them in this
 # order. bt_navigator last, because it needs the others' actions to
 # exist before it configures.
@@ -47,6 +54,9 @@ SERVERS = [
 
 def generate_launch_description():
     params = LaunchConfiguration("params_file")
+    # A dict overlay wins over the file, which is what lets one file
+    # serve wall clock and sim time both.
+    use_sim_time = {"use_sim_time": LaunchConfiguration("use_sim_time")}
 
     return LaunchDescription(
         [
@@ -55,13 +65,19 @@ def generate_launch_description():
                 default_value=CONFIG,
                 description="Nav2 parameter file.",
             ),
+            DeclareLaunchArgument(
+                "use_sim_time",
+                default_value="false",
+                description="Overlay the parameter file's clock source; "
+                "true only against a simulator publishing /clock.",
+            ),
             *[
                 Node(
                     package=package,
                     executable=executable,
                     name=executable,
                     output="screen",
-                    parameters=[params],
+                    parameters=[params, use_sim_time],
                     # The controller's velocity goes to its own topic so
                     # the unstamped teleop path keeps working — see the
                     # module docstring.
@@ -74,7 +90,7 @@ def generate_launch_description():
                 executable="lifecycle_manager",
                 name="lifecycle_manager",
                 output="screen",
-                parameters=[params],
+                parameters=[params, use_sim_time],
             ),
         ]
     )

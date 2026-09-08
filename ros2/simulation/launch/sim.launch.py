@@ -44,6 +44,9 @@ BRIDGE_TOPICS = [
     "/odom@nav_msgs/msg/Odometry[gz.msgs.Odometry",
     "/tf@tf2_msgs/msg/TFMessage[gz.msgs.Pose_V",
     "/joint_states@sensor_msgs/msg/JointState[gz.msgs.Model",
+    # The simulated BNO085. Named imu_raw because the Elixir bridge
+    # consumes it and republishes on /imu, exactly as on the vehicle.
+    "/imu_raw@sensor_msgs/msg/Imu[gz.msgs.IMU",
     "/stereo/left/camera_info@sensor_msgs/msg/CameraInfo[gz.msgs.CameraInfo",
     "/stereo/right/camera_info@sensor_msgs/msg/CameraInfo[gz.msgs.CameraInfo",
 ]

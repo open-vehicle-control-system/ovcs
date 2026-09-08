@@ -106,22 +106,51 @@ defmodule OvcsMini do
   # the perception Pi), so each names its ROS node explicitly —
   # otherwise both announce `ovcs_bridge` and the ROS graph cannot
   # tell them apart.
-  defp ros_host_config,
-    do: %RosBridge.Config{
+  defp ros_host_config do
+    sim? = System.get_env("OVCS_SIM") in ["1", "true"]
+
+    # Against the simulator the IMU driver is the simulated BNO085 —
+    # Gazebo publishes it on `imu_raw`, `RosBridge.Imu.Zenoh` consumes
+    # it, and `/imu` is still published by this bridge's own
+    # `Publishers.Imu`, exactly as on the vehicle. Only the driver
+    # changes, the same pattern as the cameras.
+    imu_driver = if sim?, do: RosBridge.Imu.Zenoh, else: OvcsDrivers.Imu.Dummy
+
+    components = [
+      :heartbeat,
+      :joy_interpreter,
+      # Nav2 publishes TwistStamped on /cmd_vel_nav; teleop_twist_joy
+      # publishes plain Twist on /cmd_vel. Subscribing to the stamped
+      # one keeps the joystick path on 0x2B0 and the planner path on
+      # 0x2B1, so both can be present without racing.
+      {:velocity_interpreter,
+       %{topic: "cmd_vel_nav", message: Ros2.GeometryMsgs.Msg.TwistStamped}},
+      {:imu_publisher, driver: imu_driver}
+    ]
+
+    # Against the simulator, Gazebo's AckermannSteering already
+    # publishes /odom and odom -> base_link, and a second publisher on
+    # either would hand every consumer two contradictory poses — the
+    # tf tree interpolates across both rather than picking a winner.
+    # One odometry owner per fabric: the bench (no Gazebo) gets this
+    # bridge's dead reckoning, a simulated run gets Gazebo's.
+    odometry =
+      if sim? do
+        []
+      else
+        # After :imu_publisher, which starts the driver this listens
+        # to. Reads the VMS's vehicle_motion frame off CAN and
+        # publishes /odom and odom -> base_link, which is everything
+        # Nav2 needs in the map-less setup.
+        [{:odometry_publisher, driver: OvcsDrivers.Imu.Dummy}]
+      end
+
+    %RosBridge.Config{
       zenoh_endpoint_ip: System.get_env("ZENOH_ENDPOINT_IP", "127.0.0.1"),
       node_name: "ovcs_bridge_ros",
-      components: [
-        :heartbeat,
-        :joy_interpreter,
-        # Nav2 publishes TwistStamped on /cmd_vel_nav; teleop_twist_joy
-        # publishes plain Twist on /cmd_vel. Subscribing to the stamped
-        # one keeps the joystick path on 0x2B0 and the planner path on
-        # 0x2B1, so both can be present without racing.
-        {:velocity_interpreter,
-         %{topic: "cmd_vel_nav", message: Ros2.GeometryMsgs.Msg.TwistStamped}},
-        {:imu_publisher, driver: OvcsDrivers.Imu.Dummy}
-      ]
+      components: components ++ odometry
     }
+  end
 
   defp ros_target_config,
     do: %RosBridge.Config{
@@ -135,7 +164,9 @@ defmodule OvcsMini do
         # vehicle only if it is declared here as well.
         {:velocity_interpreter,
          %{topic: "cmd_vel_nav", message: Ros2.GeometryMsgs.Msg.TwistStamped}},
-        {:imu_publisher, driver: BNO085.I2C}
+        {:imu_publisher, driver: BNO085.I2C},
+        # Same ordering constraint as the host config.
+        {:odometry_publisher, driver: BNO085.I2C}
       ]
     }
 

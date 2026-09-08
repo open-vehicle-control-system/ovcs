@@ -144,6 +144,7 @@ The boundary between Gazebo's transport and ROS is exactly the list in
 | `/tf` | `tf2_msgs/TFMessage` | gz → ros | `AckermannSteering` (`odom → base_link`) | Nav2, Foxglove |
 | `/tf_static` | `tf2_msgs/TFMessage` | — | `robot_state_publisher` (the URDF's fixed joints, `chassis → stereo_left_link → stereo_left_optical`) **and** `RosBridge.Publishers.StaticTransform` (`base_link → stereo_left`) | Nav2, Foxglove |
 | `/joint_states` | `sensor_msgs/JointState` | gz → ros | Gazebo | `drive_test.py` |
+| `/imu_raw` | `sensor_msgs/Imu` | gz → ros | the model's IMU sensor | `RosBridge.Imu.Zenoh`, which republishes on `/imu` via `Publishers.Imu` — only the driver changes, as for the cameras |
 | `/stereo/{left,right}/image_raw/compressed` | `sensor_msgs/CompressedImage` | gz → ros | `image_bridge` | `RosBridge.Camera.Zenoh` |
 | `/stereo/{left,right}/camera_info` | `sensor_msgs/CameraInfo` | gz → ros | Gazebo | perception bridge |
 | `/cmd_vel` | `geometry_msgs/Twist` | ros → gz | `teleop_twist_joy`, `drive_test.py` | `AckermannSteering` |
@@ -295,11 +296,14 @@ flowchart LR
     subgraph vehicle["On the vehicle"]
         joyn["joy node (base station)"] -->|"/joy"| cj["Consumers.Joy"]
         cj -->|"0x2B0"| vms1["VMS: RosActuatorCommand.*"]
-        navv["Nav2"] -->|"/cmd_vel_nav"| cv["Consumers.Velocity"]
+        navv["Nav2 (onboard)"] -->|"/cmd_vel_nav"| cv["Consumers.Velocity"]
         cv -->|"0x2B1"| vms2["VMS: RosVelocityCommand"]
         vms1 --> mgr["Managers.ControlLevel"]
         vms2 --> mgr
         mgr --> trax["Traxxas.Steering / Throttle (PWM)"]
+        vm["VMS: VehicleMotion"] -->|"0x60B"| po["Publishers.Odometry"]
+        imu["BNO085"] --> po
+        po -->|"/odom + /tf"| navv
     end
 ```
 
@@ -307,9 +311,38 @@ The simulator loop bypasses the bottom diagram entirely: Nav2's
 `TwistStamped` goes straight into Gazebo's plugin, which solves the
 Ackermann kinematics itself. That is why a simulated run proves Nav2
 can *plan and command* for a car, and proves nothing about the VMS
-converting those commands. Closing that gap — a Gazebo model driven by
-the VMS through a virtual CAN bus — is the obvious next step and is
-not built.
+converting those commands. `verify_planner_loop.sh` (section 8) closes
+most of that gap without Gazebo: the vehicle's own Nav2 image plans
+against odometry dead-reckoned by the real bridge from the real VMS's
+frames, and its commands are asserted on the CAN bus — every hop is
+vehicle code, only the physics is missing. A Gazebo model driven by
+the VMS through a virtual CAN bus, which would add the physics back,
+remains unbuilt.
+
+### The vehicle's own motion (0x60B), and where /odom comes from
+
+Nav2 consumes `/odom` and the `odom → base_link` transform, and on the
+real vehicle nothing used to publish them. Now the VMS emits
+`vehicle_motion` (`0x60B`): the speed from the pulse counter, *signed*
+by the throttle request the control level manager selected — a hall
+sensor pulsing once per shaft turn cannot know direction, but the VMS
+knows what it commanded — plus the commanded steering angle, a
+validity flag and a per-fresh-sample sequence.
+`RosBridge.Publishers.Odometry` integrates that speed along the
+BNO085's heading and publishes both topics with one stamp. When the
+VMS loses its own speed, or the frame goes stale, the publisher goes
+*silent* rather than holding: tf lookups never extrapolate past the
+newest stamp, so a stopped publisher halts Nav2 instead of letting it
+plan against a frozen pose. Everything is `odom`-frame and drifts with
+dead reckoning, which is exactly the map-less contract the Nav2
+configuration was written for.
+
+One odometry owner per fabric, enforced by configuration: against the
+simulator Gazebo's `AckermannSteering` already publishes `/odom` and
+the transform, so the Mini's host bridge drops `:odometry_publisher`
+when `OVCS_SIM` is set — two publishers would hand every consumer two
+contradictory poses, and the tf tree interpolates across both rather
+than picking a winner.
 
 ### The actuator command (0x2B0)
 
@@ -401,11 +434,25 @@ state machine and the bench recipe are in
 
 ## 6. Nav2, as configured here
 
-Nav2 1.5.1, in its own image behind `--profile nav2`. Four lifecycle
-servers and a manager, brought up in dependency order —
-`controller_server`, `planner_server`, `behavior_server`,
-`bt_navigator`. Not `nav2_bringup`, which is absent from the Lyrical
-archive and would pull in map_server and AMCL.
+Nav2 1.5.1. Four lifecycle servers and a manager, brought up in
+dependency order — `controller_server`, `planner_server`,
+`behavior_server`, `bt_navigator`. Not `nav2_bringup`, which is absent
+from the Lyrical archive and would pull in map_server and AMCL.
+
+One configuration, three deployments. The parameter file, the
+behaviour trees and the launch file live in `ros2/vehicule/nav2/` —
+balena requires what the onboard image bakes in to sit inside its
+source root, and everything else reaches across:
+
+| Where | Compose | Clock | Why |
+|---|---|---|---|
+| On the vehicle's ROS Pi | `ros2/vehicule/docker-compose.yml`, always on | wall | autonomy survives the base station leaving, like the router |
+| On a dev machine | `ros2/base/docker-compose.yml --profile nav2` | wall | the exact onboard image against a host VMS + bridge — `verify_planner_loop.sh` |
+| Against the simulator | `ros2/simulation/docker-compose.yml --profile nav2` | `use_sim_time:=true` | mounts the same files; the clock is the only difference, and it is a visible launch argument |
+
+The file's values are the vehicle's truth (`use_sim_time: false`); the
+simulator overlays the clock through a launch argument rather than
+keeping a fork that would drift and stop being evidence.
 
 ```mermaid
 flowchart TB
@@ -509,7 +556,7 @@ starting from `bridges/firmware` rather than `bridges/ros_bridge`);
 the simulation README has the exact invocation, and
 `verify-perception` exists so you rarely need it.
 
-## 8. The three verifiers
+## 8. The verifiers
 
 Each is one command, brings the whole stack up, asserts, and tears it
 down. Each exists because it caught something that looked fine on
@@ -539,6 +586,7 @@ sequenceDiagram
 | `mise run verify-drivetrain` | `drive_test.py` | wheel radius, wheelbase, steering geometry | a wrong wheel radius: it cancels inside `AckermannSteering`, so `/odom` reports 1.000 m/s while the car crawls at 0.548. The check reads `/joint_states`. |
 | `mise run verify-nav2` | `nav2_test.py` | Nav2 arrives at an easy goal **and** commands within the Ackermann limits at a tight one | arrival: an unconstrained controller arrives *better* while commanding 3.68× the limit |
 | `mise run verify-perception` | `perception_test.py` | depth median, p75 and p95 match the world's box positions to a centimetre; fused detection depth | throughput: geometry is machine-independent and checked tightly; rates are checked against a floor |
+| `mise run verify-planner-loop` | `ros2/base/verify_planner_loop.sh` | no simulator at all: the vehicle's Nav2 image plans against `/odom` dead-reckoned by the host bridge from the host VMS's `0x60B`, and a goal produces nonzero `0x2B1` on vcan | the whole VMS-side conversion path, which Gazebo's loop bypasses |
 
 The hard `sleep 20` / `sleep 30` / `sleep 25` are a known fragility —
 they are what "wait for the stack to settle" currently means, and a
@@ -563,8 +611,9 @@ Where to go next, by what you want to understand.
 | what a vehicle's bridge runs | `vehicles/ovcs_mini/lib/ovcs_mini.ex` (`ros_bridge_config/2`) | `bridges/ros_bridge/lib/ros_bridge/components.ex` |
 | the actuator command path | `bridges/ros_bridge/lib/ros_bridge/consumers/joy.ex` | `libraries/ovcs_can/priv/can/components/ovcs/0x2B0_ros_actuator_command.yml`, `vms/core/lib/vms_core/components/ovcs/ros_actuator_command/` |
 | the velocity command path | `bridges/ros_bridge/lib/ros_bridge/consumers/velocity.ex` | `0x2B1_ros_velocity_command.yml`, `vms/core/lib/vms_core/components/ovcs/ros_velocity_command.ex` |
+| odometry on the real vehicle | `bridges/ros_bridge/lib/ros_bridge/publishers/odometry.ex` | `0x60B_vehicle_motion.yml`, `vms/core/lib/vms_core/components/ovcs/vehicle_motion.ex` |
 | who commands the vehicle | [`vehicle_parameterisation.md`](./vehicle_parameterisation.md#control-levels-who-commands-and-which-ros-node) | `vms/core/lib/vms_core/managers/control_level.ex` |
-| Nav2's configuration and why | `ros2/simulation/config/nav2.yaml` (heavily commented) | `config/nav2_ackermann_bt.xml`, `scripts/nav2_test.py` |
+| Nav2's configuration and why | `ros2/vehicule/nav2/config/nav2.yaml` (heavily commented) | `nav2_ackermann_bt.xml` beside it, `ros2/simulation/scripts/nav2_test.py` |
 | the perception pipeline | [`ros_perception_detection.md`](./ros_perception_detection.md) | `bridges/ros_bridge/lib/ros_bridge/camera/zenoh.ex`, `stereo_camera/supervisor.ex` |
 | the vehicle's ROS computer | [`ros_compute_node.md`](./ros_compute_node.md) | `ros2/vehicule/`, `ros2/README.md` |
 | the model's geometry | `vehicles/ovcs_mini/description/ovcs_mini.urdf.xacro` | `gazebo_ackermann.xacro`, `OvcsMini.geometry/0` |

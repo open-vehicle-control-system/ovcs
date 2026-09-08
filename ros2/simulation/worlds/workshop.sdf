@@ -56,6 +56,11 @@
             name="gz::sim::systems::Sensors">
       <render_engine>ogre2</render_engine>
     </plugin>
+    <!-- The IMU has its own system, separate from Sensors (which
+         drives the rendering-based ones). Without it a model's
+         <sensor type="imu"> publishes nothing, silently. -->
+    <plugin filename="gz-sim-imu-system"
+            name="gz::sim::systems::Imu" />
 
     <!-- Bright and fairly flat. Hard shadows are a stereo hazard:
          a shadow edge is a strong feature that moves with the light
