@@ -187,14 +187,6 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
     {:noreply, %{state | contact: contact}}
   end
 
-  def handle_info(
-        %Bus.Message{name: :requested_throttle, value: requested_throttle, source: source},
-        state
-      )
-      when source == state.requested_throttle_source do
-    {:noreply, %{state | requested_throttle: requested_throttle}}
-  end
-
   def handle_info(%Bus.Message{}, state) do
     {:noreply, state}
   end
