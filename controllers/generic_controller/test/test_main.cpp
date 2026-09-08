@@ -9,6 +9,7 @@ using namespace fakeit;
 #include <AdoptionButtonTests.h>
 #include <DigitalPinTests.h>
 #include <PulseCounterTests.h>
+#include <ExternalPwmTests.h>
 
 
 #define RUN_TEST_GROUP(TEST) \
@@ -34,5 +35,6 @@ int main()
   RUN_TEST_GROUP(AdoptionButtonTests);
   RUN_TEST_GROUP(DigitalPinTests);
   RUN_TEST_GROUP(PulseCounterTests);
+  RUN_TEST_GROUP(ExternalPwmTests);
   return UNITY_END();
 }
