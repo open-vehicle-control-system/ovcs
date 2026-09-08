@@ -57,6 +57,52 @@ defmodule VmsCore.Managers.GearTest do
     end
   end
 
+  describe "a level that commands no throttle" do
+    test "zeroes the held request rather than gating gear changes on it" do
+      # With a nil source no `:requested_throttle` message matches, so
+      # a held positive request would refuse gear changes for ever.
+      state =
+        stub_state(%{
+          requested_throttle_source: Driver,
+          requested_throttle: Decimal.new("0.6")
+        })
+
+      {:noreply, state} =
+        Gear.handle_info(
+          %Message{
+            name: :requested_throttle_source,
+            value: nil,
+            source: @control_level_source
+          },
+          state
+        )
+
+      assert state.requested_throttle_source == nil
+      assert Decimal.eq?(state.requested_throttle, Decimal.new(0))
+    end
+
+    test "a switch between commanders keeps the request" do
+      state =
+        stub_state(%{
+          requested_throttle_source: Driver,
+          requested_throttle: Decimal.new("0.6")
+        })
+
+      {:noreply, state} =
+        Gear.handle_info(
+          %Message{
+            name: :requested_throttle_source,
+            value: AnotherDriver,
+            source: @control_level_source
+          },
+          state
+        )
+
+      assert state.requested_throttle_source == AnotherDriver
+      assert Decimal.eq?(state.requested_throttle, Decimal.new("0.6"))
+    end
+  end
+
   describe "requested_gear vs requested_direction" do
     test "requested_gear updates state when the gear-source path is active" do
       state = stub_state(%{requested_gear_source: Driver})
