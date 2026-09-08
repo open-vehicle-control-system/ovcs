@@ -33,13 +33,14 @@ defmodule BridgeFirmware.MixProject do
     common_deps() ++ system_deps(Mix.target())
   end
 
-  # Nerves systems live in separate per-target forks that pin different
-  # nerves_system_br versions (rpi3a/rpi4 → 1.29.3, rpi5 → 1.33.7). Mix's
-  # constraint resolver evaluates the *full* dep graph regardless of the
-  # `:targets` keyword, so listing all three at once produces a "br 1.29.3
-  # vs br 1.33.7" conflict at `mix deps.get`. Returning only the active
-  # target's system from `deps/0` keeps each MIX_TARGET's resolution
-  # independent — they get their own mix.lock entries with no cross-talk.
+  # The Nerves systems are independent per-target forks, each free to
+  # pin its own nerves_system_br (they happen to agree on 1.33.7 today,
+  # but nothing enforces that). Mix's constraint resolver evaluates the
+  # *full* dep graph regardless of the `:targets` keyword, so listing
+  # all three at once would turn any divergence between those pins into
+  # a `mix deps.get` conflict. Returning only the active target's system
+  # from `deps/0` keeps each MIX_TARGET's resolution independent, so one
+  # fork bumping its br version can never break another target's build.
   defp system_deps(:host), do: []
 
   defp system_deps(:ovcs_base_can_system_rpi3a) do
