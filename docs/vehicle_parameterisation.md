@@ -191,6 +191,133 @@ All firmware releases share `--cookie ovcs`, so no authentication
 wiring is needed beyond what `nerves_pack` already does for the
 remsh / `./ovcs attach` flow.
 
+## Control levels: who commands, and which ROS node
+
+`VmsCore.Managers.ControlLevel` arbitrates between commanders. It
+reads two independent switches on the RC transmitter, because
+authority and autonomy are different questions:
+
+| Component | Values |
+|---|---|
+| `OVCS.RadioControl.RequestedControlLevel` | `:manual` / `:radio` / `:ros` |
+| `OVCS.RadioControl.RequestedRosCommander` | `:teleop` / `:autonomous` |
+
+Which transmitter channel each one reads is per vehicle; the layout
+table below is the single place that records it.
+
+`:ros` means the vehicle takes its commands from the ROS bridge. It
+does **not** mean the vehicle is driving itself: a human on a gamepad
+and a planner reach the VMS over the same topics and the same CAN
+frames. Which of them has the wheel is the commander switch's answer,
+and it is why the level is named `:ros` rather than `:autonomous`.
+
+Both switches only *request*. The manager decides, and refuses moves
+that are unsafe — in motion, not ready to drive, or while a fault has
+forced a lower level. `:ros` is reachable only from `:radio`, so
+getting there is two deliberate throws with the middle position in
+between. A request it cannot honour is logged once, with the reason.
+
+The full channel layout per vehicle. Channel numbers are the
+transmitter's own: the radio control bridge copies the receiver's
+channels 1-8 onto `0x2A0` and `0x2A1` unchanged, and each composer
+names the channel every component reads.
+
+| Purpose | Mini | OVCS1 |
+|---|---|---|
+| Steering | 1 | 1 |
+| Throttle (and `radio_breaking`, the human takeover) | 2 | 2 |
+| Control level | 6 | 3 |
+| Direction | 7 (published, no actuator reads it) | 4 |
+| ROS commander | 5 | not wired |
+
+Switch positions are 1000, 1500 and 2000 µs with a margin of 100. A
+position outside every margin falls back to the safe one: `:manual` for
+the level, `:teleop` for the commander, `:forward` for direction.
+
+The Mini's link is ExpressLRS in MAVLink link mode, which forces the
+Hybrid switch mode, and that fixes part of the layout: channel 5 is the
+link's arm channel, sent with every packet as a 2-position value of
+1000 or 2000 whatever switch drives it, so it can never carry a middle
+position. In Hybrid mode channels 6 to 11 are 3-bit and do give 1000,
+1500 and 2000; of those only 6 to 8 reach the bus, since `0x2A1`
+carries channels 5 to 8. That is why the three-position level is on 6
+and the two-position commander on 5.
+
+### The source maps
+
+Each `requested_*_sources` map in a composer is keyed by level. The
+`:ros` entry is itself keyed by commander:
+
+```elixir
+requested_throttle_sources: %{
+  manual: OVCS.ThrottlePedal,
+  radio: OVCS.RadioControl.Throttle,
+  ros: %{teleop: OVCS.RosActuatorCommand.Throttle, autonomous: OVCS.RosVelocityCommand}
+}
+```
+
+A missing key resolves to `nil`, which means nothing commands that
+actuator. That is the safe direction, and it is how a vehicle with no
+planner is expressed: `ros: %{teleop: ...}` leaves the autonomous
+position commanding nothing rather than falling back to something
+nobody asked for. Such a vehicle also omits
+`requested_ros_commander_source`, which pins the commander to
+`:teleop` outright.
+
+### Driving on the host bench
+
+`Managers.ControlLevel` starts in `default_control_level` — `:manual`
+on OVCS Mini, where every source is `nil`, so **nothing commands the
+vehicle until channel 6 says otherwise**. On the host there is no RC
+receiver: `radio_control_bridge_config(:host)` declares no components,
+so nothing emits `0x2A1`/`0x2A0` and the level never leaves `:manual`.
+Joystick input still reaches `0x2B0` and is discarded.
+
+There is no controller on the host either, so nothing emits the pulse
+counter frame `0x709`. The generic controller publishes the pulse
+frequency as nil while that frame is dead, `OVCS.PulseSpeedSensor`
+publishes a nil speed, and the manager treats an unknown speed as "not a
+standstill": every mode change is refused with `:speed_unknown`. So a
+bench session needs two things synthesised, a speed and the switches.
+
+The speed first, and it has to be a stream: the frame watcher needs
+several on-time frames to declare `0x709` alive and drops it again as
+soon as they stop. Leave this running in its own terminal; a count and
+a frequency of zero is a stationary vehicle:
+
+```bash
+cangen vcan0 -I 709 -L 4 -D 00000000 -g 10
+```
+
+Then the switches. `0x2A0` carries channels 1-4 as little-endian
+`uint16`, two bytes each; `0x2A1` carries 5-8 the same way. 1500 is
+`DC05`, 2000 is `D007`, 1000 is `E803`:
+
+```bash
+# Steering and throttle centred (channels 1 and 2)
+cansend vcan0 2A0#DC05DC0500000000
+
+# Level -> :radio (channel 6 = 1500; channel 5 = 1000 keeps :teleop)
+cansend vcan0 2A1#E803DC0500000000
+
+# ... then level -> :ros (channel 6 = 2000). Two steps, in this order:
+# :ros is only reachable from :radio.
+cansend vcan0 2A1#E803D00700000000
+
+# Optional: hand it to the planner rather than the gamepad
+# (channel 5 = 2000). Needs a standstill, which the zero speed
+# stream above provides.
+cansend vcan0 2A1#D007D00700000000
+```
+
+Channels 7 and 8 read as 0 in these frames, which is outside every
+switch margin and therefore the safe fallback. The frames are the
+Mini's layout; the table above has the other vehicles'.
+
+`ready_to_drive` is hardcoded `true` on Mini (`OvcsMini.Vms`). On a
+vehicle whose `ready_to_drive` comes from contactors or an inverter,
+that has to be true as well.
+
 ## Host dev vs. deployed
 
 Same code path, two physical topologies:

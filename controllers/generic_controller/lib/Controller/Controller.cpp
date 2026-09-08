@@ -79,7 +79,16 @@ void Controller::shutdownAllOtherPins(){
 void Controller::setExternalPwm() {
   ExternalPwm externalPwmRequest = _can.parseExternalPwmRequest();
   ExternalPwm& externalPwm = _configuration._externalPwms[externalPwmRequest.pwmId()];
-  externalPwm.update(externalPwmRequest);
+  // The VMS retransmits every request frame on a 10 ms timer whether
+  // or not anything changed, and the hat parses each serial packet
+  // inside its UART receive interrupt with floating-point math. An
+  // identical packet is pure load there: it can delay the next channel's
+  // packet past the hardware FIFO and lose it. Relay changes at once
+  // and unchanged settings only at the slow refresh rate.
+  unsigned long now = millis();
+  if (externalPwm.needsRelay(externalPwmRequest, now)) {
+    externalPwm.update(externalPwmRequest, now);
+  }
 };
 
 void Controller::disableExternalPwms() {
@@ -112,6 +121,15 @@ void Controller::emitPinStatuses() {
     PinStatus* digitalPinsStatus = readDigitalPins();
     uint16_t* analogPinsStatus = readAnalogPins();
     _can.emitdigitalAndAnalogPinsStatus(_configuration._digitalAndAnalogPinsStatusFrameId, digitalPinsStatus, analogPinsStatus);
+    // Only a controller with the pin enabled emits this frame; the
+    // others have no such frame declared on their bus.
+    if (_configuration._pulsePin.readable()) {
+      _can.emitPulseCounterStatus(
+        _configuration._pulseCounterStatusFrameId,
+        _configuration._pulsePin.count(),
+        _configuration._pulsePin.frequencyDeciHz()
+      );
+    }
   }
 };
 

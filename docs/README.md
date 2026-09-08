@@ -12,6 +12,7 @@ Index for the Open Vehicle Control System guides. For a high-level project overv
 
 - [Applications](./applications.md) — what each app and library is, how the layers fit together, and how to run them.
 - [Vehicle Parameterisation](./vehicle_parameterisation.md) — how `VEHICLE` selects a composer, how each firmware boots against a vehicle package, and the four behaviours in play (`OvcsVehicle`, `VmsCore.Vehicle`, `InfotainmentCore.Vehicle`, `OvcsBridge`).
+- [ROS 2 and the simulator](./ros2_integration.md) — the map of how ROS 2, Gazebo and the Elixir bridge connect: the Zenoh fabric, what the simulator starts and in what order, who publishes which topic, how simulator time reaches the bridge, the three velocity-command paths and which of them the simulator actually exercises, Nav2 as configured, perception against Gazebo, and what each verifier proves. **Read this before the simulation README if you are new.**
 
 ### Hardware
 

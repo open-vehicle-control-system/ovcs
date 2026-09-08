@@ -2,33 +2,30 @@ defmodule RosBridge.Consumers.JoyTest do
   @moduledoc """
   Tests for the joystick-axis to CAN-value conversion.
 
-  This is the drive path — axis 0 steers, axis 1 drives — and it had no
-  tests. Both signals are signed 32-bit, and Cantastic encodes with
-  `<<int::little-signed-integer-size(32)>>`, which **truncates
-  silently**. So a value that overflows the field does not raise; it
-  comes back out as a different number, and for a positive overflow
-  that number is negative.
-
-  The over-range case is checked by doing the truncation these tests, so
-  the assertion is about the value that would actually reach the bus
-  rather than about the intermediate decimal.
+  This is the drive path — axis 0 steers, axis 1 drives — as normalised
+  positions in [-1, 1] on a signed 16-bit signal at 0.001. Cantastic
+  encodes by truncation, so a value outside the field would not raise;
+  it would come back out as a different number, and for a positive
+  overflow that number is negative. The over-range case is therefore
+  checked against what would actually reach the bus rather than against
+  the intermediate decimal.
   """
   use ExUnit.Case, async: true
 
   alias Decimal, as: D
   alias RosBridge.Consumers.Joy
 
-  @max 2 ** 31 - 1
   # Matches the call sites: steering is inverted, throttle is not.
-  @steering -@max
-  @throttle @max
+  @steering -1
+  @throttle 1
+  @max 1.0
 
-  # What Cantastic's encoder would make of a value, so a test can assert
-  # on what reaches the wire.
+  # What Cantastic's encoder would make of a value at scale 0.001, so a
+  # test can assert on what reaches the wire.
   defp on_the_wire(%Decimal{} = value) do
-    int = value |> D.round() |> D.to_integer()
-    <<encoded::little-signed-integer-size(32)>> = <<int::little-signed-integer-size(32)>>
-    encoded
+    int = value |> D.div(D.new("0.001")) |> D.round() |> D.to_integer()
+    <<encoded::little-signed-integer-size(16)>> = <<int::little-signed-integer-size(16)>>
+    encoded / 1000
   end
 
   describe "control_value/3 in normal range" do
@@ -51,7 +48,7 @@ defmodule RosBridge.Consumers.JoyTest do
 
     test "half deflection is half scale" do
       value = on_the_wire(Joy.control_value([0.5, 0.0], 0, @steering))
-      assert_in_delta value, -@max / 2, 2
+      assert_in_delta value, -@max / 2, 0.001
     end
 
     test "each axis is read from its own index" do
@@ -64,9 +61,8 @@ defmodule RosBridge.Consumers.JoyTest do
 
   describe "control_value/3 out of range" do
     test "an over-range axis does not flip sign on the wire" do
-      # The bug this replaces: 1.9 * (2^31-1) = 4_080_218_929, which
-      # truncated into a signed 32-bit field reads as -214_748_367 —
-      # full positive lock arriving as a tenth of negative lock.
+      # Unclamped, an axis past 1.0 would truncate in the signed field
+      # and could come back with the wrong sign.
       wire = on_the_wire(Joy.control_value([1.9, 0.0], 0, @steering))
       assert wire == -@max
       assert wire < 0, "steering commanded the wrong way for a positive axis"
@@ -83,19 +79,18 @@ defmodule RosBridge.Consumers.JoyTest do
       assert on_the_wire(Joy.control_value([0.0, -3.5], 1, @throttle)) == -@max
     end
 
-    test "clamped values stay inside the signed 32-bit field" do
+    test "clamped values stay inside [-1, 1]" do
       for axis <- [-1000.0, -1.0001, 1.0001, 1000.0] do
-        int = Joy.control_value([axis, axis], 0, @steering) |> D.round() |> D.to_integer()
-        assert int >= -2_147_483_648 and int <= 2_147_483_647
+        value = Joy.control_value([axis, axis], 0, @steering) |> D.to_float()
+        assert value >= -1.0 and value <= 1.0
       end
     end
   end
 
   describe "control_value/3 with unusable input" do
     test "an empty axes array reads as centre" do
-      # sensor_msgs/Joy permits empty axes, and this used to raise
-      # FunctionClauseError in Decimal.from_float/1, taking the drive
-      # path down on every frame.
+      # sensor_msgs/Joy permits empty axes; without the centre fallback
+      # Decimal.from_float/1 raises on nil and takes the drive path down.
       assert D.equal?(Joy.control_value([], 0, @steering), D.new(0))
       assert D.equal?(Joy.control_value([], 1, @throttle), D.new(0))
     end
@@ -118,5 +113,10 @@ defmodule RosBridge.Consumers.JoyTest do
     test "a non-numeric axis reads as centre rather than raising" do
       assert D.equal?(Joy.control_value([:up, nil], 0, @steering), D.new(0))
     end
+  end
+
+  test "the sequence counts every sample and wraps into a byte" do
+    assert Joy.next_sequence(0) == 1
+    assert Joy.next_sequence(255) == 0
   end
 end

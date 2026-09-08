@@ -64,7 +64,7 @@ Cross-firmware traffic is automatic: every BEAM in the vehicle (VMS, infotainmen
 
 Managers orchestrate cross-component logic:
 
-- **`Managers.ControlLevel`** — Selects the active control source (`:manual`, `:radio`, or `:autonomous`) and routes throttle, steering, gear, and direction inputs from the appropriate source
+- **`Managers.ControlLevel`** — Selects the active control level (`:manual`, `:radio`, or `:ros`; under `:ros`, the `:teleop` or `:autonomous` commander) and routes throttle, steering, gear, and direction inputs from the appropriate source
 - **`Managers.Gear`** — Enforces gear shift safety constraints (speed near zero, throttle released, ready-to-drive status)
 
 ## Supervision Tree
@@ -99,6 +99,7 @@ the library.
 | `Components.OVCS.SteeringColumn` | `components/ovcs/steering_column.ex` | Stepper motor steering with PID controller |
 | `Components.OVCS.WaterPump` | `components/ovcs/water_pump.ex` | Cooling water pump relay control |
 | `Components.OVCS.Infotainment` | `components/ovcs/infotainment.ex` | Infotainment CAN bridge (music control, turn signals) |
+| `Components.OVCS.PulseSpeedSensor` | `components/ovcs/pulse_speed_sensor.ex` | Vehicle and wheel speed from a shaft pulse counted by a generic controller |
 
 ### Radio Control
 
@@ -157,7 +158,6 @@ the library.
 
 | Module | Purpose |
 |--------|---------|
-| `Components.Traxxas.Motor` | Brushless motor monitoring |
 | `Components.Traxxas.Steering` | Servo steering via external PWM |
 | `Components.Traxxas.Throttle` | ESC throttle via external PWM |
 
@@ -238,7 +238,7 @@ The VMS Core starts as a dependency of the VMS API (Phoenix). The `VEHICLE` env 
 - **HV contactor precharge sequence** — Prevents inrush current damage by following negative → precharge → (wait for voltage equalization) → positive → disable precharge
 - **VMS heartbeat watchdog** — Arduino controllers shut down all outputs if the VMS heartbeat (`0x1A0`) is missing for too long
 - **Gear shift safety** — Gear manager enforces speed and throttle constraints before allowing shifts
-- **Manual brake override** — Pressing the brake pedal in radio/autonomous mode can override to manual control
+- **Manual brake override** — Pressing the brake pedal in radio/ROS mode can override to manual control
 - **5-second boot grace period** — Controller status checks are skipped during initial boot to allow hardware initialization
 
 ## License

@@ -4,5 +4,5 @@ can_networks:
   ovcs:
     bitrate: 500000
     emitted_frames:
-      - import!:@ovcs_can:can/components/ovcs/0x2B0_ros_control0.yml
-      - import!:@ovcs_can:can/components/ovcs/0x2B1_ros_control1.yml
+      - import!:@ovcs_can:can/components/ovcs/0x2B0_ros_actuator_command.yml
+      - import!:@ovcs_can:can/components/ovcs/0x2B1_ros_velocity_command.yml

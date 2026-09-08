@@ -39,4 +39,20 @@ defmodule OvcsBusTest do
 
     refute_receive _, 50
   end
+
+  test "a message without a source is refused rather than delivered as a wildcard" do
+    :ok = OvcsBus.subscribe("messages")
+
+    message = %OvcsBus.Message{name: :speed, value: 1, source: nil}
+
+    assert_raise ArgumentError, ~r/has no :source/, fn ->
+      OvcsBus.broadcast("messages", message)
+    end
+
+    assert_raise ArgumentError, ~r/has no :source/, fn ->
+      OvcsBus.local_broadcast("messages", message)
+    end
+
+    refute_receive _, 50
+  end
 end

@@ -70,7 +70,19 @@ Digital readbacks and analog inputs are reported on `0x7X4` every 10 ms:
 candump can0,704:7FF
 ```
 
-The frame layout is in
+A controller with its pulse counter enabled also reports the count and
+frequency of the edges on A1 on `0x7X9`, every 10 ms:
+
+```sh
+candump can0,709:7FF
+```
+
+Bytes 0-1 are the count and bytes 2-3 the frequency in tenths of a
+hertz, both little-endian. A wheel turned by hand should step the count
+and show a frequency that falls back to zero within two seconds of
+stopping.
+
+The frame layouts are in
 [`controllers/generic_controller/README.md`](../controllers/generic_controller/README.md).
 
 ## Troubleshooting
@@ -90,6 +102,12 @@ boot grace period. Confirm:
 - The VMS is running: `candump can0,1A0:7FF`.
 - `CAN_NETWORK_MAPPINGS` routes `ovcs:` to the same interface the
   controller is on.
+
+A VMS reboot, and therefore every redeploy, always trips this: the
+heartbeat stops for longer than the controller tolerates. The VMS
+resets the controllers itself three seconds after it boots, so the
+error clears on its own once the new VMS is up. If a controller is
+still in this state afterwards, use the reset below.
 
 ### Controller goes to `EXPANSION_BOARDS_ERROR`
 

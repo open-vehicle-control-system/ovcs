@@ -1,0 +1,52 @@
+---
+# Actuator command from the ROS bridge: what a joystick means.
+#
+# One of two command frames the bridge can put on the bus, and the
+# shallower abstraction of the two:
+#
+#   0x2B0 ros_actuator_command  normalised positions — what a joystick means
+#   0x2B1 ros_velocity_command  linear + angular     — what a planner means
+#
+# `steering` and `throttle` are the operator's axes in [-1, 1] at a
+# resolution of 0.001, far finer than any servo resolves. On OVCS1 a
+# negative throttle is regenerative braking and reverse is a gear, so
+# `direction` is carried separately rather than read from the sign.
+#
+# `sequence` is what makes staleness visible on the bus. Cantastic
+# retransmits a frame at its period whether or not anything new was
+# written into it, so a frame arriving on time proves the bridge is
+# alive and nothing else. The bridge increments `sequence` once per
+# ROS sample; a receiver that sees it stop changing knows the input has
+# gone, without a second watchdog on the other side of the link.
+name: ros_actuator_command
+id: 0x2B0
+frequency: 10
+signals:
+  - name: steering
+    value_start: 0
+    value_length: 16
+    sign: signed
+    scale: "0.001"
+    precision: 3
+  - name: throttle
+    value_start: 16
+    value_length: 16
+    sign: signed
+    scale: "0.001"
+    precision: 3
+  - name: direction
+    kind: enum
+    value_start: 32
+    value_length: 1
+    mapping:
+      0x00: forward
+      0x01: backward
+  - name: filler0
+    kind: static
+    value_start: 33
+    value_length: 7
+    value: 0x00
+  - name: sequence
+    kind: integer
+    value_start: 40
+    value_length: 8

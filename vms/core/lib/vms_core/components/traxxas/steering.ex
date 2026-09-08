@@ -21,7 +21,7 @@ defmodule VmsCore.Components.Traxxas.Steering do
   def init(%{
         controller: controller,
         external_pwm_id: external_pwm_id,
-        requested_steering_source: requested_steering_source
+        selected_control_level_source: selected_control_level_source
       }) do
     Bus.subscribe("messages")
     {:ok, timer} = :timer.send_interval(@loop_period, :loop)
@@ -31,13 +31,36 @@ defmodule VmsCore.Components.Traxxas.Steering do
        loop_timer: timer,
        controller: controller,
        external_pwm_id: external_pwm_id,
-       requested_steering_source: requested_steering_source,
+       selected_control_level_source: selected_control_level_source,
+       # Starts nil: nothing commands this actuator until the manager
+       # names a source. The manager's default level does that on its
+       # first tick.
+       requested_steering_source: nil,
        requested_steering: @zero,
        steering: @zero
      }}
   end
 
   @impl true
+  def handle_info(
+        %Bus.Message{
+          name: :requested_steering_source,
+          value: requested_steering_source,
+          source: source
+        },
+        state
+      )
+      when source == state.selected_control_level_source do
+    # Hold on the way to a level that commands nothing. With no source
+    # no `:requested_steering` message matches, so the wheels stay
+    # where the last commander left them. That is deliberate and the
+    # opposite of the throttle: removing propulsion is what makes the
+    # vehicle safe, while snapping the wheels straight mid-corner is a
+    # new hazard rather than a mitigation, the same policy every input
+    # watchdog in this tree applies.
+    {:noreply, %{state | requested_steering_source: requested_steering_source}}
+  end
+
   def handle_info(:loop, state) do
     state =
       state
@@ -80,16 +103,5 @@ defmodule VmsCore.Components.Traxxas.Steering do
 
         %{state | steering: state.requested_steering}
     end
-  end
-
-  # TODO remove
-  @impl true
-  def handle_call({:test_request_steering, value}, _from, state) do
-    {:reply, :ok, %{state | requested_steering: value}}
-  end
-
-  # TODO remove
-  def test_request_steering(value) do
-    GenServer.call(__MODULE__, {:test_request_steering, value})
   end
 end

@@ -1,6 +1,23 @@
 defmodule VmsCore.Components.OVCS.RadioControl.RequestedControlLevel do
   @moduledoc """
     Control control level based on radio control's input
+
+  This is the authority switch: it says *who* commands the vehicle, and
+  nothing more.
+
+      1000 -> :manual   nothing commands it, or the vehicle's own pedals
+      1500 -> :radio     the transmitter
+      2000 -> :ros       the ROS bridge
+
+  `:ros` deliberately does not mean "autonomous". A human on a gamepad
+  and a planner both reach the VMS through the ROS bridge -- same
+  topics, same CAN frames -- so which of them is driving is a separate
+  question, answered on a separate channel by
+  `VmsCore.Components.OVCS.RadioControl.RequestedRosCommander`.
+
+  This only *requests* a level. `VmsCore.Managers.ControlLevel` decides,
+  and refuses moves that are unsafe (in motion, not ready to drive, or
+  while a fault has forced a lower level).
   """
 
   use GenServer
@@ -9,7 +26,7 @@ defmodule VmsCore.Components.OVCS.RadioControl.RequestedControlLevel do
 
   @loop_period 10
   @default_value 1000
-  @value_mapping %{1000 => :manual, 1500 => :radio, 2000 => :autonomous}
+  @value_mapping %{1000 => :manual, 1500 => :radio, 2000 => :ros}
   @default_requested_control_level @value_mapping[@default_value]
   # RC PWM channels jitter and rarely sit exactly on 1000/1500/2000, so match
   # any value within this margin of a known position before falling back.

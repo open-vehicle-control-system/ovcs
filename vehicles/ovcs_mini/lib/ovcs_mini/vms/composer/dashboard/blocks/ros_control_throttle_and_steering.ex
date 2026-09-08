@@ -1,5 +1,5 @@
 defmodule OvcsMini.Vms.Composer.Dashboard.Blocks.ROSControlThrottleAndSteeringBlock do
-  alias VmsCore.Components.OVCS.ROSControl
+  alias VmsCore.Components.OVCS.RosActuatorCommand
 
   def definition(order: order, full_width: full_width) do
     %{
@@ -16,11 +16,11 @@ defmodule OvcsMini.Vms.Composer.Dashboard.Blocks.ROSControlThrottleAndSteeringBl
           series: [
             %{
               name: "Requested Steering",
-              metric: %{module: ROSControl.Steering, key: :requested_steering}
+              metric: %{module: RosActuatorCommand.Steering, key: :requested_steering}
             },
             %{
               name: "Requested Throttle",
-              metric: %{module: ROSControl.Throttle, key: :requested_throttle}
+              metric: %{module: RosActuatorCommand.Throttle, key: :requested_throttle}
             }
           ]
         }

@@ -1,5 +1,5 @@
 defmodule Ovcs1.Vms.Composer.Dashboard.ROSControlPage do
-  alias VmsCore.Components.OVCS.ROSControl
+  alias VmsCore.Components.OVCS.RosActuatorCommand
 
   def definition(order: order) do
     %{
@@ -15,19 +15,19 @@ defmodule Ovcs1.Vms.Composer.Dashboard.ROSControlPage do
             %{
               type: :metric,
               name: "Requested Direction",
-              module: ROSControl.Direction,
+              module: RosActuatorCommand.Direction,
               key: :requested_direction
             },
             %{
               type: :metric,
               name: "Requested Steering",
-              module: ROSControl.Steering,
+              module: RosActuatorCommand.Steering,
               key: :requested_steering
             },
             %{
               type: :metric,
               name: "Requested Throttle",
-              module: ROSControl.Throttle,
+              module: RosActuatorCommand.Throttle,
               key: :requested_throttle
             }
           ]
@@ -46,11 +46,11 @@ defmodule Ovcs1.Vms.Composer.Dashboard.ROSControlPage do
               series: [
                 %{
                   name: "Requested Steering",
-                  metric: %{module: ROSControl.Steering, key: :requested_steering}
+                  metric: %{module: RosActuatorCommand.Steering, key: :requested_steering}
                 },
                 %{
                   name: "Requested Throttle",
-                  metric: %{module: ROSControl.Throttle, key: :requested_throttle}
+                  metric: %{module: RosActuatorCommand.Throttle, key: :requested_throttle}
                 }
               ]
             }

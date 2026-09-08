@@ -101,6 +101,9 @@ defmodule RosBridge.Clock do
   poisons it permanently for the reason above. Mixing the two
   timescales in one run is the failure this module exists to prevent,
   so a run that has started on wall clock finishes on wall clock.
+  "Permanent" means for the life of this process: the bridge subtree
+  is `:rest_for_one` behind `ZenohClient`, so a client crash restarts
+  this too and the wait for `/clock` runs again from scratch.
 
   Which makes the timeout a real deadline rather than a nicety, and
   it is set accordingly: `docker compose up -d` returns long before

@@ -1,5 +1,10 @@
 # simulation — the OVCS Mini in Gazebo
 
+> New here? [`docs/ros2_integration.md`](../../docs/ros2_integration.md)
+> is the map — how the simulator, ROS 2, Nav2 and the Elixir bridge fit
+> together, and which command path the simulator actually exercises.
+> This file is the manual.
+
 A Gazebo **Jetty** model of the OVCS Mini (a Traxxas Slash 4x4, 1/10
 scale short-course truck), plus the stack to run it. Third sibling to
 `ros2/vehicule` (on the car, balenaOS) and `ros2/base` (the operator's
@@ -363,11 +368,10 @@ ROS.
 
 ### Known details
 
-The odometry frame comes out as `ovcs_mini/odom` while its child is
-plain `base_link` — `AckermannSteering` namespaces the parent by model
-name and there is no verified tag to override it (`<child_frame_id>`
-exists, `<frame_id>` does not). Harmless with one vehicle; something
-to remap at the bridge if a consumer expects a bare `odom`.
+The odometry frame is `odom`, child `base_link`, at 50 Hz. Left to
+itself `AckermannSteering` namespaces the parent by model name and
+publishes `ovcs_mini/odom`, which Nav2 rejects outright; `<frame_id>`
+does exist in the shipped plugin and `gazebo_ackermann.xacro` sets it.
 
 ### Known wrinkle
 

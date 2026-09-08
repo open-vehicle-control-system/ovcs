@@ -153,31 +153,36 @@ defmodule Ovcs1.Vms.Composer do
        %{
          radio_control_channel: 4
        }},
-      {OVCS.ROSControl.Steering, %{}},
-      {OVCS.ROSControl.Throttle, %{}},
-      {OVCS.ROSControl.Direction, %{}},
+      {OVCS.RosActuatorCommand.Steering, %{}},
+      {OVCS.RosActuatorCommand.Throttle, %{}},
+      {OVCS.RosActuatorCommand.Direction, %{}},
       {Managers.ControlLevel,
        %{
          requested_control_level_source: OVCS.RadioControl.RequestedControlLevel,
+         # `:ros` is keyed by commander because a gamepad and a planner
+         # are different commanders on the same authority level. OVCS1
+         # has no planner path yet and no second switch, so only
+         # `:teleop` is populated; the manager pins the commander to
+         # `:teleop` when no source is configured.
          requested_gear_sources: %{
            manual: OVCS.Infotainment,
            radio: nil,
-           autonomous: nil
+           ros: %{teleop: nil}
          },
          requested_direction_sources: %{
            manual: nil,
            radio: OVCS.RadioControl.Direction,
-           autonomous: ROSControl.Direction
+           ros: %{teleop: OVCS.RosActuatorCommand.Direction}
          },
          requested_throttle_sources: %{
            manual: OVCS.ThrottlePedal,
            radio: OVCS.RadioControl.Throttle,
-           autonomous: ROSControl.Throttle
+           ros: %{teleop: OVCS.RosActuatorCommand.Throttle}
          },
          requested_steering_sources: %{
            manual: nil,
            radio: OVCS.RadioControl.Steering,
-           autonomous: ROSControl.Steering
+           ros: %{teleop: OVCS.RosActuatorCommand.Steering}
          },
          manual_breaking_source: Bosch.IBoosterGen2,
          radio_breaking_source: OVCS.RadioControl.Throttle,

@@ -11,9 +11,33 @@ vehicle_host = "#{vehicle_dir |> String.replace("_", "-")}-infotainment"
 # values are picked up by every firmware (vms, infotainment, bridges)
 # of one vehicle. Gitignored.
 if config_env() in [:dev, :test, :prod] do
-  for filename <- [".env.exs", ".env.#{config_env()}.exs"] do
+  env_files = [".env.exs", ".env.#{config_env()}.exs"]
+
+  for filename <- env_files do
     abs = Path.expand("../../../vehicles/#{vehicle_dir}/#{filename}", __DIR__)
     if File.exists?(abs), do: import_config(abs)
+  end
+
+  # A missing env file is fatal for a real firmware build. Without it
+  # the device is built with generated Phoenix secrets, NO SSH keys —
+  # you are locked out — a reset Wi-Fi list, and
+  # ZENOH_ENDPOINT_IP=127.0.0.1, so ros_bridge reaches no router. That
+  # firmware is worse than a failed build: it boots and strands the
+  # vehicle. CI builds firmware only to check it compiles and never
+  # deploys it, so there the defaults are fine — GitHub sets CI=true.
+  unless Enum.any?(env_files, fn filename ->
+           Path.expand("../../../vehicles/#{vehicle_dir}/#{filename}", __DIR__)
+           |> File.exists?()
+         end) do
+    if System.get_env("CI") == "true" do
+      IO.warn("no .env.exs for vehicle #{inspect(vehicle_dir)}: building with defaults (CI).", [])
+    else
+      raise "no .env.exs for vehicle #{inspect(vehicle_dir)}: a firmware built without it " <>
+              "has generated secrets, no SSH keys (you would be locked out), a reset " <>
+              "Wi-Fi list, and ZENOH_ENDPOINT_IP=127.0.0.1 (the bridge reaches no router). " <>
+              "Copy vehicles/#{vehicle_dir}/.env.exs.example to .env.exs and fill it in. " <>
+              "Set CI=true to build with defaults anyway."
+    end
   end
 end
 
