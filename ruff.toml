@@ -12,7 +12,7 @@
 # count, which is churn rather than a defect caught. `ruff check` is
 # the half with signal: undefined names, unused imports, an `except`
 # that can never fire.
-include = ["ros2/**/*.py"]
+include = ["compose/**/*.py"]
 
 # Matches the Elixir formatter's default, which the rest of the tree is
 # written to, so one convention covers the repo.

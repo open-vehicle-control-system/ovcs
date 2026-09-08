@@ -1,0 +1,33 @@
+# Shared service definitions for the local stacks (base.yml,
+# simulation.yml). Nothing here is started on its own: the two stacks
+# `extends:` these services, which is how compose shares configuration
+# across files — YAML anchors stop at the file boundary.
+#
+# Not used by ../compute/docker-compose.yml: the balena supervisor's
+# parser (Compose 2.4-based) has no `extends:`, so the vehicle file
+# spells the same environment out per service. A change to the fabric
+# settings below is a change there too.
+
+services:
+  # Any container that joins the Zenoh fabric: host networking so
+  # Zenoh peering and local discovery behave like a bare-metal install,
+  # and the three variables the shared entrypoint renders the session
+  # config from.
+  fabric-client:
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      RMW_IMPLEMENTATION: rmw_zenoh_cpp
+      ZENOH_SESSION_CONFIG_URI: /tmp/zenoh-session.json5
+      # The router this box peers with. Points at the vehicle's compute
+      # node in normal use (set it in .env); 127.0.0.1 pairs with the
+      # `standalone` zenohd in base.yml for vehicle-less development.
+      ZENOH_ENDPOINT_IP: ${ZENOH_ENDPOINT_IP:-127.0.0.1}
+
+  # A fabric client running the shared ROS 2 image — the one the car
+  # runs (../compute/images/ros2). Only base.yml's `ros2` service
+  # builds it; every other user references the tag.
+  ros2-image:
+    extends:
+      service: fabric-client
+    image: ovcs/ros2:lyrical

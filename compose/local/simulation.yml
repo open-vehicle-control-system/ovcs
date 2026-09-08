@@ -1,0 +1,145 @@
+# Gazebo Jetty simulation of the OVCS Mini. Only ever runs on a
+# workstation; nothing in this file is pushed to balena.
+#
+# It speaks Zenoh like everything else, so a simulated vehicle appears
+# on the same fabric as a real one and the existing tooling — `ros2
+# topic`, Foxglove — needs no special case. Point it at the local
+# `standalone` router in base.yml, or at a vehicle's router to run
+# the two side by side.
+#
+# Usage:
+#   docker compose -f base.yml --profile standalone up -d zenohd
+#   docker compose -f simulation.yml up -d
+#   docker compose -f simulation.yml logs -f sim
+#
+# Drive it:
+#   docker compose -f simulation.yml exec sim bash -lc \
+#     'ros2 topic pub -r 10 /cmd_vel geometry_msgs/msg/Twist \
+#        "{linear: {x: 1.0}, angular: {z: 0.3}}"'
+#
+# The Zenoh environment comes from common.yml via `extends:`; the
+# project name keeps this stack's containers apart from base.yml's,
+# which lives in the same directory.
+
+name: ovcs-sim
+
+services:
+  sim:
+    extends:
+      file: common.yml
+      service: fabric-client
+    build:
+      # The context is compose/, not this directory, so the image can
+      # COPY the Zenoh session template and entrypoint from the car's
+      # image (../compute/images/ros2) instead of keeping a second copy.
+      context: ..
+      dockerfile: local/images/sim/Dockerfile
+    image: ovcs/sim:jetty
+    container_name: ovcs-sim
+    environment:
+      # Gazebo finds meshes and models through this. Only the world
+      # directory for now — the model is spawned from
+      # /robot_description, not from the resource path.
+      GZ_SIM_RESOURCE_PATH: /opt/ovcs/worlds
+    volumes:
+      # Each vehicle's model, mounted under its own name. Models live
+      # with their vehicle (vehicles/<name>/description), so a new
+      # vehicle is a new line here plus `vehicle:=<name>` on the
+      # launch command.
+      - ../../vehicles/ovcs_mini/description:/opt/ovcs/vehicles/ovcs_mini:ro
+      # Macros shared by every model. The xacros reach it as
+      # ../../common relative to themselves, which resolves inside the
+      # container regardless of where the files sit in the repo.
+      - ./simulation/common:/opt/ovcs/common:ro
+      # Iterate on the launch file and world without rebuilding too.
+      # The image carries its own copies, so the stack still runs if
+      # this mount is dropped.
+      - ./simulation/launch:/opt/ovcs/launch:ro
+      - ./simulation/worlds:/opt/ovcs/worlds:ro
+      - ./simulation/config:/opt/ovcs/config:ro
+      - ./simulation/scripts:/opt/ovcs/scripts:ro
+    command:
+      - bash
+      - -lc
+      - "ros2 launch /opt/ovcs/launch/sim.launch.py teleop:=false"
+
+  nav2:
+    # Nav2, behind a profile so the plain `up -d` above stays a bare
+    # simulator. The image is the car's own (../compute/images/nav2):
+    # same Dockerfile, same tag as base.yml's `nav2`, so a simulated
+    # run exercises the configuration that ships. The one difference
+    # is the clock, and it is a visible launch argument.
+    #
+    #   docker compose -f simulation.yml --profile nav2 up -d nav2
+    #
+    # It drives through /cmd_vel_nav (TwistStamped), which
+    # sim.launch.py bridges separately from the unstamped /cmd_vel that
+    # teleop uses.
+    extends:
+      file: common.yml
+      service: fabric-client
+    build:
+      context: ../compute
+      dockerfile: images/nav2/Dockerfile
+    image: ovcs/nav2:lyrical
+    container_name: ovcs-nav2
+    profiles: ["nav2"]
+    # The launch file and parameters are baked into the image; they are
+    # mounted over it here so a parameter edit is tried without a
+    # rebuild.
+    volumes:
+      - ../compute/nav2/launch:/opt/ovcs/launch:ro
+      - ../compute/nav2/config:/opt/ovcs/config:ro
+    command:
+      - bash
+      - -lc
+      - "ros2 launch /opt/ovcs/launch/nav2.launch.py use_sim_time:=true"
+
+  teleop:
+    # The gamepad, as its own service so the simulation never requires
+    # a controller to be plugged in — compose treats a missing
+    # `devices:` entry as a hard failure, which would make `up` fail on
+    # any machine without one.
+    #
+    #   docker compose -f simulation.yml --profile teleop up -d teleop
+    extends:
+      file: common.yml
+      service: fabric-client
+    image: ovcs/sim:jetty
+    container_name: ovcs-sim-teleop
+    profiles: ["teleop"]
+    volumes:
+      - ./simulation/launch:/opt/ovcs/launch:ro
+      - ./simulation/config:/opt/ovcs/config:ro
+    devices:
+      - /dev/input/js0:/dev/input/js0
+    command:
+      - bash
+      - -lc
+      - "ros2 launch /opt/ovcs/launch/teleop.launch.py"
+
+  gz-gui:
+    # Gazebo's GUI, as a separate service so the headless simulation
+    # above never depends on a display existing. Needs an X socket:
+    #   xhost +local:docker
+    #   docker compose -f simulation.yml --profile gui up -d gz-gui
+    #
+    # A fabric client only because the shared entrypoint insists on
+    # ZENOH_ENDPOINT_IP; the GUI itself talks to the simulator over
+    # Gazebo's own transport.
+    extends:
+      file: common.yml
+      service: fabric-client
+    image: ovcs/sim:jetty
+    container_name: ovcs-sim-gui
+    profiles: ["gui"]
+    restart: "no"
+    environment:
+      DISPLAY: ${DISPLAY:-:0}
+      QT_X11_NO_MITSHM: 1
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    command:
+      - bash
+      - -lc
+      - "gz sim -g"

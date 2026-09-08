@@ -16,7 +16,7 @@ defmodule Ros2.FoxgloveMsgs.Msg.ImageAnnotations do
 
   The cost is a dependency: `foxglove_msgs` is not part of a ROS base
   install, so `ros-jazzy-foxglove-msgs` is installed in
-  `ros2/vehicule/image/Dockerfile` — without it `foxglove_bridge`
+  `compose/compute/images/ros2/Dockerfile` — without it `foxglove_bridge`
   cannot resolve the type and never advertises the topic.
 
   `circles` is always empty here; the field still has to be encoded,

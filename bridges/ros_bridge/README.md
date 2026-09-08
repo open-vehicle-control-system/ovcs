@@ -200,11 +200,11 @@ host, vehicle LAN IP on target).
 
 ## Verifying end-to-end
 
-With `./ovcs run <vehicle>` going and the `ros2/base/docker-compose.yml`
+With `./ovcs run <vehicle>` going and the `compose/local/base.yml`
 stack up:
 
 ```sh
-cd ros2/base && docker compose exec ros2 bash -lc '
+cd compose/local && docker compose -f base.yml exec ros2 bash -lc '
   source /opt/ros/*/setup.bash
   ros2 topic list
   ros2 topic info -v /ovcs_heartbeat

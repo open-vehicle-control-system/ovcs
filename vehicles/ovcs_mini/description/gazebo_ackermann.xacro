@@ -16,7 +16,7 @@
 
   The shape of that failure under gz-sim 10 is the opposite of what
   one would expect, and was measured rather than assumed (see
-  `ros2/simulation/scripts/drive_test.py`). The radius cancels in the
+  `compose/local/simulation/scripts/drive_test.py`). The radius cancels in the
   plugin — commanded speed is divided by it to get a joint velocity,
   and the joint velocity is multiplied by it again to get odometry —
   so `/odom` reads a flawless 1.000 m/s while the car actually crawls
