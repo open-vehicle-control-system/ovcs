@@ -25,7 +25,7 @@ counter and the channel layout only exist on the new firmware.
       gear by hand: frequency rises, decays to zero two seconds after
       the gear stops.
 
-## 1. Calibrate the speed ratio
+## 1. Calibrate the speed ratio  ← DONE: bench measurement confirms the 2.72 estimate
 
 The composer estimates `@pulses_per_revolution 1` × `@gear_ratio 2.72`
 (Slash 4x4 transmission). Measure the real product; it is the divisor

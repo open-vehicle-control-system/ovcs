@@ -31,9 +31,10 @@ defmodule OvcsMini.Vms.Composer do
   # The trigger magnet sits in the spur gear, so wheel speed needs the
   # ratio from the spur gear to the wheels: the Slash 4x4 transmission's
   # fixed 2.72:1. The pinion does not enter into it. One magnet, one
-  # pulse per spur turn. ESTIMATE until measured: turn the spur gear by
-  # hand until a wheel completes one revolution and count the pulses on
-  # `0x709`; only the product of the two constants matters.
+  # pulse per spur turn. Confirmed on the bench: 14 pulses over 10 wheel
+  # revolutions back-driven through one wheel, which the open
+  # differential halves, gives ~2.8 pulses per wheel turn — 2.72 within
+  # the +/-1 count noise. Only the product of the two constants matters.
   @pulses_per_revolution 1
   @gear_ratio 2.72
 
