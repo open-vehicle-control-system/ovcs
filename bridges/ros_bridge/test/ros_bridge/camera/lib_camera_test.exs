@@ -5,7 +5,12 @@ defmodule RosBridge.Camera.LibCameraTest do
 
   # The driver itself needs the native binary and two cameras; the
   # watchdog's decision is the part that can be wrong, and it is pure.
-  @state %{started_at: 1_000, last_frame_at: nil, stall_timeout_ms: 2_000, startup_timeout_ms: 15_000}
+  @state %{
+    started_at: 1_000,
+    last_frame_at: nil,
+    stall_timeout_ms: 2_000,
+    startup_timeout_ms: 15_000
+  }
 
   describe "stall_verdict/2" do
     test "waits for the first frame up to the startup timeout" do
