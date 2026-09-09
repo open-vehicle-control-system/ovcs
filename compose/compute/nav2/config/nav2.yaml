@@ -101,8 +101,17 @@ controller_server:
       batch_size: 1000
       vx_std: 0.2
       wz_std: 0.4
-      vx_max: 1.5
-      vx_min: -0.5
+      # Forward only, and no faster than the vehicle's speed at its
+      # throttle cap (`@max_speed_m_s` in the Mini's VMS composer):
+      # anything above saturates the actuator, and the optimizer would
+      # plan on a speed the truck cannot reach. Reverse is off because
+      # the Traxxas ESC treats the first pull into negative as braking
+      # and only reverses after a return to neutral, a sequence a
+      # velocity command cannot express; a reverse the controller
+      # believes in is a truck that does not move. The BackUp recovery
+      # is out of the behaviour trees for the same reason.
+      vx_max: 0.5
+      vx_min: 0.0
       wz_max: 2.5
       ax_max: 2.0
       ax_min: -2.0

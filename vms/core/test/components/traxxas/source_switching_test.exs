@@ -236,12 +236,35 @@ defmodule VmsCore.Components.Traxxas.SourceSwitchingTest do
       assert D.eq?(Throttle.shape(D.new("1"), false, curve), D.new("1"))
     end
 
-    test "a physical quantity is applied as is" do
+    test "a physical quantity skips the dead zone and the feel curve" do
       # A planner asking for a fifth of full speed must get a fifth,
       # not a twenty-fifth.
       curve = Throttle.curve(%{})
       assert D.eq?(Throttle.shape(D.new("0.2"), true, curve), D.new("0.2"))
       assert D.eq?(Throttle.shape(D.new("-0.2"), true, curve), D.new("-0.2"))
+    end
+
+    test "a physical quantity still lands on [start_offset, cap]" do
+      # The ESC does not move below its minimum pulse whoever asks, so a
+      # planner's request is stretched over the band that does move:
+      # 0.05 + 0.3 × (0.1 − 0.05) = 0.065, not 0.3 × 0.1 = 0.03.
+      curve =
+        Throttle.curve(%{
+          start_offset: D.new("0.05"),
+          max_throttle: D.new("0.1"),
+          max_reverse: D.new("0.2")
+        })
+
+      assert D.eq?(Throttle.shape(D.new("0.3"), true, curve), D.new("0.065"))
+      assert D.eq?(Throttle.shape(D.new("1"), true, curve), D.new("0.1"))
+      assert D.eq?(Throttle.shape(D.new("-0.3"), true, curve), D.new("-0.095"))
+    end
+
+    test "a physical quantity below the epsilon is a stop, not the edge of motion" do
+      curve = Throttle.curve(%{start_offset: D.new("0.05"), max_throttle: D.new("0.1")})
+      assert D.eq?(Throttle.shape(D.new("0.01"), true, curve), D.new(0))
+      assert D.eq?(Throttle.shape(D.new("-0.019"), true, curve), D.new(0))
+      assert D.eq?(Throttle.shape(D.new("0.02"), true, curve), D.new("0.051"))
     end
 
     test "expo blends between linear and square" do
@@ -288,16 +311,20 @@ defmodule VmsCore.Components.Traxxas.SourceSwitchingTest do
       assert D.eq?(Throttle.shape(D.new("0.525"), false, curve), D.new("0.55"))
     end
 
-    test "a physical quantity skips the dead zone, the curve and the start offset" do
-      # A planner decelerating through a tiny velocity must be followed
-      # down, not held at the edge of motion until it publishes exactly
-      # zero.
+    test "a physical quantity skips the dead zone and the curve but not the offset" do
+      # The dead zone and the curve are a hand's; the offset is the
+      # ESC's. A planner's request is proportional above the epsilon and
+      # lands on [start_offset, cap], so any speed it asks for moves the
+      # vehicle; below the epsilon it is a stop, so a planner
+      # decelerating through tiny velocities comes to rest.
       curve =
         Throttle.curve(%{deadzone: D.new("0.05"), expo: D.new(1), start_offset: D.new("0.1")})
 
       assert D.eq?(Throttle.shape(D.new(0), true, curve), D.new(0))
-      assert D.eq?(Throttle.shape(D.new("0.02"), true, curve), D.new("0.02"))
-      assert D.eq?(Throttle.shape(D.new("-0.5"), true, curve), D.new("-0.5"))
+      assert D.eq?(Throttle.shape(D.new("0.01"), true, curve), D.new(0))
+      # 0.1 + 0.02 × 0.9: no dead zone, no squaring, the offset applied.
+      assert D.eq?(Throttle.shape(D.new("0.02"), true, curve), D.new("0.118"))
+      assert D.eq?(Throttle.shape(D.new("-0.5"), true, curve), D.new("-0.55"))
       assert D.eq?(Throttle.shape(D.new("1"), true, curve), D.new("1"))
     end
 

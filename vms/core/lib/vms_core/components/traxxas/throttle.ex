@@ -31,14 +31,25 @@ defmodule VmsCore.Components.Traxxas.Throttle do
      *output* at which the wheels first move -- the value written to
      the ESC, not the request shown on the dashboard.
 
-  All three are properties of a *hand* on an axis, not of the actuator.
-  A commander that sends a physical quantity -- `RosVelocityCommand`
-  normalises metres per second -- expects its request applied as is, or
-  a planner asking for a fifth of full speed gets a twenty-fifth, and a
-  planner decelerating through a tiny velocity expects the vehicle to
-  follow it down rather than hold the edge of motion. `:linear_sources`
-  lists the sources whose request is already a physical quantity: they
-  skip all three steps.
+  The dead zone and the feel curve are properties of a *hand* on an
+  axis, not of the actuator. A commander that sends a physical quantity
+  -- `RosVelocityCommand` normalises metres per second -- expects its
+  request applied proportionally, or a planner asking for a fifth of
+  full speed gets a twenty-fifth. `:linear_sources` lists the sources
+  whose request is already a physical quantity: they skip those two
+  steps.
+
+  The start offset is different: it is a property of the *ESC*, which
+  does not turn the motor below a minimum pulse whoever is asking. A
+  linear request therefore lands on `[start_offset, cap]` like a hand's
+  does, so any speed a planner commands reaches the edge of motion
+  instead of being silently wasted below it -- with a cap of a tenth of
+  the pulse range, a proportional request of 0.3 would otherwise sit
+  15 µs above neutral and move nothing, and the planner, seeing no
+  progress, would fall back on its recoveries. Requests below a small
+  epsilon (2 % of full travel) are zero, so a planner decelerating
+  through tiny velocities comes to rest rather than holding the edge of
+  motion.
 
   ## The cap
 
@@ -69,6 +80,12 @@ defmodule VmsCore.Components.Traxxas.Throttle do
   @pwm_period_us D.new(div(1_000_000, @pwm_frequency))
   @zero D.new(0)
   @one D.new(1)
+
+  # Below this a physical request is a stop, not a speed: with the start
+  # offset applied to linear sources too, something has to separate "hold
+  # the edge of motion" from "come to rest", and a planner's decelerating
+  # trail of tiny velocities is the latter.
+  @linear_epsilon D.new("0.02")
 
   @default_curve %{
     deadzone: @zero,
@@ -239,12 +256,18 @@ defmodule VmsCore.Components.Traxxas.Throttle do
   end
 
   @doc """
-  The output in [-1, 1] for a request in [-1, 1]. A linear request is
-  only scaled by the cap; a shaped one goes through all three steps and
-  lands on `[start_offset, cap]`.
+  The output in [-1, 1] for a request in [-1, 1]. A shaped request goes
+  through all three steps; a linear one skips the dead zone and the feel
+  curve. Both land on `[start_offset, cap]`, and both are zero at rest.
   """
   def shape(requested, true = _linear, curve) do
-    requested |> D.abs() |> D.min(@one) |> D.mult(cap(requested, curve)) |> signed_as(requested)
+    magnitude = requested |> D.abs() |> D.min(@one)
+
+    if D.lt?(magnitude, @linear_epsilon) do
+      @zero
+    else
+      offset(signed_as(magnitude, requested), curve.start_offset, cap(requested, curve))
+    end
   end
 
   def shape(requested, false, curve) do

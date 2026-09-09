@@ -8,9 +8,12 @@
   the RecoveryNode burns a retry. With Spin first in the list, a single
   transient planning failure is enough to abort the whole action.
 
-  What remains is `Wait` (for a costmap that will clear on its own, e.g.
-  a moving obstacle) and `BackUp` (which a car genuinely can do, and
-  which is the useful recovery when it has nosed into a dead end).
+  `BackUp` is out too. The car could reverse, but its Traxxas ESC
+  treats the first pull into negative as braking and only reverses
+  after a return to neutral — a sequence a velocity command cannot
+  express — so the behaviour ran its full duration against a truck
+  that did not move, and burned a retry like Spin did. What remains is
+  `Wait`, for a costmap that will clear on its own (a moving obstacle).
 
   ClearCostmap services stay: they cost nothing and fix the common case
   of a stale obstacle.
@@ -37,7 +40,6 @@
         <ClearEntireCostmap name="ClearGlobalCostmap-Subtree" service_name="global_costmap/clear_entirely_global_costmap"/>
         <!-- No Spin: this vehicle cannot execute one. -->
         <Wait wait_duration="2.0"/>
-        <BackUp backup_dist="0.30" backup_speed="0.15"/>
       </Sequence>
     </RecoveryNode>
   </BehaviorTree>

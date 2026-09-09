@@ -8,11 +8,14 @@
 
   This is nav2_bt_navigator's stock
   `navigate_through_poses_w_replanning_and_recovery.xml` with exactly
-  one line removed: the `Spin` recovery. On an Ackermann vehicle a spin
-  command produces no motion — `AckermannSteering` needs forward speed
-  to generate any yaw — so the behaviour runs its full duration,
-  achieves nothing, and consumes a recovery slot. Since the recoveries
-  sit in a RoundRobin, Spin is tried every other failure.
+  two lines removed: the `Spin` and `BackUp` recoveries. On an Ackermann
+  vehicle a spin command produces no motion — `AckermannSteering` needs
+  forward speed to generate any yaw — and a backup command meets a
+  Traxxas ESC that treats the first pull into negative as braking and
+  only reverses after a return to neutral, which a velocity command
+  cannot express. Either behaviour runs its full duration, achieves
+  nothing, and consumes a recovery slot; in a RoundRobin that is every
+  other failure.
 
   Kept deliberately close to upstream so a Nav2 bump is a readable
   diff. The `spin` behaviour *server* is still loaded (see nav2.yaml) —
@@ -70,7 +73,6 @@
               <ClearEntireCostmap name="ClearGlobalCostmap-Subtree" service_name="global_costmap/clear_entirely_global_costmap"/>
             </Sequence>
             <Wait name="WaitRecovery" wait_duration="5.0" error_code_id="{wait_error_code}" error_msg="{wait_error_msg}"/>
-            <BackUp name="BackUpRecovery" backup_dist="0.30" backup_speed="0.15" error_code_id="{backup_error_code}" error_msg="{backup_error_msg}"/>
           </RoundRobin>
         </ReactiveFallback>
       </Sequence>

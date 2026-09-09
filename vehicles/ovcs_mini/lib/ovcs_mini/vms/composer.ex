@@ -35,11 +35,13 @@ defmodule OvcsMini.Vms.Composer do
   # Throttle feel, see `Traxxas.Throttle` for what each one does.
   @throttle_deadzone Decimal.new("0.05")
   @throttle_expo Decimal.new("0.5")
-  # A 10 us start offset leaves 40 us of forward modulation before the
-  # 1550 us cap. Keep this conservative until the ESC's start/stop
-  # thresholds have been measured under load; the Radio Control page
-  # exposes the commanded pulse width, before HAT timer quantisation.
-  @throttle_start_offset Decimal.new("0.02")
+  # MEASURED: with the ESC calibrated against this actuator's full
+  # range, the wheels first turned at an output of 0.057 (1528 µs), so
+  # the edge of motion sits at 0.05. Below it the pulse is wasted;
+  # above it, with the 0.1 cap, 25 µs of travel remain to modulate
+  # speed, which is what this vehicle has to offer at these speeds. The
+  # planner's requests land on the same band (see `Traxxas.Throttle`).
+  @throttle_start_offset Decimal.new("0.05")
   # A tenth of the pulse range forward (1550 µs at full trigger), with
   # the ESC calibrated against this actuator's full 1000-2000 µs range.
   # Half the range was far too fast for where the truck drives and a
