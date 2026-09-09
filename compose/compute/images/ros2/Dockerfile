@@ -36,7 +36,8 @@ RUN apt-get update \
         python3-pip \
     && rm -rf /var/lib/apt/lists/* \
     && pip3 install --no-cache-dir --break-system-packages \
-        eclipse-zenoh==1.9.0
+        eclipse-zenoh==1.9.0 \
+        websockets==17.0.1
 
 # Baked in rather than bind-mounted: balenaOS has no host bind mounts,
 # and keeping one mechanism means the vehicle and the base station read
@@ -50,6 +51,7 @@ COPY zenoh/session.json5.template /etc/zenoh/session.json5.template
 # docker/calibrator.sh is mode 644 in git.
 COPY docker/entrypoint.sh         /usr/local/bin/entrypoint
 COPY docker/foxglove_bridge.sh    /usr/local/bin/foxglove_bridge
+COPY docker/foxglove_compression.py /usr/local/bin/foxglove_compression
 COPY docker/joy.sh                /usr/local/bin/joy
 COPY docker/calibrator.sh         /usr/local/bin/calibrator
 COPY docker/decompress_stereo.py  /usr/local/bin/decompress_stereo

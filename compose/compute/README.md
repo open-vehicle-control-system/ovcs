@@ -36,6 +36,44 @@ balena push <device>.local         # local mode: build on the device, no cloud
 Runtime configuration is balena fleet/device variables, not a `.env`
 file.
 
+### Foxglove on slower Wi-Fi
+
+The public endpoint remains `ws://<compute-node-ip>:8765`. A local relay
+negotiates WebSocket `permessage-deflate` with compatible clients and forwards
+the original Foxglove text and binary messages in both directions using the
+bridge's `foxglove.sdk.v1` subprotocol. Compression
+is lossless: topics, frame rates, image resolution and layouts are unchanged.
+Clients without compression support can still connect, without the bandwidth
+savings. The relay logs the negotiated extension for each connection.
+
+The ROS bridge listens on loopback port 8766, configurable with
+`FOXGLOVE_BRIDGE_INTERNAL_PORT`; the public port uses `FOXGLOVE_BRIDGE_PORT`.
+Both processes run in the bridge container and a child failure exits the
+service so the supervisor can restart it. The relay uses compression level 1,
+a receive high-water mark of one frame and a 32 KiB write high-water mark.
+These limits propagate slow-client backpressure to the bridge rather than
+adding an unbounded application queue. Kernel socket buffers still apply.
+
+The bridge limits each client's outgoing queue to 32 messages with
+`FOXGLOVE_MESSAGE_BACKLOG_SIZE` (Foxglove Bridge 3.4.1 or later). Set this
+fleet/device variable to override the limit; it is read at startup.
+When the queue fills, the SDK drops the oldest data messages. This keeps
+less stale data queued without changing the layout or source topics.
+The limit is in messages, not bytes, and does not bound TCP buffers or
+reduce the source bandwidth. A full control-message queue disconnects
+the client, so check reconnections when reducing the limit further.
+
+The 3.4.3 bridge still declares `use_compression` and `send_buffer_limit`,
+but its SDK-backed WebSocket initialization does not use them. Do not
+rely on those parameters for compression or a byte-based queue limit.
+See the [versioned bridge source](https://github.com/foxglove/foxglove-sdk/blob/ros-v3.4.3/ros/src/foxglove_bridge/src/ros2_foxglove_bridge.cpp).
+
+Run the relay integration tests in an environment with `websockets==17.0.1`:
+
+```sh
+python3 -m unittest discover -s images/ros2/docker/tests -v
+```
+
 ### Rehearsing on a workstation
 
 The file is plain Compose (a subset of it), so it also runs on any
