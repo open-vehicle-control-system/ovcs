@@ -22,16 +22,24 @@ defmodule OvcsMini.Vms.Composer do
   def default_can_mapping(:host), do: "ovcs:vcan0"
   def default_can_mapping(:target), do: "ovcs:spi0.0"
 
-  # Full throttle in m/s. Not geometry — a property of the motor and
-  # gearing, not a measured dimension of the chassis. ESTIMATE: a stock
-  # Slash 4x4 does roughly 30 mph, and the simulated model is capped at
-  # 13 m/s, but nothing has measured this one under load.
-  @max_speed_m_s 5.0
+  # Speed in m/s at the throttle cap below, which is what a full request
+  # from the planner produces. Not geometry — a property of the motor,
+  # the gearing and the cap, not a measured dimension of the chassis.
+  # ESTIMATE: a stock Slash 4x4 does roughly 30 mph and the simulated
+  # model is capped at 13 m/s; the uncapped truck was estimated at
+  # 5 m/s and this is half of it, but nothing has measured this one
+  # under load.
+  @max_speed_m_s 2.5
 
   # Throttle feel, see `Traxxas.Throttle` for what each one does.
   @throttle_deadzone Decimal.new("0.05")
   @throttle_expo Decimal.new("0.5")
   @throttle_start_offset Decimal.new("0.06")
+  # Half the pulse range forward. The uncapped truck is far too fast for
+  # where it drives; the reverse side stays at 1 because on this ESC the
+  # first pull into negative is the brake.
+  @throttle_max Decimal.new("0.5")
+  @throttle_max_reverse Decimal.new("1")
 
   # The trigger magnet sits in the spur gear, so wheel speed needs the
   # ratio from the spur gear to the wheels: the Slash 4x4 transmission's
@@ -185,7 +193,8 @@ defmodule OvcsMini.Vms.Composer do
          selected_control_level_source: Managers.ControlLevel,
          # A velocity is a physical quantity, not a hand on a trigger:
          # it bypasses the dead zone, the feel curve and the start
-         # offset below.
+         # offset below, and only gets the cap. `@max_speed_m_s` is the
+         # speed at that cap for that reason.
          linear_sources: [OVCS.RosVelocityCommand],
          # The trigger at rest drifts by up to 20 counts of 500, and
          # the joystick node's own dead zone is the same 5%. Matches
@@ -202,7 +211,9 @@ defmodule OvcsMini.Vms.Composer do
          # force when it was taken. Too low only wastes a little
          # travel; too high makes the first touch a jump, so it starts
          # conservative.
-         start_offset: @throttle_start_offset
+         start_offset: @throttle_start_offset,
+         max_throttle: @throttle_max,
+         max_reverse: @throttle_max_reverse
        }},
       {OVCS.PulseSpeedSensor,
        %{
