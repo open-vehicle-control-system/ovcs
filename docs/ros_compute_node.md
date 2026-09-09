@@ -209,6 +209,22 @@ installs the NAT rule unconditionally; if `wlan0` is unassociated,
 clients still get leases and full vehicle-local connectivity and simply
 have no route off the car.
 
+One piece of the vehicle network is not a keyfile but a container:
+`bridge_nat_fix` in
+[`compose/compute/docker-compose.yml`](../compose/compute/docker-compose.yml).
+balena-engine switches `bridge-nf-call-iptables` on, so frames `ovcs0`
+forwards between `eth0` and the access point traverse iptables, where
+`method=shared`'s MASQUERADE rewrites anything not addressed to
+`10.42.0.0/24` — multicast included. A laptop's mDNS query then reaches
+the wire from the bridge's address on a random port, the board answers
+it as a legacy unicast query, and the laptop's resolver discards the
+reply for not coming from port 5353. `ovcs-mini-vms.local` works from
+the site Wi-Fi and fails from the vehicle's own access point, with
+nothing in any log. The container inserts one rule ahead of
+NetworkManager's — traffic leaving through `ovcs0` is not translated —
+and re-asserts it every 30 s, since NetworkManager rewrites its nat
+rules whenever the connection is re-activated.
+
 Keyfile templates live in
 [`compose/compute/host/system-connections/`](../compose/compute/host/system-connections/).
 Two non-obvious constraints are baked into them, and the comments in
@@ -390,11 +406,12 @@ iw dev wlP1p1s0 info                 # type AP, expected channel
 ip -4 addr show ovcs0                # 10.42.0.1/24
 ls /sys/class/net/ovcs0/brif/        # eth0 wlP1p1s0
 cat /var/lib/NetworkManager/dnsmasq-ovcs0.leases   # one line per board
+iptables -t nat -S POSTROUTING | head -2           # ovcs-bridge-no-nat before nm-shared-ovcs0
 ip route | grep default              # exactly one, via wlan0
 journalctl -k -b | grep iwlwifi      # "loaded firmware" and "loaded PNVM"
 
-# From a laptop on the site Wi-Fi
-ping ovcs-mini-vms.local             # each board, at its site address
+# From a laptop on the site Wi-Fi, then again on the access point
+ping ovcs-mini-vms.local             # site address, then 10.42.0.x
 ```
 
 That last kernel line is the check worth keeping: if the boot-time
