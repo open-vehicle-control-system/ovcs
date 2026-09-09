@@ -59,6 +59,18 @@ services:
     # `always` default and the container simply never exits (see
     # ./images/wifi-firmware/Dockerfile).
 
+  bridge_nat_fix:
+    # Keeps the host's NAT off frames the ovcs0 bridge forwards between
+    # eth0 and the access point — without it mDNS between a laptop on
+    # the access point and the wired boards is silently broken. See
+    # ./images/bridge-nat-fix/Dockerfile for the mechanism. Privileged
+    # host networking because it edits the host's nat table; it loops
+    # so the rule outlives NetworkManager re-activating the bridge.
+    build: ./images/bridge-nat-fix
+    restart: always
+    network_mode: host
+    privileged: true
+
   zenohd:
     # The vehicle *is* the router for the OVCS fabric, so the fabric
     # survives the base station disconnecting. Everything else —

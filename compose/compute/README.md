@@ -12,12 +12,13 @@ either.
 
 ```
 compute/
-├── docker-compose.yml    the stack: wifi_firmware, zenohd, foxglove_bridge, nav2
+├── docker-compose.yml    the stack: wifi_firmware, bridge_nat_fix, zenohd, foxglove_bridge, nav2
 ├── .dockerignore         keeps host/ and this file out of the pushed tarball
 ├── images/
 │   ├── ros2/             the shared ROS 2 image: entrypoint, Zenoh template, launchers
 │   ├── nav2/             the Nav2 image (Dockerfile only; it COPYs ../ros2 and ../../nav2)
-│   └── wifi-firmware/    AX210 firmware staged into balenaOS's extra-firmware volume
+│   ├── wifi-firmware/    AX210 firmware staged into balenaOS's extra-firmware volume
+│   └── bridge-nat-fix/   keeps the host's NAT off frames bridged between eth0 and the AP
 ├── nav2/
 │   ├── launch/           baked into images/nav2 here, bind-mounted by ../local/simulation.yml
 │   └── config/           nav2.yaml and the Ackermann behaviour trees
@@ -48,7 +49,8 @@ docker compose up -d zenohd foxglove_bridge nav2
 Name the services: `wifi_firmware` copies its blobs into
 `/extra-firmware`, a volume only balenaOS mounts (through the
 `io.balena.features.extra-firmware` label), so on a workstation the
-copy fails and the container restarts forever. Do not run this beside
+copy fails and the container restarts forever, and `bridge_nat_fix`
+would edit the workstation's nat table. Do not run this beside
 `../local/base.yml --profile standalone` — both start a router on
 port 7447. And note what this rehearsal is not: Nav2 here runs
 always-on against the wall clock with the router at `127.0.0.1`, the

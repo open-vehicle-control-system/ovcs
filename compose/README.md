@@ -8,7 +8,7 @@ vehicle, or does it never leave a workstation?**
 compose/
 ├── compute/          PUSHED TO BALENA — the vehicle's compute node, one deployable unit
 │   ├── docker-compose.yml    the on-vehicle stack (name and place imposed by balena)
-│   ├── images/               every image the car runs: ros2/, nav2/, wifi-firmware/
+│   ├── images/               every image the car runs: ros2/, nav2/, wifi-firmware/, bridge-nat-fix/
 │   ├── nav2/                 Nav2 launch + parameters — baked on the car, mounted by the simulator
 │   └── host/                 balenaOS network config (copied to the device once, never pushed)
 └── local/            NEVER PUSHED — the operator's machine and the simulation workstation
@@ -38,6 +38,7 @@ multicast, just TCP peerings to `zenohd`.
 | `foxglove_bridge` | compute | Studio attaches over the LAN to `ws://<compute-node-ip>:8765` |
 | `nav2` | compute | the planner survives the base station leaving, like the router |
 | `wifi_firmware` | compute | AX210 blobs for the host kernel — not ROS at all |
+| `bridge_nat_fix` | compute | one nat rule so mDNS crosses the vehicle bridge — not ROS either |
 | `ros2` (tooling shell) | local/base | interactive, `docker compose exec` |
 | `joy` | local/base | the game controller is with the operator, not the car |
 | `calibrator` | local/base | one-shot X11 GUI |
