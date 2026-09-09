@@ -91,7 +91,8 @@ as a detection that is still there.
 
 `/stereo/left/detections` is the Image panel's annotation topic — set
 under the panel's *Annotations* section, which the checked-in layout
-already does for the left camera. Each detection draws a `LINE_LOOP`
+(`compose/local/foxglove/ovcs_perception.json`) already does for the
+left camera. Each detection draws a `LINE_LOOP`
 box coloured red-to-green by score, with a `<class> <score>
 <distance>m` label above it on a dark backing plate.
 

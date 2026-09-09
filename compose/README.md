@@ -150,6 +150,19 @@ Linux-only — `device_cgroup_rules` + a bind-mounted `/dev/input` does
 not work on Docker Desktop for macOS/Windows; if `ls /dev/input/js*` is
 empty after plugging in, check `dmesg | tail`.
 
+**Foxglove Studio:** connect to `ws://<compute-node-ip>:8765` (or
+`ws://127.0.0.1:8765` with the `standalone` profile), then *Layouts →
+Import from file…* one of [`local/foxglove/`](./local/foxglove/):
+
+| Layout | For | Shows |
+|---|---|---|
+| `ovcs_navigation.json` | the planner drive | both costmaps, global and local plan, footprint and odometry in the `odom` frame; commanded vs measured velocity; dead-reckoned position; IMU vs odometry yaw rate; the odometry stamp (silence there is what halts Nav2). Clicking in the 3D panel publishes a `/goal_pose`. |
+| `ovcs_perception.json` | the stereo pipeline | left/right images with detection boxes, depth, point cloud with 3D detections, IMU and joystick plots |
+
+Both are plain Studio exports: edit in Studio, export, overwrite the
+file. They are operator tooling, which is why they live in `local/` and
+not with the Elixir bridge that publishes the topics.
+
 **Simulator:** see [`local/simulation/README.md`](./local/simulation/README.md).
 
 **Vehicle:** see [`compute/README.md`](./compute/README.md) —
