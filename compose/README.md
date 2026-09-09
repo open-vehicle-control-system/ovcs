@@ -49,6 +49,30 @@ another, for developing with no vehicle on the LAN. Two routers on one
 LAN is how you end up debugging two fabrics — with a vehicle present,
 leave those profiles off.
 
+## Profiles
+
+A service sits behind a profile for one of two mechanical reasons: it
+**stands in for something the vehicle provides**, so it must not run
+while a vehicle is on the LAN; or it has a **host dependency that would
+make a plain `up -d` fail**. Nothing is behind a profile for tidiness.
+
+| Stack | Profile | Adds | Reason |
+|---|---|---|---|
+| `base.yml` | *(none)* | `ros2`, `joy` | what an operator always wants with a vehicle present |
+| `base.yml` | `standalone` | `zenohd`, `foxglove_bridge` | stands in for `compute/`; two routers on one LAN is two fabrics |
+| `base.yml` | `nav2` | `nav2` (wall clock, container `ovcs-nav2-vehicle`) | stands in for the car's planner; two planners fight over `/cmd_vel_nav` |
+| `base.yml` | `calibration` | `calibrator` | one-shot X11 GUI |
+| `simulation.yml` | *(none)* | `sim` | headless Gazebo, what the verifiers rely on |
+| `simulation.yml` | `nav2` | `nav2` (`use_sim_time:=true`, container `ovcs-nav2`) | the same image against the simulator's clock |
+| `simulation.yml` | `teleop` | `teleop` | `devices: /dev/input/js0` fails `up` without a controller |
+| `simulation.yml` | `gui` | `gz-gui` | needs an X socket |
+
+The two `nav2` profiles are the same image with different clocks; start
+one or the other, never both. The verifiers compose these explicitly —
+`verify-nav2` wants the router without the vehicle's planner,
+`verify-planner-loop` wants both — which is why they are not one
+profile.
+
 ## The one link across the boundary
 
 The images the car runs are built **only** from `compute/images/`:

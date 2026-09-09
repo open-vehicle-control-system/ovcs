@@ -32,9 +32,31 @@ balena push ovcs-mini-ros          # build on balena's builders, OTA to the flee
 balena push <device>.local         # local mode: build on the device, no cloud
 ```
 
-Plain `docker compose up -d` also works here for a bare-metal rehearsal
-on any aarch64 box. Runtime configuration is balena fleet/device
-variables, not a `.env` file.
+Runtime configuration is balena fleet/device variables, not a `.env`
+file.
+
+### Rehearsing on a workstation
+
+The file is plain Compose (a subset of it), so it also runs on any
+Docker host, which is the closest check of the file itself short of a
+`balena push`:
+
+```sh
+docker compose up -d zenohd foxglove_bridge nav2
+```
+
+Name the services: `wifi_firmware` copies its blobs into
+`/extra-firmware`, a volume only balenaOS mounts (through the
+`io.balena.features.extra-firmware` label), so on a workstation the
+copy fails and the container restarts forever. Do not run this beside
+`../local/base.yml --profile standalone` — both start a router on
+port 7447. And note what this rehearsal is not: Nav2 here runs
+always-on against the wall clock with the router at `127.0.0.1`, the
+car's configuration. To *work* with the same images on a workstation
+use `../local/base.yml` (`--profile standalone --profile nav2`), or
+`../local/simulation.yml --profile nav2` against Gazebo — same
+Dockerfiles, same tags, plus the profiles, `.env` and bind mounts that
+balena forbids.
 
 The first push after a change to this directory's layout should be a
 local-mode push to one device: the supervisor's compose parser is a
