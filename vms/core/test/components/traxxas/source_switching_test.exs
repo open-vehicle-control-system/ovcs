@@ -82,6 +82,29 @@ defmodule VmsCore.Components.Traxxas.SourceSwitchingTest do
   defp source_message(name, value, source), do: %Message{name: name, value: value, source: source}
 
   describe "a level that commands nothing" do
+    test "sends neutral on the first tick even before a commander is selected" do
+      {:ok, controller} = FakeController.start_link(self())
+      OvcsBus.subscribe("messages")
+
+      {:ok, state} =
+        Throttle.init(%{
+          controller: controller,
+          external_pwm_id: 1,
+          selected_control_level_source: @manager
+        })
+
+      {:ok, :cancel} = :timer.cancel(state.loop_timer)
+      {:noreply, state} = Throttle.handle_info(:loop, state)
+
+      assert_received {:pwm, 1, true, duty, 100}
+      assert D.eq?(duty, D.new("0.15"))
+      assert_received %Message{name: :pulse_width_us, value: pulse, source: Throttle}
+      assert D.eq?(pulse, D.new(1500))
+
+      {:noreply, _state} = Throttle.handle_info(:loop, state)
+      refute_received {:pwm, _, _, _, _}
+    end
+
     test "zeroes the throttle rather than holding it" do
       # The dangerous case: driving at 0.6, switched to a level with no
       # commander. Holding would keep the vehicle moving.
@@ -293,6 +316,58 @@ defmodule VmsCore.Components.Traxxas.SourceSwitchingTest do
   end
 
   describe "the cap" do
+    test "an out-of-range request cannot exceed either cap" do
+      curve = Throttle.curve(%{max_throttle: D.new("0.1"), max_reverse: D.new("0.2")})
+
+      for linear <- [false, true] do
+        assert D.eq?(Throttle.shape(D.new(2), linear, curve), D.new("0.1"))
+        assert D.eq?(Throttle.shape(D.new(-2), linear, curve), D.new("-0.2"))
+      end
+    end
+
+    test "a narrow pulse range remains progressive and is reported after shaping" do
+      {:ok, controller} = FakeController.start_link(self())
+      OvcsBus.subscribe("messages")
+
+      curve =
+        Throttle.curve(%{
+          deadzone: D.new("0.05"),
+          expo: D.new("0.5"),
+          start_offset: D.new("0.02"),
+          max_throttle: D.new("0.1"),
+          max_reverse: D.new("0.2")
+        })
+
+      state = throttle_state(%{controller: controller, curve: curve, throttle: nil})
+
+      # 0.525 is the midpoint of the usable trigger travel after deadzone.
+      for {request, expected_pulse} <- [
+            {"0.05", "1500"},
+            {"0.052", "1510.042193905817174515235457"},
+            {"0.525", "1525"},
+            {"1", "1550"},
+            {"-1", "1400"},
+            {"0", "1500"}
+          ],
+          reduce: state do
+        state ->
+          {:noreply, state} =
+            Throttle.handle_info(:loop, %{state | requested_throttle: D.new(request)})
+
+          assert_received {:pwm, 1, true, duty, 100}
+
+          assert_in_delta D.to_float(D.mult(duty, 10_000)),
+                          D.to_float(D.new(expected_pulse)),
+                          0.000001
+
+          assert_received %Message{name: :pulse_width_us, value: pulse, source: Throttle}
+          assert D.eq?(D.div(pulse, 10_000), duty)
+          assert_received %Message{name: :throttle, value: output, source: Throttle}
+          assert D.eq?(output, state.throttle)
+          state
+      end
+    end
+
     test "scales a hand's output onto [start_offset, max_throttle]" do
       # Scaled, not clipped: full trigger still means "as fast as
       # allowed", so the whole travel stays useful.
