@@ -59,6 +59,19 @@ services:
     # `always` default and the container simply never exits (see
     # ./images/wifi-firmware/Dockerfile).
 
+  wifi_ap_fix:
+    # Correct the host supplicant's channel-149 / 80 MHz center frequency
+    # and restore the tested transmit-power limit after driver resets.
+    build: ./images/wifi-ap-fix
+    restart: always
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+    labels:
+      io.balena.features.dbus: '1'
+    environment:
+      DBUS_SYSTEM_BUS_ADDRESS: unix:path=/host/run/dbus/system_bus_socket
+
   bridge_nat_fix:
     # Keeps the host's NAT off frames the ovcs0 bridge forwards between
     # eth0 and the access point — without it mDNS between a laptop on

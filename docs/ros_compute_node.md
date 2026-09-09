@@ -183,7 +183,7 @@ Two networks, each doing the one thing it is good at:
         │      MASQUERADE out via the uplink             │
         └────┬────────────────────────────┬──────────────┘
              │                            │
-          eth0                      wlP1p1s0  (AX210 AP "OVCS-Mini", 2.4 GHz)
+          eth0                      wlP1p1s0  (AX210 AP "OVCS-Mini", 5 GHz)
      vehicle switch:                a laptop with no site Wi-Fi,
      VMS, bridge-ros,               or one that wants the fabric
      bridge-ros_perception          at full rate
@@ -234,11 +234,13 @@ each file explain the rest:
   `NetworkManager.conf` lists `interface-name:br*` as unmanaged, so
   such a bridge is invisible to NetworkManager and activation fails
   with `device is strictly unmanaged`.
-- **The access point is 2.4 GHz because that is all the card offers.**
-  The AX210 is a self-managed regulatory phy; 5 GHz is either
-  `IR-CONCURRENT`, `DFS`, or in a band the ETSI regdb caps at 13 dBm
-  and partly allocates to road tolling. A 5 GHz AP here needs a
-  different card and hostapd, not a config change.
+- **The access point uses channel 149 at 80 MHz.** NetworkManager 1.52
+  generates an invalid VHT center frequency of 5770 MHz for this channel.
+  The `wifi_ap_fix` service corrects it to 5775 MHz through the host
+  supplicant's D-Bus interface and reapplies the tested 6 dBm TX limit.
+  Keep the configured regulatory country and account for antenna gain
+  when changing power. Deploy the service before installing the 5 GHz
+  profile; see the [host instructions](../compose/compute/host/README.md).
 
 ### Reaching the vehicle network from the site Wi-Fi
 
