@@ -27,19 +27,23 @@ defmodule OvcsMini.Vms.Composer do
   # the gearing and the cap, not a measured dimension of the chassis.
   # ESTIMATE: a stock Slash 4x4 does roughly 30 mph and the simulated
   # model is capped at 13 m/s; the uncapped truck was estimated at
-  # 5 m/s and this is half of it, but nothing has measured this one
-  # under load.
-  @max_speed_m_s 2.5
+  # 5 m/s and a tenth of the pulse range is taken as a tenth of that,
+  # though an ESC is not linear and nothing has measured this one under
+  # load. The pulse speed sensor below is what to measure it with.
+  @max_speed_m_s 0.5
 
   # Throttle feel, see `Traxxas.Throttle` for what each one does.
   @throttle_deadzone Decimal.new("0.05")
   @throttle_expo Decimal.new("0.5")
   @throttle_start_offset Decimal.new("0.06")
-  # Half the pulse range forward. The uncapped truck is far too fast for
-  # where it drives; the reverse side stays at 1 because on this ESC the
-  # first pull into negative is the brake.
-  @throttle_max Decimal.new("0.5")
-  @throttle_max_reverse Decimal.new("1")
+  # A tenth of the pulse range forward (1550 µs at full trigger), with
+  # the ESC calibrated against this actuator's full 1000-2000 µs range.
+  # Half the range was far too fast for where the truck drives and a
+  # fifth still was. Reverse is capped too, a little higher: on this
+  # ESC the first pull into negative is the brake, so this is also the
+  # braking force, and at these speeds a fifth of it stops the truck.
+  @throttle_max Decimal.new("0.1")
+  @throttle_max_reverse Decimal.new("0.2")
 
   # The trigger magnet sits in the spur gear, so wheel speed needs the
   # ratio from the spur gear to the wheels: the Slash 4x4 transmission's
