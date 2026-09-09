@@ -3,29 +3,35 @@
 # this: what it adds is a route off the vehicle (balena OTA, the cloud
 # SSH tunnel, NTP) and the address a laptop on the site Wi-Fi reaches
 # Foxglove and the balena host at. Reserve that lease on the site router
-# for wlan0's MAC if a stable URL matters. The same site network goes in
+# for the onboard radio's MAC if a stable URL matters. The same site network goes in
 # the vehicle's WIFI_NETWORKS so each Nerves board joins it too.
 #
 # Separate phy from the AX210, so the AP's channel and this link's
-# channel do not constrain each other. Note that the phy *indices* are
-# assigned in probe order and do swap between boots, so never identify
-# either radio by `phy#N` — go through the interface name.
+# channel do not constrain each other.
 #
-# wlan0 is a safe pin even though the boot log can show the AX210
-# transiently claiming that name ("wlP1p1s0: renamed from wlan0"): the
-# AX210 is always renamed to its PCI-path name, so the onboard SDIO
-# radio, which has no predictable name to be given, always ends up as
-# wlan0. Add a `[match] driver=brcmfmac` section if a third radio ever
-# joins the box.
+# Matched by driver, not by name. The kernel hands out wlan0 to
+# whichever radio registers first, and on a boot where the AX210 got it
+# ("wlP1p1s0: renamed from wlan0" in the log) the onboard radio ends up
+# as wlan1 for good — the AX210's rename to its PCI-path name frees
+# wlan0 but nothing renames the Broadcom after the fact. A profile
+# pinned to wlan0 then never activates: no uplink, no NTP, no cloud
+# tunnel, and the compute node unreachable from the site Wi-Fi. The
+# brcmfmac driver is the one thing about the onboard radio that never
+# changes. Do not add an interface-name; with `[match]` present it
+# would have to agree on every boot.
 #
 # `method=auto` and no [ipv4] address: this side takes a lease. Leave
 # it as the only default route on the box — the bridge deliberately
-# installs none.
+# installs none. autoconnect-priority outranks any profile
+# NetworkManager generates for the radio on its own.
 
 [connection]
 id=uplink
 type=wifi
-interface-name=wlan0
+autoconnect-priority=10
+
+[match]
+driver=brcmfmac
 
 [wifi]
 mode=infrastructure
