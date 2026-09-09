@@ -504,7 +504,10 @@ one is open.
 compute node. The `wifi_firmware` service stages the blobs and iwlwifi
 binds them at boot ("loaded firmware version 89…", "loaded PNVM
 version…"); `"country": "BE"` reaches the AX210's self-managed phy;
-`OVCS-Mini` comes up unattended on ch 11 as `WPA2 WPA3`; `ovcs0` holds
+`OVCS-Mini` comes up unattended as `WPA2 WPA3` — on ch 11 before the
+5 GHz profile, on ch 149 / 80 MHz with `wifi_ap_fix` deployed, and the
+2.4 GHz clone `ovcs0-ap-fallback` takes over if 5 GHz cannot start;
+`ovcs0` holds
 `10.42.0.1/24` with `eth0` and the access point as its ports, and
 dnsmasq leases to the three Nerves boards by hostname. `uplink` on the
 onboard radio is the only default route. Every Nerves firmware is built
@@ -514,10 +517,9 @@ and both bridges peer with the router over the wire.
 
 What is left:
 
-1. Decide whether HT40 is worth it. `channel-width` is auto (HT20)
-   today; HT40 roughly doubles throughput for a laptop on the access
-   point but needs ch 3-9, which is where the site's other APs already
-   are.
+1. Confirm the 5 GHz access point survives a cold boot on the car,
+   including the fallback path (`ovcs0-ap-fallback` on ch 11 when
+   ch 149 does not come up).
 2. A reservation on the site router for the compute node's onboard radio, so
    the Foxglove URL stops moving.
 

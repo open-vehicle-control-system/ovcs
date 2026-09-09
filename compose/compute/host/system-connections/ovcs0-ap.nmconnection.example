@@ -4,6 +4,17 @@
 # 1.52: it corrects the VHT center to 5775 MHz and limits TX power to
 # 6 dBm. Deploy that service before activating this profile.
 #
+# The 6 dBm is not a tuning value. An 80 MHz channel centred on 5775 MHz
+# spans 5735-5815 MHz; the ETSI/BE table caps 5725-5875 at 13 dBm and
+# 5795-5815 is the road-tolling band, so this transmitter, on a vehicle,
+# sits inside it. The card would offer 22 dBm here. Raising the limit
+# means re-reading that table first, and the 2.4 GHz fallback profile
+# (see ../README.md) exists precisely so nothing forces the issue.
+#
+# The lower 5 GHz channels are no alternative: 36-48 are IR-CONCURRENT
+# (AP only alongside a client link on the same channel) and 52-140 are
+# DFS, which the supplicant's AP mode cannot do.
+#
 # Requires `"country":"BE"` in /mnt/boot/config.json. Without a country
 # the phy sits in regulatory domain 00, where AP mode cannot beacon.
 #

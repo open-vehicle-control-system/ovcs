@@ -62,6 +62,12 @@ services:
   wifi_ap_fix:
     # Correct the host supplicant's channel-149 / 80 MHz center frequency
     # and restore the tested transmit-power limit after driver resets.
+    # It edits the network inside the host's wpa_supplicant over D-Bus,
+    # behind NetworkManager's back: NetworkManager rewrites that network
+    # every time it (re)activates the profile, which is why the service
+    # loops every two seconds rather than acting once. If the access
+    # point ever behaves oddly, this tug-of-war is the first suspect —
+    # `balena logs wifi_ap_fix` shows each correction it makes.
     build: ./images/wifi-ap-fix
     restart: always
     network_mode: host
