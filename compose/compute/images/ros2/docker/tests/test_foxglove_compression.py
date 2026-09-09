@@ -2,8 +2,8 @@
 
 import asyncio
 import importlib.util
-from pathlib import Path
 import unittest
+from pathlib import Path
 
 from websockets.asyncio.client import connect
 from websockets.asyncio.server import serve
@@ -58,14 +58,16 @@ class CompressionRelayTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(await asyncio.wait_for(peer.recv(), 3), message)
 
     async def test_clients_have_separate_sessions_and_compression_is_optional(self):
-        async with connect(self.uri, subprotocols=[relay.PROTOCOL]) as first:
-            async with connect(self.uri, subprotocols=[relay.PROTOCOL], compression=None) as second:
-                self.assertNotIn("Sec-WebSocket-Extensions", second.response.headers)
-                await first.send("first")
-                await second.send("second")
-                self.assertEqual(await asyncio.wait_for(first.recv(), 3), "first")
-                self.assertEqual(await asyncio.wait_for(second.recv(), 3), "second")
-                self.assertEqual(self.upstream_connections, 2)
+        async with (
+            connect(self.uri, subprotocols=[relay.PROTOCOL]) as first,
+            connect(self.uri, subprotocols=[relay.PROTOCOL], compression=None) as second,
+        ):
+            self.assertNotIn("Sec-WebSocket-Extensions", second.response.headers)
+            await first.send("first")
+            await second.send("second")
+            self.assertEqual(await asyncio.wait_for(first.recv(), 3), "first")
+            self.assertEqual(await asyncio.wait_for(second.recv(), 3), "second")
+            self.assertEqual(self.upstream_connections, 2)
 
     async def test_upstream_close_terminates_client_session(self):
         async with connect(self.uri, subprotocols=[relay.PROTOCOL]) as peer:

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Relay Foxglove messages with lossless WebSocket compression."""
 
 import argparse
