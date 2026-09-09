@@ -28,6 +28,11 @@ defmodule OvcsMini.Vms.Composer do
   # 13 m/s, but nothing has measured this one under load.
   @max_speed_m_s 5.0
 
+  # Throttle feel, see `Traxxas.Throttle` for what each one does.
+  @throttle_deadzone Decimal.new("0.05")
+  @throttle_expo Decimal.new("0.5")
+  @throttle_start_offset Decimal.new("0.06")
+
   # The trigger magnet sits in the spur gear, so wheel speed needs the
   # ratio from the spur gear to the wheels: the Slash 4x4 transmission's
   # fixed 2.72:1. The pinion does not enter into it. One magnet, one
@@ -179,8 +184,25 @@ defmodule OvcsMini.Vms.Composer do
          external_pwm_id: 1,
          selected_control_level_source: Managers.ControlLevel,
          # A velocity is a physical quantity, not a hand on a trigger:
-         # it bypasses the joystick feel curve.
-         linear_sources: [OVCS.RosVelocityCommand]
+         # it bypasses the dead zone, the feel curve and the start
+         # offset below.
+         linear_sources: [OVCS.RosVelocityCommand],
+         # The trigger at rest drifts by up to 20 counts of 500, and
+         # the joystick node's own dead zone is the same 5%. Matches
+         # `RadioControl.Throttle`'s braking threshold, so a trigger
+         # that reads as braking also reads as a request here.
+         deadzone: @throttle_deadzone,
+         # Half way between linear and the full square: enough
+         # flattening for fine control at low speed without pushing
+         # the edge of motion a third of the way along the trigger.
+         expo: @throttle_expo,
+         # ESTIMATE: the throttle output at which the wheels first
+         # move. The radio control page shows the request, not the
+         # output, so the reading has to be run through the curve in
+         # force when it was taken. Too low only wastes a little
+         # travel; too high makes the first touch a jump, so it starts
+         # conservative.
+         start_offset: @throttle_start_offset
        }},
       {OVCS.PulseSpeedSensor,
        %{

@@ -71,6 +71,7 @@ defmodule VmsCore.Components.Traxxas.SourceSwitchingTest do
         selected_control_level_source: @manager,
         requested_throttle_source: @commander,
         linear_sources: [],
+        curve: Throttle.curve(%{}),
         requested_throttle: D.new("0.6"),
         throttle: D.new(0)
       },
@@ -205,17 +206,85 @@ defmodule VmsCore.Components.Traxxas.SourceSwitchingTest do
              "the ESC stayed on the previous source's shaping"
     end
 
-    test "a joystick-shaped request is squared, keeping its sign" do
-      assert D.eq?(Throttle.shape(D.new("0.5"), false), D.new("0.25"))
-      assert D.eq?(Throttle.shape(D.new("-0.5"), false), D.new("-0.25"))
-      assert D.eq?(Throttle.shape(D.new("1"), false), D.new("1"))
+    test "with no curve configured a joystick request is squared, keeping its sign" do
+      curve = Throttle.curve(%{})
+      assert D.eq?(Throttle.shape(D.new("0.5"), false, curve), D.new("0.25"))
+      assert D.eq?(Throttle.shape(D.new("-0.5"), false, curve), D.new("-0.25"))
+      assert D.eq?(Throttle.shape(D.new("1"), false, curve), D.new("1"))
     end
 
     test "a physical quantity is applied as is" do
       # A planner asking for a fifth of full speed must get a fifth,
       # not a twenty-fifth.
-      assert D.eq?(Throttle.shape(D.new("0.2"), true), D.new("0.2"))
-      assert D.eq?(Throttle.shape(D.new("-0.2"), true), D.new("-0.2"))
+      curve = Throttle.curve(%{})
+      assert D.eq?(Throttle.shape(D.new("0.2"), true, curve), D.new("0.2"))
+      assert D.eq?(Throttle.shape(D.new("-0.2"), true, curve), D.new("-0.2"))
+    end
+
+    test "expo blends between linear and square" do
+      linear = Throttle.curve(%{expo: D.new(0)})
+      half = Throttle.curve(%{expo: D.new("0.5")})
+
+      assert D.eq?(Throttle.shape(D.new("0.5"), false, linear), D.new("0.5"))
+      # Half of 0.5 plus half of 0.25.
+      assert D.eq?(Throttle.shape(D.new("0.5"), false, half), D.new("0.375"))
+      assert D.eq?(Throttle.shape(D.new("-0.5"), false, half), D.new("-0.375"))
+      assert D.eq?(Throttle.shape(D.new("1"), false, half), D.new("1"))
+    end
+
+    test "the dead zone reads a drifting hand as zero and keeps full deflection" do
+      curve = Throttle.curve(%{deadzone: D.new("0.05"), expo: D.new(0)})
+
+      assert D.eq?(Throttle.shape(D.new("0.04"), false, curve), D.new(0))
+      assert D.eq?(Throttle.shape(D.new("-0.05"), false, curve), D.new(0))
+      assert D.eq?(Throttle.shape(D.new("1"), false, curve), D.new("1"))
+      assert D.eq?(Throttle.shape(D.new("-1"), false, curve), D.new("-1"))
+      # The remaining travel is stretched: 0.525 sits half way between
+      # 0.05 and 1, so it maps to 0.5.
+      assert D.eq?(Throttle.shape(D.new("0.525"), false, curve), D.new("0.5"))
+    end
+
+    test "the start offset lifts every non-zero output to the edge of motion" do
+      curve =
+        Throttle.curve(%{deadzone: D.new("0.05"), expo: D.new(0), start_offset: D.new("0.1")})
+
+      assert D.eq?(Throttle.shape(D.new(0), false, curve), D.new(0))
+
+      assert D.eq?(Throttle.shape(D.new("0.03"), false, curve), D.new(0)),
+             "a hand at rest must not creep the vehicle forward"
+
+      # The first request past the dead zone already sits at the offset.
+      first = Throttle.shape(D.new("0.06"), false, curve)
+      assert D.gt?(first, D.new("0.1")) and D.lt?(first, D.new("0.12"))
+
+      reverse = Throttle.shape(D.new("-0.06"), false, curve)
+      assert D.lt?(reverse, D.new("-0.1")) and D.gt?(reverse, D.new("-0.12"))
+
+      assert D.eq?(Throttle.shape(D.new("1"), false, curve), D.new("1"))
+      # 0.525 -> 0.5 after the dead zone -> 0.1 + 0.9 * 0.5.
+      assert D.eq?(Throttle.shape(D.new("0.525"), false, curve), D.new("0.55"))
+    end
+
+    test "a physical quantity skips the dead zone, the curve and the start offset" do
+      # A planner decelerating through a tiny velocity must be followed
+      # down, not held at the edge of motion until it publishes exactly
+      # zero.
+      curve =
+        Throttle.curve(%{deadzone: D.new("0.05"), expo: D.new(1), start_offset: D.new("0.1")})
+
+      assert D.eq?(Throttle.shape(D.new(0), true, curve), D.new(0))
+      assert D.eq?(Throttle.shape(D.new("0.02"), true, curve), D.new("0.02"))
+      assert D.eq?(Throttle.shape(D.new("-0.5"), true, curve), D.new("-0.5"))
+      assert D.eq?(Throttle.shape(D.new("1"), true, curve), D.new("1"))
+    end
+
+    test "the curve parameters are validated" do
+      assert_raise ArgumentError, fn -> Throttle.curve(%{expo: D.new("1.5")}) end
+      assert_raise ArgumentError, fn -> Throttle.curve(%{deadzone: D.new("-0.1")}) end
+
+      assert_raise ArgumentError, fn ->
+        Throttle.curve(%{deadzone: D.new("0.5"), start_offset: D.new("0.5")})
+      end
     end
   end
 end
