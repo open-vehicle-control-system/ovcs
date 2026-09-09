@@ -117,7 +117,7 @@ ovcs/
 |   +-- express_lrs/              MAVLink v2 telemetry reader (ExpressLRS)
 |   +-- msp_osd/                  MSP / DisplayPort OSD stack for MSP-compatible VTXs
 |
-+-- ros2/                       ROS 2 Lyrical + Zenoh router compose stacks: vehicule/ (balenaOS) and base/ (dev box)
++-- compose/                    Container stacks: compute/ (the vehicle's compute node, balenaOS) and local/ (operator + simulation)
 +-- cli/                        Rust source for the `ovcs` CLI (binary at cli/ovcs)
 +-- scripts/                    Utility scripts (setup_can.sh, bind_remote_can.rb, ...)
 +-- candumps/                   CAN bus capture logs for offline testing and replay
@@ -205,7 +205,7 @@ Subscribe to the [Spin42 Engineering YouTube channel](https://www.youtube.com/@s
 Full documentation is in the [`docs/`](./docs/README.md) directory:
 
 1. [Getting Started](./docs/getting_started.md) — environment setup and installation
-2. [Simulation](./ros2/simulation/README.md) — drive a simulated OVCS Mini in Gazebo, no hardware needed
+2. [Simulation](./compose/local/simulation/README.md) — drive a simulated OVCS Mini in Gazebo, no hardware needed
 3. [Applications](./docs/applications.md) — what each app and library is, plus local-dev
 4. [Vehicle Parameterisation](./docs/vehicle_parameterisation.md) — how `VEHICLE` selects a composer and what each firmware boots
 5. [Hardware Architecture](./docs/hardware_architecture.md) — physical topology, CAN networks, controllers

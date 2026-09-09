@@ -77,7 +77,7 @@ Foxglove's 3D panel **does not support `vision_msgs`** — publishing
 only that puts the data on the wire with nothing to draw it. Markers,
 conversely, carry no class label, score or covariance in
 machine-readable form. (`ros-lyrical-vision-msgs` is installed in the
-`vehicule` image, so `foxglove_bridge` can deserialise the
+shared ROS image, so `foxglove_bridge` can deserialise the
 Detection3DArray too.)
 
 Each detection draws two markers: a `CUBE` coloured red-to-green by
@@ -91,7 +91,8 @@ as a detection that is still there.
 
 `/stereo/left/detections` is the Image panel's annotation topic — set
 under the panel's *Annotations* section, which the checked-in layout
-already does for the left camera. Each detection draws a `LINE_LOOP`
+(`compose/local/foxglove/ovcs_perception.json`) already does for the
+left camera. Each detection draws a `LINE_LOOP`
 box coloured red-to-green by score, with a `<class> <score>
 <distance>m` label above it on a dark backing plate.
 
@@ -107,9 +108,9 @@ message, and `LINE_LOOP` closes a rectangle in four points where a
 
 The cost is a dependency. `foxglove_msgs` is not in a ROS base
 install, so `ros-lyrical-foxglove-msgs` is installed in
-`ros2/vehicule/image/Dockerfile` — **without it `foxglove_bridge`
+`compose/compute/images/ros2/Dockerfile` — **without it `foxglove_bridge`
 cannot resolve the type and never advertises the topic**. Both the
-`vehicule` and `base` composes build from that one Dockerfile, so a
+vehicle and the local stacks build from that one Dockerfile, so a
 single change covers them, but the vehicle container has to be
 redeployed (`balena push <device-ip>`) before the overlay appears.
 

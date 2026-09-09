@@ -18,7 +18,7 @@ OVCS is developed on Linux. macOS users need a Linux VM (see [macOS setup](#loca
 | Ruby | 3.3+ | Utility scripts under `scripts/` (e.g. `bind_remote_can.rb`, `faker.rb`) | mise |
 | Python | 3.12+ | PlatformIO + misc tooling | mise |
 | [Flutter](https://flutter.dev/docs/get-started/install) | 3.32.8 | Infotainment dashboard | mise |
-| Docker + Compose v2 | Latest | The Gazebo simulator, the ROS base station, and the ROS compute node all run in containers (see [Simulation](../ros2/simulation/README.md)) | system package |
+| Docker + Compose v2 | Latest | The Gazebo simulator, the ROS base station, and the ROS compute node all run in containers (see [Simulation](../compose/local/simulation/README.md)) | system package |
 | can-utils | Latest | CAN bus utilities (`cansend`, `candump`, `canplayer`) | system package |
 | `fwup` | Latest | Nerves firmware image packager | system package |
 | `libsocketcan-dev` | Latest | Cantastic native CAN bindings | system package (firmware builds only) |

@@ -32,7 +32,9 @@ the repo, not on the SD card.
 The vehicle is the router. Everything else — the Nerves bridges, the
 on-vehicle nodes, the operator's laptop — is a Zenoh **client**, so
 the fabric survives the base station driving away. Compose files for
-both sides live in [`ros2/`](../ros2/README.md).
+both sides live in [`compose/`](../compose/README.md): what runs here
+in `compose/compute/`, what never leaves a workstation in
+`compose/local/`.
 
 ## Hardware
 
@@ -69,7 +71,7 @@ further.
 Alternatives weighed and not chosen:
 
 - **NixOS** — the best fit for this repo's ethos: the vehicle's OS
-  becomes a file next to `ros2/`, generations give atomic rollback,
+  becomes a file next to `compose/`, generations give atomic rollback,
   `nixos-rebuild --target-host` is the update path, and there is no
   vendor. Friction: Pi 5 needs the vendor-kernel route
   (`raspberry-pi-nix` / `nixos-hardware`), and it is a new toolchain
@@ -92,7 +94,7 @@ its own Node and ignores the repo's `node` pin.
 
 ```sh
 balena login
-cd ros2/vehicule
+cd compose/compute
 balena push <fleet>            # build on balena's builders, OTA to the fleet
 balena push <device>.local     # local mode: build on the device, no cloud
 ```
@@ -114,12 +116,14 @@ Local-mode pushes also leave the fleet's target state untouched, so
 nothing reaches the other devices until the same code is pushed to the
 fleet rather than to `<device>.local`.
 
-`ros2/vehicule/` is the balena **source root**. That is not cosmetic:
+`compose/compute/` is the balena **source root**. That is not cosmetic:
 `balena push` only reads a file literally named `docker-compose.yml` at
 the root of the pushed directory, and every `build:` context must sit
-inside that directory. This is why the shared image moved to
-`ros2/vehicule/image/` and the base station reaches across to it, and
-not the other way round.
+inside that directory. This is why every image the car runs lives under
+`compose/compute/images/` and the local stacks reach across to build
+the same ones, and not the other way round. The root also carries a
+`.dockerignore`: the pushed tarball is what OTA deltas are computed
+from, so `host/` and the README stay out of it.
 
 Runtime configuration is balena **fleet/device variables**, not a
 `.env` file. Whether such a variable *overrides* a value written
@@ -133,8 +137,8 @@ entrypoint).
 
 The balena supervisor implements a subset of Compose (see the
 [supported fields reference](https://docs.balena.io/reference/supervisor/docker-compose/)).
-`ros2/vehicule/docker-compose.yml` is written to stay inside it, and
-the differences from `ros2/base/docker-compose.yml` are all forced:
+`compose/compute/docker-compose.yml` is written to stay inside it, and
+the differences from `compose/local/*.yml` are all forced:
 
 | Not usable on balena | Consequence |
 |---|---|
@@ -145,9 +149,12 @@ the differences from `ros2/base/docker-compose.yml` are all forced:
 | shared image tags across services | every custom-image service carries its own `build:` |
 | BuildKit | no `COPY --chmod=`, no heredocs, no `RUN --mount` — balenaEngine builds with the classic engine |
 
-YAML anchors and `${VAR:-default}` interpolation are avoided too — not
-because they are known to fail, but because they are unverified against
-the balena parser and the launcher scripts already default everything.
+YAML anchors, `extends:` and `${VAR:-default}` interpolation are
+avoided too — not because they are known to fail, but because they are
+unverified against the balena parser and the launcher scripts already
+default everything. The local stacks share their Zenoh environment
+through `compose/local/common.yml`; the vehicle file spells it out per
+service.
 
 ## Networking
 
@@ -191,7 +198,7 @@ and full vehicle-local connectivity and simply have no route off the
 car. Only balena OTA, the cloud SSH tunnel and NTP need the uplink.
 
 Keyfile templates live in
-[`ros2/vehicule/host/system-connections/`](../ros2/vehicule/host/system-connections/).
+[`compose/compute/host/system-connections/`](../compose/compute/host/system-connections/).
 Two non-obvious constraints are baked into them, and the comments in
 each file explain the rest:
 
@@ -208,7 +215,7 @@ each file explain the rest:
 ### Installing it
 
 Prerequisite: the `wifi_firmware` service in
-[`../ros2/vehicule/docker-compose.yml`](../ros2/vehicule/docker-compose.yml)
+[`compose/compute/docker-compose.yml`](../compose/compute/docker-compose.yml)
 must have been deployed and the device rebooted once, or the AX210 has
 no driver bound and `wlP1p1s0` does not exist.
 
@@ -323,7 +330,7 @@ happens is a privileged service that writes the card's PCI address to
    built without `ZENOH_ENDPOINT_IP` set falls back to `127.0.0.1`,
    where no router is listening.
 4. Point the base station at it: `ZENOH_ENDPOINT_IP` in
-   `ros2/base/.env`, and Foxglove Studio at `ws://<pi-ip>:8765`.
+   `compose/local/.env`, and Foxglove Studio at `ws://<pi-ip>:8765`.
 
 Step 3 used to be the recurring cost of this design, because the
 address was whatever DHCP handed out. Now that the Pi hands out the

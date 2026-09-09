@@ -91,8 +91,6 @@ words:
   - uart
 
   # ROS compute node / immutable OS deployment
-  # `vehicule` is the deliberate French spelling used for the
-  # on-vehicle half of the ros2/ compose split.
   - balena
   - buildroot
   - nixos
@@ -101,7 +99,6 @@ words:
   - podman
   - quadlets
   - rclcpp
-  - vehicule
 
   # ROS 2 / Zenoh / Foxglove
   - cdr

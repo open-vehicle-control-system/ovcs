@@ -1,6 +1,6 @@
 # ROS 2 and the simulator — how the pieces connect
 
-A map, not a manual. [`ros2/simulation/README.md`](../ros2/simulation/README.md)
+A map, not a manual. [`compose/local/simulation/README.md`](../compose/local/simulation/README.md)
 tells you how to *run* the simulator; this tells you what is actually
 running, who owns time, and which command path is real. Read this
 first, then that.
@@ -37,15 +37,15 @@ on the same fabric as a real one.
 
 ```mermaid
 flowchart LR
-    subgraph vehicle["ros2/vehicule — on the car, balenaOS"]
+    subgraph vehicle["compose/compute — the vehicle's compute node, balenaOS"]
         zenohd["zenohd (the router)"]
         foxglove["foxglove_bridge"]
     end
-    subgraph base["ros2/base — the operator's laptop"]
+    subgraph base["compose/local/base.yml — the operator's laptop"]
         joy["joy node"]
         cli["ros2 CLI shell"]
     end
-    subgraph sim["ros2/simulation — a workstation"]
+    subgraph sim["compose/local/simulation.yml — a workstation"]
         gz["Gazebo + ros_gz_bridge"]
         nav2["Nav2"]
     end
@@ -63,7 +63,7 @@ flowchart LR
 ```
 
 The vehicle is the router so the fabric survives the laptop leaving.
-With no vehicle on the LAN, `ros2/base` carries a `standalone` copy of
+With no vehicle on the LAN, `compose/local/base.yml` carries a `standalone` copy of
 `zenohd` behind a compose profile — that is what every simulator
 session and every `verify-*` task uses.
 
@@ -88,7 +88,7 @@ the wire format in full.
 
 ## 2. What the simulator starts, and in what order
 
-`ros2/simulation/launch/sim.launch.py` brings up one vehicle in one
+`compose/local/simulation/launch/sim.launch.py` brings up one vehicle in one
 world. The order is load-bearing, and the launch file's own docstring
 says why for each step.
 
@@ -130,7 +130,7 @@ Some details that read like bugs until you know them:
 The model itself lives with its vehicle, in
 `vehicles/ovcs_mini/description/`, and is *mounted* into the container
 rather than baked in. A second vehicle is a second `description/`
-directory plus one line in `docker-compose.yml`.
+directory plus one line in `compose/local/simulation.yml`.
 
 ## 3. Topics: who publishes what
 
@@ -440,15 +440,17 @@ dependency order — `controller_server`, `planner_server`,
 from the Lyrical archive and would pull in map_server and AMCL.
 
 One configuration, three deployments. The parameter file, the
-behaviour trees and the launch file live in `ros2/vehicule/nav2/` —
+behaviour trees and the launch file live in `compose/compute/nav2/` —
 balena requires what the onboard image bakes in to sit inside its
-source root, and everything else reaches across:
+source root, and the local stacks reach across. The image is one too:
+`compose/compute/images/nav2/`, tagged `ovcs/nav2:lyrical` wherever it
+is built.
 
 | Where | Compose | Clock | Why |
 |---|---|---|---|
-| On the vehicle's ROS Pi | `ros2/vehicule/docker-compose.yml`, always on | wall | autonomy survives the base station leaving, like the router |
-| On a dev machine | `ros2/base/docker-compose.yml --profile nav2` | wall | the exact onboard image against a host VMS + bridge — `verify_planner_loop.sh` |
-| Against the simulator | `ros2/simulation/docker-compose.yml --profile nav2` | `use_sim_time:=true` | mounts the same files; the clock is the only difference, and it is a visible launch argument |
+| On the vehicle's compute node | `compose/compute/docker-compose.yml`, always on | wall | autonomy survives the base station leaving, like the router |
+| On a dev machine | `compose/local/base.yml --profile nav2` | wall | the exact onboard image against a host VMS + bridge — `verify_planner_loop.sh` |
+| Against the simulator | `compose/local/simulation.yml --profile nav2` | `use_sim_time:=true` | mounts the same files; the clock is the only difference, and it is a visible launch argument |
 
 The file's values are the vehicle's truth (`use_sim_time: false`); the
 simulator overlays the clock through a launch argument rather than
@@ -565,7 +567,7 @@ screen.
 ```mermaid
 sequenceDiagram
     participant V as verify_*.sh
-    participant R as zenohd + ros2 (ros2/base)
+    participant R as zenohd + ros2 (compose/local/base.yml)
     participant S as simulator
     participant X as nav2 or perception bridge
     participant T as test script
@@ -586,7 +588,7 @@ sequenceDiagram
 | `mise run verify-drivetrain` | `drive_test.py` | wheel radius, wheelbase, steering geometry | a wrong wheel radius: it cancels inside `AckermannSteering`, so `/odom` reports 1.000 m/s while the car crawls at 0.548. The check reads `/joint_states`. |
 | `mise run verify-nav2` | `nav2_test.py` | Nav2 arrives at an easy goal **and** commands within the Ackermann limits at a tight one | arrival: an unconstrained controller arrives *better* while commanding 3.68× the limit |
 | `mise run verify-perception` | `perception_test.py` | depth median, p75 and p95 match the world's box positions to a centimetre; fused detection depth | throughput: geometry is machine-independent and checked tightly; rates are checked against a floor |
-| `mise run verify-planner-loop` | `ros2/base/verify_planner_loop.sh` | no simulator at all: the vehicle's Nav2 image plans against `/odom` dead-reckoned by the host bridge from the host VMS's `0x60B`, and a goal produces nonzero `0x2B1` on vcan | the whole VMS-side conversion path, which Gazebo's loop bypasses |
+| `mise run verify-planner-loop` | `compose/local/scripts/verify_planner_loop.sh` | no simulator at all: the vehicle's Nav2 image plans against `/odom` dead-reckoned by the host bridge from the host VMS's `0x60B`, and a goal produces nonzero `0x2B1` on vcan | the whole VMS-side conversion path, which Gazebo's loop bypasses |
 
 The hard `sleep 20` / `sleep 30` / `sleep 25` are a known fragility —
 they are what "wait for the stack to settle" currently means, and a
@@ -604,8 +606,8 @@ Where to go next, by what you want to understand.
 
 | I want to understand… | Read | Then |
 |---|---|---|
-| how to run any of this | [`ros2/simulation/README.md`](../ros2/simulation/README.md) | `ros2/simulation/docker-compose.yml` |
-| the launch order and the bridge topic list | `ros2/simulation/launch/sim.launch.py` (its docstrings are the design notes) | `launch/nav2.launch.py`, `launch/teleop.launch.py` |
+| how to run any of this | [`compose/local/simulation/README.md`](../compose/local/simulation/README.md) | `compose/local/simulation.yml` |
+| the launch order and the bridge topic list | `compose/local/simulation/launch/sim.launch.py` (its docstrings are the design notes) | `launch/nav2.launch.py`, `launch/teleop.launch.py` |
 | the rmw_zenoh wire format | [`bridges/ros_bridge/README.md`](../bridges/ros_bridge/README.md) | `bridges/ros_bridge/lib/ros2/rmw_zenoh.ex`, `zenoh_client.ex` |
 | time | `bridges/ros_bridge/lib/ros_bridge/clock.ex` | `timing.ex`, `publishers/static_transform.ex` |
 | what a vehicle's bridge runs | `vehicles/ovcs_mini/lib/ovcs_mini.ex` (`ros_bridge_config/2`) | `bridges/ros_bridge/lib/ros_bridge/components.ex` |
@@ -613,7 +615,7 @@ Where to go next, by what you want to understand.
 | the velocity command path | `bridges/ros_bridge/lib/ros_bridge/consumers/velocity.ex` | `0x2B1_ros_velocity_command.yml`, `vms/core/lib/vms_core/components/ovcs/ros_velocity_command.ex` |
 | odometry on the real vehicle | `bridges/ros_bridge/lib/ros_bridge/publishers/odometry.ex` | `0x60B_vehicle_motion.yml`, `vms/core/lib/vms_core/components/ovcs/vehicle_motion.ex` |
 | who commands the vehicle | [`vehicle_parameterisation.md`](./vehicle_parameterisation.md#control-levels-who-commands-and-which-ros-node) | `vms/core/lib/vms_core/managers/control_level.ex` |
-| Nav2's configuration and why | `ros2/vehicule/nav2/config/nav2.yaml` (heavily commented) | `nav2_ackermann_bt.xml` beside it, `ros2/simulation/scripts/nav2_test.py` |
+| Nav2's configuration and why | `compose/compute/nav2/config/nav2.yaml` (heavily commented) | `nav2_ackermann_bt.xml` beside it, `compose/local/simulation/scripts/nav2_test.py` |
 | the perception pipeline | [`ros_perception_detection.md`](./ros_perception_detection.md) | `bridges/ros_bridge/lib/ros_bridge/camera/zenoh.ex`, `stereo_camera/supervisor.ex` |
-| the vehicle's ROS computer | [`ros_compute_node.md`](./ros_compute_node.md) | `ros2/vehicule/`, `ros2/README.md` |
+| the vehicle's ROS computer | [`ros_compute_node.md`](./ros_compute_node.md) | `compose/compute/`, `compose/README.md` |
 | the model's geometry | `vehicles/ovcs_mini/description/ovcs_mini.urdf.xacro` | `gazebo_ackermann.xacro`, `OvcsMini.geometry/0` |

@@ -1,0 +1,279 @@
+{
+  "configById": {
+    "3D!nav": {
+      "cameraState": {
+        "distance": 8,
+        "perspective": true,
+        "phi": 60,
+        "thetaOffset": 0,
+        "targetOffset": [1.0, 0, 0],
+        "target": [0, 0, 0],
+        "targetOrientation": [0, 0, 0, 1],
+        "fovy": 45,
+        "near": 0.1,
+        "far": 200
+      },
+      "followMode": "follow-pose",
+      "followTf": "odom",
+      "scene": {
+        "transforms": {
+          "showLabel": true,
+          "labelSize": 0.1,
+          "axisScale": 0.3
+        }
+      },
+      "transforms": {},
+      "topics": {
+        "/global_costmap/costmap": {
+          "visible": true,
+          "colorMode": "costmap",
+          "alpha": 0.5
+        },
+        "/local_costmap/costmap": {
+          "visible": true,
+          "colorMode": "costmap",
+          "alpha": 0.6
+        },
+        "/local_costmap/published_footprint": {
+          "visible": true,
+          "lineWidth": 0.03,
+          "color": "#ffd60a"
+        },
+        "/plan": {
+          "visible": true,
+          "lineWidth": 0.04,
+          "gradient": ["#00c853", "#00c853"]
+        },
+        "/local_plan": {
+          "visible": true,
+          "lineWidth": 0.05,
+          "gradient": ["#2979ff", "#2979ff"]
+        },
+        "/trajectories": {
+          "visible": false
+        },
+        "/odom": {
+          "visible": true,
+          "type": "arrow",
+          "arrowScale": [0.4, 0.06, 0.06],
+          "color": "#ff1744"
+        }
+      },
+      "layers": {
+        "grid": {
+          "visible": true,
+          "frameId": "odom",
+          "size": 20,
+          "divisions": 20,
+          "lineWidth": 1,
+          "color": "#248eff40",
+          "position": [0, 0, 0],
+          "rotation": [0, 0, 0],
+          "layerId": "foxglove.Grid",
+          "instanceId": "grid",
+          "label": "Grid",
+          "order": 1
+        }
+      },
+      "publish": {
+        "type": "pose",
+        "poseTopic": "/goal_pose",
+        "pointTopic": "/clicked_point",
+        "poseEstimateTopic": "/initialpose",
+        "poseEstimateXDeviation": 0.5,
+        "poseEstimateYDeviation": 0.5,
+        "poseEstimateThetaDeviation": 0.26179939
+      },
+      "foxglovePanelTitle": "Odometry frame: costmaps, plan, footprint — click to publish a goal"
+    },
+    "Plot!cmd_vel": {
+      "title": "Nav2 command (/cmd_vel_nav)",
+      "paths": [
+        {
+          "value": "/cmd_vel_nav.twist.linear.x",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "v (m/s)"
+        },
+        {
+          "value": "/cmd_vel_nav.twist.angular.z",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "omega (rad/s)"
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showPlotValuesInLegend": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "followingViewWidth": 20,
+      "foxglovePanelTitle": "Commanded velocity"
+    },
+    "Plot!odom_twist": {
+      "title": "Measured motion (/odom)",
+      "paths": [
+        {
+          "value": "/odom.twist.twist.linear.x",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "v (m/s)"
+        },
+        {
+          "value": "/odom.twist.twist.angular.z",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "yaw rate (rad/s)"
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showPlotValuesInLegend": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "followingViewWidth": 20,
+      "foxglovePanelTitle": "Measured velocity"
+    },
+    "Plot!odom_xy": {
+      "title": "Dead-reckoned position",
+      "paths": [
+        {
+          "value": "/odom.pose.pose.position.x",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "x (m)"
+        },
+        {
+          "value": "/odom.pose.pose.position.y",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "y (m)"
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showPlotValuesInLegend": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "followingViewWidth": 60,
+      "foxglovePanelTitle": "Position in odom"
+    },
+    "Plot!imu_gyro_z": {
+      "title": "IMU yaw rate vs odometry yaw rate",
+      "paths": [
+        {
+          "value": "/imu.angular_velocity.z",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "imu wz"
+        },
+        {
+          "value": "/odom.twist.twist.angular.z",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "odom wz"
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showPlotValuesInLegend": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "followingViewWidth": 20,
+      "foxglovePanelTitle": "Yaw rate: IMU vs odometry"
+    },
+    "RawMessages!heartbeat": {
+      "topicPath": "/ovcs_heartbeat.data",
+      "diffEnabled": false,
+      "showFullMessageForDiff": false,
+      "diffMethod": "custom",
+      "diffTopicPath": "",
+      "fontSize": 12,
+      "foxglovePanelTitle": "Bridge heartbeat"
+    },
+    "RawMessages!odom_header": {
+      "topicPath": "/odom.header",
+      "diffEnabled": false,
+      "showFullMessageForDiff": false,
+      "diffMethod": "custom",
+      "diffTopicPath": "",
+      "fontSize": 12,
+      "foxglovePanelTitle": "Odometry stamp (silence here halts Nav2)"
+    },
+    "RawMessages!diagnostics": {
+      "topicPath": "/diagnostics.status",
+      "diffEnabled": false,
+      "showFullMessageForDiff": false,
+      "diffMethod": "custom",
+      "diffTopicPath": "",
+      "fontSize": 12,
+      "foxglovePanelTitle": "Diagnostics"
+    },
+    "Tab!tf": {
+      "activeTabIdx": 0,
+      "tabs": [
+        {
+          "title": "TF tree",
+          "layout": "SourceInfo!tf"
+        }
+      ]
+    },
+    "SourceInfo!tf": {
+      "foxglovePanelTitle": "Topics on the fabric"
+    }
+  },
+  "globalVariables": {},
+  "userNodes": {},
+  "playbackConfig": {
+    "speed": 1
+  },
+  "layout": {
+    "first": "3D!nav",
+    "second": {
+      "first": {
+        "first": "Plot!cmd_vel",
+        "second": "Plot!odom_twist",
+        "direction": "column",
+        "splitPercentage": 50
+      },
+      "second": {
+        "first": {
+          "first": "Plot!odom_xy",
+          "second": "Plot!imu_gyro_z",
+          "direction": "column",
+          "splitPercentage": 50
+        },
+        "second": {
+          "first": {
+            "first": "RawMessages!heartbeat",
+            "second": "RawMessages!odom_header",
+            "direction": "column",
+            "splitPercentage": 35
+          },
+          "second": {
+            "first": "RawMessages!diagnostics",
+            "second": "Tab!tf",
+            "direction": "column",
+            "splitPercentage": 50
+          },
+          "direction": "column",
+          "splitPercentage": 45
+        },
+        "direction": "column",
+        "splitPercentage": 55
+      },
+      "direction": "column",
+      "splitPercentage": 40
+    },
+    "direction": "row",
+    "splitPercentage": 66
+  }
+}

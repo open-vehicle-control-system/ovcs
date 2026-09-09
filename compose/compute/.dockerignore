@@ -1,0 +1,10 @@
+# What `balena push` leaves out of the tarball it uploads. The tarball
+# is what OTA deltas are computed from, so nothing that is not a build
+# input belongs in it.
+#
+# Never list images/ or nav2/ here: the local stacks build the Nav2
+# image with this directory as context (`context: ../compute`), and a
+# single root .dockerignore applies to every build that uses it.
+host/
+README.md
+.dockerignore

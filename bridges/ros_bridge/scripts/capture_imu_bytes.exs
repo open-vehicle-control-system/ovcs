@@ -5,7 +5,7 @@
 #     mix run --no-start scripts/capture_imu_bytes.exs
 #
 # Expects a rclpy publisher producing on `/imu_probe` (see
-# `ros2/workspace/imu_probe.py`) with a Zenoh router on
+# `compose/local/workspace/imu_probe.py`) with a Zenoh router on
 # 127.0.0.1:7447.
 
 {:ok, config} = {:ok, Zenohex.Config.default()}

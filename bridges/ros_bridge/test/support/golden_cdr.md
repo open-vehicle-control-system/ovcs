@@ -33,7 +33,7 @@ is deserialisation by the real ROS runtime, not arithmetic.
 
 ## Regenerating
 
-Needs the `ovcs-ros2` container running (`ros2/base`, image
+Needs the `ovcs-ros2` container running (`compose/local/base.yml`, image
 `ovcs/ros2:lyrical`) — it carries both `visualization_msgs` and
 `vision_msgs`.
 
