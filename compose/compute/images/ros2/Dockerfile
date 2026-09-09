@@ -18,6 +18,13 @@ RUN apt-get update \
         ros-lyrical-rmw-zenoh-cpp \
         ros-lyrical-foxglove-bridge \
         ros-lyrical-foxglove-msgs \
+        # foxglove_bridge can only expose a topic or service whose
+        # definition it can load: Nav2's costmaps, behaviour-tree log
+        # and lifecycle services (nav2_msgs), costmap updates
+        # (map_msgs) and the /bond heartbeat need these three.
+        ros-lyrical-nav2-msgs \
+        ros-lyrical-map-msgs \
+        ros-lyrical-bond \
         ros-lyrical-joy-linux \
         ros-lyrical-vision-msgs \
         ros-lyrical-image-transport-plugins \

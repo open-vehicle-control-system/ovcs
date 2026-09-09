@@ -43,8 +43,8 @@ in `compose/compute/`, what never leaves a workstation in
 | Board | Raspberry Pi 5, 8 GB | ROS 2 Lyrical + Foxglove + perception nodes want the headroom |
 | Storage | NVMe (HAT) or USB SSD | ROS images are multi-GB and container writes destroy SD cards |
 | Clock | Pi 5 RTC connector + battery, plus NTP | see [Clock](#clock) |
-| Network | the Pi *is* the vehicle network — see [Networking](#networking) | the bridges' router IP is baked into firmware, so it has to be an address we choose |
-| Wi-Fi card | Intel AX210 (M.2 → PCIe), **plus** the onboard radio | the AX210 serves the access point; the onboard radio is the optional internet feed |
+| Network | the compute node *is* the vehicle network; every board also joins the site Wi-Fi on its own — see [Networking](#networking) | the bridges' router IP is baked into firmware, so it has to be an address we choose |
+| Wi-Fi card | Intel AX210 (M.2 → PCIe), **plus** the onboard radio | the AX210 serves the access point; the onboard radio joins the site Wi-Fi |
 
 This is a **new Pi**, not a repurposed one:
 
@@ -158,15 +158,23 @@ service.
 
 ## Networking
 
-The Pi *is* the vehicle network. It runs the access point, the DHCP
-server and the gateway, so the fabric exists as soon as the car has
-power — no infrastructure to be in range of, and an address for the
-Zenoh router that we choose rather than lease.
+Two networks, each doing the one thing it is good at:
+
+- **The wire is the vehicle.** The compute node runs the access point,
+  the DHCP server and the gateway of `10.42.0.0/24`, so the fabric
+  exists as soon as the car has power — no infrastructure to be in
+  range of, and an address for the Zenoh router (`10.42.0.1`) that we
+  choose rather than lease. The Nerves boards are cabled to it through
+  the vehicle switch.
+- **The site Wi-Fi is for people.** Every board — the compute node
+  through its onboard radio, each Nerves board through its own — also
+  joins the site's Wi-Fi as an ordinary client. That is where SSH,
+  `./ovcs connect`, the VMS dashboard, Foxglove and mDNS live, and
+  where internet (balena OTA, the cloud tunnel, NTP) comes from.
 
 ```
-                        internet (optional)
-                              │
-                wlan0 ── onboard Broadcom, client, default route
+            site Wi-Fi ── wlan0 of the compute node (uplink, default route)
+                       ── wlan0 of each Nerves board (WIFI_NETWORKS)
                               │  NAT
         ┌─────────────────────┴──────────────────────────┐
         │  ovcs0   10.42.0.1/24    NetworkManager bridge │
@@ -175,27 +183,31 @@ Zenoh router that we choose rather than lease.
         │      MASQUERADE out via wlan0                  │
         └────┬────────────────────────────┬──────────────┘
              │                            │
-          eth0                      wlP1p1s0  (AX210 AP, 2.4 GHz)
-     Nerves bridges                 base station laptop
+          eth0                      wlP1p1s0  (AX210 AP "OVCS-Mini", 2.4 GHz)
+     vehicle switch:                a laptop with no site Wi-Fi,
+     VMS, bridge-ros,               or one that wants the fabric
+     bridge-ros_perception          at full rate
 ```
 
 `eth0` and the access point are **ports on one bridge**, so the wired
-bridges and the wireless base station are a single L2 domain served by
-a single DHCP server, reachable at `tcp/10.42.0.1:7447` from either
-side without the Pi having to route between them.
+boards and a laptop on the access point are a single L2 domain served
+by a single DHCP server, reachable at `tcp/10.42.0.1:7447` from either
+side without the compute node having to route between them.
 
-That is the end state. **`eth0` joins last, and deliberately so** — the
-diagram above is where this is going, not where a fresh install starts.
-Until it is bridged, eth0 stays an ordinary DHCP client, which keeps it
-usable as the maintenance link while the access point is brought up and
-exercised. The two phases in [Installing it](#installing-it) reflect
-that: phase 1 cannot cost you access to the device, phase 2 can.
+The Nerves boards are dual-homed by their firmware: `eth0` takes its
+lease from `ovcs0` and carries the fabric; `wlan0` joins whichever of
+the vehicle's `WIFI_NETWORKS` (in `vehicles/<vehicle>/.env.exs`) is in
+range and carries everything a person does. VintageNet prefers the
+wired route when both are up, and the Zenoh endpoint is on the wire in
+any case. Nothing on the fabric depends on the site Wi-Fi: unplug it
+and the car keeps driving; take the car somewhere else and every Nerves
+board is still reachable through the access point.
 
-The onboard radio is deliberately not load-bearing. `method=shared`
-assigns the bridge address, starts dnsmasq and installs the NAT rule
-unconditionally; if `wlan0` is unassociated, clients still get leases
-and full vehicle-local connectivity and simply have no route off the
-car. Only balena OTA, the cloud SSH tunnel and NTP need the uplink.
+The onboard radio of the compute node is deliberately not load-bearing
+either. `method=shared` assigns the bridge address, starts dnsmasq and
+installs the NAT rule unconditionally; if `wlan0` is unassociated,
+clients still get leases and full vehicle-local connectivity and simply
+have no route off the car.
 
 Keyfile templates live in
 [`compose/compute/host/system-connections/`](../compose/compute/host/system-connections/).
@@ -211,6 +223,69 @@ each file explain the rest:
   `IR-CONCURRENT`, `DFS`, or in a band the ETSI regdb caps at 13 dBm
   and partly allocates to road tolling. A 5 GHz AP here needs a
   different card and hostapd, not a config change.
+
+### Reaching the vehicle network from the site Wi-Fi
+
+A laptop on the site Wi-Fi reaches each Nerves board directly, at its
+own site address, by mDNS: `ping ovcs-mini-vms.local`, `./ovcs connect
+ovcs_mini vms`, the dashboard at `http://ovcs-mini-vms.local:4000`.
+Foxglove attaches to the compute node's site address (the `uplink`
+lease — reserve it on the site router for `wlan0`'s MAC if a stable URL
+matters).
+
+What that laptop does *not* have is a route into `10.42.0.0/24`:
+`method=shared` masquerades outbound traffic and forwards nothing in,
+so `ping 10.42.0.1` fails and a board's wired address is unreachable.
+The two ways in:
+
+- **Join the access point.** `OVCS-Mini` puts the laptop on the fabric
+  itself — needed for anything that must see the wire (a `z_sub`
+  against the router, a board whose Wi-Fi is down), and the better
+  path for Foxglove when the stereo streams saturate the compute
+  node's onboard radio.
+- **Hop through the compute node for SSH.** The balenaOS host is on
+  both networks and its sshd forwards, so one block in `~/.ssh/config`
+  makes every wired address reachable for `ssh`, and therefore for
+  `./ovcs upload` and `./ovcs connect --host`, which run `ssh`
+  underneath:
+
+  ```
+  Host 10.42.0.*
+      ProxyJump root@<compute node site address>:22222
+      StrictHostKeyChecking accept-new
+  ```
+
+  Only SSH goes through it — nothing else on the laptop sees
+  `10.42.0.0/24` — and the compute node's site address is a lease, so
+  the block follows it. It is the way to reflash a board whose own
+  Wi-Fi is not configured yet, without changing the laptop's network.
+
+### Why not relay the site Wi-Fi onto the wire
+
+The obvious alternative — the AX210 as a *client* of the site Wi-Fi,
+the wired switch placed on that same network — was built and tested on
+the car, and is not the design for two reasons worth keeping:
+
+- A Wi-Fi station cannot be a port of a Linux bridge (802.11 frames
+  carry three addresses, so the access point drops anything whose
+  source MAC is not the station's; NetworkManager will not enslave a
+  station), which leaves a layer-3 imitation: proxy ARP plus a DHCP
+  relay. The proxy ARP half works — the site's access point accepted
+  several addresses behind the card's MAC — but its **DHCP server
+  ignored every relayed request**, broadcast or unicast, as guest
+  networks and consumer routers commonly do. The remaining options were
+  a local pool inside the site's subnet (a collision risk on any
+  network whose DHCP range is unknown) or impersonating each board at
+  the DHCP level, both of them workarounds for sharing one radio.
+- Even when it works, the router address baked into the bridge
+  firmwares becomes the AX210's *lease*, so every new site means a
+  reservation on someone else's router or a firmware rebuild, and no
+  site in range means no fabric at all.
+
+Giving each board its own Wi-Fi removes the shared radio, and with it
+the whole problem: real leases for everyone, mDNS native on both
+networks, a constant router address, and a fabric that does not need
+the site.
 
 ### Installing it
 
@@ -236,14 +311,17 @@ partition). A keyfile dropped in `/mnt/boot` and then
 is why the sequences below write both places: `/mnt/boot` so the
 configuration survives, `/etc` so it can be activated without a reboot.
 
-#### Phase 1 — the access point
+`eth0` is the maintenance link on a fresh install and changes last:
+phase 1 cannot cost you access to the device, phase 2 can.
+
+#### Phase 1 — the access point and the uplink
 
 Nothing here touches `eth0`, so the maintenance link and the balena
-cloud tunnel stay up throughout. Copy `ovcs0` and `ovcs0-ap` (and
-`uplink`, if the onboard radio is wanted as an internet feed — it is
-optional and can wait) into **both** directories, then:
+cloud tunnel stay up throughout. Copy `ovcs0`, `ovcs0-ap` and `uplink`
+into **both** directories, then:
 
-1. Fill in the AP SSID and PSK. The filled copies are gitignored.
+1. Fill in the AP SSID and PSK, and the site Wi-Fi's in `uplink`. The
+   filled copies are gitignored.
 2. Add the regulatory domain to `/mnt/boot/config.json` —
    `"country": "BE"`. `balena-net-config` turns that into
    `iw reg set "$COUNTRY"` at boot. Without it the card sits in domain
@@ -259,36 +337,45 @@ optional and can wait) into **both** directories, then:
    `balena-config-vars --no-cache` to verify, and remember the value
    only reaches the driver at the next boot.
 3. `chmod 600` the `/etc` copies and `nmcli connection reload`.
-4. `nmcli con up ovcs0`. Join the access point from a laptop and check
+4. `nmcli con up uplink && ip -4 addr show wlan0` — this address is the
+   way in from now on; open a second SSH session on it.
+5. `nmcli con up ovcs0`. Join the access point from a laptop and check
    it gets a lease in `10.42.0.0/24` and can reach `10.42.0.1`.
-5. Reboot and check the same things again. Keyfile autoconnect at boot
+6. Reboot and check the same things again. Keyfile autoconnect at boot
    is a different code path from `nmcli con up`, and this is the first
    time it runs unattended.
 
-While eth0 is still an ordinary DHCP client it also remains the default
-route, so `method=shared`'s MASQUERADE rule sends AP clients out
-through it. Convenient for testing; it stops being true in phase 2,
-which is what `uplink` is for.
-
 #### Phase 2 — bridging eth0
 
-Only when the vehicle is actually being wired up. Activating
-`ovcs0-eth0` converts eth0 from DHCP client to DHCP *server* and drops
-the Pi's lease on whatever it is plugged into, so:
+Activating `ovcs0-eth0` converts `eth0` from DHCP client to DHCP
+*server* and drops the compute node's lease on whatever it is plugged
+into, so:
 
-1. Bring up `uplink` first and confirm the cloud tunnel survives on it
-   — it becomes the only way in if the wired side goes wrong:
-   `nmcli con up uplink && ip route get 1.1.1.1`.
-2. **Move eth0 to the vehicle's own switch.** On an office LAN this Pi
-   would become a rogue DHCP server the moment step 3 lands.
+1. Be connected over the `uplink` address, and confirm the cloud tunnel
+   is on it: `ip route get 1.1.1.1` should name `wlan0`.
+2. **Move `eth0` to the vehicle's own switch**, with the switch
+   disconnected from any site LAN. On an office LAN this would become
+   a rogue DHCP server the moment step 3 lands.
 3. Copy `ovcs0-eth0` into both directories, `chmod 600` the `/etc`
-   copy, `nmcli connection reload`, `nmcli con up ovcs0-eth0`.
+   copy, `nmcli connection reload`, `nmcli con up ovcs0-eth0`. Within
+   seconds `/var/lib/NetworkManager/dnsmasq-ovcs0.leases` lists the
+   boards, by hostname.
 4. Reboot, and confirm eth0 came back as a bridge port rather than
    picking up a fresh lease.
 
 Keep `ovcs0-eth0` out of `/mnt/boot/system-connections/` until step 3.
 Everything in that directory autoconnects at boot, so staging it early
 means a reboot silently performs phase 2 for you.
+
+#### The boards
+
+Put the site Wi-Fi in `WIFI_NETWORKS` in `vehicles/<vehicle>/.env.exs`
+and set `ZENOH_ENDPOINT_IP` to the bridge address — see
+[Wiring it into OVCS](#wiring-it-into-ovcs). Rebuild and upload every
+Nerves firmware of the vehicle; boards that have not been reflashed yet
+are reachable for the upload through the
+[SSH hop](#reaching-the-vehicle-network-from-the-site-wi-fi) at the
+wired address `dnsmasq-ovcs0.leases` gives them.
 
 #### Checks
 
@@ -301,27 +388,33 @@ means a reboot silently performs phase 2 for you.
 iw phy$(cat /sys/class/net/wlP1p1s0/phy80211/index) reg get | head -2
 iw dev wlP1p1s0 info                 # type AP, expected channel
 ip -4 addr show ovcs0                # 10.42.0.1/24
-ls /sys/class/net/ovcs0/brif/        # wlP1p1s0; plus eth0 after phase 2
+ls /sys/class/net/ovcs0/brif/        # eth0 wlP1p1s0
+cat /var/lib/NetworkManager/dnsmasq-ovcs0.leases   # one line per board
+ip route | grep default              # exactly one, via wlan0
 journalctl -k -b | grep iwlwifi      # "loaded firmware" and "loaded PNVM"
+
+# From a laptop on the site Wi-Fi
+ping ovcs-mini-vms.local             # each board, at its site address
 ```
 
-That last one is the check worth keeping: if the boot-time probe races
-the volume mount and loses, it prints the `ty-a0-gf-a0-77` failure list
-again and the access point silently does not exist. The fix if it ever
-happens is a privileged service that writes the card's PCI address to
-`/sys/bus/pci/drivers_probe` on start.
+That last kernel line is the check worth keeping: if the boot-time
+probe races the volume mount and loses, it prints the
+`ty-a0-gf-a0-77` failure list again and the access point silently does
+not exist. The fix if it ever happens is a privileged service that
+writes the card's PCI address to `/sys/bus/pci/drivers_probe` on start.
 
 ## Wiring it into OVCS
 
-1. Set the Pi up as the vehicle network — see [Networking](#networking).
-   Its bridge address (`10.42.0.1` in the templates) is the router
-   address, and it is chosen rather than leased.
+1. Set the compute node up as the vehicle network — see
+   [Networking](#networking). Its bridge address (`10.42.0.1` in the
+   templates) is the router address, chosen rather than leased.
 2. Set `ZENOH_ENDPOINT_IP` to that address in
-   `vehicles/ovcs_mini/.env.exs`.
-3. **Rebuild and re-upload every firmware that hosts `RosBridge`** —
-   on the Mini that is `bridge-ros` and `bridge-ros_perception`.
-   (`bridge-radio_control` gets the value stamped too, but never
-   reads it.) The endpoint is
+   `vehicles/ovcs_mini/.env.exs`, and the site Wi-Fi in
+   `WIFI_NETWORKS` next to it.
+3. **Rebuild and re-upload every firmware of the vehicle** — the
+   `RosBridge` hosts (`bridge-ros`, `bridge-ros_perception` on the
+   Mini) for the endpoint, and all of them, the VMS included, for the
+   Wi-Fi. The endpoint is
    baked into application config at build time
    (`bridges/firmware/config/target.exs`), not read at boot: `.env.exs`
    only `System.put_env`s on the build host, so the device-side
@@ -330,14 +423,17 @@ happens is a privileged service that writes the card's PCI address to
    built without `ZENOH_ENDPOINT_IP` set falls back to `127.0.0.1`,
    where no router is listening.
 4. Point the base station at it: `ZENOH_ENDPOINT_IP` in
-   `compose/local/.env`, and Foxglove Studio at `ws://<pi-ip>:8765`.
+   `compose/local/.env` (`10.42.0.1` from a laptop on the access
+   point, the compute node's site address otherwise), and Foxglove
+   Studio at `ws://<compute node address>:8765`.
 
 Step 3 used to be the recurring cost of this design, because the
-address was whatever DHCP handed out. Now that the Pi hands out the
-addresses, the router address is a constant and step 3 is a one-time
-setup step rather than something a network change re-triggers. Making
-the endpoint runtime-resolvable is still the nicer answer, but it is no
-longer urgent.
+address was whatever DHCP handed out. Now that the compute node hands
+out the addresses, the router address is a constant and step 3 is a
+one-time setup step rather than something a network change re-triggers.
+Adding a site to `WIFI_NETWORKS` is the one thing that still means a
+rebuild. Making the endpoint runtime-resolvable is still the nicer
+answer, but it is no longer urgent.
 
 Version coupling to keep in mind: `zenohex 0.9.0`, which `ros_bridge`
 depends on, pins zenoh **1.9.0** — the same version as the
@@ -384,24 +480,25 @@ one is open.
 
 ## Where the network stands
 
-**Phase 1 is done and proven across a reboot** on the Mini's Pi. The
-`wifi_firmware` service stages the blobs and iwlwifi binds them at boot
-("loaded firmware version 89…", "loaded PNVM version…"); `"country":
-"BE"` reaches the AX210's self-managed phy; `OVCS-Mini` comes up
-unattended on ch 11 as `WPA2 WPA3`, confirmed beaconing by scanning
-for it from the onboard radio; `ovcs0` holds `10.42.0.1/24` with
-dnsmasq leasing `.10-.254`, and a client has been given an address.
-The onboard radio reconnects as the uplink. `eth0` is untouched and
-still the default route.
+**Both phases are installed and proven across a reboot** on the Mini's
+compute node. The `wifi_firmware` service stages the blobs and iwlwifi
+binds them at boot ("loaded firmware version 89…", "loaded PNVM
+version…"); `"country": "BE"` reaches the AX210's self-managed phy;
+`OVCS-Mini` comes up unattended on ch 11 as `WPA2 WPA3`; `ovcs0` holds
+`10.42.0.1/24` with `eth0` and the access point as its ports, and
+dnsmasq leases to the three Nerves boards by hostname. `uplink` on the
+onboard radio is the only default route. Every Nerves firmware is built
+with the site Wi-Fi in `WIFI_NETWORKS` and `ZENOH_ENDPOINT_IP=10.42.0.1`:
+the boards resolve and answer by mDNS from a laptop on the site Wi-Fi,
+and both bridges peer with the router over the wire.
 
 What is left:
 
 1. Decide whether HT40 is worth it. `channel-width` is auto (HT20)
-   today; HT40 roughly doubles throughput for Foxglove but needs
-   ch 3-9, which is where the site's other APs already are.
-2. Phase 2 — bridge `eth0` per
-   [Installing it](#installing-it), set `ZENOH_ENDPOINT_IP` to the
-   bridge address in `vehicles/ovcs_mini/.env.exs`, and rebuild
-   `bridge-ros` and `bridge-ros_perception` once.
+   today; HT40 roughly doubles throughput for a laptop on the access
+   point but needs ch 3-9, which is where the site's other APs already
+   are.
+2. A reservation on the site router for the compute node's `wlan0`, so
+   the Foxglove URL stops moving.
 
 Next: [Running on Hardware](./running_hardware.md)

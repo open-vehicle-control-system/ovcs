@@ -1,7 +1,10 @@
-# Onboard Wi-Fi as an internet feed. Entirely optional: the vehicle
-# network in ovcs0.nmconnection has its own gateway and DHCP and does
-# not depend on this. What this adds is a route off the vehicle, for
-# balena OTA updates, the cloud SSH tunnel and NTP.
+# Onboard Wi-Fi as a client of the site network. The vehicle network in
+# ovcs0.nmconnection has its own gateway and DHCP and does not depend on
+# this: what it adds is a route off the vehicle (balena OTA, the cloud
+# SSH tunnel, NTP) and the address a laptop on the site Wi-Fi reaches
+# Foxglove and the balena host at. Reserve that lease on the site router
+# for wlan0's MAC if a stable URL matters. The same site network goes in
+# the vehicle's WIFI_NETWORKS so each Nerves board joins it too.
 #
 # Separate phy from the AX210, so the AP's channel and this link's
 # channel do not constrain each other. Note that the phy *indices* are
