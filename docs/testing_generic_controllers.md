@@ -85,6 +85,63 @@ stopping.
 The frame layouts are in
 [`controllers/generic_controller/README.md`](../controllers/generic_controller/README.md).
 
+## OVCS Mini throttle resolution and calibration
+
+The throttle path is radio channel 2 on CAN `0x2A0`, VMS
+`Traxxas.Throttle`, CAN `0x706`, Arduino UART, then HAT output 1 (RB3)
+to the ESC. The Arduino forwards the 16-bit duty unchanged. Full scale
+is 65535 on both ends, and the output frequency is 100 Hz.
+
+Use the HAT firmware with per-output prescaler selection and nearest-tick
+rounding. At 100 Hz it uses a /10 prescaler at 64 MHz: 64000 timer ticks
+per period, or 0.15625 us per tick. A fixed /100 prescaler leaves only
+about 27 distinct pulses in the Mini's 1510-1550 us forward modulation
+range. Updating only the VMS does not fix that hardware quantisation.
+
+The Mini composer sets 5% input deadzone, 0.5 expo, 0.02 start offset,
+0.1 forward cap and 0.2 reverse/brake cap. For forward requests outside
+the deadzone:
+
+```text
+request = (radio_channel_2 - 1500) / 500
+x = (request - 0.05) / 0.95
+throttle = 0.02 + 0.08 * (0.5*x + 0.5*x*x)
+pulse_us = 1500 + 500*throttle
+```
+
+The **Radio Control** page shows both the input request and the commanded
+throttle/pulse after the curve. The latter is before CAN/timer quantisation,
+not a measured HAT or ESC readback. The first VMS tick commands neutral,
+even if no source has been selected yet.
+
+After deploying the VMS and flashing the HAT, verify the pulse on RB3 with
+the ESC disconnected from the signal. A period is 10 ms; expected widths
+are 1500 us at neutral, approximately 1510 us just beyond the forward
+deadzone, 1525 us at request 0.525, 1550 us at full forward and 1400 us
+at full reverse/brake. Allow for oscillator accuracy and sub-microsecond
+CAN/timer rounding. Check the steering output too after flashing the HAT.
+
+With the drivetrain secured and wheels clear, reconnect the ESC and sweep
+the trigger slowly up and down. Record **Commanded ESC Pulse** when the
+wheels start and when they stop; repeat under a controlled rolling load.
+The start threshold can differ from the stop threshold. The initial offset
+is conservative, not a measured calibration. A measured forward threshold
+can be expressed as `(pulse_us - 1500) / 500`, but do not raise the offset
+above the minimum sustainable command merely to force a quicker start:
+that creates a jump and spends the available modulation range.
+
+Check which endpoints the ESC learned. Its calibration must use the full
+1000/1500/2000 us actuator range, following the exact ESC model's procedure,
+with propulsion mechanically isolated. Do not calibrate it using the
+normal capped Mini curve: teaching 1550 us as full forward defeats the cap.
+Return to normal capped operation before any driving test.
+
+The speed sensor is available for observing the result, but the throttle
+path is open loop: a 10% throttle cap is not a 10% speed guarantee. If the
+lowest stable motor speed is still too high after the waveform and ESC
+calibration are verified, further changes need measured drivetrain behavior;
+an uncalibrated speed controller or a larger start offset is not a substitute.
+
 ## Troubleshooting
 
 ### Controller stays in `ADOPTION_REQUIRED`
