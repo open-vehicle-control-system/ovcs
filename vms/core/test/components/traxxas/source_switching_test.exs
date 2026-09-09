@@ -285,6 +285,56 @@ defmodule VmsCore.Components.Traxxas.SourceSwitchingTest do
       assert_raise ArgumentError, fn ->
         Throttle.curve(%{deadzone: D.new("0.5"), start_offset: D.new("0.5")})
       end
+
+      assert_raise ArgumentError, fn ->
+        Throttle.curve(%{start_offset: D.new("0.5"), max_throttle: D.new("0.5")})
+      end
+    end
+  end
+
+  describe "the cap" do
+    test "scales a hand's output onto [start_offset, max_throttle]" do
+      # Scaled, not clipped: full trigger still means "as fast as
+      # allowed", so the whole travel stays useful.
+      curve =
+        Throttle.curve(%{
+          deadzone: D.new("0.05"),
+          expo: D.new(0),
+          start_offset: D.new("0.1"),
+          max_throttle: D.new("0.5")
+        })
+
+      assert D.eq?(Throttle.shape(D.new("1"), false, curve), D.new("0.5"))
+      # 0.525 -> 0.5 after the dead zone -> 0.1 + 0.4 * 0.5.
+      assert D.eq?(Throttle.shape(D.new("0.525"), false, curve), D.new("0.3"))
+      assert D.eq?(Throttle.shape(D.new(0), false, curve), D.new(0))
+    end
+
+    test "scales a physical quantity without touching its shape" do
+      curve = Throttle.curve(%{max_throttle: D.new("0.5")})
+
+      assert D.eq?(Throttle.shape(D.new("1"), true, curve), D.new("0.5"))
+      assert D.eq?(Throttle.shape(D.new("0.2"), true, curve), D.new("0.1"))
+      assert D.eq?(Throttle.shape(D.new(0), true, curve), D.new(0))
+    end
+
+    test "reverse follows max_throttle unless given its own cap" do
+      same = Throttle.curve(%{max_throttle: D.new("0.5")})
+      assert D.eq?(Throttle.shape(D.new("-1"), true, same), D.new("-0.5"))
+      assert D.eq?(Throttle.shape(D.new("-1"), false, same), D.new("-0.5"))
+
+      # Braking lives on the negative side of a Traxxas ESC, so a vehicle
+      # can cap forward speed and keep the full brake.
+      braking = Throttle.curve(%{max_throttle: D.new("0.5"), max_reverse: D.new(1)})
+      assert D.eq?(Throttle.shape(D.new("-1"), false, braking), D.new("-1"))
+      assert D.eq?(Throttle.shape(D.new("-1"), true, braking), D.new("-1"))
+      assert D.eq?(Throttle.shape(D.new("1"), false, braking), D.new("0.5"))
+    end
+
+    test "no cap leaves the output untouched" do
+      curve = Throttle.curve(%{})
+      assert D.eq?(Throttle.shape(D.new("1"), false, curve), D.new("1"))
+      assert D.eq?(Throttle.shape(D.new("-1"), true, curve), D.new("-1"))
     end
   end
 end

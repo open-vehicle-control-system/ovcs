@@ -5,8 +5,9 @@ defmodule VmsCore.Components.Traxxas.Throttle do
   ## From request to pulse
 
   A request in [-1, 1] goes through up to three steps before it becomes
-  a duty cycle. All three are tunable per vehicle; the defaults are no
-  dead zone, the full square and no start offset.
+  a duty cycle, and the result is capped. Everything is tunable per
+  vehicle; the defaults are no dead zone, the full square, no start
+  offset and no cap.
 
   1. **Dead zone** (`:deadzone`). A hand at rest is not exactly at
      centre: a trigger drifts by a few counts, a gamepad stick by a few
@@ -38,6 +39,23 @@ defmodule VmsCore.Components.Traxxas.Throttle do
   follow it down rather than hold the edge of motion. `:linear_sources`
   lists the sources whose request is already a physical quantity: they
   skip all three steps.
+
+  ## The cap
+
+  `:max_throttle` is the output a full forward request produces, and
+  `:max_reverse` the same for a full negative one; both default to 1,
+  `:max_reverse` to `:max_throttle` when only that is given. The cap
+  *scales* rather than clips: full deflection still means "as fast as
+  allowed", so a hand's output runs over `[start_offset, max]` and a
+  physical quantity is multiplied by it. It applies to every source --
+  a vehicle that is too fast is too fast whoever is driving.
+
+  Two things follow. A commander that normalises a speed against the
+  vehicle's full-throttle speed must use the speed reached *at the cap*,
+  or it gets a fraction of what it asks for. And on a Traxxas ESC the
+  first pull into negative is proportional braking, so a reverse cap
+  below 1 also weakens the brake -- keep `:max_reverse` at 1 unless
+  reverse speed is the problem.
   """
   use GenServer
   alias Decimal, as: D
@@ -51,7 +69,13 @@ defmodule VmsCore.Components.Traxxas.Throttle do
   @zero D.new(0)
   @one D.new(1)
 
-  @default_curve %{deadzone: @zero, expo: @one, start_offset: @zero}
+  @default_curve %{
+    deadzone: @zero,
+    expo: @one,
+    start_offset: @zero,
+    max_throttle: @one,
+    max_reverse: nil
+  }
 
   def start_link(args) do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
@@ -170,10 +194,12 @@ defmodule VmsCore.Components.Traxxas.Throttle do
   @doc """
   The curve parameters from a component's arguments, each defaulting to
   the value that leaves the request untouched. Fractions of full travel,
-  all in [0, 1]; `deadzone + start_offset` must stay below 1.
+  all in [0, 1]; `deadzone + start_offset` must stay below 1 and the
+  start offset must stay below both caps.
   """
   def curve(args) do
     curve = Map.merge(@default_curve, Map.take(args, Map.keys(@default_curve)))
+    curve = %{curve | max_reverse: curve.max_reverse || curve.max_throttle}
 
     Enum.each(curve, fn {key, value} ->
       if D.negative?(value) or D.gt?(value, @one) do
@@ -185,20 +211,32 @@ defmodule VmsCore.Components.Traxxas.Throttle do
       raise ArgumentError, ":deadzone + :start_offset must be below 1"
     end
 
+    unless D.lt?(curve.start_offset, curve.max_throttle) and
+             D.lt?(curve.start_offset, curve.max_reverse) do
+      raise ArgumentError, ":start_offset must be below :max_throttle and :max_reverse"
+    end
+
     curve
   end
 
   @doc """
   The output in [-1, 1] for a request in [-1, 1]. A linear request is
-  returned as is; a shaped one goes through all three steps.
+  only scaled by the cap; a shaped one goes through all three steps and
+  lands on `[start_offset, cap]`.
   """
-  def shape(requested, true = _linear, _curve), do: requested
+  def shape(requested, true = _linear, curve) do
+    requested |> D.abs() |> D.mult(cap(requested, curve)) |> signed_as(requested)
+  end
 
   def shape(requested, false, curve) do
     requested
     |> strip_deadzone(curve.deadzone)
     |> blend(curve.expo)
-    |> offset(curve.start_offset)
+    |> offset(curve.start_offset, cap(requested, curve))
+  end
+
+  defp cap(requested, curve) do
+    if D.negative?(requested), do: curve.max_reverse, else: curve.max_throttle
   end
 
   # Zero within the dead zone; beyond it the remaining travel is
@@ -227,15 +265,15 @@ defmodule VmsCore.Components.Traxxas.Throttle do
   end
 
   # Zero stays zero; anything else is remapped from [0, 1] onto
-  # [start_offset, 1] so the smallest non-zero output already reaches
-  # the ESC's edge of motion.
-  defp offset(requested, start_offset) do
+  # [start_offset, cap] so the smallest non-zero output already reaches
+  # the ESC's edge of motion and full deflection stops at the cap.
+  defp offset(requested, start_offset, cap) do
     if D.eq?(requested, @zero) do
       @zero
     else
       requested
       |> D.abs()
-      |> D.mult(D.sub(@one, start_offset))
+      |> D.mult(D.sub(cap, start_offset))
       |> D.add(start_offset)
       |> signed_as(requested)
     end
