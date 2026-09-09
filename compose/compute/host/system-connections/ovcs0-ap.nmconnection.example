@@ -13,9 +13,10 @@
 # Requires `"country":"BE"` in /mnt/boot/config.json. Without a country
 # the phy sits in regulatory domain 00, where AP mode cannot beacon.
 #
-# interface-name is the AX210's stable PCI-path name. The onboard
-# Broadcom radio stays wlan0; this one is derived from its slot, so
-# probe order cannot swap them.
+# interface-name is the AX210's stable PCI-path name, derived from its
+# slot, so probe order cannot change it. The onboard Broadcom radio has
+# no such name (wlan0 or wlan1, depending on who registered first),
+# which is why uplink.nmconnection matches it by driver instead.
 #
 # channel: pick one clear of nearby APs — `nmcli device wifi list` on
 # the device shows what is around. NetworkManager 1.52 also exposes

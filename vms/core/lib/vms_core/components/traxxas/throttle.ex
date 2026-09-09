@@ -64,8 +64,9 @@ defmodule VmsCore.Components.Traxxas.Throttle do
 
   @loop_period 10
   @pwm_frequency 100
-  @neutral_duty_cycle_percentage D.new("0.15")
-  @duty_cycle_percentage_range D.new("0.05")
+  @neutral_pulse_width_us D.new(1500)
+  @pulse_width_range_us D.new(500)
+  @pwm_period_us D.new(div(1_000_000, @pwm_frequency))
   @zero D.new(0)
   @one D.new(1)
 
@@ -105,7 +106,9 @@ defmodule VmsCore.Components.Traxxas.Throttle do
        # first tick.
        requested_throttle_source: nil,
        requested_throttle: @zero,
-       throttle: @zero
+       # No pulse has been sent yet: even a zero first request must
+       # enable the ESC signal and establish neutral.
+       throttle: nil
      }}
   end
 
@@ -168,15 +171,17 @@ defmodule VmsCore.Components.Traxxas.Throttle do
         state.curve
       )
 
-    case D.eq?(state.throttle, throttle) do
+    case not is_nil(state.throttle) and D.eq?(state.throttle, throttle) do
       true ->
         state
 
       false ->
-        duty_cycle_percentage =
+        pulse_width_us =
           throttle
-          |> D.mult(@duty_cycle_percentage_range)
-          |> D.add(@neutral_duty_cycle_percentage)
+          |> D.mult(@pulse_width_range_us)
+          |> D.add(@neutral_pulse_width_us)
+
+        duty_cycle_percentage = D.div(pulse_width_us, @pwm_period_us)
 
         :ok =
           GenericController.set_external_pwm(
@@ -186,6 +191,20 @@ defmodule VmsCore.Components.Traxxas.Throttle do
             duty_cycle_percentage,
             @pwm_frequency
           )
+
+        Bus.broadcast("messages", %Bus.Message{
+          name: :throttle,
+          value: throttle,
+          source: __MODULE__
+        })
+
+        # This is the command before CAN/timer quantisation, not an ESC
+        # readback. It makes the start threshold measurable on the car.
+        Bus.broadcast("messages", %Bus.Message{
+          name: :pulse_width_us,
+          value: pulse_width_us,
+          source: __MODULE__
+        })
 
         %{state | throttle: throttle}
     end
@@ -225,11 +244,13 @@ defmodule VmsCore.Components.Traxxas.Throttle do
   lands on `[start_offset, cap]`.
   """
   def shape(requested, true = _linear, curve) do
-    requested |> D.abs() |> D.mult(cap(requested, curve)) |> signed_as(requested)
+    requested |> D.abs() |> D.min(@one) |> D.mult(cap(requested, curve)) |> signed_as(requested)
   end
 
   def shape(requested, false, curve) do
     requested
+    |> D.max(D.negate(@one))
+    |> D.min(@one)
     |> strip_deadzone(curve.deadzone)
     |> blend(curve.expo)
     |> offset(curve.start_offset, cap(requested, curve))

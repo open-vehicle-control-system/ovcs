@@ -173,14 +173,14 @@ Two networks, each doing the one thing it is good at:
   where internet (balena OTA, the cloud tunnel, NTP) comes from.
 
 ```
-            site Wi-Fi ── wlan0 of the compute node (uplink, default route)
+            site Wi-Fi ── onboard radio of the compute node (uplink, default route)
                        ── wlan0 of each Nerves board (WIFI_NETWORKS)
                               │  NAT
         ┌─────────────────────┴──────────────────────────┐
         │  ovcs0   10.42.0.1/24    NetworkManager bridge │
         │    ipv4.method=shared →                        │
         │      dnsmasq: DHCP .10-.254 + DNS              │
-        │      MASQUERADE out via wlan0                  │
+        │      MASQUERADE out via the uplink             │
         └────┬────────────────────────────┬──────────────┘
              │                            │
           eth0                      wlP1p1s0  (AX210 AP "OVCS-Mini", 2.4 GHz)
@@ -205,7 +205,7 @@ board is still reachable through the access point.
 
 The onboard radio of the compute node is deliberately not load-bearing
 either. `method=shared` assigns the bridge address, starts dnsmasq and
-installs the NAT rule unconditionally; if `wlan0` is unassociated,
+installs the NAT rule unconditionally; if the uplink is unassociated,
 clients still get leases and full vehicle-local connectivity and simply
 have no route off the car.
 
@@ -246,7 +246,7 @@ A laptop on the site Wi-Fi reaches each Nerves board directly, at its
 own site address, by mDNS: `ping ovcs-mini-vms.local`, `./ovcs connect
 ovcs_mini vms`, the dashboard at `http://ovcs-mini-vms.local:4000`.
 Foxglove attaches to the compute node's site address (the `uplink`
-lease — reserve it on the site router for `wlan0`'s MAC if a stable URL
+lease — reserve it on the site router for the onboard radio's MAC if a stable URL
 matters).
 
 What that laptop does *not* have is a route into `10.42.0.0/24`:
@@ -353,7 +353,7 @@ into **both** directories, then:
    `balena-config-vars --no-cache` to verify, and remember the value
    only reaches the driver at the next boot.
 3. `chmod 600` the `/etc` copies and `nmcli connection reload`.
-4. `nmcli con up uplink && ip -4 addr show wlan0` — this address is the
+4. `nmcli con up uplink && nmcli -f IP4.ADDRESS con show uplink` — this address is the
    way in from now on; open a second SSH session on it.
 5. `nmcli con up ovcs0`. Join the access point from a laptop and check
    it gets a lease in `10.42.0.0/24` and can reach `10.42.0.1`.
@@ -368,7 +368,8 @@ Activating `ovcs0-eth0` converts `eth0` from DHCP client to DHCP
 into, so:
 
 1. Be connected over the `uplink` address, and confirm the cloud tunnel
-   is on it: `ip route get 1.1.1.1` should name `wlan0`.
+   is on it: `ip route get 1.1.1.1` should name the onboard radio
+   (`wlan0` or `wlan1` — see the `uplink` keyfile for why it varies).
 2. **Move `eth0` to the vehicle's own switch**, with the switch
    disconnected from any site LAN. On an office LAN this would become
    a rogue DHCP server the moment step 3 lands.
@@ -407,7 +408,7 @@ ip -4 addr show ovcs0                # 10.42.0.1/24
 ls /sys/class/net/ovcs0/brif/        # eth0 wlP1p1s0
 cat /var/lib/NetworkManager/dnsmasq-ovcs0.leases   # one line per board
 iptables -t nat -S POSTROUTING | head -2           # ovcs-bridge-no-nat before nm-shared-ovcs0
-ip route | grep default              # exactly one, via wlan0
+ip route | grep default              # exactly one, via the onboard radio (wlan0 or wlan1)
 journalctl -k -b | grep iwlwifi      # "loaded firmware" and "loaded PNVM"
 
 # From a laptop on the site Wi-Fi, then again on the access point
@@ -515,7 +516,7 @@ What is left:
    today; HT40 roughly doubles throughput for a laptop on the access
    point but needs ch 3-9, which is where the site's other APs already
    are.
-2. A reservation on the site router for the compute node's `wlan0`, so
+2. A reservation on the site router for the compute node's onboard radio, so
    the Foxglove URL stops moving.
 
 Next: [Running on Hardware](./running_hardware.md)

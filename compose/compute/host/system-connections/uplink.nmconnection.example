@@ -7,20 +7,28 @@
 # the vehicle's WIFI_NETWORKS so each Nerves board joins it too.
 #
 # Separate phy from the AX210, so the AP's channel and this link's
-# channel do not constrain each other. Note that the phy *indices* are
-# assigned in probe order and do swap between boots, so never identify
-# either radio by `phy#N` — go through the interface name.
+# channel do not constrain each other.
 #
-# Match the onboard driver: its interface can be wlan0 or wlan1,
-# depending on whether the AX210 claimed wlan0 before being renamed.
+# Matched by driver, not by name. The kernel hands out wlan0 to
+# whichever radio registers first, and on a boot where the AX210 got it
+# ("wlP1p1s0: renamed from wlan0" in the log) the onboard radio ends up
+# as wlan1 for good — the AX210's rename to its PCI-path name frees
+# wlan0 but nothing renames the Broadcom after the fact. A profile
+# pinned to wlan0 then never activates: no uplink, no NTP, no cloud
+# tunnel, and the compute node unreachable from the site Wi-Fi. The
+# brcmfmac driver is the one thing about the onboard radio that never
+# changes. Do not add an interface-name; with `[match]` present it
+# would have to agree on every boot.
 #
 # `method=auto` and no [ipv4] address: this side takes a lease. Leave
 # it as the only default route on the box — the bridge deliberately
-# installs none.
+# installs none. autoconnect-priority outranks any profile
+# NetworkManager generates for the radio on its own.
 
 [connection]
 id=uplink
 type=wifi
+autoconnect-priority=10
 
 [match]
 driver=brcmfmac
