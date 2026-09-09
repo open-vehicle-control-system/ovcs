@@ -17,7 +17,7 @@ topology these files implement and the install procedure.
 |---|---|
 | `system-connections/ovcs0.nmconnection.example` | the vehicle bridge — its own gateway + DHCP server |
 | `system-connections/ovcs0-ap.nmconnection.example` | the AX210 as a 2.4 GHz AP, a bridge port |
-| `system-connections/uplink.nmconnection.example` | onboard Wi-Fi as an *optional* internet feed |
+| `system-connections/uplink.nmconnection.example` | onboard Wi-Fi as a client of the site network — internet, cloud tunnel, Foxglove |
 | `system-connections/ovcs0-eth0.nmconnection.example` | `eth0` as a bridge port — **installed last**, see below |
 
 The first three are safe to install at any time: they leave `eth0`

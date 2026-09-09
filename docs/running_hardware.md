@@ -267,7 +267,7 @@ The CLI separates **booting** a vehicle from **observing / driving** it:
 
 - The host's SSH public key must be in `vehicles/<vehicle>/.env.exs`'s `AUTHORIZED_SSH_KEYS` at firmware build time (same file that powers `./ovcs upload` / `./ovcs connect`). One file per vehicle, picked up by every firmware (`vms`, `infotainment`, every bridge). Copy the gitignored starter from `vehicles/<vehicle>/.env.exs.example`.
 - Your private key must be loaded in `ssh-agent`: `attach` and `connect` authenticate through it. `ssh-add -l` to verify.
-- Devices must be reachable on the LAN via mDNS (`<vehicle>-<side>.local`). Verify with `ping ovcs1-vms.local` before attaching.
+- Devices must be reachable on the LAN via mDNS (`<vehicle>-<side>.local`). Verify with `ping ovcs1-vms.local` before attaching. On a vehicle with a compute node, the boards' wired addresses sit behind it; an SSH `ProxyJump` block makes them reachable from the site Wi-Fi — see [Reaching the vehicle network](./ros_compute_node.md#reaching-the-vehicle-network-from-the-site-wi-fi).
 - Non-Nerves bridges (e.g. Arduino generic controllers) have no SSH / IEx — they are skipped automatically.
 
 ### `./ovcs connect` — single-device IEx
