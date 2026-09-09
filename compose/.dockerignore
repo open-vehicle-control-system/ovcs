@@ -1,0 +1,9 @@
+# Applies to the one build whose context is this whole directory: the
+# Gazebo image (local/images/sim/Dockerfile, built by
+# local/simulation.yml). It COPYs compute/images/ros2/{docker,zenoh}
+# and local/simulation/*; nothing else here is a build input, and two
+# of these directories hold untracked local state that could be large.
+local/workspace/
+local/calibration_output/
+compute/host/
+**/README.md
