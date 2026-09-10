@@ -21,6 +21,7 @@ Index for the Open Vehicle Control System guides. For a high-level project overv
 - [ROS Compute Node](./ros_compute_node.md) — the OVCS Mini's non-Nerves Pi: why it exists, the immutable OS choice (balenaOS), the compute/local compose split, the vehicle network (the wire is the fabric, the site Wi-Fi is for people), and how it wires into the Zenoh fabric.
 - [Simulation](../compose/local/simulation/README.md) — the Gazebo Jetty model of the OVCS Mini: how to run it, drive it with a gamepad, point the real perception pipeline at it, navigate it with Nav2, and the three verifiers that check depth, drivetrain and navigation against the world. **The quickest way to see this project do something without hardware.**
 - [ROS Perception Detection](./ros_perception_detection.md) — object detection on the Hailo-8: why detection and not disparity, what it costs the stereo rate, how a 2D box becomes a 3D position, and the two topics it publishes.
+- [VESC drivetrain](./vesc_drivetrain.md) — driving a traction motor through a VESC over CAN: why, the wiring, the VESC Tool settings, the extended-id frames, how `Vesc.MotorController` replaces the PWM throttle in a composer, and how to fake the VESC on the host bench.
 - [Running on Hardware](./running_hardware.md) — Nerves targets, the `ovcs` CLI for build / burn / OTA upload, attach / connect for runtime debugging.
 - [OVCS1 Wiring Reference](../vehicles/ovcs1/WIRING.md) — pin-level wiring for the OVCS1 vehicle (Leaf harness, iBooster, steering pump, Polo CAN bus).
 
