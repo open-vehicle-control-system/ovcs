@@ -1,0 +1,21 @@
+---
+# CAN_PACKET_SET_DUTY for the VESC with id 1: open-loop duty cycle in
+# [-1, 1], negative for reverse. Duty control is the voltage-mode
+# equivalent of a hand on a trigger, so this is the command a shaped
+# hand request drives. Zero duty shorts the motor phases, a gentle
+# drag brake; releasing the motor entirely is `vesc_set_current` at 0.
+#
+# Emitted every 20 ms: the VESC stops the motor when its command
+# timeout (1000 ms by default) elapses without a command frame.
+name: vesc_set_duty
+id: 0x0001
+extended: true
+frequency: 20
+signals:
+  - name: duty
+    value_start: 0
+    value_length: 32
+    sign: signed
+    endianness: big
+    scale: "0.00001"
+    precision: 5

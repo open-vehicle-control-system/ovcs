@@ -145,6 +145,7 @@ libraries/ovcs_can/priv/can/components/
 +-- nissan/leaf_aze0/                # Leaf inverter and charger frames
 +-- orion/bms2/                      # Battery management frames
 +-- ovcs/                            # OVCS internal frames and generic controller templates
++-- vesc/                            # VESC motor controller frames (29-bit extended ids)
 +-- volkswagen/polo_9n/              # Polo ABS, dashboard, key, lock, wheels frames
 +-- obd2/                            # OBD2 diagnostic frames
 
@@ -205,5 +206,11 @@ The OVCS Mini uses the same software stack on a Traxxas 4WD RC car chassis:
 | Radio Control | ExpressLRS receiver via Radio Control Bridge (RPi 3A) |
 
 The OVCS Mini uses a single CAN bus (`ovcs` at 500 kbps) since there are no third-party automotive components requiring isolation.
+
+A VESC motor controller can take the place of the PWM ESC: it is a CAN
+node of its own, commanded from the VMS with closed-loop speed and
+reporting the motor rpm, current and battery voltage back. Its
+frames are 29-bit extended identifiers, which coexist with the standard
+frames above on the same bus. See [VESC drivetrain](./vesc_drivetrain.md).
 
 Next: [Running on Hardware](./running_hardware.md)
