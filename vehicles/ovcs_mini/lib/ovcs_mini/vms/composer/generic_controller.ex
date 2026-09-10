@@ -33,7 +33,7 @@ defmodule OvcsMini.Vms.Composer.GenericController do
         "analog_pin2" => "disabled",
         # The hall sensor watching the spur gear, on A1. Counted by
         # interrupt on the controller and reported as a frequency; see
-        # `OVCS.PulseSpeedSensor`.
+        # `OVCS.PulseRotationSensor`.
         "pulse_pin0" => "enabled"
       }
     }
