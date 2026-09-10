@@ -1,0 +1,19 @@
+---
+# CAN_PACKET_SET_RPM for the VESC with id 1: closed-loop speed setpoint
+# in *electrical* rpm (mechanical rpm × pole pairs), negative for
+# reverse. The VESC's speed PID holds it under load, which is what a
+# commander sending a physical velocity expects. Below the VESC's
+# minimum speed-PID erpm (900 by default) the loop is off and the VESC
+# holds zero duty instead, a passive brake — so a setpoint of zero
+# brakes to a standstill, and so does any setpoint under that minimum.
+name: vesc_set_rpm
+id: 0x0301
+extended: true
+frequency: 20
+signals:
+  - name: erpm
+    kind: integer
+    value_start: 0
+    value_length: 32
+    sign: signed
+    endianness: big
