@@ -29,7 +29,7 @@ defmodule OvcsMini.Vms.Composer do
   # model is capped at 13 m/s; the uncapped truck was estimated at
   # 5 m/s and a tenth of the pulse range is taken as a tenth of that,
   # though an ESC is not linear and nothing has measured this one under
-  # load. The pulse speed sensor below is what to measure it with.
+  # load. `VehicleMotion`'s speed below is what to measure it with.
   @max_speed_m_s 0.5
 
   # Throttle feel, see `Traxxas.Throttle` for what each one does.
@@ -49,15 +49,16 @@ defmodule OvcsMini.Vms.Composer do
   @throttle_max Decimal.new("0.1")
   @throttle_max_reverse Decimal.new("0.2")
 
-  # The trigger magnet sits in the spur gear, so wheel speed needs the
-  # ratio from the spur gear to the wheels: the Slash 4x4 transmission's
-  # fixed 2.72:1. The pinion does not enter into it. One magnet, one
-  # pulse per spur turn. Confirmed on the bench: 14 pulses over 10 wheel
-  # revolutions back-driven through one wheel, which the open
-  # differential halves, gives ~2.8 pulses per wheel turn — 2.72 within
-  # the +/-1 count noise. Only the product of the two constants matters.
+  # The trigger magnet sits in the spur gear: one magnet, one pulse per
+  # spur turn. The spur turns 2.72 times per wheel turn, the Slash 4x4
+  # transmission's fixed ratio; the pinion does not enter into it.
+  # Confirmed on the bench: 14 pulses over 10 wheel revolutions
+  # back-driven through one wheel, which the open differential halves,
+  # gives ~2.8 pulses per wheel turn — 2.72 within the +/-1 count
+  # noise. The sensor only knows the first constant; the second is the
+  # vehicle's kinematics and goes to `VehicleMotion`.
   @pulses_per_revolution 1
-  @gear_ratio 2.72
+  @spur_to_wheel_ratio 2.72
 
   @impl VmsCore.Vehicle
   def children do
@@ -181,9 +182,9 @@ defmodule OvcsMini.Vms.Composer do
          ready_to_drive_source: Vms,
          # The standstill gate on every mode change reads this. It is
          # exactly zero once the hall sensor has been quiet for two
-         # seconds, and the gear ratio above only scales what counts as
+         # seconds, and the kinematics only scale what counts as
          # moving, so an estimate there does not weaken the gate.
-         speed_source: OVCS.PulseSpeedSensor
+         speed_source: OVCS.VehicleMotion
        }},
       # The manager owns the choice now, so the drivetrain follows
       # whichever source it names rather than being wired to one
@@ -223,21 +224,25 @@ defmodule OvcsMini.Vms.Composer do
          max_throttle: @throttle_max,
          max_reverse: @throttle_max_reverse
        }},
-      {OVCS.PulseSpeedSensor,
+      {OVCS.PulseRotationSensor,
        %{
          controller: Vms.MainController,
-         pulses_per_revolution: @pulses_per_revolution,
-         gear_ratio: @gear_ratio,
-         wheel_radius: OvcsMini.geometry().wheel_radius
+         pulses_per_revolution: @pulses_per_revolution
        }},
-      # The vehicle's own motion on 0x60B, for the ROS bridge's
-      # odometry. The sign of the speed follows the selected throttle
-      # request, since the hall sensor cannot know the direction, and
-      # `steering_sign` must match `RosVelocityCommand`'s so the
-      # reported angle converts back to REP-103.
+      # The vehicle's own motion: the spur's rotation through the
+      # gearing and the wheel size gives the speed, published on the
+      # bus for the manager's standstill gate and emitted on 0x60B for
+      # the ROS bridge's odometry. The sign follows the selected
+      # throttle request, since the hall sensor cannot know the
+      # direction, and `steering_sign` must match
+      # `RosVelocityCommand`'s so the reported angle converts back to
+      # REP-103.
       {OVCS.VehicleMotion,
        %{
-         speed_source: OVCS.PulseSpeedSensor,
+         rotation_source: OVCS.PulseRotationSensor,
+         rotation_to_wheel_ratio: @spur_to_wheel_ratio,
+         rotation_signed: false,
+         wheel_radius: OvcsMini.geometry().wheel_radius,
          selected_control_level_source: Managers.ControlLevel,
          steering_limit: OvcsMini.geometry().steering_limit,
          steering_sign: 1

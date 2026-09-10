@@ -58,15 +58,21 @@ defmodule OvcsMini.Vms.Composer.Dashboard.DashboardPage do
             %{
               type: :metric,
               name: "Speed",
-              module: OVCS.PulseSpeedSensor,
+              module: OVCS.VehicleMotion,
               key: :speed,
               unit: "km/h"
             },
             %{
               type: :metric,
               name: "Wheel RPM",
-              module: OVCS.PulseSpeedSensor,
+              module: OVCS.VehicleMotion,
               key: :wheel_rotation_per_minute
+            },
+            %{
+              type: :metric,
+              name: "Spur RPM",
+              module: OVCS.PulseRotationSensor,
+              key: :rotation_per_minute
             }
           ]
         },
@@ -77,10 +83,10 @@ defmodule OvcsMini.Vms.Composer.Dashboard.DashboardPage do
           serie_max_size: 300,
           y_axis: [
             %{
-              min: 0,
+              min: -5,
               max: 30,
               label: "km/h",
-              series: [%{name: "Speed", metric: %{module: OVCS.PulseSpeedSensor, key: :speed}}]
+              series: [%{name: "Speed", metric: %{module: OVCS.VehicleMotion, key: :speed}}]
             },
             %{
               position: "right",
@@ -92,7 +98,7 @@ defmodule OvcsMini.Vms.Composer.Dashboard.DashboardPage do
               series: [
                 %{
                   name: "Wheel RPM",
-                  metric: %{module: OVCS.PulseSpeedSensor, key: :wheel_rotation_per_minute}
+                  metric: %{module: OVCS.VehicleMotion, key: :wheel_rotation_per_minute}
                 }
               ]
             }

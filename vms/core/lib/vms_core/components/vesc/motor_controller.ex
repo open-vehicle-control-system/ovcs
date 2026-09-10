@@ -25,8 +25,8 @@ defmodule VmsCore.Components.Vesc.MotorController do
       turns into a light drag brake.
     * **A physical velocity** (a source in `:linear_sources`, such as
       `OVCS.RosVelocityCommand`) sends `vesc_set_rpm`: the request in
-      [-1, 1] is a fraction of `:max_speed`, converted to electrical
-      rpm, and the VESC's speed loop holds it under load. Below the
+      [-1, 1] is a fraction of `:max_rotation_per_minute`, converted to
+      electrical rpm, and the VESC's speed loop holds it under load. Below the
       VESC's *minimum speed-PID erpm* the loop is off and the VESC
       holds zero duty instead, a passive brake: a zero request brakes
       to a standstill, which is what a planner that stopped means, but
@@ -43,10 +43,11 @@ defmodule VmsCore.Components.Vesc.MotorController do
   `:input_voltage`, nil while the status frame is not arriving — the
   VESC is off, unpowered or not configured to send status.
 
-  The vehicle's `:speed` is not this component's: it stays with the
-  speed sensor on the driveline, `OVCS.PulseSpeedSensor`, which
-  measures the wheels rather than the motor and does not move when the
-  motor is swapped.
+  What the motor's rotation means for the vehicle is not this
+  component's to know: the gearing to the wheels and the wheel size are
+  the vehicle's kinematics, and `OVCS.VehicleMotion` applies them to
+  whichever shaft it is given — this motor, or a pulse sensor
+  elsewhere in the driveline.
 
   ## Options
 
@@ -54,17 +55,16 @@ defmodule VmsCore.Components.Vesc.MotorController do
       throttle source, `Managers.ControlLevel`.
     * `:linear_sources` — commanders whose request is a physical
       quantity; they get the rpm mode and skip the feel curve.
-    * `:max_speed` — metres per second at a linear request of 1. It
-      must match what the linear commanders normalise against.
+    * `:max_rotation_per_minute` — mechanical motor rpm at a linear
+      request of 1. The composer derives it from the speed the linear
+      commanders normalise against and the vehicle's kinematics, so the
+      gearing is declared once, next to `VehicleMotion`'s.
     * `:pole_pairs` — of the motor: electrical rpm is mechanical rpm
       times this. A 4-pole motor has 2.
-    * `:motor_to_wheel_ratio` — motor turns per wheel turn, the pinion
-      to spur ratio times the transmission's own ratio.
-    * `:wheel_radius` — metres, from the vehicle's `geometry/0`.
     * `:deadzone`, `:expo`, `:start_offset`, `:max_throttle`,
       `:max_reverse` — the feel curve for hands, as documented on
       `Traxxas.Throttle`. They shape the duty command only; the caps
-      do not apply to a velocity, which `:max_speed` already bounds.
+      do not apply to a velocity, which `:max_rotation_per_minute` already bounds.
 
   The VESC itself must have id 1, the CAN bitrate of the bus, status
   messages 1 and 5 enabled at 50 Hz, a command timeout longer than the
@@ -98,10 +98,8 @@ defmodule VmsCore.Components.Vesc.MotorController do
   def init(
         %{
           selected_control_level_source: selected_control_level_source,
-          max_speed: max_speed,
-          pole_pairs: pole_pairs,
-          motor_to_wheel_ratio: motor_to_wheel_ratio,
-          wheel_radius: wheel_radius
+          max_rotation_per_minute: max_rotation_per_minute,
+          pole_pairs: pole_pairs
         } = args
       ) do
     Bus.subscribe("messages")
@@ -124,8 +122,7 @@ defmodule VmsCore.Components.Vesc.MotorController do
        selected_control_level_source: selected_control_level_source,
        linear_sources: Map.get(args, :linear_sources, []),
        curve: Throttle.curve(args),
-       erpm_per_request:
-         erpm_per_request(max_speed, pole_pairs, motor_to_wheel_ratio, wheel_radius),
+       erpm_per_request: erpm_per_request(max_rotation_per_minute, pole_pairs),
        pole_pairs: pole_pairs,
        # Starts nil: nothing commands this actuator until the manager
        # names a source. The manager's default level does that on its
@@ -260,7 +257,7 @@ defmodule VmsCore.Components.Vesc.MotorController do
   end
 
   # The normalised command in [-1, 1] for the dashboard: the duty for a
-  # hand, the fraction of `:max_speed` for a velocity, zero for none.
+  # hand, the fraction of the maximum rpm for a velocity, zero for none.
   defp throttle(%{requested_throttle_source: nil}), do: @zero
 
   defp throttle(state) do
@@ -281,12 +278,10 @@ defmodule VmsCore.Components.Vesc.MotorController do
     |> D.to_integer()
   end
 
-  # Electrical rpm at a request of 1: `max_speed` in wheel turns per
-  # minute, times the gearing up to the motor, times the pole pairs.
+  # Electrical rpm at a request of 1.
   @doc false
-  def erpm_per_request(max_speed, pole_pairs, motor_to_wheel_ratio, wheel_radius) do
-    wheel_rpm = max_speed * 60 / (2 * :math.pi() * wheel_radius)
-    D.from_float(wheel_rpm * motor_to_wheel_ratio * pole_pairs)
+  def erpm_per_request(max_rotation_per_minute, pole_pairs) do
+    D.from_float(1.0 * max_rotation_per_minute * pole_pairs)
   end
 
   # The mechanical rpm of the motor, signed like the erpm it comes from.

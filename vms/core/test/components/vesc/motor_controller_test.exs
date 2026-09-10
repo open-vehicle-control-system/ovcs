@@ -21,12 +21,11 @@ defmodule VmsCore.Components.Vesc.MotorControllerTest do
   @hand SomeRadioThrottle
   @planner PlannerVelocity
 
-  # An AXE540 (2 pole pairs) through a 13/54 pinion and the Slash 4x4
-  # transmission's 2.72, on 54.8 mm wheels, 0.5 m/s at full request.
+  # An AXE540 (2 pole pairs) at 984 motor rpm for a full request: what
+  # 0.5 m/s comes to through a 13/54 pinion, the Slash 4x4
+  # transmission's 2.72 and 54.8 mm wheels.
   @pole_pairs 2
-  @ratio 54 / 13 * 2.72
-  @wheel_radius 0.0548
-  @max_speed 0.5
+  @max_rpm 984
 
   defp state(overrides \\ %{}) do
     Map.merge(
@@ -35,8 +34,7 @@ defmodule VmsCore.Components.Vesc.MotorControllerTest do
         selected_control_level_source: @manager,
         linear_sources: [@planner],
         curve: Throttle.curve(%{}),
-        erpm_per_request:
-          MotorController.erpm_per_request(@max_speed, @pole_pairs, @ratio, @wheel_radius),
+        erpm_per_request: MotorController.erpm_per_request(@max_rpm, @pole_pairs),
         pole_pairs: @pole_pairs,
         requested_throttle_source: @hand,
         requested_throttle: D.new("0.6"),
@@ -69,14 +67,14 @@ defmodule VmsCore.Components.Vesc.MotorControllerTest do
       assert D.eq?(duty, D.new("0.36"))
     end
 
-    test "a physical velocity drives the rpm, as a fraction of max_speed" do
+    test "a physical velocity drives the rpm, as a fraction of the maximum" do
       {"vesc_set_rpm", %{"erpm" => erpm}} =
         MotorController.command(
           state(%{requested_throttle_source: @planner, requested_throttle: D.new(1)})
         )
 
-      # 0.5 m/s on a 0.0548 m wheel is 87.1 wheel rpm; × 11.3 × 2.
-      assert_in_delta erpm, 1968, 1
+      # Two pole pairs: twice the mechanical rpm.
+      assert erpm == 1968
     end
 
     test "a negative velocity is a negative rpm: the planner may reverse" do
@@ -85,7 +83,7 @@ defmodule VmsCore.Components.Vesc.MotorControllerTest do
           state(%{requested_throttle_source: @planner, requested_throttle: D.new("-0.5")})
         )
 
-      assert_in_delta erpm, -984, 1
+      assert erpm == -984
     end
 
     test "a velocity beyond the range is clamped, not extrapolated" do

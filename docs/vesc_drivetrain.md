@@ -20,9 +20,9 @@ the way. A VESC on the CAN bus closes all three gaps:
   be set below the slowest velocity in use (see the settings).
 - **Telemetry.** `vesc_status` reports the signed motor rpm and the
   motor current at 50 Hz; `vesc_status_5` adds the battery voltage.
-  The vehicle's speed itself stays with the pulse speed sensor on the
-  driveline: it measures the wheels, not the motor, and does not move
-  when the motor is swapped.
+  The rpm is a rotation `OVCS.VehicleMotion` can turn into the
+  vehicle's speed, with the direction included, as an alternative to
+  the pulse sensor elsewhere in the driveline.
 - **Reverse.** A negative rpm is reverse, no brake-then-reverse
   sequence, so the planner may plan in reverse.
 
@@ -99,10 +99,9 @@ changes kind. The VESC applies whichever control mode it last received.
 
 ## Wiring it into a composer
 
-`Vesc.MotorController` takes the place of `Traxxas.Throttle` as the throttle
-actuator; `OVCS.PulseSpeedSensor` stays as the speed source and
-`OVCS.VehicleMotion` is unchanged. The topology YAML imports the five
-frames, three emitted and two received:
+`Vesc.MotorController` takes the place of `Traxxas.Throttle` as the
+throttle actuator. The topology YAML imports the five frames, three
+emitted and two received:
 
 ```yaml
 emitted_frames:
@@ -114,23 +113,28 @@ received_frames:
   - import!:@ovcs_can:can/components/vesc/0x1B01_vesc_status_5.yml
 ```
 
-The composer starts the component with the geometry that turns a
-velocity into a motor rpm, and the same source wiring as the PWM
-throttle:
+The motor controller knows nothing about the vehicle: it takes the
+motor rpm at a full linear request and the motor's pole pairs. The
+kinematics that turn a speed into that rpm — the pinion to spur ratio,
+the transmission, the wheel radius — are the vehicle's, declared once
+in the composer and shared with `VehicleMotion`:
 
 ```elixir
+# Motor turns per wheel turn: spur teeth over pinion teeth, both
+# counted on the vehicle, times the transmission's fixed 2.72.
+@motor_to_wheel_ratio 54 / 13 * 2.72
+# Motor rpm at `@max_speed_m_s`, what a full linear request asks for.
+@max_motor_rotation_per_minute @max_speed_m_s * 60 /
+                                 (2 * :math.pi() * OvcsMini.geometry().wheel_radius) *
+                                 @motor_to_wheel_ratio
+
 {Vesc.MotorController,
  %{
    selected_control_level_source: Managers.ControlLevel,
    linear_sources: [OVCS.RosVelocityCommand],
-   # m/s at a linear request of 1; RosVelocityCommand's max_speed.
-   max_speed: @max_speed_m_s,
+   max_rotation_per_minute: @max_motor_rotation_per_minute,
    # A 4-pole motor.
    pole_pairs: 2,
-   # Motor turns per wheel turn: spur teeth over pinion teeth, both
-   # counted on the vehicle, times the transmission's own ratio.
-   motor_to_wheel_ratio: 54 / 13 * 2.72,
-   wheel_radius: OvcsMini.geometry().wheel_radius,
    # The feel curve for hands, see Traxxas.Throttle.
    deadzone: @throttle_deadzone,
    expo: @throttle_expo,
@@ -139,10 +143,25 @@ throttle:
  }}
 ```
 
-`:max_speed` is the speed at a linear request of 1 on both sides — what
-`RosVelocityCommand` normalises against and what `Vesc.MotorController` converts
-to rpm — so it is one constant in the composer, not two. Unlike the PWM
-throttle's cap, it is a real speed: the VESC holds it.
+`VehicleMotion` may then take its rotation from the motor rather than
+the pulse sensor — signed, so reverse needs no inference from the
+command:
+
+```elixir
+{OVCS.VehicleMotion,
+ %{
+   rotation_source: Vesc.MotorController,
+   rotation_to_wheel_ratio: @motor_to_wheel_ratio,
+   rotation_signed: true,
+   wheel_radius: OvcsMini.geometry().wheel_radius,
+   ...
+ }}
+```
+
+`@max_speed_m_s` is the speed at a linear request of 1 on both sides —
+what `RosVelocityCommand` normalises against and what the motor rpm is
+derived from — so it is one constant in the composer, not two. Unlike
+the PWM throttle's cap, it is a real speed: the VESC holds it.
 
 ### Bench checks
 
