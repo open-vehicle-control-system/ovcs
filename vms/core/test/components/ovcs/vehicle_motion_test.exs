@@ -1,12 +1,14 @@
 defmodule VmsCore.Components.OVCS.VehicleMotionTest do
   @moduledoc """
-  The motion frame's three claims: the sign follows the command, the
-  magnitude follows the sensor, and an unknown speed is flagged rather
-  than encoded as a standstill.
+  The motion frame's claims: the kinematics turn a shaft's rotation
+  into the vehicle's speed, the sign follows the command unless the
+  source knows it, and an unknown rotation is flagged rather than
+  encoded as a standstill.
 
   Driven through `handle_info/2` against a stub state, the way the
   actuator tests do — `init/1` configures a CAN emitter, which is not
-  under test.
+  under test. The constants are the Mini's: a 0.0548 m wheel and a
+  sensed shaft geared 2.72:1 to it.
   """
   use ExUnit.Case, async: true
 
@@ -15,25 +17,67 @@ defmodule VmsCore.Components.OVCS.VehicleMotionTest do
   alias VmsCore.Components.OVCS.VehicleMotion
 
   @manager ControlLevelManager
-  @sensor SpeedSensor
+  @sensor ShaftSensor
   @commander SomeCommander
+  @ratio 2.72
+  @wheel_radius 0.0548
 
   defp state(overrides \\ %{}) do
     Map.merge(
       %{
         loop_timer: nil,
-        speed_source: @sensor,
+        rotation_source: @sensor,
+        rotation_signed: false,
+        rotation_to_wheel_ratio: D.from_float(@ratio),
+        speed_factor: VehicleMotion.speed_factor(@ratio, @wheel_radius),
         selected_control_level_source: @manager,
         steering_factor: D.from_float(0.52),
         requested_throttle_source: @commander,
         requested_steering_source: @commander,
         direction_sign: 1,
         requested_steering: D.new(0),
-        speed: nil,
+        rotation_per_minute: nil,
         sequence: 0
       },
       overrides
     )
+  end
+
+  describe "the kinematics" do
+    test "one wheel turn per second" do
+      # 2.72 shaft turns per wheel turn: 163.2 shaft rpm is 60 wheel
+      # rpm, 2π · 0.0548 m = 0.3443 m/s = 1.24 km/h.
+      state = state(%{rotation_per_minute: D.new("163.2")})
+      assert D.eq?(VehicleMotion.speed_km_h(state), D.new("1.24"))
+      assert D.eq?(VehicleMotion.wheel_rotation_per_minute(state), D.new("60.0"))
+    end
+
+    test "no rotation is exactly zero, which is what the standstill gate needs" do
+      state = state(%{rotation_per_minute: D.new(0)})
+      assert D.eq?(VehicleMotion.speed_km_h(state), D.new(0))
+      assert D.eq?(VehicleMotion.wheel_rotation_per_minute(state), D.new(0))
+    end
+
+    test "the sensed shaft is not the wheel" do
+      # A shaft geared 2.72:1 turns 2.72 times per wheel turn, so the
+      # same rpm on it is a slower vehicle than on the wheel itself.
+      on_shaft = state(%{rotation_per_minute: D.new("100.0")})
+
+      on_wheel =
+        state(%{
+          rotation_per_minute: D.new("100.0"),
+          rotation_to_wheel_ratio: D.new(1),
+          speed_factor: VehicleMotion.speed_factor(1, @wheel_radius)
+        })
+
+      assert D.lt?(VehicleMotion.speed_km_h(on_shaft), VehicleMotion.speed_km_h(on_wheel))
+    end
+
+    test "km/h to m/s for the frame" do
+      # 3.6 km/h is 1 m/s.
+      assert D.eq?(VehicleMotion.speed_m_s(D.new("3.6")), D.new("1.000"))
+      assert D.eq?(VehicleMotion.speed_m_s(D.new("-3.6")), D.new("-1.000"))
+    end
   end
 
   describe "the direction sign" do
@@ -56,44 +100,72 @@ defmodule VmsCore.Components.OVCS.VehicleMotionTest do
 
       assert unchanged.direction_sign == 1
     end
-  end
 
-  describe "the speed" do
-    test "converts km/h to signed m/s" do
-      # 3.6 km/h is 1 m/s.
-      assert D.eq?(VehicleMotion.signed_speed_m_s(D.new("3.6"), 1), D.new("1.000"))
-      assert D.eq?(VehicleMotion.signed_speed_m_s(D.new("3.6"), -1), D.new("-1.000"))
+    test "an unsigned rotation takes the command's sign" do
+      state = state(%{rotation_per_minute: D.new("163.2"), direction_sign: -1})
+      assert D.eq?(VehicleMotion.speed_km_h(state), D.new("-1.24"))
     end
 
-    test "nil encodes as zero, and speed_valid is what says not to read it" do
-      assert D.eq?(VehicleMotion.signed_speed_m_s(nil, -1), D.new(0))
+    test "a signed rotation keeps its own sign, whatever the command says" do
+      # A motor controller reports a negative rpm in reverse; applying
+      # the command's sign on top would read two negatives as forward.
+      state =
+        state(%{
+          rotation_signed: true,
+          rotation_per_minute: D.new("-163.2"),
+          direction_sign: -1
+        })
+
+      assert D.eq?(VehicleMotion.speed_km_h(state), D.new("-1.24"))
+    end
+  end
+
+  describe "unknown is not zero" do
+    test "a nil rotation is a nil speed, encoded as zero with speed_valid false" do
+      state = state()
+      assert VehicleMotion.speed_km_h(state) == nil
+      assert VehicleMotion.wheel_rotation_per_minute(state) == nil
+      assert D.eq?(VehicleMotion.speed_m_s(nil), D.new(0))
     end
 
     test "the sequence advances on a fresh sample and holds on nil" do
       {:noreply, state} =
         VehicleMotion.handle_info(
-          %Message{name: :speed, value: D.new("1.24"), source: @sensor},
+          %Message{name: :rotation_per_minute, value: D.new("163.2"), source: @sensor},
           state()
         )
 
       assert state.sequence == 1
-      assert D.eq?(state.speed, D.new("1.24"))
+      assert D.eq?(state.rotation_per_minute, D.new("163.2"))
 
       {:noreply, state} =
-        VehicleMotion.handle_info(%Message{name: :speed, value: nil, source: @sensor}, state)
+        VehicleMotion.handle_info(
+          %Message{name: :rotation_per_minute, value: nil, source: @sensor},
+          state
+        )
 
       assert state.sequence == 1
-      assert state.speed == nil
+      assert state.rotation_per_minute == nil
     end
 
     test "the sequence wraps at 255" do
       {:noreply, state} =
         VehicleMotion.handle_info(
-          %Message{name: :speed, value: D.new(0), source: @sensor},
+          %Message{name: :rotation_per_minute, value: D.new(0), source: @sensor},
           state(%{sequence: 255})
         )
 
       assert state.sequence == 0
+    end
+
+    test "only the configured rotation source is read" do
+      {:noreply, unchanged} =
+        VehicleMotion.handle_info(
+          %Message{name: :rotation_per_minute, value: D.new("163.2"), source: Impostor},
+          state()
+        )
+
+      assert unchanged.rotation_per_minute == nil
     end
   end
 

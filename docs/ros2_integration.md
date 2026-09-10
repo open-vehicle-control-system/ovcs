@@ -323,11 +323,13 @@ remains unbuilt.
 
 Nav2 consumes `/odom` and the `odom → base_link` transform, and on the
 real vehicle nothing used to publish them. Now the VMS emits
-`vehicle_motion` (`0x60B`): the speed from the pulse counter, *signed*
-by the throttle request the control level manager selected — a hall
-sensor pulsing once per shaft turn cannot know direction, but the VMS
-knows what it commanded — plus the commanded steering angle, a
-validity flag and a per-fresh-sample sequence.
+`vehicle_motion` (`0x60B`): the speed, computed by `VehicleMotion` from
+the rotation of a shaft in the driveline through the vehicle's gearing
+and wheel size, *signed* by the throttle request the control level
+manager selected — a hall sensor pulsing once per shaft turn cannot
+know direction, but the VMS knows what it commanded — plus the
+commanded steering angle, a validity flag and a per-fresh-sample
+sequence.
 `RosBridge.Publishers.Odometry` integrates that speed along the
 BNO085's heading and publishes both topics with one stamp. When the
 VMS loses its own speed, or the frame goes stale, the publisher goes
