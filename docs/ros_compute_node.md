@@ -183,7 +183,7 @@ Two networks, each doing the one thing it is good at:
         │      MASQUERADE out via the uplink             │
         └────┬────────────────────────────┬──────────────┘
              │                            │
-          eth0                      wlP1p1s0  (AX210 AP "OVCS-Mini", 2.4 GHz)
+          eth0                      wlP1p1s0  (AX210 AP "OVCS-Mini", 5 GHz)
      vehicle switch:                a laptop with no site Wi-Fi,
      VMS, bridge-ros,               or one that wants the fabric
      bridge-ros_perception          at full rate
@@ -234,11 +234,13 @@ each file explain the rest:
   `NetworkManager.conf` lists `interface-name:br*` as unmanaged, so
   such a bridge is invisible to NetworkManager and activation fails
   with `device is strictly unmanaged`.
-- **The access point is 2.4 GHz because that is all the card offers.**
-  The AX210 is a self-managed regulatory phy; 5 GHz is either
-  `IR-CONCURRENT`, `DFS`, or in a band the ETSI regdb caps at 13 dBm
-  and partly allocates to road tolling. A 5 GHz AP here needs a
-  different card and hostapd, not a config change.
+- **The access point uses channel 149 at 80 MHz.** NetworkManager 1.52
+  generates an invalid VHT center frequency of 5770 MHz for this channel.
+  The `wifi_ap_fix` service corrects it to 5775 MHz through the host
+  supplicant's D-Bus interface and reapplies the tested 6 dBm TX limit.
+  Keep the configured regulatory country and account for antenna gain
+  when changing power. Deploy the service before installing the 5 GHz
+  profile; see the [host instructions](../compose/compute/host/README.md).
 
 ### Reaching the vehicle network from the site Wi-Fi
 
@@ -502,7 +504,10 @@ one is open.
 compute node. The `wifi_firmware` service stages the blobs and iwlwifi
 binds them at boot ("loaded firmware version 89…", "loaded PNVM
 version…"); `"country": "BE"` reaches the AX210's self-managed phy;
-`OVCS-Mini` comes up unattended on ch 11 as `WPA2 WPA3`; `ovcs0` holds
+`OVCS-Mini` comes up unattended as `WPA2 WPA3` — on ch 11 before the
+5 GHz profile, on ch 149 / 80 MHz with `wifi_ap_fix` deployed, and the
+2.4 GHz clone `ovcs0-ap-fallback` takes over if 5 GHz cannot start;
+`ovcs0` holds
 `10.42.0.1/24` with `eth0` and the access point as its ports, and
 dnsmasq leases to the three Nerves boards by hostname. `uplink` on the
 onboard radio is the only default route. Every Nerves firmware is built
@@ -512,10 +517,9 @@ and both bridges peer with the router over the wire.
 
 What is left:
 
-1. Decide whether HT40 is worth it. `channel-width` is auto (HT20)
-   today; HT40 roughly doubles throughput for a laptop on the access
-   point but needs ch 3-9, which is where the site's other APs already
-   are.
+1. Confirm the 5 GHz access point survives a cold boot on the car,
+   including the fallback path (`ovcs0-ap-fallback` on ch 11 when
+   ch 149 does not come up).
 2. A reservation on the site router for the compute node's onboard radio, so
    the Foxglove URL stops moving.
 

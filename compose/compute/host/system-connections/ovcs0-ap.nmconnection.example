@@ -1,14 +1,19 @@
 # The AX210 as an access point, bridged into the vehicle network.
 #
-# 2.4 GHz is not a preference, it is the only option this card offers
-# here. The AX210 is a self-managed regulatory phy; under BE its table
-# marks 5 GHz ch 36-48 IR-CONCURRENT (AP only alongside a client link
-# on the same channel) and ch 52-140 DFS (needs radar detection, which
-# NetworkManager's wpa_supplicant AP mode does not do). ch 149-173 the
-# card offers at 22 dBm, but the ETSI/BE regdb caps 5725-5875 at 13 dBm
-# and 5795-5815 is the road-tolling band — not somewhere to put a
-# transmitter on a vehicle. 2.4 GHz is clean and allows HT40 in
-# 2422-2462.
+# Channel 149 / 80 MHz requires the wifi_ap_fix service on NetworkManager
+# 1.52: it corrects the VHT center to 5775 MHz and limits TX power to
+# 6 dBm. Deploy that service before activating this profile.
+#
+# The 6 dBm is not a tuning value. An 80 MHz channel centred on 5775 MHz
+# spans 5735-5815 MHz; the ETSI/BE table caps 5725-5875 at 13 dBm and
+# 5795-5815 is the road-tolling band, so this transmitter, on a vehicle,
+# sits inside it. The card would offer 22 dBm here. Raising the limit
+# means re-reading that table first, and the 2.4 GHz fallback profile
+# (see ../README.md) exists precisely so nothing forces the issue.
+#
+# The lower 5 GHz channels are no alternative: 36-48 are IR-CONCURRENT
+# (AP only alongside a client link on the same channel) and 52-140 are
+# DFS, which the supplicant's AP mode cannot do.
 #
 # Requires `"country":"BE"` in /mnt/boot/config.json. Without a country
 # the phy sits in regulatory domain 00, where AP mode cannot beacon.
@@ -18,22 +23,20 @@
 # no such name (wlan0 or wlan1, depending on who registered first),
 # which is why uplink.nmconnection matches it by driver instead.
 #
-# channel: pick one clear of nearby APs — `nmcli device wifi list` on
-# the device shows what is around. NetworkManager 1.52 also exposes
-# 802-11-wireless.channel-width (auto yields HT20); HT40 needs ch 3-9
-# and roughly doubles throughput at the cost of spectrum.
-
 [connection]
 id=ovcs0-ap
 type=wifi
 interface-name=wlP1p1s0
 master=ovcs0
 slave-type=bridge
+autoconnect-priority=100
+autoconnect-retries=1
 
 [wifi]
 mode=ap
-band=bg
-channel=11
+band=a
+channel=149
+channel-width=80
 ssid=OVCS-Mini
 
 # proto/pairwise/group are not decoration. Left to itself
