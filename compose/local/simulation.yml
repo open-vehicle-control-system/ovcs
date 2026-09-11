@@ -139,6 +139,8 @@ services:
       QT_X11_NO_MITSHM: 1
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      # The GUI resolves visual mesh URIs independently of the server.
+      - ../../vehicles/ovcs_mini/description:/opt/ovcs/vehicles/ovcs_mini:ro
     command:
       - bash
       - -lc
