@@ -19,6 +19,12 @@ void Can::begin() {
 void Can::receive() {
   if (acan.available()) {
     acan.receive(_receivedFrame);
+    // Every frame the controller understands has a standard 11-bit id.
+    // The 29-bit frames of other devices on the bus (a VESC's low byte
+    // is its controller id) would otherwise alias a standard id.
+    if (_receivedFrame.ext) {
+      _receivedFrame.id = 0;
+    }
   } else {
     _receivedFrame.id = 0;
   }

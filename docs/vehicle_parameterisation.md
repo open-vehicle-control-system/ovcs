@@ -275,9 +275,10 @@ Joystick input still reaches `0x2B0` and is discarded.
 
 There is no controller on the host either, so nothing emits the pulse
 counter frame `0x709`. The generic controller publishes the pulse
-frequency as nil while that frame is dead, `OVCS.PulseSpeedSensor`
-publishes a nil speed, and the manager treats an unknown speed as "not a
-standstill": every mode change is refused with `:speed_unknown`. So a
+frequency as nil while that frame is dead, `OVCS.PulseRotationSensor`
+publishes a nil rotation, `OVCS.VehicleMotion` a nil speed, and the
+manager treats an unknown speed as "not a standstill": every mode change
+is refused with `:speed_unknown`. So a
 bench session needs two things synthesised, a speed and the switches.
 
 The speed first, and it has to be a stream: the frame watcher needs

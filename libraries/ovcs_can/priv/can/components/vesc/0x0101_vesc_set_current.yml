@@ -1,0 +1,18 @@
+---
+# CAN_PACKET_SET_CURRENT for the VESC with id 1: motor current
+# setpoint in amperes, negative for reverse torque. At zero the VESC
+# applies no torque at all, which lets the motor spin freely — the
+# command for "nothing commands the vehicle".
+name: vesc_set_current
+id: 0x0101
+extended: true
+frequency: 20
+signals:
+  - name: current
+    unit: A
+    value_start: 0
+    value_length: 32
+    sign: signed
+    endianness: big
+    scale: "0.001"
+    precision: 3

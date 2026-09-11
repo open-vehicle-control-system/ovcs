@@ -1,0 +1,34 @@
+---
+# CAN_PACKET_STATUS from the VESC with id 1, sent at the VESC's
+# configured status rate (50 Hz expected here). `erpm` is signed, so
+# the direction of travel comes with the speed rather than being
+# inferred from the command.
+#
+# `precision` is stated with `scale` because Cantastic otherwise rounds
+# the decoded value to two decimals.
+name: vesc_status
+id: 0x0901
+extended: true
+frequency: 20
+signals:
+  - name: erpm
+    kind: integer
+    value_start: 0
+    value_length: 32
+    sign: signed
+    endianness: big
+  - name: motor_current
+    unit: A
+    value_start: 32
+    value_length: 16
+    sign: signed
+    endianness: big
+    scale: "0.1"
+    precision: 1
+  - name: duty
+    value_start: 48
+    value_length: 16
+    sign: signed
+    endianness: big
+    scale: "0.001"
+    precision: 3

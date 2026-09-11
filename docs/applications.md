@@ -53,6 +53,7 @@ The core library contains:
   - `Ovcs.RadioControl.*` -- RC transmitter control (throttle, steering, direction)
   - `OVCS.RosActuatorCommand.*`, `OVCS.RosVelocityCommand` -- the two command paths from the ROS bridge: joystick positions and planner velocity
   - `Traxxas.*` -- RC car motor, steering, and throttle (for OVCS Mini)
+  - `Vesc.MotorController` -- a motor controller running the VESC firmware, commanded over CAN (see [VESC drivetrain](./vesc_drivetrain.md))
 - **Vehicle behaviour** (`lib/vms_core/vehicle.ex`) -- Contract each vehicle's VMS composer must implement: required `children/0`, `can_config_otp_app/0`, `can_config_path/0`, `default_can_mapping/1`; optional `dashboard_configuration/0`, `generic_controllers/0`. The configured composer is resolved via `Application.get_env(:vms_core, :vehicle)` and comes from a vehicle package (e.g. `Ovcs1.Vms.Composer`).
 - **Managers** (`lib/vms_core/managers/`) -- Higher-level logic for gear management and control level switching.
 - **Bus** (`lib/vms_core/bus.ex`) -- PubSub-based event bus for inter-process communication.
