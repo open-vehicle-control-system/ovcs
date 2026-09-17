@@ -31,9 +31,10 @@ load; with a sensorless motor it still works but starts roughly.
 
 ## Wiring
 
-The VESC's CAN H and CAN L go on the `ovcs` bus like any other node. It
-has no termination resistor of its own, so the bus's existing
-terminations stay as they are. Its CAN ground is the vehicle ground.
+The VESC's CAN H and CAN L go on a bus of the VMS's — on OVCS Mini the
+`misc` bus on `spi1.0`, kept apart from the controller and bridge
+frames on `ovcs`. It has no termination resistor of its own, so the
+bus's existing terminations stay as they are. Its CAN ground is the vehicle ground.
 The VESC's own power stays on the traction battery; the VMS does not
 switch it.
 
@@ -48,7 +49,7 @@ Set these once in VESC Tool, after motor detection:
 | Setting | Where | Value |
 |---------|-------|-------|
 | VESC ID | App Settings → General | `1` (the id baked into the frame files) |
-| CAN baud rate | App Settings → General | the `ovcs` bus's bitrate, 500 kbps on OVCS Mini |
+| CAN baud rate | App Settings → General | the bus's bitrate, 500 kbps for `misc` on OVCS Mini |
 | CAN status message mode | App Settings → General | a mode that includes messages 1 and 5 |
 | CAN status rate | App Settings → General | 50 Hz |
 | Timeout | App Settings → General | 1000 ms (default); must stay far above the 20 ms command period |
@@ -101,16 +102,19 @@ changes kind. The VESC applies whichever control mode it last received.
 
 `Vesc.MotorController` takes the place of `Traxxas.Throttle` as the
 throttle actuator. The topology YAML imports the five frames, three
-emitted and two received:
+emitted and two received, on the network the VESC is wired to:
 
 ```yaml
-emitted_frames:
-  - import!:@ovcs_can:can/components/vesc/0x0001_vesc_set_duty.yml
-  - import!:@ovcs_can:can/components/vesc/0x0101_vesc_set_current.yml
-  - import!:@ovcs_can:can/components/vesc/0x0301_vesc_set_rpm.yml
-received_frames:
-  - import!:@ovcs_can:can/components/vesc/0x0901_vesc_status.yml
-  - import!:@ovcs_can:can/components/vesc/0x1B01_vesc_status_5.yml
+can_networks:
+  misc:
+    bitrate: 500000
+    emitted_frames:
+      - import!:@ovcs_can:can/components/vesc/0x0001_vesc_set_duty.yml
+      - import!:@ovcs_can:can/components/vesc/0x0101_vesc_set_current.yml
+      - import!:@ovcs_can:can/components/vesc/0x0301_vesc_set_rpm.yml
+    received_frames:
+      - import!:@ovcs_can:can/components/vesc/0x0901_vesc_status.yml
+      - import!:@ovcs_can:can/components/vesc/0x1B01_vesc_status_5.yml
 ```
 
 The motor controller knows nothing about the vehicle: it takes the
@@ -130,6 +134,7 @@ in the composer and shared with `VehicleMotion`:
 
 {Vesc.MotorController,
  %{
+   network: :misc,
    selected_control_level_source: Managers.ControlLevel,
    linear_sources: [OVCS.RosVelocityCommand],
    max_rotation_per_minute: @max_motor_rotation_per_minute,
@@ -186,13 +191,14 @@ in [Vehicle Parameterisation, "Driving on the host
 bench"](./vehicle_parameterisation.md#driving-on-the-host-bench) is
 unchanged. Nothing emits `vesc_status` on a virtual CAN, so the
 motor controller's telemetry reads nil; to see it populated, synthesise a
-stationary VESC — the id needs `cangen`'s extended flag:
+stationary VESC on the VESC's bus — `vcan1` is `misc` on the Mini — and
+the id needs `cangen`'s extended flag:
 
 ```bash
-cangen vcan0 -e -I 901 -L 8 -D 0000000000000000 -g 20
+cangen vcan1 -e -I 901 -L 8 -D 0000000000000000 -g 20
 ```
 
-The commands the VMS emits are visible with `candump vcan0` as
+The commands the VMS emits are visible with `candump vcan1` as
 `00000001`, `00000101` or `00000301` frames, one of them at a time.
 
 Next: [Vehicle Parameterisation](./vehicle_parameterisation.md)

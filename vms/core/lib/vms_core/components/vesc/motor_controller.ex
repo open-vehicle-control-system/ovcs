@@ -51,6 +51,9 @@ defmodule VmsCore.Components.Vesc.MotorController do
 
   ## Options
 
+    * `:network` — the CAN network the VESC sits on, as named in the
+      vehicle's topology YAML, which must import the five `vesc_*`
+      frames on it.
     * `:selected_control_level_source` — the manager that names the
       throttle source, `Managers.ControlLevel`.
     * `:linear_sources` — commanders whose request is a physical
@@ -80,7 +83,6 @@ defmodule VmsCore.Components.Vesc.MotorController do
   alias VmsCore.Components.Traxxas.Throttle
 
   @loop_period 10
-  @network :ovcs
   @set_duty "vesc_set_duty"
   @set_current "vesc_set_current"
   @set_rpm "vesc_set_rpm"
@@ -97,6 +99,7 @@ defmodule VmsCore.Components.Vesc.MotorController do
   @impl true
   def init(
         %{
+          network: network,
           selected_control_level_source: selected_control_level_source,
           max_rotation_per_minute: max_rotation_per_minute,
           pole_pairs: pole_pairs
@@ -105,20 +108,21 @@ defmodule VmsCore.Components.Vesc.MotorController do
     Bus.subscribe("messages")
     # Errors too: the watcher's missing-frame events are what turn the
     # telemetry back to nil when the VESC goes quiet.
-    :ok = Receiver.subscribe(self(), @network, [@status, @status_5], %{errors: true})
-    :ok = ReceivedFrameWatcher.enable(@network, @status)
+    :ok = Receiver.subscribe(self(), network, [@status, @status_5], %{errors: true})
+    :ok = ReceivedFrameWatcher.enable(network, @status)
 
     # All three command emitters exist from the start, none enabled:
     # the first tick enables the one for the selected source.
-    :ok = configure_emitter(@set_duty, %{"duty" => @zero})
-    :ok = configure_emitter(@set_current, %{"current" => @zero})
-    :ok = configure_emitter(@set_rpm, %{"erpm" => 0})
+    :ok = configure_emitter(network, @set_duty, %{"duty" => @zero})
+    :ok = configure_emitter(network, @set_current, %{"current" => @zero})
+    :ok = configure_emitter(network, @set_rpm, %{"erpm" => 0})
 
     {:ok, timer} = :timer.send_interval(@loop_period, :loop)
 
     {:ok,
      %{
        loop_timer: timer,
+       network: network,
        selected_control_level_source: selected_control_level_source,
        linear_sources: Map.get(args, :linear_sources, []),
        curve: Throttle.curve(args),
@@ -193,11 +197,12 @@ defmodule VmsCore.Components.Vesc.MotorController do
     {:noreply, %{state | input_voltage: input_voltage}}
   end
 
-  def handle_info({:handle_missing_frame, @network, @status}, state) do
+  def handle_info({:handle_missing_frame, network, @status}, state)
+      when network == state.network do
     {:noreply, %{state | erpm: nil, motor_current: nil}}
   end
 
-  def handle_info({:handle_missing_frame, @network, _frame_name}, state) do
+  def handle_info({:handle_missing_frame, _network, _frame_name}, state) do
     {:noreply, state}
   end
 
@@ -214,12 +219,12 @@ defmodule VmsCore.Components.Vesc.MotorController do
 
       false ->
         {frame_name, data} = command
-        :ok = Emitter.update(@network, frame_name, fn _ -> data end)
+        :ok = Emitter.update(state.network, frame_name, fn _ -> data end)
 
         case state.command do
           {^frame_name, _} -> :ok
-          {previous_frame_name, _} -> switch_emitter(previous_frame_name, frame_name)
-          nil -> Emitter.enable(@network, frame_name)
+          {previous, _} -> switch_emitter(state.network, previous, frame_name)
+          nil -> Emitter.enable(state.network, frame_name)
         end
 
         Bus.broadcast("messages", %Bus.Message{
@@ -236,9 +241,9 @@ defmodule VmsCore.Components.Vesc.MotorController do
   # emitter, so the new frame carries the new data from its first
   # emission. Disabling first leaves the VESC without a command for a
   # tick at most, far inside its timeout.
-  defp switch_emitter(previous_frame_name, frame_name) do
-    Emitter.disable(@network, previous_frame_name)
-    Emitter.enable(@network, frame_name)
+  defp switch_emitter(network, previous_frame_name, frame_name) do
+    Emitter.disable(network, previous_frame_name)
+    Emitter.enable(network, frame_name)
   end
 
   @doc """
@@ -314,8 +319,8 @@ defmodule VmsCore.Components.Vesc.MotorController do
     state
   end
 
-  defp configure_emitter(frame_name, initial_data) do
-    Emitter.configure(@network, frame_name, %{
+  defp configure_emitter(network, frame_name, initial_data) do
+    Emitter.configure(network, frame_name, %{
       parameters_builder_function: :default,
       initial_data: initial_data,
       enable: false

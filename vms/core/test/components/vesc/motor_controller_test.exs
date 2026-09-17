@@ -31,6 +31,7 @@ defmodule VmsCore.Components.Vesc.MotorControllerTest do
     Map.merge(
       %{
         loop_timer: nil,
+        network: :misc,
         selected_control_level_source: @manager,
         linear_sources: [@planner],
         curve: Throttle.curve(%{}),
@@ -210,10 +211,20 @@ defmodule VmsCore.Components.Vesc.MotorControllerTest do
       assert state.erpm == 0
 
       {:noreply, state} =
-        MotorController.handle_info({:handle_missing_frame, :ovcs, "vesc_status"}, state)
+        MotorController.handle_info({:handle_missing_frame, :misc, "vesc_status"}, state)
 
       assert state.erpm == nil
       assert state.motor_current == nil
+    end
+
+    test "a missing frame on another network is not this VESC's" do
+      {:noreply, state} =
+        MotorController.handle_info({:handle_frame, status_frame(500, D.new(1))}, state())
+
+      {:noreply, state} =
+        MotorController.handle_info({:handle_missing_frame, :ovcs, "vesc_status"}, state)
+
+      assert state.erpm == 500
     end
 
     test "the input voltage comes from status 5" do
