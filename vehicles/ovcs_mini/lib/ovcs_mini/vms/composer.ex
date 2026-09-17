@@ -19,8 +19,8 @@ defmodule OvcsMini.Vms.Composer do
   def can_config_path, do: "can/vms.yml"
 
   @impl VmsCore.Vehicle
-  def default_can_mapping(:host), do: "ovcs:vcan0"
-  def default_can_mapping(:target), do: "ovcs:spi0.0"
+  def default_can_mapping(:host), do: "ovcs:vcan0,misc:vcan1"
+  def default_can_mapping(:target), do: "ovcs:spi0.0,misc:spi1.0"
 
   # Speed in m/s at the throttle cap below, which is what a full request
   # from the planner produces. Not geometry — a property of the motor,
