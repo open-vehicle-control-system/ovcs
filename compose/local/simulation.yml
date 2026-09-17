@@ -1,4 +1,4 @@
-# Gazebo Jetty simulation of the OVCS Mini. Only ever runs on a
+# Gazebo Jetty simulation of the selected vehicle. Only ever runs on a
 # workstation; nothing in this file is pushed to balena.
 #
 # It speaks Zenoh like everything else, so a simulated vehicle appears
@@ -42,14 +42,14 @@ services:
       # /robot_description, not from the resource path.
       GZ_SIM_RESOURCE_PATH: /opt/ovcs/worlds
     volumes:
-      # Each vehicle's model, mounted under its own name. Models live
-      # with their vehicle (vehicles/<name>/description), so a new
-      # vehicle is a new line here plus `vehicle:=<name>` on the
-      # launch command.
-      - ../../vehicles/ovcs_mini/description:/opt/ovcs/vehicles/ovcs_mini:ro
-      # Macros shared by every model. The xacros reach it as
-      # ../../common relative to themselves, which resolves inside the
-      # container regardless of where the files sit in the repo.
+      # Both server and GUI resolve mesh URIs under the same generic path.
+      - type: bind
+        source: ../../vehicles/${SIM_VEHICLE:?Set SIM_VEHICLE to a vehicle directory}/description
+        target: /opt/ovcs/description
+        read_only: true
+        bind:
+          create_host_path: false
+      # Shared macros are passed explicitly to Xacro by the launcher.
       - ./simulation/common:/opt/ovcs/common:ro
       # Iterate on the launch file and world without rebuilding too.
       # The image carries its own copies, so the stack still runs if
@@ -61,7 +61,7 @@ services:
     command:
       - bash
       - -lc
-      - "ros2 launch /opt/ovcs/launch/sim.launch.py teleop:=false"
+      - "ros2 launch /opt/ovcs/launch/sim.launch.py vehicle:=${SIM_VEHICLE:?Set SIM_VEHICLE to a vehicle directory} teleop:=false"
 
   nav2:
     # Nav2, behind a profile so the plain `up -d` above stays a bare
@@ -139,6 +139,12 @@ services:
       QT_X11_NO_MITSHM: 1
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - type: bind
+        source: ../../vehicles/${SIM_VEHICLE:?Set SIM_VEHICLE to a vehicle directory}/description
+        target: /opt/ovcs/description
+        read_only: true
+        bind:
+          create_host_path: false
     command:
       - bash
       - -lc

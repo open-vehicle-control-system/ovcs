@@ -1,4 +1,4 @@
-# Gazebo Jetty + ROS 2 Lyrical image for simulating the OVCS Mini.
+# Gazebo Jetty + ROS 2 Lyrical image for local vehicle simulation.
 #
 # Separate from the vehicle image on purpose. This one carries Gazebo
 # and its GUI stack — hundreds of megabytes that must never end up on
@@ -66,7 +66,6 @@ COPY local/simulation/scripts/  /opt/ovcs/scripts/
 # extra layer. Same reason as ../../../compute/images/ros2/Dockerfile.
 RUN chmod 0755 /usr/local/bin/entrypoint
 
-ENV OVCS_VEHICLES_DIR=/opt/ovcs/vehicles
 
 # Gazebo needs somewhere writable for its own config and cache.
 ENV HOME=/tmp
