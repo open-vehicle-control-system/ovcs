@@ -40,9 +40,9 @@ Its Qt settings apply only to the preview processes to avoid Wayland/HiDPI
 viewport flickering. The grid spacing is 100 mm. Joint sliders are independent;
 Gazebo's Ackermann controller is not running in this preview.
 
-The Gazebo server and GUI both need the description directory mounted at
-`/opt/ovcs/vehicles/ovcs_mini`, as configured in `compose/local/simulation.yml`.
-The GUI loads its own copies of the meshes.
+When using Gazebo, both the server and GUI need access to the description
+directory at the same container path: the GUI loads its own copies of meshes.
+The standalone RViz preview does not require Docker or Compose mounts.
 
 ## Dimensional audit
 
