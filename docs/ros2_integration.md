@@ -130,7 +130,8 @@ Some details that read like bugs until you know them:
 The model itself lives with its vehicle, in
 `vehicles/ovcs_mini/description/`, and is *mounted* into the container
 rather than baked in. A second vehicle is a second `description/`
-directory plus one line in `compose/local/simulation.yml`.
+directory selected with `SIM_VEHICLE=<directory_name>`; shared Compose files
+do not need vehicle-specific mounts.
 
 ## 3. Topics: who publishes what
 

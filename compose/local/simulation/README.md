@@ -1,14 +1,13 @@
-# simulation — the OVCS Mini in Gazebo
+# simulation — vehicle models in Gazebo
 
 > New here? [`docs/ros2_integration.md`](../../../docs/ros2_integration.md)
 > is the map — how the simulator, ROS 2, Nav2 and the Elixir bridge fit
 > together, and which command path the simulator actually exercises.
 > This file is the manual.
 
-A Gazebo **Jetty** model of the OVCS Mini (a Traxxas Slash 4x4, 1/10
-scale short-course truck), plus the stack to run it (`../simulation.yml`). It sits in
-`compose/local/` beside the operator's stack (`../base.yml`) because,
-like it, it never runs on the car; what does is in `../../compute/`.
+A shared Gazebo **Jetty** stack (`../simulation.yml`) loads a model from the
+selected vehicle package. It runs on a workstation, alongside the operator's
+stack; the software deployed to the vehicle lives in `../../compute/`.
 
 It speaks Zenoh like everything else, so a simulated vehicle appears
 on the same fabric as a real one and existing tooling — `ros2 topic`,
@@ -26,20 +25,29 @@ compose/local/
     scripts/              drive_test.py — verifies geometry, not motion
   scripts/verify_*.sh     the verifiers (`mise run verify-*`)
 
-vehicles/ovcs_mini/
-  description/            the Mini's model — mounted, not baked
+vehicles/<vehicle>/
+  description/            the selected model — mounted, not baked
 ```
 
 **A model describes one vehicle, so it lives with that vehicle.** It
 sits beside `priv/` rather than inside it: `priv` is an Elixir
 application's private directory and nothing in the Elixir tree reads a
-xacro, but the model is still the Mini's, not the simulator's.
+xacro, and each model belongs to its vehicle package.
 
-Adding a vehicle is a `description/` directory under it containing
-`<name>.urdf.xacro`, one mount line in `../simulation.yml`, and:
+Adding a vehicle requires `vehicles/<name>/description/<name>.urdf.xacro`.
+Set `SIM_VEHICLE=<name>` in `compose/local/.env` or export it in your shell.
+There is no default and no Compose edit is required. This is a directory name;
+the separate Elixir `VEHICLE` variable remains a module name.
+
+Server and GUI mount the selected description read-only at
+`/opt/ovcs/description`, so they resolve identical mesh URIs. The launcher passes
+`common_dir:=/opt/ovcs/common` to Xacro. Models should expose this argument for
+shared macros and resolve meshes relative to their description directory.
+A missing selection fails Compose interpolation, and a missing description
+directory is not silently created. Recreate both services after changing it:
 
 ```sh
-docker compose -f simulation.yml exec sim ros2 launch /opt/ovcs/launch/sim.launch.py vehicle:=<name>
+docker compose -f simulation.yml --profile gui up -d --force-recreate sim gz-gui
 ```
 
 ## Quickstart
@@ -53,6 +61,7 @@ where it appears.
 
 ```sh
 cd compose/local
+export SIM_VEHICLE=your_vehicle_directory
 
 # A Zenoh router, if there is no vehicle on the LAN to peer with.
 docker compose -f base.yml --profile standalone up -d zenohd
@@ -200,7 +209,7 @@ measures for 20 s, checks, and tears everything down.
 ### The expected distances are derived, not recorded
 
 They come from `worlds/workshop.sdf` and
-`vehicles/ovcs_mini/description/`, so moving a box or the camera
+`vehicles/<vehicle>/description/`, so moving a box or the camera
 updates the expectation rather than silently invalidating it:
 
 ```
@@ -299,7 +308,7 @@ distortion, eyes already coplanar. Feeding it distortion coefficients
 and rectification rotations that describe a physical lens warps the
 two views apart rather than into alignment. Coverage sat at **5.4%**
 until the simulator got its own calibration
-(`vehicles/ovcs_mini/priv/calibration/sim/`), where D is zero and R is
+(`vehicles/<vehicle>/priv/calibration/sim/`), where D is zero and R is
 identity. The same scene then measured **61.2%**.
 
 The focal length in that file is still the real one, scaled to the
@@ -342,7 +351,7 @@ already correct.
 
 ## Measured vs estimated
 
-`vehicles/ovcs_mini/description/ovcs_mini.urdf.xacro` declares every dimension once and
+`vehicles/<vehicle>/description/ovcs_mini.urdf.xacro` declares every dimension once and
 marks which are which. Measured values come from the Traxxas
 specification; **ESTIMATE** marks what the specification does not
 publish — tyre width, chassis-tub dimensions, ground clearance,

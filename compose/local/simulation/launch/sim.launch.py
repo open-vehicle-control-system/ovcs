@@ -1,4 +1,4 @@
-"""Bring up the OVCS Mini in Gazebo Harmonic.
+"""Bring up the selected vehicle in Gazebo Jetty.
 
 Starts four things, in the order they depend on each other:
 
@@ -28,7 +28,8 @@ from launch.substitutions import Command, LaunchConfiguration, PathJoinSubstitut
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
-VEHICLES_DIR = os.environ.get("OVCS_VEHICLES_DIR", "/opt/ovcs/vehicles")
+DESCRIPTION_DIR = "/opt/ovcs/description"
+COMMON_DIR = "/opt/ovcs/common"
 WORLDS_DIR = "/opt/ovcs/worlds"
 CONFIG_DIR = "/opt/ovcs/config"
 
@@ -92,28 +93,22 @@ def generate_launch_description():
     teleop = LaunchConfiguration("teleop")
     vehicle = LaunchConfiguration("vehicle")
 
-    # `value_type=str` is load-bearing. Without it launch tries to
-    # parse the expanded URDF as YAML and fails on the first colon in
-    # the XML, with an error that says nothing about xacro.
-    # <vehicles>/<vehicle>/<vehicle>.urdf.xacro — one directory per
-    # vehicle, named after it.
-    model = PathJoinSubstitution([VEHICLES_DIR, vehicle, [vehicle, ".urdf.xacro"]])
+    model = PathJoinSubstitution([DESCRIPTION_DIR, [vehicle, ".urdf.xacro"]])
 
     # `value_type=str` is load-bearing. Without it launch tries to
     # parse the expanded URDF as YAML and fails on the first colon in
     # the XML, with an error that says nothing about xacro.
     robot_description = ParameterValue(
-        Command(["xacro ", model]), value_type=str
+        Command(["xacro ", model, " common_dir:=", COMMON_DIR]), value_type=str
     )
 
     return LaunchDescription(
         [
             DeclareLaunchArgument(
                 "vehicle",
-                default_value="ovcs_mini",
                 description=(
-                    "Which vehicle to spawn. Names a directory under "
-                    "simulation/vehicles/ containing <name>.urdf.xacro."
+                    "Vehicle directory name; loads <name>.urdf.xacro from "
+                    "/opt/ovcs/description. Must match the Compose selection."
                 ),
             ),
             DeclareLaunchArgument(
