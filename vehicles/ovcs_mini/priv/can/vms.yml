@@ -18,3 +18,12 @@ can_networks:
       - import!:@ovcs_can:can/components/ovcs/0x2A1_radio_control_channels1.yml
       - import!:@ovcs_can:can/components/ovcs/0x2B0_ros_actuator_command.yml
       - import!:@ovcs_can:can/components/ovcs/0x2B1_ros_velocity_command.yml
+  # Second bus, on the VMS's second SPI CAN controller (spi1.0), for
+  # components that are not OVCS's own — a motor controller, a BMS —
+  # kept off `ovcs` so their traffic and identifiers never mix with
+  # the controller and bridge frames. No frames yet: the bus comes up
+  # empty until a component is wired to it.
+  misc:
+    bitrate: 500000
+    emitted_frames: []
+    received_frames: []

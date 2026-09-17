@@ -204,6 +204,13 @@ The OVCS Mini uses the same software stack on a Traxxas 4WD RC car chassis:
 | Motor speed | Hall effect sensor on the main controller's A1, counted by interrupt and reported as a frequency on `0x709` |
 | Radio Control | ExpressLRS receiver via Radio Control Bridge (RPi 3A) |
 
-The OVCS Mini uses a single CAN bus (`ovcs` at 500 kbps) since there are no third-party automotive components requiring isolation.
+The OVCS Mini's VMS has two CAN buses:
+
+| Network | Bitrate | Interface | Connected Components |
+|---------|---------|-----------|---------------------|
+| `ovcs` | 500 kbps | `spi0.0` | Main controller, Radio Control Bridge, ROS Bridge |
+| `misc` | 500 kbps | `spi1.0` | Third-party components: the traction motor controller first, a BMS later |
+
+The bridges only sit on `ovcs`; `misc` is the VMS's alone, so third-party traffic and identifiers never mix with the controller and bridge frames.
 
 Next: [Running on Hardware](./running_hardware.md)
