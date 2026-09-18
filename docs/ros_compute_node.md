@@ -41,7 +41,7 @@ in `compose/compute/`, what never leaves a workstation in
 | Item | Choice | Why |
 |---|---|---|
 | Board | Raspberry Pi 5, 8 GB | ROS 2 Lyrical + Foxglove + perception nodes want the headroom |
-| Storage | NVMe (HAT) or USB SSD | ROS images are multi-GB and container writes destroy SD cards |
+| Storage | NVMe in a USB enclosure | ROS images are multi-GB and container writes destroy SD cards; the PCIe slot holds the Wi-Fi card, so the disk goes on USB — see [Boot media](#boot-media) |
 | Clock | Pi 5 RTC connector + battery, plus NTP | see [Clock](#clock) |
 | Network | the compute node *is* the vehicle network; every board also joins the site Wi-Fi on its own — see [Networking](#networking) | the bridges' router IP is baked into firmware, so it has to be an address we choose |
 | Wi-Fi card | Intel AX210 (M.2 → PCIe), **plus** the onboard radio | the AX210 serves the access point; the onboard radio joins the site Wi-Fi |
@@ -85,6 +85,55 @@ Alternatives weighed and not chosen:
 - **Raspberry Pi OS + overlayfs** — zero friction, but a read-only root
   without atomic updates or rollback is the half of "immutable" that
   doesn't matter on a vehicle.
+
+### Boot media
+
+The compute node boots from an NVMe SSD in a USB 3 enclosure. The Pi 5
+has one PCIe lane and the AX210 is on it, so the disk cannot be on the
+M.2 HAT; a USB enclosure is the only place left, and it is fast enough.
+The SD card is for bringing the board up and for nothing else.
+
+The Pi 5 bootloader refuses USB boot on a supply it cannot negotiate
+5 A from. Without USB-PD it caps the USB ports at 600 mA while looking
+for a boot device, and an NVMe behind a bridge chip asks for more than
+that (the RTL9210B enclosure declares 896 mA) — the drive is simply
+never seen, the green LED blinks its "no boot device" pattern, and
+nothing is logged anywhere. A DC-DC converter on a vehicle is never a
+PD supply, so this has to be settled in the bootloader EEPROM, once per
+board:
+
+1. Flash Raspberry Pi OS Lite to a spare SD card, boot the Pi from it.
+2. `sudo rpi-eeprom-config --edit`, add `PSU_MAX_CURRENT=5000`, keep
+   `BOOT_ORDER=0xf461` (SD, then NVMe, then USB, retry). Save, then
+   `sudo reboot` once so the new bootloader slot is committed;
+   `sudo rpi-eeprom-config` must show the line afterwards.
+3. Power off, remove the SD card, connect the SSD, power on.
+
+`PSU_MAX_CURRENT` tells the bootloader to assume a 5 A supply without
+asking. That is a promise about the converter feeding the Pi: it must
+deliver 5 A at 5 V, or the symptom moves from "does not boot" to
+brownouts under load. balenaOS ships no EEPROM tools, which is why the
+step goes through Raspberry Pi OS.
+
+Then flash balenaOS itself:
+
+1. Download the fleet's image from the dashboard (**Add device**,
+   development mode, the site Wi-Fi as the network) and write it to the
+   SSD with Etcher. The device registers itself in the fleet on first
+   boot with a new name.
+2. Enable **local mode** on the new device before the first
+   `balena push`.
+3. Delete the previous device from the dashboard; its identity does not
+   move with the disk.
+
+`BALENA_HOST_CONFIG_usb_max_current_enable=1` is set at fleet level,
+which lifts the *OS-stage* USB budget to 1.6 A once Linux is up. It
+does not reach the bootloader; only the EEPROM setting above does.
+
+The Realtek RTL9210B bridge (firmware 20.01) is known to drop under
+sustained load on the Pi 5. It has been fine here so far; `dmesg`
+showing `uas` resets or the disk re-enumerating under container load
+is the sign to swap the enclosure for an ASMedia- or JMicron-based one.
 
 ## Deploying
 
@@ -517,8 +566,6 @@ one is open.
 ## Open questions
 
 - balenaCloud vs self-hosted openBalena vs falling back to NixOS.
-- NVMe boot on balenaOS for the Pi 5 — confirm against balena's Pi 5
-  documentation before ordering the HAT.
 - Whether `joy` stays on the base station (it does today, and the
   round trip pad → ROS → Zenoh → `RosBridge.Consumers.Joy` → CAN is
   the price of keeping the controller with the operator). If a pad
