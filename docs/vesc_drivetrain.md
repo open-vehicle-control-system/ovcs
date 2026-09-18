@@ -14,10 +14,11 @@ the way. A VESC on the CAN bus closes all three gaps:
 
 - **Closed-loop speed.** `vesc_set_rpm` asks for an electrical rpm and
   the VESC's speed loop holds it under load, so a planner's velocity is
-  followed rather than approximated by a pulse width. Below the loop's
-  minimum erpm the VESC holds zero duty instead, a passive brake, which
-  is how a zero request stops the vehicle — and why that minimum has to
-  be set below the slowest velocity in use (see the settings).
+  followed rather than approximated by a pulse width. A zero velocity
+  is sent as zero duty, a passive brake that works from any motor
+  state; below the loop's minimum erpm the VESC brakes the same way,
+  which is why that minimum has to be set below the slowest velocity
+  in use (see the settings).
 - **Telemetry.** `vesc_status` reports the signed motor rpm and the
   motor current at 50 Hz; `vesc_status_5` adds the battery voltage.
   The rpm is a rotation `OVCS.VehicleMotion` can turn into the
@@ -48,7 +49,7 @@ Set these once in VESC Tool, after motor detection:
 
 | Setting | Where | Value |
 |---------|-------|-------|
-| VESC ID | App Settings → General | `1` (the id baked into the frame files) |
+| VESC ID | App Settings → General | the id byte of the vehicle's frame wrappers, `1` in the examples below |
 | CAN baud rate | App Settings → General | the bus's bitrate, 500 kbps for `misc` on OVCS Mini |
 | CAN status message mode | App Settings → General | a mode that includes messages 1 and 5 |
 | CAN status rate | App Settings → General | 50 Hz |
@@ -61,8 +62,9 @@ it has to be set explicitly. The 500 kbps baud rate, the 1000 ms
 timeout and the 50 Hz status rate are the firmware defaults.
 
 **Minimum ERPM matters.** A speed setpoint whose magnitude is under it
-does not run the speed loop at all: the VESC holds zero duty, which is
-a passive brake. The firmware default is 900 erpm; on a 2-pole-pair
+does not run the speed loop at all: a running motor holds zero duty, a
+passive brake, and a released motor is not started. The firmware
+default is 900 erpm; on a 2-pole-pair
 motor geared 11.3:1 to 54.8 mm wheels that is 0.23 m/s, above much of
 what a planner commands on its way into a goal — every one of those
 velocities would brake instead. Set it to a few tens of erpm; the
@@ -77,45 +79,76 @@ for the motor and the battery first; the VMS's own caps come on top.
 
 Every VESC frame is a 29-bit extended frame; the low byte of its
 identifier is the VESC id and the byte above it the packet type. The
-frame files pin the id at 1. A second VESC on the bus needs its own set
-of files with the id byte changed, as Cantastic identifiers are static.
+shared library carries the *signals* of each packet and nothing else
+(`libraries/ovcs_can/priv/can/components/vesc/*_signals.yml`); the
+vehicle topology wraps each one in a frame that names it and sets the
+identifier with its VESC's id byte — the way the generic controller's
+frames are declared. A second VESC is a second set of wrappers with
+another id byte and another name prefix.
 
 Standard and extended frames share the bus without conflict: the
 arbitration field differs even when the low 11 bits coincide, and the
 receivers on both sides keep them apart — Cantastic keys its
 specifications on the SocketCAN `can_id` with `CAN_EFF_FLAG`, and the
-generic controller ignores extended frames outright.
+generic controller's MCP2517FD filters extended frames out in hardware.
 
-| Frame | Id | Sent by | When |
-|-------|----|---------|------|
-| `vesc_set_current` | `0x0101` | VMS | no source is selected: zero current releases the motor |
-| `vesc_set_duty` | `0x0001` | VMS | a hand commands: duty in [-1, 1] through the feel curve |
-| `vesc_set_rpm` | `0x0301` | VMS | a velocity commands: electrical rpm, negative for reverse |
-| `vesc_status` | `0x0901` | VESC | 50 Hz: erpm, motor current, duty |
-| `vesc_status_5` | `0x1B01` | VESC | 50 Hz: tachometer, input voltage |
+For a VESC with id 1 wrapped under the prefix `vesc`:
+
+| Frame | Id | Signals | Sent by | When |
+|-------|----|---------|---------|------|
+| `vesc_set_current` | `0x0101` | `set_current_signals.yml` | VMS | no source is selected: zero current releases the motor |
+| `vesc_set_duty` | `0x0001` | `set_duty_signals.yml` | VMS | a hand commands: duty in [-1, 1] through the feel curve; also a velocity of exactly zero, which brakes |
+| `vesc_set_rpm` | `0x0301` | `set_rpm_signals.yml` | VMS | a non-zero velocity commands: electrical rpm, negative for reverse |
+| `vesc_status` | `0x0901` | `status_signals.yml` | VESC | 50 Hz: erpm, motor current, duty |
+| `vesc_status_5` | `0x1B01` | `status_5_signals.yml` | VESC | 50 Hz: tachometer, input voltage |
 
 Exactly one of the three command frames is emitted at a time, every
-20 ms; `Vesc.MotorController` switches the emitter when the selected source
-changes kind. The VESC applies whichever control mode it last received.
+20 ms; `Vesc.MotorController` switches the emitter when the selected
+source changes kind. The VESC applies whichever control mode it last
+received.
+
+Zero velocity goes out as zero duty rather than zero rpm on purpose.
+The VESC only starts its speed loop for a setpoint above *Minimum
+ERPM*; below it a running motor holds zero duty, a passive brake, but
+a released motor — which is what the release command and the timeout
+leave behind — stays released, and a zero rpm would never start it.
+Zero duty brakes from any state and leaves the motor running for the
+next setpoint.
 
 ## Wiring it into a composer
 
 `Vesc.MotorController` takes the place of `Traxxas.Throttle` as the
-throttle actuator. The topology YAML imports the five frames, three
-emitted and two received, on the network the VESC is wired to:
+throttle actuator. Its frame names follow its process name, so with
+`process_name: Vms.Vesc` the topology YAML declares the five frames
+under the `vesc_` prefix on the network the VESC is wired to, each
+wrapping the shared signals with the VESC's id in the low byte:
 
 ```yaml
+# vehicles/ovcs_mini/priv/can/vms.yml
 can_networks:
   misc:
     bitrate: 500000
     emitted_frames:
-      - import!:@ovcs_can:can/components/vesc/0x0001_vesc_set_duty.yml
-      - import!:@ovcs_can:can/components/vesc/0x0101_vesc_set_current.yml
-      - import!:@ovcs_can:can/components/vesc/0x0301_vesc_set_rpm.yml
+      - import!:vesc/0x0001_vesc_set_duty.yml
+      - import!:vesc/0x0101_vesc_set_current.yml
+      - import!:vesc/0x0301_vesc_set_rpm.yml
     received_frames:
-      - import!:@ovcs_can:can/components/vesc/0x0901_vesc_status.yml
-      - import!:@ovcs_can:can/components/vesc/0x1B01_vesc_status_5.yml
+      - import!:vesc/0x0901_vesc_status.yml
+      - import!:vesc/0x1B01_vesc_status_5.yml
 ```
+
+```yaml
+# vehicles/ovcs_mini/priv/can/vesc/0x0301_vesc_set_rpm.yml
+---
+name: vesc_set_rpm
+id: 0x0301
+extended: true
+frequency: 20
+signals: import!:@ovcs_can:can/components/vesc/set_rpm_signals.yml
+```
+
+The received wrappers carry `frequency: 20` as well, the period the
+frame watcher expects at the VESC's 50 Hz status rate.
 
 The motor controller knows nothing about the vehicle: it takes the
 motor rpm at a full linear request and the motor's pole pairs. The
@@ -134,6 +167,7 @@ in the composer and shared with `VehicleMotion`:
 
 {Vesc.MotorController,
  %{
+   process_name: Vms.Vesc,
    network: :misc,
    selected_control_level_source: Managers.ControlLevel,
    linear_sources: [OVCS.RosVelocityCommand],
@@ -150,12 +184,13 @@ in the composer and shared with `VehicleMotion`:
 
 `VehicleMotion` may then take its rotation from the motor rather than
 the pulse sensor — signed, so reverse needs no inference from the
-command:
+command. The source is the process name, which is what the motor
+controller stamps on its bus messages:
 
 ```elixir
 {OVCS.VehicleMotion,
  %{
-   rotation_source: Vesc.MotorController,
+   rotation_source: Vms.Vesc,
    rotation_to_wheel_ratio: @motor_to_wheel_ratio,
    rotation_signed: true,
    wheel_radius: OvcsMini.geometry().wheel_radius,
@@ -170,14 +205,17 @@ the PWM throttle's cap, it is a real speed: the VESC holds it.
 
 ### Bench checks
 
-`motor_to_wheel_ratio` and `pole_pairs` turn the planner's velocity
-into the motor rpm the VESC holds, so an error there makes the vehicle
-drive at the wrong speed — and the pulse speed sensor, which does not
-depend on them, will show it. Check once: drive at a fixed velocity
-under the planner and compare the sensor's `:speed` with what was
-asked; or lift the vehicle, command a known rpm from IEx, and compare
-the sensor's `:wheel_rotation_per_minute` with the motor controller's
-`:rotation_per_minute` over the ratio.
+The motor-to-wheel ratio and the pole pairs turn the planner's
+velocity into the motor rpm the VESC holds, so an error there makes the
+vehicle drive at the wrong speed. The check has to come from a source
+that does not depend on them: the pulse sensor on the spur, whose
+`:rotation_per_minute` is the spur's, independent of anything the VESC
+reports. Lift the vehicle, command a known rpm from IEx, and compare
+the motor controller's `:rotation_per_minute` with the spur sensor's
+times the pinion-to-spur ratio (54/13 above). If `VehicleMotion` is on
+the motor, its `:speed` is derived from the same numbers and proves
+nothing here; on the spur sensor it is the independent reading, and a
+fixed velocity under the planner should read back as asked.
 
 Then find the slowest speed the loop holds cleanly: with the vehicle
 lifted, step the rpm setpoint down until the wheels stutter or stop,
