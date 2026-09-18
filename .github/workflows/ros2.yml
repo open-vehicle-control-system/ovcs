@@ -1,10 +1,10 @@
 name: ROS 2
 
-# The ROS 2 side had no CI at all. The vehicle stack is built by balena
-# from `compose/compute/`, so a broken Dockerfile or a compose file that
-# does not interpolate only surfaced on deploy — the same shape of hole
-# as firmware not being built on pull requests, which cost us four
-# rounds of red CI before it was closed.
+# The ROS 2 side had no CI at all. A vehicle's compute stack is deployed
+# by balena from `vehicles/<name>/compute/`, so a broken Dockerfile or
+# a compose file that does not interpolate only surfaced on deploy —
+# the same shape of hole as firmware not being built on pull requests,
+# which cost us four rounds of red CI before it was closed.
 #
 # Four levels, cheapest first:
 #
@@ -22,7 +22,10 @@ name: ROS 2
 #     `decompress_stereo.py` — which runs on the *vehicle* — are only
 #     ever parsed when something starts them, so an undefined name in
 #     an error path shipped and waited.
-#   * `image` builds every image the vehicle's compute node runs, for
+#   * `vehicle-image` builds each vehicle's own image on top of the
+#     published framework tag — the Dockerfile balena builds on the
+#     device.
+#   * `image` builds every framework image a compute node runs, for
 #     both architectures: amd64 for the workstations that run the same
 #     images, arm64 for the compute node itself. Only a build proves the
 #     COPY lines that reach across directories, and only an arm64 build
@@ -42,6 +45,7 @@ on:
   pull_request:
     paths:
       - 'compose/**'
+      - 'vehicles/*/compute/**'
       - 'ruff.toml'
       - '.github/workflows/ros2.yml'
   workflow_dispatch:
@@ -67,7 +71,7 @@ jobs:
           # --profile '*' is not a thing, so every profile is named: a
           # service behind a profile is otherwise skipped entirely and
           # never validated. The vehicle file has none.
-          - file: compose/compute/docker-compose.yml
+          - file: vehicles/ovcs_mini/compute/docker-compose.yml
             profiles: ''
           - file: compose/local/base.yml
             profiles: --profile standalone --profile calibration --profile nav2
@@ -80,12 +84,14 @@ jobs:
         run: |
           # The local stacks read ZENOH_ENDPOINT_IP from a .env that is
           # deliberately not committed (it holds a site-specific vehicle
-          # address), and the vehicle stack gets its configuration from
-          # balena device variables. Supply a placeholder so
-          # interpolation resolves and a genuinely malformed file is
-          # still the only way this fails.
+          # address, and the vehicle whose Nav2 image the stacks build),
+          # and the vehicle stack gets its configuration from balena
+          # device variables. Supply placeholders so interpolation
+          # resolves and a genuinely malformed file is still the only
+          # way this fails.
           export ZENOH_ENDPOINT_IP=127.0.0.1
           export FOXGLOVE_BRIDGE_PORT=8765
+          export OVCS_VEHICLE=ovcs_mini
           docker compose -f '${{ matrix.file }}' ${{ matrix.profiles }} config -q
 
   pins:
@@ -97,8 +103,8 @@ jobs:
       - name: zenoh is one version everywhere
         run: |
           set -eu
-          router=$(grep -ho 'eclipse/zenoh:[0-9.]*' compose/compute/docker-compose.yml compose/local/base.yml | sort -u)
-          client=$(grep -ho 'eclipse-zenoh==[0-9.]*' compose/compute/images/ros2/Dockerfile | sort -u)
+          router=$(grep -ho 'eclipse/zenoh:[0-9.]*' vehicles/*/compute/docker-compose.yml compose/local/base.yml | sort -u)
+          client=$(grep -ho 'eclipse-zenoh==[0-9.]*' compose/images/ros2/Dockerfile | sort -u)
           echo "router image(s): $router"
           echo "python client:   $client"
           [ "$(echo "$router" | wc -l)" -eq 1 ] || { echo "the two compose files pin different router images"; exit 1; }
@@ -150,16 +156,15 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Nav2's Dockerfile COPYs from its sibling ros2/ and from nav2/,
-      # so its context is the whole source root, the same one the
-      # vehicle compose file gives it. Every other image is
-      # self-contained in its own directory.
+      # Nav2's Dockerfile COPYs from its sibling ros2/, so its context
+      # is compose/images/. Every other image is self-contained in its
+      # own directory.
       - name: Build${{ github.event_name != 'pull_request' && ' and push by digest' || '' }}
         id: build
         uses: docker/build-push-action@v6
         with:
-          context: ${{ matrix.image == 'nav2' && 'compose/compute' || format('compose/compute/images/{0}', matrix.image) }}
-          file: ${{ matrix.image == 'nav2' && 'compose/compute/images/nav2/Dockerfile' || '' }}
+          context: ${{ matrix.image == 'nav2' && 'compose/images' || format('compose/images/{0}', matrix.image) }}
+          file: ${{ matrix.image == 'nav2' && 'compose/images/nav2/Dockerfile' || '' }}
           platforms: linux/${{ matrix.platform.arch }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
@@ -234,3 +239,38 @@ jobs:
             -t "$image:sha-$short" \
             "$@"
           docker buildx imagetools inspect "$image:latest"
+
+  vehicle-image:
+    name: build ${{ matrix.vehicle }}'s images
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        vehicle: [ovcs_mini]
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: docker/setup-buildx-action@v3
+
+      # The vehicle's Dockerfile is FROM the framework's published
+      # image. balena pulls it anonymously, which needs the package
+      # public; this token reads it either way.
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # What balena builds on the device: the vehicle's Dockerfile on
+      # top of the published framework tag. Built for the compute
+      # node's architecture and never pushed — balena does that.
+      - name: Build vehicles/${{ matrix.vehicle }}/compute/nav2
+        uses: docker/build-push-action@v6
+        with:
+          context: vehicles/${{ matrix.vehicle }}/compute/nav2
+          platforms: linux/arm64
+          push: false

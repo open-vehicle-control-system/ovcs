@@ -15,6 +15,9 @@ on:
       - 'vms/**'
       - 'infotainment/**'
       - 'vehicles/**'
+      # A vehicle's compute node stack is containers, not firmware;
+      # ros2.yml covers it.
+      - '!vehicles/*/compute/**'
       - 'libraries/**'
       - 'mise.toml'
       - '.github/workflows/firmware.yml'

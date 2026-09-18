@@ -5,10 +5,10 @@ Everything here configures **balenaOS itself**, not the containers in
 `balena push` — you copy it onto the device once. It lives in the repo
 because the alternative is configuring the vehicle's network by hand
 over SSH, which is the thing
-[`docs/ros_compute_node.md`](../../../docs/ros_compute_node.md) exists
+[`docs/ros_compute_node.md`](../../../../docs/ros_compute_node.md) exists
 to avoid.
 
-See [Networking](../../../docs/ros_compute_node.md#networking) for the
+See [Networking](../../../../docs/ros_compute_node.md#networking) for the
 topology these files implement and the install procedure.
 
 ## What's here
@@ -38,7 +38,7 @@ secrets out of git.
 `chmod 600` itself. NetworkManager only reads the `/etc` copy, so a
 file added to `/mnt/boot` does nothing until the next reboot. The
 install procedure writes both deliberately — see
-[Installing it](../../../docs/ros_compute_node.md#installing-it).
+[Installing it](../../../../docs/ros_compute_node.md#installing-it).
 
 ## Persistent 5 GHz access point
 

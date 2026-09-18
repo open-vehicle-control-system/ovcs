@@ -25,6 +25,10 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOCAL="$(cd "$HERE/.." && pwd)"
 REPO="$(cd "$HERE/../../.." && pwd)"
+# The compose stacks build the vehicle's Nav2 image from
+# vehicles/$OVCS_VEHICLE/compute/nav2; this verifier is written
+# against the Mini.
+export OVCS_VEHICLE="${OVCS_VEHICLE:-ovcs_mini}"
 PERCEPTION_LOG="${TMPDIR:-/tmp}/ovcs-verify-perception.log"
 
 DETECTOR="${OVCS_DETECTOR:-off}"

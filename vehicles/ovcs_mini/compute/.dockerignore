@@ -1,0 +1,6 @@
+# What `balena push` leaves out of the tarball it uploads. The tarball
+# is what OTA deltas are computed from, so nothing that is not a build
+# input belongs in it. The only build input here is nav2/.
+host/
+README.md
+.dockerignore

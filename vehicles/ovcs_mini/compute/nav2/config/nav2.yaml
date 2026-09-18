@@ -1,9 +1,10 @@
 # Nav2 for the OVCS Mini — the one parameter file, for the vehicle and
 # the simulator both.
 #
-# It lives under compose/compute/ because balena requires everything
-# the vehicle image bakes in to sit inside the pushed source root; the
-# simulator reaches across and mounts it. The values written here are
+# It lives with the vehicle because the values are the vehicle's:
+# wheelbase, turning radius, speed limits. The Mini's Nav2 image bakes
+# it over the framework's (../Dockerfile) and the simulator mounts the
+# same directory. The values written here are
 # the vehicle's truth — `use_sim_time: false` in particular — and the
 # launch file overlays `use_sim_time:=true` for a simulated run rather
 # than this file carrying two copies that would drift apart. If sim and

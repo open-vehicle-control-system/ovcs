@@ -6,7 +6,8 @@
 # pushed to balena; the on-vehicle stack is ../compute/.
 #
 # Usage (with a vehicle on the LAN):
-#   cp .env.example .env      # set ZENOH_ENDPOINT_IP to the compute node
+#   cp .env.example .env      # ZENOH_ENDPOINT_IP → the compute node,
+#                             # OVCS_VEHICLE → the vehicle directory
 #   docker compose -f base.yml up -d
 #   docker compose -f base.yml exec ros2 bash
 #
@@ -43,40 +44,43 @@ services:
       service: ros2-image
     container_name: ovcs-ros2
     build:
-      context: ../compute/images/ros2
+      context: ../images/ros2
       dockerfile: Dockerfile
     volumes:
       # Drop ROS 2 packages you write here; the entrypoint sources
       # /opt/ros/$ROS_DISTRO + this overlay before running the CMD.
       # Nodes that graduate to running on the car get baked into an
-      # image under ../compute/images/ instead.
+      # image under ../images/ instead.
       - ./workspace:/workspace
     # Default image CMD idles. Override via
     # `docker compose -f base.yml run --rm ros2 ros2 topic list` to one-shot.
 
   nav2:
-    # The exact image that runs on the car — same Dockerfile, same
-    # baked-in launch and parameters — behind a profile so the loop is
-    # testable with no vehicle at all: standalone zenohd + this + a
-    # host ros_bridge + a host VMS is the full planner path on one
-    # machine. With a vehicle on the LAN, don't start it: the car
-    # runs its own and two planners on one fabric would fight over
-    # /cmd_vel_nav.
+    # The exact image that runs on the car — the vehicle's own
+    # Dockerfile, its parameters baked in over the framework's Nav2
+    # image — behind a profile so the loop is testable with no vehicle
+    # at all: standalone zenohd + this + a host ros_bridge + a host VMS
+    # is the full planner path on one machine. With a vehicle on the
+    # LAN, don't start it: the car runs its own and two planners on
+    # one fabric would fight over /cmd_vel_nav.
     #
     #   docker compose -f base.yml --profile nav2 up -d
     #
+    # OVCS_VEHICLE (from .env) names the vehicle directory. It is
+    # required rather than defaulted: the framework has no vehicle of
+    # its own to plan for.
+    #
     # Bind mounts work here (unlike balena), so a parameter edit can
-    # be tried by mounting ../compute/nav2/config over
+    # be tried by mounting the vehicle's nav2/config over
     # /opt/ovcs/config before baking it.
     extends:
       file: common.yml
       service: fabric-client
-    image: ovcs/nav2:lyrical
+    image: ${OVCS_VEHICLE:?Set OVCS_VEHICLE to a vehicle directory}/nav2:local
     container_name: ovcs-nav2-vehicle
     profiles: ["nav2"]
     build:
-      context: ../compute
-      dockerfile: images/nav2/Dockerfile
+      context: ../../vehicles/${OVCS_VEHICLE:?Set OVCS_VEHICLE to a vehicle directory}/compute/nav2
 
   foxglove_bridge:
     # Also standalone-only: with a vehicle present, Foxglove Studio

@@ -31,7 +31,7 @@ services:
     build:
       # The context is compose/, not this directory, so the image can
       # COPY the Zenoh session template and entrypoint from the car's
-      # image (../compute/images/ros2) instead of keeping a second copy.
+      # image (../images/ros2) instead of keeping a second copy.
       context: ..
       dockerfile: local/images/sim/Dockerfile
     image: ovcs/sim:jetty
@@ -65,10 +65,11 @@ services:
 
   nav2:
     # Nav2, behind a profile so the plain `up -d` above stays a bare
-    # simulator. The image is the car's own (../compute/images/nav2):
-    # same Dockerfile, same tag as base.yml's `nav2`, so a simulated
-    # run exercises the configuration that ships. The one difference
-    # is the clock, and it is a visible launch argument.
+    # simulator. The image is the car's own: the vehicle's Dockerfile
+    # under vehicles/${OVCS_VEHICLE}/compute/nav2, same tag as
+    # base.yml's `nav2`, so a simulated run exercises the
+    # configuration that ships. The one difference is the clock, and
+    # it is a visible launch argument.
     #
     #   docker compose -f simulation.yml --profile nav2 up -d nav2
     #
@@ -79,17 +80,16 @@ services:
       file: common.yml
       service: fabric-client
     build:
-      context: ../compute
-      dockerfile: images/nav2/Dockerfile
-    image: ovcs/nav2:lyrical
+      context: ../../vehicles/${OVCS_VEHICLE:?Set OVCS_VEHICLE to a vehicle directory}/compute/nav2
+    image: ${OVCS_VEHICLE:?Set OVCS_VEHICLE to a vehicle directory}/nav2:local
     container_name: ovcs-nav2
     profiles: ["nav2"]
-    # The launch file and parameters are baked into the image; they are
-    # mounted over it here so a parameter edit is tried without a
-    # rebuild.
+    # The launch file (framework) and parameters (vehicle) are baked
+    # into the image; they are mounted over it here so an edit is
+    # tried without a rebuild.
     volumes:
-      - ../compute/nav2/launch:/opt/ovcs/launch:ro
-      - ../compute/nav2/config:/opt/ovcs/config:ro
+      - ../images/nav2/launch:/opt/ovcs/launch:ro
+      - ../../vehicles/${OVCS_VEHICLE:?Set OVCS_VEHICLE to a vehicle directory}/compute/nav2/config:/opt/ovcs/config:ro
     command:
       - bash
       - -lc

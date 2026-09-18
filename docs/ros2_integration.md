@@ -37,7 +37,7 @@ on the same fabric as a real one.
 
 ```mermaid
 flowchart LR
-    subgraph vehicle["compose/compute — the vehicle's compute node, balenaOS"]
+    subgraph vehicle["vehicles/<name>/compute — the vehicle's compute node, balenaOS"]
         zenohd["zenohd (the router)"]
         foxglove["foxglove_bridge"]
     end
@@ -439,16 +439,17 @@ dependency order — `controller_server`, `planner_server`,
 `behavior_server`, `bt_navigator`. Not `nav2_bringup`, which is absent
 from the Lyrical archive and would pull in map_server and AMCL.
 
-One configuration, three deployments. The parameter file, the
-behaviour trees and the launch file live in `compose/compute/nav2/` —
-balena requires what the onboard image bakes in to sit inside its
-source root, and the local stacks reach across. The image is one too:
-`compose/compute/images/nav2/`, tagged `ovcs/nav2:lyrical` wherever it
-is built.
+One configuration, three deployments. The servers and the launch file
+are the framework's (`compose/images/nav2/`, published as
+`ghcr.io/open-vehicle-control-system/ovcs/nav2`); the parameter file
+and behaviour trees are the vehicle's
+(`vehicles/ovcs_mini/compute/nav2/config/`), baked over that image by
+the vehicle's own two-line Dockerfile. The local stacks build the same
+vehicle image, selected by `OVCS_VEHICLE` in `compose/local/.env`.
 
 | Where | Compose | Clock | Why |
 |---|---|---|---|
-| On the vehicle's compute node | `compose/compute/docker-compose.yml`, always on | wall | autonomy survives the base station leaving, like the router |
+| On the vehicle's compute node | `vehicles/ovcs_mini/compute/docker-compose.yml`, always on | wall | autonomy survives the base station leaving, like the router |
 | On a dev machine | `compose/local/base.yml --profile nav2` | wall | the exact onboard image against a host VMS + bridge — `verify_planner_loop.sh` |
 | Against the simulator | `compose/local/simulation.yml --profile nav2` | `use_sim_time:=true` | mounts the same files; the clock is the only difference, and it is a visible launch argument |
 
@@ -615,7 +616,7 @@ Where to go next, by what you want to understand.
 | the velocity command path | `bridges/ros_bridge/lib/ros_bridge/consumers/velocity.ex` | `0x2B1_ros_velocity_command.yml`, `vms/core/lib/vms_core/components/ovcs/ros_velocity_command.ex` |
 | odometry on the real vehicle | `bridges/ros_bridge/lib/ros_bridge/publishers/odometry.ex` | `0x60B_vehicle_motion.yml`, `vms/core/lib/vms_core/components/ovcs/vehicle_motion.ex` |
 | who commands the vehicle | [`vehicle_parameterisation.md`](./vehicle_parameterisation.md#control-levels-who-commands-and-which-ros-node) | `vms/core/lib/vms_core/managers/control_level.ex` |
-| Nav2's configuration and why | `compose/compute/nav2/config/nav2.yaml` (heavily commented) | `nav2_ackermann_bt.xml` beside it, `compose/local/simulation/scripts/nav2_test.py` |
+| Nav2's configuration and why | `vehicles/ovcs_mini/compute/nav2/config/nav2.yaml` (heavily commented) | `nav2_ackermann_bt.xml` beside it, `compose/images/nav2/launch/nav2.launch.py`, `compose/local/simulation/scripts/nav2_test.py` |
 | the perception pipeline | [`ros_perception_detection.md`](./ros_perception_detection.md) | `bridges/ros_bridge/lib/ros_bridge/camera/zenoh.ex`, `stereo_camera/supervisor.ex` |
-| the vehicle's ROS computer | [`ros_compute_node.md`](./ros_compute_node.md) | `compose/compute/`, `compose/README.md` |
+| the vehicle's ROS computer | [`ros_compute_node.md`](./ros_compute_node.md) | `vehicles/ovcs_mini/compute/`, `compose/README.md` |
 | the model's geometry | `vehicles/ovcs_mini/description/ovcs_mini.urdf.xacro` | `gazebo_ackermann.xacro`, `OvcsMini.geometry/0` |

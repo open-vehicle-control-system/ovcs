@@ -33,8 +33,8 @@ is deserialisation by the real ROS runtime, not arithmetic.
 
 ## Regenerating
 
-Needs the `ovcs-ros2` container running (`compose/local/base.yml`, image
-`ovcs/ros2:lyrical`) — it carries both `visualization_msgs` and
+Needs the `ovcs-ros2` container running (`compose/local/base.yml`, the
+framework's shared ROS 2 image) — it carries both `visualization_msgs` and
 `vision_msgs`.
 
 1. Encode the fixtures with this repo's modules and dump them as

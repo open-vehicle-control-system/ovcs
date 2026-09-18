@@ -8,7 +8,9 @@
 A Gazebo **Jetty** model of the OVCS Mini (a Traxxas Slash 4x4, 1/10
 scale short-course truck), plus the stack to run it (`../simulation.yml`). It sits in
 `compose/local/` beside the operator's stack (`../base.yml`) because,
-like it, it never runs on the car; what does is in `../../compute/`.
+like it, it never runs on the car; what does is each vehicle's
+`compute/` directory (`vehicles/ovcs_mini/compute/`), built from the
+framework images in `../../images/`.
 
 It speaks Zenoh like everything else, so a simulated vehicle appears
 on the same fabric as a real one and existing tooling — `ros2 topic`,
@@ -28,6 +30,7 @@ compose/local/
 
 vehicles/ovcs_mini/
   description/            the Mini's model — mounted, not baked
+  compute/nav2/config/    the Mini's Nav2 parameters — what the nav2 profile bakes and mounts
 ```
 
 **A model describes one vehicle, so it lives with that vehicle.** It
@@ -402,8 +405,10 @@ docker compose -f simulation.yml --profile nav2 up -d nav2
 docker logs -f ovcs-nav2
 ```
 
-Nav2 1.5.1 in the car's own image (`../../compute/images/nav2/`,
-tagged `ovcs/nav2:lyrical` here and on the vehicle), behind a compose
+Nav2 1.5.1 in the car's own image (the framework's `../../images/nav2/`
+with the Mini's parameters baked over it by
+`vehicles/ovcs_mini/compute/nav2/Dockerfile`, selected through
+`OVCS_VEHICLE` in `.env`), behind a compose
 profile so a plain `up -d` stays a bare simulator. No map and no AMCL:
 every frame is `odom` and both costmaps roll. That is enough to prove
 the velocity path drives an Ackermann vehicle without taking on the

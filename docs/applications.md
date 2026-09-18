@@ -208,21 +208,22 @@ Provides integration with ROS 2 for autonomous driving research. It:
 - Subscribes to the ROS 2 `joy` topic via the same `ZenohClient` and forwards `sensor_msgs/Joy` axes onto the CAN bus through `RosBridge.Consumers.Joy` → the `ros_actuator_command` Cantastic emitter.
 - Publishes `sensor_msgs/Imu` from any `OvcsDrivers.Imu` driver via `RosBridge.Publishers.Imu`. The host arm runs the kind-level `OvcsDrivers.Imu.Dummy` stub and the target arm runs `BNO085.I2C` against a physical sensor; swapping in a future ICM-20948 (or any other conforming IMU) is a one-line supervisor change.
 
-## Compute Node (`compose/compute/`)
+## Compute Node (`vehicles/<name>/compute/`)
 
 | | |
 |---|---|
 | **Technology** | Docker Compose on balenaOS |
-| **Deploy** | `balena push` from `compose/compute/` |
+| **Deploy** | `balena push` from `vehicles/<name>/compute/` |
 
 The one machine on a vehicle that is not Nerves: a full Linux userland
 running the Zenoh router the whole fabric peers with, `foxglove_bridge`,
 Nav2, and the Wi-Fi firmware service that makes the vehicle's access
-point possible. Every image it runs is defined under
-`compose/compute/images/`; the operator's and simulation stacks in
-`compose/local/` build the same images to run them off the vehicle.
-See [`compose/README.md`](../compose/README.md) for the split and
-[`ros_compute_node.md`](./ros_compute_node.md) for the machine.
+point possible. The images are the framework's, defined under
+`compose/images/` and published to GHCR by CI; the vehicle's compose
+file names them and adds its own Nav2 parameters. The operator's and
+simulation stacks in `compose/local/` run the same images off the
+vehicle. See [`compose/README.md`](../compose/README.md) for the split
+and [`ros_compute_node.md`](./ros_compute_node.md) for the machine.
 
 ## Controllers
 
