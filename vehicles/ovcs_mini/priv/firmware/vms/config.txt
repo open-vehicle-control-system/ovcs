@@ -30,10 +30,13 @@ dtparam=i2c_arm=off
 #dtparam=spi=on
 
 dtoverlay=spi0-2cs
+dtoverlay=spi1-3cs
 
-
+# ovcs bus
 dtoverlay=mcp251xfd,spi0-0,oscillator=40000000,interrupt=4 # cs_pin=8
 #dtoverlay=mcp251xfd,spi0-1,oscillator=40000000,interrupt=14 # cs_pin=7
+# misc bus, same controller and pins as OVCS1's spi1-0
+dtoverlay=mcp251xfd,spi1-0,oscillator=40000000,interrupt=5 # cs_pin=18
 
 
 # Using SPI3-2CS requires to create a custom DTBO for MCP251XFD
