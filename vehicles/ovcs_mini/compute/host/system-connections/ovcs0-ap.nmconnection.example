@@ -8,8 +8,7 @@
 # spans 5735-5815 MHz; the ETSI/BE table caps 5725-5875 at 13 dBm and
 # 5795-5815 is the road-tolling band, so this transmitter, on a vehicle,
 # sits inside it. The card would offer 22 dBm here. Raising the limit
-# means re-reading that table first, and the 2.4 GHz fallback profile
-# (see ../README.md) exists precisely so nothing forces the issue.
+# means re-reading that table first.
 #
 # The lower 5 GHz channels are no alternative: 36-48 are IR-CONCURRENT
 # (AP only alongside a client link on the same channel) and 52-140 are

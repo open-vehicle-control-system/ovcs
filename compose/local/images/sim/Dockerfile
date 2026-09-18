@@ -7,8 +7,8 @@
 #
 # The build context is `compose/`, not this directory, so the Zenoh
 # session template and entrypoint are COPYed from the car's own image
-# (compute/images/ros2) rather than duplicated. One template, one
-# renderer, one place to fix a fabric setting.
+# (images/ros2) rather than duplicated. One template, one renderer,
+# one place to fix a fabric setting.
 #
 #   docker compose -f simulation.yml build          # from compose/local/
 
@@ -40,8 +40,8 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # Shared with the vehicle image — see the note on the build context.
-COPY compute/images/ros2/zenoh/session.json5.template /etc/zenoh/session.json5.template
-COPY compute/images/ros2/docker/entrypoint.sh         /usr/local/bin/entrypoint
+COPY images/ros2/zenoh/session.json5.template /etc/zenoh/session.json5.template
+COPY images/ros2/docker/entrypoint.sh         /usr/local/bin/entrypoint
 
 # The simulator is baked; the vehicle models are not.
 #
@@ -63,7 +63,7 @@ COPY local/simulation/scripts/  /opt/ovcs/scripts/
 # `COPY --chmod=` needs BuildKit, which balenaEngine does not
 # implement. This image never goes near balena, but the two images
 # share an entrypoint and drifting between them costs more than the
-# extra layer. Same reason as ../../../compute/images/ros2/Dockerfile.
+# extra layer. Same reason as ../../../images/ros2/Dockerfile.
 RUN chmod 0755 /usr/local/bin/entrypoint
 
 ENV OVCS_VEHICLES_DIR=/opt/ovcs/vehicles

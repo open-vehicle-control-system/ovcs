@@ -1,5 +1,6 @@
 # Keeps NetworkManager's NAT off traffic that never leaves the vehicle
-# bridge. See ../../host/README.md for the network this belongs to.
+# bridge. See vehicles/ovcs_mini/compute/host/README.md for the network
+# this belongs to.
 #
 # balena-engine turns on `net.bridge.bridge-nf-call-iptables`, so every
 # frame the ovcs0 bridge forwards between eth0 and the access point is

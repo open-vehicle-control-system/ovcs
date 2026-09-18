@@ -31,10 +31,10 @@ the repo, not on the SD card.
 
 The vehicle is the router. Everything else — the Nerves bridges, the
 on-vehicle nodes, the operator's laptop — is a Zenoh **client**, so
-the fabric survives the base station driving away. Compose files for
-both sides live in [`compose/`](../compose/README.md): what runs here
-in `compose/compute/`, what never leaves a workstation in
-`compose/local/`.
+the fabric survives the base station driving away. The framework's
+images and the workstation stacks live in
+[`compose/`](../compose/README.md); what runs here is each vehicle's
+own stack, `vehicles/<name>/compute/`, which pulls those images.
 
 ## Hardware
 
@@ -94,7 +94,7 @@ its own Node and ignores the repo's `node` pin.
 
 ```sh
 balena login
-cd compose/compute
+cd vehicles/ovcs_mini/compute
 balena push <fleet>            # build on balena's builders, OTA to the fleet
 balena push <device>.local     # local mode: build on the device, no cloud
 ```
@@ -116,14 +116,22 @@ Local-mode pushes also leave the fleet's target state untouched, so
 nothing reaches the other devices until the same code is pushed to the
 fleet rather than to `<device>.local`.
 
-`compose/compute/` is the balena **source root**. That is not cosmetic:
-`balena push` only reads a file literally named `docker-compose.yml` at
-the root of the pushed directory, and every `build:` context must sit
-inside that directory. This is why every image the car runs lives under
-`compose/compute/images/` and the local stacks reach across to build
-the same ones, and not the other way round. The root also carries a
+`vehicles/<name>/compute/` is the balena **source root**. That is not
+cosmetic: `balena push` only reads a file literally named
+`docker-compose.yml` at the root of the pushed directory, and every
+`build:` context must sit inside that directory. The framework's images
+are therefore not built by balena at all: CI publishes them to
+`ghcr.io/open-vehicle-control-system/ovcs/<name>` from `compose/images/`
+on every merge to `main`, the vehicle's compose file names those tags,
+and the only `build:` is the vehicle's own Nav2 image, which bakes its
+parameters over the framework's. The root also carries a
 `.dockerignore`: the pushed tarball is what OTA deltas are computed
 from, so `host/` and the README stay out of it.
+
+`latest` follows `main`, so a `balena push` picks up every framework
+change merged since the previous one. The workflow also publishes a
+`sha-<short>` tag per merge; pin the vehicle's services to one when the
+car must hold a known framework.
 
 Runtime configuration is balena **fleet/device variables**, not a
 `.env` file. Whether such a variable *overrides* a value written
@@ -166,8 +174,9 @@ restarted the container.
 
 The balena supervisor implements a subset of Compose (see the
 [supported fields reference](https://docs.balena.io/reference/supervisor/docker-compose/)).
-`compose/compute/docker-compose.yml` is written to stay inside it, and
-the differences from `compose/local/*.yml` are all forced:
+`vehicles/ovcs_mini/compute/docker-compose.yml` is written to stay
+inside it, and the differences from `compose/local/*.yml` are all
+forced:
 
 | Not usable on balena | Consequence |
 |---|---|
@@ -175,7 +184,7 @@ the differences from `compose/local/*.yml` are all forced:
 | `container_name` | the supervisor names containers |
 | `profiles:` | one file, one always-on set of services |
 | `device_cgroup_rules` | hot-plug device tricks need `privileged` / balena labels instead |
-| shared image tags across services | every custom-image service carries its own `build:` |
+| shared image tags across services | a service pulls a published `image:` or carries its own `build:` |
 | BuildKit | no `COPY --chmod=`, no heredocs, no `RUN --mount` — balenaEngine builds with the classic engine |
 
 YAML anchors, `extends:` and `${VAR:-default}` interpolation are
@@ -240,7 +249,7 @@ have no route off the car.
 
 One piece of the vehicle network is not a keyfile but a container:
 `bridge_nat_fix` in
-[`compose/compute/docker-compose.yml`](../compose/compute/docker-compose.yml).
+[`vehicles/ovcs_mini/compute/docker-compose.yml`](../vehicles/ovcs_mini/compute/docker-compose.yml).
 balena-engine switches `bridge-nf-call-iptables` on, so frames `ovcs0`
 forwards between `eth0` and the access point traverse iptables, where
 `method=shared`'s MASQUERADE rewrites anything not addressed to
@@ -255,7 +264,7 @@ and re-asserts it every 30 s, since NetworkManager rewrites its nat
 rules whenever the connection is re-activated.
 
 Keyfile templates live in
-[`compose/compute/host/system-connections/`](../compose/compute/host/system-connections/).
+[`vehicles/ovcs_mini/compute/host/system-connections/`](../vehicles/ovcs_mini/compute/host/system-connections/).
 Two non-obvious constraints are baked into them, and the comments in
 each file explain the rest:
 
@@ -269,7 +278,7 @@ each file explain the rest:
   supplicant's D-Bus interface and reapplies the tested 6 dBm TX limit.
   Keep the configured regulatory country and account for antenna gain
   when changing power. Deploy the service before installing the 5 GHz
-  profile; see the [host instructions](../compose/compute/host/README.md).
+  profile; see the [host instructions](../vehicles/ovcs_mini/compute/host/README.md).
 
 ### Reaching the vehicle network from the site Wi-Fi
 
@@ -337,7 +346,7 @@ the site.
 ### Installing it
 
 Prerequisite: the `wifi_firmware` service in
-[`compose/compute/docker-compose.yml`](../compose/compute/docker-compose.yml)
+[`vehicles/ovcs_mini/compute/docker-compose.yml`](../vehicles/ovcs_mini/compute/docker-compose.yml)
 must have been deployed and the device rebooted once, or the AX210 has
 no driver bound and `wlP1p1s0` does not exist.
 
@@ -533,10 +542,9 @@ one is open.
 compute node. The `wifi_firmware` service stages the blobs and iwlwifi
 binds them at boot ("loaded firmware version 89…", "loaded PNVM
 version…"); `"country": "BE"` reaches the AX210's self-managed phy;
-`OVCS-Mini` comes up unattended as `WPA2 WPA3` — on ch 11 before the
-5 GHz profile, on ch 149 / 80 MHz with `wifi_ap_fix` deployed, and the
-2.4 GHz clone `ovcs0-ap-fallback` takes over if 5 GHz cannot start;
-`ovcs0` holds
+`OVCS-Mini` comes up unattended as `WPA2 WPA3` on ch 149 / 80 MHz with
+`wifi_ap_fix` deployed (on ch 11, with the round-trip times that go
+with it, while the service is not running); `ovcs0` holds
 `10.42.0.1/24` with `eth0` and the access point as its ports, and
 dnsmasq leases to the three Nerves boards by hostname. `uplink` on the
 onboard radio is the only default route. Every Nerves firmware is built
@@ -546,10 +554,7 @@ and both bridges peer with the router over the wire.
 
 What is left:
 
-1. Confirm the 5 GHz access point survives a cold boot on the car,
-   including the fallback path (`ovcs0-ap-fallback` on ch 11 when
-   ch 149 does not come up).
-2. A reservation on the site router for the compute node's onboard radio, so
+1. A reservation on the site router for the compute node's onboard radio, so
    the Foxglove URL stops moving.
 
 Next: [Running on Hardware](./running_hardware.md)

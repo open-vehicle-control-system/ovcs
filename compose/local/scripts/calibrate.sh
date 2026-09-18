@@ -64,9 +64,12 @@ echo "  DISPLAY:                  ${display}"
 echo "  XAUTHORITY (host):        ${xauth_source}"
 echo
 
+# base.yml interpolates OVCS_VEHICLE for its nav2 profile even when
+# that profile is off; this tool is written against the Mini.
 CHESSBOARD_INNER_CORNERS="${corners}" \
 CHESSBOARD_SQUARE_M="${square}" \
 APPROXIMATE_SYNC="${approx_sync}" \
 DISPLAY="${display}" \
 OVCS_XAUTHORITY="${xauth_source}" \
+OVCS_VEHICLE="${OVCS_VEHICLE:-ovcs_mini}" \
   docker compose -f base.yml --profile calibration run --rm calibrator

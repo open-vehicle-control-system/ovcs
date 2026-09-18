@@ -1,15 +1,18 @@
-"""Nav2 for the OVCS Mini — launched identically on the vehicle, on a
-dev machine, and against the simulator.
+"""Nav2, launched identically on the vehicle, on a dev machine, and
+against the simulator.
 
-One parameter file (`config/nav2.yaml`, the vehicle's truth) and one
-switch: `use_sim_time:=true` overlays the file for a simulated run,
-because a params fork would drift and stop the simulator being
-evidence about the vehicle.
+One parameter file and one switch. The file is the vehicle's truth
+and lives with the vehicle (`vehicles/<name>/compute/nav2/config/`),
+baked into that vehicle's image at /opt/ovcs/config or bind-mounted
+there by the simulator; `use_sim_time:=true` overlays it for a
+simulated run, because a params fork would drift and stop the
+simulator being evidence about the vehicle.
 
 Four lifecycle servers plus a manager to bring them up. Deliberately
 *not* `nav2_bringup`: there is no such package in the Lyrical archive,
 and its launch file would pull in map_server and AMCL, neither of which
-this configuration uses. See `config/nav2.yaml` for why there is no map.
+a vehicle's configuration uses. See the OVCS Mini's `nav2.yaml` for why
+there is no map.
 
 The velocity output needs saying out loud, because it is the one thing
 that silently does nothing if it is wrong. Nav2 1.5.1 publishes

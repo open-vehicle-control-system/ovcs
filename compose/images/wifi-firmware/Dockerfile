@@ -1,4 +1,5 @@
-# Wi-Fi firmware for the host kernel — see ../../host/README.md.
+# Wi-Fi firmware for the host kernel — see
+# vehicles/ovcs_mini/compute/host/README.md for the network built on it.
 #
 # balenaOS ships the iwlwifi *driver* but its linux-firmware set stops
 # at the 9260, so the AX210 in the Pi 5's PCIe slot enumerates, probes,
@@ -45,7 +46,7 @@ RUN apk add --no-cache curl \
 #
 # Then idle instead of exiting. The work is a one-shot, but a service
 # that exits is one the supervisor keeps trying to bring back, and no
-# `restart:` value avoids that (see ../../docker-compose.yml). Staying up
+# `restart:` value avoids that (see the vehicle compose file). Staying up
 # costs an idle `tail` and makes the service's state legible: running
 # means the firmware is staged. `tail -f /dev/null` rather than
 # `sleep infinity` because busybox `sleep` does not take `infinity`.

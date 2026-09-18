@@ -25,9 +25,11 @@ services:
       ZENOH_ENDPOINT_IP: ${ZENOH_ENDPOINT_IP:-127.0.0.1}
 
   # A fabric client running the shared ROS 2 image — the one the car
-  # runs (../compute/images/ros2). Only base.yml's `ros2` service
-  # builds it; every other user references the tag.
+  # runs. The tag is the published one, so `docker compose pull` gets
+  # the image CI built from main and `docker compose build` (base.yml's
+  # `ros2` service, the only one with a `build:`) replaces it with a
+  # local build under the same name.
   ros2-image:
     extends:
       service: fabric-client
-    image: ovcs/ros2:lyrical
+    image: ghcr.io/open-vehicle-control-system/ovcs/ros2:latest

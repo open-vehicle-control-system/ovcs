@@ -108,7 +108,7 @@ message, and `LINE_LOOP` closes a rectangle in four points where a
 
 The cost is a dependency. `foxglove_msgs` is not in a ROS base
 install, so `ros-lyrical-foxglove-msgs` is installed in
-`compose/compute/images/ros2/Dockerfile` — **without it `foxglove_bridge`
+`compose/images/ros2/Dockerfile` — **without it `foxglove_bridge`
 cannot resolve the type and never advertises the topic**. Both the
 vehicle and the local stacks build from that one Dockerfile, so a
 single change covers them, but the vehicle container has to be

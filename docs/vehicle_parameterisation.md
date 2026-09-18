@@ -47,6 +47,8 @@ vehicles/ovcs1/
   priv/can/generic_controller/   — per-controller CAN YAMLs
   priv/can/bridges/<id>.yml      — per-bridge YAMLs (one per bridge_firmwares entry)
   priv/firmware/{vms,infotainment,bridges}/  — per-side firmware overrides (fwup.conf, …)
+  description/                   — URDF/xacro model for the simulator (optional)
+  compute/                       — the compute node's balena stack (optional, see docs/ros_compute_node.md)
 ```
 
 The package is **metadata + composers only**. No `Application` module,

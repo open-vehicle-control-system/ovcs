@@ -43,7 +43,13 @@ lib/ovcs_mini/vms/                 — VMS-side composer + dashboard pages
 priv/can/vms.yml                   — VMS CAN topology (single `ovcs` bus)
 priv/can/generic_controller/       — Per-controller frame wirings
 priv/firmware/{vms,bridges}/       — Per-side fwup overrides
+description/                       — Gazebo model (URDF/xacro)
+compute/                           — the compute node's balena stack: services, Nav2 parameters, host keyfiles
 ```
+
+The compute node (Zenoh router, Foxglove bridge, Nav2) is deployed with
+`balena push` from [`compute/`](./compute/README.md); the images are the
+framework's, published to GHCR from `compose/images/`.
 
 See [`docs/hardware_architecture.md`](../../docs/hardware_architecture.md#ovcs-mini-hardware)
 for the RC-car hardware breakdown.

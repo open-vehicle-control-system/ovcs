@@ -5,10 +5,10 @@ Everything here configures **balenaOS itself**, not the containers in
 `balena push` — you copy it onto the device once. It lives in the repo
 because the alternative is configuring the vehicle's network by hand
 over SSH, which is the thing
-[`docs/ros_compute_node.md`](../../../docs/ros_compute_node.md) exists
+[`docs/ros_compute_node.md`](../../../../docs/ros_compute_node.md) exists
 to avoid.
 
-See [Networking](../../../docs/ros_compute_node.md#networking) for the
+See [Networking](../../../../docs/ros_compute_node.md#networking) for the
 topology these files implement and the install procedure.
 
 ## What's here
@@ -38,31 +38,18 @@ secrets out of git.
 `chmod 600` itself. NetworkManager only reads the `/etc` copy, so a
 file added to `/mnt/boot` does nothing until the next reboot. The
 install procedure writes both deliberately — see
-[Installing it](../../../docs/ros_compute_node.md#installing-it).
+[Installing it](../../../../docs/ros_compute_node.md#installing-it).
 
-## Persistent 5 GHz access point
+## 5 GHz access point
 
-Deploy `wifi_ap_fix` from the compute stack before changing the AP profile.
-Copy `configure-5ghz.sh` to the balenaOS host and run it with `bash` there.
-It backs up the boot profile under `/mnt/data/ovcs-ap-before-5ghz`, creates
-the fallback and writes both profiles to the active and boot directories.
-Activate the preferred profile with `nmcli --wait 35 connection up ovcs0-ap`
-from the site-network SSH connection; the AP connection briefly drops.
-
-The service uses the host D-Bus socket to correct NetworkManager 1.52's channel-149
-VHT center from 5770 to 5775 MHz, and host networking with `NET_ADMIN` to
-restore the 6 dBm transmit-power limit. It only corrects AP networks on
-that channel and leaves an already-correct center frequency alone.
-
-The AP profile must be written to both `/etc/NetworkManager/system-connections/`
-and `/mnt/boot/system-connections/`; an `nmcli --temporary` change disappears
-on reboot. The example selects channel 149, 80 MHz, autoconnect priority 100
-and one autoconnect attempt. Keep a clone of the working 2.4 GHz profile
-named `ovcs0-ap-fallback`, with autoconnect enabled, priority -100 and one
-attempt, in both directories. This restores access if 5 GHz cannot start.
-If boot reaches the fallback before the service starts, the service retries
-the preferred profile once. A failed retry leaves NetworkManager free to
-return to the fallback instead of disconnecting clients repeatedly.
+`ovcs0-ap` selects channel 149 at 80 MHz, autoconnect priority 100 and
+one autoconnect attempt. NetworkManager 1.52 generates an invalid VHT
+center frequency (5770 MHz) for that channel, so the `wifi_ap_fix`
+service in the compute stack corrects it to 5775 MHz through the host
+supplicant's D-Bus interface and reapplies the 6 dBm transmit-power
+limit after driver resets. Deploy the stack before installing the
+profile: without the service NetworkManager brings the access point up
+on 2.4 GHz instead, with the round-trip times that go with it.
 
 After activation and after a reboot, verify on the host:
 

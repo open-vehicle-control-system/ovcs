@@ -1,15 +1,15 @@
 # Single ROS 2 Lyrical image powering every service on both sides of the
-# fabric: `foxglove_bridge` on the vehicle (../../docker-compose.yml)
-# and `ros2` / `joy` / `calibrator` on the operator's machine
-# (../../../local/base.yml). Each service picks its launcher via the
-# image's CMD or a compose-level override; the ENTRYPOINT
-# (cross-cutting Zenoh + ROS init) is the same for all of them, so
-# there's no point in maintaining separate images.
+# fabric: `foxglove_bridge` on a vehicle's compute node
+# (vehicles/<name>/compute/docker-compose.yml) and `ros2` / `joy` /
+# `calibrator` on the operator's machine (../../local/base.yml). Each
+# service picks its launcher via the image's CMD or a compose-level
+# override; the ENTRYPOINT (cross-cutting Zenoh + ROS init) is the
+# same for all of them, so there's no point in maintaining separate
+# images.
 #
-# Lives under compose/compute/ because balena requires every build
-# context to sit inside the pushed source root; the local stacks reach
-# across to it (`context: ../compute/images/ros2`), which plain
-# `docker compose` is happy to do. The direction matters: a workstation
+# Published as ghcr.io/open-vehicle-control-system/ovcs/ros2 by
+# .github/workflows/ros2.yml; a vehicle pulls that tag and the local
+# stacks build this file under the same name. Either way a workstation
 # runs the image the car runs, never a copy of it.
 FROM ros:lyrical-ros-base
 
