@@ -255,15 +255,25 @@ defmodule VmsCore.Components.OVCS.GenericController do
   # wiped 10 ms later.
   @impl true
   def handle_info({:handle_frame, %Frame{name: name, signals: signals}}, state)
-      when name == state.digital_and_analog_pin_status_frame_name or
-             name == state.pulse_counter_status_frame_name do
-    received_pins =
-      signals
-      |> Enum.reduce(state.received_pins, fn {_, signal}, pins ->
-        Map.put(pins, signal.name, signal.value)
-      end)
+      when name == state.digital_and_analog_pin_status_frame_name do
+    {:noreply, %{state | received_pins: merge_signals(state.received_pins, signals)}}
+  end
 
-    {:noreply, %{state | received_pins: received_pins}}
+  # The pulse signals go out as each frame arrives rather than on the
+  # tick: a consumer integrating them — the vehicle's motion, and the
+  # odometry behind it — has to tell a fresh sample from a held one,
+  # and a message per frame is what makes that distinction.
+  @impl true
+  def handle_info({:handle_frame, %Frame{name: name, signals: signals}}, state)
+      when name == state.pulse_counter_status_frame_name do
+    received_pins = merge_signals(state.received_pins, signals)
+    state = %{state | received_pins: received_pins}
+
+    Enum.each(signals, fn {_, signal} ->
+      broadcast_received_pin(state, signal.name, signal.value)
+    end)
+
+    {:noreply, state}
   end
 
   @impl true
@@ -419,22 +429,32 @@ defmodule VmsCore.Components.OVCS.GenericController do
     "#{controller_name}_#{suffix}"
   end
 
+  defp merge_signals(received_pins, signals) do
+    Enum.reduce(signals, received_pins, fn {_, signal}, pins ->
+      Map.put(pins, signal.name, signal.value)
+    end)
+  end
+
+  defp broadcast_received_pin(state, name, value) do
+    Bus.broadcast("messages", %Bus.Message{
+      name: "received_#{name}" |> String.to_atom(),
+      value: value,
+      source: state.process_name
+    })
+  end
+
+  # The pulse pins are broadcast as their frame arrives; here they are
+  # only declared unknown while that frame is dead.
   defp emit_metrics(state) do
     pulse_frame_alive = pulse_frame_alive?(state)
 
     state.received_pin_names
     |> Enum.each(fn name ->
-      value =
-        case name do
-          "pulse" <> _ when not pulse_frame_alive -> nil
-          _ -> state.received_pins[name]
-        end
-
-      Bus.broadcast("messages", %Bus.Message{
-        name: "received_#{name}" |> String.to_atom(),
-        value: value,
-        source: state.process_name
-      })
+      case name do
+        "pulse" <> _ when not pulse_frame_alive -> broadcast_received_pin(state, name, nil)
+        "pulse" <> _ -> :ok
+        _ -> broadcast_received_pin(state, name, state.received_pins[name])
+      end
     end)
 
     state.requested_pin_names
