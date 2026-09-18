@@ -7,7 +7,13 @@ void Can::begin() {
   settings.mDriverTransmitFIFOSize = 1;
   settings.mDriverReceiveFIFOSize  = 1;
 
-  const uint32_t errorCode = acan.begin (settings, [] { acan.isr () ; });
+  // Every frame the controller understands has a standard 11-bit id.
+  // Extended frames from other devices on the bus — a VESC's low
+  // identifier byte is its controller id — would alias a standard id,
+  // so the MCP2517FD drops them before they reach the FIFO.
+  ACAN2517Filters filters;
+  filters.appendFormatFilter (kStandard, NULL);
+  const uint32_t errorCode = acan.begin (settings, [] { acan.isr () ; }, filters);
   if (errorCode == 0) {
     DPRINTLN("> CAN Ready");
   } else {

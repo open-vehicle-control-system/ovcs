@@ -1,0 +1,17 @@
+---
+# CAN_PACKET_SET_RPM (packet type 0x03): closed-loop speed setpoint in
+# *electrical* rpm (mechanical rpm × pole pairs), negative for reverse.
+# The VESC's speed PID holds it under load, which is what a commander
+# sending a physical velocity expects.
+#
+# Below the VESC's minimum speed-PID erpm (900 by default) the loop is
+# off: a *running* motor holds zero duty instead, a passive brake, but
+# a motor that was released stays released — a small setpoint does not
+# start it. A zero request therefore has to go out as `set_duty` at 0,
+# which does brake from any state.
+- name: erpm
+  kind: integer
+  value_start: 0
+  value_length: 32
+  sign: signed
+  endianness: big
