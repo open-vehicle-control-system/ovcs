@@ -1,0 +1,128 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:arg name="mesh_dir" default="${xacro.abs_filename('meshes')}" />
+  <xacro:arg name="show_body" default="false" />
+  <xacro:property name="mesh_dir" value="$(arg mesh_dir)" />
+
+  <material name="shell_blue"><color rgba="0.025 0.24 0.75 1" /></material>
+  <material name="window_dark"><color rgba="0.025 0.045 0.065 1" /></material>
+  <material name="rubber"><color rgba="0.035 0.038 0.042 1" /></material>
+  <!-- Functional colours distinguish components in RViz and Gazebo. -->
+  <material name="chassis_blue"><color rgba="0.12 0.35 0.72 1" /></material>
+  <material name="suspension_orange"><color rgba="1.0 0.38 0.06 1" /></material>
+  <material name="shock_yellow"><color rgba="1.0 0.78 0.08 1" /></material>
+  <material name="bumper_slate"><color rgba="0.30 0.36 0.44 1" /></material>
+  <material name="sensor_green"><color rgba="0.12 0.80 0.40 1" /></material>
+  <material name="mount_teal"><color rgba="0.08 0.65 0.72 1" /></material>
+  <material name="steering_purple"><color rgba="0.65 0.28 0.85 1" /></material>
+  <material name="alloy"><color rgba="0.55 0.59 0.63 1" /></material>
+
+  <xacro:macro name="visual_mesh" params="name material scale z:=0">
+    <visual name="${name}">
+      <origin xyz="0 0 ${z}" />
+      <geometry><mesh filename="file://${mesh_dir}/${name}.stl" scale="${scale}" /></geometry>
+      <material name="${material}" />
+    </visual>
+  </xacro:macro>
+
+  <xacro:macro name="mini_visuals">
+    <xacro:if value="$(arg show_body)">
+      <xacro:visual_mesh name="body" material="shell_blue"
+        scale="${shell_length} ${shell_width} ${shell_height}" z="${shell_mount_z}" />
+      <xacro:visual_mesh name="windows" material="window_dark"
+        scale="${shell_length} ${shell_width} ${shell_height}" z="${shell_mount_z}" />
+      <xacro:visual_mesh name="trim" material="rubber"
+        scale="${shell_length} ${shell_width} ${shell_height}" z="${shell_mount_z}" />
+      <xacro:visual_mesh name="stripe" material="white"
+        scale="${shell_length} ${shell_width} ${shell_height}" z="${shell_mount_z}" />
+    </xacro:if>
+    <xacro:bumper end="front" side="1" />
+    <xacro:bumper end="rear" side="-1" />
+    <xacro:suspension_visuals x="${half_wheelbase}" side="1" name="front_left" />
+    <xacro:suspension_visuals x="${half_wheelbase}" side="-1" name="front_right" />
+    <xacro:suspension_visuals x="${-half_wheelbase}" side="1" name="rear_left" />
+    <xacro:suspension_visuals x="${-half_wheelbase}" side="-1" name="rear_right" />
+    <xacro:camera_mount />
+  </xacro:macro>
+
+  <!-- Estimated tray dimensions. Visual and collision parts share each box. -->
+  <xacro:macro name="chassis_box" params="name x y z sx sy sz rpy:='0 0 0' material:=chassis_blue">
+    <visual name="${name}">
+      <origin xyz="${x} ${y} ${z}" rpy="${rpy}" />
+      <geometry><box size="${sx} ${sy} ${sz}" /></geometry>
+      <material name="${material}" />
+    </visual>
+    <collision name="${name}">
+      <origin xyz="${x} ${y} ${z}" rpy="${rpy}" />
+      <geometry><box size="${sx} ${sy} ${sz}" /></geometry>
+    </collision>
+  </xacro:macro>
+
+  <xacro:macro name="chassis_tray">
+    <xacro:chassis_box name="tray_floor" x="0" y="0" z="${ground_clearance + 0.003}"
+      sx="${tub_length}" sy="0.120" sz="0.006" />
+    <xacro:tray_side side="1" name="left" />
+    <xacro:tray_side side="-1" name="right" />
+  </xacro:macro>
+
+  <xacro:macro name="tray_side" params="side name">
+    <xacro:chassis_box name="${name}_tray_wing" x="0" y="${side * 0.080}"
+      z="${ground_clearance + 0.003}" sx="0.200" sy="0.040" sz="0.006" />
+  </xacro:macro>
+
+  <!-- Static support makes the assumed sensor installation visible. -->
+  <xacro:macro name="camera_mount">
+    <visual name="stereo_crossbar">
+      <origin xyz="${camera_x} 0 ${camera_z - 0.009}" />
+      <geometry><box size="0.012 ${baseline + 0.024} 0.006" /></geometry>
+      <material name="mount_teal" />
+    </visual>
+    <xacro:rod name="stereo_post" x1="${camera_x}" y1="0" z1="${ground_clearance + 0.006}"
+      x2="${camera_x}" y2="0" z2="${camera_z - 0.012}" radius="0.004" material="mount_teal" />
+  </xacro:macro>
+
+  <!-- Static visual approximations only: no suspension joints or spring model. -->
+  <xacro:macro name="rod" params="name x1 y1 z1 x2 y2 z2 radius material">
+    <xacro:property name="dx" value="${x2 - x1}" />
+    <xacro:property name="dy" value="${y2 - y1}" />
+    <xacro:property name="dz" value="${z2 - z1}" />
+    <xacro:property name="length" value="${sqrt(dx * dx + dy * dy + dz * dz)}" />
+    <visual name="${name}">
+      <origin xyz="${(x1 + x2) / 2} ${(y1 + y2) / 2} ${(z1 + z2) / 2}"
+        rpy="0 ${acos(dz / length)} ${atan2(dy, dx)}" />
+      <geometry><cylinder radius="${radius}" length="${length}" /></geometry>
+      <material name="${material}" />
+    </visual>
+  </xacro:macro>
+
+  <xacro:macro name="suspension_visuals" params="x side name">
+    <xacro:property name="arm_z" value="${ground_clearance + 0.006}" />
+    <xacro:rod name="${name}_arm" x1="${x}" y1="${side * 0.060}" z1="${arm_z}"
+      x2="${x}" y2="${side * half_track}" z2="${wheel_radius}"
+      radius="0.004" material="suspension_orange" />
+    <xacro:rod name="${name}_shock_tower" x1="${x}" y1="${side * 0.060}"
+      z1="${ground_clearance + 0.006}"
+      x2="${x}" y2="${side * 0.060}" z2="0.105" radius="0.003" material="suspension_orange" />
+    <xacro:rod name="${name}_shock" x1="${x}" y1="${side * 0.060}" z1="0.105"
+      x2="${x}" y2="${side * (0.060 + 0.8 * (half_track - 0.060))}"
+      z2="${arm_z + 0.8 * (wheel_radius - arm_z)}"
+      radius="0.006" material="shock_yellow" />
+  </xacro:macro>
+
+  <!-- Visual bumpers fit inside the declared overall length. -->
+  <xacro:macro name="bumper" params="end side">
+    <xacro:rod name="${end}_bumper_support" x1="${side * tub_length / 2}" y1="0"
+      z1="${ground_clearance + 0.006}"
+      x2="${side * (body_length / 2 - 0.006)}" y2="0" z2="0.056"
+      radius="0.006" material="bumper_slate" />
+    <xacro:chassis_box name="${end}_bumper" x="${side * (body_length / 2 - 0.006)}"
+      y="0" z="0.056" sx="0.012" sy="${body_width * 0.77}" sz="0.018" material="bumper_slate" />
+  </xacro:macro>
+
+  <xacro:macro name="detailed_wheel">
+    <xacro:visual_mesh name="tyre" material="rubber"
+      scale="${wheel_radius} ${wheel_radius} ${wheel_width}" />
+    <xacro:visual_mesh name="rim" material="alloy"
+      scale="${wheel_radius} ${wheel_radius} ${wheel_width}" />
+  </xacro:macro>
+</robot>

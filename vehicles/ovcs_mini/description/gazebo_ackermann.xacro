@@ -57,18 +57,15 @@
       <left_steering_joint>front_left_steering_joint</left_steering_joint>
       <right_steering_joint>front_right_steering_joint</right_steering_joint>
 
-      <!-- Geometry, from the vehicle's measured specification. -->
+      <!-- Shared model geometry; unmeasured values are documented in README.md. -->
       <wheel_base>${wheelbase}</wheel_base>
       <wheel_separation>${track}</wheel_separation>
       <wheel_radius>${wheel_radius}</wheel_radius>
 
-      <!-- The kingpin axes sit inboard of the tyre centres, so this is
-           a little narrower than the track. It is what makes the two
-           front wheels take *different* angles in a turn — the whole
-           point of Ackermann geometry. ESTIMATE: the specification
-           does not publish kingpin spacing. -->
-      <kingpin_width>${track - 0.036}</kingpin_width>
-      <steering_limit>${steering_limit}</steering_limit>
+      <!-- The controller uses the same pivot spacing and achievable turning radius
+           as the URDF. See the parameter conversion in ovcs_mini.urdf.xacro. -->
+      <kingpin_width>${kingpin_width}</kingpin_width>
+      <steering_limit>${gazebo_steering_limit}</steering_limit>
 
       <!-- ESTIMATE. A stock Slash 4x4 does roughly 30 mph; reverse is
            geared slower. Acceleration limits keep the velocity

@@ -2,13 +2,9 @@
 <!--
   Simulated sensors.
 
-  Camera placement is the one thing simulation gets to be certain
-  about. On the real vehicle the `base_link` -> `stereo_left`
-  transform is still a placeholder ({0.10, 0.0, 0.12}, never
-  measured), so every depth reading is correctly shaped and sitting in
-  the wrong place on the car. Here the position is exact by
-  construction, which makes this the natural place to settle what the
-  real numbers should be.
+  Sensor offsets are model parameters; the camera height and IMU mount
+  remain estimates. Exact placement in simulation does not validate the
+  placement of the physical sensor.
 
   ## Frames
 
@@ -19,7 +15,7 @@
     * an **optical** frame is x right, y down, z forward.
 
   `<name>_link` is the mount in body orientation; `<name>_optical` is
-  its optical child. Gazebo renders down the optical frame's +z, and
+  its optical child. The optical frame's +z points along the mount's +x, and
   the image's `frame_id` names the optical frame, so a consumer
   unprojecting a pixel gets a ray in the right direction. Collapsing
   the two is the classic way to end up with a point cloud lying on its
@@ -41,11 +37,11 @@
         <geometry>
           <box size="0.012 0.024 0.012" />
         </geometry>
-        <material name="grey" />
+        <material name="sensor_green" />
       </visual>
       <!-- No collision and negligible mass: a 5 g camera module on a
            2.4 kg truck changes nothing except the solver's workload. -->
-      <xacro:inertial_box mass="0.005" x="0.012" y="0.024" z="0.012">
+      <xacro:inertial_box mass="${camera_mass}" x="0.012" y="0.024" z="0.012">
         <origin xyz="0 0 0" rpy="0 0 0" />
       </xacro:inertial_box>
     </link>
@@ -56,7 +52,7 @@
       <origin xyz="${x} ${y} ${z}" rpy="0 0 0" />
     </joint>
 
-    <!-- Body -> optical: -90 deg about z, then -90 deg about x. -->
+    <!-- URDF fixed-axis RPY: roll=-90 degrees, yaw=-90 degrees. -->
     <link name="${name}_optical" />
 
     <joint name="${name}_optical_joint" type="fixed">
@@ -135,7 +131,7 @@
   -->
   <xacro:macro name="sim_imu" params="name x y z rate">
     <link name="${name}_link">
-      <xacro:inertial_box mass="0.005" x="0.014" y="0.012" z="0.002">
+      <xacro:inertial_box mass="${imu_mass}" x="0.014" y="0.012" z="0.002">
         <origin xyz="0 0 0" rpy="0 0 0" />
       </xacro:inertial_box>
     </link>
