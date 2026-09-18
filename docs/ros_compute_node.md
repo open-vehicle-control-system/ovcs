@@ -133,6 +133,35 @@ so the vehicle compose file simply leaves overridable settings unset
 pins what must always be true (`ZENOH_ENDPOINT_IP`, required by the
 entrypoint).
 
+### Redeploying the router
+
+`zenohd` is the fabric's router, and the two ROS services on the node
+join it as clients. A `rmw_zenoh_cpp` node declares its publishers and
+subscriptions to the router it joined; when that router process is
+replaced — a `balena push` that recreates the `zenohd` container, or a
+crash and restart — the node's TCP session reconnects to the new
+process, but the new router knows nothing of what the node declared and
+the node learns nothing of the fabric. Foxglove connects to a bridge
+that advertises the old topic list and delivers no data; `ros2 topic
+list` inside the container hangs; `zenohd` logs `Unknown interest`. The
+Nerves boards are not affected: their sessions are fresh connections
+and declare themselves again.
+
+The router's REST admin space (`--rest-http-port 127.0.0.1:8000`,
+loopback only) exposes its `zid`, which changes with every process.
+With `ZENOH_ROUTER_ADMIN_URL` set in the compose file, the shared
+entrypoint (`images/ros2/docker/entrypoint.sh`) runs `foxglove_bridge`
+and `nav2` under a watch: it waits for the router to answer before
+launching, then polls the `zid` every five seconds and exits when it
+changes, and the service's `restart: always` brings it
+back against the new router. A router that is merely down for a while
+is left to the sessions' own reconnection.
+
+Waiting before launching also settles the cold-boot order: Nav2 used to
+start before the router, its lifecycle manager timed out on the first
+`change_state` call and the stack stayed inactive until someone
+restarted the container.
+
 ### What the compose subset costs you
 
 The balena supervisor implements a subset of Compose (see the
