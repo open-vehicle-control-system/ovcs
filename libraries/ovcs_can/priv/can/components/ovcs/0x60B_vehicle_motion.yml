@@ -2,23 +2,26 @@
 # The vehicle's own motion, emitted by the VMS for consumers that
 # integrate it — the ROS bridge's odometry publisher first of all.
 #
-# `speed` is signed: the sign is the direction of travel, taken from
-# the sign of the throttle request driving the vehicle, since a hall
-# sensor pulsing once per shaft turn cannot know which way the shaft
-# turns. `steering_angle` is the commanded angle in radians, positive
-# left per REP-103, derived from the same normalised request the
-# steering actuator consumes — commanded, not measured; the servo has
-# no feedback.
+# `speed` is signed: the sign is the direction of travel. It is
+# measured when the rotation source knows it (a motor controller
+# reporting a signed rpm) and taken from the sign of the throttle
+# request otherwise (a hall sensor pulsing once per shaft turn cannot
+# know which way the shaft turns). `steering_angle` is the commanded
+# angle in radians, positive left per REP-103, derived from the same
+# normalised request the steering actuator consumes — commanded, not
+# measured; the servo has no feedback.
 #
 # `speed_valid` is false while the VMS itself does not know the speed
-# (the pulse counter frame is dead). An integrator must stop on false
-# rather than integrate the last value, for the same reason the VMS
-# refuses mode changes on an unknown speed: silence is not standstill.
+# (the rotation source's frame is dead). An integrator must stop on
+# false rather than integrate the last value, for the same reason the
+# VMS refuses mode changes on an unknown speed: silence is not
+# standstill.
 #
-# `sequence` increments once per fresh speed sample. `Cantastic.Emitter`
-# retransmits on a timer, so a frame arriving on time only proves the
-# VMS is alive; a sequence that stops advancing tells the consumer the
-# *data* went stale even while `speed_valid` still reads true.
+# `sequence` increments once per fresh rotation sample from the source.
+# `Cantastic.Emitter` retransmits on a timer, so a frame arriving on
+# time only proves the VMS is alive; a sequence that stops advancing
+# tells the consumer the *data* went stale even while `speed_valid`
+# still reads true.
 #
 # `precision` is stated with `scale` because Cantastic otherwise rounds
 # the decoded value to two decimals.

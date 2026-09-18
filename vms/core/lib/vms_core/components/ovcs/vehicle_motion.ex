@@ -45,10 +45,13 @@ defmodule VmsCore.Components.OVCS.VehicleMotion do
   a zero speed, and an integrator must stop rather than hold — the
   same rule the control level manager applies to mode changes.
 
-  `sequence` increments once per fresh rotation sample. The emitter
-  retransmits on a timer, so a frame arriving on time only proves this
-  process is alive; a sequence that stops advancing tells the consumer
-  the data went stale even while `speed_valid` still reads true.
+  `sequence` increments once per fresh rotation sample. The rotation
+  sources publish one message per frame they receive, never on a timer,
+  so every message here is a sample the sensor actually took. The
+  emitter, by contrast, retransmits on a timer: a frame arriving on
+  time only proves this process is alive, and a sequence that stops
+  advancing tells the consumer the data went stale before the frame
+  watcher has declared the source dead and `speed_valid` has dropped.
 
   ## Options
 

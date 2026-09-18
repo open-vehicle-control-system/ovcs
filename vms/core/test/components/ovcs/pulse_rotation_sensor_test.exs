@@ -1,13 +1,17 @@
 defmodule VmsCore.Components.OVCS.PulseRotationSensorTest do
   @moduledoc """
   Pulse frequency to shaft rotation, and nothing more: the sensor does
-  not know what the shaft drives.
+  not know what the shaft drives, and it speaks once per sample.
   """
   use ExUnit.Case, async: true
 
   alias Decimal, as: D
   alias OvcsBus.Message
   alias VmsCore.Components.OVCS.PulseRotationSensor
+
+  @frequency :received_pulse_pin0_frequency
+
+  defp state, do: %{controller: Ctrl, pulses_per_revolution: D.new(1)}
 
   test "no pulses is exactly zero, which is what the standstill gate needs" do
     assert D.eq?(PulseRotationSensor.rotation_per_minute(D.new(0), D.new(1)), D.new(0))
@@ -28,26 +32,36 @@ defmodule VmsCore.Components.OVCS.PulseRotationSensorTest do
              "1500.0"
   end
 
-  test "before the first frequency the rotation is unknown, not zero" do
-    {:ok, state} = PulseRotationSensor.init(%{controller: Ctrl, pulses_per_revolution: 1})
-    {:ok, :cancel} = :timer.cancel(state.loop_timer)
-    assert state.rotation_per_minute == nil
+  test "each frequency becomes one rotation message, and a dead frame a nil one" do
+    OvcsBus.subscribe("messages")
 
-    message = %Message{name: :received_pulse_pin0_frequency, value: D.new("2.5"), source: Ctrl}
-    {:noreply, state} = PulseRotationSensor.handle_info(message, state)
-    assert D.eq?(state.rotation_per_minute, D.new("150.0"))
+    {:noreply, _} =
+      PulseRotationSensor.handle_info(
+        %Message{name: @frequency, value: D.new("2.5"), source: Ctrl},
+        state()
+      )
 
-    dead = %Message{name: :received_pulse_pin0_frequency, value: nil, source: Ctrl}
-    {:noreply, state} = PulseRotationSensor.handle_info(dead, state)
-    assert state.rotation_per_minute == nil
+    assert_received %Message{name: :rotation_per_minute, value: rpm, source: PulseRotationSensor}
+    assert D.eq?(rpm, D.new("150.0"))
+
+    {:noreply, _} =
+      PulseRotationSensor.handle_info(
+        %Message{name: @frequency, value: nil, source: Ctrl},
+        state()
+      )
+
+    assert_received %Message{name: :rotation_per_minute, value: nil, source: PulseRotationSensor}
   end
 
   test "only the configured controller is read" do
-    {:ok, state} = PulseRotationSensor.init(%{controller: Ctrl, pulses_per_revolution: 1})
-    {:ok, :cancel} = :timer.cancel(state.loop_timer)
+    OvcsBus.subscribe("messages")
 
-    message = %Message{name: :received_pulse_pin0_frequency, value: D.new("2.5"), source: Other}
-    {:noreply, state} = PulseRotationSensor.handle_info(message, state)
-    assert state.rotation_per_minute == nil
+    {:noreply, _} =
+      PulseRotationSensor.handle_info(
+        %Message{name: @frequency, value: D.new("2.5"), source: Other},
+        state()
+      )
+
+    refute_received %Message{name: :rotation_per_minute}
   end
 end
