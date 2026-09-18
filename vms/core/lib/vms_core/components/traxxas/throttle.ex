@@ -249,11 +249,18 @@ defmodule VmsCore.Components.Traxxas.Throttle do
 
   def shape(requested, false, curve) do
     requested
-    |> D.max(D.negate(@one))
-    |> D.min(@one)
+    |> clamp()
     |> strip_deadzone(curve.deadzone)
     |> blend(curve.expo)
     |> offset(curve.start_offset, cap(requested, curve))
+  end
+
+  @doc """
+  A request held to [-1, 1]: a commander that overshoots its range asks
+  for full deflection, not for more than the actuator has.
+  """
+  def clamp(requested) do
+    requested |> D.max(D.negate(@one)) |> D.min(@one)
   end
 
   defp cap(requested, curve) do
