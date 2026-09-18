@@ -22,10 +22,14 @@ name: ROS 2
 #     `decompress_stereo.py` — which runs on the *vehicle* — are only
 #     ever parsed when something starts them, so an undefined name in
 #     an error path shipped and waited.
-#   * `image` actually builds the two images the car runs: the shared
-#     ROS image (every service on both sides of the fabric runs it) and
-#     Nav2. Their Dockerfiles COPY across directories, and only a build
-#     proves those paths.
+#   * `image` builds every image the vehicle's compute node runs, for
+#     both architectures: amd64 for the workstations that run the same
+#     images, arm64 for the compute node itself. Only a build proves the
+#     COPY lines that reach across directories, and only an arm64 build
+#     proves what the car will actually pull. On `main` the builds are
+#     pushed to GHCR by digest and `manifest` stitches the two
+#     architectures into one tag per image — the tag a vehicle's
+#     compose file names.
 #
 # Deliberately not built here: the simulator image, which pulls Gazebo
 # in through the ROS vendor packages and is far too heavy for per-PR
@@ -41,6 +45,12 @@ on:
       - 'ruff.toml'
       - '.github/workflows/ros2.yml'
   workflow_dispatch:
+
+# Where the compute node images are published. A vehicle's compose file
+# names `image: ghcr.io/open-vehicle-control-system/ovcs/<name>:latest`
+# and balena pulls it, so the vehicle never builds framework images.
+env:
+  REGISTRY_IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/ovcs
 
 concurrency:
   group: ros2-${{ github.ref }}
@@ -112,31 +122,115 @@ jobs:
         run: ruff check --output-format=github .
 
   image:
-    name: build the images the car runs
-    runs-on: ubuntu-latest
+    name: build ${{ matrix.image }} (${{ matrix.platform.arch }})
+    runs-on: ${{ matrix.platform.runner }}
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [ros2, nav2, wifi-firmware, wifi-ap-fix, bridge-nat-fix]
+        # Native runners for both architectures rather than QEMU: the
+        # ROS apt layers take minutes natively and the better part of
+        # an hour emulated. The arm64 runners are free on public repos.
+        platform:
+          - { arch: amd64, runner: ubuntu-latest }
+          - { arch: arm64, runner: ubuntu-24.04-arm }
     steps:
       - uses: actions/checkout@v5
 
       - uses: docker/setup-buildx-action@v3
 
-      - name: Build compose/compute/images/ros2
-        uses: docker/build-push-action@v6
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
         with:
-          context: compose/compute/images/ros2
-          push: false
-          # Layer cache in the Actions cache, so a PR that does not touch
-          # the Dockerfile reuses the apt layer rather than re-fetching
-          # the ROS package set every run.
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Same context as the vehicle compose file gives it, so the COPY
-      # lines that reach into images/ros2 and nav2/ are the ones tested.
-      - name: Build compose/compute/images/nav2
+      # Nav2's Dockerfile COPYs from its sibling ros2/ and from nav2/,
+      # so its context is the whole source root, the same one the
+      # vehicle compose file gives it. Every other image is
+      # self-contained in its own directory.
+      - name: Build${{ github.event_name != 'pull_request' && ' and push by digest' || '' }}
+        id: build
         uses: docker/build-push-action@v6
         with:
-          context: compose/compute
-          file: compose/compute/images/nav2/Dockerfile
-          push: false
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          context: ${{ matrix.image == 'nav2' && 'compose/compute' || format('compose/compute/images/{0}', matrix.image) }}
+          file: ${{ matrix.image == 'nav2' && 'compose/compute/images/nav2/Dockerfile' || '' }}
+          platforms: linux/${{ matrix.platform.arch }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          # Pushed by digest only; `manifest` below gives the digests
+          # their tags once both architectures exist. On a pull request
+          # this is a plain build.
+          outputs: type=image,name=${{ env.REGISTRY_IMAGE_PREFIX }}/${{ matrix.image }},name-canonical=true,push-by-digest=true,push=${{ github.event_name != 'pull_request' }}
+          # Layer cache in the Actions cache, one scope per image and
+          # architecture, so a PR that does not touch a Dockerfile
+          # reuses the apt layer rather than re-fetching the ROS
+          # package set every run.
+          cache-from: type=gha,scope=${{ matrix.image }}-${{ matrix.platform.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}-${{ matrix.platform.arch }}
+
+      - name: Export digest
+        if: github.event_name != 'pull_request'
+        run: |
+          mkdir -p /tmp/digests
+          digest='${{ steps.build.outputs.digest }}'
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ matrix.image }}-${{ matrix.platform.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  manifest:
+    name: publish ${{ matrix.image }}
+    if: github.event_name != 'pull_request'
+    needs: image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [ros2, nav2, wifi-firmware, wifi-ap-fix, bridge-nat-fix]
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: digest-${{ matrix.image }}-*
+          path: /tmp/digests
+          merge-multiple: true
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Two tags per image: `latest` follows main, and the short commit
+      # sha is the immutable name to pin a vehicle to when a framework
+      # change must not reach it unreviewed.
+      - name: Create the multi-arch manifest
+        working-directory: /tmp/digests
+        run: |
+          image='${{ env.REGISTRY_IMAGE_PREFIX }}/${{ matrix.image }}'
+          short=$(echo '${{ github.sha }}' | cut -c1-7)
+          set --
+          for digest in *; do set -- "$@" "$image@sha256:$digest"; done
+          docker buildx imagetools create \
+            -t "$image:latest" \
+            -t "$image:sha-$short" \
+            "$@"
+          docker buildx imagetools inspect "$image:latest"
