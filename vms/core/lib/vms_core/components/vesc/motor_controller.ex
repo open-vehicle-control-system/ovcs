@@ -19,11 +19,11 @@ defmodule VmsCore.Components.Vesc.MotorController do
       command arrives within its timeout.
     * **A hand** (any source not in `:linear_sources`) sends
       `set_duty`, the open-loop mode that behaves like a trigger on a
-      conventional ESC. The request goes through the same dead zone,
-      feel curve and start offset as `Traxxas.Throttle`, with the same
-      options; a released trigger sends zero duty, which the VESC turns
-      into a drag brake. With a gear source, see below, a hand drives
-      through the selected gear instead.
+      conventional ESC. The request arrives already shaped by the
+      hand's `OVCS.ThrottleCurve` and is only scaled by the caps; a
+      released trigger sends zero duty, which the VESC turns into a drag
+      brake. With a gear source, see below, a hand drives through the
+      selected gear instead.
     * **A physical velocity** (a source in `:linear_sources`, such as
       `OVCS.RosVelocityCommand`) sends `set_rpm`: the request in
       [-1, 1] is a fraction of `:max_rotation_per_minute`, converted to
@@ -52,8 +52,8 @@ defmodule VmsCore.Components.Vesc.MotorController do
       before a gear is known, it releases the motor.
     * A negative request brakes, in every gear: `set_current_brake`,
       a braking current that opposes the rotation whichever way the
-      motor turns and never drives it the other way. It is the request
-      past the dead zone, linear, times `:max_brake_current`.
+      motor turns and never drives it the other way. It is the request's
+      magnitude times `:max_brake_current`.
     * A released trigger releases the motor: it coasts.
 
   A velocity ignores the gear: its sign is the direction of travel, and
@@ -95,19 +95,21 @@ defmodule VmsCore.Components.Vesc.MotorController do
     * `:selected_control_level_source` — the manager that names the
       throttle source, `Managers.ControlLevel`.
     * `:linear_sources` — commanders whose request is a physical
-      quantity; they get the rpm mode and skip the feel curve.
+      quantity; they get the rpm mode and skip the caps.
     * `:max_rotation_per_minute` — mechanical motor rpm at a linear
       request of 1. The composer derives it from the speed the linear
       commanders normalise against and the vehicle's kinematics, so the
       gearing is declared once, next to `VehicleMotion`'s.
     * `:pole_pairs` — of the motor: electrical rpm is mechanical rpm
       times this. A 4-pole motor has 2.
-    * `:deadzone`, `:expo`, `:start_offset`, `:max_throttle`,
-      `:max_reverse` — the feel curve for hands, as documented on
-      `Traxxas.Throttle`. They shape the duty command only; the caps
-      do not apply to a velocity, which `:max_rotation_per_minute`
-      already bounds. With a gear source `:max_reverse` caps the duty
-      in `:reverse`.
+    * `:max_throttle`, `:max_reverse` — the fraction of the motor's full
+      output a hand's full forward and full negative requests give, or
+      with a gear source a full request in `:drive` and in `:reverse`.
+      On a VESC the output is the duty, a fraction of the pack voltage.
+      Fractions in [0, 1], defaulting to 1, `:max_reverse` to
+      `:max_throttle`. The
+      caps scale rather than clip, and do not apply to a velocity,
+      which `:max_rotation_per_minute` already bounds.
     * `:selected_gear_source` — optional, the manager publishing
       `:selected_gear`. Needs `:max_brake_current` and the
       `set_current_brake` frame.
@@ -126,11 +128,12 @@ defmodule VmsCore.Components.Vesc.MotorController do
   alias Decimal, as: D
   alias OvcsBus, as: Bus
   alias Cantastic.{Emitter, Frame, Receiver, ReceivedFrameWatcher, Signal}
-  alias VmsCore.Components.Traxxas.Throttle
+  alias VmsCore.Throttle
 
   @loop_period 10
   @frame_suffixes [:set_duty, :set_current, :set_current_brake, :set_rpm, :status, :status_5]
   @zero D.new(0)
+  @one D.new(1)
   @gear_signs %{drive: 1, reverse: -1}
 
   def start_link(%{process_name: process_name} = args) do
@@ -179,15 +182,12 @@ defmodule VmsCore.Components.Vesc.MotorController do
        frames: frames,
        selected_control_level_source: selected_control_level_source,
        linear_sources: Map.get(args, :linear_sources, []),
-       curve: Throttle.curve(args),
+       caps: caps(args),
        selected_gear_source: selected_gear_source,
        # Unknown until the manager publishes it: a hand releases the
        # motor rather than guess a direction.
        selected_gear: nil,
        max_brake_current: brake_current(selected_gear_source, args),
-       # The brake is linear past the same dead zone: the feel curve is
-       # for fine speed control, and a brake wants to be predictable.
-       brake_curve: Throttle.curve(Map.merge(Map.take(args, [:deadzone]), %{expo: @zero})),
        erpm_per_request: erpm_per_request(max_rotation_per_minute, pole_pairs),
        pole_pairs: pole_pairs,
        # Starts nil: nothing commands this actuator until the manager
@@ -347,7 +347,11 @@ defmodule VmsCore.Components.Vesc.MotorController do
   end
 
   defp signed_duty_command(state) do
-    duty = Throttle.shape(state.requested_throttle, false, state.curve)
+    requested = Throttle.clamp(state.requested_throttle)
+
+    duty =
+      requested |> D.abs() |> D.mult(cap(requested, state.caps)) |> Throttle.signed_as(requested)
+
     {:set_duty, %{"duty" => duty}, duty}
   end
 
@@ -362,23 +366,38 @@ defmodule VmsCore.Components.Vesc.MotorController do
       is_nil(gear_sign) ->
         release()
 
+      D.eq?(requested, @zero) ->
+        release()
+
       true ->
-        # Shaped as a request of the gear's sign, so reverse gets the
-        # reverse cap.
-        duty = requested |> D.mult(gear_sign) |> Throttle.shape(false, state.curve)
-        if D.eq?(duty, @zero), do: release(), else: {:set_duty, %{"duty" => duty}, duty}
+        # A request of the gear's sign, so reverse gets the reverse cap.
+        signed = D.mult(requested, gear_sign)
+        duty = signed |> D.abs() |> D.mult(cap(signed, state.caps)) |> Throttle.signed_as(signed)
+        {:set_duty, %{"duty" => duty}, duty}
     end
   end
 
   defp brake_command(requested, state) do
-    fraction = requested |> D.abs() |> Throttle.shape(false, state.brake_curve)
+    current = requested |> D.abs() |> D.mult(state.max_brake_current) |> D.round(3)
+    {:set_current_brake, %{"current" => current}, @zero}
+  end
 
-    if D.eq?(fraction, @zero) do
-      release()
-    else
-      current = fraction |> D.mult(state.max_brake_current) |> D.round(3)
-      {:set_current_brake, %{"current" => current}, @zero}
-    end
+  defp cap(requested, caps) do
+    if D.negative?(requested), do: caps.max_reverse, else: caps.max_throttle
+  end
+
+  @doc false
+  def caps(args) do
+    max_throttle = Map.get(args, :max_throttle, @one)
+    caps = %{max_throttle: max_throttle, max_reverse: Map.get(args, :max_reverse, max_throttle)}
+
+    Enum.each(caps, fn {key, value} ->
+      if D.negative?(value) or D.gt?(value, @one) do
+        raise ArgumentError, "#{inspect(key)} must be in [0, 1], got #{value}"
+      end
+    end)
+
+    caps
   end
 
   defp release, do: {:set_current, %{"current" => @zero}, @zero}

@@ -256,6 +256,33 @@ requested_throttle_sources: %{
 }
 ```
 
+A hand's throttle usually goes through an `OVCS.ThrottleCurve` first,
+and the map names the curve rather than the commander: the dead zone
+and expo are the hand's, one curve per hand with its own parameters,
+while the actuator only applies its caps. On the OVCS Mini:
+
+```elixir
+{OVCS.ThrottleCurve,
+ %{
+   process_name: Vms.RadioThrottleCurve,
+   throttle_source: OVCS.RadioControl.Throttle,
+   deadzone: @throttle_deadzone,
+   expo: @throttle_expo
+ }},
+...
+requested_throttle_sources: %{
+  manual: nil,
+  radio: Vms.RadioThrottleCurve,
+  ros: %{teleop: Vms.TeleopThrottleCurve, autonomous: OVCS.RosVelocityCommand}
+},
+radio_breaking_source: OVCS.RadioControl.Throttle
+```
+
+A velocity is a physical quantity and is named directly. So is the
+takeover: `radio_breaking` is read from the raw trigger. A hand wired
+to an actuator without a curve gets no dead zone, and a trigger that
+drifts at rest creeps the vehicle.
+
 A missing key resolves to `nil`, which means nothing commands that
 actuator. That is the safe direction, and it is how a vehicle with no
 planner is expressed: `ros: %{teleop: ...}` leaves the autonomous

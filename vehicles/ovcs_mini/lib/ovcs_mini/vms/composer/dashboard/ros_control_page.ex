@@ -1,5 +1,6 @@
 defmodule OvcsMini.Vms.Composer.Dashboard.ROSControlPage do
   alias VmsCore.Components.OVCS.RosActuatorCommand
+  alias OvcsMini.Vms
   alias OvcsMini.Vms.Composer.Dashboard.Blocks.ROSControlThrottleAndSteeringBlock
 
   def definition(order: order) do
@@ -23,6 +24,19 @@ defmodule OvcsMini.Vms.Composer.Dashboard.ROSControlPage do
               type: :metric,
               name: "Requested Throttle",
               module: RosActuatorCommand.Throttle,
+              key: :requested_throttle
+            }
+          ]
+        },
+        "throttle-curve" => %{
+          order: 2,
+          name: "Throttle Curve",
+          type: "table",
+          rows: [
+            %{
+              type: :metric,
+              name: "Shaped Throttle",
+              module: Vms.TeleopThrottleCurve,
               key: :requested_throttle
             }
           ]

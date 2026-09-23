@@ -15,7 +15,6 @@ defmodule VmsCore.Components.Vesc.MotorControllerTest do
   alias Cantastic.{Frame, Signal}
   alias Decimal, as: D
   alias OvcsBus.Message
-  alias VmsCore.Components.Traxxas.Throttle
   alias VmsCore.Components.Vesc.MotorController
 
   @manager ControlLevelManager
@@ -38,7 +37,7 @@ defmodule VmsCore.Components.Vesc.MotorControllerTest do
         frames: MotorController.frame_names(@vesc),
         selected_control_level_source: @manager,
         linear_sources: [@planner],
-        curve: Throttle.curve(%{}),
+        caps: MotorController.caps(%{}),
         erpm_per_request: MotorController.erpm_per_request(@max_rpm, @pole_pairs),
         pole_pairs: @pole_pairs,
         requested_throttle_source: @hand,
@@ -81,11 +80,30 @@ defmodule VmsCore.Components.Vesc.MotorControllerTest do
   end
 
   describe "which command frame" do
-    test "a hand drives the duty, shaped by the curve, and the dashboard sees the duty" do
+    test "a hand's request is the duty, already shaped upstream, and the dashboard sees it" do
       {:set_duty, %{"duty" => duty}, throttle} = MotorController.command(state())
-      # The default curve is the full square.
-      assert D.eq?(duty, D.new("0.36"))
+      # No caps: the request is applied as is.
+      assert D.eq?(duty, D.new("0.6"))
       assert D.eq?(throttle, duty)
+    end
+
+    test "the caps scale a hand's duty, reverse following forward unless given" do
+      capped = %{
+        requested_throttle: D.new("0.5"),
+        caps: MotorController.caps(%{max_throttle: D.new("0.1")})
+      }
+
+      {:set_duty, %{"duty" => forward}, _} = MotorController.command(state(capped))
+      assert D.eq?(forward, D.new("0.05"))
+
+      {:set_duty, %{"duty" => reverse}, _} =
+        MotorController.command(state(%{capped | requested_throttle: D.new("-1")}))
+
+      assert D.eq?(reverse, D.new("-0.1"))
+
+      assert_raise ArgumentError, fn ->
+        MotorController.caps(%{max_reverse: D.new("1.5")})
+      end
     end
 
     test "a physical velocity drives the rpm, as a fraction of the maximum" do
@@ -130,14 +148,7 @@ defmodule VmsCore.Components.Vesc.MotorControllerTest do
         selected_gear_source: @gear,
         selected_gear: gear,
         max_brake_current: D.new(20),
-        brake_curve: Throttle.curve(%{deadzone: D.new("0.05"), expo: D.new(0)}),
-        curve:
-          Throttle.curve(%{
-            deadzone: D.new("0.05"),
-            expo: D.new(0),
-            max_throttle: D.new("0.1"),
-            max_reverse: D.new("0.05")
-          }),
+        caps: MotorController.caps(%{max_throttle: D.new("0.1"), max_reverse: D.new("0.05")}),
         requested_throttle: D.new(requested)
       })
     end
@@ -164,16 +175,18 @@ defmodule VmsCore.Components.Vesc.MotorControllerTest do
       end
     end
 
-    test "the brake is linear past the dead zone" do
-      # Half way through the travel past a 5% dead zone.
+    test "the brake current is proportional to the request" do
       {:set_current_brake, %{"current" => current}, _} =
-        MotorController.command(geared("-0.525", :drive))
+        MotorController.command(geared("-0.5", :drive))
 
       assert D.eq?(current, D.new(10))
     end
 
     test "a released trigger coasts, in drive as in reverse" do
-      for gear <- [:drive, :reverse], requested <- ["0", "0.03", "-0.03"] do
+      # The hand's curve turns a drifting trigger into exactly zero.
+      for gear <- [:drive, :reverse] do
+        requested = "0"
+
         assert MotorController.command(geared(requested, gear)) ==
                  {:set_current, %{"current" => D.new(0)}, D.new(0)}
       end

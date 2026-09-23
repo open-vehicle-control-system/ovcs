@@ -1,5 +1,6 @@
 defmodule OvcsMini.Vms.Composer.Dashboard.RadioControlPage do
   alias VmsCore.Components.OVCS.RadioControl
+  alias OvcsMini.Vms
   alias OvcsMini.Vms.Composer.Dashboard.Blocks.RadioControlThrottleAndSteeringBlock
 
   def definition(order: order) do
@@ -41,6 +42,19 @@ defmodule OvcsMini.Vms.Composer.Dashboard.RadioControlPage do
               type: :metric,
               name: "Requested Throttle",
               module: RadioControl.Throttle,
+              key: :requested_throttle
+            }
+          ]
+        },
+        "throttle-curve" => %{
+          order: 2,
+          name: "Throttle Curve",
+          type: "table",
+          rows: [
+            %{
+              type: :metric,
+              name: "Shaped Throttle",
+              module: Vms.RadioThrottleCurve,
               key: :requested_throttle
             }
           ]

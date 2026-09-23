@@ -210,6 +210,7 @@ defmodule VmsCore.Components.Traxxas.SourceSwitchingTest do
         throttle_state(%{
           controller: controller,
           linear_sources: [@planner],
+          curve: Throttle.curve(%{start_offset: D.new("0.1")}),
           requested_throttle: D.new("0.4")
         })
 
@@ -229,71 +230,35 @@ defmodule VmsCore.Components.Traxxas.SourceSwitchingTest do
              "the ESC stayed on the previous source's shaping"
     end
 
-    test "with no curve configured a joystick request is squared, keeping its sign" do
-      curve = Throttle.curve(%{})
-      assert D.eq?(Throttle.shape(D.new("0.5"), false, curve), D.new("0.25"))
-      assert D.eq?(Throttle.shape(D.new("-0.5"), false, curve), D.new("-0.25"))
-      assert D.eq?(Throttle.shape(D.new("1"), false, curve), D.new("1"))
-    end
-
     test "a physical quantity is applied as is" do
-      # A planner asking for a fifth of full speed must get a fifth,
-      # not a twenty-fifth.
+      # A planner asking for a fifth of full speed must get a fifth.
       curve = Throttle.curve(%{})
       assert D.eq?(Throttle.shape(D.new("0.2"), true, curve), D.new("0.2"))
       assert D.eq?(Throttle.shape(D.new("-0.2"), true, curve), D.new("-0.2"))
     end
 
-    test "expo blends between linear and square" do
-      linear = Throttle.curve(%{expo: D.new(0)})
-      half = Throttle.curve(%{expo: D.new("0.5")})
-
-      assert D.eq?(Throttle.shape(D.new("0.5"), false, linear), D.new("0.5"))
-      # Half of 0.5 plus half of 0.25.
-      assert D.eq?(Throttle.shape(D.new("0.5"), false, half), D.new("0.375"))
-      assert D.eq?(Throttle.shape(D.new("-0.5"), false, half), D.new("-0.375"))
-      assert D.eq?(Throttle.shape(D.new("1"), false, half), D.new("1"))
-    end
-
-    test "the dead zone reads a drifting hand as zero and keeps full deflection" do
-      curve = Throttle.curve(%{deadzone: D.new("0.05"), expo: D.new(0)})
-
-      assert D.eq?(Throttle.shape(D.new("0.04"), false, curve), D.new(0))
-      assert D.eq?(Throttle.shape(D.new("-0.05"), false, curve), D.new(0))
-      assert D.eq?(Throttle.shape(D.new("1"), false, curve), D.new("1"))
-      assert D.eq?(Throttle.shape(D.new("-1"), false, curve), D.new("-1"))
-      # The remaining travel is stretched: 0.525 sits half way between
-      # 0.05 and 1, so it maps to 0.5.
-      assert D.eq?(Throttle.shape(D.new("0.525"), false, curve), D.new("0.5"))
-    end
-
     test "the start offset lifts every non-zero output to the edge of motion" do
-      curve =
-        Throttle.curve(%{deadzone: D.new("0.05"), expo: D.new(0), start_offset: D.new("0.1")})
+      curve = Throttle.curve(%{start_offset: D.new("0.1")})
 
       assert D.eq?(Throttle.shape(D.new(0), false, curve), D.new(0))
 
-      assert D.eq?(Throttle.shape(D.new("0.03"), false, curve), D.new(0)),
-             "a hand at rest must not creep the vehicle forward"
-
-      # The first request past the dead zone already sits at the offset.
-      first = Throttle.shape(D.new("0.06"), false, curve)
+      # The first non-zero request already sits at the offset.
+      first = Throttle.shape(D.new("0.01"), false, curve)
       assert D.gt?(first, D.new("0.1")) and D.lt?(first, D.new("0.12"))
 
-      reverse = Throttle.shape(D.new("-0.06"), false, curve)
+      reverse = Throttle.shape(D.new("-0.01"), false, curve)
       assert D.lt?(reverse, D.new("-0.1")) and D.gt?(reverse, D.new("-0.12"))
 
       assert D.eq?(Throttle.shape(D.new("1"), false, curve), D.new("1"))
-      # 0.525 -> 0.5 after the dead zone -> 0.1 + 0.9 * 0.5.
-      assert D.eq?(Throttle.shape(D.new("0.525"), false, curve), D.new("0.55"))
+      # 0.1 + 0.9 * 0.5.
+      assert D.eq?(Throttle.shape(D.new("0.5"), false, curve), D.new("0.55"))
     end
 
-    test "a physical quantity skips the dead zone, the curve and the start offset" do
+    test "a physical quantity skips the start offset" do
       # A planner decelerating through a tiny velocity must be followed
       # down, not held at the edge of motion until it publishes exactly
       # zero.
-      curve =
-        Throttle.curve(%{deadzone: D.new("0.05"), expo: D.new(1), start_offset: D.new("0.1")})
+      curve = Throttle.curve(%{start_offset: D.new("0.1")})
 
       assert D.eq?(Throttle.shape(D.new(0), true, curve), D.new(0))
       assert D.eq?(Throttle.shape(D.new("0.02"), true, curve), D.new("0.02"))
@@ -302,12 +267,8 @@ defmodule VmsCore.Components.Traxxas.SourceSwitchingTest do
     end
 
     test "the curve parameters are validated" do
-      assert_raise ArgumentError, fn -> Throttle.curve(%{expo: D.new("1.5")}) end
-      assert_raise ArgumentError, fn -> Throttle.curve(%{deadzone: D.new("-0.1")}) end
-
-      assert_raise ArgumentError, fn ->
-        Throttle.curve(%{deadzone: D.new("0.5"), start_offset: D.new("0.5")})
-      end
+      assert_raise ArgumentError, fn -> Throttle.curve(%{start_offset: D.new("-0.1")}) end
+      assert_raise ArgumentError, fn -> Throttle.curve(%{max_throttle: D.new("1.5")}) end
 
       assert_raise ArgumentError, fn ->
         Throttle.curve(%{start_offset: D.new("0.5"), max_throttle: D.new("0.5")})
@@ -331,8 +292,6 @@ defmodule VmsCore.Components.Traxxas.SourceSwitchingTest do
 
       curve =
         Throttle.curve(%{
-          deadzone: D.new("0.05"),
-          expo: D.new("0.5"),
           start_offset: D.new("0.02"),
           max_throttle: D.new("0.1"),
           max_reverse: D.new("0.2")
@@ -340,11 +299,10 @@ defmodule VmsCore.Components.Traxxas.SourceSwitchingTest do
 
       state = throttle_state(%{controller: controller, curve: curve, throttle: nil})
 
-      # 0.525 is the midpoint of the usable trigger travel after deadzone.
       for {request, expected_pulse} <- [
-            {"0.05", "1500"},
-            {"0.052", "1510.042193905817174515235457"},
-            {"0.525", "1525"},
+            {"0", "1500"},
+            {"0.01", "1510.4"},
+            {"0.5", "1530"},
             {"1", "1550"},
             {"-1", "1400"},
             {"0", "1500"}
@@ -371,17 +329,11 @@ defmodule VmsCore.Components.Traxxas.SourceSwitchingTest do
     test "scales a hand's output onto [start_offset, max_throttle]" do
       # Scaled, not clipped: full trigger still means "as fast as
       # allowed", so the whole travel stays useful.
-      curve =
-        Throttle.curve(%{
-          deadzone: D.new("0.05"),
-          expo: D.new(0),
-          start_offset: D.new("0.1"),
-          max_throttle: D.new("0.5")
-        })
+      curve = Throttle.curve(%{start_offset: D.new("0.1"), max_throttle: D.new("0.5")})
 
       assert D.eq?(Throttle.shape(D.new("1"), false, curve), D.new("0.5"))
-      # 0.525 -> 0.5 after the dead zone -> 0.1 + 0.4 * 0.5.
-      assert D.eq?(Throttle.shape(D.new("0.525"), false, curve), D.new("0.3"))
+      # 0.1 + 0.4 * 0.5.
+      assert D.eq?(Throttle.shape(D.new("0.5"), false, curve), D.new("0.3"))
       assert D.eq?(Throttle.shape(D.new(0), false, curve), D.new(0))
     end
 

@@ -98,7 +98,7 @@ For a VESC with id 1 wrapped under the prefix `vesc`:
 |-------|----|---------|---------|------|
 | `vesc_set_current` | `0x0101` | `set_current_signals.yml` | VMS | no source is selected, or a geared hand in neutral, parking or at rest: zero current releases the motor |
 | `vesc_set_current_brake` | `0x0201` | `set_current_brake_signals.yml` | VMS | with gears, a hand pulling the trigger back: braking current, never reverse |
-| `vesc_set_duty` | `0x0001` | `set_duty_signals.yml` | VMS | a hand commands: duty in [-1, 1] through the feel curve, signed by the gear when there is one; also a velocity of exactly zero, which brakes |
+| `vesc_set_duty` | `0x0001` | `set_duty_signals.yml` | VMS | a hand commands: its shaped request in [-1, 1] times the duty cap, signed by the gear when there is one; also a velocity of exactly zero, which brakes |
 | `vesc_set_rpm` | `0x0301` | `set_rpm_signals.yml` | VMS | a non-zero velocity commands: electrical rpm, negative for reverse |
 | `vesc_status` | `0x0901` | `status_signals.yml` | VESC | 50 Hz: erpm, motor current, duty |
 | `vesc_status_5` | `0x1B01` | `status_5_signals.yml` | VESC | 50 Hz: tachometer, input voltage |
@@ -198,11 +198,10 @@ in the composer and shared with `VehicleMotion`:
    max_rotation_per_minute: @max_motor_rotation_per_minute,
    # A 4-pole motor.
    pole_pairs: 2,
-   # The feel curve for hands, see Traxxas.Throttle.
-   deadzone: @throttle_deadzone,
-   expo: @throttle_expo,
-   max_throttle: @throttle_max,
-   max_reverse: @throttle_max_reverse
+   # Duty caps for hands; the hand's own dead zone and expo are an
+   # `OVCS.ThrottleCurve` in front of the manager.
+   max_throttle: @max_throttle,
+   max_reverse: @max_reverse_throttle
  }}
 ```
 
