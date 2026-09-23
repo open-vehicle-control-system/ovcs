@@ -40,6 +40,7 @@ defmodule VmsCore.Components.OVCS.PulseRotationSensor do
   use GenServer
   alias Decimal, as: D
   alias OvcsBus, as: Bus
+  alias OvcsBus.Units
 
   @frequency_name :received_pulse_pin0_frequency
 
@@ -64,6 +65,7 @@ defmodule VmsCore.Components.OVCS.PulseRotationSensor do
     Bus.broadcast("messages", %Bus.Message{
       name: :rotation_per_minute,
       value: rotation_per_minute(frequency, state.pulses_per_revolution),
+      unit: Units.revolution_per_minute(),
       source: __MODULE__
     })
 

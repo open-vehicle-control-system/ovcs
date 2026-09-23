@@ -83,6 +83,7 @@ defmodule VmsCore.Components.OVCS.VehicleMotion do
   alias Cantastic.Emitter
   alias Decimal, as: D
   alias OvcsBus, as: Bus
+  alias OvcsBus.Units
 
   @loop_period 50
   @frame_name "vehicle_motion"
@@ -158,11 +159,17 @@ defmodule VmsCore.Components.OVCS.VehicleMotion do
         }
       end)
 
-    Bus.broadcast("messages", %Bus.Message{name: :speed, value: speed, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{
+      name: :speed,
+      value: speed,
+      unit: Units.kilometre_per_hour(),
+      source: __MODULE__
+    })
 
     Bus.broadcast("messages", %Bus.Message{
       name: :wheel_rotation_per_minute,
       value: wheel_rotation_per_minute(state),
+      unit: Units.revolution_per_minute(),
       source: __MODULE__
     })
 

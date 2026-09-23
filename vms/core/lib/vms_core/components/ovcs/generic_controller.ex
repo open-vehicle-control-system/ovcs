@@ -6,6 +6,7 @@ defmodule VmsCore.Components.OVCS.GenericController do
 
   alias Cantastic.{Emitter, Frame, Signal, Receiver, ReceivedFrameWatcher}
   alias OvcsBus, as: Bus
+  alias OvcsBus.Units
   alias VmsCore.Application
   @pwm_duty_cycle_range 65_535
   alias Decimal, as: D
@@ -439,8 +440,13 @@ defmodule VmsCore.Components.OVCS.GenericController do
     Bus.broadcast("messages", %Bus.Message{
       name: "received_#{name}" |> String.to_atom(),
       value: value,
+      unit: pin_unit(name),
       source: state.process_name
     })
+  end
+
+  defp pin_unit(name) do
+    if String.ends_with?(name, "_frequency"), do: Units.hertz()
   end
 
   # The pulse pins are broadcast as their frame arrives; here they are
@@ -464,6 +470,7 @@ defmodule VmsCore.Components.OVCS.GenericController do
       Bus.broadcast("messages", %Bus.Message{
         name: "requested_#{name}" |> String.to_atom(),
         value: value,
+        unit: pin_unit(name),
         source: state.process_name
       })
     end)

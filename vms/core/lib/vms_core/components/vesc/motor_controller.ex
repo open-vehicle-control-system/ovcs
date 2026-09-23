@@ -127,6 +127,7 @@ defmodule VmsCore.Components.Vesc.MotorController do
   use GenServer
   alias Decimal, as: D
   alias OvcsBus, as: Bus
+  alias OvcsBus.Units
   alias Cantastic.{Emitter, Frame, Receiver, ReceivedFrameWatcher, Signal}
   alias VmsCore.Throttle
 
@@ -253,28 +254,35 @@ defmodule VmsCore.Components.Vesc.MotorController do
   def handle_info({:handle_frame, %Frame{name: name, signals: signals}}, state)
       when name == state.frames.status do
     %{"erpm" => %Signal{value: erpm}, "motor_current" => %Signal{value: motor_current}} = signals
-    broadcast(state, :rotation_per_minute, rotation_per_minute(erpm, state.pole_pairs))
-    broadcast(state, :motor_current, motor_current)
+
+    broadcast(
+      state,
+      :rotation_per_minute,
+      rotation_per_minute(erpm, state.pole_pairs),
+      Units.revolution_per_minute()
+    )
+
+    broadcast(state, :motor_current, motor_current, Units.ampere())
     {:noreply, state}
   end
 
   def handle_info({:handle_frame, %Frame{name: name, signals: signals}}, state)
       when name == state.frames.status_5 do
     %{"input_voltage" => %Signal{value: input_voltage}} = signals
-    broadcast(state, :input_voltage, input_voltage)
+    broadcast(state, :input_voltage, input_voltage, Units.volt())
     {:noreply, state}
   end
 
   def handle_info({:handle_missing_frame, network, name}, state)
       when network == state.network and name == state.frames.status do
-    broadcast(state, :rotation_per_minute, nil)
-    broadcast(state, :motor_current, nil)
+    broadcast(state, :rotation_per_minute, nil, Units.revolution_per_minute())
+    broadcast(state, :motor_current, nil, Units.ampere())
     {:noreply, state}
   end
 
   def handle_info({:handle_missing_frame, network, name}, state)
       when network == state.network and name == state.frames.status_5 do
-    broadcast(state, :input_voltage, nil)
+    broadcast(state, :input_voltage, nil, Units.volt())
     {:noreply, state}
   end
 
@@ -433,8 +441,13 @@ defmodule VmsCore.Components.Vesc.MotorController do
     Map.new(@frame_suffixes, fn suffix -> {suffix, "#{prefix}_#{suffix}"} end)
   end
 
-  defp broadcast(state, name, value) do
-    Bus.broadcast("messages", %Bus.Message{name: name, value: value, source: state.process_name})
+  defp broadcast(state, name, value, unit \\ nil) do
+    Bus.broadcast("messages", %Bus.Message{
+      name: name,
+      value: value,
+      unit: unit,
+      source: state.process_name
+    })
   end
 
   defp configure_emitter(network, frame_name, initial_data) do

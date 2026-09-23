@@ -43,15 +43,13 @@ defmodule OvcsMini.Vms.Composer.Dashboard.DrivetrainPage do
               type: :metric,
               name: "Motor Current",
               module: Vms.Vesc,
-              key: :motor_current,
-              unit: "A"
+              key: :motor_current
             },
             %{
               type: :metric,
               name: "Battery Voltage",
               module: Vms.Vesc,
-              key: :input_voltage,
-              unit: "V"
+              key: :input_voltage
             }
           ]
         },
@@ -64,8 +62,7 @@ defmodule OvcsMini.Vms.Composer.Dashboard.DrivetrainPage do
               type: :metric,
               name: "Speed",
               module: OVCS.VehicleMotion,
-              key: :speed,
-              unit: "km/h"
+              key: :speed
             },
             %{
               type: :metric,

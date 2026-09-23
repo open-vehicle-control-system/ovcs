@@ -77,11 +77,23 @@
         }
     }
 
+    // A row's own unit wins over the one its publisher gave.
+    const unitOf = (store, metric) => {
+        return metric.unit ?? store.units?.[metric.module]?.[metric.key]
+    }
+
+    // Decimals arrive as numeric strings.
+    const isNumeric = (value) => {
+        return typeof(value) === "number" ||
+            (typeof(value) === "string" && value.trim() !== "" && !isNaN(Number(value)))
+    }
+
     const renderValue = (store, metric) => {
         let value = store.data[metric.module][metric.key]
-        if(typeof(value) === "number"){
-            let displayValue = Math.round(value*100)/100
-            metric.unit != null? displayValue = displayValue + " " + metric.unit : undefined
+        if(isNumeric(value)){
+            let displayValue = Math.round(Number(value)*100)/100
+            let unit = unitOf(store, metric)
+            unit != null? displayValue = displayValue + " " + unit : undefined
             return displayValue
         } else if(Array.isArray(value)){
             return value.join(", ")

@@ -33,22 +33,19 @@ defmodule OvcsMini.Vms.Composer.Dashboard.GenericControllersPage do
               type: :metric,
               name: "Steering PWM Duty Cycle",
               module: Vms.MainController,
-              key: :requested_external_pwm0_duty_cycle,
-              unit: "%"
+              key: :requested_external_pwm0_duty_cycle
             },
             %{
               type: :metric,
               name: "Steering PWM frequency",
               module: Vms.MainController,
-              key: :requested_external_pwm0_frequency,
-              unit: "Hz"
+              key: :requested_external_pwm0_frequency
             },
             %{
               type: :metric,
               name: "Pulse counter frequency",
               module: Vms.MainController,
-              key: :received_pulse_pin0_frequency,
-              unit: "Hz"
+              key: :received_pulse_pin0_frequency
             },
             %{
               type: :metric,
