@@ -27,12 +27,9 @@ defmodule OvcsMini.Vms.Composer.Dashboard.DrivetrainPage do
           name: "Motor Controller (VESC)",
           type: "table",
           rows: [
-            %{
-              type: :metric,
-              name: "Commanded Throttle (after curve)",
-              module: Vms.Vesc,
-              key: :throttle
-            },
+            %{type: :metric, name: "Command", module: Vms.Vesc, key: :command},
+            %{type: :metric, name: "Throttle", module: Vms.Vesc, key: :throttle},
+            %{type: :metric, name: "Brake Current", module: Vms.Vesc, key: :brake_current},
             %{
               type: :metric,
               name: "Motor RPM",

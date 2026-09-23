@@ -61,6 +61,10 @@ defmodule VmsCore.Components.Vesc.MotorController do
 
   ## Telemetry
 
+  Each time the command changes, `:command` names it — `release`,
+  `brake`, `duty` or `speed` — with `:throttle`, the normalised drive
+  command, and `:brake_current`, zero unless braking.
+
   `status` carries the signed electrical rpm and the motor current,
   `status_5` the input voltage. They are published as
   `:rotation_per_minute` (mechanical, signed), `:motor_current` and
@@ -136,6 +140,12 @@ defmodule VmsCore.Components.Vesc.MotorController do
   @zero D.new(0)
   @one D.new(1)
   @gear_signs %{drive: 1, reverse: -1}
+  @command_labels %{
+    set_current: "release",
+    set_current_brake: "brake",
+    set_duty: "duty",
+    set_rpm: "speed"
+  }
 
   def start_link(%{process_name: process_name} = args) do
     GenServer.start_link(__MODULE__, args, name: process_name)
@@ -313,9 +323,14 @@ defmodule VmsCore.Components.Vesc.MotorController do
         end
 
         broadcast(state, :throttle, throttle, Units.fraction())
+        broadcast(state, :command, @command_labels[frame], nil)
+        broadcast(state, :brake_current, commanded_brake_current(frame, data), Units.ampere())
         %{state | command: command}
     end
   end
+
+  defp commanded_brake_current(:set_current_brake, %{"current" => current}), do: current
+  defp commanded_brake_current(_frame, _data), do: @zero
 
   # The update above is a call and the enable a cast on the same
   # emitter, so the new frame carries the new data from its first
