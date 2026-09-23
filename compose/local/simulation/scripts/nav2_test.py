@@ -7,9 +7,9 @@ that matter on a real car.
 ## What this actually guards
 
 1. **The goal is reached.** Proves the whole chain: bt_navigator ->
-   planner -> MPPI -> `/cmd_vel_nav` (TwistStamped) -> the stamped
-   bridge -> `AckermannSteering`. Any broken link here shows up as a
-   goal that never completes.
+   planner -> MPPI -> velocity smoother -> `/cmd_vel_nav`
+   (TwistStamped) -> the stamped bridge -> `AckermannSteering`. Any
+   broken link here shows up as a goal that never completes.
 
 2. **The turning radius is honoured.** For every commanded pair,
    `|wz| <= |vx| / min_turning_r`. This is the assertion that catches
@@ -29,6 +29,11 @@ that matter on a real car.
 Check 2 is the reason this file exists. It is the only one that fails
 when the kinematic model is wrong, and the whole point of running Nav2
 against this vehicle rather than a differential-drive one.
+
+Checks 2 and 3 read the controller's own output, `/cmd_vel_nav_raw`,
+ahead of the velocity smoother. The smoother's deadband zeroes a linear
+velocity under 0.22 m/s but leaves its yaw rate, so every start and
+stop downstream of it looks like an in-place rotation.
 
 ## Two goals, because one cannot test both things
 
@@ -115,7 +120,7 @@ class Navigator(Node):
         self.create_subscription(Odometry, "/odom", self.on_odom, 10)
         # TwistStamped, not Twist. Subscribing with the wrong type here
         # would report zero commands and pass every check vacuously.
-        self.create_subscription(TwistStamped, "/cmd_vel_nav", self.on_cmd, 30)
+        self.create_subscription(TwistStamped, "/cmd_vel_nav_raw", self.on_cmd, 30)
         self.pose = None
         self.commands = []
 
@@ -190,7 +195,7 @@ def navigate(node, label, dx, dy, must_arrive, failures):
         print(f"        (arrival not asserted: {error:.2f} m away, status {status})")
 
     if not node.commands:
-        check(failures, False, "commands observed", "nothing published on /cmd_vel_nav")
+        check(failures, False, "commands observed", "nothing published on /cmd_vel_nav_raw")
         return
 
     # ── the turning radius ───────────────────────────────────────────

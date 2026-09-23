@@ -59,10 +59,10 @@ log "Starting the simulator"
 sleep 20
 
 log "Starting Nav2"
-(cd "$LOCAL" && ZENOH_ENDPOINT_IP=127.0.0.1 timeout 300 docker compose -f simulation.yml --profile nav2 up -d nav2) \
+(cd "$LOCAL" && ZENOH_ENDPOINT_IP=127.0.0.1 timeout 300 docker compose -f simulation.yml --profile nav2 up -d --build nav2) \
   || { fail "nav2 failed to start"; exit 1; }
 
-# Lifecycle bringup is sequential across five nodes and each waits on
+# Lifecycle bringup is sequential across the servers and each waits on
 # a transform. A failure here is otherwise reported as "the action
 # server never appeared", which reads like a discovery problem.
 sleep 30

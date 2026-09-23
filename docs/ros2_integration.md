@@ -148,7 +148,8 @@ The boundary between Gazebo's transport and ROS is exactly the list in
 | `/stereo/{left,right}/image_raw/compressed` | `sensor_msgs/CompressedImage` | gz → ros | `image_bridge` | `RosBridge.Camera.Zenoh` |
 | `/stereo/{left,right}/camera_info` | `sensor_msgs/CameraInfo` | gz → ros | Gazebo | perception bridge |
 | `/cmd_vel` | `geometry_msgs/Twist` | ros → gz | `teleop_twist_joy`, `drive_test.py` | `AckermannSteering` |
-| `/cmd_vel_nav` | `geometry_msgs/TwistStamped` | ros → gz | Nav2 `controller_server` | `AckermannSteering` |
+| `/cmd_vel_nav_raw` | `geometry_msgs/TwistStamped` | — | Nav2 `controller_server`, `behavior_server` | Nav2 `velocity_smoother`, `nav2_test.py` |
+| `/cmd_vel_nav` | `geometry_msgs/TwistStamped` | ros → gz | Nav2 `velocity_smoother` | `AckermannSteering` |
 | `/stereo/...` disparity, depth, points | `stereo_msgs`, `sensor_msgs` | — | perception bridge | Foxglove, `perception_test.py` |
 | `/stereo/detections`, `.../markers` | `vision_msgs`, `visualization_msgs` | — | perception bridge | Foxglove, `perception_test.py` |
 | `/ovcs_heartbeat` | `std_msgs/String` | — | every Elixir bridge | you, to see the BEAM is alive |
@@ -285,7 +286,7 @@ vehicle's, and the simulator does not exercise it.
 flowchart LR
     subgraph today["In the simulator today"]
         teleop["teleop_twist_joy"] -->|"/cmd_vel (Twist)"| bridgeA["parameter_bridge"]
-        nav["Nav2 controller_server"] -->|"/cmd_vel_nav (TwistStamped)"| bridgeB["parameter_bridge_nav"]
+        nav["Nav2 velocity_smoother"] -->|"/cmd_vel_nav (TwistStamped)"| bridgeB["parameter_bridge_nav"]
         bridgeA -->|"/model/ovcs_mini/cmd_vel"| ack["Gazebo AckermannSteering"]
         bridgeB -->|"/model/ovcs_mini/cmd_vel"| ack
     end
@@ -467,7 +468,8 @@ flowchart TB
     odom["/odom, /tf"] --> ctrl
     odom --> costmaps["local + global costmap (inflation only)"]
     costmaps --> ctrl
-    ctrl -->|"/cmd_vel_nav TwistStamped @ 20 Hz"| out["parameter_bridge_nav"]
+    ctrl -->|"/cmd_vel_nav_raw"| smoother["velocity_smoother"]
+    smoother -->|"/cmd_vel_nav TwistStamped @ 20 Hz"| out["parameter_bridge_nav"]
 ```
 
 What is deliberately unusual:
@@ -487,6 +489,13 @@ What is deliberately unusual:
 - **`TwistStamped` on `/cmd_vel_nav`.** `nav2_util::TwistPublisher`
   defaults `enable_stamped_cmd_vel` to true — the header comment still
   says otherwise; the code wins.
+- **A 0.22 m/s floor.** On the vehicle the VESC brakes instead of
+  driving below its Minimum ERPM, 0.22 m/s through the gearing
+  ([vesc_drivetrain.md](./vesc_drivetrain.md)). `velocity_smoother`
+  sits between the controller and behaviours (`/cmd_vel_nav_raw`) and
+  `/cmd_vel_nav`, with MPPI's limits and a `deadband_velocity` of 0.22
+  m/s: a slower linear velocity goes out as zero. BackUp runs at 0.25
+  m/s, and its `minimum_speed` is 0.25, for the same reason.
 - **`Spin` is removed from both behaviour trees.** A car produces no
   motion from a spin, so it ran its full duration and burned a
   recovery slot. The spin *server* stays loaded because `bt_navigator`
