@@ -27,7 +27,7 @@ defmodule OvcsMini.Vms.Composer do
   # speed loop holds for it, through the gearing below.
   @max_speed_m_s 0.5
 
-  # Throttle feel for hands, see `OVCS.ThrottleCurve`. The trigger at
+  # Throttle feel for hands, see `OVCS.InputCurve`. The trigger at
   # rest drifts by up to 20 counts of 500, and the joystick node's own
   # dead zone is the same 5%; it matches `RadioControl.Throttle`'s
   # braking threshold, so a trigger that reads as braking also reads as
@@ -112,16 +112,16 @@ defmodule OvcsMini.Vms.Composer do
        }},
       # The hands' feel, one curve each, between the commander and the
       # manager. A velocity goes to the manager unshaped.
-      {OVCS.ThrottleCurve,
+      {OVCS.InputCurve,
        %{
-         process_name: Vms.RadioThrottleCurve,
+         process_name: Vms.RadioThrottleInputCurve,
          throttle_source: OVCS.RadioControl.Throttle,
          deadzone: @throttle_deadzone,
          expo: @throttle_expo
        }},
-      {OVCS.ThrottleCurve,
+      {OVCS.InputCurve,
        %{
-         process_name: Vms.TeleopThrottleCurve,
+         process_name: Vms.TeleopThrottleInputCurve,
          throttle_source: OVCS.RosActuatorCommand.Throttle,
          deadzone: @throttle_deadzone,
          expo: @throttle_expo
@@ -174,8 +174,8 @@ defmodule OvcsMini.Vms.Composer do
          },
          requested_throttle_sources: %{
            manual: nil,
-           radio: Vms.RadioThrottleCurve,
-           ros: %{teleop: Vms.TeleopThrottleCurve, autonomous: OVCS.RosVelocityCommand}
+           radio: Vms.RadioThrottleInputCurve,
+           ros: %{teleop: Vms.TeleopThrottleInputCurve, autonomous: OVCS.RosVelocityCommand}
          },
          requested_steering_sources: %{
            manual: nil,

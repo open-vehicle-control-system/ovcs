@@ -256,15 +256,15 @@ requested_throttle_sources: %{
 }
 ```
 
-A hand's throttle usually goes through an `OVCS.ThrottleCurve` first,
+A hand's throttle usually goes through an `OVCS.InputCurve` first,
 and the map names the curve rather than the commander: the dead zone
 and expo are the hand's, one curve per hand with its own parameters,
 while the actuator only applies its caps. On the OVCS Mini:
 
 ```elixir
-{OVCS.ThrottleCurve,
+{OVCS.InputCurve,
  %{
-   process_name: Vms.RadioThrottleCurve,
+   process_name: Vms.RadioThrottleInputCurve,
    throttle_source: OVCS.RadioControl.Throttle,
    deadzone: @throttle_deadzone,
    expo: @throttle_expo
@@ -272,8 +272,8 @@ while the actuator only applies its caps. On the OVCS Mini:
 ...
 requested_throttle_sources: %{
   manual: nil,
-  radio: Vms.RadioThrottleCurve,
-  ros: %{teleop: Vms.TeleopThrottleCurve, autonomous: OVCS.RosVelocityCommand}
+  radio: Vms.RadioThrottleInputCurve,
+  ros: %{teleop: Vms.TeleopThrottleInputCurve, autonomous: OVCS.RosVelocityCommand}
 },
 radio_breaking_source: OVCS.RadioControl.Throttle
 ```

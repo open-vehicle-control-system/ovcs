@@ -199,7 +199,7 @@ in the composer and shared with `VehicleMotion`:
    # A 4-pole motor.
    pole_pairs: 2,
    # Duty caps for hands; the hand's own dead zone and expo are an
-   # `OVCS.ThrottleCurve` in front of the manager.
+   # `OVCS.InputCurve` in front of the manager.
    max_throttle: @max_throttle,
    max_reverse: @max_reverse_throttle
  }}

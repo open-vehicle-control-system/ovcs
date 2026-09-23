@@ -20,7 +20,7 @@ defmodule VmsCore.Components.Vesc.MotorController do
     * **A hand** (any source not in `:linear_sources`) sends
       `set_duty`, the open-loop mode that behaves like a trigger on a
       conventional ESC. The request arrives already shaped by the
-      hand's `OVCS.ThrottleCurve` and is only scaled by the caps; a
+      hand's `OVCS.InputCurve` and is only scaled by the caps; a
       released trigger sends zero duty, which the VESC turns into a drag
       brake. With a gear source, see below, a hand drives through the
       selected gear instead.

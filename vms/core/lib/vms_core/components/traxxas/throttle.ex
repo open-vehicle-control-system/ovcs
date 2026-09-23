@@ -5,7 +5,7 @@ defmodule VmsCore.Components.Traxxas.Throttle do
   ## From request to pulse
 
   A hand's request arrives already shaped: the dead zone and the feel
-  curve are the hand's, applied by `OVCS.ThrottleCurve` between the
+  curve are the hand's, applied by `OVCS.InputCurve` between the
   commander and the manager. What is left here is the ESC's own:
 
   **Start offset** (`:start_offset`). An ESC and a motor need a minimum

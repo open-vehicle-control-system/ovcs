@@ -1,10 +1,14 @@
-defmodule VmsCore.Components.OVCS.ThrottleCurve do
+defmodule VmsCore.Components.OVCS.InputCurve do
   @moduledoc """
-  The feel of a hand on a throttle axis: a dead zone and an expo curve
-  between a commander and whichever actuator drives the vehicle.
+  The curve of a hand's throttle axis, the way an EdgeTX input shapes a
+  stick: a dead zone and an expo between a commander and whichever
+  actuator drives the vehicle. The axis is signed, so the same curve
+  shapes driving and braking.
 
   It follows one source's `:requested_throttle` and publishes the shaped
-  request under its own process name, as it arrives, so the control
+  request under its own process name, as it arrives, with the request it
+  was given as `:input_throttle` and its parameters as `:deadzone` and
+  `:expo`, so a dashboard reads everything from this one component, so the control
   level manager selects it like any other throttle source and the
   actuator never learns whether a hand or a planner is driving. Each
   hand gets its own instance with its own parameters — a radio trigger
@@ -61,8 +65,11 @@ defmodule VmsCore.Components.OVCS.ThrottleCurve do
   @impl true
   def init(%{process_name: process_name, throttle_source: throttle_source} = args) do
     Bus.subscribe("messages")
+    curve = curve(args)
+    broadcast(process_name, :deadzone, curve.deadzone)
+    broadcast(process_name, :expo, curve.expo)
 
-    {:ok, %{process_name: process_name, throttle_source: throttle_source, curve: curve(args)}}
+    {:ok, %{process_name: process_name, throttle_source: throttle_source, curve: curve}}
   end
 
   @impl true
@@ -71,17 +78,17 @@ defmodule VmsCore.Components.OVCS.ThrottleCurve do
         state
       )
       when source == state.throttle_source do
-    Bus.broadcast("messages", %Bus.Message{
-      name: :requested_throttle,
-      value: shape(requested_throttle, state.curve),
-      source: state.process_name
-    })
-
+    broadcast(state.process_name, :input_throttle, requested_throttle)
+    broadcast(state.process_name, :requested_throttle, shape(requested_throttle, state.curve))
     {:noreply, state}
   end
 
   def handle_info(%Bus.Message{}, state) do
     {:noreply, state}
+  end
+
+  defp broadcast(process_name, name, value) do
+    Bus.broadcast("messages", %Bus.Message{name: name, value: value, source: process_name})
   end
 
   @doc """
