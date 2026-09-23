@@ -52,6 +52,7 @@ The core library contains:
   - `Ovcs.ThrottlePedal`, `Ovcs.SteeringColumn`, `Ovcs.HighVoltageContactors`, etc.
   - `Ovcs.RadioControl.*` -- RC transmitter control (throttle, steering, direction)
   - `OVCS.RosActuatorCommand.*`, `OVCS.RosVelocityCommand` -- the two command paths from the ROS bridge: joystick positions and planner velocity
+  - `OVCS.RotationFusion` -- one shaft's rotation from several sensors: priority, an exact zero, fallback and a cross-check
   - `OVCS.InputCurve` -- a hand's dead zone and expo, between a throttle commander and the control level manager
   - `Traxxas.*` -- RC car steering servo (for OVCS Mini) and a hobby ESC throttle over PWM
   - `Vesc.MotorController` -- a motor controller running the VESC firmware, commanded over CAN (see [VESC drivetrain](./vesc_drivetrain.md))

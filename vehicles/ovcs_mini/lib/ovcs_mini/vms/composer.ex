@@ -42,22 +42,14 @@ defmodule OvcsMini.Vms.Composer do
   # Amperes of braking current at full stick back.
   @max_brake_current 10
 
-  # Motor turns per wheel turn. Traxxas specifies 11.82:1 overall for
-  # the stock gearing, which this truck runs: 13 pinion teeth on a 54
-  # tooth spur, both counted. The pinion stage was also measured through
-  # the VESC and the spur sensor at 5% duty: 1,548 motor rpm against 366
-  # spur rpm, 4.2, 54/13 within the sensor's 6 rpm resolution.
+  # Motor turns per wheel turn: Traxxas's stock ratio, for the stock
+  # 13-tooth pinion on the 54-tooth spur.
   @motor_to_wheel_ratio 11.82
   @pinion_teeth 13
   @spur_teeth 54
 
-  # The trigger magnet sits in the spur gear: one magnet, one pulse per
-  # spur turn. What is left of the overall ratio past the pinion stage
-  # is the transmission, 2.85 spur turns per wheel turn. The sensor only
-  # knows the first constant; the second is the vehicle's kinematics and
-  # goes to `VehicleMotion`.
+  # One magnet in the spur gear: one pulse per spur turn.
   @pulses_per_revolution 1
-  @spur_to_wheel_ratio @motor_to_wheel_ratio * @pinion_teeth / @spur_teeth
 
   # Motor rpm at `@max_speed_m_s`, what a full linear request asks the
   # VESC for.
@@ -250,26 +242,35 @@ defmodule OvcsMini.Vms.Composer do
          controller: Vms.MainController,
          pulses_per_revolution: @pulses_per_revolution
        }},
-      # The vehicle's own motion: the spur's rotation through the
-      # gearing and the wheel size gives the speed, published on the
-      # bus for the manager's standstill gate and emitted on 0x60B for
-      # the ROS bridge's odometry. The hall sensor cannot know the
-      # direction, so the sign follows the direction the VESC is
-      # driven in: the request's sign would flip the speed while a
-      # moving truck brakes. `steering_sign` must match
+      # The motor's rotation: the VESC first, the spur sensor as its
+      # cross-check and its fallback. Every rpm here is the motor's.
+      {OVCS.RotationFusion,
+       %{
+         process_name: Vms.MotorRotation,
+         sources: [
+           %{source: Vms.Vesc, ratio: 1, signed: true, noise_rpm: 5},
+           %{
+             source: OVCS.PulseRotationSensor,
+             ratio: @spur_teeth / @pinion_teeth,
+             signed: false
+           }
+         ],
+         direction_source: Vms.Vesc,
+         # The VESC's minimum speed-loop rpm: where the planner drives.
+         cross_check_from_rpm: 450,
+         cross_check_tolerance: 0.1,
+         cross_check_hold_ms: 500
+       }},
+      # The vehicle's own motion, published on the bus for the
+      # manager's standstill gate and emitted on 0x60B for the ROS
+      # bridge's odometry. `steering_sign` must match
       # `RosVelocityCommand`'s so the reported angle converts back to
       # REP-103.
-      #
-      # The spur sensor rather than the motor: it is the reading
-      # independent of the VESC's gearing constants, and it reads
-      # exactly zero at rest, which the manager's standstill gate
-      # needs. The VESC reports a stray erpm or two on a stopped motor.
       {OVCS.VehicleMotion,
        %{
-         rotation_source: OVCS.PulseRotationSensor,
-         rotation_to_wheel_ratio: @spur_to_wheel_ratio,
-         rotation_signed: false,
-         direction_source: Vms.Vesc,
+         rotation_source: Vms.MotorRotation,
+         rotation_to_wheel_ratio: @motor_to_wheel_ratio,
+         rotation_signed: true,
          wheel_radius: OvcsMini.geometry().wheel_radius,
          selected_control_level_source: Managers.ControlLevel,
          steering_limit: OvcsMini.geometry().steering_limit,

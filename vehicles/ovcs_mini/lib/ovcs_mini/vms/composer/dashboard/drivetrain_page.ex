@@ -53,8 +53,39 @@ defmodule OvcsMini.Vms.Composer.Dashboard.DrivetrainPage do
             }
           ]
         },
-        "vehicle-motion" => %{
+        "motor-rotation" => %{
           order: 2,
+          name: "Motor Rotation",
+          type: "table",
+          rows: [
+            %{
+              type: :metric,
+              name: "Motor RPM",
+              module: Vms.MotorRotation,
+              key: :rotation_per_minute
+            },
+            %{
+              type: :metric,
+              name: "Active Source",
+              module: Vms.MotorRotation,
+              key: :active_source
+            },
+            %{
+              type: :metric,
+              name: "Cross-check Gap",
+              module: Vms.MotorRotation,
+              key: :cross_check_gap
+            },
+            %{
+              type: :metric,
+              name: "Cross-check Fault",
+              module: Vms.MotorRotation,
+              key: :cross_check_fault
+            }
+          ]
+        },
+        "vehicle-motion" => %{
+          order: 3,
           name: "Vehicle Motion",
           type: "table",
           rows: [
@@ -73,7 +104,7 @@ defmodule OvcsMini.Vms.Composer.Dashboard.DrivetrainPage do
           ]
         },
         "spur-sensor" => %{
-          order: 3,
+          order: 4,
           name: "Spur Sensor",
           type: "table",
           rows: [

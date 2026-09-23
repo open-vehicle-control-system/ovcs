@@ -129,10 +129,6 @@ lets the motor coast. In `:neutral` and `:parking` a hand can brake but
 not drive. A velocity ignores the gear, since its own sign is the
 direction.
 
-`VehicleMotion` on an unsigned sensor then needs
-`direction_source: Vms.Vesc`: the request goes negative while a moving
-vehicle brakes, and its sign would flip the speed.
-
 ## Wiring it into a composer
 
 `Vesc.MotorController` takes the place of `Traxxas.Throttle` as the
@@ -205,24 +201,41 @@ in the composer and shared with `VehicleMotion`:
  }}
 ```
 
-`VehicleMotion` may take its rotation from the motor rather than
-a pulse sensor — signed, so reverse needs no inference from the
-command. A stopped motor still reports an erpm or two, though, and
-`Managers.ControlLevel`'s standstill gate wants a speed of exactly
-zero, so a vehicle with a pulse sensor keeps it as the source; the
-OVCS Mini does. The source is the process name, which is what the
-motor controller stamps on its bus messages:
+`VehicleMotion` takes the motor's rotation through an
+`OVCS.RotationFusion`, which couples the VESC with a pulse sensor on
+the same shaft. The VESC gives the value, signed and at 50 Hz; the
+pulse sensor cross-checks it and takes over when the VESC goes quiet,
+signed by the direction the VESC is driven in. When every source reads
+within its noise the fused rotation is exactly zero, which
+`Managers.ControlLevel`'s standstill gate needs: a stopped VESC still
+reports an erpm or two. Every rpm in the fusion's options is of the
+output shaft, here the motor:
 
 ```elixir
+{OVCS.RotationFusion,
+ %{
+   process_name: Vms.MotorRotation,
+   sources: [
+     %{source: Vms.Vesc, ratio: 1, signed: true, noise_rpm: 5},
+     %{source: OVCS.PulseRotationSensor, ratio: @spur_teeth / @pinion_teeth, signed: false}
+   ],
+   direction_source: Vms.Vesc,
+   cross_check_from_rpm: 450,
+   cross_check_tolerance: 0.1,
+   cross_check_hold_ms: 500
+ }},
 {OVCS.VehicleMotion,
  %{
-   rotation_source: Vms.Vesc,
+   rotation_source: Vms.MotorRotation,
    rotation_to_wheel_ratio: @motor_to_wheel_ratio,
    rotation_signed: true,
-   wheel_radius: OvcsMini.geometry().wheel_radius,
    ...
  }}
 ```
+
+A cross-check fault is published and logged, not acted on: on the
+Mini both sources sit upstream of the slipper clutch, so a gap means a
+sensor or the gear mesh has failed.
 
 `@max_speed_m_s` is the speed at a linear request of 1 on both sides —
 what `RosVelocityCommand` normalises against and what the motor rpm is
@@ -238,10 +251,10 @@ that does not depend on them: the pulse sensor on the spur, whose
 `:rotation_per_minute` is the spur's, independent of anything the VESC
 reports. Lift the vehicle, command a known rpm from IEx, and compare
 the motor controller's `:rotation_per_minute` with the spur sensor's
-times the pinion-to-spur ratio (54/13 above). If `VehicleMotion` is on
-the motor, its `:speed` is derived from the same numbers and proves
-nothing here; on the spur sensor it is the independent reading, and a
-fixed velocity under the planner should read back as asked.
+times the pinion-to-spur ratio (54/13 above). The rotation fusion runs
+the same comparison continuously above `cross_check_from_rpm`. The
+fused `:speed` is derived from the motor-to-wheel ratio and proves
+nothing about it: that needs a measured distance.
 
 Then find the slowest speed the loop holds cleanly: with the vehicle
 lifted, step the rpm setpoint down until the wheels stutter or stop,
