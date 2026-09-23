@@ -8,18 +8,22 @@ Before making changes, read the relevant docs rather than rediscovering the proj
 
 - [README.md](./README.md) — high-level overview and prerequisites.
 - [CODE_STYLING.md](./CODE_STYLING.md) — conventions to match when editing: layout, naming, Elixir idioms, config placement, shell scripts, CAN YAML, and anti-patterns to avoid. Read this before non-trivial changes.
-- [docs/README.md](./docs/README.md) — index of all guides.
+- [docs/README.md](./docs/README.md) — index of all guides (and the website's docs tree).
+- [docs/framework.md](./docs/framework.md) — the framework / application / reference-application vocabulary.
+- [docs/architecture.md](./docs/architecture.md) — bus isolation, the application contract, the Erlang mesh.
 - [docs/getting_started.md](./docs/getting_started.md) — toolchain setup (mise, CAN, Nerves).
 - [docs/applications.md](./docs/applications.md) — what each app/library is and how the layers fit together (VMS + Infotainment: firmware / api / core / dashboard).
 - [docs/hardware_architecture.md](./docs/hardware_architecture.md) — physical topology, CAN networks, controllers.
 - [docs/running_hardware.md](./docs/running_hardware.md) — build/burn/upload via the top-level `ovcs` Rust CLI (source in `cli/src/`, built to `cli/ovcs` via `mise run cli`; the binary is gitignored), runtime env vars (`VEHICLE`, `CAN_NETWORK_MAPPINGS`).
-- [docs/vehicle_parameterisation.md](./docs/vehicle_parameterisation.md) — end-to-end: how `VEHICLE` selects a composer, what each firmware boots, the behaviours in play, and the bus helpers.
+- [docs/vehicle_parameterisation.md](./docs/vehicle_parameterisation.md) — your application package: how `VEHICLE` selects it, what each firmware boots, the behaviours in play, control levels, `ovcs new`.
 - [docs/testing_can_messages.md](./docs/testing_can_messages.md), [docs/testing_generic_controllers.md](./docs/testing_generic_controllers.md) — CAN + controller testing.
 - [vehicles/ovcs1/WIRING.md](./vehicles/ovcs1/WIRING.md) — OVCS1 wiring.
 
 Prefer updating these docs over duplicating their content here.
 
 ## Workflow rules
+
+- **Go straight to the point.** In replies, code comments and docs alike: say what matters, once, and stop. No preamble, no recap, no restating what the reader just saw, no filler. If a sentence adds nothing, cut it; if nothing needs saying, say nothing.
 
 - **Don't commit until the user validates.** Make the edits, run whatever sanity checks are possible locally, and stop. Wait for the user to confirm the change works on their end before running `git commit`. Small follow-up tweaks can be squashed into the eventual commit.
 
@@ -72,12 +76,36 @@ A comment describes the code as it is at the moment the comment is written — n
 
 Rewrite the offending commits locally and push with `--force-with-lease` — on your own branch, without asking. On `main`, or on any branch someone else may have based work on, propose the rewrite and wait for the user's explicit go: a force-push of shared history is theirs to authorise (see "Don't commit until the user validates"). Remember that PR descriptions are a second copy of the message and need editing separately.
 
+## Documentation is published on ovcs.be
+
+Every guide linked from [docs/README.md](./docs/README.md) is rendered as-is by the [website](https://github.com/open-vehicle-control-system/website) (https://ovcs.be/docs). The index's sections and order are the site's navigation; a new guide gets a line there. Write guides as public pages, not developer notes. `elixir scripts/check_docs.exs` enforces the rules below and runs in CI.
+
+### Vocabulary (non-negotiable)
+
+- **OVCS is a framework** for vehicle embedded systems: cores, APIs, dashboards, Nerves firmware shells, bridges, generic controller firmware, shared libraries, the `ovcs` CLI. It contains no vehicle-specific code.
+- A package under `vehicles/<name>/` is an **application** built on the framework. The reader's own vehicle is "your application".
+- **OVCS1, OVCS Mini and OBD2 are the three reference applications.** They are worked examples, never requirements. Never call them "the vehicles", "supported vehicles" or "shipped vehicles". Name the one you use ("the OVCS1 reference application") and label vehicle-specific detail as a worked example.
+- A command shown on `ovcs1` / `ovcs_mini` / `obd2` must make clear it works the same on the reader's own application. Placeholders are `<app>` / `<App>`, not `<vehicle>`.
+- Module and env-var names stay as they are in the code (`VEHICLE`, `VmsCore.Vehicle`, `vehicles/`); the vocabulary applies to prose.
+
+### Format
+
+- Start with YAML frontmatter carrying `title` and `description` (one sentence). No H1: the site renders the title from the frontmatter.
+- GitHub-flavoured Markdown only. No Mermaid: use prose, tables or `text` blocks for diagrams. No raw HTML, not even `<app>` in prose: wrap it in backticks (the site's build rejects it).
+- Every code fence carries a language.
+- Links are repo-relative (`./running_hardware.md`, `../vehicles/ovcs1/WIRING.md`); the site rewrites them. Pages that exist only on the site are linked absolutely (`https://ovcs.be/docs/framework`).
+- Voice: direct and technical, second person, no marketing adjectives.
+
+### API reference comes from the code
+
+Behaviour callbacks, function signatures and module summaries belong in `@moduledoc` / `@doc` / `@callback`, not retyped in a guide. A guide explains the concept and links to the module; keep the moduledoc accurate when you change the code.
+
 ## Repo-specific notes for Claude
 
 - Polyglot **monorepo** (Elixir/Nerves, Phoenix, Vue, Flutter, C++/Arduino, Ruby). Not an Elixir umbrella — each Elixir app is a standalone Mix project with `path:` deps to siblings.
 - Strict layer split in `{vms,infotainment}`: `core` (platform + component drivers, no web deps) ← `api` (Phoenix) ← `firmware` (Nerves); `dashboard` talks to `api` over HTTP + Phoenix Channels. Put logic in the layer it belongs to.
 - **Vehicles are their own packages under `vehicles/<name>/`** — each bundles a VMS composer, an infotainment composer (optional), and its CAN topology YAMLs. A vehicle's top-level module implements `OvcsVehicle` and exposes `vms/0` + `infotainment/0`. `vms_core` and `infotainment_core` contain zero vehicle-specific code.
 - Shared per-component CAN frame/signal YAMLs live in `libraries/ovcs_can/priv/can/components/`. Vehicle topology YAMLs live in `vehicles/<name>/priv/can/{vms,infotainment}.yml` and import shared components via `import!:@ovcs_can:can/components/...` (Cantastic cross-app import syntax).
-- Vehicle selection is runtime via the `VEHICLE` env var, whose value is the top-level module name of the vehicle package (e.g. `Ovcs1`, `OvcsMini`, `Obd2`). Each **firmware**'s `config/runtime.exs` calls `OvcsVehicle.Firmware.resolve_vehicle/3`, which prepends the vehicle's ebin to the code path, then writes the matching composer to `:vms_core, :vehicle` / `:infotainment_core, :vehicle` — no hardcoded vehicle list anywhere in `vms_core`/`infotainment_core`/api/firmware. The `ovcs` CLI takes the directory name as a positional arg (e.g. `./ovcs build ovcs1 vms`) and converts it to the module name.
+- Vehicle selection is runtime via the `VEHICLE` env var, whose value is the top-level module name of the vehicle package (e.g. `Ovcs1`, `OvcsMini`, `Obd2`). Each **firmware**'s `config/runtime.exs` calls `OvcsVehicle.Firmware.resolve_side/4`, which prepends the vehicle's ebin to the code path and returns `{vehicle, composer}`, then writes the composer to `:vms_core, :vehicle` / `:infotainment_core, :vehicle` — no hardcoded vehicle list anywhere in `vms_core`/`infotainment_core`/api/firmware. The `ovcs` CLI takes the directory name as a positional arg (e.g. `./ovcs build ovcs1 vms`) and converts it to the module name.
 - Run `./ovcs can setup <vehicle>` (host dev) or `./scripts/setup_can.sh` (physical-hardware fallback) before starting any Elixir app locally.
 - Toolchain is pinned in `mise.toml` — run `mise install` at the repo root.
