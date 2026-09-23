@@ -17,13 +17,7 @@
   <!-- The rolling part, shared by both wheel kinds. -->
   <xacro:macro name="wheel_link" params="name">
     <link name="${name}_wheel">
-      <visual>
-        <origin xyz="0 0 0" rpy="0 0 0" />
-        <geometry>
-          <cylinder length="${wheel_width}" radius="${wheel_radius}" />
-        </geometry>
-        <material name="black" />
-      </visual>
+      <xacro:detailed_wheel />
       <collision>
         <origin xyz="0 0 0" rpy="0 0 0" />
         <geometry>
@@ -74,7 +68,7 @@
         <geometry>
           <cylinder length="0.02" radius="0.012" />
         </geometry>
-        <material name="grey" />
+        <material name="steering_purple" />
       </visual>
       <!-- No collision: the knuckle lives inside the wheel, and
            overlapping collision geometry on a jointed pair is a
@@ -91,7 +85,7 @@
       <origin xyz="${x} ${side * half_track} ${wheel_radius}" rpy="0 0 0" />
       <!-- Kingpin axis is vertical. -->
       <axis xyz="0 0 1" />
-      <limit lower="${-steering_limit}" upper="${steering_limit}"
+      <limit lower="${-wheel_steering_limit}" upper="${wheel_steering_limit}"
              effort="10" velocity="5.0" />
       <dynamics damping="0.05" friction="0.0" />
     </joint>
