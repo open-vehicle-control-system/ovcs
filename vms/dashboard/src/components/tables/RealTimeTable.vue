@@ -90,6 +90,10 @@
 
     const renderValue = (store, metric) => {
         let value = store.data[metric.module][metric.key]
+        // An unknown value says so rather than leaving the cell blank.
+        if(value === null || value === undefined){
+            return metric.placeholder ?? "—"
+        }
         if(isNumeric(value)){
             let unit = unitOf(store, metric)
             // A fraction of a full range reads as a percentage.

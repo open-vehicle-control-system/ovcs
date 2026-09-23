@@ -72,7 +72,8 @@ defmodule OvcsMini.Vms.Composer.Dashboard.DrivetrainPage do
               type: :metric,
               name: "Cross-check Gap",
               module: Vms.MotorRotation,
-              key: :cross_check_gap
+              key: :cross_check_gap,
+              placeholder: "not checked"
             },
             %{
               type: :metric,
