@@ -2,8 +2,8 @@
 
 How a traction motor behind a VESC motor controller is driven from the
 VMS over CAN, and what has to be set on the VESC for it. The component
-is `VmsCore.Components.Vesc.MotorController`; the frames are in
-[`libraries/ovcs_can/priv/can/components/vesc/`](../libraries/ovcs_can/priv/can/components/vesc/README.md).
+is `VmsCore.Components.Vesc.MotorController`; its frames are described
+under [Frames](#frames).
 
 ## Why a VESC rather than a hobby ESC
 
@@ -77,9 +77,11 @@ for the motor and the battery first; the VMS's own caps come on top.
 
 ## Frames
 
-Every VESC frame is a 29-bit extended frame; the low byte of its
-identifier is the VESC id and the byte above it the packet type. The
-shared library carries the *signals* of each packet and nothing else
+The packets are the VESC firmware's own (`vedderb/bldc`,
+`comm/comm_can.c`). Every VESC frame is a 29-bit extended frame whose
+identifier is `controller_id | (packet_type << 8)`: the low byte is the
+VESC id, the byte above it the packet type. All payloads are
+big-endian. The shared library carries the *signals* of each packet and nothing else
 (`libraries/ovcs_can/priv/can/components/vesc/*_signals.yml`); the
 vehicle topology wraps each one in a frame that names it and sets the
 identifier with its VESC's id byte — the way the generic controller's
@@ -102,6 +104,17 @@ For a VESC with id 1 wrapped under the prefix `vesc`:
 | `vesc_set_rpm` | `0x0301` | `set_rpm_signals.yml` | VMS | a non-zero velocity commands: electrical rpm, negative for reverse |
 | `vesc_status` | `0x0901` | `status_signals.yml` | VESC | 50 Hz: erpm, motor current, duty |
 | `vesc_status_5` | `0x1B01` | `status_5_signals.yml` | VESC | 50 Hz: tachometer, input voltage |
+
+The payloads, as the signals files decode them:
+
+| Signals | Packet | Type | Payload |
+|---------|--------|------|---------|
+| `set_duty_signals.yml` | `CAN_PACKET_SET_DUTY` | 0x00 | duty in [-1, 1] as int32 × 100 000 |
+| `set_current_signals.yml` | `CAN_PACKET_SET_CURRENT` | 0x01 | motor current in A as int32 × 1000 |
+| `set_current_brake_signals.yml` | `CAN_PACKET_SET_CURRENT_BRAKE` | 0x02 | braking current in A as int32 × 1000 |
+| `set_rpm_signals.yml` | `CAN_PACKET_SET_RPM` | 0x03 | electrical rpm as int32 |
+| `status_signals.yml` | `CAN_PACKET_STATUS` | 0x09 | erpm int32, motor current int16 × 10, duty int16 × 1000 |
+| `status_5_signals.yml` | `CAN_PACKET_STATUS_5` | 0x1B | tachometer int32, input voltage int16 × 10 |
 
 Exactly one command frame is emitted at a time, every
 20 ms; `Vesc.MotorController` switches the emitter when the selected
