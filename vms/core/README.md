@@ -159,7 +159,7 @@ the library.
 | Module | Purpose |
 |--------|---------|
 | `Components.Traxxas.Steering` | Servo steering via external PWM |
-| `Components.Traxxas.Throttle` | ESC throttle via external PWM |
+| `Components.Traxxas.MotorController` | Hobby ESC driving the motor via external PWM |
 
 ## Infrastructure Modules
 

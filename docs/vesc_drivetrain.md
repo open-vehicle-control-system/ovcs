@@ -131,7 +131,7 @@ direction.
 
 ## Wiring it into a composer
 
-`Vesc.MotorController` takes the place of `Traxxas.Throttle` as the
+`Vesc.MotorController` takes the place of `Traxxas.MotorController` as the
 throttle actuator; the OVCS Mini's composer
 (`vehicles/ovcs_mini/lib/ovcs_mini/vms/composer.ex`) is the worked
 example. Its frame names follow its process name, so with

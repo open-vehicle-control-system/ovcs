@@ -1,6 +1,6 @@
-defmodule VmsCore.Components.Traxxas.Throttle do
+defmodule VmsCore.Components.Traxxas.MotorController do
   @moduledoc """
-    Traxxas' ESC throttle controlled by a PWM signal
+    A Traxxas ESC driving the traction motor, commanded by a PWM signal
 
   ## From request to pulse
 
