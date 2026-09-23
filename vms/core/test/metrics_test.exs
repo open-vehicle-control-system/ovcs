@@ -47,6 +47,32 @@ defmodule VmsCore.MetricsTest do
     end
   end
 
+  describe "units" do
+    test "the publisher's unit is kept per source and name" do
+      state = @empty_state
+
+      {:noreply, state} =
+        Metrics.handle_info(%Message{name: :voltage, value: 15.7, unit: "V", source: Vesc}, state)
+
+      {:noreply, state} =
+        Metrics.handle_info(%Message{name: :gear, value: :drive, source: Vesc}, state)
+
+      assert state.units == %{Vesc => %{voltage: "V"}}
+      assert state.sources == %{Vesc => %{voltage: 15.7, gear: :drive}}
+    end
+
+    test "a message without a unit leaves the last unit in place" do
+      # A dead frame publishes nil values; the unit of the metric does
+      # not change because its value is unknown.
+      state = %{sources: %{}, units: %{Vesc => %{voltage: "V"}}}
+
+      {:noreply, state} =
+        Metrics.handle_info(%Message{name: :voltage, value: nil, source: Vesc}, state)
+
+      assert state.units == %{Vesc => %{voltage: "V"}}
+    end
+  end
+
   describe "handle_call({:metrics, source})" do
     setup do
       state = %{

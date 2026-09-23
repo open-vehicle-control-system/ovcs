@@ -1,0 +1,6 @@
+---
+name: vesc_set_duty
+id: 0x0001
+extended: true
+frequency: 20
+signals: import!:@ovcs_can:can/components/vesc/set_duty_signals.yml

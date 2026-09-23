@@ -12,7 +12,7 @@ defmodule OvcsMini.Vms.Composer.Dashboard.Blocks.ROSControlThrottleAndSteeringBl
         %{
           min: -1,
           max: 1,
-          label: "%",
+          label: "request",
           series: [
             %{
               name: "Requested Steering",

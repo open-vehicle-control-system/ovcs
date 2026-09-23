@@ -227,7 +227,7 @@ names the channel every component reads.
 | Steering | 1 | 1 |
 | Throttle (and `radio_breaking`, the human takeover) | 2 | 2 |
 | Control level | 6 | 3 |
-| Direction | 7 (published, no actuator reads it) | 4 |
+| Direction (the reverse button, through `Managers.Gear`) | 7 | 4 |
 | ROS commander | 5 | not wired |
 
 Switch positions are 1000, 1500 and 2000 µs with a margin of 100. A
@@ -256,6 +256,33 @@ requested_throttle_sources: %{
 }
 ```
 
+A hand's throttle usually goes through an `OVCS.InputCurve` first,
+and the map names the curve rather than the commander: the dead zone
+and expo are the hand's, one curve per hand with its own parameters,
+while the actuator only applies its caps. On the OVCS Mini:
+
+```elixir
+{OVCS.InputCurve,
+ %{
+   process_name: Vms.RadioThrottleInputCurve,
+   throttle_source: OVCS.RadioControl.Throttle,
+   deadzone: @throttle_deadzone,
+   expo: @throttle_expo
+ }},
+...
+requested_throttle_sources: %{
+  manual: nil,
+  radio: Vms.RadioThrottleInputCurve,
+  ros: %{teleop: Vms.TeleopThrottleInputCurve, autonomous: OVCS.RosVelocityCommand}
+},
+radio_breaking_source: OVCS.RadioControl.Throttle
+```
+
+A velocity is a physical quantity and is named directly. So is the
+takeover: `radio_breaking` is read from the raw trigger. A hand wired
+to an actuator without a curve gets no dead zone, and a trigger that
+drifts at rest creeps the vehicle.
+
 A missing key resolves to `nil`, which means nothing commands that
 actuator. That is the safe direction, and it is how a vehicle with no
 planner is expressed: `ros: %{teleop: ...}` leaves the autonomous
@@ -275,9 +302,10 @@ Joystick input still reaches `0x2B0` and is discarded.
 
 There is no controller on the host either, so nothing emits the pulse
 counter frame `0x709`. The generic controller publishes the pulse
-frequency as nil while that frame is dead, `OVCS.PulseSpeedSensor`
-publishes a nil speed, and the manager treats an unknown speed as "not a
-standstill": every mode change is refused with `:speed_unknown`. So a
+frequency as nil while that frame is dead, `OVCS.PulseRotationSensor`
+publishes a nil rotation, `OVCS.VehicleMotion` a nil speed, and the
+manager treats an unknown speed as "not a standstill": every mode change
+is refused with `:speed_unknown`. So a
 bench session needs two things synthesised, a speed and the switches.
 
 The speed first, and it has to be a stream: the frame watcher needs

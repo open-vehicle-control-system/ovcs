@@ -80,7 +80,8 @@ defmodule VmsApiWeb.MetricsChannel do
   @impl true
   def handle_info(:push_metrics, socket) do
     {:ok, metrics} = Metrics.filtered_metrics(socket.assigns.metrics)
-    view = VmsApiWeb.Api.MetricsJSON.render("metrics.json", %{metrics: metrics})
+    {:ok, units} = Metrics.filtered_units(socket.assigns.metrics)
+    view = VmsApiWeb.Api.MetricsJSON.render("metrics.json", %{metrics: metrics, units: units})
     push(socket, "updated", view)
     {:noreply, socket}
   end

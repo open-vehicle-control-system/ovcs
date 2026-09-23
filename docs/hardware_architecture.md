@@ -145,6 +145,7 @@ libraries/ovcs_can/priv/can/components/
 +-- nissan/leaf_aze0/                # Leaf inverter and charger frames
 +-- orion/bms2/                      # Battery management frames
 +-- ovcs/                            # OVCS internal frames and generic controller templates
++-- vesc/                            # VESC motor controller frames (29-bit extended ids)
 +-- volkswagen/polo_9n/              # Polo ABS, dashboard, key, lock, wheels frames
 +-- obd2/                            # OBD2 diagnostic frames
 
@@ -199,9 +200,9 @@ The OVCS Mini uses the same software stack on a Traxxas 4WD RC car chassis:
 |-----------|----------|
 | VMS | Raspberry Pi 4 |
 | Controller | Arduino R4 Minima (single "main" controller) |
-| Motor | Traxxas brushless motor (controlled via external PWM) |
+| Motor | Hobbywing Xerun AXE540 R2 sensored brushless motor, driven by a Flipsky Mini FSESC 6.7 Pro (VESC) on `misc`; see [VESC drivetrain](./vesc_drivetrain.md) |
 | Steering | Traxxas servo (controlled via external PWM) |
-| Motor speed | Hall effect sensor on the main controller's A1, counted by interrupt and reported as a frequency on `0x709` |
+| Spur rotation | Hall effect sensor on the main controller's A1, counted by interrupt and reported as a frequency on `0x709` |
 | Radio Control | ExpressLRS receiver via Radio Control Bridge (RPi 3A) |
 
 The OVCS Mini's VMS has two CAN buses:
@@ -209,8 +210,14 @@ The OVCS Mini's VMS has two CAN buses:
 | Network | Bitrate | Interface | Connected Components |
 |---------|---------|-----------|---------------------|
 | `ovcs` | 500 kbps | `spi0.0` | Main controller, Radio Control Bridge, ROS Bridge |
-| `misc` | 500 kbps | `spi1.0` | Third-party components: the traction motor controller first, a BMS later |
+| `misc` | 500 kbps | `spi1.0` | Third-party components: the traction motor's VESC (id 1), a BMS later |
 
 The bridges only sit on `ovcs`; `misc` is the VMS's alone, so third-party traffic and identifiers never mix with the controller and bridge frames.
+
+A VESC motor controller can take the place of the PWM ESC: it is a CAN
+node of its own, commanded from the VMS with closed-loop speed and
+reporting the motor rpm, current and battery voltage back. Its
+frames are 29-bit extended identifiers, which coexist with the standard
+frames above on the same bus. See [VESC drivetrain](./vesc_drivetrain.md).
 
 Next: [Running on Hardware](./running_hardware.md)

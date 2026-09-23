@@ -77,11 +77,31 @@
         }
     }
 
+    // A row's own unit wins over the one its publisher gave.
+    const unitOf = (store, metric) => {
+        return metric.unit ?? store.units?.[metric.module]?.[metric.key]
+    }
+
+    // Decimals arrive as numeric strings.
+    const isNumeric = (value) => {
+        return typeof(value) === "number" ||
+            (typeof(value) === "string" && value.trim() !== "" && !isNaN(Number(value)))
+    }
+
     const renderValue = (store, metric) => {
         let value = store.data[metric.module][metric.key]
-        if(typeof(value) === "number"){
-            let displayValue = Math.round(value*100)/100
-            metric.unit != null? displayValue = displayValue + " " + metric.unit : undefined
+        // An unknown value says so rather than leaving the cell blank.
+        if(value === null || value === undefined){
+            return metric.placeholder ?? "—"
+        }
+        if(isNumeric(value)){
+            let unit = unitOf(store, metric)
+            // A fraction of a full range reads as a percentage.
+            if(unit === "fraction"){
+                return Math.round(Number(value)*1000)/10 + " %"
+            }
+            let displayValue = Math.round(Number(value)*100)/100
+            unit != null? displayValue = displayValue + " " + unit : undefined
             return displayValue
         } else if(Array.isArray(value)){
             return value.join(", ")

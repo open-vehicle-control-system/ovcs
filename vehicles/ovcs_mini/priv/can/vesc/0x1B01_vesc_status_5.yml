@@ -1,0 +1,6 @@
+---
+name: vesc_status_5
+id: 0x1B01
+extended: true
+frequency: 20
+signals: import!:@ovcs_can:can/components/vesc/status_5_signals.yml

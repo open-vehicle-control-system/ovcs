@@ -1,5 +1,7 @@
 defmodule OvcsMini.Vms.Composer.Dashboard.ROSControlPage do
   alias VmsCore.Components.OVCS.RosActuatorCommand
+  alias OvcsMini.Vms
+  alias OvcsMini.Vms.Composer.Dashboard.Blocks.ThrottleInputCurveBlock
   alias OvcsMini.Vms.Composer.Dashboard.Blocks.ROSControlThrottleAndSteeringBlock
 
   def definition(order: order) do
@@ -27,6 +29,10 @@ defmodule OvcsMini.Vms.Composer.Dashboard.ROSControlPage do
             }
           ]
         },
+        "throttle-input-curve-settings" =>
+          ThrottleInputCurveBlock.settings(order: 2, curve: Vms.TeleopThrottleInputCurve),
+        "throttle-input-curve" =>
+          ThrottleInputCurveBlock.chart(order: 3, curve: Vms.TeleopThrottleInputCurve),
         "steering-and-throttle" =>
           ROSControlThrottleAndSteeringBlock.definition(order: 1, full_width: false)
       }
