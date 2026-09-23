@@ -55,5 +55,5 @@ OvcsCan come in transitively through `infotainment_core`. The active
 vehicle package under `vehicles/<name>/` isn't a Mix dep — it's
 resolved at runtime from `VEHICLE` by
 `infotainment/firmware/config/runtime.exs` (via
-`OvcsVehicle.Firmware.resolve_vehicle/3`) before
+`OvcsVehicle.Firmware.resolve_side/4`) before
 `InfotainmentCore.Application` starts.
