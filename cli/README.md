@@ -1,197 +1,149 @@
-# ovcs CLI
+---
+title: CLI reference
+description: Every ovcs subcommand, how the CLI finds an application, the attach TUI and its hotkeys, and how the CAN pane decodes frames.
+---
 
-Rust + Ratatui CLI that orchestrates OVCS vehicle firmware builds, burns,
-OTA uploads, CAN provisioning, and local boots.
+`ovcs` is the framework's command-line tool: it scaffolds applications, provisions virtual CAN, boots every firmware on your laptop, builds and flashes Nerves images, pushes over-the-air updates, and watches a running vehicle from a terminal. It is written in Rust with [Ratatui](https://ratatui.rs/) and knows nothing about any particular car: every command works the same on the reference applications (`ovcs1`, `ovcs_mini`, `obd2`) and on yours.
 
-## Build
+## Building the CLI
 
 ```sh
-cd cli
-cargo build --release
+mise run cli       # cargo build --release, stripped and copied to cli/ovcs
+./ovcs doctor      # verify the toolchain and every application under vehicles/
 ```
 
-This produces a stripped static binary at `cli/target/release/ovcs`
-(~7.5 MB). `mise run cli` does the build and copies the binary to
-`cli/ovcs`, which is what the root-level `./ovcs` symlink points at.
-`cli/ovcs` is gitignored — every contributor builds it locally.
-
-Toolchain is pinned in the repo's `mise.toml` — `mise install` at the
-repo root pulls rustc 1.90, the only runtime dependency.
+`./ovcs` at the repository root is a symlink to `cli/ovcs`, which is gitignored: every contributor builds it locally. The Rust toolchain (1.90) is pinned in `mise.toml` and `cli/rust-toolchain.toml`. The CLI finds the repository by climbing from the current directory; set `OVCS_ROOT` to run it from elsewhere.
 
 ## Commands
 
+| Command | Arguments | What it does |
+|---|---|---|
+| `vehicles` | | List every application under `vehicles/` with its Nerves targets |
+| `doctor` | | Check the required binaries, the `nerves_bootstrap` archive, the `libsocketcan` headers, each application's Nerves targets and its SSH host keys |
+| `new` | `<name> [--vms-target T] [--infotainment-target T] [--no-infotainment] [--no-bridges] [--display-name DN]` | Scaffold an application under `vehicles/<name>/` (targets default to `ovcs_base_can_system_rpi4` and `ovcs_base_can_system_rpi5`) |
+| `can setup` | `<app>` | Create and bring up the vcan interfaces the application's host mapping names (sudo; idempotent) |
+| `can status` | `<app>` | Report which vcan interfaces the application needs and whether they're up |
+| `run` | `<app> [--no-addons]` | `can setup`, compile every firmware for the host, then spawn one BEAM per role |
+| `attach` | `<app>` | Split-pane TUI on a running application, deployed or local |
+| `connect` | `<app> <role> [--host H]` | Plain IEx over SSH on one deployed board |
+| `build` | `<app> <role>` or `--all <app>` | Build a firmware image; `--all` builds every role |
+| `burn` | `<app> <role> [--build]` | Write the image to an SD card; `--build` builds first |
+| `upload` | `<app> <role> [--build] [--host H] [-f\|--file F]` | Push firmware to a running board over SSH |
+| `clean` | `<app> <role>` | Remove build artifacts |
+| `host-keys generate` | `<app> [--force]` | Generate stable per-role SSH host keys |
+| `host-keys verify` | `<app>` | Check every role has a complete key set (exit 1 if not) |
+| `host-keys export` | `<app> [-o FILE]` | Bundle the keys into an archive (default `<app>-host-keys.tar.gz`) |
+| `host-keys import` | `<app> --from FILE [--force]` | Restore keys from an archive |
+
+`./ovcs --help` and `./ovcs <command> --help` print every option. [Running on hardware](../docs/running_hardware.md) walks through build, burn, upload and host keys.
+
+### Arguments
+
+- `<app>` is the snake_case directory name of an application under `vehicles/`, for example `ovcs_mini` or `my_car`.
+- `<role>` is `vms`, `infotainment`, or `bridge-<id>` for any id in the application's `bridge_firmwares/0`, for example `bridge-radio_control`. The `bridge-` prefix is required: a bare id is rejected, and the error lists the valid roles.
+- The two positional arguments of `build`, `burn`, `clean`, `upload` and `connect` are order-independent: the resolver picks the application out of the two and treats the other as the role.
+- A missing argument opens an interactive picker. On a non-tty stdin the command exits with status 2 instead.
+
+### How it finds an application
+
+The CLI converts the directory name to UpperCamelCase (`ovcs_mini` becomes `OvcsMini`) and asks that module, through short `mix run --no-start` spawns, for the `OvcsVehicle` callbacks every application implements: `vms_target/0`, `infotainment_target/0`, `bridge_firmwares/0`, and the composers' `default_can_mapping/1`. It then passes `VEHICLE` and `MIX_TARGET` (plus `BRIDGE_FIRMWARE_ID` for bridges) to the firmware projects' `build.sh` scripts in `vms/firmware/`, `infotainment/firmware/` and `bridges/firmware/`.
+
+`build --all` builds the firmware projects in parallel, one lane per project directory. Roles sharing a directory (every bridge lives in `bridges/firmware`) build one after another, since they share its `deps/` and `mix.lock`. A failure skips the rest of its lane; the other lanes finish, and the first failure's log is printed at the end.
+
+`new` runs `OvcsVehicle.Scaffold.generate/3` from `libraries/ovcs_vehicle/`, so the templates stay in Elixir. [Your application package](../docs/vehicle_parameterisation.md) explains what the callbacks mean.
+
+## `run` versus `attach`
+
+The CLI separates **booting** an application from **observing** it.
+
+`./ovcs run <app>` provisions vcan, compiles each firmware project for the host, then spawns `elixir --sname <app>-<role> -S mix run --no-halt` per role from its project directory, with `VEHICLE` (and `BRIDGE_FIRMWARE_ID` plus the bridge's host CAN mapping for bridges) in its environment. `OvcsBus.Cluster` joins the BEAMs into one Erlang cluster, as on the vehicle. Each child's output is line-prefixed (`[vms] …`, `[bridge-ros] …`). There is no TUI and no IEx; `Ctrl-C` stops everything.
+
+`run` also starts each firmware's **dev add-ons**, declared by the firmware in `dev_addons/0` and prefixed `[<firmware>-<addon>] …`. The only one today is the VMS dashboard's Vite dev server, on `http://localhost:5173`; use it rather than `:4000`, which serves the last prebuilt bundle and doesn't hot-reload. When the add-on's `node_modules` is missing, `run` installs it first. A missing toolchain or a failed start is a warning, not an error. `--no-addons` boots only the BEAMs.
+
+The Flutter infotainment dashboard isn't an add-on: its hot reload reads keypresses on stdin, which a multiplexed `run` can't forward. Start it in its own terminal alongside `run`; it talks to the infotainment API on `:4001`:
+
 ```sh
-./ovcs vehicles                    # list discovered vehicles + nerves targets
-./ovcs doctor                      # verify toolchain + vehicle packages
-./ovcs build   <vehicle> <role>    # build firmware (positional args order-independent)
-./ovcs build   --all <vehicle>     # build every role of the vehicle (vms, infotainment, each bridge)
-./ovcs burn    <vehicle> <role> [--build]              # burn to SD card; --build runs build first
-./ovcs clean   <vehicle> <role>    # remove build artifacts
-./ovcs upload  <vehicle> <role> [--build] [--host H] [-f|--file F]
-./ovcs can setup  <vehicle>        # create + bring up vcan interfaces (sudo)
-./ovcs can status <vehicle>        # report vcan interface state
-./ovcs new <name> [--vms-target T] [--infotainment-target T] [--no-infotainment] [--no-bridges] [--display-name DN]
-./ovcs host-keys generate <vehicle> [--force] # generate stable per-role SSH host keys
-./ovcs host-keys verify   <vehicle>           # check every role has a complete key set (exit 1 if not)
-./ovcs host-keys export   <vehicle> [-o FILE] # bundle keys into a shareable archive
-./ovcs host-keys import   <vehicle> --from FILE [--force]  # restore keys from an archive
-./ovcs run     <vehicle>           # `can setup` + spawn one BEAM per role, line-prefixed stdout
-./ovcs attach  <vehicle>           # split-pane TUI (merged logs / bus / can / iex) over SSH or local remsh
-./ovcs connect <vehicle> <role> [--host H]            # plain IEx shell over SSH on a single deployed device
+mise run infotainment-dashboard   # cd infotainment/dashboard && flutter run -d linux
 ```
 
-Where:
+`./ovcs attach <app>` works from any shell, or another machine. It looks for deployed boards first, probing `<app>-<role>.local` on port 22 for each role (underscores become dashes: `ovcs-mini-vms.local`), and opens an SSH session per board. When none answers, it falls back to the local BEAMs registered in `epmd` under `<app>-*` and opens an `iex --remsh` per BEAM. Both transports reconnect on their own: an `epmd` poll locally, SSH retries with exponential backoff when deployed.
 
-- `<vehicle>` is the snake_case directory name under `vehicles/` (e.g.
-  `ovcs1`, `ovcs_mini`, `obd2`).
-- `<role>` is `vms`, `infotainment`, or any bridge firmware id declared in
-  the vehicle's `bridge_firmwares/0` callback.
-- Positional args for build/burn/clean/upload/connect are
-  **order-independent** — the resolver picks the vehicle out of the two
-  values and treats the other as the role. Missing values prompt
-  interactively via a Ratatui picker; non-tty stdin exits code 2.
-
-The CLI resolves the top-level vehicle module (e.g. `Ovcs1`) by
-converting the directory name to UpperCamelCase, then queries the
-vehicle's `OvcsVehicle.vms_target/0`, `OvcsVehicle.infotainment_target/0`,
-`default_can_mapping/1`, and `bridge_firmwares/0` callbacks via short
-`mix run --no-start` spawns.
-The resolved `VEHICLE` and `MIX_TARGET` (and `BRIDGE_FIRMWARE_ID` for
-bridge firmwares) are passed to the shared firmware build scripts in
-`vms/firmware/`, `infotainment/firmware/`, and `bridges/firmware/`.
-
-`new` shells out to `OvcsVehicle.Scaffold.generate/3` in
-`libraries/ovcs_vehicle/` — EEx templates stay in Elixir.
-
-## Layout
-
-```
-cli/
-├── Cargo.toml            # package + dep list
-├── Cargo.lock            # committed
-├── rust-toolchain.toml   # pin to stable 1.90
-├── ovcs                  # built release binary (gitignored — `mise run cli` rebuilds it)
-└── src/
-    ├── main.rs           # clap command enum + dispatch
-    ├── repo_root.rs      # OVCS_ROOT env or climb from cwd
-    ├── shell.rs          # run() inherits stdio; run_capture() for mix probes
-    ├── vehicles.rs       # discovery + mix run -e metadata probes
-    ├── firmware.rs       # static-vs-bridge application resolution
-    ├── resolve_args.rs   # order-independent (vehicle, app) argv resolution
-    ├── prompt.rs         # ratatui single-select picker
-    └── commands/         # one file per subcommand
+```sh
+./ovcs run ovcs1       # terminal A
+./ovcs attach ovcs1    # terminal B
 ```
 
-`./ovcs run` and `./ovcs attach` split booting a vehicle from observing
-it. `run` provisions vcan, spawns one `elixir --sname <vehicle>-<role>
--S mix run --no-halt` per firmware role from its own project directory,
-and line-prefixes each child's stdout/stderr (`[vms] …`, `[bridge-ros]
-…`) to the tty. It's the canonical local dev boot.
+## The attach TUI
 
-`attach` is terminal-independent — from another shell or machine it
-discovers the running nodes (first by probing
-`<vehicle>-<side>.local:22` for deployed Nerves devices; falling back
-to `epmd -names` for local dev BEAMs) and drives a four-pane Ratatui
-view:
+Four panes:
 
-- **Logs** (top-left) — merged per-node stream from `RingLogger.attach`.
-- **Bus** (top-right, upper) — every `OvcsBus.Message` flowing through
-  `Phoenix.PubSub`. Subscribed from the VMS node only since
-  `OvcsBus.Cluster` fans messages cluster-wide.
-- **CAN** (top-right, lower) — every raw CAN frame on every declared
-  vcan interface, decoded into named signals (see below).
-- **IEx** (full-width bottom) — interactive shell. A thin tab strip
-  directly above it selects which node drives the shell; the read-only
-  panes above aggregate across every node.
+- **Logs**: the merged per-node log stream, from `RingLogger.attach`, each node in its own colour.
+- **Bus**: every `OvcsBus.Message`, subscribed on the VMS node only, since `OvcsBus.Cluster` already fans messages out cluster-wide.
+- **CAN**: every frame on every interface each node declares, decoded into named signals ([below](#can-decoding)).
+- **IEx**: an interactive shell. The tab strip above it picks which node it drives; the other panes aggregate every node.
 
-Reconnection is built in on both transports (local epmd poll + SSH
-retry with exponential backoff), and `Space` pauses Bus/Can for
-inspection without losing live data. Ratatui also backs the one-off
-vehicle/app picker used when an argument is missing. One-shot views
-(`vehicles`, `doctor`, `can status`) use plain `println!` +
-`owo-colors`.
+### Hotkeys
 
-### Clipboard (Ctrl-Y / mouse drag)
+| Key | Where | Action |
+|---|---|---|
+| `Tab` | anywhere | Move focus: Logs → Bus → CAN → IEx |
+| `Ctrl-N` / `Ctrl-P` | anywhere | Cycle the node the IEx pane drives |
+| `F1` … `F9` | anywhere | Jump to the Nth node |
+| `Alt-Enter` | anywhere | Maximise the focused pane, or restore it |
+| `Ctrl-Y` | anywhere | Copy the focused pane ([Clipboard](#clipboard)) |
+| `Ctrl-C` | anywhere | Quit; the BEAMs or boards keep running |
+| `↑`/`↓` or `k`/`j`, `PgUp`/`PgDn` | Logs, Bus, CAN | Scroll |
+| `g` / `Home`, `G` / `End` | Logs, Bus, CAN | Jump to the top; follow the tail again |
+| `y`, `c` | Logs, Bus, CAN | Copy the pane |
+| `q`, `Esc` | Logs, Bus, CAN | Quit |
+| `Space` or `p` | Bus, CAN | Freeze the pane; new messages are dropped until you unfreeze |
+| `o` | Bus, CAN | Toggle the observer view: one row per message or frame, showing its latest value |
+| `/` | Bus, CAN | Filter; `Enter` keeps the filter, `Esc` clears it |
+| `i` | CAN | Cycle decoded + raw, decoded only, raw only |
+| `Enter`, `↑`/`↓` | IEx | Evaluate the line; walk the history |
+| `Esc` | IEx | Return focus to Logs |
 
-`attach` can copy pane contents to the system clipboard, either by
-dragging the mouse across rows or by pressing `Ctrl-Y` (also plain `y`
-/ `c` in read-only panes). It probes helpers in this order and stops
-at the first that succeeds:
+### Clipboard
 
-1. `wl-copy` (Wayland) — `wl-clipboard` package.
-2. `xclip -selection clipboard` (X11) — `xclip` package.
-3. `xsel --clipboard --input` (X11 alternative) — `xsel` package.
-4. `pbcopy` (macOS, preinstalled).
-5. OSC 52 escape sequence, as a last resort over SSH.
-
-Install at least one of the native helpers on Linux — OSC 52 is
-silently dropped by tmux, gnome-terminal, and konsole by default, so
-without a helper the copy reaches the terminal but not the clipboard.
-The toast footer announces which path was used (`→ clipboard (wl-copy)
-+ /tmp/ovcs_attach_copy_<pane>.txt`) so you can tell at a glance. The
-full pane is also written to `/tmp/ovcs_attach_copy_<pane>.txt` on
-every copy as an overflow fallback (the clipboard payload is capped at
-64 KB; the file is never truncated).
+Mouse drag or `Ctrl-Y` copies to the system clipboard. The CLI tries helpers in order and stops at the first that works: `wl-copy` (Wayland), `xclip -selection clipboard`, `xsel --clipboard --input`, `pbcopy` (macOS), and finally the OSC 52 escape sequence. Install one native helper on Linux: tmux, gnome-terminal and konsole drop OSC 52 by default, so the copy would reach the terminal but not the clipboard. The footer names the path used. Every copy also writes the full pane to `/tmp/ovcs_attach_copy_<pane>.txt`, since the clipboard payload is capped at 64 KB.
 
 ### CAN decoding
 
-The CAN pane shows human-readable signals, not raw bytes:
+The CAN pane shows signals, not bytes:
 
-```
+```text
 [vms|ovcs/vms_status]        status="OK" ready_to_drive=false counter=42 | raw=00 00 2A 00 …
 [bridge-ros|ovcs/0x1A0]      raw=00 00 2A 00 …
 ```
 
-All of that decoding happens **inside the running BEAM** — the CLI
-never parses signal layouts itself. The mechanism:
+Decoding happens **inside each running BEAM**; the CLI never parses signal layouts, and neither the applications nor Cantastic need any change for it.
 
-1. On each attached node, `attach` spawns an `iex --remsh` session and
-   writes a chunk of Elixir (the `MONITOR_SNIPPET` constant in
-   `src/commands/attach.rs`) into its stdin. That code executes in
-   the remote BEAM's own VM, so it has access to every module the
-   firmware has compiled in — crucially including `cantastic`.
-2. At startup the snippet walks `Cantastic.ConfigurationStore.networks()`
-   and for every network runs the raw YAML blobs under
-   `network_config[:emitted_frames]` and `network_config[:received_frames]`
-   back through `Cantastic.FrameSpecification.from_yaml/3`. That
-   rebuilds the same `%FrameSpecification{}` structs (with
-   `signal_specifications`, checksum info, data length, etc.) that
-   Cantastic itself uses on the receive path. They get cached in
-   `:persistent_term` keyed by `{:ovcs_attach_specs, iface}`.
-3. A `candump -tz <iface>` `Port` is spawned per unique vcan. Its
-   output (`(ts) vcan0 1A0 [8] 00 00 2A 00 …`) is parsed line by line
-   into `{id, dlc, raw_bytes}`.
-4. For each frame, the spec cache is looked up by id. A bare
-   `%Cantastic.Frame{raw_data: <<…>>}` is built and handed to
-   `Cantastic.Frame.interpret/2` — Cantastic's own decoder. It
-   iterates `spec.signal_specifications`, calls
-   `Cantastic.Signal.interpret/2` for each, and returns a frame with
-   `signals: %{name => %Signal{value: …}}` populated. The snippet
-   formats that map as `name=inspect(value)` pairs and sends one
-   `OVCS_CAN <network> <frame> <signals> | raw=<hex>` line to its
-   stdout, where the Rust side picks it up and pushes it into the
-   CAN pane.
-5. Unknown IDs (frames this node's YAML doesn't declare) skip the
-   decode step and render as `0x<ID> raw=<hex>` so the frame is still
-   visible.
+1. On each node, `attach` opens an `iex --remsh` session and feeds it a chunk of Elixir (`MONITOR_SNIPPET` in `src/commands/attach.rs`). Running in that node, the code has every module the firmware compiled in, Cantastic included.
+2. At startup it walks `Cantastic.ConfigurationStore.networks()` and rebuilds each network's frame specifications from the YAML Cantastic loaded, with `Cantastic.FrameSpecification.from_yaml/3`, caching them in `:persistent_term`.
+3. It spawns one `candump -tz <iface>` port per declared interface and parses each line into id, length and bytes.
+4. It looks the frame's spec up by id and hands the frame to `Cantastic.Frame.interpret/2`, Cantastic's own decoder, then streams the signals back as `name=value` pairs.
+5. An id the node's YAML doesn't declare skips decoding and renders as `0x<ID> raw=<hex>`.
 
-Why `candump` rather than subscribing to `Cantastic.Receiver`:
-Cantastic's receiver only forwards frames whose id is in a network's
-`received_frames` list — anything the node itself emits is silently
-dropped. On host dev most traffic comes from local emitters, so the
-CAN pane would sit empty. `candump` taps the kernel CAN socket
-directly and sees every frame on the bus regardless of YAML
-declarations.
+It uses `candump` rather than Cantastic's receiver because the receiver only forwards frames a network lists under `received_frames`: whatever the node emits itself would be missing, and on the host that is most of the traffic. The consequence: when several nodes share `vcan0`, one frame shows up once per observing node, decoded by the nodes that declare it and raw on the others. The `[<node>|<network>/<frame>]` prefix tells them apart.
 
-Every attached node runs its own `candump` against its own declared
-vcan interfaces, and decoding uses only the specs that node's YAML
-knows about. On host dev where several nodes share vcan0, a single
-frame typically shows up three times — once per observing node —
-with whichever nodes declared it rendering the signals and the
-others falling back to raw. The `[<node>|<network>/<frame>]` prefix
-(coloured with the node's accent) makes the duplicates easy to
-disambiguate.
+## Source layout
 
-**No changes to any app or to Cantastic itself are required** —
-the snippet only calls already-compiled functions already loaded in
-the target BEAM.
+```text
+cli/
+├── Cargo.toml            # package and dependencies
+├── Cargo.lock            # committed
+├── rust-toolchain.toml   # pinned to 1.90
+├── ovcs                  # built binary (gitignored; `mise run cli` rebuilds it)
+└── src/
+    ├── main.rs           # clap command enum and dispatch
+    ├── repo_root.rs      # OVCS_ROOT, or climb from the cwd
+    ├── vehicles.rs       # application discovery and `mix run -e` metadata probes
+    ├── firmware.rs       # role → firmware project and environment
+    ├── resolve_args.rs   # order-independent (app, role) argument resolution
+    ├── build_runner.rs   # parallel build.sh lanes for `build --all` and `run`
+    ├── shell.rs          # run() inherits stdio; run_capture() for mix probes
+    ├── prompt.rs         # Ratatui single-select picker
+    ├── ui.rs             # shared status-line helpers
+    ├── ansi.rs           # strips ANSI escapes from streamed BEAM output
+    └── commands/         # one file per subcommand; run_ui.rs is the attach TUI
+```
