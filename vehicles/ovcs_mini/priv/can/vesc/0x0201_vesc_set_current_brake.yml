@@ -1,0 +1,6 @@
+---
+name: vesc_set_current_brake
+id: 0x0201
+extended: true
+frequency: 20
+signals: import!:@ovcs_can:can/components/vesc/set_current_brake_signals.yml

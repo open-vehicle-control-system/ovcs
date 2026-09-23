@@ -227,7 +227,7 @@ names the channel every component reads.
 | Steering | 1 | 1 |
 | Throttle (and `radio_breaking`, the human takeover) | 2 | 2 |
 | Control level | 6 | 3 |
-| Direction | 7 (published, no actuator reads it) | 4 |
+| Direction (the reverse button, through `Managers.Gear`) | 7 | 4 |
 | ROS commander | 5 | not wired |
 
 Switch positions are 1000, 1500 and 2000 µs with a margin of 100. A

@@ -4,7 +4,7 @@ defmodule OvcsMini.Vms.Composer do
   """
   @behaviour VmsCore.Vehicle
 
-  alias VmsCore.Components.{OVCS, Traxxas}
+  alias VmsCore.Components.{OVCS, Traxxas, Vesc}
   alias VmsCore.Managers
   alias OvcsMini.Vms
 
@@ -22,43 +22,52 @@ defmodule OvcsMini.Vms.Composer do
   def default_can_mapping(:host), do: "ovcs:vcan0,misc:vcan1"
   def default_can_mapping(:target), do: "ovcs:spi0.0,misc:spi1.0"
 
-  # Speed in m/s at the throttle cap below, which is what a full request
-  # from the planner produces. Not geometry — a property of the motor,
-  # the gearing and the cap, not a measured dimension of the chassis.
-  # ESTIMATE: a stock Slash 4x4 does roughly 30 mph and the simulated
-  # model is capped at 13 m/s; the uncapped truck was estimated at
-  # 5 m/s and a tenth of the pulse range is taken as a tenth of that,
-  # though an ESC is not linear and nothing has measured this one under
-  # load. `VehicleMotion`'s speed below is what to measure it with.
+  # Speed in m/s at a linear request of 1: what `RosVelocityCommand`
+  # normalises the planner's velocity against, and the speed the VESC's
+  # speed loop holds for it, through the gearing below.
   @max_speed_m_s 0.5
 
-  # Throttle feel, see `Traxxas.Throttle` for what each one does.
+  # Throttle feel for hands, see `Traxxas.Throttle` for what each one
+  # does. It shapes the VESC's duty command; a velocity bypasses it.
   @throttle_deadzone Decimal.new("0.05")
   @throttle_expo Decimal.new("0.5")
-  # A 10 us start offset leaves 40 us of forward modulation before the
-  # 1550 us cap. Keep this conservative until the ESC's start/stop
-  # thresholds have been measured under load; the Radio Control page
-  # exposes the commanded pulse width, before HAT timer quantisation.
-  @throttle_start_offset Decimal.new("0.02")
-  # A tenth of the pulse range forward (1550 µs at full trigger), with
-  # the ESC calibrated against this actuator's full 1000-2000 µs range.
-  # Half the range was far too fast for where the truck drives and a
-  # fifth still was. Reverse is capped too, a little higher: on this
-  # ESC the first pull into negative is the brake, so this is also the
-  # braking force, and at these speeds a fifth of it stops the truck.
-  @throttle_max Decimal.new("0.1")
-  @throttle_max_reverse Decimal.new("0.2")
+  # Duty caps by hand, in drive and in reverse gear. 5% duty turned the
+  # lifted wheels at about 1,550 motor rpm on a 15.7 V pack, about
+  # 0.8 m/s through the gearing below, so 3% is about 0.5 m/s unloaded,
+  # the planner's top speed. Duty is a fraction of the pack voltage: the
+  # same cap is slower on a flatter pack.
+  @throttle_max Decimal.new("0.03")
+  @throttle_max_reverse Decimal.new("0.03")
+  # Braking current at a full pull of the trigger. ESTIMATE: through the
+  # motor's torque constant and the gearing, 10 A is about 9 N at the
+  # tyres, a few m/s² on a truck this size. The VESC's own motor
+  # current limits stay in force below it.
+  @max_brake_current 10
+
+  # Motor turns per wheel turn. Traxxas specifies 11.82:1 overall for
+  # the stock gearing, which this truck runs: 13 pinion teeth on a 54
+  # tooth spur, both counted. The pinion stage was also measured through
+  # the VESC and the spur sensor at 5% duty: 1,548 motor rpm against 366
+  # spur rpm, 4.2, 54/13 within the sensor's 6 rpm resolution.
+  @motor_to_wheel_ratio 11.82
+  @pinion_teeth 13
+  @spur_teeth 54
 
   # The trigger magnet sits in the spur gear: one magnet, one pulse per
-  # spur turn. The spur turns 2.72 times per wheel turn, the Slash 4x4
-  # transmission's fixed ratio; the pinion does not enter into it.
-  # Confirmed on the bench: 14 pulses over 10 wheel revolutions
-  # back-driven through one wheel, which the open differential halves,
-  # gives ~2.8 pulses per wheel turn — 2.72 within the +/-1 count
-  # noise. The sensor only knows the first constant; the second is the
-  # vehicle's kinematics and goes to `VehicleMotion`.
+  # spur turn. What is left of the overall ratio past the pinion stage
+  # is the transmission, 2.85 spur turns per wheel turn. The sensor only
+  # knows the first constant; the second is the vehicle's kinematics and
+  # goes to `VehicleMotion`.
   @pulses_per_revolution 1
-  @spur_to_wheel_ratio 2.72
+  @spur_to_wheel_ratio @motor_to_wheel_ratio * @pinion_teeth / @spur_teeth
+
+  # Motor rpm at `@max_speed_m_s`, what a full linear request asks the
+  # VESC for.
+  @max_motor_rotation_per_minute @max_speed_m_s * 60 /
+                                   (2 * :math.pi() * OvcsMini.geometry().wheel_radius) *
+                                   @motor_to_wheel_ratio
+  # Hobbywing Xerun AXE540 R2, a 4-pole motor.
+  @motor_pole_pairs 2
 
   @impl VmsCore.Vehicle
   def children do
@@ -74,7 +83,7 @@ defmodule OvcsMini.Vms.Composer do
               process_name: Vms.MainController,
               control_digital_pins: true,
               control_other_pins: false,
-              enabled_external_pwms: [0, 1]
+              enabled_external_pwms: [0]
             }
           ]
         }
@@ -124,10 +133,9 @@ defmodule OvcsMini.Vms.Composer do
        %{
          radio_control_channel: 5
        }},
-      # Started so the value is published; no actuator on the Mini
-      # reads a direction, since reverse is a negative throttle here.
-      # Named as the radio source below so a drivetrain that consumes
-      # direction can be wired without touching the manager.
+      # The reverse button: its position is the requested direction,
+      # which `Managers.Gear` turns into `:drive` or `:reverse` once the
+      # truck is stopped and the trigger released.
       {OVCS.RadioControl.Direction,
        %{
          radio_control_channel: 7
@@ -136,14 +144,15 @@ defmodule OvcsMini.Vms.Composer do
        %{
          requested_control_level_source: OVCS.RadioControl.RequestedControlLevel,
          requested_ros_commander_source: OVCS.RadioControl.RequestedRosCommander,
-         # No gearbox on an RC truck, and no pedals — so `:manual` has
-         # no inputs at all, which makes it the useful safe position on
-         # the switch rather than a gap. Every source nil means nothing
+         # No gear lever on an RC truck, the gear comes from the
+         # direction below, and no pedals — so `:manual` has no inputs
+         # at all, which makes it the useful safe position on the
+         # switch rather than a gap. Every source nil means nothing
          # commands the vehicle.
          requested_gear_sources: %{manual: nil, radio: nil, ros: %{}},
          # A velocity carries its own sign, so the planner path needs
-         # no separate direction signal — see 0x2B1. The gamepad path
-         # does, because its throttle axis is unsigned.
+         # no direction — see 0x2B1. The radio and the gamepad select a
+         # gear, and their throttle drives in it or brakes.
          requested_direction_sources: %{
            manual: nil,
            radio: OVCS.RadioControl.Direction,
@@ -186,6 +195,16 @@ defmodule OvcsMini.Vms.Composer do
          # moving, so an estimate there does not weaken the gate.
          speed_source: OVCS.VehicleMotion
        }},
+      # Drive or reverse from the selected direction source, shifted
+      # only below 1 km/h with the trigger released. No ignition on the
+      # Mini, so no contact source.
+      {Managers.Gear,
+       %{
+         selected_control_level_source: Managers.ControlLevel,
+         ready_to_drive_source: Vms,
+         speed_source: OVCS.VehicleMotion,
+         contact_source: nil
+       }},
       # The manager owns the choice now, so the drivetrain follows
       # whichever source it names rather than being wired to one
       # commander for the life of the process.
@@ -195,16 +214,20 @@ defmodule OvcsMini.Vms.Composer do
          external_pwm_id: 0,
          selected_control_level_source: Managers.ControlLevel
        }},
-      {Traxxas.Throttle,
+      # The traction motor, behind a VESC on `misc`. With no source it
+      # releases the motor. A hand drives in the selected gear through
+      # the feel curve, and pulling the trigger back always brakes; a
+      # velocity gets the VESC's speed loop.
+      {Vesc.MotorController,
        %{
-         controller: Vms.MainController,
-         external_pwm_id: 1,
+         process_name: Vms.Vesc,
+         network: :misc,
          selected_control_level_source: Managers.ControlLevel,
-         # A velocity is a physical quantity, not a hand on a trigger:
-         # it bypasses the dead zone, the feel curve and the start
-         # offset below, and only gets the cap. `@max_speed_m_s` is the
-         # speed at that cap for that reason.
          linear_sources: [OVCS.RosVelocityCommand],
+         selected_gear_source: Managers.Gear,
+         max_brake_current: @max_brake_current,
+         max_rotation_per_minute: @max_motor_rotation_per_minute,
+         pole_pairs: @motor_pole_pairs,
          # The trigger at rest drifts by up to 20 counts of 500, and
          # the joystick node's own dead zone is the same 5%. Matches
          # `RadioControl.Throttle`'s braking threshold, so a trigger
@@ -214,13 +237,6 @@ defmodule OvcsMini.Vms.Composer do
          # flattening for fine control at low speed without pushing
          # the edge of motion a third of the way along the trigger.
          expo: @throttle_expo,
-         # ESTIMATE: the throttle output at which the wheels first
-         # move. The radio control page shows the request, not the
-         # output, so the reading has to be run through the curve in
-         # force when it was taken. Too low only wastes a little
-         # travel; too high makes the first touch a jump, so it starts
-         # conservative.
-         start_offset: @throttle_start_offset,
          max_throttle: @throttle_max,
          max_reverse: @throttle_max_reverse
        }},
@@ -232,16 +248,23 @@ defmodule OvcsMini.Vms.Composer do
       # The vehicle's own motion: the spur's rotation through the
       # gearing and the wheel size gives the speed, published on the
       # bus for the manager's standstill gate and emitted on 0x60B for
-      # the ROS bridge's odometry. The sign follows the selected
-      # throttle request, since the hall sensor cannot know the
-      # direction, and `steering_sign` must match
+      # the ROS bridge's odometry. The hall sensor cannot know the
+      # direction, so the sign follows the direction the VESC is
+      # driven in: the request's sign would flip the speed while a
+      # moving truck brakes. `steering_sign` must match
       # `RosVelocityCommand`'s so the reported angle converts back to
       # REP-103.
+      #
+      # The spur sensor rather than the motor: it is the reading
+      # independent of the VESC's gearing constants, and it reads
+      # exactly zero at rest, which the manager's standstill gate
+      # needs. The VESC reports a stray erpm or two on a stopped motor.
       {OVCS.VehicleMotion,
        %{
          rotation_source: OVCS.PulseRotationSensor,
          rotation_to_wheel_ratio: @spur_to_wheel_ratio,
          rotation_signed: false,
+         direction_source: Vms.Vesc,
          wheel_radius: OvcsMini.geometry().wheel_radius,
          selected_control_level_source: Managers.ControlLevel,
          steering_limit: OvcsMini.geometry().steering_limit,

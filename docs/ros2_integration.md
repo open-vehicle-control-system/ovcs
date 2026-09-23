@@ -350,9 +350,9 @@ than picking a winner.
 
 `RosBridge.Consumers.Joy` subscribes to `/joy` and writes
 `ros_actuator_command`: `steering` and `throttle` as the gamepad's
-`[-1, 1]` axes at a resolution of 0.001, a `direction` (OVCS1 needs it
-separately, since a negative throttle is regenerative braking there and
-reverse is a gear), and a `sequence`. The VMS's
+`[-1, 1]` axes at a resolution of 0.001, a `direction` (OVCS1 and the
+OVCS Mini need it separately, since a negative throttle brakes there
+and reverse is a gear), and a `sequence`. The VMS's
 `OVCS.RosActuatorCommand.*` components read them as normalised actuator
 requests. This is *what a joystick means*: positions, not physics.
 

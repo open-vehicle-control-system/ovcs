@@ -1,0 +1,6 @@
+---
+name: vesc_set_rpm
+id: 0x0301
+extended: true
+frequency: 20
+signals: import!:@ovcs_can:can/components/vesc/set_rpm_signals.yml

@@ -57,6 +57,12 @@ defmodule OvcsMini.Vms.Composer.Dashboard.DashboardPage do
             },
             %{
               type: :metric,
+              name: "Selected Gear",
+              module: Managers.Gear,
+              key: :selected_gear
+            },
+            %{
+              type: :metric,
               name: "Speed",
               module: OVCS.VehicleMotion,
               key: :speed,
@@ -73,6 +79,26 @@ defmodule OvcsMini.Vms.Composer.Dashboard.DashboardPage do
               name: "Spur RPM",
               module: OVCS.PulseRotationSensor,
               key: :rotation_per_minute
+            },
+            %{
+              type: :metric,
+              name: "Motor RPM",
+              module: Vms.Vesc,
+              key: :rotation_per_minute
+            },
+            %{
+              type: :metric,
+              name: "Motor Current",
+              module: Vms.Vesc,
+              key: :motor_current,
+              unit: "A"
+            },
+            %{
+              type: :metric,
+              name: "Battery Voltage",
+              module: Vms.Vesc,
+              key: :input_voltage,
+              unit: "V"
             }
           ]
         },

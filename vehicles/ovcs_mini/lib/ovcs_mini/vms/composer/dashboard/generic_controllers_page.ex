@@ -45,26 +45,6 @@ defmodule OvcsMini.Vms.Composer.Dashboard.GenericControllersPage do
             },
             %{
               type: :metric,
-              name: "Throttle PWM Enabled",
-              module: Vms.MainController,
-              key: :requested_external_pwm1_enabled
-            },
-            %{
-              type: :metric,
-              name: "Throttle PWM Duty Cycle",
-              module: Vms.MainController,
-              key: :requested_external_pwm1_duty_cycle,
-              unit: "%"
-            },
-            %{
-              type: :metric,
-              name: "Throttle PWM frequency",
-              module: Vms.MainController,
-              key: :requested_external_pwm1_frequency,
-              unit: "Hz"
-            },
-            %{
-              type: :metric,
               name: "Pulse counter frequency",
               module: Vms.MainController,
               key: :received_pulse_pin0_frequency,

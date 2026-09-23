@@ -65,7 +65,7 @@ timeout and the 50 Hz status rate are the firmware defaults.
 does not run the speed loop at all: a running motor holds zero duty, a
 passive brake, and a released motor is not started. The firmware
 default is 900 erpm; on a 2-pole-pair
-motor geared 11.3:1 to 54.8 mm wheels that is 0.23 m/s, above much of
+motor geared 11.82:1 to 54.8 mm wheels that is 0.22 m/s, above much of
 what a planner commands on its way into a goal — every one of those
 velocities would brake instead. Set it to a few tens of erpm; the
 speed loop's low end then depends on the motor's sensor, which is what
@@ -96,13 +96,14 @@ For a VESC with id 1 wrapped under the prefix `vesc`:
 
 | Frame | Id | Signals | Sent by | When |
 |-------|----|---------|---------|------|
-| `vesc_set_current` | `0x0101` | `set_current_signals.yml` | VMS | no source is selected: zero current releases the motor |
-| `vesc_set_duty` | `0x0001` | `set_duty_signals.yml` | VMS | a hand commands: duty in [-1, 1] through the feel curve; also a velocity of exactly zero, which brakes |
+| `vesc_set_current` | `0x0101` | `set_current_signals.yml` | VMS | no source is selected, or a geared hand in neutral, parking or at rest: zero current releases the motor |
+| `vesc_set_current_brake` | `0x0201` | `set_current_brake_signals.yml` | VMS | with gears, a hand pulling the trigger back: braking current, never reverse |
+| `vesc_set_duty` | `0x0001` | `set_duty_signals.yml` | VMS | a hand commands: duty in [-1, 1] through the feel curve, signed by the gear when there is one; also a velocity of exactly zero, which brakes |
 | `vesc_set_rpm` | `0x0301` | `set_rpm_signals.yml` | VMS | a non-zero velocity commands: electrical rpm, negative for reverse |
 | `vesc_status` | `0x0901` | `status_signals.yml` | VESC | 50 Hz: erpm, motor current, duty |
 | `vesc_status_5` | `0x1B01` | `status_5_signals.yml` | VESC | 50 Hz: tachometer, input voltage |
 
-Exactly one of the three command frames is emitted at a time, every
+Exactly one command frame is emitted at a time, every
 20 ms; `Vesc.MotorController` switches the emitter when the selected
 source changes kind. The VESC applies whichever control mode it last
 received.
@@ -115,10 +116,29 @@ leave behind — stays released, and a zero rpm would never start it.
 Zero duty brakes from any state and leaves the motor running for the
 next setpoint.
 
+### Gears for hands
+
+Given `selected_gear_source: Managers.Gear`, a hand's request stops
+carrying the direction. The gear does, as on OVCS1: the radio's
+direction switch or the gamepad's direction button asks for `:drive`
+or `:reverse`, and the gear manager shifts only below 1 km/h with the
+trigger released. A positive request then drives in the selected gear;
+pulling the trigger back always brakes, with `vesc_set_current_brake`
+at up to `:max_brake_current`, and never reverses; a released trigger
+lets the motor coast. In `:neutral` and `:parking` a hand can brake but
+not drive. A velocity ignores the gear, since its own sign is the
+direction.
+
+`VehicleMotion` on an unsigned sensor then needs
+`direction_source: Vms.Vesc`: the request goes negative while a moving
+vehicle brakes, and its sign would flip the speed.
+
 ## Wiring it into a composer
 
 `Vesc.MotorController` takes the place of `Traxxas.Throttle` as the
-throttle actuator. Its frame names follow its process name, so with
+throttle actuator; the OVCS Mini's composer
+(`vehicles/ovcs_mini/lib/ovcs_mini/vms/composer.ex`) is the worked
+example. Its frame names follow its process name, so with
 `process_name: Vms.Vesc` the topology YAML declares the five frames
 under the `vesc_` prefix on the network the VESC is wired to, each
 wrapping the shared signals with the VESC's id in the low byte:
@@ -131,6 +151,7 @@ can_networks:
     emitted_frames:
       - import!:vesc/0x0001_vesc_set_duty.yml
       - import!:vesc/0x0101_vesc_set_current.yml
+      - import!:vesc/0x0201_vesc_set_current_brake.yml
       - import!:vesc/0x0301_vesc_set_rpm.yml
     received_frames:
       - import!:vesc/0x0901_vesc_status.yml
@@ -157,9 +178,9 @@ the transmission, the wheel radius — are the vehicle's, declared once
 in the composer and shared with `VehicleMotion`:
 
 ```elixir
-# Motor turns per wheel turn: spur teeth over pinion teeth, both
-# counted on the vehicle, times the transmission's fixed 2.72.
-@motor_to_wheel_ratio 54 / 13 * 2.72
+# Motor turns per wheel turn: the manufacturer's overall ratio for
+# the gearing the vehicle runs, 11.82:1 on the stock Slash 4x4.
+@motor_to_wheel_ratio 11.82
 # Motor rpm at `@max_speed_m_s`, what a full linear request asks for.
 @max_motor_rotation_per_minute @max_speed_m_s * 60 /
                                  (2 * :math.pi() * OvcsMini.geometry().wheel_radius) *
@@ -171,6 +192,9 @@ in the composer and shared with `VehicleMotion`:
    network: :misc,
    selected_control_level_source: Managers.ControlLevel,
    linear_sources: [OVCS.RosVelocityCommand],
+   # Drive or reverse from the gear, the trigger pulled back brakes.
+   selected_gear_source: Managers.Gear,
+   max_brake_current: @max_brake_current,
    max_rotation_per_minute: @max_motor_rotation_per_minute,
    # A 4-pole motor.
    pole_pairs: 2,
@@ -182,10 +206,13 @@ in the composer and shared with `VehicleMotion`:
  }}
 ```
 
-`VehicleMotion` may then take its rotation from the motor rather than
-the pulse sensor — signed, so reverse needs no inference from the
-command. The source is the process name, which is what the motor
-controller stamps on its bus messages:
+`VehicleMotion` may take its rotation from the motor rather than
+a pulse sensor — signed, so reverse needs no inference from the
+command. A stopped motor still reports an erpm or two, though, and
+`Managers.ControlLevel`'s standstill gate wants a speed of exactly
+zero, so a vehicle with a pulse sensor keeps it as the source; the
+OVCS Mini does. The source is the process name, which is what the
+motor controller stamps on its bus messages:
 
 ```elixir
 {OVCS.VehicleMotion,

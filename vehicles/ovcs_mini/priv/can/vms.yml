@@ -4,10 +4,10 @@ can_networks:
     bitrate: 500000
     emitted_frames:
       - import!:@ovcs_can:can/components/ovcs/0x1A0_vms_status.yml
+      - import!:@ovcs_can:can/components/ovcs/0x600_gear_status.yml
       - import!:@ovcs_can:can/components/ovcs/0x700_controller_configuration.yml
       - import!:generic_controller/0x702_main_controller_digital_pin_request.yml
       - import!:generic_controller/0x705_main_controller_external_pwm0_request.yml
-      - import!:generic_controller/0x706_main_controller_external_pwm1_request.yml
       - import!:@ovcs_can:can/components/ovcs/0x1AA_vms_command.yml
       - import!:@ovcs_can:can/components/ovcs/0x60B_vehicle_motion.yml
     received_frames:
@@ -19,11 +19,16 @@ can_networks:
       - import!:@ovcs_can:can/components/ovcs/0x2B0_ros_actuator_command.yml
       - import!:@ovcs_can:can/components/ovcs/0x2B1_ros_velocity_command.yml
   # Second bus, on the VMS's second SPI CAN controller (spi1.0), for
-  # components that are not OVCS's own — a motor controller, a BMS —
-  # kept off `ovcs` so their traffic and identifiers never mix with
-  # the controller and bridge frames. No frames yet: the bus comes up
-  # empty until a component is wired to it.
+  # components that are not OVCS's own, kept off `ovcs` so their
+  # traffic and identifiers never mix with the controller and bridge
+  # frames. The traction motor's VESC is here, with id 1.
   misc:
     bitrate: 500000
-    emitted_frames: []
-    received_frames: []
+    emitted_frames:
+      - import!:vesc/0x0001_vesc_set_duty.yml
+      - import!:vesc/0x0101_vesc_set_current.yml
+      - import!:vesc/0x0201_vesc_set_current_brake.yml
+      - import!:vesc/0x0301_vesc_set_rpm.yml
+    received_frames:
+      - import!:vesc/0x0901_vesc_status.yml
+      - import!:vesc/0x1B01_vesc_status_5.yml
