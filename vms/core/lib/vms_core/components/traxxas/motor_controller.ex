@@ -46,7 +46,7 @@ defmodule VmsCore.Components.Traxxas.MotorController do
   alias Decimal, as: D
   alias OvcsBus, as: Bus
   alias VmsCore.Components.OVCS.GenericController
-  alias VmsCore.Throttle
+  alias VmsCore.NormalisedRequest
 
   @loop_period 10
   @pwm_frequency 100
@@ -226,12 +226,12 @@ defmodule VmsCore.Components.Traxxas.MotorController do
     |> D.abs()
     |> D.min(@one)
     |> D.mult(cap(requested, curve))
-    |> Throttle.signed_as(requested)
+    |> NormalisedRequest.signed_as(requested)
   end
 
   def shape(requested, false, curve) do
     requested
-    |> Throttle.clamp()
+    |> NormalisedRequest.clamp()
     |> offset(curve.start_offset, cap(requested, curve))
   end
 
@@ -250,7 +250,7 @@ defmodule VmsCore.Components.Traxxas.MotorController do
       |> D.abs()
       |> D.mult(D.sub(cap, start_offset))
       |> D.add(start_offset)
-      |> Throttle.signed_as(requested)
+      |> NormalisedRequest.signed_as(requested)
     end
   end
 end

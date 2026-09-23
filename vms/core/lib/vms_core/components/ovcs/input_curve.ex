@@ -49,7 +49,7 @@ defmodule VmsCore.Components.OVCS.InputCurve do
   alias Decimal, as: D
   alias OvcsBus, as: Bus
   alias OvcsBus.Units
-  alias VmsCore.Throttle
+  alias VmsCore.NormalisedRequest
 
   @zero D.new(0)
   @one D.new(1)
@@ -122,7 +122,7 @@ defmodule VmsCore.Components.OVCS.InputCurve do
   """
   def shape(requested, curve) do
     requested
-    |> Throttle.clamp()
+    |> NormalisedRequest.clamp()
     |> strip_deadzone(curve.deadzone)
     |> blend(curve.expo)
   end
@@ -139,7 +139,7 @@ defmodule VmsCore.Components.OVCS.InputCurve do
       magnitude
       |> D.sub(deadzone)
       |> D.div(D.sub(@one, deadzone))
-      |> Throttle.signed_as(requested)
+      |> NormalisedRequest.signed_as(requested)
     end
   end
 

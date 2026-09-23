@@ -1,7 +1,8 @@
-defmodule VmsCore.Throttle do
+defmodule VmsCore.NormalisedRequest do
   @moduledoc """
-  Arithmetic on a normalised throttle request, shared by the components
-  that shape one and the actuators that apply one.
+  Arithmetic on a request normalised to [-1, 1] — a throttle, a
+  steering — shared by the components that shape one and the actuators
+  that apply one.
   """
   alias Decimal, as: D
 

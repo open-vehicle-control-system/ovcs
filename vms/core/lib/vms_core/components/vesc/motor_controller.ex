@@ -135,7 +135,7 @@ defmodule VmsCore.Components.Vesc.MotorController do
   alias OvcsBus, as: Bus
   alias OvcsBus.Units
   alias Cantastic.{Emitter, Frame, Receiver, ReceivedFrameWatcher, Signal}
-  alias VmsCore.Throttle
+  alias VmsCore.NormalisedRequest
 
   @loop_period 10
   @frame_suffixes [:set_duty, :set_current, :set_current_brake, :set_rpm, :status, :status_5]
@@ -358,7 +358,7 @@ defmodule VmsCore.Components.Vesc.MotorController do
   end
 
   defp velocity_command(state) do
-    requested = Throttle.clamp(state.requested_throttle)
+    requested = NormalisedRequest.clamp(state.requested_throttle)
 
     if D.eq?(requested, @zero) do
       {:set_duty, %{"duty" => @zero}, @zero}
@@ -368,16 +368,19 @@ defmodule VmsCore.Components.Vesc.MotorController do
   end
 
   defp signed_duty_command(state) do
-    requested = Throttle.clamp(state.requested_throttle)
+    requested = NormalisedRequest.clamp(state.requested_throttle)
 
     duty =
-      requested |> D.abs() |> D.mult(cap(requested, state.caps)) |> Throttle.signed_as(requested)
+      requested
+      |> D.abs()
+      |> D.mult(cap(requested, state.caps))
+      |> NormalisedRequest.signed_as(requested)
 
     {:set_duty, %{"duty" => duty}, duty}
   end
 
   defp geared_command(state) do
-    requested = Throttle.clamp(state.requested_throttle)
+    requested = NormalisedRequest.clamp(state.requested_throttle)
     gear_sign = Map.get(@gear_signs, state.selected_gear)
 
     cond do
@@ -393,7 +396,13 @@ defmodule VmsCore.Components.Vesc.MotorController do
       true ->
         # A request of the gear's sign, so reverse gets the reverse cap.
         signed = D.mult(requested, gear_sign)
-        duty = signed |> D.abs() |> D.mult(cap(signed, state.caps)) |> Throttle.signed_as(signed)
+
+        duty =
+          signed
+          |> D.abs()
+          |> D.mult(cap(signed, state.caps))
+          |> NormalisedRequest.signed_as(signed)
+
         {:set_duty, %{"duty" => duty}, duty}
     end
   end
