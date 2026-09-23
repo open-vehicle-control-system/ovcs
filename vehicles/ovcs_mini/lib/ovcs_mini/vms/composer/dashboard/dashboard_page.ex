@@ -23,18 +23,12 @@ defmodule OvcsMini.Vms.Composer.Dashboard.DashboardPage do
               action: "reset_status"
             },
             %{type: :metric, name: "VMS Status", module: Vms, key: :vms_status},
-            %{type: :metric, name: "OVCS Mini ready", module: Vms, key: :ready_to_drive},
-            %{
-              type: :metric,
-              name: "Main Controller Alive",
-              module: Vms.MainController,
-              key: :is_alive
-            }
+            %{type: :metric, name: "OVCS Mini ready", module: Vms, key: :ready_to_drive}
           ]
         },
-        "drivetrain" => %{
+        "control-level" => %{
           order: 1,
-          name: "Drivetrain",
+          name: "Control Level",
           type: "table",
           rows: [
             %{
@@ -54,51 +48,6 @@ defmodule OvcsMini.Vms.Composer.Dashboard.DashboardPage do
               name: "Control Level Forced",
               module: Managers.ControlLevel,
               key: :control_level_forced
-            },
-            %{
-              type: :metric,
-              name: "Selected Gear",
-              module: Managers.Gear,
-              key: :selected_gear
-            },
-            %{
-              type: :metric,
-              name: "Speed",
-              module: OVCS.VehicleMotion,
-              key: :speed,
-              unit: "km/h"
-            },
-            %{
-              type: :metric,
-              name: "Wheel RPM",
-              module: OVCS.VehicleMotion,
-              key: :wheel_rotation_per_minute
-            },
-            %{
-              type: :metric,
-              name: "Spur RPM",
-              module: OVCS.PulseRotationSensor,
-              key: :rotation_per_minute
-            },
-            %{
-              type: :metric,
-              name: "Motor RPM",
-              module: Vms.Vesc,
-              key: :rotation_per_minute
-            },
-            %{
-              type: :metric,
-              name: "Motor Current",
-              module: Vms.Vesc,
-              key: :motor_current,
-              unit: "A"
-            },
-            %{
-              type: :metric,
-              name: "Battery Voltage",
-              module: Vms.Vesc,
-              key: :input_voltage,
-              unit: "V"
             }
           ]
         },
@@ -109,17 +58,16 @@ defmodule OvcsMini.Vms.Composer.Dashboard.DashboardPage do
           serie_max_size: 300,
           y_axis: [
             %{
-              min: -5,
-              max: 30,
+              min: -10,
+              max: 10,
               label: "km/h",
               series: [%{name: "Speed", metric: %{module: OVCS.VehicleMotion, key: :speed}}]
             },
             %{
               position: "right",
               min: 0,
-              # A wheel turning at the estimated top speed, 5 m/s on a
-              # 0.0548 m wheel, does a little under 900 rpm.
-              max: 1_000,
+              # 10 km/h on a 0.0548 m wheel is a little under 500 rpm.
+              max: 500,
               label: "RPM",
               series: [
                 %{
