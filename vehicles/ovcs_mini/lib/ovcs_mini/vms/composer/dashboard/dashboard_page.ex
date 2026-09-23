@@ -66,7 +66,6 @@ defmodule OvcsMini.Vms.Composer.Dashboard.DashboardPage do
             %{
               position: "right",
               min: 0,
-              # 10 km/h on a 0.0548 m wheel is a little under 500 rpm.
               max: 500,
               label: "RPM",
               series: [

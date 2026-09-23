@@ -22,9 +22,7 @@ defmodule VmsCore.Components.Vesc.MotorControllerTest do
   @planner PlannerVelocity
   @vesc Vms.Vesc
 
-  # An AXE540 (2 pole pairs) at 984 motor rpm for a full request: what
-  # 0.5 m/s comes to through a 13/54 pinion, the Slash 4x4
-  # transmission's 2.72 and 54.8 mm wheels.
+  # A 4-pole motor, 984 motor rpm at a full linear request.
   @pole_pairs 2
   @max_rpm 984
 

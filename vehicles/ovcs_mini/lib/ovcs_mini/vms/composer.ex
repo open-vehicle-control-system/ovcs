@@ -27,12 +27,9 @@ defmodule OvcsMini.Vms.Composer do
   # speed loop holds for it, through the gearing below.
   @max_speed_m_s 0.5
 
-  # Throttle feel for hands, see `OVCS.InputCurve`. The trigger at
-  # rest drifts by up to 20 counts of 500, and the joystick node's own
-  # dead zone is the same 5%; it matches `RadioControl.Throttle`'s
-  # braking threshold, so a trigger that reads as braking also reads as
-  # a request. The expo is half way between linear and the full square:
-  # enough flattening for fine control at low speed, braking included.
+  # Throttle feel for hands, see `OVCS.InputCurve`. The dead zone
+  # matches `RadioControl.Throttle`'s braking threshold, so a trigger
+  # that reads as braking also reads as a request.
   @throttle_deadzone Decimal.new("0.05")
   @throttle_expo Decimal.new("0.5")
   # Fraction of the motor's full output at full stick, in drive and in
@@ -195,15 +192,12 @@ defmodule OvcsMini.Vms.Composer do
          # "Driving on the host bench", has the frames for both.
          default_control_level: :manual,
          ready_to_drive_source: Vms,
-         # The standstill gate on every mode change reads this. It is
-         # exactly zero once the hall sensor has been quiet for two
-         # seconds, and the kinematics only scale what counts as
-         # moving, so an estimate there does not weaken the gate.
+         # The standstill gate on every mode change reads this; the
+         # fused rotation reads exactly zero at rest.
          speed_source: OVCS.VehicleMotion
        }},
-      # Drive or reverse from the selected direction source, shifted
-      # only below 1 km/h with the trigger released. No ignition on the
-      # Mini, so no contact source.
+      # Drive or reverse from the selected direction source. No
+      # ignition on the Mini, so no contact source.
       {Managers.Gear,
        %{
          selected_control_level_source: Managers.ControlLevel,
@@ -220,10 +214,7 @@ defmodule OvcsMini.Vms.Composer do
          external_pwm_id: 0,
          selected_control_level_source: Managers.ControlLevel
        }},
-      # The traction motor, behind a VESC on `misc`. With no source it
-      # releases the motor. A hand's shaped request drives in the
-      # selected gear up to the duty caps, and pulling the trigger back
-      # always brakes; a velocity gets the VESC's speed loop.
+      # The traction motor, behind a VESC on `misc`.
       {Vesc.MotorController,
        %{
          process_name: Vms.Vesc,

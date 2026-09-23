@@ -260,13 +260,10 @@ defmodule VmsCore.Components.OVCS.GenericController do
     {:noreply, %{state | received_pins: merge_signals(state.received_pins, signals)}}
   end
 
-  # The pulse signals go out as each frame arrives rather than on the
-  # tick: a consumer integrating them — the vehicle's motion, and the
-  # odometry behind it — has to tell a fresh sample from a held one,
-  # and a message per frame is what makes that distinction. Only while
-  # the watcher calls the frame alive, though: until it has seen enough
-  # frames on time the tick declares the pins unknown, and a value from
-  # here in between would make them flicker.
+  # The pulse signals go out as each frame arrives, so a consumer
+  # integrating them can tell a fresh sample from a held one, and only
+  # while the frame is alive: until then the tick declares them unknown,
+  # and both would alternate.
   @impl true
   def handle_info({:handle_frame, %Frame{name: name, signals: signals}}, state)
       when name == state.pulse_counter_status_frame_name do

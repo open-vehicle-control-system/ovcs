@@ -204,9 +204,8 @@ defmodule VmsCore.Components.Vesc.MotorController do
        erpm_per_request: erpm_per_request(max_rotation_per_minute, pole_pairs),
        pole_pairs: pole_pairs,
        noise_rpm: D.new(Map.get(args, :noise_rpm, 5)),
-       # Starts nil: nothing commands this actuator until the manager
-       # names a source. The manager's default level does that on its
-       # first tick.
+       # Nothing commands this actuator until the manager names a
+       # source.
        requested_throttle_source: nil,
        requested_throttle: @zero,
        # No command has been sent yet: even the release has to enable
@@ -229,9 +228,8 @@ defmodule VmsCore.Components.Vesc.MotorController do
         state
       )
       when source == state.selected_control_level_source do
-    # Zero on the way to a level that commands nothing, for the reason
-    # `Traxxas.Throttle` gives: with no source no request message
-    # matches, and the last request would otherwise be held.
+    # Zero on the way to a level that commands nothing: with no source
+    # no request message matches, and the last request would be held.
     requested = if is_nil(requested_throttle_source), do: @zero, else: state.requested_throttle
 
     {:noreply,

@@ -225,9 +225,8 @@ defmodule VmsCore.Components.OVCS.VehicleMotion do
     end
   end
 
-  # km/h per rpm of the sensed shaft, fixed at init: one wheel
-  # circumference per `rotation_to_wheel_ratio` turns, sixty of them an
-  # hour... per minute, a thousand metres to the kilometre.
+  # km/h per rpm of the sensed shaft: one wheel circumference per
+  # `rotation_to_wheel_ratio` turns, times 60 minutes, over 1000 m.
   @doc false
   def speed_factor(rotation_to_wheel_ratio, wheel_radius) do
     wheel_circumference = 2 * :math.pi() * wheel_radius
