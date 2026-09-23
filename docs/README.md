@@ -1,87 +1,38 @@
-# OVCS Documentation
+# OVCS documentation
 
-Index for the Open Vehicle Control System guides. For a high-level project overview, see the [main README](../README.md).
+These guides are published on [ovcs.be/docs](https://ovcs.be/docs). This index is the site's docs tree: its sections and their order are the site's navigation, and each guide's title and description come from its frontmatter.
 
-## Guides
+## Start here
 
-### Getting started
+- [Framework and applications](./framework.md)
+- [Getting started](./getting_started.md)
+- [Quickstart](./quickstart.md)
+- [Simulation](../compose/local/simulation/README.md)
 
-- [Getting Started](./getting_started.md) — prerequisites, mise + system packages, fwup, repo bootstrap, virtual CAN, dev verification.
+## The framework
 
-### Understanding the codebase
+- [Architecture](./architecture.md)
+- [Framework components](./applications.md)
+- [Hardware](./hardware_architecture.md)
+- [Toolchain and OTP](./toolchain_and_otp.md)
 
-- [Applications](./applications.md) — what each app and library is, how the layers fit together, and how to run them.
-- [Vehicle Parameterisation](./vehicle_parameterisation.md) — how `VEHICLE` selects a composer, how each firmware boots against a vehicle package, and the four behaviours in play (`OvcsVehicle`, `VmsCore.Vehicle`, `InfotainmentCore.Vehicle`, `OvcsBridge`).
-- [ROS 2 and the simulator](./ros2_integration.md) — the map of how ROS 2, Gazebo and the Elixir bridge connect: the Zenoh fabric, what the simulator starts and in what order, who publishes which topic, how simulator time reaches the bridge, the three velocity-command paths and which of them the simulator actually exercises, Nav2 as configured, perception against Gazebo, and what each verifier proves. **Read this before the simulation README if you are new.**
+## Build an application
 
-### Hardware
+- [Your application package](./vehicle_parameterisation.md)
+- [Generic controllers](./testing_generic_controllers.md)
+- [Testing with CAN](./testing_can_messages.md)
+- [Running on hardware](./running_hardware.md)
+- [VESC drivetrain](./vesc_drivetrain.md)
 
-- [Hardware Architecture](./hardware_architecture.md) — design principles, component layout, CAN bus topology and bitrates.
-- [Toolchain and OTP Versions](./toolchain_and_otp.md) — why the host Elixir/OTP pin in `mise.toml` is coupled to each Nerves target's OTP version, what the A/B partition layout requires of firmware, and how to follow a system fork upstream again.
-- [ROS Compute Node](./ros_compute_node.md) — the OVCS Mini's non-Nerves Pi: why it exists, the immutable OS choice (balenaOS), the compute/local compose split, the vehicle network (the wire is the fabric, the site Wi-Fi is for people), and how it wires into the Zenoh fabric.
-- [Simulation](../compose/local/simulation/README.md) — the Gazebo Jetty model of the OVCS Mini: how to run it, drive it with a gamepad, point the real perception pipeline at it, navigate it with Nav2, and the three verifiers that check depth, drivetrain and navigation against the world. **The quickest way to see this project do something without hardware.**
-- [ROS Perception Detection](./ros_perception_detection.md) — object detection on the Hailo-8: why detection and not disparity, what it costs the stereo rate, how a 2D box becomes a 3D position, and the two topics it publishes.
-- [VESC drivetrain](./vesc_drivetrain.md) — driving a traction motor through a VESC over CAN: why, the wiring, the VESC Tool settings, the extended-id frames, how `Vesc.MotorController` replaces the PWM throttle in a composer, and how to fake the VESC on the host bench.
-- [Running on Hardware](./running_hardware.md) — Nerves targets, the `ovcs` CLI for build / burn / OTA upload, attach / connect for runtime debugging.
-- [OVCS1 Wiring Reference](../vehicles/ovcs1/WIRING.md) — pin-level wiring for the OVCS1 vehicle (Leaf harness, iBooster, steering pump, Polo CAN bus).
+## ROS 2
 
-### Development and testing
+- [ROS 2 and the simulator](./ros2_integration.md)
+- [ROS compute node](./ros_compute_node.md)
+- [Perception: object detection](./ros_perception_detection.md)
 
-- [Testing CAN Messages](./testing_can_messages.md) — simulating CAN traffic with `cansend` and replaying captures from `candumps/`.
-- [Testing Generic Controllers](./testing_generic_controllers.md) — adopting a generic Arduino controller and verifying it from the dashboard or IEx.
-- [OBD2 Diagnostics](./obd2_diagnostics.md) — using OVCS as an OBD2 / KWP2000 / UDS scan tool, plus how to extend it for brand-specific Mode 22 DIDs, Mode 21 KWP2000 reads, Mode 31 routines and proprietary CAN broadcasts.
+## Reference and help
 
-## Architecture Reference
-
-OVCS is a monorepo of independent Elixir applications, a C++/PlatformIO
-project, and frontend apps — **not** an Elixir umbrella. Each app has
-its own `mix.exs`. See the [main README](../README.md#repository-structure)
-for the full directory tree and [Applications](./applications.md) for
-the dependency graph and layer breakdown.
-
-### Shared Libraries
-
-Cross-cutting Elixir libraries under `libraries/`. Each one has its
-own README with usage, design notes, and API.
-
-| Library | Path | Module | README |
-|---------|------|--------|--------|
-| OvcsVehicle | `libraries/ovcs_vehicle/` | `OvcsVehicle` | [README](../libraries/ovcs_vehicle/README.md) — vehicle-package behaviour + `ovcs new` scaffold |
-| OvcsCan | `libraries/ovcs_can/` | `OvcsCan` | [README](../libraries/ovcs_can/README.md) — shared CAN frame YAMLs (`import!:@ovcs_can:…`) |
-| OvcsBus | `libraries/ovcs_bus/` | `OvcsBus` | [README](../libraries/ovcs_bus/README.md) — cluster-wide pub/sub over Erlang distribution |
-| OvcsBridge | `libraries/ovcs_bridge/` | `OvcsBridge` | [README](../libraries/ovcs_bridge/README.md) — bridge-library contract + firmware supervisor |
-| OvcsDrivers | `libraries/ovcs_drivers/` | `OvcsDrivers` | [README](../libraries/ovcs_drivers/README.md) — hardware chip drivers grouped by kind (`OvcsDrivers.Imu`, …); currently BNO085 |
-| Cantastic | `libraries/cantastic/` | `Cantastic` | [README](../libraries/cantastic/README.md) — CAN bus library (SocketCAN, YAML config, frame encoding/decoding) |
-| ExpressLRS | `libraries/express_lrs/` | `ExpressLrs` | [README](../libraries/express_lrs/README.md) — ExpressLRS MAVLink decoder (used by `radio_control_bridge`) |
-| MspOsd | `libraries/msp_osd/` | `MspOsd` | [README](../libraries/msp_osd/README.md) — MSP + DisplayPort stack (v1 jumbo / v2 / v2-over-v1) for pushing OSD to HDZero/Walksnail/DJI VTX |
-
-### Elixir Applications
-
-| Application | Path | Module | Description |
-|-------------|------|--------|-------------|
-| VMS Core | `vms/core/` | `VmsCore` | Vehicle management business logic, component drivers, vehicle composers |
-| VMS API | `vms/api/` | `VmsApi` | Phoenix JSON API + WebSocket for the debug dashboard |
-| VMS Firmware | `vms/firmware/` | `VmsFirmware` | Nerves firmware image for Raspberry Pi 4 |
-| Infotainment Core | `infotainment/core/` | `InfotainmentCore` | Infotainment business logic, UI layout, pages and blocks |
-| Infotainment API | `infotainment/api/` | `InfotainmentApi` | Phoenix JSON API + WebSocket for the Flutter dashboard |
-| Infotainment Firmware | `infotainment/firmware/` | `InfotainmentFirmware` | Nerves firmware image for Raspberry Pi 5 |
-| Bridge Firmware | `bridges/firmware/` | `BridgeFirmware` | Shared Nerves image (targets `:ovcs_base_can_system_rpi3a`, `:ovcs_base_can_system_rpi4`, `:rpi5`); bundles the bridge libraries the active vehicle declares in `bridge_firmwares/0` |
-| Radio Control Bridge | `bridges/radio_control_bridge/` | `RadioControlBridge` | MAVLink/ExpressLRS RC bridge library (hosted by `bridge_firmware`) |
-| ROS Bridge | `bridges/ros_bridge/` | `RosBridge` | Native rmw_zenoh ROS 2 bridge with BNO085 IMU (hosted by `bridge_firmware`) |
-
-### Non-Elixir Components
-
-| Component | Path | Technology | Description |
-|-----------|------|------------|-------------|
-| Generic Controller | `controllers/generic_controller/` | C++ / PlatformIO | Arduino R4 Minima firmware for CAN-connected hardware controllers |
-| VMS Dashboard | `vms/dashboard/` | Vue.js 3 / Vite | Real-time debug dashboard with charts and metrics |
-| Infotainment Dashboard | `infotainment/dashboard/` | Flutter / Dart | In-car touchscreen UI for gear selection, status, and diagnostics |
-
-## External Resources
-
-Presentations and video links live in the
-[main README](../README.md#presentations-and-media). Additional pointers:
-
-- [ElixirForum: Driving a car powered with Nerves and Elixir](https://elixirforum.com/t/driving-a-car-powered-with-nerves-and-elixir/71557) -- Project announcement and community discussion
-- [GitHub: OVCS Organization](https://github.com/open-vehicle-control-system) -- All repositories (ovcs, base systems, presentations)
-- [GitHub: Presentations](https://github.com/open-vehicle-control-system/presentations) -- Slide decks from conference talks
+- [OBD2 reference application](./obd2_diagnostics.md)
+- [CLI reference](../cli/README.md)
+- [Troubleshooting](./troubleshooting.md)
+- [Community and talks](./community.md)
