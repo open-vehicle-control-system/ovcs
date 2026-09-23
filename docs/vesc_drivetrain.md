@@ -222,7 +222,7 @@ output shaft, here the motor:
    direction_source: Vms.Vesc,
    cross_check_from_rpm: 450,
    cross_check_tolerance: 0.1,
-   cross_check_hold_ms: 500
+   cross_check_hold_ms: 1_500
  }},
 {OVCS.VehicleMotion,
  %{

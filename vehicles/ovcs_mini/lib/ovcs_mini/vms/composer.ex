@@ -259,7 +259,8 @@ defmodule OvcsMini.Vms.Composer do
          # The VESC's minimum speed-loop rpm: where the planner drives.
          cross_check_from_rpm: 450,
          cross_check_tolerance: 0.1,
-         cross_check_hold_ms: 500
+         # Past the spur sensor's decay after a hard stop.
+         cross_check_hold_ms: 1_500
        }},
       # The vehicle's own motion, published on the bus for the
       # manager's standstill gate and emitted on 0x60B for the ROS

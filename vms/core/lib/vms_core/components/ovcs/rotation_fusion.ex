@@ -28,7 +28,10 @@ defmodule VmsCore.Components.OVCS.RotationFusion do
       source; below it a coarse sensor's resolution alone exceeds any
       useful tolerance. A gap larger than `cross_check_tolerance`, as a
       fraction of the faster reading, held for `cross_check_hold_ms`,
-      raises `:cross_check_fault`. The fault is reported, not acted on.
+      raises `:cross_check_fault`. The hold must outlast the slowest
+      source's lag: a pulse sensor measuring the time between pulses
+      still reads its last speed for a while after the shaft stops. The
+      fault is reported, not acted on.
 
   The priority picks a source rather than averaging: a fine source mixed
   with a coarse one would only get worse.
