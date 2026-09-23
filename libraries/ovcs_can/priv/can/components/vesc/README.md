@@ -31,6 +31,7 @@ with its own `process_name`.
 |------|--------|------|-----------|---------|
 | `set_duty_signals.yml` | `CAN_PACKET_SET_DUTY` | 0x00 | VMS → VESC | duty [-1, 1] as int32 × 100 000 |
 | `set_current_signals.yml` | `CAN_PACKET_SET_CURRENT` | 0x01 | VMS → VESC | motor current in A as int32 × 1000 |
+| `set_current_brake_signals.yml` | `CAN_PACKET_SET_CURRENT_BRAKE` | 0x02 | VMS → VESC | braking current in A as int32 × 1000 |
 | `set_rpm_signals.yml` | `CAN_PACKET_SET_RPM` | 0x03 | VMS → VESC | electrical rpm as int32 |
 | `status_signals.yml` | `CAN_PACKET_STATUS` | 0x09 | VESC → VMS | erpm int32, motor current int16 × 10, duty int16 × 1000 |
 | `status_5_signals.yml` | `CAN_PACKET_STATUS_5` | 0x1B | VESC → VMS | tachometer int32, input voltage int16 × 10 |

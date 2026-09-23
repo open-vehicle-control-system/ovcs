@@ -70,6 +70,7 @@ defmodule VmsCore.Components.Vesc.MotorControllerTest do
       assert MotorController.frame_names(Vms.Vesc) == %{
                set_duty: "vesc_set_duty",
                set_current: "vesc_set_current",
+               set_current_brake: "vesc_set_current_brake",
                set_rpm: "vesc_set_rpm",
                status: "vesc_status",
                status_5: "vesc_status_5"
@@ -118,6 +119,94 @@ defmodule VmsCore.Components.Vesc.MotorControllerTest do
       # way an unpowered ESC would.
       assert MotorController.command(state(%{requested_throttle_source: nil})) ==
                {:set_current, %{"current" => D.new(0)}, D.new(0)}
+    end
+  end
+
+  describe "with gears" do
+    @gear Gear
+
+    defp geared(requested, gear) do
+      state(%{
+        selected_gear_source: @gear,
+        selected_gear: gear,
+        max_brake_current: D.new(20),
+        brake_curve: Throttle.curve(%{deadzone: D.new("0.05"), expo: D.new(0)}),
+        curve:
+          Throttle.curve(%{
+            deadzone: D.new("0.05"),
+            expo: D.new(0),
+            max_throttle: D.new("0.1"),
+            max_reverse: D.new("0.05")
+          }),
+        requested_throttle: D.new(requested)
+      })
+    end
+
+    test "a positive request drives forward in drive, capped by the forward cap" do
+      {:set_duty, %{"duty" => duty}, throttle} = MotorController.command(geared(1, :drive))
+      assert D.eq?(duty, D.new("0.1"))
+      assert D.eq?(throttle, duty)
+    end
+
+    test "a positive request drives backward in reverse, capped by the reverse cap" do
+      {:set_duty, %{"duty" => duty}, throttle} = MotorController.command(geared(1, :reverse))
+      assert D.eq?(duty, D.new("-0.05"))
+      assert D.eq?(throttle, duty)
+    end
+
+    test "a negative request brakes in every gear and never reverses" do
+      for gear <- [:drive, :reverse, :neutral, :parking, nil] do
+        assert {:set_current_brake, %{"current" => current}, throttle} =
+                 MotorController.command(geared(-1, gear))
+
+        assert D.eq?(current, D.new(20))
+        assert D.eq?(throttle, D.new(0))
+      end
+    end
+
+    test "the brake is linear past the dead zone" do
+      # Half way through the travel past a 5% dead zone.
+      {:set_current_brake, %{"current" => current}, _} =
+        MotorController.command(geared("-0.525", :drive))
+
+      assert D.eq?(current, D.new(10))
+    end
+
+    test "a released trigger coasts, in drive as in reverse" do
+      for gear <- [:drive, :reverse], requested <- ["0", "0.03", "-0.03"] do
+        assert MotorController.command(geared(requested, gear)) ==
+                 {:set_current, %{"current" => D.new(0)}, D.new(0)}
+      end
+    end
+
+    test "neutral, parking and an unknown gear release a positive request" do
+      for gear <- [:neutral, :parking, nil] do
+        assert MotorController.command(geared(1, gear)) ==
+                 {:set_current, %{"current" => D.new(0)}, D.new(0)}
+      end
+    end
+
+    test "a velocity ignores the gear: its sign is the direction of travel" do
+      state =
+        geared("-0.5", :drive)
+        |> Map.put(:requested_throttle_source, @planner)
+
+      assert {:set_rpm, %{"erpm" => -984}, _} = MotorController.command(state)
+    end
+
+    test "only the gear source's gear is taken" do
+      {:noreply, state} =
+        MotorController.handle_info(
+          source_message(:selected_gear, :reverse, @gear),
+          geared(1, nil)
+        )
+
+      assert state.selected_gear == :reverse
+
+      {:noreply, unchanged} =
+        MotorController.handle_info(source_message(:selected_gear, :drive, Impostor), state)
+
+      assert unchanged.selected_gear == :reverse
     end
   end
 

@@ -32,6 +32,14 @@ defmodule VmsCore.Components.OVCS.VehicleMotion do
   driven. A source that reads a signed rotation off a motor controller
   declares `rotation_signed: true` and its sign is used as is.
 
+  A request is not always a direction, though. Where a gear carries the
+  direction and a negative request brakes, the request's sign would
+  flip the speed the moment a moving vehicle brakes. A
+  `:direction_source` then names the actuator instead, and its signed
+  `:throttle` — the direction it drives the motor in, zero while it
+  brakes or releases — sets the sign, with the same rule that zero
+  keeps the last one.
+
   The angle is the commanded steering, not a measured one: the servo
   has no feedback. It is the selected `:requested_steering` in
   `[-1, 1]` scaled by `:steering_limit`, and `:steering_sign` converts
@@ -61,6 +69,9 @@ defmodule VmsCore.Components.OVCS.VehicleMotion do
       One when the shaft is the wheel itself.
     * `:rotation_signed` — `true` when the source's rotation already
       carries the direction of travel. Default `false`.
+    * `:direction_source` — optional, for an unsigned rotation: the
+      actuator whose signed `:throttle` gives the direction, in place of
+      the selected throttle request.
     * `:wheel_radius` — metres, from the vehicle's `geometry/0`.
     * `:selected_control_level_source` — names the throttle and
       steering sources (`Managers.ControlLevel`).
@@ -117,6 +128,7 @@ defmodule VmsCore.Components.OVCS.VehicleMotion do
        loop_timer: timer,
        rotation_source: rotation_source,
        rotation_signed: Map.get(args, :rotation_signed, false),
+       direction_source: Map.get(args, :direction_source),
        rotation_to_wheel_ratio: D.from_float(1.0 * rotation_to_wheel_ratio),
        speed_factor: speed_factor(rotation_to_wheel_ratio, wheel_radius),
        selected_control_level_source: selected_control_level_source,
@@ -190,9 +202,14 @@ defmodule VmsCore.Components.OVCS.VehicleMotion do
         %Bus.Message{name: :requested_throttle, value: requested_throttle, source: source},
         state
       )
-      when source == state.requested_throttle_source do
+      when is_nil(state.direction_source) and source == state.requested_throttle_source do
     {:noreply,
      %{state | direction_sign: direction_sign(requested_throttle, state.direction_sign)}}
+  end
+
+  def handle_info(%Bus.Message{name: :throttle, value: throttle, source: source}, state)
+      when not is_nil(source) and source == state.direction_source do
+    {:noreply, %{state | direction_sign: direction_sign(throttle, state.direction_sign)}}
   end
 
   def handle_info(

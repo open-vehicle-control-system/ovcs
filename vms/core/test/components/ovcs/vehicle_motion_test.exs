@@ -28,6 +28,7 @@ defmodule VmsCore.Components.OVCS.VehicleMotionTest do
         loop_timer: nil,
         rotation_source: @sensor,
         rotation_signed: false,
+        direction_source: nil,
         rotation_to_wheel_ratio: D.from_float(@ratio),
         speed_factor: VehicleMotion.speed_factor(@ratio, @wheel_radius),
         selected_control_level_source: @manager,
@@ -95,6 +96,49 @@ defmodule VmsCore.Components.OVCS.VehicleMotionTest do
       {:noreply, unchanged} =
         VehicleMotion.handle_info(
           %Message{name: :requested_throttle, value: D.new("-1"), source: Impostor},
+          state()
+        )
+
+      assert unchanged.direction_sign == 1
+    end
+
+    test "with a direction source, the actuator's throttle sets the sign, not the request" do
+      # A gear carries the direction and a negative request brakes: the
+      # request going negative while the vehicle rolls forward must not
+      # flip the speed.
+      geared = state(%{direction_source: Actuator})
+
+      {:noreply, braking} =
+        VehicleMotion.handle_info(
+          %Message{name: :requested_throttle, value: D.new("-0.8"), source: @commander},
+          geared
+        )
+
+      assert braking.direction_sign == 1
+
+      {:noreply, reversing} =
+        VehicleMotion.handle_info(
+          %Message{name: :throttle, value: D.new("-0.03"), source: Actuator},
+          braking
+        )
+
+      assert reversing.direction_sign == -1
+
+      # The brake and the release publish a zero throttle: the vehicle
+      # keeps rolling the way it was driven.
+      {:noreply, coasting} =
+        VehicleMotion.handle_info(
+          %Message{name: :throttle, value: D.new(0), source: Actuator},
+          reversing
+        )
+
+      assert coasting.direction_sign == -1
+    end
+
+    test "without a direction source, another component's throttle is ignored" do
+      {:noreply, unchanged} =
+        VehicleMotion.handle_info(
+          %Message{name: :throttle, value: D.new("-1"), source: Actuator},
           state()
         )
 

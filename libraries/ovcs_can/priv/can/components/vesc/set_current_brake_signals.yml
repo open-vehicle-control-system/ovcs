@@ -1,0 +1,16 @@
+---
+# CAN_PACKET_SET_CURRENT_BRAKE (packet type 0x02): braking current in
+# amperes, a magnitude. The VESC opposes the motor's rotation, whichever
+# way it turns, and stops at standstill: unlike a negative duty or
+# current, a brake never drives the motor the other way.
+#
+# Emit every 20 ms, like every command: the VESC stops the motor when
+# its command timeout elapses without a command frame.
+- name: current
+  unit: A
+  value_start: 0
+  value_length: 32
+  sign: signed
+  endianness: big
+  scale: "0.001"
+  precision: 3
