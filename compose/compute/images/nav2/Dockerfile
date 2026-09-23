@@ -28,6 +28,7 @@ RUN apt-get update \
         ros-lyrical-nav2-navfn-planner \
         ros-lyrical-nav2-bt-navigator \
         ros-lyrical-nav2-behaviors \
+        ros-lyrical-nav2-velocity-smoother \
         ros-lyrical-nav2-behavior-tree \
         ros-lyrical-nav2-lifecycle-manager \
         ros-lyrical-nav2-costmap-2d \

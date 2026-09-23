@@ -264,12 +264,41 @@ behavior_server:
     behavior_plugins: ["spin", "backup", "drive_on_heading", "wait"]
     spin:
       plugin: "nav2_behaviors::Spin"
+    # `minimum_speed` floors the ramp down at the end of a drive, which
+    # would otherwise fall into the smoother's deadband and stall short
+    # of the distance. The BT XMLs command BackUp at the same speed.
     backup:
       plugin: "nav2_behaviors::BackUp"
+      minimum_speed: 0.25
     drive_on_heading:
       plugin: "nav2_behaviors::DriveOnHeading"
+      minimum_speed: 0.25
     wait:
       plugin: "nav2_behaviors::Wait"
+
+velocity_smoother:
+  ros__parameters:
+    use_sim_time: false
+    # Between the controller and behaviours (/cmd_vel_nav_raw) and the
+    # vehicle (/cmd_vel_nav), see the launch file. Limits are MPPI's
+    # above, in [x, y, theta].
+    smoothing_frequency: 20.0
+    scale_velocities: false
+    feedback: "OPEN_LOOP"
+    max_velocity: [1.5, 0.0, 2.5]
+    min_velocity: [-0.5, 0.0, -2.5]
+    max_accel: [2.0, 0.0, 3.0]
+    max_decel: [-2.0, 0.0, -3.0]
+    # The VESC brakes instead of driving below its Minimum ERPM, 0.22
+    # m/s on this vehicle, so any slower linear velocity is sent as
+    # zero: the vehicle drives at 0.22 m/s or more, or stops. The
+    # smoother ramps on its own state before this applies, so a start
+    # still leaves the band.
+    deadband_velocity: [0.22, 0.0, 0.0]
+    # How long the last input is held before ramping to zero. A planner
+    # that stops publishing must not be held longer than the VMS's own
+    # staleness timeout on 0x2B1 (300 ms, `RosVelocityCommand`).
+    velocity_timeout: 0.25
 
 lifecycle_manager:
   ros__parameters:
@@ -280,4 +309,5 @@ lifecycle_manager:
       - controller_server
       - planner_server
       - behavior_server
+      - velocity_smoother
       - bt_navigator

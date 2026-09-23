@@ -37,7 +37,7 @@
         <ClearEntireCostmap name="ClearGlobalCostmap-Subtree" service_name="global_costmap/clear_entirely_global_costmap"/>
         <!-- No Spin: this vehicle cannot execute one. -->
         <Wait wait_duration="2.0"/>
-        <BackUp backup_dist="0.30" backup_speed="0.15"/>
+        <BackUp backup_dist="0.30" backup_speed="0.25"/>
       </Sequence>
     </RecoveryNode>
   </BehaviorTree>

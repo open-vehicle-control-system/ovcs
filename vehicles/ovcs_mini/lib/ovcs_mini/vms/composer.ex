@@ -24,8 +24,8 @@ defmodule OvcsMini.Vms.Composer do
 
   # Speed in m/s at a linear request of 1: what `RosVelocityCommand`
   # normalises the planner's velocity against, and the speed the VESC's
-  # speed loop holds for it, through the gearing below.
-  @max_speed_m_s 0.5
+  # speed loop holds for it, through the gearing below. Nav2's `vx_max`.
+  @max_speed_m_s 1.5
 
   # Throttle feel for hands, see `OVCS.InputCurve`. The dead zone
   # matches `RadioControl.Throttle`'s braking threshold, so a trigger

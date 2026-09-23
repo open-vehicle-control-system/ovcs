@@ -410,6 +410,18 @@ the velocity path drives an Ackermann vehicle without taking on the
 map/SLAM question, and it avoids a fake static `map -> odom`, which is
 the usual shortcut and worse, because it looks like localisation.
 
+The controller and behaviours publish `/cmd_vel_nav_raw`; Nav2's
+`velocity_smoother` republishes it on `/cmd_vel_nav` with a deadband
+that sends any linear velocity under 0.22 m/s as zero, the vehicle's
+VESC floor (see `../../../docs/vesc_drivetrain.md`). Gazebo would
+drive slower, so the deadband is there only to keep the simulator
+running the vehicle's configuration. `nav2_test.py` checks the
+controller's own output on `/cmd_vel_nav_raw`. The smoother is a
+package in the image, so an `ovcs/nav2:lyrical` built before it needs
+a rebuild (`docker compose -f simulation.yml --profile nav2 build
+nav2`); mounting the new launch file over an old image does not
+start.
+
 ### Four things that each fail silently
 
 Every one of these cost a debugging cycle, so they are worth knowing

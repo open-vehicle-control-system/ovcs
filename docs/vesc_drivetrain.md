@@ -17,8 +17,8 @@ the way. A VESC on the CAN bus closes all three gaps:
   followed rather than approximated by a pulse width. A zero velocity
   is sent as zero duty, a passive brake that works from any motor
   state; below the loop's minimum erpm the VESC brakes the same way,
-  which is why that minimum has to be set below the slowest velocity
-  in use (see the settings).
+  so the planner must never command a non-zero velocity below it (see
+  the settings).
 - **Telemetry.** `vesc_status` reports the signed motor rpm and the
   motor current at 50 Hz; `vesc_status_5` adds the battery voltage.
   The rpm is a rotation `OVCS.VehicleMotion` can turn into the
@@ -55,7 +55,7 @@ Set these once in VESC Tool, after motor detection:
 | CAN status rate | App Settings → General | 50 Hz |
 | Timeout | App Settings → General | 1000 ms (default); must stay far above the 20 ms command period |
 | Timeout brake current | App Settings → General | 0 A, so a lost VMS releases the motor rather than braking |
-| Minimum ERPM | Motor Settings → PID Controllers → Speed Controller | below the slowest velocity in use, see below |
+| Minimum ERPM | Motor Settings → PID Controllers → Speed Controller | 900 (default); the planner's velocity floor sits above it, see below |
 
 The VESC id defaults to one derived from the board's serial number, so
 it has to be set explicitly. The 500 kbps baud rate, the 1000 ms
@@ -65,11 +65,15 @@ timeout and the 50 Hz status rate are the firmware defaults.
 does not run the speed loop at all: a running motor holds zero duty, a
 passive brake, and a released motor is not started. The firmware
 default is 900 erpm; on a 2-pole-pair
-motor geared 11.82:1 to 54.8 mm wheels that is 0.22 m/s, above much of
-what a planner commands on its way into a goal — every one of those
-velocities would brake instead. Set it to a few tens of erpm; the
-speed loop's low end then depends on the motor's sensor, which is what
-the bench check below is for.
+motor geared 11.82:1 to 54.8 mm wheels that is 0.22 m/s. The OVCS Mini
+keeps the default and floors the planner instead: Nav2's velocity
+smoother has a `deadband_velocity` of 0.22 m/s, so any slower linear
+velocity reaches the VMS as zero, and the BackUp recovery drives at
+0.25 m/s (see `compose/compute/nav2/config/`). The vehicle drives at
+0.22 m/s or more, or stops; it never sits in the band where the VESC
+brakes. Lowering Minimum ERPM instead makes the speed loop's low end
+depend on the motor's sensor, which is what the bench check below is
+for.
 
 Motor current, battery current, and erpm limits are set on the VESC in
 *Motor Settings* and hold regardless of what the VMS asks for. Set them
@@ -271,8 +275,8 @@ nothing about it: that needs a measured distance.
 
 Then find the slowest speed the loop holds cleanly: with the vehicle
 lifted, step the rpm setpoint down until the wheels stutter or stop,
-and make sure *Minimum ERPM* sits below that and the planner's minimum
-velocity sits above it.
+and make sure *Minimum ERPM* sits below that and the planner's velocity
+floor (the smoother's deadband) sits above it.
 
 ## On the host bench
 
