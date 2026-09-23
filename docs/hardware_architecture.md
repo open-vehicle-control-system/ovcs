@@ -199,6 +199,7 @@ The OVCS Mini uses the same software stack on a Traxxas 4WD RC car chassis:
 | Component | Hardware |
 |-----------|----------|
 | VMS | Raspberry Pi 4 |
+| Compute node | Raspberry Pi 5, balenaOS on an NVMe SSD in a USB enclosure; the bootloader EEPROM needs `PSU_MAX_CURRENT=5000` to boot from USB on the vehicle's supply — see [ROS Compute Node, Boot media](./ros_compute_node.md#boot-media) |
 | Controller | Arduino R4 Minima (single "main" controller) |
 | Motor | Hobbywing Xerun AXE540 R2 sensored brushless motor, driven by a Flipsky Mini FSESC 6.7 Pro (VESC) on `misc`; see [VESC drivetrain](./vesc_drivetrain.md) |
 | Steering | Traxxas servo (controlled via external PWM) |
