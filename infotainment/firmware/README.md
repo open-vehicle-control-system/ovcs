@@ -55,7 +55,7 @@ Direct invocation also works — `build.sh` requires `VEHICLE` and defaults
 
 | Variable | Required | Purpose |
 |----------|:-:|---------|
-| `VEHICLE` | yes | Top-level vehicle module (`Ovcs1`, …) — picked up by `infotainment/firmware/config/runtime.exs` via `OvcsVehicle.Firmware.resolve_vehicle/3`, which writes the infotainment composer to `:infotainment_core, :vehicle` before `InfotainmentCore.Application` starts |
+| `VEHICLE` | yes | Top-level vehicle module (`Ovcs1`, …) — picked up by `infotainment/firmware/config/runtime.exs` via `OvcsVehicle.Firmware.resolve_side/4`, which writes the infotainment composer to `:infotainment_core, :vehicle` before `InfotainmentCore.Application` starts |
 | `MIX_TARGET` | no | Nerves target atom (default: `ovcs_base_can_system_rpi5`) |
 | `NERVES_FW_APPLICATION_PART0_TARGET` | no | Application partition mount point (default: `/data` — see `vms/firmware/README.md`) |
 

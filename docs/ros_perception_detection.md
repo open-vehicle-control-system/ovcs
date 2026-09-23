@@ -1,27 +1,19 @@
-# Object detection on the Hailo-8
+---
+title: "Perception: object detection"
+description: Object detection on a Hailo-8 fused with stereo depth into 3D detections, the topics it publishes, the CPU/GPU backends for the simulator, and model licensing.
+---
 
-The Mini's perception Pi runs stereo depth on the CPU and object
-detection on the Hailo-8 accelerator, then fuses the two into 3D
-detections. This page is the why and the how-to-check; the component
-reference lives in [bridges/ros_bridge/README.md](../bridges/ros_bridge/README.md).
+`RosBridge` can run object detection next to its stereo depth pipeline and fuse the two into 3D detections. The OVCS Mini reference application is the worked example: its `ros_perception` bridge (a Pi 5) runs SGBM stereo depth on the CPU and detection on a Hailo-8. Numbers on this page are measured on that board. The component reference is [`bridges/ros_bridge/README.md`](../bridges/ros_bridge/README.md).
 
 ## Why detection and not depth
 
-The accelerator was bought to make disparity faster. It does not. A
-StereoNet HEF benchmarked on the device came out level with the
-CPU SGBM already in the pipeline, and neural disparity would have cost
-the calibration-derived accuracy and the tuned 0.55 m near clip for
-nothing.
+A Hailo-8 doesn't make disparity faster: a StereoNet HEF benchmarked on the device came out level with the CPU SGBM, and neural disparity would give up the calibration-derived accuracy and the tuned 0.55 m near clip.
 
-Detection is what the part is actually good at, and it is the thing the
-CPU has no room for. `yolov8n` benchmarks at **340 FPS hw-only,
-177 FPS streaming, 3.33 ms hardware latency** against a stereo pipeline
-running at ~15 Hz.
+Detection is what the accelerator is good at, and what the CPU has no room for. `yolov8n` benchmarks at **340 FPS hardware-only, 177 FPS streaming, 3.33 ms hardware latency**, against a stereo pipeline running at about 15 Hz.
 
 ## What it costs
 
-Not nothing, despite how the arithmetic looks. Measured on the device
-before and after:
+Measured on the Mini before and after enabling detection:
 
 | Topic | Before | After |
 |---|---|---|
@@ -31,118 +23,60 @@ before and after:
 | `/stereo/detections` | — | 12.99 Hz |
 | `/stereo/detections/markers` | — | 13.87 Hz |
 
-About 14 % off the depth rate. Inference itself is 3.3 ms; the rest is
-two more topics on the Zenoh session and the per-box depth median,
-which currently sorts a few thousand floats in Elixir per detection per
-frame. If that becomes the constraint, move the median into
-Evision/Nx — it is the obvious next lever, and `:detect_every_n` is the
-cheap one in the meantime.
+About 14 % off the depth rate. Inference is 3.3 ms; the rest is two more topics on the Zenoh session and the per-box depth median, which sorts a few thousand floats in Elixir per detection per frame. Moving the median into Evision/Nx is the next lever; `:detect_every_n` is the cheap one.
 
 ## How a box becomes a position
 
-The detector consumes the stereo backend's `Result`, which carries the
-rectified left image and the metric depth `Mat` alongside the packed
-bytes. Both are in the same rectified frame pixel for pixel, so fusing
-them is a lookup rather than a registration problem — and the pixels
-are already decoded and rectified, so detection adds no image
-processing of its own.
+The detector consumes the stereo backend's `Result`, which carries the rectified left image and the metric depth `Mat`. Both are in the same rectified frame pixel for pixel, so fusing them is a lookup, not a registration, and detection adds no image processing of its own.
 
-1. **Median** of the valid depths in the middle half of the box. Median
-   rather than mean because a box around a person contains background
-   at its corners, and a mean walks the distance towards the wall
-   behind them. Zero is the ROS "no measurement" value, so zeros are
-   excluded rather than averaged in as 0 m.
-2. **Unproject** the box centre with the rectified intrinsics:
-   `X = (u - cx)·Z/fx`, `Y = (v - cy)·Z/fx`. The principal point comes
-   from the calibration, not the image centre.
-3. A detection with **no valid depth is dropped**, not published at a
-   guessed range. Stereo genuinely returns nothing on untextured
-   surfaces, and a box at an invented distance is worse than no box.
+1. **Median** of the valid depths in the middle half of the box. A box around a person contains background at its corners, and a mean walks the distance towards the wall behind them. Zero is the ROS "no measurement" value, so zeros are excluded.
+2. **Unproject** the box centre with the rectified intrinsics: `X = (u - cx)·Z/fx`, `Y = (v - cy)·Z/fx`. The principal point comes from the calibration, not the image centre.
+3. A detection with **no valid depth is dropped**, not published at a guessed range. Stereo returns nothing on untextured surfaces, and a box at an invented distance is worse than no box.
 
-The published box has a fixed 0.1 m extent along the optical axis.
-Nothing measures an object's depth from one view; a thin slab says
-"the surface is here" rather than pretending to know how deep the
-object goes.
+The published box has a fixed 0.1 m extent along the optical axis: one view can't measure an object's depth, so a thin slab says "the surface is here" without pretending to know how deep the object goes.
 
-## Two topics, two audiences
+## Three topics, three audiences
 
 | Topic | Type | For |
 |---|---|---|
 | `/stereo/detections/markers` | `visualization_msgs/MarkerArray` | Foxglove's 3D panel |
-| `/stereo/detections` | `vision_msgs/Detection3DArray` | nav2 and other consumers |
+| `/stereo/detections` | `vision_msgs/Detection3DArray` | Nav2 and other consumers |
 | `/stereo/left/detections` | `foxglove_msgs/ImageAnnotations` | labelled boxes on the Image panel |
 
-The first two are both published because neither covers the other.
-Foxglove's 3D panel **does not support `vision_msgs`** — publishing
-only that puts the data on the wire with nothing to draw it. Markers,
-conversely, carry no class label, score or covariance in
-machine-readable form. (`ros-lyrical-vision-msgs` is installed in the
-shared ROS image, so `foxglove_bridge` can deserialise the
-Detection3DArray too.)
+The first two are both needed: Foxglove's 3D panel **doesn't support `vision_msgs`**, and markers carry no class label, score or covariance in machine-readable form. `ros-lyrical-vision-msgs` is installed in the shared ROS image, so `foxglove_bridge` can deserialise the `Detection3DArray` too. The `/stereo` prefix is the stereo unit's `topic_prefix`.
 
-Each detection draws two markers: a `CUBE` coloured red-to-green by
-score, and a `TEXT_VIEW_FACING` label above it reading
-`<class> <score> <distance>m`. Markers carry a 500 ms lifetime so they
-do not flicker between frames, and ids that vanish get an explicit
-`DELETE` — otherwise a box that goes away lingers on screen and reads
-as a detection that is still there.
+Each detection draws two markers: a `CUBE` coloured red to green by score, and a `TEXT_VIEW_FACING` label above it reading `<class> <score> <distance>m`. Markers live 500 ms (`:marker_lifetime_ms`) so they don't flicker between frames, and ids that vanish get an explicit `DELETE`; otherwise a box that went away lingers and reads as a detection still there.
 
 ## Labelled boxes on the camera image
 
-`/stereo/left/detections` is the Image panel's annotation topic — set
-under the panel's *Annotations* section, which the checked-in layout
-(`compose/local/foxglove/ovcs_perception.json`) already does for the
-left camera. Each detection draws a `LINE_LOOP`
-box coloured red-to-green by score, with a `<class> <score>
-<distance>m` label above it on a dark backing plate.
+`/stereo/left/detections` is the Image panel's annotation topic, set under the panel's *Annotations* section; the checked-in layout `compose/local/foxglove/ovcs_perception.json` does it for the left camera. Each detection draws a `LINE_LOOP` box coloured by score, with a `<class> <score> <distance>m` label on a dark backing plate.
 
-**Why `foxglove_msgs` and not `visualization_msgs`.**
-`visualization_msgs/ImageMarker` was the first implementation and
-cannot carry text at all — it has no text type, so a box drawn with it
-can never say what it is. ROS 2 also has no `ImageMarkerArray`, and
-the Image panel takes one message per annotation topic, so N
-detections would have needed N topics.
-`foxglove_msgs/ImageAnnotations` solves both: boxes and labels in one
-message, and `LINE_LOOP` closes a rectangle in four points where a
-`LINE_LIST` of segment pairs needs eight.
+**Why `foxglove_msgs`.** `visualization_msgs/ImageMarker` has no text type, so its boxes can't say what they are, and ROS 2 has no `ImageMarkerArray`: with one message per annotation topic, N detections would need N topics. `foxglove_msgs/ImageAnnotations` carries boxes and labels in one message, and `LINE_LOOP` closes a rectangle in four points where a `LINE_LIST` needs eight.
 
-The cost is a dependency. `foxglove_msgs` is not in a ROS base
-install, so `ros-lyrical-foxglove-msgs` is installed in
-`compose/compute/images/ros2/Dockerfile` — **without it `foxglove_bridge`
-cannot resolve the type and never advertises the topic**. Both the
-vehicle and the local stacks build from that one Dockerfile, so a
-single change covers them, but the vehicle container has to be
-redeployed (`balena push <device-ip>`) before the overlay appears.
+The cost is a dependency: `foxglove_msgs` isn't in a ROS base install, so `ros-lyrical-foxglove-msgs` is installed in `compose/compute/images/ros2/Dockerfile`. **Without it `foxglove_bridge` can't resolve the type and never advertises the topic.** The vehicle and local stacks build from that one Dockerfile; on the vehicle, redeploy the compute node (`balena push`, see [ROS compute node](./ros_compute_node.md#deploying)) before the overlay appears.
 
-**The boxes are moved back into raw pixels first.** Detection happens
-on the rectified image, but the stream the panel shows is
-`image_raw`. Measured on the Mini those differ by ~10 px on average
-and up to 23 px on a 480-wide frame — enough that drawing rectified
-coordinates directly puts the box visibly beside the object. Each
-vertex is therefore mapped back through OpenCV's rectification map,
-which costs nothing on the wire compared with publishing a second
-rectified image stream.
+**Boxes are mapped back into raw pixels.** Detection runs on the rectified image, but the panel shows `image_raw`. On the Mini the two differ by about 10 px on average and up to 23 px on a 480-wide frame, enough to put a box visibly beside its object. Each vertex is mapped back through OpenCV's rectification map, which costs nothing on the wire compared with a second rectified image stream.
 
-That map is `CV_16SC2` — interleaved int16 pairs per rectified pixel,
-with `map_y` being the interpolation table rather than a coordinate.
-Reading it as two single-channel float maps gives a plausible-looking
-240 px mean displacement instead of the real 10.
+That map is `CV_16SC2`: interleaved int16 pairs per rectified pixel, with `map_y` being the interpolation table rather than a coordinate. Reading it as two single-channel float maps gives a plausible-looking 240 px mean displacement instead of the real 10.
 
-Because a straight edge in rectified space is a *curve* in raw space,
-each edge is subdivided (`:outline_segments`, default 4) and every
-vertex mapped individually — so a box is 16 vertices, and its top edge
-comes off the wire as y = 101, 101, 100, 100, 99 rather than a
-constant. That 2 px bow is the distortion being followed.
+A straight edge in rectified space is a curve in raw space, so each edge is subdivided (`:outline_segments`, default 4) and every vertex mapped individually. A box is 16 vertices, and its top edge comes off the wire as y = 101, 101, 100, 100, 99 rather than a constant: the 2 px bow is the distortion being followed.
 
 ## Grayscale is fine
 
-The detector is fed the pipeline's existing grayscale frame. Measured
-on the device against ultralytics' `bus.jpg`, grayscale scored within
-0.01 of colour (person 0.881 vs 0.888; bus 0.87 vs 0.84). Colour would
-mean a second JPEG decode for no measurable gain.
+The detector is fed the pipeline's existing grayscale frame. Against ultralytics' `bus.jpg`, grayscale scored within 0.01 of colour (person 0.881 vs 0.888; bus 0.87 vs 0.84); colour would mean a second JPEG decode for no measurable gain. Resolution isn't the limit either: at the Mini's 480×270 the model still scores people at 0.91 / 0.87 / 0.74.
 
-Resolution is likewise not the limit. At the pipeline's 480×270 the
-model still scores people at 0.91 / 0.87 / 0.74.
+## Wiring it into your application
+
+The detector is a component of the perception bridge's `RosBridge.Config`, listed after `:stereo_camera` (it registers on that unit's backend while starting). The OVCS Mini's `vehicles/ovcs_mini/lib/ovcs_mini.ex`:
+
+```elixir
+{:hailo_detector,
+ hef_path: Path.join(priv_models_dir(), "#{hailo_model()}.hef"),
+ score_threshold: 0.4,
+ frame_id: "stereo_left"}
+```
+
+`frame_id` is the stereo unit's own frame, since boxes are positioned in its rectified pixels. Your application also needs a `base_link` → `stereo_left` static transform (the `:static_transforms` component) so consumers can place detections relative to the vehicle.
 
 ## Checking it works
 
@@ -158,90 +92,60 @@ docker exec ovcs-ros2 bash -lc \
 On the device:
 
 ```elixir
-RosBridge.Inference.Hailo.available?()                      # true — Port up
+RosBridge.Inference.Hailo.available?()                      # true: the Port is up
 RosBridge.Inference.Hailo.busy?()                           # often true; not a fault
 :sys.get_state(RosBridge.Publishers.Detections)             # frame_count, seq, published
 :sys.get_state(RosBridge.Inference.Hailo).dropped           # 0
 ```
 
-`seq` tracking `frame_count` exactly means every frame reached the
-accelerator; `dropped` climbing means it could not keep up. `busy?`
-being true is the normal state at frame rate — there is usually an
-inference in flight — so it says nothing about health on its own.
+`seq` tracking `frame_count` exactly means every frame reached the accelerator; a climbing `dropped` means it couldn't keep up. `busy?` is normally true at frame rate (there is usually an inference in flight), so it says nothing about health on its own.
 
-An empty `MarkerArray` streaming at ~13 Hz is correct when nothing
-COCO-shaped is in front of the rig — the topic being live and the
-arrays being empty are different facts, and `published` in the
-publisher's state distinguishes them.
+An empty `MarkerArray` at about 13 Hz is correct when nothing COCO-shaped is in view: the topic being live and the arrays being empty are different facts, and `published` in the publisher's state distinguishes them.
 
-## Failure is not fatal
+## Failure isn't fatal
 
-A missing binary, missing HEF or absent accelerator logs once at boot
-and leaves the detector alive but inference-less. Frames are dropped
-rather than queued when the accelerator is busy, since a stale
-detection has no value. The pair runs under its own supervisor
-(`RosBridge.Inference.Supervisor`, `:rest_for_one`, 10 restarts a
-minute) so a detector crash-looping at frame rate cannot exhaust the
-bridge supervisor's budget and take the cameras down with it.
+A missing binary, missing HEF or absent accelerator logs once at boot and leaves the detector alive but inference-less. Frames are dropped rather than queued while the accelerator is busy, since a stale detection has no value. The pair runs under its own supervisor (`RosBridge.Inference.Supervisor`, `:rest_for_one`, 10 restarts a minute), so a detector crash-looping at frame rate can't exhaust the bridge supervisor's budget and take the cameras down with it.
 
-## Swapping the model
+## Choosing the model
 
-`vehicles/ovcs_mini/priv/models/yolov8n.hef` (fetched, not committed —
-see **Model licensing**) is the COCO nano model
-compiled for **HAILO8** — a HEF is architecture-specific and will not
-load on a Hailo-8L. `yolov8s.hef` from the same model zoo path has an
-identical input and output contract and is a drop-in. Anything with a
-different input size, or without in-graph NMS, is not: `hailo_detect`
-reads `HAILO_NMS_BY_CLASS` output directly and decodes no anchors.
+The Hailo path loads `vehicles/ovcs_mini/priv/models/<model>.hef`, with `<model>` from `OVCS_HAILO_MODEL`:
+
+| `OVCS_HAILO_MODEL` | Model | Licence |
+|---|---|---|
+| unset (`nanodet_repvgg`) | NanoDet-RepVGG | Apache-2.0 |
+| `yolov8n` | YOLOv8 nano, COCO | AGPL-3.0, see [Model licensing](#model-licensing) |
+
+Neither is committed: `mise run fetch-models` downloads both and verifies each against a sha256 in `scripts/models.tsv`. A model you add there becomes selectable the same way.
+
+A HEF is compiled for one architecture: these are **HAILO8** builds and won't load on a Hailo-8L. `hailo_detect` reads the input size from `input_vstream.get_info().shape` and the class count from `nms_shape.number_of_classes`; its hard requirements are a square 3-channel input and an in-graph NMS producing `HAILO_NMS_BY_CLASS` output (net flow `HAILO_NET_FLOW_YOLOV8_NMS`), since it decodes no anchors. NanoDet-RepVGG and `yolov8s` meet them; `yolox_tiny` carries `HAILO_NET_FLOW_YOLOX_NMS` and doesn't.
+
+The 0.4 score threshold was measured against yolov8n at 480×270, where it stops furniture being reported as animals. Re-measure it for NanoDet before relying on it.
 
 ## Running the detector without a Hailo
 
-`RosBridge.Inference.Hailo` is one of three backends behind the
-`RosBridge.Inference` behaviour. The other two exist so the whole
-stack — detection included — runs on a workstation against the
-simulator, rather than everything-but-the-detector.
+`RosBridge.Inference.Hailo` is one of three backends behind the `RosBridge.Inference` behaviour. The other two run the whole stack, detection included, on a workstation against the simulator.
 
 | Backend | Where it runs | What it is for |
 |---|---|---|
 | `Inference.Hailo` | Hailo-8, via a Port | the vehicle |
 | `Inference.Dnn` | OpenCV DNN: CPU, or GPU via OpenCL | a workstation |
-| `Inference.Stub` | nowhere — fixed boxes | proving the plumbing |
+| `Inference.Stub` | nowhere: fixed boxes | proving the plumbing |
 
-`Detections` cannot tell them apart: each answers `detect/3`
-asynchronously and replies `{:inference_detections, seq, detections}`
-with boxes in the submitted image's pixels. Every backend owns its own
-resize transform in both directions.
+`RosBridge.Publishers.Detections` can't tell them apart: each answers `detect/3` asynchronously and replies `{:inference_detections, seq, detections}` with boxes in the submitted image's pixels. Every backend owns its resize transform in both directions.
 
 ### The DNN backend, CPU and GPU
 
-`:target` chooses `:cpu`, `:opencl` or `:opencl_fp16`. They are one
-module because they differ by two calls — `setPreferableBackend/2` and
-`setPreferableTarget/2` — while model loading, blob preparation, output
-decoding and NMS are identical.
+`:target` is `:cpu`, `:opencl` or `:opencl_fp16`. They share one module because they differ by two calls (`setPreferableBackend/2`, `setPreferableTarget/2`); model loading, blob preparation, decoding and NMS are identical.
 
-**CUDA is not an option with the precompiled Evision.** Every `cuda*`
-module is listed *Unavailable* in its OpenCV build, so a CUDA target
-would mean building Evision from source against CUDA + cuDNN. OpenCL
-is available and does use the GPU, but OpenCV's OpenCL DNN kernels are
-much less tuned than its CUDA ones — expect roughly 1.5–3x CPU on an
-NVIDIA card, not the 10x+ CUDA would give.
+**CUDA isn't available with the precompiled Evision**: every `cuda*` module is listed *Unavailable* in its OpenCV build, so a CUDA target means building Evision from source against CUDA and cuDNN. OpenCL does use the GPU, but OpenCV's OpenCL DNN kernels are much less tuned than its CUDA ones: expect roughly 1.5 to 3× CPU on an NVIDIA card.
 
-Asking for OpenCL where no device is usable logs the reason and
-continues on the CPU. It does not silently pretend, because a machine
-that quietly lost its GPU should look like a log line rather than an
-unexplained slowdown.
+Asking for OpenCL where no device is usable logs the reason and continues on the CPU, so a machine that lost its GPU shows up as a log line rather than an unexplained slowdown.
 
-### The model is not in the repo
+`Inference.Dnn.decode/6` expects YOLOv8's attribute-major `[1, 4 + classes, anchors]` output. It derives the class count from the shape, so any size of YOLOv8-style head works, but a different layout doesn't: YOLOX ONNX is anchor-major `[1, anchors, 5 + classes]` with a separate objectness column, and NanoDet splits classification and box regression into separate outputs with distribution-based box encoding. Running a permissive model on this backend means teaching `decode/6` a second layout; its tests build fixtures from raw float32 with the layout explicit.
 
-The Hailo path uses `yolov8n.hef`; the DNN path needs the ONNX export
-of an equivalent model at `vehicles/ovcs_mini/priv/models/yolov8n.onnx`.
-Neither is committed, and for the same reason — see **Model licensing**
-below. `mise run fetch-models` downloads and verifies both against
-`scripts/models.tsv`.
+### The ONNX model
 
-Until one is present the sim runs stereo-only, which is why the default
-is "no detector" rather than "a detector that logs a missing file every
-time it starts".
+The DNN path needs an ONNX export of a YOLOv8-shaped model at `vehicles/ovcs_mini/priv/models/yolov8n.onnx`. It isn't committed and `scripts/models.tsv` doesn't list it, for the licensing reason below: export it yourself. Until it exists the simulator runs stereo-only, so the default is "no detector" rather than one that logs a missing file on every start.
 
 ### Choosing a backend in the simulator
 
@@ -254,168 +158,59 @@ VEHICLE=OvcsMini OVCS_SIM=1 OVCS_DETECTOR=gpu ZENOH_ENDPOINT_IP=127.0.0.1 \
   iex -S mix
 ```
 
-| value | backend |
+| Value | Backend |
 |---|---|
 | unset | `Dnn` on CPU if the ONNX model exists, otherwise no detector |
 | `dnn` | `Dnn`, CPU |
 | `gpu` | `Dnn`, OpenCL FP16 |
-| `stub` | `Stub` — fabricated boxes |
+| `stub` | `Stub`: fabricated boxes |
 | `off` | no detector |
 
-`detect_every_n: 3` in the sim wiring, because CPU inference shares
-the machine with SGBM and Gazebo. On the car the accelerator runs every
-frame.
+The simulator wiring sets `detect_every_n: 3`, because CPU inference shares the machine with SGBM and Gazebo. On the vehicle the accelerator runs every frame.
 
-### What the stub is actually good for
+### What the stub is good for
 
-It fabricates boxes, so it says nothing about detection quality — and
-it warns loudly on every start, because boxes on a screen look equally
-convincing whether or not anything detected them.
+It fabricates boxes, so it says nothing about detection quality, and it warns on every start because boxes on a screen look equally convincing either way.
 
-What it *does* test is everything downstream of the box, none of which
-involves a neural network: the median-depth sample, the unprojection,
-the marker and `Detection3DArray` publishing. Against `workshop.sdf`
-its centred box fuses to
+It does test everything downstream of the box: the median-depth sample, the unprojection, the marker and `Detection3DArray` publishing. Against `workshop.sdf` its centred box fuses to
 
-```
+```text
 position: x 0.0  y 0.0  z 0.8088 m
 ```
 
-and the world puts that box's front face 0.808 m from the lens. Correct
-to the millimetre, on the optical axis — which checks the fusion
-geometry against ground truth rather than against itself. That path was
-previously only exercisable on hardware.
+and the world puts that box's front face 0.808 m from the lens: correct to the millimetre on the optical axis, which checks the fusion geometry against ground truth.
 
 ## Known limitation
 
-The `base_link` → `stereo_left` translation in
-`vehicles/ovcs_mini/lib/ovcs_mini.ex` is still the placeholder
-`{0.10, 0.0, 0.12}`. Every detection is correctly positioned relative
-to the camera and inherits that offset relative to the car. Measuring
-the lens centre against the chassis origin is the cheapest accuracy
-win available here.
+In the OVCS Mini's `base_link` → `stereo_left` transform (`vehicles/ovcs_mini/lib/ovcs_mini.ex`), `{0.042, 0.0, 0.12}`, x is measured but z (the lens height) isn't. Detections are correct relative to the camera and inherit that error relative to the vehicle.
 
 ## Model licensing
 
-**No model weights are committed to this repository.** `mise run
-fetch-models` downloads them and verifies each against a sha256 in
-`scripts/models.tsv`, which also records the licence of each one.
+**No model weights are committed.** `mise run fetch-models` downloads them and verifies each against the sha256 in `scripts/models.tsv`, which also records each licence and prints it before the download.
 
-### Why
+OVCS is MIT licensed (`LICENCE.txt`). Ultralytics YOLOv8 is dual-licensed **AGPL-3.0** or a paid Enterprise licence, and Ultralytics asserts that covers the pretrained *weights*, not only the Python code. The two don't compose in this direction: MIT tells downstream users they may use the work without source-disclosure obligations, and AGPL-3.0 doesn't let anyone grant that. Distributing YOLOv8-derived weights under MIT would make a promise the licence can't keep. Fetching moves the choice to the operator. `yolov8n.hef` is in this repository's git history, which removing it from `HEAD` doesn't undo.
 
-OVCS is MIT licensed (`LICENCE.txt`, Spin42 SRL). Ultralytics YOLOv8 is
-dual-licensed **AGPL-3.0** or a paid Enterprise licence, and Ultralytics
-asserts that covers the pretrained *weights*, not only their Python
-code.
+The inference code isn't affected: `Inference.Dnn` runs OpenCV's DNN module and `Inference.Hailo` the Hailo runtime, neither containing Ultralytics code, and the decode test fixture (`bridges/ros_bridge/test/support/tiny_head.onnx`) was authored from scratch.
 
-Those two do not compose in this direction. MIT tells downstream users
-they may use the work without source-disclosure obligations; AGPL-3.0
-does not permit anyone to grant that. A public MIT repository
-distributing YOLOv8-derived weights therefore makes a promise its
-licence cannot keep — anyone who took `LICENCE.txt` at face value would
-inherit an obligation nobody told them about.
+Unsettled, and not legal advice:
 
-Fetching rather than vendoring moves that choice to the operator, who
-sees the licence printed before the download starts.
+- whether neural network weights attract copyright at all (it differs between the US and the EU);
+- whether a compiled `.hef` is a derivative work of the weights it was built from (by analogy to compilation, probably; untested for models);
+- whether AGPL-3.0 §13 ("interacting with users remotely through a computer network") covers a vehicle publishing to Foxglove over Zenoh.
 
-### What is not affected
+For commercial use of YOLOv8 specifically, an Ultralytics Enterprise licence is the direct answer.
 
-The inference code. `Inference.Dnn` runs OpenCV's DNN module and
-`Inference.Hailo` runs the Hailo runtime; neither contains Ultralytics
-code. The decode test fixture (`test/support/tiny_head.onnx`) was
-authored from scratch for exactly this reason. The exposure is the
-weights, and only the weights.
+### Permissive models
 
-### Where this is genuinely unsettled
+Apache-2.0 unless noted; those with a prebuilt HAILO8 HEF in model zoo v2.15.0 are marked, with sizes as served:
 
-Worth stating rather than implying more certainty than exists:
+- **NanoDet-RepVGG**: in the zoo (6.7 MB). The default.
+- **YOLOX** tiny / s-leaky: in the zoo (9.3 / 9.4 MB), different NMS op.
+- **DAMO-YOLO** tinynasL20_T: in the zoo (13.4 MB).
+- **SSD-MobileNet** v1/v2: in the zoo (6.7 MB), weaker but long-supported.
+- **CenterNet** ResNet-v1-18, **EfficientDet-lite0**: in the zoo.
+- **RT-DETR**: the original Baidu release, not the Ultralytics port.
+- **RF-DETR** (Roboflow), **D-FINE**.
+- torchvision's detectors (BSD-3).
 
-  * Whether neural network weights attract copyright at all is
-    unsettled, and differs between the US and the EU.
-  * Whether a compiled `.hef` is a derivative work of the weights it
-    was built from. By analogy to compilation, probably; untested for
-    models.
-  * AGPL-3.0 §13 triggers on "interacting with users remotely through a
-    computer network". A vehicle publishing to Foxglove over Zenoh is
-    arguably not that.
-
-None of which is legal advice. If OVCS is going anywhere commercial
-with YOLOv8 specifically, that needs a real answer and an Ultralytics
-Enterprise licence is the direct route to one.
-
-### The Hailo path now defaults to a permissive model
-
-**NanoDet-RepVGG**, Apache-2.0, from the same Hailo model zoo path.
-`OVCS_HAILO_MODEL=yolov8n` selects the original for anyone holding an
-Ultralytics licence.
-
-It needs no code change, and that was checked rather than hoped for:
-
-  * The HEF carries **`HAILO_NET_FLOW_YOLOV8_NMS`** — the same in-graph
-    NMS net flow as `yolov8n.hef`, so the output is the same
-    `HAILO_NMS_BY_CLASS` layout `hailo_detect` already reads.
-  * `hailo_detect` derives the input size from
-    `input_vstream.get_info().shape` and the class count from
-    `nms_shape.number_of_classes`, so neither is assumed. Its only
-    hard requirement is a square 3-channel input.
-
-`yolox_tiny` is also in the zoo and also Apache-2.0, but it is **not**
-a drop-in: it carries `HAILO_NET_FLOW_YOLOX_NMS`, a different
-postprocess op. Worth knowing before reaching for the more obvious
-name.
-
-#### Still to confirm on the device
-
-Two things that need a Hailo-8 and cannot be checked from the HEF:
-
-  * That it loads and produces sensible detections. Failure here is
-    loud and harmless — `hailo_detect` logs the shape it got and exits,
-    `Inference.Hailo` answers `{:error, :unavailable}`, and stereo
-    depth is unaffected.
-  * The score threshold. 0.4 was measured against **yolov8n** at
-    480x270; it has not been re-taken for NanoDet, so treat it as a
-    starting point rather than a tuned value.
-
-### Other permissive options
-
-All Apache-2.0 unless noted. Those with a prebuilt HAILO8 HEF in model
-zoo v2.15.0 are marked, with sizes as served:
-
-  * **NanoDet-RepVGG** — in the zoo (6.7 MB). The default.
-  * **YOLOX** tiny / s-leaky — in the zoo (9.3 / 9.4 MB), different NMS op
-  * **DAMO-YOLO** tinynasL20_T — in the zoo (13.4 MB)
-  * **SSD-MobileNet v1/v2** — in the zoo (6.7 MB), weaker but long-supported
-  * **CenterNet** ResNet-v1-18, **EfficientDet-lite0** — in the zoo
-  * **RT-DETR** — the original Baidu release, *not* the Ultralytics port
-  * **RF-DETR** (Roboflow), **D-FINE**
-  * torchvision's detectors (BSD-3)
-
-Avoid: YOLOv5/v8/v10/v11 (Ultralytics, AGPL-3.0), YOLOv6 and YOLOv7
-(GPL-3.0), YOLO-NAS (restrictive Deci licence). `yolov6n.hef` is in the
-zoo and is GPL-3.0, which is no better here than AGPL.
-
-### The DNN path is still YOLOv8-shaped
-
-`Inference.Dnn.decode/6` expects an attribute-major
-`[1, 4 + classes, anchors]` output — YOLOv8's layout. It already
-derives the class count from the shape rather than assuming 80, so a
-different *size* of YOLOv8-style head works, but a genuinely different
-layout does not:
-
-  * YOLOX ONNX is anchor-major `[1, anchors, 5 + classes]` and carries
-    a separate objectness column that has to be multiplied into the
-    class score.
-  * NanoDet splits classification and box regression into separate
-    outputs and uses distribution-based box encoding.
-
-So teaching `decode/6` a second layout is the outstanding work for
-running a permissive model on the CPU/GPU backend. Bounded, and the
-tests for it already build their fixtures from raw float32 with the
-layout explicit, which is the right shape to extend.
-
-### One thing fetching does not fix
-
-`yolov8n.hef` was committed at one point, so it remains in this
-repository's git history and in every existing clone. Removing it from
-`HEAD` stops further distribution but does not undo what is already
-published; that would take a history rewrite.
+Avoid YOLOv5/v8/v10/v11 (Ultralytics, AGPL-3.0), YOLOv6 and YOLOv7 (GPL-3.0; `yolov6n.hef` is in the zoo), and YOLO-NAS (restrictive Deci licence).

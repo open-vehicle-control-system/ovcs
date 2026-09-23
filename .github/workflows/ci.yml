@@ -26,6 +26,15 @@ jobs:
       - uses: ./.github/actions/setup-mise
       - run: elixir scripts/check_lock_drift.exs
 
+  docs:
+    # The guides linked from docs/README.md are rendered as-is on ovcs.be.
+    name: Docs · published guides
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup-mise
+      - run: elixir scripts/check_docs.exs
+
   elixir-format:
     name: Elixir · format check
     runs-on: ubuntu-latest
