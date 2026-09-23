@@ -8,6 +8,9 @@ defmodule OvcsBus.Units do
   def celsius, do: "°C"
   def degree, do: "°"
   def degree_per_second, do: "°/s"
+  # A share of a full range, 1 being all of it: a normalised request, a
+  # curve parameter. Dashboards show it as a percentage.
+  def fraction, do: "fraction"
   def gram_per_second, do: "g/s"
   def hertz, do: "Hz"
   def kilometre, do: "km"

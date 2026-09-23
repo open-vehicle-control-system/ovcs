@@ -91,8 +91,12 @@
     const renderValue = (store, metric) => {
         let value = store.data[metric.module][metric.key]
         if(isNumeric(value)){
-            let displayValue = Math.round(Number(value)*100)/100
             let unit = unitOf(store, metric)
+            // A fraction of a full range reads as a percentage.
+            if(unit === "fraction"){
+                return Math.round(Number(value)*1000)/10 + " %"
+            }
+            let displayValue = Math.round(Number(value)*100)/100
             unit != null? displayValue = displayValue + " " + unit : undefined
             return displayValue
         } else if(Array.isArray(value)){

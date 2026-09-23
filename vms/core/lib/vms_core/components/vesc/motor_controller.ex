@@ -312,7 +312,7 @@ defmodule VmsCore.Components.Vesc.MotorController do
           nil -> Emitter.enable(state.network, frame_name)
         end
 
-        broadcast(state, :throttle, throttle)
+        broadcast(state, :throttle, throttle, Units.fraction())
         %{state | command: command}
     end
   end
@@ -441,7 +441,7 @@ defmodule VmsCore.Components.Vesc.MotorController do
     Map.new(@frame_suffixes, fn suffix -> {suffix, "#{prefix}_#{suffix}"} end)
   end
 
-  defp broadcast(state, name, value, unit \\ nil) do
+  defp broadcast(state, name, value, unit) do
     Bus.broadcast("messages", %Bus.Message{
       name: name,
       value: value,

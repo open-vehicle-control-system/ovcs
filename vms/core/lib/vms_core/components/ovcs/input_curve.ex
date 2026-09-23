@@ -48,6 +48,7 @@ defmodule VmsCore.Components.OVCS.InputCurve do
   use GenServer
   alias Decimal, as: D
   alias OvcsBus, as: Bus
+  alias OvcsBus.Units
   alias VmsCore.Throttle
 
   @zero D.new(0)
@@ -88,7 +89,12 @@ defmodule VmsCore.Components.OVCS.InputCurve do
   end
 
   defp broadcast(process_name, name, value) do
-    Bus.broadcast("messages", %Bus.Message{name: name, value: value, source: process_name})
+    Bus.broadcast("messages", %Bus.Message{
+      name: name,
+      value: value,
+      unit: Units.fraction(),
+      source: process_name
+    })
   end
 
   @doc """
