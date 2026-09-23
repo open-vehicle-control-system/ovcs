@@ -40,6 +40,7 @@ defmodule VmsCore.Components.Vesc.MotorControllerTest do
         caps: MotorController.caps(%{}),
         erpm_per_request: MotorController.erpm_per_request(@max_rpm, @pole_pairs),
         pole_pairs: @pole_pairs,
+        noise_rpm: D.new(5),
         requested_throttle_source: @hand,
         requested_throttle: D.new("0.6"),
         command: nil
@@ -76,6 +77,16 @@ defmodule VmsCore.Components.Vesc.MotorControllerTest do
              }
 
       assert MotorController.frame_names(Vms.RearMotor).status == "rear_motor_status"
+    end
+  end
+
+  describe "direction" do
+    test "the sign of the rotation, with a stray rpm at rest reading as stopped" do
+      noise = D.new(5)
+      assert MotorController.direction(D.new("450.0"), noise) == "forward"
+      assert MotorController.direction(D.new("-450.0"), noise) == "backward"
+      assert MotorController.direction(D.new("-1.0"), noise) == "stopped"
+      assert MotorController.direction(D.new("5.0"), noise) == "stopped"
     end
   end
 
@@ -311,6 +322,7 @@ defmodule VmsCore.Components.Vesc.MotorControllerTest do
 
       assert_received %Message{name: :rotation_per_minute, value: rpm, source: @vesc}
       assert D.eq?(rpm, D.new("-492.0"))
+      assert_received %Message{name: :direction, value: "backward", source: @vesc}
     end
 
     test "a dead status frame withdraws the rotation and the current" do

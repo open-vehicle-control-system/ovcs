@@ -67,8 +67,8 @@ defmodule VmsCore.Components.Vesc.MotorController do
 
   `status` carries the signed electrical rpm and the motor current,
   `status_5` the input voltage. They are published as
-  `:rotation_per_minute` (mechanical, signed), `:motor_current` and
-  `:input_voltage`, once per frame received — a message per sample, so
+  `:rotation_per_minute` (mechanical, signed) with the `:direction` it
+  gives, `:motor_current` and `:input_voltage`, once per frame received — a message per sample, so
   a consumer integrating the rotation can tell a fresh value from a
   held one — and as nil the moment the frame watcher declares the
   frame missing: the VESC is off, unpowered or not configured to send
@@ -106,6 +106,8 @@ defmodule VmsCore.Components.Vesc.MotorController do
       gearing is declared once, next to `VehicleMotion`'s.
     * `:pole_pairs` — of the motor: electrical rpm is mechanical rpm
       times this. A 4-pole motor has 2.
+    * `:noise_rpm` — motor rpm at or below which `:direction` reads
+      `"stopped"`: a stopped motor reports a stray erpm or two. Default 5.
     * `:max_throttle`, `:max_reverse` — the fraction of the motor's full
       output a hand's full forward and full negative requests give, or
       with a gear source a full request in `:drive` and in `:reverse`.
@@ -201,6 +203,7 @@ defmodule VmsCore.Components.Vesc.MotorController do
        max_brake_current: brake_current(selected_gear_source, args),
        erpm_per_request: erpm_per_request(max_rotation_per_minute, pole_pairs),
        pole_pairs: pole_pairs,
+       noise_rpm: D.new(Map.get(args, :noise_rpm, 5)),
        # Starts nil: nothing commands this actuator until the manager
        # names a source. The manager's default level does that on its
        # first tick.
@@ -264,13 +267,9 @@ defmodule VmsCore.Components.Vesc.MotorController do
   def handle_info({:handle_frame, %Frame{name: name, signals: signals}}, state)
       when name == state.frames.status do
     %{"erpm" => %Signal{value: erpm}, "motor_current" => %Signal{value: motor_current}} = signals
-
-    broadcast(
-      state,
-      :rotation_per_minute,
-      rotation_per_minute(erpm, state.pole_pairs),
-      Units.revolution_per_minute()
-    )
+    rotation = rotation_per_minute(erpm, state.pole_pairs)
+    broadcast(state, :rotation_per_minute, rotation, Units.revolution_per_minute())
+    broadcast(state, :direction, direction(rotation, state.noise_rpm), nil)
 
     broadcast(state, :motor_current, motor_current, Units.ampere())
     {:noreply, state}
@@ -286,6 +285,7 @@ defmodule VmsCore.Components.Vesc.MotorController do
   def handle_info({:handle_missing_frame, network, name}, state)
       when network == state.network and name == state.frames.status do
     broadcast(state, :rotation_per_minute, nil, Units.revolution_per_minute())
+    broadcast(state, :direction, nil, nil)
     broadcast(state, :motor_current, nil, Units.ampere())
     {:noreply, state}
   end
@@ -442,6 +442,18 @@ defmodule VmsCore.Components.Vesc.MotorController do
   @doc false
   def erpm_per_request(max_rotation_per_minute, pole_pairs) do
     D.from_float(1.0 * max_rotation_per_minute * pole_pairs)
+  end
+
+  @doc """
+  Which way the motor turns: `"forward"` or `"backward"` above
+  `noise_rpm`, `"stopped"` within it.
+  """
+  def direction(rotation, noise_rpm) do
+    cond do
+      D.gt?(rotation, noise_rpm) -> "forward"
+      D.lt?(rotation, D.negate(noise_rpm)) -> "backward"
+      true -> "stopped"
+    end
   end
 
   # The mechanical rpm of the motor, signed like the erpm it comes from.

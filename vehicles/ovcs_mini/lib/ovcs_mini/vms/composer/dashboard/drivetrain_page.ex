@@ -36,6 +36,7 @@ defmodule OvcsMini.Vms.Composer.Dashboard.DrivetrainPage do
               module: Vms.Vesc,
               key: :rotation_per_minute
             },
+            %{type: :metric, name: "Direction", module: Vms.Vesc, key: :direction},
             %{
               type: :metric,
               name: "Motor Current",
