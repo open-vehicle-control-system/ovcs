@@ -4,7 +4,7 @@ Nerves firmware image for the Vehicle Management System. Wraps
 [`vms_api`](../api) (and transitively [`vms_core`](../core) + the active
 vehicle package) into a deployable image for the Raspberry Pi 4.
 
-See [`docs/applications.md`](../../docs/applications.md) for how this layer
+See [`docs/components.md`](../../docs/components.md) for how this layer
 fits with `core` / `api` / `dashboard`, and
 [`docs/running_hardware.md`](../../docs/running_hardware.md) for burn + OTA
 flows.
@@ -46,7 +46,7 @@ resulting `.fw` lands in `_build/${MIX_TARGET}_dev/nerves/images/`.
 
 | Variable | Required | Purpose |
 |----------|:-:|---------|
-| `VEHICLE` | yes | Top-level vehicle module (`Ovcs1`, `OvcsMini`, …) — picked up by `vms/firmware/config/runtime.exs` via `OvcsVehicle.Firmware.resolve_vehicle/3`, which writes the VMS composer to `:vms_core, :vehicle` before `VmsCore.Application` starts |
+| `VEHICLE` | yes | Top-level vehicle module (`Ovcs1`, `OvcsMini`, …) — picked up by `vms/firmware/config/runtime.exs` via `OvcsVehicle.Firmware.resolve_side/4`, which writes the VMS composer to `:vms_core, :vehicle` before `VmsCore.Application` starts |
 | `MIX_TARGET` | no | Nerves target atom (default: `ovcs_base_can_system_rpi4`) |
 | `NERVES_FW_APPLICATION_PART0_TARGET` | no | Application partition mount point (default: `/data` — overrides the system's `/root` so `vms_core`'s SQLite DB and NervesSSH host keys land in the standard upstream Nerves location) |
 

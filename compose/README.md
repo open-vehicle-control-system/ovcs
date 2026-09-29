@@ -199,5 +199,5 @@ The pins below have to move together. CI (`pins` job in
 - The vehicle compose file is written against the balena supervisor's
   Compose subset: no anchors, no `extends:`, no `${VAR:-}`, no
   `profiles:`, no `container_name`, no bind mounts. Its header lists
-  each omission; [`docs/ros_compute_node.md`](../docs/ros_compute_node.md)
+  each omission; [`docs/ros2_compute_node.md`](../docs/ros2_compute_node.md)
   explains what that costs.

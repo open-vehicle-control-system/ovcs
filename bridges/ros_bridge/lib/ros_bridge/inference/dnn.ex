@@ -63,7 +63,7 @@ defmodule RosBridge.Inference.Dnn do
       `yolov8n.hef` is fetched by `mise run fetch-models`
       (`scripts/models.tsv`); this wants the `.onnx` export of an
       equivalent model, which is neither committed nor fetched — see
-      `docs/ros_perception_detection.md`.
+      `docs/ros2_perception.md`.
     * `:target` (`:cpu`) — as above.
     * `:score_threshold` (`0.4`), `:nms_threshold` (`0.45`).
     * `:input_size` (`640`) — the square the model expects.
@@ -175,7 +175,7 @@ defmodule RosBridge.Inference.Dnn do
     else
       Logger.error(
         "#{__MODULE__}: no model at #{state.model_path} — detections disabled. " <>
-          "See docs/ros_perception_detection.md for obtaining one."
+          "See docs/ros2_perception.md for obtaining one."
       )
 
       state

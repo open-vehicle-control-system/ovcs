@@ -5,7 +5,7 @@ release. This directory is the balena **source root**: `balena push`
 is run from here, reads `docker-compose.yml` (that exact name, at this
 exact place) and tars up the rest as build context. What the machine
 is — today a Raspberry Pi 5 on the OVCS Mini, see
-[`docs/ros_compute_node.md`](../../docs/ros_compute_node.md) — does not
+[`docs/ros2_compute_node.md`](../../docs/ros2_compute_node.md) — does not
 show in the layout, and neither does what the services are written in:
 `wifi_firmware` is not ROS, and the next onboard service need not be
 either.

@@ -5,7 +5,7 @@ as [`vms_api`](../../vms/api) — a thin routing layer in front of
 [`infotainment_core`](../core) — but serves the Flutter dashboard
 (`../dashboard`) on the RPi 5 head unit instead of the Vue debug UI.
 
-See [`docs/applications.md`](../../docs/applications.md) for where this
+See [`docs/components.md`](../../docs/components.md) for where this
 layer fits in the overall `core` / `api` / `firmware` / `dashboard` stack.
 
 ## Endpoints
@@ -55,5 +55,5 @@ OvcsCan come in transitively through `infotainment_core`. The active
 vehicle package under `vehicles/<name>/` isn't a Mix dep — it's
 resolved at runtime from `VEHICLE` by
 `infotainment/firmware/config/runtime.exs` (via
-`OvcsVehicle.Firmware.resolve_vehicle/3`) before
+`OvcsVehicle.Firmware.resolve_side/4`) before
 `InfotainmentCore.Application` starts.

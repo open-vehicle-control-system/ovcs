@@ -4,7 +4,7 @@ Phoenix 1.7 JSON + WebSocket server that exposes the VMS Core to the debug
 dashboard. Thin layer — all logic lives in [`vms_core`](../core); controllers
 and channels just route HTTP/WebSocket traffic to it.
 
-See [`docs/applications.md`](../../docs/applications.md) for the three-layer
+See [`docs/components.md`](../../docs/components.md) for the three-layer
 (`core` ← `api` ← `firmware`) architecture this app sits in.
 
 ## Endpoints
@@ -59,5 +59,5 @@ Direct path dep: [`vms_core`](../core). Cantastic / OvcsBus / OvcsCan
 come in transitively through `vms_core`. The active vehicle package
 under `vehicles/<name>/` isn't a Mix dep — it's resolved at runtime
 from `VEHICLE` by `vms/firmware/config/runtime.exs` (via
-`OvcsVehicle.Firmware.resolve_vehicle/3`) before `VmsCore.Application`
+`OvcsVehicle.Firmware.resolve_side/4`) before `VmsCore.Application`
 starts.

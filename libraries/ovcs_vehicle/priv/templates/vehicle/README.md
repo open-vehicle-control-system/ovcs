@@ -72,7 +72,7 @@ bus, radio-control / ROS bridges, etc. Drivers live under
 `VmsCore.Components.*`. Mirror each component with a matching
 dashboard page under `lib/<%= @name %>/vms/composer/dashboard/` so
 the UI surfaces its state — see
-[`docs/applications.md`](../../docs/applications.md).
+[`docs/components.md`](../../docs/components.md).
 
 ### 2. Generic controllers (CAN)
 
@@ -100,7 +100,7 @@ ID convention (fixed by `ovcs_can`; `X` is the controller id):
 infotainment + VMS ↔ generic_controllers). Add extra networks at the
 same indent level for each physical bus your vehicle has — drivetrain
 inverter, BMS, brake booster, body CAN, etc. See
-[`docs/testing_can_messages.md`](../../docs/testing_can_messages.md) for
+[`docs/testing_with_can.md`](../../docs/testing_with_can.md) for
 how to exercise frames.
 
 ### 4. Bridge firmwares (optional)
@@ -170,7 +170,7 @@ kernel command lines point at the A/B rootfs partitions
 
 ## Further reading
 
-- [`docs/applications.md`](../../docs/applications.md) — how
+- [`docs/components.md`](../../docs/components.md) — how
   `core` / `api` / `firmware` / `dashboard` fit together.
-- [`docs/hardware_architecture.md`](../../docs/hardware_architecture.md)
+- [`docs/hardware.md`](../../docs/hardware.md)
   — physical topology, CAN networks, controller boards.

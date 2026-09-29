@@ -42,7 +42,7 @@ Callbacks (all required unless noted):
 The composer is resolved at runtime from the `VEHICLE` env var — the
 top-level vehicle module's `infotainment/0` points at this composer. See
 [`CLAUDE.md`](../../CLAUDE.md) and
-[`docs/applications.md`](../../docs/applications.md) for the end-to-end
+[`docs/components.md`](../../docs/components.md) for the end-to-end
 wiring.
 
 ## Modules

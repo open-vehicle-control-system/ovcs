@@ -16,7 +16,7 @@ uv      = "latest"
 # (compose/compute/ → balenaOS). Pinned to the major: the CLI talks to a
 # hosted API, so patches are fine but a major bump is a decision. The
 # standalone build bundles its own Node, so it is independent of the
-# `node` pin above. See docs/ros_compute_node.md.
+# `node` pin above. See docs/ros2_compute_node.md.
 balena  = "25"
 
 [env]

@@ -359,7 +359,7 @@ defmodule OvcsMini do
 
   # NanoDet-RepVGG by default, because it is Apache-2.0 and YOLOv8 is
   # AGPL-3.0 — see the Model licensing section of
-  # docs/ros_perception_detection.md. The swap needs no code: both
+  # docs/ros2_perception.md. The swap needs no code: both
   # carry the same in-graph NMS net flow, and `hailo_detect` reads the
   # input size and class count off the HEF rather than assuming them.
   #

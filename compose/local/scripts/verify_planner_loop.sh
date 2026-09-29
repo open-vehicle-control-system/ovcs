@@ -89,7 +89,7 @@ RUN_PID=$!
 log "Synthesising the controller: zero-speed pulse counter stream"
 # The VMS needs 0x709 alive to know the speed at all; a count and
 # frequency of zero is a stationary vehicle. Same stream as the host
-# bench recipe in docs/vehicle_parameterisation.md.
+# bench recipe in docs/vehicle_package.md.
 cangen vcan0 -I 709 -L 4 -D 00000000 -g 10 >/dev/null 2>&1 &
 CANGEN_PID=$!
 

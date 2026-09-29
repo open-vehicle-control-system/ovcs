@@ -8,7 +8,7 @@ side) into a deployable image for the Raspberry Pi 5 head unit.
 Only built for vehicles that expose an `infotainment/0` composer — vehicles
 without a head unit (e.g. `OvcsMini`, `Obd2`) skip this layer entirely.
 
-See [`docs/applications.md`](../../docs/applications.md) for how this layer
+See [`docs/components.md`](../../docs/components.md) for how this layer
 fits with `core` / `api` / `dashboard`, and
 [`docs/running_hardware.md`](../../docs/running_hardware.md) for burn + OTA
 flows.
@@ -57,7 +57,7 @@ Direct invocation also works — `build.sh` requires `VEHICLE` and defaults
 
 | Variable | Required | Purpose |
 |----------|:-:|---------|
-| `VEHICLE` | yes | Top-level vehicle module (`Ovcs1`, …) — picked up by `infotainment/firmware/config/runtime.exs` via `OvcsVehicle.Firmware.resolve_vehicle/3`, which writes the infotainment composer to `:infotainment_core, :vehicle` before `InfotainmentCore.Application` starts |
+| `VEHICLE` | yes | Top-level vehicle module (`Ovcs1`, …) — picked up by `infotainment/firmware/config/runtime.exs` via `OvcsVehicle.Firmware.resolve_side/4`, which writes the infotainment composer to `:infotainment_core, :vehicle` before `InfotainmentCore.Application` starts |
 | `MIX_TARGET` | no | Nerves target atom (default: `ovcs_base_can_system_rpi5`) |
 | `NERVES_FW_APPLICATION_PART0_TARGET` | no | Application partition mount point (default: `/data` — see `vms/firmware/README.md`) |
 

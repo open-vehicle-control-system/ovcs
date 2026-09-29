@@ -126,7 +126,7 @@ defmodule OvcsMini.Vms.Composer do
       # 2, switches from 5 up, 3 and 4 unused. Channel 5 is the link's
       # 2-position arm channel and cannot carry a middle position, so
       # the three-position level goes on 6 and the two-position
-      # commander takes 5. docs/vehicle_parameterisation.md has the
+      # commander takes 5. docs/vehicle_package.md has the
       # layout of every vehicle.
       {OVCS.RadioControl.RequestedControlLevel,
        %{
@@ -188,7 +188,7 @@ defmodule OvcsMini.Vms.Composer do
          # 1000, and joystick input on 0x2B0/0x2B1 is discarded with no
          # log. Nothing emits the pulse counter frame either, so the
          # speed is unknown and the manager refuses every mode change
-         # until one is synthesised. docs/vehicle_parameterisation.md,
+         # until one is synthesised. docs/vehicle_package.md,
          # "Driving on the host bench", has the frames for both.
          default_control_level: :manual,
          ready_to_drive_source: Vms,
