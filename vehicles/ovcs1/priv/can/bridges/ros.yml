@@ -3,7 +3,7 @@
 # Emits ROS2-derived control messages onto the OVCS bus.
 can_networks:
   ovcs:
-    bitrate: 500000
+    bitrate: 1000000
     emitted_frames:
       - import!:@ovcs_can:can/components/ovcs/0x2B0_ros_actuator_command.yml
       - import!:@ovcs_can:can/components/ovcs/0x2B1_ros_velocity_command.yml
