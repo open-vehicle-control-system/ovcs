@@ -90,7 +90,7 @@ end
     );
 
     let out = Command::new("mix")
-        .args(["run", "--no-start", "-e", &snippet])
+        .args(["run", "--no-start", "--no-deps-check", "-e", &snippet])
         .current_dir(&ovcs_vehicle_dir)
         .env("MIX_ENV", "dev")
         .output()?;
@@ -132,11 +132,12 @@ end
 
     println!();
     step("Next steps:");
+    // `run` brings up the host vcan interfaces itself, so no `can setup` step.
+    sub(&format!("./ovcs run {}", raw));
     sub(&format!("./ovcs build {} vms", raw));
     if info.is_some() {
         sub(&format!("./ovcs build {} infotainment", raw));
     }
-    sub(&format!("./ovcs can setup {}", raw));
     println!();
     println!(
         "Then review lib/{}.ex and composers; prune components and",
