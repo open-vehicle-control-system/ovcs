@@ -99,10 +99,19 @@ defmodule OvcsVehicle.Scaffold do
   defp firmware_app(:vms), do: "vms/firmware"
   defp firmware_app(:infotainment), do: "infotainment/firmware"
 
-  # Copy the shared firmware defaults (fwup.conf, config.txt, …) for
-  # each enabled side into the scaffolded vehicle's
-  # priv/firmware/<side>/. Plain file copies (no EEx) so users can
-  # edit in place without touching the shared defaults.
+  # Boot files copied from the shared target defaults. The firmware's
+  # config/config.exs points VEHICLE_FIRMWARE_DIR at
+  # priv/firmware/<side>/ as soon as it holds a config.txt, and fwup.conf
+  # then reads all three from there, so they are copied as a set.
+  # fwup.conf is resolved per file and falls back to the shared
+  # target copy, so it is not copied: a vehicle copy would stop
+  # following updates to the shared partition layout.
+  @firmware_files ~w(config.txt cmdline-a.txt cmdline-b.txt)
+
+  # Copy the shared boot files for each enabled side into the
+  # scaffolded vehicle's priv/firmware/<side>/. Plain file copies (no
+  # EEx) so users can edit in place without touching the shared
+  # defaults.
   defp copy_firmware(target_dir, assigns, opts) do
     repo_root = Keyword.get(opts, :repo_root) || raise "repo_root is required for firmware copy"
     create_opts = Keyword.take(opts, [:force])
@@ -129,10 +138,10 @@ defmodule OvcsVehicle.Scaffold do
   defp copy_firmware_side(target_dir, repo_root, side, target, create_opts) do
     source = firmware_defaults_dir(repo_root, side, target)
 
-    if File.dir?(source) do
+    if Enum.all?(@firmware_files, &File.regular?(Path.join(source, &1))) do
       dst_dir = Path.join([target_dir, "priv/firmware", to_string(side)])
 
-      Enum.each(File.ls!(source), fn file ->
+      Enum.each(@firmware_files, fn file ->
         Mix.Generator.copy_file(
           Path.join(source, file),
           Path.join(dst_dir, file),

@@ -15,10 +15,12 @@ Default `MIX_TARGET`: `ovcs_base_can_system_rpi4` — a
 [custom Nerves system](https://github.com/open-vehicle-control-system/ovcs_base_can_system_rpi4)
 with CAN bus support (SPI-to-CAN) and the kernel modules the VMS needs.
 
-Per-target defaults (`fwup.conf`, `config.txt`, `cmdline.txt`) live under
-`targets/<target>/`. A vehicle can override any of them by dropping files
-into its own `vehicles/<name>/priv/firmware/vms/`; the build prefers the
-per-vehicle file when present.
+Per-target defaults (`fwup.conf`, `config.txt`, `cmdline-a.txt`,
+`cmdline-b.txt`) live under `targets/<target>/`. A vehicle overrides
+`fwup.conf` by dropping its own into `vehicles/<name>/priv/firmware/vms/`.
+The boot files are taken as a set: once that directory holds a
+`config.txt`, `config.txt`, `cmdline-a.txt` and `cmdline-b.txt` are all
+read from it, so a vehicle overriding one ships all three.
 
 ## Building
 
