@@ -359,4 +359,15 @@ defmodule VmsCore.Components.Vesc.MotorControllerTest do
       refute_received %Message{name: :rotation_per_minute}
     end
   end
+
+  test "two VESCs are two children, each named by its process name" do
+    specs =
+      [Vms.FrontVesc, Vms.RearVesc]
+      |> Enum.map(&Supervisor.child_spec({MotorController, %{process_name: &1}}, []))
+
+    assert Enum.map(specs, & &1.id) == [Vms.FrontVesc, Vms.RearVesc]
+
+    assert %{start: {MotorController, :start_link, [%{process_name: Vms.FrontVesc}]}} =
+             hd(specs)
+  end
 end
