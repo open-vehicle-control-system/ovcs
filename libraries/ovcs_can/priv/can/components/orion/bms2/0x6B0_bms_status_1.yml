@@ -34,5 +34,5 @@ signals:
     value_length: 8
   - name: checksum
     kind: integer
-    value_start: 54
+    value_start: 56
     value_length: 8
