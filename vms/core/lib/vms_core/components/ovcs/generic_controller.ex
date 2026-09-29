@@ -315,8 +315,8 @@ defmodule VmsCore.Components.OVCS.GenericController do
     pin_name = "pwm_pin#{pin}_duty_cycle"
 
     :ok =
-      Emitter.update(:ovcs, state.pwm_pin_request_frame_name, fn data ->
-        %{data | "pwm_pin#{pin}_duty_cycle" => duty_cycle}
+      Emitter.update(:ovcs, state.other_pin_request_frame_name, fn data ->
+        %{data | pin_name => duty_cycle}
       end)
 
     requested_pins = %{state.requested_pins | pin_name => duty_cycle}
@@ -382,7 +382,7 @@ defmodule VmsCore.Components.OVCS.GenericController do
   end
 
   def set_dac_duty_cycle(controller, duty_cycle) do
-    GenServer.call(controller, {:set_dac_value, duty_cycle})
+    GenServer.call(controller, {:set_dac_duty_cycle, duty_cycle})
   end
 
   def set_external_pwm(controller, pwm_id, enabled, duty_cycle_percentage, frequency) do
