@@ -11,9 +11,10 @@
 #   * run from bridges/ros_bridge instead of bridges/firmware and
 #     Cantastic dies with "CAN network mappings are missing", because
 #     the library has no config/ of its own.
-#   * omit BRIDGE_FIRMWARE_ID and firmware_id/0 falls back to "ros",
-#     which starts the joy/IMU wiring instead of the stereo pipeline
-#     and publishes no stereo topics at all, silently.
+#   * omit BRIDGE_FIRMWARE_ID and bridges/firmware/config/config.exs
+#     defaults it to "radio_control" on host, which starts the radio
+#     control bridge instead of the perception bridge and publishes no
+#     stereo topics at all, silently.
 #
 # Usage:
 #   ./verify_perception.sh              # stereo only

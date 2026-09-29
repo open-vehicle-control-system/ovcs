@@ -59,9 +59,10 @@ defmodule RosBridge.Inference.Dnn do
 
   ## Opts
 
-    * `:model_path` (required) — an ONNX YOLO model. The repo ships
-      `yolov8n.hef` for the Hailo; this wants the `.onnx` export of an
-      equivalent model, which is **not** committed — see
+    * `:model_path` (required) — an ONNX YOLO model. The Hailo's
+      `yolov8n.hef` is fetched by `mise run fetch-models`
+      (`scripts/models.tsv`); this wants the `.onnx` export of an
+      equivalent model, which is neither committed nor fetched — see
       `docs/ros_perception_detection.md`.
     * `:target` (`:cpu`) — as above.
     * `:score_threshold` (`0.4`), `:nms_threshold` (`0.45`).

@@ -13,8 +13,8 @@
 #   docker compose -f simulation.yml logs -f sim
 #
 # Drive it:
-#   docker compose -f simulation.yml exec sim bash -lc \
-#     'ros2 topic pub -r 10 /cmd_vel geometry_msgs/msg/Twist \
+#   docker compose -f simulation.yml exec sim bash -c \
+#     'source /opt/ros/lyrical/setup.bash && ros2 topic pub -r 10 /cmd_vel geometry_msgs/msg/Twist \
 #        "{linear: {x: 1.0}, angular: {z: 0.3}}"'
 #
 # The Zenoh environment comes from common.yml via `extends:`; the

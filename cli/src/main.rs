@@ -62,7 +62,7 @@ enum Commands {
         vehicle: Option<String>,
         role: Option<String>,
     },
-    /// OTA-upload firmware to a running device
+    /// Push firmware to a running device over SSH
     Upload {
         /// Build the firmware first, then upload (one-shot for fresh edits)
         #[arg(long)]

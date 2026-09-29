@@ -13,10 +13,11 @@ name: ROS 2
 #     a typo in a service, a `${VAR:?}` with nothing to satisfy it, an
 #     invalid profile, an `extends:` pointing at a service that is not
 #     there.
-#   * `pins` checks that the zenoh version is the same everywhere it is
-#     written. The router image, the Python client in the shared image
-#     and the `zenohex` dependency of the Elixir bridge all have to
-#     agree; the README says so, and this is what makes it true.
+#   * `pins` checks that both compose files pin the same zenoh router
+#     image and that it matches the Python client (`eclipse-zenoh`) in
+#     the shared image. The `zenohex` dependency of the Elixir bridge
+#     has to agree too, but its zenoh version is not in any file this
+#     job can grep: check `bridges/ros_bridge/mix.exs` by hand.
 #   * `lint` runs ruff over the repo's own Python. Nothing else does:
 #     the launch files, the verification scripts and
 #     `decompress_stereo.py` — which runs on the *vehicle* — are only
