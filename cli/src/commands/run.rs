@@ -34,11 +34,11 @@ pub fn run(vehicle_arg: Option<String>, no_addons: bool) -> Result<()> {
     ));
     let sname_width = roles
         .iter()
-        .map(|r| r.label.len() + vehicle.dir.len() + 1)
+        .map(|r| vehicles::local_sname(&vehicle.dir, &r.label).len())
         .max()
         .unwrap_or(0);
     for r in &roles {
-        let sname = format!("{}-{}", vehicle.dir, r.label);
+        let sname = vehicles::local_sname(&vehicle.dir, &r.label);
         sub(&format!(
             "{:<width$}  {}",
             sname,
@@ -70,7 +70,7 @@ pub fn run(vehicle_arg: Option<String>, no_addons: bool) -> Result<()> {
     let mut procs: Vec<Proc> = Vec::new();
 
     for role in &roles {
-        let sname = format!("{}-{}", vehicle.dir, sname_safe(&role.label));
+        let sname = vehicles::local_sname(&vehicle.dir, &role.label);
         let mut cmd = Command::new("elixir");
         cmd.args([
             "--sname",
@@ -549,10 +549,6 @@ where
         let _ = writeln!(sink, "[{}] {}", label, line);
         let _ = sink.flush();
     }
-}
-
-fn sname_safe(label: &str) -> String {
-    label.replace('_', "-")
 }
 
 fn short_path(p: &std::path::Path, root: &std::path::Path) -> String {

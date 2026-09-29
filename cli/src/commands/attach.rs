@@ -198,7 +198,9 @@ fn tcp_open(host: &str, port: u16, timeout: Duration) -> bool {
 /// Return every local BEAM that belongs to `<vehicle>` as registered with
 /// epmd, in a stable order (vms first, then infotainment, then bridges).
 ///
-/// Recognises:
+/// Recognises the snames `./ovcs run` registers (see
+/// `vehicles::local_sname`), with every `_` of the vehicle dir and the
+/// bridge id hyphenated:
 /// - `<vehicle>-vms`                       — VMS role.
 /// - `<vehicle>-infotainment`              — infotainment role.
 /// - `<vehicle>-bridge-<id>`               — each bridge.
@@ -228,7 +230,7 @@ fn find_local_beams(vehicle_dir: &str) -> Vec<(String, String)> {
         .collect();
     snames.sort();
 
-    let prefix = format!("{}-", vehicle_dir);
+    let prefix = vehicles::local_sname_prefix(vehicle_dir);
 
     let mut vms = None;
     let mut infotainment = None;
