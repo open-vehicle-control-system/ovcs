@@ -12,7 +12,11 @@ class MetricsService extends ChangeNotifier {
   static final MetricsService _instance = MetricsService._internal();
   factory MetricsService() => _instance;
 
+  /// Push interval, in milliseconds, used when no vehicle config sets one.
+  static const int defaultInterval = 50;
+
   PhoenixChannel? _channel;
+  int _interval = defaultInterval;
   bool _joined = false;
   final Map<String, dynamic> _metrics = {};
   final Set<String> _subscribedKeys = {};
@@ -20,6 +24,14 @@ class MetricsService extends ChangeNotifier {
   StreamSubscription? _openSubscription;
 
   MetricsService._internal();
+
+  /// Sets the interval, in milliseconds, at which the backend pushes metric
+  /// updates: the vehicle's `refreshInterval`. The channel is joined with it
+  /// on the first [subscribe], so call this before any widget subscribes.
+  /// A non-positive value falls back to [defaultInterval].
+  void configure({required int interval}) {
+    _interval = interval > 0 ? interval : defaultInterval;
+  }
 
   /// Get the current value for a metric identified by module + key.
   dynamic getValue(String module, String key) {
@@ -57,7 +69,7 @@ class MetricsService extends ChangeNotifier {
     final socket = SocketService.socket;
     _channel = socket.addChannel(
       topic: 'metrics',
-      parameters: {'interval': 50},
+      parameters: {'interval': _interval},
     );
 
     _openSubscription = socket.openStream.listen((_) {
