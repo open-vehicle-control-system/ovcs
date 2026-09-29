@@ -11,7 +11,11 @@
 #include <ControllerStatus.h>
 #include <VmsCommand.h>
 
-#define CAN_BITRATE 500UL * 1000UL
+// Nominal bitrate in bit/s. It must match the bus the controller joins;
+// override it at build time with -D CAN_BITRATE=<bit/s>.
+#ifndef CAN_BITRATE
+#define CAN_BITRATE (500UL * 1000UL)
+#endif
 #define CAN_OSCILLATOR ACAN2517Settings::OSC_40MHz
 #define SPI_CAN_CS 10
 #define SPI_CAN_INT 3
