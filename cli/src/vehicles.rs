@@ -101,10 +101,28 @@ pub fn host_for(vehicle_dir: &str, side: &str) -> String {
     // Both halves must use dashes — the device's `:mdns_lite` advertises
     // its hostname after replacing underscores in the vehicle dir AND in
     // the bridge id (see bridges/firmware/config/config.exs).
+    format!("{}.local", node_prefix(vehicle_dir, side))
+}
+
+/// Short node name of a host-run BEAM (`./ovcs run`): `<vehicle>-<role>`
+/// with every underscore hyphenated, e.g. `ovcs-mini-bridge-radio-control`.
+/// `OvcsBus.Cluster` dials exactly this name on the shared hostname, so
+/// both halves must be hyphenated the same way it does.
+pub fn local_sname(vehicle_dir: &str, role: &str) -> String {
+    node_prefix(vehicle_dir, role)
+}
+
+/// Hyphenated prefix of every local sname belonging to `vehicle_dir`,
+/// e.g. `ovcs-mini-`.
+pub fn local_sname_prefix(vehicle_dir: &str) -> String {
+    format!("{}-", vehicle_dir.replace('_', "-"))
+}
+
+fn node_prefix(vehicle_dir: &str, role: &str) -> String {
     format!(
-        "{}-{}.local",
-        vehicle_dir.replace('_', "-"),
-        side.replace('_', "-")
+        "{}{}",
+        local_sname_prefix(vehicle_dir),
+        role.replace('_', "-")
     )
 }
 
@@ -316,7 +334,27 @@ fn retry_with_deps(path: &Path, marked: &str) -> Result<Option<String>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{probe_payload, PROBE_MARKER};
+    use super::{host_for, local_sname, local_sname_prefix, probe_payload, PROBE_MARKER};
+
+    #[test]
+    fn local_snames_hyphenate_the_vehicle_and_the_role() {
+        // OvcsBus.Cluster.peers_for/1 dials `ovcs-mini-vms@<host>`.
+        assert_eq!(local_sname("ovcs_mini", "vms"), "ovcs-mini-vms");
+        assert_eq!(
+            local_sname("ovcs_mini", "bridge-radio_control"),
+            "ovcs-mini-bridge-radio-control"
+        );
+        assert_eq!(local_sname("ovcs1", "infotainment"), "ovcs1-infotainment");
+        assert!(local_sname("ovcs_mini", "vms").starts_with(&local_sname_prefix("ovcs_mini")));
+    }
+
+    #[test]
+    fn deployed_hostnames_hyphenate_the_vehicle_and_the_role() {
+        assert_eq!(
+            host_for("ovcs_mini", "bridge-radio_control"),
+            "ovcs-mini-bridge-radio-control.local"
+        );
+    }
 
     // The exact chatter that caused `ovcs can setup ovcs_mini` to offer
     // to create interfaces named "Compiling 10 files (.ex)".
