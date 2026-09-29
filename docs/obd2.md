@@ -64,7 +64,7 @@ Adding a metric is mostly "subscribe to one more Cantastic request, broadcast it
 
 ### Prerequisites
 
-- The VMS Raspberry Pi 4 with an MCP2515 SPI CAN HAT (16 MHz crystal, interrupt on GPIO 23). The Pi-side configuration, including the `mcp2515-can0` overlay, is in `vehicles/obd2/priv/firmware/vms/config.txt`. The `obd2` network maps to `spi0.0` on target and `vcan0` on the host; the `ovcs` network, which carries `drivetrain_status` to the infotainment, maps to `spi0.1` and `vcan1`.
+- The VMS Raspberry Pi 4 with a Waveshare 2-CH CAN HAT: two MCP2515 controllers with 16 MHz crystals, CAN0 on SPI0 chip select 0 with its interrupt on GPIO 23, CAN1 on chip select 1 with its interrupt on GPIO 25. The Pi-side configuration, including the `mcp2515-can0` and `mcp2515-can1` overlays, is in `vehicles/obd2/priv/firmware/vms/config.txt`. The `obd2` network maps to `spi0.0` on target and `vcan0` on the host; the `ovcs` network, which carries `drivetrain_status` to the infotainment, maps to `spi0.1` (the HAT's CAN1 channel) and `vcan1`.
 - An OBD-II cable wired so that:
   - pin 6 → CAN-High on the HAT's CAN0 channel;
   - pin 14 → CAN-Low;

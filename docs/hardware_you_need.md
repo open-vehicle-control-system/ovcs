@@ -61,11 +61,12 @@ The OVCS1 and OVCS Mini reference vehicles use a custom multi-CAN SPI hub with M
 
 The Pi learns about the controller from a device-tree overlay in `config.txt`. The VMS firmware takes `vehicles/<vehicle>/priv/firmware/vms/config.txt` when your vehicle ships one and falls back to [`vms/firmware/targets/ovcs_base_can_system_rpi4/config.txt`](../vms/firmware/targets/ovcs_base_can_system_rpi4/config.txt) otherwise ([`vms/firmware/config/config.exs`](../vms/firmware/config/config.exs)). The default is the five-controller hub, so with an off-the-shelf HAT, add your own file.
 
-An **MCP2515** HAT with a 16 MHz crystal and its interrupt on GPIO 23, as in the OBD2 reference vehicle ([`vehicles/obd2/priv/firmware/vms/config.txt`](../vehicles/obd2/priv/firmware/vms/config.txt)):
+An **MCP2515** HAT with 16 MHz crystals, such as the Waveshare 2-CH CAN HAT the OBD2 reference vehicle uses: CAN0 on SPI0 chip select 0 with its interrupt on GPIO 23, CAN1 on chip select 1 with its interrupt on GPIO 25 ([`vehicles/obd2/priv/firmware/vms/config.txt`](../vehicles/obd2/priv/firmware/vms/config.txt)). A single-channel HAT needs only the `mcp2515-can0` line:
 
 ```text
 dtparam=spi=on
 dtoverlay=mcp2515-can0,oscillator=16000000,interrupt=23
+dtoverlay=mcp2515-can1,oscillator=16000000,interrupt=25
 dtoverlay=spi-bcm2835-overlay
 ```
 
@@ -111,7 +112,7 @@ A generic controller is an Arduino R4 Minima running the framework firmware in [
 
 The expanders give 16 more digital pins (OVCS pins 3–18). The PWM hat drives the four external PWM outputs (`0x7X5`–`0x7X8`). The repository describes it only by its interface: the Arduino sends it duty and frequency packets over the UART with SerialTransfer, resending every 100 ms. Its hardware and firmware are not in this repository, and neither is a transceiver part number.
 
-The firmware runs CAN at 500 kbps (`CAN_BITRATE` in `Can.h`). The bus a controller joins must run at that rate; for another bitrate, change the constant and reflash. Flashing, adoption and `candump` checks are in [Generic controllers](./generic_controllers.md).
+The firmware runs CAN at 500 kbps by default (`CAN_BITRATE` in `Can.h`), and the bus a controller joins must run at that rate. For another bitrate, set `CAN_BITRATE` as a build flag and reflash ([Generic controllers](./generic_controllers.md#bus-bitrate)). Flashing, adoption and `candump` checks are in [Generic controllers](./generic_controllers.md).
 
 ## Bridges and extras
 
@@ -180,7 +181,7 @@ A scan tool with no drivetrain and no bridges ([OBD2](./obd2.md)).
 
 | Role | Part |
 |---|---|
-| VMS | Raspberry Pi 4 with an MCP2515 SPI CAN HAT (16 MHz crystal, interrupt on GPIO 23) |
+| VMS | Raspberry Pi 4 with a Waveshare 2-CH CAN HAT (two MCP2515, 16 MHz): CAN0 `spi0.0` `obd2` (interrupt GPIO 23), CAN1 `spi0.1` `ovcs` (interrupt GPIO 25) |
 | Car connection | An OBD-II cable to the HAT's CAN0 channel: pin 6 CAN-High, pin 14 CAN-Low, pins 4 and 5 ground |
 | Infotainment (optional) | Raspberry Pi 5, one CAN controller on `ovcs` |
 
