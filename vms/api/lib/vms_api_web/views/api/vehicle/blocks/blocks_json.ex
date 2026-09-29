@@ -45,6 +45,8 @@ defmodule VmsApiWeb.Api.Vehicle.Page.BlocksJSON do
     }
   end
 
+  # `position` ("left" or "right") is optional: without it ECharts puts
+  # the first y-axis on the left and the next on the right.
   def render("y_axis.json", %{y_axis: y_axis}) do
     %{
       min: y_axis.min,
@@ -52,13 +54,7 @@ defmodule VmsApiWeb.Api.Vehicle.Page.BlocksJSON do
       label: y_axis.label,
       series: y_axis.series
     }
-  end
-
-  def render("serie.json", %{serie: serie}) do
-    %{
-      name: serie.name,
-      metric: render_one(serie.metric, __MODULE__, "metric.json", as: :metric)
-    }
+    |> put_present(:position, y_axis[:position])
   end
 
   def render("row.json", %{row: row}) do
@@ -93,4 +89,7 @@ defmodule VmsApiWeb.Api.Vehicle.Page.BlocksJSON do
       step: action[:step]
     }
   end
+
+  defp put_present(map, _key, nil), do: map
+  defp put_present(map, key, value), do: Map.put(map, key, value)
 end
