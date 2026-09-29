@@ -77,9 +77,11 @@ defmodule OvcsInfotainmentFirmware.MixProject do
   def release do
     [
       overwrite: true,
-      # Erlang distribution is not started automatically.
-      # See https://hexdocs.pm/nerves_pack/readme.html#erlang-distribution
-      cookie: "#{@app}_cookie",
+      # Shared by every OVCS firmware and by `./ovcs run` / `./ovcs
+      # attach`, so the vehicle's BEAMs authenticate each other. Passed
+      # to the VM by `-setcookie` in rel/vm.args.eex (erlinit boots the
+      # VM directly, not through the release start script).
+      cookie: "ovcs",
       include_erts: &Nerves.Release.erts/0,
       steps: [
         &Nerves.Release.init/1,

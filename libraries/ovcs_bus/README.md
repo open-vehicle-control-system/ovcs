@@ -49,14 +49,41 @@ each `bridge_firmwares/0` entry) and the local node's naming
 convention:
 
 - **Host dev** — `<vehicle>-<role>@<host>` snames; peers share `<host>`.
-- **Deployed Nerves** — `nerves@<vehicle>-<role>` node names; peers
-  share the sname `nerves` and vary the hostname (resolved via
-  mDNS through `nerves_pack`).
+- **Deployed Nerves** — `nerves@<vehicle>-<role>.local` long names;
+  peers share the sname `nerves` and the `.local` domain and vary the
+  hostname.
+
+In both, underscores in the vehicle directory and the bridge id
+become dashes: the OVCS Mini's VMS is `ovcs-mini-vms@<host>` on the
+host, and its `radio_control` bridge `ovcs-mini-bridge-radio-control`.
 
 It calls `Node.connect/1` on each peer and retries on a 2-second
 tick so nodes that boot later are folded into the mesh. Once every
 node is connected, `Phoenix.PubSub.broadcast/3` carries the message
 to all subscribers on all nodes natively.
+
+On the host, `./ovcs run` starts each BEAM with `--sname` and
+`--cookie ovcs`. A Nerves release boots unnamed, so
+`OvcsBus.Distribution.ensure_started/0`, called on every Cluster
+tick, starts distribution when the firmware's target config sets:
+
+```elixir
+config :ovcs_bus, :distribution, domain: "local"
+```
+
+It runs `epmd -daemon`, then `Node.start/2` as
+`nerves@<hostname>.local` with long names, where `<hostname>` is the
+`<vehicle>-<role>` hostname erlinit sets from `hostname_pattern`. No
+IP address is needed for that, so it succeeds before the network is
+up; a failure is logged and retried on the next tick. The peer list
+is derived again on every tick, so it follows the node name.
+
+Erlang's resolver has no mDNS support, so each firmware enables
+mdns_lite's DNS bridge (`dns_bridge_enabled: true` on
+`127.0.0.53:53`) and lists it first in VintageNet's
+`additional_name_servers`. `.local` peer names then resolve for
+`Node.connect/1`; other names are refused by the bridge and fall
+through to the DHCP-supplied servers.
 
 ```
 ┌──────────────────┐       ┌──────────────────────┐       ┌──────────────────┐
@@ -66,10 +93,11 @@ to all subscribers on all nodes natively.
 └──────────────────┘       └──────────────────────┘       └──────────────────┘
 ```
 
-No MQTT broker, no separate protocol, no config file — just Erlang
-distribution. `--cookie ovcs` is shared across every firmware
-release (and every `./ovcs run` child), so joining the cluster is
-automatic as soon as peers resolve.
+No MQTT broker, no separate protocol — just Erlang distribution.
+The cookie `ovcs` is shared by every firmware release (`cookie:
+"ovcs"` in its `mix.exs`, passed to the VM by `-setcookie` in
+`rel/vm.args.eex`) and every `./ovcs run` child, so joining the
+cluster is automatic as soon as peers resolve.
 
 ### When a node is down
 
@@ -93,6 +121,7 @@ lib/
   ovcs_bus/
     application.ex          — starts Phoenix.PubSub(name: OvcsBus)
     cluster.ex              — boot-time Node.connect/1 retry loop
+    distribution.ex         — starts distribution on deployed firmware
     message.ex              — %OvcsBus.Message{} struct
 ```
 

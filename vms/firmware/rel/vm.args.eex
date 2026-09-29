@@ -1,7 +1,8 @@
 ## Customize flags given to the VM: http://erlang.org/doc/man/erl.html
 
-## Do not set -name or -sname here. Prefer configuring them at runtime
-## Configure -setcookie in the mix.exs release section or at runtime
+## Do not set -name or -sname here: OvcsBus.Distribution starts distribution
+## at runtime. The cookie is the release `:cookie` option from mix.exs.
+-setcookie <%= @release.options[:cookie] %>
 
 ## Number of dirty schedulers doing IO work (file, sockets, and others)
 ##+SDio 5
