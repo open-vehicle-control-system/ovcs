@@ -33,7 +33,7 @@ The firmware joins the bus at 500 kbps by default (`CAN_BITRATE` in [`lib/Can/Ca
 PLATFORMIO_BUILD_FLAGS="-D CAN_BITRATE=1000000" pio run -e uno_r4_minima_prod -t upload
 ```
 
-As worked examples: the OVCS Mini reference vehicle declares its `ovcs` bus at the default 500 kbps; the OVCS1 reference vehicle declares 1 Mbps in its `vms.yml`, so controllers flashed for it take the flag.
+As worked examples: the OVCS Mini reference vehicle's `ovcs` bus runs at the default 500 kbps; the OVCS1 reference vehicle's runs at 1 Mbps, so its controllers are flashed with `-D CAN_BITRATE=1000000`.
 
 The board talks to the bus through an external MCP2517FD SPI CAN controller, not the R4 Minima's built-in CAN peripheral, so any Arduino-compatible board with EEPROM, an MCP2517FD controller and a CAN transceiver should work. On Linux, the upload needs a udev rule for the R4's USB ids; the controller README has it.
 

@@ -122,7 +122,7 @@ Every vehicle CAN bus terminates on the VMS Pi 4, so components on different bus
        |                |                  |              |            |
   Infotainment     Front controller   Rear controller  Controls      VMS (Pi 4)
   (Pi 5)           0x70x              0x71x            controller    |
-                                                       0x72x         +-- leaf_drive (500 kbps): Leaf inverter, charger
+                                                       0x72x         +-- leaf_drive (500 kbps): Leaf inverter        
                                                                      +-- polo_drive (500 kbps): ABS, cluster, ignition, airbag
                                                                      +-- orion_bms  (500 kbps): Orion BMS2, EVPT23 charger
                                                                      +-- misc       (500 kbps): Bosch iBooster, LWS sensor
