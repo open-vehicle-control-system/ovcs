@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:dashboard_flutter/models/vehicle_config.dart';
 import 'package:dashboard_flutter/models/page_config.dart';
 import 'package:dashboard_flutter/services/config_service.dart';
+import 'package:dashboard_flutter/services/metrics_service.dart';
 import 'package:dashboard_flutter/views/infotainment_shell.dart';
 
 void main() {
@@ -56,8 +57,10 @@ class _BootScreenState extends State<_BootScreen> {
         ConfigService.fetchPages(),
       ]);
       if (!mounted) return;
+      final vehicleConfig = results[0] as VehicleConfig;
+      MetricsService().configure(interval: vehicleConfig.refreshInterval);
       setState(() {
-        _vehicleConfig = results[0] as VehicleConfig;
+        _vehicleConfig = vehicleConfig;
         _pages = results[1] as List<PageConfig>;
       });
     } catch (e) {
