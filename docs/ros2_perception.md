@@ -43,7 +43,7 @@ The published box has a fixed 0.1 m extent along the optical axis: one view can'
 | `/stereo/detections` | `vision_msgs/Detection3DArray` | Nav2 and other consumers |
 | `/stereo/left/detections` | `foxglove_msgs/ImageAnnotations` | labelled boxes on the Image panel |
 
-The first two are both needed: Foxglove's 3D panel **doesn't support `vision_msgs`**, and markers carry no class label, score or covariance in machine-readable form. `ros-lyrical-vision-msgs` is installed in the shared ROS image, so `foxglove_bridge` can deserialise the `Detection3DArray` too. The `/stereo` prefix is the stereo unit's `topic_prefix`.
+The first two are both needed: Foxglove's 3D panel **doesn't support `vision_msgs`**, and markers carry no class label, score or covariance in machine-readable form. `ros-lyrical-vision-msgs` is installed in the shared ROS image, so `foxglove_bridge` can deserialise the `Detection3DArray` too. The `/stereo` prefix is the detector's own `:topic_prefix` (default `"stereo"`, the same as the stereo unit's default). Change one and you must change the other.
 
 Each detection draws two markers: a `CUBE` coloured red to green by score, and a `TEXT_VIEW_FACING` label above it reading `<class> <score> <distance>m`. Markers live 500 ms (`:marker_lifetime_ms`) so they don't flicker between frames, and ids that vanish get an explicit `DELETE`; otherwise a box that went away lingers and reads as a detection still there.
 
@@ -98,7 +98,7 @@ RosBridge.Inference.Hailo.busy?()                           # often true; not a 
 :sys.get_state(RosBridge.Inference.Hailo).dropped           # 0
 ```
 
-`seq` tracking `frame_count` exactly means every frame reached the accelerator; a climbing `dropped` means it couldn't keep up. `busy?` is normally true at frame rate (there is usually an inference in flight), so it says nothing about health on its own.
+With `detect_every_n: 1` (the vehicle), `seq` tracking `frame_count` exactly means every frame reached the accelerator; with n > 1 expect `seq ≈ frame_count / n`. A climbing `dropped` means it couldn't keep up. `busy?` is normally true at frame rate (there is usually an inference in flight), so it says nothing about health on its own.
 
 An empty `MarkerArray` at about 13 Hz is correct when nothing COCO-shaped is in view: the topic being live and the arrays being empty are different facts, and `published` in the publisher's state distinguishes them.
 
@@ -117,7 +117,7 @@ The Hailo path loads `vehicles/ovcs_mini/priv/models/<model>.hef`, with `<model>
 
 Neither is committed: `mise run fetch-models` downloads both and verifies each against a sha256 in `scripts/models.tsv`. A model you add there becomes selectable the same way.
 
-A HEF is compiled for one architecture: these are **HAILO8** builds and won't load on a Hailo-8L. `hailo_detect` reads the input size from `input_vstream.get_info().shape` and the class count from `nms_shape.number_of_classes`; its hard requirements are a square 3-channel input and an in-graph NMS producing `HAILO_NMS_BY_CLASS` output (net flow `HAILO_NET_FLOW_YOLOV8_NMS`), since it decodes no anchors. NanoDet-RepVGG and `yolov8s` meet them; `yolox_tiny` carries `HAILO_NET_FLOW_YOLOX_NMS` and doesn't.
+A HEF is compiled for one architecture: these are **HAILO8** builds and won't load on a Hailo-8L. `hailo_detect` reads the input size from `input_vstream.get_info().shape` and the class count from `nms_shape.number_of_classes`; its hard requirements are a square 3-channel input and an in-graph NMS producing `HAILO_NMS_BY_CLASS` output (net flow `HAILO_NET_FLOW_YOLOV8_NMS`), since it decodes no anchors. NanoDet-RepVGG and `yolov8n` meet them; `yolox_tiny` carries `HAILO_NET_FLOW_YOLOX_NMS` and doesn't.
 
 The 0.4 score threshold was measured against yolov8n at 480×270, where it stops furniture being reported as animals. Re-measure it for NanoDet before relying on it.
 
@@ -166,7 +166,7 @@ VEHICLE=OvcsMini OVCS_SIM=1 OVCS_DETECTOR=gpu ZENOH_ENDPOINT_IP=127.0.0.1 \
 | `stub` | `Stub`: fabricated boxes |
 | `off` | no detector |
 
-The simulator wiring sets `detect_every_n: 3`, because CPU inference shares the machine with SGBM and Gazebo. On the vehicle the accelerator runs every frame.
+The simulator's `Dnn` wiring sets `detect_every_n: 3`, because CPU inference shares the machine with SGBM and Gazebo; the stub runs every frame, as does the accelerator on the vehicle.
 
 ### What the stub is good for
 
@@ -214,3 +214,9 @@ Apache-2.0 unless noted; those with a prebuilt HAILO8 HEF in model zoo v2.15.0 a
 - torchvision's detectors (BSD-3).
 
 Avoid YOLOv5/v8/v10/v11 (Ultralytics, AGPL-3.0), YOLOv6 and YOLOv7 (GPL-3.0; `yolov6n.hef` is in the zoo), and YOLO-NAS (restrictive Deci licence).
+
+## Next steps
+
+- [ROS 2 and the simulator](./ros2_simulator.md): the fabric, simulator time and the `verify-perception` check.
+- [ROS compute node](./ros2_compute_node.md): the router and `foxglove_bridge` these topics reach.
+- [Simulation](../compose/local/simulation/README.md): running the perception bridge against Gazebo.

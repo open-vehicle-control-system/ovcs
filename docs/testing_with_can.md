@@ -6,7 +6,7 @@ description: Inject single frames with cansend, replay real captures with canpla
 During local development none of the CAN traffic is real. The `can-utils` tools let you inject single frames, replay captures from a real car, and watch what the VMS emits, all against the virtual interfaces `./ovcs can setup` creates.
 
 > [!NOTE]
-> The tools and the virtual-CAN setup work with any vehicle. The frame ids in the examples (`0x280`, `0x320`) come from the OVCS1 reference vehicle; your vehicle's frames are whatever its `priv/can/` YAMLs declare, and the same commands apply.
+> The tools and the virtual-CAN setup work with any vehicle. The frame ids in the examples (`0x1DA`, `0x280`, `0x320`) come from the OVCS1 reference vehicle; the `cangen` example is from the OVCS Mini. Your vehicle's frames are whatever its `priv/can/` YAMLs declare, and the same commands apply.
 
 ## Prerequisites
 
@@ -28,6 +28,14 @@ The id is hex; the data is hex bytes with no separators. With `./ovcs run ovcs1`
 cansend vcan2 320#0002000000000000   # handbrake engaged (byte 1 = 0x02)
 cansend vcan2 320#0000000000000000   # handbrake disengaged
 ```
+
+Also on OVCS1, a Nissan Leaf inverter status reporting 5000 rpm goes on the Leaf bus (`leaf_drive`, so `vcan1`). The rpm is a big-endian signed 16-bit integer in bytes 4 and 5, `0x1388`:
+
+```sh
+cansend vcan1 1DA#0000000013880000
+```
+
+`./ovcs attach ovcs1` shows it in the CAN pane as `leaf_drive` / `inverter_status` with `rotations_per_minute=5000`.
 
 For your vehicle, pick a frame its VMS **receives** and follow the same pattern. Sending a frame the VMS emits does nothing: the VMS is the one producing it.
 
@@ -56,7 +64,7 @@ canplayer      -I candumps/candump-standard-test.log vcan2=can0   # once
 
 - `-l i` loops the replay forever.
 - `-I <file>` names the dump.
-- `vcan2=can0` replays the dump's `can0` onto your `vcan2`. The interface names inside a dump are those of the machine that recorded it, not your networks: check the ids with `head <file>` and map each recorded interface onto the vcan that carries the same network. In `candump-standard-test.log`, `can0` is the Polo bus (`0x320`, `0x470`, `0x5A0`, …), which OVCS1's host mapping puts on `vcan2`; its `can1` traffic matches no current OVCS1 network, so leave it out.
+- `vcan2=can0` replays the dump's `can0` onto your `vcan2`. The interface names inside a dump are those of the machine that recorded it, not your networks: check the ids with `head <file>` and map each recorded interface onto the vcan that carries the same network. In `candump-standard-test.log`, `can0` is the Polo bus (`0x320`, `0x470`, `0x5A0`, …), which OVCS1's host mapping puts on `vcan2`; its `can1` traffic (`0x151`, `0x271`, `0x400`, …) belongs to another Polo bus; only `0x591` and `0x651` coincide with ids OVCS1 declares, so leave it out.
 
 `ls candumps/` lists the scenarios; the names describe what was captured, for instance `candump-leaf-engine-startup-128-then-minus-3.log` or `candump-2025-07-OBD2-tcross.log`.
 
@@ -65,7 +73,7 @@ canplayer      -I candumps/candump-standard-test.log vcan2=can0   # once
 Some behaviour needs a stream of frames rather than one: `cangen` repeats a frame at a fixed gap. Switching control levels on the host, for example, needs a zero-speed stream plus the radio switch frames; the full recipe is in [Driving on the host bench](./vehicle_package.md#driving-on-the-host-bench).
 
 ```sh
-cangen vcan0 -I 709 -L 4 -D 00000000 -g 10   # 0x709 every 10 ms, fixed payload
+cangen vcan0 -I 709 -L 4 -D 00000000 -g 10   # OVCS Mini: pulse counter 0x709 every 10 ms, fixed payload
 ```
 
 ## Reading frame definitions
@@ -76,18 +84,7 @@ Every frame OVCS understands is described in YAML. Shared per-component specs li
 - import!:@ovcs_can:can/components/ovcs/0x1A0_vms_status.yml
 ```
 
-A frame definition gives the CAN id, the frequency, and the signals packed inside. A signal is a bit range with a kind and, optionally, a scale and unit. From `0x280_engine_status.yml`:
-
-```yaml
-- name: rotations_per_minute
-  kind: integer
-  unit: rpm
-  value_start: 16    # bit offset within the frame data
-  value_length: 16   # number of bits
-  scale: "0.25"
-```
-
-Signed and unsigned integers, big- and little-endian layouts, enums, static fillers and scaled values are supported; the [Cantastic README](https://github.com/open-vehicle-control-system/cantastic) has the full format. [Hardware](./hardware.md#can-bus-configuration) shows how component and topology files fit together.
+A frame definition gives the CAN id, the period and the signals packed inside it. To work out which bytes of a `cansend` payload a signal occupies, read [CAN frames and topology](./can_frames.md): it covers signal keys, Cantastic's bit numbering and how it compares with DBC. [Hardware](./hardware.md#can-bus-configuration) shows how component and topology files fit together.
 
 ## Troubleshooting
 

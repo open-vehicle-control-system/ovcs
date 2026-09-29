@@ -55,6 +55,7 @@ Set up as any user would ([Getting started](./getting_started.md)), then check:
 ```sh
 git clone https://github.com/open-vehicle-control-system/ovcs.git
 cd ovcs
+mise trust
 mise install
 mise run cli
 ./ovcs doctor
@@ -63,7 +64,7 @@ mise run cli
 Before opening a pull request:
 
 - **Style.** [`CODE_STYLING.md`](../CODE_STYLING.md) documents the conventions. Credo covers the Elixir apps, Ruff the Python tooling, `cspell` the spelling. Guides follow the documentation rules in [`CLAUDE.md`](../CLAUDE.md) and pass `elixir scripts/check_docs.exs`.
-- **CI runs on pull requests.** `.github/workflows/` holds `ci.yml` (the Elixir tree), `firmware.yml` (every firmware build, the only thing that catches a host-versus-target OTP mismatch) and `ros2.yml` (the container stacks, including the check that the Zenoh pins agree).
+- **CI runs on pull requests.** `.github/workflows/` holds `ci.yml` (the Elixir tree, every PR), `firmware.yml` (every firmware build, on PRs touching `vms/`, `infotainment/`, `bridges/`, `vehicles/`, `libraries/` or `mise.toml`; the only thing that catches a host-versus-target OTP mismatch) and `ros2.yml` (the container stacks and the Zenoh pin check, on PRs touching `compose/` or `ruff.toml`).
 - **Sideloaded libraries have their own repositories.** A change to Cantastic, ExpressLRS, MSP OSD or ovcs_control is a pull request there, not against `libraries/` here.
 - **Vehicles live in `vehicles/`.** A new vehicle is a new package scaffolded with `./ovcs new`, not a framework change. The cores, firmware shells and libraries stay free of vehicle-specific code; if your vehicle needs something the framework cannot express, open a separate framework pull request. See [Your vehicle package](./vehicle_package.md).
 - **The reference vehicles are examples, not requirements.** Fixes to them are welcome; nothing in a new vehicle should depend on them.

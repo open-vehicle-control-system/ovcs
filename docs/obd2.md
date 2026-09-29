@@ -3,10 +3,10 @@ title: OBD2 reference vehicle
 description: A vehicle package with no drivetrain that turns the VMS into an OBD2 / KWP2000 / UDS scan tool for any car, and how to extend it for brand-specific data.
 ---
 
-OBD2 is the smallest of the three reference vehicles: a vehicle package under `vehicles/obd2/` that turns the framework's VMS into an OBD2 / KWP2000 / UDS scan tool. It has no drivetrain and no bridges; every supervised process reads or probes the diagnostic CAN bus of whatever car you plug into. It runs on the same Raspberry Pi 4 the framework targets for every VMS.
+OBD2 is the smallest of the three reference vehicles: a vehicle package under `vehicles/obd2/` that turns the framework's VMS into an OBD2 / KWP2000 / UDS scan tool. It has no drivetrain and no bridges; its supervised processes read or probe the diagnostic CAN bus of whatever car you plug into, and one mirrors speed and rpm onto the `ovcs` bus for the infotainment. It runs on the same Raspberry Pi 4 the framework targets for every VMS.
 
 > [!NOTE]
-> OBD2 is worth reading even if you never scan a car: it shows how little a vehicle has to contain. Two GenServers, a handful of YAML imports and a composer. Your own vehicle follows the same contract; see [Your vehicle package](./vehicle_package.md).
+> OBD2 is worth reading even if you never scan a car: it shows how little a vehicle has to contain. Three GenServers, a handful of YAML imports and a composer. Your own vehicle follows the same contract; see [Your vehicle package](./vehicle_package.md).
 
 ## Why this is a vehicle, not a feature
 
@@ -39,7 +39,7 @@ A DTC (Diagnostic Trouble Code) is the standardised five-character code an ECU s
 
 ## Architecture
 
-At boot, the vehicle's `priv/can/vms.yml` imports one YAML per request from the framework's `ovcs_can` library, under the `obd2` network's `obd2_requests:` key. Cantastic spawns one `OBD2.Request` GenServer per declared request and polls it at the frequency its YAML sets. Two GenServers in the vehicle package consume the answers and broadcast them as ordinary `%OvcsBus.Message{}`s, so the framework's metrics pipeline carries them to the dashboard.
+At boot, the vehicle's `priv/can/vms.yml` imports one YAML per request from the framework's `ovcs_can` library, under the `obd2` network's `obd2_requests:` key. Cantastic spawns one `OBD2.Request` GenServer per declared request; once enabled, it re-sends the request every `frequency` milliseconds. `Diagnostics` enables the read-only requests at boot and leaves the clear and session requests off until the dashboard triggers them. Three GenServers in the vehicle package consume the answers: `Diagnostics` and `Discovery` broadcast them as ordinary `%OvcsBus.Message{}`s, so the framework's metrics pipeline carries them to the dashboard, and `Obd2.Vms` copies speed and rpm into the `ovcs` network's `drivetrain_status` frame for the infotainment.
 
 ```text
 vehicles/obd2/priv/can/vms.yml
@@ -64,7 +64,7 @@ Adding a metric is mostly "subscribe to one more Cantastic request, broadcast it
 
 ### Prerequisites
 
-- The VMS Raspberry Pi 4 with an MCP2515 SPI CAN HAT (a Waveshare 2-CAN HAT). The Pi-side configuration, including the `mcp2515-can0` overlay, is in `vehicles/obd2/priv/firmware/vms/config.txt`. The `obd2` network maps to `spi0.0` on target and `vcan0` on the host.
+- The VMS Raspberry Pi 4 with an MCP2515 SPI CAN HAT (16 MHz crystal, interrupt on GPIO 23). The Pi-side configuration, including the `mcp2515-can0` overlay, is in `vehicles/obd2/priv/firmware/vms/config.txt`. The `obd2` network maps to `spi0.0` on target and `vcan0` on the host; the `ovcs` network, which carries `drivetrain_status` to the infotainment, maps to `spi0.1` and `vcan1`.
 - An OBD-II cable wired so that:
   - pin 6 → CAN-High on the HAT's CAN0 channel;
   - pin 14 → CAN-Low;
@@ -89,7 +89,7 @@ Default polling is read-only: reading live data, codes or the VIN doesn't change
 
 ## Extending the vehicle
 
-Everything below changes the OBD2 vehicle, never the framework. Standardised wire formats live in YAML; brand quirks live in the vehicle's Elixir. If your brand-specific additions grow beyond a module or two, a scan tool for one make is worth a vehicle package of its own: scaffold it with `./ovcs new` and borrow these patterns.
+Everything below changes the OBD2 vehicle's code, never the framework's. Adding a standard PID is the exception: it edits the shared request YAML in `ovcs_can`, which every vehicle importing it picks up. Standardised wire formats live in YAML; brand quirks live in the vehicle's Elixir. If your brand-specific additions grow beyond a module or two, a scan tool for one make is worth a vehicle package of its own: scaffold it with `./ovcs new` and borrow these patterns.
 
 ### 1. Add a live Mode 01 PID
 
@@ -117,7 +117,7 @@ The fast file (100 ms) is for values that move with every driver input; the slow
 Manufacturer data sits behind 16-bit DIDs read with Mode 22. Cantastic stays brand-agnostic by exposing the raw payload as a `kind: bytes` parameter and letting your handler decode it. For a Nissan Leaf battery cell-voltage block:
 
 ```yaml
-# libraries/ovcs_can/priv/can/components/obd2/leaf_battery_cells.yml
+# vehicles/obd2/priv/can/obd2/leaf_battery_cells.yml
 name: leaf_battery_cells
 request_frame_id: 0x79B
 response_frame_id: 0x7BB
@@ -133,7 +133,7 @@ parameters:
 Import it under `obd2_requests:` in `vehicles/obd2/priv/can/vms.yml`:
 
 ```yaml
-      - import!:@ovcs_can:can/components/obd2/leaf_battery_cells.yml
+      - import!:obd2/leaf_battery_cells.yml
 ```
 
 Decode it in a small module of its own, keeping brand code out of `Diagnostics`:
@@ -186,7 +186,7 @@ def children do
 end
 ```
 
-The pattern is the same for every brand: declare the wire format in YAML with `kind: bytes`, put the bit-twiddling in a brand-named module, broadcast the result on the bus. The dashboard then shows it through `%{module: NissanLeaf, key: :leaf_cell_voltages}`.
+The pattern is the same for every brand: declare the wire format in YAML with `kind: bytes`, put the bit-twiddling in a brand-named module, broadcast the result on the bus. The dashboard then shows it through `%{type: :metric, module: Obd2.Vms.Brands.NissanLeaf, key: :leaf_cell_voltages}` (or alias the module in the page).
 
 ### 3. KWP2000 ECUs (Mode 21)
 
@@ -228,14 +228,14 @@ options:
   sub_function: 0x01      # startRoutine (the default)
 ```
 
-Fire it on demand the way `Diagnostics.pulse/2` handles Mode 04 and Mode 14. Routines almost always need an extended session first: open it from the dashboard's Vehicle info page, then trigger the routine.
+Fire it on demand with `Diagnostics.pulse("vw_throttle_adapt_reset")`, as the Clear buttons do for Mode 04 and Mode 14; subscribe a handler of your own to the request to see its response. Routines almost always need an extended session first: open it from the dashboard's Vehicle info page, then trigger the routine.
 
 ### 5. Probe brand-specific DID ranges
 
 `Obd2.Vms.Discovery.start_did_scan/1` takes `:dids`, `:request_id` and `:response_id`, so you can probe non-standard ranges or other ECUs without touching the GenServer. It defaults to the ISO 14229-1 identification range `0xF180`–`0xF19E` on the powertrain pair `0x7E0` / `0x7E8`. From IEx on the device:
 
 ```elixir
-# Sweep VW long-coding bytes on the gateway ECU
+# Example: sweep a manufacturer DID range on another ECU pair
 Obd2.Vms.Discovery.start_did_scan(
   dids: Enum.to_list(0x0100..0x017F),
   request_id: 0x710,
@@ -270,7 +270,8 @@ When an ECU rejects a request (`0x7F SID NRC`), the subscribing GenServer receiv
 | Diagnostic orchestrator | `vehicles/obd2/lib/obd2/vms/diagnostics.ex` |
 | PID name catalogue | `vehicles/obd2/lib/obd2/vms/pid_catalog.ex` |
 | Discovery (passive + DID probe) | `vehicles/obd2/lib/obd2/vms/discovery.ex` |
-| Composer and dashboard pages | `vehicles/obd2/lib/obd2/vms/composer/` |
+| Composer | `vehicles/obd2/lib/obd2/vms/composer.ex` |
+| Dashboard pages | `vehicles/obd2/lib/obd2/vms/composer/dashboard/` |
 | Multi-line metric rendering | `vms/dashboard/src/components/tables/RealTimeTable.vue` |
 
 The Cantastic reference for every supported service, its YAML options and the negative-response table is the `Cantastic.OBD2` moduledoc in the [Cantastic repository](https://github.com/open-vehicle-control-system/cantastic).

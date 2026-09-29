@@ -57,7 +57,7 @@ sudo modprobe vcan
 
 ### Edits to the dashboard don't show up
 
-**Cause:** `http://localhost:4000` serves the last prebuilt bundle from `vms/api/priv/static/`. **Fix:** open the Vite dev server `./ovcs run` starts as an add-on, usually `http://localhost:5173`.
+**Cause:** `http://localhost:4000` serves the last prebuilt bundle from `vms/api/priv/static/`. **Fix:** open the Vite dev server `./ovcs run` starts as an add-on, on `http://localhost:5173`.
 
 ### The stereo pipeline never starts against the simulator
 
@@ -136,9 +136,9 @@ sudo udevadm trigger
 ./ovcs host-keys verify <vehicle>     # exit 1 if any role is missing keys
 ```
 
-### The build asks for SSH keys, Wi-Fi or Phoenix secrets
+### The firmware build fails with `no .env.exs for vehicle`
 
-**Cause:** `vehicles/<vehicle>/.env.exs` doesn't exist. **Fix:** copy `.env.exs.example` next to it and fill in `AUTHORIZED_SSH_KEYS`, `WIFI_NETWORKS`, `SECRET_KEY_BASE` and `SIGNING_SALT`. The file is gitignored and shared by every firmware of that vehicle.
+**Cause:** `vehicles/<vehicle>/.env.exs` doesn't exist; without it the image would have no SSH keys, generated Phoenix secrets, a reset Wi-Fi list and `ZENOH_ENDPOINT_IP=127.0.0.1`, so the build refuses. **Fix:** copy `.env.exs.example` next to it and fill in `AUTHORIZED_SSH_KEYS`, `WIFI_NETWORKS`, `SECRET_KEY_BASE`, `SIGNING_SALT` and, for ROS bridges, `ZENOH_ENDPOINT_IP`. The file is gitignored and shared by every firmware of that vehicle. `CI=true` builds with defaults, for compile checks only.
 
 ### `./ovcs attach` or `connect` cannot reach the device
 

@@ -177,7 +177,7 @@ A cross-check fault is published and logged, not acted on: on the Mini both sour
 
 ### Bench checks
 
-The motor-to-wheel ratio and the pole pairs turn the planner's velocity into the motor rpm the VESC holds, so an error there drives the vehicle at the wrong speed. The check has to come from a source that doesn't depend on them: on the Mini, the pulse sensor on the spur, whose `:rotation_per_minute` is independent of anything the VESC reports. Lift the vehicle, command a known rpm from IEx, and compare the motor controller's `:rotation_per_minute` with the spur sensor's times the spur-to-pinion ratio (54/13 on the Mini). The rotation fusion runs the same comparison continuously above `cross_check_from_rpm`. The fused `:speed` is derived from the motor-to-wheel ratio and proves nothing about it: that needs a measured distance.
+The motor-to-wheel ratio and the pole pairs turn the planner's velocity into the motor rpm the VESC holds, so an error there drives the vehicle at the wrong speed. The check has to come from a source that doesn't depend on them: on the Mini, the pulse sensor on the spur, whose `:rotation_per_minute` is independent of anything the VESC reports. Lift the vehicle, command a known velocity through the ROS bridge (a `/cmd_vel` with a fixed `linear.x`) with the control level on `:ros` and the commander on `:autonomous`, and compare the motor controller's `:rotation_per_minute` with the spur sensor's times the spur-to-pinion ratio (54/13 on the Mini). The rotation fusion runs the same comparison continuously above `cross_check_from_rpm`. The fused `:speed` is derived from the motor-to-wheel ratio and proves nothing about it: that needs a measured distance.
 
 Then find the slowest speed the loop holds cleanly: with the vehicle lifted, step the rpm setpoint down until the wheels stutter or stop, and make sure *Minimum ERPM* sits below that and the planner's velocity floor (the smoother's deadband) above it.
 
@@ -189,4 +189,4 @@ The speed still comes from the pulse counter frame, so the bench setup in [Drivi
 cangen vcan1 -e -I 901 -L 8 -D 0000000000000000 -g 20
 ```
 
-The commands the VMS emits show in `candump vcan1` as `00000001`, `00000101` or `00000301` frames, one kind at a time.
+The commands the VMS emits show in `candump vcan1` as `00000001`, `00000101`, `00000201` or `00000301` frames, one kind at a time.

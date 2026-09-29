@@ -8,7 +8,7 @@ A generic controller is an Arduino R4 Minima that lets the VMS switch relays, re
 > [!NOTE]
 > The controller firmware is part of the framework: the same binary runs on every board of every vehicle. What each board does is decided by your vehicle's VMS composer, which declares the boards and their pinouts in `generic_controllers/0`. The OVCS1 and OVCS Mini controllers below are worked examples.
 
-Protocol details (frame layouts, pin numbering, status codes) are in [`controllers/generic_controller/README.md`](../controllers/generic_controller/README.md).
+Controller ids and pin numbering are in [`controllers/generic_controller/README.md`](../controllers/generic_controller/README.md); frame layouts and status codes are in the signal YAMLs under [`libraries/ovcs_can/priv/can/components/ovcs/generic_controller/`](../libraries/ovcs_can/priv/can/components/ovcs/generic_controller/).
 
 ## Flashing the firmware
 
@@ -25,7 +25,7 @@ cd controllers/generic_controller
 pio run -e uno_r4_minima_prod -t upload
 ```
 
-The board talks to the bus through an external MCP2517FD SPI CAN controller, not the R4 Minima's built-in CAN peripheral, so any Arduino-compatible board with EEPROM and that transceiver should work. On Linux, the upload needs a udev rule for the R4's USB ids; the controller README has it.
+The board talks to the bus through an external MCP2517FD SPI CAN controller, not the R4 Minima's built-in CAN peripheral, so any Arduino-compatible board with EEPROM, an MCP2517FD controller and a CAN transceiver should work. On Linux, the upload needs a udev rule for the R4's USB ids; the controller README has it.
 
 ## How CAN ids are derived
 
@@ -35,7 +35,7 @@ The controller id is assigned during adoption and determines every frame id the 
 Message ID = 0b111AAAABBBB
 ```
 
-`AAAA` is the controller id, so up to 16 controllers fit on one network. `BBBB` is the frame number, up to 15 per controller; `0000` is reserved for the adoption frame `0x700`. So `0x7X1` means "frame 1 of controller X": controller 0 uses `0x701`–`0x70F`, controller 1 `0x711`–`0x71F`, and so on up to `0x7FF`.
+`AAAA` is the controller id, so up to 16 controllers fit on one network. `BBBB` is the frame number, up to 15 per controller; `0000` is reserved for the adoption frame `0x700`. So `0x7X1` means "frame 1 of controller X": controller 0 uses `0x701`–`0x709`, controller 1 `0x711`–`0x719`, up to controller 15 at `0x7F1`–`0x7F9`; frame numbers 10–15 are unused.
 
 | Frame | Direction | Content |
 |---|---|---|
@@ -65,7 +65,7 @@ OVCS1's package also carries frame YAMLs for a test controller (id 3, `0x731`–
 You need:
 
 - the controller flashed, and wired to the network your vehicle maps to `ovcs`;
-- the VMS running and reachable on that network, through the SPI CAN HAT on hardware, or through a USB CAN adapter from your laptop against `./ovcs run <vehicle>`;
+- the VMS running and reachable on that network, through the SPI CAN HAT on hardware, or through a USB CAN adapter from your laptop against `./ovcs run <vehicle>` (start it with `CAN_NETWORK_MAPPINGS=ovcs:can0,…` so the VMS uses the adapter instead of `vcan0`);
 - the controller declared in the active vehicle's `generic_controllers/0`, defined in `vehicles/<name>/lib/<name>/vms/composer/generic_controller.ex`.
 
 ### From the dashboard
@@ -73,7 +73,7 @@ You need:
 1. Boot the VMS: `./ovcs run <vehicle>`.
 2. Open the dashboard (`http://localhost:5173`, the dev server `./ovcs run` starts) and go to the Generic Controllers page your composer declares.
 3. Click **Adopt** next to the controller. The VMS broadcasts the configuration frame `0x700` for one second.
-4. Within that second, press the adoption button on the Arduino (D2). The controller stores the configuration in EEPROM and moves from `ADOPTION_REQUIRED` to `READY`. Later boots load it automatically.
+4. Press the adoption button on the Arduino (D2), before or during that second: the controller shuts its outputs, waits for the next `0x700`, stores it in EEPROM and moves from `ADOPTION_REQUIRED` to `READY`. Pressing it on a running controller cuts its outputs until it is adopted again. Later boots load the configuration automatically.
 
 ### From IEx
 
@@ -91,7 +91,7 @@ The examples use `can0`, a CAN adapter on the network the controller is on; use 
 
 ### Alive frame
 
-Byte 1 of `0x7X1` is the status code: `0x01` `ADOPTION_REQUIRED`, `0x02` `READY`, `0x03` `VMS_MISSING_ERROR`, `0x07` `EXPANSION_BOARDS_ERROR` (the full list is in the controller README).
+Byte 1 of `0x7X1` is the status code: `0x01` `ADOPTION_REQUIRED`, `0x02` `READY`, `0x03` `VMS_MISSING_ERROR`, `0x07` `EXPANSION_BOARDS_ERROR` (the full list is in [`0x7X1_alive_signals.yml`](../libraries/ovcs_can/priv/can/components/ovcs/generic_controller/0x7X1_alive_signals.yml)). The firmware calls `0x02` `READY`, but that YAML decodes it as `OK`, so the dashboard and `./ovcs attach` show `OK`.
 
 ```sh
 candump can0,701:7FF      # controller id 0
@@ -124,7 +124,7 @@ In the OVCS Mini reference vehicle the steering servo is on PWM hat output 0 (`0
 ### Controller stays in `ADOPTION_REQUIRED`
 
 - Check that the VMS emits the configuration frame: `candump can0,700:7FF`.
-- Press the adoption button **while** the configuration frame is broadcast, that is within a second of clicking Adopt or calling `start_adoption/1`.
+- Press the adoption button **before or while** the configuration frame is broadcast, that is before the second after clicking Adopt or calling `start_adoption/1` ends. A press arms the controller until the next `0x700` arrives.
 - Check the Arduino's USB serial output (`uno_r4_minima_debug` build) for parse errors.
 
 ### Controller goes to `VMS_MISSING_ERROR`

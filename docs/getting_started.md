@@ -1,9 +1,9 @@
 ---
 title: Getting started
-description: Set up a Linux workstation (or a VM on macOS) with mise, the system packages and the ovcs CLI, then check it with ./ovcs doctor.
+description: Set up a Linux workstation (or a VM on macOS) with mise, the system packages and the ovcs CLI, then check it with ./ovcs doctor and virtual CAN.
 ---
 
-OVCS runs on your workstation without any hardware: virtual CAN interfaces stand in for the buses, and every firmware boots as a plain BEAM. This guide takes a fresh machine to a green `./ovcs doctor`. From there, the [Quickstart](./quickstart.md) boots a whole vehicle in one command.
+OVCS runs on your workstation without any hardware: virtual CAN interfaces stand in for the buses, and every firmware boots as a plain BEAM. This guide takes a fresh machine to a green `./ovcs doctor` and working virtual CAN interfaces. From there, the [Quickstart](./quickstart.md) boots a whole vehicle in one command.
 
 > [!NOTE]
 > Linux is the development platform. The virtual CAN driver (`vcan`) is a Linux kernel module that only ships in standard, non-cloud kernels. On macOS, develop inside a Linux VM ([below](#macos-multipass-vm)). WSL2's stock kernel has no `vcan` either, so use a full VM on Windows too.
@@ -32,7 +32,7 @@ Most of the toolchain is pinned in [`mise.toml`](../mise.toml) and installed by 
 | nerves_bootstrap | latest | Nerves Mix archive | `mise install` hook |
 
 > [!WARNING]
-> The Erlang and Elixir versions are exact, not minimums. Every Nerves target ships the OTP 28 line, and Mix refuses to cross-compile across OTP majors: a host on OTP 27 builds nothing for hardware, and an Elixir older than 1.19 does not compile the tree. [Toolchain and OTP](./toolchain_and_otp.md) explains the coupling.
+> The Erlang and Elixir versions are exact, not minimums. Every Nerves target ships the OTP 28 line, and nothing in the toolchain compares the host's OTP with the target's: a host on another OTP major either fails the build or produces an image that flashes and then fails at boot. mise pins Elixir 1.19.5 built against OTP 28 to match. [Toolchain and OTP](./toolchain_and_otp.md) explains the coupling.
 
 ## Set up your machine
 
@@ -71,6 +71,8 @@ sudo apt install -y git can-utils libsocketcan-dev libmnl-dev kmod
 - `kmod` provides `lsmod` and `modprobe`, which `./ovcs can setup` and `./ovcs run` use to load `vcan`. Minimal container images lack it.
 - `libsocketcan-dev` is only needed to build firmware for physical CAN targets.
 - `libmnl-dev` host-compiles `nerves_uevent`, a transitive firmware dependency.
+
+Docker Engine with the Compose v2 plugin is needed only for the simulator and the ROS containers; install it from [the Docker Engine docs](https://docs.docker.com/engine/install/).
 
 `fwup` is not in the Debian/Ubuntu repositories. Install the `.deb` from its releases:
 
@@ -115,7 +117,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now ovcs-vcan.service
 ```
 
-`ip -br link show | grep vcan` lists five interfaces in `UP` state. Five covers the OVCS1 reference vehicle, the largest; widen the loop if your vehicle declares more networks. Then create and enter the container:
+`ip -br link show | grep vcan` lists `vcan0` to `vcan4`, each with `UP` in its flags (`<NOARP,UP,LOWER_UP>`); the state column reads `UNKNOWN`, which is normal for vcan. Five covers the OVCS1 reference vehicle, the largest; widen the loop if your vehicle declares more networks. Then create and enter the container:
 
 ```sh
 distrobox create --name ovcs --image ubuntu:24.04
@@ -178,7 +180,7 @@ mise run cli      # cargo build --release, stripped and copied to cli/ovcs
 ./ovcs doctor
 ```
 
-`./ovcs` at the repository root is a symlink to `cli/ovcs`, which is gitignored: every contributor builds it. `doctor` checks the required binaries (mise, Elixir, Node, Ruby, Python, Flutter, fwup, can-utils, PlatformIO), the `nerves_bootstrap` archive, the `libsocketcan` headers, each vehicle's Nerves targets under `vehicles/`, and their SSH host keys. Missing host keys are a warning: you only need them before burning firmware.
+`./ovcs` at the repository root is a symlink to `cli/ovcs`, which is gitignored: every contributor builds it. `doctor` checks the toolchain binaries (required: mise, Elixir, Mix, Node, Python, fwup; optional, a warning when missing: Ruby, Flutter, can-utils, PlatformIO), the `nerves_bootstrap` archive, the `libsocketcan` headers (warning), each vehicle's Nerves targets under `vehicles/`, and their SSH host keys. Missing host keys are a warning: you only need them before burning firmware.
 
 ### 6. Optional: firmware builds
 
@@ -194,44 +196,26 @@ The build, burn and upload flow is in [Running on hardware](./running_hardware.m
 
 ## Verify the setup
 
-These steps run the OVCS1 reference vehicle. `ovcs_mini`, `obd2` and a vehicle you scaffolded with `./ovcs new` work the same way.
-
-Provision the virtual CAN interfaces. The CLI reads the vehicle's `default_can_mapping(:host)` and creates only the interfaces it needs; you're prompted for sudo the first time, and a second run is a no-op:
+Provision the virtual CAN interfaces for one vehicle and check them. The commands take any vehicle under `vehicles/`; the OVCS Mini reference vehicle, which the [Quickstart](./quickstart.md) boots, needs two. Run them with `ovcs1`, `obd2` or your own vehicle's name and they work the same:
 
 ```sh
-./ovcs can setup ovcs1
-./ovcs can status ovcs1
+./ovcs can setup ovcs_mini
+./ovcs can status ovcs_mini
 ```
 
-Boot the vehicle. This provisions vcan if needed, compiles every firmware for the host, and spawns one BEAM per firmware role, joined into one Erlang cluster:
+`can setup` reads the vehicle's `default_can_mapping(:host)` and creates only the interfaces that are missing: it lists what it will run as root, then prompts for sudo. A second run prints `All virtual CAN interfaces for OvcsMini are already up — nothing to do.` `can status` prints one line per interface and ends with `All interfaces up.` An interface marked `down` or `not created` means `can setup` didn't finish: on an atomic Fedora, create them on the host ([above](#bluefin--atomic-fedora)).
 
-```sh
-./ovcs run ovcs1
-```
+> [!NOTE]
+> The CLI runs `mix` to read each vehicle's metadata, so it needs the mise-managed toolchain on your `PATH`. If `./ovcs doctor` reports `mix` as not on `PATH`, or `./ovcs can setup` stops with `failed to spawn mix`, mise isn't activated in this shell: check the `mise activate` line from step 1 is in your shell's rc file, open a new shell, and `cd` back into the repository.
 
-The VMS API answers on `http://localhost:4000`; open the dashboard on the dev server `./ovcs run` starts alongside it, `http://localhost:5173`.
-
-In a second terminal, attach the TUI: merged logs, the message bus, decoded CAN frames and an IEx shell across every running BEAM.
-
-```sh
-./ovcs attach ovcs1
-```
-
-In a third, send the VMS a Nissan Leaf inverter status reporting 5000 rpm. OVCS1 maps its `leaf_drive` network to `vcan1` on the host:
-
-```sh
-cansend vcan1 1DA#0000000013880000
-```
-
-The CAN pane shows it decoded as `leaf_drive/inverter_status` with `rotations_per_minute=5000`.
+A green `./ovcs doctor` and `All interfaces up.` mean your toolchain works. Booting a vehicle on it is the [Quickstart](./quickstart.md).
 
 > [!TIP]
 > Something doesn't line up? [Troubleshooting](./troubleshooting.md) lists the setup failures people hit most, each with the check that names the cause.
 
 ## Next steps
 
-- [Quickstart](./quickstart.md): boot a reference vehicle, open the dashboard, attach the TUI, send your first frame.
-- [Framework and vehicles](./framework.md): what the framework provides and what a vehicle is.
-- [Simulation](../compose/local/simulation/README.md): drive a Gazebo model of the OVCS Mini reference vehicle with nothing but Docker.
+- [Quickstart](./quickstart.md): boot the OVCS Mini reference vehicle, open the dashboard, attach the TUI, send your first frames.
+- [Your first vehicle](./first_vehicle.md): scaffold your own vehicle and make it do something.
 - [Framework components](./components.md): each core, API, firmware shell and library.
 - [Hardware](./hardware.md): the Raspberry Pis, the CAN hub and the Arduino controllers.

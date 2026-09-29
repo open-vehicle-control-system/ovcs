@@ -40,7 +40,7 @@ ovcs/
 +-- scripts/                  Utility scripts (setup_can.sh, bind_remote_can.rb, …)
 +-- candumps/                 Recorded CAN captures, for replay
 +-- docs/                     These guides
-+-- ovcs                      Symlink to cli/ovcs (built by `mise run cli`; gitignored)
++-- ovcs                      Symlink to cli/ovcs, the binary built by `mise run cli` (binary gitignored, symlink committed)
 ```
 
 Each major system follows the Firmware → API → Core layering described in [Architecture](./architecture.md). Every Elixir project runs on a host machine against virtual CAN interfaces; development needs no hardware.
@@ -107,7 +107,7 @@ The Nerves shell that packages the API and Core for the Pi 4, on a [custom Nerve
 
 ## Infotainment system
 
-The in-car UI on a 10-inch touchscreen: gear selection, vehicle status, battery health, settings. A vehicle opts in by implementing `infotainment/0`.
+The in-car UI on a 10-inch touchscreen: gear selection, vehicle status, battery health, settings. A vehicle opts in by implementing `infotainment/0` and `infotainment_target/0`.
 
 | Layer | Path | Module / tech | Notes |
 |---|---|---|---|
@@ -136,7 +136,7 @@ Reads `VEHICLE` and `BRIDGE_FIRMWARE_ID` at boot, looks up the matching entry in
 |---|---|
 | **Path** | `bridges/radio_control_bridge/` |
 | **Module** | `RadioControlBridge` |
-| **Key deps** | `cantastic`, `express_lrs`, `msp_osd`, `ovcs_bridge` |
+| **Key deps** | `ovcs_bridge` (brings `cantastic`), `express_lrs`, `msp_osd` |
 
 Lets a MAVLink-capable transmitter (an ExpressLRS link in MAVLink mode) drive the vehicle. `MavlinkForwarder` reads MAVLink `RC_CHANNELS_OVERRIDE` from a UART and copies the receiver's channels 1 to 8 onto CAN frames `0x2A0` and `0x2A1`. `MspOsdForwarder`, the telemetry path back to MSP video goggles, is a placeholder not yet wired in. A vehicle selects components through `%RadioControlBridge.Config{}`.
 
@@ -146,7 +146,7 @@ Lets a MAVLink-capable transmitter (an ExpressLRS link in MAVLink mode) drive th
 |---|---|
 | **Path** | `bridges/ros_bridge/` |
 | **Module** | `RosBridge` |
-| **Key deps** | `cantastic`, `zenohex`, `ovcs_bridge`, `ovcs_drivers` |
+| **Key deps** | `ovcs_bridge` (brings `cantastic`), `ovcs_drivers`, `zenohex`, `evision`, `nx` |
 
 Speaks the `rmw_zenoh` wire format natively over Zenoh, linking nothing from ROS. `ZenohClient` holds one session and exposes publish/subscribe (wire-format details in [`bridges/ros_bridge/README.md`](../bridges/ros_bridge/README.md)). Components a vehicle selects through `%RosBridge.Config{}`:
 
@@ -176,7 +176,7 @@ The one machine on a vehicle that is not Nerves: a Raspberry Pi 5 with a full Li
 | **Technology** | C++ / PlatformIO |
 | **Target** | Arduino R4 Minima |
 
-One configurable firmware for every Arduino controller in every vehicle. Pin assignments arrive over CAN through the adoption process, so nothing is hardcoded per board. Supports digital output (with MCP23008 I2C expansion boards for extra pins), analog input, DAC, PWM, external PWM through a PWM hat on the UART, and a pulse counter. All frames are CRC-protected.
+One configurable firmware for every Arduino controller in every vehicle. Pin assignments arrive over CAN through the adoption process, so nothing is hardcoded per board. Supports digital output (with MCP23008 I2C expansion boards for extra pins), analog input, DAC, PWM, external PWM through a PWM hat on the UART, and a pulse counter. The adopted configuration is stored in EEPROM with a CRC32 and rejected on boot if it does not match.
 
 | Environment | Purpose |
 |---|---|
@@ -215,7 +215,7 @@ A vehicle is a standalone Mix package under `vehicles/<name>/` whose top-level m
 | Package | Top-level module | What it demonstrates |
 |---|---|---|
 | `vehicles/ovcs1/` | `Ovcs1` | Full-size EV conversion: VMS on five isolated buses, infotainment, radio-control and ROS bridges, generic controllers |
-| `vehicles/ovcs_mini/` | `OvcsMini` | RC car on one bus: no infotainment side; radio-control, ROS and perception bridges; a compute node |
+| `vehicles/ovcs_mini/` | `OvcsMini` | RC car on two buses (`ovcs`, and `misc` for the VESC): no infotainment side; radio-control, ROS and perception bridges; a compute node |
 | `vehicles/obd2/` | `Obd2` | Diagnostics only: VMS and infotainment, no bridges, no drivetrain |
 | `vehicles/<yours>/` | `<Yours>` | Scaffolded by `./ovcs new`; keep the components you need, drop the rest |
 
@@ -226,7 +226,7 @@ Each firmware's `runtime.exs` writes the side composer (`Ovcs1.Vms.Composer`, fo
 | Variable | Description | Example |
 |---|---|---|
 | `VEHICLE` | Top-level module name of the vehicle to load (case-sensitive) | `Ovcs1`, `OvcsMini`, `Obd2`, or your own |
-| `CAN_NETWORK_MAPPINGS` | Overrides the vehicle's `default_can_mapping(:host)` | `ovcs:can0,leaf_drive:vcan1,polo_drive:vcan2` |
+| `CAN_NETWORK_MAPPINGS` | Overrides the vehicle's `default_can_mapping/1` (host or target arm) | `ovcs:can0,leaf_drive:vcan1,polo_drive:vcan2` |
 | `BRIDGE_FIRMWARE_ID` | Bridge firmware only: picks one entry from the vehicle's `bridge_firmwares/0` | `radio_control`, `ros`, `ros_perception` |
 
 ## Local development
@@ -243,7 +243,7 @@ This provisions the vehicle's vcan interfaces (`./ovcs can setup <vehicle>` does
 
 - the VMS API on `http://localhost:4000`, in the `<vehicle>-vms` BEAM;
 - the infotainment API on `http://localhost:4001`, in `<vehicle>-infotainment`, for vehicles that implement `infotainment/0`;
-- one BEAM per bridge firmware, named `<vehicle>-bridge-<id>`;
+- one BEAM per bridge firmware, named `<vehicle>-bridge-<id>` (every node name turns underscores into dashes, in `<vehicle>` and `<id>` alike);
 - an Erlang-distribution cluster stitched together by `OvcsBus.Cluster`: each BEAM `Node.connect/1`s the others, and `OvcsBus.broadcast/2` reaches every node. Deployed firmware uses the same transport.
 
 The Vue dashboard starts alongside as a dev add-on (`--no-addons` skips it). The Flutter dashboard needs its own terminal, because its hot reload is keyboard-driven:

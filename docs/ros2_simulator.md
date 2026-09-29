@@ -3,7 +3,7 @@ title: ROS 2 and the simulator
 description: The Zenoh fabric, who publishes which topic, simulator time, the three command paths, Nav2, perception, and what each verifier proves.
 ---
 
-A map, not a manual: what runs when OVCS talks to ROS 2, who owns time, which command path is real, and what each verifier proves. [Simulation](../compose/local/simulation/README.md) tells you how to run the simulator; read this first.
+A map, not a manual: what runs when OVCS talks to ROS 2, who owns time, which command path is real, and what each verifier proves. [Simulation](../compose/local/simulation/README.md) tells you how to run the simulator; read it first.
 
 > [!NOTE]
 > The ROS bridge library, the Zenoh client, the message codecs, the VMS command components and the container images are framework. Which topics a bridge publishes and consumes, which drivers it uses and where the router lives are decided by the **vehicle**, in its `ros_bridge_config/2`. Everything here was built and measured on the **OVCS Mini reference vehicle**, the one that runs a ROS bridge, a perception bridge and a compute node: treat its wiring as a worked example for your own.
@@ -35,7 +35,7 @@ Everything containerised lives under `compose/`, split by one question: is it pu
 | `foxglove_bridge` | `compose/compute` | Foxglove Studio attaches over the LAN on port 8765 |
 | `nav2` | `compose/compute` | the planner survives the base station leaving, like the router |
 | `wifi_firmware`, `wifi_ap_fix`, `bridge_nat_fix` | `compose/compute` | host plumbing for the compute node's network; not ROS |
-| `ros2` (tooling shell), `joy`, `calibrator` | `compose/local/base.yml` | the operator's side: CLI, game controller, stereo calibration GUI |
+| `ros2` (tooling shell), `joy`, `calibrator` (profile `calibration`) | `compose/local/base.yml` | the operator's side: CLI, game controller, stereo calibration GUI |
 | `zenohd`, `foxglove_bridge` (profile `standalone`), `nav2` (profile `nav2`) | `compose/local/base.yml` | stand-ins for the vehicle's own, when none is on the LAN |
 | `sim`, `teleop`, `gz-gui`, `nav2` | `compose/local/simulation.yml` | Gazebo and its operator-side extras |
 
@@ -50,7 +50,7 @@ Everything containerised lives under `compose/`, split by one question: is it pu
 3. Two `parameter_bridge` nodes bridge `/clock`, `/odom`, `/tf`, `/joint_states`, `/imu_raw`, both `camera_info` topics and the two command topics.
 4. One `image_bridge` per camera (compressed).
 5. `ros_gz_sim create` spawns the model from `/robot_description`. The model exists only now, so it comes last.
-6. With `teleop:=true`, `joy_linux` and `teleop_twist_joy`.
+6. With `teleop:=true` (the launch default), `joy_linux` and `teleop_twist_joy`. The compose `sim` service passes `teleop:=false` and runs the gamepad as its own `teleop` service (`--profile teleop`), so a missing controller never blocks the simulator.
 
 Details that read like bugs until you know them:
 
@@ -60,7 +60,7 @@ Details that read like bugs until you know them:
 - **Cameras go through `image_bridge`**, for bandwidth ([Perception](#perception-against-the-simulator)).
 - **`use_sim_time: true`** on every node ([Time](#time)).
 
-The model lives with its vehicle, in `vehicles/ovcs_mini/description/`, and is mounted into the container rather than baked in. Another vehicle's model is another `description/` directory plus one mount line in `compose/local/simulation.yml`.
+The model lives with its vehicle, in `vehicles/ovcs_mini/description/`, and is mounted into the container rather than baked in. Another vehicle's model is another `description/` directory plus one mount line in `compose/local/simulation.yml` and `vehicle:=<vehicle>` on the `sim` service's launch command.
 
 ## Topics: who publishes what
 
@@ -74,12 +74,12 @@ The boundary between Gazebo's transport and ROS is exactly the list in `sim.laun
 | `/joint_states` | `sensor_msgs/JointState` | Gazebo | `drive_test.py` |
 | `/imu_raw` | `sensor_msgs/Imu` | the model's IMU sensor | `RosBridge.Imu.Zenoh`, republished on `/imu` by `Publishers.Imu` |
 | `/stereo/{left,right}/image_raw/compressed` | `sensor_msgs/CompressedImage` | `image_bridge` | `RosBridge.Camera.Zenoh` |
-| `/stereo/{left,right}/camera_info` | `sensor_msgs/CameraInfo` | Gazebo | perception bridge |
+| `/stereo/{left,right}/camera_info` | `sensor_msgs/CameraInfo` | Gazebo **and** the perception bridge (from its calibration YAML) | Foxglove, the calibrator |
 | `/cmd_vel` | `geometry_msgs/Twist` | `teleop_twist_joy`, `drive_test.py` | `AckermannSteering` |
 | `/cmd_vel_nav_raw` | `geometry_msgs/TwistStamped` | Nav2 `controller_server`, `behavior_server` | Nav2 `velocity_smoother`, `nav2_test.py` |
 | `/cmd_vel_nav` | `geometry_msgs/TwistStamped` | Nav2 `velocity_smoother` | `AckermannSteering` (sim) or `RosBridge.Consumers.Velocity` (vehicle) |
 | `/stereo/...` disparity, depth, points, detections | `stereo_msgs`, `sensor_msgs`, `vision_msgs` | perception bridge | Foxglove, `perception_test.py` |
-| `/ovcs_heartbeat` | `std_msgs/String` | every Elixir bridge | you, to see the BEAM is alive |
+| `/ovcs_heartbeat` | `std_msgs/String` | every `RosBridge` that lists `:heartbeat` | you, to see the BEAM is alive |
 
 **Two transform buffers, three publishers.** `/tf` is time-indexed: `tf2` stores each sample against its stamp and interpolates. `/tf_static` is timeless, and two things publish on it: `robot_state_publisher` with the URDF's fixed joints, and the bridge with `base_link → stereo_left`, the frame its image headers name. They don't collide, because the URDF's camera frames are `stereo_left_link` and `stereo_left_optical`; the simulated camera and the bridge describe one sensor under different frame names. The bridge's transform is static rather than on `/tf` at a rate because a point cloud stamped after the newest `/tf` sample cannot be transformed, and Nav2 drops it.
 
@@ -156,7 +156,7 @@ Nav2 consumes `/odom` and the `odom → base_link` transform. On the vehicle, th
 
 `RosBridge.Publishers.Odometry` integrates that speed along the BNO085's heading and publishes both topics with one stamp. When the VMS loses its speed, or the frame goes stale, the publisher goes *silent* rather than holding: tf lookups never extrapolate past the newest stamp, so a stopped publisher halts Nav2 instead of letting it plan against a frozen pose.
 
-One odometry owner per fabric: against the simulator Gazebo already publishes `/odom` and the transform, so the OVCS Mini's host bridge drops `:odometry_publisher` when `OVCS_SIM` is set. Two publishers would hand every consumer two contradictory poses.
+One odometry owner per fabric: against the simulator Gazebo already publishes `/odom` and the transform, so the OVCS Mini's host bridge drops `:odometry_publisher` when `OVCS_SIM` is `1` or `true`. Two publishers would hand every consumer two contradictory poses.
 
 ### The actuator command (0x2B0)
 
@@ -238,7 +238,7 @@ Gazebo cameras ─► image_bridge ─/stereo/{left,right}/image_raw/compressed�
                              └─► detector (optional: Stub or Dnn) ─► /stereo/detections
 ```
 
-`RosBridge.Camera.Zenoh` subscribes to a `CompressedImage` topic and emits the same `{:camera_frame, %Frame{}}` casts a physical driver does. Swapping it in for `RosBridge.Camera.LibCamera` is the entire difference between the car and the simulated car; in the OVCS Mini, `OVCS_SIM=1` selects it (`perception_sim_config/0` in `vehicles/ovcs_mini/lib/ovcs_mini.ex`).
+`RosBridge.Camera.Zenoh` subscribes to a `CompressedImage` topic and emits the same `{:camera_frame, %Frame{}}` casts a physical driver does. Swapping it in for `RosBridge.Camera.LibCamera` is the entire difference between the car and the simulated car; in the OVCS Mini, `OVCS_SIM=1` (or `true`) selects it (`perception_sim_config/0` in `vehicles/ovcs_mini/lib/ovcs_mini.ex`).
 
 - **Compressed, not raw.** A 480×270 rgb8 frame is 389 KB; at 30 Hz, 11.6 MB/s. Over Zenoh, a subscriber that cannot drain that receives one frame every fifteen seconds, which looks like a dead topic. JPEG is about 6.5 KB a frame. Compression belongs upstream of the fabric, as on the vehicle.
 - **The simulator has its own calibration.** Gazebo renders an ideal pinhole; the vehicle's distortion coefficients and rectification rotations warp its views apart. `vehicles/ovcs_mini/priv/calibration/sim/` has D = 0 and R = I: 61.2 % coverage on the same scene, against 5.4 % with the vehicle's calibration.
@@ -271,7 +271,7 @@ A bare atom is shorthand for `{atom, []}`, and an unknown name raises at supervi
 
 ## Version pins
 
-These move together. The `pins` job in `.github/workflows/ros2.yml` fails when the zenoh ones disagree.
+These move together. The `pins` job in `.github/workflows/ros2.yml` fails when the router image and the Python client disagree; it does not read `bridges/ros_bridge/mix.exs`, so check the `zenohex` pin by hand.
 
 | What | Value | Where |
 |---|---|---|
@@ -288,11 +288,11 @@ Each is one command: it brings the stack up, asserts, and tears it down. Each ex
 | Task | Script | Proves | What `/odom` alone could not |
 |---|---|---|---|
 | `mise run verify-drivetrain` | `drive_test.py` | wheel radius, wheelbase, steering geometry | a wrong wheel radius cancels inside `AckermannSteering`: `/odom` reports 1.000 m/s while the car crawls at 0.548. The check reads `/joint_states`. |
-| `mise run verify-nav2` | `nav2_test.py` | Nav2 arrives at an easy goal **and** commands within the Ackermann limits at a tight one | an unconstrained controller arrives *better* while commanding 3.68× the limit |
-| `mise run verify-perception` | `perception_test.py` | depth median, p75 and p95 match the world's box positions to a centimetre; fused detection depth | geometry is checked tightly; rates only against a floor |
+| `mise run verify-nav2` | `nav2_test.py` | Nav2 arrives at an easy goal **and** commands within the Ackermann limits at a tight one | a differential-drive motion model arrives *better* while commanding 3.68× the limit |
+| `mise run verify-perception` | `perception_test.py` | depth median within 5 cm of the near box, p75 within 10 cm of the far box, p95 inside the room; fused detection depth within 5 cm when run with `OVCS_DETECTOR=stub` | geometry is checked tightly; rates only against a floor |
 | `mise run verify-planner-loop` | `verify_planner_loop.sh` | no simulator: the vehicle's Nav2 image plans against `/odom` dead-reckoned by the host bridge from the host VMS's `0x60B`, and a goal produces nonzero `0x2B1` on vcan | the VMS-side conversion path, which Gazebo's loop bypasses |
 
-Each script starts the standalone router and the simulator, waits, starts Nav2 or the perception bridge, waits again, pipes the test into the base stack's `ros2` container, then tears down, the BEAM first because it holds a Zenoh session. The waits are fixed `sleep 20` / `sleep 30` / `sleep 25`: a slower machine can fail a verifier without anything being wrong. `KEEP_UP=1` leaves the stack running. `verify-perception` also needs the `mise` toolchain and a `vcan0`, because it runs the real Elixir bridge and Cantastic will not start without a CAN network.
+Each script starts the standalone router, then the simulator (`verify-planner-loop` starts none: a host VMS and bridge on vcan instead), then Nav2 or the perception bridge where needed, and pipes the test into a container: the base stack's `ros2`, or `ovcs-nav2` for `verify-nav2`, which needs `nav2_msgs`. It then tears down, the BEAM first because it holds a Zenoh session. The waits are fixed sleeps (drivetrain 20 s; nav2 20 s then 30 s; perception 25 s), so a slower machine can fail a verifier without anything being wrong. `KEEP_UP=1` leaves the stack running. `verify-perception` also needs the `mise` toolchain and a `vcan0`, because it runs the real Elixir bridge and Cantastic will not start without a CAN network. `verify-planner-loop` needs `cli/ovcs` built (`mise run cli`) and can-utils.
 
 ## Verifying end to end
 
@@ -300,6 +300,7 @@ With `./ovcs run <vehicle>` going and the `compose/local/base.yml` stack up:
 
 ```sh
 cd compose/local && docker compose -f base.yml exec ros2 bash -lc '
+  source /opt/ros/*/setup.bash
   ros2 topic list
   ros2 topic info -v /ovcs_heartbeat
   ros2 topic echo /ovcs_heartbeat std_msgs/msg/String

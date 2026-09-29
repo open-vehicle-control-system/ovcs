@@ -115,7 +115,7 @@ The balena supervisor implements a [subset of Compose](https://docs.balena.io/re
 | shared image tags across services | every custom-image service carries its own `build:` |
 | BuildKit | no `COPY --chmod=`, no heredocs, no `RUN --mount`: balenaEngine builds with the classic engine |
 
-YAML anchors, `extends:` and `${VAR:-default}` interpolation are avoided too: they are unverified against the balena parser, and the launcher scripts already default everything. The local stacks share their Zenoh environment through `compose/local/common.yml`; the vehicle file spells it out per service.
+`extends:` doesn't exist in the balena supervisor's Compose 2.4-based parser; YAML anchors and `${VAR:-default}` interpolation are avoided because they are unverified against it, and the launcher scripts already default everything. The local stacks share their Zenoh environment through `compose/local/common.yml`; the vehicle file spells it out per service.
 
 ## Networking
 
@@ -182,7 +182,7 @@ Giving each board its own Wi-Fi removes the shared radio: real leases for everyo
 
 ### Installing it
 
-Prerequisite: deploy the `wifi_firmware` service in [`compose/compute/docker-compose.yml`](../compose/compute/docker-compose.yml) and reboot once, or the AX210 has no driver bound and `wlP1p1s0` doesn't exist.
+Prerequisite: deploy [`compose/compute/docker-compose.yml`](../compose/compute/docker-compose.yml) (at least `wifi_firmware` and `wifi_ap_fix`) and reboot once, or the AX210 has no driver bound and `wlP1p1s0` doesn't exist, and the 5 GHz AP profile starts with an invalid centre frequency.
 
 **Two directories are in play, on different filesystems.** `/mnt/boot/system-connections/` (vfat, the boot partition) is the source of truth: `balena-net-config` runs on every boot and does
 
@@ -266,3 +266,9 @@ The Nerves bridges get this from `nerves_time`, which also floors the clock at t
 - The compute node: `balena push`, or an OTA from the fleet.
 
 The gamepad (`joy`) stays on the base station, in `compose/local/base.yml`: the round trip pad → ROS → Zenoh → `RosBridge.Consumers.Joy` → CAN is the price of keeping the controller with the operator.
+
+## Next steps
+
+- [Perception: object detection](./ros2_perception.md): what the perception bridge publishes on the fabric this node routes.
+- [Running on hardware](./running_hardware.md): building and uploading the Nerves firmwares that join it.
+- [Troubleshooting](./troubleshooting.md): symptoms and fixes across the stack.

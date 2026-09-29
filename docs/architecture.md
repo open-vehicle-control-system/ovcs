@@ -45,13 +45,17 @@ A running vehicle is a small fleet of BEAMs:
 - **Bridges** (zero or more): each ferries data between the `ovcs` bus and a non-CAN world, such as an ExpressLRS radio link or a ROS 2 graph. The vehicle declares which bridges it ships and on which target.
 - **Generic controllers**: Arduino R4 Minima boards running one shared firmware. They receive their pinout from the VMS at runtime through an adoption frame. See [Generic controllers](./generic_controllers.md).
 
-The dashboards sit outside the vehicle: the Vue dashboard talks to the VMS API, the Flutter head unit to the infotainment API, both over HTTP and WebSocket. Both render the pages the vehicle's composers declare.
+The Vue dashboard runs off the vehicle, on a laptop, and talks to the VMS API. The Flutter head unit runs on the infotainment Pi 5, bundled into its firmware, and talks to the infotainment API. Both use HTTP and WebSocket and render the pages the vehicle's composers declare.
 
 ### One Erlang mesh, no broker
 
 Every BEAM of a running vehicle joins one Erlang-distribution cluster through `OvcsBus.Cluster`: at boot each node calls `Node.connect/1` on its declared peers until the mesh forms. `OvcsBus.broadcast/2` then reaches subscribers on every node via `Phoenix.PubSub`. No MQTT broker, no relay.
 
 The transport is the same in both environments: `./ovcs run <vehicle>` clusters one BEAM per role over loopback; a deployed vehicle clusters one BEAM per Raspberry Pi over the vehicle LAN.
+
+On the host, the CLI starts each BEAM with `--sname <vehicle>-<role> --cookie ovcs`. A Nerves release boots without a node name, so on the first `OvcsBus.Cluster` tick `OvcsBus.Distribution` runs `epmd -daemon` and starts distribution as `nerves@<vehicle>-<role>.local` with long names. The hostname part is the device hostname set by erlinit's `hostname_pattern`, which mdns_lite also advertises. Every release's cookie is `ovcs`, passed to the VM by `-setcookie` in `rel/vm.args.eex`, the same cookie `./ovcs run` and `./ovcs attach` use, so the devices authenticate each other. Starting distribution needs no IP address; a failed start is logged and retried on the next tick.
+
+Erlang's own resolver knows nothing about mDNS. Each firmware enables mdns_lite's DNS bridge on `127.0.0.53` and lists it first in VintageNet's `additional_name_servers`, so a lookup of `<vehicle>-<role>.local` is answered from mDNS. The bridge refuses every other name, and the resolver moves on to the DHCP-supplied servers.
 
 > [!NOTE]
 > Nothing safety-relevant depends on the mesh. Commands from the radio link or the ROS bridge travel as CAN frames on the `ovcs` bus, where the VMS watches their freshness. The mesh carries metrics, status and coordination.
@@ -97,13 +101,13 @@ alias OvcsBus, as: Bus
 # Broadcasting a metric
 Bus.broadcast("messages", %Bus.Message{
   name: :speed,
-  value: 45.2,
+  value: Decimal.new("45.2"),
   source: VmsCore.Components.Volkswagen.Polo9N.ABS
 })
 
 # Receiving it in another component
 def handle_info(%Bus.Message{name: :speed, value: speed, source: source}, state)
-    when source == state.abs_source do
+    when source == state.speed_source do
   {:noreply, %{state | speed: speed}}
 end
 ```
@@ -122,7 +126,7 @@ Managers hold framework logic spanning several components:
 ```text
 VmsCore.Application                          (framework)
 ├── VmsCore.Repo               SQLite: throttle calibration and other persisted data
-├── Ecto.Migrator              applies pending migrations on boot
+├── Ecto.Migrator              applies pending migrations on boot (skipped when RELEASE_NAME is set)
 ├── VmsCore.Metrics            aggregates every bus message for the dashboard and API
 ├── VmsCore.NetworkInterfaces  CAN interface statistics (errors, bus state)
 ├── OvcsBus.Cluster            connects this BEAM to the vehicle's other firmwares
@@ -141,7 +145,7 @@ Every vehicle gets these without writing them:
 
 - **HV contactor precharge.** Negative, then precharge, wait for the voltages to equalise, then positive, then drop precharge. Prevents inrush damage.
 - **VMS heartbeat watchdog.** Generic controllers shut down every output when the VMS heartbeat (`0x1A0`, every 100 ms) goes missing. They give the VMS 30 s after power-up before that counts.
-- **Control-level forcing.** The manual brake forces `:manual` from any other level; the radio brake forces `:ros` back to `:radio`. Mode changes need a standstill and ready-to-drive.
+- **Control-level forcing.** The manual brake, or losing ready-to-drive, forces `:manual` from any other level; the radio brake forces `:ros` back to `:radio`. Entering `:radio` or `:ros` needs a standstill and ready-to-drive, and `:ros` is reachable only from `:radio`.
 - **Gear-shift safety.** The gear manager checks speed and throttle before a shift.
 - **Command freshness.** Both ROS command frames carry a sequence number incremented per ROS sample. When it stops changing, the VMS zeroes the command, whether the bridge died or its input did.
 
@@ -153,8 +157,9 @@ Every vehicle gets these without writing them:
 | | Host dev (`./ovcs run <vehicle>`) | Deployed Nerves |
 |---|---|---|
 | BEAMs | Several on one machine, one per firmware role | One per physical device |
-| Node names | `<vehicle>-<role>@<host>` | `nerves@<vehicle>-<role>` (underscores become dashes in hostnames) |
-| Transport | Erlang distribution over loopback | Erlang distribution over the vehicle LAN |
+| Node names | `<vehicle>-<role>@<host>` (short names) | `nerves@<vehicle>-<role>.local` (long names); underscores become dashes in both, e.g. `ovcs-mini-vms` |
+| Distribution started by | `./ovcs run`: `--sname` and `--cookie ovcs` | `OvcsBus.Distribution` at runtime; cookie `ovcs` from the release |
+| Transport | Erlang distribution over loopback | Erlang distribution over the vehicle LAN, `.local` names resolved through mdns_lite's DNS bridge |
 | CAN interfaces | Virtual (`vcan0`, `vcan1`, …), provisioned by `./ovcs can setup` | Real SPI/CAN hardware, set up by Cantastic at boot |
 | `VEHICLE` | Set by the CLI for each BEAM | Baked into the release at build time |
 

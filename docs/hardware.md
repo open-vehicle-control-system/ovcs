@@ -22,7 +22,7 @@ The framework targets off-the-shelf boards: Raspberry Pis for the Elixir firmwar
 | Raspberry Pi 4 | Vehicle Management System (VMS) | All of the vehicle's CAN buses, through the multi-CAN SPI hub |
 | Raspberry Pi 5 | Infotainment (optional) | The `ovcs` bus |
 | Raspberry Pi 3A | Radio control bridge (optional) | The `ovcs` bus |
-| Raspberry Pi 4 or 5 | ROS 2 bridge (optional) | The `ovcs` bus |
+| Raspberry Pi 4 or 5 | ROS 2 bridge (optional) | The `ovcs` bus (a perception bridge may have none and reach the vehicle over Zenoh) |
 | Raspberry Pi 5 (8 GB) | ROS compute node: balenaOS, not Nerves (optional) | None; it runs the Zenoh router the bridges peer with |
 | Arduino R4 Minima | Generic controllers, as many as the vehicle declares | The `ovcs` bus |
 
@@ -37,7 +37,7 @@ The framework's `ovcs` bus carries controller adoption, heartbeats, infotainment
 
 ## Generic Controllers
 
-Arduino R4 Minima boards serve as configurable I/O controllers. They are generic because one framework firmware runs on every board in every vehicle; pin assignments and behaviour are configured over CAN through an **adoption** process, driven by the pinout map the vehicle's VMS composer declares. The boards don't use the R4 Minima's built-in CAN peripheral: any Arduino-compatible board with EEPROM and an external CAN transceiver should work.
+Arduino R4 Minima boards serve as configurable I/O controllers. They are generic because one framework firmware runs on every board in every vehicle; pin assignments and behaviour are configured over CAN through an **adoption** process, driven by the pinout map the vehicle's VMS composer declares. The boards don't use the R4 Minima's built-in CAN peripheral: any Arduino-compatible board with EEPROM and an external MCP2517FD SPI CAN controller plus transceiver should work.
 
 ### Adoption
 
@@ -79,6 +79,7 @@ libraries/ovcs_can/priv/can/components/        FRAMEWORK: shared frame specs
 vehicles/<name>/priv/can/                      VEHICLE: which frames on which network
 +-- vms.yml                      full CAN topology read by vms_core
 +-- infotainment.yml             narrow topology read by infotainment_core (optional)
++-- bridges/<id>.yml             one topology per bridge_firmwares/0 entry
 +-- generic_controller/          per-vehicle controller frame wirings
 ```
 
@@ -130,12 +131,12 @@ Every vehicle CAN bus terminates on the VMS Pi 4, so components on different bus
 | Network | Bitrate | Purpose | Connected components |
 |---|---|---|---|
 | `ovcs` | 1 Mbps | Framework-internal communication | VMS, infotainment, controllers, radio control bridge, ROS bridge |
-| `leaf_drive` | 500 kbps | Nissan Leaf drivetrain | Leaf inverter, Leaf charger |
+| `leaf_drive` | 500 kbps | Nissan Leaf drivetrain | Leaf inverter |
 | `polo_drive` | 500 kbps | Original VW Polo systems | ABS, dashboard, ignition lock, airbag |
 | `orion_bms` | 500 kbps | Battery management | Orion BMS2, EVPT23 charger |
 | `misc` | 500 kbps | Additional components | Bosch iBooster, Bosch LWS steering sensor |
 
-The hub gives OVCS1's VMS five MCP2517FD controllers, `spi0.0` to `spi0.4`. These network names are OVCS1's; your vehicle declares its own names and bitrates in its `vms.yml` and maps them to interfaces in `default_can_mapping/1`.
+The hub gives OVCS1's VMS five MCP2517FD controllers: `spi0.0` (`ovcs`), `spi0.1` (`leaf_drive`), `spi1.0` (`polo_drive`), `spi1.1` (`orion_bms`), `spi1.2` (`misc`). Network names and bitrates are your vehicle's own, declared in its `vms.yml` and mapped to interfaces in `default_can_mapping/1`, except that most `vms_core` drivers expect the network name OVCS1 uses: the `Nissan.LeafAZE0` drivers `leaf_drive`; `Orion.Bms2` and `Evpt.Evpt23Charger` `orion_bms`; the other `Volkswagen.Polo9N` drivers `polo_drive`; `Bosch.IBoosterGen2`, `OVCS.SteeringColumn` and `Volkswagen.Polo9N.PowerSteeringPump` `misc`. `Vesc.MotorController` takes a `network:` option.
 
 ### Controllers
 
@@ -188,7 +189,7 @@ The bridges sit only on `ovcs`; `misc` is the VMS's alone, so third-party traffi
 | ROS bridge | Raspberry Pi 4 or 5 | `ovcs_base_can_system_rpi4`, or `rpi5` (the `ovcs_bridges_system_rpi5` system) |
 | Generic controller | Arduino R4 Minima | PlatformIO, not Nerves |
 
-The custom systems add the CAN kernel modules and device-tree overlays the SPI CAN boards need. They matter only when building firmware for physical hardware; local development never touches them. Each role's Nerves target comes from the vehicle's module (`vms_target/0`, `infotainment_target/0`, the `:target` key of each `bridge_firmwares/0` entry), so moving a vehicle to different boards means changing those values and adding the matching system dependency to the framework firmware's `mix.exs`. Why the host Elixir/OTP pin is tied to these systems is in [Toolchain and OTP](./toolchain_and_otp.md).
+The custom systems add the CAN kernel modules and device-tree overlays the SPI CAN boards need. They matter only when building firmware for physical hardware; local development never touches them. Each role's Nerves target comes from the vehicle's module (`vms_target/0`, `infotainment_target/0`, the `:target` key of each `bridge_firmwares/0` entry), so moving a vehicle to different boards means changing those values and adding the matching system dependency to the framework firmware's `mix.exs`, plus a `targets/<target>/fwup.conf` in that firmware, and for bridges a `system_deps/1` clause and the bridge library's `targets:` list. Why the host Elixir/OTP pin is tied to these systems is in [Toolchain and OTP](./toolchain_and_otp.md).
 
 ## Where next
 

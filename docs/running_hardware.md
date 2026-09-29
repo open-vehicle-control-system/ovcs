@@ -15,10 +15,10 @@ The firmware projects, the Nerves systems and the `ovcs` CLI are the framework. 
 | Infotainment | Raspberry Pi 5 | [`ovcs_base_can_system_rpi5`](https://github.com/open-vehicle-control-system/ovcs_base_can_system_rpi5) |
 | Radio control bridge | Raspberry Pi 3A | [`ovcs_base_can_system_rpi3a`](https://github.com/open-vehicle-control-system/ovcs_base_can_system_rpi3a) |
 | ROS bridge | Raspberry Pi 4 | [`ovcs_base_can_system_rpi4`](https://github.com/open-vehicle-control-system/ovcs_base_can_system_rpi4) |
-| Perception bridge | Raspberry Pi 5 + Hailo-8 | [`ovcs_bridges_system_rpi5`](https://github.com/open-vehicle-control-system/ovcs_bridges_system_rpi5) |
+| Perception bridge | Raspberry Pi 5 + Hailo-8 | [`ovcs_bridges_system_rpi5`](https://github.com/open-vehicle-control-system/ovcs_bridges_system_rpi5) (Mix target `rpi5`) |
 | Generic controller | Arduino R4 Minima | none (PlatformIO) |
 
-These are the reference vehicles' choices. The target of each role is a per-vehicle decision, read from your top-level module: `vms_target/0`, `infotainment_target/0`, and the `:target` key of each `bridge_firmwares/0` entry. To deploy on other hardware, change those values in `vehicles/<vehicle>/lib/<vehicle>.ex` and add the matching system dependency to the firmware project's `mix.exs` (see the [Nerves custom-systems guide](https://hexdocs.pm/nerves/customizing-systems.html)).
+These are the reference vehicles' choices. The target of each role is a per-vehicle decision, read from your top-level module: `vms_target/0`, `infotainment_target/0`, and the `:target` key of each `bridge_firmwares/0` entry. The `:target` value is the Mix target, which usually but not always equals the system's name. To deploy on other hardware, change those values in `vehicles/<vehicle>/lib/<vehicle>.ex` and add the matching system dependency to the firmware project's `mix.exs` (see the [Nerves custom-systems guide](https://hexdocs.pm/nerves/customizing-systems.html)).
 
 The OVCS systems add the CAN kernel modules and device-tree overlays the SPI-CAN hardware needs. The host OTP pinned in `mise.toml` must match the OTP they ship: [Toolchain and OTP](./toolchain_and_otp.md) explains why.
 
@@ -38,7 +38,7 @@ Every build, burn and upload goes through `./ovcs` (built by `mise run cli`, see
 
 ## Build
 
-1. **Configure the vehicle's secrets.** Copy `vehicles/<vehicle>/.env.exs.example` to `vehicles/<vehicle>/.env.exs` and fill in `AUTHORIZED_SSH_KEYS` (your SSH public keys), `WIFI_NETWORKS`, and the Phoenix `SECRET_KEY_BASE` and `SIGNING_SALT`. The file is gitignored and shared by every firmware of the vehicle.
+1. **Configure the vehicle's secrets.** Copy `vehicles/<vehicle>/.env.exs.example` to `vehicles/<vehicle>/.env.exs` and fill in `AUTHORIZED_SSH_KEYS` (your SSH public keys), `WIFI_NETWORKS`, the Phoenix `SECRET_KEY_BASE` and `SIGNING_SALT`, and, for a vehicle with a ROS bridge, `ZENOH_ENDPOINT_IP`. The file is gitignored and shared by every firmware of the vehicle.
 2. **Generate stable SSH host keys**, once per vehicle ([below](#stable-ssh-host-keys-across-burns)):
 
    ```sh
@@ -157,7 +157,7 @@ Host 10.42.0.*
 
 ## CAN interfaces
 
-Each side's composer declares which interface carries each CAN network, per environment, in `default_can_mapping/1`: `:host` for `./ovcs run` (virtual `vcan` interfaces), `:target` for the deployed image (`spi` interfaces behind the CAN hub). A bridge declares its own in the `default_can_mapping` of its `bridge_firmwares/0` entry.
+Each side's composer declares which interface carries each CAN network, per environment, in `default_can_mapping/1`: `:host` for `./ovcs run` (virtual `vcan` interfaces), `:target` for the deployed image (on the VMS, `spi` interfaces behind the CAN hub; the infotainment uses `can0`). A bridge declares its own in the `default_can_mapping` of its `bridge_firmwares/0` entry.
 
 | Interface prefix | Type | Example |
 |---|---|---|
@@ -165,7 +165,7 @@ Each side's composer declares which interface carries each CAN network, per envi
 | `can` | Physical CAN interface | `can0` |
 | `spi` | CAN via SPI, as on the VMS with the multi-CAN hub | `spi0.0` |
 
-The network names are the vehicle's own. The reference vehicles declare:
+The network names are declared in the vehicle's YAML, but most `vms_core` drivers expect the names OVCS1 uses: the `Nissan.LeafAZE0` drivers `leaf_drive`, `Orion.Bms2` and `Evpt.Evpt23Charger` `orion_bms`, the `Volkswagen.Polo9N` drivers `polo_drive` (except `PowerSteeringPump`, on `misc`), `Bosch.IBoosterGen2` and `OVCS.SteeringColumn` `misc`, and the framework's own components `ovcs`. `Vesc.MotorController` takes a `network:` option. The reference vehicles declare:
 
 | Network | Declared by | Carries |
 |---|---|---|
@@ -183,7 +183,7 @@ The network names are the vehicle's own. The reference vehicles declare:
 CAN_NETWORK_MAPPINGS=network1:interface1,network2:interface2,...
 ```
 
-It is read by each firmware's `config/runtime.exs`, so it only works on the host: a deployed image boots without it and uses `default_can_mapping(:target)`. To change a deployed mapping, change the composer.
+It is read by each firmware's `config/runtime.exs` at boot. A deployed image boots without it in its environment and uses `default_can_mapping(:target)`; to change a deployed mapping, change the composer.
 
 On the host, every BEAM `./ovcs run` spawns inherits it except the bridges, which always get their own mapping. Cantastic refuses a mapping that names a network its YAML doesn't declare (`CAN Network: '…' is missing from the Yaml configuration`), so the variable suits a vehicle whose sides share their networks. The Mini's VMS, for instance, on a physical `can0` for the `ovcs` bus:
 

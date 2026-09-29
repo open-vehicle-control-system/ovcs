@@ -26,10 +26,10 @@ vehicles/ovcs_mini/
   description/            the Mini's URDF/xacro model, mounted into the container
 ```
 
-A model describes one vehicle, so it lives with that vehicle's package. Simulating yours is a `description/` directory under `vehicles/<vehicle>/` containing `<vehicle>.urdf.xacro`, one mount line in `simulation.yml`, and:
+A model describes one vehicle, so it lives with that vehicle's package. Simulating yours is a `description/` directory under `vehicles/<vehicle>/` containing `<vehicle>.urdf.xacro`, a mount line in `simulation.yml` (`- ../../vehicles/<vehicle>/description:/opt/ovcs/vehicles/<vehicle>:ro`), and `vehicle:=<vehicle>` added to the `sim` service's command:
 
 ```sh
-docker compose -f simulation.yml exec sim ros2 launch /opt/ovcs/launch/sim.launch.py vehicle:=<vehicle>
+ros2 launch /opt/ovcs/launch/sim.launch.py teleop:=false vehicle:=<vehicle>
 ```
 
 ## Quickstart
@@ -49,15 +49,15 @@ docker compose -f simulation.yml logs -f sim    # ^C once it settles
 Drive it from a topic:
 
 ```sh
-docker compose -f simulation.yml exec sim bash -lc \
-  'ros2 topic pub -r 10 /cmd_vel geometry_msgs/msg/Twist \
+docker compose -f simulation.yml exec sim bash -c \
+  'source /opt/ros/lyrical/setup.bash && ros2 topic pub -r 10 /cmd_vel geometry_msgs/msg/Twist \
      "{linear: {x: 1.0}, angular: {z: 0.3}}"'
 ```
 
 Watch it move, in another shell:
 
 ```sh
-docker compose -f simulation.yml exec sim bash -lc 'ros2 topic echo /odom --once'
+docker compose -f simulation.yml exec sim bash -c 'source /opt/ros/lyrical/setup.bash && ros2 topic echo /odom --once'
 ```
 
 See it. The GUI is a separate service, because Qt in a headless container takes the physics down with it; a plain `up -d` works on a machine with no display:
@@ -91,20 +91,20 @@ mise run cli                  # builds ./ovcs, needs Rust
 ```
 
 > [!WARNING]
-> Stop driving before you verify. Nothing arbitrates `/cmd_vel`: a `topic pub` left running, or the teleop service, publishes against the verifier's own commands, and the failure does not name the cause. `^C` the publisher or run `docker compose -f simulation.yml stop teleop` first. Nav2 uses a separate topic and does not collide.
+> Stop driving before you verify. Nothing arbitrates `/cmd_vel`: a `topic pub` left running, or the teleop service, publishes against the verifier's own commands, and the failure does not name the cause. `^C` the publisher or run `docker compose -f simulation.yml stop teleop` first. Nav2 has its own ROS topic, `/cmd_vel_nav`, but both bridges drive the same Gazebo command topic, so a leftover `/cmd_vel` publisher disturbs `verify-nav2` as well.
 
 ## What the verifiers prove
 
 ### Drivetrain
 
 ```sh
-docker compose -f simulation.yml exec sim python3 /opt/ovcs/scripts/drive_test.py
+docker compose -f simulation.yml exec sim bash -c 'source /opt/ros/lyrical/setup.bash && python3 /opt/ovcs/scripts/drive_test.py'
 ```
 
 ```text
 straight: 1.0 m/s        ->  1.000 m/s     wheel radius and odometry scale
-turn 1.0 m/s, 0.5 rad/s  ->  R = 2.005 m   wheelbase and steering geometry
-turn 2.0 m/s, 0.5 rad/s  ->  R = 3.984 m   the above, at a second point
+turn 1.0 m/s, 0.5 rad/s  ->  R = 2.032 m   wheelbase and steering geometry
+turn 2.0 m/s, 0.5 rad/s  ->  R = 3.927 m   the above, at a second point
 ```
 
 The turning radius must equal `v / ω`; it exercises wheelbase, track and kingpin width together.
@@ -123,7 +123,7 @@ mise run verify-perception                     # stereo only
 OVCS_DETECTOR=stub mise run verify-perception  # + the depth-fusion check
 ```
 
-It starts the router, the simulator and the real perception bridge, measures for 20 s, checks, and tears down. The expected distances are derived from `worlds/workshop.sdf` and the model, not recorded, so moving a box or the camera updates the expectation:
+It starts the router, the base `ros2` container (where the checks run), the simulator and the real perception bridge, measures for 20 s, checks, and tears down. Moving a box or the camera means updating the constants in `perception_test.py`; until then the check fails. The expected distances are computed from constants copied out of `worlds/workshop.sdf` and the model, not from a recorded run:
 
 ```text
 box_1m     x=1.0, 0.3 deep  ->  front face 0.85 m from origin
@@ -189,7 +189,7 @@ docker compose -f simulation.yml --profile nav2 up -d nav2
 docker logs -f ovcs-nav2
 ```
 
-This is Nav2 1.5.1 in the **vehicle's own image** (`compose/compute/images/nav2/`, tagged `ovcs/nav2:lyrical`), with the vehicle's parameters and behaviour trees mounted in, behind a profile so a plain `up -d` stays a bare simulator. The one difference is the clock, a visible launch argument (`use_sim_time:=true`). No map and no AMCL: every frame is `odom` and both costmaps roll with the vehicle.
+This is Nav2 from the Lyrical apt archive (1.5.1 when written) in the **vehicle's own image** (`compose/compute/images/nav2/`, tagged `ovcs/nav2:lyrical`), with the vehicle's parameters and behaviour trees mounted in, behind a profile so a plain `up -d` stays a bare simulator. The one difference is the clock, a visible launch argument (`use_sim_time:=true`). No map and no AMCL: every frame is `odom` and both costmaps roll with the vehicle.
 
 The controller and behaviours publish `/cmd_vel_nav_raw`; `velocity_smoother` republishes it on `/cmd_vel_nav` with a deadband that sends any linear velocity under 0.22 m/s as zero, the Mini's VESC floor ([VESC drivetrain](../../../docs/vesc_drivetrain.md)). Gazebo would drive slower; the deadband is there to run the vehicle's configuration. `nav2_test.py` checks the controller's own output on `/cmd_vel_nav_raw`.
 
@@ -209,7 +209,7 @@ The controller and behaviours publish `/cmd_vel_nav_raw`; `velocity_smoother` re
 | 3.0 m ahead, 1.0 m across | 5.00 m | arrival |
 | 0.8 m ahead, 1.4 m across | 0.93 m | the kinematic limits |
 
-An easy goal never approaches the radius limit: an unconstrained controller drives it at 0.74×, under the threshold. A tight goal bites, but the correct configuration then has to shuffle and may not arrive, so arrival is reported rather than asserted there.
+An easy goal never approaches the radius limit: an unconstrained controller drives it at 0.72×, under the threshold. A tight goal bites, but the correct configuration then has to shuffle and may not arrive, so arrival is reported rather than asserted there.
 
 ## The model
 
@@ -224,11 +224,11 @@ An easy goal never approaches the radius limit: an unconstrained controller driv
 
 The chassis carries its mass in a low tub rather than the full 193 mm envelope, because a centre of gravity at half the body height rolls the truck over in its first corner. Drive is Gazebo's own `AckermannSteering` system, reached through `ros_gz_bridge`. `inertial_macros.xacro` and the gamepad mapping in `config/` come from the earlier [traxxas](https://github.com/open-vehicle-control-system/traxxas) model, which targeted Gazebo Classic.
 
-The model carries the stereo pair and a simulated BNO085 on `/imu_raw`. The camera bar's **height** (`camera_z`, 0.12 m) is the one unmeasured number, in the model and in the vehicle's `stereo_transforms` alike.
+The model carries the stereo pair and a simulated BNO085 on `/imu_raw`. The camera bar's **height** (`camera_z`, 0.12 m) is the one unmeasured number in the stereo geometry, in the model and in the vehicle's `stereo_transforms` alike.
 
 ## Why Jetty, and why Lyrical
 
-ROS 2 Jazzy supports only Gazebo Harmonic; Jetty, the current LTS, needs ROS 2 **Lyrical**, so the whole ROS stack is on Lyrical. The move changed nothing on the wire: all 14 hardcoded `RIHS01_` type hashes in `ros_bridge` are identical between Jazzy and Lyrical, and zenoh is 1.9.0 on both sides, the version `zenohex` 0.9 pins. The Elixir side speaks the rmw_zenoh protocol directly and links nothing from ROS.
+ROS 2 Jazzy supports only Gazebo Harmonic; Jetty, the current LTS, needs ROS 2 **Lyrical**, so the whole ROS stack is on Lyrical. The move changed nothing on the wire: all 14 `RIHS01_` type hashes `ros_bridge` carried over from Jazzy are identical on Lyrical (the 15th, `nav_msgs/msg/Odometry`, was captured on Lyrical directly), and zenoh is 1.9.0 on both sides, the version `zenohex` 0.9 pins. The Elixir side speaks the rmw_zenoh protocol directly and links nothing from ROS.
 
 ## Known limitations
 
@@ -236,3 +236,9 @@ ROS 2 Jazzy supports only Gazebo Harmonic; Jetty, the current LTS, needs ROS 2 *
 - `yaw_goal_tolerance` is deliberately about π. A car cannot rotate to a commanded final heading.
 - Nothing arbitrates between `/cmd_vel` and `/cmd_vel_nav`. Run teleop or Nav2, not both.
 - The verifiers wait with fixed `sleep`s; a slow machine can fail one without anything being wrong.
+
+## Next steps
+
+- [ROS 2 and the simulator](../../../docs/ros2_simulator.md): how the simulator, the ROS bridge and the VMS fit together.
+- [Perception: object detection](../../../docs/ros2_perception.md): the stereo and detection pipeline the perception verifier exercises.
+- [Quickstart](../../../docs/quickstart.md): boot a reference vehicle on your laptop with virtual CAN.

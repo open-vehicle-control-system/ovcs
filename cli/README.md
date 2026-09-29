@@ -19,7 +19,7 @@ mise run cli       # cargo build --release, stripped and copied to cli/ovcs
 | Command | Arguments | What it does |
 |---|---|---|
 | `vehicles` | | List every vehicle under `vehicles/` with its Nerves targets |
-| `doctor` | | Check the required binaries, the `nerves_bootstrap` archive, the `libsocketcan` headers, each vehicle's Nerves targets and its SSH host keys |
+| `doctor` | | Check the toolchain binaries (required: mise, Elixir, Mix, Node, Python, fwup; optional: Ruby, Flutter, can-utils, PlatformIO), the `nerves_bootstrap` archive, the `libsocketcan` headers, each vehicle's Nerves targets and its SSH host keys |
 | `new` | `<name> [--vms-target T] [--infotainment-target T] [--no-infotainment] [--no-bridges] [--display-name DN]` | Scaffold a vehicle under `vehicles/<name>/` (targets default to `ovcs_base_can_system_rpi4` and `ovcs_base_can_system_rpi5`) |
 | `can setup` | `<vehicle>` | Create and bring up the vcan interfaces the vehicle's host mapping names (sudo; idempotent) |
 | `can status` | `<vehicle>` | Report which vcan interfaces the vehicle needs and whether they're up |
@@ -33,7 +33,7 @@ mise run cli       # cargo build --release, stripped and copied to cli/ovcs
 | `host-keys generate` | `<vehicle> [--force]` | Generate stable per-role SSH host keys |
 | `host-keys verify` | `<vehicle>` | Check every role has a complete key set (exit 1 if not) |
 | `host-keys export` | `<vehicle> [-o FILE]` | Bundle the keys into an archive (default `<vehicle>-host-keys.tar.gz`) |
-| `host-keys import` | `<vehicle> --from FILE [--force]` | Restore keys from an archive |
+| `host-keys import` | `<vehicle> -i\|--from FILE [--force]` | Restore keys from an archive |
 
 `./ovcs --help` and `./ovcs <command> --help` print every option. [Running on hardware](../docs/running_hardware.md) walks through build, burn, upload and host keys.
 
@@ -56,7 +56,7 @@ The CLI converts the directory name to UpperCamelCase (`ovcs_mini` becomes `Ovcs
 
 The CLI separates **booting** a vehicle from **observing** it.
 
-`./ovcs run <vehicle>` provisions vcan, compiles each firmware project for the host, then spawns `elixir --sname <vehicle>-<role> -S mix run --no-halt` per role from its project directory, with `VEHICLE` (and `BRIDGE_FIRMWARE_ID` plus the bridge's host CAN mapping for bridges) in its environment. `OvcsBus.Cluster` joins the BEAMs into one Erlang cluster, as on the vehicle. Each child's output is line-prefixed (`[vms] …`, `[bridge-ros] …`). There is no TUI and no IEx; `Ctrl-C` stops everything.
+`./ovcs run <vehicle>` provisions vcan, compiles each firmware project for the host, then spawns `elixir --sname <vehicle>-<role> --cookie ovcs -S mix run --no-halt` per role from its project directory (every underscore, in the vehicle and in the role, becomes a dash: `ovcs-mini-bridge-radio-control`, the name `OvcsBus.Cluster` dials), with `VEHICLE` (and `BRIDGE_FIRMWARE_ID` plus the bridge's host CAN mapping for bridges) in its environment. `OvcsBus.Cluster` joins the BEAMs into one Erlang cluster, as on the vehicle. Each child's output is line-prefixed (`[vms] …`, `[bridge-ros] …`). There is no TUI and no IEx; `Ctrl-C` stops everything.
 
 `run` also starts each firmware's **dev add-ons**, declared by the firmware in `dev_addons/0` and prefixed `[<firmware>-<addon>] …`. The only one today is the VMS dashboard's Vite dev server, on `http://localhost:5173`; use it rather than `:4000`, which serves the last prebuilt bundle and doesn't hot-reload. When the add-on's `node_modules` is missing, `run` installs it first. A missing toolchain or a failed start is a warning, not an error. `--no-addons` boots only the BEAMs.
 
@@ -66,7 +66,7 @@ The Flutter infotainment dashboard isn't an add-on: its hot reload reads keypres
 mise run infotainment-dashboard   # cd infotainment/dashboard && flutter run -d linux
 ```
 
-`./ovcs attach <vehicle>` works from any shell, or another machine. It looks for deployed boards first, probing `<vehicle>-<role>.local` on port 22 for each role (underscores become dashes: `ovcs-mini-vms.local`), and opens an SSH session per board. When none answers, it falls back to the local BEAMs registered in `epmd` under `<vehicle>-*` and opens an `iex --remsh` per BEAM. Both transports reconnect on their own: an `epmd` poll locally, SSH retries with exponential backoff when deployed.
+`./ovcs attach <vehicle>` works from any shell, or another machine. It looks for deployed boards first, probing `<vehicle>-<role>.local` on port 22 for each role (underscores become dashes: `ovcs-mini-vms.local`), and opens an SSH session per board. When none answers, it falls back to the local BEAMs registered in `epmd` under `<vehicle>-*` (hyphenated, e.g. `ovcs-mini-*`) and opens an `iex --remsh` per BEAM. Both transports reconnect on their own: an `epmd` poll locally, SSH retries with exponential backoff when deployed.
 
 ```sh
 ./ovcs run ovcs1       # terminal A
