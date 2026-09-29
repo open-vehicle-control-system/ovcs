@@ -27,7 +27,7 @@ The framework never imports a vehicle. At boot each firmware reads one environme
 - **Bridges** to non-CAN worlds: an ExpressLRS radio link, a ROS 2 graph over Zenoh.
 - **Generic controllers**: one Arduino firmware for every board, configured over CAN by the VMS.
 - **One Erlang mesh** joining every firmware BEAM, with no broker.
-- **A CLI** that boots everything on a laptop with virtual CAN, builds and burns Nerves images, uploads over the air, and attaches a debugging TUI.
+- **A CLI** that boots everything on a laptop with virtual CAN, builds and burns Nerves images, pushes firmware to a running board over SSH, and attaches a debugging TUI.
 - **Libraries** for CAN (Cantastic), PID control, ExpressLRS, MSP OSD, and shared CAN frame definitions for common automotive components.
 
 None of it knows which car it is in. [Architecture](./architecture.md) shows how the pieces fit; [Framework components](./components.md) is the inventory.

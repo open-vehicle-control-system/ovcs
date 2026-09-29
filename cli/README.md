@@ -3,7 +3,7 @@ title: CLI reference
 description: Every ovcs subcommand, how the CLI finds a vehicle, the attach TUI and its hotkeys, and how the CAN pane decodes frames.
 ---
 
-`ovcs` is the framework's command-line tool: it scaffolds vehicles, provisions virtual CAN, boots every firmware on your laptop, builds and flashes Nerves images, pushes over-the-air updates, and watches a running vehicle from a terminal. It is written in Rust with [Ratatui](https://ratatui.rs/) and knows nothing about any particular car: every command works the same on the reference vehicles (`ovcs1`, `ovcs_mini`, `obd2`) and on yours.
+`ovcs` is the framework's command-line tool: it scaffolds vehicles, provisions virtual CAN, boots every firmware on your laptop, builds and flashes Nerves images, pushes firmware to a running board over SSH, and watches a running vehicle from a terminal. It is written in Rust with [Ratatui](https://ratatui.rs/) and knows nothing about any particular car: every command works the same on the reference vehicles (`ovcs1`, `ovcs_mini`, `obd2`) and on yours.
 
 ## Building the CLI
 

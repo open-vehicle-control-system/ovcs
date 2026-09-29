@@ -1,6 +1,6 @@
 ---
 title: Running on hardware
-description: Build, burn and OTA-upload your vehicle's Nerves firmware, keep SSH host keys stable across burns, and attach to the running boards.
+description: Build and burn your vehicle's Nerves firmware, update running boards over SSH or through NervesHub, keep SSH host keys stable across burns, and attach to the running boards.
 ---
 
 Everything that runs on your laptop with `./ovcs run` also runs on the vehicle: the same firmware projects, the same vehicle package, the same Erlang cluster. The difference is that each BEAM becomes a Nerves image on its own Raspberry Pi. This guide covers building those images, getting them onto boards, updating them, and watching them run.

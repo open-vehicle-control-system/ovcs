@@ -6,7 +6,7 @@ description: The Zenoh fabric, who publishes which topic, simulator time, the th
 A map, not a manual: what runs when OVCS talks to ROS 2, who owns time, which command path is real, and what each verifier proves. [Simulation](../compose/local/simulation/README.md) tells you how to run the simulator; read it first.
 
 > [!NOTE]
-> The ROS bridge library, the Zenoh client, the message codecs, the VMS command components and the container images are framework. Which topics a bridge publishes and consumes, which drivers it uses and where the router lives are decided by the **vehicle**, in its `ros_bridge_config/2`. Everything here was built and measured on the **OVCS Mini reference vehicle**, the one that runs a ROS bridge, a perception bridge and a compute node: treat its wiring as a worked example for your own.
+> The ROS bridge library, the Zenoh client, the message codecs, the VMS command components and the container images are framework. Which topics a bridge publishes and consumes, which drivers it uses and where the router lives are decided by the **vehicle**, in its `ros_bridge_config/1` or `/2` (see [Vehicle package](./vehicle_package.md)). Everything here was built and measured on the **OVCS Mini reference vehicle**, the one that runs a ROS bridge, a perception bridge and a compute node: treat its wiring as a worked example for your own.
 
 > [!WARNING]
 > In simulation, the gamepad and Nav2 drive Gazebo's physics **directly**. The VMS and the CAN bus are **not in that loop**; only the Elixir bridge's perception (and, on the host bridge, the IMU) runs against the simulator. A CAN frame is not what moves the simulated car. [Commands](#commands-three-paths-and-a-gap) shows both loops.
@@ -249,7 +249,7 @@ Detection on the Hailo-8 and its backends are in [Perception: object detection](
 
 ## Per-vehicle bridge configuration
 
-This is the framework/vehicle boundary on the ROS side. Apart from `ZenohClient`, every feature of `RosBridge` is a component the vehicle opts into through `%RosBridge.Config{}`, returned by its `ros_bridge_config(:host | :target, firmware_id)`. The host arm is where a dummy IMU lets `./ovcs run` work without a sensor; the target arm has the real `BNO085.I2C`. From the OVCS Mini reference vehicle:
+This is the framework/vehicle boundary on the ROS side. Apart from `ZenohClient`, every feature of `RosBridge` is a component the vehicle opts into through `%RosBridge.Config{}`, returned by its `ros_bridge_config(:host | :target)`, or `ros_bridge_config(:host | :target, firmware_id)` when one vehicle bundles `RosBridge` in several `bridge_firmwares/0` entries, as the OVCS Mini does. The host arm is where a dummy IMU lets `./ovcs run` work without a sensor; the target arm has the real `BNO085.I2C`. From the OVCS Mini reference vehicle:
 
 ```elixir
 defp ros_target_config,
