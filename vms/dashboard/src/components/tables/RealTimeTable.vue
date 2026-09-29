@@ -131,9 +131,13 @@
             return
         }
         action.actionOngoing = true
-        ActionService.createAction(action).then((response) => {
-            action.actionOngoing = false
-        })
+        ActionService.createAction(action)
+            .catch((error) => {
+                console.error(`Action ${action.action} failed:`, error.response?.data?.errors ?? error)
+            })
+            .finally(() => {
+                action.actionOngoing = false
+            })
     }
 
     // Seed each number input with the live value once it first arrives, so the

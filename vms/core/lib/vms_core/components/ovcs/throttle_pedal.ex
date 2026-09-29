@@ -205,7 +205,7 @@ defmodule VmsCore.Components.OVCS.ThrottlePedal do
       {:reply, :ok,
        %{state | throttle_calibration_status: "disabled", calibrated: calibrated?(state)}}
     else
-      {:error, error} -> {:error, error}
+      {:error, error} -> {:reply, {:error, error}, state}
     end
   end
 
@@ -242,7 +242,7 @@ defmodule VmsCore.Components.OVCS.ThrottlePedal do
           {:reply, :ok,
            %{state | throttle_calibration_status: "disabled", calibrated: calibrated?(state)}}
         else
-          {:error, error} -> {:error, error}
+          {:error, error} -> {:reply, {:error, error}, state}
         end
     end
   end
