@@ -3,7 +3,7 @@ title: Getting started
 description: Set up a Linux workstation (or a VM on macOS) with mise, the system packages and the ovcs CLI, then check it with ./ovcs doctor.
 ---
 
-OVCS runs on your workstation without any hardware: virtual CAN interfaces stand in for the buses, and every firmware boots as a plain BEAM. This guide takes a fresh machine to a green `./ovcs doctor`. From there, the [Quickstart](./quickstart.md) boots a whole application in one command.
+OVCS runs on your workstation without any hardware: virtual CAN interfaces stand in for the buses, and every firmware boots as a plain BEAM. This guide takes a fresh machine to a green `./ovcs doctor`. From there, the [Quickstart](./quickstart.md) boots a whole vehicle in one command.
 
 > [!NOTE]
 > Linux is the development platform. The virtual CAN driver (`vcan`) is a Linux kernel module that only ships in standard, non-cloud kernels. On macOS, develop inside a Linux VM ([below](#macos-multipass-vm)). WSL2's stock kernel has no `vcan` either, so use a full VM on Windows too.
@@ -115,7 +115,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now ovcs-vcan.service
 ```
 
-`ip -br link show | grep vcan` lists five interfaces in `UP` state. Five covers the OVCS1 reference application, the largest; widen the loop if your application declares more networks. Then create and enter the container:
+`ip -br link show | grep vcan` lists five interfaces in `UP` state. Five covers the OVCS1 reference vehicle, the largest; widen the loop if your vehicle declares more networks. Then create and enter the container:
 
 ```sh
 distrobox create --name ovcs --image ubuntu:24.04
@@ -178,32 +178,32 @@ mise run cli      # cargo build --release, stripped and copied to cli/ovcs
 ./ovcs doctor
 ```
 
-`./ovcs` at the repository root is a symlink to `cli/ovcs`, which is gitignored: every contributor builds it. `doctor` checks the required binaries (mise, Elixir, Node, Ruby, Python, Flutter, fwup, can-utils, PlatformIO), the `nerves_bootstrap` archive, the `libsocketcan` headers, each application's Nerves targets under `vehicles/`, and their SSH host keys. Missing host keys are a warning: you only need them before burning firmware.
+`./ovcs` at the repository root is a symlink to `cli/ovcs`, which is gitignored: every contributor builds it. `doctor` checks the required binaries (mise, Elixir, Node, Ruby, Python, Flutter, fwup, can-utils, PlatformIO), the `nerves_bootstrap` archive, the `libsocketcan` headers, each vehicle's Nerves targets under `vehicles/`, and their SSH host keys. Missing host keys are a warning: you only need them before burning firmware.
 
 ### 6. Optional: firmware builds
 
 Skip this if you only develop on the host. Building images for the Raspberry Pis additionally needs the host packages from the [Nerves installation guide](https://hexdocs.pm/nerves/installation.html) (`squashfs-tools`, `ssh-askpass`, …). You don't clone the OVCS Nerves systems: each firmware project pins its system to a release tag and Mix fetches it, prebuilt, on the first build. Clone a system into `systems/` only to modify it ([Toolchain and OTP](./toolchain_and_otp.md#hacking-on-a-system-fork-locally)).
 
-Before your first burn, generate stable SSH host keys for your application, so reflashes don't trip OpenSSH's "REMOTE HOST IDENTIFICATION HAS CHANGED" warning:
+Before your first burn, generate stable SSH host keys for your vehicle, so reflashes don't trip OpenSSH's "REMOTE HOST IDENTIFICATION HAS CHANGED" warning:
 
 ```sh
-./ovcs host-keys generate <app>   # once per application, e.g. ovcs1
+./ovcs host-keys generate <vehicle>   # once per vehicle, e.g. ovcs1
 ```
 
 The build, burn and upload flow is in [Running on hardware](./running_hardware.md).
 
 ## Verify the setup
 
-These steps run the OVCS1 reference application. `ovcs_mini`, `obd2` and an application you scaffolded with `./ovcs new` work the same way.
+These steps run the OVCS1 reference vehicle. `ovcs_mini`, `obd2` and a vehicle you scaffolded with `./ovcs new` work the same way.
 
-Provision the virtual CAN interfaces. The CLI reads the application's `default_can_mapping(:host)` and creates only the interfaces it needs; you're prompted for sudo the first time, and a second run is a no-op:
+Provision the virtual CAN interfaces. The CLI reads the vehicle's `default_can_mapping(:host)` and creates only the interfaces it needs; you're prompted for sudo the first time, and a second run is a no-op:
 
 ```sh
 ./ovcs can setup ovcs1
 ./ovcs can status ovcs1
 ```
 
-Boot the application. This provisions vcan if needed, compiles every firmware for the host, and spawns one BEAM per firmware role, joined into one Erlang cluster:
+Boot the vehicle. This provisions vcan if needed, compiles every firmware for the host, and spawns one BEAM per firmware role, joined into one Erlang cluster:
 
 ```sh
 ./ovcs run ovcs1
@@ -230,8 +230,8 @@ The CAN pane shows it decoded as `leaf_drive/inverter_status` with `rotations_pe
 
 ## Next steps
 
-- [Quickstart](./quickstart.md): boot a reference application, open the dashboard, attach the TUI, send your first frame.
-- [Framework and applications](./framework.md): what the framework provides and what an application is.
-- [Simulation](../compose/local/simulation/README.md): drive a Gazebo model of the OVCS Mini reference application with nothing but Docker.
+- [Quickstart](./quickstart.md): boot a reference vehicle, open the dashboard, attach the TUI, send your first frame.
+- [Framework and vehicles](./framework.md): what the framework provides and what a vehicle is.
+- [Simulation](../compose/local/simulation/README.md): drive a Gazebo model of the OVCS Mini reference vehicle with nothing but Docker.
 - [Framework components](./applications.md): each core, API, firmware shell and library.
 - [Hardware](./hardware_architecture.md): the Raspberry Pis, the CAN hub and the Arduino controllers.

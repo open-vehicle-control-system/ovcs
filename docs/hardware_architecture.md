@@ -3,10 +3,10 @@ title: Hardware
 description: The boards the framework targets and the generic Arduino controllers, with the OVCS1 and OVCS Mini builds as worked examples.
 ---
 
-The framework targets off-the-shelf boards: Raspberry Pis for the Elixir firmwares and Arduino R4 Minimas for I/O, joined by custom CAN interface boards. Every application shares that. Which CAN buses exist, at what bitrate, and which manufacturer components hang off them is the application's decision. This page describes what the framework targets, then walks through two reference applications: OVCS1 with five isolated buses on a full-size car, and the OVCS Mini with two buses on an RC car.
+The framework targets off-the-shelf boards: Raspberry Pis for the Elixir firmwares and Arduino R4 Minimas for I/O, joined by custom CAN interface boards. Every vehicle shares that. Which CAN buses exist, at what bitrate, and which manufacturer components hang off them is the vehicle's decision. This page describes what the framework targets, then walks through two reference vehicles: OVCS1 with five isolated buses on a full-size car, and the OVCS Mini with two buses on an RC car.
 
 > [!NOTE]
-> The boards, the CAN interface hardware and the generic controllers are framework-level: your application uses them as they are. Bus layouts, manufacturer components and controller roles belong to the OVCS1 and OVCS Mini reference applications; yours declares its own in its CAN topology YAMLs and composers. See [Framework and applications](./framework.md).
+> The boards, the CAN interface hardware and the generic controllers are framework-level: your vehicle uses them as they are. Bus layouts, manufacturer components and controller roles belong to the OVCS1 and OVCS Mini reference vehicles; yours declares its own in its CAN topology YAMLs and composers. See [Framework and vehicles](./framework.md).
 
 ## Design principles
 
@@ -19,30 +19,30 @@ The framework targets off-the-shelf boards: Raspberry Pis for the Elixir firmwar
 
 | Device | Framework role | CAN connectivity |
 |---|---|---|
-| Raspberry Pi 4 | Vehicle Management System (VMS) | All of the application's CAN buses, through the multi-CAN SPI hub |
+| Raspberry Pi 4 | Vehicle Management System (VMS) | All of the vehicle's CAN buses, through the multi-CAN SPI hub |
 | Raspberry Pi 5 | Infotainment (optional) | The `ovcs` bus |
 | Raspberry Pi 3A | Radio control bridge (optional) | The `ovcs` bus |
 | Raspberry Pi 4 or 5 | ROS 2 bridge (optional) | The `ovcs` bus |
 | Raspberry Pi 5 (8 GB) | ROS compute node: balenaOS, not Nerves (optional) | None; it runs the Zenoh router the bridges peer with |
-| Arduino R4 Minima | Generic controllers, as many as the application declares | The `ovcs` bus |
+| Arduino R4 Minima | Generic controllers, as many as the vehicle declares | The `ovcs` bus |
 
-An application declares which roles it uses in its `OvcsVehicle` module (`vms_target/0`, `infotainment_target/0`, the `bridge_firmwares/0` map) and in its VMS composer's `generic_controllers/0`.
+A vehicle declares which roles it uses in its `OvcsVehicle` module (`vms_target/0`, `infotainment_target/0`, the `bridge_firmwares/0` map) and in its VMS composer's `generic_controllers/0`.
 
 ### CAN interface hardware
 
 - **Custom Raspberry Pi CAN HATs**: SPI-to-CAN boards connecting a Pi to one CAN network. Used on the infotainment and bridge Pis.
-- **Custom multi-CAN SPI hub**: fans the VMS Pi 4's SPI out to MCP2517FD CAN controllers, one per bus, each with its own transceiver. Cantastic addresses them as `spiN.M` interfaces (`spi0.0`, `spi1.0`, …); an application maps its network names onto them in `default_can_mapping(:target)`.
+- **Custom multi-CAN SPI hub**: fans the VMS Pi 4's SPI out to MCP2517FD CAN controllers, one per bus, each with its own transceiver. Cantastic addresses them as `spiN.M` interfaces (`spi0.0`, `spi1.0`, …); a vehicle maps its network names onto them in `default_can_mapping(:target)`.
 
-The framework's `ovcs` bus carries controller adoption, heartbeats, infotainment and bridge commands. Applications with many nodes on it run it at 1 Mbps; manufacturer buses run at the stock bitrate their components require.
+The framework's `ovcs` bus carries controller adoption, heartbeats, infotainment and bridge commands. Vehicles with many nodes on it run it at 1 Mbps; manufacturer buses run at the stock bitrate their components require.
 
 ## Generic Controllers
 
-Arduino R4 Minima boards serve as configurable I/O controllers. They are generic because one framework firmware runs on every board in every application; pin assignments and behaviour are configured over CAN through an **adoption** process, driven by the pinout map the application's VMS composer declares. The boards don't use the R4 Minima's built-in CAN peripheral: any Arduino-compatible board with EEPROM and an external CAN transceiver should work.
+Arduino R4 Minima boards serve as configurable I/O controllers. They are generic because one framework firmware runs on every board in every vehicle; pin assignments and behaviour are configured over CAN through an **adoption** process, driven by the pinout map the vehicle's VMS composer declares. The boards don't use the R4 Minima's built-in CAN peripheral: any Arduino-compatible board with EEPROM and an external CAN transceiver should work.
 
 ### Adoption
 
 1. A new, unconfigured controller joins the `ovcs` bus and broadcasts its status as `ADOPTION_REQUIRED`.
-2. The VMS sends a configuration frame (`0x700`) with the pin assignments from the application's `generic_controllers/0`.
+2. The VMS sends a configuration frame (`0x700`) with the pin assignments from the vehicle's `generic_controllers/0`.
 3. You press the physical adoption button on the Arduino to confirm.
 4. The controller stores the configuration in EEPROM and starts normal operation.
 5. On later boots it loads the configuration from EEPROM and starts immediately.
@@ -62,7 +62,7 @@ Controller frame ids follow `0b111AAAABBBB`: `AAAA` is the controller id (up to 
 
 ## CAN Bus Configuration
 
-Shared component-level frame and signal specifications live in the framework's [`ovcs_can`](../libraries/ovcs_can/README.md) library. Each application bundles its own topology YAMLs, saying which frames run on which network, inside its package.
+Shared component-level frame and signal specifications live in the framework's [`ovcs_can`](../libraries/ovcs_can/README.md) library. Each vehicle bundles its own topology YAMLs, saying which frames run on which network, inside its package.
 
 ```text
 libraries/ovcs_can/priv/can/components/        FRAMEWORK: shared frame specs
@@ -76,10 +76,10 @@ libraries/ovcs_can/priv/can/components/        FRAMEWORK: shared frame specs
 +-- volkswagen/polo_9n/          Polo ABS, dashboard, key, lock, wheel frames
 +-- obd2/                        OBD2 diagnostic requests
 
-vehicles/<name>/priv/can/                      APPLICATION: which frames on which network
+vehicles/<name>/priv/can/                      VEHICLE: which frames on which network
 +-- vms.yml                      full CAN topology read by vms_core
 +-- infotainment.yml             narrow topology read by infotainment_core (optional)
-+-- generic_controller/          per-application controller frame wirings
++-- generic_controller/          per-vehicle controller frame wirings
 ```
 
 The VMS topology holds every frame; the infotainment one subscribes only to what the head unit renders. Both import shared specs with Cantastic's cross-app syntax:
@@ -88,9 +88,9 @@ The VMS topology holds every frame; the infotainment one subscribes only to what
 - import!:@ovcs_can:can/components/ovcs/0x1A0_vms_status.yml
 ```
 
-The specs under `ovcs_can` exist because the reference applications needed them. If your application uses a component the library doesn't describe yet, add its YAML, ideally to the library so the next application can import it.
+The specs under `ovcs_can` exist because the reference vehicles needed them. If your vehicle uses a component the library doesn't describe yet, add its YAML, ideally to the library so the next vehicle can import it.
 
-## Worked example: the OVCS1 reference application
+## Worked example: the OVCS1 reference vehicle
 
 OVCS1 is a 2007 Volkswagen Polo 9N converted to an electric vehicle. It uses every role the framework offers: VMS, infotainment, two bridges and generic controllers, on five isolated buses. Pin-level notes are in the [OVCS1 wiring reference](../vehicles/ovcs1/WIRING.md).
 
@@ -135,7 +135,7 @@ Every vehicle CAN bus terminates on the VMS Pi 4, so components on different bus
 | `orion_bms` | 500 kbps | Battery management | Orion BMS2, EVPT23 charger |
 | `misc` | 500 kbps | Additional components | Bosch iBooster, Bosch LWS steering sensor |
 
-The hub gives OVCS1's VMS five MCP2517FD controllers, `spi0.0` to `spi0.4`. These network names are OVCS1's; your application declares its own names and bitrates in its `vms.yml` and maps them to interfaces in `default_can_mapping/1`.
+The hub gives OVCS1's VMS five MCP2517FD controllers, `spi0.0` to `spi0.4`. These network names are OVCS1's; your vehicle declares its own names and bitrates in its `vms.yml` and maps them to interfaces in `default_can_mapping/1`.
 
 ### Controllers
 
@@ -152,11 +152,11 @@ The hub gives OVCS1's VMS five MCP2517FD controllers, `spi0.0` to `spi0.4`. Thes
 - **Cabling.** RC receivers live near the antenna and the ROS bridge rides with the autonomy stack; both are far from the VMS bay.
 - **Targets.** The Pi 3A is cheap and adequate for the RC bridge; ROS needs the memory of a Pi 4 or 5.
 
-The BEAMs still join one Erlang cluster through `OvcsBus.Cluster`, so at the application level they talk as if they were processes in one VM. Any application can make the same choice, or bundle several bridges into one image through `bridge_firmwares/0`.
+The BEAMs still join one Erlang cluster through `OvcsBus.Cluster`, so at the application level they talk as if they were processes in one VM. Any vehicle can make the same choice, or bundle several bridges into one image through `bridge_firmwares/0`.
 
 ## OVCS Mini Hardware
 
-The OVCS Mini reference application runs the same framework on a Traxxas 4WD chassis, with no infotainment side.
+The OVCS Mini reference vehicle runs the same framework on a Traxxas 4WD chassis, with no infotainment side.
 
 | Component | Hardware |
 |---|---|
@@ -188,7 +188,7 @@ The bridges sit only on `ovcs`; `misc` is the VMS's alone, so third-party traffi
 | ROS bridge | Raspberry Pi 4 or 5 | `ovcs_base_can_system_rpi4`, or `rpi5` (the `ovcs_bridges_system_rpi5` system) |
 | Generic controller | Arduino R4 Minima | PlatformIO, not Nerves |
 
-The custom systems add the CAN kernel modules and device-tree overlays the SPI CAN boards need. They matter only when building firmware for physical hardware; local development never touches them. Each role's Nerves target comes from the application's module (`vms_target/0`, `infotainment_target/0`, the `:target` key of each `bridge_firmwares/0` entry), so moving an application to different boards means changing those values and adding the matching system dependency to the framework firmware's `mix.exs`. Why the host Elixir/OTP pin is tied to these systems is in [Toolchain and OTP](./toolchain_and_otp.md).
+The custom systems add the CAN kernel modules and device-tree overlays the SPI CAN boards need. They matter only when building firmware for physical hardware; local development never touches them. Each role's Nerves target comes from the vehicle's module (`vms_target/0`, `infotainment_target/0`, the `:target` key of each `bridge_firmwares/0` entry), so moving a vehicle to different boards means changing those values and adding the matching system dependency to the framework firmware's `mix.exs`. Why the host Elixir/OTP pin is tied to these systems is in [Toolchain and OTP](./toolchain_and_otp.md).
 
 ## Where next
 

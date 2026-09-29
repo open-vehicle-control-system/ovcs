@@ -1,12 +1,12 @@
 ---
 title: Simulation
-description: Drive the OVCS Mini reference application in Gazebo with nothing but Docker, then point the real perception pipeline and Nav2 at it.
+description: Drive the OVCS Mini reference vehicle in Gazebo with nothing but Docker, then point the real perception pipeline and Nav2 at it.
 ---
 
-A Gazebo **Jetty** model of the OVCS Mini reference application (a Traxxas Slash 4x4, 1/10 scale) and the container stack to run it. It needs Docker and Compose v2 and nothing else: no Nerves toolchain, no CAN interface, no vehicle. It is the quickest way to see OVCS do something.
+A Gazebo **Jetty** model of the OVCS Mini reference vehicle (a Traxxas Slash 4x4, 1/10 scale) and the container stack to run it. It needs Docker and Compose v2 and nothing else: no Nerves toolchain, no CAN interface, no physical vehicle. It is the quickest way to see OVCS do something.
 
 > [!NOTE]
-> The simulator stack is framework tooling. It knows nothing about the Mini beyond the model mounted into it, which lives in the Mini's own package, `vehicles/ovcs_mini/description/`. Your application gets its own model the same way. See [Framework and applications](../../../docs/framework.md).
+> The simulator stack is framework tooling. It knows nothing about the Mini beyond the model mounted into it, which lives in the Mini's own package, `vehicles/ovcs_mini/description/`. Your vehicle gets its own model the same way. See [Framework and vehicles](../../../docs/framework.md).
 
 > [!WARNING]
 > The gamepad and Nav2 drive Gazebo's physics **directly**. The VMS and the CAN bus are **not in that loop**; the Elixir bridge runs against the simulator only for perception (and, on the host ROS bridge, the IMU). A CAN frame is not what moves the simulated car. [ROS 2 and the simulator](../../../docs/ros2_integration.md#commands-three-paths-and-a-gap) shows both loops.
@@ -26,10 +26,10 @@ vehicles/ovcs_mini/
   description/            the Mini's URDF/xacro model, mounted into the container
 ```
 
-A model describes one application, so it lives with that application's package. Simulating yours is a `description/` directory under `vehicles/<app>/` containing `<app>.urdf.xacro`, one mount line in `simulation.yml`, and:
+A model describes one vehicle, so it lives with that vehicle's package. Simulating yours is a `description/` directory under `vehicles/<vehicle>/` containing `<vehicle>.urdf.xacro`, one mount line in `simulation.yml`, and:
 
 ```sh
-docker compose -f simulation.yml exec sim ros2 launch /opt/ovcs/launch/sim.launch.py vehicle:=<app>
+docker compose -f simulation.yml exec sim ros2 launch /opt/ovcs/launch/sim.launch.py vehicle:=<vehicle>
 ```
 
 ## Quickstart
@@ -154,7 +154,7 @@ The checks tell "slow" from "wrong".
 
 ## Running the perception bridge against it
 
-The stereo stack (SGBM, rectification, publishers, detector) is framework code in `bridges/ros_bridge` and runs unchanged against the simulator. The Mini wires it in its `ros_bridge_config/2`; `VEHICLE=OvcsMini` below selects that application, and yours is selected the same way. Only the camera driver differs: `RosBridge.Camera.Zenoh` subscribes to a ROS image topic and emits the same frames a physical driver does.
+The stereo stack (SGBM, rectification, publishers, detector) is framework code in `bridges/ros_bridge` and runs unchanged against the simulator. The Mini wires it in its `ros_bridge_config/2`; `VEHICLE=OvcsMini` below selects that vehicle, and yours is selected the same way. Only the camera driver differs: `RosBridge.Camera.Zenoh` subscribes to a ROS image topic and emits the same frames a physical driver does.
 
 ```sh
 ./ovcs can setup ovcs_mini          # once; Cantastic needs vcan0 to exist

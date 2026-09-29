@@ -1,15 +1,15 @@
 ---
 title: CLI reference
-description: Every ovcs subcommand, how the CLI finds an application, the attach TUI and its hotkeys, and how the CAN pane decodes frames.
+description: Every ovcs subcommand, how the CLI finds a vehicle, the attach TUI and its hotkeys, and how the CAN pane decodes frames.
 ---
 
-`ovcs` is the framework's command-line tool: it scaffolds applications, provisions virtual CAN, boots every firmware on your laptop, builds and flashes Nerves images, pushes over-the-air updates, and watches a running vehicle from a terminal. It is written in Rust with [Ratatui](https://ratatui.rs/) and knows nothing about any particular car: every command works the same on the reference applications (`ovcs1`, `ovcs_mini`, `obd2`) and on yours.
+`ovcs` is the framework's command-line tool: it scaffolds vehicles, provisions virtual CAN, boots every firmware on your laptop, builds and flashes Nerves images, pushes over-the-air updates, and watches a running vehicle from a terminal. It is written in Rust with [Ratatui](https://ratatui.rs/) and knows nothing about any particular car: every command works the same on the reference vehicles (`ovcs1`, `ovcs_mini`, `obd2`) and on yours.
 
 ## Building the CLI
 
 ```sh
 mise run cli       # cargo build --release, stripped and copied to cli/ovcs
-./ovcs doctor      # verify the toolchain and every application under vehicles/
+./ovcs doctor      # verify the toolchain and every vehicle under vehicles/
 ```
 
 `./ovcs` at the repository root is a symlink to `cli/ovcs`, which is gitignored: every contributor builds it locally. The Rust toolchain (1.90) is pinned in `mise.toml` and `cli/rust-toolchain.toml`. The CLI finds the repository by climbing from the current directory; set `OVCS_ROOT` to run it from elsewhere.
@@ -18,45 +18,45 @@ mise run cli       # cargo build --release, stripped and copied to cli/ovcs
 
 | Command | Arguments | What it does |
 |---|---|---|
-| `vehicles` | | List every application under `vehicles/` with its Nerves targets |
-| `doctor` | | Check the required binaries, the `nerves_bootstrap` archive, the `libsocketcan` headers, each application's Nerves targets and its SSH host keys |
-| `new` | `<name> [--vms-target T] [--infotainment-target T] [--no-infotainment] [--no-bridges] [--display-name DN]` | Scaffold an application under `vehicles/<name>/` (targets default to `ovcs_base_can_system_rpi4` and `ovcs_base_can_system_rpi5`) |
-| `can setup` | `<app>` | Create and bring up the vcan interfaces the application's host mapping names (sudo; idempotent) |
-| `can status` | `<app>` | Report which vcan interfaces the application needs and whether they're up |
-| `run` | `<app> [--no-addons]` | `can setup`, compile every firmware for the host, then spawn one BEAM per role |
-| `attach` | `<app>` | Split-pane TUI on a running application, deployed or local |
-| `connect` | `<app> <role> [--host H]` | Plain IEx over SSH on one deployed board |
-| `build` | `<app> <role>` or `--all <app>` | Build a firmware image; `--all` builds every role |
-| `burn` | `<app> <role> [--build]` | Write the image to an SD card; `--build` builds first |
-| `upload` | `<app> <role> [--build] [--host H] [-f\|--file F]` | Push firmware to a running board over SSH |
-| `clean` | `<app> <role>` | Remove build artifacts |
-| `host-keys generate` | `<app> [--force]` | Generate stable per-role SSH host keys |
-| `host-keys verify` | `<app>` | Check every role has a complete key set (exit 1 if not) |
-| `host-keys export` | `<app> [-o FILE]` | Bundle the keys into an archive (default `<app>-host-keys.tar.gz`) |
-| `host-keys import` | `<app> --from FILE [--force]` | Restore keys from an archive |
+| `vehicles` | | List every vehicle under `vehicles/` with its Nerves targets |
+| `doctor` | | Check the required binaries, the `nerves_bootstrap` archive, the `libsocketcan` headers, each vehicle's Nerves targets and its SSH host keys |
+| `new` | `<name> [--vms-target T] [--infotainment-target T] [--no-infotainment] [--no-bridges] [--display-name DN]` | Scaffold a vehicle under `vehicles/<name>/` (targets default to `ovcs_base_can_system_rpi4` and `ovcs_base_can_system_rpi5`) |
+| `can setup` | `<vehicle>` | Create and bring up the vcan interfaces the vehicle's host mapping names (sudo; idempotent) |
+| `can status` | `<vehicle>` | Report which vcan interfaces the vehicle needs and whether they're up |
+| `run` | `<vehicle> [--no-addons]` | `can setup`, compile every firmware for the host, then spawn one BEAM per role |
+| `attach` | `<vehicle>` | Split-pane TUI on a running vehicle, deployed or local |
+| `connect` | `<vehicle> <role> [--host H]` | Plain IEx over SSH on one deployed board |
+| `build` | `<vehicle> <role>` or `--all <vehicle>` | Build a firmware image; `--all` builds every role |
+| `burn` | `<vehicle> <role> [--build]` | Write the image to an SD card; `--build` builds first |
+| `upload` | `<vehicle> <role> [--build] [--host H] [-f\|--file F]` | Push firmware to a running board over SSH |
+| `clean` | `<vehicle> <role>` | Remove build artifacts |
+| `host-keys generate` | `<vehicle> [--force]` | Generate stable per-role SSH host keys |
+| `host-keys verify` | `<vehicle>` | Check every role has a complete key set (exit 1 if not) |
+| `host-keys export` | `<vehicle> [-o FILE]` | Bundle the keys into an archive (default `<vehicle>-host-keys.tar.gz`) |
+| `host-keys import` | `<vehicle> --from FILE [--force]` | Restore keys from an archive |
 
 `./ovcs --help` and `./ovcs <command> --help` print every option. [Running on hardware](../docs/running_hardware.md) walks through build, burn, upload and host keys.
 
 ### Arguments
 
-- `<app>` is the snake_case directory name of an application under `vehicles/`, for example `ovcs_mini` or `my_car`.
-- `<role>` is `vms`, `infotainment`, or `bridge-<id>` for any id in the application's `bridge_firmwares/0`, for example `bridge-radio_control`. The `bridge-` prefix is required: a bare id is rejected, and the error lists the valid roles.
-- The two positional arguments of `build`, `burn`, `clean`, `upload` and `connect` are order-independent: the resolver picks the application out of the two and treats the other as the role.
+- `<vehicle>` is the snake_case directory name of a vehicle package under `vehicles/`, for example `ovcs_mini` or `my_car`.
+- `<role>` is `vms`, `infotainment`, or `bridge-<id>` for any id in the vehicle's `bridge_firmwares/0`, for example `bridge-radio_control`. The `bridge-` prefix is required: a bare id is rejected, and the error lists the valid roles.
+- The two positional arguments of `build`, `burn`, `clean`, `upload` and `connect` are order-independent: the resolver picks the vehicle out of the two and treats the other as the role.
 - A missing argument opens an interactive picker. On a non-tty stdin the command exits with status 2 instead.
 
-### How it finds an application
+### How it finds a vehicle
 
-The CLI converts the directory name to UpperCamelCase (`ovcs_mini` becomes `OvcsMini`) and asks that module, through short `mix run --no-start` spawns, for the `OvcsVehicle` callbacks every application implements: `vms_target/0`, `infotainment_target/0`, `bridge_firmwares/0`, and the composers' `default_can_mapping/1`. It then passes `VEHICLE` and `MIX_TARGET` (plus `BRIDGE_FIRMWARE_ID` for bridges) to the firmware projects' `build.sh` scripts in `vms/firmware/`, `infotainment/firmware/` and `bridges/firmware/`.
+The CLI converts the directory name to UpperCamelCase (`ovcs_mini` becomes `OvcsMini`) and asks that module, through short `mix run --no-start` spawns, for the `OvcsVehicle` callbacks every vehicle implements: `vms_target/0`, `infotainment_target/0`, `bridge_firmwares/0`, and the composers' `default_can_mapping/1`. It then passes `VEHICLE` and `MIX_TARGET` (plus `BRIDGE_FIRMWARE_ID` for bridges) to the firmware projects' `build.sh` scripts in `vms/firmware/`, `infotainment/firmware/` and `bridges/firmware/`.
 
 `build --all` builds the firmware projects in parallel, one lane per project directory. Roles sharing a directory (every bridge lives in `bridges/firmware`) build one after another, since they share its `deps/` and `mix.lock`. A failure skips the rest of its lane; the other lanes finish, and the first failure's log is printed at the end.
 
-`new` runs `OvcsVehicle.Scaffold.generate/3` from `libraries/ovcs_vehicle/`, so the templates stay in Elixir. [Your application package](../docs/vehicle_parameterisation.md) explains what the callbacks mean.
+`new` runs `OvcsVehicle.Scaffold.generate/3` from `libraries/ovcs_vehicle/`, so the templates stay in Elixir. [Your vehicle package](../docs/vehicle_parameterisation.md) explains what the callbacks mean.
 
 ## `run` versus `attach`
 
-The CLI separates **booting** an application from **observing** it.
+The CLI separates **booting** a vehicle from **observing** it.
 
-`./ovcs run <app>` provisions vcan, compiles each firmware project for the host, then spawns `elixir --sname <app>-<role> -S mix run --no-halt` per role from its project directory, with `VEHICLE` (and `BRIDGE_FIRMWARE_ID` plus the bridge's host CAN mapping for bridges) in its environment. `OvcsBus.Cluster` joins the BEAMs into one Erlang cluster, as on the vehicle. Each child's output is line-prefixed (`[vms] …`, `[bridge-ros] …`). There is no TUI and no IEx; `Ctrl-C` stops everything.
+`./ovcs run <vehicle>` provisions vcan, compiles each firmware project for the host, then spawns `elixir --sname <vehicle>-<role> -S mix run --no-halt` per role from its project directory, with `VEHICLE` (and `BRIDGE_FIRMWARE_ID` plus the bridge's host CAN mapping for bridges) in its environment. `OvcsBus.Cluster` joins the BEAMs into one Erlang cluster, as on the vehicle. Each child's output is line-prefixed (`[vms] …`, `[bridge-ros] …`). There is no TUI and no IEx; `Ctrl-C` stops everything.
 
 `run` also starts each firmware's **dev add-ons**, declared by the firmware in `dev_addons/0` and prefixed `[<firmware>-<addon>] …`. The only one today is the VMS dashboard's Vite dev server, on `http://localhost:5173`; use it rather than `:4000`, which serves the last prebuilt bundle and doesn't hot-reload. When the add-on's `node_modules` is missing, `run` installs it first. A missing toolchain or a failed start is a warning, not an error. `--no-addons` boots only the BEAMs.
 
@@ -66,7 +66,7 @@ The Flutter infotainment dashboard isn't an add-on: its hot reload reads keypres
 mise run infotainment-dashboard   # cd infotainment/dashboard && flutter run -d linux
 ```
 
-`./ovcs attach <app>` works from any shell, or another machine. It looks for deployed boards first, probing `<app>-<role>.local` on port 22 for each role (underscores become dashes: `ovcs-mini-vms.local`), and opens an SSH session per board. When none answers, it falls back to the local BEAMs registered in `epmd` under `<app>-*` and opens an `iex --remsh` per BEAM. Both transports reconnect on their own: an `epmd` poll locally, SSH retries with exponential backoff when deployed.
+`./ovcs attach <vehicle>` works from any shell, or another machine. It looks for deployed boards first, probing `<vehicle>-<role>.local` on port 22 for each role (underscores become dashes: `ovcs-mini-vms.local`), and opens an SSH session per board. When none answers, it falls back to the local BEAMs registered in `epmd` under `<vehicle>-*` and opens an `iex --remsh` per BEAM. Both transports reconnect on their own: an `epmd` poll locally, SSH retries with exponential backoff when deployed.
 
 ```sh
 ./ovcs run ovcs1       # terminal A
@@ -116,7 +116,7 @@ The CAN pane shows signals, not bytes:
 [bridge-ros|ovcs/0x1A0]      raw=00 00 2A 00 …
 ```
 
-Decoding happens **inside each running BEAM**; the CLI never parses signal layouts, and neither the applications nor Cantastic need any change for it.
+Decoding happens **inside each running BEAM**; the CLI never parses signal layouts, and neither the vehicle packages nor Cantastic need any change for it.
 
 1. On each node, `attach` opens an `iex --remsh` session and feeds it a chunk of Elixir (`MONITOR_SNIPPET` in `src/commands/attach.rs`). Running in that node, the code has every module the firmware compiled in, Cantastic included.
 2. At startup it walks `Cantastic.ConfigurationStore.networks()` and rebuilds each network's frame specifications from the YAML Cantastic loaded, with `Cantastic.FrameSpecification.from_yaml/3`, caching them in `:persistent_term`.
@@ -137,7 +137,7 @@ cli/
 └── src/
     ├── main.rs           # clap command enum and dispatch
     ├── repo_root.rs      # OVCS_ROOT, or climb from the cwd
-    ├── vehicles.rs       # application discovery and `mix run -e` metadata probes
+    ├── vehicles.rs       # vehicle discovery and `mix run -e` metadata probes
     ├── firmware.rs       # role → firmware project and environment
     ├── resolve_args.rs   # order-independent (app, role) argument resolution
     ├── build_runner.rs   # parallel build.sh lanes for `build --all` and `run`

@@ -6,15 +6,15 @@ description: Inject single frames with cansend, replay real captures with canpla
 During local development none of the CAN traffic is real. The `can-utils` tools let you inject single frames, replay captures from a real car, and watch what the VMS emits, all against the virtual interfaces `./ovcs can setup` creates.
 
 > [!NOTE]
-> The tools and the virtual-CAN setup work with any application. The frame ids in the examples (`0x280`, `0x320`) come from the OVCS1 reference application; your application's frames are whatever its `priv/can/` YAMLs declare, and the same commands apply.
+> The tools and the virtual-CAN setup work with any vehicle. The frame ids in the examples (`0x280`, `0x320`) come from the OVCS1 reference vehicle; your vehicle's frames are whatever its `priv/can/` YAMLs declare, and the same commands apply.
 
 ## Prerequisites
 
-- Virtual CAN interfaces are up: `./ovcs can setup <app>`, or `./ovcs run <app>`, which does it for you.
+- Virtual CAN interfaces are up: `./ovcs can setup <vehicle>`, or `./ovcs run <vehicle>`, which does it for you.
 - The VMS (or infotainment) side is running; see [Framework components](./applications.md#local-development).
 - `can-utils` is installed (`sudo apt install can-utils`): it provides `cansend`, `candump`, `canplayer` and `cangen`.
 
-Each network maps to one interface. The application's `default_can_mapping(:host)` sets the mapping; OVCS1's is `ovcs:vcan0,leaf_drive:vcan1,polo_drive:vcan2,orion_bms:vcan3,misc:vcan4`. A frame sent on the wrong interface is silently ignored.
+Each network maps to one interface. The vehicle's `default_can_mapping(:host)` sets the mapping; OVCS1's is `ovcs:vcan0,leaf_drive:vcan1,polo_drive:vcan2,orion_bms:vcan3,misc:vcan4`. A frame sent on the wrong interface is silently ignored.
 
 ## Sending single frames
 
@@ -29,7 +29,7 @@ cansend vcan2 320#0002000000000000   # handbrake engaged (byte 1 = 0x02)
 cansend vcan2 320#0000000000000000   # handbrake disengaged
 ```
 
-For your application, pick a frame its VMS **receives** and follow the same pattern. Sending a frame the VMS emits does nothing: the VMS is the one producing it.
+For your vehicle, pick a frame its VMS **receives** and follow the same pattern. Sending a frame the VMS emits does nothing: the VMS is the one producing it.
 
 ## Watching what the VMS emits
 
@@ -43,7 +43,7 @@ candump -L vcan2 > my_recording.log  # record in the log format canplayer reads
 In OVCS1, `0x280` is the engine status the VMS sends to the Polo instrument cluster: the Leaf motor's rpm, as a little-endian 16-bit integer in bytes 2 and 3, scaled by 0.25. `88 13` reads as `0x1388` = 5000, so 1250 rpm.
 
 > [!TIP]
-> `./ovcs attach <app>` has a CAN pane that shows every frame on every declared interface decoded into named signals, using the application's own YAML. It is often faster than reading bytes. See the [CLI reference](../cli/README.md).
+> `./ovcs attach <vehicle>` has a CAN pane that shows every frame on every declared interface decoded into named signals, using the vehicle's own YAML. It is often faster than reading bytes. See the [CLI reference](../cli/README.md).
 
 ## Replaying CAN Dumps
 
@@ -70,7 +70,7 @@ cangen vcan0 -I 709 -L 4 -D 00000000 -g 10   # 0x709 every 10 ms, fixed payload
 
 ## Reading frame definitions
 
-Every frame OVCS understands is described in YAML. Shared per-component specs live in the `ovcs_can` library under [`libraries/ovcs_can/priv/can/components/`](../libraries/ovcs_can/priv/can/components), grouped by manufacturer (`bosch/`, `nissan/`, `orion/`, `volkswagen/`, `vesc/`, `ovcs/`, `obd2/`, …). Each application's topology, which frames run on which network, lives in its package under `vehicles/<name>/priv/can/vms.yml` and `infotainment.yml`, and imports the shared specs:
+Every frame OVCS understands is described in YAML. Shared per-component specs live in the `ovcs_can` library under [`libraries/ovcs_can/priv/can/components/`](../libraries/ovcs_can/priv/can/components), grouped by manufacturer (`bosch/`, `nissan/`, `orion/`, `volkswagen/`, `vesc/`, `ovcs/`, `obd2/`, …). Each vehicle's topology, which frames run on which network, lives in its package under `vehicles/<name>/priv/can/vms.yml` and `infotainment.yml`, and imports the shared specs:
 
 ```yaml
 - import!:@ovcs_can:can/components/ovcs/0x1A0_vms_status.yml
@@ -96,7 +96,7 @@ Signed and unsigned integers, big- and little-endian layouts, enums, static fill
 The virtual interfaces aren't up:
 
 ```sh
-./ovcs can setup <app>
+./ovcs can setup <vehicle>
 ```
 
 If loading the `vcan` module fails, load the kernel modules first:
@@ -111,6 +111,6 @@ On an atomic Fedora desktop (Bluefin, Silverblue, …) this has to happen on the
 
 ### Frames sent, nothing happens
 
-1. The VMS runs with `CAN_NETWORK_MAPPINGS` (or the application's default host mapping) pointing at your virtual interfaces.
-2. `VEHICLE` is the application's top-level module name: `Ovcs1`, `OvcsMini`, `Obd2`, or your own.
+1. The VMS runs with `CAN_NETWORK_MAPPINGS` (or the vehicle's default host mapping) pointing at your virtual interfaces.
+2. `VEHICLE` is the vehicle's top-level module name: `Ovcs1`, `OvcsMini`, `Obd2`, or your own.
 3. You're sending on the interface that carries the frame's network, and the frame is one the VMS receives.

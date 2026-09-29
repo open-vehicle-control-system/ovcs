@@ -1,9 +1,9 @@
 ---
 title: ROS compute node
-description: The non-Nerves Pi that runs the Zenoh router and the on-vehicle ROS nodes on balenaOS, and the vehicle network it owns, with the OVCS Mini reference application as the worked example.
+description: The non-Nerves Pi that runs the Zenoh router and the on-vehicle ROS nodes on balenaOS, and the vehicle network it owns, with the OVCS Mini reference vehicle as the worked example.
 ---
 
-Nerves can't host a ROS 2 stack: Buildroot has no ROS 2 and a Nerves image has no container runtime. An application that runs ROS nodes on the vehicle (`zenohd`, `foxglove_bridge`, Nav2, any rclcpp/rclpy node) therefore needs one machine that isn't Nerves: the compute node. This guide uses the OVCS Mini reference application's compute node as the worked example; the design carries over to your application unchanged, only the names and addresses are the Mini's.
+Nerves can't host a ROS 2 stack: Buildroot has no ROS 2 and a Nerves image has no container runtime. A vehicle that runs ROS nodes on board (`zenohd`, `foxglove_bridge`, Nav2, any rclcpp/rclpy node) therefore needs one machine that isn't Nerves: the compute node. This guide uses the OVCS Mini reference vehicle's compute node as the worked example; the design carries over to your vehicle unchanged, only the names and addresses are the Mini's.
 
 The goal is that this machine is immutable in the same sense the Nerves boards are: nothing is configured by hand over SSH, the OS updates atomically with rollback, and the state that matters lives in the repo.
 
@@ -143,7 +143,7 @@ Two networks, each doing one job:
 
 `eth0` and the access point are **ports on one bridge**: the wired boards and a laptop on the access point share one L2 domain and one DHCP server, and reach `tcp/10.42.0.1:7447` without the compute node routing between them.
 
-The Nerves boards are dual-homed by their firmware: `eth0` takes its lease from `ovcs0` and carries the fabric; `wlan0` joins whichever of the application's `WIFI_NETWORKS` (in `vehicles/<app>/.env.exs`) is in range and carries everything a person does. VintageNet prefers the wired route when both are up. Nothing on the fabric depends on the site Wi-Fi: unplug it and the vehicle keeps driving; take the vehicle elsewhere and every board is still reachable through the access point.
+The Nerves boards are dual-homed by their firmware: `eth0` takes its lease from `ovcs0` and carries the fabric; `wlan0` joins whichever of the vehicle's `WIFI_NETWORKS` (in `vehicles/<vehicle>/.env.exs`) is in range and carries everything a person does. VintageNet prefers the wired route when both are up. Nothing on the fabric depends on the site Wi-Fi: unplug it and the vehicle keeps driving; take the vehicle elsewhere and every board is still reachable through the access point.
 
 The compute node's uplink isn't load-bearing either. `method=shared` assigns the bridge address, starts dnsmasq and installs the NAT rule unconditionally; with the uplink down, clients still get leases and full vehicle-local connectivity, just no route off the vehicle.
 
@@ -221,7 +221,7 @@ Keep `ovcs0-eth0` out of `/mnt/boot/system-connections/` until step 3: everythin
 
 #### The boards
 
-Put the site Wi-Fi in `WIFI_NETWORKS` in `vehicles/<app>/.env.exs` and set `ZENOH_ENDPOINT_IP` to the bridge address (see [Wiring it into OVCS](#wiring-it-into-ovcs)). Rebuild and upload every Nerves firmware of the application; boards not yet reflashed are reachable through the [SSH hop](#reaching-the-vehicle-network-from-the-site-wi-fi) at the wired address `dnsmasq-ovcs0.leases` gives them.
+Put the site Wi-Fi in `WIFI_NETWORKS` in `vehicles/<vehicle>/.env.exs` and set `ZENOH_ENDPOINT_IP` to the bridge address (see [Wiring it into OVCS](#wiring-it-into-ovcs)). Rebuild and upload every Nerves firmware of the vehicle; boards not yet reflashed are reachable through the [SSH hop](#reaching-the-vehicle-network-from-the-site-wi-fi) at the wired address `dnsmasq-ovcs0.leases` gives them.
 
 #### Checks
 
@@ -246,8 +246,8 @@ The kernel line is the one to keep an eye on: if the boot-time probe races the v
 ## Wiring it into OVCS
 
 1. Set the compute node up as the vehicle network (see [Networking](#networking)). Its bridge address (`10.42.0.1` in the templates) is the router address.
-2. Set `ZENOH_ENDPOINT_IP` to that address in `vehicles/<app>/.env.exs`, and the site Wi-Fi in `WIFI_NETWORKS` next to it.
-3. **Rebuild and re-upload every firmware of the application**: the `RosBridge` hosts (`bridge-ros` and `bridge-ros_perception` on the Mini) for the endpoint, and all of them, the VMS included, for the Wi-Fi. The endpoint is baked into application config at build time (`bridges/firmware/config/target.exs`), not read at boot: `.env.exs` only calls `System.put_env` on the build host. A firmware that isn't rebuilt keeps peering with the old address; one built without `ZENOH_ENDPOINT_IP` falls back to `127.0.0.1`, where no router listens.
+2. Set `ZENOH_ENDPOINT_IP` to that address in `vehicles/<vehicle>/.env.exs`, and the site Wi-Fi in `WIFI_NETWORKS` next to it.
+3. **Rebuild and re-upload every firmware of the vehicle**: the `RosBridge` hosts (`bridge-ros` and `bridge-ros_perception` on the Mini) for the endpoint, and all of them, the VMS included, for the Wi-Fi. The endpoint is baked into application config at build time (`bridges/firmware/config/target.exs`), not read at boot: `.env.exs` only calls `System.put_env` on the build host. A firmware that isn't rebuilt keeps peering with the old address; one built without `ZENOH_ENDPOINT_IP` falls back to `127.0.0.1`, where no router listens.
 4. Point the base station at it: `ZENOH_ENDPOINT_IP` in `compose/local/.env` (`10.42.0.1` from a laptop on the access point, the compute node's site address otherwise), and Foxglove Studio at `ws://<compute node address>:8765`.
 
 Because the compute node hands out the addresses, the router address is a constant and step 3 is one-time setup. Adding a site to `WIFI_NETWORKS` still means a rebuild.
@@ -262,7 +262,7 @@ The Nerves bridges get this from `nerves_time`, which also floors the clock at t
 
 ## Two update paths
 
-- Nerves firmwares: `./ovcs upload <app> <role>` (see [Running on hardware](./running_hardware.md)).
+- Nerves firmwares: `./ovcs upload <vehicle> <role>` (see [Running on hardware](./running_hardware.md)).
 - The compute node: `balena push`, or an OTA from the fleet.
 
 The gamepad (`joy`) stays on the base station, in `compose/local/base.yml`: the round trip pad → ROS → Zenoh → `RosBridge.Consumers.Joy` → CAN is the price of keeping the controller with the operator.

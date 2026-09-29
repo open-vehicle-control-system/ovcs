@@ -9,13 +9,13 @@ Before making changes, read the relevant docs rather than rediscovering the proj
 - [README.md](./README.md) — high-level overview and prerequisites.
 - [CODE_STYLING.md](./CODE_STYLING.md) — conventions to match when editing: layout, naming, Elixir idioms, config placement, shell scripts, CAN YAML, and anti-patterns to avoid. Read this before non-trivial changes.
 - [docs/README.md](./docs/README.md) — index of all guides (and the website's docs tree).
-- [docs/framework.md](./docs/framework.md) — the framework / application / reference-application vocabulary.
-- [docs/architecture.md](./docs/architecture.md) — bus isolation, the application contract, the Erlang mesh.
+- [docs/framework.md](./docs/framework.md) — the framework / vehicle / reference-vehicle vocabulary.
+- [docs/architecture.md](./docs/architecture.md) — bus isolation, the vehicle contract, the Erlang mesh.
 - [docs/getting_started.md](./docs/getting_started.md) — toolchain setup (mise, CAN, Nerves).
 - [docs/applications.md](./docs/applications.md) — what each app/library is and how the layers fit together (VMS + Infotainment: firmware / api / core / dashboard).
 - [docs/hardware_architecture.md](./docs/hardware_architecture.md) — physical topology, CAN networks, controllers.
 - [docs/running_hardware.md](./docs/running_hardware.md) — build/burn/upload via the top-level `ovcs` Rust CLI (source in `cli/src/`, built to `cli/ovcs` via `mise run cli`; the binary is gitignored), runtime env vars (`VEHICLE`, `CAN_NETWORK_MAPPINGS`).
-- [docs/vehicle_parameterisation.md](./docs/vehicle_parameterisation.md) — your application package: how `VEHICLE` selects it, what each firmware boots, the behaviours in play, control levels, `ovcs new`.
+- [docs/vehicle_parameterisation.md](./docs/vehicle_parameterisation.md) — your vehicle package: how `VEHICLE` selects it, what each firmware boots, the behaviours in play, control levels, `ovcs new`.
 - [docs/testing_can_messages.md](./docs/testing_can_messages.md), [docs/testing_generic_controllers.md](./docs/testing_generic_controllers.md) — CAN + controller testing.
 - [vehicles/ovcs1/WIRING.md](./vehicles/ovcs1/WIRING.md) — OVCS1 wiring.
 
@@ -83,15 +83,15 @@ Every guide linked from [docs/README.md](./docs/README.md) is rendered as-is by 
 ### Vocabulary (non-negotiable)
 
 - **OVCS is a framework** for vehicle embedded systems: cores, APIs, dashboards, Nerves firmware shells, bridges, generic controller firmware, shared libraries, the `ovcs` CLI. It contains no vehicle-specific code.
-- A package under `vehicles/<name>/` is an **application** built on the framework. The reader's own vehicle is "your application".
-- **OVCS1, OVCS Mini and OBD2 are the three reference applications.** They are worked examples, never requirements. Never call them "the vehicles", "supported vehicles" or "shipped vehicles". Name the one you use ("the OVCS1 reference application") and label vehicle-specific detail as a worked example.
-- A command shown on `ovcs1` / `ovcs_mini` / `obd2` must make clear it works the same on the reader's own application. Placeholders are `<app>` / `<App>`, not `<vehicle>`.
+- A package under `vehicles/<name>/` is a **vehicle** built on the framework. The reader's own is "your vehicle".
+- **OVCS1, OVCS Mini and OBD2 are the three reference vehicles.** They are worked examples, never requirements. Name the one you use ("the OVCS1 reference vehicle") and label vehicle-specific detail as a worked example.
+- A command shown on `ovcs1` / `ovcs_mini` / `obd2` must make clear it works the same on the reader's own vehicle. Placeholders are `<vehicle>` / `<Vehicle>`.
 - Module and env-var names stay as they are in the code (`VEHICLE`, `VmsCore.Vehicle`, `vehicles/`); the vocabulary applies to prose.
 
 ### Format
 
 - Start with YAML frontmatter carrying `title` and `description` (one sentence). No H1: the site renders the title from the frontmatter.
-- GitHub-flavoured Markdown only. No Mermaid: use prose, tables or `text` blocks for diagrams. No raw HTML, not even `<app>` in prose: wrap it in backticks (the site's build rejects it).
+- GitHub-flavoured Markdown only. No Mermaid: use prose, tables or `text` blocks for diagrams. No raw HTML, not even `<vehicle>` in prose: wrap it in backticks (the site's build rejects it).
 - Every code fence carries a language.
 - Links are repo-relative (`./running_hardware.md`, `../vehicles/ovcs1/WIRING.md`); the site rewrites them. Pages that exist only on the site are linked absolutely (`https://ovcs.be/docs/framework`).
 - Voice: direct and technical, second person, no marketing adjectives.

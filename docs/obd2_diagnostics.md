@@ -1,20 +1,20 @@
 ---
-title: OBD2 reference application
-description: An application with no drivetrain that turns the VMS into an OBD2 / KWP2000 / UDS scan tool for any car, and how to extend it for brand-specific data.
+title: OBD2 reference vehicle
+description: A vehicle package with no drivetrain that turns the VMS into an OBD2 / KWP2000 / UDS scan tool for any car, and how to extend it for brand-specific data.
 ---
 
-OBD2 is the smallest of the three reference applications: a vehicle package under `vehicles/obd2/` that turns the framework's VMS into an OBD2 / KWP2000 / UDS scan tool. It has no drivetrain and no bridges; every supervised process reads or probes the diagnostic CAN bus of whatever car you plug into. It runs on the same Raspberry Pi 4 the framework targets for every VMS.
+OBD2 is the smallest of the three reference vehicles: a vehicle package under `vehicles/obd2/` that turns the framework's VMS into an OBD2 / KWP2000 / UDS scan tool. It has no drivetrain and no bridges; every supervised process reads or probes the diagnostic CAN bus of whatever car you plug into. It runs on the same Raspberry Pi 4 the framework targets for every VMS.
 
 > [!NOTE]
-> OBD2 is worth reading even if you never scan a car: it shows how little an application has to contain. Two GenServers, a handful of YAML imports and a composer. Your own application follows the same contract; see [Your application package](./vehicle_parameterisation.md).
+> OBD2 is worth reading even if you never scan a car: it shows how little a vehicle has to contain. Two GenServers, a handful of YAML imports and a composer. Your own vehicle follows the same contract; see [Your vehicle package](./vehicle_parameterisation.md).
 
-## Why this is an application, not a feature
+## Why this is a vehicle, not a feature
 
 The framework already speaks CAN through Cantastic, ships a Phoenix dashboard with a metrics channel, and loads whatever package `VEHICLE` names at boot. A scan tool is therefore just another composer, one that subscribes to OBD2 and UDS request loops instead of Leaf inverter frames, and the framework's dashboard displays the results without a frontend change. So:
 
-- Adding or changing a probe is a YAML edit plus, optionally, a few lines of Elixir in the application. The framework doesn't change.
-- The dashboard the OVCS1 reference application uses for debugging works on any car with an OBD-II port.
-- Brand-specific knowledge stays in one application.
+- Adding or changing a probe is a YAML edit plus, optionally, a few lines of Elixir in the vehicle package. The framework doesn't change.
+- The dashboard the OVCS1 reference vehicle uses for debugging works on any car with an OBD-II port.
+- Brand-specific knowledge stays in one vehicle package.
 
 Select it with `VEHICLE=Obd2`, or pass `obd2` to the CLI. The package has a VMS and an infotainment composer and declares no bridges; its layout is in the [package README](../vehicles/obd2/README.md).
 
@@ -39,7 +39,7 @@ A DTC (Diagnostic Trouble Code) is the standardised five-character code an ECU s
 
 ## Architecture
 
-At boot, the application's `priv/can/vms.yml` imports one YAML per request from the framework's `ovcs_can` library, under the `obd2` network's `obd2_requests:` key. Cantastic spawns one `OBD2.Request` GenServer per declared request and polls it at the frequency its YAML sets. Two GenServers in the application consume the answers and broadcast them as ordinary `%OvcsBus.Message{}`s, so the framework's metrics pipeline carries them to the dashboard.
+At boot, the vehicle's `priv/can/vms.yml` imports one YAML per request from the framework's `ovcs_can` library, under the `obd2` network's `obd2_requests:` key. Cantastic spawns one `OBD2.Request` GenServer per declared request and polls it at the frequency its YAML sets. Two GenServers in the vehicle package consume the answers and broadcast them as ordinary `%OvcsBus.Message{}`s, so the framework's metrics pipeline carries them to the dashboard.
 
 ```text
 vehicles/obd2/priv/can/vms.yml
@@ -87,9 +87,9 @@ Default polling is read-only: reading live data, codes or the VIN doesn't change
 > [!WARNING]
 > Continuous polling (the fast live-data loop runs at 10 Hz) keeps every ECU on the bus awake and prevents the usual "30 seconds of quiet, then sleep". On a parked modern car that drains the 12 V battery: unplug the scanner between drives or power the VMS through the ignition.
 
-## Extending the application
+## Extending the vehicle
 
-Everything below changes the OBD2 application, never the framework. Standardised wire formats live in YAML; brand quirks live in the application's Elixir. If your brand-specific additions grow beyond a module or two, a scan tool for one make is a good application of its own: scaffold it with `./ovcs new` and borrow these patterns.
+Everything below changes the OBD2 vehicle, never the framework. Standardised wire formats live in YAML; brand quirks live in the vehicle's Elixir. If your brand-specific additions grow beyond a module or two, a scan tool for one make is worth a vehicle package of its own: scaffold it with `./ovcs new` and borrow these patterns.
 
 ### 1. Add a live Mode 01 PID
 
@@ -266,7 +266,7 @@ When an ECU rejects a request (`0x7F SID NRC`), the subscribing GenServer receiv
 | What | Where |
 |---|---|
 | Standard OBD2 / UDS request YAMLs | `libraries/ovcs_can/priv/can/components/obd2/` |
-| Application topology (imports) | `vehicles/obd2/priv/can/vms.yml` |
+| Vehicle topology (imports) | `vehicles/obd2/priv/can/vms.yml` |
 | Diagnostic orchestrator | `vehicles/obd2/lib/obd2/vms/diagnostics.ex` |
 | PID name catalogue | `vehicles/obd2/lib/obd2/vms/pid_catalog.ex` |
 | Discovery (passive + DID probe) | `vehicles/obd2/lib/obd2/vms/discovery.ex` |

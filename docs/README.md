@@ -4,7 +4,7 @@ These guides are published on [ovcs.be/docs](https://ovcs.be/docs). This index i
 
 ## Start here
 
-- [Framework and applications](./framework.md)
+- [Framework and vehicles](./framework.md)
 - [Getting started](./getting_started.md)
 - [Quickstart](./quickstart.md)
 - [Simulation](../compose/local/simulation/README.md)
@@ -16,9 +16,9 @@ These guides are published on [ovcs.be/docs](https://ovcs.be/docs). This index i
 - [Hardware](./hardware_architecture.md)
 - [Toolchain and OTP](./toolchain_and_otp.md)
 
-## Build an application
+## Build a vehicle
 
-- [Your application package](./vehicle_parameterisation.md)
+- [Your vehicle package](./vehicle_parameterisation.md)
 - [Generic controllers](./testing_generic_controllers.md)
 - [Testing with CAN](./testing_can_messages.md)
 - [Running on hardware](./running_hardware.md)
@@ -32,7 +32,7 @@ These guides are published on [ovcs.be/docs](https://ovcs.be/docs). This index i
 
 ## Reference and help
 
-- [OBD2 reference application](./obd2_diagnostics.md)
+- [OBD2 reference vehicle](./obd2_diagnostics.md)
 - [CLI reference](../cli/README.md)
 - [Troubleshooting](./troubleshooting.md)
 - [Community and talks](./community.md)

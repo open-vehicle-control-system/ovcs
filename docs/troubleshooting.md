@@ -3,7 +3,7 @@ title: Troubleshooting
 description: The failures newcomers hit most, collected in one place, each with the check that names the cause.
 ---
 
-Each entry gives the check that names the cause, then the fix. Start with `./ovcs doctor`: it catches the toolchain half of this list on its own. Where an example names OVCS1, OVCS Mini or OBD2, substitute your own application's name, module or channel layout.
+Each entry gives the check that names the cause, then the fix. Start with `./ovcs doctor`: it catches the toolchain half of this list on its own. Where an example names OVCS1, OVCS Mini or OBD2, substitute your own vehicle's name, module or channel layout.
 
 ## Setup and toolchain
 
@@ -35,7 +35,7 @@ Each entry gives the check that names the cause, then the fix. Start with `./ovc
 
 **Check:** `ip -br link show | grep vcan`.
 
-**Fix:** `./ovcs can setup <app>`. If loading the module fails:
+**Fix:** `./ovcs can setup <vehicle>`. If loading the module fails:
 
 ```sh
 sudo modprobe can
@@ -49,9 +49,9 @@ sudo modprobe vcan
 
 **Check**, in order:
 
-1. `VEHICLE` is your application's top-level module name, case-sensitive (`Ovcs1`, `OvcsMini`, `Obd2` for the references).
-2. `./ovcs can status <app>` lists the interfaces, and `CAN_NETWORK_MAPPINGS` (or the composer's default host mapping) routes the target network to the interface you send on.
-3. The frame is one the VMS **receives** on that network. In the OVCS1 reference application, the handbrake frame `0x320` belongs to `polo_drive`, which is `vcan2` on the host. A frame the VMS only emits, such as `0x280`, changes nothing when injected.
+1. `VEHICLE` is your vehicle's top-level module name, case-sensitive (`Ovcs1`, `OvcsMini`, `Obd2` for the references).
+2. `./ovcs can status <vehicle>` lists the interfaces, and `CAN_NETWORK_MAPPINGS` (or the composer's default host mapping) routes the target network to the interface you send on.
+3. The frame is one the VMS **receives** on that network. In the OVCS1 reference vehicle, the handbrake frame `0x320` belongs to `polo_drive`, which is `vcan2` on the host. A frame the VMS only emits, such as `0x280`, changes nothing when injected.
 
 ## Running locally
 
@@ -77,7 +77,7 @@ sudo modprobe vcan
 cangen vcan0 -I 709 -L 4 -D 00000000 -g 10
 ```
 
-Then the switches, in the OVCS Mini reference application's channel layout. Values are little-endian `uint16` microseconds: 1000 is `E803`, 1500 is `DC05`, 2000 is `D007`.
+Then the switches, in the OVCS Mini reference vehicle's channel layout. Values are little-endian `uint16` microseconds: 1000 is `E803`, 1500 is `DC05`, 2000 is `D007`.
 
 ```sh
 cansend vcan0 2A0#DC05DC0500000000   # steering and throttle centred
@@ -86,7 +86,7 @@ cansend vcan0 2A1#E803D00700000000   # channel 6 = 2000: level :ros (only reacha
 cansend vcan0 2A1#D007D00700000000   # channel 5 = 2000: commander :autonomous (needs a standstill)
 ```
 
-`ready_to_drive` must be true as well; the Mini hardcodes it. Details in [Your application package](./vehicle_parameterisation.md#driving-on-the-host-bench).
+`ready_to_drive` must be true as well; the Mini hardcodes it. Details in [Your vehicle package](./vehicle_parameterisation.md#driving-on-the-host-bench).
 
 ## Generic controllers
 
@@ -132,23 +132,23 @@ sudo udevadm trigger
 **Cause:** a fresh SD-card burn regenerates the device's SSH host key. **Fix:** generate persistent per-role keys once; the firmware ships them and the identity survives burns.
 
 ```sh
-./ovcs host-keys generate <app>
-./ovcs host-keys verify <app>     # exit 1 if any role is missing keys
+./ovcs host-keys generate <vehicle>
+./ovcs host-keys verify <vehicle>     # exit 1 if any role is missing keys
 ```
 
 ### The build asks for SSH keys, Wi-Fi or Phoenix secrets
 
-**Cause:** `vehicles/<app>/.env.exs` doesn't exist. **Fix:** copy `.env.exs.example` next to it and fill in `AUTHORIZED_SSH_KEYS`, `WIFI_NETWORKS`, `SECRET_KEY_BASE` and `SIGNING_SALT`. The file is gitignored and shared by every firmware of that application.
+**Cause:** `vehicles/<vehicle>/.env.exs` doesn't exist. **Fix:** copy `.env.exs.example` next to it and fill in `AUTHORIZED_SSH_KEYS`, `WIFI_NETWORKS`, `SECRET_KEY_BASE` and `SIGNING_SALT`. The file is gitignored and shared by every firmware of that vehicle.
 
 ### `./ovcs attach` or `connect` cannot reach the device
 
-**Check:** `ping <app>-vms.local` (underscores become dashes: `ovcs-mini-vms.local`) and `ssh-add -l`.
+**Check:** `ping <vehicle>-vms.local` (underscores become dashes: `ovcs-mini-vms.local`) and `ssh-add -l`.
 
-**Cause:** mDNS is not resolving, your key is not loaded in `ssh-agent`, or your public key was not in `AUTHORIZED_SSH_KEYS` when the firmware was built. **Fix:** rebuild with the key, load it into the agent, or bypass mDNS with `./ovcs connect <app> vms --host <ip>`.
+**Cause:** mDNS is not resolving, your key is not loaded in `ssh-agent`, or your public key was not in `AUTHORIZED_SSH_KEYS` when the firmware was built. **Fix:** rebuild with the key, load it into the agent, or bypass mDNS with `./ovcs connect <vehicle> vms --host <ip>`.
 
 ### A board's wired `10.42.0.x` address is unreachable from the site Wi-Fi
 
-**Cause:** on a vehicle with a compute node (the OVCS Mini reference application has one), the wired network is NATed and forwards nothing in. **Fix:** join the vehicle's own access point, or hop through the compute node with one block in `~/.ssh/config`. `./ovcs upload` and `./ovcs connect --host` run `ssh` underneath, so they follow it. See [ROS compute node](./ros_compute_node.md).
+**Cause:** on a vehicle with a compute node (the OVCS Mini reference vehicle has one), the wired network is NATed and forwards nothing in. **Fix:** join the vehicle's own access point, or hop through the compute node with one block in `~/.ssh/config`. `./ovcs upload` and `./ovcs connect --host` run `ssh` underneath, so they follow it. See [ROS compute node](./ros_compute_node.md).
 
 ```text
 Host 10.42.0.*
@@ -158,7 +158,7 @@ Host 10.42.0.*
 
 ### A bridge peers with the wrong Zenoh router, or with `127.0.0.1`
 
-**Cause:** `ZENOH_ENDPOINT_IP` is baked into the bridge firmware **at build time**, not read at boot. A firmware built before the address changed keeps the old one; one built without it falls back to loopback. **Fix:** set it in `vehicles/<app>/.env.exs`, then rebuild and re-upload every `RosBridge` firmware of that application.
+**Cause:** `ZENOH_ENDPOINT_IP` is baked into the bridge firmware **at build time**, not read at boot. A firmware built before the address changed keeps the old one; one built without it falls back to loopback. **Fix:** set it in `vehicles/<vehicle>/.env.exs`, then rebuild and re-upload every `RosBridge` firmware of that vehicle.
 
 ## ROS 2 and simulation
 

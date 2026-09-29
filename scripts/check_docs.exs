@@ -105,8 +105,7 @@ check_file = fn path ->
       String.contains?(body, "```mermaid") && "Mermaid block",
       String.match?(prose, ~r/<(?!https?:)[A-Za-z!\/][^>\n]*>/) &&
         "raw HTML: #{Regex.run(~r/<(?!https?:)[A-Za-z!\/][^>\n]*>/, prose) |> hd()}",
-      String.match?(body, ~r/<vehicle>|<Vehicle>/) && "`<vehicle>` placeholder (use `<app>`)",
-      String.match?(prose, ~r/\b(supported|shipped) vehicles\b/i) && "\"supported/shipped vehicles\" (reference applications)",
+      String.match?(body, ~r/<app>|<App>/) && "`<app>` placeholder (use `<vehicle>`)",
       fences != [] && "#{length(fences)} code fence(s) without a language"
     ]
     |> Enum.filter(& &1)

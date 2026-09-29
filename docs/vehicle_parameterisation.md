@@ -1,70 +1,70 @@
 ---
-title: Your application package
+title: Your vehicle package
 description: The OvcsVehicle contract, how VEHICLE selects your package, what each firmware boots, control levels, and the ovcs new scaffold.
 ---
 
-OVCS is a framework; the vehicle you build on it is an **application**: a package under `vehicles/<name>/` that the framework loads at boot. This guide covers what an application provides, how to scaffold one, how `VEHICLE` selects it, what each firmware does with it at boot, how the BEAMs find each other, and who is allowed to command the vehicle. Read it before creating an application or touching any firmware's `config/`.
+OVCS is a framework; the **vehicle** you build on it is a package under `vehicles/<name>/` that the framework loads at boot. This guide covers what a vehicle provides, how to scaffold one, how `VEHICLE` selects it, what each firmware does with it at boot, how the BEAMs find each other, and who is allowed to command the vehicle. Read it before creating a vehicle or touching any firmware's `config/`.
 
 > [!NOTE]
-> The framework contains no vehicle-specific code. OVCS1, OVCS Mini and OBD2 are the three **reference applications** in the repository: worked examples of the contract on this page. Your application needs none of them. See [Framework and applications](https://ovcs.be/docs/framework).
+> The framework contains no vehicle-specific code. OVCS1, OVCS Mini and OBD2 are the three **reference vehicles** in the repository: worked examples of the contract on this page. Your vehicle needs none of them. See [Framework and vehicles](https://ovcs.be/docs/framework).
 
-## What an application is
+## What a vehicle is
 
 A standalone Mix package whose top-level module implements the `OvcsVehicle` behaviour. It is **metadata and composers only**: no `Application` module, nothing runnable on its own. Firmware BEAMs load it through `Code.prepend_path` at boot and ask it what to supervise.
 
-| The application provides | The framework provides |
+| The vehicle provides | The framework provides |
 |---|---|
 | A top-level module (`OvcsVehicle`): name, composer pointers, Nerves targets, bridge firmware map | The firmware shells that boot and read that module: `vms/firmware`, `infotainment/firmware`, `bridges/firmware` |
 | A VMS composer (`VmsCore.Vehicle`): which component drivers run, the CAN topology, dashboard pages, controller pinouts | `vms_core` with the component drivers, managers, metrics, and the dashboard API |
 | An optional infotainment composer (`InfotainmentCore.Vehicle`): head-unit pages and CAN topology | `infotainment_core`, its API, and the Flutter dashboard |
 | Optional bridge firmware entries: which bridge libraries to bundle, on which Pi, with which CAN mapping | The bridge libraries (`RadioControlBridge`, `RosBridge`) and `OvcsBridge.Supervisor` |
 | CAN YAMLs under `priv/can/` that import shared frame specs | `ovcs_can` frame specifications and Cantastic |
-| `.env.exs` with SSH keys, Wi-Fi networks and secrets; SSH host keys | The `ovcs` CLI that builds, burns, uploads and runs any application |
+| `.env.exs` with SSH keys, Wi-Fi networks and secrets; SSH host keys | The `ovcs` CLI that builds, burns, uploads and runs any vehicle |
 
-Everything is driven by **one environment variable**, `VEHICLE`, set to the application's top-level module name: `Ovcs1`, `OvcsMini` or `Obd2` for the reference applications, whatever `./ovcs new` generated for yours. Bridge firmwares also read `BRIDGE_FIRMWARE_ID` to pick one entry from the application's `bridge_firmwares/0` map.
+Everything is driven by **one environment variable**, `VEHICLE`, set to the vehicle's top-level module name: `Ovcs1`, `OvcsMini` or `Obd2` for the reference vehicles, whatever `./ovcs new` generated for yours. Bridge firmwares also read `BRIDGE_FIRMWARE_ID` to pick one entry from the vehicle's `bridge_firmwares/0` map.
 
 ## Start from the scaffold
 
-Don't copy a reference application. Generate a clean package:
+Don't copy a reference vehicle. Generate a clean package:
 
 ```sh
 ./ovcs new my_car --vms-target ovcs_base_can_system_rpi4 --infotainment-target ovcs_base_can_system_rpi5
 ```
 
-This runs `OvcsVehicle.Scaffold.generate/3` against `libraries/ovcs_vehicle/priv/templates/vehicle/` and produces a working VMS plus infotainment application with:
+This runs `OvcsVehicle.Scaffold.generate/3` against `libraries/ovcs_vehicle/priv/templates/vehicle/` and produces a working VMS plus infotainment vehicle with:
 
 - a minimal `children/0`: one example generic controller and a vehicle GenServer;
 - a commented-out `bridge_firmwares/0` stub;
 - the CAN topology YAMLs, firmware override directories, and an `.env.exs.example`.
 
-`--no-infotainment` and `--no-bridges` trim the template; `--display-name` sets the human-readable name. Drop the components you don't need, add the ones your hardware needs, fill in the CAN YAMLs under `priv/can/`, then boot it like any application:
+`--no-infotainment` and `--no-bridges` trim the template; `--display-name` sets the human-readable name. Drop the components you don't need, add the ones your hardware needs, fill in the CAN YAMLs under `priv/can/`, then boot it like any vehicle:
 
 ```sh
-./ovcs run my_car            # every firmware of your application on virtual CAN
+./ovcs run my_car            # every firmware of your vehicle on virtual CAN
 ./ovcs build my_car vms      # the VMS firmware image for your Nerves target
 ```
 
 > [!TIP]
-> `./ovcs vehicles` lists every discovered application with its Nerves targets; `./ovcs doctor` checks each package's metadata. Run both after scaffolding.
+> `./ovcs vehicles` lists every discovered vehicle with its Nerves targets; `./ovcs doctor` checks each package's metadata. Run both after scaffolding.
 
 ## The four behaviours
 
 | Behaviour | Where | What it is |
 |---|---|---|
-| `OvcsVehicle` | `libraries/ovcs_vehicle/lib/ovcs_vehicle.ex` | Top-level application module: name, composer pointers, Nerves targets, bridge firmware map. Every `vehicles/<name>/lib/<name>.ex` implements it. |
-| `VmsCore.Vehicle` | `vms/core/lib/vms_core/vehicle.ex` | VMS composer: `children/0`, CAN config (`can_config_otp_app/0`, `can_config_path/0`, `default_can_mapping/1`), optional `dashboard_configuration/0` and `generic_controllers/0`. Implemented by `<App>.Vms.Composer`. |
-| `InfotainmentCore.Vehicle` | `infotainment/core/lib/infotainment_core/vehicle.ex` | Infotainment composer: `children/0`, CAN config, optional `infotainment_configuration/0`. Implemented by `<App>.Infotainment.Composer`. |
-| `OvcsBridge` | `libraries/ovcs_bridge/lib/ovcs_bridge.ex` | One per bridge **library** in the framework, not per application: `children/0`. Applications pick which bridges to bundle via `bridge_firmwares/0`. |
+| `OvcsVehicle` | `libraries/ovcs_vehicle/lib/ovcs_vehicle.ex` | Top-level vehicle module: name, composer pointers, Nerves targets, bridge firmware map. Every `vehicles/<name>/lib/<name>.ex` implements it. |
+| `VmsCore.Vehicle` | `vms/core/lib/vms_core/vehicle.ex` | VMS composer: `children/0`, CAN config (`can_config_otp_app/0`, `can_config_path/0`, `default_can_mapping/1`), optional `dashboard_configuration/0` and `generic_controllers/0`. Implemented by `<Vehicle>.Vms.Composer`. |
+| `InfotainmentCore.Vehicle` | `infotainment/core/lib/infotainment_core/vehicle.ex` | Infotainment composer: `children/0`, CAN config, optional `infotainment_configuration/0`. Implemented by `<Vehicle>.Infotainment.Composer`. |
+| `OvcsBridge` | `libraries/ovcs_bridge/lib/ovcs_bridge.ex` | One per bridge **library** in the framework, not per vehicle: `children/0`. Vehicles pick which bridges to bundle via `bridge_firmwares/0`. |
 
 ## Package layout
 
-The OVCS1 reference application, as an example of the shape every application has:
+The OVCS1 reference vehicle, as an example of the shape every vehicle has:
 
 ```text
 vehicles/ovcs1/
   mix.exs                        firmware path deps (see below)
   lib/ovcs1.ex                   implements OvcsVehicle
-  lib/ovcs1/vms.ex               VMS-side GenServer (application-specific state)
+  lib/ovcs1/vms.ex               VMS-side GenServer (vehicle-specific state)
   lib/ovcs1/vms/composer.ex      implements VmsCore.Vehicle
   lib/ovcs1/vms/composer/        dashboard pages, generic controllers
   lib/ovcs1/infotainment.ex      infotainment-side GenServer (optional)
@@ -77,9 +77,9 @@ vehicles/ovcs1/
   priv/firmware/{vms,infotainment,bridges}/   per-side firmware overrides (fwup.conf, …)
 ```
 
-### Why the application depends on the firmwares
+### Why the vehicle depends on the firmwares
 
-`vehicles/<name>/mix.exs` lists `vms_firmware`, `infotainment_firmware` (when the application has an infotainment side) and `bridge_firmware` (when it declares bridges) as path dependencies:
+`vehicles/<name>/mix.exs` lists `vms_firmware`, `infotainment_firmware` (when the vehicle has an infotainment side) and `bridge_firmware` (when it declares bridges) as path dependencies:
 
 ```elixir
 defp deps do
@@ -93,14 +93,14 @@ defp deps do
 end
 ```
 
-This is the entry point for `./ovcs run <app>`: one `mix compile` in the application directory builds every firmware project into `vehicles/<name>/_build/dev/lib/`, so each spawned BEAM is self-contained against that tree. The firmware projects never depend on an application; the dependency points one way, which keeps the framework vehicle-agnostic.
+This is the entry point for `./ovcs run <vehicle>`: one `mix compile` in the vehicle directory builds every firmware project into `vehicles/<name>/_build/dev/lib/`, so each spawned BEAM is self-contained against that tree. The firmware projects never depend on a vehicle; the dependency points one way, which keeps the framework vehicle-agnostic.
 
 ## Boot flow
 
 Each firmware's `config.exs` and `runtime.exs` run in Mix's standard order:
 
-1. **`config/config.exs`**, at compile time and again at each `mix run`, so host development picks up the current environment. Selects Nerves targets, `fwup.conf` overlays, application override directories and, for bridges, the `:ovcs_bridge, :vehicle` and `:firmware_id` application env.
-2. **`config/runtime.exs`**, at every boot. The application-specific wiring happens here:
+1. **`config/config.exs`**, at compile time and again at each `mix run`, so host development picks up the current environment. Selects Nerves targets, `fwup.conf` overlays, vehicle override directories and, for bridges, the `:ovcs_bridge, :vehicle` and `:firmware_id` application env.
+2. **`config/runtime.exs`**, at every boot. The vehicle-specific wiring happens here:
 
    ```elixir
    case OvcsVehicle.Firmware.resolve_side(
@@ -119,17 +119,17 @@ Each firmware's `config.exs` and `runtime.exs` run in Mix's standard order:
    end
    ```
 
-   `OvcsVehicle.Firmware.resolve_side/4` reads `VEHICLE`, prepends the application's `_build/<env>/lib/<name>/ebin` to the code path, and returns `{vehicle, composer}` for that side, or `nil` without `VEHICLE` or under `MIX_ENV=test`.
+   `OvcsVehicle.Firmware.resolve_side/4` reads `VEHICLE`, prepends the vehicle's `_build/<env>/lib/<name>/ebin` to the code path, and returns `{vehicle, composer}` for that side, or `nil` without `VEHICLE` or under `MIX_ENV=test`.
 3. **`Application.start/2`** of the core (`VmsCore.Application` or `InfotainmentCore.Application`) reads `:*_core, :vehicle`, calls `composer.children/0`, and supervises the result under its root supervisor. It also supervises `OvcsBus.Cluster`, which connects this BEAM to its siblings.
 
 Bridges follow the same pattern with `OvcsBridge.Supervisor` in place of a core application; the entry it reads is `vehicle.bridge_firmwares()[bridge_firmware_id]`.
 
 ## What a composer contributes
 
-The VMS composer, `<App>.Vms.Composer`, returns:
+The VMS composer, `<Vehicle>.Vms.Composer`, returns:
 
-- `children/0`: a flat list of child specs, the component drivers your vehicle uses (inverter, BMS, brake booster, steering column, …) plus any application-specific GenServers. The drivers live in `vms_core`; the composer picks and configures them.
-- `can_config_otp_app/0` and `can_config_path/0`: where Cantastic loads the application's VMS topology YAML.
+- `children/0`: a flat list of child specs, the component drivers your vehicle uses (inverter, BMS, brake booster, steering column, …) plus any vehicle-specific GenServers. The drivers live in `vms_core`; the composer picks and configures them.
+- `can_config_otp_app/0` and `can_config_path/0`: where Cantastic loads the vehicle's VMS topology YAML.
 - `default_can_mapping(:host | :target)`: network name to interface, for host vcan versus deployed SPI.
 - `dashboard_configuration/0` and `generic_controllers/0`, both optional: dashboard pages and controller pinout maps.
 
@@ -137,7 +137,7 @@ The infotainment composer has the same shape, with `infotainment_configuration/0
 
 ## Bridge firmwares
 
-An application declares its bridge images in the optional `bridge_firmwares/0` callback. From the OVCS1 reference application:
+A vehicle declares its bridge images in the optional `bridge_firmwares/0` callback. From the OVCS1 reference vehicle:
 
 ```elixir
 @impl OvcsVehicle
@@ -167,18 +167,18 @@ Each key becomes a CLI role with the `bridge-` prefix:
 The shared `bridges/firmware` image is built once per entry. At boot, `OvcsBridge.Supervisor` reads `VEHICLE` and `BRIDGE_FIRMWARE_ID`, looks up the entry, and supervises each listed bridge's `children/0`.
 
 > [!NOTE]
-> A bare id such as `radio_control` is rejected, and the error lists the valid roles for that application. The prefix is what tells `build`, `burn` and `upload` to target the bridge image.
+> A bare id such as `radio_control` is rejected, and the error lists the valid roles for that vehicle. The prefix is what tells `build`, `burn` and `upload` to target the bridge image.
 
 ## Bus wiring and node names
 
 Every firmware image runs `OvcsBus` (a thin `Phoenix.PubSub` wrapper) and `OvcsBus.Cluster`, which calls `Node.connect/1` against each declared peer on a retry loop until the BEAMs form a distributed Erlang mesh. From then on `OvcsBus.broadcast/2` reaches subscribers on every node. No broker, no relay.
 
-Peer node names come from the application module's declared roles plus the naming convention parsed from `Node.self()`:
+Peer node names come from the vehicle module's declared roles plus the naming convention parsed from `Node.self()`:
 
 | Environment | Node name | Peers differ by |
 |---|---|---|
-| Host dev | `<app>-<role>@<host>` | sname; all share `<host>` |
-| Deployed Nerves | `nerves@<app>-<role>` | mDNS hostname; all share the sname `nerves` |
+| Host dev | `<vehicle>-<role>@<host>` | sname; all share `<host>` |
+| Deployed Nerves | `nerves@<vehicle>-<role>` | mDNS hostname; all share the sname `nerves` |
 
 All releases share `--cookie ovcs`, so nothing beyond what `nerves_pack` provides for `./ovcs attach` is needed.
 
@@ -197,7 +197,7 @@ Both switches only *request*. The manager refuses unsafe moves: in motion, not r
 
 ### Channel layout
 
-Which transmitter channel each component reads is an application decision. The radio control bridge copies the receiver's channels 1 to 8 onto `0x2A0` and `0x2A1` unchanged, and each composer names the channel every component reads. The two reference applications with radio control use:
+Which transmitter channel each component reads is a vehicle decision. The radio control bridge copies the receiver's channels 1 to 8 onto `0x2A0` and `0x2A1` unchanged, and each composer names the channel every component reads. The two reference vehicles with radio control use:
 
 | Purpose | OVCS Mini | OVCS1 |
 |---|---|---|
@@ -223,7 +223,7 @@ requested_throttle_sources: %{
 }
 ```
 
-A hand's throttle usually goes through an `OVCS.InputCurve` first, and the map names the curve: dead zone and expo belong to the hand, one curve per hand, while the actuator only applies its caps. In the OVCS Mini reference application:
+A hand's throttle usually goes through an `OVCS.InputCurve` first, and the map names the curve: dead zone and expo belong to the hand, one curve per hand, while the actuator only applies its caps. In the OVCS Mini reference vehicle:
 
 ```elixir
 {OVCS.InputCurve,
@@ -244,11 +244,11 @@ radio_breaking_source: OVCS.RadioControl.Throttle
 
 A velocity is a physical quantity and is named directly, as is the takeover: `radio_breaking` reads the raw trigger. A hand wired to an actuator without a curve gets no dead zone, and a trigger that drifts at rest creeps the vehicle.
 
-A missing key resolves to `nil`: nothing commands that actuator. That is the safe direction, and it is how an application without a planner is expressed: `ros: %{teleop: ...}` leaves the autonomous position commanding nothing. Such an application also omits `requested_ros_commander_source`, which pins the commander to `:teleop`.
+A missing key resolves to `nil`: nothing commands that actuator. That is the safe direction, and it is how a vehicle without a planner is expressed: `ros: %{teleop: ...}` leaves the autonomous position commanding nothing. Such a vehicle also omits `requested_ros_commander_source`, which pins the commander to `:teleop`.
 
 ### Driving on the host bench
 
-On the host there is no radio receiver and no controller. The level starts at `default_control_level` (`:manual` in the OVCS Mini reference application, where every source is `nil`); nothing emits `0x2A0`/`0x2A1`, and nothing emits the pulse counter frame `0x709`. Without that frame the speed is unknown, and the manager refuses every mode change with `:speed_unknown`. A bench session synthesises both.
+On the host there is no radio receiver and no controller. The level starts at `default_control_level` (`:manual` in the OVCS Mini reference vehicle, where every source is `nil`); nothing emits `0x2A0`/`0x2A1`, and nothing emits the pulse counter frame `0x709`. Without that frame the speed is unknown, and the manager refuses every mode change with `:speed_unknown`. A bench session synthesises both.
 
 First the speed, as a stream in its own terminal: the frame watcher needs several on-time frames to declare `0x709` alive and drops it as soon as they stop. A count and frequency of zero is a stationary vehicle:
 
@@ -272,21 +272,21 @@ cansend vcan0 2A1#E803D00700000000
 cansend vcan0 2A1#D007D00700000000
 ```
 
-Channels 7 and 8 read as 0 here, outside every margin, so they take the safe fallback. `ready_to_drive` is hardcoded `true` in the Mini (`OvcsMini.Vms`); where it comes from contactors or an inverter, it has to be true as well. For your application, substitute the channels your composer names.
+Channels 7 and 8 read as 0 here, outside every margin, so they take the safe fallback. `ready_to_drive` is hardcoded `true` in the Mini (`OvcsMini.Vms`); where it comes from contactors or an inverter, it has to be true as well. For your vehicle, substitute the channels your composer names.
 
 ## Host development versus deployed
 
-| | Host dev (`./ovcs run <app>`) | Deployed Nerves |
+| | Host dev (`./ovcs run <vehicle>`) | Deployed Nerves |
 |---|---|---|
 | BEAMs | Several on one machine, one per firmware role | One per physical device |
-| Node names | `<app>-<role>@<host>` | `nerves@<app>-<role>.local` |
+| Node names | `<vehicle>-<role>@<host>` | `nerves@<vehicle>-<role>.local` |
 | Transport | Erlang distribution via loopback | Erlang distribution via mDNS over the vehicle LAN |
 | CAN interfaces | Virtual, provisioned by `./ovcs can setup` | Real SPI/CAN hardware, set up by Cantastic at boot |
 | `VEHICLE` | Set by the CLI when spawning each BEAM | Baked into the release at build time |
 
 `OvcsBus.Cluster.peers_for/1` handles the naming split; composers don't care which mode they run in.
 
-## Learn from the reference applications
+## Learn from the reference vehicles
 
 Each demonstrates a different shape. Copy the patterns, not the packages.
 
@@ -298,5 +298,5 @@ Each demonstrates a different shape. Copy the patterns, not the packages.
 
 - [`libraries/ovcs_vehicle/README.md`](../libraries/ovcs_vehicle/README.md): the `OvcsVehicle` behaviour and `ovcs new`.
 - [`libraries/ovcs_bus/README.md`](../libraries/ovcs_bus/README.md): relay design, echo avoidance, runtime config.
-- [Applications](./applications.md): the core / API / firmware / dashboard split.
+- [Framework components](./applications.md): the core / API / firmware / dashboard split.
 - [Running on hardware](./running_hardware.md): build, burn and upload flows.

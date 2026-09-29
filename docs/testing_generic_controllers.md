@@ -1,12 +1,12 @@
 ---
 title: Generic controllers
-description: Flash the generic controller firmware on an Arduino R4 Minima, adopt it from your application's VMS, and verify it on the bus.
+description: Flash the generic controller firmware on an Arduino R4 Minima, adopt it from your vehicle's VMS, and verify it on the bus.
 ---
 
 A generic controller is an Arduino R4 Minima that lets the VMS switch relays, read digital and analog inputs, and drive PWM, DAC and external PWM outputs over CAN. It is generic because one firmware runs on every board: which pins do what is configured over CAN through an **adoption** process, and the board stores that configuration in EEPROM.
 
 > [!NOTE]
-> The controller firmware is part of the framework: the same binary runs on every board of every application. What each board does is decided by your application's VMS composer, which declares the boards and their pinouts in `generic_controllers/0`. The OVCS1 and OVCS Mini controllers below are worked examples.
+> The controller firmware is part of the framework: the same binary runs on every board of every vehicle. What each board does is decided by your vehicle's VMS composer, which declares the boards and their pinouts in `generic_controllers/0`. The OVCS1 and OVCS Mini controllers below are worked examples.
 
 Protocol details (frame layouts, pin numbering, status codes) are in [`controllers/generic_controller/README.md`](../controllers/generic_controller/README.md).
 
@@ -48,9 +48,9 @@ Message ID = 0b111AAAABBBB
 
 External PWM outputs live on a separate PWM hat that the Arduino drives over its UART (D0/D1); extra digital pins come from up to two MCP23008 expansion boards on I2C.
 
-### Example: the reference applications
+### Example: the reference vehicles
 
-In the OVCS1 reference application the VMS composer declares three controllers:
+In the OVCS1 reference vehicle the VMS composer declares three controllers:
 
 | Controller | Frames | Purpose |
 |---|---|---|
@@ -58,19 +58,19 @@ In the OVCS1 reference application the VMS composer declares three controllers:
 | `Vms.RearController` (id 1) | `0x711`–`0x714` | Water pump, rear sensors and relays |
 | `Vms.ControlsController` (id 2) | `0x721`–`0x725` | Steering column PWM, throttle pedal DAC, control inputs |
 
-OVCS1's package also carries frame YAMLs for a test controller (id 3, `0x731`–`0x738`) that exercises every pin type. The OVCS Mini reference application declares one `Vms.MainController`: it drives the steering servo through external PWM and counts the spur gear's hall-effect sensor on A1. Your application can declare any number, up to 16 per network.
+OVCS1's package also carries frame YAMLs for a test controller (id 3, `0x731`–`0x738`) that exercises every pin type. The OVCS Mini reference vehicle declares one `Vms.MainController`: it drives the steering servo through external PWM and counts the spur gear's hall-effect sensor on A1. Your vehicle can declare any number, up to 16 per network.
 
 ## Adopting a controller
 
 You need:
 
-- the controller flashed, and wired to the network your application maps to `ovcs`;
-- the VMS running and reachable on that network, through the SPI CAN HAT on hardware, or through a USB CAN adapter from your laptop against `./ovcs run <app>`;
-- the controller declared in the active application's `generic_controllers/0`, defined in `vehicles/<name>/lib/<name>/vms/composer/generic_controller.ex`.
+- the controller flashed, and wired to the network your vehicle maps to `ovcs`;
+- the VMS running and reachable on that network, through the SPI CAN HAT on hardware, or through a USB CAN adapter from your laptop against `./ovcs run <vehicle>`;
+- the controller declared in the active vehicle's `generic_controllers/0`, defined in `vehicles/<name>/lib/<name>/vms/composer/generic_controller.ex`.
 
 ### From the dashboard
 
-1. Boot the VMS: `./ovcs run <app>`.
+1. Boot the VMS: `./ovcs run <vehicle>`.
 2. Open the dashboard (`http://localhost:5173`, the dev server `./ovcs run` starts) and go to the Generic Controllers page your composer declares.
 3. Click **Adopt** next to the controller. The VMS broadcasts the configuration frame `0x700` for one second.
 4. Within that second, press the adoption button on the Arduino (D2). The controller stores the configuration in EEPROM and moves from `ADOPTION_REQUIRED` to `READY`. Later boots load it automatically.
@@ -83,7 +83,7 @@ VmsCore.Components.OVCS.GenericController.start_adoption(Ovcs1.Vms.FrontControll
 VmsCore.Components.OVCS.GenericController.stop_adoption()
 ```
 
-The atom passed to `start_adoption/1` must be a key of the active application's `generic_controllers/0` map; `Ovcs1.Vms.FrontController` is OVCS1's. To reconfigure a board, adopt it again: the new configuration overwrites the EEPROM.
+The atom passed to `start_adoption/1` must be a key of the active vehicle's `generic_controllers/0` map; `Ovcs1.Vms.FrontController` is OVCS1's. To reconfigure a board, adopt it again: the new configuration overwrites the EEPROM.
 
 ## Verifying a controller
 
@@ -113,11 +113,11 @@ candump can0,709:7FF
 Bytes 0–1 are the running count (16 bits, wrapping) and bytes 2–3 the frequency in tenths of a hertz, both little-endian. A wheel turned by hand should step the count and show a frequency that falls back to zero within two seconds of stopping. Edges closer than 2 ms are ignored as chatter. A1 is shared with analog input 0; when both are enabled, the pulse counter takes the pin.
 
 > [!TIP]
-> `./ovcs attach <app>` decodes these frames into named signals in its CAN pane, using your application's YAMLs. See the [CLI reference](../cli/README.md).
+> `./ovcs attach <vehicle>` decodes these frames into named signals in its CAN pane, using your vehicle's YAMLs. See the [CLI reference](../cli/README.md).
 
 ## OVCS Mini steering output
 
-In the OVCS Mini reference application the steering servo is on PWM hat output 0 (`0x705`) at 100 Hz. Use the hat firmware with per-output prescaler selection and nearest-tick rounding: at 100 Hz it runs a /10 prescaler at 64 MHz, 0.15625 µs per tick, where a fixed /100 prescaler leaves the servo only coarse pulse steps. Updating the VMS alone doesn't change that hardware quantisation.
+In the OVCS Mini reference vehicle the steering servo is on PWM hat output 0 (`0x705`) at 100 Hz. Use the hat firmware with per-output prescaler selection and nearest-tick rounding: at 100 Hz it runs a /10 prescaler at 64 MHz, 0.15625 µs per tick, where a fixed /100 prescaler leaves the servo only coarse pulse steps. Updating the VMS alone doesn't change that hardware quantisation.
 
 ## Troubleshooting
 

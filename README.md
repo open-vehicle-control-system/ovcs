@@ -2,22 +2,22 @@
 
 An open-source framework for vehicle embedded systems, built with [Elixir](https://elixir-lang.org/), [Nerves](https://nerves-project.org/), [Phoenix](https://www.phoenixframework.org/) and [Flutter](https://flutter.dev/). It makes components from different manufacturers work together: each manufacturer's CAN bus stays isolated, and a Vehicle Management System (VMS) on a Raspberry Pi translates and orchestrates them.
 
-OVCS contains no vehicle-specific code. A vehicle is an **application** of the framework: a package under `vehicles/` that the firmware loads at boot. Three reference applications show it on real hardware:
+OVCS contains no vehicle-specific code. A **vehicle** is a package under `vehicles/`, built on the framework, that the firmware loads at boot. Three reference vehicles show it on real hardware:
 
-| Reference application | What it is |
+| Reference vehicle | What it is |
 |---|---|
 | [OVCS1](./vehicles/ovcs1/README.md) | 2007 VW Polo converted to electric: Nissan Leaf AZE0 drivetrain, Bosch iBooster Gen2, Orion BMS2, the Polo's original systems. Drivable, manual and remote. |
 | [OVCS Mini](./vehicles/ovcs_mini/README.md) | Traxxas 4WD RC car with a VESC-driven motor, for radio-control and ROS 2 work. |
 | [OBD2](./vehicles/obd2/README.md) | The VMS as an OBD2 / UDS scan tool for any car. |
 
-Your own vehicle is another application, and needs none of them. See [Framework and applications](./docs/framework.md).
+Your own vehicle is one more package of the same kind, and needs none of them. See [Framework and vehicles](./docs/framework.md).
 
 ## Quick start
 
 On Linux, after [Getting started](./docs/getting_started.md):
 
 ```sh
-./ovcs run ovcs_mini       # every firmware of the application, on virtual CAN
+./ovcs run ovcs_mini       # every firmware of the vehicle, on virtual CAN
 ./ovcs attach ovcs_mini    # in another terminal: logs, bus, CAN and IEx panes
 ```
 
@@ -25,7 +25,7 @@ The debug dashboard is on `http://localhost:5173`. [Quickstart](./docs/quickstar
 
 ## Documentation
 
-The guides live in [`docs/`](./docs/README.md) and are published on [ovcs.be/docs](https://ovcs.be/docs). Start with [Architecture](./docs/architecture.md) and [Your application package](./docs/vehicle_parameterisation.md).
+The guides live in [`docs/`](./docs/README.md) and are published on [ovcs.be/docs](https://ovcs.be/docs). Start with [Architecture](./docs/architecture.md) and [Your vehicle package](./docs/vehicle_parameterisation.md).
 
 ## Presentations and media
 

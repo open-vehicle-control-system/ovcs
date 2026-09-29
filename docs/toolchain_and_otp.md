@@ -3,7 +3,7 @@ title: Toolchain and OTP
 description: Why the host Elixir/OTP pin is coupled to each Nerves target, what the A/B firmware layout requires of every image, and how to move a system fork forward.
 ---
 
-The host toolchain pinned in [`mise.toml`](../mise.toml) is not a free choice: each Nerves target ships its own Erlang runtime, and the two have to agree. This guide covers that coupling, the current pins, what the A/B firmware layout demands of every image, and how to follow upstream with a system fork. The toolchain and the Nerves systems belong to the framework, so all of it applies to every application, yours included.
+The host toolchain pinned in [`mise.toml`](../mise.toml) is not a free choice: each Nerves target ships its own Erlang runtime, and the two have to agree. This guide covers that coupling, the current pins, what the A/B firmware layout demands of every image, and how to follow upstream with a system fork. The toolchain and the Nerves systems belong to the framework, so all of it applies to every vehicle, yours included.
 
 ## The constraint
 
@@ -22,7 +22,7 @@ Every system is on OTP 28 (`nerves_system_br` 1.33.7), and `mise.toml` pins Erla
 | `ovcs_base_can_system_rpi5` | `infotainment/firmware` | v2.0.4 |
 | `rpi5` (`ovcs_bridges_system_rpi5`) | `bridges/firmware` (perception) | v2.0.8 |
 
-Which of these your application builds depends on the targets its `OvcsVehicle` module declares; the reference applications use all four between them.
+Which of these your vehicle builds depends on the targets its `OvcsVehicle` module declares; the reference vehicles use all four between them.
 
 Every system is pinned to a **tag**, never to a branch. A branch moves with each release on the fork, and the next `mix deps.update` would silently change the OTP major.
 
@@ -33,11 +33,11 @@ Every system is pinned to a **tag**, never to a branch. A branch moves with each
 The v2.0 systems use A/B firmware slots on the MicroSD/eMMC with automatic rollback. Two consequences are easy to break by accident.
 
 > [!WARNING]
-> **Firmware must mark itself good.** An image that doesn't call `Nerves.Runtime.validate_firmware/0` is reverted on the next boot. `OvcsVehicle.FirmwareValidator` does this in `vms_firmware`, `infotainment_firmware` and `bridge_firmware`, on target only, so every application gets it for free. Remove it and every OTA update silently rolls back, NervesHub's included.
+> **Firmware must mark itself good.** An image that doesn't call `Nerves.Runtime.validate_firmware/0` is reverted on the next boot. `OvcsVehicle.FirmwareValidator` does this in `vms_firmware`, `infotainment_firmware` and `bridge_firmware`, on target only, so every vehicle gets it for free. Remove it and every OTA update silently rolls back, NervesHub's included.
 
-**Boot overlays come in A/B pairs.** `cmdline-a.txt` (rootfs on `mmcblk0p5`) and `cmdline-b.txt` (`mmcblk0p6`) live next to `config.txt` under each application's `priv/firmware/<role>/` (`priv/firmware/bridges/<id>/` for bridges). The pairs are not interchangeable between roles: infotainment boots with `console=tty3` and `logo.nologo`, radio control with `brcmfmac.feature_disable`. Derive a new pair from its own role's original, never from another role.
+**Boot overlays come in A/B pairs.** `cmdline-a.txt` (rootfs on `mmcblk0p5`) and `cmdline-b.txt` (`mmcblk0p6`) live next to `config.txt` under each vehicle's `priv/firmware/<role>/` (`priv/firmware/bridges/<id>/` for bridges). The pairs are not interchangeable between roles: infotainment boots with `console=tty3` and `logo.nologo`, radio control with `brcmfmac.feature_disable`. Derive a new pair from its own role's original, never from another role.
 
-The per-target `fwup.conf` under `<firmware>/targets/<target>/` encodes the partition layout. It is regenerated from the system's own `fwup.conf` rather than hand-patched; the OVCS changes on top are the three `${VEHICLE_FIRMWARE_DIR}` redirects (`cmdline-a.txt`, `cmdline-b.txt`, `config.txt`) and the CAN/SPI device-tree overlays each firmware needs. Each firmware's `config/config.exs` picks a file from the application's `priv/firmware/<role>/` when it exists and falls back to the target default otherwise, and points `VEHICLE_FIRMWARE_DIR` at the application directory when it has a `config.txt`. An application only ships a file that genuinely differs from the default.
+The per-target `fwup.conf` under `<firmware>/targets/<target>/` encodes the partition layout. It is regenerated from the system's own `fwup.conf` rather than hand-patched; the OVCS changes on top are the three `${VEHICLE_FIRMWARE_DIR}` redirects (`cmdline-a.txt`, `cmdline-b.txt`, `config.txt`) and the CAN/SPI device-tree overlays each firmware needs. Each firmware's `config/config.exs` picks a file from the vehicle's `priv/firmware/<role>/` when it exists and falls back to the target default otherwise, and points `VEHICLE_FIRMWARE_DIR` at the vehicle directory when it has a `config.txt`. A vehicle only ships a file that genuinely differs from the default.
 
 ## Migrating a system fork
 
@@ -49,7 +49,7 @@ When a fork needs to follow upstream again:
 4. **Tag against an explicit SHA**, and check the tag points where you think before pushing. With colliding tag names, a failed `git tag` followed by `git push <tag>` publishes *upstream's* tag onto the fork.
 5. **Point the firmware projects at the new tags** and let the `firmware.yml` workflow build every matrix entry.
 
-Then **reflash every affected board**, in every application deployed on the old layout. A partition-layout change can't be delivered over the air, and a device left on the old layout can't take the new firmware. The burn flow is in [Running on hardware](./running_hardware.md).
+Then **reflash every affected board**, in every vehicle deployed on the old layout. A partition-layout change can't be delivered over the air, and a device left on the old layout can't take the new firmware. The burn flow is in [Running on hardware](./running_hardware.md).
 
 > [!NOTE]
 > `workflow_dispatch` only works once the workflow file is on the repository's **default** branch, so a `release.yml` added in a pull request can't be dispatched from it. If a fork has no workflows on `main`, land `release.yml` there alone first (it touches nothing the system builds), dispatch it against the migration branch, and merge the migration once that run is green.

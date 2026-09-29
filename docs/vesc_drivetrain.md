@@ -3,7 +3,7 @@ title: VESC drivetrain
 description: Drive a traction motor through a VESC over CAN with Vesc.MotorController, the VESC Tool settings, the extended-id frames, and how to fake the VESC on the host bench.
 ---
 
-This guide covers driving a traction motor behind a VESC motor controller from the VMS over CAN, and what to set on the VESC for it. The component is `VmsCore.Components.Vesc.MotorController`; its frames are under [Frames](#frames). The OVCS Mini reference application is the worked example: its numbers and names are the Mini's, the setup is the same for your application.
+This guide covers driving a traction motor behind a VESC motor controller from the VMS over CAN, and what to set on the VESC for it. The component is `VmsCore.Components.Vesc.MotorController`; its frames are under [Frames](#frames). The OVCS Mini reference vehicle is the worked example: its numbers and names are the Mini's, the setup is the same for your vehicle.
 
 ## Why a VESC rather than a hobby ESC
 
@@ -45,7 +45,7 @@ Motor current, battery current and erpm limits are set in VESC Tool's *Motor Set
 
 The packets are the VESC firmware's own (`vedderb/bldc`, `comm/comm_can.c`). Every VESC frame is a 29-bit extended frame whose identifier is `controller_id | (packet_type << 8)`: the low byte is the VESC id, the byte above it the packet type. Payloads are big-endian.
 
-The shared library carries only the *signals* of each packet (`libraries/ovcs_can/priv/can/components/vesc/*_signals.yml`). Your application's topology wraps each in a frame that names it and sets the identifier with the VESC's id byte, the way generic controller frames are declared. A second VESC is a second set of wrappers with another id byte and name prefix.
+The shared library carries only the *signals* of each packet (`libraries/ovcs_can/priv/can/components/vesc/*_signals.yml`). Your vehicle's topology wraps each in a frame that names it and sets the identifier with the VESC's id byte, the way generic controller frames are declared. A second VESC is a second set of wrappers with another id byte and name prefix.
 
 Standard and extended frames share the bus without conflict: the arbitration field differs even when the low 11 bits coincide. Cantastic keys its specifications on the SocketCAN `can_id` with `CAN_EFF_FLAG`, and the generic controller's MCP2517FD filters extended frames out in hardware.
 
@@ -117,7 +117,7 @@ signals: import!:@ovcs_can:can/components/vesc/set_rpm_signals.yml
 
 The received wrappers carry `frequency: 20` too: the period the frame watcher expects at the VESC's 50 Hz status rate. `vesc_set_current_brake` is only needed with a gear source.
 
-The motor controller knows nothing about the vehicle: it takes the motor rpm at a full linear request and the motor's pole pairs. The kinematics that turn a speed into that rpm (pinion to spur, transmission, wheel radius) are your application's, declared once in the composer and shared with `VehicleMotion`:
+The motor controller knows nothing about the vehicle: it takes the motor rpm at a full linear request and the motor's pole pairs. The kinematics that turn a speed into that rpm (pinion to spur, transmission, wheel radius) are your vehicle's, declared once in the composer and shared with `VehicleMotion`:
 
 ```elixir
 # Motor turns per wheel turn: the manufacturer's overall ratio for

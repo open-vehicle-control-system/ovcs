@@ -6,7 +6,7 @@ description: The Zenoh fabric, who publishes which topic, simulator time, the th
 A map, not a manual: what runs when OVCS talks to ROS 2, who owns time, which command path is real, and what each verifier proves. [Simulation](../compose/local/simulation/README.md) tells you how to run the simulator; read this first.
 
 > [!NOTE]
-> The ROS bridge library, the Zenoh client, the message codecs, the VMS command components and the container images are framework. Which topics a bridge publishes and consumes, which drivers it uses and where the router lives are decided by the **application**, in its `ros_bridge_config/2`. Everything here was built and measured on the **OVCS Mini reference application**, the one that runs a ROS bridge, a perception bridge and a compute node: treat its wiring as a worked example for your own.
+> The ROS bridge library, the Zenoh client, the message codecs, the VMS command components and the container images are framework. Which topics a bridge publishes and consumes, which drivers it uses and where the router lives are decided by the **vehicle**, in its `ros_bridge_config/2`. Everything here was built and measured on the **OVCS Mini reference vehicle**, the one that runs a ROS bridge, a perception bridge and a compute node: treat its wiring as a worked example for your own.
 
 > [!WARNING]
 > In simulation, the gamepad and Nav2 drive Gazebo's physics **directly**. The VMS and the CAN bus are **not in that loop**; only the Elixir bridge's perception (and, on the host bridge, the IMU) runs against the simulator. A CAN frame is not what moves the simulated car. [Commands](#commands-three-paths-and-a-gap) shows both loops.
@@ -60,7 +60,7 @@ Details that read like bugs until you know them:
 - **Cameras go through `image_bridge`**, for bandwidth ([Perception](#perception-against-the-simulator)).
 - **`use_sim_time: true`** on every node ([Time](#time)).
 
-The model lives with its vehicle, in `vehicles/ovcs_mini/description/`, and is mounted into the container rather than baked in. Another application's model is another `description/` directory plus one mount line in `compose/local/simulation.yml`.
+The model lives with its vehicle, in `vehicles/ovcs_mini/description/`, and is mounted into the container rather than baked in. Another vehicle's model is another `description/` directory plus one mount line in `compose/local/simulation.yml`.
 
 ## Topics: who publishes what
 
@@ -83,7 +83,7 @@ The boundary between Gazebo's transport and ROS is exactly the list in `sim.laun
 
 **Two transform buffers, three publishers.** `/tf` is time-indexed: `tf2` stores each sample against its stamp and interpolates. `/tf_static` is timeless, and two things publish on it: `robot_state_publisher` with the URDF's fixed joints, and the bridge with `base_link → stereo_left`, the frame its image headers name. They don't collide, because the URDF's camera frames are `stereo_left_link` and `stereo_left_optical`; the simulated camera and the bridge describe one sensor under different frame names. The bridge's transform is static rather than on `/tf` at a rate because a point cloud stamped after the newest `/tf` sample cannot be transformed, and Nav2 drops it.
 
-**Both `cmd_vel` topics land on one Gazebo topic.** `AckermannSteering` listens on `/model/<app>/cmd_vel`; the two bridges remap the ROS side onto it. Nothing arbitrates, so run teleop *or* Nav2. On the vehicle, `Managers.ControlLevel` decides who has authority.
+**Both `cmd_vel` topics land on one Gazebo topic.** `AckermannSteering` listens on `/model/<vehicle>/cmd_vel`; the two bridges remap the ROS side onto it. Nothing arbitrates, so run teleop *or* Nav2. On the vehicle, `Managers.ControlLevel` decides who has authority.
 
 ## Time
 
@@ -160,18 +160,18 @@ One odometry owner per fabric: against the simulator Gazebo already publishes `/
 
 ### The actuator command (0x2B0)
 
-`RosBridge.Consumers.Joy` subscribes to `/joy` and writes `ros_actuator_command`: `steering` and `throttle` as the gamepad's `[-1, 1]` axes at 0.001 resolution, a `direction` (for applications where reverse is a gear and a negative throttle brakes, like OVCS1), and a `sequence`. The VMS components `OVCS.RosActuatorCommand.*` read them as normalised actuator requests: *what a joystick means*, positions, not physics. An axis outside `[-1, 1]` is clamped (Cantastic truncates a signed field silently and the value would come back with the wrong sign), and a `Joy` with too few axes reads as centre.
+`RosBridge.Consumers.Joy` subscribes to `/joy` and writes `ros_actuator_command`: `steering` and `throttle` as the gamepad's `[-1, 1]` axes at 0.001 resolution, a `direction` (for vehicles where reverse is a gear and a negative throttle brakes, like OVCS1), and a `sequence`. The VMS components `OVCS.RosActuatorCommand.*` read them as normalised actuator requests: *what a joystick means*, positions, not physics. An axis outside `[-1, 1]` is clamped (Cantastic truncates a signed field silently and the value would come back with the wrong sign), and a `Joy` with too few axes reads as centre.
 
 ### The velocity command (0x2B1)
 
-`RosBridge.Consumers.Velocity` subscribes to a velocity topic and writes `ros_velocity_command`: `linear` (m/s, 0.01) and `angular` (rad/s, 0.001) as signed 16-bit integers, plus a `sequence`. This is *what a planner means*: a physical quantity, with the kinematics solved **once, in the VMS**, by `OVCS.RosVelocityCommand` against the application's `geometry/0`:
+`RosBridge.Consumers.Velocity` subscribes to a velocity topic and writes `ros_velocity_command`: `linear` (m/s, 0.01) and `angular` (rad/s, 0.001) as signed 16-bit integers, plus a `sequence`. This is *what a planner means*: a physical quantity, with the kinematics solved **once, in the VMS**, by `OVCS.RosVelocityCommand` against the vehicle's `geometry/0`:
 
 ```text
 ω is first clamped to |v| / (wheelbase / tan(steering_limit))
 δ = atan(wheelbase · ω / v)      clamped to steering_limit
 ```
 
-A yaw rate the steering cannot achieve collapses to full lock rather than an error branch. Forward and reverse are the sign of `linear`. The bridge never learns a wheelbase, so any commander (Nav2, a remote operator, a test rig) gets correct kinematics for whatever application it drives.
+A yaw rate the steering cannot achieve collapses to full lock rather than an error branch. Forward and reverse are the sign of `linear`. The bridge never learns a wheelbase, so any commander (Nav2, a remote operator, a test rig) gets correct kinematics for whatever vehicle it drives.
 
 ### The sequence
 
@@ -186,7 +186,7 @@ A yaw rate the steering cannot achieve collapses to full lock rather than an err
 | `OVCS.RadioControl.RequestedControlLevel` | `:manual` / `:radio` / `:ros` | who has authority |
 | `OVCS.RadioControl.RequestedRosCommander` | `:teleop` / `:autonomous` | which ROS node, when ROS does |
 
-`:ros` means "commands come from the ROS bridge", not "the car drives itself": a human on a gamepad and a planner reach the VMS over identical topics and frames. `:ros` is reachable only from `:radio`, both switches only *request*, and arming `:autonomous` needs a standstill while handing back to `:teleop` is immediate. The state machine, each reference application's channel layout and the bench recipe are in [Your application package](./vehicle_parameterisation.md#control-levels-who-commands-and-which-ros-node).
+`:ros` means "commands come from the ROS bridge", not "the car drives itself": a human on a gamepad and a planner reach the VMS over identical topics and frames. `:ros` is reachable only from `:radio`, both switches only *request*, and arming `:autonomous` needs a standstill while handing back to `:teleop` is immediate. The state machine, each reference vehicle's channel layout and the bench recipe are in [Your vehicle package](./vehicle_parameterisation.md#control-levels-who-commands-and-which-ros-node).
 
 ### Two things that fail silently
 
@@ -247,9 +247,9 @@ Gazebo cameras ─► image_bridge ─/stereo/{left,right}/image_raw/compressed�
 
 Detection on the Hailo-8 and its backends are in [Perception: object detection](./ros_perception_detection.md).
 
-## Per-application bridge configuration
+## Per-vehicle bridge configuration
 
-This is the framework/application boundary on the ROS side. Apart from `ZenohClient`, every feature of `RosBridge` is a component the application opts into through `%RosBridge.Config{}`, returned by its `ros_bridge_config(:host | :target, firmware_id)`. The host arm is where a dummy IMU lets `./ovcs run` work without a sensor; the target arm has the real `BNO085.I2C`. From the OVCS Mini reference application:
+This is the framework/vehicle boundary on the ROS side. Apart from `ZenohClient`, every feature of `RosBridge` is a component the vehicle opts into through `%RosBridge.Config{}`, returned by its `ros_bridge_config(:host | :target, firmware_id)`. The host arm is where a dummy IMU lets `./ovcs run` work without a sensor; the target arm has the real `BNO085.I2C`. From the OVCS Mini reference vehicle:
 
 ```elixir
 defp ros_target_config,
@@ -296,7 +296,7 @@ Each script starts the standalone router and the simulator, waits, starts Nav2 o
 
 ## Verifying end to end
 
-With `./ovcs run <app>` going and the `compose/local/base.yml` stack up:
+With `./ovcs run <vehicle>` going and the `compose/local/base.yml` stack up:
 
 ```sh
 cd compose/local && docker compose -f base.yml exec ros2 bash -lc '
@@ -319,11 +319,11 @@ Or open Foxglove Studio against `ws://<docker-host>:8765` and subscribe to `/ovc
 | the launch order and bridged topics | `compose/local/simulation/launch/sim.launch.py` (its docstrings are the design notes) | `compose/compute/nav2/launch/nav2.launch.py`, `compose/local/simulation/launch/teleop.launch.py` |
 | the rmw_zenoh wire format | [`bridges/ros_bridge/README.md`](../bridges/ros_bridge/README.md) | `bridges/ros_bridge/lib/ros2/rmw_zenoh.ex`, `zenoh_client.ex` |
 | time | `bridges/ros_bridge/lib/ros_bridge/clock.ex` | `timing.ex`, `publishers/static_transform.ex` |
-| what an application's bridge runs | `vehicles/ovcs_mini/lib/ovcs_mini.ex` (`ros_bridge_config/2`) | `bridges/ros_bridge/lib/ros_bridge/components.ex` |
+| what a vehicle's bridge runs | `vehicles/ovcs_mini/lib/ovcs_mini.ex` (`ros_bridge_config/2`) | `bridges/ros_bridge/lib/ros_bridge/components.ex` |
 | the actuator command path | `bridges/ros_bridge/lib/ros_bridge/consumers/joy.ex` | `libraries/ovcs_can/priv/can/components/ovcs/0x2B0_ros_actuator_command.yml`, `vms/core/lib/vms_core/components/ovcs/ros_actuator_command/` |
 | the velocity command path | `bridges/ros_bridge/lib/ros_bridge/consumers/velocity.ex` | `0x2B1_ros_velocity_command.yml`, `vms/core/lib/vms_core/components/ovcs/ros_velocity_command.ex` |
 | odometry on the vehicle | `bridges/ros_bridge/lib/ros_bridge/publishers/odometry.ex` | `0x60B_vehicle_motion.yml`, `vms/core/lib/vms_core/components/ovcs/vehicle_motion.ex` |
-| who commands the vehicle | [Your application package](./vehicle_parameterisation.md#control-levels-who-commands-and-which-ros-node) | `vms/core/lib/vms_core/managers/control_level.ex` |
+| who commands the vehicle | [Your vehicle package](./vehicle_parameterisation.md#control-levels-who-commands-and-which-ros-node) | `vms/core/lib/vms_core/managers/control_level.ex` |
 | Nav2's configuration | `compose/compute/nav2/config/nav2.yaml` (heavily commented) | `nav2_ackermann_bt.xml` beside it, `compose/local/simulation/scripts/nav2_test.py` |
 | the perception pipeline | [Perception: object detection](./ros_perception_detection.md) | `bridges/ros_bridge/lib/ros_bridge/camera/zenoh.ex`, `stereo_camera/supervisor.ex` |
 | the vehicle's ROS computer | [ROS compute node](./ros_compute_node.md) | `compose/compute/`, [`compose/README.md`](../compose/README.md) |

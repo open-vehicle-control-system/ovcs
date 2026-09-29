@@ -3,7 +3,7 @@ title: "Perception: object detection"
 description: Object detection on a Hailo-8 fused with stereo depth into 3D detections, the topics it publishes, the CPU/GPU backends for the simulator, and model licensing.
 ---
 
-`RosBridge` can run object detection next to its stereo depth pipeline and fuse the two into 3D detections. The OVCS Mini reference application is the worked example: its `ros_perception` bridge (a Pi 5) runs SGBM stereo depth on the CPU and detection on a Hailo-8. Numbers on this page are measured on that board. The component reference is [`bridges/ros_bridge/README.md`](../bridges/ros_bridge/README.md).
+`RosBridge` can run object detection next to its stereo depth pipeline and fuse the two into 3D detections. The OVCS Mini reference vehicle is the worked example: its `ros_perception` bridge (a Pi 5) runs SGBM stereo depth on the CPU and detection on a Hailo-8. Numbers on this page are measured on that board. The component reference is [`bridges/ros_bridge/README.md`](../bridges/ros_bridge/README.md).
 
 ## Why detection and not depth
 
@@ -65,7 +65,7 @@ A straight edge in rectified space is a curve in raw space, so each edge is subd
 
 The detector is fed the pipeline's existing grayscale frame. Against ultralytics' `bus.jpg`, grayscale scored within 0.01 of colour (person 0.881 vs 0.888; bus 0.87 vs 0.84); colour would mean a second JPEG decode for no measurable gain. Resolution isn't the limit either: at the Mini's 480×270 the model still scores people at 0.91 / 0.87 / 0.74.
 
-## Wiring it into your application
+## Wiring it into your vehicle
 
 The detector is a component of the perception bridge's `RosBridge.Config`, listed after `:stereo_camera` (it registers on that unit's backend while starting). The OVCS Mini's `vehicles/ovcs_mini/lib/ovcs_mini.ex`:
 
@@ -76,7 +76,7 @@ The detector is a component of the perception bridge's `RosBridge.Config`, liste
  frame_id: "stereo_left"}
 ```
 
-`frame_id` is the stereo unit's own frame, since boxes are positioned in its rectified pixels. Your application also needs a `base_link` → `stereo_left` static transform (the `:static_transforms` component) so consumers can place detections relative to the vehicle.
+`frame_id` is the stereo unit's own frame, since boxes are positioned in its rectified pixels. Your vehicle also needs a `base_link` → `stereo_left` static transform (the `:static_transforms` component) so consumers can place detections relative to the vehicle.
 
 ## Checking it works
 

@@ -1,19 +1,19 @@
 ---
 title: Quickstart
-description: Boot a reference application on your laptop with virtual CAN, attach the TUI, open the dashboard, send your first frame.
+description: Boot a reference vehicle on your laptop with virtual CAN, attach the TUI, open the dashboard, send your first frame.
 ---
 
-You need no car, Raspberry Pi or CAN adapter to see OVCS work. A whole application boots on a Linux laptop: one BEAM per firmware, joined in an Erlang cluster, talking over virtual CAN. This page assumes you completed [Getting started](./getting_started.md) and `./ovcs doctor` is green.
+You need no car, Raspberry Pi or CAN adapter to see OVCS work. A whole vehicle boots on a Linux laptop: one BEAM per firmware, joined in an Erlang cluster, talking over virtual CAN. This page assumes you completed [Getting started](./getting_started.md) and `./ovcs doctor` is green.
 
 > [!NOTE]
-> The commands use the reference applications because they are ready to run. An application you scaffold with `./ovcs new` boots the same way. See [Framework and applications](./framework.md).
+> The commands use the reference vehicles because they are ready to run. A vehicle you scaffold with `./ovcs new` boots the same way. See [Framework and vehicles](./framework.md).
 
 > [!TIP]
 > No Linux at hand? [Simulation](../compose/local/simulation/README.md) needs only Docker: a Gazebo model of the OVCS Mini.
 
-## Boot a reference application
+## Boot a reference vehicle
 
-`./ovcs run <app>` takes any application under `vehicles/`. Start with the OVCS Mini reference application: one CAN bus, no infotainment side.
+`./ovcs run <vehicle>` takes any vehicle under `vehicles/`. Start with the OVCS Mini reference vehicle: one CAN bus, no infotainment side.
 
 ```sh
 ./ovcs run ovcs_mini
@@ -21,16 +21,16 @@ You need no car, Raspberry Pi or CAN adapter to see OVCS work. A whole applicati
 
 The CLI:
 
-1. Loads the `vcan` kernel module and creates the virtual CAN interfaces the application declares (sudo prompt the first time).
-2. Compiles the application package, which pulls in every framework firmware project it needs.
+1. Loads the `vcan` kernel module and creates the virtual CAN interfaces the vehicle declares (sudo prompt the first time).
+2. Compiles the vehicle package, which pulls in every framework firmware project it needs.
 3. Spawns one BEAM per role from that firmware's directory: `vms`, then one per bridge firmware (`bridge-radio_control`, `bridge-ros`, `bridge-ros_perception` for the Mini).
 
 Output is prefixed per role (`[vms] …`, `[bridge-ros] …`). The VMS API is on `http://localhost:4000`. `Ctrl+C` stops everything.
 
 ```sh
-./ovcs run ovcs1        # OVCS1 reference application: VMS, infotainment (:4001), two bridges
-./ovcs run obd2         # OBD2 reference application: VMS and infotainment, no bridges
-./ovcs run my_car       # your own application
+./ovcs run ovcs1        # OVCS1 reference vehicle: VMS, infotainment (:4001), two bridges
+./ovcs run obd2         # OBD2 reference vehicle: VMS and infotainment, no bridges
+./ovcs run my_car       # your own vehicle
 ```
 
 Every BEAM joins one Erlang cluster through `OvcsBus.Cluster`, so a message broadcast on the VMS reaches subscribers in every bridge with no broker. A deployed vehicle uses the same transport, one BEAM per Raspberry Pi.
@@ -45,7 +45,7 @@ http://localhost:5173
 
 `:4000` serves the last prebuilt bundle from `vms/api/priv/static/` and does not hot-reload. `--no-addons` boots only the BEAMs.
 
-The dashboard renders the pages the application's VMS composer declares: metric tables, live charts, and action buttons that call into components (adopt a controller, calibrate the throttle, enable contactors).
+The dashboard renders the pages the vehicle's VMS composer declares: metric tables, live charts, and action buttons that call into components (adopt a controller, calibrate the throttle, enable contactors).
 
 ## Attach the TUI
 
@@ -70,7 +70,7 @@ The rest is in the [CLI reference](../cli/README.md).
 
 ## Send your first CAN frame
 
-With the OVCS1 reference application running, pull the original Polo's handbrake and watch it on the dashboard. The frame belongs to the `polo_drive` network, which OVCS1 maps to `vcan2` on the host; your application declares its own frames and mapping.
+With the OVCS1 reference vehicle running, pull the original Polo's handbrake and watch it on the dashboard. The frame belongs to the `polo_drive` network, which OVCS1 maps to `vcan2` on the host; your vehicle declares its own frames and mapping.
 
 ```sh
 cansend vcan2 320#0002000000000000   # handbrake engaged
@@ -95,8 +95,8 @@ CAN_NETWORK_MAPPINGS=ovcs:can0,leaf_drive:vcan1,polo_drive:vcan2,orion_bms:vcan3
 
 ## Where next
 
-- [Architecture](./architecture.md): bus isolation, the application contract, the Erlang mesh.
+- [Architecture](./architecture.md): bus isolation, the vehicle contract, the Erlang mesh.
 - [Simulation](../compose/local/simulation/README.md): the same Elixir bridge in front of a Gazebo model, driven by Nav2.
 - [Generic controllers](./testing_generic_controllers.md): flash an Arduino and adopt it.
 - [Running on hardware](./running_hardware.md): build, burn and upload Nerves firmware.
-- [Your application package](./vehicle_parameterisation.md): scaffold your own with `./ovcs new`.
+- [Your vehicle package](./vehicle_parameterisation.md): scaffold your own with `./ovcs new`.
