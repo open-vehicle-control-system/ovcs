@@ -20,6 +20,7 @@ defmodule <%= @module %>.Infotainment.Composer.Infotainment do
     %{
       vehicle: %{
         name: "<%= @display_name %>",
+        module: <%= @module %>.Infotainment,
         main_color: "gray",
         refresh_interval: 50,
         grid_columns: @grid_columns,

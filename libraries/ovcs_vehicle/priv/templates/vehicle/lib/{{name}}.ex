@@ -49,11 +49,17 @@ defmodule <%= @module %> do
   # The shared `bridges/firmware` image reads VEHICLE +
   # BRIDGE_FIRMWARE_ID at boot and supervises only the bridges listed.
   #
-  # Some bridges expose their own behaviour for per-vehicle config — e.g.
-  # bundling `RosBridge` also requires `@behaviour RosBridge` on this
-  # module + a `ros_bridge_config/0` callback returning a
-  # `%RosBridge.Config{}`. See `vehicles/ovcs_mini/lib/ovcs_mini.ex` and
-  # `vehicles/ovcs1/lib/ovcs1.ex` for the pattern.
+  # Each bundled bridge also needs its per-vehicle config callback on
+  # this module. `RadioControlBridge` requires
+  # `@behaviour RadioControlBridge` + `radio_control_bridge_config/1`,
+  # as below.
+  # `RosBridge` requires `@behaviour RosBridge` + `ros_bridge_config/1`
+  # (arm) or `ros_bridge_config/2` (arm, firmware id) returning a
+  # `%RosBridge.Config{}`. See `vehicles/ovcs_mini/lib/ovcs_mini.ex` for
+  # both. The entry below also needs `priv/can/bridges/radio_control.yml`;
+  # start from `vehicles/ovcs_mini/priv/can/bridges/radio_control.yml`.
+  #
+  # @behaviour RadioControlBridge
   #
   # @impl OvcsVehicle
   # def bridge_firmwares do
@@ -66,4 +72,14 @@ defmodule <%= @module %> do
   #     }
   #   }
   # end
+  #
+  # # `:host` is `./ovcs run`, `:target` the burned firmware.
+  # @impl RadioControlBridge
+  # def radio_control_bridge_config(:host),
+  #   do: %RadioControlBridge.Config{components: []}
+  #
+  # def radio_control_bridge_config(:target),
+  #   do: %RadioControlBridge.Config{
+  #     components: [{:mavlink_forwarder, uart_port: "ttySC0", uart_baud_rate: 460_800}]
+  #   }
 <% end %>end

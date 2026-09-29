@@ -3,9 +3,12 @@
 # generic controller emits one on 0x7X1 so the VMS can detect that
 # the controller is still responsive. Rename to match the role this
 # controller fills in your vehicle (front_controller, bms_controller,
-# sensor_board, ...) and pick an unused 0x7X1 ID.
+# sensor_board, ...). X is the board's `controller_id`, set in
+# lib/<%= @name %>/vms/composer/generic_controller.ex: controller N uses
+# 0x7N1-0x7N9, so this example is controller 0. Give each additional
+# controller its own id and frame range.
 name: example_controller_alive
-id: 0x7E1
+id: 0x701
 frequency: 100
 allowed_frequency_leeway: 200
 allowed_missing_frames: 10
