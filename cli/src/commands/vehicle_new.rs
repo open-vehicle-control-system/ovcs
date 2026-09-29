@@ -194,7 +194,7 @@ fn warn_missing_firmware(root: &Path, side: &str, target: &str) -> Result<()> {
     println!(
         "{}",
         format!(
-            "Note: no firmware defaults for {side} target {target} at {rel}.\n      priv/firmware/{side}/ was not populated — seed one by dropping\n      fwup.conf + config.txt in there, or add them to the shared\n      target dir so future scaffolds pick them up.",
+            "Note: no firmware defaults for {side} target {target} at {rel}.\n      priv/firmware/{side}/ was not populated. Add fwup.conf, config.txt,\n      cmdline-a.txt and cmdline-b.txt to that shared target dir (or put\n      all four in priv/firmware/{side}/) before building an image.",
             side = side,
             target = target,
             rel = rel
