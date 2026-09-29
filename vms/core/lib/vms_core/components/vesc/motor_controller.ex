@@ -149,6 +149,10 @@ defmodule VmsCore.Components.Vesc.MotorController do
     set_rpm: "speed"
   }
 
+  def child_spec(%{process_name: process_name} = args) do
+    %{id: process_name, start: {__MODULE__, :start_link, [args]}}
+  end
+
   def start_link(%{process_name: process_name} = args) do
     GenServer.start_link(__MODULE__, args, name: process_name)
   end
