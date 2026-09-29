@@ -17,22 +17,22 @@ defmodule OvcsBus.Cluster do
         :"ovcs1-infotainment@dev-laptop"
         :"ovcs1-bridge-ros@dev-laptop"
 
-  * Deployed Nerves (`nerves@<vehicle>-<role>`) — peers share the
-    sname `nerves` and vary the hostname. Example, for
-    `nerves@ovcs1-vms`:
+  * Deployed Nerves (`nerves@<vehicle>-<role>.local`) — peers share
+    the sname `nerves` and the domain suffix of the local hostname,
+    and vary the hostname. Example, for `nerves@ovcs1-vms.local`:
 
-        :"nerves@ovcs1-infotainment"
-        :"nerves@ovcs1-bridge-ros"
+        :"nerves@ovcs1-infotainment.local"
+        :"nerves@ovcs1-bridge-ros.local"
+
+  On a deployed firmware the node starts without a name;
+  `OvcsBus.Distribution.ensure_started/0` names it on the first tick
+  that succeeds. Until then the peer list is empty. Peers are derived
+  again on every tick, so they follow `Node.self()`.
 
   Calls `Node.connect/1` on every peer at boot and retries on a
   `@retry_interval` timer, so a peer that comes up later is pulled
   into the mesh. Once connected, `Phoenix.PubSub` (and therefore
   `OvcsBus.broadcast/2`) fans messages out across every node.
-
-  This replaces the `OvcsBus.Mqtt.*` plumbing for inter-firmware
-  traffic. A single transport (Erlang distribution) now handles both
-  host dev and deployed — no Mosquitto, no Tortoise311 client, no
-  AppArmor quirks on dev machines.
   """
   use GenServer
   require Logger
@@ -44,20 +44,21 @@ defmodule OvcsBus.Cluster do
   @impl true
   def init(opts) do
     vehicle = Keyword.fetch!(opts, :vehicle)
-    peers = peers_for(vehicle)
-
-    Logger.info(
-      "OvcsBus.Cluster starting with peers #{inspect(peers)} (self: #{inspect(Node.self())})"
-    )
-
     send(self(), :connect)
-    {:ok, %{peers: peers}}
+    {:ok, %{vehicle: vehicle, peers: []}}
   end
 
   @impl true
-  def handle_info(:connect, %{peers: peers} = state) do
-    connected = Node.list()
+  def handle_info(:connect, %{vehicle: vehicle} = state) do
+    OvcsBus.Distribution.ensure_started()
+    peers = peers_for(vehicle)
     self_node = Node.self()
+
+    if peers != state.peers do
+      Logger.info("OvcsBus.Cluster peers #{inspect(peers)} (self: #{inspect(self_node)})")
+    end
+
+    connected = Node.list()
 
     Enum.each(peers, fn peer ->
       cond do
@@ -68,7 +69,7 @@ defmodule OvcsBus.Cluster do
     end)
 
     Process.send_after(self(), :connect, @retry_interval)
-    {:noreply, state}
+    {:noreply, %{state | peers: peers}}
   end
 
   @doc """
@@ -77,14 +78,19 @@ defmodule OvcsBus.Cluster do
   """
   @spec peers_for(module()) :: [node()]
   def peers_for(vehicle_module) do
-    case String.split(Atom.to_string(Node.self()), "@", parts: 2) do
+    case Node.alive?() && String.split(Atom.to_string(Node.self()), "@", parts: 2) do
       [sname, hostname] ->
         vehicle_hyphen = vehicle_dir_hyphen(vehicle_module)
         roles = declared_roles(vehicle_module)
 
         if sname == "nerves" do
-          # Deployed: role is encoded in hostname.
-          Enum.map(roles, fn role -> String.to_atom("nerves@#{vehicle_hyphen}-#{role}") end)
+          # Deployed: role is encoded in hostname; the domain suffix
+          # (`.local`) is shared.
+          domain = domain_suffix(hostname)
+
+          Enum.map(roles, fn role ->
+            String.to_atom("nerves@#{vehicle_hyphen}-#{role}#{domain}")
+          end)
         else
           # Host dev: role is encoded in sname; hostname is shared.
           Enum.map(roles, fn role ->
@@ -94,6 +100,14 @@ defmodule OvcsBus.Cluster do
 
       _ ->
         []
+    end
+  end
+
+  # `"ovcs1-vms.local"` -> `".local"`; `"ovcs1-vms"` -> `""`.
+  defp domain_suffix(hostname) do
+    case String.split(hostname, ".", parts: 2) do
+      [_host, domain] -> "." <> domain
+      [_host] -> ""
     end
   end
 

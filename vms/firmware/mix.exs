@@ -83,7 +83,11 @@ defmodule VmsFirmware.MixProject do
   def release do
     [
       overwrite: true,
-      cookie: "#{@app}_cookie",
+      # Shared by every OVCS firmware and by `./ovcs run` / `./ovcs
+      # attach`, so the vehicle's BEAMs authenticate each other. Passed
+      # to the VM by `-setcookie` in rel/vm.args.eex (erlinit boots the
+      # VM directly, not through the release start script).
+      cookie: "ovcs",
       include_erts: &Nerves.Release.erts/0,
       steps: [&Nerves.Release.init/1, :assemble, &copy_vehicle_app/1],
       strip_beams: Mix.env() == :prod or [keep: ["Docs"]]

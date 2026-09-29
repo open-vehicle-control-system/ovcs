@@ -93,6 +93,7 @@ wlan0_config =
 
 config :vintage_net,
   regulatory_domain: "00",
+  additional_name_servers: [{127, 0, 0, 53}],
   config:
     [
       {"usb0", %{type: VintageNetDirect}},
@@ -102,3 +103,8 @@ config :vintage_net,
          ipv4: %{method: :dhcp}
        }}
     ] ++ wlan0_config
+
+# Start Erlang distribution as `nerves@<hostname>.local` so
+# `OvcsBus.Cluster` can reach the vehicle's other firmwares. See
+# `OvcsBus.Distribution`.
+config :ovcs_bus, :distribution, domain: "local"

@@ -1,5 +1,9 @@
 ## Customize flags given to the VM: http://erlang.org/doc/man/erl.html
 
+## Do not set -name or -sname here: OvcsBus.Distribution starts distribution
+## at runtime. The cookie is the release `:cookie` option from mix.exs.
+-setcookie <%= @release.options[:cookie] %>
+
 +Bc
 +C multi_time_warp
 -mode embedded

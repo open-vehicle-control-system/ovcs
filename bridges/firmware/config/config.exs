@@ -134,9 +134,17 @@ if Mix.target() != :host do
       {"eth0", %{type: VintageNetEthernet, ipv4: %{method: :dhcp}}}
     ]
 
+  # The DNS bridge answers `.local` queries for Erlang's resolver, which
+  # has no mDNS support of its own. `additional_name_servers` in
+  # target.exs puts it first; it refuses other names, so the resolver falls through to
+  # the DHCP-supplied servers. See the "DNS Bridge configuration"
+  # section of the mdns_lite README.
   config :mdns_lite,
     hosts: [:hostname, vehicle_host],
     ttl: 120,
+    dns_bridge_enabled: true,
+    dns_bridge_ip: {127, 0, 0, 53},
+    dns_bridge_port: 53,
     services: [
       %{protocol: "ssh", transport: "tcp", port: 22},
       %{protocol: "sftp-ssh", transport: "tcp", port: 22},
