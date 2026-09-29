@@ -208,7 +208,9 @@ fn host_keys_dir(vehicle: &Vehicle) -> PathBuf {
     vehicle.path.join("priv").join("host_keys")
 }
 
-fn role_dir(vehicle: &Vehicle, role: &str) -> PathBuf {
+/// Directory holding `role`'s host keys (`role` as `applications_for`
+/// names it: `vms`, `infotainment` or `bridge-<id>`).
+pub(crate) fn role_dir(vehicle: &Vehicle, role: &str) -> PathBuf {
     let base = host_keys_dir(vehicle);
     // Bridge roles arrive as `bridge-<id>` (from `applications_for`), but
     // the firmware reads keys at `bridges/<id>` — bridges/firmware's

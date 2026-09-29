@@ -3,6 +3,7 @@ use owo_colors::OwoColorize;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
+use crate::commands::vehicle_host_keys;
 use crate::firmware::applications_for;
 use crate::repo_root::repo_root;
 use crate::ui::step;
@@ -225,18 +226,10 @@ fn missing_host_key_roles(vehicle: &Vehicle, roles: &[String]) -> Vec<String> {
 }
 
 fn host_keys_present(vehicle: &Vehicle, role: &str) -> bool {
-    let dir = host_keys_dir(vehicle, role);
+    let dir = vehicle_host_keys::role_dir(vehicle, role);
     ["ssh_host_rsa_key", "ssh_host_ed25519_key"]
         .iter()
         .all(|name| dir.join(name).exists())
-}
-
-fn host_keys_dir(vehicle: &Vehicle, role: &str) -> std::path::PathBuf {
-    let base = vehicle.path.join("priv").join("host_keys");
-    match role {
-        "vms" | "infotainment" => base.join(role),
-        bridge_id => base.join("bridges").join(bridge_id),
-    }
 }
 
 fn print_row(mark: Mark, name: &str, detail: &str) {
