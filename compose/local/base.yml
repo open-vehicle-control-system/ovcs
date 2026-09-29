@@ -15,7 +15,7 @@
 #
 # Smoke test against the bridge's heartbeat:
 #   docker compose -f base.yml exec ros2 bash -lc \
-#     'ros2 topic echo /ovcs_heartbeat std_msgs/msg/String'
+#     'source /opt/ros/*/setup.bash; ros2 topic echo /ovcs_heartbeat std_msgs/msg/String'
 #
 # The Zenoh environment and the shared image come from common.yml via
 # `extends:`; the project name keeps this stack's containers apart from

@@ -13,9 +13,13 @@ that matter on a real car.
 
 2. **The turning radius is honoured.** For every commanded pair,
    `|wz| <= |vx| / min_turning_r`. This is the assertion that catches
-   `motion_model` being unset or renamed, which silently reverts MPPI
-   to `mppi::OmniMotionModel` — holonomic, and happy to command
-   sideways and spin-in-place velocities the vehicle cannot produce.
+   `motion_model` naming an instance whose plugin is not
+   `mppi::AckermannMotionModel`: `mppi::OmniMotionModel` or
+   `mppi::DiffDriveMotionModel` configure without complaint and are
+   happy to command sideways and spin-in-place velocities the vehicle
+   cannot produce. (Leaving `motion_model` unset is not this case: it
+   is fatal, controller_server refuses to configure; see
+   `compose/compute/nav2/config/nav2.yaml`.)
    The car still reaches the goal in simulation when that happens,
    because Gazebo's plugin quietly ignores what it cannot do. On the
    real vehicle it would be commanding arcs tighter than the steering

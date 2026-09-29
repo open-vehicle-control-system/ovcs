@@ -1,4 +1,4 @@
-"""Bring up the OVCS Mini in Gazebo Harmonic.
+"""Bring up the OVCS Mini in Gazebo Jetty.
 
 Starts four things, in the order they depend on each other:
 
@@ -113,7 +113,9 @@ def generate_launch_description():
                 default_value="ovcs_mini",
                 description=(
                     "Which vehicle to spawn. Names a directory under "
-                    "simulation/vehicles/ containing <name>.urdf.xacro."
+                    "$OVCS_VEHICLES_DIR (default /opt/ovcs/vehicles) "
+                    "containing <name>.urdf.xacro; compose mounts "
+                    "vehicles/<name>/description there."
                 ),
             ),
             DeclareLaunchArgument(
