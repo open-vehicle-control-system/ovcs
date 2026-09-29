@@ -69,7 +69,8 @@ A comment describes the code as it is at the moment the comment is written — n
 
 - No history: no "previously this did X", "changed from Y", "was a workaround for Z", "per feedback". Git holds the story.
 - No process narration, session references, or dated diary entries.
-- Explain non-obvious *why* and invariants; skip what the code already states plainly.
+- Comment only when it's needed: a non-obvious *why*, an invariant, a trap. Most code needs none; skip what the code already states plainly.
+- Keep comments short and plain: one line where one line does. No paragraphs, no restating the surrounding code, no emphasis.
 - A stale comment is deleted, not amended.
 
 ### If a violation has already been pushed
