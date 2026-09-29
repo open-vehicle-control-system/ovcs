@@ -86,7 +86,7 @@ cansend vcan0 2A1#E803D00700000000   # channel 6 = 2000: level :ros (only reacha
 cansend vcan0 2A1#D007D00700000000   # channel 5 = 2000: commander :autonomous (needs a standstill)
 ```
 
-`ready_to_drive` must be true as well; the Mini hardcodes it. Details in [Your vehicle package](./vehicle_parameterisation.md#driving-on-the-host-bench).
+`ready_to_drive` must be true as well; the Mini hardcodes it. Details in [Your vehicle package](./vehicle_package.md#driving-on-the-host-bench).
 
 ## Generic controllers
 
@@ -148,7 +148,7 @@ sudo udevadm trigger
 
 ### A board's wired `10.42.0.x` address is unreachable from the site Wi-Fi
 
-**Cause:** on a vehicle with a compute node (the OVCS Mini reference vehicle has one), the wired network is NATed and forwards nothing in. **Fix:** join the vehicle's own access point, or hop through the compute node with one block in `~/.ssh/config`. `./ovcs upload` and `./ovcs connect --host` run `ssh` underneath, so they follow it. See [ROS compute node](./ros_compute_node.md).
+**Cause:** on a vehicle with a compute node (the OVCS Mini reference vehicle has one), the wired network is NATed and forwards nothing in. **Fix:** join the vehicle's own access point, or hop through the compute node with one block in `~/.ssh/config`. `./ovcs upload` and `./ovcs connect --host` run `ssh` underneath, so they follow it. See [ROS compute node](./ros2_compute_node.md).
 
 ```text
 Host 10.42.0.*
@@ -184,7 +184,7 @@ Host 10.42.0.*
 
 ### Nav2 drops every point cloud: "the timestamp on the message is earlier than all the data in the transform cache"
 
-**Cause:** one transform stamped with wall-clock time reached `tf2` before the bridge learned the simulator clock. `tf2` prunes relative to its newest entry, and a stamp decades in the future never ages out. **Fix:** `RosBridge.Clock` blocks in `init/1` until the first `/clock` sample, so `:simulator_clock` must come before every component that publishes stamped messages. If you reordered them, put it back. With no `/clock` within 60 s the bridge stays on wall clock for the whole run, by design; restart it once the simulator is up. Background in [ROS 2 and the simulator](./ros2_integration.md).
+**Cause:** one transform stamped with wall-clock time reached `tf2` before the bridge learned the simulator clock. `tf2` prunes relative to its newest entry, and a stamp decades in the future never ages out. **Fix:** `RosBridge.Clock` blocks in `init/1` until the first `/clock` sample, so `:simulator_clock` must come before every component that publishes stamped messages. If you reordered them, put it back. With no `/clock` within 60 s the bridge stays on wall clock for the whole run, by design; restart it once the simulator is up. Background in [ROS 2 and the simulator](./ros2_simulator.md).
 
 ### The image topic looks dead: one frame every fifteen seconds
 

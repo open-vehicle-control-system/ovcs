@@ -11,7 +11,7 @@ During local development none of the CAN traffic is real. The `can-utils` tools 
 ## Prerequisites
 
 - Virtual CAN interfaces are up: `./ovcs can setup <vehicle>`, or `./ovcs run <vehicle>`, which does it for you.
-- The VMS (or infotainment) side is running; see [Framework components](./applications.md#local-development).
+- The VMS (or infotainment) side is running; see [Framework components](./components.md#local-development).
 - `can-utils` is installed (`sudo apt install can-utils`): it provides `cansend`, `candump`, `canplayer` and `cangen`.
 
 Each network maps to one interface. The vehicle's `default_can_mapping(:host)` sets the mapping; OVCS1's is `ovcs:vcan0,leaf_drive:vcan1,polo_drive:vcan2,orion_bms:vcan3,misc:vcan4`. A frame sent on the wrong interface is silently ignored.
@@ -62,7 +62,7 @@ canplayer      -I candumps/candump-standard-test.log vcan2=can0   # once
 
 ## Synthesising inputs on the bench
 
-Some behaviour needs a stream of frames rather than one: `cangen` repeats a frame at a fixed gap. Switching control levels on the host, for example, needs a zero-speed stream plus the radio switch frames; the full recipe is in [Driving on the host bench](./vehicle_parameterisation.md#driving-on-the-host-bench).
+Some behaviour needs a stream of frames rather than one: `cangen` repeats a frame at a fixed gap. Switching control levels on the host, for example, needs a zero-speed stream plus the radio switch frames; the full recipe is in [Driving on the host bench](./vehicle_package.md#driving-on-the-host-bench).
 
 ```sh
 cangen vcan0 -I 709 -L 4 -D 00000000 -g 10   # 0x709 every 10 ms, fixed payload
@@ -87,7 +87,7 @@ A frame definition gives the CAN id, the frequency, and the signals packed insid
   scale: "0.25"
 ```
 
-Signed and unsigned integers, big- and little-endian layouts, enums, static fillers and scaled values are supported; the [Cantastic README](https://github.com/open-vehicle-control-system/cantastic) has the full format. [Hardware](./hardware_architecture.md#can-bus-configuration) shows how component and topology files fit together.
+Signed and unsigned integers, big- and little-endian layouts, enums, static fillers and scaled values are supported; the [Cantastic README](https://github.com/open-vehicle-control-system/cantastic) has the full format. [Hardware](./hardware.md#can-bus-configuration) shows how component and topology files fit together.
 
 ## Troubleshooting
 

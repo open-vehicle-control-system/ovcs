@@ -28,7 +28,7 @@ The framework never imports a vehicle. At boot each firmware reads one environme
 - **A CLI** that boots everything on a laptop with virtual CAN, builds and burns Nerves images, uploads over the air, and attaches a debugging TUI.
 - **Libraries** for CAN (Cantastic), PID control, ExpressLRS, MSP OSD, and shared CAN frame definitions for common automotive components.
 
-None of it knows which car it is in. [Architecture](./architecture.md) shows how the pieces fit; [Framework components](./applications.md) is the inventory.
+None of it knows which car it is in. [Architecture](./architecture.md) shows how the pieces fit; [Framework components](./components.md) is the inventory.
 
 ## What a vehicle provides
 
@@ -41,19 +41,19 @@ A vehicle answers the framework's questions about itself:
 - **Which Raspberry Pi images to build**, and which bridges to bundle.
 - **Who may command the vehicle**: the throttle, steering, gear and direction sources per control level.
 
-That is the whole contract. [Your vehicle package](./vehicle_parameterisation.md) walks through it and shows how `./ovcs new` scaffolds one.
+That is the whole contract. [Your vehicle package](./vehicle_package.md) walks through it and shows how `./ovcs new` scaffolds one.
 
 ## The reference vehicles, and what each one teaches
 
-- **OVCS1** ([hardware](./hardware_architecture.md)): a 2007 VW Polo converted to electric. Every side of the framework in use: VMS, infotainment, radio-control and ROS bridges, three controllers, five isolated buses. Multi-manufacturer integration done for real.
+- **OVCS1** ([hardware](./hardware.md)): a 2007 VW Polo converted to electric. Every side of the framework in use: VMS, infotainment, radio-control and ROS bridges, three controllers, five isolated buses. Multi-manufacturer integration done for real.
 - **OVCS Mini** ([simulation](../compose/local/simulation/README.md)): a Traxxas RC car with a VESC-driven motor. One bus, no infotainment, radio-control, ROS and perception bridges. The smallest drivable vehicle, and the one the Gazebo simulator models.
-- **OBD2** ([guide](./obd2_diagnostics.md)): no drivetrain. The VMS as an OBD2 / UDS scan tool for any car. How little a vehicle package needs.
+- **OBD2** ([guide](./obd2.md)): no drivetrain. The VMS as an OBD2 / UDS scan tool for any car. How little a vehicle package needs.
 
 All three are ordinary vehicles. Nothing in the framework treats them specially, and `./ovcs vehicles` lists them next to whatever you add under `vehicles/`.
 
 ## How the documentation uses them
 
-Commands are shown on the reference vehicles because anyone can run them: `./ovcs run ovcs_mini`, `./ovcs build ovcs1 vms`. Every one works the same on your vehicle, with your package's name in their place. Vehicle-specific detail, such as OVCS1's five buses or the Mini's radio channel layout, is labelled as a worked example. [Architecture](./architecture.md), [Framework components](./applications.md), [Hardware](./hardware_architecture.md) and [Toolchain and OTP](./toolchain_and_otp.md) describe what every vehicle inherits.
+Commands are shown on the reference vehicles because anyone can run them: `./ovcs run ovcs_mini`, `./ovcs build ovcs1 vms`. Every one works the same on your vehicle, with your package's name in their place. Vehicle-specific detail, such as OVCS1's five buses or the Mini's radio channel layout, is labelled as a worked example. [Architecture](./architecture.md), [Framework components](./components.md), [Hardware](./hardware.md) and [Toolchain and OTP](./toolchain_and_otp.md) describe what every vehicle inherits.
 
 ## Build yours
 
@@ -64,5 +64,5 @@ Commands are shown on the reference vehicles because anyone can run them: `./ovc
 
 The scaffold is a working vehicle with an example controller and a vehicle GenServer. Replace the example components with the drivers your hardware needs and fill in the CAN YAMLs.
 
-- [Your vehicle package](./vehicle_parameterisation.md): the contract, the scaffold, the boot flow, control levels.
+- [Your vehicle package](./vehicle_package.md): the contract, the scaffold, the boot flow, control levels.
 - [Quickstart](./quickstart.md): boot a reference vehicle first to see what "working" looks like.

@@ -58,7 +58,7 @@ Arduino R4 Minima boards serve as configurable I/O controllers. They are generic
 | External PWM | PWM through a PWM hat on the Arduino's UART, 16-bit duty and 24-bit frequency | `0x7X5`–`0x7X8` request |
 | Pulse counter | Rising edges on A1: count and frequency | `0x7X9` status |
 
-Controller frame ids follow `0b111AAAABBBB`: `AAAA` is the controller id (up to 16 per bus), `BBBB` the frame. Flashing, adoption and verification with `candump` are in [Generic controllers](./testing_generic_controllers.md).
+Controller frame ids follow `0b111AAAABBBB`: `AAAA` is the controller id (up to 16 per bus), `BBBB` the frame. Flashing, adoption and verification with `candump` are in [Generic controllers](./generic_controllers.md).
 
 ## CAN Bus Configuration
 
@@ -167,7 +167,7 @@ The OVCS Mini reference vehicle runs the same framework on a Traxxas 4WD chassis
 | Spur rotation | Hall-effect sensor on the main controller's A1, counted by interrupt and reported as a frequency on `0x709` |
 | Radio control | ExpressLRS receiver through the radio control bridge on a Pi 3A |
 | ROS 2 | ROS bridge on a Pi 4; perception bridge (stereo cameras and Hailo-8) on a Pi 5 |
-| Compute node | Raspberry Pi 5 running balenaOS from an NVMe SSD in a USB enclosure: Zenoh router, Foxglove bridge, Nav2, the vehicle's Wi-Fi access point. The bootloader EEPROM needs `PSU_MAX_CURRENT=5000` to boot from USB on the vehicle's supply; see [ROS compute node, Boot media](./ros_compute_node.md#boot-media) |
+| Compute node | Raspberry Pi 5 running balenaOS from an NVMe SSD in a USB enclosure: Zenoh router, Foxglove bridge, Nav2, the vehicle's Wi-Fi access point. The bootloader EEPROM needs `PSU_MAX_CURRENT=5000` to boot from USB on the vehicle's supply; see [ROS compute node, Boot media](./ros2_compute_node.md#boot-media) |
 
 The Mini's VMS has two buses:
 
@@ -193,5 +193,5 @@ The custom systems add the CAN kernel modules and device-tree overlays the SPI C
 ## Where next
 
 - [Running on hardware](./running_hardware.md): build, burn and upload firmware to these boards.
-- [Generic controllers](./testing_generic_controllers.md): flash an Arduino and adopt it from the VMS.
+- [Generic controllers](./generic_controllers.md): flash an Arduino and adopt it from the VMS.
 - [OVCS1 wiring reference](../vehicles/ovcs1/WIRING.md): the Leaf harness, iBooster, steering pump and Polo CAN bus.

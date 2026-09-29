@@ -21,7 +21,7 @@ VmsCore.Vehicle (behaviour)
 
 The `VEHICLE` environment variable selects which vehicle package's
 composer is wired in at startup. See
-[Vehicle Parameterisation](../../docs/vehicle_parameterisation.md) for
+[Vehicle Parameterisation](../../docs/vehicle_package.md) for
 the live list and the boot flow.
 
 ### 2. Component Pattern

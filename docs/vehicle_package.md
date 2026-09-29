@@ -298,5 +298,5 @@ Each demonstrates a different shape. Copy the patterns, not the packages.
 
 - [`libraries/ovcs_vehicle/README.md`](../libraries/ovcs_vehicle/README.md): the `OvcsVehicle` behaviour and `ovcs new`.
 - [`libraries/ovcs_bus/README.md`](../libraries/ovcs_bus/README.md): relay design, echo avoidance, runtime config.
-- [Framework components](./applications.md): the core / API / firmware / dashboard split.
+- [Framework components](./components.md): the core / API / firmware / dashboard split.
 - [Running on hardware](./running_hardware.md): build, burn and upload flows.

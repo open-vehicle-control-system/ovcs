@@ -233,5 +233,5 @@ The CAN pane shows it decoded as `leaf_drive/inverter_status` with `rotations_pe
 - [Quickstart](./quickstart.md): boot a reference vehicle, open the dashboard, attach the TUI, send your first frame.
 - [Framework and vehicles](./framework.md): what the framework provides and what a vehicle is.
 - [Simulation](../compose/local/simulation/README.md): drive a Gazebo model of the OVCS Mini reference vehicle with nothing but Docker.
-- [Framework components](./applications.md): each core, API, firmware shell and library.
-- [Hardware](./hardware_architecture.md): the Raspberry Pis, the CAN hub and the Arduino controllers.
+- [Framework components](./components.md): each core, API, firmware shell and library.
+- [Hardware](./hardware.md): the Raspberry Pis, the CAN hub and the Arduino controllers.

@@ -45,5 +45,5 @@ priv/can/generic_controller/       — Per-controller frame wirings
 priv/firmware/{vms,bridges}/       — Per-side fwup overrides
 ```
 
-See [`docs/hardware_architecture.md`](../../docs/hardware_architecture.md#ovcs-mini-hardware)
+See [`docs/hardware.md`](../../docs/hardware.md#ovcs-mini-hardware)
 for the RC-car hardware breakdown.

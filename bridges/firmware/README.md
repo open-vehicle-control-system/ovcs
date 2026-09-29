@@ -5,7 +5,7 @@ Shared Nerves firmware image hosting one or more
 vehicle declares which bridges to bundle (and on which Nerves target)
 via its `bridge_firmwares/0` callback — one Nerves image per entry.
 
-See [`docs/vehicle_parameterisation.md`](../../docs/vehicle_parameterisation.md#bridge-firmwares)
+See [`docs/vehicle_package.md`](../../docs/vehicle_package.md#bridge-firmwares)
 for the boot flow and [`libraries/ovcs_bridge/README.md`](../../libraries/ovcs_bridge/README.md)
 for the supervision contract.
 

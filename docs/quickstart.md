@@ -83,7 +83,7 @@ Or replay Polo traffic recorded on the real car, in a loop:
 canplayer -l i -I candumps/candump-standard-test.log vcan2=can0
 ```
 
-More in [Testing with CAN](./testing_can_messages.md).
+More in [Testing with CAN](./testing_with_can.md).
 
 ## Override the CAN mapping
 
@@ -97,6 +97,6 @@ CAN_NETWORK_MAPPINGS=ovcs:can0,leaf_drive:vcan1,polo_drive:vcan2,orion_bms:vcan3
 
 - [Architecture](./architecture.md): bus isolation, the vehicle contract, the Erlang mesh.
 - [Simulation](../compose/local/simulation/README.md): the same Elixir bridge in front of a Gazebo model, driven by Nav2.
-- [Generic controllers](./testing_generic_controllers.md): flash an Arduino and adopt it.
+- [Generic controllers](./generic_controllers.md): flash an Arduino and adopt it.
 - [Running on hardware](./running_hardware.md): build, burn and upload Nerves firmware.
-- [Your vehicle package](./vehicle_parameterisation.md): scaffold your own with `./ovcs new`.
+- [Your vehicle package](./vehicle_package.md): scaffold your own with `./ovcs new`.

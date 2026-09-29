@@ -73,4 +73,4 @@ list fail loudly rather than silently dropping a feature.
 
 The bridge is bundled into a firmware image via the vehicle's
 `bridge_firmwares/0` map — see
-[`docs/vehicle_parameterisation.md`](../../docs/vehicle_parameterisation.md#bridge-firmwares).
+[`docs/vehicle_package.md`](../../docs/vehicle_package.md#bridge-firmwares).

@@ -156,7 +156,7 @@ Speaks the `rmw_zenoh` wire format natively over Zenoh, linking nothing from ROS
 - `Publishers.Imu` from any `OvcsDrivers.Imu` driver (`OvcsDrivers.Imu.Dummy` on the host, the BNO085 on target), `Publishers.Odometry`, static transforms;
 - a stereo camera pipeline and a Hailo-8 object detector.
 
-How it all connects is in [ROS 2 and the simulator](./ros2_integration.md).
+How it all connects is in [ROS 2 and the simulator](./ros2_simulator.md).
 
 ## Compute node
 
@@ -166,7 +166,7 @@ How it all connects is in [ROS 2 and the simulator](./ros2_integration.md).
 | **Technology** | Docker Compose on balenaOS |
 | **Deploy** | `balena push` from `compose/compute/` |
 
-The one machine on a vehicle that is not Nerves: a Raspberry Pi 5 with a full Linux userland running the Zenoh router every bridge peers with, `foxglove_bridge`, Nav2, and the Wi-Fi firmware service behind the vehicle's access point. Every image it runs is defined under `compose/compute/images/`; the operator and simulation stacks in `compose/local/` build the same images. The OVCS Mini reference vehicle is the one with a compute node. See [`compose/README.md`](../compose/README.md) for the split and [ROS compute node](./ros_compute_node.md) for the machine.
+The one machine on a vehicle that is not Nerves: a Raspberry Pi 5 with a full Linux userland running the Zenoh router every bridge peers with, `foxglove_bridge`, Nav2, and the Wi-Fi firmware service behind the vehicle's access point. Every image it runs is defined under `compose/compute/images/`; the operator and simulation stacks in `compose/local/` build the same images. The OVCS Mini reference vehicle is the one with a compute node. See [`compose/README.md`](../compose/README.md) for the split and [ROS compute node](./ros2_compute_node.md) for the machine.
 
 ## Generic controller
 
@@ -184,7 +184,7 @@ One configurable firmware for every Arduino controller in every vehicle. Pin ass
 | `uno_r4_minima_debug` | Debug build with serial output |
 | `local_test` | Unit tests (Unity framework) |
 
-Flashing and adoption are in [Generic controllers](./testing_generic_controllers.md).
+Flashing and adoption are in [Generic controllers](./generic_controllers.md).
 
 ## Shared libraries
 
@@ -219,7 +219,7 @@ A vehicle is a standalone Mix package under `vehicles/<name>/` whose top-level m
 | `vehicles/obd2/` | `Obd2` | Diagnostics only: VMS and infotainment, no bridges, no drivetrain |
 | `vehicles/<yours>/` | `<Yours>` | Scaffolded by `./ovcs new`; keep the components you need, drop the rest |
 
-Each firmware's `runtime.exs` writes the side composer (`Ovcs1.Vms.Composer`, for example) into `:vms_core, :vehicle` or `:infotainment_core, :vehicle`. The wiring and the scaffold are in [Your vehicle package](./vehicle_parameterisation.md).
+Each firmware's `runtime.exs` writes the side composer (`Ovcs1.Vms.Composer`, for example) into `:vms_core, :vehicle` or `:infotainment_core, :vehicle`. The wiring and the scaffold are in [Your vehicle package](./vehicle_package.md).
 
 ## Environment variables
 

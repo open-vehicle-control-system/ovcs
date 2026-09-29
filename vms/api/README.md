@@ -4,7 +4,7 @@ Phoenix 1.7 JSON + WebSocket server that exposes the VMS Core to the debug
 dashboard. Thin layer — all logic lives in [`vms_core`](../core); controllers
 and channels just route HTTP/WebSocket traffic to it.
 
-See [`docs/applications.md`](../../docs/applications.md) for the three-layer
+See [`docs/components.md`](../../docs/components.md) for the three-layer
 (`core` ← `api` ← `firmware`) architecture this app sits in.
 
 ## Endpoints

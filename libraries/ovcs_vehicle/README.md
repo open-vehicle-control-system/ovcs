@@ -10,7 +10,7 @@ depend on the vehicle as a Mix dep — they read `VEHICLE` at boot,
 prepend the vehicle's compiled ebin to the code path, and dispatch
 through the module.
 
-See [`docs/vehicle_parameterisation.md`](../../docs/vehicle_parameterisation.md)
+See [`docs/vehicle_package.md`](../../docs/vehicle_package.md)
 for the end-to-end flow; this README is the library reference.
 
 ## The behaviour

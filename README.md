@@ -25,7 +25,7 @@ The debug dashboard is on `http://localhost:5173`. [Quickstart](./docs/quickstar
 
 ## Documentation
 
-The guides live in [`docs/`](./docs/README.md) and are published on [ovcs.be/docs](https://ovcs.be/docs). Start with [Architecture](./docs/architecture.md) and [Your vehicle package](./docs/vehicle_parameterisation.md).
+The guides live in [`docs/`](./docs/README.md) and are published on [ovcs.be/docs](https://ovcs.be/docs). Start with [Architecture](./docs/architecture.md) and [Your vehicle package](./docs/vehicle_package.md).
 
 ## Presentations and media
 

@@ -57,4 +57,4 @@ priv/firmware/{vms,infotainment,bridges}/  — Per-side fwup overrides
 
 See [`WIRING.md`](./WIRING.md) for harness-level pin notes. The full
 vehicle topology (CAN buses, controllers) is in
-[`docs/hardware_architecture.md`](../../docs/hardware_architecture.md).
+[`docs/hardware.md`](../../docs/hardware.md).

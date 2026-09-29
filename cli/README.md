@@ -50,7 +50,7 @@ The CLI converts the directory name to UpperCamelCase (`ovcs_mini` becomes `Ovcs
 
 `build --all` builds the firmware projects in parallel, one lane per project directory. Roles sharing a directory (every bridge lives in `bridges/firmware`) build one after another, since they share its `deps/` and `mix.lock`. A failure skips the rest of its lane; the other lanes finish, and the first failure's log is printed at the end.
 
-`new` runs `OvcsVehicle.Scaffold.generate/3` from `libraries/ovcs_vehicle/`, so the templates stay in Elixir. [Your vehicle package](../docs/vehicle_parameterisation.md) explains what the callbacks mean.
+`new` runs `OvcsVehicle.Scaffold.generate/3` from `libraries/ovcs_vehicle/`, so the templates stay in Elixir. [Your vehicle package](../docs/vehicle_package.md) explains what the callbacks mean.
 
 ## `run` versus `attach`
 

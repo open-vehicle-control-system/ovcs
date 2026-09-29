@@ -6,7 +6,7 @@ description: A vehicle package with no drivetrain that turns the VMS into an OBD
 OBD2 is the smallest of the three reference vehicles: a vehicle package under `vehicles/obd2/` that turns the framework's VMS into an OBD2 / KWP2000 / UDS scan tool. It has no drivetrain and no bridges; every supervised process reads or probes the diagnostic CAN bus of whatever car you plug into. It runs on the same Raspberry Pi 4 the framework targets for every VMS.
 
 > [!NOTE]
-> OBD2 is worth reading even if you never scan a car: it shows how little a vehicle has to contain. Two GenServers, a handful of YAML imports and a composer. Your own vehicle follows the same contract; see [Your vehicle package](./vehicle_parameterisation.md).
+> OBD2 is worth reading even if you never scan a car: it shows how little a vehicle has to contain. Two GenServers, a handful of YAML imports and a composer. Your own vehicle follows the same contract; see [Your vehicle package](./vehicle_package.md).
 
 ## Why this is a vehicle, not a feature
 

@@ -4,7 +4,7 @@ Nerves firmware image for the Vehicle Management System. Wraps
 [`vms_api`](../api) (and transitively [`vms_core`](../core) + the active
 vehicle package) into a deployable image for the Raspberry Pi 4.
 
-See [`docs/applications.md`](../../docs/applications.md) for how this layer
+See [`docs/components.md`](../../docs/components.md) for how this layer
 fits with `core` / `api` / `dashboard`, and
 [`docs/running_hardware.md`](../../docs/running_hardware.md) for burn + OTA
 flows.

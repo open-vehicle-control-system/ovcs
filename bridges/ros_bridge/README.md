@@ -130,7 +130,7 @@ vehicle's list — it registers on that unit's backend and consumes its
 (`visualization_msgs/MarkerArray`, which is what Foxglove's 3D panel
 renders) and `<prefix>/detections` (`vision_msgs/Detection3DArray`,
 for nav2 and other consumers). See
-`docs/ros_perception_detection.md`.
+`docs/ros2_perception.md`.
 
 Vehicle example (`vehicles/<v>/lib/<v>.ex`):
 

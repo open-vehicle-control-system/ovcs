@@ -14,11 +14,11 @@ OVCS is a framework for vehicle embedded systems. It makes components from diffe
 
 Components from different manufacturers use overlapping CAN identifiers. A Nissan Leaf inverter and a Volkswagen Polo ABS module were never meant to share a wire; on one bus their frames would collide. OVCS keeps each manufacturer's bus physically separate. The Vehicle Management System (VMS) is the only node on all of them, and bridges traffic between buses where the vehicle needs it. In the OVCS1 reference vehicle, that is how the Polo's original instrument cluster shows the Leaf motor's RPM.
 
-An internal bus, `ovcs`, carries framework traffic: heartbeats, controller adoption, infotainment and bridge commands. Manufacturer buses run at the bitrate their components require. Which buses exist, and at what speed, is the vehicle's decision; OVCS1's five-bus layout is in [Hardware](./hardware_architecture.md).
+An internal bus, `ovcs`, carries framework traffic: heartbeats, controller adoption, infotainment and bridge commands. Manufacturer buses run at the bitrate their components require. Which buses exist, and at what speed, is the vehicle's decision; OVCS1's five-bus layout is in [Hardware](./hardware.md).
 
 ### The framework knows no vehicle
 
-The cores (`vms_core`, `infotainment_core`), firmware shells, bridge libraries and shared libraries contain no vehicle-specific code. Every vehicle is a Mix package under `vehicles/<name>/` that implements `OvcsVehicle` and bundles its supervision tree, CAN topology YAMLs and Nerves targets. `VEHICLE`, set to the package's top-level module name, selects it at boot. [Your vehicle package](./vehicle_parameterisation.md) follows that selection through the boot sequence.
+The cores (`vms_core`, `infotainment_core`), firmware shells, bridge libraries and shared libraries contain no vehicle-specific code. Every vehicle is a Mix package under `vehicles/<name>/` that implements `OvcsVehicle` and bundles its supervision tree, CAN topology YAMLs and Nerves targets. `VEHICLE`, set to the package's top-level module name, selects it at boot. [Your vehicle package](./vehicle_package.md) follows that selection through the boot sequence.
 
 ## Where the line is drawn
 
@@ -43,7 +43,7 @@ A running vehicle is a small fleet of BEAMs:
 - **VMS**: the only firmware on the vehicle CAN buses, so all isolation between manufacturers happens there. Raspberry Pi 4 with a multi-CAN SPI hub.
 - **Infotainment** (optional): the in-car touchscreen on a Raspberry Pi 5, on the `ovcs` bus only.
 - **Bridges** (zero or more): each ferries data between the `ovcs` bus and a non-CAN world, such as an ExpressLRS radio link or a ROS 2 graph. The vehicle declares which bridges it ships and on which target.
-- **Generic controllers**: Arduino R4 Minima boards running one shared firmware. They receive their pinout from the VMS at runtime through an adoption frame. See [Generic controllers](./testing_generic_controllers.md).
+- **Generic controllers**: Arduino R4 Minima boards running one shared firmware. They receive their pinout from the VMS at runtime through an adoption frame. See [Generic controllers](./generic_controllers.md).
 
 The dashboards sit outside the vehicle: the Vue dashboard talks to the VMS API, the Flutter head unit to the infotainment API, both over HTTP and WebSocket. Both render the pages the vehicle's composers declare.
 
@@ -78,7 +78,7 @@ VMS and infotainment share one layered shape. Each layer is its own Mix project 
 - **Dashboard**: Vue for the VMS debug dashboard, Flutter for the head unit.
 - **Firmware**: a Nerves project packaging the API (and Core) into a bootable image. At boot it reads `VEHICLE` and loads the vehicle package.
 
-The vehicle package sits beside these layers: the firmware reaches it through `Code.prepend_path`, and no framework project depends on it. Every Elixir project runs on a host against virtual CAN. The inventory is in [Framework components](./applications.md).
+The vehicle package sits beside these layers: the firmware reaches it through `Code.prepend_path`, and no framework project depends on it. Every Elixir project runs on a host against virtual CAN. The inventory is in [Framework components](./components.md).
 
 ## The component pattern
 
@@ -114,7 +114,7 @@ The broadcast is cluster-wide, so a subscriber in a bridge BEAM on another Pi re
 
 Managers hold framework logic spanning several components:
 
-- `Managers.ControlLevel` arbitrates between commanders. It reads the requested control level (`:manual`, `:radio`, `:ros`) and, under `:ros`, the requested commander (`:teleop`, `:autonomous`), routes throttle, steering and direction from the sources the composer maps to each level, and refuses unsafe moves. Details in [Your vehicle package](./vehicle_parameterisation.md#control-levels-who-commands-and-which-ros-node).
+- `Managers.ControlLevel` arbitrates between commanders. It reads the requested control level (`:manual`, `:radio`, `:ros`) and, under `:ros`, the requested commander (`:teleop`, `:autonomous`), routes throttle, steering and direction from the sources the composer maps to each level, and refuses unsafe moves. Details in [Your vehicle package](./vehicle_package.md#control-levels-who-commands-and-which-ros-node).
 - `Managers.Gear` turns the requested direction into a gear and enforces shift constraints.
 
 ## The VMS supervision tree
@@ -161,6 +161,6 @@ Every vehicle gets these without writing them:
 ## Where next
 
 - [Framework and vehicles](./framework.md): what the framework provides and what a vehicle supplies.
-- [Your vehicle package](./vehicle_parameterisation.md): how `VEHICLE` selects a vehicle and what each firmware boots.
-- [Hardware](./hardware_architecture.md): the boards the framework targets, with OVCS1's five buses as a worked example.
-- [Framework components](./applications.md): every project and library in the monorepo.
+- [Your vehicle package](./vehicle_package.md): how `VEHICLE` selects a vehicle and what each firmware boots.
+- [Hardware](./hardware.md): the boards the framework targets, with OVCS1's five buses as a worked example.
+- [Framework components](./components.md): every project and library in the monorepo.

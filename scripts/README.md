@@ -13,5 +13,5 @@ fallbacks and developer-side tooling.
 | [`sleep_loop.rb`](./sleep_loop.rb) | Toggles a specific CAN frame on/off on a loop — quick demo / debugging aid. |
 
 For replaying real-vehicle CAN captures, see
-[`docs/testing_can_messages.md`](../docs/testing_can_messages.md#replaying-can-dumps)
+[`docs/testing_with_can.md`](../docs/testing_with_can.md#replaying-can-dumps)
 (uses `canplayer` against files under `candumps/`).

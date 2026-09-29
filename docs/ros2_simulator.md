@@ -39,7 +39,7 @@ Everything containerised lives under `compose/`, split by one question: is it pu
 | `zenohd`, `foxglove_bridge` (profile `standalone`), `nav2` (profile `nav2`) | `compose/local/base.yml` | stand-ins for the vehicle's own, when none is on the LAN |
 | `sim`, `teleop`, `gz-gui`, `nav2` | `compose/local/simulation.yml` | Gazebo and its operator-side extras |
 
-`compose/compute/` is pushed to balena as one unit; `compose/local/` never is. The vehicle's images are built only from `compose/compute/images/`, and the local stacks build the same Dockerfiles, so a workstation runs what the car runs. A stand-in must not run while a vehicle is on the LAN: two routers are two fabrics. The profile table is in [`compose/README.md`](../compose/README.md); the compute node itself is [ROS compute node](./ros_compute_node.md).
+`compose/compute/` is pushed to balena as one unit; `compose/local/` never is. The vehicle's images are built only from `compose/compute/images/`, and the local stacks build the same Dockerfiles, so a workstation runs what the car runs. A stand-in must not run while a vehicle is on the LAN: two routers are two fabrics. The profile table is in [`compose/README.md`](../compose/README.md); the compute node itself is [ROS compute node](./ros2_compute_node.md).
 
 ## What the simulator starts
 
@@ -186,7 +186,7 @@ A yaw rate the steering cannot achieve collapses to full lock rather than an err
 | `OVCS.RadioControl.RequestedControlLevel` | `:manual` / `:radio` / `:ros` | who has authority |
 | `OVCS.RadioControl.RequestedRosCommander` | `:teleop` / `:autonomous` | which ROS node, when ROS does |
 
-`:ros` means "commands come from the ROS bridge", not "the car drives itself": a human on a gamepad and a planner reach the VMS over identical topics and frames. `:ros` is reachable only from `:radio`, both switches only *request*, and arming `:autonomous` needs a standstill while handing back to `:teleop` is immediate. The state machine, each reference vehicle's channel layout and the bench recipe are in [Your vehicle package](./vehicle_parameterisation.md#control-levels-who-commands-and-which-ros-node).
+`:ros` means "commands come from the ROS bridge", not "the car drives itself": a human on a gamepad and a planner reach the VMS over identical topics and frames. `:ros` is reachable only from `:radio`, both switches only *request*, and arming `:autonomous` needs a standstill while handing back to `:teleop` is immediate. The state machine, each reference vehicle's channel layout and the bench recipe are in [Your vehicle package](./vehicle_package.md#control-levels-who-commands-and-which-ros-node).
 
 ### Two things that fail silently
 
@@ -245,7 +245,7 @@ Gazebo cameras ─► image_bridge ─/stereo/{left,right}/image_raw/compressed�
 - **One topic name, two roles.** `Publishers.StereoCamera` republishes each frame on `<topic_prefix>/<side>/image_raw/compressed`, and the prefix is `stereo`, so against the simulator the bridge publishes onto the name it consumes from `image_bridge`. The measured 30 Hz suggests a session does not hear its own publications; if the stereo rate ever looks doubled, look here first.
 - **`workshop.sdf`, not `empty.sdf`, for depth.** SGBM correlates texture; a flat plane under a blank sky yields no disparity.
 
-Detection on the Hailo-8 and its backends are in [Perception: object detection](./ros_perception_detection.md).
+Detection on the Hailo-8 and its backends are in [Perception: object detection](./ros2_perception.md).
 
 ## Per-vehicle bridge configuration
 
@@ -323,8 +323,8 @@ Or open Foxglove Studio against `ws://<docker-host>:8765` and subscribe to `/ovc
 | the actuator command path | `bridges/ros_bridge/lib/ros_bridge/consumers/joy.ex` | `libraries/ovcs_can/priv/can/components/ovcs/0x2B0_ros_actuator_command.yml`, `vms/core/lib/vms_core/components/ovcs/ros_actuator_command/` |
 | the velocity command path | `bridges/ros_bridge/lib/ros_bridge/consumers/velocity.ex` | `0x2B1_ros_velocity_command.yml`, `vms/core/lib/vms_core/components/ovcs/ros_velocity_command.ex` |
 | odometry on the vehicle | `bridges/ros_bridge/lib/ros_bridge/publishers/odometry.ex` | `0x60B_vehicle_motion.yml`, `vms/core/lib/vms_core/components/ovcs/vehicle_motion.ex` |
-| who commands the vehicle | [Your vehicle package](./vehicle_parameterisation.md#control-levels-who-commands-and-which-ros-node) | `vms/core/lib/vms_core/managers/control_level.ex` |
+| who commands the vehicle | [Your vehicle package](./vehicle_package.md#control-levels-who-commands-and-which-ros-node) | `vms/core/lib/vms_core/managers/control_level.ex` |
 | Nav2's configuration | `compose/compute/nav2/config/nav2.yaml` (heavily commented) | `nav2_ackermann_bt.xml` beside it, `compose/local/simulation/scripts/nav2_test.py` |
-| the perception pipeline | [Perception: object detection](./ros_perception_detection.md) | `bridges/ros_bridge/lib/ros_bridge/camera/zenoh.ex`, `stereo_camera/supervisor.ex` |
-| the vehicle's ROS computer | [ROS compute node](./ros_compute_node.md) | `compose/compute/`, [`compose/README.md`](../compose/README.md) |
+| the perception pipeline | [Perception: object detection](./ros2_perception.md) | `bridges/ros_bridge/lib/ros_bridge/camera/zenoh.ex`, `stereo_camera/supervisor.ex` |
+| the vehicle's ROS computer | [ROS compute node](./ros2_compute_node.md) | `compose/compute/`, [`compose/README.md`](../compose/README.md) |
 | the model's geometry | `vehicles/ovcs_mini/description/ovcs_mini.urdf.xacro` | `gazebo_ackermann.xacro`, `OvcsMini.geometry/0` |

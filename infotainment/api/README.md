@@ -5,7 +5,7 @@ as [`vms_api`](../../vms/api) — a thin routing layer in front of
 [`infotainment_core`](../core) — but serves the Flutter dashboard
 (`../dashboard`) on the RPi 5 head unit instead of the Vue debug UI.
 
-See [`docs/applications.md`](../../docs/applications.md) for where this
+See [`docs/components.md`](../../docs/components.md) for where this
 layer fits in the overall `core` / `api` / `firmware` / `dashboard` stack.
 
 ## Endpoints

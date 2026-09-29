@@ -46,7 +46,7 @@ Everything lives under the [open-vehicle-control-system](https://github.com/open
 | [ovcs_base_can_system_rpi3a](https://github.com/open-vehicle-control-system/ovcs_base_can_system_rpi3a) | Nerves system: Raspberry Pi 3A, for the radio control bridge |
 | [ovcs_bridges_system_rpi5](https://github.com/open-vehicle-control-system/ovcs_bridges_system_rpi5) | Nerves system: Raspberry Pi 5 for the perception bridge (stereo cameras, Hailo-8) |
 
-`mise run libraries` sideloads the four libraries into `libraries/`, because they are useful outside OVCS. The framework-internal contracts (`ovcs_bridge`, `ovcs_bus`, `ovcs_can`, `ovcs_vehicle`, `ovcs_drivers`) live in the monorepo. See [Framework components](./applications.md).
+`mise run libraries` sideloads the four libraries into `libraries/`, because they are useful outside OVCS. The framework-internal contracts (`ovcs_bridge`, `ovcs_bus`, `ovcs_can`, `ovcs_vehicle`, `ovcs_drivers`) live in the monorepo. See [Framework components](./components.md).
 
 ## Contributing
 
@@ -65,7 +65,7 @@ Before opening a pull request:
 - **Style.** [`CODE_STYLING.md`](../CODE_STYLING.md) documents the conventions. Credo covers the Elixir apps, Ruff the Python tooling, `cspell` the spelling. Guides follow the documentation rules in [`CLAUDE.md`](../CLAUDE.md) and pass `elixir scripts/check_docs.exs`.
 - **CI runs on pull requests.** `.github/workflows/` holds `ci.yml` (the Elixir tree), `firmware.yml` (every firmware build, the only thing that catches a host-versus-target OTP mismatch) and `ros2.yml` (the container stacks, including the check that the Zenoh pins agree).
 - **Sideloaded libraries have their own repositories.** A change to Cantastic, ExpressLRS, MSP OSD or ovcs_control is a pull request there, not against `libraries/` here.
-- **Vehicles live in `vehicles/`.** A new vehicle is a new package scaffolded with `./ovcs new`, not a framework change. The cores, firmware shells and libraries stay free of vehicle-specific code; if your vehicle needs something the framework cannot express, open a separate framework pull request. See [Your vehicle package](./vehicle_parameterisation.md).
+- **Vehicles live in `vehicles/`.** A new vehicle is a new package scaffolded with `./ovcs new`, not a framework change. The cores, firmware shells and libraries stay free of vehicle-specific code; if your vehicle needs something the framework cannot express, open a separate framework pull request. See [Your vehicle package](./vehicle_package.md).
 - **The reference vehicles are examples, not requirements.** Fixes to them are welcome; nothing in a new vehicle should depend on them.
 - **Nerves systems are forks** pinned to upstream tags; [Toolchain and OTP](./toolchain_and_otp.md) has the migration recipe.
 

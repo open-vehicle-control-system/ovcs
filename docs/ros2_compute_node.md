@@ -33,7 +33,7 @@ The vehicle is the router. Everything else (the Nerves bridges, the on-vehicle n
 Keep it a separate Pi:
 
 - The **VMS** is vehicle control. Coupling it to the ROS fabric puts a container runtime in the safety path.
-- A **perception bridge** (on the Mini, the `ros_perception` Pi 5 running stereo depth and Hailo detection in Elixir, see [Perception: object detection](./ros_perception_detection.md)) stays Nerves and joins the fabric as a client like the other bridges.
+- A **perception bridge** (on the Mini, the `ros_perception` Pi 5 running stereo depth and Hailo detection in Elixir, see [Perception: object detection](./ros2_perception.md)) stays Nerves and joins the fabric as a client like the other bridges.
 
 ## Operating system
 

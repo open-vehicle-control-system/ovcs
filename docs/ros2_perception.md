@@ -53,7 +53,7 @@ Each detection draws two markers: a `CUBE` coloured red to green by score, and a
 
 **Why `foxglove_msgs`.** `visualization_msgs/ImageMarker` has no text type, so its boxes can't say what they are, and ROS 2 has no `ImageMarkerArray`: with one message per annotation topic, N detections would need N topics. `foxglove_msgs/ImageAnnotations` carries boxes and labels in one message, and `LINE_LOOP` closes a rectangle in four points where a `LINE_LIST` needs eight.
 
-The cost is a dependency: `foxglove_msgs` isn't in a ROS base install, so `ros-lyrical-foxglove-msgs` is installed in `compose/compute/images/ros2/Dockerfile`. **Without it `foxglove_bridge` can't resolve the type and never advertises the topic.** The vehicle and local stacks build from that one Dockerfile; on the vehicle, redeploy the compute node (`balena push`, see [ROS compute node](./ros_compute_node.md#deploying)) before the overlay appears.
+The cost is a dependency: `foxglove_msgs` isn't in a ROS base install, so `ros-lyrical-foxglove-msgs` is installed in `compose/compute/images/ros2/Dockerfile`. **Without it `foxglove_bridge` can't resolve the type and never advertises the topic.** The vehicle and local stacks build from that one Dockerfile; on the vehicle, redeploy the compute node (`balena push`, see [ROS compute node](./ros2_compute_node.md#deploying)) before the overlay appears.
 
 **Boxes are mapped back into raw pixels.** Detection runs on the rectified image, but the panel shows `image_raw`. On the Mini the two differ by about 10 px on average and up to 23 px on a 480-wide frame, enough to put a box visibly beside its object. Each vertex is mapped back through OpenCV's rectification map, which costs nothing on the wire compared with a second rectified image stream.
 

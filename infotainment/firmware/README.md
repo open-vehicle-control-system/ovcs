@@ -8,7 +8,7 @@ side) into a deployable image for the Raspberry Pi 5 head unit.
 Only built for vehicles that expose an `infotainment/0` composer — vehicles
 without a head unit (e.g. `OvcsMini`, `Obd2`) skip this layer entirely.
 
-See [`docs/applications.md`](../../docs/applications.md) for how this layer
+See [`docs/components.md`](../../docs/components.md) for how this layer
 fits with `core` / `api` / `dashboard`, and
 [`docs/running_hardware.md`](../../docs/running_hardware.md) for burn + OTA
 flows.

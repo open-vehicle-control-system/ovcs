@@ -183,7 +183,7 @@ Then find the slowest speed the loop holds cleanly: with the vehicle lifted, ste
 
 ## On the host bench
 
-The speed still comes from the pulse counter frame, so the bench setup in [Driving on the host bench](./vehicle_parameterisation.md#driving-on-the-host-bench) applies unchanged. Nothing emits `vesc_status` on virtual CAN, so the motor controller's telemetry reads nil. To see it populated, synthesise a stationary VESC on its bus (`vcan1` is `misc` on the Mini's host mapping), with `cangen`'s extended flag:
+The speed still comes from the pulse counter frame, so the bench setup in [Driving on the host bench](./vehicle_package.md#driving-on-the-host-bench) applies unchanged. Nothing emits `vesc_status` on virtual CAN, so the motor controller's telemetry reads nil. To see it populated, synthesise a stationary VESC on its bus (`vcan1` is `misc` on the Mini's host mapping), with `cangen`'s extended flag:
 
 ```bash
 cangen vcan1 -e -I 901 -L 8 -D 0000000000000000 -g 20

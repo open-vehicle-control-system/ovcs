@@ -12,11 +12,11 @@ Before making changes, read the relevant docs rather than rediscovering the proj
 - [docs/framework.md](./docs/framework.md) — the framework / vehicle / reference-vehicle vocabulary.
 - [docs/architecture.md](./docs/architecture.md) — bus isolation, the vehicle contract, the Erlang mesh.
 - [docs/getting_started.md](./docs/getting_started.md) — toolchain setup (mise, CAN, Nerves).
-- [docs/applications.md](./docs/applications.md) — what each app/library is and how the layers fit together (VMS + Infotainment: firmware / api / core / dashboard).
-- [docs/hardware_architecture.md](./docs/hardware_architecture.md) — physical topology, CAN networks, controllers.
+- [docs/components.md](./docs/components.md) — what each app/library is and how the layers fit together (VMS + Infotainment: firmware / api / core / dashboard).
+- [docs/hardware.md](./docs/hardware.md) — physical topology, CAN networks, controllers.
 - [docs/running_hardware.md](./docs/running_hardware.md) — build/burn/upload via the top-level `ovcs` Rust CLI (source in `cli/src/`, built to `cli/ovcs` via `mise run cli`; the binary is gitignored), runtime env vars (`VEHICLE`, `CAN_NETWORK_MAPPINGS`).
-- [docs/vehicle_parameterisation.md](./docs/vehicle_parameterisation.md) — your vehicle package: how `VEHICLE` selects it, what each firmware boots, the behaviours in play, control levels, `ovcs new`.
-- [docs/testing_can_messages.md](./docs/testing_can_messages.md), [docs/testing_generic_controllers.md](./docs/testing_generic_controllers.md) — CAN + controller testing.
+- [docs/vehicle_package.md](./docs/vehicle_package.md) — your vehicle package: how `VEHICLE` selects it, what each firmware boots, the behaviours in play, control levels, `ovcs new`.
+- [docs/testing_with_can.md](./docs/testing_with_can.md), [docs/generic_controllers.md](./docs/generic_controllers.md) — CAN + controller testing.
 - [vehicles/ovcs1/WIRING.md](./vehicles/ovcs1/WIRING.md) — OVCS1 wiring.
 
 Prefer updating these docs over duplicating their content here.

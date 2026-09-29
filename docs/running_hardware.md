@@ -22,7 +22,7 @@ These are the reference vehicles' choices. The target of each role is a per-vehi
 
 The OVCS systems add the CAN kernel modules and device-tree overlays the SPI-CAN hardware needs. The host OTP pinned in `mise.toml` must match the OTP they ship: [Toolchain and OTP](./toolchain_and_otp.md) explains why.
 
-The generic controller firmware is a [PlatformIO](https://platformio.org/) project. It doesn't use the R4's built-in CAN peripheral, so any Arduino-compatible board with EEPROM and an external CAN transceiver works. Flashing and adoption are in [Generic controllers](./testing_generic_controllers.md).
+The generic controller firmware is a [PlatformIO](https://platformio.org/) project. It doesn't use the R4's built-in CAN peripheral, so any Arduino-compatible board with EEPROM and an external CAN transceiver works. Flashing and adoption are in [Generic controllers](./generic_controllers.md).
 
 ## The `ovcs` CLI
 
@@ -153,7 +153,7 @@ Host 10.42.0.*
     StrictHostKeyChecking accept-new
 ```
 
-[Reaching the vehicle network](./ros_compute_node.md#reaching-the-vehicle-network-from-the-site-wi-fi) explains that layout. Arduino controllers have no SSH or IEx and are skipped.
+[Reaching the vehicle network](./ros2_compute_node.md#reaching-the-vehicle-network-from-the-site-wi-fi) explains that layout. Arduino controllers have no SSH or IEx and are skipped.
 
 ## CAN interfaces
 
@@ -197,7 +197,7 @@ On a Nerves board, Cantastic sets the CAN interfaces up at boot (`setup_can_inte
 
 ## Next steps
 
-- [Generic controllers](./testing_generic_controllers.md): flash and adopt the Arduino boards on the `ovcs` bus.
+- [Generic controllers](./generic_controllers.md): flash and adopt the Arduino boards on the `ovcs` bus.
 - [CLI reference](../cli/README.md): every subcommand, and how the attach TUI decodes frames.
 - [Toolchain and OTP](./toolchain_and_otp.md): why host and target OTP must agree, and what A/B firmware requires.
 - [Troubleshooting](./troubleshooting.md): the failures newcomers hit most.
