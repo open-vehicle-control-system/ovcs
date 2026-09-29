@@ -5,10 +5,10 @@
 # lib/<%= @name %>.ex) if the vehicle has no infotainment head.
 can_networks:
   ovcs:
-    bitrate: 500000
+    bitrate: 1000000
     emitted_frames:
       - import!:@ovcs_can:can/components/ovcs/0x201_infotainment_status.yml
     received_frames:
       - import!:@ovcs_can:can/components/ovcs/0x1A0_vms_status.yml
-      - import!:generic_controller/0x7E1_example_controller_alive.yml
-      - import!:generic_controller/0x7E4_example_controller_digital_and_analog_pin_status.yml
+      - import!:generic_controller/0x701_example_controller_alive.yml
+      - import!:generic_controller/0x704_example_controller_digital_and_analog_pin_status.yml

@@ -16,9 +16,10 @@ contract consulted by `vms_core`<%= if @infotainment do %> and
 ../../ovcs run <%= @name %>            # provisions vcan + spawns one BEAM per firmware
 ```
 
-Spawns one BEAM per declared firmware — `<%= @name %>-vms`<%= if @infotainment do %>,
-`<%= @name %>-infotainment`<% end %>, and one `<%= @name %>-bridge-<id>` per
-`bridge_firmwares/0` entry. The BEAMs join one Erlang-distribution
+Spawns one BEAM per declared firmware — `<%= String.replace(@name, "_", "-") %>-vms`<%= if @infotainment do %>,
+`<%= String.replace(@name, "_", "-") %>-infotainment`<% end %>, and one `<%= String.replace(@name, "_", "-") %>-bridge-<id>` per
+`bridge_firmwares/0` entry (node names hyphenate every underscore,
+including those in `<id>`). The BEAMs join one Erlang-distribution
 cluster via `OvcsBus.Cluster`, so `OvcsBus.broadcast/2` reaches every
 firmware with no broker required — same transport as deployed. VMS API
 on `http://localhost:4000`<%= if @infotainment do %>, infotainment API on
@@ -56,8 +57,8 @@ See [`docs/running_hardware.md`](../../docs/running_hardware.md) for burn
 | `priv/can/vms.yml` | VMS CAN topology (Cantastic) | Add hardware buses |<%= if @infotainment do %>
 | `priv/can/infotainment.yml` | Infotainment CAN topology | |<% end %>
 | `priv/can/generic_controller/` | Per-controller frame YAMLs | Rename/duplicate per real controller |
-| `priv/firmware/vms/{fwup.conf,config.txt,cmdline.txt}` | Nerves firmware + boot config for VMS, copied from `vms/firmware/targets/<%= @vms_target %>/` | Only if your board needs a different overlay |<%= if @infotainment do %>
-| `priv/firmware/infotainment/{fwup.conf,config.txt,cmdline.txt}` | Nerves firmware + boot config for infotainment, copied from `infotainment/firmware/targets/<%= @infotainment_target %>/` | Only if your head unit needs a different overlay |<% end %>
+| `priv/firmware/vms/{config.txt,cmdline-a.txt,cmdline-b.txt}` | VMS boot config and A/B kernel command lines, copied from `vms/firmware/targets/<%= @vms_target %>/` | Only if your board needs a different overlay |<%= if @infotainment do %>
+| `priv/firmware/infotainment/{config.txt,cmdline-a.txt,cmdline-b.txt}` | Infotainment boot config and A/B kernel command lines, copied from `infotainment/firmware/targets/<%= @infotainment_target %>/` | Only if your head unit needs a different overlay |<% end %>
 
 ## Things to customize next
 
@@ -75,14 +76,15 @@ the UI surfaces its state — see
 
 ### 2. Generic controllers (CAN)
 
-The scaffold ships with one `example_controller` at `0x7E1` / `0x7E2` /
-`0x7E4`. Rename and duplicate the files in
+The scaffold ships with one `example_controller`, controller id `0`
+(`"controller_id" => 0` in `lib/<%= @name %>/vms/composer/generic_controller.ex`),
+on `0x701` / `0x702` / `0x704`. Rename and duplicate the files in
 `priv/can/generic_controller/` for each physical controller you run
-(e.g. `front_controller`, `rear_controller`, `bms_controller`), then
-update the `import!:` references in `priv/can/vms.yml`<%= if @infotainment do %>
-and `priv/can/infotainment.yml`<% end %>.
+(e.g. `front_controller`, `rear_controller`, `bms_controller`), giving
+each its own controller id, then update the `import!:` references in
+`priv/can/vms.yml`<%= if @infotainment do %> and `priv/can/infotainment.yml`<% end %>.
 
-ID convention (fixed by `ovcs_can`):
+ID convention (fixed by `ovcs_can`; `X` is the controller id):
 
 | Offset | Frame |
 |--------|-------|
@@ -122,8 +124,15 @@ end
 Each map key becomes its own build target:
 
 ```sh
-../../ovcs build <%= @name %> radio_control
+../../ovcs build <%= @name %> bridge-radio_control
 ```
+
+Each bundled bridge also needs its config callback on the vehicle
+module: `RadioControlBridge` requires `@behaviour RadioControlBridge`
+and `radio_control_bridge_config/1`, `RosBridge` requires
+`@behaviour RosBridge` and `ros_bridge_config/1` or `/2`. The
+commented block in `lib/<%= @name %>.ex` has a bootable radio-control
+example.
 
 Each bridge firmware needs a CAN topology YAML — by convention at
 `priv/can/bridges/<firmware_id>.yml` (override the path with
@@ -147,11 +156,17 @@ Bridge firmware targets are declared inside each entry of
 Shared firmware defaults for each Nerves target live in
 [`vms/firmware/targets/<target>/`](../../vms/firmware/targets)<%= if @infotainment do %>
 and [`infotainment/firmware/targets/<target>/`](../../infotainment/firmware/targets)<% end %>.
-At scaffold time the per-target files were copied into this vehicle's
+At scaffold time the boot files (`config.txt`, `cmdline-a.txt`,
+`cmdline-b.txt`) were copied into this vehicle's
 `priv/firmware/vms/`<%= if @infotainment do %> and `priv/firmware/infotainment/`<% end %> so you can edit them in
-place. The firmware build prefers `priv/firmware/<side>/<file>` over
-the shared default when both exist, so deleting a file falls back to
-the current shared version.
+place. They are used as a set: when `priv/firmware/<side>/config.txt`
+exists, the build reads all three from that directory, so keep them
+together, and delete all three to fall back to the shared defaults.
+`fwup.conf` is not copied; the build takes
+`priv/firmware/<side>/fwup.conf` when you add one and otherwise uses
+the shared target copy, which carries the partition layout. The
+kernel command lines point at the A/B rootfs partitions
+(`mmcblk0p5` / `mmcblk0p6`); keep those when you edit them.
 
 ## Further reading
 

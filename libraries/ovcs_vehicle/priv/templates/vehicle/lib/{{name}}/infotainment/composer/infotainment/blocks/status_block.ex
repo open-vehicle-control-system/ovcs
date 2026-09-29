@@ -1,11 +1,10 @@
 defmodule <%= @module %>.Infotainment.Composer.Infotainment.Blocks.StatusBlock do
   @moduledoc """
-  Example block — renders the current VMS status as a labelled cell.
+  Example block: renders the current VMS status in a status grid.
 
-  A block's `definition/1` is a map describing how the UI should
-  render it. `type:` picks the widget (here `"status_grid"`); `source:`
-  points at the module whose `status/0` the UI polls every
-  `refresh_interval` ms.
+  A block's `definition/1` is a map describing how the head unit renders
+  it. `type:` picks the widget (`"statusGrid"`); each entry in `metrics:`
+  names the module whose `status/0` supplies the value under `key:`.
   """
   alias <%= @module %>.Infotainment
 
@@ -16,10 +15,10 @@ defmodule <%= @module %>.Infotainment.Composer.Infotainment.Blocks.StatusBlock d
       row: row,
       columns: columns,
       rows: rows,
-      type: "status_grid",
-      source: Infotainment,
-      cells: [
-        %{label: "VMS", key: :vms_status}
+      name: "Status",
+      type: "statusGrid",
+      metrics: [
+        %{module: Infotainment, key: :vms_status, label: "VMS"}
       ]
     }
   end
