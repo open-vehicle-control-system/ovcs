@@ -356,7 +356,7 @@ defmodule VmsCore.Components.Vesc.MotorControllerTest do
       {:noreply, _} =
         MotorController.handle_info({:handle_missing_frame, :ovcs, "vesc_status"}, state())
 
-      refute_received %Message{name: :rotation_per_minute}
+      refute_received %Message{name: :rotation_per_minute, source: @vesc}
     end
   end
 

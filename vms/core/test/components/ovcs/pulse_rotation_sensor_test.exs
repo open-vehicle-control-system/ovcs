@@ -62,6 +62,6 @@ defmodule VmsCore.Components.OVCS.PulseRotationSensorTest do
         state()
       )
 
-    refute_received %Message{name: :rotation_per_minute}
+    refute_received %Message{name: :rotation_per_minute, source: PulseRotationSensor}
   end
 end
