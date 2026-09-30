@@ -61,7 +61,7 @@ A commander is a component that requests throttle, steering or direction; [contr
 
 | Driver | Network | Options | Publishes |
 |---|---|---|---|
-| `OVCS.ThrottlePedal` | none, through a controller | `controller`, `throttle_a_pin`, `throttle_b_pin` | `:requested_throttle` and calibration |
+| `OVCS.ThrottlePedal` | none, through a controller | `controller`, `throttle_a_pin`, `throttle_b_pin`, `cross_check_tolerance`, `cross_check_hold_ms` | `:requested_throttle` (zero while `:cross_check_fault`), `:cross_check_gap`, calibration |
 | `OVCS.InputCurve` | none, bus only | throttle source, `deadzone`, `expo` | shaped `:requested_throttle` |
 | `OVCS.RadioControl.Steering`, `.Throttle`, `.Direction`, `.RequestedControlLevel`, `.RequestedRosCommander` | `ovcs` | `radio_control_channel` | the `requested_*` value of its channel |
 | `OVCS.RosActuatorCommand.Steering`, `.Throttle`, `.Direction`, and `OVCS.RosVelocityCommand` | `ovcs` | none; `wheelbase_m`, `steering_limit_rad`, `max_speed_m_s` | `:requested_throttle`, `:requested_steering`, `:requested_direction` |
