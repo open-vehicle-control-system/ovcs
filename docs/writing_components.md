@@ -338,7 +338,8 @@ Sources are the `*_source` options; "controller" means a generic controller proc
 | `OVCS.Status`, `VmsCore.Status` | `ovcs` | BMS source; ready-to-drive and VMS status sources | pack and VMS status frames, `:resetting` |
 | `Managers.ControlLevel`, `Managers.Gear` | `ovcs` (Gear) | the source maps; see [Your vehicle package](./vehicle_package.md) | selected level and sources; `:selected_gear` |
 | `Vesc.MotorController` | `network:` | `process_name`, control level source, `max_rotation_per_minute`, `pole_pairs`, caps | rpm, direction, motor current, input voltage |
-| `OVCS.HighVoltageContactors`, `OVCS.WaterPump`, `OVCS.ThrottlePedal`, `Polo9N.FakeOilPressureSensor`, `Traxxas.Steering`, `Traxxas.MotorController` (no reference vehicle) | none, through a controller | a controller and its pins, plus sources | `:ready_to_drive`; nothing; `:requested_throttle` and calibration; nothing; nothing; throttle, pulse width |
+| `OVCS.ThrottlePedal` | none, through a controller | `controller`, `throttle_a_pin`, `throttle_b_pin`, `cross_check_tolerance`, `cross_check_hold_ms` | `:requested_throttle` (zero while `:cross_check_fault`), `:cross_check_gap`, calibration |
+| `OVCS.HighVoltageContactors`, `OVCS.WaterPump`, `Polo9N.FakeOilPressureSensor`, `Traxxas.Steering`, `Traxxas.MotorController` (no reference vehicle) | none, through a controller | a controller and its pins, plus sources | `:ready_to_drive`; nothing; nothing; nothing; throttle, pulse width |
 | `OVCS.PulseRotationSensor`, `OVCS.RotationFusion`, `OVCS.InputCurve` | none, bus only | controller or sources, see the moduledoc | `:rotation_per_minute`; fused rpm; shaped `:requested_throttle` |
 
 The composers in [OVCS1](../vehicles/ovcs1/lib/ovcs1/vms/composer.ex) and [OVCS Mini](../vehicles/ovcs_mini/lib/ovcs_mini/vms/composer.ex) are worked examples of every option; the moduledoc of each driver is the reference.
