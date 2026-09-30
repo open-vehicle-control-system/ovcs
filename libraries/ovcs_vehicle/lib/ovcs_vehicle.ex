@@ -14,6 +14,8 @@ defmodule OvcsVehicle do
   target and a set of bridge modules to bundle together, so one
   vehicle can run multiple bridge firmwares in parallel (e.g. an
   rpi3a image for radio-control and an rpi5 image for ROS + lidar).
+  An entry's `required_files`, paths relative to the vehicle app
+  (`priv/models/x.hef`), fail the firmware build when missing.
   """
 
   @type bridge_firmware_id :: String.t()
@@ -22,6 +24,7 @@ defmodule OvcsVehicle do
           required(:target) => atom(),
           required(:bridges) => [module()],
           optional(:can_config_path) => String.t(),
+          optional(:required_files) => [String.t()],
           optional(:default_can_mapping) => %{
             host: String.t(),
             target: String.t()

@@ -167,6 +167,8 @@ Each key becomes a CLI role with the `bridge-` prefix:
 ./ovcs build my_car bridge-<id>
 ```
 
+An entry can also list `required_files`, paths relative to your vehicle app, for files a bridge needs but the repository doesn't carry. The OVCS Mini's perception entry names its detection model this way (`required_files: ["priv/models/nanodet_repvgg.hef"]`, fetched by `mise run fetch-models`), and the firmware build fails when one is missing rather than producing an image that boots without it.
+
 The shared `bridges/firmware` image is built once per entry. At boot, `OvcsBridge.Supervisor` reads `VEHICLE` and `BRIDGE_FIRMWARE_ID`, looks up the entry, and supervises each listed bridge's `children/0`.
 
 Each bundled bridge reads its configuration from a callback on your vehicle module (see [The four behaviours](#the-four-behaviours)). From the OVCS Mini reference vehicle:
