@@ -36,7 +36,7 @@ against this vehicle rather than a differential-drive one.
 
 Checks 2 and 3 read the controller's own output, `/cmd_vel_nav_raw`,
 ahead of the velocity smoother. The smoother's deadband zeroes a linear
-velocity under 0.22 m/s but leaves its yaw rate, so every start and
+velocity under 0.08 m/s but leaves its yaw rate, so every start and
 stop downstream of it looks like an in-place rotation.
 
 ## Two goals, because one cannot test both things

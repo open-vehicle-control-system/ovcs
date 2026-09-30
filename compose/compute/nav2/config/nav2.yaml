@@ -106,9 +106,8 @@ controller_server:
       # car is always empty.
       vx_min: 0.0
       wz_max: 2.5
-      # From standstill MPPI reaches two steps of ax_max * model_dt; at
-      # 2.0 that is 0.20 m/s, under the smoother's 0.22 m/s deadband, and
-      # the vehicle never starts.
+      # From standstill MPPI reaches two steps of ax_max * model_dt, so
+      # this also sets how quickly a start clears the smoother's deadband.
       ax_max: 3.0
       ax_min: -3.0
       az_max: 3.0
@@ -320,13 +319,13 @@ behavior_server:
       plugin: "nav2_behaviors::Spin"
     # `minimum_speed` floors the ramp down at the end of a drive, which
     # would otherwise fall into the smoother's deadband and stall short
-    # of the distance. The BT XMLs command BackUp at the same speed.
+    # of the distance.
     backup:
       plugin: "nav2_behaviors::BackUp"
-      minimum_speed: 0.25
+      minimum_speed: 0.10
     drive_on_heading:
       plugin: "nav2_behaviors::DriveOnHeading"
-      minimum_speed: 0.25
+      minimum_speed: 0.10
     wait:
       plugin: "nav2_behaviors::Wait"
 
@@ -343,12 +342,12 @@ velocity_smoother:
     min_velocity: [0.0, 0.0, -2.5]
     max_accel: [3.0, 0.0, 3.0]
     max_decel: [-3.0, 0.0, -3.0]
-    # The VESC brakes instead of driving below its Minimum ERPM, 0.22
-    # m/s on this vehicle, so any slower linear velocity is sent as
-    # zero: the vehicle drives at 0.22 m/s or more, or stops. The
+    # The VESC brakes instead of driving below its Minimum ERPM (300, so
+    # 0.07 m/s on this vehicle), so any slower linear velocity is sent
+    # as zero: the vehicle drives above that floor, or stops. The
     # smoother ramps on its own state before this applies, so a start
     # still leaves the band.
-    deadband_velocity: [0.22, 0.0, 0.0]
+    deadband_velocity: [0.08, 0.0, 0.0]
     # How long the last input is held before ramping to zero. A planner
     # that stops publishing must not be held longer than the VMS's own
     # staleness timeout on 0x2B1 (300 ms, `RosVelocityCommand`).
