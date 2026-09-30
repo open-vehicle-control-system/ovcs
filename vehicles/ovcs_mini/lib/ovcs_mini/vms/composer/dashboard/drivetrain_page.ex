@@ -1,6 +1,6 @@
 defmodule OvcsMini.Vms.Composer.Dashboard.DrivetrainPage do
   alias OvcsMini.Vms
-  alias VmsCore.Components.OVCS
+  alias VmsCore.Components.{Matek, OVCS}
   alias VmsCore.Managers
 
   def definition(order: order) do
@@ -112,6 +112,19 @@ defmodule OvcsMini.Vms.Composer.Dashboard.DrivetrainPage do
               name: "Spur RPM",
               module: OVCS.PulseRotationSensor,
               key: :rotation_per_minute
+            }
+          ]
+        },
+        "power-module" => %{
+          order: 5,
+          name: "Power Module (PM12S-3)",
+          type: "table",
+          rows: [
+            %{
+              type: :metric,
+              name: "Electronics Battery Voltage",
+              module: Matek.PM12S3,
+              key: :voltage
             }
           ]
         }
