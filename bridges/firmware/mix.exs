@@ -185,9 +185,35 @@ defmodule BridgeFirmware.MixProject do
       end
 
       Mix.shell().info("Bundled vehicle #{vehicle_name} app from #{src} → #{dst}")
+      check_required_files!(vehicle_name, src, dst)
     end
 
     release
+  end
+
+  # Files the entry names under `required_files` (relative to the
+  # vehicle app, e.g. a model under priv/) that are not committed. A
+  # bridge missing one boots but cannot do its job, so the build fails
+  # instead.
+  defp check_required_files!(vehicle_name, src, dst) do
+    firmware_id = System.fetch_env!("BRIDGE_FIRMWARE_ID")
+    Code.prepend_path(Path.join(src, "ebin"))
+    entry = Module.concat([vehicle_name]).bridge_firmwares() |> Map.fetch!(firmware_id)
+
+    missing =
+      entry
+      |> Map.get(:required_files, [])
+      |> Enum.reject(&File.exists?(Path.join(dst, &1)))
+
+    if missing != [] do
+      Mix.raise("""
+      Bridge firmware "#{firmware_id}" of #{vehicle_name} requires files that are missing:
+
+      #{Enum.map_join(missing, "\n", &"    #{&1}")}
+
+      They are listed under `required_files` in its bridge_firmwares/0 entry.
+      """)
+    end
   end
 
   defp read_app_vsn!(src_dir, dir) do

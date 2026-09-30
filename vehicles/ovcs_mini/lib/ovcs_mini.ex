@@ -62,7 +62,9 @@ defmodule OvcsMini do
       "ros_perception" => %{
         target: :rpi5,
         bridges: [RosBridge],
-        default_can_mapping: %{host: "ovcs:vcan0", target: "ovcs:vcan0"}
+        default_can_mapping: %{host: "ovcs:vcan0", target: "ovcs:vcan0"},
+        # Not committed: `mise run fetch-models`.
+        required_files: ["priv/models/#{hailo_model()}.hef"]
       }
     }
   end
