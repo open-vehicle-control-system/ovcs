@@ -28,6 +28,19 @@ defmodule Ovcs1.Vms.Composer.Dashboard.ThrottlePedalPage do
               module: ThrottlePedal,
               key: :requested_throttle
             },
+            %{
+              type: :metric,
+              name: "A/B Gap",
+              module: ThrottlePedal,
+              key: :cross_check_gap,
+              placeholder: "not calibrated"
+            },
+            %{
+              type: :metric,
+              name: "A/B Fault",
+              module: ThrottlePedal,
+              key: :cross_check_fault
+            },
             %{type: :metric, name: "Raw Throttle A", module: ThrottlePedal, key: :raw_throttle_a},
             %{type: :metric, name: "Raw Throttle B", module: ThrottlePedal, key: :raw_throttle_b},
             %{

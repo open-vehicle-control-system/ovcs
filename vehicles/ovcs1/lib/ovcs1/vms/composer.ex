@@ -201,7 +201,9 @@ defmodule Ovcs1.Vms.Composer do
        %{
          controller: Vms.ControlsController,
          throttle_a_pin: 0,
-         throttle_b_pin: 1
+         throttle_b_pin: 1,
+         cross_check_tolerance: "0.1",
+         cross_check_hold_ms: 100
        }},
       {Vms.OVCSCANForwarder,
        %{
