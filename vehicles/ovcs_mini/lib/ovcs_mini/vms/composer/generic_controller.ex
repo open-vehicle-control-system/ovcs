@@ -29,7 +29,8 @@ defmodule OvcsMini.Vms.Composer.GenericController do
         "pwm_pin2" => "disabled",
         "dac_pin0" => "disabled",
         "analog_pin0" => "disabled",
-        "analog_pin1" => "disabled",
+        # The PM12S-3's Volt pad, on A2; see `Matek.PM12S3`.
+        "analog_pin1" => "enabled",
         "analog_pin2" => "disabled",
         # The hall sensor watching the spur gear, on A1. Counted by
         # interrupt on the controller and reported as a frequency; see

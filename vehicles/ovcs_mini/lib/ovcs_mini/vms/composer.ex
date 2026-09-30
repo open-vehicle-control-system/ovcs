@@ -4,7 +4,7 @@ defmodule OvcsMini.Vms.Composer do
   """
   @behaviour VmsCore.Vehicle
 
-  alias VmsCore.Components.{OVCS, Traxxas, Vesc}
+  alias VmsCore.Components.{Matek, OVCS, Traxxas, Vesc}
   alias VmsCore.Managers
   alias OvcsMini.Vms
 
@@ -233,6 +233,7 @@ defmodule OvcsMini.Vms.Composer do
          controller: Vms.MainController,
          pulses_per_revolution: @pulses_per_revolution
        }},
+      {Matek.PM12S3, %{controller: Vms.MainController, voltage_pin: 1}},
       # The motor's rotation: the VESC first, the spur sensor as its
       # cross-check and its fallback. Every rpm here is the motor's.
       {OVCS.RotationFusion,
