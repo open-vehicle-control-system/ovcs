@@ -217,6 +217,8 @@ Every node uses the cookie `ovcs`: `./ovcs run` and `./ovcs attach` pass `--cook
 
 Both switches only *request*. The manager refuses unsafe moves: in motion, not ready to drive, or while a fault has forced a lower level. `:ros` is reachable only from `:radio`, so getting there takes two deliberate throws with the middle position in between. A refused request is logged once, with the reason.
 
+The radio trigger (`radio_breaking_source`) drops `:ros` to `:radio`, and so does an optional `rotation_fault_source`: a `OVCS.RotationFusion` whose sources disagree (`:cross_check_fault`) means the odometry, and every costmap cell placed with it, can no longer be trusted. Either one forces `:radio` until the switch comes back to `:radio` or below, and `:ros` is refused while it lasts. The OVCS Mini reference vehicle wires its motor rotation fusion there.
+
 ### Channel layout
 
 Which transmitter channel each component reads is a vehicle decision. The radio control bridge copies the receiver's channels 1 to 8 onto `0x2A0` and `0x2A1` unchanged, and each composer names the channel every component reads. The two reference vehicles with radio control use:

@@ -295,6 +295,50 @@ defmodule VmsCore.Managers.ControlLevelTest do
     end
   end
 
+  describe "a rotation fault" do
+    test "drops :ros to :radio mid-drive and forces it there" do
+      state =
+        manager(%{rotation_fault_source: Rotation})
+        |> in_ros()
+        |> deliver(:requested_ros_commander, :autonomous, RadioCommander)
+        |> tick()
+        |> deliver(:cross_check_fault, true, Rotation)
+        |> tick()
+
+      assert state.selected_control_level == :radio
+      assert state.forced_control_level == :radio
+      assert state.requested_throttle_source == RadioThrottle
+    end
+
+    test "refuses :ros while it lasts, and says why" do
+      state =
+        manager(%{rotation_fault_source: Rotation})
+        |> request(:radio)
+        |> deliver(:cross_check_fault, true, Rotation)
+
+      log = capture_log(fn -> send(self(), {:state, request(state, :ros)}) end)
+      assert_received {:state, state}
+      assert state.selected_control_level == :radio
+      assert log =~ "rotation_fault"
+
+      state = state |> deliver(:cross_check_fault, false, Rotation) |> request(:ros)
+      assert state.selected_control_level == :ros
+    end
+
+    test "is ignored without a configured source, or from another one" do
+      state = in_ros() |> deliver(:cross_check_fault, true, Rotation) |> tick()
+      assert state.selected_control_level == :ros
+
+      state =
+        manager(%{rotation_fault_source: Rotation})
+        |> in_ros()
+        |> deliver(:cross_check_fault, true, Other)
+        |> tick()
+
+      assert state.selected_control_level == :ros
+    end
+  end
+
   describe "a brake that is still applied" do
     test "refuses :radio rather than letting it through for one tick" do
       # The force is lifted by the switch returning to :manual, not by

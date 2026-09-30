@@ -179,6 +179,9 @@ defmodule OvcsMini.Vms.Composer do
          # was driving.
          manual_breaking_source: nil,
          radio_breaking_source: OVCS.RadioControl.Throttle,
+         # Odometry rests on the motor rotation: sources that disagree
+         # take the wheel back from ROS.
+         rotation_fault_source: Vms.MotorRotation,
          # Start in the safe position: nothing commands the vehicle
          # until the switch says otherwise.
          #
