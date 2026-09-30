@@ -209,17 +209,19 @@ The file holds the vehicle's values (`use_sim_time: false`); the simulator overr
 
 ```text
 NavigateToPose goal ─► bt_navigator ─► planner_server (NavFn) ─► path
-                                   └─► controller_server (MPPI) ◄─ /odom, /tf, costmaps (inflation only)
+                                   └─► controller_server (MPPI) ◄─ /odom, /tf, costmaps (/stereo/points)
 controller_server, behavior_server ─/cmd_vel_nav_raw─► velocity_smoother ─/cmd_vel_nav @ 20 Hz─►
 ```
 
 What is deliberately unusual:
 
 - **No map, no AMCL.** Every frame is `odom` and both costmaps roll with the vehicle: enough to prove the velocity path drives an Ackermann vehicle without the SLAM question, and no fake static `map → odom`, which looks like localisation and is not.
-- **Costmaps are inflation-only.** No obstacle source: the car does not yet avoid what stereo sees.
+- **Stereo is the only obstacle source.** Both costmaps mark `/stereo/points` between 5 cm and 60 cm above the ground, up to 3 m, and clear by raytracing to 3.5 m. Without the perception pipeline running they stay inflation-only, and nothing is avoided.
 - **`AckermannConstraints`.** MPPI's `motion_model` names a plugin *instance*; the class, `mppi::AckermannMotionModel`, comes from `<instance>.plugin`. It clamps yaw rate to `|vx| / min_turning_r` inside the sampler, so infeasible arcs are never considered. `min_turning_r` is `0.324 / tan(0.52) = 0.566 m`, rounded up to 0.6.
 - **`TwistStamped` on `/cmd_vel_nav`.** `nav2_util::TwistPublisher` defaults `enable_stamped_cmd_vel` to true; its header comment says otherwise, and the code wins.
-- **A 0.22 m/s floor.** Below its minimum ERPM the Mini's VESC brakes instead of driving, 0.22 m/s through the gearing ([VESC drivetrain](./vesc_drivetrain.md)). `velocity_smoother` has a `deadband_velocity` of 0.22 m/s, so a slower linear velocity goes out as zero. BackUp runs at 0.25 m/s, and BackUp and DriveOnHeading floor at `minimum_speed: 0.25`, for the same reason.
+- **A 0.22 m/s floor.** Below its minimum ERPM the Mini's VESC brakes instead of driving, 0.22 m/s through the gearing ([VESC drivetrain](./vesc_drivetrain.md)). `velocity_smoother` has a `deadband_velocity` of 0.22 m/s, so a slower linear velocity goes out as zero. DriveOnHeading floors at `minimum_speed: 0.25` for the same reason.
+- **No reverse, and 3 m/s² acceleration.** MPPI's `vx_min` is 0: with stereo looking forward only, any reverse is driven blind. From standstill MPPI reaches two steps of `ax_max × model_dt`; at 2 m/s² that is 0.20 m/s, under the 0.22 m/s deadband, and the vehicle never starts. `ax_max` and the smoother's `max_accel` are 3.0, which gives 0.30 m/s.
+- **No `BackUp` in either behaviour tree.** Stereo looks forward only, so the costmap behind the car is always empty and a reverse would be driven blind. The backup *server* stays loaded for a manual call.
 - **No `Spin` in either behaviour tree.** A car produces no motion from a spin, so it ran its full duration and burned a recovery slot. The spin *server* stays loaded because `bt_navigator` resolves every action at activation.
 - **NavFn, not Smac.** No `nav2_smac_planner` in the archive, so the global plan knows nothing about turning radius; MPPI carries the corners the car cannot cut.
 - **`yaw_goal_tolerance` is 3.15.** A car cannot rotate in place to a final heading.

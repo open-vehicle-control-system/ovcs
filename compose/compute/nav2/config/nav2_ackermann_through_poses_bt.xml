@@ -7,15 +7,15 @@
   NavigateThroughPoses for a vehicle that cannot rotate on the spot.
 
   This is nav2_bt_navigator's stock
-  `navigate_through_poses_w_replanning_and_recovery.xml` with exactly
-  one line removed: the `Spin` recovery. On an Ackermann vehicle a spin
-  command produces no motion — `AckermannSteering` needs forward speed
-  to generate any yaw — so the behaviour runs its full duration,
-  achieves nothing, and consumes a recovery slot. Since the recoveries
-  sit in a RoundRobin, Spin is tried every other failure.
+  `navigate_through_poses_w_replanning_and_recovery.xml` with two
+  recoveries removed. `Spin`: on an Ackermann vehicle a spin command
+  produces no motion — `AckermannSteering` needs forward speed to
+  generate any yaw — so the behaviour runs its full duration, achieves
+  nothing, and consumes a recovery slot. `BackUp`: the only obstacle
+  source is the forward stereo pair, so a reverse is driven blind.
 
   Kept deliberately close to upstream so a Nav2 bump is a readable
-  diff. The `spin` behaviour *server* is still loaded (see nav2.yaml) —
+  diff. The `spin` and `backup` behaviour *servers* are still loaded (see nav2.yaml) —
   bt_navigator resolves action servers for both trees at activation.
 -->
 <root BTCPP_format="4" main_tree_to_execute="NavigateThroughPosesWReplanningAndRecovery">
@@ -70,7 +70,6 @@
               <ClearEntireCostmap name="ClearGlobalCostmap-Subtree" service_name="global_costmap/clear_entirely_global_costmap"/>
             </Sequence>
             <Wait name="WaitRecovery" wait_duration="5.0" error_code_id="{wait_error_code}" error_msg="{wait_error_msg}"/>
-            <BackUp name="BackUpRecovery" backup_dist="0.30" backup_speed="0.25" error_code_id="{backup_error_code}" error_msg="{backup_error_msg}"/>
           </RoundRobin>
         </ReactiveFallback>
       </Sequence>

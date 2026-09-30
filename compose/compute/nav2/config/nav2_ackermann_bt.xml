@@ -1,16 +1,17 @@
 <!--
   NavigateToPose for a vehicle that cannot rotate on the spot.
 
-  This is Nav2's default nav-to-pose tree with one change: the recovery
-  fallback drops `Spin`. On an Ackermann vehicle a spin command produces
+  This is Nav2's default nav-to-pose tree with two changes: the recovery
+  fallback drops `Spin` and `BackUp`. On an Ackermann vehicle a spin command produces
   no motion at all — `AckermannSteering` needs forward speed to generate
   yaw — so the behaviour runs its full duration, achieves nothing, and
   the RecoveryNode burns a retry. With Spin first in the list, a single
   transient planning failure is enough to abort the whole action.
 
-  What remains is `Wait` (for a costmap that will clear on its own, e.g.
-  a moving obstacle) and `BackUp` (which a car genuinely can do, and
-  which is the useful recovery when it has nosed into a dead end).
+  `BackUp` goes because the only obstacle source is the forward stereo
+  pair: the costmap behind the car is always empty, so a reverse is
+  driven blind. What remains is `Wait`, for a costmap that will clear
+  on its own (a moving obstacle).
 
   ClearCostmap services stay: they cost nothing and fix the common case
   of a stale obstacle.
@@ -36,8 +37,8 @@
         <ClearEntireCostmap name="ClearLocalCostmap-Subtree" service_name="local_costmap/clear_entirely_local_costmap"/>
         <ClearEntireCostmap name="ClearGlobalCostmap-Subtree" service_name="global_costmap/clear_entirely_global_costmap"/>
         <!-- No Spin: this vehicle cannot execute one. -->
+        <!-- No BackUp: nothing senses behind the car. -->
         <Wait wait_duration="2.0"/>
-        <BackUp backup_dist="0.30" backup_speed="0.25"/>
       </Sequence>
     </RecoveryNode>
   </BehaviorTree>

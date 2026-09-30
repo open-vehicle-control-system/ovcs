@@ -102,10 +102,15 @@ controller_server:
       vx_std: 0.2
       wz_std: 0.4
       vx_max: 1.5
-      vx_min: -0.5
+      # No reverse: stereo looks forward only, so the costmap behind the
+      # car is always empty.
+      vx_min: 0.0
       wz_max: 2.5
-      ax_max: 2.0
-      ax_min: -2.0
+      # From standstill MPPI reaches two steps of ax_max * model_dt; at
+      # 2.0 that is 0.20 m/s, under the smoother's 0.22 m/s deadband, and
+      # the vehicle never starts.
+      ax_max: 3.0
+      ax_min: -3.0
       az_max: 3.0
       iteration_count: 1
       temperature: 0.3
@@ -141,7 +146,7 @@ controller_server:
         cost_power: 1
         cost_weight: 3.81
         critical_cost: 300.0
-        consider_footprint: false
+        consider_footprint: true
         collision_cost: 1000000.0
         near_goal_distance: 1.0
       PathAlignCritic:
@@ -183,15 +188,31 @@ local_costmap:
       # normal boot. (Zero is not "wait forever" — it still errors;
       # measured.)
       initial_transform_timeout: 300.0
-      update_frequency: 5.0
-      publish_frequency: 2.0
+      update_frequency: 10.0
+      publish_frequency: 5.0
+      # Foxglove draws the full grid only, not costmap_updates.
+      always_send_full_costmap: true
       rolling_window: true
       width: 6
       height: 6
       resolution: 0.05
-      # Half the diagonal of a 568 x 296 mm truck, plus a little.
-      robot_radius: 0.35
-      plugins: ["inflation_layer"]
+      # The 568 mm body and 341 mm wheel envelope around base_link, which
+      # sits midway between the axles, plus 2 cm.
+      footprint: "[[0.30, 0.19], [0.30, -0.19], [-0.30, -0.19], [-0.30, 0.19]]"
+      plugins: ["obstacle_layer", "inflation_layer"]
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        observation_sources: stereo
+        # Heights are in odom, whose z is the ground: below 5 cm is floor.
+        stereo:
+          topic: /stereo/points
+          data_type: "PointCloud2"
+          marking: true
+          clearing: true
+          min_obstacle_height: 0.05
+          max_obstacle_height: 0.6
+          obstacle_max_range: 3.0
+          raytrace_max_range: 3.5
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
@@ -204,7 +225,7 @@ global_costmap:
       global_frame: odom
       robot_base_frame: base_link
       initial_transform_timeout: 300.0
-      update_frequency: 1.0
+      update_frequency: 2.0
       publish_frequency: 1.0
       # Rolling, because without a map there is no fixed extent to
       # anchor a static costmap to.
@@ -212,8 +233,21 @@ global_costmap:
       width: 30
       height: 30
       resolution: 0.1
-      robot_radius: 0.35
-      plugins: ["inflation_layer"]
+      footprint: "[[0.30, 0.19], [0.30, -0.19], [-0.30, -0.19], [-0.30, 0.19]]"
+      plugins: ["obstacle_layer", "inflation_layer"]
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        observation_sources: stereo
+        # Heights are in odom, whose z is the ground: below 5 cm is floor.
+        stereo:
+          topic: /stereo/points
+          data_type: "PointCloud2"
+          marking: true
+          clearing: true
+          min_obstacle_height: 0.05
+          max_obstacle_height: 0.6
+          obstacle_max_range: 3.0
+          raytrace_max_range: 3.5
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
@@ -286,9 +320,9 @@ velocity_smoother:
     scale_velocities: false
     feedback: "OPEN_LOOP"
     max_velocity: [1.5, 0.0, 2.5]
-    min_velocity: [-0.5, 0.0, -2.5]
-    max_accel: [2.0, 0.0, 3.0]
-    max_decel: [-2.0, 0.0, -3.0]
+    min_velocity: [0.0, 0.0, -2.5]
+    max_accel: [3.0, 0.0, 3.0]
+    max_decel: [-3.0, 0.0, -3.0]
     # The VESC brakes instead of driving below its Minimum ERPM, 0.22
     # m/s on this vehicle, so any slower linear velocity is sent as
     # zero: the vehicle drives at 0.22 m/s or more, or stops. The
