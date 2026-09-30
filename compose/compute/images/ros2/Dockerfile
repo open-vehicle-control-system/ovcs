@@ -11,9 +11,24 @@
 # across to it (`context: ../compute/images/ros2`), which plain
 # `docker compose` is happy to do. The direction matters: a workstation
 # runs the image the car runs, never a copy of it.
-FROM ros:lyrical-ros-base
+# Pinned: the base by digest (its ROS packages are the 2026-08-12 sync)
+# and apt to the ROS snapshot of 2026-08-19, so every build installs the
+# same packages. Bump both together; the snapshot key expires 2027-06-01.
+FROM ros:lyrical-ros-base@sha256:0c19f326a339ed770ef1d4c0646a8b53bdb49dd5ff74b6de41ebdb8ac21e1806
 
+COPY ros-snapshots.asc /usr/share/keyrings/ros-snapshots.asc
+RUN printf '%s\n' \
+        'Types: deb' \
+        'URIs: http://snapshots.ros.org/lyrical/2026-08-19/ubuntu' \
+        'Suites: resolute' \
+        'Components: main' \
+        'Signed-By: /usr/share/keyrings/ros-snapshots.asc' \
+        > /etc/apt/sources.list.d/ros2.sources
+
+# Upgrade first, so the base's packages match the snapshot's: packages
+# built against a newer rosidl fail at load with undefined symbols.
 RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
     && apt-get install -y --no-install-recommends \
         ros-lyrical-rmw-zenoh-cpp \
         ros-lyrical-foxglove-bridge \

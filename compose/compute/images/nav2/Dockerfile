@@ -13,13 +13,28 @@
 # Launch file and parameters are baked in, not mounted: balenaOS has
 # no host bind mounts. They are the same files the simulator mounts —
 # compose/compute/nav2/{launch,config}/ is the single copy.
-FROM ros:lyrical-ros-base
+# Pinned: the base by digest (its ROS packages are the 2026-08-12 sync)
+# and apt to the ROS snapshot of 2026-08-19, so every build installs the
+# same packages. Bump both together; the snapshot key expires 2027-06-01.
+FROM ros:lyrical-ros-base@sha256:0c19f326a339ed770ef1d4c0646a8b53bdb49dd5ff74b6de41ebdb8ac21e1806
+
+COPY images/ros2/ros-snapshots.asc /usr/share/keyrings/ros-snapshots.asc
+RUN printf '%s\n' \
+        'Types: deb' \
+        'URIs: http://snapshots.ros.org/lyrical/2026-08-19/ubuntu' \
+        'Suites: resolute' \
+        'Components: main' \
+        'Signed-By: /usr/share/keyrings/ros-snapshots.asc' \
+        > /etc/apt/sources.list.d/ros2.sources
 
 # Individual servers rather than a metapackage: there is no
 # `ros-lyrical-navigation2` or `ros-lyrical-nav2-bringup` in the
 # Lyrical archive, and naming what we run keeps the image honest
 # about it.
+# Upgrade first, so the base's packages match the snapshot's: packages
+# built against a newer rosidl fail at load with undefined symbols.
 RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
     && apt-get install -y --no-install-recommends \
         ros-lyrical-rmw-zenoh-cpp \
         ros-lyrical-nav2-controller \
