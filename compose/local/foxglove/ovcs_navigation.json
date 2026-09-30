@@ -44,13 +44,27 @@
           "lineWidth": 0.04,
           "gradient": ["#00c853", "#00c853"]
         },
-        "/local_plan": {
+        "/transformed_global_plan": {
           "visible": true,
           "lineWidth": 0.05,
           "gradient": ["#2979ff", "#2979ff"]
         },
-        "/trajectories": {
-          "visible": false
+        "/controller_server/optimal_path": {
+          "visible": true,
+          "lineWidth": 0.05,
+          "gradient": ["#aa00ff", "#aa00ff"]
+        },
+        "/stereo/points": {
+          "visible": true,
+          "colorMode": "colormap",
+          "colorMap": "turbo",
+          "colorField": "z",
+          "minValue": 0.5,
+          "maxValue": 4.0,
+          "pointSize": 2
+        },
+        "/stereo/detections/markers": {
+          "visible": true
         },
         "/odom": {
           "visible": true,
@@ -84,7 +98,7 @@
         "poseEstimateYDeviation": 0.5,
         "poseEstimateThetaDeviation": 0.26179939
       },
-      "foxglovePanelTitle": "Odometry frame: costmaps, plan, footprint — click to publish a goal"
+      "foxglovePanelTitle": "Odometry frame: costmaps, obstacles, plan, footprint — click to publish a goal"
     },
     "Plot!cmd_vel": {
       "title": "Nav2 command (/cmd_vel_nav)",
