@@ -65,14 +65,14 @@ defmodule VmsCore.Components.Vesc.MotorController do
   `brake`, `duty` or `speed` — with `:throttle`, the normalised drive
   command, and `:brake_current`, zero unless braking.
 
-  `status` carries the signed electrical rpm and the motor current,
-  `status_5` the input voltage. They are published as
-  `:rotation_per_minute` (mechanical, signed) with the `:direction` it
-  gives, `:motor_current` and `:input_voltage`, once per frame received — a message per sample, so
-  a consumer integrating the rotation can tell a fresh value from a
-  held one — and as nil the moment the frame watcher declares the
-  frame missing: the VESC is off, unpowered or not configured to send
-  status.
+  `status` carries the erpm and the motor current, `status_5` the
+  tachometer and the input voltage. The rotation comes from one of the
+  two, see `:rotation_from`. They are published as `:rotation_per_minute`
+  (mechanical, signed) with the `:direction` it gives, `:motor_current`
+  and `:input_voltage`, once per frame received — a message per sample,
+  so a consumer integrating the rotation can tell a fresh value from a
+  held one — and as nil the moment the frame watcher declares the frame
+  missing: the VESC is off, unpowered or not configured to send status.
 
   What the motor's rotation means for the vehicle is not this
   component's to know: the gearing to the wheels and the wheel size are
@@ -106,6 +106,11 @@ defmodule VmsCore.Components.Vesc.MotorController do
       gearing is declared once, next to `VehicleMotion`'s.
     * `:pole_pairs` — of the motor: electrical rpm is mechanical rpm
       times this. A 4-pole motor has 2.
+    * `:rotation_from` — `:tachometer` (default) differences the
+      tachometer, a signed count of 6 steps per electrical turn, over
+      a 200 ms window. `:erpm` takes the erpm, the controller's speed
+      estimate, which without Hall sensors and at low speed can be far
+      from the shaft's.
     * `:noise_rpm` — motor rpm at or below which `:direction` reads
       `"stopped"`: a stopped motor reports a stray erpm or two. Default 5.
     * `:max_throttle`, `:max_reverse` — the fraction of the motor's full
@@ -139,6 +144,7 @@ defmodule VmsCore.Components.Vesc.MotorController do
 
   @loop_period 10
   @frame_suffixes [:set_duty, :set_current, :set_current_brake, :set_rpm, :status, :status_5]
+  @tachometer_window_ms 200
   @zero D.new(0)
   @one D.new(1)
   @gear_signs %{drive: 1, reverse: -1}
@@ -212,6 +218,8 @@ defmodule VmsCore.Components.Vesc.MotorController do
        erpm_per_request: erpm_per_request(max_rotation_per_minute, pole_pairs),
        pole_pairs: pole_pairs,
        noise_rpm: D.new(Map.get(args, :noise_rpm, 5)),
+       rotation_from: rotation_from(Map.get(args, :rotation_from, :tachometer)),
+       tachometer_samples: [],
        # Nothing commands this actuator until the manager names a
        # source.
        requested_throttle_source: nil,
@@ -268,14 +276,14 @@ defmodule VmsCore.Components.Vesc.MotorController do
     {:noreply, state}
   end
 
-  # Converted and published as the frame arrives, not on the tick: the
-  # constant is fixed and the value only changes with a frame.
+  # Published as the frame arrives, not on the tick: the values only
+  # change with a frame.
   def handle_info({:handle_frame, %Frame{name: name, signals: signals}}, state)
       when name == state.frames.status do
     %{"erpm" => %Signal{value: erpm}, "motor_current" => %Signal{value: motor_current}} = signals
-    rotation = rotation_per_minute(erpm, state.pole_pairs)
-    broadcast(state, :rotation_per_minute, rotation, Units.revolution_per_minute())
-    broadcast(state, :direction, direction(rotation, state.noise_rpm), nil)
+
+    if state.rotation_from == :erpm,
+      do: broadcast_rotation(state, rotation_per_minute(erpm, state.pole_pairs))
 
     broadcast(state, :motor_current, motor_current, Units.ampere())
     {:noreply, state}
@@ -283,23 +291,38 @@ defmodule VmsCore.Components.Vesc.MotorController do
 
   def handle_info({:handle_frame, %Frame{name: name, signals: signals}}, state)
       when name == state.frames.status_5 do
-    %{"input_voltage" => %Signal{value: input_voltage}} = signals
+    %{
+      "tachometer" => %Signal{value: tachometer},
+      "input_voltage" => %Signal{value: input_voltage}
+    } =
+      signals
+
+    {rotation, samples} =
+      tachometer_rotation(
+        state.tachometer_samples,
+        {System.monotonic_time(:millisecond), tachometer},
+        state.pole_pairs
+      )
+
+    if state.rotation_from == :tachometer and not is_nil(rotation),
+      do: broadcast_rotation(state, rotation)
+
     broadcast(state, :input_voltage, input_voltage, Units.volt())
-    {:noreply, state}
+    {:noreply, %{state | tachometer_samples: samples}}
   end
 
   def handle_info({:handle_missing_frame, network, name}, state)
       when network == state.network and name == state.frames.status do
-    broadcast(state, :rotation_per_minute, nil, Units.revolution_per_minute())
-    broadcast(state, :direction, nil, nil)
+    if state.rotation_from == :erpm, do: broadcast_rotation(state, nil)
     broadcast(state, :motor_current, nil, Units.ampere())
     {:noreply, state}
   end
 
   def handle_info({:handle_missing_frame, network, name}, state)
       when network == state.network and name == state.frames.status_5 do
+    if state.rotation_from == :tachometer, do: broadcast_rotation(state, nil)
     broadcast(state, :input_voltage, nil, Units.volt())
-    {:noreply, state}
+    {:noreply, %{state | tachometer_samples: []}}
   end
 
   def handle_info({:handle_missing_frame, _network, _frame_name}, state) do
@@ -471,10 +494,47 @@ defmodule VmsCore.Components.Vesc.MotorController do
     end
   end
 
+  defp broadcast_rotation(state, rotation) do
+    broadcast(state, :rotation_per_minute, rotation, Units.revolution_per_minute())
+    broadcast(state, :direction, rotation && direction(rotation, state.noise_rpm), nil)
+  end
+
+  defp rotation_from(source) when source in [:tachometer, :erpm], do: source
+
+  defp rotation_from(source) do
+    raise ArgumentError, ":rotation_from must be :tachometer or :erpm, got #{inspect(source)}"
+  end
+
   # The mechanical rpm of the motor, signed like the erpm it comes from.
   @doc false
   def rotation_per_minute(erpm, pole_pairs) do
     erpm |> D.new() |> D.div(pole_pairs) |> D.round(1)
+  end
+
+  # The mechanical rpm over the samples of the last window, newest
+  # first, and the samples to keep. Nil until the window spans two
+  # samples: one count says nothing about a rate.
+  @doc false
+  def tachometer_rotation(samples, {now_ms, _count} = sample, pole_pairs) do
+    samples = [
+      sample | Enum.take_while(samples, fn {at, _} -> now_ms - at <= @tachometer_window_ms end)
+    ]
+
+    case List.last(samples) do
+      {^now_ms, _} ->
+        {nil, samples}
+
+      {oldest_ms, oldest_count} ->
+        {_, count} = sample
+
+        rotation =
+          D.new(count - oldest_count)
+          |> D.mult(60_000)
+          |> D.div(6 * pole_pairs * (now_ms - oldest_ms))
+          |> D.round(1)
+
+        {rotation, samples}
+    end
   end
 
   @doc false
