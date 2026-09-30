@@ -63,9 +63,9 @@ void Can::emitdigitalAndAnalogPinsStatus(uint16_t digitalAndAnalogPinStatusesFra
   frame.data[2] = frame.data[2]                                              | extractBits(analogPinsStatus[0], 0b00000011111000, 3);
   frame.data[3] = extractBits(analogPinsStatus[0], 0b00000000000111, 0) << 5 | extractBits(analogPinsStatus[0], 0b11111000000000, 9);
   frame.data[4] = extractBits(analogPinsStatus[0], 0b00000100000000, 8) << 7 | extractBits(analogPinsStatus[1], 0b00000011111110, 1);
-  frame.data[5] = extractBits(analogPinsStatus[1], 0b00000000000001, 0) << 7 | extractBits(analogPinsStatus[1], 0b11111100000000, 8);
-  frame.data[6] = extractBits(analogPinsStatus[2], 0b00000011111111, 0);
-  frame.data[7] = extractBits(analogPinsStatus[2], 0b11111100000000, 8) << 2;
+  frame.data[5] = extractBits(analogPinsStatus[1], 0b00000000000001, 0) << 7 | extractBits(analogPinsStatus[1], 0b11111100000000, 8) << 1 | extractBits(analogPinsStatus[2], 0b00000010000000, 7);
+  frame.data[6] = extractBits(analogPinsStatus[2], 0b00000001111111, 0) << 1 | extractBits(analogPinsStatus[2], 0b10000000000000, 13);
+  frame.data[7] = extractBits(analogPinsStatus[2], 0b01111100000000, 8) << 3;
 
   emit(frame);
 };
