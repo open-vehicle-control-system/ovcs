@@ -244,6 +244,43 @@ defmodule VmsCore.Managers.ControlLevelTest do
       assert state.selected_ros_commander == :teleop
     end
 
+    test "a switch taken below the forced level lifts the force" do
+      # Forced to :radio by the radio brake, then taken all the way down
+      # to :manual: the force must not outlive a level that is already
+      # below it, or :radio is refused for ever.
+      state =
+        in_ros()
+        |> deliver(:radio_breaking, true, RadioThrottle)
+        |> tick()
+        |> deliver(:radio_breaking, false, RadioThrottle)
+        |> request(:manual)
+
+      assert state.selected_control_level == :manual
+
+      state = tick(state)
+      assert state.forced_control_level == nil
+
+      state = request(state, :radio)
+      assert state.selected_control_level == :radio
+    end
+
+    test "a switch still above the forced level keeps the force" do
+      state =
+        in_ros()
+        |> deliver(:radio_breaking, true, RadioThrottle)
+        |> tick()
+        |> deliver(:radio_breaking, false, RadioThrottle)
+        |> tick()
+
+      assert state.selected_control_level == :radio
+      assert state.forced_control_level == :radio
+
+      capture_log(fn -> send(self(), {:state, request(state, :ros)}) end)
+      assert_received {:state, state}
+      assert state.selected_control_level == :radio
+      assert state.forced_control_level == :radio
+    end
+
     test "a fault forces :manual out of an autonomous drive" do
       state =
         in_ros()
