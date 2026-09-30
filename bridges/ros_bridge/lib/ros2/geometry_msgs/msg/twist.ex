@@ -18,6 +18,16 @@ defmodule Ros2.GeometryMsgs.Msg.Twist do
 
   defstruct linear: %Vector3{}, angular: %Vector3{}
 
+  # rmw_zenoh keyexpr metadata for `geometry_msgs/msg/Twist`, so a subscription declares
+  # its liveliness token and shows in the ROS graph. The RIHS01 hash was
+  # captured against ROS 2 Lyrical via `ros2 topic info -v`. Refresh on
+  # distro bumps.
+  @dds_type "geometry_msgs::msg::dds_::Twist_"
+  @type_hash "RIHS01_9c45bf16fe0983d80e3cfe750d6835843d265a9a6c46bd2e609fcddde6fb8d2a"
+
+  def dds_type, do: @dds_type
+  def type_hash, do: @type_hash
+
   # Six float64s, no internal padding: the buffer must be 8-aligned on
   # entry and leaves 8-aligned.
   def encode(%__MODULE__{linear: linear, angular: angular}) do
