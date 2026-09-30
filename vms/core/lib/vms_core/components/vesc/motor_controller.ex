@@ -179,7 +179,9 @@ defmodule VmsCore.Components.Vesc.MotorController do
 
     # Every command emitter exists from the start, none enabled: the
     # first tick enables the one for the selected source. The brake
-    # only exists with gears.
+    # only exists with gears. The emitters outlive this process, so a
+    # restart disables them too: otherwise the one a previous run left
+    # enabled keeps sending alongside the new one.
     selected_gear_source = Map.get(args, :selected_gear_source)
     :ok = configure_emitter(network, frames.set_duty, %{"duty" => @zero})
     :ok = configure_emitter(network, frames.set_current, %{"current" => @zero})
@@ -188,6 +190,8 @@ defmodule VmsCore.Components.Vesc.MotorController do
     if selected_gear_source do
       :ok = configure_emitter(network, frames.set_current_brake, %{"current" => @zero})
     end
+
+    :ok = Emitter.disable(network, command_frame_names(frames, selected_gear_source))
 
     {:ok, timer} = :timer.send_interval(@loop_period, :loop)
 
@@ -487,6 +491,11 @@ defmodule VmsCore.Components.Vesc.MotorController do
       source: state.process_name
     })
   end
+
+  defp command_frame_names(frames, nil), do: [frames.set_duty, frames.set_current, frames.set_rpm]
+
+  defp command_frame_names(frames, _selected_gear_source),
+    do: [frames.set_duty, frames.set_current, frames.set_rpm, frames.set_current_brake]
 
   defp configure_emitter(network, frame_name, initial_data) do
     Emitter.configure(network, frame_name, %{
