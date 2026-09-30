@@ -202,16 +202,26 @@ local_costmap:
       plugins: ["obstacle_layer", "inflation_layer"]
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
-        observation_sources: stereo
-        # Heights are in odom, whose z is the ground: below 5 cm is floor.
-        stereo:
+        # One cloud, two sources. Heights are in odom, whose z is the
+        # ground: marking ignores the floor, but clearing needs it, since
+        # in a clear path nearly every ray ends on the floor and would
+        # otherwise never erase a false match.
+        observation_sources: stereo_marking stereo_clearing
+        stereo_marking:
           topic: /stereo/points
           data_type: "PointCloud2"
           marking: true
-          clearing: true
+          clearing: false
           min_obstacle_height: 0.05
           max_obstacle_height: 0.6
           obstacle_max_range: 3.0
+        stereo_clearing:
+          topic: /stereo/points
+          data_type: "PointCloud2"
+          marking: false
+          clearing: true
+          min_obstacle_height: -0.5
+          max_obstacle_height: 0.6
           raytrace_max_range: 3.5
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
@@ -237,16 +247,26 @@ global_costmap:
       plugins: ["obstacle_layer", "inflation_layer"]
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
-        observation_sources: stereo
-        # Heights are in odom, whose z is the ground: below 5 cm is floor.
-        stereo:
+        # One cloud, two sources. Heights are in odom, whose z is the
+        # ground: marking ignores the floor, but clearing needs it, since
+        # in a clear path nearly every ray ends on the floor and would
+        # otherwise never erase a false match.
+        observation_sources: stereo_marking stereo_clearing
+        stereo_marking:
           topic: /stereo/points
           data_type: "PointCloud2"
           marking: true
-          clearing: true
+          clearing: false
           min_obstacle_height: 0.05
           max_obstacle_height: 0.6
           obstacle_max_range: 3.0
+        stereo_clearing:
+          topic: /stereo/points
+          data_type: "PointCloud2"
+          marking: false
+          clearing: true
+          min_obstacle_height: -0.5
+          max_obstacle_height: 0.6
           raytrace_max_range: 3.5
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
