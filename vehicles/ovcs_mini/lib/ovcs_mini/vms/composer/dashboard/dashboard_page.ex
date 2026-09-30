@@ -1,6 +1,6 @@
 defmodule OvcsMini.Vms.Composer.Dashboard.DashboardPage do
   alias OvcsMini.Vms
-  alias VmsCore.Components.OVCS
+  alias VmsCore.Components.{Matek, OVCS}
   alias VmsCore.Managers
   alias VmsCore.Status
 
@@ -51,8 +51,21 @@ defmodule OvcsMini.Vms.Composer.Dashboard.DashboardPage do
             }
           ]
         },
-        "speed-and-rpm" => %{
+        "power-module" => %{
           order: 2,
+          name: "Power Module (PM12S-3)",
+          type: "table",
+          rows: [
+            %{
+              type: :metric,
+              name: "Electronics Battery Voltage",
+              module: Matek.PM12S3,
+              key: :voltage
+            }
+          ]
+        },
+        "speed-and-rpm" => %{
+          order: 3,
           name: "Speed & RPM",
           type: "lineChart",
           serie_max_size: 300,
