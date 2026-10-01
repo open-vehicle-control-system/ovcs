@@ -39,6 +39,7 @@ RUN apt-get update \
         ros-lyrical-rmw-zenoh-cpp \
         ros-lyrical-nav2-controller \
         ros-lyrical-nav2-mppi-controller \
+        ros-lyrical-nav2-regulated-pure-pursuit-controller \
         ros-lyrical-nav2-planner \
         ros-lyrical-nav2-navfn-planner \
         ros-lyrical-nav2-bt-navigator \

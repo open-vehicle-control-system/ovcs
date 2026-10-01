@@ -224,6 +224,7 @@ What is deliberately unusual:
 - **`BackUp` reverses only 15 cm, at 0.10 m/s.** Stereo looks forward only, so the costmap behind the car is always empty and a reverse is driven blind; MPPI's `vx_min` of 0 keeps the controller forward. Without any reverse, though, a car that cannot turn tighter than its radius stays stuck facing an obstacle, so the recovery backs up 15 cm, within the ground it has just driven over. The velocity smoother allows −0.10 m/s for it.
 - **No `Spin` in either behaviour tree.** A car produces no motion from a spin, so it ran its full duration and burned a recovery slot. The spin *server* stays loaded because `bt_navigator` resolves every action at activation.
 - **NavFn, not Smac.** No `nav2_smac_planner` in the archive, so the global plan knows nothing about turning radius; MPPI carries the corners the car cannot cut.
+- **`ReverseArc`, a second controller.** Regulated Pure Pursuit with `allow_reversing` drives a path that lies behind the car, so a caller can reverse along an arc; MPPI stays forward-only. Nothing in the behaviour trees uses it: `forward_explore` sends its three-point turns to it through `follow_path`.
 - **`yaw_goal_tolerance` is 3.15.** A car cannot rotate in place to a final heading.
 
 ### Arriving proves almost nothing

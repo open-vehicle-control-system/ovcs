@@ -1,0 +1,27 @@
+forward_explore:
+  ros__parameters:
+    # Candidates: inside the camera's view, a short step ahead. The car
+    # turns further by chaining steps.
+    cone_half_angle_deg: 20.0
+    angle_step_deg: 5.0
+    distances: [0.6, 0.8, 1.0]
+    # Nav2's min_turning_r (0.6 m) plus a margin.
+    min_turn_radius: 0.7
+    footprint_half_length: 0.30
+    footprint_half_width: 0.19
+    # The matched part of the stereo's view.
+    camera_half_fov_deg: 18.0
+    camera_near: 0.55
+    camera_far: 3.0
+    # Unknown cells a goal must reveal to be worth driving to.
+    min_gain: 15
+    avoid_radius: 0.6
+    avoid_penalty: 30
+    perimeter: 4.0
+    max_duration: 600.0
+    goal_timeout: 40.0
+    reach_radius: 0.4
+    # Each turn reverses this far along a min_turn_radius arc.
+    reverse_distance: 0.5
+    reverse_budget: 3.0
+    seen_free_skip: 0.6

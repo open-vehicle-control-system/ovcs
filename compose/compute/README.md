@@ -12,18 +12,20 @@ either.
 
 ```
 compute/
-├── docker-compose.yml    the stack: wifi_firmware, bridge_nat_fix, zenohd, foxglove_bridge, nav2, rtabmap
+├── docker-compose.yml    the stack: wifi_firmware, bridge_nat_fix, zenohd, foxglove_bridge, nav2, rtabmap, explore
 ├── .dockerignore         keeps host/ and this file out of the pushed tarball
 ├── images/
 │   ├── ros2/             the shared ROS 2 image: entrypoint, Zenoh template, launchers
 │   ├── nav2/             the Nav2 image (Dockerfile only; it COPYs ../ros2 and ../../nav2)
 │   ├── rtabmap/          the RTAB-Map image (Dockerfile only; it COPYs ../ros2 and ../../rtabmap)
+│   ├── explore/          forward_explore, and explore_lite built from source (COPYs ../ros2, ../../explore)
 │   ├── wifi-firmware/    AX210 firmware staged into balenaOS's extra-firmware volume
 │   └── bridge-nat-fix/   keeps the host's NAT off frames bridged between eth0 and the AP
 ├── nav2/
 │   ├── launch/           baked into images/nav2 here, bind-mounted by ../local/simulation.yml
 │   └── config/           nav2.yaml and the Ackermann behaviour trees
 ├── rtabmap/              launch file and parameters baked into images/rtabmap
+├── explore/              forward_explore's code and tests, explore_lite's launch file, both parameter files
 └── host/                 NetworkManager keyfiles for balenaOS itself — installed by hand, once
 ```
 
@@ -82,7 +84,7 @@ Run the relay integration tests in an environment with `websockets==17.0.1`:
 python3 -m unittest discover -s images/ros2/docker/tests -v
 ```
 
-### Mapping
+### Mapping and exploring
 
 `rtabmap` builds the map continuously from the stereo bridge and
 `/odom`, and publishes it on `/rtabmap/map`. Each start of the service
@@ -95,6 +97,50 @@ balena-engine restart "$(balena-engine ps -qf name=rtabmap)"
 Keeping a map across starts (`delete_db_on_start:=false` in the launch
 file) is not the default: a database written by an interrupted session
 can fail to reload and kill the node at every start.
+
+`explore` holds two explorers that send Nav2 goals over that map. Both
+start driving as soon as they run, so the container only idles and
+exploration is started by hand, with the vehicle in `:ros` /
+`:autonomous`. Stopping the process, or restarting the container, ends
+it; nothing restarts it on its own. The radio's control level switch
+takes the vehicle back at any time.
+
+`forward_explore` suits a car that sees ahead only and cannot turn on
+the spot. Each cycle it scores goals in a cone ahead, reachable along
+one arc no tighter than the turning radius and clear in the local
+costmap, by the unknown cells the camera would see from them, and sends
+the best. With nothing left to see ahead it reverses along an arc to
+the clearer side and turns on: a three-point turn, the reverse half
+driven by the `ReverseArc` controller. It stops
+at a time limit, when its reverse budget is spent or when nothing is
+reachable, and never sends a goal beyond a perimeter around the start
+(`explore/config/forward_explore.yaml`). Its candidates are published on
+`/forward_explore/candidates`, its decisions on `/rosout`:
+
+```sh
+balena-engine exec -d "$(balena-engine ps -qf name=explore)" bash -lc \
+  'source /opt/ros/lyrical/setup.bash && exec python3 /opt/ovcs/forward_explore/forward_explore_node.py --ros-args --params-file /opt/ovcs/config/forward_explore.yaml'
+```
+
+`false` on `/forward_explore/resume` pauses it and cancels its goal;
+`true` resumes it. Appending `-p dry_run:=true` makes it choose and log
+without sending anything. Its geometry is tested without ROS:
+
+```sh
+python3 -m unittest discover -s explore/forward_explore/tests -v
+```
+
+explore_lite drives towards the frontiers of the whole map, which suits
+a robot that sees all around and turns on the spot better than this
+car:
+
+```sh
+balena-engine exec -d "$(balena-engine ps -qf name=explore)" bash -lc \
+  'source /opt/ros/lyrical/setup.bash && source /opt/explore/install/setup.bash && ros2 launch /opt/ovcs/launch/explore.launch.py'
+```
+
+`false` on `/explore/resume` pauses it and cancels its goal; `true`
+resumes it.
 
 ### Rehearsing on a workstation
 

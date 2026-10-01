@@ -24,6 +24,11 @@
       },
       "transforms": {},
       "topics": {
+        "/rtabmap/map": {
+          "visible": true,
+          "colorMode": "map",
+          "alpha": 0.7
+        },
         "/global_costmap/costmap": {
           "visible": true,
           "colorMode": "costmap",
@@ -71,6 +76,17 @@
           "type": "arrow",
           "arrowScale": [0.4, 0.06, 0.06],
           "color": "#ff1744"
+        },
+        "/explore/frontiers": {
+          "visible": true
+        },
+        "/forward_explore/candidates": {
+          "visible": true
+        },
+        "/rtabmap/mapPath": {
+          "visible": true,
+          "lineWidth": 0.03,
+          "gradient": ["#ff9100", "#ff9100"]
         }
       },
       "layers": {
@@ -231,17 +247,84 @@
       "fontSize": 12,
       "foxglovePanelTitle": "Diagnostics"
     },
-    "Tab!tf": {
+    "SourceInfo!tf": {
+      "foxglovePanelTitle": "Topics on the fabric"
+    },
+    "RosOut!nav": {
+      "searchTerms": [],
+      "minLogLevel": 2,
+      "topicToRender": "/rosout",
+      "foxglovePanelTitle": "Nav2 and exploration log"
+    },
+    "RawMessages!bt": {
+      "topicPath": "/behavior_tree_log.event_log",
+      "diffEnabled": false,
+      "showFullMessageForDiff": false,
+      "diffMethod": "custom",
+      "diffTopicPath": "",
+      "fontSize": 12,
+      "foxglovePanelTitle": "Behaviour tree: last transitions"
+    },
+    "Plot!rtabmap": {
+      "title": "RTAB-Map nodes and loop closures",
+      "paths": [
+        {
+          "value": "/rtabmap/info.ref_id",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "current node"
+        },
+        {
+          "value": "/rtabmap/info.loop_closure_id",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "loop closure with node"
+        },
+        {
+          "value": "/rtabmap/info.proximity_detection_id",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "proximity with node"
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showPlotValuesInLegend": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "followingViewWidth": 20,
+      "foxglovePanelTitle": "RTAB-Map nodes and loop closures"
+    },
+    "Tab!debug": {
       "activeTabIdx": 0,
       "tabs": [
+        {
+          "title": "Diagnostics",
+          "layout": "RawMessages!diagnostics"
+        },
+        {
+          "title": "Position",
+          "layout": "Plot!odom_xy"
+        },
+        {
+          "title": "IMU",
+          "layout": "Plot!imu_gyro_z"
+        },
+        {
+          "title": "Odometry stamp",
+          "layout": "RawMessages!odom_header"
+        },
+        {
+          "title": "Heartbeat",
+          "layout": "RawMessages!heartbeat"
+        },
         {
           "title": "TF tree",
           "layout": "SourceInfo!tf"
         }
       ]
-    },
-    "SourceInfo!tf": {
-      "foxglovePanelTitle": "Topics on the fabric"
     }
   },
   "globalVariables": {},
@@ -252,40 +335,30 @@
   "layout": {
     "first": "3D!nav",
     "second": {
-      "first": {
-        "first": "Plot!cmd_vel",
-        "second": "Plot!odom_twist",
-        "direction": "column",
-        "splitPercentage": 50
-      },
+      "first": "RosOut!nav",
       "second": {
-        "first": {
-          "first": "Plot!odom_xy",
-          "second": "Plot!imu_gyro_z",
-          "direction": "column",
-          "splitPercentage": 50
-        },
+        "first": "RawMessages!bt",
         "second": {
-          "first": {
-            "first": "RawMessages!heartbeat",
-            "second": "RawMessages!odom_header",
-            "direction": "column",
-            "splitPercentage": 35
-          },
+          "first": "Plot!rtabmap",
           "second": {
-            "first": "RawMessages!diagnostics",
-            "second": "Tab!tf",
+            "first": "Plot!cmd_vel",
+            "second": {
+              "first": "Plot!odom_twist",
+              "second": "Tab!debug",
+              "direction": "column",
+              "splitPercentage": 50
+            },
             "direction": "column",
-            "splitPercentage": 50
+            "splitPercentage": 33
           },
           "direction": "column",
-          "splitPercentage": 45
+          "splitPercentage": 25
         },
         "direction": "column",
-        "splitPercentage": 55
+        "splitPercentage": 22
       },
       "direction": "column",
-      "splitPercentage": 40
+      "splitPercentage": 28
     },
     "direction": "row",
     "splitPercentage": 66

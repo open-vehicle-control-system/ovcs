@@ -1,0 +1,18 @@
+explore_node:
+  ros__parameters:
+    robot_base_frame: base_link
+    costmap_topic: /rtabmap/map
+    costmap_updates_topic: /rtabmap/map_updates
+    visualize: true
+    planner_frequency: 0.5
+    # A frontier the car makes no progress towards is blacklisted.
+    progress_timeout: 30.0
+    # Large frontiers over near ones: with a forward-only camera the
+    # nearest unknown is the strip just behind the car.
+    potential_scale: 1.0
+    orientation_scale: 0.0
+    gain_scale: 3.0
+    transform_tolerance: 0.3
+    # The stereo's false points leave small unknown pockets.
+    min_frontier_size: 1.0
+    return_to_init: true
