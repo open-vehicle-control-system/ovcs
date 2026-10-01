@@ -39,6 +39,8 @@ defmodule VmsCore.Components.Vesc.MotorControllerTest do
         erpm_per_request: MotorController.erpm_per_request(@max_rpm, @pole_pairs),
         pole_pairs: @pole_pairs,
         noise_rpm: D.new(5),
+        rotation_from: :tachometer,
+        tachometer_samples: [],
         requested_throttle_source: @hand,
         requested_throttle: D.new("0.6"),
         command: nil
@@ -306,9 +308,11 @@ defmodule VmsCore.Components.Vesc.MotorControllerTest do
       :ok
     end
 
-    test "each status frame is one rotation and one current message, sign kept" do
+    test "from the erpm, each status frame is one rotation and one current message, sign kept" do
+      state = state(%{rotation_from: :erpm})
+
       {:noreply, state} =
-        MotorController.handle_info({:handle_frame, status_frame(1968, D.new("3.5"))}, state())
+        MotorController.handle_info({:handle_frame, status_frame(1968, D.new("3.5"))}, state)
 
       assert_received %Message{name: :rotation_per_minute, value: rpm, source: @vesc}
       assert D.eq?(rpm, D.new("984.0"))
@@ -323,14 +327,60 @@ defmodule VmsCore.Components.Vesc.MotorControllerTest do
       assert_received %Message{name: :direction, value: "backward", source: @vesc}
     end
 
-    test "a dead status frame withdraws the rotation and the current" do
+    test "from the tachometer, the status frame carries the current but no rotation" do
+      {:noreply, _} =
+        MotorController.handle_info({:handle_frame, status_frame(1968, D.new("3.5"))}, state())
+
+      assert_received %Message{name: :motor_current, source: @vesc}
+      refute_received %Message{name: :rotation_per_minute, source: @vesc}
+    end
+
+    test "a dead frame withdraws the rotation only when it is the rotation's source" do
       # Silence is not standstill: the manager must refuse mode changes
       # rather than read a dead VESC as a stopped vehicle.
       {:noreply, _} =
-        MotorController.handle_info({:handle_missing_frame, :misc, "vesc_status"}, state())
+        MotorController.handle_info(
+          {:handle_missing_frame, :misc, "vesc_status"},
+          state(%{rotation_from: :erpm})
+        )
 
       assert_received %Message{name: :rotation_per_minute, value: nil, source: @vesc}
       assert_received %Message{name: :motor_current, value: nil, source: @vesc}
+
+      {:noreply, _} =
+        MotorController.handle_info({:handle_missing_frame, :misc, "vesc_status"}, state())
+
+      refute_received %Message{name: :rotation_per_minute, source: @vesc}
+
+      {:noreply, state} =
+        MotorController.handle_info(
+          {:handle_missing_frame, :misc, "vesc_status_5"},
+          state(%{tachometer_samples: [{0, 12}]})
+        )
+
+      assert_received %Message{name: :rotation_per_minute, value: nil, source: @vesc}
+      assert state.tachometer_samples == []
+    end
+
+    test "the tachometer rate is steps over 6 per electrical turn, signed, over the window" do
+      # 2 pole pairs: 12 steps a motor turn. 24 steps in 100 ms is 1200 rpm.
+      {nil, samples} = MotorController.tachometer_rotation([], {1000, 500}, @pole_pairs)
+      {rpm, samples} = MotorController.tachometer_rotation(samples, {1100, 524}, @pole_pairs)
+      assert D.eq?(rpm, D.new("1200.0"))
+
+      {rpm, _} = MotorController.tachometer_rotation(samples, {1200, 500}, @pole_pairs)
+      assert D.eq?(rpm, D.new("0.0"))
+
+      {rpm, _} = MotorController.tachometer_rotation([{1000, 500}], {1100, 488}, @pole_pairs)
+      assert D.eq?(rpm, D.new("-600.0"))
+    end
+
+    test "samples older than the window are dropped, and a lone sample gives no rate" do
+      {rpm, samples} =
+        MotorController.tachometer_rotation([{1000, 0}], {1300, 12}, @pole_pairs)
+
+      assert rpm == nil
+      assert samples == [{1300, 12}]
     end
 
     test "the input voltage comes from status 5 and dies with it" do

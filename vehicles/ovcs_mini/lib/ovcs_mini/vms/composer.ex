@@ -225,6 +225,8 @@ defmodule OvcsMini.Vms.Composer do
          max_brake_current: @max_brake_current,
          max_rotation_per_minute: @max_motor_rotation_per_minute,
          pole_pairs: @motor_pole_pairs,
+         # :erpm switches to the VESC's own speed estimate.
+         rotation_from: :tachometer,
          max_throttle: @max_throttle,
          max_reverse: @max_reverse_throttle
        }},
