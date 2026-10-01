@@ -33,11 +33,11 @@ Set these once in VESC Tool, after motor detection:
 | CAN status rate | App Settings → General | 50 Hz |
 | Timeout | App Settings → General | 1000 ms (default); must stay far above the 20 ms command period |
 | Timeout brake current | App Settings → General | 0 A, so a lost VMS releases the motor rather than braking |
-| Minimum ERPM | Motor Settings → PID Controllers → Speed Controller | 900 (default); the planner's velocity floor sits above it, see below |
+| Minimum ERPM | Motor Settings → PID Controllers → Speed Controller | 300 on the Mini (default 900); the planner's velocity floor sits above it, see below |
 
 The VESC id defaults to one derived from the board's serial number, so set it explicitly. The 500 kbps baud rate, the 1000 ms timeout and the 50 Hz status rate are the firmware defaults.
 
-**Minimum ERPM matters.** A speed setpoint under it doesn't run the speed loop: a running motor holds zero duty, a passive brake, and a released motor isn't started. On the Mini (2 pole pairs, geared 11.82:1, 54.8 mm wheel radius) the default 900 erpm is 0.22 m/s. The Mini keeps the default and floors the planner instead: Nav2's velocity smoother has `deadband_velocity: [0.22, 0.0, 0.0]`, so any slower linear velocity reaches the VMS as zero, and the BackUp recovery drives at 0.25 m/s (`compose/compute/nav2/config/`). The vehicle drives at 0.22 m/s or more, or stops; it never sits in the band where the VESC brakes. Lowering Minimum ERPM instead makes the loop's low end depend on the motor's sensor, which the [bench check](#bench-checks) measures.
+**Minimum ERPM matters.** A speed setpoint under it doesn't run the speed loop: a running motor holds zero duty, a passive brake, and a released motor isn't started. On the Mini (2 pole pairs, geared 11.82:1, 54.8 mm wheel radius) 900 erpm is 0.22 m/s. The Mini's sensored motor turns steadily from about 150 rpm, so its Minimum ERPM is 300, 0.07 m/s, and the planner is floored just above: Nav2's velocity smoother has `deadband_velocity: [0.08, 0.0, 0.0]`, so any slower linear velocity reaches the VMS as zero, and the behaviours that drive a fixed speed floor at 0.10 m/s (`compose/compute/nav2/config/`). The vehicle drives above the floor, or stops; it never sits in the band where the VESC brakes. How low Minimum ERPM can go depends on the motor's sensor, which the [bench check](#bench-checks) measures.
 
 Motor current, battery current and erpm limits are set in VESC Tool's *Motor Settings* and hold whatever the VMS asks for. Set them for the motor and the battery first; the VMS's caps come on top.
 

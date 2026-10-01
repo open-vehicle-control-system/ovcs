@@ -100,11 +100,17 @@ controller_server:
       model_dt: 0.05
       batch_size: 1000
       vx_std: 0.2
-      wz_std: 0.4
-      vx_max: 1.5
-      vx_min: -0.5
+      # Larger steering noise shows up as wobble in the chosen command.
+      wz_std: 0.2
+      # Indoors: the stereo sees 3 m ahead.
+      vx_max: 0.6
+      # No reverse: stereo looks forward only, so the costmap behind the
+      # car is always empty.
+      vx_min: 0.0
       wz_max: 2.5
-      ax_max: 2.0
+      # From standstill MPPI reaches two steps of ax_max * model_dt, so
+      # this also sets how quickly a start clears the smoother's deadband.
+      ax_max: 1.0
       ax_min: -2.0
       az_max: 3.0
       iteration_count: 1
@@ -141,7 +147,7 @@ controller_server:
         cost_power: 1
         cost_weight: 3.81
         critical_cost: 300.0
-        consider_footprint: false
+        consider_footprint: true
         collision_cost: 1000000.0
         near_goal_distance: 1.0
       PathAlignCritic:
@@ -183,15 +189,41 @@ local_costmap:
       # normal boot. (Zero is not "wait forever" — it still errors;
       # measured.)
       initial_transform_timeout: 300.0
-      update_frequency: 5.0
-      publish_frequency: 2.0
+      update_frequency: 10.0
+      publish_frequency: 5.0
+      # Foxglove draws the full grid only, not costmap_updates.
+      always_send_full_costmap: true
       rolling_window: true
       width: 6
       height: 6
       resolution: 0.05
-      # Half the diagonal of a 568 x 296 mm truck, plus a little.
-      robot_radius: 0.35
-      plugins: ["inflation_layer"]
+      # The 568 mm body and 341 mm wheel envelope around base_link, which
+      # sits midway between the axles, plus 2 cm.
+      footprint: "[[0.30, 0.19], [0.30, -0.19], [-0.30, -0.19], [-0.30, 0.19]]"
+      plugins: ["obstacle_layer", "inflation_layer"]
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        # One cloud, two sources. Heights are in odom, whose z is the
+        # ground: marking ignores the floor, but clearing needs it, since
+        # in a clear path nearly every ray ends on the floor and would
+        # otherwise never erase a false match.
+        observation_sources: stereo_marking stereo_clearing
+        stereo_marking:
+          topic: /stereo/points
+          data_type: "PointCloud2"
+          marking: true
+          clearing: false
+          min_obstacle_height: 0.05
+          max_obstacle_height: 0.6
+          obstacle_max_range: 3.0
+        stereo_clearing:
+          topic: /stereo/points
+          data_type: "PointCloud2"
+          marking: false
+          clearing: true
+          min_obstacle_height: -0.5
+          max_obstacle_height: 0.6
+          raytrace_max_range: 3.5
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
@@ -204,7 +236,7 @@ global_costmap:
       global_frame: odom
       robot_base_frame: base_link
       initial_transform_timeout: 300.0
-      update_frequency: 1.0
+      update_frequency: 2.0
       publish_frequency: 1.0
       # Rolling, because without a map there is no fixed extent to
       # anchor a static costmap to.
@@ -212,8 +244,31 @@ global_costmap:
       width: 30
       height: 30
       resolution: 0.1
-      robot_radius: 0.35
-      plugins: ["inflation_layer"]
+      footprint: "[[0.30, 0.19], [0.30, -0.19], [-0.30, -0.19], [-0.30, 0.19]]"
+      plugins: ["obstacle_layer", "inflation_layer"]
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        # One cloud, two sources. Heights are in odom, whose z is the
+        # ground: marking ignores the floor, but clearing needs it, since
+        # in a clear path nearly every ray ends on the floor and would
+        # otherwise never erase a false match.
+        observation_sources: stereo_marking stereo_clearing
+        stereo_marking:
+          topic: /stereo/points
+          data_type: "PointCloud2"
+          marking: true
+          clearing: false
+          min_obstacle_height: 0.05
+          max_obstacle_height: 0.6
+          obstacle_max_range: 3.0
+        stereo_clearing:
+          topic: /stereo/points
+          data_type: "PointCloud2"
+          marking: false
+          clearing: true
+          min_obstacle_height: -0.5
+          max_obstacle_height: 0.6
+          raytrace_max_range: 3.5
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
@@ -266,13 +321,13 @@ behavior_server:
       plugin: "nav2_behaviors::Spin"
     # `minimum_speed` floors the ramp down at the end of a drive, which
     # would otherwise fall into the smoother's deadband and stall short
-    # of the distance. The BT XMLs command BackUp at the same speed.
+    # of the distance.
     backup:
       plugin: "nav2_behaviors::BackUp"
-      minimum_speed: 0.25
+      minimum_speed: 0.10
     drive_on_heading:
       plugin: "nav2_behaviors::DriveOnHeading"
-      minimum_speed: 0.25
+      minimum_speed: 0.10
     wait:
       plugin: "nav2_behaviors::Wait"
 
@@ -285,16 +340,16 @@ velocity_smoother:
     smoothing_frequency: 20.0
     scale_velocities: false
     feedback: "OPEN_LOOP"
-    max_velocity: [1.5, 0.0, 2.5]
-    min_velocity: [-0.5, 0.0, -2.5]
-    max_accel: [2.0, 0.0, 3.0]
+    max_velocity: [0.6, 0.0, 2.5]
+    min_velocity: [0.0, 0.0, -2.5]
+    max_accel: [1.0, 0.0, 3.0]
     max_decel: [-2.0, 0.0, -3.0]
-    # The VESC brakes instead of driving below its Minimum ERPM, 0.22
-    # m/s on this vehicle, so any slower linear velocity is sent as
-    # zero: the vehicle drives at 0.22 m/s or more, or stops. The
+    # The VESC brakes instead of driving below its Minimum ERPM (300, so
+    # 0.07 m/s on this vehicle), so any slower linear velocity is sent
+    # as zero: the vehicle drives above that floor, or stops. The
     # smoother ramps on its own state before this applies, so a start
     # still leaves the band.
-    deadband_velocity: [0.22, 0.0, 0.0]
+    deadband_velocity: [0.08, 0.0, 0.0]
     # How long the last input is held before ramping to zero. A planner
     # that stops publishing must not be held longer than the VMS's own
     # staleness timeout on 0x2B1 (300 ms, `RosVelocityCommand`).
