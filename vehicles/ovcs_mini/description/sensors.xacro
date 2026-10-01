@@ -2,8 +2,8 @@
 <!--
   Simulated sensors.
 
-  Sensor offsets are model parameters; the camera height and IMU mount
-  remain estimates. Exact placement in simulation does not validate the
+  Sensor offsets are model parameters; the IMU mount remains an
+  estimate. Exact placement in simulation does not validate the
   placement of the physical sensor.
 
   ## Frames
