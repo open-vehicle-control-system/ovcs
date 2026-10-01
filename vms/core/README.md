@@ -58,7 +58,7 @@ end
 
 The `source` field enables decoupling: components don't import each other directly. Instead, they receive source module atoms through their init configuration from the Composer.
 
-Cross-firmware traffic is automatic: every BEAM in the vehicle (VMS, infotainment, each bridge) is joined into a distributed Erlang mesh by `OvcsBus.Cluster`, so `OvcsBus.broadcast/2` reaches subscribers on every node. See [`OvcsBus`](../../libraries/ovcs_bus) for details.
+Every BEAM in the vehicle (VMS, infotainment, each bridge) is joined into a distributed Erlang mesh by `OvcsBus.Cluster`. `OvcsBus.broadcast/2` stays on the local node unless `:cluster_broadcast` is set. See [`OvcsBus`](../../libraries/ovcs_bus) for details.
 
 ### 4. Manager Pattern
 
