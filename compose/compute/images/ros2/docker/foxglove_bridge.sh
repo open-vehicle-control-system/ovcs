@@ -34,6 +34,10 @@ trap 'exit 0' INT TERM
   -p message_backlog_size:="${FOXGLOVE_MESSAGE_BACKLOG_SIZE}" &
 child_pids+=("$!")
 
+# Exits when the bridge stops draining its Zenoh session.
+python3 /usr/local/bin/foxglove_watchdog --pid "${child_pids[0]}" &
+child_pids+=("$!")
+
 python3 /usr/local/bin/foxglove_compression \
   --port "${FOXGLOVE_BRIDGE_PORT}" \
   --upstream-port "${FOXGLOVE_BRIDGE_INTERNAL_PORT}" &
