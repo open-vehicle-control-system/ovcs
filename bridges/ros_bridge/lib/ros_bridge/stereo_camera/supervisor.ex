@@ -17,7 +17,9 @@ defmodule RosBridge.StereoCamera.Supervisor do
            the image's own namespace, so without this a viewer cannot
            project the depth image and silently renders nothing,
          - `<topic_prefix>/disparity/image` (Image 32FC1, pixels) only
-           when `:publish_disparity_image` is set — see below.
+           when `:publish_disparity_image` is set — see below,
+         - `<topic_prefix>/left/image_rect/compressed` (JPEG) only when
+           `:publish_rectified_image` is set — see below.
 
   Children start in that order so each downstream child can register
   on its upstream during `init/1`.
@@ -46,6 +48,11 @@ defmodule RosBridge.StereoCamera.Supervisor do
       turning it on dropped `depth/image_rect` from ~7 Hz to 1.3 Hz
       while only 9.6 MB/s arrived — so this is a debugging aid to
       switch on deliberately, not something to leave running.
+    * `:publish_rectified_image` (`false`) — also publish the
+      rectified left image, pixel-aligned with the depth image and
+      stamped like it, for consumers that pair the two (RGB-D SLAM).
+      Its intrinsics are `<topic_prefix>/depth/camera_info`;
+      `<topic_prefix>/left/camera_info` describes the raw image.
     * `:topic_prefix` (`"stereo"`) — root of every topic this
       unit publishes. Also drives the default `frame_id` for each
       side (`<prefix>_left`, `<prefix>_right`).
@@ -104,6 +111,7 @@ defmodule RosBridge.StereoCamera.Supervisor do
       topic_prefix: topic_prefix,
       pair_tolerance_ms: Keyword.get(opts, :pair_tolerance_ms, @default_pair_tolerance_ms),
       publish_disparity_image: Keyword.get(opts, :publish_disparity_image, false),
+      publish_rectified_image: Keyword.get(opts, :publish_rectified_image, false),
       backend_opts: Keyword.get(opts, :backend_opts, []),
       left:
         resolve_side_opts(
@@ -226,6 +234,8 @@ defmodule RosBridge.StereoCamera.Supervisor do
       depth_topic: "#{config.topic_prefix}/depth/image_rect",
       depth_camera_info_topic: "#{config.topic_prefix}/depth/camera_info",
       cloud_topic: "#{config.topic_prefix}/points",
+      rectified_image_topic:
+        config.publish_rectified_image && "#{config.topic_prefix}/left/image_rect/compressed",
       pair_tolerance_ms: config.pair_tolerance_ms
     ]
 
