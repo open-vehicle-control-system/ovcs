@@ -18,14 +18,14 @@ compute/
 │   ├── ros2/             the shared ROS 2 image: entrypoint, Zenoh template, launchers
 │   ├── nav2/             the Nav2 image (Dockerfile only; it COPYs ../ros2 and ../../nav2)
 │   ├── rtabmap/          the RTAB-Map image (Dockerfile only; it COPYs ../ros2 and ../../rtabmap)
-│   ├── explore/          forward_explore, and explore_lite built from source (COPYs ../ros2, ../../explore)
+│   ├── explore/          camera-viewpoint supervisor (COPYs ../ros2, ../../explore)
 │   ├── wifi-firmware/    AX210 firmware staged into balenaOS's extra-firmware volume
 │   └── bridge-nat-fix/   keeps the host's NAT off frames bridged between eth0 and the AP
 ├── nav2/
 │   ├── launch/           baked into images/nav2 here, bind-mounted by ../local/simulation.yml
 │   └── config/           nav2.yaml and the Ackermann behaviour trees
 ├── rtabmap/              launch file and parameters baked into images/rtabmap
-├── explore/              forward_explore's code and tests, explore_lite's launch file, both parameter files
+├── explore/              viewpoint selection, motion guard, action handling, launch and tests
 └── host/                 NetworkManager keyfiles for balenaOS itself — installed by hand, once
 ```
 
@@ -86,61 +86,106 @@ python3 -m unittest discover -s images/ros2/docker/tests -v
 
 ### Mapping and exploring
 
-`rtabmap` builds the map continuously from the stereo bridge and
-`/odom`, and publishes it on `/rtabmap/map`. Each start of the service
-begins a new map, so restarting it starts one:
+`rtabmap` publishes `/rtabmap/map` and `map -> odom` from the stereo depth
+image and `/odom`. Its database persists across restarts. A new mapping
+session requires an explicit `delete_db_on_start:=true` launch argument;
+a failed database load does not silently erase the map. Every mapper
+restart changes `/rtabmap/session` and stops any active exploration.
 
-```sh
-balena-engine restart "$(balena-engine ps -qf name=rtabmap)"
-```
-
-Keeping a map across starts (`delete_db_on_start:=false` in the launch
-file) is not the default: a database written by an interrupted session
-can fail to reload and kill the node at every start.
-
-`explore` holds two explorers that send Nav2 goals over that map. Both
-start driving as soon as they run, so the container only idles and
-exploration is started by hand, with the vehicle in `:ros` /
-`:autonomous`. Stopping the process, or restarting the container, ends
-it; nothing restarts it on its own. The radio's control level switch
-takes the vehicle back at any time.
-
-`forward_explore` suits a car that sees ahead only and cannot turn on
-the spot. Each cycle it scores goals in a cone ahead, reachable along
-one arc no tighter than the turning radius and clear in the local
-costmap, by the unknown cells the camera would see from them, and sends
-the best. With nothing left to see ahead it reverses along an arc to
-the clearer side and turns on: a three-point turn, the reverse half
-driven by the `ReverseArc` controller. It stops
-at a time limit, when its reverse budget is spent or when nothing is
-reachable, and never sends a goal beyond a perimeter around the start
-(`explore/config/forward_explore.yaml`). Its candidates are published on
-`/forward_explore/candidates`, its decisions on `/rosout`:
+The `explore` container idles until launched. With the OVCS Mini reference
+vehicle in `:ros` / `:autonomous`, start it with:
 
 ```sh
 balena-engine exec -d "$(balena-engine ps -qf name=explore)" bash -lc \
-  'source /opt/ros/lyrical/setup.bash && exec python3 /opt/ovcs/forward_explore/forward_explore_node.py --ros-args --params-file /opt/ovcs/config/forward_explore.yaml'
+  'source /opt/ros/lyrical/setup.bash && exec ros2 launch /opt/ovcs/launch/explore.launch.py'
 ```
 
-`false` on `/forward_explore/resume` pauses it and cancels its goal;
-`true` resumes it. Appending `-p dry_run:=true` makes it choose and log
-without sending anything. Its geometry is tested without ROS:
+`forward_explore` scores known-free viewpoints facing map frontiers using
+the matched stereo field of view. It preflights candidate routes with `ComputePathToPose`, ranks their actual
+length against expected gain, then sends `NavigateToPose` goals. Smac
+Hybrid checks forward-only routes with a 0.70 m minimum turning radius, and
+Regulated Pure Pursuit follows them. The rear axle is the control reference.
+The camera origin is 0.204 m ahead and 0.045 m left of it. Every planned
+footprint must be in mapped free space and inside the mission perimeter.
+RPP follows forward routes and has a separate controller for short retreats.
+MPPI parameters are retained for explicit offline comparisons. There are no
+spin recoveries or obstacle-clearing recoveries. A viewpoint succeeds only with both its position and heading
+reached. Repeated failures or no map growth end the mission.
+
+If navigation fails or no forward route remains, the supervisor can retrace
+the last 0.20 m actually driven, at 0.10 m/s. It waits for the old action to
+terminate and for standstill, then submits that measured route to `FollowPath`.
+It attempts one retreat until a forward viewpoint produces new map coverage,
+with at most three retreats per mission. It replans after retreating and
+temporarily excludes failed goals. A failed retreat ends the mission.
+A short retreat may create turning room; it cannot escape every dead end.
+
+The velocity path is:
+
+```text
+Nav2 -> /cmd_vel_nav_raw -> velocity_smoother -> /cmd_vel_nav_smoothed
+     -> motion_guard -> /cmd_vel_nav -> ROS bridge -> CAN -> VMS
+```
+
+The guard runs independently of the explorer. Motion requires an accepted
+action, a checked plan and a lease renewed within 0.5 s. It checks source
+and receipt timestamps for odometry, point clouds, costmaps, maps and mapper
+heartbeats, plus TF age. All boards must use synchronized clocks; source
+timestamps more than 100 ms in the future are rejected. It tests the full footprint through a stopping
+envelope against the map, local costmap and perimeter. Reverse requires a
+separate retreat authorization and recently traversed space (15 s). The guard
+limits it to 0.10 m/s and cuts commands after 0.25 m measured travel or 6 s
+per attempt; heartbeats cannot renew those limits. The overall reverse budget
+is 1 m per mission.
+All motion is limited to 0.25 m/s and 600 s. The RPP approach floor is
+0.10 m/s, above the smoother's 0.08 m/s deadband. Velocity limits preserve
+curvature. The bridge also rejects delayed or replayed stamped commands.
+
+A new map cannot certify the stereo camera's blind area under and behind
+the vehicle. Start from a mapped, clear staging area; the supervisor waits
+until the complete footprint is known free. Unknown space never becomes
+free merely because a local obstacle expired. Depth and cloud share the
+same spatially filtered disparity; no camera-frame temporal persistence
+filter discards newly observed obstacles. Both mapping and local obstacle
+marking use a 5 cm ground threshold.
+
+Publish `false` on `/forward_explore/resume` to pause. The lease is revoked
+immediately and cancellation is retained even if Nav2 accepts the goal
+later. Publish `true` after cancellation completes to begin a new mission
+at the current pose. A completed or faulted process must be launched again.
+Stopping or killing the explorer expires its lease. The radio's control
+level switch remains the physical authority over ROS commands.
+
+Use `dry_run:=true` on the launch command to inspect candidates without
+sending goals. Viewpoints appear on `/forward_explore/candidates`; decisions
+appear on `/rosout`, and `/motion_guard/status` reports the stop reason,
+fault and measured reverse distance. The tunable defaults live in
+`explore/config/forward_explore.yaml` and `nav2/config/nav2.yaml`.
+
+Offline checks, from the repository root:
 
 ```sh
-python3 -m unittest discover -s explore/forward_explore/tests -v
+python3 -m unittest discover -s compose/compute/explore/forward_explore/tests -v
+compose/local/scripts/verify_exploration.sh
 ```
 
-explore_lite drives towards the frontiers of the whole map, which suits
-a robot that sees all around and turns on the spot better than this
-car:
+The first command needs NumPy; ROS-specific tests run inside the Nav2
+image in CI. The second builds that image and runs real Nav2 servers,
+the explorer and guard in network-isolated containers against a synthetic
+map/cloud source and an Ackermann plant with steering lag and a speed
+deadband. It checks mapped motion, arrival, perimeter, reverse budget and
+stopping after sensor, TF or explorer loss, including during retreat. The
+dead-end case must complete one short retreat without repeating it. It leaves JSON results and
+logs in the printed directory. It does not exercise camera matching,
+RTAB-Map loop closures, CAN timing or physical motor braking.
 
-```sh
-balena-engine exec -d "$(balena-engine ps -qf name=explore)" bash -lc \
-  'source /opt/ros/lyrical/setup.bash && source /opt/explore/install/setup.bash && ros2 launch /opt/ovcs/launch/explore.launch.py'
-```
-
-`false` on `/explore/resume` pauses it and cancels its goal; `true`
-resumes it.
+The stopping envelope assumes at least 0.3 m/s² deceleration and 0.6 s
+reaction time. Those values and the 5 cm ground threshold need measured
+vehicle validation. Zero ROS velocity is not evidence of physical standstill;
+the Mini's VESC zero-duty behavior, stopping distance, camera calibration,
+floor reflections and thin obstacles must be checked before unattended use.
+The forward camera cannot detect a new obstacle entering behind the vehicle;
+recent traversal does not guarantee current rear clearance.
 
 ### Rehearsing on a workstation
 

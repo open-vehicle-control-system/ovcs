@@ -11,11 +11,12 @@
 # TwistStamped straight into its own Ackermann plugin, bypassing the
 # bridge, the CAN frames and the VMS entirely. Here every hop is the
 # vehicle's own code; only the physics is missing, so the vehicle
-# never moves and never arrives. The assertions are about what flows,
+# never moves and never arrives. The map and cloud are synthetic; this
+# checks command transport, not perception or obstacle avoidance. The assertions are about what flows,
 # not where it gets to:
 #
 #   /odom is published            (VMS 0x60B -> bridge dead reckoning)
-#   Nav2 finishes lifecycle bringup (its costmaps accepted the tf)
+#   Nav2 finishes lifecycle bringup (synthetic map/cloud; real VMS odometry)
 #   0x2B1 carries a command        (Nav2 -> Zenoh -> bridge -> CAN)
 #
 # Needs: the ovcs CLI built (mise run cli), vcan support, docker,
@@ -32,6 +33,13 @@ LOCAL="$(cd "$HERE/.." && pwd)"
 REPO="$(cd "$HERE/../../.." && pwd)"
 
 KEEP_UP="${KEEP_UP:-0}"
+# This verifier owns these containers; never replace another running stack.
+for container in ovcs-zenohd ovcs-ros2 ovcs-nav2-vehicle; do
+  if docker container inspect "$container" >/dev/null 2>&1; then
+    printf 'Container %s already exists; use a separate test host or stop that stack first.\n' "$container" >&2
+    exit 1
+  fi
+done
 RUN_PID=""
 CANGEN_PID=""
 
@@ -143,6 +151,11 @@ log "Starting Nav2 now that odometry is live"
   --profile nav2 up -d nav2) \
   || { fail "nav2 failed to start"; exit 1; }
 
+log "Starting synthetic perception and the real exploration supervisor (virtual CAN only)"
+(timeout 180 docker exec -i -e OVCS_OFFLINE_FIXTURE=1 ovcs-nav2-vehicle bash -lc \
+  'source /opt/ros/lyrical/setup.bash; exec python3 -') \
+  < "$LOCAL/simulation/scripts/planner_fixture.py" >/tmp/ovcs-planner-fixture.log 2>&1 &
+
 log "Waiting for Nav2 lifecycle bringup"
 ok=0
 for _ in $(seq 1 24); do
@@ -170,12 +183,6 @@ fi
 # Together they are the whole path, each leg deterministic.
 
 log "Leg A: a goal makes Nav2 command a nonzero velocity on /cmd_vel_nav"
-(timeout 30 docker exec ovcs-nav2-vehicle bash -lc \
-  'source /opt/ros/lyrical/setup.bash 2>/dev/null;
-   ros2 action send_goal /navigate_to_pose nav2_msgs/action/NavigateToPose \
-     "{pose: {header: {frame_id: odom}, pose: {position: {x: 5.0}, orientation: {w: 1.0}}}}" \
-     >/dev/null 2>&1') &
-sleep 2
 nav_cmd=0
 for _ in $(seq 1 8); do
   x=$(cd "$LOCAL" && timeout 12 docker compose -f base.yml exec -T ros2 bash -lc \
@@ -191,6 +198,8 @@ if [ "$nav_cmd" -ne 1 ]; then
   exit 1
 fi
 
+# Stop the guard before the direct bridge probe so it cannot publish competing zeros.
+(cd "$LOCAL" && docker compose -f base.yml --profile nav2 stop nav2) || exit 1
 log "Leg B: a nonzero /cmd_vel_nav reaches the CAN bus as nonzero 0x2B1"
 # Driven directly rather than through Nav2, so the assertion does not
 # depend on the progress checker leaving a command up long enough to
@@ -198,7 +207,7 @@ log "Leg B: a nonzero /cmd_vel_nav reaches the CAN bus as nonzero 0x2B1"
 (cd "$LOCAL" && timeout 15 docker compose -f base.yml exec -T ros2 bash -lc \
   'source /opt/ros/lyrical/setup.bash 2>/dev/null;
    ros2 topic pub -r 10 /cmd_vel_nav geometry_msgs/msg/TwistStamped \
-     "{header: {frame_id: base_link}, twist: {linear: {x: 0.5}, angular: {z: 0.3}}}" \
+     "{header: auto, twist: {linear: {x: 0.5}, angular: {z: 0.3}}}" \
      >/dev/null 2>&1') &
 sleep 2
 frames=$(timeout 12 candump -n 60 vcan0,2B1:7FF 2>/dev/null)

@@ -15,7 +15,7 @@ A map, not a manual: what runs when OVCS talks to ROS 2, who owns time, which co
 
 Everything ROS-shaped speaks **Zenoh**, not DDS. ROS 2 nodes use `rmw_zenoh_cpp`; the Elixir bridge speaks the `rmw_zenoh` wire format natively through `zenohex` and links nothing from ROS. Every participant is a *client* of one router (`zenohd`): no multicast discovery to configure, and a simulated vehicle appears on the same fabric as a real one.
 
-The vehicle is the router, so the fabric survives the laptop leaving. With no vehicle on the LAN, `compose/local/base.yml` carries a copy of `zenohd` behind the `standalone` profile; every simulator session and every `verify-*` task uses it.
+The vehicle is the router, so the fabric survives the laptop leaving. With no vehicle on the LAN, `compose/local/base.yml` carries a copy of `zenohd` behind the `standalone` profile. Simulator sessions use it; the isolated exploration verifier starts its own router inside each test container.
 
 Three consequences of the wire format:
 
@@ -76,8 +76,9 @@ The boundary between Gazebo's transport and ROS is exactly the list in `sim.laun
 | `/stereo/{left,right}/image_raw/compressed` | `sensor_msgs/CompressedImage` | `image_bridge` | `RosBridge.Camera.Zenoh` |
 | `/stereo/{left,right}/camera_info` | `sensor_msgs/CameraInfo` | Gazebo **and** the perception bridge (from its calibration YAML) | Foxglove, the calibrator |
 | `/cmd_vel` | `geometry_msgs/Twist` | `teleop_twist_joy`, `drive_test.py` | `AckermannSteering` |
-| `/cmd_vel_nav_raw` | `geometry_msgs/TwistStamped` | Nav2 `controller_server`, `behavior_server` | Nav2 `velocity_smoother`, `nav2_test.py` |
-| `/cmd_vel_nav` | `geometry_msgs/TwistStamped` | Nav2 `velocity_smoother` | `AckermannSteering` (sim) or `RosBridge.Consumers.Velocity` (vehicle) |
+| `/cmd_vel_nav_raw` | `geometry_msgs/TwistStamped` | Nav2 `controller_server` | Nav2 `velocity_smoother` |
+| `/cmd_vel_nav_smoothed` | `geometry_msgs/TwistStamped` | Nav2 `velocity_smoother` | `motion_guard` |
+| `/cmd_vel_nav` | `geometry_msgs/TwistStamped` | `motion_guard` | `AckermannSteering` (sim) or `RosBridge.Consumers.Velocity` (vehicle) |
 | `/stereo/...` disparity, depth, points, detections | `stereo_msgs`, `sensor_msgs`, `vision_msgs` | perception bridge | Foxglove, `perception_test.py` |
 | `/ovcs_heartbeat` | `std_msgs/String` | every `RosBridge` that lists `:heartbeat` | you, to see the BEAM is alive |
 
@@ -131,7 +132,7 @@ Three ways a velocity command reaches a drivetrain. Two exist in the simulator; 
 ```text
 In the simulator
   teleop_twist_joy ──/cmd_vel (Twist)──────────► parameter_bridge ─────┐
-  Nav2 velocity_smoother ──/cmd_vel_nav (TwistStamped)► parameter_bridge_nav ─┤
+  Nav2 motion_guard ───────/cmd_vel_nav (TwistStamped)► parameter_bridge_nav ─┤
                                             /model/ovcs_mini/cmd_vel ◄──┘
                                             Gazebo AckermannSteering
 
@@ -148,7 +149,7 @@ On the vehicle (OVCS Mini)
                                    Nav2 (onboard)
 ```
 
-The simulator loop bypasses the vehicle loop entirely: Nav2's `TwistStamped` goes straight into Gazebo's plugin, which solves the Ackermann kinematics itself. A simulated run proves Nav2 can *plan and command* for a car, and nothing about the VMS converting those commands. `verify-planner-loop` covers that without Gazebo: the vehicle's Nav2 image plans against odometry dead-reckoned by the real bridge from the real VMS's frames, and its commands are asserted on the CAN bus. Only the physics is missing; a Gazebo model driven by the VMS over virtual CAN does not exist.
+The simulator loop bypasses the vehicle loop entirely: Nav2's `TwistStamped` goes straight into Gazebo's plugin, which solves the Ackermann kinematics itself. A simulated run proves Nav2 can *plan and command* for a car, and nothing about the VMS converting those commands. `verify-planner-loop` covers that without Gazebo: the vehicle's Nav2 image plans against odometry dead-reckoned by the real bridge from the real VMS's frames, and its commands are asserted on the CAN bus. That stationary test supplies synthetic map/cloud inputs; it checks transport, not perception. A Gazebo model driven by the VMS over virtual CAN does not exist.
 
 ### The vehicle's own motion (0x60B)
 
@@ -195,41 +196,51 @@ A yaw rate the steering cannot achieve collapses to full lock rather than an err
 
 ## Nav2, as configured here
 
-Nav2 1.5.1: a lifecycle manager and four servers (`controller_server`, `planner_server`, `behavior_server`, `bt_navigator`) plus `velocity_smoother`. Not `nav2_bringup`, which is absent from the Lyrical archive and would pull in map_server and AMCL.
-
-One configuration, three deployments. The parameter file, behaviour trees and launch file live in `compose/compute/nav2/`; the image is `compose/compute/images/nav2/`, tagged `ovcs/nav2:lyrical` wherever it is built.
-
-| Where | Compose | Clock |
-|---|---|---|
-| The vehicle's compute node | `compose/compute/docker-compose.yml`, always on | wall |
-| A dev machine, against a host VMS and bridge | `compose/local/base.yml --profile nav2` | wall |
-| Against the simulator | `compose/local/simulation.yml --profile nav2` | `use_sim_time:=true` |
-
-The file holds the vehicle's values (`use_sim_time: false`); the simulator overrides the clock with a launch argument rather than keeping a copy that would drift.
+The OVCS Mini reference vehicle uses Nav2 1.5.1 with Smac Hybrid route
+planning and Regulated Pure Pursuit tracking. Smac is built from the pinned
+Nav2 release because the ROS snapshot has no binary package for it. The retained MPPI parameters are enabled only by the offline test
+runner's `--controller MPPI` option; the deployed controllers use RPP for forward tracking and short retreats. The parameter
+file and behavior trees in `compose/compute/nav2/` are shared by the vehicle
+and simulation; launch with `use_sim_time:=true` for Gazebo.
 
 ```text
-NavigateToPose goal ─► bt_navigator ─► planner_server (NavFn) ─► path
-                                   └─► controller_server (MPPI) ◄─ /odom, /tf, costmaps (/stereo/points)
-controller_server, behavior_server ─/cmd_vel_nav_raw─► velocity_smoother ─/cmd_vel_nav @ 20 Hz─►
+viewpoint supervisor -> NavigateToPose -> Smac Hybrid -> RPP
+RPP -> velocity smoother -> motion guard -> /cmd_vel_nav -> vehicle
 ```
 
-What is deliberately unusual:
+Navigation needs the RTAB-Map occupancy grid and `map -> odom` transform.
+The global costmap uses that map, with unknown space blocked. The local
+costmap uses stereo points with a 5 cm obstacle-height threshold and 15 s
+voxel decay. The independent guard still requires mapped-free clearance;
+voxel expiry cannot authorize unseen reverse motion.
 
-- **No map, no AMCL.** Every frame is `odom` and both costmaps roll with the vehicle: enough to prove the velocity path drives an Ackermann vehicle without the SLAM question, and no fake static `map → odom`, which looks like localisation and is not.
-- **Stereo is the only obstacle source.** Both costmaps mark `/stereo/points` between 12 cm and 60 cm above the ground, up to 3 m: a glossy floor's reflections read 7–10 cm high, so lower obstacles go unseen. The global costmap clears by raytracing to 3.5 m. The local costmap uses the spatio-temporal voxel layer: its marks expire after 15 s, and faster inside the camera's frustum (0.55–3 m, the matched part of the image) when they are no longer seen, because a forward-only camera never looks again at what it turned away from. Without the perception pipeline running they stay inflation-only, and nothing is avoided.
-- **`AckermannConstraints`.** MPPI's `motion_model` names a plugin *instance*; the class, `mppi::AckermannMotionModel`, comes from `<instance>.plugin`. It clamps yaw rate to `|vx| / min_turning_r` inside the sampler, so infeasible arcs are never considered. `min_turning_r` is `0.324 / tan(0.52) = 0.566 m`, rounded up to 0.6.
-- **`TwistStamped` on `/cmd_vel_nav`.** `nav2_util::TwistPublisher` defaults `enable_stamped_cmd_vel` to true; its header comment says otherwise, and the code wins.
-- **A 0.08 m/s floor.** Below its Minimum ERPM (300) the Mini's VESC brakes instead of driving, 0.07 m/s through the gearing ([VESC drivetrain](./vesc_drivetrain.md)). `velocity_smoother` has a `deadband_velocity` of 0.08 m/s, so a slower linear velocity goes out as zero. DriveOnHeading floors at `minimum_speed: 0.10` for the same reason.
-- **No reverse, 0.6 m/s, 1 m/s².** MPPI's `vx_min` is 0: with stereo looking forward only, any reverse is driven blind. `vx_max` is 0.6 m/s indoors, and acceleration 1 m/s² (braking 2): from standstill MPPI reaches two steps of `ax_max × model_dt`, 0.10 m/s, above the 0.08 m/s deadband.
-- **`BackUp` reverses only 15 cm, at 0.10 m/s.** Stereo looks forward only, so the costmap behind the car is always empty and a reverse is driven blind; MPPI's `vx_min` of 0 keeps the controller forward. Without any reverse, though, a car that cannot turn tighter than its radius stays stuck facing an obstacle, so the recovery backs up 15 cm, within the ground it has just driven over. The velocity smoother allows −0.10 m/s for it.
-- **No `Spin` in either behaviour tree.** A car produces no motion from a spin, so it ran its full duration and burned a recovery slot. The spin *server* stays loaded because `bt_navigator` resolves every action at activation.
-- **NavFn, not Smac.** No `nav2_smac_planner` in the archive, so the global plan knows nothing about turning radius; MPPI carries the corners the car cannot cut.
-- **`ReverseArc`, a second controller.** Regulated Pure Pursuit with `allow_reversing` drives a path that lies behind the car, so a caller can reverse along an arc; MPPI stays forward-only. Nothing in the behaviour trees uses it: `forward_explore` sends its three-point turns to it through `follow_path`.
-- **`yaw_goal_tolerance` is 3.15.** A car cannot rotate in place to a final heading.
+The rear axle is the Ackermann control frame. Smac uses a 0.70 m minimum
+turning radius and Dubins forward-only search. The forward RPP controller disables reversing and in-place rotation
+and keeps approach speed at or above 0.10 m/s, above the 0.08 m/s drivetrain
+deadband. Goal tolerance is 0.12 m and 0.20 rad. The behavior trees return
+failures to the supervisor without spin, blind backup or costmap clearing.
+The supervisor can separately retrace 0.20 m of recent measured odometry at
+0.10 m/s through `FollowPath`, after the forward action terminates and motion
+stops. One attempt is allowed until a forward viewpoint adds map coverage,
+with three attempts per mission. A failed retreat stops exploration.
 
-### Arriving proves almost nothing
+Only the guard publishes `/cmd_vel_nav`. It limits forward speed to
+0.25 m/s, retreat speed to 0.10 m/s, and requires fresh sensor data, transforms,
+a validated plan and an expiring exploration lease. Reverse must remain
+inside recently traversed space, and its 1 m mission budget is measured
+from odometry. The complete footprint, including its corners, must remain
+inside mapped free space. Each retreat has an independent 0.25 m measured
+command cutoff and 6 s timeout. Recent traversal cannot confirm that a new
+obstacle has not entered behind a forward-facing camera. Motion stays
+inside the 4 m mission perimeter. See [mapping and exploring](../compose/compute/README.md#mapping-and-exploring)
+for launch commands, stop reasons, offline tests and physical validation limits.
 
-Gazebo's `AckermannSteering` quietly ignores commands it cannot execute. With `mppi::DiffDriveMotionModel` substituted in, the vehicle reached the tight goal *better* than the correct configuration (0.30 m against 0.53 m) while commanding **3.68×** the kinematic yaw-rate limit. So `nav2_test.py` asserts on what was *commanded*, and uses two goals because no single goal tests both arrival and the limits.
+`mise run verify-nav2` runs the isolated closed-loop exploration checks.
+These execute the real Nav2 stack against an Ackermann plant with actuator
+lag and a deadband, plus synthetic map/cloud data. They require goal arrival
+and check commands, collisions, perimeter and fault stops. They do not prove
+stereo matching, SLAM accuracy or VESC braking. The separate Gazebo drivetrain
+and perception verifiers cover those software paths independently.
 
 ## Perception against the simulator
 
@@ -292,11 +303,11 @@ Each is one command: it brings the stack up, asserts, and tears it down. Each ex
 | Task | Script | Proves | What `/odom` alone could not |
 |---|---|---|---|
 | `mise run verify-drivetrain` | `drive_test.py` | wheel radius, wheelbase, steering geometry | a wrong wheel radius cancels inside `AckermannSteering`: `/odom` reports 1.000 m/s while the car crawls at 0.548. The check reads `/joint_states`. |
-| `mise run verify-nav2` | `nav2_test.py` | Nav2 arrives at an easy goal **and** commands within the Ackermann limits at a tight one | a differential-drive motion model arrives *better* while commanding 3.68× the limit |
+| `mise run verify-nav2` | `exploration_test.py` | bounded exploration, completed viewpoints and fault stops in isolated containers | fresh sensors and an active lease are required independently of Nav2 |
 | `mise run verify-perception` | `perception_test.py` | depth median within 5 cm of the near box, p75 within 10 cm of the far box, p95 inside the room; fused detection depth within 5 cm when run with `OVCS_DETECTOR=stub` | geometry is checked tightly; rates only against a floor |
 | `mise run verify-planner-loop` | `verify_planner_loop.sh` | no simulator: the vehicle's Nav2 image plans against `/odom` dead-reckoned by the host bridge from the host VMS's `0x60B`, and a goal produces nonzero `0x2B1` on vcan | the VMS-side conversion path, which Gazebo's loop bypasses |
 
-Each script starts the standalone router, then the simulator (`verify-planner-loop` starts none: a host VMS and bridge on vcan instead), then Nav2 or the perception bridge where needed, and pipes the test into a container: the base stack's `ros2`, or `ovcs-nav2` for `verify-nav2`, which needs `nav2_msgs`. It then tears down, the BEAM first because it holds a Zenoh session. The waits are fixed sleeps (drivetrain 20 s; nav2 20 s then 30 s; perception 25 s), so a slower machine can fail a verifier without anything being wrong. `KEEP_UP=1` leaves the stack running. `verify-perception` also needs the `mise` toolchain and a `vcan0`, because it runs the real Elixir bridge and Cantastic will not start without a CAN network. `verify-planner-loop` needs `cli/ovcs` built (`mise run cli`) and can-utils.
+`verify-nav2` uses `--network none` and owns no shared router or simulator containers. The other scripts start the standalone router, then the simulator (`verify-planner-loop` starts none: a host VMS and bridge on vcan instead), then Nav2 or the perception bridge where needed. They tear down the BEAM first because it holds a Zenoh session. The Gazebo startup waits are fixed sleeps (drivetrain 20 s; perception 25 s), so a slower machine can fail a verifier without anything being wrong. `KEEP_UP=1` leaves the stack running. `verify-perception` also needs the `mise` toolchain and a `vcan0`, because it runs the real Elixir bridge and Cantastic will not start without a CAN network. `verify-planner-loop` needs `cli/ovcs` built (`mise run cli`) and can-utils.
 
 ## Verifying end to end
 
@@ -329,7 +340,7 @@ Or open Foxglove Studio against `ws://<docker-host>:8765` and subscribe to `/ovc
 | the velocity command path | `bridges/ros_bridge/lib/ros_bridge/consumers/velocity.ex` | `0x2B1_ros_velocity_command.yml`, `vms/core/lib/vms_core/components/ovcs/ros_velocity_command.ex` |
 | odometry on the vehicle | `bridges/ros_bridge/lib/ros_bridge/publishers/odometry.ex` | `0x60B_vehicle_motion.yml`, `vms/core/lib/vms_core/components/ovcs/vehicle_motion.ex` |
 | who commands the vehicle | [Your vehicle package](./vehicle_package.md#control-levels-who-commands-and-which-ros-node) | `vms/core/lib/vms_core/managers/control_level.ex` |
-| Nav2's configuration | `compose/compute/nav2/config/nav2.yaml` (heavily commented) | `nav2_ackermann_bt.xml` beside it, `compose/local/simulation/scripts/nav2_test.py` |
+| Nav2's configuration | `compose/compute/nav2/config/nav2.yaml` | `nav2_ackermann_bt.xml` beside it, `compose/local/simulation/scripts/exploration_test.py` |
 | the perception pipeline | [Perception: object detection](./ros2_perception.md) | `bridges/ros_bridge/lib/ros_bridge/camera/zenoh.ex`, `stereo_camera/supervisor.ex` |
 | the vehicle's ROS computer | [ROS compute node](./ros2_compute_node.md) | `compose/compute/`, [`compose/README.md`](../compose/README.md) |
 | the model's geometry | `vehicles/ovcs_mini/description/ovcs_mini.urdf.xacro` | `gazebo_ackermann.xacro`, `OvcsMini.geometry/0` |

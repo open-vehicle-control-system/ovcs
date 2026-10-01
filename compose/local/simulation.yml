@@ -90,10 +90,44 @@ services:
     volumes:
       - ../compute/nav2/launch:/opt/ovcs/launch:ro
       - ../compute/nav2/config:/opt/ovcs/config:ro
+      - ../compute/explore/forward_explore:/opt/ovcs/forward_explore:ro
     command:
       - bash
       - -lc
       - "ros2 launch /opt/ovcs/launch/nav2.launch.py use_sim_time:=true"
+
+  rtabmap:
+    extends:
+      file: common.yml
+      service: fabric-client
+    build:
+      context: ../compute
+      dockerfile: images/rtabmap/Dockerfile
+    image: ovcs/rtabmap:lyrical
+    profiles: ["mapping"]
+    volumes:
+      - ../compute/rtabmap/launch:/opt/ovcs/launch:ro
+      - ../compute/rtabmap/config:/opt/ovcs/config:ro
+      - ../compute/rtabmap/scripts:/opt/ovcs/scripts:ro
+      - simulated-map:/var/lib/rtabmap
+    command: ["bash", "-lc", "ros2 launch /opt/ovcs/launch/rtabmap.launch.py use_sim_time:=true delete_db_on_start:=true"]
+
+  explore:
+    extends:
+      file: common.yml
+      service: fabric-client
+    build:
+      context: ../compute
+      dockerfile: images/explore/Dockerfile
+    image: ovcs/explore:lyrical
+    profiles: ["explore"]
+    restart: "no"
+    volumes:
+      - ../compute/explore/launch:/opt/ovcs/launch:ro
+      - ../compute/explore/config:/opt/ovcs/config:ro
+      - ../compute/explore/forward_explore:/opt/ovcs/forward_explore:ro
+    # Start explicitly; a simulator restart must not restart exploration.
+    command: ["sleep", "infinity"]
 
   teleop:
     # The gamepad, as its own service so the simulation never requires
@@ -143,3 +177,6 @@ services:
       - bash
       - -lc
       - "gz sim -g"
+
+volumes:
+  simulated-map:

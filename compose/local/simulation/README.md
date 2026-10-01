@@ -17,7 +17,7 @@ The simulator speaks Zenoh like everything else, so a simulated vehicle appears 
 
 ```text
 compose/local/
-  simulation.yml          the stack: sim, teleop, gz-gui, nav2
+  simulation.yml          the stack: sim, teleop, gz-gui, nav2, rtabmap, explore
   images/sim/             the Gazebo Jetty image
   simulation/             worlds, shared macros, sim.launch.py, gamepad mapping, test scripts
   scripts/verify_*.sh     the verifiers behind `mise run verify-*`
@@ -78,10 +78,10 @@ Tear down with `docker compose -f simulation.yml down`, plus `docker compose -f 
 |---|---|---|---|
 | gamepad | `docker compose -f simulation.yml --profile teleop up -d teleop` | drive with a stick instead of `topic pub` | a joystick at `/dev/input/js0` |
 | drivetrain | `mise run verify-drivetrain` | odometry checked against the model's geometry | Docker |
-| navigation | `mise run verify-nav2` | Nav2 planning and driving to a goal | Docker |
+| navigation | `mise run verify-nav2` | isolated Nav2 exploration, arrival and sensor-loss checks | Docker |
 | depth | `mise run verify-perception` | the **real** stereo pipeline, checked against the world | Docker, `mise`, `vcan0` |
 
-The `verify-*` tasks bring the whole stack up, assert, and tear it down: one command that passes or tells you what broke. `KEEP_UP=1` leaves the stack running to poke at.
+`verify-nav2` uses network-isolated containers with a synthetic Ackermann plant and map/cloud source. It saves logs and JSON results in a temporary directory. The Gazebo `verify-*` tasks bring their stack up, assert, and tear it down; `KEEP_UP=1` leaves those stacks running.
 
 `verify-perception` runs the actual Elixir perception bridge rather than a ROS node, so it needs the `mise` toolchain and a `vcan0`, since Cantastic will not start without a CAN network. It checks for `vcan0` up front and tells you if it is missing:
 
@@ -91,7 +91,28 @@ mise run cli                  # builds ./ovcs, needs Rust
 ```
 
 > [!WARNING]
-> Stop driving before you verify. Nothing arbitrates `/cmd_vel`: a `topic pub` left running, or the teleop service, publishes against the verifier's own commands, and the failure does not name the cause. `^C` the publisher or run `docker compose -f simulation.yml stop teleop` first. Nav2 has its own ROS topic, `/cmd_vel_nav`, but both bridges drive the same Gazebo command topic, so a leftover `/cmd_vel` publisher disturbs `verify-nav2` as well.
+> Stop driving before you verify. Nothing arbitrates `/cmd_vel`: a `topic pub` left running, or the teleop service, publishes against the verifier's own commands, and the failure does not name the cause. `^C` the publisher or run `docker compose -f simulation.yml stop teleop` first. Nav2 has its own ROS topic, `/cmd_vel_nav`, but both bridges drive the same Gazebo command topic, so run only one commander in an interactive Gazebo session. The isolated `verify-nav2` test cannot receive these commands.
+
+## Mapping and exploration in Gazebo
+
+Start the real perception bridge described below, then start the mapper,
+Nav2 and the idle exploration container on the same local fabric:
+
+```sh
+docker compose -f simulation.yml --profile mapping --profile nav2 --profile explore up -d rtabmap nav2 explore
+```
+
+Both mapping and navigation use Gazebo's clock. Manually map a clear
+staging area, stop the manual commander, then start the supervisor:
+
+```sh
+docker compose -f simulation.yml exec explore bash -lc \
+  'ros2 launch /opt/ovcs/launch/explore.launch.py use_sim_time:=true'
+```
+
+`dry_run:=true` shows candidate viewpoints without goals. The simulation
+mapper explicitly starts a new database at each start; the vehicle keeps
+its database. A mapper restart stops exploration in either case.
 
 ## What the verifiers prove
 
@@ -181,35 +202,23 @@ Two things produce **no disparity at all**:
 ## Navigating with Nav2
 
 ```sh
-mise run verify-nav2            # up, navigate, check, down
-KEEP_UP=1 mise run verify-nav2  # leave the stack up
-
-# or by hand
-docker compose -f simulation.yml --profile nav2 up -d nav2
-docker logs -f ovcs-nav2
+mise run verify-nav2
 ```
 
-This is Nav2 from the Lyrical apt archive (1.5.1 when written) in the **vehicle's own image** (`compose/compute/images/nav2/`, tagged `ovcs/nav2:lyrical`), with the vehicle's parameters and behaviour trees mounted in, behind a profile so a plain `up -d` stays a bare simulator. The one difference is the clock, a visible launch argument (`use_sim_time:=true`). No map and no AMCL: every frame is `odom` and both costmaps roll with the vehicle.
+The offline verifier uses the vehicle's Nav2 image with the same parameters,
+behavior trees, supervisor and guard. It runs in `--network none` containers
+and saves logs and JSON results. It requires completed viewpoints and checks
+commands against the Ackermann limits, map occupancy and mission perimeter.
+The dead-end case must complete one short retreat over the driven route;
+cloud and explorer losses are also injected during reverse motion. Sensor,
+TF and explorer losses must stop motion. The synthetic plant includes
+steering-rate limits, acceleration and the 0.08 m/s drive deadband.
 
-The controller and behaviours publish `/cmd_vel_nav_raw`; `velocity_smoother` republishes it on `/cmd_vel_nav` with a deadband that sends any linear velocity under 0.08 m/s as zero, the Mini's VESC floor ([VESC drivetrain](../../../docs/vesc_drivetrain.md)). Gazebo would drive slower; the deadband is there to run the vehicle's configuration. `nav2_test.py` checks the controller's own output on `/cmd_vel_nav_raw`.
-
-### Four things that fail silently
-
-- **Nav2 publishes `TwistStamped`.** `nav2_util::TwistPublisher` defaults `enable_stamped_cmd_vel` to true, whatever its header comment says. The `/cmd_vel` bridge is unstamped, so Nav2 has its own topic (`/cmd_vel_nav`) and its own bridge node onto the same Gazebo topic. Without it, a healthy-looking Nav2 moves nothing.
-- **`motion_model` names a plugin instance, not a class.** The class comes from `<instance>.plugin`; naming the class directly fails with "No 'plugin' param for param ns!". Leaving `motion_model` unset fails loudly: MPPI defaults it to `diff_drive`, which has no `.plugin`, so the controller refuses to configure.
-- **The odometry frame needs `<frame_id>`.** Without it `AckermannSteering` namespaces the frame by model name (`ovcs_mini/odom`), Nav2 rejects it, and every costmap logs `Invalid frame ID "odom"` and never activates. `gazebo_ackermann.xacro` sets `odom` / `base_link`, at 50 Hz.
-- **`Spin` aborts navigation on a car.** Both stock behaviour trees put it in their recovery branch; an Ackermann vehicle produces no motion from a spin, so it runs its full duration and burns a recovery slot. Both trees drop it. The spin *server* stays loaded because `bt_navigator` resolves every action at activation.
-
-### Arriving proves almost nothing
-
-`AckermannSteering` quietly ignores commands it cannot execute, so a controller configured for a differential-drive robot still arrives while commanding arcs the steering could never cut. With `mppi::DiffDriveMotionModel` substituted in, the vehicle reached the tight goal *better* than the correct configuration (0.30 m against 0.53 m) while commanding a yaw rate 3.68× the kinematic limit. So `nav2_test.py` asserts on what was **commanded**, with two goals because no single goal tests both:
-
-| Goal | Required arc | Asserts |
-|---|---|---|
-| 3.0 m ahead, 1.0 m across | 5.00 m | arrival |
-| 0.8 m ahead, 1.4 m across | 0.93 m | the kinematic limits |
-
-An easy goal never approaches the radius limit: an unconstrained controller drives it at 0.72×, under the threshold. A tight goal bites, but the correct configuration then has to shuffle and may not arrive, so arrival is reported rather than asserted there.
+For an interactive Gazebo run, follow [mapping and exploration](#mapping-and-exploration-in-gazebo)
+above. Navigation requires the map, stereo cloud, odometry and transforms;
+there is no mapless navigation mode. `/cmd_vel_nav_raw` passes through the
+smoother and independent guard before becoming `/cmd_vel_nav` (`TwistStamped`).
+The vehicle configuration is documented in [ROS 2 and the simulator](../../../docs/ros2_simulator.md#nav2-as-configured-here).
 
 ## The model
 
@@ -224,7 +233,7 @@ An easy goal never approaches the radius limit: an unconstrained controller driv
 
 The chassis carries its mass in a low tub rather than the full 193 mm envelope, because a centre of gravity at half the body height rolls the truck over in its first corner. Drive is Gazebo's own `AckermannSteering` system, reached through `ros_gz_bridge`. `inertial_macros.xacro` and the gamepad mapping in `config/` come from the earlier [traxxas](https://github.com/open-vehicle-control-system/traxxas) model, which targeted Gazebo Classic.
 
-The model carries the stereo pair and a simulated BNO085 on `/imu_raw`. The camera bar's **height** (`camera_z`, 0.12 m) is the one unmeasured number in the stereo geometry, in the model and in the vehicle's `stereo_transforms` alike.
+The model carries the stereo pair and a simulated BNO085 on `/imu_raw`. The camera bar is configured at 0.185 m above ground in the model and the vehicle transform. Recheck sensor extrinsics after changing the mounting.
 
 ## Why Jetty, and why Lyrical
 
@@ -232,8 +241,7 @@ ROS 2 Jazzy supports only Gazebo Harmonic; Jetty, the current LTS, needs ROS 2 *
 
 ## Known limitations
 
-- Global plans come from NavFn (`nav2_smac_planner` is absent from the Lyrical archive), so they are **not kinematically feasible**: MPPI carries the corners the car cannot cut. Fine in an open workshop, a real constraint in tight spaces.
-- `yaw_goal_tolerance` is deliberately about π. A car cannot rotate to a commanded final heading.
+- Synthetic maps and actuator dynamics do not validate stereo matching, SLAM drift or physical braking.
 - Nothing arbitrates between `/cmd_vel` and `/cmd_vel_nav`. Run teleop or Nav2, not both.
 - The verifiers wait with fixed `sleep`s; a slow machine can fail one without anything being wrong.
 

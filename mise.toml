@@ -96,3 +96,7 @@ run = "cd cli && cargo build --release && strip --strip-all target/release/ovcs 
 [tasks.infotainment-dashboard]
 description = "Run the infotainment Flutter dashboard locally (native window, hot reload)"
 run = "cd infotainment/dashboard && flutter run -d linux"
+
+[tasks.verify-exploration]
+description = "Run isolated Nav2 exploration and fault-stop checks"
+run = "compose/local/scripts/verify_exploration.sh"
