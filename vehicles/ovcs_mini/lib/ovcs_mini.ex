@@ -449,7 +449,9 @@ defmodule OvcsMini do
         num_disparities: 96,
         block_size: 9,
         speckle_window_size: 300,
-        speckle_range: 12
+        speckle_range: 12,
+        # The glossy floor's reflections come and go between frames.
+        persistence_filter: [voxel_m: 0.10, frames: 2]
       ],
       left: camera_addressing(arm, :left),
       right: camera_addressing(arm, :right)
