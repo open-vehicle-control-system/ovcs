@@ -37,6 +37,9 @@ export ZENOH_SESSION_CONFIG_URI
 set +u
 # shellcheck disable=SC1091
 source "/opt/ros/${ROS_DISTRO}/setup.bash"
+if [[ -f /opt/ovcs/nav2_overlay/setup.bash ]]; then
+  source /opt/ovcs/nav2_overlay/setup.bash
+fi
 set -u
 
 if [[ -z "${ZENOH_ROUTER_ADMIN_URL:-}" ]]; then

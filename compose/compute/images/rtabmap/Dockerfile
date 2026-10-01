@@ -28,7 +28,8 @@ COPY images/ros2/zenoh/session.json5.template /etc/zenoh/session.json5.template
 COPY images/ros2/docker/entrypoint.sh /usr/local/bin/entrypoint
 COPY rtabmap/launch /opt/ovcs/launch
 COPY rtabmap/config /opt/ovcs/config
-RUN chmod 0755 /usr/local/bin/entrypoint
+COPY rtabmap/scripts /opt/ovcs/scripts
+RUN chmod 0755 /usr/local/bin/entrypoint && mkdir -p /var/lib/rtabmap
 
 ENTRYPOINT ["/usr/local/bin/entrypoint"]
 CMD ["bash", "-lc", "ros2 launch /opt/ovcs/launch/rtabmap.launch.py"]

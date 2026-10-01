@@ -1,162 +1,171 @@
-"""Exercise the forward explorer's geometry and scoring on synthetic grids."""
+"""Regression cases for mapped footprint clearance, visibility and reverse coverage."""
 
-import importlib.util
 import math
+import sys
 import unittest
 from pathlib import Path
 
 import numpy as np
 
-spec = importlib.util.spec_from_file_location(
-    "forward_explore_core", Path(__file__).resolve().parents[1] / "forward_explore_core.py"
-)
-core = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(core)
-
-RES = 0.05
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import forward_explore_core as core
+from guard_core import TraversedCorridor, fresh, motion_error
 
 
-def grid(value, size=10.0):
-    """A square grid centred on the origin, filled with `value`."""
-    n = int(size / RES)
-    return core.Grid(np.full((n, n), value, dtype=np.int16), RES, -size / 2, -size / 2)
+def grid(value=0, size=10.0):
+    n = int(size / 0.05)
+    return core.Grid(np.full((n, n), value, dtype=np.int16), 0.05, -size / 2, -size / 2)
 
 
-def fill(g, x0, x1, y0, y1, value):
-    i0, j0 = g.index(x0, y0)
-    i1, j1 = g.index(x1, y1)
-    g.data[j0 : j1 + 1, i0 : i1 + 1] = value
+def fill(g, x, y, value):
+    i, j = g.index(x, y)
+    g.data[j, i] = value
 
 
-class ArcTest(unittest.TestCase):
-    def test_the_arc_ends_on_the_goal_with_the_tangent_heading(self):
-        for forward, lateral in ((1.0, 0.4), (1.5, -0.6), (2.0, 0.0)):
-            end = core.arc_points(forward, lateral, 0.05)[-1]
-            self.assertAlmostEqual(end[0], forward, places=6)
-            self.assertAlmostEqual(end[1], lateral, places=6)
-        self.assertAlmostEqual(core.end_heading(1.0, 1.0), math.pi / 2)
+class GeometryTest(unittest.TestCase):
+    def setUp(self):
+        self.grid = grid()
+        self.footprint = core.Footprint()
 
-    def test_arc_poses_turn_steadily_to_the_end_heading(self):
-        poses = core.arc_poses(1.0, 0.4, 0.05)
-        headings = [h for _, _, h in poses]
-        self.assertEqual(headings, sorted(headings))
-        self.assertAlmostEqual(headings[-1], core.end_heading(1.0, 0.4))
-        self.assertTrue(all(h == 0.0 for _, _, h in core.arc_poses(1.0, 0.0, 0.05)))
+    def test_rotated_grid_and_negative_coordinates(self):
+        g = core.Grid(np.arange(12).reshape(3, 4), 0.1, 1.0, -2.0, math.pi / 3)
+        for j in range(3):
+            for i in range(4):
+                self.assertEqual(g.index(*g.world(i, j)), (i, j))
+                self.assertEqual(g.cell(*g.world(i, j)), j * 4 + i)
+        self.assertEqual(core.Grid(np.zeros((2, 2)), 1, 0, 0).index(-0.01, -0.01), (-1, -1))
 
-    def test_radius_through_a_point(self):
-        self.assertAlmostEqual(core.arc_radius(1.0, 1.0), 1.0)
-        self.assertAlmostEqual(core.arc_radius(1.0, -1.0), -1.0)
-        self.assertTrue(math.isinf(core.arc_radius(1.0, 0.0)))
+    def test_obstacle_inside_footprint_but_off_centerline(self):
+        fill(self.grid, 0.2, 0.15, 100)
+        self.assertFalse(core.footprint_clear(self.grid, (0, 0, 0), self.footprint))
 
-    def test_candidates_cover_the_cone(self):
-        cs = core.candidates(math.radians(60), [1.0], math.radians(30))
-        angles = sorted(round(math.degrees(math.atan2(c.lateral, c.forward))) for c in cs)
-        self.assertEqual(angles, [-60, -30, 0, 30, 60])
+    def test_small_obstacle_inside_polygon_not_just_edges(self):
+        fill(self.grid, 0.1, 0.05, 100)
+        self.assertFalse(core.footprint_clear(self.grid, (0, 0, 0), self.footprint))
 
+    def test_unknown_and_outside_map_are_not_free(self):
+        fill(self.grid, -0.1, -0.1, -1)
+        self.assertFalse(core.footprint_clear(self.grid, (0, 0, 0), self.footprint))
+        self.assertFalse(core.footprint_clear(self.grid, (5, 0, 0), self.footprint))
 
-class ReachableTest(unittest.TestCase):
-    footprint = (0.30, 0.19)
+    def test_rotated_corner_overlap_is_checked(self):
+        pose = (0, 0, math.pi / 4)
+        x, y = core.to_frame(pose, 0.44, 0.17)
+        fill(self.grid, x, y, 100)
+        self.assertFalse(core.footprint_clear(self.grid, pose, self.footprint))
 
-    def test_straight_ahead_on_a_free_grid(self):
-        free = grid(0)
-        self.assertTrue(core.reachable(core.Candidate(1.5, 0.0), free, (0, 0, 0), 0.7, self.footprint, 0.05))
+    def test_sweep_finds_obstacle_between_sparse_waypoints(self):
+        fill(self.grid, 0.75, 0.15, 100)
+        self.assertFalse(
+            core.path_clear([(0, 0, 0), (1.5, 0, 0)], self.grid, self.footprint, (0, 0), 4)
+        )
 
-    def test_an_arc_tighter_than_the_turning_radius_is_refused(self):
-        free = grid(0)
-        sharp = core.Candidate(1.0 * math.cos(math.radians(60)), 1.0 * math.sin(math.radians(60)))
-        self.assertLess(abs(core.arc_radius(sharp.forward, sharp.lateral)), 0.7)
-        self.assertFalse(core.reachable(sharp, free, (0, 0, 0), 0.7, self.footprint, 0.05))
+    def test_reverse_and_front_corner_respect_perimeter(self):
+        self.assertTrue(core.inside_perimeter((3.5, 0, math.pi), self.footprint, (0, 0), 4))
+        path = core.motion_poses((3.9, 0, math.pi), -0.12, 0, 4)
+        self.assertFalse(core.path_clear(path, self.grid, self.footprint, (0, 0), 4))
+        self.assertFalse(core.inside_perimeter((3.8, 0, 0), self.footprint, (0, 0), 4))
 
-    def test_an_obstacle_on_the_arc_is_refused(self):
-        g = grid(0)
-        fill(g, 0.75, 0.85, -0.1, 0.1, core.LETHAL)
-        self.assertFalse(core.reachable(core.Candidate(1.5, 0.0), g, (0, 0, 0), 0.7, self.footprint, 0.05))
+    def test_heading_wrap_interpolates_short_rotation(self):
+        poses = list(
+            core.interpolate_path(
+                [(0, 0, math.pi - 0.01), (0, 0, -math.pi + 0.01)], 0.025, self.footprint
+            )
+        )
+        self.assertLess(len(poses), 4)
 
-    def test_a_footprint_on_an_obstacle_beside_the_goal_is_refused(self):
-        g = grid(0)
-        fill(g, 1.4, 1.6, 0.15, 0.2, core.LETHAL)
-        self.assertFalse(core.reachable(core.Candidate(1.5, 0.0), g, (0, 0, 0), 0.7, self.footprint, 0.05))
+    def test_known_free_route_is_accepted(self):
+        self.assertTrue(
+            core.path_clear([(0, 0, 0), (1, 0, 0)], self.grid, self.footprint, (0, 0), 4)
+        )
 
-    def test_a_corner_sweeping_into_an_obstacle_is_refused(self):
-        # Inside a left turn: the arc's centre line passes 16 cm from it,
-        # the left side of the footprint runs over it.
-        g = grid(0)
-        turn = core.Candidate(1.5 * math.cos(math.radians(40)), 1.5 * math.sin(math.radians(40)))
-        fill(g, 0.45, 0.50, 0.25, 0.30, core.LETHAL)
-        centre = [g.cell(f, lat) for f, lat in core.arc_points(turn.forward, turn.lateral, 0.05)]
-        self.assertTrue(all(c < core.INSCRIBED for c in centre))
-        self.assertFalse(core.reachable(turn, g, (0, 0, 0), 0.7, self.footprint, 0.05))
+    def test_map_boundary_counts_as_unknown_gain(self):
+        self.assertGreater(
+            core.visible_unknown(grid(size=2), (0.8, 0, 0), 0.22, 0.38, 0.55, 3), 0
+        )
 
-    def test_an_obstacle_on_the_chord_is_refused(self):
-        # A controller heading for the goal cuts inside the arc.
-        g = grid(0)
-        turn = core.Candidate(1.0 * math.cos(math.radians(30)), 1.0 * math.sin(math.radians(30)))
-        mid = (turn.forward / 2, turn.lateral / 2)
-        fill(g, mid[0], mid[0] + 0.05, mid[1] + 0.12, mid[1] + 0.17, core.LETHAL)
-        arc_only = [core.footprint_clear(g, (f, lat, h), self.footprint, 0.05) for f, lat, h in core.arc_poses(turn.forward, turn.lateral, 0.1)]
-        self.assertTrue(all(arc_only))
-        self.assertFalse(core.reachable(turn, g, (0, 0, 0), 0.7, self.footprint, 0.05))
+    def test_near_obstacle_occludes_far_unknown(self):
+        g = grid(-1)
+        g.data[:, 100:110] = 100
+        self.assertEqual(core.visible_unknown(g, (0, 0, 0), 0.22, 0.38, 0.55, 3), 0)
 
-    def test_the_pose_is_honoured(self):
-        g = grid(0)
-        fill(g, -0.1, 0.1, 0.75, 0.85, core.LETHAL)
-        facing_up = (0.0, 0.0, math.pi / 2)
-        self.assertFalse(core.reachable(core.Candidate(1.5, 0.0), g, facing_up, 0.7, self.footprint, 0.05))
-        self.assertTrue(core.reachable(core.Candidate(1.5, 0.0), g, (0, 0, 0), 0.7, self.footprint, 0.05))
-
-
-class ReverseArcTest(unittest.TestCase):
-    def test_steering_left_swings_the_rear_left_and_the_nose_right(self):
-        f, lat, heading = core.reverse_arc_poses(0.5, 0.7, 0.05)[-1]
-        self.assertLess(f, 0.0)
-        self.assertGreater(lat, 0.0)
-        self.assertAlmostEqual(heading, -0.5 / 0.7)
-        self.assertAlmostEqual(math.hypot(f, lat), 2 * 0.7 * math.sin(0.25 / 0.7))
-
-    def test_an_obstacle_behind_on_one_side_blocks_only_that_side(self):
-        g = grid(0)
-        fill(g, -0.75, -0.65, 0.15, 0.35, core.LETHAL)
-        footprint = (0.30, 0.19)
-        left = core.reverse_arc_poses(0.5, 0.7, 0.1)
-        right = core.reverse_arc_poses(0.5, -0.7, 0.1)
-        self.assertFalse(core.poses_clear(left, g, (0, 0, 0), footprint, 0.05))
-        self.assertTrue(core.poses_clear(right, g, (0, 0, 0), footprint, 0.05))
+    def test_viewpoints_are_fully_free_inside_boundary(self):
+        g = grid(-1)
+        g.data[60:140, 60:140] = 0
+        views = core.viewpoints(g, (0, 0, 0), self.footprint, (0, 0), 3)
+        self.assertTrue(views)
+        for view in views:
+            self.assertTrue(core.footprint_clear(g, view, self.footprint))
+            self.assertTrue(core.inside_perimeter(view, self.footprint, (0, 0), 3))
 
 
-class SeenFreeTest(unittest.TestCase):
-    def test_unknown_on_the_arc_beyond_the_blind_zone_is_refused(self):
-        g = grid(0)
-        fill(g, 0.75, 0.85, -0.1, 0.1, core.UNKNOWN)
-        self.assertFalse(core.seen_free(g, (0, 0, 0), core.Candidate(1.0, 0.0), 0.6, 0.05))
+class GuardTest(unittest.TestCase):
+    def test_fresh_receipt_does_not_make_old_source_data_fresh(self):
+        self.assertFalse(fresh(1, 10, 10, 10, 0.5))
+        self.assertFalse(fresh(10, 1, 10, 10, 0.5))
+        self.assertFalse(fresh(0, 10, 0, 10, 0.5))
+        self.assertFalse(fresh(11, 10, 10, 10, 0.5))
+        self.assertTrue(fresh(9.8, 9.9, 10, 10, 0.5))
 
-    def test_unknown_inside_the_blind_zone_is_ignored(self):
-        g = grid(0)
-        fill(g, 0.0, 0.5, -0.1, 0.1, core.UNKNOWN)
-        self.assertTrue(core.seen_free(g, (0, 0, 0), core.Candidate(1.0, 0.0), 0.6, 0.05))
+    def test_unseen_reverse_is_rejected_even_with_free_local_costmap(self):
+        reason = motion_error(
+            grid(-1),
+            grid(),
+            (0, 0, 0),
+            (0, 0, 0),
+            core.Footprint(),
+            (0, 0),
+            4,
+            -0.1,
+            0,
+            0,
+            0,
+            TraversedCorridor(),
+            1,
+        )
+        self.assertEqual(reason, "unknown or occupied map footprint")
 
+    def test_mapped_reverse_requires_recent_traversal(self):
+        corridor = TraversedCorridor()
+        footprint = core.Footprint()
+        args = (grid(), grid(), (0, 0, 0), (0, 0, 0), footprint, (0, 0), 4, -0.1, 0, 0, 0)
+        self.assertEqual(
+            motion_error(*args, corridor, 1), "reverse leaves recently traversed space"
+        )
+        for x in np.arange(-0.4, 0.05, 0.01):
+            corridor.record((x, 0, 0), footprint, 1)
+        self.assertIsNone(motion_error(*args, corridor, 2))
+        self.assertEqual(
+            motion_error(*args, corridor, 17), "reverse leaves recently traversed space"
+        )
 
-class GainTest(unittest.TestCase):
-    def test_counts_unknown_cells_in_view(self):
-        g = grid(0)
-        fill(g, 1.0, 2.0, -0.2, 0.2, core.UNKNOWN)
-        self.assertGreater(core.visible_unknown(g, (0, 0, 0), math.radians(18), 0.55, 3.0, 0.05), 0)
-        self.assertEqual(core.visible_unknown(g, (0, 0, math.pi), math.radians(18), 0.55, 3.0, 0.05), 0)
+    def test_reverse_turn_cannot_swing_outside_the_traversed_corridor(self):
+        corridor, footprint = TraversedCorridor(), core.Footprint()
+        for x in np.arange(-1, 0.1, 0.01):
+            corridor.record((x, 0, 0), footprint, 1)
+        path = core.motion_poses((0, 0, 0), -0.12, 0.17, 3)
+        self.assertFalse(corridor.contains(path, footprint, 2))
 
-    def test_an_obstacle_hides_what_is_behind_it(self):
-        g = grid(0)
-        fill(g, 1.5, 2.5, -1.0, 1.0, core.UNKNOWN)
-        open_view = core.visible_unknown(g, (0, 0, 0), math.radians(18), 0.55, 3.0, 0.05)
-        fill(g, 1.0, 1.05, -1.0, 1.0, core.LETHAL)
-        self.assertEqual(core.visible_unknown(g, (0, 0, 0), math.radians(18), 0.55, 3.0, 0.05), 0)
-        self.assertGreater(open_view, 0)
-
-    def test_visited_places_lower_the_score(self):
-        self.assertEqual(core.score((1.0, 0.0), 40, [], 0.6, 30), 40)
-        self.assertEqual(core.score((1.0, 0.0), 40, [(1.2, 0.1), (5.0, 5.0)], 0.6, 30), 10)
-
-    def test_near_any(self):
-        self.assertTrue(core.near_any((1.0, 0.0), [(1.2, 0.1)], 0.6))
-        self.assertFalse(core.near_any((1.0, 0.0), [(5.0, 5.0)], 0.6))
+    def test_stopping_envelope_includes_current_speed(self):
+        g = grid()
+        fill(g, 0.65, 0, 100)
+        # A zero request cannot erase the vehicle's existing forward momentum.
+        reason = motion_error(
+            g,
+            grid(),
+            (0, 0, 0),
+            (0, 0, 0),
+            core.Footprint(),
+            (0, 0),
+            4,
+            0,
+            0,
+            0.25,
+            0,
+            TraversedCorridor(),
+            1,
+        )
+        self.assertEqual(reason, "unknown or occupied map footprint")
 
 
 if __name__ == "__main__":

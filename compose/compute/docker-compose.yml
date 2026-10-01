@@ -176,7 +176,7 @@ services:
       ZENOH_ROUTER_ADMIN_URL: http://127.0.0.1:8000
 
   explore:
-    # forward_explore and explore_lite, which send Nav2 goals over
+    # Camera-viewpoint exploration, which sends Nav2 goals over
     # RTAB-Map's grid. The container idles: both drive as soon as they
     # run, so they are launched on demand with `balena-engine exec` (see
     # README.md), and a container restart never resumes them.

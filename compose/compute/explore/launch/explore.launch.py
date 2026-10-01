@@ -1,25 +1,28 @@
-"""Frontier exploration for the OVCS Mini.
-
-explore_lite reads RTAB-Map's grid (`/rtabmap/map`), picks the frontier
-between free and unknown space that is cheapest to reach and largest,
-and sends it to Nav2 as a NavigateToPose goal. It starts exploring as
-soon as it runs: this is launched on demand, never at boot.
-`explore/resume` (std_msgs/Bool) pauses and resumes it.
-"""
+"""Launch the camera-viewpoint supervisor on demand."""
 
 from launch import LaunchDescription
-from launch_ros.actions import Node
+from launch.actions import DeclareLaunchArgument, ExecuteProcess
+from launch.substitutions import LaunchConfiguration
 
 
 def generate_launch_description():
     return LaunchDescription(
         [
-            Node(
-                package="explore_lite",
-                executable="explore",
-                name="explore_node",
+            DeclareLaunchArgument("use_sim_time", default_value="false"),
+            DeclareLaunchArgument("dry_run", default_value="false"),
+            ExecuteProcess(
+                cmd=[
+                    "python3",
+                    "/opt/ovcs/forward_explore/forward_explore_node.py",
+                    "--ros-args",
+                    "--params-file",
+                    "/opt/ovcs/config/forward_explore.yaml",
+                    "-p",
+                    ["use_sim_time:=", LaunchConfiguration("use_sim_time")],
+                    "-p",
+                    ["dry_run:=", LaunchConfiguration("dry_run")],
+                ],
                 output="screen",
-                parameters=["/opt/ovcs/config/explore.yaml"],
-            )
+            ),
         ]
     )

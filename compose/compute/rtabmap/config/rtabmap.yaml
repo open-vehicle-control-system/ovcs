@@ -1,7 +1,7 @@
 # RTAB-Map's own parameters are strings, even when they hold numbers.
 /rtabmap/rgbd_sync:
   ros__parameters:
-    rgb_image_transport: compressed
+    image_transport: compressed
     depth_image_transport: raw
     # The image and the depth carry the same stamp.
     approx_sync: false
