@@ -18,9 +18,11 @@ rectification_matrix:
   data: [ 0.99944372, -0.02306374,  0.02408961,
           0.02318023,  0.99972087, -0.00456755,
          -0.02397754,  0.00512341,  0.99969937]
+# cx is +7.44 px from the left camera's: it cancels a constant disparity
+# offset measured against a target at 1.0, 1.71 and 2.5 m.
 projection_matrix:
   rows: 3
   cols: 4
-  data: [779.54677,   0.     , 308.74369, -69.70435,
+  data: [779.54677,   0.     , 316.18369, -69.70435,
            0.     , 779.54677, 189.01907,   0.     ,
            0.     ,   0.     ,   1.     ,   0.     ]
