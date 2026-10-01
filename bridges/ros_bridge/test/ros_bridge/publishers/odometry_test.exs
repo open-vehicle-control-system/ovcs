@@ -97,6 +97,28 @@ defmodule RosBridge.Publishers.OdometryTest do
     end
   end
 
+  describe "diagonal/1" do
+    test "puts the six variances on the diagonal of a row-major 6x6" do
+      covariance = Odometry.diagonal([1, 2, 3, 4, 5, 6])
+
+      assert length(covariance) == 36
+
+      assert Enum.map([0, 7, 14, 21, 28, 35], &Enum.at(covariance, &1)) == [
+               1.0,
+               2.0,
+               3.0,
+               4.0,
+               5.0,
+               6.0
+             ]
+
+      assert covariance
+             |> Enum.with_index()
+             |> Enum.reject(fn {_, i} -> rem(i, 7) == 0 end)
+             |> Enum.all?(fn {v, _} -> v == 0.0 end)
+    end
+  end
+
   describe "publishable?/2" do
     test "needs a valid speed, a heading, and a fresh frame" do
       good = state(speed_valid: true, yaw: 0.0, last_fresh_at_ms: 900)
