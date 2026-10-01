@@ -160,6 +160,21 @@ config :vintage_net,
        }}
     ] ++ wlan0_config
 
+# Interfaces mdns_lite neither answers nor queries on, from the
+# vehicle's `.env.exs` (comma-separated) on top of mdns_lite's defaults:
+# `MDNS_EXCLUDED_IFNAMES_VMS` if set, else `MDNS_EXCLUDED_IFNAMES`.
+# Listing `wlan0` keeps the Erlang mesh resolving peers to their wired
+# addresses on a dual-homed vehicle; a board with Wi-Fi only sets its
+# override to "".
+config :mdns_lite,
+  excluded_ifnames:
+    ["lo0", "lo", "ppp0", "wwan0", "__unknown"] ++
+      String.split(
+        System.get_env("MDNS_EXCLUDED_IFNAMES_VMS") || System.get_env("MDNS_EXCLUDED_IFNAMES", ""),
+        ",",
+        trim: true
+      )
+
 # The DNS bridge answers `.local` queries for Erlang's resolver, which
 # has no mDNS support of its own. `additional_name_servers` above puts
 # it first; it refuses other names, so the resolver falls through to

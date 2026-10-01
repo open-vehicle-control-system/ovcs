@@ -143,7 +143,7 @@ Two networks, each doing one job:
 
 `eth0` and the access point are **ports on one bridge**: the wired boards and a laptop on the access point share one L2 domain and one DHCP server, and reach `tcp/10.42.0.1:7447` without the compute node routing between them.
 
-The Nerves boards are dual-homed by their firmware: `eth0` takes its lease from `ovcs0` and carries the fabric; `wlan0` joins whichever of the vehicle's `WIFI_NETWORKS` (in `vehicles/<vehicle>/.env.exs`) is in range and carries everything a person does. VintageNet prefers the wired route when both are up. Nothing on the fabric depends on the site Wi-Fi: unplug it and the vehicle keeps driving; take the vehicle elsewhere and every board is still reachable through the access point.
+The Nerves boards are dual-homed by their firmware: `eth0` takes its lease from `ovcs0` and carries the fabric; `wlan0` joins whichever of the vehicle's `WIFI_NETWORKS` (in `vehicles/<vehicle>/.env.exs`) is in range and carries everything a person does. VintageNet prefers the wired route when both are up, but mDNS answers on both interfaces, so a board can resolve a peer's `.local` name to its Wi-Fi address and run the Erlang mesh over the radio. `MDNS_EXCLUDED_IFNAMES` set to `"wlan0"` in the same `.env.exs` stops mDNS on `wlan0` and keeps the mesh on the wire. A board with Wi-Fi only, such as the radio-control bridge of the OVCS Mini reference vehicle, keeps mDNS on `wlan0` with its override set to `""` (`MDNS_EXCLUDED_IFNAMES_BRIDGE_RADIO_CONTROL`); the wired boards no longer resolve it, so it stays off the mesh, which it does not need: its commands reach the VMS as CAN frames. Nothing on the fabric depends on the site Wi-Fi: unplug it and the vehicle keeps driving; take the vehicle elsewhere and every board is still reachable through the access point.
 
 The compute node's uplink isn't load-bearing either. `method=shared` assigns the bridge address, starts dnsmasq and installs the NAT rule unconditionally; with the uplink down, clients still get leases and full vehicle-local connectivity, just no route off the vehicle.
 
@@ -156,7 +156,7 @@ Keyfile templates live in [`compose/compute/host/system-connections/`](../compos
 
 ### Reaching the vehicle network from the site Wi-Fi
 
-A laptop on the site Wi-Fi reaches each Nerves board directly at its site address, by mDNS: `ping ovcs-mini-vms.local`, `./ovcs connect ovcs_mini vms`, the dashboard at `http://ovcs-mini-vms.local:4000`. Foxglove attaches to the compute node's site address (its `uplink` lease; reserve it on the site router for a stable URL).
+A laptop on the site Wi-Fi reaches each Nerves board directly at its site address, by mDNS: `ping ovcs-mini-vms.local`, `./ovcs connect ovcs_mini vms`, the dashboard at `http://ovcs-mini-vms.local:4000`. With `MDNS_EXCLUDED_IFNAMES` set to `"wlan0"`, these names only resolve on the access point; from the site Wi-Fi, use the board's site address or the SSH hop below. Foxglove attaches to the compute node's site address (its `uplink` lease; reserve it on the site router for a stable URL).
 
 That laptop has no route into `10.42.0.0/24`: `method=shared` masquerades outbound traffic and forwards nothing in, so `ping 10.42.0.1` fails. Two ways in:
 
@@ -238,7 +238,7 @@ ip route | grep default              # exactly one, via the onboard radio (wlan0
 journalctl -k -b | grep iwlwifi      # "loaded firmware" and "loaded PNVM"
 
 # From a laptop on the site Wi-Fi, then again on the access point
-ping ovcs-mini-vms.local             # site address, then 10.42.0.x
+ping ovcs-mini-vms.local             # site address (none with wlan0 excluded), then 10.42.0.x
 ```
 
 The kernel line is the one to keep an eye on: if the boot-time probe races the volume mount and loses, it prints the `ty-a0-gf-a0-77` failure list and the access point silently doesn't exist. The fix would be a privileged service that writes the card's PCI address to `/sys/bus/pci/drivers_probe` on start.

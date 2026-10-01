@@ -104,6 +104,22 @@ config :vintage_net,
        }}
     ] ++ wlan0_config
 
+# Interfaces mdns_lite neither answers nor queries on, from the
+# vehicle's `.env.exs` (comma-separated) on top of mdns_lite's defaults:
+# `MDNS_EXCLUDED_IFNAMES_BRIDGE_<ID>` if set, else `MDNS_EXCLUDED_IFNAMES`.
+# Listing `wlan0` keeps the Erlang mesh resolving peers to their wired
+# addresses on a dual-homed vehicle; a board with Wi-Fi only sets its
+# override to "".
+config :mdns_lite,
+  excluded_ifnames:
+    ["lo0", "lo", "ppp0", "wwan0", "__unknown"] ++
+      String.split(
+        System.get_env("MDNS_EXCLUDED_IFNAMES_BRIDGE_#{String.upcase(bridge_firmware_id)}") ||
+          System.get_env("MDNS_EXCLUDED_IFNAMES", ""),
+        ",",
+        trim: true
+      )
+
 # Start Erlang distribution as `nerves@<hostname>.local` so
 # `OvcsBus.Cluster` can reach the vehicle's other firmwares. See
 # `OvcsBus.Distribution`.
