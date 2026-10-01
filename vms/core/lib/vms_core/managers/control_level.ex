@@ -35,6 +35,13 @@ defmodule VmsCore.Managers.ControlLevel do
   actuator. That is the safe direction: a vehicle with no planner wires
   `ros: %{teleop: ...}` and the autonomous position simply commands
   nothing rather than falling back to something that was not asked for.
+
+  ## Rotation fault
+
+  An optional `rotation_fault_source` publishes `:cross_check_fault`
+  (`OVCS.RotationFusion`). While it is true, `:ros` drops to `:radio`
+  and is refused: odometry and every costmap cell placed with it rest
+  on the rotation, so a planner cannot drive on sources that disagree.
   """
   use GenServer
   require Logger
@@ -80,6 +87,7 @@ defmodule VmsCore.Managers.ControlLevel do
     # Optional: a vehicle with no second switch never leaves `:teleop`,
     # so a planner it does not have can never take the wheel.
     requested_ros_commander_source = args[:requested_ros_commander_source]
+    rotation_fault_source = args[:rotation_fault_source]
 
     {:ok,
      %{
@@ -96,6 +104,8 @@ defmodule VmsCore.Managers.ControlLevel do
        manual_breaking: false,
        radio_breaking_source: radio_breaking_source,
        radio_breaking: false,
+       rotation_fault_source: rotation_fault_source,
+       rotation_fault: false,
        forced_control_level: nil,
        requested_control_level: nil,
        selected_control_level: default_control_level,
@@ -170,6 +180,14 @@ defmodule VmsCore.Managers.ControlLevel do
   end
 
   def handle_info(
+        %Bus.Message{name: :cross_check_fault, value: fault, source: source},
+        state
+      )
+      when not is_nil(source) and source == state.rotation_fault_source do
+    {:noreply, %{state | rotation_fault: fault == true}}
+  end
+
+  def handle_info(
         %Bus.Message{name: :ready_to_drive, value: ready_to_drive, source: source},
         state
       )
@@ -197,7 +215,6 @@ defmodule VmsCore.Managers.ControlLevel do
       requested_control_level: requested_control_level,
       selected_control_level: selected_control_level,
       manual_breaking: manual_breaking,
-      radio_breaking: radio_breaking,
       speed: speed
     } = state
 
@@ -205,7 +222,7 @@ defmodule VmsCore.Managers.ControlLevel do
       selected_control_level != :manual && (manual_breaking || !ready_to_drive) ->
         %{state | selected_control_level: :manual, forced_control_level: :manual}
 
-      selected_control_level == :ros && radio_breaking ->
+      selected_control_level == :ros && ros_overridden?(state) ->
         %{state | selected_control_level: :radio, forced_control_level: :radio}
 
       requested_control_level == :manual && selected_control_level != :manual ->
@@ -217,7 +234,7 @@ defmodule VmsCore.Managers.ControlLevel do
         %{state | selected_control_level: :radio}
 
       requested_control_level == :ros && selected_control_level == :radio &&
-        is_nil(forced_control_level) && !manual_breaking && !radio_breaking &&
+        is_nil(forced_control_level) && !manual_breaking && !ros_overridden?(state) &&
           standstill?(speed) ->
         %{state | selected_control_level: :ros}
 
@@ -270,6 +287,10 @@ defmodule VmsCore.Managers.ControlLevel do
     end
   end
 
+  # A human on the trigger, or rotation sources that disagree, takes the
+  # wheel back from ROS.
+  defp ros_overridden?(state), do: state.radio_breaking or state.rotation_fault
+
   defp refusal_reason(state) do
     cond do
       not is_nil(state.forced_control_level) ->
@@ -292,6 +313,9 @@ defmodule VmsCore.Managers.ControlLevel do
 
       state.requested_control_level == :ros && state.radio_breaking ->
         :radio_breaking
+
+      state.requested_control_level == :ros && state.rotation_fault ->
+        :rotation_fault
 
       state.requested_control_level == :ros && state.selected_control_level == :manual ->
         # `:ros` is only reachable from `:radio`, deliberately: it puts
