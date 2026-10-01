@@ -47,6 +47,7 @@ RUN apt-get update \
         ros-lyrical-nav2-behavior-tree \
         ros-lyrical-nav2-lifecycle-manager \
         ros-lyrical-nav2-costmap-2d \
+        ros-lyrical-spatio-temporal-voxel-layer \
         ros-lyrical-nav2-simple-commander \
         ros-lyrical-nav2-msgs \
         gettext-base \
