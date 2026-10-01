@@ -433,16 +433,13 @@ defmodule OvcsMini do
       # instead of 4:3 — the anamorphic squeeze inflates rectified f
       # from 725 to 1046, and undoing it buys the same near clip for
       # ~1.44x fewer disparities. Must stay a multiple of 16.
-      # block_size=7 is a balanced point between bs=5 (denser
-      # coverage but jittery) and bs=9 (stable but sparse) — gives
-      # ~30 % more frame-to-frame stability for ~5 pp coverage cost.
-      # Speckle filtering, tuned against the measured failure mode
-      # rather than the defaults: the map's problem is not missing
-      # pixels but confident wrong ones — isolated blobs reading
-      # 3.5 m inside a 2 m surface, from false matches on repetitive
-      # structure like shelving. A hole is honest; a phantom obstacle
-      # is not. Doubling the window and halving the tolerated internal
-      # range invalidates those blobs; costs some coverage.
+      # block_size and speckle filtering are tuned against the failure
+      # that matters to the costmap: not missing pixels but confident
+      # wrong ones. Thin and repetitive structure (a pole, cabinet
+      # doors, shelving) false-matches to a disparity far too large,
+      # and reads as an obstacle about a metre ahead. A hole is honest;
+      # a phantom obstacle is not. Keep CLAHE: without it those
+      # phantoms multiply.
       driver: camera_driver,
       calibration_dir: priv_calibration_dir(arm),
       width: 480,
@@ -451,9 +448,9 @@ defmodule OvcsMini do
       pair_tolerance_ms: 100,
       backend_opts: [
         num_disparities: 96,
-        block_size: 7,
-        speckle_window_size: 200,
-        speckle_range: 16
+        block_size: 9,
+        speckle_window_size: 300,
+        speckle_range: 12
       ],
       left: camera_addressing(arm, :left),
       right: camera_addressing(arm, :right)
