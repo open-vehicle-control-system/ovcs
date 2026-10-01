@@ -47,7 +47,7 @@
   <!-- Nominal geometry; unresolved measurements are listed in README.md. -->
   <xacro:property name="wheelbase"     value="0.324" />
   <xacro:property name="track"         value="0.296" />
-  <xacro:property name="wheel_radius"  value="0.0548" />
+  <xacro:property name="wheel_radius"  value="0.0522" />
   <xacro:property name="body_length"   value="0.568" />
   <xacro:property name="body_width"    value="0.296" />
   <xacro:property name="total_mass"    value="2.41" />
