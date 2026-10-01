@@ -277,9 +277,10 @@ These move together. The `pins` job in `.github/workflows/ros2.yml` fails when t
 
 | What | Value | Where |
 |---|---|---|
-| zenoh router image | `eclipse/zenoh:1.9.0` | `compose/compute/docker-compose.yml`, `compose/local/base.yml` |
-| zenoh Python client | `eclipse-zenoh==1.9.0` | `compose/compute/images/ros2/Dockerfile` |
-| zenoh in the Elixir bridge | `zenohex ~> 0.9.0` (zenoh 1.9.0) | `bridges/ros_bridge/mix.exs` |
+| zenoh in the ROS nodes | `rmw_zenoh_cpp` 0.10.5: zenoh 1.8.0 plus fixes, before 1.9.0's routing rewrite | the ROS snapshot in `compose/compute/images/*/Dockerfile` |
+| zenoh router image | `eclipse/zenoh:1.8.0` | `compose/compute/docker-compose.yml`, `compose/local/base.yml` |
+| zenoh Python client | `eclipse-zenoh==1.8.0` | `compose/compute/images/ros2/Dockerfile` |
+| zenoh in the Elixir bridge | `zenohex ~> 0.8.0` (zenoh 1.8.0) | `bridges/ros_bridge/mix.exs` |
 | ROS 2 distribution | `ros:lyrical-ros-base` | `compose/compute/images/{ros2,nav2}/`, `compose/local/images/sim/` |
 | Gazebo | Jetty, via `ros-lyrical-ros-gz` | `compose/local/images/sim/Dockerfile` |
 

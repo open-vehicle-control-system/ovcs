@@ -32,7 +32,7 @@ defmodule RosBridge.MixProject do
     [
       {:ovcs_bridge, path: "../../libraries/ovcs_bridge"},
       {:ovcs_drivers, path: "../../libraries/ovcs_drivers"},
-      {:zenohex, "~> 0.9.0"},
+      {:zenohex, "~> 0.8.0"},
       {:elixir_make, "~> 0.7", runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
 

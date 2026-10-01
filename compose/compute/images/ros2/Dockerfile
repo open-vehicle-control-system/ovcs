@@ -51,7 +51,7 @@ RUN apt-get update \
         python3-pip \
     && rm -rf /var/lib/apt/lists/* \
     && pip3 install --no-cache-dir --break-system-packages \
-        eclipse-zenoh==1.9.0 \
+        eclipse-zenoh==1.8.0 \
         websockets==17.0.1
 
 # Baked in rather than bind-mounted: balenaOS has no host bind mounts,

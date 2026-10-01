@@ -28,7 +28,7 @@ services:
     # Only for working without a vehicle. On the car, the router runs
     # on the compute node under balena — starting a second one here and
     # pointing at it is how you end up debugging two fabrics.
-    image: eclipse/zenoh:1.9.0
+    image: eclipse/zenoh:1.8.0
     container_name: ovcs-zenohd
     profiles: ["standalone"]
     restart: unless-stopped

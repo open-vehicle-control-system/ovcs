@@ -176,9 +176,10 @@ The pins below have to move together. CI (`pins` job in
 
 | What | Value | Where |
 |---|---|---|
-| zenoh router image | `eclipse/zenoh:1.9.0` | `compute/docker-compose.yml`, `local/base.yml` |
-| zenoh Python client | `eclipse-zenoh==1.9.0` | `compute/images/ros2/Dockerfile` |
-| zenoh in the Elixir bridge | `zenohex 0.9.0` (pins zenoh 1.9.0) | `bridges/ros_bridge/mix.exs` |
+| zenoh in the ROS nodes | `rmw_zenoh_cpp` 0.10.5: zenoh 1.8.0 plus fixes, before 1.9.0's routing rewrite | the ROS snapshot in `compute/images/*/Dockerfile` |
+| zenoh router image | `eclipse/zenoh:1.8.0` | `compute/docker-compose.yml`, `local/base.yml` |
+| zenoh Python client | `eclipse-zenoh==1.8.0` | `compute/images/ros2/Dockerfile` |
+| zenoh in the Elixir bridge | `zenohex 0.8.0` (pins zenoh 1.8.0) | `bridges/ros_bridge/mix.exs` |
 | ROS 2 distribution | `ros:lyrical-ros-base` | `compute/images/ros2/`, `compute/images/nav2/`, `local/images/sim/` |
 | Gazebo | Jetty, via `ros-lyrical-ros-gz` | `local/images/sim/Dockerfile` |
 | Wi-Fi firmware | linux-firmware `20260810`, checksummed | `compute/images/wifi-firmware/Dockerfile` |

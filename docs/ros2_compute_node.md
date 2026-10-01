@@ -252,7 +252,7 @@ The kernel line is the one to keep an eye on: if the boot-time probe races the v
 
 Because the compute node hands out the addresses, the router address is a constant and step 3 is one-time setup. Adding a site to `WIFI_NETWORKS` still means a rebuild.
 
-`zenohex 0.9.0`, which `ros_bridge` depends on, pins zenoh **1.9.0**, the same version as the `eclipse/zenoh:1.9.0` router image. Bump them together.
+`zenohex 0.8.0`, which `ros_bridge` depends on, pins zenoh **1.8.0**, the same version as the `eclipse/zenoh:1.8.0` router image. Both follow the zenoh that `rmw_zenoh_cpp` vendors in the pinned ROS snapshot: 1.8.0 plus fixes, from before the routing rewrite in 1.9.0. Against those ROS nodes a 1.9.0 router logs "Unknown interest" and graph discovery stalls. Bump all three together.
 
 ## Clock
 
