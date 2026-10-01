@@ -6,6 +6,8 @@ defmodule RosBridge.Publishers.Odometry.State do
     :base_frame_id,
     :publish_interval_ms,
     :stale_after_ms,
+    :pose_covariance,
+    :twist_covariance,
     x: 0.0,
     y: 0.0,
     yaw: nil,
@@ -56,6 +58,11 @@ defmodule RosBridge.Publishers.Odometry do
       20 Hz; publishing faster only buffers.
     * `:stale_after_ms` (default 300) — matches the VMS-side
       `Freshness` timeout on the command path.
+    * `:pose_variance`, `:twist_variance` — the covariance diagonals,
+      in the order x, y, z, roll, pitch, yaw. The defaults suit a car
+      on flat ground: a few centimetres and about a degree in the
+      plane, and the axes it cannot move along declared unknown
+      (1e6) rather than perfect (0), which is how a zero reads.
 
   The IMU driver must already be running (the `:imu_publisher`
   component starts it); this registers as a second listener on it.
@@ -82,7 +89,9 @@ defmodule RosBridge.Publishers.Odometry do
   # the gap is unknown, so the step is dropped rather than integrated.
   @max_step_s 0.5
 
-  @unknown_covariance List.duplicate(0.0, 36)
+  @default_pose_variance [1.0e-4, 1.0e-4, 1.0e6, 1.0e6, 1.0e6, 3.0e-4]
+  # No lateral slip: a car does not move sideways.
+  @default_twist_variance [4.0e-4, 1.0e-6, 1.0e6, 1.0e6, 1.0e6, 1.0e-4]
 
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -97,7 +106,9 @@ defmodule RosBridge.Publishers.Odometry do
       odom_frame_id: Keyword.get(opts, :odom_frame_id, "odom"),
       base_frame_id: Keyword.get(opts, :base_frame_id, "base_link"),
       publish_interval_ms: Keyword.get(opts, :publish_interval_ms, @default_publish_interval_ms),
-      stale_after_ms: Keyword.get(opts, :stale_after_ms, @default_stale_after_ms)
+      stale_after_ms: Keyword.get(opts, :stale_after_ms, @default_stale_after_ms),
+      pose_covariance: diagonal(Keyword.get(opts, :pose_variance, @default_pose_variance)),
+      twist_covariance: diagonal(Keyword.get(opts, :twist_variance, @default_twist_variance))
     }
 
     :ok = Receiver.subscribe(self(), :ovcs, @frame_name)
@@ -211,6 +222,12 @@ defmodule RosBridge.Publishers.Odometry do
     :math.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
   end
 
+  @doc false
+  # Row-major 6x6 with the variances on the diagonal.
+  def diagonal([_, _, _, _, _, _] = variances) do
+    for row <- 0..5, col <- 0..5, do: if(row == col, do: Enum.at(variances, row) * 1.0, else: 0.0)
+  end
+
   defp publish(%State{} = state) do
     now_ns = System.system_time(:nanosecond)
 
@@ -234,14 +251,14 @@ defmodule RosBridge.Publishers.Odometry do
           position: %Point{x: state.x, y: state.y, z: 0.0},
           orientation: orientation
         },
-        covariance: @unknown_covariance
+        covariance: state.pose_covariance
       },
       twist: %TwistWithCovariance{
         twist: %Twist{
           linear: %Vector3{x: state.speed, y: 0.0, z: 0.0},
           angular: %Vector3{x: 0.0, y: 0.0, z: state.yaw_rate}
         },
-        covariance: @unknown_covariance
+        covariance: state.twist_covariance
       }
     }
 
