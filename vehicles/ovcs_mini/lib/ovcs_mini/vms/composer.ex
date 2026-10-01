@@ -215,7 +215,9 @@ defmodule OvcsMini.Vms.Composer do
        %{
          controller: Vms.MainController,
          external_pwm_id: 0,
-         selected_control_level_source: Managers.ControlLevel
+         selected_control_level_source: Managers.ControlLevel,
+         # Positive steers right: the servo's neutral pulls the car left.
+         trim: "0.05"
        }},
       # The traction motor, behind a VESC on `misc`.
       {Vesc.MotorController,

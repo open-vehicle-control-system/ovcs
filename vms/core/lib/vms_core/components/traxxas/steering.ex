@@ -1,6 +1,11 @@
 defmodule VmsCore.Components.Traxxas.Steering do
   @moduledoc """
-    Traxxas' steering controlled by a PWM signal
+  Traxxas' steering controlled by a PWM signal.
+
+  `:trim` (default `0`) is added to every steering request, in the
+  same `[-1, 1]` units, before the result is clamped to `[-1, 1]`.
+  It centres a servo whose neutral pulse does not drive the wheels
+  straight.
   """
   use GenServer
   alias Decimal, as: D
@@ -12,17 +17,21 @@ defmodule VmsCore.Components.Traxxas.Steering do
   @center_duty_cycle_percentage D.new("0.15")
   @duty_cycle_percentage_range D.new("0.05")
   @zero D.new(0)
+  @one D.new(1)
+  @minus_one D.new(-1)
 
   def start_link(args) do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
   end
 
   @impl true
-  def init(%{
-        controller: controller,
-        external_pwm_id: external_pwm_id,
-        selected_control_level_source: selected_control_level_source
-      }) do
+  def init(
+        %{
+          controller: controller,
+          external_pwm_id: external_pwm_id,
+          selected_control_level_source: selected_control_level_source
+        } = args
+      ) do
     Bus.subscribe("messages")
     {:ok, timer} = :timer.send_interval(@loop_period, :loop)
 
@@ -32,12 +41,14 @@ defmodule VmsCore.Components.Traxxas.Steering do
        controller: controller,
        external_pwm_id: external_pwm_id,
        selected_control_level_source: selected_control_level_source,
+       trim: D.new(Map.get(args, :trim, 0)),
        # Starts nil: nothing commands this actuator until the manager
        # names a source. The manager's default level does that on its
        # first tick.
        requested_steering_source: nil,
        requested_steering: @zero,
-       steering: @zero
+       # nil so the first tick sends the trimmed centre.
+       steering: nil
      }}
   end
 
@@ -82,13 +93,16 @@ defmodule VmsCore.Components.Traxxas.Steering do
   end
 
   defp steer(state) do
-    case D.eq?(state.steering, state.requested_steering) do
+    case state.steering != nil and D.eq?(state.steering, state.requested_steering) do
       true ->
         state
 
       false ->
         duty_cycle_percentage =
           state.requested_steering
+          |> D.add(state.trim)
+          |> D.max(@minus_one)
+          |> D.min(@one)
           |> D.mult(@duty_cycle_percentage_range)
           |> D.add(@center_duty_cycle_percentage)
 

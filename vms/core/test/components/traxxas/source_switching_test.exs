@@ -56,7 +56,8 @@ defmodule VmsCore.Components.Traxxas.SourceSwitchingTest do
         selected_control_level_source: @manager,
         requested_steering_source: @commander,
         requested_steering: D.new("0.7"),
-        steering: D.new(0)
+        steering: D.new(0),
+        trim: D.new(0)
       },
       overrides
     )
