@@ -12,16 +12,18 @@ either.
 
 ```
 compute/
-├── docker-compose.yml    the stack: wifi_firmware, bridge_nat_fix, zenohd, foxglove_bridge, nav2
+├── docker-compose.yml    the stack: wifi_firmware, bridge_nat_fix, zenohd, foxglove_bridge, nav2, rtabmap
 ├── .dockerignore         keeps host/ and this file out of the pushed tarball
 ├── images/
 │   ├── ros2/             the shared ROS 2 image: entrypoint, Zenoh template, launchers
 │   ├── nav2/             the Nav2 image (Dockerfile only; it COPYs ../ros2 and ../../nav2)
+│   ├── rtabmap/          the RTAB-Map image (Dockerfile only; it COPYs ../ros2 and ../../rtabmap)
 │   ├── wifi-firmware/    AX210 firmware staged into balenaOS's extra-firmware volume
 │   └── bridge-nat-fix/   keeps the host's NAT off frames bridged between eth0 and the AP
 ├── nav2/
 │   ├── launch/           baked into images/nav2 here, bind-mounted by ../local/simulation.yml
 │   └── config/           nav2.yaml and the Ackermann behaviour trees
+├── rtabmap/              launch file and parameters baked into images/rtabmap
 └── host/                 NetworkManager keyfiles for balenaOS itself — installed by hand, once
 ```
 
@@ -79,6 +81,20 @@ Run the relay integration tests in an environment with `websockets==17.0.1`:
 ```sh
 python3 -m unittest discover -s images/ros2/docker/tests -v
 ```
+
+### Mapping
+
+`rtabmap` builds the map continuously from the stereo bridge and
+`/odom`, and publishes it on `/rtabmap/map`. Each start of the service
+begins a new map, so restarting it starts one:
+
+```sh
+balena-engine restart "$(balena-engine ps -qf name=rtabmap)"
+```
+
+Keeping a map across starts (`delete_db_on_start:=false` in the launch
+file) is not the default: a database written by an interrupted session
+can fail to reload and kill the node at every start.
 
 ### Rehearsing on a workstation
 

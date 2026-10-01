@@ -1,0 +1,48 @@
+# RTAB-Map's own parameters are strings, even when they hold numbers.
+/rtabmap/rgbd_sync:
+  ros__parameters:
+    rgb_image_transport: compressed
+    depth_image_transport: raw
+    # The image and the depth carry the same stamp.
+    approx_sync: false
+
+/rtabmap/rtabmap:
+  ros__parameters:
+    frame_id: base_link
+    map_frame_id: map
+    publish_tf: true
+    database_path: /var/lib/rtabmap/rtabmap.db
+    subscribe_depth: false
+    subscribe_rgb: false
+    subscribe_rgbd: true
+    # /odom comes from another board, at another rate.
+    approx_sync: true
+    wait_for_transform: 0.2
+    # Republish the map at every update, not only when the graph grows:
+    # explore_lite subscribes without latching and would otherwise wait
+    # for the car to move.
+    map_always_update: true
+
+    # A car on flat ground.
+    Reg/Force3DoF: "true"
+    Rtabmap/DetectionRate: "1"
+    RGBD/LinearUpdate: "0.1"
+    RGBD/AngularUpdate: "0.1"
+    Mem/IncrementalMemory: "true"
+    # 480x270 greyscale on plain walls yields few features.
+    Vis/MinInliers: "15"
+
+    # The 2D grid from the depth image, in the costmap's height band.
+    Grid/Sensor: "1"
+    Grid/3D: "false"
+    Grid/CellSize: "0.05"
+    # Divides both 480 and 270.
+    Grid/DepthDecimation: "3"
+    Grid/RangeMax: "3.0"
+    Grid/RayTracing: "true"
+    Grid/NormalsSegmentation: "false"
+    Grid/MaxGroundHeight: "0.05"
+    Grid/MaxObstacleHeight: "0.6"
+    # A glossy floor's reflections read below the floor: ignore them
+    # rather than clear through them.
+    Grid/MinGroundHeight: "-0.10"

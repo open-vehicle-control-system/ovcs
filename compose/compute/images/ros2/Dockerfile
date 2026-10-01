@@ -40,6 +40,9 @@ RUN apt-get update \
         ros-lyrical-nav2-msgs \
         ros-lyrical-map-msgs \
         ros-lyrical-bond \
+        # RTAB-Map's info, graph and services.
+        ros-lyrical-rtabmap-msgs \
+        ros-lyrical-octomap-msgs \
         ros-lyrical-joy-linux \
         ros-lyrical-vision-msgs \
         ros-lyrical-image-transport-plugins \
