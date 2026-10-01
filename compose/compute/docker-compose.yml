@@ -156,6 +156,25 @@ services:
       # inactive until someone restarted the container.
       ZENOH_ROUTER_ADMIN_URL: http://127.0.0.1:8000
 
+  rtabmap:
+    # The map: RGB-D SLAM from the stereo bridge's rectified image and
+    # depth, plus /odom. Publishes /rtabmap/map and map -> odom. Each start
+    # begins a new map in the named volume (see the launch file).
+    build:
+      context: .
+      dockerfile: images/rtabmap/Dockerfile
+    restart: always
+    network_mode: host
+    depends_on:
+      - zenohd
+    volumes:
+      - rtabmap-data:/var/lib/rtabmap
+    environment:
+      RMW_IMPLEMENTATION: rmw_zenoh_cpp
+      ZENOH_SESSION_CONFIG_URI: /tmp/zenoh-session.json5
+      ZENOH_ENDPOINT_IP: "127.0.0.1"
+      ZENOH_ROUTER_ADMIN_URL: http://127.0.0.1:8000
+
   # Further onboard services — autonomy, perception, telemetry, ROS or
   # not — go here as additional services, each with its own `build:`
   # pointing at its own directory under ./images. There is no
@@ -163,3 +182,6 @@ services:
   # car ships inside an image, which is the whole point of putting this
   # on an immutable OS. Iterate against ../local/base.yml first, then
   # bake.
+
+volumes:
+  rtabmap-data:
