@@ -66,7 +66,14 @@ Then flash balenaOS:
 
 The fleet variable `BALENA_HOST_CONFIG_usb_max_current_enable=1` lifts the OS-stage USB budget to 1.6 A once Linux is up. It doesn't reach the bootloader; only the EEPROM setting does.
 
-RTL9210B bridges (firmware 20.01) are known to drop under sustained load on the Pi 5. `uas` resets in `dmesg`, or the disk re-enumerating under container load, mean swapping the enclosure for an ASMedia- or JMicron-based one.
+RTL9210B bridges (USB ID `0bda:9210`) hang under sustained load on the Pi 5 when they run in UAS mode: `uas_eh_abort_handler` lines and a device reset in `dmesg`, then I/O errors once a reset fails, and the containers and SSH die with the disk. An image build is enough to trigger it. Turn UAS off for the bridge, at some cost in throughput, by prepending the quirk to the single line of the boot partition's `cmdline.txt` from a host shell, then rebooting:
+
+```sh
+sed -i '1s/^/usb-storage.quirks=0bda:9210:u /' /mnt/boot/cmdline.txt
+reboot
+```
+
+`dmesg` then reports `UAS is ignored for this device, using usb-storage instead`. A balenaOS update may rewrite `cmdline.txt`: check `/proc/cmdline` after one. An ASMedia- or JMicron-based enclosure needs no quirk.
 
 ## Deploying
 
