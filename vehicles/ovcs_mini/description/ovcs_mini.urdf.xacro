@@ -95,11 +95,11 @@
   <!-- Gazebo 10 velocity mode uses L / sin(parameter), not L / tan(parameter). -->
   <xacro:property name="gazebo_steering_limit" value="${asin(tan(steering_limit))}" />
 
-  <!-- Stereo geometry; camera height remains an estimate. -->
+  <!-- Stereo geometry. -->
   <xacro:property name="baseline" value="0.090" />
   <xacro:property name="focal_px" value="${779.54677 * 480 / 640}" />
   <xacro:property name="camera_x" value="${half_wheelbase - 0.120}" />
-  <xacro:property name="camera_z" value="0.12" />
+  <xacro:property name="camera_z" value="0.185" />
 
   <!-- ── base_link ──────────────────────────────────────────────── -->
   <!-- Deliberately empty. A link with no inertia is the conventional
