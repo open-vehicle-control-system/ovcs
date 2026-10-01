@@ -96,7 +96,7 @@ services:
     # the Nerves bridges (tcp/<this-host-ip>:7447, baked in at firmware
     # build time), the services below, and the base station — joins
     # as a client.
-    image: eclipse/zenoh:1.9.0
+    image: eclipse/zenoh:1.8.0
     restart: always
     # Host networking so the router's listen socket and Zenoh's local
     # discovery behave the same as a bare-metal install.

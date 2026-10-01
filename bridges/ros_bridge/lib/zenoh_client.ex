@@ -836,16 +836,12 @@ defmodule RosBridge.ZenohClient do
   ## Internals — session
 
   defp open_session(endpoint_ip) do
-    with config <- Zenohex.Config.default(),
-         {:ok, config} <- Zenohex.Config.insert_json5(config, "mode", "client"),
-         {:ok, config} <-
-           Zenohex.Config.insert_json5(
-             config,
-             "connect/endpoints",
-             ~s(["tcp/#{endpoint_ip}:#{@zenoh_port}"])
-           ) do
-      Zenohex.Session.open(config)
-    end
+    Zenohex.Config.default()
+    |> Zenohex.Config.update_in(["mode"], fn _ -> "client" end)
+    |> Zenohex.Config.update_in(["connect", "endpoints"], fn _ ->
+      ["tcp/#{endpoint_ip}:#{@zenoh_port}"]
+    end)
+    |> Zenohex.Session.open()
   end
 
   defp schedule_reconnect(state, backoff_ms, reason) do

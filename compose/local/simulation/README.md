@@ -228,7 +228,7 @@ The model carries the stereo pair and a simulated BNO085 on `/imu_raw`. The came
 
 ## Why Jetty, and why Lyrical
 
-ROS 2 Jazzy supports only Gazebo Harmonic; Jetty, the current LTS, needs ROS 2 **Lyrical**, so the whole ROS stack is on Lyrical. The move changed nothing on the wire: all 14 `RIHS01_` type hashes `ros_bridge` carried over from Jazzy are identical on Lyrical (the 15th, `nav_msgs/msg/Odometry`, was captured on Lyrical directly), and zenoh is 1.9.0 on both sides, the version `zenohex` 0.9 pins. The Elixir side speaks the rmw_zenoh protocol directly and links nothing from ROS.
+ROS 2 Jazzy supports only Gazebo Harmonic; Jetty, the current LTS, needs ROS 2 **Lyrical**, so the whole ROS stack is on Lyrical. The move changed nothing on the wire: all 14 `RIHS01_` type hashes `ros_bridge` carried over from Jazzy are identical on Lyrical (the 15th, `nav_msgs/msg/Odometry`, was captured on Lyrical directly), and both sides run zenoh 1.8, the version `zenohex` 0.8 pins. The Elixir side speaks the rmw_zenoh protocol directly and links nothing from ROS.
 
 ## Known limitations
 
