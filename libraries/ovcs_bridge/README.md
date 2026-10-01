@@ -56,9 +56,10 @@ matching entry in `vehicle.bridge_firmwares/0`, and:
 3. flat-maps `children/0` from every bundled bridge module;
 4. runs everything under `:one_for_one`.
 
-Bridge libraries get cluster-wide `OvcsBus` for free — this lib
-depends on `ovcs_bus`, so `OvcsBus.subscribe/1` and `broadcast/2`
-work out of the box and reach subscribers on every peer BEAM.
+Bridge libraries get `OvcsBus` for free — this lib depends on
+`ovcs_bus`, so `OvcsBus.subscribe/1` and `broadcast/2` work out of
+the box. A broadcast reaches peer BEAMs only with `:cluster_broadcast`
+set (see [`OvcsBus`](../ovcs_bus)).
 
 ## Layout
 
@@ -73,7 +74,7 @@ lib/
 
 - `ovcs_vehicle` — for the `OvcsVehicle` contract the supervisor
   queries for the active bridge firmware entry.
-- `ovcs_bus` — cluster-wide pub/sub bus, available to every
+- `ovcs_bus` — pub/sub bus, available to every
   bridge library that transitively depends on this one.
 
 ## Why bridge libs are listed in `bridges/firmware/mix.exs`

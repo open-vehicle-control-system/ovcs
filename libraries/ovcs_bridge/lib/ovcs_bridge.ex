@@ -13,9 +13,8 @@ defmodule OvcsBridge do
   Bridge libraries get `OvcsBus` pub/sub for free — pulling in
   `ovcs_bridge` brings `ovcs_bus` along, so a bridge child can
   `OvcsBus.subscribe("messages")` / `OvcsBus.broadcast/2` exactly
-  like any `vms_core` component. `OvcsBus` is cluster-wide, so any
-  broadcast on a bridge BEAM reaches subscribers on the VMS /
-  infotainment / other-bridge BEAMs over Erlang distribution.
+  like any `vms_core` component. A broadcast stays on the bridge's
+  BEAM unless `:cluster_broadcast` is set (see `OvcsBus`).
 
   Keep the behaviour tight — anything vehicle-specific belongs in
   the vehicle's `bridge_firmwares/0` entry (target, CAN config,

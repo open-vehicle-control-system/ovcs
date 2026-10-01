@@ -1,10 +1,9 @@
 # OvcsBus
 
-Cluster-wide pub/sub bus shared across the VMS, infotainment, and
-bridge firmwares. Thin wrapper around `Phoenix.PubSub`, with
-`OvcsBus.Cluster` stitching every OVCS BEAM into a distributed
-Erlang mesh at boot so `broadcast/2` reaches subscribers on every
-node with no separate transport.
+Pub/sub bus of the VMS, infotainment, and bridge firmwares. Thin
+wrapper around `Phoenix.PubSub`, with `OvcsBus.Cluster` stitching
+every OVCS BEAM into a distributed Erlang mesh at boot. `broadcast/2`
+stays on the local node unless `:cluster_broadcast` is set.
 
 ## Why
 
@@ -30,9 +29,12 @@ used and subscribers discriminate in `handle_info` using the
 `%OvcsBus.Message{}` struct's `:name` + `:source` fields. Topics
 are free-form strings — add more if you need fan-out isolation.
 
-`broadcast/2` fans out to subscribers on every node in the cluster,
-including the local one. Use `local_broadcast/2` for the rare case
-you want to keep a message node-local.
+`broadcast/2` delivers to subscribers on the local node. With
+`config :ovcs_bus, cluster_broadcast: true` it fans out to every node
+in the cluster instead. That is off by default: a cluster broadcast
+suspends the publisher while the link to any peer is saturated, so a
+slow link stalls the component that published. `local_broadcast/2`
+always stays node-local.
 
 `OvcsBus.Message`:
 - `:name`          — short atom (e.g. `:ready_to_drive`, `:speed`).
@@ -58,9 +60,9 @@ become dashes: the OVCS Mini's VMS is `ovcs-mini-vms@<host>` on the
 host, and its `radio_control` bridge `ovcs-mini-bridge-radio-control`.
 
 It calls `Node.connect/1` on each peer and retries on a 2-second
-tick so nodes that boot later are folded into the mesh. Once every
-node is connected, `Phoenix.PubSub.broadcast/3` carries the message
-to all subscribers on all nodes natively.
+tick so nodes that boot later are folded into the mesh. With
+`:cluster_broadcast` set, `Phoenix.PubSub.broadcast/3` then carries
+each message to all subscribers on all nodes natively.
 
 On the host, `./ovcs run` starts each BEAM with `--sname` and
 `--cookie ovcs`. A Nerves release boots unnamed, so

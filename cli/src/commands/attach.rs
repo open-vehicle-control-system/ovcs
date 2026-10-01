@@ -306,7 +306,7 @@ Process.sleep(:infinity)
 ///
 /// Subscribes to:
 /// - `OvcsBus` messages — but only when running on the VMS node, because
-///   `OvcsBus.Cluster` fans out cluster-wide and subscribing on every BEAM
+///   `OvcsBus.broadcast/2` can fan out cluster-wide and subscribing on every BEAM
 ///   would yield N duplicates of every message.
 /// - Every Cantastic network the local BEAM knows about (per-BEAM — each
 ///   side has its own YAML).

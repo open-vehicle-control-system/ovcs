@@ -244,7 +244,7 @@ This provisions the vehicle's vcan interfaces (`./ovcs can setup <vehicle>` does
 - the VMS API on `http://localhost:4000`, in the `<vehicle>-vms` BEAM;
 - the infotainment API on `http://localhost:4001`, in `<vehicle>-infotainment`, for vehicles that implement `infotainment/0`;
 - one BEAM per bridge firmware, named `<vehicle>-bridge-<id>` (every node name turns underscores into dashes, in `<vehicle>` and `<id>` alike);
-- an Erlang-distribution cluster stitched together by `OvcsBus.Cluster`: each BEAM `Node.connect/1`s the others, and `OvcsBus.broadcast/2` reaches every node. Deployed firmware uses the same transport.
+- an Erlang-distribution cluster stitched together by `OvcsBus.Cluster`: each BEAM `Node.connect/1`s the others, and `OvcsBus.broadcast/2` reaches every node when `:cluster_broadcast` is set. Deployed firmware uses the same transport.
 
 The Vue dashboard starts alongside as a dev add-on (`--no-addons` skips it). The Flutter dashboard needs its own terminal, because its hot reload is keyboard-driven:
 

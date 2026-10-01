@@ -40,6 +40,17 @@ defmodule OvcsBusTest do
     refute_receive _, 50
   end
 
+  test "broadcast reaches local subscribers whether cluster_broadcast is set or not" do
+    :ok = OvcsBus.subscribe("messages")
+    message = %OvcsBus.Message{name: :x, value: 1, source: __MODULE__}
+
+    with_cluster_broadcast(false, fn -> OvcsBus.broadcast("messages", message) end)
+    assert_receive ^message
+
+    with_cluster_broadcast(true, fn -> OvcsBus.broadcast("messages", message) end)
+    assert_receive ^message
+  end
+
   test "a message without a source is refused rather than delivered as a wildcard" do
     :ok = OvcsBus.subscribe("messages")
 
@@ -54,5 +65,18 @@ defmodule OvcsBusTest do
     end
 
     refute_receive _, 50
+  end
+
+  defp with_cluster_broadcast(value, fun) do
+    previous = Application.get_env(:ovcs_bus, :cluster_broadcast)
+    Application.put_env(:ovcs_bus, :cluster_broadcast, value)
+
+    try do
+      fun.()
+    after
+      if previous == nil,
+        do: Application.delete_env(:ovcs_bus, :cluster_broadcast),
+        else: Application.put_env(:ovcs_bus, :cluster_broadcast, previous)
+    end
   end
 end
