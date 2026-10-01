@@ -50,6 +50,9 @@ defmodule RosBridge.StereoCamera.OpenCV do
       already produces rectified frames.
     * `:num_disparities` (64), `:block_size` (5), `:min_disparity`
       (0) — `Evision.StereoSGBM` parameters.
+    * `:persistence_filter` — options for
+      `RosBridge.StereoCamera.PersistenceFilter`, which keeps only the cloud
+      points the previous clouds saw. Off when absent.
     * `:name` — GenServer name (default `__MODULE__`).
   """
   use GenServer
@@ -57,6 +60,7 @@ defmodule RosBridge.StereoCamera.OpenCV do
 
   alias RosBridge.Camera.Calibration
   alias RosBridge.Camera.Frame
+  alias RosBridge.StereoCamera.PersistenceFilter
   alias RosBridge.StereoCamera.Result
   alias RosBridge.StereoCamera.Telemetry
 
@@ -152,6 +156,7 @@ defmodule RosBridge.StereoCamera.OpenCV do
        baseline: baseline,
        principal_point: principal_point(left_calibration),
        cloud_decimation: Keyword.get(opts, :cloud_decimation, 4),
+       persistence: persistence(Keyword.get(opts, :persistence_filter)),
        num_disparities: Keyword.get(opts, :num_disparities, 64),
        block_size: Keyword.get(opts, :block_size, 5),
        min_disparity: Keyword.get(opts, :min_disparity, 0),
@@ -287,6 +292,8 @@ defmodule RosBridge.StereoCamera.OpenCV do
         {pack_ns, result} =
           time(fn -> build_result(raw_disparity, left_frame, left_rectified, state) end)
 
+        {persist_ns, {result, persistence}} = time(fn -> persist(result, state.persistence) end)
+
         telemetry =
           state.telemetry
           |> Telemetry.record(:decode, decode_ns)
@@ -295,6 +302,7 @@ defmodule RosBridge.StereoCamera.OpenCV do
           |> Telemetry.record(:sgbm, sgbm_ns)
           |> Telemetry.record(:post, post_ns)
           |> Telemetry.record(:pack, pack_ns)
+          |> maybe_record_persistence(state.persistence, persist_ns)
           |> maybe_record_quality(quality_ns, quality_samples)
 
         previous_disparity = if run_quality?, do: raw_disparity, else: state.previous_disparity
@@ -304,7 +312,8 @@ defmodule RosBridge.StereoCamera.OpenCV do
            state
            | telemetry: telemetry,
              previous_disparity: previous_disparity,
-             frame_count: frame_count
+             frame_count: frame_count,
+             persistence: persistence
          }}
 
       {:error, reason} ->
@@ -312,6 +321,22 @@ defmodule RosBridge.StereoCamera.OpenCV do
         {{:error, reason}, %{state | telemetry: telemetry}}
     end
   end
+
+  defp persistence(nil), do: nil
+  defp persistence(opts), do: PersistenceFilter.new(opts)
+
+  defp persist(result, nil), do: {result, nil}
+  defp persist(%Result{cloud: nil} = result, persistence), do: {result, persistence}
+
+  defp persist(%Result{} = result, persistence) do
+    {cloud, points, persistence} = PersistenceFilter.filter(persistence, result.cloud)
+    {%{result | cloud: cloud, cloud_points: points}, persistence}
+  end
+
+  defp maybe_record_persistence(telemetry, nil, _ns), do: telemetry
+
+  defp maybe_record_persistence(telemetry, _persistence, ns),
+    do: Telemetry.record(telemetry, :persist, ns)
 
   defp time(fun) do
     start = System.monotonic_time(:nanosecond)
