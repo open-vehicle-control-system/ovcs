@@ -446,6 +446,7 @@ defmodule OvcsMini do
       height: 270,
       fps: 30,
       pair_tolerance_ms: 100,
+      publish_rectified_image: true,
       backend_opts: [
         num_disparities: 96,
         block_size: 9,
