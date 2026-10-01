@@ -100,7 +100,8 @@ controller_server:
       model_dt: 0.05
       batch_size: 1000
       vx_std: 0.2
-      wz_std: 0.4
+      # Larger steering noise shows up as wobble in the chosen command.
+      wz_std: 0.2
       # Indoors: the stereo sees 3 m ahead.
       vx_max: 0.6
       # No reverse: stereo looks forward only, so the costmap behind the
