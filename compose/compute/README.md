@@ -63,6 +63,12 @@ The limit is in messages, not bytes, and does not bound TCP buffers or
 reduce the source bandwidth. A full control-message queue disconnects
 the client, so check reconnections when reducing the limit further.
 
+A third process, `foxglove_watchdog`, exits when the bridge leaves more
+than 1 MB unread on its Zenoh connection for 10 s. A client that stops
+draining its session fills the router's queue towards it, and the router
+then stalls graph discovery for every node, Nav2 included; the restart
+opens a fresh session.
+
 The 3.4.3 bridge still declares `use_compression` and `send_buffer_limit`,
 but its SDK-backed WebSocket initialization does not use them. Do not
 rely on those parameters for compression or a byte-based queue limit.

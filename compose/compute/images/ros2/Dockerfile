@@ -67,6 +67,7 @@ COPY zenoh/session.json5.template /etc/zenoh/session.json5.template
 COPY docker/entrypoint.sh         /usr/local/bin/entrypoint
 COPY docker/foxglove_bridge.sh    /usr/local/bin/foxglove_bridge
 COPY docker/foxglove_compression.py /usr/local/bin/foxglove_compression
+COPY docker/foxglove_watchdog.py  /usr/local/bin/foxglove_watchdog
 COPY docker/joy.sh                /usr/local/bin/joy
 COPY docker/calibrator.sh         /usr/local/bin/calibrator
 COPY docker/decompress_stereo.py  /usr/local/bin/decompress_stereo
