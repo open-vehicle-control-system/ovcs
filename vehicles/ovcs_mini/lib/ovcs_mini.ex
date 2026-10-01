@@ -27,7 +27,7 @@ defmodule OvcsMini do
     do: %{
       wheelbase: 0.324,
       track: 0.296,
-      wheel_radius: 0.0548,
+      wheel_radius: 0.0522,
       steering_limit: 0.52
     }
 
