@@ -142,9 +142,12 @@ defmodule OvcsMini do
       else
         # After :imu_publisher, which starts the driver this listens
         # to. Reads the VMS's vehicle_motion frame off CAN and
-        # publishes /odom and odom -> base_link, which is everything
-        # Nav2 needs in the map-less setup.
-        [{:odometry_publisher, driver: OvcsDrivers.Imu.Dummy}]
+        # publishes /odom and odom -> base_link for the mapping stack.
+        [
+          {:odometry_publisher,
+           driver: OvcsDrivers.Imu.Dummy, base_offset_x: geometry().wheelbase / 2},
+          rear_axle_transform()
+        ]
       end
 
     %RosBridge.Config{
@@ -168,7 +171,8 @@ defmodule OvcsMini do
          %{topic: "cmd_vel_nav", message: Ros2.GeometryMsgs.Msg.TwistStamped}},
         {:imu_publisher, driver: BNO085.I2C},
         # Same ordering constraint as the host config.
-        {:odometry_publisher, driver: BNO085.I2C}
+        {:odometry_publisher, driver: BNO085.I2C, base_offset_x: geometry().wheelbase / 2},
+        rear_axle_transform()
       ]
     }
 
@@ -284,40 +288,26 @@ defmodule OvcsMini do
     }
   end
 
-  # Where the stereo bar sits on the car. Without this, `stereo_left`
-  # is a label nothing can resolve: a consumer knows a point is 1.2 m
-  # in front of the camera but not where the camera is, so it cannot
-  # express the measurement in the car's own terms — and Foxglove's 3D
-  # panel reports the frame missing and draws nothing.
-  #
-  # The rotation is the standard body -> optical frame change, not a
-  # mounting angle: base_link is REP-103 (x forward, y left, z up)
-  # while an optical frame is x right, y down, z into the image. That
-  # is what the (-0.5, 0.5, -0.5, 0.5) quaternion does.
-  #
-  # x and z are measured.
-  #
-  # `base_link` sits midway between the axles, so with a 324 mm
-  # wheelbase the front axle is 162 mm ahead of it. The camera bar is
-  # 120 mm behind the front axle, which puts the lenses at
-  # 162 - 120 = 42 mm forward of base_link. The value here was 100 mm
-  # — a guess that placed the cameras 58 mm too far forward and shifted
-  # every detection on the vehicle by that much.
-  #
-  # y is 0: the bar straddles the centreline, and the pair's own 90 mm
-  # baseline is carried by the calibration, not by this transform,
-  # which locates `stereo_left` — the frame the depth image and
-  # detections are published in.
-  #
-  # z is the lens centres' height above the ground, where base_link
-  # sits: 185 mm.
+  defp rear_axle_transform do
+    {:static_transforms,
+     transforms: [
+       %{
+         parent: "base_link",
+         child: "rear_axle",
+         translation: {-geometry().wheelbase / 2, 0.0, 0.0},
+         rotation: {0.0, 0.0, 0.0, 1.0}
+       }
+     ]}
+  end
+
+  # The left lens is 45 mm left of the centreline and 185 mm above ground.
   defp stereo_transforms do
     {:static_transforms,
      transforms: [
        %{
          parent: "base_link",
          child: "stereo_left",
-         translation: {0.042, 0.0, 0.185},
+         translation: {0.042, 0.045, 0.185},
          rotation: {-0.5, 0.5, -0.5, 0.5}
        }
      ]}
@@ -386,73 +376,21 @@ defmodule OvcsMini do
   defp stereo_component(camera_driver, arm) do
     {
       :stereo_camera,
-      # 640×360 is 16:9 — the sensor's native aspect. Asking a 16:9
-      # sensor for a 4:3 buffer squeezed the full field of view into
-      # 480 rows, which showed up in the calibration as fy/fx = 1.334
-      # (anamorphic pixels) and cost 1.44x on the near clip, because
-      # rectification then inflates f from ~725 to 1046 restoring
-      # square pixels. Native aspect also means 25 % fewer pixels for
-      # SGBM, which scales with `width × height × num_disparities`.
-      #
-      # 480x270 keeps that 16:9 aspect and is a pure isotropic
-      # downscale, which is why the 640x360 calibration still applies:
-      # the backend scales K and P to the capture resolution, and for a
-      # proportional resize that scaling is exact (distortion
-      # coefficients are normalised). Changing the *aspect* is what
-      # requires a fresh calibration, not changing the size.
-      #
-      # Resolution is the best lever this pipeline has, because it cuts
-      # compute and improves near range at once: f scales with width,
-      # and the near clip is (f x baseline) / num_disparities. Measured
-      # offline on identical rectified frames, coverage held at ~38-39 %
-      # across 640/560/480/400 wide — SGBM's limit here is texture, not
-      # pixel count — while cost and near clip both fell:
-      #
-      #   640x360   f*B 69.7   clip 0.73 m   SGBM ~141 ms
-      #   480x270   f*B 52.3   clip 0.55 m   SGBM  ~79 ms
-      #
-      # The price is depth precision at distance, since dZ = Z^2 dd /
-      # (f*B): about 3.8 cm at 2 m against 2.9 cm at 640 wide. Fine for
-      # deciding whether to stop for something; not fine for mapping.
-      # Wide enough for the unsynchronized USB cameras on host;
-      # drop to 5 ms once the perception target has FSIN-tied CSI
-      # modules.
-      # num_disparities sets the *near* clip: Z_min = (f × baseline) /
-      # num_disparities. With the calibrated f·B of 93.9 px·m, 48
-      # disparities clipped at 2.0 m — everything closer was clamped
-      # there (measured: image centre pinned at exactly 2.00 m, 5 % of
-      # valid pixels at the ceiling), which is useless on a car whose
-      # obstacles live between 0.2 and 3 m. 96 brings the clip to
-      # ~0.98 m. SGBM cost scales roughly linearly with this, so it is
-      # bought with frame rate: 128 reached 0.74 m but pushed the Pi to
-      # load 5.7 on 4 cores, dropped disparity to 3.6 Hz and starved
-      # the capture path down to 26 Hz. It also blinds the leftmost
-      # `num_disparities` columns, so 128 costs 20 % of the image width
-      # against 15 % here. The real headroom is in capturing 16:9
-      # instead of 4:3 — the anamorphic squeeze inflates rectified f
-      # from 725 to 1046, and undoing it buys the same near clip for
-      # ~1.44x fewer disparities. Must stay a multiple of 16.
-      # block_size and speckle filtering are tuned against the failure
-      # that matters to the costmap: not missing pixels but confident
-      # wrong ones. Thin and repetitive structure (a pole, cabinet
-      # doors, shelving) false-matches to a disparity far too large,
-      # and reads as an obstacle about a metre ahead. A hole is honest;
-      # a phantom obstacle is not. Keep CLAHE: without it those
-      # phantoms multiply.
+      # Keep the calibration's 16:9 aspect. At 480x270, 96 disparities
+      # give a 0.55 m near limit. Pair within 20 ms to limit motion mismatch.
+      # Spatial disparity filtering feeds both the depth image and cloud.
       driver: camera_driver,
       calibration_dir: priv_calibration_dir(arm),
       width: 480,
       height: 270,
       fps: 30,
-      pair_tolerance_ms: 100,
+      pair_tolerance_ms: 20,
       publish_rectified_image: true,
       backend_opts: [
         num_disparities: 96,
         block_size: 9,
         speckle_window_size: 300,
-        speckle_range: 12,
-        # The glossy floor's reflections come and go between frames.
-        persistence_filter: [voxel_m: 0.10, frames: 2]
+        speckle_range: 12
       ],
       left: camera_addressing(arm, :left),
       right: camera_addressing(arm, :right)

@@ -62,4 +62,12 @@ defmodule RosBridge.Consumers.VelocityTest do
     assert Velocity.next_sequence(0) == 1
     assert Velocity.next_sequence(255) == 0
   end
+
+  test "stamped commands reject delayed, future and uninitialized source times" do
+    now = 1_000_000_000
+    assert Velocity.fresh_stamp?(now - 250_000_000, now, 300)
+    refute Velocity.fresh_stamp?(now - 301_000_000, now, 300)
+    refute Velocity.fresh_stamp?(now + 101_000_000, now, 300)
+    refute Velocity.fresh_stamp?(0, now, 300)
+  end
 end
