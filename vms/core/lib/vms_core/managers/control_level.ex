@@ -186,6 +186,10 @@ defmodule VmsCore.Managers.ControlLevel do
     {:noreply, state}
   end
 
+  defp rank(:manual), do: 0
+  defp rank(:radio), do: 1
+  defp rank(:ros), do: 2
+
   defp select_control_level(state) when not is_nil(state.requested_control_level_source) do
     %{
       ready_to_drive: ready_to_drive,
@@ -218,12 +222,13 @@ defmodule VmsCore.Managers.ControlLevel do
         %{state | selected_control_level: :ros}
 
       # The force is lifted by the switch returning to the level it was
-      # forced to, not by the brake being released, so a level whose
-      # forcing condition is still active must be refused on entry
-      # above rather than entered for the one tick it takes to force it
-      # again.
-      requested_control_level == selected_control_level &&
-          requested_control_level == forced_control_level ->
+      # forced to, or below it, not by the brake being released, so a
+      # level whose forcing condition is still active must be refused on
+      # entry above rather than entered for the one tick it takes to
+      # force it again.
+      not is_nil(forced_control_level) &&
+        requested_control_level == selected_control_level &&
+          rank(selected_control_level) <= rank(forced_control_level) ->
         %{state | forced_control_level: nil}
 
       true ->
