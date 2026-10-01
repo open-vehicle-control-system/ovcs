@@ -101,15 +101,16 @@ controller_server:
       batch_size: 1000
       vx_std: 0.2
       wz_std: 0.4
-      vx_max: 1.5
+      # Indoors: the stereo sees 3 m ahead.
+      vx_max: 0.6
       # No reverse: stereo looks forward only, so the costmap behind the
       # car is always empty.
       vx_min: 0.0
       wz_max: 2.5
       # From standstill MPPI reaches two steps of ax_max * model_dt, so
       # this also sets how quickly a start clears the smoother's deadband.
-      ax_max: 3.0
-      ax_min: -3.0
+      ax_max: 1.0
+      ax_min: -2.0
       az_max: 3.0
       iteration_count: 1
       temperature: 0.3
@@ -338,10 +339,10 @@ velocity_smoother:
     smoothing_frequency: 20.0
     scale_velocities: false
     feedback: "OPEN_LOOP"
-    max_velocity: [1.5, 0.0, 2.5]
+    max_velocity: [0.6, 0.0, 2.5]
     min_velocity: [0.0, 0.0, -2.5]
-    max_accel: [3.0, 0.0, 3.0]
-    max_decel: [-3.0, 0.0, -3.0]
+    max_accel: [1.0, 0.0, 3.0]
+    max_decel: [-2.0, 0.0, -3.0]
     # The VESC brakes instead of driving below its Minimum ERPM (300, so
     # 0.07 m/s on this vehicle), so any slower linear velocity is sent
     # as zero: the vehicle drives above that floor, or stops. The
