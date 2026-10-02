@@ -29,6 +29,8 @@
     RGBD/LinearUpdate: "0.1"
     RGBD/AngularUpdate: "0.1"
     Mem/IncrementalMemory: "true"
+    # Load valid graph nodes; timestamp-based session loading can include merged nodes after a crash.
+    Mem/InitWMWithAllNodes: "true"
     # 480x270 greyscale on plain walls yields few features.
     Vis/MinInliers: "15"
 

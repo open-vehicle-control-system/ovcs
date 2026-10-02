@@ -263,14 +263,23 @@ class ForwardExplore(Node):
             return
         if now - self.started >= self.max_duration:
             return self.finish("time limit reached")
-        healthy = (
+        inputs_ready = (
             self.map
             and self.map.fresh(self.ros_now(), now, 3.0)
             and self.guard
             and self.guard.fresh(self.ros_now(), now, 0.5)
             and self.guard.value["ready"]
-            and not self.guard.value.get("fault")
         )
+        if self.origin is None and self.session is None and self.planning is None:
+            if inputs_ready:
+                speed = self.guard.value.get("speed")
+                pose = self.pose()
+                if speed is not None and abs(speed) <= 0.02 and pose is not None:
+                    # An explicit new mission clears old faults with motion still disabled.
+                    self.origin = pose[:2]
+                    self.publish_lease(False)
+            return
+        healthy = inputs_ready and not self.guard.value.get("fault")
         if self.session:
             if not healthy or self.guard.value.get("fault"):
                 return self.finish("sensor, localization or motion guard unavailable")
@@ -321,9 +330,6 @@ class ForwardExplore(Node):
         pose = self.pose()
         if pose is None:
             return
-        if self.origin is None:
-            self.origin = pose[:2]
-            self.publish_lease(False)
         if not core.footprint_clear(self.map.value, pose, self.footprint):
             self.get_logger().warning(
                 "Waiting for known free space under the complete footprint."

@@ -91,6 +91,9 @@ image and `/odom`. Its database persists across restarts. A new mapping
 session requires an explicit `delete_db_on_start:=true` launch argument;
 a failed database load does not silently erase the map. Every mapper
 restart changes `/rtabmap/session` and stops any active exploration.
+Startup loads the valid graph nodes instead of inferring the previous working
+memory from save timestamps, which can include merged nodes after an interrupted
+save. Large saved maps therefore need more startup memory.
 
 The `explore` container idles until launched. With the OVCS Mini reference
 vehicle in `:ros` / `:autonomous`, start it with:

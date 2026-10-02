@@ -276,6 +276,57 @@ class NodeTest(unittest.TestCase):
         self.assertNotIn("map", self.guard.samples)
         self.assertIn("stale or missing", self.evaluate())
 
+    def startup_guard_status(self, speed=0.0):
+        self.explorer.on_guard(
+            String(
+                data=json.dumps(
+                    {
+                        "stamp": self.explorer.ros_now(),
+                        "ready": True,
+                        "fault": "mapper restarted; restart exploration",
+                        "speed": speed,
+                    }
+                )
+            )
+        )
+
+    def test_new_stationary_mission_clears_restart_fault_without_authorizing_motion(self):
+        self.inputs()
+        self.guard.lease.value["enabled"] = False
+        self.guard.fault = "mapper restarted; restart exploration"
+        self.startup_guard_status()
+        self.explorer.step()
+        deadline = time.monotonic() + 2
+        while self.guard.mission != self.explorer.mission and time.monotonic() < deadline:
+            rclpy.spin_once(self.guard, timeout_sec=0.01)
+        self.assertEqual(self.guard.mission, self.explorer.mission)
+        self.assertIsNone(self.guard.fault)
+        self.assertFalse(self.guard.lease.value["enabled"])
+        self.assertIsNone(self.explorer.session)
+        self.assertIsNone(self.explorer.planning)
+
+    def test_mission_start_requires_standstill_and_fresh_inputs(self):
+        self.inputs()
+        self.startup_guard_status(speed=0.1)
+        self.explorer.step()
+        self.assertIsNone(self.explorer.origin)
+        self.startup_guard_status()
+        self.explorer.guard.stamp -= 1
+        self.explorer.step()
+        self.assertIsNone(self.explorer.origin)
+
+    def test_existing_mission_does_not_clear_restart_fault(self):
+        self.inputs()
+        self.explorer.origin = (0, 0)
+        self.guard.mission = self.explorer.mission
+        self.guard.fault = "mapper restarted; restart exploration"
+        self.startup_guard_status()
+        self.explorer.step()
+        rclpy.spin_once(self.guard, timeout_sec=0.05)
+        self.assertIsNotNone(self.guard.fault)
+        self.assertIsNone(self.explorer.session)
+        self.assertIsNone(self.explorer.planning)
+
     def test_goal_behind_or_wrong_heading_is_not_success(self):
         self.explorer.goal = (0, 0, math.pi / 2)
         self.assertFalse(self.explorer.at_goal((2, 0, 0)))
