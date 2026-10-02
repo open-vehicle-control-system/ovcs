@@ -362,6 +362,10 @@ defmodule VmsCore.Components.Vesc.MotorControllerTest do
       assert state.tachometer_samples == []
     end
 
+    test "the tachometer is also the motor's turns: 6 steps per electrical turn" do
+      assert D.eq?(MotorController.revolutions(-24, @pole_pairs), D.new(-2))
+    end
+
     test "the tachometer rate is steps over 6 per electrical turn, signed, over the window" do
       # 2 pole pairs: 12 steps a motor turn. 24 steps in 100 ms is 1200 rpm.
       {nil, samples} = MotorController.tachometer_rotation([], {1000, 500}, @pole_pairs)

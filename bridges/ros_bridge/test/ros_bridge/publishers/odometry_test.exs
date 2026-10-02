@@ -15,7 +15,6 @@ defmodule RosBridge.Publishers.OdometryTest do
         topic: "odom",
         odom_frame_id: "odom",
         base_frame_id: "base_link",
-        publish_interval_ms: 50,
         stale_after_ms: 300
       },
       overrides
@@ -157,6 +156,58 @@ defmodule RosBridge.Publishers.OdometryTest do
       {x, y} = Odometry.base_position(final)
       assert_in_delta x, 1.0, 0.01
       assert_in_delta y, 1.162, 0.01
+    end
+  end
+
+  describe "observe/2 with a distance counter" do
+    defp moving(overrides) do
+      state(
+        Keyword.merge(
+          [
+            sequence: 1,
+            speed: 2.0,
+            speed_valid: true,
+            yaw: 0.0,
+            last_fresh_at_ms: 900,
+            distance: 10.0,
+            distance_valid: true
+          ],
+          overrides
+        )
+      )
+    end
+
+    test "integrates the counter's difference, not the speed" do
+      after_state = Odometry.observe(moving([]), sample(%{distance: 10.03, distance_valid: true}))
+      assert_in_delta after_state.x, 0.03, 1.0e-9
+    end
+
+    test "a counter that wrapped still steps forward" do
+      after_state =
+        Odometry.observe(moving(distance: 65.52), sample(%{distance: 0.01, distance_valid: true}))
+
+      assert_in_delta after_state.x, 0.026, 1.0e-9
+    end
+
+    test "reversing steps backwards" do
+      after_state = Odometry.observe(moving([]), sample(%{distance: 9.98, distance_valid: true}))
+      assert_in_delta after_state.x, -0.02, 1.0e-9
+    end
+
+    test "a restarted counter is skipped, not integrated" do
+      after_state = Odometry.observe(moving([]), sample(%{distance: 42.0, distance_valid: true}))
+      assert after_state.x == 0.0
+      assert after_state.distance == 42.0
+    end
+
+    test "without a valid counter it falls back to the speed" do
+      after_state =
+        Odometry.observe(
+          moving(distance_valid: false),
+          sample(%{distance: 10.03, distance_valid: true})
+        )
+
+      assert_in_delta after_state.x, 0.2, 1.0e-9
     end
   end
 

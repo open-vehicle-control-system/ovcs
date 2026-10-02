@@ -38,6 +38,18 @@ defmodule VmsCore.Components.OVCS.VehicleMotion do
   from the servo's convention back to REP-103's positive-left, undoing
   the sign the command path applied on the way in.
 
+  ## Distance
+
+  A rate measured over a window describes the middle of the window: a
+  tachometer differenced over 200 ms reports the speed of 100 ms ago,
+  and position integrated from it lags as much. With a
+  `:revolution_source` publishing the same shaft's cumulative
+  `:revolutions`, the frame also carries the distance the wheels have
+  rolled, signed, as a 16-bit counter of millimetres that wraps every
+  65.536 m. A consumer integrates the difference between two samples,
+  which needs no window. `distance_valid` is false while the source is
+  silent.
+
   ## Unknown is not zero
 
   The rotation source publishes nil while its frame is dead, and the
@@ -67,6 +79,8 @@ defmodule VmsCore.Components.OVCS.VehicleMotion do
     * `:steering_limit` — radians at full lock, from `geometry/0`.
     * `:steering_sign` — `1` or `-1`, matching the sign given to
       `RosVelocityCommand`. Default `1`.
+    * `:revolution_source` — optional, publishes `:revolutions` of the
+      same shaft as `:rotation_source`; see "Distance".
   """
   use GenServer
   alias Cantastic.Emitter
@@ -74,7 +88,8 @@ defmodule VmsCore.Components.OVCS.VehicleMotion do
   alias OvcsBus, as: Bus
   alias OvcsBus.Units
 
-  @loop_period 50
+  # Each sample reaches the frame within a loop and an emitter period.
+  @loop_period 20
   @frame_name "vehicle_motion"
   @zero D.new(0)
 
@@ -105,6 +120,8 @@ defmodule VmsCore.Components.OVCS.VehicleMotion do
           "speed" => @zero,
           "steering_angle" => @zero,
           "speed_valid" => false,
+          "distance_valid" => false,
+          "distance" => @zero,
           "sequence" => 0
         },
         enable: true
@@ -128,6 +145,9 @@ defmodule VmsCore.Components.OVCS.VehicleMotion do
        requested_steering: @zero,
        # Unknown until the source reports, see the moduledoc.
        rotation_per_minute: nil,
+       revolution_source: Map.get(args, :revolution_source),
+       distance_factor: distance_factor(rotation_to_wheel_ratio, wheel_radius),
+       revolutions: nil,
        sequence: 0
      }}
   end
@@ -143,6 +163,8 @@ defmodule VmsCore.Components.OVCS.VehicleMotion do
           | "speed" => speed_m_s(speed),
             "steering_angle" => steering_angle(state.requested_steering, state.steering_factor),
             "speed_valid" => not is_nil(speed),
+            "distance_valid" => not is_nil(state.revolutions),
+            "distance" => distance_counter(state),
             "sequence" => state.sequence
         }
       end)
@@ -173,6 +195,11 @@ defmodule VmsCore.Components.OVCS.VehicleMotion do
       if is_nil(rotation_per_minute), do: state.sequence, else: rem(state.sequence + 1, 256)
 
     {:noreply, %{state | rotation_per_minute: rotation_per_minute, sequence: sequence}}
+  end
+
+  def handle_info(%Bus.Message{name: :revolutions, value: revolutions, source: source}, state)
+      when source == state.revolution_source and not is_nil(source) do
+    {:noreply, %{state | revolutions: revolutions}}
   end
 
   # The same source-following the actuators do: the manager names the
@@ -231,6 +258,27 @@ defmodule VmsCore.Components.OVCS.VehicleMotion do
   def speed_factor(rotation_to_wheel_ratio, wheel_radius) do
     wheel_circumference = 2 * :math.pi() * wheel_radius
     D.from_float(wheel_circumference * 60 / 1000 / rotation_to_wheel_ratio)
+  end
+
+  # Metres of wheel travel per turn of the sensed shaft.
+  @doc false
+  def distance_factor(rotation_to_wheel_ratio, wheel_radius) do
+    D.from_float(2 * :math.pi() * wheel_radius / rotation_to_wheel_ratio)
+  end
+
+  # The distance rolled, in metres modulo the 16-bit millimetre counter.
+  @doc false
+  def distance_counter(%{revolutions: nil}), do: @zero
+
+  def distance_counter(state) do
+    millimetres =
+      state.revolutions
+      |> D.mult(state.distance_factor)
+      |> D.mult(1000)
+      |> D.round(0)
+      |> D.to_integer()
+
+    millimetres |> Integer.mod(65_536) |> D.new() |> D.div(1000)
   end
 
   # Signed km/h, or nil while the rotation is unknown. A signed source

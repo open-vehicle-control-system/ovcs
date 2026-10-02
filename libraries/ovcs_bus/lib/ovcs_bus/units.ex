@@ -26,6 +26,7 @@ defmodule OvcsBus.Units do
   def newton_metre, do: "N·m"
   def pascal, do: "Pa"
   def percent, do: "%"
+  def revolution, do: "rev"
   def revolution_per_minute, do: "rpm"
   def second, do: "s"
   def volt, do: "V"
