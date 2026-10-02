@@ -264,7 +264,8 @@ defp ros_target_config,
       {:velocity_interpreter,
        %{topic: "cmd_vel_nav", message: Ros2.GeometryMsgs.Msg.TwistStamped}},
       {:imu_publisher, driver: BNO085.I2C},
-      {:odometry_publisher, driver: BNO085.I2C}
+      {:odometry_publisher,
+       driver: BNO085.I2C, base_ahead_of_rear_axle: base_ahead_of_rear_axle()}
     ]
   }
 ```
