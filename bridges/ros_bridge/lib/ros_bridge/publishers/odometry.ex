@@ -8,6 +8,7 @@ defmodule RosBridge.Publishers.Odometry.State do
     :stale_after_ms,
     :pose_covariance,
     :twist_covariance,
+    base_offset_x: 0.0,
     x: 0.0,
     y: 0.0,
     yaw: nil,
@@ -17,7 +18,9 @@ defmodule RosBridge.Publishers.Odometry.State do
     speed_valid: false,
     steering_angle: 0.0,
     sequence: nil,
-    last_fresh_at_ms: nil
+    last_fresh_at_ms: nil,
+    last_rotation_at_ms: nil,
+    last_gyro_at_ms: nil
   ]
 end
 
@@ -36,19 +39,17 @@ defmodule RosBridge.Publishers.Odometry do
   *fresh* frames — the frame's `sequence` is what distinguishes a new
   sample from `Cantastic.Emitter`'s retransmission of the last one.
   The first heading seen becomes the odom frame's zero, so a run
-  starts at the origin pointing along +x regardless of where the IMU's
+  starts with its rear axle at the origin pointing along +x regardless of where the IMU's
   own zero happens to point.
 
   ## Not knowing is not standing still
 
   Publishing stops — no `/odom`, no `/tf` — whenever the estimate is
   not trustworthy: `speed_valid` is false (the VMS lost its own speed),
-  no fresh frame has arrived within `:stale_after_ms`, or no rotation
-  sample has arrived yet. tf lookups never extrapolate past the newest
-  stamp, so a stopped publisher halts Nav2 rather than letting it plan
-  against a frozen pose. Integration across a gap is skipped for the
-  same reason: the vehicle's path during the outage is unknown, and a
-  silent position jump is worse than a pause.
+  a motion frame, heading or gyro sample is older than `:stale_after_ms`.
+  Consumers must check timestamps: a latest-TF lookup can return an old
+  transform. Integration across a gap is skipped because motion during
+  the outage is unknown.
 
   ## Options
 
@@ -58,6 +59,9 @@ defmodule RosBridge.Publishers.Odometry do
       20 Hz; publishing faster only buffers.
     * `:stale_after_ms` (default 300) — matches the VMS-side
       `Freshness` timeout on the command path.
+    * `:base_offset_x` (default 0) — base frame's forward offset from
+      the rear axle, in metres. Position integrates at the rear axle;
+      the published pose and twist include this lever arm.
     * `:pose_variance`, `:twist_variance` — the covariance diagonals,
       in the order x, y, z, roll, pitch, yaw. The defaults suit a car
       on flat ground: a few centimetres and about a degree in the
@@ -71,13 +75,13 @@ defmodule RosBridge.Publishers.Odometry do
 
   alias Cantastic.{Frame, Receiver, Signal}
   alias OvcsDrivers.Imu.Sample
-  alias Ros2.BuiltinInterfaces.Msg.Time
   alias Ros2.GeometryMsgs.Msg.{Point, Pose, PoseWithCovariance, Quaternion}
   alias Ros2.GeometryMsgs.Msg.{Transform, TransformStamped, Twist, TwistWithCovariance, Vector3}
   alias Ros2.NavMsgs.Msg.Odometry
   alias Ros2.StdMsgs.Msg.Header
   alias Ros2.Tf2Msgs.Msg.TFMessage
   alias RosBridge.Publishers.Odometry.State
+  alias RosBridge.Timing
 
   require Logger
 
@@ -90,8 +94,7 @@ defmodule RosBridge.Publishers.Odometry do
   @max_step_s 0.5
 
   @default_pose_variance [1.0e-4, 1.0e-4, 1.0e6, 1.0e6, 1.0e6, 3.0e-4]
-  # No lateral slip: a car does not move sideways.
-  @default_twist_variance [4.0e-4, 1.0e-6, 1.0e6, 1.0e6, 1.0e6, 1.0e-4]
+  @default_twist_variance [4.0e-4, 4.0e-4, 1.0e6, 1.0e6, 1.0e6, 1.0e-4]
 
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -107,6 +110,7 @@ defmodule RosBridge.Publishers.Odometry do
       base_frame_id: Keyword.get(opts, :base_frame_id, "base_link"),
       publish_interval_ms: Keyword.get(opts, :publish_interval_ms, @default_publish_interval_ms),
       stale_after_ms: Keyword.get(opts, :stale_after_ms, @default_stale_after_ms),
+      base_offset_x: Keyword.get(opts, :base_offset_x, 0.0),
       pose_covariance: diagonal(Keyword.get(opts, :pose_variance, @default_pose_variance)),
       twist_covariance: diagonal(Keyword.get(opts, :twist_variance, @default_twist_variance))
     }
@@ -161,11 +165,13 @@ defmodule RosBridge.Publishers.Odometry do
   def handle_cast({:imu_sample, %Sample{kind: :rotation, x: x, y: y, z: z, w: w}}, state) do
     yaw = yaw_from_quaternion(x, y, z, w)
     yaw_offset = state.yaw_offset || yaw
-    {:noreply, %{state | yaw: yaw - yaw_offset, yaw_offset: yaw_offset}}
+
+    {:noreply,
+     %{state | yaw: yaw - yaw_offset, yaw_offset: yaw_offset, last_rotation_at_ms: now_ms()}}
   end
 
   def handle_cast({:imu_sample, %Sample{kind: :angular_velocity, z: z}}, state) do
-    {:noreply, %{state | yaw_rate: z}}
+    {:noreply, %{state | yaw_rate: z, last_gyro_at_ms: now_ms()}}
   end
 
   def handle_cast({:imu_sample, %Sample{}}, state), do: {:noreply, state}
@@ -206,13 +212,28 @@ defmodule RosBridge.Publishers.Odometry do
 
   defp integrable?(state, sample, dt_s) do
     state.speed_valid and sample.speed_valid and not is_nil(state.yaw) and
-      not is_nil(dt_s) and dt_s <= @max_step_s
+      not is_nil(dt_s) and dt_s > 0 and dt_s <= @max_step_s and
+      imu_fresh?(state, sample.at_ms)
   end
 
   @doc false
   def publishable?(%State{} = state, now_ms) do
     state.speed_valid and not is_nil(state.yaw) and not is_nil(state.last_fresh_at_ms) and
-      now_ms - state.last_fresh_at_ms <= state.stale_after_ms
+      fresh?(state.last_fresh_at_ms, now_ms, state.stale_after_ms) and imu_fresh?(state, now_ms)
+  end
+
+  defp imu_fresh?(state, now_ms) do
+    fresh?(state.last_rotation_at_ms, now_ms, state.stale_after_ms) and
+      fresh?(state.last_gyro_at_ms, now_ms, state.stale_after_ms)
+  end
+
+  defp fresh?(nil, _now_ms, _timeout), do: false
+  defp fresh?(at_ms, now_ms, timeout), do: (now_ms - at_ms) in 0..timeout
+
+  @doc false
+  def base_position(%State{} = state) do
+    {state.x + state.base_offset_x * :math.cos(state.yaw),
+     state.y + state.base_offset_x * :math.sin(state.yaw)}
   end
 
   # Planar odometry: the pose's orientation carries the yaw alone, as a
@@ -229,12 +250,8 @@ defmodule RosBridge.Publishers.Odometry do
   end
 
   defp publish(%State{} = state) do
-    now_ns = System.system_time(:nanosecond)
-
-    stamp = %Time{
-      sec: div(now_ns, 1_000_000_000),
-      nanosec: rem(now_ns, 1_000_000_000)
-    }
+    {x, y} = base_position(state)
+    stamp = Timing.time_message_for(state.last_fresh_at_ms * 1_000_000)
 
     orientation = %Quaternion{
       x: 0.0,
@@ -248,14 +265,14 @@ defmodule RosBridge.Publishers.Odometry do
       child_frame_id: state.base_frame_id,
       pose: %PoseWithCovariance{
         pose: %Pose{
-          position: %Point{x: state.x, y: state.y, z: 0.0},
+          position: %Point{x: x, y: y, z: 0.0},
           orientation: orientation
         },
         covariance: state.pose_covariance
       },
       twist: %TwistWithCovariance{
         twist: %Twist{
-          linear: %Vector3{x: state.speed, y: 0.0, z: 0.0},
+          linear: %Vector3{x: state.speed, y: state.base_offset_x * state.yaw_rate, z: 0.0},
           angular: %Vector3{x: 0.0, y: 0.0, z: state.yaw_rate}
         },
         covariance: state.twist_covariance
@@ -266,7 +283,7 @@ defmodule RosBridge.Publishers.Odometry do
       header: %Header{stamp: stamp, frame_id: state.odom_frame_id},
       child_frame_id: state.base_frame_id,
       transform: %Transform{
-        translation: %Vector3{x: state.x, y: state.y, z: 0.0},
+        translation: %Vector3{x: x, y: y, z: 0.0},
         rotation: orientation
       }
     }

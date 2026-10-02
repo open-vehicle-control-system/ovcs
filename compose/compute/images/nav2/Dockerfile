@@ -39,8 +39,8 @@ RUN apt-get update \
         ros-lyrical-rmw-zenoh-cpp \
         ros-lyrical-nav2-controller \
         ros-lyrical-nav2-mppi-controller \
+        ros-lyrical-nav2-regulated-pure-pursuit-controller \
         ros-lyrical-nav2-planner \
-        ros-lyrical-nav2-navfn-planner \
         ros-lyrical-nav2-bt-navigator \
         ros-lyrical-nav2-behaviors \
         ros-lyrical-nav2-velocity-smoother \
@@ -50,9 +50,27 @@ RUN apt-get update \
         ros-lyrical-spatio-temporal-voxel-layer \
         ros-lyrical-nav2-simple-commander \
         ros-lyrical-nav2-msgs \
+        ros-lyrical-tf2-ros-py \
+        python3-numpy \
+        build-essential cmake curl libeigen3-dev nlohmann-json3-dev \
+        ros-lyrical-ompl ros-lyrical-angles ros-lyrical-nav2-common \
         gettext-base \
     && rm -rf /var/lib/apt/lists/*
 
+# Smac is absent from this binary snapshot. Build the matching Nav2 release.
+ARG NAV2_COMMIT=a6354f3f39d12c6e5c3e323f8021c831752edb23
+RUN mkdir -p /tmp/nav2-src \
+    && curl --retry 3 -fsSL "https://github.com/ros-navigation/navigation2/archive/${NAV2_COMMIT}.tar.gz" \
+        | tar -xz -C /tmp/nav2-src --strip-components=1 \
+    && . /opt/ros/lyrical/setup.sh \
+    && cd /tmp/nav2-src \
+    && MAKEFLAGS=-j4 colcon build --base-paths nav2_smac_planner \
+        --merge-install --install-base /opt/ovcs/nav2_overlay \
+        --packages-select nav2_smac_planner \
+        --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF \
+    && rm -rf /tmp/nav2-src
+
+COPY explore/forward_explore /opt/ovcs/forward_explore
 COPY images/ros2/zenoh/session.json5.template /etc/zenoh/session.json5.template
 COPY images/ros2/docker/entrypoint.sh /usr/local/bin/entrypoint
 COPY nav2/launch /opt/ovcs/launch

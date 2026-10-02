@@ -1,37 +1,6 @@
 name: ROS 2
 
-# The ROS 2 side had no CI at all. The vehicle stack is built by balena
-# from `compose/compute/`, so a broken Dockerfile or a compose file that
-# does not interpolate only surfaced on deploy — the same shape of hole
-# as firmware not being built on pull requests, which cost us four
-# rounds of red CI before it was closed.
-#
-# Four levels, cheapest first:
-#
-#   * `compose-config` validates every compose file in seconds. It
-#     catches the mistakes that are both most likely and most annoying:
-#     a typo in a service, a `${VAR:?}` with nothing to satisfy it, an
-#     invalid profile, an `extends:` pointing at a service that is not
-#     there.
-#   * `pins` checks that both compose files pin the same zenoh router
-#     image and that it matches the Python client (`eclipse-zenoh`) in
-#     the shared image. The `zenohex` dependency of the Elixir bridge
-#     has to agree too, but its zenoh version is not in any file this
-#     job can grep: check `bridges/ros_bridge/mix.exs` by hand.
-#   * `lint` runs ruff over the repo's own Python. Nothing else does:
-#     the launch files, the verification scripts and
-#     `decompress_stereo.py` — which runs on the *vehicle* — are only
-#     ever parsed when something starts them, so an undefined name in
-#     an error path shipped and waited.
-#   * `image` actually builds the two images the car runs: the shared
-#     ROS image (every service on both sides of the fabric runs it) and
-#     Nav2. Their Dockerfiles COPY across directories, and only a build
-#     proves those paths.
-#
-# Deliberately not built here: the simulator image, which pulls Gazebo
-# in through the ROS vendor packages and is far too heavy for per-PR
-# CI. If it starts breaking, give it its own scheduled workflow rather
-# than putting it in this path.
+# Validate configuration, ROS code, runtime images and offline exploration.
 
 on:
   push:
@@ -39,6 +8,8 @@ on:
   pull_request:
     paths:
       - 'compose/**'
+      - 'bridges/ros_bridge/**'
+      - 'vehicles/ovcs_mini/**'
       - 'ruff.toml'
       - '.github/workflows/ros2.yml'
   workflow_dispatch:
@@ -63,7 +34,7 @@ jobs:
           - file: compose/local/base.yml
             profiles: --profile standalone --profile calibration --profile nav2
           - file: compose/local/simulation.yml
-            profiles: --profile teleop --profile nav2 --profile gui
+            profiles: --profile teleop --profile nav2 --profile gui --profile mapping --profile explore
     steps:
       - uses: actions/checkout@v5
 
@@ -112,32 +83,57 @@ jobs:
       - name: ruff check
         run: ruff check --output-format=github .
 
-  image:
-    name: build the images the car runs
+  exploration-unit:
+    name: exploration geometry and action lifetimes
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: pip install numpy==2.3.5
+      - run: python -m unittest discover -s compose/compute/explore/forward_explore/tests -v
 
+  image:
+    name: build ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: ros2
+            context: compose/compute/images/ros2
+            dockerfile: compose/compute/images/ros2/Dockerfile
+          - service: nav2
+            context: compose/compute
+            dockerfile: compose/compute/images/nav2/Dockerfile
+          - service: explore
+            context: compose/compute
+            dockerfile: compose/compute/images/explore/Dockerfile
+          - service: rtabmap
+            context: compose/compute
+            dockerfile: compose/compute/images/rtabmap/Dockerfile
+    steps:
+      - uses: actions/checkout@v5
       - uses: docker/setup-buildx-action@v3
-
-      - name: Build compose/compute/images/ros2
-        uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v6
         with:
-          context: compose/compute/images/ros2
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
           push: false
-          # Layer cache in the Actions cache, so a PR that does not touch
-          # the Dockerfile reuses the apt layer rather than re-fetching
-          # the ROS package set every run.
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      # Same context as the vehicle compose file gives it, so the COPY
-      # lines that reach into images/ros2 and nav2/ are the ones tested.
-      - name: Build compose/compute/images/nav2
-        uses: docker/build-push-action@v6
-        with:
-          context: compose/compute
-          file: compose/compute/images/nav2/Dockerfile
-          push: false
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          load: true
+          tags: ovcs/${{ matrix.service }}:ci
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+      - name: ROS nodes and real action cancellation
+        if: matrix.service == 'nav2'
+        run: |
+          docker run --rm --network none --entrypoint bash \
+            -e RMW_IMPLEMENTATION=rmw_fastrtps_cpp ovcs/nav2:ci -c \
+            'source /opt/ros/lyrical/setup.bash && python3 -m unittest discover -s /opt/ovcs/forward_explore/tests -v'
+      - name: Closed-loop navigation and sensor-loss checks
+        if: matrix.service == 'nav2'
+        env:
+          NAV2_TEST_IMAGE: ovcs/nav2:ci
+          SKIP_BUILD: '1'
+        run: compose/local/scripts/verify_exploration.sh

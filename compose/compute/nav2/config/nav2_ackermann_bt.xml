@@ -1,50 +1,10 @@
-<!--
-  NavigateToPose for a vehicle that cannot rotate on the spot.
-
-  This is Nav2's default nav-to-pose tree with two changes: the recovery
-  fallback drops `Spin`, and `BackUp` is short. On an Ackermann vehicle a spin command produces
-  no motion at all — `AckermannSteering` needs forward speed to generate
-  yaw — so the behaviour runs its full duration, achieves nothing, and
-  the RecoveryNode burns a retry. With Spin first in the list, a single
-  transient planning failure is enough to abort the whole action.
-
-  `BackUp` reverses 15 cm at 0.10 m/s: the only obstacle source is the
-  forward stereo pair, so a reverse is driven blind, but without one a
-  car that cannot turn tighter than its radius stays stuck facing an
-  obstacle. 15 cm stays within the ground it has just driven over.
-  `Wait` is for a costmap that will clear on its own (a moving
-  obstacle).
-
-  ClearCostmap services stay: they cost nothing and fix the common case
-  of a stale obstacle.
--->
+<!-- Follow one validated route. Obstacle or tracking failures return to the supervisor. -->
 <root BTCPP_format="4" main_tree_to_execute="MainTree">
   <BehaviorTree ID="MainTree">
-    <RecoveryNode number_of_retries="6" name="NavigateRecovery">
-      <PipelineSequence name="NavigateWithReplanning">
-        <ControllerSelector selected_controller="{selected_controller}" default_controller="FollowPath" topic_name="controller_selector"/>
-        <PlannerSelector selected_planner="{selected_planner}" default_planner="GridBased" topic_name="planner_selector"/>
-        <RateController hz="1.0">
-          <RecoveryNode number_of_retries="1" name="ComputePathToPose">
-            <ComputePathToPose goal="{goal}" path="{path}" planner_id="{selected_planner}"/>
-            <ClearEntireCostmap name="ClearGlobalCostmap-Context" service_name="global_costmap/clear_entirely_global_costmap"/>
-          </RecoveryNode>
-        </RateController>
-        <RecoveryNode number_of_retries="1" name="FollowPath">
-          <FollowPath path="{path}" controller_id="{selected_controller}"/>
-          <ClearEntireCostmap name="ClearLocalCostmap-Context" service_name="local_costmap/clear_entirely_local_costmap"/>
-        </RecoveryNode>
-      </PipelineSequence>
-      <!-- One action per recovery, in turn, so six retries reverse at most twice. -->
-      <RoundRobin name="RecoveryActions">
-        <Sequence name="ClearingActions">
-          <ClearEntireCostmap name="ClearLocalCostmap-Subtree" service_name="local_costmap/clear_entirely_local_costmap"/>
-          <ClearEntireCostmap name="ClearGlobalCostmap-Subtree" service_name="global_costmap/clear_entirely_global_costmap"/>
-        </Sequence>
-        <!-- No Spin: this vehicle cannot execute one. -->
-        <BackUp backup_dist="0.15" backup_speed="0.10"/>
-        <Wait wait_duration="2.0"/>
-      </RoundRobin>
-    </RecoveryNode>
+    <Sequence>
+      <ControllerSelector selected_controller="{controller}" default_controller="FollowPath" topic_name="controller_selector"/>
+      <ComputePathToPose goal="{goal}" path="{path}" planner_id="GridBased"/>
+      <FollowPath path="{path}" controller_id="{controller}" goal_checker_id="goal_checker" progress_checker_id="progress_checker"/>
+    </Sequence>
   </BehaviorTree>
 </root>

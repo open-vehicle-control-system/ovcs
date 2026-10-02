@@ -1,5 +1,5 @@
 defmodule RosBridge.Consumers.Velocity.State do
-  defstruct [:watchdog, :topic, holonomic_warned: false, sequence: 0]
+  defstruct [:watchdog, :topic, :last_stamp_ns, holonomic_warned: false, sequence: 0]
 end
 
 defmodule RosBridge.Consumers.Velocity do
@@ -53,6 +53,9 @@ defmodule RosBridge.Consumers.Velocity do
   well, to zero the emitted value and to say why; see
   `RosBridge.InputWatchdog`.
 
+  Stamped commands must also have a recent, increasing source timestamp.
+  Delayed or replayed commands zero the output without refreshing the watchdog.
+
   The default timeout is deliberately tighter than the joystick's
   500 ms. A planner publishes on its own control period — Nav2's
   `controller_frequency` is 20 Hz in the simulator — and unlike a
@@ -71,7 +74,7 @@ defmodule RosBridge.Consumers.Velocity do
   alias Decimal, as: D
   alias Ros2.GeometryMsgs.Msg.{Twist, TwistStamped}
   alias RosBridge.Consumers.Velocity.State
-  alias RosBridge.InputWatchdog
+  alias RosBridge.{InputWatchdog, Timing}
 
   require Logger
 
@@ -116,8 +119,16 @@ defmodule RosBridge.Consumers.Velocity do
   end
 
   @impl true
-  def handle_info({:ros_message, {_key_expr, %TwistStamped{twist: twist}}}, state) do
-    {:noreply, command(twist, state)}
+  def handle_info({:ros_message, {_key_expr, %TwistStamped{header: header, twist: twist}}}, state) do
+    stamp_ns = header.stamp.sec * 1_000_000_000 + header.stamp.nanosec
+    now_ns = Timing.ros_time_of(System.monotonic_time(:nanosecond))
+
+    if fresh_stamp?(stamp_ns, now_ns, state.watchdog.timeout_ms) and
+         (is_nil(state.last_stamp_ns) or stamp_ns > state.last_stamp_ns) do
+      {:noreply, command(twist, %{state | last_stamp_ns: stamp_ns})}
+    else
+      {:noreply, zero_velocity(state)}
+    end
   end
 
   def handle_info({:ros_message, {_key_expr, %Twist{} = twist}}, state) do
@@ -179,6 +190,12 @@ defmodule RosBridge.Consumers.Velocity do
     else
       state
     end
+  end
+
+  @doc false
+  def fresh_stamp?(stamp_ns, now_ns, timeout_ms) do
+    stamp_ns > 0 and now_ns - stamp_ns >= -100_000_000 and
+      now_ns - stamp_ns <= timeout_ms * 1_000_000
   end
 
   @doc false

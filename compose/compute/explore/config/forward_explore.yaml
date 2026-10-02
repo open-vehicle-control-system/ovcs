@@ -1,0 +1,20 @@
+forward_explore:
+  ros__parameters:
+    # All geometry is relative to rear_axle.
+    front: 0.462
+    rear: 0.138
+    half_width: 0.19
+    camera_forward: 0.204
+    camera_left: 0.045
+    # Matched stereo band: the leftmost 96 pixels have no disparity.
+    camera_left_fov_deg: 13.0
+    camera_right_fov_deg: 22.0
+    camera_near: 0.55
+    camera_far: 3.0
+    min_gain_area: 0.04
+    perimeter: 4.0
+    max_duration: 600.0
+    goal_timeout: 60.0
+    max_no_progress: 6
+    # Only retrace measured poses; the guard independently caps each retreat.
+    retreat_distance: 0.20

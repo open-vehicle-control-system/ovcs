@@ -1,115 +1,90 @@
-# Nav2 for the OVCS Mini — the one parameter file, for the vehicle and
-# the simulator both.
-#
-# It lives under compose/compute/ because balena requires everything
-# the vehicle image bakes in to sit inside the pushed source root; the
-# simulator reaches across and mounts it. The values written here are
-# the vehicle's truth — `use_sim_time: false` in particular — and the
-# launch file overlays `use_sim_time:=true` for a simulated run rather
-# than this file carrying two copies that would drift apart. If sim and
-# vehicle ever need a genuinely different value, that difference goes
-# through a launch argument, visibly, not through a fork of this file.
-#
-# ## Why there is no map here
-#
-# No map_server and no AMCL. Every frame is `odom`, and both costmaps use
-# a rolling window, so the car navigates relative to where it is rather
-# than inside a prior. That keeps this configuration honest about what it
-# proves — that Nav2's velocity output can drive an Ackermann vehicle —
-# without dragging in the map/SLAM decision, which is the largest open
-# piece of the real-vehicle track.
-#
-# It also avoids publishing a fake static `map -> odom` transform, which
-# is the usual shortcut and is worse: it looks like localisation.
-#
-# ## Ackermann is not the default
-#
-# `mppi::AckermannMotionModel` clamps yaw rate to `|vx| / min_turning_r`
-# inside the sampler, so infeasible arcs are never considered rather
-# than merely penalised.
-#
-# Leaving `motion_model` unset does not silently pick something wrong —
-# it is fatal, which is the good outcome. MPPI defaults the value to the
-# instance name `diff_drive`, and with no `FollowPath.diff_drive.plugin`
-# to resolve, controller_server refuses to configure. (The plugin XML's
-# description claims Omni is "the default model when no plugin is
-# explicitly configured"; that is not what the code does. Measured.)
-#
-# What *is* silent is naming a valid but wrong model. Substituting
-# `mppi::DiffDriveMotionModel` loads cleanly and removes the radius
-# constraint entirely — see `scripts/nav2_test.py`, which exists to
-# catch exactly that.
-#
-# min_turning_r comes from the vehicle: wheelbase / tan(steering_limit)
-# = 0.324 / tan(0.52) = 0.566 m, rounded up to 0.6 for margin.
-#
-# ## The planner is not kinematically aware
-#
-# There is no `nav2_smac_planner` in the Lyrical archive, so the global
-# plan comes from NavFn — a grid search that knows nothing about turning
-# radius. The plan can therefore contain corners this car cannot drive,
-# and MPPI has to make the best of it. Acceptable in an open workshop;
-# it is a real limitation in tight spaces and the reason a Hybrid-A*
-# planner would be worth building if navigation gets ambitious.
-
+# OVCS Mini mapping/navigation parameters, shared with offline simulation.
+# Planning and commanded twists use the Ackermann rear axle reference.
 controller_server:
   ros__parameters:
     use_sim_time: false
     controller_frequency: 20.0
-    # The CAN command path runs at 100 Hz (`frequency: 10` in Cantastic
-    # is a period in milliseconds), so 20 Hz here is not the bottleneck.
     min_x_velocity_threshold: 0.001
     min_theta_velocity_threshold: 0.001
     failure_tolerance: 0.3
-    controller_plugins: ["FollowPath"]
-    progress_checker_plugins: ["progress_checker"]
-    goal_checker_plugins: ["goal_checker"]
-
+    controller_plugins: ["FollowPath", "Retreat"]
+    progress_checker_plugins: ["progress_checker", "retreat_progress_checker"]
+    goal_checker_plugins: ["goal_checker", "retreat_goal_checker"]
     progress_checker:
       plugin: "nav2_controller::SimpleProgressChecker"
-      required_movement_radius: 0.25
-      movement_time_allowance: 5.0
-
+      required_movement_radius: 0.10
+      movement_time_allowance: 8.0
     goal_checker:
-      # `yaw_goal_tolerance` is deliberately huge. A car cannot rotate on
-      # the spot, so any final-heading requirement it cannot satisfy by
-      # driving leaves it stuck at the goal until the action times out.
-      # Position is what matters here; heading is whatever the approach
-      # produced.
       plugin: "nav2_controller::SimpleGoalChecker"
-      xy_goal_tolerance: 0.15
-      yaw_goal_tolerance: 3.15
-      stateful: true
-
+      xy_goal_tolerance: 0.12
+      yaw_goal_tolerance: 0.20
+      stateful: false
+    retreat_progress_checker:
+      plugin: "nav2_controller::SimpleProgressChecker"
+      required_movement_radius: 0.03
+      movement_time_allowance: 3.0
+    retreat_goal_checker:
+      plugin: "nav2_controller::SimpleGoalChecker"
+      xy_goal_tolerance: 0.03
+      yaw_goal_tolerance: 0.20
+      stateful: false
     FollowPath:
+      plugin: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"
+      desired_linear_vel: 0.20
+      lookahead_dist: 0.35
+      min_lookahead_dist: 0.25
+      max_lookahead_dist: 0.45
+      use_velocity_scaled_lookahead_dist: false
+      allow_reversing: false
+      use_rotate_to_heading: false
+      use_regulated_linear_velocity_scaling: true
+      regulated_linear_scaling_min_radius: 0.70
+      regulated_linear_scaling_min_speed: 0.10
+      use_cost_regulated_linear_velocity_scaling: true
+      cost_scaling_dist: 0.30
+      cost_scaling_gain: 1.0
+      inflation_cost_scaling_factor: 3.0
+      # Above the 0.08 m/s drivetrain deadband during goal approaches.
+      min_approach_linear_velocity: 0.10
+      approach_velocity_scaling_dist: 0.35
+      use_collision_detection: true
+      max_allowed_time_to_collision_up_to_carrot: 1.0
+      transform_tolerance: 0.2
+
+    # Explicit FollowPath recovery over the recently driven route.
+    Retreat:
+      plugin: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"
+      desired_linear_vel: 0.10
+      lookahead_dist: 0.12
+      min_lookahead_dist: 0.10
+      max_lookahead_dist: 0.15
+      use_velocity_scaled_lookahead_dist: false
+      allow_reversing: true
+      use_rotate_to_heading: false
+      use_regulated_linear_velocity_scaling: false
+      use_cost_regulated_linear_velocity_scaling: false
+      min_approach_linear_velocity: 0.10
+      approach_velocity_scaling_dist: 0.15
+      use_collision_detection: true
+      max_allowed_time_to_collision_up_to_carrot: 1.0
+      transform_tolerance: 0.2
+
+    # Loaded only by the explicit offline controller comparison.
+    MPPI:
       plugin: "nav2_mppi_controller::MPPIController"
-      # `motion_model` names a plugin *instance*, and the class comes
-      # from `<instance>.plugin` — the same name-then-plugin pattern as
-      # the critics. Putting the class directly in `motion_model` fails
-      # with "No 'plugin' param for param ns!", which is a confusing way
-      # to be told you named a class where a namespace was wanted.
-      #
-      # The instance is called AckermannConstraints so `min_turning_r`
-      # keeps the parameter path it had when this was not a plugin.
       motion_model: "AckermannConstraints"
       AckermannConstraints:
         plugin: "mppi::AckermannMotionModel"
-        min_turning_r: 0.6
+        min_turning_r: 0.7
 
       time_steps: 40
       model_dt: 0.05
       batch_size: 1000
       vx_std: 0.2
-      # Larger steering noise shows up as wobble in the chosen command.
       wz_std: 0.2
-      # Indoors: the stereo sees 3 m ahead.
-      vx_max: 0.6
-      # No reverse: stereo looks forward only, so the costmap behind the
-      # car is always empty.
+      vx_max: 0.25
       vx_min: 0.0
       wz_max: 2.5
-      # From standstill MPPI reaches two steps of ax_max * model_dt, so
-      # this also sets how quickly a start clears the smoother's deadband.
       ax_max: 1.0
       ax_min: -2.0
       az_max: 3.0
@@ -131,7 +106,6 @@ controller_server:
         - "PreferForwardCritic"
 
       ConstraintCritic: {enabled: true, cost_power: 1, cost_weight: 4.0}
-      # Near enough that a short path is followed, not chased as a point.
       GoalCritic: {enabled: true, cost_power: 1, cost_weight: 5.0, threshold_to_consider: 0.6}
       GoalAngleCritic:
         enabled: true
@@ -173,38 +147,24 @@ controller_server:
         threshold_to_consider: 0.5
         max_angle_to_furthest: 1.0
 
+
 local_costmap:
   local_costmap:
     ros__parameters:
       use_sim_time: false
       global_frame: odom
-      robot_base_frame: base_link
-      # How long activation waits for the odom -> base_link transform
-      # before erroring, raised from the 60 s default. On the vehicle
-      # the always-on planner races the VMS, which must boot its CAN
-      # stack and stream 0x709 before odometry exists, and
-      # lifecycle_manager does not retry a timed-out activation — so a
-      # planner that comes up first would sit inactive for good. Five
-      # minutes covers any healthy boot; the controller re-adoption
-      # that can delay 0x709 further is a one-time setup step, not a
-      # normal boot. (Zero is not "wait forever" — it still errors;
-      # measured.)
+      robot_base_frame: rear_axle
       initial_transform_timeout: 300.0
       update_frequency: 10.0
       publish_frequency: 5.0
-      # Foxglove draws the full grid only, not costmap_updates.
       always_send_full_costmap: true
       rolling_window: true
       width: 6
       height: 6
       resolution: 0.05
-      # The 568 mm body and 341 mm wheel envelope around base_link, which
-      # sits midway between the axles, plus 2 cm.
-      footprint: "[[0.30, 0.19], [0.30, -0.19], [-0.30, -0.19], [-0.30, 0.19]]"
+      footprint: "[[0.462, 0.19], [0.462, -0.19], [-0.138, -0.19], [-0.138, 0.19]]"
       plugins: ["stvl_layer", "inflation_layer"]
       stvl_layer:
-        # The camera looks forward only, so a mark that leaves its view
-        # is never seen again; voxels expire instead of persisting.
         plugin: "spatio_temporal_voxel_layer/SpatioTemporalVoxelLayer"
         enabled: true
         voxel_decay: 15.0
@@ -225,20 +185,14 @@ local_costmap:
           marking: true
           clearing: false
           obstacle_range: 3.0
-          # Above the glossy floor's reflections, which read 7-10 cm high.
-          min_obstacle_height: 0.12
+          min_obstacle_height: 0.05
           max_obstacle_height: 0.6
-          expected_update_rate: 0.0
+          expected_update_rate: 0.5
           observation_persistence: 0.0
           inf_is_valid: false
           filter: "passthrough"
           clear_after_reading: true
         stereo_clearing:
-          # The frustum of stereo_left, an optical frame (z forward).
-          # Symmetric, so as wide as the narrower side of the matched
-          # band: the leftmost num_disparities columns see nothing.
-          # It starts at the stereo's near limit, f * B / num_disparities,
-          # so an obstacle too close to be measured is not cleared.
           topic: /stereo/points
           data_type: PointCloud2
           marking: false
@@ -254,47 +208,28 @@ local_costmap:
         cost_scaling_factor: 3.0
         inflation_radius: 0.55
 
+
 global_costmap:
   global_costmap:
     ros__parameters:
       use_sim_time: false
-      global_frame: odom
-      robot_base_frame: base_link
+      global_frame: map
+      robot_base_frame: rear_axle
       initial_transform_timeout: 300.0
       update_frequency: 2.0
       publish_frequency: 1.0
-      # Rolling, because without a map there is no fixed extent to
-      # anchor a static costmap to.
-      rolling_window: true
-      width: 30
-      height: 30
-      resolution: 0.1
-      footprint: "[[0.30, 0.19], [0.30, -0.19], [-0.30, -0.19], [-0.30, 0.19]]"
-      plugins: ["obstacle_layer", "inflation_layer"]
-      obstacle_layer:
-        plugin: "nav2_costmap_2d::ObstacleLayer"
-        # One cloud, two sources. Heights are in odom, whose z is the
-        # ground: marking ignores the floor, but clearing needs it, since
-        # in a clear path nearly every ray ends on the floor and would
-        # otherwise never erase a false match.
-        observation_sources: stereo_marking stereo_clearing
-        stereo_marking:
-          topic: /stereo/points
-          data_type: "PointCloud2"
-          marking: true
-          clearing: false
-          # Above the glossy floor's reflections, which read 7-10 cm high.
-          min_obstacle_height: 0.12
-          max_obstacle_height: 0.6
-          obstacle_max_range: 3.0
-        stereo_clearing:
-          topic: /stereo/points
-          data_type: "PointCloud2"
-          marking: false
-          clearing: true
-          min_obstacle_height: -0.5
-          max_obstacle_height: 0.6
-          raytrace_max_range: 3.5
+      always_send_full_costmap: true
+      rolling_window: false
+      track_unknown_space: true
+      resolution: 0.05
+      footprint: "[[0.462, 0.19], [0.462, -0.19], [-0.138, -0.19], [-0.138, 0.19]]"
+      plugins: ["static_layer", "inflation_layer"]
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        map_topic: /rtabmap/map
+        map_subscribe_transient_local: true
+        subscribe_to_updates: false
+        trinary_costmap: true
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
@@ -306,90 +241,76 @@ planner_server:
     expected_planner_frequency: 1.0
     planner_plugins: ["GridBased"]
     GridBased:
-      plugin: "nav2_navfn_planner::NavfnPlanner"
-      tolerance: 0.5
-      use_astar: true
-      allow_unknown: true
+      plugin: "nav2_smac_planner::SmacPlannerHybrid"
+      tolerance: 0.10
+      downsample_costmap: false
+      allow_unknown: false
+      motion_model_for_search: "DUBIN"
+      angle_quantization_bins: 72
+      minimum_turning_radius: 0.70
+      reverse_penalty: 3.0
+      change_penalty: 0.0
+      non_straight_penalty: 1.2
+      cost_penalty: 2.0
+      analytic_expansion_ratio: 3.5
+      analytic_expansion_max_length: 2.5
+      max_iterations: 250000
+      max_planning_time: 1.0
+      lookup_table_size: 5.0
+      smooth_path: true
+      smoother:
+        max_iterations: 1000
+        w_smooth: 0.3
+        w_data: 0.2
+        tolerance: 1.0e-10
+        do_refinement: true
 
 bt_navigator:
   ros__parameters:
     use_sim_time: false
-    global_frame: odom
-    robot_base_frame: base_link
+    global_frame: map
+    robot_base_frame: rear_axle
     odom_topic: /odom
     transform_tolerance: 0.2
-    # Both trees are overridden, because both stock trees put Spin in
-    # their recovery branch and this vehicle cannot execute one: the
-    # behaviour runs its full duration, produces no motion, and burns a
-    # RecoveryNode retry, so a single transient planning failure is
-    # enough to abort the action.
     default_nav_to_pose_bt_xml: /opt/ovcs/config/nav2_ackermann_bt.xml
     default_nav_through_poses_bt_xml: /opt/ovcs/config/nav2_ackermann_through_poses_bt.xml
-
-behavior_server:
-  ros__parameters:
-    use_sim_time: false
-    local_frame: odom
-    global_frame: odom
-    robot_base_frame: base_link
-    transform_tolerance: 0.2
-    local_costmap_topic: local_costmap/costmap_raw
-    local_footprint_topic: local_costmap/published_footprint
-    cycle_frequency: 10.0
-    # `spin` is loaded but never invoked. bt_navigator resolves every
-    # action server in *both* of its trees at activation, and the stock
-    # navigate_through_poses tree references Spin — without the server
-    # present it fails with "Action server spin not available" and the
-    # whole stack refuses to come up. Keeping the server costs nothing;
-    # what matters is that no tree here calls it. See the BT XMLs.
-    behavior_plugins: ["spin", "backup", "drive_on_heading", "wait"]
-    spin:
-      plugin: "nav2_behaviors::Spin"
-    # `minimum_speed` floors the ramp down at the end of a drive, which
-    # would otherwise fall into the smoother's deadband and stall short
-    # of the distance.
-    backup:
-      plugin: "nav2_behaviors::BackUp"
-      minimum_speed: 0.10
-    drive_on_heading:
-      plugin: "nav2_behaviors::DriveOnHeading"
-      minimum_speed: 0.10
-    wait:
-      plugin: "nav2_behaviors::Wait"
 
 velocity_smoother:
   ros__parameters:
     use_sim_time: false
-    # Between the controller and behaviours (/cmd_vel_nav_raw) and the
-    # vehicle (/cmd_vel_nav), see the launch file. Limits are MPPI's
-    # above, in [x, y, theta].
     smoothing_frequency: 20.0
-    scale_velocities: false
+    scale_velocities: true
     feedback: "OPEN_LOOP"
-    max_velocity: [0.6, 0.0, 2.5]
-    # Reverse only as fast as BackUp drives; MPPI's vx_min keeps it forward.
-    min_velocity: [-0.10, 0.0, -2.5]
-    max_accel: [1.0, 0.0, 3.0]
-    max_decel: [-2.0, 0.0, -3.0]
-    # The VESC brakes instead of driving below its Minimum ERPM (300, so
-    # 0.07 m/s on this vehicle), so any slower linear velocity is sent
-    # as zero: the vehicle drives above that floor, or stops. The
-    # smoother ramps on its own state before this applies, so a start
-    # still leaves the band.
+    max_velocity: [0.25, 0.0, 0.417]
+    min_velocity: [-0.12, 0.0, -0.417]
+    max_accel: [0.4, 0.0, 0.67]
+    max_decel: [-0.6, 0.0, -1.0]
     deadband_velocity: [0.08, 0.0, 0.0]
-    # How long the last input is held before ramping to zero. A planner
-    # that stops publishing must not be held longer than the VMS's own
-    # staleness timeout on 0x2B1 (300 ms, `RosVelocityCommand`).
     velocity_timeout: 0.25
+
+motion_guard:
+  ros__parameters:
+    front: 0.462
+    rear: 0.138
+    half_width: 0.19
+    max_speed: 0.25
+    reverse_speed: 0.12
+    min_turning_radius: 0.6
+    reverse_budget: 1.0
+    perimeter: 4.0
+    max_duration: 600.0
+    map_timeout: 3.0
+    # Conservative model inputs; validate stopping distance on the physical vehicle.
+    stopping_deceleration: 0.3
+    reaction_time: 0.6
 
 lifecycle_manager:
   ros__parameters:
     use_sim_time: false
     autostart: true
-    bond_timeout: 0.0
+    bond_timeout: 4.0
     node_names:
       - controller_server
       - planner_server
-      - behavior_server
       - velocity_smoother
       - bt_navigator

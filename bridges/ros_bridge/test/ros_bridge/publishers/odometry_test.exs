@@ -16,7 +16,9 @@ defmodule RosBridge.Publishers.OdometryTest do
         odom_frame_id: "odom",
         base_frame_id: "base_link",
         publish_interval_ms: 50,
-        stale_after_ms: 300
+        stale_after_ms: 300,
+        last_rotation_at_ms: 900,
+        last_gyro_at_ms: 900
       },
       overrides
     )
@@ -141,6 +143,34 @@ defmodule RosBridge.Publishers.OdometryTest do
       state = state(speed_valid: true, yaw: 0.0, last_fresh_at_ms: 0)
       refute Odometry.publishable?(state, 301)
     end
+
+    test "fresh wheel frames cannot conceal a stale IMU" do
+      good = state(speed_valid: true, yaw: 0.0, last_fresh_at_ms: 1_000)
+      refute Odometry.publishable?(%{good | last_rotation_at_ms: 600}, 1_000)
+      refute Odometry.publishable?(%{good | last_gyro_at_ms: 600}, 1_000)
+      refute Odometry.publishable?(%{good | last_rotation_at_ms: nil}, 1_000)
+    end
+
+    test "a stale heading cannot integrate fresh wheel motion" do
+      stale =
+        state(
+          sequence: 1,
+          speed: 1.0,
+          speed_valid: true,
+          yaw: 0.0,
+          last_fresh_at_ms: 900,
+          last_rotation_at_ms: 600
+        )
+
+      assert Odometry.observe(stale, sample(%{})).x == 0.0
+    end
+  end
+
+  test "base pose includes the rotating rear axle lever arm" do
+    s = state(x: 1.0, y: 2.0, yaw: :math.pi() / 2, base_offset_x: 0.162)
+    {x, y} = Odometry.base_position(s)
+    assert_in_delta x, 1.0, 1.0e-9
+    assert_in_delta y, 2.162, 1.0e-9
   end
 
   describe "yaw_from_quaternion/4" do

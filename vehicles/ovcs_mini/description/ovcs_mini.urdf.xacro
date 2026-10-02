@@ -106,6 +106,12 @@
        root: it is a frame, not a body, and giving it mass would
        double-count the chassis. -->
   <link name="base_link" />
+  <link name="rear_axle" />
+  <joint name="rear_axle_joint" type="fixed">
+    <parent link="base_link" />
+    <child link="rear_axle" />
+    <origin xyz="${-half_wheelbase} 0 0" rpy="0 0 0" />
+  </joint>
 
   <!-- ── Chassis ────────────────────────────────────────────────── -->
   <joint name="chassis_joint" type="fixed">
