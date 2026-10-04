@@ -62,6 +62,7 @@ A commit message or PR description is read later, by people who were not in the 
 - **No personal circumstance.** Nothing about the author's hardware, schedule, location, or network: no "the burned PSU rules this out", "code written earlier tonight", "observed earlier today", "on an office LAN", "the dev box". If a limitation matters, state it impersonally ("this needs a Hailo-8, which was not available").
 - **Never quote the conversation**, in any language.
 - Measured numbers, tradeoffs, and the reasoning behind a decision are welcome — those are about the code.
+- **A PR description is Markdown, not a pasted commit message.** GitHub renders every line break in it, so write each paragraph on one line rather than wrapped at 72 columns. Numbers go in Markdown tables, not space-aligned text; parallel changes go in a bulleted list; code identifiers in backticks. A PR with several commits gets one opening sentence, then a `##` section per commit.
 
 ### Code comments state present facts
 
