@@ -36,6 +36,15 @@ defmodule RosBridge.Camera.LibCamera do
   the sensor's tuning file to carry `rpi.sync` and the two processes to
   reach each other over UDP multicast. Absent, the camera runs free.
 
+  ## Exposure
+
+  `:exposure_mode` (`:normal`, `:short`, `:long`) picks the
+  auto-exposure mode of the sensor's tuning file. On the Camera
+  Module 3, `:normal` keeps the shutter open up to 30 ms before raising
+  the gain, which smears a moving image; `:short` caps it at 10 ms
+  before raising the gain, trading blur for noise. Absent, libcamera
+  uses `:normal`.
+
   ## Stall watchdog
 
   A capture can stop delivering frames without the binary exiting:
@@ -80,6 +89,12 @@ defmodule RosBridge.Camera.LibCamera do
   def sync_args(nil), do: []
   def sync_args(role) when role in [:server, :client], do: ["--sync", Atom.to_string(role)]
 
+  @doc false
+  def exposure_mode_args(nil), do: []
+
+  def exposure_mode_args(mode) when mode in [:normal, :short, :long],
+    do: ["--exposure-mode", Atom.to_string(mode)]
+
   @impl true
   def init(opts) do
     label = Keyword.fetch!(opts, :label)
@@ -89,6 +104,7 @@ defmodule RosBridge.Camera.LibCamera do
     fps = Keyword.get(opts, :fps, 30)
     rotation = Keyword.get(opts, :rotation, 0)
     sync = Keyword.get(opts, :sync)
+    exposure_mode = Keyword.get(opts, :exposure_mode)
 
     executable = binary_path()
 
@@ -109,7 +125,7 @@ defmodule RosBridge.Camera.LibCamera do
         Integer.to_string(fps),
         "--rotation",
         Integer.to_string(rotation)
-      ] ++ sync_args(sync)
+      ] ++ sync_args(sync) ++ exposure_mode_args(exposure_mode)
 
     port =
       Port.open({:spawn_executable, executable}, [

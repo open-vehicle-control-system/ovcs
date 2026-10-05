@@ -54,6 +54,9 @@ struct Args {
   // is the server, the others clients that align their frame starts to
   // it. Off by default.
   int32_t sync_mode = controls::rpi::SyncModeOff;
+  // Auto-exposure mode from the sensor's tuning file; negative leaves
+  // libcamera's default (normal).
+  int32_t exposure_mode = -1;
 };
 
 bool parse_args(int argc, char** argv, Args& out) {
@@ -70,6 +73,13 @@ bool parse_args(int argc, char** argv, Args& out) {
       if (mode == "server") out.sync_mode = controls::rpi::SyncModeServer;
       else if (mode == "client") out.sync_mode = controls::rpi::SyncModeClient;
       else { std::fprintf(stderr, "camera_capture: --sync must be server or client\n"); return false; }
+    }
+    else if (a == "--exposure-mode" && next()) {
+      std::string mode = argv[i];
+      if (mode == "normal") out.exposure_mode = controls::ExposureNormal;
+      else if (mode == "short") out.exposure_mode = controls::ExposureShort;
+      else if (mode == "long") out.exposure_mode = controls::ExposureLong;
+      else { std::fprintf(stderr, "camera_capture: --exposure-mode must be normal, short or long\n"); return false; }
     }
     else { std::fprintf(stderr, "camera_capture: unknown arg %s\n", a.c_str()); return false; }
   }
@@ -477,6 +487,11 @@ int main(int argc, char** argv) {
     } else {
       std::fprintf(stderr, "camera_capture: no camera sync on this pipeline; --sync ignored\n");
     }
+  }
+
+  if (args.exposure_mode >= 0) {
+    start_controls.set(controls::AeExposureMode, args.exposure_mode);
+    std::fprintf(stderr, "camera_capture: auto-exposure mode %d\n", args.exposure_mode);
   }
 
   if (camera->start(&start_controls) != 0) {
