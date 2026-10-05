@@ -53,4 +53,15 @@ defmodule RosBridge.Camera.LibCameraTest do
       assert LibCamera.exposure_mode_args(:short) == ["--exposure-mode", "short"]
     end
   end
+
+  describe "lens_position_args/1" do
+    test "no position leaves the lens alone" do
+      assert LibCamera.lens_position_args(nil) == []
+    end
+
+    test "a position is passed in dioptres, integers included" do
+      assert LibCamera.lens_position_args(1.5) == ["--lens-position", "1.5"]
+      assert LibCamera.lens_position_args(1) == ["--lens-position", "1.0"]
+    end
+  end
 end
