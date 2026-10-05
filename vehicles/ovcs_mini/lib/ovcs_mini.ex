@@ -448,11 +448,13 @@ defmodule OvcsMini do
       backend_opts: [
         num_disparities: 96,
         block_size: 9,
-        speckle_window_size: 300,
-        speckle_range: 12,
+        speckle_window_size: 600,
+        speckle_range: 8,
         # Rejects the ambiguous matches that land walls and furniture
-        # nearer than they are.
-        uniqueness_ratio: 15
+        # nearer than they are; the smoothness penalties fill in more,
+        # and wrongly without it.
+        uniqueness_ratio: 20,
+        clahe_clip_limit: 3.0
       ],
       left: camera_addressing(arm, :left),
       right: camera_addressing(arm, :right)
