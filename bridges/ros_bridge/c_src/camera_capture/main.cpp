@@ -50,6 +50,10 @@ struct Args {
   // the sensor + ISP to support transposed output; libcamera may
   // reject them depending on the driver.
   int rotation = 0;
+  // libcamera's software camera sync on the Pi 5: one camera of a pair
+  // is the server, the others clients that align their frame starts to
+  // it. Off by default.
+  int32_t sync_mode = controls::rpi::SyncModeOff;
 };
 
 bool parse_args(int argc, char** argv, Args& out) {
@@ -61,6 +65,12 @@ bool parse_args(int argc, char** argv, Args& out) {
     else if (a == "--height" && next()) out.height = std::atoi(argv[i]);
     else if (a == "--fps" && next()) out.fps = std::atoi(argv[i]);
     else if (a == "--rotation" && next()) out.rotation = std::atoi(argv[i]);
+    else if (a == "--sync" && next()) {
+      std::string mode = argv[i];
+      if (mode == "server") out.sync_mode = controls::rpi::SyncModeServer;
+      else if (mode == "client") out.sync_mode = controls::rpi::SyncModeClient;
+      else { std::fprintf(stderr, "camera_capture: --sync must be server or client\n"); return false; }
+    }
     else { std::fprintf(stderr, "camera_capture: unknown arg %s\n", a.c_str()); return false; }
   }
   return true;
@@ -372,6 +382,7 @@ int main(int argc, char** argv) {
   std::vector<uint8_t> record;
   record.reserve(1 + 2 + 2 + 8 + 4 + max_jpeg_size);
 
+  bool sync_reported = false;
   camera->requestCompleted.connect(camera.get(), [&](Request* request) {
     if (request->status() == Request::RequestCancelled) return;
     if (g_stop.load()) return;
@@ -389,6 +400,13 @@ int main(int argc, char** argv) {
     // |t_left - t_right|) sees the genuine sync offset instead of
     // post-DMA scheduling jitter. Falls back to monotonic_ns() if
     // libcamera/the driver doesn't report it.
+    if (!sync_reported) {
+      if (auto ready = request->metadata().get(controls::rpi::SyncReady); ready && *ready) {
+        std::fprintf(stderr, "camera_capture: camera sync established\n");
+        sync_reported = true;
+      }
+    }
+
     int64_t capture_ns = 0;
     if (auto ts = request->metadata().get(controls::SensorTimestamp)) {
       capture_ns = static_cast<int64_t>(*ts);
@@ -449,6 +467,16 @@ int main(int argc, char** argv) {
   } else {
     std::fprintf(stderr,
                  "camera_capture: ScalerCropMaximum unavailable; FoV may be cropped\n");
+  }
+
+  if (args.sync_mode != controls::rpi::SyncModeOff) {
+    if (camera->controls().count(&controls::rpi::SyncMode)) {
+      start_controls.set(controls::rpi::SyncMode, args.sync_mode);
+      std::fprintf(stderr, "camera_capture: camera sync as %s\n",
+                   args.sync_mode == controls::rpi::SyncModeServer ? "server" : "client");
+    } else {
+      std::fprintf(stderr, "camera_capture: no camera sync on this pipeline; --sync ignored\n");
+    }
   }
 
   if (camera->start(&start_controls) != 0) {

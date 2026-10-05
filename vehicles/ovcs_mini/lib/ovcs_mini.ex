@@ -474,8 +474,10 @@ defmodule OvcsMini do
   # and ORB matches between the two frames put the median
   # `x_left - x_right` at -86 px (0 of 292 matches positive, where a
   # correctly ordered pair must be entirely positive).
-  defp camera_addressing(:target, :left), do: [camera_id: 1]
-  defp camera_addressing(:target, :right), do: [camera_id: 0]
+  #
+  # The left camera leads the software sync and the right one follows it.
+  defp camera_addressing(:target, :left), do: [camera_id: 1, sync: :server]
+  defp camera_addressing(:target, :right), do: [camera_id: 0, sync: :client]
 
   # In simulation the "camera" is a topic. Gazebo publishes on the
   # same names the vehicle does, so left really is left here — the

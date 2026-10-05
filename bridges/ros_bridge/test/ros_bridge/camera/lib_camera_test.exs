@@ -32,4 +32,15 @@ defmodule RosBridge.Camera.LibCameraTest do
       assert LibCamera.stall_verdict(late_starter, 1_000 + 60_500) == :ok
     end
   end
+
+  describe "sync_args/1" do
+    test "no role runs the camera free" do
+      assert LibCamera.sync_args(nil) == []
+    end
+
+    test "a role is passed as server or client" do
+      assert LibCamera.sync_args(:server) == ["--sync", "server"]
+      assert LibCamera.sync_args(:client) == ["--sync", "client"]
+    end
+  end
 end
