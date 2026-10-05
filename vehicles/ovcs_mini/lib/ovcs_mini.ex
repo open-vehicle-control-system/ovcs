@@ -210,7 +210,7 @@ defmodule OvcsMini do
           # vehicle there is no /clock and wall clock is correct, which
           # is why this appears in no other configuration.
           :simulator_clock,
-          stereo_transforms(),
+          stereo_transforms(:sim),
           stereo_component(RosBridge.Camera.Zenoh, :sim)
         ] ++ sim_detector()
     }
@@ -275,7 +275,7 @@ defmodule OvcsMini do
       node_name: "ovcs_bridge_perception",
       components: [
         :heartbeat,
-        stereo_transforms(),
+        stereo_transforms(:target),
         stereo_component(RosBridge.Camera.LibCamera, :target),
         # After :stereo_camera — the detector registers on that
         # unit's backend while starting.
@@ -290,10 +290,12 @@ defmodule OvcsMini do
   # express the measurement in the car's own terms — and Foxglove's 3D
   # panel reports the frame missing and draws nothing.
   #
-  # The rotation is the standard body -> optical frame change, not a
-  # mounting angle: base_link is REP-103 (x forward, y left, z up)
-  # while an optical frame is x right, y down, z into the image. That
-  # is what the (-0.5, 0.5, -0.5, 0.5) quaternion does.
+  # The rotation is the standard body -> optical frame change: base_link
+  # is REP-103 (x forward, y left, z up) while an optical frame is x
+  # right, y down, z into the image, which (-0.5, 0.5, -0.5, 0.5) does.
+  # On the vehicle it also carries the bar's mounting pitch: the floor
+  # fitted in recorded clouds rises 1° towards the camera, so the camera
+  # looks 1° up. The simulator's camera is level.
   #
   # x and z are measured.
   #
@@ -311,17 +313,21 @@ defmodule OvcsMini do
   #
   # z is the lens centres' height above the ground, where base_link
   # sits: 185 mm.
-  defp stereo_transforms do
+  defp stereo_transforms(arm) do
     {:static_transforms,
      transforms: [
        %{
          parent: "base_link",
          child: "stereo_left",
          translation: {0.042, 0.0, 0.185},
-         rotation: {-0.5, 0.5, -0.5, 0.5}
+         rotation: stereo_rotation(arm)
        }
      ]}
   end
+
+  # The level body -> optical rotation, then 1° of upward pitch.
+  defp stereo_rotation(:target), do: {-0.495618, 0.495618, -0.504344, 0.504344}
+  defp stereo_rotation(_arm), do: {-0.5, 0.5, -0.5, 0.5}
 
   # YOLO on the Hailo-8, fused with the stereo depth map. Target
   # only: the accelerator is a physical card on the perception Pi, and
