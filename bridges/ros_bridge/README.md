@@ -165,6 +165,40 @@ A bare atom is shorthand for `{atom, []}`. An unknown component
 name raises `FunctionClauseError` at supervisor boot — typos in the
 list fail loudly rather than silently dropping a feature.
 
+## Tuning the stereo cameras at runtime
+
+Every `:stereo_camera` unit also runs `RosBridge.StereoCamera.Tuning`,
+which changes camera controls and stereo matching settings while the
+bridge runs, so they can be tuned while watching the images and the
+depth.
+
+Publish a `std_msgs/String` on `<prefix>/set_controls` holding one or
+more `target.key=value` assignments, separated by spaces, semicolons or
+new lines:
+
+```text
+cameras.exposure_mode=short left.lens_position=1.2
+stereo.uniqueness_ratio=20; stereo.clahe_clip_limit=3
+```
+
+| Target | Keys |
+|---|---|
+| `left`, `right`, `cameras` (both) | `exposure_mode` (`normal`, `short`, `long`), `exposure_time_us` and `analogue_gain` (0 for automatic), `lens_position` (dioptres), `brightness`, `contrast`, `sharpness`, `noise_reduction` (`off`, `fast`, `high_quality`, `minimal`) |
+| `stereo` | `uniqueness_ratio`, `speckle_window_size`, `speckle_range`, `p1`, `p2`, `disp12_max_diff`, `pre_filter_cap`, `num_disparities` (a multiple of 16), `clahe` (`true`/`false`), `clahe_clip_limit` |
+
+A message is applied only if every assignment in it is valid. The
+settings in force, followed by the outcome of the last request, are
+published on `<prefix>/controls` after each request and every two
+seconds. Camera controls need a driver with runtime controls
+(`RosBridge.Camera.LibCamera`); the sync role, resolution and frame
+rate are set at start only.
+
+Changes last until the stereo unit restarts: copy the values you keep
+into the vehicle's configuration. The Foxglove layout
+`compose/local/foxglove/ovcs_camera_tuning.json` shows both cameras and
+the depth next to the settings in force, with a panel per group of
+settings to edit and apply.
+
 ## Adding a new ROS message type
 
 1. Drop the codec under `lib/ros2/<pkg>/msg/<name>.ex`.

@@ -23,4 +23,16 @@ defmodule RosBridge.Camera do
 
   @callback register_listener(GenServer.server(), pid()) :: :ok
   @callback enable(GenServer.server()) :: :ok
+
+  @doc """
+  Change sensor controls while capturing (exposure, focus, ...).
+  Returns the controls now in force, or why the request was refused.
+  Optional: a driver without runtime controls does not implement it.
+  """
+  @callback set_controls(GenServer.server(), keyword()) :: {:ok, map()} | {:error, String.t()}
+
+  @doc "The controls in force, as last set."
+  @callback controls(GenServer.server()) :: map()
+
+  @optional_callbacks set_controls: 2, controls: 1
 end

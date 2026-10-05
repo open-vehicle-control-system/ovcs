@@ -21,6 +21,10 @@ defmodule RosBridge.StereoCamera.Supervisor do
          - `<topic_prefix>/left/image_rect/compressed` (JPEG) only when
            `:publish_rectified_image` is set — see below.
 
+    4. A `RosBridge.StereoCamera.Tuning` that changes camera controls
+       and matching settings at runtime from `<topic_prefix>/set_controls`
+       and reports them on `<topic_prefix>/controls`.
+
   Children start in that order so each downstream child can register
   on its upstream during `init/1`.
 
@@ -153,7 +157,11 @@ defmodule RosBridge.StereoCamera.Supervisor do
       camera_driver_spec(config, :left),
       camera_driver_spec(config, :right),
       stereo_backend_spec(config),
-      stereo_publisher_spec(config)
+      stereo_publisher_spec(config),
+      Supervisor.child_spec(
+        {RosBridge.StereoCamera.Tuning, topic_prefix: config.topic_prefix, driver: config.driver},
+        id: {:stereo, :tuning}
+      )
     ] ++ set_camera_info_specs(config)
   end
 
