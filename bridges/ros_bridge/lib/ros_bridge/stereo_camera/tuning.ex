@@ -8,7 +8,7 @@ defmodule RosBridge.StereoCamera.Tuning do
   by spaces, semicolons or new lines:
 
       cameras.exposure_mode=short left.lens_position=1.2
-      stereo.uniqueness_ratio=20; stereo.clahe_clip_limit=3
+      stereo.uniqueness_ratio=20; stereo.clahe_clip_limit=3; stereo.row_offset=28
 
   Targets are `left`, `right`, `cameras` (both) and `stereo`. Camera
   keys are `RosBridge.Camera.LibCamera`'s runtime controls, stereo keys

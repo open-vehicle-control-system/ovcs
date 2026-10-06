@@ -50,6 +50,9 @@ defmodule RosBridge.StereoCamera.OpenCV do
       already produces rectified frames.
     * `:num_disparities` (64), `:block_size` (5), `:min_disparity`
       (0) — `Evision.StereoSGBM` parameters.
+    * `:row_offset` (0) — pixels to move the right rectified image
+      down. Corrects a vertical misalignment between the cameras, a
+      mount that moved since calibration, until it is recalibrated.
     * `:name` — GenServer name (default `__MODULE__`).
   """
   use GenServer
@@ -80,7 +83,8 @@ defmodule RosBridge.StereoCamera.OpenCV do
   Change matching settings while running, from the next pair on:
   `:uniqueness_ratio`, `:speckle_window_size`, `:speckle_range`, `:p1`,
   `:p2`, `:disp12_max_diff`, `:pre_filter_cap`, `:num_disparities`
-  (a multiple of 16), `:clahe` (boolean) and `:clahe_clip_limit`.
+  (a multiple of 16), `:clahe` (boolean), `:clahe_clip_limit` and
+  `:row_offset`.
   Returns the settings now in force, or why the request was refused.
   """
   def set_options(server, options), do: GenServer.call(server, {:set_options, options})
@@ -135,12 +139,13 @@ defmodule RosBridge.StereoCamera.OpenCV do
     clahe = if Keyword.get(opts, :clahe, true), do: create_clahe(opts)
 
     rectify? = Keyword.get(opts, :rectify, true)
+    row_offset = Keyword.get(opts, :row_offset, 0) * 1.0
 
     rectification_maps =
       if rectify? do
         %{
           left: build_rectification_maps(left_calibration),
-          right: build_rectification_maps(right_calibration)
+          right: build_rectification_maps(shift_rows(right_calibration, row_offset))
         }
       else
         nil
@@ -160,6 +165,8 @@ defmodule RosBridge.StereoCamera.OpenCV do
        block_size: Keyword.get(opts, :block_size, 5),
        min_disparity: Keyword.get(opts, :min_disparity, 0),
        rectification_maps: rectification_maps,
+       right_calibration: right_calibration,
+       row_offset: row_offset,
        rectify?: rectify?,
        clahe: clahe,
        post_filter: Keyword.get(opts, :post_filter, :median),
@@ -190,7 +197,10 @@ defmodule RosBridge.StereoCamera.OpenCV do
 
       maps =
         if state.rectify? do
-          %{left: build_rectification_maps(left), right: build_rectification_maps(right)}
+          %{
+            left: build_rectification_maps(left),
+            right: build_rectification_maps(shift_rows(right, state.row_offset))
+          }
         else
           nil
         end
@@ -206,6 +216,7 @@ defmodule RosBridge.StereoCamera.OpenCV do
          | focal_length: focal_length,
            baseline: baseline,
            rectification_maps: maps,
+           right_calibration: right,
            previous_disparity: nil
        }}
     rescue
@@ -724,6 +735,9 @@ defmodule RosBridge.StereoCamera.OpenCV do
 
   defp option_error(:clahe, value) when is_boolean(value), do: nil
 
+  defp option_error(:row_offset, value) when is_number(value) and value >= -100 and value <= 100,
+    do: nil
+
   defp option_error(:clahe_clip_limit, value) when is_number(value) and value > 0 and value <= 40,
     do: nil
 
@@ -766,7 +780,25 @@ defmodule RosBridge.StereoCamera.OpenCV do
     %{s | opts: opts, clahe: if(s.clahe, do: create_clahe(opts))}
   end
 
+  defp apply_option({:row_offset, v}, s) do
+    maps =
+      if s.rectification_maps,
+        do: %{
+          s.rectification_maps
+          | right: build_rectification_maps(shift_rows(s.right_calibration, v * 1.0))
+        }
+
+    %{s | row_offset: v * 1.0, rectification_maps: maps}
+  end
+
   defp matcher(state, fun), do: %{state | matcher: fun.(state.matcher)}
+
+  # Rectified rows of the right image `offset` pixels lower: the
+  # projection matrix's cy moves the rectified image, nothing else.
+  defp shift_rows(%Calibration{projection_matrix: p} = calibration, offset) when offset != 0,
+    do: %{calibration | projection_matrix: List.update_at(p, 6, &(&1 + offset))}
+
+  defp shift_rows(calibration, _offset), do: calibration
 
   defp create_clahe(opts) do
     Evision.createCLAHE(
@@ -786,7 +818,8 @@ defmodule RosBridge.StereoCamera.OpenCV do
       pre_filter_cap: Evision.StereoSGBM.getPreFilterCap(m),
       num_disparities: Evision.StereoSGBM.getNumDisparities(m),
       clahe: not is_nil(state.clahe),
-      clahe_clip_limit: Keyword.get(state.opts, :clahe_clip_limit, 2.0)
+      clahe_clip_limit: Keyword.get(state.opts, :clahe_clip_limit, 2.0),
+      row_offset: state.row_offset
     }
   end
 

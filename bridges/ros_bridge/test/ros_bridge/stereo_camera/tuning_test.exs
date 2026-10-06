@@ -66,6 +66,9 @@ defmodule RosBridge.StereoCamera.TuningTest do
                num_disparities: 128,
                clahe_clip_limit: 3
              ) == :ok
+
+      assert OpenCV.validate_options(row_offset: 28) == :ok
+      assert OpenCV.validate_options(row_offset: -12.5) == :ok
     end
 
     test "refuses bad values and settings fixed at start" do

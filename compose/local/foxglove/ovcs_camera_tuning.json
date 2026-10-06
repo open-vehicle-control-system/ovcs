@@ -110,8 +110,8 @@
       "buttonTooltip": "Edit the values, then apply",
       "buttonColor": "#2962FF",
       "advancedView": true,
-      "value": "{\n  \"data\": \"stereo.uniqueness_ratio=20 stereo.speckle_window_size=600 stereo.speckle_range=8 stereo.clahe_clip_limit=3 stereo.num_disparities=96\"\n}",
-      "foxglovePanelTitle": "Stereo matching"
+      "value": "{\n  \"data\": \"stereo.uniqueness_ratio=20 stereo.speckle_window_size=600 stereo.speckle_range=8 stereo.clahe_clip_limit=3 stereo.num_disparities=96 stereo.row_offset=0\"\n}",
+      "foxglovePanelTitle": "Stereo matching (row_offset: pixels to move the right image down if the cameras moved since calibration)"
     }
   },
   "globalVariables": {},

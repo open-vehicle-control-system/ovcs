@@ -184,7 +184,7 @@ stereo.uniqueness_ratio=20; stereo.clahe_clip_limit=3
 | Target | Keys |
 |---|---|
 | `left`, `right`, `cameras` (both) | `exposure_mode` (`normal`, `short`, `long`), `exposure_time_us` and `analogue_gain` (0 for automatic), `lens_position` (dioptres), `brightness`, `contrast`, `sharpness`, `noise_reduction` (`off`, `fast`, `high_quality`, `minimal`) |
-| `stereo` | `uniqueness_ratio`, `speckle_window_size`, `speckle_range`, `p1`, `p2`, `disp12_max_diff`, `pre_filter_cap`, `num_disparities` (a multiple of 16), `clahe` (`true`/`false`), `clahe_clip_limit` |
+| `stereo` | `uniqueness_ratio`, `speckle_window_size`, `speckle_range`, `p1`, `p2`, `disp12_max_diff`, `pre_filter_cap`, `num_disparities` (a multiple of 16), `clahe` (`true`/`false`), `clahe_clip_limit`, `row_offset` (pixels to move the right rectified image down, for a camera that moved since calibration) |
 
 A message is applied only if every assignment in it is valid. The
 settings in force, followed by the outcome of the last request, are
