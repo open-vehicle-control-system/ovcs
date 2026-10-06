@@ -64,4 +64,16 @@ defmodule RosBridge.Camera.LibCameraTest do
       assert LibCamera.lens_position_args(1) == ["--lens-position", "1.0"]
     end
   end
+
+  describe "log records" do
+    test "carry a level and the capture program's message" do
+      assert LibCamera.parse_record(<<2, 1, "camera sync not established">>) ==
+               {:log, :warning, "camera sync not established"}
+
+      assert LibCamera.parse_record(<<2, 0, "focus fixed">>) == {:log, :info, "focus fixed"}
+
+      assert LibCamera.parse_record(<<2, 2, "Camera::start failed">>) ==
+               {:log, :error, "Camera::start failed"}
+    end
+  end
 end

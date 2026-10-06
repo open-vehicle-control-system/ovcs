@@ -2,6 +2,7 @@
 
 #include <arpa/inet.h>  // htonl/ntohl
 #include <cstring>
+#include <mutex>
 #include <unistd.h>
 
 namespace ovcs::framing {
@@ -46,11 +47,24 @@ bool read_record(std::vector<uint8_t>& out) {
 }
 
 bool write_record(const uint8_t* data, size_t len) {
+  // A record is two writes: interleaving two threads' would corrupt
+  // the stream.
+  static std::mutex write_mutex;
+  std::lock_guard<std::mutex> lock(write_mutex);
   uint32_t be_len = htonl(static_cast<uint32_t>(len));
   if (!write_exact(output_fd, &be_len, sizeof(be_len))) return false;
   if (len > 0 && !write_exact(output_fd, data, len)) return false;
   // No fflush — we use the raw fd (write()), not stdio.
   return true;
+}
+
+std::vector<uint8_t> build_log_record(uint8_t level, const std::string& message) {
+  std::vector<uint8_t> out;
+  out.reserve(2 + message.size());
+  out.push_back(2);
+  out.push_back(level);
+  out.insert(out.end(), message.begin(), message.end());
+  return out;
 }
 
 std::vector<uint8_t> build_frame_record(uint16_t width, uint16_t height,
