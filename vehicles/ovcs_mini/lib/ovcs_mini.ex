@@ -415,11 +415,11 @@ defmodule OvcsMini do
       # across 640/560/480/400 wide — SGBM's limit here is texture, not
       # pixel count — while cost and near clip both fell:
       #
-      #   640x360   f*B 74.2   clip 0.77 m   SGBM ~141 ms
-      #   480x270   f*B 55.6   clip 0.58 m   SGBM  ~79 ms
+      #   640x360   f*B 46.0   clip 0.48 m   SGBM ~141 ms
+      #   480x270   f*B 34.5   clip 0.36 m   SGBM  ~79 ms
       #
       # The price is depth precision at distance, since dZ = Z^2 dd /
-      # (f*B): about 3.6 cm at 2 m against 2.7 cm at 640 wide. Fine for
+      # (f*B): about 5.8 cm at 2 m against 4.3 cm at 640 wide. Fine for
       # deciding whether to stop for something; not fine for mapping.
       # Wide enough for the unsynchronized USB cameras on host;
       # drop to 5 ms once the perception target has FSIN-tied CSI
@@ -489,12 +489,26 @@ defmodule OvcsMini do
   # Short exposures: the normal mode's 30 ms smears the edges SGBM
   # matches as soon as the car moves. Focus is fixed at 1 m, the
   # distances the costmaps care about; the calibration is only valid
-  # for these positions.
+  # for these positions. The 2304x1296 sensor mode bins the whole
+  # sensor; libcamera's own pick for this output is a centre crop with
+  # a third less field of view.
   defp camera_addressing(:target, :left),
-    do: [camera_id: 1, sync: :server, exposure_mode: :short, lens_position: 1.0]
+    do: [
+      camera_id: 1,
+      sync: :server,
+      exposure_mode: :short,
+      lens_position: 1.0,
+      sensor_mode: {2304, 1296}
+    ]
 
   defp camera_addressing(:target, :right),
-    do: [camera_id: 0, sync: :client, exposure_mode: :short, lens_position: 1.0]
+    do: [
+      camera_id: 0,
+      sync: :client,
+      exposure_mode: :short,
+      lens_position: 1.0,
+      sensor_mode: {2304, 1296}
+    ]
 
   # In simulation the "camera" is a topic. Gazebo publishes on the
   # same names the vehicle does, so left really is left here — the

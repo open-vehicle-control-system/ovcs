@@ -54,6 +54,16 @@ defmodule RosBridge.Camera.LibCameraTest do
     end
   end
 
+  describe "sensor_mode_args/1" do
+    test "lets libcamera pick the mode by default" do
+      assert LibCamera.sensor_mode_args(nil) == []
+    end
+
+    test "passes the mode's size" do
+      assert LibCamera.sensor_mode_args({2304, 1296}) == ["--sensor-mode", "2304x1296"]
+    end
+  end
+
   describe "lens_position_args/1" do
     test "no position leaves the lens alone" do
       assert LibCamera.lens_position_args(nil) == []

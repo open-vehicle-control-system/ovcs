@@ -78,6 +78,11 @@ struct Args {
   // Dioptres (1 / focus distance in metres); negative leaves the lens
   // where libcamera puts it.
   float lens_position = -1.0f;
+  // Sensor mode as its output size and bit depth; 0 lets libcamera pick
+  // one from the output size, which can be a centre crop of the sensor.
+  unsigned int sensor_width = 0;
+  unsigned int sensor_height = 0;
+  unsigned int sensor_bit_depth = 10;
 };
 
 bool parse_args(int argc, char** argv, Args& out) {
@@ -103,6 +108,14 @@ bool parse_args(int argc, char** argv, Args& out) {
       else { log_message(LOG_WARNING, "--exposure-mode must be normal, short or long"); return false; }
     }
     else if (a == "--lens-position" && next()) out.lens_position = std::strtof(argv[i], nullptr);
+    else if (a == "--sensor-mode" && next()) {
+      // WIDTHxHEIGHT or WIDTHxHEIGHT:BITDEPTH
+      if (std::sscanf(argv[i], "%ux%u:%u", &out.sensor_width, &out.sensor_height,
+                      &out.sensor_bit_depth) < 2) {
+        log_message(LOG_WARNING, "--sensor-mode must be WIDTHxHEIGHT[:BITDEPTH]");
+        return false;
+      }
+    }
     else { log_message(LOG_WARNING, "unknown arg %s", a.c_str()); return false; }
   }
   return true;
@@ -368,6 +381,13 @@ int main(int argc, char** argv) {
   cfg.pixelFormat = formats::YUV420;
   cfg.bufferCount = 4;
 
+  if (args.sensor_width > 0) {
+    SensorConfiguration sensor;
+    sensor.bitDepth = args.sensor_bit_depth;
+    sensor.outputSize = Size(args.sensor_width, args.sensor_height);
+    config->sensorConfig = sensor;
+  }
+
   switch (config->validate()) {
     case CameraConfiguration::Valid:
       break;
@@ -377,7 +397,10 @@ int main(int argc, char** argv) {
                    cfg.pixelFormat.toString().c_str());
       break;
     case CameraConfiguration::Invalid:
-      log_message(LOG_ERROR, "configuration invalid");
+      log_message(LOG_ERROR, args.sensor_width > 0
+                                 ? "configuration invalid: no %ux%u %u-bit sensor mode?"
+                                 : "configuration invalid",
+                  args.sensor_width, args.sensor_height, args.sensor_bit_depth);
       camera->release();
       cm.stop();
       return 1;
@@ -597,15 +620,11 @@ int main(int argc, char** argv) {
   start_controls.set(controls::FrameDurationLimits,
                      Span<const int64_t, 2>({period_us, period_us}));
 
-  // Without an explicit ScalerCrop libcamera/PISP may pick a sensor
-  // mode whose native dimensions exceed the requested output and
-  // present it as a centre crop — looks "zoomed in" with a narrower
-  // FoV than the lens delivers. Pin the crop to the full active
-  // sensor area so the downscale to args.{width,height} preserves the
-  // lens's full FoV.
+  // The widest crop the sensor mode allows. A mode can itself be a
+  // centre crop of the sensor (see --sensor-mode).
   if (auto max_crop = camera->properties().get(properties::ScalerCropMaximum)) {
     start_controls.set(controls::ScalerCrop, *max_crop);
-    log_message(LOG_INFO, "ScalerCrop set to full sensor (%dx%d @ %d,%d)",
+    log_message(LOG_INFO, "ScalerCrop set to the sensor mode's full area (%dx%d @ %d,%d)",
                  max_crop->width, max_crop->height,
                  max_crop->x, max_crop->y);
   } else {
