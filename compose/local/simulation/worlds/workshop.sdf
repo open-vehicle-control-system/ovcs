@@ -20,7 +20,7 @@
 
   The vehicle spawns at the origin facing +x. Obstacles sit at known
   distances along that axis so depth can be *checked* rather than
-  admired — at 480x270 with a 90 mm baseline the near clip is 0.55 m
+  admired — at 480x270 with a 90 mm baseline the near clip is 0.58 m
   and precision falls off as Z², so the useful band is roughly
   0.6-4 m. The boxes bracket it:
 

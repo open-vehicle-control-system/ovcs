@@ -132,7 +132,8 @@ defmodule RosBridge.ZenohClientSampleTest do
             assert {:noreply, _} = sample(state(Twist), :binary.copy(<<0>>, 48 + surplus))
           end)
 
-        assert log == "", "#{surplus} bytes of padding was reported as a mismatch"
+        # Other async tests log too: only the surplus warning is ruled out.
+        refute log =~ "unread", "#{surplus} bytes of padding was reported as a mismatch"
       end
     end
 

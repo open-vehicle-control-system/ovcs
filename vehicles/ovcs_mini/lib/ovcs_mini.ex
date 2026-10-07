@@ -144,7 +144,10 @@ defmodule OvcsMini do
         # to. Reads the VMS's vehicle_motion frame off CAN and
         # publishes /odom and odom -> base_link, which is everything
         # Nav2 needs in the map-less setup.
-        [{:odometry_publisher, driver: OvcsDrivers.Imu.Dummy}]
+        [
+          {:odometry_publisher,
+           driver: OvcsDrivers.Imu.Dummy, base_ahead_of_rear_axle: base_ahead_of_rear_axle()}
+        ]
       end
 
     %RosBridge.Config{
@@ -153,6 +156,9 @@ defmodule OvcsMini do
       components: components ++ odometry
     }
   end
+
+  # base_link sits midway between the axles.
+  defp base_ahead_of_rear_axle, do: geometry().wheelbase / 2
 
   defp ros_target_config,
     do: %RosBridge.Config{
@@ -168,7 +174,8 @@ defmodule OvcsMini do
          %{topic: "cmd_vel_nav", message: Ros2.GeometryMsgs.Msg.TwistStamped}},
         {:imu_publisher, driver: BNO085.I2C},
         # Same ordering constraint as the host config.
-        {:odometry_publisher, driver: BNO085.I2C}
+        {:odometry_publisher,
+         driver: BNO085.I2C, base_ahead_of_rear_axle: base_ahead_of_rear_axle()}
       ]
     }
 
@@ -408,11 +415,11 @@ defmodule OvcsMini do
       # across 640/560/480/400 wide — SGBM's limit here is texture, not
       # pixel count — while cost and near clip both fell:
       #
-      #   640x360   f*B 69.7   clip 0.73 m   SGBM ~141 ms
-      #   480x270   f*B 52.3   clip 0.55 m   SGBM  ~79 ms
+      #   640x360   f*B 74.2   clip 0.77 m   SGBM ~141 ms
+      #   480x270   f*B 55.6   clip 0.58 m   SGBM  ~79 ms
       #
       # The price is depth precision at distance, since dZ = Z^2 dd /
-      # (f*B): about 3.8 cm at 2 m against 2.9 cm at 640 wide. Fine for
+      # (f*B): about 3.6 cm at 2 m against 2.7 cm at 640 wide. Fine for
       # deciding whether to stop for something; not fine for mapping.
       # Wide enough for the unsynchronized USB cameras on host;
       # drop to 5 ms once the perception target has FSIN-tied CSI
@@ -441,6 +448,7 @@ defmodule OvcsMini do
       # phantoms multiply.
       driver: camera_driver,
       calibration_dir: priv_calibration_dir(arm),
+      calibration_store_dir: calibration_store_dir(arm),
       width: 480,
       height: 270,
       fps: 30,
@@ -500,6 +508,11 @@ defmodule OvcsMini do
   # alignment. Measured, that dropped stereo coverage to 5.4%.
   defp priv_calibration_dir(:sim), do: Path.join(priv_calibration_dir(), "sim")
   defp priv_calibration_dir(_arm), do: priv_calibration_dir()
+
+  # The firmware's root filesystem is read-only: a calibration
+  # committed from cameracalibrator goes to the data partition.
+  defp calibration_store_dir(:target), do: "/data/calibration"
+  defp calibration_store_dir(_arm), do: nil
 
   defp priv_calibration_dir do
     case :code.priv_dir(:ovcs_mini) do

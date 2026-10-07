@@ -63,6 +63,12 @@ defmodule RosBridge.StereoCamera.Supervisor do
     * `:calibration_dir` — when set, the per-side
       `calibration_path` defaults to
       `<calibration_dir>/<topic_prefix>_<side>.yaml`.
+    * `:calibration_store_dir` — a writable directory for
+      calibrations committed at runtime (`cameracalibrator`'s
+      COMMIT), as `<topic_prefix>_<side>.yaml`. When both sides are
+      stored there they take precedence over `calibration_path`, so
+      a calibration survives a restart on a read-only root
+      filesystem. Without it, COMMIT writes to `calibration_path`.
     * `:pair_tolerance_ms` (33).
     * `:backend_opts` (`[]`) — forwarded to
       `RosBridge.StereoCamera.OpenCV`'s `start_link/1`. The per-side
@@ -71,6 +77,7 @@ defmodule RosBridge.StereoCamera.Supervisor do
       vehicles don't have to specify them at two levels.
   """
   use Supervisor
+  require Logger
 
   alias RosBridge.StereoCamera.OpenCV
 
@@ -106,6 +113,15 @@ defmodule RosBridge.StereoCamera.Supervisor do
   defp build_config(opts) do
     topic_prefix = Keyword.get(opts, :topic_prefix, @default_topic_prefix)
     calibration_dir = Keyword.get(opts, :calibration_dir)
+    store_dir = Keyword.get(opts, :calibration_store_dir)
+
+    left =
+      resolve_side_opts(Keyword.fetch!(opts, :left), :left, topic_prefix, calibration_dir)
+
+    right =
+      resolve_side_opts(Keyword.fetch!(opts, :right), :right, topic_prefix, calibration_dir)
+
+    {left, right} = use_stored_calibration(left, right, store_dir, topic_prefix)
 
     %{
       driver: Keyword.fetch!(opts, :driver),
@@ -117,20 +133,8 @@ defmodule RosBridge.StereoCamera.Supervisor do
       publish_disparity_image: Keyword.get(opts, :publish_disparity_image, false),
       publish_rectified_image: Keyword.get(opts, :publish_rectified_image, false),
       backend_opts: Keyword.get(opts, :backend_opts, []),
-      left:
-        resolve_side_opts(
-          Keyword.fetch!(opts, :left),
-          :left,
-          topic_prefix,
-          calibration_dir
-        ),
-      right:
-        resolve_side_opts(
-          Keyword.fetch!(opts, :right),
-          :right,
-          topic_prefix,
-          calibration_dir
-        )
+      left: left,
+      right: right
     }
   end
 
@@ -142,6 +146,45 @@ defmodule RosBridge.StereoCamera.Supervisor do
     |> Keyword.put_new_lazy(:calibration_path, fn ->
       default_calibration_path(calibration_dir, topic_prefix, side_string)
     end)
+  end
+
+  @doc """
+  The per-side opts with `:calibration_store_path` set from
+  `store_dir`, and `:calibration_path` pointing at the stored files
+  when both sides are stored: one stored side alone would pair two
+  calibrations solved apart. Unchanged when `store_dir` is `nil`.
+  """
+  def use_stored_calibration(left, right, nil, _topic_prefix), do: {left, right}
+
+  def use_stored_calibration(left, right, store_dir, topic_prefix) do
+    left_store = Path.join(store_dir, "#{topic_prefix}_left.yaml")
+    right_store = Path.join(store_dir, "#{topic_prefix}_right.yaml")
+    left = Keyword.put(left, :calibration_store_path, left_store)
+    right = Keyword.put(right, :calibration_store_path, right_store)
+
+    if File.exists?(left_store) and File.exists?(right_store) do
+      Logger.info("#{__MODULE__} using the calibration stored in #{store_dir}")
+
+      {Keyword.put(left, :calibration_path, left_store),
+       Keyword.put(right, :calibration_path, right_store)}
+    else
+      {left, right}
+    end
+  end
+
+  @doc """
+  Reloads the backend from the stored calibration once both sides
+  are stored. COMMIT stores one side at a time.
+  """
+  def reload_stored_calibration(backend, left_store, right_store) do
+    if File.exists?(left_store) and File.exists?(right_store) do
+      OpenCV.reload_calibration(backend,
+        left_calibration_path: left_store,
+        right_calibration_path: right_store
+      )
+    else
+      :ok
+    end
   end
 
   defp default_calibration_path(nil, _topic_prefix, _side), do: nil
@@ -167,15 +210,15 @@ defmodule RosBridge.StereoCamera.Supervisor do
 
   # Per-side `set_camera_info` service server. Together they let
   # `cameracalibrator`'s COMMIT button persist the new calibration
-  # to disk (the same YAML path the bridge loaded from at boot)
-  # and hot-reload the SGBM backend so the change takes effect
+  # (to the store when there is one, else over the YAML loaded at
+  # boot) and hot-reload the SGBM backend so the change takes effect
   # without restarting.
   defp set_camera_info_specs(config) do
     Enum.flat_map([:left, :right], fn side ->
       side_opts = Map.fetch!(config, side)
       service_name = "#{config.topic_prefix}/#{side}/set_camera_info"
 
-      case Keyword.get(side_opts, :calibration_path) do
+      case Keyword.get(side_opts, :calibration_store_path, side_opts[:calibration_path]) do
         nil ->
           []
 
@@ -186,12 +229,22 @@ defmodule RosBridge.StereoCamera.Supervisor do
                service_name: service_name,
                calibration_path: path,
                camera_name: "#{config.topic_prefix}_#{side}",
-               reload: {OpenCV, :reload_calibration, [OpenCV]}},
+               reload: reload_callback(config)},
               id: {:stereo, :set_camera_info, side}
             )
           ]
       end
     end)
+  end
+
+  defp reload_callback(config) do
+    case {config.left[:calibration_store_path], config.right[:calibration_store_path]} do
+      {nil, nil} ->
+        {OpenCV, :reload_calibration, [OpenCV]}
+
+      {left_store, right_store} ->
+        {__MODULE__, :reload_stored_calibration, [OpenCV, left_store, right_store]}
+    end
   end
 
   defp camera_driver_spec(config, side) do
@@ -206,6 +259,7 @@ defmodule RosBridge.StereoCamera.Supervisor do
       |> Keyword.put_new(:fps, config.fps)
       # Strip publisher-only keys so the driver doesn't see them.
       |> Keyword.delete(:calibration_path)
+      |> Keyword.delete(:calibration_store_path)
       |> Keyword.delete(:frame_id)
 
     Supervisor.child_spec({config.driver, driver_opts}, id: {:stereo, :driver, side})

@@ -99,7 +99,7 @@
             <format>R8G8B8</format>
           </image>
           <clip>
-            <!-- Near plane well inside the stereo near clip (0.55 m on
+            <!-- Near plane well inside the stereo near clip (0.58 m on
                  the real rig) so the simulation is not the thing that
                  limits close range. -->
             <near>0.02</near>
