@@ -57,6 +57,9 @@ struct Args {
   // Auto-exposure mode from the sensor's tuning file; negative leaves
   // libcamera's default (normal).
   int32_t exposure_mode = -1;
+  // Dioptres (1 / focus distance in metres); negative leaves the lens
+  // where libcamera puts it.
+  float lens_position = -1.0f;
 };
 
 bool parse_args(int argc, char** argv, Args& out) {
@@ -81,6 +84,7 @@ bool parse_args(int argc, char** argv, Args& out) {
       else if (mode == "long") out.exposure_mode = controls::ExposureLong;
       else { std::fprintf(stderr, "camera_capture: --exposure-mode must be normal, short or long\n"); return false; }
     }
+    else if (a == "--lens-position" && next()) out.lens_position = std::strtof(argv[i], nullptr);
     else { std::fprintf(stderr, "camera_capture: unknown arg %s\n", a.c_str()); return false; }
   }
   return true;
@@ -492,6 +496,18 @@ int main(int argc, char** argv) {
   if (args.exposure_mode >= 0) {
     start_controls.set(controls::AeExposureMode, args.exposure_mode);
     std::fprintf(stderr, "camera_capture: auto-exposure mode %d\n", args.exposure_mode);
+  }
+
+  // A stereo calibration holds only while the lens stays put: focus is
+  // manual and fixed when a position is given.
+  if (args.lens_position >= 0.0f) {
+    if (camera->controls().count(&controls::AfMode) && camera->controls().count(&controls::LensPosition)) {
+      start_controls.set(controls::AfMode, controls::AfModeManual);
+      start_controls.set(controls::LensPosition, args.lens_position);
+      std::fprintf(stderr, "camera_capture: focus fixed at %.2f dioptres\n", args.lens_position);
+    } else {
+      std::fprintf(stderr, "camera_capture: no focus control on this sensor; --lens-position ignored\n");
+    }
   }
 
   if (camera->start(&start_controls) != 0) {

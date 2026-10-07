@@ -45,6 +45,14 @@ defmodule RosBridge.Camera.LibCamera do
   before raising the gain, trading blur for noise. Absent, libcamera
   uses `:normal`.
 
+  ## Focus
+
+  `:lens_position` fixes the focus of a sensor that has a motorised
+  lens (Camera Module 3), in dioptres: 1.0 is focused at 1 m, 0 at
+  infinity. A stereo calibration holds only while the lens stays put,
+  and the two modules of a pair may need different positions to be
+  equally sharp. Absent, the lens is left where libcamera puts it.
+
   ## Stall watchdog
 
   A capture can stop delivering frames without the binary exiting:
@@ -95,6 +103,10 @@ defmodule RosBridge.Camera.LibCamera do
   def exposure_mode_args(mode) when mode in [:normal, :short, :long],
     do: ["--exposure-mode", Atom.to_string(mode)]
 
+  @doc false
+  def lens_position_args(nil), do: []
+  def lens_position_args(dioptres), do: ["--lens-position", Float.to_string(dioptres * 1.0)]
+
   @impl true
   def init(opts) do
     label = Keyword.fetch!(opts, :label)
@@ -105,6 +117,7 @@ defmodule RosBridge.Camera.LibCamera do
     rotation = Keyword.get(opts, :rotation, 0)
     sync = Keyword.get(opts, :sync)
     exposure_mode = Keyword.get(opts, :exposure_mode)
+    lens_position = Keyword.get(opts, :lens_position)
 
     executable = binary_path()
 
@@ -125,7 +138,8 @@ defmodule RosBridge.Camera.LibCamera do
         Integer.to_string(fps),
         "--rotation",
         Integer.to_string(rotation)
-      ] ++ sync_args(sync) ++ exposure_mode_args(exposure_mode)
+      ] ++
+        sync_args(sync) ++ exposure_mode_args(exposure_mode) ++ lens_position_args(lens_position)
 
     port =
       Port.open({:spawn_executable, executable}, [
