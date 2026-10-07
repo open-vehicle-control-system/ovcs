@@ -22,6 +22,16 @@ defmodule RosBridge.Camera.LibCamera do
       uint32  jpeg_len  LE
       bytes   jpeg
 
+  or a log line from the binary, written to the logger under this
+  camera's label (the Port does not capture its stderr):
+
+      uint8   tag                 # 2 = LOG
+      uint8   level               # 0 info, 1 warning, 2 error
+      bytes   message
+
+  Records the other way, on the binary's stdin, are `key=value`
+  runtime controls (see "Runtime controls").
+
   The Port supervises the binary: closing stdin (which happens
   when this GenServer dies) tells the binary to exit cleanly.
 
@@ -96,6 +106,7 @@ defmodule RosBridge.Camera.LibCamera do
   alias RosBridge.Camera.Frame
 
   @frame_tag 1
+  @log_tag 2
   @watchdog_interval_ms 1_000
   @default_stall_timeout_ms 2_000
   @default_startup_timeout_ms 15_000
@@ -191,6 +202,10 @@ defmodule RosBridge.Camera.LibCamera do
         frame = %{frame | label: state.label}
         Enum.each(state.listeners, &GenServer.cast(&1, {:camera_frame, frame}))
         {:noreply, %{state | last_frame_at: now_ms()}}
+
+      {:log, level, message} ->
+        Logger.log(level, "#{__MODULE__}[#{state.label}] camera_capture: #{message}")
+        {:noreply, state}
 
       {:error, reason} ->
         Logger.warning(
@@ -333,14 +348,15 @@ defmodule RosBridge.Camera.LibCamera do
 
   defp now_ms, do: System.monotonic_time(:millisecond)
 
-  defp parse_record(<<
-         @frame_tag,
-         width::little-unsigned-integer-size(16),
-         height::little-unsigned-integer-size(16),
-         capture_ns::little-signed-integer-size(64),
-         jpeg_len::little-unsigned-integer-size(32),
-         jpeg::binary-size(jpeg_len)
-       >>) do
+  @doc false
+  def parse_record(<<
+        @frame_tag,
+        width::little-unsigned-integer-size(16),
+        height::little-unsigned-integer-size(16),
+        capture_ns::little-signed-integer-size(64),
+        jpeg_len::little-unsigned-integer-size(32),
+        jpeg::binary-size(jpeg_len)
+      >>) do
     {:ok,
      %Frame{
        label: nil,
@@ -354,7 +370,14 @@ defmodule RosBridge.Camera.LibCamera do
      }}
   end
 
-  defp parse_record(_other), do: {:error, :malformed_record}
+  def parse_record(<<@log_tag, level, message::binary>>),
+    do: {:log, log_level(level), message}
+
+  def parse_record(_other), do: {:error, :malformed_record}
+
+  defp log_level(0), do: :info
+  defp log_level(1), do: :warning
+  defp log_level(_), do: :error
 
   # `:code.priv_dir/1` resolves to the consumer's priv (here:
   # ros_bridge's), where elixir_make drops the binary. We keep the

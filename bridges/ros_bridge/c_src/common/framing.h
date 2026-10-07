@@ -40,8 +40,13 @@ bool read_record(std::vector<uint8_t>& out);
 void set_output_fd(int fd);
 
 // Write one length-prefixed record to the output fd (stdout unless
-// `set_output_fd` said otherwise).
+// `set_output_fd` said otherwise). Safe to call from several threads.
 bool write_record(const uint8_t* data, size_t len);
+
+// A LOG record (tag = 2): one message for the BEAM's logger.
+// Levels: 0 info, 1 warning, 2 error. Mirrors the parser in
+// `RosBridge.Camera.LibCamera`.
+std::vector<uint8_t> build_log_record(uint8_t level, const std::string& message);
 
 // Convenience: build the FRAME record payload (tag = 1) used by
 // camera_capture. Mirrors the parser in
