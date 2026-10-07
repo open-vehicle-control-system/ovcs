@@ -84,10 +84,12 @@ defmodule RosBridge.StereoCamera.OpenCV do
   Reload calibration + rectification maps from the side YAMLs
   currently on disk. Used after a `set_camera_info` service call
   rewrites them — lets the next disparity reflect the new
-  geometry without restarting the bridge.
+  geometry without restarting the bridge. `paths`
+  (`:left_calibration_path`, `:right_calibration_path`) replaces
+  the YAMLs to read, for this and later reloads, once they load.
   """
-  def reload_calibration(server) do
-    GenServer.call(server, :reload_calibration)
+  def reload_calibration(server, paths \\ []) do
+    GenServer.call(server, {:reload_calibration, paths})
   end
 
   # ── GenServer callbacks ──────────────────────────────────────
@@ -175,8 +177,8 @@ defmodule RosBridge.StereoCamera.OpenCV do
   end
 
   @impl true
-  def handle_call(:reload_calibration, _from, state) do
-    opts = state.opts
+  def handle_call({:reload_calibration, paths}, _from, state) do
+    opts = Keyword.merge(state.opts, paths)
 
     try do
       left_raw = Calibration.load!(Keyword.fetch!(opts, :left_calibration_path))
@@ -207,7 +209,8 @@ defmodule RosBridge.StereoCamera.OpenCV do
          | focal_length: focal_length,
            baseline: baseline,
            rectification_maps: maps,
-           previous_disparity: nil
+           previous_disparity: nil,
+           opts: opts
        }}
     rescue
       error ->
