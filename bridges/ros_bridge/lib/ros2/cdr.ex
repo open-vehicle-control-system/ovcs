@@ -20,6 +20,9 @@ defmodule Ros2.Cdr do
   def i64(acc, v), do: pad(acc, 8) <> <<v::little-signed-64>>
   def u64(acc, v), do: pad(acc, 8) <> <<v::little-64>>
   def f64(acc, v), do: pad(acc, 8) <> <<v * 1.0::little-float-64>>
+  # Elixir floats have no infinities; REP 117 rangers need both.
+  def f32(acc, :infinity), do: pad(acc, 4) <> <<0x7F800000::little-32>>
+  def f32(acc, :neg_infinity), do: pad(acc, 4) <> <<0xFF800000::little-32>>
   def f32(acc, v), do: pad(acc, 4) <> <<v * 1.0::little-float-32>>
   def string(acc, s), do: u32(acc, byte_size(s) + 1) <> s <> <<0>>
 

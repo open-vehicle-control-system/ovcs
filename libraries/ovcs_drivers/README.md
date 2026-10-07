@@ -26,6 +26,11 @@ Current kinds:
 |-----------------------|--------------------------|---------------------------------|------------------|
 | IMU                   | `OvcsDrivers.Imu`        | `OvcsDrivers.Imu.Sample`        | `BNO085.I2C` (+ `OvcsDrivers.Imu.Dummy` stub) |
 | Scanning lidar        | `OvcsDrivers.Lidar`      | `OvcsDrivers.Lidar.Scan` (one revolution) | `RPLidar.UART` (SLAMTEC RPLIDAR C1 and its protocol) |
+| Rangefinder           | `OvcsDrivers.Rangefinder` (instances named per sensor) | `OvcsDrivers.Rangefinder.Sample` | `A02YYUW.UART` (DFRobot A02YYUW ultrasonic) |
+
+Serial drivers find their USB adapter by its serial number
+(`OvcsDrivers.Serial`), since several adapters enumerate as `ttyUSB*` in
+any order.
 
 New kinds land alongside their first concrete driver — defining a
 behaviour with zero implementations is dead code; wait until you have
@@ -46,6 +51,12 @@ lib/
     scan.ex                       # %OvcsDrivers.Lidar.Scan{points, started_at, duration_ns, range}
   rplidar/                        # implements OvcsDrivers.Lidar
     uart.ex
+  rangefinder.ex                  # OvcsDrivers.Rangefinder behaviour
+  rangefinder/
+    sample.ex                     # %OvcsDrivers.Rangefinder.Sample{distance, range, field_of_view, measured_at}
+  a02yyuw/                        # implements OvcsDrivers.Rangefinder
+    uart.ex
+  serial.ex                       # OvcsDrivers.Serial — a USB adapter's device by serial number
   <next_chip>/...
 ```
 

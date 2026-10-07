@@ -43,6 +43,13 @@ defmodule RosBridge.Components do
         * `:driver_opts` — forwarded to the driver (`device:`, ...)
         * `:topic`, `:frame_id`, `:bins` — forwarded to
           `RosBridge.Publishers.LaserScan` (see its defaults).
+    * `:range_publisher` — one rangefinder: starts the named driver
+      instance (any `OvcsDrivers.Rangefinder` implementation) followed
+      by `RosBridge.Publishers.Range`. List it once per sensor. Opts:
+        * `:driver` (required, module — `A02YYUW.UART`)
+        * `:name` (required) — the instance's name, unique per sensor
+        * `:driver_opts` — forwarded to the driver (`serial_number:`, ...)
+        * `:topic`, `:frame_id` (required), `:radiation_type`
     * `:odometry_publisher` — `RosBridge.Publishers.Odometry`,
       dead-reckoning `/odom` and the `odom → base_link` transform from
       the VMS's `vehicle_motion` CAN frame and the IMU heading. Opts:
@@ -109,6 +116,16 @@ defmodule RosBridge.Components do
   def start(:lidar_publisher, opts) do
     driver = Keyword.fetch!(opts, :driver)
     [{driver, Keyword.get(opts, :driver_opts, [])}, {RosBridge.Publishers.LaserScan, opts}]
+  end
+
+  def start(:range_publisher, opts) do
+    driver = Keyword.fetch!(opts, :driver)
+    name = Keyword.fetch!(opts, :name)
+
+    [
+      {driver, Keyword.put(Keyword.get(opts, :driver_opts, []), :name, name)},
+      {RosBridge.Publishers.Range, opts}
+    ]
   end
 
   # The driver is started by `:imu_publisher`, which must appear

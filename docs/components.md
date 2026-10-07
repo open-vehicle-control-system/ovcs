@@ -154,7 +154,7 @@ Speaks the `rmw_zenoh` wire format natively over Zenoh, linking nothing from ROS
 - `Consumers.Joy`: a `sensor_msgs/Joy` becomes the `0x2B0` actuator command;
 - `Consumers.Velocity`: a planner `Twist` becomes the `0x2B1` velocity command;
 - `Publishers.Imu` from any `OvcsDrivers.Imu` driver (`OvcsDrivers.Imu.Dummy` on the host, the BNO085 on target), `Publishers.Odometry`, static transforms;
-- `Publishers.LaserScan` from any `OvcsDrivers.Lidar` driver (an RPLIDAR over USB serial);
+- `Publishers.LaserScan` from any `OvcsDrivers.Lidar` driver (an RPLIDAR over USB serial), and `Publishers.Range` per rangefinder (A02YYUW ultrasonic sensors over USB serial);
 - a stereo camera pipeline and a Hailo-8 object detector.
 
 How it all connects is in [ROS 2 and the simulator](./ros2_simulator.md).
@@ -197,7 +197,7 @@ Two kinds live side by side under `libraries/`. **In-tree** libraries are framew
 | `ovcs_can/` | `OvcsCan` | [in-tree](../libraries/ovcs_can/README.md) | Shared per-component CAN frame YAMLs under `priv/can/components/`, no runtime logic |
 | `ovcs_bus/` | `OvcsBus` | [in-tree](../libraries/ovcs_bus/README.md) | Cluster-wide pub/sub over Erlang distribution |
 | `ovcs_bridge/` | `OvcsBridge` | [in-tree](../libraries/ovcs_bridge/README.md) | Behaviour and supervisor for bridge libraries |
-| `ovcs_drivers/` | `OvcsDrivers` | [in-tree](../libraries/ovcs_drivers/README.md) | Hardware chip drivers grouped by kind: the BNO085 IMU, the RPLIDAR scanning lidar |
+| `ovcs_drivers/` | `OvcsDrivers` | [in-tree](../libraries/ovcs_drivers/README.md) | Hardware chip drivers grouped by kind: the BNO085 IMU, the RPLIDAR scanning lidar, the A02YYUW ultrasonic rangefinder |
 | `cantastic/` | `Cantastic` | [sideloaded](https://github.com/open-vehicle-control-system/cantastic) | CAN library: YAML frame specs, SocketCAN, emitter/receiver, ISO-TP, OBD2, `socketcand`, received-frame watchdog |
 | `express_lrs/` | `ExpressLrs` | [sideloaded](https://github.com/open-vehicle-control-system/express_lrs) | MAVLink decoder for ExpressLRS links |
 | `msp_osd/` | `MspOsd` | [sideloaded](https://github.com/open-vehicle-control-system/msp_osd) | MSP / DisplayPort OSD stack for HDZero, Walksnail and DJI VTXs |

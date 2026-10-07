@@ -176,9 +176,13 @@ defmodule OvcsMini do
         # Same ordering constraint as the host config.
         {:odometry_publisher,
          driver: BNO085.I2C, base_ahead_of_rear_axle: base_ahead_of_rear_axle()},
-        # RPLIDAR C1 on the bridge's USB port. It measures about every
-        # 0.72 degrees, 500 points a revolution: one bin each.
-        {:lidar_publisher, driver: RPLidar.UART, driver_opts: [device: "ttyUSB0"], bins: 500},
+        # RPLIDAR C1 on the bridge's USB port, found by its adapter's
+        # serial number. It measures about every 0.72 degrees, 500
+        # points a revolution: one bin each.
+        {:lidar_publisher,
+         driver: RPLidar.UART,
+         driver_opts: [serial_number: "bafb4ecd0064ef11858ee0a9c169b110"],
+         bins: 500},
         lidar_transform()
       ]
     }

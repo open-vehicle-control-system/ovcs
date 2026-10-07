@@ -17,7 +17,8 @@ defmodule RPLidar.UART do
 
   ## Options
 
-    * `:device` — serial device name (`"ttyUSB0"`)
+    * `:serial_number` or `:device` — the adapter (see
+      `OvcsDrivers.Serial`)
     * `:speed` — baud rate (460800, the C1's)
     * `:range` — `{min, max}` metres the sensor measures
       (`{0.05, 12.0}`, the C1M1's)
@@ -46,6 +47,7 @@ defmodule RPLidar.UART do
   @after_reset_ms 2_000
   @response_timeout_ms 1_000
   @stall_ms 2_000
+  @retry_ms 5_000
   # The first measurements follow the scan request once the motor is up
   # to speed, about three seconds on the C1.
   @spin_up_ms 8_000
@@ -62,17 +64,13 @@ defmodule RPLidar.UART do
 
   @impl true
   def init(opts) do
-    device = Keyword.get(opts, :device, "ttyUSB0")
-    speed = Keyword.get(opts, :speed, 460_800)
     {:ok, uart} = Circuits.UART.start_link()
-    :ok = Circuits.UART.open(uart, device, speed: speed, active: true)
-    # DTR low runs the motor; opening the port raises it.
-    :ok = Circuits.UART.set_dtr(uart, false)
-    Logger.info("#{__MODULE__} on /dev/#{device} at #{speed} baud")
 
     {:ok,
      %{
+       opts: opts,
        uart: uart,
+       connected?: false,
        range: Keyword.get(opts, :range, {0.05, 12.0}),
        listeners: [],
        mode: :idle,
@@ -87,9 +85,11 @@ defmodule RPLidar.UART do
   def handle_cast({:register_listener, pid}, state),
     do: {:noreply, %{state | listeners: Enum.uniq([pid | state.listeners])}}
 
-  def handle_cast(:enable, state), do: {:noreply, restart(state)}
+  def handle_cast(:enable, state), do: {:noreply, connect(state)}
 
   @impl true
+  def handle_info(:connect, state), do: {:noreply, connect(state)}
+
   def handle_info(:request_health, state) do
     send_request(state, @get_health)
     Process.send_after(self(), {:response_timeout, :health}, @response_timeout_ms)
@@ -127,6 +127,27 @@ defmodule RPLidar.UART do
   def handle_info(_message, state), do: {:noreply, state}
 
   # ── protocol ─────────────────────────────────────────────────
+
+  # A missing adapter is retried rather than crashing the bridge's other
+  # components with it.
+  defp connect(%{connected?: true} = state), do: restart(state)
+
+  defp connect(state) do
+    speed = Keyword.get(state.opts, :speed, 460_800)
+
+    with {:ok, device} <- OvcsDrivers.Serial.device(state.opts),
+         :ok <- Circuits.UART.open(state.uart, device, speed: speed, active: true),
+         # DTR low runs the motor; opening the port raises it.
+         :ok <- Circuits.UART.set_dtr(state.uart, false) do
+      Logger.info("#{__MODULE__} on /dev/#{device} at #{speed} baud")
+      restart(%{state | connected?: true})
+    else
+      error ->
+        Logger.warning("#{__MODULE__}: #{inspect(error)}; retrying in #{@retry_ms} ms")
+        Process.send_after(self(), :connect, @retry_ms)
+        state
+    end
+  end
 
   defp restart(state) do
     send_request(state, @stop)
