@@ -201,7 +201,7 @@ Changes last until the stereo unit restarts: copy the values you keep
 from `ros2 param dump` into the vehicle's configuration. The Foxglove
 layout `compose/local/foxglove/ovcs_camera_tuning.json` shows both
 cameras and the depth next to a Parameters panel, the diagnostics and
-a plot of the sync offset, exposure and gain.
+plots of the sync offset, exposure and gain.
 
 ## Adding a new ROS message type
 

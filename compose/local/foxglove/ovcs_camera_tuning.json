@@ -65,7 +65,7 @@
       "foxglovePanelTitle": "Depth (mm): black = no match"
     },
     "Parameters!stereo": {
-      "foxglovePanelTitle": "Stereo parameters"
+      "foxglovePanelTitle": "Parameters (type stereo in the filter)"
     },
     "DiagnosticSummary!stereo": {
       "minLevel": 0,
@@ -74,37 +74,13 @@
       "topicToRender": "/diagnostics",
       "sortByLevel": false
     },
-    "Plot!live": {
+    "Plot!sync": {
       "paths": [
         {
           "value": "/stereo/live/sync_offset_ms.data",
           "enabled": true,
           "timestampMethod": "receiveTime",
-          "label": "sync offset (ms)"
-        },
-        {
-          "value": "/stereo/live/left/exposure_time_us.data",
-          "enabled": true,
-          "timestampMethod": "receiveTime",
-          "label": "left exposure (us)"
-        },
-        {
-          "value": "/stereo/live/right/exposure_time_us.data",
-          "enabled": true,
-          "timestampMethod": "receiveTime",
-          "label": "right exposure (us)"
-        },
-        {
-          "value": "/stereo/live/left/analogue_gain.data",
-          "enabled": true,
-          "timestampMethod": "receiveTime",
-          "label": "left gain"
-        },
-        {
-          "value": "/stereo/live/right/analogue_gain.data",
-          "enabled": true,
-          "timestampMethod": "receiveTime",
-          "label": "right gain"
+          "label": "offset"
         }
       ],
       "showLegend": true,
@@ -114,7 +90,55 @@
       "isSynced": true,
       "xAxisVal": "timestamp",
       "followingViewWidth": 30,
-      "foxglovePanelTitle": "Live values"
+      "foxglovePanelTitle": "Sync offset, right - left (ms)"
+    },
+    "Plot!exposure": {
+      "paths": [
+        {
+          "value": "/stereo/live/left/exposure_time_us.data",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "left"
+        },
+        {
+          "value": "/stereo/live/right/exposure_time_us.data",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "right"
+        }
+      ],
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "followingViewWidth": 30,
+      "foxglovePanelTitle": "Exposure (us)"
+    },
+    "Plot!gain": {
+      "paths": [
+        {
+          "value": "/stereo/live/left/analogue_gain.data",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "left"
+        },
+        {
+          "value": "/stereo/live/right/analogue_gain.data",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "right"
+        }
+      ],
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "followingViewWidth": 30,
+      "foxglovePanelTitle": "Analogue gain"
     }
   },
   "globalVariables": {},
@@ -138,7 +162,17 @@
       "first": "Parameters!stereo",
       "second": {
         "first": "DiagnosticSummary!stereo",
-        "second": "Plot!live",
+        "second": {
+          "first": "Plot!sync",
+          "second": {
+            "first": "Plot!exposure",
+            "second": "Plot!gain",
+            "direction": "column",
+            "splitPercentage": 50
+          },
+          "direction": "column",
+          "splitPercentage": 33
+        },
         "direction": "column",
         "splitPercentage": 40
       },
