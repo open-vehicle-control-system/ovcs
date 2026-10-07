@@ -6,6 +6,11 @@ defmodule RosBridge.ZenohClient.State do
     :node_name,
     :domain_id,
     :session,
+    # The node's own liveliness token, per session. Without it rmw_zenoh
+    # infers the node from its entities, and the inferred node of a
+    # closed session hides this one's services from graph queries by
+    # node, such as foxglove_bridge's parameter discovery.
+    :node_token,
     # %{topic => %{
     #     message_module, key_expr, gid, publisher_id,
     #     liveliness_token, sequence_number
@@ -133,6 +138,9 @@ defmodule RosBridge.ZenohClient do
     GenServer.call(__MODULE__, {:register_service, service_name, service_module, handler_pid})
   end
 
+  @doc "The ROS node name this client declares its entities under."
+  def node_name, do: GenServer.call(__MODULE__, :node_name)
+
   @doc """
   Reply to an in-flight service query with an already-encoded
   response payload (CDR-LE encapsulated). `service_name` is the
@@ -158,6 +166,8 @@ defmodule RosBridge.ZenohClient do
   end
 
   @impl true
+  def handle_call(:node_name, _from, state), do: {:reply, state.node_name, state}
+
   def handle_call({:subscribe, topic, message_module, pid, _opts}, _from, state) do
     key_expr = subscription_key_expr(state.domain_id, topic)
 
@@ -354,6 +364,7 @@ defmodule RosBridge.ZenohClient do
         end
 
         state = %{state | session: session, drops_while_offline: 0}
+        state = declare_node(state)
         state = redeclare_publishers(state)
         state = redeclare_subscribers(state)
         state = redeclare_services(state)
@@ -853,6 +864,8 @@ defmodule RosBridge.ZenohClient do
   end
 
   defp teardown_session(%State{} = state) do
+    if state.node_token, do: Zenohex.Liveliness.undeclare_token(state.node_token)
+
     Enum.each(state.publishers, fn {_topic, publisher} ->
       if publisher.liveliness_token,
         do: Zenohex.Liveliness.undeclare_token(publisher.liveliness_token)
@@ -876,6 +889,18 @@ defmodule RosBridge.ZenohClient do
     :ok
   end
 
+  defp declare_node(state) do
+    with {:ok, %Zenohex.Session.Info{zid: zid}} <- Zenohex.Session.info(state.session),
+         key = RmwZenoh.node_liveliness_key(state.domain_id, zid, state.node_name),
+         {:ok, token} <- Zenohex.Liveliness.declare_token(state.session, key) do
+      %{state | node_token: token}
+    else
+      error ->
+        Logger.warning("#{__MODULE__} node token not declared: #{inspect(error)}")
+        state
+    end
+  end
+
   # Clears per-session refs without dropping the durable identity
   # bits (gid, sequence_number, registered subscribers, service handlers).
   defp drop_session(%State{} = state) do
@@ -897,6 +922,7 @@ defmodule RosBridge.ZenohClient do
     %{
       state
       | session: nil,
+        node_token: nil,
         publishers: publishers,
         subscriptions: subscriptions,
         services: services

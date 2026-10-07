@@ -86,4 +86,41 @@ defmodule RosBridge.Camera.LibCameraTest do
                {:log, :error, "Camera::start failed"}
     end
   end
+
+  describe "control_commands/1" do
+    test "names libcamera's controls, enumerations by their values" do
+      assert LibCamera.control_commands(exposure_mode: "short", lens_position: 1.5) ==
+               {:ok, ["AeExposureMode=1", "AfMode=0", "LensPosition=1.5"]}
+
+      assert LibCamera.control_commands(exposure_mode: :long, noise_reduction: "off") ==
+               {:ok, ["AeExposureMode=2", "NoiseReductionMode=0"]}
+    end
+
+    test "hands exposure and gain back to the automatic mode at 0" do
+      assert LibCamera.control_commands(exposure_time_us: 0, analogue_gain: 0) ==
+               {:ok, ["ExposureTimeMode=0", "AnalogueGainMode=0"]}
+
+      assert LibCamera.control_commands(exposure_time_us: 8000, analogue_gain: 2) ==
+               {:ok,
+                [
+                  "ExposureTimeMode=1",
+                  "ExposureTime=8000",
+                  "AnalogueGainMode=1",
+                  "AnalogueGain=2.0"
+                ]}
+    end
+
+    test "refuses out-of-range values, unknown modes and unknown keys" do
+      assert {:error, "brightness must be a number within" <> _} =
+               LibCamera.control_commands(brightness: 2)
+
+      assert {:error, "exposure_mode must be one of" <> _} =
+               LibCamera.control_commands(exposure_mode: :fast)
+
+      assert {:error, "exposure_time_us must be an integer" <> _} =
+               LibCamera.control_commands(exposure_time_us: 10.5)
+
+      assert {:error, "unknown camera control" <> _} = LibCamera.control_commands(sync: :server)
+    end
+  end
 end

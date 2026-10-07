@@ -89,7 +89,7 @@ defmodule RosBridge do
   def children do
     config = resolve_config()
 
-    base = [{RosBridge.ZenohClient, zenoh_client_opts(config)}]
+    base = [{RosBridge.ZenohClient, zenoh_client_opts(config)}, RosBridge.Parameters]
     extras = Enum.flat_map(config.components, &resolve_component/1)
 
     [

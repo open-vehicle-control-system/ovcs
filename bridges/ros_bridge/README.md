@@ -167,37 +167,32 @@ list fail loudly rather than silently dropping a feature.
 
 ## Tuning the stereo cameras at runtime
 
-Every `:stereo_camera` unit also runs `RosBridge.StereoCamera.Tuning`,
-which changes camera controls and stereo matching settings while the
-bridge runs, so they can be tuned while watching the images and the
-depth.
+The bridge's node serves ROS 2 parameters (`RosBridge.Parameters`), and
+every `:stereo_camera` unit declares its settings there
+(`RosBridge.StereoCamera.Parameters`), so they can be changed while
+watching the images and the depth, from Foxglove's Parameters panel or
+the `ros2 param` CLI:
 
-Publish a `std_msgs/String` on `<prefix>/set_controls` holding one or
-more `target.key=value` assignments, separated by spaces, semicolons or
-new lines:
-
-```text
-cameras.exposure_mode=short left.lens_position=1.2
-stereo.uniqueness_ratio=20; stereo.clahe_clip_limit=3
+```bash
+ros2 param list /ovcs_bridge_perception
+ros2 param describe /ovcs_bridge_perception stereo.left.lens_position
+ros2 param set /ovcs_bridge_perception stereo.left.lens_position 1.2
+ros2 param dump /ovcs_bridge_perception
 ```
 
-| Target | Keys |
+| Parameters | Settings |
 |---|---|
-| `left`, `right`, `cameras` (both) | `exposure_mode` (`normal`, `short`, `long`), `exposure_time_us` and `analogue_gain` (0 for automatic), `lens_position` (dioptres), `brightness`, `contrast`, `sharpness`, `noise_reduction` (`off`, `fast`, `high_quality`, `minimal`) |
-| `stereo` | `uniqueness_ratio`, `speckle_window_size`, `speckle_range`, `p1`, `p2`, `disp12_max_diff`, `pre_filter_cap`, `num_disparities` (a multiple of 16), `clahe` (`true`/`false`), `clahe_clip_limit` |
+| `<prefix>.left.*`, `<prefix>.right.*` | each camera's runtime controls (`RosBridge.Camera.LibCamera.control_specs/0`): exposure mode, shutter time and gain (0 for automatic), focus, brightness, contrast, sharpness, noise reduction |
+| `<prefix>.*` | the matching settings (`RosBridge.StereoCamera.OpenCV.option_specs/0`) |
+| read-only | each camera's addressing, sync role, sensor mode and calibration file, and the resolution and frame rate |
 
-A message is applied only if every assignment in it is valid. The
-settings in force, followed by the outcome of the last request, are
-published on `<prefix>/controls` after each request and every two
-seconds. Camera controls need a driver with runtime controls
-(`RosBridge.Camera.LibCamera`); the sync role, resolution and frame
-rate are set at start only.
+Each parameter carries its type, range or accepted values and a
+description; a value outside them is refused with the reason.
 
 Changes last until the stereo unit restarts: copy the values you keep
-into the vehicle's configuration. The Foxglove layout
-`compose/local/foxglove/ovcs_camera_tuning.json` shows both cameras and
-the depth next to the settings in force, with a panel per group of
-settings to edit and apply.
+from `ros2 param dump` into the vehicle's configuration. The Foxglove
+layout `compose/local/foxglove/ovcs_camera_tuning.json` shows both
+cameras and the depth next to a Parameters panel.
 
 ## Adding a new ROS message type
 
