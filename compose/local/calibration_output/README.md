@@ -44,20 +44,30 @@ with `docker compose exec ros2 ros2 topic list`.
    calibration is **< 0.5 px**; >2 px means more samples / better
    board angles are needed.
 
-5. **Click SAVE.** The GUI writes
-   `/output/calibrationdata.tar.gz` (i.e. this directory) and
-   prints the path.
+5. **Click SAVE** to keep the samples and YAMLs: the
+   GUI writes `/output/calibrationdata.tar.gz` (i.e. this
+   directory).
 
-6. **Extract and install:**
+6. **Click COMMIT** to apply it now. The bridge reloads the new
+   calibration live and keeps it across restarts: on the vehicle it
+   is stored in `/data/calibration/` (the firmware's own files are
+   read-only), which the bridge prefers at boot once both sides are
+   there. The bridge logs "using the calibration stored in
+   /data/calibration" when it does. The calibrator exits after
+   COMMIT.
+
+7. **Install it in your vehicle package,** so a fresh firmware or
+   a wiped data partition gets it too. Either extract the tarball:
    ```
    tar xzf calibrationdata.tar.gz
    cp left.yaml  ../../../vehicles/ovcs_mini/priv/calibration/stereo_left.yaml
    cp right.yaml ../../../vehicles/ovcs_mini/priv/calibration/stereo_right.yaml
    ```
-
-7. **Re-run the bridge.** The `Stereo.OpenCV` backend reads
-   the new YAMLs at boot and the disparity → depth numbers now
-   reflect the actual physical geometry.
+   or copy the committed files off the vehicle:
+   ```
+   sftp <perception-ip>:/data/calibration/stereo_left.yaml  ../../../vehicles/ovcs_mini/priv/calibration/
+   sftp <perception-ip>:/data/calibration/stereo_right.yaml ../../../vehicles/ovcs_mini/priv/calibration/
+   ```
 
 ## Troubleshooting
 

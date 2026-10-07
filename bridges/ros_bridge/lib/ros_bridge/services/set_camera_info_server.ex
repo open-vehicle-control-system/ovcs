@@ -12,7 +12,8 @@ defmodule RosBridge.Services.SetCameraInfoServer do
     * `:service_name` — full ROS service name (e.g.
       `"/stereo/left/set_camera_info"`).
     * `:calibration_path` — destination YAML on disk
-      (e.g. `vehicles/ovcs_mini/priv/calibration/stereo_left.yaml`).
+      (e.g. `vehicles/ovcs_mini/priv/calibration/stereo_left.yaml`);
+      its directory is created if missing.
     * `:camera_name` — `camera_name:` field written into the
       YAML; informational only.
     * `:reload` — `{module, function, args}` invoked with no extra
@@ -79,16 +80,16 @@ defmodule RosBridge.Services.SetCameraInfoServer do
     calibration = Calibration.from_camera_info(camera_info)
     yaml = Calibration.to_yaml(calibration, state.camera_name)
 
-    case File.write(state.calibration_path, yaml) do
-      :ok ->
-        Logger.info(
-          "#{__MODULE__}[#{state.service_name}] wrote " <>
-            "#{byte_size(yaml)} B → #{state.calibration_path}"
-        )
+    with :ok <- File.mkdir_p(Path.dirname(state.calibration_path)),
+         :ok <- File.write(state.calibration_path, yaml) do
+      Logger.info(
+        "#{__MODULE__}[#{state.service_name}] wrote " <>
+          "#{byte_size(yaml)} B → #{state.calibration_path}"
+      )
 
-        maybe_reload(state.reload)
-        %Response{success: true, status_message: "ok"}
-
+      maybe_reload(state.reload)
+      %Response{success: true, status_message: "ok"}
+    else
       {:error, reason} ->
         Logger.warning("#{__MODULE__}[#{state.service_name}] write failed: #{inspect(reason)}")
 

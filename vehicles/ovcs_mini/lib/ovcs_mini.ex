@@ -441,6 +441,7 @@ defmodule OvcsMini do
       # phantoms multiply.
       driver: camera_driver,
       calibration_dir: priv_calibration_dir(arm),
+      calibration_store_dir: calibration_store_dir(arm),
       width: 480,
       height: 270,
       fps: 30,
@@ -489,6 +490,11 @@ defmodule OvcsMini do
   # alignment. Measured, that dropped stereo coverage to 5.4%.
   defp priv_calibration_dir(:sim), do: Path.join(priv_calibration_dir(), "sim")
   defp priv_calibration_dir(_arm), do: priv_calibration_dir()
+
+  # The firmware's root filesystem is read-only: a calibration
+  # committed from cameracalibrator goes to the data partition.
+  defp calibration_store_dir(:target), do: "/data/calibration"
+  defp calibration_store_dir(_arm), do: nil
 
   defp priv_calibration_dir do
     case :code.priv_dir(:ovcs_mini) do
