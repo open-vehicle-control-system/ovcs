@@ -627,7 +627,8 @@ defmodule RosBridge.StereoCamera.OpenCV do
     {focal_length, baseline}
   end
 
-  defp create_matcher(opts) do
+  @doc false
+  def create_matcher(opts) do
     block_size = Keyword.get(opts, :block_size, 5)
 
     # Defaults follow OpenCV's documentation recipe for SGBM:
@@ -645,8 +646,6 @@ defmodule RosBridge.StereoCamera.OpenCV do
       numDisparities: Keyword.get(opts, :num_disparities, 64),
       blockSize: block_size,
       mode: sgbm_mode(Keyword.get(opts, :mode, :sgbm_3way)),
-      P1: Keyword.get(opts, :p1, default_p1),
-      P2: Keyword.get(opts, :p2, default_p2),
       # Reject ambiguous matches (margin of best vs 2nd-best cost).
       # 10 % is the textbook sweet spot once epipolar geometry is
       # real; tune lower if too sparse, higher if too noisy.
@@ -668,6 +667,10 @@ defmodule RosBridge.StereoCamera.OpenCV do
       speckleWindowSize: Keyword.get(opts, :speckle_window_size, 100),
       speckleRange: Keyword.get(opts, :speckle_range, 32)
     )
+    # Evision's create/1 accepts P1 and P2 but drops them: they read
+    # back as 0, leaving SGBM without its smoothness penalties.
+    |> Evision.StereoSGBM.setP1(Keyword.get(opts, :p1, default_p1))
+    |> Evision.StereoSGBM.setP2(Keyword.get(opts, :p2, default_p2))
   end
 
   # SGBM aggregation modes. MODE_SGBM (5 paths) is the historical
