@@ -64,9 +64,6 @@
       "layers": {},
       "foxglovePanelTitle": "Depth (mm): black = no match"
     },
-    "Parameters!stereo": {
-      "foxglovePanelTitle": "Parameters (type stereo in the filter)"
-    },
     "DiagnosticSummary!stereo": {
       "minLevel": 0,
       "pinnedIds": [],
@@ -139,6 +136,10 @@
       "xAxisVal": "timestamp",
       "followingViewWidth": 30,
       "foxglovePanelTitle": "Analogue gain"
+    },
+    "parameter-sliders.Parameter sliders!stereo": {
+      "node": "/ovcs_bridge_perception",
+      "prefix": "stereo."
     }
   },
   "globalVariables": {},
@@ -159,7 +160,7 @@
       "splitPercentage": 50
     },
     "second": {
-      "first": "Parameters!stereo",
+      "first": "parameter-sliders.Parameter sliders!stereo",
       "second": {
         "first": "DiagnosticSummary!stereo",
         "second": {
