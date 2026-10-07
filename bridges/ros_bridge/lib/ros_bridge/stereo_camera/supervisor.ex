@@ -18,8 +18,8 @@ defmodule RosBridge.StereoCamera.Supervisor do
            project the depth image and silently renders nothing,
          - `<topic_prefix>/disparity/image` (Image 32FC1, pixels) only
            when `:publish_disparity_image` is set — see below,
-         - `<topic_prefix>/left/image_rect/compressed` (JPEG) only when
-           `:publish_rectified_image` is set — see below.
+         - `<topic_prefix>/{left,right}/image_rect/compressed` (JPEG)
+           only when `:publish_rectified_image` is set — see below.
 
     4. `RosBridge.StereoCamera.Parameters`, the unit's settings as ROS
        2 parameters of the bridge's node.
@@ -55,8 +55,10 @@ defmodule RosBridge.StereoCamera.Supervisor do
       switch on deliberately, not something to leave running.
     * `:publish_rectified_image` (`false`) — also publish the
       rectified left image, pixel-aligned with the depth image and
-      stamped like it, for consumers that pair the two (RGB-D SLAM).
-      Its intrinsics are `<topic_prefix>/depth/camera_info`;
+      stamped like it, for consumers that pair the two (RGB-D SLAM),
+      and the rectified right image, row-aligned with it, to see the
+      pair as the matcher does. The left one's intrinsics are
+      `<topic_prefix>/depth/camera_info`;
       `<topic_prefix>/left/camera_info` describes the raw image.
     * `:topic_prefix` (`"stereo"`) — root of every topic this
       unit publishes. Also drives the default `frame_id` for each
@@ -315,6 +317,8 @@ defmodule RosBridge.StereoCamera.Supervisor do
       cloud_topic: "#{config.topic_prefix}/points",
       rectified_image_topic:
         config.publish_rectified_image && "#{config.topic_prefix}/left/image_rect/compressed",
+      right_rectified_image_topic:
+        config.publish_rectified_image && "#{config.topic_prefix}/right/image_rect/compressed",
       pair_tolerance_ms: config.pair_tolerance_ms
     ]
 

@@ -6,8 +6,7 @@
         "perspective": true
       },
       "imageMode": {
-        "imageTopic": "/stereo/left/image_raw/compressed",
-        "calibrationTopic": "/stereo/left/camera_info",
+        "imageTopic": "/stereo/left/image_rect/compressed",
         "synchronize": false,
         "rotation": 0,
         "flipHorizontal": false,
@@ -18,7 +17,7 @@
       "transforms": {},
       "topics": {},
       "layers": {},
-      "foxglovePanelTitle": "Left camera"
+      "foxglovePanelTitle": "Left camera, rectified (raw: /stereo/left/image_raw/compressed)"
     },
     "Image!right": {
       "cameraState": {
@@ -26,8 +25,7 @@
         "perspective": true
       },
       "imageMode": {
-        "imageTopic": "/stereo/right/image_raw/compressed",
-        "calibrationTopic": "/stereo/right/camera_info",
+        "imageTopic": "/stereo/right/image_rect/compressed",
         "synchronize": false,
         "rotation": 0,
         "flipHorizontal": false,
@@ -38,7 +36,7 @@
       "transforms": {},
       "topics": {},
       "layers": {},
-      "foxglovePanelTitle": "Right camera"
+      "foxglovePanelTitle": "Right camera, rectified (raw: /stereo/right/image_raw/compressed)"
     },
     "Image!depth": {
       "cameraState": {

@@ -305,7 +305,9 @@ defmodule RosBridge.StereoCamera.OpenCV do
           end
 
         {pack_ns, result} =
-          time(fn -> build_result(raw_disparity, left_frame, left_rectified, state) end)
+          time(fn ->
+            build_result(raw_disparity, left_frame, {left_rectified, right_rectified}, state)
+          end)
 
         telemetry =
           state.telemetry
@@ -515,7 +517,7 @@ defmodule RosBridge.StereoCamera.OpenCV do
 
   # 5) Build the Result struct: pack 32FC1 disparity + 32FC1 depth
   #    + the geometry metadata downstream consumers need.
-  defp build_result(raw_disparity, left_frame, reference_image, state) do
+  defp build_result(raw_disparity, left_frame, {reference_image, right_rectified}, state) do
     # Single-channel Mats report a 2-tuple shape; the 3-tuple clause is
     # kept so a caller passing a colour reference still works.
     {height, width} =
@@ -549,6 +551,7 @@ defmodule RosBridge.StereoCamera.OpenCV do
       cloud: cloud,
       cloud_points: points,
       left_rectified: reference_image,
+      right_rectified: right_rectified,
       depth_m: depth_m,
       principal_point: state.principal_point,
       rectification_map_left: left_rectification_map(state)

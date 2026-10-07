@@ -159,7 +159,7 @@ Import from file…* one of [`local/foxglove/`](./local/foxglove/):
 |---|---|---|
 | `ovcs_navigation.json` | the planner drive | both costmaps, global and local plan, footprint and odometry in the `odom` frame; commanded vs measured velocity; dead-reckoned position; IMU vs odometry yaw rate; the odometry stamp (silence there is what halts Nav2). Clicking in the 3D panel publishes a `/goal_pose`. |
 | `ovcs_perception.json` | the stereo pipeline | left/right images with detection boxes, depth, point cloud with 3D detections, the diagnostics, the cameras' sync offset, IMU and joystick plots |
-| `ovcs_camera_tuning.json` | tuning the stereo cameras | both cameras and the depth next to the camera and matching settings as sliders, menus and toggles (the `extensions/parameter-sliders` Foxglove panel, installed once), the cameras' diagnostics and a plot of their sync offset, exposure and gain (see `bridges/ros_bridge/README.md`) |
+| `ovcs_camera_tuning.json` | tuning the stereo cameras | both cameras rectified (rows aligned) and the depth next to the camera and matching settings as sliders, menus and toggles (the `extensions/parameter-sliders` Foxglove panel, installed once), the cameras' diagnostics and a plot of their sync offset, exposure and gain (see `bridges/ros_bridge/README.md`) |
 
 All three are plain Studio exports: edit in Studio, export, overwrite the
 file. They are operator tooling, which is why they live in `local/` and
