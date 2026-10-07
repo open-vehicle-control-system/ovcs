@@ -8,6 +8,7 @@ defmodule RosBridge.Publishers.Odometry.State do
     :stale_after_ms,
     :pose_covariance,
     :twist_covariance,
+    base_offset: 0.0,
     x: 0.0,
     y: 0.0,
     yaw: nil,
@@ -39,6 +40,15 @@ defmodule RosBridge.Publishers.Odometry do
   starts at the origin pointing along +x regardless of where the IMU's
   own zero happens to point.
 
+  ## The rear axle moves along the heading, not base_link
+
+  A car pivots about its rear axle, so that is the point whose velocity
+  lies along the heading, and the point integrated. A `base_link` ahead
+  of it, midway between the axles say, also slides outward in a turn:
+  it is published `:base_ahead_of_rear_axle` along the heading from the
+  integrated point, and its twist carries the sideways speed
+  `ω · base_ahead_of_rear_axle`.
+
   ## Not knowing is not standing still
 
   Publishing stops — no `/odom`, no `/tf` — whenever the estimate is
@@ -58,6 +68,9 @@ defmodule RosBridge.Publishers.Odometry do
       20 Hz; publishing faster only buffers.
     * `:stale_after_ms` (default 300) — matches the VMS-side
       `Freshness` timeout on the command path.
+    * `:base_ahead_of_rear_axle` (default 0.0) — metres from the rear
+      axle forward to `base_link`. Zero when `base_link` is on the
+      rear axle.
     * `:pose_variance`, `:twist_variance` — the covariance diagonals,
       in the order x, y, z, roll, pitch, yaw. The defaults suit a car
       on flat ground: a few centimetres and about a degree in the
@@ -90,7 +103,7 @@ defmodule RosBridge.Publishers.Odometry do
   @max_step_s 0.5
 
   @default_pose_variance [1.0e-4, 1.0e-4, 1.0e6, 1.0e6, 1.0e6, 3.0e-4]
-  # No lateral slip: a car does not move sideways.
+  # No slip: the only sideways speed is the turn's, ω · base_offset.
   @default_twist_variance [4.0e-4, 1.0e-6, 1.0e6, 1.0e6, 1.0e6, 1.0e-4]
 
   def start_link(opts) do
@@ -100,8 +113,12 @@ defmodule RosBridge.Publishers.Odometry do
   @impl true
   def init(opts) do
     driver = Keyword.fetch!(opts, :driver)
+    base_offset = Keyword.get(opts, :base_ahead_of_rear_axle, 0.0) * 1.0
 
     state = %State{
+      # The integrated point is the rear axle; base_link starts at the origin.
+      base_offset: base_offset,
+      x: -base_offset,
       topic: Keyword.get(opts, :topic, @default_topic),
       odom_frame_id: Keyword.get(opts, :odom_frame_id, "odom"),
       base_frame_id: Keyword.get(opts, :base_frame_id, "base_link"),
@@ -223,6 +240,12 @@ defmodule RosBridge.Publishers.Odometry do
   end
 
   @doc false
+  def base_position(%State{} = state) do
+    {state.x + state.base_offset * :math.cos(state.yaw),
+     state.y + state.base_offset * :math.sin(state.yaw)}
+  end
+
+  @doc false
   # Row-major 6x6 with the variances on the diagonal.
   def diagonal([_, _, _, _, _, _] = variances) do
     for row <- 0..5, col <- 0..5, do: if(row == col, do: Enum.at(variances, row) * 1.0, else: 0.0)
@@ -230,6 +253,7 @@ defmodule RosBridge.Publishers.Odometry do
 
   defp publish(%State{} = state) do
     now_ns = System.system_time(:nanosecond)
+    {x, y} = base_position(state)
 
     stamp = %Time{
       sec: div(now_ns, 1_000_000_000),
@@ -248,14 +272,14 @@ defmodule RosBridge.Publishers.Odometry do
       child_frame_id: state.base_frame_id,
       pose: %PoseWithCovariance{
         pose: %Pose{
-          position: %Point{x: state.x, y: state.y, z: 0.0},
+          position: %Point{x: x, y: y, z: 0.0},
           orientation: orientation
         },
         covariance: state.pose_covariance
       },
       twist: %TwistWithCovariance{
         twist: %Twist{
-          linear: %Vector3{x: state.speed, y: 0.0, z: 0.0},
+          linear: %Vector3{x: state.speed, y: state.yaw_rate * state.base_offset, z: 0.0},
           angular: %Vector3{x: 0.0, y: 0.0, z: state.yaw_rate}
         },
         covariance: state.twist_covariance
@@ -266,7 +290,7 @@ defmodule RosBridge.Publishers.Odometry do
       header: %Header{stamp: stamp, frame_id: state.odom_frame_id},
       child_frame_id: state.base_frame_id,
       transform: %Transform{
-        translation: %Vector3{x: state.x, y: state.y, z: 0.0},
+        translation: %Vector3{x: x, y: y, z: 0.0},
         rotation: orientation
       }
     }

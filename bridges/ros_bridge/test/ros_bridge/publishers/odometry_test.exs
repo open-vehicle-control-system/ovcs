@@ -119,6 +119,47 @@ defmodule RosBridge.Publishers.OdometryTest do
     end
   end
 
+  describe "base_position/1" do
+    test "is the integrated rear axle when base_link sits on it" do
+      assert Odometry.base_position(state(x: 1.0, y: 2.0, yaw: 0.7)) == {1.0, 2.0}
+    end
+
+    test "is base_offset ahead of the rear axle along the heading" do
+      {x, y} =
+        Odometry.base_position(state(base_offset: 0.2, x: 1.0, y: 2.0, yaw: :math.pi() / 2))
+
+      assert_in_delta x, 1.0, 1.0e-9
+      assert_in_delta y, 2.2, 1.0e-9
+    end
+
+    test "ends a quarter turn half a wheelbase ahead of the rear axle" do
+      # 1 m/s around a 1 m circle: the rear axle goes from the origin to
+      # (1, 1) and ends heading +y, so base_link ends at (1, 1 + offset).
+      steps = 2000
+      dt_ms = :math.pi() / 2 / steps * 1000
+
+      start =
+        state(
+          base_offset: 0.162,
+          speed: 1.0,
+          speed_valid: true,
+          yaw: 0.0,
+          sequence: 0,
+          last_fresh_at_ms: 0.0
+        )
+
+      final =
+        Enum.reduce(1..steps, start, fn k, st ->
+          st = Odometry.observe(st, sample(%{sequence: k, at_ms: k * dt_ms}))
+          %{st | yaw: k * dt_ms / 1000}
+        end)
+
+      {x, y} = Odometry.base_position(final)
+      assert_in_delta x, 1.0, 0.01
+      assert_in_delta y, 1.162, 0.01
+    end
+  end
+
   describe "publishable?/2" do
     test "needs a valid speed, a heading, and a fresh frame" do
       good = state(speed_valid: true, yaw: 0.0, last_fresh_at_ms: 900)

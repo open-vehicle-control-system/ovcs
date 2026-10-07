@@ -144,7 +144,10 @@ defmodule OvcsMini do
         # to. Reads the VMS's vehicle_motion frame off CAN and
         # publishes /odom and odom -> base_link, which is everything
         # Nav2 needs in the map-less setup.
-        [{:odometry_publisher, driver: OvcsDrivers.Imu.Dummy}]
+        [
+          {:odometry_publisher,
+           driver: OvcsDrivers.Imu.Dummy, base_ahead_of_rear_axle: base_ahead_of_rear_axle()}
+        ]
       end
 
     %RosBridge.Config{
@@ -153,6 +156,9 @@ defmodule OvcsMini do
       components: components ++ odometry
     }
   end
+
+  # base_link sits midway between the axles.
+  defp base_ahead_of_rear_axle, do: geometry().wheelbase / 2
 
   defp ros_target_config,
     do: %RosBridge.Config{
@@ -168,7 +174,8 @@ defmodule OvcsMini do
          %{topic: "cmd_vel_nav", message: Ros2.GeometryMsgs.Msg.TwistStamped}},
         {:imu_publisher, driver: BNO085.I2C},
         # Same ordering constraint as the host config.
-        {:odometry_publisher, driver: BNO085.I2C}
+        {:odometry_publisher,
+         driver: BNO085.I2C, base_ahead_of_rear_axle: base_ahead_of_rear_axle()}
       ]
     }
 

@@ -42,7 +42,8 @@ defmodule RosBridge.Components do
         * `:driver` (required, module) — the **already running** IMU
           driver; list `:imu_publisher` first, it starts the driver.
         * `:topic`, `:odom_frame_id`, `:base_frame_id`,
-          `:publish_interval_ms`, `:stale_after_ms` — see the module.
+          `:publish_interval_ms`, `:stale_after_ms`,
+          `:base_ahead_of_rear_axle` — see the module.
     * `:static_transforms` — publishes the vehicle's fixed frame
       relationships on `/tf_static`, republished at 1 Hz. Opts: `:transforms` (required, a list of
       `%{parent:, child:, translation: {x,y,z}, rotation: {x,y,z,w}}`),
