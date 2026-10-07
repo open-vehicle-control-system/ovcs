@@ -66,6 +66,55 @@
     },
     "Parameters!stereo": {
       "foxglovePanelTitle": "Stereo parameters"
+    },
+    "DiagnosticSummary!stereo": {
+      "minLevel": 0,
+      "pinnedIds": [],
+      "hardwareIdFilter": "",
+      "topicToRender": "/diagnostics",
+      "sortByLevel": false
+    },
+    "Plot!live": {
+      "paths": [
+        {
+          "value": "/stereo/live/sync_offset_ms.data",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "sync offset (ms)"
+        },
+        {
+          "value": "/stereo/live/left/exposure_time_us.data",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "left exposure (us)"
+        },
+        {
+          "value": "/stereo/live/right/exposure_time_us.data",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "right exposure (us)"
+        },
+        {
+          "value": "/stereo/live/left/analogue_gain.data",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "left gain"
+        },
+        {
+          "value": "/stereo/live/right/analogue_gain.data",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "right gain"
+        }
+      ],
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "followingViewWidth": 30,
+      "foxglovePanelTitle": "Live values"
     }
   },
   "globalVariables": {},
@@ -85,7 +134,17 @@
       "direction": "column",
       "splitPercentage": 50
     },
-    "second": "Parameters!stereo",
+    "second": {
+      "first": "Parameters!stereo",
+      "second": {
+        "first": "DiagnosticSummary!stereo",
+        "second": "Plot!live",
+        "direction": "column",
+        "splitPercentage": 40
+      },
+      "direction": "column",
+      "splitPercentage": 45
+    },
     "direction": "row",
     "splitPercentage": 62
   }

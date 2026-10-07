@@ -67,6 +67,16 @@ std::vector<uint8_t> build_log_record(uint8_t level, const std::string& message)
   return out;
 }
 
+std::vector<uint8_t> build_metadata_record(int64_t capture_ns, uint8_t present,
+                                           const double (&values)[kMetadataFields]) {
+  std::vector<uint8_t> out(2 + sizeof(capture_ns) + sizeof(values));
+  out[0] = 3;
+  out[1] = present;
+  std::memcpy(out.data() + 2, &capture_ns, sizeof(capture_ns));
+  std::memcpy(out.data() + 2 + sizeof(capture_ns), values, sizeof(values));
+  return out;
+}
+
 std::vector<uint8_t> build_frame_record(uint16_t width, uint16_t height,
                                         int64_t capture_ns,
                                         const uint8_t* jpeg, size_t jpeg_len) {

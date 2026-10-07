@@ -189,10 +189,19 @@ ros2 param dump /ovcs_bridge_perception
 Each parameter carries its type, range or accepted values and a
 description; a value outside them is refused with the reason.
 
+What the cameras actually apply goes to `/diagnostics`
+(`RosBridge.StereoCamera.Live`): per camera the shutter time, gains,
+focus, frame duration, colour temperature and sync state that libcamera
+reports, and for the pair the time between the two cameras' frames,
+with a warning above 1 ms. `<prefix>/live/sync_offset_ms` and each
+camera's `<prefix>/live/<side>/exposure_time_us` and `analogue_gain`
+(`std_msgs/Float64`) carry the same values for plotting.
+
 Changes last until the stereo unit restarts: copy the values you keep
 from `ros2 param dump` into the vehicle's configuration. The Foxglove
 layout `compose/local/foxglove/ovcs_camera_tuning.json` shows both
-cameras and the depth next to a Parameters panel.
+cameras and the depth next to a Parameters panel, the diagnostics and
+a plot of the sync offset, exposure and gain.
 
 ## Adding a new ROS message type
 

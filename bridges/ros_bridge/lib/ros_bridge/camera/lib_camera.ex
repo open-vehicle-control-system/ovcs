@@ -29,6 +29,14 @@ defmodule RosBridge.Camera.LibCamera do
       uint8   level               # 0 info, 1 warning, 2 error
       bytes   message
 
+  or, every few frames, what the camera applied to a frame (see
+  `live/1`):
+
+      uint8   tag                 # 3 = METADATA
+      uint8   present             # bit i set when value i was reported
+      int64   capture_ns LE
+      float64 values[8] LE        # in the order of `live/1`'s keys
+
   Records the other way, on the binary's stdin, are runtime controls
   (see "Runtime controls"), one `Name=value` each: a libcamera control
   by its name, such as `LensPosition=1.5` or `AeExposureMode=1`, which
@@ -119,6 +127,17 @@ defmodule RosBridge.Camera.LibCamera do
 
   @frame_tag 1
   @log_tag 2
+  @metadata_tag 3
+  @metadata_keys [
+    :exposure_time_us,
+    :analogue_gain,
+    :digital_gain,
+    :lens_position,
+    :frame_duration_us,
+    :colour_temperature,
+    :sync_ready,
+    :sync_timer_us
+  ]
   @watchdog_interval_ms 1_000
   @default_stall_timeout_ms 2_000
   @default_startup_timeout_ms 15_000
@@ -209,6 +228,7 @@ defmodule RosBridge.Camera.LibCamera do
        port: port,
        listeners: [],
        controls: initial_controls(exposure_mode, lens_position),
+       live: nil,
        started_at: now_ms(),
        last_frame_at: nil,
        stall_timeout_ms: Keyword.get(opts, :stall_timeout_ms, @default_stall_timeout_ms),
@@ -227,6 +247,9 @@ defmodule RosBridge.Camera.LibCamera do
       {:log, level, message} ->
         Logger.log(level, "#{__MODULE__}[#{state.label}] camera_capture: #{message}")
         {:noreply, state}
+
+      {:metadata, live} ->
+        {:noreply, %{state | live: Map.put(live, :received_ms, System.system_time(:millisecond))}}
 
       {:error, reason} ->
         Logger.warning(
@@ -284,6 +307,16 @@ defmodule RosBridge.Camera.LibCamera do
   @impl RosBridge.Camera
   def controls(server), do: GenServer.call(server, :controls)
 
+  @doc """
+  What the camera applied to a recent frame, as libcamera reports it:
+  `:exposure_time_us`, `:analogue_gain`, `:digital_gain`,
+  `:lens_position`, `:frame_duration_us`, `:colour_temperature`,
+  `:sync_ready` (boolean) and `:sync_timer_us`, each absent when not
+  reported, plus `:capture_ns` and `:received_ms` (system time). `nil`
+  before the first report.
+  """
+  def live(server), do: GenServer.call(server, :live)
+
   @impl true
   def handle_call({:set_controls, controls}, _from, state) do
     case control_commands(controls) do
@@ -298,6 +331,7 @@ defmodule RosBridge.Camera.LibCamera do
   end
 
   def handle_call(:controls, _from, state), do: {:reply, state.controls, state}
+  def handle_call(:live, _from, state), do: {:reply, state.live, state}
 
   defp normalise_control({key, value}) when is_atom(value) and not is_boolean(value),
     do: {key, Atom.to_string(value)}
@@ -480,7 +514,30 @@ defmodule RosBridge.Camera.LibCamera do
   def parse_record(<<@log_tag, level, message::binary>>),
     do: {:log, log_level(level), message}
 
+  def parse_record(
+        <<@metadata_tag, present, capture_ns::little-signed-64, values::binary-size(64)>>
+      ) do
+    reported =
+      for {{key, <<value::little-float-64>>}, i} <-
+            Enum.with_index(Enum.zip(@metadata_keys, chunks(values, 8))),
+          Bitwise.band(present, Bitwise.bsl(1, i)) != 0,
+          into: %{},
+          do: {key, metadata_value(key, value)}
+
+    {:metadata,
+     Map.put(reported, :capture_ns, RosBridge.Timing.from_kernel_monotonic(capture_ns))}
+  end
+
   def parse_record(_other), do: {:error, :malformed_record}
+
+  defp chunks(binary, size), do: for(<<chunk::binary-size(size) <- binary>>, do: chunk)
+
+  defp metadata_value(:sync_ready, value), do: value != 0
+
+  defp metadata_value(key, value) when key in [:analogue_gain, :digital_gain, :lens_position],
+    do: value
+
+  defp metadata_value(_key, value), do: round(value)
 
   defp log_level(0), do: :info
   defp log_level(1), do: :warning

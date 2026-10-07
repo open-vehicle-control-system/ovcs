@@ -123,4 +123,31 @@ defmodule RosBridge.Camera.LibCameraTest do
       assert {:error, "unknown camera control" <> _} = LibCamera.control_commands(sync: :server)
     end
   end
+
+  describe "metadata records" do
+    test "carry the values reported, the others absent" do
+      values =
+        for v <- [9_990.0, 2.5, 1.0, 1.2, 33_333.0, 4_100.0, 1.0, -12.0],
+            into: <<>>,
+            do: <<v::little-float-64>>
+
+      # Everything reported but the digital gain (bit 2).
+      present = 0b11111011
+
+      assert {:metadata, live} =
+               LibCamera.parse_record(<<3, present, 1_000::little-signed-64, values::binary>>)
+
+      assert %{
+               exposure_time_us: 9_990,
+               analogue_gain: 2.5,
+               lens_position: 1.2,
+               frame_duration_us: 33_333,
+               colour_temperature: 4_100,
+               sync_ready: true,
+               sync_timer_us: -12
+             } = live
+
+      refute Map.has_key?(live, :digital_gain)
+    end
+  end
 end

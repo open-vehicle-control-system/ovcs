@@ -23,6 +23,8 @@ defmodule RosBridge.StereoCamera.Supervisor do
 
     4. `RosBridge.StereoCamera.Parameters`, the unit's settings as ROS
        2 parameters of the bridge's node.
+    5. `RosBridge.StereoCamera.Live`, what the cameras actually apply
+       and their sync, on `/diagnostics` and `<topic_prefix>/live/*`.
 
   Children start in that order so each downstream child can register
   on its upstream during `init/1`.
@@ -210,6 +212,15 @@ defmodule RosBridge.StereoCamera.Supervisor do
          height: config.height,
          fps: config.fps},
         id: {:stereo, :parameters}
+      ),
+      Supervisor.child_spec(
+        {RosBridge.StereoCamera.Live,
+         topic_prefix: config.topic_prefix,
+         driver: config.driver,
+         left: config.left,
+         right: config.right,
+         fps: config.fps},
+        id: {:stereo, :live}
       )
     ] ++ set_camera_info_specs(config)
   end
