@@ -25,6 +25,17 @@ defmodule RosBridge.Camera.LibCamera do
   The Port supervises the binary: closing stdin (which happens
   when this GenServer dies) tells the binary to exit cleanly.
 
+  ## Sync
+
+  The cameras of a stereo pair run on their own clocks, so their frames
+  are taken up to half a frame period apart, a different offset at each
+  start. While the vehicle turns, that shifts one image against the
+  other and corrupts the disparity. `:sync` (`:server` on one camera,
+  `:client` on the other) enables libcamera's software camera sync on
+  the Pi 5: the client aligns its frame starts to the server's. It needs
+  the sensor's tuning file to carry `rpi.sync` and the two processes to
+  reach each other over UDP multicast. Absent, the camera runs free.
+
   ## Stall watchdog
 
   A capture can stop delivering frames without the binary exiting:
@@ -65,6 +76,10 @@ defmodule RosBridge.Camera.LibCamera do
 
   def name_for(label), do: Module.concat([__MODULE__, "L_#{label}"])
 
+  @doc false
+  def sync_args(nil), do: []
+  def sync_args(role) when role in [:server, :client], do: ["--sync", Atom.to_string(role)]
+
   @impl true
   def init(opts) do
     label = Keyword.fetch!(opts, :label)
@@ -73,6 +88,7 @@ defmodule RosBridge.Camera.LibCamera do
     height = Keyword.get(opts, :height, 720)
     fps = Keyword.get(opts, :fps, 30)
     rotation = Keyword.get(opts, :rotation, 0)
+    sync = Keyword.get(opts, :sync)
 
     executable = binary_path()
 
@@ -81,18 +97,19 @@ defmodule RosBridge.Camera.LibCamera do
               "build with `mix compile` on the :rpi5 target (elixir_make)."
     end
 
-    args = [
-      "--camera",
-      Integer.to_string(camera_id),
-      "--width",
-      Integer.to_string(width),
-      "--height",
-      Integer.to_string(height),
-      "--fps",
-      Integer.to_string(fps),
-      "--rotation",
-      Integer.to_string(rotation)
-    ]
+    args =
+      [
+        "--camera",
+        Integer.to_string(camera_id),
+        "--width",
+        Integer.to_string(width),
+        "--height",
+        Integer.to_string(height),
+        "--fps",
+        Integer.to_string(fps),
+        "--rotation",
+        Integer.to_string(rotation)
+      ] ++ sync_args(sync)
 
     port =
       Port.open({:spawn_executable, executable}, [
