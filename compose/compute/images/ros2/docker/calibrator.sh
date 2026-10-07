@@ -89,7 +89,8 @@ echo "  square size:              ${CHESSBOARD_SQUARE_M} m"
 echo "  approximate sync window:  ${APPROXIMATE_SYNC} s"
 echo
 
-exec ros2 run camera_calibration cameracalibrator \
+# Unbuffered, so CALIBRATE's results reach the terminal as they are printed.
+PYTHONUNBUFFERED=1 exec ros2 run camera_calibration cameracalibrator \
   --size "${CHESSBOARD_INNER_CORNERS}" \
   --square "${CHESSBOARD_SQUARE_M}" \
   --approximate "${APPROXIMATE_SYNC}" \

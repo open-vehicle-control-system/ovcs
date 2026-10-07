@@ -7,7 +7,7 @@ description: Object detection on a Hailo-8 fused with stereo depth into 3D detec
 
 ## Why detection and not depth
 
-A Hailo-8 doesn't make disparity faster: a StereoNet HEF benchmarked on the device came out level with the CPU SGBM, and neural disparity would give up the calibration-derived accuracy and the tuned 0.55 m near clip.
+A Hailo-8 doesn't make disparity faster: a StereoNet HEF benchmarked on the device came out level with the CPU SGBM, and neural disparity would give up the calibration-derived accuracy and the tuned 0.58 m near clip.
 
 Detection is what the accelerator is good at, and what the CPU has no room for. `yolov8n` benchmarks at **340 FPS hardware-only, 177 FPS streaming, 3.33 ms hardware latency**, against a stereo pipeline running at about 15 Hz.
 

@@ -54,6 +54,13 @@ RUN apt-get update \
         eclipse-zenoh==1.8.0 \
         websockets==17.0.1
 
+# camera_calibration 7.1.7 predates Lyrical's rclpy and NumPy 2: the
+# logger's warn() crashes cameracalibrator at start, ndarray.tostring()
+# crashes SAVE.
+RUN cd /opt/ros/lyrical/lib/python3.14/site-packages/camera_calibration \
+    && sed -i 's/get_logger()\.warn(/get_logger().warning(/' camera_calibrator.py \
+    && sed -i 's/\.tostring()/.tobytes()/' mono_calibrator.py stereo_calibrator.py
+
 # Baked in rather than bind-mounted: balenaOS has no host bind mounts,
 # and keeping one mechanism means the vehicle and the base station read
 # the identical template. Editing it means a rebuild.
