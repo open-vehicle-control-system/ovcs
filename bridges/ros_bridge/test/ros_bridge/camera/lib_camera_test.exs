@@ -43,4 +43,14 @@ defmodule RosBridge.Camera.LibCameraTest do
       assert LibCamera.sync_args(:client) == ["--sync", "client"]
     end
   end
+
+  describe "exposure_mode_args/1" do
+    test "no mode leaves libcamera's default" do
+      assert LibCamera.exposure_mode_args(nil) == []
+    end
+
+    test "a mode is passed by name" do
+      assert LibCamera.exposure_mode_args(:short) == ["--exposure-mode", "short"]
+    end
+  end
 end

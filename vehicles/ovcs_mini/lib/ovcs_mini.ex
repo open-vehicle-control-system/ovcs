@@ -476,8 +476,12 @@ defmodule OvcsMini do
   # correctly ordered pair must be entirely positive).
   #
   # The left camera leads the software sync and the right one follows it.
-  defp camera_addressing(:target, :left), do: [camera_id: 1, sync: :server]
-  defp camera_addressing(:target, :right), do: [camera_id: 0, sync: :client]
+  # Short exposures: the normal mode's 30 ms smears the edges SGBM
+  # matches as soon as the car moves.
+  defp camera_addressing(:target, :left), do: [camera_id: 1, sync: :server, exposure_mode: :short]
+
+  defp camera_addressing(:target, :right),
+    do: [camera_id: 0, sync: :client, exposure_mode: :short]
 
   # In simulation the "camera" is a topic. Gazebo publishes on the
   # same names the vehicle does, so left really is left here — the
