@@ -183,23 +183,52 @@ defmodule OvcsMini do
          driver: RPLidar.UART,
          driver_opts: [serial_number: "bafb4ecd0064ef11858ee0a9c169b110"],
          bins: 500},
-        lidar_transform()
+        # A02YYUW ultrasonic sensors on the rear bumper, each on a CP2104
+        # found by its serial number.
+        rear_ultrasound(:left, "01D9EBFA"),
+        rear_ultrasound(:right, "02PW2EBP"),
+        {:static_transforms, transforms: [lidar_transform() | rear_ultrasound_transforms()]}
       ]
     }
+
+  defp rear_ultrasound(side, serial_number) do
+    {:range_publisher,
+     driver: A02YYUW.UART,
+     name: :"ultrasound_rear_#{side}",
+     driver_opts: [serial_number: serial_number],
+     topic: "ultrasound/rear_#{side}",
+     frame_id: "ultrasound_rear_#{side}"}
+  end
+
+  # On the rear bumper's support: its back face 125 mm behind the rear
+  # axle, so 287 mm behind base_link (midway between the axles), and
+  # each sensor's face 10.6 mm further back, 41.8 mm either side of the
+  # centreline, 110 mm above the ground (with the suspension at rest).
+  # Each faces backwards toed 10 degrees outward: 170 and -170 degrees
+  # about z.
+  defp rear_ultrasound_transforms do
+    for {side, {y, yaw_degrees}} <- [left: {0.0418, 170}, right: {-0.0418, -170}] do
+      half_yaw = yaw_degrees * :math.pi() / 360
+
+      %{
+        parent: "base_link",
+        child: "ultrasound_rear_#{side}",
+        translation: {-0.2976, y, 0.110},
+        rotation: {0.0, 0.0, :math.sin(half_yaw), :math.cos(half_yaw)}
+      }
+    end
+  end
 
   # Where the lidar sits on the car, so `laser` resolves. Not measured
   # yet: on the roof, above base_link. The C1's zero angle points along
   # its own x axis, taken as the car's forward.
   defp lidar_transform do
-    {:static_transforms,
-     transforms: [
-       %{
-         parent: "base_link",
-         child: "laser",
-         translation: {0.0, 0.0, 0.25},
-         rotation: {0.0, 0.0, 0.0, 1.0}
-       }
-     ]}
+    %{
+      parent: "base_link",
+      child: "laser",
+      translation: {0.0, 0.0, 0.25},
+      rotation: {0.0, 0.0, 0.0, 1.0}
+    }
   end
 
   defp perception_host_config do
