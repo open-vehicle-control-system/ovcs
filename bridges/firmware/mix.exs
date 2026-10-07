@@ -71,7 +71,7 @@ defmodule BridgeFirmware.MixProject do
       # this perception bridge — Camera Module 3 stereo on the Pi 5 PiSP FE).
       {:ovcs_bridges_system_rpi5,
        github: "open-vehicle-control-system/ovcs_bridges_system_rpi5",
-       tag: "v2.0.8",
+       tag: "v2.0.9",
        runtime: false,
        nerves: [compile: false]}
     ]
