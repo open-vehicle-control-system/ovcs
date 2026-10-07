@@ -20,6 +20,7 @@ defmodule Ros2.Cdr do
   def i64(acc, v), do: pad(acc, 8) <> <<v::little-signed-64>>
   def u64(acc, v), do: pad(acc, 8) <> <<v::little-64>>
   def f64(acc, v), do: pad(acc, 8) <> <<v * 1.0::little-float-64>>
+  def f32(acc, v), do: pad(acc, 4) <> <<v * 1.0::little-float-32>>
   def string(acc, s), do: u32(acc, byte_size(s) + 1) <> s <> <<0>>
 
   @doc "A sequence: its length, then each element through `encode`."

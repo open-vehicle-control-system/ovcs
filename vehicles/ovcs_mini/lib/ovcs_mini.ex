@@ -175,9 +175,28 @@ defmodule OvcsMini do
         {:imu_publisher, driver: BNO085.I2C},
         # Same ordering constraint as the host config.
         {:odometry_publisher,
-         driver: BNO085.I2C, base_ahead_of_rear_axle: base_ahead_of_rear_axle()}
+         driver: BNO085.I2C, base_ahead_of_rear_axle: base_ahead_of_rear_axle()},
+        # RPLIDAR C1 on the bridge's USB port. It measures about every
+        # 0.72 degrees, 500 points a revolution: one bin each.
+        {:lidar_publisher, driver: RPLidar.UART, driver_opts: [device: "ttyUSB0"], bins: 500},
+        lidar_transform()
       ]
     }
+
+  # Where the lidar sits on the car, so `laser` resolves. Not measured
+  # yet: on the roof, above base_link. The C1's zero angle points along
+  # its own x axis, taken as the car's forward.
+  defp lidar_transform do
+    {:static_transforms,
+     transforms: [
+       %{
+         parent: "base_link",
+         child: "laser",
+         translation: {0.0, 0.0, 0.25},
+         rotation: {0.0, 0.0, 0.0, 1.0}
+       }
+     ]}
+  end
 
   defp perception_host_config do
     %RosBridge.Config{
@@ -446,6 +465,7 @@ defmodule OvcsMini do
       # and reads as an obstacle about a metre ahead. A hole is honest;
       # a phantom obstacle is not. Keep CLAHE: without it those
       # phantoms multiply.
+      # The rectified pair, to check the calibration's row alignment.
       driver: camera_driver,
       calibration_dir: priv_calibration_dir(arm),
       calibration_store_dir: calibration_store_dir(arm),
@@ -453,7 +473,6 @@ defmodule OvcsMini do
       height: 270,
       fps: 30,
       pair_tolerance_ms: 100,
-      # The rectified pair, to check the calibration's row alignment.
       publish_rectified_image: true,
       backend_opts: [
         num_disparities: 96,

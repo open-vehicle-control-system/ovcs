@@ -36,6 +36,13 @@ defmodule RosBridge.Components do
           `BNO085.I2C`, etc.)
         * `:topic`, `:frame_id`, `:publish_interval_ms` — forwarded
           to `RosBridge.Publishers.Imu` (see its defaults).
+    * `:lidar_publisher` — starts the named driver (any
+      `OvcsDrivers.Lidar` implementation) followed by
+      `RosBridge.Publishers.LaserScan`. Opts:
+        * `:driver` (required, module — `RPLidar.UART`)
+        * `:driver_opts` — forwarded to the driver (`device:`, ...)
+        * `:topic`, `:frame_id`, `:bins` — forwarded to
+          `RosBridge.Publishers.LaserScan` (see its defaults).
     * `:odometry_publisher` — `RosBridge.Publishers.Odometry`,
       dead-reckoning `/odom` and the `odom → base_link` transform from
       the VMS's `vehicle_motion` CAN frame and the IMU heading. Opts:
@@ -97,6 +104,11 @@ defmodule RosBridge.Components do
   def start(:imu_publisher, opts) do
     driver = Keyword.fetch!(opts, :driver)
     [{driver, []}, {RosBridge.Publishers.Imu, opts}]
+  end
+
+  def start(:lidar_publisher, opts) do
+    driver = Keyword.fetch!(opts, :driver)
+    [{driver, Keyword.get(opts, :driver_opts, [])}, {RosBridge.Publishers.LaserScan, opts}]
   end
 
   # The driver is started by `:imu_publisher`, which must appear

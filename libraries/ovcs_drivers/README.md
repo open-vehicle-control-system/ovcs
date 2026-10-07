@@ -25,6 +25,7 @@ Current kinds:
 | Kind                  | Behaviour                | Sample / output struct          | Drivers          |
 |-----------------------|--------------------------|---------------------------------|------------------|
 | IMU                   | `OvcsDrivers.Imu`        | `OvcsDrivers.Imu.Sample`        | `BNO085.I2C` (+ `OvcsDrivers.Imu.Dummy` stub) |
+| Scanning lidar        | `OvcsDrivers.Lidar`      | `OvcsDrivers.Lidar.Scan` (one revolution) | `RPLidar.UART` (SLAMTEC RPLIDAR C1 and its protocol) |
 
 New kinds land alongside their first concrete driver — defining a
 behaviour with zero implementations is dead code; wait until you have
@@ -40,6 +41,11 @@ lib/
     dummy.ex                      # OvcsDrivers.Imu.Dummy — kind-level fixture stub
   bno085/                         # one driver, implements OvcsDrivers.Imu
     i2c.ex
+  lidar.ex                        # OvcsDrivers.Lidar behaviour
+  lidar/
+    scan.ex                       # %OvcsDrivers.Lidar.Scan{points, started_at, duration_ns, range}
+  rplidar/                        # implements OvcsDrivers.Lidar
+    uart.ex
   <next_chip>/...
 ```
 
@@ -47,7 +53,7 @@ lib/
 
 1. New directory `lib/<chip>/`.
 2. Driver GenServer in `lib/<chip>/<bus>.ex` (`i2c.ex` / `spi.ex` /
-   `gpio.ex`). Use `Circuits.<Bus>` directly. Declare `@behaviour
+   `gpio.ex` / `uart.ex`). Use `Circuits.<Bus>` directly. Declare `@behaviour
    OvcsDrivers.<Kind>` and implement its callbacks.
 3. Emit the kind's sample struct via `GenServer.cast(listener,
    {:<kind>_sample, %OvcsDrivers.<Kind>.Sample{}})` for sensor-style
