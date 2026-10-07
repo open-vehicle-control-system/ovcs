@@ -187,15 +187,6 @@
       "fontSize": 12,
       "foxglovePanelTitle": "Heartbeat"
     },
-    "RawMessages!disparity_geometry": {
-      "topicPath": "/stereo/disparity.valid_window",
-      "diffEnabled": false,
-      "showFullMessageForDiff": false,
-      "diffMethod": "custom",
-      "diffTopicPath": "",
-      "fontSize": 12,
-      "foxglovePanelTitle": "Disparity geometry"
-    },
     "3D!depth_cloud": {
       "cameraState": {
         "distance": 4.5,
@@ -257,14 +248,30 @@
       "fontSize": 12,
       "foxglovePanelTitle": "Detections (class + score)"
     },
-    "RawMessages!diagnostics": {
-      "topicPath": "/diagnostics.status",
-      "diffEnabled": false,
-      "showFullMessageForDiff": false,
-      "diffMethod": "custom",
-      "diffTopicPath": "",
-      "fontSize": 12,
-      "foxglovePanelTitle": "Diagnostics"
+    "Plot!sync_offset": {
+      "paths": [
+        {
+          "value": "/stereo/live/sync_offset_ms.data",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "right - left (ms)"
+        }
+      ],
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "followingViewWidth": 30,
+      "foxglovePanelTitle": "Camera sync offset"
+    },
+    "DiagnosticSummary!stereo": {
+      "minLevel": 0,
+      "pinnedIds": [],
+      "hardwareIdFilter": "",
+      "topicToRender": "/diagnostics",
+      "sortByLevel": false
     }
   },
   "globalVariables": {},
@@ -293,13 +300,13 @@
       "first": {
         "first": {
           "first": "RawMessages!heartbeat",
-          "second": "RawMessages!disparity_geometry",
+          "second": "Plot!sync_offset",
           "direction": "column",
           "splitPercentage": 34
         },
         "second": {
           "first": "RawMessages!detections",
-          "second": "RawMessages!diagnostics",
+          "second": "DiagnosticSummary!stereo",
           "direction": "column",
           "splitPercentage": 60
         },
