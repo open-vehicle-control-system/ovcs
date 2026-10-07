@@ -704,6 +704,34 @@ defmodule RosBridge.StereoCamera.OpenCV do
     num_disparities: {16, 256}
   }
 
+  @option_descriptions %{
+    uniqueness_ratio: "Margin in percent by which the best match must beat the second best",
+    speckle_window_size: "Largest region of disparity speckle removed, in pixels (0 disables)",
+    speckle_range: "Disparity variation allowed within a connected region",
+    p1: "Penalty for a disparity change of 1 between neighbours",
+    p2: "Penalty for a larger disparity change between neighbours",
+    disp12_max_diff: "Left-right consistency tolerance in pixels (-1 disables)",
+    pre_filter_cap: "Clamp of the prefiltered image",
+    num_disparities: "Disparity search range in pixels, a multiple of 16; sets the near limit",
+    clahe: "Local contrast equalisation before matching",
+    clahe_clip_limit: "Contrast limit of the equalisation"
+  }
+
+  @doc """
+  The settings `set_options/2` accepts, as `{key, spec}` with `:type`
+  (`:integer`, `:double` or `:bool`), `:range` and `:description`.
+  `num_disparities` must also be a multiple of 16.
+  """
+  def option_specs do
+    integers = for {key, range} <- @integer_options, do: {key, %{type: :integer, range: range}}
+
+    (integers ++
+       [clahe: %{type: :bool}, clahe_clip_limit: %{type: :double, range: {0, 40}}])
+    |> Enum.map(fn {key, spec} ->
+      {key, Map.put(spec, :description, @option_descriptions[key])}
+    end)
+  end
+
   @doc false
   def validate_options(options) do
     Enum.find_value(options, :ok, fn {key, value} ->

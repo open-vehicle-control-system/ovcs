@@ -116,6 +116,13 @@ defmodule Ros2.RmwZenoh do
   end
 
   @doc """
+  Liveliness token for the **node** itself (entity prefix `NN`, entity
+  id equal to the node id), in the root namespace.
+  """
+  def node_liveliness_key(domain_id, zid, node_name),
+    do: "@ros2_lv/#{domain_id}/#{zid}/0/0/NN/%/%/#{node_name}"
+
+  @doc """
   Liveliness token for a **service server** (rmw_zenoh entity prefix
   `SS`). Same field layout as the publisher token but with the
   service-specific QoS profile (`::,10:,:,:,,`) — keep-last 10,

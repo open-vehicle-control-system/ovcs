@@ -163,59 +163,54 @@ bool read_exact(void* buf, size_t len) {
   return true;
 }
 
-// One `key=value` command into `out`; false when the key or value is
-// not understood.
+// One `Name=value` command into `out`: a libcamera control by its name,
+// the value parsed for the control's type. False when either is not
+// understood.
 bool parse_control(const std::string& command, ControlList& out) {
   auto eq = command.find('=');
   if (eq == std::string::npos) return false;
-  std::string key = command.substr(0, eq), value = command.substr(eq + 1);
-  char* end = nullptr;
-  float number = std::strtof(value.c_str(), &end);
-  bool numeric = end != value.c_str() && *end == '\0';
+  const std::string name = command.substr(0, eq), value = command.substr(eq + 1);
 
-  if (key == "exposure_mode") {
-    if (value == "normal") out.set(controls::AeExposureMode, controls::ExposureNormal);
-    else if (value == "short") out.set(controls::AeExposureMode, controls::ExposureShort);
-    else if (value == "long") out.set(controls::AeExposureMode, controls::ExposureLong);
-    else return false;
-  } else if (key == "exposure_time_us" && numeric) {
-    // 0 hands the exposure back to the auto-exposure.
-    if (number <= 0) {
-      out.set(controls::ExposureTimeMode, controls::ExposureTimeModeAuto);
-    } else {
-      out.set(controls::ExposureTimeMode, controls::ExposureTimeModeManual);
-      out.set(controls::ExposureTime, static_cast<int32_t>(number));
+  const ControlId* id = nullptr;
+  for (const auto& [_, candidate] : controls::controls) {
+    if (candidate->name() == name && !candidate->isArray()) {
+      id = candidate;
+      break;
     }
-  } else if (key == "analogue_gain" && numeric) {
-    if (number <= 0) {
-      out.set(controls::AnalogueGainMode, controls::AnalogueGainModeAuto);
-    } else {
-      out.set(controls::AnalogueGainMode, controls::AnalogueGainModeManual);
-      out.set(controls::AnalogueGain, number);
-    }
-  } else if (key == "lens_position" && numeric) {
-    out.set(controls::AfMode, controls::AfModeManual);
-    out.set(controls::LensPosition, number);
-  } else if (key == "brightness" && numeric) {
-    out.set(controls::Brightness, number);
-  } else if (key == "contrast" && numeric) {
-    out.set(controls::Contrast, number);
-  } else if (key == "sharpness" && numeric) {
-    out.set(controls::Sharpness, number);
-  } else if (key == "noise_reduction") {
-    if (value == "off") out.set(controls::draft::NoiseReductionMode, controls::draft::NoiseReductionModeOff);
-    else if (value == "fast") out.set(controls::draft::NoiseReductionMode, controls::draft::NoiseReductionModeFast);
-    else if (value == "high_quality") out.set(controls::draft::NoiseReductionMode, controls::draft::NoiseReductionModeHighQuality);
-    else if (value == "minimal") out.set(controls::draft::NoiseReductionMode, controls::draft::NoiseReductionModeMinimal);
-    else return false;
-  } else {
-    return false;
   }
-  return true;
+  if (!id || value.empty()) return false;
+
+  char* end = nullptr;
+  switch (id->type()) {
+    case ControlTypeBool:
+      if (value != "0" && value != "1") return false;
+      out.set(id->id(), ControlValue(value == "1"));
+      return true;
+    case ControlTypeInteger32: {
+      long v = std::strtol(value.c_str(), &end, 10);
+      if (*end != '\0') return false;
+      out.set(id->id(), ControlValue(static_cast<int32_t>(v)));
+      return true;
+    }
+    case ControlTypeInteger64: {
+      long long v = std::strtoll(value.c_str(), &end, 10);
+      if (*end != '\0') return false;
+      out.set(id->id(), ControlValue(static_cast<int64_t>(v)));
+      return true;
+    }
+    case ControlTypeFloat: {
+      float v = std::strtof(value.c_str(), &end);
+      if (*end != '\0') return false;
+      out.set(id->id(), ControlValue(v));
+      return true;
+    }
+    default:
+      return false;
+  }
 }
 
 // stdin carries the Port's {:packet, 4} records: a 4-byte big-endian
-// length, then one `key=value` command. EOF (the BEAM closing the
+// length, then one `Name=value` command. EOF (the BEAM closing the
 // Port) stops the capture.
 void stdin_reader() {
   while (true) {

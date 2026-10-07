@@ -29,8 +29,10 @@ defmodule RosBridge.Camera.LibCamera do
       uint8   level               # 0 info, 1 warning, 2 error
       bytes   message
 
-  Records the other way, on the binary's stdin, are `key=value`
-  runtime controls (see "Runtime controls").
+  Records the other way, on the binary's stdin, are runtime controls
+  (see "Runtime controls"), one `Name=value` each: a libcamera control
+  by its name, such as `LensPosition=1.5` or `AeExposureMode=1`, which
+  the binary parses for the control's type.
 
   The Port supervises the binary: closing stdin (which happens
   when this GenServer dies) tells the binary to exit cleanly.
@@ -79,12 +81,11 @@ defmodule RosBridge.Camera.LibCamera do
   while capturing; the capture program applies them from the next frame
   on. Accepted keys:
 
-    * `:exposure_mode` — `:normal`, `:short`, `:long`
-    * `:exposure_time_us` — a fixed shutter time, 0 for automatic
-    * `:analogue_gain` — a fixed gain, 0 for automatic
-    * `:lens_position` — focus in dioptres (manual focus)
-    * `:brightness` (-1..1), `:contrast` (0..32), `:sharpness` (0..16)
-    * `:noise_reduction` — `:off`, `:fast`, `:high_quality`, `:minimal`
+  `control_specs/0` lists them with their types and ranges: exposure
+  mode, shutter time and gain (0 for automatic), focus, brightness,
+  contrast, sharpness and noise reduction. `controls/1` starts from
+  libcamera's defaults, with the focus nil unless `:lens_position` is
+  set.
 
   The sync role, sensor mode, resolution and frame rate are fixed at
   start.
@@ -288,7 +289,7 @@ defmodule RosBridge.Camera.LibCamera do
     case control_commands(controls) do
       {:ok, commands} ->
         Enum.each(commands, &Port.command(state.port, &1))
-        controls = Map.merge(state.controls, Map.new(controls))
+        controls = Map.merge(state.controls, Map.new(controls, &normalise_control/1))
         {:reply, {:ok, controls}, %{state | controls: controls}}
 
       {:error, _} = error ->
@@ -298,55 +299,141 @@ defmodule RosBridge.Camera.LibCamera do
 
   def handle_call(:controls, _from, state), do: {:reply, state.controls, state}
 
-  @modes %{
-    exposure_mode: [:normal, :short, :long],
-    noise_reduction: [:off, :fast, :high_quality, :minimal]
-  }
-  @ranges %{
-    exposure_time_us: {0, 1_000_000},
-    analogue_gain: {0, 16},
-    lens_position: {0, 15},
-    brightness: {-1, 1},
-    contrast: {0, 32},
-    sharpness: {0, 16}
-  }
+  defp normalise_control({key, value}) when is_atom(value) and not is_boolean(value),
+    do: {key, Atom.to_string(value)}
+
+  defp normalise_control({key, value}) when is_integer(value) and key != :exposure_time_us,
+    do: {key, value * 1.0}
+
+  defp normalise_control(control), do: control
+
+  # Runtime controls: the capture program's commands name libcamera's
+  # own controls, with enumerations as their numeric values.
+  @controls [
+    %{
+      key: :exposure_mode,
+      type: :string,
+      values: ~w(normal short long),
+      description: "Auto-exposure mode; short caps the shutter at 10 ms before raising the gain"
+    },
+    %{
+      key: :exposure_time_us,
+      type: :integer,
+      range: {0, 1_000_000},
+      description: "Fixed shutter time in microseconds, 0 for automatic"
+    },
+    %{
+      key: :analogue_gain,
+      type: :double,
+      range: {0, 16},
+      description: "Fixed analogue gain, 0 for automatic"
+    },
+    %{
+      key: :lens_position,
+      type: :double,
+      range: {0, 15},
+      description: "Focus in dioptres (1 / distance in metres), 0 at infinity"
+    },
+    %{key: :brightness, type: :double, range: {-1, 1}, description: "Brightness offset"},
+    %{key: :contrast, type: :double, range: {0, 32}, description: "Contrast, 1 for none"},
+    %{
+      key: :sharpness,
+      type: :double,
+      range: {0, 16},
+      description: "Sharpening, 1 for the default"
+    },
+    %{
+      key: :noise_reduction,
+      type: :string,
+      values: ~w(off fast high_quality minimal),
+      description: "Noise reduction mode"
+    }
+  ]
+
+  @exposure_modes %{"normal" => 0, "short" => 1, "long" => 2}
+  @noise_reduction_modes %{"off" => 0, "fast" => 1, "high_quality" => 2, "minimal" => 3}
 
   @doc """
-  The capture program's `key=value` commands for `controls`, or the
-  first one that is not accepted. Pure.
+  The runtime controls `set_controls/2` accepts: `:key`, `:type`
+  (`:string`, `:integer` or `:double`), `:range` or `:values`, and a
+  `:description`.
+  """
+  def control_specs, do: @controls
+
+  @doc """
+  The capture program's commands for `controls` (`key: value`, an
+  enumeration as a string or an atom), or the first one that is not
+  accepted. Pure.
   """
   def control_commands(controls) do
     Enum.reduce_while(controls, {:ok, []}, fn {key, value}, {:ok, acc} ->
-      case control_command(key, value) do
-        {:ok, command} -> {:cont, {:ok, acc ++ [command]}}
+      with {:ok, spec} <- control_spec(key),
+           {:ok, value} <- check_control(spec, value) do
+        {:cont, {:ok, acc ++ libcamera_controls(key, value)}}
+      else
         {:error, _} = error -> {:halt, error}
       end
     end)
   end
 
-  defp control_command(key, value) when is_map_key(@modes, key) do
-    if value in @modes[key],
-      do: {:ok, "#{key}=#{value}"},
-      else: {:error, "#{key} must be one of #{inspect(@modes[key])}, got #{inspect(value)}"}
+  defp control_spec(key) do
+    case Enum.find(@controls, &(&1.key == key)) do
+      nil -> {:error, "unknown camera control #{inspect(key)}"}
+      spec -> {:ok, spec}
+    end
   end
 
-  defp control_command(key, value) when is_map_key(@ranges, key) and is_number(value) do
-    {low, high} = @ranges[key]
+  defp check_control(%{values: _} = spec, value) when is_atom(value),
+    do: check_control(spec, Atom.to_string(value))
 
-    if value >= low and value <= high,
-      do: {:ok, "#{key}=#{value}"},
-      else: {:error, "#{key} must be within #{low}..#{high}, got #{value}"}
+  defp check_control(%{values: values} = spec, value) do
+    if value in values,
+      do: {:ok, value},
+      else:
+        {:error, "#{spec.key} must be one of #{Enum.join(values, ", ")}, got #{inspect(value)}"}
   end
 
-  defp control_command(key, value) when is_map_key(@ranges, key),
-    do: {:error, "#{key} must be a number, got #{inspect(value)}"}
+  defp check_control(%{range: {low, high}} = spec, value)
+       when is_number(value) and value >= low and value <= high,
+       do:
+         if(spec.type == :integer, do: integer_control(spec.key, value), else: {:ok, value * 1.0})
 
-  defp control_command(key, _value), do: {:error, "unknown camera control #{inspect(key)}"}
+  defp check_control(%{range: {low, high}} = spec, value),
+    do: {:error, "#{spec.key} must be a number within #{low}..#{high}, got #{inspect(value)}"}
 
+  defp integer_control(_key, value) when is_integer(value), do: {:ok, value}
+  defp integer_control(key, value), do: {:error, "#{key} must be an integer, got #{value}"}
+
+  defp libcamera_controls(:exposure_mode, mode), do: ["AeExposureMode=#{@exposure_modes[mode]}"]
+  defp libcamera_controls(:exposure_time_us, 0), do: ["ExposureTimeMode=0"]
+  defp libcamera_controls(:exposure_time_us, us), do: ["ExposureTimeMode=1", "ExposureTime=#{us}"]
+  defp libcamera_controls(:analogue_gain, gain) when gain == 0, do: ["AnalogueGainMode=0"]
+
+  defp libcamera_controls(:analogue_gain, gain),
+    do: ["AnalogueGainMode=1", "AnalogueGain=#{gain}"]
+
+  defp libcamera_controls(:lens_position, dioptres), do: ["AfMode=0", "LensPosition=#{dioptres}"]
+  defp libcamera_controls(:brightness, v), do: ["Brightness=#{v}"]
+  defp libcamera_controls(:contrast, v), do: ["Contrast=#{v}"]
+  defp libcamera_controls(:sharpness, v), do: ["Sharpness=#{v}"]
+
+  defp libcamera_controls(:noise_reduction, mode),
+    do: ["NoiseReductionMode=#{@noise_reduction_modes[mode]}"]
+
+  # Controls libcamera starts with: the configured ones and its own
+  # defaults. "auto" is its choice of noise reduction, which cannot be
+  # requested back once a mode is set.
   defp initial_controls(exposure_mode, lens_position) do
-    %{exposure_mode: exposure_mode || :normal, lens_position: lens_position}
-    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
-    |> Map.new()
+    %{
+      exposure_mode: Atom.to_string(exposure_mode || :normal),
+      exposure_time_us: 0,
+      analogue_gain: 0.0,
+      lens_position: lens_position && lens_position * 1.0,
+      brightness: 0.0,
+      contrast: 1.0,
+      sharpness: 1.0,
+      noise_reduction: "auto"
+    }
   end
 
   @doc """
