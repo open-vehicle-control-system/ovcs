@@ -99,4 +99,24 @@ defmodule RosBridge.ParametersTest do
       assert Parameters.set(refusing, 1.0) == {:error, "camera busy"}
     end
   end
+
+  describe "describe/1" do
+    test "gives the declared value and the accepted values in the constraints" do
+      mode = %{name: "m", type: :string, values: ~w(normal short), default: "short"}
+      assert Parameters.describe(mode).constraints == "default: short; one of: normal, short"
+
+      assert Parameters.describe(%{name: "g", type: :double, default: 1.5}).constraints ==
+               "default: 1.5"
+    end
+
+    test "gives no default for read-only or unset parameters, nor one that cannot be set" do
+      assert Parameters.describe(%{name: "s", type: :string, default: "x", read_only: true}).constraints ==
+               ""
+
+      assert Parameters.describe(%{name: "l", type: :double, default: nil}).constraints == ""
+
+      auto = %{name: "n", type: :string, values: ~w(off fast), default: "auto"}
+      assert Parameters.describe(auto).constraints == "one of: off, fast"
+    end
+  end
 end

@@ -35,6 +35,7 @@ type Descriptor = {
   readOnly: boolean;
   range?: { low: number; high: number; step: number };
   values?: string[];
+  initial?: Scalar;
 };
 
 type RawDescriptor = {
@@ -53,8 +54,10 @@ const SET_INTERVAL_MS = 150;
 function toDescriptor(raw: RawDescriptor): Descriptor {
   const float = raw.floating_point_range[0];
   const integer = raw.integer_range[0];
-  // RosBridge.Parameters lists a string's accepted values as "one of: a, b".
-  const oneOf = /one of: (.*)$/.exec(raw.additional_constraints);
+  // RosBridge.Parameters gives "default: <value>; one of: <a>, <b>".
+  const parts = raw.additional_constraints.split("; ");
+  const oneOf = parts.find((part) => part.startsWith("one of: "))?.slice("one of: ".length);
+  const initial = parts.find((part) => part.startsWith("default: "))?.slice("default: ".length);
 
   return {
     type: raw.type,
@@ -73,8 +76,13 @@ function toDescriptor(raw: RawDescriptor): Descriptor {
             step: Number(integer.step) > 0 ? Number(integer.step) : 1,
           }
         : undefined,
-    values: oneOf?.[1]?.split(", "),
+    values: oneOf?.split(", "),
+    initial: initial == undefined ? undefined : parseScalar(raw.type, initial),
   };
+}
+
+function parseScalar(type: number, raw: string): Scalar {
+  return type === BOOL ? raw === "true" : type === INTEGER || type === DOUBLE ? Number(raw) : raw;
 }
 
 function parameterValue(type: number, value: Scalar): object {
@@ -225,6 +233,21 @@ function ParameterSlidersPanel({ context }: { context: PanelExtensionContext }):
     [send],
   );
 
+  const resettable = names.filter((name) => {
+    const descriptor = descriptors.get(name);
+    return (
+      descriptor?.initial != undefined && !descriptor.readOnly && value(name) !== descriptor.initial
+    );
+  });
+
+  const reset = (name: string) => {
+    const descriptor = descriptors.get(name);
+    if (descriptor?.initial != undefined) {
+      setLocal((previous) => new Map(previous).set(name, descriptor.initial!));
+      send(name, descriptor.type, descriptor.initial);
+    }
+  };
+
   const colours = dark
     ? { text: "#e7e7ea", muted: "#9a9aa3", line: "#3a3a42", error: "#ff7373", input: "#2a2a31" }
     : { text: "#1a1a1f", muted: "#6b6b73", line: "#dcdce0", error: "#c62828", input: "#f2f2f4" };
@@ -252,6 +275,17 @@ function ParameterSlidersPanel({ context }: { context: PanelExtensionContext }):
           No parameters under {config.node} {config.prefix}. Set the node and prefix in the panel settings.
         </p>
       )}
+      {names.length > 0 && (
+        <button
+          style={buttonStyle(colours)}
+          disabled={resettable.length === 0}
+          onClick={() => {
+            resettable.forEach(reset);
+          }}
+        >
+          Reset all ({resettable.length} changed)
+        </button>
+      )}
       {errors.has("*") && <p style={{ color: colours.error }}>{errors.get("*")}</p>}
       {order.map((group) => (
         <section key={group} style={{ marginBottom: "0.75rem" }}>
@@ -266,7 +300,12 @@ function ParameterSlidersPanel({ context }: { context: PanelExtensionContext }):
               value={value(name)}
               error={errors.get(name)}
               colours={colours}
-              onChange={(type, next) => { change(name, type, next); }}
+              onChange={(type, next) => {
+                change(name, type, next);
+              }}
+              onReset={() => {
+                reset(name);
+              }}
             />
           ))}
         </section>
@@ -281,6 +320,17 @@ function rank(group: string): number {
 
 type Colours = { text: string; muted: string; line: string; error: string; input: string };
 
+function buttonStyle(colours: Colours) {
+  return {
+    background: colours.input,
+    color: colours.text,
+    border: `1px solid ${colours.line}`,
+    borderRadius: 3,
+    padding: "1px 6px",
+    cursor: "pointer",
+  };
+}
+
 function Control(props: {
   label: string;
   descriptor: Descriptor | undefined;
@@ -288,8 +338,11 @@ function Control(props: {
   error: string | undefined;
   colours: Colours;
   onChange: (type: number, value: Scalar) => void;
+  onReset: () => void;
 }): ReactElement {
-  const { label, descriptor, value, error, colours, onChange } = props;
+  const { label, descriptor, value, error, colours, onChange, onReset } = props;
+  const changed =
+    descriptor?.initial != undefined && !descriptor.readOnly && value !== descriptor.initial;
   const inputStyle = {
     background: colours.input,
     color: colours.text,
@@ -363,6 +416,15 @@ function Control(props: {
       <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
         <span style={{ width: "9.5rem", flexShrink: 0 }}>{label}</span>
         {control}
+        {descriptor?.initial != undefined && !descriptor.readOnly && (
+          <button
+            style={{ ...buttonStyle(colours), visibility: changed ? "visible" : "hidden" }}
+            title={`Reset to ${text(descriptor.initial)}`}
+            onClick={onReset}
+          >
+            ↺
+          </button>
+        )}
       </div>
       {error != undefined && <div style={{ color: colours.error, marginLeft: "10.25rem" }}>{error}</div>}
     </div>

@@ -5,7 +5,9 @@ menus and toggles. It reads each parameter's description from the node
 (`describe_parameters`): numbers get a slider over their declared
 range, strings with a fixed set of values a menu, booleans a toggle,
 and read-only parameters are shown greyed. A value the node refuses
-shows the node's reason under its control.
+shows the node's reason under its control. A changed parameter gets a
+reset button back to the value the node declared it with (`default:`
+in its constraints), and *Reset all* resets every one.
 
 The panel settings choose the node (default `/ovcs_bridge_perception`)
 and the name prefix of the parameters to show (default `stereo.`).
