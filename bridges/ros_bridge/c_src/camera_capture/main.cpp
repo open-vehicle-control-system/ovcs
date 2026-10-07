@@ -20,10 +20,12 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
+#include <cstdarg>
 #include <cstdlib>
 #include <cstring>
 #include <linux/dma-buf.h>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
@@ -41,6 +43,22 @@ using namespace libcamera;
 
 namespace {
 
+// Messages go to the BEAM's logger as LOG records: the Port does not
+// capture stderr.
+enum LogLevel : uint8_t { LOG_INFO = 0, LOG_WARNING = 1, LOG_ERROR = 2 };
+
+void log_message(LogLevel level, const char* format, ...) __attribute__((format(printf, 2, 3)));
+
+void log_message(LogLevel level, const char* format, ...) {
+  char buf[512];
+  va_list args;
+  va_start(args, format);
+  std::vsnprintf(buf, sizeof(buf), format, args);
+  va_end(args);
+  auto record = ovcs::framing::build_log_record(level, buf);
+  ovcs::framing::write_record(record.data(), record.size());
+}
+
 struct Args {
   int camera_id = 0;
   int width = 1280;
@@ -50,6 +68,16 @@ struct Args {
   // the sensor + ISP to support transposed output; libcamera may
   // reject them depending on the driver.
   int rotation = 0;
+  // libcamera's software camera sync on the Pi 5: one camera of a pair
+  // is the server, the others clients that align their frame starts to
+  // it. Off by default.
+  int32_t sync_mode = controls::rpi::SyncModeOff;
+  // Auto-exposure mode from the sensor's tuning file; negative leaves
+  // libcamera's default (normal).
+  int32_t exposure_mode = -1;
+  // Dioptres (1 / focus distance in metres); negative leaves the lens
+  // where libcamera puts it.
+  float lens_position = -1.0f;
 };
 
 bool parse_args(int argc, char** argv, Args& out) {
@@ -61,22 +89,140 @@ bool parse_args(int argc, char** argv, Args& out) {
     else if (a == "--height" && next()) out.height = std::atoi(argv[i]);
     else if (a == "--fps" && next()) out.fps = std::atoi(argv[i]);
     else if (a == "--rotation" && next()) out.rotation = std::atoi(argv[i]);
-    else { std::fprintf(stderr, "camera_capture: unknown arg %s\n", a.c_str()); return false; }
+    else if (a == "--sync" && next()) {
+      std::string mode = argv[i];
+      if (mode == "server") out.sync_mode = controls::rpi::SyncModeServer;
+      else if (mode == "client") out.sync_mode = controls::rpi::SyncModeClient;
+      else { log_message(LOG_WARNING, "--sync must be server or client"); return false; }
+    }
+    else if (a == "--exposure-mode" && next()) {
+      std::string mode = argv[i];
+      if (mode == "normal") out.exposure_mode = controls::ExposureNormal;
+      else if (mode == "short") out.exposure_mode = controls::ExposureShort;
+      else if (mode == "long") out.exposure_mode = controls::ExposureLong;
+      else { log_message(LOG_WARNING, "--exposure-mode must be normal, short or long"); return false; }
+    }
+    else if (a == "--lens-position" && next()) out.lens_position = std::strtof(argv[i], nullptr);
+    else { log_message(LOG_WARNING, "unknown arg %s", a.c_str()); return false; }
   }
   return true;
 }
 
 std::atomic<bool> g_stop{false};
 
-void stdin_watcher() {
-  char buf[16];
+// libcamera writes its own log to stderr. Point stderr at a pipe and
+// forward each line as a LOG record, so its errors reach the logger.
+void forward_stderr() {
+  int fds[2];
+  if (pipe(fds) != 0) return;
+  dup2(fds[1], STDERR_FILENO);
+  close(fds[1]);
+  std::thread([read_fd = fds[0]] {
+    std::string line;
+    char c;
+    while (::read(read_fd, &c, 1) == 1) {
+      if (c != '\n') {
+        line += c;
+        continue;
+      }
+      LogLevel level = line.find(" ERROR ") != std::string::npos || line.find(" FATAL ") != std::string::npos
+                           ? LOG_ERROR
+                           : line.find(" WARN ") != std::string::npos ? LOG_WARNING : LOG_INFO;
+      log_message(level, "libcamera: %s", line.c_str());
+      line.clear();
+    }
+  }).detach();
+}
+
+
+// Controls received on stdin, applied to the next request re-queued.
+std::mutex g_pending_mutex;
+ControlList g_pending(controls::controls);
+
+bool read_exact(void* buf, size_t len) {
+  auto* p = static_cast<uint8_t*>(buf);
+  while (len > 0) {
+    ssize_t n = ::read(STDIN_FILENO, p, len);
+    if (n <= 0) return false;
+    p += n;
+    len -= static_cast<size_t>(n);
+  }
+  return true;
+}
+
+// One `key=value` command into `out`; false when the key or value is
+// not understood.
+bool parse_control(const std::string& command, ControlList& out) {
+  auto eq = command.find('=');
+  if (eq == std::string::npos) return false;
+  std::string key = command.substr(0, eq), value = command.substr(eq + 1);
+  char* end = nullptr;
+  float number = std::strtof(value.c_str(), &end);
+  bool numeric = end != value.c_str() && *end == '\0';
+
+  if (key == "exposure_mode") {
+    if (value == "normal") out.set(controls::AeExposureMode, controls::ExposureNormal);
+    else if (value == "short") out.set(controls::AeExposureMode, controls::ExposureShort);
+    else if (value == "long") out.set(controls::AeExposureMode, controls::ExposureLong);
+    else return false;
+  } else if (key == "exposure_time_us" && numeric) {
+    // 0 hands the exposure back to the auto-exposure.
+    if (number <= 0) {
+      out.set(controls::ExposureTimeMode, controls::ExposureTimeModeAuto);
+    } else {
+      out.set(controls::ExposureTimeMode, controls::ExposureTimeModeManual);
+      out.set(controls::ExposureTime, static_cast<int32_t>(number));
+    }
+  } else if (key == "analogue_gain" && numeric) {
+    if (number <= 0) {
+      out.set(controls::AnalogueGainMode, controls::AnalogueGainModeAuto);
+    } else {
+      out.set(controls::AnalogueGainMode, controls::AnalogueGainModeManual);
+      out.set(controls::AnalogueGain, number);
+    }
+  } else if (key == "lens_position" && numeric) {
+    out.set(controls::AfMode, controls::AfModeManual);
+    out.set(controls::LensPosition, number);
+  } else if (key == "brightness" && numeric) {
+    out.set(controls::Brightness, number);
+  } else if (key == "contrast" && numeric) {
+    out.set(controls::Contrast, number);
+  } else if (key == "sharpness" && numeric) {
+    out.set(controls::Sharpness, number);
+  } else if (key == "noise_reduction") {
+    if (value == "off") out.set(controls::draft::NoiseReductionMode, controls::draft::NoiseReductionModeOff);
+    else if (value == "fast") out.set(controls::draft::NoiseReductionMode, controls::draft::NoiseReductionModeFast);
+    else if (value == "high_quality") out.set(controls::draft::NoiseReductionMode, controls::draft::NoiseReductionModeHighQuality);
+    else if (value == "minimal") out.set(controls::draft::NoiseReductionMode, controls::draft::NoiseReductionModeMinimal);
+    else return false;
+  } else {
+    return false;
+  }
+  return true;
+}
+
+// stdin carries the Port's {:packet, 4} records: a 4-byte big-endian
+// length, then one `key=value` command. EOF (the BEAM closing the
+// Port) stops the capture.
+void stdin_reader() {
   while (true) {
-    ssize_t n = ::read(STDIN_FILENO, buf, sizeof(buf));
-    if (n <= 0) {
-      g_stop.store(true);
-      return;
+    uint8_t header[4];
+    if (!read_exact(header, sizeof(header))) break;
+    uint32_t len = (uint32_t(header[0]) << 24) | (uint32_t(header[1]) << 16) |
+                   (uint32_t(header[2]) << 8) | uint32_t(header[3]);
+    std::string command(len, '\0');
+    if (len > 0 && !read_exact(command.data(), len)) break;
+
+    ControlList parsed(controls::controls);
+    if (parse_control(command, parsed)) {
+      std::lock_guard<std::mutex> lock(g_pending_mutex);
+      g_pending.merge(parsed, ControlList::MergePolicy::OverwriteExisting);
+      log_message(LOG_INFO, "control %s", command.c_str());
+    } else {
+      log_message(LOG_WARNING, "control not understood: %s", command.c_str());
     }
   }
+  g_stop.store(true);
 }
 
 int64_t monotonic_ns() {
@@ -111,7 +257,7 @@ class FdMapper {
       size_t total = (end > 0) ? static_cast<size_t>(end) : (offset + length);
       void* p = ::mmap(nullptr, total, PROT_READ, MAP_SHARED, fd, 0);
       if (p == MAP_FAILED) {
-        std::fprintf(stderr, "camera_capture: mmap(fd=%d, len=%zu) failed: %s\n",
+        log_message(LOG_ERROR, "mmap(fd=%d, len=%zu) failed: %s",
                      fd, total, std::strerror(errno));
         return nullptr;
       }
@@ -153,32 +299,32 @@ inline void dmabuf_sync(const std::vector<int>& fds, uint64_t flags) {
 }  // namespace
 
 int main(int argc, char** argv) {
+  forward_stderr();
+
   Args args;
   if (!parse_args(argc, argv, args)) return 2;
 
-  std::fprintf(stderr,
-               "camera_capture: camera=%d %dx%d @%d fps\n",
+  log_message(LOG_INFO, "camera=%d %dx%d @%d fps",
                args.camera_id, args.width, args.height, args.fps);
 
-  std::thread watcher(stdin_watcher);
-  watcher.detach();
+  std::thread reader(stdin_reader);
+  reader.detach();
 
   // ---- libcamera bring-up --------------------------------------
   CameraManager cm;
   if (int ret = cm.start(); ret != 0) {
-    std::fprintf(stderr, "camera_capture: CameraManager::start failed (%d)\n", ret);
+    log_message(LOG_ERROR, "CameraManager::start failed (%d)", ret);
     return 1;
   }
 
   const auto& cameras = cm.cameras();
   if (cameras.empty()) {
-    std::fprintf(stderr, "camera_capture: no cameras detected by libcamera\n");
+    log_message(LOG_ERROR, "no cameras detected by libcamera");
     cm.stop();
     return 1;
   }
   if (args.camera_id < 0 || static_cast<size_t>(args.camera_id) >= cameras.size()) {
-    std::fprintf(stderr,
-                 "camera_capture: camera_id %d out of range (have %zu cameras)\n",
+    log_message(LOG_ERROR, "camera_id %d out of range (have %zu cameras)",
                  args.camera_id, cameras.size());
     cm.stop();
     return 1;
@@ -186,7 +332,7 @@ int main(int argc, char** argv) {
 
   std::shared_ptr<Camera> camera = cameras[args.camera_id];
   if (camera->acquire() != 0) {
-    std::fprintf(stderr, "camera_capture: Camera::acquire failed (camera %d)\n",
+    log_message(LOG_ERROR, "Camera::acquire failed (camera %d)",
                  args.camera_id);
     cm.stop();
     return 1;
@@ -195,7 +341,7 @@ int main(int argc, char** argv) {
   std::unique_ptr<CameraConfiguration> config =
       camera->generateConfiguration({StreamRole::VideoRecording});
   if (!config || config->size() != 1) {
-    std::fprintf(stderr, "camera_capture: generateConfiguration failed\n");
+    log_message(LOG_ERROR, "generateConfiguration failed");
     camera->release();
     cm.stop();
     return 1;
@@ -209,8 +355,7 @@ int main(int argc, char** argv) {
     case 180: config->orientation = Orientation::Rotate180; break;
     case 270: config->orientation = Orientation::Rotate270; break;
     default:
-      std::fprintf(stderr,
-                   "camera_capture: --rotation %d unsupported (use 0/90/180/270)\n",
+      log_message(LOG_ERROR, "--rotation %d unsupported (use 0/90/180/270)",
                    args.rotation);
       camera->release();
       cm.stop();
@@ -227,21 +372,19 @@ int main(int argc, char** argv) {
     case CameraConfiguration::Valid:
       break;
     case CameraConfiguration::Adjusted:
-      std::fprintf(stderr,
-                   "camera_capture: configuration adjusted to %ux%u %s\n",
+      log_message(LOG_INFO, "configuration adjusted to %ux%u %s",
                    cfg.size.width, cfg.size.height,
                    cfg.pixelFormat.toString().c_str());
       break;
     case CameraConfiguration::Invalid:
-      std::fprintf(stderr, "camera_capture: configuration invalid\n");
+      log_message(LOG_ERROR, "configuration invalid");
       camera->release();
       cm.stop();
       return 1;
   }
 
   if (cfg.pixelFormat != formats::YUV420) {
-    std::fprintf(stderr,
-                 "camera_capture: driver refused YUV420 (got %s); aborting\n",
+    log_message(LOG_ERROR, "driver refused YUV420 (got %s); aborting",
                  cfg.pixelFormat.toString().c_str());
     camera->release();
     cm.stop();
@@ -249,7 +392,7 @@ int main(int argc, char** argv) {
   }
 
   if (camera->configure(config.get()) != 0) {
-    std::fprintf(stderr, "camera_capture: Camera::configure failed\n");
+    log_message(LOG_ERROR, "Camera::configure failed");
     camera->release();
     cm.stop();
     return 1;
@@ -266,7 +409,7 @@ int main(int argc, char** argv) {
   // ---- buffer allocation + mmap --------------------------------
   FrameBufferAllocator allocator(camera);
   if (allocator.allocate(stream) < 0) {
-    std::fprintf(stderr, "camera_capture: buffer allocation failed\n");
+    log_message(LOG_ERROR, "buffer allocation failed");
     camera->release();
     cm.stop();
     return 1;
@@ -279,7 +422,7 @@ int main(int argc, char** argv) {
   for (const auto& buffer : allocator.buffers(stream)) {
     const auto& planes = buffer->planes();
     if (planes.empty()) {
-      std::fprintf(stderr, "camera_capture: buffer has no planes\n");
+      log_message(LOG_ERROR, "buffer has no planes");
       camera->release();
       cm.stop();
       return 1;
@@ -316,7 +459,7 @@ int main(int argc, char** argv) {
     }
 
     if (!view.y || !view.u || !view.v) {
-      std::fprintf(stderr, "camera_capture: failed to mmap buffer planes\n");
+      log_message(LOG_ERROR, "failed to mmap buffer planes");
       camera->release();
       cm.stop();
       return 1;
@@ -325,13 +468,13 @@ int main(int argc, char** argv) {
 
     auto request = camera->createRequest();
     if (!request) {
-      std::fprintf(stderr, "camera_capture: createRequest failed\n");
+      log_message(LOG_ERROR, "createRequest failed");
       camera->release();
       cm.stop();
       return 1;
     }
     if (request->addBuffer(stream, buffer.get()) != 0) {
-      std::fprintf(stderr, "camera_capture: addBuffer failed\n");
+      log_message(LOG_ERROR, "addBuffer failed");
       camera->release();
       cm.stop();
       return 1;
@@ -349,7 +492,7 @@ int main(int argc, char** argv) {
   // `TJFLAG_NOREALLOC` so the hot path never mallocs.
   tjhandle jpeg = tjInitCompress();
   if (!jpeg) {
-    std::fprintf(stderr, "camera_capture: tjInitCompress failed\n");
+    log_message(LOG_ERROR, "tjInitCompress failed");
     camera->release();
     cm.stop();
     return 1;
@@ -359,7 +502,7 @@ int main(int argc, char** argv) {
                 TJSAMP_420);
   unsigned char* jpeg_buf = tjAlloc(static_cast<int>(max_jpeg_size));
   if (!jpeg_buf) {
-    std::fprintf(stderr, "camera_capture: tjAlloc(%lu) failed\n", max_jpeg_size);
+    log_message(LOG_ERROR, "tjAlloc(%lu) failed", max_jpeg_size);
     tjDestroy(jpeg);
     camera->release();
     cm.stop();
@@ -372,6 +515,9 @@ int main(int argc, char** argv) {
   std::vector<uint8_t> record;
   record.reserve(1 + 2 + 2 + 8 + 4 + max_jpeg_size);
 
+  bool sync_reported = false;
+  int frames_without_sync = 0;
+  constexpr int kSyncPatienceFrames = 300;
   camera->requestCompleted.connect(camera.get(), [&](Request* request) {
     if (request->status() == Request::RequestCancelled) return;
     if (g_stop.load()) return;
@@ -389,6 +535,16 @@ int main(int argc, char** argv) {
     // |t_left - t_right|) sees the genuine sync offset instead of
     // post-DMA scheduling jitter. Falls back to monotonic_ns() if
     // libcamera/the driver doesn't report it.
+    if (args.sync_mode != controls::rpi::SyncModeOff && !sync_reported) {
+      ++frames_without_sync;
+      if (auto ready = request->metadata().get(controls::rpi::SyncReady); ready && *ready) {
+        log_message(LOG_INFO, "camera sync established after %d frames", frames_without_sync);
+        sync_reported = true;
+      } else if (frames_without_sync == kSyncPatienceFrames) {
+        log_message(LOG_WARNING, "camera sync not established after %d frames", kSyncPatienceFrames);
+      }
+    }
+
     int64_t capture_ns = 0;
     if (auto ts = request->metadata().get(controls::SensorTimestamp)) {
       capture_ns = static_cast<int64_t>(*ts);
@@ -420,11 +576,18 @@ int main(int argc, char** argv) {
         g_stop.store(true);
       }
     } else {
-      std::fprintf(stderr, "camera_capture: tjCompressFromYUVPlanes: %s\n",
+      log_message(LOG_WARNING, "tjCompressFromYUVPlanes: %s",
                    tjGetErrorStr2(jpeg));
     }
 
     request->reuse(Request::ReuseBuffers);
+    {
+      std::lock_guard<std::mutex> lock(g_pending_mutex);
+      if (!g_pending.empty()) {
+        request->controls().merge(g_pending, ControlList::MergePolicy::OverwriteExisting);
+        g_pending.clear();
+      }
+    }
     camera->queueRequest(request);
   });
 
@@ -442,17 +605,42 @@ int main(int argc, char** argv) {
   // lens's full FoV.
   if (auto max_crop = camera->properties().get(properties::ScalerCropMaximum)) {
     start_controls.set(controls::ScalerCrop, *max_crop);
-    std::fprintf(stderr,
-                 "camera_capture: ScalerCrop set to full sensor (%dx%d @ %d,%d)\n",
+    log_message(LOG_INFO, "ScalerCrop set to full sensor (%dx%d @ %d,%d)",
                  max_crop->width, max_crop->height,
                  max_crop->x, max_crop->y);
   } else {
-    std::fprintf(stderr,
-                 "camera_capture: ScalerCropMaximum unavailable; FoV may be cropped\n");
+    log_message(LOG_WARNING, "ScalerCropMaximum unavailable; FoV may be cropped");
+  }
+
+  if (args.sync_mode != controls::rpi::SyncModeOff) {
+    if (camera->controls().count(&controls::rpi::SyncMode)) {
+      start_controls.set(controls::rpi::SyncMode, args.sync_mode);
+      log_message(LOG_INFO, "camera sync as %s",
+                   args.sync_mode == controls::rpi::SyncModeServer ? "server" : "client");
+    } else {
+      log_message(LOG_WARNING, "no camera sync on this pipeline; --sync ignored");
+    }
+  }
+
+  if (args.exposure_mode >= 0) {
+    start_controls.set(controls::AeExposureMode, args.exposure_mode);
+    log_message(LOG_INFO, "auto-exposure mode %d", args.exposure_mode);
+  }
+
+  // A stereo calibration holds only while the lens stays put: focus is
+  // manual and fixed when a position is given.
+  if (args.lens_position >= 0.0f) {
+    if (camera->controls().count(&controls::AfMode) && camera->controls().count(&controls::LensPosition)) {
+      start_controls.set(controls::AfMode, controls::AfModeManual);
+      start_controls.set(controls::LensPosition, args.lens_position);
+      log_message(LOG_INFO, "focus fixed at %.2f dioptres", args.lens_position);
+    } else {
+      log_message(LOG_WARNING, "no focus control on this sensor; --lens-position ignored");
+    }
   }
 
   if (camera->start(&start_controls) != 0) {
-    std::fprintf(stderr, "camera_capture: Camera::start failed\n");
+    log_message(LOG_ERROR, "Camera::start failed");
     tjDestroy(jpeg);
     camera->release();
     cm.stop();
@@ -461,7 +649,7 @@ int main(int argc, char** argv) {
 
   for (auto& request : requests) {
     if (camera->queueRequest(request.get()) != 0) {
-      std::fprintf(stderr, "camera_capture: initial queueRequest failed\n");
+      log_message(LOG_ERROR, "initial queueRequest failed");
       g_stop.store(true);
       break;
     }

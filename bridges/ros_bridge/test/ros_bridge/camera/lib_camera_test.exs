@@ -32,4 +32,48 @@ defmodule RosBridge.Camera.LibCameraTest do
       assert LibCamera.stall_verdict(late_starter, 1_000 + 60_500) == :ok
     end
   end
+
+  describe "sync_args/1" do
+    test "no role runs the camera free" do
+      assert LibCamera.sync_args(nil) == []
+    end
+
+    test "a role is passed as server or client" do
+      assert LibCamera.sync_args(:server) == ["--sync", "server"]
+      assert LibCamera.sync_args(:client) == ["--sync", "client"]
+    end
+  end
+
+  describe "exposure_mode_args/1" do
+    test "no mode leaves libcamera's default" do
+      assert LibCamera.exposure_mode_args(nil) == []
+    end
+
+    test "a mode is passed by name" do
+      assert LibCamera.exposure_mode_args(:short) == ["--exposure-mode", "short"]
+    end
+  end
+
+  describe "lens_position_args/1" do
+    test "no position leaves the lens alone" do
+      assert LibCamera.lens_position_args(nil) == []
+    end
+
+    test "a position is passed in dioptres, integers included" do
+      assert LibCamera.lens_position_args(1.5) == ["--lens-position", "1.5"]
+      assert LibCamera.lens_position_args(1) == ["--lens-position", "1.0"]
+    end
+  end
+
+  describe "log records" do
+    test "carry a level and the capture program's message" do
+      assert LibCamera.parse_record(<<2, 1, "camera sync not established">>) ==
+               {:log, :warning, "camera sync not established"}
+
+      assert LibCamera.parse_record(<<2, 0, "focus fixed">>) == {:log, :info, "focus fixed"}
+
+      assert LibCamera.parse_record(<<2, 2, "Camera::start failed">>) ==
+               {:log, :error, "Camera::start failed"}
+    end
+  end
 end

@@ -456,11 +456,13 @@ defmodule OvcsMini do
       backend_opts: [
         num_disparities: 96,
         block_size: 9,
-        speckle_window_size: 300,
-        speckle_range: 12,
+        speckle_window_size: 600,
+        speckle_range: 8,
         # Rejects the ambiguous matches that land walls and furniture
-        # nearer than they are.
-        uniqueness_ratio: 15
+        # nearer than they are; the smoothness penalties fill in more,
+        # and wrongly without it.
+        uniqueness_ratio: 20,
+        clahe_clip_limit: 3.0
       ],
       left: camera_addressing(arm, :left),
       right: camera_addressing(arm, :right)
@@ -482,8 +484,17 @@ defmodule OvcsMini do
   # and ORB matches between the two frames put the median
   # `x_left - x_right` at -86 px (0 of 292 matches positive, where a
   # correctly ordered pair must be entirely positive).
-  defp camera_addressing(:target, :left), do: [camera_id: 1]
-  defp camera_addressing(:target, :right), do: [camera_id: 0]
+  #
+  # The left camera leads the software sync and the right one follows it.
+  # Short exposures: the normal mode's 30 ms smears the edges SGBM
+  # matches as soon as the car moves. Focus is fixed at 1 m, the
+  # distances the costmaps care about; the calibration is only valid
+  # for these positions.
+  defp camera_addressing(:target, :left),
+    do: [camera_id: 1, sync: :server, exposure_mode: :short, lens_position: 1.0]
+
+  defp camera_addressing(:target, :right),
+    do: [camera_id: 0, sync: :client, exposure_mode: :short, lens_position: 1.0]
 
   # In simulation the "camera" is a topic. Gazebo publishes on the
   # same names the vehicle does, so left really is left here — the

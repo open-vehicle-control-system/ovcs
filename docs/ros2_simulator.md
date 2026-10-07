@@ -311,7 +311,7 @@ cd compose/local && docker compose -f base.yml exec ros2 bash -lc '
 '
 ```
 
-Or open Foxglove Studio against `ws://<docker-host>:8765` and subscribe to `/ovcs_heartbeat`. Two layouts ship in `compose/local/foxglove/`: `ovcs_navigation.json` for the planner and `ovcs_perception.json` for the stereo pipeline.
+Or open Foxglove Studio against `ws://<docker-host>:8765` and subscribe to `/ovcs_heartbeat`. Three layouts ship in `compose/local/foxglove/`: `ovcs_navigation.json` for the planner, `ovcs_perception.json` for the stereo pipeline and `ovcs_camera_tuning.json` for tuning the stereo cameras.
 
 > [!TIP]
 > If `ros2 topic echo` fails with `ResponseError: unknown tag 'rclpy.topic_endpoint_info.TopicEndpointInfo'` (a `ros2cli` daemon bug on Python 3.14), pass `--no-daemon`.
