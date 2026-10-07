@@ -53,6 +53,21 @@ defmodule RosBridge.Camera.LibCamera do
   and the two modules of a pair may need different positions to be
   equally sharp. Absent, the lens is left where libcamera puts it.
 
+  ## Runtime controls
+
+  `set_controls/2` changes exposure, gain, focus and image processing
+  while capturing; the capture program applies them from the next frame
+  on. Accepted keys:
+
+    * `:exposure_mode` — `:normal`, `:short`, `:long`
+    * `:exposure_time_us` — a fixed shutter time, 0 for automatic
+    * `:analogue_gain` — a fixed gain, 0 for automatic
+    * `:lens_position` — focus in dioptres (manual focus)
+    * `:brightness` (-1..1), `:contrast` (0..32), `:sharpness` (0..16)
+    * `:noise_reduction` — `:off`, `:fast`, `:high_quality`, `:minimal`
+
+  The sync role, resolution and frame rate are fixed at start.
+
   ## Stall watchdog
 
   A capture can stop delivering frames without the binary exiting:
@@ -161,6 +176,7 @@ defmodule RosBridge.Camera.LibCamera do
        camera_id: camera_id,
        port: port,
        listeners: [],
+       controls: initial_controls(exposure_mode, lens_position),
        started_at: now_ms(),
        last_frame_at: nil,
        stall_timeout_ms: Keyword.get(opts, :stall_timeout_ms, @default_stall_timeout_ms),
@@ -225,6 +241,78 @@ defmodule RosBridge.Camera.LibCamera do
 
   @impl RosBridge.Camera
   def enable(_server), do: :ok
+
+  @impl RosBridge.Camera
+  def set_controls(server, controls), do: GenServer.call(server, {:set_controls, controls})
+
+  @impl RosBridge.Camera
+  def controls(server), do: GenServer.call(server, :controls)
+
+  @impl true
+  def handle_call({:set_controls, controls}, _from, state) do
+    case control_commands(controls) do
+      {:ok, commands} ->
+        Enum.each(commands, &Port.command(state.port, &1))
+        controls = Map.merge(state.controls, Map.new(controls))
+        {:reply, {:ok, controls}, %{state | controls: controls}}
+
+      {:error, _} = error ->
+        {:reply, error, state}
+    end
+  end
+
+  def handle_call(:controls, _from, state), do: {:reply, state.controls, state}
+
+  @modes %{
+    exposure_mode: [:normal, :short, :long],
+    noise_reduction: [:off, :fast, :high_quality, :minimal]
+  }
+  @ranges %{
+    exposure_time_us: {0, 1_000_000},
+    analogue_gain: {0, 16},
+    lens_position: {0, 15},
+    brightness: {-1, 1},
+    contrast: {0, 32},
+    sharpness: {0, 16}
+  }
+
+  @doc """
+  The capture program's `key=value` commands for `controls`, or the
+  first one that is not accepted. Pure.
+  """
+  def control_commands(controls) do
+    Enum.reduce_while(controls, {:ok, []}, fn {key, value}, {:ok, acc} ->
+      case control_command(key, value) do
+        {:ok, command} -> {:cont, {:ok, acc ++ [command]}}
+        {:error, _} = error -> {:halt, error}
+      end
+    end)
+  end
+
+  defp control_command(key, value) when is_map_key(@modes, key) do
+    if value in @modes[key],
+      do: {:ok, "#{key}=#{value}"},
+      else: {:error, "#{key} must be one of #{inspect(@modes[key])}, got #{inspect(value)}"}
+  end
+
+  defp control_command(key, value) when is_map_key(@ranges, key) and is_number(value) do
+    {low, high} = @ranges[key]
+
+    if value >= low and value <= high,
+      do: {:ok, "#{key}=#{value}"},
+      else: {:error, "#{key} must be within #{low}..#{high}, got #{value}"}
+  end
+
+  defp control_command(key, value) when is_map_key(@ranges, key),
+    do: {:error, "#{key} must be a number, got #{inspect(value)}"}
+
+  defp control_command(key, _value), do: {:error, "unknown camera control #{inspect(key)}"}
+
+  defp initial_controls(exposure_mode, lens_position) do
+    %{exposure_mode: exposure_mode || :normal, lens_position: lens_position}
+    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+    |> Map.new()
+  end
 
   @doc """
   The watchdog's decision for a driver state at `now_ms`: `:ok`,

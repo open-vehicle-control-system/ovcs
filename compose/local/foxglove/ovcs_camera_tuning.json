@@ -1,0 +1,158 @@
+{
+  "configById": {
+    "Image!left": {
+      "cameraState": {
+        "distance": 5,
+        "perspective": true
+      },
+      "imageMode": {
+        "imageTopic": "/stereo/left/image_raw/compressed",
+        "calibrationTopic": "/stereo/left/camera_info",
+        "synchronize": false,
+        "rotation": 0,
+        "flipHorizontal": false,
+        "flipVertical": false
+      },
+      "followTf": "stereo_left",
+      "scene": {},
+      "transforms": {},
+      "topics": {},
+      "layers": {},
+      "foxglovePanelTitle": "Left camera"
+    },
+    "Image!right": {
+      "cameraState": {
+        "distance": 5,
+        "perspective": true
+      },
+      "imageMode": {
+        "imageTopic": "/stereo/right/image_raw/compressed",
+        "calibrationTopic": "/stereo/right/camera_info",
+        "synchronize": false,
+        "rotation": 0,
+        "flipHorizontal": false,
+        "flipVertical": false
+      },
+      "followTf": "stereo_right",
+      "scene": {},
+      "transforms": {},
+      "topics": {},
+      "layers": {},
+      "foxglovePanelTitle": "Right camera"
+    },
+    "Image!depth": {
+      "cameraState": {
+        "distance": 5,
+        "perspective": true
+      },
+      "imageMode": {
+        "imageTopic": "/stereo/depth/image_rect",
+        "calibrationTopic": "/stereo/depth/camera_info",
+        "synchronize": false,
+        "rotation": 0,
+        "flipHorizontal": false,
+        "flipVertical": false,
+        "minValue": 400,
+        "maxValue": 4000,
+        "colorMode": "colormap",
+        "colorMap": "turbo"
+      },
+      "followTf": "stereo_left",
+      "scene": {},
+      "transforms": {},
+      "topics": {},
+      "layers": {},
+      "foxglovePanelTitle": "Depth (mm): black = no match"
+    },
+    "RawMessages!controls": {
+      "topicPath": "/stereo/controls.data",
+      "diffEnabled": false,
+      "showFullMessageForDiff": false,
+      "diffMethod": "custom",
+      "diffTopicPath": "",
+      "fontSize": 12,
+      "foxglovePanelTitle": "Settings in force (and last request)"
+    },
+    "Publish!exposure": {
+      "topicName": "/stereo/set_controls",
+      "datatype": "std_msgs/msg/String",
+      "buttonText": "Apply",
+      "buttonTooltip": "Edit the values, then apply",
+      "buttonColor": "#00A871",
+      "advancedView": true,
+      "value": "{\n  \"data\": \"cameras.exposure_mode=short cameras.exposure_time_us=0 cameras.analogue_gain=0\"\n}",
+      "foxglovePanelTitle": "Exposure, both cameras: exposure_mode normal|short|long; exposure_time_us / analogue_gain 0 = auto"
+    },
+    "Publish!focus": {
+      "topicName": "/stereo/set_controls",
+      "datatype": "std_msgs/msg/String",
+      "buttonText": "Apply",
+      "buttonTooltip": "Edit the values, then apply",
+      "buttonColor": "#00A871",
+      "advancedView": true,
+      "value": "{\n  \"data\": \"left.lens_position=1.0 right.lens_position=1.0\"\n}",
+      "foxglovePanelTitle": "Focus per camera, dioptres (1.0 = 1 m, 0 = infinity)"
+    },
+    "Publish!image": {
+      "topicName": "/stereo/set_controls",
+      "datatype": "std_msgs/msg/String",
+      "buttonText": "Apply",
+      "buttonTooltip": "Edit the values, then apply",
+      "buttonColor": "#00A871",
+      "advancedView": true,
+      "value": "{\n  \"data\": \"cameras.brightness=0 cameras.contrast=1 cameras.sharpness=1 cameras.noise_reduction=fast\"\n}",
+      "foxglovePanelTitle": "Image processing, both cameras: brightness -1..1, contrast 0..32, sharpness 0..16, noise_reduction off|fast|high_quality|minimal"
+    },
+    "Publish!stereo": {
+      "topicName": "/stereo/set_controls",
+      "datatype": "std_msgs/msg/String",
+      "buttonText": "Apply",
+      "buttonTooltip": "Edit the values, then apply",
+      "buttonColor": "#2962FF",
+      "advancedView": true,
+      "value": "{\n  \"data\": \"stereo.uniqueness_ratio=20 stereo.speckle_window_size=600 stereo.speckle_range=8 stereo.clahe_clip_limit=3 stereo.num_disparities=96\"\n}",
+      "foxglovePanelTitle": "Stereo matching"
+    }
+  },
+  "globalVariables": {},
+  "userNodes": {},
+  "playbackConfig": {
+    "speed": 1
+  },
+  "layout": {
+    "first": {
+      "first": {
+        "first": "Image!left",
+        "second": "Image!right",
+        "direction": "row",
+        "splitPercentage": 50
+      },
+      "second": "Image!depth",
+      "direction": "column",
+      "splitPercentage": 50
+    },
+    "second": {
+      "first": "RawMessages!controls",
+      "second": {
+        "first": {
+          "first": "Publish!exposure",
+          "second": "Publish!focus",
+          "direction": "column",
+          "splitPercentage": 50
+        },
+        "second": {
+          "first": "Publish!image",
+          "second": "Publish!stereo",
+          "direction": "column",
+          "splitPercentage": 50
+        },
+        "direction": "column",
+        "splitPercentage": 50
+      },
+      "direction": "column",
+      "splitPercentage": 38
+    },
+    "direction": "row",
+    "splitPercentage": 62
+  }
+}

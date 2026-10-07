@@ -24,6 +24,7 @@
 #include <cstring>
 #include <linux/dma-buf.h>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
@@ -92,15 +93,94 @@ bool parse_args(int argc, char** argv, Args& out) {
 
 std::atomic<bool> g_stop{false};
 
-void stdin_watcher() {
-  char buf[16];
+// Controls received on stdin, applied to the next request re-queued.
+std::mutex g_pending_mutex;
+ControlList g_pending(controls::controls);
+
+bool read_exact(void* buf, size_t len) {
+  auto* p = static_cast<uint8_t*>(buf);
+  while (len > 0) {
+    ssize_t n = ::read(STDIN_FILENO, p, len);
+    if (n <= 0) return false;
+    p += n;
+    len -= static_cast<size_t>(n);
+  }
+  return true;
+}
+
+// One `key=value` command into `out`; false when the key or value is
+// not understood.
+bool parse_control(const std::string& command, ControlList& out) {
+  auto eq = command.find('=');
+  if (eq == std::string::npos) return false;
+  std::string key = command.substr(0, eq), value = command.substr(eq + 1);
+  char* end = nullptr;
+  float number = std::strtof(value.c_str(), &end);
+  bool numeric = end != value.c_str() && *end == '\0';
+
+  if (key == "exposure_mode") {
+    if (value == "normal") out.set(controls::AeExposureMode, controls::ExposureNormal);
+    else if (value == "short") out.set(controls::AeExposureMode, controls::ExposureShort);
+    else if (value == "long") out.set(controls::AeExposureMode, controls::ExposureLong);
+    else return false;
+  } else if (key == "exposure_time_us" && numeric) {
+    // 0 hands the exposure back to the auto-exposure.
+    if (number <= 0) {
+      out.set(controls::ExposureTimeMode, controls::ExposureTimeModeAuto);
+    } else {
+      out.set(controls::ExposureTimeMode, controls::ExposureTimeModeManual);
+      out.set(controls::ExposureTime, static_cast<int32_t>(number));
+    }
+  } else if (key == "analogue_gain" && numeric) {
+    if (number <= 0) {
+      out.set(controls::AnalogueGainMode, controls::AnalogueGainModeAuto);
+    } else {
+      out.set(controls::AnalogueGainMode, controls::AnalogueGainModeManual);
+      out.set(controls::AnalogueGain, number);
+    }
+  } else if (key == "lens_position" && numeric) {
+    out.set(controls::AfMode, controls::AfModeManual);
+    out.set(controls::LensPosition, number);
+  } else if (key == "brightness" && numeric) {
+    out.set(controls::Brightness, number);
+  } else if (key == "contrast" && numeric) {
+    out.set(controls::Contrast, number);
+  } else if (key == "sharpness" && numeric) {
+    out.set(controls::Sharpness, number);
+  } else if (key == "noise_reduction") {
+    if (value == "off") out.set(controls::draft::NoiseReductionMode, controls::draft::NoiseReductionModeOff);
+    else if (value == "fast") out.set(controls::draft::NoiseReductionMode, controls::draft::NoiseReductionModeFast);
+    else if (value == "high_quality") out.set(controls::draft::NoiseReductionMode, controls::draft::NoiseReductionModeHighQuality);
+    else if (value == "minimal") out.set(controls::draft::NoiseReductionMode, controls::draft::NoiseReductionModeMinimal);
+    else return false;
+  } else {
+    return false;
+  }
+  return true;
+}
+
+// stdin carries the Port's {:packet, 4} records: a 4-byte big-endian
+// length, then one `key=value` command. EOF (the BEAM closing the
+// Port) stops the capture.
+void stdin_reader() {
   while (true) {
-    ssize_t n = ::read(STDIN_FILENO, buf, sizeof(buf));
-    if (n <= 0) {
-      g_stop.store(true);
-      return;
+    uint8_t header[4];
+    if (!read_exact(header, sizeof(header))) break;
+    uint32_t len = (uint32_t(header[0]) << 24) | (uint32_t(header[1]) << 16) |
+                   (uint32_t(header[2]) << 8) | uint32_t(header[3]);
+    std::string command(len, '\0');
+    if (len > 0 && !read_exact(command.data(), len)) break;
+
+    ControlList parsed(controls::controls);
+    if (parse_control(command, parsed)) {
+      std::lock_guard<std::mutex> lock(g_pending_mutex);
+      g_pending.merge(parsed, ControlList::MergePolicy::OverwriteExisting);
+      std::fprintf(stderr, "camera_capture: control %s\n", command.c_str());
+    } else {
+      std::fprintf(stderr, "camera_capture: control not understood: %s\n", command.c_str());
     }
   }
+  g_stop.store(true);
 }
 
 int64_t monotonic_ns() {
@@ -184,8 +264,8 @@ int main(int argc, char** argv) {
                "camera_capture: camera=%d %dx%d @%d fps\n",
                args.camera_id, args.width, args.height, args.fps);
 
-  std::thread watcher(stdin_watcher);
-  watcher.detach();
+  std::thread reader(stdin_reader);
+  reader.detach();
 
   // ---- libcamera bring-up --------------------------------------
   CameraManager cm;
@@ -457,6 +537,13 @@ int main(int argc, char** argv) {
     }
 
     request->reuse(Request::ReuseBuffers);
+    {
+      std::lock_guard<std::mutex> lock(g_pending_mutex);
+      if (!g_pending.empty()) {
+        request->controls().merge(g_pending, ControlList::MergePolicy::OverwriteExisting);
+        g_pending.clear();
+      }
+    }
     camera->queueRequest(request);
   });
 

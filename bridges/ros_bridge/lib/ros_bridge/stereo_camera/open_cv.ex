@@ -77,6 +77,18 @@ defmodule RosBridge.StereoCamera.OpenCV do
     do: GenServer.cast(server, {:submit_pair, left, right})
 
   @doc """
+  Change matching settings while running, from the next pair on:
+  `:uniqueness_ratio`, `:speckle_window_size`, `:speckle_range`, `:p1`,
+  `:p2`, `:disp12_max_diff`, `:pre_filter_cap`, `:num_disparities`
+  (a multiple of 16), `:clahe` (boolean) and `:clahe_clip_limit`.
+  Returns the settings now in force, or why the request was refused.
+  """
+  def set_options(server, options), do: GenServer.call(server, {:set_options, options})
+
+  @doc "The matching settings in force."
+  def options(server), do: GenServer.call(server, :options)
+
+  @doc """
   Reload calibration + rectification maps from the side YAMLs
   currently on disk. Used after a `set_camera_info` service call
   rewrites them — lets the next disparity reflect the new
@@ -120,15 +132,7 @@ defmodule RosBridge.StereoCamera.OpenCV do
     # equalizes contrast so SGBM's gradient-based cost has more
     # signal to work with in low-texture regions — calibration-
     # independent, ~1 ms total at 640×480.
-    clahe =
-      if Keyword.get(opts, :clahe, true) do
-        Evision.createCLAHE(
-          clipLimit: Keyword.get(opts, :clahe_clip_limit, 2.0),
-          tileGridSize: Keyword.get(opts, :clahe_tile_grid_size, {8, 8})
-        )
-      else
-        nil
-      end
+    clahe = if Keyword.get(opts, :clahe, true), do: create_clahe(opts)
 
     rectify? = Keyword.get(opts, :rectify, true)
 
@@ -210,6 +214,19 @@ defmodule RosBridge.StereoCamera.OpenCV do
         {:reply, {:error, error}, state}
     end
   end
+
+  def handle_call({:set_options, options}, _from, state) do
+    case validate_options(options) do
+      :ok ->
+        state = Enum.reduce(options, state, &apply_option/2)
+        {:reply, {:ok, current_options(state)}, state}
+
+      {:error, _} = error ->
+        {:reply, error, state}
+    end
+  end
+
+  def handle_call(:options, _from, state), do: {:reply, current_options(state), state}
 
   @impl true
   def handle_cast({:register_listener, listener}, state) do
@@ -671,6 +688,106 @@ defmodule RosBridge.StereoCamera.OpenCV do
     # back as 0, leaving SGBM without its smoothness penalties.
     |> Evision.StereoSGBM.setP1(Keyword.get(opts, :p1, default_p1))
     |> Evision.StereoSGBM.setP2(Keyword.get(opts, :p2, default_p2))
+  end
+
+  @integer_options %{
+    uniqueness_ratio: {0, 100},
+    speckle_window_size: {0, 10_000},
+    speckle_range: {0, 256},
+    p1: {0, 100_000},
+    p2: {0, 400_000},
+    disp12_max_diff: {-1, 64},
+    pre_filter_cap: {1, 63},
+    num_disparities: {16, 256}
+  }
+
+  @doc false
+  def validate_options(options) do
+    Enum.find_value(options, :ok, fn {key, value} ->
+      case option_error(key, value) do
+        nil -> nil
+        reason -> {:error, reason}
+      end
+    end)
+  end
+
+  defp option_error(:num_disparities, value) when is_integer(value) and rem(value, 16) != 0,
+    do: "num_disparities must be a multiple of 16, got #{value}"
+
+  defp option_error(key, value) when is_map_key(@integer_options, key) do
+    {low, high} = @integer_options[key]
+
+    if is_integer(value) and value >= low and value <= high,
+      do: nil,
+      else: "#{key} must be an integer within #{low}..#{high}, got #{inspect(value)}"
+  end
+
+  defp option_error(:clahe, value) when is_boolean(value), do: nil
+
+  defp option_error(:clahe_clip_limit, value) when is_number(value) and value > 0 and value <= 40,
+    do: nil
+
+  defp option_error(key, value),
+    do: "unknown or invalid stereo setting #{inspect(key)}: #{inspect(value)}"
+
+  defp apply_option({:uniqueness_ratio, v}, s),
+    do: matcher(s, &Evision.StereoSGBM.setUniquenessRatio(&1, v))
+
+  defp apply_option({:speckle_window_size, v}, s),
+    do: matcher(s, &Evision.StereoSGBM.setSpeckleWindowSize(&1, v))
+
+  defp apply_option({:speckle_range, v}, s),
+    do: matcher(s, &Evision.StereoSGBM.setSpeckleRange(&1, v))
+
+  defp apply_option({:p1, v}, s), do: matcher(s, &Evision.StereoSGBM.setP1(&1, v))
+  defp apply_option({:p2, v}, s), do: matcher(s, &Evision.StereoSGBM.setP2(&1, v))
+
+  defp apply_option({:disp12_max_diff, v}, s),
+    do: matcher(s, &Evision.StereoSGBM.setDisp12MaxDiff(&1, v))
+
+  defp apply_option({:pre_filter_cap, v}, s),
+    do: matcher(s, &Evision.StereoSGBM.setPreFilterCap(&1, v))
+
+  defp apply_option({:num_disparities, v}, s),
+    do: %{matcher(s, &Evision.StereoSGBM.setNumDisparities(&1, v)) | num_disparities: v}
+
+  defp apply_option({:clahe, false}, s),
+    do: %{s | clahe: nil, opts: Keyword.put(s.opts, :clahe, false)}
+
+  defp apply_option({:clahe, true}, s),
+    do: %{
+      s
+      | clahe: create_clahe(Keyword.put(s.opts, :clahe, true)),
+        opts: Keyword.put(s.opts, :clahe, true)
+    }
+
+  defp apply_option({:clahe_clip_limit, v}, s) do
+    opts = Keyword.put(s.opts, :clahe_clip_limit, v * 1.0)
+    %{s | opts: opts, clahe: if(s.clahe, do: create_clahe(opts))}
+  end
+
+  defp matcher(state, fun), do: %{state | matcher: fun.(state.matcher)}
+
+  defp create_clahe(opts) do
+    Evision.createCLAHE(
+      clipLimit: Keyword.get(opts, :clahe_clip_limit, 2.0),
+      tileGridSize: Keyword.get(opts, :clahe_tile_grid_size, {8, 8})
+    )
+  end
+
+  defp current_options(%{matcher: m} = state) do
+    %{
+      uniqueness_ratio: Evision.StereoSGBM.getUniquenessRatio(m),
+      speckle_window_size: Evision.StereoSGBM.getSpeckleWindowSize(m),
+      speckle_range: Evision.StereoSGBM.getSpeckleRange(m),
+      p1: Evision.StereoSGBM.getP1(m),
+      p2: Evision.StereoSGBM.getP2(m),
+      disp12_max_diff: Evision.StereoSGBM.getDisp12MaxDiff(m),
+      pre_filter_cap: Evision.StereoSGBM.getPreFilterCap(m),
+      num_disparities: Evision.StereoSGBM.getNumDisparities(m),
+      clahe: not is_nil(state.clahe),
+      clahe_clip_limit: Keyword.get(state.opts, :clahe_clip_limit, 2.0)
+    }
   end
 
   # SGBM aggregation modes. MODE_SGBM (5 paths) is the historical
