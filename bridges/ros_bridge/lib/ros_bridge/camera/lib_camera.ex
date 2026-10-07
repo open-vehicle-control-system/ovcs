@@ -63,6 +63,16 @@ defmodule RosBridge.Camera.LibCamera do
   and the two modules of a pair may need different positions to be
   equally sharp. Absent, the lens is left where libcamera puts it.
 
+  ## Sensor mode
+
+  `:sensor_mode` (`{width, height}`, 10-bit) picks the sensor mode
+  instead of letting libcamera choose one from the output size. For a
+  small output libcamera picks the fastest mode, which on the Camera
+  Module 3 (IMX708) is 1536x864: a binned crop of the sensor's centre,
+  two thirds of its width, so about 43° of horizontal field of view.
+  `{2304, 1296}` bins the whole sensor (about 66°, up to 56 fps). A
+  stereo calibration holds for one sensor mode only.
+
   ## Runtime controls
 
   `set_controls/2` changes exposure, gain, focus and image processing
@@ -76,7 +86,8 @@ defmodule RosBridge.Camera.LibCamera do
     * `:brightness` (-1..1), `:contrast` (0..32), `:sharpness` (0..16)
     * `:noise_reduction` — `:off`, `:fast`, `:high_quality`, `:minimal`
 
-  The sync role, resolution and frame rate are fixed at start.
+  The sync role, sensor mode, resolution and frame rate are fixed at
+  start.
 
   ## Stall watchdog
 
@@ -130,6 +141,12 @@ defmodule RosBridge.Camera.LibCamera do
     do: ["--exposure-mode", Atom.to_string(mode)]
 
   @doc false
+  def sensor_mode_args(nil), do: []
+
+  def sensor_mode_args({width, height}) when is_integer(width) and is_integer(height),
+    do: ["--sensor-mode", "#{width}x#{height}"]
+
+  @doc false
   def lens_position_args(nil), do: []
   def lens_position_args(dioptres), do: ["--lens-position", Float.to_string(dioptres * 1.0)]
 
@@ -144,6 +161,7 @@ defmodule RosBridge.Camera.LibCamera do
     sync = Keyword.get(opts, :sync)
     exposure_mode = Keyword.get(opts, :exposure_mode)
     lens_position = Keyword.get(opts, :lens_position)
+    sensor_mode = Keyword.get(opts, :sensor_mode)
 
     executable = binary_path()
 
@@ -165,7 +183,9 @@ defmodule RosBridge.Camera.LibCamera do
         "--rotation",
         Integer.to_string(rotation)
       ] ++
-        sync_args(sync) ++ exposure_mode_args(exposure_mode) ++ lens_position_args(lens_position)
+        sync_args(sync) ++
+        exposure_mode_args(exposure_mode) ++
+        lens_position_args(lens_position) ++ sensor_mode_args(sensor_mode)
 
     port =
       Port.open({:spawn_executable, executable}, [
