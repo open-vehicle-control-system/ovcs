@@ -197,7 +197,8 @@ defmodule OvcsMini do
      name: :"ultrasound_rear_#{side}",
      driver_opts: [serial_number: serial_number],
      topic: "ultrasound/rear_#{side}",
-     frame_id: "ultrasound_rear_#{side}"}
+     frame_id: "ultrasound_rear_#{side}",
+     marker_topic: "ultrasound/markers"}
   end
 
   # On the rear bumper's support: its back face 125 mm behind the rear

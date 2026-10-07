@@ -241,6 +241,9 @@
           "colorMode": "colormap",
           "colorMap": "turbo",
           "pointSize": 4
+        },
+        "/ultrasound/markers": {
+          "visible": true
         }
       },
       "layers": {},

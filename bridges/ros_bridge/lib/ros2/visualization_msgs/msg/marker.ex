@@ -57,6 +57,7 @@ defmodule Ros2.VisualizationMsgs.Msg.Marker do
   @arrow 0
   @cube 1
   @sphere 2
+  @line_strip 4
   @text_view_facing 9
 
   # `action` values.
@@ -67,6 +68,7 @@ defmodule Ros2.VisualizationMsgs.Msg.Marker do
   def arrow, do: @arrow
   def cube, do: @cube
   def sphere, do: @sphere
+  def line_strip, do: @line_strip
   def text_view_facing, do: @text_view_facing
 
   def add, do: @add
