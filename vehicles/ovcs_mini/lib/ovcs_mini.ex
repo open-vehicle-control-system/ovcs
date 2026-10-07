@@ -219,14 +219,17 @@ defmodule OvcsMini do
     end
   end
 
-  # Where the lidar sits on the car, so `laser` resolves. Not measured
-  # yet: on the roof, above base_link. The C1's zero angle points along
-  # its own x axis, taken as the car's forward.
+  # Where the lidar sits on the car, so `laser` resolves: its centre 25
+  # mm ahead of the rear axle, so 137 mm behind base_link, on the
+  # centreline, its base 205 mm above the ground (20 mm above the stereo
+  # lenses). The frame is at the base; the scan plane is a little
+  # higher. The C1's zero angle is taken as the car's forward, not yet
+  # checked against an object in front.
   defp lidar_transform do
     %{
       parent: "base_link",
       child: "laser",
-      translation: {0.0, 0.0, 0.25},
+      translation: {-0.137, 0.0, 0.205},
       rotation: {0.0, 0.0, 0.0, 1.0}
     }
   end
