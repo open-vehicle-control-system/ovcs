@@ -48,6 +48,14 @@ bool write_record(const uint8_t* data, size_t len);
 // `RosBridge.Camera.LibCamera`.
 std::vector<uint8_t> build_log_record(uint8_t level, const std::string& message);
 
+// A METADATA record (tag = 3): what the camera applied to the frame
+// taken at `capture_ns`. `values` holds kMetadataFields float64s;
+// bit i of `present` is set when values[i] was reported. Mirrors the
+// parser in `RosBridge.Camera.LibCamera`.
+constexpr size_t kMetadataFields = 8;
+std::vector<uint8_t> build_metadata_record(int64_t capture_ns, uint8_t present,
+                                           const double (&values)[kMetadataFields]);
+
 // Convenience: build the FRAME record payload (tag = 1) used by
 // camera_capture. Mirrors the parser in
 // `RosBridge.Camera.LibCamera.parse_record/1`.

@@ -123,6 +123,31 @@ bool parse_args(int argc, char** argv, Args& out) {
 
 std::atomic<bool> g_stop{false};
 
+// What libcamera applied to a frame, in the METADATA record's order:
+// exposure time (us), analogue gain, digital gain, lens position
+// (dioptres), frame duration (us), colour temperature (K), sync ready
+// (0/1), sync timer (us).
+void send_metadata(const ControlList& metadata, int64_t capture_ns) {
+  double values[ovcs::framing::kMetadataFields] = {};
+  uint8_t present = 0;
+  auto put = [&](size_t i, auto value) {
+    if (value) {
+      values[i] = static_cast<double>(*value);
+      present |= uint8_t(1u << i);
+    }
+  };
+  put(0, metadata.get(controls::ExposureTime));
+  put(1, metadata.get(controls::AnalogueGain));
+  put(2, metadata.get(controls::DigitalGain));
+  put(3, metadata.get(controls::LensPosition));
+  put(4, metadata.get(controls::FrameDuration));
+  put(5, metadata.get(controls::ColourTemperature));
+  put(6, metadata.get(controls::rpi::SyncReady));
+  put(7, metadata.get(controls::rpi::SyncTimer));
+  auto record = ovcs::framing::build_metadata_record(capture_ns, present, values);
+  ovcs::framing::write_record(record.data(), record.size());
+}
+
 // libcamera writes its own log to stderr. Point stderr at a pipe and
 // forward each line as a LOG record, so its errors reach the logger.
 void forward_stderr() {
@@ -536,6 +561,8 @@ int main(int argc, char** argv) {
   bool sync_reported = false;
   int frames_without_sync = 0;
   constexpr int kSyncPatienceFrames = 300;
+  int frames_since_metadata = 0;
+  constexpr int kMetadataEveryFrames = 5;
   camera->requestCompleted.connect(camera.get(), [&](Request* request) {
     if (request->status() == Request::RequestCancelled) return;
     if (g_stop.load()) return;
@@ -568,6 +595,11 @@ int main(int argc, char** argv) {
       capture_ns = static_cast<int64_t>(*ts);
     } else {
       capture_ns = monotonic_ns();
+    }
+
+    if (++frames_since_metadata >= kMetadataEveryFrames) {
+      frames_since_metadata = 0;
+      send_metadata(request->metadata(), capture_ns);
     }
 
     // CPU-side cache invalidate before reading the dmabuf — required
