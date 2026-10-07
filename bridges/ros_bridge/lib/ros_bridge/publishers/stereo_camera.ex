@@ -15,9 +15,12 @@ defmodule RosBridge.Publishers.StereoCamera do
        late subscribers see it without us needing real
        latched-QoS support.
     3. **Pair frames by timestamp.** Both sides arrive
-       independently; we keep the freshest of each and emit a
-       pair once their `Frame.capture_ns` differ by less than
-       `:pair_tolerance_ms`.
+       independently; the last few of each are kept, and the pair
+       submitted is the one whose `Frame.capture_ns` are closest,
+       the newest among equals, within `:pair_tolerance_ms`. The
+       newest frame of each side is not a pair: one side's next
+       frame often lands before the other's, and pairing them mixes
+       two capture instants.
     4. **Drive the stereo backend** (`RosBridge.StereoCamera.OpenCV`)
        with one pair at a time. Backpressure: while a previous
        pair is still being processed (`awaiting_result == true`)
@@ -96,6 +99,8 @@ defmodule RosBridge.Publishers.StereoCamera do
   alias Ros2.StereoMsgs.Msg.DisparityImage
 
   @default_pair_tolerance_ms 33
+  # Frames kept per side for pairing: a few frame periods.
+  @pair_buffer 4
   @default_camera_info_interval_frames 30
 
   def start_link(opts) do
@@ -151,8 +156,8 @@ defmodule RosBridge.Publishers.StereoCamera do
        # camera's frame, per ROS convention.
        stereo_frame_id: Keyword.fetch!(left_opts, :frame_id),
        pair_tolerance_ns: pair_tolerance_ms * 1_000_000,
-       latest_left: nil,
-       latest_right: nil,
+       left_frames: [],
+       right_frames: [],
        awaiting_result: false,
        telemetry: Telemetry.new(window: 30, label: "publisher"),
        last_result_at: nil,
@@ -293,10 +298,10 @@ defmodule RosBridge.Publishers.StereoCamera do
   # ── pairing ──────────────────────────────────────────────────
 
   defp stash_for_pairing(state, %Frame{label: "left"} = frame),
-    do: %{state | latest_left: frame}
+    do: %{state | left_frames: Enum.take([frame | state.left_frames], @pair_buffer)}
 
   defp stash_for_pairing(state, %Frame{label: "right"} = frame),
-    do: %{state | latest_right: frame}
+    do: %{state | right_frames: Enum.take([frame | state.right_frames], @pair_buffer)}
 
   defp stash_for_pairing(state, _frame), do: state
 
@@ -324,8 +329,8 @@ defmodule RosBridge.Publishers.StereoCamera do
 
         %{
           state
-          | latest_left: nil,
-            latest_right: nil,
+          | left_frames: newer_than(state.left_frames, left),
+            right_frames: newer_than(state.right_frames, right),
             awaiting_result: true,
             submit_at: System.monotonic_time(:nanosecond),
             telemetry: Telemetry.record(state.telemetry, :pair_delta, delta_ns)
@@ -333,11 +338,20 @@ defmodule RosBridge.Publishers.StereoCamera do
     end
   end
 
-  defp ready_pair(%{latest_left: nil}), do: :not_ready
-  defp ready_pair(%{latest_right: nil}), do: :not_ready
+  @doc false
+  def ready_pair(%{left_frames: []}), do: :not_ready
+  def ready_pair(%{right_frames: []}), do: :not_ready
 
-  defp ready_pair(%{latest_left: left, latest_right: right, pair_tolerance_ns: tolerance}) do
-    delta_ns = abs(left.capture_ns - right.capture_ns)
+  def ready_pair(%{left_frames: lefts, right_frames: rights, pair_tolerance_ns: tolerance}) do
+    candidates =
+      for left <- lefts, right <- rights do
+        {abs(left.capture_ns - right.capture_ns), -max(left.capture_ns, right.capture_ns), left,
+         right}
+      end
+
+    # Closest capture times first, then the newest.
+    {delta_ns, _newest, left, right} =
+      Enum.min(candidates, fn {d1, n1, _, _}, {d2, n2, _, _} -> {d1, n1} <= {d2, n2} end)
 
     if delta_ns <= tolerance do
       {:ok, left, right, delta_ns}
@@ -345,6 +359,10 @@ defmodule RosBridge.Publishers.StereoCamera do
       {:out_of_tolerance, delta_ns}
     end
   end
+
+  # Frames taken after the submitted one: older ones can no longer pair.
+  defp newer_than(frames, %Frame{capture_ns: capture_ns}),
+    do: Enum.filter(frames, &(&1.capture_ns > capture_ns))
 
   # ── disparity + depth publish ────────────────────────────────
 
