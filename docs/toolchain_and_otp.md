@@ -20,7 +20,7 @@ Every system is on OTP 28 (`nerves_system_br` 1.33.7), and `mise.toml` pins Erla
 | `ovcs_base_can_system_rpi3a` | `bridges/firmware` (radio control) | v2.0.4 |
 | `ovcs_base_can_system_rpi4` | `vms/firmware`, `bridges/firmware` (ROS) | v2.0.4 |
 | `ovcs_base_can_system_rpi5` | `infotainment/firmware` | v2.0.4 |
-| `rpi5` (`ovcs_bridges_system_rpi5`) | `bridges/firmware` (perception) | v2.0.8 |
+| `rpi5` (`ovcs_bridges_system_rpi5`) | `bridges/firmware` (perception) | v2.0.9 |
 
 Which of these your vehicle builds depends on the targets its `OvcsVehicle` module declares; the reference vehicles use all four between them.
 

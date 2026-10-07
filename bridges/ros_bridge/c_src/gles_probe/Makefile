@@ -5,7 +5,7 @@
 # Cross-compile against the Nerves sysroot, then copy to /data on the
 # device (the only writable path) and run it over ssh:
 #
-#   make SYSROOT=~/.nerves/artifacts/ovcs_bridges_system_rpi5-portable-2.0.8/staging \
+#   make SYSROOT=~/.nerves/artifacts/ovcs_bridges_system_rpi5-portable-2.0.9/staging \
 #        CROSSCOMPILE=~/.nerves/artifacts/nerves_toolchain_aarch64_nerves_linux_gnu-linux_x86_64-13.2.0/bin/aarch64-nerves-linux-gnu-
 #
 #   scp gles_probe ovcs-mini-bridge-ros-perception.local:/data/

@@ -34,7 +34,7 @@
   "one_dhcpd": {:hex, :one_dhcpd, "2.0.3", "224f8a4cd06d73c9e481dd92766d3e831f8dc4d29d2cd50b9459135b32845da0", [:make, :mix], [{:elixir_make, "~> 0.6", [hex: :elixir_make, repo: "hexpm", optional: false]}], "hexpm", "a5902e4ed956bcfaa975bcda7adb2fc35303695a496eafecea69392a26cbf9ff"},
   "ovcs_base_can_system_rpi3a": {:git, "https://github.com/open-vehicle-control-system/ovcs_base_can_system_rpi3a.git", "32ca3acf9809b8ef09f68c443de622be4ef603c3", [tag: "v2.0.4"]},
   "ovcs_base_can_system_rpi4": {:git, "https://github.com/open-vehicle-control-system/ovcs_base_can_system_rpi4.git", "56fb76647df6649f681797feb2d0b0d909b886ca", [tag: "v2.0.4"]},
-  "ovcs_bridges_system_rpi5": {:git, "https://github.com/open-vehicle-control-system/ovcs_bridges_system_rpi5.git", "1a066164086789fb82b5745a9306479f7d2deb34", [tag: "v2.0.8"]},
+  "ovcs_bridges_system_rpi5": {:git, "https://github.com/open-vehicle-control-system/ovcs_bridges_system_rpi5.git", "a57f3a475efd152b3f37c9e7a81252fdd830aeb9", [tag: "v2.0.9"]},
   "phoenix_pubsub": {:hex, :phoenix_pubsub, "2.2.0", "ff3a5616e1bed6804de7773b92cbccfc0b0f473faf1f63d7daf1206c7aeaaa6f", [:mix], [], "hexpm", "adc313a5bf7136039f63cfd9668fde73bba0765e0614cba80c06ac9460ff3e96"},
   "property_table": {:hex, :property_table, "0.3.3", "7a31cc1c6d9e0a532787f56bee6d9a6067205d9c24c6d64e8ba851837d59f297", [:mix], [], "hexpm", "738a1584ab56237443e0fccaa0cf4a1da058c0c992948bcd73fed1a99de5696e"},
   "recon": {:hex, :recon, "2.5.6", "9052588e83bfedfd9b72e1034532aee2a5369d9d9343b61aeb7fbce761010741", [:mix, :rebar3], [], "hexpm", "96c6799792d735cc0f0fd0f86267e9d351e63339cbe03df9d162010cefc26bb0"},
