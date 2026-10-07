@@ -97,7 +97,7 @@
 
   <!-- Stereo geometry. -->
   <xacro:property name="baseline" value="0.090" />
-  <xacro:property name="focal_px" value="617.02" />
+  <xacro:property name="focal_px" value="379.03" />
   <xacro:property name="camera_x" value="${half_wheelbase - 0.120}" />
   <xacro:property name="camera_z" value="0.185" />
 
@@ -145,7 +145,7 @@
   <!-- ── Sensors ────────────────────────────────────────────────── -->
   <!-- Matches the real vehicle's capture: 480x270 at 30 Hz. The
        resolution is not arbitrary — it is what the stereo pipeline was
-       tuned to, trading depth precision at range for a 0.58 m near
+       tuned to, trading depth precision at range for a 0.36 m near
        clip and half the SGBM cost. Simulating something else would
        measure a pipeline the vehicle does not run.
 
@@ -164,12 +164,13 @@
 
   <!-- From the vehicle's own calibration
        (vehicles/ovcs_mini/priv/calibration/stereo_left.yaml): the
-       rectified P gives fx = 617.02 at the 480 px capture width.
+       rectified P gives fx = 379.03 at the 480 px capture width, with
+       the cameras binning the whole sensor.
 
-       That is a ~43 degree horizontal field of view, not the ~70 a
-       wide-angle module would suggest, and it is what makes the
-       simulated depth behave like the real one: f*B = 55.5, so the
-       near clip lands at 55.5 / 96 = 0.58 m. -->
+       That is a ~65 degree horizontal field of view after
+       rectification, and it is what makes the simulated depth behave
+       like the real one: f*B = 34.1, so the near clip lands at
+       34.1 / 96 = 0.36 m. -->
   <!-- TODO: still unmeasured. Lens centre height above the ground. -->
 
   <!-- Left is +y in REP-103. -->
