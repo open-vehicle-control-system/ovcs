@@ -453,6 +453,8 @@ defmodule OvcsMini do
       height: 270,
       fps: 30,
       pair_tolerance_ms: 100,
+      # The rectified pair, to check the calibration's row alignment.
+      publish_rectified_image: true,
       backend_opts: [
         num_disparities: 96,
         block_size: 9,

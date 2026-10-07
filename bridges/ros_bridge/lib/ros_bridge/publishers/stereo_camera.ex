@@ -76,10 +76,11 @@ defmodule RosBridge.Publishers.StereoCamera do
     * `:camera_info_interval_frames` — republish CameraInfo every
       Nth frame. Default 30 (≈ once per second at 30 fps).
     * `:depth_camera_info_topic`, `:cloud_topic`,
-      `:disparity_image_topic`, `:rectified_image_topic` — each output
-      is published only when its topic is given; `nil` (the default)
-      skips it. `:rectified_image_topic` carries the rectified left
-      image as JPEG, with the depth image's header.
+      `:disparity_image_topic`, `:rectified_image_topic`,
+      `:right_rectified_image_topic` — each output is published only
+      when its topic is given; `nil` (the default) skips it. The
+      rectified topics carry the rectified left and right images as
+      JPEG, row-aligned, with the depth image's header.
   """
   use GenServer
   require Logger
@@ -117,6 +118,7 @@ defmodule RosBridge.Publishers.StereoCamera do
     depth_camera_info_topic = Keyword.get(opts, :depth_camera_info_topic)
     cloud_topic = Keyword.get(opts, :cloud_topic)
     rectified_image_topic = Keyword.get(opts, :rectified_image_topic)
+    right_rectified_image_topic = Keyword.get(opts, :right_rectified_image_topic)
     left_opts = Keyword.fetch!(opts, :left)
     right_opts = Keyword.fetch!(opts, :right)
     width = Keyword.fetch!(opts, :width)
@@ -152,6 +154,7 @@ defmodule RosBridge.Publishers.StereoCamera do
        depth_camera_info_topic: depth_camera_info_topic,
        cloud_topic: cloud_topic,
        rectified_image_topic: rectified_image_topic,
+       right_rectified_image_topic: right_rectified_image_topic,
        # The depth + disparity outputs are anchored to the left
        # camera's frame, per ROS convention.
        stereo_frame_id: Keyword.fetch!(left_opts, :frame_id),
@@ -438,9 +441,14 @@ defmodule RosBridge.Publishers.StereoCamera do
       })
     end
 
-    with topic when is_binary(topic) <- state.rectified_image_topic,
-         %Evision.Mat{} = image <- result.left_rectified,
-         jpeg when is_binary(jpeg) <- Evision.imencode(".jpg", image) do
+    for {topic, image} <- [
+          {state.rectified_image_topic, result.left_rectified},
+          {state.right_rectified_image_topic, result.right_rectified}
+        ],
+        is_binary(topic),
+        match?(%Evision.Mat{}, image),
+        jpeg = Evision.imencode(".jpg", image),
+        is_binary(jpeg) do
       RosBridge.ZenohClient.publish(topic, CompressedImage, %CompressedImage{
         header: header,
         format: "jpeg",

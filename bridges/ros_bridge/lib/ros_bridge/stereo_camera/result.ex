@@ -55,6 +55,8 @@ defmodule RosBridge.StereoCamera.Result do
       and rectify the frame a second time. A `Mat` is a refcounted
       NIF resource, so passing it between processes costs a pointer,
       not a copy.
+    * `:right_rectified` — the rectified right image, likewise, row-
+      aligned with the left one.
     * `:depth_m` — the same depth as `:depth`, but as a float32 `Mat`
       in **metres** rather than packed uint16 millimetres. This is
       what makes a 2D detection into a 3D one: the detector takes a
@@ -103,6 +105,7 @@ defmodule RosBridge.StereoCamera.Result do
   defstruct @enforce_keys ++
               [
                 left_rectified: nil,
+                right_rectified: nil,
                 depth_m: nil,
                 principal_point: nil,
                 rectification_map_left: nil
@@ -128,6 +131,7 @@ defmodule RosBridge.StereoCamera.Result do
           cloud: binary() | nil,
           cloud_points: non_neg_integer(),
           left_rectified: Evision.Mat.t() | nil,
+          right_rectified: Evision.Mat.t() | nil,
           depth_m: Evision.Mat.t() | nil,
           principal_point: {float(), float()} | nil,
           rectification_map_left: Evision.Mat.t() | nil

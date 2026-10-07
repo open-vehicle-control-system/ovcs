@@ -20,6 +20,11 @@ defmodule RosBridge.Parameters do
 
   An integer is accepted for a `:double` parameter. A set request is
   answered per parameter; the atomic variant is refused.
+
+  A description's constraints carry the value declared, as `default:
+  <value>` when it can be set again, and a string's accepted values, as
+  `one of: <a>, <b>`, separated by `; `, so a viewer can offer to reset
+  a parameter.
   """
 
   use GenServer
@@ -54,7 +59,8 @@ defmodule RosBridge.Parameters do
 
     declared =
       Map.new(parameters, fn p ->
-        {p.name, Map.merge(%{read_only: false}, p) |> Map.put(:owner, owner)}
+        {p.name,
+         Map.merge(%{read_only: false}, p) |> Map.merge(%{owner: owner, default: p[:value]})}
       end)
 
     {:reply, :ok,
@@ -173,18 +179,27 @@ defmodule RosBridge.Parameters do
 
   defp check_values(_p, _v), do: :ok
 
-  defp describe(p) do
+  @doc false
+  def describe(p) do
     constraints =
-      case p do
-        %{values: values} ->
-          Enum.join([Map.get(p, :constraints, "") | ["one of: " <> Enum.join(values, ", ")]], " ")
-
-        _ ->
-          Map.get(p, :constraints, "")
-      end
+      [
+        Map.get(p, :constraints, ""),
+        if(resettable?(p), do: "default: #{p.default}"),
+        if(p[:values], do: "one of: " <> Enum.join(p.values, ", "))
+      ]
+      |> Enum.reject(&(&1 in [nil, ""]))
+      |> Enum.join("; ")
 
     Map.take(p, [:name, :type, :description, :read_only, :range])
-    |> Map.put(:constraints, String.trim(constraints))
+    |> Map.put(:constraints, constraints)
+  end
+
+  # A declared value outside the accepted ones (libcamera's own choice,
+  # "auto") cannot be set back.
+  defp resettable?(p) do
+    not is_nil(p[:default]) and not Map.get(p, :read_only, false) and
+      match?({:ok, _}, check_type(p.type, p.default)) and check_range(p, p.default) == :ok and
+      check_values(p, p.default) == :ok
   end
 
   defp maybe_put_value(parameters, name, value) do
