@@ -160,6 +160,23 @@ defmodule RosBridge.Publishers.OdometryTest do
     end
   end
 
+  describe "a vehicle_motion frame" do
+    test "whose speed_valid the layout does not map leaves the speed invalid" do
+      signals = %{
+        "speed" => %Cantastic.Signal{value: Decimal.new("0.5")},
+        "steering_angle" => %Cantastic.Signal{value: Decimal.new("0")},
+        "speed_valid" => %Cantastic.Signal{value: nil},
+        "sequence" => %Cantastic.Signal{value: 3}
+      }
+
+      frame = %Cantastic.Frame{name: "vehicle_motion", signals: signals}
+      {:noreply, state} = Odometry.handle_info({:handle_frame, frame}, state(speed_valid: true))
+
+      refute state.speed_valid
+      refute Odometry.publishable?(state, state.last_fresh_at_ms || 0)
+    end
+  end
+
   describe "publishable?/2" do
     test "needs a valid speed, a heading, and a fresh frame" do
       good = state(speed_valid: true, yaw: 0.0, last_fresh_at_ms: 900)
