@@ -20,8 +20,8 @@
   diff. The `spin` and `backup` behaviour *servers* are still loaded (see nav2.yaml) —
   bt_navigator resolves action servers for both trees at activation.
 -->
-<root BTCPP_format="4" main_tree_to_execute="NavigateThroughPosesWReplanningAndRecovery">
-  <BehaviorTree ID="NavigateThroughPosesWReplanningAndRecovery">
+<root BTCPP_format="4" main_tree_to_execute="AckermannNavigateThroughPoses">
+  <BehaviorTree ID="AckermannNavigateThroughPoses">
     <RecoveryNode number_of_retries="6" name="NavigateRecovery">
       <PipelineSequence name="NavigateWithReplanning">
         <ProgressCheckerSelector selected_progress_checker="{selected_progress_checker}" default_progress_checker="progress_checker" topic_name="progress_checker_selector"/>

@@ -445,14 +445,14 @@ defmodule OvcsMini do
       height: 270,
       fps: 30,
       pair_tolerance_ms: 100,
-      publish_rectified_image: true,
       backend_opts: [
         num_disparities: 96,
         block_size: 9,
         speckle_window_size: 300,
         speckle_range: 12,
-        # The glossy floor's reflections come and go between frames.
-        persistence_filter: [voxel_m: 0.10, frames: 2]
+        # Rejects the ambiguous matches that land walls and furniture
+        # nearer than they are.
+        uniqueness_ratio: 15
       ],
       left: camera_addressing(arm, :left),
       right: camera_addressing(arm, :right)

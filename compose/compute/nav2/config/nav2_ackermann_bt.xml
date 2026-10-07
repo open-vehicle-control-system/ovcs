@@ -18,8 +18,8 @@
   ClearCostmap services stay: they cost nothing and fix the common case
   of a stale obstacle.
 -->
-<root BTCPP_format="4" main_tree_to_execute="MainTree">
-  <BehaviorTree ID="MainTree">
+<root BTCPP_format="4" main_tree_to_execute="AckermannNavigateToPose">
+  <BehaviorTree ID="AckermannNavigateToPose">
     <RecoveryNode number_of_retries="6" name="NavigateRecovery">
       <PipelineSequence name="NavigateWithReplanning">
         <ControllerSelector selected_controller="{selected_controller}" default_controller="FollowPath" topic_name="controller_selector"/>
