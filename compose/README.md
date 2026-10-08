@@ -161,6 +161,13 @@ Import from file…* one of [`local/foxglove/`](./local/foxglove/):
 | `ovcs_perception.json` | the stereo pipeline | left/right images with detection boxes, depth, point cloud with 3D detections, the diagnostics, the cameras' sync offset, IMU and joystick plots |
 | `ovcs_camera_tuning.json` | tuning the stereo cameras | both cameras rectified (rows aligned) and the depth next to the camera and matching settings as sliders, menus and toggles (the `extensions/parameter-sliders` Foxglove panel, installed once), the cameras' diagnostics and a plot of their sync offset, exposure and gain (see `bridges/ros_bridge/README.md`) |
 
+The navigation and perception layouts also draw the lidar's `/scan` and
+the ultrasonic sensors' `Range` topics in 3D. Foxglove does not draw
+`sensor_msgs/Range` itself: install the
+[`extensions/range-fans`](./local/foxglove/extensions/range-fans/README.md)
+converter once, which draws each reading as its beam's outline cut at
+the distance.
+
 All three are plain Studio exports: edit in Studio, export, overwrite the
 file. They are operator tooling, which is why they live in `local/` and
 not with the Elixir bridge that publishes the topics.

@@ -42,25 +42,4 @@ defmodule RosBridge.Publishers.RangeTest do
     assert_in_delta fov, 1.0, 1.0e-6
     assert_in_delta min, 0.03, 1.0e-6
   end
-
-  describe "marker/2" do
-    test "outlines a fan from the sensor, the beam's width, cut at the distance" do
-      marker = RangePublisher.marker(sample(1.0), @state)
-      assert marker.type == Ros2.VisualizationMsgs.Msg.Marker.line_strip()
-      assert length(marker.points) == 15
-      assert List.last(marker.points) == hd(marker.points)
-      [apex, edge | _] = marker.points
-      assert {apex.x, apex.y} == {0.0, 0.0}
-      assert_in_delta :math.sqrt(edge.x * edge.x + edge.y * edge.y), 1.0, 1.0e-9
-      assert_in_delta :math.atan2(edge.y, edge.x), -0.5, 1.0e-9
-      assert marker.header.frame_id == "ultrasound_rear_left"
-    end
-
-    test "draws nothing in range as a faint fan out to the maximum" do
-      marker = RangePublisher.marker(sample(:beyond_range), @state)
-      [_apex, edge | _] = marker.points
-      assert_in_delta :math.sqrt(edge.x * edge.x + edge.y * edge.y), 4.5, 1.0e-9
-      assert marker.color.a < 0.5
-    end
-  end
 end

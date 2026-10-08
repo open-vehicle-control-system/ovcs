@@ -242,7 +242,10 @@
           "colorMap": "turbo",
           "pointSize": 4
         },
-        "/ultrasound/markers": {
+        "/ultrasound/rear_left": {
+          "visible": true
+        },
+        "/ultrasound/rear_right": {
           "visible": true
         }
       },
