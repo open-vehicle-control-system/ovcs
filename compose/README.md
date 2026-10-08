@@ -40,6 +40,7 @@ multicast, just TCP peerings to `zenohd`.
 | `nav2` | compute | the planner survives the base station leaving, like the router |
 | `wifi_firmware` | compute | AX210 blobs for the host kernel — not ROS at all |
 | `bridge_nat_fix` | compute | one nat rule so mDNS crosses the vehicle bridge — not ROS either |
+| `ntp` | compute | the boards take their time from the node Nav2 runs on, online or not |
 | `ros2` (tooling shell) | local/base | interactive, `docker compose exec` |
 | `joy` | local/base | the game controller is with the operator, not the car |
 | `calibrator` | local/base | one-shot X11 GUI |

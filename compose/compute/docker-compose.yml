@@ -90,6 +90,14 @@ services:
     network_mode: host
     privileged: true
 
+  ntp:
+    # Serves this node's clock to the vehicle network, so the boards
+    # stamp ROS messages with the clock Nav2 compares against, with or
+    # without internet. Host networking for udp/123 on ovcs0.
+    build: ./images/ntp
+    restart: always
+    network_mode: host
+
   zenohd:
     # The vehicle *is* the router for the OVCS fabric, so the fabric
     # survives the base station disconnecting. Everything else —
