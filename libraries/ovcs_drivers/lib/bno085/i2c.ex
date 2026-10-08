@@ -8,6 +8,11 @@ defmodule BNO085.I2C do
   hardware concerns — Q-point scaling, register layouts, chip-ready
   gating all live here; framework-side translation lives in the
   consuming application.
+
+  The orientation is the game rotation vector, fused from the gyroscope
+  and the accelerometer alone: indoors, a magnetometer-corrected heading
+  jumps tens of degrees near steel or a motor. The heading drifts slowly
+  instead, relative to where the chip started.
   """
   @behaviour OvcsDrivers.Imu
 
@@ -24,7 +29,7 @@ defmodule BNO085.I2C do
   @timebase_reference_report 0xFB
   @accelerometer_report 0x01
   @calibrated_gyroscope_report 0x02
-  @rotation_vector_report 0x05
+  @game_rotation_vector_report 0x08
   @uncalibrated_gyroscope_report 0x07
   @command_reponse 0xF1
   @reset_complete_response 0x01
@@ -42,7 +47,11 @@ defmodule BNO085.I2C do
   # Reports we translate into `BNO085.Sample`s for listeners. Others
   # (uncalibrated gyro, timebase, command responses, product-id) are
   # still parsed for diagnostics but not broadcast.
-  @imu_sample_ids [@accelerometer_report, @calibrated_gyroscope_report, @rotation_vector_report]
+  @imu_sample_ids [
+    @accelerometer_report,
+    @calibrated_gyroscope_report,
+    @game_rotation_vector_report
+  ]
 
   # The chip announces "reset complete" at the *start* of its usable
   # window, and silently drops feature commands sent in that instant.
@@ -159,10 +168,9 @@ defmodule BNO085.I2C do
          <<report_id::integer, report_data::binary>> = report_bytes,
          @inport_sensor_reports_channel
        )
-       when report_id == @rotation_vector_report and bit_size(report_bytes) >= 14 * 8 do
-    # SH-2 rotation-vector report: header bytes + 5 little-endian
-    # int16s — quaternion components (i, j, k, real) in Q14, then
-    # an accuracy estimate in Q12 radians (we don't expose it).
+       when report_id == @game_rotation_vector_report and bit_size(report_bytes) >= 12 * 8 do
+    # SH-2 game-rotation-vector report: header bytes + 4 little-endian
+    # int16s, the quaternion components (i, j, k, real) in Q14.
     <<
       sequence_number::8,
       status::8,
@@ -171,14 +179,13 @@ defmodule BNO085.I2C do
       quaternion_j::little-signed-integer-size(16),
       quaternion_k::little-signed-integer-size(16),
       quaternion_real::little-signed-integer-size(16),
-      _accuracy_estimate::little-signed-integer-size(16),
       rest::binary
     >> = report_data
 
     {:ok,
      %{
        id: report_id,
-       name: "rotation_vector",
+       name: "game_rotation_vector",
        sequence_number: sequence_number,
        status: status,
        delay: delay,
@@ -531,7 +538,7 @@ defmodule BNO085.I2C do
   end
 
   def build_sample(%{id: id, i: i, j: j, k: k, real: real})
-      when id == @rotation_vector_report do
+      when id == @game_rotation_vector_report do
     %Sample{
       kind: :rotation,
       x: i * @quaternion_scale,
@@ -558,7 +565,7 @@ defmodule BNO085.I2C do
         :accelerometer -> @accelerometer_report
         :uncalibrated_gyroscope -> @uncalibrated_gyroscope_report
         :calibrated_gyroscope -> @calibrated_gyroscope_report
-        :rotation_vector -> @rotation_vector_report
+        :game_rotation_vector -> @game_rotation_vector_report
       end
 
     Logger.debug("#{__MODULE__} enable #{sensor}")
@@ -622,7 +629,7 @@ defmodule BNO085.I2C do
     :ok = GenServer.cast(__MODULE__, {:enable, :accelerometer})
     :ok = GenServer.cast(__MODULE__, {:enable, :uncalibrated_gyroscope})
     :ok = GenServer.cast(__MODULE__, {:enable, :calibrated_gyroscope})
-    :ok = GenServer.cast(__MODULE__, {:enable, :rotation_vector})
+    :ok = GenServer.cast(__MODULE__, {:enable, :game_rotation_vector})
     :ok
   end
 
