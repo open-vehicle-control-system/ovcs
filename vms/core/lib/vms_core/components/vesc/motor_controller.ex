@@ -17,13 +17,11 @@ defmodule VmsCore.Components.Vesc.MotorController do
       `set_current` at zero: no torque, the motor spins freely. This is
       the release, and it is also what the VESC falls back to when no
       command arrives within its timeout.
-    * **A hand** (any source not in `:linear_sources`) sends
-      `set_duty`, the open-loop mode that behaves like a trigger on a
-      conventional ESC. The request arrives already shaped by the
-      hand's `OVCS.InputCurve` and is only scaled by the caps; a
-      released trigger sends zero duty, which the VESC turns into a drag
-      brake. With a gear source, see below, a hand drives through the
-      selected gear instead.
+    * **A hand** (any source not in `:linear_sources`) drives the motor
+      the way `:hand_control` says, see below. The request arrives
+      already shaped by the hand's `OVCS.InputCurve` and is only scaled
+      by the caps. With a gear source, see below, a hand drives through
+      the selected gear.
     * **A physical velocity** (a source in `:linear_sources`, such as
       `OVCS.RosVelocityCommand`) sends `set_rpm`: the request in
       [-1, 1] is a fraction of `:max_rotation_per_minute`, converted to
@@ -41,14 +39,28 @@ defmodule VmsCore.Components.Vesc.MotorController do
   sends; the firmware default of 900 erpm is a walking pace on a small
   vehicle.
 
+  ## Duty or current for hands
+
+  `:hand_control` picks how a hand's request reaches the motor:
+
+    * `:duty` (the default) sends `set_duty`, a fraction of the pack
+      voltage, like a trigger on a conventional ESC. A duty behaves
+      like a speed target: easing the request below what the motor's
+      speed needs brakes it down, and without gears a released
+      trigger's zero duty is a drag brake.
+    * `:current` sends `set_current`, the request times `:max_current`:
+      a torque, like a car's accelerator. Easing the request pushes
+      less and never brakes, and zero coasts. Braking is the request's
+      negative side, with gears.
+
   ## Gears for hands
 
   With `:selected_gear_source` (`Managers.Gear`) a hand's request no
   longer carries the direction: the gear does, the way a car's does.
 
-    * A positive request drives in the selected gear: forward duty in
-      `:drive`, reverse duty in `:reverse`, capped by `:max_throttle`
-      and `:max_reverse` respectively. In `:neutral` or `:parking`, or
+    * A positive request drives in the selected gear: forward in
+      `:drive`, reverse in `:reverse`, capped by `:max_throttle` and
+      `:max_reverse` respectively. In `:neutral` or `:parking`, or
       before a gear is known, it releases the motor.
     * A negative request brakes, in every gear: `set_current_brake`,
       a braking current that opposes the rotation whichever way the
@@ -62,8 +74,8 @@ defmodule VmsCore.Components.Vesc.MotorController do
   ## Telemetry
 
   Each time the command changes, `:command` names it — `release`,
-  `brake`, `duty` or `speed` — with `:throttle`, the normalised drive
-  command, and `:brake_current`, zero unless braking.
+  `brake`, `duty`, `current` or `speed` — with `:throttle`, the
+  normalised drive command, and `:brake_current`, zero unless braking.
 
   `status` carries the erpm and the motor current, `status_5` the
   tachometer and the input voltage. The rotation comes from one of the
@@ -119,11 +131,15 @@ defmodule VmsCore.Components.Vesc.MotorController do
     * `:max_throttle`, `:max_reverse` — the fraction of the motor's full
       output a hand's full forward and full negative requests give, or
       with a gear source a full request in `:drive` and in `:reverse`.
-      On a VESC the output is the duty, a fraction of the pack voltage.
-      Fractions in [0, 1], defaulting to 1, `:max_reverse` to
+      The output is the duty, or `:max_current` with `:hand_control`
+      `:current`. Fractions in [0, 1], defaulting to 1, `:max_reverse` to
       `:max_throttle`. The
       caps scale rather than clip, and do not apply to a velocity,
       which `:max_rotation_per_minute` already bounds.
+    * `:hand_control` — `:duty` (default) or `:current`, see above.
+    * `:max_current` — amperes at a full hand request, with
+      `:hand_control` `:current`. The VESC's own current limits stay
+      in force below it.
     * `:selected_gear_source` — optional, the manager publishing
       `:selected_gear`. Needs `:max_brake_current` and the
       `set_current_brake` frame.
@@ -213,6 +229,7 @@ defmodule VmsCore.Components.Vesc.MotorController do
        selected_control_level_source: selected_control_level_source,
        linear_sources: Map.get(args, :linear_sources, []),
        caps: caps(args),
+       hand_control: hand_control(args),
        selected_gear_source: selected_gear_source,
        # Unknown until the manager publishes it: a hand releases the
        # motor rather than guess a direction.
@@ -357,11 +374,16 @@ defmodule VmsCore.Components.Vesc.MotorController do
         end
 
         broadcast(state, :throttle, throttle, Units.fraction())
-        broadcast(state, :command, @command_labels[frame], nil)
+        broadcast(state, :command, label(frame, data), nil)
         broadcast(state, :brake_current, commanded_brake_current(frame, data), Units.ampere())
         %{state | command: command}
     end
   end
+
+  defp label(:set_current, %{"current" => current}),
+    do: if(D.eq?(current, @zero), do: "release", else: "current")
+
+  defp label(frame, _data), do: @command_labels[frame]
 
   defp commanded_brake_current(:set_current_brake, %{"current" => current}), do: current
   defp commanded_brake_current(_frame, _data), do: @zero
@@ -379,8 +401,9 @@ defmodule VmsCore.Components.Vesc.MotorController do
   The command for a state: `{frame, data, throttle}`, where `frame` is
   one of `:set_current`, `:set_current_brake`, `:set_duty` and
   `:set_rpm`, `data` its signals, and `throttle` the normalised command
-  in [-1, 1] the dashboard shows — the duty for a hand, the fraction of
-  the maximum rpm for a velocity, zero for none and for a brake. Its
+  in [-1, 1] the dashboard shows — the duty or the fraction of
+  `:max_current` for a hand, the fraction of the maximum rpm for a
+  velocity, zero for none and for a brake. Its
   sign is the direction the motor is driven in, never the brake's.
   """
   def command(%{requested_throttle_source: nil}), do: release()
@@ -412,7 +435,7 @@ defmodule VmsCore.Components.Vesc.MotorController do
       |> D.mult(cap(requested, state.caps))
       |> NormalisedRequest.signed_as(requested)
 
-    {:set_duty, %{"duty" => duty}, duty}
+    hand_output(duty, state)
   end
 
   defp geared_command(state) do
@@ -439,9 +462,18 @@ defmodule VmsCore.Components.Vesc.MotorController do
           |> D.mult(cap(signed, state.caps))
           |> NormalisedRequest.signed_as(signed)
 
-        {:set_duty, %{"duty" => duty}, duty}
+        hand_output(duty, state)
     end
   end
+
+  # `output` is the capped, signed fraction of the motor's full output.
+  defp hand_output(output, %{hand_control: {:current, max_current}}) do
+    if D.eq?(output, @zero),
+      do: release(),
+      else: {:set_current, %{"current" => output |> D.mult(max_current) |> D.round(3)}, output}
+  end
+
+  defp hand_output(output, _state), do: {:set_duty, %{"duty" => output}, output}
 
   defp brake_command(requested, state) do
     current = requested |> D.abs() |> D.mult(state.max_brake_current) |> D.round(3)
@@ -464,6 +496,23 @@ defmodule VmsCore.Components.Vesc.MotorController do
     end)
 
     caps
+  end
+
+  @doc false
+  def hand_control(args) do
+    case {Map.get(args, :hand_control, :duty), Map.get(args, :max_current)} do
+      {:duty, _} ->
+        :duty
+
+      {:current, max_current} when is_number(max_current) and max_current > 0 ->
+        {:current, D.from_float(1.0 * max_current)}
+
+      {:current, _} ->
+        raise ArgumentError, ":hand_control :current needs a positive :max_current"
+
+      {other, _} ->
+        raise ArgumentError, ":hand_control must be :duty or :current, got #{inspect(other)}"
+    end
   end
 
   defp release, do: {:set_current, %{"current" => @zero}, @zero}

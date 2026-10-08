@@ -234,6 +234,75 @@ defmodule VmsCore.Components.Vesc.MotorControllerTest do
     end
   end
 
+  describe "with current for hands" do
+    defp current(requested, overrides \\ %{}) do
+      state(
+        Map.merge(
+          %{
+            hand_control:
+              MotorController.hand_control(%{hand_control: :current, max_current: 10}),
+            requested_throttle: D.new(requested)
+          },
+          overrides
+        )
+      )
+    end
+
+    test "a hand's request is a current, a fraction of the maximum" do
+      {:set_current, %{"current" => amperes}, throttle} = MotorController.command(current("0.6"))
+      assert D.eq?(amperes, D.new(6))
+      assert D.eq?(throttle, D.new("0.6"))
+    end
+
+    test "without gears a negative request is a reverse torque" do
+      {:set_current, %{"current" => amperes}, _} = MotorController.command(current("-0.5"))
+      assert D.eq?(amperes, D.new(-5))
+    end
+
+    test "with gears it drives in the gear, capped, and still brakes on a negative request" do
+      geared = %{
+        selected_gear_source: Gear,
+        max_brake_current: D.new(20),
+        caps: MotorController.caps(%{max_throttle: D.new("0.5")})
+      }
+
+      {:set_current, %{"current" => forward}, _} =
+        MotorController.command(current("1", Map.put(geared, :selected_gear, :drive)))
+
+      assert D.eq?(forward, D.new(5))
+
+      {:set_current, %{"current" => backward}, _} =
+        MotorController.command(current("1", Map.put(geared, :selected_gear, :reverse)))
+
+      assert D.eq?(backward, D.new(-5))
+
+      assert {:set_current_brake, _, _} =
+               MotorController.command(current("-1", Map.put(geared, :selected_gear, :drive)))
+    end
+
+    test "a released request coasts" do
+      assert MotorController.command(current("0")) ==
+               {:set_current, %{"current" => D.new(0)}, D.new(0)}
+    end
+
+    test "a velocity still drives the rpm" do
+      assert {:set_rpm, _, _} =
+               MotorController.command(current("0.5", %{requested_throttle_source: @planner}))
+    end
+
+    test "needs a positive maximum current" do
+      assert MotorController.hand_control(%{}) == :duty
+
+      assert_raise ArgumentError, fn ->
+        MotorController.hand_control(%{hand_control: :current})
+      end
+
+      assert_raise ArgumentError, fn ->
+        MotorController.hand_control(%{hand_control: :torque, max_current: 10})
+      end
+    end
+  end
+
   describe "a level that commands nothing" do
     test "zeroes the request rather than holding it" do
       {:noreply, state} =

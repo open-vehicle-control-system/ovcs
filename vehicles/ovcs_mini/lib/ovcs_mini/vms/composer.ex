@@ -32,10 +32,9 @@ defmodule OvcsMini.Vms.Composer do
   # that reads as braking also reads as a request.
   @throttle_deadzone Decimal.new("0.05")
   @throttle_expo Decimal.new("0.5")
-  # Fraction of the motor's full output at full stick, in drive and in
-  # reverse gear.
-  @max_throttle Decimal.new("0.25")
-  @max_reverse_throttle Decimal.new("0.25")
+  # Amperes of motor current at full stick, in drive and in reverse
+  # gear: a torque, so easing off coasts rather than brakes.
+  @max_motor_current 10
   # Amperes of braking current at full stick back.
   @max_brake_current 10
 
@@ -232,8 +231,8 @@ defmodule OvcsMini.Vms.Composer do
          pole_pairs: @motor_pole_pairs,
          # :erpm switches to the VESC's own speed estimate.
          rotation_from: :tachometer,
-         max_throttle: @max_throttle,
-         max_reverse: @max_reverse_throttle
+         hand_control: :current,
+         max_current: @max_motor_current
        }},
       {OVCS.PulseRotationSensor,
        %{
