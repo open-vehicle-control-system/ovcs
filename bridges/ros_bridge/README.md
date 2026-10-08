@@ -203,7 +203,7 @@ camera's `<prefix>/live/<side>/exposure_time_us` and `analogue_gain`
 
 Changes last until the stereo unit restarts: copy the values you keep
 from `ros2 param dump` into the vehicle's configuration. The Foxglove
-layout `compose/local/foxglove/ovcs_camera_tuning.json` shows both
+layout `compose/local/foxglove/ovcs_stereo_tuning.json` shows both
 cameras, rectified so their rows align as the matcher sees them, and
 the depth next to the stereo parameters as sliders, menus
 and toggles (the `compose/local/foxglove/extensions/parameter-sliders`

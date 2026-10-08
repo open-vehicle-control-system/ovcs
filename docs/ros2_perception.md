@@ -49,7 +49,7 @@ Each detection draws two markers: a `CUBE` coloured red to green by score, and a
 
 ## Labelled boxes on the camera image
 
-`/stereo/left/detections` is the Image panel's annotation topic, set under the panel's *Annotations* section; the checked-in layout `compose/local/foxglove/ovcs_perception.json` does it for the left camera. Each detection draws a `LINE_LOOP` box coloured by score, with a `<class> <score> <distance>m` label on a dark backing plate.
+`/stereo/left/detections` is the Image panel's annotation topic, set under the panel's *Annotations* section; the checked-in layout `compose/local/foxglove/ovcs_stereo.json` does it for the left camera. Each detection draws a `LINE_LOOP` box coloured by score, with a `<class> <score> <distance>m` label on a dark backing plate.
 
 **Why `foxglove_msgs`.** `visualization_msgs/ImageMarker` has no text type, so its boxes can't say what they are, and ROS 2 has no `ImageMarkerArray`: with one message per annotation topic, N detections would need N topics. `foxglove_msgs/ImageAnnotations` carries boxes and labels in one message, and `LINE_LOOP` closes a rectangle in four points where a `LINE_LIST` needs eight.
 
