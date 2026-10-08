@@ -267,7 +267,7 @@
         }
       },
       "layers": {},
-      "foxglovePanelTitle": "Point cloud + detections"
+      "foxglovePanelTitle": "Obstacles: stereo cloud, detections, lidar, ultrasound"
     },
     "RawMessages!detections": {
       "topicPath": "/stereo/detections.detections",

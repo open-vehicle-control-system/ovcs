@@ -22,4 +22,4 @@ npm run local-install
 ```
 
 or build `npm run package` and drag the `.foxe` file into Foxglove.
-The camera tuning layout (`../../ovcs_camera_tuning.json`) uses it.
+The stereo tuning layout (`../../ovcs_stereo_tuning.json`) uses it.
