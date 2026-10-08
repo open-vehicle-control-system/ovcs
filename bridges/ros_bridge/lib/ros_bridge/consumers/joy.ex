@@ -1,20 +1,44 @@
 defmodule RosBridge.Consumers.Joy.State do
-  defstruct [:watchdog, sequence: 0]
+  defstruct [
+    :watchdog,
+    :active,
+    profiles: %{},
+    ignored: MapSet.new(),
+    released: MapSet.new(),
+    direction: "forward",
+    sequence: 0
+  ]
 end
 
 defmodule RosBridge.Consumers.Joy do
   @moduledoc """
-  Subscribes to the ROS 2 `joy` topic via the native-Zenoh client
-  (`RosBridge.ZenohClient.subscribe/2`) and translates each
-  `sensor_msgs/Joy` sample into the `ros_actuator_command` frame
-  (`0x2B0`): the operator's axes as normalised positions.
+  Subscribes to ROS 2 `sensor_msgs/Joy` topics via the native-Zenoh
+  client (`RosBridge.ZenohClient.subscribe/2`) and translates each
+  sample into the `ros_actuator_command` frame (`0x2B0`): the
+  operator's axes as normalised positions.
+
+  ## Profiles
+
+  Each controller has its own layout, described by a profile file
+  (`RosBridge.Consumers.Joy.Profile`) that reads `joy/<name>`; the
+  operator's `joy` node picks the topic from the controller plugged in.
+  The framework ships one profile per supported controller in this
+  application's `priv/joy`; `:profiles_dir` names a vehicle's own
+  directory, whose profiles add to them, one of the same name replacing
+  the framework's.
+
+  One controller commands at a time: the first to publish keeps the
+  vehicle until its input goes stale, and another publishing meanwhile
+  is ignored, with a warning. Going stale also forgets which pedals
+  were seen released, since a restarted `joy` node reports them as 0
+  again, and the direction returns to forward.
 
   ## Why the axis conversion is defensive
 
-  This is the drive path: axis 0 becomes steering and axis 1 throttle,
-  each a signed 16-bit signal at a resolution of 0.001. Two things a
-  joystick can legally send would otherwise go wrong here, and neither
-  announces itself.
+  This is the drive path: steering and throttle are each a signed
+  16-bit signal at a resolution of 0.001. Two things a joystick can
+  legally send would otherwise go wrong here, and neither announces
+  itself.
 
   **An axis outside [-1, 1] would wrap on the wire.** Cantastic encodes
   a signed field by truncation rather than raising, so an out-of-range
@@ -26,7 +50,7 @@ defmodule RosBridge.Consumers.Joy do
   answers `nil` past the end and `Decimal.from_float/1` has no clause
   for it, and `sensor_msgs/Joy` explicitly permits empty `axes`.
 
-  So `control_value/3` clamps, and a missing axis reads as centre
+  So `Profile.command/3` clamps, and a missing axis reads as centre
   rather than as a crash. Centre is the safe reading: it commands
   neither steering nor throttle.
 
@@ -65,14 +89,13 @@ defmodule RosBridge.Consumers.Joy do
   alias Cantastic.Emitter
   alias Decimal, as: D
   alias Ros2.SensorMsgs.Msg.Joy
-  alias RosBridge.Consumers.Joy.State
+  alias RosBridge.Consumers.Joy.{Profile, State}
   alias RosBridge.InputWatchdog
 
   require Logger
   use GenServer
 
   @frame_name "ros_actuator_command"
-  @joy_topic "joy"
   # Ten missed samples at the 20 Hz autorepeat rate. At 2 m/s that is
   # about a metre of travel — longer than the VMS-side watcher's 50 ms,
   # because this has to tolerate a scheduling hiccup on the operator's
@@ -81,7 +104,7 @@ defmodule RosBridge.Consumers.Joy do
   @check_period_ms 50
 
   @impl true
-  def init(_) do
+  def init(opts) do
     :ok =
       Emitter.configure(:ovcs, @frame_name, %{
         parameters_builder_function: :default,
@@ -94,59 +117,57 @@ defmodule RosBridge.Consumers.Joy do
         enable: true
       })
 
-    :ok = RosBridge.ZenohClient.subscribe(@joy_topic, Joy)
+    vehicle_profiles =
+      case Keyword.get(opts, :profiles_dir) do
+        nil -> []
+        dir -> Profile.load_dir!(dir)
+      end
+
+    profiles =
+      (Profile.load_dir!(Profile.framework_dir()) ++ vehicle_profiles)
+      |> Map.new(&{&1.name, &1})
+      |> Map.new(fn {_name, profile} -> {Profile.topic(profile), profile} end)
+
+    Logger.info("#{__MODULE__} profiles on #{profiles |> Map.keys() |> Enum.join(", ")}")
+
+    for topic <- Map.keys(profiles), do: :ok = RosBridge.ZenohClient.subscribe(topic, Joy)
     {:ok, _timer} = :timer.send_interval(@check_period_ms, :check_input)
 
-    {:ok, %State{watchdog: InputWatchdog.new(timeout_ms())}}
+    {:ok, %State{watchdog: InputWatchdog.new(timeout_ms()), profiles: profiles}}
   end
 
   defp timeout_ms do
     Application.get_env(:ros_bridge, :joy_timeout_ms, @default_timeout_ms)
   end
 
-  @spec start_link(nil) :: :ignore | {:error, any()} | {:ok, pid()}
+  defp topics(state), do: state.profiles |> Map.keys() |> Enum.join(" or ")
+
+  @spec start_link(keyword()) :: :ignore | {:error, any()} | {:ok, pid()}
   def start_link(args) do
     Logger.debug("Starting #{__MODULE__}...")
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
   end
 
   @doc """
-  One joystick axis as a normalised position in [-1, 1].
-
-  `sign` carries the sign convention: steering is inverted, throttle
-  is not. A missing axis, or one that is not a number, reads as centre.
+  The throttle and the frame's direction for the gear lever's
+  `requested` direction, `last` being the direction sent before. In
+  neutral the throttle only brakes and the direction holds; a profile
+  without `gears` (`nil`) drives forward.
   """
-  @spec control_value([number()] | nil, non_neg_integer(), 1 | -1) :: Decimal.t()
-  def control_value(axes, index, sign) when is_list(axes) do
-    axes
-    |> Enum.at(index)
-    |> clamp()
-    |> D.from_float()
-    |> D.mult(sign)
-  end
+  def gear(nil, throttle, _last), do: {throttle, "forward"}
+  def gear(:neutral, throttle, last), do: {min(throttle, 0.0), last}
+  def gear(requested, throttle, _last), do: {throttle, Atom.to_string(requested)}
 
-  def control_value(_axes, _index, _sign), do: D.new(0)
-
-  # Centre for anything unusable, rather than raising: the drive path
-  # staying up and commanding nothing beats it restarting on every
-  # frame. `from_float/1` also has no integer clause, so an axis of `0`
-  # rather than `0.0` would raise — hence the float conversion here.
-  defp clamp(value) when is_float(value), do: value |> max(-1.0) |> min(1.0)
-  defp clamp(value) when is_integer(value), do: clamp(value * 1.0)
-  defp clamp(_other), do: 0.0
+  # `from_float/1` has no integer clause; the profile's sums are floats.
+  defp decimal(value), do: value |> Kernel.*(1.0) |> D.from_float()
 
   @impl true
-  def handle_info({:ros_message, {_key_expr, %Joy{axes: axes}}}, state) do
-    steering = control_value(axes, 0, -1)
-    throttle = control_value(axes, 1, 1)
-    sequence = next_sequence(state.sequence)
+  def handle_info({:ros_message, {key_expr, %Joy{} = joy}}, state) do
+    profile = Map.fetch!(state.profiles, topic(key_expr))
 
-    :ok =
-      Emitter.update(:ovcs, @frame_name, fn data ->
-        %{data | "steering" => steering, "throttle" => throttle, "sequence" => sequence}
-      end)
-
-    {:noreply, %{state | watchdog: InputWatchdog.seen(state.watchdog), sequence: sequence}}
+    if state.active in [nil, profile.name],
+      do: {:noreply, drive(profile, joy, state)},
+      else: {:noreply, ignore(profile, state)}
   end
 
   # The transition, not the state, so this logs once per outage rather
@@ -166,6 +187,46 @@ defmodule RosBridge.Consumers.Joy do
     {:noreply, state}
   end
 
+  defp drive(profile, %Joy{axes: axes, buttons: buttons}, state) do
+    {steering, throttle, released} = Profile.command(profile, axes, state.released)
+
+    {throttle, direction} =
+      gear(Profile.direction(profile, axes, buttons), throttle, state.direction)
+
+    sequence = next_sequence(state.sequence)
+
+    :ok =
+      Emitter.update(:ovcs, @frame_name, fn data ->
+        %{
+          data
+          | "steering" => decimal(steering),
+            "throttle" => decimal(throttle),
+            "direction" => direction,
+            "sequence" => sequence
+        }
+      end)
+
+    %{
+      state
+      | watchdog: InputWatchdog.seen(state.watchdog),
+        active: profile.name,
+        released: released,
+        direction: direction,
+        sequence: sequence
+    }
+  end
+
+  # Once per controller and outage, not twenty times a second.
+  defp ignore(profile, state) do
+    unless MapSet.member?(state.ignored, profile.name) do
+      Logger.warning(
+        "#{__MODULE__}: ignoring #{Profile.topic(profile)}, #{state.active} is commanding the vehicle"
+      )
+    end
+
+    %{state | ignored: MapSet.put(state.ignored, profile.name)}
+  end
+
   # Nothing has ever arrived, which is a setup problem rather than a
   # loss: the topic name, the domain id, or a `joy` node that was never
   # started. Said once, on the first tick, because nothing downstream
@@ -173,7 +234,7 @@ defmodule RosBridge.Consumers.Joy do
   # VMS-side watcher sees a perfectly healthy stream.
   defp handle_transition(:silent, state) do
     Logger.warning(
-      "#{__MODULE__}: nothing has published #{@joy_topic} since start. " <>
+      "#{__MODULE__}: nothing has published #{topics(state)} since start. " <>
         "Check the topic name and ROS_DOMAIN_ID; the controller is not " <>
         "commanding this vehicle."
     )
@@ -183,7 +244,7 @@ defmodule RosBridge.Consumers.Joy do
 
   defp handle_transition(:stale, state) do
     Logger.warning(
-      "#{__MODULE__}: no #{@joy_topic} sample for #{timeout_ms()} ms — throttle zeroed. " <>
+      "#{__MODULE__}: no #{topics(state)} sample for #{timeout_ms()} ms — throttle zeroed. " <>
         "The controller is not commanding this vehicle."
     )
 
@@ -191,7 +252,7 @@ defmodule RosBridge.Consumers.Joy do
   end
 
   defp handle_transition(:fresh, state) do
-    Logger.info("#{__MODULE__}: #{@joy_topic} is publishing")
+    Logger.info("#{__MODULE__}: #{state.active} is commanding the vehicle")
     state
   end
 
@@ -207,9 +268,21 @@ defmodule RosBridge.Consumers.Joy do
         %{data | "throttle" => D.new(0), "sequence" => sequence}
       end)
 
-    %{state | sequence: sequence}
+    %{
+      state
+      | sequence: sequence,
+        active: nil,
+        ignored: MapSet.new(),
+        released: MapSet.new(),
+        direction: "forward"
+    }
   end
 
   @doc false
   def next_sequence(sequence), do: rem(sequence + 1, 256)
+
+  @doc "The topic of an rmw_zenoh key: `<domain>/<topic>/<type>/<hash>`."
+  def topic(key_expr) do
+    key_expr |> String.split("/") |> Enum.slice(1..-3//1) |> Enum.join("/")
+  end
 end

@@ -1,0 +1,4 @@
+# The Logitech G923 for Xbox One and PC enumerates in Xbox mode
+# (046d:c26d), which Linux has no driver for. This switches it to HID
+# mode (046d:c26e), where it is a joystick, each time it is plugged in.
+ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="046d", ATTR{idProduct}=="c26d", RUN+="/usr/sbin/usb_modeswitch -v 046d -p c26d -M 0f00010142 -C 03 -m 01 -r 81"

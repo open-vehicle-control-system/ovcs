@@ -33,6 +33,8 @@ defmodule RosBridge.MixProject do
       {:ovcs_bridge, path: "../../libraries/ovcs_bridge"},
       {:ovcs_drivers, path: "../../libraries/ovcs_drivers"},
       {:zenohex, "~> 0.8.0"},
+      # Joy profiles (`RosBridge.Consumers.Joy.Profile`).
+      {:yaml_elixir, "~> 2.12"},
       {:elixir_make, "~> 0.7", runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
 

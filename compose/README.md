@@ -18,6 +18,7 @@ compose/
     ├── images/sim/           the Gazebo image — the only one that never goes near the car
     ├── simulation/           worlds, macros, launch files, gamepad mapping, test scripts
     ├── scripts/              the verifiers behind `mise run verify-*`, and calibrate.sh
+    ├── udev/                 host rules for controllers (the G923 wheel's mode switch)
     └── calibration_output/   where the stereo calibrator drops its tarball
 ```
 
@@ -134,22 +135,103 @@ Foxglove against `ws://<compute-node-ip>:8765`.
 ZENOH_ENDPOINT_IP=127.0.0.1 docker compose -f base.yml --profile standalone up -d
 ```
 
-**USB controller → `/joy` → CAN:**
+**USB controller → `/joy/<profile>` → CAN:**
 
 ```sh
 ls /dev/input/js*                            # should show js0 — that's the default
 docker compose -f base.yml up -d joy
-docker compose -f base.yml exec ros2 bash -lc 'ros2 topic echo /joy sensor_msgs/msg/Joy'
+docker compose -f base.yml logs joy          # the controller found and its topic
+docker compose -f base.yml exec ros2 bash -lc 'ros2 topic echo /joy/xbox sensor_msgs/msg/Joy'
 ```
 
-`RosBridge.Consumers.Joy` subscribes to `/joy` over the same fabric, so
-a running `./ovcs run <vehicle>` (or a Nerves bridge on the LAN) sees
-the axes flow straight into the `ros_actuator_command` CAN emitter.
-Other controllers: `JOY_DEV=/dev/input/js1 docker compose -f base.yml up -d joy`;
-`JOY_DEADZONE` and `JOY_AUTOREPEAT_RATE` likewise. The service is
-Linux-only — `device_cgroup_rules` + a bind-mounted `/dev/input` does
-not work on Docker Desktop for macOS/Windows; if `ls /dev/input/js*` is
-empty after plugging in, check `dmesg | tail`.
+The `joy` service reads the controller's name, picks the joy profile
+whose `device` pattern matches it, and publishes on `/joy/<profile>`.
+`RosBridge.Consumers.Joy` subscribes to each profile's topic over the
+same fabric and maps the controller with its profile into the
+`ros_actuator_command` CAN emitter. One controller commands at a time:
+another publishing meanwhile is ignored until the first stops for
+500 ms.
+
+A profile is a YAML file per controller
+(`RosBridge.Consumers.Joy.Profile` describes the format). The
+framework ships two in `bridges/ros_bridge/priv/joy/`:
+
+| Profile | Controls |
+|---|---|
+| `xbox.yml` | right stick steers, and drives (up) or brakes (down) in the gear the triggers hold: RT forward, LT backward, neither neutral |
+| `g923.yml` | the wheel steers, full lock at ±90°, and springs back to centre while the `joy` service runs; the accelerator drives and the brake brakes, the brake winning when both are pressed, in the gear of the Driving Force Shifter: 1 to 6 forward, reverse backward |
+
+In neutral the throttle only brakes. As with the radio's reverse
+switch, the VMS changes gear only once the vehicle is stopped and the
+throttle released.
+
+**Adding a controller.** A profile describes one controller model
+(`RosBridge.Consumers.Joy.Profile` has the full format):
+
+1. Plug the controller in and read its name, which the profile's
+   `device` pattern has to match:
+
+   ```sh
+   cat /sys/class/input/js0/device/name
+   ```
+
+2. Publish it under a name no profile has yet, and watch its axes and
+   buttons while you move each control. The bridge ignores the topic:
+
+   ```sh
+   JOY_PROFILE=probe docker compose -f base.yml up -d joy
+   docker compose -f base.yml exec ros2 bash -lc 'ros2 topic echo /joy/probe sensor_msgs/msg/Joy'
+   ```
+
+   Note each control's index, its value at rest and fully moved, and
+   which way is positive. `joy_linux` reports a stick pushed left or up
+   as positive, a trigger as 1 released and -1 pressed, and an axis it
+   has had no event for yet as 0.
+
+3. Write `<name>.yml`. `steering` and `throttle` are sums of terms:
+   steering is positive to the right on the OVCS Mini reference vehicle,
+   so a stick or wheel needs a negative gain; throttle drives when
+   positive and brakes when negative. Read a pedal with `pedal`, which
+   also keeps it released until it has been seen released, and a brake
+   pedal under `brake`, which wins over the throttle while pressed. `gears` names the held buttons or
+   triggers for each direction; without it the vehicle only drives
+   forward. A larger steering gain reaches full lock earlier. For a
+   force-feedback wheel, `centring` (0 to 1) sets the spring that pulls
+   it back to centre, and `deadzone: 0.0` keeps a pedal's travel whole.
+
+4. Put the file in `bridges/ros_bridge/priv/joy/` if the controller is
+   common, where both the `joy` service and every vehicle find it, or
+   in your vehicle's own profile directory: the vehicle passes
+   `{:joy_interpreter, profiles_dir: ...}`, and a profile of the same
+   name replaces the framework's. The `joy` service only reads the
+   framework's profiles, so start it with `JOY_PROFILE=<name>` for one
+   only your vehicle has.
+
+5. Flash or restart the ROS bridge, restart the `joy` service, and check
+   its log names your profile. Test with the vehicle lifted or the
+   motor disabled first.
+
+`JOY_DEV=/dev/input/js1` picks another device, `JOY_AUTOREPEAT_RATE`
+likewise. The service is Linux-only —
+`device_cgroup_rules` + a bind-mounted `/dev/input` does not work on
+Docker Desktop for macOS/Windows; if `ls /dev/input/js*` is empty after
+plugging in, check `dmesg | tail`.
+
+The G923 *for Xbox One and PC* (`046d:c26d` in `lsusb`) starts in Xbox
+mode, which Linux has no driver for: no `/dev/input/js*` appears.
+`usb_modeswitch` switches it to HID mode (`046d:c26e`) until it is
+unplugged:
+
+```sh
+sudo usb_modeswitch -v 046d -p c26d -M 0f00010142 -C 03 -m 01 -r 81
+```
+
+To switch it on every plug-in, install the udev rule:
+
+```sh
+sudo cp local/udev/99-logitech-g923.rules /etc/udev/rules.d/
+sudo udevadm control --reload
+```
 
 **Foxglove Studio:** connect to `ws://<compute-node-ip>:8765` (or
 `ws://127.0.0.1:8765` with the `standalone` profile), then *Layouts →

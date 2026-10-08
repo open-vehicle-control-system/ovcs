@@ -1,0 +1,22 @@
+# Logitech G923 in HID mode (see compose/README.md). The 900° wheel
+# reaches full lock at ±90°; the accelerator drives and the brake
+# brakes, the brake winning when both are pressed.
+device: G923 Racing Wheel
+# No stick drift, and joy_linux's deadzone sits at the axes' centre: a
+# pedal half pressed.
+deadzone: 0.0
+# The force-feedback spring that pulls the wheel back to centre, held
+# by the operator's joy node: full strength.
+centring: 1.0
+steering:
+  - axis: 0
+    gain: -5.0
+throttle:
+  - pedal: 1
+brake:
+  - pedal: 2
+# The Driving Force Shifter: gears 1 to 6 drive, reverse reverses,
+# neutral cuts the accelerator.
+gears:
+  forward: [12, 13, 14, 15, 16, 17]
+  backward: [11]

@@ -136,7 +136,7 @@ In the simulator
                                             Gazebo AckermannSteering
 
 On the vehicle (OVCS Mini)
-  joy node (base station) ──/joy─────────► Consumers.Joy ──0x2B0──► VMS: RosActuatorCommand.*
+  joy node (base station) ──/joy/<profile>──► Consumers.Joy ──0x2B0──► VMS: RosActuatorCommand.*
   Nav2 (onboard) ──/cmd_vel_nav──► Consumers.Velocity ──0x2B1──► VMS: RosVelocityCommand
                                                                        │
                                                              Managers.ControlLevel
@@ -160,7 +160,7 @@ One odometry owner per fabric: against the simulator Gazebo already publishes `/
 
 ### The actuator command (0x2B0)
 
-`RosBridge.Consumers.Joy` subscribes to `/joy` and writes `ros_actuator_command`: `steering` and `throttle` as the gamepad's `[-1, 1]` axes at 0.001 resolution, a `direction` (for vehicles where reverse is a gear and a negative throttle brakes, like OVCS1), and a `sequence`. The VMS components `OVCS.RosActuatorCommand.*` read them as normalised actuator requests: *what a joystick means*, positions, not physics. An axis outside `[-1, 1]` is clamped (Cantastic truncates a signed field silently and the value would come back with the wrong sign), and a `Joy` with too few axes reads as centre.
+`RosBridge.Consumers.Joy` subscribes to `/joy/<profile>`, one topic per joy profile, and writes `ros_actuator_command`: `steering` and `throttle` in `[-1, 1]` at 0.001 resolution, mapped from the controller's axes by its profile, a `direction` (for vehicles where reverse is a gear and a negative throttle brakes), and a `sequence`. The VMS components `OVCS.RosActuatorCommand.*` read them as normalised actuator requests: *what a joystick means*, positions, not physics. An axis outside `[-1, 1]` is clamped (Cantastic truncates a signed field silently and the value would come back with the wrong sign), and a `Joy` with too few axes reads as centre.
 
 ### The velocity command (0x2B1)
 

@@ -149,9 +149,9 @@ services:
   joy:
     # Reads a USB game controller (Xbox / generic HID) from
     # /dev/input/${JOY_DEV} on this box and republishes it as
-    # sensor_msgs/Joy on /joy. `RosBridge.Consumers.Joy` subscribes
-    # to the same topic via rmw_zenoh's `0/joy/**` keyexpr, so the
-    # joystick drives steering/throttle on the OVCS CAN bus end-to-end
+    # sensor_msgs/Joy on /joy/<profile>, the joy profile matching the
+    # controller. `RosBridge.Consumers.Joy` subscribes to each
+    # profile's topic, so the joystick drives the OVCS CAN bus end-to-end
     # — across the fabric, so the controller stays with the operator.
     #
     # Plug the controller in before `docker compose -f base.yml up joy`;
@@ -165,14 +165,18 @@ services:
       # joy_linux parameters — override per host if your controller
       # is something other than js0.
       JOY_DEV: ${JOY_DEV:-/dev/input/js0}
-      JOY_DEADZONE: ${JOY_DEADZONE:-0.05}
       JOY_AUTOREPEAT_RATE: ${JOY_AUTOREPEAT_RATE:-20.0}
+      # The joy profile, picked from the controller's name when empty
+      # (see RosBridge.Consumers.Joy.Profile).
+      JOY_PROFILE: ${JOY_PROFILE:-}
     volumes:
       # Bind-mount the whole /dev/input tree (not a single `devices:`
       # entry) so a hot-plugged controller appears in the container
       # without restarting it. The cgroup rule below grants read/write
       # to any char device with major 13 — the Linux input subsystem.
       - /dev/input:/dev/input
+      # The framework's joy profiles, to pick one by the controller's name.
+      - ../../bridges/ros_bridge/priv/joy:/joy_profiles:ro
     device_cgroup_rules:
       - 'c 13:* rmw'
     command: ["joy"]

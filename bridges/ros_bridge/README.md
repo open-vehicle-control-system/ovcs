@@ -13,12 +13,14 @@ lib/
   ros_bridge/
     heartbeat.ex             # Periodic publisher (std_msgs/String on /ovcs_heartbeat) via ZenohClient.publish/4
     imu_publisher.ex         # OvcsDrivers.Imu consumer → sensor_msgs/Imu over Zenoh
-    joy_interpreter.ex       # ROS 2 /joy → Cantastic emitter (steering, throttle)
+    consumers/joy.ex         # ROS 2 /joy/<profile> → Cantastic emitter (steering, throttle, direction)
+    consumers/joy/profile.ex # joy profile files: a controller's axes, pedals and gears
   ros2/                      # ROS 2 message codecs (CDR encode + parse)
     common.ex                # Shared encoder/parser primitives (encode_string, …)
     rmw_zenoh.ex             # rmw_zenoh wire-format helpers (key_expr, payload, attachment, liveliness)
     std_msgs/msg/string.ex   # std_msgs/String + DDS type name + RIHS01 type hash
     sensor_msgs/, geometry_msgs/, builtin_interfaces/, std_msgs/msg/header.ex
+priv/joy/                    # the framework's joy profiles, one per controller
 ```
 
 ## Native rmw_zenoh wire format
@@ -120,7 +122,7 @@ Catalogue (extend by adding a clause to
 | Component         | Opts                                                     | Child specs started                       |
 |-------------------|----------------------------------------------------------|-------------------------------------------|
 | `:heartbeat`      | `:interval_ms` (default `1_000`)                         | `RosBridge.Publishers.Heartbeat`                     |
-| `:joy_interpreter`| —                                                        | `RosBridge.Consumers.Joy`                |
+| `:joy_interpreter`| `:profiles_dir`: the vehicle's own joystick profiles, added to the framework's in `priv/joy` (`RosBridge.Consumers.Joy.Profile`) | `RosBridge.Consumers.Joy`                |
 | `:imu_publisher`  | `:driver` (required, an `OvcsDrivers.Imu` module); plus `:topic`, `:frame_id`, `:publish_interval_ms` forwarded | the driver, then `RosBridge.Publishers.Imu` |
 | `:lidar_publisher` | `:driver` (required, an `OvcsDrivers.Lidar` module), `:driver_opts` (e.g. `serial_number: "..."`); plus `:topic` (`scan`), `:frame_id` (`laser`), `:bins` forwarded | the driver, then `RosBridge.Publishers.LaserScan` |
 | `:range_publisher` | once per sensor: `:driver` (required, an `OvcsDrivers.Rangefinder` module), `:name` (required, unique), `:driver_opts`, `:topic` and `:frame_id` (required), `:radiation_type` | the driver instance, then `RosBridge.Publishers.Range` |

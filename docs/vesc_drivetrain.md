@@ -77,7 +77,7 @@ Zero velocity goes out as zero duty rather than zero rpm because the VESC only s
 
 ### Gears for hands
 
-With `selected_gear_source: Managers.Gear`, a hand's request no longer carries the direction; the gear does, as in a car. The radio's direction switch or the gamepad's direction button requests `:drive` or `:reverse`, and the gear manager shifts only below 1 km/h with the trigger released.
+With `selected_gear_source: Managers.Gear`, a hand's request no longer carries the direction; the gear does, as in a car. The radio's direction switch, or the gear a joy profile reads from the controller (the Xbox controller's triggers, the G923's shifter), requests `:drive` or `:reverse`, and the gear manager shifts only below 1 km/h with the trigger released.
 
 - A positive request drives in the selected gear.
 - Pulling the trigger back brakes in every gear, with `vesc_set_current_brake` at up to `:max_brake_current`, and never reverses.
