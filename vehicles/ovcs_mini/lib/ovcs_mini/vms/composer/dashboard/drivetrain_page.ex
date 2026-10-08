@@ -27,8 +27,18 @@ defmodule OvcsMini.Vms.Composer.Dashboard.DrivetrainPage do
           name: "Motor Controller (VESC)",
           type: "table",
           rows: [
+            %{type: :metric, name: "Hand Control", module: Vms.Vesc, key: :hand_control},
+            %{type: :metric, name: "Starting Current", module: Vms.Vesc, key: :min_current},
+            %{type: :metric, name: "Maximum Current", module: Vms.Vesc, key: :max_current},
+            %{
+              type: :metric,
+              name: "Maximum Brake Current",
+              module: Vms.Vesc,
+              key: :max_brake_current
+            },
             %{type: :metric, name: "Command", module: Vms.Vesc, key: :command},
             %{type: :metric, name: "Throttle", module: Vms.Vesc, key: :throttle},
+            %{type: :metric, name: "Drive Current", module: Vms.Vesc, key: :drive_current},
             %{type: :metric, name: "Brake Current", module: Vms.Vesc, key: :brake_current},
             %{
               type: :metric,

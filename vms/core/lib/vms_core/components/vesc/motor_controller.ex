@@ -78,7 +78,10 @@ defmodule VmsCore.Components.Vesc.MotorController do
 
   Each time the command changes, `:command` names it — `release`,
   `brake`, `duty`, `current` or `speed` — with `:throttle`, the
-  normalised drive command, and `:brake_current`, zero unless braking.
+  normalised drive command, `:drive_current`, the current driving the
+  motor, and `:brake_current`, zero unless braking. At start, the
+  settings: `:hand_control` (`duty` or `current`), `:min_current` and
+  `:max_current` (nil with `duty`), and `:max_brake_current`.
 
   `status` carries the erpm and the motor current, `status_5` the
   tachometer and the input voltage. The rotation comes from one of the
@@ -224,6 +227,9 @@ defmodule VmsCore.Components.Vesc.MotorController do
     :ok = Emitter.disable(network, command_frame_names(frames, selected_gear_source))
 
     {:ok, timer} = :timer.send_interval(@loop_period, :loop)
+    hand_control = hand_control(args)
+    max_brake_current = brake_current(selected_gear_source, args)
+    broadcast_settings(%{process_name: process_name}, hand_control, max_brake_current)
 
     {:ok,
      %{
@@ -234,12 +240,12 @@ defmodule VmsCore.Components.Vesc.MotorController do
        selected_control_level_source: selected_control_level_source,
        linear_sources: Map.get(args, :linear_sources, []),
        caps: caps(args),
-       hand_control: hand_control(args),
+       hand_control: hand_control,
        selected_gear_source: selected_gear_source,
        # Unknown until the manager publishes it: a hand releases the
        # motor rather than guess a direction.
        selected_gear: nil,
-       max_brake_current: brake_current(selected_gear_source, args),
+       max_brake_current: max_brake_current,
        erpm_per_request: erpm_per_request(max_rotation_per_minute, pole_pairs),
        pole_pairs: pole_pairs,
        noise_rpm: D.new(Map.get(args, :noise_rpm, 5)),
@@ -381,6 +387,7 @@ defmodule VmsCore.Components.Vesc.MotorController do
         broadcast(state, :throttle, throttle, Units.fraction())
         broadcast(state, :command, label(frame, data), nil)
         broadcast(state, :brake_current, commanded_brake_current(frame, data), Units.ampere())
+        broadcast(state, :drive_current, commanded_drive_current(frame, data), Units.ampere())
         %{state | command: command}
     end
   end
@@ -392,6 +399,23 @@ defmodule VmsCore.Components.Vesc.MotorController do
 
   defp commanded_brake_current(:set_current_brake, %{"current" => current}), do: current
   defp commanded_brake_current(_frame, _data), do: @zero
+
+  defp commanded_drive_current(:set_current, %{"current" => current}), do: current
+  defp commanded_drive_current(_frame, _data), do: @zero
+
+  # Published once: they never change while the process lives.
+  defp broadcast_settings(state, hand_control, max_brake_current) do
+    {mode, min_current, max_current} =
+      case hand_control do
+        :duty -> {"duty", nil, nil}
+        {:current, min_current, max_current} -> {"current", min_current, max_current}
+      end
+
+    broadcast(state, :hand_control, mode, nil)
+    broadcast(state, :min_current, min_current, Units.ampere())
+    broadcast(state, :max_current, max_current, Units.ampere())
+    broadcast(state, :max_brake_current, max_brake_current, Units.ampere())
+  end
 
   # The update above is a call and the enable a cast on the same
   # emitter, so the new frame carries the new data from its first
