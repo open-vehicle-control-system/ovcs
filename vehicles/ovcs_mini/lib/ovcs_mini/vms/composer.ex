@@ -269,6 +269,8 @@ defmodule OvcsMini.Vms.Composer do
       {OVCS.VehicleMotion,
        %{
          rotation_source: Vms.MotorRotation,
+         # The VESC's tachometer, the motor's turns: the distance on 0x60B.
+         revolution_source: Vms.Vesc,
          rotation_to_wheel_ratio: @motor_to_wheel_ratio,
          rotation_signed: true,
          wheel_radius: OvcsMini.geometry().wheel_radius,

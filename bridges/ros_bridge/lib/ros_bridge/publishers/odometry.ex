@@ -4,7 +4,6 @@ defmodule RosBridge.Publishers.Odometry.State do
     :topic,
     :odom_frame_id,
     :base_frame_id,
-    :publish_interval_ms,
     :stale_after_ms,
     :pose_covariance,
     :twist_covariance,
@@ -16,6 +15,8 @@ defmodule RosBridge.Publishers.Odometry.State do
     yaw_rate: 0.0,
     speed: 0.0,
     speed_valid: false,
+    distance: nil,
+    distance_valid: false,
     steering_angle: 0.0,
     sequence: nil,
     last_fresh_at_ms: nil
@@ -32,10 +33,17 @@ defmodule RosBridge.Publishers.Odometry do
       commanded steering angle;
     * the IMU driver's rotation vector: the heading.
 
-  Position integrates speed along the IMU heading,
-  `x += v·cos(ψ)·dt, y += v·sin(ψ)·dt`, with `dt` measured between
-  *fresh* frames — the frame's `sequence` is what distinguishes a new
-  sample from `Cantastic.Emitter`'s retransmission of the last one.
+  Position integrates the distance rolled between two *fresh* frames
+  along the IMU heading, `x += Δd·cos(ψ), y += Δd·sin(ψ)` — the frame's
+  `sequence` is what distinguishes a new sample from
+  `Cantastic.Emitter`'s retransmission of the last one. `Δd` is the
+  difference of the frame's distance counter, which carries no
+  measuring window's lag; while `distance_valid` is false it falls back
+  to `v·dt`. A step longer than the vehicle can roll between two
+  samples, a counter that restarted, is skipped.
+
+  Each fresh sample is published at once, stamped with the time it
+  arrived.
   The first heading seen becomes the odom frame's zero, so a run
   starts at the origin pointing along +x regardless of where the IMU's
   own zero happens to point.
@@ -64,8 +72,6 @@ defmodule RosBridge.Publishers.Odometry do
 
     * `:topic` (`"odom"`), `:odom_frame_id` (`"odom"`),
       `:base_frame_id` (`"base_link"`).
-    * `:publish_interval_ms` (default 50) — Nav2's controller runs at
-      20 Hz; publishing faster only buffers.
     * `:stale_after_ms` (default 300) — matches the VMS-side
       `Freshness` timeout on the command path.
     * `:base_ahead_of_rear_axle` (default 0.0) — metres from the rear
@@ -96,11 +102,14 @@ defmodule RosBridge.Publishers.Odometry do
 
   @frame_name "vehicle_motion"
   @default_topic "odom"
-  @default_publish_interval_ms 50
   @default_stale_after_ms 300
   # A dt above this means the stream was interrupted; the path across
   # the gap is unknown, so the step is dropped rather than integrated.
   @max_step_s 0.5
+  # The distance counter wraps at 65.536 m.
+  @distance_wrap_m 65.536
+  # Farther than the vehicle rolls between two samples.
+  @max_distance_step_m 0.5
 
   @default_pose_variance [1.0e-4, 1.0e-4, 1.0e6, 1.0e6, 1.0e6, 3.0e-4]
   # No slip: the only sideways speed is the turn's, ω · base_offset.
@@ -122,7 +131,6 @@ defmodule RosBridge.Publishers.Odometry do
       topic: Keyword.get(opts, :topic, @default_topic),
       odom_frame_id: Keyword.get(opts, :odom_frame_id, "odom"),
       base_frame_id: Keyword.get(opts, :base_frame_id, "base_link"),
-      publish_interval_ms: Keyword.get(opts, :publish_interval_ms, @default_publish_interval_ms),
       stale_after_ms: Keyword.get(opts, :stale_after_ms, @default_stale_after_ms),
       pose_covariance: diagonal(Keyword.get(opts, :pose_variance, @default_pose_variance)),
       twist_covariance: diagonal(Keyword.get(opts, :twist_variance, @default_twist_variance))
@@ -130,12 +138,10 @@ defmodule RosBridge.Publishers.Odometry do
 
     :ok = Receiver.subscribe(self(), :ovcs, @frame_name)
     driver.register_listener(self())
-    Process.send_after(self(), :tick, state.publish_interval_ms)
 
     Logger.info(
       "#{__MODULE__} publishing Ros2.NavMsgs.Msg.Odometry on #{state.topic} " <>
-        "and #{state.odom_frame_id} -> #{state.base_frame_id} on tf " <>
-        "every #{state.publish_interval_ms}ms"
+        "and #{state.odom_frame_id} -> #{state.base_frame_id} on tf"
     )
 
     {:ok, state}
@@ -147,26 +153,28 @@ defmodule RosBridge.Publishers.Odometry do
       "speed" => %Signal{value: speed},
       "steering_angle" => %Signal{value: steering_angle},
       "speed_valid" => %Signal{value: speed_valid},
+      "distance" => %Signal{value: distance},
+      "distance_valid" => %Signal{value: distance_valid},
       "sequence" => %Signal{value: sequence}
     } = signals
 
-    {:noreply,
-     observe(state, %{
-       speed: Decimal.to_float(speed),
-       steering_angle: Decimal.to_float(steering_angle),
-       speed_valid: speed_valid,
-       sequence: sequence,
-       at_ms: now_ms()
-     })}
-  end
+    at_ms = now_ms()
 
-  def handle_info(:tick, %State{} = state) do
-    if publishable?(state, now_ms()) do
-      publish(state)
-    end
+    next =
+      observe(state, %{
+        speed: Decimal.to_float(speed),
+        steering_angle: Decimal.to_float(steering_angle),
+        # Anything but true, a value the frame layout does not map
+        # included, leaves the reading unusable.
+        speed_valid: speed_valid == true,
+        distance: Decimal.to_float(distance),
+        distance_valid: distance_valid == true,
+        sequence: sequence,
+        at_ms: at_ms
+      })
 
-    Process.send_after(self(), :tick, state.publish_interval_ms)
-    {:noreply, state}
+    if next.sequence != state.sequence and publishable?(next, at_ms), do: publish(next)
+    {:noreply, next}
   end
 
   # Anything else is ignored rather than fatal: a gap in odometry is
@@ -197,12 +205,14 @@ defmodule RosBridge.Publishers.Odometry do
   def observe(%State{} = state, sample) do
     dt_s = step_seconds(state.last_fresh_at_ms, sample.at_ms)
 
+    step = if integrable?(state, sample, dt_s), do: step_metres(state, sample, dt_s)
+
     state =
-      if integrable?(state, sample, dt_s) do
+      if step do
         %{
           state
-          | x: state.x + state.speed * :math.cos(state.yaw) * dt_s,
-            y: state.y + state.speed * :math.sin(state.yaw) * dt_s
+          | x: state.x + step * :math.cos(state.yaw),
+            y: state.y + step * :math.sin(state.yaw)
         }
       else
         state
@@ -213,9 +223,30 @@ defmodule RosBridge.Publishers.Odometry do
       | speed: sample.speed,
         steering_angle: sample.steering_angle,
         speed_valid: sample.speed_valid,
+        distance: Map.get(sample, :distance),
+        distance_valid: Map.get(sample, :distance_valid, false),
         sequence: sample.sequence,
         last_fresh_at_ms: sample.at_ms
     }
+  end
+
+  # The counter's difference when both samples carry one, else the
+  # previous speed over the interval; nil for an implausible jump.
+  defp step_metres(
+         %State{distance_valid: true, distance: from},
+         %{distance_valid: true, distance: to},
+         _dt_s
+       )
+       when is_float(from) and is_float(to) do
+    step = wrapped(to - from)
+    if abs(step) <= @max_distance_step_m, do: step
+  end
+
+  defp step_metres(state, _sample, dt_s), do: state.speed * dt_s
+
+  defp wrapped(delta) do
+    half = @distance_wrap_m / 2
+    delta - @distance_wrap_m * Float.floor((delta + half) / @distance_wrap_m)
   end
 
   defp step_seconds(nil, _now_ms), do: nil

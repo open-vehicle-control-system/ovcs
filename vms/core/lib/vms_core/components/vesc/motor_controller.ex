@@ -67,7 +67,10 @@ defmodule VmsCore.Components.Vesc.MotorController do
 
   `status` carries the erpm and the motor current, `status_5` the
   tachometer and the input voltage. The rotation comes from one of the
-  two, see `:rotation_from`. They are published as `:rotation_per_minute`
+  two, see `:rotation_from`. The tachometer is also published as
+  `:revolutions`, the motor's signed mechanical turns since the VESC
+  started: a distance, for a consumer that integrates position without
+  the lag of the rate's window. They are published as `:rotation_per_minute`
   (mechanical, signed) with the `:direction` it gives, `:motor_current`
   and `:input_voltage`, once per frame received — a message per sample,
   so a consumer integrating the rotation can tell a fresh value from a
@@ -307,6 +310,7 @@ defmodule VmsCore.Components.Vesc.MotorController do
     if state.rotation_from == :tachometer and not is_nil(rotation),
       do: broadcast_rotation(state, rotation)
 
+    broadcast(state, :revolutions, revolutions(tachometer, state.pole_pairs), Units.revolution())
     broadcast(state, :input_voltage, input_voltage, Units.volt())
     {:noreply, %{state | tachometer_samples: samples}}
   end
@@ -321,6 +325,7 @@ defmodule VmsCore.Components.Vesc.MotorController do
   def handle_info({:handle_missing_frame, network, name}, state)
       when network == state.network and name == state.frames.status_5 do
     if state.rotation_from == :tachometer, do: broadcast_rotation(state, nil)
+    broadcast(state, :revolutions, nil, Units.revolution())
     broadcast(state, :input_voltage, nil, Units.volt())
     {:noreply, %{state | tachometer_samples: []}}
   end
@@ -509,6 +514,12 @@ defmodule VmsCore.Components.Vesc.MotorController do
   @doc false
   def rotation_per_minute(erpm, pole_pairs) do
     erpm |> D.new() |> D.div(pole_pairs) |> D.round(1)
+  end
+
+  # The tachometer counts 6 steps per electrical turn.
+  @doc false
+  def revolutions(tachometer, pole_pairs) do
+    tachometer |> D.new() |> D.div(6 * pole_pairs)
   end
 
   # The mechanical rpm over the samples of the last window, newest

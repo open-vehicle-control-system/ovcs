@@ -10,7 +10,7 @@ This guide covers driving a traction motor behind a VESC motor controller from t
 A hobby ESC takes a servo pulse and gives nothing back. The VMS has to guess the edge of motion, can't ask for a speed, and can't brake and reverse without the ESC's own brake-then-reverse sequence getting in the way. A VESC on CAN closes all three gaps:
 
 - **Closed-loop speed.** `vesc_set_rpm` asks for an electrical rpm and the VESC's speed loop holds it under load, so a planner's velocity is followed rather than approximated by a pulse width. A zero velocity goes out as zero duty, a passive brake from any motor state. Below the loop's minimum erpm the VESC brakes the same way, so a planner must never command a non-zero velocity below it (see [the settings](#vesc-tool-settings)).
-- **Telemetry.** `vesc_status` reports the signed motor rpm and motor current at 50 Hz; `vesc_status_5` adds the battery voltage. The signed rpm is a rotation `OVCS.VehicleMotion` turns into the vehicle's speed, direction included.
+- **Telemetry.** `vesc_status` reports the signed motor rpm and motor current at 50 Hz; `vesc_status_5` adds the battery voltage and the tachometer, which also gives the distance the wheels have rolled for odometry. The signed rpm is a rotation `OVCS.VehicleMotion` turns into the vehicle's speed, direction included.
 - **Reverse.** A negative rpm is reverse, with no brake-then-reverse sequence, so a planner may plan in reverse.
 
 Use a sensored motor (Hall or encoder) for clean starts under load; a sensorless motor works but starts roughly.
