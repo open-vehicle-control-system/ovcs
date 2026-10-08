@@ -144,31 +144,48 @@
       "title": "Joy axes",
       "paths": [
         {
-          "value": "/joy.axes[0]",
+          "value": "/joy/xbox.axes[0]",
           "enabled": true,
           "timestampMethod": "receiveTime",
-          "label": "axis 0"
+          "label": "xbox stick x"
         },
         {
-          "value": "/joy.axes[1]",
+          "value": "/joy/xbox.axes[1]",
           "enabled": true,
           "timestampMethod": "receiveTime",
-          "label": "axis 1"
+          "label": "xbox stick y"
         },
         {
-          "value": "/joy.axes[2]",
+          "value": "/joy/xbox.axes[2]",
           "enabled": true,
           "timestampMethod": "receiveTime",
-          "label": "axis 2"
+          "label": "xbox LT"
         },
         {
-          "value": "/joy.axes[3]",
+          "value": "/joy/xbox.axes[5]",
           "enabled": true,
           "timestampMethod": "receiveTime",
-          "label": "axis 3"
+          "label": "xbox RT"
+        },
+        {
+          "value": "/joy/g923.axes[0]",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "g923 wheel"
+        },
+        {
+          "value": "/joy/g923.axes[1]",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "g923 accelerator"
+        },
+        {
+          "value": "/joy/g923.axes[2]",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "g923 brake"
         }
-      ],
-      "showXAxisLabels": true,
+      ],      "showXAxisLabels": true,
       "showYAxisLabels": true,
       "showLegend": true,
       "legendDisplay": "floating",

@@ -120,7 +120,7 @@ defmodule OvcsMini do
 
     components = [
       :heartbeat,
-      {:joy_interpreter, profiles_dir: joy_profiles_dir()},
+      :joy_interpreter,
       # Nav2 publishes TwistStamped on /cmd_vel_nav; teleop_twist_joy
       # publishes plain Twist on /cmd_vel. Subscribing to the stamped
       # one keeps the joystick path on 0x2B0 and the planner path on
@@ -157,8 +157,6 @@ defmodule OvcsMini do
     }
   end
 
-  defp joy_profiles_dir, do: :ovcs_mini |> :code.priv_dir() |> Path.join("joy")
-
   # base_link sits midway between the axles.
   defp base_ahead_of_rear_axle, do: geometry().wheelbase / 2
 
@@ -168,7 +166,7 @@ defmodule OvcsMini do
       node_name: "ovcs_bridge_ros",
       components: [
         :heartbeat,
-        {:joy_interpreter, profiles_dir: joy_profiles_dir()},
+        :joy_interpreter,
         # Same subscription as the host config. This is the list the
         # burned firmware runs, so the planner path exists on the
         # vehicle only if it is declared here as well.

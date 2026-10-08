@@ -1,7 +1,0 @@
-# A gamepad: the left stick steers and drives.
-topic: joy
-steering:
-  - axis: 0
-    gain: -1.0
-throttle:
-  - axis: 1

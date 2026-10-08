@@ -101,7 +101,7 @@ The guides use a small set of words precisely. Each entry below gives the meanin
 
 | Term | Definition |
 |---|---|
-| **Actuator command** | The `0x2B0` frame `RosBridge.Consumers.Joy` writes from `/joy`: normalised steering and throttle positions, read by `OVCS.RosActuatorCommand.*`. [ROS 2 and the simulator](./ros2_simulator.md#the-actuator-command-0x2b0) |
+| **Actuator command** | The `0x2B0` frame `RosBridge.Consumers.Joy` writes from `/joy/<profile>`: normalised steering and throttle positions, read by `OVCS.RosActuatorCommand.*`. [ROS 2 and the simulator](./ros2_simulator.md#the-actuator-command-0x2b0) |
 | **Base station** | The operator's workstation side, `compose/local/`: ROS tooling, the gamepad node and Foxglove Studio, joining the vehicle's router as clients. [ROS 2 and the simulator](./ros2_simulator.md#who-runs-what) |
 | **`OVCS_SIM`** | Environment variable (`1` or `true`) that switches the OVCS Mini reference vehicle's ROS bridges to simulator wiring: Zenoh camera input, no odometry publisher. [ROS 2 and the simulator](./ros2_simulator.md#perception-against-the-simulator) |
 | **ROS bridge** | `RosBridge`, the bridge that speaks the `rmw_zenoh` wire format natively over Zenoh, turning ROS topics into `ovcs` frames and back; a vehicle configures it in `ros_bridge_config/1` or `/2`. [Framework components](./components.md#ros-bridge) |

@@ -1,5 +1,13 @@
 defmodule RosBridge.Consumers.Joy.State do
-  defstruct [:watchdog, profiles: %{}, released: MapSet.new(), sequence: 0]
+  defstruct [
+    :watchdog,
+    :active,
+    profiles: %{},
+    ignored: MapSet.new(),
+    released: MapSet.new(),
+    direction: "forward",
+    sequence: 0
+  ]
 end
 
 defmodule RosBridge.Consumers.Joy do
@@ -11,14 +19,19 @@ defmodule RosBridge.Consumers.Joy do
 
   ## Profiles
 
-  Each controller has its own axis layout, so each profile reads its
-  own topic and the operator picks one by the topic the `joy` node
-  publishes on. `:profiles_dir` names a directory of profile files, one
-  per controller (`RosBridge.Consumers.Joy.Profile` describes the
-  format); without it, `Profile.gamepad/0` reads `joy`. Two
-  controllers publishing at once both write the frame; the latest
-  sample wins. The input going stale forgets which pedals were seen
-  released, since a restarted `joy` node reports them as 0 again.
+  Each controller has its own layout, described by a profile file
+  (`RosBridge.Consumers.Joy.Profile`) that reads `joy/<name>`; the
+  operator's `joy` node picks the topic from the controller plugged in.
+  The framework ships one profile per supported controller in this
+  application's `priv/joy`; `:profiles_dir` names a vehicle's own
+  directory, whose profiles add to them, one of the same name replacing
+  the framework's.
+
+  One controller commands at a time: the first to publish keeps the
+  vehicle until its input goes stale, and another publishing meanwhile
+  is ignored, with a warning. Going stale also forgets which pedals
+  were seen released, since a restarted `joy` node reports them as 0
+  again, and the direction returns to forward.
 
   ## Why the axis conversion is defensive
 
@@ -104,17 +117,18 @@ defmodule RosBridge.Consumers.Joy do
         enable: true
       })
 
-    profiles =
+    vehicle_profiles =
       case Keyword.get(opts, :profiles_dir) do
-        nil -> [Profile.gamepad()]
+        nil -> []
         dir -> Profile.load_dir!(dir)
       end
-      |> Map.new(&{&1.topic, &1})
 
-    Logger.info(
-      "#{__MODULE__} profiles: " <>
-        Enum.map_join(profiles, ", ", fn {t, p} -> "#{p.name} on #{t}" end)
-    )
+    profiles =
+      (Profile.load_dir!(Profile.framework_dir()) ++ vehicle_profiles)
+      |> Map.new(&{&1.name, &1})
+      |> Map.new(fn {_name, profile} -> {Profile.topic(profile), profile} end)
+
+    Logger.info("#{__MODULE__} profiles on #{profiles |> Map.keys() |> Enum.join(", ")}")
 
     for topic <- Map.keys(profiles), do: :ok = RosBridge.ZenohClient.subscribe(topic, Joy)
     {:ok, _timer} = :timer.send_interval(@check_period_ms, :check_input)
@@ -134,32 +148,26 @@ defmodule RosBridge.Consumers.Joy do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
   end
 
+  @doc """
+  The throttle and the frame's direction for the gear lever's
+  `requested` direction, `last` being the direction sent before. In
+  neutral the throttle only brakes and the direction holds; a profile
+  without `gears` (`nil`) drives forward.
+  """
+  def gear(nil, throttle, _last), do: {throttle, "forward"}
+  def gear(:neutral, throttle, last), do: {min(throttle, 0.0), last}
+  def gear(requested, throttle, _last), do: {throttle, Atom.to_string(requested)}
+
   # `from_float/1` has no integer clause; the profile's sums are floats.
   defp decimal(value), do: value |> Kernel.*(1.0) |> D.from_float()
 
   @impl true
-  def handle_info({:ros_message, {key_expr, %Joy{axes: axes}}}, state) do
+  def handle_info({:ros_message, {key_expr, %Joy{} = joy}}, state) do
     profile = Map.fetch!(state.profiles, topic(key_expr))
-    {steering, throttle, released} = Profile.command(profile, axes, state.released)
-    sequence = next_sequence(state.sequence)
 
-    :ok =
-      Emitter.update(:ovcs, @frame_name, fn data ->
-        %{
-          data
-          | "steering" => decimal(steering),
-            "throttle" => decimal(throttle),
-            "sequence" => sequence
-        }
-      end)
-
-    {:noreply,
-     %{
-       state
-       | watchdog: InputWatchdog.seen(state.watchdog),
-         released: released,
-         sequence: sequence
-     }}
+    if state.active in [nil, profile.name],
+      do: {:noreply, drive(profile, joy, state)},
+      else: {:noreply, ignore(profile, state)}
   end
 
   # The transition, not the state, so this logs once per outage rather
@@ -177,6 +185,46 @@ defmodule RosBridge.Consumers.Joy do
     Logger.warning("#{__MODULE__} unexpected message on #{key_expr}: #{inspect(message)}")
 
     {:noreply, state}
+  end
+
+  defp drive(profile, %Joy{axes: axes, buttons: buttons}, state) do
+    {steering, throttle, released} = Profile.command(profile, axes, state.released)
+
+    {throttle, direction} =
+      gear(Profile.direction(profile, axes, buttons), throttle, state.direction)
+
+    sequence = next_sequence(state.sequence)
+
+    :ok =
+      Emitter.update(:ovcs, @frame_name, fn data ->
+        %{
+          data
+          | "steering" => decimal(steering),
+            "throttle" => decimal(throttle),
+            "direction" => direction,
+            "sequence" => sequence
+        }
+      end)
+
+    %{
+      state
+      | watchdog: InputWatchdog.seen(state.watchdog),
+        active: profile.name,
+        released: released,
+        direction: direction,
+        sequence: sequence
+    }
+  end
+
+  # Once per controller and outage, not twenty times a second.
+  defp ignore(profile, state) do
+    unless MapSet.member?(state.ignored, profile.name) do
+      Logger.warning(
+        "#{__MODULE__}: ignoring #{Profile.topic(profile)}, #{state.active} is commanding the vehicle"
+      )
+    end
+
+    %{state | ignored: MapSet.put(state.ignored, profile.name)}
   end
 
   # Nothing has ever arrived, which is a setup problem rather than a
@@ -204,7 +252,7 @@ defmodule RosBridge.Consumers.Joy do
   end
 
   defp handle_transition(:fresh, state) do
-    Logger.info("#{__MODULE__}: #{topics(state)} is publishing")
+    Logger.info("#{__MODULE__}: #{state.active} is commanding the vehicle")
     state
   end
 
@@ -220,7 +268,14 @@ defmodule RosBridge.Consumers.Joy do
         %{data | "throttle" => D.new(0), "sequence" => sequence}
       end)
 
-    %{state | sequence: sequence, released: MapSet.new()}
+    %{
+      state
+      | sequence: sequence,
+        active: nil,
+        ignored: MapSet.new(),
+        released: MapSet.new(),
+        direction: "forward"
+    }
   end
 
   @doc false

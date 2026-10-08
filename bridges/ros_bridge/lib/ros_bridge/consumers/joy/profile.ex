@@ -3,8 +3,8 @@ defmodule RosBridge.Consumers.Joy.Profile do
   How one controller's `sensor_msgs/Joy` axes become the actuator
   command, read from a YAML file:
 
-      # Logitech G923 in HID mode.
-      topic: joy_wheel
+      # g923.yml: Logitech G923 in HID mode.
+      device: G923 Racing Wheel
       steering:
         - axis: 0
           gain: -5.0
@@ -12,8 +12,16 @@ defmodule RosBridge.Consumers.Joy.Profile do
         - pedal: 1
         - pedal: 2
           gain: -1.0
+      gears:
+        forward: [12, 13, 14, 15, 16, 17]
+        backward: [11]
 
-  `topic` is the `Joy` topic the profile reads. `steering` and
+  A profile is named after its file and reads `joy/<name>`. `device`
+  is a regular expression matching the controller's name as the kernel
+  reports it, which the operator's `joy` node uses to pick the profile
+  of the controller plugged in (`compose/compute/images/ros2/docker/joy.sh`),
+  with `deadzone`, if set, as its `joy_linux` deadzone.
+  `steering` and
   `throttle` are each the sum of their terms, clamped to [-1, 1], in
   the units of the `ros_actuator_command` frame. A term reads one axis,
   times its `gain` (1.0):
@@ -22,20 +30,42 @@ defmodule RosBridge.Consumers.Joy.Profile do
     * `pedal: i` — a pedal reported -1 released and 1 pressed, read
       0 to 1
 
+  `gears`, optional, selects the direction from what is held: `forward`
+  and `backward` each list buttons (`button: i`, or the bare index) and
+  triggers (`trigger: i`, an axis resting at 1 and pressed towards -1,
+  held past half travel). A gear lever's positions are buttons held
+  while it sits in them; a trigger is held by hand:
+
+      gears:
+        forward:
+          - trigger: 5
+        backward:
+          - trigger: 2
+
+  Nothing held, or both directions at once, is neutral, where the
+  throttle cannot drive (it still brakes). Without `gears` the
+  direction is always forward.
+
   A pedal reads as released until a sample has shown it released:
   `joy_linux` reports an axis it has no event for as 0, which is a
   pedal half pressed. A missing or non-numeric axis reads as 0.
   """
 
-  defstruct [:name, :topic, steering: [], throttle: []]
+  defstruct [:name, :device, :gears, steering: [], throttle: []]
 
   @type term_spec :: {:axis | :pedal, non_neg_integer(), float()}
   @type t :: %__MODULE__{
           name: String.t(),
-          topic: String.t(),
+          device: String.t() | nil,
           steering: [term_spec()],
-          throttle: [term_spec()]
+          throttle: [term_spec()],
+          gears:
+            nil
+            | %{forward: [control()], backward: [control()]}
         }
+
+  @type control :: {:button | :trigger, non_neg_integer()}
+  @type direction :: :forward | :backward | :neutral
 
   @doc "The profile in `path`, named after the file."
   @spec load!(Path.t()) :: t()
@@ -49,6 +79,10 @@ defmodule RosBridge.Consumers.Joy.Profile do
     end
   end
 
+  @doc "The framework's profiles, in the bridge's `priv/joy`."
+  @spec framework_dir() :: Path.t()
+  def framework_dir, do: :ros_bridge |> :code.priv_dir() |> Path.join("joy")
+
   @doc "Every `*.yml` profile in `dir`."
   @spec load_dir!(Path.t()) :: [t()]
   def load_dir!(dir), do: dir |> Path.join("*.yml") |> Path.wildcard() |> Enum.map(&load!/1)
@@ -58,11 +92,52 @@ defmodule RosBridge.Consumers.Joy.Profile do
   def parse!(name, yaml) do
     %__MODULE__{
       name: name,
-      topic: Map.get(yaml, "topic", "joy"),
+      device: device!(name, Map.get(yaml, "device")),
       steering: terms!(name, yaml, "steering"),
-      throttle: terms!(name, yaml, "throttle")
+      throttle: terms!(name, yaml, "throttle"),
+      gears: gears!(name, Map.get(yaml, "gears"))
     }
   end
+
+  defp device!(_name, nil), do: nil
+
+  defp device!(name, device) when is_binary(device) do
+    case Regex.compile(device) do
+      {:ok, _} -> device
+      {:error, error} -> raise ArgumentError, "joy profile #{name}, device: #{inspect(error)}"
+    end
+  end
+
+  defp device!(name, device),
+    do: raise(ArgumentError, "joy profile #{name}, device: not a string: #{inspect(device)}")
+
+  @doc "The `Joy` topic a profile reads."
+  @spec topic(t()) :: String.t()
+  def topic(%__MODULE__{name: name}), do: "joy/#{name}"
+
+  defp gears!(_name, nil), do: nil
+
+  defp gears!(name, %{} = gears) do
+    for direction <- ["forward", "backward"], into: %{} do
+      controls = gears |> Map.get(direction, []) |> List.wrap()
+      {String.to_atom(direction), Enum.map(controls, &control!(name, direction, &1))}
+    end
+  end
+
+  defp gears!(name, gears),
+    do: raise(ArgumentError, "joy profile #{name}, gears: not a map: #{inspect(gears)}")
+
+  defp control!(_name, _direction, index) when is_integer(index) and index >= 0,
+    do: {:button, index}
+
+  defp control!(_name, _direction, %{"button" => index}) when is_integer(index) and index >= 0,
+    do: {:button, index}
+
+  defp control!(_name, _direction, %{"trigger" => index}) when is_integer(index) and index >= 0,
+    do: {:trigger, index}
+
+  defp control!(name, direction, control),
+    do: raise(ArgumentError, "joy profile #{name}, gears: bad #{direction} #{inspect(control)}")
 
   defp terms!(name, yaml, output) do
     yaml |> Map.get(output, []) |> List.wrap() |> Enum.map(&term!(name, output, &1))
@@ -79,16 +154,6 @@ defmodule RosBridge.Consumers.Joy.Profile do
 
   defp gain(term), do: term |> Map.get("gain", 1.0) |> Kernel.*(1.0)
 
-  @doc "The default: a gamepad on `joy`, axis 0 steering (inverted) and axis 1 throttle."
-  @spec gamepad() :: t()
-  def gamepad,
-    do: %__MODULE__{
-      name: "gamepad",
-      topic: "joy",
-      steering: [{:axis, 0, -1.0}],
-      throttle: [{:axis, 1, 1.0}]
-    }
-
   @doc """
   `{steering, throttle, released}` for a sample's `axes`, each in
   [-1, 1]. `released` is the set of pedal axes seen released so far,
@@ -104,6 +169,30 @@ defmodule RosBridge.Consumers.Joy.Profile do
 
     {output(profile.steering, axes, released), output(profile.throttle, axes, released), released}
   end
+
+  @doc """
+  The direction what is held in a sample asks for, `nil` without
+  `gears`.
+  """
+  @spec direction(t(), [number()] | nil, [integer()] | nil) :: direction() | nil
+  def direction(%__MODULE__{gears: nil}, _axes, _buttons), do: nil
+
+  def direction(%__MODULE__{gears: gears}, axes, buttons) do
+    held = &held?(&1, axes, buttons)
+
+    case {Enum.any?(gears.forward, held), Enum.any?(gears.backward, held)} do
+      {true, false} -> :forward
+      {false, true} -> :backward
+      _ -> :neutral
+    end
+  end
+
+  defp held?({:button, index}, _axes, buttons) when is_list(buttons),
+    do: Enum.at(buttons, index) == 1
+
+  defp held?({:button, _index}, _axes, _buttons), do: false
+  # Before its first event joy_linux reports a trigger as 0: not held.
+  defp held?({:trigger, index}, axes, _buttons), do: axis(axes, index) <= -0.5
 
   defp output(terms, axes, released) do
     terms

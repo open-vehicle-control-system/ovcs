@@ -135,35 +135,44 @@ Foxglove against `ws://<compute-node-ip>:8765`.
 ZENOH_ENDPOINT_IP=127.0.0.1 docker compose -f base.yml --profile standalone up -d
 ```
 
-**USB controller → `/joy` → CAN:**
+**USB controller → `/joy/<profile>` → CAN:**
 
 ```sh
 ls /dev/input/js*                            # should show js0 — that's the default
 docker compose -f base.yml up -d joy
-docker compose -f base.yml exec ros2 bash -lc 'ros2 topic echo /joy sensor_msgs/msg/Joy'
+docker compose -f base.yml logs joy          # the controller found and its topic
+docker compose -f base.yml exec ros2 bash -lc 'ros2 topic echo /joy/xbox sensor_msgs/msg/Joy'
 ```
 
-`RosBridge.Consumers.Joy` subscribes to `/joy` over the same fabric, so
-a running `./ovcs run <vehicle>` (or a Nerves bridge on the LAN) sees
-the axes flow straight into the `ros_actuator_command` CAN emitter.
-Other controllers: `JOY_DEV=/dev/input/js1 docker compose -f base.yml up -d joy`;
-`JOY_DEADZONE` and `JOY_AUTOREPEAT_RATE` likewise. The service is
-Linux-only — `device_cgroup_rules` + a bind-mounted `/dev/input` does
-not work on Docker Desktop for macOS/Windows; if `ls /dev/input/js*` is
-empty after plugging in, check `dmesg | tail`.
+The `joy` service reads the controller's name, picks the joy profile
+whose `device` pattern matches it, and publishes on `/joy/<profile>`.
+`RosBridge.Consumers.Joy` subscribes to each profile's topic over the
+same fabric and maps the controller with its profile into the
+`ros_actuator_command` CAN emitter. One controller commands at a time:
+another publishing meanwhile is ignored until the first stops for
+500 ms.
 
-**Steering wheel.** The topic picks the bridge's joy profile, a YAML
-file per controller in your vehicle's `priv/joy/`
-(`RosBridge.Consumers.Joy.Profile` describes the format). The OVCS
-Mini reference vehicle's `g923.yml` reads the wheel on `joy_wheel`,
-with the throttle as the accelerator minus the brake.
+A profile is a YAML file per controller
+(`RosBridge.Consumers.Joy.Profile` describes the format). The
+framework ships two in `bridges/ros_bridge/priv/joy/`:
 
-```sh
-JOY_TOPIC=joy_wheel JOY_DEADZONE=0.0 docker compose -f base.yml up -d joy
-```
+| Profile | Controls |
+|---|---|
+| `xbox.yml` | left stick steers, and drives (up) or brakes (down) in the gear the triggers hold: RT forward, LT backward, neither neutral |
+| `g923.yml` | the wheel steers, full lock at ±90°; the accelerator drives and the brake brakes, in the gear of the Driving Force Shifter: 1 to 6 forward, reverse backward |
 
-A deadzone of 0.0, because the wheel has no stick drift and joy_linux's
-deadzone sits at the axis' centre, which is a pedal half pressed.
+In neutral the throttle only brakes. As with the radio's reverse
+switch, the VMS changes gear only once the vehicle is stopped and the
+throttle released.
+
+Your vehicle adds its own profiles with
+`{:joy_interpreter, profiles_dir: ...}`, one of the same name replacing
+the framework's; start the `joy` service with `JOY_PROFILE=<name>` for
+a profile only your vehicle has. `JOY_DEV=/dev/input/js1` picks another
+device, `JOY_AUTOREPEAT_RATE` likewise. The service is Linux-only —
+`device_cgroup_rules` + a bind-mounted `/dev/input` does not work on
+Docker Desktop for macOS/Windows; if `ls /dev/input/js*` is empty after
+plugging in, check `dmesg | tail`.
 
 The G923 *for Xbox One and PC* (`046d:c26d` in `lsusb`) starts in Xbox
 mode, which Linux has no driver for: no `/dev/input/js*` appears.
