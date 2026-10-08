@@ -201,7 +201,7 @@ local_costmap:
       # The 568 mm body and 341 mm wheel envelope around base_link, which
       # sits midway between the axles, plus 2 cm.
       footprint: "[[0.30, 0.19], [0.30, -0.19], [-0.30, -0.19], [-0.30, 0.19]]"
-      plugins: ["stvl_layer", "denoise_layer", "inflation_layer"]
+      plugins: ["stvl_layer", "denoise_layer", "lidar_layer", "inflation_layer"]
       stvl_layer:
         # The camera looks forward only, so a mark that leaves its view
         # is never seen again; voxels expire instead of persisting.
@@ -257,6 +257,19 @@ local_costmap:
         plugin: "nav2_costmap_2d::DenoiseLayer"
         minimal_group_size: 5
         group_connectivity_type: 8
+      lidar_layer:
+        # The RPLIDAR's 360° scan, after denoise_layer: its returns are not
+        # stereo mismatches, and a chair leg is a single cell.
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        observation_sources: scan
+        scan:
+          topic: /scan
+          data_type: "LaserScan"
+          marking: true
+          clearing: true
+          obstacle_max_range: 4.0
+          raytrace_max_range: 5.0
+          max_obstacle_height: 0.6
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
@@ -280,7 +293,7 @@ global_costmap:
       height: 30
       resolution: 0.1
       footprint: "[[0.30, 0.19], [0.30, -0.19], [-0.30, -0.19], [-0.30, 0.19]]"
-      plugins: ["obstacle_layer", "denoise_layer", "inflation_layer"]
+      plugins: ["obstacle_layer", "denoise_layer", "lidar_layer", "inflation_layer"]
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         # One cloud, two sources. Heights are in odom, whose z is the
@@ -311,6 +324,19 @@ global_costmap:
         plugin: "nav2_costmap_2d::DenoiseLayer"
         minimal_group_size: 5
         group_connectivity_type: 8
+      lidar_layer:
+        # The RPLIDAR's 360° scan, after denoise_layer: its returns are not
+        # stereo mismatches, and a chair leg is a single cell.
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        observation_sources: scan
+        scan:
+          topic: /scan
+          data_type: "LaserScan"
+          marking: true
+          clearing: true
+          obstacle_max_range: 4.0
+          raytrace_max_range: 5.0
+          max_obstacle_height: 0.6
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
