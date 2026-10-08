@@ -53,9 +53,9 @@ For a VESC with id 1 wrapped under the prefix `vesc`:
 
 | Frame | Id | Signals | Sent by | When |
 |-------|----|---------|---------|------|
-| `vesc_set_current` | `0x0101` | `set_current_signals.yml` | VMS | no source selected, or a geared hand in neutral, parking or at rest: zero current releases the motor |
+| `vesc_set_current` | `0x0101` | `set_current_signals.yml` | VMS | a hand commands with `hand_control: :current`: its shaped request times `:max_current`, signed by the gear when there is one; at zero, with no source selected or a geared hand in neutral, parking or at rest, it releases the motor |
 | `vesc_set_current_brake` | `0x0201` | `set_current_brake_signals.yml` | VMS | with gears, a hand pulling the trigger back: braking current, never reverse |
-| `vesc_set_duty` | `0x0001` | `set_duty_signals.yml` | VMS | a hand commands: its shaped request in [-1, 1] times the duty cap, signed by the gear when there is one; also a velocity of exactly zero, which brakes |
+| `vesc_set_duty` | `0x0001` | `set_duty_signals.yml` | VMS | a hand commands with `hand_control: :duty`: its shaped request in [-1, 1] times the duty cap, signed by the gear when there is one; also a velocity of exactly zero, which brakes |
 | `vesc_set_rpm` | `0x0301` | `set_rpm_signals.yml` | VMS | a non-zero velocity commands: electrical rpm, negative for reverse |
 | `vesc_status` | `0x0901` | `status_signals.yml` | VESC | 50 Hz: erpm, motor current, duty |
 | `vesc_status_5` | `0x1B01` | `status_5_signals.yml` | VESC | 50 Hz: tachometer, input voltage |
@@ -74,6 +74,17 @@ The payloads, as the signals files decode them:
 Exactly one command frame is emitted at a time, every 20 ms; `Vesc.MotorController` switches emitters when the selected source changes kind. The VESC applies whichever control mode it last received.
 
 Zero velocity goes out as zero duty rather than zero rpm because the VESC only starts its speed loop above *Minimum ERPM*. Below it a running motor holds zero duty, but a released motor (what the release command and the timeout leave behind) stays released, and a zero rpm would never start it. Zero duty brakes from any state and leaves the motor running for the next setpoint.
+
+### Duty or current for hands
+
+`hand_control` picks how a hand's request (radio, joystick) reaches the motor:
+
+| `hand_control` | Frame | A request is | Easing off |
+|---|---|---|---|
+| `:duty` (default) | `vesc_set_duty` | a fraction of the pack voltage, capped by `:max_throttle` and `:max_reverse` | brakes the motor down to the lower duty's speed: a duty behaves like a speed target |
+| `:current` | `vesc_set_current` | a motor current from `:min_current` at the smallest request to `:max_current` at a full one, scaled by the same caps: a torque, like a car's accelerator | pushes less; at zero the motor coasts |
+
+With `:current` the vehicle keeps accelerating while the request is held, up to what the VESC's own limits allow. Set `:min_current` just under the current the vehicle needs to start rolling, so the request's travel moves it rather than fights static friction. The OVCS Mini reference vehicle starts rolling at 4.3 A and uses `:current` from 4 A to 10 A.
 
 ### Gears for hands
 
@@ -140,10 +151,11 @@ The motor controller knows nothing about the vehicle: it takes the motor rpm at 
    max_rotation_per_minute: @max_motor_rotation_per_minute,
    # A 4-pole motor.
    pole_pairs: 2,
-   # Duty caps for hands; the hand's own dead zone and expo are an
-   # `OVCS.InputCurve` in front of the manager.
-   max_throttle: @max_throttle,
-   max_reverse: @max_reverse_throttle
+   # Hands command a current, a torque: easing off coasts. The hand's
+   # own dead zone and expo are an `OVCS.InputCurve` in front of the
+   # manager.
+   hand_control: :current,
+   max_current: @max_motor_current
  }}
 ```
 
