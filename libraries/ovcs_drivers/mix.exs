@@ -17,10 +17,11 @@ defmodule OvcsDrivers.MixProject do
 
   defp deps do
     [
-      # Each driver pulls in only the buses it actually uses. Today
-      # everything is I²C; add `:circuits_gpio` / `:circuits_spi`
-      # alongside if a SPI / GPIO driver lands here.
+      # Each driver pulls in only the buses it actually uses; add
+      # `:circuits_gpio` / `:circuits_spi` alongside if a SPI / GPIO
+      # driver lands here.
       {:circuits_i2c, "~> 2.0"},
+      {:circuits_uart, "~> 1.5"},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
     ]
   end

@@ -175,9 +175,64 @@ defmodule OvcsMini do
         {:imu_publisher, driver: BNO085.I2C},
         # Same ordering constraint as the host config.
         {:odometry_publisher,
-         driver: BNO085.I2C, base_ahead_of_rear_axle: base_ahead_of_rear_axle()}
+         driver: BNO085.I2C, base_ahead_of_rear_axle: base_ahead_of_rear_axle()},
+        # RPLIDAR C1 on the bridge's USB port, found by its adapter's
+        # serial number. It measures about every 0.72 degrees, 500
+        # points a revolution: one bin each.
+        {:lidar_publisher,
+         driver: RPLidar.UART,
+         driver_opts: [serial_number: "bafb4ecd0064ef11858ee0a9c169b110"],
+         bins: 500},
+        # A02YYUW ultrasonic sensors on the rear bumper, each on a CP2104
+        # found by its serial number.
+        rear_ultrasound(:left, "01D9EBFA"),
+        rear_ultrasound(:right, "02PW2EBP"),
+        {:static_transforms, transforms: [lidar_transform() | rear_ultrasound_transforms()]}
       ]
     }
+
+  defp rear_ultrasound(side, serial_number) do
+    {:range_publisher,
+     driver: A02YYUW.UART,
+     name: :"ultrasound_rear_#{side}",
+     driver_opts: [serial_number: serial_number],
+     topic: "ultrasound/rear_#{side}",
+     frame_id: "ultrasound_rear_#{side}"}
+  end
+
+  # On the rear bumper's support: its back face 125 mm behind the rear
+  # axle, so 287 mm behind base_link (midway between the axles), and
+  # each sensor's face 10.6 mm further back, 41.8 mm either side of the
+  # centreline, 110 mm above the ground (with the suspension at rest).
+  # Each faces backwards toed 10 degrees outward: 170 and -170 degrees
+  # about z.
+  defp rear_ultrasound_transforms do
+    for {side, {y, yaw_degrees}} <- [left: {0.0418, 170}, right: {-0.0418, -170}] do
+      half_yaw = yaw_degrees * :math.pi() / 360
+
+      %{
+        parent: "base_link",
+        child: "ultrasound_rear_#{side}",
+        translation: {-0.2976, y, 0.110},
+        rotation: {0.0, 0.0, :math.sin(half_yaw), :math.cos(half_yaw)}
+      }
+    end
+  end
+
+  # Where the lidar sits on the car, so `laser` resolves: its centre 25
+  # mm ahead of the rear axle, so 137 mm behind base_link, on the
+  # centreline, its base 205 mm above the ground (20 mm above the stereo
+  # lenses). The frame is at the base; the scan plane is a little
+  # higher. The C1's zero angle is taken as the car's forward, not yet
+  # checked against an object in front.
+  defp lidar_transform do
+    %{
+      parent: "base_link",
+      child: "laser",
+      translation: {-0.137, 0.0, 0.205},
+      rotation: {0.0, 0.0, 0.0, 1.0}
+    }
+  end
 
   defp perception_host_config do
     %RosBridge.Config{
@@ -446,6 +501,7 @@ defmodule OvcsMini do
       # and reads as an obstacle about a metre ahead. A hole is honest;
       # a phantom obstacle is not. Keep CLAHE: without it those
       # phantoms multiply.
+      # The rectified pair, to check the calibration's row alignment.
       driver: camera_driver,
       calibration_dir: priv_calibration_dir(arm),
       calibration_store_dir: calibration_store_dir(arm),
@@ -453,7 +509,6 @@ defmodule OvcsMini do
       height: 270,
       fps: 30,
       pair_tolerance_ms: 100,
-      # The rectified pair, to check the calibration's row alignment.
       publish_rectified_image: true,
       backend_opts: [
         num_disparities: 96,

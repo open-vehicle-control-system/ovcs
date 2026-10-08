@@ -6,9 +6,22 @@
         "perspective": true,
         "phi": 60,
         "thetaOffset": 0,
-        "targetOffset": [1.0, 0, 0],
-        "target": [0, 0, 0],
-        "targetOrientation": [0, 0, 0, 1],
+        "targetOffset": [
+          1.0,
+          0,
+          0
+        ],
+        "target": [
+          0,
+          0,
+          0
+        ],
+        "targetOrientation": [
+          0,
+          0,
+          0,
+          1
+        ],
         "fovy": 45,
         "near": 0.1,
         "far": 200
@@ -42,17 +55,26 @@
         "/plan": {
           "visible": true,
           "lineWidth": 0.04,
-          "gradient": ["#00c853", "#00c853"]
+          "gradient": [
+            "#00c853",
+            "#00c853"
+          ]
         },
         "/transformed_global_plan": {
           "visible": true,
           "lineWidth": 0.05,
-          "gradient": ["#2979ff", "#2979ff"]
+          "gradient": [
+            "#2979ff",
+            "#2979ff"
+          ]
         },
         "/controller_server/optimal_path": {
           "visible": true,
           "lineWidth": 0.05,
-          "gradient": ["#aa00ff", "#aa00ff"]
+          "gradient": [
+            "#aa00ff",
+            "#aa00ff"
+          ]
         },
         "/stereo/points": {
           "visible": true,
@@ -69,8 +91,25 @@
         "/odom": {
           "visible": true,
           "type": "arrow",
-          "arrowScale": [0.4, 0.06, 0.06],
+          "arrowScale": [
+            0.4,
+            0.06,
+            0.06
+          ],
           "color": "#ff1744"
+        },
+        "/scan": {
+          "visible": true,
+          "colorField": "range",
+          "colorMode": "colormap",
+          "colorMap": "turbo",
+          "pointSize": 4
+        },
+        "/ultrasound/rear_left": {
+          "visible": true
+        },
+        "/ultrasound/rear_right": {
+          "visible": true
         }
       },
       "layers": {
@@ -81,8 +120,16 @@
           "divisions": 20,
           "lineWidth": 1,
           "color": "#248eff40",
-          "position": [0, 0, 0],
-          "rotation": [0, 0, 0],
+          "position": [
+            0,
+            0,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            0
+          ],
           "layerId": "foxglove.Grid",
           "instanceId": "grid",
           "label": "Grid",
@@ -98,7 +145,7 @@
         "poseEstimateYDeviation": 0.5,
         "poseEstimateThetaDeviation": 0.26179939
       },
-      "foxglovePanelTitle": "Odometry frame: costmaps, obstacles, plan, footprint — click to publish a goal"
+      "foxglovePanelTitle": "Odometry frame: costmaps, obstacles, plan, footprint \u2014 click to publish a goal"
     },
     "Plot!cmd_vel": {
       "title": "Nav2 command (/cmd_vel_nav)",

@@ -234,6 +234,19 @@
         },
         "/stereo/detections/markers": {
           "visible": true
+        },
+        "/scan": {
+          "visible": true,
+          "colorField": "range",
+          "colorMode": "colormap",
+          "colorMap": "turbo",
+          "pointSize": 4
+        },
+        "/ultrasound/rear_left": {
+          "visible": true
+        },
+        "/ultrasound/rear_right": {
+          "visible": true
         }
       },
       "layers": {},
