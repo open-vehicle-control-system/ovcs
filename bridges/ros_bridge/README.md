@@ -120,7 +120,7 @@ Catalogue (extend by adding a clause to
 | Component         | Opts                                                     | Child specs started                       |
 |-------------------|----------------------------------------------------------|-------------------------------------------|
 | `:heartbeat`      | `:interval_ms` (default `1_000`)                         | `RosBridge.Publishers.Heartbeat`                     |
-| `:joy_interpreter`| —                                                        | `RosBridge.Consumers.Joy`                |
+| `:joy_interpreter`| `:profiles_dir`: a directory of profile files, one per controller: its `Joy` topic and axis mapping (`RosBridge.Consumers.Joy.Profile`; default: a gamepad on `joy`) | `RosBridge.Consumers.Joy`                |
 | `:imu_publisher`  | `:driver` (required, an `OvcsDrivers.Imu` module); plus `:topic`, `:frame_id`, `:publish_interval_ms` forwarded | the driver, then `RosBridge.Publishers.Imu` |
 | `:lidar_publisher` | `:driver` (required, an `OvcsDrivers.Lidar` module), `:driver_opts` (e.g. `serial_number: "..."`); plus `:topic` (`scan`), `:frame_id` (`laser`), `:bins` forwarded | the driver, then `RosBridge.Publishers.LaserScan` |
 | `:range_publisher` | once per sensor: `:driver` (required, an `OvcsDrivers.Rangefinder` module), `:name` (required, unique), `:driver_opts`, `:topic` and `:frame_id` (required), `:radiation_type` | the driver instance, then `RosBridge.Publishers.Range` |

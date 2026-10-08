@@ -1,0 +1,11 @@
+# Logitech G923 in HID mode (see compose/README.md). The 900° wheel
+# reaches full lock at ±90°; the throttle is the accelerator minus the
+# brake.
+topic: joy_wheel
+steering:
+  - axis: 0
+    gain: -5.0
+throttle:
+  - pedal: 1
+  - pedal: 2
+    gain: -1.0

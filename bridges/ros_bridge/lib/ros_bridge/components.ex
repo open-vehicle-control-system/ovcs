@@ -16,7 +16,9 @@ defmodule RosBridge.Components do
       `std_msgs/String` on `/ovcs_heartbeat`. Opts:
         * `:interval_ms` (default `1_000`)
     * `:joy_interpreter` — `RosBridge.Consumers.Joy` subscribing to
-      `/joy` and forwarding axes onto the CAN bus. No opts.
+      `/joy` and forwarding axes onto the CAN bus. Options:
+      `:profiles_dir`, a directory of one profile file per controller
+      (see `RosBridge.Consumers.Joy.Profile`).
     * `:velocity_interpreter` — `RosBridge.Consumers.Velocity`
       subscribing to a velocity-command topic (`cmd_vel` by default,
       `geometry_msgs/TwistStamped`) and emitting `ros_velocity_command`
@@ -103,7 +105,7 @@ defmodule RosBridge.Components do
 
   def start(:simulator_clock, opts), do: [{RosBridge.Clock, opts}]
 
-  def start(:joy_interpreter, _opts), do: [{RosBridge.Consumers.Joy, []}]
+  def start(:joy_interpreter, opts), do: [{RosBridge.Consumers.Joy, opts}]
 
   def start(:velocity_interpreter, opts), do: [{RosBridge.Consumers.Velocity, opts}]
 

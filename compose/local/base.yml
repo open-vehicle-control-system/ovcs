@@ -167,6 +167,9 @@ services:
       JOY_DEV: ${JOY_DEV:-/dev/input/js0}
       JOY_DEADZONE: ${JOY_DEADZONE:-0.05}
       JOY_AUTOREPEAT_RATE: ${JOY_AUTOREPEAT_RATE:-20.0}
+      # The topic picks the bridge's joy profile: joy for a gamepad,
+      # joy_wheel for a steering wheel (see RosBridge.Consumers.Joy).
+      JOY_TOPIC: ${JOY_TOPIC:-joy}
     volumes:
       # Bind-mount the whole /dev/input tree (not a single `devices:`
       # entry) so a hot-plugged controller appears in the container
