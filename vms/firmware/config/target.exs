@@ -147,6 +147,18 @@ wlan0_config =
       ]
   end
 
+# The Zenoh router is the vehicle's compute node, which also serves the
+# vehicle network's time (`ntp` in compose/compute): every board then
+# stamps with the clock Nav2 compares against, with or without internet.
+ntp_pool = ["0.pool.ntp.org", "1.pool.ntp.org", "2.pool.ntp.org", "3.pool.ntp.org"]
+
+config :nerves_time,
+  servers:
+    (case System.get_env("ZENOH_ENDPOINT_IP", "127.0.0.1") do
+       "127.0.0.1" -> ntp_pool
+       router -> [router | ntp_pool]
+     end)
+
 config :vintage_net,
   regulatory_domain: "00",
   additional_name_servers: [{127, 0, 0, 53}],

@@ -34,7 +34,7 @@ Everything containerised lives under `compose/`, split by one question: is it pu
 | `zenohd` | `compose/compute` | the fabric outlives the operator's laptop |
 | `foxglove_bridge` | `compose/compute` | Foxglove Studio attaches over the LAN on port 8765 |
 | `nav2` | `compose/compute` | the planner survives the base station leaving, like the router |
-| `wifi_firmware`, `wifi_ap_fix`, `bridge_nat_fix` | `compose/compute` | host plumbing for the compute node's network; not ROS |
+| `wifi_firmware`, `wifi_ap_fix`, `bridge_nat_fix`, `ntp` | `compose/compute` | host plumbing for the compute node's network; not ROS |
 | `ros2` (tooling shell), `joy`, `calibrator` (profile `calibration`) | `compose/local/base.yml` | the operator's side: CLI, game controller, stereo calibration GUI |
 | `zenohd`, `foxglove_bridge` (profile `standalone`), `nav2` (profile `nav2`) | `compose/local/base.yml` | stand-ins for the vehicle's own, when none is on the LAN |
 | `sim`, `teleop`, `gz-gui`, `nav2` | `compose/local/simulation.yml` | Gazebo and its operator-side extras |
