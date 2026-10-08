@@ -56,6 +56,13 @@ defmodule RosBridge.Camera.LibCamera do
   the sensor's tuning file to carry `rpi.sync` and the two processes to
   reach each other over UDP multicast. Absent, the camera runs free.
 
+  libcamera joins and sends on the multicast group without naming an
+  interface, so each end follows the routing table at the time: the
+  client can join on wlan0 while the server sends on eth0, and then
+  never hears it. Both cameras of a pair run on the same board, so the
+  driver routes the group (239.255.255.250, libcamera's default) over
+  the loopback before starting a synced camera.
+
   ## Exposure
 
   `:exposure_mode` (`:normal`, `:short`, `:long`) picks the
@@ -138,6 +145,7 @@ defmodule RosBridge.Camera.LibCamera do
     :sync_ready,
     :sync_timer_us
   ]
+  @sync_group "239.255.255.250"
   @watchdog_interval_ms 1_000
   @default_stall_timeout_ms 2_000
   @default_startup_timeout_ms 15_000
@@ -153,6 +161,29 @@ defmodule RosBridge.Camera.LibCamera do
   @doc false
   def sync_args(nil), do: []
   def sync_args(role) when role in [:server, :client], do: ["--sync", Atom.to_string(role)]
+
+  @doc false
+  def sync_route_commands(nil), do: []
+
+  def sync_route_commands(_role),
+    do: [
+      ["link", "set", "lo", "multicast", "on"],
+      ["route", "replace", "#{@sync_group}/32", "dev", "lo"]
+    ]
+
+  defp route_sync_over_loopback(sync, label) do
+    for args <- sync_route_commands(sync) do
+      case System.cmd("ip", args, stderr_to_stdout: true) do
+        {_, 0} ->
+          :ok
+
+        {output, status} ->
+          Logger.warning(
+            "#{__MODULE__}[#{label}]: ip #{Enum.join(args, " ")} exited #{status}: #{String.trim(output)}"
+          )
+      end
+    end
+  end
 
   @doc false
   def exposure_mode_args(nil), do: []
@@ -189,6 +220,8 @@ defmodule RosBridge.Camera.LibCamera do
       raise "#{__MODULE__}[#{label}]: native binary missing at #{executable}; " <>
               "build with `mix compile` on the :rpi5 target (elixir_make)."
     end
+
+    route_sync_over_loopback(sync, label)
 
     args =
       [
