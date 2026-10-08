@@ -271,6 +271,8 @@ global_costmap:
       initial_transform_timeout: 300.0
       update_frequency: 2.0
       publish_frequency: 1.0
+      # Foxglove draws the full grid only, not costmap_updates.
+      always_send_full_costmap: true
       # Rolling, because without a map there is no fixed extent to
       # anchor a static costmap to.
       rolling_window: true
