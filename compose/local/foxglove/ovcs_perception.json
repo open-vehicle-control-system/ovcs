@@ -144,10 +144,10 @@
       "title": "Joy axes",
       "paths": [
         {
-          "value": "/joy/xbox.axes[0]",
+          "value": "/joy/xbox.axes[3]",
           "enabled": true,
           "timestampMethod": "receiveTime",
-          "label": "xbox left stick x"
+          "label": "xbox right stick x"
         },
         {
           "value": "/joy/xbox.axes[4]",

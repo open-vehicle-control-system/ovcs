@@ -1,9 +1,9 @@
-# An Xbox controller. The left stick steers; the right stick drives (up)
-# or brakes (down) in the gear the triggers hold: RT forward, LT
-# backward, neither neutral.
+# An Xbox controller. The right stick steers, and drives (up) or brakes
+# (down) in the gear the triggers hold: RT forward, LT backward,
+# neither neutral.
 device: "(?i)x-?box.*(pad|controller)"
 steering:
-  - axis: 0
+  - axis: 3
     gain: -1.0
 throttle:
   - axis: 4

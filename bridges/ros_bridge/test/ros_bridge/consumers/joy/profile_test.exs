@@ -115,13 +115,13 @@ defmodule RosBridge.Consumers.Joy.ProfileTest do
       assert command(xbox_file(), [0.0, 0.0]) == {0.0, 0.0}
     end
 
-    # Left stick x (0) steers, right stick y (4) drives.
+    # The right stick: x (3) steers, y (4) drives.
     test "steering is inverted, throttle is not" do
-      assert command(xbox_file(), [0.5, 0.9, 0.0, 0.0, -0.25, 0.0]) == {-0.5, -0.25}
+      assert command(xbox_file(), [0.9, 0.9, 0.0, 0.5, -0.25, 0.0]) == {-0.5, -0.25}
     end
 
     test "an over-range axis clamps rather than wrapping on the wire" do
-      assert command(xbox_file(), [2.0, 0.0, 0.0, 0.0, -5.0, 0.0]) == {-1.0, -1.0}
+      assert command(xbox_file(), [0.0, 0.0, 0.0, 2.0, -5.0, 0.0]) == {-1.0, -1.0}
     end
 
     test "a missing, nil or non-numeric axis reads as centre" do
@@ -131,7 +131,7 @@ defmodule RosBridge.Consumers.Joy.ProfileTest do
     end
 
     test "an integer axis is accepted" do
-      assert command(xbox_file(), [1, 0, 0, 0, 0, 0]) == {-1.0, 0.0}
+      assert command(xbox_file(), [0, 0, 0, 1, 0, 0]) == {-1.0, 0.0}
     end
   end
 
