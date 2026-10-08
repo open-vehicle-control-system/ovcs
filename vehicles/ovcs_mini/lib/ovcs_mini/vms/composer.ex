@@ -35,6 +35,8 @@ defmodule OvcsMini.Vms.Composer do
   # Amperes of motor current at full stick, in drive and in reverse
   # gear: a torque, so easing off coasts rather than brakes.
   @max_motor_current 10
+  # Amperes at the smallest stick: the Mini starts rolling at 4.3 A.
+  @min_motor_current 4
   # Amperes of braking current at full stick back.
   @max_brake_current 10
 
@@ -232,6 +234,7 @@ defmodule OvcsMini.Vms.Composer do
          # :erpm switches to the VESC's own speed estimate.
          rotation_from: :tachometer,
          hand_control: :current,
+         min_current: @min_motor_current,
          max_current: @max_motor_current
        }},
       {OVCS.PulseRotationSensor,

@@ -48,10 +48,13 @@ defmodule VmsCore.Components.Vesc.MotorController do
       like a speed target: easing the request below what the motor's
       speed needs brakes it down, and without gears a released
       trigger's zero duty is a drag brake.
-    * `:current` sends `set_current`, the request times `:max_current`:
-      a torque, like a car's accelerator. Easing the request pushes
-      less and never brakes, and zero coasts. Braking is the request's
-      negative side, with gears.
+    * `:current` sends `set_current`, from `:min_current` at the
+      smallest request to `:max_current` at a full one: a torque, like
+      a car's accelerator. Easing the request pushes less and never
+      brakes, and zero coasts. Braking is the request's negative side,
+      with gears. `:min_current` sits just under what the vehicle needs
+      to start rolling, so the request's travel is spent moving it
+      rather than fighting static friction.
 
   ## Gears for hands
 
@@ -140,6 +143,8 @@ defmodule VmsCore.Components.Vesc.MotorController do
     * `:max_current` — amperes at a full hand request, with
       `:hand_control` `:current`. The VESC's own current limits stay
       in force below it.
+    * `:min_current` — amperes at the smallest hand request above zero,
+      with `:hand_control` `:current`. Default 0.
     * `:selected_gear_source` — optional, the manager publishing
       `:selected_gear`. Needs `:max_brake_current` and the
       `set_current_brake` frame.
@@ -467,10 +472,20 @@ defmodule VmsCore.Components.Vesc.MotorController do
   end
 
   # `output` is the capped, signed fraction of the motor's full output.
-  defp hand_output(output, %{hand_control: {:current, max_current}}) do
-    if D.eq?(output, @zero),
-      do: release(),
-      else: {:set_current, %{"current" => output |> D.mult(max_current) |> D.round(3)}, output}
+  defp hand_output(output, %{hand_control: {:current, min_current, max_current}}) do
+    if D.eq?(output, @zero) do
+      release()
+    else
+      current =
+        output
+        |> D.abs()
+        |> D.mult(D.sub(max_current, min_current))
+        |> D.add(min_current)
+        |> NormalisedRequest.signed_as(output)
+        |> D.round(3)
+
+      {:set_current, %{"current" => current}, output}
+    end
   end
 
   defp hand_output(output, _state), do: {:set_duty, %{"duty" => output}, output}
@@ -500,15 +515,20 @@ defmodule VmsCore.Components.Vesc.MotorController do
 
   @doc false
   def hand_control(args) do
+    min_current = Map.get(args, :min_current, 0)
+
     case {Map.get(args, :hand_control, :duty), Map.get(args, :max_current)} do
       {:duty, _} ->
         :duty
 
-      {:current, max_current} when is_number(max_current) and max_current > 0 ->
-        {:current, D.from_float(1.0 * max_current)}
+      {:current, max_current}
+      when is_number(max_current) and is_number(min_current) and
+             0 <= min_current and min_current < max_current ->
+        {:current, D.from_float(1.0 * min_current), D.from_float(1.0 * max_current)}
 
       {:current, _} ->
-        raise ArgumentError, ":hand_control :current needs a positive :max_current"
+        raise ArgumentError,
+              ":hand_control :current needs :max_current above :min_current (0 or more)"
 
       {other, _} ->
         raise ArgumentError, ":hand_control must be :duty or :current, got #{inspect(other)}"

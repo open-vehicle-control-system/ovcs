@@ -82,9 +82,9 @@ Zero velocity goes out as zero duty rather than zero rpm because the VESC only s
 | `hand_control` | Frame | A request is | Easing off |
 |---|---|---|---|
 | `:duty` (default) | `vesc_set_duty` | a fraction of the pack voltage, capped by `:max_throttle` and `:max_reverse` | brakes the motor down to the lower duty's speed: a duty behaves like a speed target |
-| `:current` | `vesc_set_current` | a motor current up to `:max_current`, scaled by the same caps: a torque, like a car's accelerator | pushes less; at zero the motor coasts |
+| `:current` | `vesc_set_current` | a motor current from `:min_current` at the smallest request to `:max_current` at a full one, scaled by the same caps: a torque, like a car's accelerator | pushes less; at zero the motor coasts |
 
-With `:current` the vehicle keeps accelerating while the request is held, up to what the VESC's own limits allow. The OVCS Mini reference vehicle uses `:current` at 10 A.
+With `:current` the vehicle keeps accelerating while the request is held, up to what the VESC's own limits allow. Set `:min_current` just under the current the vehicle needs to start rolling, so the request's travel moves it rather than fights static friction. The OVCS Mini reference vehicle starts rolling at 4.3 A and uses `:current` from 4 A to 10 A.
 
 ### Gears for hands
 

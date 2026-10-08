@@ -280,6 +280,29 @@ defmodule VmsCore.Components.Vesc.MotorControllerTest do
                MotorController.command(current("-1", Map.put(geared, :selected_gear, :drive)))
     end
 
+    test "the minimum current starts at the smallest request, signed with it" do
+      starting = %{
+        hand_control:
+          MotorController.hand_control(%{hand_control: :current, min_current: 4, max_current: 10})
+      }
+
+      {:set_current, %{"current" => small}, _} =
+        MotorController.command(current("0.01", starting))
+
+      assert D.eq?(small, D.new("4.06"))
+
+      {:set_current, %{"current" => full}, _} = MotorController.command(current("1", starting))
+      assert D.eq?(full, D.new(10))
+
+      {:set_current, %{"current" => reverse}, _} =
+        MotorController.command(current("-0.5", starting))
+
+      assert D.eq?(reverse, D.new(-7))
+
+      assert MotorController.command(current("0", starting)) ==
+               {:set_current, %{"current" => D.new(0)}, D.new(0)}
+    end
+
     test "a released request coasts" do
       assert MotorController.command(current("0")) ==
                {:set_current, %{"current" => D.new(0)}, D.new(0)}
@@ -292,6 +315,10 @@ defmodule VmsCore.Components.Vesc.MotorControllerTest do
 
     test "needs a positive maximum current" do
       assert MotorController.hand_control(%{}) == :duty
+
+      assert_raise ArgumentError, fn ->
+        MotorController.hand_control(%{hand_control: :current, min_current: 10, max_current: 10})
+      end
 
       assert_raise ArgumentError, fn ->
         MotorController.hand_control(%{hand_control: :current})
