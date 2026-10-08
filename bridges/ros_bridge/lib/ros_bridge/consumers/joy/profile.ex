@@ -20,7 +20,9 @@ defmodule RosBridge.Consumers.Joy.Profile do
   is a regular expression matching the controller's name as the kernel
   reports it, which the operator's `joy` node uses to pick the profile
   of the controller plugged in (`compose/compute/images/ros2/docker/joy.sh`),
-  with `deadzone`, if set, as its `joy_linux` deadzone.
+  with `deadzone`, if set, as its `joy_linux` deadzone, and `centring`,
+  if set, as the strength (0 to 1) of the force-feedback spring it holds
+  on the controller.
   `steering` and
   `throttle` are each the sum of their terms, clamped to [-1, 1], in
   the units of the `ros_actuator_command` frame: throttle drives when

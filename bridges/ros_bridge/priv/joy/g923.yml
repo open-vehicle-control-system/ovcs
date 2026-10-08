@@ -5,6 +5,9 @@ device: G923 Racing Wheel
 # No stick drift, and joy_linux's deadzone sits at the axes' centre: a
 # pedal half pressed.
 deadzone: 0.0
+# The force-feedback spring that pulls the wheel back to centre, held
+# by the operator's joy node: full strength.
+centring: 1.0
 steering:
   - axis: 0
     gain: -5.0

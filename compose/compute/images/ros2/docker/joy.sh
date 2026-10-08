@@ -4,7 +4,8 @@
 # `sensor_msgs/Joy` on /joy/<profile> via `joy_linux/joy_node`, where
 # <profile> is the joy profile in ${JOY_PROFILES} whose `device`
 # matches the controller's name, or ${JOY_PROFILE} when set. The ROS
-# bridge maps each topic with its profile. Runs under the shared
+# bridge maps each topic with its profile. A profile's `centring` holds
+# a force-feedback spring on the controller (joy_centring). Runs under the shared
 # entrypoint, which has already prepared Zenoh + sourced the ROS
 # overlay.
 
@@ -22,8 +23,9 @@ fi
 
 device_name=$(cat "/sys/class/input/$(basename "${JOY_DEV}")/device/name" 2>/dev/null || true)
 
-# Prints the profile's name and its deadzone (0.05 unless it sets one).
-read -r profile deadzone < <(python3 - "${JOY_PROFILES}" "${device_name}" "${JOY_PROFILE:-}" <<'EOF'
+# Prints the profile's name, its deadzone (0.05 unless it sets one) and
+# its centring (0, none, unless it sets one).
+read -r profile deadzone centring < <(python3 - "${JOY_PROFILES}" "${device_name}" "${JOY_PROFILE:-}" <<'EOF'
 import glob, os, re, sys, yaml
 
 directory, device, wanted = sys.argv[1:4]
@@ -41,10 +43,15 @@ if len(names) != 1:
     found = ", ".join(names) or "none"
     sys.exit(f"joy: {found} of {', '.join(profiles) or 'no profiles'} match {device!r}; set JOY_PROFILE")
 
-print(names[0], float(profiles.get(names[0], {}).get("deadzone", 0.05)))
+profile = profiles.get(names[0], {})
+print(names[0], float(profile.get("deadzone", 0.05)), float(profile.get("centring", 0)))
 EOF
 )
 [ -n "${profile:-}" ] || exit 1
+
+if [ "${centring}" != "0.0" ]; then
+  joy_centring "${JOY_DEV}" "${centring}" &
+fi
 
 echo "joy: ${device_name:-unknown device} on ${JOY_DEV} as profile ${profile} onto /joy/${profile}, peering with ${ZENOH_ENDPOINT_IP}:7447"
 

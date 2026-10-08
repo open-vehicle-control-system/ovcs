@@ -18,7 +18,7 @@ compose/
     ├── images/sim/           the Gazebo image — the only one that never goes near the car
     ├── simulation/           worlds, macros, launch files, gamepad mapping, test scripts
     ├── scripts/              the verifiers behind `mise run verify-*`, and calibrate.sh
-    ├── udev/                 host rules for controllers (the G923 wheel's mode switch and autocentre)
+    ├── udev/                 host rules for controllers (the G923 wheel's mode switch)
     └── calibration_output/   where the stereo calibrator drops its tarball
 ```
 
@@ -159,7 +159,7 @@ framework ships two in `bridges/ros_bridge/priv/joy/`:
 | Profile | Controls |
 |---|---|
 | `xbox.yml` | left stick steers, and drives (up) or brakes (down) in the gear the triggers hold: RT forward, LT backward, neither neutral |
-| `g923.yml` | the wheel steers, full lock at ±90°; the accelerator drives and the brake brakes, in the gear of the Driving Force Shifter: 1 to 6 forward, reverse backward |
+| `g923.yml` | the wheel steers, full lock at ±90°, and springs back to centre while the `joy` service runs; the accelerator drives and the brake brakes, in the gear of the Driving Force Shifter: 1 to 6 forward, reverse backward |
 
 In neutral the throttle only brakes. As with the radio's reverse
 switch, the VMS changes gear only once the vehicle is stopped and the
@@ -195,7 +195,9 @@ throttle released.
    also keeps it released until it has been seen released, and give
    the brake a negative gain. `gears` names the held buttons or
    triggers for each direction; without it the vehicle only drives
-   forward. A larger steering gain reaches full lock earlier.
+   forward. A larger steering gain reaches full lock earlier. For a
+   force-feedback wheel, `centring` (0 to 1) sets the spring that pulls
+   it back to centre, and `deadzone: 0.0` keeps a pedal's travel whole.
 
 4. Put the file in `bridges/ros_bridge/priv/joy/` if the controller is
    common, where both the `joy` service and every vehicle find it, or
@@ -224,17 +226,9 @@ unplugged:
 sudo usb_modeswitch -v 046d -p c26d -M 0f00010142 -C 03 -m 01 -r 81
 ```
 
-In HID mode the wheel has no centring spring until force feedback turns
-one on; `local/udev/g923-autocentre` does, at full strength:
+To switch it on every plug-in, install the udev rule:
 
 ```sh
-local/udev/g923-autocentre "$(realpath /dev/input/by-id/*G923*-event-joystick)" 100
-```
-
-To do both on every plug-in, install the script and the udev rule:
-
-```sh
-sudo install local/udev/g923-autocentre /usr/local/bin/
 sudo cp local/udev/99-logitech-g923.rules /etc/udev/rules.d/
 sudo udevadm control --reload
 ```

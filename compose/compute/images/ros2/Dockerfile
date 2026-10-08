@@ -76,12 +76,14 @@ COPY docker/foxglove_bridge.sh    /usr/local/bin/foxglove_bridge
 COPY docker/foxglove_compression.py /usr/local/bin/foxglove_compression
 COPY docker/foxglove_watchdog.py  /usr/local/bin/foxglove_watchdog
 COPY docker/joy.sh                /usr/local/bin/joy
+COPY docker/joy_centring.py       /usr/local/bin/joy_centring
 COPY docker/calibrator.sh         /usr/local/bin/calibrator
 COPY docker/decompress_stereo.py  /usr/local/bin/decompress_stereo
 RUN chmod 0755 \
         /usr/local/bin/entrypoint \
         /usr/local/bin/foxglove_bridge \
         /usr/local/bin/joy \
+        /usr/local/bin/joy_centring \
         /usr/local/bin/calibrator \
         /usr/local/bin/decompress_stereo
 
