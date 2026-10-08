@@ -164,9 +164,11 @@ defmodule RosBridge.Publishers.Odometry do
       observe(state, %{
         speed: Decimal.to_float(speed),
         steering_angle: Decimal.to_float(steering_angle),
-        speed_valid: speed_valid,
+        # Anything but true, a value the frame layout does not map
+        # included, leaves the reading unusable.
+        speed_valid: speed_valid == true,
         distance: Decimal.to_float(distance),
-        distance_valid: distance_valid,
+        distance_valid: distance_valid == true,
         sequence: sequence,
         at_ms: at_ms
       })

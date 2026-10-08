@@ -159,6 +159,26 @@ defmodule RosBridge.Publishers.OdometryTest do
     end
   end
 
+  describe "a vehicle_motion frame" do
+    test "whose validity flags the layout does not map leaves both readings invalid" do
+      signals = %{
+        "speed" => %Cantastic.Signal{value: Decimal.new("0.5")},
+        "steering_angle" => %Cantastic.Signal{value: Decimal.new("0")},
+        "speed_valid" => %Cantastic.Signal{value: nil},
+        "distance" => %Cantastic.Signal{value: Decimal.new("1.0")},
+        "distance_valid" => %Cantastic.Signal{value: nil},
+        "sequence" => %Cantastic.Signal{value: 3}
+      }
+
+      frame = %Cantastic.Frame{name: "vehicle_motion", signals: signals}
+      {:noreply, state} = Odometry.handle_info({:handle_frame, frame}, state(speed_valid: true))
+
+      refute state.speed_valid
+      refute state.distance_valid
+      refute Odometry.publishable?(state, state.last_fresh_at_ms || 0)
+    end
+  end
+
   describe "observe/2 with a distance counter" do
     defp moving(overrides) do
       state(
