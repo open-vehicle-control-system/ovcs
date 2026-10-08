@@ -13,12 +13,14 @@ lib/
   ros_bridge/
     heartbeat.ex             # Periodic publisher (std_msgs/String on /ovcs_heartbeat) via ZenohClient.publish/4
     imu_publisher.ex         # OvcsDrivers.Imu consumer → sensor_msgs/Imu over Zenoh
-    joy_interpreter.ex       # ROS 2 /joy → Cantastic emitter (steering, throttle)
+    consumers/joy.ex         # ROS 2 /joy/<profile> → Cantastic emitter (steering, throttle, direction)
+    consumers/joy/profile.ex # joy profile files: a controller's axes, pedals and gears
   ros2/                      # ROS 2 message codecs (CDR encode + parse)
     common.ex                # Shared encoder/parser primitives (encode_string, …)
     rmw_zenoh.ex             # rmw_zenoh wire-format helpers (key_expr, payload, attachment, liveliness)
     std_msgs/msg/string.ex   # std_msgs/String + DDS type name + RIHS01 type hash
     sensor_msgs/, geometry_msgs/, builtin_interfaces/, std_msgs/msg/header.ex
+priv/joy/                    # the framework's joy profiles, one per controller
 ```
 
 ## Native rmw_zenoh wire format
