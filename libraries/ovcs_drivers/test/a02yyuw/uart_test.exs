@@ -18,6 +18,28 @@ defmodule A02YYUW.UARTTest do
     end
   end
 
+  describe "a received frame" do
+    defp receive_frame(millimetres) do
+      state = %{listeners: [self()], buffer: <<>>, range: {0.03, 4.5}, field_of_view: 1.0}
+
+      {:noreply, _} =
+        A02YYUW.UART.handle_info({:circuits_uart, "ttyUSB1", frame(millimetres)}, state)
+
+      assert_receive {:"$gen_cast", {:range_sample, sample}}
+      sample.distance
+    end
+
+    test "is a distance in metres, or out of range" do
+      assert receive_frame(1234) == 1.234
+      assert receive_frame(20) == :below_range
+      assert receive_frame(4600) == :beyond_range
+    end
+
+    test "of 0, no echo, is nothing in range" do
+      assert receive_frame(0) == :beyond_range
+    end
+  end
+
   describe "OvcsDrivers.Serial.find/2" do
     test "names the adapter with that serial number" do
       devices = %{

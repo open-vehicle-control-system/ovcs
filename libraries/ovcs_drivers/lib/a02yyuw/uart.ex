@@ -9,7 +9,8 @@ defmodule A02YYUW.UART do
   100 ms at 9600 baud as a 4-byte frame: `0xFF`, the distance in mm
   (big-endian), and a checksum, the low byte of the sum of the other
   three. Bytes that do not form a valid frame are skipped one at a
-  time. A distance of 0 is no measurement and is dropped.
+  time. The sensor sends 0 when no echo came back, reported as
+  `:beyond_range`: nothing it can detect is in front of it.
 
   ## Options
 
@@ -80,7 +81,7 @@ defmodule A02YYUW.UART do
     {distances, rest} = parse_frames(state.buffer <> data)
     now = System.system_time(:nanosecond)
 
-    for millimetres <- distances, millimetres > 0 do
+    for millimetres <- distances do
       sample = %Sample{
         distance: classify(millimetres / 1000, state.range),
         range: state.range,
@@ -101,6 +102,7 @@ defmodule A02YYUW.UART do
 
   def handle_info(_message, state), do: {:noreply, state}
 
+  defp classify(metres, _range) when metres == 0, do: :beyond_range
   defp classify(metres, {min, _max}) when metres < min, do: :below_range
   defp classify(metres, {_min, max}) when metres > max, do: :beyond_range
   defp classify(metres, _range), do: metres
