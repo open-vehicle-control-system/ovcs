@@ -10,7 +10,7 @@ defmodule BNO085.I2CTest do
   # report (1 byte report id, then the report-specific payload).
   # Channel 3 is the "input sensor reports" channel; report ids
   # match `@accelerometer_report` / `@calibrated_gyroscope_report`
-  # / `@rotation_vector_report` in `BNO085.I2C`.
+  # / `@game_rotation_vector_report` in `BNO085.I2C`.
 
   describe "parse_cargo/1 — accelerometer (report 0x01, 10-byte body)" do
     test "extracts raw signed int16 axes in little-endian order" do
@@ -42,18 +42,17 @@ defmodule BNO085.I2CTest do
     end
   end
 
-  describe "parse_cargo/1 — rotation_vector (report 0x05, 14-byte body)" do
-    test "extracts the quaternion + drops accuracy_estimate" do
-      # 1 byte id + seq + status + delay + 4 × int16 quat + int16 accuracy
-      # = 14-byte report body. cargo_length = 4 + 14 = 18.
-      # i=0, j=0, k=0, real=16_383 (≈ Q14 1.0), accuracy=42 (ignored).
-      cargo = <<18, 0, 3, 0, 0x05, 9, 3, 0, 0, 0, 0, 0, 0, 0, 0xFF, 0x3F, 42, 0>>
+  describe "parse_cargo/1 — game_rotation_vector (report 0x08, 12-byte body)" do
+    test "extracts the quaternion" do
+      # 1 byte id + seq + status + delay + 4 × int16 quat = 12-byte
+      # report body. cargo_length = 4 + 12 = 16.
+      # i=0, j=0, k=0, real=16_383 (≈ Q14 1.0).
+      cargo = <<16, 0, 3, 0, 0x08, 9, 3, 0, 0, 0, 0, 0, 0, 0, 0xFF, 0x3F>>
 
       assert {:ok, %{reports: [report]}} = I2C.parse_cargo(cargo)
-      assert report.id == 0x05
-      assert report.name == "rotation_vector"
+      assert report.id == 0x08
+      assert report.name == "game_rotation_vector"
       assert {report.i, report.j, report.k, report.real} == {0, 0, 0, 16_383}
-      refute Map.has_key?(report, :accuracy_estimate)
     end
   end
 
@@ -68,10 +67,10 @@ defmodule BNO085.I2CTest do
       assert %Sample{kind: :angular_velocity, x: 1.0, y: -1.0, z: 2.0} = I2C.build_sample(raw)
     end
 
-    test "rotation_vector is Q14 → unit-quaternion components" do
+    test "game_rotation_vector is Q14 → unit-quaternion components" do
       # real = 16_383 should land at 16_383/16384 ≈ 0.99993896 — the
       # exact value we see on the wire from the dummy driver.
-      raw = %{id: 0x05, name: "rotation_vector", i: 0, j: 0, k: 0, real: 16_383}
+      raw = %{id: 0x08, name: "game_rotation_vector", i: 0, j: 0, k: 0, real: 16_383}
 
       sample = I2C.build_sample(raw)
       assert sample.kind == :rotation

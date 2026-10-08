@@ -37,6 +37,9 @@ defmodule VmsCore.Components.OVCS.VehicleMotionTest do
         direction_sign: 1,
         requested_steering: D.new(0),
         rotation_per_minute: nil,
+        revolution_source: @sensor,
+        distance_factor: VehicleMotion.distance_factor(@ratio, @wheel_radius),
+        revolutions: nil,
         sequence: 0
       },
       overrides
@@ -166,6 +169,43 @@ defmodule VmsCore.Components.OVCS.VehicleMotionTest do
         )
 
       assert unchanged.rotation_per_minute == nil
+    end
+  end
+
+  describe "the frame definition" do
+    test "is valid for emitting: every bit defined, signals in order and contiguous" do
+      path = Path.join(:code.priv_dir(:ovcs_can), "can/components/ovcs/0x60B_vehicle_motion.yml")
+      {:ok, yaml} = YamlElixir.read_from_file(path, atoms: true)
+      frame = yaml |> Jason.encode!() |> Jason.decode!(keys: :atoms)
+
+      assert {:ok, _} = Cantastic.FrameSpecification.from_yaml(:ovcs, frame, :emit)
+    end
+  end
+
+  describe "the distance" do
+    test "the source's revolutions through the gearing and the wheel, in millimetres" do
+      # 2.72 turns of the shaft roll one 0.0548 m wheel turn: 344.3 mm.
+      state = state(%{revolutions: D.new("2.72")})
+      assert D.eq?(VehicleMotion.distance_counter(state), D.new("0.344"))
+    end
+
+    test "wraps every 65.536 m, and stays positive in reverse" do
+      wheel_turn = 2 * :math.pi() * @wheel_radius
+      turns = D.from_float(-0.002 / wheel_turn * @ratio)
+      assert D.eq?(VehicleMotion.distance_counter(state(%{revolutions: turns})), D.new("65.534"))
+    end
+
+    test "no revolutions yet is a zero counter, flagged invalid by the frame" do
+      assert D.eq?(VehicleMotion.distance_counter(state()), D.new(0))
+    end
+
+    test "only the configured revolution source is read" do
+      message = %Message{name: :revolutions, value: D.new(5), source: Elsewhere}
+      {:noreply, state} = VehicleMotion.handle_info(message, state())
+      assert state.revolutions == nil
+
+      {:noreply, state} = VehicleMotion.handle_info(%{message | source: @sensor}, state)
+      assert D.eq?(state.revolutions, D.new(5))
     end
   end
 
