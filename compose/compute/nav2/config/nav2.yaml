@@ -68,7 +68,9 @@ controller_server:
     progress_checker:
       plugin: "nav2_controller::SimpleProgressChecker"
       required_movement_radius: 0.25
-      movement_time_allowance: 5.0
+      # Facing an obstacle close ahead, MPPI can hold the car for about
+      # 5 s while the costmaps fill in and it finds a way around.
+      movement_time_allowance: 15.0
 
     goal_checker:
       # `yaw_goal_tolerance` is deliberately huge. A car cannot rotate on
