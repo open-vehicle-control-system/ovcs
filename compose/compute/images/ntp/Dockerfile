@@ -7,5 +7,7 @@ RUN apk add --no-cache chrony
 
 COPY chrony.conf /etc/chrony/chrony.conf
 
-# -x: leave the clock to the host's chronyd, so no CAP_SYS_TIME.
-ENTRYPOINT ["chronyd", "-d", "-x", "-f", "/etc/chrony/chrony.conf"]
+# -x: leave the clock to the host's chronyd, so no CAP_SYS_TIME. A
+# restarted container keeps the last run's pid file, whose pid 1 is this
+# chronyd again, which then refuses to start.
+ENTRYPOINT ["sh", "-c", "rm -f /run/chrony/chronyd.pid && exec chronyd -d -x -f /etc/chrony/chrony.conf"]
