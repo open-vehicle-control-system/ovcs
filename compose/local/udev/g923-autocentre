@@ -1,0 +1,24 @@
+#!/usr/bin/env python3
+"""Turn on a force-feedback wheel's autocentre spring.
+
+Usage: g923-autocentre /dev/input/eventN [percent]
+
+Writes FF_AUTOCENTER to the wheel's event device; without it the G923
+stays wherever it is left. The setting lasts until the wheel is
+unplugged.
+"""
+import os
+import struct
+import sys
+
+EV_FF = 0x15
+FF_AUTOCENTER = 0x61
+
+device = sys.argv[1]
+percent = float(sys.argv[2]) if len(sys.argv) > 2 else 100.0
+strength = round(0xFFFF * min(max(percent, 0.0), 100.0) / 100)
+
+fd = os.open(device, os.O_WRONLY)
+# struct input_event: timeval (two longs), type, code, value.
+os.write(fd, struct.pack("llHHi", 0, 0, EV_FF, FF_AUTOCENTER, strength))
+os.close(fd)

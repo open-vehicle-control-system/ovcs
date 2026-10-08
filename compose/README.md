@@ -18,6 +18,7 @@ compose/
     ├── images/sim/           the Gazebo image — the only one that never goes near the car
     ├── simulation/           worlds, macros, launch files, gamepad mapping, test scripts
     ├── scripts/              the verifiers behind `mise run verify-*`, and calibrate.sh
+    ├── udev/                 host rules for controllers (the G923 wheel's mode switch and autocentre)
     └── calibration_output/   where the stereo calibrator drops its tarball
 ```
 
@@ -150,6 +151,43 @@ Other controllers: `JOY_DEV=/dev/input/js1 docker compose -f base.yml up -d joy`
 Linux-only — `device_cgroup_rules` + a bind-mounted `/dev/input` does
 not work on Docker Desktop for macOS/Windows; if `ls /dev/input/js*` is
 empty after plugging in, check `dmesg | tail`.
+
+**Steering wheel.** The topic picks the bridge's joy profile, a YAML
+file per controller in your vehicle's `priv/joy/`
+(`RosBridge.Consumers.Joy.Profile` describes the format). The OVCS
+Mini reference vehicle's `g923.yml` reads the wheel on `joy_wheel`,
+with the throttle as the accelerator minus the brake.
+
+```sh
+JOY_TOPIC=joy_wheel JOY_DEADZONE=0.0 docker compose -f base.yml up -d joy
+```
+
+A deadzone of 0.0, because the wheel has no stick drift and joy_linux's
+deadzone sits at the axis' centre, which is a pedal half pressed.
+
+The G923 *for Xbox One and PC* (`046d:c26d` in `lsusb`) starts in Xbox
+mode, which Linux has no driver for: no `/dev/input/js*` appears.
+`usb_modeswitch` switches it to HID mode (`046d:c26e`) until it is
+unplugged:
+
+```sh
+sudo usb_modeswitch -v 046d -p c26d -M 0f00010142 -C 03 -m 01 -r 81
+```
+
+In HID mode the wheel has no centring spring until force feedback turns
+one on; `local/udev/g923-autocentre` does, at full strength:
+
+```sh
+local/udev/g923-autocentre "$(realpath /dev/input/by-id/*G923*-event-joystick)" 100
+```
+
+To do both on every plug-in, install the script and the udev rule:
+
+```sh
+sudo install local/udev/g923-autocentre /usr/local/bin/
+sudo cp local/udev/99-logitech-g923.rules /etc/udev/rules.d/
+sudo udevadm control --reload
+```
 
 **Foxglove Studio:** connect to `ws://<compute-node-ip>:8765` (or
 `ws://127.0.0.1:8765` with the `standalone` profile), then *Layouts →
