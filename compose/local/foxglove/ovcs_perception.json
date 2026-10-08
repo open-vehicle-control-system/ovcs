@@ -147,13 +147,13 @@
           "value": "/joy/xbox.axes[0]",
           "enabled": true,
           "timestampMethod": "receiveTime",
-          "label": "xbox stick x"
+          "label": "xbox left stick x"
         },
         {
-          "value": "/joy/xbox.axes[1]",
+          "value": "/joy/xbox.axes[4]",
           "enabled": true,
           "timestampMethod": "receiveTime",
-          "label": "xbox stick y"
+          "label": "xbox right stick y"
         },
         {
           "value": "/joy/xbox.axes[2]",
