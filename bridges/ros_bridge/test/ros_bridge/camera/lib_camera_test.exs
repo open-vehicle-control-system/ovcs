@@ -33,6 +33,19 @@ defmodule RosBridge.Camera.LibCameraTest do
     end
   end
 
+  describe "sync_route_commands/1" do
+    test "none without sync" do
+      assert LibCamera.sync_route_commands(nil) == []
+    end
+
+    test "routes the sync group over the loopback" do
+      assert LibCamera.sync_route_commands(:client) == [
+               ["link", "set", "lo", "multicast", "on"],
+               ["route", "replace", "239.255.255.250/32", "dev", "lo"]
+             ]
+    end
+  end
+
   describe "sync_args/1" do
     test "no role runs the camera free" do
       assert LibCamera.sync_args(nil) == []
