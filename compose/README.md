@@ -165,11 +165,52 @@ In neutral the throttle only brakes. As with the radio's reverse
 switch, the VMS changes gear only once the vehicle is stopped and the
 throttle released.
 
-Your vehicle adds its own profiles with
-`{:joy_interpreter, profiles_dir: ...}`, one of the same name replacing
-the framework's; start the `joy` service with `JOY_PROFILE=<name>` for
-a profile only your vehicle has. `JOY_DEV=/dev/input/js1` picks another
-device, `JOY_AUTOREPEAT_RATE` likewise. The service is Linux-only —
+**Adding a controller.** A profile describes one controller model
+(`RosBridge.Consumers.Joy.Profile` has the full format):
+
+1. Plug the controller in and read its name, which the profile's
+   `device` pattern has to match:
+
+   ```sh
+   cat /sys/class/input/js0/device/name
+   ```
+
+2. Publish it under a name no profile has yet, and watch its axes and
+   buttons while you move each control. The bridge ignores the topic:
+
+   ```sh
+   JOY_PROFILE=probe docker compose -f base.yml up -d joy
+   docker compose -f base.yml exec ros2 bash -lc 'ros2 topic echo /joy/probe sensor_msgs/msg/Joy'
+   ```
+
+   Note each control's index, its value at rest and fully moved, and
+   which way is positive. `joy_linux` reports a stick pushed left or up
+   as positive, a trigger as 1 released and -1 pressed, and an axis it
+   has had no event for yet as 0.
+
+3. Write `<name>.yml`. `steering` and `throttle` are sums of terms:
+   steering is positive to the right on the OVCS Mini reference vehicle,
+   so a stick or wheel needs a negative gain; throttle drives when
+   positive and brakes when negative. Read a pedal with `pedal`, which
+   also keeps it released until it has been seen released, and give
+   the brake a negative gain. `gears` names the held buttons or
+   triggers for each direction; without it the vehicle only drives
+   forward. A larger steering gain reaches full lock earlier.
+
+4. Put the file in `bridges/ros_bridge/priv/joy/` if the controller is
+   common, where both the `joy` service and every vehicle find it, or
+   in your vehicle's own profile directory: the vehicle passes
+   `{:joy_interpreter, profiles_dir: ...}`, and a profile of the same
+   name replaces the framework's. The `joy` service only reads the
+   framework's profiles, so start it with `JOY_PROFILE=<name>` for one
+   only your vehicle has.
+
+5. Flash or restart the ROS bridge, restart the `joy` service, and check
+   its log names your profile. Test with the vehicle lifted or the
+   motor disabled first.
+
+`JOY_DEV=/dev/input/js1` picks another device, `JOY_AUTOREPEAT_RATE`
+likewise. The service is Linux-only —
 `device_cgroup_rules` + a bind-mounted `/dev/input` does not work on
 Docker Desktop for macOS/Windows; if `ls /dev/input/js*` is empty after
 plugging in, check `dmesg | tail`.

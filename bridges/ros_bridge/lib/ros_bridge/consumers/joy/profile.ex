@@ -23,8 +23,11 @@ defmodule RosBridge.Consumers.Joy.Profile do
   with `deadzone`, if set, as its `joy_linux` deadzone.
   `steering` and
   `throttle` are each the sum of their terms, clamped to [-1, 1], in
-  the units of the `ros_actuator_command` frame. A term reads one axis,
-  times its `gain` (1.0):
+  the units of the `ros_actuator_command` frame: throttle drives when
+  positive and brakes when negative, and steering is positive to the
+  right on the OVCS Mini reference vehicle, against `joy_linux`
+  reporting left as positive, hence the negative steering gains. A term
+  reads one axis, times its `gain` (1.0):
 
     * `axis: i` — as `joy_linux` reports it, -1 to 1
     * `pedal: i` — a pedal reported -1 released and 1 pressed, read
