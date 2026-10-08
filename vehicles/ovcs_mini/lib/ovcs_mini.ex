@@ -446,6 +446,8 @@ defmodule OvcsMini do
       # and reads as an obstacle about a metre ahead. A hole is honest;
       # a phantom obstacle is not. Keep CLAHE: without it those
       # phantoms multiply.
+      # publish_rectified_image: the rectified pair, to check the
+      # calibration's row alignment.
       driver: camera_driver,
       calibration_dir: priv_calibration_dir(arm),
       calibration_store_dir: calibration_store_dir(arm),
@@ -453,7 +455,6 @@ defmodule OvcsMini do
       height: 270,
       fps: 30,
       pair_tolerance_ms: 100,
-      # The rectified pair, to check the calibration's row alignment.
       publish_rectified_image: true,
       backend_opts: [
         num_disparities: 96,
