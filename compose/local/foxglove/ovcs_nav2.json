@@ -289,6 +289,127 @@
     },
     "SourceInfo!tf": {
       "foxglovePanelTitle": "Topics on the fabric"
+    },
+    "Plot!imu_accel": {
+      "title": "IMU linear acceleration (m/s\u00b2)",
+      "paths": [
+        {
+          "value": "/imu.linear_acceleration.x",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "ax"
+        },
+        {
+          "value": "/imu.linear_acceleration.y",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "ay"
+        },
+        {
+          "value": "/imu.linear_acceleration.z",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "az"
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showPlotValuesInLegend": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "sidebarDimension": 240,
+      "followingViewWidth": 20,
+      "foxglovePanelTitle": "IMU acceleration"
+    },
+    "Plot!imu_gyro": {
+      "title": "IMU angular velocity (rad/s)",
+      "paths": [
+        {
+          "value": "/imu.angular_velocity.x",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "wx"
+        },
+        {
+          "value": "/imu.angular_velocity.y",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "wy"
+        },
+        {
+          "value": "/imu.angular_velocity.z",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "wz"
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showPlotValuesInLegend": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "followingViewWidth": 20,
+      "foxglovePanelTitle": "IMU angular velocity"
+    },
+    "Plot!joy_axes": {
+      "title": "Joy axes",
+      "paths": [
+        {
+          "value": "/joy/xbox.axes[3]",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "xbox right stick x"
+        },
+        {
+          "value": "/joy/xbox.axes[4]",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "xbox right stick y"
+        },
+        {
+          "value": "/joy/xbox.axes[2]",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "xbox LT"
+        },
+        {
+          "value": "/joy/xbox.axes[5]",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "xbox RT"
+        },
+        {
+          "value": "/joy/g923.axes[0]",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "g923 wheel"
+        },
+        {
+          "value": "/joy/g923.axes[1]",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "g923 accelerator"
+        },
+        {
+          "value": "/joy/g923.axes[2]",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "g923 brake"
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showPlotValuesInLegend": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "followingViewWidth": 20,
+      "foxglovePanelTitle": "Joy axes"
     }
   },
   "globalVariables": {},
@@ -300,41 +421,56 @@
     "first": "3D!nav",
     "second": {
       "first": {
-        "first": "Plot!cmd_vel",
-        "second": "Plot!odom_twist",
-        "direction": "column",
-        "splitPercentage": 50
-      },
-      "second": {
         "first": {
-          "first": "Plot!odom_xy",
-          "second": "Plot!imu_gyro_z",
+          "first": "Plot!cmd_vel",
+          "second": "Plot!odom_twist",
           "direction": "column",
           "splitPercentage": 50
         },
         "second": {
           "first": {
-            "first": "RawMessages!heartbeat",
-            "second": "RawMessages!odom_header",
-            "direction": "column",
-            "splitPercentage": 35
-          },
-          "second": {
-            "first": "RawMessages!diagnostics",
-            "second": "Tab!tf",
+            "first": "Plot!odom_xy",
+            "second": "Plot!imu_gyro_z",
             "direction": "column",
             "splitPercentage": 50
           },
+          "second": {
+            "first": {
+              "first": "RawMessages!heartbeat",
+              "second": "RawMessages!odom_header",
+              "direction": "column",
+              "splitPercentage": 35
+            },
+            "second": {
+              "first": "RawMessages!diagnostics",
+              "second": "Tab!tf",
+              "direction": "column",
+              "splitPercentage": 50
+            },
+            "direction": "column",
+            "splitPercentage": 45
+          },
           "direction": "column",
-          "splitPercentage": 45
+          "splitPercentage": 55
         },
         "direction": "column",
-        "splitPercentage": 55
+        "splitPercentage": 40
       },
-      "direction": "column",
-      "splitPercentage": 40
+      "second": {
+        "first": "Plot!imu_accel",
+        "second": {
+          "first": "Plot!imu_gyro",
+          "second": "Plot!joy_axes",
+          "direction": "column",
+          "splitPercentage": 50
+        },
+        "direction": "column",
+        "splitPercentage": 34
+      },
+      "direction": "row",
+      "splitPercentage": 55
     },
     "direction": "row",
-    "splitPercentage": 66
+    "splitPercentage": 55
   }
 }
