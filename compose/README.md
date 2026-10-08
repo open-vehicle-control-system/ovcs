@@ -159,7 +159,7 @@ framework ships two in `bridges/ros_bridge/priv/joy/`:
 | Profile | Controls |
 |---|---|
 | `xbox.yml` | right stick steers, and drives (up) or brakes (down) in the gear the triggers hold: RT forward, LT backward, neither neutral |
-| `g923.yml` | the wheel steers, full lock at ±90°, and springs back to centre while the `joy` service runs; the accelerator drives and the brake brakes, in the gear of the Driving Force Shifter: 1 to 6 forward, reverse backward |
+| `g923.yml` | the wheel steers, full lock at ±90°, and springs back to centre while the `joy` service runs; the accelerator drives and the brake brakes, the brake winning when both are pressed, in the gear of the Driving Force Shifter: 1 to 6 forward, reverse backward |
 
 In neutral the throttle only brakes. As with the radio's reverse
 switch, the VMS changes gear only once the vehicle is stopped and the
@@ -192,8 +192,8 @@ throttle released.
    steering is positive to the right on the OVCS Mini reference vehicle,
    so a stick or wheel needs a negative gain; throttle drives when
    positive and brakes when negative. Read a pedal with `pedal`, which
-   also keeps it released until it has been seen released, and give
-   the brake a negative gain. `gears` names the held buttons or
+   also keeps it released until it has been seen released, and a brake
+   pedal under `brake`, which wins over the throttle while pressed. `gears` names the held buttons or
    triggers for each direction; without it the vehicle only drives
    forward. A larger steering gain reaches full lock earlier. For a
    force-feedback wheel, `centring` (0 to 1) sets the spring that pulls

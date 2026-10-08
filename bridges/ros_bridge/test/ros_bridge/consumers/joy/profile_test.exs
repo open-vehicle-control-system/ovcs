@@ -10,8 +10,8 @@ defmodule RosBridge.Consumers.Joy.ProfileTest do
       gain: -5.0
   throttle:
     - pedal: 1
+  brake:
     - pedal: 2
-      gain: -1
   gears:
     forward: [12, 13, 14, 15, 16, 17]
     backward: [11]
@@ -30,7 +30,8 @@ defmodule RosBridge.Consumers.Joy.ProfileTest do
                name: "g923",
                device: "G923 Racing Wheel",
                steering: [{:axis, 0, -5.0}],
-               throttle: [{:pedal, 1, 1.0}, {:pedal, 2, -1.0}],
+               throttle: [{:pedal, 1, 1.0}],
+               brake: [{:pedal, 2, 1.0}],
                gears: %{
                  forward: [{:button, 12}, {:button, 13}, {:button, 14} | _],
                  backward: [{:button, 11}]
@@ -141,10 +142,20 @@ defmodule RosBridge.Consumers.Joy.ProfileTest do
       assert {1.0, _} = command(wheel(), [-0.5, -1.0, -1.0])
     end
 
-    test "the throttle is the accelerator minus the brake" do
+    test "the accelerator drives, the brake brakes" do
       released = MapSet.new([1, 2])
       assert {_, 1.0} = command(wheel(), [0.0, 1.0, -1.0], released)
-      assert {_, -0.5} = command(wheel(), [0.0, 0.0, 1.0], released)
+      assert {_, -0.5} = command(wheel(), [0.0, -1.0, 0.0], released)
+    end
+
+    test "the brake wins over the accelerator" do
+      released = MapSet.new([1, 2])
+      assert {_, -0.5} = command(wheel(), [0.0, 1.0, 0.0], released)
+    end
+
+    test "a brake at rest leaves the accelerator alone" do
+      released = MapSet.new([1, 2])
+      assert {_, 1.0} = command(wheel(), [0.0, 1.0, -0.99], released)
     end
 
     test "a pedal reads as released until it has been seen released" do

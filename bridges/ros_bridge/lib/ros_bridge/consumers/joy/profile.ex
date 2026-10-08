@@ -10,8 +10,8 @@ defmodule RosBridge.Consumers.Joy.Profile do
           gain: -5.0
       throttle:
         - pedal: 1
+      brake:
         - pedal: 2
-          gain: -1.0
       gears:
         forward: [12, 13, 14, 15, 16, 17]
         backward: [11]
@@ -30,6 +30,11 @@ defmodule RosBridge.Consumers.Joy.Profile do
   right on the OVCS Mini reference vehicle, against `joy_linux`
   reporting left as positive, hence the negative steering gains. A term
   reads one axis, times its `gain` (1.0):
+
+  `brake`, optional, is the sum of its own terms, clamped to [0, 1]:
+  pressed past 2 %, it brakes by that much and the throttle is
+  ignored, so the brake pedal wins over the accelerator rather than
+  cancelling it.
 
     * `axis: i` — as `joy_linux` reports it, -1 to 1
     * `pedal: i` — a pedal reported -1 released and 1 pressed, read
@@ -56,7 +61,11 @@ defmodule RosBridge.Consumers.Joy.Profile do
   pedal half pressed. A missing or non-numeric axis reads as 0.
   """
 
-  defstruct [:name, :device, :gears, steering: [], throttle: []]
+  # Below this the brake reads as released, so a pedal's noise at rest
+  # does not take the throttle away.
+  @brake_threshold 0.02
+
+  defstruct [:name, :device, :gears, steering: [], throttle: [], brake: []]
 
   @type term_spec :: {:axis | :pedal, non_neg_integer(), float()}
   @type t :: %__MODULE__{
@@ -64,6 +73,7 @@ defmodule RosBridge.Consumers.Joy.Profile do
           device: String.t() | nil,
           steering: [term_spec()],
           throttle: [term_spec()],
+          brake: [term_spec()],
           gears:
             nil
             | %{forward: [control()], backward: [control()]}
@@ -100,6 +110,7 @@ defmodule RosBridge.Consumers.Joy.Profile do
       device: device!(name, Map.get(yaml, "device")),
       steering: terms!(name, yaml, "steering"),
       throttle: terms!(name, yaml, "throttle"),
+      brake: terms!(name, yaml, "brake"),
       gears: gears!(name, Map.get(yaml, "gears"))
     }
   end
@@ -167,12 +178,17 @@ defmodule RosBridge.Consumers.Joy.Profile do
   @spec command(t(), [number()] | nil, MapSet.t()) :: {float(), float(), MapSet.t()}
   def command(%__MODULE__{} = profile, axes, released \\ MapSet.new()) do
     released =
-      for {:pedal, index, _} <- profile.steering ++ profile.throttle,
+      for {:pedal, index, _} <- profile.steering ++ profile.throttle ++ profile.brake,
           axis(axes, index) <= -0.95,
           reduce: released,
           do: (acc -> MapSet.put(acc, index))
 
-    {output(profile.steering, axes, released), output(profile.throttle, axes, released), released}
+    brake = profile.brake |> output(axes, released) |> max(0.0)
+
+    throttle =
+      if brake > @brake_threshold, do: -brake, else: output(profile.throttle, axes, released)
+
+    {output(profile.steering, axes, released), throttle, released}
   end
 
   @doc """
