@@ -31,7 +31,7 @@
           </RecoveryNode>
         </RateController>
         <RecoveryNode number_of_retries="1" name="FollowPath">
-          <FollowPath path="{path}" controller_id="{selected_controller}"/>
+          <FollowPath path="{path}" controller_id="{selected_controller}" goal_checker_id="goal_checker" progress_checker_id="progress_checker" path_handler_id="PathHandler"/>
           <ClearEntireCostmap name="ClearLocalCostmap-Context" service_name="local_costmap/clear_entirely_local_costmap"/>
         </RecoveryNode>
       </PipelineSequence>
