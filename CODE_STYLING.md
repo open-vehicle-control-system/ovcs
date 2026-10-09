@@ -6,6 +6,11 @@ match what you see unless you have a reason to do otherwise.
 
 ## Layout principles
 
+- **Only `vehicles/` is vehicle-specific.** Everything else (cores, APIs,
+  firmware, bridges, libraries, `compose/`, the CLI, scripts) works for
+  any vehicle and takes what differs from the vehicle package:
+  dimensions, tuning, calibration, network names. A reference vehicle
+  may appear outside `vehicles/` only as an example in docs or tests.
 - **Cores are platform libraries.** `vms/core` and `infotainment/core` hold
   generic hardware drivers, behaviours, and infrastructure. They **do not**
   contain vehicle-specific code.
