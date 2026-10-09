@@ -9,7 +9,8 @@ defmodule VmsApi.MixProject do
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       aliases: aliases(),
-      deps: deps()
+      deps: deps(),
+      dialyzer: [plt_add_apps: [:ex_unit]]
     ]
   end
 
@@ -43,7 +44,8 @@ defmodule VmsApi.MixProject do
       {:bandit, "~> 1.2"},
       {:cors_plug, "~> 3.0.3"},
       {:vms_core, path: "../core"},
-      {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
+      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}
     ]
   end
 

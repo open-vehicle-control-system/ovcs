@@ -22,7 +22,8 @@ defmodule OvcsDrivers.MixProject do
       # driver lands here.
       {:circuits_i2c, "~> 2.0"},
       {:circuits_uart, "~> 1.5"},
-      {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
+      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}
     ]
   end
 end

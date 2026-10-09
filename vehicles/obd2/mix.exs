@@ -7,7 +7,8 @@ defmodule Obd2.MixProject do
       version: "0.1.0",
       elixir: "~> 1.15",
       start_permanent: Mix.env() == :prod,
-      deps: deps()
+      deps: deps(),
+      dialyzer: [plt_add_apps: [:infotainment_core]]
     ]
   end
 
@@ -27,7 +28,8 @@ defmodule Obd2.MixProject do
       {:ovcs_vehicle, path: "../../libraries/ovcs_vehicle"},
       {:vms_firmware, path: "../../vms/firmware"},
       {:infotainment_firmware, path: "../../infotainment/firmware"},
-      {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
+      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}
     ]
   end
 end

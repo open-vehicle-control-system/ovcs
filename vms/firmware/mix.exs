@@ -76,7 +76,8 @@ defmodule VmsFirmware.MixProject do
         targets: :ovcs_base_can_system_rpi4,
         nerves: [compile: false]
       },
-      {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
+      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}
     ]
   end
 

@@ -122,7 +122,8 @@ defmodule BridgeFirmware.MixProject do
        path: "../ros_bridge",
        targets: [:host, :ovcs_base_can_system_rpi4, :rpi5],
        runtime: Mix.target() != :host},
-      {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
+      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}
 
       # Bridge libraries are added as each is migrated out of its
       # legacy bridges/<name>/firmware/ project. The supervisor only
