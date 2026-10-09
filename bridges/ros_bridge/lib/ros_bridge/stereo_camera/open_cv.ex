@@ -363,7 +363,6 @@ defmodule RosBridge.StereoCamera.OpenCV do
         disp_f32 = Evision.Mat.as_type(raw_disparity, :f32)
 
         case Evision.meanStdDev(disp_f32, mask: valid_mask) do
-          {{mean_vec, std_vec}, _opt} -> {scalar(mean_vec) / 16.0, scalar(std_vec) / 16.0}
           {mean_vec, std_vec} -> {scalar(mean_vec) / 16.0, scalar(std_vec) / 16.0}
         end
       else
@@ -421,12 +420,6 @@ defmodule RosBridge.StereoCamera.OpenCV do
 
       tuple when is_tuple(tuple) and tuple_size(tuple) > 0 ->
         elem(tuple, 0)
-
-      [v | _] when is_number(v) ->
-        v
-
-      [[v | _] | _] when is_number(v) ->
-        v
 
       v when is_number(v) ->
         v

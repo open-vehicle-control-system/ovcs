@@ -24,8 +24,10 @@ defmodule InfotainmentFirmware.Application do
       {:ok, _} ->
         Logger.info("#{application} started successfully!")
 
-      {:error, :nomatch} ->
-        Logger.warning("#{application} could not start, continuing without it.")
+      {:error, {failed_application, reason}} ->
+        Logger.warning(
+          "#{application} could not start (#{failed_application}: #{inspect(reason)}), continuing without it."
+        )
     end
 
     :ok
