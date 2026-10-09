@@ -17,10 +17,9 @@ defmodule Ros2.SensorMsgs.Srv.SetCameraInfo do
   topic — the `dds_type` is the service's combined type
   (Request-side suffix stripped per rmw_zenoh convention).
 
-  The QoS suffix in the liveliness token differs from a publisher's:
-  services use `::,10:,:,:,,` (keep-last 10, reliable, volatile)
-  versus our publishers' `::,:,:,:,,`. Pass `:service` to
-  `Ros2.RmwZenoh.liveliness_key/6` so the right tail is emitted.
+  Services announce `::,10:,:,:,,` (keep-last 10, reliable, volatile)
+  in their liveliness token. Pass `:service` to
+  `Ros2.RmwZenoh.liveliness_key/6` so a service token is emitted.
   """
   use Ros2.Common
 
