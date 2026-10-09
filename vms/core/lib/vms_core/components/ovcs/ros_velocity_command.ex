@@ -64,6 +64,10 @@ defmodule VmsCore.Components.OVCS.RosVelocityCommand do
       `geometry/0`, in metres and radians.
     * `:max_speed` — m/s at full throttle. Not geometry: it is a
       property of the motor and gearing, not a dimension.
+    * `:min_speed` — m/s, default 0. A non-zero linear velocity slower
+      than this is driven at it, in its direction: a motor's speed loop
+      holds the lowest speeds poorly, and a planner easing in near a
+      goal otherwise stops and restarts the vehicle. Zero stays zero.
     * `:steering_sign` — `1` or `-1`, default `1`. REP-103 makes a
       positive yaw rate a left turn; whether a positive
       `requested_steering` turns this vehicle's servo left is a fact
@@ -108,6 +112,7 @@ defmodule VmsCore.Components.OVCS.RosVelocityCommand do
        loop_timer: timer,
        geometry: %{wheelbase: wheelbase, steering_limit: steering_limit},
        max_speed: max_speed,
+       min_speed: Map.get(args, :min_speed, 0.0) * 1.0,
        steering_sign: steering_sign,
        freshness: Freshness.new(@timeout_ms, now()),
        linear: @zero,
@@ -173,7 +178,7 @@ defmodule VmsCore.Components.OVCS.RosVelocityCommand do
       state
       | requested_steering:
           steering(linear, angular, state.geometry) |> D.mult(state.steering_sign),
-        requested_throttle: throttle(linear, state.max_speed)
+        requested_throttle: throttle(linear, state.min_speed, state.max_speed)
     }
   end
 
@@ -203,12 +208,19 @@ defmodule VmsCore.Components.OVCS.RosVelocityCommand do
     end
   end
 
-  defp throttle(linear, max_speed) do
-    (linear / max_speed)
+  @doc false
+  def throttle(linear, min_speed, max_speed) do
+    (floor_speed(linear, min_speed) / max_speed)
     |> max(-1.0)
     |> min(1.0)
     |> D.from_float()
   end
+
+  defp floor_speed(linear, min_speed)
+       when abs(linear) < @standstill_m_s or abs(linear) >= min_speed,
+       do: linear
+
+  defp floor_speed(linear, min_speed), do: if(linear > 0, do: min_speed, else: -min_speed)
 
   defp emit(state) do
     Bus.broadcast("messages", %Bus.Message{
