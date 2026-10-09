@@ -40,6 +40,9 @@ RUN apt-get update \
         ros-lyrical-nav2-msgs \
         ros-lyrical-map-msgs \
         ros-lyrical-bond \
+        # The stereo voxel layer's save_grid service: its type ships only
+        # inside the plugin.
+        ros-lyrical-spatio-temporal-voxel-layer \
         ros-lyrical-joy-linux \
         ros-lyrical-vision-msgs \
         ros-lyrical-image-transport-plugins \
