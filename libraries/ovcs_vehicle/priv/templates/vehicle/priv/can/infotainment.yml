@@ -1,8 +1,5 @@
 ---
-# Infotainment-side CAN topology. Mirrors vms.yml: the infotainment
-# head reads the VMS-published state frames and emits its own status
-# back. Delete this file entirely (and the infotainment/0 callback in
-# lib/<%= @name %>.ex) if the vehicle has no infotainment head.
+# Infotainment-side CAN topology: reads the VMS state frames, emits the head unit's status.
 can_networks:
   ovcs:
     bitrate: 1000000

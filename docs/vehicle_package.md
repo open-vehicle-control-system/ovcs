@@ -34,7 +34,7 @@ Don't copy a reference vehicle. Generate a clean package:
 This runs `OvcsVehicle.Scaffold.generate/3` against `libraries/ovcs_vehicle/priv/templates/vehicle/` and produces a working VMS plus infotainment vehicle with:
 
 - a minimal `children/0`: one example generic controller (controller id `0`, frames `0x701`, `0x702`, `0x704`), `VmsCore.Status` and a vehicle GenServer;
-- a commented-out `bridge_firmwares/0` stub with a radio-control bridge and its `radio_control_bridge_config/1`, which boots once uncommented and given `priv/can/bridges/radio_control.yml`;
+- examples in the top-level module's `@moduledoc` for the optional `geometry/0` and `bridge_firmwares/0`, the latter with a radio-control bridge and its `radio_control_bridge_config/1`, which boots once copied in and given `priv/can/bridges/radio_control.yml`;
 - the CAN topology YAMLs and an `.env.exs.example`;
 - `priv/firmware/vms/` and `priv/firmware/infotainment/` holding `config.txt`, `cmdline-a.txt` and `cmdline-b.txt` copied from each target's defaults. `fwup.conf` is not copied: it stays shared with the target (see [Toolchain and OTP](./toolchain_and_otp.md#what-the-ab-layout-requires)).
 
