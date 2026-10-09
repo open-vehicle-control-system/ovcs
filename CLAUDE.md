@@ -73,6 +73,11 @@ A comment describes the code as it is at the moment the comment is written — n
 - Comment only when it's needed: a non-obvious *why*, an invariant, a trap. Most code needs none; skip what the code already states plainly.
 - Keep comments short and plain: one line where one line does. No paragraphs, no restating the surrounding code, no emphasis.
 - A stale comment is deleted, not amended.
+- A better name beats a comment: functions and variables say what they do. Module and function documentation goes in `@moduledoc` / `@doc`, not comment blocks; see [CODE_STYLING.md](./CODE_STYLING.md#names-docs-and-comments).
+- The same rules apply to every file type: YAML, Dockerfiles, shell, Python and Rust, which credo does not check.
+- Why a value or behaviour changed goes in the commit message; a comment says only why the code is as it is.
+- No measurements, estimates or derived numbers next to a tunable value: they go stale when it is tuned. Put them in the commit message or a guide.
+- Before finishing, review every comment line the diff adds against these rules and run credo on the projects touched.
 
 ### If a violation has already been pushed
 
@@ -106,6 +111,7 @@ Behaviour callbacks, function signatures and module summaries belong in `@module
 
 - Polyglot **monorepo** (Elixir/Nerves, Phoenix, Vue, Flutter, C++/Arduino, Ruby). Not an Elixir umbrella — each Elixir app is a standalone Mix project with `path:` deps to siblings.
 - Strict layer split in `{vms,infotainment}`: `core` (platform + component drivers, no web deps) ← `api` (Phoenix) ← `firmware` (Nerves); `dashboard` talks to `api` over HTTP + Phoenix Channels. Put logic in the layer it belongs to.
+- **Nothing outside `vehicles/` is vehicle-specific.** Cores, APIs, firmware, bridges, libraries, `compose/`, the CLI and scripts take whatever differs per vehicle from the vehicle package; a reference vehicle appears elsewhere only as an example in docs or tests.
 - **Vehicles are their own packages under `vehicles/<name>/`** — each bundles a VMS composer, an infotainment composer (optional), and its CAN topology YAMLs. A vehicle's top-level module implements `OvcsVehicle` and exposes `vms/0` + `infotainment/0`. `vms_core` and `infotainment_core` contain zero vehicle-specific code.
 - Shared per-component CAN frame/signal YAMLs live in `libraries/ovcs_can/priv/can/components/`. Vehicle topology YAMLs live in `vehicles/<name>/priv/can/{vms,infotainment}.yml` and import shared components via `import!:@ovcs_can:can/components/...` (Cantastic cross-app import syntax).
 - Vehicle selection is runtime via the `VEHICLE` env var, whose value is the top-level module name of the vehicle package (e.g. `Ovcs1`, `OvcsMini`, `Obd2`). Each **firmware**'s `config/runtime.exs` calls `OvcsVehicle.Firmware.resolve_side/4`, which prepends the vehicle's ebin to the code path and returns `{vehicle, composer}`, then writes the composer to `:vms_core, :vehicle` / `:infotainment_core, :vehicle` — no hardcoded vehicle list anywhere in `vms_core`/`infotainment_core`/api/firmware. The `ovcs` CLI takes the directory name as a positional arg (e.g. `./ovcs build ovcs1 vms`) and converts it to the module name.

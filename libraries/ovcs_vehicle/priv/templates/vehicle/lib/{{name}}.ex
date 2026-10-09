@@ -1,7 +1,51 @@
 defmodule <%= @module %> do
   @moduledoc """
   Top-level entry point for the <%= @display_name %> vehicle package.
-  """
+
+  ## Geometry
+
+  Declare `geometry/0` once something on the vehicle needs its shape,
+  such as kinematics turning a velocity command into a steering angle.
+  Measured values only, in metres and radians; see
+  `t:OvcsVehicle.geometry/0`. If the vehicle also has a simulation
+  model, test that the two agree, as
+  `vehicles/ovcs_mini/test/geometry_test.exs` does.
+
+      @impl OvcsVehicle
+      def geometry,
+        do: %{wheelbase: 0.0, track: 0.0, wheel_radius: 0.0, steering_limit: 0.0}
+<%= if @bridges do %>
+  ## Bridge firmwares
+
+  Each entry of `bridge_firmwares/0` is a build target,
+  `./ovcs build <%= @name %> bridge-<firmware-id>`, and each bundled bridge
+  needs its configuration callback on this module. A radio-control
+  bridge also needs `priv/can/bridges/radio_control.yml`; start from the
+  OVCS Mini reference vehicle's. See the
+  [vehicle package guide](https://ovcs.be/docs/vehicle_package).
+
+      @behaviour RadioControlBridge
+
+      @impl OvcsVehicle
+      def bridge_firmwares do
+        %{
+          "radio_control" => %{
+            target: :ovcs_base_can_system_rpi3a,
+            bridges: [RadioControlBridge],
+            default_can_mapping: %{host: "ovcs:vcan0", target: "ovcs:spi0.0"}
+          }
+        }
+      end
+
+      @impl RadioControlBridge
+      def radio_control_bridge_config(:host),
+        do: %RadioControlBridge.Config{components: []}
+
+      def radio_control_bridge_config(:target),
+        do: %RadioControlBridge.Config{
+          components: [{:mavlink_forwarder, uart_port: "ttySC0", uart_baud_rate: 460_800}]
+        }
+<% end %>  """
   @behaviour OvcsVehicle
 
   @impl OvcsVehicle
@@ -16,70 +60,4 @@ defmodule <%= @module %> do
   def vms_target, do: :<%= @vms_target %>
 <%= if @infotainment do %>  @impl OvcsVehicle
   def infotainment_target, do: :<%= @infotainment_target %>
-<% end %>
-  # Measured physical geometry — optional, in **metres and radians**.
-  #
-  # Declare it if anything on this vehicle needs to know its shape.
-  # Kinematics is the case that forces it: turning a velocity command
-  # into a steering angle is the same arithmetic on every Ackermann
-  # vehicle and a different number on each one, so `vms_core` stays
-  # generic and takes these as composer options.
-  #
-  # Only measured quantities go here. Derived ones are functions —
-  # `OvcsVehicle.min_turning_radius/1`, `max_yaw_rate/2` — because a
-  # stored derived value is one more copy to get wrong.
-  #
-  # If this vehicle also has a simulation model, the same numbers live
-  # in its xacro and cannot be shared, so add a test asserting the two
-  # agree. See `vehicles/ovcs_mini/test/geometry_test.exs`; a wheel
-  # radius wrong by 2x shipped in that model once.
-  #
-  # @impl OvcsVehicle
-  # def geometry,
-  #   do: %{
-  #     wheelbase: 0.0,
-  #     track: 0.0,
-  #     wheel_radius: 0.0,
-  #     steering_limit: 0.0
-  #   }
-<%= if @bridges do %>
-  # Bridge firmwares — optional. Uncomment and populate to declare one
-  # or more bridge firmware images for this vehicle. Each entry becomes
-  # its own build target: `./ovcs build <%= @name %> bridge-<firmware-id>`.
-  # The shared `bridges/firmware` image reads VEHICLE +
-  # BRIDGE_FIRMWARE_ID at boot and supervises only the bridges listed.
-  #
-  # Each bundled bridge also needs its per-vehicle config callback on
-  # this module. `RadioControlBridge` requires
-  # `@behaviour RadioControlBridge` + `radio_control_bridge_config/1`,
-  # as below.
-  # `RosBridge` requires `@behaviour RosBridge` + `ros_bridge_config/1`
-  # (arm) or `ros_bridge_config/2` (arm, firmware id) returning a
-  # `%RosBridge.Config{}`. See `vehicles/ovcs_mini/lib/ovcs_mini.ex` for
-  # both. The entry below also needs `priv/can/bridges/radio_control.yml`;
-  # start from `vehicles/ovcs_mini/priv/can/bridges/radio_control.yml`.
-  #
-  # @behaviour RadioControlBridge
-  #
-  # @impl OvcsVehicle
-  # def bridge_firmwares do
-  #   %{
-  #     "radio_control" => %{
-  #       target: :ovcs_base_can_system_rpi3a,
-  #       bridges: [RadioControlBridge],
-  #       default_can_mapping: %{host: "ovcs:vcan0", target: "ovcs:spi0.0"}
-  #       # can_config_path: "can/bridges/radio_control.yml"  # optional override
-  #     }
-  #   }
-  # end
-  #
-  # # `:host` is `./ovcs run`, `:target` the burned firmware.
-  # @impl RadioControlBridge
-  # def radio_control_bridge_config(:host),
-  #   do: %RadioControlBridge.Config{components: []}
-  #
-  # def radio_control_bridge_config(:target),
-  #   do: %RadioControlBridge.Config{
-  #     components: [{:mavlink_forwarder, uart_port: "ttySC0", uart_baud_rate: 460_800}]
-  #   }
 <% end %>end

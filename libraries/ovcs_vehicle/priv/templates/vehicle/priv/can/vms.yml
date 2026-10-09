@@ -1,22 +1,5 @@
 ---
-# VMS-side CAN topology.
-#
-# The `ovcs` network below is the one bus every OVCS vehicle needs:
-# it carries VMS ↔ infotainment messages and VMS ↔ generic_controller
-# traffic. The example_controller frames demonstrate the standard
-# 0x7X1 (alive) / 0x7X2 (digital pin request) / 0x7X4 (pin status)
-# pattern — rename and duplicate them per physical controller.
-#
-# To add hardware-specific buses (drivetrain inverter, BMS, brake
-# booster, …) declare extra networks at the same indent level as
-# `ovcs`, e.g.:
-#
-#   drivetrain:
-#     bitrate: 500000
-#     emitted_frames: [...]
-#     received_frames: [...]
-#
-# See vehicles/ovcs1/priv/can/vms.yml for a fully populated example.
+# VMS-side CAN topology; add a network per hardware bus. Example: vehicles/ovcs1/priv/can/vms.yml.
 can_networks:
   ovcs:
     bitrate: 1000000

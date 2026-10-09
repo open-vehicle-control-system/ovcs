@@ -30,9 +30,7 @@ defmodule <%= @module %>.Vms.Composer do
   @impl VmsCore.Vehicle
   def children do
     [
-      # Example generic_controller: a board on the CAN bus with
-      # digital + analog pins. Rename / duplicate for each physical
-      # controller you run (see priv/can/generic_controller/).
+      # One per generic controller board; its frames are in priv/can/generic_controller/.
       %{
         id: Vms.ExampleController,
         start:
@@ -47,15 +45,12 @@ defmodule <%= @module %>.Vms.Composer do
            ]}
       },
 
-      # Broadcasts VMS status/reset events — required by `Vms`.
+      # Required by `Vms`.
       {VmsCore.Status,
        %{
          ready_to_drive_source: Vms,
          vms_status_source: Vms
        }},
-
-      # Your vehicle's GenServer — put vehicle-specific state and
-      # bus-driven logic in `<%= @module %>.Vms`.
       {Vms, []}
     ]
   end
