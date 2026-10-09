@@ -40,6 +40,7 @@ defmodule VmsCore.Components.OVCS.RosVelocityCommandTest do
         loop_timer: nil,
         geometry: @geometry,
         max_speed: @max_speed,
+        min_speed: 0.0,
         steering_sign: 1,
         freshness: fresh_freshness(),
         linear: D.new(0),
@@ -199,6 +200,24 @@ defmodule VmsCore.Components.OVCS.RosVelocityCommandTest do
           ] do
         assert {:noreply, ^state} = Velocity.handle_info(message, state)
       end
+    end
+  end
+
+  describe "throttle/3 with a minimum speed" do
+    alias VmsCore.Components.OVCS.RosVelocityCommand
+
+    test "raises a slow velocity to the minimum, keeping its direction" do
+      assert_in_delta D.to_float(RosVelocityCommand.throttle(0.06, 0.15, 1.5)), 0.1, 1.0e-9
+      assert_in_delta D.to_float(RosVelocityCommand.throttle(-0.06, 0.15, 1.5)), -0.1, 1.0e-9
+    end
+
+    test "leaves zero and faster velocities alone" do
+      assert_in_delta D.to_float(RosVelocityCommand.throttle(0.0, 0.15, 1.5)), 0.0, 1.0e-9
+      assert_in_delta D.to_float(RosVelocityCommand.throttle(0.75, 0.15, 1.5)), 0.5, 1.0e-9
+    end
+
+    test "is off by default" do
+      assert_in_delta D.to_float(RosVelocityCommand.throttle(0.06, 0.0, 1.5)), 0.04, 1.0e-9
     end
   end
 end

@@ -26,6 +26,9 @@ defmodule OvcsMini.Vms.Composer do
   # normalises the planner's velocity against, and the speed the VESC's
   # speed loop holds for it, through the gearing below. Nav2's `vx_max`.
   @max_speed_m_s 1.5
+  # The slowest planner speed driven: below about twice the VESC's
+  # Minimum ERPM the speed loop stops and restarts the car.
+  @min_speed_m_s 0.15
 
   # Throttle feel for hands, see `OVCS.InputCurve`. The dead zone
   # matches `RadioControl.Throttle`'s braking threshold, so a trigger
@@ -90,7 +93,7 @@ defmodule OvcsMini.Vms.Composer do
       {OVCS.RosVelocityCommand,
        Map.merge(
          Map.take(OvcsMini.geometry(), [:wheelbase, :steering_limit]),
-         %{max_speed: @max_speed_m_s, steering_sign: -1}
+         %{max_speed: @max_speed_m_s, min_speed: @min_speed_m_s, steering_sign: -1}
        )},
       {OVCS.RadioControl.Steering,
        %{
