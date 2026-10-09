@@ -11,23 +11,12 @@ defmodule <%= @module %>.MixProject do
     ]
   end
 
-  # The vehicle package is metadata + composers only — no runnable
-  # OTP app. Every firmware BEAM (vms, infotainment, each bridge)
-  # loads the compiled ebin via `Code.prepend_path` at boot and calls
-  # into the composer modules directly.
+  # No OTP app: each firmware loads this package's ebin at boot.
   def application do
     [extra_applications: [:logger]]
   end
 
-  # A vehicle is "a set of firmwares": one VMS, one infotainment, and
-  # the shared bridges image (which runs one instance per entry in
-  # `bridge_firmwares/0`). Depending on the firmware projects here is
-  # what gives the composer modules access to `VmsCore.Vehicle`,
-  # `InfotainmentCore.Vehicle`, `OvcsBus.Message`, and Cantastic — all
-  # pulled in transitively — and makes `./ovcs run <%= @name %>`
-  # self-contained against this vehicle's `_build` tree. `ovcs_vehicle`
-  # supplies the top-level `OvcsVehicle` behaviour and doesn't sit in
-  # any firmware dep tree, so it stays explicit.
+  # The firmwares bring the cores, OvcsBus and Cantastic; no firmware depends on ovcs_vehicle.
   defp deps do
     [
       {:ovcs_vehicle, path: "../../libraries/ovcs_vehicle"},

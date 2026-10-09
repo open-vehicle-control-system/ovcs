@@ -12,7 +12,7 @@ defmodule <%= @module %>.Vms do
   use GenServer
   require Logger
   alias OvcsBus, as: Bus
-  alias VmsCore.{Status}
+  alias VmsCore.Status
   alias <%= @module %>.Vms.ExampleController
 
   @loop_period 20
@@ -45,19 +45,15 @@ defmodule <%= @module %>.Vms do
     {:noreply, state}
   end
 
-  # Example: the ExampleController generic controller publishes a liveness
-  # signal on the bus. Track it as a piece of VMS state.
   def handle_info(%Bus.Message{name: :is_alive, value: alive, source: ExampleController}, state) do
     {:noreply, %{state | example_controller_is_alive: alive}}
   end
 
-  # The built-in `VmsCore.Status` component broadcasts `resetting` while
-  # a reset is in flight — don't flap `vms_status` during that window.
+  # Keeps vms_status from flapping while a reset is in flight.
   def handle_info(%Bus.Message{name: :resetting, value: resetting, source: Status}, state) do
     {:noreply, %{state | resetting: resetting}}
   end
 
-  # Catch-all for unrelated bus messages.
   def handle_info(%Bus.Message{}, state), do: {:noreply, state}
 
   defp compute_ready_to_drive(state) do
@@ -70,8 +66,18 @@ defmodule <%= @module %>.Vms do
   end
 
   defp broadcast(state) do
-    Bus.broadcast("messages", %Bus.Message{name: :ready_to_drive, value: state.ready_to_drive, source: __MODULE__})
-    Bus.broadcast("messages", %Bus.Message{name: :vms_status, value: state.vms_status, source: __MODULE__})
+    Bus.broadcast("messages", %Bus.Message{
+      name: :ready_to_drive,
+      value: state.ready_to_drive,
+      source: __MODULE__
+    })
+
+    Bus.broadcast("messages", %Bus.Message{
+      name: :vms_status,
+      value: state.vms_status,
+      source: __MODULE__
+    })
+
     state
   end
 end

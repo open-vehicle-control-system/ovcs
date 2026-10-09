@@ -1,8 +1,5 @@
 ---
-# Example generic_controller status frame — the controller emits this
-# on 0x7X4 to report the current state of its digital and analog
-# input pins. Drop this file (and its references) if your controller
-# has no inputs to report.
+# Controller 0's digital and analog inputs, reported to the VMS.
 name: example_controller_digital_and_analog_pin_status
 id: 0x704
 frequency: 10
