@@ -13,9 +13,9 @@ set -euo pipefail
 # Bound stale data waiting for a slow WebSocket client. The SDK drops
 # the oldest data message when this per-client queue is full.
 #
-# No parameter capabilities: listing every node's parameters times out
-# on Nav2's internal nodes and logs errors in a loop, and no layout uses
-# the Parameters panel.
+# Parameters only for the stereo unit, whose sliders the
+# ovcs_stereo_tuning layout drives. foxglove_bridge still asks every node
+# once; Nav2's internal navigator nodes time out and it then ignores them.
 
 echo "foxglove_bridge: listening on ws://0.0.0.0:${FOXGLOVE_BRIDGE_PORT}, peering with ${ZENOH_ENDPOINT_IP}:7447"
 
@@ -36,7 +36,8 @@ trap 'exit 0' INT TERM
   -p port:="${FOXGLOVE_BRIDGE_INTERNAL_PORT}" \
   -p address:=127.0.0.1 \
   -p message_backlog_size:="${FOXGLOVE_MESSAGE_BACKLOG_SIZE}" \
-  -p capabilities:="['clientPublish', 'services', 'connectionGraph', 'assets']" &
+  -p capabilities:="['clientPublish', 'parameters', 'parametersSubscribe', 'services', 'connectionGraph', 'assets']" \
+  -p param_whitelist:='["^/ovcs_bridge_perception\\.stereo\\..*$"]' &
 child_pids+=("$!")
 
 # Exits when the bridge stops draining its Zenoh session.
