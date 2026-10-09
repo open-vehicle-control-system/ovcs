@@ -114,8 +114,9 @@ controller_server:
       vx_std: 0.2
       # Larger steering noise shows up as wobble in the chosen command.
       wz_std: 0.2
-      # Indoors: the stereo sees 3 m ahead.
-      vx_max: 0.6
+      # About 0.4 m to stop for a newly seen obstacle (reaction plus
+      # braking), against the stereo's 3 m and the lidar's 4 m.
+      vx_max: 0.8
       # No reverse: stereo looks forward only, so the costmap behind the
       # car is always empty.
       vx_min: 0.0
@@ -422,7 +423,7 @@ velocity_smoother:
     smoothing_frequency: 20.0
     scale_velocities: false
     feedback: "OPEN_LOOP"
-    max_velocity: [0.6, 0.0, 2.5]
+    max_velocity: [0.8, 0.0, 2.5]
     # Reverse only as fast as BackUp drives; MPPI's vx_min keeps it forward.
     min_velocity: [-0.10, 0.0, -2.5]
     max_accel: [1.0, 0.0, 3.0]
