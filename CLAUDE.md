@@ -73,6 +73,11 @@ A comment describes the code as it is at the moment the comment is written — n
 - Comment only when it's needed: a non-obvious *why*, an invariant, a trap. Most code needs none; skip what the code already states plainly.
 - Keep comments short and plain: one line where one line does. No paragraphs, no restating the surrounding code, no emphasis.
 - A stale comment is deleted, not amended.
+- A better name beats a comment: functions and variables say what they do. Module and function documentation goes in `@moduledoc` / `@doc`, not comment blocks; see [CODE_STYLING.md](./CODE_STYLING.md#names-docs-and-comments).
+- The same rules apply to every file type: YAML, Dockerfiles, shell, Python and Rust, which credo does not check.
+- Why a value or behaviour changed goes in the commit message; a comment says only why the code is as it is.
+- No measurements, estimates or derived numbers next to a tunable value: they go stale when it is tuned. Put them in the commit message or a guide.
+- Before finishing, review every comment line the diff adds against these rules and run credo on the projects touched.
 
 ### If a violation has already been pushed
 

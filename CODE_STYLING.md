@@ -46,6 +46,38 @@ match what you see unless you have a reason to do otherwise.
 - New behaviour callbacks that aren't universal go under
   `@optional_callbacks [...]`.
 
+## Names, docs and comments
+
+- **Names say what things do.** A function's name states what it does,
+  a variable's what it holds, with its unit when it has one
+  (`min_speed_m_s`, `timeout_ms`). When code needs a comment to be
+  understood, first rename, or extract a function whose name says it.
+- **No vague names.** No single-letter variables outside a short
+  anonymous function (`&(&1 * 2)`, `fn x -> x * 2 end`), and no names
+  that fit anything: `data`, `value`, `result`, `res`, `tmp`, `info`,
+  `item`, `obj`, `handle/1`, `process/1`, `do_stuff/1`. Say which data:
+  `frame`, `speed_m_s`, `decode_frame/1`.
+- **No acronyms or abbreviations.** Spell words out: `controller`, not
+  `ctrl`; `message`, not `msg`; `configuration`, not `cfg`. The
+  exceptions are a domain's standard names, which readers know better
+  than their expansion (`can`, `ros`, `vms`, `vesc`, `imu`), and units
+  (`_ms`, `_m_s`).
+- **`@moduledoc`** says what a module is for and how it fits in. Every
+  module has one, or `@moduledoc false` when it is internal.
+- **`@doc`** documents a public function: what it does, its options, what
+  it returns. Never a comment block above a `def`.
+- **`#` comments** are for a non-obvious *why*, an invariant or a trap,
+  at most three lines. A private function gets at most one line above
+  it; if it needs more, rename or split it.
+- **Configuration** (composer options, YAML, shell): one line on why a
+  value is what it is. Longer explanations go in the module's docs or a
+  guide.
+- Python uses docstrings where Elixir uses `@moduledoc` and `@doc`.
+- Credo enforces the Elixir part: `ModuleDoc` and the custom checks in
+  `.credo/checks/` (comment blocks, and comment lines at most a quarter
+  of code lines). Files not cleaned up yet are listed in each check's
+  `excluded` in `.credo.exs`; a cleaned file leaves the list.
+
 ## Configuration
 
 - Runtime config that depends on the vehicle goes in `runtime.exs` of the
