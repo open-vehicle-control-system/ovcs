@@ -101,6 +101,13 @@ controller_server:
       time_steps: 40
       model_dt: 0.05
       batch_size: 1000
+      # The candidates on /controller_server/candidate_trajectories, for
+      # the ovcs_nav2 layout: one in 50 of the batch, every fourth step,
+      # so the markers stay light over the Wi-Fi.
+      visualize: true
+      TrajectoryVisualizer:
+        trajectory_step: 50
+        time_step: 4
       vx_std: 0.2
       # Larger steering noise shows up as wobble in the chosen command.
       wz_std: 0.2

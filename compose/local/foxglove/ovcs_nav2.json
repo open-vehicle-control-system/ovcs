@@ -110,6 +110,12 @@
         },
         "/ultrasound/rear_right": {
           "visible": true
+        },
+        "/controller_server/candidate_trajectories": {
+          "visible": true
+        },
+        "/goal_pose": {
+          "visible": true
         }
       },
       "layers": {
@@ -410,6 +416,22 @@
       "xAxisVal": "timestamp",
       "followingViewWidth": 20,
       "foxglovePanelTitle": "Joy axes"
+    },
+    "RosOut!nav2": {
+      "foxglovePanelTitle": "Nav2 warnings and errors",
+      "topicToRender": "/rosout",
+      "minLogLevel": 3,
+      "searchTerms": [],
+      "nameFilter": {}
+    },
+    "RawMessages!bt_log": {
+      "foxglovePanelTitle": "Behaviour tree: last transitions",
+      "topicPath": "/behavior_tree_log.event_log",
+      "diffEnabled": false,
+      "diffMethod": "custom",
+      "diffTopicPath": "",
+      "showFullMessageForDiff": false,
+      "expansion": "all"
     }
   },
   "globalVariables": {},
@@ -418,7 +440,17 @@
     "speed": 1
   },
   "layout": {
-    "first": "3D!nav",
+    "first": {
+      "first": "3D!nav",
+      "second": {
+        "first": "RosOut!nav2",
+        "second": "RawMessages!bt_log",
+        "direction": "row",
+        "splitPercentage": 60
+      },
+      "direction": "column",
+      "splitPercentage": 70
+    },
     "second": {
       "first": {
         "first": {
