@@ -55,9 +55,11 @@
 controller_server:
   ros__parameters:
     use_sim_time: false
-    controller_frequency: 20.0
+    # The rate the local costmap refreshes at: each cycle waits for a
+    # fresh costmap, so a faster controller only misses its rate.
+    controller_frequency: 10.0
     # The CAN command path runs at 100 Hz (`frequency: 10` in Cantastic
-    # is a period in milliseconds), so 20 Hz here is not the bottleneck.
+    # is a period in milliseconds), so 10 Hz here is not the bottleneck.
     min_x_velocity_threshold: 0.001
     min_theta_velocity_threshold: 0.001
     failure_tolerance: 0.3
@@ -98,8 +100,9 @@ controller_server:
         plugin: "mppi::AckermannMotionModel"
         min_turning_r: 0.6
 
-      time_steps: 40
-      model_dt: 0.05
+      # model_dt is the controller's period; 20 steps keep a 2 s horizon.
+      time_steps: 20
+      model_dt: 0.1
       batch_size: 1000
       # The candidates on /controller_server/candidate_trajectories, for
       # the ovcs_nav2 layout: one in 50 of the batch, every fourth step,
