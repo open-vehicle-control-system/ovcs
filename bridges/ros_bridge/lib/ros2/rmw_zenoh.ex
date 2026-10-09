@@ -73,11 +73,13 @@ defmodule Ros2.RmwZenoh do
 
   Where `/` in enclave / namespace / topic is mangled to `%`. `nid`
   and `eid` are session-local counters; we hardcode `0/0` for our
-  single publisher. `<qos>` is the default reliable-volatile profile
-  (`::,:,:,:,,`) — matches what rclpy emits with `qos_profile_default`.
+  single publisher. `<qos>` is reliable, volatile, keep-last 10
+  (`::,10:,:,:,,`), the profile Nav2's publishers announce. An empty
+  depth is rmw_zenoh's system default, 42, which subscribers such as
+  foxglove_bridge then cap with a warning.
   """
   def liveliness_key(domain_id, zid, node_name, topic, message_module) do
-    build_liveliness_key(domain_id, zid, node_name, topic, message_module, "MP", "::,:,:,:,,")
+    build_liveliness_key(domain_id, zid, node_name, topic, message_module, "MP", "::,10:,:,:,,")
   end
 
   @doc """
