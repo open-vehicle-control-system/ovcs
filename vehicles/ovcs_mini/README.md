@@ -47,7 +47,12 @@ lib/ovcs_mini/vms/                 — VMS-side composer + dashboard pages
 priv/can/vms.yml                   — VMS CAN topology (`ovcs` and `misc` buses)
 priv/can/generic_controller/       — Per-controller frame wirings
 priv/firmware/{vms,bridges}/       — Per-side fwup overrides
+nav2/                              — Nav2 parameters + behaviour trees (compute node, local stacks)
+description/                       — Gazebo model + simulation.yaml (simulator)
+foxglove/                          — Foxglove layouts
 ```
+
+Deploy the compute node with `../../ovcs compute push ovcs_mini <fleet>`.
 
 See [`docs/hardware.md`](../../docs/hardware.md#ovcs-mini-hardware)
 for the RC-car hardware breakdown.

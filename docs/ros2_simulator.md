@@ -39,7 +39,7 @@ Everything containerised lives under `compose/`, split by one question: is it pu
 | `zenohd`, `foxglove_bridge` (profile `standalone`), `nav2` (profile `nav2`) | `compose/local/base.yml` | stand-ins for the vehicle's own, when none is on the LAN |
 | `sim`, `teleop`, `gz-gui`, `nav2` | `compose/local/simulation.yml` | Gazebo and its operator-side extras |
 
-`compose/compute/` is pushed to balena as one unit; `compose/local/` never is. The vehicle's images are built only from `compose/compute/images/`, and the local stacks build the same Dockerfiles, so a workstation runs what the car runs. A stand-in must not run while a vehicle is on the LAN: two routers are two fabrics. The profile table is in [`compose/README.md`](../compose/README.md); the compute node itself is [ROS compute node](./ros2_compute_node.md).
+`compose/compute/` is pushed to balena as one unit, with your vehicle's Nav2 parameters staged into it by `./ovcs compute push`; `compose/local/` never is. The vehicle's images are built only from `compose/compute/images/`, and the local stacks build the same Dockerfiles, so a workstation runs what the car runs. A stand-in must not run while a vehicle is on the LAN: two routers are two fabrics. The profile table is in [`compose/README.md`](../compose/README.md); the compute node itself is [ROS compute node](./ros2_compute_node.md).
 
 ## What the simulator starts
 
@@ -60,7 +60,7 @@ Details that read like bugs until you know them:
 - **Cameras go through `image_bridge`**, for bandwidth ([Perception](#perception-against-the-simulator)).
 - **`use_sim_time: true`** on every node ([Time](#time)).
 
-The model lives with its vehicle, in `vehicles/ovcs_mini/description/`, and is mounted into the container rather than baked in. Another vehicle's model is another `description/` directory plus one mount line in `compose/local/simulation.yml` and `vehicle:=<vehicle>` on the `sim` service's launch command.
+The model lives with its vehicle, in `vehicles/<vehicle>/description/` beside the `simulation.yaml` that names its sensors, and is mounted into the container rather than baked in. `OVCS_VEHICLE` in `compose/local/.env` picks the vehicle; the OVCS Mini reference vehicle's is the worked example ([Simulation](../compose/local/simulation/README.md#your-vehicle-in-the-simulator)).
 
 ## Topics: who publishes what
 
@@ -197,7 +197,7 @@ A yaw rate the steering cannot achieve collapses to full lock rather than an err
 
 Nav2 1.5.1: a lifecycle manager and four servers (`controller_server`, `planner_server`, `behavior_server`, `bt_navigator`) plus `velocity_smoother`. Not `nav2_bringup`, which is absent from the Lyrical archive and would pull in map_server and AMCL.
 
-One configuration, three deployments. The parameter file, behaviour trees and launch file live in `compose/compute/nav2/`; the image is `compose/compute/images/nav2/`, tagged `ovcs/nav2:lyrical` wherever it is built.
+One configuration, three deployments. The parameter file and behaviour trees are the vehicle's, in `vehicles/<vehicle>/nav2/`; the image and its launch file are the framework's, in `compose/compute/images/nav2/`, tagged `ovcs/nav2:lyrical` wherever it is built. `./ovcs compute stage` bakes the vehicle's parameters into the onboard image; the local stacks mount them.
 
 | Where | Compose | Clock |
 |---|---|---|
@@ -298,7 +298,7 @@ cd compose/local && docker compose -f base.yml exec ros2 bash -lc '
 '
 ```
 
-Or open Foxglove Studio against `ws://<docker-host>:8765` and subscribe to `/ovcs_heartbeat`. Three layouts ship in `compose/local/foxglove/`: `ovcs_nav2.json` for the planner, `ovcs_stereo.json` for the stereo pipeline and `ovcs_stereo_tuning.json` for tuning the stereo cameras.
+Or open Foxglove Studio against `ws://<docker-host>:8765` and subscribe to `/ovcs_heartbeat`. `compose/local/foxglove/ovcs_stereo_tuning.json` is for tuning the stereo cameras; a vehicle's own layouts live in its `foxglove/` directory, such as the OVCS Mini reference vehicle's `ovcs_nav2.json` for the planner and `ovcs_stereo.json` for the stereo pipeline.
 
 > [!TIP]
 > If `ros2 topic echo` fails with `ResponseError: unknown tag 'rclpy.topic_endpoint_info.TopicEndpointInfo'` (a `ros2cli` daemon bug on Python 3.14), pass `--no-daemon`.
@@ -308,7 +308,7 @@ Or open Foxglove Studio against `ws://<docker-host>:8765` and subscribe to `/ovc
 | To understand | Read | Then |
 |---|---|---|
 | how to run any of this | [Simulation](../compose/local/simulation/README.md) | `compose/local/simulation.yml` |
-| the launch order and bridged topics | `compose/local/simulation/launch/sim.launch.py` (its docstrings are the design notes) | `compose/compute/nav2/launch/nav2.launch.py`, `compose/local/simulation/launch/teleop.launch.py` |
+| the launch order and bridged topics | `compose/local/simulation/launch/sim.launch.py` (its docstrings are the design notes) | `compose/compute/images/nav2/launch/nav2.launch.py`, `compose/local/simulation/launch/teleop.launch.py` |
 | the rmw_zenoh wire format | [`bridges/ros_bridge/README.md`](../bridges/ros_bridge/README.md) | `bridges/ros_bridge/lib/ros2/rmw_zenoh.ex`, `zenoh_client.ex` |
 | time | `bridges/ros_bridge/lib/ros_bridge/clock.ex` | `timing.ex`, `publishers/static_transform.ex` |
 | what a vehicle's bridge runs | `vehicles/ovcs_mini/lib/ovcs_mini.ex` (`ros_bridge_config/2`) | `bridges/ros_bridge/lib/ros_bridge/components.ex` |
@@ -316,7 +316,7 @@ Or open Foxglove Studio against `ws://<docker-host>:8765` and subscribe to `/ovc
 | the velocity command path | `bridges/ros_bridge/lib/ros_bridge/consumers/velocity.ex` | `0x2B1_ros_velocity_command.yml`, `vms/core/lib/vms_core/components/ovcs/ros_velocity_command.ex` |
 | odometry on the vehicle | `bridges/ros_bridge/lib/ros_bridge/publishers/odometry.ex` | `0x60B_vehicle_motion.yml`, `vms/core/lib/vms_core/components/ovcs/vehicle_motion.ex` |
 | who commands the vehicle | [Your vehicle package](./vehicle_package.md#control-levels-who-commands-and-which-ros-node) | `vms/core/lib/vms_core/managers/control_level.ex` |
-| Nav2's configuration | `compose/compute/nav2/config/nav2.yaml` (heavily commented) | `nav2_ackermann_bt.xml` beside it |
+| Nav2's configuration | `vehicles/ovcs_mini/nav2/nav2.yaml`, the OVCS Mini reference vehicle's (heavily commented) | `nav2_ackermann_bt.xml` beside it |
 | the perception pipeline | [Perception: object detection](./ros2_perception.md) | `bridges/ros_bridge/lib/ros_bridge/camera/zenoh.ex`, `stereo_camera/supervisor.ex` |
 | the vehicle's ROS computer | [ROS compute node](./ros2_compute_node.md) | `compose/compute/`, [`compose/README.md`](../compose/README.md) |
-| the model's geometry | `vehicles/ovcs_mini/description/ovcs_mini.urdf.xacro` | `gazebo_ackermann.xacro`, `OvcsMini.geometry/0` |
+| the model's geometry | `vehicles/ovcs_mini/description/ovcs_mini.urdf.xacro`, the OVCS Mini reference vehicle's | `gazebo_ackermann.xacro`, `simulation.yaml`, `OvcsMini.geometry/0` |

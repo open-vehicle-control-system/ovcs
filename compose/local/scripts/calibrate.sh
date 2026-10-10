@@ -5,7 +5,7 @@
 # `calibrator.sh` from the image inside the container).
 #
 # Prerequisites:
-#   - `./ovcs run ovcs_mini` already streaming both cameras
+#   - `./ovcs run <vehicle>` already streaming both cameras
 #   - X server reachable (Xorg or XWayland)
 #   - ZENOH_ENDPOINT_IP pointing at the router the bridge publishes
 #     to (see .env.example)

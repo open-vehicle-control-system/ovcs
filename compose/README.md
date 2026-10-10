@@ -8,8 +8,8 @@ vehicle, or does it never leave a workstation?**
 compose/
 ├── compute/          PUSHED TO BALENA — the vehicle's compute node, one deployable unit
 │   ├── docker-compose.yml    the on-vehicle stack (name and place imposed by balena)
-│   ├── images/               every image the car runs: ros2/, nav2/, wifi-firmware/, bridge-nat-fix/
-│   ├── nav2/                 Nav2 launch + parameters — baked on the car, mounted by the simulator
+│   ├── images/               every image the car runs: ros2/, nav2/ (with its launch file), wifi-firmware/, bridge-nat-fix/
+│   ├── vehicle/              empty; `ovcs compute stage` fills it with the vehicle's files
 │   └── host/                 balenaOS network config (copied to the device once, never pushed)
 └── local/            NEVER PUSHED — the operator's machine and the simulation workstation
     ├── common.yml            the shared service definitions the two stacks `extends:`
@@ -73,6 +73,26 @@ make a plain `up -d` fail**. Nothing is behind a profile for tidiness.
 The two `nav2` profiles are the same image with different clocks; start
 one or the other, never both.
 
+## What comes from your vehicle
+
+Nothing here is specific to a vehicle. What differs per vehicle lives in
+its package, and the stacks take it from there:
+
+| In `vehicles/<vehicle>/` | What | Used by |
+|---|---|---|
+| `nav2/` | `nav2.yaml` and the behaviour trees it names | baked into the onboard Nav2 image by `ovcs compute stage`; mounted by both local `nav2` services |
+| `description/` | the URDF/xacro model | mounted into the simulator |
+| `description/simulation.yaml` | the sensors Gazebo bridges and the spawn height | `sim.launch.py` |
+| `foxglove/` | Foxglove layouts for the vehicle's topics | Foxglove Studio, imported by hand |
+
+The local stacks take the vehicle from `OVCS_VEHICLE` (its directory
+name) in `local/.env`, and refuse to start without it. The compute node
+takes it from the command that deploys it:
+
+```sh
+./ovcs compute push <vehicle> <fleet>
+```
+
 ## The one link across the boundary
 
 The images the car runs are built **only** from `compute/images/`:
@@ -90,9 +110,9 @@ runs, never a copy of them. One Dockerfile, one tag, on both sides:
 | Wi-Fi firmware | `compute/images/wifi-firmware/` | — | balena only |
 | Gazebo | `local/images/sim/` | `ovcs/sim:jetty` | `local/simulation.yml` only |
 
-The same direction holds for Nav2's launch file and parameters:
-`compute/nav2/` is baked into the onboard image and bind-mounted by the
-simulator, so a simulated run exercises the configuration that ships.
+The same direction holds for Nav2's parameters: the vehicle's `nav2/`
+is baked into the onboard image and bind-mounted by the simulator, so
+a simulated run exercises the configuration that ships.
 The one difference is the clock, and it is a visible launch argument
 (`use_sim_time:=true`).
 
@@ -107,7 +127,7 @@ carries its own project `name:` so the two never collide.
 
 ```sh
 cd compose/local
-cp .env.example .env               # ZENOH_ENDPOINT_IP → the vehicle's compute node
+cp .env.example .env               # OVCS_VEHICLE, and ZENOH_ENDPOINT_IP → the vehicle's compute node
 docker compose -f base.yml up -d
 docker compose -f base.yml exec ros2 bash   # shell with ROS env pre-sourced
 ```
@@ -233,7 +253,10 @@ sudo udevadm control --reload
 
 **Foxglove Studio:** connect to `ws://<compute-node-ip>:8765` (or
 `ws://127.0.0.1:8765` with the `standalone` profile), then *Layouts →
-Import from file…* one of [`local/foxglove/`](./local/foxglove/):
+Import from file…* a layout. The framework ships the stereo tuning
+layout in [`local/foxglove/`](./local/foxglove/); layouts for a
+vehicle's own topics live in its `foxglove/` directory. The OVCS Mini
+reference vehicle has the first two:
 
 | Layout | For | Shows |
 |---|---|---|
@@ -249,13 +272,13 @@ converter once, which draws each reading as its beam's outline cut at
 the distance.
 
 All three are plain Studio exports: edit in Studio, export, overwrite the
-file. They are operator tooling, which is why they live in `local/` and
-not with the Elixir bridge that publishes the topics.
+file. They are operator tooling, which is why they don't live with the
+Elixir bridge that publishes the topics.
 
 **Simulator:** see [`local/simulation/README.md`](./local/simulation/README.md).
 
 **Vehicle:** see [`compute/README.md`](./compute/README.md) —
-`balena push` from `compose/compute/`.
+`./ovcs compute push <vehicle> <fleet>` from the repo root.
 
 ## Versions
 

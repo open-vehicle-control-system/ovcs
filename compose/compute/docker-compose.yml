@@ -1,15 +1,17 @@
 # Everything that runs on the vehicle's compute node, deployed to
-# balenaOS. This directory is the balena *source root*: `balena push`
-# is run from here, and balena requires every `build:` context to sit
-# inside it — which is why the images live under ./images and the
-# never-deployed stacks (operator laptop, simulator) live next door in
-# ../local and reach across to build the same images.
+# balenaOS. This directory, plus the vehicle's files staged into
+# ./vehicle, is the balena *source root*: balena requires every
+# `build:` context to sit inside it — which is why the images live
+# under ./images and the never-deployed stacks (operator laptop,
+# simulator) live next door in ../local and reach across to build the
+# same images.
 #
-# Usage:
-#   balena push ovcs-mini-ros          # build on balena's builders + OTA
-#   balena push <device>.local         # local mode, no cloud round-trip
+# Usage, from the repo root:
+#   ./ovcs compute push <vehicle> <fleet>            # balena's builders + OTA
+#   ./ovcs compute push <vehicle> <device>.local     # local mode, no cloud
 #
-# Plain `docker compose up -d` also works here for a bare-metal
+# `./ovcs compute stage <vehicle> --out <dir>` writes the same tree
+# without pushing; `docker compose up -d` there is a bare-metal
 # rehearsal on any aarch64 box.
 #
 # Deliberate omissions vs ../local/*.yml — the balena supervisor
@@ -143,9 +145,9 @@ services:
     # leaving — the same reason the router lives here. No profiles on
     # balena, so it always runs; with no goal the controller commands
     # nothing, and the VMS's control level arbitration gates whatever
-    # it commands in any case. Launch file and parameters are baked
-    # into the image from ./nav2 — the same files the simulator
-    # mounts. Context is the source root so the Dockerfile can reuse
+    # it commands in any case. The vehicle's parameters are baked in
+    # from ./vehicle/nav2 — the same files the simulator mounts.
+    # Context is the source root so the Dockerfile can reuse
     # ./images/ros2's entrypoint and Zenoh template.
     build:
       context: .

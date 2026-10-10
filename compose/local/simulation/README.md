@@ -1,12 +1,12 @@
 ---
 title: Simulation
-description: Drive the OVCS Mini reference vehicle in Gazebo with nothing but Docker, then point the real perception pipeline and Nav2 at it.
+description: Drive a vehicle in Gazebo with nothing but Docker, then point the real perception pipeline and Nav2 at it.
 ---
 
-A Gazebo **Jetty** model of the OVCS Mini reference vehicle (a Traxxas Slash 4x4, 1/10 scale) and the container stack to run it. It needs Docker and Compose v2 and nothing else: no Nerves toolchain, no CAN interface, no physical vehicle. It is the quickest way to see OVCS do something.
+A Gazebo **Jetty** container stack that simulates a vehicle from its model. It needs Docker and Compose v2 and nothing else: no Nerves toolchain, no CAN interface, no physical vehicle. It is the quickest way to see OVCS do something. The OVCS Mini reference vehicle (a Traxxas Slash 4x4, 1/10 scale) has a model, so the commands below use it; they work the same on your vehicle once it has [its own](#your-vehicle-in-the-simulator).
 
 > [!NOTE]
-> The simulator stack is framework tooling. It knows nothing about the Mini beyond the model mounted into it, which lives in the Mini's own package, `vehicles/ovcs_mini/description/`. Your vehicle gets its own model the same way. See [Framework and vehicles](../../../docs/framework.md).
+> The simulator stack is framework tooling. It knows nothing about a vehicle beyond the files mounted from its package, `vehicles/<vehicle>/`. See [Framework and vehicles](../../../docs/framework.md).
 
 > [!WARNING]
 > The gamepad and Nav2 drive Gazebo's physics **directly**. The VMS and the CAN bus are **not in that loop**; the Elixir bridge runs against the simulator only for perception (and, on the host ROS bridge, the IMU). A CAN frame is not what moves the simulated car. [ROS 2 and the simulator](../../../docs/ros2_simulator.md#commands-three-paths-and-a-gap) shows both loops.
@@ -21,15 +21,12 @@ compose/local/
   images/sim/             the Gazebo Jetty image
   simulation/             worlds, shared macros, sim.launch.py, gamepad mapping
 
-vehicles/ovcs_mini/
-  description/            the Mini's URDF/xacro model, mounted into the container
+vehicles/<vehicle>/
+  description/            the URDF/xacro model and simulation.yaml, mounted into the container
+  nav2/                   Nav2's parameters and behaviour trees, mounted into the nav2 service
 ```
 
-A model describes one vehicle, so it lives with that vehicle's package. Simulating yours is a `description/` directory under `vehicles/<vehicle>/` containing `<vehicle>.urdf.xacro`, a mount line in `simulation.yml` (`- ../../vehicles/<vehicle>/description:/opt/ovcs/vehicles/<vehicle>:ro`), and `vehicle:=<vehicle>` added to the `sim` service's command:
-
-```sh
-ros2 launch /opt/ovcs/launch/sim.launch.py teleop:=false vehicle:=<vehicle>
-```
+The stack simulates the vehicle named by `OVCS_VEHICLE` in `compose/local/.env`.
 
 ## Quickstart
 
@@ -37,6 +34,7 @@ Every command runs from `compose/local/`. The stacks are named files, so `-f` is
 
 ```sh
 cd compose/local
+cp .env.example .env                            # OVCS_VEHICLE=ovcs_mini, or your vehicle
 
 # A Zenoh router, if there is no vehicle on the LAN to peer with.
 docker compose -f base.yml --profile standalone up -d zenohd
@@ -83,10 +81,10 @@ Nothing arbitrates `/cmd_vel`: stop a `topic pub` left running before using the 
 
 ## Running the perception bridge against it
 
-The stereo stack (SGBM, rectification, publishers, detector) is framework code in `bridges/ros_bridge` and runs unchanged against the simulator. The Mini wires it in its `ros_bridge_config/2`; `VEHICLE=OvcsMini` below selects that vehicle, and yours is selected the same way. Only the camera driver differs: `RosBridge.Camera.Zenoh` subscribes to a ROS image topic and emits the same frames a physical driver does.
+The stereo stack (SGBM, rectification, publishers, detector) is framework code in `bridges/ros_bridge` and runs unchanged against the simulator. The OVCS Mini reference vehicle wires it in its `ros_bridge_config/2`; `VEHICLE=OvcsMini` below selects that vehicle, and yours is selected the same way. Only the camera driver differs: `RosBridge.Camera.Zenoh` subscribes to a ROS image topic and emits the same frames a physical driver does.
 
 ```sh
-./ovcs can setup ovcs_mini          # once; Cantastic needs vcan0 to exist
+./ovcs can setup ovcs_mini          # once; Cantastic needs vcan0 to exist (same on your vehicle)
 
 cd bridges/firmware
 VEHICLE=OvcsMini OVCS_SIM=1 ZENOH_ENDPOINT_IP=127.0.0.1 \
@@ -114,35 +112,32 @@ docker compose -f simulation.yml --profile nav2 up -d --build nav2
 docker logs -f ovcs-nav2
 ```
 
-This is Nav2 from the Lyrical apt archive (1.5.1 when written) in the **vehicle's own image** (`compose/compute/images/nav2/`, tagged `ovcs/nav2:lyrical`), with the vehicle's parameters and behaviour trees mounted in, behind a profile so a plain `up -d` stays a bare simulator. The one difference is the clock, a visible launch argument (`use_sim_time:=true`). No map and no AMCL: every frame is `odom` and both costmaps roll with the vehicle.
+This is Nav2 from the Lyrical apt archive (1.5.1 when written) in the **vehicle's own image** (`compose/compute/images/nav2/`, tagged `ovcs/nav2:lyrical`), with the vehicle's parameters and behaviour trees (`vehicles/<vehicle>/nav2/`) mounted in, behind a profile so a plain `up -d` stays a bare simulator. The one difference is the clock, a visible launch argument (`use_sim_time:=true`). No map and no AMCL: every frame is `odom` and both costmaps roll with the vehicle.
 
-The controller and behaviours publish `/cmd_vel_nav_raw`; `velocity_smoother` republishes it on `/cmd_vel_nav` with a deadband that sends any linear velocity under 0.08 m/s as zero, the Mini's VESC floor ([VESC drivetrain](../../../docs/vesc_drivetrain.md)). Gazebo would drive slower; the deadband is there to run the vehicle's configuration.
+The controller and behaviours publish `/cmd_vel_nav_raw`; `velocity_smoother` republishes it on `/cmd_vel_nav` with a deadband that sends any linear velocity under the vehicle's slowest drivable speed as zero: 0.08 m/s on the OVCS Mini reference vehicle, its VESC floor ([VESC drivetrain](../../../docs/vesc_drivetrain.md)). Gazebo would drive slower; the deadband is there to run the vehicle's configuration.
 
 ### Four things that fail silently
 
 - **Nav2 publishes `TwistStamped`.** `nav2_util::TwistPublisher` defaults `enable_stamped_cmd_vel` to true, whatever its header comment says. The `/cmd_vel` bridge is unstamped, so Nav2 has its own topic (`/cmd_vel_nav`) and its own bridge node onto the same Gazebo topic. Without it, a healthy-looking Nav2 moves nothing.
 - **`motion_model` names a plugin instance, not a class.** The class comes from `<instance>.plugin`; naming the class directly fails with "No 'plugin' param for param ns!". Leaving `motion_model` unset fails loudly: MPPI defaults it to `diff_drive`, which has no `.plugin`, so the controller refuses to configure.
-- **The odometry frame needs `<frame_id>`.** Without it `AckermannSteering` namespaces the frame by model name (`ovcs_mini/odom`), Nav2 rejects it, and every costmap logs `Invalid frame ID "odom"` and never activates. `gazebo_ackermann.xacro` sets `odom` / `base_link`, at 50 Hz.
+- **The odometry frame needs `<frame_id>`.** Without it `AckermannSteering` namespaces the frame by model name (`<vehicle>/odom`), Nav2 rejects it, and every costmap logs `Invalid frame ID "odom"` and never activates. The OVCS Mini reference vehicle's `gazebo_ackermann.xacro` sets `odom` / `base_link`, at 50 Hz.
 - **`Spin` aborts navigation on a car.** Both stock behaviour trees put it in their recovery branch; an Ackermann vehicle produces no motion from a spin, so it runs its full duration and burns a recovery slot. Both trees drop it. The spin *server* stays loaded because `bt_navigator` resolves every action at activation.
 
 ### Arriving proves almost nothing
 
 `AckermannSteering` quietly ignores commands it cannot execute, so a controller configured for a differential-drive robot still arrives while commanding arcs the steering could never cut: with `mppi::DiffDriveMotionModel` substituted in, the vehicle reached a tight goal *better* than the correct configuration while commanding a yaw rate 3.68× the kinematic limit. Judge a configuration by what it commands on `/cmd_vel_nav_raw` (`|wz| <= |vx| / min_turning_r`), not by whether it arrives.
 
-## The model
+## Your vehicle in the simulator
 
-`vehicles/ovcs_mini/description/ovcs_mini.urdf.xacro` declares every dimension once. Measured values come from the Traxxas specification; **ESTIMATE** marks what it doesn't publish (tyre width, chassis tub, ground clearance, steering lock, the mass split between chassis and wheels). Those are the numbers to revisit first if the model behaves oddly.
+The simulator reads three things from `vehicles/<vehicle>/`:
 
-| | Slash 4x4 |
+| File | Contents |
 |---|---|
-| Wheel radius | 0.0548 m (109.5 mm tyre) |
-| Track | 0.296 m |
-| Wheelbase | 0.324 m |
-| Vehicle mass | 2.41 kg |
+| `description/<vehicle>.urdf.xacro` | the model, with Gazebo's `AckermannSteering` system publishing `odom` / `base_link` and its sensors' Gazebo plugins. Shared macros are at `../../common` relative to it, inside the container. |
+| `description/simulation.yaml` | under `gazebo`: the sensor topics to bridge to ROS, the cameras, the spawn height. |
+| `nav2/` | `nav2.yaml` and the behaviour trees it references under `/opt/ovcs/config/`. |
 
-The chassis carries its mass in a low tub rather than the full 193 mm envelope, because a centre of gravity at half the body height rolls the truck over in its first corner. Drive is Gazebo's own `AckermannSteering` system, reached through `ros_gz_bridge`. `inertial_macros.xacro` and the gamepad mapping in `config/` come from the earlier [traxxas](https://github.com/open-vehicle-control-system/traxxas) model, which targeted Gazebo Classic.
-
-The model carries the stereo pair and a simulated BNO085 on `/imu_raw`. The camera bar's **height** (`camera_z`, 0.12 m) is the one unmeasured number in the stereo geometry, in the model and in the vehicle's `stereo_transforms` alike.
+The OVCS Mini reference vehicle's are the worked example: [`vehicles/ovcs_mini/description/`](../../../vehicles/ovcs_mini/description/README.md) documents its dimensions and which of them are estimates, and `inertial_macros.xacro` and the gamepad mapping in `config/` come from the earlier [traxxas](https://github.com/open-vehicle-control-system/traxxas) model, which targeted Gazebo Classic. A centre of gravity at half the body height rolls a model over in its first corner; the Mini carries its chassis mass in a low tub for that reason.
 
 ## Why Jetty, and why Lyrical
 

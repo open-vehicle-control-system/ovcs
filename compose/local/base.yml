@@ -56,7 +56,7 @@ services:
 
   nav2:
     # The exact image that runs on the car — same Dockerfile, same
-    # baked-in launch and parameters — behind a profile so the loop is
+    # launch file and parameters — behind a profile so the loop is
     # testable with no vehicle at all: standalone zenohd + this + a
     # host ros_bridge + a host VMS is the full planner path on one
     # machine. With a vehicle on the LAN, don't start it: the car
@@ -65,9 +65,8 @@ services:
     #
     #   docker compose -f base.yml --profile nav2 up -d
     #
-    # Bind mounts work here (unlike balena), so a parameter edit can
-    # be tried by mounting ../compute/nav2/config over
-    # /opt/ovcs/config before baking it.
+    # The parameters are the vehicle's (OVCS_VEHICLE, set in .env),
+    # mounted where the car's image has them baked in.
     extends:
       file: common.yml
       service: fabric-client
@@ -77,6 +76,8 @@ services:
     build:
       context: ../compute
       dockerfile: images/nav2/Dockerfile
+    volumes:
+      - ../../vehicles/${OVCS_VEHICLE:?set OVCS_VEHICLE in compose/local/.env}/nav2:/opt/ovcs/config:ro
 
   foxglove_bridge:
     # Also standalone-only: with a vehicle present, Foxglove Studio
@@ -103,7 +104,7 @@ services:
     # bind-mount below makes it appear at
     # compose/local/calibration_output/calibrationdata.tar.gz on the
     # host. Extract → drop left.yaml + right.yaml into
-    # vehicles/ovcs_mini/priv/calibration/stereo_{left,right}.yaml.
+    # vehicles/<vehicle>/priv/calibration/stereo_{left,right}.yaml.
     #
     # Usage (with the bridge already running and Foxglove showing
     # the live streams): scripts/calibrate.sh

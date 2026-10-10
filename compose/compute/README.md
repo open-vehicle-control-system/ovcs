@@ -1,11 +1,11 @@
 # compute — the vehicle's compute node
 
 Everything that runs on the vehicle's compute node, as one balena
-release. This directory is the balena **source root**: `balena push`
-is run from here, reads `docker-compose.yml` (that exact name, at this
-exact place) and tars up the rest as build context. What the machine
-is — today a Raspberry Pi 5 on the OVCS Mini, see
-[`docs/ros2_compute_node.md`](../../docs/ros2_compute_node.md) — does not
+release. This directory, plus your vehicle's files staged into
+`vehicle/`, is the balena **source root**: `balena push` reads
+`docker-compose.yml` (that exact name, at the root) and tars up the
+rest as build context. What the machine is (see
+[`docs/ros2_compute_node.md`](../../docs/ros2_compute_node.md)) does not
 show in the layout, and neither does what the services are written in:
 `wifi_firmware` is not ROS, and the next onboard service need not be
 either.
@@ -16,22 +16,26 @@ compute/
 ├── .dockerignore         keeps host/ and this file out of the pushed tarball
 ├── images/
 │   ├── ros2/             the shared ROS 2 image: entrypoint, Zenoh template, launchers
-│   ├── nav2/             the Nav2 image (Dockerfile only; it COPYs ../ros2 and ../../nav2)
+│   ├── nav2/             the Nav2 image and its launch file; it COPYs ../ros2 and ../../vehicle/nav2
 │   ├── wifi-firmware/    AX210 firmware staged into balenaOS's extra-firmware volume
 │   └── bridge-nat-fix/   keeps the host's NAT off frames bridged between eth0 and the AP
-├── nav2/
-│   ├── launch/           baked into images/nav2 here, bind-mounted by ../local/simulation.yml
-│   └── config/           nav2.yaml and the Ackermann behaviour trees
+├── vehicle/nav2/         empty here; `ovcs compute stage` copies vehicles/<vehicle>/nav2 into it
 └── host/                 NetworkManager keyfiles for balenaOS itself — installed by hand, once
 ```
 
 ## Deploying
 
+From the repo root:
+
 ```sh
-cd compose/compute
-balena push ovcs-mini-ros          # build on balena's builders, OTA to the fleet
-balena push <device>.local         # local mode: build on the device, no cloud
+./ovcs compute push <vehicle> <fleet>            # build on balena's builders, OTA to the fleet
+./ovcs compute push <vehicle> <device>.local     # local mode: build on the device, no cloud
 ```
+
+The command stages this directory and `vehicles/<vehicle>/nav2/` into a
+temporary source root and runs `balena push` from it; arguments after
+`--` go to `balena push` (`-- --nolive`). A `balena push` run from this
+directory directly ships a Nav2 image with no parameters.
 
 Runtime configuration is balena fleet/device variables, not a `.env`
 file.
@@ -84,9 +88,12 @@ python3 -m unittest discover -s images/ros2/docker/tests -v
 
 The file is plain Compose (a subset of it), so it also runs on any
 Docker host, which is the closest check of the file itself short of a
-`balena push`:
+`balena push`. Run it from a staged tree, which carries the vehicle's
+Nav2 parameters:
 
 ```sh
+./ovcs compute stage <vehicle> --out /tmp/compute
+cd /tmp/compute
 docker compose up -d zenohd foxglove_bridge nav2
 ```
 
@@ -120,7 +127,7 @@ tag. The Zenoh environment the local stacks share through
 change to one is a change to the other.
 
 `.dockerignore` lists what never needs to reach the builders. It must
-never list `images/` or `nav2/`: the local stacks build the Nav2 image
+never list `images/` or `vehicle/`: the local stacks build the Nav2 image
 with this directory as context (`context: ../compute`), and a single
 root `.dockerignore` applies to every build that uses it.
 

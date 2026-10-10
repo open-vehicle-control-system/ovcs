@@ -1,0 +1,19 @@
+# The OVCS Mini in the framework simulator (compose/local/simulation.yml).
+
+gazebo:
+  # Dropped from above the ground so the suspension-free wheels settle
+  # onto it instead of starting interpenetrated.
+  spawn_z: 0.02
+  # Sensor topics ros_gz_bridge carries, in its `topic@ros_type[gz_type`
+  # syntax; sim.launch.py adds the clock, odometry, tf and joint states.
+  bridge_topics:
+    # The simulated BNO085, republished on /imu by the Elixir bridge as
+    # on the vehicle.
+    - /imu_raw@sensor_msgs/msg/Imu[gz.msgs.IMU
+    - /stereo/left/camera_info@sensor_msgs/msg/CameraInfo[gz.msgs.CameraInfo
+    - /stereo/right/camera_info@sensor_msgs/msg/CameraInfo[gz.msgs.CameraInfo
+  # Cameras, bridged through ros_gz_image with a compressed variant.
+  camera_topics:
+    - /stereo/left/image_raw
+    - /stereo/right/image_raw
+

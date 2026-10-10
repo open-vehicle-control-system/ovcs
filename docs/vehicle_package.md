@@ -80,6 +80,17 @@ vehicles/ovcs1/
   priv/firmware/{vms,infotainment,bridges/<id>}/   boot overrides: config.txt + cmdline-a/b.txt, optional fwup.conf
 ```
 
+A vehicle with a ROS compute node or a simulator model adds three directories beside `lib/`, outside `priv/` because no firmware reads them. The OVCS Mini reference vehicle has all three:
+
+```text
+vehicles/ovcs_mini/
+  nav2/                          nav2.yaml + behaviour trees: baked into the compute node, mounted by the local stacks
+  description/                   the URDF/xacro model and simulation.yaml, mounted into the simulator
+  foxglove/                      Foxglove layouts for the vehicle's topics
+```
+
+`./ovcs compute push <vehicle> <fleet>` deploys the compute node with your vehicle's `nav2/`; `OVCS_VEHICLE=<vehicle>` in `compose/local/.env` selects it for the local stacks. See [`compose/README.md`](../compose/README.md#what-comes-from-your-vehicle).
+
 ### Why the vehicle depends on the firmwares
 
 `vehicles/<name>/mix.exs` lists `vms_firmware`, `infotainment_firmware` (when the vehicle has an infotainment side) and `bridge_firmware` (when it declares bridges) as path dependencies:
