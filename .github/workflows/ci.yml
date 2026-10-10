@@ -42,149 +42,19 @@ jobs:
       - uses: ./.github/actions/setup-mise
       - run: elixir scripts/check_docs.exs
 
-  elixir-format:
-    name: Elixir · format check
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v5
-      - uses: ./.github/actions/setup-mise
-      - name: Install system deps for Nerves NIFs
-        # Needed for the firmware projects in the loop below: their
-        # transitive deps include nerves_uevent, which has a C NIF.
-        run: sudo apt-get update && sudo apt-get install -y libmnl-dev
-      - name: mix format --check-formatted (all projects)
-        shell: bash
-        run: |
-          set -euo pipefail
-          dirs=(
-            libraries/ovcs_can
-            libraries/ovcs_vehicle
-            libraries/ovcs_bus
-            libraries/ovcs_bridge
-            libraries/ovcs_drivers
-            vms/core vms/api vms/firmware
-            infotainment/core infotainment/api infotainment/firmware
-            bridges/firmware bridges/radio_control_bridge bridges/ros_bridge
-            vehicles/ovcs1 vehicles/ovcs_mini vehicles/obd2
-          )
-          for dir in "${dirs[@]}"; do
-            if [ -f "$dir/.formatter.exs" ]; then
-              echo "→ $dir"
-              # deps.get is required for projects whose .formatter.exs
-              # uses `import_deps:` (Phoenix/Ecto APIs).
-              (cd "$dir" && mix deps.get > /dev/null && mix format --check-formatted)
-            fi
-          done
-
-  elixir-credo:
-    # Each project runs credo against the shared root `.credo.exs`
-    # (credo doesn't auto-walk up to find a config, so --config-file is
-    # explicit). The repo adopts credo from a cold baseline — expect
-    # pre-existing warnings on the first run; triage per project.
-    name: Elixir · credo · ${{ matrix.project }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        project:
-          - libraries/ovcs_can
-          - libraries/ovcs_vehicle
-          - libraries/ovcs_bus
-          - libraries/ovcs_bridge
-          - libraries/ovcs_drivers
-          - vms/core
-          - vms/api
-          - vms/firmware
-          - infotainment/core
-          - infotainment/api
-          - infotainment/firmware
-          - bridges/firmware
-          - bridges/radio_control_bridge
-          - bridges/ros_bridge
-          - vehicles/ovcs1
-          - vehicles/ovcs_mini
-          - vehicles/obd2
-    defaults:
-      run:
-        working-directory: ${{ matrix.project }}
-    steps:
-      - uses: actions/checkout@v5
-      - uses: ./.github/actions/setup-mise
-      - name: Install system deps for Nerves NIFs
-        # Firmware projects and vehicles (transitive firmware deps) both
-        # need libmnl-dev for nerves_uevent's NIF.
-        if: contains(matrix.project, 'firmware') || startsWith(matrix.project, 'vehicles/')
-        run: sudo apt-get update && sudo apt-get install -y libmnl-dev
-      - uses: actions/cache@v5
-        with:
-          path: |
-            ${{ matrix.project }}/deps
-            ${{ matrix.project }}/_build
-          key: credo-${{ matrix.project }}-${{ hashFiles('mise.toml') }}-${{ hashFiles(format('{0}/mix.lock', matrix.project)) }}
-          restore-keys: credo-${{ matrix.project }}-${{ hashFiles('mise.toml') }}-
-      - run: mix deps.get
-      - run: mix credo --config-file ${{ github.workspace }}/.credo.exs
-
-  elixir-test:
-    # `--no-start` keeps cantastic (and vms_core / infotainment_core, which
-    # need a :vehicle config) from being booted as part of the dep graph.
-    # The APIs still boot their Repo explicitly in test_helper.exs so
-    # Ecto.Sandbox works; firmware projects have vehicle-specific config
-    # guarded on Mix.target() != :host / config_env() != :test.
-    name: Elixir · test · ${{ matrix.project }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        project:
-          - libraries/ovcs_can
-          - libraries/ovcs_vehicle
-          - libraries/ovcs_bus
-          - libraries/ovcs_bridge
-          - libraries/ovcs_drivers
-          - vms/core
-          - vms/api
-          - vms/firmware
-          - infotainment/core
-          - infotainment/api
-          - infotainment/firmware
-          - bridges/firmware
-          - bridges/radio_control_bridge
-          - bridges/ros_bridge
-          # Vehicles were missing here while the libmnl step below
-          # already special-cased them, so a test in a vehicle
-          # package never ran. `vehicles/ovcs_mini` has one now —
-          # the geometry check that keeps `geometry/0` and the
-          # simulation model in agreement.
-          - vehicles/ovcs1
-          - vehicles/ovcs_mini
-          - vehicles/obd2
-    defaults:
-      run:
-        working-directory: ${{ matrix.project }}
-    steps:
-      - uses: actions/checkout@v5
-      - uses: ./.github/actions/setup-mise
-      - name: Install system deps for Nerves NIFs
-        # Firmware projects and vehicles (transitive firmware deps) both
-        # need libmnl-dev for nerves_uevent's NIF.
-        if: contains(matrix.project, 'firmware') || startsWith(matrix.project, 'vehicles/')
-        run: sudo apt-get update && sudo apt-get install -y libmnl-dev
-      - uses: actions/cache@v5
-        with:
-          path: |
-            ${{ matrix.project }}/deps
-            ${{ matrix.project }}/_build
-          key: test-${{ matrix.project }}-${{ hashFiles('mise.toml') }}-${{ hashFiles(format('{0}/mix.lock', matrix.project)) }}
-          restore-keys: test-${{ matrix.project }}-${{ hashFiles('mise.toml') }}-
-      - run: mix deps.get
-      - run: mix test --no-start
-
-  elixir-dialyzer:
-    name: Elixir · dialyzer · ${{ matrix.project }}
+  elixir:
+    # Every check on one project, in one job, so its deps, build and PLT
+    # are fetched and restored once. Each check is its own step, so a
+    # failure still names the tool.
+    #
+    # `--warnings-as-errors` covers only the project being compiled, not
+    # its path deps, which is why every library has its own entry.
+    # `--no-start` keeps cantastic (and vms_core / infotainment_core,
+    # which need a :vehicle config) from being booted as part of the dep
+    # graph. The APIs still boot their Repo explicitly in test_helper.exs
+    # so Ecto.Sandbox works; firmware projects have vehicle-specific
+    # config guarded on Mix.target() != :host / config_env() != :test.
+    name: Elixir · ${{ matrix.project }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -215,6 +85,8 @@ jobs:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup-mise
       - name: Install system deps for Nerves NIFs
+        # Firmware projects and vehicles (transitive firmware deps) both
+        # need libmnl-dev for nerves_uevent's NIF.
         if: contains(matrix.project, 'firmware') || startsWith(matrix.project, 'vehicles/')
         run: sudo apt-get update && sudo apt-get install -y libmnl-dev
       - uses: actions/cache@v5
@@ -222,8 +94,8 @@ jobs:
           path: |
             ${{ matrix.project }}/deps
             ${{ matrix.project }}/_build
-          key: dialyzer-${{ matrix.project }}-${{ hashFiles('mise.toml') }}-${{ hashFiles(format('{0}/mix.lock', matrix.project)) }}
-          restore-keys: dialyzer-${{ matrix.project }}-${{ hashFiles('mise.toml') }}-
+          key: elixir-${{ matrix.project }}-${{ hashFiles('mise.toml') }}-${{ hashFiles(format('{0}/mix.lock', matrix.project)) }}
+          restore-keys: elixir-${{ matrix.project }}-${{ hashFiles('mise.toml') }}-
       - name: Locate the Erlang and Elixir PLTs
         id: core-plts
         run: echo "dir=$(elixir -e 'IO.puts(Mix.Utils.mix_home())')" >> "$GITHUB_OUTPUT"
@@ -231,50 +103,20 @@ jobs:
         with:
           path: ${{ steps.core-plts.outputs.dir }}/dialyxir_*.plt*
           key: dialyzer-core-plts-${{ hashFiles('mise.toml') }}
-      - run: mix deps.get
-      - run: mix dialyzer --format github
-
-  elixir-compile:
-    # `mix compile --warnings-as-errors` only applies to the current
-    # project, not its path deps — so compiling vehicles here wouldn't
-    # catch warnings in e.g. ros_bridge / radio_control_bridge even
-    # though they're pulled in transitively via bridge_firmware. Each
-    # bridge lib needs its own matrix entry.
-    name: Elixir · host compile · ${{ matrix.project }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        project:
-          - vehicles/ovcs1
-          - vehicles/ovcs_mini
-          - vehicles/obd2
-          - bridges/firmware
-          - bridges/radio_control_bridge
-          - bridges/ros_bridge
-    env:
-      MIX_ENV: dev
-    defaults:
-      run:
-        working-directory: ${{ matrix.project }}
-    steps:
-      - uses: actions/checkout@v5
-      - uses: ./.github/actions/setup-mise
-      - name: Install system deps for Nerves NIFs
-        # Vehicles / firmware projects transitively depend on
-        # nerves_uevent, whose NIF needs libmnl.
-        if: startsWith(matrix.project, 'vehicles/') || contains(matrix.project, 'firmware')
-        run: sudo apt-get update && sudo apt-get install -y libmnl-dev
-      - uses: actions/cache@v5
-        with:
-          path: |
-            ${{ matrix.project }}/deps
-            ${{ matrix.project }}/_build
-          key: compile-${{ matrix.project }}-${{ hashFiles('mise.toml') }}-${{ hashFiles(format('{0}/mix.lock', matrix.project)) }}
-          restore-keys: compile-${{ matrix.project }}-${{ hashFiles('mise.toml') }}-
-      - run: mix deps.get
-      - run: mix compile --warnings-as-errors
+      - name: Fetch deps
+        run: mix deps.get
+      - name: Format
+        # After deps.get: `.formatter.exs` files with `import_deps:` read them.
+        run: mix format --check-formatted
+      - name: Compile
+        run: mix compile --warnings-as-errors
+      - name: Credo
+        # Credo does not walk up to the shared root config on its own.
+        run: mix credo --config-file ${{ github.workspace }}/.credo.exs
+      - name: Test
+        run: mix test --no-start
+      - name: Dialyzer
+        run: mix dialyzer --format github
 
   cli-build:
     name: CLI · cargo build
