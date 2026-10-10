@@ -3,6 +3,7 @@ pub mod build;
 pub mod burn;
 pub mod can;
 pub mod clean;
+pub mod compute;
 pub mod connect;
 pub mod doctor;
 pub mod run;

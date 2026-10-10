@@ -1,7 +1,8 @@
-"""Nav2 for the OVCS Mini — launched identically on the vehicle, on a
-dev machine, and against the simulator.
+"""Nav2 — launched identically on the vehicle, on a dev machine, and
+against the simulator.
 
-One parameter file (`config/nav2.yaml`, the vehicle's truth) and one
+One parameter file (`/opt/ovcs/config/nav2.yaml`, from
+`vehicles/<vehicle>/nav2/`, the vehicle's truth) and one
 switch: `use_sim_time:=true` overlays the file for a simulated run,
 because a params fork would drift and stop the simulator being
 evidence about the vehicle.
@@ -10,7 +11,7 @@ Four lifecycle servers and a velocity smoother, plus a manager to
 bring them up. Deliberately *not* `nav2_bringup`: there is no such
 package in the Lyrical archive, and its launch file would pull in
 map_server and AMCL, neither of which this configuration uses. See
-`config/nav2.yaml` for why there is no map.
+the vehicle's `nav2.yaml` for why there is no map.
 
 The velocity output needs saying out loud, because it is the one thing
 that silently does nothing if it is wrong. Nav2 1.5.1 publishes
@@ -22,7 +23,7 @@ unstamped is the default; the code disagrees, and the code wins.)
 
 So Nav2's final output is `/cmd_vel_nav`, and `sim.launch.py`
 bridges that as `TwistStamped` alongside the existing unstamped
-`/cmd_vel` that teleop and `drive_test.py` use. Two separate bridge
+`/cmd_vel` that teleop uses. Two separate bridge
 nodes, both feeding the same Gazebo topic: one `parameter_bridge`
 cannot map two ROS topics onto one Gazebo topic, and one topic cannot
 carry two ROS types.
@@ -37,7 +38,7 @@ The controller and the behaviours do not publish `/cmd_vel_nav`
 themselves: they publish `/cmd_vel_nav_raw`, and the velocity smoother
 republishes it on `/cmd_vel_nav` with its limits and deadband applied.
 The deadband keeps every non-zero linear velocity at or above the
-vehicle's slowest drivable speed; see `config/nav2.yaml`.
+vehicle's slowest drivable speed; see the vehicle's `nav2.yaml`.
 """
 
 from launch import LaunchDescription

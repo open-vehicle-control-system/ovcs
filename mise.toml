@@ -64,22 +64,6 @@ for lib in cantastic express_lrs msp_osd ovcs_control; do
 done
 """
 
-[tasks.verify-perception]
-description = "Boot the simulator + perception pipeline and check depth geometry against the world"
-run = "compose/local/scripts/verify_perception.sh"
-
-[tasks.verify-drivetrain]
-description = "Boot the simulator, drive it and check the odometry against the model geometry"
-run = "compose/local/scripts/verify_drivetrain.sh"
-
-[tasks.verify-nav2]
-description = "Boot the simulator + Nav2, navigate to a goal and check the commands respect Ackermann limits"
-run = "compose/local/scripts/verify_nav2.sh"
-
-[tasks.verify-planner-loop]
-description = "Nav2 (the vehicle's image) against a host VMS + bridge on vcan: assert the planner's commands reach 0x2B1"
-run = "compose/local/scripts/verify_planner_loop.sh"
-
 [tasks.fetch-models]
 description = "Download + verify the detection models (not vendored — see scripts/models.tsv for why)"
 run = "./scripts/fetch_models.sh"

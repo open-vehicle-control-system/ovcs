@@ -81,10 +81,11 @@ The balena CLI is pinned in `mise.toml` (`balena = "25"`), so `mise install` at 
 
 ```sh
 balena login
-cd compose/compute
-balena push <fleet>            # build on balena's builders, OTA to the fleet
-balena push <device>.local     # local mode: build on the device, no cloud
+./ovcs compute push <vehicle> <fleet>            # build on balena's builders, OTA to the fleet
+./ovcs compute push <vehicle> <device>.local     # local mode: build on the device, no cloud
 ```
+
+Arguments after `--` go to `balena push`, e.g. `-- --nolive`.
 
 A local-mode push that is interrupted (by a reboot, say) can leave the built image **untagged** while `local_image_<service>:latest` still resolves to the previous one. The supervisor then runs the old image, and a fix visibly doesn't take although the build succeeded. Check the tag, not the build output:
 
@@ -97,7 +98,7 @@ balena-engine inspect $(balena-engine ps -aq --filter name=<service> | head -1) 
 
 Local-mode pushes leave the fleet's target state untouched: nothing reaches other devices until the same code is pushed to the fleet.
 
-`compose/compute/` is the balena **source root**. `balena push` only reads a file literally named `docker-compose.yml` at the root of the pushed directory, and every `build:` context must sit inside it. That is why every image the vehicle runs lives under `compose/compute/images/` and the local stacks reach across to build the same ones, not the other way round. The root's `.dockerignore` keeps `host/` and the README out of the pushed tarball, which is what OTA deltas are computed from.
+`balena push` only reads a file literally named `docker-compose.yml` at the root of the pushed directory, and every `build:` context must sit inside it. That is why every image the vehicle runs lives under `compose/compute/images/` and the local stacks reach across to build the same ones, not the other way round. What the images take from your vehicle, its Nav2 parameters from `vehicles/<vehicle>/nav2/`, must sit inside it too: `./ovcs compute push` copies `compose/compute/` and those parameters into a temporary source root (`compose/compute/vehicle/nav2/`, empty in the repo) and pushes that. `./ovcs compute stage <vehicle> --out <dir>` writes the same tree without pushing. The root's `.dockerignore` keeps the README out of the pushed tarball, which is what OTA deltas are computed from; `host/` is not staged at all.
 
 Runtime configuration is balena **fleet/device variables**, not a `.env` file. Whether such a variable overrides a value written literally in compose `environment:` is unverified, so the vehicle compose file leaves overridable settings unset (`FOXGLOVE_BRIDGE_PORT`, defaulted by the launcher script) and only pins what must always hold (`ZENOH_ENDPOINT_IP`, required by the entrypoint).
 
@@ -272,7 +273,7 @@ The Nerves bridges get this from `nerves_time`, which also floors the clock at t
 ## Two update paths
 
 - Nerves firmwares: `./ovcs upload <vehicle> <role>` (see [Running on hardware](./running_hardware.md)).
-- The compute node: `balena push`, or an OTA from the fleet.
+- The compute node: `./ovcs compute push <vehicle> <fleet-or-device>`, or an OTA from the fleet.
 
 The gamepad (`joy`) stays on the base station, in `compose/local/base.yml`: the round trip pad → ROS → Zenoh → `RosBridge.Consumers.Joy` → CAN is the price of keeping the controller with the operator.
 

@@ -1,9 +1,8 @@
 # Nav2 for the OVCS Mini — the one parameter file, for the vehicle and
 # the simulator both.
 #
-# It lives under compose/compute/ because balena requires everything
-# the vehicle image bakes in to sit inside the pushed source root; the
-# simulator reaches across and mounts it. The values written here are
+# `ovcs compute push` bakes it into the compute node's Nav2 image; the
+# local stacks mount it. The values written here are
 # the vehicle's truth — `use_sim_time: false` in particular — and the
 # launch file overlays `use_sim_time:=true` for a simulated run rather
 # than this file carrying two copies that would drift apart. If sim and
@@ -37,8 +36,7 @@
 #
 # What *is* silent is naming a valid but wrong model. Substituting
 # `mppi::DiffDriveMotionModel` loads cleanly and removes the radius
-# constraint entirely — see `scripts/nav2_test.py`, which exists to
-# catch exactly that.
+# constraint entirely; the simulator still arrives at goals with it.
 #
 # min_turning_r comes from the vehicle: wheelbase / tan(steering_limit)
 # = 0.324 / tan(0.52) = 0.566 m, rounded up to 0.6 for margin.

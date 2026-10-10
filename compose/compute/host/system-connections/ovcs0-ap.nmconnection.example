@@ -37,7 +37,7 @@ mode=ap
 band=a
 channel=149
 channel-width=80
-ssid=OVCS-Mini
+ssid=CHANGE_ME_VEHICLE_SSID
 
 # proto/pairwise/group are not decoration. Left to itself
 # NetworkManager advertises WPA1 alongside WPA2 (a scan shows

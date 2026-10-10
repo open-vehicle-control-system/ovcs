@@ -1,4 +1,4 @@
-"""Bring up the OVCS Mini in Gazebo Jetty.
+"""Bring up a vehicle in Gazebo Jetty.
 
 Starts four things, in the order they depend on each other:
 
@@ -19,9 +19,10 @@ failure looks like a transform problem rather than a clock one.
 
 import os
 
+import yaml
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import Command, LaunchConfiguration, PathJoinSubstitution
@@ -37,6 +38,7 @@ CONFIG_DIR = "/opt/ovcs/config"
 #   @  bidirectional
 #   [  gz -> ros
 #   ]  ros -> gz
+# The vehicle's sensors are added from its description/simulation.yaml.
 BRIDGE_TOPICS = [
     # The physics clock. First because everything else depends on
     # nodes agreeing what time it is.
@@ -44,15 +46,11 @@ BRIDGE_TOPICS = [
     "/odom@nav_msgs/msg/Odometry[gz.msgs.Odometry",
     "/tf@tf2_msgs/msg/TFMessage[gz.msgs.Pose_V",
     "/joint_states@sensor_msgs/msg/JointState[gz.msgs.Model",
-    # The simulated BNO085. Named imu_raw because the Elixir bridge
-    # consumes it and republishes on /imu, exactly as on the vehicle.
-    "/imu_raw@sensor_msgs/msg/Imu[gz.msgs.IMU",
-    "/stereo/left/camera_info@sensor_msgs/msg/CameraInfo[gz.msgs.CameraInfo",
-    "/stereo/right/camera_info@sensor_msgs/msg/CameraInfo[gz.msgs.CameraInfo",
 ]
 
-# Cameras go through `ros_gz_image image_bridge`, not the parameter
-# bridge, and the reason is bandwidth rather than tidiness.
+# Cameras (the vehicle's `camera_topics`) go through `ros_gz_image
+# image_bridge`, not the parameter bridge, and the reason is bandwidth
+# rather than tidiness.
 #
 # A 480x270 rgb8 frame is 389 KB. At 30 Hz that is 11.6 MB/s of raw
 # pixels, and putting it on the Zenoh fabric does not work: measured
@@ -64,7 +62,6 @@ BRIDGE_TOPICS = [
 # `/compressed` JPEG variant at roughly 30 KB — the same thing the real
 # vehicle publishes, and about 13x less. Raw pixels stay inside
 # gz-transport, where they are cheap.
-CAMERA_TOPICS = ["/stereo/left/image_raw", "/stereo/right/image_raw"]
 
 # The drive command is separate because its Gazebo-side name contains
 # the model name. AckermannSteering has no verified tag for renaming
@@ -86,36 +83,15 @@ NAV_CMD_VEL_GZ = "/cmd_vel@geometry_msgs/msg/TwistStamped]gz.msgs.Twist"
 
 
 def generate_launch_description():
-    use_sim_time = {"use_sim_time": True}
-
-    world = LaunchConfiguration("world")
-    teleop = LaunchConfiguration("teleop")
-    vehicle = LaunchConfiguration("vehicle")
-
-    # `value_type=str` is load-bearing. Without it launch tries to
-    # parse the expanded URDF as YAML and fails on the first colon in
-    # the XML, with an error that says nothing about xacro.
-    # <vehicles>/<vehicle>/<vehicle>.urdf.xacro — one directory per
-    # vehicle, named after it.
-    model = PathJoinSubstitution([VEHICLES_DIR, vehicle, [vehicle, ".urdf.xacro"]])
-
-    # `value_type=str` is load-bearing. Without it launch tries to
-    # parse the expanded URDF as YAML and fails on the first colon in
-    # the XML, with an error that says nothing about xacro.
-    robot_description = ParameterValue(
-        Command(["xacro ", model]), value_type=str
-    )
-
     return LaunchDescription(
         [
             DeclareLaunchArgument(
                 "vehicle",
-                default_value="ovcs_mini",
                 description=(
                     "Which vehicle to spawn. Names a directory under "
                     "$OVCS_VEHICLES_DIR (default /opt/ovcs/vehicles) "
-                    "containing <name>.urdf.xacro; compose mounts "
-                    "vehicles/<name>/description there."
+                    "containing <name>.urdf.xacro and simulation.yaml; "
+                    "compose mounts vehicles/<name>/description there."
                 ),
             ),
             DeclareLaunchArgument(
@@ -133,110 +109,133 @@ def generate_launch_description():
                 default_value="true",
                 description="Run joy + teleop_twist_joy to drive from a gamepad.",
             ),
-            Node(
-                package="robot_state_publisher",
-                executable="robot_state_publisher",
-                output="screen",
-                parameters=[
-                    {"robot_description": robot_description},
-                    use_sim_time,
-                ],
-            ),
-            # `-s` is server-only, and it is not optional here:
-            # gz_sim.launch.py starts the GUI as well by default, and
-            # in a container with no display Qt calls qFatal and takes
-            # the whole simulation down with it. The GUI is a separate
-            # compose service that mounts an X socket.
-            #
-            # `-r` runs the world immediately; without it the
-            # simulation loads paused and nothing moves, which reads
-            # exactly like a broken drive plugin.
-            IncludeLaunchDescription(
-                PythonLaunchDescriptionSource(
-                    PathJoinSubstitution(
-                        [
-                            get_package_share_directory("ros_gz_sim"),
-                            "launch",
-                            "gz_sim.launch.py",
-                        ]
-                    )
-                ),
-                launch_arguments={
-                    "gz_args": ["-s -r -v 2 ", world],
-                    "on_exit_shutdown": "true",
-                }.items(),
-            ),
-            Node(
-                package="ros_gz_bridge",
-                executable="parameter_bridge",
-                name="parameter_bridge",
-                arguments=BRIDGE_TOPICS
-                + [["/model/", vehicle, CMD_VEL_GZ]],
-                parameters=[use_sim_time],
-                remappings=[(["/model/", vehicle, "/cmd_vel"], "/cmd_vel")],
-                output="screen",
-            ),
-            # Second bridge, stamped, for Nav2. Named explicitly because
-            # two nodes from the same executable would otherwise collide
-            # on the default node name.
-            Node(
-                package="ros_gz_bridge",
-                executable="parameter_bridge",
-                name="parameter_bridge_nav",
-                arguments=[["/model/", vehicle, NAV_CMD_VEL_GZ]],
-                parameters=[use_sim_time],
-                remappings=[(["/model/", vehicle, "/cmd_vel"], "/cmd_vel_nav")],
-                output="screen",
-            ),
-            # One image_bridge per camera; each offers raw and
-            # compressed, and image_transport only actually sends a
-            # transport someone has subscribed to.
-            *[
-                Node(
-                    package="ros_gz_image",
-                    executable="image_bridge",
-                    arguments=[topic],
-                    parameters=[use_sim_time],
-                    output="screen",
-                )
-                for topic in CAMERA_TOPICS
-            ],
-            Node(
-                package="ros_gz_sim",
-                executable="create",
-                arguments=[
-                    "-topic",
-                    "/robot_description",
-                    "-name",
-                    vehicle,
-                    # Dropped from a couple of centimetres so the
-                    # suspension-free wheels settle onto the ground
-                    # instead of starting interpenetrated.
-                    "-z",
-                    "0.02",
-                ],
-                parameters=[use_sim_time],
-                output="screen",
-            ),
-            Node(
-                package="joy_linux",
-                executable="joy_linux_node",
-                condition=IfCondition(teleop),
-                parameters=[use_sim_time],
-                output="screen",
-            ),
-            # The gamepad mapping is the one from the original traxxas
-            # repo, reused unchanged — it was already correct for this
-            # controller.
-            Node(
-                package="teleop_twist_joy",
-                executable="teleop_node",
-                condition=IfCondition(teleop),
-                parameters=[
-                    os.path.join(CONFIG_DIR, "logitech_f310.yaml"),
-                    use_sim_time,
-                ],
-                output="screen",
-            ),
+            OpaqueFunction(function=spawn),
         ]
     )
+
+
+def spawn(context):
+    """Everything that depends on the vehicle, once its name is known."""
+    use_sim_time = {"use_sim_time": True}
+
+    world = LaunchConfiguration("world")
+    teleop = LaunchConfiguration("teleop")
+    vehicle = context.perform_substitution(LaunchConfiguration("vehicle"))
+    vehicle_dir = os.path.join(VEHICLES_DIR, vehicle)
+
+    with open(os.path.join(vehicle_dir, "simulation.yaml")) as file:
+        gazebo = yaml.safe_load(file)["gazebo"]
+
+    # `value_type=str` is load-bearing. Without it launch tries to
+    # parse the expanded URDF as YAML and fails on the first colon in
+    # the XML, with an error that says nothing about xacro.
+    robot_description = ParameterValue(
+        Command(["xacro ", os.path.join(vehicle_dir, f"{vehicle}.urdf.xacro")]),
+        value_type=str,
+    )
+
+    return [
+        Node(
+            package="robot_state_publisher",
+            executable="robot_state_publisher",
+            output="screen",
+            parameters=[
+                {"robot_description": robot_description},
+                use_sim_time,
+            ],
+        ),
+        # `-s` is server-only, and it is not optional here:
+        # gz_sim.launch.py starts the GUI as well by default, and
+        # in a container with no display Qt calls qFatal and takes
+        # the whole simulation down with it. The GUI is a separate
+        # compose service that mounts an X socket.
+        #
+        # `-r` runs the world immediately; without it the
+        # simulation loads paused and nothing moves, which reads
+        # exactly like a broken drive plugin.
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(
+                PathJoinSubstitution(
+                    [
+                        get_package_share_directory("ros_gz_sim"),
+                        "launch",
+                        "gz_sim.launch.py",
+                    ]
+                )
+            ),
+            launch_arguments={
+                "gz_args": ["-s -r -v 2 ", world],
+                "on_exit_shutdown": "true",
+            }.items(),
+        ),
+        Node(
+            package="ros_gz_bridge",
+            executable="parameter_bridge",
+            name="parameter_bridge",
+            arguments=BRIDGE_TOPICS
+            + gazebo["bridge_topics"]
+            + [f"/model/{vehicle}{CMD_VEL_GZ}"],
+            parameters=[use_sim_time],
+            remappings=[(f"/model/{vehicle}/cmd_vel", "/cmd_vel")],
+            output="screen",
+        ),
+        # Second bridge, stamped, for Nav2. Named explicitly because
+        # two nodes from the same executable would otherwise collide
+        # on the default node name.
+        Node(
+            package="ros_gz_bridge",
+            executable="parameter_bridge",
+            name="parameter_bridge_nav",
+            arguments=[f"/model/{vehicle}{NAV_CMD_VEL_GZ}"],
+            parameters=[use_sim_time],
+            remappings=[(f"/model/{vehicle}/cmd_vel", "/cmd_vel_nav")],
+            output="screen",
+        ),
+        # One image_bridge per camera; each offers raw and
+        # compressed, and image_transport only actually sends a
+        # transport someone has subscribed to.
+        *[
+            Node(
+                package="ros_gz_image",
+                executable="image_bridge",
+                arguments=[topic],
+                parameters=[use_sim_time],
+                output="screen",
+            )
+            for topic in gazebo["camera_topics"]
+        ],
+        Node(
+            package="ros_gz_sim",
+            executable="create",
+            arguments=[
+                "-topic",
+                "/robot_description",
+                "-name",
+                vehicle,
+                "-z",
+                str(gazebo["spawn_z"]),
+            ],
+            parameters=[use_sim_time],
+            output="screen",
+        ),
+        Node(
+            package="joy_linux",
+            executable="joy_linux_node",
+            condition=IfCondition(teleop),
+            parameters=[use_sim_time],
+            output="screen",
+        ),
+        # The gamepad mapping is the one from the original traxxas
+        # repo, reused unchanged — it was already correct for this
+        # controller.
+        Node(
+            package="teleop_twist_joy",
+            executable="teleop_node",
+            condition=IfCondition(teleop),
+            parameters=[
+                os.path.join(CONFIG_DIR, "logitech_f310.yaml"),
+                use_sim_time,
+            ],
+            output="screen",
+        ),
+    ]

@@ -60,13 +60,13 @@ with `docker compose exec ros2 ros2 topic list`.
    a wiped data partition gets it too. Either extract the tarball:
    ```
    tar xzf calibrationdata.tar.gz
-   cp left.yaml  ../../../vehicles/ovcs_mini/priv/calibration/stereo_left.yaml
-   cp right.yaml ../../../vehicles/ovcs_mini/priv/calibration/stereo_right.yaml
+   cp left.yaml  ../../../vehicles/<vehicle>/priv/calibration/stereo_left.yaml
+   cp right.yaml ../../../vehicles/<vehicle>/priv/calibration/stereo_right.yaml
    ```
    or copy the committed files off the vehicle:
    ```
-   sftp <perception-ip>:/data/calibration/stereo_left.yaml  ../../../vehicles/ovcs_mini/priv/calibration/
-   sftp <perception-ip>:/data/calibration/stereo_right.yaml ../../../vehicles/ovcs_mini/priv/calibration/
+   sftp <perception-ip>:/data/calibration/stereo_left.yaml  ../../../vehicles/<vehicle>/priv/calibration/
+   sftp <perception-ip>:/data/calibration/stereo_right.yaml ../../../vehicles/<vehicle>/priv/calibration/
    ```
 
 ## Troubleshooting

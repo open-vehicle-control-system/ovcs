@@ -20,8 +20,7 @@ defmodule OvcsMini do
   # `test/geometry_test.exs` asserts the two declarations agree, which
   # is what makes the duplication safe rather than silent. That check
   # is not decoration: a wheel radius wrong by 2x already shipped in
-  # this model once, drove convincingly, and reported nonsense — see
-  # `compose/local/simulation/scripts/drive_test.py`.
+  # this model once, drove convincingly, and reported nonsense.
   @impl OvcsVehicle
   def geometry,
     do: %{

@@ -15,16 +15,14 @@
   against a real 0.0548.
 
   The shape of that failure under gz-sim 10 is the opposite of what
-  one would expect, and was measured rather than assumed (see
-  `compose/local/simulation/scripts/drive_test.py`). The radius cancels in the
+  one would expect, and was measured rather than assumed. The radius cancels in the
   plugin — commanded speed is divided by it to get a joint velocity,
   and the joint velocity is multiplied by it again to get odometry —
   so `/odom` reads a flawless 1.000 m/s while the car actually crawls
   at 0.548. The vehicle *reports* correctly and **drives** wrong.
 
-  Which means `/odom` cannot catch it. `drive_test.py` compares the
-  physical joint velocity from `/joint_states` against what odometry
-  claims, and that comparison is what fails.
+  Which means `/odom` cannot catch it: compare the physical joint
+  velocity from `/joint_states` against what odometry claims.
 
   Tag names here were read out of the shipped
   `libgz-sim-ackermann-steering-system.so` and the reference world

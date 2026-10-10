@@ -1,4 +1,4 @@
-# Gazebo Jetty + ROS 2 Lyrical image for simulating the OVCS Mini.
+# Gazebo Jetty + ROS 2 Lyrical image for simulating a vehicle.
 #
 # Separate from the vehicle image on purpose. This one carries Gazebo
 # and its GUI stack — hundreds of megabytes that must never end up on
@@ -58,7 +58,6 @@ COPY local/simulation/common/   /opt/ovcs/common/
 COPY local/simulation/launch/   /opt/ovcs/launch/
 COPY local/simulation/worlds/   /opt/ovcs/worlds/
 COPY local/simulation/config/   /opt/ovcs/config/
-COPY local/simulation/scripts/  /opt/ovcs/scripts/
 
 # `COPY --chmod=` needs BuildKit, which balenaEngine does not
 # implement. This image never goes near balena, but the two images

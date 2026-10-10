@@ -10,7 +10,7 @@
 #
 # Workflow:
 #   1. The Elixir bridge must already be running with both cameras
-#      streaming (./ovcs run ovcs_mini).
+#      streaming (./ovcs run <vehicle>).
 #   2. Allow X access from the container:
 #        xhost +SI:localuser:$(id -un)
 #   3. Run this service: compose/local/scripts/calibrate.sh
@@ -20,7 +20,7 @@
 #   5. The tarball lands at
 #      compose/local/calibration_output/calibrationdata.tar.gz
 #      on the host. Extract → drop left.yaml + right.yaml into
-#      vehicles/ovcs_mini/priv/calibration/stereo_{left,right}.yaml.
+#      vehicles/<vehicle>/priv/calibration/stereo_{left,right}.yaml.
 
 set -euo pipefail
 
@@ -42,7 +42,7 @@ timeout 15 bash -c '
     sleep 1
   done
 ' || {
-  echo "calibrator: bridge topics not visible — is './ovcs run ovcs_mini' actually running?" >&2
+  echo "calibrator: bridge topics not visible — is './ovcs run <vehicle>' actually running?" >&2
   exit 1
 }
 echo "calibrator: bridge topics found"

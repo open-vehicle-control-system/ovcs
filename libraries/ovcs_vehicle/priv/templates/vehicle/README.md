@@ -141,7 +141,21 @@ reads `VEHICLE` + `BRIDGE_FIRMWARE_ID` at boot and only supervises
 the bridges listed in that entry, so one vehicle can run several
 bridge firmwares in parallel on different SoCs.
 
-### 5. Nerves targets
+### 5. Simulator, Nav2 and the compute node (optional)
+
+A vehicle with a ROS compute node or a Gazebo model adds, beside `lib/`:
+
+- `nav2/` — `nav2.yaml` and its behaviour trees, baked into the compute
+  node by `../../ovcs compute push <%= @name %> <fleet>` and mounted by
+  the local Nav2 stacks;
+- `description/` — `<%= @name %>.urdf.xacro` and `simulation.yaml`, for
+  the simulator;
+- `foxglove/` — Foxglove layouts for your topics.
+
+The OVCS Mini reference vehicle has all three; see
+[`compose/local/simulation/README.md`](../../compose/local/simulation/README.md).
+
+### 6. Nerves targets
 
 Set at scaffold time:
 

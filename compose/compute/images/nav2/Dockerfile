@@ -10,9 +10,11 @@
 # see ../../docker-compose.yml), so Zenoh and ROS init stay identical
 # to every other service on the fabric.
 #
-# Launch file and parameters are baked in, not mounted: balenaOS has
-# no host bind mounts. They are the same files the simulator mounts —
-# compose/compute/nav2/{launch,config}/ is the single copy.
+# The launch file is the framework's; the parameters are the vehicle's
+# (vehicles/<vehicle>/nav2/), staged into vehicle/nav2 by `ovcs compute
+# stage` and baked in, since balenaOS has no host bind mounts. Built
+# from the repo, compose/compute/vehicle/nav2 is empty: the image fails
+# at launch until the local stacks mount a vehicle's parameters.
 # Pinned: the base by digest (its ROS packages are the 2026-08-12 sync)
 # and apt to the ROS snapshot of 2026-08-19, so every build installs the
 # same packages. Bump both together; the snapshot key expires 2027-06-01.
@@ -55,8 +57,8 @@ RUN apt-get update \
 
 COPY images/ros2/zenoh/session.json5.template /etc/zenoh/session.json5.template
 COPY images/ros2/docker/entrypoint.sh /usr/local/bin/entrypoint
-COPY nav2/launch /opt/ovcs/launch
-COPY nav2/config /opt/ovcs/config
+COPY images/nav2/launch /opt/ovcs/launch
+COPY vehicle/nav2 /opt/ovcs/config
 RUN chmod 0755 /usr/local/bin/entrypoint
 
 ENTRYPOINT ["/usr/local/bin/entrypoint"]

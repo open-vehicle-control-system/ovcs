@@ -81,6 +81,11 @@ enum Commands {
         #[command(subcommand)]
         action: CanAction,
     },
+    /// Stage or deploy a vehicle's compute node release (balena)
+    Compute {
+        #[command(subcommand)]
+        action: ComputeAction,
+    },
     /// Scaffold a new vehicle package from the bundled template
     New {
         /// New vehicle directory name (snake_case)
@@ -152,6 +157,26 @@ enum CanAction {
 }
 
 #[derive(Subcommand)]
+enum ComputeAction {
+    /// Write compose/compute plus the vehicle's Nav2 parameters to a directory
+    Stage {
+        vehicle: Option<String>,
+        /// Output directory (must be empty or absent)
+        #[arg(short = 'o', long)]
+        out: String,
+    },
+    /// Stage into a temporary directory and `balena push` it
+    Push {
+        vehicle: String,
+        /// balena fleet, or `<device>.local` for local mode
+        target: String,
+        /// Extra `balena push` arguments, after `--`
+        #[arg(last = true)]
+        balena_args: Vec<String>,
+    },
+}
+
+#[derive(Subcommand)]
 enum HostKeysAction {
     /// Generate any missing host keys for every firmware role
     Generate {
@@ -209,6 +234,14 @@ fn main() -> Result<()> {
         Commands::Can { action } => match action {
             CanAction::Setup { vehicle } => commands::can::setup(vehicle),
             CanAction::Status { vehicle } => commands::can::status(vehicle),
+        },
+        Commands::Compute { action } => match action {
+            ComputeAction::Stage { vehicle, out } => commands::compute::stage(vehicle, out),
+            ComputeAction::Push {
+                vehicle,
+                target,
+                balena_args,
+            } => commands::compute::push(vehicle, target, balena_args),
         },
         Commands::New {
             name,

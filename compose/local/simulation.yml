@@ -1,4 +1,5 @@
-# Gazebo Jetty simulation of the OVCS Mini. Only ever runs on a
+# Gazebo Jetty simulation of the vehicle named by OVCS_VEHICLE (a
+# directory under vehicles/, set in .env). Only ever runs on a
 # workstation; nothing in this file is pushed to balena.
 #
 # It speaks Zenoh like everything else, so a simulated vehicle appears
@@ -42,11 +43,9 @@ services:
       # /robot_description, not from the resource path.
       GZ_SIM_RESOURCE_PATH: /opt/ovcs/worlds
     volumes:
-      # Each vehicle's model, mounted under its own name. Models live
-      # with their vehicle (vehicles/<name>/description), so a new
-      # vehicle is a new line here plus `vehicle:=<name>` on the
-      # launch command.
-      - ../../vehicles/ovcs_mini/description:/opt/ovcs/vehicles/ovcs_mini:ro
+      # The vehicle's model and simulation.yaml, mounted under its own
+      # name.
+      - ../../vehicles/${OVCS_VEHICLE:?set OVCS_VEHICLE in compose/local/.env}/description:/opt/ovcs/vehicles/${OVCS_VEHICLE}:ro
       # Macros shared by every model. The xacros reach it as
       # ../../common relative to themselves, which resolves inside the
       # container regardless of where the files sit in the repo.
@@ -57,11 +56,10 @@ services:
       - ./simulation/launch:/opt/ovcs/launch:ro
       - ./simulation/worlds:/opt/ovcs/worlds:ro
       - ./simulation/config:/opt/ovcs/config:ro
-      - ./simulation/scripts:/opt/ovcs/scripts:ro
     command:
       - bash
       - -lc
-      - "ros2 launch /opt/ovcs/launch/sim.launch.py teleop:=false"
+      - "ros2 launch /opt/ovcs/launch/sim.launch.py vehicle:=${OVCS_VEHICLE} teleop:=false"
 
   nav2:
     # Nav2, behind a profile so the plain `up -d` above stays a bare
@@ -84,12 +82,11 @@ services:
     image: ovcs/nav2:lyrical
     container_name: ovcs-nav2
     profiles: ["nav2"]
-    # The launch file and parameters are baked into the image; they are
-    # mounted over it here so a parameter edit is tried without a
-    # rebuild.
+    # The launch file is mounted over the image's so an edit is tried
+    # without a rebuild; the parameters are the vehicle's.
     volumes:
-      - ../compute/nav2/launch:/opt/ovcs/launch:ro
-      - ../compute/nav2/config:/opt/ovcs/config:ro
+      - ../compute/images/nav2/launch:/opt/ovcs/launch:ro
+      - ../../vehicles/${OVCS_VEHICLE}/nav2:/opt/ovcs/config:ro
     command:
       - bash
       - -lc
@@ -139,6 +136,9 @@ services:
       QT_X11_NO_MITSHM: 1
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      # The GUI loads its own copies of the model's meshes, from the
+      # path the server spawned it with.
+      - ../../vehicles/${OVCS_VEHICLE}/description:/opt/ovcs/vehicles/${OVCS_VEHICLE}:ro
     command:
       - bash
       - -lc
