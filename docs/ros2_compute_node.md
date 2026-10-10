@@ -155,14 +155,14 @@ The Nerves boards are dual-homed by their firmware: `eth0` takes its lease from 
 
 The compute node's uplink isn't load-bearing either. `method=shared` assigns the bridge address, starts dnsmasq and installs the NAT rule unconditionally; with the uplink down, clients still get leases and full vehicle-local connectivity, just no route off the vehicle.
 
-One piece of the vehicle network is a container rather than a keyfile: `bridge_nat_fix` in [`compose/compute/docker-compose.yml`](../compose/compute/docker-compose.yml). balena-engine switches `bridge-nf-call-iptables` on, so frames `ovcs0` forwards between `eth0` and the access point traverse iptables, where `method=shared`'s MASQUERADE rewrites anything not addressed to `10.42.0.0/24`, multicast included. A laptop's mDNS query then reaches the wire from the bridge's address on a random port, the board answers it as a legacy unicast query, and the laptop discards the reply for not coming from port 5353: `ovcs-mini-vms.local` resolves from the site Wi-Fi and fails from the access point, with nothing logged. The container inserts one rule ahead of NetworkManager's (traffic leaving through `ovcs0` isn't translated) and re-asserts it every 30 s, since NetworkManager rewrites its nat rules whenever the connection is re-activated.
+One piece of the vehicle network is a container rather than a keyfile: `bridge_no_nat` in [`compose/compute/docker-compose.yml`](../compose/compute/docker-compose.yml). balena-engine switches `bridge-nf-call-iptables` on, so frames `ovcs0` forwards between `eth0` and the access point traverse iptables, where `method=shared`'s MASQUERADE rewrites anything not addressed to `10.42.0.0/24`, multicast included. A laptop's mDNS query then reaches the wire from the bridge's address on a random port, the board answers it as a legacy unicast query, and the laptop discards the reply for not coming from port 5353: `ovcs-mini-vms.local` resolves from the site Wi-Fi and fails from the access point, with nothing logged. The container inserts one rule ahead of NetworkManager's (traffic leaving through `ovcs0` isn't translated) and re-asserts it every 30 s, since NetworkManager rewrites its nat rules whenever the connection is re-activated.
 
 The vehicle's time comes from the compute node too: its `ntp` service serves the node's clock to `10.42.0.0/24`, and the Nerves firmwares ask the Zenoh router's address (`ZENOH_ENDPOINT_IP`) before the public pools. The boards have no battery-backed clock; until they synchronise they stamp messages with a date months off, and Nav2 discards a transform from the past. With the vehicle offline every board still shares the compute node's clock, which is the one Nav2 compares stamps against.
 
 Keyfile templates live in [`compose/compute/host/system-connections/`](../compose/compute/host/system-connections/); each file's comments explain its settings. Two constraints aren't obvious:
 
 - **The bridge can't be called `br0`.** balenaOS's `NetworkManager.conf` lists `interface-name:br*` as unmanaged, so activation fails with `device is strictly unmanaged`.
-- **The 5 GHz access point needs `wifi_ap_fix`.** On channel 149 at 80 MHz, NetworkManager 1.52 generates an invalid VHT center frequency (5770 MHz). The `wifi_ap_fix` service corrects it to 5775 MHz through the host supplicant's D-Bus interface and reapplies the 6 dBm TX limit. `compose/compute/host/configure-5ghz.sh` installs the 5 GHz profile plus `ovcs0-ap-fallback`, a 2.4 GHz clone that takes over when 5 GHz can't start. Deploy the service before running it; see the [host instructions](../compose/compute/host/README.md). Keep the configured regulatory country, and account for antenna gain when changing power.
+- **The 5 GHz access point needs `wifi_ap_radio`.** On channel 149 at 80 MHz, NetworkManager 1.52 generates an invalid VHT center frequency (5770 MHz). The `wifi_ap_radio` service corrects it to 5775 MHz through the host supplicant's D-Bus interface and reapplies the 6 dBm TX limit. Deploy it before activating the AP profile; see the [host instructions](../compose/compute/host/README.md). Keep the configured regulatory country, and account for antenna gain when changing power.
 
 ### Reaching the vehicle network from the site Wi-Fi
 
@@ -192,7 +192,7 @@ Giving each board its own Wi-Fi removes the shared radio: real leases for everyo
 
 ### Installing it
 
-Prerequisite: deploy [`compose/compute/docker-compose.yml`](../compose/compute/docker-compose.yml) (at least `wifi_firmware` and `wifi_ap_fix`) and reboot once, or the AX210 has no driver bound and `wlP1p1s0` doesn't exist, and the 5 GHz AP profile starts with an invalid centre frequency.
+Prerequisite: deploy [`compose/compute/docker-compose.yml`](../compose/compute/docker-compose.yml) (at least `wifi_firmware` and `wifi_ap_radio`) and reboot once, or the AX210 has no driver bound and `wlP1p1s0` doesn't exist, and the 5 GHz AP profile starts with an invalid centre frequency.
 
 **Two directories are in play, on different filesystems.** `/mnt/boot/system-connections/` (vfat, the boot partition) is the source of truth: `balena-net-config` runs on every boot and does
 

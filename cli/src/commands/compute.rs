@@ -238,8 +238,8 @@ mod tests {
 
         for name in [
             "wifi-firmware",
-            "wifi-ap-fix",
-            "bridge-nat-fix",
+            "wifi-ap-radio",
+            "bridge-no-nat",
             "ntp",
             "ros2",
         ] {

@@ -1,6 +1,6 @@
 # The AX210 as an access point, bridged into the vehicle network.
 #
-# Channel 149 / 80 MHz requires the wifi_ap_fix service on NetworkManager
+# Channel 149 / 80 MHz requires the wifi_ap_radio service on NetworkManager
 # 1.52: it corrects the VHT center to 5775 MHz and limits TX power to
 # 6 dBm. Deploy that service before activating this profile.
 #
@@ -8,8 +8,7 @@
 # spans 5735-5815 MHz; the ETSI/BE table caps 5725-5875 at 13 dBm and
 # 5795-5815 is the road-tolling band, so this transmitter, on a vehicle,
 # sits inside it. The card would offer 22 dBm here. Raising the limit
-# means re-reading that table first, and the 2.4 GHz fallback profile
-# (see ../README.md) exists precisely so nothing forces the issue.
+# means re-reading that table first.
 #
 # The lower 5 GHz channels are no alternative: 36-48 are IR-CONCURRENT
 # (AP only alongside a client link on the same channel) and 52-140 are
@@ -29,8 +28,6 @@ type=wifi
 interface-name=wlP1p1s0
 master=ovcs0
 slave-type=bridge
-autoconnect-priority=100
-autoconnect-retries=1
 
 [wifi]
 mode=ap

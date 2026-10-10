@@ -40,29 +40,20 @@ file added to `/mnt/boot` does nothing until the next reboot. The
 install procedure writes both deliberately — see
 [Installing it](../../../docs/ros2_compute_node.md#installing-it).
 
-## Persistent 5 GHz access point
+## The 5 GHz access point
 
-Deploy `wifi_ap_fix` from the compute stack before changing the AP profile.
-Copy `configure-5ghz.sh` to the balenaOS host and run it with `bash` there.
-It backs up the boot profile under `/mnt/data/ovcs-ap-before-5ghz`, creates
-the fallback and writes both profiles to the active and boot directories.
-Activate the preferred profile with `nmcli --wait 35 connection up ovcs0-ap`
-from the site-network SSH connection; the AP connection briefly drops.
+`ovcs0-ap` runs the AX210 as a channel 149, 80 MHz access point.
+NetworkManager 1.52 gets that channel's center frequency wrong, so deploy
+the compute stack, which runs `wifi_ap_radio`, before activating the
+profile. The service corrects the center from 5770 to 5775 MHz in the
+host's wpa_supplicant over D-Bus and keeps the transmit power at 6 dBm;
+`AP_IFACE` and `AP_TX_POWER_DBM` (fleet or device variables) override
+`wlP1p1s0` and 6.
 
-The service uses the host D-Bus socket to correct NetworkManager 1.52's channel-149
-VHT center from 5770 to 5775 MHz, and host networking with `NET_ADMIN` to
-restore the 6 dBm transmit-power limit. It only corrects AP networks on
-that channel and leaves an already-correct center frequency alone.
-
-The AP profile must be written to both `/etc/NetworkManager/system-connections/`
-and `/mnt/boot/system-connections/`; an `nmcli --temporary` change disappears
-on reboot. The example selects channel 149, 80 MHz, autoconnect priority 100
-and one autoconnect attempt. Keep a clone of the working 2.4 GHz profile
-named `ovcs0-ap-fallback`, with autoconnect enabled, priority -100 and one
-attempt, in both directories. This restores access if 5 GHz cannot start.
-If boot reaches the fallback before the service starts, the service retries
-the preferred profile once. A failed retry leaves NetworkManager free to
-return to the fallback instead of disconnecting clients repeatedly.
+Write the profile to both `/etc/NetworkManager/system-connections/` and
+`/mnt/boot/system-connections/`; an `nmcli --temporary` change disappears
+on reboot. Activate it with `nmcli --wait 35 connection up ovcs0-ap` from
+the site-network SSH connection; the AP connection briefly drops.
 
 After activation and after a reboot, verify on the host:
 

@@ -130,7 +130,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: [ros2, nav2, ntp, wifi-firmware, wifi-ap-fix, bridge-nat-fix]
+        image: [ros2, nav2, ntp, wifi-firmware, wifi-ap-radio, bridge-no-nat]
         # Native runners for both architectures rather than QEMU: the
         # ROS apt layers take minutes natively and the better part of
         # an hour emulated. The arm64 runners are free on public repos.
@@ -201,7 +201,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: [ros2, nav2, ntp, wifi-firmware, wifi-ap-fix, bridge-nat-fix]
+        image: [ros2, nav2, ntp, wifi-firmware, wifi-ap-radio, bridge-no-nat]
     steps:
       - uses: actions/download-artifact@v4
         with:
