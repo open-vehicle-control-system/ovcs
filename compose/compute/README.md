@@ -36,8 +36,9 @@ From the repo root:
 
 The command stages a temporary source root and runs `balena push` from
 it; arguments after `--` go to `balena push` (`-- --nolive`). By
-default the staged compose file names the images CI published from the
-`origin/main` commit your checkout is based on
+default the staged compose file names the images CI last published,
+from the last `origin/main` commit before your checkout that changed
+`images/`, `vehicle/` or `.github/workflows/ros2.yml`
 (`ghcr.io/open-vehicle-control-system/ovcs/<name>:sha-<short>`), and
 balena builds only `vehicle/`: that Nav2 image plus
 `vehicles/<vehicle>/nav2/`. The command refuses if `images/` changed

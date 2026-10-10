@@ -3,8 +3,8 @@
 //! balena needs every build context inside the pushed directory.
 //!
 //! By default the release pulls the framework images CI publishes from
-//! `main` and builds only the vehicle's Nav2 layer; `--build` stages the
-//! image sources instead.
+//! `main` when their sources change, and builds only the vehicle's Nav2
+//! layer; `--build` stages the image sources instead.
 
 use anyhow::{bail, Context, Result};
 use regex::Regex;
@@ -24,6 +24,11 @@ const NOT_STAGED: &[&str] = &["host"];
 
 /// The framework sources the published images are built from.
 const IMAGE_SOURCES: &[&str] = &["compose/compute/images", "compose/compute/vehicle"];
+
+/// Also republishes every image when it changes. Together with
+/// IMAGE_SOURCES, the paths of the `images-changed` filter in
+/// `.github/workflows/ros2.yml`.
+const PUBLISHED_WITH: &str = ".github/workflows/ros2.yml";
 
 pub enum Images {
     /// Pull the published images with this tag.
@@ -90,14 +95,28 @@ pub fn push(
     Ok(())
 }
 
-/// `sha-<short>` of the `main` commit this checkout is based on, provided
-/// the image sources haven't changed since: CI publishes every push to
-/// `main` under that tag.
+/// `sha-<short>` of the last `main` commit, up to the one this checkout
+/// is based on, that changed what CI publishes, provided this checkout's
+/// image sources are still the same.
 fn main_tag() -> Result<String> {
     let root = repo_root()?;
     let base = git(&root, &["merge-base", "HEAD", "origin/main"])
         .context("no merge base with origin/main; pass --tag or --build")?;
-    let mut diff = vec!["diff", "--quiet", base.as_str(), "--"];
+    let mut log = vec![
+        "log",
+        "-1",
+        "--first-parent",
+        "--format=%H",
+        base.as_str(),
+        "--",
+    ];
+    log.extend(IMAGE_SOURCES);
+    log.push(PUBLISHED_WITH);
+    let published = git(&root, &log)?;
+    if published.is_empty() {
+        bail!("no commit on origin/main published the images; pass --tag or --build");
+    }
+    let mut diff = vec!["diff", "--quiet", published.as_str(), "--"];
     diff.extend(IMAGE_SOURCES);
     let unchanged = Command::new("git")
         .args(&diff)
@@ -109,10 +128,10 @@ fn main_tag() -> Result<String> {
         bail!(
             "the image sources ({}) differ from origin/main at {}; pass --build",
             IMAGE_SOURCES.join(", "),
-            &base[..7]
+            &published[..7]
         );
     }
-    Ok(format!("sha-{}", &base[..7]))
+    Ok(format!("sha-{}", &published[..7]))
 }
 
 fn git(root: &Path, args: &[&str]) -> Result<String> {

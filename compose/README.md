@@ -97,7 +97,7 @@ takes it from the command that deploys it:
 ## The one link across the boundary
 
 The images the car runs are built **only** from `compute/images/`. CI
-builds them on every push to `main` and publishes them to
+builds them on each push to `main` that changes them and publishes them to
 `ghcr.io/open-vehicle-control-system/ovcs/<name>` as `sha-<short>` and
 `latest`; a deploy pulls them and builds only the vehicle's Nav2 layer
 (`./ovcs compute push --build` builds them from the checkout instead).
