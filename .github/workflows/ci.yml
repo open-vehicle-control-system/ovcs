@@ -30,6 +30,8 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup-mise
+        with:
+          tools: erlang elixir
       - run: elixir scripts/check_lock_drift.exs
 
   docs:
@@ -40,6 +42,8 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup-mise
+        with:
+          tools: erlang elixir
       - run: elixir scripts/check_docs.exs
 
   elixir:
@@ -84,6 +88,8 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup-mise
+        with:
+          tools: erlang elixir
       - name: Install system deps for Nerves NIFs
         # Firmware projects and vehicles (transitive firmware deps) both
         # need libmnl-dev for nerves_uevent's NIF.
@@ -128,6 +134,8 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup-mise
+        with:
+          tools: rust
       - name: Install rustfmt + clippy
         # mise's rust install pulls rustc + cargo via rustup, but not
         # the rustfmt / clippy components.
@@ -158,6 +166,8 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup-mise
+        with:
+          tools: node
       - uses: actions/cache@v5
         with:
           path: ~/.npm
@@ -177,6 +187,8 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup-mise
+        with:
+          tools: flutter
       - uses: actions/cache@v5
         with:
           path: |
@@ -198,6 +210,8 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup-mise
+        with:
+          tools: python uv pipx:platformio
       - uses: actions/cache@v5
         with:
           path: |
