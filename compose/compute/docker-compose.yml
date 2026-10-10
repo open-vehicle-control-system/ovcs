@@ -10,6 +10,8 @@
 #   ./ovcs compute push <vehicle> <fleet>            # balena's builders + OTA
 #   ./ovcs compute push <vehicle> <device>.local     # local mode, no cloud
 #
+# The command swaps each `build: ./images/<name>` for the image CI
+# published from main, unless given --build.
 # `./ovcs compute stage <vehicle> --out <dir>` writes the same tree
 # without pushing; `docker compose up -d` there is a bare-metal
 # rehearsal on any aarch64 box.

@@ -32,9 +32,16 @@ From the repo root:
 ./ovcs compute push <vehicle> <device>.local     # local mode: build on the device, no cloud
 ```
 
-The command stages this directory and `vehicles/<vehicle>/nav2/` into a
-temporary source root and runs `balena push` from it; arguments after
-`--` go to `balena push` (`-- --nolive`). A `balena push` run from this
+The command stages a temporary source root and runs `balena push` from
+it; arguments after `--` go to `balena push` (`-- --nolive`). By
+default the staged compose file names the images CI published from the
+`origin/main` commit your checkout is based on
+(`ghcr.io/open-vehicle-control-system/ovcs/<name>:sha-<short>`), and
+balena builds only `vehicle/`: that Nav2 image plus
+`vehicles/<vehicle>/nav2/`. The command refuses if `images/` changed
+since that commit. `--tag <tag>` picks other published images;
+`--build` stages this directory's sources and builds every image, for
+an image change that isn't on `main` yet. A `balena push` run from this
 directory directly ships a Nav2 image with no parameters.
 
 Runtime configuration is balena fleet/device variables, not a `.env`

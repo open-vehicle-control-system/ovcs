@@ -95,19 +95,21 @@ takes it from the command that deploys it:
 
 ## The one link across the boundary
 
-The images the car runs are built **only** from `compute/images/`:
-balena requires every `build:` context inside the pushed directory,
-and its builders cannot inherit from a local `ovcs/*` tag. The local
-stacks reach across to build the very same Dockerfiles —
+The images the car runs are built **only** from `compute/images/`. CI
+builds them on every push to `main` and publishes them to
+`ghcr.io/open-vehicle-control-system/ovcs/<name>` as `sha-<short>` and
+`latest`; a deploy pulls them and builds only the vehicle's Nav2 layer
+(`./ovcs compute push --build` builds them from the checkout instead).
+The local stacks reach across to build the very same Dockerfiles —
 `context: ../compute/images/ros2` for the shared ROS image,
 `context: ../compute` for Nav2 — so a workstation runs the bits the car
 runs, never a copy of them. One Dockerfile, one tag, on both sides:
 
 | Image | Dockerfile | Tag | Built by |
 |---|---|---|---|
-| shared ROS 2 | `compute/images/ros2/` | `ovcs/ros2:lyrical` | balena; `local/base.yml` (`ros2` service) |
-| Nav2 | `compute/images/nav2/` | `ovcs/nav2:lyrical` | balena; `local/base.yml` and `local/simulation.yml` (`nav2`) |
-| Wi-Fi firmware | `compute/images/wifi-firmware/` | — | balena only |
+| shared ROS 2 | `compute/images/ros2/` | `ovcs/ros2:lyrical` | CI (GHCR); `local/base.yml` (`ros2` service) |
+| Nav2 | `compute/images/nav2/` | `ovcs/nav2:lyrical` | CI (GHCR); `local/base.yml` and `local/simulation.yml` (`nav2`) |
+| Wi-Fi firmware, Wi-Fi AP fix, bridge NAT fix, NTP | `compute/images/{wifi-firmware,wifi-ap-fix,bridge-nat-fix,ntp}/` | — | CI (GHCR) only |
 | Gazebo | `local/images/sim/` | `ovcs/sim:jetty` | `local/simulation.yml` only |
 
 The same direction holds for Nav2's parameters: the vehicle's `nav2/`
