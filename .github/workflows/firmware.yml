@@ -1,26 +1,29 @@
 name: Firmware
 
+# Builds each firmware role for its Nerves target, against a vehicle
+# scaffolded from the `ovcs new` template rather than a vehicle package,
+# so it tests the framework, its template and the target systems.
+
 on:
+  # Path filters do not apply to tag pushes, so a release tag always builds.
   push:
     branches: [main]
     tags: ['v*']
+    paths: &firmware-inputs
+      - 'bridges/**'
+      - 'vms/**'
+      - 'infotainment/**'
+      - 'libraries/**'
+      - 'mise.toml'
+      - '.github/workflows/firmware.yml'
+      - '.github/actions/setup-mise/**'
   # Also on PRs that touch anything a firmware image is built from.
   # Without this, no image was ever built before merge: a PR could go
   # fully green and still break `Firmware` on main — the host toolchain
   # in mise.toml has to match the OTP major each target system ships,
   # and nothing else checks that.
   pull_request:
-    paths:
-      - 'bridges/**'
-      - 'vms/**'
-      - 'infotainment/**'
-      - 'vehicles/**'
-      - '!vehicles/*/nav2/**'
-      - '!vehicles/*/foxglove/**'
-      - 'libraries/**'
-      - 'mise.toml'
-      - '.github/workflows/firmware.yml'
-      - '.github/actions/setup-mise/**'
+    paths: *firmware-inputs
   workflow_dispatch:
 
 permissions:
@@ -43,25 +46,21 @@ jobs:
         include:
           - app: vms/firmware
             target: ovcs_base_can_system_rpi4
-            vehicle: Ovcs1
             role: vms
           - app: infotainment/firmware
             target: ovcs_base_can_system_rpi5
-            vehicle: Ovcs1
             role: infotainment
           - app: bridges/firmware
             target: ovcs_base_can_system_rpi3a
-            vehicle: Ovcs1
             role: radio_control
             bridge_firmware_id: radio_control
           - app: bridges/firmware
             target: ovcs_base_can_system_rpi4
-            vehicle: Ovcs1
             role: ros
             bridge_firmware_id: ros
     env:
       MIX_TARGET: ${{ matrix.target }}
-      VEHICLE: ${{ matrix.vehicle }}
+      VEHICLE: CiVehicle
       BRIDGE_FIRMWARE_ID: ${{ matrix.bridge_firmware_id }}
       # MIX_ENV is deliberately unset at the workflow level. `build.sh`
       # pre-compiles the vehicle for MIX_TARGET=host in MIX_ENV=dev
@@ -75,6 +74,26 @@ jobs:
       - uses: actions/checkout@v5
 
       - uses: ./.github/actions/setup-mise
+        with:
+          tools: erlang elixir node
+
+      - name: Scaffold the vehicle
+        # The same call `ovcs new` makes, without the Rust toolchain. Its
+        # bridge firmwares match the roles above.
+        working-directory: libraries/ovcs_vehicle
+        env:
+          MIX_TARGET: host
+          MIX_ENV: dev
+        run: |
+          mix deps.get
+          mix run --no-start --no-deps-check -e '
+            :ok =
+              OvcsVehicle.Scaffold.generate("../../vehicles/ci_vehicle",
+                [module: "CiVehicle", name: "ci_vehicle", display_name: "CI vehicle",
+                 vms_target: "ovcs_base_can_system_rpi4",
+                 infotainment_target: "ovcs_base_can_system_rpi5",
+                 infotainment: true, bridges: true],
+                repo_root: "../..")'
 
       - name: Install Flutter SDK (infotainment only)
         if: matrix.role == 'infotainment'
@@ -122,8 +141,8 @@ jobs:
           path: |
             ${{ matrix.app }}/deps
             ${{ matrix.app }}/_build
-            vehicles/${{ matrix.vehicle == 'Ovcs1' && 'ovcs1' || matrix.vehicle }}/deps
-            vehicles/${{ matrix.vehicle == 'Ovcs1' && 'ovcs1' || matrix.vehicle }}/_build
+            vehicles/ci_vehicle/deps
+            vehicles/ci_vehicle/_build
           key: nerves-build-${{ matrix.app }}-${{ matrix.target }}-${{ matrix.role }}-${{ hashFiles('mise.toml') }}-${{ hashFiles(format('{0}/mix.lock', matrix.app)) }}
 
       # ~/.nerves holds downloaded system artifacts, named by their own
