@@ -23,14 +23,20 @@ on:
       - '.github/actions/setup-mise/**'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
   group: firmware-${{ github.ref }}
-  cancel-in-progress: true
+  # Only a pull request's runs supersede each other; every push to main
+  # runs to completion.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
     name: ${{ matrix.app }} · ${{ matrix.role }} · ${{ matrix.target }}
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:

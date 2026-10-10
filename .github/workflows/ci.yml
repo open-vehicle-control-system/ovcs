@@ -6,9 +6,14 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # Only a pull request's runs supersede each other; every push to main
+  # runs to completion.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   MIX_ENV: test
@@ -21,6 +26,7 @@ jobs:
     # Regex.CompileError — once the Elixir version moved.
     name: Elixir · lock drift
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup-mise
@@ -30,6 +36,7 @@ jobs:
     # The guides linked from docs/README.md are rendered as-is on ovcs.be.
     name: Docs · published guides
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup-mise
@@ -38,6 +45,7 @@ jobs:
   elixir-format:
     name: Elixir · format check
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup-mise
@@ -76,6 +84,7 @@ jobs:
     # pre-existing warnings on the first run; triage per project.
     name: Elixir · credo · ${{ matrix.project }}
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -126,6 +135,7 @@ jobs:
     # guarded on Mix.target() != :host / config_env() != :test.
     name: Elixir · test · ${{ matrix.project }}
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -176,6 +186,7 @@ jobs:
   elixir-dialyzer:
     name: Elixir · dialyzer · ${{ matrix.project }}
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -231,6 +242,7 @@ jobs:
     # bridge lib needs its own matrix entry.
     name: Elixir · host compile · ${{ matrix.project }}
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -267,6 +279,7 @@ jobs:
   cli-build:
     name: CLI · cargo build
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: cli
@@ -296,6 +309,7 @@ jobs:
   vue-dashboard:
     name: Vue · vms/dashboard
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: vms/dashboard
@@ -314,6 +328,7 @@ jobs:
   flutter-dashboard:
     name: Flutter · infotainment/dashboard
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: infotainment/dashboard
@@ -334,6 +349,7 @@ jobs:
   platformio-controller:
     name: PlatformIO · generic_controller
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: controllers/generic_controller

@@ -49,14 +49,20 @@ on:
 env:
   REGISTRY_IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/ovcs
 
+permissions:
+  contents: read
+
 concurrency:
   group: ros2-${{ github.ref }}
-  cancel-in-progress: true
+  # Only a pull request's runs supersede each other; every push to main
+  # runs to completion.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   compose-config:
     name: compose config
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
@@ -91,6 +97,7 @@ jobs:
   pins:
     name: version pins agree
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
 
@@ -107,6 +114,7 @@ jobs:
   lint:
     name: ruff
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
 
@@ -124,6 +132,7 @@ jobs:
   image:
     name: build ${{ matrix.image }} (${{ matrix.platform.arch }})
     runs-on: ${{ matrix.platform.runner }}
+    timeout-minutes: 45
     permissions:
       contents: read
       packages: write
@@ -142,8 +151,8 @@ jobs:
 
       - uses: docker/setup-buildx-action@v3
 
+      # Pull requests log in too, to read the layer cache below.
       - name: Log in to GHCR
-        if: github.event_name == 'push'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -167,12 +176,11 @@ jobs:
           # their tags once both architectures exist. Off main this is a
           # plain build.
           outputs: type=image,name=${{ env.REGISTRY_IMAGE_PREFIX }}/${{ matrix.image }},name-canonical=true,push-by-digest=true,push=${{ github.event_name == 'push' }}
-          # Layer cache in the Actions cache, one scope per image and
-          # architecture, so a PR that does not touch a Dockerfile
-          # reuses the apt layer rather than re-fetching the ROS
-          # package set every run.
-          cache-from: type=gha,scope=${{ matrix.image }}-${{ matrix.platform.arch }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.image }}-${{ matrix.platform.arch }}
+          # Layer cache in GHCR, beside each image as `buildcache-<arch>`,
+          # rather than in the Actions cache, whose 10 GB per repository
+          # the ROS layers alone would fill. Only main writes it.
+          cache-from: type=registry,ref=${{ env.REGISTRY_IMAGE_PREFIX }}/${{ matrix.image }}:buildcache-${{ matrix.platform.arch }}
+          cache-to: ${{ github.event_name == 'push' && format('type=registry,ref={0}/{1}:buildcache-{2},mode=max,image-manifest=true,oci-mediatypes=true', env.REGISTRY_IMAGE_PREFIX, matrix.image, matrix.platform.arch) || '' }}
 
       - name: Export digest
         if: github.event_name == 'push'
@@ -195,6 +203,7 @@ jobs:
     if: github.event_name == 'push'
     needs: image
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       packages: write
