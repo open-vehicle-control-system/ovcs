@@ -24,10 +24,10 @@ name: ROS 2
 #     ever parsed when something starts them, so an undefined name in
 #     an error path shipped and waited.
 #   * `image` builds every image the compute node runs, for amd64 (the
-#     workstations) and arm64 (the compute node). On `main`, `manifest`
-#     publishes each to GHCR as `sha-<short>` and `latest`: the tags
-#     `ovcs compute stage` names, so a deploy pulls them instead of
-#     rebuilding them.
+#     workstations) and arm64 (the compute node), when their sources
+#     change. On `main`, `manifest` then publishes each to GHCR as
+#     `sha-<short>` and `latest`: the tags `ovcs compute stage` names,
+#     so a deploy pulls them instead of rebuilding them.
 #
 # Deliberately not built here: the simulator image, which pulls Gazebo
 # in through the ROS vendor packages and is far too heavy for per-PR
@@ -37,13 +37,14 @@ name: ROS 2
 on:
   push:
     branches: [main]
-  pull_request:
-    paths:
+    paths: &ros2-inputs
       - 'compose/**'
       - 'vehicles/*/nav2/**'
       - 'vehicles/*/description/**'
       - 'ruff.toml'
       - '.github/workflows/ros2.yml'
+  pull_request:
+    paths: *ros2-inputs
   workflow_dispatch:
 
 env:
@@ -59,6 +60,30 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  images-changed:
+    # The images are built, and on main published, only when their sources
+    # change; manual runs always build them. `ovcs compute stage` looks up
+    # the last main commit that changed the same paths (IMAGE_SOURCES and
+    # PUBLISHED_WITH in cli/src/commands/compute.rs) to name its tag.
+    name: image sources changed
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      images: ${{ steps.filter.outputs.images }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            images:
+              - compose/compute/images/**
+              - compose/compute/vehicle/**
+              - .github/workflows/ros2.yml
+
   compose-config:
     name: compose config
     runs-on: ubuntu-latest
@@ -131,6 +156,8 @@ jobs:
 
   image:
     name: build ${{ matrix.image }} (${{ matrix.platform.arch }})
+    needs: images-changed
+    if: needs.images-changed.outputs.images == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ${{ matrix.platform.runner }}
     timeout-minutes: 45
     permissions:

@@ -15,8 +15,8 @@ defmodule OvcsVehicle.Scaffold do
       @display_name — human-readable name (e.g. "OVCS Mini")
       @vms_target / @infotainment_target — Nerves target atoms
       @infotainment — bool (false: skip the infotainment side)
-      @bridges      — bool (false: skip bridge_firmware dep + the
-                      `bridge_firmwares/0` block)
+      @bridges      — bool (false: skip the bridge_firmware dep,
+                      `bridge_firmwares/0` and `priv/can/bridges/`)
 
   Template **path components** use a literal `{{name}}` marker instead
   of EEx (EEx in filenames is awkward); `{{name}}` is substituted with
@@ -174,18 +174,15 @@ defmodule OvcsVehicle.Scaffold do
     String.replace(rel, "{{name}}", Keyword.fetch!(assigns, :name))
   end
 
-  # Skip paths that belong to a side the caller disabled. Infotainment
-  # files live under any path component starting with "infotainment"
-  # (e.g. `lib/{{name}}/infotainment.ex`, `lib/{{name}}/infotainment/…`,
-  # `priv/can/infotainment.yml`).
+  # Skip paths that belong to a part the caller disabled: any path
+  # component starting with "infotainment" (`lib/{{name}}/infotainment.ex`,
+  # `priv/can/infotainment.yml`, …) or named "bridges"
+  # (`priv/can/bridges/`).
   defp skip?(src, root, assigns) do
-    if Keyword.get(assigns, :infotainment, true) do
-      false
-    else
-      src
-      |> Path.relative_to(root)
-      |> Path.split()
-      |> Enum.any?(&String.starts_with?(&1, "infotainment"))
-    end
+    parts = src |> Path.relative_to(root) |> Path.split()
+
+    (not Keyword.get(assigns, :infotainment, true) and
+       Enum.any?(parts, &String.starts_with?(&1, "infotainment"))) or
+      (not Keyword.get(assigns, :bridges, true) and "bridges" in parts)
   end
 end

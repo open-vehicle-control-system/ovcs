@@ -18,35 +18,14 @@ defmodule <%= @module %> do
   ## Bridge firmwares
 
   Each entry of `bridge_firmwares/0` is a build target,
-  `./ovcs build <%= @name %> bridge-<firmware-id>`, and each bundled bridge
-  needs its configuration callback on this module. A radio-control
-  bridge also needs `priv/can/bridges/radio_control.yml`; start from the
-  OVCS Mini reference vehicle's. See the
+  `./ovcs build <%= @name %> bridge-<firmware-id>`, with its CAN topology in
+  `priv/can/bridges/<firmware-id>.yml`. Both bridges start with no
+  components; drop the entries your vehicle has no board for. See the
   [vehicle package guide](https://ovcs.be/docs/vehicle_package).
-
-      @behaviour RadioControlBridge
-
-      @impl OvcsVehicle
-      def bridge_firmwares do
-        %{
-          "radio_control" => %{
-            target: :ovcs_base_can_system_rpi3a,
-            bridges: [RadioControlBridge],
-            default_can_mapping: %{host: "ovcs:vcan0", target: "ovcs:spi0.0"}
-          }
-        }
-      end
-
-      @impl RadioControlBridge
-      def radio_control_bridge_config(:host),
-        do: %RadioControlBridge.Config{components: []}
-
-      def radio_control_bridge_config(:target),
-        do: %RadioControlBridge.Config{
-          components: [{:mavlink_forwarder, uart_port: "ttySC0", uart_baud_rate: 460_800}]
-        }
 <% end %>  """
-  @behaviour OvcsVehicle
+  @behaviour OvcsVehicle<%= if @bridges do %>
+  @behaviour RadioControlBridge
+  @behaviour RosBridge<% end %>
 
   @impl OvcsVehicle
   def name, do: "<%= @display_name %>"
@@ -60,4 +39,36 @@ defmodule <%= @module %> do
   def vms_target, do: :<%= @vms_target %>
 <%= if @infotainment do %>  @impl OvcsVehicle
   def infotainment_target, do: :<%= @infotainment_target %>
+<% end %><%= if @bridges do %>
+  @impl OvcsVehicle
+  def bridge_firmwares do
+    %{
+      "radio_control" => %{
+        target: :ovcs_base_can_system_rpi3a,
+        bridges: [RadioControlBridge],
+        default_can_mapping: %{host: "ovcs:vcan0", target: "ovcs:spi0.0"}
+      },
+      "ros" => %{
+        target: :ovcs_base_can_system_rpi4,
+        bridges: [RosBridge],
+        default_can_mapping: %{host: "ovcs:vcan0", target: "ovcs:spi0.0"}
+      }
+    }
+  end
+
+  @impl RadioControlBridge
+  def radio_control_bridge_config(_arm), do: %RadioControlBridge.Config{components: []}
+
+  @impl RosBridge
+  def ros_bridge_config(:host),
+    do: %RosBridge.Config{
+      zenoh_endpoint_ip: System.get_env("ZENOH_ENDPOINT_IP", "127.0.0.1"),
+      components: [:heartbeat]
+    }
+
+  def ros_bridge_config(:target),
+    do: %RosBridge.Config{
+      zenoh_endpoint_ip: Application.get_env(:ros_bridge, :zenoh_endpoint_ip, "127.0.0.1"),
+      components: [:heartbeat]
+    }
 <% end %>end

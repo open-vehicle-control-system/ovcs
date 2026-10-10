@@ -7,8 +7,8 @@ defmodule <%= @module %>.MixProject do
       version: "0.1.0",
       elixir: "~> 1.15",
       start_permanent: Mix.env() == :prod,
-      deps: deps()<%= if @infotainment do %>,
-      dialyzer: [plt_add_apps: [:infotainment_core]]<% end %>
+      deps: deps()<%= if @infotainment or @bridges do %>,
+      dialyzer: [plt_add_apps: <%= inspect(if(@infotainment, do: [:infotainment_core], else: []) ++ if(@bridges, do: [:radio_control_bridge, :ros_bridge], else: [])) %>]<% end %>
     ]
   end
 
