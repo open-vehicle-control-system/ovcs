@@ -64,9 +64,9 @@ services:
     # ./images/wifi-firmware/Dockerfile).
 
   wifi_ap_radio:
-    # Keeps the access point on a valid 80 MHz channel 149 and at its
-    # transmit-power limit; see ./images/wifi-ap-radio/ap_radio.py. It
-    # edits the host's wpa_supplicant behind NetworkManager's back, so if
+    # Keeps the access point running, on a valid 80 MHz channel 149 and
+    # at its transmit-power limit; see ./images/wifi-ap-radio/ap_radio.py.
+    # It edits the host's wpa_supplicant behind NetworkManager's back, so if
     # the access point behaves oddly, `balena logs wifi_ap_radio` shows
     # each correction it made.
     build: ./images/wifi-ap-radio

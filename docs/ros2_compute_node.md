@@ -162,7 +162,7 @@ The vehicle's time comes from the compute node too: its `ntp` service serves the
 Keyfile templates live in [`compose/compute/host/system-connections/`](../compose/compute/host/system-connections/); each file's comments explain its settings. Two constraints aren't obvious:
 
 - **The bridge can't be called `br0`.** balenaOS's `NetworkManager.conf` lists `interface-name:br*` as unmanaged, so activation fails with `device is strictly unmanaged`.
-- **The 5 GHz access point needs `wifi_ap_radio`.** On channel 149 at 80 MHz, NetworkManager 1.52 generates an invalid VHT center frequency (5770 MHz). The `wifi_ap_radio` service corrects it to 5775 MHz through the host supplicant's D-Bus interface and reapplies the 6 dBm TX limit. Deploy it before activating the AP profile; see the [host instructions](../compose/compute/host/README.md). Keep the configured regulatory country, and account for antenna gain when changing power.
+- **The 5 GHz access point needs `wifi_ap_radio`.** On channel 149 at 80 MHz, NetworkManager 1.52 generates an invalid VHT center frequency (5770 MHz). The `wifi_ap_radio` service corrects it to 5775 MHz through the host supplicant's D-Bus interface, reapplies the 6 dBm TX limit, and restarts the AP when NetworkManager gives up on it. Deploy it before activating the AP profile, and delete balenaOS's `balena-wifi-01` profile, which would otherwise take the AX210 when the AP fails; see the [host instructions](../compose/compute/host/README.md). Keep the configured regulatory country, and account for antenna gain when changing power.
 
 ### Reaching the vehicle network from the site Wi-Fi
 

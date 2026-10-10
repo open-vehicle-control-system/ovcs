@@ -46,9 +46,17 @@ install procedure writes both deliberately — see
 NetworkManager 1.52 gets that channel's center frequency wrong, so deploy
 the compute stack, which runs `wifi_ap_radio`, before activating the
 profile. The service corrects the center from 5770 to 5775 MHz in the
-host's wpa_supplicant over D-Bus and keeps the transmit power at 6 dBm;
-`AP_IFACE` and `AP_TX_POWER_DBM` (fleet or device variables) override
-`wlP1p1s0` and 6.
+host's wpa_supplicant over D-Bus and keeps the transmit power at 6 dBm.
+NetworkManager gives up on an AP that fails to start, which the AX210
+does after resetting its regulatory domain; the service then scans and
+restarts `ovcs0-ap` every minute until it runs. `AP_IFACE`,
+`AP_CONNECTION` and `AP_TX_POWER_DBM` (fleet or device variables)
+override `wlP1p1s0`, `ovcs0-ap` and 6.
+
+Delete balenaOS's provisioning profile, `balena-wifi-01`, from both
+directories once `uplink` works: it binds to no interface, so when the AP
+fails NetworkManager runs it on the AX210 instead, as a client of the
+site Wi-Fi, and the vehicle network loses its access point.
 
 Write the profile to both `/etc/NetworkManager/system-connections/` and
 `/mnt/boot/system-connections/`; an `nmcli --temporary` change disappears
