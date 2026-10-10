@@ -19,12 +19,72 @@ env:
   MIX_ENV: test
 
 jobs:
+  changes:
+    # A pull request runs only the jobs whose inputs it touches; pushes
+    # to main and manual runs run every job, which also keeps the caches
+    # warm. No job is required by main's branch settings, so a skipped
+    # one blocks nothing. The toolchain and this workflow feed every job.
+    name: Changed areas
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      elixir: ${{ steps.filter.outputs.elixir }}
+      docs: ${{ steps.filter.outputs.docs }}
+      cli: ${{ steps.filter.outputs.cli }}
+      vue: ${{ steps.filter.outputs.vue }}
+      flutter: ${{ steps.filter.outputs.flutter }}
+      platformio: ${{ steps.filter.outputs.platformio }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            shared: &shared
+              - mise.toml
+              - .github/workflows/ci.yml
+              - .github/actions/**
+            elixir:
+              - *shared
+              - .credo.exs
+              - scripts/check_lock_drift.exs
+              - libraries/**
+              - vms/core/**
+              - vms/api/**
+              - vms/firmware/**
+              - infotainment/core/**
+              - infotainment/api/**
+              - infotainment/firmware/**
+              - bridges/**
+              - vehicles/**
+            docs:
+              - *shared
+              - scripts/check_docs.exs
+              - '**/*.md'
+            cli:
+              - *shared
+              - cli/**
+            vue:
+              - *shared
+              - vms/dashboard/**
+            flutter:
+              - *shared
+              - infotainment/dashboard/**
+            platformio:
+              - *shared
+              - controllers/**
+
   lock-drift:
     # Shared dev tooling must be locked at one version across the 17
     # Mix projects. vms/core silently sat 10 patch versions behind on
     # credo, which only surfaced — as an unrelated-looking
     # Regex.CompileError — once the Elixir version moved.
     name: Elixir · lock drift
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.elixir == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -37,6 +97,8 @@ jobs:
   docs:
     # The guides linked from docs/README.md are rendered as-is on ovcs.be.
     name: Docs · published guides
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.docs == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -59,6 +121,8 @@ jobs:
     # so Ecto.Sandbox works; firmware projects have vehicle-specific
     # config guarded on Mix.target() != :host / config_env() != :test.
     name: Elixir · ${{ matrix.project }}
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.elixir == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -126,6 +190,8 @@ jobs:
 
   cli-build:
     name: CLI · cargo build
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.cli == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults:
@@ -158,6 +224,8 @@ jobs:
 
   vue-dashboard:
     name: Vue · vms/dashboard
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.vue == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
@@ -179,6 +247,8 @@ jobs:
 
   flutter-dashboard:
     name: Flutter · infotainment/dashboard
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.flutter == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
@@ -202,6 +272,8 @@ jobs:
 
   platformio-controller:
     name: PlatformIO · generic_controller
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.platformio == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
