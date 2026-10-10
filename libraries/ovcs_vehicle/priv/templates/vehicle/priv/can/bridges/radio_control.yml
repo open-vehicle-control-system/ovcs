@@ -1,0 +1,9 @@
+---
+# The radio control bridge's CAN topology: the eight receiver channels on
+# the ovcs bus, as two frames the VMS reads.
+can_networks:
+  ovcs:
+    bitrate: 1000000
+    emitted_frames:
+      - import!:@ovcs_can:can/components/ovcs/0x2A0_radio_control_channels0.yml
+      - import!:@ovcs_can:can/components/ovcs/0x2A1_radio_control_channels1.yml

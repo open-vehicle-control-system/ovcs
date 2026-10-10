@@ -105,21 +105,13 @@ how to exercise frames.
 
 ### 4. Bridge firmwares (optional)
 
-Bridges (radio-control, ROS, …) are opt-in per vehicle. To add one,
-uncomment the `bridge_firmwares/0` callback in `lib/<%= @name %>.ex`
-and list the bridges you want bundled into each image:
-
-```elixir
-def bridge_firmwares do
-  %{
-    "radio_control" => %{
-      target: :ovcs_base_can_system_rpi3a,
-      bridges: [RadioControlBridge],
-      default_can_mapping: %{host: "ovcs:vcan0", target: "ovcs:spi0.0"}
-    }
-  }
-end
-```
+Bridges (radio-control, ROS, …) are opt-in per vehicle. Unless it was
+generated with `--no-bridges`, `lib/<%= @name %>.ex` declares two in
+`bridge_firmwares/0`, both with no components yet: `radio_control` on
+`ovcs_base_can_system_rpi3a` and `ros` on `ovcs_base_can_system_rpi4`.
+Remove the ones your vehicle has no board for, and give each one you
+keep its components in `radio_control_bridge_config/1` or
+`ros_bridge_config/1`.
 
 Each map key becomes its own build target:
 
@@ -127,12 +119,10 @@ Each map key becomes its own build target:
 ../../ovcs build <%= @name %> bridge-radio_control
 ```
 
-Each bundled bridge also needs its config callback on the vehicle
-module: `RadioControlBridge` requires `@behaviour RadioControlBridge`
-and `radio_control_bridge_config/1`, `RosBridge` requires
-`@behaviour RosBridge` and `ros_bridge_config/1` or `/2`. The
-commented block in `lib/<%= @name %>.ex` has a bootable radio-control
-example.
+Each bundled bridge needs its config callback on the vehicle module:
+`RadioControlBridge` requires `@behaviour RadioControlBridge` and
+`radio_control_bridge_config/1`, `RosBridge` requires
+`@behaviour RosBridge` and `ros_bridge_config/1` or `/2`.
 
 Each bridge firmware needs a CAN topology YAML — by convention at
 `priv/can/bridges/<firmware_id>.yml` (override the path with
