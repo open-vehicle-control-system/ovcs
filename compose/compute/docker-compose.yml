@@ -10,6 +10,8 @@
 #   ./ovcs compute push <vehicle> <fleet>            # balena's builders + OTA
 #   ./ovcs compute push <vehicle> <device>.local     # local mode, no cloud
 #
+# The command swaps each `build: ./images/<name>` for the image CI
+# published from main, unless given --build.
 # `./ovcs compute stage <vehicle> --out <dir>` writes the same tree
 # without pushing; `docker compose up -d` there is a bare-metal
 # rehearsal on any aarch64 box.
@@ -61,16 +63,13 @@ services:
     # `always` default and the container simply never exits (see
     # ./images/wifi-firmware/Dockerfile).
 
-  wifi_ap_fix:
-    # Correct the host supplicant's channel-149 / 80 MHz center frequency
-    # and restore the tested transmit-power limit after driver resets.
-    # It edits the network inside the host's wpa_supplicant over D-Bus,
-    # behind NetworkManager's back: NetworkManager rewrites that network
-    # every time it (re)activates the profile, which is why the service
-    # loops every two seconds rather than acting once. If the access
-    # point ever behaves oddly, this tug-of-war is the first suspect —
-    # `balena logs wifi_ap_fix` shows each correction it makes.
-    build: ./images/wifi-ap-fix
+  wifi_ap_radio:
+    # Keeps the access point running, on a valid 80 MHz channel 149 and
+    # at its transmit-power limit; see ./images/wifi-ap-radio/ap_radio.py.
+    # It edits the host's wpa_supplicant behind NetworkManager's back, so if
+    # the access point behaves oddly, `balena logs wifi_ap_radio` shows
+    # each correction it made.
+    build: ./images/wifi-ap-radio
     restart: always
     network_mode: host
     cap_add:
@@ -80,14 +79,14 @@ services:
     environment:
       DBUS_SYSTEM_BUS_ADDRESS: unix:path=/host/run/dbus/system_bus_socket
 
-  bridge_nat_fix:
-    # Keeps the host's NAT off frames the ovcs0 bridge forwards between
-    # eth0 and the access point — without it mDNS between a laptop on
-    # the access point and the wired boards is silently broken. See
-    # ./images/bridge-nat-fix/Dockerfile for the mechanism. Privileged
+  bridge_no_nat:
+    # Exempts frames the ovcs0 bridge forwards between eth0 and the
+    # access point from the host's NAT — without it mDNS between a laptop
+    # on the access point and the wired boards is silently broken. See
+    # ./images/bridge-no-nat/Dockerfile for the mechanism. Privileged
     # host networking because it edits the host's nat table; it loops
     # so the rule outlives NetworkManager re-activating the bridge.
-    build: ./images/bridge-nat-fix
+    build: ./images/bridge-no-nat
     restart: always
     network_mode: host
     privileged: true

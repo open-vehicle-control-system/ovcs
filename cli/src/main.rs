@@ -158,22 +158,38 @@ enum CanAction {
 
 #[derive(Subcommand)]
 enum ComputeAction {
-    /// Write compose/compute plus the vehicle's Nav2 parameters to a directory
+    /// Write the compute node's balena source root to a directory
     Stage {
         vehicle: Option<String>,
         /// Output directory (must be empty or absent)
         #[arg(short = 'o', long)]
         out: String,
+        #[command(flatten)]
+        images: ImageArgs,
     },
     /// Stage into a temporary directory and `balena push` it
     Push {
         vehicle: String,
         /// balena fleet, or `<device>.local` for local mode
         target: String,
+        #[command(flatten)]
+        images: ImageArgs,
         /// Extra `balena push` arguments, after `--`
         #[arg(last = true)]
         balena_args: Vec<String>,
     },
+}
+
+/// Which framework images the release runs. Default: the GHCR images
+/// published from the origin/main commit this checkout is based on.
+#[derive(clap::Args)]
+struct ImageArgs {
+    /// Pull the GHCR images with this tag (`latest`, `sha-<short>`)
+    #[arg(long, conflicts_with = "build")]
+    tag: Option<String>,
+    /// Build the framework images from this checkout instead of pulling them
+    #[arg(long)]
+    build: bool,
 }
 
 #[derive(Subcommand)]
@@ -236,12 +252,26 @@ fn main() -> Result<()> {
             CanAction::Status { vehicle } => commands::can::status(vehicle),
         },
         Commands::Compute { action } => match action {
-            ComputeAction::Stage { vehicle, out } => commands::compute::stage(vehicle, out),
+            ComputeAction::Stage {
+                vehicle,
+                out,
+                images,
+            } => commands::compute::stage(
+                vehicle,
+                out,
+                commands::compute::images(images.tag, images.build)?,
+            ),
             ComputeAction::Push {
                 vehicle,
                 target,
+                images,
                 balena_args,
-            } => commands::compute::push(vehicle, target, balena_args),
+            } => commands::compute::push(
+                vehicle,
+                target,
+                commands::compute::images(images.tag, images.build)?,
+                balena_args,
+            ),
         },
         Commands::New {
             name,

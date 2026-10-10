@@ -1,5 +1,5 @@
-# Keeps NetworkManager's NAT off traffic that never leaves the vehicle
-# bridge. See ../../host/README.md for the network this belongs to.
+# Exempts traffic that never leaves the vehicle bridge from
+# NetworkManager's NAT. See ../../host/README.md for the network this belongs to.
 #
 # balena-engine turns on `net.bridge.bridge-nf-call-iptables`, so every
 # frame the ovcs0 bridge forwards between eth0 and the access point is
@@ -10,8 +10,8 @@
 # with the bridge's own address and a random source port, a board
 # answers it as a legacy unicast query, and the laptop's resolver — as
 # RFC 6762 requires — discards a reply that did not come from port 5353.
-# The result is `ovcs-mini-vms.local` resolving from the site Wi-Fi but
-# not from the vehicle's own access point.
+# The result is a board's `.local` name resolving from the site Wi-Fi
+# but not from the vehicle's own access point.
 #
 # The per-bridge `nf_call_iptables` knob cannot switch this off while the
 # global sysctl is on, and turning the global one off would change how

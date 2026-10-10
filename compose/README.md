@@ -8,7 +8,7 @@ vehicle, or does it never leave a workstation?**
 compose/
 ├── compute/          PUSHED TO BALENA — the vehicle's compute node, one deployable unit
 │   ├── docker-compose.yml    the on-vehicle stack (name and place imposed by balena)
-│   ├── images/               every image the car runs: ros2/, nav2/ (with its launch file), wifi-firmware/, bridge-nat-fix/
+│   ├── images/               every image the car runs: ros2/, nav2/ (with its launch file), wifi-firmware/, wifi-ap-radio/, bridge-no-nat/, ntp/
 │   ├── vehicle/              empty; `ovcs compute stage` fills it with the vehicle's files
 │   └── host/                 balenaOS network config (copied to the device once, never pushed)
 └── local/            NEVER PUSHED — the operator's machine and the simulation workstation
@@ -39,7 +39,8 @@ multicast, just TCP peerings to `zenohd`.
 | `foxglove_bridge` | compute | Studio attaches over the LAN to `ws://<compute-node-ip>:8765` |
 | `nav2` | compute | the planner survives the base station leaving, like the router |
 | `wifi_firmware` | compute | AX210 blobs for the host kernel — not ROS at all |
-| `bridge_nat_fix` | compute | one nat rule so mDNS crosses the vehicle bridge — not ROS either |
+| `wifi_ap_radio` | compute | keeps the access point's channel and transmit power right — not ROS either |
+| `bridge_no_nat` | compute | one nat rule so mDNS crosses the vehicle bridge — not ROS either |
 | `ntp` | compute | the boards take their time from the node Nav2 runs on, online or not |
 | `ros2` (tooling shell) | local/base | interactive, `docker compose exec` |
 | `joy` | local/base | the game controller is with the operator, not the car |
@@ -95,19 +96,21 @@ takes it from the command that deploys it:
 
 ## The one link across the boundary
 
-The images the car runs are built **only** from `compute/images/`:
-balena requires every `build:` context inside the pushed directory,
-and its builders cannot inherit from a local `ovcs/*` tag. The local
-stacks reach across to build the very same Dockerfiles —
+The images the car runs are built **only** from `compute/images/`. CI
+builds them on every push to `main` and publishes them to
+`ghcr.io/open-vehicle-control-system/ovcs/<name>` as `sha-<short>` and
+`latest`; a deploy pulls them and builds only the vehicle's Nav2 layer
+(`./ovcs compute push --build` builds them from the checkout instead).
+The local stacks reach across to build the very same Dockerfiles —
 `context: ../compute/images/ros2` for the shared ROS image,
 `context: ../compute` for Nav2 — so a workstation runs the bits the car
 runs, never a copy of them. One Dockerfile, one tag, on both sides:
 
 | Image | Dockerfile | Tag | Built by |
 |---|---|---|---|
-| shared ROS 2 | `compute/images/ros2/` | `ovcs/ros2:lyrical` | balena; `local/base.yml` (`ros2` service) |
-| Nav2 | `compute/images/nav2/` | `ovcs/nav2:lyrical` | balena; `local/base.yml` and `local/simulation.yml` (`nav2`) |
-| Wi-Fi firmware | `compute/images/wifi-firmware/` | — | balena only |
+| shared ROS 2 | `compute/images/ros2/` | `ovcs/ros2:lyrical` | CI (GHCR); `local/base.yml` (`ros2` service) |
+| Nav2 | `compute/images/nav2/` | `ovcs/nav2:lyrical` | CI (GHCR); `local/base.yml` and `local/simulation.yml` (`nav2`) |
+| Wi-Fi firmware, Wi-Fi AP fix, bridge NAT fix, NTP | `compute/images/{wifi-firmware,wifi-ap-radio,bridge-no-nat,ntp}/` | — | CI (GHCR) only |
 | Gazebo | `local/images/sim/` | `ovcs/sim:jetty` | `local/simulation.yml` only |
 
 The same direction holds for Nav2's parameters: the vehicle's `nav2/`

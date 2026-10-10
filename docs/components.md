@@ -165,7 +165,7 @@ How it all connects is in [ROS 2 and the simulator](./ros2_simulator.md).
 |---|---|
 | **Path** | `compose/compute/` |
 | **Technology** | Docker Compose on balenaOS |
-| **Deploy** | `./ovcs compute push <vehicle> <fleet>`, which stages `compose/compute/` with the vehicle's `nav2/` |
+| **Deploy** | `./ovcs compute push <vehicle> <fleet>`: the framework images CI publishes to GHCR, plus the vehicle's `nav2/` |
 
 The one machine on a vehicle that is not Nerves: a Raspberry Pi 5 with a full Linux userland running the Zenoh router every bridge peers with, `foxglove_bridge`, Nav2, and the Wi-Fi firmware service behind the vehicle's access point. Every image it runs is defined under `compose/compute/images/`; the operator and simulation stacks in `compose/local/` build the same images. The OVCS Mini reference vehicle is the one with a compute node. See [`compose/README.md`](../compose/README.md) for the split and [ROS compute node](./ros2_compute_node.md) for the machine.
 
