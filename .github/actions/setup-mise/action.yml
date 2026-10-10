@@ -1,8 +1,16 @@
 name: Setup mise toolchain
 description: >
-  Install mise, run `mise install` (pulls Erlang/Elixir/Node/Flutter/Ruby/Python/
-  PlatformIO from mise.toml) and clone the sideloaded Elixir libraries under
-  `libraries/` via the mise `libraries` task.
+  Install mise and the tools from mise.toml a job needs, at the versions
+  mise.toml pins. The mise cache is keyed by the tool list, so jobs with
+  different lists never restore each other's partial installs.
+
+inputs:
+  tools:
+    description: >
+      Space-separated mise.toml tools to install, e.g. "erlang elixir".
+      Empty installs every tool.
+    required: false
+    default: ""
 
 runs:
   using: composite
@@ -11,6 +19,7 @@ runs:
       with:
         experimental: true
         cache: true
+        install_args: ${{ inputs.tools }}
 
     - name: Show toolchain
       shell: bash
