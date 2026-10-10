@@ -19,7 +19,7 @@ name: ROS 2
 #     has to agree too, but its zenoh version is not in any file this
 #     job can grep: check `bridges/ros_bridge/mix.exs` by hand.
 #   * `lint` runs ruff over the repo's own Python. Nothing else does:
-#     the launch files, the verification scripts and
+#     the launch files and
 #     `decompress_stereo.py` — which runs on the *vehicle* — are only
 #     ever parsed when something starts them, so an undefined name in
 #     an error path shipped and waited.

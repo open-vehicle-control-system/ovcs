@@ -170,10 +170,6 @@ Host 10.42.0.*
 
 **Cause:** Nav2 publishes `TwistStamped`; the Gazebo `/cmd_vel` bridge expects `Twist`, and a bridge fed the wrong type never fires. **Fix:** Nav2 publishes on `/cmd_vel_nav`, which has its own bridge node; the shipped launch files already do this. The mirror image exists on the vehicle: a `TwistStamped` body parsed as `Twist` decodes to denormals near zero, and the bridge warns about surplus bytes. That warning is the tell.
 
-### A `verify-*` task fails on a slower machine with nothing obviously wrong
-
-**Cause:** the verifiers wait for the stack with fixed `sleep`s. **Fix:** rerun with `KEEP_UP=1`, confirm the topics flow, then judge the failure.
-
 ### Topics appear on one machine and not another
 
 **Cause:** two Zenoh routers on one LAN. The `standalone` profile of `compose/local/base.yml` stands in for the vehicle's router; with a vehicle present, leave it off. Likewise start one Nav2 profile, never both.

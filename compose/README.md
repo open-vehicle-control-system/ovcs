@@ -17,7 +17,7 @@ compose/
     ├── simulation.yml        Gazebo: sim, teleop, gz-gui, nav2 against the simulator
     ├── images/sim/           the Gazebo image — the only one that never goes near the car
     ├── simulation/           worlds, macros, launch files, gamepad mapping, test scripts
-    ├── scripts/              the verifiers behind `mise run verify-*`, and calibrate.sh
+    ├── scripts/              calibrate.sh
     ├── udev/                 host rules for controllers (the G923 wheel's mode switch)
     └── calibration_output/   where the stereo calibrator drops its tarball
 ```
@@ -65,16 +65,13 @@ make a plain `up -d` fail**. Nothing is behind a profile for tidiness.
 | `base.yml` | `standalone` | `zenohd`, `foxglove_bridge` | stands in for `compute/`; two routers on one LAN is two fabrics |
 | `base.yml` | `nav2` | `nav2` (wall clock, container `ovcs-nav2-vehicle`) | stands in for the car's planner; two planners fight over `/cmd_vel_nav` |
 | `base.yml` | `calibration` | `calibrator` | one-shot X11 GUI |
-| `simulation.yml` | *(none)* | `sim` | headless Gazebo, what the verifiers rely on |
+| `simulation.yml` | *(none)* | `sim` | headless Gazebo |
 | `simulation.yml` | `nav2` | `nav2` (`use_sim_time:=true`, container `ovcs-nav2`) | the same image against the simulator's clock |
 | `simulation.yml` | `teleop` | `teleop` | `devices: /dev/input/js0` fails `up` without a controller |
 | `simulation.yml` | `gui` | `gz-gui` | needs an X socket |
 
 The two `nav2` profiles are the same image with different clocks; start
-one or the other, never both. The verifiers compose these explicitly —
-`verify-nav2` wants the router without the vehicle's planner,
-`verify-planner-loop` wants both — which is why they are not one
-profile.
+one or the other, never both.
 
 ## The one link across the boundary
 

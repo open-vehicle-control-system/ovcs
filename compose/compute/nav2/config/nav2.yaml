@@ -37,8 +37,7 @@
 #
 # What *is* silent is naming a valid but wrong model. Substituting
 # `mppi::DiffDriveMotionModel` loads cleanly and removes the radius
-# constraint entirely — see `scripts/nav2_test.py`, which exists to
-# catch exactly that.
+# constraint entirely; the simulator still arrives at goals with it.
 #
 # min_turning_r comes from the vehicle: wheelbase / tan(steering_limit)
 # = 0.324 / tan(0.52) = 0.566 m, rounded up to 0.6 for margin.

@@ -57,7 +57,6 @@ services:
       - ./simulation/launch:/opt/ovcs/launch:ro
       - ./simulation/worlds:/opt/ovcs/worlds:ro
       - ./simulation/config:/opt/ovcs/config:ro
-      - ./simulation/scripts:/opt/ovcs/scripts:ro
     command:
       - bash
       - -lc

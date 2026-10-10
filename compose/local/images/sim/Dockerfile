@@ -58,7 +58,6 @@ COPY local/simulation/common/   /opt/ovcs/common/
 COPY local/simulation/launch/   /opt/ovcs/launch/
 COPY local/simulation/worlds/   /opt/ovcs/worlds/
 COPY local/simulation/config/   /opt/ovcs/config/
-COPY local/simulation/scripts/  /opt/ovcs/scripts/
 
 # `COPY --chmod=` needs BuildKit, which balenaEngine does not
 # implement. This image never goes near balena, but the two images

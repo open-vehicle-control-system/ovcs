@@ -22,7 +22,7 @@ unstamped is the default; the code disagrees, and the code wins.)
 
 So Nav2's final output is `/cmd_vel_nav`, and `sim.launch.py`
 bridges that as `TwistStamped` alongside the existing unstamped
-`/cmd_vel` that teleop and `drive_test.py` use. Two separate bridge
+`/cmd_vel` that teleop uses. Two separate bridge
 nodes, both feeding the same Gazebo topic: one `parameter_bridge`
 cannot map two ROS topics onto one Gazebo topic, and one topic cannot
 carry two ROS types.

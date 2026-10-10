@@ -217,6 +217,6 @@ Avoid YOLOv5/v8/v10/v11 (Ultralytics, AGPL-3.0), YOLOv6 and YOLOv7 (GPL-3.0; `yo
 
 ## Next steps
 
-- [ROS 2 and the simulator](./ros2_simulator.md): the fabric, simulator time and the `verify-perception` check.
+- [ROS 2 and the simulator](./ros2_simulator.md): the fabric and simulator time.
 - [ROS compute node](./ros2_compute_node.md): the router and `foxglove_bridge` these topics reach.
 - [Simulation](../compose/local/simulation/README.md): running the perception bridge against Gazebo.
