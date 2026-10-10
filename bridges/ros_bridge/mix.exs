@@ -37,6 +37,7 @@ defmodule RosBridge.MixProject do
       {:yaml_elixir, "~> 2.12"},
       {:elixir_make, "~> 0.7", runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
+      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
 
       # OpenCV bindings + Nx — used by `Stereo.OpenCV` for JPEG
       # decode, rectification, and StereoSGBM. Evision ships

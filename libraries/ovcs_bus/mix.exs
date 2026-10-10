@@ -21,7 +21,8 @@ defmodule OvcsBus.MixProject do
   defp deps do
     [
       {:phoenix_pubsub, "~> 2.1"},
-      {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
+      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}
     ]
   end
 end

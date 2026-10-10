@@ -59,6 +59,20 @@ defmodule Ros2.SensorMsgs.Msg.CameraInfo do
     roi: %RegionOfInterest{}
   ]
 
+  @type t :: %__MODULE__{
+          header: %Header{} | nil,
+          height: non_neg_integer(),
+          width: non_neg_integer(),
+          distortion_model: String.t(),
+          d: [float()],
+          k: [float()],
+          r: [float()],
+          p: [float()],
+          binning_x: non_neg_integer(),
+          binning_y: non_neg_integer(),
+          roi: %RegionOfInterest{}
+        }
+
   # Refresh on distro bumps — `ros2 topic info -v` of any live
   # CameraInfo publisher.
   @dds_type "sensor_msgs::msg::dds_::CameraInfo_"

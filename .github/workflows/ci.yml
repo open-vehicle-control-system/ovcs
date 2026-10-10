@@ -173,6 +173,56 @@ jobs:
       - run: mix deps.get
       - run: mix test --no-start
 
+  elixir-dialyzer:
+    name: Elixir · dialyzer · ${{ matrix.project }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        project:
+          - libraries/ovcs_can
+          - libraries/ovcs_vehicle
+          - libraries/ovcs_bus
+          - libraries/ovcs_bridge
+          - libraries/ovcs_drivers
+          - vms/core
+          - vms/api
+          - vms/firmware
+          - infotainment/core
+          - infotainment/api
+          - infotainment/firmware
+          - bridges/firmware
+          - bridges/radio_control_bridge
+          - bridges/ros_bridge
+          - vehicles/ovcs1
+          - vehicles/ovcs_mini
+          - vehicles/obd2
+    defaults:
+      run:
+        working-directory: ${{ matrix.project }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup-mise
+      - name: Install system deps for Nerves NIFs
+        if: contains(matrix.project, 'firmware') || startsWith(matrix.project, 'vehicles/')
+        run: sudo apt-get update && sudo apt-get install -y libmnl-dev
+      - uses: actions/cache@v5
+        with:
+          path: |
+            ${{ matrix.project }}/deps
+            ${{ matrix.project }}/_build
+          key: dialyzer-${{ matrix.project }}-${{ hashFiles('mise.toml') }}-${{ hashFiles(format('{0}/mix.lock', matrix.project)) }}
+          restore-keys: dialyzer-${{ matrix.project }}-${{ hashFiles('mise.toml') }}-
+      - name: Locate the Erlang and Elixir PLTs
+        id: core-plts
+        run: echo "dir=$(elixir -e 'IO.puts(Mix.Utils.mix_home())')" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v5
+        with:
+          path: ${{ steps.core-plts.outputs.dir }}/dialyxir_*.plt*
+          key: dialyzer-core-plts-${{ hashFiles('mise.toml') }}
+      - run: mix deps.get
+      - run: mix dialyzer --format github
+
   elixir-compile:
     # `mix compile --warnings-as-errors` only applies to the current
     # project, not its path deps — so compiling vehicles here wouldn't

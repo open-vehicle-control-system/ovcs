@@ -824,8 +824,6 @@ defmodule RosBridge.ZenohClient do
     end
   end
 
-  defp redeclare_publishers(%State{session: nil} = state), do: state
-
   defp redeclare_publishers(%State{} = state) do
     Enum.reduce(state.publishers, state, fn {topic, publisher}, acc ->
       case redeclare_publisher(acc, topic, publisher) do

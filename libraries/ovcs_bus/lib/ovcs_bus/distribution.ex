@@ -46,7 +46,7 @@ defmodule OvcsBus.Distribution do
     name = String.to_atom("#{@sname}@#{hostname}.#{domain}")
 
     with :ok <- start_epmd(),
-         {:ok, _pid} <- Node.start(name, :longnames) do
+         {:ok, _pid} <- Node.start(name, name_domain: :longnames) do
       Logger.info("OvcsBus.Distribution started as #{inspect(Node.self())}")
       :ok
     else
