@@ -15,13 +15,20 @@ defmodule RosBridge.StereoCamera.OpenCV do
 
   ## Pipeline (per submitted pair)
 
-      decode_jpeg                              # JPEG bytes → single-channel Mat
+      decode_jpeg             # JPEG → single-channel Mat
         ↓
-      rectify_image                            # apply undistortion + rectification LUT
+      rectify_image           # undistortion + rectification maps
         ↓
-      compute_disparity                        # SGBM → CV_16S Mat (pixels × 16)
+      apply_clahe             # local contrast equalisation (:clahe)
         ↓
-      build_result                             # pack 32FC1 disparity (px) + 32FC1 depth (m)
+      compute_disparity       # StereoSGBM → CV_16S, pixels × 16
+        ↓
+      post_filter_disparity   # median filter (:post_filter)
+        ↓
+      build_result            # disparity (px), depth (mm), decimated point cloud
+
+  Every `:quality_every_n`-th pair is also measured for disparity
+  quality, which is logged with the stage timings.
 
   The rectification LUT is computed once at init from each
   camera's calibration matrices (K, D, R, P) via
@@ -48,8 +55,22 @@ defmodule RosBridge.StereoCamera.OpenCV do
     * `:rectify` (default `true`) — apply per-side undistortion
       + rectification before SGBM. Set to `false` if the driver
       already produces rectified frames.
+    * `:clahe` (`true`), `:clahe_clip_limit` (`2.0`),
+      `:clahe_tile_grid_size` (`{8, 8}`) — local contrast
+      equalisation before matching.
     * `:num_disparities` (64), `:block_size` (5), `:min_disparity`
-      (0) — `Evision.StereoSGBM` parameters.
+      (0), `:mode` (`:sgbm_3way`; or `:sgbm`, `:hh`, `:hh4`) —
+      `Evision.StereoSGBM` parameters.
+    * `:uniqueness_ratio` (10), `:disp12_max_diff` (2),
+      `:pre_filter_cap` (31), `:speckle_window_size` (100),
+      `:speckle_range` (32), `:p1` / `:p2` (8 and 32 × `block_size`²)
+      — the matcher's filtering and smoothness settings; see
+      `option_specs/0`.
+    * `:post_filter` (`:median` or `:none`), `:post_filter_ksize` (5)
+      — filter applied to the raw disparity.
+    * `:cloud_decimation` (4) — keep one point cloud point every N
+      pixels in each direction; 0 publishes no point cloud.
+    * `:quality_every_n` (5) — how often the quality probe runs.
     * `:name` — GenServer name (default `__MODULE__`).
   """
   use GenServer

@@ -492,11 +492,8 @@ defmodule RosBridge.ZenohClient do
   # the subscription down with it.
   #
   # The token names a concrete type, so it needs `dds_type/0` and
-  # `type_hash/0` — and several message modules are subscribe-only and
-  # define neither (`sensor_msgs/Joy` among them, which is how
-  # throttle and steering reach the vehicle). Those subscriptions
-  # simply go untokenised. Calling the missing function instead would
-  # crash the whole client on the one topic that must never fail.
+  # `type_hash/0`; a subscription whose module defines neither goes
+  # untokenised rather than crashing the client.
   defp declare_subscriber_liveliness(subscription, %State{} = state) do
     module = subscription.message_module
     Code.ensure_loaded(module)

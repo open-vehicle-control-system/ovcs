@@ -2,7 +2,7 @@ defmodule Ros2.VisualizationMsgs.Msg.Marker do
   @moduledoc """
   ROS 2 `visualization_msgs/Marker` — the message Foxglove's 3D panel
   actually renders for arbitrary annotations. Field order on the wire
-  (Jazzy):
+  (Lyrical):
 
       std_msgs/Header header
       string ns

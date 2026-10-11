@@ -73,8 +73,7 @@ defmodule Ros2.SensorMsgs.Msg.CameraInfo do
           roi: %RegionOfInterest{}
         }
 
-  # Refresh on distro bumps — `ros2 topic info -v` of any live
-  # CameraInfo publisher.
+  # RIHS01 hash for ROS 2 Lyrical; it changes with the distro.
   @dds_type "sensor_msgs::msg::dds_::CameraInfo_"
   @type_hash "RIHS01_b3dfd68ff46c9d56c80fd3bd4ed22c7a4ddce8c8348f2f59c299e73118e7e275"
 

@@ -12,10 +12,7 @@ defmodule Ros2.RosgraphMsgs.Msg.Clock do
 
   defstruct clock: %Time{}
 
-  # rmw_zenoh keyexpr metadata for `rosgraph_msgs/msg/Clock`, so a subscription declares
-  # its liveliness token and shows in the ROS graph. The RIHS01 hash was
-  # captured against ROS 2 Lyrical via `ros2 topic info -v`. Refresh on
-  # distro bumps.
+  # RIHS01 hash for ROS 2 Lyrical; it changes with the distro.
   @dds_type "rosgraph_msgs::msg::dds_::Clock_"
   @type_hash "RIHS01_692f7a66e93a3c83e71765d033b60349ba68023a8c689a79e48078bcb5c58564"
 

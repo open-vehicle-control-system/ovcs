@@ -126,9 +126,8 @@ defmodule RosBridge.Camera.GStreamer do
   @impl RosBridge.Camera
   def enable(_server), do: :ok
 
-  # `-q` suppresses gst-launch's chatter on stderr; we already merge
-  # stderr→stdout via the Port opts so errors still surface, but
-  # routine progress prints don't pollute the JPEG byte stream.
+  # `-q` keeps gst-launch's routine progress off stderr, which the
+  # BEAM inherits; errors still print there.
   defp pipeline_args(device, width, height, fps) do
     [
       "-q",

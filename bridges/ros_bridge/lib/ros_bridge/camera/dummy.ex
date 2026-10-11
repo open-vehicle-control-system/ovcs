@@ -1,7 +1,7 @@
 defmodule RosBridge.Camera.Dummy do
   @moduledoc """
   Fixture stub for `RosBridge.Camera`. Emits a tiny canned JPEG
-  on a timer so consumers (CameraPublisher etc.) can be exercised
+  on a timer so consumers (`RosBridge.Publishers.StereoCamera`) can be exercised
   without an attached sensor or v4l2 device. Useful for CI and
   headless host dev.
 

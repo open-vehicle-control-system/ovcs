@@ -9,7 +9,7 @@ defmodule RosBridge.Inference.Supervisor do
   OpenCL on a workstation, `Stub` for plumbing only.
 
   Exists to contain failure rather than to organise code. The bridge's
-  own supervisor is `:one_for_one` with the default restart intensity
+  own supervisor is `:rest_for_one` with the default restart intensity
   (3 in 5 seconds), and `RosBridge.Publishers.Detections` handles a
   cast at the stereo frame rate — so a bug that raises on every frame
   would exhaust that budget in about 200 ms and take the *whole*

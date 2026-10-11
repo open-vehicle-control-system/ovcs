@@ -8,11 +8,7 @@ defmodule Ros2.StdMsgs.Msg.String do
 
   defstruct data: ""
 
-  # rmw_zenoh keyexpr metadata. The DDS-mangled type name comes from
-  # rosidl's IDL convention. The type hash is the REP-2016 RIHS01
-  # value for std_msgs/msg/String in ROS 2 Jazzy — verify from a live
-  # node with `ros2 topic info -v <topic>` (the "Topic type hash"
-  # line) and refresh this constant if you ever bump distros.
+  # RIHS01 hash for ROS 2 Lyrical; it changes with the distro.
   @dds_type "std_msgs::msg::dds_::String_"
   @type_hash "RIHS01_df668c740482bbd48fb39d76a70dfd4bd59db1288021743503259e948f6b1a18"
 

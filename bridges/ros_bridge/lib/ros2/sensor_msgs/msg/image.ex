@@ -52,8 +52,7 @@ defmodule Ros2.SensorMsgs.Msg.Image do
     data: <<>>
   ]
 
-  # Captured against ROS 2 Jazzy via `ros2 topic info -v` on an
-  # rclpy publisher of `sensor_msgs/Image`. Refresh on distro bumps.
+  # RIHS01 hash for ROS 2 Lyrical; it changes with the distro.
   @dds_type "sensor_msgs::msg::dds_::Image_"
   @type_hash "RIHS01_d31d41a9a4c4bc8eae9be757b0beed306564f7526c88ea6a4588fb9582527d47"
 

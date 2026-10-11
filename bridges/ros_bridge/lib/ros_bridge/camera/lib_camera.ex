@@ -576,11 +576,7 @@ defmodule RosBridge.Camera.LibCamera do
   defp log_level(1), do: :warning
   defp log_level(_), do: :error
 
-  # `:code.priv_dir/1` resolves to the consumer's priv (here:
-  # ros_bridge's), where elixir_make drops the binary. We keep the
-  # native binary in ros_bridge/priv because that's where the
-  # build infrastructure already lives — ovcs_drivers stays
-  # pure-Elixir.
+  # elixir_make builds camera_capture into ros_bridge's priv.
   defp binary_path do
     case :code.priv_dir(:ros_bridge) do
       {:error, :bad_name} ->

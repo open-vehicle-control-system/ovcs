@@ -4,10 +4,7 @@ defmodule Ros2.SensorMsgs.Msg.Joy do
 
   defstruct header: nil, axes: [], buttons: []
 
-  # rmw_zenoh keyexpr metadata for `sensor_msgs/msg/Joy`, so a subscription declares
-  # its liveliness token and shows in the ROS graph. The RIHS01 hash was
-  # captured against ROS 2 Lyrical via `ros2 topic info -v`. Refresh on
-  # distro bumps.
+  # RIHS01 hash for ROS 2 Lyrical; it changes with the distro.
   @dds_type "sensor_msgs::msg::dds_::Joy_"
   @type_hash "RIHS01_0d356c79cad3401e35ffeb75a96a96e08be3ef896b8b83841d73e890989372c5"
 
