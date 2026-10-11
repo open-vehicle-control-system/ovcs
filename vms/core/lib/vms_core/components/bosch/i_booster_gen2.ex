@@ -22,6 +22,8 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
     * `:contact_source` — the component publishing `:contact`.
     * `:controller`, `:power_relay_pin` — the generic controller digital
       pin switching the booster's power.
+    * `:kp`, `:ki`, `:kd` — the rod position PID gains, default 250, 0
+      and 0.
   """
   use GenServer
   alias Cantastic.{Emitter, Frame, Receiver, Signal}
@@ -40,9 +42,7 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
   @max_rod_position_mm D.new("16.56")
   @rod_position_range_mm @max_rod_position_mm |> D.sub(@min_rod_position_mm)
 
-  @kp D.new(250)
-  @ki D.new(0)
-  @kd D.new(0)
+  @default_gains %{kp: 250, ki: 0, kd: 0}
 
   @loop_period_ms 10
 
@@ -51,13 +51,18 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
   end
 
   @impl GenServer
-  def init(%{
-        network: network,
-        selected_control_level_source: selected_control_level_source,
-        contact_source: contact_source,
-        controller: controller,
-        power_relay_pin: power_relay_pin
-      }) do
+  def init(
+        %{
+          network: network,
+          selected_control_level_source: selected_control_level_source,
+          contact_source: contact_source,
+          controller: controller,
+          power_relay_pin: power_relay_pin
+        } = args
+      ) do
+    gains =
+      Map.new(@default_gains, fn {key, default} -> {key, D.new(Map.get(args, key, default))} end)
+
     :ok = Receiver.subscribe(self(), network, ["ibooster_status"])
     Bus.subscribe("messages")
 
@@ -114,9 +119,9 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
        automatic_mode_enabled: false,
        requested_braking: @zero,
        manual_braking: false,
-       kp: @kp,
-       ki: @ki,
-       kd: @kd
+       kp: gains.kp,
+       ki: gains.ki,
+       kd: gains.kd
      }}
   end
 

@@ -27,6 +27,12 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
       stepper.
     * `:direction_pin` — its digital pin for the direction.
     * `:external_pwm_id` — its external PWM for the steps.
+    * `:max_steering_angle_deg` — the column angle of a full
+      `:requested_steering`.
+    * `:kp`, `:ki`, `:kd` — the PID gains to start from, default 0.07,
+      0.005 and 0.005.
+    * `:input_deadband`, `:input_alpha` — the input filter's settings to
+      start from, default 0 and 0.2.
   """
   use GenServer
   alias Cantastic.{Emitter, Frame, Receiver, Signal}
@@ -43,16 +49,13 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
   @step_duty_cycle D.new("0.5")
   @direction_pin_levels %{clockwise: true, counter_clockwise: false}
 
-  # Defaults until tuned from the dashboard.
-  @kp D.new("0.07")
-  @ki D.new("0.005")
-  @kd D.new("0.005")
-
-  # Filter on requested_steering before the PID; defaults until tuned from the dashboard.
-  @input_deadband D.new("0")
-  @input_alpha D.new("0.2")
-
-  @max_steering_angle_deg D.new(400)
+  @default_tuning %{
+    kp: "0.07",
+    ki: "0.005",
+    kd: "0.005",
+    input_deadband: "0",
+    input_alpha: "0.2"
+  }
   @lws_command_duration_ms 500
 
   def start_link(args) do
@@ -60,15 +63,21 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
   end
 
   @impl GenServer
-  def init(%{
-        network: network,
-        selected_control_level_source: selected_control_level_source,
-        power_relay_controller: power_relay_controller,
-        power_relay_pin: power_relay_pin,
-        actuation_controller: actuation_controller,
-        direction_pin: direction_pin,
-        external_pwm_id: external_pwm_id
-      }) do
+  def init(
+        %{
+          network: network,
+          selected_control_level_source: selected_control_level_source,
+          power_relay_controller: power_relay_controller,
+          power_relay_pin: power_relay_pin,
+          actuation_controller: actuation_controller,
+          direction_pin: direction_pin,
+          external_pwm_id: external_pwm_id,
+          max_steering_angle_deg: max_steering_angle_deg
+        } = args
+      ) do
+    tuning =
+      Map.new(@default_tuning, fn {key, default} -> {key, D.new(Map.get(args, key, default))} end)
+
     :ok =
       Emitter.configure(network, "lws_config", %{
         parameters_builder_function: :default,
@@ -106,11 +115,12 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
        target_motor_speed_percentage: @zero,
        selected_control_level_source: selected_control_level_source,
        selected_control_level: nil,
-       kp: @kp,
-       ki: @ki,
-       kd: @kd,
-       input_deadband: @input_deadband,
-       input_alpha: @input_alpha
+       max_steering_angle_deg: D.new(max_steering_angle_deg),
+       kp: tuning.kp,
+       ki: tuning.ki,
+       kd: tuning.kd,
+       input_deadband: tuning.input_deadband,
+       input_alpha: tuning.input_alpha
      }}
   end
 
@@ -218,7 +228,7 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
 
   defp set_desired_angle(state) when state.automatic_mode_enabled == true do
     input_filter = InputFilter.apply(state.input_filter, state.requested_steering)
-    desired_angle = input_filter.value |> D.mult(@max_steering_angle_deg)
+    desired_angle = input_filter.value |> D.mult(state.max_steering_angle_deg)
     %{state | input_filter: input_filter, desired_angle: desired_angle}
   end
 

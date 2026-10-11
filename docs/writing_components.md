@@ -323,15 +323,15 @@ Sources are the `*_source` options; "controller" means a generic controller proc
 
 | Driver | Network | Options | Publishes |
 |---|---|---|---|
-| `Nissan.LeafAZE0.Inverter` | `network:` (`leaf_drive` in OVCS1) | control level, gear, contact sources; `controller`, `power_relay_pin` | rpm, torques, output voltage, temperatures, `:ready_to_drive` |
+| `Nissan.LeafAZE0.Inverter` | `network:` (`leaf_drive` in OVCS1) | control level, gear, contact sources; `controller`, `power_relay_pin`; `drive_max_torque_nm`, `reverse_max_torque_nm`, `effective_throttle_threshold` | rpm, torques, output voltage, temperatures, `:ready_to_drive` |
 | `Nissan.LeafAZE0.Charger` (no reference vehicle; not working, the charge does not start) | `network:` | `maximum_power_for_charger_source` | charge power, AC voltage, charging state |
 | `Orion.Bms2` | `network:` (`orion_bms` in OVCS1) | `controller`, `ready_relay_pin` | pack voltage, current, SoC, temperatures, relay states, `:is_alive` |
 | `Evpt.Evpt23Charger` | `network:` (`orion_bms` in OVCS1) | none | output voltage and current, protection flags |
 | `Volkswagen.Polo9N.ABS`, `.IgnitionLock`, `.PassengerCompartment` | `network:` (`polo_drive` in OVCS1) | none | `:speed` and wheel speeds; `:contact`; door, beam and handbrake states |
 | `Volkswagen.Polo9N.Dashboard` | `network:` (`polo_drive` in OVCS1) | contact, rpm sources | nothing (drives the cluster) |
 | `Volkswagen.Polo9N.PowerSteeringPump` | `network:` (`misc` in OVCS1) | gear source | nothing |
-| `Bosch.IBoosterGen2` | `network:` (`misc` in OVCS1) | control level, contact sources; `controller`, `power_relay_pin` | rod position, flow rate, `:manual_braking`, `:status` |
-| `OVCS.SteeringColumn` | `network:` (`misc` in OVCS1) | control level source; `power_relay_controller`, `power_relay_pin`, `actuation_controller`, `direction_pin`, `external_pwm_id` | angle, angular speed, calibration, PID gains |
+| `Bosch.IBoosterGen2` | `network:` (`misc` in OVCS1) | control level, contact sources; `controller`, `power_relay_pin`; PID gains | rod position, flow rate, `:manual_braking`, `:status` |
+| `OVCS.SteeringColumn` | `network:` (`misc` in OVCS1) | control level source; `power_relay_controller`, `power_relay_pin`, `actuation_controller`, `direction_pin`, `external_pwm_id`, `max_steering_angle_deg`; PID gains, input filter | angle, angular speed, calibration, PID gains |
 | `OVCS.GenericController` | `ovcs` | `process_name`, `control_digital_pins`, `control_other_pins`, `enabled_external_pwms` | `:is_alive`, `:status`, `received_*` / `requested_*` pins |
 | `OVCS.RadioControl.*` | `ovcs` | `radio_control_channel` | the `requested_*` value of its channel |
 | `OVCS.RosActuatorCommand.*`, `OVCS.RosVelocityCommand` | `ovcs` | none; `wheelbase_m`, `steering_limit_rad`, `max_speed_m_s` | `:requested_throttle`, `:requested_steering`, `:requested_direction` |

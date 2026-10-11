@@ -33,6 +33,15 @@ defmodule Ovcs1.Vms.Composer do
   alias VmsCore.Managers
   alias Ovcs1.Vms
 
+  @inverter_drive_max_torque_nm 100
+  @inverter_reverse_max_torque_nm 100
+
+  @doc "The Leaf inverter's torque request at full throttle in `:drive`, in newton-metres."
+  def inverter_drive_max_torque_nm, do: @inverter_drive_max_torque_nm
+
+  @doc "The Leaf inverter's torque request at full throttle in `:reverse`, in newton-metres."
+  def inverter_reverse_max_torque_nm, do: @inverter_reverse_max_torque_nm
+
   @impl VmsCore.Vehicle
   def children do
     [
@@ -118,7 +127,9 @@ defmodule Ovcs1.Vms.Composer do
          selected_gear_source: Managers.Gear,
          contact_source: Polo9N.IgnitionLock,
          controller: Vms.RearController,
-         power_relay_pin: 7
+         power_relay_pin: 7,
+         drive_max_torque_nm: @inverter_drive_max_torque_nm,
+         reverse_max_torque_nm: @inverter_reverse_max_torque_nm
        }},
 
       # Orion
@@ -233,7 +244,8 @@ defmodule Ovcs1.Vms.Composer do
          power_relay_pin: 6,
          actuation_controller: Vms.ControlsController,
          direction_pin: 1,
-         external_pwm_id: 0
+         external_pwm_id: 0,
+         max_steering_angle_deg: 400
        }},
       {OVCS.WaterPump,
        %{
