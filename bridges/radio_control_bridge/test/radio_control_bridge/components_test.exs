@@ -95,12 +95,12 @@ defmodule RadioControlBridge.ComponentsTest do
   end
 
   defp reset_express_lrs(previous) do
-    for {k, _v} <- Application.get_all_env(:express_lrs) do
-      Application.delete_env(:express_lrs, k)
+    for {key, _value} <- Application.get_all_env(:express_lrs) do
+      Application.delete_env(:express_lrs, key)
     end
 
-    for {k, v} <- previous do
-      Application.put_env(:express_lrs, k, v, persistent: true)
+    for {key, value} <- previous do
+      Application.put_env(:express_lrs, key, value, persistent: true)
     end
   end
 end

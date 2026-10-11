@@ -42,19 +42,17 @@ end
 defmodule RadioControlBridge do
   @moduledoc """
   Bridge library that forwards ExpressLRS MAVLink RC channels onto
-  the vehicle's OVCS CAN bus and (eventually) pushes vehicle
-  telemetry back out as MSP DisplayPort to a VTX. Hosted by the
-  shared `bridges/firmware` Nerves image; vehicles opt in via their
-  `bridge_firmwares/0` map.
+  the vehicle's OVCS CAN bus. The MSP DisplayPort path to a VTX
+  (`RadioControlBridge.MspOsdForwarder`) is a placeholder that sends
+  nothing. Hosted by the shared `bridges/firmware` Nerves image;
+  vehicles opt in via their `bridge_firmwares/0` map.
 
   Vehicles implement `c:radio_control_bridge_config/1` to declare
   which components run. UART pins and baud rates live in each
-  component's opts — `:mavlink_forwarder` carries the ExpressLRS
-  UART, and `:msp_osd_forwarder` will carry the MSP DisplayPort
-  UART when it's implemented. The bridge firmware's `runtime.exs`
-  reads each component's opts in turn to stamp the matching
-  third-party app env (`:express_lrs`, `:msp_osd`, …) before
-  applications start.
+  component's opts: `:mavlink_forwarder` carries the ExpressLRS
+  UART. The bridge firmware's `runtime.exs` calls
+  `apply_runtime_config/2` to stamp the `:express_lrs` application
+  env before applications start.
   """
   @behaviour OvcsBridge
 
@@ -70,11 +68,8 @@ defmodule RadioControlBridge do
   """
   @callback radio_control_bridge_config(:host | :target) :: RadioControlBridge.Config.t()
 
-  # `Mix.target()` MUST be read at module-compile time, not at
-  # runtime: on a deployed Nerves device the Mix application isn't
-  # loaded the way it is during a build, so `Mix.target()` at runtime
-  # silently returns `:host` and the wrong vehicle config arm gets
-  # picked. Branching on the compile-time value bakes the arm in.
+  # Read at compile time: on a Nerves device Mix.target() returns
+  # :host at runtime, which would pick the wrong config arm.
   @arm if Mix.target() == :host, do: :host, else: :target
 
   @impl OvcsBridge
@@ -83,17 +78,14 @@ defmodule RadioControlBridge do
     Enum.flat_map(config.components, &resolve_component/1)
   end
 
+  @doc """
+  Stamps the `:express_lrs` application env from the vehicle's
+  `:mavlink_forwarder` options. `ExpressLrs.Application` reads
+  `:enabled` and `:interface` once at boot, so `bridges/firmware`'s
+  `config/runtime.exs` calls this before applications start. Without
+  `:mavlink_forwarder` nothing is set and the connector stays off.
+  """
   @impl OvcsBridge
-  # `ExpressLrs.Application` reads its `:enabled` + `:interface`
-  # config once at boot, so the UART pin has to land in
-  # Application env *before* the app tree starts. Called from
-  # `bridges/firmware`'s `config/runtime.exs` (which knows nothing
-  # about the per-bridge contract — it just dispatches to every
-  # bundled bridge that exports this callback).
-  #
-  # Vehicles that don't enable `:mavlink_forwarder` (host arm,
-  # autonomy-only setups, etc.) produce no `:express_lrs` config —
-  # the app stays disabled.
   def apply_runtime_config(vehicle, build_target) do
     config = vehicle.radio_control_bridge_config(build_target)
 

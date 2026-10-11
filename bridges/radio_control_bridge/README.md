@@ -8,14 +8,14 @@ through `bridge_firmwares/0`.
 
 ## What it does
 
-- **MAVLink RC in** — reads MAVLink v2 `RC_CHANNELS` (and friends) from
-  a UART connected to the RC receiver via [`express_lrs`](../../libraries/express_lrs),
-  translates channels into throttle / steering / direction / control-mode
-  CAN frames on the OVCS bus.
-- **MSP OSD out** — pushes vehicle telemetry (RSSI, gear, speed, …) back
-  to MSP-compatible VTXs (HDZero / Walksnail / DJI) via
-  [`msp_osd`](../../libraries/msp_osd), so the pilot sees OVCS state on
-  the goggles' OSD.
+- **MAVLink RC in** — reads MAVLink v2 `RC_CHANNELS_OVERRIDE` from a
+  UART connected to the RC receiver via [`express_lrs`](../../libraries/express_lrs)
+  and emits the eight raw channels on the OVCS bus as two
+  `radio_control_channels` frames. The vehicle's VMS turns channels into
+  throttle, steering, direction and control level.
+- **MSP OSD out** — a placeholder (`RadioControlBridge.MspOsdForwarder`)
+  that sends nothing yet. [`msp_osd`](../../libraries/msp_osd) provides
+  the MSP DisplayPort transport for VTXs (HDZero / Walksnail / DJI).
 
 ## Components — per-vehicle configuration
 
@@ -30,14 +30,14 @@ Catalogue (extend by adding a clause to
 | Component             | Opts                                                                                 | Child specs started |
 |-----------------------|--------------------------------------------------------------------------------------|---------------------|
 | `:mavlink_forwarder`  | `:uart_port`, `:uart_baud_rate` (both required) — the ExpressLRS receiver UART. Read by `bridges/firmware`'s `runtime.exs` to stamp `:express_lrs` Application env before `ExpressLrs.Application` boots. | `RadioControlBridge.MavlinkForwarder` (decoded MAVLink → CAN) |
-| `:msp_osd_forwarder`  | (none yet; will gain its own `:uart_port` / `:uart_baud_rate` when implemented — separate serial line to the VTX, not the ExpressLRS receiver) | `RadioControlBridge.MspOsdForwarder` (placeholder) |
+| `:msp_osd_forwarder`  | none | `RadioControlBridge.MspOsdForwarder` (placeholder) |
 
 UART pins live with the component that uses them — two forwarders
 that drive separate hardware (ExpressLRS receiver vs. MSP
 DisplayPort to a VTX) don't share a single global UART field.
-`ExpressLrs.Mavlink.Connector` itself is started from
-`bridges/firmware`'s application tree once `runtime.exs` has read
-the component opts; it's not a child of this bridge.
+`ExpressLrs.Mavlink.Connector` is started by `ExpressLrs.Application`
+when `runtime.exs` has enabled it from the component opts; it's not a
+child of this bridge.
 
 ## Vehicle-side configuration
 

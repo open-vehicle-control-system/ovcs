@@ -1,7 +1,8 @@
 defmodule RadioControlBridge.MavlinkForwarder.State do
+  @moduledoc false
   defstruct rc_count: 0,
             other_counts: %{},
-            last_rc_at: nil
+            last_rc_at_ms: nil
 end
 
 defmodule RadioControlBridge.MavlinkForwarder do
@@ -16,9 +17,11 @@ defmodule RadioControlBridge.MavlinkForwarder do
   require Logger
   use GenServer
 
-  # Heartbeat interval: every 5s, log a summary of MAVLink traffic so
-  # silence (no MAVLink at all, vs. only non-RC messages) is obvious.
+  # A periodic traffic summary tells no MAVLink from only non-RC messages.
   @heartbeat_interval_ms 5_000
+  # One debug line per this many messages of a type: logging every
+  # message starves the SC16IS SPI drain and overruns its RX FIFO.
+  @log_sample_every 100
 
   @spec start_link(any()) :: :ignore | {:error, any()} | {:ok, pid()}
   def start_link(args) do
@@ -64,11 +67,8 @@ defmodule RadioControlBridge.MavlinkForwarder do
   end
 
   @impl GenServer
-  def handle_cast({:mavlink_message, %{name: "RC_CHANNELS_OVERRIDE"} = msg}, state) do
-    channels =
-      Enum.reduce(msg.base_fields, %{}, fn field, acc ->
-        Map.put(acc, field.name, field.value)
-      end)
+  def handle_cast({:mavlink_message, %{name: "RC_CHANNELS_OVERRIDE"} = message}, state) do
+    channels = Map.new(message.base_fields, &{&1.name, &1.value})
 
     cond do
       state.rc_count == 0 ->
@@ -76,12 +76,9 @@ defmodule RadioControlBridge.MavlinkForwarder do
           "#{__MODULE__}: first RC_CHANNELS_OVERRIDE received — channels=#{inspect(channels)}"
         )
 
-      # Sample one frame per ~second so debug builds get a useful trace
-      # without flooding the scheduler at 100 Hz (which can starve the
-      # SC16IS SPI drain and trigger RX FIFO overruns).
-      rem(state.rc_count, 100) == 0 ->
+      rem(state.rc_count, @log_sample_every) == 0 ->
         Logger.debug(fn ->
-          "RC_CHANNELS_OVERRIDE channels=#{inspect(channels)} (sample 1/100)"
+          "RC_CHANNELS_OVERRIDE channels=#{inspect(channels)} (sample 1/#{@log_sample_every})"
         end)
 
       true ->
@@ -89,9 +86,9 @@ defmodule RadioControlBridge.MavlinkForwarder do
     end
 
     :ok =
-      Emitter.update(:ovcs, "radio_control_channels0", fn data ->
+      Emitter.update(:ovcs, "radio_control_channels0", fn frame_data ->
         %{
-          data
+          frame_data
           | "channel1" => channels["chan1_raw"],
             "channel2" => channels["chan2_raw"],
             "channel3" => channels["chan3_raw"],
@@ -100,9 +97,9 @@ defmodule RadioControlBridge.MavlinkForwarder do
       end)
 
     :ok =
-      Emitter.update(:ovcs, "radio_control_channels1", fn data ->
+      Emitter.update(:ovcs, "radio_control_channels1", fn frame_data ->
         %{
-          data
+          frame_data
           | "channel5" => channels["chan5_raw"],
             "channel6" => channels["chan6_raw"],
             "channel7" => channels["chan7_raw"],
@@ -111,22 +108,20 @@ defmodule RadioControlBridge.MavlinkForwarder do
       end)
 
     {:noreply,
-     %{state | rc_count: state.rc_count + 1, last_rc_at: System.monotonic_time(:millisecond)}}
+     %{state | rc_count: state.rc_count + 1, last_rc_at_ms: System.monotonic_time(:millisecond)}}
   end
 
   def handle_cast({:mavlink_message, %{name: name}}, state) do
-    seen = Map.get(state.other_counts, name, 0)
+    seen_count = Map.get(state.other_counts, name, 0)
 
     cond do
-      seen == 0 ->
+      seen_count == 0 ->
         Logger.info("#{__MODULE__}: first ignored MAVLink #{inspect(name)}")
 
-      # Sample 1/100 to keep noisy message types (RADIO_STATUS at ~100 Hz)
-      # from flooding the log; per-type counts still surface in the
-      # heartbeat every 5s.
-      rem(seen, 100) == 0 ->
+      # Per-type counts still appear in the heartbeat summary.
+      rem(seen_count, @log_sample_every) == 0 ->
         Logger.debug(fn ->
-          "#{__MODULE__}: ignored MAVLink #{inspect(name)} (sample 1/100, total=#{seen})"
+          "#{__MODULE__}: ignored MAVLink #{inspect(name)} (sample 1/#{@log_sample_every}, total=#{seen_count})"
         end)
 
       true ->
@@ -141,9 +136,9 @@ defmodule RadioControlBridge.MavlinkForwarder do
   @impl GenServer
   def handle_info(:heartbeat, state) do
     age_ms =
-      case state.last_rc_at do
+      case state.last_rc_at_ms do
         nil -> nil
-        t -> System.monotonic_time(:millisecond) - t
+        last_rc_at_ms -> System.monotonic_time(:millisecond) - last_rc_at_ms
       end
 
     cond do
