@@ -18,6 +18,14 @@ defmodule VmsCore.Components.OVCS.RosCommand.FreshnessTest do
     assert {:unchanged, _} = Freshness.check(freshness, 1_000)
   end
 
+  test "keeps its times in the caller's milliseconds" do
+    freshness = Freshness.new(@timeout_ms, 42)
+    assert freshness.created_at_ms == 42
+
+    {:new, freshness} = Freshness.observe(freshness, 1, 100)
+    assert freshness.fresh_at_ms == 100
+  end
+
   test "a changing sequence is fresh input, a repeated one is not" do
     freshness = Freshness.new(@timeout_ms, 0)
     assert {:new, freshness} = Freshness.observe(freshness, 7, 10)
