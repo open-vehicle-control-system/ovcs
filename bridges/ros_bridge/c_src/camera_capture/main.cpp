@@ -1,19 +1,6 @@
-// camera_capture — opens a single libcamera CSI sensor and writes
-// JPEG frames to stdout in the OVCS port framing protocol (see
-// ../common/framing.h).
-//
-// Pipeline:
-//   1. CameraManager::start()
-//   2. Acquire cameras()[args.camera_id]
-//   3. generateConfiguration({StreamRole::VideoRecording}) at
-//      args.width × args.height, pixel format YUV420
-//   4. FrameBufferAllocator + mmap each buffer's planes once
-//   5. Create one Request per buffer, queueRequest
-//   6. requestCompleted slot: encode YUV420 → JPEG via libjpeg-turbo,
-//      write_record(...), reuse(Request::ReuseBuffers), re-queue
-//   7. Stop on stdin EOF (BEAM closing the Port)
-//
-// fps is enforced via FrameDurationLimits = [period_us, period_us].
+// camera_capture: one libcamera sensor, YUV420 encoded to JPEG FRAME records on
+// stdout (../common/framing.h); `Name=value` controls arrive on stdin, and
+// stdin EOF stops the capture.
 
 #include <algorithm>
 #include <atomic>
@@ -50,12 +37,12 @@ enum LogLevel : uint8_t { LOG_INFO = 0, LOG_WARNING = 1, LOG_ERROR = 2 };
 void log_message(LogLevel level, const char* format, ...) __attribute__((format(printf, 2, 3)));
 
 void log_message(LogLevel level, const char* format, ...) {
-  char buf[512];
+  char message[512];
   va_list args;
   va_start(args, format);
-  std::vsnprintf(buf, sizeof(buf), format, args);
+  std::vsnprintf(message, sizeof(message), format, args);
   va_end(args);
-  auto record = ovcs::framing::build_log_record(level, buf);
+  auto record = ovcs::framing::build_log_record(level, message);
   ovcs::framing::write_record(record.data(), record.size());
 }
 
@@ -87,28 +74,28 @@ struct Args {
 
 bool parse_args(int argc, char** argv, Args& out) {
   for (int i = 1; i < argc; ++i) {
-    std::string a = argv[i];
+    std::string flag = argv[i];
     auto next = [&]() -> const char* { return (i + 1 < argc) ? argv[++i] : nullptr; };
-    if (a == "--camera" && next()) out.camera_id = std::atoi(argv[i]);
-    else if (a == "--width" && next()) out.width = std::atoi(argv[i]);
-    else if (a == "--height" && next()) out.height = std::atoi(argv[i]);
-    else if (a == "--fps" && next()) out.fps = std::atoi(argv[i]);
-    else if (a == "--rotation" && next()) out.rotation = std::atoi(argv[i]);
-    else if (a == "--sync" && next()) {
+    if (flag == "--camera" && next()) out.camera_id = std::atoi(argv[i]);
+    else if (flag == "--width" && next()) out.width = std::atoi(argv[i]);
+    else if (flag == "--height" && next()) out.height = std::atoi(argv[i]);
+    else if (flag == "--fps" && next()) out.fps = std::atoi(argv[i]);
+    else if (flag == "--rotation" && next()) out.rotation = std::atoi(argv[i]);
+    else if (flag == "--sync" && next()) {
       std::string mode = argv[i];
       if (mode == "server") out.sync_mode = controls::rpi::SyncModeServer;
       else if (mode == "client") out.sync_mode = controls::rpi::SyncModeClient;
       else { log_message(LOG_WARNING, "--sync must be server or client"); return false; }
     }
-    else if (a == "--exposure-mode" && next()) {
+    else if (flag == "--exposure-mode" && next()) {
       std::string mode = argv[i];
       if (mode == "normal") out.exposure_mode = controls::ExposureNormal;
       else if (mode == "short") out.exposure_mode = controls::ExposureShort;
       else if (mode == "long") out.exposure_mode = controls::ExposureLong;
       else { log_message(LOG_WARNING, "--exposure-mode must be normal, short or long"); return false; }
     }
-    else if (a == "--lens-position" && next()) out.lens_position = std::strtof(argv[i], nullptr);
-    else if (a == "--sensor-mode" && next()) {
+    else if (flag == "--lens-position" && next()) out.lens_position = std::strtof(argv[i], nullptr);
+    else if (flag == "--sensor-mode" && next()) {
       // WIDTHxHEIGHT or WIDTHxHEIGHT:BITDEPTH
       if (std::sscanf(argv[i], "%ux%u:%u", &out.sensor_width, &out.sensor_height,
                       &out.sensor_bit_depth) < 2) {
@@ -116,17 +103,26 @@ bool parse_args(int argc, char** argv, Args& out) {
         return false;
       }
     }
-    else { log_message(LOG_WARNING, "unknown arg %s", a.c_str()); return false; }
+    else { log_message(LOG_WARNING, "unknown arg %s", flag.c_str()); return false; }
   }
   return true;
 }
 
 std::atomic<bool> g_stop{false};
 
-// What libcamera applied to a frame, in the METADATA record's order:
-// exposure time (us), analogue gain, digital gain, lens position
-// (dioptres), frame duration (us), colour temperature (K), sync ready
-// (0/1), sync timer (us).
+// Value order of the METADATA record.
+enum MetadataField : size_t {
+  kExposureTimeUs,
+  kAnalogueGain,
+  kDigitalGain,
+  kLensPositionDioptres,
+  kFrameDurationUs,
+  kColourTemperatureK,
+  kSyncReady,
+  kSyncTimerUs,
+};
+
+// What libcamera applied to a frame.
 void send_metadata(const ControlList& metadata, int64_t capture_ns) {
   double values[ovcs::framing::kMetadataFields] = {};
   uint8_t present = 0;
@@ -136,14 +132,14 @@ void send_metadata(const ControlList& metadata, int64_t capture_ns) {
       present |= uint8_t(1u << i);
     }
   };
-  put(0, metadata.get(controls::ExposureTime));
-  put(1, metadata.get(controls::AnalogueGain));
-  put(2, metadata.get(controls::DigitalGain));
-  put(3, metadata.get(controls::LensPosition));
-  put(4, metadata.get(controls::FrameDuration));
-  put(5, metadata.get(controls::ColourTemperature));
-  put(6, metadata.get(controls::rpi::SyncReady));
-  put(7, metadata.get(controls::rpi::SyncTimer));
+  put(kExposureTimeUs, metadata.get(controls::ExposureTime));
+  put(kAnalogueGain, metadata.get(controls::AnalogueGain));
+  put(kDigitalGain, metadata.get(controls::DigitalGain));
+  put(kLensPositionDioptres, metadata.get(controls::LensPosition));
+  put(kFrameDurationUs, metadata.get(controls::FrameDuration));
+  put(kColourTemperatureK, metadata.get(controls::ColourTemperature));
+  put(kSyncReady, metadata.get(controls::rpi::SyncReady));
+  put(kSyncTimerUs, metadata.get(controls::rpi::SyncTimer));
   auto record = ovcs::framing::build_metadata_record(capture_ns, present, values);
   ovcs::framing::write_record(record.data(), record.size());
 }
@@ -157,10 +153,10 @@ void forward_stderr() {
   close(fds[1]);
   std::thread([read_fd = fds[0]] {
     std::string line;
-    char c;
-    while (::read(read_fd, &c, 1) == 1) {
-      if (c != '\n') {
-        line += c;
+    char character;
+    while (::read(read_fd, &character, 1) == 1) {
+      if (character != '\n') {
+        line += character;
         continue;
       }
       LogLevel level = line.find(" ERROR ") != std::string::npos || line.find(" FATAL ") != std::string::npos
@@ -175,15 +171,15 @@ void forward_stderr() {
 
 // Controls received on stdin, applied to the next request re-queued.
 std::mutex g_pending_mutex;
-ControlList g_pending(controls::controls);
+ControlList g_pending_controls(controls::controls);
 
-bool read_exact(void* buf, size_t len) {
-  auto* p = static_cast<uint8_t*>(buf);
-  while (len > 0) {
-    ssize_t n = ::read(STDIN_FILENO, p, len);
-    if (n <= 0) return false;
-    p += n;
-    len -= static_cast<size_t>(n);
+bool read_exact(void* buffer, size_t length) {
+  auto* cursor = static_cast<uint8_t*>(buffer);
+  while (length > 0) {
+    ssize_t transferred = ::read(STDIN_FILENO, cursor, length);
+    if (transferred <= 0) return false;
+    cursor += transferred;
+    length -= static_cast<size_t>(transferred);
   }
   return true;
 }
@@ -192,9 +188,9 @@ bool read_exact(void* buf, size_t len) {
 // the value parsed for the control's type. False when either is not
 // understood.
 bool parse_control(const std::string& command, ControlList& out) {
-  auto eq = command.find('=');
-  if (eq == std::string::npos) return false;
-  const std::string name = command.substr(0, eq), value = command.substr(eq + 1);
+  auto separator = command.find('=');
+  if (separator == std::string::npos) return false;
+  const std::string name = command.substr(0, separator), value = command.substr(separator + 1);
 
   const ControlId* id = nullptr;
   for (const auto& [_, candidate] : controls::controls) {
@@ -212,21 +208,21 @@ bool parse_control(const std::string& command, ControlList& out) {
       out.set(id->id(), ControlValue(value == "1"));
       return true;
     case ControlTypeInteger32: {
-      long v = std::strtol(value.c_str(), &end, 10);
+      long parsed = std::strtol(value.c_str(), &end, 10);
       if (*end != '\0') return false;
-      out.set(id->id(), ControlValue(static_cast<int32_t>(v)));
+      out.set(id->id(), ControlValue(static_cast<int32_t>(parsed)));
       return true;
     }
     case ControlTypeInteger64: {
-      long long v = std::strtoll(value.c_str(), &end, 10);
+      long long parsed = std::strtoll(value.c_str(), &end, 10);
       if (*end != '\0') return false;
-      out.set(id->id(), ControlValue(static_cast<int64_t>(v)));
+      out.set(id->id(), ControlValue(static_cast<int64_t>(parsed)));
       return true;
     }
     case ControlTypeFloat: {
-      float v = std::strtof(value.c_str(), &end);
+      float parsed = std::strtof(value.c_str(), &end);
       if (*end != '\0') return false;
-      out.set(id->id(), ControlValue(v));
+      out.set(id->id(), ControlValue(parsed));
       return true;
     }
     default:
@@ -241,15 +237,15 @@ void stdin_reader() {
   while (true) {
     uint8_t header[4];
     if (!read_exact(header, sizeof(header))) break;
-    uint32_t len = (uint32_t(header[0]) << 24) | (uint32_t(header[1]) << 16) |
-                   (uint32_t(header[2]) << 8) | uint32_t(header[3]);
-    std::string command(len, '\0');
-    if (len > 0 && !read_exact(command.data(), len)) break;
+    uint32_t length = (uint32_t(header[0]) << 24) | (uint32_t(header[1]) << 16) |
+                      (uint32_t(header[2]) << 8) | uint32_t(header[3]);
+    std::string command(length, '\0');
+    if (length > 0 && !read_exact(command.data(), length)) break;
 
     ControlList parsed(controls::controls);
     if (parse_control(command, parsed)) {
       std::lock_guard<std::mutex> lock(g_pending_mutex);
-      g_pending.merge(parsed, ControlList::MergePolicy::OverwriteExisting);
+      g_pending_controls.merge(parsed, ControlList::MergePolicy::OverwriteExisting);
       log_message(LOG_INFO, "control %s", command.c_str());
     } else {
       log_message(LOG_WARNING, "control not understood: %s", command.c_str());
@@ -264,10 +260,7 @@ int64_t monotonic_ns() {
       .count();
 }
 
-// One mmap per unique buffer fd. libcamera frequently exposes a
-// single dmabuf with several planes carved out at different offsets;
-// mmap'ing each plane separately would map the same memory multiple
-// times. Keying on fd lets us share one mapping across planes.
+// One mmap per dmabuf fd: libcamera often carves several planes out of one buffer.
 struct MappedFd {
   void* base = MAP_FAILED;
   size_t length = 0;
@@ -276,8 +269,8 @@ struct MappedFd {
 class FdMapper {
  public:
   ~FdMapper() {
-    for (auto& [fd, m] : maps_) {
-      if (m.base != MAP_FAILED) ::munmap(m.base, m.length);
+    for (auto& [fd, mapping] : maps_) {
+      if (mapping.base != MAP_FAILED) ::munmap(mapping.base, mapping.length);
     }
   }
 
@@ -288,13 +281,13 @@ class FdMapper {
       // is usually larger). Use lseek to find the true size.
       off_t end = ::lseek(fd, 0, SEEK_END);
       size_t total = (end > 0) ? static_cast<size_t>(end) : (offset + length);
-      void* p = ::mmap(nullptr, total, PROT_READ, MAP_SHARED, fd, 0);
-      if (p == MAP_FAILED) {
+      void* base = ::mmap(nullptr, total, PROT_READ, MAP_SHARED, fd, 0);
+      if (base == MAP_FAILED) {
         log_message(LOG_ERROR, "mmap(fd=%d, len=%zu) failed: %s",
                      fd, total, std::strerror(errno));
         return nullptr;
       }
-      it = maps_.emplace(fd, MappedFd{p, total}).first;
+      it = maps_.emplace(fd, MappedFd{base, total}).first;
     }
     return static_cast<uint8_t*>(it->second.base) + offset;
   }
@@ -303,11 +296,8 @@ class FdMapper {
   std::unordered_map<int, MappedFd> maps_;
 };
 
-// Pre-resolved per-buffer plane pointers + strides so the hot path
-// only does encode + write, no map lookups. The fd list is what we
-// hand to DMA_BUF_IOCTL_SYNC so the CPU sees coherent data when it
-// reads the planes — on ARM (Pi 5) the dmabuf isn't cache-coherent
-// by default and skipping the sync gives torn / stale pixels.
+// Plane pointers resolved once per buffer. The dmabuf is not cache-coherent on
+// the Pi 5: sync_fds go to DMA_BUF_IOCTL_SYNC around every CPU read.
 struct YuvView {
   const uint8_t* y;
   const uint8_t* u;
@@ -321,10 +311,7 @@ inline void dmabuf_sync(const std::vector<int>& fds, uint64_t flags) {
   for (int fd : fds) {
     dma_buf_sync sync = {};
     sync.flags = flags;
-    // EINTR is the only retryable error we'd care about here, and
-    // even that's rare; ignoring failures keeps the hot path
-    // branch-free without a meaningful safety cost (worst case the
-    // CPU reads a stale line).
+    // Failure ignored: the worst case is one stale cache line.
     ::ioctl(fd, DMA_BUF_IOCTL_SYNC, &sync);
   }
 }
@@ -343,23 +330,22 @@ int main(int argc, char** argv) {
   std::thread reader(stdin_reader);
   reader.detach();
 
-  // ---- libcamera bring-up --------------------------------------
-  CameraManager cm;
-  if (int ret = cm.start(); ret != 0) {
-    log_message(LOG_ERROR, "CameraManager::start failed (%d)", ret);
+  CameraManager camera_manager;
+  if (int status = camera_manager.start(); status != 0) {
+    log_message(LOG_ERROR, "CameraManager::start failed (%d)", status);
     return 1;
   }
 
-  const auto& cameras = cm.cameras();
+  const auto& cameras = camera_manager.cameras();
   if (cameras.empty()) {
     log_message(LOG_ERROR, "no cameras detected by libcamera");
-    cm.stop();
+    camera_manager.stop();
     return 1;
   }
   if (args.camera_id < 0 || static_cast<size_t>(args.camera_id) >= cameras.size()) {
     log_message(LOG_ERROR, "camera_id %d out of range (have %zu cameras)",
                  args.camera_id, cameras.size());
-    cm.stop();
+    camera_manager.stop();
     return 1;
   }
 
@@ -367,7 +353,7 @@ int main(int argc, char** argv) {
   if (camera->acquire() != 0) {
     log_message(LOG_ERROR, "Camera::acquire failed (camera %d)",
                  args.camera_id);
-    cm.stop();
+    camera_manager.stop();
     return 1;
   }
 
@@ -376,7 +362,7 @@ int main(int argc, char** argv) {
   if (!config || config->size() != 1) {
     log_message(LOG_ERROR, "generateConfiguration failed");
     camera->release();
-    cm.stop();
+    camera_manager.stop();
     return 1;
   }
 
@@ -391,15 +377,15 @@ int main(int argc, char** argv) {
       log_message(LOG_ERROR, "--rotation %d unsupported (use 0/90/180/270)",
                    args.rotation);
       camera->release();
-      cm.stop();
+      camera_manager.stop();
       return 2;
   }
 
-  StreamConfiguration& cfg = config->at(0);
-  cfg.size = Size(static_cast<unsigned int>(args.width),
+  StreamConfiguration& stream_config = config->at(0);
+  stream_config.size = Size(static_cast<unsigned int>(args.width),
                   static_cast<unsigned int>(args.height));
-  cfg.pixelFormat = formats::YUV420;
-  cfg.bufferCount = 4;
+  stream_config.pixelFormat = formats::YUV420;
+  stream_config.bufferCount = 4;
 
   if (args.sensor_width > 0) {
     SensorConfiguration sensor;
@@ -413,8 +399,8 @@ int main(int argc, char** argv) {
       break;
     case CameraConfiguration::Adjusted:
       log_message(LOG_INFO, "configuration adjusted to %ux%u %s",
-                   cfg.size.width, cfg.size.height,
-                   cfg.pixelFormat.toString().c_str());
+                   stream_config.size.width, stream_config.size.height,
+                   stream_config.pixelFormat.toString().c_str());
       break;
     case CameraConfiguration::Invalid:
       log_message(LOG_ERROR, args.sensor_width > 0
@@ -422,39 +408,38 @@ int main(int argc, char** argv) {
                                  : "configuration invalid",
                   args.sensor_width, args.sensor_height, args.sensor_bit_depth);
       camera->release();
-      cm.stop();
+      camera_manager.stop();
       return 1;
   }
 
-  if (cfg.pixelFormat != formats::YUV420) {
+  if (stream_config.pixelFormat != formats::YUV420) {
     log_message(LOG_ERROR, "driver refused YUV420 (got %s); aborting",
-                 cfg.pixelFormat.toString().c_str());
+                 stream_config.pixelFormat.toString().c_str());
     camera->release();
-    cm.stop();
+    camera_manager.stop();
     return 1;
   }
 
   if (camera->configure(config.get()) != 0) {
     log_message(LOG_ERROR, "Camera::configure failed");
     camera->release();
-    cm.stop();
+    camera_manager.stop();
     return 1;
   }
 
-  Stream* stream = cfg.stream();
-  const unsigned int out_width = cfg.size.width;
-  const unsigned int out_height = cfg.size.height;
-  const unsigned int y_stride = cfg.stride;
+  Stream* stream = stream_config.stream();
+  const unsigned int out_width = stream_config.size.width;
+  const unsigned int out_height = stream_config.size.height;
+  const unsigned int y_stride = stream_config.stride;
   // libcamera's YUV420 packs U and V at half the line stride. This
   // matches the I420 layout turbojpeg expects.
   const unsigned int uv_stride = y_stride / 2;
 
-  // ---- buffer allocation + mmap --------------------------------
   FrameBufferAllocator allocator(camera);
   if (allocator.allocate(stream) < 0) {
     log_message(LOG_ERROR, "buffer allocation failed");
     camera->release();
-    cm.stop();
+    camera_manager.stop();
     return 1;
   }
 
@@ -467,7 +452,7 @@ int main(int argc, char** argv) {
     if (planes.empty()) {
       log_message(LOG_ERROR, "buffer has no planes");
       camera->release();
-      cm.stop();
+      camera_manager.stop();
       return 1;
     }
 
@@ -494,7 +479,7 @@ int main(int argc, char** argv) {
       const size_t uv_size = static_cast<size_t>(uv_stride) * (out_height / 2);
       uint8_t* base = mapper.map_plane(planes[0].fd.get(), planes[0].offset,
                                        y_size + 2 * uv_size);
-      if (!base) { camera->release(); cm.stop(); return 1; }
+      if (!base) { camera->release(); camera_manager.stop(); return 1; }
       view.y = base;
       view.u = base + y_size;
       view.v = base + y_size + uv_size;
@@ -504,7 +489,7 @@ int main(int argc, char** argv) {
     if (!view.y || !view.u || !view.v) {
       log_message(LOG_ERROR, "failed to mmap buffer planes");
       camera->release();
-      cm.stop();
+      camera_manager.stop();
       return 1;
     }
     views.emplace(buffer.get(), view);
@@ -513,48 +498,39 @@ int main(int argc, char** argv) {
     if (!request) {
       log_message(LOG_ERROR, "createRequest failed");
       camera->release();
-      cm.stop();
+      camera_manager.stop();
       return 1;
     }
     if (request->addBuffer(stream, buffer.get()) != 0) {
       log_message(LOG_ERROR, "addBuffer failed");
       camera->release();
-      cm.stop();
+      camera_manager.stop();
       return 1;
     }
     requests.push_back(std::move(request));
   }
 
-  // ---- JPEG encoder + pre-allocated output buffer --------------
-  //
-  // libcamera serialises `requestCompleted` slot invocations on the
-  // camera's internal thread, so the slot is effectively
-  // single-threaded for a given camera and we don't need a mutex
-  // around writes or the encoder handle. We also pre-allocate the
-  // JPEG output buffer once at its theoretical max size and pass
-  // `TJFLAG_NOREALLOC` so the hot path never mallocs.
-  tjhandle jpeg = tjInitCompress();
-  if (!jpeg) {
+  // requestCompleted runs on libcamera's single camera thread: no locking around
+  // the encoder. TJFLAG_NOREALLOC into a max-size buffer keeps malloc off the hot path.
+  tjhandle jpeg_encoder = tjInitCompress();
+  if (!jpeg_encoder) {
     log_message(LOG_ERROR, "tjInitCompress failed");
     camera->release();
-    cm.stop();
+    camera_manager.stop();
     return 1;
   }
   const unsigned long max_jpeg_size =
       tjBufSize(static_cast<int>(out_width), static_cast<int>(out_height),
                 TJSAMP_420);
-  unsigned char* jpeg_buf = tjAlloc(static_cast<int>(max_jpeg_size));
-  if (!jpeg_buf) {
+  unsigned char* jpeg_buffer = tjAlloc(static_cast<int>(max_jpeg_size));
+  if (!jpeg_buffer) {
     log_message(LOG_ERROR, "tjAlloc(%lu) failed", max_jpeg_size);
-    tjDestroy(jpeg);
+    tjDestroy(jpeg_encoder);
     camera->release();
-    cm.stop();
+    camera_manager.stop();
     return 1;
   }
 
-  // Reusable record buffer keyed by per-callback locality. The header
-  // is fixed size; only the JPEG body changes per frame. Reserve once
-  // to dodge realloc in the hot path.
   std::vector<uint8_t> record;
   record.reserve(1 + 2 + 2 + 8 + 4 + max_jpeg_size);
 
@@ -563,23 +539,19 @@ int main(int argc, char** argv) {
   constexpr int kSyncPatienceFrames = 300;
   int frames_since_metadata = 0;
   constexpr int kMetadataEveryFrames = 5;
+  constexpr int kJpegQuality = 85;
   camera->requestCompleted.connect(camera.get(), [&](Request* request) {
     if (request->status() == Request::RequestCancelled) return;
     if (g_stop.load()) return;
 
-    auto buf_it = request->buffers().find(stream);
-    if (buf_it == request->buffers().end()) return;
-    FrameBuffer* buffer = buf_it->second;
+    auto buffer_entry = request->buffers().find(stream);
+    if (buffer_entry == request->buffers().end()) return;
+    FrameBuffer* buffer = buffer_entry->second;
 
-    auto vit = views.find(buffer);
-    if (vit == views.end()) return;
-    const YuvView& view = vit->second;
+    auto view_entry = views.find(buffer);
+    if (view_entry == views.end()) return;
+    const YuvView& view = view_entry->second;
 
-    // Prefer the sensor-side capture timestamp: it's the actual
-    // exposure-midpoint time, so stereo pairing (which compares
-    // |t_left - t_right|) sees the genuine sync offset instead of
-    // post-DMA scheduling jitter. Falls back to monotonic_ns() if
-    // libcamera/the driver doesn't report it.
     if (args.sync_mode != controls::rpi::SyncModeOff && !sync_reported) {
       ++frames_without_sync;
       if (auto ready = request->metadata().get(controls::rpi::SyncReady); ready && *ready) {
@@ -590,9 +562,11 @@ int main(int argc, char** argv) {
       }
     }
 
+    // Sensor timestamp, so stereo pairing sees the true sync offset rather
+    // than DMA scheduling jitter; monotonic when the driver has none.
     int64_t capture_ns = 0;
-    if (auto ts = request->metadata().get(controls::SensorTimestamp)) {
-      capture_ns = static_cast<int64_t>(*ts);
+    if (auto sensor_timestamp = request->metadata().get(controls::SensorTimestamp)) {
+      capture_ns = static_cast<int64_t>(*sensor_timestamp);
     } else {
       capture_ns = monotonic_ns();
     }
@@ -609,39 +583,38 @@ int main(int argc, char** argv) {
     unsigned long jpeg_size = max_jpeg_size;
     const unsigned char* planes[3] = {view.y, view.u, view.v};
     int strides[3] = {view.y_stride, view.uv_stride, view.uv_stride};
-    int rc = tjCompressFromYUVPlanes(jpeg, planes, static_cast<int>(out_width),
+    int compress_status = tjCompressFromYUVPlanes(jpeg_encoder, planes, static_cast<int>(out_width),
                                      strides, static_cast<int>(out_height),
-                                     TJSAMP_420, &jpeg_buf, &jpeg_size, 85,
+                                     TJSAMP_420, &jpeg_buffer, &jpeg_size, kJpegQuality,
                                      TJFLAG_FASTDCT | TJFLAG_NOREALLOC);
 
     dmabuf_sync(view.sync_fds, DMA_BUF_SYNC_END | DMA_BUF_SYNC_READ);
 
-    if (rc == 0) {
+    if (compress_status == 0) {
       record = ovcs::framing::build_frame_record(
           static_cast<uint16_t>(out_width),
           static_cast<uint16_t>(out_height),
           capture_ns,
-          jpeg_buf, static_cast<size_t>(jpeg_size));
+          jpeg_buffer, static_cast<size_t>(jpeg_size));
       if (!ovcs::framing::write_record(record.data(), record.size())) {
         g_stop.store(true);
       }
     } else {
       log_message(LOG_WARNING, "tjCompressFromYUVPlanes: %s",
-                   tjGetErrorStr2(jpeg));
+                   tjGetErrorStr2(jpeg_encoder));
     }
 
     request->reuse(Request::ReuseBuffers);
     {
       std::lock_guard<std::mutex> lock(g_pending_mutex);
-      if (!g_pending.empty()) {
-        request->controls().merge(g_pending, ControlList::MergePolicy::OverwriteExisting);
-        g_pending.clear();
+      if (!g_pending_controls.empty()) {
+        request->controls().merge(g_pending_controls, ControlList::MergePolicy::OverwriteExisting);
+        g_pending_controls.clear();
       }
     }
     camera->queueRequest(request);
   });
 
-  // ---- start + initial queue -----------------------------------
   ControlList start_controls(controls::controls);
   const int64_t period_us = 1'000'000 / std::max(args.fps, 1);
   start_controls.set(controls::FrameDurationLimits,
@@ -687,9 +660,9 @@ int main(int argc, char** argv) {
 
   if (camera->start(&start_controls) != 0) {
     log_message(LOG_ERROR, "Camera::start failed");
-    tjDestroy(jpeg);
+    tjDestroy(jpeg_encoder);
     camera->release();
-    cm.stop();
+    camera_manager.stop();
     return 1;
   }
 
@@ -701,7 +674,6 @@ int main(int argc, char** argv) {
     }
   }
 
-  // ---- main thread idles until stop ----------------------------
   while (!g_stop.load()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
   }
@@ -709,8 +681,8 @@ int main(int argc, char** argv) {
   camera->stop();
   allocator.free(stream);
   camera->release();
-  cm.stop();
-  if (jpeg_buf) tjFree(jpeg_buf);
-  tjDestroy(jpeg);
+  camera_manager.stop();
+  if (jpeg_buffer) tjFree(jpeg_buffer);
+  tjDestroy(jpeg_encoder);
   return 0;
 }

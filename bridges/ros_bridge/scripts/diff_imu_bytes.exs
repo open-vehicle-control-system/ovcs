@@ -1,10 +1,8 @@
-# Spike helper #2: captures one rclpy `Imu` sample, encodes the
-# *same* struct via our encoder, byte-diffs the two. Used to verify
-# CDR alignment is correct end-to-end.
+# Byte-diffs one rclpy `/imu_probe` `Imu` sample against `Imu.encode/1` of the
+# same struct, to check CDR alignment. Needs a Zenoh router on 127.0.0.1:7447.
 
 alias Ros2.BuiltinInterfaces.Msg.Time
-alias Ros2.GeometryMsgs.Msg.Quaternion
-alias Ros2.GeometryMsgs.Msg.Vector3
+alias Ros2.GeometryMsgs.Msg.{Quaternion, Vector3}
 alias Ros2.SensorMsgs.Msg.Imu
 alias Ros2.StdMsgs.Msg.Header
 
@@ -22,7 +20,7 @@ reference =
     linear_acceleration_covariance: List.duplicate(0.0, 9)
   }
 
-our_bytes = Ros2.SensorMsgs.Msg.Imu.encode(reference)
+our_bytes = Imu.encode(reference)
 
 {:ok, config} = {:ok, Zenohex.Config.default()}
 {:ok, config} = Zenohex.Config.insert_json5(config, "mode", "client")

@@ -1,7 +1,5 @@
-# hailo_detect: runs a YOLO HEF on the Hailo-8 and returns boxes in
-# the caller's pixel coordinates. See main.cpp.
-#
-# OUT is set by the top-level Makefile (PRIV_DIR/hailo_detect).
+# hailo_detect: a YOLO HEF on the Hailo-8, boxes on stdout. The top-level
+# Makefile sets OUT.
 
 OUT ?= hailo_detect
 
@@ -9,15 +7,9 @@ CXX ?= $(CROSSCOMPILE)g++
 
 CXXFLAGS += -std=c++17 -O2 -Wall -Wextra -Wpedantic -I../common
 
-# libhailort ships in the ovcs_bridges_system_rpi5 sysroot
-# (headers under usr/include/hailo). There is no pkg-config file for
-# it, so the flags are spelled out.
-#
-# --allow-shlib-undefined: libhailort pulls in libprotobuf-lite.so.32,
-# which is present on the device but absent from the Buildroot
-# staging tree. Without this the link fails on protobuf symbols we
-# neither call nor need to resolve here — they bind at runtime, where
-# the library does exist.
+# libhailort has no pkg-config file. --allow-shlib-undefined: its
+# libprotobuf-lite dependency is on the device but not in the staging tree,
+# so those symbols bind at runtime.
 LDFLAGS += -lhailort -Wl,--allow-shlib-undefined
 
 SRCS := main.cpp ../common/framing.cpp

@@ -1,14 +1,6 @@
-// Shared framing helpers for the Port binaries (camera_capture,
-// hailo_detect).
-//
-// The wire format on stdin/stdout is `Port.open(..., {:packet, 4})`
-// on the Elixir side — a 4-byte **big-endian** length prefix in
-// front of each record. These helpers wrap the prefix handling so
-// each main.cpp only deals with whole records.
-//
-// Inside each record the tag + payload uses little-endian for
-// scalars and matches the Elixir parsers byte-for-byte (see
-// lib/ros_bridge/camera/lib_camera.ex).
+// {:packet, 4} framing for the Port binaries: a big-endian length prefix
+// per record. Record scalars are little-endian and match the Elixir parsers
+// byte for byte (lib/ros_bridge/camera/lib_camera.ex).
 
 #pragma once
 
@@ -24,45 +16,33 @@ namespace ovcs::framing {
 // shutdown signal (the BEAM closing the Port closes stdin).
 bool read_record(std::vector<uint8_t>& out);
 
-// Redirect subsequent `write_record` calls to `fd` instead of
-// stdout. `hailo_detect` needs this: libhailort's logger writes to
-// stdout, and a stray `[info]` line in the middle of a record turns
-// into a bogus 4-byte length prefix and desynchronises the Port for
-// good. The fix is to hand the real stdout to the framing layer and
-// point fd 1 at stderr before HailoRT is ever touched:
-//
-//     int records = dup(STDOUT_FILENO);
-//     dup2(STDERR_FILENO, STDOUT_FILENO);
-//     ovcs::framing::set_output_fd(records);
-//
-// Callers that never initialise a chatty library (camera_capture)
-// can ignore this and keep the stdout default.
+// Redirect `write_record` to `fd`. A library that logs to stdout would
+// corrupt the framing: hand the real stdout here and point fd 1 at stderr
+// before initialising it (see hailo_detect's main).
 void set_output_fd(int fd);
 
 // Write one length-prefixed record to the output fd (stdout unless
 // `set_output_fd` said otherwise). Safe to call from several threads.
-bool write_record(const uint8_t* data, size_t len);
+bool write_record(const uint8_t* data, size_t length);
 
 // A LOG record (tag = 2): one message for the BEAM's logger.
 // Levels: 0 info, 1 warning, 2 error. Mirrors the parser in
 // `RosBridge.Camera.LibCamera`.
 std::vector<uint8_t> build_log_record(uint8_t level, const std::string& message);
 
-// A METADATA record (tag = 3): what the camera applied to the frame
-// taken at `capture_ns`. `values` holds kMetadataFields float64s;
-// bit i of `present` is set when values[i] was reported. Mirrors the
-// parser in `RosBridge.Camera.LibCamera`.
+// A METADATA record (tag = 3) for the frame taken at `capture_ns`: bit i of
+// `present` is set when values[i] was reported. Mirrors the parser in
+// `RosBridge.Camera.LibCamera`.
 constexpr size_t kMetadataFields = 8;
 std::vector<uint8_t> build_metadata_record(int64_t capture_ns, uint8_t present,
                                            const double (&values)[kMetadataFields]);
 
-// Convenience: build the FRAME record payload (tag = 1) used by
-// camera_capture. Mirrors the parser in
+// A FRAME record (tag = 1). Mirrors the parser in
 // `RosBridge.Camera.LibCamera.parse_record/1`.
 std::vector<uint8_t> build_frame_record(
     uint16_t width,
     uint16_t height,
     int64_t capture_ns,
-    const uint8_t* jpeg, size_t jpeg_len);
+    const uint8_t* jpeg, size_t jpeg_length);
 
 }  // namespace ovcs::framing

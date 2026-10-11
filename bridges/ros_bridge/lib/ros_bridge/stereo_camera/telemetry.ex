@@ -15,8 +15,7 @@ defmodule RosBridge.StereoCamera.Telemetry do
       # Increment a counter (drops, etc.) without timing
       state = update_in(state.telemetry, &Telemetry.bump(&1, :busy_drop))
 
-      # Mark one "result" — pulls anything queued under :sample
-      # into the window, flushes when full.
+      # Mark one result; flushes when the window is full.
       state = update_in(state.telemetry, &Telemetry.tick(&1))
 
   `tick/1` returns the same telemetry struct; the side effect on
@@ -29,16 +28,25 @@ defmodule RosBridge.StereoCamera.Telemetry do
   defstruct window: 30,
             label: "stereo",
             count: 0,
-            # %{stage => [duration_ns, ...]} (most-recent-first; trimmed at flush)
             stages: %{},
-            # %{counter_name => integer}
             counters: %{},
-            # %{name => [{value :: number, unit :: String.t()}]}  — dimensionless or
-            # custom-unit scalars formatted distinctly from time stages
             scalars: %{}
 
-  @type t :: %__MODULE__{}
+  @typedoc """
+  `stages` holds durations in nanoseconds, most recent first;
+  `scalars` holds dimensionless or custom-unit samples, formatted apart
+  from the stage timings. All three reset at each flush.
+  """
+  @type t :: %__MODULE__{
+          window: pos_integer(),
+          label: String.t(),
+          count: non_neg_integer(),
+          stages: %{atom() => [integer()]},
+          counters: %{atom() => non_neg_integer()},
+          scalars: %{atom() => [{number(), String.t()}]}
+        }
 
+  @doc "A new accumulator; `:window` (30) samples per flush, `:label` (`\"stereo\"`) in the log line."
   def new(opts \\ []) do
     %__MODULE__{
       window: Keyword.get(opts, :window, 30),
@@ -90,8 +98,6 @@ defmodule RosBridge.StereoCamera.Telemetry do
     end
   end
 
-  # ── flush / format ───────────────────────────────────────────
-
   defp flush(%__MODULE__{} = telemetry) do
     Logger.info(format(telemetry))
     %__MODULE__{telemetry | count: 0, stages: %{}, counters: %{}, scalars: %{}}
@@ -100,7 +106,7 @@ defmodule RosBridge.StereoCamera.Telemetry do
   @doc false
   def format(%__MODULE__{} = telemetry) do
     window_seconds = window_seconds(telemetry)
-    rate = if window_seconds > 0, do: telemetry.count / window_seconds, else: 0.0
+    rate_hz = if window_seconds > 0, do: telemetry.count / window_seconds, else: 0.0
 
     stages_part =
       telemetry.stages
@@ -131,26 +137,24 @@ defmodule RosBridge.StereoCamera.Telemetry do
              end))
       end
 
-    "[#{telemetry.label}] n=#{telemetry.count} rate=#{Float.round(rate, 2)} Hz | " <>
+    "[#{telemetry.label}] n=#{telemetry.count} rate=#{Float.round(rate_hz, 2)} Hz | " <>
       stages_part <> counters_part <> scalars_part
   end
 
   defp format_scalar_samples([{_, unit} | _] = samples) do
     values = Enum.map(samples, fn {value, _} -> value end) |> Enum.sort()
-    n = length(values)
-    p50 = Enum.at(values, max(round(0.50 * n) - 1, 0))
-    p95 = Enum.at(values, max(round(0.95 * n) - 1, 0))
+    count = length(values)
+    p50 = Enum.at(values, max(round(0.50 * count) - 1, 0))
+    p95 = Enum.at(values, max(round(0.95 * count) - 1, 0))
     max_value = List.last(values)
 
-    "#{round2(p50)}/#{round2(p95)}/#{round2(max_value)}#{unit}"
+    "#{round_to_hundredths(p50)}/#{round_to_hundredths(p95)}/#{round_to_hundredths(max_value)}#{unit}"
   end
 
-  defp round2(value) when is_float(value), do: Float.round(value, 2)
-  defp round2(value), do: value
+  defp round_to_hundredths(value) when is_float(value), do: Float.round(value, 2)
+  defp round_to_hundredths(value), do: value
 
-  # Total elapsed wall time for the window — best guess from a
-  # `:wall` sample if present, otherwise from the sum of a "total"
-  # stage if recorded, otherwise 0 (rate then logs as 0).
+  # From the :wall samples, else the :total ones, else 0.
   defp window_seconds(%__MODULE__{stages: stages}) do
     cond do
       Map.has_key?(stages, :wall) -> Enum.sum(stages.wall) / 1_000_000_000
@@ -161,10 +165,10 @@ defmodule RosBridge.StereoCamera.Telemetry do
 
   defp format_samples(samples) do
     sorted = Enum.sort(samples)
-    n = length(sorted)
-    p50 = percentile_ms(sorted, n, 0.50)
-    p95 = percentile_ms(sorted, n, 0.95)
-    max_ms = percentile_ms(sorted, n, 1.00)
+    count = length(sorted)
+    p50 = percentile_ms(sorted, count, 0.50)
+    p95 = percentile_ms(sorted, count, 0.95)
+    max_ms = percentile_ms(sorted, count, 1.00)
 
     "#{p50}/#{p95}/#{max_ms}"
   end

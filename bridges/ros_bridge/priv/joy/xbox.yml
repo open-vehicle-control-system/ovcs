@@ -4,6 +4,7 @@
 device: "(?i)x-?box.*(pad|controller)"
 steering:
   - axis: 3
+    # Negative: joy_linux reports left as positive, steering is positive right.
     gain: -1.0
 throttle:
   - axis: 4

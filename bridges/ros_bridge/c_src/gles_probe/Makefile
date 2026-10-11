@@ -1,18 +1,6 @@
-# gles_probe — a throwaway measurement tool, deliberately NOT wired into
-# elixir_make or the firmware. It answers "what can the Pi 5 GPU
-# actually do with compute shaders?" with numbers from the board.
-#
-# Cross-compile against the Nerves sysroot, then copy to /data on the
-# device (the only writable path) and run it over ssh:
-#
-#   make SYSROOT=~/.nerves/artifacts/ovcs_bridges_system_rpi5-portable-2.0.9/staging \
-#        CROSSCOMPILE=~/.nerves/artifacts/nerves_toolchain_aarch64_nerves_linux_gnu-linux_x86_64-13.2.0/bin/aarch64-nerves-linux-gnu-
-#
-#   scp gles_probe ovcs-mini-bridge-ros-perception.local:/data/
-#   ssh ovcs-mini-bridge-ros-perception.local \
-#     'System.cmd("/data/gles_probe", []) |> elem(0) |> IO.puts()'
-#
-# Args: width height disparities window_radius (defaults 640 480 96 2).
+# gles_probe: a GPU compute benchmark, not part of the firmware. Build with
+# `make SYSROOT=<nerves system>/staging CROSSCOMPILE=<toolchain>/bin/aarch64-nerves-linux-gnu-`,
+# copy it to /data on <device> and run it there. Args: width height disparities window_radius.
 
 OUT ?= gles_probe
 

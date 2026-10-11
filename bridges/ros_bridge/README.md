@@ -90,11 +90,12 @@ with a single ROS bridge. **A vehicle running two bridges on one fabric
 must give each its own name** — two bridges announcing `ovcs_bridge`
 collide in the ROS graph, which `ros2 node list` reports as "nodes in
 the graph that share an exact name" and Foxglove renders as a single
-merged node. See `vehicles/ovcs_mini/lib/ovcs_mini.ex` for the two-bridge
-case (`ovcs_bridge_ros` + `ovcs_bridge_perception`).
+merged node. The OVCS Mini reference vehicle is a worked example of the
+two-bridge case: `vehicles/ovcs_mini/lib/ovcs_mini.ex` runs
+`ovcs_bridge_ros` and `ovcs_bridge_perception`.
 
 Endpoint comes from the vehicle's `RosBridge.Config.zenoh_endpoint_ip`
-— set per-vehicle in `vehicles/<v>/lib/<v>.ex`. Override at
+— set per-vehicle in `vehicles/<vehicle>/lib/<vehicle>.ex`. Override at
 deployment time with `ZENOH_ENDPOINT_IP` (read at firmware build via
 `bridges/firmware/config/target.exs`, baked into Application env,
 then read at runtime by the vehicle's `ros_bridge_config(:target)`).
@@ -136,7 +137,7 @@ renders) and `<prefix>/detections` (`vision_msgs/Detection3DArray`,
 for nav2 and other consumers). See
 `docs/ros2_perception.md`.
 
-Vehicle example (`vehicles/<v>/lib/<v>.ex`):
+Vehicle example (`vehicles/<vehicle>/lib/<vehicle>.ex`):
 
 ```elixir
 def ros_bridge_config(:host) do
@@ -175,13 +176,13 @@ The bridge's node serves ROS 2 parameters (`RosBridge.Parameters`), and
 every `:stereo_camera` unit declares its settings there
 (`RosBridge.StereoCamera.Parameters`), so they can be changed while
 watching the images and the depth, from Foxglove's Parameters panel or
-the `ros2 param` CLI:
+the `ros2 param` CLI (`<node>` is the bridge's `:node_name`):
 
 ```bash
-ros2 param list /ovcs_bridge_perception
-ros2 param describe /ovcs_bridge_perception stereo.left.lens_position
-ros2 param set /ovcs_bridge_perception stereo.left.lens_position 1.2
-ros2 param dump /ovcs_bridge_perception
+ros2 param list /<node>
+ros2 param describe /<node> stereo.left.lens_position
+ros2 param set /<node> stereo.left.lens_position 1.2
+ros2 param dump /<node>
 ```
 
 | Parameters | Settings |
