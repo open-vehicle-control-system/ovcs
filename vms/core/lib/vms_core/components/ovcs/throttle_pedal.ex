@@ -31,6 +31,7 @@ defmodule VmsCore.Components.OVCS.ThrottlePedal do
   # Full scale of the generic controller's 14-bit ADC.
   @raw_max_throttle 16_383
   @zero D.new(0)
+  @one D.new(1)
   @loop_period_ms 10
 
   def start_link(args) do
@@ -122,6 +123,8 @@ defmodule VmsCore.Components.OVCS.ThrottlePedal do
         true ->
           D.sub(state.raw_throttle_a, state.low_raw_throttle_a)
           |> D.div(D.sub(state.high_raw_throttle_a, state.low_raw_throttle_a))
+          |> D.max(@zero)
+          |> D.min(@one)
           |> D.round(2)
       end
 
