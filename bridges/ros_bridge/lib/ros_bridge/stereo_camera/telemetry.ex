@@ -90,17 +90,6 @@ defmodule RosBridge.StereoCamera.Telemetry do
     end
   end
 
-  @doc """
-  Time `fun`, record under `stage`, return `fun`'s result. Convenience
-  for the common case.
-  """
-  def measure(telemetry_ref, stage, fun) when is_atom(stage) and is_function(fun, 0) do
-    start = System.monotonic_time(:nanosecond)
-    result = fun.()
-    duration = System.monotonic_time(:nanosecond) - start
-    {duration, result, stage, telemetry_ref}
-  end
-
   # ── flush / format ───────────────────────────────────────────
 
   defp flush(%__MODULE__{} = telemetry) do
