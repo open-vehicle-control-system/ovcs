@@ -37,7 +37,7 @@ defmodule RosBridge.Services.SetCameraInfoServer do
     Module.concat([__MODULE__, "S_#{service_name}"])
   end
 
-  @impl true
+  @impl GenServer
   def init(opts) do
     service_name = Keyword.fetch!(opts, :service_name)
     calibration_path = Keyword.fetch!(opts, :calibration_path)
@@ -57,7 +57,7 @@ defmodule RosBridge.Services.SetCameraInfoServer do
      }}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info({:service_request, %{query: query, request_payload: payload}}, state) do
     response =
       case Request.parse(payload) do

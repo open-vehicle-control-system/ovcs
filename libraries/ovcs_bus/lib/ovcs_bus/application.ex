@@ -2,7 +2,7 @@ defmodule OvcsBus.Application do
   @moduledoc false
   use Application
 
-  @impl true
+  @impl Application
   def start(_type, _args) do
     children = [
       {Phoenix.PubSub, name: OvcsBus}

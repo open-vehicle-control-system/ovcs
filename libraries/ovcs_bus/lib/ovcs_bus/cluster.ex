@@ -41,14 +41,14 @@ defmodule OvcsBus.Cluster do
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 
-  @impl true
+  @impl GenServer
   def init(opts) do
     vehicle = Keyword.fetch!(opts, :vehicle)
     send(self(), :connect)
     {:ok, %{vehicle: vehicle, peers: []}}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info(:connect, %{vehicle: vehicle} = state) do
     OvcsBus.Distribution.ensure_started()
     peers = peers_for(vehicle)

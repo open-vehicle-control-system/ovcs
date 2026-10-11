@@ -4,14 +4,14 @@ defmodule VmsApiWeb.NetworkInterfacesChannel do
 
   intercept ["update"]
 
-  @impl true
+  @impl Phoenix.Channel
   def join("network-interfaces", payload, socket) do
     send(self(), :push_network_interfaces)
     {:ok, timer} = :timer.send_interval(payload["interval"], :push_network_interfaces)
     {:ok, socket |> assign(:timer, timer)}
   end
 
-  @impl true
+  @impl Phoenix.Channel
   def handle_info(:push_network_interfaces, socket) do
     {:ok, network_interfaces} = NetworkInterfaces.network_interfaces()
 
@@ -24,7 +24,7 @@ defmodule VmsApiWeb.NetworkInterfacesChannel do
     {:noreply, socket}
   end
 
-  @impl true
+  @impl Phoenix.Channel
   def terminate(_, %{assigns: %{timer: timer}}) do
     {:ok, _} = :timer.cancel(timer)
   end

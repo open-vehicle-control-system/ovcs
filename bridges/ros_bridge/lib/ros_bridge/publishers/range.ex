@@ -24,7 +24,7 @@ defmodule RosBridge.Publishers.Range do
   def child_spec(opts),
     do: %{id: {__MODULE__, Keyword.fetch!(opts, :name)}, start: {__MODULE__, :start_link, [opts]}}
 
-  @impl true
+  @impl GenServer
   def init(opts) do
     driver = Keyword.fetch!(opts, :driver)
 
@@ -39,7 +39,7 @@ defmodule RosBridge.Publishers.Range do
     {:ok, state}
   end
 
-  @impl true
+  @impl GenServer
   def handle_cast({:range_sample, %Sample{} = sample}, state) do
     RosBridge.ZenohClient.publish(state.topic, Range, range(sample, state))
 

@@ -40,7 +40,7 @@ defmodule RosBridge.Camera.Ffmpeg do
 
   def name_for(label), do: Module.concat([__MODULE__, "L_#{label}"])
 
-  @impl true
+  @impl GenServer
   def init(opts) do
     label = Keyword.fetch!(opts, :label)
     device = Keyword.fetch!(opts, :device)
@@ -98,7 +98,7 @@ defmodule RosBridge.Camera.Ffmpeg do
      }}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info({port, {:data, bytes}}, %{port: port} = state) do
     {frames, leftover} = MjpegStream.split(state.buffer <> bytes)
 
@@ -125,7 +125,7 @@ defmodule RosBridge.Camera.Ffmpeg do
     {:stop, {:ffmpeg_exit, status}, state}
   end
 
-  @impl true
+  @impl GenServer
   def handle_cast({:register_listener, listener}, state) do
     {:noreply, %{state | listeners: state.listeners ++ [listener]}}
   end

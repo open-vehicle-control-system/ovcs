@@ -124,7 +124,7 @@ defmodule MyCar.Vms.CoolantFan do
 
   def start_link(args), do: GenServer.start_link(__MODULE__, args, name: __MODULE__)
 
-  @impl true
+  @impl GenServer
   def init(%{on_threshold: on_threshold}) do
     :ok = Receiver.subscribe(self(), :ovcs, "coolant_status")
     :ok = ReceivedFrameWatcher.enable(:ovcs, "coolant_status")
@@ -148,7 +148,7 @@ defmodule MyCar.Vms.CoolantFan do
      }}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info({:handle_frame, %Frame{name: "coolant_status", signals: signals}}, state) do
     %{"coolant_temperature" => %Signal{value: temperature}} = signals
     {:noreply, %{state | coolant_temperature: temperature}}
@@ -171,7 +171,7 @@ defmodule MyCar.Vms.CoolantFan do
     GenServer.call(__MODULE__, {:set_on_threshold, Decimal.new(value)})
   end
 
-  @impl true
+  @impl GenServer
   def handle_call({:set_on_threshold, threshold}, _from, state) do
     {:reply, :ok, %{state | on_threshold: threshold}}
   end

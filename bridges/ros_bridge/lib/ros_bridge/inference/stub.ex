@@ -50,7 +50,7 @@ defmodule RosBridge.Inference.Stub do
   @impl RosBridge.Inference
   def busy?(_server \\ __MODULE__), do: false
 
-  @impl true
+  @impl GenServer
   def init(opts) do
     boxes = Keyword.get(opts, :boxes, @default_boxes)
 
@@ -62,7 +62,7 @@ defmodule RosBridge.Inference.Stub do
     {:ok, %{boxes: boxes}}
   end
 
-  @impl true
+  @impl GenServer
   def handle_call({:detect, seq, mat, reply_to}, _from, state) do
     {height, width} = shape(mat)
 

@@ -31,7 +31,7 @@ defmodule RosBridge.Publishers.Heartbeat do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
 
-  @impl true
+  @impl GenServer
   def init(opts) do
     state = %State{
       topic: Keyword.fetch!(opts, :topic),
@@ -49,7 +49,7 @@ defmodule RosBridge.Publishers.Heartbeat do
     {:ok, state}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info(:tick, state) do
     counter = state.counter + 1
     message = state.build.(counter)

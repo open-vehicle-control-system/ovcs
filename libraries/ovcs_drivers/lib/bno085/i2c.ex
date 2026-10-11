@@ -69,7 +69,7 @@ defmodule BNO085.I2C do
   # never even be scheduled. This is the backstop for that case.
   @chip_ready_timeout_ms 5_000
 
-  @impl true
+  @impl GenServer
   def init(_args) do
     {:ok, i2c} = Circuits.I2C.open("i2c-1")
     :ok = GenServer.cast(self(), :reset)
@@ -380,7 +380,7 @@ defmodule BNO085.I2C do
     end
   end
 
-  @impl true
+  @impl GenServer
   def handle_info(:verify_chip_ready, %{chip_ready?: true} = state), do: {:noreply, state}
 
   def handle_info(:verify_chip_ready, state) do
@@ -587,13 +587,13 @@ defmodule BNO085.I2C do
     Circuits.I2C.write(state.i2c, @address, cargo)
   end
 
-  @impl true
+  @impl GenServer
   def handle_cast(:reset, state) do
     send_command(state, @executable_channel, <<0x01>>)
     {:noreply, state}
   end
 
-  @impl true
+  @impl GenServer
   def handle_cast(:request_product_id, state) do
     send_command(state, @sensor_hub_control_channel, <<@product_id_request, 0x00>>)
     {:noreply, state}
@@ -603,7 +603,7 @@ defmodule BNO085.I2C do
   # straight to the bus; otherwise queue it for the reset-complete
   # handler to drain. Buffering inside the driver means callers can
   # `enable/0` from their own init/1 without racing the chip's boot.
-  @impl true
+  @impl GenServer
   def handle_cast({:enable, sensor}, state) do
     if state.chip_ready? do
       send_enable(state, sensor)

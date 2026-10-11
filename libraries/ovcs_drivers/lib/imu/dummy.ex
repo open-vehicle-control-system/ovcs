@@ -30,13 +30,13 @@ defmodule OvcsDrivers.Imu.Dummy do
     GenServer.start_link(__MODULE__, %{}, name: __MODULE__)
   end
 
-  @impl true
+  @impl GenServer
   def init(_args) do
     {:ok, _} = :timer.send_interval(10, :loop)
     {:ok, %{listeners: []}}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info(:loop, state) do
     Enum.each(@samples, fn sample ->
       Enum.each(state.listeners, fn listener ->
@@ -47,7 +47,7 @@ defmodule OvcsDrivers.Imu.Dummy do
     {:noreply, state}
   end
 
-  @impl true
+  @impl GenServer
   def handle_cast({:register_listener, listener}, state) do
     {:noreply, %{state | listeners: state.listeners ++ [listener]}}
   end

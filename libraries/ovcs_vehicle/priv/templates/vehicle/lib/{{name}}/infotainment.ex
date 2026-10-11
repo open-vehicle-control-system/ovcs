@@ -12,19 +12,19 @@ defmodule <%= @module %>.Infotainment do
 
   def start_link(_), do: GenServer.start_link(__MODULE__, nil, name: __MODULE__)
 
-  @impl true
+  @impl GenServer
   def init(_) do
     :ok = Receiver.subscribe(self(), :ovcs, ["vms_status"])
     {:ok, %{vms_status: "UNKNOWN"}}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info({:handle_frame, %Frame{name: "vms_status", signals: signals}}, state) do
     %{"status" => %Signal{value: status}} = signals
     {:noreply, %{state | vms_status: status}}
   end
 
-  @impl true
+  @impl GenServer
   def handle_call(:status, _from, state), do: {:reply, {:ok, state}, state}
 
   @doc "Snapshot of the latest infotainment state (used by dashboard blocks)."

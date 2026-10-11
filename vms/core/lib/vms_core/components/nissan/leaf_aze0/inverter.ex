@@ -28,7 +28,7 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Inverter do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
   end
 
-  @impl true
+  @impl GenServer
   def init(%{
         selected_control_level_source: selected_control_level_source,
         selected_gear_source: selected_gear_source,
@@ -89,7 +89,7 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Inverter do
      }}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info(:loop, state) do
     state =
       state

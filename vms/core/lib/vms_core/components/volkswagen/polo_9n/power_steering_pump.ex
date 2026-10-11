@@ -14,7 +14,7 @@ defmodule VmsCore.Components.Volkswagen.Polo9N.PowerSteeringPump do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
   end
 
-  @impl true
+  @impl GenServer
   def init(%{selected_gear_source: selected_gear_source}) do
     Bus.subscribe("messages")
 
@@ -47,7 +47,7 @@ defmodule VmsCore.Components.Volkswagen.Polo9N.PowerSteeringPump do
      }}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info(:loop, state) do
     case {state.enabled, state.selected_gear} do
       {true, :parking} ->

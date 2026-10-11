@@ -9,7 +9,7 @@ defmodule VmsCore.Components.Volkswagen.Polo9N.PassengerCompartment do
   alias OvcsBus, as: Bus
   @loop_period 10
 
-  @impl true
+  @impl GenServer
   def init(_) do
     :ok = Receiver.subscribe(self(), :polo_drive, ["car_status", "handbrake_status"])
     {:ok, timer} = :timer.send_interval(@loop_period, :loop)
@@ -31,7 +31,7 @@ defmodule VmsCore.Components.Volkswagen.Polo9N.PassengerCompartment do
     GenServer.start_link(__MODULE__, nil, name: __MODULE__)
   end
 
-  @impl true
+  @impl GenServer
   def handle_info(:loop, state) do
     Bus.broadcast("messages", %Bus.Message{
       name: :front_left_door_open,
@@ -78,7 +78,7 @@ defmodule VmsCore.Components.Volkswagen.Polo9N.PassengerCompartment do
     {:noreply, state}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info({:handle_frame, %Frame{name: "car_status", signals: signals}}, state) do
     %{
       "front_left_door_open" => %Signal{value: front_left_door_open},
@@ -101,7 +101,7 @@ defmodule VmsCore.Components.Volkswagen.Polo9N.PassengerCompartment do
      }}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info({:handle_frame, %Frame{name: "handbrake_status", signals: signals}}, state) do
     %{"handbrake_engaged" => %Signal{value: handbrake_engaged}} = signals
     {:noreply, %{state | handbrake_engaged: handbrake_engaged}}

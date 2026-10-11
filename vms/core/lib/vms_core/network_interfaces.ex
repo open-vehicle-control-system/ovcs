@@ -10,7 +10,7 @@ defmodule VmsCore.NetworkInterfaces do
     GenServer.start_link(__MODULE__, nil, name: __MODULE__)
   end
 
-  @impl true
+  @impl GenServer
   def init(_) do
     network_interfaces =
       ConfigurationStore.networks()
@@ -29,7 +29,7 @@ defmodule VmsCore.NetworkInterfaces do
     {:ok, %{network_interfaces: network_interfaces}}
   end
 
-  @impl true
+  @impl GenServer
   def handle_call(:network_interfaces, _from, state) do
     result =
       state.network_interfaces

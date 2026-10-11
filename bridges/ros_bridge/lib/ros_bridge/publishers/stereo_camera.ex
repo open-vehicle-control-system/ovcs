@@ -108,7 +108,7 @@ defmodule RosBridge.Publishers.StereoCamera do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
 
-  @impl true
+  @impl GenServer
   def init(opts) do
     cameras = Keyword.fetch!(opts, :cameras)
     topic_prefix = Keyword.fetch!(opts, :topic_prefix)
@@ -168,7 +168,7 @@ defmodule RosBridge.Publishers.StereoCamera do
      }}
   end
 
-  @impl true
+  @impl GenServer
   def handle_cast({:camera_frame, %Frame{} = frame}, state) do
     state =
       state

@@ -35,7 +35,7 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
   end
 
-  @impl true
+  @impl GenServer
   def init(%{
         selected_control_level_source: selected_control_level_source,
         contact_source: contact_source,
@@ -103,7 +103,7 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
      }}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info(:loop, state) do
     state =
       state
@@ -427,7 +427,7 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
     rem(value, 16)
   end
 
-  @impl true
+  @impl GenServer
   def handle_call({:set_pid_parameters, %{kp: kp, ki: ki, kd: kd}}, _from, state) do
     {:reply, :ok, %{state | kp: kp, ki: ki, kd: kd}}
   end

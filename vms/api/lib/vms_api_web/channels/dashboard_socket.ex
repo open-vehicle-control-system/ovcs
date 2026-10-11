@@ -4,11 +4,11 @@ defmodule VmsApiWeb.DashboardSocket do
   channel "network-interfaces", VmsApiWeb.NetworkInterfacesChannel
   channel "metrics", VmsApiWeb.MetricsChannel
 
-  @impl true
+  @impl Phoenix.Socket
   def connect(_params, socket, _connect_info) do
     {:ok, socket}
   end
 
-  @impl true
+  @impl Phoenix.Socket
   def id(_socket), do: nil
 end

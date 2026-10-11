@@ -103,7 +103,7 @@ defmodule RosBridge.Consumers.Joy do
   @default_timeout_ms 500
   @check_period_ms 50
 
-  @impl true
+  @impl GenServer
   def init(opts) do
     :ok =
       Emitter.configure(:ovcs, @frame_name, %{
@@ -161,7 +161,7 @@ defmodule RosBridge.Consumers.Joy do
   # `from_float/1` has no integer clause; the profile's sums are floats.
   defp decimal(value), do: value |> Kernel.*(1.0) |> D.from_float()
 
-  @impl true
+  @impl GenServer
   def handle_info({:ros_message, {key_expr, %Joy{} = joy}}, state) do
     profile = Map.fetch!(state.profiles, topic(key_expr))
 

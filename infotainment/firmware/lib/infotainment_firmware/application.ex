@@ -7,14 +7,14 @@ defmodule InfotainmentFirmware.Application do
   require Logger
   alias NervesFlutterSupport.Udev
 
-  @impl true
+  @impl Application
   def start(_type, _args) do
     children = [] ++ children(Nerves.Runtime.mix_target())
     opts = [strategy: :one_for_one, name: NervesFlutterExample.Supervisor]
     Supervisor.start_link(children, opts)
   end
 
-  @impl true
+  @impl Application
   def start_phase(:load_and_start_apps, _start_type, _args) do
     load_and_start_apps(:infotainment_api)
   end

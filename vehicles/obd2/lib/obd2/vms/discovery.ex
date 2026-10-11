@@ -51,7 +51,7 @@ defmodule Obd2.Vms.Discovery do
     GenServer.start_link(__MODULE__, nil, name: __MODULE__)
   end
 
-  @impl true
+  @impl GenServer
   def init(_) do
     state = %{
       passive_socket: nil,
@@ -65,7 +65,7 @@ defmodule Obd2.Vms.Discovery do
     {:ok, state, {:continue, :start_passive}}
   end
 
-  @impl true
+  @impl GenServer
   def handle_continue(:start_passive, state) do
     case interface_for(@network) do
       {:ok, interface} ->
@@ -110,7 +110,7 @@ defmodule Obd2.Vms.Discovery do
 
   defp parse_frame(_other), do: :ignore
 
-  @impl true
+  @impl GenServer
   def handle_info({:passive_frame, id, data}, state) do
     now = System.monotonic_time(:millisecond)
 
@@ -190,7 +190,7 @@ defmodule Obd2.Vms.Discovery do
 
   # ── Active DID scan ──────────────────────────────────────────────────
 
-  @impl true
+  @impl GenServer
   def handle_call(
         {:start_did_scan, _dids, _request_id, _response_id},
         _from,

@@ -37,7 +37,7 @@ defmodule RosBridge.Inference.Supervisor do
 
   def start_link(opts), do: Supervisor.start_link(__MODULE__, opts, name: __MODULE__)
 
-  @impl true
+  @impl Supervisor
   def init(opts) do
     {backend, backend_opts} = backend(opts)
 

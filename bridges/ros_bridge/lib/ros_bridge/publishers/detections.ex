@@ -123,7 +123,7 @@ defmodule RosBridge.Publishers.Detections do
 
   def labels, do: @coco_labels
 
-  @impl true
+  @impl GenServer
   def init(opts) do
     prefix = Keyword.get(opts, :topic_prefix, @default_topic_prefix)
 
@@ -175,7 +175,7 @@ defmodule RosBridge.Publishers.Detections do
     {:ok, state}
   end
 
-  @impl true
+  @impl GenServer
   def handle_cast({:stereo_result, %Result{} = result}, state) do
     frame_count = state.frame_count + 1
     state = %{state | frame_count: frame_count}
@@ -219,7 +219,7 @@ defmodule RosBridge.Publishers.Detections do
     end
   end
 
-  @impl true
+  @impl GenServer
   def handle_info({:inference_detections, seq, detections}, %{seq: seq, pending: pending} = state)
       when not is_nil(pending) do
     {:noreply, publish(detections, pending, %{state | pending: nil})}

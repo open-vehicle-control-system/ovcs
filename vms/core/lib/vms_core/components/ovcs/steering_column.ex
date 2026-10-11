@@ -31,7 +31,7 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
   end
 
-  @impl true
+  @impl GenServer
   def init(%{
         selected_control_level_source: selected_control_level_source,
         power_relay_controller: power_relay_controller,
@@ -84,7 +84,7 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
      }}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info(:loop, state) do
     state =
       state
@@ -276,7 +276,7 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
   defp parse_decimal(value) when is_integer(value), do: D.new(value)
   defp parse_decimal(value) when is_float(value), do: D.from_float(value)
 
-  @impl true
+  @impl GenServer
   def handle_call({:set_pid_parameters, %{kp: kp, ki: ki, kd: kd}}, _from, state) do
     {:reply, :ok, %{state | kp: kp, ki: ki, kd: kd}}
   end

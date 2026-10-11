@@ -190,7 +190,7 @@ defmodule VmsCore.Components.Vesc.MotorController do
     GenServer.start_link(__MODULE__, args, name: process_name)
   end
 
-  @impl true
+  @impl GenServer
   def init(
         %{
           process_name: process_name,
@@ -261,7 +261,7 @@ defmodule VmsCore.Components.Vesc.MotorController do
      }}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info(:loop, state) do
     {:noreply, apply_command(state)}
   end

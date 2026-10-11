@@ -64,7 +64,7 @@ defmodule RosBridge.Publishers.StaticTransform do
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 
-  @impl true
+  @impl GenServer
   def init(opts) do
     state = %{
       topic: Keyword.get(opts, :topic, @default_topic),
@@ -82,7 +82,7 @@ defmodule RosBridge.Publishers.StaticTransform do
     {:ok, state}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info(:tick, state) do
     stamp = Timing.time_message_for(System.monotonic_time(:nanosecond))
 

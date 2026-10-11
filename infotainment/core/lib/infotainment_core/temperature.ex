@@ -8,12 +8,12 @@ defmodule InfotainmentCore.Temperature do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
   end
 
-  @impl true
+  @impl GenServer
   def init(_args) do
     {:ok, %{temperature: @zero}}
   end
 
-  @impl true
+  @impl GenServer
   def handle_call(:temperature, _from, state) do
     state =
       case System.cmd("cat", ["/sys/class/thermal/thermal_zone0/temp"], stderr_to_stdout: true) do

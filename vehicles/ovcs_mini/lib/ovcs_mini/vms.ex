@@ -14,7 +14,7 @@ defmodule OvcsMini.Vms do
     GenServer.start_link(__MODULE__, nil, name: __MODULE__)
   end
 
-  @impl true
+  @impl GenServer
   def init(_) do
     Bus.subscribe("messages")
     Process.send_after(self(), :finish_boot_period, 5000)
@@ -32,7 +32,7 @@ defmodule OvcsMini.Vms do
      }}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info(:loop, state) do
     state =
       state

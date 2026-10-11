@@ -14,7 +14,7 @@ defmodule VmsCore.Components.OVCS.Status do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
   end
 
-  @impl true
+  @impl GenServer
   def init(%{bms_status_source: bms_status_source}) do
     :ok =
       Emitter.configure(:ovcs, "pack_status", %{
@@ -67,7 +67,7 @@ defmodule VmsCore.Components.OVCS.Status do
      }}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info(:loop, state) do
     state =
       state

@@ -3,7 +3,7 @@ defmodule VmsCore.Application do
 
   use Application
 
-  @impl true
+  @impl Application
   def start(_type, _args) do
     if Application.get_env(:vms_core, :load_debugger_dependencies) do
       load_debugger_dependencies()

@@ -6,7 +6,7 @@ defmodule VmsFirmware.Application do
   # via OTP transitive deps) and `VmsApi.Application`. This module is
   # the release entry point — it only exists so the firmware has an
   # Application module to mount.
-  @impl true
+  @impl Application
   def start(_type, _args) do
     Supervisor.start_link(children(), strategy: :one_for_one, name: VmsFirmware.Supervisor)
   end

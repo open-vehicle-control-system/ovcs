@@ -47,7 +47,7 @@ defmodule Obd2.Vms.Diagnostics do
     GenServer.start_link(__MODULE__, nil, name: __MODULE__)
   end
 
-  @impl true
+  @impl GenServer
   def init(_) do
     Enum.each(@always_on ++ @on_demand, fn request ->
       OBD2.Request.subscribe(self(), @network, request)
@@ -64,7 +64,7 @@ defmodule Obd2.Vms.Diagnostics do
      }}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info(
         {:handle_obd2_response, %OBD2.Response{request_name: request_name} = response},
         state
@@ -236,14 +236,14 @@ defmodule Obd2.Vms.Diagnostics do
 
   # ── On-demand actions ────────────────────────────────────────────────
 
-  @impl true
+  @impl GenServer
   def handle_cast({:pulse, request_name, duration_ms}, state) do
     OBD2.Request.enable(@network, request_name)
     Process.send_after(self(), {:disable, request_name}, duration_ms)
     {:noreply, state}
   end
 
-  @impl true
+  @impl GenServer
   def handle_call(:open_extended_session, _from, state) do
     OBD2.Request.enable(@network, "extended_session_powertrain")
     OBD2.Request.enable(@network, "tester_present_powertrain")

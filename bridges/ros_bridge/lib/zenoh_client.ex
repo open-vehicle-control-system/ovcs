@@ -153,7 +153,7 @@ defmodule RosBridge.ZenohClient do
 
   ## Callbacks
 
-  @impl true
+  @impl GenServer
   def init(opts) do
     state = %State{
       endpoint_ip: Keyword.fetch!(opts, :endpoint_ip),
@@ -165,7 +165,7 @@ defmodule RosBridge.ZenohClient do
     {:ok, state}
   end
 
-  @impl true
+  @impl GenServer
   def handle_call(:node_name, _from, state), do: {:reply, state.node_name, state}
 
   def handle_call({:subscribe, topic, message_module, pid, _opts}, _from, state) do
@@ -244,7 +244,7 @@ defmodule RosBridge.ZenohClient do
     {:reply, :ok, state}
   end
 
-  @impl true
+  @impl GenServer
   def handle_cast({:respond, service_name, query, response_payload}, state) do
     case Map.get(state.services, service_name) do
       nil ->
@@ -351,7 +351,7 @@ defmodule RosBridge.ZenohClient do
     end
   end
 
-  @impl true
+  @impl GenServer
   def handle_info({:connect, backoff_ms}, state) do
     case open_session(state.endpoint_ip) do
       {:ok, session} ->
@@ -435,7 +435,7 @@ defmodule RosBridge.ZenohClient do
     end
   end
 
-  @impl true
+  @impl GenServer
   def terminate(_reason, state), do: teardown_session(state)
 
   ## Internals — subscribers

@@ -19,7 +19,7 @@ defmodule <%= @module %>.Vms do
 
   def start_link(_), do: GenServer.start_link(__MODULE__, nil, name: __MODULE__)
 
-  @impl true
+  @impl GenServer
   def init(_) do
     Bus.subscribe("messages")
     {:ok, timer} = :timer.send_interval(@loop_period, :loop)
@@ -34,7 +34,7 @@ defmodule <%= @module %>.Vms do
      }}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info(:loop, state) do
     state =
       state

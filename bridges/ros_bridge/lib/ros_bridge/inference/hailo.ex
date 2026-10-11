@@ -91,7 +91,7 @@ defmodule RosBridge.Inference.Hailo do
     :exit, _ -> false
   end
 
-  @impl true
+  @impl GenServer
   def init(opts) do
     Process.flag(:trap_exit, true)
 
@@ -152,7 +152,7 @@ defmodule RosBridge.Inference.Hailo do
     error -> {:error, error}
   end
 
-  @impl true
+  @impl GenServer
   def handle_call(:available?, _from, state) do
     {:reply, not is_nil(state.port), state}
   end
@@ -186,7 +186,7 @@ defmodule RosBridge.Inference.Hailo do
      %{state | inflight: %{seq: seq, reply_to: reply_to, timer: timer, width: width}}}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info({port, {:data, packet}}, %{port: port} = state) do
     case parse_detections(packet) do
       {:ok, seq, detections} -> {:noreply, deliver(state, seq, detections)}

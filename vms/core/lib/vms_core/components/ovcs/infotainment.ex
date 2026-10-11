@@ -13,7 +13,7 @@ defmodule VmsCore.Components.OVCS.Infotainment do
     GenServer.start_link(__MODULE__, nil, name: __MODULE__)
   end
 
-  @impl true
+  @impl GenServer
   def init(_) do
     :ok = Receiver.subscribe(self(), :ovcs, "infotainment_status")
     {:ok, timer} = :timer.send_interval(@loop_period, :loop)
@@ -25,7 +25,7 @@ defmodule VmsCore.Components.OVCS.Infotainment do
      }}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info(:loop, state) do
     Bus.broadcast("messages", %Bus.Message{
       name: :requested_gear,

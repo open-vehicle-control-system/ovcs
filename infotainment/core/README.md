@@ -15,15 +15,15 @@ infotainment head unit plugs into this library via its own composer
 defmodule Ovcs1.Infotainment.Composer do
   @behaviour InfotainmentCore.Vehicle
 
-  @impl true
+  @impl InfotainmentCore.Vehicle
   def children, do: [ ... ]                         # supervision tree
-  @impl true
+  @impl InfotainmentCore.Vehicle
   def infotainment_configuration, do: %{ ... }      # pages + blocks
-  @impl true
+  @impl InfotainmentCore.Vehicle
   def can_config_otp_app, do: :ovcs1
-  @impl true
+  @impl InfotainmentCore.Vehicle
   def can_config_path, do: "can/infotainment.yml"
-  @impl true
+  @impl InfotainmentCore.Vehicle
   def default_can_mapping(:host),   do: "ovcs:vcan0"
   def default_can_mapping(:target), do: "ovcs:spi0.0"
 end

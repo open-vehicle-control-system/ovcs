@@ -27,7 +27,7 @@ defmodule Ovcs.Credo.Check.CommentBlocks do
   @private_def ~r/^\s*(defp|defmacrop|defguardp)\s/
 
   @doc false
-  @impl true
+  @impl Credo.Check
   def run(%SourceFile{} = source_file, params) do
     issue_meta = IssueMeta.for(source_file, params)
     max_lines = Params.get(params, :max_lines, __MODULE__)

@@ -97,7 +97,7 @@ defmodule VmsCore.Components.OVCS.VehicleMotion do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
   end
 
-  @impl true
+  @impl GenServer
   def init(
         %{
           rotation_source: rotation_source,
@@ -152,7 +152,7 @@ defmodule VmsCore.Components.OVCS.VehicleMotion do
      }}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info(:loop, state) do
     speed = speed_km_h(state)
 

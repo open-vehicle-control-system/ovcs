@@ -26,7 +26,7 @@ defmodule RosBridge.Publishers.LaserScan do
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 
-  @impl true
+  @impl GenServer
   def init(opts) do
     driver = Keyword.fetch!(opts, :driver)
 
@@ -46,7 +46,7 @@ defmodule RosBridge.Publishers.LaserScan do
     {:ok, state}
   end
 
-  @impl true
+  @impl GenServer
   def handle_cast({:lidar_scan, %Scan{} = scan}, state) do
     RosBridge.ZenohClient.publish(
       state.topic,

@@ -37,10 +37,10 @@ defmodule VmsCore.Components.Traxxas.SourceSwitchingTest do
 
     def start_link(test), do: GenServer.start_link(__MODULE__, test)
 
-    @impl true
+    @impl GenServer
     def init(test), do: {:ok, test}
 
-    @impl true
+    @impl GenServer
     def handle_call({:set_external_pwm, id, enabled, duty_cycle, frequency}, _from, test) do
       send(test, {:pwm, id, enabled, duty_cycle, frequency})
       {:reply, :ok, test}
