@@ -26,19 +26,19 @@ defmodule RosBridge.Consumers.Joy.Profile do
   `steering` and
   `throttle` are each the sum of their terms, clamped to [-1, 1], in
   the units of the `ros_actuator_command` frame: throttle drives when
-  positive and brakes when negative, and steering is positive to the
-  right on the OVCS Mini reference vehicle, against `joy_linux`
-  reporting left as positive, hence the negative steering gains. A term
+  positive and brakes when negative. On the OVCS Mini reference vehicle
+  steering is positive to the right, against `joy_linux` reporting left
+  as positive, hence the negative steering gains in the example. A term
   reads one axis, times its `gain` (1.0):
-
-  `brake`, optional, is the sum of its own terms, clamped to [0, 1]:
-  pressed past 2 %, it brakes by that much and the throttle is
-  ignored, so the brake pedal wins over the accelerator rather than
-  cancelling it.
 
     * `axis: i` — as `joy_linux` reports it, -1 to 1
     * `pedal: i` — a pedal reported -1 released and 1 pressed, read
       0 to 1
+
+  `brake`, optional, is the sum of its own terms, clamped to [0, 1]:
+  pressed past a small threshold, it brakes by that much and the
+  throttle is ignored, so the brake pedal wins over the accelerator
+  rather than cancelling it.
 
   `gears`, optional, selects the direction from what is held: `forward`
   and `backward` each list buttons (`button: i`, or the bare index) and
@@ -64,6 +64,9 @@ defmodule RosBridge.Consumers.Joy.Profile do
   # Below this the brake reads as released, so a pedal's noise at rest
   # does not take the throttle away.
   @brake_threshold 0.02
+
+  # A pedal reads as released below this, allowing a little travel for a worn pedal.
+  @pedal_released_below -0.95
 
   defstruct [:name, :device, :gears, steering: [], throttle: [], brake: []]
 
@@ -179,16 +182,16 @@ defmodule RosBridge.Consumers.Joy.Profile do
   def command(%__MODULE__{} = profile, axes, released \\ MapSet.new()) do
     released =
       for {:pedal, index, _} <- profile.steering ++ profile.throttle ++ profile.brake,
-          axis(axes, index) <= -0.95,
+          axis(axes, index) <= @pedal_released_below,
           reduce: released,
-          do: (acc -> MapSet.put(acc, index))
+          do: (released_axes -> MapSet.put(released_axes, index))
 
-    brake = profile.brake |> output(axes, released) |> max(0.0)
+    brake = profile.brake |> sum_terms(axes, released) |> max(0.0)
 
     throttle =
-      if brake > @brake_threshold, do: -brake, else: output(profile.throttle, axes, released)
+      if brake > @brake_threshold, do: -brake, else: sum_terms(profile.throttle, axes, released)
 
-    {output(profile.steering, axes, released), throttle, released}
+    {sum_terms(profile.steering, axes, released), throttle, released}
   end
 
   @doc """
@@ -215,26 +218,25 @@ defmodule RosBridge.Consumers.Joy.Profile do
   # Before its first event joy_linux reports a trigger as 0: not held.
   defp held?({:trigger, index}, axes, _buttons), do: axis(axes, index) <= -0.5
 
-  defp output(terms, axes, released) do
+  defp sum_terms(terms, axes, released) do
     terms
     |> Enum.reduce(0.0, fn {kind, index, gain}, sum ->
-      sum + gain * read(kind, axes, index, released)
+      sum + gain * read_term(kind, axes, index, released)
     end)
     |> clamp()
   end
 
-  defp read(:axis, axes, index, _released), do: clamp(axis(axes, index))
+  defp read_term(:axis, axes, index, _released), do: clamp(axis(axes, index))
 
-  # -1 is released; a little travel is allowed for a worn pedal.
-  defp read(:pedal, axes, index, released) do
+  defp read_term(:pedal, axes, index, released) do
     if MapSet.member?(released, index), do: (clamp(axis(axes, index)) + 1) / 2, else: 0.0
   end
 
-  defp axis(axes, index) when is_list(axes), do: axes |> Enum.at(index) |> number()
+  defp axis(axes, index) when is_list(axes), do: axes |> Enum.at(index) |> to_float()
   defp axis(_axes, _index), do: 0.0
 
-  defp number(value) when is_number(value), do: value * 1.0
-  defp number(_other), do: 0.0
+  defp to_float(value) when is_number(value), do: value * 1.0
+  defp to_float(_other), do: 0.0
 
   defp clamp(value), do: value |> max(-1.0) |> min(1.0)
 end

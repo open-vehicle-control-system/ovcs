@@ -3,22 +3,21 @@ defmodule RosBridge.Inference.Supervisor do
   Supervises the detection unit: an inference backend followed by the
   publisher that fuses its boxes with stereo depth.
 
-  Which backend is `:backend`, defaulting to
-  `RosBridge.Inference.Hailo` so the vehicle's wiring is unchanged.
+  Which backend is `:backend`, defaulting to the accelerator,
+  `RosBridge.Inference.Hailo`.
   See `RosBridge.Inference` for the alternatives — `Dnn` for CPU or
   OpenCL on a workstation, `Stub` for plumbing only.
 
   Exists to contain failure rather than to organise code. The bridge's
-  own supervisor is `:rest_for_one` with the default restart intensity
-  (3 in 5 seconds), and `RosBridge.Publishers.Detections` handles a
-  cast at the stereo frame rate — so a bug that raises on every frame
-  would exhaust that budget in about 200 ms and take the *whole*
-  bridge down, cameras and depth included. The one thing the detector
-  must never do.
+  own supervisor is `:rest_for_one` with the default restart intensity,
+  and `RosBridge.Publishers.Detections` handles a cast at the stereo
+  frame rate — so a bug that raises on every frame would exhaust that
+  budget almost at once and take the *whole* bridge down, cameras and
+  depth included.
 
-  Under this supervisor the same bug restarts the detector up to ten
-  times a minute and stops there, leaving the stereo pipeline
-  untouched. Detections go away; depth does not.
+  Under this supervisor the same bug restarts the detector within its
+  own budget and stops there, leaving the stereo pipeline untouched.
+  Detections go away; depth does not.
 
   `:rest_for_one` because a backend restart strands the publisher:
   `Detections` holds the `Result` whose frame is at the accelerator
@@ -34,12 +33,15 @@ defmodule RosBridge.Inference.Supervisor do
   alias RosBridge.Publishers.Detections
 
   @default_backend RosBridge.Inference.Hailo
+  # Its own budget, so a crash loop stops here instead of in the bridge supervisor.
+  @max_restarts 10
+  @max_seconds 60
 
   def start_link(opts), do: Supervisor.start_link(__MODULE__, opts, name: __MODULE__)
 
   @impl Supervisor
   def init(opts) do
-    {backend, backend_opts} = backend(opts)
+    {backend, backend_opts} = split_backend_options(opts)
 
     children = [
       {backend, backend_opts},
@@ -50,15 +52,12 @@ defmodule RosBridge.Inference.Supervisor do
 
     Supervisor.init(children,
       strategy: :rest_for_one,
-      max_restarts: 10,
-      max_seconds: 60
+      max_restarts: @max_restarts,
+      max_seconds: @max_seconds
     )
   end
 
-  # Backend-specific opts are passed through rather than enumerated, so
-  # adding a backend does not mean editing this list. Only the keys the
-  # publisher must not see are named.
-  defp backend(opts) do
+  defp split_backend_options(opts) do
     backend = Keyword.get(opts, :backend, @default_backend)
     {backend, Keyword.take(opts, backend_keys())}
   end

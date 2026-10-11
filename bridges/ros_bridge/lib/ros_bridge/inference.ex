@@ -7,7 +7,7 @@ defmodule RosBridge.Inference do
   happens:
 
     * `RosBridge.Inference.Hailo` — a YOLO HEF on a Hailo-8, via a
-      Port. What runs on the car.
+      Port. The accelerator path, for a vehicle fitted with one.
     * `RosBridge.Inference.Dnn` — OpenCV's DNN module, on the CPU or
       on a GPU through OpenCL. What lets the full stack run on a
       workstation, simulator included.
@@ -25,9 +25,9 @@ defmodule RosBridge.Inference do
 
   The reply is
 
-      {:inference_detections, seq, detections}
+      {:inference_detections, sequence, detections}
 
-  where `seq` is the sequence number the caller passed to `detect/3`,
+  where `sequence` is the sequence number the caller passed to `detect/3`,
   and each detection is
 
       %{class_id: 0..79, score: 0.0..1.0, x0: _, y0: _, x1: _, y1: _}
@@ -65,14 +65,14 @@ defmodule RosBridge.Inference do
   @type server :: GenServer.server()
 
   @doc """
-  Submit one `Evision.Mat` for detection, tagged with `seq`.
+  Submit one `Evision.Mat` for detection, tagged with `sequence`.
 
   `:ok` means the frame was accepted and a reply will follow.
   `{:error, :busy}` means one is already in flight and this frame was
   dropped. `{:error, :unavailable}` means the backend is not working
   and never will be without a restart.
   """
-  @callback detect(server(), seq :: non_neg_integer(), mat :: Evision.Mat.maybe_mat_in()) ::
+  @callback detect(server(), sequence :: non_neg_integer(), mat :: Evision.Mat.maybe_mat_in()) ::
               :ok | {:error, :busy | :unavailable}
 
   @doc "False when the backend could not initialise. Never raises."

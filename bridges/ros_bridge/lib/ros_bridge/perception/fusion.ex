@@ -27,7 +27,7 @@ defmodule RosBridge.Perception.Fusion do
   """
   @spec median_depth(Evision.Mat.t(), map(), float()) :: float() | nil
   def median_depth(depth_m, box, fraction) do
-    {height, width} = mat_hw(depth_m)
+    {height, width} = height_and_width(depth_m)
 
     {x0, x1} = shrink(box.x0, box.x1, fraction, width)
     {y0, y1} = shrink(box.y0, box.y1, fraction, height)
@@ -41,7 +41,7 @@ defmodule RosBridge.Perception.Fusion do
   end
 
   @doc """
-  Unproject a box at distance `z` into metres, using the rectified
+  Unproject a box at `distance_m` into metres, using the rectified
   intrinsics. Square pixels after rectification, so `fy == fx`.
 
   Returns the box centre as `{x, y, z}` plus its metric `width` and
@@ -49,16 +49,16 @@ defmodule RosBridge.Perception.Fusion do
   is why a marker's label goes at a *smaller* y to sit above the box.
   """
   @spec unproject(map(), float(), {float(), float()}, float()) :: map()
-  def unproject(box, z, {cx, cy}, fx) do
+  def unproject(box, distance_m, {cx, cy}, fx) do
     u = (box.x0 + box.x1) / 2.0
     v = (box.y0 + box.y1) / 2.0
 
     %{
-      x: (u - cx) * z / fx,
-      y: (v - cy) * z / fx,
-      z: z,
-      width: (box.x1 - box.x0) * z / fx,
-      height: (box.y1 - box.y0) * z / fx
+      x: (u - cx) * distance_m / fx,
+      y: (v - cy) * distance_m / fx,
+      z: distance_m,
+      width: (box.x1 - box.x0) * distance_m / fx,
+      height: (box.y1 - box.y0) * distance_m / fx
     }
   end
 
@@ -68,10 +68,9 @@ defmodule RosBridge.Perception.Fusion do
 
   Each edge is subdivided into `segments` pieces rather than drawn
   corner to corner. A straight edge in rectified pixels is a *curve*
-  in raw camera pixels, and the overlay is drawn on the raw image:
-  measured on the Mini, rectification moves a pixel by 10 on average
-  and up to 23, so an undivided edge visibly bows away from the
-  object. Subdividing lets `remap/4` follow the distortion.
+  in raw camera pixels, and the overlay is drawn on the raw image, so
+  an undivided edge visibly bows away from the object. Subdividing
+  lets `remap/4` follow the distortion.
 
   Returns `4 * segments` vertices.
   """
@@ -89,8 +88,7 @@ defmodule RosBridge.Perception.Fusion do
     |> Enum.flat_map(fn {from, to} -> subdivide(from, to, segments) end)
   end
 
-  # An edge's vertices, excluding its end corner — the next edge
-  # starts there, and repeating it would double every corner.
+  # Excludes the end corner, which starts the next edge.
   defp subdivide({x0, y0}, {x1, y1}, segments) do
     Enum.map(0..(segments - 1), fn i ->
       t = i / segments
@@ -128,9 +126,7 @@ defmodule RosBridge.Perception.Fusion do
     end
   end
 
-  # Shrink a span towards its centre, then clamp to the image. The
-  # clamp matters: a detection cut off at the frame edge legitimately
-  # has a box extending past it.
+  # Clamped to the image: a box cut off at the frame edge extends past it.
   defp shrink(low, high, fraction, limit) do
     centre = (low + high) / 2.0
     half = (high - low) * fraction / 2.0
@@ -141,12 +137,11 @@ defmodule RosBridge.Perception.Fusion do
     }
   end
 
-  # The upper bound rejects the infinities a zero disparity produces
-  # before they reach the median.
+  # The upper bound drops the infinities a zero disparity produces.
   defp valid_depths(binary) do
-    for <<value::little-float-32 <- binary>>,
-        value > 0.0 and value < 1.0e6,
-        do: value
+    for <<depth_m::little-float-32 <- binary>>,
+        depth_m > 0.0 and depth_m < 1.0e6,
+        do: depth_m
   end
 
   defp median([]), do: nil
@@ -163,7 +158,7 @@ defmodule RosBridge.Perception.Fusion do
     end
   end
 
-  defp mat_hw(mat) do
+  defp height_and_width(mat) do
     case Evision.Mat.shape(mat) do
       {height, width} -> {height, width}
       {height, width, _channels} -> {height, width}

@@ -1,4 +1,5 @@
 defmodule RosBridge.Consumers.Velocity.State do
+  @moduledoc false
   defstruct [:watchdog, :topic, holonomic_warned: false, sequence: 0]
 end
 
@@ -33,9 +34,9 @@ defmodule RosBridge.Consumers.Velocity do
   child specs with the same id and the whole bridge refuses to boot.
   Even with distinct names they would overwrite each other's frame and
   each watchdog would zero the other's command. One velocity commander
-  per vehicle is the actual design; the switch on channel 5 chooses
-  between the *velocity* path and the *joystick* path, not between two
-  velocity paths.
+  per vehicle is the actual design; the vehicle's control-level switch
+  chooses between the *velocity* path and the *joystick* path, not
+  between two velocity paths.
 
   Choosing the wrong one of the two is not loud, which is why
   `ZenohClient` warns about surplus bytes after a successful parse:
@@ -54,7 +55,7 @@ defmodule RosBridge.Consumers.Velocity do
   `RosBridge.InputWatchdog`.
 
   The default timeout is deliberately tighter than the joystick's
-  500 ms. A planner publishes on its own control period — Nav2's
+  default. A planner publishes on its own control period — Nav2's
   `controller_frequency` is 20 Hz in the simulator — and unlike a
   human on a stick there is nobody watching the vehicle when it stops
   publishing.
@@ -68,7 +69,6 @@ defmodule RosBridge.Consumers.Velocity do
   use GenServer
 
   alias Cantastic.Emitter
-  alias Decimal, as: D
   alias Ros2.GeometryMsgs.Msg.{Twist, TwistStamped}
   alias RosBridge.Consumers.Velocity.State
   alias RosBridge.InputWatchdog
@@ -78,13 +78,12 @@ defmodule RosBridge.Consumers.Velocity do
   @frame_name "ros_velocity_command"
   @default_topic "cmd_vel"
   @default_timeout_ms 300
+  # Watchdog resolution; well under the timeout.
   @check_period_ms 50
-  # The wire range of 0x2B1's signals: signed 16-bit, linear at 0.01 and
-  # angular at 0.001. A property of the frame, not of the vehicle -- the
-  # VMS clamps to the vehicle's own limits. Cantastic's encoder wraps an
-  # out-of-range integer silently, so an unclamped 9000 m/s (millimetres
-  # sent as metres) would wrap and be applied as reverse.
+  # 0x2B1's wire range (signed 16-bit at 0.01 / 0.001); Cantastic wraps
+  # out-of-range values silently, turning a mis-scaled command into reverse.
   @wire_limits %{"linear" => 327.67, "angular" => 32.767}
+  # Keeps a mis-scaled commander's warning visible without flooding the log.
   @wire_warning_period_ms 5_000
   # Below this a lateral or vertical component is float noise, not a
   # commander asserting the vehicle is holonomic.
@@ -99,17 +98,17 @@ defmodule RosBridge.Consumers.Velocity do
   def init(opts) do
     opts = Map.new(opts || %{})
     topic = Map.get(opts, :topic, @default_topic)
-    message = Map.get(opts, :message, TwistStamped)
+    message_module = Map.get(opts, :message, TwistStamped)
     timeout_ms = Map.get(opts, :timeout_ms, @default_timeout_ms)
 
     :ok =
       Emitter.configure(:ovcs, @frame_name, %{
         parameters_builder_function: :default,
-        initial_data: %{"linear" => D.new(0), "angular" => D.new(0), "sequence" => 0},
+        initial_data: %{"linear" => Decimal.new(0), "angular" => Decimal.new(0), "sequence" => 0},
         enable: true
       })
 
-    :ok = RosBridge.ZenohClient.subscribe(topic, message)
+    :ok = RosBridge.ZenohClient.subscribe(topic, message_module)
     {:ok, _timer} = :timer.send_interval(@check_period_ms, :check_input)
 
     {:ok, %State{watchdog: InputWatchdog.new(timeout_ms), topic: topic}}
@@ -137,10 +136,7 @@ defmodule RosBridge.Consumers.Velocity do
 
   def handle_info(_message, state), do: {:noreply, state}
 
-  # Only linear.x and angular.z. The other four components of a Twist
-  # are meaningless for a non-holonomic vehicle, and a commander that
-  # sets them is asserting something about this vehicle that is not
-  # true — worth saying once rather than discarding in silence.
+  # Forwards linear.x and angular.z only; the rest trips `warn_if_holonomic/3`.
   defp command(%Twist{linear: linear, angular: angular}, state) do
     state = warn_if_holonomic(linear, angular, state)
     linear_x = wire_value(linear.x / 1.0, "linear")
@@ -148,11 +144,11 @@ defmodule RosBridge.Consumers.Velocity do
     sequence = next_sequence(state.sequence)
 
     :ok =
-      Emitter.update(:ovcs, @frame_name, fn data ->
+      Emitter.update(:ovcs, @frame_name, fn frame_data ->
         %{
-          data
-          | "linear" => D.from_float(linear_x),
-            "angular" => D.from_float(angular_z),
+          frame_data
+          | "linear" => Decimal.from_float(linear_x),
+            "angular" => Decimal.from_float(angular_z),
             "sequence" => sequence
         }
       end)
@@ -160,8 +156,7 @@ defmodule RosBridge.Consumers.Velocity do
     %{state | watchdog: InputWatchdog.seen(state.watchdog), sequence: sequence}
   end
 
-  # Once per process: a commander configured for the wrong platform
-  # sends every sample this way, and one line says it.
+  # Once per process: a misconfigured commander sends this on every sample.
   defp warn_if_holonomic(_linear, _angular, %State{holonomic_warned: true} = state), do: state
 
   defp warn_if_holonomic(linear, angular, state) do
@@ -182,41 +177,35 @@ defmodule RosBridge.Consumers.Velocity do
   end
 
   @doc false
-  def wire_value(value, signal) do
+  def wire_value(velocity, signal) do
     limit = Map.fetch!(@wire_limits, signal)
 
-    if abs(value) <= limit do
-      value
+    if abs(velocity) <= limit do
+      velocity
     else
-      warn_wire_limit(value, signal, limit)
-      value |> max(-limit) |> min(limit)
+      warn_wire_limit(velocity, signal, limit)
+      velocity |> max(-limit) |> min(limit)
     end
   end
 
-  # Rate-limited per signal, since a mis-scaled commander sends at its
-  # own frequency rather than once.
-  defp warn_wire_limit(value, signal, limit) do
-    now = System.monotonic_time(:millisecond)
-    key = {:wire_limit_warned, signal}
-    last = Process.get(key)
+  # Rate-limited per signal: a mis-scaled commander repeats at its own rate.
+  defp warn_wire_limit(velocity, signal, limit) do
+    now_ms = System.monotonic_time(:millisecond)
+    warned_key = {:wire_limit_warned, signal}
+    last_warned_at_ms = Process.get(warned_key)
 
-    if is_nil(last) or now - last >= @wire_warning_period_ms do
-      Process.put(key, now)
+    if is_nil(last_warned_at_ms) or now_ms - last_warned_at_ms >= @wire_warning_period_ms do
+      Process.put(warned_key, now_ms)
 
       Logger.warning(
-        "#{__MODULE__}: #{signal}=#{value} exceeds what #{@frame_name} can carry " <>
+        "#{__MODULE__}: #{signal}=#{velocity} exceeds what #{@frame_name} can carry " <>
           "(±#{limit}); clamped. No vehicle moves this fast -- check the " <>
           "commander's units."
       )
     end
   end
 
-  # Never received anything: a topic typo, the wrong ROS_DOMAIN_ID, or a
-  # planner that was never launched. Distinct from `:stale` because the
-  # cause is at the keyboard, not on the vehicle, and because nothing
-  # else in either hop can report it -- the emitter goes on sending
-  # well-formed zero frames, so `Cantastic.ReceivedFrameWatcher` on the
-  # VMS side sees nothing wrong.
+  # Nothing ever arrived: a setup error neither hop can otherwise report.
   defp handle_transition(:silent, state) do
     Logger.warning(
       "#{__MODULE__}: nothing has published #{state.topic} since start. " <>
@@ -243,14 +232,18 @@ defmodule RosBridge.Consumers.Velocity do
 
   defp handle_transition(:unchanged, state), do: state
 
-  # The zero is a new sample as far as the VMS is concerned, so it gets
-  # a sequence.
+  # A zero is a new sample to the VMS, so it takes a sequence.
   defp zero_velocity(state) do
     sequence = next_sequence(state.sequence)
 
     :ok =
-      Emitter.update(:ovcs, @frame_name, fn data ->
-        %{data | "linear" => D.new(0), "angular" => D.new(0), "sequence" => sequence}
+      Emitter.update(:ovcs, @frame_name, fn frame_data ->
+        %{
+          frame_data
+          | "linear" => Decimal.new(0),
+            "angular" => Decimal.new(0),
+            "sequence" => sequence
+        }
       end)
 
     %{state | sequence: sequence}

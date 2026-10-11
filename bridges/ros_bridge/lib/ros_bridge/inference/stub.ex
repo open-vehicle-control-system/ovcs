@@ -21,7 +21,7 @@ defmodule RosBridge.Inference.Stub do
   front of the camera, so the fused distance is checkable against the
   world rather than merely plausible.
 
-  ## Opts
+  ## Options
 
     * `:boxes` — a list of `{class_id, score, {x0, y0, x1, y1}}` with
       the coordinates as 0.0–1.0 fractions of width/height. Defaults to
@@ -40,8 +40,8 @@ defmodule RosBridge.Inference.Stub do
   end
 
   @impl RosBridge.Inference
-  def detect(server \\ __MODULE__, seq, mat) do
-    GenServer.call(server, {:detect, seq, mat, self()})
+  def detect(server \\ __MODULE__, sequence, mat) do
+    GenServer.call(server, {:detect, sequence, mat, self()})
   end
 
   @impl RosBridge.Inference
@@ -63,8 +63,8 @@ defmodule RosBridge.Inference.Stub do
   end
 
   @impl GenServer
-  def handle_call({:detect, seq, mat, reply_to}, _from, state) do
-    {height, width} = shape(mat)
+  def handle_call({:detect, sequence, mat, reply_to}, _from, state) do
+    {height, width} = height_and_width(mat)
 
     detections =
       for {class_id, score, {x0, y0, x1, y1}} <- state.boxes do
@@ -78,14 +78,14 @@ defmodule RosBridge.Inference.Stub do
         }
       end
 
-    send(reply_to, {:inference_detections, seq, detections})
+    send(reply_to, {:inference_detections, sequence, detections})
     {:reply, :ok, state}
   end
 
-  defp shape(mat) do
+  defp height_and_width(mat) do
     case Evision.Mat.shape(mat) do
-      {h, w} -> {h, w}
-      {h, w, _channels} -> {h, w}
+      {height, width} -> {height, width}
+      {height, width, _channels} -> {height, width}
     end
   end
 end

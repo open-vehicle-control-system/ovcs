@@ -1,4 +1,5 @@
 defmodule RosBridge.Consumers.Joy.State do
+  @moduledoc false
   defstruct [
     :watchdog,
     :active,
@@ -66,19 +67,18 @@ defmodule RosBridge.Consumers.Joy do
 
   `Cantastic.Emitter` keeps its data in state and retransmits on a
   timer, so once a throttle has been written the frames keep leaving
-  at 100 Hz whether or not anything is still feeding them. Unplug the
-  controller, kill the `joy` node, partition Zenoh — the CAN bus looks
-  healthy and carries a command nobody is issuing.
+  at the frame's period whether or not anything is still feeding them.
+  Unplug the controller, kill the `joy` node, partition Zenoh — the CAN
+  bus looks healthy and carries a command nobody is issuing.
 
   The VMS-side `Cantastic.ReceivedFrameWatcher` cannot see that,
   because from its side nothing is wrong. So this consumer watches its
   own input and zeroes the throttle when it stops arriving. See
   `RosBridge.InputWatchdog` for the two hops and what each covers.
 
-  The default timeout is 500 ms, against samples that arrive every
-  50 ms: the base station runs `joy_linux` with
-  `autorepeat_rate` at 20 Hz, so a still controller still publishes.
-  Lower that rate and this has to rise with it.
+  The timeout relies on the operator's `joy_linux` `autorepeat_rate`,
+  which makes a still controller still publish. Lower that rate and the
+  timeout has to rise with it.
 
   Only the throttle is zeroed. Steering holds, for the same reason it
   holds in `VmsCore.Components.OVCS.RosActuatorCommand.Throttle`:
@@ -87,7 +87,6 @@ defmodule RosBridge.Consumers.Joy do
   mitigation.
   """
   alias Cantastic.Emitter
-  alias Decimal, as: D
   alias Ros2.SensorMsgs.Msg.Joy
   alias RosBridge.Consumers.Joy.{Profile, State}
   alias RosBridge.InputWatchdog
@@ -96,11 +95,9 @@ defmodule RosBridge.Consumers.Joy do
   use GenServer
 
   @frame_name "ros_actuator_command"
-  # Ten missed samples at the 20 Hz autorepeat rate. At 2 m/s that is
-  # about a metre of travel — longer than the VMS-side watcher's 50 ms,
-  # because this has to tolerate a scheduling hiccup on the operator's
-  # machine and a hop across the Zenoh fabric.
+  # Tolerates a scheduling hiccup on the operator's machine plus a Zenoh hop.
   @default_timeout_ms 500
+  # Watchdog resolution; well under the timeout.
   @check_period_ms 50
 
   @impl GenServer
@@ -109,8 +106,8 @@ defmodule RosBridge.Consumers.Joy do
       Emitter.configure(:ovcs, @frame_name, %{
         parameters_builder_function: :default,
         initial_data: %{
-          "steering" => D.new(0),
-          "throttle" => D.new(0),
+          "steering" => Decimal.new(0),
+          "throttle" => Decimal.new(0),
           "direction" => "forward",
           "sequence" => 0
         },
@@ -120,7 +117,7 @@ defmodule RosBridge.Consumers.Joy do
     vehicle_profiles =
       case Keyword.get(opts, :profiles_dir) do
         nil -> []
-        dir -> Profile.load_dir!(dir)
+        directory -> Profile.load_dir!(directory)
       end
 
     profiles =
@@ -150,16 +147,16 @@ defmodule RosBridge.Consumers.Joy do
 
   @doc """
   The throttle and the frame's direction for the gear lever's
-  `requested` direction, `last` being the direction sent before. In
+  `requested` direction, `last_direction` being the direction sent before. In
   neutral the throttle only brakes and the direction holds; a profile
   without `gears` (`nil`) drives forward.
   """
-  def gear(nil, throttle, _last), do: {throttle, "forward"}
-  def gear(:neutral, throttle, last), do: {min(throttle, 0.0), last}
-  def gear(requested, throttle, _last), do: {throttle, Atom.to_string(requested)}
+  def gear(nil, throttle, _last_direction), do: {throttle, "forward"}
+  def gear(:neutral, throttle, last_direction), do: {min(throttle, 0.0), last_direction}
+  def gear(requested, throttle, _last_direction), do: {throttle, Atom.to_string(requested)}
 
   # `from_float/1` has no integer clause; the profile's sums are floats.
-  defp decimal(value), do: value |> Kernel.*(1.0) |> D.from_float()
+  defp to_decimal(value), do: value |> Kernel.*(1.0) |> Decimal.from_float()
 
   @impl GenServer
   def handle_info({:ros_message, {key_expr, %Joy{} = joy}}, state) do
@@ -170,17 +167,14 @@ defmodule RosBridge.Consumers.Joy do
       else: {:noreply, ignore(profile, state)}
   end
 
-  # The transition, not the state, so this logs once per outage rather
-  # than twenty times a second.
+  # Acts on transitions, so an outage logs once.
   def handle_info(:check_input, state) do
     {transition, watchdog} = InputWatchdog.check(state.watchdog)
     state = handle_transition(transition, %{state | watchdog: watchdog})
     {:noreply, state}
   end
 
-  # Anything else delivered as `{:ros_message, …}` is a configuration
-  # bug (wrong subscribe call somewhere): log loudly rather than
-  # silently dropping or matching on the wrong shape.
+  # Any other message shape is a subscription bug: log it.
   def handle_info({:ros_message, {key_expr, message}}, state) do
     Logger.warning("#{__MODULE__} unexpected message on #{key_expr}: #{inspect(message)}")
 
@@ -196,11 +190,11 @@ defmodule RosBridge.Consumers.Joy do
     sequence = next_sequence(state.sequence)
 
     :ok =
-      Emitter.update(:ovcs, @frame_name, fn data ->
+      Emitter.update(:ovcs, @frame_name, fn frame_data ->
         %{
-          data
-          | "steering" => decimal(steering),
-            "throttle" => decimal(throttle),
+          frame_data
+          | "steering" => to_decimal(steering),
+            "throttle" => to_decimal(throttle),
             "direction" => direction,
             "sequence" => sequence
         }
@@ -216,7 +210,7 @@ defmodule RosBridge.Consumers.Joy do
     }
   end
 
-  # Once per controller and outage, not twenty times a second.
+  # Warns once per controller and outage.
   defp ignore(profile, state) do
     unless MapSet.member?(state.ignored, profile.name) do
       Logger.warning(
@@ -227,11 +221,7 @@ defmodule RosBridge.Consumers.Joy do
     %{state | ignored: MapSet.put(state.ignored, profile.name)}
   end
 
-  # Nothing has ever arrived, which is a setup problem rather than a
-  # loss: the topic name, the domain id, or a `joy` node that was never
-  # started. Said once, on the first tick, because nothing downstream
-  # can tell -- the emitter keeps sending valid zeroed frames, so the
-  # VMS-side watcher sees a perfectly healthy stream.
+  # Nothing ever arrived: a setup error that nothing downstream can detect.
   defp handle_transition(:silent, state) do
     Logger.warning(
       "#{__MODULE__}: nothing has published #{topics(state)} since start. " <>
@@ -258,14 +248,13 @@ defmodule RosBridge.Consumers.Joy do
 
   defp handle_transition(:unchanged, state), do: state
 
-  # Steering is left alone deliberately — see the moduledoc. The zero is
-  # a new sample as far as the VMS is concerned, so it gets a sequence.
+  # Steering holds (see the moduledoc); the zero takes a sequence like any sample.
   defp zero_throttle(state) do
     sequence = next_sequence(state.sequence)
 
     :ok =
-      Emitter.update(:ovcs, @frame_name, fn data ->
-        %{data | "throttle" => D.new(0), "sequence" => sequence}
+      Emitter.update(:ovcs, @frame_name, fn frame_data ->
+        %{frame_data | "throttle" => Decimal.new(0), "sequence" => sequence}
       end)
 
     %{
