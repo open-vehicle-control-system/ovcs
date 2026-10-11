@@ -90,7 +90,6 @@ defmodule RosBridge.Publishers.Odometry do
 
   alias Cantastic.{Frame, Receiver, Signal}
   alias OvcsDrivers.Imu.Sample
-  alias Ros2.BuiltinInterfaces.Msg.Time
 
   alias Ros2.GeometryMsgs.Msg.{
     Point,
@@ -108,6 +107,7 @@ defmodule RosBridge.Publishers.Odometry do
   alias Ros2.StdMsgs.Msg.Header
   alias Ros2.Tf2Msgs.Msg.TFMessage
   alias RosBridge.Publishers.Odometry.State
+  alias RosBridge.Timing
 
   require Logger
 
@@ -299,13 +299,8 @@ defmodule RosBridge.Publishers.Odometry do
   end
 
   defp publish(%State{} = state) do
-    now_ns = System.system_time(:nanosecond)
+    stamp = Timing.time_message_for(System.monotonic_time(:nanosecond))
     {x, y} = base_position(state)
-
-    stamp = %Time{
-      sec: div(now_ns, 1_000_000_000),
-      nanosec: rem(now_ns, 1_000_000_000)
-    }
 
     orientation = %Quaternion{
       x: 0.0,
