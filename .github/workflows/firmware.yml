@@ -95,20 +95,12 @@ jobs:
                  infotainment: true, bridges: true],
                 repo_root: "../..")'
 
-      - name: Install Flutter SDK (infotainment only)
+      - name: Build the Flutter tool (infotainment only)
+        # Flutter's first run builds its tool and says so on stdout, which
+        # breaks nerves_flutter_support's parse of `flutter --version
+        # --machine` during the release.
         if: matrix.role == 'infotainment'
-        # nerves_flutter_support's release step shells out to `flutter`
-        # and runs its own SDK-root detection by walking up from
-        # `which flutter`. mise's flutter is reachable via a shim
-        # wrapper but the wrapper path doesn't sit at the SDK root,
-        # so Flutter rejects it ("Could not get information about
-        # your Flutter install"). subosito/flutter-action lays the
-        # SDK down at a normal layout and exports FLUTTER_ROOT.
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.32.8'
-          channel: stable
-          cache: true
+        run: flutter --version
 
       - name: Install Nerves system build deps
         run: |
