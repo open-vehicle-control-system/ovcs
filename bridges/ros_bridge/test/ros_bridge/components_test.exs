@@ -35,7 +35,7 @@ defmodule RosBridge.ComponentsTest do
       assert opts[:driver] == FakeImu
     end
 
-    test "forwards optional publisher opts (topic, frame_id, interval_ms)" do
+    test "forwards optional publisher opts (topic, frame_id, publish_interval_ms)" do
       [_driver_spec, {RosBridge.Publishers.Imu, opts}] =
         Components.start(:imu_publisher,
           driver: RosBridge.ComponentsTest.FakeImu,

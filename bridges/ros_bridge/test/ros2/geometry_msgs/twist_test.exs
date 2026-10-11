@@ -35,14 +35,14 @@ defmodule Ros2.GeometryMsgs.Msg.TwistTest do
   # before the Twist, and those bytes carry junk.
   @twist_stamped_short "000100000700000008000000050000006f646f6d006c696e6b000c0800000000000000400000000000000000000000000000000000000000000000000000000000000000000000000000f4bf"
 
-  defp body(hex) do
+  defp cdr_body(hex) do
     <<_encapsulation::binary-size(4), body::binary>> = Base.decode16!(hex, case: :lower)
     body
   end
 
   describe "Twist" do
     test "parses the six float64s in REP-103 order" do
-      assert {:ok, twist, <<>>} = Twist.parse(body(@twist))
+      assert {:ok, twist, <<>>} = Twist.parse(cdr_body(@twist))
 
       assert twist.linear.x == 1.5
       assert twist.linear.y == -0.25
@@ -53,14 +53,14 @@ defmodule Ros2.GeometryMsgs.Msg.TwistTest do
     end
 
     test "a truncated body is an error, not a partial struct" do
-      <<short::binary-size(24), _::binary>> = body(@twist)
+      <<short::binary-size(24), _::binary>> = cdr_body(@twist)
       assert {:error, :malformed, _} = Twist.parse(short)
     end
   end
 
   describe "TwistStamped" do
     test "parses the header and the twist behind it" do
-      assert {:ok, stamped, <<>>} = TwistStamped.parse(body(@twist_stamped))
+      assert {:ok, stamped, <<>>} = TwistStamped.parse(cdr_body(@twist_stamped))
 
       assert stamped.header.stamp.sec == 1_735_689_600
       assert stamped.header.stamp.nanosec == 123_456_789
@@ -70,11 +70,10 @@ defmodule Ros2.GeometryMsgs.Msg.TwistTest do
     end
 
     test "a shorter frame id shifts the padding, and the twist still lands" do
-      # "odom" against "base_link": 2 bytes of padding become 7. If the
-      # alignment were computed from the start of the Twist rather than
-      # from the body origin, this is the case that would decode to
-      # nonsense while the other one passed.
-      assert {:ok, stamped, <<>>} = TwistStamped.parse(body(@twist_stamped_short))
+      # "odom" against "base_link": 2 bytes of padding become 7. Alignment
+      # computed from the start of the Twist rather than the body origin
+      # would decode this case to nonsense.
+      assert {:ok, stamped, <<>>} = TwistStamped.parse(cdr_body(@twist_stamped_short))
 
       assert stamped.header.frame_id == "odom"
       assert stamped.header.stamp.sec == 7
@@ -87,7 +86,7 @@ defmodule Ros2.GeometryMsgs.Msg.TwistTest do
       # Guards the claim in the moduledoc: if a future capture happened
       # to zero-fill, a parser bug that scanned for zeros would start
       # passing and this test would stop justifying itself.
-      raw = body(@twist_stamped_short)
+      raw = cdr_body(@twist_stamped_short)
       # sec + nanosec + length + "odom\0" = 17 bytes consumed, then 7
       # of padding before the 8-aligned Twist. Captured as
       # "link" <> <<0, 0x0c, 0x08>>.

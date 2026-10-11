@@ -3,16 +3,11 @@ defmodule RosBridge.Camera.ZenohTest do
 
   alias RosBridge.Camera.Zenoh
 
-  # A real JPEG, encoded the way the pipeline's frames are, so the
-  # scanner is checked against bytes it will actually meet rather than
-  # a hand-built header.
+  # A real JPEG of random pixels: a flat fill compresses to an unrepresentative short scan.
   defp jpeg(width, height) do
-    # Random pixels rather than a flat fill: a uniform image compresses
-    # to a JPEG with an unusually short scan, which is not
-    # representative of the frames this parser actually meets.
-    bytes = :crypto.strong_rand_bytes(width * height * 3)
+    pixels = :crypto.strong_rand_bytes(width * height * 3)
 
-    bytes
+    pixels
     |> Evision.Mat.from_binary({:u, 8}, height, width, 3)
     |> then(&Evision.imencode(".jpg", &1))
   end

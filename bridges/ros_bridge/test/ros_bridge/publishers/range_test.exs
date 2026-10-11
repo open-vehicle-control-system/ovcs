@@ -35,11 +35,11 @@ defmodule RosBridge.Publishers.RangeTest do
     encoded = Range.encode(RangePublisher.range(sample(1.5), @state))
     frame_end = 8 + 4 + byte_size("ultrasound_rear_left") + 1
 
-    <<_::binary-size(frame_end), radiation, _pad::binary-size(2), fov::little-float-32,
-      min::little-float-32, _::binary>> = encoded
+    <<_::binary-size(frame_end), radiation, _padding::binary-size(2),
+      field_of_view::little-float-32, min_range::little-float-32, _::binary>> = encoded
 
     assert radiation == 0
-    assert_in_delta fov, 1.0, 1.0e-6
-    assert_in_delta min, 0.03, 1.0e-6
+    assert_in_delta field_of_view, 1.0, 1.0e-6
+    assert_in_delta min_range, 0.03, 1.0e-6
   end
 end

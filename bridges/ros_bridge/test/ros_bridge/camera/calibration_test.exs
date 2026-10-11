@@ -41,7 +41,7 @@ defmodule RosBridge.Camera.CalibrationTest do
     assert calibration.width == 640
     assert calibration.height == 480
 
-    # The entries that used to raise: "0." and "1.".
+    # The bare trailing-dot entries: "0." and "1.".
     assert [725.11023, 0.0, 314.60834 | _] = calibration.camera_matrix
     assert Enum.at(calibration.camera_matrix, 8) == 1.0
     assert Enum.all?(calibration.camera_matrix, &is_float/1)
@@ -55,42 +55,42 @@ defmodule RosBridge.Camera.CalibrationTest do
   end
 
   test "accepts leading-dot and integer spellings too" do
-    body = """
+    calibration_yaml = """
     camera_matrix:
       rows: 3
       cols: 3
       data: [.5, -.25, 3, 0., -0., 1e-3, 2.5E2, 0.0, 1]
     """
 
-    assert Calibration.parse(body).camera_matrix ==
+    assert Calibration.parse(calibration_yaml).camera_matrix ==
              [0.5, -0.25, 3.0, 0.0, -0.0, 1.0e-3, 250.0, 0.0, 1.0]
   end
 
   describe "scale_to/3" do
     setup do
-      %{cal: Calibration.parse(@ost_style)}
+      %{calibration: Calibration.parse(@ost_style)}
     end
 
-    test "scales pixel-indexed intrinsics and leaves the rest alone", %{cal: cal} do
-      # 640x360 -> 480x270 is the proportional resize the vehicle uses.
-      scaled = Calibration.scale_to(%{cal | width: 640, height: 360}, 480, 270)
+    test "scales pixel-indexed intrinsics and leaves the rest alone", %{calibration: calibration} do
+      # 640x360 -> 480x270, a proportional resize.
+      scaled = Calibration.scale_to(%{calibration | width: 640, height: 360}, 480, 270)
 
       assert scaled.width == 480
       assert scaled.height == 270
 
       [fx, _, cx | _] = scaled.camera_matrix
-      [ofx, _, ocx | _] = cal.camera_matrix
-      assert_in_delta fx, ofx * 0.75, 1.0e-6
-      assert_in_delta cx, ocx * 0.75, 1.0e-6
+      [original_fx, _, original_cx | _] = calibration.camera_matrix
+      assert_in_delta fx, original_fx * 0.75, 1.0e-6
+      assert_in_delta cx, original_cx * 0.75, 1.0e-6
 
       # D and R carry no pixel units.
-      assert scaled.distortion_coefficients == cal.distortion_coefficients
-      assert scaled.rectification_matrix == cal.rectification_matrix
+      assert scaled.distortion_coefficients == calibration.distortion_coefficients
+      assert scaled.rectification_matrix == calibration.rectification_matrix
     end
 
-    test "preserves the baseline encoded in P[0,3] = -fx x T", %{cal: cal} do
+    test "preserves the baseline encoded in P[0,3] = -fx x T", %{calibration: calibration} do
       right = %{
-        cal
+        calibration
         | width: 640,
           height: 360,
           projection_matrix: [
@@ -122,8 +122,8 @@ defmodule RosBridge.Camera.CalibrationTest do
       assert_in_delta baseline.(scaled), baseline.(right), 1.0e-9
     end
 
-    test "is a no-op at the same resolution", %{cal: cal} do
-      sized = %{cal | width: 640, height: 360}
+    test "is a no-op at the same resolution", %{calibration: calibration} do
+      sized = %{calibration | width: 640, height: 360}
       assert Calibration.scale_to(sized, 640, 360) == sized
     end
   end

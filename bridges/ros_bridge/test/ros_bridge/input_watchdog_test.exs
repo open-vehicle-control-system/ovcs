@@ -36,20 +36,9 @@ defmodule RosBridge.InputWatchdogTest do
     end
 
     test "holds :silent until then, because a normal boot has not gone wrong yet" do
-      # A gamepad pairs after boot and Zenoh reconnects on a backoff
-      # starting at a second, so warning on the first tick of every
-      # start would make the one message that catches a topic typo worth
-      # ignoring. Emitting nothing is covered by `stale: true` from
-      # creation, which the test above asserts -- this is only about
-      # when to say so.
-      #
-      # The default grace, deliberately: the joystick's own 500 ms
-      # timeout is shorter than a Zenoh session takes to come up, so a
-      # grace derived from `timeout_ms` would warn on every boot. Only
-      # the tests above shorten it, and only to avoid sleeping.
-      # A 1 ms timeout with the default grace: the input is long
-      # expired, so only the grace can be holding `:silent` back. Derive
-      # the grace from `timeout_ms` again and this fires.
+      # The default grace outlasts a Zenoh session coming up, which takes
+      # longer than an input timeout. With a 1 ms timeout the input is
+      # long expired, so only the grace can be holding `:silent` back.
       watchdog = Watchdog.new(1)
 
       Process.sleep(5)
@@ -122,10 +111,8 @@ defmodule RosBridge.InputWatchdogTest do
   end
 
   describe "when input stops" do
-    # A 1 ms timeout with a real sleep, rather than injecting a clock:
-    # the module reads `System.monotonic_time/1` directly, and a test
-    # that stubbed that would be testing the stub. 20 ms of sleep for
-    # the whole file is a fair price for exercising the real thing.
+    # A real sleep rather than an injected clock: the module reads
+    # `System.monotonic_time/1` directly.
     test "the staleness transition is reported exactly once" do
       {:fresh, watchdog} = Watchdog.new(1) |> Watchdog.seen() |> Watchdog.check()
       Process.sleep(20)

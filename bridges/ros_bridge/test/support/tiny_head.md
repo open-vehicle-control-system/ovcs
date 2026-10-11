@@ -9,8 +9,6 @@ load, blob, `forward`, decode — without a downloaded model.
 
 ## Why not a real yolov8n.onnx
 
-Two reasons, and the licensing one is the decisive half.
-
 YOLOv8 is AGPL-3.0. Vendoring ~12 MB of weights under that licence into
 this repo is a decision for whoever owns the licensing, not something a
 test fixture should quietly commit. This model is ours, so the tests
@@ -33,23 +31,19 @@ The four box attributes are channels 0–3, so every anchor decodes to a
 degenerate box (`cx=0, cy=0.01, w=0.02, h=0.03`). Box geometry is
 `dnn_test.exs`'s job, against hand-built tensors.
 
-## What it caught
+## What it exercises
 
-Both of these were real bugs in the backend, and neither is reachable
-without running actual inference:
+Neither of these is reachable without running actual inference:
 
 * `Evision.DNN.Net.forward/1` returns a **list** of Mats — one per
-  output layer — even for a single-output model. Treating it as a Mat
-  raised on the first real frame.
+  output layer — even for a single-output model.
 * Evision signals failure by *returning* `{:error, message}` rather
-  than raising, so the `rescue` clauses that were supposed to handle a
-  bad model never fired.
+  than raising, so a `rescue` clause never sees it.
 
-It also caught a bad *test*: with the backend's default
-`input_size: 640`, the 2×2 blob makes the model's fixed reshape fail,
-inference returns `[]`, and a per-detection assertion loop passes
-vacuously. Hence `input_size: 2` in the fixture and an explicit
-`detections != []`.
+The model's reshape is fixed at 2×2, so any other `input_size` makes
+inference fail and return `[]`, and a per-detection assertion loop
+would pass vacuously. Hence `input_size: 2` in the fixture and an
+explicit `detections != []`.
 
 ## Regenerating
 

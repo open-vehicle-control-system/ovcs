@@ -8,9 +8,8 @@ defmodule Ros2.SensorMsgs.Msg.ImuTest do
   alias Ros2.SensorMsgs.Msg.Imu
   alias Ros2.StdMsgs.Msg.Header
 
-  # Build a fully-populated Imu with non-trivial values so the
-  # encoder/parser can't accidentally pass by zeroing everything.
-  defp sample do
+  # Non-trivial values, so an encoder or parser that zeroes everything fails.
+  defp populated_imu do
     %Imu{
       header: %Header{
         stamp: %Time{sec: 1_700_000_000, nanosec: 123_456_789},
@@ -26,7 +25,7 @@ defmodule Ros2.SensorMsgs.Msg.ImuTest do
   end
 
   test "round-trips through encode → decode_payload → parse" do
-    message = sample()
+    message = populated_imu()
 
     # Mirrors the publish path: ZenohClient calls
     # RmwZenoh.encode_payload(message) before put; subscribers strip
@@ -53,17 +52,9 @@ defmodule Ros2.SensorMsgs.Msg.ImuTest do
   end
 
   test "encode produces the canonical CDR wire bytes" do
-    # Pinned fixture captured from an rclpy `Imu` publisher on ROS 2
-    # Jazzy (see `scripts/diff_imu_bytes.exs`). Byte-exact with the
-    # rclpy emission except at offset 21 — rclpy leaves three bytes
-    # of post-string padding uninitialized (its sample had 0x65 there
-    # from prior heap contents); the CDR spec says padding is
-    # ignored, so we deterministically zero-fill instead.
-    #
-    # If this assertion ever fails, either an `encode/1` somewhere
-    # changed its byte layout or CDR alignment regressed. Don't relax
-    # it; rerun `scripts/diff_imu_bytes.exs` against a live publisher
-    # before re-pinning.
+    # An rclpy `Imu` capture (`scripts/diff_imu_bytes.exs`) with the
+    # uninitialised padding at offset 21 zero-filled. Re-capture with
+    # that script before re-pinning; never relax this assertion.
     expected = <<
       0x00,
       0xF1,
@@ -387,15 +378,13 @@ defmodule Ros2.SensorMsgs.Msg.ImuTest do
       0x00
     >>
 
-    assert Imu.encode(sample()) == expected
+    assert Imu.encode(populated_imu()) == expected
   end
 
-  test "parses the canonical bytes from an rclpy publisher" do
-    # Same payload as the rclpy capture (see scripts/diff_imu_bytes.exs),
-    # except we use our zero-padded variant so the wire-byte test
-    # above and this round-trip test share one fixture. CDR readers
-    # ignore padding so both decode to the same struct.
-    payload = Imu.encode(sample())
+  test "parses the canonical encoded bytes" do
+    # The zero-padded variant of the rclpy capture; CDR readers ignore
+    # padding, so both decode to the same struct.
+    payload = Imu.encode(populated_imu())
     {:ok, parsed, ""} = Imu.parse(payload)
 
     assert parsed.header.frame_id == "imu_link"

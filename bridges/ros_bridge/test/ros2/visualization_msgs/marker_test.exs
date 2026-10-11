@@ -1,14 +1,14 @@
 defmodule Ros2.VisualizationMsgs.MarkerTest do
   @moduledoc """
   Regression tests against `test/support/golden_cdr.json`, whose
-  bytes were validated by deserialising them with ROS 2 Jazzy — see
+  bytes were validated by deserialising them with ROS 2 — see
   `test/support/golden_cdr.md` for why rclpy's own *serialised* bytes
   cannot be used as a reference, and why matching lengths proves
   nothing here.
 
   Asserting against recorded bytes rather than a hand-computed length
-  is deliberate. Every CDR alignment bug in this codebase so far has
-  been a case of confidently predicting an offset and being wrong.
+  is deliberate: a predicted offset is exactly where CDR alignment bugs
+  hide.
   """
   use ExUnit.Case, async: true
 
@@ -99,13 +99,10 @@ defmodule Ros2.VisualizationMsgs.MarkerTest do
       assert MarkerArray.encode(%MarkerArray{}) == golden("marker_array_empty")
     end
 
-    # The regression the whole append_to/2 discipline exists for.
-    # Encoding each marker from a fresh buffer and concatenating
-    # gives every element after the first the padding for offset 0
-    # rather than its real offset. Note the naive form is *longer*
-    # here, not shorter — which is exactly why length is not the
-    # check.
-    test "encoding each marker from a fresh buffer would NOT match" do
+    # Encoding each marker from a fresh buffer pads every element after
+    # the first for offset 0 rather than its real offset. The naive form
+    # is *longer* here, which is why length is not the check.
+    test "encoding each marker from a fresh buffer would not match" do
       markers = [delete_all(), cube(), text_marker()]
 
       naive =
