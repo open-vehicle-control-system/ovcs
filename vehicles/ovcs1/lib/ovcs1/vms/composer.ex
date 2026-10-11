@@ -86,18 +86,21 @@ defmodule Ovcs1.Vms.Composer do
       # VwPolo
       {Polo9N.Dashboard,
        %{
+         network: :polo_drive,
          contact_source: Polo9N.IgnitionLock,
          rotation_per_minute_source: LeafAZE0.Inverter
        }},
       {Polo9N.ABS,
        %{
+         network: :polo_drive,
          contact_source: Polo9N.IgnitionLock,
          rotation_per_minute_source: LeafAZE0.Inverter
        }},
-      {Polo9N.PassengerCompartment, []},
-      {Polo9N.IgnitionLock, []},
+      {Polo9N.PassengerCompartment, %{network: :polo_drive}},
+      {Polo9N.IgnitionLock, %{network: :polo_drive}},
       {Polo9N.PowerSteeringPump,
        %{
+         network: :misc,
          selected_gear_source: Managers.Gear
        }},
       {Polo9N.FakeOilPressureSensor,
@@ -110,6 +113,7 @@ defmodule Ovcs1.Vms.Composer do
       # NissanLeaf
       {LeafAZE0.Inverter,
        %{
+         network: :leaf_drive,
          selected_control_level_source: Managers.ControlLevel,
          selected_gear_source: Managers.Gear,
          contact_source: Polo9N.IgnitionLock,
@@ -120,16 +124,18 @@ defmodule Ovcs1.Vms.Composer do
       # Orion
       {Orion.Bms2,
        %{
+         network: :orion_bms,
          controller: Vms.RearController,
          ready_relay_pin: 6
        }},
 
       # EVPT
-      {Evpt.Evpt23Charger, %{}},
+      {Evpt.Evpt23Charger, %{network: :orion_bms}},
 
       # Bosch
       {Bosch.IBoosterGen2,
        %{
+         network: :misc,
          selected_control_level_source: Managers.ControlLevel,
          contact_source: Polo9N.IgnitionLock,
          controller: Vms.FrontController,
@@ -221,6 +227,7 @@ defmodule Ovcs1.Vms.Composer do
        }},
       {OVCS.SteeringColumn,
        %{
+         network: :misc,
          selected_control_level_source: Managers.ControlLevel,
          power_relay_controller: Vms.FrontController,
          power_relay_pin: 6,

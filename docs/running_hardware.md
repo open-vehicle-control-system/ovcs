@@ -165,7 +165,7 @@ Each side's composer declares which interface carries each CAN network, per envi
 | `can` | Physical CAN interface | `can0` |
 | `spi` | CAN via SPI, as on the VMS with the multi-CAN hub | `spi0.0` |
 
-The network names are declared in the vehicle's YAML, but most `vms_core` drivers expect the names OVCS1 uses: the `Nissan.LeafAZE0` drivers `leaf_drive`, `Orion.Bms2` and `Evpt.Evpt23Charger` `orion_bms`, the `Volkswagen.Polo9N` drivers `polo_drive` (except `PowerSteeringPump`, on `misc`), `Bosch.IBoosterGen2` and `OVCS.SteeringColumn` `misc`, and the framework's own components `ovcs`. `Vesc.MotorController` takes a `network:` option. The reference vehicles declare:
+The network names are declared in the vehicle's YAML. The framework's own components expect `ovcs`; every driver for a part on another network takes its name as a `network:` option. The reference vehicles declare:
 
 | Network | Declared by | Carries |
 |---|---|---|

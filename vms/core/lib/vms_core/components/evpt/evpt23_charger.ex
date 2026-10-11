@@ -2,7 +2,7 @@ defmodule VmsCore.Components.Evpt.Evpt23Charger do
   @moduledoc """
   An EVPT23 on-board charger: publishes the output voltage and current
   and the fault flags from its `charger_status` frame, read on the
-  `:orion_bms` CAN network.
+  CAN network named by `:network`.
   """
   use GenServer
   alias Cantastic.{Frame, Receiver, Signal}
@@ -11,8 +11,8 @@ defmodule VmsCore.Components.Evpt.Evpt23Charger do
   @loop_period_ms 10
 
   @impl GenServer
-  def init(_) do
-    :ok = Receiver.subscribe(self(), :orion_bms, "charger_status")
+  def init(%{network: network}) do
+    :ok = Receiver.subscribe(self(), network, "charger_status")
     {:ok, timer} = :timer.send_interval(@loop_period_ms, :loop)
 
     {:ok,

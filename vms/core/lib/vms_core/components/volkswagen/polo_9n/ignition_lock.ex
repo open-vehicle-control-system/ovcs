@@ -2,7 +2,7 @@ defmodule VmsCore.Components.Volkswagen.Polo9N.IgnitionLock do
   @moduledoc """
   The Volkswagen Polo 9N ignition lock: publishes `:contact` (`:off`,
   `:on` or `:start`) from the key position it reports on the
-  `:polo_drive` CAN network.
+  CAN network named by `:network`.
   """
   use GenServer
   alias Cantastic.{Frame, Receiver, Signal}
@@ -10,13 +10,13 @@ defmodule VmsCore.Components.Volkswagen.Polo9N.IgnitionLock do
 
   @loop_period_ms 10
 
-  def start_link(_) do
-    GenServer.start_link(__MODULE__, nil, name: __MODULE__)
+  def start_link(args) do
+    GenServer.start_link(__MODULE__, args, name: __MODULE__)
   end
 
   @impl GenServer
-  def init(_) do
-    Receiver.subscribe(self(), :polo_drive, "key_status")
+  def init(%{network: network}) do
+    Receiver.subscribe(self(), network, "key_status")
     {:ok, timer} = :timer.send_interval(@loop_period_ms, :loop)
 
     {:ok,

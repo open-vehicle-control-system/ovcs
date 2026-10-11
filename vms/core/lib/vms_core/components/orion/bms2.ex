@@ -1,6 +1,6 @@
 defmodule VmsCore.Components.Orion.Bms2 do
   @moduledoc """
-  An Orion BMS 2 on the `:orion_bms` CAN network.
+  An Orion BMS 2 on the CAN network named by `:network`.
 
   At start it closes the generic controller relay that signals the BMS
   ready (`:controller`, `:ready_relay_pin`). It then publishes the pack's
@@ -21,16 +21,18 @@ defmodule VmsCore.Components.Orion.Bms2 do
 
   @impl GenServer
   def init(%{
+        network: network,
         controller: controller,
         ready_relay_pin: ready_relay_pin
       }) do
-    :ok = Receiver.subscribe(self(), :orion_bms, ["bms_status_1", "bms_status_2", "bms_status_3"])
-    :ok = ReceivedFrameWatcher.enable(:orion_bms, "bms_status_1")
+    :ok = Receiver.subscribe(self(), network, ["bms_status_1", "bms_status_2", "bms_status_3"])
+    :ok = ReceivedFrameWatcher.enable(network, "bms_status_1")
     {:ok, _} = :timer.send_after(0, :start)
     {:ok, timer} = :timer.send_interval(@loop_period_ms, :loop)
 
     {:ok,
      %{
+       network: network,
        loop_timer: timer,
        pack_current: @zero,
        pack_voltage: @zero,
@@ -133,7 +135,7 @@ defmodule VmsCore.Components.Orion.Bms2 do
   end
 
   defp emit_metrics(state) do
-    {:ok, is_alive} = ReceivedFrameWatcher.is_alive?(:orion_bms, "bms_status_1")
+    {:ok, is_alive} = ReceivedFrameWatcher.is_alive?(state.network, "bms_status_1")
     Bus.broadcast("messages", %Bus.Message{name: :is_alive, value: is_alive, source: __MODULE__})
 
     Bus.broadcast("messages", %Bus.Message{

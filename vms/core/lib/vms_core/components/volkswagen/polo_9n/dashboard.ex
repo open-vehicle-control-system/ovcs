@@ -1,7 +1,7 @@
 defmodule VmsCore.Components.Volkswagen.Polo9N.Dashboard do
   @moduledoc """
   The Volkswagen Polo 9N instrument cluster: while the contact is on,
-  emits the `engine_status` frame on the `:polo_drive` CAN network so the
+  emits the `engine_status` frame on the CAN network named by `:network` so the
   rev counter shows the rpm published by `:rotation_per_minute_source`.
   """
   use GenServer
@@ -18,11 +18,12 @@ defmodule VmsCore.Components.Volkswagen.Polo9N.Dashboard do
 
   @impl GenServer
   def init(%{
+        network: network,
         contact_source: contact_source,
         rotation_per_minute_source: rotation_per_minute_source
       }) do
     :ok =
-      Emitter.configure(:polo_drive, "engine_status", %{
+      Emitter.configure(network, "engine_status", %{
         parameters_builder_function: :default,
         initial_data: %{
           "rotations_per_minute" => 0
@@ -34,6 +35,7 @@ defmodule VmsCore.Components.Volkswagen.Polo9N.Dashboard do
 
     {:ok,
      %{
+       network: network,
        loop_timer: timer,
        contact: :off,
        enabled: false,
@@ -46,11 +48,11 @@ defmodule VmsCore.Components.Volkswagen.Polo9N.Dashboard do
   def handle_info(:loop, state) do
     case {state.enabled, state.contact} do
       {false, :on} ->
-        Emitter.enable(:polo_drive, "engine_status")
+        Emitter.enable(state.network, "engine_status")
         {:noreply, %{state | enabled: true}}
 
       {true, :off} ->
-        Emitter.disable(:polo_drive, "engine_status")
+        Emitter.disable(state.network, "engine_status")
         {:noreply, %{state | enabled: false}}
 
       _ ->
@@ -75,7 +77,7 @@ defmodule VmsCore.Components.Volkswagen.Polo9N.Dashboard do
       end
 
     :ok =
-      Emitter.update(:polo_drive, "engine_status", fn emitter_data ->
+      Emitter.update(state.network, "engine_status", fn emitter_data ->
         %{emitter_data | "rotations_per_minute" => displayed_rotation_per_minute}
       end)
 

@@ -1,7 +1,7 @@
 defmodule VmsCore.Components.Nissan.LeafAZE0.Inverter do
   @moduledoc """
-  A Nissan Leaf AZE0 inverter driving an EM57 motor, on the `:leaf_drive`
-  CAN network.
+  A Nissan Leaf AZE0 inverter driving an EM57 motor, on the CAN network
+  named by `:network`.
 
   While the contact is on, a generic controller's relay powers the
   inverter and the VMS frames it expects are emitted. Each tick turns the
@@ -12,6 +12,8 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Inverter do
 
   ## Options
 
+    * `:network` — the CAN network it sits on, as named in the vehicle's
+      CAN topology.
     * `:selected_control_level_source` — the manager that names the
       throttle source.
     * `:selected_gear_source` — the manager publishing `:selected_gear`.
@@ -39,6 +41,7 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Inverter do
 
   @impl GenServer
   def init(%{
+        network: network,
         selected_control_level_source: selected_control_level_source,
         selected_gear_source: selected_gear_source,
         contact_source: contact_source,
@@ -46,13 +49,13 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Inverter do
         power_relay_pin: power_relay_pin
       }) do
     :ok =
-      Emitter.configure(:leaf_drive, "vms_alive", %{
+      Emitter.configure(network, "vms_alive", %{
         parameters_builder_function: :default,
         initial_data: nil
       })
 
     :ok =
-      Emitter.configure(:leaf_drive, "vms_torque_request", %{
+      Emitter.configure(network, "vms_torque_request", %{
         parameters_builder_function: &torque_frame_parameters_builder/1,
         initial_data: %{
           "requested_torque" => @zero,
@@ -61,7 +64,7 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Inverter do
       })
 
     :ok =
-      Emitter.configure(:leaf_drive, "vms_status", %{
+      Emitter.configure(network, "vms_status", %{
         parameters_builder_function: &status_frame_parameters_builder/1,
         initial_data: %{
           "gear" => "drive",
@@ -69,12 +72,13 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Inverter do
         }
       })
 
-    Receiver.subscribe(self(), :leaf_drive, ["inverter_status", "inverter_temperatures"])
+    Receiver.subscribe(self(), network, ["inverter_status", "inverter_temperatures"])
     Bus.subscribe("messages")
     {:ok, timer} = :timer.send_interval(@loop_period_ms, :loop)
 
     {:ok,
      %{
+       network: network,
        rotation_per_minute: 0,
        inverter_output_voltage: 0,
        effective_torque: @zero,
@@ -203,11 +207,11 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Inverter do
     case {state.enabled, state.contact} do
       {false, :on} ->
         :ok = GenericController.set_digital_value(state.controller, state.power_relay_pin, true)
-        :ok = Emitter.enable(:leaf_drive, ["vms_alive", "vms_torque_request", "vms_status"])
+        :ok = Emitter.enable(state.network, ["vms_alive", "vms_torque_request", "vms_status"])
         %{state | enabled: true}
 
       {true, :off} ->
-        :ok = Emitter.disable(:leaf_drive, ["vms_alive", "vms_torque_request", "vms_status"])
+        :ok = Emitter.disable(state.network, ["vms_alive", "vms_torque_request", "vms_status"])
         :ok = GenericController.set_digital_value(state.controller, state.power_relay_pin, false)
         %{state | enabled: false}
 
@@ -233,7 +237,7 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Inverter do
     requested_torque = D.mult(requested_throttle, max_torque)
 
     :ok =
-      Emitter.update(:leaf_drive, "vms_torque_request", fn emitter_data ->
+      Emitter.update(state.network, "vms_torque_request", fn emitter_data ->
         %{emitter_data | "requested_torque" => requested_torque}
       end)
 

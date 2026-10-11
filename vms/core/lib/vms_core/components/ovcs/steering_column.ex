@@ -1,7 +1,8 @@
 defmodule VmsCore.Components.OVCS.SteeringColumn do
   @moduledoc """
   The OVCS steering column: a VW steering column turned by a stepper
-  motor, its angle read from a Bosch LWS sensor on `:misc`.
+  motor, its angle read from a Bosch LWS sensor on the CAN network named by
+  `:network`.
 
   While the selected control level is `:radio`, it powers the stepper
   driver through a relay, smooths the selected `:requested_steering`
@@ -16,6 +17,8 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
 
   ## Options
 
+    * `:network` — the CAN network it sits on, as named in the vehicle's
+      CAN topology.
     * `:selected_control_level_source` — publishes
       `:selected_control_level` and `:requested_steering_source`.
     * `:power_relay_controller`, `:power_relay_pin` — the stepper
@@ -58,6 +61,7 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
 
   @impl GenServer
   def init(%{
+        network: network,
         selected_control_level_source: selected_control_level_source,
         power_relay_controller: power_relay_controller,
         power_relay_pin: power_relay_pin,
@@ -66,19 +70,20 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
         external_pwm_id: external_pwm_id
       }) do
     :ok =
-      Emitter.configure(:misc, "lws_config", %{
+      Emitter.configure(network, "lws_config", %{
         parameters_builder_function: :default,
         initial_data: %{
           "command" => "reset_angle_calibration_status"
         }
       })
 
-    :ok = Receiver.subscribe(self(), :misc, ["lws_status"])
+    :ok = Receiver.subscribe(self(), network, ["lws_status"])
     Bus.subscribe("messages")
     {:ok, timer} = :timer.send_interval(@loop_period_ms, :loop)
 
     {:ok,
      %{
+       network: network,
        loop_timer: timer,
        angle: @zero,
        angular_speed: @zero,
@@ -298,6 +303,8 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
   end
 
   @impl GenServer
+  def handle_call(:network, _from, state), do: {:reply, state.network, state}
+
   def handle_call({:set_pid_parameters, %{kp: kp, ki: ki, kd: kd}}, _from, state) do
     {:reply, :ok, %{state | kp: kp, ki: ki, kd: kd}}
   end
@@ -406,9 +413,10 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
       (`"deadband"` or `"alpha"`) to `"value"`.
   """
   def trigger_action("calibrate_angle_0", _parameters) do
-    :ok = send_lws_command("reset_angle_calibration_status")
+    network = GenServer.call(__MODULE__, :network)
+    :ok = send_lws_command(network, "reset_angle_calibration_status")
     :timer.sleep(@lws_command_duration_ms)
-    :ok = send_lws_command("set_angle_zero")
+    :ok = send_lws_command(network, "set_angle_zero")
   end
 
   def trigger_action("set_pid_parameter", %{"parameter" => parameter, "value" => raw_gain})
@@ -421,15 +429,15 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
     GenServer.call(__MODULE__, {:set_filter_parameter, parameter, raw_setting})
   end
 
-  defp send_lws_command(command) do
+  defp send_lws_command(network, command) do
     :ok =
-      Emitter.update(:misc, "lws_config", fn frame_data ->
+      Emitter.update(network, "lws_config", fn frame_data ->
         %{frame_data | "command" => command}
       end)
 
-    :ok = Emitter.enable(:misc, "lws_config")
+    :ok = Emitter.enable(network, "lws_config")
     :timer.sleep(@lws_command_duration_ms)
-    :ok = Emitter.disable(:misc, "lws_config")
+    :ok = Emitter.disable(network, "lws_config")
   end
 
   @doc "Replaces the three PID gains used the next time the PID is built."

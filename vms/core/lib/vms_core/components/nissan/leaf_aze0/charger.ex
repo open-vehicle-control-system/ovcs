@@ -1,7 +1,7 @@
 defmodule VmsCore.Components.Nissan.LeafAZE0.Charger do
   @moduledoc """
-  A Nissan Leaf AZE0/EM57 on-board charger, on the `:leaf_drive` CAN
-  network.
+  A Nissan Leaf AZE0/EM57 on-board charger, on the CAN network named
+  by `:network`.
 
   **Not working: with this driver the charger does not start a charge.**
 
@@ -24,9 +24,12 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Charger do
   end
 
   @impl GenServer
-  def init(%{maximum_power_for_charger_source: maximum_power_for_charger_source}) do
+  def init(%{
+        network: network,
+        maximum_power_for_charger_source: maximum_power_for_charger_source
+      }) do
     :ok =
-      Emitter.configure(:leaf_drive, "charger_command", %{
+      Emitter.configure(network, "charger_command", %{
         parameters_builder_function: &charger_command_frame_parameters_builder/1,
         initial_data: %{
           "maximum_power_for_charger" => D.new("27.3"),
@@ -38,7 +41,7 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Charger do
       })
 
     :ok =
-      Emitter.configure(:leaf_drive, "nissan_bms_status_1", %{
+      Emitter.configure(network, "nissan_bms_status_1", %{
         parameters_builder_function: &nissan_bms_status_1_frame_parameters_builder/1,
         initial_data: %{
           "current" => @zero,
@@ -49,7 +52,7 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Charger do
       })
 
     :ok =
-      Emitter.configure(:leaf_drive, "nissan_bms_status_2", %{
+      Emitter.configure(network, "nissan_bms_status_2", %{
         parameters_builder_function: &nissan_bms_status_2_frame_parameters_builder/1,
         initial_data: %{
           "counter" => 0
@@ -58,7 +61,7 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Charger do
       })
 
     :ok =
-      Emitter.configure(:leaf_drive, "lithium_battery_controller_status", %{
+      Emitter.configure(network, "lithium_battery_controller_status", %{
         parameters_builder_function:
           &lithium_battery_controller_status_frame_parameters_builder/1,
         initial_data: %{
@@ -68,25 +71,26 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Charger do
       })
 
     :ok =
-      Emitter.configure(:leaf_drive, "lithium_battery_controller_status2", %{
+      Emitter.configure(network, "lithium_battery_controller_status2", %{
         parameters_builder_function: :default,
         initial_data: %{},
         enable: true
       })
 
     :ok =
-      Emitter.configure(:leaf_drive, "lithium_battery_controller_status3", %{
+      Emitter.configure(network, "lithium_battery_controller_status3", %{
         parameters_builder_function: :default,
         initial_data: %{},
         enable: true
       })
 
     Bus.subscribe("messages")
-    Receiver.subscribe(self(), :leaf_drive, ["charger_status"])
+    Receiver.subscribe(self(), network, ["charger_status"])
     {:ok, timer} = :timer.send_interval(@loop_period_ms, :loop)
 
     {:ok,
      %{
+       network: network,
        loop_timer: timer,
        maximum_power_for_charger_source: maximum_power_for_charger_source,
        maximum_power_for_charger: 0,
@@ -165,7 +169,7 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Charger do
     case state.maximum_power_for_charger != state.emitted_maximum_power_for_charger do
       true ->
         :ok =
-          Emitter.update(:leaf_drive, "charger_command", fn emitter_data ->
+          Emitter.update(state.network, "charger_command", fn emitter_data ->
             %{emitter_data | "maximum_power_for_charger" => state.maximum_power_for_charger}
           end)
 
@@ -180,7 +184,7 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Charger do
     case state.pack_current != state.emitted_pack_current do
       true ->
         :ok =
-          Emitter.update(:leaf_drive, "nissan_bms_status_1", fn emitter_data ->
+          Emitter.update(state.network, "nissan_bms_status_1", fn emitter_data ->
             %{emitter_data | "current" => state.pack_current}
           end)
 
@@ -195,7 +199,7 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Charger do
     case state.pack_instant_voltage != state.emitted_pack_instant_voltage do
       true ->
         :ok =
-          Emitter.update(:leaf_drive, "nissan_bms_status_1", fn emitter_data ->
+          Emitter.update(state.network, "nissan_bms_status_1", fn emitter_data ->
             %{emitter_data | "total_voltage" => state.pack_instant_voltage}
           end)
 
