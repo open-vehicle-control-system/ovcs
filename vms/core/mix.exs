@@ -30,7 +30,7 @@ defmodule VmsCore.MixProject do
       {:crc, "~> 0.10"},
       {:ecto_sql, "~> 3.10"},
       {:ecto_sqlite3, ">= 0.0.0"},
-      {:decimal, "~> 2.1.1"},
+      {:decimal, "~> 3.2"},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}
     ]
