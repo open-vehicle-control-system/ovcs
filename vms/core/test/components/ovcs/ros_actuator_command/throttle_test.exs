@@ -19,7 +19,7 @@ defmodule VmsCore.Components.OVCS.RosActuatorCommand.ThrottleTest do
   # A tracker that saw a fresh sample long enough ago to have expired.
   defp expired_freshness do
     now = System.monotonic_time(:millisecond)
-    %{Freshness.new(500, now - 10_000) | sequence: 1, fresh_at: now - 10_000, stale: false}
+    %{Freshness.new(500, now - 10_000) | sequence: 1, fresh_at_ms: now - 10_000, stale: false}
   end
 
   defp stub_state(overrides \\ %{}) do

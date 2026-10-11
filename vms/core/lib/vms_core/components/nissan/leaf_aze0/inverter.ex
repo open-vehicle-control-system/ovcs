@@ -23,7 +23,7 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Inverter do
   alias Cantastic.{Emitter, Frame, Receiver, Signal}
   alias Decimal, as: D
   alias OvcsBus, as: Bus
-  alias VmsCore.Components.{Nissan.Util, OVCS.GenericController}
+  alias VmsCore.Components.{Nissan.FrameIntegrity, OVCS.GenericController}
 
   @zero D.new(0)
   @max_torque_nm 100
@@ -322,11 +322,11 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Inverter do
 
     parameters = %{
       "requested_torque" => emitter_data["requested_torque"],
-      "counter" => Util.shifted_counter(counter),
-      "crc" => &Util.crc8/1
+      "counter" => FrameIntegrity.shifted_counter(counter),
+      "crc" => &FrameIntegrity.crc8/1
     }
 
-    emitter_data = %{emitter_data | "counter" => Util.counter(counter + 1)}
+    emitter_data = %{emitter_data | "counter" => FrameIntegrity.counter(counter + 1)}
     {:ok, parameters, emitter_data}
   end
 
@@ -334,7 +334,7 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Inverter do
     counter = emitter_data["counter"]
 
     heartbeat =
-      case Util.counter(counter) do
+      case FrameIntegrity.counter(counter) do
         0 -> 0
         1 -> 1
         2 -> 1
@@ -344,12 +344,12 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Inverter do
     parameters = %{
       "gear" => emitter_data["gear"],
       "heartbeat" => heartbeat,
-      "heartbeat1" => Util.counter(counter),
-      "counter" => Util.counter(counter),
-      "crc" => &Util.crc8/1
+      "heartbeat1" => FrameIntegrity.counter(counter),
+      "counter" => FrameIntegrity.counter(counter),
+      "crc" => &FrameIntegrity.crc8/1
     }
 
-    emitter_data = %{emitter_data | "counter" => Util.counter(counter + 1)}
+    emitter_data = %{emitter_data | "counter" => FrameIntegrity.counter(counter + 1)}
     {:ok, parameters, emitter_data}
   end
 
