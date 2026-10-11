@@ -1,13 +1,33 @@
 defmodule VmsCore.Components.OVCS.HighVoltageContactors do
   @moduledoc """
-    EV high voltage contactors with precharge, using a generic controller
+  The high voltage contactors and their precharge, switched through a
+  generic controller's digital pins.
+
+  On a `:start` contact it closes the main negative and precharge
+  relays; once the inverter's output voltage reaches
+  `required_precharge_output_voltage` it closes the main positive relay,
+  then opens the precharge relay. An `:off` contact opens all three.
+  `:ready_to_drive` is true while both main relays read closed and the
+  precharge relay open.
+
+  ## Options
+
+    * `:contact_source` — publishes the ignition `:contact`.
+    * `:inverter_output_voltage_source` — publishes
+      `:inverter_output_voltage`.
+    * `:required_precharge_output_voltage` — volts at which precharge
+      is complete.
+    * `:controller` — the generic controller driving the relays.
+    * `:main_negative_relay_pin`, `:main_positive_relay_pin`,
+      `:precharge_relay_pin` — its digital pins.
   """
   use GenServer
   alias OvcsBus, as: Bus
-  alias VmsCore.{Components.OVCS.GenericController}
+  alias VmsCore.Components.OVCS.GenericController
 
-  @loop_period 10
-  @relay_operating_delay 50
+  @loop_period_ms 10
+  # Time for the main positive relay to close before precharge opens.
+  @relay_operating_delay_ms 50
 
   def start_link(args) do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
@@ -24,7 +44,7 @@ defmodule VmsCore.Components.OVCS.HighVoltageContactors do
         precharge_relay_pin: precharge_relay_pin
       }) do
     Bus.subscribe("messages")
-    {:ok, timer} = :timer.send_interval(@loop_period, :loop)
+    {:ok, timer} = :timer.send_interval(@loop_period_ms, :loop)
 
     {:ok,
      %{
@@ -38,7 +58,7 @@ defmodule VmsCore.Components.OVCS.HighVoltageContactors do
        inverter_output_voltage: 0,
        inverter_output_voltage_source: inverter_output_voltage_source,
        required_precharge_output_voltage: required_precharge_output_voltage,
-       precharge_ending_timestamp: 0,
+       precharge_ending_time_ms: 0,
        loop_timer: timer,
        main_negative_relay_enabled: false,
        main_positive_relay_enabled: false,
@@ -80,10 +100,10 @@ defmodule VmsCore.Components.OVCS.HighVoltageContactors do
   end
 
   defp toggle_contactors(state) do
-    now = System.system_time(:millisecond)
+    now_ms = System.system_time(:millisecond)
 
     case {state.status, state.contact, state.inverter_output_voltage,
-          state.precharge_ending_timestamp} do
+          state.precharge_ending_time_ms} do
       {:off, :start, _, _} ->
         start_precharge(state)
 
@@ -92,8 +112,8 @@ defmodule VmsCore.Components.OVCS.HighVoltageContactors do
              inverter_output_voltage >= state.required_precharge_output_voltage ->
         end_precharge(state)
 
-      {:precharge_complete, contact, _, precharge_ending_timestamp}
-      when contact in [:on, :start] and precharge_ending_timestamp > now ->
+      {:precharge_complete, contact, _, precharge_ending_time_ms}
+      when contact in [:on, :start] and precharge_ending_time_ms > now_ms ->
         finish_precharge(state)
 
       {status, :off, _, _} when status != :off ->
@@ -138,8 +158,8 @@ defmodule VmsCore.Components.OVCS.HighVoltageContactors do
 
   defp end_precharge(state) do
     :ok = enable_relay(state, :main_positive_relay_pin)
-    precharge_ending_timestamp = System.system_time(:millisecond) + @relay_operating_delay
-    %{state | status: :precharge_complete, precharge_ending_timestamp: precharge_ending_timestamp}
+    precharge_ending_time_ms = System.system_time(:millisecond) + @relay_operating_delay_ms
+    %{state | status: :precharge_complete, precharge_ending_time_ms: precharge_ending_time_ms}
   end
 
   defp finish_precharge(state) do
@@ -154,15 +174,15 @@ defmodule VmsCore.Components.OVCS.HighVoltageContactors do
     %{state | status: :off}
   end
 
-  defp enable_relay(state, relay) do
-    set_relay(state, relay, true)
+  defp enable_relay(state, relay_pin_key) do
+    set_relay(state, relay_pin_key, true)
   end
 
-  defp disable_relay(state, relay) do
-    set_relay(state, relay, false)
+  defp disable_relay(state, relay_pin_key) do
+    set_relay(state, relay_pin_key, false)
   end
 
-  defp set_relay(state, relay, value) do
-    GenericController.set_digital_value(state.controller, Map.get(state, relay), value)
+  defp set_relay(state, relay_pin_key, enabled) do
+    GenericController.set_digital_value(state.controller, Map.get(state, relay_pin_key), enabled)
   end
 end

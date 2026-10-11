@@ -1,15 +1,22 @@
 defmodule VmsCore.Components.OVCS.WaterPump do
   @moduledoc """
-    Generic waterpump relay control
+  Switches a water pump's power relay on a generic controller: on in
+  `:drive` or `:reverse`, off in `:parking`.
+
+  ## Options
+
+    * `:controller`, `:power_relay_pin` — the relay's digital pin.
+    * `:selected_gear_source` — publishes `:selected_gear`.
   """
   use GenServer
   alias OvcsBus, as: Bus
+  alias VmsCore.Components.OVCS.GenericController
 
-  alias VmsCore.{
-    Components.OVCS.GenericController
-  }
+  @loop_period_ms 10
 
-  @loop_period 10
+  def start_link(args) do
+    GenServer.start_link(__MODULE__, args, name: __MODULE__)
+  end
 
   @impl GenServer
   def init(%{
@@ -17,7 +24,7 @@ defmodule VmsCore.Components.OVCS.WaterPump do
         power_relay_pin: power_relay_pin,
         selected_gear_source: selected_gear_source
       }) do
-    {:ok, timer} = :timer.send_interval(@loop_period, :loop)
+    {:ok, timer} = :timer.send_interval(@loop_period_ms, :loop)
     Bus.subscribe("messages")
 
     {:ok,
@@ -31,15 +38,11 @@ defmodule VmsCore.Components.OVCS.WaterPump do
      }}
   end
 
-  def start_link(args) do
-    GenServer.start_link(__MODULE__, args, name: __MODULE__)
-  end
-
   @impl GenServer
   def handle_info(:loop, state) do
     state =
       state
-      |> toggle_waterpump()
+      |> toggle_water_pump()
 
     {:noreply, state}
   end
@@ -53,7 +56,7 @@ defmodule VmsCore.Components.OVCS.WaterPump do
     {:noreply, state}
   end
 
-  defp toggle_waterpump(state) do
+  defp toggle_water_pump(state) do
     case {state.enabled, state.selected_gear} do
       {true, :parking} ->
         :ok = GenericController.set_digital_value(state.controller, state.power_relay_pin, false)

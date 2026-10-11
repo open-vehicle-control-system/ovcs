@@ -32,10 +32,11 @@ defmodule VmsCore.Components.OVCS.VehicleMotion do
   driven. A source that reads a signed rotation off a motor controller
   declares `rotation_signed: true` and its sign is used as is.
 
-  The angle is the commanded steering, not a measured one: the servo
-  has no feedback. It is the selected `:requested_steering` in
+  The angle is the commanded steering, not a measured one, so it holds
+  for a steering actuator without feedback. It is the selected
+  `:requested_steering` in
   `[-1, 1]` scaled by `:steering_limit`, and `:steering_sign` converts
-  from the servo's convention back to REP-103's positive-left, undoing
+  from the actuator's convention back to REP-103's positive-left, undoing
   the sign the command path applied on the way in.
 
   ## Distance
@@ -89,9 +90,12 @@ defmodule VmsCore.Components.OVCS.VehicleMotion do
   alias OvcsBus.Units
 
   # Each sample reaches the frame within a loop and an emitter period.
-  @loop_period 20
+  @loop_period_ms 20
   @frame_name "vehicle_motion"
   @zero D.new(0)
+  @km_h_per_m_s D.new("3.6")
+  # The frame's distance is a 16-bit millimetre counter.
+  @distance_counter_modulus_mm 65_536
 
   def start_link(args) do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
@@ -128,7 +132,7 @@ defmodule VmsCore.Components.OVCS.VehicleMotion do
       })
 
     Bus.subscribe("messages")
-    {:ok, timer} = :timer.send_interval(@loop_period, :loop)
+    {:ok, timer} = :timer.send_interval(@loop_period_ms, :loop)
 
     {:ok,
      %{
@@ -157,9 +161,9 @@ defmodule VmsCore.Components.OVCS.VehicleMotion do
     speed = speed_km_h(state)
 
     :ok =
-      Emitter.update(:ovcs, @frame_name, fn data ->
+      Emitter.update(:ovcs, @frame_name, fn frame_data ->
         %{
-          data
+          frame_data
           | "speed" => speed_m_s(speed),
             "steering_angle" => steering_angle(state.requested_steering, state.steering_factor),
             "speed_valid" => not is_nil(speed),
@@ -205,19 +209,27 @@ defmodule VmsCore.Components.OVCS.VehicleMotion do
   # The same source-following the actuators do: the manager names the
   # commanders, and only their messages are read.
   def handle_info(
-        %Bus.Message{name: :requested_throttle_source, value: value, source: source},
+        %Bus.Message{
+          name: :requested_throttle_source,
+          value: requested_throttle_source,
+          source: source
+        },
         state
       )
       when source == state.selected_control_level_source do
-    {:noreply, %{state | requested_throttle_source: value}}
+    {:noreply, %{state | requested_throttle_source: requested_throttle_source}}
   end
 
   def handle_info(
-        %Bus.Message{name: :requested_steering_source, value: value, source: source},
+        %Bus.Message{
+          name: :requested_steering_source,
+          value: requested_steering_source,
+          source: source
+        },
         state
       )
       when source == state.selected_control_level_source do
-    {:noreply, %{state | requested_steering_source: value}}
+    {:noreply, %{state | requested_steering_source: requested_steering_source}}
   end
 
   def handle_info(
@@ -241,9 +253,10 @@ defmodule VmsCore.Components.OVCS.VehicleMotion do
     {:noreply, state}
   end
 
-  # Zero keeps the last sign: releasing the trigger does not mean the
-  # vehicle changed direction, it means it is coasting.
-  @doc false
+  @doc """
+  The sign of `requested_throttle`. Zero keeps `last_sign`: a released
+  throttle means coasting, not a change of direction.
+  """
   def direction_sign(requested_throttle, last_sign) do
     cond do
       D.gt?(requested_throttle, @zero) -> 1
@@ -252,22 +265,21 @@ defmodule VmsCore.Components.OVCS.VehicleMotion do
     end
   end
 
-  # km/h per rpm of the sensed shaft: one wheel circumference per
-  # `rotation_to_wheel_ratio` turns, times 60 minutes, over 1000 m.
-  @doc false
+  @doc """
+  km/h per rpm of the sensed shaft: one wheel circumference per
+  `rotation_to_wheel_ratio` turns, times 60 minutes, over 1000 m.
+  """
   def speed_factor(rotation_to_wheel_ratio, wheel_radius) do
     wheel_circumference = 2 * :math.pi() * wheel_radius
     D.from_float(wheel_circumference * 60 / 1000 / rotation_to_wheel_ratio)
   end
 
-  # Metres of wheel travel per turn of the sensed shaft.
-  @doc false
+  @doc "Metres of wheel travel per turn of the sensed shaft."
   def distance_factor(rotation_to_wheel_ratio, wheel_radius) do
     D.from_float(2 * :math.pi() * wheel_radius / rotation_to_wheel_ratio)
   end
 
-  # The distance rolled, in metres modulo the 16-bit millimetre counter.
-  @doc false
+  @doc "The distance rolled, in metres modulo the 16-bit millimetre counter."
   def distance_counter(%{revolutions: nil}), do: @zero
 
   def distance_counter(state) do
@@ -278,17 +290,22 @@ defmodule VmsCore.Components.OVCS.VehicleMotion do
       |> D.round(0)
       |> D.to_integer()
 
-    millimetres |> Integer.mod(65_536) |> D.new() |> D.div(1000)
+    millimetres |> Integer.mod(@distance_counter_modulus_mm) |> D.new() |> D.div(1000)
   end
 
-  # Signed km/h, or nil while the rotation is unknown. A signed source
-  # already carries the direction; an unsigned one gets the command's.
-  @doc false
+  @doc """
+  Signed km/h, or nil while the rotation is unknown. A signed source
+  already carries the direction; an unsigned one gets the command's.
+  """
   def speed_km_h(%{rotation_per_minute: nil}), do: nil
 
   def speed_km_h(state) do
     sign = if state.rotation_signed, do: 1, else: state.direction_sign
-    state.rotation_per_minute |> D.mult(state.speed_factor) |> D.mult(sign) |> D.round(2)
+
+    state.rotation_per_minute
+    |> D.mult(state.speed_factor)
+    |> D.mult(sign)
+    |> D.round(2)
   end
 
   @doc false
@@ -298,13 +315,14 @@ defmodule VmsCore.Components.OVCS.VehicleMotion do
     state.rotation_per_minute |> D.div(state.rotation_to_wheel_ratio) |> D.round(1)
   end
 
-  # The bus speed is km/h, the frame is m/s. A nil speed encodes as
-  # zero; `speed_valid` is what tells the consumer not to read it.
-  @doc false
+  @doc """
+  The frame's m/s for a bus speed in km/h. A nil speed encodes as zero;
+  `speed_valid` is what tells the consumer not to read it.
+  """
   def speed_m_s(nil), do: @zero
 
-  def speed_m_s(speed) do
-    speed |> D.div(D.new("3.6")) |> D.round(3)
+  def speed_m_s(speed_km_h) do
+    speed_km_h |> D.div(@km_h_per_m_s) |> D.round(3)
   end
 
   @doc false
