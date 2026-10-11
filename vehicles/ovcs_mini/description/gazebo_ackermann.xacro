@@ -33,7 +33,8 @@
 
   Note the absence of a `<topic>` tag: the command topic is left at
   the system's default, `/model/ovcs_mini/cmd_vel`, and bridged to
-  `/cmd_vel` on the ROS side. `<odom_topic>`, `<tf_topic>` and
+  `/simulator/drive` on the ROS side, where the ROS bridge's simulator
+  plant publishes it. `<odom_topic>`, `<tf_topic>` and
   `<child_frame_id>` are set because they are confirmed to exist.
 -->
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
@@ -88,6 +89,20 @@
       <odom_publish_frequency>50</odom_publish_frequency>
     </plugin>
 
+    <!-- Ground truth: the model's pose as the physics has it, which the
+         steering system's odometry above is not, it follows the wheels.
+         Its transform goes to a topic nothing bridges: the odom frame
+         belongs to whichever odometry Nav2 navigates by. Tags read out
+         of the shipped libgz-sim-odometry-publisher-system.so. -->
+    <plugin filename="gz-sim-odometry-publisher-system"
+            name="gz::sim::systems::OdometryPublisher">
+      <odom_frame>odom</odom_frame>
+      <robot_base_frame>base_link</robot_base_frame>
+      <odom_topic>/simulator/odom</odom_topic>
+      <tf_topic>/simulator/tf</tf_topic>
+      <dimensions>2</dimensions>
+      <odom_publish_frequency>50</odom_publish_frequency>
+    </plugin>
     <!-- Joint positions, so robot_state_publisher can move the wheels
          and steering in a viewer rather than showing a rigid model. -->
     <plugin filename="gz-sim-joint-state-publisher-system"

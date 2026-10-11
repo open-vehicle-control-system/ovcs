@@ -43,10 +43,16 @@ defmodule OvcsMini do
         bridges: [RadioControlBridge],
         default_can_mapping: %{host: "ovcs:vcan0", target: "ovcs:spi0.0"}
       },
+      # On the host it also declares the frames of the hardware its
+      # simulator plant answers for, see `ros_simulator_config/0`.
       "ros" => %{
         target: :ovcs_base_can_system_rpi4,
         bridges: [RosBridge],
-        default_can_mapping: %{host: "ovcs:vcan0", target: "ovcs:spi0.0"}
+        can_config_path: %{
+          host: ["can/bridges/ros.yml", "can/bridges/ros_simulator.yml"],
+          target: "can/bridges/ros.yml"
+        },
+        default_can_mapping: %{host: "ovcs:vcan0,misc:vcan1", target: "ovcs:spi0.0"}
       },
       # Perception bridge: stereo Pi cameras + Hailo inference on a
       # Pi 5 + Hailo hat. Uses upstream nerves_system_rpi5 (libcamera
@@ -97,8 +103,11 @@ defmodule OvcsMini do
   def ros_bridge_config(:target, "ros_perception"),
     do: perception_target_config()
 
-  def ros_bridge_config(:host, _firmware_id),
-    do: ros_host_config()
+  def ros_bridge_config(:host, _firmware_id) do
+    if System.get_env("OVCS_SIM") in ["1", "true"],
+      do: ros_simulator_config(),
+      else: ros_host_config()
+  end
 
   def ros_bridge_config(:target, _firmware_id),
     do: ros_target_config()
@@ -107,57 +116,103 @@ defmodule OvcsMini do
   # the perception Pi), so each names its ROS node explicitly —
   # otherwise both announce `ovcs_bridge` and the ROS graph cannot
   # tell them apart.
-  defp ros_host_config do
-    sim? = System.get_env("OVCS_SIM") in ["1", "true"]
-
-    # Against the simulator the IMU driver is the simulated BNO085 —
-    # Gazebo publishes it on `imu_raw`, `RosBridge.Imu.Zenoh` consumes
-    # it, and `/imu` is still published by this bridge's own
-    # `Publishers.Imu`, exactly as on the vehicle. Only the driver
-    # changes, the same pattern as the cameras.
-    imu_driver = if sim?, do: RosBridge.Imu.Zenoh, else: OvcsDrivers.Imu.Dummy
-
-    components = [
-      :heartbeat,
-      :joy_interpreter,
-      # Nav2 publishes TwistStamped on /cmd_vel_nav; teleop_twist_joy
-      # publishes plain Twist on /cmd_vel. Subscribing to the stamped
-      # one keeps the joystick path on 0x2B0 and the planner path on
-      # 0x2B1, so both can be present without racing.
-      {:velocity_interpreter,
-       %{topic: "cmd_vel_nav", message: Ros2.GeometryMsgs.Msg.TwistStamped}},
-      {:imu_publisher, driver: imu_driver}
-    ]
-
-    # Against the simulator, Gazebo's AckermannSteering already
-    # publishes /odom and odom -> base_link, and a second publisher on
-    # either would hand every consumer two contradictory poses — the
-    # tf tree interpolates across both rather than picking a winner.
-    # One odometry owner per fabric: the bench (no Gazebo) gets this
-    # bridge's dead reckoning, a simulated run gets Gazebo's.
-    odometry =
-      if sim? do
-        []
-      else
+  defp ros_host_config,
+    do: %RosBridge.Config{
+      zenoh_endpoint_ip: System.get_env("ZENOH_ENDPOINT_IP", "127.0.0.1"),
+      node_name: "ovcs_bridge_ros",
+      components: [
+        :heartbeat,
+        :joy_interpreter,
+        # Nav2 publishes TwistStamped on /cmd_vel_nav, the planner path
+        # on 0x2B1; the joystick path stays on 0x2B0.
+        {:velocity_interpreter,
+         %{topic: "cmd_vel_nav", message: Ros2.GeometryMsgs.Msg.TwistStamped}},
+        {:imu_publisher, driver: OvcsDrivers.Imu.Dummy},
         # After :imu_publisher, which starts the driver this listens
         # to. Reads the VMS's vehicle_motion frame off CAN and
         # publishes /odom and odom -> base_link, which is everything
         # Nav2 needs in the map-less setup.
-        [
-          {:odometry_publisher,
-           driver: OvcsDrivers.Imu.Dummy, base_ahead_of_rear_axle: base_ahead_of_rear_axle()}
-        ]
-      end
-
-    %RosBridge.Config{
-      zenoh_endpoint_ip: System.get_env("ZENOH_ENDPOINT_IP", "127.0.0.1"),
-      node_name: "ovcs_bridge_ros",
-      components: components ++ odometry
+        {:odometry_publisher,
+         driver: OvcsDrivers.Imu.Dummy, base_ahead_of_rear_axle: base_ahead_of_rear_axle()}
+      ]
     }
-  end
 
   # base_link sits midway between the axles.
   defp base_ahead_of_rear_axle, do: geometry().wheelbase / 2
+
+  # The `ros` bridge against the simulator, chosen with OVCS_SIM: the
+  # plant answers for the Mini's hardware, so the VMS commands Gazebo's
+  # physics over CAN, and the IMU is Gazebo's.
+  defp ros_simulator_config do
+    %RosBridge.Config{
+      zenoh_endpoint_ip: System.get_env("ZENOH_ENDPOINT_IP", "127.0.0.1"),
+      node_name: "ovcs_bridge_ros",
+      components: [
+        :simulator_clock,
+        :heartbeat,
+        :joy_interpreter,
+        {:velocity_interpreter,
+         %{topic: "cmd_vel_nav", message: Ros2.GeometryMsgs.Msg.TwistStamped}},
+        {:imu_publisher, driver: RosBridge.Imu.Zenoh},
+        {:odometry_publisher,
+         driver: RosBridge.Imu.Zenoh, base_ahead_of_rear_axle: base_ahead_of_rear_axle()},
+        {:simulator_plant, simulator_plant()}
+      ]
+    }
+  end
+
+  # Not measured: plausible figures for a 1/10 truck on a 2S pack.
+  @simulated_battery_voltage 7.4
+  @simulated_acceleration_per_ampere 0.5
+
+  defp simulator_plant do
+    drivetrain = OvcsMini.Vms.Composer.drivetrain()
+    # The Mini's VESC Tool setting, see docs/vesc_drivetrain.md.
+    vesc_minimum_erpm = 300
+
+    [
+      vehicle: %{
+        wheelbase_m: geometry().wheelbase,
+        wheel_radius_m: geometry().wheel_radius,
+        # Friction is the motor current the Mini needs to start rolling.
+        rolling_deceleration_m_s2:
+          drivetrain.min_motor_current * @simulated_acceleration_per_ampere
+      },
+      devices: [
+        {RosBridge.Simulator.Devices.Vesc,
+         pole_pairs: drivetrain.pole_pairs,
+         motor_to_wheel_ratio: drivetrain.motor_to_wheel_ratio,
+         min_erpm: vesc_minimum_erpm,
+         acceleration_per_ampere: @simulated_acceleration_per_ampere,
+         input_voltage: @simulated_battery_voltage},
+        {RosBridge.Simulator.Devices.GenericController,
+         analog_pins: %{1 => pm12s3_reading(@simulated_battery_voltage)},
+         pulse: %{
+           shaft_turns_per_wheel_turn:
+             drivetrain.motor_to_wheel_ratio * drivetrain.pinion_teeth / drivetrain.spur_teeth,
+           pulses_per_revolution: drivetrain.pulses_per_revolution
+         }},
+        {RosBridge.Simulator.Devices.ServoSteering,
+         steering_limit_rad: geometry().steering_limit, neutral: drivetrain.steering_trim},
+        {RosBridge.Simulator.Devices.RadioControl, radio_control_script()}
+      ]
+    ]
+  end
+
+  # The PM12S-3's 1:21 divider read by the controller's 14-bit, 5 V ADC.
+  defp pm12s3_reading(voltage), do: round(voltage / 21 / 5 * 16_383)
+
+  # Sticks centred, then channel 6 through :radio to :ros, and channel 5
+  # to the commander `OVCS_SIMULATOR_COMMANDER` names (`teleop`, or
+  # `autonomous` by default), each a second apart.
+  defp radio_control_script do
+    commander = if System.get_env("OVCS_SIMULATOR_COMMANDER") == "teleop", do: 1000, else: 2000
+
+    [
+      channels: %{1 => 1500, 2 => 1500, 5 => 1000, 6 => 1000},
+      steps: [{3_000, %{6 => 1500}}, {4_000, %{6 => 2000}}, {5_000, %{5 => commander}}]
+    ]
+  end
 
   defp ros_target_config,
     do: %RosBridge.Config{

@@ -59,6 +59,24 @@ defmodule OvcsMini.Vms.Composer do
                                    @motor_to_wheel_ratio
   # Hobbywing Xerun AXE540 R2, a 4-pole motor.
   @motor_pole_pairs 2
+  # Positive steers right: the servo's neutral pulls the car left.
+  @steering_trim "0.05"
+
+  @doc """
+  The drivetrain as the VMS drives it: what a simulated drivetrain needs
+  to answer like this one.
+  """
+  def drivetrain,
+    do: %{
+      motor_to_wheel_ratio: @motor_to_wheel_ratio,
+      pinion_teeth: @pinion_teeth,
+      spur_teeth: @spur_teeth,
+      pulses_per_revolution: @pulses_per_revolution,
+      pole_pairs: @motor_pole_pairs,
+      min_motor_current: @min_motor_current,
+      max_motor_current: @max_motor_current,
+      steering_trim: String.to_float(@steering_trim)
+    }
 
   @impl VmsCore.Vehicle
   def children do
@@ -223,8 +241,7 @@ defmodule OvcsMini.Vms.Composer do
          controller: Vms.MainController,
          external_pwm_id: 0,
          selected_control_level_source: Managers.ControlLevel,
-         # Positive steers right: the servo's neutral pulls the car left.
-         trim: "0.05"
+         trim: @steering_trim
        }},
       # The traction motor, behind a VESC on `misc`.
       {Vesc.MotorController,

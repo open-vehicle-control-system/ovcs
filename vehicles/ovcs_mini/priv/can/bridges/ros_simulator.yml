@@ -1,0 +1,26 @@
+---
+# Merged into the `ros` bridge's topology on the host: the hardware
+# RosBridge.Simulator.Plant answers for, mirrored from vms.yml. Its
+# frames are emitted only while the plant runs, with OVCS_SIM.
+can_networks:
+  ovcs:
+    bitrate: 500000
+    emitted_frames:
+      - import!:@ovcs_can:can/components/ovcs/0x2A0_radio_control_channels0.yml
+      - import!:@ovcs_can:can/components/ovcs/0x2A1_radio_control_channels1.yml
+      - import!:../generic_controller/0x701_main_controller_alive.yml
+      - import!:../generic_controller/0x704_main_controller_digital_and_analog_pin_status.yml
+      - import!:../generic_controller/0x709_main_controller_pulse_counter_status.yml
+    received_frames:
+      - import!:@ovcs_can:can/components/ovcs/0x1A0_vms_status.yml
+      - import!:../generic_controller/0x705_main_controller_external_pwm0_request.yml
+  misc:
+    bitrate: 500000
+    emitted_frames:
+      - import!:../vesc/0x0901_vesc_status.yml
+      - import!:../vesc/0x1B01_vesc_status_5.yml
+    received_frames:
+      - import!:../vesc/0x0001_vesc_set_duty.yml
+      - import!:../vesc/0x0101_vesc_set_current.yml
+      - import!:../vesc/0x0201_vesc_set_current_brake.yml
+      - import!:../vesc/0x0301_vesc_set_rpm.yml
