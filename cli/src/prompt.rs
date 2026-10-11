@@ -28,17 +28,14 @@ pub fn choose(label: &str, choices: &[String]) -> Result<String> {
     teardown(&mut terminal);
 
     match result? {
-        Some(s) => Ok(s),
+        Some(choice) => Ok(choice),
         None => aborted(),
     }
 }
 
 /// Vehicle picker — centered title, one row per vehicle (module atom +
-/// snake_case dir). Deliberately metadata-free: it reads only what
-/// `vehicles::list` already globbed, so it draws instantly. Probing each
-/// vehicle's Nerves targets here would boot Mix several times per vehicle
-/// (~2s each) before the picker could even appear; `./ovcs vehicles` is
-/// the place for that detail.
+/// snake_case dir). It shows only what `vehicles::list` already globbed:
+/// probing Nerves targets would boot Mix per vehicle before it could draw.
 pub fn choose_vehicle(vehicles: &[Vehicle]) -> Result<Vehicle> {
     if vehicles.is_empty() {
         eprintln!(
@@ -53,7 +50,7 @@ pub fn choose_vehicle(vehicles: &[Vehicle]) -> Result<Vehicle> {
     teardown(&mut terminal);
 
     match result? {
-        Some(idx) => Ok(vehicles[idx].clone()),
+        Some(index) => Ok(vehicles[index].clone()),
         None => aborted(),
     }
 }
@@ -79,13 +76,13 @@ fn aborted() -> ! {
     std::process::exit(130);
 }
 
-fn with_terminal<T, F>(f: F) -> Result<(T, Terminal<CrosstermBackend<Stdout>>)>
+fn with_terminal<T, F>(picker: F) -> Result<(T, Terminal<CrosstermBackend<Stdout>>)>
 where
     F: FnOnce(&mut Terminal<CrosstermBackend<Stdout>>) -> T,
 {
     let mut terminal = terminal::enter(false)?;
-    let result = f(&mut terminal);
-    Ok((result, terminal))
+    let picked = picker(&mut terminal);
+    Ok((picked, terminal))
 }
 
 fn teardown(_terminal: &mut Terminal<CrosstermBackend<Stdout>>) {
@@ -104,8 +101,8 @@ fn run_text_picker(
     let title = format!("Select {}", label);
 
     loop {
-        terminal.draw(|f| {
-            let area = centered(f.area(), 60, choices.len() as u16 + 6);
+        terminal.draw(|frame| {
+            let area = centered(frame.area(), 60, choices.len() as u16 + 6);
 
             let outer = Block::default()
                 .borders(Borders::ALL)
@@ -118,7 +115,7 @@ fn run_text_picker(
                 ]))
                 .padding(Padding::new(2, 2, 1, 1));
             let inner = outer.inner(area);
-            f.render_widget(outer, area);
+            frame.render_widget(outer, area);
 
             let rows = Layout::default()
                 .direction(Direction::Vertical)
@@ -132,9 +129,9 @@ fn run_text_picker(
             let list = List::new(items)
                 .highlight_style(Style::default().fg(ACCENT).add_modifier(Modifier::BOLD))
                 .highlight_symbol("▶ ");
-            f.render_stateful_widget(list, rows[0], &mut state);
+            frame.render_stateful_widget(list, rows[0], &mut state);
 
-            f.render_widget(
+            frame.render_widget(
                 Paragraph::new(Line::from(Span::styled(
                     "↑↓ navigate   ⏎ select   q / Esc cancel",
                     dim(),
@@ -144,23 +141,23 @@ fn run_text_picker(
             );
         })?;
 
-        if let Some(evt) = read_nav()? {
-            match evt {
+        if let Some(navigation) = read_nav()? {
+            match navigation {
                 Nav::Up => {
                     let len = choices.len();
-                    let i = state.selected().unwrap_or(0);
-                    state.select(Some(if i == 0 { len - 1 } else { i - 1 }));
+                    let selected = state.selected().unwrap_or(0);
+                    state.select(Some(if selected == 0 { len - 1 } else { selected - 1 }));
                 }
                 Nav::Down => {
                     let len = choices.len();
-                    let i = state.selected().unwrap_or(0);
-                    state.select(Some((i + 1) % len));
+                    let selected = state.selected().unwrap_or(0);
+                    state.select(Some((selected + 1) % len));
                 }
                 Nav::Home => state.select(Some(0)),
                 Nav::End => state.select(Some(choices.len() - 1)),
                 Nav::Enter => {
-                    let i = state.selected().unwrap_or(0);
-                    return Ok(Some(choices[i].clone()));
+                    let selected = state.selected().unwrap_or(0);
+                    return Ok(Some(choices[selected].clone()));
                 }
                 Nav::Cancel => return Ok(None),
             }
@@ -178,16 +175,14 @@ fn run_vehicle_picker(
     state.select(Some(0));
 
     loop {
-        terminal.draw(|f| {
-            let outer_area = f.area();
+        terminal.draw(|frame| {
+            let outer_area = frame.area();
 
-            // Pane up to 60 cols, shrunk to terminal width. One line per
-            // vehicle + 2 border + 1 footer.
+            // One line per vehicle, two borders and the footer.
             let content_width = outer_area.width.saturating_sub(4).min(60);
             let total_height = vehicles.len() as u16 + 3;
             let area = centered(outer_area, content_width, total_height);
 
-            // Title lives on the border itself, centered.
             let title = Line::from(vec![
                 Span::raw(" "),
                 Span::styled(
@@ -210,7 +205,7 @@ fn run_vehicle_picker(
                 .title_alignment(Alignment::Center)
                 .padding(Padding::new(2, 2, 0, 0));
             let inner = outer.inner(area);
-            f.render_widget(outer, area);
+            frame.render_widget(outer, area);
 
             let rows = Layout::default()
                 .direction(Direction::Vertical)
@@ -219,14 +214,14 @@ fn run_vehicle_picker(
 
             let list_items: Vec<ListItem> = vehicles
                 .iter()
-                .map(|v| {
+                .map(|vehicle| {
                     ListItem::new(Line::from(vec![
                         Span::styled(
-                            v.module.clone(),
+                            vehicle.module.clone(),
                             Style::default().add_modifier(Modifier::BOLD),
                         ),
                         Span::raw("  "),
-                        Span::styled(format!("({})", v.dir), dim()),
+                        Span::styled(format!("({})", vehicle.dir), dim()),
                     ]))
                 })
                 .collect();
@@ -234,9 +229,9 @@ fn run_vehicle_picker(
             let list = List::new(list_items)
                 .highlight_style(Style::default().add_modifier(Modifier::BOLD))
                 .highlight_symbol(" ▌ ");
-            f.render_stateful_widget(list, rows[0], &mut state);
+            frame.render_stateful_widget(list, rows[0], &mut state);
 
-            f.render_widget(
+            frame.render_widget(
                 Paragraph::new(Line::from(Span::styled(
                     "↑↓ navigate   ⏎ select   q / Esc cancel",
                     dim(),
@@ -246,17 +241,17 @@ fn run_vehicle_picker(
             );
         })?;
 
-        if let Some(evt) = read_nav()? {
-            match evt {
+        if let Some(navigation) = read_nav()? {
+            match navigation {
                 Nav::Up => {
                     let len = vehicles.len();
-                    let i = state.selected().unwrap_or(0);
-                    state.select(Some(if i == 0 { len - 1 } else { i - 1 }));
+                    let selected = state.selected().unwrap_or(0);
+                    state.select(Some(if selected == 0 { len - 1 } else { selected - 1 }));
                 }
                 Nav::Down => {
                     let len = vehicles.len();
-                    let i = state.selected().unwrap_or(0);
-                    state.select(Some((i + 1) % len));
+                    let selected = state.selected().unwrap_or(0);
+                    state.select(Some((selected + 1) % len));
                 }
                 Nav::Home => state.select(Some(0)),
                 Nav::End => state.select(Some(vehicles.len() - 1)),
@@ -306,12 +301,12 @@ fn read_nav() -> Result<Option<Nav>> {
 
 /// Centered sub-rect inside `outer`, clamped to the outer's extent.
 fn centered(outer: Rect, width: u16, height: u16) -> Rect {
-    let w = width.min(outer.width);
-    let h = height.min(outer.height);
+    let width = width.min(outer.width);
+    let height = height.min(outer.height);
     Rect {
-        x: outer.x + (outer.width.saturating_sub(w)) / 2,
-        y: outer.y + (outer.height.saturating_sub(h)) / 2,
-        width: w,
-        height: h,
+        x: outer.x + (outer.width.saturating_sub(width)) / 2,
+        y: outer.y + (outer.height.saturating_sub(height)) / 2,
+        width,
+        height,
     }
 }

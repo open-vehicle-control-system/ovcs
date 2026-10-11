@@ -1,7 +1,7 @@
 use anyhow::{anyhow, bail, Result};
 use owo_colors::OwoColorize;
 
-use crate::firmware::applications_for;
+use crate::firmware::roles_for;
 use crate::prompt::{choose, choose_vehicle};
 use crate::repo_root::repo_root;
 use crate::vehicles::{self, Vehicle};
@@ -16,7 +16,7 @@ pub fn resolve_vehicle(arg: Option<String>) -> Result<Vehicle> {
     match arg {
         Some(dir) => list
             .into_iter()
-            .find(|v| v.dir == dir)
+            .find(|vehicle| vehicle.dir == dir)
             .ok_or_else(|| anyhow!("Unknown vehicle {}", dir)),
         None => choose_vehicle(&list),
     }
@@ -25,7 +25,7 @@ pub fn resolve_vehicle(arg: Option<String>) -> Result<Vehicle> {
 pub struct ResolvedArgs {
     pub repo_root: std::path::PathBuf,
     pub vehicle: Vehicle,
-    pub application: String,
+    pub role: String,
 }
 
 /// Pick just the vehicle out of the two order-independent positional args,
@@ -42,7 +42,7 @@ pub fn resolve_vehicle_pair(
     let values: Vec<String> = [vehicle_arg, role_arg].into_iter().flatten().collect();
     let vehicle = match values.iter().find(|v| names.contains(v)).cloned() {
         Some(dir) => match all.iter().find(|v| v.dir == dir) {
-            Some(v) => v.clone(),
+            Some(vehicle) => vehicle.clone(),
             None => bail!("Unknown vehicle {}", dir),
         },
         None => choose_vehicle(&all)?,
@@ -52,9 +52,8 @@ pub fn resolve_vehicle_pair(
 
 /// Resolve a (vehicle, role) pair from two order-independent positional
 /// args. Either or both may be omitted — missing values fall back to the
-/// interactive Ratatui picker. The struct field is still called
-/// `application` internally; user-facing strings call it the role.
-pub fn resolve_vehicle_app(
+/// interactive Ratatui picker.
+pub fn resolve_vehicle_role(
     vehicle_arg: Option<String>,
     role_arg: Option<String>,
 ) -> Result<ResolvedArgs> {
@@ -65,27 +64,27 @@ pub fn resolve_vehicle_app(
     let values: Vec<String> = [vehicle_arg, role_arg].into_iter().flatten().collect();
     let vehicle = match values.iter().find(|v| names.contains(v)).cloned() {
         Some(dir) => match all.iter().find(|v| v.dir == dir) {
-            Some(v) => v.clone(),
+            Some(vehicle) => vehicle.clone(),
             None => bail!("Unknown vehicle {}", dir),
         },
         None => choose_vehicle(&all)?,
     };
     let vehicle_dir = vehicle.dir.clone();
 
-    let valid_roles = applications_for(&vehicle)?;
+    let valid_roles = roles_for(&vehicle)?;
     let remaining: Vec<String> = values.into_iter().filter(|v| v != &vehicle_dir).collect();
-    let application = match remaining.iter().find(|v| valid_roles.contains(v)).cloned() {
-        Some(a) => a,
+    let role = match remaining.iter().find(|v| valid_roles.contains(v)).cloned() {
+        Some(role) => role,
         None => {
             if remaining.is_empty() {
                 choose("role", &valid_roles)?
             } else {
-                let bad = &remaining[0];
+                let unknown_role = &remaining[0];
                 eprintln!(
                     "{}",
                     format!(
                         "Unknown role {:?} for vehicle {}.\nValid: {}",
-                        bad,
+                        unknown_role,
                         vehicle_dir,
                         valid_roles.join(", ")
                     )
@@ -99,6 +98,6 @@ pub fn resolve_vehicle_app(
     Ok(ResolvedArgs {
         repo_root: root,
         vehicle,
-        application,
+        role,
     })
 }

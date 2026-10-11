@@ -4,7 +4,7 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 
 use crate::commands::vehicle_host_keys;
-use crate::firmware::applications_for;
+use crate::firmware::roles_for;
 use crate::repo_root::repo_root;
 use crate::ui::step;
 use crate::vehicles::{self, Vehicle};
@@ -24,7 +24,7 @@ enum Mark {
 
 struct Binary {
     name: &'static str,
-    cmd: &'static [&'static str],
+    command: &'static [&'static str],
     purpose: &'static str,
     level: Level,
 }
@@ -32,67 +32,79 @@ struct Binary {
 const BINARIES: &[Binary] = &[
     Binary {
         name: "mise",
-        cmd: &["mise", "--version"],
+        command: &["mise", "--version"],
         purpose: "language-runtime manager",
         level: Level::Required,
     },
     Binary {
         name: "elixir",
-        cmd: &["elixir", "--version"],
+        command: &["elixir", "--version"],
         purpose: "Elixir runtime (mise-managed)",
         level: Level::Required,
     },
     Binary {
         name: "mix",
-        cmd: &["mix", "--version"],
+        command: &["mix", "--version"],
         purpose: "Elixir build tool",
         level: Level::Required,
     },
     Binary {
         name: "node",
-        cmd: &["node", "--version"],
+        command: &["node", "--version"],
         purpose: "VMS dashboard build",
         level: Level::Required,
     },
     Binary {
         name: "ruby",
-        cmd: &["ruby", "--version"],
+        command: &["ruby", "--version"],
         purpose: "historical scripts",
         level: Level::Optional,
     },
     Binary {
         name: "python",
-        cmd: &["python", "--version"],
+        command: &["python", "--version"],
         purpose: "PlatformIO + tooling",
         level: Level::Required,
     },
     Binary {
         name: "flutter",
-        cmd: &["flutter", "--version"],
+        command: &["flutter", "--version"],
         purpose: "infotainment dashboard",
         level: Level::Optional,
     },
     Binary {
         name: "fwup",
-        cmd: &["fwup", "--version"],
+        command: &["fwup", "--version"],
         purpose: "Nerves firmware packaging",
         level: Level::Required,
     },
     Binary {
         name: "cansend",
-        cmd: &["cansend"],
+        command: &["cansend"],
         purpose: "can-utils",
         level: Level::Optional,
     },
     Binary {
         name: "candump",
-        cmd: &["candump", "--version"],
+        command: &["candump", "--version"],
         purpose: "can-utils",
         level: Level::Optional,
     },
     Binary {
+        name: "balena",
+        command: &["balena", "--version"],
+        purpose: "compute node push",
+        level: Level::Optional,
+    },
+    Binary {
+        name: "docker",
+        command: &["docker", "--version"],
+        purpose: "compute node image check",
+        level: Level::Optional,
+    },
+    Binary {
         name: "pio",
-        cmd: &["pio", "--version"],
+        command: &["pio", "--version"],
         purpose: "PlatformIO (Arduino controllers)",
         level: Level::Optional,
     },
@@ -103,11 +115,15 @@ pub fn run() -> Result<()> {
 
     println!();
     step("Toolchain binaries");
-    for b in BINARIES {
-        let mark = check_binary(b);
+    for binary in BINARIES {
+        let mark = check_binary(binary);
         match mark {
-            Mark::Ok => print_row(Mark::Ok, b.name, b.purpose),
-            _ => print_row(mark, b.name, &format!("{} — not on PATH", b.purpose)),
+            Mark::Ok => print_row(Mark::Ok, binary.name, binary.purpose),
+            _ => print_row(
+                mark,
+                binary.name,
+                &format!("{} — not on PATH", binary.purpose),
+            ),
         }
         if matches!(mark, Mark::Error) {
             any_required_fail = true;
@@ -133,7 +149,7 @@ pub fn run() -> Result<()> {
         "/usr/include/libsocketcan.h",
         "/usr/local/include/libsocketcan.h",
     ];
-    if candidates.iter().any(|p| Path::new(p).exists()) {
+    if candidates.iter().any(|path| Path::new(path).exists()) {
         print_row(Mark::Ok, "libsocketcan", "header present");
     } else {
         print_row(
@@ -150,40 +166,44 @@ pub fn run() -> Result<()> {
     if list.is_empty() {
         print_row(Mark::Warn, "vehicles/", "no vehicle packages found");
     } else {
-        for v in &list {
-            let targets = vehicles::nerves_target(v, "vms")
-                .and_then(|vms| Ok((vms, vehicles::nerves_target(v, "infotainment")?)));
-            let (vms, info) = match targets {
+        for vehicle in &list {
+            let targets = vehicles::nerves_target(vehicle, "vms").and_then(|vms_target| {
+                Ok((
+                    vms_target,
+                    vehicles::nerves_target(vehicle, "infotainment")?,
+                ))
+            });
+            let (vms_target, infotainment_target) = match targets {
                 Ok(targets) => targets,
                 Err(error) => {
                     let summary = error.to_string();
                     let first_line = summary.lines().next().unwrap_or("probe failed");
-                    print_row(Mark::Error, &v.dir, first_line);
+                    print_row(Mark::Error, &vehicle.dir, first_line);
                     any_required_fail = true;
                     continue;
                 }
             };
-            match (&vms, &info) {
+            match (&vms_target, &infotainment_target) {
                 (None, None) => {
                     print_row(
                         Mark::Error,
-                        &v.dir,
+                        &vehicle.dir,
                         &format!(
                             "{}.vms_target/0 / .infotainment_target/0 returned nothing",
-                            v.module
+                            vehicle.module
                         ),
                     );
                     any_required_fail = true;
                 }
                 _ => {
                     let mut parts = Vec::new();
-                    if let Some(t) = &vms {
-                        parts.push(format!("vms → {}", t));
+                    if let Some(target) = &vms_target {
+                        parts.push(format!("vms → {}", target));
                     }
-                    if let Some(t) = &info {
-                        parts.push(format!("infotainment → {}", t));
+                    if let Some(target) = &infotainment_target {
+                        parts.push(format!("infotainment → {}", target));
                     }
-                    print_row(Mark::Ok, &v.dir, &parts.join(", "));
+                    print_row(Mark::Ok, &vehicle.dir, &parts.join(", "));
                 }
             }
         }
@@ -194,21 +214,21 @@ pub fn run() -> Result<()> {
     if list.is_empty() {
         print_row(Mark::Warn, "vehicles/", "no vehicle packages found");
     } else {
-        for v in &list {
-            let roles = applications_for(v).unwrap_or_default();
-            let missing = missing_host_key_roles(v, &roles);
+        for vehicle in &list {
+            let roles = roles_for(vehicle).unwrap_or_default();
+            let missing = missing_host_key_roles(vehicle, &roles);
             if missing.is_empty() && !roles.is_empty() {
-                print_row(Mark::Ok, &v.dir, "all roles configured");
+                print_row(Mark::Ok, &vehicle.dir, "all roles configured");
             } else if roles.is_empty() {
-                print_row(Mark::Warn, &v.dir, "no firmware roles");
+                print_row(Mark::Warn, &vehicle.dir, "no firmware roles");
             } else {
                 print_row(
                     Mark::Warn,
-                    &v.dir,
+                    &vehicle.dir,
                     &format!(
                         "missing keys for: {} — run `./ovcs host-keys generate {}`",
                         missing.join(", "),
-                        v.dir
+                        vehicle.dir
                     ),
                 );
             }
@@ -230,37 +250,28 @@ pub fn run() -> Result<()> {
 fn missing_host_key_roles(vehicle: &Vehicle, roles: &[String]) -> Vec<String> {
     roles
         .iter()
-        .filter(|role| !host_keys_present(vehicle, role))
+        .filter(|role| !vehicle_host_keys::missing_host_keys(vehicle, role).is_empty())
         .cloned()
         .collect()
 }
 
-fn host_keys_present(vehicle: &Vehicle, role: &str) -> bool {
-    let dir = vehicle_host_keys::role_dir(vehicle, role);
-    ["ssh_host_rsa_key", "ssh_host_ed25519_key"]
-        .iter()
-        .all(|name| dir.join(name).exists())
-}
-
 fn print_row(mark: Mark, name: &str, detail: &str) {
-    let sym = match mark {
+    let symbol = match mark {
         Mark::Ok => format!("{}", "✓".green()),
         Mark::Warn => format!("{}", "⚠".yellow()),
         Mark::Error => format!("{}", "✗".red()),
     };
-    println!("  {} {:<22} {}", sym, name, detail.dimmed());
+    println!("  {} {:<22} {}", symbol, name, detail.dimmed());
 }
 
-// Matches Elixir CLI: existence on PATH (spawn succeeds) counts as ok;
-// we don't check the exit code because e.g. `cansend` with no args exits
-// non-zero but is still "installed and working."
-fn check_binary(b: &Binary) -> Mark {
-    let fail = match b.level {
+// Spawning is the check: `cansend` without arguments exits non-zero.
+fn check_binary(binary: &Binary) -> Mark {
+    let fail = match binary.level {
         Level::Required => Mark::Error,
         Level::Optional => Mark::Warn,
     };
-    match Command::new(b.cmd[0])
-        .args(&b.cmd[1..])
+    match Command::new(binary.command[0])
+        .args(&binary.command[1..])
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -273,8 +284,8 @@ fn check_binary(b: &Binary) -> Mark {
 
 fn check_nerves_bootstrap() -> bool {
     match Command::new("mix").arg("archive").output() {
-        Ok(out) if out.status.success() => {
-            String::from_utf8_lossy(&out.stdout).contains("nerves_bootstrap")
+        Ok(output) if output.status.success() => {
+            String::from_utf8_lossy(&output.stdout).contains("nerves_bootstrap")
         }
         _ => false,
     }

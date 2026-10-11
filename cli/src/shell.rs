@@ -10,8 +10,7 @@ pub struct RunOpts<'a> {
 }
 
 /// Spawn a subprocess with inherited stdio so output streams live. Exits
-/// the current process with the child's exit code on failure. Successor
-/// to Elixir's OvcsCli.Shell.run!/2.
+/// the current process with the child's exit code on failure.
 pub fn run(argv: &[&str], opts: &RunOpts) -> Result<()> {
     let joined = argv.join(" ");
     println!(
@@ -44,15 +43,15 @@ pub fn run_capture(
     cwd: &Path,
     env: &HashMap<String, String>,
 ) -> Result<(i32, String, String)> {
-    let out = Command::new(argv[0])
+    let output = Command::new(argv[0])
         .args(&argv[1..])
         .current_dir(cwd)
         .envs(env)
         .stderr(Stdio::piped())
         .output()
         .with_context(|| format!("failed to spawn {}", argv[0]))?;
-    let code = out.status.code().unwrap_or(-1);
-    let stdout = String::from_utf8_lossy(&out.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+    let code = output.status.code().unwrap_or(-1);
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
     Ok((code, stdout, stderr))
 }

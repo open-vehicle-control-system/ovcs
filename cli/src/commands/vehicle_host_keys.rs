@@ -3,25 +3,25 @@ use owo_colors::OwoColorize;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use crate::firmware::{applications_for, bridge_id};
+use crate::firmware::{bridge_id, roles_for};
 use crate::resolve_args::resolve_vehicle;
 use crate::ui::{step, sub, sub_fail, sub_ok};
 use crate::vehicles::Vehicle;
 
-/// The two host-key algorithms we generate per role. RSA stays for older
+/// The host-key algorithms generated per role. RSA stays for older
 /// clients; ed25519 is the modern default.
 const KEY_KINDS: [&str; 2] = ["rsa", "ed25519"];
 
 /// Generate persistent SSH host keys for every firmware role of a
 /// vehicle. Keys land under `vehicles/<dir>/priv/host_keys/<role>/` and
-/// are gitignored so each developer keeps their own; the firmware boot
-/// path picks them up from the vehicle's app priv at runtime, so the
-/// device's SSH identity stays stable across burns.
+/// are gitignored so each developer keeps their own; the firmware reads
+/// them from the vehicle package's priv at runtime, so the device's SSH
+/// identity stays stable across burns.
 ///
 /// Idempotent — existing keys are left alone unless `--force` is set.
 pub fn generate(arg: Option<String>, force: bool) -> Result<()> {
     let vehicle = resolve_vehicle(arg)?;
-    let roles = applications_for(&vehicle)?;
+    let roles = roles_for(&vehicle)?;
     if roles.is_empty() {
         step(&format!("{} declares no firmware roles.", vehicle.module));
         return Ok(());
@@ -33,7 +33,11 @@ pub fn generate(arg: Option<String>, force: bool) -> Result<()> {
     for role in &roles {
         let dir = role_dir(&vehicle, role);
         std::fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
-        sub(&format!("{}  {}", role, rel(&dir, &vehicle).dimmed()));
+        sub(&format!(
+            "{}  {}",
+            role,
+            relative_to_vehicle(&dir, &vehicle).dimmed()
+        ));
         for kind in KEY_KINDS {
             let key_path = dir.join(format!("ssh_host_{}_key", kind));
             if key_path.exists() && !force {
@@ -78,7 +82,7 @@ pub fn generate(arg: Option<String>, force: bool) -> Result<()> {
 /// missing, so it's usable as a pre-burn / CI gate.
 pub fn verify(arg: Option<String>) -> Result<()> {
     let vehicle = resolve_vehicle(arg)?;
-    let roles = applications_for(&vehicle)?;
+    let roles = roles_for(&vehicle)?;
     if roles.is_empty() {
         step(&format!("{} declares no firmware roles.", vehicle.module));
         return Ok(());
@@ -88,23 +92,7 @@ pub fn verify(arg: Option<String>) -> Result<()> {
     let mut complete = 0;
     let mut incomplete = 0;
     for role in &roles {
-        let dir = role_dir(&vehicle, role);
-        let missing: Vec<String> = KEY_KINDS
-            .iter()
-            .flat_map(|kind| {
-                let key = dir.join(format!("ssh_host_{}_key", kind));
-                let pubkey = key.with_extension("pub");
-                let mut gaps = Vec::new();
-                if !key.exists() {
-                    gaps.push(format!("ssh_host_{}_key", kind));
-                }
-                if !pubkey.exists() {
-                    gaps.push(format!("ssh_host_{}_key.pub", kind));
-                }
-                gaps
-            })
-            .collect();
-
+        let missing = missing_host_keys(&vehicle, role);
         if missing.is_empty() {
             sub_ok(&format!("{}  complete", role));
             complete += 1;
@@ -118,7 +106,7 @@ pub fn verify(arg: Option<String>) -> Result<()> {
     step(&format!("{}/{} role(s) complete", complete, roles.len()));
     if incomplete > 0 {
         bail!(
-            "{} role(s) missing host keys — run `ovcs host-keys generate {}`",
+            "{} role(s) missing host keys — run `./ovcs host-keys generate {}`",
             incomplete,
             vehicle.dir
         );
@@ -135,13 +123,14 @@ pub fn export(arg: Option<String>, out: Option<String>) -> Result<()> {
     let base = host_keys_dir(&vehicle);
     if !has_keys(&base) {
         bail!(
-            "no host keys for {} — run `ovcs host-keys generate {}` first",
+            "no host keys for {} — run `./ovcs host-keys generate {}` first",
             vehicle.dir,
             vehicle.dir
         );
     }
 
-    let out = abs_path(&out.unwrap_or_else(|| format!("{}-host-keys.tar.gz", vehicle.dir)));
+    let archive_path =
+        absolute_path(&out.unwrap_or_else(|| format!("{}-host-keys.tar.gz", vehicle.dir)));
     // `-C <priv>` so the archive holds `host_keys/...` paths, which import
     // extracts straight back into another checkout's `priv/`.
     let priv_dir = vehicle.path.join("priv");
@@ -153,15 +142,15 @@ pub fn export(arg: Option<String>, out: Option<String>) -> Result<()> {
             .create(true)
             .truncate(true)
             .mode(0o600)
-            .open(&out)
-            .with_context(|| format!("creating {}", out.display()))?;
-        std::fs::set_permissions(&out, std::fs::Permissions::from_mode(0o600))
-            .with_context(|| format!("restricting {}", out.display()))?;
+            .open(&archive_path)
+            .with_context(|| format!("creating {}", archive_path.display()))?;
+        std::fs::set_permissions(&archive_path, std::fs::Permissions::from_mode(0o600))
+            .with_context(|| format!("restricting {}", archive_path.display()))?;
     }
     run_tar(
         &[
             "-czf".as_ref(),
-            out.as_os_str(),
+            archive_path.as_os_str(),
             "-C".as_ref(),
             priv_dir.as_os_str(),
             "host_keys".as_ref(),
@@ -170,7 +159,7 @@ pub fn export(arg: Option<String>, out: Option<String>) -> Result<()> {
     )?;
 
     step(&format!("Exported {} host keys", vehicle.module));
-    sub_ok(&out.display().to_string());
+    sub_ok(&archive_path.display().to_string());
     println!(
         "{}",
         "Contains private keys — share over a trusted channel.".dimmed()
@@ -182,7 +171,7 @@ pub fn export(arg: Option<String>, out: Option<String>) -> Result<()> {
 /// clobber existing keys unless `--force`.
 pub fn import(arg: Option<String>, from: String, force: bool) -> Result<()> {
     let vehicle = resolve_vehicle(arg)?;
-    let from = abs_path(&from);
+    let from = absolute_path(&from);
     if !from.is_file() {
         bail!("archive not found: {}", from.display());
     }
@@ -211,10 +200,10 @@ pub fn import(arg: Option<String>, from: String, force: bool) -> Result<()> {
     )?;
 
     step(&format!("Imported host keys for {}", vehicle.module));
-    sub_ok(&rel(&base, &vehicle));
+    sub_ok(&relative_to_vehicle(&base, &vehicle));
     println!(
         "{}",
-        "Verify with `ovcs host-keys verify`, then burn.".dimmed()
+        "Verify with `./ovcs host-keys verify`, then burn.".dimmed()
     );
     Ok(())
 }
@@ -223,26 +212,37 @@ fn host_keys_dir(vehicle: &Vehicle) -> PathBuf {
     vehicle.path.join("priv").join("host_keys")
 }
 
-/// Directory holding `role`'s host keys (`role` as `applications_for`
+/// Directory holding `role`'s host keys (`role` as `roles_for`
 /// names it: `vms`, `infotainment` or `bridge-<id>`).
 pub(crate) fn role_dir(vehicle: &Vehicle, role: &str) -> PathBuf {
     let base = host_keys_dir(vehicle);
-    // Bridge roles arrive as `bridge-<id>` (from `applications_for`), but
-    // the firmware reads keys at `bridges/<id>` — bridges/firmware's
-    // config/runtime.exs calls
-    // `ssh_system_dir(vehicle, "bridges/#{bridge_firmware_id}")` with the
-    // bare id. Strip the prefix so the two paths agree.
+    // bridges/firmware's config/runtime.exs reads a bridge's keys from
+    // `bridges/<id>`, with the bare id.
     match bridge_id(role) {
         Some(id) => base.join("bridges").join(id),
         None => base.join(role),
     }
 }
 
+/// The key files `role` lacks: each algorithm's private and public key.
+pub(crate) fn missing_host_keys(vehicle: &Vehicle, role: &str) -> Vec<String> {
+    let dir = role_dir(vehicle, role);
+    KEY_KINDS
+        .iter()
+        .flat_map(|kind| {
+            let private_key = format!("ssh_host_{}_key", kind);
+            let public_key = format!("{}.pub", private_key);
+            [private_key, public_key]
+        })
+        .filter(|name| !dir.join(name).exists())
+        .collect()
+}
+
 /// True if at least one `ssh_host_*_key` lives anywhere under `base`.
 fn has_keys(base: &Path) -> bool {
     let pattern = base.join("**").join("ssh_host_*_key");
     match pattern.to_str() {
-        Some(p) => glob::glob(p)
+        Some(pattern) => glob::glob(pattern)
             .map(|paths| paths.flatten().next().is_some())
             .unwrap_or(false),
         None => false,
@@ -250,15 +250,15 @@ fn has_keys(base: &Path) -> bool {
 }
 
 /// Path relative to the vehicle package, for tidy display.
-fn rel(path: &Path, vehicle: &Vehicle) -> String {
+fn relative_to_vehicle(path: &Path, vehicle: &Vehicle) -> String {
     path.strip_prefix(&vehicle.path)
         .unwrap_or(path)
         .display()
         .to_string()
 }
 
-fn abs_path(p: &str) -> PathBuf {
-    let path = PathBuf::from(p);
+fn absolute_path(path: &str) -> PathBuf {
+    let path = PathBuf::from(path);
     if path.is_absolute() {
         path
     } else {
@@ -269,31 +269,32 @@ fn abs_path(p: &str) -> PathBuf {
 }
 
 fn run_tar(args: &[&std::ffi::OsStr], what: &str) -> Result<()> {
-    let out = Command::new("tar")
+    let output = Command::new("tar")
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .output()
         .with_context(|| format!("failed to spawn tar ({})", what))?;
-    if !out.status.success() {
+    if !output.status.success() {
         sub_fail(&format!(
             "tar ({}) failed: {}",
             what,
-            String::from_utf8_lossy(&out.stderr).trim()
+            String::from_utf8_lossy(&output.stderr).trim()
         ));
-        bail!("tar exited {}", out.status);
+        bail!("tar exited {}", output.status);
     }
     Ok(())
 }
 
 fn ssh_keygen(kind: &str, key_path: &Path, comment: &str) -> Result<()> {
-    let mut cmd = Command::new("ssh-keygen");
-    cmd.args(["-t", kind]);
+    let mut command = Command::new("ssh-keygen");
+    command.args(["-t", kind]);
     if kind == "rsa" {
-        cmd.args(["-b", "4096"]);
+        command.args(["-b", "4096"]);
     }
-    cmd.args(["-N", ""])
+    command
+        .args(["-N", ""])
         .args(["-C", comment])
         .arg("-f")
         .arg(key_path)
@@ -301,16 +302,16 @@ fn ssh_keygen(kind: &str, key_path: &Path, comment: &str) -> Result<()> {
         .stdout(Stdio::null())
         .stderr(Stdio::piped());
 
-    let out = cmd
+    let output = command
         .output()
         .with_context(|| format!("failed to spawn ssh-keygen ({})", kind))?;
-    if !out.status.success() {
+    if !output.status.success() {
         sub_fail(&format!(
             "ssh-keygen ({}) failed: {}",
             kind,
-            String::from_utf8_lossy(&out.stderr).trim()
+            String::from_utf8_lossy(&output.stderr).trim()
         ));
-        bail!("ssh-keygen exited {}", out.status);
+        bail!("ssh-keygen exited {}", output.status);
     }
     Ok(())
 }

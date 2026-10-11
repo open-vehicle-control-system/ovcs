@@ -38,33 +38,25 @@ pub fn run(vehicle_arg: Option<String>, no_addons: bool) -> Result<()> {
     ));
     let sname_width = roles
         .iter()
-        .map(|r| vehicles::local_sname(&vehicle.dir, &r.label).len())
+        .map(|role| vehicles::local_sname(&vehicle.dir, &role.label).len())
         .max()
         .unwrap_or(0);
-    for r in &roles {
-        let sname = vehicles::local_sname(&vehicle.dir, &r.label);
+    for role in &roles {
+        let sname = vehicles::local_sname(&vehicle.dir, &role.label);
         sub(&format!(
             "{:<width$}  {}",
             sname,
-            short_path(&r.cwd, &root),
+            short_path(&role.cwd, &root),
             width = sname_width
         ));
     }
     sub("Attach with `./ovcs attach` in another terminal · Ctrl-C to stop.");
     println!();
 
-    // Warm up each unique firmware directory's `_build/dev/` via its own
-    // `build.sh MIX_TARGET=host` — same script the deployed flow uses,
-    // just in host mode. Keeps prep logic (deps.get + compile, plus any
-    // future firmware-project-specific steps) in one place per firmware
-    // rather than split between the script and the CLI.
+    // The firmware's own build.sh, in host mode, keeps its prep steps in one place.
     ensure_built(&roles, &vehicle)?;
 
-    // Each firmware declares its own dev-time add-ons (companion processes
-    // started only on host runs — e.g. a dashboard's live dev server) via
-    // `dev_addons/0`. Discover them by asking each firmware project (now
-    // that it's compiled), install any missing deps, and drop any whose
-    // toolchain is absent — warned about, not fatal. `--no-addons` skips it.
+    // Asked only now: the firmware projects must be compiled to answer `dev_addons/0`.
     let addons = if no_addons {
         Vec::new()
     } else {
@@ -72,37 +64,36 @@ pub fn run(vehicle_arg: Option<String>, no_addons: bool) -> Result<()> {
     };
 
     erlang_cookie::ensure()?;
-    let mut procs: Vec<Proc> = Vec::new();
+    let mut processes: Vec<ChildProcess> = Vec::new();
 
     for role in &roles {
         let sname = vehicles::local_sname(&vehicle.dir, &role.label);
-        let mut cmd = Command::new("elixir");
-        cmd.args([
-            "--sname",
-            &sname,
-            // BEAM disables `IO.ANSI` when stdout is piped; force it back
-            // on so Logger emits coloured `[info]` / `[debug]` etc. into
-            // our line-prefixing pipe.
-            "--erl",
-            "-elixir ansi_enabled true",
-            "-S",
-            "mix",
-            "run",
-            "--no-halt",
-        ])
-        .current_dir(&role.cwd)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-        for (k, v) in &role.env {
-            cmd.env(k, v);
+        let mut command = Command::new("elixir");
+        command
+            .args([
+                "--sname",
+                &sname,
+                // The BEAM disables `IO.ANSI` on a piped stdout; keep Logger's colours.
+                "--erl",
+                "-elixir ansi_enabled true",
+                "-S",
+                "mix",
+                "run",
+                "--no-halt",
+            ])
+            .current_dir(&role.cwd)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        for (name, value) in &role.env {
+            command.env(name, value);
         }
         // An exported Nerves target would make these target-mode BEAMs.
-        cmd.env("MIX_TARGET", "host");
-        let mut child = match cmd.spawn() {
+        command.env("MIX_TARGET", "host");
+        let mut child = match command.spawn() {
             Ok(child) => child,
             Err(error) => {
-                stop(&mut procs);
+                stop(&mut processes);
                 return Err(error)
                     .with_context(|| format!("failed to spawn elixir for role {}", role.label));
             }
@@ -115,7 +106,7 @@ pub fn run(vehicle_arg: Option<String>, no_addons: bool) -> Result<()> {
         thread::spawn(move || prefix_stream(stdout, &label_out, std::io::stdout()));
         thread::spawn(move || prefix_stream(stderr, &label_err, std::io::stderr()));
 
-        procs.push(Proc {
+        processes.push(ChildProcess {
             label: role.label.clone(),
             child,
             critical: true,
@@ -123,40 +114,38 @@ pub fn run(vehicle_arg: Option<String>, no_addons: bool) -> Result<()> {
         });
     }
 
-    // Dev add-ons run alongside the BEAMs but are auxiliary: a closed
-    // window or a crashed dev server must not tear the vehicle down (see
-    // the wait loop's `critical` handling below). Output is line-prefixed
-    // just like the BEAMs.
-    for a in &addons {
-        let mut cmd = Command::new(&a.run[0]);
-        cmd.args(&a.run[1..])
-            .current_dir(&a.dir)
+    // Add-ons are not critical: a crashed dev server must not stop the vehicle.
+    for addon in &addons {
+        let mut command = Command::new(&addon.run[0]);
+        command
+            .args(&addon.run[1..])
+            .current_dir(&addon.dir)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        let mut child = match cmd.spawn() {
-            Ok(c) => c,
-            Err(e) => {
+        let mut child = match command.spawn() {
+            Ok(child) => child,
+            Err(error) => {
                 sub_warn(&format!(
-                    "{}: failed to start `{}` ({e}) — skipping",
-                    a.label,
-                    a.run.join(" ")
+                    "{}: failed to start `{}` ({error}) — skipping",
+                    addon.label,
+                    addon.run.join(" ")
                 ));
                 continue;
             }
         };
         let stdout = child.stdout.take().unwrap();
         let stderr = child.stderr.take().unwrap();
-        let label_out = a.label.clone();
-        let label_err = a.label.clone();
+        let label_out = addon.label.clone();
+        let label_err = addon.label.clone();
         thread::spawn(move || prefix_stream(stdout, &label_out, std::io::stdout()));
         thread::spawn(move || prefix_stream(stderr, &label_err, std::io::stderr()));
-        match &a.note {
-            Some(note) => sub_ok(&format!("{} — {}", a.label, note)),
-            None => sub_ok(&format!("{} · {}", a.label, a.run.join(" "))),
+        match &addon.note {
+            Some(note) => sub_ok(&format!("{} — {}", addon.label, note)),
+            None => sub_ok(&format!("{} · {}", addon.label, addon.run.join(" "))),
         }
-        procs.push(Proc {
-            label: a.label.clone(),
+        processes.push(ChildProcess {
+            label: addon.label.clone(),
             child,
             critical: false,
             exit: None,
@@ -168,7 +157,7 @@ pub fn run(vehicle_arg: Option<String>, no_addons: bool) -> Result<()> {
 
     // Ctrl-C reaches the whole process group and ends this process too, so
     // returning from `supervise` means a BEAM exited on its own.
-    match supervise(&mut procs) {
+    match supervise(&mut processes) {
         Some((label, status)) => bail!("{} exited ({}); the vehicle was stopped", label, status),
         None => Ok(()),
     }
@@ -179,34 +168,37 @@ pub fn run(vehicle_arg: Option<String>, no_addons: bool) -> Result<()> {
 /// prompt), then SIGKILL if it is still running after `STOP_GRACE`. A dev
 /// add-on exiting on its own is only reported. Returns the BEAM that exited
 /// first.
-fn supervise(procs: &mut [Proc]) -> Option<(String, ExitStatus)> {
+fn supervise(processes: &mut [ChildProcess]) -> Option<(String, ExitStatus)> {
     let mut first_exit: Option<(String, ExitStatus)> = None;
     let mut stop_sent_at: Option<std::time::Instant> = None;
     loop {
-        for p in procs.iter_mut().filter(|p| p.exit.is_none()) {
-            if let Ok(Some(status)) = p.child.try_wait() {
-                p.exit = Some(status);
-                if p.critical {
-                    first_exit.get_or_insert((p.label.clone(), status));
+        for process in processes
+            .iter_mut()
+            .filter(|process| process.exit.is_none())
+        {
+            if let Ok(Some(status)) = process.child.try_wait() {
+                process.exit = Some(status);
+                if process.critical {
+                    first_exit.get_or_insert((process.label.clone(), status));
                 } else if stop_sent_at.is_none() {
                     sub_warn(&format!(
                         "{} exited ({}); vehicle still running",
-                        p.label, status
+                        process.label, status
                     ));
                 }
             }
         }
-        if procs.iter().all(|p| p.exit.is_some()) {
+        if processes.iter().all(|process| process.exit.is_some()) {
             return first_exit;
         }
         if first_exit.is_some() {
             match stop_sent_at {
                 None => {
-                    signal_running(procs, libc::SIGTERM);
+                    signal_running(processes, libc::SIGTERM);
                     stop_sent_at = Some(std::time::Instant::now());
                 }
                 Some(sent_at) if sent_at.elapsed() > STOP_GRACE => {
-                    signal_running(procs, libc::SIGKILL);
+                    signal_running(processes, libc::SIGKILL);
                 }
                 Some(_) => {}
             }
@@ -216,24 +208,24 @@ fn supervise(procs: &mut [Proc]) -> Option<(String, ExitStatus)> {
 }
 
 /// Stops the children started so far, for an error before supervision.
-fn stop(procs: &mut [Proc]) {
-    signal_running(procs, libc::SIGTERM);
-    for p in procs.iter_mut() {
-        let _ = p.child.wait();
+fn stop(processes: &mut [ChildProcess]) {
+    signal_running(processes, libc::SIGTERM);
+    for process in processes.iter_mut() {
+        let _ = process.child.wait();
     }
 }
 
 /// Signals the children not yet reaped; a reaped child's pid may already
 /// belong to another process.
-fn signal_running(procs: &[Proc], signal: libc::c_int) {
-    for p in procs.iter().filter(|p| p.exit.is_none()) {
-        unsafe { libc::kill(p.child.id() as libc::pid_t, signal) };
+fn signal_running(processes: &[ChildProcess], signal: libc::c_int) {
+    for process in processes.iter().filter(|process| process.exit.is_none()) {
+        unsafe { libc::kill(process.child.id() as libc::pid_t, signal) };
     }
 }
 
 /// A spawned child the run loop supervises. `critical` BEAMs drive the
-/// loop's lifetime; non-critical dashboards are auxiliary.
-struct Proc {
+/// loop's lifetime; dev add-ons are not critical.
+struct ChildProcess {
     label: String,
     child: Child,
     critical: bool,
@@ -257,11 +249,8 @@ struct Addon {
     note: Option<String>,
 }
 
-/// Ask each firmware project (deduped by directory) what dev add-ons it
-/// declares via `dev_addons/0`, resolving each into a launchable `Addon`.
-/// The CLI is agnostic about what they are — it just runs `run`, installing
-/// deps first when `ready_marker` is absent. Labels are prefixed with the
-/// firmware family (the firmware dir's parent — "vms", "infotainment", …)
+/// The dev add-ons each firmware project declares in `dev_addons/0`,
+/// labelled with the firmware family (the project dir's parent: "vms", …)
 /// so add-ons from different firmwares don't collide in the logs.
 fn discover_addons(roles: &[Role]) -> Result<Vec<Addon>> {
     let mut seen: Vec<PathBuf> = Vec::new();
@@ -278,16 +267,16 @@ fn discover_addons(roles: &[Role]) -> Result<Vec<Addon>> {
             .and_then(|s| s.to_str())
             .unwrap_or("addon")
             .to_string();
-        for a in vehicles::dev_addons(&role.cwd)? {
-            let dir = role.cwd.join(&a.dir);
+        for addon in vehicles::dev_addons(&role.cwd)? {
+            let dir = role.cwd.join(&addon.dir);
             let dir = dir.canonicalize().unwrap_or(dir);
             addons.push(Addon {
-                label: format!("{}-{}", family, a.name),
+                label: format!("{}-{}", family, addon.name),
                 dir,
-                run: a.run,
-                install: a.install,
-                ready_marker: a.ready_marker,
-                note: a.note,
+                run: addon.run,
+                install: addon.install,
+                ready_marker: addon.ready_marker,
+                note: addon.note,
             });
         }
     }
@@ -301,22 +290,22 @@ fn discover_addons(roles: &[Role]) -> Result<Vec<Addon>> {
 fn ensure_addon_deps(addons: Vec<Addon>) -> Vec<Addon> {
     let mut ready = Vec::new();
     let mut to_install = Vec::new();
-    for a in addons {
-        if !tool_available(&a.run[0]) {
+    for addon in addons {
+        if !tool_available(&addon.run[0]) {
             sub_warn(&format!(
                 "{}: `{}` not found on PATH — skipping",
-                a.label, a.run[0]
+                addon.label, addon.run[0]
             ));
             continue;
         }
-        let needs_install = match (&a.ready_marker, &a.install) {
-            (Some(marker), Some(_)) => !a.dir.join(marker).exists(),
+        let needs_install = match (&addon.ready_marker, &addon.install) {
+            (Some(marker), Some(_)) => !addon.dir.join(marker).exists(),
             _ => false,
         };
         if needs_install {
-            to_install.push(a);
+            to_install.push(addon);
         } else {
-            ready.push(a);
+            ready.push(addon);
         }
     }
 
@@ -328,21 +317,24 @@ fn ensure_addon_deps(addons: Vec<Addon>) -> Vec<Addon> {
         "Installing dev add-on dependencies ({} project(s))",
         to_install.len()
     ));
-    for a in to_install {
-        let install = a.install.clone().expect("to_install implies install set");
-        sub(&format!("{} ({})", install.join(" "), a.label));
-        let ok = Command::new(&install[0])
+    for addon in to_install {
+        let install = addon
+            .install
+            .clone()
+            .expect("to_install implies install set");
+        sub(&format!("{} ({})", install.join(" "), addon.label));
+        let installed = Command::new(&install[0])
             .args(&install[1..])
-            .current_dir(&a.dir)
+            .current_dir(&addon.dir)
             .status()
-            .map(|s| s.success())
+            .map(|status| status.success())
             .unwrap_or(false);
-        if ok {
-            ready.push(a);
+        if installed {
+            ready.push(addon);
         } else {
             sub_warn(&format!(
                 "{}: `{}` failed — skipping",
-                a.label,
+                addon.label,
                 install.join(" ")
             ));
         }
@@ -351,8 +343,7 @@ fn ensure_addon_deps(addons: Vec<Addon>) -> Vec<Addon> {
     ready
 }
 
-/// Whether a CLI binary exists on PATH (spawn succeeds), mirroring the
-/// `doctor` check. We don't care about the exit code.
+/// Whether a binary is on PATH: spawning is the check, as in `doctor`.
 fn tool_available(name: &str) -> bool {
     Command::new(name)
         .arg("--version")
@@ -375,73 +366,54 @@ struct Role {
 }
 
 fn enumerate_roles(root: &std::path::Path, vehicle: &Vehicle) -> Result<Vec<Role>> {
-    // Delegate firmware → (dir, env) resolution to `firmware::resolve`
-    // so the mapping lives in one place. We drop `MIX_TARGET` (baked in
-    // for cross-compilation, irrelevant on host dev) and layer host CAN
-    // mappings onto bridge roles.
-    let applications = firmware::applications_for(vehicle)?;
+    // The Nerves `MIX_TARGET` is dropped; bridges get their host CAN mapping.
+    let roles = firmware::roles_for(vehicle)?;
     let host_mappings = bridge_host_mappings(vehicle)?;
 
-    applications
+    roles
         .into_iter()
-        .map(|app| {
-            let res = firmware::resolve(vehicle, &app)?;
-            let mut env: Vec<(String, String)> = res
+        .map(|role| {
+            let role_firmware = firmware::resolve(vehicle, &role)?;
+            let mut env: Vec<(String, String)> = role_firmware
                 .env
                 .into_iter()
-                .filter(|(k, _)| k != "MIX_TARGET")
+                .filter(|(name, _)| name != "MIX_TARGET")
                 .collect();
-            if let Some(id) = firmware::bridge_id(&app) {
+            if let Some(id) = firmware::bridge_id(&role) {
                 if let Some(mapping) = host_mappings.get(id) {
                     env.push(("CAN_NETWORK_MAPPINGS".to_string(), mapping.clone()));
                 }
             }
             Ok(Role {
-                label: app,
-                cwd: root.join(&res.firmware_dir),
+                label: role,
+                cwd: root.join(&role_firmware.firmware_dir),
                 env,
             })
         })
         .collect()
 }
 
-/// Invoke `./build.sh` with `MIX_TARGET=host` once per unique firmware
-/// directory in `roles` — in parallel, one thread per firmware. Multiple
-/// roles can share a cwd (every bridge role points at `bridges/firmware`
-/// on host); that's ONE shared compile, shown as a single pane labelled
-/// `bridges (radio_control, ros)` rather than one per bridge.
-///
-/// On a TTY each firmware project gets a live spinner pane (buildkit-style)
-/// showing the build's latest log line; on failure that build's full
-/// buffered output is dumped afterwards. When stdout isn't a TTY we fall
-/// back to the line-prefixed `[<label>] …` interleaved stream so CI logs
-/// stay greppable. `build.sh` handles `deps.get` then `compile` (host) or
-/// `firmware` (target); calling it here keeps build / run on the same
-/// entry point. Any non-zero exit bails before a single BEAM is spawned;
-/// remaining builds are allowed to finish so the user sees every failure,
-/// not just the first.
+/// Run `./build.sh` with `MIX_TARGET=host` once per firmware directory in
+/// `roles`, in parallel. Roles sharing a directory (every bridge) share one
+/// compile, shown as one pane: `bridges (radio_control, ros)`. A failure
+/// bails before any BEAM is spawned; the other builds finish first, and the
+/// first failure's log is printed.
 fn ensure_built(roles: &[Role], vehicle: &Vehicle) -> Result<()> {
     let groups = build_groups(roles);
 
-    let total: usize = groups.iter().map(|g| g.roles.len()).sum();
+    let total: usize = groups.iter().map(|group| group.roles.len()).sum();
     step(&format!(
         "Building {} role(s) across {} firmware project(s)",
         total,
         groups.len()
     ));
 
-    // Every host warm-up shares the same env (MIX_TARGET=host). Each group
-    // is one shared build shown as ONE pane: vms/infotainment are
-    // single-role; the bridges project serves several roles from a single
-    // compile, so label it `bridges (radio_control, ros)` rather than one
-    // pane per bridge (which wrongly implied separate builds). The groups
-    // are separate lanes that build in parallel.
     let lanes = groups
         .into_iter()
-        .map(|g| {
-            let pane = build_pane_label(&g);
+        .map(|group| {
+            let pane = build_pane_label(&group);
             BuildLane {
-                cwd: g.cwd,
+                cwd: group.cwd,
                 steps: vec![BuildStep {
                     panes: vec![pane],
                     env: HashMap::from([
@@ -469,8 +441,8 @@ struct BuildGroup {
 fn build_groups(roles: &[Role]) -> Vec<BuildGroup> {
     let mut groups: Vec<BuildGroup> = Vec::new();
     for role in roles {
-        if let Some(g) = groups.iter_mut().find(|g| g.cwd == role.cwd) {
-            g.roles.push(role.label.clone());
+        if let Some(group) = groups.iter_mut().find(|group| group.cwd == role.cwd) {
+            group.roles.push(role.label.clone());
         } else {
             groups.push(BuildGroup {
                 cwd: role.cwd.clone(),
@@ -481,10 +453,8 @@ fn build_groups(roles: &[Role]) -> Vec<BuildGroup> {
     groups
 }
 
-/// Display label for a group's single shared-build pane. Single-role
-/// groups (vms, infotainment) use the role name; a multi-role group (the
-/// bridges, which share one `bridges/firmware` compile) reads as
-/// `bridges (radio_control, ros)` so it doesn't look like separate builds.
+/// Label of a group's build pane: the role, or for several roles sharing a
+/// compile, `bridges (radio_control, ros)`.
 fn build_pane_label(group: &BuildGroup) -> String {
     if group.roles.len() == 1 {
         return group.roles[0].clone();
@@ -498,7 +468,7 @@ fn build_pane_label(group: &BuildGroup) -> String {
     let ids: Vec<&str> = group
         .roles
         .iter()
-        .map(|r| r.strip_prefix("bridge-").unwrap_or(r))
+        .map(|role| role.strip_prefix("bridge-").unwrap_or(role))
         .collect();
     format!("{} ({})", family, ids.join(", "))
 }
@@ -508,10 +478,10 @@ fn build_pane_label(group: &BuildGroup) -> String {
 fn bridge_host_mappings(vehicle: &Vehicle) -> Result<HashMap<String, String>> {
     let snippet = format!(
         r##"
-m = {module}
-Code.ensure_loaded(m)
-if function_exported?(m, :bridge_firmwares, 0) do
-  m.bridge_firmwares()
+vehicle = {module}
+Code.ensure_loaded(vehicle)
+if function_exported?(vehicle, :bridge_firmwares, 0) do
+  vehicle.bridge_firmwares()
   |> Enum.map(fn {{id, entry}} ->
     host = get_in(entry, [:default_can_mapping, :host]) || ""
     "#{{id}}\t#{{host}}"
@@ -525,15 +495,15 @@ end
     match vehicles::run_snippet(&vehicle.path, &snippet)? {
         None => Ok(HashMap::new()),
         Some(output) => {
-            let mut map = HashMap::new();
-            for line in output.lines().filter(|l| !l.is_empty()) {
+            let mut mappings = HashMap::new();
+            for line in output.lines().filter(|line| !line.is_empty()) {
                 if let Some((id, mapping)) = line.split_once('\t') {
                     if !mapping.is_empty() {
-                        map.insert(id.to_string(), mapping.to_string());
+                        mappings.insert(id.to_string(), mapping.to_string());
                     }
                 }
             }
-            Ok(map)
+            Ok(mappings)
         }
     }
 }
@@ -543,13 +513,8 @@ where
     R: std::io::Read + Send + 'static,
     W: Write + Send + 'static,
 {
-    // Elixir's default Logger console format brackets each message with
-    // a leading and trailing newline. Piped through line-prefixing that
-    // becomes a pair of `[label] ` blanks around every log entry. Skip
-    // lines whose ANSI-stripped content is empty so the merged view
-    // stays dense.
-    let buf = BufReader::new(reader);
-    for line in lossy_lines(buf) {
+    // Logger's console format wraps each message in blank lines.
+    for line in lossy_lines(BufReader::new(reader)) {
         if is_blank_after_ansi(&line) {
             continue;
         }
@@ -561,10 +526,10 @@ where
     }
 }
 
-fn short_path(p: &std::path::Path, root: &std::path::Path) -> String {
-    p.strip_prefix(root)
-        .map(|r| r.display().to_string())
-        .unwrap_or_else(|_| p.display().to_string())
+fn short_path(path: &std::path::Path, root: &std::path::Path) -> String {
+    path.strip_prefix(root)
+        .map(|relative| relative.display().to_string())
+        .unwrap_or_else(|_| path.display().to_string())
 }
 
 /// An IEx prompt or a bare `:ok`, the only lines an `attach` session can
@@ -577,12 +542,12 @@ fn is_iex_prompt_echo(line: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_iex_prompt_echo, supervise, Proc};
+    use super::{is_iex_prompt_echo, supervise, ChildProcess};
     use std::process::Command;
     use std::time::Instant;
 
-    fn spawn(label: &str, script: &str, critical: bool) -> Proc {
-        Proc {
+    fn spawn(label: &str, script: &str, critical: bool) -> ChildProcess {
+        ChildProcess {
             label: label.to_string(),
             child: Command::new("sh").args(["-c", script]).spawn().unwrap(),
             critical,
@@ -593,27 +558,27 @@ mod tests {
     #[test]
     fn a_beam_exiting_stops_the_others_and_is_reported() {
         let started = Instant::now();
-        let mut procs = vec![
+        let mut processes = vec![
             spawn("vms", "exit 3", true),
             spawn("bridge-ros", "sleep 30", true),
             spawn("dashboard", "sleep 30", false),
         ];
-        let (label, status) = supervise(&mut procs).expect("a BEAM exited");
+        let (label, status) = supervise(&mut processes).expect("a BEAM exited");
         assert_eq!(label, "vms");
         assert_eq!(status.code(), Some(3));
-        assert!(procs.iter().all(|p| p.exit.is_some()));
+        assert!(processes.iter().all(|process| process.exit.is_some()));
         assert!(started.elapsed().as_secs() < 5);
     }
 
     #[test]
     fn a_beam_ignoring_sigterm_gets_sigkill() {
         let started = Instant::now();
-        let mut procs = vec![
+        let mut processes = vec![
             spawn("vms", "exit 1", true),
             spawn("stuck", "trap '' TERM; sleep 60", true),
         ];
-        supervise(&mut procs).expect("a BEAM exited");
-        assert!(procs.iter().all(|p| p.exit.is_some()));
+        supervise(&mut processes).expect("a BEAM exited");
+        assert!(processes.iter().all(|process| process.exit.is_some()));
         assert!(started.elapsed().as_secs() < 20);
     }
 
