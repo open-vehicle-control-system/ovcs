@@ -1,4 +1,5 @@
 defmodule Ovcs1.Vms.Composer.Dashboard.Blocks.TorqueChart do
+  alias Ovcs1.Vms.Composer
   alias VmsCore.Components.Nissan.LeafAZE0.Inverter
 
   def definition(order: order, full_width: full_width) do
@@ -10,8 +11,8 @@ defmodule Ovcs1.Vms.Composer.Dashboard.Blocks.TorqueChart do
       serie_max_size: 300,
       y_axis: [
         %{
-          min: Inverter.reverse_max_torque(),
-          max: Inverter.drive_max_torque(),
+          min: -Composer.inverter_reverse_max_torque_nm(),
+          max: Composer.inverter_drive_max_torque_nm(),
           label: "Nm",
           series: [
             %{name: "Effective Torque", metric: %{module: Inverter, key: :effective_torque}},

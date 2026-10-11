@@ -20,6 +20,11 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Inverter do
     * `:contact_source` — the component publishing `:contact`.
     * `:controller`, `:power_relay_pin` — the generic controller digital
       pin switching the inverter's power.
+    * `:drive_max_torque_nm`, `:reverse_max_torque_nm` — the torque
+      request of a full throttle in `:drive` and in `:reverse`, both
+      positive; the reverse request is sent negated.
+    * `:effective_throttle_threshold` — requests below it are zero,
+      default 0.05.
   """
   use GenServer
   alias Cantastic.{Emitter, Frame, Receiver, Signal}
@@ -28,10 +33,7 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Inverter do
   alias VmsCore.Components.{Nissan.FrameIntegrity, OVCS.GenericController}
 
   @zero D.new(0)
-  @max_torque_nm 100
-  @drive_max_torque D.new(@max_torque_nm)
-  @reverse_max_torque D.new(-@max_torque_nm)
-  @effective_throttle_threshold D.new("0.05")
+  @default_effective_throttle_threshold D.new("0.05")
 
   @loop_period_ms 10
 
@@ -40,14 +42,18 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Inverter do
   end
 
   @impl GenServer
-  def init(%{
-        network: network,
-        selected_control_level_source: selected_control_level_source,
-        selected_gear_source: selected_gear_source,
-        contact_source: contact_source,
-        controller: controller,
-        power_relay_pin: power_relay_pin
-      }) do
+  def init(
+        %{
+          network: network,
+          selected_control_level_source: selected_control_level_source,
+          selected_gear_source: selected_gear_source,
+          contact_source: contact_source,
+          controller: controller,
+          power_relay_pin: power_relay_pin,
+          drive_max_torque_nm: drive_max_torque_nm,
+          reverse_max_torque_nm: reverse_max_torque_nm
+        } = args
+      ) do
     :ok =
       Emitter.configure(network, "vms_alive", %{
         parameters_builder_function: :default,
@@ -98,6 +104,12 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Inverter do
        enabled: false,
        controller: controller,
        power_relay_pin: power_relay_pin,
+       drive_max_torque_nm: D.new(drive_max_torque_nm),
+       reverse_max_torque_nm: D.new(reverse_max_torque_nm),
+       effective_throttle_threshold:
+         D.new(
+           Map.get(args, :effective_throttle_threshold, @default_effective_throttle_threshold)
+         ),
        ready_to_drive: false
      }}
   end
@@ -223,13 +235,13 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Inverter do
   defp apply_torque(state) do
     max_torque =
       case state.selected_gear do
-        :drive -> @drive_max_torque
-        :reverse -> @reverse_max_torque
+        :drive -> state.drive_max_torque_nm
+        :reverse -> D.negate(state.reverse_max_torque_nm)
         _ -> @zero
       end
 
     requested_throttle =
-      case D.lt?(state.requested_throttle, @effective_throttle_threshold) do
+      case D.lt?(state.requested_throttle, state.effective_throttle_threshold) do
         true -> @zero
         false -> state.requested_throttle
       end
@@ -356,12 +368,6 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Inverter do
     emitter_data = %{emitter_data | "counter" => FrameIntegrity.counter(counter + 1)}
     {:ok, parameters, emitter_data}
   end
-
-  @doc "The torque request, in newton-metres, of a full throttle in `:drive`."
-  def drive_max_torque, do: @drive_max_torque
-
-  @doc "The torque request, in newton-metres, of a full throttle in `:reverse`."
-  def reverse_max_torque, do: @reverse_max_torque
 
   defp fahrenheit_to_celsius(fahrenheit) do
     D.div(fahrenheit - 32, D.new("1.8")) |> D.round()
