@@ -26,19 +26,27 @@ case OvcsVehicle.Firmware.resolve_bridge(
         [mapping_string]
       }
 
-    # Vehicle may override the per-bridge YAML path; otherwise follow
-    # the convention `can/bridges/<id>.yml`. Runtime.exs runs after
-    # host.exs / target.exs, so this is the single source of truth.
-    priv_path = entry[:can_config_path] || "can/bridges/#{bridge_firmware_id}.yml"
+    # `build_target` was captured from `Mix.target()` in config.exs.
+    build_target = Application.compile_env(:ovcs_bridge, :build_target, :host)
+
+    # Vehicle may override the per-bridge YAML path, per build target
+    # or for both; otherwise follow the convention `can/bridges/<id>.yml`.
+    # Runtime.exs runs after host.exs / target.exs, so this is the
+    # single source of truth.
+    priv_path =
+      case entry[:can_config_path] do
+        nil -> "can/bridges/#{bridge_firmware_id}.yml"
+        %{} = by_build_target -> Map.fetch!(by_build_target, build_target)
+        path -> path
+      end
+
     config :cantastic, priv_can_config_path: priv_path
 
     # Let each bundled bridge stamp its own third-party Application
     # env before the app tree starts. The host stays bridge-agnostic
     # — it just dispatches to every bridge that exports the optional
-    # `apply_runtime_config/2` callback on `OvcsBridge`. `build_target`
-    # was captured from `Mix.target()` in config.exs so the bridge
-    # picks the right arm of its per-vehicle config.
-    build_target = Application.compile_env(:ovcs_bridge, :build_target, :host)
+    # `apply_runtime_config/2` callback on `OvcsBridge`, with the build
+    # target so the bridge picks the right arm of its per-vehicle config.
 
     for bridge <- entry[:bridges] || [] do
       if Code.ensure_loaded?(bridge) and function_exported?(bridge, :apply_runtime_config, 2) do
