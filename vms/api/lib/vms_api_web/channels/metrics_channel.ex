@@ -4,7 +4,7 @@ defmodule VmsApiWeb.MetricsChannel do
 
   intercept ["update"]
 
-  @impl true
+  @impl Phoenix.Channel
   def join("metrics", payload, socket) do
     socket =
       socket
@@ -44,7 +44,7 @@ defmodule VmsApiWeb.MetricsChannel do
     {:noreply, %{socket | assigns: assigns}}
   end
 
-  @impl true
+  @impl Phoenix.Channel
   def handle_in(
         "unsubscribe",
         %{"module" => module, "key" => key},
@@ -77,7 +77,7 @@ defmodule VmsApiWeb.MetricsChannel do
     {:noreply, %{socket | assigns: assigns}}
   end
 
-  @impl true
+  @impl Phoenix.Channel
   def handle_info(:push_metrics, socket) do
     {:ok, metrics} = Metrics.filtered_metrics(socket.assigns.metrics)
     {:ok, units} = Metrics.filtered_units(socket.assigns.metrics)
@@ -86,7 +86,7 @@ defmodule VmsApiWeb.MetricsChannel do
     {:noreply, socket}
   end
 
-  @impl true
+  @impl Phoenix.Channel
   def terminate(_, %Phoenix.Socket{assigns: %{timer: nil}}), do: nil
 
   def terminate(_, %Phoenix.Socket{assigns: %{timer: timer}}) do

@@ -201,7 +201,7 @@ defmodule RosBridge.Camera.LibCamera do
   def lens_position_args(nil), do: []
   def lens_position_args(dioptres), do: ["--lens-position", Float.to_string(dioptres * 1.0)]
 
-  @impl true
+  @impl GenServer
   def init(opts) do
     label = Keyword.fetch!(opts, :label)
     camera_id = Keyword.fetch!(opts, :camera_id)
@@ -269,7 +269,7 @@ defmodule RosBridge.Camera.LibCamera do
      }}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info({port, {:data, packet}}, %{port: port} = state) do
     case parse_record(packet) do
       {:ok, %Frame{} = frame} ->
@@ -321,7 +321,7 @@ defmodule RosBridge.Camera.LibCamera do
     end
   end
 
-  @impl true
+  @impl GenServer
   def handle_cast({:register_listener, listener}, state) do
     {:noreply, %{state | listeners: state.listeners ++ [listener]}}
   end
@@ -350,7 +350,7 @@ defmodule RosBridge.Camera.LibCamera do
   """
   def live(server), do: GenServer.call(server, :live)
 
-  @impl true
+  @impl GenServer
   def handle_call({:set_controls, controls}, _from, state) do
     case control_commands(controls) do
       {:ok, commands} ->

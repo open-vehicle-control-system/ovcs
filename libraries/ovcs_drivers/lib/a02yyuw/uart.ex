@@ -38,7 +38,7 @@ defmodule A02YYUW.UART do
   @impl OvcsDrivers.Rangefinder
   def register_listener(server, pid), do: GenServer.cast(server, {:register_listener, pid})
 
-  @impl true
+  @impl GenServer
   def init(opts) do
     {:ok, uart} = Circuits.UART.start_link()
     send(self(), :connect)
@@ -54,13 +54,13 @@ defmodule A02YYUW.UART do
      }}
   end
 
-  @impl true
+  @impl GenServer
   def handle_cast({:register_listener, pid}, state),
     do: {:noreply, %{state | listeners: Enum.uniq([pid | state.listeners])}}
 
   # A missing adapter is retried rather than crashing the bridge's other
   # components with it.
-  @impl true
+  @impl GenServer
   def handle_info(:connect, state) do
     with {:ok, device} <- OvcsDrivers.Serial.device(state.opts),
          :ok <- Circuits.UART.open(state.uart, device, speed: 9600, active: true) do

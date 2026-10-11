@@ -101,7 +101,7 @@ defmodule RosBridge.Inference.Dnn do
     :exit, _ -> false
   end
 
-  @impl true
+  @impl GenServer
   def init(opts) do
     model_path = Keyword.fetch!(opts, :model_path)
 
@@ -132,7 +132,7 @@ defmodule RosBridge.Inference.Dnn do
   # `spawn_monitor` rather than `Task.async`: an inference that crashes
   # must drop its frame, not take the backend down with it, and an
   # `async` Task is linked.
-  @impl true
+  @impl GenServer
   def handle_call({:detect, _seq, _mat, _reply_to}, _from, %{net: nil} = state) do
     {:reply, {:error, :unavailable}, state}
   end
@@ -151,7 +151,7 @@ defmodule RosBridge.Inference.Dnn do
 
   def handle_call(:busy?, _from, state), do: {:reply, not is_nil(state.worker), state}
 
-  @impl true
+  @impl GenServer
   def handle_info({:inferred, pid, detections}, %{worker: {pid, ref}} = state) do
     Process.demonitor(ref, [:flush])
     send(state.reply_to, {:inference_detections, state.seq, detections})

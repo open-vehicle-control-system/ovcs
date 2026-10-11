@@ -24,7 +24,7 @@ defmodule VmsCore.Components.Traxxas.Steering do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
   end
 
-  @impl true
+  @impl GenServer
   def init(
         %{
           controller: controller,
@@ -52,7 +52,7 @@ defmodule VmsCore.Components.Traxxas.Steering do
      }}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info(
         %Bus.Message{
           name: :requested_steering_source,

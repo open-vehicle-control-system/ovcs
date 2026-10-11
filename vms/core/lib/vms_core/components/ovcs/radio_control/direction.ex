@@ -19,7 +19,7 @@ defmodule VmsCore.Components.OVCS.RadioControl.Direction do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
   end
 
-  @impl true
+  @impl GenServer
   def init(%{radio_control_channel: radio_control_channel}) do
     channel_frame_index =
       case radio_control_channel do
@@ -41,7 +41,7 @@ defmodule VmsCore.Components.OVCS.RadioControl.Direction do
      }}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info(:loop, state) do
     state =
       state

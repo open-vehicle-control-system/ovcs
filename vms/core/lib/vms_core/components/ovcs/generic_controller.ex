@@ -76,7 +76,7 @@ defmodule VmsCore.Components.OVCS.GenericController do
     GenServer.start_link(__MODULE__, args, name: process_name)
   end
 
-  @impl true
+  @impl GenServer
   def init(%{
         process_name: process_name,
         control_digital_pins: control_digital_pins,
@@ -242,7 +242,7 @@ defmodule VmsCore.Components.OVCS.GenericController do
      }}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info(:loop, state) do
     state =
       state
@@ -254,7 +254,7 @@ defmodule VmsCore.Components.OVCS.GenericController do
   # Two frames feed `received_pins`, so each merges its own signals
   # rather than replacing the map, or the other frame's values would be
   # wiped 10 ms later.
-  @impl true
+  @impl GenServer
   def handle_info({:handle_frame, %Frame{name: name, signals: signals}}, state)
       when name == state.digital_and_analog_pin_status_frame_name do
     {:noreply, %{state | received_pins: merge_signals(state.received_pins, signals)}}
@@ -264,7 +264,7 @@ defmodule VmsCore.Components.OVCS.GenericController do
   # integrating them can tell a fresh sample from a held one, and only
   # while the frame is alive: until then the tick declares them unknown,
   # and both would alternate.
-  @impl true
+  @impl GenServer
   def handle_info({:handle_frame, %Frame{name: name, signals: signals}}, state)
       when name == state.pulse_counter_status_frame_name do
     received_pins = merge_signals(state.received_pins, signals)
@@ -279,7 +279,7 @@ defmodule VmsCore.Components.OVCS.GenericController do
     {:noreply, state}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info({:handle_frame, %Frame{name: name, signals: signals} = _frame}, state)
       when name == state.alive_frame_name do
     %{
@@ -297,7 +297,7 @@ defmodule VmsCore.Components.OVCS.GenericController do
      }}
   end
 
-  @impl true
+  @impl GenServer
   def handle_call({:set_digital_value, pin, value}, _from, state) do
     pin_name = "digital_pin#{pin}_enabled"
 
@@ -310,7 +310,7 @@ defmodule VmsCore.Components.OVCS.GenericController do
     {:reply, :ok, %{state | requested_pins: requested_pins}}
   end
 
-  @impl true
+  @impl GenServer
   def handle_call({:set_pwm_duty_cycle, pin, duty_cycle}, _from, state) do
     pin_name = "pwm_pin#{pin}_duty_cycle"
 
@@ -323,7 +323,7 @@ defmodule VmsCore.Components.OVCS.GenericController do
     {:reply, :ok, %{state | requested_pins: requested_pins}}
   end
 
-  @impl true
+  @impl GenServer
   def handle_call(
         {:set_external_pwm, pwm_id, enabled, duty_cycle_percentage, frequency},
         _from,
@@ -348,7 +348,7 @@ defmodule VmsCore.Components.OVCS.GenericController do
     {:reply, :ok, %{state | requested_pins: requested_pins}}
   end
 
-  @impl true
+  @impl GenServer
   def handle_call({:set_dac_duty_cycle, duty_cycle}, _from, state) do
     pin_name = "dac_pin0_duty_cycle"
 
@@ -361,13 +361,13 @@ defmodule VmsCore.Components.OVCS.GenericController do
     {:reply, :ok, %{state | requested_pins: requested_pins}}
   end
 
-  @impl true
+  @impl GenServer
   def handle_call({:get_digital_value, pin}, _from, state) do
     value = state.received_pins["digital_pin#{pin}_enabled"]
     {:reply, {:ok, value}, state}
   end
 
-  @impl true
+  @impl GenServer
   def handle_call({:get_analog_value, pin}, _from, state) do
     value = state.received_pins["analog_pin#{pin}_value"]
     {:reply, {:ok, value}, state}

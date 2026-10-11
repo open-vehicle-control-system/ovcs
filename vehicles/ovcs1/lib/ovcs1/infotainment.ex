@@ -16,7 +16,7 @@ defmodule Ovcs1.Infotainment do
     "rear_controller_alive"
   ]
 
-  @impl true
+  @impl GenServer
   def init(_) do
     :ok =
       Emitter.configure(:ovcs, "infotainment_status", %{
@@ -93,7 +93,7 @@ defmodule Ovcs1.Infotainment do
     GenServer.start_link(__MODULE__, nil, name: __MODULE__)
   end
 
-  @impl true
+  @impl GenServer
   def handle_info(:loop, state) do
     state =
       state
@@ -286,7 +286,7 @@ defmodule Ovcs1.Infotainment do
     }
   end
 
-  @impl true
+  @impl GenServer
   def handle_call({:request_gear, gear}, _from, state) do
     :ok =
       Emitter.update(:ovcs, "infotainment_status", fn data ->

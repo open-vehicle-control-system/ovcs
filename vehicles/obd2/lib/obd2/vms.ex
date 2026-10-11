@@ -28,7 +28,7 @@ defmodule Obd2.Vms do
     GenServer.start_link(__MODULE__, nil, name: __MODULE__)
   end
 
-  @impl true
+  @impl GenServer
   def init(_) do
     :ok =
       Emitter.configure(:ovcs, "drivetrain_status", %{
@@ -45,7 +45,7 @@ defmodule Obd2.Vms do
     {:ok, %{speed: @zero, rotation_per_minute: @zero}}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info(
         {:handle_obd2_response,
          %OBD2.Response{request_name: "live_data_fast", parameters: parameters}},

@@ -14,7 +14,7 @@ defmodule Ovcs1.Vms.OVCSCANForwarder do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
   end
 
-  @impl true
+  @impl GenServer
   def init(%{
         passenger_compartement_source: passenger_compartment_source,
         speed_source: speed_source
@@ -72,7 +72,7 @@ defmodule Ovcs1.Vms.OVCSCANForwarder do
      }}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info(:loop, state) do
     state =
       state

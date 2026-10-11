@@ -14,7 +14,7 @@ defmodule Obd2.Infotainment do
     GenServer.start_link(__MODULE__, nil, name: __MODULE__)
   end
 
-  @impl true
+  @impl GenServer
   def init(_) do
     :ok = Receiver.subscribe(self(), :ovcs, ["drivetrain_status"])
     {:ok, timer} = :timer.send_interval(@loop_period, :loop)
@@ -27,7 +27,7 @@ defmodule Obd2.Infotainment do
      }}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info(:loop, state) do
     {:noreply, state}
   end
@@ -44,7 +44,7 @@ defmodule Obd2.Infotainment do
      }}
   end
 
-  @impl true
+  @impl GenServer
   def handle_call(:status, _from, state) do
     status =
       state

@@ -12,7 +12,7 @@ defmodule VmsCore.Components.Volkswagen.Polo9N.FakeOilPressureSensor do
   @loop_period 10
   @rotation_per_minute_activation_treshold 800
 
-  @impl true
+  @impl GenServer
   def init(%{
         controller: controller,
         relay_pin: relay_pin,
@@ -36,7 +36,7 @@ defmodule VmsCore.Components.Volkswagen.Polo9N.FakeOilPressureSensor do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
   end
 
-  @impl true
+  @impl GenServer
   def handle_info(:loop, state) do
     state =
       state

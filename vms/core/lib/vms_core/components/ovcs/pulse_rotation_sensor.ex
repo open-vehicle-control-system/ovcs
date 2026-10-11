@@ -48,7 +48,7 @@ defmodule VmsCore.Components.OVCS.PulseRotationSensor do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
   end
 
-  @impl true
+  @impl GenServer
   def init(%{controller: controller, pulses_per_revolution: pulses_per_revolution}) do
     Bus.subscribe("messages")
 
@@ -59,7 +59,7 @@ defmodule VmsCore.Components.OVCS.PulseRotationSensor do
      }}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info(%Bus.Message{name: @frequency_name, value: frequency, source: source}, state)
       when source == state.controller do
     Bus.broadcast("messages", %Bus.Message{

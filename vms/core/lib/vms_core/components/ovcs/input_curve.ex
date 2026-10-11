@@ -63,7 +63,7 @@ defmodule VmsCore.Components.OVCS.InputCurve do
     GenServer.start_link(__MODULE__, args, name: process_name)
   end
 
-  @impl true
+  @impl GenServer
   def init(%{process_name: process_name, throttle_source: throttle_source} = args) do
     Bus.subscribe("messages")
     curve = curve(args)
@@ -73,7 +73,7 @@ defmodule VmsCore.Components.OVCS.InputCurve do
     {:ok, %{process_name: process_name, throttle_source: throttle_source, curve: curve}}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info(
         %Bus.Message{name: :requested_throttle, value: requested_throttle, source: source},
         state

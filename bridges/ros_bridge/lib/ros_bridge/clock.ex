@@ -158,7 +158,7 @@ defmodule RosBridge.Clock do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
 
-  @impl true
+  @impl GenServer
   def init(opts) do
     # Keyword list from a plain component entry, map from one with
     # options. `Map.new/1` takes either; `List.wrap/1` would turn a map
@@ -216,7 +216,7 @@ defmodule RosBridge.Clock do
     end
   end
 
-  @impl true
+  @impl GenServer
   def handle_info(
         {:ros_message, {_key_expr, %ClockMessage{clock: clock}}},
         %{following: true} = state
@@ -264,7 +264,7 @@ defmodule RosBridge.Clock do
   `exit(pid, :shutdown)` otherwise, so without that flag this was
   dead code that only the test exercised.
   """
-  @impl true
+  @impl GenServer
   def terminate(_reason, _state) do
     case :persistent_term.get(@persistent_key, nil) do
       nil -> :ok

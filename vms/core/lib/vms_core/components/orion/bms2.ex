@@ -17,7 +17,7 @@ defmodule VmsCore.Components.Orion.Bms2 do
   @one D.new(1)
   @loop_period 10
 
-  @impl true
+  @impl GenServer
   def init(%{
         controller: controller,
         ready_relay_pin: ready_relay_pin
@@ -54,13 +54,13 @@ defmodule VmsCore.Components.Orion.Bms2 do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
   end
 
-  @impl true
+  @impl GenServer
   def handle_info(:start, state) do
     :ok = GenericController.set_digital_value(state.controller, state.ready_relay_pin, true)
     {:noreply, state}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info(:loop, state) do
     state =
       state
@@ -69,7 +69,7 @@ defmodule VmsCore.Components.Orion.Bms2 do
     {:noreply, state}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info({:handle_frame, %Frame{name: "bms_status_1", signals: signals}}, state) do
     %{
       "pack_current" => %Signal{value: pack_current},

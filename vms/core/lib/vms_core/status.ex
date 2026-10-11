@@ -19,7 +19,7 @@ defmodule VmsCore.Status do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
   end
 
-  @impl true
+  @impl GenServer
   def init(%{
         ready_to_drive_source: ready_to_drive_source,
         vms_status_source: vms_status_source
@@ -61,7 +61,7 @@ defmodule VmsCore.Status do
      }}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info(:loop, state) do
     state =
       state
@@ -166,7 +166,7 @@ defmodule VmsCore.Status do
     {:ok, parameters, data}
   end
 
-  @impl true
+  @impl GenServer
   def handle_call(:start_reset_mode, _from, state) do
     {:reply, :ok, %{state | resetting: true}}
   end

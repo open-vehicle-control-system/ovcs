@@ -95,7 +95,7 @@ defmodule RosBridge.Consumers.Velocity do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
   end
 
-  @impl true
+  @impl GenServer
   def init(opts) do
     opts = Map.new(opts || %{})
     topic = Map.get(opts, :topic, @default_topic)
@@ -115,7 +115,7 @@ defmodule RosBridge.Consumers.Velocity do
     {:ok, %State{watchdog: InputWatchdog.new(timeout_ms), topic: topic}}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info({:ros_message, {_key_expr, %TwistStamped{twist: twist}}}, state) do
     {:noreply, command(twist, state)}
   end

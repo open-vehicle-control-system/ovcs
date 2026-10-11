@@ -10,13 +10,13 @@ defmodule VmsCore.Metrics do
     GenServer.start_link(__MODULE__, nil, name: __MODULE__)
   end
 
-  @impl true
+  @impl GenServer
   def init(_) do
     Bus.subscribe("messages")
     {:ok, %{sources: %{}, units: %{}}}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info(%Bus.Message{name: name, value: value, source: source} = message, state) do
     state =
       case state.sources[source] do
@@ -35,7 +35,7 @@ defmodule VmsCore.Metrics do
     Map.put(state, :units, Map.update(units, source, %{name => unit}, &Map.put(&1, name, unit)))
   end
 
-  @impl true
+  @impl GenServer
   def handle_call({:metrics, nil}, _from, state) do
     {:reply, {:ok, state.sources}, state}
   end

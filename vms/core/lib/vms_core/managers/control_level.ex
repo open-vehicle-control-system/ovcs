@@ -56,7 +56,7 @@ defmodule VmsCore.Managers.ControlLevel do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
   end
 
-  @impl true
+  @impl GenServer
   def init(
         %{
           requested_control_level_source: requested_control_level_source,
@@ -127,7 +127,7 @@ defmodule VmsCore.Managers.ControlLevel do
      }}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info(:loop, state) do
     state =
       state

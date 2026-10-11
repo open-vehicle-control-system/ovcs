@@ -46,7 +46,7 @@ defmodule VmsCore.Components.OVCS.WaterPump do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
   end
 
-  @impl true
+  @impl GenServer
   def init(%{
         controller: controller,
         power_relay_pin: power_relay_pin,
@@ -66,7 +66,7 @@ defmodule VmsCore.Components.OVCS.WaterPump do
      }}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info(:loop, state), do: {:noreply, toggle_waterpump(state)}
 
   def handle_info(%Bus.Message{name: :selected_gear, value: selected_gear, source: source}, state)

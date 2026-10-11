@@ -28,7 +28,7 @@ defmodule RosBridge.StereoCamera.Parameters do
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 
-  @impl true
+  @impl GenServer
   def init(opts) do
     :ok = RosBridge.Parameters.declare(declarations(opts))
     {:ok, nil}

@@ -40,7 +40,7 @@ defmodule VmsCore.Components.Matek.PM12S3 do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
   end
 
-  @impl true
+  @impl GenServer
   def init(%{controller: controller, voltage_pin: voltage_pin} = args) do
     Bus.subscribe("messages")
     current_pin = Map.get(args, :current_pin)
@@ -58,7 +58,7 @@ defmodule VmsCore.Components.Matek.PM12S3 do
      }}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info(%Bus.Message{name: name, value: raw, source: source}, state)
       when source == state.controller and name == state.voltage_name do
     {:noreply, %{state | raw_voltage: raw}}

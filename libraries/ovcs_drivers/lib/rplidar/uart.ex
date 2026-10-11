@@ -62,7 +62,7 @@ defmodule RPLidar.UART do
   @impl OvcsDrivers.Lidar
   def enable, do: GenServer.cast(__MODULE__, :enable)
 
-  @impl true
+  @impl GenServer
   def init(opts) do
     {:ok, uart} = Circuits.UART.start_link()
 
@@ -81,13 +81,13 @@ defmodule RPLidar.UART do
      }}
   end
 
-  @impl true
+  @impl GenServer
   def handle_cast({:register_listener, pid}, state),
     do: {:noreply, %{state | listeners: Enum.uniq([pid | state.listeners])}}
 
   def handle_cast(:enable, state), do: {:noreply, connect(state)}
 
-  @impl true
+  @impl GenServer
   def handle_info(:connect, state), do: {:noreply, connect(state)}
 
   def handle_info(:request_health, state) do

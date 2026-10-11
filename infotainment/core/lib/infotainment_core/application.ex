@@ -5,7 +5,7 @@ defmodule InfotainmentCore.Application do
 
   use Application
 
-  @impl true
+  @impl Application
   def start(_type, _args) do
     composer = vehicle_composer()
     vehicle_children = composer.children()

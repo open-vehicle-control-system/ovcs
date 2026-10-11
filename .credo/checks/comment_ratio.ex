@@ -23,7 +23,7 @@ defmodule Ovcs.Credo.Check.CommentRatio do
   alias Ovcs.Credo.Comments
 
   @doc false
-  @impl true
+  @impl Credo.Check
   def run(%SourceFile{} = source_file, params) do
     max_ratio = Params.get(params, :max_ratio, __MODULE__)
     allowance = Params.get(params, :allowance, __MODULE__)

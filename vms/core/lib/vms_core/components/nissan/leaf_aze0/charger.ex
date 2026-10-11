@@ -17,7 +17,7 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Charger do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
   end
 
-  @impl true
+  @impl GenServer
   def init(%{maximum_power_for_charger_source: maximum_power_for_charger_source}) do
     :ok =
       Emitter.configure(:leaf_drive, "charger_command", %{
@@ -96,7 +96,7 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Charger do
      }}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info(:loop, state) do
     state =
       state

@@ -123,7 +123,7 @@ defmodule RosBridge.StereoCamera.OpenCV do
 
   # ── GenServer callbacks ──────────────────────────────────────
 
-  @impl true
+  @impl GenServer
   def init(opts) do
     left_calibration_raw =
       Calibration.load!(Keyword.fetch!(opts, :left_calibration_path))
@@ -196,7 +196,7 @@ defmodule RosBridge.StereoCamera.OpenCV do
      }}
   end
 
-  @impl true
+  @impl GenServer
   def handle_call({:reload_calibration, paths}, _from, state) do
     opts = Keyword.merge(state.opts, paths)
 
@@ -252,7 +252,7 @@ defmodule RosBridge.StereoCamera.OpenCV do
 
   def handle_call(:options, _from, state), do: {:reply, current_options(state), state}
 
-  @impl true
+  @impl GenServer
   def handle_cast({:register_listener, listener}, state) do
     {:noreply, %{state | listeners: state.listeners ++ [listener]}}
   end

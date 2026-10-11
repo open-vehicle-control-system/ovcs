@@ -16,7 +16,7 @@ defmodule VmsCore.Managers.Gear do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
   end
 
-  @impl true
+  @impl GenServer
   def init(%{
         selected_control_level_source: selected_control_level_source,
         ready_to_drive_source: ready_to_drive_source,
@@ -55,7 +55,7 @@ defmodule VmsCore.Managers.Gear do
      }}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info(:loop, state) do
     state =
       state

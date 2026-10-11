@@ -10,10 +10,10 @@ defmodule VmsCore.Components.Traxxas.SteeringTrimTest do
 
     def start_link(test), do: GenServer.start_link(__MODULE__, test)
 
-    @impl true
+    @impl GenServer
     def init(test), do: {:ok, test}
 
-    @impl true
+    @impl GenServer
     def handle_call({:set_external_pwm, _id, _enabled, duty_cycle, _frequency}, _from, test) do
       send(test, {:duty_cycle, duty_cycle})
       {:reply, :ok, test}

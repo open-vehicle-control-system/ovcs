@@ -71,7 +71,7 @@ defmodule VmsCore.Components.OVCS.RotationFusion do
     GenServer.start_link(__MODULE__, args, name: process_name)
   end
 
-  @impl true
+  @impl GenServer
   def init(%{process_name: process_name, sources: sources} = args) do
     Bus.subscribe("messages")
 
@@ -91,7 +91,7 @@ defmodule VmsCore.Components.OVCS.RotationFusion do
      }}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info(
         %Bus.Message{name: :rotation_per_minute, value: value, source: source},
         state

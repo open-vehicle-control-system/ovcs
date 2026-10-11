@@ -26,7 +26,7 @@ defmodule RadioControlBridge.MavlinkForwarder do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
   end
 
-  @impl true
+  @impl GenServer
   def init(_) do
     :ok = ExpressLrs.Mavlink.Interpreter.register_listener(self())
     Logger.info("#{__MODULE__}: registered as ExpressLRS listener")
@@ -63,7 +63,7 @@ defmodule RadioControlBridge.MavlinkForwarder do
     {:ok, %State{}}
   end
 
-  @impl true
+  @impl GenServer
   def handle_cast({:mavlink_message, %{name: "RC_CHANNELS_OVERRIDE"} = msg}, state) do
     channels =
       Enum.reduce(msg.base_fields, %{}, fn field, acc ->
@@ -138,7 +138,7 @@ defmodule RadioControlBridge.MavlinkForwarder do
 
   def handle_cast({:mavlink_message, _other}, state), do: {:noreply, state}
 
-  @impl true
+  @impl GenServer
   def handle_info(:heartbeat, state) do
     age_ms =
       case state.last_rc_at do

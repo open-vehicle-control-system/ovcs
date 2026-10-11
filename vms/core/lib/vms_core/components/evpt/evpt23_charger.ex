@@ -10,7 +10,7 @@ defmodule VmsCore.Components.Evpt.Evpt23Charger do
 
   @loop_period 10
 
-  @impl true
+  @impl GenServer
   def init(_) do
     :ok = Receiver.subscribe(self(), :orion_bms, "charger_status")
     {:ok, timer} = :timer.send_interval(@loop_period, :loop)
@@ -32,7 +32,7 @@ defmodule VmsCore.Components.Evpt.Evpt23Charger do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
   end
 
-  @impl true
+  @impl GenServer
   def handle_info(:loop, state) do
     state =
       state
@@ -41,7 +41,7 @@ defmodule VmsCore.Components.Evpt.Evpt23Charger do
     {:noreply, state}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info({:handle_frame, %Frame{name: "charger_status", signals: signals}}, state) do
     %{
       "output_voltage" => %Signal{value: output_voltage},

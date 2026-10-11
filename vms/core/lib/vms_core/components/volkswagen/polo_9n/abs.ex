@@ -12,7 +12,7 @@ defmodule VmsCore.Components.Volkswagen.Polo9N.ABS do
   @loop_period 10
   @zero D.new(0)
 
-  @impl true
+  @impl GenServer
   def init(_) do
     :ok = Receiver.subscribe(self(), :polo_drive, ["abs_status", "wheels_speed"])
     {:ok, timer} = :timer.send_interval(@loop_period, :loop)
@@ -32,7 +32,7 @@ defmodule VmsCore.Components.Volkswagen.Polo9N.ABS do
     GenServer.start_link(__MODULE__, nil, name: __MODULE__)
   end
 
-  @impl true
+  @impl GenServer
   def handle_info(:loop, state) do
     Bus.broadcast("messages", %Bus.Message{name: :speed, value: state.speed, source: __MODULE__})
 
@@ -63,13 +63,13 @@ defmodule VmsCore.Components.Volkswagen.Polo9N.ABS do
     {:noreply, state}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info({:handle_frame, %Frame{name: "abs_status", signals: signals}}, state) do
     %{"speed" => %Signal{value: speed}} = signals
     {:noreply, %{state | speed: speed}}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info({:handle_frame, %Frame{name: "wheels_speed", signals: signals}}, state) do
     %{
       "front_left_wheel_speed" => %Signal{value: front_left_wheel_speed},

@@ -146,14 +146,14 @@ defmodule Obd2.Vms.Brands.NissanLeaf do
 
   def start_link(_), do: GenServer.start_link(__MODULE__, nil, name: __MODULE__)
 
-  @impl true
+  @impl GenServer
   def init(_) do
     OBD2.Request.subscribe(self(), :obd2, "leaf_battery_cells")
     OBD2.Request.enable(:obd2, "leaf_battery_cells")
     {:ok, %{}}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info({:handle_obd2_response,
                    %OBD2.Response{request_name: "leaf_battery_cells",
                                   parameters: %{"cells" => p}}},

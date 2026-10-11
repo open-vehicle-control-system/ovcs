@@ -54,7 +54,7 @@ defmodule RosBridge.Camera.Dummy do
   @doc "Module-level helper to derive the GenServer name for a label."
   def name_for(label), do: Module.concat([__MODULE__, "L_#{label}"])
 
-  @impl true
+  @impl GenServer
   def init(opts) do
     label = Keyword.fetch!(opts, :label)
     width = Keyword.get(opts, :width, 1280)
@@ -69,7 +69,7 @@ defmodule RosBridge.Camera.Dummy do
     {:ok, %{listeners: [], label: label, width: width, height: height}}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info(:tick, state) do
     frame = %Frame{
       label: state.label,
@@ -83,7 +83,7 @@ defmodule RosBridge.Camera.Dummy do
     {:noreply, state}
   end
 
-  @impl true
+  @impl GenServer
   def handle_cast({:register_listener, listener}, state) do
     {:noreply, %{state | listeners: state.listeners ++ [listener]}}
   end

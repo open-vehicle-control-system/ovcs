@@ -38,7 +38,7 @@ defmodule RosBridge.Parameters do
   @doc "Declares the calling process's parameters, replacing any it declared before."
   def declare(parameters), do: GenServer.call(__MODULE__, {:declare, self(), parameters})
 
-  @impl true
+  @impl GenServer
   def init(_opts) do
     node = ZenohClient.node_name()
 
@@ -52,7 +52,7 @@ defmodule RosBridge.Parameters do
     {:ok, %{services: services, parameters: %{}, owners: %{}}}
   end
 
-  @impl true
+  @impl GenServer
   def handle_call({:declare, owner, parameters}, _from, state) do
     state = drop_owner(state, owner)
     ref = Process.monitor(owner)
@@ -71,7 +71,7 @@ defmodule RosBridge.Parameters do
      }}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info(
         {:service_request, %{service_name: service, query: query, request_payload: payload}},
         state

@@ -14,7 +14,7 @@ defmodule VmsCore.Components.Volkswagen.Polo9N.Dashboard do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
   end
 
-  @impl true
+  @impl GenServer
   def init(%{
         contact_source: contact_source,
         rotation_per_minute_source: rotation_per_minute_source
@@ -40,7 +40,7 @@ defmodule VmsCore.Components.Volkswagen.Polo9N.Dashboard do
      }}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info(:loop, state) do
     case {state.enabled, state.contact} do
       {false, :on} ->

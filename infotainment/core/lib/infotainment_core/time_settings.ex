@@ -19,7 +19,7 @@ defmodule InfotainmentCore.TimeSettings do
     GenServer.start_link(__MODULE__, nil, name: __MODULE__)
   end
 
-  @impl true
+  @impl GenServer
   def init(_) do
     settings = load_or_create_settings()
 
@@ -31,26 +31,26 @@ defmodule InfotainmentCore.TimeSettings do
      }}
   end
 
-  @impl true
+  @impl GenServer
   def handle_call(:status, _from, state) do
     {:reply, {:ok, state}, state}
   end
 
-  @impl true
+  @impl GenServer
   def handle_call({:set_timezone, timezone}, _from, state) do
     state = %{state | timezone: timezone}
     persist(state)
     {:reply, :ok, state}
   end
 
-  @impl true
+  @impl GenServer
   def handle_call({:set_time_format, time_format}, _from, state) do
     state = %{state | time_format: time_format}
     persist(state)
     {:reply, :ok, state}
   end
 
-  @impl true
+  @impl GenServer
   def handle_call({:set_date_format, date_format}, _from, state) do
     state = %{state | date_format: date_format}
     persist(state)

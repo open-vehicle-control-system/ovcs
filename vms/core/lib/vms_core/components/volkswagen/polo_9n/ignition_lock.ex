@@ -12,7 +12,7 @@ defmodule VmsCore.Components.Volkswagen.Polo9N.IgnitionLock do
     GenServer.start_link(__MODULE__, nil, name: __MODULE__)
   end
 
-  @impl true
+  @impl GenServer
   def init(_) do
     Receiver.subscribe(self(), :polo_drive, "key_status")
     {:ok, timer} = :timer.send_interval(@loop_period, :loop)
@@ -24,7 +24,7 @@ defmodule VmsCore.Components.Volkswagen.Polo9N.IgnitionLock do
      }}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info(:loop, state) do
     Bus.broadcast("messages", %Bus.Message{
       name: :contact,
@@ -35,7 +35,7 @@ defmodule VmsCore.Components.Volkswagen.Polo9N.IgnitionLock do
     {:noreply, state}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info({:handle_frame, %Frame{signals: signals}}, state) do
     %{"key_state" => %Signal{value: key_status}} = signals
 

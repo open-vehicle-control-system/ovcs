@@ -80,7 +80,7 @@ defmodule RosBridge.Camera.Zenoh do
   @impl RosBridge.Camera
   def enable(_server), do: :ok
 
-  @impl true
+  @impl GenServer
   def init(opts) do
     label = Keyword.fetch!(opts, :label)
     topic = Keyword.fetch!(opts, :topic)
@@ -95,12 +95,12 @@ defmodule RosBridge.Camera.Zenoh do
     {:ok, %{label: label, topic: topic, listeners: [], frames: 0}}
   end
 
-  @impl true
+  @impl GenServer
   def handle_cast({:register_listener, listener}, state) do
     {:noreply, %{state | listeners: state.listeners ++ [listener]}}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info({:ros_message, {_key_expr, %CompressedImage{} = image}}, state) do
     case decode_dimensions(image.data) do
       {:ok, width, height} ->

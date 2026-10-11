@@ -23,7 +23,7 @@ defmodule VmsCore.Components.OVCS.ThrottlePedal do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
   end
 
-  @impl true
+  @impl GenServer
   def init(%{
         controller: controller,
         throttle_a_pin: throttle_a_pin,
@@ -59,7 +59,7 @@ defmodule VmsCore.Components.OVCS.ThrottlePedal do
     }
   end
 
-  @impl true
+  @impl GenServer
   def handle_info(:loop, state) do
     {:ok, raw_throttle_a} =
       GenericController.get_analog_value(state.controller, state.throttle_a_pin)
@@ -178,7 +178,7 @@ defmodule VmsCore.Components.OVCS.ThrottlePedal do
     state
   end
 
-  @impl true
+  @impl GenServer
   def handle_call(:enable_calibration_mode, _from, state) do
     {:reply, :ok, %{state | throttle_calibration_status: "started"}}
   end

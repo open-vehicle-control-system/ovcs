@@ -51,7 +51,7 @@ defmodule RosBridge.Imu.Zenoh do
   @impl OvcsDrivers.Imu
   def enable, do: :ok
 
-  @impl true
+  @impl GenServer
   def init(opts) do
     topic = Keyword.get(opts, :topic, @default_topic)
 
@@ -64,12 +64,12 @@ defmodule RosBridge.Imu.Zenoh do
     {:ok, %{topic: topic, listeners: []}}
   end
 
-  @impl true
+  @impl GenServer
   def handle_cast({:register_listener, listener}, state) do
     {:noreply, %{state | listeners: state.listeners ++ [listener]}}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info({:ros_message, {_key_expr, %Imu{} = imu}}, state) do
     samples = samples(imu)
 

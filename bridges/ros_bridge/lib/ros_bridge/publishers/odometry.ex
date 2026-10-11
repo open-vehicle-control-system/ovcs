@@ -119,7 +119,7 @@ defmodule RosBridge.Publishers.Odometry do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
 
-  @impl true
+  @impl GenServer
   def init(opts) do
     driver = Keyword.fetch!(opts, :driver)
     base_offset = Keyword.get(opts, :base_ahead_of_rear_axle, 0.0) * 1.0
@@ -147,7 +147,7 @@ defmodule RosBridge.Publishers.Odometry do
     {:ok, state}
   end
 
-  @impl true
+  @impl GenServer
   def handle_info({:handle_frame, %Frame{name: @frame_name, signals: signals}}, state) do
     %{
       "speed" => %Signal{value: speed},
@@ -182,7 +182,7 @@ defmodule RosBridge.Publishers.Odometry do
   def handle_info(_message, state), do: {:noreply, state}
 
   # IMU drivers deliver samples as casts — see `OvcsDrivers.Imu`.
-  @impl true
+  @impl GenServer
   def handle_cast({:imu_sample, %Sample{kind: :rotation, x: x, y: y, z: z, w: w}}, state) do
     yaw = yaw_from_quaternion(x, y, z, w)
     yaw_offset = state.yaw_offset || yaw

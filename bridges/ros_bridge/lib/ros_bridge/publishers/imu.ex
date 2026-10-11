@@ -55,7 +55,7 @@ defmodule RosBridge.Publishers.Imu do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
 
-  @impl true
+  @impl GenServer
   def init(opts) do
     driver = Keyword.fetch!(opts, :driver)
 
@@ -79,7 +79,7 @@ defmodule RosBridge.Publishers.Imu do
     {:ok, state}
   end
 
-  @impl true
+  @impl GenServer
   def handle_cast({:imu_sample, %Sample{kind: :acceleration, x: x, y: y, z: z}}, state) do
     {:noreply, %{state | latest_linear_acceleration: %Vector3{x: x, y: y, z: z}}}
   end
@@ -97,7 +97,7 @@ defmodule RosBridge.Publishers.Imu do
   # would register its own listener on the driver and translate them.
   def handle_cast({:imu_sample, %Sample{}}, state), do: {:noreply, state}
 
-  @impl true
+  @impl GenServer
   def handle_info(:tick, %State{} = state) do
     if ready_to_publish?(state) do
       publish_imu(state)

@@ -94,7 +94,7 @@ defmodule RosBridge.StereoCamera.Supervisor do
     Supervisor.start_link(__MODULE__, opts, name: __MODULE__)
   end
 
-  @impl true
+  @impl Supervisor
   def init(opts) do
     config = build_config(opts)
     # `:rest_for_one`, not `:one_for_one`: the pipeline is wired by

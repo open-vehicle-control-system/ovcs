@@ -32,7 +32,7 @@ defmodule RosBridge.StereoCamera.Live do
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 
-  @impl true
+  @impl GenServer
   def init(opts) do
     driver = Keyword.fetch!(opts, :driver)
     Code.ensure_loaded(driver)
@@ -59,7 +59,7 @@ defmodule RosBridge.StereoCamera.Live do
      }}
   end
 
-  @impl true
+  @impl GenServer
   def handle_cast({:camera_frame, %Frame{label: label, capture_ns: t}}, state) do
     side = String.to_existing_atom(label)
     other = if side == :left, do: :right, else: :left
@@ -76,7 +76,7 @@ defmodule RosBridge.StereoCamera.Live do
 
   def handle_cast(_message, state), do: {:noreply, state}
 
-  @impl true
+  @impl GenServer
   def handle_info(:plot, state) do
     Process.send_after(self(), :plot, @plot_period_ms)
 
