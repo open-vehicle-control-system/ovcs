@@ -12,7 +12,9 @@ defmodule OvcsVehicle.Scaffold do
 
       @module       — CamelCase module prefix (e.g. "Ovcs1")
       @name         — snake_case app/dir name (e.g. "ovcs1")
-      @display_name — human-readable name (e.g. "OVCS Mini")
+      @display_name — human-readable name (e.g. "OVCS Mini"); it is
+                      inserted into Elixir strings and docs as is, so it
+                      may not contain `"`, `\\` or `\#{`
       @vms_target / @infotainment_target — Nerves target atoms
       @infotainment — bool (false: skip the infotainment side)
       @bridges      — bool (false: skip the bridge_firmware dep,
@@ -67,19 +69,36 @@ defmodule OvcsVehicle.Scaffold do
       overwrites without prompting.
   """
   @spec generate(Path.t(), assigns(), keyword()) ::
-          :ok | {:error, {:template_missing, Path.t()}}
+          :ok
+          | {:error, {:template_missing, Path.t()}}
+          | {:error, {:invalid_display_name, String.t()}}
   def generate(target_dir, assigns, opts \\ []) do
     source = template_dir(Keyword.get(opts, :repo_root))
     create_opts = Keyword.take(opts, [:force])
+    display_name = Keyword.fetch!(assigns, :display_name)
 
-    if File.dir?(source) do
-      File.mkdir_p!(target_dir)
-      copy_tree(source, source, target_dir, assigns, create_opts)
-      copy_firmware(target_dir, assigns, opts)
-      :ok
-    else
-      {:error, {:template_missing, source}}
+    cond do
+      not valid_display_name?(display_name) ->
+        {:error, {:invalid_display_name, display_name}}
+
+      File.dir?(source) ->
+        File.mkdir_p!(target_dir)
+        copy_tree(source, source, target_dir, assigns, create_opts)
+        copy_firmware(target_dir, assigns, opts)
+        :ok
+
+      true ->
+        {:error, {:template_missing, source}}
     end
+  end
+
+  @doc """
+  Whether `display_name` can be inserted into the template's Elixir strings
+  and docs as is: no `"`, no `\\` and no `\#{` interpolation.
+  """
+  @spec valid_display_name?(String.t()) :: boolean()
+  def valid_display_name?(display_name) do
+    not String.contains?(display_name, ["\"", "\\", "\#{"])
   end
 
   @doc """
