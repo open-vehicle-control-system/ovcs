@@ -136,7 +136,7 @@ config :infotainment_api, InfotainmentApiWeb.Endpoint,
   check_origin: false,
   server: true,
   code_reloader: false,
-  adapter: Phoenix.Endpoint.Cowboy2Adapter,
+  adapter: Bandit.PhoenixAdapter,
   render_errors: [
     formats: [json: InfotainmentApiWeb.ErrorJSON],
     layout: false
