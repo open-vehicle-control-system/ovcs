@@ -10,7 +10,7 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
   loop reaches by commanding the booster's flow rate.
 
   Publishes the booster's status, rod position and target, flow rate,
-  `:manual_breaking` (the driver is braking or the booster cannot) and
+  `:manual_braking` (the driver is braking or the booster cannot) and
   `:ready_to_drive`.
 
   ## Options
@@ -325,7 +325,7 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
     })
 
     Bus.broadcast("messages", %Bus.Message{
-      name: :manual_breaking,
+      name: :manual_braking,
       value: state.manual_braking,
       source: __MODULE__
     })

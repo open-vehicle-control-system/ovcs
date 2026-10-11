@@ -328,7 +328,7 @@ Sources are the `*_source` options; "controller" means a generic controller proc
 | `Volkswagen.Polo9N.ABS`, `.IgnitionLock`, `.PassengerCompartment` | `polo_drive` | none | `:speed` and wheel speeds; `:contact`; door, beam and handbrake states |
 | `Volkswagen.Polo9N.Dashboard` | `polo_drive` | contact, rpm sources | nothing (drives the cluster) |
 | `Volkswagen.Polo9N.PowerSteeringPump` | `misc` | gear source | nothing |
-| `Bosch.IBoosterGen2` | `misc` | control level, contact sources; `controller`, `power_relay_pin` | rod position, flow rate, `:manual_breaking`, `:status` |
+| `Bosch.IBoosterGen2` | `misc` | control level, contact sources; `controller`, `power_relay_pin` | rod position, flow rate, `:manual_braking`, `:status` |
 | `OVCS.SteeringColumn` | `misc` | control level source; `power_relay_controller`, `power_relay_pin`, `actuation_controller`, `direction_pin`, `external_pwm_id` | angle, angular speed, calibration, PID gains |
 | `OVCS.GenericController` | `ovcs` | `process_name`, `control_digital_pins`, `control_other_pins`, `enabled_external_pwms` | `:is_alive`, `:status`, `received_*` / `requested_*` pins |
 | `OVCS.RadioControl.*` | `ovcs` | `radio_control_channel` | the `requested_*` value of its channel |

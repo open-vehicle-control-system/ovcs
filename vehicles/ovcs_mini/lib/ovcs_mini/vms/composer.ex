@@ -177,12 +177,12 @@ defmodule OvcsMini.Vms.Composer do
          },
          # No brake pedal here, so the manual-brake override has no
          # input. Pulling the transmitter's throttle into reverse does
-         # work: `RadioControl.Throttle` reports `:radio_breaking` on a
+         # work: `RadioControl.Throttle` reports `:radio_braking` on a
          # negative request, which drops `:ros` back to `:radio`. That
          # is the human takeover, and it works whichever ROS commander
          # was driving.
-         manual_breaking_source: nil,
-         radio_breaking_source: OVCS.RadioControl.Throttle,
+         manual_braking_source: nil,
+         radio_braking_source: OVCS.RadioControl.Throttle,
          # Odometry rests on the motor rotation: sources that disagree
          # take the wheel back from ROS.
          rotation_fault_source: Vms.MotorRotation,

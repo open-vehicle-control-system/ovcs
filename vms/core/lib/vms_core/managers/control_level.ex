@@ -104,8 +104,8 @@ defmodule VmsCore.Managers.ControlLevel do
           requested_direction_sources: requested_direction_sources,
           requested_throttle_sources: requested_throttle_sources,
           requested_steering_sources: requested_steering_sources,
-          manual_breaking_source: manual_breaking_source,
-          radio_breaking_source: radio_breaking_source,
+          manual_braking_source: manual_braking_source,
+          radio_braking_source: radio_braking_source,
           default_control_level: default_control_level,
           ready_to_drive_source: ready_to_drive_source,
           speed_source: speed_source
@@ -140,10 +140,10 @@ defmodule VmsCore.Managers.ControlLevel do
        requested_ros_commander_source: requested_ros_commander_source,
        requested_ros_commander: @default_ros_commander,
        selected_ros_commander: @default_ros_commander,
-       manual_breaking_source: manual_breaking_source,
-       manual_breaking: false,
-       radio_breaking_source: radio_breaking_source,
-       radio_breaking: false,
+       manual_braking_source: manual_braking_source,
+       manual_braking: false,
+       radio_braking_source: radio_braking_source,
+       radio_braking: false,
        rotation_fault_source: rotation_fault_source,
        rotation_fault: false,
        forced_control_level: nil,
@@ -204,19 +204,19 @@ defmodule VmsCore.Managers.ControlLevel do
   end
 
   def handle_info(
-        %Bus.Message{name: :manual_breaking, value: manual_breaking, source: source},
+        %Bus.Message{name: :manual_braking, value: manual_braking, source: source},
         state
       )
-      when source == state.manual_breaking_source do
-    {:noreply, %{state | manual_breaking: manual_breaking}}
+      when source == state.manual_braking_source do
+    {:noreply, %{state | manual_braking: manual_braking}}
   end
 
   def handle_info(
-        %Bus.Message{name: :radio_breaking, value: radio_breaking, source: source},
+        %Bus.Message{name: :radio_braking, value: radio_braking, source: source},
         state
       )
-      when source == state.radio_breaking_source do
-    {:noreply, %{state | radio_breaking: radio_breaking}}
+      when source == state.radio_braking_source do
+    {:noreply, %{state | radio_braking: radio_braking}}
   end
 
   def handle_info(
@@ -254,12 +254,12 @@ defmodule VmsCore.Managers.ControlLevel do
       forced_control_level: forced_control_level,
       requested_control_level: requested_control_level,
       selected_control_level: selected_control_level,
-      manual_breaking: manual_breaking,
+      manual_braking: manual_braking,
       speed: speed
     } = state
 
     cond do
-      selected_control_level != :manual && (manual_breaking || !ready_to_drive) ->
+      selected_control_level != :manual && (manual_braking || !ready_to_drive) ->
         %{state | selected_control_level: :manual, forced_control_level: :manual}
 
       selected_control_level == :ros && ros_overridden?(state) ->
@@ -269,12 +269,12 @@ defmodule VmsCore.Managers.ControlLevel do
         %{state | selected_control_level: :manual}
 
       requested_control_level == :radio && selected_control_level != :radio &&
-        is_nil(forced_control_level) && ready_to_drive && !manual_breaking &&
+        is_nil(forced_control_level) && ready_to_drive && !manual_braking &&
           standstill?(speed) ->
         %{state | selected_control_level: :radio}
 
       requested_control_level == :ros && selected_control_level == :radio &&
-        is_nil(forced_control_level) && !manual_breaking && !ros_overridden?(state) &&
+        is_nil(forced_control_level) && !manual_braking && !ros_overridden?(state) &&
           standstill?(speed) ->
         %{state | selected_control_level: :ros}
 
@@ -319,7 +319,7 @@ defmodule VmsCore.Managers.ControlLevel do
     end
   end
 
-  defp ros_overridden?(state), do: state.radio_breaking or state.rotation_fault
+  defp ros_overridden?(state), do: state.radio_braking or state.rotation_fault
 
   defp refusal_reason(state) do
     cond do
@@ -338,11 +338,11 @@ defmodule VmsCore.Managers.ControlLevel do
       # A brake that is still applied would force the level straight
       # back, so it reads as a refusal rather than as a transition
       # followed by a correction.
-      state.manual_breaking ->
-        :manual_breaking
+      state.manual_braking ->
+        :manual_braking
 
-      state.requested_control_level == :ros && state.radio_breaking ->
-        :radio_breaking
+      state.requested_control_level == :ros && state.radio_braking ->
+        :radio_braking
 
       state.requested_control_level == :ros && state.rotation_fault ->
         :rotation_fault

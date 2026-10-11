@@ -2,7 +2,7 @@ defmodule VmsCore.Components.OVCS.RadioControl.ThrottleTest do
   @moduledoc """
   The brake deadband, which is a control-level interlock in disguise.
 
-  `radio_breaking` is not just a brake: `Managers.ControlLevel` reads it
+  `radio_braking` is not just a brake: `Managers.ControlLevel` reads it
   to drop `:ros` back to `:radio` *and* to latch `forced_control_level`,
   so the only way out is cycling the switch down through the middle
   position. That makes a false positive expensive: without a deadband a
@@ -27,7 +27,7 @@ defmodule VmsCore.Components.OVCS.RadioControl.ThrottleTest do
     state
   end
 
-  # Reads the bus, not state: the manager only sees `radio_breaking` there.
+  # Reads the bus, not state: the manager only sees `radio_braking` there.
   defp outputs_at(raw) do
     frame =
       {:handle_frame,
@@ -43,16 +43,16 @@ defmodule VmsCore.Components.OVCS.RadioControl.ThrottleTest do
     {:noreply, _state} = Throttle.handle_info(:loop, state)
 
     assert_receive %Message{name: :requested_throttle, value: throttle, source: Throttle}
-    assert_receive %Message{name: :radio_breaking, value: breaking, source: Throttle}
-    {D.to_float(throttle), breaking}
+    assert_receive %Message{name: :radio_braking, value: braking, source: Throttle}
+    {D.to_float(throttle), braking}
   end
 
   describe "a trigger at rest" do
     test "does not report braking, whatever the trim" do
       # 1480..1500 is the range a centred trigger actually sits in.
       for raw <- 1480..1500 do
-        {_throttle, breaking} = outputs_at(raw)
-        refute breaking, "raw #{raw} reported braking with the trigger at rest"
+        {_throttle, braking} = outputs_at(raw)
+        refute braking, "raw #{raw} reported braking with the trigger at rest"
       end
     end
 
@@ -63,14 +63,14 @@ defmodule VmsCore.Components.OVCS.RadioControl.ThrottleTest do
 
   describe "a trigger actually pulled into reverse" do
     test "reports braking" do
-      {throttle, breaking} = outputs_at(1400)
-      assert breaking
+      {throttle, braking} = outputs_at(1400)
+      assert braking
       assert_in_delta throttle, -0.2, 1.0e-9
     end
 
     test "reports braking at full reverse" do
-      {throttle, breaking} = outputs_at(1000)
-      assert breaking
+      {throttle, braking} = outputs_at(1000)
+      assert braking
       assert_in_delta throttle, -1.0, 1.0e-9
     end
   end
@@ -78,8 +78,8 @@ defmodule VmsCore.Components.OVCS.RadioControl.ThrottleTest do
   describe "forward" do
     test "is never braking" do
       for raw <- [1600, 1750, 2000] do
-        {throttle, breaking} = outputs_at(raw)
-        refute breaking
+        {throttle, braking} = outputs_at(raw)
+        refute braking
         assert throttle > 0.0
       end
     end
@@ -89,8 +89,8 @@ defmodule VmsCore.Components.OVCS.RadioControl.ThrottleTest do
     test "braking is computed from this frame, not the previous tick" do
       # A takeover reported one loop late, from the previous tick's
       # value, is the one thing this signal must not do.
-      {_throttle, breaking} = outputs_at(1000)
-      assert breaking
+      {_throttle, braking} = outputs_at(1000)
+      assert braking
     end
   end
 end

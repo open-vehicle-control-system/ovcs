@@ -229,7 +229,7 @@ Every node uses the cookie `ovcs`: `./ovcs run` and `./ovcs attach` pass `--cook
 
 Both switches only *request*. The manager refuses unsafe moves: in motion, not ready to drive, or while a fault has forced a lower level. `:ros` is reachable only from `:radio`, so getting there takes two deliberate throws with the middle position in between. A refused request is logged once, with the reason.
 
-The radio trigger (`radio_breaking_source`) drops `:ros` to `:radio`, and so does an optional `rotation_fault_source`: a `OVCS.RotationFusion` whose sources disagree (`:cross_check_fault`) means the odometry, and every costmap cell placed with it, can no longer be trusted. Either one forces `:radio` until the switch comes back to `:radio` or below, and `:ros` is refused while it lasts. The OVCS Mini reference vehicle wires its motor rotation fusion there.
+The radio trigger (`radio_braking_source`) drops `:ros` to `:radio`, and so does an optional `rotation_fault_source`: a `OVCS.RotationFusion` whose sources disagree (`:cross_check_fault`) means the odometry, and every costmap cell placed with it, can no longer be trusted. Either one forces `:radio` until the switch comes back to `:radio` or below, and `:ros` is refused while it lasts. The OVCS Mini reference vehicle wires its motor rotation fusion there.
 
 ### Channel layout
 
@@ -238,7 +238,7 @@ Which transmitter channel each component reads is a vehicle decision. The radio 
 | Purpose | OVCS Mini | OVCS1 |
 |---|---|---|
 | Steering | 1 | 1 |
-| Throttle (and `radio_breaking`, the human takeover) | 2 | 2 |
+| Throttle (and `radio_braking`, the human takeover) | 2 | 2 |
 | Control level | 6 | 3 |
 | Direction (the reverse button, through `Managers.Gear`) | 7 | 4 |
 | ROS commander | 5 | not wired |
@@ -275,10 +275,10 @@ requested_throttle_sources: %{
   radio: Vms.RadioThrottleInputCurve,
   ros: %{teleop: Vms.TeleopThrottleInputCurve, autonomous: OVCS.RosVelocityCommand}
 },
-radio_breaking_source: OVCS.RadioControl.Throttle
+radio_braking_source: OVCS.RadioControl.Throttle
 ```
 
-A velocity is a physical quantity and is named directly, as is the takeover: `radio_breaking` reads the raw trigger. A hand wired to an actuator without a curve gets no dead zone, and a trigger that drifts at rest creeps the vehicle.
+A velocity is a physical quantity and is named directly, as is the takeover: `radio_braking` reads the raw trigger. A hand wired to an actuator without a curve gets no dead zone, and a trigger that drifts at rest creeps the vehicle.
 
 A missing key resolves to `nil`: nothing commands that actuator. That is the safe direction, and it is how a vehicle without a planner is expressed: `ros: %{teleop: ...}` leaves the autonomous position commanding nothing. Such a vehicle also omits `requested_ros_commander_source`, which pins the commander to `:teleop`.
 

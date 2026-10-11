@@ -37,8 +37,8 @@ defmodule VmsCore.Managers.ControlLevelTest do
       radio: RadioSteering,
       ros: %{teleop: TeleopSteering, autonomous: PlannerVelocity}
     },
-    manual_breaking_source: BrakePedal,
-    radio_breaking_source: RadioThrottle,
+    manual_braking_source: BrakePedal,
+    radio_braking_source: RadioThrottle,
     default_control_level: :manual,
     ready_to_drive_source: Vms,
     speed_source: Abs
@@ -233,7 +233,7 @@ defmodule VmsCore.Managers.ControlLevelTest do
 
       assert state.requested_throttle_source == PlannerVelocity
 
-      state = state |> deliver(:radio_breaking, true, RadioThrottle) |> tick()
+      state = state |> deliver(:radio_braking, true, RadioThrottle) |> tick()
 
       assert state.selected_control_level == :radio
       assert state.forced_control_level == :radio
@@ -247,9 +247,9 @@ defmodule VmsCore.Managers.ControlLevelTest do
       # below it, or :radio is refused for ever.
       state =
         in_ros()
-        |> deliver(:radio_breaking, true, RadioThrottle)
+        |> deliver(:radio_braking, true, RadioThrottle)
         |> tick()
-        |> deliver(:radio_breaking, false, RadioThrottle)
+        |> deliver(:radio_braking, false, RadioThrottle)
         |> request(:manual)
 
       assert state.selected_control_level == :manual
@@ -264,9 +264,9 @@ defmodule VmsCore.Managers.ControlLevelTest do
     test "a switch still above the forced level keeps the force" do
       state =
         in_ros()
-        |> deliver(:radio_breaking, true, RadioThrottle)
+        |> deliver(:radio_braking, true, RadioThrottle)
         |> tick()
-        |> deliver(:radio_breaking, false, RadioThrottle)
+        |> deliver(:radio_braking, false, RadioThrottle)
         |> tick()
 
       assert state.selected_control_level == :radio
@@ -344,7 +344,7 @@ defmodule VmsCore.Managers.ControlLevelTest do
       state =
         manager()
         |> request(:radio)
-        |> deliver(:manual_breaking, true, BrakePedal)
+        |> deliver(:manual_braking, true, BrakePedal)
         |> tick()
 
       assert state.selected_control_level == :manual
@@ -361,21 +361,21 @@ defmodule VmsCore.Managers.ControlLevelTest do
       assert_received {:state, state}
       assert state.selected_control_level == :manual
       assert state.forced_control_level == nil
-      assert log =~ "manual_breaking"
+      assert log =~ "manual_braking"
     end
 
     test "reopens :radio once released" do
       state =
         manager()
         |> request(:radio)
-        |> deliver(:manual_breaking, true, BrakePedal)
+        |> deliver(:manual_braking, true, BrakePedal)
         |> tick()
         |> request(:manual)
         |> request(:radio)
 
       assert state.selected_control_level == :manual
 
-      state = state |> deliver(:manual_breaking, false, BrakePedal) |> tick()
+      state = state |> deliver(:manual_braking, false, BrakePedal) |> tick()
 
       assert state.selected_control_level == :radio
     end
@@ -385,7 +385,7 @@ defmodule VmsCore.Managers.ControlLevelTest do
       # to :radio by the takeover branch.
       state =
         in_ros()
-        |> deliver(:radio_breaking, true, RadioThrottle)
+        |> deliver(:radio_braking, true, RadioThrottle)
         |> tick()
 
       assert state.selected_control_level == :radio
@@ -401,7 +401,7 @@ defmodule VmsCore.Managers.ControlLevelTest do
 
       assert_received {:state, state}
       assert state.selected_control_level == :radio
-      assert log =~ "radio_breaking"
+      assert log =~ "radio_braking"
     end
   end
 
