@@ -6,32 +6,33 @@ use crate::resolve_args::resolve_vehicle;
 use crate::ui::{step, sub, sub_fail, sub_ok, sub_warn};
 use crate::vehicles::{self, Vehicle};
 
-fn iface_exists(iface: &str) -> bool {
+fn interface_exists(interface: &str) -> bool {
     Command::new("ip")
-        .args(["link", "show", iface])
+        .args(["link", "show", interface])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status()
-        .map(|s| s.success())
+        .map(|status| status.success())
         .unwrap_or(false)
 }
 
 // vcan devices always report `state UNKNOWN` (no carrier), so trust the
 // IFF_UP flag in the flags column (`<NOARP,UP,LOWER_UP>`) instead.
-fn iface_up(iface: &str) -> bool {
-    match Command::new("ip").args(["link", "show", iface]).output() {
-        Ok(out) if out.status.success() => {
-            let output = String::from_utf8_lossy(&out.stdout);
-            output.contains(",UP,") || output.contains("<UP,")
+fn interface_up(interface: &str) -> bool {
+    match Command::new("ip")
+        .args(["link", "show", interface])
+        .output()
+    {
+        Ok(output) if output.status.success() => {
+            let link = String::from_utf8_lossy(&output.stdout);
+            link.contains(",UP,") || link.contains("<UP,")
         }
         _ => false,
     }
 }
 
-/// Classified state of one host CAN interface — exists? up? Used by
-/// both `setup` (to decide what to create/bring up) and `status` (to
-/// paint the ✓ / ⚠ / ✗ tree). One place to ask the kernel, two
-/// places to render it.
+/// State of one host CAN interface, shared by `setup` (what to create or
+/// bring up) and `status` (what to report).
 struct InterfaceProbe {
     name: String,
     exists: bool,
@@ -42,8 +43,8 @@ fn probe_interfaces(interfaces: &[String]) -> Vec<InterfaceProbe> {
     interfaces
         .iter()
         .map(|name| {
-            let exists = iface_exists(name);
-            let up = exists && iface_up(name);
+            let exists = interface_exists(name);
+            let up = exists && interface_up(name);
             InterfaceProbe {
                 name: name.clone(),
                 exists,
@@ -59,7 +60,7 @@ fn vcan_loaded() -> bool {
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status()
-        .map(|s| s.success())
+        .map(|status| status.success())
         .unwrap_or(false)
 }
 
@@ -69,16 +70,16 @@ fn sudo_cached() -> bool {
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status()
-        .map(|s| s.success())
+        .map(|status| status.success())
         .unwrap_or(false)
 }
 
-fn iface_state_label(iface: &str) -> String {
+fn interface_state_label(interface: &str) -> String {
     match Command::new("ip")
-        .args(["-br", "link", "show", iface])
+        .args(["-br", "link", "show", interface])
         .output()
     {
-        Ok(out) if out.status.success() => String::from_utf8_lossy(&out.stdout)
+        Ok(output) if output.status.success() => String::from_utf8_lossy(&output.stdout)
             .split_whitespace()
             .collect::<Vec<_>>()
             .join(" "),
@@ -132,13 +133,13 @@ pub fn ensure_host_can(vehicle: &Vehicle) -> Result<()> {
     }
 
     step(&format!("{} requires:", vehicle.module));
-    for i in &interfaces {
-        sub(i);
+    for interface in &interfaces {
+        sub(interface);
     }
     println!();
     step("Will run as root:");
-    for a in &actions {
-        sub(a);
+    for action in &actions {
+        sub(action);
     }
     println!();
 
@@ -148,20 +149,20 @@ set -e
 if ! lsmod | awk '{print $1}' | grep -qx vcan; then
   modprobe vcan
 fi
-for iface in "$@"; do
-  if ! ip link show "$iface" >/dev/null 2>&1; then
-    ip link add dev "$iface" type vcan
+for interface in "$@"; do
+  if ! ip link show "$interface" >/dev/null 2>&1; then
+    ip link add dev "$interface" type vcan
   fi
-  ip link set up "$iface"
+  ip link set up "$interface"
 done
 "#;
 
     step("Running sudo…");
-    let mut cmd = Command::new("sudo");
+    let mut command = Command::new("sudo");
     if sudo_cached() {
-        cmd.arg("-n");
+        command.arg("-n");
     }
-    let status = cmd
+    let status = command
         .args(["bash", "-c", script, "bash"])
         .args(&interfaces)
         .stdin(Stdio::inherit())
@@ -178,9 +179,9 @@ done
         "Virtual CAN interfaces ready for {}:",
         vehicle.module
     ));
-    for iface in &interfaces {
-        let state = iface_state_label(iface);
-        sub_ok(&format!("{}  {}", iface, state.dimmed()));
+    for interface in &interfaces {
+        let state = interface_state_label(interface);
+        sub_ok(&format!("{}  {}", interface, state.dimmed()));
     }
     println!();
     if let Some(first) = interfaces.first() {
@@ -227,7 +228,7 @@ pub fn status(arg: Option<String>) -> Result<()> {
         );
         println!(
             "{}",
-            format!("Run: ovcs can setup {}", vehicle.dir).dimmed()
+            format!("Run: ./ovcs can setup {}", vehicle.dir).dimmed()
         );
         std::process::exit(1);
     }
@@ -238,9 +239,9 @@ pub fn status(arg: Option<String>) -> Result<()> {
 /// accepts without quoting.
 fn is_interface_name(name: &str) -> bool {
     (1..=15).contains(&name.len())
-        && name
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-'))
+        && name.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '_' | '.' | '-')
+        })
 }
 
 #[cfg(test)]

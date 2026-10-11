@@ -1,9 +1,7 @@
 //! Shared status-line helpers for CLI commands.
 //!
-//! All user-facing commands print progress using the same four symbols so
-//! that the output reads the same way across `run`, `attach`, `can`,
-//! `doctor`, etc. Stick to these helpers in new commands rather than
-//! rolling your own formatting.
+//! User-facing commands print progress through these helpers so the output
+//! reads the same way across `run`, `attach`, `can`, `doctor`, etc.
 //!
 //! | helper      | symbol | meaning                                     |
 //! |-------------|--------|---------------------------------------------|
@@ -16,34 +14,34 @@
 
 use owo_colors::OwoColorize;
 
-/// Top-level phase heading — cyan bold arrow prefix.
-pub fn step(msg: &str) {
-    println!("{} {}", "▸".cyan().bold(), msg);
+/// Top-level phase heading.
+pub fn step(message: &str) {
+    println!("{} {}", "▸".cyan().bold(), message);
 }
 
-/// Neutral sub-step — dimmed middle dot. Use for "doing X" info.
-pub fn sub(msg: &str) {
-    println!("  {} {}", "·".dimmed(), msg);
+/// Neutral sub-step, for "doing X" info.
+pub fn sub(message: &str) {
+    println!("  {} {}", "·".dimmed(), message);
 }
 
-/// Sub-step that succeeded — green check.
-pub fn sub_ok(msg: &str) {
-    println!("  {} {}", "✓".green(), msg);
+/// Sub-step that succeeded.
+pub fn sub_ok(message: &str) {
+    println!("  {} {}", "✓".green(), message);
 }
 
 /// Sub-step that didn't find what it was looking for, but that's not a
 /// hard error (e.g. a probe that didn't respond, an optional component
 /// a vehicle doesn't declare).
-pub fn sub_miss(msg: &str) {
-    println!("  {} {}", "✗".yellow(), msg);
+pub fn sub_miss(message: &str) {
+    println!("  {} {}", "✗".yellow(), message);
 }
 
-/// Sub-step that produced a soft warning — yellow triangle.
-pub fn sub_warn(msg: &str) {
-    println!("  {} {}", "⚠".yellow(), msg);
+/// Sub-step that produced a soft warning.
+pub fn sub_warn(message: &str) {
+    println!("  {} {}", "⚠".yellow(), message);
 }
 
-/// Sub-step that hard-failed — red cross.
-pub fn sub_fail(msg: &str) {
-    println!("  {} {}", "✗".red(), msg);
+/// Sub-step that hard-failed.
+pub fn sub_fail(message: &str) {
+    println!("  {} {}", "✗".red(), message);
 }

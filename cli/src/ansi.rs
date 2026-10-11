@@ -1,16 +1,12 @@
-//! ANSI escape handling shared by the attach TUI and the `run`
-//! stdio streamer. Both see terminal output that carries colour
-//! codes (CSI) and occasional window-title updates (OSC) from the
-//! remote BEAM/IEx — this module collapses them out without pulling
-//! in a full parser. Bare BEL bytes are also dropped so the host
-//! terminal does not beep on every attach.
+//! Strips the colour codes (CSI), window-title updates (OSC) and BEL bytes
+//! that BEAM and IEx output carries, for the attach TUI and `run`'s output.
 fn consume_escape<I: Iterator<Item = char>>(chars: &mut std::iter::Peekable<I>) {
     match chars.peek() {
         // CSI: ESC [ … <final byte in 0x40–0x7E>
         Some('[') => {
             chars.next();
-            for c in chars.by_ref() {
-                if matches!(c, '\x40'..='\x7e') {
+            for character in chars.by_ref() {
+                if matches!(character, '\x40'..='\x7e') {
                     break;
                 }
             }
@@ -18,11 +14,11 @@ fn consume_escape<I: Iterator<Item = char>>(chars: &mut std::iter::Peekable<I>) 
         // OSC: ESC ] … terminated by BEL (\x07) or ST (ESC \)
         Some(']') => {
             chars.next();
-            while let Some(c) = chars.next() {
-                if c == '\x07' {
+            while let Some(character) = chars.next() {
+                if character == '\x07' {
                     break;
                 }
-                if c == '\x1b' && chars.peek() == Some(&'\\') {
+                if character == '\x1b' && chars.peek() == Some(&'\\') {
                     chars.next();
                     break;
                 }
@@ -41,13 +37,11 @@ fn consume_escape<I: Iterator<Item = char>>(chars: &mut std::iter::Peekable<I>) 
 pub fn strip_ansi(line: &str) -> String {
     let mut out = String::with_capacity(line.len());
     let mut chars = line.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c == '\x1b' {
+    while let Some(character) = chars.next() {
+        if character == '\x1b' {
             consume_escape(&mut chars);
-        } else if c == '\x07' {
-            // BEL outside an OSC: would beep the host terminal.
-        } else {
-            out.push(c);
+        } else if character != '\x07' {
+            out.push(character);
         }
     }
     out
@@ -58,12 +52,10 @@ pub fn strip_ansi(line: &str) -> String {
 /// colour reset" lines Elixir's Logger emits around each message.
 pub fn is_blank_after_ansi(line: &str) -> bool {
     let mut chars = line.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c == '\x1b' {
+    while let Some(character) = chars.next() {
+        if character == '\x1b' {
             consume_escape(&mut chars);
-        } else if c == '\x07' {
-            // ignore
-        } else if !c.is_whitespace() {
+        } else if character != '\x07' && !character.is_whitespace() {
             return false;
         }
     }

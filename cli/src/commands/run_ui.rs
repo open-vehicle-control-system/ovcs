@@ -1,5 +1,6 @@
 use ansi_to_tui::IntoText;
 use anyhow::Result;
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 use crossterm::event::{
     self, Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
@@ -24,34 +25,32 @@ const BUS_CAP: usize = 4000;
 const CAN_CAP: usize = 4000;
 const HISTORY_CAP: usize = 500;
 
-/// Exponential moving average weights for the per-key rate smoother
-/// used by both Bus and CAN. `_NEW` is the weight on the newest
-/// instantaneous 1/dt sample; `_PRIOR` is what's kept of the old
-/// smoothed value. Tuned to react within a handful of samples
-/// without jittering on per-frame noise.
+/// Weights of the per-key rate smoother shared by Bus and CAN: `_NEW` on
+/// the newest 1/dt sample, `_PRIOR` on the smoothed value. Balances
+/// reacting quickly against jittering on per-frame noise.
 const EMA_WEIGHT_NEW: f32 = 0.3;
 const EMA_WEIGHT_PRIOR: f32 = 0.7;
 
-/// Hide the `@NHz` tag on rows with rates below this — below 0.5 Hz
-/// the number reads more like noise than a useful cadence.
+/// Hide the `@NHz` tag below this rate, where it reads as noise rather
+/// than a cadence.
 const MIN_HZ_DISPLAY: f32 = 0.5;
 
-/// How long a transient footer toast (copy, selection, etc) stays
-/// visible before the normal key-hint line takes over again.
+/// How long a footer toast (copy, selection) stays before the key hints return.
 const TOAST_TTL: Duration = Duration::from_secs(3);
 
-/// `OSC 52` clipboard payload cap. Most terminals silently drop
-/// payloads past 64–100 KB; we keep to the tail 64 KB so the paste
-/// still lands even for a full buffer.
-const CLIPBOARD_CAP: usize = 64 * 1024;
+/// Clipboard payload cap: terminals silently drop larger OSC 52 payloads,
+/// so the tail of a full buffer is copied.
+const CLIPBOARD_CAP_BYTES: usize = 64 * 1024;
 
-/// EMA-smooth the per-key emit rate by blending the latest
-/// inter-arrival delta into the previously smoothed value. Returns
-/// 0.0 if `last_ts` is equal to `now` (defensive — callers treat
-/// that as "no rate yet").
+/// Blend the latest inter-arrival rate into the smoothed one. Returns
+/// 0.0 when `last_ts` equals `now`, which callers read as "no rate yet".
 fn smoothed_hz(now: Instant, last_ts: Instant, prev_ema: f32) -> f32 {
-    let dt = now.saturating_duration_since(last_ts).as_secs_f32();
-    let instantaneous = if dt > 0.0 { 1.0 / dt } else { 0.0 };
+    let interval_seconds = now.saturating_duration_since(last_ts).as_secs_f32();
+    let instantaneous = if interval_seconds > 0.0 {
+        1.0 / interval_seconds
+    } else {
+        0.0
+    };
     if prev_ema > 0.0 {
         prev_ema * EMA_WEIGHT_PRIOR + instantaneous * EMA_WEIGHT_NEW
     } else {
@@ -61,7 +60,7 @@ fn smoothed_hz(now: Instant, last_ts: Instant, prev_ema: f32) -> f32 {
 
 /// Messages pushed to the TUI from the transport backends (SSH task or
 /// local remsh reader threads).
-pub enum Msg {
+pub enum Message {
     /// One log line from a remote node's log channel.
     Log { node: String, line: String },
     /// One line of IEx output from a node's interactive shell channel.
@@ -89,10 +88,8 @@ pub enum Msg {
     NodeDown(String),
 }
 
-/// Per-node handle the TUI holds onto — one sender per interactive shell,
-/// keyed by node name. Lives for the whole app: supervisors on the other
-/// end reconnect transparently across node death, so dropping on
-/// `NodeDown` would break every reconnect after the first.
+/// Per-node handle the TUI holds: the interactive shell's input sender.
+/// It lives for the whole TUI, since supervisors reconnect behind it.
 pub struct NodeHandle {
     pub name: String,
     pub stdin: Sender<String>,
@@ -113,16 +110,13 @@ struct NodeState {
     shell_out: VecDeque<Line<'static>>,
 }
 
-/// `(source, name)` — the key the Bus pane deduplicates on for
-/// rate tracking, change highlight, and observer view. Node isn't
-/// part of the key because we only subscribe to `OvcsBus` on the
-/// VMS node (cluster-wide fan-out), so every observation comes
-/// from there.
+/// `(source, name)`: the Bus pane's key for rate tracking, change
+/// highlight and observer view. Only the VMS node subscribes to `OvcsBus`,
+/// so the node is not part of it.
 type BusKey = (String, String);
 
-/// One OvcsBus message row. Kept as structured data like `CanRow`
-/// so the Bus pane can render different modes (observer, filter,
-/// change highlight) without reparsing a pre-formatted line.
+/// One OvcsBus message row, kept structured so the Bus pane can render
+/// its modes (observer, filter, change highlight) without reparsing.
 struct BusRow {
     node: String,
     source: String,
@@ -134,16 +128,12 @@ struct BusRow {
     /// Whether this value differs from the previous observation of
     /// the same `(source, name)`. Drives the yellow-bold highlight.
     changed: bool,
-    /// Pre-built lowercase haystack (source, name, value) for the
-    /// `/` substring filter — same trick as `CanRow.haystack_lc`.
+    /// Lowercase (source, name, value) for the `/` substring filter.
     haystack_lc: String,
 }
 
-/// Per-`BusKey` tracking state: last observation time, smoothed
-/// rate, and the latest row `Arc` shared with the chronological
-/// `VecDeque`. Previous-value compare for change detection reads
-/// `latest_row.value` via the Arc, so the tracker doesn't duplicate
-/// a String on every push — a real saving at bus's ~1 kHz rate.
+/// Per-`BusKey` tracking state. `latest_row` is shared with the
+/// chronological feed and holds the previous value for change detection.
 struct BusTrack {
     last_ts: Instant,
     ema_hz: f32,
@@ -154,20 +144,16 @@ struct BusTrack {
 /// deduplicates on: rate tracking, signal-diff, observer view.
 type CanKey = (String, String, String);
 
-/// One decoded CAN frame row. Kept as structured data (not a
-/// pre-rendered `Line`) so the CAN pane can toggle between showing
-/// decoded signals, raw hex, or both at render time without re-parsing
-/// anything. Shared between the chronological VecDeque and the
-/// observer map via `Arc` so each push only allocates one copy.
+/// One decoded CAN frame row, kept structured so the CAN pane can show
+/// decoded signals, raw hex or both at render time. Shared between the
+/// chronological feed and the observer map.
 struct CanRow {
     node: String,
     network: String,
     frame: String,
     signals: String,
     raw: String,
-    /// Signals pre-split into (key, value) pairs in emission order.
-    /// Cheap best-effort parser: splits on ` <ident>=` boundaries, so
-    /// `k1=v1 k2={:ok, 42}` still treats the whole `{:ok, 42}` as v2.
+    /// Signals split into (key, value) pairs by `parse_signal_pairs`.
     signal_pairs: Vec<(String, String)>,
     /// Keys whose value differs from the previous observation of this
     /// `(node, network, frame)`. Drives the bold-on-change highlight.
@@ -176,17 +162,13 @@ struct CanRow {
     /// EMA-smoothed rate in Hz at the time this row was pushed.
     /// `None` for the first sample (no inter-arrival to measure).
     ema_hz: Option<f32>,
-    /// Pre-computed lowercase haystack (node, network, frame,
-    /// signals, raw, tab-joined) used by the `/` substring filter.
-    /// Computed once at push time so the hot render path doesn't
-    /// reallocate five strings per row per tick.
+    /// Lowercase tab-joined fields for the `/` substring filter, built
+    /// once per push rather than on every render.
     haystack_lc: String,
 }
 
-/// Per-`CanKey` tracking state: the previous observation's decoded
-/// signals, when we last saw it, and the smoothed rate. The latest
-/// row is shared with the chronological `VecDeque` via `Arc` so we
-/// don't duplicate row data on every push.
+/// Per-`CanKey` tracking state: the previous observation's signals, its
+/// time, the smoothed rate and the latest row.
 struct CanTrack {
     last_ts: Instant,
     ema_hz: f32,
@@ -220,10 +202,8 @@ impl CanView {
     }
 }
 
-/// Active mouse drag selection. Anchor is where the click started;
-/// cursor is the current end. Both are absolute terminal coords so
-/// the render overlay and the extractor can clip to the pane's rect
-/// independently.
+/// Active mouse drag selection, in absolute terminal rows: the anchor
+/// is where the click started, the cursor the current end.
 #[derive(Clone, Copy)]
 struct Selection {
     focus: Focus,
@@ -249,24 +229,18 @@ struct State {
     input: String,
     cursor: usize,
     history: Vec<String>,
-    history_idx: Option<usize>,
+    history_index: Option<usize>,
     focus: Focus,
-    /// `Alt-Enter` fullscreens the focused pane: `render()` routes
-    /// the whole main area to the focused pane's renderer instead of
-    /// the usual 50/50 + 50/50 subdivision. Tabs + footer still render.
+    /// `Alt-Enter` gives the focused pane the whole main area.
     maximized: bool,
     log_scroll: u16,
     log_follow: bool,
     bus_scroll: u16,
     bus_follow: bool,
-    /// Space-toggled freeze: while true, incoming Bus messages are
-    /// dropped so the pane contents stay exactly readable. Separate
-    /// from `bus_follow` (which just controls auto-tail vs. fixed
-    /// scroll position) so arrow-key scrolling doesn't silently drop
-    /// data.
+    /// Space-toggled freeze: incoming Bus messages are dropped. Separate
+    /// from `bus_follow`, so scrolling doesn't drop data.
     bus_paused: bool,
-    /// Max column widths observed so far (post-cap) for the Bus
-    /// pane, driving `format_bus_row`'s column padding.
+    /// Widest capped column values so far, for `format_bus_row`'s padding.
     bus_source_w: u16,
     bus_name_w: u16,
     /// `o`-toggled latest-value view for the Bus pane — one row per
@@ -274,52 +248,36 @@ struct State {
     bus_observer: bool,
     /// Insertion order of `BusKey`s (for stable observer row order).
     bus_order: Vec<BusKey>,
-    /// Per-key tracking state — prev value (for change detection),
-    /// last ts, rate, and the latest row Arc.
+
     bus_tracks: HashMap<BusKey, BusTrack>,
     /// Substring filter applied at render time. Empty = no filter.
     bus_filter: String,
-    /// True while the user is typing a filter (mirrored in the
-    /// footer prompt). Same UX as `can_filter_editing`.
+    /// True while the user types a filter in the footer prompt.
     bus_filter_editing: bool,
     can_scroll: u16,
     can_follow: bool,
     can_paused: bool,
     can_view: CanView,
-    /// Max column widths observed so far (post-cap). Updated on
-    /// every `push_can`; capped to stop a pathological frame name
-    /// from shoving the whole layout right. Drives
-    /// `format_can_row`'s column padding so signals align across
-    /// all rows.
+    /// Widest capped column values so far, for `format_can_row`'s padding.
     can_node_w: u16,
     can_net_w: u16,
     can_frame_w: u16,
-    /// `o`-toggled observer view: render one row per `CanKey` in
-    /// first-seen order showing the latest value, instead of the
-    /// chronological feed. Same data, pure display flip.
+    /// `o`-toggled observer view: one row per `CanKey` in first-seen
+    /// order, showing its latest value.
     can_observer: bool,
     /// First-seen key order (stable ordering for observer view).
     can_order: Vec<CanKey>,
-    /// Per-key tracking state — prev pairs (for diff), last ts, rate,
-    /// and the latest row (for observer view).
+
     can_tracks: HashMap<CanKey, CanTrack>,
-    /// Substring filter applied at render time (matches against the
-    /// full rendered body). Empty = no filter.
+    /// Substring filter applied at render time. Empty = no filter.
     can_filter: String,
-    /// While true, the footer replaces its hint row with a live edit
-    /// prompt. Keystrokes mutate `can_filter` until Enter/Esc.
+    /// True while the user types a filter in the footer prompt.
     can_filter_editing: bool,
-    /// Transient status message shown in the footer (replaces key
-    /// hints) for a couple of seconds after an action that wants
-    /// visible feedback, e.g. "copied 42 lines to clipboard".
+    /// Footer message replacing the key hints for `TOAST_TTL`.
     toast: Option<(String, Instant)>,
-    /// Last-known pane Rects (inclusive of border), refreshed once
-    /// per tick just before `terminal.draw`. Mouse event handlers
-    /// use these to hit-test which pane the cursor is in.
+    /// Pane rects (borders included) of the last tick, for mouse hit-testing.
     pane_rects: HashMap<Focus, Rect>,
-    /// Active mouse drag. `Some` between MouseDown and MouseUp, plus
-    /// briefly on release so the render can show the highlight one
-    /// last frame before clearing. `None` otherwise.
+    /// Active mouse drag, between MouseDown and MouseUp.
     selection: Option<Selection>,
     shell_scroll: u16,
     shell_follow: bool,
@@ -343,18 +301,18 @@ impl State {
     fn new(handles: Vec<NodeHandle>) -> Self {
         let mut nodes = Vec::new();
         let mut by_node = HashMap::new();
-        for (i, h) in handles.into_iter().enumerate() {
-            let color = PALETTE[i % PALETTE.len()];
+        for (index, handle) in handles.into_iter().enumerate() {
+            let color = PALETTE[index % PALETTE.len()];
             by_node.insert(
-                h.name.clone(),
+                handle.name.clone(),
                 NodeState {
                     color,
                     up: false,
-                    stdin: h.stdin,
+                    stdin: handle.stdin,
                     shell_out: VecDeque::with_capacity(SHELL_CAP),
                 },
             );
-            nodes.push(h.name);
+            nodes.push(handle.name);
         }
         let current = nodes.first().cloned().unwrap_or_default();
         Self {
@@ -366,7 +324,7 @@ impl State {
             input: String::new(),
             cursor: 0,
             history: Vec::new(),
-            history_idx: None,
+            history_index: None,
             focus: Focus::Shell,
             maximized: false,
             log_scroll: 0,
@@ -425,20 +383,20 @@ impl State {
 
     fn push_shell(&mut self, node: &str, raw: String) {
         let cleaned = self.prompt_re.replace(&raw, "").into_owned();
-        if let Some(n) = self.by_node.get_mut(node) {
-            if n.shell_out.len() == SHELL_CAP {
-                n.shell_out.pop_front();
+        if let Some(node_state) = self.by_node.get_mut(node) {
+            if node_state.shell_out.len() == SHELL_CAP {
+                node_state.shell_out.pop_front();
             }
-            n.shell_out.push_back(parse_ansi_line(&cleaned));
+            node_state.shell_out.push_back(parse_ansi_line(&cleaned));
         }
     }
 
     fn push_shell_echo(&mut self, line: Line<'static>) {
-        if let Some(n) = self.by_node.get_mut(&self.current) {
-            if n.shell_out.len() == SHELL_CAP {
-                n.shell_out.pop_front();
+        if let Some(node_state) = self.by_node.get_mut(&self.current) {
+            if node_state.shell_out.len() == SHELL_CAP {
+                node_state.shell_out.pop_front();
             }
-            n.shell_out.push_back(line);
+            node_state.shell_out.push_back(line);
         }
     }
 
@@ -455,9 +413,6 @@ impl State {
         let now = Instant::now();
         let key: BusKey = (source.to_string(), name.to_string());
 
-        // Compare against the previous latest_row to compute change
-        // + EMA-smooth rate. Borrowing from the tracker's Arc avoids
-        // storing `prev_value: String` separately.
         let (changed, ema_hz) = match self.bus_tracks.get(&key) {
             Some(prev) => {
                 let changed = prev.latest_row.value != value;
@@ -471,13 +426,13 @@ impl State {
         };
 
         let haystack_lc = {
-            let mut s = String::with_capacity(source.len() + name.len() + value.len() + 2);
-            s.push_str(&source.to_lowercase());
-            s.push('\t');
-            s.push_str(&name.to_lowercase());
-            s.push('\t');
-            s.push_str(&value.to_lowercase());
-            s
+            let mut haystack = String::with_capacity(source.len() + name.len() + value.len() + 2);
+            haystack.push_str(&source.to_lowercase());
+            haystack.push('\t');
+            haystack.push_str(&name.to_lowercase());
+            haystack.push('\t');
+            haystack.push_str(&value.to_lowercase());
+            haystack
         };
 
         let row = Arc::new(BusRow {
@@ -509,9 +464,7 @@ impl State {
         if self.can_paused {
             return;
         }
-        // Per-column width tracking: grow to fit the widest value
-        // seen per column, but cap each column so a single
-        // pathological name doesn't push signals off-screen.
+        // Capped so one long name doesn't push the signals off-screen.
         const NODE_CAP: u16 = 24;
         const NET_CAP: u16 = 16;
         const FRAME_CAP: u16 = 32;
@@ -523,8 +476,6 @@ impl State {
         let pairs = parse_signal_pairs(signals);
         let key: CanKey = (node.to_string(), network.to_string(), frame.to_string());
 
-        // Compare against the previous observation of this key to
-        // compute the `changed_keys` list + EMA-smooth the rate.
         let (changed_keys, ema_hz) = match self.can_tracks.get(&key) {
             Some(prev) => {
                 let changed = diff_pairs(&prev.prev_pairs, &pairs);
@@ -551,8 +502,6 @@ impl State {
             haystack_lc,
         });
 
-        // Update the tracker for next time. The `latest_row` Arc shares
-        // data with the VecDeque push below — no double allocation.
         let track = CanTrack {
             last_ts: now,
             ema_hz: ema_hz.unwrap_or(0.0),
@@ -571,19 +520,19 @@ impl State {
         if self.nodes.len() < 2 {
             return;
         }
-        let idx = self
+        let index = self
             .nodes
             .iter()
-            .position(|n| n == &self.current)
+            .position(|name| name == &self.current)
             .unwrap_or(0) as isize;
         let len = self.nodes.len() as isize;
-        let next = ((idx + delta).rem_euclid(len)) as usize;
+        let next = ((index + delta).rem_euclid(len)) as usize;
         self.current = self.nodes[next].clone();
         self.shell_follow = true;
     }
 
-    fn jump(&mut self, idx: usize) {
-        if let Some(name) = self.nodes.get(idx) {
+    fn jump(&mut self, index: usize) {
+        if let Some(name) = self.nodes.get(index) {
             self.current = name.clone();
             self.shell_follow = true;
         }
@@ -606,32 +555,30 @@ fn short_source(source: &str) -> String {
 }
 
 fn strip_osc(raw: &str) -> String {
-    let mut out = String::with_capacity(raw.len());
+    let mut stripped = String::with_capacity(raw.len());
     let mut chars = raw.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c == '\x1b' && chars.peek() == Some(&']') {
+    while let Some(character) = chars.next() {
+        if character == '\x1b' && chars.peek() == Some(&']') {
             chars.next();
-            while let Some(c) = chars.next() {
-                if c == '\x07' {
+            while let Some(character) = chars.next() {
+                if character == '\x07' {
                     break;
                 }
-                if c == '\x1b' && chars.peek() == Some(&'\\') {
+                if character == '\x1b' && chars.peek() == Some(&'\\') {
                     chars.next();
                     break;
                 }
             }
         } else {
-            out.push(c);
+            stripped.push(character);
         }
     }
-    out
+    stripped
 }
 
 fn parse_ansi_line(raw: &str) -> Line<'static> {
-    // Drop OSC sequences (ESC ] … BEL/ST) entirely — IEx's window-title
-    // updates would otherwise leak their BEL terminator and beep the
-    // host terminal — then strip stray \r and bare BEL bytes. CSI
-    // sequences are left intact for ansi_to_tui to render as colour.
+    // OSC (IEx's window title) and BEL would beep the host terminal; CSI
+    // stays for ansi_to_tui to render as colour.
     let without_osc = strip_osc(raw);
     let cleaned: String = without_osc
         .chars()
@@ -647,7 +594,7 @@ fn parse_ansi_line(raw: &str) -> Line<'static> {
     }
 }
 
-pub fn run(rx: Receiver<Msg>, nodes: Vec<NodeHandle>) -> Result<()> {
+pub fn run(rx: Receiver<Message>, nodes: Vec<NodeHandle>) -> Result<()> {
     // Mouse capture keeps drag-selection inside the focused pane.
     let mut terminal = terminal::enter(true)?;
     let result = event_loop(&mut terminal, rx, nodes);
@@ -657,7 +604,7 @@ pub fn run(rx: Receiver<Msg>, nodes: Vec<NodeHandle>) -> Result<()> {
 
 fn event_loop(
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
-    rx: Receiver<Msg>,
+    rx: Receiver<Message>,
     nodes: Vec<NodeHandle>,
 ) -> Result<()> {
     let mut state = State::new(nodes);
@@ -665,30 +612,30 @@ fn event_loop(
     loop {
         loop {
             match rx.try_recv() {
-                Ok(Msg::Log { node, line }) => state.push_log(&node, line),
-                Ok(Msg::Shell { node, line }) => state.push_shell(&node, line),
-                Ok(Msg::Bus {
+                Ok(Message::Log { node, line }) => state.push_log(&node, line),
+                Ok(Message::Shell { node, line }) => state.push_shell(&node, line),
+                Ok(Message::Bus {
                     node,
                     source,
                     name,
                     value,
                 }) => state.push_bus(&node, &source, &name, &value),
-                Ok(Msg::CanFrame {
+                Ok(Message::CanFrame {
                     node,
                     network,
                     frame,
                     signals,
                     raw,
                 }) => state.push_can(&node, &network, &frame, &signals, &raw),
-                Ok(Msg::NodeUp(node)) => {
-                    if let Some(n) = state.by_node.get_mut(&node) {
-                        n.up = true;
+                Ok(Message::NodeUp(node)) => {
+                    if let Some(node_state) = state.by_node.get_mut(&node) {
+                        node_state.up = true;
                     }
                     state.push_log(&node, "[ovcs] connected".to_string());
                 }
-                Ok(Msg::NodeDown(node)) => {
-                    if let Some(n) = state.by_node.get_mut(&node) {
-                        n.up = false;
+                Ok(Message::NodeDown(node)) => {
+                    if let Some(node_state) = state.by_node.get_mut(&node) {
+                        node_state.up = false;
                     }
                     state.push_log(&node, "[ovcs] disconnected".to_string());
                 }
@@ -699,7 +646,7 @@ fn event_loop(
 
         let size = terminal.size()?;
         compute_pane_rects(&mut state, Rect::new(0, 0, size.width, size.height));
-        terminal.draw(|f| render(f, &state))?;
+        terminal.draw(|frame| render(frame, &state))?;
 
         if event::poll(Duration::from_millis(50))? {
             match event::read()? {
@@ -721,30 +668,25 @@ fn event_loop(
     Ok(())
 }
 
-fn render(f: &mut ratatui::Frame, state: &State) {
-    let area = f.area();
+fn render(frame: &mut ratatui::Frame, state: &State) {
+    let area = frame.area();
 
     if state.maximized {
-        render_maximized(f, area, state);
+        render_maximized(frame, area, state);
     } else {
-        render_normal(f, area, state);
+        render_normal(frame, area, state);
     }
 
-    // Paint the drag-selection highlight after the panes so it
-    // overlays the content. Clipped to the pane's inner area (inside
-    // the border) so borders stay visible.
-    if let Some(sel) = state.selection {
-        if let Some(rect) = state.pane_rects.get(&sel.focus).copied() {
-            paint_selection(f, rect, sel);
+    if let Some(selection) = state.selection {
+        if let Some(rect) = state.pane_rects.get(&selection.focus).copied() {
+            paint_selection(frame, rect, selection);
         }
     }
 }
 
-/// Invert bg/fg on cells inside the focused pane's inner area that
-/// fall within the selection's row range. The selection is row-based
-/// (whole terminal rows), not column-based — simpler for users and
-/// matches how rows usually correspond to logical messages.
-fn paint_selection(f: &mut ratatui::Frame, rect: Rect, sel: Selection) {
+/// Highlight the selected rows inside the pane's borders. Selection is by
+/// whole rows, as rows map to messages.
+fn paint_selection(frame: &mut ratatui::Frame, rect: Rect, selection: Selection) {
     if rect.width < 2 || rect.height < 2 {
         return;
     }
@@ -752,16 +694,16 @@ fn paint_selection(f: &mut ratatui::Frame, rect: Rect, sel: Selection) {
     let inner_x1 = rect.x + rect.width - 1;
     let inner_y0 = rect.y + 1;
     let inner_y1 = rect.y + rect.height - 1;
-    let (r0, r1) = sel.row_range();
-    let y_lo = r0.max(inner_y0);
-    let y_hi = r1.min(inner_y1.saturating_sub(1));
+    let (first_row, last_row) = selection.row_range();
+    let y_lo = first_row.max(inner_y0);
+    let y_hi = last_row.min(inner_y1.saturating_sub(1));
     if y_lo > y_hi {
         return;
     }
-    let buf = f.buffer_mut();
-    for y in y_lo..=y_hi {
-        for x in inner_x0..inner_x1 {
-            if let Some(cell) = buf.cell_mut((x, y)) {
+    let buffer = frame.buffer_mut();
+    for row in y_lo..=y_hi {
+        for column in inner_x0..inner_x1 {
+            if let Some(cell) = buffer.cell_mut((column, row)) {
                 cell.set_bg(Color::Blue);
                 cell.set_fg(Color::White);
             }
@@ -769,9 +711,8 @@ fn paint_selection(f: &mut ratatui::Frame, rect: Rect, sel: Selection) {
     }
 }
 
-/// Recompute pane Rects matching whatever layout `render_normal` /
-/// `render_maximized` would produce. Called once per tick so mouse
-/// events can hit-test against the pane the user sees.
+/// Recompute the pane rects `render_normal` / `render_maximized` draw,
+/// for mouse hit-testing.
 fn compute_pane_rects(state: &mut State, area: Rect) {
     state.pane_rects.clear();
     if state.maximized {
@@ -809,10 +750,8 @@ fn compute_pane_rects(state: &mut State, area: Rect) {
     }
 }
 
-/// Mouse-event dispatcher. Left drag inside a pane selects rows (and
-/// switches focus to that pane so other bindings still make sense).
-/// Mouse up extracts the selected text and copies to the system
-/// clipboard — same path as `Ctrl-Y`.
+/// Left drag inside a pane focuses it and selects rows; releasing copies
+/// them to the clipboard, as `Ctrl-Y` does.
 fn handle_mouse(state: &mut State, event: MouseEvent) {
     match event.kind {
         MouseEventKind::Down(MouseButton::Left) => {
@@ -826,18 +765,18 @@ fn handle_mouse(state: &mut State, event: MouseEvent) {
             }
         }
         MouseEventKind::Drag(MouseButton::Left) => {
-            if let Some(ref mut sel) = state.selection {
-                if let Some(rect) = state.pane_rects.get(&sel.focus).copied() {
+            if let Some(ref mut selection) = state.selection {
+                if let Some(rect) = state.pane_rects.get(&selection.focus).copied() {
                     // Clamp to the pane's inner area (inside borders).
                     let inner_top = rect.y + 1;
                     let inner_bot = rect.y + rect.height.saturating_sub(2);
-                    sel.cursor_row = event.row.clamp(inner_top, inner_bot);
+                    selection.cursor_row = event.row.clamp(inner_top, inner_bot);
                 }
             }
         }
         MouseEventKind::Up(MouseButton::Left) => {
-            if let Some(sel) = state.selection.take() {
-                let text = selection_text(state, &sel);
+            if let Some(selection) = state.selection.take() {
+                let text = selection_text(state, &selection);
                 if !text.is_empty() {
                     let (method, _) = copy_to_clipboard(&text);
                     let lines = text.split('\n').count();
@@ -845,7 +784,7 @@ fn handle_mouse(state: &mut State, event: MouseEvent) {
                         format!(
                             "selected {} line(s) from {} → clipboard ({})",
                             lines,
-                            focus_name(sel.focus),
+                            focus_name(selection.focus),
                             method,
                         ),
                         Instant::now(),
@@ -881,13 +820,10 @@ fn focus_name(focus: Focus) -> &'static str {
     }
 }
 
-/// Extract the text covered by the selection by mirroring the same
-/// tail-fills-the-pane logic `render_*` use. Whole source rows are
-/// returned, not column-bounded slices — we're row-selecting, not
-/// rectangle-selecting.
-fn selection_text(state: &State, sel: &Selection) -> String {
-    let rect = match state.pane_rects.get(&sel.focus) {
-        Some(r) => *r,
+/// The whole lines the selection covers, laid out as `render_*` lays them.
+fn selection_text(state: &State, selection: &Selection) -> String {
+    let rect = match state.pane_rects.get(&selection.focus) {
+        Some(rect) => *rect,
         None => return String::new(),
     };
     if rect.height < 3 {
@@ -896,23 +832,19 @@ fn selection_text(state: &State, sel: &Selection) -> String {
     let inner_h = rect.height.saturating_sub(2) as usize;
     let inner_w = rect.width.saturating_sub(2) as usize;
     let inner_y0 = rect.y + 1;
-    let (r0, r1) = sel.row_range();
-    let y_lo = r0.max(inner_y0);
-    let y_hi = r1.min(rect.y + rect.height - 2);
+    let (first_row, last_row) = selection.row_range();
+    let y_lo = first_row.max(inner_y0);
+    let y_hi = last_row.min(rect.y + rect.height - 2);
     if y_lo > y_hi || inner_w == 0 {
         return String::new();
     }
     let rel_start = (y_lo - inner_y0) as usize;
     let rel_end = (y_hi - inner_y0) as usize;
 
-    // Build the visible slice of `Line`s in the same order render_*
-    // passes them to the paragraph, then pick the ones overlapping
-    // the row range.
-    let lines = pane_visible_lines(state, sel.focus, inner_h, inner_w);
+    let lines = pane_visible_lines(state, selection.focus, inner_h, inner_w);
 
-    // Walk the visible lines top-down, accumulating wrapped row span,
-    // and collect lines whose span overlaps the selected row range.
-    let mut out = Vec::new();
+    // Accumulate each line's wrapped rows to find those in the range.
+    let mut selected = Vec::new();
     let mut row_offset = 0usize;
     for line in &lines {
         let rendered_width = line.width().max(1);
@@ -920,19 +852,17 @@ fn selection_text(state: &State, sel: &Selection) -> String {
         let line_start = row_offset;
         let line_end = row_offset + taken - 1;
         if line_end >= rel_start && line_start <= rel_end {
-            out.push(line_to_plain(line));
+            selected.push(line_to_plain(line));
         }
         row_offset += taken;
         if row_offset > rel_end {
             break;
         }
     }
-    out.join("\n")
+    selected.join("\n")
 }
 
-/// Build the visible slice of `Line`s for `focus` in the same order `render_*`
-/// passes them to the paragraph. Dedicated extraction so `selection_text` (and
-/// any future whole-line copy path) reuse the exact display layout.
+/// The visible `Line`s of `focus`, in the order `render_*` draws them.
 fn pane_visible_lines(
     state: &State,
     focus: Focus,
@@ -992,9 +922,9 @@ fn pane_visible_lines(
                 .collect()
         }
         Focus::Shell => {
-            if let Some(n) = state.by_node.get(&state.current) {
+            if let Some(node_state) = state.by_node.get(&state.current) {
                 visible_lines(
-                    &n.shell_out,
+                    &node_state.shell_out,
                     state.shell_follow,
                     state.shell_scroll,
                     inner_h,
@@ -1007,32 +937,25 @@ fn pane_visible_lines(
     }
 }
 
-/// Helper used by `selection_text` to compute the visible slice of a
-/// `VecDeque<Line>`-backed pane (Log / Bus / Shell). Mirrors the
-/// render_* logic so the extracted rows match the pane's display
-/// exactly.
+/// The visible slice of a `VecDeque<Line>`-backed pane, as `render_*` draws it.
 fn visible_lines(
-    buf: &VecDeque<Line<'static>>,
+    lines: &VecDeque<Line<'static>>,
     follow: bool,
     scroll: u16,
     inner_h: usize,
     inner_w: usize,
 ) -> Vec<Line<'static>> {
-    let total = buf.len();
+    let total = lines.len();
     let start = if follow {
-        visible_start(buf, inner_h, inner_w)
+        visible_start(lines, inner_h, inner_w)
     } else {
         scroll.min(total.saturating_sub(inner_h) as u16) as usize
     };
-    buf.iter().skip(start).cloned().collect()
+    lines.iter().skip(start).cloned().collect()
 }
 
-fn render_normal(f: &mut ratatui::Frame, area: Rect, state: &State) {
-    // Layout rationale: logs/bus/can show merged streams across every node,
-    // but the IEx shell is bound to one node at a time. Put the node
-    // selector (tab strip) directly above the shell so the scope of that
-    // selection is obvious — F1/F2/… switch which node's IEx you're
-    // driving, not what the panes above display.
+fn render_normal(frame: &mut ratatui::Frame, area: Rect, state: &State) {
+    // The node tab strip sits above the shell, the only pane bound to one node.
     let outer = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -1053,18 +976,16 @@ fn render_normal(f: &mut ratatui::Frame, area: Rect, state: &State) {
         .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
         .split(upper[1]);
 
-    render_logs(f, upper[0], state);
-    render_bus(f, right[0], state);
-    render_can(f, right[1], state);
-    render_tabs(f, outer[1], state);
-    render_shell(f, outer[2], state);
-    render_status(f, outer[3], state);
+    render_logs(frame, upper[0], state);
+    render_bus(frame, right[0], state);
+    render_can(frame, right[1], state);
+    render_tabs(frame, outer[1], state);
+    render_shell(frame, outer[2], state);
+    render_status(frame, outer[3], state);
 }
 
-/// Fullscreen mode: whichever pane has focus gets the entire area
-/// between tabs and footer. Tabs + footer still render so node
-/// selection and key hints remain visible.
-fn render_maximized(f: &mut ratatui::Frame, area: Rect, state: &State) {
+/// Fullscreen mode: the focused pane gets the area above the tabs and footer.
+fn render_maximized(frame: &mut ratatui::Frame, area: Rect, state: &State) {
     let outer = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -1075,64 +996,61 @@ fn render_maximized(f: &mut ratatui::Frame, area: Rect, state: &State) {
         .split(area);
 
     match state.focus {
-        Focus::Log => render_logs(f, outer[0], state),
-        Focus::Bus => render_bus(f, outer[0], state),
-        Focus::Can => render_can(f, outer[0], state),
-        Focus::Shell => render_shell(f, outer[0], state),
+        Focus::Log => render_logs(frame, outer[0], state),
+        Focus::Bus => render_bus(frame, outer[0], state),
+        Focus::Can => render_can(frame, outer[0], state),
+        Focus::Shell => render_shell(frame, outer[0], state),
     }
-    render_tabs(f, outer[1], state);
-    render_status(f, outer[2], state);
+    render_tabs(frame, outer[1], state);
+    render_status(frame, outer[2], state);
 }
 
-fn render_tabs(f: &mut ratatui::Frame, area: Rect, state: &State) {
-    // Node selector for the IEx pane below:
+fn render_tabs(frame: &mut ratatui::Frame, area: Rect, state: &State) {
     //   IEx ▸  ● F1 vms   ● F2 infotainment   ○ F3 bridge-radio_control
-    // Active: bold + underlined in the node's accent colour.
-    // Disconnected: hollow `○` marker + DIM.
     let mut spans: Vec<Span<'static>> = vec![
         Span::styled(" IEx ", Style::default().add_modifier(Modifier::DIM)),
         Span::styled("▸ ", Style::default().add_modifier(Modifier::DIM)),
     ];
 
-    for (i, name) in state.nodes.iter().enumerate() {
+    for (index, name) in state.nodes.iter().enumerate() {
         let node = state.by_node.get(name);
         let color = node.map(|n| n.color).unwrap_or(Color::White);
         let up = node.map(|n| n.up).unwrap_or(false);
         let active = name == &state.current;
 
         let dot = if up { "●" } else { "○" };
-        let fkey = format!("F{}", i + 1);
+        let fkey = format!("F{}", index + 1);
 
         let label_style = {
-            let mut s = Style::default().fg(color);
+            let mut style = Style::default().fg(color);
             if active {
-                s = s
+                style = style
                     .add_modifier(Modifier::BOLD)
                     .add_modifier(Modifier::UNDERLINED);
             }
             if !up {
-                s = s.add_modifier(Modifier::DIM);
+                style = style.add_modifier(Modifier::DIM);
             }
-            s
+            style
         };
 
         let dot_style = {
-            let mut s = Style::default().fg(color);
+            let mut style = Style::default().fg(color);
             if !up {
-                s = s.add_modifier(Modifier::DIM);
+                style = style.add_modifier(Modifier::DIM);
             }
-            s
+            style
         };
 
         let fkey_style = {
-            let mut s = Style::default().add_modifier(Modifier::DIM);
+            let mut style = Style::default().add_modifier(Modifier::DIM);
             if active {
-                s = s.add_modifier(Modifier::BOLD);
+                style = style.add_modifier(Modifier::BOLD);
             }
-            s
+            style
         };
 
-        if i > 0 {
+        if index > 0 {
             spans.push(Span::styled(
                 "   ",
                 Style::default().add_modifier(Modifier::DIM),
@@ -1145,10 +1063,10 @@ fn render_tabs(f: &mut ratatui::Frame, area: Rect, state: &State) {
         spans.push(Span::styled(name.clone(), label_style));
     }
 
-    f.render_widget(Paragraph::new(Line::from(spans)), area);
+    frame.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
-fn render_logs(f: &mut ratatui::Frame, area: Rect, state: &State) {
+fn render_logs(frame: &mut ratatui::Frame, area: Rect, state: &State) {
     let up = state.by_node.values().filter(|n| n.up).count();
     let total = state.nodes.len();
     let title = format!(
@@ -1173,22 +1091,16 @@ fn render_logs(f: &mut ratatui::Frame, area: Rect, state: &State) {
             .min(total_lines.saturating_sub(inner_h) as u16) as usize
     };
 
-    // Pass the tail of entries from `start` onward — ratatui wraps them
-    // top-down; any overflow past `inner_h` visual rows is clipped at the
-    // bottom, which matches the stored order (newest last).
     let lines: Vec<Line> = state.logs.iter().skip(start).cloned().collect();
 
-    let p = Paragraph::new(lines)
+    let paragraph = Paragraph::new(lines)
         .block(block)
         .wrap(Wrap { trim: false });
-    f.render_widget(p, area);
+    frame.render_widget(paragraph, area);
 }
 
-/// Collect the Bus rows that a pane should consider: observer view when
-/// enabled (latest-per-key in insertion order), otherwise the chronological
-/// feed. Applies the filter if any. Used by `selection_text` and
-/// `pane_snapshot`; `render_bus` keeps its fast-path inline to avoid
-/// materialising a Vec on the common no-filter / chronological case.
+/// The Bus rows the pane shows: the observer view or the chronological
+/// feed, filtered. `render_bus` has its own path for the unfiltered feed.
 fn candidate_bus_rows(state: &State) -> Vec<&BusRow> {
     let rows: Vec<&BusRow> = if state.bus_observer {
         state
@@ -1209,9 +1121,8 @@ fn candidate_bus_rows(state: &State) -> Vec<&BusRow> {
     }
 }
 
-/// Collect the CAN rows that a pane should consider: observer view when
-/// enabled, else chronological, filter applied. Used by `render_can`,
-/// `selection_text`, and `pane_snapshot`.
+/// The CAN rows the pane shows: the observer view or the chronological
+/// feed, filtered.
 fn candidate_can_rows(state: &State) -> Vec<&CanRow> {
     let rows: Vec<&CanRow> = if state.can_observer {
         state
@@ -1232,7 +1143,7 @@ fn candidate_can_rows(state: &State) -> Vec<&CanRow> {
     }
 }
 
-fn render_bus(f: &mut ratatui::Frame, area: Rect, state: &State) {
+fn render_bus(frame: &mut ratatui::Frame, area: Rect, state: &State) {
     let inner_h = area.height.saturating_sub(2) as usize;
     let inner_w = area.width.saturating_sub(2) as usize;
 
@@ -1243,10 +1154,7 @@ fn render_bus(f: &mut ratatui::Frame, area: Rect, state: &State) {
         String::new()
     };
 
-    // Two paths: no-filter (cheap — iterate the underlying store
-    // directly without materialising a 4000-entry Vec per render)
-    // and filtered (must walk everything to compute total + scroll
-    // range, so we build the Vec once).
+    // Unfiltered, the feed is read in place rather than collected per render.
     let (lines, total): (Vec<Line>, usize) = if filter_active {
         let rows: Vec<&BusRow> = if state.bus_observer {
             state
@@ -1297,9 +1205,6 @@ fn render_bus(f: &mut ratatui::Frame, area: Rect, state: &State) {
             .collect();
         (lines, total)
     } else {
-        // Fast path: no filter, chronological. Start is the tail of
-        // `state.bus` sized for the pane; iterate directly from the
-        // VecDeque without building a Vec of references.
         let total = state.bus.len();
         let start = if state.bus_follow {
             total.saturating_sub(inner_h)
@@ -1343,7 +1248,7 @@ fn render_bus(f: &mut ratatui::Frame, area: Rect, state: &State) {
         .borders(Borders::ALL)
         .border_style(focus_style(state, Focus::Bus));
 
-    f.render_widget(
+    frame.render_widget(
         Paragraph::new(lines)
             .block(block)
             .wrap(Wrap { trim: false }),
@@ -1351,11 +1256,8 @@ fn render_bus(f: &mut ratatui::Frame, area: Rect, state: &State) {
     );
 }
 
-/// Build a `Line` for one `BusRow` at render time. Source + name
-/// columns are padded; the value is rendered bold-yellow when it
-/// differs from the previous observation of the same `(source,
-/// name)`. Optional `@N Hz` tag on the source column advertises the
-/// broadcast rate.
+/// The `Line` for one `BusRow`: padded source and name columns, the
+/// `@N Hz` rate, and the value highlighted when it changed.
 fn format_bus_row(row: &BusRow, state: &State) -> Line<'static> {
     let color = state
         .by_node
@@ -1394,9 +1296,7 @@ fn format_bus_row(row: &BusRow, state: &State) -> Line<'static> {
     ])
 }
 
-/// Tail-aware visible-start for the Bus pane. Estimates rendered
-/// width cheaply; used when `bus_follow` is on so the pane sticks to
-/// the newest rows.
+/// Index of the first Bus row to draw so the newest rows fill the pane.
 fn visible_start_bus_refs(
     rows: &[&BusRow],
     inner_h: usize,
@@ -1420,9 +1320,7 @@ fn visible_start_bus_refs(
     0
 }
 
-fn render_can(f: &mut ratatui::Frame, area: Rect, state: &State) {
-    // Everything downstream (scroll clamp, follow tail, rendering)
-    // operates on the observer-or-chronological-then-filtered slice.
+fn render_can(frame: &mut ratatui::Frame, area: Rect, state: &State) {
     let rows = candidate_can_rows(state);
 
     let pause = if state.can_paused {
@@ -1476,7 +1374,7 @@ fn render_can(f: &mut ratatui::Frame, area: Rect, state: &State) {
         .skip(start)
         .map(|row| format_can_row(row, state, state.can_view))
         .collect();
-    f.render_widget(
+    frame.render_widget(
         Paragraph::new(lines)
             .block(block)
             .wrap(Wrap { trim: false }),
@@ -1484,17 +1382,13 @@ fn render_can(f: &mut ratatui::Frame, area: Rect, state: &State) {
     );
 }
 
-/// Case-insensitive substring match against the row's pre-computed
-/// `haystack_lc`. Cheap enough to run against every row on every
-/// render tick.
+/// Case-insensitive substring match against the row's `haystack_lc`.
 fn row_matches(row: &CanRow, needle_lc: &str) -> bool {
     row.haystack_lc.contains(needle_lc)
 }
 
-/// Build the `Line` for one `CanRow` at render time. Prefix is padded
-/// to the widest observed prefix so the signals column lines up. The
-/// `view` mode picks which half of the body (decoded signals, raw
-/// hex, or both) is shown.
+/// The `Line` for one `CanRow`, its prefix padded so the signals line up;
+/// `view` picks decoded signals, raw hex or both.
 fn format_can_row(row: &CanRow, state: &State, view: CanView) -> Line<'static> {
     let color = state
         .by_node
@@ -1505,8 +1399,6 @@ fn format_can_row(row: &CanRow, state: &State, view: CanView) -> Line<'static> {
     let node_col = truncate_pad(&row.node, state.can_node_w.max(1) as usize);
     let net_col = truncate_pad(&row.network, state.can_net_w.max(1) as usize);
     let frame_col = truncate_pad(&row.frame, state.can_frame_w.max(1) as usize);
-    // Rate column: right-aligned, fixed width so signals still line up
-    // whether or not we have a sample yet.
     let rate_col = match row.ema_hz {
         Some(hz) if hz >= MIN_HZ_DISPLAY => {
             format!("{:>w$}", format!("@{}Hz", format_hz(hz)), w = RATE_W)
@@ -1558,43 +1450,38 @@ fn format_can_row(row: &CanRow, state: &State, view: CanView) -> Line<'static> {
     Line::from(spans)
 }
 
-/// Render decoded `key=value` pairs with yellow/bold highlight on keys in
-/// `changed_keys` and dimmed styling otherwise. Keys are separated by a
-/// single space so rows stay dense even when the pair list is long.
+/// Decoded `key=value` pairs, highlighting the keys in `changed_keys`.
 fn format_signal_pairs(pairs: &[(String, String)], changed_keys: &[String]) -> Vec<Span<'static>> {
     let changed: std::collections::HashSet<&str> =
         changed_keys.iter().map(|s| s.as_str()).collect();
     let mut spans = Vec::with_capacity(pairs.len() * 2);
-    for (i, (k, v)) in pairs.iter().enumerate() {
-        if i > 0 {
+    for (index, (key, value)) in pairs.iter().enumerate() {
+        if index > 0 {
             spans.push(Span::raw(" "));
         }
-        let style = if changed.contains(k.as_str()) {
+        let style = if changed.contains(key.as_str()) {
             Style::default()
                 .fg(Color::Yellow)
                 .add_modifier(Modifier::BOLD)
         } else {
             Style::default().add_modifier(Modifier::DIM)
         };
-        spans.push(Span::styled(format!("{}={}", k, v), style));
+        spans.push(Span::styled(format!("{}={}", key, value), style));
     }
     spans
 }
 
-/// Fixed rate-column width so the signals column starts at the
-/// same column on every row even when the rate isn't known yet.
+/// Fixed, so the signals line up whether or not a rate is known.
 const RATE_W: usize = 9;
 
-/// Truncate `s` with an ellipsis if it would exceed `width`, else
-/// pad with spaces to exactly `width`. Keeps the columns aligned
-/// even when a single value is longer than our per-column cap.
-fn truncate_pad(s: &str, width: usize) -> String {
-    if s.chars().count() > width {
-        let mut out: String = s.chars().take(width.saturating_sub(1)).collect();
-        out.push('…');
-        out
+/// `text` truncated with an ellipsis or padded to exactly `width`.
+fn truncate_pad(text: &str, width: usize) -> String {
+    if text.chars().count() > width {
+        let mut truncated: String = text.chars().take(width.saturating_sub(1)).collect();
+        truncated.push('…');
+        truncated
     } else {
-        format!("{:<width$}", s, width = width)
+        format!("{:<width$}", text, width = width)
     }
 }
 
@@ -1610,31 +1497,33 @@ fn format_hz(hz: f32) -> String {
     }
 }
 
-/// Best-effort split of a rendered signals string (`k1=v1 k2=v2 …`)
-/// into `(key, value)` pairs. Splits on ` <ident>=` boundaries so
-/// values containing internal spaces (tuples, lists) survive intact.
-/// Empty input → empty list.
+/// Best-effort split of a signals string (`k1=v1 k2={:ok, 42}`) into
+/// `(key, value)` pairs, on ` <ident>=` boundaries so values with spaces
+/// survive intact.
 fn parse_signal_pairs(signals: &str) -> Vec<(String, String)> {
     if signals.is_empty() {
         return Vec::new();
     }
     let bytes = signals.as_bytes();
     let mut starts: Vec<usize> = vec![0];
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b' ' {
-            // Skip whitespace run.
-            let mut j = i + 1;
-            // Next token must be an identifier followed by `=`.
-            let ident_start = j;
-            while j < bytes.len() && (bytes[j].is_ascii_alphanumeric() || bytes[j] == b'_') {
-                j += 1;
+    let mut position = 0;
+    while position < bytes.len() {
+        if bytes[position] == b' ' {
+            let mut identifier_end = position + 1;
+            let ident_start = identifier_end;
+            while identifier_end < bytes.len()
+                && (bytes[identifier_end].is_ascii_alphanumeric() || bytes[identifier_end] == b'_')
+            {
+                identifier_end += 1;
             }
-            if j > ident_start && j < bytes.len() && bytes[j] == b'=' {
-                starts.push(i + 1);
+            if identifier_end > ident_start
+                && identifier_end < bytes.len()
+                && bytes[identifier_end] == b'='
+            {
+                starts.push(position + 1);
             }
         }
-        i += 1;
+        position += 1;
     }
     starts.push(bytes.len() + 1);
 
@@ -1645,30 +1534,34 @@ fn parse_signal_pairs(signals: &str) -> Vec<(String, String)> {
         if start_pos >= end_pos {
             continue;
         }
-        let tok = &signals[start_pos..end_pos];
-        let tok = tok.trim();
-        if let Some(eq) = tok.find('=') {
-            pairs.push((tok[..eq].to_string(), tok[eq + 1..].to_string()));
+        let token = &signals[start_pos..end_pos];
+        let token = token.trim();
+        if let Some(equals) = token.find('=') {
+            pairs.push((token[..equals].to_string(), token[equals + 1..].to_string()));
         }
     }
     pairs
 }
 
-/// Keys whose value differs between two observations of the same
-/// `(node, network, frame)`. New keys added in `new` count as
-/// changed. Keys that disappeared are ignored — we render whatever
-/// the latest observation carried.
+/// Keys whose value differs between two observations of one `CanKey`;
+/// a new key counts as changed, a removed one is ignored.
 fn diff_pairs(prev: &[(String, String)], new: &[(String, String)]) -> Vec<String> {
-    let prev_map: HashMap<&str, &str> =
-        prev.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+    let prev_map: HashMap<&str, &str> = prev
+        .iter()
+        .map(|(key, value)| (key.as_str(), value.as_str()))
+        .collect();
     new.iter()
-        .filter(|(k, v)| prev_map.get(k.as_str()).map(|p| *p != v).unwrap_or(true))
-        .map(|(k, _)| k.clone())
+        .filter(|(key, value)| {
+            prev_map
+                .get(key.as_str())
+                .map(|previous| *previous != value)
+                .unwrap_or(true)
+        })
+        .map(|(key, _)| key.clone())
         .collect()
 }
 
-/// Pre-build the lowercase haystack the `/` filter searches against.
-/// One allocation per push instead of five per match during render.
+/// The lowercase text the `/` filter searches.
 fn build_haystack(node: &str, network: &str, frame: &str, signals: &str, raw: &str) -> String {
     let mut haystack = String::with_capacity(
         node.len() + network.len() + frame.len() + signals.len() + raw.len() + 4,
@@ -1685,10 +1578,8 @@ fn build_haystack(node: &str, network: &str, frame: &str, signals: &str, raw: &s
     haystack
 }
 
-/// Tail-aware start-of-view computation for the CAN pane. Takes a
-/// slice of `&CanRow` so it works identically for the chronological
-/// `VecDeque<CanRow>` and the observer view (lookup into
-/// `can_tracks`).
+/// Index of the first CAN row to draw so the newest rows fill the pane,
+/// for the chronological feed and the observer view alike.
 fn visible_start_refs(
     rows: &[&CanRow],
     inner_h: usize,
@@ -1735,10 +1626,8 @@ fn visible_start_refs(
     0
 }
 
-/// Walk stored lines from newest to oldest, summing visual rows each would
-/// occupy at width `inner_w` with wrap enabled. Stop when the next line
-/// would overflow `inner_h`. Returns the index of the first stored line to
-/// render so that the newest entries remain visible at the pane bottom.
+/// Index of the first line to draw so the newest lines, wrapped at
+/// `inner_w`, fill the `inner_h` rows.
 fn visible_start(lines: &VecDeque<Line<'static>>, inner_h: usize, inner_w: usize) -> usize {
     if inner_h == 0 || inner_w == 0 || lines.is_empty() {
         return lines.len();
@@ -1755,15 +1644,12 @@ fn visible_start(lines: &VecDeque<Line<'static>>, inner_h: usize, inner_w: usize
     0
 }
 
-fn render_shell(f: &mut ratatui::Frame, area: Rect, state: &State) {
+fn render_shell(frame: &mut ratatui::Frame, area: Rect, state: &State) {
     let current_color = state
         .by_node
         .get(&state.current)
         .map(|n| n.color)
         .unwrap_or(Color::Cyan);
-    // Shell pane keeps a short "IEx · <node>" title in the node's accent
-    // colour; the tab strip directly above is the primary "which node am I
-    // driving" selector.
     let title = format!(
         " IEx · {}{} ",
         state.current,
@@ -1779,7 +1665,7 @@ fn render_shell(f: &mut ratatui::Frame, area: Rect, state: &State) {
         .borders(Borders::ALL)
         .border_style(focus_style(state, Focus::Shell));
     let inner = block.inner(area);
-    f.render_widget(block, area);
+    frame.render_widget(block, area);
 
     let rows = Layout::default()
         .direction(Direction::Vertical)
@@ -1807,7 +1693,7 @@ fn render_shell(f: &mut ratatui::Frame, area: Rect, state: &State) {
 
     let out_lines: Vec<Line> = shell_out.iter().skip(start).cloned().collect();
 
-    f.render_widget(
+    frame.render_widget(
         Paragraph::new(out_lines).wrap(Wrap { trim: false }),
         out_area,
     );
@@ -1816,34 +1702,29 @@ fn render_shell(f: &mut ratatui::Frame, area: Rect, state: &State) {
         Span::styled("❯ ", Style::default().fg(current_color)),
         Span::raw(state.input.clone()),
     ]);
-    f.render_widget(Paragraph::new(input_line), input_area);
+    frame.render_widget(Paragraph::new(input_line), input_area);
 
     if state.focus == Focus::Shell {
         let col = input_area.x + 2 + state.cursor as u16;
         let max_col = input_area.x + input_area.width.saturating_sub(1);
-        f.set_cursor_position((col.min(max_col), input_area.y));
+        frame.set_cursor_position((col.min(max_col), input_area.y));
     }
 }
 
-fn render_status(f: &mut ratatui::Frame, area: Rect, state: &State) {
-    // Toast overrides the footer for ~3s after an action that wants
-    // feedback (Ctrl-Y copy, etc). Falls back to the key-hint line
-    // when expired.
+fn render_status(frame: &mut ratatui::Frame, area: Rect, state: &State) {
     let bar_style = Style::default().fg(Color::White).bg(Color::DarkGray);
 
-    if let Some((ref msg, at)) = state.toast {
+    if let Some((ref message, at)) = state.toast {
         if at.elapsed() < TOAST_TTL {
             let toast_style = Style::default().fg(Color::Black).bg(Color::LightGreen);
-            let p = Paragraph::new(vec![Line::from(""), Line::from(format!(" {} ", msg))])
-                .style(toast_style);
-            f.render_widget(p, area);
+            let paragraph =
+                Paragraph::new(vec![Line::from(""), Line::from(format!(" {} ", message))])
+                    .style(toast_style);
+            frame.render_widget(paragraph, area);
             return;
         }
     }
 
-    // Edit-mode replaces the footer with a live prompt. Lets the user
-    // see what they're typing without stealing screen space from the
-    // Bus/CAN pane above.
     if state.can_filter_editing || state.bus_filter_editing {
         let text = if state.can_filter_editing {
             &state.can_filter
@@ -1851,7 +1732,7 @@ fn render_status(f: &mut ratatui::Frame, area: Rect, state: &State) {
             &state.bus_filter
         };
         let prompt_style = Style::default().fg(Color::Black).bg(Color::Yellow);
-        let p = Paragraph::new(vec![
+        let paragraph = Paragraph::new(vec![
             Line::from(""),
             Line::from(vec![
                 Span::styled(" /", prompt_style),
@@ -1860,7 +1741,7 @@ fn render_status(f: &mut ratatui::Frame, area: Rect, state: &State) {
             ]),
         ])
         .style(bar_style);
-        f.render_widget(p, area);
+        frame.render_widget(paragraph, area);
         return;
     }
 
@@ -1870,9 +1751,6 @@ fn render_status(f: &mut ratatui::Frame, area: Rect, state: &State) {
         Focus::Can => "can",
         Focus::Shell => "shell",
     };
-    // The tab strip just above the shell advertises the F-key node map;
-    // this footer stays focused on universal pane / editor / exit bindings
-    // plus the pane-specific hints users most often need.
     let pane_keys = match state.focus {
         Focus::Bus => {
             let obs = if state.bus_observer { "on" } else { "off" };
@@ -1910,27 +1788,24 @@ fn render_status(f: &mut ratatui::Frame, area: Rect, state: &State) {
             focus_label, pane_keys, fs, copy_key,
         )
     };
-    let p = Paragraph::new(vec![Line::from(""), Line::from(help)]).style(bar_style);
-    f.render_widget(p, area);
+    let paragraph = Paragraph::new(vec![Line::from(""), Line::from(help)]).style(bar_style);
+    frame.render_widget(paragraph, area);
 }
 
-fn focus_style(state: &State, f: Focus) -> Style {
-    if state.focus == f {
+fn focus_style(state: &State, pane: Focus) -> Style {
+    if state.focus == pane {
         Style::default()
             .fg(Color::Cyan)
             .add_modifier(Modifier::BOLD)
     } else {
-        // Use the terminal's default foreground so the border is legible on
-        // both light and dark themes — DarkGray is invisible on most light
-        // schemes and the pane loses its frame entirely.
+        // The default foreground: DarkGray vanishes on light themes.
         Style::default()
     }
 }
 
-/// Title style for an unfocused pane — visible but quiet. When focused, we
-/// let `border_style` on the block render the title in the focus colour.
-fn title_style(state: &State, f: Focus) -> Style {
-    if state.focus == f {
+/// Title style: quiet when unfocused; focused, the block's `border_style` colours it.
+fn title_style(state: &State, pane: Focus) -> Style {
+    if state.focus == pane {
         Style::default()
             .fg(Color::Cyan)
             .add_modifier(Modifier::BOLD)
@@ -1939,11 +1814,9 @@ fn title_style(state: &State, f: Focus) -> Style {
     }
 }
 
-/// " ● MAX " badge appended to a pane title when that pane is the
-/// fullscreen focus. Empty string otherwise so the title collapses
-/// back to normal seamlessly.
-fn max_badge(state: &State, f: Focus) -> &'static str {
-    if state.maximized && state.focus == f {
+/// " ● MAX " badge for the title of the fullscreen pane, else empty.
+fn max_badge(state: &State, pane: Focus) -> &'static str {
+    if state.maximized && state.focus == pane {
         " ● MAX"
     } else {
         ""
@@ -1951,9 +1824,6 @@ fn max_badge(state: &State, f: Focus) -> &'static str {
 }
 
 fn handle_key(state: &mut State, code: KeyCode, mods: KeyModifiers) -> Result<()> {
-    // Filter-editing mode: intercept every keystroke and feed it
-    // into the active pane's filter string. Runs before the global
-    // bindings so Ctrl-C still quits and Esc exits edit mode.
     if state.can_filter_editing || state.bus_filter_editing {
         handle_filter_edit_key(state, code, mods);
         return Ok(());
@@ -1971,10 +1841,7 @@ fn handle_key(state: &mut State, code: KeyCode, mods: KeyModifiers) -> Result<()
         state.cycle(-1);
         return Ok(());
     }
-    // Ctrl-Y (universal, works in Shell) or plain `y` / `c` when the
-    // focus is a read-only pane (Shell would swallow plain chars into
-    // its input buffer). Both copy the focused pane to the system
-    // clipboard via OSC 52 and a /tmp fallback.
+    // Plain `y` / `c` copy only outside Shell, which takes them as input.
     let ctrl_y = matches!(code, KeyCode::Char('y') | KeyCode::Char('Y'))
         && mods.contains(KeyModifiers::CONTROL);
     let plain_copy = state.focus != Focus::Shell
@@ -1986,17 +1853,13 @@ fn handle_key(state: &mut State, code: KeyCode, mods: KeyModifiers) -> Result<()
         handle_copy(state);
         return Ok(());
     }
-    if let KeyCode::F(n) = code {
-        if (1..=9).contains(&n) {
-            state.jump((n - 1) as usize);
+    if let KeyCode::F(number) = code {
+        if (1..=9).contains(&number) {
+            state.jump((number - 1) as usize);
             return Ok(());
         }
     }
-    // Alt-Enter toggles fullscreen for the focused pane. Enter alone
-    // submits in Shell / is used by pane scrollers; the Alt modifier
-    // keeps this unambiguous even when Shell has focus. Chosen over
-    // F11 because many terminal emulators hijack F11 for their own
-    // fullscreen.
+    // Not F11, which many terminal emulators take for their own fullscreen.
     if code == KeyCode::Enter && mods.contains(KeyModifiers::ALT) {
         state.maximized = !state.maximized;
         return Ok(());
@@ -2063,7 +1926,7 @@ fn handle_filter_edit_key(state: &mut State, code: KeyCode, mods: KeyModifiers) 
         KeyCode::Backspace => {
             filter.pop();
         }
-        KeyCode::Char(c) => filter.push(c),
+        KeyCode::Char(character) => filter.push(character),
         _ => {}
     }
 }
@@ -2095,9 +1958,7 @@ fn handle_pane_specific_key(state: &mut State, code: KeyCode) -> bool {
             }
             KeyCode::Char('o') => {
                 state.can_observer = !state.can_observer;
-                // Observer view is a different index space than the
-                // chronological VecDeque; reset scroll to avoid
-                // clamping weirdness.
+                // The observer view has its own row indices.
                 state.can_scroll = 0;
                 state.can_follow = true;
                 true
@@ -2123,16 +1984,11 @@ fn handle_pane_scroll(
 ) {
     match code {
         KeyCode::Char('q') | KeyCode::Esc => *quit = true,
-        // Space toggles a hard freeze: `paused` gates the push side so
-        // messages stop entering the buffer, and `follow` goes off so the
-        // view holds its current offset instead of auto-tailing. Unpause
-        // resumes both.
+        // Freeze: new messages are dropped and the view stops following.
         KeyCode::Char(' ') | KeyCode::Char('p') => {
             *paused = !*paused;
             if *paused {
                 *follow = false;
-                // Pin scroll to the tail so the pane freezes on the
-                // messages the user was just looking at.
                 *scroll = row_count.saturating_sub(1) as u16;
             } else {
                 *follow = true;
@@ -2208,14 +2064,10 @@ fn handle_shell(state: &mut State, code: KeyCode) -> Result<()> {
         KeyCode::Enter => {
             let line = std::mem::take(&mut state.input);
             state.cursor = 0;
-            state.history_idx = None;
-            if let Some(n) = state.by_node.get(&state.current) {
-                // Always queue to the supervisor's stdin channel — the
-                // supervisor drains queued input on reconnect so stale
-                // commands typed while the node was down don't hit the
-                // fresh session. Sending while down is a no-op on the
-                // far side.
-                let _ = n.stdin.send(format!("{}\n", line));
+            state.history_index = None;
+            if let Some(node_state) = state.by_node.get(&state.current) {
+                // Input typed while the node is down is dropped by its supervisor.
+                let _ = node_state.stdin.send(format!("{}\n", line));
             }
             if !line.is_empty() {
                 let color = state
@@ -2235,9 +2087,9 @@ fn handle_shell(state: &mut State, code: KeyCode) -> Result<()> {
             }
             state.shell_follow = true;
         }
-        KeyCode::Char(c) => {
-            state.input.insert(state.cursor, c);
-            state.cursor += c.len_utf8();
+        KeyCode::Char(character) => {
+            state.input.insert(state.cursor, character);
+            state.cursor += character.len_utf8();
         }
         KeyCode::Backspace => {
             if state.cursor > 0 {
@@ -2256,23 +2108,23 @@ fn handle_shell(state: &mut State, code: KeyCode) -> Result<()> {
         KeyCode::End => state.cursor = state.input.len(),
         KeyCode::Up => {
             if !state.history.is_empty() {
-                let new_idx = match state.history_idx {
+                let new_index = match state.history_index {
                     None => state.history.len() - 1,
                     Some(0) => 0,
-                    Some(i) => i - 1,
+                    Some(index) => index - 1,
                 };
-                state.history_idx = Some(new_idx);
-                state.input = state.history[new_idx].clone();
+                state.history_index = Some(new_index);
+                state.input = state.history[new_index].clone();
                 state.cursor = state.input.len();
             }
         }
         KeyCode::Down => {
-            if let Some(i) = state.history_idx {
-                if i + 1 < state.history.len() {
-                    state.history_idx = Some(i + 1);
-                    state.input = state.history[i + 1].clone();
+            if let Some(index) = state.history_index {
+                if index + 1 < state.history.len() {
+                    state.history_index = Some(index + 1);
+                    state.input = state.history[index + 1].clone();
                 } else {
-                    state.history_idx = None;
+                    state.history_index = None;
                     state.input.clear();
                 }
                 state.cursor = state.input.len();
@@ -2283,33 +2135,33 @@ fn handle_shell(state: &mut State, code: KeyCode) -> Result<()> {
     Ok(())
 }
 
-fn prev_char_boundary(s: &str, i: usize) -> usize {
-    if i == 0 {
+fn prev_char_boundary(text: &str, index: usize) -> usize {
+    if index == 0 {
         return 0;
     }
-    let mut j = i - 1;
-    while j > 0 && !s.is_char_boundary(j) {
-        j -= 1;
+    let mut boundary = index - 1;
+    while boundary > 0 && !text.is_char_boundary(boundary) {
+        boundary -= 1;
     }
-    j
+    boundary
 }
 
-fn next_char_boundary(s: &str, i: usize) -> usize {
-    let mut j = i + 1;
-    let len = s.len();
-    while j < len && !s.is_char_boundary(j) {
-        j += 1;
+fn next_char_boundary(text: &str, index: usize) -> usize {
+    let mut boundary = index + 1;
+    let len = text.len();
+    while boundary < len && !text.is_char_boundary(boundary) {
+        boundary += 1;
     }
-    j.min(len)
+    boundary.min(len)
 }
 
 /// Flatten a `Line`'s span content into plain text, dropping styling.
 fn line_to_plain(line: &Line) -> String {
-    let mut out = String::new();
+    let mut text = String::new();
     for span in &line.spans {
-        out.push_str(span.content.as_ref());
+        text.push_str(span.content.as_ref());
     }
-    out
+    text
 }
 
 /// Gather the currently-visible content of the focused pane as plain
@@ -2346,8 +2198,9 @@ fn pane_snapshot(state: &State) -> (&'static str, String) {
             let text = state
                 .by_node
                 .get(&state.current)
-                .map(|n| {
-                    n.shell_out
+                .map(|node_state| {
+                    node_state
+                        .shell_out
                         .iter()
                         .map(line_to_plain)
                         .collect::<Vec<_>>()
@@ -2403,14 +2256,9 @@ fn handle_copy(state: &mut State) {
     // Best effort: a failed write only drops the file from the toast.
     let copy_file = write_copy_file(label, &text);
 
-    let clip_slice = clip_to_boundary(&text, CLIPBOARD_CAP);
+    let clip_slice = clip_to_boundary(&text, CLIPBOARD_CAP_BYTES);
     let clipped = clip_slice.len() < text.len();
 
-    // Prefer a native clipboard helper (wl-copy / xclip / xsel /
-    // pbcopy) so we work reliably on Linux desktops where tmux /
-    // gnome-terminal / konsole silently drop OSC 52. Fall back to
-    // OSC 52 when nothing is available (mostly ssh sessions into
-    // headless hosts).
     let (method, copy_ok) = copy_to_clipboard(clip_slice);
 
     let file_note = match &copy_file {
@@ -2440,9 +2288,7 @@ fn handle_copy(state: &mut State) {
     ));
 }
 
-/// Carve out the tail of `text` — newest content is what users typically
-/// want when the buffer overflows. Slice at a UTF-8 char boundary so base64
-/// encoding doesn't mangle multibyte chars (CAN rows can carry `·`, `❚❚`).
+/// The newest `cap` bytes of `text`, cut at a UTF-8 character boundary.
 fn clip_to_boundary(text: &str, cap: usize) -> &str {
     if text.len() <= cap {
         return text;
@@ -2454,16 +2300,9 @@ fn clip_to_boundary(text: &str, cap: usize) -> &str {
     &text[start..]
 }
 
-/// Push `text` onto the system clipboard using whichever mechanism the
-/// host provides. Tries, in order:
-/// 1. `wl-copy` (Wayland)
-/// 2. `xclip -selection clipboard` (X11)
-/// 3. `xsel --clipboard --input` (X11 alternative)
-/// 4. `pbcopy` (macOS)
-/// 5. OSC 52 via the terminal (SSH-friendly, but many terminals drop
-///    it — that's exactly why this is last).
-///
-/// Returns `(method_name, ok)`.
+/// Push `text` onto the system clipboard with the first helper that works
+/// (`wl-copy`, `xclip`, `xsel`, `pbcopy`), else OSC 52, which tmux,
+/// gnome-terminal and konsole drop by default. Returns `(method, copied)`.
 fn copy_to_clipboard(text: &str) -> (&'static str, bool) {
     use std::process::{Command, Stdio};
 
@@ -2473,8 +2312,8 @@ fn copy_to_clipboard(text: &str) -> (&'static str, bool) {
         ("xsel", "xsel", &["--clipboard", "--input"]),
         ("pbcopy", "pbcopy", &[]),
     ];
-    for (name, cmd, args) in helpers {
-        let mut spawn = Command::new(cmd);
+    for (name, program, args) in helpers {
+        let mut spawn = Command::new(program);
         spawn.args(*args);
         spawn.stdin(Stdio::piped());
         spawn.stdout(Stdio::null());
@@ -2485,8 +2324,8 @@ fn copy_to_clipboard(text: &str) -> (&'static str, bool) {
                     let wrote = stdin.write_all(text.as_bytes()).is_ok();
                     drop(stdin);
                     let waited = child.wait();
-                    let ok = wrote && waited.map(|s| s.success()).unwrap_or(false);
-                    if ok {
+                    let copied = wrote && waited.map(|status| status.success()).unwrap_or(false);
+                    if copied {
                         return (*name, true);
                     }
                 }
@@ -2495,43 +2334,9 @@ fn copy_to_clipboard(text: &str) -> (&'static str, bool) {
         }
     }
 
-    // OSC 52 last-ditch. `c` = CLIPBOARD selection (not PRIMARY).
-    let encoded = base64_encode(text.as_bytes());
+    // `c` is the CLIPBOARD selection, not PRIMARY.
+    let encoded = STANDARD.encode(text.as_bytes());
     let wrote = write!(std::io::stdout(), "\x1b]52;c;{}\x07", encoded).is_ok();
     let _ = std::io::stdout().flush();
     ("osc52", wrote)
-}
-
-/// Minimal RFC 4648 base64 encoder (standard alphabet, `=` padding).
-/// Hand-rolled to avoid pulling in a dependency just for OSC 52.
-fn base64_encode(input: &[u8]) -> String {
-    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity(input.len().div_ceil(3) * 4);
-    let chunks = input.chunks_exact(3);
-    let rem = chunks.remainder();
-    for c in chunks {
-        let triple = ((c[0] as u32) << 16) | ((c[1] as u32) << 8) | c[2] as u32;
-        out.push(ALPHABET[((triple >> 18) & 0x3f) as usize] as char);
-        out.push(ALPHABET[((triple >> 12) & 0x3f) as usize] as char);
-        out.push(ALPHABET[((triple >> 6) & 0x3f) as usize] as char);
-        out.push(ALPHABET[(triple & 0x3f) as usize] as char);
-    }
-    match rem.len() {
-        1 => {
-            let triple = (rem[0] as u32) << 16;
-            out.push(ALPHABET[((triple >> 18) & 0x3f) as usize] as char);
-            out.push(ALPHABET[((triple >> 12) & 0x3f) as usize] as char);
-            out.push('=');
-            out.push('=');
-        }
-        2 => {
-            let triple = ((rem[0] as u32) << 16) | ((rem[1] as u32) << 8);
-            out.push(ALPHABET[((triple >> 18) & 0x3f) as usize] as char);
-            out.push(ALPHABET[((triple >> 12) & 0x3f) as usize] as char);
-            out.push(ALPHABET[((triple >> 6) & 0x3f) as usize] as char);
-            out.push('=');
-        }
-        _ => {}
-    }
-    out
 }

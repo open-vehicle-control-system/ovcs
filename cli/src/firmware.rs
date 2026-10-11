@@ -3,25 +3,25 @@ use std::collections::HashMap;
 
 use crate::vehicles::{self, Vehicle};
 
-pub fn static_applications() -> &'static [&'static str] {
+pub fn static_roles() -> &'static [&'static str] {
     &["vms", "infotainment"]
 }
 
-pub fn applications_for(vehicle: &Vehicle) -> Result<Vec<String>> {
-    let mut out = Vec::new();
-    for app in static_applications() {
-        if vehicles::nerves_target(vehicle, app)?.is_some() {
-            out.push(app.to_string());
+pub fn roles_for(vehicle: &Vehicle) -> Result<Vec<String>> {
+    let mut roles = Vec::new();
+    for role in static_roles() {
+        if vehicles::nerves_target(vehicle, role)?.is_some() {
+            roles.push(role.to_string());
         }
     }
     let bridges = vehicles::bridge_firmwares(vehicle)?;
-    out.extend(bridges.into_keys().map(|id| format!("bridge-{}", id)));
-    Ok(out)
+    roles.extend(bridges.into_keys().map(|id| format!("bridge-{}", id)));
+    Ok(roles)
 }
 
-/// If `application` is a `bridge-<id>` role, return the bare bridge id.
-pub fn bridge_id(application: &str) -> Option<&str> {
-    application.strip_prefix("bridge-")
+/// If `role` is a `bridge-<id>` role, return the bare bridge id.
+pub fn bridge_id(role: &str) -> Option<&str> {
+    role.strip_prefix("bridge-")
 }
 
 pub struct FirmwareResolution {
@@ -29,8 +29,8 @@ pub struct FirmwareResolution {
     pub env: HashMap<String, String>,
 }
 
-pub fn resolve(vehicle: &Vehicle, application: &str) -> Result<FirmwareResolution> {
-    let static_dir = match application {
+pub fn resolve(vehicle: &Vehicle, role: &str) -> Result<FirmwareResolution> {
+    let static_dir = match role {
         "vms" => Some("vms/firmware"),
         "infotainment" => Some("infotainment/firmware"),
         _ => None,
@@ -39,7 +39,7 @@ pub fn resolve(vehicle: &Vehicle, application: &str) -> Result<FirmwareResolutio
     if let Some(dir) = static_dir {
         let mut env = HashMap::new();
         env.insert("VEHICLE".to_string(), vehicle.module.clone());
-        if let Some(target) = vehicles::nerves_target(vehicle, application)? {
+        if let Some(target) = vehicles::nerves_target(vehicle, role)? {
             env.insert("MIX_TARGET".to_string(), target);
         }
         return Ok(FirmwareResolution {
@@ -49,16 +49,16 @@ pub fn resolve(vehicle: &Vehicle, application: &str) -> Result<FirmwareResolutio
     }
 
     let bridges = vehicles::bridge_firmwares(vehicle)?;
-    let id = bridge_id(application).unwrap_or("");
+    let id = bridge_id(role).unwrap_or("");
     let Some(entry) = bridges.get(id) else {
-        let valid: Vec<String> = static_applications()
+        let valid: Vec<String> = static_roles()
             .iter()
             .map(|s| s.to_string())
             .chain(bridges.keys().map(|k| format!("bridge-{}", k)))
             .collect();
         bail!(
             "Unknown role {:?} for vehicle {}.\nExpected one of: {}",
-            application,
+            role,
             vehicle.dir,
             valid.join(", ")
         );
