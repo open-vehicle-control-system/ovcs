@@ -152,51 +152,34 @@ defmodule RosBridge.Inference.DnnIntegrationTest do
   end
 
   describe "on the GPU" do
+    # Excluded by test_helper.exs when there is no OpenCL device.
     @describetag :gpu
 
-    setup do
-      if Evision.OCL.haveOpenCL() and Evision.OCL.useOpenCL() do
-        :ok
-      else
-        # Skipped rather than failed: CI runners have no OpenCL device,
-        # and a red build there would say nothing about this code.
-        {:ok, skip: true}
-      end
-    end
+    test "OpenCL produces the same numbers as the CPU" do
+      cpu = detect_and_await(start_backend(:cpu))
+      gpu = detect_and_await(start_backend(:opencl))
 
-    test "OpenCL produces the same numbers as the CPU", context do
-      if context[:skip] do
-        assert true
-      else
-        cpu = detect_and_await(start_backend(:cpu))
-        gpu = detect_and_await(start_backend(:opencl))
+      assert length(cpu) == length(gpu)
 
-        assert length(cpu) == length(gpu)
+      for {c, g} <- Enum.zip(cpu, gpu) do
+        assert c.class_id == g.class_id
+        assert_in_delta c.score, g.score, 1.0e-5
 
-        for {c, g} <- Enum.zip(cpu, gpu) do
-          assert c.class_id == g.class_id
-          assert_in_delta c.score, g.score, 1.0e-5
-
-          for key <- [:x0, :y0, :x1, :y1] do
-            assert_in_delta Map.fetch!(c, key), Map.fetch!(g, key), 1.0e-4
-          end
+        for key <- [:x0, :y0, :x1, :y1] do
+          assert_in_delta Map.fetch!(c, key), Map.fetch!(g, key), 1.0e-4
         end
       end
     end
 
-    test "FP16 stays within half-precision tolerance of the CPU", context do
-      if context[:skip] do
-        assert true
-      else
-        cpu = detect_and_await(start_backend(:cpu))
-        fp16 = detect_and_await(start_backend(:opencl_fp16))
+    test "FP16 stays within half-precision tolerance of the CPU" do
+      cpu = detect_and_await(start_backend(:cpu))
+      fp16 = detect_and_await(start_backend(:opencl_fp16))
 
-        assert length(cpu) == length(fp16)
-        # Looser than FP32 on purpose: half precision is expected to
-        # differ slightly, and pretending otherwise would make this
-        # test flaky on other hardware.
-        for {c, f} <- Enum.zip(cpu, fp16), do: assert_in_delta(c.score, f.score, 1.0e-2)
-      end
+      assert length(cpu) == length(fp16)
+      # Looser than FP32 on purpose: half precision is expected to
+      # differ slightly, and pretending otherwise would make this
+      # test flaky on other hardware.
+      for {c, f} <- Enum.zip(cpu, fp16), do: assert_in_delta(c.score, f.score, 1.0e-2)
     end
   end
 
