@@ -3,13 +3,16 @@ defmodule VmsCore.Components.Volkswagen.Polo9N.Dashboard do
   The Volkswagen Polo 9N instrument cluster: while the contact is on,
   emits the `engine_status` frame on the CAN network named by `:network` so the
   rev counter shows the rpm published by `:rotation_per_minute_source`.
+
+  The rpm is capped at the cluster's 6,000, and an unknown (`nil`) rpm
+  shows 0.
   """
   use GenServer
   alias Cantastic.Emitter
   alias Decimal, as: D
   alias OvcsBus, as: Bus
 
-  @max_rotation_per_minute 10_000
+  @max_rotation_per_minute D.new(6_000)
   @loop_period_ms 10
 
   def start_link(args) do
@@ -71,10 +74,7 @@ defmodule VmsCore.Components.Volkswagen.Polo9N.Dashboard do
       )
       when source == state.rotation_per_minute_source do
     displayed_rotation_per_minute =
-      case D.gt?(rotation_per_minute, @max_rotation_per_minute) do
-        true -> 0
-        false -> rotation_per_minute
-      end
+      (rotation_per_minute || 0) |> D.new() |> D.min(@max_rotation_per_minute)
 
     :ok =
       Emitter.update(state.network, "engine_status", fn emitter_data ->
