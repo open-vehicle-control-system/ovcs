@@ -37,7 +37,10 @@ defmodule RosBridge.Publishers.StereoCamera do
          * `sensor_msgs/CameraInfo` on `:depth_camera_info_topic` when
            set — the left camera's intrinsics, since the depth image is
            in the rectified left frame. Without a camera_info sibling a
-           viewer cannot project the depth image.
+           viewer cannot project the depth image. Its `K` is `P`'s 3x3
+           block and `D` is zero: the image is rectified, so a consumer
+           that reaches for `K` instead of `P` still unprojects
+           correctly.
          * `sensor_msgs/PointCloud2` on `:cloud_topic` when set and the
            frame produced points.
          * the disparity pixels again as a bare 32FC1
@@ -50,7 +53,7 @@ defmodule RosBridge.Publishers.StereoCamera do
        All reuse the left frame's stamp so downstream consumers can
        pair them with the raw streams via `Header.stamp`.
 
-  ## Required opts
+  ## Required options
 
     * `:cameras` — `[{driver_module, "left"}, {driver_module,
       "right"}]`.
@@ -67,14 +70,13 @@ defmodule RosBridge.Publishers.StereoCamera do
     * `:width`, `:height` — fall-back dimensions used in
       CameraInfo when the calibration YAML doesn't supply them.
 
-  ## Optional opts
+  ## Optional options
 
     * `:pair_tolerance_ms` — max wall-clock gap between paired
-      stamps. Default 33 ms (one frame period at 30 fps); wide
-      enough for unsynchronized USB cameras with a stable phase
-      offset.
+      stamps. Default 33 ms; wide enough for unsynchronized USB
+      cameras with a stable phase offset.
     * `:camera_info_interval_frames` — republish CameraInfo every
-      Nth frame. Default 30 (≈ once per second at 30 fps).
+      Nth frame. Default 30.
     * `:depth_camera_info_topic`, `:cloud_topic`,
       `:disparity_image_topic`, `:rectified_image_topic`,
       `:right_rectified_image_topic` — each output is published only
@@ -85,23 +87,16 @@ defmodule RosBridge.Publishers.StereoCamera do
   use GenServer
   require Logger
 
-  alias RosBridge.Camera.Calibration
-  alias RosBridge.Camera.Frame
-  alias RosBridge.StereoCamera.OpenCV
-  alias RosBridge.StereoCamera.Result
-  alias RosBridge.StereoCamera.Telemetry
+  alias RosBridge.Camera.{Calibration, Frame}
+  alias RosBridge.StereoCamera.{OpenCV, Result, Telemetry}
   alias RosBridge.Timing
-  alias Ros2.SensorMsgs.Msg.CameraInfo
-  alias Ros2.SensorMsgs.Msg.PointCloud2
-  alias Ros2.SensorMsgs.Msg.CompressedImage
-  alias Ros2.SensorMsgs.Msg.Image
-  alias Ros2.SensorMsgs.Msg.RegionOfInterest
+  alias Ros2.SensorMsgs.Msg.{CameraInfo, CompressedImage, Image, PointCloud2, RegionOfInterest}
   alias Ros2.StdMsgs.Msg.Header
   alias Ros2.StereoMsgs.Msg.DisparityImage
 
   @default_pair_tolerance_ms 33
-  # Frames kept per side for pairing: a few frame periods.
-  @pair_buffer 4
+  # A few frame periods: enough to find the closest pair.
+  @frames_kept_per_side 4
   @default_camera_info_interval_frames 30
 
   def start_link(opts) do
@@ -163,8 +158,8 @@ defmodule RosBridge.Publishers.StereoCamera do
        right_frames: [],
        awaiting_result: false,
        telemetry: Telemetry.new(window: 30, label: "publisher"),
-       last_result_at: nil,
-       submit_at: nil
+       last_result_at_ns: nil,
+       submitted_at_ns: nil
      }}
   end
 
@@ -180,52 +175,47 @@ defmodule RosBridge.Publishers.StereoCamera do
   end
 
   def handle_cast({:stereo_result, %Result{} = result}, state) do
-    now = System.monotonic_time(:nanosecond)
+    now_ns = System.monotonic_time(:nanosecond)
 
-    {publish_ns, _} = time(fn -> publish_stereo(state, result) end)
+    {publish_ns, _} = measure_ns(fn -> publish_stereo(state, result) end)
 
     backend_round_trip_ns =
-      case state.submit_at do
+      case state.submitted_at_ns do
         nil -> 0
-        submit_at -> now - submit_at
+        submitted_at_ns -> now_ns - submitted_at_ns
       end
 
-    wall_ns =
-      case state.last_result_at do
+    result_interval_ns =
+      case state.last_result_at_ns do
         nil -> 0
-        last -> now - last
+        last_result_at_ns -> now_ns - last_result_at_ns
       end
 
     telemetry =
       state.telemetry
       |> Telemetry.record(:pub_stereo, publish_ns)
       |> Telemetry.record(:backend_rt, backend_round_trip_ns)
-      |> Telemetry.record(:wall, wall_ns)
+      |> Telemetry.record(:wall, result_interval_ns)
       |> Telemetry.tick()
 
     state = %{
       state
       | awaiting_result: false,
         telemetry: telemetry,
-        last_result_at: now,
-        submit_at: nil
+        last_result_at_ns: now_ns,
+        submitted_at_ns: nil
     }
 
-    # Frames may have arrived while the backend was busy; if a
-    # fresh pair is ready now, submit immediately rather than
-    # waiting for the next `:camera_frame` cast. This closes the
-    # one-frame-period gap between result-arrival and the next
-    # pair submit.
+    # Frames may have arrived while the backend was busy: submit a ready
+    # pair now rather than a frame period later.
     {:noreply, maybe_submit_pair(state)}
   end
 
-  defp time(fun) do
-    start = System.monotonic_time(:nanosecond)
-    value = fun.()
-    {System.monotonic_time(:nanosecond) - start, value}
+  defp measure_ns(fun) do
+    start_ns = System.monotonic_time(:nanosecond)
+    return_value = fun.()
+    {System.monotonic_time(:nanosecond) - start_ns, return_value}
   end
-
-  # ── per-side image + camera_info ─────────────────────────────
 
   defp publish_image(state, %Frame{label: label} = frame) do
     case Map.fetch(state.sides, label) do
@@ -236,10 +226,10 @@ defmodule RosBridge.Publishers.StereoCamera do
         }
 
         {publish_ns, _} =
-          time(fn -> publish_compressed_image(side.topic_image, header, frame) end)
+          measure_ns(fn -> publish_compressed_image(side.image_topic, header, frame) end)
 
         if rem(side.frame_counter, state.camera_info_interval_frames) == 0 do
-          publish_camera_info(side.topic_info, header, side.camera_info, frame)
+          publish_camera_info(side.camera_info_topic, header, side.camera_info, frame)
         end
 
         stage = String.to_atom("pub_#{label}")
@@ -263,48 +253,41 @@ defmodule RosBridge.Publishers.StereoCamera do
     RosBridge.ZenohClient.publish(topic, CompressedImage, message)
   end
 
-  # The depth image is *rectified*, so its camera matrix is the
-  # rectified projection P, not the raw K. Advertising a raw K next to
-  # it is an invitation to unproject with the wrong focal length — here
-  # K.fx is 536.5 against P.fx 584.7, so a consumer that reaches for K
-  # spreads the cloud 9 % too wide. There is no unrectified version of
-  # this image for K to describe, so K is set to P's 3x3 block and the
-  # distortion coefficients zeroed: whichever a consumer picks, it gets
-  # the right answer.
-  defp depth_camera_info(%CameraInfo{p: p} = base, header) do
-    [fx, s, cx, _tx, _, fy, cy, _ty, _, _, _, _] = p
+  # Rectified image: K is P's 3x3 block and D is zero; see the moduledoc.
+  defp depth_camera_info(%CameraInfo{p: projection} = camera_info, header) do
+    [fx, skew, cx, _tx, _, fy, cy, _ty, _, _, _, _] = projection
 
     %CameraInfo{
-      base
+      camera_info
       | header: header,
-        k: [fx, s, cx, 0.0, fy, cy, 0.0, 0.0, 1.0],
+        k: [fx, skew, cx, 0.0, fy, cy, 0.0, 0.0, 1.0],
         d: [0.0, 0.0, 0.0, 0.0, 0.0],
         r: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
     }
   end
 
-  defp publish_camera_info(topic, header, %CameraInfo{} = base, %Frame{width: w, height: h}) do
-    # `base` was already scaled to the configured capture resolution at
-    # init. Taking `max/2` with the frame's dimensions — as this did —
-    # silently advertised the calibration's larger resolution whenever
-    # the cameras ran smaller, with intrinsics to match.
+  defp publish_camera_info(
+         topic,
+         header,
+         %CameraInfo{} = camera_info,
+         %Frame{width: width, height: height}
+       ) do
+    # `camera_info` is already scaled to the configured capture resolution.
     message =
-      if base.width == w and base.height == h do
-        %CameraInfo{base | header: header}
+      if camera_info.width == width and camera_info.height == height do
+        %CameraInfo{camera_info | header: header}
       else
-        %CameraInfo{base | header: header, width: w, height: h}
+        %CameraInfo{camera_info | header: header, width: width, height: height}
       end
 
     RosBridge.ZenohClient.publish(topic, CameraInfo, message)
   end
 
-  # ── pairing ──────────────────────────────────────────────────
-
   defp stash_for_pairing(state, %Frame{label: "left"} = frame),
-    do: %{state | left_frames: Enum.take([frame | state.left_frames], @pair_buffer)}
+    do: %{state | left_frames: Enum.take([frame | state.left_frames], @frames_kept_per_side)}
 
   defp stash_for_pairing(state, %Frame{label: "right"} = frame),
-    do: %{state | right_frames: Enum.take([frame | state.right_frames], @pair_buffer)}
+    do: %{state | right_frames: Enum.take([frame | state.right_frames], @frames_kept_per_side)}
 
   defp stash_for_pairing(state, _frame), do: state
 
@@ -335,7 +318,7 @@ defmodule RosBridge.Publishers.StereoCamera do
           | left_frames: newer_than(state.left_frames, left),
             right_frames: newer_than(state.right_frames, right),
             awaiting_result: true,
-            submit_at: System.monotonic_time(:nanosecond),
+            submitted_at_ns: System.monotonic_time(:nanosecond),
             telemetry: Telemetry.record(state.telemetry, :pair_delta, delta_ns)
         }
     end
@@ -345,18 +328,24 @@ defmodule RosBridge.Publishers.StereoCamera do
   def ready_pair(%{left_frames: []}), do: :not_ready
   def ready_pair(%{right_frames: []}), do: :not_ready
 
-  def ready_pair(%{left_frames: lefts, right_frames: rights, pair_tolerance_ns: tolerance}) do
+  def ready_pair(%{
+        left_frames: left_frames,
+        right_frames: right_frames,
+        pair_tolerance_ns: tolerance_ns
+      }) do
     candidates =
-      for left <- lefts, right <- rights do
+      for left <- left_frames, right <- right_frames do
         {abs(left.capture_ns - right.capture_ns), -max(left.capture_ns, right.capture_ns), left,
          right}
       end
 
     # Closest capture times first, then the newest.
     {delta_ns, _newest, left, right} =
-      Enum.min(candidates, fn {d1, n1, _, _}, {d2, n2, _, _} -> {d1, n1} <= {d2, n2} end)
+      Enum.min(candidates, fn {delta_a, newest_a, _, _}, {delta_b, newest_b, _, _} ->
+        {delta_a, newest_a} <= {delta_b, newest_b}
+      end)
 
-    if delta_ns <= tolerance do
+    if delta_ns <= tolerance_ns do
       {:ok, left, right, delta_ns}
     else
       {:out_of_tolerance, delta_ns}
@@ -366,8 +355,6 @@ defmodule RosBridge.Publishers.StereoCamera do
   # Frames taken after the submitted one: older ones can no longer pair.
   defp newer_than(frames, %Frame{capture_ns: capture_ns}),
     do: Enum.filter(frames, &(&1.capture_ns > capture_ns))
-
-  # ── disparity + depth publish ────────────────────────────────
 
   defp publish_stereo(state, %Result{} = result) do
     header = %Header{
@@ -419,12 +406,6 @@ defmodule RosBridge.Publishers.StereoCamera do
     RosBridge.ZenohClient.publish(state.disparity_topic, DisparityImage, disparity_message)
     RosBridge.ZenohClient.publish(state.depth_topic, Image, depth_message)
 
-    # A depth image is only projectable with intrinsics, and consumers
-    # look for camera_info as a sibling of the image topic — ours lived
-    # only at `<prefix>/left/camera_info`, a different namespace, so
-    # viewers had no way to resolve it and drew nothing rather than
-    # complaining. The depth image is in the rectified left frame, so
-    # the left camera's info is the correct one to republish here.
     if state.cloud_topic && result.cloud && result.cloud_points > 0 do
       RosBridge.ZenohClient.publish(state.cloud_topic, PointCloud2, %PointCloud2{
         header: header,
@@ -456,33 +437,27 @@ defmodule RosBridge.Publishers.StereoCamera do
       })
     end
 
+    # Consumers look for camera_info next to the depth image topic.
     with topic when is_binary(topic) <- state.depth_camera_info_topic,
-         {:ok, %{camera_info: %CameraInfo{} = left_info}} <- Map.fetch(state.sides, "left") do
-      RosBridge.ZenohClient.publish(topic, CameraInfo, depth_camera_info(left_info, header))
+         {:ok, %{camera_info: %CameraInfo{} = left_camera_info}} <- Map.fetch(state.sides, "left") do
+      RosBridge.ZenohClient.publish(
+        topic,
+        CameraInfo,
+        depth_camera_info(left_camera_info, header)
+      )
     end
 
-    # Same pixels as `disparity_message.image`, republished under a
-    # bare `sensor_msgs/Image` type. `stereo_msgs/DisparityImage` is a
-    # container — viewers match on the *topic's* type and will not
-    # reach inside it for `.image`, so Foxglove's image panel cannot
-    # render `<prefix>/disparity` at all. The bytes already exist, but
-    # the bandwidth does not: opt-in via `:publish_disparity_image`,
-    # since a third 921 KB image per frame starves the other two on a
-    # single Zenoh session. The geometry (f, T, valid_window) still
-    # only lives on the DisparityImage topic, which stays the
-    # canonical one for consumers doing maths.
+    # `disparity_message.image` as a bare Image, for viewers that match on topic type.
     if state.disparity_image_topic do
       RosBridge.ZenohClient.publish(state.disparity_image_topic, Image, disparity_image)
     end
   end
 
-  # ── init helpers ─────────────────────────────────────────────
-
   defp build_side_state(side, topic_prefix, side_opts, fallback_width, fallback_height) do
     %{
       frame_id: Keyword.fetch!(side_opts, :frame_id),
-      topic_image: "#{topic_prefix}/#{side}/image_raw/compressed",
-      topic_info: "#{topic_prefix}/#{side}/camera_info",
+      image_topic: "#{topic_prefix}/#{side}/image_raw/compressed",
+      camera_info_topic: "#{topic_prefix}/#{side}/camera_info",
       camera_info:
         load_camera_info(
           Keyword.get(side_opts, :calibration_path),
@@ -502,14 +477,10 @@ defmodule RosBridge.Publishers.StereoCamera do
 
   defp load_camera_info(path, width, height, side) do
     case Calibration.load(path) do
-      {:ok, raw} ->
-        # Advertise the geometry that matches the images we publish.
-        # The calibration YAML is saved at whatever resolution the
-        # session used; the cameras may run smaller. Publishing the
-        # unscaled intrinsics makes every consumer that projects with
-        # CameraInfo — point clouds, obstacle projection, Foxglove's
-        # 3D panel — wrong by the resolution ratio.
-        calibration = Calibration.scale_to(raw, width, height)
+      {:ok, saved_calibration} ->
+        # The YAML is saved at the calibration session's resolution; unscaled
+        # intrinsics would be wrong by the resolution ratio.
+        calibration = Calibration.scale_to(saved_calibration, width, height)
 
         %CameraInfo{
           width: calibration.width,

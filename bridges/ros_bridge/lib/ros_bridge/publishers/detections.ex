@@ -40,7 +40,7 @@ defmodule RosBridge.Publishers.Detections do
   to the vehicle body — without it a viewer has boxes but nowhere to
   put them.
 
-  ## Opts
+  ## Options
 
     * `:topic_prefix` (`"stereo"`) — markers go to
       `<prefix>/detections/markers`, detections to
@@ -72,15 +72,28 @@ defmodule RosBridge.Publishers.Detections do
 
   The boxes are computed in *rectified* pixels, but the image the
   bridge publishes — and the one the Foxglove Image panel shows — is
-  `image_raw`. On the Mini those differ by 10 pixels on average and
-  up to 23 on a 480-wide frame, so drawing rectified coordinates
-  straight onto the raw image puts the box visibly beside the object.
+  `image_raw`. The two differ by several pixels on a typical lens, so
+  drawing rectified coordinates straight onto the raw image puts the
+  box visibly beside the object.
 
   Rather than publish a second, rectified image stream, each outline
   vertex is mapped back through OpenCV's rectification map. A
   straight edge in rectified space is a curve in raw space, so edges
   are subdivided (`:outline_segments`) and each vertex mapped
   individually.
+
+  The overlay is a `foxglove_msgs/ImageAnnotations` rather than a
+  `visualization_msgs/ImageMarker`, because ImageMarker has no text
+  type: a box drawn with it can never say what it is.
+
+  ## One inference in flight
+
+  Only one submitted `Result` is held, and a reply is matched on the
+  current sequence number. That relies on the backend answering
+  `{:error, :busy}` while an inference is in flight, so the sequence
+  only advances on an accepted frame; a backend that accepted
+  overlapping requests would have its earlier replies discarded as
+  stale.
   """
   use GenServer
 
@@ -121,48 +134,41 @@ defmodule RosBridge.Publishers.Detections do
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 
+  @doc "The COCO class names, indexed by class id."
   def labels, do: @coco_labels
 
   @impl GenServer
   def init(opts) do
-    prefix = Keyword.get(opts, :topic_prefix, @default_topic_prefix)
+    topic_prefix = Keyword.get(opts, :topic_prefix, @default_topic_prefix)
 
     state = %{
-      markers_topic: "#{prefix}/detections/markers",
-      detections_topic: "#{prefix}/detections",
-      overlay_topic: "#{prefix}/left/detections",
-      frame_id: Keyword.get(opts, :frame_id, "#{prefix}_left"),
+      markers_topic: "#{topic_prefix}/detections/markers",
+      detections_topic: "#{topic_prefix}/detections",
+      overlay_topic: "#{topic_prefix}/left/detections",
+      frame_id: Keyword.get(opts, :frame_id, "#{topic_prefix}_left"),
       labels: Keyword.get(opts, :labels, @coco_labels),
       min_score: Keyword.get(opts, :min_score, @default_min_score),
       max_detections: Keyword.get(opts, :max_detections, @default_max_detections),
-      sample_fraction: Keyword.get(opts, :depth_sample_fraction, @default_depth_sample_fraction),
-      lifetime:
+      depth_sample_fraction:
+        Keyword.get(opts, :depth_sample_fraction, @default_depth_sample_fraction),
+      marker_lifetime:
         opts
         |> Keyword.get(:marker_lifetime_ms, @default_marker_lifetime_ms)
         |> Duration.from_milliseconds(),
       detect_every_n: Keyword.get(opts, :detect_every_n, @default_detect_every_n),
-      # Which backend to ask, defaulting to the accelerator so the
-      # vehicle's wiring is unchanged. Doubles as the server name: every
-      # backend registers under its own module.
+      # Doubles as the server name: every backend registers under its own module.
       inference: Keyword.get(opts, :inference, RosBridge.Inference.Hailo),
       outline_segments: Keyword.get(opts, :outline_segments, @default_outline_segments),
       label_font_size: Keyword.get(opts, :label_font_size, @default_label_font_size),
-      # The rectification map is constant, but reading a 500 KB Mat
-      # to a binary every frame is not free — cache it, keyed on the
-      # Mat itself so a calibration reload invalidates it.
-      rectification_map: nil,
-      seq: 0,
+      # Keyed on the Mat itself, so a calibration reload invalidates it.
+      rectification_map_cache: nil,
+      sequence: 0,
       frame_count: 0,
-      # The Result whose frame is currently at the accelerator. Held
-      # because the boxes come back asynchronously and the depth map
-      # they belong to is the one submitted with them, not whatever
-      # the pipeline has produced since.
+      # The Result submitted with the in-flight inference: its boxes belong to that depth map.
       pending: nil,
-      published: 0,
-      # Marker ids we drew last time. Anything not redrawn this frame
-      # gets an explicit DELETE, so a box does not linger until its
-      # lifetime expires.
-      previous_ids: MapSet.new()
+      published_count: 0,
+      # Detection indexes drawn last frame; those not redrawn get an explicit DELETE.
+      previous_indexes: MapSet.new()
     }
 
     RosBridge.StereoCamera.OpenCV.register_listener(RosBridge.StereoCamera.OpenCV, self())
@@ -194,24 +200,12 @@ defmodule RosBridge.Publishers.Detections do
 
   def handle_cast(_message, state), do: {:noreply, state}
 
-  # Overwrites `pending` without checking it, and the reply clause
-  # matches on the current `seq` — so if a stereo result were ever
-  # processed while an inference was still outstanding, `seq` would
-  # advance and the earlier reply would be discarded as stale.
-  #
-  # `Hailo.detect/3` is what closes that today: it answers
-  # `{:error, :busy}` while an inference is in flight, so `seq` only
-  # advances on a frame that was actually accepted. Measured on the
-  # device that window never opens — `dropped: 0` across thousands of
-  # frames, because inference and publish finish well inside the
-  # ~77 ms frame period. It would open if the frame rate rose
-  # materially, and the fix then is a `seq -> Result` map with a
-  # staleness sweep rather than a single slot.
+  # Overwrites `pending`; see "One inference in flight" in the moduledoc.
   defp submit(result, state) do
-    seq = state.seq + 1
+    sequence = state.sequence + 1
 
-    case state.inference.detect(state.inference, seq, result.left_rectified) do
-      :ok -> %{state | seq: seq, pending: result}
+    case state.inference.detect(state.inference, sequence, result.left_rectified) do
+      :ok -> %{state | sequence: sequence, pending: result}
       # Busy or unavailable: skip this frame silently. The backend logs
       # the unavailable case once at startup; a per-frame log here
       # would be the loudest thing in the RingLogger.
@@ -220,12 +214,15 @@ defmodule RosBridge.Publishers.Detections do
   end
 
   @impl GenServer
-  def handle_info({:inference_detections, seq, detections}, %{seq: seq, pending: pending} = state)
+  def handle_info(
+        {:inference_detections, sequence, detections},
+        %{sequence: sequence, pending: pending} = state
+      )
       when not is_nil(pending) do
     {:noreply, publish(detections, pending, %{state | pending: nil})}
   end
 
-  # A reply for a frame we have stopped waiting on.
+  # A reply for a frame no longer waited on.
   def handle_info({:inference_detections, _stale, _detections}, state), do: {:noreply, state}
 
   def handle_info(_message, state), do: {:noreply, state}
@@ -248,21 +245,19 @@ defmodule RosBridge.Publishers.Detections do
 
     %{
       state
-      | published: state.published + length(positioned),
-        previous_ids: MapSet.new(Enum.with_index(positioned), fn {_d, i} -> i end)
+      | published_count: state.published_count + length(positioned),
+        previous_indexes: MapSet.new(Enum.with_index(positioned), fn {_, index} -> index end)
     }
   end
 
-  # ── 2D box + depth map -> a position and size in metres ──────────
-
   defp position(detection, %Result{} = result, state) do
-    case Fusion.median_depth(result.depth_m, detection, state.sample_fraction) do
+    case Fusion.median_depth(result.depth_m, detection, state.depth_sample_fraction) do
       nil ->
         nil
 
-      z ->
+      depth_m ->
         geometry =
-          Fusion.unproject(detection, z, principal_point(result), result.focal_length)
+          Fusion.unproject(detection, depth_m, principal_point(result), result.focal_length)
 
         geometry
         |> Map.merge(%{
@@ -271,19 +266,15 @@ defmodule RosBridge.Publishers.Detections do
           class_id: detection.class_id,
           label: label_for(detection.class_id, state.labels),
           score: detection.score,
-          # Nothing measures an object's extent along the optical
-          # axis from one view. A thin slab is the honest shape: it
-          # says "this is where the surface is", not "this is how
-          # deep the object goes".
+          # One view cannot measure extent along the optical axis; a
+          # thin slab marks where the surface is, not how deep it goes.
           depth: 0.1
         })
     end
   end
 
-  # ── message building ─────────────────────────────────────────────
-
   defp publish_markers(positioned, header, state) do
-    boxes =
+    markers =
       positioned
       |> Enum.with_index()
       |> Enum.flat_map(fn {detection, index} ->
@@ -293,12 +284,9 @@ defmodule RosBridge.Publishers.Detections do
         ]
       end)
 
-    # Explicitly delete any id we drew last time and did not redraw.
-    # Without this a box that disappears stays on screen until its
-    # lifetime runs out, which reads as a detection that is still
-    # there.
-    stale =
-      state.previous_ids
+    # A vanished box would otherwise stay on screen until its lifetime ends.
+    stale_markers =
+      state.previous_indexes
       |> Enum.reject(&(&1 < length(positioned)))
       |> Enum.flat_map(fn index ->
         [
@@ -310,7 +298,7 @@ defmodule RosBridge.Publishers.Detections do
     RosBridge.ZenohClient.publish(
       state.markers_topic,
       MarkerArray,
-      %MarkerArray{markers: boxes ++ stale}
+      %MarkerArray{markers: markers ++ stale_markers}
     )
   end
 
@@ -324,7 +312,7 @@ defmodule RosBridge.Publishers.Detections do
       pose: pose_for(detection),
       scale: %Vector3{x: detection.width, y: detection.height, z: detection.depth},
       color: colour_for(detection.score),
-      lifetime: state.lifetime
+      lifetime: state.marker_lifetime
     }
   end
 
@@ -353,7 +341,7 @@ defmodule RosBridge.Publishers.Detections do
       text:
         "#{detection.label} #{:erlang.float_to_binary(detection.score, decimals: 2)} " <>
           "#{:erlang.float_to_binary(detection.z, decimals: 2)}m",
-      lifetime: state.lifetime
+      lifetime: state.marker_lifetime
     }
   end
 
@@ -392,16 +380,9 @@ defmodule RosBridge.Publishers.Detections do
     )
   end
 
-  # ── 2D overlay on the raw left image ─────────────────────────────
-
-  # `foxglove_msgs/ImageAnnotations` rather than
-  # `visualization_msgs/ImageMarker`, because ImageMarker has no text
-  # type: a box drawn with it can never say what it is. Annotations
-  # carry the boxes and their labels in one message, and LINE_LOOP
-  # closes a rectangle in four points where a LINE_LIST of segment
-  # pairs needs eight.
+  # LINE_LOOP closes a box in four points where a LINE_LIST needs eight.
   defp publish_overlay(positioned, header, %Result{} = result, state) do
-    {map_binary, state} = rectification_map(result, state)
+    {map_binary, state} = rectification_map_binary(result, state)
 
     boxes =
       Enum.map(positioned, fn detection ->
@@ -460,34 +441,32 @@ defmodule RosBridge.Publishers.Detections do
       "#{:erlang.float_to_binary(detection.z, decimals: 2)}m"
   end
 
-  # Same red-to-green ramp as the 3D markers, in foxglove_msgs/Color
-  # (float64) rather than std_msgs/ColorRGBA (float32).
+  # The `colour_for/1` ramp as foxglove_msgs/Color (float64), not std_msgs/ColorRGBA.
   defp overlay_colour(score) do
     %Color{r: 1.0 - score, g: score, b: 0.15, a: 1.0}
   end
 
-  # Without a calibration there is no map and no rectification, so the
-  # rectified and raw pixels are the same thing.
+  # Without a calibration, rectified and raw pixels are the same.
   defp to_raw_pixel(vertex, nil, _result), do: vertex
 
   defp to_raw_pixel(vertex, map_binary, %Result{} = result) do
     Fusion.remap(map_binary, result.width, result.height, vertex)
   end
 
-  defp rectification_map(%Result{rectification_map_left: nil}, state) do
+  defp rectification_map_binary(%Result{rectification_map_left: nil}, state) do
     {nil, state}
   end
 
-  defp rectification_map(
-         %Result{rectification_map_left: map},
-         %{rectification_map: {map, binary}} = state
+  defp rectification_map_binary(
+         %Result{rectification_map_left: map_mat},
+         %{rectification_map_cache: {map_mat, map_binary}} = state
        ) do
-    {binary, state}
+    {map_binary, state}
   end
 
-  defp rectification_map(%Result{rectification_map_left: map}, state) do
-    binary = Evision.Mat.to_binary(map)
-    {binary, %{state | rectification_map: {map, binary}}}
+  defp rectification_map_binary(%Result{rectification_map_left: map_mat}, state) do
+    map_binary = Evision.Mat.to_binary(map_mat)
+    {map_binary, %{state | rectification_map_cache: {map_mat, map_binary}}}
   end
 
   defp pose_for(detection) do
@@ -497,18 +476,14 @@ defmodule RosBridge.Publishers.Detections do
     }
   end
 
-  # Red at the score floor through green at certainty, so a glance at
-  # the 3D panel separates a confident detection from a marginal one.
+  # Red at the score floor to green at certainty: confident and marginal detections stand apart.
   defp colour_for(score) do
     %ColorRGBA{r: 1.0 - score, g: score, b: 0.15, a: 0.45}
   end
 
   defp label_for(class_id, labels), do: Enum.at(labels, class_id, "class_#{class_id}")
 
-  # The rectified principal point, carried on the Result from the
-  # backend's calibration. The image centre is the fallback for a
-  # Result built without one — close enough to look plausible, which
-  # is exactly why it is worth not relying on.
+  # The image centre is only a fallback for a Result without calibration; do not rely on it.
   defp principal_point(%Result{principal_point: {cx, cy}}), do: {cx, cy}
 
   defp principal_point(%Result{} = result) do

@@ -21,8 +21,8 @@ defmodule RosBridge.Camera.GStreamer do
   loudly on init if `gst-launch-1.0` isn't found. The camera must
   also natively output MJPEG at the requested resolution/framerate
   — most UVC webcams and HDMI capture cards do; if yours doesn't,
-  swap the `image/jpeg,…` caps for `video/x-raw,…ge ! jpegenc` in
-  `pipeline_args/4`.
+  swap the `image/jpeg,…` caps for `video/x-raw,… ! jpegenc` in
+  `pipeline_arguments/4`.
 
   ## Framing
 
@@ -34,8 +34,7 @@ defmodule RosBridge.Camera.GStreamer do
   use GenServer
   require Logger
 
-  alias RosBridge.Camera.Frame
-  alias RosBridge.Camera.MjpegStream
+  alias RosBridge.Camera.{Frame, MjpegStream}
 
   def start_link(opts) do
     label = Keyword.fetch!(opts, :label)
@@ -43,6 +42,7 @@ defmodule RosBridge.Camera.GStreamer do
     GenServer.start_link(__MODULE__, opts, name: name)
   end
 
+  @doc "The registered name of the driver for `label`."
   def name_for(label), do: Module.concat([__MODULE__, "L_#{label}"])
 
   @impl GenServer
@@ -57,7 +57,7 @@ defmodule RosBridge.Camera.GStreamer do
       System.find_executable("gst-launch-1.0") ||
         raise "#{__MODULE__}[#{label}]: gst-launch-1.0 not found on PATH"
 
-    args = pipeline_args(device, width, height, fps)
+    pipeline_arguments = pipeline_arguments(device, width, height, fps)
 
     # Do NOT merge stderr into stdout — gst-launch error prints
     # would corrupt the JPEG byte stream. Stderr is left inherited
@@ -66,11 +66,11 @@ defmodule RosBridge.Camera.GStreamer do
       Port.open({:spawn_executable, gst_launch}, [
         :binary,
         :exit_status,
-        args: args
+        args: pipeline_arguments
       ])
 
     Logger.info(
-      "#{__MODULE__}[#{label}] streaming #{device} at #{width}×#{height}@#{fps} via gst-launch-1.0 pid #{inspect(port)}"
+      "#{__MODULE__}[#{label}] streaming #{device} at #{width}×#{height}@#{fps} via gst-launch-1.0 port #{inspect(port)}"
     )
 
     {:ok,
@@ -126,9 +126,8 @@ defmodule RosBridge.Camera.GStreamer do
   @impl RosBridge.Camera
   def enable(_server), do: :ok
 
-  # `-q` keeps gst-launch's routine progress off stderr, which the
-  # BEAM inherits; errors still print there.
-  defp pipeline_args(device, width, height, fps) do
+  # `-q` keeps routine progress off the inherited stderr; errors still print.
+  defp pipeline_arguments(device, width, height, fps) do
     [
       "-q",
       "v4l2src",

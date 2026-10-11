@@ -12,7 +12,7 @@ defmodule RosBridge.Camera.Zenoh do
   is the entire difference between running on the car and running
   against a simulated one.
 
-  ## Opts
+  ## Options
 
     * `:label` (required) — `"left"` / `"right"`, as for every driver.
     * `:topic` (required) — the ROS topic to consume, e.g.
@@ -25,14 +25,11 @@ defmodule RosBridge.Camera.Zenoh do
 
   ## Compressed, not raw
 
-  The topic carries JPEG, and that is not incidental. A 480x270 rgb8
-  frame is 389 KB; at 30 Hz that is 11.6 MB/s, and measured over
-  Zenoh a subscriber that cannot drain it that fast receives **one
-  frame every fifteen seconds** — the transport drops what the link
-  will not carry, and the failure looks like a dead topic rather than
-  a saturated one. The same stream as JPEG is about 6.5 KB a frame.
-  Compression belongs upstream of the fabric, which is also what the
-  real vehicle does.
+  The topic carries JPEG, and that is not incidental. Raw frames
+  outrun what a Zenoh subscriber can drain; the transport then drops
+  what the link will not carry, and the failure looks like a dead topic
+  rather than a saturated one. Compression belongs upstream of the
+  fabric, which is also what the real vehicle does.
 
   ## Time
 
@@ -44,17 +41,12 @@ defmodule RosBridge.Camera.Zenoh do
   passing it through would project to a wall-clock time nearly two
   decades wrong.
 
-  That used to mean outgoing headers carried arrival time rather than
-  simulation time and so did not line up with `/clock`. It no longer
-  does: `RosBridge.Clock` keeps a monotonic-to-simulator offset, and
-  `RosBridge.Timing` projects through it, so arrival time lands on the
-  simulator's timescale without this driver having to pass a foreign
-  clock through. Frames stay on Erlang monotonic time here, which is
-  the invariant that made the conversion possible in one place.
+  Outgoing headers still line up with `/clock`: `RosBridge.Clock`
+  keeps a monotonic-to-simulator offset and `RosBridge.Timing` projects
+  through it, so arrival time lands on the simulator's timescale.
 
-  Pairing was never affected either way: both sides are published
-  together and land within a millisecond of each other, far inside
-  `:pair_tolerance_ms`.
+  Both sides are published together and arrive within a millisecond of
+  each other, well inside `:pair_tolerance_ms`, so pairing holds.
   """
   @behaviour RosBridge.Camera
 
@@ -70,6 +62,7 @@ defmodule RosBridge.Camera.Zenoh do
     GenServer.start_link(__MODULE__, opts, name: name_for(label))
   end
 
+  @doc "The registered name of the driver for `label`."
   def name_for(label), do: Module.concat([__MODULE__, "L_#{label}"])
 
   @impl RosBridge.Camera
@@ -92,7 +85,7 @@ defmodule RosBridge.Camera.Zenoh do
 
     Logger.info("#{__MODULE__}[#{label}] consuming #{topic}")
 
-    {:ok, %{label: label, topic: topic, listeners: [], frames: 0}}
+    {:ok, %{label: label, topic: topic, listeners: [], frame_count: 0}}
   end
 
   @impl GenServer
@@ -113,7 +106,7 @@ defmodule RosBridge.Camera.Zenoh do
         }
 
         Enum.each(state.listeners, &GenServer.cast(&1, {:camera_frame, frame}))
-        {:noreply, %{state | frames: state.frames + 1}}
+        {:noreply, %{state | frame_count: state.frame_count + 1}}
 
       :error ->
         # A frame whose dimensions cannot be read is not one the
@@ -175,7 +168,6 @@ defmodule RosBridge.Camera.Zenoh do
     end
   end
 
-  # Padding between segments is legal; skip a stray fill byte.
   defp scan_segments(<<0xFF>>), do: :error
   defp scan_segments(_), do: :error
 end

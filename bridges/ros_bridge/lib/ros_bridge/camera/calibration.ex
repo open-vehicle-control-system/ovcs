@@ -4,8 +4,7 @@ defmodule RosBridge.Camera.Calibration do
   `camera_calibration_parsers` YAML — the same format
   `cameracalibrator` writes (`left.yaml` / `right.yaml`).
 
-  We carry the raw flat-list representation of each matrix
-  (row-major, as the YAML provides them); converting to Nx
+  Each matrix is kept as the YAML's flat row-major list; converting to Nx
   tensors or Evision Mats is the consumer's responsibility.
   Two consumers:
 
@@ -15,7 +14,7 @@ defmodule RosBridge.Camera.Calibration do
       rectification look-up tables via
       `Evision.initUndistortRectifyMap/6`.
 
-  ## YAML schema we accept
+  ## Accepted YAML schema
 
       image_width: <int>
       image_height: <int>
@@ -29,11 +28,26 @@ defmodule RosBridge.Camera.Calibration do
       projection_matrix:
         data: [P00, P01, P02, P03, P10, ..., P23]
 
-  We use regex-driven parsing (rather than pulling in a full
-  YAML parser) because the field set is small, fixed, and the
-  format is well-defined. If a future calibrator produces
-  exotic formatting we fail loudly via `load!/1`.
+  Parsing is regex-driven rather than a full YAML parser because the
+  field set is small, fixed, and the format is well-defined.
+
+  ## Numbers
+
+  Every numeric spelling the calibration tools emit is accepted, which
+  `String.to_float/1` is too strict for. `load!/1` runs inside
+  `RosBridge.StereoCamera.OpenCV.init/1`, so an `ArgumentError` there
+  takes the whole bridge down at boot with nothing logged:
+
+    * `"0."` / `"1."` — cameracalibrator writes whole numbers with a
+      bare trailing dot, which `Float.parse/1` leaves as a `"."`
+      remainder.
+    * `"1e-3"` — an exponent with no decimal point in the mantissa;
+      Erlang rejects it, `Float.parse/1` accepts it.
+    * `".5"` — a leading dot, which `Float.parse/1` rejects, is padded
+      with a zero first.
   """
+
+  alias Ros2.SensorMsgs.Msg.CameraInfo
 
   defstruct [
     :width,
@@ -127,18 +141,16 @@ defmodule RosBridge.Camera.Calibration do
     }
   end
 
-  # ── regex helpers ────────────────────────────────────────────
-
   defp read_integer(yaml, regex, default) do
     case Regex.run(regex, yaml) do
-      [_, value] -> String.to_integer(value)
+      [_, digits] -> String.to_integer(digits)
       _ -> default
     end
   end
 
   defp read_string(yaml, regex, default) do
     case Regex.run(regex, yaml) do
-      [_, value] -> String.trim(value)
+      [_, text] -> String.trim(text)
       _ -> default
     end
   end
@@ -157,25 +169,13 @@ defmodule RosBridge.Camera.Calibration do
     end
   end
 
-  # Accepts every numeric spelling the calibration tools emit.
-  # `String.to_float/1` is too strict for two of them, and because
-  # `load!/1` runs inside `RosBridge.StereoCamera.OpenCV.init/1` an ArgumentError
-  # here takes the whole bridge down at boot with nothing logged:
-  #
-  #   * "0." / "1."  — cameracalibrator writes whole numbers with a
-  #     bare trailing dot, which is what `Float.parse/1` leaves as a
-  #     "." remainder.
-  #   * "1e-3"       — an exponent with no decimal point in the
-  #     mantissa; Erlang rejects it, `Float.parse/1` accepts it.
-  #
-  # Leading-dot forms (".5") are normalised first since `Float.parse/1`
-  # rejects those outright.
+  # See "Numbers" in the moduledoc for the spellings accepted.
   defp parse_float(text) do
     text = text |> String.trim() |> pad_leading_zero()
 
     case Float.parse(text) do
-      {value, rest} when rest in ["", "."] ->
-        value
+      {number, rest} when rest in ["", "."] ->
+        number
 
       _ ->
         raise ArgumentError,
@@ -206,7 +206,7 @@ defmodule RosBridge.Camera.Calibration do
       when actual_width > 0 and actual_height > 0 do
     cond do
       calibration.width == 0 or calibration.height == 0 ->
-        # No reference dims in the YAML — trust the intrinsics as-is.
+        # No reference dimensions in the YAML — trust the intrinsics as-is.
         %{calibration | width: actual_width, height: actual_height}
 
       calibration.width == actual_width and calibration.height == actual_height ->
@@ -226,17 +226,17 @@ defmodule RosBridge.Camera.Calibration do
     end
   end
 
-  defp scale_3x3([a, b, c, d, e, f, g, h, i], scale_x, scale_y) do
+  defp scale_3x3([r0c0, r0c1, r0c2, r1c0, r1c1, r1c2, r2c0, r2c1, r2c2], scale_x, scale_y) do
     [
-      a * scale_x,
-      b * scale_x,
-      c * scale_x,
-      d * scale_y,
-      e * scale_y,
-      f * scale_y,
-      g,
-      h,
-      i
+      r0c0 * scale_x,
+      r0c1 * scale_x,
+      r0c2 * scale_x,
+      r1c0 * scale_y,
+      r1c1 * scale_y,
+      r1c2 * scale_y,
+      r2c0,
+      r2c1,
+      r2c2
     ]
   end
 
@@ -260,8 +260,6 @@ defmodule RosBridge.Camera.Calibration do
       r2c3
     ]
   end
-
-  # ── writers ──────────────────────────────────────────────────
 
   @doc """
   Render a calibration to the `camera_calibration_parsers` YAML
@@ -306,16 +304,16 @@ defmodule RosBridge.Camera.Calibration do
   (k, r, p, d) but with different field names — this is a pure
   rename.
   """
-  @spec from_camera_info(Ros2.SensorMsgs.Msg.CameraInfo.t()) :: t()
-  def from_camera_info(%Ros2.SensorMsgs.Msg.CameraInfo{} = info) do
+  @spec from_camera_info(CameraInfo.t()) :: t()
+  def from_camera_info(%CameraInfo{} = camera_info) do
     %__MODULE__{
-      width: info.width,
-      height: info.height,
-      distortion_model: info.distortion_model,
-      distortion_coefficients: info.d,
-      camera_matrix: info.k,
-      rectification_matrix: info.r,
-      projection_matrix: info.p
+      width: camera_info.width,
+      height: camera_info.height,
+      distortion_model: camera_info.distortion_model,
+      distortion_coefficients: camera_info.d,
+      camera_matrix: camera_info.k,
+      rectification_matrix: camera_info.r,
+      projection_matrix: camera_info.p
     }
   end
 
@@ -323,6 +321,6 @@ defmodule RosBridge.Camera.Calibration do
     Enum.map_join(values, ", ", &format_float/1)
   end
 
-  defp format_float(value) when is_float(value), do: Float.to_string(value)
-  defp format_float(value) when is_integer(value), do: Float.to_string(value * 1.0)
+  defp format_float(number) when is_float(number), do: Float.to_string(number)
+  defp format_float(number) when is_integer(number), do: Float.to_string(number * 1.0)
 end

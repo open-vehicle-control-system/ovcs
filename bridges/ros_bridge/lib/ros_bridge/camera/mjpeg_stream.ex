@@ -8,9 +8,7 @@ defmodule RosBridge.Camera.MjpegStream do
   partial reads through `split/1` and keeps the returned leftover
   for the next chunk.
 
-  Naive linear scan — fine at the 30 fps host-dev workloads we
-  care about. If we ever need much higher throughput, replace with
-  a state-machine pass.
+  A linear scan: host-dev frame rates need nothing faster.
   """
 
   @doc """
@@ -21,43 +19,41 @@ defmodule RosBridge.Camera.MjpegStream do
   """
   def split(buffer), do: split(buffer, [])
 
-  defp split(buffer, acc) do
+  defp split(buffer, frames) do
     case find_marker(buffer, 0xD8, 0) do
       nil ->
-        {Enum.reverse(acc), buffer}
+        {Enum.reverse(frames), buffer}
 
-      soi ->
-        case find_marker(buffer, 0xD9, soi + 2) do
+      soi_offset ->
+        case find_marker(buffer, 0xD9, soi_offset + 2) do
           nil ->
-            # SOI seen but no terminating EOI yet — drop anything
-            # before the SOI (subprocess prologue, partial frame
-            # from a prior crash, etc.) and keep from SOI onward
-            # for the next chunk.
-            <<_::binary-size(soi), tail::binary>> = buffer
-            {Enum.reverse(acc), tail}
+            # Bytes before the SOI are subprocess prologue or a partial frame.
+            <<_::binary-size(soi_offset), tail::binary>> = buffer
+            {Enum.reverse(frames), tail}
 
-          eoi ->
-            frame_end = eoi + 2
+          eoi_offset ->
+            frame_end = eoi_offset + 2
 
-            <<_pre::binary-size(soi), frame::binary-size(frame_end - soi), rest::binary>> = buffer
+            <<_pre::binary-size(soi_offset), frame::binary-size(frame_end - soi_offset),
+              rest::binary>> = buffer
 
-            split(rest, [frame | acc])
+            split(rest, [frame | frames])
         end
     end
   end
 
-  defp find_marker(buffer, marker_byte, from) do
+  defp find_marker(buffer, marker_byte, start_offset) do
     case buffer do
-      <<_::binary-size(from), _::binary>> -> scan(buffer, marker_byte, from)
+      <<_::binary-size(start_offset), _::binary>> -> scan(buffer, marker_byte, start_offset)
       _ -> nil
     end
   end
 
   defp scan(buffer, marker_byte, index) when index + 1 < byte_size(buffer) do
-    <<_::binary-size(index), a, b, _::binary>> = buffer
+    <<_::binary-size(index), first_byte, second_byte, _::binary>> = buffer
 
     cond do
-      a == 0xFF and b == marker_byte -> index
+      first_byte == 0xFF and second_byte == marker_byte -> index
       true -> scan(buffer, marker_byte, index + 1)
     end
   end

@@ -47,13 +47,13 @@ defmodule RosBridge.Publishers.Range do
   end
 
   @doc "The `Range` for `sample`. Pure."
-  def range(%Sample{range: {min, max}} = sample, state) do
+  def range(%Sample{range: {min_range_m, max_range_m}} = sample, state) do
     %Range{
-      header: %Header{stamp: time(sample.measured_at), frame_id: state.frame_id},
+      header: %Header{stamp: time_message(sample.measured_at), frame_id: state.frame_id},
       radiation_type: state.radiation_type,
       field_of_view: sample.field_of_view,
-      min_range: min,
-      max_range: max,
+      min_range: min_range_m,
+      max_range: max_range_m,
       range:
         case sample.distance do
           :below_range -> :neg_infinity
@@ -63,6 +63,6 @@ defmodule RosBridge.Publishers.Range do
     }
   end
 
-  defp time(system_ns),
+  defp time_message(system_ns),
     do: %Time{sec: div(system_ns, 1_000_000_000), nanosec: rem(system_ns, 1_000_000_000)}
 end
