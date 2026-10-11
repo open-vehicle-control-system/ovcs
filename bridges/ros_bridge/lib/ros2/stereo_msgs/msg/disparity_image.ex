@@ -22,13 +22,11 @@ defmodule Ros2.StereoMsgs.Msg.DisparityImage do
     * All other fields are u32/float32 runs that stay
       4-aligned naturally.
 
-  No `parse/1` — the bridge only emits disparity. Add when
-  something consumes it locally.
+  No `parse/1`: the bridge only emits disparity.
   """
   use Ros2.Common
 
-  alias Ros2.SensorMsgs.Msg.Image
-  alias Ros2.SensorMsgs.Msg.RegionOfInterest
+  alias Ros2.SensorMsgs.Msg.{Image, RegionOfInterest}
   alias Ros2.StdMsgs.Msg.Header
 
   defstruct [

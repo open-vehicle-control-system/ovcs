@@ -26,10 +26,9 @@ defmodule Ros2.SensorMsgs.Msg.Image do
       with its own u32 length prefix (already 4-aligned) and then
       raw u8 bytes (no further alignment).
 
-  `parse/1` exists because the bridge now *consumes* images too: a
-  simulated camera in Gazebo publishes raw `sensor_msgs/Image`, and
-  `RosBridge.Camera.Zenoh` turns those into the same frames a physical
-  camera driver produces.
+  `parse/1` reads raw images from a camera on the ROS side, such as a
+  simulated camera in Gazebo: `RosBridge.Camera.Zenoh` turns them into
+  the same frames a physical camera driver produces.
 
   Parsing has to undo the same two irregularities the encoder
   introduces — the unpadded `encoding` string, and the realignment
@@ -68,7 +67,8 @@ defmodule Ros2.SensorMsgs.Msg.Image do
          <<height::little-unsigned-32, width::little-unsigned-32, rest::binary>> <- rest,
          # `encoding` was written without trailing padding, so it must
          # be read without skipping any.
-         <<len::little-unsigned-32, encoding::binary-size(len), rest::binary>> <- rest,
+         <<encoding_length::little-unsigned-32, encoding::binary-size(encoding_length),
+           rest::binary>> <- rest,
          <<is_bigendian::little-unsigned-8, rest::binary>> <- rest,
          rest = consume_alignment(rest, 4, byte_size(body) - byte_size(rest)),
          <<step::little-unsigned-32, rest::binary>> <- rest,

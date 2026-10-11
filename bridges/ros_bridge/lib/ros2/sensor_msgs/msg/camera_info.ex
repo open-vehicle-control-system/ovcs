@@ -26,6 +26,12 @@ defmodule Ros2.SensorMsgs.Msg.CameraInfo do
       differing by one character move the prefix between the two
       8-residues — so `append_float64_sequence/2` is buffer-aware and
       `parse_float64_sequence/2` is told the body size.
+    * The fixed `float64[9]` arrays that follow continue an 8-aligned
+      run — no extra padding needed.
+    * After the last `float64[12]`, two `uint32`s are 4-aligned by
+      virtue of starting on an 8-boundary.
+    * `RegionOfInterest`'s first field is u32 (4-aligned, fine after
+      the previous u32 run).
 
   Both the encoder and the parser assume this message starts at the
   encapsulated-body origin, which is what makes `byte_size(buffer)` a
@@ -33,12 +39,6 @@ defmodule Ros2.SensorMsgs.Msg.CameraInfo do
   the first field of `SetCameraInfo_Request`. Embedding it at a
   non-8-aligned offset inside some larger message would need the true
   offset threaded in from the outermost parser.
-    * The fixed `float64[9]` arrays that follow continue an 8-aligned
-      run — no extra padding needed.
-    * After the last `float64[12]`, two `uint32`s are 4-aligned by
-      virtue of starting on an 8-boundary.
-    * `RegionOfInterest`'s first field is u32 (4-aligned, fine after
-      the previous u32 run).
   """
   use Ros2.Common
 
@@ -80,18 +80,18 @@ defmodule Ros2.SensorMsgs.Msg.CameraInfo do
   def dds_type, do: @dds_type
   def type_hash, do: @type_hash
 
-  def encode(%__MODULE__{} = msg) do
-    Header.encode(msg.header)
-    |> Kernel.<>(encode_uint32(msg.height))
-    |> Kernel.<>(encode_uint32(msg.width))
-    |> Kernel.<>(encode_string(msg.distortion_model))
-    |> append_float64_sequence(msg.d)
-    |> Kernel.<>(encode_float64_array_fixed(msg.k, 9))
-    |> Kernel.<>(encode_float64_array_fixed(msg.r, 9))
-    |> Kernel.<>(encode_float64_array_fixed(msg.p, 12))
-    |> Kernel.<>(encode_uint32(msg.binning_x))
-    |> Kernel.<>(encode_uint32(msg.binning_y))
-    |> Kernel.<>(RegionOfInterest.encode(msg.roi))
+  def encode(%__MODULE__{} = camera_info) do
+    Header.encode(camera_info.header)
+    |> Kernel.<>(encode_uint32(camera_info.height))
+    |> Kernel.<>(encode_uint32(camera_info.width))
+    |> Kernel.<>(encode_string(camera_info.distortion_model))
+    |> append_float64_sequence(camera_info.d)
+    |> Kernel.<>(encode_float64_array_fixed(camera_info.k, 9))
+    |> Kernel.<>(encode_float64_array_fixed(camera_info.r, 9))
+    |> Kernel.<>(encode_float64_array_fixed(camera_info.p, 12))
+    |> Kernel.<>(encode_uint32(camera_info.binning_x))
+    |> Kernel.<>(encode_uint32(camera_info.binning_y))
+    |> Kernel.<>(RegionOfInterest.encode(camera_info.roi))
   end
 
   def parse(payload) do

@@ -30,17 +30,15 @@ defmodule Ros2.VisionMsgs.Msg.Detection3D do
     |> append_results(detection.results)
     |> align_to(8)
     |> Kernel.<>(BoundingBox3D.encode(detection.bbox))
-    # `id` is the final field, and CDR pads only on behalf of a
-    # *following* field's alignment — so the padded `encode_string/1`
-    # would make every detection two bytes too long. When this struct
-    # is nested, the array encoder re-aligns before the next element.
+    # CDR pads only for a following field, and `id` is last; the array
+    # encoder re-aligns before the next element.
     |> Kernel.<>(encode_string_unaligned(detection.id))
   end
 
   defp append_results(buffer, results) do
-    Enum.reduce(results, buffer <> encode_uint32(length(results)), fn result, acc ->
+    Enum.reduce(results, buffer <> encode_uint32(length(results)), fn hypothesis, acc ->
       # Each element opens with a string (u32 length), alignment 4.
-      ObjectHypothesisWithPose.append_to(align_to(acc, 4), result)
+      ObjectHypothesisWithPose.append_to(align_to(acc, 4), hypothesis)
     end)
   end
 end

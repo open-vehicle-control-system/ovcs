@@ -48,8 +48,6 @@ defmodule Ros2.RclInterfaces.Parameters do
   @doc "The `ParameterType` code of a type."
   def type_id(type), do: Map.fetch!(@types, type)
 
-  # ── requests ─────────────────────────────────────────────────
-
   @doc "The names in a get, get-types or describe request."
   def decode_names(payload) do
     {names, _} = read_sequence({payload, 0}, &read_string/1)
@@ -93,13 +91,11 @@ defmodule Ros2.RclInterfaces.Parameters do
     {value, input}
   end
 
-  # ── responses ────────────────────────────────────────────────
-
   @doc "ListParameters response: the names, no prefixes."
   def encode_list(names), do: <<>> |> sequence(names, &string/2) |> sequence([], &string/2)
 
   @doc "GetParameters response: one `{type, value}` per name, `nil` when unknown."
-  def encode_values(values), do: sequence(<<>>, values, &value/2)
+  def encode_values(values), do: sequence(<<>>, values, &append_parameter_value/2)
 
   @doc "GetParameterTypes response: one type per name, `:not_set` when unknown."
   def encode_types(types), do: sequence(<<>>, types, &u8(&1, type_id(&2)))
@@ -109,23 +105,24 @@ defmodule Ros2.RclInterfaces.Parameters do
   `:description`, `:constraints`, `:read_only` and `:range`
   (`{low, high}`, absent when unbounded).
   """
-  def encode_descriptors(descriptors), do: sequence(<<>>, descriptors, &descriptor/2)
+  def encode_descriptors(descriptors), do: sequence(<<>>, descriptors, &append_descriptor/2)
 
   @doc "SetParameters response: `:ok` or `{:error, reason}` per parameter."
-  def encode_results(results), do: sequence(<<>>, results, &result/2)
+  def encode_results(results), do: sequence(<<>>, results, &append_set_result/2)
 
   @doc "SetParametersAtomically response."
-  def encode_result(result), do: result(<<>>, result)
+  def encode_result(set_result), do: append_set_result(<<>>, set_result)
 
-  defp value(acc, nil), do: value(acc, {:not_set, nil})
+  defp append_parameter_value(message, nil),
+    do: append_parameter_value(message, {:not_set, nil})
 
-  defp value(acc, {type, v}) do
-    acc
+  defp append_parameter_value(message, {type, parameter_value}) do
+    message
     |> u8(type_id(type))
-    |> bool(type == :bool and v)
-    |> i64(if type == :integer, do: v, else: 0)
-    |> f64(if type == :double, do: v, else: 0.0)
-    |> string(if type == :string, do: v, else: "")
+    |> bool(type == :bool and parameter_value)
+    |> i64(if type == :integer, do: parameter_value, else: 0)
+    |> f64(if type == :double, do: parameter_value, else: 0.0)
+    |> string(if type == :string, do: parameter_value, else: "")
     |> sequence([], & &1)
     |> sequence([], & &1)
     |> sequence([], & &1)
@@ -133,32 +130,38 @@ defmodule Ros2.RclInterfaces.Parameters do
     |> sequence([], & &1)
   end
 
-  defp descriptor(acc, d) do
-    acc =
-      acc
-      |> string(d.name)
-      |> u8(type_id(d.type))
-      |> string(Map.get(d, :description, ""))
-      |> string(Map.get(d, :constraints, ""))
-      |> bool(Map.get(d, :read_only, false))
+  defp append_descriptor(message, descriptor) do
+    message =
+      message
+      |> string(descriptor.name)
+      |> u8(type_id(descriptor.type))
+      |> string(Map.get(descriptor, :description, ""))
+      |> string(Map.get(descriptor, :constraints, ""))
+      |> bool(Map.get(descriptor, :read_only, false))
       |> bool(false)
 
-    case {d.type, Map.get(d, :range)} do
+    case {descriptor.type, Map.get(descriptor, :range)} do
       {:double, {low, high}} ->
-        acc
-        |> sequence([{low, high}], fn a, {l, h} -> a |> f64(l) |> f64(h) |> f64(0.0) end)
+        message
+        |> sequence([{low, high}], fn encoded, {from, to} ->
+          encoded |> f64(from) |> f64(to) |> f64(0.0)
+        end)
         |> sequence([], & &1)
 
       {:integer, {low, high}} ->
-        acc
+        message
         |> sequence([], & &1)
-        |> sequence([{low, high}], fn a, {l, h} -> a |> i64(l) |> i64(h) |> u64(1) end)
+        |> sequence([{low, high}], fn encoded, {from, to} ->
+          encoded |> i64(from) |> i64(to) |> u64(1)
+        end)
 
       _ ->
-        acc |> sequence([], & &1) |> sequence([], & &1)
+        message |> sequence([], & &1) |> sequence([], & &1)
     end
   end
 
-  defp result(acc, :ok), do: acc |> bool(true) |> string("")
-  defp result(acc, {:error, reason}), do: acc |> bool(false) |> string(reason)
+  defp append_set_result(message, :ok), do: message |> bool(true) |> string("")
+
+  defp append_set_result(message, {:error, reason}),
+    do: message |> bool(false) |> string(reason)
 end

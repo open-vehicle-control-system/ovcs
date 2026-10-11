@@ -26,13 +26,13 @@ defmodule Ros2.FoxgloveMsgs.Msg.PointsAnnotation do
   alias Ros2.FoxgloveMsgs.Msg.{Color, Point2}
 
   @unknown 0
-  @points 1
+  @points_type 1
   @line_loop 2
   @line_strip 3
   @line_list 4
 
   def unknown, do: @unknown
-  def points_type, do: @points
+  def points_type, do: @points_type
   def line_loop, do: @line_loop
   def line_strip, do: @line_strip
   def line_list, do: @line_list

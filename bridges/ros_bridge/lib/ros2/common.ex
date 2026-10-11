@@ -1,9 +1,5 @@
 # credo:disable-for-this-file Credo.Check.Refactor.LongQuoteBlocks
-# The quote block *is* the module: `use Ros2.Common` injects the shared
-# CDR codec into each `Ros2.*` message module, several of which need the
-# parsers as private functions. Splitting it to satisfy the length check
-# would mean either exporting every codec or nesting sub-macros, both of
-# which read worse than one documented block.
+# The quote is the module: splitting it would export the private parsers.
 defmodule Ros2.Common do
   @moduledoc """
   CDR (Common Data Representation) encoder/parser primitives shared
@@ -18,52 +14,59 @@ defmodule Ros2.Common do
   the current offset from the body origin — call `align_to/2` before
   the next primitive whose alignment is larger than the running tail.
 
-  The hazards in our message set:
+  The hazards in the message set:
 
     * `string` (4-aligned tail) → `float64` field needs an
-      `align_to(buf, 8)` step in between.
-    * `int32`/`uint32` (4) → `float64` (8) needs `align_to(buf, 8)`.
+      `align_to(buffer, 8)` step in between.
+    * `int32`/`uint32` (4) → `float64` (8) needs `align_to(buffer, 8)`.
 
-  Within a homogenous `float64` sequence (e.g. covariance matrices)
+  Within a homogeneous `float64` sequence (e.g. covariance matrices)
   no extra alignment is needed once the run starts on an 8-boundary.
+
+  The encoders return the field bytes only; callers call `align_to/2`
+  before fields whose alignment is larger than the running buffer tail.
+  The exceptions, `append_float64_sequence/2` and `align_to/2`, take the
+  in-progress body buffer, because their padding depends on where the
+  field lands.
   """
 
   defmacro __using__(_opts) do
     quote do
-      # CDR encoder for strings: 4-byte LE length (including the
-      # trailing null byte), then the bytes + null, then 0-padding
-      # to the next 4-byte boundary so a following u32-or-larger
-      # field lands aligned. This matches what rclpy / rmw_zenoh
-      # emit on the wire for the *common* case where the next
-      # field is u32.
-      #
-      # If the next field is u8 (alignment 1, e.g.
-      # `sensor_msgs/Image.is_bigendian`), this over-pads — use
-      # `encode_string_unaligned/1` instead and let the caller
-      # handle alignment via `align_to/2`.
-      def encode_string(str) when is_binary(str) do
-        bytes = str <> <<0>>
-        len = byte_size(bytes)
-        pad_size = rem(4 - rem(4 + len, 4), 4)
-        <<len::little-unsigned-integer-size(32), bytes::binary, 0::size(pad_size * 8)>>
+      @doc """
+      CDR string: 4-byte LE length (including the trailing null), the
+      bytes and null, then zero padding to the next 4-byte boundary so a
+      following u32-or-larger field lands aligned, as rclpy and
+      rmw_zenoh emit it.
+
+      When the next field is a u8 (e.g. `sensor_msgs/Image.is_bigendian`)
+      this over-pads: use `encode_string_unaligned/1` and `align_to/2`.
+      """
+      def encode_string(string) when is_binary(string) do
+        bytes = string <> <<0>>
+        size_with_null = byte_size(bytes)
+        padding_size = rem(4 - rem(4 + size_with_null, 4), 4)
+
+        <<size_with_null::little-unsigned-integer-size(32), bytes::binary,
+          0::size(padding_size * 8)>>
       end
 
-      # Standards-strict CDR string: 4-byte LE length + bytes
-      # (including null), no trailing padding. Use when the next
-      # field has alignment < 4 (typically `uint8`) — the over-
-      # padding `encode_string/1` performs would otherwise shift
-      # subsequent fields out of position on the receiver.
-      def encode_string_unaligned(str) when is_binary(str) do
-        bytes = str <> <<0>>
-        len = byte_size(bytes)
-        <<len::little-unsigned-integer-size(32), bytes::binary>>
+      @doc """
+      Standards-strict CDR string: 4-byte LE length and the bytes
+      (including null), no trailing padding. Use it when the next field
+      has alignment below 4 (typically `uint8`), where the padding of
+      `encode_string/1` would shift every following field.
+      """
+      def encode_string_unaligned(string) when is_binary(string) do
+        bytes = string <> <<0>>
+        size_with_null = byte_size(bytes)
+        <<size_with_null::little-unsigned-integer-size(32), bytes::binary>>
       end
 
       def parse_string(
-            <<len::little-unsigned-integer-size(32), string::binary-size(len), payload::binary>>
+            <<size_with_null::little-unsigned-integer-size(32),
+              string::binary-size(size_with_null), payload::binary>>
           ) do
-        # Calculate padding to align to 4-byte boundary
-        total_size = 4 + len
+        total_size = 4 + size_with_null
         padding = rem(4 - rem(total_size, 4), 4)
 
         payload =
@@ -81,10 +84,7 @@ defmodule Ros2.Common do
         _ -> {:error, :malformed, :string}
       end
 
-      # Fixed-size `float64[N]` array — CDR omits the length prefix
-      # for bounded arrays, so the caller passes the element count.
-      # For an unbounded `float64[]` we'd need a separate parser that
-      # reads the leading u32 length first.
+      # Fixed-size `float64[count]`: CDR omits the length prefix.
       defp parse_float64_array(payload, count) do
         <<floats::binary-size(count * 8), payload::binary>> = payload
         array = for <<element::little-signed-float-size(64) <- floats>>, do: element
@@ -93,26 +93,21 @@ defmodule Ros2.Common do
         _ -> {:error, :malformed, :float64_array}
       end
 
-      defp parse_float32_array(<<len::little-integer-size(32), payload::binary>>) do
-        <<floats::binary-size(len * 4), payload::binary>> = payload
+      defp parse_float32_array(<<count::little-integer-size(32), payload::binary>>) do
+        <<floats::binary-size(count * 4), payload::binary>> = payload
         array = for <<element::little-signed-float-size(32) <- floats>>, do: element
         {:ok, array, payload}
       rescue
         _ -> {:error, :malformed, :float32_array}
       end
 
-      defp parse_int32_array(<<len::little-unsigned-integer-size(32), payload::binary>>) do
-        <<ints::binary-size(len * 4), payload::binary>> = payload
-        array = for <<element::little-signed-integer-size(32) <- ints>>, do: element
+      defp parse_int32_array(<<count::little-unsigned-integer-size(32), payload::binary>>) do
+        <<integers::binary-size(count * 4), payload::binary>> = payload
+        array = for <<element::little-signed-integer-size(32) <- integers>>, do: element
         {:ok, array, payload}
       rescue
         _ -> {:error, :malformed, :int32_array}
       end
-
-      # ── Encoders for primitive types ──────────────────────────────
-      # Each returns the field bytes only. Callers are responsible for
-      # invoking `align_to/2` before fields whose alignment is larger
-      # than the running buffer tail.
 
       def encode_int32(value) when is_integer(value) do
         <<value::little-signed-integer-size(32)>>
@@ -126,8 +121,7 @@ defmodule Ros2.Common do
         <<value::little-float-size(64)>>
       end
 
-      # Fixed-size `float64[count]` — no length prefix. Mirrors
-      # `parse_float64_array/2`.
+      @doc "Fixed-size `float64[count]`, no length prefix. Mirrors `parse_float64_array/2`."
       def encode_float64_array_fixed(values, count) when length(values) == count do
         Enum.reduce(values, <<>>, fn value, acc -> acc <> encode_float64(value) end)
       end
@@ -147,25 +141,24 @@ defmodule Ros2.Common do
       def encode_bool(true), do: <<1::little-unsigned-integer-size(8)>>
       def encode_bool(false), do: <<0::little-unsigned-integer-size(8)>>
 
-      # Unbounded `uint8[]` (≈ CDR sequence of octets) — 4-byte LE
-      # length prefix followed by the raw bytes. No trailing padding
-      # required since the alignment of a u8 is 1.
+      @doc """
+      Unbounded `uint8[]`: 4-byte LE length prefix, then the raw bytes.
+      No trailing padding, since a u8 has alignment 1.
+      """
       def encode_byte_sequence(bytes) when is_binary(bytes) do
         <<byte_size(bytes)::little-unsigned-integer-size(32), bytes::binary>>
       end
 
-      # Unbounded `float64[]` — 4-byte LE length prefix, then the
-      # float run 8-aligned. Takes the in-progress body buffer rather
-      # than returning standalone bytes: the padding depends on where
-      # the prefix actually lands, which only the buffer knows. A
-      # field-only version cannot be correct — e.g. a `frame_id` of
-      # 11 vs 12 characters shifts the prefix between the two
-      # 8-residues, needing 4 bytes of padding in one case and 0 in
-      # the other.
-      #
-      # An empty sequence gets no padding at all: Fast-CDR's
-      # `serialize_array` returns before aligning when the element
-      # count is 0, so a `float64[]` of length 0 is just the prefix.
+      @doc """
+      Appends an unbounded `float64[]` to the in-progress body `buffer`:
+      the 4-byte LE length prefix, then the floats 8-aligned.
+
+      It takes the buffer because the padding depends on where the prefix
+      lands: a `frame_id` of 11 or 12 characters moves the prefix between
+      the two 8-residues, needing 4 bytes of padding in one case and 0 in
+      the other. An empty sequence is just the prefix, as Fast-CDR's
+      `serialize_array` returns before aligning when the count is 0.
+      """
       def append_float64_sequence(buffer, values)
           when is_binary(buffer) and is_list(values) do
         buffer = buffer <> <<length(values)::little-unsigned-integer-size(32)>>
@@ -181,12 +174,11 @@ defmodule Ros2.Common do
         end
       end
 
-      # Unbounded sequence of an inner CDR struct. `encode_one` is a
-      # 1-arg function returning the inner struct's body bytes; this
-      # helper prepends the u32 element count and concatenates the
-      # results. The caller is responsible for any alignment between
-      # successive elements when needed (most nested message types
-      # naturally land on their own alignment).
+      @doc """
+      Unbounded sequence of an inner CDR struct: the u32 element count,
+      then `encode_one` (returning one element's body bytes) applied to
+      each value. Alignment between elements is the caller's.
+      """
       def encode_struct_sequence(values, encode_one)
           when is_list(values) and is_function(encode_one, 1) do
         prefix = <<length(values)::little-unsigned-integer-size(32)>>
@@ -194,27 +186,23 @@ defmodule Ros2.Common do
         prefix <> body
       end
 
-      # Append zero-byte padding so `byte_size(buffer)` becomes a
-      # multiple of `n`. Pure — takes the in-progress body buffer,
-      # returns the padded buffer. See moduledoc for the alignment
-      # contract (origin = start of encapsulated body).
-      def align_to(buffer, n) when is_binary(buffer) and is_integer(n) and n > 0 do
-        pad = rem(n - rem(byte_size(buffer), n), n)
-        buffer <> <<0::size(pad * 8)>>
+      @doc """
+      Pads the in-progress body `buffer` with zero bytes until its size
+      is a multiple of `alignment`. The origin is the start of the
+      encapsulated body.
+      """
+      def align_to(buffer, alignment)
+          when is_binary(buffer) and is_integer(alignment) and alignment > 0 do
+        padding_size = rem(alignment - rem(byte_size(buffer), alignment), alignment)
+        buffer <> <<0::size(padding_size * 8)>>
       end
 
-      # Unbounded `float64[]` parser. Inverse of
-      # `append_float64_sequence/2`, and it needs the same offset
-      # information the encoder had: `body_size` is the size of the
-      # full encapsulated body, so `body_size - byte_size(payload)`
-      # is the current offset from the body origin. A fixed padding
-      # skip cannot be correct for the same reason the encoder's
-      # couldn't. Zero-length sequences carry no padding.
+      # Inverse of `append_float64_sequence/2`; `body_size` anchors the offset.
       defp parse_float64_sequence(payload, body_size) when is_integer(body_size) do
         case payload do
-          <<len::little-unsigned-integer-size(32), rest::binary>> ->
+          <<count::little-unsigned-integer-size(32), rest::binary>> ->
             offset_after_prefix = body_size - byte_size(payload) + 4
-            take_float64_run(rest, len, offset_after_prefix)
+            take_float64_run(rest, count, offset_after_prefix)
 
           _ ->
             {:error, :malformed, :float64_sequence}
@@ -223,13 +211,13 @@ defmodule Ros2.Common do
 
       defp take_float64_run(rest, 0, _offset), do: {:ok, [], rest}
 
-      defp take_float64_run(rest, len, offset) do
-        pad = rem(8 - rem(offset, 8), 8)
-        bytes_needed = len * 8
+      defp take_float64_run(rest, count, offset) do
+        padding_size = rem(8 - rem(offset, 8), 8)
+        bytes_needed = count * 8
 
         case rest do
-          <<_pad::binary-size(pad), floats::binary-size(bytes_needed), tail::binary>> ->
-            values = for <<v::little-signed-float-size(64) <- floats>>, do: v
+          <<_padding::binary-size(padding_size), floats::binary-size(bytes_needed), tail::binary>> ->
+            values = for <<element::little-signed-float-size(64) <- floats>>, do: element
             {:ok, values, tail}
 
           _ ->
@@ -237,12 +225,10 @@ defmodule Ros2.Common do
         end
       end
 
-      # Strip `n` bytes of alignment padding given the current offset
-      # from the body origin. Used by parsers that need to skip CDR
-      # padding between fields of differing alignment.
+      # `current_offset` is measured from the body origin.
       defp consume_alignment(payload, alignment, current_offset) do
-        pad = rem(alignment - rem(current_offset, alignment), alignment)
-        <<_skip::binary-size(pad), rest::binary>> = payload
+        padding_size = rem(alignment - rem(current_offset, alignment), alignment)
+        <<_skip::binary-size(padding_size), rest::binary>> = payload
         rest
       end
     end

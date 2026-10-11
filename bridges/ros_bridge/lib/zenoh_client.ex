@@ -1,44 +1,39 @@
 defmodule RosBridge.ZenohClient.State do
-  @moduledoc false
+  @moduledoc """
+  `RosBridge.ZenohClient`'s state.
+
+    * `node_token`: the node's own liveliness token, per session.
+      Without it rmw_zenoh infers the node from its entities, and the
+      inferred node of a closed session hides this one's services from
+      graph queries by node, such as foxglove_bridge's parameter
+      discovery.
+    * `publishers`: `%{topic => %{message_module, key_expr, gid,
+      publisher_id, liveliness_token, sequence_number}}`. `gid` and
+      `sequence_number` survive reconnects so subscribers see one
+      publisher identity; `publisher_id` and `liveliness_token` are
+      per session.
+    * `subscriptions`: `%{key_expr => %{topic, message_module,
+      subscribers: %{pid => monitor_ref}, subscriber_id,
+      liveliness_token, eid}}`.
+    * `services`: `%{service_name => %{service_module, handler,
+      key_expr, liveliness_key, queryable_id, liveliness_token}}`. The
+      handler pid turns requests into responses; `queryable_id` and
+      `liveliness_token` are per session.
+    * `monitors`: `%{monitor_ref => {key_expr, pid}}`, for `:DOWN`.
+    * `drops_while_offline`: publishes dropped while no session is
+      open, logged once on connect, then reset.
+  """
 
   defstruct [
     :endpoint_ip,
     :node_name,
     :domain_id,
     :session,
-    # The node's own liveliness token, per session. Without it rmw_zenoh
-    # infers the node from its entities, and the inferred node of a
-    # closed session hides this one's services from graph queries by
-    # node, such as foxglove_bridge's parameter discovery.
     :node_token,
-    # %{topic => %{
-    #     message_module, key_expr, gid, publisher_id,
-    #     liveliness_token, sequence_number
-    #   }}
-    # Per-topic state. `gid` and `sequence_number` are stable across
-    # reconnects so subscribers see a consistent publisher identity;
-    # `publisher_id` and `liveliness_token` are per-session and get
-    # re-declared on every reconnect.
     publishers: %{},
-    # %{key_expr => %{
-    #     topic, message_module,
-    #     subscribers: %{pid => monitor_ref},
-    #     subscriber_id
-    #   }}
     subscriptions: %{},
-    # %{service_name => %{
-    #     service_module, handler, key_expr,
-    #     liveliness_key, queryable_id, liveliness_token
-    #   }}
-    # Per-service-server state. The handler is the pid that runs
-    # the request → response logic; queryable_id +
-    # liveliness_token are per-session and re-declared on reconnect.
     services: %{},
-    # Reverse index for fast :DOWN lookup: monitor_ref → {key_expr, pid}.
     monitors: %{},
-    # Count of publishes dropped while no session is open (heartbeat/IMU
-    # timers keep firing during reconnect). Summarised once on connect
-    # instead of logged per-drop, then reset.
     drops_while_offline: 0
   ]
 end
@@ -59,6 +54,44 @@ defmodule RosBridge.ZenohClient do
   The actual ROS 2 message generation (heartbeats, IMU, etc.) lives in
   caller GenServers — `RosBridge.Publishers.Heartbeat`, `RosBridge.Consumers.Joy`,
   and friends — that use the API exposed here.
+
+  ## Subscriptions
+
+  A subscription matches `<domain>/<topic>/**` rather than the exact
+  `<domain>/<topic>/<type>/<hash>` keyexpr. `rmw_zenoh_cpp` appends a
+  per-subscriber `/_buf/<id>` segment to the data keyexpr, which an
+  exact match never receives, and one topic carries one type, so
+  type-hash drift between ROS distributions does not matter: the
+  message module's `parse/1` is the only type-aware step. The cost is
+  that `/**` also matches copies a publisher addresses to *other*
+  subscribers, so a second consumer of the same topic makes the bridge
+  handle each sample twice; deduplicate on the header stamp rather
+  than narrowing the pattern, since the buffer id is not predictable.
+
+  Each subscription also declares a liveliness token. Receiving data
+  does not need it, but publishers that only send when someone is
+  listening (`image_transport`'s compressed transports, anything using
+  `count_subscribers()`) stay silent without it. A token that cannot be
+  declared, or a message module without `dds_type/0` and
+  `type_hash/0`, is logged and skipped: the subscription still
+  receives from ordinary publishers.
+
+  ## Parsing
+
+  Every message module is entered through one guarded call. The
+  parsers are binary pattern matches, and a short or malformed body
+  raises (`FunctionClauseError`, `MatchError`, `ArgumentError`) rather
+  than returning a tagged error. The bridge subtree is `:rest_for_one`
+  (`RosBridge.children/0`), so a raise would restart every consumer at
+  the publisher's frequency; a malformed frame is data, not a fault.
+
+  Bytes left over after a successful parse mean the wrong message
+  module: a `TwistStamped` body handed to `Twist.parse/1` reads the
+  header as float64s and succeeds with denormals, so the vehicle
+  ignores every command while the stream looks healthy. Messages ending
+  in a variable-length field can carry up to 7 bytes of CDR alignment
+  padding, so only a surplus of 8 bytes or more is warned about, at
+  most once per period per keyexpr.
   """
   use GenServer
 
@@ -71,11 +104,13 @@ defmodule RosBridge.ZenohClient do
   @default_domain_id 0
   @reconnect_initial_ms 1_000
   @reconnect_max_ms 30_000
+  # zenohd's default listener.
   @zenoh_port 7447
-  @surplus_warning_period 5_000
-  @surplus_alignment_slack 8
-
-  ## API
+  @surplus_warning_period_ms 5_000
+  # Trailing CDR padding is at most 7 bytes.
+  @surplus_alignment_slack_bytes 8
+  # Logs a topic's first put, then one in this many.
+  @debug_log_every_puts 30
 
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -150,8 +185,6 @@ defmodule RosBridge.ZenohClient do
   def respond(service_name, %Zenohex.Query{} = query, response_payload) do
     GenServer.cast(__MODULE__, {:respond, service_name, query, response_payload})
   end
-
-  ## Callbacks
 
   @impl GenServer
   def init(opts) do
@@ -252,21 +285,15 @@ defmodule RosBridge.ZenohClient do
         {:noreply, state}
 
       service ->
-        # rmw_zenoh's CDR encapsulation header on the response body.
-        cdr = <<0x00, 0x01, 0x00, 0x00>> <> response_payload
+        encapsulated_response = <<0x00, 0x01, 0x00, 0x00>> <> response_payload
 
-        # The reply must carry an attachment that echoes the request's
-        # sequence_id so the rclpy client can match it to the call
-        # site. The request attachment layout matches our publisher
-        # attachment (see `Ros2.RmwZenoh.attachment/3`): 8 bytes seq,
-        # 8 bytes ns, 1 byte gid-len, 16 bytes gid. We echo the seq
-        # and re-stamp the timestamp; the GID we re-use as the
-        # writer-id stand-in.
+        # Echoes the request's sequence number so the client matches the
+        # reply; same layout as `Ros2.RmwZenoh.attachment/3`.
         attachment =
           case query.attachment do
-            <<seq::little-signed-integer-size(64), _ts::binary-size(8),
+            <<sequence_number::little-signed-integer-size(64), _source_timestamp::binary-size(8),
               16::unsigned-integer-size(8), gid::binary-size(16)>> ->
-              RmwZenoh.attachment(seq, System.system_time(:nanosecond), gid)
+              RmwZenoh.attachment(sequence_number, System.system_time(:nanosecond), gid)
 
             _ ->
               # No or unparseable request attachment — synthesise one.
@@ -277,7 +304,9 @@ defmodule RosBridge.ZenohClient do
               )
           end
 
-        case Zenohex.Query.reply(query.zenoh_query, service.key_expr, cdr, attachment: attachment) do
+        case Zenohex.Query.reply(query.zenoh_query, service.key_expr, encapsulated_response,
+               attachment: attachment
+             ) do
           :ok ->
             {:noreply, state}
 
@@ -316,11 +345,7 @@ defmodule RosBridge.ZenohClient do
 
         case Zenohex.Publisher.put(publisher.publisher_id, payload, attachment: attachment) do
           :ok ->
-            # Sample the debug log: emit on the first put (so you
-            # see each topic come alive) and once every 30 puts
-            # after — at 30 Hz that's ~1 line/sec/topic instead of
-            # the full firehose.
-            if rem(publisher.sequence_number, 30) == 1 do
+            if rem(publisher.sequence_number, @debug_log_every_puts) == 1 do
               Logger.debug(
                 "#{__MODULE__} put ##{publisher.sequence_number} on #{publisher.key_expr} " <>
                   "(#{byte_size(payload)}B payload)"
@@ -338,7 +363,7 @@ defmodule RosBridge.ZenohClient do
 
             teardown_session(state)
             send(self(), {:connect, @reconnect_initial_ms})
-            {:noreply, drop_session(state)}
+            {:noreply, clear_session_handles(state)}
         end
 
       {:error, reason, state} ->
@@ -438,27 +463,8 @@ defmodule RosBridge.ZenohClient do
   @impl GenServer
   def terminate(_reason, state), do: teardown_session(state)
 
-  ## Internals — subscribers
-
   defp subscription_key_expr(domain_id, topic) do
-    # Wildcard match on `<domain>/<topic>/**`. One topic carries one
-    # type in the OVCS bus, so type-hash drift between ROS distros
-    # doesn't break us — the message module's `parse/1` is the only
-    # type-aware step on the subscriber side.
-    #
-    # The wildcard also absorbs a change in rmw_zenoh 0.10.5: it
-    # appends a per-subscriber buffer segment to the data keyexpr
-    # (".../<hash>/_buf/<id>"), so an exact-match subscription on
-    # "<domain>/<topic>/<type>/<hash>" now receives nothing at all.
-    #
-    # The cost is that a publisher emits one copy per matched
-    # subscriber, and "/**" matches copies addressed to *other*
-    # subscribers too. With one consumer that is invisible — measured
-    # at 287 deliveries for 287 distinct frames — but a second
-    # consumer of the same topic would have this bridge handling each
-    # frame twice. If that day comes, deduplicate on the header stamp
-    # rather than narrowing the pattern, since the buffer id is not
-    # ours to predict.
+    # Wildcard, as explained in the moduledoc.
     "#{domain_id}/#{String.trim_leading(topic, "/")}/**"
   end
 
@@ -468,7 +474,7 @@ defmodule RosBridge.ZenohClient do
         Logger.info("#{__MODULE__} subscribed to #{key_expr}")
 
         %{subscription | subscriber_id: subscriber_id}
-        |> declare_subscriber_liveliness(state)
+        |> maybe_declare_subscriber_liveliness(state)
 
       {:error, reason} ->
         Logger.warning("#{__MODULE__} declare_subscriber #{key_expr} failed: #{inspect(reason)}")
@@ -477,29 +483,13 @@ defmodule RosBridge.ZenohClient do
     end
   end
 
-  # Announce the subscription in the ROS graph.
-  #
-  # Receiving data does not require this; being *sent* data sometimes
-  # does. Publishers that only transmit when someone is listening —
-  # `image_transport`'s compressed transports, anything using
-  # `count_subscribers()` — see a bridge without this token as no
-  # subscriber at all and stay silent, which looks exactly like a dead
-  # topic.
-  #
-  # Failure is not fatal: a bridge that is invisible in the graph
-  # still receives from every ordinary publisher, so a token that
-  # cannot be declared is logged and stepped over rather than taking
-  # the subscription down with it.
-  #
-  # The token names a concrete type, so it needs `dds_type/0` and
-  # `type_hash/0`; a subscription whose module defines neither goes
-  # untokenised rather than crashing the client.
-  defp declare_subscriber_liveliness(subscription, %State{} = state) do
+  # Announces the subscription in the ROS graph, when its module names a type.
+  defp maybe_declare_subscriber_liveliness(subscription, %State{} = state) do
     module = subscription.message_module
     Code.ensure_loaded(module)
 
     if function_exported?(module, :dds_type, 0) and function_exported?(module, :type_hash, 0) do
-      do_declare_subscriber_liveliness(subscription, state)
+      declare_subscriber_liveliness_token(subscription, state)
     else
       Logger.debug(
         "#{__MODULE__} #{inspect(module)} declares no dds_type/type_hash; " <>
@@ -510,7 +500,7 @@ defmodule RosBridge.ZenohClient do
     end
   end
 
-  defp do_declare_subscriber_liveliness(subscription, %State{session: session} = state) do
+  defp declare_subscriber_liveliness_token(subscription, %State{session: session} = state) do
     with {:ok, %Zenohex.Session.Info{zid: zid}} <- Zenohex.Session.info(session),
          liveliness_key <-
            RmwZenoh.subscriber_liveliness_key(
@@ -547,9 +537,7 @@ defmodule RosBridge.ZenohClient do
     %{state | subscriptions: subscriptions}
   end
 
-  # The registered key_expr ends in `/**` — strip it and match by
-  # prefix so the incoming Sample's concrete key_expr (which embeds
-  # the type name + hash chosen by the publisher) routes back.
+  # Prefix match: a sample's key_expr carries the publisher's type and hash.
   defp match_subscription(subscriptions, sample_key) do
     Enum.find_value(subscriptions, :no_match, fn {key_expr, subscription} ->
       prefix = String.trim_trailing(key_expr, "/**")
@@ -577,24 +565,7 @@ defmodule RosBridge.ZenohClient do
     end
   end
 
-  # The one place every message module is entered, and therefore the
-  # one place worth making total.
-  #
-  # The parsers are built from binary pattern matches, and a body that
-  # is short or malformed raises rather than returning a tagged error:
-  # `FunctionClauseError` from a `parse_string/1` clause that matches no
-  # input, `MatchError` from an alignment helper, `ArgumentError` from a
-  # `binary_part/3` given a negative length. None of those are caught by
-  # the `else` above, so without this they kill the GenServer. The
-  # bridge subtree is `:rest_for_one` (`RosBridge.children/0`), so a
-  # client crash restarts every consumer and they re-subscribe -- but a
-  # malformed frame is data, not a fault, and one publisher must not be
-  # able to restart the whole bridge at its own frequency.
-  #
-  # A rescue clause per parser would be whack-a-mole -- the same idiom
-  # appears in `Ros2.Common.parse_string/1`, `Time.parse/1`,
-  # `Quaternion.parse/1` and every module built on them. Guarding the
-  # call site covers all of them at once, including ones not written yet.
+  # A raising parser must not crash the client; see the moduledoc.
   defp parse_body(message_module, body) do
     message_module.parse(body)
   rescue
@@ -602,35 +573,16 @@ defmodule RosBridge.ZenohClient do
       {:error, {:parse_raised, Exception.message(exception), byte_size(body)}}
   end
 
-  # Surplus bytes after a successful parse are the signature of the
-  # wrong message module, and the fixed-layout parsers cannot tell: a
-  # 72-byte `TwistStamped` body handed to `Twist.parse/1` reads the
-  # header's bytes as float64s and succeeds, yielding denormals near
-  # 1.0e-273 -- a vehicle that ignores every command while every
-  # watchdog reports a healthy stream.
-  #
-  # The threshold is what keeps this from crying wolf. Messages ending
-  # in a variable-length field -- `Joy`'s axes and buttons,
-  # `CompressedImage`'s data -- can carry trailing CDR alignment
-  # padding, which is at most 7 bytes for the widest primitive. Anything
-  # from 8 bytes up is a field the parser did not know about, not
-  # padding. The mismatch this exists for leaves 24.
-  #
-  # Rate-limited per key, because a mis-typed publisher sends at its own
-  # frequency rather than once.
+  # Surplus bytes mean the wrong message module; see the moduledoc.
   defp warn_on_surplus(message_module, key_expr, rest)
-       when byte_size(rest) >= @surplus_alignment_slack do
-    now = System.monotonic_time(:millisecond)
-    key = {:surplus_warned, key_expr}
-    last = Process.get(key)
+       when byte_size(rest) >= @surplus_alignment_slack_bytes do
+    now_ms = System.monotonic_time(:millisecond)
+    warned_key = {:surplus_warned, key_expr}
+    last_warning_ms = Process.get(warned_key)
 
-    # `nil` explicitly, not a sentinel arrived at by arithmetic:
-    # `System.monotonic_time/1` has an arbitrary origin and is routinely
-    # negative, so `now - -@surplus_warning_period >= @surplus_warning_period`
-    # is false on a fresh VM and the first warning -- the one that
-    # matters -- never fires.
-    if is_nil(last) or now - last >= @surplus_warning_period do
-      Process.put(key, now)
+    # Test nil, not a sentinel: monotonic time is often negative.
+    if is_nil(last_warning_ms) or now_ms - last_warning_ms >= @surplus_warning_period_ms do
+      Process.put(warned_key, now_ms)
 
       Logger.warning(
         "#{__MODULE__} #{inspect(message_module)} parsed #{key_expr} but left " <>
@@ -673,8 +625,6 @@ defmodule RosBridge.ZenohClient do
         {%{state | subscriptions: subscriptions, monitors: monitors}, subscription}
     end
   end
-
-  ## Internals — services
 
   defp build_service_record(state, service_name, service_module, handler_pid) do
     key_expr = RmwZenoh.service_key_expr(state.domain_id, service_name, service_module)
@@ -733,18 +683,17 @@ defmodule RosBridge.ZenohClient do
   defp redeclare_services(%State{session: nil} = state), do: state
 
   defp redeclare_services(%State{} = state) do
-    Enum.reduce(state.services, state, fn {service_name, service}, acc ->
+    Enum.reduce(state.services, state, fn {service_name, service}, updated_state ->
       service = %{service | queryable_id: nil, liveliness_token: nil}
 
-      case declare_service(acc, service_name, service) do
-        {:ok, acc, _} -> acc
-        {:error, _reason, acc} -> acc
+      case declare_service(updated_state, service_name, service) do
+        {:ok, updated_state, _} -> updated_state
+        {:error, _reason, updated_state} -> updated_state
       end
     end)
   end
 
-  # The registered service key_expr is a single concrete string —
-  # match incoming query.key_expr against it exactly.
+  # A service key_expr is concrete, so queries match it exactly.
   defp match_service(services, query_key) do
     Enum.find_value(services, :no_match, fn {service_name, service} ->
       if service.key_expr == query_key do
@@ -752,8 +701,6 @@ defmodule RosBridge.ZenohClient do
       end
     end)
   end
-
-  ## Internals — publishers
 
   defp ensure_publisher(state, topic, message_module) do
     case Map.get(state.publishers, topic) do
@@ -822,15 +769,15 @@ defmodule RosBridge.ZenohClient do
   end
 
   defp redeclare_publishers(%State{} = state) do
-    Enum.reduce(state.publishers, state, fn {topic, publisher}, acc ->
-      case redeclare_publisher(acc, topic, publisher) do
-        {:ok, acc, _} ->
-          acc
+    Enum.reduce(state.publishers, state, fn {topic, publisher}, updated_state ->
+      case redeclare_publisher(updated_state, topic, publisher) do
+        {:ok, updated_state, _} ->
+          updated_state
 
-        {:error, reason, acc} ->
+        {:error, reason, updated_state} ->
           Logger.warning("#{__MODULE__} re-declare publisher #{topic} failed: #{inspect(reason)}")
 
-          acc
+          updated_state
       end
     end)
   end
@@ -838,8 +785,6 @@ defmodule RosBridge.ZenohClient do
   defp put_publisher(state, topic, publisher) do
     %{state | publishers: Map.put(state.publishers, topic, publisher)}
   end
-
-  ## Internals — session
 
   defp open_session(endpoint_ip) do
     Zenohex.Config.default()
@@ -851,11 +796,11 @@ defmodule RosBridge.ZenohClient do
   end
 
   defp schedule_reconnect(state, backoff_ms, reason) do
-    next = min(backoff_ms * 2, @reconnect_max_ms)
+    next_backoff_ms = min(backoff_ms * 2, @reconnect_max_ms)
 
     Logger.warning("#{__MODULE__} #{reason}; retrying in #{backoff_ms}ms")
-    Process.send_after(self(), {:connect, next}, backoff_ms)
-    {:noreply, drop_session(state)}
+    Process.send_after(self(), {:connect, next_backoff_ms}, backoff_ms)
+    {:noreply, clear_session_handles(state)}
   end
 
   defp teardown_session(%State{} = state) do
@@ -886,8 +831,8 @@ defmodule RosBridge.ZenohClient do
 
   defp declare_node(state) do
     with {:ok, %Zenohex.Session.Info{zid: zid}} <- Zenohex.Session.info(state.session),
-         key = RmwZenoh.node_liveliness_key(state.domain_id, zid, state.node_name),
-         {:ok, token} <- Zenohex.Liveliness.declare_token(state.session, key) do
+         liveliness_key = RmwZenoh.node_liveliness_key(state.domain_id, zid, state.node_name),
+         {:ok, token} <- Zenohex.Liveliness.declare_token(state.session, liveliness_key) do
       %{state | node_token: token}
     else
       error ->
@@ -896,9 +841,8 @@ defmodule RosBridge.ZenohClient do
     end
   end
 
-  # Clears per-session refs without dropping the durable identity
-  # bits (gid, sequence_number, registered subscribers, service handlers).
-  defp drop_session(%State{} = state) do
+  # Keeps gids, sequence numbers, subscribers and service handlers.
+  defp clear_session_handles(%State{} = state) do
     publishers =
       Map.new(state.publishers, fn {topic, publisher} ->
         {topic, %{publisher | publisher_id: nil, liveliness_token: nil}}

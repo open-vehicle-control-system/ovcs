@@ -71,7 +71,7 @@ defmodule Ros2.RmwZenoh do
   our publisher is invisible to graph introspection even though its
   data flows on the right keyexpr.
 
-  Format (verified by capturing live tokens from rclpy publishers):
+  Format:
 
       @ros2_lv/<domain>/<zid>/<nid>/<eid>/MP/<enclave>/<ns>/<node>/<topic>/<type>/<hash>/<qos>
 
@@ -94,13 +94,9 @@ defmodule Ros2.RmwZenoh do
   graph as a consumer**, and that is not cosmetic: publishers that
   only send when someone is listening — `image_transport`'s
   compressed transports, and anything built on
-  `count_subscribers()` — never start. Measured against a simulated
-  camera, the compressed stream published nothing at all until a
-  separate `ros2 topic echo` provided a subscriber the publisher
-  could see; with one, the same Elixir subscription received 28.8 Hz.
+  `count_subscribers()` — never start.
 
-  Format captured live from an `rmw_zenoh_cpp` 0.10.5 subscriber,
-  the same way the publisher token was:
+  Example, from an `rmw_zenoh_cpp` subscriber:
 
       @ros2_lv/0/<zid>/0/4/MS/%/%/<node>/%probe_topic/std_msgs::msg::dds_::String_/RIHS01_.../::,10:,:,:,,
 
@@ -153,9 +149,9 @@ defmodule Ros2.RmwZenoh do
   shape as a topic. Strips a leading `/` from the service name to
   match rmw_zenoh's `strip_slashes` behavior.
   """
-  def service_key_expr(domain_id, service_name, service_module) do
-    key_expr(domain_id, service_name, service_module)
-  end
+  defdelegate service_key_expr(domain_id, service_name, service_module),
+    to: __MODULE__,
+    as: :key_expr
 
   defp build_liveliness_key(
          domain_id,
@@ -169,14 +165,14 @@ defmodule Ros2.RmwZenoh do
        ) do
     enclave = mangle("/")
     namespace = mangle("/")
-    topic_m = mangle(topic_with_leading_slash(topic))
+    mangled_topic = mangle(topic_with_leading_slash(topic))
     nid = 0
 
     "@ros2_lv/#{domain_id}/#{zid}/#{nid}/#{eid}/#{entity}/#{enclave}/#{namespace}/" <>
-      "#{node_name}/#{topic_m}/#{message_module.dds_type()}/#{message_module.type_hash()}/#{qos}"
+      "#{node_name}/#{mangled_topic}/#{message_module.dds_type()}/#{message_module.type_hash()}/#{qos}"
   end
 
-  defp mangle(s), do: String.replace(s, "/", "%")
-  defp topic_with_leading_slash("/" <> _ = t), do: t
-  defp topic_with_leading_slash(t), do: "/" <> t
+  defp mangle(path), do: String.replace(path, "/", "%")
+  defp topic_with_leading_slash("/" <> _ = topic), do: topic
+  defp topic_with_leading_slash(topic), do: "/" <> topic
 end

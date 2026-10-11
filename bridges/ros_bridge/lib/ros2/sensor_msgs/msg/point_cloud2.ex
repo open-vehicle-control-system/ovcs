@@ -5,7 +5,7 @@ defmodule Ros2.SensorMsgs.Msg.PointField do
   `count` (u32).
 
   The `uint8` after a string is the alignment hazard here — see
-  `encode/1`.
+  `append_to/2`.
   """
   use Ros2.Common
 
@@ -24,11 +24,10 @@ defmodule Ros2.SensorMsgs.Msg.PointField do
   computing padding from zero silently produces a message the receiver
   cannot decode.
 
-  Two alignment steps inside one small struct: `name` is a string with
-  no trailing pad (the next primitive after `offset` is a `uint8`, so
-  `encode_string/1` would over-pad), then `offset` is a `uint32` and
-  needs 4; and `count` is a `uint32` after that `uint8`, so it needs 4
-  again.
+  Two alignment steps inside one small struct: `name` is written
+  without trailing padding and realigned to 4 for the `uint32`
+  `offset`, and `count` is a `uint32` after the `uint8` `datatype`, so
+  it needs 4 again.
   """
   @spec append_to(binary(), %__MODULE__{}) :: binary()
   def append_to(buffer, %__MODULE__{name: name, offset: offset, datatype: datatype, count: count})
@@ -48,8 +47,8 @@ defmodule Ros2.SensorMsgs.Msg.PointCloud2 do
 
   Published alongside the depth image because a depth image is only
   half a measurement: it needs intrinsics, a depth scale, and a viewer
-  that knows to unproject it. Every one of those was a silent failure
-  mode while getting the 3D view working. A point cloud carries
+  that knows to unproject it, and each of those fails silently when
+  wrong. A point cloud carries
   explicit XYZ in metres — there is nothing left to interpret, and it
   is what an obstacle-processing consumer wants anyway.
 

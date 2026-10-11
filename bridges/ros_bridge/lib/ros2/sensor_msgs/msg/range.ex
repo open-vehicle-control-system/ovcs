@@ -26,17 +26,19 @@ defmodule Ros2.SensorMsgs.Msg.Range do
   def dds_type, do: @dds_type
   def type_hash, do: @type_hash
 
-  # The header is encoded here rather than by `Header.encode/1`, which
-  # pads the frame id to 4 bytes: the uint8 that follows sits right
-  # after it.
-  def encode(%__MODULE__{header: header} = m) do
+  @doc """
+  Encodes the header itself rather than through `Header.encode/1`,
+  which pads the frame id to 4 bytes: the uint8 that follows sits right
+  after it.
+  """
+  def encode(%__MODULE__{header: header} = range_reading) do
     Time.encode(header.stamp)
     |> string(header.frame_id)
-    |> u8(if m.radiation_type == :infrared, do: @infrared, else: @ultrasound)
-    |> f32(m.field_of_view)
-    |> f32(m.min_range)
-    |> f32(m.max_range)
-    |> f32(m.range)
-    |> f32(m.variance)
+    |> u8(if range_reading.radiation_type == :infrared, do: @infrared, else: @ultrasound)
+    |> f32(range_reading.field_of_view)
+    |> f32(range_reading.min_range)
+    |> f32(range_reading.max_range)
+    |> f32(range_reading.range)
+    |> f32(range_reading.variance)
   end
 end

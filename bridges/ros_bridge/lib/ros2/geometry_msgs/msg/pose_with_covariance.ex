@@ -5,10 +5,9 @@ defmodule Ros2.GeometryMsgs.Msg.PoseWithCovariance do
   length prefix in CDR, so this is a flat 56 + 288 = 344 byte run
   that needs the buffer 8-aligned on entry and leaves it 8-aligned.
 
-  We publish an all-zero covariance. In ROS convention that reads as
-  "unknown", which is honest: a detection's position uncertainty is
-  dominated by the stereo depth error, and we do not currently
-  propagate that through to a covariance matrix.
+  The covariance defaults to all zeros, which ROS reads as "unknown":
+  a detection's position uncertainty is dominated by the stereo depth
+  error, which is not propagated into a covariance matrix.
   """
   use Ros2.Common
 

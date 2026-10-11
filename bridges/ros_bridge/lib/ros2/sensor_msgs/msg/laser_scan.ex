@@ -25,16 +25,16 @@ defmodule Ros2.SensorMsgs.Msg.LaserScan do
   def dds_type, do: @dds_type
   def type_hash, do: @type_hash
 
-  def encode(%__MODULE__{} = m) do
-    Header.encode(m.header)
-    |> f32(m.angle_min)
-    |> f32(m.angle_max)
-    |> f32(m.angle_increment)
-    |> f32(m.time_increment)
-    |> f32(m.scan_time)
-    |> f32(m.range_min)
-    |> f32(m.range_max)
-    |> sequence(m.ranges, &f32/2)
-    |> sequence(m.intensities, &f32/2)
+  def encode(%__MODULE__{} = scan) do
+    Header.encode(scan.header)
+    |> f32(scan.angle_min)
+    |> f32(scan.angle_max)
+    |> f32(scan.angle_increment)
+    |> f32(scan.time_increment)
+    |> f32(scan.scan_time)
+    |> f32(scan.range_min)
+    |> f32(scan.range_max)
+    |> sequence(scan.ranges, &f32/2)
+    |> sequence(scan.intensities, &f32/2)
   end
 end

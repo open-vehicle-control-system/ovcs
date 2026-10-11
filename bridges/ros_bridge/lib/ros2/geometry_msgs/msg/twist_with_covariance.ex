@@ -6,8 +6,7 @@ defmodule Ros2.GeometryMsgs.Msg.TwistWithCovariance do
   entry and on exit.
 
   An all-zero covariance reads as "unknown" by ROS convention, which
-  is what a dead-reckoned twist honestly is until the sensor noise is
-  characterised.
+  is what a dead-reckoned twist with uncharacterised sensor noise is.
   """
   use Ros2.Common
 

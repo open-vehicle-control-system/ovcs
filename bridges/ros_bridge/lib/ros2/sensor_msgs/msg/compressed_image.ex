@@ -24,17 +24,17 @@ defmodule Ros2.SensorMsgs.Msg.CompressedImage do
   def dds_type, do: @dds_type
   def type_hash, do: @type_hash
 
-  def encode(%__MODULE__{} = msg) do
-    Header.encode(msg.header)
-    |> Kernel.<>(encode_string(msg.format))
-    |> Kernel.<>(encode_byte_sequence(msg.data))
+  def encode(%__MODULE__{} = compressed_image) do
+    Header.encode(compressed_image.header)
+    |> Kernel.<>(encode_string(compressed_image.format))
+    |> Kernel.<>(encode_byte_sequence(compressed_image.data))
   end
 
   def parse(payload) do
     with {:ok, header, payload} <- Header.parse(payload),
          {:ok, format, payload} <- parse_string(payload),
-         <<len::little-unsigned-integer-size(32), payload::binary>> <- payload,
-         <<data::binary-size(len), payload::binary>> <- payload do
+         <<data_length::little-unsigned-integer-size(32), payload::binary>> <- payload,
+         <<data::binary-size(data_length), payload::binary>> <- payload do
       {:ok, %__MODULE__{header: header, format: format, data: data}, payload}
     else
       _ -> {:error, :malformed, __MODULE__}

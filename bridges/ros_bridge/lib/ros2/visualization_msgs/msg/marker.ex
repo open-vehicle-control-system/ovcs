@@ -42,12 +42,17 @@ defmodule Ros2.VisualizationMsgs.Msg.Marker do
       `align_to(8)` after its count. An **empty** one gets no
       padding at all, matching Fast-CDR's `serialize_array`, which
       returns before aligning when the element count is zero.
+
+  `texture` is a nested `CompressedImage` whose fields are all
+  4-aligned, so its struct-local `encode/1` is safe. CDR has no absent
+  fields, so a nil texture is encoded as a default-constructed image
+  (zero stamp, empty frame_id), as rclpy does: reusing the marker's
+  header would add the frame_id's bytes to every marker.
   """
   use Ros2.Common
 
   alias Ros2.BuiltinInterfaces.Msg.{Duration, Time}
-  alias Ros2.GeometryMsgs.Msg.{Point, Pose}
-  alias Ros2.GeometryMsgs.Msg.Vector3
+  alias Ros2.GeometryMsgs.Msg.{Point, Pose, Vector3}
   alias Ros2.SensorMsgs.Msg.CompressedImage
   alias Ros2.StdMsgs.Msg.{ColorRGBA, Header}
   alias Ros2.VisualizationMsgs.Msg.{MeshFile, UVCoordinate}
@@ -126,8 +131,7 @@ defmodule Ros2.VisualizationMsgs.Msg.Marker do
     |> Kernel.<>(encode_bool(marker.mesh_use_embedded_materials))
   end
 
-  # `Point[]` — the count is u32, then the float64 run needs the
-  # buffer 8-aligned. An empty sequence carries no padding.
+  # The float64 run is 8-aligned after the count; an empty one is not padded.
   defp append_point_sequence(buffer, []), do: buffer <> encode_uint32(0)
 
   defp append_point_sequence(buffer, points) do
@@ -136,23 +140,14 @@ defmodule Ros2.VisualizationMsgs.Msg.Marker do
     end)
   end
 
-  # Sequences whose element alignment is 4 or less: the u32 count
-  # already leaves the buffer where the elements need it.
+  # For elements aligned to 4 or less, which the u32 count already satisfies.
   defp append_struct_sequence(buffer, values, encode_one) do
     Enum.reduce(values, buffer <> encode_uint32(length(values)), fn value, acc ->
       acc <> encode_one.(value)
     end)
   end
 
-  # `texture` is a nested CompressedImage. Every field in it is
-  # 4-aligned and the buffer is 4-aligned here, so the struct-local
-  # `encode/1` is safe — unlike `pose`, nothing inside it aligns to
-  # 8. A nil texture still has to be encoded, because CDR has no
-  # absent fields: it becomes a **default-constructed** image, with a
-  # zero stamp and an empty frame_id. Reusing the marker's own header
-  # here would be the natural-looking choice and is wrong — it adds
-  # the frame_id's bytes to every marker, and rclpy's own encoding
-  # says a default-constructed nested struct is what belongs here.
+  # A nil texture is a default-constructed image; see the moduledoc.
   defp append_texture(buffer, nil) do
     buffer <>
       CompressedImage.encode(%CompressedImage{

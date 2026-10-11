@@ -17,8 +17,7 @@ defmodule Ros2.SensorMsgs.Msg.Imu do
   """
   use Ros2.Common
 
-  alias Ros2.GeometryMsgs.Msg.Quaternion
-  alias Ros2.GeometryMsgs.Msg.Vector3
+  alias Ros2.GeometryMsgs.Msg.{Quaternion, Vector3}
   alias Ros2.StdMsgs.Msg.Header
 
   defstruct [
@@ -74,11 +73,5 @@ defmodule Ros2.SensorMsgs.Msg.Imu do
     end
   end
 
-  # CDR alignment is relative to the start of the encapsulated body,
-  # but `Header.parse/1` consumes a variable number of bytes (the
-  # frame_id string). To know how much padding precedes the next
-  # 8-aligned field we have to know the body-relative offset *after*
-  # Header — i.e. how many bytes Header.encode/1 would have produced
-  # for the same struct.
   defp byte_size_after_header(header), do: byte_size(Header.encode(header))
 end

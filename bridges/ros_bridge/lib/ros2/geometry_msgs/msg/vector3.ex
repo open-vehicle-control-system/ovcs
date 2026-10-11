@@ -16,10 +16,7 @@ defmodule Ros2.GeometryMsgs.Msg.Vector3 do
     {:ok, %__MODULE__{x: x, y: y, z: z}, rest}
   end
 
-  # A body shorter than 24 bytes matches no clause above, and a
-  # `rescue` on the clause with the binary pattern never sees that —
-  # the FunctionClauseError is raised at the call site, not inside the
-  # body. So the error case needs a clause of its own, or every caller
-  # inherits a crash where the contract promises a tagged tuple.
+  # A short body raises FunctionClauseError at the call site, out of
+  # reach of a `rescue`, so the tagged error needs its own clause.
   def parse(body) when is_binary(body), do: {:error, :malformed, __MODULE__}
 end
