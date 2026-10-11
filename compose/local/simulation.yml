@@ -13,10 +13,9 @@
 #   docker compose -f simulation.yml up -d
 #   docker compose -f simulation.yml logs -f sim
 #
-# Drive it:
-#   docker compose -f simulation.yml exec sim bash -c \
-#     'source /opt/ros/lyrical/setup.bash && ros2 topic pub -r 10 /cmd_vel geometry_msgs/msg/Twist \
-#        "{linear: {x: 1.0}, angular: {z: 0.3}}"'
+# Nothing here drives the vehicle: the VMS does, through the simulator
+# plant in the vehicle's ROS bridge (`OVCS_SIM=1 ./ovcs run <vehicle>`).
+# See simulation/README.md.
 #
 # The Zenoh environment comes from common.yml via `extends:`; the
 # project name keeps this stack's containers apart from base.yml's,
@@ -55,11 +54,17 @@ services:
       # this mount is dropped.
       - ./simulation/launch:/opt/ovcs/launch:ro
       - ./simulation/worlds:/opt/ovcs/worlds:ro
-      - ./simulation/config:/opt/ovcs/config:ro
+      # The GPU, for the cameras. Without it Mesa renders them on the
+      # CPU (llvmpipe), which takes most of a workstation's cores.
+      # Bind-mounted rather than a `devices:` entry, which fails `up` on
+      # a machine without one; the cgroup rule grants the DRM devices.
+      - /dev/dri:/dev/dri
+    device_cgroup_rules:
+      - 'c 226:* rmw'
     command:
       - bash
       - -lc
-      - "ros2 launch /opt/ovcs/launch/sim.launch.py vehicle:=${OVCS_VEHICLE} teleop:=false"
+      - "ros2 launch /opt/ovcs/launch/sim.launch.py vehicle:=${OVCS_VEHICLE}"
 
   nav2:
     # Nav2, behind a profile so the plain `up -d` above stays a bare
@@ -70,9 +75,8 @@ services:
     #
     #   docker compose -f simulation.yml --profile nav2 up -d nav2
     #
-    # It drives through /cmd_vel_nav (TwistStamped), which
-    # sim.launch.py bridges separately from the unstamped /cmd_vel that
-    # teleop uses.
+    # It drives through /cmd_vel_nav, which the ROS bridge carries to
+    # the VMS, as on the vehicle.
     extends:
       file: common.yml
       service: fabric-client
@@ -91,29 +95,6 @@ services:
       - bash
       - -lc
       - "ros2 launch /opt/ovcs/launch/nav2.launch.py use_sim_time:=true"
-
-  teleop:
-    # The gamepad, as its own service so the simulation never requires
-    # a controller to be plugged in — compose treats a missing
-    # `devices:` entry as a hard failure, which would make `up` fail on
-    # any machine without one.
-    #
-    #   docker compose -f simulation.yml --profile teleop up -d teleop
-    extends:
-      file: common.yml
-      service: fabric-client
-    image: ovcs/sim:jetty
-    container_name: ovcs-sim-teleop
-    profiles: ["teleop"]
-    volumes:
-      - ./simulation/launch:/opt/ovcs/launch:ro
-      - ./simulation/config:/opt/ovcs/config:ro
-    devices:
-      - /dev/input/js0:/dev/input/js0
-    command:
-      - bash
-      - -lc
-      - "ros2 launch /opt/ovcs/launch/teleop.launch.py"
 
   gz-gui:
     # Gazebo's GUI, as a separate service so the headless simulation
@@ -136,9 +117,13 @@ services:
       QT_X11_NO_MITSHM: 1
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      # The GPU, as for `sim`.
+      - /dev/dri:/dev/dri
       # The GUI loads its own copies of the model's meshes, from the
       # path the server spawned it with.
       - ../../vehicles/${OVCS_VEHICLE}/description:/opt/ovcs/vehicles/${OVCS_VEHICLE}:ro
+    device_cgroup_rules:
+      - 'c 226:* rmw'
     command:
       - bash
       - -lc

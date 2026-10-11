@@ -33,8 +33,6 @@ RUN apt-get update \
         ros-lyrical-xacro \
         ros-lyrical-robot-state-publisher \
         ros-lyrical-joint-state-publisher \
-        ros-lyrical-teleop-twist-joy \
-        ros-lyrical-joy-linux \
         ros-lyrical-tf2-ros \
         gettext-base \
     && rm -rf /var/lib/apt/lists/*
@@ -57,7 +55,6 @@ COPY compute/images/ros2/docker/entrypoint.sh         /usr/local/bin/entrypoint
 COPY local/simulation/common/   /opt/ovcs/common/
 COPY local/simulation/launch/   /opt/ovcs/launch/
 COPY local/simulation/worlds/   /opt/ovcs/worlds/
-COPY local/simulation/config/   /opt/ovcs/config/
 
 # `COPY --chmod=` needs BuildKit, which balenaEngine does not
 # implement. This image never goes near balena, but the two images

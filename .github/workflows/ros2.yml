@@ -102,7 +102,7 @@ jobs:
           - file: compose/local/base.yml
             profiles: --profile standalone --profile calibration --profile nav2
           - file: compose/local/simulation.yml
-            profiles: --profile teleop --profile nav2 --profile gui
+            profiles: --profile nav2 --profile gui
     steps:
       - uses: actions/checkout@v5
 
