@@ -135,7 +135,7 @@ defmodule RosBridge.Publishers.OdometryTest do
       # 1 m/s around a 1 m circle: the rear axle goes from the origin to
       # (1, 1) and ends heading +y, so base_link ends at (1, 1 + offset).
       steps = 2000
-      dt_ms = :math.pi() / 2 / steps * 1000
+      step_ms = :math.pi() / 2 / steps * 1000
 
       start =
         state(
@@ -147,13 +147,15 @@ defmodule RosBridge.Publishers.OdometryTest do
           last_fresh_at_ms: 0.0
         )
 
-      final =
-        Enum.reduce(1..steps, start, fn k, st ->
-          st = Odometry.observe(st, sample(%{sequence: k, at_ms: k * dt_ms}))
-          %{st | yaw: k * dt_ms / 1000}
+      final_state =
+        Enum.reduce(1..steps, start, fn step, step_state ->
+          step_state =
+            Odometry.observe(step_state, sample(%{sequence: step, at_ms: step * step_ms}))
+
+          %{step_state | yaw: step * step_ms / 1000}
         end)
 
-      {x, y} = Odometry.base_position(final)
+      {x, y} = Odometry.base_position(final_state)
       assert_in_delta x, 1.0, 0.01
       assert_in_delta y, 1.162, 0.01
     end
@@ -233,8 +235,8 @@ defmodule RosBridge.Publishers.OdometryTest do
 
   describe "publishable?/2" do
     test "needs a valid speed, a heading, and a fresh frame" do
-      good = state(speed_valid: true, yaw: 0.0, last_fresh_at_ms: 900)
-      assert Odometry.publishable?(good, 1_000)
+      publishable_state = state(speed_valid: true, yaw: 0.0, last_fresh_at_ms: 900)
+      assert Odometry.publishable?(publishable_state, 1_000)
 
       refute Odometry.publishable?(
                state(speed_valid: false, yaw: 0.0, last_fresh_at_ms: 900),

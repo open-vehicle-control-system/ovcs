@@ -51,12 +51,14 @@ defmodule RosBridge.Consumers.Joy.ProfileTest do
   end
 
   test "load_dir!/1 reads every profile in a directory, named after its file" do
-    dir = Path.join(System.tmp_dir!(), "joy_profiles_#{System.unique_integer([:positive])}")
-    File.mkdir_p!(dir)
-    File.write!(Path.join(dir, "g923.yml"), @wheel_yaml)
-    File.write!(Path.join(dir, "gamepad.yml"), "throttle:\n  - axis: 1\n")
+    profiles_directory =
+      Path.join(System.tmp_dir!(), "joy_profiles_#{System.unique_integer([:positive])}")
 
-    assert dir |> Profile.load_dir!() |> Enum.map(&Profile.topic/1) |> Enum.sort() ==
+    File.mkdir_p!(profiles_directory)
+    File.write!(Path.join(profiles_directory, "g923.yml"), @wheel_yaml)
+    File.write!(Path.join(profiles_directory, "gamepad.yml"), "throttle:\n  - axis: 1\n")
+
+    assert profiles_directory |> Profile.load_dir!() |> Enum.map(&Profile.topic/1) |> Enum.sort() ==
              ["joy/g923", "joy/gamepad"]
   end
 
@@ -109,30 +111,30 @@ defmodule RosBridge.Consumers.Joy.ProfileTest do
              [{"g923", "G923 Racing Wheel"}, {"xbox", "(?i)x-?box.*(pad|controller)"}]
   end
 
-  defp xbox_file, do: Profile.framework_dir() |> Path.join("xbox.yml") |> Profile.load!()
+  defp xbox_profile, do: Profile.framework_dir() |> Path.join("xbox.yml") |> Profile.load!()
 
   describe "command/3 with the Xbox controller" do
     test "centre is zero on both outputs" do
-      assert command(xbox_file(), [0.0, 0.0]) == {0.0, 0.0}
+      assert command(xbox_profile(), [0.0, 0.0]) == {0.0, 0.0}
     end
 
     # The right stick: x (3) steers, y (4) drives.
     test "steering is inverted, throttle is not" do
-      assert command(xbox_file(), [0.9, 0.9, 0.0, 0.5, -0.25, 0.0]) == {-0.5, -0.25}
+      assert command(xbox_profile(), [0.9, 0.9, 0.0, 0.5, -0.25, 0.0]) == {-0.5, -0.25}
     end
 
     test "an over-range axis clamps rather than wrapping on the wire" do
-      assert command(xbox_file(), [0.0, 0.0, 0.0, 2.0, -5.0, 0.0]) == {-1.0, -1.0}
+      assert command(xbox_profile(), [0.0, 0.0, 0.0, 2.0, -5.0, 0.0]) == {-1.0, -1.0}
     end
 
     test "a missing, nil or non-numeric axis reads as centre" do
-      assert command(xbox_file(), []) == {0.0, 0.0}
-      assert command(xbox_file(), nil) == {0.0, 0.0}
-      assert command(xbox_file(), [:up, nil]) == {0.0, 0.0}
+      assert command(xbox_profile(), []) == {0.0, 0.0}
+      assert command(xbox_profile(), nil) == {0.0, 0.0}
+      assert command(xbox_profile(), [:up, nil]) == {0.0, 0.0}
     end
 
     test "an integer axis is accepted" do
-      assert command(xbox_file(), [0, 0, 0, 1, 0, 0]) == {-1.0, 0.0}
+      assert command(xbox_profile(), [0, 0, 0, 1, 0, 0]) == {-1.0, 0.0}
     end
   end
 

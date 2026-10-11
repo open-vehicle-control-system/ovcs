@@ -1,7 +1,7 @@
 defmodule Ros2.VisionMsgs.Detection3DTest do
   @moduledoc """
   Regression tests against `test/support/golden_cdr.json`, whose bytes
-  were validated by deserialising them with ROS 2 Jazzy. See
+  were validated by deserialising them with ROS 2. See
   `test/support/golden_cdr.md` for the provenance and for why rclpy's
   serialised bytes are not usable as a byte-equality reference.
   """
@@ -66,8 +66,7 @@ defmodule Ros2.VisionMsgs.Detection3DTest do
     end
 
     # `id` is the last field, and CDR pads only on behalf of a
-    # *following* field's alignment. Using the padded encode_string/1
-    # here made every detection two bytes too long.
+    # *following* field's alignment.
     test "does not pad the trailing id string" do
       encoded = Detection3D.append_to(<<>>, detection())
       assert byte_size(encoded) == 486
@@ -97,7 +96,7 @@ defmodule Ros2.VisionMsgs.Detection3DTest do
       assert Detection3DArray.encode(array) == golden("detection3d_array_empty")
     end
 
-    test "encoding each detection from a fresh buffer would NOT match" do
+    test "encoding each detection from a fresh buffer would not match" do
       detections = [detection(), second_detection()]
 
       naive =

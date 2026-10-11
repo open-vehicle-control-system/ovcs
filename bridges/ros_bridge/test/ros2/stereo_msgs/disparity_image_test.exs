@@ -35,7 +35,7 @@ defmodule Ros2.StereoMsgs.DisparityImageTest do
     }
   end
 
-  defp sample do
+  defp disparity_image do
     %DisparityImage{
       header: header(),
       image: %Image{
@@ -68,15 +68,14 @@ defmodule Ros2.StereoMsgs.DisparityImageTest do
   end
 
   test "encodes to the bytes ROS 2 reads back correctly" do
-    assert DisparityImage.encode(sample()) == golden("disparity_image")
+    assert DisparityImage.encode(disparity_image()) == golden("disparity_image")
   end
 
-  test "the nested Image leaves the tail unaligned, so f must not land where it did" do
-    # Guards the `align_to(4)` between the nested Image and `f`: the
-    # image's trailing byte sequence ends at an offset that is not
-    # 4-aligned for this payload, so dropping the alignment step would
-    # shift f, T and everything after them.
-    encoded = DisparityImage.encode(sample())
+  test "f is 4-aligned after the unaligned tail of the nested Image" do
+    # The image's trailing byte sequence ends off a 4-boundary here, so
+    # without the `align_to(4)` before `f`, f, T and everything after
+    # them would shift.
+    encoded = DisparityImage.encode(disparity_image())
     {offset, 4} = :binary.match(encoded, <<321.5::little-float-32>>)
     assert rem(offset, 4) == 0
   end

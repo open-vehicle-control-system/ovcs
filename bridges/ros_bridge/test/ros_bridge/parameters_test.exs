@@ -6,8 +6,8 @@ defmodule RosBridge.ParametersTest do
   alias RosBridge.Parameters
 
   # A ParameterValue as ROS clients send it: every field present.
-  defp parameter(acc, {name, type, bool, integer, double, string}) do
-    acc
+  defp encode_parameter(encoded, {name, type, bool, integer, double, string}) do
+    encoded
     |> string(name)
     |> u8(Codec.type_id(type))
     |> bool(bool)
@@ -40,7 +40,7 @@ defmodule RosBridge.ParametersTest do
         sequence(
           <<>>,
           [{"a", :double, false, 0, 1.5, ""}, {"stereo.mode", :string, false, 0, 0.0, "short"}],
-          &parameter/2
+          &encode_parameter/2
         )
 
       assert Codec.decode_parameters(payload) == [{"a", 1.5}, {"stereo.mode", "short"}]
@@ -53,10 +53,10 @@ defmodule RosBridge.ParametersTest do
 
     test "writes values that read back with their types" do
       encoded = Codec.encode_values([{:integer, 20}, nil, {:bool, true}])
-      {[first, second, third], _} = read_sequence({encoded, 0}, &read_value/1)
-      assert first == {2, 20}
-      assert second == {0, nil}
-      assert third == {1, true}
+      {[integer_value, unset_value, bool_value], _} = read_sequence({encoded, 0}, &read_value/1)
+      assert integer_value == {2, 20}
+      assert unset_value == {0, nil}
+      assert bool_value == {1, true}
     end
   end
 

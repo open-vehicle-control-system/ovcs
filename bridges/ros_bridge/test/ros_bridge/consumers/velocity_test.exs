@@ -12,16 +12,21 @@ defmodule RosBridge.Consumers.VelocityTest do
 
   import ExUnit.CaptureLog
 
-  alias Decimal, as: D
   alias RosBridge.Consumers.Velocity
 
   @linear_limit 327.67
   @angular_limit 32.767
 
   # What Cantastic's encoder makes of a linear value at scale 0.01.
-  defp on_the_wire(value) do
-    int = value |> D.from_float() |> D.div(D.new("0.01")) |> D.round() |> D.to_integer()
-    <<encoded::little-signed-integer-size(16)>> = <<int::little-signed-integer-size(16)>>
+  defp on_the_wire(linear_velocity) do
+    raw_integer =
+      linear_velocity
+      |> Decimal.from_float()
+      |> Decimal.div(Decimal.new("0.01"))
+      |> Decimal.round()
+      |> Decimal.to_integer()
+
+    <<encoded::little-signed-integer-size(16)>> = <<raw_integer::little-signed-integer-size(16)>>
     encoded / 100
   end
 

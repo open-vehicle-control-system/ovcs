@@ -3,8 +3,7 @@ defmodule RosBridge.Perception.FusionTest do
 
   alias RosBridge.Perception.Fusion
 
-  # A depth map built by hand so the expected answer is arithmetic
-  # rather than a recording: `values` is a list of rows in metres.
+  # A hand-built depth map from `rows` in metres, so the expected answer is arithmetic.
   defp depth_mat(rows) do
     height = length(rows)
     width = rows |> hd() |> length()

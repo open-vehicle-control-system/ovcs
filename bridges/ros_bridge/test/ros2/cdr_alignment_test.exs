@@ -7,22 +7,18 @@ defmodule Ros2.CdrAlignmentTest do
   the parser make the same wrong assumption they agree with each other
   and disagree only with real ROS peers. So every assertion here locates
   a field in the *raw bytes* by a distinctive sentinel value and checks
-  its absolute offset, independently of our own parser.
+  its absolute offset, independently of the parser.
 
   Each case is parametrised over `frame_id` length. A name one character
   longer shifts everything after the header between alignment residues,
-  which is exactly the axis the `float64[]` bug in `Ros2.Common` hid
-  along.
+  which is the axis along which a fixed-padding assumption fails.
 
   `sensor_msgs/Image` and `stereo_msgs/DisparityImage` are encode-only
   in this bridge (nothing consumes them locally), so they get alignment
   assertions but no round-trip.
 
-  Not covered here: golden byte vectors captured from a live
-  `rclpy` / `rmw_zenoh` publisher, which is the only check that
-  validates against the real peer rather than against ourselves. That
-  needs a running ROS 2 stack — worth adding to the calibration
-  container as follow-up.
+  Byte vectors validated against a real ROS 2 peer live in
+  `test/support/golden_cdr.json`; see `test/support/golden_cdr.md`.
   """
   use ExUnit.Case, async: true
 
@@ -36,7 +32,7 @@ defmodule Ros2.CdrAlignmentTest do
   # Distinctive enough that :binary.match cannot mistake them for
   # neighbouring zeroed fields or ASCII.
   @step 287_454_020
-  @data "SENTINEL-PAYLOAD"
+  @data_sentinel "SENTINEL-PAYLOAD"
   @focal 1234.5
   @baseline 6789.25
   @delta_d 0.0625
@@ -52,11 +48,11 @@ defmodule Ros2.CdrAlignmentTest do
     }
   end
 
-  defp frame_id(len), do: String.duplicate("x", len)
+  defp frame_id(character_count), do: String.duplicate("x", character_count)
 
   defp offset_of!(encoded, needle) do
     case :binary.match(encoded, needle) do
-      {offset, _len} -> offset
+      {offset, _length} -> offset
       :nomatch -> flunk("could not locate the sentinel in the encoded body")
     end
   end
@@ -77,39 +73,39 @@ defmodule Ros2.CdrAlignmentTest do
         encoding: "32FC1",
         is_bigendian: 0,
         step: @step,
-        data: @data
+        data: @data_sentinel
       }
     end
 
-    for len <- @frame_id_lengths do
+    for frame_id_length <- @frame_id_lengths do
       # `encoding` is a string followed by a u8, so Image must use the
       # unaligned string encoder; over-padding there shifts `step` and
       # every byte of `data` on the receiver.
-      test "step stays 4-aligned with a #{len}-char frame_id" do
-        encoded = Image.encode(image(frame_id(unquote(len))))
+      test "step stays 4-aligned with a #{frame_id_length}-char frame_id" do
+        encoded = Image.encode(image(frame_id(unquote(frame_id_length))))
         assert_aligned!(encoded, <<@step::little-unsigned-integer-size(32)>>, 4, "step")
       end
 
-      test "data stays 4-aligned with a #{len}-char frame_id" do
-        encoded = Image.encode(image(frame_id(unquote(len))))
-        assert_aligned!(encoded, @data, 4, "data")
+      test "data stays 4-aligned with a #{frame_id_length}-char frame_id" do
+        encoded = Image.encode(image(frame_id(unquote(frame_id_length))))
+        assert_aligned!(encoded, @data_sentinel, 4, "data")
       end
     end
   end
 
   describe "sensor_msgs/CompressedImage" do
     defp compressed_image(frame_id) do
-      %CompressedImage{header: header(frame_id), format: "jpeg", data: @data}
+      %CompressedImage{header: header(frame_id), format: "jpeg", data: @data_sentinel}
     end
 
-    for len <- @frame_id_lengths do
-      test "data stays 4-aligned with a #{len}-char frame_id" do
-        encoded = CompressedImage.encode(compressed_image(frame_id(unquote(len))))
-        assert_aligned!(encoded, @data, 4, "data")
+    for frame_id_length <- @frame_id_lengths do
+      test "data stays 4-aligned with a #{frame_id_length}-char frame_id" do
+        encoded = CompressedImage.encode(compressed_image(frame_id(unquote(frame_id_length))))
+        assert_aligned!(encoded, @data_sentinel, 4, "data")
       end
 
-      test "round-trips with a #{len}-char frame_id" do
-        message = compressed_image(frame_id(unquote(len)))
+      test "round-trips with a #{frame_id_length}-char frame_id" do
+        message = compressed_image(frame_id(unquote(frame_id_length)))
         assert {:ok, parsed, <<>>} = CompressedImage.parse(CompressedImage.encode(message))
         assert parsed == message
       end
@@ -118,7 +114,7 @@ defmodule Ros2.CdrAlignmentTest do
 
   describe "sensor_msgs/RegionOfInterest" do
     test "the trailing bool lands at offset 16" do
-      roi = %RegionOfInterest{
+      region_of_interest = %RegionOfInterest{
         x_offset: 1,
         y_offset: 2,
         height: 3,
@@ -126,13 +122,13 @@ defmodule Ros2.CdrAlignmentTest do
         do_rectify: true
       }
 
-      encoded = RegionOfInterest.encode(roi)
+      encoded = RegionOfInterest.encode(region_of_interest)
       assert byte_size(encoded) == 17
       assert binary_part(encoded, 16, 1) == <<1>>
     end
 
     test "round-trips" do
-      roi = %RegionOfInterest{
+      region_of_interest = %RegionOfInterest{
         x_offset: 7,
         y_offset: 9,
         height: 11,
@@ -140,8 +136,10 @@ defmodule Ros2.CdrAlignmentTest do
         do_rectify: true
       }
 
-      assert {:ok, parsed, <<>>} = RegionOfInterest.parse(RegionOfInterest.encode(roi))
-      assert parsed == roi
+      assert {:ok, parsed, <<>>} =
+               RegionOfInterest.parse(RegionOfInterest.encode(region_of_interest))
+
+      assert parsed == region_of_interest
     end
   end
 
@@ -156,7 +154,7 @@ defmodule Ros2.CdrAlignmentTest do
           encoding: "32FC1",
           is_bigendian: 0,
           step: 2560,
-          data: @data
+          data: @data_sentinel
         },
         f: @focal,
         t: @baseline,
@@ -167,18 +165,17 @@ defmodule Ros2.CdrAlignmentTest do
       }
     end
 
-    for len <- @frame_id_lengths do
-      # `Image` ends in a byte sequence (alignment 1) and
-      # `RegionOfInterest` ends in a bool, so both leave the tail at an
-      # arbitrary offset — the float32s after them need explicit
-      # `align_to(4)`.
-      test "f follows the nested Image 4-aligned with a #{len}-char frame_id" do
-        encoded = DisparityImage.encode(disparity_image(frame_id(unquote(len))))
+    for frame_id_length <- @frame_id_lengths do
+      # `Image` ends in a byte sequence and `RegionOfInterest` in a bool,
+      # so both leave the tail at an arbitrary offset and the float32s
+      # after them need an explicit `align_to(4)`.
+      test "f follows the nested Image 4-aligned with a #{frame_id_length}-char frame_id" do
+        encoded = DisparityImage.encode(disparity_image(frame_id(unquote(frame_id_length))))
         assert_aligned!(encoded, <<@focal::little-float-size(32)>>, 4, "f")
       end
 
-      test "delta_d follows valid_window 4-aligned with a #{len}-char frame_id" do
-        encoded = DisparityImage.encode(disparity_image(frame_id(unquote(len))))
+      test "delta_d follows valid_window 4-aligned with a #{frame_id_length}-char frame_id" do
+        encoded = DisparityImage.encode(disparity_image(frame_id(unquote(frame_id_length))))
         assert_aligned!(encoded, <<@delta_d::little-float-size(32)>>, 4, "delta_d")
       end
     end

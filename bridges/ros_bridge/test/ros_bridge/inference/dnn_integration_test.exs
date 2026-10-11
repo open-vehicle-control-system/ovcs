@@ -10,8 +10,7 @@ defmodule RosBridge.Inference.DnnIntegrationTest do
   lets the GPU result be compared to the CPU's for equality rather than
   for plausibility. It also means these tests carry no model licence.
 
-  Two things here cannot be tested any other way, and both were real
-  bugs before these tests existed:
+  Two behaviours only a real run exercises:
 
     * `Net.forward/1` returns a **list** of Mats, one per output layer,
       even for a single-output model.
@@ -19,8 +18,9 @@ defmodule RosBridge.Inference.DnnIntegrationTest do
       `rescue` never sees it.
 
   What this does **not** test is detection quality — the model detects
-  nothing. `dnn_test.exs` covers the decode arithmetic; this covers the
-  plumbing around it.
+  nothing, and every anchor decodes to the same degenerate box
+  (`cx=0, cy=0.01, w=0.02, h=0.03`). `dnn_test.exs` covers the decode
+  arithmetic; this covers the plumbing around it.
   """
   use ExUnit.Case, async: false
 
@@ -28,10 +28,6 @@ defmodule RosBridge.Inference.DnnIntegrationTest do
 
   @model Path.expand("../../support/tiny_head.onnx", __DIR__)
 
-  # 84 channels x 4 anchors, bias = channel/100. The 4 box attributes
-  # are channels 0-3, so every anchor decodes to cx=0, cy=0.01,
-  # w=0.02, h=0.03 — a degenerate box, deliberately: geometry is
-  # dnn_test.exs's job.
   defp start_backend(target) do
     name = :"dnn_#{target}_#{System.unique_integer([:positive])}"
 
@@ -40,10 +36,8 @@ defmodule RosBridge.Inference.DnnIntegrationTest do
         name: name,
         model_path: @model,
         target: target,
-        # The model's Reshape is fixed at 2x2, so the blob must be 2x2
-        # too. Leaving the 640 default makes every inference fail and
-        # return [] — which an assertion loop over the result would
-        # then pass vacuously.
+        # The model's Reshape is fixed at 2x2; any other blob size makes
+        # inference fail and return [].
         input_size: 2,
         # Below every bias, so nothing is filtered and the plumbing is
         # what is under test.
@@ -58,8 +52,7 @@ defmodule RosBridge.Inference.DnnIntegrationTest do
     Nx.broadcast(Nx.tensor(0, type: :u8), {2, 2, 3}) |> Evision.Mat.from_nx_2d()
   end
 
-  # What the stereo pipeline actually hands over: `left_rectified` is
-  # single-channel, because SGBM needs grayscale.
+  # Single-channel, like the stereo pipeline's `left_rectified`: SGBM needs grayscale.
   defp mono_frame do
     Nx.broadcast(Nx.tensor(0, type: :u8), {2, 2, 1}) |> Evision.Mat.from_nx_2d()
   end
@@ -68,10 +61,8 @@ defmodule RosBridge.Inference.DnnIntegrationTest do
     assert :ok = Dnn.detect(name, 7, frame())
     assert_receive {:inference_detections, 7, detections}, 15_000
 
-    # Non-empty is the point. Inference failing returns [], and every
-    # per-detection assertion below would then hold trivially — which
-    # is how the first version of this test passed while the model was
-    # not running at all.
+    # A failed inference returns [], which would make every
+    # per-detection assertion hold vacuously.
     assert detections != [], "inference produced no detections — it did not run"
     detections
   end
@@ -84,13 +75,9 @@ defmodule RosBridge.Inference.DnnIntegrationTest do
     end
 
     test "a grayscale frame infers, because that is what stereo produces" do
-      # The regression guard for a bug that only a live run found. The
-      # backend fed `Result.left_rectified` straight to
-      # `blobFromImage`, and that frame is single-channel — SGBM needs
-      # grayscale. OpenCV refuses the graph with "Number of input
-      # channels should be multiple of 3 but got 1", once per frame,
-      # so a real yolov8n would have detected nothing at all the
-      # moment the weights were dropped in.
+      # Stereo hands over a single-channel `left_rectified`, which OpenCV
+      # refuses ("Number of input channels should be multiple of 3")
+      # unless the backend expands it to 3 channels.
       name = start_backend(:cpu)
 
       assert :ok = Dnn.detect(name, 11, mono_frame())
@@ -101,16 +88,9 @@ defmodule RosBridge.Inference.DnnIntegrationTest do
     end
 
     test "a frame submitted while one is in flight is dropped, not queued" do
-      # Driven through `handle_call/3` rather than the running server:
-      # `tiny_head.onnx` on a 2x2 frame finishes in microseconds, so
-      # there is no reliable way to catch the in-flight window from
-      # outside, and a test that tried would be a coin flip.
-      #
-      # The clause is what matters. `RosBridge.Inference` says a frame
-      # arriving mid-inference is dropped — queueing would add latency
-      # to a measurement whose only value is being current — and this
-      # backend answered `{:error, :busy}` never, because it used to
-      # run inference inline and so was never busy.
+      # Through `handle_call/3`: on a 2x2 frame the in-flight window is
+      # too short to hit from outside. `RosBridge.Inference` drops a frame
+      # arriving mid-inference rather than queueing it.
       busy = %{net: :a_loaded_net, worker: {self(), make_ref()}}
 
       assert {:reply, {:error, :busy}, ^busy} =
@@ -118,10 +98,9 @@ defmodule RosBridge.Inference.DnnIntegrationTest do
     end
 
     test "an inference that crashes drops its frame and leaves the backend up" do
-      # The reason the worker is spawn_monitor and not Task.async: a
-      # linked task taking the backend down would lose every later
-      # frame too, and `Detections` drives the stereo depth path from
-      # the same process.
+      # The worker is spawn_monitor, not Task.async: a linked crash would
+      # take the backend down, losing every later frame and the stereo
+      # depth path `Detections` drives from the same process.
       name = start_backend(:cpu)
       server = Process.whereis(name)
 
@@ -143,10 +122,10 @@ defmodule RosBridge.Inference.DnnIntegrationTest do
       # Every returned detection must carry the full contract from
       # `RosBridge.Inference`; a backend that omits a key fails only
       # later, inside the depth fusion.
-      for d <- detections do
-        assert is_integer(d.class_id) and d.class_id >= 0
-        assert is_float(d.score) or is_integer(d.score)
-        for key <- [:x0, :y0, :x1, :y1], do: assert(is_number(Map.fetch!(d, key)))
+      for detection <- detections do
+        assert is_integer(detection.class_id) and detection.class_id >= 0
+        assert is_float(detection.score) or is_integer(detection.score)
+        for key <- [:x0, :y0, :x1, :y1], do: assert(is_number(Map.fetch!(detection, key)))
       end
     end
   end
@@ -161,12 +140,12 @@ defmodule RosBridge.Inference.DnnIntegrationTest do
 
       assert length(cpu) == length(gpu)
 
-      for {c, g} <- Enum.zip(cpu, gpu) do
-        assert c.class_id == g.class_id
-        assert_in_delta c.score, g.score, 1.0e-5
+      for {cpu_detection, gpu_detection} <- Enum.zip(cpu, gpu) do
+        assert cpu_detection.class_id == gpu_detection.class_id
+        assert_in_delta cpu_detection.score, gpu_detection.score, 1.0e-5
 
         for key <- [:x0, :y0, :x1, :y1] do
-          assert_in_delta Map.fetch!(c, key), Map.fetch!(g, key), 1.0e-4
+          assert_in_delta Map.fetch!(cpu_detection, key), Map.fetch!(gpu_detection, key), 1.0e-4
         end
       end
     end
@@ -179,7 +158,8 @@ defmodule RosBridge.Inference.DnnIntegrationTest do
       # Looser than FP32 on purpose: half precision is expected to
       # differ slightly, and pretending otherwise would make this
       # test flaky on other hardware.
-      for {c, f} <- Enum.zip(cpu, fp16), do: assert_in_delta(c.score, f.score, 1.0e-2)
+      for {cpu_detection, fp16_detection} <- Enum.zip(cpu, fp16),
+          do: assert_in_delta(cpu_detection.score, fp16_detection.score, 1.0e-2)
     end
   end
 

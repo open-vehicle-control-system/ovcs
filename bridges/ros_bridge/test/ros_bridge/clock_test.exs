@@ -1,8 +1,9 @@
-# `subscribe/2` is called from inside `Clock.init/1`, so `self()` there
-# is the Clock process itself — putting a sample in its mailbox before
-# the selective receive runs. That lets the real lifecycle be tested
-# without a live ZenohClient, and without poking at process state.
 defmodule RosBridge.ClockTest.AcquiringSubscriber do
+  @moduledoc """
+  `subscribe/2` runs inside `Clock.init/1`, where `self()` is the Clock
+  process, so the sample is in its mailbox before the selective receive
+  runs. That tests the real lifecycle without a live ZenohClient.
+  """
   alias Ros2.BuiltinInterfaces.Msg.Time
   alias Ros2.RosgraphMsgs.Msg.Clock, as: ClockMessage
 
@@ -26,10 +27,9 @@ defmodule RosBridge.ClockTest do
 
   The property that matters most is the *absence* of an effect: on a
   vehicle, and in every other test in this suite, no `/clock` is being
-  followed and `RosBridge.Timing` must behave exactly as it did before
-  this existed. Sim time is opt-in, and a clock module that quietly
-  changed stamps on the real vehicle would be far worse than one that
-  did nothing.
+  followed and `RosBridge.Timing` must stay on wall clock. Sim time is
+  opt-in, and a clock module that quietly changed stamps on the real
+  vehicle would be far worse than one that did nothing.
 
   `async: false`, because the offset lives in `:persistent_term` and
   `:atomics` — process-independent by design, since it is read on
@@ -56,15 +56,12 @@ defmodule RosBridge.ClockTest do
     :ok
   end
 
-  defp body(hex) do
+  defp cdr_body(hex) do
     <<_encapsulation::binary-size(4), body::binary>> = Base.decode16!(hex, case: :lower)
     body
   end
 
-  # What `init/1` builds once it has acquired a clock, without needing
-  # a ZenohClient to subscribe to. `following: true` matters: samples
-  # are only adopted while following, so that a late one after the
-  # deadline cannot switch timescales mid-run.
+  # The state `init/1` builds once it follows a clock; samples are adopted only while `following`.
   defp tracking_state do
     atomics = :atomics.new(2, signed: true)
     :persistent_term.put(@persistent_key, atomics)
@@ -78,7 +75,7 @@ defmodule RosBridge.ClockTest do
 
   describe "parsing rosgraph_msgs/Clock" do
     test "reads the simulator time out of real bytes" do
-      assert {:ok, %ClockMessage{clock: clock}, <<>>} = ClockMessage.parse(body(@clock_hex))
+      assert {:ok, %ClockMessage{clock: clock}, <<>>} = ClockMessage.parse(cdr_body(@clock_hex))
       assert clock.sec == 58
       assert clock.nanosec == 643_000_000
     end
@@ -91,11 +88,10 @@ defmodule RosBridge.ClockTest do
     end
 
     test "Timing stays on wall clock" do
-      # The regression that would matter on the vehicle: stamps must
-      # still land near system time, not near zero.
-      monotonic = System.monotonic_time(:nanosecond)
-      stamped = Timing.ros_time_of(monotonic)
-      assert_in_delta stamped, System.system_time(:nanosecond), 1_000_000_000
+      # Stamps must still land near system time, not near zero.
+      monotonic_ns = System.monotonic_time(:nanosecond)
+      stamp_ns = Timing.ros_time_of(monotonic_ns)
+      assert_in_delta stamp_ns, System.system_time(:nanosecond), 1_000_000_000
     end
   end
 
@@ -105,40 +101,38 @@ defmodule RosBridge.ClockTest do
 
       assert Clock.following?()
 
-      # A capture taken now should stamp at roughly the simulator time
-      # we just saw — not at 1.78e9 seconds.
-      stamped = Timing.ros_time_of(System.monotonic_time(:nanosecond))
-      assert_in_delta stamped, 58_643_000_000, 100_000_000
+      # A capture taken now stamps at roughly the simulator time just
+      # received, not at wall-clock seconds.
+      stamp_ns = Timing.ros_time_of(System.monotonic_time(:nanosecond))
+      assert_in_delta stamp_ns, 58_643_000_000, 100_000_000
     end
 
     test "a stamp is nowhere near wall clock, which is the whole point" do
       {:noreply, _state} = Clock.handle_info(clock_message(58, 0), tracking_state())
 
-      stamped = Timing.ros_time_of(System.monotonic_time(:nanosecond))
-      wall = System.system_time(:nanosecond)
+      stamp_ns = Timing.ros_time_of(System.monotonic_time(:nanosecond))
+      wall_ns = System.system_time(:nanosecond)
 
-      assert abs(wall - stamped) > 1_000_000_000_000_000,
+      assert abs(wall_ns - stamp_ns) > 1_000_000_000_000_000,
              "simulator stamps should be ~two decades from wall clock, not adjacent to it"
     end
 
     test "the offset tracks a clock that keeps advancing" do
       state = tracking_state()
       {:noreply, state} = Clock.handle_info(clock_message(10, 0), state)
-      first = Clock.offset_ns()
+      first_offset_ns = Clock.offset_ns()
 
       {:noreply, _state} = Clock.handle_info(clock_message(20, 0), state)
-      second = Clock.offset_ns()
+      second_offset_ns = Clock.offset_ns()
 
       # Ten simulated seconds passed in near-zero real time, so the
       # offset must have grown by about that much.
-      assert_in_delta second - first, 10_000_000_000, 100_000_000
+      assert_in_delta second_offset_ns - first_offset_ns, 10_000_000_000, 100_000_000
     end
 
     test "a stamp fits builtin_interfaces/Time without wrapping" do
-      # `sec` is an int32. A wall-clock stamp is fine today but a
-      # simulator stamp being *negative* would mean the offset was
-      # applied the wrong way round, which is the classic sign error
-      # here.
+      # `sec` is an int32, and a negative simulator stamp means the
+      # offset was applied the wrong way round.
       {:noreply, _state} = Clock.handle_info(clock_message(58, 643_000_000), tracking_state())
 
       time = Timing.time_message_for(System.monotonic_time(:nanosecond))
@@ -149,12 +143,9 @@ defmodule RosBridge.ClockTest do
   end
 
   describe "the real lifecycle, under a supervisor" do
-    # The first version of the shutdown test called `terminate/2` by
-    # hand, so it passed while production did nothing: a `GenServer`
-    # does not receive `terminate/2` from a supervisor's ordinary
-    # `exit(pid, :shutdown)` unless it traps exits, and `init/1` did
-    # not. Testing the callback tested the callback. These test the
-    # guarantee.
+    # A supervisor's `:shutdown` reaches `terminate/2` only when the
+    # process traps exits, so these go through a real supervisor rather
+    # than calling the callback.
     test "a sample delivered during init is adopted" do
       start_supervised!({Clock, %{subscriber: AcquiringSubscriber, acquire_timeout_ms: 5_000}})
 
@@ -182,10 +173,8 @@ defmodule RosBridge.ClockTest do
   end
 
   describe "giving up is permanent" do
-    # The review finding this exists for: the deadline logged
-    # "continuing on wall clock" while the subscription stayed live, so
-    # a sample arriving later silently switched timescales mid-run —
-    # which is exactly the tf2-poisoning the blocking init prevents.
+    # Past the deadline the bridge is on wall clock for good: a late
+    # sample switching timescales mid-run would poison tf2.
     test "the deadline leaves it on wall clock" do
       start_supervised!({Clock, %{subscriber: SilentSubscriber, acquire_timeout_ms: 5}})
 
@@ -198,16 +187,16 @@ defmodule RosBridge.ClockTest do
 
     test "a sample arriving after the deadline is ignored" do
       start_supervised!({Clock, %{subscriber: SilentSubscriber, acquire_timeout_ms: 5}})
-      clock = Process.whereis(Clock)
+      clock_pid = Process.whereis(Clock)
 
       send(
-        clock,
+        clock_pid,
         {:ros_message,
          {"clock", %ClockMessage{clock: %Ros2.BuiltinInterfaces.Msg.Time{sec: 58, nanosec: 0}}}}
       )
 
       # Round-trip so the message above is definitely handled.
-      _ = :sys.get_state(clock)
+      _ = :sys.get_state(clock_pid)
 
       refute Clock.following?(),
              "a late /clock sample switched the timescale mid-run, which corrupts tf2 for good"

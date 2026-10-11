@@ -4,15 +4,22 @@ defmodule RosBridge.Publishers.StereoCameraPairingTest do
   alias RosBridge.Camera.Frame
   alias RosBridge.Publishers.StereoCamera
 
-  defp frame(label, ms),
-    do: %Frame{label: label, width: 4, height: 4, jpeg: <<>>, capture_ns: ms * 1_000_000}
+  defp frame(label, capture_time_ms),
+    do: %Frame{
+      label: label,
+      width: 4,
+      height: 4,
+      jpeg: <<>>,
+      capture_ns: capture_time_ms * 1_000_000
+    }
 
-  defp frames(label, ms_list), do: ms_list |> Enum.reverse() |> Enum.map(&frame(label, &1))
+  defp frames(label, capture_times_ms),
+    do: capture_times_ms |> Enum.reverse() |> Enum.map(&frame(label, &1))
 
-  defp state(lefts, rights, tolerance_ms) do
+  defp state(left_capture_times_ms, right_capture_times_ms, tolerance_ms) do
     %{
-      left_frames: frames("left", lefts),
-      right_frames: frames("right", rights),
+      left_frames: frames("left", left_capture_times_ms),
+      right_frames: frames("right", right_capture_times_ms),
       pair_tolerance_ns: tolerance_ms * 1_000_000
     }
   end

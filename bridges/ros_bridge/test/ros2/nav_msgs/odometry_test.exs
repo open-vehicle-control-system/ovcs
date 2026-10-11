@@ -46,8 +46,8 @@ defmodule Ros2.NavMsgs.Msg.OdometryTest do
 
   test "the twist follows the pose covariance" do
     body = Odometry.encode(message())
-    <<_::binary-size(384), vx::little-float-size(64), _::binary>> = body
-    assert vx == 0.75
+    <<_::binary-size(384), linear_x::little-float-size(64), _::binary>> = body
+    assert linear_x == 0.75
 
     <<_::binary-size(384 + 40), yaw_rate::little-float-size(64), _::binary>> = body
     assert yaw_rate == -0.5
