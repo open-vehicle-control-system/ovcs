@@ -2,10 +2,10 @@ defmodule VmsCore.Components.OVCS.RadioControl.Throttle do
   @moduledoc """
   Throttle requested from a radio control trigger: broadcasts
   `:requested_throttle`, normalised to [-1, 1] around the channel's
-  centre, and `:radio_breaking` while the trigger is pulled in reverse
+  centre, and `:radio_braking` while the trigger is pulled in reverse
   past `@braking_threshold`.
 
-  `:radio_breaking` takes authority back from ROS and latches a forced
+  `:radio_braking` takes authority back from ROS and latches a forced
   control level in `VmsCore.Managers.ControlLevel`, so it is computed
   from the current reading, not the previous tick's, and against a
   threshold rather than zero: a trigger trimmed slightly below centre
@@ -50,7 +50,7 @@ defmodule VmsCore.Components.OVCS.RadioControl.Throttle do
        channel_name: "channel#{radio_control_channel}",
        raw_channel: @center_raw_channel,
        requested_throttle: @zero,
-       radio_breaking: false
+       radio_braking: false
      }}
   end
 
@@ -87,9 +87,9 @@ defmodule VmsCore.Components.OVCS.RadioControl.Throttle do
     requested_throttle =
       state.raw_channel |> D.sub(@center_raw_channel) |> D.div(@half_travel)
 
-    radio_breaking = requested_throttle |> D.lt?(@braking_threshold)
+    radio_braking = requested_throttle |> D.lt?(@braking_threshold)
 
-    %{state | requested_throttle: requested_throttle, radio_breaking: radio_breaking}
+    %{state | requested_throttle: requested_throttle, radio_braking: radio_braking}
   end
 
   defp emit(state) do
@@ -100,8 +100,8 @@ defmodule VmsCore.Components.OVCS.RadioControl.Throttle do
     })
 
     Bus.broadcast("messages", %Bus.Message{
-      name: :radio_breaking,
-      value: state.radio_breaking,
+      name: :radio_braking,
+      value: state.radio_braking,
       source: __MODULE__
     })
 

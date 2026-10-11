@@ -34,7 +34,7 @@ defmodule VmsCore.Components.OVCS.InputCurve do
   A commander that sends a physical quantity, such as
   `RosVelocityCommand`, does not go through a curve: it is wired to the
   manager directly. Neither does anything that reacts to the raw hand,
-  such as `radio_breaking`, which `RadioControl.Throttle` reports from
+  such as `radio_braking`, which `RadioControl.Throttle` reports from
   the unshaped trigger.
 
   ## Options

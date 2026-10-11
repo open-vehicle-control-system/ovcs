@@ -184,8 +184,8 @@ defmodule Ovcs1.Vms.Composer do
            radio: OVCS.RadioControl.Steering,
            ros: %{teleop: OVCS.RosActuatorCommand.Steering}
          },
-         manual_breaking_source: Bosch.IBoosterGen2,
-         radio_breaking_source: OVCS.RadioControl.Throttle,
+         manual_braking_source: Bosch.IBoosterGen2,
+         radio_braking_source: OVCS.RadioControl.Throttle,
          default_control_level: :manual,
          ready_to_drive_source: Vms,
          speed_source: Polo9N.ABS
