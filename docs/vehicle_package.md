@@ -214,7 +214,7 @@ Peer node names come from the vehicle module's declared roles plus the naming co
 
 On the host, `./ovcs run` names each BEAM with `--sname`. A deployed firmware boots unnamed; `OvcsBus.Distribution` starts distribution on the first cluster tick with long names, after `epmd -daemon`, on the hostname erlinit set from `hostname_pattern`. Peers resolve each other's `.local` names through mdns_lite's DNS bridge, which each firmware's target config enables and puts first in VintageNet's `additional_name_servers`.
 
-Every node uses the cookie `ovcs`: `./ovcs run` and `./ovcs attach` pass `--cookie ovcs`, and each firmware release sets `cookie: "ovcs"` in its `mix.exs`, handed to the VM by `-setcookie` in `rel/vm.args.eex`.
+Every firmware release sets the cookie `ovcs` in its `mix.exs`, handed to the VM by `-setcookie` in `rel/vm.args.eex`. On the host, `./ovcs run` and `./ovcs attach` use your `~/.erlang.cookie` instead, which the CLI creates with a random value if it is missing.
 
 ## Control levels: who commands, and which ROS node
 

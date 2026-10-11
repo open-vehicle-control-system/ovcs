@@ -64,8 +64,8 @@ tick so nodes that boot later are folded into the mesh. With
 `:cluster_broadcast` set, `Phoenix.PubSub.broadcast/3` then carries
 each message to all subscribers on all nodes natively.
 
-On the host, `./ovcs run` starts each BEAM with `--sname` and
-`--cookie ovcs`. A Nerves release boots unnamed, so
+On the host, `./ovcs run` starts each BEAM with `--sname` and the
+user's `~/.erlang.cookie`. A Nerves release boots unnamed, so
 `OvcsBus.Distribution.ensure_started/0`, called on every Cluster
 tick, starts distribution when the firmware's target config sets:
 
@@ -98,8 +98,9 @@ through to the DHCP-supplied servers.
 No MQTT broker, no separate protocol — just Erlang distribution.
 The cookie `ovcs` is shared by every firmware release (`cookie:
 "ovcs"` in its `mix.exs`, passed to the VM by `-setcookie` in
-`rel/vm.args.eex`) and every `./ovcs run` child, so joining the
-cluster is automatic as soon as peers resolve.
+`rel/vm.args.eex`), and the `./ovcs run` children share the user's
+`~/.erlang.cookie`, so joining the cluster is automatic as soon as
+peers resolve.
 
 ### When a node is down
 

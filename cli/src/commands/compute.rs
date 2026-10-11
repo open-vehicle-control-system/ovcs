@@ -9,7 +9,7 @@
 use anyhow::{bail, Context, Result};
 use regex::Regex;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use crate::repo_root::repo_root;
@@ -56,6 +56,27 @@ pub fn stage(vehicle: Option<String>, out: String, images: Images) -> Result<()>
     Ok(())
 }
 
+/// A new staging directory only the user can open, so nobody else on the
+/// machine can swap files in before `balena push` reads them.
+fn private_staging_dir(vehicle_dir: &str) -> Result<PathBuf> {
+    use std::os::unix::fs::DirBuilderExt;
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.subsec_nanos())
+        .unwrap_or(0);
+    let dir = std::env::temp_dir().join(format!(
+        "ovcs-compute-{}-{}-{}",
+        vehicle_dir,
+        std::process::id(),
+        nanos
+    ));
+    fs::DirBuilder::new()
+        .mode(0o700)
+        .create(&dir)
+        .with_context(|| format!("creating the staging directory {}", dir.display()))?;
+    Ok(dir)
+}
+
 pub fn push(
     vehicle: String,
     target: String,
@@ -63,11 +84,7 @@ pub fn push(
     balena_args: Vec<String>,
 ) -> Result<()> {
     let vehicle = resolve_vehicle(Some(vehicle))?;
-    let out = std::env::temp_dir().join(format!(
-        "ovcs-compute-{}-{}",
-        vehicle.dir,
-        std::process::id()
-    ));
+    let out = private_staging_dir(&vehicle.dir)?;
     let staged = stage_into(&vehicle, &out, &images);
     if staged.is_err() {
         let _ = fs::remove_dir_all(&out);
@@ -87,8 +104,10 @@ pub fn push(
         .args(&balena_args)
         .status()
         .context("failed to spawn balena (run `mise install`)");
-    fs::remove_dir_all(&out)?;
+    let cleanup = fs::remove_dir_all(&out)
+        .with_context(|| format!("removing the staging directory {}", out.display()));
     let status = status?;
+    cleanup?;
     if !status.success() {
         std::process::exit(status.code().unwrap_or(1));
     }

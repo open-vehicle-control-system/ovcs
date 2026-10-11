@@ -9,8 +9,12 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use russh::keys::ssh_key::PublicKey;
+
 use crate::ansi::strip_ansi;
 use crate::commands::run_ui::{self, Msg, NodeHandle};
+use crate::commands::vehicle_host_keys;
+use crate::erlang_cookie;
 use crate::lines::lossy_lines;
 use crate::resolve_args::resolve_vehicle;
 use crate::ui::{step, sub, sub_miss, sub_ok};
@@ -66,7 +70,7 @@ pub fn run(vehicle_arg: Option<String>) -> Result<()> {
             reachable.len(),
             if reachable.len() == 1 { "" } else { "s" }
         ));
-        attach_deployed(reachable)
+        attach_deployed(&vehicle, reachable)
     } else {
         step("no deployed devices reachable — checking local epmd…");
         let local = find_local_beams(&vehicle.dir);
@@ -596,51 +600,31 @@ OvcsAttachMonitor.start()
 Process.sleep(:infinity)
 "##;
 
-/// Wrap a multi-line Elixir snippet so it reaches the remote IEx as a
-/// series of short input lines, each well under the cooked-mode PTY
-/// line-discipline cap (`MAX_CANON` = 4096 on Linux).
-///
-/// Two constraints meet here:
-/// - IEx echoes every input line back with a prompt prefix, so we want
-///   as few input lines as possible — that pushed us to base64 the
-///   whole snippet into a single `Code.eval_string(...)` call.
-/// - For deployed attach we run over an SSH PTY in canonical mode, and
-///   a single 10 KB line is silently truncated mid-base64; the eval
-///   fails to parse and the bus/can monitor never starts. Local attach
-///   uses pipes (no line discipline) so it didn't surface there.
-///
-/// Compromise: stream the base64 payload into `/tmp/ovcs_attach.exs`
-/// in ~1 KB chunks via `File.write!`, then `Code.require_file/1` it.
-/// Each input line stays small. The monitor channel's reader only
-/// forwards `OVCS_BUS\t…` / `OVCS_CAN\t…` lines, so the echoed
-/// `File.write!` calls are dropped naturally. The log channel relies
-/// on the `OVCS_LOG_READY` gate, which still works.
+/// Wrap a multi-line Elixir snippet so it reaches the remote IEx as short
+/// input lines: an SSH PTY in canonical mode truncates a line past
+/// `MAX_CANON` (4096 bytes on Linux). The base64 payload is appended to an
+/// IEx variable in chunks, then evaluated from memory; each line returns
+/// `:ok`, which the readers drop along with the echoed `iex(` prompts.
 const CHUNK_BYTES: usize = 1024;
 
 fn wrap_snippet(snippet: &str, channel: &str) -> String {
     use base64::{engine::general_purpose::STANDARD, Engine as _};
     let encoded = STANDARD.encode(snippet.as_bytes());
-    // Per-channel path so log + monitor chunked writes never interleave
-    // on the same remote BEAM.
-    let path = format!("/tmp/ovcs_attach_{}.exs", channel);
+    let variable = format!("ovcs_attach_{}", channel);
     let mut out = String::with_capacity(encoded.len() + 256);
-    out.push_str(&format!("File.write!(\"{}\", \"\")\n", path));
+    out.push_str(&format!("{variable} = \"\"; :ok\n"));
     for chunk in encoded.as_bytes().chunks(CHUNK_BYTES) {
         let chunk_str = std::str::from_utf8(chunk).expect("base64 alphabet is ASCII");
         out.push_str(&format!(
-            "File.write!(\"{}\", Base.decode64!(\"{}\"), [:append])\n",
-            path, chunk_str
+            "{variable} = {variable} <> Base.decode64!(\"{chunk_str}\"); :ok\n"
         ));
     }
-    // `Code.eval_file/1`, not `Code.require_file/1`: require_file
-    // memoises by path for the BEAM's lifetime, so a second attach to
-    // the same long-lived Nerves device would no-op the load and we'd
-    // get no logs, no can, no bus.
-    out.push_str(&format!("Code.eval_file(\"{}\")\n", path));
+    out.push_str(&format!("Code.eval_string({variable})\n"));
     out
 }
 
 fn attach_local(nodes: Vec<(String, String)>) -> Result<()> {
+    erlang_cookie::ensure()?;
     let (tx, rx) = mpsc::channel::<Msg>();
     let mut handles: Vec<NodeHandle> = Vec::new();
     let pid = std::process::id();
@@ -987,8 +971,6 @@ fn spawn_remsh(local_sname: &str, full_node: &str) -> Result<std::process::Child
             "-hidden",
             "--sname",
             local_sname,
-            "--cookie",
-            "ovcs",
             "--remsh",
             full_node,
         ])
@@ -1004,7 +986,7 @@ fn spawn_remsh(local_sname: &str, full_node: &str) -> Result<std::process::Child
 
 // ---------- deployed transport: SSH via russh ----------
 
-fn attach_deployed(devices: Vec<(String, String)>) -> Result<()> {
+fn attach_deployed(vehicle: &vehicles::Vehicle, devices: Vec<(String, String)>) -> Result<()> {
     let (tx, rx) = mpsc::channel::<Msg>();
     let mut handles = Vec::new();
     let shutdown = Arc::new(AtomicBool::new(false));
@@ -1021,10 +1003,12 @@ fn attach_deployed(devices: Vec<(String, String)>) -> Result<()> {
 
     for (label, host) in devices {
         let (stdin_tx, stdin_rx) = mpsc::channel::<String>();
+        let pinned_host_keys = pinned_host_keys(vehicle, &label)?;
         rt_tx
             .send(DeployedJob {
                 label: label.clone(),
                 host: host.clone(),
+                pinned_host_keys,
                 stdin_rx,
             })
             .map_err(|_| anyhow!("runtime thread died before we could send a job"))?;
@@ -1053,6 +1037,7 @@ fn attach_deployed(devices: Vec<(String, String)>) -> Result<()> {
 struct DeployedJob {
     label: String,
     host: String,
+    pinned_host_keys: Vec<PublicKey>,
     stdin_rx: Receiver<String>,
 }
 
@@ -1082,7 +1067,15 @@ fn run_ssh_runtime(
             let tx = tx.clone();
             let shutdown = shutdown.clone();
             let h = tokio::spawn(async move {
-                run_device_supervisor(job.label, job.host, job.stdin_rx, tx, shutdown).await;
+                run_device_supervisor(
+                    job.label,
+                    job.host,
+                    job.pinned_host_keys,
+                    job.stdin_rx,
+                    tx,
+                    shutdown,
+                )
+                .await;
             });
             aborts.lock().unwrap().push(h.abort_handle());
             joins.push(h);
@@ -1101,6 +1094,7 @@ fn run_ssh_runtime(
 async fn run_device_supervisor(
     label: String,
     host: String,
+    pinned_host_keys: Vec<PublicKey>,
     stdin_rx: Receiver<String>,
     tx: Sender<Msg>,
     shutdown: Arc<AtomicBool>,
@@ -1128,7 +1122,7 @@ async fn run_device_supervisor(
         *active.lock().unwrap() = Some(ain_tx);
 
         let started = tokio::time::Instant::now();
-        let result = run_device_once(&label, &host, ain_rx, &tx).await;
+        let result = run_device_once(&label, &host, &pinned_host_keys, ain_rx, &tx).await;
 
         // Either the remote side hung up or we errored out — stop routing
         // stdin until a reconnect swaps in a fresh sender.
@@ -1181,12 +1175,13 @@ async fn interruptible_sleep_async(total: Duration, shutdown: &AtomicBool) {
 async fn run_device_once(
     label: &str,
     host: &str,
+    pinned_host_keys: &[PublicKey],
     mut ain_rx: tokio::sync::mpsc::UnboundedReceiver<String>,
     tx: &Sender<Msg>,
 ) -> Result<()> {
     use russh::ChannelMsg;
 
-    let mut handle = connect_ssh(host).await?;
+    let mut handle = connect_ssh(host, pinned_host_keys).await?;
     let (mut log_ch, mut shell_ch, mut mon_ch) = open_ssh_channels(&mut handle).await?;
 
     let _ = tx.send(Msg::NodeUp(label.to_string()));
@@ -1294,19 +1289,47 @@ async fn run_device_once(
     Ok(())
 }
 
-/// russh `client::Handler` that accepts any server host key. Private to
-/// attach.rs — the TUI already requires the user to have cleared the host
-/// verification via plain `ssh` once, and we can't prompt from inside a
-/// Ratatui render loop.
-struct SshAcceptAllKeys;
+/// The role's public host keys from `ovcs host-keys`, empty when the
+/// vehicle has none for it.
+fn pinned_host_keys(vehicle: &vehicles::Vehicle, label: &str) -> Result<Vec<PublicKey>> {
+    let dir = vehicle_host_keys::role_dir(vehicle, label);
+    let mut keys = Vec::new();
+    for kind in ["ed25519", "rsa"] {
+        let path = dir.join(format!("ssh_host_{}_key.pub", kind));
+        if path.exists() {
+            keys.push(
+                PublicKey::read_openssh_file(&path)
+                    .with_context(|| format!("reading {}", path.display()))?,
+            );
+        }
+    }
+    Ok(keys)
+}
 
-impl russh::client::Handler for SshAcceptAllKeys {
+/// Accepts the server only if its host key is one of the role's pinned
+/// keys or, when none are pinned, if `~/.ssh/known_hosts` lists it for the
+/// host. The TUI cannot prompt, so anything else is refused.
+struct VerifiedHostKey {
+    host: String,
+    pinned: Vec<PublicKey>,
+}
+
+impl VerifiedHostKey {
+    fn accepts(&self, key: &PublicKey) -> bool {
+        if self.pinned.is_empty() {
+            russh::keys::check_known_hosts(&self.host, 22, key).unwrap_or(false)
+        } else {
+            self.pinned
+                .iter()
+                .any(|pinned| pinned.key_data() == key.key_data())
+        }
+    }
+}
+
+impl russh::client::Handler for VerifiedHostKey {
     type Error = russh::Error;
-    async fn check_server_key(
-        &mut self,
-        _: &russh::keys::ssh_key::PublicKey,
-    ) -> Result<bool, Self::Error> {
-        Ok(true)
+    async fn check_server_key(&mut self, key: &PublicKey) -> Result<bool, Self::Error> {
+        Ok(self.accepts(key))
     }
 }
 
@@ -1349,18 +1372,38 @@ fn signing_hash_for(
 /// user's ssh-agent identities. Returns the handle the caller can open
 /// channels against. Returns a descriptive `anyhow::Error` on any
 /// failure in the connect / auth chain.
-async fn connect_ssh(host: &str) -> Result<russh::client::Handle<SshAcceptAllKeys>> {
+async fn connect_ssh(
+    host: &str,
+    pinned_host_keys: &[PublicKey],
+) -> Result<russh::client::Handle<VerifiedHostKey>> {
     let config = Arc::new(russh::client::Config {
         keepalive_interval: Some(KEEPALIVE_INTERVAL),
         ..Default::default()
     });
-    let mut handle = tokio::time::timeout(
+    let verifier = VerifiedHostKey {
+        host: host.to_string(),
+        pinned: pinned_host_keys.to_vec(),
+    };
+    let mut handle = match tokio::time::timeout(
         CONNECT_TIMEOUT,
-        russh::client::connect(config, (host, 22), SshAcceptAllKeys),
+        russh::client::connect(config, (host, 22), verifier),
     )
     .await
     .with_context(|| format!("connect {} timed out after {:?}", host, CONNECT_TIMEOUT))?
-    .with_context(|| format!("connect {} failed", host))?;
+    {
+        Ok(handle) => handle,
+        Err(russh::Error::UnknownKey) if pinned_host_keys.is_empty() => bail!(
+            "{} is not in ~/.ssh/known_hosts and the vehicle pins no host key for it; \
+             run `./ovcs connect` once to accept its key",
+            host
+        ),
+        Err(russh::Error::UnknownKey) => bail!(
+            "{}'s host key does not match the vehicle's pinned keys; \
+             reflash it or update them with `./ovcs host-keys import`",
+            host
+        ),
+        Err(error) => return Err(error).with_context(|| format!("connect {} failed", host)),
+    };
 
     let mut agent = connect_ssh_agent(host).await?;
     let identities = agent
@@ -1464,7 +1507,7 @@ fn resolve_identity_agent(host: &str) -> Option<std::path::PathBuf> {
 /// Returns them in `(log, shell, monitor)` order so destructuring matches
 /// the order they are read in the caller's `tokio::select!` loop.
 async fn open_ssh_channels(
-    handle: &mut russh::client::Handle<SshAcceptAllKeys>,
+    handle: &mut russh::client::Handle<VerifiedHostKey>,
 ) -> Result<(
     russh::Channel<russh::client::Msg>,
     russh::Channel<russh::client::Msg>,
@@ -1705,7 +1748,10 @@ fn dispatch_monitor_line(raw: &str, node: &str, tx: &Sender<Msg>) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{agent_identity_public_key, signing_hash_for, LineBuffer};
+    use super::{
+        agent_identity_public_key, signing_hash_for, wrap_snippet, LineBuffer, VerifiedHostKey,
+        MONITOR_SNIPPET,
+    };
     use russh::keys::agent::AgentIdentity;
     use russh::keys::ssh_key::{Certificate, HashAlg, PublicKey};
 
@@ -1797,5 +1843,38 @@ mod tests {
     fn blank_lines_are_dropped() {
         let mut buffer = LineBuffer::default();
         assert_eq!(buffer.feed(b"one\n\n\x1b[0m\ntwo\n"), vec!["one", "two"]);
+    }
+
+    const OTHER_ED25519_PUB: &str =
+        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDtxw/nkOAcL+gOJR7+N1dGpblfk3Wpxr3LAagzlArUG other-test";
+
+    fn verifier(pinned: &[&str]) -> VerifiedHostKey {
+        VerifiedHostKey {
+            host: "vehicle-vms.local".to_string(),
+            pinned: pinned
+                .iter()
+                .map(|key| PublicKey::from_openssh(key).unwrap())
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn a_pinned_host_key_is_accepted_whatever_its_comment() {
+        let served =
+            PublicKey::from_openssh(&ED25519_PUB.replace("ed-test", "root@device")).unwrap();
+        assert!(verifier(&[RSA_PUB, ED25519_PUB]).accepts(&served));
+    }
+
+    #[test]
+    fn a_host_key_that_is_not_pinned_is_refused() {
+        let served = PublicKey::from_openssh(OTHER_ED25519_PUB).unwrap();
+        assert!(!verifier(&[RSA_PUB, ED25519_PUB]).accepts(&served));
+    }
+
+    #[test]
+    fn a_wrapped_snippet_fits_the_pty_line_limit() {
+        for line in wrap_snippet(MONITOR_SNIPPET, "mon").lines() {
+            assert!(line.len() < 4096, "{} bytes", line.len());
+        }
     }
 }

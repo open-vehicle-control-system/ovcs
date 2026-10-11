@@ -145,6 +145,19 @@ pub fn export(arg: Option<String>, out: Option<String>) -> Result<()> {
     // `-C <priv>` so the archive holds `host_keys/...` paths, which import
     // extracts straight back into another checkout's `priv/`.
     let priv_dir = vehicle.path.join("priv");
+    // The archive holds private keys: create it readable by the user only.
+    {
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(&out)
+            .with_context(|| format!("creating {}", out.display()))?;
+        std::fs::set_permissions(&out, std::fs::Permissions::from_mode(0o600))
+            .with_context(|| format!("restricting {}", out.display()))?;
+    }
     run_tar(
         &[
             "-czf".as_ref(),
@@ -189,8 +202,10 @@ pub fn import(arg: Option<String>, from: String, force: bool) -> Result<()> {
         &[
             "-xzf".as_ref(),
             from.as_os_str(),
+            "--no-same-owner".as_ref(),
             "-C".as_ref(),
             priv_dir.as_os_str(),
+            "host_keys".as_ref(),
         ],
         "extract archive",
     )?;
