@@ -61,3 +61,49 @@ pub fn is_blank_after_ansi(line: &str) -> bool {
     }
     true
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{is_blank_after_ansi, strip_ansi};
+
+    #[test]
+    fn colour_codes_are_dropped() {
+        assert_eq!(
+            strip_ansi("\x1b[31m\x1b[1merror\x1b[0m: boom"),
+            "error: boom"
+        );
+    }
+
+    #[test]
+    fn a_window_title_is_dropped_whichever_terminator_it_has() {
+        assert_eq!(strip_ansi("\x1b]0;iex(vms@host)\x07iex> "), "iex> ");
+        assert_eq!(strip_ansi("\x1b]0;iex(vms@host)\x1b\\iex> "), "iex> ");
+    }
+
+    #[test]
+    fn a_bare_bell_is_dropped() {
+        assert_eq!(strip_ansi("ding\x07 dong"), "ding dong");
+    }
+
+    #[test]
+    fn an_escape_cut_off_at_the_end_of_the_line_is_dropped() {
+        assert_eq!(strip_ansi("text\x1b"), "text");
+        assert_eq!(strip_ansi("text\x1b[3"), "text");
+        assert_eq!(strip_ansi("text\x1b]0;unterminated title"), "text");
+    }
+
+    #[test]
+    fn plain_text_is_untouched() {
+        let line = "VmsCore.Bus: speed=12.5 km/h — état ✓";
+        assert_eq!(strip_ansi(line), line);
+    }
+
+    #[test]
+    fn a_line_holding_only_escapes_and_spaces_is_blank() {
+        assert!(is_blank_after_ansi(""));
+        assert!(is_blank_after_ansi("\x1b[0m  \x1b[22m\t"));
+        assert!(is_blank_after_ansi("\x1b]0;title\x07\x07 "));
+        assert!(!is_blank_after_ansi("\x1b[0m x"));
+        assert!(!is_blank_after_ansi("\x1b]0;title\x1b\\:ok"));
+    }
+}

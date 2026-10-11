@@ -351,8 +351,18 @@ fn probe_failure(dir: &str, stdout: &str, stderr: &str) -> anyhow::Error {
 #[cfg(test)]
 mod tests {
     use super::{
-        host_for, local_sname, local_sname_prefix, probe_failure, probe_payload, PROBE_MARKER,
+        host_for, local_sname, local_sname_prefix, module_for, probe_failure, probe_payload,
+        PROBE_MARKER,
     };
+
+    #[test]
+    fn module_names_camelize_the_vehicle_directory() {
+        assert_eq!(module_for("ovcs_mini"), "OvcsMini");
+        assert_eq!(module_for("obd2"), "Obd2");
+        assert_eq!(module_for("ovcs1"), "Ovcs1");
+        assert_eq!(module_for("roadster"), "Roadster");
+        assert_eq!(module_for("my_first_car"), "MyFirstCar");
+    }
 
     #[test]
     fn local_snames_hyphenate_the_vehicle_and_the_role() {

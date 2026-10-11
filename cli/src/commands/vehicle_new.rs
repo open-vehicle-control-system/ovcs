@@ -289,7 +289,15 @@ fn default_display_name(snake: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::el_string;
+    use super::{default_display_name, el_string};
+
+    #[test]
+    fn display_names_capitalise_each_word_of_the_directory() {
+        assert_eq!(default_display_name("ovcs_mini"), "Ovcs Mini");
+        assert_eq!(default_display_name("obd2"), "Obd2");
+        assert_eq!(default_display_name("ovcs1"), "Ovcs1");
+        assert_eq!(default_display_name("my_first_car"), "My First Car");
+    }
 
     #[test]
     fn el_string_escapes_quotes_backslashes_and_interpolation() {

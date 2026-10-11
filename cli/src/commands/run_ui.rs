@@ -275,7 +275,7 @@ struct State {
     can_filter_editing: bool,
     /// Footer message replacing the key hints for `TOAST_TTL`.
     toast: Option<(String, Instant)>,
-    /// Pane rects (borders included) of the last tick, for mouse hit-testing.
+    /// Pane rects (borders included) of the last tick, for mouse hit-testing and scrolling.
     pane_rects: HashMap<Focus, Rect>,
     /// Active mouse drag, between MouseDown and MouseUp.
     selection: Option<Selection>,
@@ -358,7 +358,8 @@ impl State {
             shell_follow: true,
             current,
             quit: false,
-            prompt_re: Regex::new(r"^(iex|\.{3})\(\d+\)>\s?").unwrap(),
+            // `iex(3)> ` locally, `iex(vms@host)3> ` over a remsh.
+            prompt_re: Regex::new(r"^(?:iex|\.{3})\((?:\d+\)|[^()\s]+\)\d+)>\s?").unwrap(),
         }
     }
 
@@ -712,7 +713,7 @@ fn paint_selection(frame: &mut ratatui::Frame, rect: Rect, selection: Selection)
 }
 
 /// Recompute the pane rects `render_normal` / `render_maximized` draw,
-/// for mouse hit-testing.
+/// for mouse hit-testing and scrolling from the rows on screen.
 fn compute_pane_rects(state: &mut State, area: Rect) {
     state.pane_rects.clear();
     if state.maximized {
@@ -721,7 +722,7 @@ fn compute_pane_rects(state: &mut State, area: Rect) {
             .constraints([
                 Constraint::Min(1),
                 Constraint::Length(1),
-                Constraint::Length(1),
+                Constraint::Length(2),
             ])
             .split(area);
         state.pane_rects.insert(state.focus, outer[0]);
@@ -732,7 +733,7 @@ fn compute_pane_rects(state: &mut State, area: Rect) {
                 Constraint::Percentage(70),
                 Constraint::Length(1),
                 Constraint::Percentage(30),
-                Constraint::Length(1),
+                Constraint::Length(2),
             ])
             .split(area);
         let upper = Layout::default()
@@ -878,44 +879,24 @@ fn pane_visible_lines(
             inner_w,
         ),
         Focus::Bus => {
-            let filtered = candidate_bus_rows(state);
-            let start = if state.bus_follow {
-                visible_start_bus_refs(
-                    &filtered,
-                    inner_h,
-                    inner_w,
-                    state.bus_source_w,
-                    state.bus_name_w,
-                )
-            } else {
-                state
-                    .bus_scroll
-                    .min(filtered.len().saturating_sub(inner_h) as u16) as usize
-            };
-            filtered
+            let start = display_start(
+                state.bus_follow,
+                state.bus_scroll,
+                pane_bottom_start(state, focus, inner_h, inner_w),
+            );
+            candidate_bus_rows(state)
                 .iter()
                 .skip(start)
                 .map(|r| format_bus_row(r, state))
                 .collect()
         }
         Focus::Can => {
-            let filtered = candidate_can_rows(state);
-            let start = if state.can_follow {
-                visible_start_refs(
-                    &filtered,
-                    inner_h,
-                    inner_w,
-                    state.can_node_w,
-                    state.can_net_w,
-                    state.can_frame_w,
-                    state.can_view,
-                )
-            } else {
-                state
-                    .can_scroll
-                    .min(filtered.len().saturating_sub(inner_h) as u16) as usize
-            };
-            filtered
+            let start = display_start(
+                state.can_follow,
+                state.can_scroll,
+                pane_bottom_start(state, focus, inner_h, inner_w),
+            );
+            candidate_can_rows(state)
                 .iter()
                 .skip(start)
                 .map(|r| format_can_row(r, state, state.can_view))
@@ -945,13 +926,57 @@ fn visible_lines(
     inner_h: usize,
     inner_w: usize,
 ) -> Vec<Line<'static>> {
-    let total = lines.len();
-    let start = if follow {
-        visible_start(lines, inner_h, inner_w)
-    } else {
-        scroll.min(total.saturating_sub(inner_h) as u16) as usize
-    };
+    let start = display_start(follow, scroll, visible_start(lines, inner_h, inner_w));
     lines.iter().skip(start).cloned().collect()
+}
+
+/// Index of the first row `focus` shows while following: the newest rows,
+/// wrapped at `inner_w`, filling `inner_h`.
+fn pane_bottom_start(state: &State, focus: Focus, inner_h: usize, inner_w: usize) -> usize {
+    match focus {
+        Focus::Log => visible_start(&state.logs, inner_h, inner_w),
+        Focus::Bus => visible_start_bus_refs(
+            &candidate_bus_rows(state),
+            inner_h,
+            inner_w,
+            state.bus_source_w,
+            state.bus_name_w,
+        ),
+        Focus::Can => visible_start_refs(
+            &candidate_can_rows(state),
+            inner_h,
+            inner_w,
+            state.can_node_w,
+            state.can_net_w,
+            state.can_frame_w,
+            state.can_view,
+        ),
+        Focus::Shell => state
+            .by_node
+            .get(&state.current)
+            .map(|node_state| visible_start(&node_state.shell_out, inner_h, inner_w))
+            .unwrap_or(0),
+    }
+}
+
+/// `pane_bottom_start` for `focus` at the size it was last drawn.
+fn drawn_bottom_start(state: &State, focus: Focus) -> usize {
+    let Some(rect) = state.pane_rects.get(&focus) else {
+        return 0;
+    };
+    let inner_h = rect.height.saturating_sub(2) as usize;
+    let inner_w = rect.width.saturating_sub(2) as usize;
+    pane_bottom_start(state, focus, inner_h, inner_w)
+}
+
+/// Index of the first row a pane shows: `bottom_start` while following,
+/// else its scroll position, which never goes past `bottom_start`.
+fn display_start(follow: bool, scroll: u16, bottom_start: usize) -> usize {
+    if follow {
+        bottom_start
+    } else {
+        (scroll as usize).min(bottom_start)
+    }
 }
 
 fn render_normal(frame: &mut ratatui::Frame, area: Rect, state: &State) {
@@ -1082,14 +1107,11 @@ fn render_logs(frame: &mut ratatui::Frame, area: Rect, state: &State) {
 
     let inner_h = area.height.saturating_sub(2) as usize;
     let inner_w = area.width.saturating_sub(2) as usize;
-    let total_lines = state.logs.len();
-    let start = if state.log_follow {
-        visible_start(&state.logs, inner_h, inner_w)
-    } else {
-        state
-            .log_scroll
-            .min(total_lines.saturating_sub(inner_h) as u16) as usize
-    };
+    let start = display_start(
+        state.log_follow,
+        state.log_scroll,
+        visible_start(&state.logs, inner_h, inner_w),
+    );
 
     let lines: Vec<Line> = state.logs.iter().skip(start).cloned().collect();
 
@@ -1100,7 +1122,7 @@ fn render_logs(frame: &mut ratatui::Frame, area: Rect, state: &State) {
 }
 
 /// The Bus rows the pane shows: the observer view or the chronological
-/// feed, filtered. `render_bus` has its own path for the unfiltered feed.
+/// feed, filtered.
 fn candidate_bus_rows(state: &State) -> Vec<&BusRow> {
     let rows: Vec<&BusRow> = if state.bus_observer {
         state
@@ -1147,78 +1169,21 @@ fn render_bus(frame: &mut ratatui::Frame, area: Rect, state: &State) {
     let inner_h = area.height.saturating_sub(2) as usize;
     let inner_w = area.width.saturating_sub(2) as usize;
 
-    let filter_active = !state.bus_filter.is_empty();
-    let filter_lc = if filter_active {
-        state.bus_filter.to_lowercase()
-    } else {
-        String::new()
-    };
-
-    // Unfiltered, the feed is read in place rather than collected per render.
-    let (lines, total): (Vec<Line>, usize) = if filter_active {
-        let rows: Vec<&BusRow> = if state.bus_observer {
-            state
-                .bus_order
-                .iter()
-                .filter_map(|k| state.bus_tracks.get(k).map(|t| t.latest_row.as_ref()))
-                .filter(|r| r.haystack_lc.contains(&filter_lc))
-                .collect()
-        } else {
-            state
-                .bus
-                .iter()
-                .map(|r| r.as_ref())
-                .filter(|r| r.haystack_lc.contains(&filter_lc))
-                .collect()
-        };
-        let total = rows.len();
-        let start = if state.bus_follow {
-            visible_start_bus_refs(
-                &rows,
-                inner_h,
-                inner_w,
-                state.bus_source_w,
-                state.bus_name_w,
-            )
-        } else {
-            state.bus_scroll.min(total.saturating_sub(inner_h) as u16) as usize
-        };
-        let lines: Vec<Line> = rows
-            .iter()
-            .skip(start)
-            .map(|r| format_bus_row(r, state))
-            .collect();
-        (lines, total)
-    } else if state.bus_observer {
-        let total = state.bus_order.len();
-        let start = if state.bus_follow {
-            total.saturating_sub(inner_h)
-        } else {
-            state.bus_scroll.min(total.saturating_sub(inner_h) as u16) as usize
-        };
-        let lines: Vec<Line> = state
-            .bus_order
-            .iter()
-            .skip(start)
-            .filter_map(|k| state.bus_tracks.get(k).map(|t| t.latest_row.as_ref()))
-            .map(|r| format_bus_row(r, state))
-            .collect();
-        (lines, total)
-    } else {
-        let total = state.bus.len();
-        let start = if state.bus_follow {
-            total.saturating_sub(inner_h)
-        } else {
-            state.bus_scroll.min(total.saturating_sub(inner_h) as u16) as usize
-        };
-        let lines: Vec<Line> = state
-            .bus
-            .iter()
-            .skip(start)
-            .map(|r| format_bus_row(r.as_ref(), state))
-            .collect();
-        (lines, total)
-    };
+    let rows = candidate_bus_rows(state);
+    let total = rows.len();
+    let bottom_start = visible_start_bus_refs(
+        &rows,
+        inner_h,
+        inner_w,
+        state.bus_source_w,
+        state.bus_name_w,
+    );
+    let start = display_start(state.bus_follow, state.bus_scroll, bottom_start);
+    let lines: Vec<Line> = rows
+        .iter()
+        .skip(start)
+        .map(|r| format_bus_row(r, state))
+        .collect();
 
     let pause = if state.bus_paused {
         " ❚❚ paused "
@@ -1230,7 +1195,7 @@ fn render_bus(frame: &mut ratatui::Frame, area: Rect, state: &State) {
     } else {
         ""
     };
-    let filter_badge = if filter_active {
+    let filter_badge = if !state.bus_filter.is_empty() {
         format!(" · filter={:?}", state.bus_filter)
     } else {
         String::new()
@@ -1354,20 +1319,16 @@ fn render_can(frame: &mut ratatui::Frame, area: Rect, state: &State) {
 
     let inner_h = area.height.saturating_sub(2) as usize;
     let inner_w = area.width.saturating_sub(2) as usize;
-    let total = rows.len();
-    let start = if state.can_follow {
-        visible_start_refs(
-            &rows,
-            inner_h,
-            inner_w,
-            state.can_node_w,
-            state.can_net_w,
-            state.can_frame_w,
-            state.can_view,
-        )
-    } else {
-        state.can_scroll.min(total.saturating_sub(inner_h) as u16) as usize
-    };
+    let bottom_start = visible_start_refs(
+        &rows,
+        inner_h,
+        inner_w,
+        state.can_node_w,
+        state.can_net_w,
+        state.can_frame_w,
+        state.can_view,
+    );
+    let start = display_start(state.can_follow, state.can_scroll, bottom_start);
 
     let lines: Vec<Line> = rows
         .iter()
@@ -1684,12 +1645,11 @@ fn render_shell(frame: &mut ratatui::Frame, area: Rect, state: &State) {
 
     let inner_h = out_area.height as usize;
     let inner_w = out_area.width as usize;
-    let total = shell_out.len();
-    let start = if state.shell_follow {
-        visible_start(shell_out, inner_h, inner_w)
-    } else {
-        state.shell_scroll.min(total.saturating_sub(inner_h) as u16) as usize
-    };
+    let start = display_start(
+        state.shell_follow,
+        state.shell_scroll,
+        visible_start(shell_out, inner_h, inner_w),
+    );
 
     let out_lines: Vec<Line> = shell_out.iter().skip(start).cloned().collect();
 
@@ -1881,7 +1841,7 @@ fn handle_key(state: &mut State, code: KeyCode, mods: KeyModifiers) -> Result<()
         Focus::Log => handle_log(state, code),
         Focus::Bus => handle_pane_scroll(
             code,
-            state.bus.len(),
+            drawn_bottom_start(state, Focus::Bus),
             &mut state.bus_scroll,
             &mut state.bus_follow,
             &mut state.bus_paused,
@@ -1889,7 +1849,7 @@ fn handle_key(state: &mut State, code: KeyCode, mods: KeyModifiers) -> Result<()
         ),
         Focus::Can => handle_pane_scroll(
             code,
-            state.can.len(),
+            drawn_bottom_start(state, Focus::Can),
             &mut state.can_scroll,
             &mut state.can_follow,
             &mut state.can_paused,
@@ -1976,7 +1936,7 @@ fn handle_pane_specific_key(state: &mut State, code: KeyCode) -> bool {
 
 fn handle_pane_scroll(
     code: KeyCode,
-    row_count: usize,
+    bottom_start: usize,
     scroll: &mut u16,
     follow: &mut bool,
     paused: &mut bool,
@@ -1988,29 +1948,9 @@ fn handle_pane_scroll(
         KeyCode::Char(' ') | KeyCode::Char('p') => {
             *paused = !*paused;
             if *paused {
+                *scroll = display_start(*follow, *scroll, bottom_start) as u16;
                 *follow = false;
-                *scroll = row_count.saturating_sub(1) as u16;
             } else {
-                *follow = true;
-            }
-        }
-        KeyCode::Up | KeyCode::Char('k') => {
-            *follow = false;
-            *scroll = scroll.saturating_sub(1);
-        }
-        KeyCode::Down | KeyCode::Char('j') => {
-            *scroll = scroll.saturating_add(1);
-            if *scroll as usize >= row_count {
-                *follow = true;
-            }
-        }
-        KeyCode::PageUp => {
-            *follow = false;
-            *scroll = scroll.saturating_sub(10);
-        }
-        KeyCode::PageDown => {
-            *scroll = scroll.saturating_add(10);
-            if *scroll as usize >= row_count {
                 *follow = true;
             }
         }
@@ -2018,44 +1958,44 @@ fn handle_pane_scroll(
             *follow = true;
             *paused = false;
         }
-        KeyCode::Home | KeyCode::Char('g') => {
-            *follow = false;
-            *scroll = 0;
-        }
-        _ => {}
+        _ => scroll_view(code, bottom_start, scroll, follow),
     }
 }
 
 fn handle_log(state: &mut State, code: KeyCode) {
     match code {
         KeyCode::Char('q') | KeyCode::Esc => state.quit = true,
-        KeyCode::Up | KeyCode::Char('k') => {
-            state.log_follow = false;
-            state.log_scroll = state.log_scroll.saturating_sub(1);
-        }
-        KeyCode::Down | KeyCode::Char('j') => {
-            state.log_scroll = state.log_scroll.saturating_add(1);
-            if state.log_scroll as usize >= state.logs.len() {
-                state.log_follow = true;
-            }
-        }
-        KeyCode::PageUp => {
-            state.log_follow = false;
-            state.log_scroll = state.log_scroll.saturating_sub(10);
-        }
-        KeyCode::PageDown => {
-            state.log_scroll = state.log_scroll.saturating_add(10);
-            if state.log_scroll as usize >= state.logs.len() {
-                state.log_follow = true;
-            }
-        }
         KeyCode::End | KeyCode::Char('G') => state.log_follow = true,
-        KeyCode::Home | KeyCode::Char('g') => {
-            state.log_follow = false;
-            state.log_scroll = 0;
+        _ => {
+            let bottom_start = drawn_bottom_start(state, Focus::Log);
+            scroll_view(
+                code,
+                bottom_start,
+                &mut state.log_scroll,
+                &mut state.log_follow,
+            );
         }
-        _ => {}
     }
+}
+
+/// Rows `PageUp` / `PageDown` move a pane by.
+const PAGE_ROWS: usize = 10;
+
+/// Moves a pane's view from the rows on screen for the arrow, page and
+/// `Home` keys. Reaching `bottom_start` going down resumes following.
+fn scroll_view(code: KeyCode, bottom_start: usize, scroll: &mut u16, follow: &mut bool) {
+    let start = display_start(*follow, *scroll, bottom_start);
+    let target = match code {
+        KeyCode::Up | KeyCode::Char('k') => start.saturating_sub(1),
+        KeyCode::PageUp => start.saturating_sub(PAGE_ROWS),
+        KeyCode::Down | KeyCode::Char('j') => start + 1,
+        KeyCode::PageDown => start + PAGE_ROWS,
+        KeyCode::Home | KeyCode::Char('g') => 0,
+        _ => return,
+    };
+    let going_down = matches!(code, KeyCode::Down | KeyCode::Char('j') | KeyCode::PageDown);
+    *scroll = target.min(bottom_start) as u16;
+    *follow = going_down && target >= bottom_start;
 }
 
 fn handle_shell(state: &mut State, code: KeyCode) -> Result<()> {
@@ -2339,4 +2279,246 @@ fn copy_to_clipboard(text: &str) -> (&'static str, bool) {
     let wrote = write!(std::io::stdout(), "\x1b]52;c;{}\x07", encoded).is_ok();
     let _ = std::io::stdout().flush();
     ("osc52", wrote)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::backend::TestBackend;
+    use std::sync::mpsc;
+
+    fn state_with_node(name: &str) -> State {
+        let (stdin, _receiver) = mpsc::channel();
+        State::new(vec![NodeHandle {
+            name: name.to_string(),
+            stdin,
+        }])
+    }
+
+    /// Lays `focus` out over a `width` × `height` screen, as the event loop
+    /// does before handling a key.
+    fn place_pane(state: &mut State, focus: Focus, width: u16, height: u16) {
+        state.pane_rects.clear();
+        state
+            .pane_rects
+            .insert(focus, Rect::new(0, 0, width, height));
+    }
+
+    /// The text of each row `focus` renders inside its borders.
+    fn rendered_rows(state: &State, focus: Focus) -> Vec<String> {
+        let rect = state.pane_rects[&focus];
+        let mut terminal = Terminal::new(TestBackend::new(rect.width, rect.height)).unwrap();
+        terminal
+            .draw(|frame| match focus {
+                Focus::Log => render_logs(frame, rect, state),
+                Focus::Bus => render_bus(frame, rect, state),
+                Focus::Can => render_can(frame, rect, state),
+                Focus::Shell => render_shell(frame, rect, state),
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        (1..rect.height - 1)
+            .map(|row| {
+                (1..rect.width - 1)
+                    .map(|column| buffer.cell((column, row)).unwrap().symbol())
+                    .collect::<String>()
+                    .trim_end()
+                    .to_string()
+            })
+            .collect()
+    }
+
+    fn press(state: &mut State, code: KeyCode) {
+        handle_key(state, code, KeyModifiers::NONE).unwrap();
+    }
+
+    fn pairs(entries: &[(&str, &str)]) -> Vec<(String, String)> {
+        entries
+            .iter()
+            .map(|(key, value)| (key.to_string(), value.to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn signal_values_keep_their_spaces_tuples_and_equals_signs() {
+        assert_eq!(
+            parse_signal_pairs("speed=12.5 status={:ok, 42} label=front left expr=a=b"),
+            pairs(&[
+                ("speed", "12.5"),
+                ("status", "{:ok, 42}"),
+                ("label", "front left"),
+                ("expr", "a=b"),
+            ])
+        );
+    }
+
+    #[test]
+    fn signals_without_pairs_parse_to_nothing() {
+        assert!(parse_signal_pairs("").is_empty());
+        assert!(parse_signal_pairs("no decode").is_empty());
+    }
+
+    #[test]
+    fn multi_byte_signal_values_are_kept_whole() {
+        assert_eq!(
+            parse_signal_pairs("mode=éco gear=☐ D"),
+            pairs(&[("mode", "éco"), ("gear", "☐ D")])
+        );
+    }
+
+    #[test]
+    fn changed_and_new_signals_are_highlighted_but_removed_ones_are_not() {
+        let previous = pairs(&[("speed", "10"), ("gear", "D"), ("brake", "off")]);
+        let current = pairs(&[("speed", "11"), ("gear", "D"), ("rpm", "900")]);
+        assert_eq!(diff_pairs(&previous, &current), vec!["speed", "rpm"]);
+        assert!(diff_pairs(&current, &current).is_empty());
+    }
+
+    #[test]
+    fn window_titles_and_bells_are_dropped_but_colours_rendered() {
+        assert_eq!(
+            strip_osc("\x1b]0;iex\x07a\x1b]2;title\x1b\\b\x1b[31mc"),
+            "ab\x1b[31mc"
+        );
+        let line = parse_ansi_line("\x1b]0;iex(vms@host)\x07\x1b[32mok\x1b[0m\x07\r");
+        assert_eq!(line_to_plain(&line), "ok");
+        assert_eq!(line.spans[0].style.fg, Some(Color::Green));
+    }
+
+    #[test]
+    fn the_clipboard_gets_the_newest_bytes_cut_at_a_character_boundary() {
+        assert_eq!(clip_to_boundary("short", 64), "short");
+        // `é` is two bytes: a cut through it drops the whole character.
+        assert_eq!(clip_to_boundary("abcé", 2), "é");
+        assert_eq!(clip_to_boundary("abcé", 1), "");
+        assert_eq!(clip_to_boundary("€€", 4), "€");
+    }
+
+    #[test]
+    fn char_boundaries_step_over_whole_characters() {
+        let text = "aé€b";
+        assert_eq!(next_char_boundary(text, 0), 1);
+        assert_eq!(next_char_boundary(text, 1), 3);
+        assert_eq!(next_char_boundary(text, 3), 6);
+        assert_eq!(next_char_boundary(text, text.len()), text.len());
+        assert_eq!(prev_char_boundary(text, text.len()), 6);
+        assert_eq!(prev_char_boundary(text, 6), 3);
+        assert_eq!(prev_char_boundary(text, 3), 1);
+        assert_eq!(prev_char_boundary(text, 0), 0);
+    }
+
+    #[test]
+    fn the_input_line_edits_multi_byte_characters_whole() {
+        let mut state = state_with_node("vms");
+        for character in "aé€".chars() {
+            press(&mut state, KeyCode::Char(character));
+        }
+        press(&mut state, KeyCode::Left);
+        press(&mut state, KeyCode::Backspace);
+        assert_eq!(state.input, "a€");
+        press(&mut state, KeyCode::Char('ü'));
+        assert_eq!(state.input, "aü€");
+        assert_eq!(state.cursor, "aü".len());
+    }
+
+    #[test]
+    fn remsh_and_plain_iex_prompts_are_stripped_from_shell_output() {
+        let mut state = state_with_node("vms");
+        let lines = [
+            "iex(3)> 42",
+            "iex(ovcs-mini-vms@host)3> :ok",
+            "...(ovcs-mini-vms@host)3> ]",
+            "iex:12: warning: unused variable",
+        ];
+        for line in lines {
+            state.push_shell("vms", line.to_string());
+        }
+        let shell: Vec<String> = state.by_node["vms"]
+            .shell_out
+            .iter()
+            .map(line_to_plain)
+            .collect();
+        assert_eq!(
+            shell,
+            vec!["42", ":ok", "]", "iex:12: warning: unused variable"]
+        );
+    }
+
+    #[test]
+    fn scrolling_up_from_the_bottom_of_the_logs_moves_one_line_up() {
+        let mut state = state_with_node("vms");
+        for index in 0..100 {
+            state.push_log("vms", format!("line {index}"));
+        }
+        state.focus = Focus::Log;
+        place_pane(&mut state, Focus::Log, 40, 12);
+        assert_eq!(rendered_rows(&state, Focus::Log)[0], "[vms] line 90");
+
+        press(&mut state, KeyCode::Up);
+        assert!(!state.log_follow);
+        assert_eq!(rendered_rows(&state, Focus::Log)[0], "[vms] line 89");
+
+        press(&mut state, KeyCode::Down);
+        assert!(state.log_follow);
+    }
+
+    #[test]
+    fn scrolling_down_to_the_last_page_resumes_following() {
+        let mut state = state_with_node("vms");
+        for index in 0..15 {
+            state.push_log("vms", format!("line {index}"));
+        }
+        state.focus = Focus::Log;
+        place_pane(&mut state, Focus::Log, 40, 12);
+        press(&mut state, KeyCode::Home);
+        assert_eq!(rendered_rows(&state, Focus::Log)[0], "[vms] line 0");
+        for _ in 0..5 {
+            press(&mut state, KeyCode::Down);
+        }
+        assert!(state.log_follow);
+        assert_eq!(rendered_rows(&state, Focus::Log)[0], "[vms] line 5");
+    }
+
+    #[test]
+    fn paging_up_from_the_bottom_of_the_bus_moves_one_page_up() {
+        let mut state = state_with_node("vms");
+        for index in 0..50 {
+            state.push_bus("vms", "Src", "speed", &format!("value {index}"));
+        }
+        state.focus = Focus::Bus;
+        place_pane(&mut state, Focus::Bus, 60, 12);
+        press(&mut state, KeyCode::PageUp);
+        assert!(!state.bus_follow);
+        assert!(rendered_rows(&state, Focus::Bus)[0].ends_with("value 30"));
+    }
+
+    #[test]
+    fn the_followed_bus_shows_its_newest_row_when_earlier_rows_wrap() {
+        let mut state = state_with_node("vms");
+        // Each row is two screen rows wide at this width.
+        for index in 0..10 {
+            state.push_bus("vms", "Src", "n", &format!("row{index} {}", "a".repeat(25)));
+        }
+        assert_eq!(pane_bottom_start(&state, Focus::Bus, 6, 38), 7);
+        place_pane(&mut state, Focus::Bus, 40, 8);
+        let rows = rendered_rows(&state, Focus::Bus);
+        assert!(rows[0].ends_with("row7"), "{rows:?}");
+        assert!(rows.iter().any(|row| row.ends_with("row9")), "{rows:?}");
+    }
+
+    #[test]
+    fn pausing_the_bus_freezes_the_rows_on_screen() {
+        let mut state = state_with_node("vms");
+        for index in 0..50 {
+            state.push_bus("vms", "Src", "speed", &format!("value {index}"));
+        }
+        state.focus = Focus::Bus;
+        place_pane(&mut state, Focus::Bus, 60, 12);
+        press(&mut state, KeyCode::Char(' '));
+        state.push_bus("vms", "Src", "speed", "dropped");
+        assert_eq!(state.bus.len(), 50);
+        assert!(rendered_rows(&state, Focus::Bus)[0].ends_with("value 40"));
+        press(&mut state, KeyCode::Up);
+        assert!(rendered_rows(&state, Focus::Bus)[0].ends_with("value 39"));
+    }
 }

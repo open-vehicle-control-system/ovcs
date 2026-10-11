@@ -542,7 +542,8 @@ fn is_iex_prompt_echo(line: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_iex_prompt_echo, supervise, ChildProcess};
+    use super::{build_pane_label, is_iex_prompt_echo, supervise, BuildGroup, ChildProcess};
+    use std::path::PathBuf;
     use std::process::Command;
     use std::time::Instant;
 
@@ -593,5 +594,27 @@ mod tests {
             "    (vms_core 0.1.0) lib/vms_core/application.ex:12: VmsCore.Application.start/2"
         ));
         assert!(!is_iex_prompt_echo("Compiling 3 files (.ex)"));
+    }
+
+    fn build_group(cwd: &str, roles: &[&str]) -> BuildGroup {
+        BuildGroup {
+            cwd: PathBuf::from(cwd),
+            roles: roles.iter().map(|role| role.to_string()).collect(),
+        }
+    }
+
+    #[test]
+    fn a_firmware_built_for_one_role_is_labelled_with_the_role() {
+        let group = build_group("/repo/vms/firmware", &["vms"]);
+        assert_eq!(build_pane_label(&group), "vms");
+    }
+
+    #[test]
+    fn bridges_sharing_a_build_are_labelled_with_their_ids() {
+        let group = build_group(
+            "/repo/bridges/firmware",
+            &["bridge-radio_control", "bridge-ros"],
+        );
+        assert_eq!(build_pane_label(&group), "bridges (radio_control, ros)");
     }
 }
