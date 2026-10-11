@@ -1,13 +1,8 @@
 use ansi_to_tui::IntoText;
 use anyhow::Result;
 use crossterm::event::{
-    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers,
-    MouseButton, MouseEvent, MouseEventKind,
+    self, Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
-use crossterm::terminal::{
-    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
-};
-use crossterm::ExecutableCommand;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -16,10 +11,12 @@ use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
 use ratatui::Terminal;
 use regex::Regex;
 use std::collections::{HashMap, VecDeque};
-use std::io::{self, Stdout, Write as _};
+use std::io::{Stdout, Write as _};
 use std::sync::mpsc::{Receiver, Sender, TryRecvError};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+
+use crate::terminal;
 
 const LOG_CAP: usize = 4000;
 const SHELL_CAP: usize = 2000;
@@ -651,23 +648,10 @@ fn parse_ansi_line(raw: &str) -> Line<'static> {
 }
 
 pub fn run(rx: Receiver<Msg>, nodes: Vec<NodeHandle>) -> Result<()> {
-    let mut stdout = io::stdout();
-    enable_raw_mode()?;
-    stdout.execute(EnterAlternateScreen)?;
-    // Capture mouse so drag-selection in the TUI can be constrained
-    // to the focused pane instead of spilling across the whole
-    // window. Disabled again on shutdown so the terminal's native
-    // selection is restored.
-    stdout.execute(EnableMouseCapture)?;
-    let mut terminal = Terminal::new(CrosstermBackend::new(stdout))?;
-
+    // Mouse capture keeps drag-selection inside the focused pane.
+    let mut terminal = terminal::enter(true)?;
     let result = event_loop(&mut terminal, rx, nodes);
-
-    let _ = terminal.backend_mut().execute(DisableMouseCapture);
-    let _ = disable_raw_mode();
-    let _ = terminal.backend_mut().execute(LeaveAlternateScreen);
-    let _ = terminal.show_cursor();
-
+    terminal::restore();
     result
 }
 

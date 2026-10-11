@@ -1,5 +1,5 @@
 use anyhow::{anyhow, bail, Context, Result};
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufReader, Write};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::os::unix::process::CommandExt;
 use std::process::{Child, ChildStdin, Command, Stdio};
@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 
 use crate::ansi::strip_ansi;
 use crate::commands::run_ui::{self, Msg, NodeHandle};
+use crate::lines::lossy_lines;
 use crate::resolve_args::resolve_vehicle;
 use crate::ui::{step, sub, sub_miss, sub_ok};
 use crate::vehicles;
@@ -24,6 +25,9 @@ const BACKOFF_CAP: Duration = Duration::from_secs(10);
 /// Connect timeout on SSH sessions so we don't sit forever on an
 /// unresponsive host and miss shutdown signals.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+/// Idle time after which a keepalive probes a session; a board that misses
+/// `russh`'s default three in a row is treated as gone and reconnected.
+const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(5);
 /// Initial reconnect backoff — bumps by `next_backoff` up to `BACKOFF_CAP`.
 const INITIAL_BACKOFF: Duration = Duration::from_secs(1);
 /// A session is considered "healthy" (and backoff is reset to
@@ -727,7 +731,7 @@ fn run_local_node(
             Err(e) => {
                 let _ = tx.send(Msg::Log {
                     node: label.clone(),
-                    line: format!("[ovcs] spawn failed: {}", e),
+                    line: format!("[ovcs] spawn failed: {:#}", e),
                 });
             }
         }
@@ -1133,7 +1137,7 @@ async fn run_device_supervisor(
         if let Err(e) = result {
             let _ = tx.send(Msg::Log {
                 node: label.clone(),
-                line: format!("[ovcs] session: {}", e),
+                line: format!("[ovcs] session: {:#}", e),
             });
         } else if started.elapsed() > HEALTHY_SESSION {
             // The session stayed up long enough to count as healthy;
@@ -1195,6 +1199,8 @@ async fn run_device_once(
     // and prints `OVCS_LOG_READY`. After that, `is_iex_noise` keeps
     // any stray prompts out.
     let mut log_ready = false;
+    let (mut log_out, mut log_err) = (LineBuffer::default(), LineBuffer::default());
+    let (mut mon_out, mut mon_err) = (LineBuffer::default(), LineBuffer::default());
     let forward_log_line = |line: String, ready: &mut bool, tx: &Sender<Msg>| {
         if !*ready {
             if strip_ansi(&line).contains(LOG_READY_MARKER) {
@@ -1215,12 +1221,12 @@ async fn run_device_once(
             maybe = log_ch.wait() => {
                 match maybe {
                     Some(ChannelMsg::Data { data }) => {
-                        for line in split_lines(&data) {
+                        for line in log_out.feed(&data) {
                             forward_log_line(line, &mut log_ready, &tx_owned);
                         }
                     }
                     Some(ChannelMsg::ExtendedData { data, .. }) => {
-                        for line in split_lines(&data) {
+                        for line in log_err.feed(&data) {
                             forward_log_line(line, &mut log_ready, &tx_owned);
                         }
                     }
@@ -1255,12 +1261,12 @@ async fn run_device_once(
             maybe = mon_ch.wait() => {
                 match maybe {
                     Some(ChannelMsg::Data { data }) => {
-                        for line in split_lines(&data) {
+                        for line in mon_out.feed(&data) {
                             let _ = dispatch_monitor_line(&line, &label_owned, &tx_owned);
                         }
                     }
                     Some(ChannelMsg::ExtendedData { data, .. }) => {
-                        for line in split_lines(&data) {
+                        for line in mon_err.feed(&data) {
                             let _ = dispatch_monitor_line(&line, &label_owned, &tx_owned);
                         }
                     }
@@ -1344,7 +1350,10 @@ fn signing_hash_for(
 /// channels against. Returns a descriptive `anyhow::Error` on any
 /// failure in the connect / auth chain.
 async fn connect_ssh(host: &str) -> Result<russh::client::Handle<SshAcceptAllKeys>> {
-    let config = Arc::new(russh::client::Config::default());
+    let config = Arc::new(russh::client::Config {
+        keepalive_interval: Some(KEEPALIVE_INTERVAL),
+        ..Default::default()
+    });
     let mut handle = tokio::time::timeout(
         CONNECT_TIMEOUT,
         russh::client::connect(config, (host, 22), SshAcceptAllKeys),
@@ -1488,6 +1497,25 @@ async fn open_ssh_channels(
     Ok((log_ch, shell_ch, mon_ch))
 }
 
+/// One SSH stream's bytes, cut into lines even when a line or a UTF-8
+/// character straddles two packets.
+#[derive(Default)]
+struct LineBuffer {
+    pending: Vec<u8>,
+}
+
+impl LineBuffer {
+    /// Appends `bytes` and returns the non-blank lines they complete.
+    fn feed(&mut self, bytes: &[u8]) -> Vec<String> {
+        self.pending.extend_from_slice(bytes);
+        let Some(last_newline) = self.pending.iter().rposition(|&byte| byte == b'\n') else {
+            return Vec::new();
+        };
+        let complete: Vec<u8> = self.pending.drain(..=last_newline).collect();
+        split_lines(&complete)
+    }
+}
+
 fn split_lines(bytes: &[u8]) -> Vec<String> {
     let output = String::from_utf8_lossy(bytes);
     output
@@ -1513,7 +1541,7 @@ where
     Handle: Fn(&str, &str, &Sender<Msg>) -> bool,
 {
     let buffered = BufReader::new(reader);
-    for line in buffered.lines().map_while(|result| result.ok()) {
+    for line in lossy_lines(buffered) {
         if !handle_line(&line, node, tx) {
             break;
         }
@@ -1527,7 +1555,7 @@ fn forward_log<R: std::io::Read + Send + 'static>(reader: R, node: &str, tx: &Se
     // `is_iex_noise` filter is enough.
     let mut ready = false;
     let buffered = BufReader::new(reader);
-    for line in buffered.lines().map_while(|r| r.ok()) {
+    for line in lossy_lines(buffered) {
         if !ready {
             if strip_ansi(&line).contains(LOG_READY_MARKER) {
                 ready = true;
@@ -1677,7 +1705,7 @@ fn dispatch_monitor_line(raw: &str, node: &str, tx: &Sender<Msg>) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{agent_identity_public_key, signing_hash_for};
+    use super::{agent_identity_public_key, signing_hash_for, LineBuffer};
     use russh::keys::agent::AgentIdentity;
     use russh::keys::ssh_key::{Certificate, HashAlg, PublicKey};
 
@@ -1744,5 +1772,30 @@ mod tests {
             comment: "ed-test".to_string(),
         };
         assert_eq!(agent_identity_public_key(identity), None);
+    }
+    #[test]
+    fn a_line_split_across_packets_comes_out_whole() {
+        let mut buffer = LineBuffer::default();
+        assert!(buffer.feed(b"OVCS_CAN\tmisc\t0x1").is_empty());
+        assert_eq!(
+            buffer.feed(b"23\tframe\r\nOVCS_LOG_"),
+            vec!["OVCS_CAN\tmisc\t0x123\tframe"]
+        );
+        assert_eq!(buffer.feed(b"READY\n"), vec!["OVCS_LOG_READY"]);
+    }
+
+    #[test]
+    fn a_character_split_across_packets_is_not_mangled() {
+        let mut buffer = LineBuffer::default();
+        let bytes = "temp 21 \u{b0}C\n".as_bytes();
+        let split = bytes.len() - 3;
+        assert!(buffer.feed(&bytes[..split]).is_empty());
+        assert_eq!(buffer.feed(&bytes[split..]), vec!["temp 21 \u{b0}C"]);
+    }
+
+    #[test]
+    fn blank_lines_are_dropped() {
+        let mut buffer = LineBuffer::default();
+        assert_eq!(buffer.feed(b"one\n\n\x1b[0m\ntwo\n"), vec!["one", "two"]);
     }
 }

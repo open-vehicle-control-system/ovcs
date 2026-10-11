@@ -1,9 +1,5 @@
 use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
-use crossterm::terminal::{
-    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
-};
-use crossterm::ExecutableCommand;
 use owo_colors::OwoColorize;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
@@ -13,6 +9,7 @@ use ratatui::widgets::{Block, BorderType, Borders, List, ListItem, ListState, Pa
 use ratatui::Terminal;
 use std::io::{self, IsTerminal, Stdout};
 
+use crate::terminal;
 use crate::vehicles::Vehicle;
 
 const ACCENT: Color = Color::Cyan;
@@ -86,18 +83,13 @@ fn with_terminal<T, F>(f: F) -> Result<(T, Terminal<CrosstermBackend<Stdout>>)>
 where
     F: FnOnce(&mut Terminal<CrosstermBackend<Stdout>>) -> T,
 {
-    let mut stdout = io::stdout();
-    enable_raw_mode()?;
-    stdout.execute(EnterAlternateScreen)?;
-    let mut terminal = Terminal::new(CrosstermBackend::new(stdout))?;
+    let mut terminal = terminal::enter(false)?;
     let result = f(&mut terminal);
     Ok((result, terminal))
 }
 
-fn teardown(terminal: &mut Terminal<CrosstermBackend<Stdout>>) {
-    let _ = disable_raw_mode();
-    let _ = terminal.backend_mut().execute(LeaveAlternateScreen);
-    let _ = terminal.show_cursor();
+fn teardown(_terminal: &mut Terminal<CrosstermBackend<Stdout>>) {
+    terminal::restore();
 }
 
 // ---------- plain text picker ----------

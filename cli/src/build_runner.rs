@@ -24,7 +24,7 @@ use anyhow::{bail, Result};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use owo_colors::OwoColorize;
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, IsTerminal, Write};
+use std::io::{BufReader, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
@@ -32,6 +32,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::ansi::{is_blank_after_ansi, strip_ansi};
+use crate::lines::lossy_lines;
 
 /// One `build.sh` invocation in a lane's directory, with its env.
 ///
@@ -248,7 +249,7 @@ fn capture_stream<R>(reader: R, bars: &[ProgressBar], buf: &Arc<Mutex<Vec<String
 where
     R: std::io::Read + Send + 'static,
 {
-    for line in BufReader::new(reader).lines().map_while(|l| l.ok()) {
+    for line in lossy_lines(BufReader::new(reader)) {
         if is_blank_after_ansi(&line) {
             continue;
         }
@@ -344,7 +345,7 @@ where
     R: std::io::Read + Send + 'static,
     W: Write + Send + 'static,
 {
-    for line in BufReader::new(reader).lines().map_while(|l| l.ok()) {
+    for line in lossy_lines(BufReader::new(reader)) {
         if is_blank_after_ansi(&line) {
             continue;
         }

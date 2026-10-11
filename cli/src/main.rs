@@ -5,10 +5,12 @@ mod ansi;
 mod build_runner;
 mod commands;
 mod firmware;
+mod lines;
 mod prompt;
 mod repo_root;
 mod resolve_args;
 mod shell;
+mod terminal;
 mod ui;
 mod vehicles;
 
@@ -230,6 +232,11 @@ enum HostKeysAction {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+    // Rust ignores SIGPIPE, so printing into a closed pipe (`| head`) panics.
+    // `attach` keeps it ignored: it writes to remsh pipes that may close.
+    if !matches!(cli.command, Commands::Attach { .. }) {
+        unsafe { libc::signal(libc::SIGPIPE, libc::SIG_DFL) };
+    }
     match cli.command {
         Commands::Vehicles => commands::vehicles::run(),
         Commands::Doctor => commands::doctor::run(),
