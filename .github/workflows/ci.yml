@@ -237,6 +237,9 @@ jobs:
           key: npm-vms-dashboard-${{ hashFiles('mise.toml') }}-${{ hashFiles('vms/dashboard/package-lock.json') }}
           restore-keys: npm-vms-dashboard-${{ hashFiles('mise.toml') }}-
       - run: npm ci
+      - name: Audit deps
+        # Only the packages that ship in the built dashboard, not the build and test tools.
+        run: npm audit --omit=dev
       - run: npm run test:unit
       - run: npm run build
 
