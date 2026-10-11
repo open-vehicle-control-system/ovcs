@@ -151,8 +151,18 @@ pub fn run() -> Result<()> {
         print_row(Mark::Warn, "vehicles/", "no vehicle packages found");
     } else {
         for v in &list {
-            let vms = vehicles::nerves_target(v, "vms")?;
-            let info = vehicles::nerves_target(v, "infotainment")?;
+            let targets = vehicles::nerves_target(v, "vms")
+                .and_then(|vms| Ok((vms, vehicles::nerves_target(v, "infotainment")?)));
+            let (vms, info) = match targets {
+                Ok(targets) => targets,
+                Err(error) => {
+                    let summary = error.to_string();
+                    let first_line = summary.lines().next().unwrap_or("probe failed");
+                    print_row(Mark::Error, &v.dir, first_line);
+                    any_required_fail = true;
+                    continue;
+                }
+            };
             match (&vms, &info) {
                 (None, None) => {
                     print_row(

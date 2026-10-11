@@ -365,7 +365,7 @@ fn enumerate_roles(root: &std::path::Path, vehicle: &Vehicle) -> Result<Vec<Role
     // for cross-compilation, irrelevant on host dev) and layer host CAN
     // mappings onto bridge roles.
     let applications = firmware::applications_for(vehicle)?;
-    let host_mappings = bridge_host_mappings(vehicle).unwrap_or_default();
+    let host_mappings = bridge_host_mappings(vehicle)?;
 
     applications
         .into_iter()
