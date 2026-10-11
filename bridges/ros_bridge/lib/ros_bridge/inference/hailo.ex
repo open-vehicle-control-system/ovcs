@@ -13,12 +13,12 @@ defmodule RosBridge.Inference.Hailo do
 
   `detect/3` is asynchronous and **drops** the frame if inference is
   already running, answering `{:error, :busy}`. That is the right
-  behaviour for a live sensor: yolov8n runs at 177 FPS against a
-  pipeline producing 15 frames a second, so a drop means something is
-  badly wrong, and queueing frames would only add latency to a
-  measurement whose whole value is being current.
+  behaviour for a live sensor: inference is far faster than the stereo
+  frame rate, so a drop means something is badly wrong, and queueing
+  frames would only add latency to a measurement whose whole value is
+  being current.
 
-  The caller receives `{:inference_detections, seq, detections}` where
+  The caller receives `{:inference_detections, sequence, detections}` where
   each detection is
 
       %{class_id: 0..79, score: 0.0..1.0, x0:, y0:, x1:, y1:}
@@ -43,13 +43,13 @@ defmodule RosBridge.Inference.Hailo do
 
   require Logger
 
-  @tag_detect 1
-  @tag_detections 1
+  # Port protocol tags; must match `hailo_detect`.
+  @detect_request_tag 1
+  @detections_reply_tag 1
 
   @default_score_threshold 0.4
 
-  # Generous next to a 3.3 ms inference: this is the "the Port has
-  # wedged" timeout, not a latency budget.
+  # Detects a wedged Port; not a latency budget.
   @infer_timeout_ms 2_000
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -61,8 +61,8 @@ defmodule RosBridge.Inference.Hailo do
   `{:error, :unavailable}` when the Port never started.
   """
   @impl RosBridge.Inference
-  def detect(server \\ __MODULE__, seq, mat) do
-    GenServer.call(server, {:detect, seq, mat, self()})
+  def detect(server \\ __MODULE__, sequence, mat) do
+    GenServer.call(server, {:detect, sequence, mat, self()})
   catch
     :exit, _ -> {:error, :unavailable}
   end
@@ -96,14 +96,14 @@ defmodule RosBridge.Inference.Hailo do
     Process.flag(:trap_exit, true)
 
     hef_path = Keyword.fetch!(opts, :hef_path)
-    threshold = Keyword.get(opts, :score_threshold, @default_score_threshold)
-    executable = Keyword.get_lazy(opts, :executable, &binary_path/0)
+    score_threshold = Keyword.get(opts, :score_threshold, @default_score_threshold)
+    executable = Keyword.get_lazy(opts, :executable, &default_executable_path/0)
 
     state = %{
       port: nil,
       executable: executable,
       hef_path: hef_path,
-      score_threshold: threshold,
+      score_threshold: score_threshold,
       inflight: nil,
       dropped: 0
     }
@@ -112,7 +112,7 @@ defmodule RosBridge.Inference.Hailo do
       {:ok, port} ->
         Logger.info(
           "#{__MODULE__} loaded #{Path.basename(hef_path)} " <>
-            "(score >= #{threshold})"
+            "(score >= #{score_threshold})"
         )
 
         {:ok, %{state | port: port}}
@@ -127,15 +127,15 @@ defmodule RosBridge.Inference.Hailo do
     end
   end
 
-  defp open_port(%{executable: executable, hef_path: hef_path, score_threshold: threshold}) do
+  defp open_port(%{executable: executable, hef_path: hef_path, score_threshold: score_threshold}) do
     cond do
       not File.exists?(executable) -> {:error, {:missing_binary, executable}}
       not File.exists?(hef_path) -> {:error, {:missing_hef, hef_path}}
-      true -> do_open_port(executable, hef_path, threshold)
+      true -> spawn_detector_port(executable, hef_path, score_threshold)
     end
   end
 
-  defp do_open_port(executable, hef_path, threshold) do
+  defp spawn_detector_port(executable, hef_path, score_threshold) do
     # `cd: "/data"` because libhailort wants somewhere writable for
     # its own log; the rootfs is read-only.
     port =
@@ -144,7 +144,7 @@ defmodule RosBridge.Inference.Hailo do
         :exit_status,
         {:packet, 4},
         {:cd, ~c"/data"},
-        {:args, [hef_path, to_string(threshold)]}
+        {:args, [hef_path, to_string(score_threshold)]}
       ])
 
     {:ok, port}
@@ -161,45 +161,45 @@ defmodule RosBridge.Inference.Hailo do
     {:reply, not is_nil(state.inflight), state}
   end
 
-  def handle_call({:detect, _seq, _mat, _reply_to}, _from, %{port: nil} = state) do
+  def handle_call({:detect, _sequence, _mat, _reply_to}, _from, %{port: nil} = state) do
     {:reply, {:error, :unavailable}, state}
   end
 
-  def handle_call({:detect, _seq, _mat, _reply_to}, _from, %{inflight: inflight} = state)
+  def handle_call({:detect, _sequence, _mat, _reply_to}, _from, %{inflight: inflight} = state)
       when not is_nil(inflight) do
     {:reply, {:error, :busy}, %{state | dropped: state.dropped + 1}}
   end
 
-  def handle_call({:detect, seq, mat, reply_to}, _from, state) do
+  def handle_call({:detect, sequence, mat, reply_to}, _from, state) do
     {height, width, channels} = mat_shape(mat)
     pixels = Evision.Mat.to_binary(mat)
 
     Port.command(
       state.port,
-      <<@tag_detect, seq::little-32, width::little-16, height::little-16, channels,
+      <<@detect_request_tag, sequence::little-32, width::little-16, height::little-16, channels,
         pixels::binary>>
     )
 
-    timer = Process.send_after(self(), {:infer_timeout, seq}, @infer_timeout_ms)
+    timer = Process.send_after(self(), {:infer_timeout, sequence}, @infer_timeout_ms)
 
     {:reply, :ok,
-     %{state | inflight: %{seq: seq, reply_to: reply_to, timer: timer, width: width}}}
+     %{state | inflight: %{sequence: sequence, reply_to: reply_to, timer: timer, width: width}}}
   end
 
   @impl GenServer
   def handle_info({port, {:data, packet}}, %{port: port} = state) do
     case parse_detections(packet) do
-      {:ok, seq, detections} -> {:noreply, deliver(state, seq, detections)}
+      {:ok, sequence, detections} -> {:noreply, deliver(state, sequence, detections)}
       :error -> {:noreply, state}
     end
   end
 
-  def handle_info({:infer_timeout, seq}, %{inflight: %{seq: seq}} = state) do
-    Logger.warning("#{__MODULE__} frame #{seq} timed out after #{@infer_timeout_ms}ms")
+  def handle_info({:infer_timeout, sequence}, %{inflight: %{sequence: sequence}} = state) do
+    Logger.warning("#{__MODULE__} frame #{sequence} timed out after #{@infer_timeout_ms}ms")
     {:noreply, %{state | inflight: nil}}
   end
 
-  def handle_info({:infer_timeout, _stale_seq}, state), do: {:noreply, state}
+  def handle_info({:infer_timeout, _stale_sequence}, state), do: {:noreply, state}
 
   def handle_info({port, {:exit_status, status}}, %{port: port} = state) do
     Logger.error("#{__MODULE__} hailo_detect exited with status #{status}")
@@ -213,36 +213,36 @@ defmodule RosBridge.Inference.Hailo do
 
   def handle_info(_message, state), do: {:noreply, state}
 
-  defp deliver(%{inflight: %{seq: seq} = inflight} = state, seq, detections) do
+  defp deliver(%{inflight: %{sequence: sequence} = inflight} = state, sequence, detections) do
     Process.cancel_timer(inflight.timer)
-    send(inflight.reply_to, {:inference_detections, seq, detections})
+    send(inflight.reply_to, {:inference_detections, sequence, detections})
     %{state | inflight: nil}
   end
 
-  # A reply for a sequence we are no longer waiting on — a frame that
-  # timed out and then arrived anyway. Dropping it keeps the
-  # in-flight slot honest.
-  defp deliver(state, _stale_seq, _detections), do: state
+  # Late reply for a timed-out frame: dropped.
+  defp deliver(state, _stale_sequence, _detections), do: state
 
-  defp parse_detections(<<@tag_detections, seq::little-32, count::little-16, rest::binary>>) do
-    {:ok, seq, take_detections(rest, count, [])}
+  defp parse_detections(
+         <<@detections_reply_tag, sequence::little-32, count::little-16, rest::binary>>
+       ) do
+    {:ok, sequence, take_detections(rest, count, [])}
   end
 
   defp parse_detections(_packet), do: :error
 
-  defp take_detections(_rest, 0, acc), do: Enum.reverse(acc)
+  defp take_detections(_rest, 0, detections), do: Enum.reverse(detections)
 
   defp take_detections(
          <<class_id::little-16, score::little-float-32, x0::little-float-32, y0::little-float-32,
            x1::little-float-32, y1::little-float-32, rest::binary>>,
          count,
-         acc
+         detections
        ) do
     detection = %{class_id: class_id, score: score, x0: x0, y0: y0, x1: x1, y1: y1}
-    take_detections(rest, count - 1, [detection | acc])
+    take_detections(rest, count - 1, [detection | detections])
   end
 
-  defp take_detections(_malformed, _count, acc), do: Enum.reverse(acc)
+  defp take_detections(_malformed, _count, detections), do: Enum.reverse(detections)
 
   # Single-channel Mats report a 2-tuple shape.
   defp mat_shape(mat) do
@@ -252,7 +252,7 @@ defmodule RosBridge.Inference.Hailo do
     end
   end
 
-  defp binary_path do
+  defp default_executable_path do
     :ros_bridge
     |> :code.priv_dir()
     |> Path.join("hailo_detect")

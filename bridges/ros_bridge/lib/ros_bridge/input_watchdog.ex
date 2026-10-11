@@ -14,10 +14,10 @@ defmodule RosBridge.InputWatchdog do
       bridge stops, VMS alive     -> the VMS via the sequence
 
   It has to be longer than the largest legitimate gap between samples.
-  For `joy` that is knowable: the base station runs `joy_linux` with
-  `autorepeat_rate` at 20 Hz by default, so samples arrive every 50 ms
-  even when nothing on the controller moves. For a planner publishing
-  a velocity command, it is that planner's control period.
+  For `joy` that is the operator's `joy_linux` `autorepeat_rate`
+  period: samples keep arriving even when nothing on the controller
+  moves. For a planner publishing a velocity command, it is that
+  planner's control period.
 
   Neither is a constant this module should guess, which is why the
   timeout is a required argument rather than a default living here.
@@ -27,18 +27,29 @@ defmodule RosBridge.InputWatchdog do
   decision testable without waiting for wall-clock time, and the state
   machine below is the part worth testing — a watchdog that reports
   staleness repeatedly, or that never recovers, is worse than none.
+
+  ## Startup grace
+
+  `:silent` is a diagnosis, so it waits before making one: a gamepad
+  pairs after boot, a planner is usually launched by hand, and Zenoh
+  reconnects on a backoff. Reporting on the first tick of every normal
+  boot would train the operator to ignore the one message that catches
+  a topic typo. The grace is separate from `timeout_ms`, which bounds
+  the gap *between samples* and is shorter than a Zenoh session takes
+  to come up. `stale: true` from creation keeps the vehicle safe in
+  the meantime; the grace only governs when to say so.
   """
 
   # How long to wait before calling a never-received input a mistake
   # rather than a slow start. See `startup_grace_elapsed?/1`.
   @startup_grace_ms 5_000
 
-  @enforce_keys [:timeout_ms, :created_at]
+  @enforce_keys [:timeout_ms, :created_at_ms]
   defstruct [
     :timeout_ms,
     :startup_grace_ms,
-    :created_at,
-    :last_seen,
+    :created_at_ms,
+    :last_seen_at_ms,
     stale: true,
     reported: false
   ]
@@ -46,8 +57,8 @@ defmodule RosBridge.InputWatchdog do
   @type t :: %__MODULE__{
           timeout_ms: pos_integer(),
           startup_grace_ms: pos_integer(),
-          created_at: integer(),
-          last_seen: integer() | nil,
+          created_at_ms: integer(),
+          last_seen_at_ms: integer() | nil,
           stale: boolean(),
           reported: boolean()
         }
@@ -83,7 +94,7 @@ defmodule RosBridge.InputWatchdog do
     %__MODULE__{
       timeout_ms: timeout_ms,
       startup_grace_ms: startup_grace_ms,
-      created_at: now()
+      created_at_ms: now_ms()
     }
   end
 
@@ -99,7 +110,7 @@ defmodule RosBridge.InputWatchdog do
   """
   @spec seen(t()) :: t()
   def seen(%__MODULE__{} = watchdog) do
-    %{watchdog | last_seen: now()}
+    %{watchdog | last_seen_at_ms: now_ms()}
   end
 
   @doc """
@@ -128,7 +139,7 @@ defmodule RosBridge.InputWatchdog do
       not expired?(watchdog) and (watchdog.stale or not watchdog.reported) ->
         {:fresh, announced.(watchdog, false)}
 
-      expired?(watchdog) and is_nil(watchdog.last_seen) and not watchdog.reported and
+      expired?(watchdog) and is_nil(watchdog.last_seen_at_ms) and not watchdog.reported and
           startup_grace_elapsed?(watchdog) ->
         {:silent, announced.(watchdog, true)}
 
@@ -149,32 +160,16 @@ defmodule RosBridge.InputWatchdog do
   @spec stale?(t()) :: boolean()
   def stale?(%__MODULE__{stale: stale}), do: stale
 
-  # `:silent` is a diagnosis, so it waits before making one. A gamepad
-  # pairs after boot, a planner is usually launched by hand, and Zenoh
-  # reconnects on a backoff starting at a second -- reporting "nothing
-  # has published since start" on the first 50 ms tick of every normal
-  # boot would train the operator to ignore the one message that
-  # catches a topic typo.
-  #
-  # Its own value, not `timeout_ms`. The two measure different things:
-  # `timeout_ms` is the largest legitimate gap *between samples*,
-  # 500 ms on the joystick path, which is shorter than a Zenoh session
-  # takes to come up -- so deriving the grace from it would warn on
-  # every boot anyway. `max/2` because a slow input's timeout can
-  # exceed the grace. It is an argument to `new/2` only so a test does
-  # not have to sleep for five seconds.
-  #
-  # `stale: true` from creation is what keeps the vehicle safe in the
-  # meantime; this only governs when it is worth saying out loud.
+  # `max/2` because a slow input's timeout can exceed the grace; see "Startup grace".
   defp startup_grace_elapsed?(%__MODULE__{} = watchdog) do
-    now() - watchdog.created_at > max(watchdog.timeout_ms, watchdog.startup_grace_ms)
+    now_ms() - watchdog.created_at_ms > max(watchdog.timeout_ms, watchdog.startup_grace_ms)
   end
 
-  defp expired?(%__MODULE__{last_seen: nil}), do: true
+  defp expired?(%__MODULE__{last_seen_at_ms: nil}), do: true
 
-  defp expired?(%__MODULE__{last_seen: last_seen, timeout_ms: timeout_ms}) do
-    now() - last_seen > timeout_ms
+  defp expired?(%__MODULE__{last_seen_at_ms: last_seen_at_ms, timeout_ms: timeout_ms}) do
+    now_ms() - last_seen_at_ms > timeout_ms
   end
 
-  defp now, do: System.monotonic_time(:millisecond)
+  defp now_ms, do: System.monotonic_time(:millisecond)
 end

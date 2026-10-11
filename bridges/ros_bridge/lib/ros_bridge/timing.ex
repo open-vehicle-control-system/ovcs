@@ -29,7 +29,7 @@ defmodule RosBridge.Timing do
   clock by sampling the offset between the two clocks at call
   time. The offset drift between successive calls is on the
   order of nanoseconds — negligible compared to the
-  millisecond-scale BEAM-scheduling jitter we're removing.
+  millisecond-scale BEAM-scheduling jitter this removes.
 
   ## Wall clock is not always the target
 
@@ -69,7 +69,7 @@ defmodule RosBridge.Timing do
   `:os.perf_counter/1` reads `CLOCK_MONOTONIC` on Linux, so sampling
   it alongside `System.monotonic_time/1` recovers the fixed offset
   between the two clocks. Both samples are taken microseconds apart,
-  which is well inside the jitter we already tolerate.
+  well inside the scheduling jitter.
   """
   def from_kernel_monotonic(kernel_nanoseconds) when is_integer(kernel_nanoseconds) do
     kernel_nanoseconds - :os.perf_counter(:nanosecond) + System.monotonic_time(:nanosecond)
@@ -83,7 +83,7 @@ defmodule RosBridge.Timing do
   def ros_time_of(monotonic_nanoseconds) when is_integer(monotonic_nanoseconds) do
     case RosBridge.Clock.offset_ns() do
       nil -> wallclock_of(monotonic_nanoseconds)
-      offset -> monotonic_nanoseconds + offset
+      offset_ns -> monotonic_nanoseconds + offset_ns
     end
   end
 
@@ -96,15 +96,8 @@ defmodule RosBridge.Timing do
   def time_message_for(monotonic_nanoseconds) do
     nanoseconds = ros_time_of(monotonic_nanoseconds)
 
-    # Floor division, not `div/2`. `div` and `rem` truncate toward
-    # zero, so a negative total gives a negative `nanosec` — and
-    # `Time.encode/1` writes that field as `little-unsigned-integer`,
-    # which *wraps* rather than raising: -30 ms becomes 4_264_967_296,
-    # a stamp 4.26 s in the future.
-    #
-    # Reachable now that simulator time exists. After a world reset
-    # `/clock` returns to ~0, and a frame captured just before that
-    # sample projects to a small negative number.
+    # Floored, not truncated: `Time.encode/1` writes `nanosec` unsigned, so a
+    # negative remainder would wrap. Simulator time goes negative after a world reset.
     %Time{
       sec: Integer.floor_div(nanoseconds, 1_000_000_000),
       nanosec: Integer.mod(nanoseconds, 1_000_000_000)

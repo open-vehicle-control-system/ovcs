@@ -3,8 +3,8 @@ defmodule RosBridge.Services.SetCameraInfoServer do
   ROS 2 service server for `sensor_msgs/srv/SetCameraInfo`. One
   instance per camera side; together they make the
   `cameracalibrator` GUI's **COMMIT** button work — clicking it
-  delivers the freshly-solved `CameraInfo` over Zenoh, we persist
-  it to the side's YAML, and trigger a hot-reload of the SGBM
+  delivers the freshly-solved `CameraInfo` over Zenoh, this persists
+  it to the side's YAML and triggers a hot-reload of the SGBM
   backend so the new geometry takes effect on the next frame.
 
   ## Required opts
@@ -26,8 +26,7 @@ defmodule RosBridge.Services.SetCameraInfoServer do
 
   alias RosBridge.Camera.Calibration
   alias Ros2.SensorMsgs.Srv.SetCameraInfo
-  alias Ros2.SensorMsgs.Srv.SetCameraInfo.Request
-  alias Ros2.SensorMsgs.Srv.SetCameraInfo.Response
+  alias Ros2.SensorMsgs.Srv.SetCameraInfo.{Request, Response}
 
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: name_for(Keyword.fetch!(opts, :service_name)))
@@ -62,7 +61,7 @@ defmodule RosBridge.Services.SetCameraInfoServer do
     response =
       case Request.parse(payload) do
         {:ok, %Request{camera_info: camera_info}, _rest} ->
-          handle_request(camera_info, state)
+          persist_calibration(camera_info, state)
 
         error ->
           Logger.warning(
@@ -76,7 +75,7 @@ defmodule RosBridge.Services.SetCameraInfoServer do
     {:noreply, state}
   end
 
-  defp handle_request(camera_info, state) do
+  defp persist_calibration(camera_info, state) do
     calibration = Calibration.from_camera_info(camera_info)
     yaml = Calibration.to_yaml(calibration, state.camera_name)
 

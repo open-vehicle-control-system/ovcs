@@ -55,9 +55,9 @@ defmodule RosBridge.Inference.Dnn do
   frame and leaves the backend up.
 
   The output decode is native rather than `Nx`, for the same class of
-  reason — see `decode/6`, where it was worth 340 ms a frame.
+  reason — see `decode/6`.
 
-  ## Opts
+  ## Options
 
     * `:model_path` (required) — an ONNX YOLO model. The Hailo's
       `yolov8n.hef` is fetched by `mise run fetch-models`
@@ -76,15 +76,18 @@ defmodule RosBridge.Inference.Dnn do
 
   @default_score_threshold 0.4
   @default_nms_threshold 0.45
+  # The standard YOLOv8 export input size.
   @default_input_size 640
+  # `handle_call/3` replies at once; this only bounds a wedged server.
+  @detect_call_timeout_ms 10_000
 
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: Keyword.get(opts, :name, __MODULE__))
   end
 
   @impl RosBridge.Inference
-  def detect(server \\ __MODULE__, seq, mat) do
-    GenServer.call(server, {:detect, seq, mat, self()}, 10_000)
+  def detect(server \\ __MODULE__, sequence, mat) do
+    GenServer.call(server, {:detect, sequence, mat, self()}, @detect_call_timeout_ms)
   end
 
   @impl RosBridge.Inference
@@ -108,7 +111,7 @@ defmodule RosBridge.Inference.Dnn do
     state = %{
       net: nil,
       worker: nil,
-      seq: nil,
+      sequence: nil,
       reply_to: nil,
       target: Keyword.get(opts, :target, :cpu),
       score_threshold: Keyword.get(opts, :score_threshold, @default_score_threshold),
@@ -117,34 +120,23 @@ defmodule RosBridge.Inference.Dnn do
       model_path: model_path
     }
 
-    {:ok, load(state)}
+    {:ok, load_model(state)}
   end
 
-  # Inference runs in a monitored child process, and `detect/3` returns
-  # the moment the frame is handed over. `RosBridge.Inference` requires
-  # that — "asynchronous and lossy" — and it is not a stylistic point:
-  # the caller is `Detections`, which also drives the *stereo depth*
-  # path. A CPU frame that takes 800 ms would stall depth for 800 ms,
-  # and one that took longer than the call timeout would crash
-  # `Detections` outright, which is precisely the outcome the
-  # behaviour doc says must not happen.
-  #
-  # `spawn_monitor` rather than `Task.async`: an inference that crashes
-  # must drop its frame, not take the backend down with it, and an
-  # `async` Task is linked.
+  # `spawn_monitor`, not `Task.async`: a crashing inference must not take the backend down.
   @impl GenServer
-  def handle_call({:detect, _seq, _mat, _reply_to}, _from, %{net: nil} = state) do
+  def handle_call({:detect, _sequence, _mat, _reply_to}, _from, %{net: nil} = state) do
     {:reply, {:error, :unavailable}, state}
   end
 
-  def handle_call({:detect, _seq, _mat, _reply_to}, _from, %{worker: {_pid, _ref}} = state) do
+  def handle_call({:detect, _sequence, _mat, _reply_to}, _from, %{worker: {_pid, _ref}} = state) do
     {:reply, {:error, :busy}, state}
   end
 
-  def handle_call({:detect, seq, mat, reply_to}, _from, state) do
+  def handle_call({:detect, sequence, mat, reply_to}, _from, state) do
     parent = self()
     worker = spawn_monitor(fn -> send(parent, {:inferred, self(), infer(state, mat)}) end)
-    {:reply, :ok, %{state | worker: worker, seq: seq, reply_to: reply_to}}
+    {:reply, :ok, %{state | worker: worker, sequence: sequence, reply_to: reply_to}}
   end
 
   def handle_call(:available?, _from, state), do: {:reply, not is_nil(state.net), state}
@@ -152,16 +144,17 @@ defmodule RosBridge.Inference.Dnn do
   def handle_call(:busy?, _from, state), do: {:reply, not is_nil(state.worker), state}
 
   @impl GenServer
-  def handle_info({:inferred, pid, detections}, %{worker: {pid, ref}} = state) do
-    Process.demonitor(ref, [:flush])
-    send(state.reply_to, {:inference_detections, state.seq, detections})
+  def handle_info({:inferred, pid, detections}, %{worker: {pid, monitor_reference}} = state) do
+    Process.demonitor(monitor_reference, [:flush])
+    send(state.reply_to, {:inference_detections, state.sequence, detections})
     {:noreply, %{state | worker: nil, reply_to: nil}}
   end
 
-  # A crashed inference drops the frame. No reply is sent, so
-  # `Detections` clears its pending frame on the next one rather than
-  # waiting on boxes that will never come.
-  def handle_info({:DOWN, ref, :process, pid, reason}, %{worker: {pid, ref}} = state) do
+  # A crashed inference drops its frame; no reply is sent.
+  def handle_info(
+        {:DOWN, monitor_reference, :process, pid, reason},
+        %{worker: {pid, monitor_reference}} = state
+      ) do
     Logger.warning("#{__MODULE__}: inference process died: #{inspect(reason)} — frame dropped")
     {:noreply, %{state | worker: nil, reply_to: nil}}
   end
@@ -169,7 +162,7 @@ defmodule RosBridge.Inference.Dnn do
   # A late message from a worker already accounted for.
   def handle_info(_message, state), do: {:noreply, state}
 
-  defp load(state) do
+  defp load_model(state) do
     if File.exists?(state.model_path) do
       read_net(state)
     else
@@ -192,7 +185,7 @@ defmodule RosBridge.Inference.Dnn do
         %{state | net: net}
 
       other ->
-        # Again a return value, not an exception.
+        # Evision returns errors instead of raising.
         Logger.error(
           "#{__MODULE__}: could not load #{state.model_path}: " <>
             "#{inspect(other) |> String.slice(0, 200)} — detections disabled"
@@ -206,8 +199,7 @@ defmodule RosBridge.Inference.Dnn do
       state
   end
 
-  # Returns the backend/target pair and a phrase for the log, so the
-  # fallback is visible rather than inferred from a missing speedup.
+  # Also returns a phrase for the log, so a fallback is visible.
   defp resolve_target(:cpu), do: {dnn_backend_opencv(), dnn_target_cpu(), "running on the CPU"}
 
   defp resolve_target(requested) when requested in [:opencl, :opencl_fp16] do
@@ -240,8 +232,6 @@ defmodule RosBridge.Inference.Dnn do
     _ -> "an OpenCL device"
   end
 
-  # Evision exposes the cv::dnn enums as functions; naming them here
-  # keeps the constants in one place and the call sites readable.
   defp dnn_backend_opencv, do: Evision.Constant.cv_DNN_BACKEND_OPENCV()
   defp dnn_target_cpu, do: Evision.Constant.cv_DNN_TARGET_CPU()
   defp dnn_target_opencl, do: Evision.Constant.cv_DNN_TARGET_OPENCL()
@@ -249,14 +239,14 @@ defmodule RosBridge.Inference.Dnn do
 
   defp infer(state, mat) do
     {height, width} = mat_shape(mat)
-    size = state.input_size
+    input_size = state.input_size
 
     blob =
       mat
       |> to_three_channel()
       |> Evision.DNN.blobFromImage(
         scalefactor: 1.0 / 255.0,
-        size: {size, size},
+        size: {input_size, input_size},
         swapRB: true,
         crop: false
       )
@@ -264,25 +254,17 @@ defmodule RosBridge.Inference.Dnn do
     with %Evision.Mat{} = blob <- blob,
          net = Evision.DNN.Net.setInput(state.net, blob),
          outputs when not is_tuple(outputs) <- Evision.DNN.Net.forward(net),
-         %Evision.Mat{} = out <- first_output(outputs) do
-      decode(out, width, height, size, state.score_threshold, state.nms_threshold)
+         %Evision.Mat{} = output <- first_output(outputs) do
+      decode(output, width, height, input_size, state.score_threshold, state.nms_threshold)
     else
       other ->
-        # Evision signals failure by *returning* `{:error, message}`
-        # rather than raising, so this has to be matched rather than
-        # rescued. A frame that cannot be inferred is dropped, not
-        # crashed on — same as a busy accelerator.
+        # Evision returns `{:error, message}` instead of raising; the frame is dropped.
         log_inference_failure(other)
         []
     end
   end
 
-  # A failure that is going to happen at all happens on every frame —
-  # a channel-count mismatch, a model that will not run on the chosen
-  # target — so logging each one buries the rest of the log at the
-  # stereo rate. The first is loud; after that, one line per hundred
-  # with the count, which is enough to see it is still happening
-  # without drowning anything else.
+  # Failures repeat every frame: log the first, then every Nth with the count.
   @failure_log_interval 100
 
   defp log_inference_failure(reason) do
@@ -297,20 +279,12 @@ defmodule RosBridge.Inference.Dnn do
     end
   end
 
-  # `Net.forward/1` answers with a *list* of Mats, one per output layer,
-  # even for a single-output model. Treating it as a Mat is the kind of
-  # mistake that only shows up the first time real inference runs.
+  # `Net.forward/1` returns a list of Mats, one per output layer.
   defp first_output([%Evision.Mat{} = mat | _]), do: mat
   defp first_output(%Evision.Mat{} = mat), do: mat
   defp first_output(other), do: other
 
-  # The frame this is handed is `Result.left_rectified`, which is
-  # **grayscale**: SGBM needs single-channel input, so that is what the
-  # stereo pipeline rectifies and keeps. Every YOLO export expects
-  # three, and OpenCV does not broadcast — it refuses the graph with
-  # "Number of input channels should be multiple of 3 but got 1", once
-  # per frame, which is how this was found. Converting is a copy of a
-  # 640x480 mono frame and cheap next to the inference.
+  # The stereo pipeline hands a grayscale frame; YOLO needs three channels.
   defp to_three_channel(mat) do
     case Evision.Mat.shape(mat) do
       {_height, _width} ->
@@ -324,14 +298,11 @@ defmodule RosBridge.Inference.Dnn do
     end
   end
 
-  # `Evision.Mat.shape/1` signals failure the way the rest of Evision
-  # does, by returning `{:error, message}` — which is a two-tuple, and
-  # so would match a `{height, width}` clause and put a binary into the
-  # arithmetic further down. Hence the guards.
+  # Guarded: Evision's `{:error, message}` would otherwise match `{height, width}`.
   defp mat_shape(mat) do
     case Evision.Mat.shape(mat) do
-      {h, w} when is_integer(h) and is_integer(w) -> {h, w}
-      {h, w, _channels} when is_integer(h) and is_integer(w) -> {h, w}
+      {height, width} when is_integer(height) and is_integer(width) -> {height, width}
+      {height, width, _channels} when is_integer(height) and is_integer(width) -> {height, width}
       _other -> {0, 0}
     end
   end
@@ -340,31 +311,23 @@ defmodule RosBridge.Inference.Dnn do
   Turn one YOLO output into boxes in the source image's pixels.
 
   Takes the output `Evision.Mat` — `{1, 4 + classes, anchors}` or the
-  same without the batch — rather than a flat list, for two reasons
-  that were both defects here:
+  same without the batch — rather than a flat list:
 
-    * The class count has to come from the shape. It was hardcoded to
-      84 (4 box + 80 COCO classes), which made every other model — a
-      single-class person detector, a retrained head — decode as
-      nothing at all, silently, because the flat length no longer
-      divided by 84.
+    * The class count comes from the shape, so any class count decodes,
+      not only COCO's 80.
 
-    * The per-anchor maximum has to be taken in native code. Doing it
-      in Nx cost **340 ms** of a 397 ms decode for a real yolov8n
-      output (84 x 8400), because Nx's default backend is pure Elixir:
-      a 1.8 fps ceiling on the decode alone, against a 30 Hz stereo
-      pipeline. `Evision.reduce/4` does the same 672,000-element pass
-      in 1.7 ms. The tests had used a 2x2 input with 4 anchors and so
-      never went anywhere near it.
+    * The per-anchor maximum is taken in native code (`Evision.reduce/4`):
+      Nx's default backend is pure Elixir and far too slow for the
+      stereo frame rate.
 
-  So OpenCV reduces, and Elixir only touches the 8,400 maxima and the
-  handful of anchors that clear the threshold.
+  Elixir only touches the per-anchor maxima and the handful of anchors
+  that clear the threshold.
   """
-  def decode(out, width, height, input_size, score_threshold, nms_threshold) do
-    case attribute_major(out) do
-      {mat, attrs, anchors} ->
+  def decode(output, width, height, input_size, score_threshold, nms_threshold) do
+    case attribute_major(output) do
+      {mat, attributes, anchors} ->
         mat
-        |> candidates(attrs, anchors, score_threshold)
+        |> candidates(attributes, anchors, score_threshold)
         |> Enum.map(&to_pixels(&1, width, height, input_size))
         |> non_max_suppression(nms_threshold)
 
@@ -373,52 +336,48 @@ defmodule RosBridge.Inference.Dnn do
     end
   end
 
-  # `Net.forward/1` gives `{1, attrs, anchors}`. Everything below works
-  # on the 2D form, and anything that is not one of these two shapes is
-  # refused rather than decoded into nonsense.
-  defp attribute_major(out) do
-    with %Evision.Mat{} = mat <- out,
+  # Normalises the output to 2D `{attributes, anchors}`; other shapes are refused.
+  defp attribute_major(output) do
+    with %Evision.Mat{} = mat <- output,
          shape <- Evision.Mat.shape(mat),
-         {attrs, anchors} <- two_dimensional(shape),
-         true <- attrs > 4 and anchors > 0,
-         %Evision.Mat{} = flat <- reshape_2d(mat, shape, attrs, anchors) do
-      {flat, attrs, anchors}
+         {attributes, anchors} <- two_dimensional(shape),
+         true <- attributes > 4 and anchors > 0,
+         %Evision.Mat{} = flat <- reshape_2d(mat, shape, attributes, anchors) do
+      {flat, attributes, anchors}
     else
       _other -> :error
     end
   end
 
-  defp two_dimensional({1, attrs, anchors}), do: {attrs, anchors}
-  defp two_dimensional({attrs, anchors}), do: {attrs, anchors}
+  defp two_dimensional({1, attributes, anchors}), do: {attributes, anchors}
+  defp two_dimensional({attributes, anchors}), do: {attributes, anchors}
   defp two_dimensional(_other), do: :error
 
-  defp reshape_2d(mat, {_batch, _attrs, _anchors}, attrs, anchors),
-    do: Evision.Mat.reshape(mat, [attrs, anchors])
+  defp reshape_2d(mat, {_batch, _attributes, _anchors}, attributes, anchors),
+    do: Evision.Mat.reshape(mat, [attributes, anchors])
 
-  defp reshape_2d(mat, _shape, _attrs, _anchors), do: mat
+  defp reshape_2d(mat, _shape, _attributes, _anchors), do: mat
 
-  # yolov8 output is attribute-major: every anchor's cx sits `anchors`
-  # elements from its cy, not next to it. Reading it row-major is the
-  # classic way to get boxes that look almost right.
-  defp candidates(mat, attrs, anchors, threshold) do
-    classes = attrs - 4
+  # Attribute-major: an anchor's cx and cy are `anchors` elements apart.
+  defp candidates(mat, attributes, anchors, threshold) do
+    classes = attributes - 4
 
     # `roi/2` takes `{x, y, width, height}`, so these are full-width
     # row bands: the four box attributes, then every class score.
     with %Evision.Mat{} = boxes <- Evision.Mat.roi(mat, {0, 0, anchors, 4}),
          %Evision.Mat{} = scores <- Evision.Mat.roi(mat, {0, 4, anchors, classes}),
-         %Evision.Mat{} = maxes <- reduce_max_per_anchor(scores),
-         box_bin when is_binary(box_bin) <- Evision.Mat.to_binary(boxes),
-         score_bin when is_binary(score_bin) <- Evision.Mat.to_binary(scores),
-         max_bin when is_binary(max_bin) <- Evision.Mat.to_binary(maxes) do
-      for {score, a} <- Enum.with_index(floats(max_bin)), score >= threshold do
+         %Evision.Mat{} = max_scores <- reduce_max_per_anchor(scores),
+         box_binary when is_binary(box_binary) <- Evision.Mat.to_binary(boxes),
+         score_binary when is_binary(score_binary) <- Evision.Mat.to_binary(scores),
+         max_binary when is_binary(max_binary) <- Evision.Mat.to_binary(max_scores) do
+      for {score, anchor} <- Enum.with_index(floats(max_binary)), score >= threshold do
         %{
-          cx: float_at(box_bin, a),
-          cy: float_at(box_bin, anchors + a),
-          w: float_at(box_bin, 2 * anchors + a),
-          h: float_at(box_bin, 3 * anchors + a),
+          cx: float_at(box_binary, anchor),
+          cy: float_at(box_binary, anchors + anchor),
+          width: float_at(box_binary, 2 * anchors + anchor),
+          height: float_at(box_binary, 3 * anchors + anchor),
           score: score,
-          class_id: best_class(score_bin, a, anchors, classes)
+          class_id: best_class(score_binary, anchor, anchors, classes)
         }
       end
     else
@@ -426,18 +385,15 @@ defmodule RosBridge.Inference.Dnn do
     end
   end
 
-  # Along dimension 0, i.e. down the class rows, giving one maximum per
-  # anchor. This is the call that replaced 340 ms of Nx with 1.7 ms.
+  # Reduces down the class rows: one maximum per anchor.
   defp reduce_max_per_anchor(scores) do
     Evision.reduce(scores, 0, Evision.Constant.cv_REDUCE_MAX(), dtype: Evision.Constant.cv_32F())
   end
 
-  # Only ever called for an anchor that already cleared the threshold,
-  # so this walks `classes` floats a handful of times per frame rather
-  # than `classes * anchors` every time.
-  defp best_class(score_bin, anchor, anchors, classes) do
+  # Called only for anchors above the threshold.
+  defp best_class(score_binary, anchor, anchors, classes) do
     Enum.reduce(0..(classes - 1), {-1.0, 0}, fn class_id, {best, best_id} ->
-      score = float_at(score_bin, class_id * anchors + anchor)
+      score = float_at(score_binary, class_id * anchors + anchor)
       if score > best, do: {score, class_id}, else: {best, best_id}
     end)
     |> elem(1)
@@ -451,25 +407,22 @@ defmodule RosBridge.Inference.Dnn do
 
   defp floats(binary), do: for(<<value::float-32-little <- binary>>, do: value)
 
-  # The blob was a plain resize (`crop: false`, no letterbox), so the
-  # inverse is one scale factor per axis.
-  defp to_pixels(d, width, height, input_size) do
-    sx = width / input_size
-    sy = height / input_size
+  # Plain resize (`crop: false`, no letterbox): one scale factor per axis.
+  defp to_pixels(candidate, width, height, input_size) do
+    scale_x = width / input_size
+    scale_y = height / input_size
 
     %{
-      class_id: d.class_id,
-      score: d.score,
-      x0: (d.cx - d.w / 2) * sx,
-      y0: (d.cy - d.h / 2) * sy,
-      x1: (d.cx + d.w / 2) * sx,
-      y1: (d.cy + d.h / 2) * sy
+      class_id: candidate.class_id,
+      score: candidate.score,
+      x0: (candidate.cx - candidate.width / 2) * scale_x,
+      y0: (candidate.cy - candidate.height / 2) * scale_y,
+      x1: (candidate.cx + candidate.width / 2) * scale_x,
+      y1: (candidate.cy + candidate.height / 2) * scale_y
     }
   end
 
-  # Greedy NMS, per class. Done here rather than through
-  # `Evision.DNN.nmsBoxes/4` so the whole decode stays a pure function
-  # over numbers and can be tested without Evision in the loop.
+  # Greedy per-class NMS in Elixir, so it is testable without Evision.
   defp non_max_suppression(detections, threshold) do
     detections
     |> Enum.group_by(& &1.class_id)
@@ -486,15 +439,15 @@ defmodule RosBridge.Inference.Dnn do
     suppress(rest, [best | kept], threshold)
   end
 
-  defp iou(a, b) do
-    x0 = max(a.x0, b.x0)
-    y0 = max(a.y0, b.y0)
-    x1 = min(a.x1, b.x1)
-    y1 = min(a.y1, b.y1)
+  defp iou(box, other_box) do
+    x0 = max(box.x0, other_box.x0)
+    y0 = max(box.y0, other_box.y0)
+    x1 = min(box.x1, other_box.x1)
+    y1 = min(box.y1, other_box.y1)
     overlap = max(0.0, x1 - x0) * max(0.0, y1 - y0)
-    area_a = max(0.0, a.x1 - a.x0) * max(0.0, a.y1 - a.y0)
-    area_b = max(0.0, b.x1 - b.x0) * max(0.0, b.y1 - b.y0)
-    union = area_a + area_b - overlap
+    box_area = max(0.0, box.x1 - box.x0) * max(0.0, box.y1 - box.y0)
+    other_area = max(0.0, other_box.x1 - other_box.x0) * max(0.0, other_box.y1 - other_box.y0)
+    union = box_area + other_area - overlap
     if union <= 0.0, do: 0.0, else: overlap / union
   end
 end

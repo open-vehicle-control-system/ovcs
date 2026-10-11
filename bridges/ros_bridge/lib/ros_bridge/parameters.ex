@@ -40,11 +40,11 @@ defmodule RosBridge.Parameters do
 
   @impl GenServer
   def init(_opts) do
-    node = ZenohClient.node_name()
+    node_name = ZenohClient.node_name()
 
     services =
       Map.new(Codec.services(), fn {service, module} ->
-        name = "/#{node}/#{service}"
+        name = "/#{node_name}/#{service}"
         :ok = ZenohClient.register_service(name, module, self())
         {name, service}
       end)
@@ -55,7 +55,7 @@ defmodule RosBridge.Parameters do
   @impl GenServer
   def handle_call({:declare, owner, parameters}, _from, state) do
     state = drop_owner(state, owner)
-    ref = Process.monitor(owner)
+    monitor_reference = Process.monitor(owner)
 
     declared =
       Map.new(parameters, fn p ->
@@ -67,7 +67,7 @@ defmodule RosBridge.Parameters do
      %{
        state
        | parameters: Map.merge(state.parameters, declared),
-         owners: Map.put(state.owners, owner, ref)
+         owners: Map.put(state.owners, owner, monitor_reference)
      }}
   end
 
@@ -143,17 +143,17 @@ defmodule RosBridge.Parameters do
   end
 
   @doc """
-  Checks `value` against parameter `p` and applies it with its `:set`;
+  Checks `value` against `parameter` and applies it with its `:set`;
   `{:ok, value}` with the value as stored, or `{:error, reason}`.
   """
   def set(nil, _value), do: {:error, "unknown parameter"}
   def set(%{read_only: true}, _value), do: {:error, "read-only: fixed at start"}
 
-  def set(p, value) do
-    with {:ok, value} <- check_type(p.type, value),
-         :ok <- check_range(p, value),
-         :ok <- check_values(p, value),
-         :ok <- p.set.(value) do
+  def set(parameter, value) do
+    with {:ok, value} <- check_type(parameter.type, value),
+         :ok <- check_range(parameter, value),
+         :ok <- check_values(parameter, value),
+         :ok <- parameter.set.(value) do
       {:ok, value}
     end
   rescue
@@ -162,44 +162,44 @@ defmodule RosBridge.Parameters do
     :exit, reason -> {:error, "not applied: #{inspect(reason)}"}
   end
 
-  defp check_type(:bool, v) when is_boolean(v), do: {:ok, v}
-  defp check_type(:integer, v) when is_integer(v), do: {:ok, v}
-  defp check_type(:double, v) when is_number(v), do: {:ok, v * 1.0}
-  defp check_type(:string, v) when is_binary(v), do: {:ok, v}
-  defp check_type(type, v), do: {:error, "expected #{type}, got #{inspect(v)}"}
+  defp check_type(:bool, value) when is_boolean(value), do: {:ok, value}
+  defp check_type(:integer, value) when is_integer(value), do: {:ok, value}
+  defp check_type(:double, value) when is_number(value), do: {:ok, value * 1.0}
+  defp check_type(:string, value) when is_binary(value), do: {:ok, value}
+  defp check_type(type, value), do: {:error, "expected #{type}, got #{inspect(value)}"}
 
-  defp check_range(%{range: {low, high}}, v) when v < low or v > high,
+  defp check_range(%{range: {low, high}}, value) when value < low or value > high,
     do: {:error, "out of range #{low}..#{high}"}
 
-  defp check_range(_p, _v), do: :ok
+  defp check_range(_parameter, _value), do: :ok
 
-  defp check_values(%{values: values}, v) do
-    if v in values, do: :ok, else: {:error, "expected one of #{Enum.join(values, ", ")}"}
+  defp check_values(%{values: values}, value) do
+    if value in values, do: :ok, else: {:error, "expected one of #{Enum.join(values, ", ")}"}
   end
 
-  defp check_values(_p, _v), do: :ok
+  defp check_values(_parameter, _value), do: :ok
 
   @doc false
-  def describe(p) do
+  def describe(parameter) do
     constraints =
       [
-        Map.get(p, :constraints, ""),
-        if(resettable?(p), do: "default: #{p.default}"),
-        if(p[:values], do: "one of: " <> Enum.join(p.values, ", "))
+        Map.get(parameter, :constraints, ""),
+        if(resettable?(parameter), do: "default: #{parameter.default}"),
+        if(parameter[:values], do: "one of: " <> Enum.join(parameter.values, ", "))
       ]
       |> Enum.reject(&(&1 in [nil, ""]))
       |> Enum.join("; ")
 
-    Map.take(p, [:name, :type, :description, :read_only, :range])
+    Map.take(parameter, [:name, :type, :description, :read_only, :range])
     |> Map.put(:constraints, constraints)
   end
 
-  # A declared value outside the accepted ones (libcamera's own choice,
-  # "auto") cannot be set back.
-  defp resettable?(p) do
-    not is_nil(p[:default]) and not Map.get(p, :read_only, false) and
-      match?({:ok, _}, check_type(p.type, p.default)) and check_range(p, p.default) == :ok and
-      check_values(p, p.default) == :ok
+  # A default outside the accepted values (libcamera's "auto") cannot be set back.
+  defp resettable?(parameter) do
+    not is_nil(parameter[:default]) and not Map.get(parameter, :read_only, false) and
+      match?({:ok, _}, check_type(parameter.type, parameter.default)) and
+      check_range(parameter, parameter.default) == :ok and
+      check_values(parameter, parameter.default) == :ok
   end
 
   defp maybe_put_value(parameters, name, value) do
@@ -213,8 +213,8 @@ defmodule RosBridge.Parameters do
       {nil, _} ->
         state
 
-      {ref, owners} ->
-        Process.demonitor(ref, [:flush])
+      {monitor_reference, owners} ->
+        Process.demonitor(monitor_reference, [:flush])
         parameters = Map.reject(state.parameters, fn {_, p} -> p.owner == owner end)
         %{state | owners: owners, parameters: parameters}
     end

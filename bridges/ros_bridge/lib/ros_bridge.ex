@@ -71,26 +71,21 @@ defmodule RosBridge do
 
   @optional_callbacks ros_bridge_config: 1, ros_bridge_config: 2
 
-  # `Mix.target()` MUST be read at module-compile time, not at
-  # runtime: on a deployed Nerves device the Mix application isn't
-  # loaded the way it is during a build, so `Mix.target()` at runtime
-  # silently returns `:host` and the wrong vehicle config arm gets
-  # picked. Branching on the compile-time value bakes the arm in.
+  # Read at compile time: on a Nerves device `Mix.target()` returns
+  # `:host` at runtime, which would pick the wrong config arm.
   @arm if Mix.target() == :host, do: :host, else: :target
 
-  # One `:rest_for_one` subtree with `ZenohClient` first. Consumers
-  # subscribe from `init/1` and never again, so a client that restarts
-  # alone comes back with an empty subscription map and every consumer
-  # is deaf until the BEAM restarts. Restarting everything after it is
-  # what makes a client crash recoverable. Publishers would survive
-  # either way (they re-declare lazily), but a consistent restart is
-  # simpler to reason about than a partial one.
+  @doc """
+  One `:rest_for_one` subtree with `ZenohClient` first. Consumers
+  subscribe only from `init/1`, so they must restart with the client
+  to get their subscriptions back.
+  """
   @impl OvcsBridge
   def children do
     config = resolve_config()
 
-    base = [{RosBridge.ZenohClient, zenoh_client_opts(config)}, RosBridge.Parameters]
-    extras = Enum.flat_map(config.components, &resolve_component/1)
+    core_children = [{RosBridge.ZenohClient, zenoh_client_opts(config)}, RosBridge.Parameters]
+    component_children = Enum.flat_map(config.components, &resolve_component/1)
 
     [
       %{
@@ -98,14 +93,15 @@ defmodule RosBridge do
         type: :supervisor,
         start:
           {Supervisor, :start_link,
-           [base ++ extras, [strategy: :rest_for_one, name: RosBridge.Supervisor]]}
+           [
+             core_children ++ component_children,
+             [strategy: :rest_for_one, name: RosBridge.Supervisor]
+           ]}
       }
     ]
   end
 
-  # `:node_name` is optional — omit the key entirely when the vehicle
-  # leaves it unset so `ZenohClient` applies its own default rather
-  # than receiving an explicit nil.
+  # Omit `:node_name` when unset so `ZenohClient` applies its default.
   defp zenoh_client_opts(%RosBridge.Config{node_name: nil} = config),
     do: [endpoint_ip: config.zenoh_endpoint_ip]
 
@@ -113,31 +109,24 @@ defmodule RosBridge do
     do: [endpoint_ip: config.zenoh_endpoint_ip, node_name: config.node_name]
 
   defp resolve_config do
-    mod = vehicle()
+    vehicle_module = vehicle()
 
     cond do
-      function_exported?(mod, :ros_bridge_config, 2) ->
-        mod.ros_bridge_config(@arm, firmware_id())
+      function_exported?(vehicle_module, :ros_bridge_config, 2) ->
+        vehicle_module.ros_bridge_config(@arm, firmware_id())
 
-      function_exported?(mod, :ros_bridge_config, 1) ->
-        mod.ros_bridge_config(@arm)
+      function_exported?(vehicle_module, :ros_bridge_config, 1) ->
+        vehicle_module.ros_bridge_config(@arm)
 
       true ->
         raise """
-        #{inspect(mod)} bundles RosBridge in bridge_firmwares/0 but \
+        #{inspect(vehicle_module)} bundles RosBridge in bridge_firmwares/0 but \
         implements neither ros_bridge_config/1 nor ros_bridge_config/2.
         """
     end
   end
 
-  # `BRIDGE_FIRMWARE_ID` first, mirroring `OvcsBridge.Supervisor`: on
-  # host every bridge role shares one compiled build, whose config
-  # bakes "radio_control" (bridges/firmware/config/config.exs), and
-  # `./ovcs run` sets the real id per BEAM. Reading only the compiled
-  # value made the perception BEAM resolve "radio_control" and start
-  # joy/IMU instead of the stereo pipeline. On target the env isn't
-  # present and the per-firmware baked value is correct; the "ros"
-  # default preserves the historical single-bridge behaviour.
+  # Env first: on host every bridge role shares one build and `./ovcs run` sets the id per BEAM.
   defp firmware_id do
     System.get_env("BRIDGE_FIRMWARE_ID") ||
       Application.get_env(:ovcs_bridge, :firmware_id, "ros")
@@ -148,10 +137,6 @@ defmodule RosBridge do
   defp resolve_component({name, opts}) when is_atom(name),
     do: RosBridge.Components.start(name, opts)
 
-  # The vehicle module is stamped into Application env by
-  # bridges/firmware's runtime.exs (same mechanism vms_core /
-  # infotainment_core use). Fetch! rather than get_env so a
-  # misconfigured boot fails loudly instead of with a confusing
-  # nil.ros_bridge_config/1 UndefinedFunctionError.
+  # Set by bridges/firmware's runtime.exs; fetch! so a misconfigured boot fails loudly.
   defp vehicle, do: Application.fetch_env!(:ovcs_vehicle, :module)
 end

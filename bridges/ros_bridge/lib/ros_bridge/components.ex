@@ -10,7 +10,7 @@ defmodule RosBridge.Components do
   defaults — the bridge's runtime shape is exactly what the active
   vehicle declared.
 
-  ## Components today
+  ## Components
 
     * `:heartbeat` — `RosBridge.Publishers.Heartbeat` publishing a 1 Hz
       `std_msgs/String` on `/ovcs_heartbeat`. Opts:
@@ -83,9 +83,7 @@ defmodule RosBridge.Components do
       `"stereo"` (matching the ROS `stereo_image_proc` convention),
       and per-side `frame_id` / `calibration_path` to values
       derived from `:topic_prefix` and `:calibration_dir`. The
-      stereo-depth backend is hardcoded to
-      `RosBridge.StereoCamera.OpenCV`; if/when a second backend
-      lands we'll reintroduce a behaviour + `:backend` opt.
+      stereo-depth backend is `RosBridge.StereoCamera.OpenCV`.
   """
 
   @doc """
@@ -129,11 +127,8 @@ defmodule RosBridge.Components do
     ]
   end
 
-  # The driver is started by `:imu_publisher`, which must appear
-  # earlier in the vehicle's component list; this only registers a
-  # second listener on it. Starting the driver twice would collide on
-  # its registered name.
   def start(:odometry_publisher, opts) do
+    # Fetched only to fail at boot when missing; `:imu_publisher` starts the driver.
     _driver = Keyword.fetch!(opts, :driver)
     [{RosBridge.Publishers.Odometry, opts}]
   end
@@ -143,27 +138,15 @@ defmodule RosBridge.Components do
   end
 
   def start(:hailo_detector, opts) do
-    # Kept as its own name because it reads well in a vehicle's
-    # component list and because the accelerator is the default; it is
-    # `:detector` with `backend: RosBridge.Inference.Hailo`.
     start(:detector, Keyword.put_new(opts, :backend, RosBridge.Inference.Hailo))
   end
 
   def start(:detector, opts) do
-    # One child, not two. The pair lives under its own supervisor so
-    # a detector that crashes on every frame cannot exhaust the
-    # bridge supervisor's restart budget and take the cameras with
-    # it — see `RosBridge.Inference.Supervisor`. `:backend` chooses
-    # where the arithmetic happens; see `RosBridge.Inference`.
+    # Its own supervisor, so a crashing detector cannot exhaust the bridge's restart budget.
     [{RosBridge.Inference.Supervisor, opts}]
   end
 
   def start(:stereo_camera, opts) do
-    # Everything :stereo_camera needs to do — start two camera
-    # drivers, the SGBM backend, and the unified publisher that
-    # emits per-side images + disparity + depth — is owned by a
-    # dedicated supervisor. See `RosBridge.StereoCamera.Supervisor`
-    # for the full set of opts (driver, left, right, etc.).
     [{RosBridge.StereoCamera.Supervisor, opts}]
   end
 

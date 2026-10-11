@@ -20,9 +20,10 @@ defmodule RosBridge.Imu.Zenoh do
   One `sensor_msgs/Imu` fans out into the three sample kinds the
   hardware drivers produce — `:rotation`, `:angular_velocity`,
   `:acceleration` — because the contract is per-kind and consumers
-  coalesce for themselves.
+  coalesce for themselves. `sensor_msgs/Imu` is already SI (REP-103),
+  so this is a fan-out, not a conversion.
 
-  ## Opts
+  ## Options
 
     * `:topic` (`"imu_raw"`) — the ROS topic to consume.
   """
@@ -46,8 +47,7 @@ defmodule RosBridge.Imu.Zenoh do
     GenServer.cast(__MODULE__, {:register_listener, listener})
   end
 
-  # Sample production is gated by the simulator publishing, not by
-  # this process: there is no hardware to arm.
+  @doc "No-op: samples flow when the simulator publishes; there is no hardware to arm."
   @impl OvcsDrivers.Imu
   def enable, do: :ok
 
@@ -82,8 +82,6 @@ defmodule RosBridge.Imu.Zenoh do
 
   def handle_info(_message, state), do: {:noreply, state}
 
-  # `sensor_msgs/Imu` is already SI (REP-103: rad/s, m/s²,
-  # unit quaternion), so this is a fan-out, not a conversion.
   @doc false
   def samples(%Imu{} = imu) do
     [

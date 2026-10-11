@@ -9,19 +9,14 @@ defmodule RosBridge.Clock do
   it at zero, and advances it with physics, so a wall-clock stamp is
   most of two decades away from everything else on the graph.
 
-  Not *every* publisher goes through `Timing`, which is worth knowing
-  before adding one to a simulation configuration:
+  Not *every* publisher goes through `Timing`:
   `RosBridge.Publishers.Imu` builds its `%Time{}` from
-  `System.system_time/1` directly and so ignores this entirely. No
-  simulation configuration includes it today, so nothing is currently
-  wrong — but the invariant is positional rather than enforced.
+  `System.system_time/1` directly and so ignores this entirely. Keep it
+  out of simulation configurations.
 
-  That mattered less than it sounds until something consumed the
-  stamps. `RosBridge.Camera.Zenoh` used to document the trade-off and
-  accept it — pairing left and right frames only needs them to agree
-  with *each other*. Nav2 is the first consumer that needs them to
-  agree with **`/tf`**, and it does not: its costmap message filter
-  drops every point cloud with
+  Pairing left and right frames only needs them to agree with *each
+  other*, but Nav2 needs them to agree with **`/tf`**: its costmap
+  message filter drops every point cloud with
 
       the timestamp on the message is earlier than all the data in
       the transform cache
@@ -66,8 +61,7 @@ defmodule RosBridge.Clock do
   ## Why `init/1` blocks
 
   It waits for the first `/clock` sample before returning, which holds
-  up the rest of the supervision tree for as long as that takes. That
-  is deliberate, and it is not about tidiness.
+  up the rest of the supervision tree for as long as that takes.
 
   A single message published before the offset is known carries a
   wall-clock stamp, and on `/tf` that is unrecoverable. `tf2` prunes
@@ -80,10 +74,8 @@ defmodule RosBridge.Clock do
       the transform cache
 
   It does not recover, because the bad entry is decades in the future
-  and never ages out. Measured: the static-transform publisher won its
-  race against the first `/clock` sample by *zero milliseconds*, and
-  that was enough to make the costmaps ignore stereo for the whole
-  run.
+  and never ages out. The static-transform publisher races the first
+  `/clock` sample, so this is not a theoretical window.
 
   So this is listed first among a vehicle's simulation components, and
   blocking here means no publisher can emit a wall-clock stamp into a
@@ -118,10 +110,7 @@ defmodule RosBridge.Clock do
 
   require Logger
 
-  # A deadline, not a nicety — see the moduledoc. `docker compose up -d`
-  # returns before Gazebo has loaded a world and started the node that
-  # bridges /clock, so this has to outlast an ordinary cold boot. It
-  # only elapses when no simulator is coming.
+  # Outlasts a simulator cold boot; elapses only when no simulator is coming.
   @default_acquire_timeout_ms 60_000
 
   @persistent_key __MODULE__
@@ -160,9 +149,7 @@ defmodule RosBridge.Clock do
 
   @impl GenServer
   def init(opts) do
-    # Keyword list from a plain component entry, map from one with
-    # options. `Map.new/1` takes either; `List.wrap/1` would turn a map
-    # into a one-element list and then fail.
+    # Keyword list or map, depending on how the component is listed.
     opts = Map.new(opts || [])
     timeout_ms = Map.get(opts, :acquire_timeout_ms, @default_acquire_timeout_ms)
     # Injected so the lifecycle can be tested without a live
@@ -185,13 +172,11 @@ defmodule RosBridge.Clock do
     {:ok, await_first_sample(state, timeout_ms)}
   end
 
-  # A selective receive rather than a `handle_continue`: the point is
-  # that no *other* process gets to publish first, and anything after
-  # `init/1` returns is too late. See the moduledoc.
+  # Selective receive: nothing may publish before `init/1` returns (see the moduledoc).
   defp await_first_sample(state, timeout_ms) do
     receive do
       {:ros_message, {_key_expr, %ClockMessage{clock: clock}}} ->
-        record(state.atomics, clock)
+        record_offset(state.atomics, clock)
 
         Logger.info(
           "#{__MODULE__}: simulator clock acquired at #{clock.sec}.#{clock.nanosec} — " <>
@@ -221,13 +206,11 @@ defmodule RosBridge.Clock do
         {:ros_message, {_key_expr, %ClockMessage{clock: clock}}},
         %{following: true} = state
       ) do
-    record(state.atomics, clock)
+    record_offset(state.atomics, clock)
     {:noreply, %{state | samples: state.samples + 1}}
   end
 
-  # Arrived after the deadline, or after unsubscribing did not take
-  # effect immediately. Ignored rather than adopted — see the
-  # moduledoc.
+  # Late sample after giving up: ignored (see the moduledoc).
   def handle_info({:ros_message, {_key_expr, %ClockMessage{}}}, state) do
     {:noreply, state}
   end
@@ -240,9 +223,7 @@ defmodule RosBridge.Clock do
 
   def handle_info(_message, state), do: {:noreply, state}
 
-  # Sampled as close together as the two reads allow; see the moduledoc
-  # on why the residual error does not matter.
-  defp record(atomics, clock) do
+  defp record_offset(atomics, clock) do
     monotonic_now = System.monotonic_time(:nanosecond)
     simulator_now = clock.sec * 1_000_000_000 + clock.nanosec
 
@@ -259,10 +240,9 @@ defmodule RosBridge.Clock do
   moment this stopped — silently drifting, since the simulator's clock
   keeps moving and nothing is left to notice.
 
-  Reached only because `init/1` sets `:trap_exit`. A `GenServer` does
+  Reached only because `init/1` sets `:trap_exit`: a `GenServer` does
   **not** get `terminate/2` from a supervisor's ordinary
-  `exit(pid, :shutdown)` otherwise, so without that flag this was
-  dead code that only the test exercised.
+  `exit(pid, :shutdown)` otherwise.
   """
   @impl GenServer
   def terminate(_reason, _state) do
