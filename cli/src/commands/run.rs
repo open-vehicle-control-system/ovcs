@@ -1,19 +1,21 @@
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Command, ExitStatus, Stdio};
 use std::thread;
 
-use crate::ansi::is_blank_after_ansi;
+use crate::ansi::{is_blank_after_ansi, strip_ansi};
 use crate::build_runner::{self, BuildLane, BuildStep};
-use crate::commands::attach::is_iex_noise;
 use crate::commands::can::ensure_host_can;
 use crate::firmware;
 use crate::repo_root::repo_root;
 use crate::resolve_args::resolve_vehicle;
 use crate::ui::{step, sub, sub_ok, sub_warn};
 use crate::vehicles::{self, Vehicle};
+
+/// How long a child has to stop after SIGTERM before it gets SIGKILL.
+const STOP_GRACE: std::time::Duration = std::time::Duration::from_secs(10);
 
 pub fn run(vehicle_arg: Option<String>, no_addons: bool) -> Result<()> {
     let vehicle = resolve_vehicle(vehicle_arg)?;
@@ -94,9 +96,16 @@ pub fn run(vehicle_arg: Option<String>, no_addons: bool) -> Result<()> {
         for (k, v) in &role.env {
             cmd.env(k, v);
         }
-        let mut child = cmd
-            .spawn()
-            .with_context(|| format!("failed to spawn elixir for role {}", role.label))?;
+        // An exported Nerves target would make these target-mode BEAMs.
+        cmd.env("MIX_TARGET", "host");
+        let mut child = match cmd.spawn() {
+            Ok(child) => child,
+            Err(error) => {
+                stop(&mut procs);
+                return Err(error)
+                    .with_context(|| format!("failed to spawn elixir for role {}", role.label));
+            }
+        };
 
         let stdout = child.stdout.take().unwrap();
         let stderr = child.stderr.take().unwrap();
@@ -109,7 +118,7 @@ pub fn run(vehicle_arg: Option<String>, no_addons: bool) -> Result<()> {
             label: role.label.clone(),
             child,
             critical: true,
-            reported: false,
+            exit: None,
         });
     }
 
@@ -149,69 +158,76 @@ pub fn run(vehicle_arg: Option<String>, no_addons: bool) -> Result<()> {
             label: a.label.clone(),
             child,
             critical: false,
-            reported: false,
+            exit: None,
         });
     }
     if !addons.is_empty() {
         println!();
     }
 
-    // Happy path: Ctrl-C propagates SIGINT to the whole process group; the
-    // Rust parent exits, the BEAMs are reaped by their parents' death. Crash
-    // path: if any child dies early (BEAM crash, compile failure, …), don't
-    // leave the others running — send SIGTERM to each survivor so BEAM runs
-    // `init:stop/0` and shuts down cleanly. (SIGINT would trip the BEAM's
-    // JCL break handler and leave each child sitting at an interactive
-    // prompt.)
-    // "Dead" decisions key off the *critical* (BEAM) procs only: we exit
-    // when every BEAM is gone, and propagate a teardown when any BEAM dies.
-    // An auxiliary dashboard dying on its own is just reported once and left
-    // alone — it shouldn't bring the running vehicle down.
-    let mut propagated = false;
+    // Ctrl-C reaches the whole process group and ends this process too, so
+    // returning from `supervise` means a BEAM exited on its own.
+    match supervise(&mut procs) {
+        Some((label, status)) => bail!("{} exited ({}); the vehicle was stopped", label, status),
+        None => Ok(()),
+    }
+}
+
+/// Waits on the children. When the first BEAM exits, every other child gets
+/// SIGTERM, so a BEAM runs `init:stop/0` (SIGINT would leave it at its break
+/// prompt), then SIGKILL if it is still running after `STOP_GRACE`. A dev
+/// add-on exiting on its own is only reported. Returns the BEAM that exited
+/// first.
+fn supervise(procs: &mut [Proc]) -> Option<(String, ExitStatus)> {
+    let mut first_exit: Option<(String, ExitStatus)> = None;
+    let mut stop_sent_at: Option<std::time::Instant> = None;
     loop {
-        let mut critical_died = false;
-        let mut all_critical_dead = true;
-        for p in procs.iter_mut() {
-            match p.child.try_wait() {
-                Ok(Some(status)) => {
-                    if p.critical {
-                        critical_died = true;
-                    } else if !p.reported {
-                        p.reported = true;
-                        sub_warn(&format!(
-                            "{} exited ({}); vehicle still running",
-                            p.label, status
-                        ));
-                    }
-                }
-                Ok(None) => {
-                    if p.critical {
-                        all_critical_dead = false;
-                    }
-                }
-                Err(_) => {
-                    if p.critical {
-                        all_critical_dead = false;
-                    }
+        for p in procs.iter_mut().filter(|p| p.exit.is_none()) {
+            if let Ok(Some(status)) = p.child.try_wait() {
+                p.exit = Some(status);
+                if p.critical {
+                    first_exit.get_or_insert((p.label.clone(), status));
+                } else if stop_sent_at.is_none() {
+                    sub_warn(&format!(
+                        "{} exited ({}); vehicle still running",
+                        p.label, status
+                    ));
                 }
             }
         }
-        if all_critical_dead {
-            break;
+        if procs.iter().all(|p| p.exit.is_some()) {
+            return first_exit;
         }
-        if critical_died && !propagated {
-            for p in procs.iter() {
-                // try_wait has set the exit status on already-dead children;
-                // kill(2) on a reaped pid returns ESRCH, which we ignore.
-                // SIGTERM every survivor — including the auxiliary dashboards.
-                unsafe { libc::kill(p.child.id() as libc::pid_t, libc::SIGTERM) };
+        if first_exit.is_some() {
+            match stop_sent_at {
+                None => {
+                    signal_running(procs, libc::SIGTERM);
+                    stop_sent_at = Some(std::time::Instant::now());
+                }
+                Some(sent_at) if sent_at.elapsed() > STOP_GRACE => {
+                    signal_running(procs, libc::SIGKILL);
+                }
+                Some(_) => {}
             }
-            propagated = true;
         }
         thread::sleep(std::time::Duration::from_millis(200));
     }
+}
 
-    Ok(())
+/// Stops the children started so far, for an error before supervision.
+fn stop(procs: &mut [Proc]) {
+    signal_running(procs, libc::SIGTERM);
+    for p in procs.iter_mut() {
+        let _ = p.child.wait();
+    }
+}
+
+/// Signals the children not yet reaped; a reaped child's pid may already
+/// belong to another process.
+fn signal_running(procs: &[Proc], signal: libc::c_int) {
+    for p in procs.iter().filter(|p| p.exit.is_none()) {
+        unsafe { libc::kill(p.child.id() as libc::pid_t, signal) };
+    }
 }
 
 /// A spawned child the run loop supervises. `critical` BEAMs drive the
@@ -220,9 +236,7 @@ struct Proc {
     label: String,
     child: Child,
     critical: bool,
-    /// Whether an auxiliary proc's exit has already been reported (so we log
-    /// a dashboard dying once, not every 200ms poll).
-    reported: bool,
+    exit: Option<ExitStatus>,
 }
 
 /// A dev add-on resolved into a launchable form: a firmware's declared
@@ -538,12 +552,7 @@ where
         if is_blank_after_ansi(&line) {
             continue;
         }
-        // When `./ovcs attach` connects, the remote BEAM's IEx echoes the
-        // remsh's typed input (our base64 init wrapper) plus its own
-        // prompt to local stdout — `run` captures that via the BEAM's
-        // pipe and would prefix it with `[label]`. Drop those lines so
-        // the run window stays free of attach plumbing.
-        if is_iex_noise(&line) {
+        if is_iex_prompt_echo(&line) {
             continue;
         }
         let _ = writeln!(sink, "[{}] {}", label, line);
@@ -555,4 +564,68 @@ fn short_path(p: &std::path::Path, root: &std::path::Path) -> String {
     p.strip_prefix(root)
         .map(|r| r.display().to_string())
         .unwrap_or_else(|_| p.display().to_string())
+}
+
+/// An IEx prompt or a bare `:ok`, the only lines an `attach` session can
+/// leave in a BEAM's output; error reports and stack frames are kept.
+fn is_iex_prompt_echo(line: &str) -> bool {
+    let stripped = strip_ansi(line);
+    let trimmed = stripped.trim();
+    trimmed.starts_with("iex(") || trimmed.starts_with("...(") || trimmed == ":ok"
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_iex_prompt_echo, supervise, Proc};
+    use std::process::Command;
+    use std::time::Instant;
+
+    fn spawn(label: &str, script: &str, critical: bool) -> Proc {
+        Proc {
+            label: label.to_string(),
+            child: Command::new("sh").args(["-c", script]).spawn().unwrap(),
+            critical,
+            exit: None,
+        }
+    }
+
+    #[test]
+    fn a_beam_exiting_stops_the_others_and_is_reported() {
+        let started = Instant::now();
+        let mut procs = vec![
+            spawn("vms", "exit 3", true),
+            spawn("bridge-ros", "sleep 30", true),
+            spawn("dashboard", "sleep 30", false),
+        ];
+        let (label, status) = supervise(&mut procs).expect("a BEAM exited");
+        assert_eq!(label, "vms");
+        assert_eq!(status.code(), Some(3));
+        assert!(procs.iter().all(|p| p.exit.is_some()));
+        assert!(started.elapsed().as_secs() < 5);
+    }
+
+    #[test]
+    fn a_beam_ignoring_sigterm_gets_sigkill() {
+        let started = Instant::now();
+        let mut procs = vec![
+            spawn("vms", "exit 1", true),
+            spawn("stuck", "trap '' TERM; sleep 60", true),
+        ];
+        supervise(&mut procs).expect("a BEAM exited");
+        assert!(procs.iter().all(|p| p.exit.is_some()));
+        assert!(started.elapsed().as_secs() < 20);
+    }
+
+    #[test]
+    fn errors_and_stack_frames_are_not_taken_for_iex_echo() {
+        assert!(is_iex_prompt_echo("iex(ovcs-mini-vms@host)3> :ok"));
+        assert!(is_iex_prompt_echo(":ok"));
+        assert!(!is_iex_prompt_echo(
+            "** (Mix) Could not start application vms_core: exited in: ..."
+        ));
+        assert!(!is_iex_prompt_echo(
+            "    (vms_core 0.1.0) lib/vms_core/application.ex:12: VmsCore.Application.start/2"
+        ));
+        assert!(!is_iex_prompt_echo("Compiling 3 files (.ex)"));
+    }
 }
