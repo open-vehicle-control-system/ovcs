@@ -50,4 +50,8 @@ defmodule VmsCore.Components.Volkswagen.Polo9N.DashboardTest do
   test "an rpm above the cap is shown at the cap" do
     assert displayed(7_200) == 6_000
   end
+
+  test "an unknown rpm is shown as 0" do
+    assert displayed(nil) == 0
+  end
 end

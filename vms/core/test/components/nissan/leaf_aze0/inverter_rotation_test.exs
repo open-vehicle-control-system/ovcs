@@ -1,5 +1,5 @@
 defmodule VmsCore.Components.Nissan.LeafAZE0.InverterRotationTest do
-  @moduledoc "The inverter's rpm: unsigned, and zero above the EM57's rated 10,500."
+  @moduledoc "The inverter's rpm: unsigned, and unknown above the EM57's rated 10,500."
   use ExUnit.Case, async: true
   alias Cantastic.{Frame, Signal}
   alias VmsCore.Components.Nissan.LeafAZE0.Inverter
@@ -27,8 +27,8 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.InverterRotationTest do
     assert published(-3_000) == 3_000
   end
 
-  test "a reading above the rated maximum is invalid and reads zero" do
-    assert published(10_501) == 0
-    assert published(-32_768) == 0
+  test "a reading above the rated maximum is invalid and unknown" do
+    assert published(10_501) == nil
+    assert published(-32_768) == nil
   end
 end

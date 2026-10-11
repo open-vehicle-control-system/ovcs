@@ -7,8 +7,9 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Inverter do
   inverter and the VMS frames it expects are emitted. Each tick turns the
   selected source's throttle request into a torque request, signed by the
   selected gear and zero outside `:drive` and `:reverse`. Publishes the
-  motor rpm (unsigned, and zero above the EM57's rated 10,500), requested and effective torque, output voltage, the
-  inverter and motor temperatures, and `:ready_to_drive`.
+  motor rpm (unsigned, and `nil` above the EM57's rated 10,500, where
+  the reading is invalid), requested and effective torque, output
+  voltage, the inverter and motor temperatures, and `:ready_to_drive`.
 
   ## Options
 
@@ -373,7 +374,7 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Inverter do
 
   defp valid_rotation_per_minute(rotation_per_minute)
        when rotation_per_minute > @max_valid_rotation_per_minute,
-       do: 0
+       do: nil
 
   defp valid_rotation_per_minute(rotation_per_minute), do: rotation_per_minute
 
