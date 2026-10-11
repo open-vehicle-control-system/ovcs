@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 use crate::firmware;
 use crate::resolve_args::resolve_vehicle_app;
@@ -25,6 +25,13 @@ pub fn run(
     }
 
     let host = host.unwrap_or_else(|| vehicles::host_for(&args.vehicle.dir, &args.application));
+    // `upload.sh` runs in the firmware directory, so a relative path must be
+    // resolved against the directory the user ran the command from.
+    let file = file
+        .map(|path| std::path::absolute(&path))
+        .transpose()
+        .context("resolving --file")?
+        .map(|path| path.to_string_lossy().into_owned());
     let mut argv: Vec<&str> = vec!["./upload.sh", &host];
     if let Some(ref f) = file {
         argv.push(f);
