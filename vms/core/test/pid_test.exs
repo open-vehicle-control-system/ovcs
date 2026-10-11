@@ -98,6 +98,19 @@ defmodule VmsCore.PIDTest do
     assert pid.output |> D.equal?("0.000025")
   end
 
+  test "the integral term is ki times the accumulated error" do
+    one_second_ago_ms = System.monotonic_time(:millisecond) - 1000
+
+    pid =
+      PID.new(ki: D.new("0.5"), maximum_output: D.new(10), previous_time: one_second_ago_ms)
+      |> PID.iterate(@zero, @one)
+
+    pid = %{pid | previous_time: System.monotonic_time(:millisecond) - 1000}
+    pid = PID.iterate(pid, @zero, @one)
+
+    assert pid.output |> D.round(1) |> D.equal?(@one)
+  end
+
   test "output is capped by the maximum output value" do
     pid =
       PID.new(

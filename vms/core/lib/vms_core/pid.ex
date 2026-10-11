@@ -22,6 +22,7 @@ defmodule VmsCore.PID do
             minimum_elapsed_time: D.new("0.0001"),
             reset_derivative_when_setpoint_changes: false,
             proportional_term: @zero,
+            error_integral: @zero,
             integral_term: @zero,
             derivative_term: @zero,
             previous_time: nil,
@@ -63,11 +64,8 @@ defmodule VmsCore.PID do
 
     proportional_term = error |> D.mult(pid.kp)
 
-    integral_term =
-      error
-      |> D.mult(elapsed_time_s)
-      |> D.add(pid.integral_term)
-      |> D.mult(pid.ki)
+    error_integral = error |> D.mult(elapsed_time_s) |> D.add(pid.error_integral)
+    integral_term = error_integral |> D.mult(pid.ki)
 
     derivative_term =
       error |> D.sub(previous_error) |> D.div(elapsed_time_s) |> D.mult(pid.kd)
@@ -89,6 +87,7 @@ defmodule VmsCore.PID do
         previous_setpoint: setpoint,
         previous_measurement: measurement,
         proportional_term: proportional_term,
+        error_integral: error_integral,
         integral_term: integral_term,
         derivative_term: derivative_term,
         output: output
