@@ -1,11 +1,14 @@
 defmodule VmsCore.Components.Nissan.LeafAZE0.Charger do
   @moduledoc """
-  A Nissan Leaf AZE0 on-board charger, on the `:leaf_drive` CAN network.
+  A Nissan Leaf AZE0/EM57 on-board charger, on the `:leaf_drive` CAN
+  network.
+
+  **Not working: with this driver the charger does not start a charge.**
 
   Emits the frames the charger expects from the Leaf's BMS and lithium
   battery controller, with the charge power limit, pack current and pack
   voltage published by `:maximum_power_for_charger_source`, and publishes
-  the charger's status. Incomplete: the charge does not start.
+  the charger's status.
   """
   use GenServer
   alias Cantastic.{Emitter, Frame, Receiver, Signal}

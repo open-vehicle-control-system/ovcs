@@ -132,7 +132,7 @@ the library.
 | Module | Purpose |
 |--------|---------|
 | `Components.Nissan.LeafAZE0.Inverter` | Motor control, torque requests, speed feedback, regenerative braking |
-| `Components.Nissan.LeafAZE0.Charger` | AC charging control and monitoring |
+| `Components.Nissan.LeafAZE0.Charger` | AC charging control and monitoring. **Not working: the charge does not start.** |
 
 ### Bosch
 
