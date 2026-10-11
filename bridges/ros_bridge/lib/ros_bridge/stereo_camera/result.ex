@@ -28,10 +28,9 @@ defmodule RosBridge.StereoCamera.Result do
       the metric distance to that pixel, in **millimetres**, 0 for
       pixels with invalid disparity (the ROS depth-image "no
       measurement" convention). uint16 mm rather than float32 m
-      because it halves the payload, and two full-size float images
-      per frame could not share one Zenoh session — the second one
-      published was dropped down to ~1.2 Hz. 1 mm over 65 m is well
-      past what a 90 mm baseline resolves.
+      halves the payload, so it shares one Zenoh session with the
+      disparity image; 1 mm steps up to 65 m exceed what stereo
+      depth resolves.
     * `:depth_step` — bytes per row of the depth buffer
       (`width × 2` for 16UC1).
     * `:cloud` — packed `x, y, z` float32 points in the depth image's
@@ -46,9 +45,8 @@ defmodule RosBridge.StereoCamera.Result do
     * `:min_disparity`, `:max_disparity` — search-range bounds
       used by the backend, in pixels. Goes into DisparityImage.
     * `:delta_d` — disparity quantization step, in pixels. For
-      classic SGBM this is 1/16: the values are floats now, but they
-      were derived from OpenCV's ×16 fixed point, so that remains
-      the smallest representable increment.
+      classic SGBM this is 1/16: the float values derive from
+      OpenCV's ×16 fixed point, so that is the smallest increment.
     * `:left_rectified` — the rectified left image as an Evision
       `Mat`, before CLAHE. Carried so a consumer that needs pixels
       rather than depth (the Hailo detector) does not have to decode

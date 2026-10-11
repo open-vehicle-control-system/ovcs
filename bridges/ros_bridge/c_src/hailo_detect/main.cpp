@@ -1,39 +1,9 @@
-// hailo_detect: runs a YOLO HEF on the Hailo-8 and returns bounding
-// boxes, as a Port binary driven by `RosBridge.Inference.Hailo`.
-//
-// Why a Port and not a NIF: `InferVStreams::infer` blocks for
-// milliseconds. That is a scheduler hazard in a NIF and a non-event
-// in a separate OS process. It also buys crash isolation — a Hailo
-// fault must never take the depth path down with it.
-//
-// The HEF is expected to carry its NMS in-graph (the model zoo
-// `*_nms_postprocess` variants do), so this binary never decodes
-// anchors or runs IoU suppression: it hands over pixels and reads
-// back boxes.
-//
-// ## Wire protocol
-//
-// Request (stdin), tag 1 = DETECT:
-//     u8  tag
-//     u32 seq
-//     u16 width
-//     u16 height
-//     u8  channels        (1 = grayscale, 3 = BGR as Evision hands it over)
-//     u8  pixels[width * height * channels]
-//
-// Response (stdout), tag 1 = DETECTIONS:
-//     u8  tag
-//     u32 seq
-//     u16 count
-//     count x { u16 class_id; f32 score; f32 x0, y0, x1, y1 }
-//
-// Boxes come back in the **caller's** pixel coordinates, not the
-// model's 640x640 — this binary owns the letterbox transform, so it
-// is also the only place that can invert it. Everything is
-// little-endian, matching the other records on this transport.
-//
-// Scalars are little-endian to match `camera_capture`; the 4-byte
-// record length prefix is big-endian and handled by ovcs::framing.
+// hailo_detect: the Port behind `RosBridge.Inference.Hailo`. The HEF carries its
+// NMS in-graph, so this binary letterboxes pixels in and reads boxes back out.
+
+// Request (stdin): u8 tag 1, u32 seq, u16 width, u16 height, u8 channels (1 gray, 3 BGR), pixels.
+// Response (stdout): u8 tag 1, u32 seq, u16 count, count × {u16 class_id, f32 score, x0, y0, x1, y1}
+// in the caller's pixel coordinates. Scalars are little-endian.
 
 #include <arpa/inet.h>
 #include <unistd.h>
@@ -52,82 +22,81 @@ namespace {
 
 constexpr uint8_t kTagDetect = 1;
 constexpr uint8_t kTagDetections = 1;
+// tag, seq, width, height, channels
+constexpr size_t kDetectHeaderBytes = 1 + 4 + 2 + 2 + 1;
+// y_min, x_min, y_max, x_max, score
+constexpr size_t kFloatsPerBox = 5;
+// class_id, score, x0, y0, x1, y1
+constexpr size_t kDetectionBytes = 2 + 5 * 4;
 
 // YOLO's conventional letterbox fill. Mid-grey keeps the padding
 // from reading as a hard edge to the first conv layer.
 constexpr uint8_t kPadValue = 114;
 
 // Geometry of the letterbox that maps a caller frame into the
-// model's square input, kept so we can invert it on the way out.
+// model's square input, kept to invert it on the way out.
 struct Letterbox {
   float scale;   // caller px -> model px
   int offset_x;  // left padding, in model px
   int offset_y;  // top padding, in model px
 };
 
-Letterbox letterbox_for(int src_w, int src_h, int dst) {
+Letterbox letterbox_for(int source_width, int source_height, int model_size) {
   const float scale =
-      std::fmin(static_cast<float>(dst) / static_cast<float>(src_w),
-                static_cast<float>(dst) / static_cast<float>(src_h));
-  const int scaled_w = static_cast<int>(std::lround(src_w * scale));
-  const int scaled_h = static_cast<int>(std::lround(src_h * scale));
-  return Letterbox{scale, (dst - scaled_w) / 2, (dst - scaled_h) / 2};
+      std::fmin(static_cast<float>(model_size) / static_cast<float>(source_width),
+                static_cast<float>(model_size) / static_cast<float>(source_height));
+  const int scaled_width = static_cast<int>(std::lround(source_width * scale));
+  const int scaled_height = static_cast<int>(std::lround(source_height * scale));
+  return Letterbox{scale, (model_size - scaled_width) / 2, (model_size - scaled_height) / 2};
 }
 
-// Bilinear resize straight into the centre of the model's NHWC RGB
-// buffer. A 1-channel source is replicated across R/G/B; a
-// 3-channel source is taken as BGR (what Evision hands over) and
-// swapped to the RGB the model was trained on.
-//
-// Done by hand rather than via OpenCV: this is the only image
-// operation the binary needs, and linking OpenCV into a Port that
-// otherwise only talks to libhailort is a lot of firmware weight
-// for one resize.
-void letterbox_into(const uint8_t* src, int src_w, int src_h, int channels,
-                    uint8_t* dst, int dst_size, const Letterbox& box) {
-  std::memset(dst, kPadValue, static_cast<size_t>(dst_size) * dst_size * 3);
+// Bilinear letterbox into the model's NHWC RGB input (gray replicated, BGR
+// swapped). Hand-written: linking OpenCV for one resize is a lot of firmware weight.
+void letterbox_into(const uint8_t* source, int source_width, int source_height, int channels,
+                    uint8_t* destination, int model_size, const Letterbox& box) {
+  std::memset(destination, kPadValue, static_cast<size_t>(model_size) * model_size * 3);
 
-  const int scaled_w = static_cast<int>(std::lround(src_w * box.scale));
-  const int scaled_h = static_cast<int>(std::lround(src_h * box.scale));
+  const int scaled_width = static_cast<int>(std::lround(source_width * box.scale));
+  const int scaled_height = static_cast<int>(std::lround(source_height * box.scale));
 
-  for (int y = 0; y < scaled_h; ++y) {
-    // Sample at pixel centres, so the mapping stays symmetric and
-    // the image doesn't creep half a pixel up-left as it scales.
-    const float sy = (static_cast<float>(y) + 0.5f) / box.scale - 0.5f;
-    const int y0 = static_cast<int>(std::floor(sy));
-    const float wy = sy - static_cast<float>(y0);
-    const int y0c = std::min(std::max(y0, 0), src_h - 1);
-    const int y1c = std::min(std::max(y0 + 1, 0), src_h - 1);
+  for (int y = 0; y < scaled_height; ++y) {
+    // Sample at pixel centres, so the image doesn't creep half a pixel up-left.
+    const float source_y = (static_cast<float>(y) + 0.5f) / box.scale - 0.5f;
+    const int y0 = static_cast<int>(std::floor(source_y));
+    const float y_weight = source_y - static_cast<float>(y0);
+    const int top_row = std::min(std::max(y0, 0), source_height - 1);
+    const int bottom_row = std::min(std::max(y0 + 1, 0), source_height - 1);
 
-    for (int x = 0; x < scaled_w; ++x) {
-      const float sx = (static_cast<float>(x) + 0.5f) / box.scale - 0.5f;
-      const int x0 = static_cast<int>(std::floor(sx));
-      const float wx = sx - static_cast<float>(x0);
-      const int x0c = std::min(std::max(x0, 0), src_w - 1);
-      const int x1c = std::min(std::max(x0 + 1, 0), src_w - 1);
+    for (int x = 0; x < scaled_width; ++x) {
+      const float source_x = (static_cast<float>(x) + 0.5f) / box.scale - 0.5f;
+      const int x0 = static_cast<int>(std::floor(source_x));
+      const float x_weight = source_x - static_cast<float>(x0);
+      const int left_column = std::min(std::max(x0, 0), source_width - 1);
+      const int right_column = std::min(std::max(x0 + 1, 0), source_width - 1);
 
-      uint8_t* p = dst + ((static_cast<size_t>(box.offset_y + y) * dst_size +
-                           (box.offset_x + x)) *
-                          3);
+      uint8_t* destination_pixel =
+          destination + ((static_cast<size_t>(box.offset_y + y) * model_size +
+                          (box.offset_x + x)) *
+                         3);
 
       for (int c = 0; c < channels; ++c) {
-        const auto at = [&](int yy, int xx) {
+        const auto at = [&](int row, int column) {
           return static_cast<float>(
-              src[(static_cast<size_t>(yy) * src_w + xx) * channels + c]);
+              source[(static_cast<size_t>(row) * source_width + column) * channels + c]);
         };
-        const float top = at(y0c, x0c) * (1.0f - wx) + at(y0c, x1c) * wx;
-        const float bot = at(y1c, x0c) * (1.0f - wx) + at(y1c, x1c) * wx;
-        const uint8_t v =
-            static_cast<uint8_t>(std::lround(top * (1.0f - wy) + bot * wy));
+        const float top = at(top_row, left_column) * (1.0f - x_weight) +
+                          at(top_row, right_column) * x_weight;
+        const float bottom = at(bottom_row, left_column) * (1.0f - x_weight) +
+                             at(bottom_row, right_column) * x_weight;
+        const uint8_t sample =
+            static_cast<uint8_t>(std::lround(top * (1.0f - y_weight) + bottom * y_weight));
 
-        // channels == 1 fills all three; channels == 3 reverses BGR
-        // into RGB as it goes.
         if (channels == 1) {
-          p[0] = v;
-          p[1] = v;
-          p[2] = v;
+          destination_pixel[0] = sample;
+          destination_pixel[1] = sample;
+          destination_pixel[2] = sample;
         } else {
-          p[2 - c] = v;
+          destination_pixel[2 - c] = sample;
         }
       }
     }
@@ -140,69 +109,65 @@ struct Detection {
   float x0, y0, x1, y1;
 };
 
-// Decode HAILO_FORMAT_ORDER_HAILO_NMS_BY_CLASS: for each class in
-// turn, a float32 count followed by that many
-// `hailo_bbox_float32_t`. The bbox field order is
-// **y_min, x_min, y_max, x_max, score** — not the (x, y) order the
-// name "bbox" suggests — and the values are normalised to the
-// padded model input, so undoing the letterbox is part of decoding.
-std::vector<Detection> decode_nms_by_class(const float* data, size_t floats,
-                                           size_t num_classes,
-                                           int src_w, int src_h,
+// HAILO_NMS_BY_CLASS: per class, a float count then that many bboxes ordered
+// y_min, x_min, y_max, x_max, score, normalised to the padded model input.
+std::vector<Detection> decode_nms_by_class(const float* nms_output, size_t float_count,
+                                           size_t class_count,
+                                           int source_width, int source_height,
                                            const Letterbox& box,
                                            int model_size,
                                            float score_threshold) {
-  std::vector<Detection> out;
-  size_t at = 0;
+  std::vector<Detection> detections;
+  size_t offset = 0;
 
-  for (size_t class_id = 0; class_id < num_classes; ++class_id) {
-    if (at >= floats) break;
-    const size_t count = static_cast<size_t>(data[at++]);
+  for (size_t class_id = 0; class_id < class_count; ++class_id) {
+    if (offset >= float_count) break;
+    const size_t count = static_cast<size_t>(nms_output[offset++]);
     if (count == 0) continue;
-    if (at + count * 5 > floats) break;
+    if (offset + count * kFloatsPerBox > float_count) break;
 
     for (size_t i = 0; i < count; ++i) {
-      const float* b = data + at + i * 5;
-      const float score = b[4];
+      const float* bbox = nms_output + offset + i * kFloatsPerBox;
+      const float score = bbox[4];
       if (score < score_threshold) continue;
 
       // Normalised padded coords -> padded pixels -> caller pixels.
-      auto to_src_x = [&](float n) {
+      auto to_source_x = [&](float n) {
         return (n * static_cast<float>(model_size) -
                 static_cast<float>(box.offset_x)) / box.scale;
       };
-      auto to_src_y = [&](float n) {
+      auto to_source_y = [&](float n) {
         return (n * static_cast<float>(model_size) -
                 static_cast<float>(box.offset_y)) / box.scale;
       };
 
-      Detection d;
-      d.class_id = static_cast<uint16_t>(class_id);
-      d.score = score;
-      d.x0 = to_src_x(b[1]);
-      d.y0 = to_src_y(b[0]);
-      d.x1 = to_src_x(b[3]);
-      d.y1 = to_src_y(b[2]);
+      Detection detection;
+      detection.class_id = static_cast<uint16_t>(class_id);
+      detection.score = score;
+      detection.x0 = to_source_x(bbox[1]);
+      detection.y0 = to_source_y(bbox[0]);
+      detection.x1 = to_source_x(bbox[3]);
+      detection.y1 = to_source_y(bbox[2]);
 
       // Clamp to the frame: a box may legitimately extend into the
       // padding when an object is cut off at the image edge.
-      d.x0 = std::fmin(std::fmax(d.x0, 0.0f), static_cast<float>(src_w));
-      d.x1 = std::fmin(std::fmax(d.x1, 0.0f), static_cast<float>(src_w));
-      d.y0 = std::fmin(std::fmax(d.y0, 0.0f), static_cast<float>(src_h));
-      d.y1 = std::fmin(std::fmax(d.y1, 0.0f), static_cast<float>(src_h));
+      detection.x0 = std::fmin(std::fmax(detection.x0, 0.0f), static_cast<float>(source_width));
+      detection.x1 = std::fmin(std::fmax(detection.x1, 0.0f), static_cast<float>(source_width));
+      detection.y0 = std::fmin(std::fmax(detection.y0, 0.0f), static_cast<float>(source_height));
+      detection.y1 = std::fmin(std::fmax(detection.y1, 0.0f), static_cast<float>(source_height));
 
-      if (d.x1 > d.x0 && d.y1 > d.y0) out.push_back(d);
+      if (detection.x1 > detection.x0 && detection.y1 > detection.y0) detections.push_back(detection);
     }
-    at += count * 5;
+    offset += count * kFloatsPerBox;
   }
 
-  return out;
+  return detections;
 }
 
 std::vector<uint8_t> build_detections_record(
-    uint32_t seq, const std::vector<Detection>& detections) {
+    uint32_t sequence, const std::vector<Detection>& detections) {
   std::vector<uint8_t> out;
-  out.reserve(1 + 4 + 2 + detections.size() * 22);
+  out.reserve(1 + 4 + 2 + detections.size() * kDetectionBytes);
   out.push_back(kTagDetections);
 
   auto append = [&](const void* p, size_t n) {
@@ -210,54 +175,52 @@ std::vector<uint8_t> build_detections_record(
     out.insert(out.end(), b, b + n);
   };
 
-  append(&seq, sizeof(seq));
+  append(&sequence, sizeof(sequence));
   const uint16_t count = static_cast<uint16_t>(detections.size());
   append(&count, sizeof(count));
 
-  for (const Detection& d : detections) {
-    append(&d.class_id, sizeof(d.class_id));
-    append(&d.score, sizeof(d.score));
-    append(&d.x0, sizeof(d.x0));
-    append(&d.y0, sizeof(d.y0));
-    append(&d.x1, sizeof(d.x1));
-    append(&d.y1, sizeof(d.y1));
+  for (const Detection& detection : detections) {
+    append(&detection.class_id, sizeof(detection.class_id));
+    append(&detection.score, sizeof(detection.score));
+    append(&detection.x0, sizeof(detection.x0));
+    append(&detection.y0, sizeof(detection.y0));
+    append(&detection.x1, sizeof(detection.x1));
+    append(&detection.y1, sizeof(detection.y1));
   }
 
   return out;
 }
 
-// Debug aid, enabled with HAILO_DEBUG_DUMP=<dir>: dump the exact
-// buffer handed to the accelerator as a PPM, plus the head of the
-// raw NMS output. Lets a wrong letterbox or a misread output layout
-// be seen rather than inferred.
+// HAILO_DEBUG_DUMP=<dir>: the model input as a PPM and the head of the raw NMS
+// output, to see a wrong letterbox or a misread output layout.
 void dump_debug(const std::string& dir, const uint8_t* rgb, int size,
-                const float* out, size_t floats, size_t num_classes) {
+                const float* nms_output, size_t float_count, size_t class_count) {
   const std::string ppm_path = dir + "/hailo_input.ppm";
-  if (FILE* f = fopen(ppm_path.c_str(), "wb")) {
-    fprintf(f, "P6\n%d %d\n255\n", size, size);
-    fwrite(rgb, 1, static_cast<size_t>(size) * size * 3, f);
-    fclose(f);
+  if (FILE* ppm_file = fopen(ppm_path.c_str(), "wb")) {
+    fprintf(ppm_file, "P6\n%d %d\n255\n", size, size);
+    fwrite(rgb, 1, static_cast<size_t>(size) * size * 3, ppm_file);
+    fclose(ppm_file);
   }
 
-  const std::string txt_path = dir + "/hailo_output.txt";
-  if (FILE* f = fopen(txt_path.c_str(), "w")) {
+  const std::string text_path = dir + "/hailo_output.txt";
+  if (FILE* text_file = fopen(text_path.c_str(), "w")) {
     // One line per class that reported any box, so a non-empty
     // result is obvious even when every score is below threshold.
-    size_t at = 0;
-    for (size_t c = 0; c < num_classes && at < floats; ++c) {
-      const size_t count = static_cast<size_t>(out[at++]);
-      if (count > 0 && at + count * 5 <= floats) {
-        fprintf(f, "class %zu count %zu:", c, count);
+    size_t offset = 0;
+    for (size_t class_id = 0; class_id < class_count && offset < float_count; ++class_id) {
+      const size_t count = static_cast<size_t>(nms_output[offset++]);
+      if (count > 0 && offset + count * kFloatsPerBox <= float_count) {
+        fprintf(text_file, "class %zu count %zu:", class_id, count);
         for (size_t i = 0; i < count && i < 4; ++i) {
-          const float* b = out + at + i * 5;
-          fprintf(f, "  [y0=%.3f x0=%.3f y1=%.3f x1=%.3f s=%.3f]", b[0], b[1],
-                  b[2], b[3], b[4]);
+          const float* bbox = nms_output + offset + i * kFloatsPerBox;
+          fprintf(text_file, "  [y0=%.3f x0=%.3f y1=%.3f x1=%.3f s=%.3f]", bbox[0], bbox[1],
+                  bbox[2], bbox[3], bbox[4]);
         }
-        fprintf(f, "\n");
+        fprintf(text_file, "\n");
       }
-      if (count > 0) at += count * 5;
+      if (count > 0) offset += count * kFloatsPerBox;
     }
-    fclose(f);
+    fclose(text_file);
   }
 }
 
@@ -278,13 +241,13 @@ int main(int argc, char** argv) {
 
   // Take stdout away from libhailort before it can log a byte onto
   // it — see `framing::set_output_fd`.
-  const int records = dup(STDOUT_FILENO);
-  if (records < 0) {
+  const int records_fd = dup(STDOUT_FILENO);
+  if (records_fd < 0) {
     log("could not dup stdout");
     return 1;
   }
   dup2(STDERR_FILENO, STDOUT_FILENO);
-  ovcs::framing::set_output_fd(records);
+  ovcs::framing::set_output_fd(records_fd);
 
   using namespace hailort;
 
@@ -351,12 +314,12 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  const size_t num_classes =
+  const size_t class_count =
       output_vstream.get_info().nms_shape.number_of_classes;
   const size_t output_bytes = output_vstream.get_frame_size();
 
   log("ready: " + hef_path + " " + std::to_string(model_size) + "x" +
-      std::to_string(model_size) + ", " + std::to_string(num_classes) +
+      std::to_string(model_size) + ", " + std::to_string(class_count) +
       " classes, threshold " + std::to_string(score_threshold));
 
   std::vector<uint8_t> model_input(static_cast<size_t>(model_size) *
@@ -365,32 +328,31 @@ int main(int argc, char** argv) {
   std::vector<uint8_t> request;
 
   while (ovcs::framing::read_record(request)) {
-    // 1 tag + 4 seq + 2 width + 2 height + 1 channels
-    if (request.size() < 10 || request[0] != kTagDetect) continue;
+    if (request.size() < kDetectHeaderBytes || request[0] != kTagDetect) continue;
 
-    uint32_t seq;
+    uint32_t sequence;
     uint16_t width, height;
-    std::memcpy(&seq, request.data() + 1, sizeof(seq));
+    std::memcpy(&sequence, request.data() + 1, sizeof(sequence));
     std::memcpy(&width, request.data() + 5, sizeof(width));
     std::memcpy(&height, request.data() + 7, sizeof(height));
     const int channels = request[9];
 
     if (channels != 1 && channels != 3) {
-      log("frame " + std::to_string(seq) + ": unsupported channel count " +
+      log("frame " + std::to_string(sequence) + ": unsupported channel count " +
           std::to_string(channels));
       continue;
     }
 
-    const size_t expected = static_cast<size_t>(width) * height * channels;
-    if (request.size() != 10 + expected) {
-      log("frame " + std::to_string(seq) + ": expected " +
-          std::to_string(expected) + " pixel bytes, got " +
-          std::to_string(request.size() - 10));
+    const size_t expected_bytes = static_cast<size_t>(width) * height * channels;
+    if (request.size() != kDetectHeaderBytes + expected_bytes) {
+      log("frame " + std::to_string(sequence) + ": expected " +
+          std::to_string(expected_bytes) + " pixel bytes, got " +
+          std::to_string(request.size() - kDetectHeaderBytes));
       continue;
     }
 
     const Letterbox box = letterbox_for(width, height, model_size);
-    letterbox_into(request.data() + 10, width, height, channels,
+    letterbox_into(request.data() + kDetectHeaderBytes, width, height, channels,
                    model_input.data(), model_size, box);
 
     std::map<std::string, MemoryView> input_map;
@@ -408,7 +370,7 @@ int main(int argc, char** argv) {
       log("infer failed: " + std::to_string(status));
       // Answer anyway: the Elixir side keeps per-seq state and would
       // otherwise hold that frame's depth Mat until it ages out.
-      const auto empty = build_detections_record(seq, {});
+      const auto empty = build_detections_record(sequence, {});
       if (!ovcs::framing::write_record(empty.data(), empty.size())) break;
       continue;
     }
@@ -416,15 +378,15 @@ int main(int argc, char** argv) {
     if (const char* dir = getenv("HAILO_DEBUG_DUMP")) {
       dump_debug(dir, model_input.data(), model_size,
                  reinterpret_cast<const float*>(output_buffer.data()),
-                 output_bytes / sizeof(float), num_classes);
+                 output_bytes / sizeof(float), class_count);
     }
 
     const auto detections = decode_nms_by_class(
         reinterpret_cast<const float*>(output_buffer.data()),
-        output_bytes / sizeof(float), num_classes, width, height, box,
+        output_bytes / sizeof(float), class_count, width, height, box,
         model_size, score_threshold);
 
-    const auto record = build_detections_record(seq, detections);
+    const auto record = build_detections_record(sequence, detections);
     if (!ovcs::framing::write_record(record.data(), record.size())) break;
   }
 

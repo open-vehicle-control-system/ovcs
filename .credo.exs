@@ -184,9 +184,6 @@
                  "lib/ovcs_vehicle/firmware_validator.ex",
                  "lib/ovcs_vehicle/scaffold.ex",
                  "lib/radio_control_bridge.ex",
-                 "lib/ros_bridge/stereo_camera/open_cv.ex",
-                 "lib/ros_bridge/stereo_camera/supervisor.ex",
-                 "lib/ros_bridge/stereo_camera/telemetry.ex",
                  "lib/rplidar/uart.ex",
                  "lib/vms_api_web/controllers/error_json.ex",
                  "lib/vms_api_web/endpoint.ex",
@@ -219,7 +216,6 @@
                  "lib/infotainment_firmware.ex",
                  "lib/ovcs_mini.ex",
                  "lib/ovcs_mini/vms/composer.ex",
-                 "lib/ros_bridge/stereo_camera/open_cv.ex",
                  "lib/vms_api_web/controllers/error_json.ex",
                  "lib/vms_firmware/application.ex"
                ]

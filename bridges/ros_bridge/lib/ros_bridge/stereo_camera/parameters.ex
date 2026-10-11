@@ -26,6 +26,7 @@ defmodule RosBridge.StereoCamera.Parameters do
 
   @startup_keys [:camera_id, :device, :sync, :sensor_mode, :rotation, :calibration_path]
 
+  @doc "Declares the unit's parameters on the bridge's node; see the module doc."
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 
   @impl GenServer
@@ -58,7 +59,7 @@ defmodule RosBridge.StereoCamera.Parameters do
         |> Map.merge(%{
           name: "#{prefix}.#{side}.#{spec.key}",
           value: values[spec.key],
-          set: &applied(driver.set_controls(server, [{spec.key, &1}]))
+          set: &drop_reply_value(driver.set_controls(server, [{spec.key, &1}]))
         })
       end
     else
@@ -73,7 +74,7 @@ defmodule RosBridge.StereoCamera.Parameters do
       Map.merge(spec, %{
         name: "#{prefix}.#{key}",
         value: values[key],
-        set: &applied(OpenCV.set_options(backend, [{key, &1}]))
+        set: &drop_reply_value(OpenCV.set_options(backend, [{key, &1}]))
       })
     end
   end
@@ -103,6 +104,6 @@ defmodule RosBridge.StereoCamera.Parameters do
   defp parameter_value(value) when is_atom(value), do: {:string, Atom.to_string(value)}
   defp parameter_value(value), do: {:string, to_string(value)}
 
-  defp applied({:ok, _}), do: :ok
-  defp applied({:error, _} = error), do: error
+  defp drop_reply_value({:ok, _}), do: :ok
+  defp drop_reply_value({:error, _} = error), do: error
 end

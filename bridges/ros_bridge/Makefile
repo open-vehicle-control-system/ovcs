@@ -1,11 +1,5 @@
-# Top-level make entry point invoked by :elixir_make on the :rpi5
-# target. Builds the native Port binaries into priv/:
-#
-#   camera_capture — one CSI camera via libcamera, JPEG on stdout
-#   hailo_detect   — a YOLO HEF on the Hailo-8, boxes on stdout
-#
-# Both link libraries that only exist in the rpi5 sysroot, which is
-# why mix.exs runs elixir_make on that target alone.
+# :elixir_make entry on :rpi5: builds the camera_capture and hailo_detect
+# Port binaries into priv/. Both link libraries only the rpi5 sysroot has.
 
 PRIV_DIR := $(MIX_APP_PATH)/priv
 

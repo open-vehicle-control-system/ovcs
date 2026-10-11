@@ -27,7 +27,11 @@ defmodule RosBridge.StereoCamera.Supervisor do
        and their sync, on `/diagnostics` and `<topic_prefix>/live/*`.
 
   Children start in that order so each downstream child can register
-  on its upstream during `init/1`.
+  on its upstream during `init/1`. The strategy is `:rest_for_one`
+  because that registration is the only wiring: a restarted driver or
+  backend comes back with no listeners, so everything downstream of it
+  restarts too and registers again. Drivers stop deliberately when
+  their subprocess exits, so restarts are a designed path.
 
   ## Required opts
 
@@ -47,12 +51,9 @@ defmodule RosBridge.StereoCamera.Supervisor do
     * `:publish_disparity_image` (`false`) — also publish the
       disparity pixels as a bare `sensor_msgs/Image`, because viewers
       match on a topic's type and cannot render the `DisparityImage`
-      container. Off by default: it is a third uncompressed 921 KB
-      image per frame, and at 640x360 / 7 Hz the three together ask
-      for ~19 MB/s from one Zenoh session. Measured on ovcs_mini,
-      turning it on dropped `depth/image_rect` from ~7 Hz to 1.3 Hz
-      while only 9.6 MB/s arrived — so this is a debugging aid to
-      switch on deliberately, not something to leave running.
+      container. Off by default: a third uncompressed image per frame
+      can starve `depth/image_rect` on one Zenoh session, so this is a
+      debugging aid to switch on deliberately.
     * `:publish_rectified_image` (`false`) — also publish the
       rectified left image, pixel-aligned with the depth image and
       stamped like it, for consumers that pair the two (RGB-D SLAM),
@@ -82,7 +83,9 @@ defmodule RosBridge.StereoCamera.Supervisor do
   use Supervisor
   require Logger
 
-  alias RosBridge.StereoCamera.OpenCV
+  alias RosBridge.Publishers.StereoCamera, as: StereoCameraPublisher
+  alias RosBridge.Services.SetCameraInfoServer
+  alias RosBridge.StereoCamera.{Live, OpenCV, Parameters}
 
   @default_width 1280
   @default_height 720
@@ -90,6 +93,7 @@ defmodule RosBridge.StereoCamera.Supervisor do
   @default_topic_prefix "stereo"
   @default_pair_tolerance_ms 33
 
+  @doc "Starts the stereo unit; see the module doc for `opts`."
   def start_link(opts) do
     Supervisor.start_link(__MODULE__, opts, name: __MODULE__)
   end
@@ -97,21 +101,8 @@ defmodule RosBridge.StereoCamera.Supervisor do
   @impl Supervisor
   def init(opts) do
     config = build_config(opts)
-    # `:rest_for_one`, not `:one_for_one`: the pipeline is wired by
-    # init-time registration (the publisher casts `register_listener`
-    # to both drivers and to the backend), and the drivers stop
-    # deliberately when their subprocess exits, so restart is a
-    # designed path. Under `:one_for_one` a restarted driver came back
-    # with `listeners: []` and never delivered another frame, and a
-    # restarted backend left the publisher `awaiting_result: true`
-    # forever, dropping every pair as `drop_busy` — both silently.
-    # Child order (drivers, backend, publisher, services) means
-    # restarting any child also restarts everything downstream of it,
-    # which re-runs the registrations.
     Supervisor.init(child_specs(config), strategy: :rest_for_one)
   end
-
-  # ── config resolution ────────────────────────────────────────
 
   defp build_config(opts) do
     topic_prefix = Keyword.get(opts, :topic_prefix, @default_topic_prefix)
@@ -196,8 +187,6 @@ defmodule RosBridge.StereoCamera.Supervisor do
     Path.join(calibration_dir, "#{topic_prefix}_#{side}.yaml")
   end
 
-  # ── child specs ──────────────────────────────────────────────
-
   defp child_specs(config) do
     [
       camera_driver_spec(config, :left),
@@ -205,7 +194,7 @@ defmodule RosBridge.StereoCamera.Supervisor do
       stereo_backend_spec(config),
       stereo_publisher_spec(config),
       Supervisor.child_spec(
-        {RosBridge.StereoCamera.Parameters,
+        {Parameters,
          topic_prefix: config.topic_prefix,
          driver: config.driver,
          left: config.left,
@@ -216,7 +205,7 @@ defmodule RosBridge.StereoCamera.Supervisor do
         id: {:stereo, :parameters}
       ),
       Supervisor.child_spec(
-        {RosBridge.StereoCamera.Live,
+        {Live,
          topic_prefix: config.topic_prefix,
          driver: config.driver,
          left: config.left,
@@ -227,11 +216,7 @@ defmodule RosBridge.StereoCamera.Supervisor do
     ] ++ set_camera_info_specs(config)
   end
 
-  # Per-side `set_camera_info` service server. Together they let
-  # `cameracalibrator`'s COMMIT button persist the new calibration
-  # (to the store when there is one, else over the YAML loaded at
-  # boot) and hot-reload the SGBM backend so the change takes effect
-  # without restarting.
+  # `cameracalibrator`'s COMMIT persists the calibration and hot-reloads the backend.
   defp set_camera_info_specs(config) do
     Enum.flat_map([:left, :right], fn side ->
       side_opts = Map.fetch!(config, side)
@@ -244,7 +229,7 @@ defmodule RosBridge.StereoCamera.Supervisor do
         path ->
           [
             Supervisor.child_spec(
-              {RosBridge.Services.SetCameraInfoServer,
+              {SetCameraInfoServer,
                service_name: service_name,
                calibration_path: path,
                camera_name: "#{config.topic_prefix}_#{side}",
@@ -285,12 +270,6 @@ defmodule RosBridge.StereoCamera.Supervisor do
   end
 
   defp stereo_backend_spec(config) do
-    # Push the per-side calibration paths AND the actual capture
-    # resolution into the backend's opts so vehicles don't have to
-    # specify them at two levels. The resolution lets the backend
-    # scale the calibration matrices to match what the cameras
-    # actually deliver — crucial when the calibration session was
-    # captured at a different resolution.
     backend_opts =
       config.backend_opts
       |> Keyword.put_new(:left_calibration_path, config.left[:calibration_path])
@@ -322,6 +301,6 @@ defmodule RosBridge.StereoCamera.Supervisor do
       pair_tolerance_ms: config.pair_tolerance_ms
     ]
 
-    {RosBridge.Publishers.StereoCamera, publisher_opts}
+    {StereoCameraPublisher, publisher_opts}
   end
 end

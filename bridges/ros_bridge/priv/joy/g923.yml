@@ -10,6 +10,7 @@ deadzone: 0.0
 centring: 1.0
 steering:
   - axis: 0
+    # Negative: joy_linux reports left as positive, steering is positive right.
     gain: -5.0
 throttle:
   - pedal: 1

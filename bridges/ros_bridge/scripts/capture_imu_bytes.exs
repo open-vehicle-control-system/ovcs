@@ -31,7 +31,13 @@ receive do
     |> :binary.bin_to_list()
     |> Enum.chunk_every(16)
     |> Enum.each(fn chunk ->
-      hexes = Enum.map_join(chunk, ", ", &("0x" <> String.pad_leading(Integer.to_string(&1, 16), 2, "0")))
+      hexes =
+        Enum.map_join(
+          chunk,
+          ", ",
+          &("0x" <> String.pad_leading(Integer.to_string(&1, 16), 2, "0"))
+        )
+
       IO.puts("  " <> hexes <> ",")
     end)
 
@@ -41,10 +47,10 @@ receive do
     case Ros2.SensorMsgs.Msg.Imu.parse(body) do
       {:ok, parsed, rest} ->
         IO.puts("Parse succeeded; rest = #{byte_size(rest)} bytes")
-        IO.inspect(parsed, label: "parsed", pretty: true)
+        IO.puts("parsed: " <> inspect(parsed, pretty: true))
 
       error ->
-        IO.inspect(error, label: "PARSE FAILED")
+        IO.puts("PARSE FAILED: " <> inspect(error))
     end
 after
   10_000 ->
