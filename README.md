@@ -21,7 +21,7 @@ On Linux, after [Getting started](./docs/getting_started.md):
 ./ovcs attach ovcs_mini    # in another terminal: logs, bus, CAN and IEx panes
 ```
 
-The debug dashboard is on `http://localhost:5173`. [Quickstart](./docs/quickstart.md) goes further; [Simulation](./compose/local/simulation/README.md) needs only Docker.
+The debug dashboard is on `http://localhost:5173`. [Quickstart](./docs/quickstart.md) goes further; [Simulation](./compose/local/simulation/README.md) puts the same VMS behind a Gazebo model of the vehicle.
 
 ## Documentation
 

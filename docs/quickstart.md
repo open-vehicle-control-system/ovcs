@@ -9,7 +9,7 @@ You need no car, Raspberry Pi or CAN adapter to see OVCS work. A whole vehicle b
 > The OVCS Mini is a worked example, used because it is ready to run and small. Every command here takes any vehicle under `vehicles/`, including one you scaffold with `./ovcs new`: replace `ovcs_mini` with its name, and the frames with ones its `priv/can/` YAMLs declare. See [Framework and vehicles](./framework.md).
 
 > [!TIP]
-> No Linux at hand? [Simulation](../compose/local/simulation/README.md) needs only Docker: a Gazebo model of the OVCS Mini.
+> Once it runs, [Simulation](../compose/local/simulation/README.md) puts the same VMS behind a Gazebo model of the OVCS Mini reference vehicle: Nav2, perception and the gamepad drive it over virtual CAN.
 
 ## Boot the vehicle
 
