@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::thread;
@@ -10,6 +10,7 @@ use crate::build_runner::{self, BuildLane, BuildStep};
 use crate::commands::attach::is_iex_noise;
 use crate::commands::can::ensure_host_can;
 use crate::firmware;
+use crate::lines::lossy_lines;
 use crate::repo_root::repo_root;
 use crate::resolve_args::resolve_vehicle;
 use crate::ui::{step, sub, sub_ok, sub_warn};
@@ -534,7 +535,7 @@ where
     // lines whose ANSI-stripped content is empty so the merged view
     // stays dense.
     let buf = BufReader::new(reader);
-    for line in buf.lines().map_while(|l| l.ok()) {
+    for line in lossy_lines(buf) {
         if is_blank_after_ansi(&line) {
             continue;
         }
