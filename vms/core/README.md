@@ -188,7 +188,6 @@ the library.
 |--------|------|---------|
 | `VmsCore.Status` | `status.ex` | Emits VMS heartbeat (`0x1A0`), manages ready-to-drive state, controller reset command (`0x1AA`) |
 | `VmsCore.Metrics` | `metrics.ex` | Subscribes to all Bus messages, stores latest values, exposes `metrics/0` for the API |
-| `VmsCore.PID` | `pid.ex` | Proportional-Integral-Derivative controller using Decimal arithmetic |
 | `VmsCore.NormalisedRequest` | `normalised_request.ex` | Arithmetic on requests normalised to [-1, 1] |
 | `VmsCore.Repo` | `repo.ex` | Ecto SQLite3 repository for persistent data |
 | `VmsCore.NetworkInterfaces` | `network_interfaces.ex` | CAN interface statistics (TX/RX errors, bus state) |
