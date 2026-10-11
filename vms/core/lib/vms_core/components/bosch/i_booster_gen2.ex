@@ -1,7 +1,7 @@
 defmodule VmsCore.Components.Bosch.IBoosterGen2 do
   @moduledoc """
   A Bosch iBooster Gen2 electromechanical brake booster (Tesla Model 3),
-  on the `:misc` CAN network.
+  on the CAN network named by `:network`.
 
   The pedal acts on the booster mechanically at all times. While the
   contact is on, a generic controller's relay powers the booster and its
@@ -15,6 +15,8 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
 
   ## Options
 
+    * `:network` — the CAN network it sits on, as named in the vehicle's
+      CAN topology.
     * `:selected_control_level_source` — the manager that names the
       control level and the throttle source.
     * `:contact_source` — the component publishing `:contact`.
@@ -50,16 +52,17 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
 
   @impl GenServer
   def init(%{
+        network: network,
         selected_control_level_source: selected_control_level_source,
         contact_source: contact_source,
         controller: controller,
         power_relay_pin: power_relay_pin
       }) do
-    :ok = Receiver.subscribe(self(), :misc, ["ibooster_status"])
+    :ok = Receiver.subscribe(self(), network, ["ibooster_status"])
     Bus.subscribe("messages")
 
     :ok =
-      Emitter.configure(:misc, "vehicle_status", %{
+      Emitter.configure(network, "vehicle_status", %{
         parameters_builder_function: &vehicle_status_frame_parameters_builder/1,
         initial_data: %{
           "counter" => 0,
@@ -68,7 +71,7 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
       })
 
     :ok =
-      Emitter.configure(:misc, "vehicle_alive", %{
+      Emitter.configure(network, "vehicle_alive", %{
         parameters_builder_function: &vehicle_alive_frame_parameters_builder/1,
         initial_data: %{
           "counter" => 0
@@ -76,7 +79,7 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
       })
 
     :ok =
-      Emitter.configure(:misc, "brake_request", %{
+      Emitter.configure(network, "brake_request", %{
         parameters_builder_function: &brake_request_frame_parameters_builder/1,
         initial_data: %{
           "counter" => 0,
@@ -89,6 +92,7 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
 
     {:ok,
      %{
+       network: network,
        status: "off",
        driver_brake_apply: "not_init_or_off",
        internal_state: "no_mode_active",
@@ -205,14 +209,14 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
   defp toggle_ibooster(state) do
     case {state.enabled, state.contact} do
       {false, :on} ->
-        deactivate_external_request()
+        deactivate_external_request(state.network)
         :ok = GenericController.set_digital_value(state.controller, state.power_relay_pin, true)
-        :ok = Emitter.enable(:misc, ["vehicle_status", "vehicle_alive", "brake_request"])
+        :ok = Emitter.enable(state.network, ["vehicle_status", "vehicle_alive", "brake_request"])
         %{state | enabled: true}
 
       {true, :off} ->
-        deactivate_external_request()
-        :ok = Emitter.disable(:misc, ["vehicle_status", "vehicle_alive", "brake_request"])
+        deactivate_external_request(state.network)
+        :ok = Emitter.disable(state.network, ["vehicle_status", "vehicle_alive", "brake_request"])
         :ok = GenericController.set_digital_value(state.controller, state.power_relay_pin, false)
         %{state | enabled: false}
 
@@ -238,11 +242,11 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
     cond do
       enable_automatic_mode && !state.automatic_mode_enabled ->
         pid = init_pid(state)
-        activate_external_request()
+        activate_external_request(state.network)
         %{state | pid: pid, automatic_mode_enabled: true}
 
       !enable_automatic_mode && state.automatic_mode_enabled ->
-        deactivate_external_request()
+        deactivate_external_request(state.network)
         %{state | automatic_mode_enabled: false}
 
       true ->
@@ -272,7 +276,7 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
   defp actuate(state) when state.automatic_mode_enabled do
     pid = PID.iterate(state.pid, state.rod_position, state.rod_position_target)
     flow_rate = @zero_point_flow_rate |> D.add(pid.output)
-    set_flow_rate(flow_rate)
+    set_flow_rate(state.network, flow_rate)
     %{state | pid: pid, flow_rate: flow_rate}
   end
 
@@ -289,28 +293,28 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
     )
   end
 
-  defp activate_external_request do
-    set_external_request("brake_request", true)
-    set_external_request("vehicle_status", true)
-    set_flow_rate(@zero_point_flow_rate)
+  defp activate_external_request(network) do
+    set_external_request(network, "brake_request", true)
+    set_external_request(network, "vehicle_status", true)
+    set_flow_rate(network, @zero_point_flow_rate)
   end
 
-  defp deactivate_external_request do
-    set_external_request("brake_request", false)
-    set_external_request("vehicle_status", false)
-    set_flow_rate(@zero_point_flow_rate)
+  defp deactivate_external_request(network) do
+    set_external_request(network, "brake_request", false)
+    set_external_request(network, "vehicle_status", false)
+    set_flow_rate(network, @zero_point_flow_rate)
   end
 
-  defp set_flow_rate(flow_rate) do
+  defp set_flow_rate(network, flow_rate) do
     :ok =
-      Emitter.update(:misc, "brake_request", fn emitter_data ->
+      Emitter.update(network, "brake_request", fn emitter_data ->
         %{emitter_data | "flow_rate" => flow_rate}
       end)
   end
 
-  defp set_external_request(frame_name, enabled) do
+  defp set_external_request(network, frame_name, enabled) do
     :ok =
-      Emitter.update(:misc, frame_name, fn emitter_data ->
+      Emitter.update(network, frame_name, fn emitter_data ->
         %{emitter_data | "external_request" => enabled}
       end)
   end

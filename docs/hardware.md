@@ -136,7 +136,7 @@ Every vehicle CAN bus terminates on the VMS Pi 4, so components on different bus
 | `orion_bms` | 500 kbps | Battery management | Orion BMS2, EVPT23 charger |
 | `misc` | 500 kbps | Additional components | Bosch iBooster, Bosch LWS steering sensor |
 
-The hub gives OVCS1's VMS five MCP2517FD controllers: `spi0.0` (`ovcs`), `spi0.1` (`leaf_drive`), `spi1.0` (`polo_drive`), `spi1.1` (`orion_bms`), `spi1.2` (`misc`). Network names and bitrates are your vehicle's own, declared in its `vms.yml` and mapped to interfaces in `default_can_mapping/1`, except that most `vms_core` drivers expect the network name OVCS1 uses: the `Nissan.LeafAZE0` drivers `leaf_drive`; `Orion.Bms2` and `Evpt.Evpt23Charger` `orion_bms`; the other `Volkswagen.Polo9N` drivers `polo_drive`; `Bosch.IBoosterGen2`, `OVCS.SteeringColumn` and `Volkswagen.Polo9N.PowerSteeringPump` `misc`. `Vesc.MotorController` takes a `network:` option.
+The hub gives OVCS1's VMS five MCP2517FD controllers: `spi0.0` (`ovcs`), `spi0.1` (`leaf_drive`), `spi1.0` (`polo_drive`), `spi1.1` (`orion_bms`), `spi1.2` (`misc`). Network names and bitrates are your vehicle's own, declared in its `vms.yml` and mapped to interfaces in `default_can_mapping/1`. A driver for a part on one of these networks takes its name as a `network:` option; only the framework's own components expect `ovcs`.
 
 ### Controllers
 

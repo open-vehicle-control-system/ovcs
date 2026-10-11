@@ -107,8 +107,10 @@ Declare the frame in your topology YAML under the network's `received_frames`, t
 alias Cantastic.{Frame, Receiver, Signal}
 
 # in init/1, from Nissan.LeafAZE0.Inverter
-Receiver.subscribe(self(), :leaf_drive, ["inverter_status", "inverter_temperatures"])
+Receiver.subscribe(self(), network, ["inverter_status", "inverter_temperatures"])
 ```
+
+A driver for a part that sits on one of your vehicle's own networks takes that network's name as a `:network` option, so it works on whatever your topology calls the bus.
 
 `Receiver.subscribe/4` takes one frame name or a list, and an optional `%{errors: true}` (below). The name must exist on that network: the receiver matches it against its specifications and an unknown name takes the network's receiver process down.
 
@@ -321,15 +323,15 @@ Sources are the `*_source` options; "controller" means a generic controller proc
 
 | Driver | Network | Options | Publishes |
 |---|---|---|---|
-| `Nissan.LeafAZE0.Inverter` | `leaf_drive` | control level, gear, contact sources; `controller`, `power_relay_pin` | rpm, torques, output voltage, temperatures, `:ready_to_drive` |
-| `Nissan.LeafAZE0.Charger` (no reference vehicle; not working, the charge does not start) | `leaf_drive` | `maximum_power_for_charger_source` | charge power, AC voltage, charging state |
-| `Orion.Bms2` | `orion_bms` | `controller`, `ready_relay_pin` | pack voltage, current, SoC, temperatures, relay states, `:is_alive` |
-| `Evpt.Evpt23Charger` | `orion_bms` | none | output voltage and current, protection flags |
-| `Volkswagen.Polo9N.ABS`, `.IgnitionLock`, `.PassengerCompartment` | `polo_drive` | none | `:speed` and wheel speeds; `:contact`; door, beam and handbrake states |
-| `Volkswagen.Polo9N.Dashboard` | `polo_drive` | contact, rpm sources | nothing (drives the cluster) |
-| `Volkswagen.Polo9N.PowerSteeringPump` | `misc` | gear source | nothing |
-| `Bosch.IBoosterGen2` | `misc` | control level, contact sources; `controller`, `power_relay_pin` | rod position, flow rate, `:manual_braking`, `:status` |
-| `OVCS.SteeringColumn` | `misc` | control level source; `power_relay_controller`, `power_relay_pin`, `actuation_controller`, `direction_pin`, `external_pwm_id` | angle, angular speed, calibration, PID gains |
+| `Nissan.LeafAZE0.Inverter` | `network:` (`leaf_drive` in OVCS1) | control level, gear, contact sources; `controller`, `power_relay_pin` | rpm, torques, output voltage, temperatures, `:ready_to_drive` |
+| `Nissan.LeafAZE0.Charger` (no reference vehicle; not working, the charge does not start) | `network:` | `maximum_power_for_charger_source` | charge power, AC voltage, charging state |
+| `Orion.Bms2` | `network:` (`orion_bms` in OVCS1) | `controller`, `ready_relay_pin` | pack voltage, current, SoC, temperatures, relay states, `:is_alive` |
+| `Evpt.Evpt23Charger` | `network:` (`orion_bms` in OVCS1) | none | output voltage and current, protection flags |
+| `Volkswagen.Polo9N.ABS`, `.IgnitionLock`, `.PassengerCompartment` | `network:` (`polo_drive` in OVCS1) | none | `:speed` and wheel speeds; `:contact`; door, beam and handbrake states |
+| `Volkswagen.Polo9N.Dashboard` | `network:` (`polo_drive` in OVCS1) | contact, rpm sources | nothing (drives the cluster) |
+| `Volkswagen.Polo9N.PowerSteeringPump` | `network:` (`misc` in OVCS1) | gear source | nothing |
+| `Bosch.IBoosterGen2` | `network:` (`misc` in OVCS1) | control level, contact sources; `controller`, `power_relay_pin` | rod position, flow rate, `:manual_braking`, `:status` |
+| `OVCS.SteeringColumn` | `network:` (`misc` in OVCS1) | control level source; `power_relay_controller`, `power_relay_pin`, `actuation_controller`, `direction_pin`, `external_pwm_id` | angle, angular speed, calibration, PID gains |
 | `OVCS.GenericController` | `ovcs` | `process_name`, `control_digital_pins`, `control_other_pins`, `enabled_external_pwms` | `:is_alive`, `:status`, `received_*` / `requested_*` pins |
 | `OVCS.RadioControl.*` | `ovcs` | `radio_control_channel` | the `requested_*` value of its channel |
 | `OVCS.RosActuatorCommand.*`, `OVCS.RosVelocityCommand` | `ovcs` | none; `wheelbase`, `steering_limit`, `max_speed` | `:requested_throttle`, `:requested_steering`, `:requested_direction` |
@@ -337,7 +339,7 @@ Sources are the `*_source` options; "controller" means a generic controller proc
 | `OVCS.VehicleMotion` | `ovcs` | rotation and control level sources, ratio, wheel radius, `steering_limit` | `:speed`, `:wheel_rotation_per_minute` |
 | `OVCS.Status`, `VmsCore.Status` | `ovcs` | BMS source; ready-to-drive and VMS status sources | pack and VMS status frames, `:resetting` |
 | `Managers.ControlLevel`, `Managers.Gear` | `ovcs` (Gear) | the source maps; see [Your vehicle package](./vehicle_package.md) | selected level and sources; `:selected_gear` |
-| `Vesc.MotorController` | `network:` | `process_name`, control level source, `max_rotation_per_minute`, `pole_pairs`, caps | rpm, direction, motor current, input voltage |
+| `Vesc.MotorController` | `network:` (`misc` in OVCS Mini) | `process_name`, control level source, `max_rotation_per_minute`, `pole_pairs`, caps | rpm, direction, motor current, input voltage |
 | `OVCS.HighVoltageContactors`, `OVCS.WaterPump`, `OVCS.ThrottlePedal`, `Polo9N.FakeOilPressureSensor`, `Traxxas.Steering`, `Traxxas.MotorController` (no reference vehicle) | none, through a controller | a controller and its pins, plus sources | `:ready_to_drive`; nothing; `:requested_throttle` and calibration; nothing; nothing; throttle, pulse width |
 | `Matek.PM12S3` | none, through a controller | `controller`, `voltage_pin`; `current_pin` with the sensor's `current_scale` and `current_offset` | `:voltage`, `:current` |
 | `OVCS.PulseRotationSensor`, `OVCS.RotationFusion`, `OVCS.InputCurve` | none, bus only | controller or sources, see the moduledoc | `:rotation_per_minute`; fused rpm; shaped `:requested_throttle` |

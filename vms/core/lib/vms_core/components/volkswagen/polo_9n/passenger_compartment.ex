@@ -1,7 +1,7 @@
 defmodule VmsCore.Components.Volkswagen.Polo9N.PassengerCompartment do
   @moduledoc """
   The Volkswagen Polo 9N body signals: publishes the door, trunk, beam and
-  handbrake states reported on the `:polo_drive` CAN network.
+  handbrake states reported on the CAN network named by `:network`.
   """
   use GenServer
   alias Cantastic.{Frame, Receiver, Signal}
@@ -10,8 +10,8 @@ defmodule VmsCore.Components.Volkswagen.Polo9N.PassengerCompartment do
   @loop_period_ms 10
 
   @impl GenServer
-  def init(_) do
-    :ok = Receiver.subscribe(self(), :polo_drive, ["car_status", "handbrake_status"])
+  def init(%{network: network}) do
+    :ok = Receiver.subscribe(self(), network, ["car_status", "handbrake_status"])
     {:ok, timer} = :timer.send_interval(@loop_period_ms, :loop)
 
     {:ok,
@@ -27,8 +27,8 @@ defmodule VmsCore.Components.Volkswagen.Polo9N.PassengerCompartment do
      }}
   end
 
-  def start_link(_) do
-    GenServer.start_link(__MODULE__, nil, name: __MODULE__)
+  def start_link(args) do
+    GenServer.start_link(__MODULE__, args, name: __MODULE__)
   end
 
   @impl GenServer

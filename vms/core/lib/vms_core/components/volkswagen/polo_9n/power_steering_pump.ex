@@ -1,7 +1,7 @@
 defmodule VmsCore.Components.Volkswagen.Polo9N.PowerSteeringPump do
   @moduledoc """
   The Volkswagen Polo 9N power steering pump: emits the `engine_status`
-  and `handbrake_status` frames it expects on the `:misc` CAN network,
+  and `handbrake_status` frames it expects on the CAN network named by `:network`,
   with a non-zero rpm once `:drive` or `:reverse` is selected, zero back
   in `:parking`, and a released handbrake.
   """
@@ -18,11 +18,11 @@ defmodule VmsCore.Components.Volkswagen.Polo9N.PowerSteeringPump do
   end
 
   @impl GenServer
-  def init(%{selected_gear_source: selected_gear_source}) do
+  def init(%{network: network, selected_gear_source: selected_gear_source}) do
     Bus.subscribe("messages")
 
     :ok =
-      Emitter.configure(:misc, "engine_status", %{
+      Emitter.configure(network, "engine_status", %{
         parameters_builder_function: :default,
         initial_data: %{
           "rotations_per_minute" => 0
@@ -31,7 +31,7 @@ defmodule VmsCore.Components.Volkswagen.Polo9N.PowerSteeringPump do
       })
 
     :ok =
-      Emitter.configure(:misc, "handbrake_status", %{
+      Emitter.configure(network, "handbrake_status", %{
         parameters_builder_function: :default,
         initial_data: %{
           "handbrake_engaged" => false
@@ -43,6 +43,7 @@ defmodule VmsCore.Components.Volkswagen.Polo9N.PowerSteeringPump do
 
     {:ok,
      %{
+       network: network,
        loop_timer: timer,
        selected_gear: :parking,
        selected_gear_source: selected_gear_source,
@@ -54,11 +55,11 @@ defmodule VmsCore.Components.Volkswagen.Polo9N.PowerSteeringPump do
   def handle_info(:loop, state) do
     case {state.enabled, state.selected_gear} do
       {true, :parking} ->
-        set_rotation_per_minute(@disabling_rotation_per_minute)
+        set_rotation_per_minute(state.network, @disabling_rotation_per_minute)
         {:noreply, %{state | enabled: false}}
 
       {false, gear} when gear == :drive or gear == :reverse ->
-        set_rotation_per_minute(@enabling_rotation_per_minute)
+        set_rotation_per_minute(state.network, @enabling_rotation_per_minute)
         {:noreply, %{state | enabled: true}}
 
       _ ->
@@ -75,9 +76,9 @@ defmodule VmsCore.Components.Volkswagen.Polo9N.PowerSteeringPump do
     {:noreply, state}
   end
 
-  defp set_rotation_per_minute(rotation_per_minute) do
+  defp set_rotation_per_minute(network, rotation_per_minute) do
     :ok =
-      Emitter.update(:misc, "engine_status", fn emitter_data ->
+      Emitter.update(network, "engine_status", fn emitter_data ->
         %{emitter_data | "rotations_per_minute" => rotation_per_minute}
       end)
   end
