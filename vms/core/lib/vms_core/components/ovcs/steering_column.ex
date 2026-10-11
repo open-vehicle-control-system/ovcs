@@ -433,7 +433,7 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
   end
 
   @doc "Replaces the three PID gains used the next time the PID is built."
-  def test_set_pid_parameters(%{kp: kp, ki: ki, kd: kd}) do
+  def set_pid_parameters(%{kp: kp, ki: ki, kd: kd}) do
     GenServer.call(__MODULE__, {:set_pid_parameters, %{kp: kp, ki: ki, kd: kd}})
   end
 end

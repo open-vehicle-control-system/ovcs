@@ -1,4 +1,4 @@
-defmodule VmsCore.Components.Nissan.Util do
+defmodule VmsCore.Components.Nissan.FrameIntegrity do
   @moduledoc """
   Frame helpers shared by the Nissan Leaf AZE0 drivers: the CRC and the
   rolling counters their frames carry.

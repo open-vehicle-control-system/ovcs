@@ -199,11 +199,11 @@ alias Cantastic.Emitter
 
     parameters = %{
       "requested_torque" => data["requested_torque"],
-      "counter" => Util.shifted_counter(counter),
-      "crc" => &Util.crc8/1
+      "counter" => FrameIntegrity.shifted_counter(counter),
+      "crc" => &FrameIntegrity.crc8/1
     }
 
-    {:ok, parameters, %{data | "counter" => Util.counter(counter + 1)}}
+    {:ok, parameters, %{data | "counter" => FrameIntegrity.counter(counter + 1)}}
   end
   ```
 

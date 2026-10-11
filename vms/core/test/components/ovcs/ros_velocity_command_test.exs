@@ -24,12 +24,12 @@ defmodule VmsCore.Components.OVCS.RosVelocityCommandTest do
 
   defp fresh_freshness do
     now = System.monotonic_time(:millisecond)
-    %{Freshness.new(300, now) | sequence: 0, fresh_at: now, stale: false}
+    %{Freshness.new(300, now) | sequence: 0, fresh_at_ms: now, stale: false}
   end
 
   defp expired_freshness do
     now = System.monotonic_time(:millisecond)
-    %{Freshness.new(300, now - 10_000) | sequence: 0, fresh_at: now - 10_000, stale: false}
+    %{Freshness.new(300, now - 10_000) | sequence: 0, fresh_at_ms: now - 10_000, stale: false}
   end
 
   defp stub_state(overrides \\ %{}) do

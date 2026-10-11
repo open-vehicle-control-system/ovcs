@@ -21,15 +21,15 @@ defmodule VmsCore.Components.OVCS.RosCommand.Freshness do
   consumer that never receives a fresh frame says so once.
   """
 
-  @enforce_keys [:timeout_ms, :created_at]
-  defstruct [:timeout_ms, :created_at, :sequence, :fresh_at, stale: true, reported: false]
+  @enforce_keys [:timeout_ms, :created_at_ms]
+  defstruct [:timeout_ms, :created_at_ms, :sequence, :fresh_at_ms, stale: true, reported: false]
 
   @type transition :: :fresh | :stale | :unchanged
   @type t :: %__MODULE__{
           timeout_ms: pos_integer(),
-          created_at: integer(),
+          created_at_ms: integer(),
           sequence: non_neg_integer() | nil,
-          fresh_at: integer() | nil,
+          fresh_at_ms: integer() | nil,
           stale: boolean(),
           reported: boolean()
         }
@@ -40,7 +40,7 @@ defmodule VmsCore.Components.OVCS.RosCommand.Freshness do
   """
   @spec new(pos_integer(), integer()) :: t()
   def new(timeout_ms, now_ms) when is_integer(timeout_ms) and timeout_ms > 0 do
-    %__MODULE__{timeout_ms: timeout_ms, created_at: now_ms}
+    %__MODULE__{timeout_ms: timeout_ms, created_at_ms: now_ms}
   end
 
   @doc """
@@ -54,7 +54,7 @@ defmodule VmsCore.Components.OVCS.RosCommand.Freshness do
   end
 
   def observe(%__MODULE__{} = freshness, sequence, now_ms) do
-    {:new, %{freshness | sequence: sequence, fresh_at: now_ms}}
+    {:new, %{freshness | sequence: sequence, fresh_at_ms: now_ms}}
   end
 
   @doc """
@@ -68,7 +68,7 @@ defmodule VmsCore.Components.OVCS.RosCommand.Freshness do
     cond do
       # Only a sample can make the input fresh; before the first one the
       # tracker is stale and merely quiet about it until the timeout.
-      not expired and freshness.stale and not is_nil(freshness.fresh_at) ->
+      not expired and freshness.stale and not is_nil(freshness.fresh_at_ms) ->
         {:fresh, %{freshness | stale: false, reported: true}}
 
       expired and not freshness.stale ->
@@ -86,11 +86,11 @@ defmodule VmsCore.Components.OVCS.RosCommand.Freshness do
   @spec stale?(t()) :: boolean()
   def stale?(%__MODULE__{stale: stale}), do: stale
 
-  defp expired?(%__MODULE__{fresh_at: nil} = freshness, now_ms) do
-    now_ms - freshness.created_at > freshness.timeout_ms
+  defp expired?(%__MODULE__{fresh_at_ms: nil} = freshness, now_ms) do
+    now_ms - freshness.created_at_ms > freshness.timeout_ms
   end
 
-  defp expired?(%__MODULE__{fresh_at: fresh_at, timeout_ms: timeout_ms}, now_ms) do
-    now_ms - fresh_at > timeout_ms
+  defp expired?(%__MODULE__{fresh_at_ms: fresh_at_ms, timeout_ms: timeout_ms}, now_ms) do
+    now_ms - fresh_at_ms > timeout_ms
   end
 end

@@ -13,7 +13,7 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Charger do
   use GenServer
   alias Cantastic.{Emitter, Frame, Receiver, Signal}
   alias OvcsBus, as: Bus
-  alias VmsCore.Components.Nissan.Util
+  alias VmsCore.Components.Nissan.FrameIntegrity
   alias Decimal, as: D
 
   @loop_period_ms 10
@@ -240,11 +240,11 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Charger do
     parameters = %{
       "current" => emitter_data["current"],
       "total_voltage" => emitter_data["total_voltage"],
-      "counter" => Util.counter(counter),
-      "crc" => &Util.crc8/1
+      "counter" => FrameIntegrity.counter(counter),
+      "crc" => &FrameIntegrity.crc8/1
     }
 
-    emitter_data = %{emitter_data | "counter" => Util.counter(counter + 1)}
+    emitter_data = %{emitter_data | "counter" => FrameIntegrity.counter(counter + 1)}
     {:ok, parameters, emitter_data}
   end
 
@@ -252,11 +252,11 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Charger do
     counter = emitter_data["counter"]
 
     parameters = %{
-      "counter" => Util.counter(counter),
-      "crc" => &Util.crc8/1
+      "counter" => FrameIntegrity.counter(counter),
+      "crc" => &FrameIntegrity.crc8/1
     }
 
-    emitter_data = %{emitter_data | "counter" => Util.counter(counter + 1)}
+    emitter_data = %{emitter_data | "counter" => FrameIntegrity.counter(counter + 1)}
     {:ok, parameters, emitter_data}
   end
 
@@ -267,11 +267,11 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Charger do
       "charge_power_limit" => emitter_data["charge_power_limit"],
       "discharge_power_limit" => emitter_data["discharge_power_limit"],
       "maximum_power_for_charger" => emitter_data["maximum_power_for_charger"],
-      "counter" => Util.counter(counter),
-      "crc" => &Util.crc8/1
+      "counter" => FrameIntegrity.counter(counter),
+      "crc" => &FrameIntegrity.crc8/1
     }
 
-    emitter_data = %{emitter_data | "counter" => Util.counter(counter + 1)}
+    emitter_data = %{emitter_data | "counter" => FrameIntegrity.counter(counter + 1)}
     {:ok, parameters, emitter_data}
   end
 
@@ -279,11 +279,11 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Charger do
     counter = emitter_data["counter"]
 
     parameters = %{
-      "counter" => Util.counter(counter),
-      "crc" => &Util.crc8/1
+      "counter" => FrameIntegrity.counter(counter),
+      "crc" => &FrameIntegrity.crc8/1
     }
 
-    emitter_data = %{emitter_data | "counter" => Util.counter(counter + 1)}
+    emitter_data = %{emitter_data | "counter" => FrameIntegrity.counter(counter + 1)}
     {:ok, parameters, emitter_data}
   end
 end

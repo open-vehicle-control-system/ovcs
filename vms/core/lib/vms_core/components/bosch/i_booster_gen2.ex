@@ -442,7 +442,7 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
   end
 
   @doc "Replaces the PID gains used from the next switch into automatic mode."
-  def test_set_pid_parameters(%{kp: kp, ki: ki, kd: kd}) do
+  def set_pid_parameters(%{kp: kp, ki: ki, kd: kd}) do
     GenServer.call(__MODULE__, {:set_pid_parameters, %{kp: kp, ki: ki, kd: kd}})
   end
 
