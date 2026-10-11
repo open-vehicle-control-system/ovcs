@@ -17,9 +17,7 @@ defmodule Ros2.SensorMsgs.Msg.CompressedImage do
 
   defstruct [:header, format: "jpeg", data: <<>>]
 
-  # Hash captured against ROS 2 Jazzy via `ros2 topic info -v` on an
-  # rclpy publisher of `sensor_msgs/CompressedImage`. Refresh on
-  # distro bumps.
+  # RIHS01 hash for ROS 2 Lyrical; it changes with the distro.
   @dds_type "sensor_msgs::msg::dds_::CompressedImage_"
   @type_hash "RIHS01_15640771531571185e2efc8a100baf923961a4d15d5569652e6cb6691e8e371a"
 

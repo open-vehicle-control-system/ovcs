@@ -16,6 +16,10 @@ defmodule Ros2.RmwZenoh do
   Each ROS message module under `Ros2.*` is expected to expose
   `dds_type/0`, `type_hash/0`, and `encode/1` so this module can
   pack it without per-type knowledge.
+
+  A type hash is read from a live node, the `Topic type hash:` line of
+  `ros2 topic info -v <topic>` (for a service, its liveliness token),
+  and changes with the ROS distribution.
   """
 
   # CDR_LE, no options — all rmw_zenoh payloads use this.
@@ -98,7 +102,7 @@ defmodule Ros2.RmwZenoh do
   Format captured live from an `rmw_zenoh_cpp` 0.10.5 subscriber,
   the same way the publisher token was:
 
-      @ros2_lv/0/<zid>/0/4/MS/%/%/<node>/%probe_topic/std_msgs::msg::dds_::String_/RIHS01_.../::,5:,:,:,,
+      @ros2_lv/0/<zid>/0/4/MS/%/%/<node>/%probe_topic/std_msgs::msg::dds_::String_/RIHS01_.../::,10:,:,:,,
 
   `eid` must be unique per entity within the session, so callers pass
   their own counter rather than the hardcoded 0 the single publisher

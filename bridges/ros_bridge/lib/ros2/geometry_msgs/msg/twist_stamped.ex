@@ -26,10 +26,7 @@ defmodule Ros2.GeometryMsgs.Msg.TwistStamped do
 
   defstruct header: nil, twist: %Twist{}
 
-  # rmw_zenoh keyexpr metadata for `geometry_msgs/msg/TwistStamped`, so a subscription declares
-  # its liveliness token and shows in the ROS graph. The RIHS01 hash was
-  # captured against ROS 2 Lyrical via `ros2 topic info -v`. Refresh on
-  # distro bumps.
+  # RIHS01 hash for ROS 2 Lyrical; it changes with the distro.
   @dds_type "geometry_msgs::msg::dds_::TwistStamped_"
   @type_hash "RIHS01_5f0fcd4f81d5d06ad9b4c4c63e3ea51b82d6ae4d0558f1d475229b1121db6f64"
 

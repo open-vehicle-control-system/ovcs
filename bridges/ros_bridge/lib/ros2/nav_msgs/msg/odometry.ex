@@ -23,11 +23,7 @@ defmodule Ros2.NavMsgs.Msg.Odometry do
             pose: %PoseWithCovariance{},
             twist: %TwistWithCovariance{}
 
-  # rmw_zenoh keyexpr metadata for `nav_msgs/msg/Odometry`. The RIHS01
-  # hash was captured against ROS 2 Lyrical (the distro Nav2 runs on
-  # here) via `ros2 topic info -v /odom` on a `ros2 topic pub`
-  # publisher, the same procedure as every other hash in this tree.
-  # Refresh on distro bumps.
+  # RIHS01 hash for ROS 2 Lyrical; it changes with the distro.
   @dds_type "nav_msgs::msg::dds_::Odometry_"
   @type_hash "RIHS01_3cc97dc7fb7502f8714462c526d369e35b603cfc34d946e3f2eda2766dfec6e0"
 

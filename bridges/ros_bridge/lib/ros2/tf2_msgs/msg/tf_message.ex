@@ -19,8 +19,7 @@ defmodule Ros2.Tf2Msgs.Msg.TFMessage do
 
   defstruct transforms: []
 
-  # `ros2 topic info -v /tf` on a Jazzy node. Per-distro — re-check it
-  # if the distro moves, exactly as for every other message here.
+  # RIHS01 hash for ROS 2 Lyrical; it changes with the distro.
   def dds_type, do: "tf2_msgs::msg::dds_::TFMessage_"
 
   def type_hash,

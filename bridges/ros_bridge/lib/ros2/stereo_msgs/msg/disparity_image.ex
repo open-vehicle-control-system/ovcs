@@ -42,9 +42,7 @@ defmodule Ros2.StereoMsgs.Msg.DisparityImage do
     delta_d: 0.0
   ]
 
-  # Captured against ROS 2 Jazzy via `ros2 topic info -v` on an
-  # rclpy publisher of `stereo_msgs/DisparityImage`. Refresh on
-  # distro bumps.
+  # RIHS01 hash for ROS 2 Lyrical; it changes with the distro.
   @dds_type "stereo_msgs::msg::dds_::DisparityImage_"
   @type_hash "RIHS01_1ec1ff6b5bace919e4544a37f2d96ead9f81783701b7b7a4d97a09325ecf2711"
 

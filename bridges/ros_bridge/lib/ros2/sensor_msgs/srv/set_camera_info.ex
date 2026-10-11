@@ -10,16 +10,16 @@ defmodule Ros2.SensorMsgs.Srv.SetCameraInfo do
         bool   success
         string status_message
 
-  Service-level metadata captured from a live Jazzy server's
-  `@ros2_lv/**` liveliness token (entity prefix `SS`). The
+  Service-level metadata, as in a service server's `@ros2_lv/**`
+  liveliness token (entity prefix `SS`). The
   rmw_zenoh data keyexpr for the queryable is
   `<domain>/<service_name>/<dds_type>/<type_hash>`, same shape as a
   topic — the `dds_type` is the service's combined type
   (Request-side suffix stripped per rmw_zenoh convention).
 
   Services announce `::,10:,:,:,,` (keep-last 10, reliable, volatile)
-  in their liveliness token. Pass `:service` to
-  `Ros2.RmwZenoh.liveliness_key/6` so a service token is emitted.
+  in their liveliness token, which
+  `Ros2.RmwZenoh.service_liveliness_key/5` builds.
   """
   use Ros2.Common
 
@@ -30,8 +30,7 @@ defmodule Ros2.SensorMsgs.Srv.SetCameraInfo do
   # liveliness token.
   @dds_type "sensor_msgs::srv::dds_::SetCameraInfo_"
 
-  # Captured against ROS 2 Jazzy via a rclpy service server's
-  # liveliness token. Refresh on distro bumps.
+  # RIHS01 hash for ROS 2 Lyrical; it changes with the distro.
   @type_hash "RIHS01_a10cca5d33dc637c8d49db50ab288701a3592bb9cd854f2f16a0659613b68984"
 
   def dds_type, do: @dds_type

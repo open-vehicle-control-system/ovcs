@@ -40,7 +40,7 @@ defmodule RosBridge do
   `RosBridge.Config` that names the Zenoh router and the list of
   components to start (`RosBridge.Publishers.Heartbeat`,
   `RosBridge.Consumers.Joy`, `RosBridge.Publishers.Imu`,
-  `RosBridge.Publishers.Camera`, …). The bridge passes the active
+  `RosBridge.Publishers.StereoCamera`, …). The bridge passes the active
   `:host`/`:target` arm and the bridge firmware id, so vehicles
   running this bridge on more than one physical device (e.g. an IMU
   bridge on a Pi 4 alongside a perception bridge on a Pi 5) can

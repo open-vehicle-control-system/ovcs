@@ -31,11 +31,7 @@ defmodule Ros2.SensorMsgs.Msg.Imu do
     :linear_acceleration_covariance
   ]
 
-  # rmw_zenoh keyexpr metadata for `sensor_msgs/msg/Imu`. The
-  # DDS-mangled type name comes from rosidl's IDL convention. The
-  # RIHS01 hash was captured against ROS 2 Jazzy via
-  # `ros2 topic info -v /<topic>` ("Topic type hash:" line) on an
-  # rclpy publisher of `sensor_msgs/Imu`. Refresh on distro bumps.
+  # RIHS01 hash for ROS 2 Lyrical; it changes with the distro.
   @dds_type "sensor_msgs::msg::dds_::Imu_"
   @type_hash "RIHS01_7d9a00ff131080897a5ec7e26e315954b8eae3353c3f995c55faf71574000b5b"
 

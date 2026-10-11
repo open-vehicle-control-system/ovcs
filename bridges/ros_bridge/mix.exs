@@ -39,7 +39,7 @@ defmodule RosBridge.MixProject do
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
 
-      # OpenCV bindings + Nx — used by `Stereo.OpenCV` for JPEG
+      # OpenCV bindings + Nx — used by `RosBridge.StereoCamera.OpenCV` for JPEG
       # decode, rectification, and StereoSGBM. Evision ships
       # precompiled NIFs for x86_64 Linux (via rustler_precompiled)
       # so it's free to install on host; on target it builds against

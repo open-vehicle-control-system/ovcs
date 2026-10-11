@@ -1,6 +1,6 @@
 defmodule RosBridge.Camera do
   @moduledoc """
-  Contract for one-camera drivers in `ovcs_drivers`. A driver
+  Contract for the one-camera drivers under `RosBridge.Camera.*`. A driver
   represents a single image sensor: it captures, compresses to JPEG,
   and fans frames out to registered listeners. Stereo / multi-camera
   setups wire up several driver instances and tag them via `:label`.

@@ -1,12 +1,6 @@
-# Spike helper: captures one raw `sensor_msgs/Imu` payload from the
-# Zenoh fabric and prints it as a hex literal suitable for pinning
-# into a test fixture. Run from `bridges/ros_bridge`:
-#
-#     mix run --no-start scripts/capture_imu_bytes.exs
-#
-# Expects a rclpy publisher producing on `/imu_probe` (see
-# `compose/local/workspace/imu_probe.py`) with a Zenoh router on
-# 127.0.0.1:7447.
+# Prints one raw `sensor_msgs/Imu` payload from `/imu_probe` as a hex
+# literal for a test fixture. Needs an rclpy publisher on that topic and
+# a Zenoh router on 127.0.0.1:7447: `mix run --no-start scripts/capture_imu_bytes.exs`.
 
 {:ok, config} = {:ok, Zenohex.Config.default()}
 {:ok, config} = Zenohex.Config.insert_json5(config, "mode", "client")

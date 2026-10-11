@@ -7,6 +7,8 @@ doc/
 *.db-wal
 _build/
 deps/
+# ExUnit's @tag :tmp_dir output.
+tmp/
 *.o
 .elixir_ls/
 erl_crash.dump

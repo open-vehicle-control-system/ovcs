@@ -5,8 +5,7 @@ defmodule RosBridge.Camera.CalibrationTest do
 
   # Verbatim shape of what ROS `cameracalibrator` writes on SAVE:
   # whole numbers carry a bare trailing dot and the flow sequence
-  # spans several lines. Parsing this used to raise inside
-  # `Stereo.OpenCV.init/1` and take the bridge down at boot.
+  # spans several lines.
   @ost_style """
   image_width: 640
   image_height: 480

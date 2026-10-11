@@ -7,9 +7,9 @@ defmodule RosBridge.Camera.Calibration do
   We carry the raw flat-list representation of each matrix
   (row-major, as the YAML provides them); converting to Nx
   tensors or Evision Mats is the consumer's responsibility.
-  Two consumers today:
+  Two consumers:
 
-    * `RosBridge.Publishers.Camera` — populates the outgoing
+    * `RosBridge.Publishers.StereoCamera` — populates the outgoing
       `sensor_msgs/CameraInfo` directly from these fields.
     * `RosBridge.StereoCamera.OpenCV` — builds undistortion +
       rectification look-up tables via
@@ -159,7 +159,7 @@ defmodule RosBridge.Camera.Calibration do
 
   # Accepts every numeric spelling the calibration tools emit.
   # `String.to_float/1` is too strict for two of them, and because
-  # `load!/1` runs inside `Stereo.OpenCV.init/1` an ArgumentError
+  # `load!/1` runs inside `RosBridge.StereoCamera.OpenCV.init/1` an ArgumentError
   # here takes the whole bridge down at boot with nothing logged:
   #
   #   * "0." / "1."  — cameracalibrator writes whole numbers with a

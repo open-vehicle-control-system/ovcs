@@ -9,8 +9,8 @@ defmodule Ros2.GeometryMsgs.Msg.Twist do
   telling you it thinks the vehicle is holonomic — which is worth
   noticing rather than silently ignoring.
 
-  `parse/1` only; nothing here publishes a Twist. The bridge consumes
-  velocity commands and emits CAN.
+  `parse/1` reads velocity commands, which the bridge turns into CAN;
+  `encode/1` writes the twist inside `nav_msgs/Odometry`.
   """
   use Ros2.Common
 
@@ -18,10 +18,7 @@ defmodule Ros2.GeometryMsgs.Msg.Twist do
 
   defstruct linear: %Vector3{}, angular: %Vector3{}
 
-  # rmw_zenoh keyexpr metadata for `geometry_msgs/msg/Twist`, so a subscription declares
-  # its liveliness token and shows in the ROS graph. The RIHS01 hash was
-  # captured against ROS 2 Lyrical via `ros2 topic info -v`. Refresh on
-  # distro bumps.
+  # RIHS01 hash for ROS 2 Lyrical; it changes with the distro.
   @dds_type "geometry_msgs::msg::dds_::Twist_"
   @type_hash "RIHS01_9c45bf16fe0983d80e3cfe750d6835843d265a9a6c46bd2e609fcddde6fb8d2a"
 
