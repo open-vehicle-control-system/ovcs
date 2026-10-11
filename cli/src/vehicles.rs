@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use glob::glob;
 use owo_colors::OwoColorize;
 use std::collections::HashMap;
@@ -286,7 +286,7 @@ pub(crate) fn run_snippet(path: &Path, snippet: &str) -> Result<Option<String>> 
     let env: HashMap<String, String> =
         std::iter::once(("MIX_ENV".to_string(), "dev".to_string())).collect();
     let marked = format!("IO.write(\"{PROBE_MARKER}\")\n{snippet}");
-    let (code, stdout) = run_capture(
+    let (code, stdout, _stderr) = run_capture(
         &["mix", "run", "--no-start", "--no-deps-check", "-e", &marked],
         path,
         &env,
@@ -316,12 +316,13 @@ fn retry_with_deps(path: &Path, marked: &str) -> Result<Option<String>> {
             .stdin(Stdio::inherit())
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit())
-            .status()?;
+            .status()
+            .context("failed to spawn mix")?;
         if !status.success() {
-            return Ok(None);
+            bail!("`mix {}` failed in {}", args[0], rel.display());
         }
     }
-    let (code, stdout) = run_capture(
+    let (code, stdout, stderr) = run_capture(
         &["mix", "run", "--no-start", "--no-deps-check", "-e", marked],
         path,
         &env,
@@ -329,12 +330,35 @@ fn retry_with_deps(path: &Path, marked: &str) -> Result<Option<String>> {
     if code == 0 {
         return Ok(probe_payload(&stdout));
     }
-    Ok(None)
+    Err(probe_failure(&rel.display().to_string(), &stdout, &stderr))
+}
+
+/// The error for a probe `mix run` that failed: its exception header (or
+/// last line) first, so a one-line summary is useful, then the end of its
+/// output.
+fn probe_failure(dir: &str, stdout: &str, stderr: &str) -> anyhow::Error {
+    const SHOWN_LINES: usize = 15;
+    let lines: Vec<&str> = stderr
+        .lines()
+        .chain(stdout.lines())
+        .filter(|line| !line.trim().is_empty() && !line.contains(PROBE_MARKER))
+        .collect();
+    let summary = lines
+        .iter()
+        .rev()
+        .find(|line| line.trim_start().starts_with("** ("))
+        .or(lines.last())
+        .map(|line| line.trim())
+        .unwrap_or("no output");
+    let tail = &lines[lines.len().saturating_sub(SHOWN_LINES)..];
+    anyhow!("probing {} failed: {}\n{}", dir, summary, tail.join("\n"))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{host_for, local_sname, local_sname_prefix, probe_payload, PROBE_MARKER};
+    use super::{
+        host_for, local_sname, local_sname_prefix, probe_failure, probe_payload, PROBE_MARKER,
+    };
 
     #[test]
     fn local_snames_hyphenate_the_vehicle_and_the_role() {
@@ -391,5 +415,18 @@ mod tests {
     fn the_last_marker_wins() {
         let stdout = format!("{PROBE_MARKER}stale{PROBE_MARKER}fresh");
         assert_eq!(probe_payload(&stdout).as_deref(), Some("fresh"));
+    }
+
+    #[test]
+    fn a_failed_probe_leads_with_its_exception() {
+        let stderr =
+            "** (RuntimeError) broken CAN mapping\n    (car 0.1.0) lib/car.ex:27: Car.f/1\n";
+        let error = probe_failure("vehicles/car", "Compiling 2 files (.ex)\n", stderr);
+        let message = error.to_string();
+        assert_eq!(
+            message.lines().next(),
+            Some("probing vehicles/car failed: ** (RuntimeError) broken CAN mapping")
+        );
+        assert!(message.contains("lib/car.ex:27"));
     }
 }
