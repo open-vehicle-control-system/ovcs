@@ -31,6 +31,10 @@ defmodule RosBridge.Components do
       **Simulation only.** Without it every stamp is wall clock, which
       is correct on a vehicle and wrong against Gazebo — see
       `RosBridge.Clock` for what that breaks.
+    * `:simulator_plant` — `RosBridge.Simulator.Plant`, emulating the
+      vehicle's hardware on CAN so the VMS drives a simulated vehicle.
+      **Simulation only.** Opts: `:vehicle`, `:devices` (required),
+      `:drive_topic`; see the module.
     * `:imu_publisher` — starts the named driver (any
       `OvcsDrivers.Imu` implementation) followed by
       `RosBridge.Publishers.Imu`. Opts:
@@ -102,6 +106,8 @@ defmodule RosBridge.Components do
   end
 
   def start(:simulator_clock, opts), do: [{RosBridge.Clock, opts}]
+
+  def start(:simulator_plant, opts), do: [{RosBridge.Simulator.Plant, opts}]
 
   def start(:joy_interpreter, opts), do: [{RosBridge.Consumers.Joy, opts}]
 
