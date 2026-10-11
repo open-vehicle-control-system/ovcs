@@ -4,7 +4,6 @@ defmodule VmsCore.Components.OVCS.PulseRotationSensorTest do
   not know what the shaft drives, and it speaks once per sample.
   """
   use ExUnit.Case, async: true
-
   alias Decimal, as: D
   alias OvcsBus.Message
   alias VmsCore.Components.OVCS.PulseRotationSensor
@@ -14,11 +13,17 @@ defmodule VmsCore.Components.OVCS.PulseRotationSensorTest do
   defp state, do: %{controller: Ctrl, pulses_per_revolution: D.new(1)}
 
   test "no pulses is exactly zero, which is what the standstill gate needs" do
-    assert D.eq?(PulseRotationSensor.rotation_per_minute(D.new(0), D.new(1)), D.new(0))
+    assert D.eq?(
+             PulseRotationSensor.rotation_per_minute(D.new(0), D.new(1)),
+             D.new(0)
+           )
   end
 
   test "one pulse per second on a one-pulse shaft is 60 rpm" do
-    assert D.eq?(PulseRotationSensor.rotation_per_minute(D.new("1.0"), D.new(1)), D.new("60.0"))
+    assert D.eq?(
+             PulseRotationSensor.rotation_per_minute(D.new("1.0"), D.new(1)),
+             D.new("60.0")
+           )
   end
 
   test "more pulses per turn means a slower shaft for the same frequency, rendered plainly" do

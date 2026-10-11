@@ -1,4 +1,8 @@
-defmodule VmsCoreTest do
+defmodule VmsCore.PIDTest do
+  @moduledoc """
+  The PID controller: each term alone, convergence on a setpoint, and
+  the output limits.
+  """
   use ExUnit.Case
   doctest VmsCore
   alias VmsCore.PID
@@ -42,15 +46,15 @@ defmodule VmsCoreTest do
     assert pid.output |> D.equal?(D.new("0"))
   end
 
-  test "proporional control converges" do
+  test "proportional control converges" do
     setpoint = @one
     pid = PID.new(kp: D.new("0.08"))
 
     pid_output =
-      Enum.reduce(0..100, D.new("0.0"), fn _x, acc ->
+      Enum.reduce(0..100, D.new("0.0"), fn _iteration, measurement ->
         Process.sleep(10)
-        pid = PID.iterate(pid, acc, setpoint)
-        pid.output |> D.add(acc)
+        pid = PID.iterate(pid, measurement, setpoint)
+        pid.output |> D.add(measurement)
       end)
 
     assert D.round(pid_output) |> D.equal?(@one)
@@ -61,10 +65,10 @@ defmodule VmsCoreTest do
     pid = PID.new(kp: D.new("0.08"), kd: D.new("1.0"))
 
     pid_output =
-      Enum.reduce(0..100, D.new("0.0"), fn _x, acc ->
+      Enum.reduce(0..100, D.new("0.0"), fn _iteration, measurement ->
         Process.sleep(10)
-        pid = PID.iterate(pid, acc, setpoint)
-        pid.output |> D.add(acc)
+        pid = PID.iterate(pid, measurement, setpoint)
+        pid.output |> D.add(measurement)
       end)
 
     assert D.round(pid_output) |> D.equal?(@one)
@@ -80,10 +84,10 @@ defmodule VmsCoreTest do
     pid = PID.new(kp: D.new("0.08"), ki: D.new("2.0"))
 
     pid_output =
-      Enum.reduce(0..100, D.new("0.0"), fn _x, acc ->
+      Enum.reduce(0..100, D.new("0.0"), fn _iteration, measurement ->
         Process.sleep(10)
-        pid = PID.iterate(pid, acc, setpoint)
-        pid.output |> D.add(acc)
+        pid = PID.iterate(pid, measurement, setpoint)
+        pid.output |> D.add(measurement)
       end)
 
     assert D.round(pid_output) |> D.equal?(@one)
@@ -96,7 +100,11 @@ defmodule VmsCoreTest do
 
   test "output is capped by the maximum output value" do
     pid =
-      PID.new(kp: D.new("2"), minimum_output: D.new(-5), maximum_output: D.new(-2))
+      PID.new(
+        kp: D.new("2"),
+        minimum_output: D.new(-5),
+        maximum_output: D.new(-2)
+      )
       |> PID.iterate(@zero, @one)
 
     assert pid.output |> D.equal?(-2)
@@ -104,7 +112,11 @@ defmodule VmsCoreTest do
 
   test "output is capped by the minimum output value" do
     pid =
-      PID.new(kp: D.new("2"), minimum_output: D.new(5), maximum_output: D.new(10))
+      PID.new(
+        kp: D.new("2"),
+        minimum_output: D.new(5),
+        maximum_output: D.new(10)
+      )
       |> PID.iterate(@zero, @one)
 
     assert pid.output |> D.equal?(5)

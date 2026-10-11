@@ -1,9 +1,7 @@
 defmodule VmsCore.Components.OVCS.RosVelocityCommandTest do
   @moduledoc """
-  Tests for the velocity-to-drivetrain conversion.
-
-  This is the arithmetic that decides where a planner's command
-  actually points the wheels. The first thing asserted is that zero
+  The velocity-to-drivetrain conversion: the arithmetic that decides
+  where a planner's command actually points the wheels. The first thing asserted is that zero
   means zero: a normalisation of the form `(angle - max) / range` maps
   straight ahead to half lock, and a vehicle built on that drives in a
   circle when told to go straight.
@@ -20,9 +18,9 @@ defmodule VmsCore.Components.OVCS.RosVelocityCommandTest do
   alias VmsCore.Components.OVCS.RosCommand.Freshness
   alias VmsCore.Components.OVCS.RosVelocityCommand, as: Velocity
 
-  # OVCS Mini, from `OvcsMini.geometry/0`. min_turning_radius = 0.5659 m.
+  # Example values from the OVCS Mini reference vehicle's `geometry/0`.
   @geometry %{wheelbase: 0.324, steering_limit: 0.52}
-  @max_speed 5.0
+  @max_speed_m_s 5.0
 
   defp fresh_freshness do
     now = System.monotonic_time(:millisecond)
@@ -39,7 +37,7 @@ defmodule VmsCore.Components.OVCS.RosVelocityCommandTest do
       %{
         loop_timer: nil,
         geometry: @geometry,
-        max_speed: @max_speed,
+        max_speed: @max_speed_m_s,
         min_speed: 0.0,
         steering_sign: 1,
         freshness: fresh_freshness(),
@@ -208,7 +206,10 @@ defmodule VmsCore.Components.OVCS.RosVelocityCommandTest do
 
     test "raises a slow velocity to the minimum, keeping its direction" do
       assert_in_delta D.to_float(RosVelocityCommand.throttle(0.06, 0.15, 1.5)), 0.1, 1.0e-9
-      assert_in_delta D.to_float(RosVelocityCommand.throttle(-0.06, 0.15, 1.5)), -0.1, 1.0e-9
+
+      assert_in_delta D.to_float(RosVelocityCommand.throttle(-0.06, 0.15, 1.5)),
+                      -0.1,
+                      1.0e-9
     end
 
     test "leaves zero and faster velocities alone" do

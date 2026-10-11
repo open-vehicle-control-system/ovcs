@@ -1,6 +1,9 @@
 defmodule VmsCore.Components.Traxxas.SteeringTrimTest do
+  @moduledoc """
+  The steering trim: added to every request before the clamp, read off
+  the duty cycle a fake controller receives.
+  """
   use ExUnit.Case, async: true
-
   alias Decimal, as: D
   alias VmsCore.Components.Traxxas.Steering
 
@@ -8,15 +11,15 @@ defmodule VmsCore.Components.Traxxas.SteeringTrimTest do
     @moduledoc false
     use GenServer
 
-    def start_link(test), do: GenServer.start_link(__MODULE__, test)
+    def start_link(test_pid), do: GenServer.start_link(__MODULE__, test_pid)
 
     @impl GenServer
-    def init(test), do: {:ok, test}
+    def init(test_pid), do: {:ok, test_pid}
 
     @impl GenServer
-    def handle_call({:set_external_pwm, _id, _enabled, duty_cycle, _frequency}, _from, test) do
-      send(test, {:duty_cycle, duty_cycle})
-      {:reply, :ok, test}
+    def handle_call({:set_external_pwm, _id, _enabled, duty_cycle, _frequency}, _from, test_pid) do
+      send(test_pid, {:duty_cycle, duty_cycle})
+      {:reply, :ok, test_pid}
     end
   end
 

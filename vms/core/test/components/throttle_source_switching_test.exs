@@ -15,7 +15,6 @@ defmodule VmsCore.Components.ThrottleSourceSwitchingTest do
   the CAN stack `init/1` would need.
   """
   use ExUnit.Case, async: true
-
   alias Decimal, as: D
   alias OvcsBus.Message
   alias VmsCore.Components.Bosch.IBoosterGen2

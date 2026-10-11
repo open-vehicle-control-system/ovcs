@@ -4,7 +4,6 @@ defmodule VmsCore.Components.Matek.PM12S3Test do
   controller loop, and nil while the controller is not alive.
   """
   use ExUnit.Case, async: true
-
   alias Decimal, as: D
   alias OvcsBus.Message
   alias VmsCore.Components.Matek.PM12S3
@@ -40,7 +39,10 @@ defmodule VmsCore.Components.Matek.PM12S3Test do
 
   test "the pad's voltage above the offset, per the sensor's scale, is the current" do
     # 1.5 V on the pad: 1 V above a 0.5 V offset at 40 mV/A.
-    assert D.eq?(PM12S3.current(4915, D.new("0.04"), D.new("0.5")), D.new("25.0"))
+    assert D.eq?(
+             PM12S3.current(4915, D.new("0.04"), D.new("0.5")),
+             D.new("25.0")
+           )
   end
 
   test "readings are published when the controller closes its loop" do

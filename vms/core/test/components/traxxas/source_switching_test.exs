@@ -3,9 +3,9 @@ defmodule VmsCore.Components.Traxxas.SourceSwitchingTest do
   The drivetrain follows whichever commander `Managers.ControlLevel`
   names, and stops propelling when it names none.
 
-  That second half is the reason this file exists. The manager selects
-  sources per control level, and a level with no commander — `:manual`
-  on OVCS Mini, which has no pedals — selects `nil`. The message
+  The manager selects sources per control level, and a level with no
+  commander (`:manual` on the OVCS Mini reference vehicle, which has no
+  pedals) selects `nil`. The message
   handler for `:requested_throttle` gates on the source, so with no
   source **no message matches and the last request persists**. Left
   alone, switching the transmitter to the safe position would leave
@@ -19,7 +19,6 @@ defmodule VmsCore.Components.Traxxas.SourceSwitchingTest do
   and starts a timer, neither of which is under test.
   """
   use ExUnit.Case, async: true
-
   alias Decimal, as: D
   alias OvcsBus.Message
   alias VmsCore.Components.Traxxas.{MotorController, Steering}
@@ -35,15 +34,15 @@ defmodule VmsCore.Components.Traxxas.SourceSwitchingTest do
     @moduledoc false
     use GenServer
 
-    def start_link(test), do: GenServer.start_link(__MODULE__, test)
+    def start_link(test_pid), do: GenServer.start_link(__MODULE__, test_pid)
 
     @impl GenServer
-    def init(test), do: {:ok, test}
+    def init(test_pid), do: {:ok, test_pid}
 
     @impl GenServer
-    def handle_call({:set_external_pwm, id, enabled, duty_cycle, frequency}, _from, test) do
-      send(test, {:pwm, id, enabled, duty_cycle, frequency})
-      {:reply, :ok, test}
+    def handle_call({:set_external_pwm, id, enabled, duty_cycle, frequency}, _from, test_pid) do
+      send(test_pid, {:pwm, id, enabled, duty_cycle, frequency})
+      {:reply, :ok, test_pid}
     end
   end
 
@@ -137,9 +136,9 @@ defmodule VmsCore.Components.Traxxas.SourceSwitchingTest do
 
   describe "switching between commanders" do
     test "the new source is adopted and the current request is kept" do
-      # Not a safety transition — one commander handing to another —
-      # so the vehicle should not lurch to zero mid-handover. The next
-      # message from the new source overwrites it anyway.
+      # One commander handing to another is not a safety transition, so
+      # the vehicle must not lurch to zero mid-handover; the new source's
+      # next message overwrites the request.
       {:noreply, state} =
         MotorController.handle_info(
           source_message(:requested_throttle_source, AnotherCommander, @manager),
@@ -234,8 +233,16 @@ defmodule VmsCore.Components.Traxxas.SourceSwitchingTest do
     test "a physical quantity is applied as is" do
       # A planner asking for a fifth of full speed must get a fifth.
       curve = MotorController.curve(%{})
-      assert D.eq?(MotorController.shape(D.new("0.2"), true, curve), D.new("0.2"))
-      assert D.eq?(MotorController.shape(D.new("-0.2"), true, curve), D.new("-0.2"))
+
+      assert D.eq?(
+               MotorController.shape(D.new("0.2"), true, curve),
+               D.new("0.2")
+             )
+
+      assert D.eq?(
+               MotorController.shape(D.new("-0.2"), true, curve),
+               D.new("-0.2")
+             )
     end
 
     test "the start offset lifts every non-zero output to the edge of motion" do
@@ -248,11 +255,16 @@ defmodule VmsCore.Components.Traxxas.SourceSwitchingTest do
       assert D.gt?(first, D.new("0.1")) and D.lt?(first, D.new("0.12"))
 
       reverse = MotorController.shape(D.new("-0.01"), false, curve)
-      assert D.lt?(reverse, D.new("-0.1")) and D.gt?(reverse, D.new("-0.12"))
+
+      assert D.lt?(reverse, D.new("-0.1")) and
+               D.gt?(reverse, D.new("-0.12"))
 
       assert D.eq?(MotorController.shape(D.new("1"), false, curve), D.new("1"))
       # 0.1 + 0.9 * 0.5.
-      assert D.eq?(MotorController.shape(D.new("0.5"), false, curve), D.new("0.55"))
+      assert D.eq?(
+               MotorController.shape(D.new("0.5"), false, curve),
+               D.new("0.55")
+             )
     end
 
     test "a physical quantity skips the start offset" do
@@ -262,28 +274,56 @@ defmodule VmsCore.Components.Traxxas.SourceSwitchingTest do
       curve = MotorController.curve(%{start_offset: D.new("0.1")})
 
       assert D.eq?(MotorController.shape(D.new(0), true, curve), D.new(0))
-      assert D.eq?(MotorController.shape(D.new("0.02"), true, curve), D.new("0.02"))
-      assert D.eq?(MotorController.shape(D.new("-0.5"), true, curve), D.new("-0.5"))
+
+      assert D.eq?(
+               MotorController.shape(D.new("0.02"), true, curve),
+               D.new("0.02")
+             )
+
+      assert D.eq?(
+               MotorController.shape(D.new("-0.5"), true, curve),
+               D.new("-0.5")
+             )
+
       assert D.eq?(MotorController.shape(D.new("1"), true, curve), D.new("1"))
     end
 
     test "the curve parameters are validated" do
-      assert_raise ArgumentError, fn -> MotorController.curve(%{start_offset: D.new("-0.1")}) end
-      assert_raise ArgumentError, fn -> MotorController.curve(%{max_throttle: D.new("1.5")}) end
+      assert_raise ArgumentError, fn ->
+        MotorController.curve(%{start_offset: D.new("-0.1")})
+      end
 
       assert_raise ArgumentError, fn ->
-        MotorController.curve(%{start_offset: D.new("0.5"), max_throttle: D.new("0.5")})
+        MotorController.curve(%{max_throttle: D.new("1.5")})
+      end
+
+      assert_raise ArgumentError, fn ->
+        MotorController.curve(%{
+          start_offset: D.new("0.5"),
+          max_throttle: D.new("0.5")
+        })
       end
     end
   end
 
   describe "the cap" do
     test "an out-of-range request cannot exceed either cap" do
-      curve = MotorController.curve(%{max_throttle: D.new("0.1"), max_reverse: D.new("0.2")})
+      curve =
+        MotorController.curve(%{
+          max_throttle: D.new("0.1"),
+          max_reverse: D.new("0.2")
+        })
 
       for linear <- [false, true] do
-        assert D.eq?(MotorController.shape(D.new(2), linear, curve), D.new("0.1"))
-        assert D.eq?(MotorController.shape(D.new(-2), linear, curve), D.new("-0.2"))
+        assert D.eq?(
+                 MotorController.shape(D.new(2), linear, curve),
+                 D.new("0.1")
+               )
+
+        assert D.eq?(
+                 MotorController.shape(D.new(-2), linear, curve),
+                 D.new("-0.2")
+               )
       end
     end
 
@@ -330,11 +370,23 @@ defmodule VmsCore.Components.Traxxas.SourceSwitchingTest do
     test "scales a hand's output onto [start_offset, max_throttle]" do
       # Scaled, not clipped: full trigger still means "as fast as
       # allowed", so the whole travel stays useful.
-      curve = MotorController.curve(%{start_offset: D.new("0.1"), max_throttle: D.new("0.5")})
+      curve =
+        MotorController.curve(%{
+          start_offset: D.new("0.1"),
+          max_throttle: D.new("0.5")
+        })
 
-      assert D.eq?(MotorController.shape(D.new("1"), false, curve), D.new("0.5"))
+      assert D.eq?(
+               MotorController.shape(D.new("1"), false, curve),
+               D.new("0.5")
+             )
+
       # 0.1 + 0.4 * 0.5.
-      assert D.eq?(MotorController.shape(D.new("0.5"), false, curve), D.new("0.3"))
+      assert D.eq?(
+               MotorController.shape(D.new("0.5"), false, curve),
+               D.new("0.3")
+             )
+
       assert D.eq?(MotorController.shape(D.new(0), false, curve), D.new(0))
     end
 
@@ -342,21 +394,47 @@ defmodule VmsCore.Components.Traxxas.SourceSwitchingTest do
       curve = MotorController.curve(%{max_throttle: D.new("0.5")})
 
       assert D.eq?(MotorController.shape(D.new("1"), true, curve), D.new("0.5"))
-      assert D.eq?(MotorController.shape(D.new("0.2"), true, curve), D.new("0.1"))
+
+      assert D.eq?(
+               MotorController.shape(D.new("0.2"), true, curve),
+               D.new("0.1")
+             )
+
       assert D.eq?(MotorController.shape(D.new(0), true, curve), D.new(0))
     end
 
     test "reverse follows max_throttle unless given its own cap" do
       same = MotorController.curve(%{max_throttle: D.new("0.5")})
-      assert D.eq?(MotorController.shape(D.new("-1"), true, same), D.new("-0.5"))
-      assert D.eq?(MotorController.shape(D.new("-1"), false, same), D.new("-0.5"))
+
+      assert D.eq?(
+               MotorController.shape(D.new("-1"), true, same),
+               D.new("-0.5")
+             )
+
+      assert D.eq?(
+               MotorController.shape(D.new("-1"), false, same),
+               D.new("-0.5")
+             )
 
       # Braking lives on the negative side of a Traxxas ESC, so a vehicle
       # can cap forward speed and keep the full brake.
-      braking = MotorController.curve(%{max_throttle: D.new("0.5"), max_reverse: D.new(1)})
-      assert D.eq?(MotorController.shape(D.new("-1"), false, braking), D.new("-1"))
-      assert D.eq?(MotorController.shape(D.new("-1"), true, braking), D.new("-1"))
-      assert D.eq?(MotorController.shape(D.new("1"), false, braking), D.new("0.5"))
+      braking =
+        MotorController.curve(%{max_throttle: D.new("0.5"), max_reverse: D.new(1)})
+
+      assert D.eq?(
+               MotorController.shape(D.new("-1"), false, braking),
+               D.new("-1")
+             )
+
+      assert D.eq?(
+               MotorController.shape(D.new("-1"), true, braking),
+               D.new("-1")
+             )
+
+      assert D.eq?(
+               MotorController.shape(D.new("1"), false, braking),
+               D.new("0.5")
+             )
     end
 
     test "no cap leaves the output untouched" do
