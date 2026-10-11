@@ -171,6 +171,9 @@ jobs:
           key: dialyzer-core-plts-${{ hashFiles('mise.toml') }}
       - name: Fetch deps
         run: mix deps.get
+      - name: Audit deps
+        # Fails on any locked package with a security advisory or a retirement.
+        run: mix hex.audit
       - name: Format
         # After deps.get: `.formatter.exs` files with `import_deps:` read them.
         run: mix format --check-formatted
