@@ -231,7 +231,7 @@ std::vector<uint8_t> build_detections_record(
 // raw NMS output. Lets a wrong letterbox or a misread output layout
 // be seen rather than inferred.
 void dump_debug(const std::string& dir, const uint8_t* rgb, int size,
-                const float* out, size_t floats) {
+                const float* out, size_t floats, size_t num_classes) {
   const std::string ppm_path = dir + "/hailo_input.ppm";
   if (FILE* f = fopen(ppm_path.c_str(), "wb")) {
     fprintf(f, "P6\n%d %d\n255\n", size, size);
@@ -244,7 +244,7 @@ void dump_debug(const std::string& dir, const uint8_t* rgb, int size,
     // One line per class that reported any box, so a non-empty
     // result is obvious even when every score is below threshold.
     size_t at = 0;
-    for (size_t c = 0; c < 80 && at < floats; ++c) {
+    for (size_t c = 0; c < num_classes && at < floats; ++c) {
       const size_t count = static_cast<size_t>(out[at++]);
       if (count > 0 && at + count * 5 <= floats) {
         fprintf(f, "class %zu count %zu:", c, count);
@@ -416,7 +416,7 @@ int main(int argc, char** argv) {
     if (const char* dir = getenv("HAILO_DEBUG_DUMP")) {
       dump_debug(dir, model_input.data(), model_size,
                  reinterpret_cast<const float*>(output_buffer.data()),
-                 output_bytes / sizeof(float));
+                 output_bytes / sizeof(float), num_classes);
     }
 
     const auto detections = decode_nms_by_class(
