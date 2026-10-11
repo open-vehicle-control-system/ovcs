@@ -332,9 +332,9 @@ Sources are the `*_source` options; "controller" means a generic controller proc
 | `OVCS.SteeringColumn` | `misc` | control level source; `power_relay_controller`, `power_relay_pin`, `actuation_controller`, `direction_pin`, `external_pwm_id` | angle, angular speed, calibration, PID gains |
 | `OVCS.GenericController` | `ovcs` | `process_name`, `control_digital_pins`, `control_other_pins`, `enabled_external_pwms` | `:is_alive`, `:status`, `received_*` / `requested_*` pins |
 | `OVCS.RadioControl.*` | `ovcs` | `radio_control_channel` | the `requested_*` value of its channel |
-| `OVCS.RosActuatorCommand.*`, `OVCS.RosVelocityCommand` | `ovcs` | none; `wheelbase`, `steering_limit`, `max_speed` | `:requested_throttle`, `:requested_steering`, `:requested_direction` |
+| `OVCS.RosActuatorCommand.*`, `OVCS.RosVelocityCommand` | `ovcs` | none; `wheelbase_m`, `steering_limit_rad`, `max_speed_m_s` | `:requested_throttle`, `:requested_steering`, `:requested_direction` |
 | `OVCS.Infotainment` | `ovcs` | none | `:requested_gear` |
-| `OVCS.VehicleMotion` | `ovcs` | rotation and control level sources, ratio, wheel radius, `steering_limit` | `:speed`, `:wheel_rotation_per_minute` |
+| `OVCS.VehicleMotion` | `ovcs` | rotation and control level sources, ratio, `wheel_radius_m`, `steering_limit_rad` | `:speed`, `:wheel_rotation_per_minute` |
 | `OVCS.Status`, `VmsCore.Status` | `ovcs` | BMS source; ready-to-drive and VMS status sources | pack and VMS status frames, `:resetting` |
 | `Managers.ControlLevel`, `Managers.Gear` | `ovcs` (Gear) | the source maps; see [Your vehicle package](./vehicle_package.md) | selected level and sources; `:selected_gear` |
 | `Vesc.MotorController` | `network:` | `process_name`, control level source, `max_rotation_per_minute`, `pole_pairs`, caps | rpm, direction, motor current, input voltage |

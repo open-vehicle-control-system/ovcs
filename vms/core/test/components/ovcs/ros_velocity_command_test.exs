@@ -37,8 +37,8 @@ defmodule VmsCore.Components.OVCS.RosVelocityCommandTest do
       %{
         loop_timer: nil,
         geometry: @geometry,
-        max_speed: @max_speed_m_s,
-        min_speed: 0.0,
+        max_speed_m_s: @max_speed_m_s,
+        min_speed_m_s: 0.0,
         steering_sign: 1,
         freshness: fresh_freshness(),
         linear: D.new(0),

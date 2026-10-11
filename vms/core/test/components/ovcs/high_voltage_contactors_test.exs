@@ -38,7 +38,7 @@ defmodule VmsCore.Components.OVCS.HighVoltageContactorsTest do
       status: :precharge_complete,
       inverter_output_voltage: 400,
       inverter_output_voltage_source: :inverter,
-      required_precharge_output_voltage: 380,
+      required_precharge_output_voltage_v: 380,
       precharge_ending_time_ms: precharge_ending_time_ms,
       loop_timer: nil,
       main_negative_relay_enabled: true,

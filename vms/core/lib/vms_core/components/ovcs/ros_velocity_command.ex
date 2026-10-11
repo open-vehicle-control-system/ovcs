@@ -37,7 +37,7 @@ defmodule VmsCore.Components.OVCS.RosVelocityCommand do
   moves.
 
   `requested_steering` and `requested_throttle` are then normalised to
-  `[-1, 1]` against the steering limit and `:max_speed`, because that
+  `[-1, 1]` against the steering limit and `:max_speed_m_s`, because that
   is the contract the drivetrain components already consume.
 
   ## Reverse is a sign, not a mode
@@ -60,11 +60,11 @@ defmodule VmsCore.Components.OVCS.RosVelocityCommand do
 
   ## Options
 
-    * `:wheelbase`, `:steering_limit` — from the vehicle's
-      `geometry/0`, in metres and radians.
-    * `:max_speed` — m/s at full throttle. Not geometry: it is a
+    * `:wheelbase_m`, `:steering_limit_rad` — from the vehicle's
+      `geometry/0`.
+    * `:max_speed_m_s` — at full throttle. Not geometry: it is a
       property of the motor and gearing, not a dimension.
-    * `:min_speed` — m/s, default 0. A non-zero linear velocity slower
+    * `:min_speed_m_s` — default 0. A non-zero linear velocity slower
       than this is driven at it, in its direction: a motor's speed loop
       holds the lowest speeds poorly, and a planner easing in near a
       goal otherwise stops and restarts the vehicle. Zero stays zero.
@@ -97,7 +97,7 @@ defmodule VmsCore.Components.OVCS.RosVelocityCommand do
   end
 
   @impl GenServer
-  def init(%{wheelbase: wheelbase, steering_limit: steering_limit, max_speed: max_speed} = args) do
+  def init(%{wheelbase_m: wheelbase_m, steering_limit_rad: steering_limit_rad} = args) do
     steering_sign = Map.get(args, :steering_sign, 1)
 
     unless steering_sign in [1, -1] do
@@ -110,9 +110,9 @@ defmodule VmsCore.Components.OVCS.RosVelocityCommand do
     {:ok,
      %{
        loop_timer: timer,
-       geometry: %{wheelbase: wheelbase, steering_limit: steering_limit},
-       max_speed: max_speed,
-       min_speed: Map.get(args, :min_speed, 0.0) * 1.0,
+       geometry: %{wheelbase: wheelbase_m, steering_limit: steering_limit_rad},
+       max_speed_m_s: Map.fetch!(args, :max_speed_m_s),
+       min_speed_m_s: Map.get(args, :min_speed_m_s, 0.0) * 1.0,
        steering_sign: steering_sign,
        freshness: Freshness.new(@timeout_ms, now_ms()),
        linear: @zero,
@@ -178,7 +178,7 @@ defmodule VmsCore.Components.OVCS.RosVelocityCommand do
       state
       | requested_steering:
           steering(linear_m_s, angular_rad_s, state.geometry) |> D.mult(state.steering_sign),
-        requested_throttle: throttle(linear_m_s, state.min_speed, state.max_speed)
+        requested_throttle: throttle(linear_m_s, state.min_speed_m_s, state.max_speed_m_s)
     }
   end
 
