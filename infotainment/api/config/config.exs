@@ -15,7 +15,7 @@ config :infotainment_api,
 # Configures the endpoint
 config :infotainment_api, InfotainmentApiWeb.Endpoint,
   url: [host: "localhost"],
-  adapter: Phoenix.Endpoint.Cowboy2Adapter,
+  adapter: Bandit.PhoenixAdapter,
   render_errors: [
     formats: [json: InfotainmentApiWeb.ErrorJSON],
     layout: false

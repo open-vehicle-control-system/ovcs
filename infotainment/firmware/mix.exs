@@ -47,7 +47,7 @@ defmodule OvcsInfotainmentFirmware.MixProject do
       {:nerves_pack, "~> 0.7.1", targets: @all_targets},
       {:vintage_net, "~> 0.13", targets: @all_targets},
       {:vintage_net_ethernet, "~> 0.11", targets: @all_targets},
-      {:plug_cowboy, "~> 2.0"},
+      {:bandit, "~> 1.2"},
       {:infotainment_api, path: "../api", runtime: false},
       # Infotainment YAMLs reference `import!:@ovcs_can:...` shared
       # frame definitions, so the app must be loaded in the BEAM.
