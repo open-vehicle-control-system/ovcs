@@ -1,4 +1,6 @@
 ---
+# Byte layout unverified: OVMS reads the motor temperature from byte 1 and
+# the inverter's from byte 2.
 name: inverter_temperatures
 id: 0x55A
 frequency: 10
