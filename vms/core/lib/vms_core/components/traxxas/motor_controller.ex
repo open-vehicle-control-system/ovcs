@@ -1,6 +1,8 @@
 defmodule VmsCore.Components.Traxxas.MotorController do
   @moduledoc """
-    A Traxxas ESC driving the traction motor, commanded by a PWM signal
+  A Traxxas ESC driving the traction motor, commanded by a generic
+  controller's external PWM (`:controller`, `:external_pwm_id`) from the
+  `:requested_throttle` of the source the control level manager names.
 
   ## From request to pulse
 
@@ -48,11 +50,12 @@ defmodule VmsCore.Components.Traxxas.MotorController do
   alias VmsCore.Components.OVCS.GenericController
   alias VmsCore.NormalisedRequest
 
-  @loop_period 10
-  @pwm_frequency 100
+  @loop_period_ms 10
+  # The standard RC frame and pulse widths.
+  @pwm_frequency_hz 100
   @neutral_pulse_width_us D.new(1500)
   @pulse_width_range_us D.new(500)
-  @pwm_period_us D.new(div(1_000_000, @pwm_frequency))
+  @pwm_period_us D.new(div(1_000_000, @pwm_frequency_hz))
   @zero D.new(0)
   @one D.new(1)
 
@@ -75,7 +78,7 @@ defmodule VmsCore.Components.Traxxas.MotorController do
         } = args
       ) do
     Bus.subscribe("messages")
-    {:ok, timer} = :timer.send_interval(@loop_period, :loop)
+    {:ok, timer} = :timer.send_interval(@loop_period_ms, :loop)
 
     {:ok,
      %{
@@ -85,13 +88,13 @@ defmodule VmsCore.Components.Traxxas.MotorController do
        selected_control_level_source: selected_control_level_source,
        linear_sources: Map.get(args, :linear_sources, []),
        curve: curve(args),
-       # Starts nil: nothing commands this actuator until the manager
-       # names a source. The manager's default level does that on its
-       # first tick.
+       # Nothing commands this actuator until the manager names a
+       # source.
        requested_throttle_source: nil,
        requested_throttle: @zero,
-       # No pulse has been sent yet: even a zero first request must
-       # enable the ESC signal and establish neutral.
+       # The output last written to the ESC, not the last request: a
+       # source switch at an unchanged request still reaches the PWM.
+       # nil so the first tick enables the signal and establishes neutral.
        throttle: nil
      }}
   end
@@ -106,19 +109,16 @@ defmodule VmsCore.Components.Traxxas.MotorController do
         state
       )
       when source == state.selected_control_level_source do
-    # Zero on the way to a level that commands nothing. Without this
-    # the last request would persist — `handle_info` for
-    # `:requested_throttle` gates on the source, so with no source no
-    # message matches and the actuator holds. On the throttle that
-    # means a vehicle that keeps driving after being switched to a
-    # safe level, which is the same hazard as a stale CAN frame.
-    requested = if is_nil(requested_throttle_source), do: @zero, else: state.requested_throttle
+    # Zero on the way to a level that commands nothing: with no source
+    # no request message matches, and the last request would be held.
+    requested_throttle =
+      if is_nil(requested_throttle_source), do: @zero, else: state.requested_throttle
 
     {:noreply,
      %{
        state
        | requested_throttle_source: requested_throttle_source,
-         requested_throttle: requested
+         requested_throttle: requested_throttle
      }}
   end
 
@@ -142,11 +142,6 @@ defmodule VmsCore.Components.Traxxas.MotorController do
     {:noreply, state}
   end
 
-  # `throttle` holds what was last written to the ESC, not what was last
-  # requested. The two differ: the same request maps to a different duty
-  # cycle depending on whether its source is shaped, so a switch between
-  # a shaped and a linear commander at an unchanged request still has to
-  # reach the PWM.
   defp apply_throttle(state) do
     throttle =
       shape(
@@ -173,7 +168,7 @@ defmodule VmsCore.Components.Traxxas.MotorController do
             state.external_pwm_id,
             true,
             duty_cycle_percentage,
-            @pwm_frequency
+            @pwm_frequency_hz
           )
 
         Bus.broadcast("messages", %Bus.Message{
@@ -182,8 +177,8 @@ defmodule VmsCore.Components.Traxxas.MotorController do
           source: __MODULE__
         })
 
-        # This is the command before CAN/timer quantisation, not an ESC
-        # readback. It makes the start threshold measurable on the car.
+        # The command before CAN and timer quantisation, not an ESC
+        # readback: it makes the start threshold measurable.
         Bus.broadcast("messages", %Bus.Message{
           name: :pulse_width_us,
           value: pulse_width_us,
@@ -203,9 +198,9 @@ defmodule VmsCore.Components.Traxxas.MotorController do
     curve = Map.merge(@default_curve, Map.take(args, Map.keys(@default_curve)))
     curve = %{curve | max_reverse: curve.max_reverse || curve.max_throttle}
 
-    Enum.each(curve, fn {key, value} ->
-      if D.negative?(value) or D.gt?(value, @one) do
-        raise ArgumentError, "#{inspect(key)} must be in [0, 1], got #{value}"
+    Enum.each(curve, fn {key, fraction} ->
+      if D.negative?(fraction) or D.gt?(fraction, @one) do
+        raise ArgumentError, "#{inspect(key)} must be in [0, 1], got #{fraction}"
       end
     end)
 
@@ -232,17 +227,15 @@ defmodule VmsCore.Components.Traxxas.MotorController do
   def shape(requested, false, curve) do
     requested
     |> NormalisedRequest.clamp()
-    |> offset(curve.start_offset, cap(requested, curve))
+    |> apply_start_offset(curve.start_offset, cap(requested, curve))
   end
 
   defp cap(requested, curve) do
     if D.negative?(requested), do: curve.max_reverse, else: curve.max_throttle
   end
 
-  # Zero stays zero; anything else is remapped from [0, 1] onto
-  # [start_offset, cap] so the smallest non-zero output already reaches
-  # the ESC's edge of motion and full deflection stops at the cap.
-  defp offset(requested, start_offset, cap) do
+  # Zero stays zero; anything else is remapped from [0, 1] onto [start_offset, cap].
+  defp apply_start_offset(requested, start_offset, cap) do
     if D.eq?(requested, @zero) do
       @zero
     else

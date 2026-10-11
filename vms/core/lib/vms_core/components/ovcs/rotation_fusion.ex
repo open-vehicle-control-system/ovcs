@@ -78,7 +78,7 @@ defmodule VmsCore.Components.OVCS.RotationFusion do
     {:ok,
      %{
        process_name: process_name,
-       sources: Enum.map(sources, &source_spec/1),
+       sources: Enum.map(sources, &source_settings/1),
        readings: %{},
        direction_source: Map.get(args, :direction_source),
        sign: 1,
@@ -93,20 +93,23 @@ defmodule VmsCore.Components.OVCS.RotationFusion do
 
   @impl GenServer
   def handle_info(
-        %Bus.Message{name: :rotation_per_minute, value: value, source: source},
+        %Bus.Message{name: :rotation_per_minute, value: rotation_per_minute, source: source},
         state
       ) do
     case Enum.find(state.sources, &(&1.source == source)) do
       nil ->
         {:noreply, state}
 
-      spec ->
-        state = state |> record(spec, value) |> track_sign(spec, value)
+      source_settings ->
+        state =
+          state
+          |> record(source_settings, rotation_per_minute)
+          |> track_sign(source_settings, rotation_per_minute)
 
         case active_source(state) do
           # A sample of the source in use, or the last source dying.
-          ^source -> {:noreply, publish(state, now())}
-          nil -> {:noreply, publish(state, now())}
+          ^source -> {:noreply, publish(state, now_ms())}
+          nil -> {:noreply, publish(state, now_ms())}
           _ -> {:noreply, state}
         end
     end
@@ -121,8 +124,8 @@ defmodule VmsCore.Components.OVCS.RotationFusion do
     {:noreply, state}
   end
 
-  defp publish(state, now) do
-    {rotation, state} = compute(state, now)
+  defp publish(state, now_ms) do
+    {rotation, state} = compute(state, now_ms)
     broadcast(state, :rotation_per_minute, rotation, Units.revolution_per_minute())
     broadcast(state, :active_source, source_label(active_source(state)))
     broadcast(state, :cross_check_gap, state.gap, Units.fraction())
@@ -131,56 +134,58 @@ defmodule VmsCore.Components.OVCS.RotationFusion do
   end
 
   @doc """
-  The output rotation and the state after the cross-check, at `now` in
-  milliseconds.
+  The output rotation and the state after the cross-check, at `now_ms`
+  on the monotonic clock.
   """
-  def compute(state, now) do
-    state = cross_check(state, now)
+  def compute(state, now_ms) do
+    state = cross_check(state, now_ms)
     {rotation(state), state}
   end
 
   @doc false
   def rotation(state) do
-    case active_spec(state) do
+    case active_source_settings(state) do
       nil ->
         nil
 
-      spec ->
+      source_settings ->
+        reading = state.readings[source_settings.source]
+
         cond do
           at_rest?(state) -> @zero
-          spec.signed -> state.readings[spec.source]
-          true -> state.readings[spec.source] |> D.abs() |> D.mult(state.sign)
+          source_settings.signed -> reading
+          true -> reading |> D.abs() |> D.mult(state.sign)
         end
     end
   end
 
   @doc false
   def active_source(state) do
-    case active_spec(state) do
+    case active_source_settings(state) do
       nil -> nil
-      spec -> spec.source
+      source_settings -> source_settings.source
     end
   end
 
-  defp active_spec(state) do
+  defp active_source_settings(state) do
     Enum.find(state.sources, &Map.has_key?(state.readings, &1.source))
   end
 
   defp at_rest?(state) do
-    Enum.all?(state.sources, fn spec ->
-      case state.readings[spec.source] do
+    Enum.all?(state.sources, fn source_settings ->
+      case state.readings[source_settings.source] do
         nil -> true
-        reading -> reading |> D.abs() |> D.compare(spec.noise_rpm) != :gt
+        reading -> reading |> D.abs() |> D.compare(source_settings.noise_rpm) != :gt
       end
     end)
   end
 
   @doc false
-  def cross_check(state, now) do
+  def cross_check(state, now_ms) do
     gap = largest_gap(state)
     mismatch = not is_nil(gap) and D.gt?(gap, state.cross_check_tolerance)
-    mismatch_since = if mismatch, do: state.mismatch_since || now, else: nil
-    fault = mismatch and now - mismatch_since >= state.cross_check_hold_ms
+    mismatch_since = if mismatch, do: state.mismatch_since || now_ms, else: nil
+    fault = mismatch and now_ms - mismatch_since >= state.cross_check_hold_ms
 
     if fault and not state.fault do
       Logger.warning(
@@ -192,79 +197,89 @@ defmodule VmsCore.Components.OVCS.RotationFusion do
     Map.merge(state, %{gap: gap, mismatch_since: mismatch_since, fault: fault})
   end
 
-  # The largest gap between the active source and any other live one, as
-  # a fraction of the faster of the two, or nil while nothing reads fast
-  # enough to be compared.
+  # Against the active source; nil while nothing reads fast enough to be compared.
   defp largest_gap(state) do
-    active = active_source(state)
-    magnitudes = Map.new(state.readings, fn {source, reading} -> {source, D.abs(reading)} end)
+    active_source = active_source(state)
 
-    checked =
-      not is_nil(active) and
+    magnitudes =
+      Map.new(state.readings, fn {source, reading} -> {source, D.abs(reading)} end)
+
+    comparable =
+      not is_nil(active_source) and
         Enum.any?(magnitudes, fn {_, rpm} -> not D.lt?(rpm, state.cross_check_from_rpm) end)
 
-    if checked do
+    if comparable do
       magnitudes
-      |> Map.delete(active)
-      |> Enum.map(fn {_, rpm} -> gap(magnitudes[active], rpm) end)
+      |> Map.delete(active_source)
+      |> Enum.map(fn {_, rpm} -> gap(magnitudes[active_source], rpm) end)
       |> Enum.max(&(D.compare(&1, &2) != :lt), fn -> nil end)
     end
   end
 
-  defp gap(a, b) do
-    faster = D.max(a, b)
+  # As a fraction of the faster of the two.
+  defp gap(first_rpm, second_rpm) do
+    faster = D.max(first_rpm, second_rpm)
 
     if D.eq?(faster, @zero),
       do: @zero,
-      else: a |> D.sub(b) |> D.abs() |> D.div(faster) |> D.round(3)
+      else:
+        first_rpm
+        |> D.sub(second_rpm)
+        |> D.abs()
+        |> D.div(faster)
+        |> D.round(3)
   end
 
-  defp record(state, spec, nil), do: %{state | readings: Map.delete(state.readings, spec.source)}
+  defp record(state, source_settings, nil),
+    do: %{state | readings: Map.delete(state.readings, source_settings.source)}
 
-  defp record(state, spec, value) do
-    reading = value |> decimal() |> D.mult(spec.ratio)
-    %{state | readings: Map.put(state.readings, spec.source, reading)}
+  defp record(state, source_settings, rotation_per_minute) do
+    reading = rotation_per_minute |> decimal() |> D.mult(source_settings.ratio)
+    %{state | readings: Map.put(state.readings, source_settings.source, reading)}
   end
 
-  # A signed source above its noise sets the sign for the unsigned ones,
-  # unless an actuator gives it.
-  defp track_sign(%{direction_source: nil} = state, %{signed: true} = spec, value)
-       when not is_nil(value) do
-    reading = state.readings[spec.source]
+  # Without an actuator, a signed source above its noise sets the sign for the unsigned ones.
+  defp track_sign(
+         %{direction_source: nil} = state,
+         %{signed: true} = source_settings,
+         rotation_per_minute
+       )
+       when not is_nil(rotation_per_minute) do
+    reading = state.readings[source_settings.source]
 
-    if D.gt?(D.abs(reading), spec.noise_rpm),
+    if D.gt?(D.abs(reading), source_settings.noise_rpm),
       do: %{state | sign: sign_of(reading, state.sign)},
       else: state
   end
 
-  defp track_sign(state, _spec, _value), do: state
+  defp track_sign(state, _source_settings, _rotation_per_minute), do: state
 
   @doc false
-  def sign_of(value, last_sign) do
+  def sign_of(signed_number, last_sign) do
     cond do
-      D.gt?(value, @zero) -> 1
-      D.lt?(value, @zero) -> -1
+      D.gt?(signed_number, @zero) -> 1
+      D.lt?(signed_number, @zero) -> -1
       true -> last_sign
     end
   end
 
-  defp source_spec(%{source: source, ratio: ratio, signed: signed} = spec) do
+  defp source_settings(%{source: source, ratio: ratio, signed: signed} = source_options) do
     %{
       source: source,
       ratio: decimal(ratio),
       signed: signed,
-      noise_rpm: decimal(Map.get(spec, :noise_rpm, 0))
+      noise_rpm: decimal(Map.get(source_options, :noise_rpm, 0))
     }
   end
 
   defp source_label(nil), do: nil
   defp source_label(source), do: source |> inspect() |> String.split(".") |> List.last()
 
-  defp decimal(%D{} = value), do: value
-  defp decimal(value) when is_integer(value), do: D.new(value)
-  defp decimal(value) when is_float(value), do: D.from_float(value)
+  defp decimal(%D{} = number), do: number
+  defp decimal(number) when is_integer(number), do: D.new(number)
+  defp decimal(number) when is_float(number), do: D.from_float(number)
 
-  defp now, do: System.monotonic_time(:millisecond)
+  defp now_ms, do: System.monotonic_time(:millisecond)
 
   defp broadcast(state, name, value, unit \\ nil) do
     Bus.broadcast("messages", %Bus.Message{

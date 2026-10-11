@@ -1,19 +1,22 @@
 defmodule VmsCore.MetricsTest do
+  @moduledoc """
+  The metrics store: the last value and unit per source and name.
+
+  Driven through the callbacks directly, so the tests stay pure and
+  need no process subscribed to the bus.
+  """
   use ExUnit.Case, async: true
 
   alias OvcsBus.Message
   alias VmsCore.Metrics
 
-  # The GenServer's init/1 calls Bus.subscribe which needs Phoenix.PubSub
-  # running; we exercise the callbacks directly instead so these tests
-  # stay pure and don't need the app booted.
   @empty_state %{sources: %{}}
 
   describe "handle_info/2" do
     test "records the first message from a source under that source + name" do
-      msg = %Message{name: :speed, value: 42, source: SomeSensor}
+      message = %Message{name: :speed, value: 42, source: SomeSensor}
 
-      {:noreply, state} = Metrics.handle_info(msg, @empty_state)
+      {:noreply, state} = Metrics.handle_info(message, @empty_state)
 
       assert state.sources == %{SomeSensor => %{speed: 42}}
     end
@@ -91,13 +94,13 @@ defmodule VmsCore.MetricsTest do
     end
 
     test "returns only the requested source", %{state: state} do
-      {:reply, {:ok, result}, ^state} = Metrics.handle_call({:metrics, BmsA}, :from, state)
-      assert result == %{voltage: 400, temperature: 25}
+      {:reply, {:ok, metrics}, ^state} = Metrics.handle_call({:metrics, BmsA}, :from, state)
+      assert metrics == %{voltage: 400, temperature: 25}
     end
 
     test "returns an empty map when the source has no recorded metrics", %{state: state} do
-      {:reply, {:ok, result}, ^state} = Metrics.handle_call({:metrics, Unknown}, :from, state)
-      assert result == %{}
+      {:reply, {:ok, metrics}, ^state} = Metrics.handle_call({:metrics, Unknown}, :from, state)
+      assert metrics == %{}
     end
   end
 end

@@ -2,8 +2,8 @@ defmodule VmsCore.Components.OVCS.PulseRotationSensor do
   @moduledoc """
   The rotation of a shaft, from a magnet passing a switch.
 
-  The sensor closes once per turn of whatever shaft it is mounted on —
-  a spur gear, a half shaft, a wheel hub. The generic controller counts
+  The sensor closes `pulses_per_revolution` times per turn of whatever
+  shaft it is mounted on — a spur gear, a half shaft, a wheel hub. The generic controller counts
   its pulses by interrupt and reports a frequency on its pulse counter
   frame. This turns that frequency into the shaft's rotation:
 
@@ -25,7 +25,8 @@ defmodule VmsCore.Components.OVCS.PulseRotationSensor do
   The controller reports a frequency of zero once no edge has arrived
   for two seconds, so `:rotation_per_minute` reads exactly zero at rest
   and the standstill gate downstream holds. The same two seconds set
-  the slowest rotation that reads as motion at all, 30 rpm of the shaft.
+  the slowest frequency that reads as motion at all, 0.5 Hz: 30 rpm of
+  the shaft divided by `pulses_per_revolution`.
 
   When the controller's pulse frame is not arriving, the generic
   controller publishes a nil frequency and this publishes a nil
@@ -76,12 +77,18 @@ defmodule VmsCore.Components.OVCS.PulseRotationSensor do
     {:noreply, state}
   end
 
-  # The frequency arrives with one decimal (`0x7X9` decodes at
-  # precision 1), so the result carries one too: `600.0`, not `600`.
-  @doc false
+  @doc """
+  The shaft's rpm for a pulse `frequency` in hertz, nil when the
+  frequency is unknown. The frequency signal decodes at precision 1, so
+  the result carries one decimal too: `600.0`, not `600`.
+  """
   def rotation_per_minute(nil, _pulses_per_revolution), do: nil
 
   def rotation_per_minute(frequency, pulses_per_revolution) do
-    frequency |> D.new() |> D.mult(60) |> D.div(pulses_per_revolution) |> D.round(1)
+    frequency
+    |> D.new()
+    |> D.mult(60)
+    |> D.div(pulses_per_revolution)
+    |> D.round(1)
   end
 end

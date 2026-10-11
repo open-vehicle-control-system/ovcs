@@ -1,19 +1,27 @@
 defmodule VmsCore.Status do
   @moduledoc """
-    VMS status
+  The VMS heartbeat. Emits the `vms_status` frame (status, ready to
+  drive and a rolling counter) that generic controllers watch, relays
+  the `:vms_status` and `:ready_to_drive` of its sources into it, and
+  enables the `vms_command` frame while resetting the generic
+  controllers.
+
+  ## Boot reset
+
+  A generic controller shuts down when the VMS alive frame stops, and a
+  VMS reboot always outlasts its timeout, so every redeploy leaves the
+  controllers in `VMS_MISSING_ERROR`. The reset the dashboard action
+  performs is therefore done once at boot, after `@boot_reset_delay_ms`
+  gives the CAN stack time to come up.
   """
   use GenServer
   alias Cantastic.Emitter
   alias OvcsBus, as: Bus
 
-  @loop_period 10
-  # A generic controller shuts down when the VMS alive frame stops for
-  # about half a second, and a VMS reboot always exceeds that, so every
-  # redeploy leaves the controllers in VMS_MISSING_ERROR. The reset the
-  # dashboard button performs is done once here, after the CAN stack
-  # has had time to come up.
+  @loop_period_ms 10
   @boot_reset_delay_ms 3_000
   @reset_duration_ms 1_000
+  @counter_cycle 4
 
   def start_link(args) do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
@@ -44,7 +52,7 @@ defmodule VmsCore.Status do
       })
 
     Bus.subscribe("messages")
-    {:ok, timer} = :timer.send_interval(@loop_period, :loop)
+    {:ok, timer} = :timer.send_interval(@loop_period_ms, :loop)
     Process.send_after(self(), :start_reset_mode, @boot_reset_delay_ms)
 
     {:ok,
@@ -105,16 +113,16 @@ defmodule VmsCore.Status do
     cond do
       state.resetting && state.emitted_vms_status != "RESETTING" ->
         :ok =
-          Emitter.update(:ovcs, "vms_status", fn data ->
-            %{data | "status" => "RESETTING"}
+          Emitter.update(:ovcs, "vms_status", fn frame_data ->
+            %{frame_data | "status" => "RESETTING"}
           end)
 
         %{state | emitted_vms_status: "RESETTING"}
 
       state.emitted_vms_status != state.vms_status ->
         :ok =
-          Emitter.update(:ovcs, "vms_status", fn data ->
-            %{data | "status" => state.vms_status}
+          Emitter.update(:ovcs, "vms_status", fn frame_data ->
+            %{frame_data | "status" => state.vms_status}
           end)
 
         %{state | emitted_vms_status: state.vms_status}
@@ -131,8 +139,8 @@ defmodule VmsCore.Status do
 
       false ->
         :ok =
-          Emitter.update(:ovcs, "vms_status", fn data ->
-            %{data | "ready_to_drive" => state.ready_to_drive}
+          Emitter.update(:ovcs, "vms_status", fn frame_data ->
+            %{frame_data | "ready_to_drive" => state.ready_to_drive}
           end)
 
         %{state | emitted_ready_to_drive: state.ready_to_drive}
@@ -143,8 +151,8 @@ defmodule VmsCore.Status do
     cond do
       state.resetting && !state.reset_generic_controllers_frame_enabled ->
         :ok =
-          Emitter.update(:ovcs, "vms_command", fn data ->
-            %{data | "command" => "reset_generic_controllers"}
+          Emitter.update(:ovcs, "vms_command", fn frame_data ->
+            %{frame_data | "command" => "reset_generic_controllers"}
           end)
 
         Emitter.enable(:ovcs, "vms_command")
@@ -159,11 +167,9 @@ defmodule VmsCore.Status do
     end
   end
 
-  defp vms_status_frame_parameter_builder(data) do
-    counter = data["counter"]
-    parameters = data
-    data = %{data | "counter" => counter(counter + 1)}
-    {:ok, parameters, data}
+  defp vms_status_frame_parameter_builder(frame_data) do
+    next_frame_data = %{frame_data | "counter" => wrap_counter(frame_data["counter"] + 1)}
+    {:ok, frame_data, next_frame_data}
   end
 
   @impl GenServer
@@ -175,14 +181,18 @@ defmodule VmsCore.Status do
     {:reply, :ok, %{state | resetting: false}}
   end
 
-  def trigger_action("reset_status", _params) do
+  @doc """
+  Dashboard action: `"reset_status"` resets the generic controllers by
+  holding reset mode for `@reset_duration_ms`.
+  """
+  def trigger_action("reset_status", _parameters) do
     GenServer.call(__MODULE__, :start_reset_mode)
-    :timer.sleep(1000)
+    :timer.sleep(@reset_duration_ms)
     GenServer.call(__MODULE__, :stop_reset_mode)
   end
 
-  defp counter(value) do
-    rem(value, 4)
+  defp wrap_counter(counter) do
+    rem(counter, @counter_cycle)
   end
 
   defp emit_metrics(state) do

@@ -43,8 +43,9 @@ defmodule VmsCore.Components.OVCS.RosVelocityCommand do
   ## Reverse is a sign, not a mode
 
   Negative `linear` is reverse. The actuator command carries a separate
-  `direction` because on OVCS1 a negative throttle means regenerative
-  braking; a velocity has its sign built in.
+  `direction` because a negative throttle can mean regenerative
+  braking, as on the OVCS1 reference vehicle; a velocity has its sign
+  built in.
 
   ## Staleness
 
@@ -54,9 +55,8 @@ defmodule VmsCore.Components.OVCS.RosVelocityCommand do
   died or the CAN link was cut. A retransmitted frame is not applied as
   fresh input, so a stray frame after an outage cannot re-poison the
   request. The timeout is tighter than the joystick's: a planner
-  publishes on its own control period (Nav2's `controller_frequency` is
-  20 Hz in the simulator) and nobody is watching the vehicle when it
-  stops.
+  publishes on its own control period (Nav2's `controller_frequency`)
+  and nobody is watching the vehicle when it stops.
 
   ## Options
 
@@ -71,9 +71,9 @@ defmodule VmsCore.Components.OVCS.RosVelocityCommand do
     * `:steering_sign` — `1` or `-1`, default `1`. REP-103 makes a
       positive yaw rate a left turn; whether a positive
       `requested_steering` turns this vehicle's servo left is a fact
-      about the servo and its linkage. The joystick path settles the
-      same question with the sign of its scale. Measure it on the
-      servo before the first ROS drive and set it here.
+      about the servo and its linkage, found by measuring it on the
+      vehicle. The joystick path settles the same question with the
+      sign of its scale.
   """
   use GenServer
 
@@ -84,7 +84,7 @@ defmodule VmsCore.Components.OVCS.RosVelocityCommand do
 
   require Logger
 
-  @loop_period 10
+  @loop_period_ms 10
   @timeout_ms 300
   @zero D.new(0)
   @frame_name "ros_velocity_command"
@@ -105,7 +105,7 @@ defmodule VmsCore.Components.OVCS.RosVelocityCommand do
     end
 
     :ok = Receiver.subscribe(self(), :ovcs, @frame_name)
-    {:ok, timer} = :timer.send_interval(@loop_period, :loop)
+    {:ok, timer} = :timer.send_interval(@loop_period_ms, :loop)
 
     {:ok,
      %{
@@ -114,7 +114,7 @@ defmodule VmsCore.Components.OVCS.RosVelocityCommand do
        max_speed: max_speed,
        min_speed: Map.get(args, :min_speed, 0.0) * 1.0,
        steering_sign: steering_sign,
-       freshness: Freshness.new(@timeout_ms, now()),
+       freshness: Freshness.new(@timeout_ms, now_ms()),
        linear: @zero,
        angular: @zero,
        requested_steering: @zero,
@@ -124,12 +124,12 @@ defmodule VmsCore.Components.OVCS.RosVelocityCommand do
 
   @impl GenServer
   def handle_info(:loop, state) do
-    {transition, freshness} = Freshness.check(state.freshness, now())
+    {transition, freshness} = Freshness.check(state.freshness, now_ms())
 
     state =
       %{state | freshness: freshness}
       |> apply_transition(transition)
-      |> compute()
+      |> compute_requests()
       |> emit()
 
     {:noreply, state}
@@ -142,7 +142,7 @@ defmodule VmsCore.Components.OVCS.RosVelocityCommand do
       "sequence" => %Signal{value: sequence}
     } = signals
 
-    case Freshness.observe(state.freshness, sequence, now()) do
+    case Freshness.observe(state.freshness, sequence, now_ms()) do
       {:new, freshness} ->
         {:noreply, %{state | freshness: freshness, linear: linear, angular: angular}}
 
@@ -170,38 +170,32 @@ defmodule VmsCore.Components.OVCS.RosVelocityCommand do
 
   defp apply_transition(state, :unchanged), do: state
 
-  defp compute(state) do
-    linear = D.to_float(state.linear)
-    angular = D.to_float(state.angular)
+  defp compute_requests(state) do
+    linear_m_s = D.to_float(state.linear)
+    angular_rad_s = D.to_float(state.angular)
 
     %{
       state
       | requested_steering:
-          steering(linear, angular, state.geometry) |> D.mult(state.steering_sign),
-        requested_throttle: throttle(linear, state.min_speed, state.max_speed)
+          steering(linear_m_s, angular_rad_s, state.geometry) |> D.mult(state.steering_sign),
+        requested_throttle: throttle(linear_m_s, state.min_speed, state.max_speed)
     }
   end
 
-  # Clamp the yaw rate first: at a standstill the achievable rate is
-  # zero, so the whole impossible case collapses to "straight ahead"
-  # without a branch of its own.
-  defp steering(linear, angular, geometry) do
-    limit = OvcsVehicle.max_yaw_rate(geometry, linear)
-    clamped = angular |> max(-limit) |> min(limit)
+  # The yaw clamp collapses rotating on the spot to "straight ahead".
+  defp steering(linear_m_s, angular_rad_s, geometry) do
+    max_yaw_rate_rad_s = OvcsVehicle.max_yaw_rate(geometry, linear_m_s)
+    clamped_angular_rad_s = angular_rad_s |> max(-max_yaw_rate_rad_s) |> min(max_yaw_rate_rad_s)
 
-    # This guard only exists for a linear of exactly zero (or `-0.0`,
-    # which does not match a `+0.0` pattern from OTP 27 on), where the
-    # division below is undefined. The yaw clamp above already bounds
-    # the angle to the steering limit at any non-zero speed, so the
-    # smallest value the wire can carry commands full lock at near-zero
-    # throttle, which is the Ackermann answer rather than a
-    # discontinuity.
-    if abs(linear) < @standstill_m_s do
+    # A threshold rather than a `0.0` match, which `-0.0` misses from OTP 27 on.
+    # Above it the yaw clamp bounds the angle, so the smallest non-zero linear
+    # gives full lock at near-zero throttle rather than a discontinuity.
+    if abs(linear_m_s) < @standstill_m_s do
       @zero
     else
-      angle = :math.atan(geometry.wheelbase * clamped / linear)
+      steering_angle_rad = :math.atan(geometry.wheelbase * clamped_angular_rad_s / linear_m_s)
 
-      (angle / geometry.steering_limit)
+      (steering_angle_rad / geometry.steering_limit)
       |> max(-1.0)
       |> min(1.0)
       |> D.from_float()
@@ -209,18 +203,19 @@ defmodule VmsCore.Components.OVCS.RosVelocityCommand do
   end
 
   @doc false
-  def throttle(linear, min_speed, max_speed) do
-    (floor_speed(linear, min_speed) / max_speed)
+  def throttle(linear_m_s, min_speed_m_s, max_speed_m_s) do
+    (floor_speed(linear_m_s, min_speed_m_s) / max_speed_m_s)
     |> max(-1.0)
     |> min(1.0)
     |> D.from_float()
   end
 
-  defp floor_speed(linear, min_speed)
-       when abs(linear) < @standstill_m_s or abs(linear) >= min_speed,
-       do: linear
+  defp floor_speed(linear_m_s, min_speed_m_s)
+       when abs(linear_m_s) < @standstill_m_s or abs(linear_m_s) >= min_speed_m_s,
+       do: linear_m_s
 
-  defp floor_speed(linear, min_speed), do: if(linear > 0, do: min_speed, else: -min_speed)
+  defp floor_speed(linear_m_s, min_speed_m_s),
+    do: if(linear_m_s > 0, do: min_speed_m_s, else: -min_speed_m_s)
 
   defp emit(state) do
     Bus.broadcast("messages", %Bus.Message{
@@ -238,5 +233,5 @@ defmodule VmsCore.Components.OVCS.RosVelocityCommand do
     state
   end
 
-  defp now, do: System.monotonic_time(:millisecond)
+  defp now_ms, do: System.monotonic_time(:millisecond)
 end

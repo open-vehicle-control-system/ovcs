@@ -322,7 +322,7 @@ Sources are the `*_source` options; "controller" means a generic controller proc
 | Driver | Network | Options | Publishes |
 |---|---|---|---|
 | `Nissan.LeafAZE0.Inverter` | `leaf_drive` | control level, gear, contact sources; `controller`, `power_relay_pin` | rpm, torques, output voltage, temperatures, `:ready_to_drive` |
-| `Nissan.LeafAZE0.Charger` (no reference vehicle) | `leaf_drive` | `maximum_power_for_charger_source` | charge power, AC voltage, charging state |
+| `Nissan.LeafAZE0.Charger` (no reference vehicle; not working, the charge does not start) | `leaf_drive` | `maximum_power_for_charger_source` | charge power, AC voltage, charging state |
 | `Orion.Bms2` | `orion_bms` | `controller`, `ready_relay_pin` | pack voltage, current, SoC, temperatures, relay states, `:is_alive` |
 | `Evpt.Evpt23Charger` | `orion_bms` | none | output voltage and current, protection flags |
 | `Volkswagen.Polo9N.ABS`, `.IgnitionLock`, `.PassengerCompartment` | `polo_drive` | none | `:speed` and wheel speeds; `:contact`; door, beam and handbrake states |

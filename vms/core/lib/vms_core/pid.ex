@@ -1,13 +1,24 @@
 defmodule VmsCore.PID do
   alias Decimal, as: D
-  @zero D.new(0)
+
+  @moduledoc """
+  A proportional-integral-derivative controller in Decimal arithmetic,
+  used by the component drivers that close a loop on a measurement.
+
+  `new/1` takes the gains and limits; each `iterate/3` takes the latest
+  measurement and setpoint and returns the controller with its new
+  `output`, clamped to `[minimum_output, maximum_output]`.
+  """
   require Logger
+
+  @zero D.new(0)
 
   defstruct kp: @zero,
             ki: @zero,
             kd: @zero,
-            minimum_output: Decimal.new(-1),
-            maximum_output: Decimal.new(1),
+            minimum_output: D.new(-1),
+            maximum_output: D.new(1),
+            # Keeps the derivative finite when two iterations share a millisecond.
             minimum_elapsed_time: D.new("0.0001"),
             reset_derivative_when_setpoint_changes: false,
             proportional_term: @zero,
@@ -19,17 +30,27 @@ defmodule VmsCore.PID do
             previous_setpoint: nil,
             output: nil
 
-  def new(config \\ []) do
-    default = %__MODULE__{}
-    default |> Map.merge(config |> Enum.into(%{}))
+  @doc """
+  A controller with the struct's defaults overridden by `opts`, a keyword
+  list of its fields (`kp`, `ki`, `kd`, output limits, ...).
+  """
+  def new(opts \\ []) do
+    %__MODULE__{} |> Map.merge(opts |> Enum.into(%{}))
   end
 
+  @doc """
+  Advance the controller by one step towards `setpoint` from
+  `measurement`, timed on the monotonic clock.
+  """
   def iterate(pid, measurement, setpoint) do
-    time = System.monotonic_time(:millisecond)
-    previous_time = pid.previous_time || time
+    now_ms = System.monotonic_time(:millisecond)
+    previous_time_ms = pid.previous_time || now_ms
 
-    elapsed_time_seconds =
-      time |> D.sub(previous_time) |> D.div(1000) |> D.max(pid.minimum_elapsed_time)
+    elapsed_time_s =
+      now_ms
+      |> D.sub(previous_time_ms)
+      |> D.div(1000)
+      |> D.max(pid.minimum_elapsed_time)
 
     error = setpoint |> D.sub(measurement)
 
@@ -43,22 +64,28 @@ defmodule VmsCore.PID do
     proportional_term = error |> D.mult(pid.kp)
 
     integral_term =
-      error |> D.mult(elapsed_time_seconds) |> D.add(pid.integral_term) |> D.mult(pid.ki)
+      error
+      |> D.mult(elapsed_time_s)
+      |> D.add(pid.integral_term)
+      |> D.mult(pid.ki)
 
     derivative_term =
-      error |> D.sub(previous_error) |> D.div(elapsed_time_seconds) |> D.mult(pid.kd)
+      error |> D.sub(previous_error) |> D.div(elapsed_time_s) |> D.mult(pid.kd)
 
-    output_raw = proportional_term |> D.add(integral_term) |> D.add(derivative_term)
-    output = output_raw |> D.max(pid.minimum_output) |> D.min(pid.maximum_output)
+    unclamped_output =
+      proportional_term |> D.add(integral_term) |> D.add(derivative_term)
+
+    output =
+      unclamped_output |> D.max(pid.minimum_output) |> D.min(pid.maximum_output)
 
     Logger.debug(
-      "E: #{error |> Decimal.round(4)} - P: #{proportional_term |> Decimal.round(4)} - I: #{integral_term |> Decimal.round(4)} - D: #{derivative_term |> Decimal.round(4)} - O: #{output |> Decimal.round(4)}"
+      "E: #{error |> D.round(4)} - P: #{proportional_term |> D.round(4)} - I: #{integral_term |> D.round(4)} - D: #{derivative_term |> D.round(4)} - O: #{output |> D.round(4)}"
     )
 
     %{
       pid
       | previous_error: error,
-        previous_time: time,
+        previous_time: now_ms,
         previous_setpoint: setpoint,
         previous_measurement: measurement,
         proportional_term: proportional_term,

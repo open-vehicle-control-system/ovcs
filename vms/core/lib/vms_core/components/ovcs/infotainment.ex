@@ -1,13 +1,15 @@
 defmodule VmsCore.Components.OVCS.Infotainment do
   @moduledoc """
-    OVCS Infotainment touchscreen module
+  The gear the driver requests on the infotainment screen: reads
+  `requested_gear` from the `infotainment_status` frame on `:ovcs` and
+  publishes it as `:requested_gear`, `:parking` until the first frame.
   """
   use GenServer
 
   alias Cantastic.{Frame, Receiver, Signal}
   alias OvcsBus, as: Bus
 
-  @loop_period 10
+  @loop_period_ms 10
 
   def start_link(_) do
     GenServer.start_link(__MODULE__, nil, name: __MODULE__)
@@ -16,7 +18,7 @@ defmodule VmsCore.Components.OVCS.Infotainment do
   @impl GenServer
   def init(_) do
     :ok = Receiver.subscribe(self(), :ovcs, "infotainment_status")
-    {:ok, timer} = :timer.send_interval(@loop_period, :loop)
+    {:ok, timer} = :timer.send_interval(@loop_period_ms, :loop)
 
     {:ok,
      %{

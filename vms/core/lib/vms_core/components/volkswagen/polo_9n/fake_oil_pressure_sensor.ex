@@ -1,16 +1,16 @@
 defmodule VmsCore.Components.Volkswagen.Polo9N.FakeOilPressureSensor do
   @moduledoc """
-    Fale oil pressure indicator sensor to avoid alerts on the original dashboard
+  Stands in for the Volkswagen Polo 9N's oil pressure switch so the
+  original instrument cluster raises no oil pressure warning: closes a
+  generic controller relay (`:controller`, `:relay_pin`) while the rpm
+  published by `:rotation_per_minute_source` is at or above a threshold.
   """
   use GenServer
   alias OvcsBus, as: Bus
+  alias VmsCore.Components.OVCS.GenericController
 
-  alias VmsCore.{
-    Components.OVCS.GenericController
-  }
-
-  @loop_period 10
-  @rotation_per_minute_activation_treshold 800
+  @loop_period_ms 10
+  @relay_closing_rotation_per_minute 800
 
   @impl GenServer
   def init(%{
@@ -18,7 +18,7 @@ defmodule VmsCore.Components.Volkswagen.Polo9N.FakeOilPressureSensor do
         relay_pin: relay_pin,
         rotation_per_minute_source: rotation_per_minute_source
       }) do
-    {:ok, timer} = :timer.send_interval(@loop_period, :loop)
+    {:ok, timer} = :timer.send_interval(@loop_period_ms, :loop)
     Bus.subscribe("messages")
 
     {:ok,
@@ -59,11 +59,11 @@ defmodule VmsCore.Components.Volkswagen.Polo9N.FakeOilPressureSensor do
 
   defp toggle_relay(state) do
     cond do
-      !state.enabled && state.rotation_per_minute >= @rotation_per_minute_activation_treshold ->
+      !state.enabled && state.rotation_per_minute >= @relay_closing_rotation_per_minute ->
         :ok = GenericController.set_digital_value(state.controller, state.relay_pin, true)
         %{state | enabled: true}
 
-      state.enabled && state.rotation_per_minute < @rotation_per_minute_activation_treshold ->
+      state.enabled && state.rotation_per_minute < @relay_closing_rotation_per_minute ->
         :ok = GenericController.set_digital_value(state.controller, state.relay_pin, false)
         %{state | enabled: false}
 

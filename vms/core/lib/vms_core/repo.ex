@@ -1,6 +1,7 @@
 defmodule VmsCore.Repo do
   @moduledoc """
-    VMS SQLite repository
+  The VMS's SQLite repository, holding persisted calibrations such as
+  `VmsCore.Models.ThrottleCalibration`.
   """
   use Ecto.Repo,
     otp_app: :vms_core,

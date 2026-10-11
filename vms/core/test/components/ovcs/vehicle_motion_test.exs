@@ -7,11 +7,10 @@ defmodule VmsCore.Components.OVCS.VehicleMotionTest do
 
   Driven through `handle_info/2` against a stub state, the way the
   actuator tests do — `init/1` configures a CAN emitter, which is not
-  under test. The constants are the Mini's: a 0.0548 m wheel and a
+  under test. The constants are an example: a 0.0548 m wheel and a
   sensed shaft geared 2.72:1 to it.
   """
   use ExUnit.Case, async: true
-
   alias Decimal, as: D
   alias OvcsBus.Message
   alias VmsCore.Components.OVCS.VehicleMotion
@@ -19,8 +18,8 @@ defmodule VmsCore.Components.OVCS.VehicleMotionTest do
   @manager ControlLevelManager
   @sensor ShaftSensor
   @commander SomeCommander
-  @ratio 2.72
-  @wheel_radius 0.0548
+  @shaft_to_wheel_ratio 2.72
+  @wheel_radius_m 0.0548
 
   defp state(overrides \\ %{}) do
     Map.merge(
@@ -28,8 +27,8 @@ defmodule VmsCore.Components.OVCS.VehicleMotionTest do
         loop_timer: nil,
         rotation_source: @sensor,
         rotation_signed: false,
-        rotation_to_wheel_ratio: D.from_float(@ratio),
-        speed_factor: VehicleMotion.speed_factor(@ratio, @wheel_radius),
+        rotation_to_wheel_ratio: D.from_float(@shaft_to_wheel_ratio),
+        speed_factor: VehicleMotion.speed_factor(@shaft_to_wheel_ratio, @wheel_radius_m),
         selected_control_level_source: @manager,
         steering_factor: D.from_float(0.52),
         requested_throttle_source: @commander,
@@ -38,7 +37,7 @@ defmodule VmsCore.Components.OVCS.VehicleMotionTest do
         requested_steering: D.new(0),
         rotation_per_minute: nil,
         revolution_source: @sensor,
-        distance_factor: VehicleMotion.distance_factor(@ratio, @wheel_radius),
+        distance_factor: VehicleMotion.distance_factor(@shaft_to_wheel_ratio, @wheel_radius_m),
         revolutions: nil,
         sequence: 0
       },
@@ -70,7 +69,7 @@ defmodule VmsCore.Components.OVCS.VehicleMotionTest do
         state(%{
           rotation_per_minute: D.new("100.0"),
           rotation_to_wheel_ratio: D.new(1),
-          speed_factor: VehicleMotion.speed_factor(1, @wheel_radius)
+          speed_factor: VehicleMotion.speed_factor(1, @wheel_radius_m)
         })
 
       assert D.lt?(VehicleMotion.speed_km_h(on_shaft), VehicleMotion.speed_km_h(on_wheel))
@@ -190,9 +189,13 @@ defmodule VmsCore.Components.OVCS.VehicleMotionTest do
     end
 
     test "wraps every 65.536 m, and stays positive in reverse" do
-      wheel_turn = 2 * :math.pi() * @wheel_radius
-      turns = D.from_float(-0.002 / wheel_turn * @ratio)
-      assert D.eq?(VehicleMotion.distance_counter(state(%{revolutions: turns})), D.new("65.534"))
+      wheel_circumference_m = 2 * :math.pi() * @wheel_radius_m
+      turns = D.from_float(-0.002 / wheel_circumference_m * @shaft_to_wheel_ratio)
+
+      assert D.eq?(
+               VehicleMotion.distance_counter(state(%{revolutions: turns})),
+               D.new("65.534")
+             )
     end
 
     test "no revolutions yet is a zero counter, flagged invalid by the frame" do
@@ -219,7 +222,11 @@ defmodule VmsCore.Components.OVCS.VehicleMotionTest do
 
     test "a negative steering_sign flips the reported angle back to REP-103" do
       factor = D.mult(D.from_float(0.52), -1)
-      assert D.eq?(VehicleMotion.steering_angle(D.new("0.5"), factor), D.new("-0.260"))
+
+      assert D.eq?(
+               VehicleMotion.steering_angle(D.new("0.5"), factor),
+               D.new("-0.260")
+             )
     end
 
     test "only the selected commander moves the request" do

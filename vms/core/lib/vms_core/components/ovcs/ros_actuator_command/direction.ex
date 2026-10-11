@@ -1,10 +1,11 @@
 defmodule VmsCore.Components.OVCS.RosActuatorCommand.Direction do
   @moduledoc """
   Direction from the ROS bridge's actuator command (`ros_actuator_command`,
-  `0x2B0`). Carried as its own signal because on OVCS1 a negative
-  throttle is regenerative braking, not reverse: reverse is a gear, and
-  this is what asks for it. Holds when the input goes stale; direction
-  is inert once the throttle has been zeroed.
+  `0x2B0`), broadcast as `:requested_direction`. Carried as its own
+  signal because a negative throttle can mean regenerative braking
+  rather than reverse, as on the OVCS1 reference vehicle: reverse is a
+  gear, and this is what asks for it. Holds when the input goes stale;
+  direction is inert once the throttle has been zeroed.
   """
   use GenServer
   alias Cantastic.{Receiver, Frame, Signal}
@@ -12,9 +13,9 @@ defmodule VmsCore.Components.OVCS.RosActuatorCommand.Direction do
   alias VmsCore.Components.OVCS.RosCommand.Freshness
 
   @frame_name "ros_actuator_command"
-  @loop_period 10
+  @loop_period_ms 10
   @timeout_ms 500
-  @value_mapping %{"forward" => :forward, "backward" => :backward}
+  @directions_by_signal %{"forward" => :forward, "backward" => :backward}
 
   def start_link(args) do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
@@ -23,29 +24,29 @@ defmodule VmsCore.Components.OVCS.RosActuatorCommand.Direction do
   @impl GenServer
   def init(_) do
     :ok = Receiver.subscribe(self(), :ovcs, @frame_name)
-    {:ok, timer} = :timer.send_interval(@loop_period, :loop)
+    {:ok, timer} = :timer.send_interval(@loop_period_ms, :loop)
 
     {:ok,
      %{
        loop_timer: timer,
-       freshness: Freshness.new(@timeout_ms, now()),
+       freshness: Freshness.new(@timeout_ms, now_ms()),
        requested_direction: :forward
      }}
   end
 
   @impl GenServer
   def handle_info(:loop, state) do
-    {_transition, freshness} = Freshness.check(state.freshness, now())
+    {_transition, freshness} = Freshness.check(state.freshness, now_ms())
     {:noreply, emit(%{state | freshness: freshness})}
   end
 
   def handle_info({:handle_frame, %Frame{name: @frame_name, signals: signals}}, state) do
     %{"direction" => %Signal{value: direction}, "sequence" => %Signal{value: sequence}} = signals
 
-    case Freshness.observe(state.freshness, sequence, now()) do
+    case Freshness.observe(state.freshness, sequence, now_ms()) do
       {:new, freshness} ->
         {:noreply,
-         %{state | freshness: freshness, requested_direction: @value_mapping[direction]}}
+         %{state | freshness: freshness, requested_direction: @directions_by_signal[direction]}}
 
       {:repeat, freshness} ->
         {:noreply, %{state | freshness: freshness}}
@@ -64,5 +65,5 @@ defmodule VmsCore.Components.OVCS.RosActuatorCommand.Direction do
     state
   end
 
-  defp now, do: System.monotonic_time(:millisecond)
+  defp now_ms, do: System.monotonic_time(:millisecond)
 end

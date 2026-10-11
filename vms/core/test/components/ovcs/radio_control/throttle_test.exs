@@ -11,10 +11,10 @@ defmodule VmsCore.Components.OVCS.RadioControl.ThrottleTest do
   """
   use ExUnit.Case, async: true
 
-  alias VmsCore.Components.OVCS.RadioControl.Throttle
   alias Cantastic.{Frame, Signal}
   alias OvcsBus.Message
   alias Decimal, as: D
+  alias VmsCore.Components.OVCS.RadioControl.Throttle
 
   setup do
     OvcsBus.subscribe("messages")
@@ -27,19 +27,15 @@ defmodule VmsCore.Components.OVCS.RadioControl.ThrottleTest do
     state
   end
 
-  # Drive one raw channel value through the component and read what it
-  # puts on the bus, rather than inspecting state: `radio_breaking` is
-  # only useful to the manager, which sees it over the bus.
-  defp at(raw) do
+  # Reads the bus, not state: the manager only sees `radio_breaking` there.
+  defp outputs_at(raw) do
     frame =
       {:handle_frame,
        %Frame{
          name: "radio_control_channels0",
-         # An integer, as `kind: integer` in `0x2A0_radio_control_channels0.yml`
-         # decodes it -- the component's bounds check compares the raw
-         # value with `>`, and a Decimal there sorts above every integer
-         # in Erlang term order, so a struct would silently be rejected
-         # as out of range.
+         # An integer, as `0x2A0_radio_control_channels0.yml` decodes it: a
+         # Decimal sorts above every integer in term order, so the bounds
+         # check would reject it as out of range.
          signals: %{"channel2" => %Signal{name: "channel2", value: raw}}
        }}
 
@@ -55,25 +51,25 @@ defmodule VmsCore.Components.OVCS.RadioControl.ThrottleTest do
     test "does not report braking, whatever the trim" do
       # 1480..1500 is the range a centred trigger actually sits in.
       for raw <- 1480..1500 do
-        {_throttle, breaking} = at(raw)
+        {_throttle, breaking} = outputs_at(raw)
         refute breaking, "raw #{raw} reported braking with the trigger at rest"
       end
     end
 
     test "reports no throttle at exact centre" do
-      assert {0.0, false} = at(1500)
+      assert {0.0, false} = outputs_at(1500)
     end
   end
 
   describe "a trigger actually pulled into reverse" do
     test "reports braking" do
-      {throttle, breaking} = at(1400)
+      {throttle, breaking} = outputs_at(1400)
       assert breaking
       assert_in_delta throttle, -0.2, 1.0e-9
     end
 
     test "reports braking at full reverse" do
-      {throttle, breaking} = at(1000)
+      {throttle, breaking} = outputs_at(1000)
       assert breaking
       assert_in_delta throttle, -1.0, 1.0e-9
     end
@@ -82,7 +78,7 @@ defmodule VmsCore.Components.OVCS.RadioControl.ThrottleTest do
   describe "forward" do
     test "is never braking" do
       for raw <- [1600, 1750, 2000] do
-        {throttle, breaking} = at(raw)
+        {throttle, breaking} = outputs_at(raw)
         refute breaking
         assert throttle > 0.0
       end
@@ -93,7 +89,7 @@ defmodule VmsCore.Components.OVCS.RadioControl.ThrottleTest do
     test "braking is computed from this frame, not the previous tick" do
       # A takeover reported one loop late, from the previous tick's
       # value, is the one thing this signal must not do.
-      {_throttle, breaking} = at(1000)
+      {_throttle, breaking} = outputs_at(1000)
       assert breaking
     end
   end

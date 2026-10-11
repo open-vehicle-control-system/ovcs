@@ -31,8 +31,8 @@ defmodule VmsCore.Application do
     Supervisor.start_link(children, opts)
   end
 
+  # A release's start script sets `RELEASE_NAME`; migrations are skipped there.
   defp skip_migrations? do
-    # By default, sqlite migrations are run when using a release
     System.get_env("RELEASE_NAME") != nil
   end
 
@@ -42,18 +42,19 @@ defmodule VmsCore.Application do
     Mix.ensure_application!(:observer)
   end
 
+  @doc """
+  The vehicle's VMS composer, a `VmsCore.Vehicle` module, set by the
+  firmware's `config/runtime.exs`.
+  """
   def vehicle_composer do
     Application.fetch_env!(:vms_core, :vehicle)
   end
 
-  # Supervise `OvcsBus.Cluster` when `:ovcs_vehicle, :module` is set —
-  # each firmware's `runtime.exs` sets this to the top-level vehicle
-  # module (e.g. `Ovcs1`) whenever a vehicle is selected. Without it
-  # the cluster helper has nothing to probe for, so skip.
+  # Without a selected vehicle the cluster has no peers to probe for.
   defp cluster_child do
     case Application.get_env(:ovcs_vehicle, :module) do
       nil -> []
-      mod -> [{OvcsBus.Cluster, vehicle: mod}]
+      vehicle_module -> [{OvcsBus.Cluster, vehicle: vehicle_module}]
     end
   end
 end

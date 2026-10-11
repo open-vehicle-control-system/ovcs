@@ -1,14 +1,15 @@
 defmodule VmsCore.Components.OVCS.RosActuatorCommand.Throttle do
   @moduledoc """
   Throttle from the ROS bridge's actuator command (`ros_actuator_command`,
-  `0x2B0`): the operator's axis in [-1, 1], applied as is. On OVCS1 a
-  negative value is regenerative braking; reverse is the frame's
+  `0x2B0`): the operator's axis in [-1, 1], applied as is and broadcast
+  as `:requested_throttle`. A negative value can mean regenerative
+  braking, as on the OVCS1 reference vehicle; reverse is the frame's
   `direction`, read by `RosActuatorCommand.Direction`.
 
   ## The throttle expires; it is not held
 
   `handle_frame` is the only thing that moves the request and `emit/1`
-  runs every 10 ms regardless, so without an expiry a bridge that stops
+  runs every loop regardless, so without an expiry a bridge that stops
   talking leaves the last throttle applied for ever. The frame's
   `sequence` is what expires it: the bridge increments it once per ROS
   sample, and `RosCommand.Freshness` zeroes the request when it has not
@@ -17,17 +18,16 @@ defmodule VmsCore.Components.OVCS.RosActuatorCommand.Throttle do
   one mechanism, and it needs no edge from a frame watcher, so a stray
   frame after an outage cannot re-poison the request.
 
-  The timeout is sized for a joystick at the base station's 20 Hz
-  autorepeat with a Zenoh hop in between, and matches the bridge's own
-  watchdog on the same input.
+  The timeout is sized for a joystick's autorepeat with a network hop
+  in between, and matches the ROS bridge's own watchdog on the same
+  input.
 
   ## Only the throttle expires
 
   `RosActuatorCommand.Steering` holds its last value rather than
   centring. Removing propulsion is what makes the vehicle safe;
   snapping the wheels straight mid-corner at speed is a new hazard
-  rather than a mitigation, and it would be a violent input on OVCS1 in
-  particular.
+  rather than a mitigation.
   """
   use GenServer
   alias Cantastic.{Receiver, Frame, Signal}
@@ -38,7 +38,7 @@ defmodule VmsCore.Components.OVCS.RosActuatorCommand.Throttle do
   require Logger
 
   @frame_name "ros_actuator_command"
-  @loop_period 10
+  @loop_period_ms 10
   @timeout_ms 500
   @zero D.new(0)
 
@@ -49,19 +49,19 @@ defmodule VmsCore.Components.OVCS.RosActuatorCommand.Throttle do
   @impl GenServer
   def init(_) do
     :ok = Receiver.subscribe(self(), :ovcs, @frame_name)
-    {:ok, timer} = :timer.send_interval(@loop_period, :loop)
+    {:ok, timer} = :timer.send_interval(@loop_period_ms, :loop)
 
     {:ok,
      %{
        loop_timer: timer,
-       freshness: Freshness.new(@timeout_ms, now()),
+       freshness: Freshness.new(@timeout_ms, now_ms()),
        requested_throttle: @zero
      }}
   end
 
   @impl GenServer
   def handle_info(:loop, state) do
-    {transition, freshness} = Freshness.check(state.freshness, now())
+    {transition, freshness} = Freshness.check(state.freshness, now_ms())
 
     state =
       %{state | freshness: freshness}
@@ -74,7 +74,7 @@ defmodule VmsCore.Components.OVCS.RosActuatorCommand.Throttle do
   def handle_info({:handle_frame, %Frame{name: @frame_name, signals: signals}}, state) do
     %{"throttle" => %Signal{value: throttle}, "sequence" => %Signal{value: sequence}} = signals
 
-    case Freshness.observe(state.freshness, sequence, now()) do
+    case Freshness.observe(state.freshness, sequence, now_ms()) do
       {:new, freshness} ->
         {:noreply, %{state | freshness: freshness, requested_throttle: throttle}}
 
@@ -113,5 +113,5 @@ defmodule VmsCore.Components.OVCS.RosActuatorCommand.Throttle do
     state
   end
 
-  defp now, do: System.monotonic_time(:millisecond)
+  defp now_ms, do: System.monotonic_time(:millisecond)
 end

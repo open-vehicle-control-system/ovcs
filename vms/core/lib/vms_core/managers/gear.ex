@@ -1,6 +1,13 @@
 defmodule VmsCore.Managers.Gear do
   @moduledoc """
-    Decide which gear should be selected based on the requested one and the other constraints
+  Selects the gear from the one requested and the vehicle's state, emits
+  it on the `gear_status` frame and broadcasts `:selected_gear`.
+
+  The request comes from whichever gear or direction source
+  `VmsCore.Managers.ControlLevel` currently names. Parking, reverse and
+  drive are engaged only near standstill with the throttle released;
+  the contact off forces parking and a vehicle not ready to drive drops
+  to neutral.
   """
   use GenServer
   alias Cantastic.Emitter
@@ -8,9 +15,9 @@ defmodule VmsCore.Managers.Gear do
   alias OvcsBus, as: Bus
 
   @gear_shift_throttle_limit D.new("0.05")
-  @gear_shift_speed_limit D.new("1")
+  @gear_shift_speed_limit_km_h D.new("1")
   @zero D.new(0)
-  @loop_period 10
+  @loop_period_ms 10
 
   def start_link(args) do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
@@ -34,7 +41,7 @@ defmodule VmsCore.Managers.Gear do
         enable: true
       })
 
-    {:ok, timer} = :timer.send_interval(@loop_period, :loop)
+    {:ok, timer} = :timer.send_interval(@loop_period_ms, :loop)
 
     {:ok,
      %{
@@ -94,17 +101,16 @@ defmodule VmsCore.Managers.Gear do
         state
       )
       when source == state.selected_control_level_source do
-    # Zero on the way to a level that commands nothing. The
-    # `:requested_throttle` handler gates on the source, so with no
-    # source no message matches and a held positive request would keep
-    # refusing gear changes that are actually safe.
-    requested = if is_nil(requested_throttle_source), do: @zero, else: state.requested_throttle
+    # With no source no `:requested_throttle` matches, so a held positive
+    # request would keep refusing safe gear changes: zero it.
+    requested_throttle =
+      if is_nil(requested_throttle_source), do: @zero, else: state.requested_throttle
 
     {:noreply,
      %{
        state
        | requested_throttle_source: requested_throttle_source,
-         requested_throttle: requested
+         requested_throttle: requested_throttle
      }}
   end
 
@@ -171,7 +177,9 @@ defmodule VmsCore.Managers.Gear do
     } = state
 
     # A nil speed is a source that has gone quiet; unknown is not near zero.
-    speed_near_zero = not is_nil(speed) and D.abs(speed) |> D.lt?(@gear_shift_speed_limit)
+    speed_near_zero =
+      not is_nil(speed) and D.abs(speed) |> D.lt?(@gear_shift_speed_limit_km_h)
+
     throttle_near_zero = D.lt?(requested_throttle, @gear_shift_throttle_limit)
 
     cond do
@@ -213,8 +221,8 @@ defmodule VmsCore.Managers.Gear do
 
   defp apply_gear(state, gear) do
     :ok =
-      Emitter.update(:ovcs, "gear_status", fn data ->
-        %{data | "selected_gear" => "#{gear}"}
+      Emitter.update(:ovcs, "gear_status", fn frame_data ->
+        %{frame_data | "selected_gear" => "#{gear}"}
       end)
 
     %{state | selected_gear: gear}

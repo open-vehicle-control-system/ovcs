@@ -1,6 +1,8 @@
 defmodule VmsCore.Components.Volkswagen.Polo9N.Dashboard do
   @moduledoc """
-    Polo dashboard
+  The Volkswagen Polo 9N instrument cluster: while the contact is on,
+  emits the `engine_status` frame on the `:polo_drive` CAN network so the
+  rev counter shows the rpm published by `:rotation_per_minute_source`.
   """
   use GenServer
   alias Cantastic.Emitter
@@ -8,7 +10,7 @@ defmodule VmsCore.Components.Volkswagen.Polo9N.Dashboard do
   alias OvcsBus, as: Bus
 
   @max_rotation_per_minute 10_000
-  @loop_period 10
+  @loop_period_ms 10
 
   def start_link(args) do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
@@ -27,7 +29,7 @@ defmodule VmsCore.Components.Volkswagen.Polo9N.Dashboard do
         }
       })
 
-    {:ok, timer} = :timer.send_interval(@loop_period, :loop)
+    {:ok, timer} = :timer.send_interval(@loop_period_ms, :loop)
     Bus.subscribe("messages")
 
     {:ok,
@@ -66,15 +68,15 @@ defmodule VmsCore.Components.Volkswagen.Polo9N.Dashboard do
         state
       )
       when source == state.rotation_per_minute_source do
-    rotation_per_minute =
+    displayed_rotation_per_minute =
       case D.gt?(rotation_per_minute, @max_rotation_per_minute) do
         true -> 0
         false -> rotation_per_minute
       end
 
     :ok =
-      Emitter.update(:polo_drive, "engine_status", fn data ->
-        %{data | "rotations_per_minute" => rotation_per_minute}
+      Emitter.update(:polo_drive, "engine_status", fn emitter_data ->
+        %{emitter_data | "rotations_per_minute" => displayed_rotation_per_minute}
       end)
 
     {:noreply, state}

@@ -8,9 +8,9 @@ defmodule VmsCore.Components.OVCS.InputCurve do
   It follows one source's `:requested_throttle` and publishes the shaped
   request under its own process name, as it arrives, with the request it
   was given as `:input_throttle` and its parameters as `:deadzone` and
-  `:expo`, so a dashboard reads everything from this one component, so the control
-  level manager selects it like any other throttle source and the
-  actuator never learns whether a hand or a planner is driving. Each
+  `:expo`, so a dashboard reads everything from this one component. The
+  control level manager selects it like any other throttle source, and
+  the actuator never learns whether a hand or a planner is driving. Each
   hand gets its own instance with its own parameters — a radio trigger
   and a gamepad stick drift differently.
 
@@ -34,8 +34,8 @@ defmodule VmsCore.Components.OVCS.InputCurve do
   A commander that sends a physical quantity, such as
   `RosVelocityCommand`, does not go through a curve: it is wired to the
   manager directly. Neither does anything that reacts to the raw hand,
-  such as `radio_breaking`, which `RadioControl.Throttle` still reports
-  from the unshaped trigger.
+  such as `radio_breaking`, which `RadioControl.Throttle` reports from
+  the unshaped trigger.
 
   ## Options
 
@@ -88,10 +88,10 @@ defmodule VmsCore.Components.OVCS.InputCurve do
     {:noreply, state}
   end
 
-  defp broadcast(process_name, name, value) do
+  defp broadcast(process_name, name, fraction) do
     Bus.broadcast("messages", %Bus.Message{
       name: name,
-      value: value,
+      value: fraction,
       unit: Units.fraction(),
       source: process_name
     })
@@ -104,9 +104,9 @@ defmodule VmsCore.Components.OVCS.InputCurve do
   def curve(args) do
     curve = Map.merge(@default_curve, Map.take(args, Map.keys(@default_curve)))
 
-    Enum.each(curve, fn {key, value} ->
-      if D.negative?(value) or D.gt?(value, @one) do
-        raise ArgumentError, "#{inspect(key)} must be in [0, 1], got #{value}"
+    Enum.each(curve, fn {parameter, fraction} ->
+      if D.negative?(fraction) or D.gt?(fraction, @one) do
+        raise ArgumentError, "#{inspect(parameter)} must be in [0, 1], got #{fraction}"
       end
     end)
 
@@ -124,12 +124,10 @@ defmodule VmsCore.Components.OVCS.InputCurve do
     requested
     |> NormalisedRequest.clamp()
     |> strip_deadzone(curve.deadzone)
-    |> blend(curve.expo)
+    |> apply_expo(curve.expo)
   end
 
-  # Zero within the dead zone; beyond it the remaining travel is
-  # stretched back over the full range, so full deflection still gives
-  # full output.
+  # Past the dead zone the travel is stretched back over [0, 1], so full deflection stays full.
   defp strip_deadzone(requested, deadzone) do
     magnitude = D.abs(requested)
 
@@ -143,10 +141,8 @@ defmodule VmsCore.Components.OVCS.InputCurve do
     end
   end
 
-  # `(1 - expo) * x + expo * x * |x|`: the signed square keeps the sign
-  # and the endpoints while flattening the middle of the travel, and the
-  # blend sets how much of that flattening is applied.
-  defp blend(requested, expo) do
+  # `(1 - expo) * x + expo * x * |x|`: the signed square keeps the sign and the endpoints.
+  defp apply_expo(requested, expo) do
     linear = requested |> D.mult(D.sub(@one, expo))
     squared = requested |> D.abs() |> D.mult(requested) |> D.mult(expo)
     D.add(linear, squared)

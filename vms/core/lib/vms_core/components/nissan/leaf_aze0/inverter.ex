@@ -1,28 +1,37 @@
 defmodule VmsCore.Components.Nissan.LeafAZE0.Inverter do
   @moduledoc """
-    Nissan Leaf AZE0/EM57 Inverter
+  A Nissan Leaf AZE0 inverter driving an EM57 motor, on the `:leaf_drive`
+  CAN network.
+
+  While the contact is on, a generic controller's relay powers the
+  inverter and the VMS frames it expects are emitted. Each tick turns the
+  selected source's throttle request into a torque request, signed by the
+  selected gear and zero outside `:drive` and `:reverse`. Publishes the
+  motor rpm, requested and effective torque, output voltage, the
+  inverter and motor temperatures, and `:ready_to_drive`.
+
+  ## Options
+
+    * `:selected_control_level_source` — the manager that names the
+      throttle source.
+    * `:selected_gear_source` — the manager publishing `:selected_gear`.
+    * `:contact_source` — the component publishing `:contact`.
+    * `:controller`, `:power_relay_pin` — the generic controller digital
+      pin switching the inverter's power.
   """
   use GenServer
-  alias OvcsBus, as: Bus
-
   alias Cantastic.{Emitter, Frame, Receiver, Signal}
   alias Decimal, as: D
-
-  alias VmsCore.{
-    Components.Nissan.Util,
-    Components.OVCS.GenericController
-  }
+  alias OvcsBus, as: Bus
+  alias VmsCore.Components.{Nissan.Util, OVCS.GenericController}
 
   @zero D.new(0)
-  # @motor_max_torque D.new("250")
-  # @motor_max_power D.new("80")
-  @max_torque 100
-  # TODO store in DB
-  @drive_max_torque D.new(@max_torque)
-  @reverse_max_torque D.new(-@max_torque)
+  @max_torque_nm 100
+  @drive_max_torque D.new(@max_torque_nm)
+  @reverse_max_torque D.new(-@max_torque_nm)
   @effective_throttle_threshold D.new("0.05")
 
-  @loop_period 10
+  @loop_period_ms 10
 
   def start_link(args) do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
@@ -62,7 +71,7 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Inverter do
 
     Receiver.subscribe(self(), :leaf_drive, ["inverter_status", "inverter_temperatures"])
     Bus.subscribe("messages")
-    {:ok, timer} = :timer.send_interval(@loop_period, :loop)
+    {:ok, timer} = :timer.send_interval(@loop_period_ms, :loop)
 
     {:ok,
      %{
@@ -110,19 +119,16 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Inverter do
         state
       )
       when source == state.selected_control_level_source do
-    # Zero on the way to a level that commands nothing. The
-    # `:requested_throttle` handler gates on the source, so with no
-    # source no message matches and the last request would be held --
-    # and applied as torque every tick. A vehicle that keeps pulling
-    # after being switched to a safe level is the same hazard as a
-    # stale CAN frame.
-    requested = if is_nil(requested_throttle_source), do: @zero, else: state.requested_throttle
+    # Zero on the way to a level that commands nothing: with no source
+    # no request message matches, and the last request would be held.
+    requested_throttle =
+      if is_nil(requested_throttle_source), do: @zero, else: state.requested_throttle
 
     {:noreply,
      %{
        state
        | requested_throttle_source: requested_throttle_source,
-         requested_throttle: requested
+         requested_throttle: requested_throttle
      }}
   end
 
@@ -184,12 +190,12 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Inverter do
      %{
        state
        | inverter_communication_board_temperature:
-           fahrenheit_to_celcius(inverter_communication_board_temperature),
+           fahrenheit_to_celsius(inverter_communication_board_temperature),
          insulated_gate_bipolar_transistor_temperature:
-           fahrenheit_to_celcius(insulated_gate_bipolar_transistor_temperature),
+           fahrenheit_to_celsius(insulated_gate_bipolar_transistor_temperature),
          insulated_gate_bipolar_transistor_board_temperature:
-           fahrenheit_to_celcius(insulated_gate_bipolar_transistor_board_temperature),
-         motor_temperature: fahrenheit_to_celcius(motor_temperature)
+           fahrenheit_to_celsius(insulated_gate_bipolar_transistor_board_temperature),
+         motor_temperature: fahrenheit_to_celsius(motor_temperature)
      }}
   end
 
@@ -227,8 +233,8 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Inverter do
     requested_torque = D.mult(requested_throttle, max_torque)
 
     :ok =
-      Emitter.update(:leaf_drive, "vms_torque_request", fn data ->
-        %{data | "requested_torque" => requested_torque}
+      Emitter.update(:leaf_drive, "vms_torque_request", fn emitter_data ->
+        %{emitter_data | "requested_torque" => requested_torque}
       end)
 
     %{state | requested_torque: requested_torque}
@@ -311,21 +317,21 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Inverter do
     state
   end
 
-  defp torque_frame_parameters_builder(data) do
-    counter = data["counter"]
+  defp torque_frame_parameters_builder(emitter_data) do
+    counter = emitter_data["counter"]
 
     parameters = %{
-      "requested_torque" => data["requested_torque"],
+      "requested_torque" => emitter_data["requested_torque"],
       "counter" => Util.shifted_counter(counter),
       "crc" => &Util.crc8/1
     }
 
-    data = %{data | "counter" => Util.counter(counter + 1)}
-    {:ok, parameters, data}
+    emitter_data = %{emitter_data | "counter" => Util.counter(counter + 1)}
+    {:ok, parameters, emitter_data}
   end
 
-  defp status_frame_parameters_builder(data) do
-    counter = data["counter"]
+  defp status_frame_parameters_builder(emitter_data) do
+    counter = emitter_data["counter"]
 
     heartbeat =
       case Util.counter(counter) do
@@ -336,27 +342,24 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Inverter do
       end
 
     parameters = %{
-      "gear" => data["gear"],
+      "gear" => emitter_data["gear"],
       "heartbeat" => heartbeat,
       "heartbeat1" => Util.counter(counter),
       "counter" => Util.counter(counter),
       "crc" => &Util.crc8/1
     }
 
-    data = %{data | "counter" => Util.counter(counter + 1)}
-    {:ok, parameters, data}
+    emitter_data = %{emitter_data | "counter" => Util.counter(counter + 1)}
+    {:ok, parameters, emitter_data}
   end
 
-  def drive_max_torque do
-    @drive_max_torque
-  end
+  @doc "The torque request, in newton-metres, of a full throttle in `:drive`."
+  def drive_max_torque, do: @drive_max_torque
 
-  def reverse_max_torque do
-    @reverse_max_torque
-  end
+  @doc "The torque request, in newton-metres, of a full throttle in `:reverse`."
+  def reverse_max_torque, do: @reverse_max_torque
 
-  defp fahrenheit_to_celcius(fahrenheit) do
-    shifted = fahrenheit - 32
-    D.div(shifted, D.new("1.8")) |> D.round()
+  defp fahrenheit_to_celsius(fahrenheit) do
+    D.div(fahrenheit - 32, D.new("1.8")) |> D.round()
   end
 end

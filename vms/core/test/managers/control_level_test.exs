@@ -1,6 +1,6 @@
 defmodule VmsCore.Managers.ControlLevelTest do
   @moduledoc """
-  The manager decides who commands the vehicle, and it had no tests.
+  The manager decides who commands the vehicle.
 
   Everything here drives `handle_info/2` directly against the state
   `init/1` builds, rather than starting the GenServer: the transitions
@@ -13,17 +13,16 @@ defmodule VmsCore.Managers.ControlLevelTest do
   use ExUnit.Case, async: true
 
   import ExUnit.CaptureLog
-
-  alias VmsCore.Managers.ControlLevel
   alias OvcsBus.Message
   alias Decimal, as: D
+  alias VmsCore.Managers.ControlLevel
 
   @zero D.new(0)
 
   # Stand-ins for the real components. The manager only ever compares
   # these for equality and hands them on as `:requested_*_source`, so
   # what matters is that they are distinguishable.
-  @args %{
+  @init_arguments %{
     requested_control_level_source: RadioLevel,
     requested_ros_commander_source: RadioCommander,
     requested_gear_sources: %{manual: nil, radio: nil, ros: %{}},
@@ -51,8 +50,8 @@ defmodule VmsCore.Managers.ControlLevelTest do
   end
 
   defp manager(overrides \\ %{}) do
-    {:ok, state} = ControlLevel.init(Map.merge(@args, overrides))
-    # `init/1` arms a 10 ms interval that would race every assertion.
+    {:ok, state} = ControlLevel.init(Map.merge(@init_arguments, overrides))
+    # `init/1` arms a loop timer that would race every assertion.
     {:ok, :cancel} = :timer.cancel(state.loop_timer)
     state
   end
@@ -78,8 +77,7 @@ defmodule VmsCore.Managers.ControlLevelTest do
     |> tick()
   end
 
-  # `:ros` is only reachable from `:radio`, so getting there is two
-  # deliberate steps rather than one.
+  # `:ros` is only reachable from `:radio`.
   defp in_ros(state \\ manager()) do
     state |> request(:radio) |> request(:ros)
   end
@@ -106,9 +104,8 @@ defmodule VmsCore.Managers.ControlLevelTest do
     end
 
     test "refuses :ros straight from :manual, and says so once" do
-      # The silent failure this exists for: a switch already in the top
-      # position at boot fell through every branch and stayed in
-      # :manual for ever without a word.
+      # A switch already in the top position at boot must not leave the
+      # vehicle in :manual without a word.
       state = manager()
 
       log =
@@ -121,7 +118,7 @@ defmodule VmsCore.Managers.ControlLevelTest do
       assert log =~ ":ros"
       assert log =~ "ros_only_reachable_from_radio"
 
-      # Held, not repeated: the loop runs at 100 Hz.
+      # Held, not repeated on every loop.
       assert capture_log(fn -> tick(state) end) == ""
     end
 
@@ -214,9 +211,9 @@ defmodule VmsCore.Managers.ControlLevelTest do
     end
 
     test "a vehicle with no second switch stays in :teleop" do
-      # OVCS1: no commander channel, and `ros:` populated for :teleop
-      # only. The planner position must be unreachable rather than
-      # resolving to nil and silently commanding nothing.
+      # As on the OVCS1 reference vehicle: no commander channel, `ros:` for
+      # :teleop only. The planner position must be unreachable, not resolve
+      # to nil and silently command nothing.
       state =
         manager(%{requested_ros_commander_source: nil})
         |> deliver(:requested_ros_commander, :autonomous, RadioCommander)
@@ -341,10 +338,9 @@ defmodule VmsCore.Managers.ControlLevelTest do
 
   describe "a brake that is still applied" do
     test "refuses :radio rather than letting it through for one tick" do
-      # The force is lifted by the switch returning to :manual, not by
-      # the brake being released, so without the check the level goes
-      # to :radio, is forced back on the next tick, and oscillates at
-      # the loop frequency for as long as the switch stays there.
+      # The force is lifted by the switch returning to :manual, not by the
+      # brake's release: without the check the level would oscillate
+      # between :radio and :manual on every tick.
       state =
         manager()
         |> request(:radio)
@@ -411,13 +407,15 @@ defmodule VmsCore.Managers.ControlLevelTest do
 
   describe "source attribution" do
     test "an unattributed message never reaches the bus" do
-      # The handlers gate on `source == state.speed_source`, and the bus
-      # is cluster-wide, so a nil-source message would read as a
-      # wildcard on any vehicle that leaves that source unconfigured --
-      # which OVCS Mini does for three of them. The bus refuses it
-      # instead, so the manager never has to consider the case.
+      # The handlers gate on `source == state.speed_source`, so on a
+      # cluster-wide bus a nil-source message would match any source a
+      # vehicle leaves unconfigured. The bus refuses it instead.
       assert_raise ArgumentError, ~r/has no :source/, fn ->
-        OvcsBus.broadcast("messages", %Message{name: :speed, value: D.new("9.9"), source: nil})
+        OvcsBus.broadcast("messages", %Message{
+          name: :speed,
+          value: D.new("9.9"),
+          source: nil
+        })
       end
 
       refute_receive %Message{name: :speed}, 50
@@ -446,21 +444,24 @@ defmodule VmsCore.Managers.ControlLevelTest do
 
   describe "source map validation" do
     test "a flat :ros entry is refused at init rather than on the first flip to :ros" do
-      args = %{@args | requested_throttle_sources: %{manual: nil, radio: nil, ros: Planner}}
+      arguments = %{
+        @init_arguments
+        | requested_throttle_sources: %{manual: nil, radio: nil, ros: Planner}
+      }
 
       assert_raise ArgumentError, ~r/requested_throttle_sources.*:ros.*keyed by commander/s, fn ->
-        ControlLevel.init(args)
+        ControlLevel.init(arguments)
       end
     end
 
     test "an :autonomous level is refused, naming the rename" do
-      args = %{
-        @args
+      arguments = %{
+        @init_arguments
         | requested_steering_sources: %{manual: nil, radio: nil, autonomous: Planner}
       }
 
       assert_raise ArgumentError, ~r/requested_steering_sources.*:autonomous.*:ros/s, fn ->
-        ControlLevel.init(args)
+        ControlLevel.init(arguments)
       end
     end
 

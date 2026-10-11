@@ -5,7 +5,6 @@ defmodule VmsCore.Components.OVCS.RotationFusionTest do
   cross-check.
   """
   use ExUnit.Case, async: true
-
   alias Decimal, as: D
   alias OvcsBus.Message
   alias VmsCore.Components.OVCS.RotationFusion
@@ -21,7 +20,12 @@ defmodule VmsCore.Components.OVCS.RotationFusionTest do
         process_name: @fusion,
         sources: [
           %{source: @vesc, ratio: D.new(1), signed: true, noise_rpm: D.new(5)},
-          %{source: @spur, ratio: D.from_float(54 / 13), signed: false, noise_rpm: D.new(0)}
+          %{
+            source: @spur,
+            ratio: D.from_float(54 / 13),
+            signed: false,
+            noise_rpm: D.new(0)
+          }
         ],
         readings: %{},
         direction_source: nil,
@@ -37,10 +41,10 @@ defmodule VmsCore.Components.OVCS.RotationFusionTest do
     )
   end
 
-  defp rotation(source, value, state) do
+  defp rotation(source, rpm, state) do
     {:noreply, state} =
       RotationFusion.handle_info(
-        %Message{name: :rotation_per_minute, value: value, source: source},
+        %Message{name: :rotation_per_minute, value: rpm, source: source},
         state
       )
 
@@ -49,7 +53,7 @@ defmodule VmsCore.Components.OVCS.RotationFusionTest do
 
   defp published_rotation do
     receive do
-      %Message{name: :rotation_per_minute, value: value, source: @fusion} -> {:ok, value}
+      %Message{name: :rotation_per_minute, value: rpm, source: @fusion} -> {:ok, rpm}
     after
       0 -> :none
     end
@@ -66,8 +70,8 @@ defmodule VmsCore.Components.OVCS.RotationFusionTest do
       assert {:ok, _} = published_rotation()
 
       rotation(@vesc, D.new(-450), state)
-      assert {:ok, value} = published_rotation()
-      assert D.eq?(value, D.new(-450))
+      assert {:ok, rpm} = published_rotation()
+      assert D.eq?(rpm, D.new(-450))
     end
 
     test "only a sample of the active source is published" do
@@ -88,9 +92,9 @@ defmodule VmsCore.Components.OVCS.RotationFusionTest do
       flush()
 
       rotation(@spur, D.new("108.0"), state)
-      assert {:ok, value} = published_rotation()
+      assert {:ok, rpm} = published_rotation()
       # 108 spur rpm times 54/13.
-      assert_in_delta D.to_float(value), 448.6, 0.1
+      assert_in_delta D.to_float(rpm), 448.6, 0.1
     end
 
     test "with every source dead the rotation is unknown" do
@@ -136,7 +140,9 @@ defmodule VmsCore.Components.OVCS.RotationFusionTest do
       state =
         state(%{
           direction_source: @actuator,
-          sources: [%{source: @spur, ratio: D.new(1), signed: false, noise_rpm: D.new(0)}]
+          sources: [
+            %{source: @spur, ratio: D.new(1), signed: false, noise_rpm: D.new(0)}
+          ]
         })
 
       {:noreply, state} =
@@ -157,8 +163,8 @@ defmodule VmsCore.Components.OVCS.RotationFusionTest do
   end
 
   describe "the cross-check" do
-    defp readings(vesc, spur),
-      do: state(%{readings: %{@vesc => D.new(vesc), @spur => D.new(spur)}})
+    defp readings(vesc_rpm, spur_rpm),
+      do: state(%{readings: %{@vesc => D.new(vesc_rpm), @spur => D.new(spur_rpm)}})
 
     test "below the check speed nothing is compared" do
       state = RotationFusion.cross_check(readings(100, 60), 0)

@@ -54,12 +54,12 @@ defmodule VmsCore.Components.Vesc.MotorControllerTest do
 
   defp source_message(name, value, source), do: %Message{name: name, value: value, source: source}
 
-  defp status_frame(erpm, current) do
+  defp status_frame(erpm, motor_current_a) do
     %Frame{
       name: "vesc_status",
       signals: %{
         "erpm" => %Signal{name: "erpm", value: erpm},
-        "motor_current" => %Signal{name: "motor_current", value: current},
+        "motor_current" => %Signal{name: "motor_current", value: motor_current_a},
         "duty" => %Signal{name: "duty", value: D.new("0.1")}
       }
     }
@@ -82,11 +82,11 @@ defmodule VmsCore.Components.Vesc.MotorControllerTest do
 
   describe "direction" do
     test "the sign of the rotation, with a stray rpm at rest reading as stopped" do
-      noise = D.new(5)
-      assert MotorController.direction(D.new("450.0"), noise) == "forward"
-      assert MotorController.direction(D.new("-450.0"), noise) == "backward"
-      assert MotorController.direction(D.new("-1.0"), noise) == "stopped"
-      assert MotorController.direction(D.new("5.0"), noise) == "stopped"
+      noise_rpm = D.new(5)
+      assert MotorController.direction(D.new("450.0"), noise_rpm) == "forward"
+      assert MotorController.direction(D.new("-450.0"), noise_rpm) == "backward"
+      assert MotorController.direction(D.new("-1.0"), noise_rpm) == "stopped"
+      assert MotorController.direction(D.new("5.0"), noise_rpm) == "stopped"
     end
   end
 
@@ -140,7 +140,8 @@ defmodule VmsCore.Components.Vesc.MotorControllerTest do
       # A zero rpm setpoint does nothing to a released motor: the VESC
       # only starts its speed loop above its minimum erpm. Zero duty
       # brakes whatever state the motor is in.
-      assert MotorController.command(planner(0)) == {:set_duty, %{"duty" => D.new(0)}, D.new(0)}
+      assert MotorController.command(planner(0)) ==
+               {:set_duty, %{"duty" => D.new(0)}, D.new(0)}
     end
 
     test "no source releases the motor: zero current, not zero rpm" do
@@ -159,7 +160,11 @@ defmodule VmsCore.Components.Vesc.MotorControllerTest do
         selected_gear_source: @gear,
         selected_gear: gear,
         max_brake_current: D.new(20),
-        caps: MotorController.caps(%{max_throttle: D.new("0.1"), max_reverse: D.new("0.05")}),
+        caps:
+          MotorController.caps(%{
+            max_throttle: D.new("0.1"),
+            max_reverse: D.new("0.05")
+          }),
         requested_throttle: D.new(requested)
       })
     end
@@ -408,7 +413,10 @@ defmodule VmsCore.Components.Vesc.MotorControllerTest do
       state = state(%{rotation_from: :erpm})
 
       {:noreply, state} =
-        MotorController.handle_info({:handle_frame, status_frame(1968, D.new("3.5"))}, state)
+        MotorController.handle_info(
+          {:handle_frame, status_frame(1968, D.new("3.5"))},
+          state
+        )
 
       assert_received %Message{name: :rotation_per_minute, value: rpm, source: @vesc}
       assert D.eq?(rpm, D.new("984.0"))
@@ -416,7 +424,10 @@ defmodule VmsCore.Components.Vesc.MotorControllerTest do
       assert D.eq?(current, D.new("3.5"))
 
       {:noreply, _} =
-        MotorController.handle_info({:handle_frame, status_frame(-984, D.new("-3.5"))}, state)
+        MotorController.handle_info(
+          {:handle_frame, status_frame(-984, D.new("-3.5"))},
+          state
+        )
 
       assert_received %Message{name: :rotation_per_minute, value: rpm, source: @vesc}
       assert D.eq?(rpm, D.new("-492.0"))
@@ -425,7 +436,10 @@ defmodule VmsCore.Components.Vesc.MotorControllerTest do
 
     test "from the tachometer, the status frame carries the current but no rotation" do
       {:noreply, _} =
-        MotorController.handle_info({:handle_frame, status_frame(1968, D.new("3.5"))}, state())
+        MotorController.handle_info(
+          {:handle_frame, status_frame(1968, D.new("3.5"))},
+          state()
+        )
 
       assert_received %Message{name: :motor_current, source: @vesc}
       refute_received %Message{name: :rotation_per_minute, source: @vesc}

@@ -1,16 +1,37 @@
 defmodule VmsCore.Components.OVCS.GenericController do
   @moduledoc """
-    Generic controller based on an Arduino R4 Minima
+  Driver for one OVCS generic controller, an Arduino R4 Minima on the
+  `:ovcs` network.
+
+  Its pins are configured by the vehicle composer's
+  `generic_controllers/0`, under the controller's process name. This
+  process emits the pin requests other components make through
+  `set_digital_value/3`, `set_pwm_duty_cycle/3`, `set_dac_duty_cycle/2`
+  and `set_external_pwm/5`, keeps the pin statuses the controller
+  reports, and broadcasts every enabled pin as `:received_<pin>` and
+  `:requested_<pin>`, along with `:is_alive`, `:status` and the
+  expansion boards' last errors.
+
+  ## Options
+
+    * `:process_name` — the name this process registers under, the
+      source of its messages and the prefix of its frame names.
+    * `:control_digital_pins` — emit the digital pin request frame.
+    * `:control_other_pins` — emit the PWM and DAC pin request frame.
+    * `:enabled_external_pwms` — ids of the external PWMs to drive.
   """
   use GenServer
 
-  alias Cantastic.{Emitter, Frame, Signal, Receiver, ReceivedFrameWatcher}
+  alias Decimal, as: D
+  alias Cantastic.{Emitter, Frame, Receiver, ReceivedFrameWatcher, Signal}
   alias OvcsBus, as: Bus
   alias OvcsBus.Units
   alias VmsCore.Application
+
+  # Full scale of the 16-bit external PWM duty_cycle signal.
   @pwm_duty_cycle_range 65_535
-  alias Decimal, as: D
-  @loop_period 50
+  @loop_period_ms 50
+  @adoption_duration_ms 1000
 
   @digital_pins %{
     "digital_pin0_enabled" => false,
@@ -116,10 +137,9 @@ defmodule VmsCore.Components.OVCS.GenericController do
         digital_and_analog_pin_status_frame_name
       ])
 
-    # Watched as well as subscribed: a controller on old firmware, or
-    # not yet re-adopted, never emits this frame, and a stale or
-    # default frequency would read as a standstill. While the frame is
-    # dead the pulse signals are broadcast as nil.
+    # Watched as well as subscribed: a controller whose firmware lacks this
+    # frame never emits it, and a stale frequency would read as standstill.
+    # While the frame is dead the pulse signals are broadcast as nil.
     if pulse_pin_enabled do
       :ok = Receiver.subscribe(self(), :ovcs, pulse_counter_status_frame_name)
       :ok = ReceivedFrameWatcher.enable(:ovcs, pulse_counter_status_frame_name)
@@ -161,15 +181,15 @@ defmodule VmsCore.Components.OVCS.GenericController do
 
     enabled_pin_names =
       controller_configuration
-      |> Enum.flat_map(fn {key, value} ->
-        case value != "disabled" do
+      |> Enum.flat_map(fn {pin, pin_mode} ->
+        case pin_mode != "disabled" do
           true ->
-            case key do
-              "digital_pin" <> _ -> [key <> "_enabled"]
-              "analog_pin" <> _ -> [key <> "_value"]
-              "pulse_pin" <> _ -> [key <> "_count", key <> "_frequency"]
-              "pwm_pin" <> _ -> [key <> "_duty_cycle"]
-              "dac_pin" <> _ -> [key <> "_duty_cycle"]
+            case pin do
+              "digital_pin" <> _ -> [pin <> "_enabled"]
+              "analog_pin" <> _ -> [pin <> "_value"]
+              "pulse_pin" <> _ -> [pin <> "_count", pin <> "_frequency"]
+              "pwm_pin" <> _ -> [pin <> "_duty_cycle"]
+              "dac_pin" <> _ -> [pin <> "_duty_cycle"]
               _ -> []
             end
 
@@ -212,7 +232,7 @@ defmodule VmsCore.Components.OVCS.GenericController do
         end
       end)
 
-    {:ok, timer} = :timer.send_interval(@loop_period, :loop)
+    {:ok, timer} = :timer.send_interval(@loop_period_ms, :loop)
 
     {:ok,
      %{
@@ -253,18 +273,15 @@ defmodule VmsCore.Components.OVCS.GenericController do
 
   # Two frames feed `received_pins`, so each merges its own signals
   # rather than replacing the map, or the other frame's values would be
-  # wiped 10 ms later.
-  @impl GenServer
+  # wiped on its next arrival.
   def handle_info({:handle_frame, %Frame{name: name, signals: signals}}, state)
       when name == state.digital_and_analog_pin_status_frame_name do
     {:noreply, %{state | received_pins: merge_signals(state.received_pins, signals)}}
   end
 
-  # The pulse signals go out as each frame arrives, so a consumer
-  # integrating them can tell a fresh sample from a held one, and only
-  # while the frame is alive: until then the tick declares them unknown,
-  # and both would alternate.
-  @impl GenServer
+  # Broadcast per frame, so an integrator can tell a fresh sample from a held
+  # one, and only while the frame is alive: otherwise the tick declares them
+  # unknown and the two would alternate.
   def handle_info({:handle_frame, %Frame{name: name, signals: signals}}, state)
       when name == state.pulse_counter_status_frame_name do
     received_pins = merge_signals(state.received_pins, signals)
@@ -279,8 +296,7 @@ defmodule VmsCore.Components.OVCS.GenericController do
     {:noreply, state}
   end
 
-  @impl GenServer
-  def handle_info({:handle_frame, %Frame{name: name, signals: signals} = _frame}, state)
+  def handle_info({:handle_frame, %Frame{name: name, signals: signals}}, state)
       when name == state.alive_frame_name do
     %{
       "status" => %Signal{value: status},
@@ -298,32 +314,30 @@ defmodule VmsCore.Components.OVCS.GenericController do
   end
 
   @impl GenServer
-  def handle_call({:set_digital_value, pin, value}, _from, state) do
+  def handle_call({:set_digital_value, pin, enabled}, _from, state) do
     pin_name = "digital_pin#{pin}_enabled"
 
     :ok =
-      Emitter.update(:ovcs, state.digital_pin_request_frame_name, fn data ->
-        %{data | pin_name => value}
+      Emitter.update(:ovcs, state.digital_pin_request_frame_name, fn frame_data ->
+        %{frame_data | pin_name => enabled}
       end)
 
-    requested_pins = %{state.requested_pins | pin_name => value}
+    requested_pins = %{state.requested_pins | pin_name => enabled}
     {:reply, :ok, %{state | requested_pins: requested_pins}}
   end
 
-  @impl GenServer
   def handle_call({:set_pwm_duty_cycle, pin, duty_cycle}, _from, state) do
     pin_name = "pwm_pin#{pin}_duty_cycle"
 
     :ok =
-      Emitter.update(:ovcs, state.other_pin_request_frame_name, fn data ->
-        %{data | pin_name => duty_cycle}
+      Emitter.update(:ovcs, state.other_pin_request_frame_name, fn frame_data ->
+        %{frame_data | pin_name => duty_cycle}
       end)
 
     requested_pins = %{state.requested_pins | pin_name => duty_cycle}
     {:reply, :ok, %{state | requested_pins: requested_pins}}
   end
 
-  @impl GenServer
   def handle_call(
         {:set_external_pwm, pwm_id, enabled, duty_cycle_percentage, frequency},
         _from,
@@ -332,9 +346,18 @@ defmodule VmsCore.Components.OVCS.GenericController do
     duty_cycle = duty_cycle_percentage |> D.mult(@pwm_duty_cycle_range)
 
     :ok =
-      Emitter.update(:ovcs, state.external_pwm_request_frame_names |> Enum.at(pwm_id), fn data ->
-        %{data | "enabled" => enabled, "duty_cycle" => duty_cycle, "frequency" => frequency}
-      end)
+      Emitter.update(
+        :ovcs,
+        state.external_pwm_request_frame_names |> Enum.at(pwm_id),
+        fn frame_data ->
+          %{
+            frame_data
+            | "enabled" => enabled,
+              "duty_cycle" => duty_cycle,
+              "frequency" => frequency
+          }
+        end
+      )
 
     pin_name = "external_pwm#{pwm_id}"
 
@@ -348,43 +371,47 @@ defmodule VmsCore.Components.OVCS.GenericController do
     {:reply, :ok, %{state | requested_pins: requested_pins}}
   end
 
-  @impl GenServer
   def handle_call({:set_dac_duty_cycle, duty_cycle}, _from, state) do
     pin_name = "dac_pin0_duty_cycle"
 
     :ok =
-      Emitter.update(:ovcs, state.other_pin_request_frame_name, fn data ->
-        %{data | pin_name => duty_cycle}
+      Emitter.update(:ovcs, state.other_pin_request_frame_name, fn frame_data ->
+        %{frame_data | pin_name => duty_cycle}
       end)
 
     requested_pins = %{state.requested_pins | pin_name => duty_cycle}
     {:reply, :ok, %{state | requested_pins: requested_pins}}
   end
 
-  @impl GenServer
   def handle_call({:get_digital_value, pin}, _from, state) do
-    value = state.received_pins["digital_pin#{pin}_enabled"]
-    {:reply, {:ok, value}, state}
+    enabled = state.received_pins["digital_pin#{pin}_enabled"]
+    {:reply, {:ok, enabled}, state}
   end
 
-  @impl GenServer
   def handle_call({:get_analog_value, pin}, _from, state) do
-    value = state.received_pins["analog_pin#{pin}_value"]
-    {:reply, {:ok, value}, state}
+    reading = state.received_pins["analog_pin#{pin}_value"]
+    {:reply, {:ok, reading}, state}
   end
 
-  def set_digital_value(controller, pin, value) do
-    GenServer.call(controller, {:set_digital_value, pin, value})
+  @doc "Requests digital output `pin` of `controller` on (`true`) or off."
+  def set_digital_value(controller, pin, enabled) do
+    GenServer.call(controller, {:set_digital_value, pin, enabled})
   end
 
+  @doc "Requests a raw duty cycle on PWM `pin` of `controller`."
   def set_pwm_duty_cycle(controller, pin, duty_cycle) do
     GenServer.call(controller, {:set_pwm_duty_cycle, pin, duty_cycle})
   end
 
+  @doc "Requests a raw duty cycle on the DAC pin of `controller`."
   def set_dac_duty_cycle(controller, duty_cycle) do
     GenServer.call(controller, {:set_dac_duty_cycle, duty_cycle})
   end
 
+  @doc """
+  Requests external PWM `pwm_id` of `controller`: `duty_cycle_percentage`
+  is a fraction in [0, 1], `frequency` in hertz.
+  """
   def set_external_pwm(controller, pwm_id, enabled, duty_cycle_percentage, frequency) do
     GenServer.call(
       controller,
@@ -392,21 +419,28 @@ defmodule VmsCore.Components.OVCS.GenericController do
     )
   end
 
+  @doc "The last reading of analog `pin` of `controller`, as `{:ok, reading}`."
   def get_analog_value(controller, pin) do
     GenServer.call(controller, {:get_analog_value, pin})
   end
 
+  @doc "The last reported state of digital `pin` of `controller`, as `{:ok, enabled}`."
   def get_digital_value(controller, pin) do
     GenServer.call(controller, {:get_digital_value, pin})
   end
 
-  def trigger_action("adopt", params) do
-    controller_name = params["controller_name"] |> String.to_existing_atom()
+  @doc """
+  Dashboard action `"adopt"`: sends the configuration of the controller
+  named by `"controller_name"` for `#{@adoption_duration_ms}` ms.
+  """
+  def trigger_action("adopt", parameters) do
+    controller_name = parameters["controller_name"] |> String.to_existing_atom()
     start_adoption(controller_name)
-    :timer.sleep(1000)
+    :timer.sleep(@adoption_duration_ms)
     stop_adoption()
   end
 
+  @doc "Starts emitting `controller_name`'s configuration on the adoption frame."
   def start_adoption(controller_name) do
     :ok =
       Emitter.configure(:ovcs, "controller_configuration", %{
@@ -416,6 +450,7 @@ defmodule VmsCore.Components.OVCS.GenericController do
       })
   end
 
+  @doc "Stops emitting the adoption frame."
   def stop_adoption do
     Emitter.disable(:ovcs, "controller_configuration")
   end
@@ -438,41 +473,38 @@ defmodule VmsCore.Components.OVCS.GenericController do
     end)
   end
 
-  defp broadcast_received_pin(state, name, value) do
+  defp broadcast_received_pin(state, pin_name, pin_value) do
     Bus.broadcast("messages", %Bus.Message{
-      name: "received_#{name}" |> String.to_atom(),
-      value: value,
-      unit: pin_unit(name),
+      name: "received_#{pin_name}" |> String.to_atom(),
+      value: pin_value,
+      unit: pin_unit(pin_name),
       source: state.process_name
     })
   end
 
-  defp pin_unit(name) do
-    if String.ends_with?(name, "_frequency"), do: Units.hertz()
+  defp pin_unit(pin_name) do
+    if String.ends_with?(pin_name, "_frequency"), do: Units.hertz()
   end
 
-  # The pulse pins are broadcast as their frame arrives; here they are
-  # only declared unknown while that frame is dead.
+  # Pulse pins go out per frame; the tick only declares them nil while their frame is dead.
   defp emit_metrics(state) do
     pulse_frame_alive = pulse_frame_alive?(state)
 
     state.received_pin_names
-    |> Enum.each(fn name ->
-      case name do
-        "pulse" <> _ when not pulse_frame_alive -> broadcast_received_pin(state, name, nil)
+    |> Enum.each(fn pin_name ->
+      case pin_name do
+        "pulse" <> _ when not pulse_frame_alive -> broadcast_received_pin(state, pin_name, nil)
         "pulse" <> _ -> :ok
-        _ -> broadcast_received_pin(state, name, state.received_pins[name])
+        _ -> broadcast_received_pin(state, pin_name, state.received_pins[pin_name])
       end
     end)
 
     state.requested_pin_names
-    |> Enum.each(fn name ->
-      value = state.requested_pins[name]
-
+    |> Enum.each(fn pin_name ->
       Bus.broadcast("messages", %Bus.Message{
-        name: "requested_#{name}" |> String.to_atom(),
-        value: value,
-        unit: pin_unit(name),
+        name: "requested_#{pin_name}" |> String.to_atom(),
+        value: state.requested_pins[pin_name],
+        unit: pin_unit(pin_name),
         source: state.process_name
       })
     end)

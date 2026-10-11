@@ -1,12 +1,14 @@
 defmodule VmsCore.Components.Nissan.Util do
   @moduledoc """
-   Nissan AZE0 CAN utils
+  Frame helpers shared by the Nissan Leaf AZE0 drivers: the CRC and the
+  rolling counters their frames carry.
   """
   import Bitwise
 
-  def crc8(raw_data) do
+  @doc "The CRC-8 (polynomial 0x85) closing a Nissan frame, over its payload."
+  def crc8(payload) do
     CRC.calculate(
-      raw_data,
+      payload,
       %{
         width: 8,
         poly: 0x85,
@@ -18,11 +20,13 @@ defmodule VmsCore.Components.Nissan.Util do
     )
   end
 
-  def counter(value) do
-    rem(value, 4)
+  @doc "The 2-bit rolling counter for a frame count."
+  def counter(frame_count) do
+    rem(frame_count, 4)
   end
 
-  def shifted_counter(value) do
-    bxor(7, counter(value) <<< 6)
+  @doc "The rolling counter in the top two bits of a byte whose low bits are 7."
+  def shifted_counter(frame_count) do
+    bxor(7, counter(frame_count) <<< 6)
   end
 end

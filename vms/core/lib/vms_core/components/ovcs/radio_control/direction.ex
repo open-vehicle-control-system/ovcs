@@ -1,16 +1,18 @@
 defmodule VmsCore.Components.OVCS.RadioControl.Direction do
   @moduledoc """
-    Control direction based on radio control's input
+  Direction requested from a two-position radio control switch:
+  broadcasts `:requested_direction`, `:forward` or `:backward`.
   """
 
   use GenServer
   alias Cantastic.{Receiver, Frame}
   alias OvcsBus, as: Bus
 
-  @loop_period 10
-  @default_value 1000
-  @value_mapping %{1000 => :forward, 2000 => :backward}
-  @default_direction @value_mapping[@default_value]
+  @loop_period_ms 10
+  @channels_per_frame 4
+  @default_raw_channel 1000
+  @raw_channel_positions %{1000 => :forward, 2000 => :backward}
+  @default_direction @raw_channel_positions[@default_raw_channel]
   # RC PWM channels jitter and rarely sit exactly on 1000/2000, so match any
   # value within this margin of a known position before falling back.
   @channel_margin 100
@@ -21,22 +23,18 @@ defmodule VmsCore.Components.OVCS.RadioControl.Direction do
 
   @impl GenServer
   def init(%{radio_control_channel: radio_control_channel}) do
-    channel_frame_index =
-      case radio_control_channel do
-        channel when channel < 5 -> 0
-        _ -> 1
-      end
+    channel_frame_index = if radio_control_channel <= @channels_per_frame, do: 0, else: 1
 
     channel_frame_name = "radio_control_channels#{channel_frame_index}"
     :ok = Receiver.subscribe(self(), :ovcs, channel_frame_name)
-    {:ok, timer} = :timer.send_interval(@loop_period, :loop)
+    {:ok, timer} = :timer.send_interval(@loop_period_ms, :loop)
 
     {:ok,
      %{
        loop_timer: timer,
        channel_frame_name: channel_frame_name,
        channel_name: "channel#{radio_control_channel}",
-       raw_channel: @default_value,
+       raw_channel: @default_raw_channel,
        requested_direction: @default_direction
      }}
   end
@@ -59,8 +57,8 @@ defmodule VmsCore.Components.OVCS.RadioControl.Direction do
 
   defp compute_direction(state) do
     direction =
-      Enum.find_value(@value_mapping, @default_direction, fn {value, dir} ->
-        if abs(state.raw_channel - value) <= @channel_margin, do: dir
+      Enum.find_value(@raw_channel_positions, @default_direction, fn {position, direction} ->
+        if abs(state.raw_channel - position) <= @channel_margin, do: direction
       end)
 
     %{state | requested_direction: direction}

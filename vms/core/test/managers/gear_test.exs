@@ -1,12 +1,14 @@
 defmodule VmsCore.Managers.GearTest do
+  @moduledoc """
+  The gear manager's source gating: every inbound message is acted on
+  only when its source is the configured one. Driven through
+  `handle_info/2` against a stub state.
+  """
   use ExUnit.Case, async: true
 
   alias OvcsBus.Message
   alias VmsCore.Managers.Gear
 
-  # Source identifiers. The manager gates every inbound message on the
-  # source field matching one of the configured sources; we exercise
-  # that gating here via the handle_info/2 callback directly.
   @control_level_source ControlLevelManager
   @ready_to_drive_source OvcsStatus
   @speed_source LeafInverter
@@ -119,13 +121,13 @@ defmodule VmsCore.Managers.GearTest do
     test "requested_gear is ignored when published by a source other than the configured one" do
       state = stub_state(%{requested_gear_source: Driver})
 
-      {:noreply, result} =
+      {:noreply, unchanged} =
         Gear.handle_info(
           %Message{name: :requested_gear, value: :drive, source: Rogue},
           state
         )
 
-      assert result == state
+      assert unchanged == state
     end
 
     test "requested_direction :forward maps to :drive" do
@@ -195,15 +197,15 @@ defmodule VmsCore.Managers.GearTest do
     end
   end
 
-  test "an unrelated Bus.Message is dropped without changing state" do
+  test "an unrelated bus message is dropped without changing state" do
     original = stub_state()
 
-    {:noreply, result} =
+    {:noreply, unchanged} =
       Gear.handle_info(
         %Message{name: :something_unrelated, value: 123, source: Someone},
         original
       )
 
-    assert result == original
+    assert unchanged == original
   end
 end

@@ -59,14 +59,14 @@ defmodule VmsCore.Components.Matek.PM12S3 do
   end
 
   @impl GenServer
-  def handle_info(%Bus.Message{name: name, value: raw, source: source}, state)
+  def handle_info(%Bus.Message{name: name, value: adc_reading, source: source}, state)
       when source == state.controller and name == state.voltage_name do
-    {:noreply, %{state | raw_voltage: raw}}
+    {:noreply, %{state | raw_voltage: adc_reading}}
   end
 
-  def handle_info(%Bus.Message{name: name, value: raw, source: source}, state)
+  def handle_info(%Bus.Message{name: name, value: adc_reading, source: source}, state)
       when source == state.controller and name == state.current_name do
-    {:noreply, %{state | raw_current: raw}}
+    {:noreply, %{state | raw_current: adc_reading}}
   end
 
   # The controller publishes `:is_alive` after its pins, so this closes
@@ -93,18 +93,23 @@ defmodule VmsCore.Components.Matek.PM12S3 do
   @doc false
   def voltage(nil, _divider), do: nil
 
-  def voltage(raw, divider) do
-    raw |> pad_voltage() |> D.mult(divider) |> D.round(2)
+  def voltage(adc_reading, divider) do
+    adc_reading |> pad_voltage() |> D.mult(divider) |> D.round(2)
   end
 
   @doc false
   def current(nil, _scale, _offset), do: nil
 
-  def current(raw, scale, offset) do
-    raw |> pad_voltage() |> D.sub(offset) |> D.div(scale) |> D.round(1)
+  def current(adc_reading, scale, offset) do
+    adc_reading |> pad_voltage() |> D.sub(offset) |> D.div(scale) |> D.round(1)
   end
 
-  defp pad_voltage(raw), do: raw |> D.new() |> D.mult(@adc_reference_voltage) |> D.div(@adc_max)
+  defp pad_voltage(adc_reading),
+    do:
+      adc_reading
+      |> D.new()
+      |> D.mult(@adc_reference_voltage)
+      |> D.div(@adc_max)
 
   defp pin_name(pin), do: :"received_analog_pin#{pin}_value"
 

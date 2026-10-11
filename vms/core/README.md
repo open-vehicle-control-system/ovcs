@@ -10,19 +10,19 @@ VMS Core is built around four key patterns:
 
 Vehicles live outside `vms_core` in their own Mix packages under `vehicles/`. Each vehicle's VMS side implements the `VmsCore.Vehicle` behaviour:
 
-```
+```text
 VmsCore.Vehicle (behaviour)
 ├── children/0                → List of child specs for the OTP supervisor
-├── generic_controllers/0     → Pin configurations for Arduino controllers (optional)
+├── generic_controllers/0     → Pin configurations for generic controllers (optional)
 ├── dashboard_configuration/0 → UI layout for the web dashboard (optional)
 ├── can_config_otp_app/0      → OTP app owning the CAN YAMLs
-└── can_config_path/0         → Path to the YAML inside that app's priv/
+├── can_config_path/0         → Path to the YAML inside that app's priv/
+└── default_can_mapping/1     → CAN_NETWORK_MAPPINGS when the variable is unset
 ```
 
 The `VEHICLE` environment variable selects which vehicle package's
 composer is wired in at startup. See
-[Vehicle Parameterisation](../../docs/vehicle_package.md) for
-the live list and the boot flow.
+[Your vehicle package](../../docs/vehicle_package.md) for the boot flow.
 
 ### 2. Component Pattern
 
@@ -31,25 +31,27 @@ Every hardware driver is a GenServer that follows the same pattern:
 1. **Subscribes to CAN frames** via `Cantastic.Receiver.subscribe/3`
 2. **Subscribes to internal messages** via `OvcsBus.subscribe/1`
 3. **Runs a periodic loop** (typically every 10ms) to emit CAN frames and broadcast metrics
-4. **Exposes actions** via `trigger_action/2` for dashboard control
+4. **May expose actions** via `trigger_action/2` for dashboard control
 
 Components receive CAN data as `{:handle_frame, %Cantastic.Frame{}}` messages and internal data as `%OvcsBus.Message{}` messages.
 
 ### 3. Bus System
 
-[`OvcsBus`](../../libraries/ovcs_bus) (shared across VMS, infotainment, and bridge firmwares) is a Phoenix PubSub-based message bus for inter-component communication. Components broadcast metrics and listen for messages from other components:
+[`OvcsBus`](../../libraries/ovcs_bus) (shared across VMS, infotainment, and bridge firmwares) is a Phoenix PubSub-based message bus for inter-component communication. Components broadcast metrics:
 
 ```elixir
 alias OvcsBus, as: Bus
 
-# Broadcasting a metric
 Bus.broadcast("messages", %Bus.Message{
   name: :speed,
   value: 45.2,
   source: VmsCore.Components.Volkswagen.Polo9N.ABS
 })
+```
 
-# Receiving in another component's handle_info
+and listen for messages from other components in their `handle_info/2`:
+
+```elixir
 def handle_info(%Bus.Message{name: :speed, value: speed, source: source}, state)
     when source == state.abs_source do
   {:noreply, %{state | speed: speed}}
@@ -69,10 +71,10 @@ Managers orchestrate cross-component logic:
 
 ## Supervision Tree
 
-```
+```text
 VmsCore.Application
 ├── VmsCore.Repo (SQLite - throttle calibration data)
-├── Ecto.Migrator (applies pending migrations on boot)
+├── Ecto.Migrator (applies pending migrations on boot, except under a release start script)
 ├── VmsCore.Metrics (aggregates all Bus messages for dashboard/API)
 ├── VmsCore.NetworkInterfaces (CAN interface statistics)
 ├── OvcsBus.Cluster (connects this BEAM to the vehicle's other firmwares via Erlang distribution)
@@ -80,7 +82,7 @@ VmsCore.Application
     ├── VmsCore.Status (VMS heartbeat, ready-to-drive, controller reset)
     ├── Components (hardware drivers)
     ├── Managers (control level, gear)
-    └── Generic Controllers (Arduino I/O drivers)
+    └── Generic Controllers (I/O board drivers)
 ```
 
 `OvcsBus`'s own `Phoenix.PubSub` lives under its own OTP application
@@ -100,6 +102,10 @@ the library.
 | `Components.OVCS.WaterPump` | `components/ovcs/water_pump.ex` | Cooling water pump relay control |
 | `Components.OVCS.Infotainment` | `components/ovcs/infotainment.ex` | Infotainment CAN bridge (music control, turn signals) |
 | `Components.OVCS.PulseRotationSensor` | `components/ovcs/pulse_rotation_sensor.ex` | Rotation of a shaft from a pulse counted by a generic controller |
+| `Components.OVCS.RotationFusion` | `components/ovcs/rotation_fusion.ex` | One shaft's rotation from several sensors, with a cross-check fault when they disagree |
+| `Components.OVCS.VehicleMotion` | `components/ovcs/vehicle_motion.ex` | Vehicle speed from a driveline shaft's rotation, on the bus and on `vehicle_motion` (`0x60B`) |
+| `Components.OVCS.InputCurve` | `components/ovcs/input_curve.ex` | Dead zone and expo applied to a throttle request |
+| `Components.OVCS.Status` | `components/ovcs/status.ex` | Forwards the battery state to the infotainment |
 
 ### Radio Control
 
@@ -108,22 +114,25 @@ the library.
 | `Components.OVCS.RadioControl.Steering` | Steering input from RC transmitter |
 | `Components.OVCS.RadioControl.Throttle` | Throttle input from RC transmitter |
 | `Components.OVCS.RadioControl.Direction` | Forward/reverse from RC transmitter |
-| `Components.OVCS.RadioControl.RequestedControlLevel` | Control mode switch from RC transmitter |
+| `Components.OVCS.RadioControl.RequestedControlLevel` | Control level switch (`:manual` / `:radio` / `:ros`) from RC transmitter |
+| `Components.OVCS.RadioControl.RequestedRosCommander` | ROS commander switch (`:teleop` / `:autonomous`) from RC transmitter |
 
-### ROS Control (Autonomous)
+### ROS Commands
 
 | Module | Purpose |
 |--------|---------|
-| `Components.OVCS.RosControl.Steering` | Steering commands from ROS2 |
-| `Components.OVCS.RosControl.Throttle` | Throttle commands from ROS2 |
-| `Components.OVCS.RosControl.Direction` | Direction commands from ROS2 |
+| `Components.OVCS.RosActuatorCommand.Steering` | Steering from the ROS bridge's actuator command (`0x2B0`) |
+| `Components.OVCS.RosActuatorCommand.Throttle` | Throttle from the ROS bridge's actuator command, zeroed when stale |
+| `Components.OVCS.RosActuatorCommand.Direction` | Direction from the ROS bridge's actuator command |
+| `Components.OVCS.RosVelocityCommand` | Steering and throttle from a linear and angular velocity (`0x2B1`) |
+| `Components.OVCS.RosCommand.Freshness` | Detects a ROS command that stopped changing |
 
 ### Nissan Leaf AZE0
 
 | Module | Purpose |
 |--------|---------|
 | `Components.Nissan.LeafAZE0.Inverter` | Motor control, torque requests, speed feedback, regenerative braking |
-| `Components.Nissan.LeafAZE0.Charger` | AC charging control and monitoring |
+| `Components.Nissan.LeafAZE0.Charger` | AC charging control and monitoring. **Not working: the charge does not start.** |
 
 ### Bosch
 
@@ -154,7 +163,19 @@ the library.
 | `Components.Volkswagen.Polo9N.PowerSteeringPump` | Electric power steering pump control |
 | `Components.Volkswagen.Polo9N.FakeOilPressureSensor` | Simulated oil pressure signal (suppresses dashboard warning) |
 
-### Traxxas (OVCS Mini)
+### Matek
+
+| Module | Purpose |
+|--------|---------|
+| `Components.Matek.PM12S3` | Battery voltage and current from a PM12S-3 power module |
+
+### VESC
+
+| Module | Purpose |
+|--------|---------|
+| `Components.Vesc.MotorController` | Traction motor controller running the VESC firmware, over CAN |
+
+### Traxxas
 
 | Module | Purpose |
 |--------|---------|
@@ -168,6 +189,7 @@ the library.
 | `VmsCore.Status` | `status.ex` | Emits VMS heartbeat (`0x1A0`), manages ready-to-drive state, controller reset command (`0x1AA`) |
 | `VmsCore.Metrics` | `metrics.ex` | Subscribes to all Bus messages, stores latest values, exposes `metrics/0` for the API |
 | `VmsCore.PID` | `pid.ex` | Proportional-Integral-Derivative controller using Decimal arithmetic |
+| `VmsCore.NormalisedRequest` | `normalised_request.ex` | Arithmetic on requests normalised to [-1, 1] |
 | `VmsCore.Repo` | `repo.ex` | Ecto SQLite3 repository for persistent data |
 | `VmsCore.NetworkInterfaces` | `network_interfaces.ex` | CAN interface statistics (TX/RX errors, bus state) |
 
@@ -175,11 +197,11 @@ the library.
 
 Vehicle CAN topology files live in each vehicle package's `priv/can/`:
 
-```
+```text
 vehicles/<name>/priv/can/
-├── vms.yml                 # read by vms_core
-├── infotainment.yml        # read by infotainment_core (optional)
-└── generic_controller/     # per-vehicle controller frame wirings
+├── vms.yml                 → read by vms_core
+├── infotainment.yml        → read by infotainment_core (optional)
+└── generic_controller/     → per-vehicle controller frame wirings
 ```
 
 Shared per-component frame and signal definitions live in the [`ovcs_can`](../../libraries/ovcs_can) library under `priv/can/components/`. Vehicle topology YAMLs import components from the library via Cantastic's cross-app import syntax:
@@ -195,7 +217,7 @@ Each vehicle's Composer defines a declarative dashboard configuration consumed b
 ```elixir
 %{
   vehicle: %{
-    name: "OVCS1",
+    name: "My vehicle",
     main_color: "#1a73e8",
     refresh_interval: 100,
     pages: %{
@@ -231,15 +253,15 @@ cd vms/api
 VEHICLE=Ovcs1 iex -S mix phx.server
 ```
 
-The VMS Core starts as a dependency of the VMS API (Phoenix). The `VEHICLE` env var (the top-level vehicle module name, e.g. `Ovcs1`) is required; `CAN_NETWORK_MAPPINGS` defaults to whatever `default_can_mapping(:host)` returns on the vehicle's VMS composer and only needs to be set to override it.
+This runs the OVCS1 reference vehicle; set `VEHICLE` to your vehicle's top-level module the same way. The VMS Core starts as a dependency of the VMS API (Phoenix). The `VEHICLE` env var is required; `CAN_NETWORK_MAPPINGS` defaults to whatever `default_can_mapping(:host)` returns on the vehicle's VMS composer and only needs to be set to override it.
 
 ## Key Safety Features
 
 - **HV contactor precharge sequence** — Prevents inrush current damage by following negative → precharge → (wait for voltage equalization) → positive → disable precharge
-- **VMS heartbeat watchdog** — Arduino controllers shut down all outputs if the VMS heartbeat (`0x1A0`) is missing for too long
+- **VMS heartbeat watchdog** — Generic controllers shut down all outputs if the VMS heartbeat (`0x1A0`) is missing for too long
 - **Gear shift safety** — Gear manager enforces speed and throttle constraints before allowing shifts
-- **Manual brake override** — Pressing the brake pedal in radio/ROS mode can override to manual control
-- **5-second boot grace period** — Controller status checks are skipped during initial boot to allow hardware initialization
+- **Manual brake override** — Pressing the brake pedal in radio or ROS mode forces manual control
+- **Radio takeover** — Pulling the radio trigger in reverse while ROS drives forces radio control
 
 ## License
 

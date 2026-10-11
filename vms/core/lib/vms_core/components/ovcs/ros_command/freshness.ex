@@ -34,9 +34,13 @@ defmodule VmsCore.Components.OVCS.RosCommand.Freshness do
           reported: boolean()
         }
 
+  @doc """
+  A stale tracker that expires input after `timeout_ms`, created at
+  `now_ms` on the caller's monotonic clock.
+  """
   @spec new(pos_integer(), integer()) :: t()
-  def new(timeout_ms, now) when is_integer(timeout_ms) and timeout_ms > 0 do
-    %__MODULE__{timeout_ms: timeout_ms, created_at: now}
+  def new(timeout_ms, now_ms) when is_integer(timeout_ms) and timeout_ms > 0 do
+    %__MODULE__{timeout_ms: timeout_ms, created_at: now_ms}
   end
 
   @doc """
@@ -45,12 +49,12 @@ defmodule VmsCore.Components.OVCS.RosCommand.Freshness do
   caller should not apply as if it were fresh input.
   """
   @spec observe(t(), non_neg_integer(), integer()) :: {:new | :repeat, t()}
-  def observe(%__MODULE__{sequence: sequence} = freshness, sequence, _now) do
+  def observe(%__MODULE__{sequence: sequence} = freshness, sequence, _now_ms) do
     {:repeat, freshness}
   end
 
-  def observe(%__MODULE__{} = freshness, sequence, now) do
-    {:new, %{freshness | sequence: sequence, fresh_at: now}}
+  def observe(%__MODULE__{} = freshness, sequence, now_ms) do
+    {:new, %{freshness | sequence: sequence, fresh_at: now_ms}}
   end
 
   @doc """
@@ -58,8 +62,8 @@ defmodule VmsCore.Components.OVCS.RosCommand.Freshness do
   `:unchanged` otherwise.
   """
   @spec check(t(), integer()) :: {transition(), t()}
-  def check(%__MODULE__{} = freshness, now) do
-    expired = expired?(freshness, now)
+  def check(%__MODULE__{} = freshness, now_ms) do
+    expired = expired?(freshness, now_ms)
 
     cond do
       # Only a sample can make the input fresh; before the first one the
@@ -78,14 +82,15 @@ defmodule VmsCore.Components.OVCS.RosCommand.Freshness do
     end
   end
 
+  @doc "Whether the input is currently considered gone."
   @spec stale?(t()) :: boolean()
   def stale?(%__MODULE__{stale: stale}), do: stale
 
-  defp expired?(%__MODULE__{fresh_at: nil} = freshness, now) do
-    now - freshness.created_at > freshness.timeout_ms
+  defp expired?(%__MODULE__{fresh_at: nil} = freshness, now_ms) do
+    now_ms - freshness.created_at > freshness.timeout_ms
   end
 
-  defp expired?(%__MODULE__{fresh_at: fresh_at, timeout_ms: timeout_ms}, now) do
-    now - fresh_at > timeout_ms
+  defp expired?(%__MODULE__{fresh_at: fresh_at, timeout_ms: timeout_ms}, now_ms) do
+    now_ms - fresh_at > timeout_ms
   end
 end

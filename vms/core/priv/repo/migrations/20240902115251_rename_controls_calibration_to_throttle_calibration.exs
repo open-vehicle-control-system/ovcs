@@ -2,6 +2,6 @@ defmodule VmsCore.Repo.Migrations.RenameControlsCalibrationToThrottleCalibration
   use Ecto.Migration
 
   def change do
-    rename table(:ControlsCalibration),  to: table(:throttle_calibrations)
+    rename table(:ControlsCalibration), to: table(:throttle_calibrations)
   end
 end

@@ -1,14 +1,22 @@
 defmodule VmsCore.Components.OVCS.Status do
   @moduledoc """
-    OVCS Status module emitting metrics in the OVCS format
+  Forwards the battery state to the infotainment: the BMS's pack
+  readings on the `pack_status` frame and the 12 V battery voltage on
+  `twelve_volt_battery_status`, both on `:ovcs`. Each frame is updated
+  only when one of its readings changed.
+
+  ## Options
+
+    * `:bms_status_source` — publishes the pack readings and
+      `:twelve_volt_battery_voltage`.
   """
   use GenServer
-  alias OvcsBus, as: Bus
   alias Cantastic.Emitter
   alias Decimal, as: D
+  alias OvcsBus, as: Bus
 
   @zero D.new(0)
-  @loop_period 10
+  @loop_period_ms 10
 
   def start_link(args) do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
@@ -44,7 +52,7 @@ defmodule VmsCore.Components.OVCS.Status do
       })
 
     Bus.subscribe("messages")
-    {:ok, timer} = :timer.send_interval(@loop_period, :loop)
+    {:ok, timer} = :timer.send_interval(@loop_period_ms, :loop)
 
     {:ok,
      %{
@@ -71,8 +79,8 @@ defmodule VmsCore.Components.OVCS.Status do
   def handle_info(:loop, state) do
     state =
       state
-      |> handle_pack_status()
-      |> handle_twelve_volt_battery_status_status()
+      |> emit_pack_status()
+      |> emit_twelve_volt_battery_status()
 
     {:noreply, state}
   end
@@ -244,13 +252,13 @@ defmodule VmsCore.Components.OVCS.Status do
     {:noreply, state}
   end
 
-  defp handle_pack_status(state) do
+  defp emit_pack_status(state) do
     case state.pack_status_frame_requires_update do
       true ->
         :ok =
-          Emitter.update(:ovcs, "pack_status", fn data ->
+          Emitter.update(:ovcs, "pack_status", fn frame_data ->
             %{
-              data
+              frame_data
               | "pack_current" => state.pack_current,
                 "pack_voltage" => state.pack_voltage,
                 "pack_state_of_charge" => state.pack_state_of_charge,
@@ -272,12 +280,12 @@ defmodule VmsCore.Components.OVCS.Status do
     end
   end
 
-  defp handle_twelve_volt_battery_status_status(state) do
+  defp emit_twelve_volt_battery_status(state) do
     case state.twelve_volt_battery_status_frame_requires_update do
       true ->
         :ok =
-          Emitter.update(:ovcs, "twelve_volt_battery_status", fn data ->
-            %{data | "battery_voltage" => state.twelve_volt_battery_voltage}
+          Emitter.update(:ovcs, "twelve_volt_battery_status", fn frame_data ->
+            %{frame_data | "battery_voltage" => state.twelve_volt_battery_voltage}
           end)
 
         %{state | twelve_volt_battery_status_frame_requires_update: false}

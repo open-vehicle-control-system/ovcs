@@ -1,6 +1,6 @@
 defmodule VmsCore.Components.OVCS.RosActuatorCommand.ThrottleTest do
   @moduledoc """
-  The ROS throttle expiry, now driven by the frame's `sequence`: a
+  The ROS throttle expiry, driven by the frame's `sequence`: a
   bridge that stops producing samples, or stops talking, leaves a
   sequence that no longer changes, and the throttle must go to zero.
 
@@ -49,8 +49,8 @@ defmodule VmsCore.Components.OVCS.RosActuatorCommand.ThrottleTest do
 
   defp emitted(state) do
     {:noreply, state} = Throttle.handle_info(:loop, state)
-    assert_receive %Message{name: :requested_throttle, value: value, source: Throttle}
-    {value, state}
+    assert_receive %Message{name: :requested_throttle, value: throttle, source: Throttle}
+    {throttle, state}
   end
 
   describe "a sequence that stops changing" do
@@ -59,22 +59,26 @@ defmodule VmsCore.Components.OVCS.RosActuatorCommand.ThrottleTest do
       # may well keep arriving, retransmitted, with the same sequence.
       state = stub_state(%{requested_throttle: D.new(1)})
       {:noreply, state} = Throttle.handle_info(frame(1, 1), state)
-      assert D.equal?(state.requested_throttle, D.new(1)), "a repeat was applied as input"
 
-      {value, _} = emitted(state)
-      assert D.equal?(value, D.new(0)), "the last throttle survived the input going away"
+      assert D.equal?(state.requested_throttle, D.new(1)),
+             "a repeat was applied as input"
+
+      {throttle, _} = emitted(state)
+
+      assert D.equal?(throttle, D.new(0)),
+             "the last throttle survived the input going away"
     end
 
     test "zeroes a braking request too" do
-      {value, _} = emitted(stub_state(%{requested_throttle: D.new(-1)}))
-      assert D.equal?(value, D.new(0))
+      {throttle, _} = emitted(stub_state(%{requested_throttle: D.new(-1)}))
+      assert D.equal?(throttle, D.new(0))
     end
 
     test "the next new sample restores control with no latch to clear" do
       {_, expired} = emitted(stub_state(%{requested_throttle: D.new(1)}))
       {:noreply, recovered} = Throttle.handle_info(frame("0.5", 2), expired)
-      {value, _} = emitted(recovered)
-      assert D.equal?(value, D.new("0.5"))
+      {throttle, _} = emitted(recovered)
+      assert D.equal?(throttle, D.new("0.5"))
     end
   end
 

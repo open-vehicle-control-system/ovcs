@@ -4,7 +4,6 @@ defmodule VmsCore.Components.OVCS.InputCurveTest do
   actuator, relayed under its own name from exactly one source.
   """
   use ExUnit.Case, async: true
-
   alias Decimal, as: D
   alias OvcsBus.Message
   alias VmsCore.Components.OVCS.InputCurve

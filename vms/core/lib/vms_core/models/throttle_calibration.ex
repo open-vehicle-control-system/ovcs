@@ -1,6 +1,7 @@
 defmodule VmsCore.Models.ThrottleCalibration do
   @moduledoc """
-    Store the calibration values from the throttle pedal
+  A throttle pedal calibration value, stored by key in `VmsCore.Repo`
+  and read back by `VmsCore.Components.OVCS.ThrottlePedal`.
   """
   use Ecto.Schema
 
