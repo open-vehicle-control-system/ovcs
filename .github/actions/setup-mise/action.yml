@@ -1,16 +1,8 @@
 name: Setup mise toolchain
 description: >
-  Install mise and the tools from mise.toml a job needs, at the versions
-  mise.toml pins. The mise cache is keyed by the tool list, so jobs with
-  different lists never restore each other's partial installs.
-
-inputs:
-  tools:
-    description: >
-      Space-separated mise.toml tools to install, e.g. "erlang elixir".
-      Empty installs every tool.
-    required: false
-    default: ""
+  Install mise and every tool mise.toml pins. Every job installs them all:
+  mise.toml's postinstall hook runs `mise run bootstrap`, and `mise run`
+  installs any missing tool first. One toolchain, one mise cache entry.
 
 runs:
   using: composite
@@ -19,7 +11,6 @@ runs:
       with:
         experimental: true
         cache: true
-        install_args: ${{ inputs.tools }}
 
     - name: Show toolchain
       shell: bash
