@@ -1,13 +1,13 @@
 defmodule RadioControlBridge.MspOsdForwarder.State do
+  @moduledoc false
   defstruct []
 end
 
 defmodule RadioControlBridge.MspOsdForwarder do
   @moduledoc """
-  Placeholder GenServer for the MSP OSD forward path. Not yet wired
-  into `RadioControlBridge.children/0`; kept as a skeleton ported
-  from the legacy firmware so the integration work can land
-  incrementally.
+  Placeholder GenServer for the MSP OSD forward path: started for the
+  `:msp_osd_forwarder` component, it holds no state and sends
+  nothing.
   """
   alias RadioControlBridge.MspOsdForwarder.State
 

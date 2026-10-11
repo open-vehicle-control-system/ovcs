@@ -9,7 +9,7 @@ defmodule RadioControlBridge.Components do
   by listing the components they want; adding a new feature is one
   new clause here plus one opt-in line per vehicle that wants it.
 
-  ## Components today
+  ## Components
 
     * `:mavlink_forwarder` — `RadioControlBridge.MavlinkForwarder`,
       the ExpressLRS MAVLink RC-channel → CAN bus path. Opts:
@@ -22,12 +22,12 @@ defmodule RadioControlBridge.Components do
           forwarder GenServer itself.
 
     * `:msp_osd_forwarder` — `RadioControlBridge.MspOsdForwarder`,
-      placeholder for the vehicle-metrics → MSP DisplayPort path.
-      No opts today; when the forwarder gains real behaviour it'll
-      carry its own `:uart_port` / `:uart_baud_rate` opts for the
-      VTX serial line (different hardware path than the ExpressLRS
-      receiver, hence per-component UART config rather than a
-      shared field on `RadioControlBridge.Config`).
+      a placeholder for the vehicle-metrics → MSP DisplayPort path.
+      Takes no opts.
+
+  UART settings are per component rather than a shared field on
+  `RadioControlBridge.Config`: each forwarder drives its own serial
+  line.
   """
 
   @doc """
