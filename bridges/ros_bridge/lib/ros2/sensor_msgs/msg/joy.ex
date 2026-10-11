@@ -1,5 +1,8 @@
 defmodule Ros2.SensorMsgs.Msg.Joy do
-  @moduledoc false
+  @moduledoc """
+  ROS 2 `sensor_msgs/Joy`: a header, `float32[]` axes and `int32[]`
+  buttons. Parse only: the bridge consumes joystick commands.
+  """
   use Ros2.Common
 
   defstruct header: nil, axes: [], buttons: []

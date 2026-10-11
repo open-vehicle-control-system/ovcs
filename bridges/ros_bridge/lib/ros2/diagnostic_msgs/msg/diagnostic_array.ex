@@ -19,14 +19,16 @@ defmodule Ros2.DiagnosticMsgs.Msg.DiagnosticArray do
   def type_hash, do: @type_hash
 
   def encode(%__MODULE__{header: header, status: status}),
-    do: sequence(Header.encode(header), status, &status/2)
+    do: sequence(Header.encode(header), status, &append_status/2)
 
-  defp status(acc, s) do
-    acc
-    |> u8(Map.fetch!(@levels, s.level))
-    |> string(s.name)
-    |> string(Map.get(s, :message, ""))
-    |> string(Map.get(s, :hardware_id, ""))
-    |> sequence(Map.get(s, :values, []), fn acc, {k, v} -> acc |> string(k) |> string(v) end)
+  defp append_status(message, status) do
+    message
+    |> u8(Map.fetch!(@levels, status.level))
+    |> string(status.name)
+    |> string(Map.get(status, :message, ""))
+    |> string(Map.get(status, :hardware_id, ""))
+    |> sequence(Map.get(status, :values, []), fn encoded, {key, value} ->
+      encoded |> string(key) |> string(value)
+    end)
   end
 end

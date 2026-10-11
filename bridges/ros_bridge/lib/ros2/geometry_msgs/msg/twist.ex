@@ -25,8 +25,7 @@ defmodule Ros2.GeometryMsgs.Msg.Twist do
   def dds_type, do: @dds_type
   def type_hash, do: @type_hash
 
-  # Six float64s, no internal padding: the buffer must be 8-aligned on
-  # entry and leaves 8-aligned.
+  @doc "Six float64s, no internal padding: the buffer must be 8-aligned on entry and leaves 8-aligned."
   def encode(%__MODULE__{linear: linear, angular: angular}) do
     Vector3.encode(linear) <> Vector3.encode(angular)
   end

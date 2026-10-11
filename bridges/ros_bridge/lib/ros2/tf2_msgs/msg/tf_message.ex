@@ -19,18 +19,16 @@ defmodule Ros2.Tf2Msgs.Msg.TFMessage do
 
   defstruct transforms: []
 
+  @dds_type "tf2_msgs::msg::dds_::TFMessage_"
   # RIHS01 hash for ROS 2 Lyrical; it changes with the distro.
-  def dds_type, do: "tf2_msgs::msg::dds_::TFMessage_"
+  @type_hash "RIHS01_e369d0f05a23ae52508854b66f6aa0437f3449d652e8cbf22d5abe85d020f087"
 
-  def type_hash,
-    do: "RIHS01_e369d0f05a23ae52508854b66f6aa0437f3449d652e8cbf22d5abe85d020f087"
+  def dds_type, do: @dds_type
+  def type_hash, do: @type_hash
 
   def encode(%__MODULE__{transforms: transforms}) do
-    # CDR sequence: uint32 count, then the elements. Each element is
-    # appended to the running buffer rather than encoded standalone,
-    # because TransformStamped aligns its Transform to 8 bytes
-    # relative to the body origin — and after the 4-byte count that
-    # offset is not what a struct-local encode would compute.
+    # Appended, not encoded standalone: TransformStamped aligns its
+    # Transform against the body origin, which the count shifts.
     Enum.reduce(transforms, encode_uint32(length(transforms)), fn transform, acc ->
       TransformStamped.append_to(acc, transform)
     end)

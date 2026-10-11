@@ -25,9 +25,6 @@ defmodule Ros2.SensorMsgs.Srv.SetCameraInfo do
 
   alias Ros2.SensorMsgs.Msg.CameraInfo
 
-  # DDS-mangled service type. Note the trailing underscore — rosidl
-  # convention. The same string is used in the data keyexpr and the
-  # liveliness token.
   @dds_type "sensor_msgs::srv::dds_::SetCameraInfo_"
 
   # RIHS01 hash for ROS 2 Lyrical; it changes with the distro.

@@ -14,8 +14,7 @@ defmodule Ros2.NavMsgs.Msg.Odometry do
   """
   use Ros2.Common
 
-  alias Ros2.GeometryMsgs.Msg.PoseWithCovariance
-  alias Ros2.GeometryMsgs.Msg.TwistWithCovariance
+  alias Ros2.GeometryMsgs.Msg.{PoseWithCovariance, TwistWithCovariance}
   alias Ros2.StdMsgs.Msg.Header
 
   defstruct header: nil,

@@ -10,76 +10,81 @@ defmodule Ros2.Cdr do
   the encapsulation header.
   """
 
-  # ── encoding ─────────────────────────────────────────────────
+  def pad(message, alignment),
+    do:
+      message <>
+        :binary.copy(<<0>>, rem(alignment - rem(byte_size(message), alignment), alignment))
 
-  def pad(acc, n), do: acc <> :binary.copy(<<0>>, rem(n - rem(byte_size(acc), n), n))
+  def u8(message, value), do: message <> <<value::8>>
+  def bool(message, value), do: u8(message, if(value, do: 1, else: 0))
+  def u32(message, value), do: pad(message, 4) <> <<value::little-32>>
+  def i64(message, value), do: pad(message, 8) <> <<value::little-signed-64>>
+  def u64(message, value), do: pad(message, 8) <> <<value::little-64>>
+  def f64(message, value), do: pad(message, 8) <> <<value * 1.0::little-float-64>>
 
-  def u8(acc, v), do: acc <> <<v::8>>
-  def bool(acc, v), do: u8(acc, if(v, do: 1, else: 0))
-  def u32(acc, v), do: pad(acc, 4) <> <<v::little-32>>
-  def i64(acc, v), do: pad(acc, 8) <> <<v::little-signed-64>>
-  def u64(acc, v), do: pad(acc, 8) <> <<v::little-64>>
-  def f64(acc, v), do: pad(acc, 8) <> <<v * 1.0::little-float-64>>
-  # Elixir floats have no infinities; REP 117 rangers need both.
-  def f32(acc, :infinity), do: pad(acc, 4) <> <<0x7F800000::little-32>>
-  def f32(acc, :neg_infinity), do: pad(acc, 4) <> <<0xFF800000::little-32>>
-  def f32(acc, v), do: pad(acc, 4) <> <<v * 1.0::little-float-32>>
-  def string(acc, s), do: u32(acc, byte_size(s) + 1) <> s <> <<0>>
+  @doc """
+  A `float32`. `:infinity` and `:neg_infinity` encode the IEEE
+  infinities, which Elixir floats lack and REP 117 range sensors need.
+  """
+  def f32(message, :infinity), do: pad(message, 4) <> <<0x7F800000::little-32>>
+  def f32(message, :neg_infinity), do: pad(message, 4) <> <<0xFF800000::little-32>>
+  def f32(message, value), do: pad(message, 4) <> <<value * 1.0::little-float-32>>
+
+  def string(message, string), do: u32(message, byte_size(string) + 1) <> string <> <<0>>
 
   @doc "A sequence: its length, then each element through `encode`."
-  def sequence(acc, list, encode), do: Enum.reduce(list, u32(acc, length(list)), &encode.(&2, &1))
+  def sequence(message, list, encode),
+    do: Enum.reduce(list, u32(message, length(list)), &encode.(&2, &1))
 
-  # ── decoding ─────────────────────────────────────────────────
-
-  def skip_pad({bin, offset}, n) do
-    p = rem(n - rem(offset, n), n)
-    <<_::binary-size(p), rest::binary>> = bin
-    {rest, offset + p}
+  def skip_pad({binary, offset}, alignment) do
+    padding_size = rem(alignment - rem(offset, alignment), alignment)
+    <<_::binary-size(padding_size), rest::binary>> = binary
+    {rest, offset + padding_size}
   end
 
-  def read_u8({<<v::8, rest::binary>>, offset}), do: {v, {rest, offset + 1}}
+  def read_u8({<<byte::8, rest::binary>>, offset}), do: {byte, {rest, offset + 1}}
 
   def read_bool(input) do
-    {v, input} = read_u8(input)
-    {v != 0, input}
+    {byte, input} = read_u8(input)
+    {byte != 0, input}
   end
 
   def read_u32(input) do
-    {<<v::little-32, rest::binary>>, offset} = skip_pad(input, 4)
-    {v, {rest, offset + 4}}
+    {<<value::little-32, rest::binary>>, offset} = skip_pad(input, 4)
+    {value, {rest, offset + 4}}
   end
 
   def read_i64(input) do
-    {<<v::little-signed-64, rest::binary>>, offset} = skip_pad(input, 8)
-    {v, {rest, offset + 8}}
+    {<<value::little-signed-64, rest::binary>>, offset} = skip_pad(input, 8)
+    {value, {rest, offset + 8}}
   end
 
   def read_u64(input) do
-    {<<v::little-64, rest::binary>>, offset} = skip_pad(input, 8)
-    {v, {rest, offset + 8}}
+    {<<value::little-64, rest::binary>>, offset} = skip_pad(input, 8)
+    {value, {rest, offset + 8}}
   end
 
   def read_f64(input) do
-    {<<v::little-float-64, rest::binary>>, offset} = skip_pad(input, 8)
-    {v, {rest, offset + 8}}
+    {<<value::little-float-64, rest::binary>>, offset} = skip_pad(input, 8)
+    {value, {rest, offset + 8}}
   end
 
   def read_string(input) do
-    {n, {bin, offset}} = read_u32(input)
-    <<s::binary-size(n - 1), 0, rest::binary>> = bin
-    {s, {rest, offset + n}}
+    {size_with_null, {binary, offset}} = read_u32(input)
+    <<string::binary-size(size_with_null - 1), 0, rest::binary>> = binary
+    {string, {rest, offset + size_with_null}}
   end
 
   @doc "A sequence: its length, then that many elements through `decode`."
   def read_sequence(input, decode) do
-    {n, input} = read_u32(input)
+    {count, input} = read_u32(input)
 
-    {items, input} =
-      Enum.reduce(1..n//1, {[], input}, fn _, {acc, input} ->
-        {item, input} = decode.(input)
-        {[item | acc], input}
+    {reversed_elements, input} =
+      Enum.reduce(1..count//1, {[], input}, fn _, {elements, input} ->
+        {element, input} = decode.(input)
+        {[element | elements], input}
       end)
 
-    {Enum.reverse(items), input}
+    {Enum.reverse(reversed_elements), input}
   end
 end
