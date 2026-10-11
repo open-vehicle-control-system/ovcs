@@ -15,6 +15,7 @@ use crate::commands::connect::tcp_open;
 use crate::commands::run_ui::{self, Message, NodeHandle};
 use crate::commands::vehicle_host_keys;
 use crate::erlang_cookie;
+use crate::firmware;
 use crate::lines::lossy_lines;
 use crate::resolve_args::resolve_vehicle;
 use crate::ui::{step, sub, sub_miss, sub_ok};
@@ -186,9 +187,8 @@ fn probe_reachable(devices: &[(String, String)]) -> Vec<(String, String)> {
         .collect()
 }
 
-/// Every local BEAM of the vehicle registered with epmd under the snames
-/// `./ovcs run` gives them (`vehicles::local_sname`), as
-/// `(role, sname@host)`: vms first, then infotainment, then bridges.
+/// Every local BEAM of the vehicle registered with epmd, as
+/// `(role, sname@host)`, in `local_beams_for`'s order.
 fn find_local_beams(vehicle_dir: &str) -> Vec<(String, String)> {
     let Ok(epmd) = Command::new("epmd").arg("-names").output() else {
         return Vec::new();
@@ -203,32 +203,48 @@ fn find_local_beams(vehicle_dir: &str) -> Vec<(String, String)> {
         .map(|name| name.trim().to_string())
         .unwrap_or_else(|| "localhost".to_string());
 
-    // Walk each epmd registration line of the form: `name <sname> at port ...`.
-    let mut snames: Vec<String> = stdout
+    local_beams_for(vehicle_dir, &epmd_snames(&stdout))
+        .into_iter()
+        .map(|(role, sname)| (role, format!("{}@{}", sname, hostname)))
+        .collect()
+}
+
+/// The snames registered in `epmd -names` output, one per
+/// `name <sname> at port <port>` line.
+fn epmd_snames(output: &str) -> Vec<&str> {
+    output
         .lines()
         .filter_map(|line| {
             line.trim()
                 .strip_prefix("name ")
                 .and_then(|registration| registration.split(" at").next())
         })
-        .map(|sname| sname.to_string())
-        .collect();
-    snames.sort();
+        .collect()
+}
+
+/// The snames `./ovcs run` gives `vehicle_dir`'s BEAMs
+/// (`vehicles::local_sname`), as `(role, sname)`: vms first, then
+/// infotainment, then bridges in sname order.
+fn local_beams_for<'a>(vehicle_dir: &str, snames: &[&'a str]) -> Vec<(String, &'a str)> {
+    let mut sorted = snames.to_vec();
+    sorted.sort();
 
     let prefix = vehicles::local_sname_prefix(vehicle_dir);
 
     let mut vms = None;
     let mut infotainment = None;
-    let mut bridges: Vec<(String, String)> = Vec::new();
+    let mut bridges: Vec<(String, &str)> = Vec::new();
 
-    for sname in snames {
-        if let Some(rest) = sname.strip_prefix(&prefix) {
-            let label = rest.to_string();
-            let full_node = format!("{}@{}", sname, hostname);
-            match label.as_str() {
-                "vms" => vms = Some((label, full_node)),
-                "infotainment" => infotainment = Some((label, full_node)),
-                _ => bridges.push((label, full_node)),
+    for sname in sorted {
+        if let Some(role) = sname.strip_prefix(&prefix) {
+            match role {
+                "vms" => vms = Some((role.to_string(), sname)),
+                "infotainment" => infotainment = Some((role.to_string(), sname)),
+                _ if firmware::bridge_id(role).is_some_and(|id| !id.is_empty()) => {
+                    bridges.push((role.to_string(), sname))
+                }
+                // Another vehicle whose name extends this one, e.g. `ovcs-mini-vms` for `ovcs`.
+                _ => {}
             }
         }
     }
@@ -834,13 +850,7 @@ fn node_registered(full_node: &str) -> bool {
         return true;
     };
     let stdout = String::from_utf8_lossy(&epmd.stdout);
-    stdout.lines().any(|line| {
-        line.trim()
-            .strip_prefix("name ")
-            .and_then(|registration| registration.split(" at").next())
-            .map(|registered| registered == sname)
-            .unwrap_or(false)
-    })
+    epmd_snames(&stdout).contains(&sname)
 }
 
 /// Poll epmd until `full_node` is registered, sleeping briefly between
@@ -1588,11 +1598,13 @@ fn dispatch_monitor_line(raw: &str, node: &str, tx: &Sender<Message>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        agent_identity_public_key, signing_hash_for, wrap_snippet, LineBuffer, VerifiedHostKey,
-        LOG_INIT_SNIPPET, LOG_READY_MARKER, MONITOR_SNIPPET,
+        agent_identity_public_key, epmd_snames, local_beams_for, next_backoff, signing_hash_for,
+        wrap_snippet, LineBuffer, VerifiedHostKey, BACKOFF_CAP, INITIAL_BACKOFF, LOG_INIT_SNIPPET,
+        LOG_READY_MARKER, MONITOR_SNIPPET,
     };
     use russh::keys::agent::AgentIdentity;
     use russh::keys::ssh_key::{Certificate, HashAlg, PublicKey};
+    use std::time::Duration;
 
     // Real keys, generated with ssh-keygen: `signing_hash_for` treats RSA
     // and ed25519 differently, and an agent can hold a certificate.
@@ -1713,5 +1725,76 @@ mod tests {
         for line in wrap_snippet(MONITOR_SNIPPET, "mon").lines() {
             assert!(line.len() < 4096, "{} bytes", line.len());
         }
+    }
+
+    const EPMD_NAMES: &str = "epmd: up and running on port 4369 with data:
+name ovcs-mini-bridge-ros at port 40125
+name ovcs-mini-vms at port 35123
+name ovcs_attach_log_4242_0_0 at port 41001
+";
+
+    #[test]
+    fn epmd_output_yields_every_registered_sname() {
+        assert_eq!(
+            epmd_snames(EPMD_NAMES),
+            vec![
+                "ovcs-mini-bridge-ros",
+                "ovcs-mini-vms",
+                "ovcs_attach_log_4242_0_0"
+            ]
+        );
+        assert!(epmd_snames("epmd: Cannot connect to local epmd").is_empty());
+    }
+
+    #[test]
+    fn local_beams_come_vms_first_then_infotainment_then_bridges() {
+        let snames = [
+            "ovcs-mini-bridge-ros",
+            "ovcs-mini-infotainment",
+            "ovcs-mini-bridge-radio-control",
+            "ovcs-mini-vms",
+            "ovcs_attach_sh_4242_0_0",
+        ];
+        assert_eq!(
+            local_beams_for("ovcs_mini", &snames),
+            vec![
+                ("vms".to_string(), "ovcs-mini-vms"),
+                ("infotainment".to_string(), "ovcs-mini-infotainment"),
+                (
+                    "bridge-radio-control".to_string(),
+                    "ovcs-mini-bridge-radio-control"
+                ),
+                ("bridge-ros".to_string(), "ovcs-mini-bridge-ros"),
+            ]
+        );
+    }
+
+    #[test]
+    fn another_vehicle_sharing_the_prefix_is_not_picked_up() {
+        let snames = [
+            "ovcs-mini-vms",
+            "ovcs-mini-bridge-ros",
+            "ovcs-vms",
+            "ovcs-bridge-",
+        ];
+        assert_eq!(
+            local_beams_for("ovcs", &snames),
+            vec![("vms".to_string(), "ovcs-vms")]
+        );
+    }
+
+    #[test]
+    fn backoff_doubles_up_to_its_cap() {
+        assert_eq!(next_backoff(INITIAL_BACKOFF), INITIAL_BACKOFF * 2);
+        assert_eq!(next_backoff(BACKOFF_CAP), BACKOFF_CAP);
+        assert_eq!(
+            next_backoff(BACKOFF_CAP - Duration::from_millis(1)),
+            BACKOFF_CAP
+        );
+        let mut backoff = INITIAL_BACKOFF;
+        for _ in 0..64 {
+            backoff = next_backoff(backoff);
+        }
+        assert_eq!(backoff, BACKOFF_CAP);
     }
 }
