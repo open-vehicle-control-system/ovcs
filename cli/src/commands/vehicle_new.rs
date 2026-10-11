@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{bail, Context, Result};
 use owo_colors::OwoColorize;
 use regex::Regex;
 use std::path::Path;
@@ -54,11 +54,44 @@ pub fn run(
         std::process::exit(1);
     }
 
+    if target_dir.exists() {
+        eprintln!(
+            "{}",
+            format!("vehicles/{} already exists; pick another name.", raw).red()
+        );
+        std::process::exit(1);
+    }
+
     let module = module_for(&raw);
+    let module_dir = directory_for_module(&module)?;
+    if module_dir != raw {
+        eprintln!(
+            "{}",
+            format!(
+                "Invalid vehicle name {:?}: its module {} maps back to the directory {:?}, \
+                 which is where the firmware would look. Use {:?} instead.",
+                raw, module, module_dir, module_dir
+            )
+            .red()
+        );
+        std::process::exit(1);
+    }
     let display = display_name
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| default_display_name(&raw));
+    if display.contains(['"', '\\']) || display.contains("#{") {
+        eprintln!(
+            "{}",
+            format!(
+                "Invalid display name {:?}: it goes into Elixir strings as is, so it may not \
+                 contain `\"`, `\\` or `#{{`.",
+                display
+            )
+            .red()
+        );
+        std::process::exit(1);
+    }
     let bridges = !no_bridges;
     let info_el = match &info {
         Some(t) => el_string(t),
@@ -204,8 +237,35 @@ fn warn_missing_firmware(root: &Path, side: &str, target: &str) -> Result<()> {
     Ok(())
 }
 
+/// `s` as an Elixir string literal; `#` is escaped so `#{…}` is not
+/// interpolated.
 fn el_string(s: &str) -> String {
-    format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
+    format!(
+        "\"{}\"",
+        s.replace('\\', "\\\\")
+            .replace('"', "\\\"")
+            .replace('#', "\\#")
+    )
+}
+
+/// The directory the firmware derives from a vehicle module with
+/// `Macro.underscore/1`, asked of Elixir itself.
+fn directory_for_module(module: &str) -> Result<String> {
+    let out = Command::new("elixir")
+        .args([
+            "-e",
+            &format!("IO.write(Macro.underscore({}))", el_string(module)),
+        ])
+        .output()
+        .context("failed to spawn elixir")?;
+    if !out.status.success() {
+        bail!(
+            "elixir could not underscore {}: {}",
+            module,
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
 fn default_display_name(snake: &str) -> String {
@@ -221,4 +281,15 @@ fn default_display_name(snake: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::el_string;
+
+    #[test]
+    fn el_string_escapes_quotes_backslashes_and_interpolation() {
+        assert_eq!(el_string("plain"), "\"plain\"");
+        assert_eq!(el_string(r#"a "b" \ #{c}"#), r#""a \"b\" \\ \#{c}""#);
+    }
 }
