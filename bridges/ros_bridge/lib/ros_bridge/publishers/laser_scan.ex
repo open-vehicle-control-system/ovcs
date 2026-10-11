@@ -14,7 +14,7 @@ defmodule RosBridge.Publishers.LaserScan do
 
     * `:driver` (required) — the `OvcsDrivers.Lidar` module
     * `:topic` (`"scan"`), `:frame_id` (`"laser"`)
-    * `:bins` (720, half a degree)
+    * `:bins` (720)
   """
   use GenServer
   require Logger
@@ -59,7 +59,7 @@ defmodule RosBridge.Publishers.LaserScan do
 
   @doc "The `LaserScan` for `scan` binned into `bins` slots. Pure."
   def laser_scan(%Scan{range: {range_min, range_max}} = scan, bins, frame_id) do
-    increment = 2 * :math.pi() / bins
+    angle_increment_rad = 2 * :math.pi() / bins
 
     slots =
       Enum.reduce(scan.points, %{}, fn
@@ -67,10 +67,10 @@ defmodule RosBridge.Publishers.LaserScan do
           slots
 
         {angle, distance, quality}, slots ->
-          slot = slot(angle, increment, bins)
+          slot = slot_index(angle, angle_increment_rad, bins)
 
-          Map.update(slots, slot, {distance, quality}, fn {kept, _} = existing ->
-            if distance < kept, do: {distance, quality}, else: existing
+          Map.update(slots, slot, {distance, quality}, fn {kept_distance, _} = existing ->
+            if distance < kept_distance, do: {distance, quality}, else: existing
           end)
       end)
 
@@ -78,10 +78,10 @@ defmodule RosBridge.Publishers.LaserScan do
       Enum.map(0..(bins - 1), &Map.get(slots, &1, {0.0, 0})) |> Enum.unzip()
 
     %LaserScan{
-      header: %Header{stamp: time(scan.started_at), frame_id: frame_id},
+      header: %Header{stamp: time_message(scan.started_at), frame_id: frame_id},
       angle_min: -:math.pi(),
-      angle_max: :math.pi() - increment,
-      angle_increment: increment,
+      angle_max: :math.pi() - angle_increment_rad,
+      angle_increment: angle_increment_rad,
       time_increment: 0.0,
       scan_time: scan.duration_ns / 1.0e9,
       range_min: range_min,
@@ -92,11 +92,11 @@ defmodule RosBridge.Publishers.LaserScan do
   end
 
   # Angles arrive in [0, 2π); slot 0 starts at -π.
-  defp slot(angle, increment, bins) do
+  defp slot_index(angle, angle_increment_rad, bins) do
     wrapped = if angle >= :math.pi(), do: angle - 2 * :math.pi(), else: angle
-    min(trunc((wrapped + :math.pi()) / increment), bins - 1)
+    min(trunc((wrapped + :math.pi()) / angle_increment_rad), bins - 1)
   end
 
-  defp time(system_ns),
+  defp time_message(system_ns),
     do: %Time{sec: div(system_ns, 1_000_000_000), nanosec: rem(system_ns, 1_000_000_000)}
 end

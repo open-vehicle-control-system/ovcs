@@ -66,8 +66,8 @@ defmodule RosBridge.Camera.LibCamera do
   ## Exposure
 
   `:exposure_mode` (`:normal`, `:short`, `:long`) picks the
-  auto-exposure mode of the sensor's tuning file. On the Camera
-  Module 3, `:normal` keeps the shutter open up to 30 ms before raising
+  auto-exposure mode of the sensor's tuning file. On a Camera
+  Module 3, for example, `:normal` keeps the shutter open up to 30 ms before raising
   the gain, which smears a moving image; `:short` caps it at 10 ms
   before raising the gain, trading blur for noise. Absent, libcamera
   uses `:normal`.
@@ -84,8 +84,8 @@ defmodule RosBridge.Camera.LibCamera do
 
   `:sensor_mode` (`{width, height}`, 10-bit) picks the sensor mode
   instead of letting libcamera choose one from the output size. For a
-  small output libcamera picks the fastest mode, which on the Camera
-  Module 3 (IMX708) is 1536x864: a binned crop of the sensor's centre,
+  small output libcamera picks the fastest mode, which on a Camera
+  Module 3 (IMX708), for example, is 1536x864: a binned crop of the sensor's centre,
   two thirds of its width, so about 43° of horizontal field of view.
   `{2304, 1296}` bins the whole sensor (about 66°, up to 56 fps). A
   stereo calibration holds for one sensor mode only.
@@ -94,7 +94,7 @@ defmodule RosBridge.Camera.LibCamera do
 
   `set_controls/2` changes exposure, gain, focus and image processing
   while capturing; the capture program applies them from the next frame
-  on. Accepted keys:
+  on.
 
   `control_specs/0` lists them with their types and ranges: exposure
   mode, shutter time and gain (0 for automatic), focus, brightness,
@@ -111,12 +111,10 @@ defmodule RosBridge.Camera.LibCamera do
   libcamera keeps the process alive, sleeping on its request queue,
   and nothing on this side would ever notice — the port stays open,
   the supervisor sees a healthy child, and the fabric simply carries
-  no more images. Both cameras of a stereo pair have been seen doing
-  exactly that a few seconds after boot, until the drivers were
-  restarted by hand.
+  no more images.
 
   So the driver watches its own frame flow. Once frames have started,
-  `:stall_timeout_ms` (default 2000 ms — sixty frame periods at 30 fps)
+  `:stall_timeout_ms` (default 2000 ms)
   of silence is a stall; before the first frame, `:startup_timeout_ms`
   (default 15000 ms, libcamera's pipeline set-up on a Pi 5 can take a
   few seconds) is the most a camera gets to produce one. Either way the
@@ -146,6 +144,7 @@ defmodule RosBridge.Camera.LibCamera do
     :sync_timer_us
   ]
   @sync_group "239.255.255.250"
+  # Checks often enough that a stall is caught soon after its timeout.
   @watchdog_interval_ms 1_000
   @default_stall_timeout_ms 2_000
   @default_startup_timeout_ms 15_000
@@ -156,6 +155,7 @@ defmodule RosBridge.Camera.LibCamera do
     GenServer.start_link(__MODULE__, opts, name: name)
   end
 
+  @doc "The registered name of the driver for `label`."
   def name_for(label), do: Module.concat([__MODULE__, "L_#{label}"])
 
   @doc false
@@ -171,15 +171,15 @@ defmodule RosBridge.Camera.LibCamera do
       ["route", "replace", "#{@sync_group}/32", "dev", "lo"]
     ]
 
-  defp route_sync_over_loopback(sync, label) do
-    for args <- sync_route_commands(sync) do
-      case System.cmd("ip", args, stderr_to_stdout: true) do
+  defp route_sync_over_loopback(sync_role, label) do
+    for ip_arguments <- sync_route_commands(sync_role) do
+      case System.cmd("ip", ip_arguments, stderr_to_stdout: true) do
         {_, 0} ->
           :ok
 
         {output, status} ->
           Logger.warning(
-            "#{__MODULE__}[#{label}]: ip #{Enum.join(args, " ")} exited #{status}: #{String.trim(output)}"
+            "#{__MODULE__}[#{label}]: ip #{Enum.join(ip_arguments, " ")} exited #{status}: #{String.trim(output)}"
           )
       end
     end
@@ -209,7 +209,7 @@ defmodule RosBridge.Camera.LibCamera do
     height = Keyword.get(opts, :height, 720)
     fps = Keyword.get(opts, :fps, 30)
     rotation = Keyword.get(opts, :rotation, 0)
-    sync = Keyword.get(opts, :sync)
+    sync_role = Keyword.get(opts, :sync)
     exposure_mode = Keyword.get(opts, :exposure_mode)
     lens_position = Keyword.get(opts, :lens_position)
     sensor_mode = Keyword.get(opts, :sensor_mode)
@@ -221,9 +221,9 @@ defmodule RosBridge.Camera.LibCamera do
               "build with `mix compile` on the :rpi5 target (elixir_make)."
     end
 
-    route_sync_over_loopback(sync, label)
+    route_sync_over_loopback(sync_role, label)
 
-    args =
+    capture_arguments =
       [
         "--camera",
         Integer.to_string(camera_id),
@@ -236,7 +236,7 @@ defmodule RosBridge.Camera.LibCamera do
         "--rotation",
         Integer.to_string(rotation)
       ] ++
-        sync_args(sync) ++
+        sync_args(sync_role) ++
         exposure_mode_args(exposure_mode) ++
         lens_position_args(lens_position) ++ sensor_mode_args(sensor_mode)
 
@@ -245,7 +245,7 @@ defmodule RosBridge.Camera.LibCamera do
         :binary,
         :exit_status,
         {:packet, 4},
-        args: args
+        args: capture_arguments
       ])
 
     Logger.info(
@@ -261,7 +261,7 @@ defmodule RosBridge.Camera.LibCamera do
        port: port,
        listeners: [],
        controls: initial_controls(exposure_mode, lens_position),
-       live: nil,
+       applied_metadata: nil,
        started_at: now_ms(),
        last_frame_at: nil,
        stall_timeout_ms: Keyword.get(opts, :stall_timeout_ms, @default_stall_timeout_ms),
@@ -281,8 +281,9 @@ defmodule RosBridge.Camera.LibCamera do
         Logger.log(level, "#{__MODULE__}[#{state.label}] camera_capture: #{message}")
         {:noreply, state}
 
-      {:metadata, live} ->
-        {:noreply, %{state | live: Map.put(live, :received_ms, System.system_time(:millisecond))}}
+      {:metadata, metadata} ->
+        received_ms = System.system_time(:millisecond)
+        {:noreply, %{state | applied_metadata: Map.put(metadata, :received_ms, received_ms)}}
 
       {:error, reason} ->
         Logger.warning(
@@ -364,7 +365,7 @@ defmodule RosBridge.Camera.LibCamera do
   end
 
   def handle_call(:controls, _from, state), do: {:reply, state.controls, state}
-  def handle_call(:live, _from, state), do: {:reply, state.live, state}
+  def handle_call(:live, _from, state), do: {:reply, state.applied_metadata, state}
 
   defp normalise_control({key, value}) when is_atom(value) and not is_boolean(value),
     do: {key, Atom.to_string(value)}
@@ -374,9 +375,8 @@ defmodule RosBridge.Camera.LibCamera do
 
   defp normalise_control(control), do: control
 
-  # Runtime controls: the capture program's commands name libcamera's
-  # own controls, with enumerations as their numeric values.
-  @controls [
+  # The capture program's commands name libcamera's own controls, enumerations by number.
+  @control_specs [
     %{
       key: :exposure_mode,
       type: :string,
@@ -425,7 +425,7 @@ defmodule RosBridge.Camera.LibCamera do
   (`:string`, `:integer` or `:double`), `:range` or `:values`, and a
   `:description`.
   """
-  def control_specs, do: @controls
+  def control_specs, do: @control_specs
 
   @doc """
   The capture program's commands for `controls` (`key: value`, an
@@ -433,10 +433,10 @@ defmodule RosBridge.Camera.LibCamera do
   accepted. Pure.
   """
   def control_commands(controls) do
-    Enum.reduce_while(controls, {:ok, []}, fn {key, value}, {:ok, acc} ->
+    Enum.reduce_while(controls, {:ok, []}, fn {key, value}, {:ok, commands} ->
       with {:ok, spec} <- control_spec(key),
            {:ok, value} <- check_control(spec, value) do
-        {:cont, {:ok, acc ++ libcamera_controls(key, value)}}
+        {:cont, {:ok, commands ++ libcamera_controls(key, value)}}
       else
         {:error, _} = error -> {:halt, error}
       end
@@ -444,7 +444,7 @@ defmodule RosBridge.Camera.LibCamera do
   end
 
   defp control_spec(key) do
-    case Enum.find(@controls, &(&1.key == key)) do
+    case Enum.find(@control_specs, &(&1.key == key)) do
       nil -> {:error, "unknown camera control #{inspect(key)}"}
       spec -> {:ok, spec}
     end
@@ -473,23 +473,24 @@ defmodule RosBridge.Camera.LibCamera do
 
   defp libcamera_controls(:exposure_mode, mode), do: ["AeExposureMode=#{@exposure_modes[mode]}"]
   defp libcamera_controls(:exposure_time_us, 0), do: ["ExposureTimeMode=0"]
-  defp libcamera_controls(:exposure_time_us, us), do: ["ExposureTimeMode=1", "ExposureTime=#{us}"]
+
+  defp libcamera_controls(:exposure_time_us, exposure_time_us),
+    do: ["ExposureTimeMode=1", "ExposureTime=#{exposure_time_us}"]
+
   defp libcamera_controls(:analogue_gain, gain) when gain == 0, do: ["AnalogueGainMode=0"]
 
   defp libcamera_controls(:analogue_gain, gain),
     do: ["AnalogueGainMode=1", "AnalogueGain=#{gain}"]
 
   defp libcamera_controls(:lens_position, dioptres), do: ["AfMode=0", "LensPosition=#{dioptres}"]
-  defp libcamera_controls(:brightness, v), do: ["Brightness=#{v}"]
-  defp libcamera_controls(:contrast, v), do: ["Contrast=#{v}"]
-  defp libcamera_controls(:sharpness, v), do: ["Sharpness=#{v}"]
+  defp libcamera_controls(:brightness, brightness), do: ["Brightness=#{brightness}"]
+  defp libcamera_controls(:contrast, contrast), do: ["Contrast=#{contrast}"]
+  defp libcamera_controls(:sharpness, sharpness), do: ["Sharpness=#{sharpness}"]
 
   defp libcamera_controls(:noise_reduction, mode),
     do: ["NoiseReductionMode=#{@noise_reduction_modes[mode]}"]
 
-  # Controls libcamera starts with: the configured ones and its own
-  # defaults. "auto" is its choice of noise reduction, which cannot be
-  # requested back once a mode is set.
+  # "auto" is libcamera's own noise reduction; once a mode is set it cannot be requested back.
   defp initial_controls(exposure_mode, lens_position) do
     %{
       exposure_mode: Atom.to_string(exposure_mode || :normal),
@@ -511,13 +512,13 @@ defmodule RosBridge.Camera.LibCamera do
   the two timeouts can be checked without a camera.
   """
   def stall_verdict(%{last_frame_at: nil} = state, now_ms) do
-    waited = now_ms - state.started_at
-    if waited > state.startup_timeout_ms, do: {:no_first_frame, waited}, else: :ok
+    waited_ms = now_ms - state.started_at
+    if waited_ms > state.startup_timeout_ms, do: {:no_first_frame, waited_ms}, else: :ok
   end
 
   def stall_verdict(state, now_ms) do
-    silent = now_ms - state.last_frame_at
-    if silent > state.stall_timeout_ms, do: {:stalled, silent}, else: :ok
+    silent_ms = now_ms - state.last_frame_at
+    if silent_ms > state.stall_timeout_ms, do: {:stalled, silent_ms}, else: :ok
   end
 
   defp now_ms, do: System.monotonic_time(:millisecond)
@@ -528,8 +529,8 @@ defmodule RosBridge.Camera.LibCamera do
         width::little-unsigned-integer-size(16),
         height::little-unsigned-integer-size(16),
         capture_ns::little-signed-integer-size(64),
-        jpeg_len::little-unsigned-integer-size(32),
-        jpeg::binary-size(jpeg_len)
+        jpeg_length::little-unsigned-integer-size(32),
+        jpeg::binary-size(jpeg_length)
       >>) do
     {:ok,
      %Frame{
@@ -548,12 +549,12 @@ defmodule RosBridge.Camera.LibCamera do
     do: {:log, log_level(level), message}
 
   def parse_record(
-        <<@metadata_tag, present, capture_ns::little-signed-64, values::binary-size(64)>>
+        <<@metadata_tag, present_mask, capture_ns::little-signed-64, values::binary-size(64)>>
       ) do
     reported =
-      for {{key, <<value::little-float-64>>}, i} <-
+      for {{key, <<value::little-float-64>>}, index} <-
             Enum.with_index(Enum.zip(@metadata_keys, chunks(values, 8))),
-          Bitwise.band(present, Bitwise.bsl(1, i)) != 0,
+          Bitwise.band(present_mask, Bitwise.bsl(1, index)) != 0,
           into: %{},
           do: {key, metadata_value(key, value)}
 
@@ -582,8 +583,8 @@ defmodule RosBridge.Camera.LibCamera do
       {:error, :bad_name} ->
         raise "#{__MODULE__}: :ros_bridge app not loaded; cannot locate camera_capture binary"
 
-      dir ->
-        Path.join([List.to_string(dir), "camera_capture"])
+      priv_directory ->
+        Path.join([List.to_string(priv_directory), "camera_capture"])
     end
   end
 end

@@ -11,44 +11,33 @@ defmodule RosBridge.Publishers.StaticTransform do
   "1.2 m ahead of the car, 15 cm above the ground" is the form a
   steering decision needs.
 
-  ## Opts
+  ## Options
 
     * `:transforms` (required) — a list of maps:
 
           %{parent: "base_link", child: "stereo_left",
-            translation: {x, y, z},          # metres, REP-103: x fwd, y left, z up
+            translation: {x, y, z},          # metres, REP-103: x forward, y left, z up
             rotation: {x, y, z, w}}          # quaternion, defaults to identity
 
     * `:topic` (`"/tf_static"`), `:interval_ms` (`1000`).
 
-  Published on `/tf_static`, and *republished* at 1 Hz.
+  Published on `/tf_static`, and *republished* every `:interval_ms`.
+  Both halves matter.
 
-  Both halves matter, and the first one was got wrong here once.
   Static transforms conventionally rely on TRANSIENT_LOCAL durability
   so a late-joining subscriber receives the latched message;
   `ZenohClient` publishes volatile, so that subscriber would wait for
   ever. Republishing fixes that.
 
-  But republishing on `/tf` — which is what this used to do — trades
-  one problem for a subtler one. A transform on `/tf` is *time
-  indexed*: `tf2` stores it against its stamp and interpolates
-  between samples, and will not extrapolate past the newest one. At
-  1 Hz that leaves a window up to a second wide in which any message
-  stamped after the latest transform cannot be transformed at all.
-  Nav2's costmaps hit it immediately:
-
-      Requested time 291.444 but the latest data is at time 291.217,
-      when looking up transform from frame [stereo_left] to frame
-      [odom]
-
-  227 ms newer than the transform, and the point cloud was dropped —
-  every one of them, for the whole run.
+  Republishing on `/tf` instead would not work. A transform on `/tf`
+  is *time indexed*: `tf2` stores it against its stamp, interpolates
+  between samples, and will not extrapolate past the newest one, so
+  any message stamped after the latest transform cannot be transformed
+  at all, and consumers such as Nav2's costmaps drop it.
 
   `/tf_static` has no such window: `tf2` keeps those transforms in a
   separate buffer with no time index, so a lookup at *any* stamp
-  succeeds. Republishing them keeps the durability fix, and being
-  timeless removes the interpolation problem the previous choice
-  introduced.
+  succeeds.
   """
   use GenServer
 
@@ -69,7 +58,7 @@ defmodule RosBridge.Publishers.StaticTransform do
     state = %{
       topic: Keyword.get(opts, :topic, @default_topic),
       interval_ms: Keyword.get(opts, :interval_ms, @default_interval_ms),
-      transforms: opts |> Keyword.fetch!(:transforms) |> Enum.map(&normalise/1)
+      transforms: opts |> Keyword.fetch!(:transforms) |> Enum.map(&normalise_transform/1)
     }
 
     Logger.info(
@@ -88,11 +77,14 @@ defmodule RosBridge.Publishers.StaticTransform do
 
     message = %TFMessage{
       transforms:
-        Enum.map(state.transforms, fn t ->
+        Enum.map(state.transforms, fn transform ->
           %TransformStamped{
-            header: %Header{stamp: stamp, frame_id: t.parent},
-            child_frame_id: t.child,
-            transform: %Transform{translation: t.translation, rotation: t.rotation}
+            header: %Header{stamp: stamp, frame_id: transform.parent},
+            child_frame_id: transform.child,
+            transform: %Transform{
+              translation: transform.translation,
+              rotation: transform.rotation
+            }
           }
         end)
     }
@@ -102,15 +94,27 @@ defmodule RosBridge.Publishers.StaticTransform do
     {:noreply, state}
   end
 
-  defp normalise(%{parent: parent, child: child} = transform) do
-    {tx, ty, tz} = Map.get(transform, :translation, {0.0, 0.0, 0.0})
-    {rx, ry, rz, rw} = Map.get(transform, :rotation, {0.0, 0.0, 0.0, 1.0})
+  defp normalise_transform(%{parent: parent, child: child} = transform) do
+    {translation_x, translation_y, translation_z} =
+      Map.get(transform, :translation, {0.0, 0.0, 0.0})
+
+    {rotation_x, rotation_y, rotation_z, rotation_w} =
+      Map.get(transform, :rotation, {0.0, 0.0, 0.0, 1.0})
 
     %{
       parent: parent,
       child: child,
-      translation: %Vector3{x: tx / 1.0, y: ty / 1.0, z: tz / 1.0},
-      rotation: %Quaternion{x: rx / 1.0, y: ry / 1.0, z: rz / 1.0, w: rw / 1.0}
+      translation: %Vector3{
+        x: translation_x / 1.0,
+        y: translation_y / 1.0,
+        z: translation_z / 1.0
+      },
+      rotation: %Quaternion{
+        x: rotation_x / 1.0,
+        y: rotation_y / 1.0,
+        z: rotation_z / 1.0,
+        w: rotation_w / 1.0
+      }
     }
   end
 end

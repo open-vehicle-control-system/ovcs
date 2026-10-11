@@ -51,7 +51,7 @@ defmodule RosBridge.Camera.Dummy do
     GenServer.start_link(__MODULE__, opts, name: name)
   end
 
-  @doc "Module-level helper to derive the GenServer name for a label."
+  @doc "The registered name of the driver for `label`."
   def name_for(label), do: Module.concat([__MODULE__, "L_#{label}"])
 
   @impl GenServer

@@ -79,9 +79,9 @@ defmodule RosBridge.Publishers.Odometry do
       rear axle.
     * `:pose_variance`, `:twist_variance` — the covariance diagonals,
       in the order x, y, z, roll, pitch, yaw. The defaults suit a car
-      on flat ground: a few centimetres and about a degree in the
-      plane, and the axes it cannot move along declared unknown
-      (1e6) rather than perfect (0), which is how a zero reads.
+      on flat ground: tight in the plane, and the axes it cannot move
+      along declared unknown (large) rather than perfect (0), which is
+      how a zero reads.
 
   The IMU driver must already be running (the `:imu_publisher`
   component starts it); this registers as a second listener on it.
@@ -91,8 +91,19 @@ defmodule RosBridge.Publishers.Odometry do
   alias Cantastic.{Frame, Receiver, Signal}
   alias OvcsDrivers.Imu.Sample
   alias Ros2.BuiltinInterfaces.Msg.Time
-  alias Ros2.GeometryMsgs.Msg.{Point, Pose, PoseWithCovariance, Quaternion}
-  alias Ros2.GeometryMsgs.Msg.{Transform, TransformStamped, Twist, TwistWithCovariance, Vector3}
+
+  alias Ros2.GeometryMsgs.Msg.{
+    Point,
+    Pose,
+    PoseWithCovariance,
+    Quaternion,
+    Transform,
+    TransformStamped,
+    Twist,
+    TwistWithCovariance,
+    Vector3
+  }
+
   alias Ros2.NavMsgs.Msg.Odometry
   alias Ros2.StdMsgs.Msg.Header
   alias Ros2.Tf2Msgs.Msg.TFMessage
@@ -103,12 +114,12 @@ defmodule RosBridge.Publishers.Odometry do
   @frame_name "vehicle_motion"
   @default_topic "odom"
   @default_stale_after_ms 300
-  # A dt above this means the stream was interrupted; the path across
+  # A longer interval means the stream was interrupted; the path across
   # the gap is unknown, so the step is dropped rather than integrated.
   @max_step_s 0.5
-  # The distance counter wraps at 65.536 m.
+  # The frame's distance signal is 16 bits unsigned at 1 mm per count.
   @distance_wrap_m 65.536
-  # Farther than the vehicle rolls between two samples.
+  # A larger step is a restarted counter, not distance rolled.
   @max_distance_step_m 0.5
 
   @default_pose_variance [1.0e-4, 1.0e-4, 1.0e6, 1.0e6, 1.0e6, 3.0e-4]
@@ -158,9 +169,9 @@ defmodule RosBridge.Publishers.Odometry do
       "sequence" => %Signal{value: sequence}
     } = signals
 
-    at_ms = now_ms()
+    received_at_ms = now_ms()
 
-    next =
+    next_state =
       observe(state, %{
         speed: Decimal.to_float(speed),
         steering_angle: Decimal.to_float(steering_angle),
@@ -170,11 +181,13 @@ defmodule RosBridge.Publishers.Odometry do
         distance: Decimal.to_float(distance),
         distance_valid: distance_valid == true,
         sequence: sequence,
-        at_ms: at_ms
+        at_ms: received_at_ms
       })
 
-    if next.sequence != state.sequence and publishable?(next, at_ms), do: publish(next)
-    {:noreply, next}
+    if next_state.sequence != state.sequence and publishable?(next_state, received_at_ms),
+      do: publish(next_state)
+
+    {:noreply, next_state}
   end
 
   # Anything else is ignored rather than fatal: a gap in odometry is
@@ -189,30 +202,31 @@ defmodule RosBridge.Publishers.Odometry do
     {:noreply, %{state | yaw: yaw - yaw_offset, yaw_offset: yaw_offset}}
   end
 
-  def handle_cast({:imu_sample, %Sample{kind: :angular_velocity, z: z}}, state) do
-    {:noreply, %{state | yaw_rate: z}}
+  def handle_cast({:imu_sample, %Sample{kind: :angular_velocity, z: yaw_rate}}, state) do
+    {:noreply, %{state | yaw_rate: yaw_rate}}
   end
 
   def handle_cast({:imu_sample, %Sample{}}, state), do: {:noreply, state}
 
-  # A retransmission (same sequence) refreshes nothing and moves
-  # nothing. A fresh sample integrates the distance covered since the
-  # previous fresh sample along the current heading — unless the gap is
-  # too wide to trust or the estimate is not currently valid.
-  @doc false
+  @doc """
+  The state after a `vehicle_motion` sample. A retransmission (same
+  sequence) changes nothing. A fresh sample integrates the distance
+  covered since the previous fresh sample along the current heading,
+  unless the gap is too wide to trust or the estimate is not valid.
+  """
   def observe(%State{sequence: sequence} = state, %{sequence: sequence}), do: state
 
   def observe(%State{} = state, sample) do
-    dt_s = step_seconds(state.last_fresh_at_ms, sample.at_ms)
+    elapsed_s = step_seconds(state.last_fresh_at_ms, sample.at_ms)
 
-    step = if integrable?(state, sample, dt_s), do: step_metres(state, sample, dt_s)
+    step_m = if integrable?(state, sample, elapsed_s), do: step_metres(state, sample, elapsed_s)
 
     state =
-      if step do
+      if step_m do
         %{
           state
-          | x: state.x + step * :math.cos(state.yaw),
-            y: state.y + step * :math.sin(state.yaw)
+          | x: state.x + step_m * :math.cos(state.yaw),
+            y: state.y + step_m * :math.sin(state.yaw)
         }
       else
         state
@@ -230,31 +244,30 @@ defmodule RosBridge.Publishers.Odometry do
     }
   end
 
-  # The counter's difference when both samples carry one, else the
-  # previous speed over the interval; nil for an implausible jump.
+  # Counter difference, else speed over the interval; nil for an implausible jump.
   defp step_metres(
-         %State{distance_valid: true, distance: from},
-         %{distance_valid: true, distance: to},
-         _dt_s
+         %State{distance_valid: true, distance: previous_distance_m},
+         %{distance_valid: true, distance: distance_m},
+         _elapsed_s
        )
-       when is_float(from) and is_float(to) do
-    step = wrapped(to - from)
-    if abs(step) <= @max_distance_step_m, do: step
+       when is_float(previous_distance_m) and is_float(distance_m) do
+    step_m = unwrap_distance_step(distance_m - previous_distance_m)
+    if abs(step_m) <= @max_distance_step_m, do: step_m
   end
 
-  defp step_metres(state, _sample, dt_s), do: state.speed * dt_s
+  defp step_metres(state, _sample, elapsed_s), do: state.speed * elapsed_s
 
-  defp wrapped(delta) do
-    half = @distance_wrap_m / 2
-    delta - @distance_wrap_m * Float.floor((delta + half) / @distance_wrap_m)
+  defp unwrap_distance_step(delta_m) do
+    half_wrap_m = @distance_wrap_m / 2
+    delta_m - @distance_wrap_m * Float.floor((delta_m + half_wrap_m) / @distance_wrap_m)
   end
 
   defp step_seconds(nil, _now_ms), do: nil
   defp step_seconds(last_ms, now_ms), do: (now_ms - last_ms) / 1000
 
-  defp integrable?(state, sample, dt_s) do
+  defp integrable?(state, sample, elapsed_s) do
     state.speed_valid and sample.speed_valid and not is_nil(state.yaw) and
-      not is_nil(dt_s) and dt_s <= @max_step_s
+      not is_nil(elapsed_s) and elapsed_s <= @max_step_s
   end
 
   @doc false
@@ -263,9 +276,11 @@ defmodule RosBridge.Publishers.Odometry do
       now_ms - state.last_fresh_at_ms <= state.stale_after_ms
   end
 
-  # Planar odometry: the pose's orientation carries the yaw alone, as a
-  # rotation about z. Roll and pitch are the IMU publisher's story.
-  @doc false
+  @doc """
+  The yaw of a quaternion. Planar odometry: the pose's orientation
+  carries the yaw alone, as a rotation about z; roll and pitch are left
+  to the IMU publisher.
+  """
   def yaw_from_quaternion(x, y, z, w) do
     :math.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
   end
@@ -276,10 +291,11 @@ defmodule RosBridge.Publishers.Odometry do
      state.y + state.base_offset * :math.sin(state.yaw)}
   end
 
-  @doc false
-  # Row-major 6x6 with the variances on the diagonal.
+  @doc "Row-major 6x6 covariance with `variances` on the diagonal."
   def diagonal([_, _, _, _, _, _] = variances) do
-    for row <- 0..5, col <- 0..5, do: if(row == col, do: Enum.at(variances, row) * 1.0, else: 0.0)
+    for row <- 0..5,
+        column <- 0..5,
+        do: if(row == column, do: Enum.at(variances, row) * 1.0, else: 0.0)
   end
 
   defp publish(%State{} = state) do

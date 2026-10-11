@@ -29,8 +29,7 @@ defmodule RosBridge.Camera.Ffmpeg do
   use GenServer
   require Logger
 
-  alias RosBridge.Camera.Frame
-  alias RosBridge.Camera.MjpegStream
+  alias RosBridge.Camera.{Frame, MjpegStream}
 
   def start_link(opts) do
     label = Keyword.fetch!(opts, :label)
@@ -38,6 +37,7 @@ defmodule RosBridge.Camera.Ffmpeg do
     GenServer.start_link(__MODULE__, opts, name: name)
   end
 
+  @doc "The registered name of the driver for `label`."
   def name_for(label), do: Module.concat([__MODULE__, "L_#{label}"])
 
   @impl GenServer
@@ -52,7 +52,7 @@ defmodule RosBridge.Camera.Ffmpeg do
       System.find_executable("ffmpeg") ||
         raise "#{__MODULE__}[#{label}]: ffmpeg not found on PATH"
 
-    args = [
+    ffmpeg_arguments = [
       "-hide_banner",
       "-loglevel",
       "error",
@@ -78,11 +78,11 @@ defmodule RosBridge.Camera.Ffmpeg do
       Port.open({:spawn_executable, ffmpeg}, [
         :binary,
         :exit_status,
-        args: args
+        args: ffmpeg_arguments
       ])
 
     Logger.info(
-      "#{__MODULE__}[#{label}] streaming #{device} at #{width}×#{height}@#{fps} via ffmpeg pid #{inspect(port)}"
+      "#{__MODULE__}[#{label}] streaming #{device} at #{width}×#{height}@#{fps} via ffmpeg port #{inspect(port)}"
     )
 
     {:ok,

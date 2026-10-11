@@ -20,21 +20,16 @@ defmodule RosBridge.Publishers.Imu do
   Knows nothing about any specific chip — any module implementing
   the `OvcsDrivers.Imu` behaviour plugs in via the `:driver` option.
 
-  Samples arrive independently per kind; we keep the freshest of
-  each and publish a single coalesced `Imu` at 50 Hz. The tick is a
-  no-op until all three kinds we publish have been seen at least
-  once (avoids emitting half-filled messages).
-
-  TODO: characterize the source's noise floor and populate
-  `*_covariance` arrays with measured values instead of the zero
-  sentinel ("covariance unknown" per the ROS message definition).
+  Samples arrive independently per kind; the freshest of each is kept
+  and a single coalesced `Imu` published every `:publish_interval_ms`.
+  The tick is a no-op until all three published kinds have been seen at
+  least once, so no half-filled message goes out.
   """
   use GenServer
 
   alias OvcsDrivers.Imu.Sample
   alias Ros2.BuiltinInterfaces.Msg.Time
-  alias Ros2.GeometryMsgs.Msg.Quaternion
-  alias Ros2.GeometryMsgs.Msg.Vector3
+  alias Ros2.GeometryMsgs.Msg.{Quaternion, Vector3}
   alias Ros2.SensorMsgs.Msg.Imu
   alias Ros2.StdMsgs.Msg.Header
   alias RosBridge.Publishers.Imu.State
@@ -43,12 +38,10 @@ defmodule RosBridge.Publishers.Imu do
 
   @default_topic "imu"
   @default_frame_id "imu_link"
-  # 50 Hz — fast enough for Foxglove's IMU visualizer to feel live,
-  # slow enough not to drown a downstream consumer in samples.
+  # Live enough for an IMU visualizer, sparse enough not to flood consumers.
   @default_publish_interval_ms 20
 
-  # Nine-element zero list, the ROS sentinel for "covariance unknown"
-  # (per the comment in the upstream sensor_msgs/Imu.msg IDL).
+  # The ROS sentinel for "covariance unknown", per sensor_msgs/Imu.msg.
   @unknown_covariance List.duplicate(0.0, 9)
 
   def start_link(opts) do
@@ -92,9 +85,7 @@ defmodule RosBridge.Publishers.Imu do
     {:noreply, %{state | latest_orientation: %Quaternion{x: x, y: y, z: z, w: w}}}
   end
 
-  # `:magnetometer` and `:temperature` aren't part of sensor_msgs/Imu;
-  # drop them silently. A future MagneticField / Temperature publisher
-  # would register its own listener on the driver and translate them.
+  # sensor_msgs/Imu has no magnetometer or temperature fields.
   def handle_cast({:imu_sample, %Sample{}}, state), do: {:noreply, state}
 
   @impl GenServer
