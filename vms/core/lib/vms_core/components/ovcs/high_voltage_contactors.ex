@@ -5,7 +5,7 @@ defmodule VmsCore.Components.OVCS.HighVoltageContactors do
 
   On a `:start` contact it closes the main negative and precharge
   relays; once the inverter's output voltage reaches
-  `required_precharge_output_voltage` it closes the main positive relay,
+  `required_precharge_output_voltage_v` it closes the main positive relay,
   then opens the precharge relay. An `:off` contact opens all three.
   `:ready_to_drive` is true while both main relays read closed and the
   precharge relay open.
@@ -15,7 +15,7 @@ defmodule VmsCore.Components.OVCS.HighVoltageContactors do
     * `:contact_source` — publishes the ignition `:contact`.
     * `:inverter_output_voltage_source` — publishes
       `:inverter_output_voltage`.
-    * `:required_precharge_output_voltage` — volts at which precharge
+    * `:required_precharge_output_voltage_v` — the voltage at which precharge
       is complete.
     * `:controller` — the generic controller driving the relays.
     * `:main_negative_relay_pin`, `:main_positive_relay_pin`,
@@ -37,7 +37,7 @@ defmodule VmsCore.Components.OVCS.HighVoltageContactors do
   def init(%{
         contact_source: contact_source,
         inverter_output_voltage_source: inverter_output_voltage_source,
-        required_precharge_output_voltage: required_precharge_output_voltage,
+        required_precharge_output_voltage_v: required_precharge_output_voltage_v,
         controller: controller,
         main_negative_relay_pin: main_negative_relay_pin,
         main_positive_relay_pin: main_positive_relay_pin,
@@ -57,7 +57,7 @@ defmodule VmsCore.Components.OVCS.HighVoltageContactors do
        status: :off,
        inverter_output_voltage: 0,
        inverter_output_voltage_source: inverter_output_voltage_source,
-       required_precharge_output_voltage: required_precharge_output_voltage,
+       required_precharge_output_voltage_v: required_precharge_output_voltage_v,
        precharge_ending_time_ms: 0,
        loop_timer: timer,
        main_negative_relay_enabled: false,
@@ -109,7 +109,7 @@ defmodule VmsCore.Components.OVCS.HighVoltageContactors do
 
       {:starting, contact, inverter_output_voltage, _}
       when contact in [:on, :start] and
-             inverter_output_voltage >= state.required_precharge_output_voltage ->
+             inverter_output_voltage >= state.required_precharge_output_voltage_v ->
         end_precharge(state)
 
       {:precharge_complete, contact, _, precharge_ending_time_ms}

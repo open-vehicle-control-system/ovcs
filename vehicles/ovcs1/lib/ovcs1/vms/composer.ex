@@ -213,7 +213,7 @@ defmodule Ovcs1.Vms.Composer do
        %{
          contact_source: Polo9N.IgnitionLock,
          inverter_output_voltage_source: LeafAZE0.Inverter,
-         required_precharge_output_voltage: 300,
+         required_precharge_output_voltage_v: 300,
          controller: Vms.RearController,
          main_negative_relay_pin: 3,
          main_positive_relay_pin: 4,

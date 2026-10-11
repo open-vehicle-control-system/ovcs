@@ -91,10 +91,13 @@ defmodule OvcsMini.Vms.Composer do
       # positive yaw rate (Nav2 turning left) drove this servo right, so
       # the sign is inverted to match the drivetrain's convention.
       {OVCS.RosVelocityCommand,
-       Map.merge(
-         Map.take(OvcsMini.geometry(), [:wheelbase, :steering_limit]),
-         %{max_speed: @max_speed_m_s, min_speed: @min_speed_m_s, steering_sign: -1}
-       )},
+       %{
+         wheelbase_m: OvcsMini.geometry().wheelbase,
+         steering_limit_rad: OvcsMini.geometry().steering_limit,
+         max_speed_m_s: @max_speed_m_s,
+         min_speed_m_s: @min_speed_m_s,
+         steering_sign: -1
+       }},
       {OVCS.RadioControl.Steering,
        %{
          radio_control_channel: 1
@@ -278,9 +281,9 @@ defmodule OvcsMini.Vms.Composer do
          revolution_source: Vms.Vesc,
          rotation_to_wheel_ratio: @motor_to_wheel_ratio,
          rotation_signed: true,
-         wheel_radius: OvcsMini.geometry().wheel_radius,
+         wheel_radius_m: OvcsMini.geometry().wheel_radius,
          selected_control_level_source: Managers.ControlLevel,
-         steering_limit: OvcsMini.geometry().steering_limit,
+         steering_limit_rad: OvcsMini.geometry().steering_limit,
          steering_sign: 1
        }},
       {VmsCore.Status,

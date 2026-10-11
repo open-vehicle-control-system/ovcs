@@ -35,7 +35,7 @@ defmodule VmsCore.Components.OVCS.VehicleMotion do
   The angle is the commanded steering, not a measured one, so it holds
   for a steering actuator without feedback. It is the selected
   `:requested_steering` in
-  `[-1, 1]` scaled by `:steering_limit`, and `:steering_sign` converts
+  `[-1, 1]` scaled by `:steering_limit_rad`, and `:steering_sign` converts
   from the actuator's convention back to REP-103's positive-left, undoing
   the sign the command path applied on the way in.
 
@@ -74,10 +74,10 @@ defmodule VmsCore.Components.OVCS.VehicleMotion do
       One when the shaft is the wheel itself.
     * `:rotation_signed` — `true` when the source's rotation already
       carries the direction of travel. Default `false`.
-    * `:wheel_radius` — metres, from the vehicle's `geometry/0`.
+    * `:wheel_radius_m` — from the vehicle's `geometry/0`.
     * `:selected_control_level_source` — names the throttle and
       steering sources (`Managers.ControlLevel`).
-    * `:steering_limit` — radians at full lock, from `geometry/0`.
+    * `:steering_limit_rad` — at full lock, from `geometry/0`.
     * `:steering_sign` — `1` or `-1`, matching the sign given to
       `RosVelocityCommand`. Default `1`.
     * `:revolution_source` — optional, publishes `:revolutions` of the
@@ -106,9 +106,9 @@ defmodule VmsCore.Components.OVCS.VehicleMotion do
         %{
           rotation_source: rotation_source,
           rotation_to_wheel_ratio: rotation_to_wheel_ratio,
-          wheel_radius: wheel_radius,
+          wheel_radius_m: wheel_radius_m,
           selected_control_level_source: selected_control_level_source,
-          steering_limit: steering_limit
+          steering_limit_rad: steering_limit_rad
         } = args
       ) do
     steering_sign = Map.get(args, :steering_sign, 1)
@@ -140,9 +140,9 @@ defmodule VmsCore.Components.OVCS.VehicleMotion do
        rotation_source: rotation_source,
        rotation_signed: Map.get(args, :rotation_signed, false),
        rotation_to_wheel_ratio: D.from_float(1.0 * rotation_to_wheel_ratio),
-       speed_factor: speed_factor(rotation_to_wheel_ratio, wheel_radius),
+       speed_factor: speed_factor(rotation_to_wheel_ratio, wheel_radius_m),
        selected_control_level_source: selected_control_level_source,
-       steering_factor: D.mult(D.from_float(1.0 * steering_limit), steering_sign),
+       steering_factor: D.mult(D.from_float(1.0 * steering_limit_rad), steering_sign),
        requested_throttle_source: nil,
        requested_steering_source: nil,
        direction_sign: 1,
@@ -150,7 +150,7 @@ defmodule VmsCore.Components.OVCS.VehicleMotion do
        # Unknown until the source reports, see the moduledoc.
        rotation_per_minute: nil,
        revolution_source: Map.get(args, :revolution_source),
-       distance_factor: distance_factor(rotation_to_wheel_ratio, wheel_radius),
+       distance_factor: distance_factor(rotation_to_wheel_ratio, wheel_radius_m),
        revolutions: nil,
        sequence: 0
      }}
@@ -269,14 +269,14 @@ defmodule VmsCore.Components.OVCS.VehicleMotion do
   km/h per rpm of the sensed shaft: one wheel circumference per
   `rotation_to_wheel_ratio` turns, times 60 minutes, over 1000 m.
   """
-  def speed_factor(rotation_to_wheel_ratio, wheel_radius) do
-    wheel_circumference = 2 * :math.pi() * wheel_radius
-    D.from_float(wheel_circumference * 60 / 1000 / rotation_to_wheel_ratio)
+  def speed_factor(rotation_to_wheel_ratio, wheel_radius_m) do
+    wheel_circumference_m = 2 * :math.pi() * wheel_radius_m
+    D.from_float(wheel_circumference_m * 60 / 1000 / rotation_to_wheel_ratio)
   end
 
   @doc "Metres of wheel travel per turn of the sensed shaft."
-  def distance_factor(rotation_to_wheel_ratio, wheel_radius) do
-    D.from_float(2 * :math.pi() * wheel_radius / rotation_to_wheel_ratio)
+  def distance_factor(rotation_to_wheel_ratio, wheel_radius_m) do
+    D.from_float(2 * :math.pi() * wheel_radius_m / rotation_to_wheel_ratio)
   end
 
   @doc "The distance rolled, in metres modulo the 16-bit millimetre counter."
