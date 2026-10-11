@@ -100,7 +100,7 @@ defmodule VmsCore.Components.OVCS.HighVoltageContactors do
   end
 
   defp toggle_contactors(state) do
-    now_ms = System.system_time(:millisecond)
+    now_ms = System.monotonic_time(:millisecond)
 
     case {state.status, state.contact, state.inverter_output_voltage,
           state.precharge_ending_time_ms} do
@@ -113,7 +113,7 @@ defmodule VmsCore.Components.OVCS.HighVoltageContactors do
         end_precharge(state)
 
       {:precharge_complete, contact, _, precharge_ending_time_ms}
-      when contact in [:on, :start] and precharge_ending_time_ms > now_ms ->
+      when contact in [:on, :start] and now_ms >= precharge_ending_time_ms ->
         finish_precharge(state)
 
       {status, :off, _, _} when status != :off ->
@@ -158,7 +158,8 @@ defmodule VmsCore.Components.OVCS.HighVoltageContactors do
 
   defp end_precharge(state) do
     :ok = enable_relay(state, :main_positive_relay_pin)
-    precharge_ending_time_ms = System.system_time(:millisecond) + @relay_operating_delay_ms
+    # Monotonic: the wall clock steps when NTP first synchronises.
+    precharge_ending_time_ms = System.monotonic_time(:millisecond) + @relay_operating_delay_ms
     %{state | status: :precharge_complete, precharge_ending_time_ms: precharge_ending_time_ms}
   end
 
