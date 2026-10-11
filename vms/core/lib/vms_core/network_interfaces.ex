@@ -1,6 +1,7 @@
 defmodule VmsCore.NetworkInterfaces do
   @moduledoc """
-    Expose CAN networks interfaces and statistics
+  The CAN network interfaces Cantastic is configured with, and their
+  `ip` link statistics, for the VMS API.
   """
   use GenServer
   require Logger
@@ -31,9 +32,10 @@ defmodule VmsCore.NetworkInterfaces do
 
   @impl GenServer
   def handle_call(:network_interfaces, _from, state) do
-    result =
+    network_interfaces_with_statistics =
       state.network_interfaces
       |> Enum.map(fn network_interface ->
+        # `-s` twice adds the detailed error counters.
         {statistics_as_json, 0} =
           System.cmd("ip", [
             "--json",
@@ -49,9 +51,10 @@ defmodule VmsCore.NetworkInterfaces do
         %{network_interface | statistics: statistics}
       end)
 
-    {:reply, {:ok, result}, state}
+    {:reply, {:ok, network_interfaces_with_statistics}, state}
   end
 
+  @doc "Each network interface with its current statistics."
   def network_interfaces do
     GenServer.call(__MODULE__, :network_interfaces)
   end

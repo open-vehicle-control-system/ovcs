@@ -17,14 +17,14 @@ defmodule VmsCore.Metrics do
   end
 
   @impl GenServer
-  def handle_info(%Bus.Message{name: name, value: value, source: source} = message, state) do
+  def handle_info(%Bus.Message{name: name, value: metric_value, source: source} = message, state) do
     state =
       case state.sources[source] do
         nil -> put_in(state, [:sources, source], %{})
         _ -> state
       end
 
-    state = put_in(state, [:sources, source, name], value)
+    state = put_in(state, [:sources, source, name], metric_value)
     {:noreply, record_unit(state, source, name, message.unit)}
   end
 
@@ -48,21 +48,28 @@ defmodule VmsCore.Metrics do
     {:reply, {:ok, Map.get(state.sources, source, %{})}, state}
   end
 
+  @doc "The last value of each metric `source` published."
   def metrics(source) do
     GenServer.call(__MODULE__, {:metrics, source})
   end
 
+  @doc "The last value of every metric, by source."
   def metrics do
     GenServer.call(__MODULE__, {:metrics, nil})
   end
 
+  @doc "The last unit of every metric whose publisher gave one, by source."
   def units do
     GenServer.call(__MODULE__, :units)
   end
 
+  @doc """
+  The metrics in `filter`, a map of source to a map whose keys are the
+  metric names to keep.
+  """
   def filtered_metrics(filter) do
     {:ok, metrics} = metrics()
-    {:ok, filter(metrics, filter)}
+    {:ok, filter_by_source(metrics, filter)}
   end
 
   @doc """
@@ -71,19 +78,19 @@ defmodule VmsCore.Metrics do
   """
   def filtered_units(filter) do
     {:ok, units} = units()
-    {:ok, filter(units, filter)}
+    {:ok, filter_by_source(units, filter)}
   end
 
-  defp filter(by_source, filter) do
+  defp filter_by_source(by_source, filter) do
     by_source
-    |> Enum.reduce(%{}, fn {module, module_metrics}, result ->
-      case filter[module] do
+    |> Enum.reduce(%{}, fn {source, source_metrics}, filtered ->
+      case filter[source] do
         nil ->
-          result
+          filtered
 
         _ ->
-          module_metrics = module_metrics |> Map.take(Map.keys(filter[module]))
-          result |> put_in([module], module_metrics)
+          source_metrics = source_metrics |> Map.take(Map.keys(filter[source]))
+          filtered |> put_in([source], source_metrics)
       end
     end)
   end

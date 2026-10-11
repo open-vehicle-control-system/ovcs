@@ -1,6 +1,9 @@
 defmodule VmsCore.Managers.ControlLevel do
   @moduledoc """
-    Decide which control level should be selected based on the requested one and the other constraints
+  Selects the control level from the one requested and the vehicle's
+  state, and routes each actuator's request from the source that level
+  names. Broadcasts the selected level, the selected ROS commander and
+  the source in force for gear, direction, throttle and steering.
 
   ## Two orthogonal axes
 
@@ -42,13 +45,50 @@ defmodule VmsCore.Managers.ControlLevel do
   (`OVCS.RotationFusion`). While it is true, `:ros` drops to `:radio`
   and is refused: odometry and every costmap cell placed with it rest
   on the rotation, so a planner cannot drive on sources that disagree.
+
+  ## Forced levels
+
+  A brake pedal, a vehicle not ready to drive, a pull on the radio
+  trigger or a rotation fault forces the level down and latches it. The
+  force is lifted by the switch returning to the forced level or below,
+  not by the cause going away, so a level whose cause is still active is
+  refused on entry rather than entered for the one tick it takes to
+  force it again.
+
+  ## Refusals
+
+  A request that cannot be honoured is logged once, with its reason,
+  rather than at the loop frequency. `:ros` is only reachable from
+  `:radio`, so the switch left in `:ros` while the vehicle sits in
+  `:manual` is refused: the operator steps down through the middle
+  position, which puts it between "nothing drives" and "ROS drives".
+
+  ## Commander handover
+
+  Handing the vehicle to the planner is a mode change like any other,
+  so it waits for a standstill. Taking it back is unconditional and
+  immediate: an operator reaching for the switch because the planner is
+  doing something wrong must not be made to stop first. Off the `:ros`
+  level the commander is disarmed, so re-entering `:ros` goes back
+  through the standstill gate rather than resuming a planner.
+
+  ## Standstill
+
+  A speed source that has gone quiet publishes `nil`, and unknown is not
+  standstill: a vehicle that cannot prove it is stopped gets no mode
+  change. A vehicle with no speed source keeps the initial zero, which
+  permits every change.
+
+  Each `requested_*_sources` map is validated in `init/1`, so a
+  mis-shaped entry fails at boot naming the option rather than crashing
+  the manager on the first flip to `:ros`.
   """
   use GenServer
   require Logger
   alias OvcsBus, as: Bus
   alias Decimal, as: D
 
-  @loop_period 10
+  @loop_period_ms 10
   @zero D.new(0)
   @default_ros_commander :teleop
 
@@ -82,7 +122,7 @@ defmodule VmsCore.Managers.ControlLevel do
     )
 
     Bus.subscribe("messages")
-    {:ok, timer} = :timer.send_interval(@loop_period, :loop)
+    {:ok, timer} = :timer.send_interval(@loop_period_ms, :loop)
 
     # Optional: a vehicle with no second switch never leaves `:teleop`,
     # so a planner it does not have can never take the wheel.
@@ -180,11 +220,11 @@ defmodule VmsCore.Managers.ControlLevel do
   end
 
   def handle_info(
-        %Bus.Message{name: :cross_check_fault, value: fault, source: source},
+        %Bus.Message{name: :cross_check_fault, value: cross_check_fault, source: source},
         state
       )
       when not is_nil(source) and source == state.rotation_fault_source do
-    {:noreply, %{state | rotation_fault: fault == true}}
+    {:noreply, %{state | rotation_fault: cross_check_fault == true}}
   end
 
   def handle_info(
@@ -238,11 +278,7 @@ defmodule VmsCore.Managers.ControlLevel do
           standstill?(speed) ->
         %{state | selected_control_level: :ros}
 
-      # The force is lifted by the switch returning to the level it was
-      # forced to, or below it, not by the brake being released, so a
-      # level whose forcing condition is still active must be refused on
-      # entry above rather than entered for the one tick it takes to
-      # force it again.
+      # Lifted by the switch, not by the cause going away: see "Forced levels".
       not is_nil(forced_control_level) &&
         requested_control_level == selected_control_level &&
           rank(selected_control_level) <= rank(forced_control_level) ->
@@ -255,11 +291,7 @@ defmodule VmsCore.Managers.ControlLevel do
 
   defp select_control_level(state), do: state
 
-  # Nothing matched, which is fine when the request is already
-  # satisfied and a real problem otherwise. The switch left in `:ros`
-  # while the vehicle sits in `:manual` is the case worth saying out
-  # loud: `:ros` is only reachable *from* `:radio`, so the operator has
-  # to step down through the middle position.
+  # Reached when no transition matched, whether or not the request is satisfied.
   defp log_refusal(state) do
     refusal = {state.requested_control_level, state.selected_control_level}
 
@@ -287,8 +319,6 @@ defmodule VmsCore.Managers.ControlLevel do
     end
   end
 
-  # A human on the trigger, or rotation sources that disagree, takes the
-  # wheel back from ROS.
   defp ros_overridden?(state), do: state.radio_breaking or state.rotation_fault
 
   defp refusal_reason(state) do
@@ -318,8 +348,6 @@ defmodule VmsCore.Managers.ControlLevel do
         :rotation_fault
 
       state.requested_control_level == :ros && state.selected_control_level == :manual ->
-        # `:ros` is only reachable from `:radio`, deliberately: it puts
-        # the middle position between "nothing drives" and "ROS drives".
         :ros_only_reachable_from_radio
 
       true ->
@@ -327,18 +355,13 @@ defmodule VmsCore.Managers.ControlLevel do
     end
   end
 
-  # Handing the vehicle to a planner is a mode change like any other,
-  # so it waits for a standstill. Taking it back is unconditional and
-  # immediate -- an operator reaching for the switch because the
-  # planner is doing something wrong must not be made to stop first.
+  # See "Commander handover" in the moduledoc.
   defp select_ros_commander(state) when not is_nil(state.requested_ros_commander_source) do
     cond do
       state.requested_ros_commander == :teleop ->
         %{state | selected_ros_commander: :teleop}
 
-      # Off the `:ros` level the commander is disarmed, so re-entering
-      # it goes back through the standstill gate rather than resuming
-      # a planner that was driving when authority was taken away.
+      # Disarmed off `:ros`, so re-entering it passes the standstill gate again.
       state.selected_control_level != :ros ->
         %{state | selected_ros_commander: :teleop}
 
@@ -367,21 +390,14 @@ defmodule VmsCore.Managers.ControlLevel do
 
   defp select_sources(state), do: state
 
-  # A speed source that has gone quiet publishes nil, and unknown is not
-  # standstill: a vehicle that cannot prove it is stopped does not get a
-  # mode change. A vehicle with no speed source at all keeps the initial
-  # zero, which is the documented permissive case.
+  # An unknown speed is not a standstill: see "Standstill" in the moduledoc.
   defp standstill?(nil), do: false
   defp standstill?(speed), do: D.eq?(speed, @zero)
 
-  # Only `:ros` is keyed by commander. Every other level names a single
-  # source, so the second switch cannot affect it.
+  # Only `:ros` is keyed by commander, so the second switch affects no other level.
   defp source_for(sources, :ros, commander), do: sources[:ros][commander]
   defp source_for(sources, level, _commander), do: sources[level]
 
-  # Checked once here rather than discovered on the first flip to
-  # `:ros`, when a mis-shaped entry would crash the manager at the loop
-  # frequency with a stack trace that never names the composer.
   defp validate_sources!(key, sources) when is_map(sources) do
     if Map.has_key?(sources, :autonomous) do
       raise ArgumentError,
@@ -390,13 +406,13 @@ defmodule VmsCore.Managers.ControlLevel do
     end
 
     case Map.get(sources, :ros) do
-      ros when is_map(ros) or is_nil(ros) ->
+      ros_sources when is_map(ros_sources) or is_nil(ros_sources) ->
         :ok
 
-      other ->
+      ros_sources ->
         raise ArgumentError,
               "#{inspect(key)}[:ros] must be a map keyed by commander " <>
-                "(%{teleop: ..., autonomous: ...}), got #{inspect(other)}"
+                "(%{teleop: ..., autonomous: ...}), got #{inspect(ros_sources)}"
     end
   end
 

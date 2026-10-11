@@ -152,7 +152,6 @@
                  "lib/ovcs_mini/vms/composer/dashboard/ros_control_page.ex",
                  "lib/vms_api_web/channels/metrics_channel.ex",
                  "lib/vms_api_web/channels/network_interfaces_channel.ex",
-                 "lib/vms_core/pid.ex",
                  "lib/vms_firmware/util/network_mapper.ex"
                ]
              }
@@ -185,17 +184,11 @@
                  "lib/vms_api_web/controllers/error_json.ex",
                  "lib/vms_api_web/endpoint.ex",
                  "lib/vms_api_web/router.ex",
-                 "lib/vms_core/application.ex",
                  "lib/vms_core/components/bosch/i_booster_gen2.ex",
                  "lib/vms_core/components/nissan/leaf_aze0/inverter.ex",
-                 "lib/vms_core/components/ovcs/radio_control/throttle.ex",
-                 "lib/vms_core/components/ovcs/ros_velocity_command.ex",
                  "lib/vms_core/components/traxxas/motor_controller.ex",
                  "lib/vms_core/components/traxxas/steering.ex",
                  "lib/vms_core/components/vesc/motor_controller.ex",
-                 "lib/vms_core/managers/control_level.ex",
-                 "lib/vms_core/managers/gear.ex",
-                 "lib/vms_core/status.ex",
                  "lib/vms_firmware/application.ex"
                ]
              }
