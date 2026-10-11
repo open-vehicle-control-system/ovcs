@@ -211,6 +211,12 @@ jobs:
             cli/target
           key: cargo-cli-${{ hashFiles('mise.toml') }}-${{ hashFiles('cli/Cargo.lock') }}
           restore-keys: cargo-cli-${{ hashFiles('mise.toml') }}-
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      - name: Audit deps
+        # Fails on a vulnerability; unmaintained, unsound and yanked crates only warn.
+        run: cargo audit
       - run: cargo fmt --check
       - run: cargo clippy --release --all-targets -- -D warnings
       - run: cargo build --release

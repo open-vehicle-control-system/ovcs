@@ -1,0 +1,6 @@
+[advisories]
+ignore = [
+  # rsa: Marvin timing side channel in RSA private-key operations, no fixed
+  # release. russh only handles RSA public keys here: ssh-agent does the signing.
+  "RUSTSEC-2023-0071",
+]
