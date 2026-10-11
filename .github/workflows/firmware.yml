@@ -147,14 +147,21 @@ jobs:
 
       # ~/.nerves holds downloaded system artifacts, named by their own
       # content hash, so a stale entry is simply unused rather than
-      # wrong. It is worth a prefix fallback — it saves re-downloading
-      # ~300 MB — but still scoped to one toolchain.
+      # wrong. The key is the system revision the app locks, so apps
+      # building the same system share one entry; the prefix fallback
+      # saves re-downloading it after a system bump.
+      - name: Locked Nerves system revision
+        id: system
+        run: |
+          rev=$(grep -oE '"${{ matrix.target }}": \{:git, "[^"]+", "[0-9a-f]+' '${{ matrix.app }}/mix.lock' | grep -oE '[0-9a-f]+$')
+          echo "rev=${rev:?no git lock for ${{ matrix.target }} in ${{ matrix.app }}/mix.lock}" >> "$GITHUB_OUTPUT"
+
       - uses: actions/cache@v5
         with:
           path: ~/.nerves
-          key: nerves-dl-${{ matrix.target }}-${{ hashFiles('mise.toml') }}-${{ hashFiles(format('{0}/mix.lock', matrix.app)) }}
+          key: nerves-dl-${{ matrix.target }}-${{ steps.system.outputs.rev }}
           restore-keys: |
-            nerves-dl-${{ matrix.target }}-${{ hashFiles('mise.toml') }}-
+            nerves-dl-${{ matrix.target }}-
 
       - name: Build firmware
         working-directory: ${{ matrix.app }}
