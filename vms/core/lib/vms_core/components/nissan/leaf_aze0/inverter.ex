@@ -7,7 +7,7 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Inverter do
   inverter and the VMS frames it expects are emitted. Each tick turns the
   selected source's throttle request into a torque request, signed by the
   selected gear and zero outside `:drive` and `:reverse`. Publishes the
-  motor rpm, requested and effective torque, output voltage, the
+  motor rpm (unsigned, and zero above the EM57's rated 10,500), requested and effective torque, output voltage, the
   inverter and motor temperatures, and `:ready_to_drive`.
 
   ## Options
@@ -33,6 +33,8 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Inverter do
   alias VmsCore.Components.{Nissan.FrameIntegrity, OVCS.GenericController}
 
   @zero D.new(0)
+  # The EM57's rated maximum; the inverter reports higher, invalid values at start.
+  @max_valid_rotation_per_minute 10_500
   @default_effective_throttle_threshold D.new("0.05")
 
   @loop_period_ms 10
@@ -177,7 +179,7 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Inverter do
       "rotations_per_minute" => %Signal{value: rotation_per_minute}
     } = signals
 
-    rotation_per_minute = abs(rotation_per_minute)
+    rotation_per_minute = valid_rotation_per_minute(abs(rotation_per_minute))
 
     {:noreply,
      %{
@@ -368,6 +370,12 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Inverter do
     emitter_data = %{emitter_data | "counter" => FrameIntegrity.counter(counter + 1)}
     {:ok, parameters, emitter_data}
   end
+
+  defp valid_rotation_per_minute(rotation_per_minute)
+       when rotation_per_minute > @max_valid_rotation_per_minute,
+       do: 0
+
+  defp valid_rotation_per_minute(rotation_per_minute), do: rotation_per_minute
 
   defp fahrenheit_to_celsius(fahrenheit) do
     D.div(fahrenheit - 32, D.new("1.8")) |> D.round()
