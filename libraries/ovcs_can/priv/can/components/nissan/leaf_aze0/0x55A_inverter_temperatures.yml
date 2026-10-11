@@ -7,19 +7,19 @@ signals:
     kind: integer
     value_start: 8
     value_length: 8
-    unit: C
+    unit: "°F"
   - name: insulated_gate_bipolar_transistor_temperature
     kind: integer
     value_start: 16
     value_length: 8
-    unit: C
+    unit: "°F"
   - name: insulated_gate_bipolar_transistor_board_temperature
     kind: integer
     value_start: 24
     value_length: 8
-    unit: C
+    unit: "°F"
   - name: motor_temperature
     kind: integer
     value_start: 32
     value_length: 8
-    unit: C
+    unit: "°F"
