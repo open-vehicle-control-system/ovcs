@@ -30,10 +30,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: firmware-${{ github.ref }}
-  # Only a pull request's runs supersede each other; every push to main
-  # runs to completion.
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  # A pull request's runs share a group, so a new push cancels the last.
+  # Every other run gets its commit's own group: GitHub keeps one waiting
+  # run per group and replaces it, so a shared group would drop all but
+  # the newest of several quick merges to main.
+  group: firmware-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: true
 
 jobs:
   build:
