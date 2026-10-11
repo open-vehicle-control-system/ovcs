@@ -1,18 +1,18 @@
 defmodule VmsCore.Components.Volkswagen.Polo9N.PassengerCompartment do
   @moduledoc """
-    Polo passenger compartment
+  The Volkswagen Polo 9N body signals: publishes the door, trunk, beam and
+  handbrake states reported on the `:polo_drive` CAN network.
   """
   use GenServer
-
-  require Logger
   alias Cantastic.{Frame, Receiver, Signal}
   alias OvcsBus, as: Bus
-  @loop_period 10
+
+  @loop_period_ms 10
 
   @impl GenServer
   def init(_) do
     :ok = Receiver.subscribe(self(), :polo_drive, ["car_status", "handbrake_status"])
-    {:ok, timer} = :timer.send_interval(@loop_period, :loop)
+    {:ok, timer} = :timer.send_interval(@loop_period_ms, :loop)
 
     {:ok,
      %{

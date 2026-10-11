@@ -107,8 +107,9 @@ defmodule VmsCore.Components.Vesc.MotorController do
   controller's do: `Vms.Vesc` reads and emits `vesc_set_duty`,
   `vesc_set_current`, `vesc_set_rpm`, `vesc_status` and
   `vesc_status_5`, and `vesc_set_current_brake` with a gear source. The
-  vehicle topology declares those frames on `:network`, each wrapping the matching `*_signals.yml` with the
-  VESC's id in the low identifier byte. A second VESC is a second
+  vehicle topology declares those frames on `:network`, each wrapping
+  the matching `*_signals.yml` with the VESC's id in the low identifier
+  byte. A second VESC is a second
   process name, a second set of wrappers and another id byte.
 
   ## Options
@@ -139,9 +140,8 @@ defmodule VmsCore.Components.Vesc.MotorController do
       with a gear source a full request in `:drive` and in `:reverse`.
       The output is the duty, or `:max_current` with `:hand_control`
       `:current`. Fractions in [0, 1], defaulting to 1, `:max_reverse` to
-      `:max_throttle`. The
-      caps scale rather than clip, and do not apply to a velocity,
-      which `:max_rotation_per_minute` already bounds.
+      `:max_throttle`. The caps scale rather than clip, and do not apply
+      to a velocity, which `:max_rotation_per_minute` already bounds.
     * `:hand_control` — `:duty` (default) or `:current`, see above.
     * `:max_current` — amperes at a full hand request, with
       `:hand_control` `:current`. The VESC's own current limits stay
@@ -169,7 +169,7 @@ defmodule VmsCore.Components.Vesc.MotorController do
   alias Cantastic.{Emitter, Frame, Receiver, ReceivedFrameWatcher, Signal}
   alias VmsCore.NormalisedRequest
 
-  @loop_period 10
+  @loop_period_ms 10
   @frame_suffixes [:set_duty, :set_current, :set_current_brake, :set_rpm, :status, :status_5]
   @tachometer_window_ms 200
   @zero D.new(0)
@@ -210,11 +210,9 @@ defmodule VmsCore.Components.Vesc.MotorController do
     :ok = ReceivedFrameWatcher.enable(network, frames.status)
     :ok = ReceivedFrameWatcher.enable(network, frames.status_5)
 
-    # Every command emitter exists from the start, none enabled: the
-    # first tick enables the one for the selected source. The brake
-    # only exists with gears. The emitters outlive this process, so a
-    # restart disables them too: otherwise the one a previous run left
-    # enabled keeps sending alongside the new one.
+    # Every command emitter starts disabled, the brake's only with gears.
+    # The emitters outlive this process: a restart must disable the one
+    # a previous run left enabled.
     selected_gear_source = Map.get(args, :selected_gear_source)
     :ok = configure_emitter(network, frames.set_duty, %{"duty" => @zero})
     :ok = configure_emitter(network, frames.set_current, %{"current" => @zero})
@@ -226,7 +224,7 @@ defmodule VmsCore.Components.Vesc.MotorController do
 
     :ok = Emitter.disable(network, command_frame_names(frames, selected_gear_source))
 
-    {:ok, timer} = :timer.send_interval(@loop_period, :loop)
+    {:ok, timer} = :timer.send_interval(@loop_period_ms, :loop)
     hand_control = hand_control(args)
     max_brake_current = brake_current(selected_gear_source, args)
     broadcast_settings(%{process_name: process_name}, hand_control, max_brake_current)
@@ -277,13 +275,14 @@ defmodule VmsCore.Components.Vesc.MotorController do
       when source == state.selected_control_level_source do
     # Zero on the way to a level that commands nothing: with no source
     # no request message matches, and the last request would be held.
-    requested = if is_nil(requested_throttle_source), do: @zero, else: state.requested_throttle
+    requested_throttle =
+      if is_nil(requested_throttle_source), do: @zero, else: state.requested_throttle
 
     {:noreply,
      %{
        state
        | requested_throttle_source: requested_throttle_source,
-         requested_throttle: requested
+         requested_throttle: requested_throttle
      }}
   end
 
@@ -362,13 +361,10 @@ defmodule VmsCore.Components.Vesc.MotorController do
     {:noreply, state}
   end
 
-  # `command` holds what was last written to the VESC, not what was
-  # last requested: the same request maps to a different frame
-  # depending on its source, so a switch of source at an unchanged
-  # request still has to reach the bus.
+  # `state.command` is what was last written, so a source switch at an unchanged request still emits.
   defp apply_command(state) do
-    {frame, data, throttle} = command(state)
-    command = {frame, data}
+    {frame, signals, throttle} = command(state)
+    command = {frame, signals}
 
     case state.command == command do
       true ->
@@ -376,7 +372,7 @@ defmodule VmsCore.Components.Vesc.MotorController do
 
       false ->
         frame_name = state.frames[frame]
-        :ok = Emitter.update(state.network, frame_name, fn _ -> data end)
+        :ok = Emitter.update(state.network, frame_name, fn _ -> signals end)
 
         case state.command do
           {^frame, _} -> :ok
@@ -385,9 +381,9 @@ defmodule VmsCore.Components.Vesc.MotorController do
         end
 
         broadcast(state, :throttle, throttle, Units.fraction())
-        broadcast(state, :command, label(frame, data), nil)
-        broadcast(state, :brake_current, commanded_brake_current(frame, data), Units.ampere())
-        broadcast(state, :drive_current, commanded_drive_current(frame, data), Units.ampere())
+        broadcast(state, :command, label(frame, signals), nil)
+        broadcast(state, :brake_current, commanded_brake_current(frame, signals), Units.ampere())
+        broadcast(state, :drive_current, commanded_drive_current(frame, signals), Units.ampere())
         %{state | command: command}
     end
   end
@@ -395,13 +391,13 @@ defmodule VmsCore.Components.Vesc.MotorController do
   defp label(:set_current, %{"current" => current}),
     do: if(D.eq?(current, @zero), do: "release", else: "current")
 
-  defp label(frame, _data), do: @command_labels[frame]
+  defp label(frame, _signals), do: @command_labels[frame]
 
   defp commanded_brake_current(:set_current_brake, %{"current" => current}), do: current
-  defp commanded_brake_current(_frame, _data), do: @zero
+  defp commanded_brake_current(_frame, _signals), do: @zero
 
   defp commanded_drive_current(:set_current, %{"current" => current}), do: current
-  defp commanded_drive_current(_frame, _data), do: @zero
+  defp commanded_drive_current(_frame, _signals), do: @zero
 
   # Published once: they never change while the process lives.
   defp broadcast_settings(state, hand_control, max_brake_current) do
@@ -417,23 +413,21 @@ defmodule VmsCore.Components.Vesc.MotorController do
     broadcast(state, :max_brake_current, max_brake_current, Units.ampere())
   end
 
-  # The update above is a call and the enable a cast on the same
-  # emitter, so the new frame carries the new data from its first
-  # emission. Disabling first leaves the VESC without a command for a
-  # tick at most, far inside its timeout.
+  # The update is a call and the enable a cast: the new frame carries its new signals from the start.
   defp switch_emitter(network, previous_frame_name, frame_name) do
+    # Disabling first leaves the VESC uncommanded for a tick at most, inside its timeout.
     Emitter.disable(network, previous_frame_name)
     Emitter.enable(network, frame_name)
   end
 
   @doc """
-  The command for a state: `{frame, data, throttle}`, where `frame` is
+  The command for a state: `{frame, signals, throttle}`, where `frame` is
   one of `:set_current`, `:set_current_brake`, `:set_duty` and
-  `:set_rpm`, `data` its signals, and `throttle` the normalised command
+  `:set_rpm`, `signals` its signal values, and `throttle` the normalised command
   in [-1, 1] the dashboard shows — the duty or the fraction of
   `:max_current` for a hand, the fraction of the maximum rpm for a
-  velocity, zero for none and for a brake. Its
-  sign is the direction the motor is driven in, never the brake's.
+  velocity, zero for none and for a brake. Its sign is the direction the
+  motor is driven in, never the brake's.
   """
   def command(%{requested_throttle_source: nil}), do: release()
 
@@ -483,13 +477,13 @@ defmodule VmsCore.Components.Vesc.MotorController do
 
       true ->
         # A request of the gear's sign, so reverse gets the reverse cap.
-        signed = D.mult(requested, gear_sign)
+        gear_request = D.mult(requested, gear_sign)
 
         duty =
-          signed
+          gear_request
           |> D.abs()
-          |> D.mult(cap(signed, state.caps))
-          |> NormalisedRequest.signed_as(signed)
+          |> D.mult(cap(gear_request, state.caps))
+          |> NormalisedRequest.signed_as(gear_request)
 
         hand_output(duty, state)
     end
@@ -515,7 +509,9 @@ defmodule VmsCore.Components.Vesc.MotorController do
   defp hand_output(output, _state), do: {:set_duty, %{"duty" => output}, output}
 
   defp brake_command(requested, state) do
-    current = requested |> D.abs() |> D.mult(state.max_brake_current) |> D.round(3)
+    current =
+      requested |> D.abs() |> D.mult(state.max_brake_current) |> D.round(3)
+
     {:set_current_brake, %{"current" => current}, @zero}
   end
 
@@ -528,9 +524,9 @@ defmodule VmsCore.Components.Vesc.MotorController do
     max_throttle = Map.get(args, :max_throttle, @one)
     caps = %{max_throttle: max_throttle, max_reverse: Map.get(args, :max_reverse, max_throttle)}
 
-    Enum.each(caps, fn {key, value} ->
-      if D.negative?(value) or D.gt?(value, @one) do
-        raise ArgumentError, "#{inspect(key)} must be in [0, 1], got #{value}"
+    Enum.each(caps, fn {key, fraction} ->
+      if D.negative?(fraction) or D.gt?(fraction, @one) do
+        raise ArgumentError, "#{inspect(key)} must be in [0, 1], got #{fraction}"
       end
     end)
 
@@ -574,8 +570,7 @@ defmodule VmsCore.Components.Vesc.MotorController do
     requested |> D.mult(erpm_per_request) |> D.round() |> D.to_integer()
   end
 
-  # Electrical rpm at a request of 1.
-  @doc false
+  @doc "Electrical rpm at a request of 1."
   def erpm_per_request(max_rotation_per_minute, pole_pairs) do
     D.from_float(1.0 * max_rotation_per_minute * pole_pairs)
   end
@@ -603,25 +598,27 @@ defmodule VmsCore.Components.Vesc.MotorController do
     raise ArgumentError, ":rotation_from must be :tachometer or :erpm, got #{inspect(source)}"
   end
 
-  # The mechanical rpm of the motor, signed like the erpm it comes from.
-  @doc false
+  @doc "The mechanical rpm of the motor, signed like the erpm it comes from."
   def rotation_per_minute(erpm, pole_pairs) do
     erpm |> D.new() |> D.div(pole_pairs) |> D.round(1)
   end
 
-  # The tachometer counts 6 steps per electrical turn.
-  @doc false
+  @doc "The motor's mechanical turns: the tachometer counts 6 steps per electrical turn."
   def revolutions(tachometer, pole_pairs) do
     tachometer |> D.new() |> D.div(6 * pole_pairs)
   end
 
-  # The mechanical rpm over the samples of the last window, newest
-  # first, and the samples to keep. Nil until the window spans two
-  # samples: one count says nothing about a rate.
-  @doc false
+  @doc """
+  The mechanical rpm over the samples of the last window, newest first,
+  and the samples to keep. Nil until the window spans two samples: one
+  count says nothing about a rate.
+  """
   def tachometer_rotation(samples, {now_ms, _count} = sample, pole_pairs) do
     samples = [
-      sample | Enum.take_while(samples, fn {at, _} -> now_ms - at <= @tachometer_window_ms end)
+      sample
+      | Enum.take_while(samples, fn {sampled_at_ms, _} ->
+          now_ms - sampled_at_ms <= @tachometer_window_ms
+        end)
     ]
 
     case List.last(samples) do

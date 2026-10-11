@@ -1,12 +1,15 @@
 defmodule VmsCore.Components.Volkswagen.Polo9N.PowerSteeringPump do
   @moduledoc """
-    Polo power steering pump
+  The Volkswagen Polo 9N power steering pump: emits the `engine_status`
+  and `handbrake_status` frames it expects on the `:misc` CAN network,
+  with a non-zero rpm once `:drive` or `:reverse` is selected, zero back
+  in `:parking`, and a released handbrake.
   """
   use GenServer
   alias Cantastic.Emitter
   alias OvcsBus, as: Bus
 
-  @loop_period 10
+  @loop_period_ms 10
   @disabling_rotation_per_minute 0
   @enabling_rotation_per_minute 1500
 
@@ -36,7 +39,7 @@ defmodule VmsCore.Components.Volkswagen.Polo9N.PowerSteeringPump do
         enable: true
       })
 
-    {:ok, timer} = :timer.send_interval(@loop_period, :loop)
+    {:ok, timer} = :timer.send_interval(@loop_period_ms, :loop)
 
     {:ok,
      %{
@@ -74,8 +77,8 @@ defmodule VmsCore.Components.Volkswagen.Polo9N.PowerSteeringPump do
 
   defp set_rotation_per_minute(rotation_per_minute) do
     :ok =
-      Emitter.update(:misc, "engine_status", fn data ->
-        %{data | "rotations_per_minute" => rotation_per_minute}
+      Emitter.update(:misc, "engine_status", fn emitter_data ->
+        %{emitter_data | "rotations_per_minute" => rotation_per_minute}
       end)
   end
 end

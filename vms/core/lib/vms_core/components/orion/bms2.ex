@@ -1,21 +1,23 @@
 defmodule VmsCore.Components.Orion.Bms2 do
   @moduledoc """
-    Orion BMS
+  An Orion BMS 2 on the `:orion_bms` CAN network.
+
+  At start it closes the generic controller relay that signals the BMS
+  ready (`:controller`, `:ready_relay_pin`). It then publishes the pack's
+  current, voltage, state of charge and temperatures, the 12 V battery
+  voltage, the J1772 plug state and the BMS's relay and error flags, and
+  `:is_alive` from the `bms_status_1` frame watcher.
   """
   use GenServer
-  alias OvcsBus, as: Bus
-
-  alias VmsCore.{
-    Components.OVCS.GenericController
-  }
-
-  require Logger
   alias Cantastic.{Frame, Receiver, ReceivedFrameWatcher, Signal}
   alias Decimal, as: D
+  alias OvcsBus, as: Bus
+  alias VmsCore.Components.OVCS.GenericController
 
   @zero D.new(0)
-  @one D.new(1)
-  @loop_period 10
+  # The 12 V reading is taken behind a diode inside the BMS.
+  @bms_diode_drop_v D.new(1)
+  @loop_period_ms 10
 
   @impl GenServer
   def init(%{
@@ -25,7 +27,7 @@ defmodule VmsCore.Components.Orion.Bms2 do
     :ok = Receiver.subscribe(self(), :orion_bms, ["bms_status_1", "bms_status_2", "bms_status_3"])
     :ok = ReceivedFrameWatcher.enable(:orion_bms, "bms_status_1")
     {:ok, _} = :timer.send_after(0, :start)
-    {:ok, timer} = :timer.send_interval(@loop_period, :loop)
+    {:ok, timer} = :timer.send_interval(@loop_period_ms, :loop)
 
     {:ok,
      %{
@@ -99,8 +101,7 @@ defmodule VmsCore.Components.Orion.Bms2 do
     {:noreply,
      %{
        state
-       | # Add one volt to compensate the internal BMS' diode
-         twelve_volt_battery_voltage: D.add(twelve_volt_battery_voltage, @one),
+       | twelve_volt_battery_voltage: D.add(twelve_volt_battery_voltage, @bms_diode_drop_v),
          pack_lowest_temperature: pack_lowest_temperature,
          pack_highest_temperature: pack_highest_temperature,
          pack_average_temperature: pack_average_temperature

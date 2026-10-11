@@ -1,35 +1,48 @@
 defmodule VmsCore.Components.Bosch.IBoosterGen2 do
   @moduledoc """
-   Tesla Model3 IBooster Gen2
+  A Bosch iBooster Gen2 electromechanical brake booster (Tesla Model 3),
+  on the `:misc` CAN network.
+
+  The pedal acts on the booster mechanically at all times. While the
+  contact is on, a generic controller's relay powers the booster and its
+  keep-alive frames are emitted. Under the `:radio` control level a
+  negative throttle request becomes a rod position target, which a PID
+  loop reaches by commanding the booster's flow rate.
+
+  Publishes the booster's status, rod position and target, flow rate,
+  `:manual_breaking` (the driver is braking or the booster cannot) and
+  `:ready_to_drive`.
+
+  ## Options
+
+    * `:selected_control_level_source` — the manager that names the
+      control level and the throttle source.
+    * `:contact_source` — the component publishing `:contact`.
+    * `:controller`, `:power_relay_pin` — the generic controller digital
+      pin switching the booster's power.
   """
   use GenServer
-  require Logger
   alias Cantastic.{Emitter, Frame, Receiver, Signal}
   alias Decimal, as: D
   alias OvcsBus, as: Bus
-  alias VmsCore.{Components.OVCS.GenericController}
   alias OvcsControl.PID
+  alias VmsCore.Components.OVCS.GenericController
 
   @zero D.new(0)
 
-  # @min_flow_rate 27_136 # 0x6A00
-  # 0x7e00
-  @zero_point_flow_rate 32_256
-  # @max_flow_rate 37_376 # 0x9200
-  @flow_rate_range 5120
+  # The booster accepts flow rates from 0x6A00 to 0x9200 around this zero point.
+  @zero_point_flow_rate 0x7E00
+  @flow_rate_range 0x1400
 
-  # TODO check in practice
-  @min_rod_position @zero
-  # TODO check in practice
-  @max_rod_position D.new("16.56")
-  @rod_position_range @max_rod_position |> D.sub(@min_rod_position)
+  @min_rod_position_mm @zero
+  @max_rod_position_mm D.new("16.56")
+  @rod_position_range_mm @max_rod_position_mm |> D.sub(@min_rod_position_mm)
 
   @kp D.new(250)
   @ki D.new(0)
   @kd D.new(0)
 
-  @zero D.new(0)
-  @loop_period 10
+  @loop_period_ms 10
 
   def start_link(args) do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
@@ -72,14 +85,14 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
         }
       })
 
-    {:ok, timer} = :timer.send_interval(@loop_period, :loop)
+    {:ok, timer} = :timer.send_interval(@loop_period_ms, :loop)
 
     {:ok,
      %{
        status: "off",
        driver_brake_apply: "not_init_or_off",
        internal_state: "no_mode_active",
-       rod_position: @min_rod_position,
+       rod_position: @min_rod_position_mm,
        flow_rate: @zero,
        loop_timer: timer,
        enabled: false,
@@ -93,10 +106,10 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
        controller: controller,
        power_relay_pin: power_relay_pin,
        pid: nil,
-       rod_position_target: @min_rod_position,
+       rod_position_target: @min_rod_position_mm,
        automatic_mode_enabled: false,
        requested_braking: @zero,
-       manual_breaking: false,
+       manual_braking: false,
        kp: @kp,
        ki: @ki,
        kd: @kd
@@ -131,7 +144,7 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
        state
        | status: status,
          driver_brake_apply: driver_brake_apply,
-         manual_breaking:
+         manual_braking:
            driver_brake_apply in ["driver_applying_brake", "fault", "not_init_or_off"],
          internal_state: internal_state,
          rod_position: rod_position
@@ -159,18 +172,16 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
         state
       )
       when source == state.selected_control_level_source do
-    # Zero on the way to a level that commands nothing. The
-    # `:requested_throttle` handler gates on the source, so with no
-    # source no message matches and a held negative request would keep
-    # the automatic braking applied. The pedal is unaffected: it acts
-    # on the booster mechanically.
-    requested = if is_nil(requested_throttle_source), do: @zero, else: state.requested_throttle
+    # Zero on the way to a level that commands nothing: with no source
+    # no request message matches, and the last request would be held.
+    requested_throttle =
+      if is_nil(requested_throttle_source), do: @zero, else: state.requested_throttle
 
     {:noreply,
      %{
        state
        | requested_throttle_source: requested_throttle_source,
-         requested_throttle: requested
+         requested_throttle: requested_throttle
      }}
   end
 
@@ -182,7 +193,7 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
     {:noreply, %{state | requested_throttle: requested_throttle}}
   end
 
-  def handle_info(%OvcsBus.Message{name: :contact, value: contact, source: source}, state)
+  def handle_info(%Bus.Message{name: :contact, value: contact, source: source}, state)
       when source == state.contact_source do
     {:noreply, %{state | contact: contact}}
   end
@@ -252,7 +263,7 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
   defp set_requested_braking(state), do: state
 
   defp set_rod_position_target(state) when state.automatic_mode_enabled == true do
-    rod_position_target = state.requested_braking |> D.mult(@rod_position_range)
+    rod_position_target = state.requested_braking |> D.mult(@rod_position_range_mm)
     %{state | rod_position_target: rod_position_target}
   end
 
@@ -292,15 +303,15 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
 
   defp set_flow_rate(flow_rate) do
     :ok =
-      Emitter.update(:misc, "brake_request", fn data ->
-        %{data | "flow_rate" => flow_rate}
+      Emitter.update(:misc, "brake_request", fn emitter_data ->
+        %{emitter_data | "flow_rate" => flow_rate}
       end)
   end
 
-  defp set_external_request(frame_name, value) do
+  defp set_external_request(frame_name, enabled) do
     :ok =
-      Emitter.update(:misc, frame_name, fn data ->
-        %{data | "external_request" => value}
+      Emitter.update(:misc, frame_name, fn emitter_data ->
+        %{emitter_data | "external_request" => enabled}
       end)
   end
 
@@ -315,7 +326,7 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
 
     Bus.broadcast("messages", %Bus.Message{
       name: :manual_breaking,
-      value: state.manual_breaking,
+      value: state.manual_braking,
       source: __MODULE__
     })
 
@@ -370,48 +381,48 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
     state
   end
 
-  defp vehicle_status_frame_parameters_builder(data) do
-    counter = data["counter"]
+  defp vehicle_status_frame_parameters_builder(emitter_data) do
+    counter = emitter_data["counter"]
 
     parameters = %{
-      "counter" => counter(counter),
-      "external_request" => data["external_request"],
+      "counter" => wrap_counter(counter),
+      "external_request" => emitter_data["external_request"],
       "crc" => &crc8/1
     }
 
-    data = %{data | "counter" => counter(counter + 1)}
-    {:ok, parameters, data}
+    emitter_data = %{emitter_data | "counter" => wrap_counter(counter + 1)}
+    {:ok, parameters, emitter_data}
   end
 
-  defp vehicle_alive_frame_parameters_builder(data) do
-    counter = data["counter"]
+  defp vehicle_alive_frame_parameters_builder(emitter_data) do
+    counter = emitter_data["counter"]
 
     parameters = %{
-      "counter" => counter(counter),
+      "counter" => wrap_counter(counter),
       "crc" => &crc8/1
     }
 
-    data = %{data | "counter" => counter(counter + 1)}
-    {:ok, parameters, data}
+    emitter_data = %{emitter_data | "counter" => wrap_counter(counter + 1)}
+    {:ok, parameters, emitter_data}
   end
 
-  defp brake_request_frame_parameters_builder(data) do
-    counter = data["counter"]
+  defp brake_request_frame_parameters_builder(emitter_data) do
+    counter = emitter_data["counter"]
 
     parameters = %{
-      "counter" => counter(counter),
-      "flow_rate" => data["flow_rate"],
-      "external_request" => data["external_request"],
+      "counter" => wrap_counter(counter),
+      "flow_rate" => emitter_data["flow_rate"],
+      "external_request" => emitter_data["external_request"],
       "crc" => &crc8/1
     }
 
-    data = %{data | "counter" => counter(counter + 1)}
-    {:ok, parameters, data}
+    emitter_data = %{emitter_data | "counter" => wrap_counter(counter + 1)}
+    {:ok, parameters, emitter_data}
   end
 
-  defp crc8(raw_data) do
+  defp crc8(payload) do
     CRC.calculate(
-      raw_data,
+      payload,
       %{
         width: 8,
         poly: 0x1D,
@@ -423,24 +434,21 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
     )
   end
 
-  defp counter(value) do
-    rem(value, 16)
-  end
+  defp wrap_counter(counter), do: rem(counter, 16)
 
   @impl GenServer
   def handle_call({:set_pid_parameters, %{kp: kp, ki: ki, kd: kd}}, _from, state) do
     {:reply, :ok, %{state | kp: kp, ki: ki, kd: kd}}
   end
 
+  @doc "Replaces the PID gains used from the next switch into automatic mode."
   def test_set_pid_parameters(%{kp: kp, ki: ki, kd: kd}) do
     GenServer.call(__MODULE__, {:set_pid_parameters, %{kp: kp, ki: ki, kd: kd}})
   end
 
-  def min_rod_position do
-    @min_rod_position
-  end
+  @doc "The rod position, in millimetres, of a released brake."
+  def min_rod_position, do: @min_rod_position_mm
 
-  def max_rod_position do
-    @max_rod_position
-  end
+  @doc "The rod position, in millimetres, of a full automatic braking request."
+  def max_rod_position, do: @max_rod_position_mm
 end

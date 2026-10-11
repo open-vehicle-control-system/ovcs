@@ -1,6 +1,8 @@
 defmodule VmsCore.Components.Traxxas.Steering do
   @moduledoc """
-  Traxxas' steering controlled by a PWM signal.
+  A Traxxas steering servo, driven by a generic controller's external PWM
+  (`:controller`, `:external_pwm_id`) from the `:requested_steering` of
+  the source the control level manager names.
 
   `:trim` (default `0`) is added to every steering request, in the
   same `[-1, 1]` units, before the result is clamped to `[-1, 1]`.
@@ -12,8 +14,9 @@ defmodule VmsCore.Components.Traxxas.Steering do
   alias OvcsBus, as: Bus
   alias VmsCore.Components.OVCS.GenericController
 
-  @loop_period 10
-  @pwm_frequency 100
+  @loop_period_ms 10
+  # The standard RC servo frame; neutral and half-travel are fractions of its period.
+  @pwm_frequency_hz 100
   @center_duty_cycle_percentage D.new("0.15")
   @duty_cycle_percentage_range D.new("0.05")
   @zero D.new(0)
@@ -33,7 +36,7 @@ defmodule VmsCore.Components.Traxxas.Steering do
         } = args
       ) do
     Bus.subscribe("messages")
-    {:ok, timer} = :timer.send_interval(@loop_period, :loop)
+    {:ok, timer} = :timer.send_interval(@loop_period_ms, :loop)
 
     {:ok,
      %{
@@ -42,9 +45,8 @@ defmodule VmsCore.Components.Traxxas.Steering do
        external_pwm_id: external_pwm_id,
        selected_control_level_source: selected_control_level_source,
        trim: D.new(Map.get(args, :trim, 0)),
-       # Starts nil: nothing commands this actuator until the manager
-       # names a source. The manager's default level does that on its
-       # first tick.
+       # Nothing commands this actuator until the manager names a
+       # source.
        requested_steering_source: nil,
        requested_steering: @zero,
        # nil so the first tick sends the trimmed centre.
@@ -62,13 +64,9 @@ defmodule VmsCore.Components.Traxxas.Steering do
         state
       )
       when source == state.selected_control_level_source do
-    # Hold on the way to a level that commands nothing. With no source
-    # no `:requested_steering` message matches, so the wheels stay
-    # where the last commander left them. That is deliberate and the
-    # opposite of the throttle: removing propulsion is what makes the
-    # vehicle safe, while snapping the wheels straight mid-corner is a
-    # new hazard rather than a mitigation, the same policy every input
-    # watchdog in this tree applies.
+    # Hold on the way to a level that commands nothing, unlike the
+    # throttle: snapping the wheels straight mid-corner is a new hazard,
+    # not a mitigation.
     {:noreply, %{state | requested_steering_source: requested_steering_source}}
   end
 
@@ -112,7 +110,7 @@ defmodule VmsCore.Components.Traxxas.Steering do
             state.external_pwm_id,
             true,
             duty_cycle_percentage,
-            @pwm_frequency
+            @pwm_frequency_hz
           )
 
         %{state | steering: state.requested_steering}

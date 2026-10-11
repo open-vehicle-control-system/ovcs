@@ -1,16 +1,19 @@
 defmodule VmsCore.Components.Nissan.LeafAZE0.Charger do
   @moduledoc """
-    Nissan Leaf AZE0/EM57 Charger
-    !! WIP implementation, does not work yet (charge is not starting) !!
+  A Nissan Leaf AZE0 on-board charger, on the `:leaf_drive` CAN network.
+
+  Emits the frames the charger expects from the Leaf's BMS and lithium
+  battery controller, with the charge power limit, pack current and pack
+  voltage published by `:maximum_power_for_charger_source`, and publishes
+  the charger's status. Incomplete: the charge does not start.
   """
   use GenServer
-
   alias Cantastic.{Emitter, Frame, Receiver, Signal}
   alias OvcsBus, as: Bus
   alias VmsCore.Components.Nissan.Util
   alias Decimal, as: D
 
-  @loop_period 10
+  @loop_period_ms 10
   @zero D.new(0)
 
   def start_link(args) do
@@ -77,7 +80,7 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Charger do
 
     Bus.subscribe("messages")
     Receiver.subscribe(self(), :leaf_drive, ["charger_status"])
-    {:ok, timer} = :timer.send_interval(@loop_period, :loop)
+    {:ok, timer} = :timer.send_interval(@loop_period_ms, :loop)
 
     {:ok,
      %{
@@ -100,9 +103,9 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Charger do
   def handle_info(:loop, state) do
     state =
       state
-      |> handle_maximum_charge_power()
-      |> handle_pack_current()
-      |> handle_pack_instant_voltage()
+      |> emit_maximum_power_for_charger()
+      |> emit_pack_current()
+      |> emit_pack_instant_voltage()
       |> emit_metrics()
 
     {:noreply, state}
@@ -155,12 +158,12 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Charger do
      }}
   end
 
-  defp handle_maximum_charge_power(state) do
+  defp emit_maximum_power_for_charger(state) do
     case state.maximum_power_for_charger != state.emitted_maximum_power_for_charger do
       true ->
         :ok =
-          Emitter.update(:leaf_drive, "charger_command", fn data ->
-            %{data | "maximum_power_for_charger" => state.maximum_power_for_charger}
+          Emitter.update(:leaf_drive, "charger_command", fn emitter_data ->
+            %{emitter_data | "maximum_power_for_charger" => state.maximum_power_for_charger}
           end)
 
         %{state | emitted_maximum_power_for_charger: state.maximum_power_for_charger}
@@ -170,12 +173,12 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Charger do
     end
   end
 
-  defp handle_pack_current(state) do
+  defp emit_pack_current(state) do
     case state.pack_current != state.emitted_pack_current do
       true ->
         :ok =
-          Emitter.update(:leaf_drive, "nissan_bms_status_1", fn data ->
-            %{data | "current" => state.pack_current}
+          Emitter.update(:leaf_drive, "nissan_bms_status_1", fn emitter_data ->
+            %{emitter_data | "current" => state.pack_current}
           end)
 
         %{state | emitted_pack_current: state.pack_current}
@@ -185,12 +188,12 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Charger do
     end
   end
 
-  defp handle_pack_instant_voltage(state) do
+  defp emit_pack_instant_voltage(state) do
     case state.pack_instant_voltage != state.emitted_pack_instant_voltage do
       true ->
         :ok =
-          Emitter.update(:leaf_drive, "nissan_bms_status_1", fn data ->
-            %{data | "total_voltage" => state.pack_instant_voltage}
+          Emitter.update(:leaf_drive, "nissan_bms_status_1", fn emitter_data ->
+            %{emitter_data | "total_voltage" => state.pack_instant_voltage}
           end)
 
         %{state | emitted_pack_instant_voltage: state.pack_instant_voltage}
@@ -228,56 +231,56 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Charger do
     state
   end
 
-  def nissan_bms_status_1_frame_parameters_builder(data) do
-    counter = data["counter"]
+  defp nissan_bms_status_1_frame_parameters_builder(emitter_data) do
+    counter = emitter_data["counter"]
 
     parameters = %{
-      "current" => data["current"],
-      "total_voltage" => data["total_voltage"],
+      "current" => emitter_data["current"],
+      "total_voltage" => emitter_data["total_voltage"],
       "counter" => Util.counter(counter),
       "crc" => &Util.crc8/1
     }
 
-    data = %{data | "counter" => Util.counter(counter + 1)}
-    {:ok, parameters, data}
+    emitter_data = %{emitter_data | "counter" => Util.counter(counter + 1)}
+    {:ok, parameters, emitter_data}
   end
 
-  def nissan_bms_status_2_frame_parameters_builder(data) do
-    counter = data["counter"]
+  defp nissan_bms_status_2_frame_parameters_builder(emitter_data) do
+    counter = emitter_data["counter"]
 
     parameters = %{
       "counter" => Util.counter(counter),
       "crc" => &Util.crc8/1
     }
 
-    data = %{data | "counter" => Util.counter(counter + 1)}
-    {:ok, parameters, data}
+    emitter_data = %{emitter_data | "counter" => Util.counter(counter + 1)}
+    {:ok, parameters, emitter_data}
   end
 
-  def charger_command_frame_parameters_builder(data) do
-    counter = data["counter"]
+  defp charger_command_frame_parameters_builder(emitter_data) do
+    counter = emitter_data["counter"]
 
     parameters = %{
-      "charge_power_limit" => data["charge_power_limit"],
-      "discharge_power_limit" => data["discharge_power_limit"],
-      "maximum_power_for_charger" => data["maximum_power_for_charger"],
+      "charge_power_limit" => emitter_data["charge_power_limit"],
+      "discharge_power_limit" => emitter_data["discharge_power_limit"],
+      "maximum_power_for_charger" => emitter_data["maximum_power_for_charger"],
       "counter" => Util.counter(counter),
       "crc" => &Util.crc8/1
     }
 
-    data = %{data | "counter" => Util.counter(counter + 1)}
-    {:ok, parameters, data}
+    emitter_data = %{emitter_data | "counter" => Util.counter(counter + 1)}
+    {:ok, parameters, emitter_data}
   end
 
-  def lithium_battery_controller_status_frame_parameters_builder(data) do
-    counter = data["counter"]
+  defp lithium_battery_controller_status_frame_parameters_builder(emitter_data) do
+    counter = emitter_data["counter"]
 
     parameters = %{
       "counter" => Util.counter(counter),
       "crc" => &Util.crc8/1
     }
 
-    data = %{data | "counter" => Util.counter(counter + 1)}
-    {:ok, parameters, data}
+    emitter_data = %{emitter_data | "counter" => Util.counter(counter + 1)}
+    {:ok, parameters, emitter_data}
   end
 end

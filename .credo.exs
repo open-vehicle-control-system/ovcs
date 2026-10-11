@@ -184,11 +184,6 @@
                  "lib/vms_api_web/controllers/error_json.ex",
                  "lib/vms_api_web/endpoint.ex",
                  "lib/vms_api_web/router.ex",
-                 "lib/vms_core/components/bosch/i_booster_gen2.ex",
-                 "lib/vms_core/components/nissan/leaf_aze0/inverter.ex",
-                 "lib/vms_core/components/traxxas/motor_controller.ex",
-                 "lib/vms_core/components/traxxas/steering.ex",
-                 "lib/vms_core/components/vesc/motor_controller.ex",
                  "lib/vms_firmware/application.ex"
                ]
              }

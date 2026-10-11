@@ -1,21 +1,20 @@
 defmodule VmsCore.Components.Volkswagen.Polo9N.ABS do
   @moduledoc """
-    Polo ABS
+  The Volkswagen Polo 9N ABS unit: publishes the vehicle speed and the
+  four wheel speeds it reports on the `:polo_drive` CAN network.
   """
   use GenServer
-  alias OvcsBus, as: Bus
-
-  require Logger
   alias Cantastic.{Frame, Receiver, Signal}
   alias Decimal, as: D
+  alias OvcsBus, as: Bus
 
-  @loop_period 10
+  @loop_period_ms 10
   @zero D.new(0)
 
   @impl GenServer
   def init(_) do
     :ok = Receiver.subscribe(self(), :polo_drive, ["abs_status", "wheels_speed"])
-    {:ok, timer} = :timer.send_interval(@loop_period, :loop)
+    {:ok, timer} = :timer.send_interval(@loop_period_ms, :loop)
 
     {:ok,
      %{
