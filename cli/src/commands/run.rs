@@ -8,6 +8,7 @@ use std::thread;
 use crate::ansi::{is_blank_after_ansi, strip_ansi};
 use crate::build_runner::{self, BuildLane, BuildStep};
 use crate::commands::can::ensure_host_can;
+use crate::erlang_cookie;
 use crate::firmware;
 use crate::lines::lossy_lines;
 use crate::repo_root::repo_root;
@@ -70,6 +71,7 @@ pub fn run(vehicle_arg: Option<String>, no_addons: bool) -> Result<()> {
         ensure_addon_deps(discover_addons(&roles)?)
     };
 
+    erlang_cookie::ensure()?;
     let mut procs: Vec<Proc> = Vec::new();
 
     for role in &roles {
@@ -78,8 +80,6 @@ pub fn run(vehicle_arg: Option<String>, no_addons: bool) -> Result<()> {
         cmd.args([
             "--sname",
             &sname,
-            "--cookie",
-            "ovcs",
             // BEAM disables `IO.ANSI` when stdout is piped; force it back
             // on so Logger emits coloured `[info]` / `[debug]` etc. into
             // our line-prefixing pipe.

@@ -2359,14 +2359,37 @@ fn pane_snapshot(state: &State) -> (&'static str, String) {
     }
 }
 
-/// Copy the focused pane's visible text to the user's system
-/// clipboard (OSC 52) and also write it to `/tmp/ovcs_attach_copy_
-/// <pane>.txt` as a fallback. Sets a footer toast so the user gets
-/// visible confirmation.
-fn handle_copy(state: &mut State) {
-    // OSC 52 payload limit comment and the CLIPBOARD_CAP constant
-    // itself now live at module top with the rest of the tunables.
+/// Writes a pane copy, readable only by the user, under `$XDG_RUNTIME_DIR`
+/// or else `~/.cache/ovcs`. Returns its path, or `None` if it could not be
+/// written.
+fn write_copy_file(label: &str, text: &str) -> Option<std::path::PathBuf> {
+    use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+    let dir = match std::env::var_os("XDG_RUNTIME_DIR") {
+        Some(runtime_dir) => std::path::PathBuf::from(runtime_dir),
+        None => std::path::PathBuf::from(std::env::var_os("HOME")?).join(".cache/ovcs"),
+    };
+    std::fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(&dir)
+        .ok()?;
+    let path = dir.join(format!("ovcs_attach_copy_{}.txt", label));
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(&path)
+        .ok()?;
+    file.write_all(text.as_bytes()).ok()?;
+    Some(path)
+}
 
+/// Copy the focused pane's text to the system clipboard and, in full, to
+/// `ovcs_attach_copy_<pane>.txt` in the user's private runtime directory.
+/// Sets a footer toast so the user gets visible confirmation.
+fn handle_copy(state: &mut State) {
     let focus_name = match state.focus {
         Focus::Log => "LOG",
         Focus::Bus => "BUS",
@@ -2377,10 +2400,8 @@ fn handle_copy(state: &mut State) {
     let bytes = text.len();
     let lines = text.split('\n').count();
 
-    // Best-effort file dump — never fails the action, just skipped
-    // if the write errors. Always full content.
-    let path = format!("/tmp/ovcs_attach_copy_{}.txt", label);
-    let file_ok = std::fs::write(&path, &text).is_ok();
+    // Best effort: a failed write only drops the file from the toast.
+    let copy_file = write_copy_file(label, &text);
 
     let clip_slice = clip_to_boundary(&text, CLIPBOARD_CAP);
     let clipped = clip_slice.len() < text.len();
@@ -2392,32 +2413,23 @@ fn handle_copy(state: &mut State) {
     // headless hosts).
     let (method, copy_ok) = copy_to_clipboard(clip_slice);
 
-    // Event log so the user can verify the binding actually fires,
-    // and see which underlying paths succeeded.
-    if let Ok(mut f) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open("/tmp/ovcs_attach_events.log")
-    {
-        let _ = writeln!(
-            f,
-            "copy focus={} pane={} bytes={} clip_bytes={} lines={} clipped={} file_ok={} method={} copy_ok={} path={}",
-            focus_name, label, bytes, clip_slice.len(), lines, clipped, file_ok, method, copy_ok, path,
-        );
-    }
-
+    let file_note = match &copy_file {
+        Some(path) => format!(", full copy in {}", path.display()),
+        None => String::new(),
+    };
     let clip_note = match method {
         "osc52" => format!(
-            " ⚠ clipboard via OSC 52 (install wl-clipboard or xclip for reliable copy) · full copy in {}",
-            path,
+            " ⚠ clipboard via OSC 52 (install wl-clipboard or xclip for reliable copy){}",
+            file_note,
         ),
+        _ if !copy_ok => format!(" ⚠ clipboard copy via {} failed{}", method, file_note),
         _ if clipped => format!(
-            " (clipboard got last {} KB via {}, full copy in {})",
+            " (clipboard got last {} KB via {}{})",
             clip_slice.len() / 1024,
             method,
-            path,
+            file_note,
         ),
-        _ => format!(" → clipboard ({}) + {}", method, path),
+        _ => format!(" → clipboard ({}){}", method, file_note),
     };
     state.toast = Some((
         format!(

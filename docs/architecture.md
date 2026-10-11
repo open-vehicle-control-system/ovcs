@@ -55,7 +55,7 @@ Every BEAM of a running vehicle joins one Erlang-distribution cluster through `O
 
 The transport is the same in both environments: `./ovcs run <vehicle>` clusters one BEAM per role over loopback; a deployed vehicle clusters one BEAM per Raspberry Pi over the vehicle LAN.
 
-On the host, the CLI starts each BEAM with `--sname <vehicle>-<role> --cookie ovcs`. A Nerves release boots without a node name, so on the first `OvcsBus.Cluster` tick `OvcsBus.Distribution` runs `epmd -daemon` and starts distribution as `nerves@<vehicle>-<role>.local` with long names. The hostname part is the device hostname set by erlinit's `hostname_pattern`, which mdns_lite also advertises. Every release's cookie is `ovcs`, passed to the VM by `-setcookie` in `rel/vm.args.eex`, the same cookie `./ovcs run` and `./ovcs attach` use, so the devices authenticate each other. Starting distribution needs no IP address; a failed start is logged and retried on the next tick.
+On the host, the CLI starts each BEAM with `--sname <vehicle>-<role>` and your `~/.erlang.cookie`, which it creates with a random value if it is missing; the host BEAMs only dial each other, so nobody else on the network can join them. A Nerves release boots without a node name, so on the first `OvcsBus.Cluster` tick `OvcsBus.Distribution` runs `epmd -daemon` and starts distribution as `nerves@<vehicle>-<role>.local` with long names. The hostname part is the device hostname set by erlinit's `hostname_pattern`, which mdns_lite also advertises. Every release's cookie is `ovcs`, passed to the VM by `-setcookie` in `rel/vm.args.eex`, so the devices authenticate each other. Starting distribution needs no IP address; a failed start is logged and retried on the next tick.
 
 Erlang's own resolver knows nothing about mDNS. Each firmware enables mdns_lite's DNS bridge on `127.0.0.53` and lists it first in VintageNet's `additional_name_servers`, so a lookup of `<vehicle>-<role>.local` is answered from mDNS. The bridge refuses every other name, and the resolver moves on to the DHCP-supplied servers.
 
@@ -160,7 +160,7 @@ Every vehicle gets these without writing them:
 |---|---|---|
 | BEAMs | Several on one machine, one per firmware role | One per physical device |
 | Node names | `<vehicle>-<role>@<host>` (short names) | `nerves@<vehicle>-<role>.local` (long names); underscores become dashes in both, e.g. `ovcs-mini-vms` |
-| Distribution started by | `./ovcs run`: `--sname` and `--cookie ovcs` | `OvcsBus.Distribution` at runtime; cookie `ovcs` from the release |
+| Distribution started by | `./ovcs run`: `--sname`, cookie from `~/.erlang.cookie` | `OvcsBus.Distribution` at runtime; cookie `ovcs` from the release |
 | Transport | Erlang distribution over loopback | Erlang distribution over the vehicle LAN, `.local` names resolved through mdns_lite's DNS bridge |
 | CAN interfaces | Virtual (`vcan0`, `vcan1`, …), provisioned by `./ovcs can setup` | Real SPI/CAN hardware, set up by Cantastic at boot |
 | `VEHICLE` | Set by the CLI for each BEAM | Baked into the release at build time |

@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{bail, Result};
 use owo_colors::OwoColorize;
 use std::process::{Command, Stdio};
 
@@ -95,6 +95,13 @@ pub fn setup(arg: Option<String>) -> Result<()> {
 /// interfaces already up are skipped. Used by both `can setup` and `run`.
 pub fn ensure_host_can(vehicle: &Vehicle) -> Result<()> {
     let interfaces = vehicles::host_can_interfaces(vehicle)?;
+    if let Some(invalid) = interfaces.iter().find(|name| !is_interface_name(name)) {
+        bail!(
+            "{} declares the host CAN interface {:?}, which is not a valid interface name",
+            vehicle.module,
+            invalid
+        );
+    }
     if interfaces.is_empty() {
         step(&format!(
             "{} declares no host CAN interfaces — nothing to do.",
@@ -135,21 +142,19 @@ pub fn ensure_host_can(vehicle: &Vehicle) -> Result<()> {
     }
     println!();
 
-    let script = format!(
-        r##"
+    // The interface names arrive as the script's arguments, never as its text.
+    let script = r#"
 set -e
-if ! lsmod | awk '{{print $1}}' | grep -qx vcan; then
+if ! lsmod | awk '{print $1}' | grep -qx vcan; then
   modprobe vcan
 fi
-for iface in {ifaces}; do
+for iface in "$@"; do
   if ! ip link show "$iface" >/dev/null 2>&1; then
     ip link add dev "$iface" type vcan
   fi
   ip link set up "$iface"
 done
-"##,
-        ifaces = interfaces.join(" ")
-    );
+"#;
 
     step("Running sudo…");
     let mut cmd = Command::new("sudo");
@@ -157,7 +162,8 @@ done
         cmd.arg("-n");
     }
     let status = cmd
-        .args(["bash", "-c", &script])
+        .args(["bash", "-c", script, "bash"])
+        .args(&interfaces)
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
@@ -226,4 +232,28 @@ pub fn status(arg: Option<String>) -> Result<()> {
         std::process::exit(1);
     }
     Ok(())
+}
+
+/// A Linux interface name: at most 15 bytes, of the characters `ip link`
+/// accepts without quoting.
+fn is_interface_name(name: &str) -> bool {
+    (1..=15).contains(&name.len())
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-'))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_interface_name;
+
+    #[test]
+    fn interface_names_are_validated() {
+        assert!(is_interface_name("vcan0"));
+        assert!(is_interface_name("can_misc.1"));
+        assert!(!is_interface_name(""));
+        assert!(!is_interface_name("vcan0; reboot"));
+        assert!(!is_interface_name("$(id)"));
+        assert!(!is_interface_name("a-very-long-name0"));
+    }
 }

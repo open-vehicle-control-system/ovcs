@@ -4,6 +4,7 @@ use clap::{Parser, Subcommand};
 mod ansi;
 mod build_runner;
 mod commands;
+mod erlang_cookie;
 mod firmware;
 mod lines;
 mod prompt;

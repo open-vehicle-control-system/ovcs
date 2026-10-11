@@ -56,7 +56,7 @@ The CLI converts the directory name to UpperCamelCase (`ovcs_mini` becomes `Ovcs
 
 The CLI separates **booting** a vehicle from **observing** it.
 
-`./ovcs run <vehicle>` provisions vcan, compiles each firmware project for the host, then spawns `elixir --sname <vehicle>-<role> --cookie ovcs -S mix run --no-halt` per role from its project directory (every underscore, in the vehicle and in the role, becomes a dash: `ovcs-mini-bridge-radio-control`, the name `OvcsBus.Cluster` dials), with `VEHICLE` (and `BRIDGE_FIRMWARE_ID` plus the bridge's host CAN mapping for bridges) in its environment. `OvcsBus.Cluster` joins the BEAMs into one Erlang cluster, as on the vehicle. Each child's output is line-prefixed (`[vms] …`, `[bridge-ros] …`). There is no TUI and no IEx; `Ctrl-C` stops everything. When a BEAM exits on its own, the other children get SIGTERM (SIGKILL after 10 seconds) and `run` exits with an error naming it; a dev add-on exiting is only reported.
+`./ovcs run <vehicle>` provisions vcan, compiles each firmware project for the host, then spawns `elixir --sname <vehicle>-<role> -S mix run --no-halt` per role from its project directory (every underscore, in the vehicle and in the role, becomes a dash: `ovcs-mini-bridge-radio-control`, the name `OvcsBus.Cluster` dials), with `VEHICLE` (and `BRIDGE_FIRMWARE_ID` plus the bridge's host CAN mapping for bridges) in its environment. `OvcsBus.Cluster` joins the BEAMs into one Erlang cluster, as on the vehicle. Each child's output is line-prefixed (`[vms] …`, `[bridge-ros] …`). There is no TUI and no IEx; `Ctrl-C` stops everything. When a BEAM exits on its own, the other children get SIGTERM (SIGKILL after 10 seconds) and `run` exits with an error naming it; a dev add-on exiting is only reported.
 
 `run` also starts each firmware's **dev add-ons**, declared by the firmware in `dev_addons/0` and prefixed `[<firmware>-<addon>] …`. The only one today is the VMS dashboard's Vite dev server, on `http://localhost:5173`; use it rather than `:4000`, which serves the last prebuilt bundle and doesn't hot-reload. When the add-on's `node_modules` is missing, `run` installs it first. A missing toolchain or a failed start is a warning, not an error. `--no-addons` boots only the BEAMs.
 
@@ -66,7 +66,7 @@ The Flutter infotainment dashboard isn't an add-on: its hot reload reads keypres
 mise run infotainment-dashboard   # cd infotainment/dashboard && flutter run -d linux
 ```
 
-`./ovcs attach <vehicle>` works from any shell, or another machine. It looks for deployed boards first, probing `<vehicle>-<role>.local` on port 22 for each role (underscores become dashes: `ovcs-mini-vms.local`), and opens an SSH session per board. When none answers, it falls back to the local BEAMs registered in `epmd` under `<vehicle>-*` (hyphenated, e.g. `ovcs-mini-*`) and opens an `iex --remsh` per BEAM. Both transports reconnect on their own: an `epmd` poll locally, SSH retries with exponential backoff when deployed.
+`./ovcs attach <vehicle>` works from any shell, or another machine. It looks for deployed boards first, probing `<vehicle>-<role>.local` on port 22 for each role (underscores become dashes: `ovcs-mini-vms.local`), and opens an SSH session per board. A board's host key must match the vehicle's pinned key for its role, from `./ovcs host-keys`, or, for a role without one, your `~/.ssh/known_hosts` entry (`./ovcs connect` adds it once); anything else is refused. When none answers, it falls back to the local BEAMs registered in `epmd` under `<vehicle>-*` (hyphenated, e.g. `ovcs-mini-*`) and opens an `iex --remsh` per BEAM. Both transports reconnect on their own: an `epmd` poll locally, SSH retries with exponential backoff when deployed.
 
 ```sh
 ./ovcs run ovcs1       # terminal A
@@ -105,7 +105,7 @@ Four panes:
 
 ### Clipboard
 
-Mouse drag or `Ctrl-Y` copies to the system clipboard. The CLI tries helpers in order and stops at the first that works: `wl-copy` (Wayland), `xclip -selection clipboard`, `xsel --clipboard --input`, `pbcopy` (macOS), and finally the OSC 52 escape sequence. Install one native helper on Linux: tmux, gnome-terminal and konsole drop OSC 52 by default, so the copy would reach the terminal but not the clipboard. The footer names the path used. Every copy also writes the full pane to `/tmp/ovcs_attach_copy_<pane>.txt`, since the clipboard payload is capped at 64 KB.
+Mouse drag or `Ctrl-Y` copies to the system clipboard. The CLI tries helpers in order and stops at the first that works: `wl-copy` (Wayland), `xclip -selection clipboard`, `xsel --clipboard --input`, `pbcopy` (macOS), and finally the OSC 52 escape sequence. Install one native helper on Linux: tmux, gnome-terminal and konsole drop OSC 52 by default, so the copy would reach the terminal but not the clipboard. The footer names the path used. Every copy also writes the full pane to `ovcs_attach_copy_<pane>.txt` in `$XDG_RUNTIME_DIR` (or `~/.cache/ovcs`), readable only by you, since the clipboard payload is capped at 64 KB.
 
 ### CAN decoding
 
