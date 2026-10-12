@@ -139,7 +139,7 @@ A vehicle with a ROS compute node or a Gazebo model adds, beside `lib/`:
   node by `../../ovcs compute push <%= @name %> <fleet>` and mounted by
   the local Nav2 stacks;
 - `description/` — `<%= @name %>.urdf.xacro` and `simulation.yaml`, for
-  the simulator, plus a `:simulator_plant` in your ROS bridge's host
+  the simulator, plus a `:simulated_hardware` in your ROS bridge's host
   configuration, so your VMS can drive the model;
 - `foxglove/` — Foxglove layouts for your topics.
 

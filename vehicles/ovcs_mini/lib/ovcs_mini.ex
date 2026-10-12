@@ -44,7 +44,7 @@ defmodule OvcsMini do
         default_can_mapping: %{host: "ovcs:vcan0", target: "ovcs:spi0.0"}
       },
       # On the host it also declares the frames of the hardware its
-      # simulator plant answers for, see `ros_simulation_config/0`.
+      # simulated hardware answers for, see `ros_simulation_config/0`.
       "ros" => %{
         target: :ovcs_base_can_system_rpi4,
         bridges: [RosBridge],
@@ -140,8 +140,8 @@ defmodule OvcsMini do
   # base_link sits midway between the axles.
   defp base_ahead_of_rear_axle, do: geometry().wheelbase / 2
 
-  # The `ros` bridge against the simulator, chosen with OVCS_SIM: the
-  # plant answers for the Mini's hardware, so the VMS commands Gazebo's
+  # The `ros` bridge against the simulator, chosen with OVCS_SIM: its
+  # simulated hardware answers for the Mini's, so the VMS commands Gazebo's
   # physics over CAN, and the IMU is Gazebo's.
   defp ros_simulation_config do
     %RosBridge.Config{
@@ -160,7 +160,7 @@ defmodule OvcsMini do
         rear_ultrasound(:left, RosBridge.Rangefinder.Zenoh, topic: "ultrasound/rear_left_raw"),
         rear_ultrasound(:right, RosBridge.Rangefinder.Zenoh, topic: "ultrasound/rear_right_raw"),
         {:static_transforms, transforms: [lidar_transform() | rear_ultrasound_transforms()]},
-        {:simulator_plant, simulator_plant()}
+        {:simulated_hardware, simulated_hardware()}
       ]
     }
   end
@@ -169,7 +169,7 @@ defmodule OvcsMini do
   @simulated_battery_voltage 7.4
   @simulated_acceleration_per_ampere 0.5
 
-  defp simulator_plant do
+  defp simulated_hardware do
     drivetrain = OvcsMini.Vms.Composer.drivetrain()
     # The Mini's VESC Tool setting, see docs/vesc_drivetrain.md.
     vesc_minimum_erpm = 300

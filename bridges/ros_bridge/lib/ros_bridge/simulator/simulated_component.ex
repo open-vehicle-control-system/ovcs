@@ -1,7 +1,7 @@
 defmodule RosBridge.Simulator.SimulatedComponent do
   @moduledoc """
   One piece of a vehicle's hardware, emulated on the CAN bus for
-  `RosBridge.Simulator.Plant`: a motor controller, a brake booster, a
+  `RosBridge.Simulator.Hardware`: a motor controller, a brake booster, a
   steering sensor, a generic controller.
 
   A simulated component reads the frames the VMS sends it, acts on
@@ -54,6 +54,63 @@ defmodule RosBridge.Simulator.SimulatedComponent do
               {term(), [update()]}
 
   @optional_callbacks handle_frame: 4, actuations: 3
+
+  @typedoc "A running simulated component, as `RosBridge.Simulator.Hardware` holds it."
+  @type running :: %{module: module(), state: term(), received: MapSet.t(frame())}
+
+  @doc """
+  Starts `module` with `opts`: subscribes the caller to the frames it
+  reads and configures an emitter for each frame it sends.
+  """
+  @spec start({module(), keyword() | map()}) :: running()
+  def start({module, opts}) do
+    {state, received, emitted} = module.init(opts)
+
+    received
+    |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
+    |> Enum.each(fn {network, frame_names} ->
+      :ok = Cantastic.Receiver.subscribe(self(), network, frame_names)
+    end)
+
+    Enum.each(emitted, fn {network, frame_name, initial_data} ->
+      :ok =
+        Cantastic.Emitter.configure(network, frame_name, %{
+          parameters_builder_function: :default,
+          initial_data: initial_data,
+          enable: true
+        })
+    end)
+
+    %{module: module, state: state, received: MapSet.new(received)}
+  end
+
+  @doc "Hands `frame` to the component if it reads it."
+  def handle_frame(running, %Cantastic.Frame{network_name: network, name: name} = frame, now_ms) do
+    if MapSet.member?(running.received, {network, name}),
+      do: %{
+        running
+        | state: running.module.handle_frame(name, frame.signals, running.state, now_ms)
+      },
+      else: running
+  end
+
+  @doc "The component's actuations this tick, none if it drives nothing."
+  def actuations(running, vehicle, now_ms) do
+    if function_exported?(running.module, :actuations, 3),
+      do: running.module.actuations(running.state, vehicle, now_ms),
+      else: []
+  end
+
+  @doc "Steps the component and emits what it reports."
+  def step(running, vehicle, dt_s, now_ms) do
+    {state, updates} = running.module.step(running.state, vehicle, dt_s, now_ms)
+
+    Enum.each(updates, fn {network, frame_name, signals} ->
+      :ok = Cantastic.Emitter.update(network, frame_name, &Map.merge(&1, signals))
+    end)
+
+    %{running | state: state}
+  end
 
   @doc "A signal's value as a float, whether Cantastic decoded it as a `Decimal` or a number."
   def float(signals, name) do

@@ -1,6 +1,6 @@
 defmodule RosBridge.Simulator.Vehicle do
   @moduledoc """
-  The simulated vehicle's motion, as `RosBridge.Simulator.Plant`'s
+  The simulated vehicle's motion, as `RosBridge.Simulator.Hardware`'s
   simulated components see it: a speed along the heading, a steering angle, and the
   distance rolled.
 
@@ -38,8 +38,8 @@ defmodule RosBridge.Simulator.Vehicle do
   `@standstill_m_s` of zero is zero, physics jitter at rest that would
   otherwise keep the VMS's standstill gate shut.
 
-  Every speed is per second of the plant's own clock, the wall clock the
-  VMS measures rates against, and `dt_s` is a step of it.
+  Every speed is per second of the simulated hardware's clock, the wall
+  clock the VMS measures rates against, and `dt_s` is a step of it.
 
   ## Parameters
 

@@ -63,7 +63,7 @@ foxglove/                          — Foxglove layouts
 
 ## In the simulator
 
-`description/` is the Gazebo model ([Simulation](../../compose/local/simulation/README.md)); `ros_simulation_config/0` in `lib/ovcs_mini.ex` and `priv/can/bridges/ros_simulated_components.yml` wire the simulator plant to it.
+`description/` is the Gazebo model ([Simulation](../../compose/local/simulation/README.md)); `ros_simulation_config/0` in `lib/ovcs_mini.ex` and `priv/can/bridges/ros_simulated_components.yml` wire the simulated hardware to it.
 
 | Sensor | Gazebo topic | Model | Republished on |
 |---|---|---|---|
@@ -71,7 +71,7 @@ foxglove/                          — Foxglove layouts
 | RPLIDAR C1 | `/scan_raw` | 500-ray `gpu_lidar`, 0.05–12 m, 10 Hz | `/scan` |
 | Two rear A02YYUW | `/ultrasound/rear_{left,right}_raw` | a 13-ray, 60° `gpu_lidar` fan each, 0.03–4.5 m, 10 Hz | `/ultrasound/rear_{left,right}` |
 
-- **The wheels stall.** Each wheel joint's effort limit, `wheel_max_torque` in `description/ovcs_mini.urdf.xacro`, is what the plant's 10 A of motor current gives a wheel. Commanded at 0.3 m/s against `workshop.sdf`'s first box, the wheels stalled and the bridge's `/odom` stopped 1.8 cm short of the model.
+- **The wheels stall.** Each wheel joint's effort limit, `wheel_max_torque` in `description/ovcs_mini.urdf.xacro`, is what the simulated VESC's 10 A of motor current gives a wheel. Commanded at 0.3 m/s against `workshop.sdf`'s first box, the wheels stalled and the bridge's `/odom` stopped 1.8 cm short of the model.
 - **A 5 ms step is enough.** A steady arc steers and turns the same with the world's 5 ms step as with 1 ms: 0.5835 ± 0.008 rad/s for 0.6 commanded, either way.
 
 Deploy the compute node with `../../ovcs compute push ovcs_mini <fleet>`.

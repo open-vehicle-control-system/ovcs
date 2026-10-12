@@ -33,8 +33,8 @@
 
   Note the absence of a `<topic>` tag: the command topic is left at
   the system's default, `/model/ovcs_mini/cmd_vel`, and bridged to
-  `/simulator/drive` on the ROS side, where the ROS bridge's simulator
-  plant publishes it. `<odom_topic>`, `<tf_topic>` and
+  `/simulator/drive` on the ROS side, where the ROS bridge's simulated
+  hardware publishes it. `<odom_topic>`, `<tf_topic>` and
   `<child_frame_id>` are set because they are confirmed to exist.
 -->
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">

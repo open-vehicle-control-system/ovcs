@@ -3,10 +3,10 @@ title: Simulation
 description: Run your vehicle's VMS, ROS bridge, perception and Nav2 against a Gazebo model of it, over virtual CAN.
 ---
 
-A Gazebo **Jetty** container stack that simulates a vehicle from its model, driven by the vehicle's own VMS. The VMS runs on your machine as it does in `./ovcs run`, over virtual CAN, and a plant in the vehicle's ROS bridge answers for the hardware it commands and moves the Gazebo model. Nav2, the gamepad, the stereo pipeline and the odometry all take the paths they take on the vehicle. No Nerves toolchain, no CAN hardware and no physical vehicle are needed. The OVCS Mini reference vehicle (a Traxxas Slash 4x4, 1/10 scale) has a model and a plant, so the commands below use it; they work the same on your vehicle once it has [both](#your-vehicle-in-the-simulator).
+A Gazebo **Jetty** container stack that simulates a vehicle from its model, driven by the vehicle's own VMS. The VMS runs on your machine as it does in `./ovcs run`, over virtual CAN, and simulated hardware in the vehicle's ROS bridge answers for the hardware it commands and moves the Gazebo model. Nav2, the gamepad, the stereo pipeline and the odometry all take the paths they take on the vehicle. No Nerves toolchain, no CAN hardware and no physical vehicle are needed. The OVCS Mini reference vehicle (a Traxxas Slash 4x4, 1/10 scale) has a model and simulated hardware, so the commands below use it; they work the same on your vehicle once it has [both](#your-vehicle-in-the-simulator).
 
 > [!NOTE]
-> The simulator stack and the plant are framework tooling. They know nothing about a vehicle beyond the files and configuration in its package, `vehicles/<vehicle>/`. See [Framework and vehicles](../../../docs/framework.md).
+> The simulator stack and the simulated hardware are framework tooling. They know nothing about a vehicle beyond the files and configuration in its package, `vehicles/<vehicle>/`. See [Framework and vehicles](../../../docs/framework.md).
 
 ## What it is
 
@@ -21,11 +21,11 @@ compose/local/
 vehicles/<vehicle>/
   description/            the URDF/xacro model and simulation.yaml, mounted into the container
   nav2/                   Nav2's parameters and behaviour trees, mounted into the nav2 service
-  lib/                    the ROS bridge's simulator plant, in ros_bridge_config/2
+  lib/                    the ROS bridge's simulated hardware, in ros_bridge_config/2
 ```
 
 ```text
-Nav2 ──/cmd_vel_nav──► ROS bridge ──0x2B1──► VMS ──actuator commands────────► plant ──/simulator/drive──► Gazebo
+Nav2 ──/cmd_vel_nav──► ROS bridge ──0x2B1──► VMS ──actuator commands─────► hardware ──/simulator/drive──► Gazebo
                          ▲                      ◄──their status frames──────────┘                          │
                          └──── /odom ◄── 0x60B ── VMS          IMU heading ◄── /imu_raw ◄──────────────────┘
 ```
@@ -50,7 +50,7 @@ cd ../..
 OVCS_SIM=1 ZENOH_ENDPOINT_IP=127.0.0.1 ./ovcs run ovcs_mini
 ```
 
-`OVCS_SIM=1` gives every bridge its simulated wiring: the ROS bridge runs the plant and reads the simulated IMU, the perception bridge reads the simulated cameras. Within seconds of the VMS appearing, the plant's scripted RC switches take it through `:radio` to `:ros` with the `autonomous` commander (`OVCS_SIMULATOR_COMMANDER=teleop` for the gamepad instead). Then:
+`OVCS_SIM=1` gives every bridge its simulated wiring: the ROS bridge runs the simulated hardware and reads the simulated IMU, the perception bridge reads the simulated cameras. Within seconds of the VMS appearing, the simulated radio's scripted switches take it through `:radio` to `:ros` with the `autonomous` commander (`OVCS_SIMULATOR_COMMANDER=teleop` for the gamepad instead). Then:
 
 ```sh
 cd compose/local && docker compose -f simulation.yml --profile nav2 up -d nav2
@@ -68,7 +68,7 @@ docker compose -f simulation.yml --profile gui up -d gazebo-gui
 Tear down with `docker compose -f simulation.yml --profile nav2 down`, plus `docker compose -f base.yml rm -sf zenohd`.
 
 > [!TIP]
-> If the VMS dashboard shows a `FAILURE` status, the VMS finished booting before the plant's controller answered; its `reset_status` action clears it. On the vehicle the same happens when a controller boots late.
+> If the VMS dashboard shows a `FAILURE` status, the VMS finished booting before the simulated controller answered; its `reset_status` action clears it. On the vehicle the same happens when a controller boots late.
 
 > [!TIP]
 > If `ros2 topic echo` fails with `ResponseError: unknown tag 'rclpy.topic_endpoint_info.TopicEndpointInfo'` (a `ros2cli` daemon bug on Python 3.14), pass `--no-daemon`: `ros2 topic echo --no-daemon /odom`.
@@ -85,7 +85,7 @@ The VMS takes the gamepad only with the `teleop` commander selected: run with `O
 
 ## Odometry and ground truth
 
-`/odom` and `odom → base_link` are the ROS bridge's, from the VMS's `0x60B` (the wheel distance) and the IMU heading, as on the vehicle. The wheel distance is the simulated wheels': the plant reports the speed of the wheel joints on `/joint_states`, as the vehicle's motor and shaft sensors measure the wheels, so a wheel spinning in place reads as moving, and one the model's effort limit stalls against an obstacle reads as stopped. `/simulator/odom` is ground truth, the model's pose from the physics, which nothing navigates by: compare the two from a common start to see the dead reckoning drift. The steering system's own odometry follows the wheels rather than the body and is not bridged. See [Ground truth](../../../docs/ros2_simulator.md#ground-truth).
+`/odom` and `odom → base_link` are the ROS bridge's, from the VMS's `0x60B` (the wheel distance) and the IMU heading, as on the vehicle. The wheel distance is the simulated wheels': the simulated hardware reports the speed of the wheel joints on `/joint_states`, as the vehicle's motor and shaft sensors measure the wheels, so a wheel spinning in place reads as moving, and one the model's effort limit stalls against an obstacle reads as stopped. `/simulator/odom` is ground truth, the model's pose from the physics, which nothing navigates by: compare the two from a common start to see the dead reckoning drift. The steering system's own odometry follows the wheels rather than the body and is not bridged. See [Ground truth](../../../docs/ros2_simulator.md#ground-truth).
 
 ## Running the perception bridge against it
 
@@ -144,7 +144,7 @@ The simulator reads three things from `vehicles/<vehicle>/`:
 | `description/simulation.yaml` | under `gazebo`: the sensor topics to bridge to ROS, the cameras, the spawn height. |
 | `nav2/` | `nav2.yaml` and the behaviour trees it references under `/opt/ovcs/config/`. |
 
-The ROS bridge needs two more things from the vehicle package: a `:simulator_plant` in its host `ros_bridge_config/2` against the simulator, listing a `RosBridge.Simulator.SimulatedComponent` for each piece of hardware the VMS drives, and their frames in its host CAN topology, through a `%{host: _, target: _}` `can_config_path` (see `OvcsVehicle`). The OVCS Mini's `ros_simulation_config/0` and `priv/can/bridges/ros_simulated_components.yml` are the worked example; hardware with no simulated component yet, such as the OVCS1 reference vehicle's inverter or brake booster, needs one written first.
+The ROS bridge needs two more things from the vehicle package: a `:simulated_hardware` in its host `ros_bridge_config/2` against the simulator, listing a `RosBridge.Simulator.SimulatedComponent` for each piece of hardware the VMS drives, and their frames in its host CAN topology, through a `%{host: _, target: _}` `can_config_path` (see `OvcsVehicle`). The OVCS Mini's `ros_simulation_config/0` and `priv/can/bridges/ros_simulated_components.yml` are the worked example; hardware with no simulated component yet, such as the OVCS1 reference vehicle's inverter or brake booster, needs one written first.
 
 The OVCS Mini reference vehicle's model is the worked example: [`vehicles/ovcs_mini/description/`](../../../vehicles/ovcs_mini/description/README.md) documents its dimensions and which of them are estimates, and `inertial_macros.xacro` comes from the earlier [traxxas](https://github.com/open-vehicle-control-system/traxxas) model, which targeted Gazebo Classic. A centre of gravity at half the body height rolls a model over in its first corner; the Mini carries its chassis mass in a low tub for that reason.
 
@@ -154,8 +154,8 @@ ROS 2 Jazzy supports only Gazebo Harmonic; Jetty, the current LTS, needs ROS 2 *
 
 ## Known limitations
 
-- **Gazebo can run slower than real time**, without a GPU or on a loaded machine. Nav2 and the plant follow its clock, so goals take longer in wall time; the VMS's watchdogs stay on the wall clock, and `/odom`'s twist is per wall second.
-- **Gazebo needs the GPU.** The `gazebo` and `gazebo-gui` services mount `/dev/dri`; without a GPU there, Mesa renders the cameras on the CPU (`llvmpipe`). Measured on an Intel Iris Xe, that is about 1040 % of CPU against 130 % with the GPU, and enough contention for the plant's controller frames to arrive later than the VMS's frame watchers allow, which shows as a VMS `FAILURE`. An NVIDIA GPU needs the NVIDIA Container Toolkit as well.
+- **Gazebo can run slower than real time**, without a GPU or on a loaded machine. Nav2 follows its clock, so goals take longer in wall time; the VMS's watchdogs stay on the wall clock, and `/odom`'s twist is per wall second.
+- **Gazebo needs the GPU.** The `gazebo` and `gazebo-gui` services mount `/dev/dri`; without a GPU there, Mesa renders the cameras on the CPU (`llvmpipe`). Measured on an Intel Iris Xe, that is about 1040 % of CPU against 130 % with the GPU, and enough contention for the simulated controller's frames to arrive later than the VMS's frame watchers allow, which shows as a VMS `FAILURE`. An NVIDIA GPU needs the NVIDIA Container Toolkit as well.
 - Global plans come from NavFn (`nav2_smac_planner` is absent from the Lyrical archive), so they are **not kinematically feasible**: MPPI carries the corners the car cannot cut. Fine in an open workshop, a real constraint in tight spaces.
 - `yaw_goal_tolerance` is deliberately about π. A car cannot rotate to a commanded final heading.
 

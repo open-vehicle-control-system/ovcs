@@ -13,8 +13,8 @@
 #   docker compose -f simulation.yml up -d
 #   docker compose -f simulation.yml logs -f gazebo
 #
-# Nothing here drives the vehicle: the VMS does, through the simulator
-# plant in the vehicle's ROS bridge (`OVCS_SIM=1 ./ovcs run <vehicle>`).
+# Nothing here drives the vehicle: the VMS does, through the simulated
+# hardware in the vehicle's ROS bridge (`OVCS_SIM=1 ./ovcs run <vehicle>`).
 # See simulation/README.md.
 #
 # The Zenoh environment comes from common.yml via `extends:`; the

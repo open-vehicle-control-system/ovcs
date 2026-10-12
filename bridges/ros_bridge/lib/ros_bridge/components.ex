@@ -31,7 +31,7 @@ defmodule RosBridge.Components do
       **Simulation only.** Without it every stamp is wall clock, which
       is correct on a vehicle and wrong against Gazebo — see
       `RosBridge.Clock` for what that breaks.
-    * `:simulator_plant` — `RosBridge.Simulator.Plant`, emulating the
+    * `:simulated_hardware` — `RosBridge.Simulator.Hardware`, emulating the
       vehicle's hardware on CAN so the VMS drives a simulated vehicle.
       **Simulation only.** Opts: `:vehicle`, `:simulated_components`
       (required), `:drive_topic`, `:wheel_joints`; see the module.
@@ -110,7 +110,7 @@ defmodule RosBridge.Components do
 
   def start(:simulator_clock, opts), do: [{RosBridge.Clock, opts}]
 
-  def start(:simulator_plant, opts), do: [{RosBridge.Simulator.Plant, opts}]
+  def start(:simulated_hardware, opts), do: [{RosBridge.Simulator.Hardware, opts}]
 
   def start(:joy_interpreter, opts), do: [{RosBridge.Consumers.Joy, opts}]
 

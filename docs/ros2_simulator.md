@@ -71,7 +71,7 @@ The boundary between Gazebo's transport and ROS is exactly the list in `gazebo.l
 | `/clock` | `rosgraph_msgs/Clock` | Gazebo | every node, `RosBridge.Clock` |
 | `/odom`, `/tf` (`odom → base_link`) | `nav_msgs/Odometry`, `tf2_msgs/TFMessage` | `RosBridge.Publishers.Odometry` | Nav2, Foxglove |
 | `/tf_static` | `tf2_msgs/TFMessage` | `robot_state_publisher` **and** `RosBridge.Publishers.StaticTransform` | Nav2, Foxglove |
-| `/joint_states` | `sensor_msgs/JointState` | Gazebo | `RosBridge.Simulator.Plant` (the wheel speed), Foxglove |
+| `/joint_states` | `sensor_msgs/JointState` | Gazebo | `RosBridge.Simulator.Hardware` (the wheel speed), Foxglove |
 | `/imu_raw` | `sensor_msgs/Imu` | the model's IMU sensor | `RosBridge.Imu.Zenoh`, republished on `/imu` by `Publishers.Imu` |
 | a ray sensor's `*_raw` topic | `sensor_msgs/LaserScan` | a `gpu_lidar` in the model | `RosBridge.Lidar.Zenoh` for a lidar, `RosBridge.Rangefinder.Zenoh` for a fan standing in for one rangefinder beam; republished as on the vehicle |
 | `/stereo/{left,right}/image_raw/compressed` | `sensor_msgs/CompressedImage` | `image_bridge` | `RosBridge.Camera.Zenoh` |
@@ -79,7 +79,7 @@ The boundary between Gazebo's transport and ROS is exactly the list in `gazebo.l
 | `/cmd_vel_nav_raw` | `geometry_msgs/TwistStamped` | Nav2 `controller_server`, `behavior_server` | Nav2 `velocity_smoother` |
 | `/cmd_vel_nav` | `geometry_msgs/TwistStamped` | Nav2 `velocity_smoother` | `RosBridge.Consumers.Velocity` |
 | `/joy/<profile>` | `sensor_msgs/Joy` | the operator's `joy` service | `RosBridge.Consumers.Joy` |
-| `/simulator/drive` | `geometry_msgs/Twist` | `RosBridge.Simulator.Plant` ([the plant](#the-vms-drives-the-simulator)) | `AckermannSteering` |
+| `/simulator/drive` | `geometry_msgs/Twist` | `RosBridge.Simulator.Hardware` ([simulated hardware](#the-vms-drives-the-simulator)) | `AckermannSteering` |
 | `/simulator/odom` | `nav_msgs/Odometry` | the model's `OdometryPublisher`: [ground truth](#ground-truth) | you, to compare with `/odom` |
 | `/stereo/...` disparity, depth, points, detections | `stereo_msgs`, `sensor_msgs`, `vision_msgs` | perception bridge | Foxglove |
 | `/ovcs_heartbeat` | `std_msgs/String` | every `RosBridge` that lists `:heartbeat` | you, to see the BEAM is alive |
@@ -145,10 +145,10 @@ On the vehicle (OVCS Mini)
 
 ### The VMS drives the simulator
 
-In the simulator the same loop drives Gazebo. A plant (`RosBridge.Simulator.Plant`, the `:simulator_plant` component) stands in for the hardware on virtual CAN: it reads what the VMS commands, moves its own model of the vehicle, reports what the real hardware would, and hands Gazebo the resulting motion.
+In the simulator the same loop drives Gazebo. Simulated hardware (`RosBridge.Simulator.Hardware`, the `:simulated_hardware` component) stands in for the hardware on virtual CAN: it reads what the VMS commands, moves its own model of the vehicle, reports what the real hardware would, and hands Gazebo the resulting motion.
 
 ```text
-Nav2 ──/cmd_vel_nav──► Consumers.Velocity ──0x2B1──► VMS ──actuator commands───────────► plant
+Nav2 ──/cmd_vel_nav──► Consumers.Velocity ──0x2B1──► VMS ──actuator commands────────► hardware
                                                        ▲                                  │
                             the hardware's status frames ◄────────────────────────────────┤
                                                                                          │ /simulator/drive
@@ -157,12 +157,12 @@ Nav2 ◄── /odom + /tf ── Publishers.Odometry ◄── 0x60B ── VMS
                                 └──────────────── /imu_raw (heading) ◄────────────────────┘
 ```
 
-The plant is framework; what it emulates is the vehicle's. Each piece of hardware is a `RosBridge.Simulator.SimulatedComponent`, the inverse of the VMS component that drives it, named after it and reading and writing its frames by name: `SimulatedComponents.Vesc.MotorController`, `SimulatedComponents.OVCS.GenericController`, `SimulatedComponents.Traxxas.Steering` and `SimulatedComponents.OVCS.RadioControl` are the OVCS Mini reference vehicle's set. A vehicle with other hardware adds simulated components; `RosBridge.Simulator.Vehicle`, the motion they act on, knows none of them. The OVCS Mini wires it into its `ros` bridge with `OVCS_SIM`, in `ros_simulation_config/0`, and declares its frames in `priv/can/bridges/ros_simulated_components.yml`, merged into the bridge's CAN topology on the host only.
+The simulated hardware is framework; what it emulates is the vehicle's. Each piece of hardware is a `RosBridge.Simulator.SimulatedComponent`, the inverse of the VMS component that drives it, named after it and reading and writing its frames by name: `SimulatedComponents.Vesc.MotorController`, `SimulatedComponents.OVCS.GenericController`, `SimulatedComponents.Traxxas.Steering` and `SimulatedComponents.OVCS.RadioControl` are the OVCS Mini reference vehicle's set. A vehicle with other hardware adds simulated components; `RosBridge.Simulator.Vehicle`, the motion they act on, knows none of them. The OVCS Mini wires it into its `ros` bridge with `OVCS_SIM`, in `ros_simulation_config/0`, and declares its frames in `priv/can/bridges/ros_simulated_components.yml`, merged into the bridge's CAN topology on the host only.
 
 Three things are particular to the simulator:
 
-- **Gazebo is told the motion, and measures it back.** The plant publishes its vehicle's commanded speed and Ackermann yaw rate on `/simulator/drive`, which `gazebo.launch.py` bridges to the plugin; the plugin's own odometry and its `odom → base_link` are not bridged. What the simulated components report follows the wheels, as the vehicle's motor and shaft sensors do, with the command kept just ahead of it. A wheel that spins without the model moving reads as moving. `AckermannSteering` drives the wheels at the commanded velocity, but no harder than their joints' effort limit: set to what the motor gives each wheel, a wheel held back stalls instead of spinning. The bridge's `Publishers.Odometry` owns `/odom`, from `0x60B` and the simulated IMU, as on the vehicle.
-- **One clock, the VMS's.** The plant runs on the wall clock, as the VMS does. How far the wheels turned comes from their joint positions on `/joint_states`, which Gazebo integrates, and how fast is that distance per wall second: the counters match Gazebo, and the rates match the counters, however fast Gazebo runs, so the VMS's cross-check between a VESC and a pulse sensor holds. One consequence reaches Nav2: `/odom`'s pose advances with Gazebo, but its twist is the VMS's speed, per wall second, so below real time Nav2 reads a car slower than it commanded while its position tracks.
+- **Gazebo is told the motion, and measures it back.** The simulated hardware publishes its vehicle's commanded speed and Ackermann yaw rate on `/simulator/drive`, which `gazebo.launch.py` bridges to the plugin; the plugin's own odometry and its `odom → base_link` are not bridged. What the simulated components report follows the wheels, as the vehicle's motor and shaft sensors do, with the command kept just ahead of it. A wheel that spins without the model moving reads as moving. `AckermannSteering` drives the wheels at the commanded velocity, but no harder than their joints' effort limit: set to what the motor gives each wheel, a wheel held back stalls instead of spinning. The bridge's `Publishers.Odometry` owns `/odom`, from `0x60B` and the simulated IMU, as on the vehicle.
+- **One clock, the VMS's.** The simulated hardware runs on the wall clock, as the VMS does. How far the wheels turned comes from their joint positions on `/joint_states`, which Gazebo integrates, and how fast is that distance per wall second: the counters match Gazebo, and the rates match the counters, however fast Gazebo runs, so the VMS's cross-check between a VESC and a pulse sensor holds. One consequence reaches Nav2: `/odom`'s pose advances with Gazebo, but its twist is the VMS's speed, per wall second, so below real time Nav2 reads a car slower than it commanded while its position tracks.
 - **The switches are scripted.** `SimulatedComponents.OVCS.RadioControl` moves channels 6 and 5 through `:radio` to `:ros` and the commander once the VMS's `vms_status` appears, and back to the start when it disappears, so a restarted VMS goes through the same transitions.
 
 ### Ground truth
@@ -286,7 +286,7 @@ defp ros_target_config,
   }
 ```
 
-A bare atom is shorthand for `{atom, []}`, and an unknown name raises at supervisor boot. The components are `:heartbeat`, `:simulator_clock`, `:joy_interpreter`, `:velocity_interpreter`, `:imu_publisher`, `:odometry_publisher`, `:static_transforms`, `:stereo_camera`, `:detector`, `:hailo_detector` (after `:stereo_camera`) and `:simulator_plant`; `RosBridge.Components` documents each. Order matters where one component listens to another: `:odometry_publisher` after `:imu_publisher`. Two bridges on one fabric need distinct `node_name`s, or they collide in the ROS graph and Foxglove renders them as one node; the Mini uses `ovcs_bridge_ros` and `ovcs_bridge_perception`.
+A bare atom is shorthand for `{atom, []}`, and an unknown name raises at supervisor boot. The components are `:heartbeat`, `:simulator_clock`, `:joy_interpreter`, `:velocity_interpreter`, `:imu_publisher`, `:odometry_publisher`, `:static_transforms`, `:stereo_camera`, `:detector`, `:hailo_detector` (after `:stereo_camera`) and `:simulated_hardware`; `RosBridge.Components` documents each. Order matters where one component listens to another: `:odometry_publisher` after `:imu_publisher`. Two bridges on one fabric need distinct `node_name`s, or they collide in the ROS graph and Foxglove renders them as one node; the Mini uses `ovcs_bridge_ros` and `ovcs_bridge_perception`.
 
 ## Version pins
 
@@ -331,7 +331,7 @@ Or open Foxglove Studio against `ws://<docker-host>:8765` and subscribe to `/ovc
 | the actuator command path | `bridges/ros_bridge/lib/ros_bridge/consumers/joy.ex` | `libraries/ovcs_can/priv/can/components/ovcs/0x2B0_ros_actuator_command.yml`, `vms/core/lib/vms_core/components/ovcs/ros_actuator_command/` |
 | the velocity command path | `bridges/ros_bridge/lib/ros_bridge/consumers/velocity.ex` | `0x2B1_ros_velocity_command.yml`, `vms/core/lib/vms_core/components/ovcs/ros_velocity_command.ex` |
 | odometry on the vehicle | `bridges/ros_bridge/lib/ros_bridge/publishers/odometry.ex` | `0x60B_vehicle_motion.yml`, `vms/core/lib/vms_core/components/ovcs/vehicle_motion.ex` |
-| the VMS in the simulator's loop | `bridges/ros_bridge/lib/ros_bridge/simulator/plant.ex` | `simulator/vehicle.ex`, `simulator/simulated_components/`, `ros_simulation_config/0` in `vehicles/ovcs_mini/lib/ovcs_mini.ex` |
+| the VMS in the simulator's loop | `bridges/ros_bridge/lib/ros_bridge/simulator/hardware.ex` | `simulator/vehicle.ex`, `simulator/simulated_components/`, `ros_simulation_config/0` in `vehicles/ovcs_mini/lib/ovcs_mini.ex` |
 | who commands the vehicle | [Your vehicle package](./vehicle_package.md#control-levels-who-commands-and-which-ros-node) | `vms/core/lib/vms_core/managers/control_level.ex` |
 | Nav2's configuration | `vehicles/ovcs_mini/nav2/nav2.yaml`, the OVCS Mini reference vehicle's (heavily commented) | `nav2_ackermann_bt.xml` beside it |
 | the perception pipeline | [Perception: object detection](./ros2_perception.md) | `bridges/ros_bridge/lib/ros_bridge/camera/zenoh.ex`, `stereo_camera/supervisor.ex` |
