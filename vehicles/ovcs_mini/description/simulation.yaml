@@ -10,6 +10,11 @@ gazebo:
     # The simulated BNO085, republished on /imu by the Elixir bridge as
     # on the vehicle.
     - /imu_raw@sensor_msgs/msg/Imu[gz.msgs.IMU
+    # The RPLIDAR and the two rear A02YYUW, republished on /scan and
+    # ultrasound/rear_* by the Elixir bridge as on the vehicle.
+    - /scan_raw@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan
+    - /ultrasound/rear_left_raw@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan
+    - /ultrasound/rear_right_raw@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan
     - /stereo/left/camera_info@sensor_msgs/msg/CameraInfo[gz.msgs.CameraInfo
     - /stereo/right/camera_info@sensor_msgs/msg/CameraInfo[gz.msgs.CameraInfo
   # Cameras, bridged through ros_gz_image with a compressed variant.

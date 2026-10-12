@@ -156,6 +156,10 @@ defmodule OvcsMini do
         {:imu_publisher, driver: RosBridge.Imu.Zenoh},
         {:odometry_publisher,
          driver: RosBridge.Imu.Zenoh, base_ahead_of_rear_axle: base_ahead_of_rear_axle()},
+        {:lidar_publisher, driver: RosBridge.Lidar.Zenoh, bins: 500},
+        rear_ultrasound(:left, RosBridge.Rangefinder.Zenoh, topic: "ultrasound/rear_left_raw"),
+        rear_ultrasound(:right, RosBridge.Rangefinder.Zenoh, topic: "ultrasound/rear_right_raw"),
+        {:static_transforms, transforms: [lidar_transform() | rear_ultrasound_transforms()]},
         {:simulator_plant, simulator_plant()}
       ]
     }
@@ -239,17 +243,17 @@ defmodule OvcsMini do
          bins: 500},
         # A02YYUW ultrasonic sensors on the rear bumper, each on a CP2104
         # found by its serial number.
-        rear_ultrasound(:left, "01D9EBFA"),
-        rear_ultrasound(:right, "02PW2EBP"),
+        rear_ultrasound(:left, A02YYUW.UART, serial_number: "01D9EBFA"),
+        rear_ultrasound(:right, A02YYUW.UART, serial_number: "02PW2EBP"),
         {:static_transforms, transforms: [lidar_transform() | rear_ultrasound_transforms()]}
       ]
     }
 
-  defp rear_ultrasound(side, serial_number) do
+  defp rear_ultrasound(side, driver, driver_opts) do
     {:range_publisher,
-     driver: A02YYUW.UART,
+     driver: driver,
      name: :"ultrasound_rear_#{side}",
-     driver_opts: [serial_number: serial_number],
+     driver_opts: driver_opts,
      topic: "ultrasound/rear_#{side}",
      frame_id: "ultrasound_rear_#{side}"}
   end

@@ -19,9 +19,9 @@ defmodule RosBridge.Publishers.Range do
   require Logger
 
   alias OvcsDrivers.Rangefinder.Sample
-  alias Ros2.BuiltinInterfaces.Msg.Time
   alias Ros2.SensorMsgs.Msg.Range
   alias Ros2.StdMsgs.Msg.Header
+  alias RosBridge.Timing
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts)
 
@@ -54,7 +54,10 @@ defmodule RosBridge.Publishers.Range do
   @doc "The `Range` for `sample`. Pure."
   def range(%Sample{range: {min_range_m, max_range_m}} = sample, state) do
     %Range{
-      header: %Header{stamp: time_message(sample.measured_at), frame_id: state.frame_id},
+      header: %Header{
+        stamp: Timing.time_message_for_system_time(sample.measured_at),
+        frame_id: state.frame_id
+      },
       radiation_type: state.radiation_type,
       field_of_view: sample.field_of_view,
       min_range: min_range_m,
@@ -68,7 +71,4 @@ defmodule RosBridge.Publishers.Range do
         end
     }
   end
-
-  defp time_message(system_ns),
-    do: %Time{sec: div(system_ns, 1_000_000_000), nanosec: rem(system_ns, 1_000_000_000)}
 end

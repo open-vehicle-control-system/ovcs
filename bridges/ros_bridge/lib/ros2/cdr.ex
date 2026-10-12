@@ -69,6 +69,17 @@ defmodule Ros2.Cdr do
     {value, {rest, offset + 8}}
   end
 
+  @doc "A `float32`; IEEE infinities decode to `:infinity` / `:neg_infinity`, NaN to `:nan`."
+  def read_f32(input) do
+    {<<bits::binary-size(4), rest::binary>>, offset} = skip_pad(input, 4)
+    {f32_value(bits), {rest, offset + 4}}
+  end
+
+  defp f32_value(<<0x7F800000::little-32>>), do: :infinity
+  defp f32_value(<<0xFF800000::little-32>>), do: :neg_infinity
+  defp f32_value(<<value::little-float-32>>), do: value
+  defp f32_value(_nan), do: :nan
+
   def read_string(input) do
     {size_with_null, {binary, offset}} = read_u32(input)
     <<string::binary-size(size_with_null - 1), 0, rest::binary>> = binary

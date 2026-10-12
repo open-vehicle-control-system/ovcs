@@ -93,11 +93,28 @@ defmodule RosBridge.Timing do
   have a `frame.capture_ns` in hand and need a `%Time{sec,
   nanosec}` to drop into a `std_msgs/Header`.
   """
-  def time_message_for(monotonic_nanoseconds) do
-    nanoseconds = ros_time_of(monotonic_nanoseconds)
+  def time_message_for(monotonic_nanoseconds),
+    do: time_message(ros_time_of(monotonic_nanoseconds))
 
-    # Floored, not truncated: `Time.encode/1` writes `nanosec` unsigned, so a
-    # negative remainder would wrap. Simulator time goes negative after a world reset.
+  @doc """
+  `time_message_for/1` for a system-time timestamp, which is what
+  `OvcsDrivers.Rangefinder.Sample` and `OvcsDrivers.Lidar.Scan` carry.
+  """
+  def time_message_for_system_time(system_nanoseconds) do
+    case RosBridge.Clock.offset_ns() do
+      nil ->
+        time_message(system_nanoseconds)
+
+      _following ->
+        time_message_for(
+          system_nanoseconds - System.system_time(:nanosecond) +
+            System.monotonic_time(:nanosecond)
+        )
+    end
+  end
+
+  # Floored: `nanosec` is unsigned, and simulator time goes negative after a world reset.
+  defp time_message(nanoseconds) do
     %Time{
       sec: Integer.floor_div(nanoseconds, 1_000_000_000),
       nanosec: Integer.mod(nanoseconds, 1_000_000_000)

@@ -44,7 +44,7 @@ Everything containerised lives under `compose/`, split by one question: is it pu
 
 1. `robot_state_publisher` expands the xacro and publishes `/robot_description`.
 2. `gz sim -s -r` loads the world, server-only, running.
-3. A `parameter_bridge` bridges `/clock`, `/joint_states`, the ground truth on `/simulator/odom`, `/imu_raw`, both `camera_info` topics and the drive command, `/simulator/drive`.
+3. A `parameter_bridge` bridges `/clock`, `/joint_states`, the ground truth on `/simulator/odom`, `/imu_raw`, `/scan_raw`, `/ultrasound/rear_{left,right}_raw`, both `camera_info` topics and the drive command, `/simulator/drive`.
 4. One `image_bridge` per camera (compressed).
 5. `ros_gz_sim create` spawns the model from `/robot_description`. The model exists only now, so it comes last.
 
@@ -73,6 +73,8 @@ The boundary between Gazebo's transport and ROS is exactly the list in `sim.laun
 | `/tf_static` | `tf2_msgs/TFMessage` | `robot_state_publisher` **and** `RosBridge.Publishers.StaticTransform` | Nav2, Foxglove |
 | `/joint_states` | `sensor_msgs/JointState` | Gazebo | Foxglove |
 | `/imu_raw` | `sensor_msgs/Imu` | the model's IMU sensor | `RosBridge.Imu.Zenoh`, republished on `/imu` by `Publishers.Imu` |
+| `/scan_raw` | `sensor_msgs/LaserScan` | the model's lidar, a 500-ray `gpu_lidar` | `RosBridge.Lidar.Zenoh`, republished on `/scan` by `Publishers.LaserScan` |
+| `/ultrasound/rear_{left,right}_raw` | `sensor_msgs/LaserScan` | a 13-ray, 60° `gpu_lidar` fan per rear ultrasonic | `RosBridge.Rangefinder.Zenoh`, republished on `/ultrasound/rear_{left,right}` by `Publishers.Range` |
 | `/stereo/{left,right}/image_raw/compressed` | `sensor_msgs/CompressedImage` | `image_bridge` | `RosBridge.Camera.Zenoh` |
 | `/stereo/{left,right}/camera_info` | `sensor_msgs/CameraInfo` | Gazebo **and** the perception bridge (from its calibration YAML) | Foxglove, the calibrator |
 | `/cmd_vel_nav_raw` | `geometry_msgs/TwistStamped` | Nav2 `controller_server`, `behavior_server` | Nav2 `velocity_smoother` |

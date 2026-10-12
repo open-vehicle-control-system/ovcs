@@ -45,14 +45,16 @@ defmodule RosBridge.Components do
     * `:lidar_publisher` — starts the named driver (any
       `OvcsDrivers.Lidar` implementation) followed by
       `RosBridge.Publishers.LaserScan`. Opts:
-        * `:driver` (required, module — `RPLidar.UART`)
+        * `:driver` (required, module — `RPLidar.UART`,
+          `RosBridge.Lidar.Zenoh`)
         * `:driver_opts` — forwarded to the driver (`device:`, ...)
         * `:topic`, `:frame_id`, `:bins` — forwarded to
           `RosBridge.Publishers.LaserScan` (see its defaults).
     * `:range_publisher` — one rangefinder: starts the named driver
       instance (any `OvcsDrivers.Rangefinder` implementation) followed
       by `RosBridge.Publishers.Range`. List it once per sensor. Opts:
-        * `:driver` (required, module — `A02YYUW.UART`)
+        * `:driver` (required, module — `A02YYUW.UART`,
+          `RosBridge.Rangefinder.Zenoh`)
         * `:name` (required) — the instance's name, unique per sensor
         * `:driver_opts` — forwarded to the driver (`serial_number:`, ...)
         * `:topic`, `:frame_id` (required), `:radiation_type`,

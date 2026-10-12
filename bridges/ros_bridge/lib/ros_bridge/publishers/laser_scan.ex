@@ -22,9 +22,9 @@ defmodule RosBridge.Publishers.LaserScan do
   require Logger
 
   alias OvcsDrivers.Lidar.Scan
-  alias Ros2.BuiltinInterfaces.Msg.Time
   alias Ros2.SensorMsgs.Msg.LaserScan
   alias Ros2.StdMsgs.Msg.Header
+  alias RosBridge.Timing
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 
@@ -84,7 +84,10 @@ defmodule RosBridge.Publishers.LaserScan do
       Enum.map(0..(bins - 1), &Map.get(slots, &1, {0.0, 0})) |> Enum.unzip()
 
     %LaserScan{
-      header: %Header{stamp: time_message(scan.started_at), frame_id: frame_id},
+      header: %Header{
+        stamp: Timing.time_message_for_system_time(scan.started_at),
+        frame_id: frame_id
+      },
       angle_min: -:math.pi(),
       angle_max: :math.pi() - angle_increment_rad,
       angle_increment: angle_increment_rad,
@@ -102,7 +105,4 @@ defmodule RosBridge.Publishers.LaserScan do
     wrapped = if angle >= :math.pi(), do: angle - 2 * :math.pi(), else: angle
     min(trunc((wrapped + :math.pi()) / angle_increment_rad), bins - 1)
   end
-
-  defp time_message(system_ns),
-    do: %Time{sec: div(system_ns, 1_000_000_000), nanosec: rem(system_ns, 1_000_000_000)}
 end

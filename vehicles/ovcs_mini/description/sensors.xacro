@@ -151,4 +151,48 @@
       </sensor>
     </gazebo>
   </xacro:macro>
+
+  <!--
+    A planar `gpu_lidar`: `samples` rays from `min_angle` to `max_angle`,
+    both included, published as a LaserScan on `topic`. It stands in for
+    the RPLIDAR and, as a horizontal fan that keeps the floor out of the
+    beam, for each A02YYUW; `RosBridge.Lidar.Zenoh` and
+    `RosBridge.Rangefinder.Zenoh` consume them.
+  -->
+  <xacro:macro name="sim_ray" params="name x y z yaw topic samples min_angle max_angle min_range max_range rate">
+    <link name="${name}_link">
+      <xacro:inertial_box mass="${ray_sensor_mass}" x="0.02" y="0.02" z="0.02">
+        <origin xyz="0 0 0" rpy="0 0 0" />
+      </xacro:inertial_box>
+    </link>
+
+    <joint name="${name}_joint" type="fixed">
+      <parent link="base_link" />
+      <child link="${name}_link" />
+      <origin xyz="${x} ${y} ${z}" rpy="0 0 ${yaw}" />
+    </joint>
+
+    <gazebo reference="${name}_link">
+      <sensor name="${name}" type="gpu_lidar">
+        <always_on>1</always_on>
+        <update_rate>${rate}</update_rate>
+        <visualize>false</visualize>
+        <topic>${topic}</topic>
+        <frame_id>${name}_link</frame_id>
+        <lidar>
+          <scan>
+            <horizontal>
+              <samples>${samples}</samples>
+              <min_angle>${min_angle}</min_angle>
+              <max_angle>${max_angle}</max_angle>
+            </horizontal>
+          </scan>
+          <range>
+            <min>${min_range}</min>
+            <max>${max_range}</max>
+          </range>
+        </lidar>
+      </sensor>
+    </gazebo>
+  </xacro:macro>
 </robot>

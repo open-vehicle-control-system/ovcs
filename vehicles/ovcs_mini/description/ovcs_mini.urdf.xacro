@@ -77,6 +77,7 @@
   <xacro:property name="steering_mass" value="0.05" />
   <xacro:property name="camera_mass" value="0.005" />
   <xacro:property name="imu_mass" value="0.005" />
+  <xacro:property name="ray_sensor_mass" value="0.005" />
 
   <!-- ── Derived ────────────────────────────────────────────────── -->
   <xacro:property name="half_wheelbase" value="${wheelbase / 2}" />
@@ -186,6 +187,19 @@
        real mounting position has not been measured. Harmless while
        only orientation is consumed. 100 Hz is the BNO085's cadence. -->
   <xacro:sim_imu name="imu" x="0" y="0" z="0.05" rate="100" />
+
+  <!-- Mounts as the ROS bridge's static transforms have them
+       (`OvcsMini`'s `lidar_transform/0`, `rear_ultrasound_transforms/0`).
+       The lidar's row stops a step short of +π, which would repeat its first ray. -->
+  <xacro:sim_ray name="lidar" x="-0.137" y="0" z="0.205" yaw="0"
+                 topic="scan_raw" samples="500"
+                 min_angle="${-pi}" max_angle="${pi - 2 * pi / 500}" min_range="0.05" max_range="12.0" rate="10" />
+  <xacro:sim_ray name="ultrasound_rear_left" x="-0.2976" y="0.0418" z="0.110"
+                 yaw="${radians(170)}" topic="ultrasound/rear_left_raw" samples="13"
+                 min_angle="${radians(-30)}" max_angle="${radians(30)}" min_range="0.03" max_range="4.5" rate="10" />
+  <xacro:sim_ray name="ultrasound_rear_right" x="-0.2976" y="-0.0418" z="0.110"
+                 yaw="${radians(-170)}" topic="ultrasound/rear_right_raw" samples="13"
+                 min_angle="${radians(-30)}" max_angle="${radians(30)}" min_range="0.03" max_range="4.5" rate="10" />
 
   <xacro:include filename="gazebo_ackermann.xacro" />
 </robot>
