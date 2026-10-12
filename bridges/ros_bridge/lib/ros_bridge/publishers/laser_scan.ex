@@ -6,9 +6,11 @@ defmodule RosBridge.Publishers.LaserScan do
   `LaserScan` wants ranges at evenly spaced angles, and a spinning
   sensor's measurements are not, so each revolution is binned into
   `:bins` slots over `[-π, π)`, each keeping its nearest return (an
-  obstacle is never hidden by a farther point in the same slot) and
-  0.0 when it has none. `time_increment` is 0: the bins are not in
-  measurement order.
+  obstacle is never hidden by a farther point in the same slot). A slot
+  whose points all came back empty (a distance of 0.0, or beyond the
+  range) is `+Inf`, REP 117's no return, which a costmap clears
+  through; a slot with no point at all is 0.0, invalid.
+  `time_increment` is 0: the bins are not in measurement order.
 
   ## Options
 
@@ -63,12 +65,16 @@ defmodule RosBridge.Publishers.LaserScan do
 
     slots =
       Enum.reduce(scan.points, %{}, fn
-        {_angle, distance, _quality}, slots when distance < range_min or distance > range_max ->
+        {angle, distance, _quality}, slots when distance == 0.0 or distance > range_max ->
+          Map.put_new(slots, slot_index(angle, angle_increment_rad, bins), {:infinity, 0})
+
+        {_angle, distance, _quality}, slots when distance < range_min ->
           slots
 
         {angle, distance, quality}, slots ->
           slot = slot_index(angle, angle_increment_rad, bins)
 
+          # An atom, `:infinity` sorts after every distance.
           Map.update(slots, slot, {distance, quality}, fn {kept_distance, _} = existing ->
             if distance < kept_distance, do: {distance, quality}, else: existing
           end)

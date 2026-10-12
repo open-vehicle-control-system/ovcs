@@ -2,7 +2,8 @@ defmodule Ros2.SensorMsgs.Msg.LaserScan do
   @moduledoc """
   ROS 2 `sensor_msgs/LaserScan`: one revolution of a planar scanner,
   as ranges at evenly spaced angles from `angle_min`. A range outside
-  `range_min..range_max` (here 0.0) means no return.
+  `range_min..range_max` is not a measurement; REP 117's `+Inf` means
+  no return.
   """
 
   import Ros2.Cdr
