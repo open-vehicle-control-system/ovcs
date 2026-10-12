@@ -55,7 +55,8 @@ defmodule RosBridge.Components do
         * `:driver` (required, module — `A02YYUW.UART`)
         * `:name` (required) — the instance's name, unique per sensor
         * `:driver_opts` — forwarded to the driver (`serial_number:`, ...)
-        * `:topic`, `:frame_id` (required), `:radiation_type`
+        * `:topic`, `:frame_id` (required), `:radiation_type`,
+          `:beyond_range`
     * `:odometry_publisher` — `RosBridge.Publishers.Odometry`,
       dead-reckoning `/odom` and the `odom → base_link` transform from
       the VMS's `vehicle_motion` CAN frame and the IMU heading. Opts:

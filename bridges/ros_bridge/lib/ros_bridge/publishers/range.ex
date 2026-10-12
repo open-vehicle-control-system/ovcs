@@ -10,6 +10,10 @@ defmodule RosBridge.Publishers.Range do
     * `:name` (required) — the driver instance's name
     * `:topic`, `:frame_id` (required)
     * `:radiation_type` — `:ultrasound` (default) or `:infrared`
+    * `:beyond_range` — what a reading beyond the sensor's range
+      publishes: `:infinity` (default, REP 117) or `:max_range`, for
+      Nav2's `RangeSensorLayer`, which drops infinities and clears only
+      on a reading of exactly `max_range`
   """
   use GenServer
   require Logger
@@ -31,7 +35,8 @@ defmodule RosBridge.Publishers.Range do
     state = %{
       topic: Keyword.fetch!(opts, :topic),
       frame_id: Keyword.fetch!(opts, :frame_id),
-      radiation_type: Keyword.get(opts, :radiation_type, :ultrasound)
+      radiation_type: Keyword.get(opts, :radiation_type, :ultrasound),
+      beyond_range: Keyword.get(opts, :beyond_range, :infinity)
     }
 
     driver.register_listener(Keyword.fetch!(opts, :name), self())
@@ -57,6 +62,7 @@ defmodule RosBridge.Publishers.Range do
       range:
         case sample.distance do
           :below_range -> :neg_infinity
+          :beyond_range when state.beyond_range == :max_range -> max_range_m
           :beyond_range -> :infinity
           metres -> metres
         end
