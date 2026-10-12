@@ -35,8 +35,11 @@
 <sdf version="1.10">
   <world name="workshop">
 
-    <physics name="1ms" type="ignored">
-      <max_step_size>0.001</max_step_size>
+    <!-- Gazebo publishes /clock once per step, so the step is also the
+         clock's rate, which every ROS node with use_sim_time receives.
+         It divides the IMU's 100 Hz and the odometry's 50 Hz. -->
+    <physics name="5ms" type="ignored">
+      <max_step_size>0.005</max_step_size>
       <real_time_factor>1.0</real_time_factor>
     </physics>
 

@@ -57,6 +57,7 @@ Details that read like bugs until you know them:
 - **Cameras go through `image_bridge`**, for bandwidth ([Perception](#perception-against-the-simulator)).
 - **`use_sim_time: true`** on every node ([Time](#time)).
 - **`GZ_IP=127.0.0.1`** on the `sim` and `gz-gui` services. They share the host's network, which has several interfaces, and without it gz-transport discovery leaves some subscriptions unconnected: on about one start in two a bridged topic (`/clock`, `/simulator/odom`, `/imu_raw`) never reached ROS, for every subscriber, until another Gazebo subscriber to it appeared ([gz-transport#225](https://github.com/gazebosim/gz-transport/issues/225) has the same symptom). Pinned, ten starts out of ten delivered every topic.
+- **The world steps every 5 ms.** Gazebo publishes `/clock` once per step, so that is also the clock's rate, 200 Hz, which every node with `use_sim_time` receives. On the OVCS Mini reference vehicle a steady arc steers and turns the same as with a 1 ms step (0.5835 ± 0.008 rad/s for 0.6 commanded, either way).
 
 The model lives with its vehicle, in `vehicles/<vehicle>/description/` beside the `simulation.yaml` that names its sensors, and is mounted into the container rather than baked in. `OVCS_VEHICLE` in `compose/local/.env` picks the vehicle; the OVCS Mini reference vehicle's is the worked example ([Simulation](../compose/local/simulation/README.md#your-vehicle-in-the-simulator)).
 
