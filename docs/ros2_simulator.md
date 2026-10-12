@@ -158,7 +158,7 @@ Nav2 ◄── /odom + /tf ── Publishers.Odometry ◄── 0x60B ── VMS
                                 └──────────────── /imu_raw (heading) ◄────────────────────┘
 ```
 
-The plant is framework; what it emulates is the vehicle's. Each piece of hardware is a `RosBridge.Simulator.SimulatedComponent`, the inverse of the VMS component that drives it, named after it and reading and writing its frames by name: `SimulatedComponents.Vesc.MotorController`, `SimulatedComponents.OVCS.GenericController`, `SimulatedComponents.Traxxas.Steering` and `SimulatedComponents.OVCS.RadioControl` are the OVCS Mini reference vehicle's set. A vehicle with other hardware adds simulated components; `RosBridge.Simulator.Vehicle`, the motion they act on, knows none of them. The OVCS Mini wires it into its `ros` bridge with `OVCS_SIM`, in `ros_simulator_config/0`, and declares its frames in `priv/can/bridges/ros_simulator.yml`, merged into the bridge's CAN topology on the host only.
+The plant is framework; what it emulates is the vehicle's. Each piece of hardware is a `RosBridge.Simulator.SimulatedComponent`, the inverse of the VMS component that drives it, named after it and reading and writing its frames by name: `SimulatedComponents.Vesc.MotorController`, `SimulatedComponents.OVCS.GenericController`, `SimulatedComponents.Traxxas.Steering` and `SimulatedComponents.OVCS.RadioControl` are the OVCS Mini reference vehicle's set. A vehicle with other hardware adds simulated components; `RosBridge.Simulator.Vehicle`, the motion they act on, knows none of them. The OVCS Mini wires it into its `ros` bridge with `OVCS_SIM`, in `ros_simulation_config/0`, and declares its frames in `priv/can/bridges/ros_simulated_components.yml`, merged into the bridge's CAN topology on the host only.
 
 Three things are particular to the simulator:
 
@@ -335,7 +335,7 @@ Or open Foxglove Studio against `ws://<docker-host>:8765` and subscribe to `/ovc
 | the actuator command path | `bridges/ros_bridge/lib/ros_bridge/consumers/joy.ex` | `libraries/ovcs_can/priv/can/components/ovcs/0x2B0_ros_actuator_command.yml`, `vms/core/lib/vms_core/components/ovcs/ros_actuator_command/` |
 | the velocity command path | `bridges/ros_bridge/lib/ros_bridge/consumers/velocity.ex` | `0x2B1_ros_velocity_command.yml`, `vms/core/lib/vms_core/components/ovcs/ros_velocity_command.ex` |
 | odometry on the vehicle | `bridges/ros_bridge/lib/ros_bridge/publishers/odometry.ex` | `0x60B_vehicle_motion.yml`, `vms/core/lib/vms_core/components/ovcs/vehicle_motion.ex` |
-| the VMS in the simulator's loop | `bridges/ros_bridge/lib/ros_bridge/simulator/plant.ex` | `simulator/vehicle.ex`, `simulator/simulated_components/`, `ros_simulator_config/0` in `vehicles/ovcs_mini/lib/ovcs_mini.ex` |
+| the VMS in the simulator's loop | `bridges/ros_bridge/lib/ros_bridge/simulator/plant.ex` | `simulator/vehicle.ex`, `simulator/simulated_components/`, `ros_simulation_config/0` in `vehicles/ovcs_mini/lib/ovcs_mini.ex` |
 | who commands the vehicle | [Your vehicle package](./vehicle_package.md#control-levels-who-commands-and-which-ros-node) | `vms/core/lib/vms_core/managers/control_level.ex` |
 | Nav2's configuration | `vehicles/ovcs_mini/nav2/nav2.yaml`, the OVCS Mini reference vehicle's (heavily commented) | `nav2_ackermann_bt.xml` beside it |
 | the perception pipeline | [Perception: object detection](./ros2_perception.md) | `bridges/ros_bridge/lib/ros_bridge/camera/zenoh.ex`, `stereo_camera/supervisor.ex` |

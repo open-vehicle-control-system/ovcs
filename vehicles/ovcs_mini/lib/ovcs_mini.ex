@@ -44,12 +44,12 @@ defmodule OvcsMini do
         default_can_mapping: %{host: "ovcs:vcan0", target: "ovcs:spi0.0"}
       },
       # On the host it also declares the frames of the hardware its
-      # simulator plant answers for, see `ros_simulator_config/0`.
+      # simulator plant answers for, see `ros_simulation_config/0`.
       "ros" => %{
         target: :ovcs_base_can_system_rpi4,
         bridges: [RosBridge],
         can_config_path: %{
-          host: ["can/bridges/ros.yml", "can/bridges/ros_simulator.yml"],
+          host: ["can/bridges/ros.yml", "can/bridges/ros_simulated_components.yml"],
           target: "can/bridges/ros.yml"
         },
         default_can_mapping: %{host: "ovcs:vcan0,misc:vcan1", target: "ovcs:spi0.0"}
@@ -105,7 +105,7 @@ defmodule OvcsMini do
 
   def ros_bridge_config(:host, _firmware_id) do
     if System.get_env("OVCS_SIM") in ["1", "true"],
-      do: ros_simulator_config(),
+      do: ros_simulation_config(),
       else: ros_host_config()
   end
 
@@ -143,7 +143,7 @@ defmodule OvcsMini do
   # The `ros` bridge against the simulator, chosen with OVCS_SIM: the
   # plant answers for the Mini's hardware, so the VMS commands Gazebo's
   # physics over CAN, and the IMU is Gazebo's.
-  defp ros_simulator_config do
+  defp ros_simulation_config do
     %RosBridge.Config{
       zenoh_endpoint_ip: System.get_env("ZENOH_ENDPOINT_IP", "127.0.0.1"),
       node_name: "ovcs_bridge_ros",
