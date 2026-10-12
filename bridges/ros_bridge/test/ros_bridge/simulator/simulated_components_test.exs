@@ -23,7 +23,7 @@ defmodule RosBridge.Simulator.SimulatedComponentsTest do
     do: %Vehicle{
       wheelbase_m: 0.324,
       wheel_radius_m: @wheel_radius,
-      speed_m_s: speed,
+      commanded_speed_m_s: speed,
       measured_speed_m_s: speed
     }
 
@@ -51,6 +51,32 @@ defmodule RosBridge.Simulator.SimulatedComponentsTest do
     test "a set_rpm under the minimum erpm brakes to a stop" do
       state = MotorController.handle_frame("vesc_set_rpm", signals(%{"erpm" => 200}), vesc(), 0)
       assert MotorController.actuations(state, vehicle(0.3), 10) == [{:speed, 0.0}]
+    end
+
+    test "set_duty sets its share of the full-duty speed" do
+      state = MotorController.handle_frame("vesc_set_duty", signals(%{"duty" => 0.5}), vesc(), 0)
+      assert MotorController.actuations(state, vehicle(0.0), 10) == [{:speed, 1.5}]
+    end
+
+    test "set_current_brake decelerates, and reports a negative motor current" do
+      brake = signals(%{"current" => Decimal.new("4.0")})
+      state = MotorController.handle_frame("vesc_set_current_brake", brake, vesc(), 0)
+
+      assert MotorController.actuations(state, vehicle(0.5), 10) == [{:deceleration, 2.0}]
+
+      {_state, [{_, "vesc_status", status}, _]} =
+        MotorController.step(state, vehicle(0.5), @dt, 10)
+
+      assert Decimal.equal?(status["motor_current"], Decimal.new("-4.0"))
+    end
+
+    test "the tachometer wraps as a signed 32-bit counter" do
+      state = %{vesc() | tachometer: 2_147_483_647.0 + 10}
+
+      {_state, [_, {_, "vesc_status_5", status_5}]} =
+        MotorController.step(state, vehicle(0.0), @dt, 0)
+
+      assert status_5["tachometer"] == -2_147_483_639
     end
 
     test "the motor is released once commands stop for the timeout" do
@@ -120,26 +146,33 @@ defmodule RosBridge.Simulator.SimulatedComponentsTest do
       assert_in_delta spur_rpm * 54 / 13, motor_rpm(speed), motor_rpm(speed) * 0.02
     end
 
-    test "the alive counter steps once per alive frame, not per tick" do
-      {state, _, _} = GenericController.init([])
+    test "the pulse count wraps at 16 bits, and the frequency drops to zero without pulses" do
+      {state, _, _} =
+        GenericController.init(
+          pulse: %{shaft_turns_per_wheel_turn: 1.0, pulses_per_revolution: 1}
+        )
 
-      {_state, [{_, _, alive}]} =
-        Enum.reduce(1..25, {state, []}, fn _, {state, _} ->
-          GenericController.step(state, vehicle(0.0), @dt, 0)
-        end)
+      one_turn = %{vehicle(1.0) | wheel_turns_step: 1.0}
+      state = %{state | pulses: 65_535.0}
+      {state, [{_, _, counting}]} = GenericController.step(state, one_turn, @dt, 0)
+      assert counting["pulse_pin0_count"] == 0
+      assert Decimal.to_float(counting["pulse_pin0_frequency"]) > 0
 
-      assert alive["counter"] == 2
+      still = %{vehicle(1.0) | wheel_turns_step: 0.0}
+      {_state, [{_, _, stopped}]} = GenericController.step(state, still, 2.5, 0)
+      assert Decimal.to_float(stopped["pulse_pin0_frequency"]) == 0.0
     end
 
-    test "no pulse frame without a pulse sensor" do
-      {_, [], emitted} = GenericController.init([])
+    test "no pulse frame without a pulse sensor, and nothing to report each tick" do
+      {state, [], emitted} = GenericController.init([])
       refute List.keymember?(emitted, "main_controller_pulse_counter_status", 1)
+      assert GenericController.step(state, vehicle(0.0), @dt, 0) == {state, []}
     end
   end
 
   describe "Traxxas.Steering" do
     setup do
-      {state, _, _} = Steering.init(steering_limit_rad: 0.52, neutral: 0.05)
+      {state, _, _} = Steering.init(steering_limit_rad: 0.52, steering_sign: -1, neutral: 0.05)
       %{servo: state}
     end
 
@@ -150,6 +183,16 @@ defmodule RosBridge.Simulator.SimulatedComponentsTest do
     test "a positive request steers right, a negative REP-103 angle", %{servo: servo} do
       assert Steering.angle(0.19, servo) < 0
       assert Steering.angle(0.11, servo) > 0
+    end
+
+    test "the opposite steering sign turns the other way", %{servo: servo} do
+      assert Steering.angle(0.19, %{servo | steering_sign: 1}) > 0
+    end
+
+    test "reads the duty cycle as the VMS sends it, an integer share of 65 535", %{servo: servo} do
+      frame = signals(%{"enabled" => true, "duty_cycle" => round(0.20 * 65_535)})
+      steered = Steering.handle_frame("main_controller_external_pwm0_request", frame, servo, 0)
+      assert_in_delta steered.angle, -(1 - 0.05) * 0.52, 1.0e-3
     end
 
     test "a disabled PWM holds the wheels", %{servo: servo} do

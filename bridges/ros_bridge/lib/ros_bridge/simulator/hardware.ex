@@ -85,7 +85,8 @@ defmodule RosBridge.Simulator.Hardware do
     actuations =
       Enum.flat_map(state.components, &SimulatedComponent.actuations(&1, state.vehicle, now_ms))
 
-    vehicle = Vehicle.step(state.vehicle, actuations, dt_s, wheel_turns_step(state))
+    wheel_turns_step = wheel_turns_step(state.wheel_turns, state.wheel_turns_read)
+    vehicle = Vehicle.step(state.vehicle, actuations, dt_s, wheel_turns_step)
     components = Enum.map(state.components, &SimulatedComponent.step(&1, vehicle, dt_s, now_ms))
     publish_drive(vehicle)
 
@@ -100,7 +101,8 @@ defmodule RosBridge.Simulator.Hardware do
   end
 
   def handle_info({:handle_frame, %Frame{} = frame}, state) do
-    components = Enum.map(state.components, &SimulatedComponent.handle_frame(&1, frame, now_ms()))
+    now_ms = now_ms()
+    components = Enum.map(state.components, &SimulatedComponent.handle_frame(&1, frame, now_ms))
     {:noreply, %{state | components: components}}
   end
 
@@ -113,10 +115,14 @@ defmodule RosBridge.Simulator.Hardware do
 
   def handle_info(_message, state), do: {:noreply, state}
 
-  defp wheel_turns_step(%{wheel_turns: nil}), do: nil
-
-  defp wheel_turns_step(state),
-    do: state.wheel_turns - (state.wheel_turns_read || state.wheel_turns)
+  @doc """
+  How far the wheels turned since the last tick, from the latest sample
+  and the one the last tick read: nil before any sample, 0 for the first.
+  Pure.
+  """
+  def wheel_turns_step(nil, _read), do: nil
+  def wheel_turns_step(_turns, nil), do: 0.0
+  def wheel_turns_step(turns, read), do: turns - read
 
   @doc "`wheel_joints`' mean position in `joint_state`, in turns; nil if one is missing. Pure."
   def wheel_turns(%JointState{name: names, position: positions}, wheel_joints) do
@@ -130,7 +136,7 @@ defmodule RosBridge.Simulator.Hardware do
 
   defp publish_drive(vehicle) do
     twist = %Twist{
-      linear: %Vector3{x: vehicle.speed_m_s, y: 0.0, z: 0.0},
+      linear: %Vector3{x: vehicle.commanded_speed_m_s, y: 0.0, z: 0.0},
       angular: %Vector3{x: 0.0, y: 0.0, z: Vehicle.yaw_rate(vehicle)}
     }
 

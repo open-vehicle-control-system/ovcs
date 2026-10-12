@@ -4,16 +4,19 @@ defmodule RosBridge.Simulator.SimulatedComponents.Traxxas.Steering do
   inverse of `VmsCore.Components.Traxxas.Steering`.
 
   The request is recovered from the duty cycle the way that component
-  builds it, 15 % ± 5 % of the period, and turned into a steering
-  angle: a request of 1 is full lock to the right, `-:steering_limit_rad`
-  in REP-103. A disabled PWM leaves the wheels where they were. The
-  servo is instant.
+  builds it, 15 % ± 5 % of the period, and turned into a steering angle:
+  `:steering_sign · (request − :neutral) · :steering_limit_rad`, REP-103.
+  A disabled PWM leaves the wheels where they were. The servo is
+  instant.
 
   ## Options
 
     * `:controller` (`"main_controller"`), `:pwm` (`0`), `:network`
       (`:ovcs`) — whose request frame to read.
     * `:steering_limit_rad` (required).
+    * `:steering_sign` (required) — `1` if a positive request turns
+      left, `-1` if it turns right: the sign the vehicle's
+      `RosVelocityCommand` uses.
     * `:neutral` (`0.0`) — the request that drives straight: the trim
       the VMS adds to centre a servo whose neutral pulse does not.
   """
@@ -33,6 +36,7 @@ defmodule RosBridge.Simulator.SimulatedComponents.Traxxas.Steering do
 
     state = %{
       steering_limit_rad: Map.fetch!(opts, :steering_limit_rad),
+      steering_sign: Map.fetch!(opts, :steering_sign),
       neutral: Map.get(opts, :neutral, 0.0),
       angle: 0.0
     }
@@ -54,12 +58,9 @@ defmodule RosBridge.Simulator.SimulatedComponents.Traxxas.Steering do
   @impl RosBridge.Simulator.SimulatedComponent
   def actuations(state, _vehicle, _now_ms), do: [{:steering, state.angle}]
 
-  @impl RosBridge.Simulator.SimulatedComponent
-  def step(state, _vehicle, _dt_s, _now_ms), do: {state, []}
-
   @doc "The REP-103 steering angle for a duty cycle fraction of the period."
   def angle(duty_fraction, state) do
     request = ((duty_fraction - @center) / @half_travel) |> max(-1.0) |> min(1.0)
-    -(request - state.neutral) * state.steering_limit_rad
+    state.steering_sign * (request - state.neutral) * state.steering_limit_rad
   end
 end

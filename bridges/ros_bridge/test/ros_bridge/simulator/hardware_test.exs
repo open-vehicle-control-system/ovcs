@@ -18,6 +18,12 @@ defmodule RosBridge.Simulator.HardwareTest do
                     1.0e-9
   end
 
+  test "the wheels' turn since the last tick: none before a sample, zero for the first" do
+    assert Hardware.wheel_turns_step(nil, nil) == nil
+    assert Hardware.wheel_turns_step(4.25, nil) == 0.0
+    assert Hardware.wheel_turns_step(4.25, 4.0) == 0.25
+  end
+
   test "reads nothing when a wheel or its position is missing" do
     assert Hardware.wheel_turns(joint_state([]), @wheels) == nil
     assert Hardware.wheel_turns(joint_state([0.3, 1.0, 2.0]), ["other_wheel"]) == nil

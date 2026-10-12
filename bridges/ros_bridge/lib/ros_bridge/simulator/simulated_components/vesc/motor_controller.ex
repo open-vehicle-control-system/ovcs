@@ -15,9 +15,9 @@ defmodule RosBridge.Simulator.SimulatedComponents.Vesc.MotorController do
     * `set_current_brake` decelerates it by the same scale, down to a
       stop.
 
-  It reports `status` (erpm, motor current, duty) and `status_5`
-  (tachometer, input voltage), both from the vehicle's speed through
-  `:motor_to_wheel_ratio`.
+  It reports `status` (erpm, motor current, duty) from the wheels'
+  measured speed and `status_5` (tachometer, input voltage) from how far
+  they turned, both through `:motor_to_wheel_ratio`.
 
   ## Options
 
@@ -25,8 +25,9 @@ defmodule RosBridge.Simulator.SimulatedComponents.Vesc.MotorController do
       underscored process name.
     * `:network` (`:misc`).
     * `:pole_pairs`, `:motor_to_wheel_ratio` (required).
-    * `:min_erpm` (`900`), `:full_duty_speed_m_s` (`3.0`), `:acceleration_per_ampere` (`0.5`),
-      `:command_timeout_ms` (`1_000`), `:input_voltage` (`12.0`).
+    * `:min_erpm` (`900`), `:full_duty_speed_m_s` (`3.0`),
+      `:acceleration_per_ampere` (`0.5`), `:command_timeout_ms` (`1_000`),
+      `:input_voltage` (`12.0`).
   """
   @behaviour RosBridge.Simulator.SimulatedComponent
 
@@ -42,27 +43,28 @@ defmodule RosBridge.Simulator.SimulatedComponents.Vesc.MotorController do
     input_voltage: 12.0
   }
 
+  @commands [:set_duty, :set_current, :set_current_brake, :set_rpm]
+
   @impl RosBridge.Simulator.SimulatedComponent
   def init(opts) do
+    opts = Map.merge(@defaults, Map.new(opts))
+    _ = {Map.fetch!(opts, :pole_pairs), Map.fetch!(opts, :motor_to_wheel_ratio)}
+
     state =
-      @defaults
-      |> Map.merge(Map.new(opts))
-      |> Map.merge(%{command: :release, command_at_ms: nil, tachometer: 0.0})
+      Map.merge(opts, %{
+        commands: Map.new(@commands, &{"#{opts.name}_#{&1}", &1}),
+        status: "#{opts.name}_status",
+        status_5: "#{opts.name}_status_5",
+        command: :release,
+        command_at_ms: nil,
+        tachometer: 0.0
+      })
 
-    for key <- [:pole_pairs, :motor_to_wheel_ratio],
-        not Map.has_key?(state, key),
-        do: raise(ArgumentError, "#{inspect(__MODULE__)} needs #{inspect(key)}")
-
-    names = frame_names(state.name)
-    state = Map.put(state, :frames, names)
-
-    received =
-      for frame <- [:set_duty, :set_current, :set_current_brake, :set_rpm],
-          do: {state.network, names[frame]}
+    received = for name <- Map.keys(state.commands), do: {state.network, name}
 
     emitted = [
-      {state.network, names.status, status(state, 0, 0.0, 0.0)},
-      {state.network, names.status_5, status_5(state)}
+      {state.network, state.status, status(state, 0, 0.0, 0.0)},
+      {state.network, state.status_5, status_5(state)}
     ]
 
     {state, received, emitted}
@@ -71,7 +73,7 @@ defmodule RosBridge.Simulator.SimulatedComponents.Vesc.MotorController do
   @impl RosBridge.Simulator.SimulatedComponent
   def handle_frame(name, signals, state, now_ms) do
     command =
-      case frame_kind(state.frames, name) do
+      case state.commands[name] do
         :set_duty -> {:duty, float(signals, "duty")}
         :set_current -> {:current, float(signals, "current")}
         :set_current_brake -> {:brake, float(signals, "current")}
@@ -100,14 +102,14 @@ defmodule RosBridge.Simulator.SimulatedComponents.Vesc.MotorController do
 
     {state,
      [
-       {state.network, state.frames.status,
+       {state.network, state.status,
         status(
           state,
           erpm(state, vehicle),
           motor_current(state, now_ms),
           vehicle.measured_speed_m_s
         )},
-       {state.network, state.frames.status_5, status_5(state)}
+       {state.network, state.status_5, status_5(state)}
      ]}
   end
 
@@ -135,7 +137,7 @@ defmodule RosBridge.Simulator.SimulatedComponents.Vesc.MotorController do
 
   defp status_5(state) do
     %{
-      "tachometer" => int32(trunc(state.tachometer)),
+      "tachometer" => int32(floor(state.tachometer)),
       "input_voltage" => decimal(state.input_voltage, 1)
     }
   end
@@ -154,19 +156,5 @@ defmodule RosBridge.Simulator.SimulatedComponents.Vesc.MotorController do
   defp int32(value) do
     <<wrapped::signed-integer-size(32)>> = <<value::signed-integer-size(32)>>
     wrapped
-  end
-
-  defp frame_kind(frames, name) do
-    Enum.find_value([:set_duty, :set_current, :set_current_brake, :set_rpm], fn kind ->
-      if frames[kind] == name, do: kind
-    end)
-  end
-
-  @doc false
-  def frame_names(name) do
-    Map.new(
-      [:set_duty, :set_current, :set_current_brake, :set_rpm, :status, :status_5],
-      fn kind -> {kind, "#{name}_#{kind}"} end
-    )
   end
 end

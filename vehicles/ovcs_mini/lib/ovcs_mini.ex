@@ -200,7 +200,9 @@ defmodule OvcsMini do
            pulses_per_revolution: drivetrain.pulses_per_revolution
          }},
         {RosBridge.Simulator.SimulatedComponents.Traxxas.Steering,
-         steering_limit_rad: geometry().steering_limit, neutral: drivetrain.steering_trim},
+         steering_limit_rad: geometry().steering_limit,
+         steering_sign: drivetrain.steering_sign,
+         neutral: drivetrain.steering_trim},
         {RosBridge.Simulator.SimulatedComponents.OVCS.RadioControl, radio_control_script()}
       ]
     ]

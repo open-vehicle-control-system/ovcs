@@ -23,14 +23,20 @@ defmodule RosBridge.Simulator.SimulatedComponents.OVCS.GenericController do
 
   import RosBridge.Simulator.SimulatedComponent, only: [decimal: 2]
 
+  # The VMS reads the status and the board errors, never the counter.
+  @alive %{
+    "counter" => 0,
+    "status" => "OK",
+    "expansion_board1_last_error" => "OK",
+    "expansion_board2_last_error" => "OK"
+  }
+
   @digital_pins 0..18
                 |> Map.new(fn pin -> {"digital_pin#{pin}_enabled", false} end)
                 |> Map.put("filler0", 0)
   # The controller reports zero once no edge has arrived for this long.
   @pulse_timeout_s 2.0
   @counter_range 65_536
-  # The alive frame's period: its counter steps once per frame sent.
-  @alive_period_s 0.1
 
   @impl RosBridge.Simulator.SimulatedComponent
   def init(opts) do
@@ -43,14 +49,13 @@ defmodule RosBridge.Simulator.SimulatedComponents.OVCS.GenericController do
       pin_status: "#{name}_digital_and_analog_pin_status",
       pulse_counter: "#{name}_pulse_counter_status",
       pulse: Map.get(opts, :pulse),
-      elapsed_s: 0.0,
       pulses: 0.0,
       since_pulse_s: nil
     }
 
     emitted =
       [
-        {state.network, state.alive, alive(0)},
+        {state.network, state.alive, @alive},
         {state.network, state.pin_status, pin_status(Map.get(opts, :analog_pins, %{}))}
       ] ++
         if(state.pulse,
@@ -63,14 +68,9 @@ defmodule RosBridge.Simulator.SimulatedComponents.OVCS.GenericController do
 
   @impl RosBridge.Simulator.SimulatedComponent
   def step(state, vehicle, dt_s, _now_ms) do
-    state = %{state | elapsed_s: state.elapsed_s + dt_s}
-
-    alive =
-      {state.network, state.alive, alive(rem(trunc(state.elapsed_s / @alive_period_s), 256))}
-
     case state.pulse do
       nil ->
-        {state, [alive]}
+        {state, []}
 
       pulse ->
         pulses_per_wheel_turn = pulse.shaft_turns_per_wheel_turn * pulse.pulses_per_revolution
@@ -81,7 +81,7 @@ defmodule RosBridge.Simulator.SimulatedComponents.OVCS.GenericController do
           abs(vehicle.measured_speed_m_s) / (2 * :math.pi() * vehicle.wheel_radius_m) *
             pulses_per_wheel_turn
 
-        {state, [alive, {state.network, state.pulse_counter, pulse_counter(state, frequency)}]}
+        {state, [{state.network, state.pulse_counter, pulse_counter(state, frequency)}]}
     end
   end
 
@@ -90,7 +90,7 @@ defmodule RosBridge.Simulator.SimulatedComponents.OVCS.GenericController do
 
     since_pulse_s =
       cond do
-        trunc(pulses) > trunc(state.pulses) -> 0.0
+        floor(pulses) > floor(state.pulses) -> 0.0
         is_nil(state.since_pulse_s) -> nil
         true -> state.since_pulse_s + dt_s
       end
@@ -98,25 +98,15 @@ defmodule RosBridge.Simulator.SimulatedComponents.OVCS.GenericController do
     %{state | pulses: pulses, since_pulse_s: since_pulse_s}
   end
 
-  @doc false
-  def pulse_counter(state, frequency) do
+  defp pulse_counter(state, frequency) do
     reported =
       if is_nil(state.since_pulse_s) or state.since_pulse_s > @pulse_timeout_s,
         do: 0.0,
         else: frequency
 
     %{
-      "pulse_pin0_count" => rem(trunc(state.pulses), @counter_range),
+      "pulse_pin0_count" => rem(floor(state.pulses), @counter_range),
       "pulse_pin0_frequency" => decimal(reported, 1)
-    }
-  end
-
-  defp alive(counter) do
-    %{
-      "counter" => counter,
-      "status" => "OK",
-      "expansion_board1_last_error" => "OK",
-      "expansion_board2_last_error" => "OK"
     }
   end
 

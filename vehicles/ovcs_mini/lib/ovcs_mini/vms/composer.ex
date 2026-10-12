@@ -61,6 +61,9 @@ defmodule OvcsMini.Vms.Composer do
   @motor_pole_pairs 2
   # Positive steers right: the servo's neutral pulls the car left.
   @steering_trim "0.05"
+  # Measured on the servo: a REP-103 positive yaw rate (Nav2 turning
+  # left) drove it right, so a positive request turns right.
+  @steering_sign -1
 
   @doc """
   The drivetrain as the VMS drives it: what a simulated drivetrain needs
@@ -75,7 +78,8 @@ defmodule OvcsMini.Vms.Composer do
       pole_pairs: @motor_pole_pairs,
       min_motor_current: @min_motor_current,
       max_motor_current: @max_motor_current,
-      steering_trim: String.to_float(@steering_trim)
+      steering_trim: String.to_float(@steering_trim),
+      steering_sign: @steering_sign
     }
 
   @impl VmsCore.Vehicle
@@ -105,16 +109,13 @@ defmodule OvcsMini.Vms.Composer do
       # vehicle's own geometry. Started unconditionally — it emits
       # zeros until something publishes, and whether the drivetrain
       # *reads* it is the channel-5 switch's decision, below.
-      # `steering_sign: -1` was measured on the servo: a REP-103
-      # positive yaw rate (Nav2 turning left) drove this servo right, so
-      # the sign is inverted to match the drivetrain's convention.
       {OVCS.RosVelocityCommand,
        %{
          wheelbase_m: OvcsMini.geometry().wheelbase,
          steering_limit_rad: OvcsMini.geometry().steering_limit,
          max_speed_m_s: @max_speed_m_s,
          min_speed_m_s: @min_speed_m_s,
-         steering_sign: -1
+         steering_sign: @steering_sign
        }},
       {OVCS.RadioControl.Steering,
        %{

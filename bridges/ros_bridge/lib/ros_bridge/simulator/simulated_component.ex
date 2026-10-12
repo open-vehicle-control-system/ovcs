@@ -1,8 +1,8 @@
 defmodule RosBridge.Simulator.SimulatedComponent do
   @moduledoc """
   One piece of a vehicle's hardware, emulated on the CAN bus for
-  `RosBridge.Simulator.Hardware`: a motor controller, a brake booster, a
-  steering sensor, a generic controller.
+  `RosBridge.Simulator.Hardware`: a motor controller, a generic
+  controller, a steering servo, a radio receiver.
 
   A simulated component reads the frames the VMS sends it, acts on
   `RosBridge.Simulator.Vehicle` through actuations, and reports what
@@ -53,7 +53,7 @@ defmodule RosBridge.Simulator.SimulatedComponent do
   @callback step(state :: term(), Vehicle.t(), dt_s :: float(), now_ms :: integer()) ::
               {term(), [update()]}
 
-  @optional_callbacks handle_frame: 4, actuations: 3
+  @optional_callbacks handle_frame: 4, actuations: 3, step: 4
 
   @typedoc "A running simulated component, as `RosBridge.Simulator.Hardware` holds it."
   @type running :: %{module: module(), state: term(), received: MapSet.t(frame())}
@@ -101,15 +101,19 @@ defmodule RosBridge.Simulator.SimulatedComponent do
       else: []
   end
 
-  @doc "Steps the component and emits what it reports."
+  @doc "Steps the component, if it reports anything, and emits what it reports."
   def step(running, vehicle, dt_s, now_ms) do
-    {state, updates} = running.module.step(running.state, vehicle, dt_s, now_ms)
+    if function_exported?(running.module, :step, 4) do
+      {state, updates} = running.module.step(running.state, vehicle, dt_s, now_ms)
 
-    Enum.each(updates, fn {network, frame_name, signals} ->
-      :ok = Cantastic.Emitter.update(network, frame_name, &Map.merge(&1, signals))
-    end)
+      Enum.each(updates, fn {network, frame_name, signals} ->
+        :ok = Cantastic.Emitter.update(network, frame_name, &Map.merge(&1, signals))
+      end)
 
-    %{running | state: state}
+      %{running | state: state}
+    else
+      running
+    end
   end
 
   @doc "A signal's value as a float, whether Cantastic decoded it as a `Decimal` or a number."
