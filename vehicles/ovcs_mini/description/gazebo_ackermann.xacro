@@ -108,6 +108,9 @@
     <plugin filename="gz-sim-joint-state-publisher-system"
             name="gz::sim::systems::JointStatePublisher">
       <topic>/joint_states</topic>
+      <!-- Without it the system publishes every physics step,
+           and robot_state_publisher turns each into a /tf message. -->
+      <update_rate>50</update_rate>
     </plugin>
   </gazebo>
 </robot>
