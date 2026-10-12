@@ -2,16 +2,15 @@
   NavigateToPose for a vehicle that cannot rotate on the spot.
 
   This is Nav2's default nav-to-pose tree with two changes: the recovery
-  fallback drops `Spin`, and `BackUp` is short. On an Ackermann vehicle a spin command produces
+  fallback drops `Spin`, and `BackUp` is slower. On an Ackermann vehicle a spin command produces
   no motion at all — `AckermannSteering` needs forward speed to generate
   yaw — so the behaviour runs its full duration, achieves nothing, and
   the RecoveryNode burns a retry. With Spin first in the list, a single
   transient planning failure is enough to abort the whole action.
 
-  `BackUp` reverses 15 cm at 0.10 m/s: the only obstacle source is the
-  forward stereo pair, so a reverse is driven blind, but without one a
-  car that cannot turn tighter than its radius stays stuck facing an
-  obstacle. 15 cm stays within the ground it has just driven over.
+  `BackUp` reverses 30 cm at 0.10 m/s, checked against the lidar and the
+  rear ultrasonics: without it a car that cannot turn tighter than its
+  radius stays stuck facing an obstacle.
   `Wait` is for a costmap that will clear on its own (a moving
   obstacle).
 
@@ -42,7 +41,7 @@
           <ClearEntireCostmap name="ClearGlobalCostmap-Subtree" service_name="global_costmap/clear_entirely_global_costmap"/>
         </Sequence>
         <!-- No Spin: this vehicle cannot execute one. -->
-        <BackUp backup_dist="0.15" backup_speed="0.10"/>
+        <BackUp backup_dist="0.30" backup_speed="0.10"/>
         <Wait wait_duration="2.0"/>
       </RoundRobin>
     </RecoveryNode>

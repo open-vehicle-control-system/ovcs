@@ -115,9 +115,9 @@ controller_server:
       # About 0.4 m to stop for a newly seen obstacle (reaction plus
       # braking), against the stereo's 3 m and the lidar's 4 m.
       vx_max: 0.8
-      # No reverse: stereo looks forward only, so the costmap behind the
-      # car is always empty.
-      vx_min: 0.0
+      # Behind the car only the lidar and the rear ultrasonics see, so
+      # reverse stays slow; PreferForwardCritic keeps it a last resort.
+      vx_min: -0.3
       wz_max: 2.5
       # From standstill MPPI reaches two steps of ax_max * model_dt, so
       # this also sets how quickly a start clears the smoother's deadband.
@@ -212,7 +212,7 @@ local_costmap:
       # The 568 mm body and 341 mm wheel envelope around base_link, which
       # sits midway between the axles, plus 2 cm.
       footprint: "[[0.30, 0.19], [0.30, -0.19], [-0.30, -0.19], [-0.30, 0.19]]"
-      plugins: ["stvl_layer", "denoise_layer", "lidar_layer", "inflation_layer"]
+      plugins: ["stvl_layer", "denoise_layer", "lidar_layer", "range_layer", "inflation_layer"]
       stvl_layer:
         # The camera looks forward only, so a mark that leaves its view
         # is never seen again; voxels expire instead of persisting.
@@ -283,6 +283,14 @@ local_costmap:
           obstacle_max_range: 4.0
           raytrace_max_range: 5.0
           max_obstacle_height: 0.6
+      range_layer:
+        # The rear ultrasonics, below the lidar's plane. After
+        # denoise_layer: a close obstacle is an arc of two or three cells.
+        # `beyond_range: :max_range` on the bridge makes an empty reading
+        # clear the cone.
+        plugin: "nav2_costmap_2d::RangeSensorLayer"
+        topics: ["/ultrasound/rear_left", "/ultrasound/rear_right"]
+        clear_on_max_reading: true
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
@@ -306,7 +314,7 @@ global_costmap:
       height: 30
       resolution: 0.1
       footprint: "[[0.30, 0.19], [0.30, -0.19], [-0.30, -0.19], [-0.30, 0.19]]"
-      plugins: ["obstacle_layer", "denoise_layer", "lidar_layer", "inflation_layer"]
+      plugins: ["obstacle_layer", "denoise_layer", "lidar_layer", "range_layer", "inflation_layer"]
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         # One cloud, two sources. Heights are in odom, whose z is the
@@ -352,6 +360,14 @@ global_costmap:
           obstacle_max_range: 4.0
           raytrace_max_range: 5.0
           max_obstacle_height: 0.6
+      range_layer:
+        # The rear ultrasonics, below the lidar's plane. After
+        # denoise_layer: a close obstacle is an arc of two or three cells.
+        # `beyond_range: :max_range` on the bridge makes an empty reading
+        # clear the cone.
+        plugin: "nav2_costmap_2d::RangeSensorLayer"
+        topics: ["/ultrasound/rear_left", "/ultrasound/rear_right"]
+        clear_on_max_reading: true
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
@@ -426,8 +442,7 @@ velocity_smoother:
     scale_velocities: false
     feedback: "OPEN_LOOP"
     max_velocity: [0.8, 0.0, 2.5]
-    # Reverse only as fast as BackUp drives; MPPI's vx_min keeps it forward.
-    min_velocity: [-0.10, 0.0, -2.5]
+    min_velocity: [-0.3, 0.0, -2.5]
     max_accel: [1.0, 0.0, 3.0]
     max_decel: [-2.0, 0.0, -3.0]
     # Only noise: the VMS drives any slower non-zero velocity at its
