@@ -52,15 +52,4 @@ defmodule Ros2.NavMsgs.Msg.OdometryTest do
     <<_::binary-size(384 + 40), yaw_rate::little-float-size(64), _::binary>> = body
     assert yaw_rate == -0.5
   end
-
-  test "parse reads back what encode wrote" do
-    assert {:ok, parsed, ""} = Odometry.parse(Odometry.encode(message()))
-    assert parsed == message()
-  end
-
-  test "parse follows the alignment of any frame name length" do
-    odometry = %{message() | child_frame_id: "base"}
-    assert {:ok, parsed, ""} = Odometry.parse(Odometry.encode(odometry))
-    assert parsed.twist.twist.linear.x == 0.75
-  end
 end

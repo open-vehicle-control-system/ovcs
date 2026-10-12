@@ -14,15 +14,7 @@ defmodule Ros2.NavMsgs.Msg.Odometry do
   """
   use Ros2.Common
 
-  alias Ros2.GeometryMsgs.Msg.{
-    Point,
-    Pose,
-    PoseWithCovariance,
-    Quaternion,
-    Twist,
-    TwistWithCovariance
-  }
-
+  alias Ros2.GeometryMsgs.Msg.{PoseWithCovariance, TwistWithCovariance}
   alias Ros2.StdMsgs.Msg.Header
 
   defstruct header: nil,
@@ -43,29 +35,5 @@ defmodule Ros2.NavMsgs.Msg.Odometry do
     |> align_to(8)
     |> Kernel.<>(PoseWithCovariance.encode(odometry.pose))
     |> Kernel.<>(TwistWithCovariance.encode(odometry.twist))
-  end
-
-  def parse(body) when is_binary(body) do
-    with {:ok, header, rest} <- Header.parse(body),
-         {:ok, child_frame_id, rest} <- parse_string(rest),
-         # Alignment is computed against the body origin, not against
-         # the start of this struct.
-         rest = consume_alignment(rest, 8, byte_size(body) - byte_size(rest)),
-         {:ok, [x, y, z], rest} <- parse_float64_array(rest, 3),
-         {:ok, orientation, rest} <- Quaternion.parse(rest),
-         {:ok, pose_covariance, rest} <- parse_float64_array(rest, 36),
-         {:ok, twist, rest} <- Twist.parse(rest),
-         {:ok, twist_covariance, rest} <- parse_float64_array(rest, 36) do
-      {:ok,
-       %__MODULE__{
-         header: header,
-         child_frame_id: child_frame_id,
-         pose: %PoseWithCovariance{
-           pose: %Pose{position: %Point{x: x, y: y, z: z}, orientation: orientation},
-           covariance: pose_covariance
-         },
-         twist: %TwistWithCovariance{twist: twist, covariance: twist_covariance}
-       }, rest}
-    end
   end
 end

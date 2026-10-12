@@ -12,12 +12,12 @@ defmodule RosBridge.Simulator.Plant do
   drive plugin moves the vehicle; the VMS learns how far it went only
   from the devices' telemetry.
 
-  The telemetry measures the simulated world. The plant follows the
-  simulator's ground truth on `:ground_truth_topic`, the model's
-  forward speed, and each step starts from it and reports it: a model
-  held against an obstacle reads as stopped on the VMS's side, as on
-  the vehicle. Without a sample in the last `@ground_truth_stale_ms`,
-  the plant reports its own commanded motion instead.
+  The telemetry measures the simulated wheels, as the vehicle's motor
+  and shaft sensors do: the measured speed, which each step starts from
+  and reports, is the `:wheel_joints`' mean velocity on `joint_states`
+  times the wheel radius. Without a sample in the last
+  `@wheel_speed_stale_ms`, the plant reports its own commanded motion
+  instead.
 
   The vehicle moves in simulator time, as Gazebo's does, through
   `RosBridge.Timing`: with `:simulator_clock` listed before this
@@ -32,8 +32,8 @@ defmodule RosBridge.Simulator.Plant do
       parameters.
     * `:devices` (required) — `{module, opts}` per device.
     * `:drive_topic` (`"simulator/drive"`).
-    * `:ground_truth_topic` (`"simulator/odom"`), a `nav_msgs/Odometry`
-      whose twist is in the vehicle's frame; `nil` for none.
+    * `:wheel_joints` (`[]`) — the joints the drive turns, each positive
+      when rolling forward; none for no measurement.
 
   The bridge firmware's CAN topology must declare every frame the
   devices read and emit, the other way round from the VMS's.
@@ -42,7 +42,7 @@ defmodule RosBridge.Simulator.Plant do
 
   alias Cantastic.{Emitter, Frame, Receiver}
   alias Ros2.GeometryMsgs.Msg.{Twist, Vector3}
-  alias Ros2.NavMsgs.Msg.Odometry
+  alias Ros2.SensorMsgs.Msg.JointState
   alias RosBridge.Simulator.Vehicle
   alias RosBridge.Timing
 
@@ -50,7 +50,7 @@ defmodule RosBridge.Simulator.Plant do
 
   @loop_period_ms 10
   @drive_period_ms 20
-  @ground_truth_stale_ms 200
+  @wheel_speed_stale_ms 200
 
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -70,8 +70,9 @@ defmodule RosBridge.Simulator.Plant do
         %{module: module, state: state, received: MapSet.new(received)}
       end)
 
-    ground_truth_topic = Map.get(opts, :ground_truth_topic, "simulator/odom")
-    if ground_truth_topic, do: :ok = RosBridge.ZenohClient.subscribe(ground_truth_topic, Odometry)
+    wheel_joints = Map.get(opts, :wheel_joints, [])
+
+    if wheel_joints != [], do: :ok = RosBridge.ZenohClient.subscribe("joint_states", JointState)
 
     {:ok, _timer} = :timer.send_interval(@loop_period_ms, :loop)
     Logger.info("#{__MODULE__}: emulating #{Enum.map_join(devices, ", ", &inspect(&1.module))}")
@@ -84,7 +85,8 @@ defmodule RosBridge.Simulator.Plant do
        vehicle_time_ns: vehicle_time_ns(),
        last_step_ms: now_ms(),
        last_drive_ms: now_ms() - @drive_period_ms,
-       ground_truth: nil
+       wheel_joints: wheel_joints,
+       wheel_speed: nil
      }}
   end
 
@@ -101,7 +103,7 @@ defmodule RosBridge.Simulator.Plant do
     vehicle =
       Vehicle.step(state.vehicle, actuations, dt_s,
         wall_dt_s: wall_dt_s,
-        measured_speed_m_s: measured_speed(state.ground_truth, now_ms)
+        measured_speed_m_s: measured_speed(state.wheel_speed, now_ms)
       )
 
     devices = Enum.map(state.devices, &step(&1, vehicle, wall_dt_s, now_ms))
@@ -131,15 +133,29 @@ defmodule RosBridge.Simulator.Plant do
     {:noreply, %{state | devices: devices}}
   end
 
-  def handle_info({:ros_message, {_key_expr, %Odometry{twist: %{twist: twist}}}}, state),
-    do: {:noreply, %{state | ground_truth: {twist.linear.x, now_ms()}}}
+  def handle_info({:ros_message, {_key_expr, %JointState{} = joint_state}}, state) do
+    case wheel_speed(joint_state, state.wheel_joints, state.vehicle.wheel_radius_m) do
+      nil -> {:noreply, state}
+      speed -> {:noreply, %{state | wheel_speed: {speed, now_ms()}}}
+    end
+  end
 
   def handle_info(_message, state), do: {:noreply, state}
 
-  defp measured_speed({speed, at_ms}, now_ms) when now_ms - at_ms <= @ground_truth_stale_ms,
+  defp measured_speed({speed, at_ms}, now_ms) when now_ms - at_ms <= @wheel_speed_stale_ms,
     do: speed
 
-  defp measured_speed(_ground_truth, _now_ms), do: nil
+  defp measured_speed(_wheel_speed, _now_ms), do: nil
+
+  @doc "`wheel_joints`' mean velocity times `wheel_radius_m`; nil if one is missing. Pure."
+  def wheel_speed(%JointState{name: names, velocity: velocities}, wheel_joints, wheel_radius_m) do
+    by_name = Enum.zip(names, velocities) |> Map.new()
+    speeds = Enum.map(wheel_joints, &Map.get(by_name, &1))
+
+    if nil in speeds,
+      do: nil,
+      else: Enum.sum(speeds) / length(speeds) * wheel_radius_m
+  end
 
   defp actuations(device, vehicle, now_ms) do
     if function_exported?(device.module, :actuations, 3),

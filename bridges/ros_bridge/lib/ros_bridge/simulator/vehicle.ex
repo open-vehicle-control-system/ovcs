@@ -21,14 +21,14 @@ defmodule RosBridge.Simulator.Vehicle do
   ## Commanded and measured
 
   `speed_m_s` is what the drive commands: the speed handed to the
-  simulator. `measured_speed_m_s` is the speed the vehicle actually
+  simulator. `measured_speed_m_s` is the speed the wheels actually
   rolled at, the simulator's when a step is given one, and the
   commanded one otherwise. The commanded speed follows the drive but
   stays within `@command_lead_m_s` of the measured one, enough to cover
   the simulator's reply latency and not enough to wind up against an
   obstacle. The distance, the counters and the rates the devices report
-  all follow the measured speed: a vehicle the simulator holds against
-  a wall reads as stopped, as its real sensors would. A measurement
+  all follow the measured speed, as the vehicle's wheel and motor
+  sensors would. A measurement
   within `@standstill_m_s` of zero is zero, physics jitter at rest that
   would otherwise keep the VMS's standstill gate shut.
 

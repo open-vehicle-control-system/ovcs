@@ -78,6 +78,10 @@
   <xacro:property name="camera_mass" value="0.005" />
   <xacro:property name="imu_mass" value="0.005" />
   <xacro:property name="ray_sensor_mass" value="0.005" />
+  <!-- The drive force the simulator plant gives the VESC's 10 A at its
+       0.5 m/s² per ampere (`OvcsMini`), shared by the four wheels: a
+       wheel held back stalls instead of spinning at the commanded speed. -->
+  <xacro:property name="wheel_max_torque" value="${total_mass * 0.5 * 10 * wheel_radius / 4}" />
 
   <!-- ── Derived ────────────────────────────────────────────────── -->
   <xacro:property name="half_wheelbase" value="${wheelbase / 2}" />

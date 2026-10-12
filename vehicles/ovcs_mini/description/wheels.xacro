@@ -53,6 +53,8 @@
       <origin xyz="${x} ${side * half_track} ${wheel_radius}"
               rpy="${-pi/2} 0 0" />
       <axis xyz="0 0 1" />
+      <!-- URDF requires a velocity with the effort; the drive's own limit applies. -->
+      <limit effort="${wheel_max_torque}" velocity="1000" />
       <dynamics damping="0.01" friction="0.0" />
     </joint>
   </xacro:macro>
@@ -97,6 +99,8 @@
       <child link="${name}_wheel" />
       <origin xyz="0 0 0" rpy="${-pi/2} 0 0" />
       <axis xyz="0 0 1" />
+      <!-- URDF requires a velocity with the effort; the drive's own limit applies. -->
+      <limit effort="${wheel_max_torque}" velocity="1000" />
       <dynamics damping="0.01" friction="0.0" />
     </joint>
   </xacro:macro>

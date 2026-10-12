@@ -85,7 +85,7 @@ The VMS takes the gamepad only with the `teleop` commander selected: run with `O
 
 ## Odometry and ground truth
 
-`/odom` and `odom → base_link` are the ROS bridge's, from the VMS's `0x60B` (the wheel distance) and the IMU heading, as on the vehicle. The wheel distance is the simulated world's: the plant reports the speed Gazebo's model actually has, so a model held against an obstacle reads as stopped, as the vehicle's sensors would. `/simulator/odom` is ground truth, the model's pose from the physics, which nothing navigates by: compare the two from a common start to see the dead reckoning drift. The steering system's own odometry follows the wheels rather than the body and is not bridged. See [Ground truth](../../../docs/ros2_simulator.md#ground-truth).
+`/odom` and `odom → base_link` are the ROS bridge's, from the VMS's `0x60B` (the wheel distance) and the IMU heading, as on the vehicle. The wheel distance is the simulated wheels': the plant reports the speed of the wheel joints on `/joint_states`, as the vehicle's motor and shaft sensors measure the wheels, so a wheel spinning in place reads as moving, and one the model's effort limit stalls against an obstacle reads as stopped. `/simulator/odom` is ground truth, the model's pose from the physics, which nothing navigates by: compare the two from a common start to see the dead reckoning drift. The steering system's own odometry follows the wheels rather than the body and is not bridged. See [Ground truth](../../../docs/ros2_simulator.md#ground-truth).
 
 ## Running the perception bridge against it
 
