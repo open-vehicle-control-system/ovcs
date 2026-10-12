@@ -1,9 +1,8 @@
 # Gazebo Jetty + ROS 2 Lyrical image for simulating a vehicle.
 #
-# Separate from the vehicle image on purpose. This one carries Gazebo
-# and its GUI stack — hundreds of megabytes that must never end up on
-# the balena device, which has no display and no use for a physics
-# engine. The vehicle image stays as small as the car needs.
+# Separate from the vehicle image on purpose: Gazebo and its graphical
+# interface are hundreds of megabytes the vehicle, which has no display,
+# never needs.
 #
 # The build context is `compose/`, not this directory, so the Zenoh
 # session template and entrypoint are COPYed from the car's own image
@@ -14,26 +13,14 @@
 
 FROM ros:lyrical-ros-base
 
-# ros-lyrical-ros-gz pulls Gazebo in through the ROS vendor packages
-# (ros-lyrical-gz-sim-vendor and friends) — there is no separate
-# `gz-jetty` package and no OSRF apt repository to add.
-#
-# Lyrical pairs with Gazebo **Jetty** (LTS). That pairing is why the
-# stack moved off Jazzy at all: Jazzy's only supported Gazebo is
-# Harmonic, and Jetty against it is a flat "unsupported" rather than
-# a cautious yes.
-#
-# The model this replaces targeted Gazebo *Classic*, two generations
-# further back and end-of-life, whose
-# `libgazebo_ros_ackermann_drive.so` exists in none of these.
+# ros-lyrical-ros-gz brings Gazebo Jetty, Lyrical's pairing, through the
+# ROS vendor packages: there is no separate Gazebo apt repository to add.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ros-lyrical-ros-gz \
         ros-lyrical-rmw-zenoh-cpp \
         ros-lyrical-xacro \
         ros-lyrical-robot-state-publisher \
-        ros-lyrical-joint-state-publisher \
-        ros-lyrical-tf2-ros \
         gettext-base \
     && rm -rf /var/lib/apt/lists/*
 

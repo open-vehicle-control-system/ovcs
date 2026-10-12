@@ -26,7 +26,7 @@ case OvcsVehicle.Firmware.resolve_bridge(
         [mapping_string]
       }
 
-    # `build_target` was captured from `Mix.target()` in config.exs.
+    # `:host` or `:target`, captured from `Mix.target()` in config.exs.
     build_target = Application.compile_env(:ovcs_bridge, :build_target, :host)
 
     # Vehicle may override the per-bridge YAML path, per build target

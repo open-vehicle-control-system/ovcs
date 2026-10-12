@@ -69,6 +69,66 @@ defmodule OvcsMini.GeometryTest do
     end
   end
 
+  describe "the simulated drivetrain agrees with the VMS and the simulated hardware" do
+    test "the maximum motor current is the composer's" do
+      assert xacro_property("max_motor_current") ==
+               OvcsMini.Vms.Composer.drivetrain().max_motor_current
+    end
+
+    test "the acceleration per ampere is the simulated hardware's" do
+      assert xacro_property("simulated_acceleration_per_ampere") ==
+               OvcsMini.simulated_acceleration_per_ampere()
+    end
+  end
+
+  describe "the simulated sensors sit where the ROS bridge's transforms put them" do
+    # `<xacro:sim_ray name="lidar" x="-0.137" y="0" z="0.205" yaw="0"`, the
+    # yaw either a number or `${radians(n)}`.
+    defp sim_ray(name) do
+      [_, x, y, z, yaw] =
+        Regex.run(
+          ~r/<xacro:sim_ray name="#{name}" x="([^"]+)" y="([^"]+)" z="([^"]+)"\s+yaw="([^"]+)"/,
+          File.read!(@xacro)
+        ) || flunk("No <xacro:sim_ray name=\"#{name}\"> in #{@xacro}.")
+
+      yaw =
+        case Regex.run(~r/^\$\{radians\((-?[\d.]+)\)\}$/, yaw) do
+          [_, degrees] -> number(degrees) * :math.pi() / 180
+          nil -> number(yaw)
+        end
+
+      {number(x), number(y), number(z), yaw}
+    end
+
+    defp number(text) do
+      {value, ""} = Float.parse(text)
+      value
+    end
+
+    defp transforms do
+      %RosBridge.Config{components: components} = OvcsMini.ros_bridge_config(:target, "ros")
+
+      {:static_transforms, transforms: transforms} =
+        List.keyfind(components, :static_transforms, 0)
+
+      Map.new(transforms, &{&1.child, &1})
+    end
+
+    for {ray, frame} <- [
+          {"lidar", "laser"},
+          {"ultrasound_rear_left", "ultrasound_rear_left"},
+          {"ultrasound_rear_right", "ultrasound_rear_right"}
+        ] do
+      test "#{ray}" do
+        {x, y, z, yaw} = sim_ray(unquote(ray))
+        %{translation: {tx, ty, tz}, rotation: {_qx, _qy, qz, qw}} = transforms()[unquote(frame)]
+
+        for {modelled, declared} <- [{x, tx}, {y, ty}, {z, tz}, {yaw, 2 * :math.atan2(qz, qw)}],
+            do: assert_in_delta(modelled, declared, 1.0e-6)
+      end
+    end
+  end
+
   describe "derived values" do
     test "the minimum turning radius follows from the declared geometry" do
       # 0.324 / tan(0.52) = 0.5659 m. Stated here because it is the

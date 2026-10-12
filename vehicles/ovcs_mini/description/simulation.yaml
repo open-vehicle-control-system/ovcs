@@ -5,7 +5,8 @@ gazebo:
   # onto it instead of starting interpenetrated.
   spawn_z: 0.02
   # Sensor topics ros_gz_bridge carries, in its `topic@ros_type[gz_type`
-  # syntax; gazebo.launch.py adds the clock, odometry, tf and joint states.
+  # syntax; gazebo.launch.py adds the clock, joint states, ground-truth
+  # odometry and the drive command.
   bridge_topics:
     # The simulated BNO085, republished on /imu by the Elixir bridge as
     # on the vehicle.

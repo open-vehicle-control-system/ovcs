@@ -92,25 +92,19 @@ defmodule OvcsMini do
     }
 
   @impl RosBridge
-  def ros_bridge_config(:host, "ros_perception") do
-    if System.get_env("OVCS_SIM") in ["1", "true"] do
-      perception_sim_config()
-    else
-      perception_host_config()
-    end
-  end
+  def ros_bridge_config(:host, "ros_perception"),
+    do: if(simulation?(), do: perception_sim_config(), else: perception_host_config())
 
   def ros_bridge_config(:target, "ros_perception"),
     do: perception_target_config()
 
-  def ros_bridge_config(:host, _firmware_id) do
-    if System.get_env("OVCS_SIM") in ["1", "true"],
-      do: ros_simulation_config(),
-      else: ros_host_config()
-  end
+  def ros_bridge_config(:host, _firmware_id),
+    do: if(simulation?(), do: ros_simulation_config(), else: ros_host_config())
 
   def ros_bridge_config(:target, _firmware_id),
     do: ros_target_config()
+
+  defp simulation?, do: System.get_env("OVCS_SIM") in ["1", "true"]
 
   # The Mini runs two ROS bridges on one Zenoh fabric (this one and
   # the perception Pi), so each names its ROS node explicitly —
@@ -168,11 +162,14 @@ defmodule OvcsMini do
   # Not measured: plausible figures for a 1/10 truck on a 2S pack.
   @simulated_battery_voltage 7.4
   @simulated_acceleration_per_ampere 0.5
+  # The Mini's VESC Tool setting, see docs/vesc_drivetrain.md.
+  @vesc_minimum_erpm 300
+
+  @doc false
+  def simulated_acceleration_per_ampere, do: @simulated_acceleration_per_ampere
 
   defp simulated_hardware do
     drivetrain = OvcsMini.Vms.Composer.drivetrain()
-    # The Mini's VESC Tool setting, see docs/vesc_drivetrain.md.
-    vesc_minimum_erpm = 300
 
     [
       vehicle: %{
@@ -189,7 +186,7 @@ defmodule OvcsMini do
         {RosBridge.Simulator.SimulatedComponents.Vesc.MotorController,
          pole_pairs: drivetrain.pole_pairs,
          motor_to_wheel_ratio: drivetrain.motor_to_wheel_ratio,
-         min_erpm: vesc_minimum_erpm,
+         min_erpm: @vesc_minimum_erpm,
          acceleration_per_ampere: @simulated_acceleration_per_ampere,
          input_voltage: @simulated_battery_voltage},
         {RosBridge.Simulator.SimulatedComponents.OVCS.GenericController,
@@ -329,12 +326,8 @@ defmodule OvcsMini do
       components:
         [
           :heartbeat,
-          # First, and only here. Gazebo owns the clock in simulation,
-          # so every stamp this bridge publishes has to be on
-          # simulator time or it will not line up with /tf and /odom —
-          # Nav2's costmaps drop point clouds that do not. On the
-          # vehicle there is no /clock and wall clock is correct, which
-          # is why this appears in no other configuration.
+          # Gazebo owns the clock: stamps on its time line up with /tf
+          # and /odom, which Nav2's costmaps require.
           :simulator_clock,
           stereo_transforms(),
           stereo_component(RosBridge.Camera.Zenoh, :sim)

@@ -30,8 +30,9 @@ manager arbitrates between them.
 The controller and the behaviours do not publish `/cmd_vel_nav`
 themselves: they publish `/cmd_vel_nav_raw`, and the velocity smoother
 republishes it on `/cmd_vel_nav` with its limits and deadband applied.
-The deadband keeps every non-zero linear velocity at or above the
-vehicle's slowest drivable speed; see the vehicle's `nav2.yaml`.
+The deadband zeroes noise; a vehicle whose `RosVelocityCommand` sets
+`:min_speed_m_s` floors slower non-zero speeds there, see its
+`nav2.yaml`.
 """
 
 from launch import LaunchDescription
