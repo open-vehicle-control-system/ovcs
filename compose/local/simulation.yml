@@ -41,6 +41,11 @@ services:
       # directory for now — the model is spawned from
       # /robot_description, not from the resource path.
       GZ_SIM_RESOURCE_PATH: /opt/ovcs/worlds
+      # Every Gazebo process runs on this host, and the host network
+      # has several interfaces. Unpinned, gz-transport discovery picks
+      # among them and some subscriptions never connect: a bridged
+      # topic then stays silent for the whole run.
+      GZ_IP: 127.0.0.1
     volumes:
       # The vehicle's model and simulation.yaml, mounted under its own
       # name.
@@ -115,6 +120,8 @@ services:
     environment:
       DISPLAY: ${DISPLAY:-:0}
       QT_X11_NO_MITSHM: 1
+      # As for `sim`, which it must share an interface with.
+      GZ_IP: 127.0.0.1
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       # The GPU, as for `sim`.
