@@ -25,9 +25,15 @@ vehicles/<vehicle>/
 ```
 
 ```text
-Nav2 ──/cmd_vel_nav──► ROS bridge ──0x2B1──► VMS ──actuator commands─────► hardware ──/simulator/drive──► Gazebo
-                         ▲                      ◄──their status frames──────────┘                          │
-                         └──── /odom ◄── 0x60B ── VMS          IMU heading ◄── /imu_raw ◄──────────────────┘
+Nav2 ── /cmd_vel_nav ──► Consumers.Velocity ── 0x2B1 ──► VMS ── 0x60B ──► Publishers.Odometry ── /odom, /tf ──► Nav2
+                                                         │ ▲                      ▲
+                                      actuator commands  │ │ status frames        │ /imu_raw (heading)
+                                                         ▼ │                      │
+                                                 simulated hardware               │
+                                                         │ ▲                      │
+                                       /simulator/drive  │ │ /joint_states        │
+                                                         ▼ │                      │
+                                                      Gazebo ─────────────────────┘
 ```
 
 The stack simulates the vehicle named by `OVCS_VEHICLE` in `compose/local/.env`. [ROS 2 and the simulator](../../../docs/ros2_simulator.md#the-vms-drives-the-simulator) has the loop in full.
@@ -38,7 +44,7 @@ The first run pulls and builds images; budget a few minutes. From the repository
 
 ```sh
 cd compose/local
-cp .env.example .env                            # OVCS_VEHICLE=ovcs_mini, ZENOH_ENDPOINT_IP=127.0.0.1
+cp .env.example .env                            # then set OVCS_VEHICLE=ovcs_mini, ZENOH_ENDPOINT_IP=127.0.0.1
 
 # A Zenoh router, if there is no vehicle on the LAN to peer with.
 docker compose -f base.yml --profile standalone up -d zenohd
@@ -65,7 +71,7 @@ xhost +local:docker
 docker compose -f simulation.yml --profile gui up -d gazebo-gui
 ```
 
-Tear down with `docker compose -f simulation.yml --profile nav2 down`, plus `docker compose -f base.yml rm -sf zenohd`.
+Tear down with `docker compose -f simulation.yml --profile nav2 --profile gui down`, plus `docker compose -f base.yml rm -sf zenohd`.
 
 > [!TIP]
 > If the VMS dashboard shows a `FAILURE` status, the VMS finished booting before the simulated controller answered; its `reset_status` action clears it. On the vehicle the same happens when a controller boots late.
@@ -85,7 +91,7 @@ The VMS takes the gamepad only with the `teleop` commander selected: run with `O
 
 ## Odometry and ground truth
 
-`/odom` and `odom → base_link` are the ROS bridge's, from the VMS's `0x60B` (the wheel distance) and the IMU heading, as on the vehicle. The wheel distance is the simulated wheels': the simulated hardware reports the speed of the wheel joints on `/joint_states`, as the vehicle's motor and shaft sensors measure the wheels, so a wheel spinning in place reads as moving, and one the model's effort limit stalls against an obstacle reads as stopped. `/simulator/odom` is ground truth, the model's pose from the physics, which nothing navigates by: compare the two from a common start to see the dead reckoning drift. The steering system's own odometry follows the wheels rather than the body and is not bridged. See [Ground truth](../../../docs/ros2_simulator.md#ground-truth).
+`/odom` and `odom → base_link` are the ROS bridge's, from the VMS's `0x60B` (the wheel distance) and the IMU heading, as on the vehicle. The wheel distance is the simulated wheels': the simulated hardware reports how far the wheel joints on `/joint_states` turned, as the vehicle's motor and shaft sensors measure the wheels, so a wheel spinning in place reads as moving, and one the model's effort limit stalls against an obstacle reads as stopped. `/simulator/odom` is ground truth, the model's pose from the physics, which nothing navigates by: compare the two from a common start to see the dead reckoning drift. The steering system's own odometry follows the wheels rather than the body and is not bridged. See [Ground truth](../../../docs/ros2_simulator.md#ground-truth).
 
 ## Running the perception bridge against it
 
@@ -124,15 +130,7 @@ This is Nav2 from the Lyrical apt archive (1.5.1 when written) in the **vehicle'
 
 The controller and behaviours publish `/cmd_vel_nav_raw`; `velocity_smoother` republishes it on `/cmd_vel_nav`, which the ROS bridge carries to the VMS as on the vehicle.
 
-### Three things that fail silently
-
-- **Nav2 publishes `TwistStamped`.** `nav2_util::TwistPublisher` defaults `enable_stamped_cmd_vel` to true, whatever its header comment says. A bridge subscribing to `/cmd_vel_nav` as `Twist` decodes nonsense and warns about surplus bytes.
-- **`motion_model` names a plugin instance, not a class.** The class comes from `<instance>.plugin`; naming the class directly fails with "No 'plugin' param for param ns!". Leaving `motion_model` unset fails loudly: MPPI defaults it to `diff_drive`, which has no `.plugin`, so the controller refuses to configure.
-- **`Spin` aborts navigation on a car.** Both stock behaviour trees put it in their recovery branch; an Ackermann vehicle produces no motion from a spin, so it runs its full duration and burns a recovery slot. Both trees drop it. The spin *server* stays loaded because `bt_navigator` resolves every action at activation.
-
-### Arriving proves almost nothing
-
-Gazebo's `AckermannSteering` quietly ignores commands it cannot execute, so a controller configured for a differential-drive robot still arrives while commanding arcs the steering could never cut: with `mppi::DiffDriveMotionModel` substituted in, the vehicle reached a tight goal *better* than the correct configuration while commanding a yaw rate 3.68× the kinematic limit. Judge a configuration by what it commands on `/cmd_vel_nav_raw` (`|wz| <= |vx| / min_turning_r`), not by whether it arrives.
+Why the configuration is as it is, and the traps it avoids, are in [Nav2, as configured here](../../../docs/ros2_simulator.md#nav2-as-configured-here).
 
 ## Your vehicle in the simulator
 
@@ -150,7 +148,7 @@ The OVCS Mini reference vehicle's model is the worked example: [`vehicles/ovcs_m
 
 ## Why Jetty, and why Lyrical
 
-ROS 2 Jazzy supports only Gazebo Harmonic; Jetty, the current LTS, needs ROS 2 **Lyrical**, so the whole ROS stack is on Lyrical. The move changed nothing on the wire: all 14 `RIHS01_` type hashes `ros_bridge` carried over from Jazzy are identical on Lyrical (the 15th, `nav_msgs/msg/Odometry`, was captured on Lyrical directly), and both sides run zenoh 1.8, the version `zenohex` 0.8 pins. The Elixir side speaks the rmw_zenoh protocol directly and links nothing from ROS.
+ROS 2 Jazzy supports only Gazebo Harmonic; Jetty, the current LTS, needs ROS 2 **Lyrical**, so the whole ROS stack is on Lyrical. The move changed nothing on the wire: every `RIHS01_` type hash `ros_bridge` carried over from Jazzy is identical on Lyrical, and both sides run zenoh 1.8, the version `zenohex` 0.8 pins. The Elixir side speaks the rmw_zenoh protocol directly and links nothing from ROS.
 
 ## Known limitations
 

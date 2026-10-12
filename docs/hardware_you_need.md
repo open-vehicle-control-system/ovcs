@@ -17,7 +17,7 @@ What works with zero hardware:
 - the VMS, the infotainment and the bridges, talking over `vcan` interfaces;
 - the Vue dashboard and `./ovcs attach <vehicle>`, which decodes every frame with your vehicle's YAMLs;
 - injecting and replaying traffic with `cansend`, `cangen` and `canplayer`, including real captures under `candumps/` ([Testing with CAN](./testing_with_can.md));
-- the Gazebo simulator of the OVCS Mini reference vehicle, driven by its VMS over the same `vcan` interfaces, plus Docker ([Simulation](../compose/local/simulation/README.md)).
+- the Gazebo simulator, with Docker: the OVCS Mini reference vehicle's VMS drives its model over the same `vcan` interfaces ([Simulation](../compose/local/simulation/README.md)).
 
 The one requirement is the `vcan` kernel module: it ships in standard Linux kernels, not in WSL2's or most cloud kernels, so on macOS or Windows use a full Linux VM. [Getting started](./getting_started.md) covers the setup.
 

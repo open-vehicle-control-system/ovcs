@@ -1,13 +1,14 @@
 """Bring up a vehicle in Gazebo Jetty, for the VMS to drive.
 
-Starts four things, in the order they depend on each other:
+Starts, in the order they depend on each other:
 
 1. ``robot_state_publisher`` — expands the xacro and publishes
    ``/robot_description`` plus the fixed transforms.
 2. ``gz sim`` — the physics server, loading the world.
 3. ``ros_gz_bridge`` — the only path between the Gazebo transport and
    ROS. Nothing crosses that boundary unless it is listed here.
-4. ``ros_gz_sim create`` — spawns the robot from
+4. one ``image_bridge`` per camera.
+5. ``ros_gz_sim create`` — spawns the robot from
    ``/robot_description``, which is why it comes last.
 
 Nothing here commands the vehicle. The VMS does, over virtual CAN,
@@ -65,9 +66,9 @@ BRIDGE_TOPICS = [
 # failure looks like a broken topic rather than a saturated one.
 #
 # image_bridge publishes through image_transport, which offers a
-# `/compressed` JPEG variant at roughly 30 KB — the same thing the real
-# vehicle publishes, and about 13x less. Raw pixels stay inside
-# gz-transport, where they are cheap.
+# `/compressed` JPEG variant, the same thing the real vehicle publishes,
+# and a fraction of the size. Raw pixels stay inside gz-transport, where
+# they are cheap.
 
 # The drive command's Gazebo-side name contains the model name.
 # AckermannSteering has no verified tag for renaming its command topic,

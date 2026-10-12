@@ -168,7 +168,7 @@ Host 10.42.0.*
 
 ### Nav2 looks healthy but the simulated car doesn't move
 
-**Cause:** the VMS is not at the `:ros` level with the `:autonomous` commander, or the ROS bridge is not running its simulated hardware. **Fix:** start the bridge with `OVCS_SIM=1`, before the VMS; its scripted RC switches take the VMS to `:ros` within seconds of the VMS appearing, and `candump vcan1` then shows the VESC commands. A bridge subscribing to `/cmd_vel_nav` as `Twist` instead of `TwistStamped` decodes denormals near zero and warns about surplus bytes; that warning is the tell.
+**Cause:** the ROS bridge is not running its simulated hardware, or the VMS is on the `teleop` commander. **Fix:** run with `OVCS_SIM=1` and without `OVCS_SIMULATOR_COMMANDER=teleop`; the simulated radio takes the VMS to `:ros` a few seconds after it appears. On the OVCS Mini reference vehicle, `candump vcan1` then shows the VESC commands.
 
 ### Topics appear on one machine and not another
 
