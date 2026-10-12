@@ -96,6 +96,14 @@ The part most likely to bite, because every failure it causes looks like somethi
 
 ROS nodes get this from the parameter. The Elixir bridge is not a ROS node, and its drivers stamp frames with Erlang monotonic time, so something has to convert.
 
+| Part | Clock | Why |
+|---|---|---|
+| Gazebo | simulated | It is the clock: `/clock` is published once per physics step. |
+| Nav2, `robot_state_publisher` | simulated (`use_sim_time`) | Gazebo stamps its images, joint states and odometry in simulated time, and the transform tree has to agree. |
+| The ROS bridge's publishers | wall, stamped in simulated time | Drivers keep local time; `RosBridge.Timing` converts each stamp, below. |
+| The VMS | wall | Unchanged from the vehicle: it measures rates and timeouts in real seconds. |
+| The simulated hardware | wall | It answers the VMS, so it measures as the VMS does, and takes distances from Gazebo's wheels ([below](#the-vms-drives-the-simulator)). |
+
 ### The bridge tracks an offset, not the clock
 
 Each `/clock` sample gives a simulator time and, read alongside it, a local monotonic time; `RosBridge.Clock` stores the difference in `:atomics` for lock-free reads. `RosBridge.Timing.time_message_for/1` projects any monotonic capture time through it:
@@ -145,7 +153,7 @@ On the vehicle (OVCS Mini)
 
 ### The VMS drives the simulator
 
-In the simulator the same loop drives Gazebo. Simulated hardware (`RosBridge.Simulator.Hardware`, the `:simulated_hardware` component) stands in for the hardware on virtual CAN: it reads what the VMS commands, moves its own model of the vehicle, reports what the real hardware would, and hands Gazebo the resulting motion.
+In the simulator the same loop drives Gazebo. Simulated hardware (`RosBridge.Simulator.Hardware`, the `:simulated_hardware` component) stands in for the hardware on virtual CAN: it reads what the VMS commands, hands Gazebo the resulting motion, and reports what the real hardware would.
 
 ```text
 Nav2 ──/cmd_vel_nav──► Consumers.Velocity ──0x2B1──► VMS ──actuator commands────────► hardware
@@ -158,6 +166,14 @@ Nav2 ◄── /odom + /tf ── Publishers.Odometry ◄── 0x60B ── VMS
 ```
 
 The simulated hardware is framework; what it emulates is the vehicle's. Each piece of hardware is a `RosBridge.Simulator.SimulatedComponent`, the inverse of the VMS component that drives it, named after it and reading and writing its frames by name: `SimulatedComponents.Vesc.MotorController`, `SimulatedComponents.OVCS.GenericController`, `SimulatedComponents.Traxxas.Steering` and `SimulatedComponents.OVCS.RadioControl` are the OVCS Mini reference vehicle's set. A vehicle with other hardware adds simulated components; `RosBridge.Simulator.Vehicle`, the motion they act on, knows none of them. The OVCS Mini wires it into its `ros` bridge with `OVCS_SIM`, in `ros_simulation_config/0`, and declares its frames in `priv/can/bridges/ros_simulated_components.yml`, merged into the bridge's CAN topology on the host only.
+
+A frame from the VMS only updates the command its simulated component holds. The work happens on a 20 ms wall-clock tick:
+
+1. Each simulated component turns its command into actuations on `RosBridge.Simulator.Vehicle`: a speed setpoint, an acceleration from a motor current, a deceleration from a brake, a steering angle.
+2. The vehicle combines them into a commanded speed and steering angle. A setpoint is taken as it is; accelerations are integrated against rolling resistance. The command stays within 0.25 m/s of the measured speed, so it cannot wind up against an obstacle.
+3. The wheels' turn since the last tick is the change in the `:wheel_joints`' mean position on `/joint_states`, and the measured speed is that distance per wall second, smoothed by a filter that keeps the total.
+4. Each simulated component updates its CAN frames from that measurement, counters from the distance and rates from the speed; Cantastic sends them on their own timers.
+5. The commanded speed and its Ackermann yaw rate go to Gazebo on `/simulator/drive`.
 
 Three things are particular to the simulator:
 
