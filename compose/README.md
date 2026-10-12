@@ -14,7 +14,7 @@ compose/
 └── local/            NEVER PUSHED — the operator's machine and the simulation workstation
     ├── common.yml            the shared service definitions the two stacks `extends:`
     ├── base.yml              operator laptop: ros2 shell, joy, calibrator, standalone router, nav2 profile
-    ├── simulation.yml        Gazebo: gazebo, gz-gui, nav2 against the simulator
+    ├── simulation.yml        Gazebo: gazebo, gazebo-gui, nav2 against the simulator
     ├── images/gazebo/        the Gazebo image — the only one that never goes near the car
     ├── simulation/           worlds, macros, launch files
     ├── scripts/              calibrate.sh
@@ -45,7 +45,7 @@ multicast, just TCP peerings to `zenohd`.
 | `ros2` (tooling shell) | local/base | interactive, `docker compose exec` |
 | `joy` | local/base | the game controller is with the operator, not the car |
 | `calibrator` | local/base | one-shot X11 GUI |
-| `gazebo`, `gz-gui` | local/simulation | Gazebo and its viewer |
+| `gazebo`, `gazebo-gui` | local/simulation | Gazebo and its viewer |
 
 `local/base.yml` also carries `standalone` copies of `zenohd` and
 `foxglove_bridge` behind a compose profile, and the car's Nav2 behind
@@ -68,7 +68,7 @@ make a plain `up -d` fail**. Nothing is behind a profile for tidiness.
 | `base.yml` | `calibration` | `calibrator` | one-shot X11 GUI |
 | `simulation.yml` | *(none)* | `gazebo` | headless Gazebo |
 | `simulation.yml` | `nav2` | `nav2` (`use_sim_time:=true`, container `ovcs-nav2`) | the same image against the simulator's clock |
-| `simulation.yml` | `gui` | `gz-gui` | needs an X socket |
+| `simulation.yml` | `gui` | `gazebo-gui` | needs an X socket |
 
 The two `nav2` profiles are the same image with different clocks; start
 one or the other, never both.

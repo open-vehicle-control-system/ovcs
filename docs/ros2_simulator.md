@@ -34,7 +34,7 @@ Everything containerised lives under `compose/`, split by one question: is it pu
 | `wifi_firmware`, `wifi_ap_radio`, `bridge_no_nat`, `ntp` | `compose/compute` | host plumbing for the compute node's network; not ROS |
 | `ros2` (tooling shell), `joy`, `calibrator` (profile `calibration`) | `compose/local/base.yml` | the operator's side: CLI, game controller, stereo calibration GUI |
 | `zenohd`, `foxglove_bridge` (profile `standalone`), `nav2` (profile `nav2`) | `compose/local/base.yml` | stand-ins for the vehicle's own, when none is on the LAN |
-| `gazebo`, `gz-gui`, `nav2` | `compose/local/simulation.yml` | Gazebo, its viewer, and Nav2 on its clock |
+| `gazebo`, `gazebo-gui`, `nav2` | `compose/local/simulation.yml` | Gazebo, its viewer, and Nav2 on its clock |
 
 `compose/compute/` is pushed to balena as one unit, with your vehicle's Nav2 parameters staged into it by `./ovcs compute push`; `compose/local/` never is. The vehicle's images are built only from `compose/compute/images/`, and the local stacks build the same Dockerfiles, so a workstation runs what the car runs. A stand-in must not run while a vehicle is on the LAN: two routers are two fabrics. The profile table is in [`compose/README.md`](../compose/README.md); the compute node itself is [ROS compute node](./ros2_compute_node.md).
 
@@ -56,7 +56,7 @@ Details that read like bugs until you know them:
 - **`-r` runs the world.** Without it the simulation loads paused, which looks exactly like a broken drive plugin.
 - **Cameras go through `image_bridge`**, for bandwidth ([Perception](#perception-against-the-simulator)).
 - **`use_sim_time: true`** on every node ([Time](#time)).
-- **`GZ_IP=127.0.0.1`** on the `gazebo` and `gz-gui` services. They share the host's network, which has several interfaces, and without it gz-transport discovery leaves some subscriptions unconnected: on about one start in two a bridged topic (`/clock`, `/simulator/odom`, `/imu_raw`) never reached ROS, for every subscriber, until another Gazebo subscriber to it appeared ([gz-transport#225](https://github.com/gazebosim/gz-transport/issues/225) has the same symptom). Pinned, ten starts out of ten delivered every topic.
+- **`GZ_IP=127.0.0.1`** on the `gazebo` and `gazebo-gui` services. They share the host's network, which has several interfaces, and without it gz-transport discovery leaves some subscriptions unconnected: on about one start in two a bridged topic (`/clock`, `/simulator/odom`, `/imu_raw`) never reached ROS, for every subscriber, until another Gazebo subscriber to it appeared ([gz-transport#225](https://github.com/gazebosim/gz-transport/issues/225) has the same symptom). Pinned, ten starts out of ten delivered every topic.
 - **The world steps every 5 ms.** Gazebo publishes `/clock` once per step, so that is also the clock's rate, 200 Hz, which every node with `use_sim_time` receives. On the OVCS Mini reference vehicle a steady arc steers and turns the same as with a 1 ms step (0.5835 ± 0.008 rad/s for 0.6 commanded, either way).
 - **`/joint_states` at 50 Hz**, set on the model's `JointStatePublisher`; unset, it publishes every step, and `robot_state_publisher` republishes each one on `/tf`.
 

@@ -14,7 +14,7 @@ The simulator speaks Zenoh like everything else, so a simulated vehicle appears 
 
 ```text
 compose/local/
-  simulation.yml          the stack: gazebo, gz-gui, nav2
+  simulation.yml          the stack: gazebo, gazebo-gui, nav2
   images/gazebo/          the Gazebo Jetty image
   simulation/             worlds, shared macros, sim.launch.py
 
@@ -62,7 +62,7 @@ See it. The GUI is a separate service, because Qt in a headless container takes 
 
 ```sh
 xhost +local:docker
-docker compose -f simulation.yml --profile gui up -d gz-gui
+docker compose -f simulation.yml --profile gui up -d gazebo-gui
 ```
 
 Tear down with `docker compose -f simulation.yml --profile nav2 down`, plus `docker compose -f base.yml rm -sf zenohd`.
@@ -155,7 +155,7 @@ ROS 2 Jazzy supports only Gazebo Harmonic; Jetty, the current LTS, needs ROS 2 *
 ## Known limitations
 
 - **Gazebo can run slower than real time**, without a GPU or on a loaded machine. Nav2 and the plant follow its clock, so goals take longer in wall time; the VMS's watchdogs stay on the wall clock, and `/odom`'s twist is per wall second.
-- **Gazebo needs the GPU.** The `gazebo` and `gz-gui` services mount `/dev/dri`; without a GPU there, Mesa renders the cameras on the CPU (`llvmpipe`). Measured on an Intel Iris Xe, that is about 1040 % of CPU against 130 % with the GPU, and enough contention for the plant's controller frames to arrive later than the VMS's frame watchers allow, which shows as a VMS `FAILURE`. An NVIDIA GPU needs the NVIDIA Container Toolkit as well.
+- **Gazebo needs the GPU.** The `gazebo` and `gazebo-gui` services mount `/dev/dri`; without a GPU there, Mesa renders the cameras on the CPU (`llvmpipe`). Measured on an Intel Iris Xe, that is about 1040 % of CPU against 130 % with the GPU, and enough contention for the plant's controller frames to arrive later than the VMS's frame watchers allow, which shows as a VMS `FAILURE`. An NVIDIA GPU needs the NVIDIA Container Toolkit as well.
 - Global plans come from NavFn (`nav2_smac_planner` is absent from the Lyrical archive), so they are **not kinematically feasible**: MPPI carries the corners the car cannot cut. Fine in an open workshop, a real constraint in tight spaces.
 - `yaw_goal_tolerance` is deliberately about π. A car cannot rotate to a commanded final heading.
 

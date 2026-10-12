@@ -21,7 +21,7 @@
 # project name keeps this stack's containers apart from base.yml's,
 # which lives in the same directory.
 
-name: ovcs-sim
+name: ovcs-simulation
 
 services:
   gazebo:
@@ -101,11 +101,11 @@ services:
       - -lc
       - "ros2 launch /opt/ovcs/launch/nav2.launch.py use_sim_time:=true"
 
-  gz-gui:
+  gazebo-gui:
     # Gazebo's GUI, as a separate service so the headless simulation
     # above never depends on a display existing. Needs an X socket:
     #   xhost +local:docker
-    #   docker compose -f simulation.yml --profile gui up -d gz-gui
+    #   docker compose -f simulation.yml --profile gui up -d gazebo-gui
     #
     # A fabric client only because the shared entrypoint insists on
     # ZENOH_ENDPOINT_IP; the GUI itself talks to the simulator over
@@ -114,7 +114,7 @@ services:
       file: common.yml
       service: fabric-client
     image: ovcs/gazebo:jetty
-    container_name: ovcs-sim-gui
+    container_name: ovcs-gazebo-gui
     profiles: ["gui"]
     restart: "no"
     environment:
