@@ -67,15 +67,14 @@ defmodule RosBridge.Rangefinder.Zenoh do
 
   # Gazebo reports a ray with no return as +∞ and one below range_min as -∞.
   defp distance(ranges, range_min, range_max) do
-    nearest =
-      ranges
-      |> Enum.map(&if(&1 == :neg_infinity, do: 0.0, else: &1))
-      |> Enum.min(fn -> :infinity end)
+    returns = Enum.filter(ranges, &is_float/1)
 
     cond do
-      not is_float(nearest) or nearest > range_max -> :beyond_range
-      nearest < range_min -> :below_range
-      true -> nearest
+      :neg_infinity in ranges -> :below_range
+      returns == [] -> :beyond_range
+      Enum.min(returns) < range_min -> :below_range
+      Enum.min(returns) > range_max -> :beyond_range
+      true -> Enum.min(returns)
     end
   end
 end

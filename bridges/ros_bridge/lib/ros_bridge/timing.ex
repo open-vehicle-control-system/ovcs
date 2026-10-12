@@ -2,7 +2,9 @@ defmodule RosBridge.Timing do
   @moduledoc """
   Time-conversion helpers shared by every publisher in the bridge.
 
-  Drivers tag their samples with `System.monotonic_time(:nanosecond)`.
+  Most drivers tag their samples with `System.monotonic_time(:nanosecond)`;
+  `OvcsDrivers.Lidar.Scan` and `OvcsDrivers.Rangefinder.Sample` carry
+  system time and go through `time_message_for_system_time/1`.
   Monotonic time has no relation to wall clock, but every ROS
   message's `std_msgs/Header` expects a wall-clock stamp — otherwise
   downstream `ApproximateTime` matchers (`stereo_image_proc`, `tf2`,
@@ -25,11 +27,8 @@ defmodule RosBridge.Timing do
   `from_kernel_monotonic/1` at the driver boundary, so that
   `Frame.capture_ns` means exactly one thing everywhere.
 
-  `wallclock_of/1` projects a monotonic capture time onto wall
-  clock by sampling the offset between the two clocks at call
-  time. The offset drift between successive calls is on the
-  order of nanoseconds — negligible compared to the
-  millisecond-scale BEAM-scheduling jitter this removes.
+  `wallclock_of/1` projects a monotonic capture time onto wall clock
+  through `System.time_offset/1`, the VM's own offset between the two.
 
   ## Wall clock is not always the target
 
@@ -41,8 +40,8 @@ defmodule RosBridge.Timing do
   So `time_message_for/1` asks `RosBridge.Clock` which timescale to
   target. With no simulator clock being followed — a vehicle, and
   every test — the answer is `nil` and the wall-clock path above is
-  unchanged. Drivers are unaffected either way: they keep producing
-  Erlang monotonic time and this stays the only place that converts.
+  unchanged. Drivers are unaffected either way: they keep their own
+  timescale and this stays the only place that converts.
   """
 
   alias Ros2.BuiltinInterfaces.Msg.Time
@@ -56,11 +55,8 @@ defmodule RosBridge.Timing do
   monotonic timestamp). The output matches
   `System.system_time(:nanosecond)`.
   """
-  def wallclock_of(monotonic_nanoseconds) when is_integer(monotonic_nanoseconds) do
-    monotonic_now = System.monotonic_time(:nanosecond)
-    wallclock_now = System.system_time(:nanosecond)
-    monotonic_nanoseconds + (wallclock_now - monotonic_now)
-  end
+  def wallclock_of(monotonic_nanoseconds) when is_integer(monotonic_nanoseconds),
+    do: monotonic_nanoseconds + System.time_offset(:nanosecond)
 
   @doc """
   Convert a kernel `CLOCK_MONOTONIC` timestamp (in nanoseconds) into
@@ -102,14 +98,8 @@ defmodule RosBridge.Timing do
   """
   def time_message_for_system_time(system_nanoseconds) do
     case RosBridge.Clock.offset_ns() do
-      nil ->
-        time_message(system_nanoseconds)
-
-      _following ->
-        time_message_for(
-          system_nanoseconds - System.system_time(:nanosecond) +
-            System.monotonic_time(:nanosecond)
-        )
+      nil -> time_message(system_nanoseconds)
+      offset_ns -> time_message(system_nanoseconds - System.time_offset(:nanosecond) + offset_ns)
     end
   end
 

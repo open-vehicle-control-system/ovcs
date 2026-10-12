@@ -6,8 +6,9 @@ defmodule RosBridge.Lidar.Zenoh do
   `Publishers.LaserScan` republishes it on `/scan` as on the vehicle.
   The `RosBridge.Imu.Zenoh` pattern, for Gazebo's lidar.
 
-  A range outside `range_min..range_max`, an infinity included, becomes
-  the `0.0` of no return. `:started_at` is the time of receipt.
+  Finite ranges pass through as the RPLIDAR's do, for
+  `Publishers.LaserScan` to classify; an infinity or NaN becomes the
+  `0.0` of no return. `:started_at` is the time of receipt.
 
   ## Options
 
@@ -62,15 +63,14 @@ defmodule RosBridge.Lidar.Zenoh do
       |> Enum.map(fn {range, index} ->
         angle = laser_scan.angle_min + index * laser_scan.angle_increment
 
-        if is_float(range) and range >= range_min and range <= range_max,
-          do: {wrap(angle), range, 1},
-          else: {wrap(angle), 0.0, 0}
+        if is_float(range), do: {wrap(angle), range, 1}, else: {wrap(angle), 0.0, 0}
       end)
 
     %Scan{
       points: points,
       started_at: received_at,
-      duration_ns: round(laser_scan.scan_time * 1.0e9),
+      duration_ns:
+        if(is_float(laser_scan.scan_time), do: round(laser_scan.scan_time * 1.0e9), else: 0),
       range: {range_min, range_max}
     }
   end

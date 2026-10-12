@@ -22,6 +22,7 @@ defmodule RosBridge.Rangefinder.ZenohTest do
   test "reports a fan with no return as beyond range" do
     assert Zenoh.sample(fan([:infinity, :infinity]), 0).distance == :beyond_range
     assert Zenoh.sample(fan([4.8]), 0).distance == :beyond_range
+    assert Zenoh.sample(fan([:nan, :nan]), 0).distance == :beyond_range
   end
 
   test "reports a ray below range_min as below range" do

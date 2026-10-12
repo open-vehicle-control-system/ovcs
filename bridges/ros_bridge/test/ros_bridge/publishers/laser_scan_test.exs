@@ -35,9 +35,8 @@ defmodule RosBridge.Publishers.LaserScanTest do
   end
 
   test "reports a slot whose points all came back empty as +Inf, an empty slot as 0.0" do
-    message =
-      LaserScan.laser_scan(scan([{0.0, 0.0, 0}, {0.0, 20.0, 5}, {0.01, 0.01, 3}]), 4, "laser")
-
+    # Slot 2 holds a point beyond the range, slot 3 one below it.
+    message = LaserScan.laser_scan(scan([{0.0, 20.0, 5}, {:math.pi() / 2, 0.01, 3}]), 4, "laser")
     assert message.ranges == [0.0, 0.0, :infinity, 0.0]
   end
 

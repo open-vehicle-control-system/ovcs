@@ -23,11 +23,12 @@ defmodule Ros2.Cdr do
   def f64(message, value), do: pad(message, 8) <> <<value * 1.0::little-float-64>>
 
   @doc """
-  A `float32`. `:infinity` and `:neg_infinity` encode the IEEE
-  infinities, which Elixir floats lack and REP 117 range sensors need.
+  A `float32`. `:infinity`, `:neg_infinity` and `:nan` encode the IEEE
+  special values, which Elixir floats lack and REP 117 range sensors need.
   """
   def f32(message, :infinity), do: pad(message, 4) <> <<0x7F800000::little-32>>
   def f32(message, :neg_infinity), do: pad(message, 4) <> <<0xFF800000::little-32>>
+  def f32(message, :nan), do: pad(message, 4) <> <<0x7FC00000::little-32>>
   def f32(message, value), do: pad(message, 4) <> <<value * 1.0::little-float-32>>
 
   def string(message, string), do: u32(message, byte_size(string) + 1) <> string <> <<0>>

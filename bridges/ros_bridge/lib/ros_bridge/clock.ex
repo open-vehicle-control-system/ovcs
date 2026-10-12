@@ -2,17 +2,11 @@ defmodule RosBridge.Clock do
   @moduledoc """
   What `use_sim_time` means for this bridge.
 
-  The stereo publishers stamp their output through
-  `RosBridge.Timing.time_message_for/1`, which projects a driver's
-  Erlang-monotonic capture time onto wall clock. On a vehicle that is
+  Every publisher stamps its output through `RosBridge.Timing`, which
+  projects a driver's capture time onto wall clock. On a vehicle that is
   right. Against a simulator it is not: Gazebo owns the clock, starts
   it at zero, and advances it with physics, so a wall-clock stamp is
   most of two decades away from everything else on the graph.
-
-  Not *every* publisher goes through `Timing`:
-  `RosBridge.Publishers.Imu` builds its `%Time{}` from
-  `System.system_time/1` directly and so ignores this entirely. Keep it
-  out of simulation configurations.
 
   Pairing left and right frames only needs them to agree with *each
   other*, but Nav2 needs them to agree with **`/tf`**: its costmap

@@ -107,6 +107,13 @@ defmodule RosBridge.ClockTest do
       assert_in_delta stamp_ns, 58_643_000_000, 100_000_000
     end
 
+    test "a system-time sample stamps on the simulator's time too" do
+      {:noreply, _state} = Clock.handle_info(clock_message(58, 643_000_000), tracking_state())
+
+      stamp = Timing.time_message_for_system_time(System.system_time(:nanosecond))
+      assert_in_delta stamp.sec * 1_000_000_000 + stamp.nanosec, 58_643_000_000, 100_000_000
+    end
+
     test "a stamp is nowhere near wall clock, which is the whole point" do
       {:noreply, _state} = Clock.handle_info(clock_message(58, 0), tracking_state())
 
