@@ -1,6 +1,6 @@
 defmodule RosBridge.Publishers.Heartbeat.State do
   @moduledoc false
-  defstruct [:topic, :message_module, :interval_ms, :build, counter: 0]
+  defstruct [:topic, :message_module, :interval_ms, :build, :node_name, counter: 0]
 end
 
 defmodule RosBridge.Publishers.Heartbeat do
@@ -9,7 +9,9 @@ defmodule RosBridge.Publishers.Heartbeat do
   builder into `RosBridge.ZenohClient.publish/4`. Used by the bridge
   to advertise its presence (`std_msgs/String` on `ovcs_heartbeat`)
   so consumers can see that the BEAM is alive even when no other
-  topic is flowing.
+  topic is flowing. The builder gets the tick's counter and the
+  bridge's node name, read from `RosBridge.ZenohClient` once at start,
+  so bridges sharing the topic tell themselves apart.
 
   Configured at start time:
 
@@ -17,8 +19,8 @@ defmodule RosBridge.Publishers.Heartbeat do
        topic: "ovcs_heartbeat",
        message_module: Ros2.StdMsgs.Msg.String,
        interval_ms: 5_000,
-       build: fn counter ->
-         %Ros2.StdMsgs.Msg.String{data: "heartbeat #\{counter}"}
+       build: fn counter, node_name ->
+         %Ros2.StdMsgs.Msg.String{data: "#\{node_name} heartbeat #\{counter}"}
        end}
   """
   use GenServer
@@ -37,7 +39,8 @@ defmodule RosBridge.Publishers.Heartbeat do
       topic: Keyword.fetch!(opts, :topic),
       message_module: Keyword.fetch!(opts, :message_module),
       interval_ms: Keyword.fetch!(opts, :interval_ms),
-      build: Keyword.fetch!(opts, :build)
+      build: Keyword.fetch!(opts, :build),
+      node_name: RosBridge.ZenohClient.node_name()
     }
 
     Logger.info(
@@ -52,7 +55,7 @@ defmodule RosBridge.Publishers.Heartbeat do
   @impl GenServer
   def handle_info(:tick, state) do
     counter = state.counter + 1
-    message = state.build.(counter)
+    message = state.build.(counter, state.node_name)
 
     RosBridge.ZenohClient.publish(state.topic, state.message_module, message)
 

@@ -104,7 +104,7 @@ defmodule RosBridge.Components do
        topic: "ovcs_heartbeat",
        message_module: Ros2.StdMsgs.Msg.String,
        interval_ms: Keyword.get(opts, :interval_ms, 1_000),
-       build: &heartbeat_message/1}
+       build: &heartbeat_message/2}
     ]
   end
 
@@ -159,9 +159,9 @@ defmodule RosBridge.Components do
     [{RosBridge.StereoCamera.Supervisor, opts}]
   end
 
-  defp heartbeat_message(counter) do
+  defp heartbeat_message(counter, node_name) do
     %Ros2.StdMsgs.Msg.String{
-      data: "heartbeat #{counter} @ #{System.system_time(:millisecond)}"
+      data: "#{node_name} heartbeat #{counter} @ #{System.system_time(:millisecond)}"
     }
   end
 end
