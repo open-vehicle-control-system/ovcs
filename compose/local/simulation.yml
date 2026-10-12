@@ -11,7 +11,7 @@
 # Usage:
 #   docker compose -f base.yml --profile standalone up -d zenohd
 #   docker compose -f simulation.yml up -d
-#   docker compose -f simulation.yml logs -f sim
+#   docker compose -f simulation.yml logs -f gazebo
 #
 # Nothing here drives the vehicle: the VMS does, through the simulator
 # plant in the vehicle's ROS bridge (`OVCS_SIM=1 ./ovcs run <vehicle>`).
@@ -24,7 +24,7 @@
 name: ovcs-sim
 
 services:
-  sim:
+  gazebo:
     extends:
       file: common.yml
       service: fabric-client
@@ -33,9 +33,9 @@ services:
       # COPY the Zenoh session template and entrypoint from the car's
       # image (../compute/images/ros2) instead of keeping a second copy.
       context: ..
-      dockerfile: local/images/sim/Dockerfile
-    image: ovcs/sim:jetty
-    container_name: ovcs-sim
+      dockerfile: local/images/gazebo/Dockerfile
+    image: ovcs/gazebo:jetty
+    container_name: ovcs-gazebo
     environment:
       # Gazebo finds meshes and models through this. Only the world
       # directory for now — the model is spawned from
@@ -113,18 +113,18 @@ services:
     extends:
       file: common.yml
       service: fabric-client
-    image: ovcs/sim:jetty
+    image: ovcs/gazebo:jetty
     container_name: ovcs-sim-gui
     profiles: ["gui"]
     restart: "no"
     environment:
       DISPLAY: ${DISPLAY:-:0}
       QT_X11_NO_MITSHM: 1
-      # As for `sim`, which it must share an interface with.
+      # As for `gazebo`, which it must share an interface with.
       GZ_IP: 127.0.0.1
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
-      # The GPU, as for `sim`.
+      # The GPU, as for `gazebo`.
       - /dev/dri:/dev/dri
       # The GUI loads its own copies of the model's meshes, from the
       # path the server spawned it with.

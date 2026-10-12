@@ -14,8 +14,8 @@ The simulator speaks Zenoh like everything else, so a simulated vehicle appears 
 
 ```text
 compose/local/
-  simulation.yml          the stack: sim, gz-gui, nav2
-  images/sim/             the Gazebo Jetty image
+  simulation.yml          the stack: gazebo, gz-gui, nav2
+  images/gazebo/          the Gazebo Jetty image
   simulation/             worlds, shared macros, sim.launch.py
 
 vehicles/<vehicle>/
@@ -44,7 +44,7 @@ cp .env.example .env                            # OVCS_VEHICLE=ovcs_mini, ZENOH_
 docker compose -f base.yml --profile standalone up -d zenohd
 
 docker compose -f simulation.yml up -d          # the simulator, headless
-docker compose -f simulation.yml logs -f sim    # ^C once it has spawned the model
+docker compose -f simulation.yml logs -f gazebo # ^C once it has spawned the model
 cd ../..
 
 OVCS_SIM=1 ZENOH_ENDPOINT_IP=127.0.0.1 ./ovcs run ovcs_mini
@@ -155,7 +155,7 @@ ROS 2 Jazzy supports only Gazebo Harmonic; Jetty, the current LTS, needs ROS 2 *
 ## Known limitations
 
 - **Gazebo can run slower than real time**, without a GPU or on a loaded machine. Nav2 and the plant follow its clock, so goals take longer in wall time; the VMS's watchdogs stay on the wall clock, and `/odom`'s twist is per wall second.
-- **Gazebo needs the GPU.** The `sim` and `gz-gui` services mount `/dev/dri`; without a GPU there, Mesa renders the cameras on the CPU (`llvmpipe`). Measured on an Intel Iris Xe, that is about 1040 % of CPU against 130 % with the GPU, and enough contention for the plant's controller frames to arrive later than the VMS's frame watchers allow, which shows as a VMS `FAILURE`. An NVIDIA GPU needs the NVIDIA Container Toolkit as well.
+- **Gazebo needs the GPU.** The `gazebo` and `gz-gui` services mount `/dev/dri`; without a GPU there, Mesa renders the cameras on the CPU (`llvmpipe`). Measured on an Intel Iris Xe, that is about 1040 % of CPU against 130 % with the GPU, and enough contention for the plant's controller frames to arrive later than the VMS's frame watchers allow, which shows as a VMS `FAILURE`. An NVIDIA GPU needs the NVIDIA Container Toolkit as well.
 - Global plans come from NavFn (`nav2_smac_planner` is absent from the Lyrical archive), so they are **not kinematically feasible**: MPPI carries the corners the car cannot cut. Fine in an open workshop, a real constraint in tight spaces.
 - `yaw_goal_tolerance` is deliberately about π. A car cannot rotate to a commanded final heading.
 
