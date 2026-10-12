@@ -7,12 +7,9 @@ defmodule RosBridge.Simulator.SimulatedComponents.Vesc.MotorController do
   `:command_timeout_ms` elapses, after which the motor is released, as
   the firmware does:
 
-    * `set_rpm` drives the vehicle to the setpoint's speed with time
-      constant `:speed_time_constant_s`, compensating rolling resistance
-      the way the VESC's speed loop does. Below `:min_erpm` the loop is
-      off and the motor brakes to a stop.
-    * `set_duty` drives it to `duty · :full_duty_speed_m_s` the same
-      way; zero duty brakes.
+    * `set_rpm` sets the setpoint's speed; below `:min_erpm` the VESC's
+      speed loop is off and the motor brakes, a setpoint of zero.
+    * `set_duty` sets `duty · :full_duty_speed_m_s`; zero duty brakes.
     * `set_current` accelerates it by `current · :acceleration_per_ampere`;
       zero releases the motor.
     * `set_current_brake` decelerates it by the same scale, down to a
@@ -28,19 +25,17 @@ defmodule RosBridge.Simulator.SimulatedComponents.Vesc.MotorController do
       underscored process name.
     * `:network` (`:misc`).
     * `:pole_pairs`, `:motor_to_wheel_ratio` (required).
-    * `:min_erpm` (`900`), `:speed_time_constant_s` (`0.15`),
-      `:full_duty_speed_m_s` (`3.0`), `:acceleration_per_ampere` (`0.5`),
+    * `:min_erpm` (`900`), `:full_duty_speed_m_s` (`3.0`), `:acceleration_per_ampere` (`0.5`),
       `:command_timeout_ms` (`1_000`), `:input_voltage` (`12.0`).
   """
   @behaviour RosBridge.Simulator.SimulatedComponent
 
-  alias Cantastic.Signal
+  import RosBridge.Simulator.SimulatedComponent, only: [decimal: 2, float: 2]
 
   @defaults %{
     name: "vesc",
     network: :misc,
     min_erpm: 900,
-    speed_time_constant_s: 0.15,
     full_duty_speed_m_s: 3.0,
     acceleration_per_ampere: 0.5,
     command_timeout_ms: 1_000,
@@ -77,10 +72,10 @@ defmodule RosBridge.Simulator.SimulatedComponents.Vesc.MotorController do
   def handle_frame(name, signals, state, now_ms) do
     command =
       case frame_kind(state.frames, name) do
-        :set_duty -> {:duty, value(signals, "duty")}
-        :set_current -> {:current, value(signals, "current")}
-        :set_current_brake -> {:brake, value(signals, "current")}
-        :set_rpm -> {:rpm, value(signals, "erpm")}
+        :set_duty -> {:duty, float(signals, "duty")}
+        :set_current -> {:current, float(signals, "current")}
+        :set_current_brake -> {:brake, float(signals, "current")}
+        :set_rpm -> {:rpm, float(signals, "erpm")}
       end
 
     %{state | command: command, command_at_ms: now_ms}
@@ -89,10 +84,9 @@ defmodule RosBridge.Simulator.SimulatedComponents.Vesc.MotorController do
   @impl RosBridge.Simulator.SimulatedComponent
   def actuations(state, vehicle, now_ms) do
     case active_command(state, now_ms) do
-      {:rpm, erpm} when abs(erpm) < state.min_erpm -> brake_to_stop(state, vehicle)
-      {:rpm, erpm} -> hold_speed(state, vehicle, speed_of_erpm(state, vehicle, erpm))
-      {:duty, duty} when duty == 0.0 -> brake_to_stop(state, vehicle)
-      {:duty, duty} -> hold_speed(state, vehicle, duty * state.full_duty_speed_m_s)
+      {:rpm, erpm} when abs(erpm) < state.min_erpm -> [{:speed, 0.0}]
+      {:rpm, erpm} -> [{:speed, speed_of_erpm(state, vehicle, erpm)}]
+      {:duty, duty} -> [{:speed, duty * state.full_duty_speed_m_s}]
       {:current, amperes} -> [{:acceleration, amperes * state.acceleration_per_ampere}]
       {:brake, amperes} -> [{:deceleration, amperes * state.acceleration_per_ampere}]
       :release -> []
@@ -116,20 +110,6 @@ defmodule RosBridge.Simulator.SimulatedComponents.Vesc.MotorController do
        {state.network, state.frames.status_5, status_5(state)}
      ]}
   end
-
-  # The speed loop's integrator holds the setpoint against rolling resistance.
-  defp hold_speed(state, vehicle, target) do
-    feedforward =
-      if target == 0.0, do: 0.0, else: sign(target) * vehicle.rolling_deceleration_m_s2
-
-    [
-      {:acceleration,
-       (target - vehicle.measured_speed_m_s) / state.speed_time_constant_s + feedforward}
-    ]
-  end
-
-  defp brake_to_stop(state, vehicle),
-    do: [{:deceleration, abs(vehicle.measured_speed_m_s) / state.speed_time_constant_s}]
 
   defp active_command(%{command_at_ms: nil}, _now_ms), do: :release
 
@@ -181,18 +161,6 @@ defmodule RosBridge.Simulator.SimulatedComponents.Vesc.MotorController do
       if frames[kind] == name, do: kind
     end)
   end
-
-  defp value(signals, name) do
-    case signals[name] do
-      %Signal{value: %Decimal{} = value} -> Decimal.to_float(value)
-      %Signal{value: value} -> value * 1.0
-    end
-  end
-
-  defp decimal(value, places), do: (value * 1.0) |> Decimal.from_float() |> Decimal.round(places)
-
-  defp sign(value) when value < 0, do: -1.0
-  defp sign(_value), do: 1.0
 
   @doc false
   def frame_names(name) do

@@ -21,6 +21,8 @@ defmodule RosBridge.Simulator.SimulatedComponents.OVCS.GenericController do
   """
   @behaviour RosBridge.Simulator.SimulatedComponent
 
+  import RosBridge.Simulator.SimulatedComponent, only: [decimal: 2]
+
   @digital_pins 0..18
                 |> Map.new(fn pin -> {"digital_pin#{pin}_enabled", false} end)
                 |> Map.put("filler0", 0)
@@ -105,7 +107,7 @@ defmodule RosBridge.Simulator.SimulatedComponents.OVCS.GenericController do
 
     %{
       "pulse_pin0_count" => rem(trunc(state.pulses), @counter_range),
-      "pulse_pin0_frequency" => reported |> Decimal.from_float() |> Decimal.round(1)
+      "pulse_pin0_frequency" => decimal(reported, 1)
     }
   end
 

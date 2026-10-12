@@ -10,13 +10,15 @@ defmodule RosBridge.Simulator.Vehicle do
       forward axis: a motor's torque over the vehicle's mass;
     * `{:deceleration, m_s2}` — a brake, a magnitude that opposes the
       motion and stops at standstill rather than reversing;
+    * `{:speed, m_s}` — a speed controller's setpoint, signed: the
+      commanded speed, which the simulator ramps to;
     * `{:steering, rad}` — the front wheels' angle, REP-103: positive
       turns left.
 
-  Accelerations and decelerations add; the last steering wins. The
-  vehicle adds its own `:rolling_deceleration_m_s2`, which a drive must
-  overcome to start moving. The speed stays within
-  `:max_speed_m_s` either way.
+  Accelerations and decelerations add; the last speed and the last
+  steering win, and a speed overrides the accelerations. The vehicle
+  adds its own `:rolling_deceleration_m_s2`, which a drive must overcome
+  to start moving. The speed stays within `:max_speed_m_s` either way.
 
   ## Commanded and measured
 
@@ -73,9 +75,13 @@ defmodule RosBridge.Simulator.Vehicle do
   nil to follow the commanded motion.
   """
   def step(vehicle, actuations, dt_s, wheel_turns_step \\ nil) do
-    {drive, brake, steering} = combine(actuations, vehicle.steering_rad)
+    {drive, brake, setpoint, steering} = combine(actuations, vehicle.steering_rad)
     resistance = brake + vehicle.rolling_deceleration_m_s2
-    speed = next_speed(vehicle.speed_m_s, drive, resistance, dt_s, vehicle.max_speed_m_s)
+
+    speed =
+      if setpoint,
+        do: setpoint |> max(-vehicle.max_speed_m_s) |> min(vehicle.max_speed_m_s),
+        else: next_speed(vehicle.speed_m_s, drive, resistance, dt_s, vehicle.max_speed_m_s)
 
     {speed, measured_speed, wheel_turns_step} =
       case wheel_turns_step do
@@ -113,10 +119,18 @@ defmodule RosBridge.Simulator.Vehicle do
   defp standstill(speed), do: speed * 1.0
 
   defp combine(actuations, steering) do
-    Enum.reduce(actuations, {0.0, 0.0, steering}, fn
-      {:acceleration, a}, {drive, brake, steering} -> {drive + a, brake, steering}
-      {:deceleration, d}, {drive, brake, steering} -> {drive, brake + abs(d), steering}
-      {:steering, angle}, {drive, brake, _steering} -> {drive, brake, angle}
+    Enum.reduce(actuations, {0.0, 0.0, nil, steering}, fn
+      {:acceleration, a}, {drive, brake, speed, steering} ->
+        {drive + a, brake, speed, steering}
+
+      {:deceleration, d}, {drive, brake, speed, steering} ->
+        {drive, brake + abs(d), speed, steering}
+
+      {:speed, s}, {drive, brake, _speed, steering} ->
+        {drive, brake, s * 1.0, steering}
+
+      {:steering, angle}, {drive, brake, speed, _steering} ->
+        {drive, brake, speed, angle}
     end)
   end
 

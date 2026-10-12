@@ -35,6 +35,11 @@ defmodule RosBridge.Simulator.VehicleTest do
     assert run(vehicle(%{speed_m_s: -0.5}), [{:deceleration, 5.0}], 1.0).speed_m_s == 0.0
   end
 
+  test "a speed setpoint is the commanded speed, within the maximum" do
+    assert Vehicle.step(vehicle(), [{:acceleration, 1.0}, {:speed, -0.4}], @dt).speed_m_s == -0.4
+    assert Vehicle.step(vehicle(), [{:speed, 9.0}], @dt).speed_m_s == 3.0
+  end
+
   test "the speed stays within the maximum" do
     assert run(vehicle(), [{:acceleration, 50.0}], 1.0).speed_m_s == 3.0
   end

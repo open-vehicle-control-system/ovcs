@@ -21,7 +21,10 @@ defmodule RosBridge.Simulator.SimulatedComponent do
 
   @typedoc "See `RosBridge.Simulator.Vehicle`."
   @type actuation ::
-          {:acceleration, float()} | {:deceleration, float()} | {:steering, float()}
+          {:acceleration, float()}
+          | {:deceleration, float()}
+          | {:speed, float()}
+          | {:steering, float()}
 
   @doc """
   The simulated component's initial state, the frames it reads, and the frames it
@@ -51,4 +54,15 @@ defmodule RosBridge.Simulator.SimulatedComponent do
               {term(), [update()]}
 
   @optional_callbacks handle_frame: 4, actuations: 3
+
+  @doc "A signal's value as a float, whether Cantastic decoded it as a `Decimal` or a number."
+  def float(signals, name) do
+    case signals[name] do
+      %Cantastic.Signal{value: %Decimal{} = value} -> Decimal.to_float(value)
+      %Cantastic.Signal{value: value} -> value * 1.0
+    end
+  end
+
+  @doc "`value` as a `Decimal` rounded to `places`, as Cantastic encodes a scaled signal."
+  def decimal(value, places), do: (value * 1.0) |> Decimal.from_float() |> Decimal.round(places)
 end

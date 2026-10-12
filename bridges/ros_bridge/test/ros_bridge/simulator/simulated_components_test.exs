@@ -40,18 +40,17 @@ defmodule RosBridge.Simulator.SimulatedComponentsTest do
   defp motor_rpm(speed), do: speed / (2 * :math.pi() * @wheel_radius) * 60 * @ratio
 
   describe "Vesc.MotorController" do
-    test "set_rpm holds its speed against rolling resistance" do
+    test "set_rpm sets its speed" do
       erpm = round(motor_rpm(0.5) * @pole_pairs)
       state = MotorController.handle_frame("vesc_set_rpm", signals(%{"erpm" => erpm}), vesc(), 0)
-      at_speed = %{vehicle(0.5) | rolling_deceleration_m_s2: 2.0}
 
-      [{:acceleration, a}] = MotorController.actuations(state, at_speed, 10)
-      assert_in_delta a, 2.0, 0.01
+      [{:speed, speed}] = MotorController.actuations(state, vehicle(0.0), 10)
+      assert_in_delta speed, 0.5, 0.001
     end
 
-    test "a set_rpm under the minimum erpm brakes" do
+    test "a set_rpm under the minimum erpm brakes to a stop" do
       state = MotorController.handle_frame("vesc_set_rpm", signals(%{"erpm" => 200}), vesc(), 0)
-      assert [{:deceleration, _}] = MotorController.actuations(state, vehicle(0.3), 10)
+      assert MotorController.actuations(state, vehicle(0.3), 10) == [{:speed, 0.0}]
     end
 
     test "the motor is released once commands stop for the timeout" do
