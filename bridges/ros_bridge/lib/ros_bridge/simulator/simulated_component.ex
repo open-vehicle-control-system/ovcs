@@ -1,14 +1,14 @@
-defmodule RosBridge.Simulator.Device do
+defmodule RosBridge.Simulator.SimulatedComponent do
   @moduledoc """
   One piece of a vehicle's hardware, emulated on the CAN bus for
   `RosBridge.Simulator.Plant`: a motor controller, a brake booster, a
   steering sensor, a generic controller.
 
-  A device reads the frames the VMS sends it, acts on
+  A simulated component reads the frames the VMS sends it, acts on
   `RosBridge.Simulator.Vehicle` through actuations, and reports what
-  the real device would from the vehicle's motion. It is the inverse
-  of the VMS component that drives the same hardware, and reads that
-  component's frames by the same names.
+  the real hardware would from the vehicle's motion. It is the inverse
+  of the VMS component that drives the same hardware, is named after
+  it, and reads that component's frames by the same names.
   """
 
   alias RosBridge.Simulator.Vehicle
@@ -24,7 +24,7 @@ defmodule RosBridge.Simulator.Device do
           {:acceleration, float()} | {:deceleration, float()} | {:steering, float()}
 
   @doc """
-  The device's initial state, the frames it reads, and the frames it
+  The simulated component's initial state, the frames it reads, and the frames it
   emits with their initial signals.
   """
   @callback init(opts :: keyword() | map()) ::
@@ -39,7 +39,7 @@ defmodule RosBridge.Simulator.Device do
             ) ::
               term()
 
-  @doc "How the device acts on the vehicle this tick."
+  @doc "How the simulated component acts on the vehicle this tick."
   @callback actuations(state :: term(), Vehicle.t(), now_ms :: integer()) :: [actuation()]
 
   @doc """

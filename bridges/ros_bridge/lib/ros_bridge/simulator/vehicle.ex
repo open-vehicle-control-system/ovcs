@@ -1,10 +1,10 @@
 defmodule RosBridge.Simulator.Vehicle do
   @moduledoc """
   The simulated vehicle's motion, as `RosBridge.Simulator.Plant`'s
-  devices see it: a speed along the heading, a steering angle, and the
+  simulated components see it: a speed along the heading, a steering angle, and the
   distance rolled.
 
-  Devices act on it through actuations, collected every tick:
+  Simulated components act on it through actuations, collected every tick:
 
     * `{:acceleration, m_s2}` — a drive, signed along the vehicle's
       forward axis: a motor's torque over the vehicle's mass;
@@ -26,7 +26,7 @@ defmodule RosBridge.Simulator.Vehicle do
   commanded one otherwise. The commanded speed follows the drive but
   stays within `@command_lead_m_s` of the measured one, enough to cover
   the simulator's reply latency and not enough to wind up against an
-  obstacle. The distance, the counters and the rates the devices report
+  obstacle. The distance, the counters and the rates the simulated components report
   all follow the measured speed, as the vehicle's wheel and motor
   sensors would. A measurement
   within `@standstill_m_s` of zero is zero, physics jitter at rest that
@@ -36,7 +36,7 @@ defmodule RosBridge.Simulator.Vehicle do
 
   The vehicle moves in simulator time: both speeds are per simulated
   second, and `dt_s` is a simulated step. The VMS measures rates against
-  the wall clock, so a device reporting a rate (an rpm, a pulse
+  the wall clock, so a simulated component reporting a rate (an rpm, a pulse
   frequency) reports `wall_speed_m_s`: the distance rolled per wall
   second, smoothed over `@wall_speed_time_constant_s`. The two agree
   when the simulator keeps real time. Counters follow the distance,

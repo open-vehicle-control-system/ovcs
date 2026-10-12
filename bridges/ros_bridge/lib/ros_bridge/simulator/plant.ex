@@ -4,13 +4,14 @@ defmodule RosBridge.Simulator.Plant do
   drives the simulated vehicle over CAN as it drives the real one.
   **Simulation only.**
 
-  Every tick it collects the actuations of the vehicle's devices
-  (`RosBridge.Simulator.Device`), advances `RosBridge.Simulator.Vehicle`,
-  lets each device report the motion as its real counterpart would, and
+  Every tick it collects the actuations of the vehicle's simulated
+  components (`RosBridge.Simulator.SimulatedComponent`), advances
+  `RosBridge.Simulator.Vehicle`, lets each report the motion as the
+  hardware it stands in for would, and
   publishes the vehicle's speed and Ackermann yaw rate to the simulator
   as a `geometry_msgs/Twist` on `:drive_topic`. The simulator's own
   drive plugin moves the vehicle; the VMS learns how far it went only
-  from the devices' telemetry.
+  from the simulated components' telemetry.
 
   The telemetry measures the simulated wheels, as the vehicle's motor
   and shaft sensors do: the measured speed, which each step starts from
@@ -23,20 +24,21 @@ defmodule RosBridge.Simulator.Plant do
   `RosBridge.Timing`: with `:simulator_clock` listed before this
   component, a simulator running slower than real time moves the
   plant's vehicle as far as its own. Command timeouts and the rates the
-  devices report stay on the wall clock, the VMS's; see "Two clocks" in
-  `RosBridge.Simulator.Vehicle`.
+  simulated components report stay on the wall clock, the VMS's; see
+  "Two clocks" in `RosBridge.Simulator.Vehicle`.
 
   ## Options
 
     * `:vehicle` (required) — `RosBridge.Simulator.Vehicle.new/1`'s
       parameters.
-    * `:devices` (required) — `{module, opts}` per device.
+    * `:simulated_components` (required) — `{module, opts}` per
+      simulated component.
     * `:drive_topic` (`"simulator/drive"`).
     * `:wheel_joints` (`[]`) — the joints the drive turns, each positive
       when rolling forward; none for no measurement.
 
   The bridge firmware's CAN topology must declare every frame the
-  devices read and emit, the other way round from the VMS's.
+  simulated components read and emit, the other way round from the VMS's.
   """
   use GenServer
 
@@ -60,11 +62,11 @@ defmodule RosBridge.Simulator.Plant do
   def init(opts) do
     opts = Map.new(opts)
 
-    devices =
+    components =
       opts
-      |> Map.fetch!(:devices)
-      |> Enum.map(fn {module, device_opts} ->
-        {state, received, emitted} = module.init(device_opts)
+      |> Map.fetch!(:simulated_components)
+      |> Enum.map(fn {module, component_opts} ->
+        {state, received, emitted} = module.init(component_opts)
         :ok = subscribe(received)
         :ok = configure_emitters(emitted)
         %{module: module, state: state, received: MapSet.new(received)}
@@ -75,12 +77,15 @@ defmodule RosBridge.Simulator.Plant do
     if wheel_joints != [], do: :ok = RosBridge.ZenohClient.subscribe("joint_states", JointState)
 
     {:ok, _timer} = :timer.send_interval(@loop_period_ms, :loop)
-    Logger.info("#{__MODULE__}: emulating #{Enum.map_join(devices, ", ", &inspect(&1.module))}")
+
+    Logger.info(
+      "#{__MODULE__}: emulating #{Enum.map_join(components, ", ", &inspect(&1.module))}"
+    )
 
     {:ok,
      %{
        vehicle: Vehicle.new(Map.fetch!(opts, :vehicle)),
-       devices: devices,
+       components: components,
        drive_topic: Map.get(opts, :drive_topic, "simulator/drive"),
        vehicle_time_ns: vehicle_time_ns(),
        last_step_ms: now_ms(),
@@ -98,7 +103,7 @@ defmodule RosBridge.Simulator.Plant do
     vehicle_time_ns = max(vehicle_time_ns(), state.vehicle_time_ns)
     dt_s = (vehicle_time_ns - state.vehicle_time_ns) / 1.0e9
     wall_dt_s = (now_ms - state.last_step_ms) / 1000
-    actuations = Enum.flat_map(state.devices, &actuations(&1, state.vehicle, now_ms))
+    actuations = Enum.flat_map(state.components, &actuations(&1, state.vehicle, now_ms))
 
     vehicle =
       Vehicle.step(state.vehicle, actuations, dt_s,
@@ -106,12 +111,12 @@ defmodule RosBridge.Simulator.Plant do
         measured_speed_m_s: measured_speed(state.wheel_speed, now_ms)
       )
 
-    devices = Enum.map(state.devices, &step(&1, vehicle, wall_dt_s, now_ms))
+    components = Enum.map(state.components, &step(&1, vehicle, wall_dt_s, now_ms))
 
     state = %{
       state
       | vehicle: vehicle,
-        devices: devices,
+        components: components,
         vehicle_time_ns: vehicle_time_ns,
         last_step_ms: now_ms
     }
@@ -123,14 +128,17 @@ defmodule RosBridge.Simulator.Plant do
         {:handle_frame, %Frame{network_name: network, name: name, signals: signals}},
         state
       ) do
-    devices =
-      Enum.map(state.devices, fn device ->
-        if MapSet.member?(device.received, {network, name}),
-          do: %{device | state: device.module.handle_frame(name, signals, device.state, now_ms())},
-          else: device
+    components =
+      Enum.map(state.components, fn component ->
+        if MapSet.member?(component.received, {network, name}),
+          do: %{
+            component
+            | state: component.module.handle_frame(name, signals, component.state, now_ms())
+          },
+          else: component
       end)
 
-    {:noreply, %{state | devices: devices}}
+    {:noreply, %{state | components: components}}
   end
 
   def handle_info({:ros_message, {_key_expr, %JointState{} = joint_state}}, state) do
@@ -157,20 +165,20 @@ defmodule RosBridge.Simulator.Plant do
       else: Enum.sum(speeds) / length(speeds) * wheel_radius_m
   end
 
-  defp actuations(device, vehicle, now_ms) do
-    if function_exported?(device.module, :actuations, 3),
-      do: device.module.actuations(device.state, vehicle, now_ms),
+  defp actuations(component, vehicle, now_ms) do
+    if function_exported?(component.module, :actuations, 3),
+      do: component.module.actuations(component.state, vehicle, now_ms),
       else: []
   end
 
-  defp step(device, vehicle, dt_s, now_ms) do
-    {state, updates} = device.module.step(device.state, vehicle, dt_s, now_ms)
+  defp step(component, vehicle, dt_s, now_ms) do
+    {state, updates} = component.module.step(component.state, vehicle, dt_s, now_ms)
 
     Enum.each(updates, fn {network, frame_name, signals} ->
       :ok = Emitter.update(network, frame_name, &Map.merge(&1, signals))
     end)
 
-    %{device | state: state}
+    %{component | state: state}
   end
 
   defp publish_drive(state, now_ms) when now_ms - state.last_drive_ms < @drive_period_ms,

@@ -1,4 +1,4 @@
-defmodule RosBridge.Simulator.Devices.Vesc do
+defmodule RosBridge.Simulator.SimulatedComponents.Vesc.MotorController do
   @moduledoc """
   A traction motor behind a VESC, the inverse of
   `VmsCore.Components.Vesc.MotorController`.
@@ -32,7 +32,7 @@ defmodule RosBridge.Simulator.Devices.Vesc do
       `:full_duty_speed_m_s` (`3.0`), `:acceleration_per_ampere` (`0.5`),
       `:command_timeout_ms` (`1_000`), `:input_voltage` (`12.0`).
   """
-  @behaviour RosBridge.Simulator.Device
+  @behaviour RosBridge.Simulator.SimulatedComponent
 
   alias Cantastic.Signal
 
@@ -47,7 +47,7 @@ defmodule RosBridge.Simulator.Devices.Vesc do
     input_voltage: 12.0
   }
 
-  @impl RosBridge.Simulator.Device
+  @impl RosBridge.Simulator.SimulatedComponent
   def init(opts) do
     state =
       @defaults
@@ -73,7 +73,7 @@ defmodule RosBridge.Simulator.Devices.Vesc do
     {state, received, emitted}
   end
 
-  @impl RosBridge.Simulator.Device
+  @impl RosBridge.Simulator.SimulatedComponent
   def handle_frame(name, signals, state, now_ms) do
     command =
       case frame_kind(state.frames, name) do
@@ -86,7 +86,7 @@ defmodule RosBridge.Simulator.Devices.Vesc do
     %{state | command: command, command_at_ms: now_ms}
   end
 
-  @impl RosBridge.Simulator.Device
+  @impl RosBridge.Simulator.SimulatedComponent
   def actuations(state, vehicle, now_ms) do
     case active_command(state, now_ms) do
       {:rpm, erpm} when abs(erpm) < state.min_erpm -> brake_to_stop(state, vehicle)
@@ -99,7 +99,7 @@ defmodule RosBridge.Simulator.Devices.Vesc do
     end
   end
 
-  @impl RosBridge.Simulator.Device
+  @impl RosBridge.Simulator.SimulatedComponent
   def step(state, vehicle, _dt_s, now_ms) do
     motor_turns = vehicle.wheel_turns_step * state.motor_to_wheel_ratio
     state = %{state | tachometer: state.tachometer + motor_turns * 6 * state.pole_pairs}

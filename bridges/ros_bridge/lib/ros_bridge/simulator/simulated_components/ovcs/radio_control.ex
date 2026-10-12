@@ -1,4 +1,4 @@
-defmodule RosBridge.Simulator.Devices.RadioControl do
+defmodule RosBridge.Simulator.SimulatedComponents.OVCS.RadioControl do
   @moduledoc """
   An RC receiver's channels on `radio_control_channels0` and `1`
   (`0x2A0`, `0x2A1`), what `RadioControlBridge` emits on the vehicle.
@@ -25,9 +25,9 @@ defmodule RosBridge.Simulator.Devices.RadioControl do
     * `:start_on` (`{:ovcs, "vms_status"}`) — the frame that starts it.
     * `:rewind_after_ms` (`1_000`).
   """
-  @behaviour RosBridge.Simulator.Device
+  @behaviour RosBridge.Simulator.SimulatedComponent
 
-  @impl RosBridge.Simulator.Device
+  @impl RosBridge.Simulator.SimulatedComponent
   def init(opts) do
     opts = Map.new(opts)
 
@@ -43,11 +43,11 @@ defmodule RosBridge.Simulator.Devices.RadioControl do
     {state, [Map.get(opts, :start_on, {:ovcs, "vms_status"})], updates(state, state.channels)}
   end
 
-  @impl RosBridge.Simulator.Device
+  @impl RosBridge.Simulator.SimulatedComponent
   def handle_frame(_name, _signals, state, now_ms),
     do: %{state | started_at_ms: state.started_at_ms || now_ms, last_seen_ms: now_ms}
 
-  @impl RosBridge.Simulator.Device
+  @impl RosBridge.Simulator.SimulatedComponent
   def step(state, _vehicle, _dt_s, now_ms) do
     state =
       if state.started_at_ms && now_ms - state.last_seen_ms > state.rewind_after_ms,

@@ -1,4 +1,4 @@
-defmodule RosBridge.Simulator.Devices.ServoSteering do
+defmodule RosBridge.Simulator.SimulatedComponents.Traxxas.Steering do
   @moduledoc """
   An RC steering servo on a generic controller's external PWM, the
   inverse of `VmsCore.Components.Traxxas.Steering`.
@@ -17,7 +17,7 @@ defmodule RosBridge.Simulator.Devices.ServoSteering do
     * `:neutral` (`0.0`) — the request that drives straight: the trim
       the VMS adds to centre a servo whose neutral pulse does not.
   """
-  @behaviour RosBridge.Simulator.Device
+  @behaviour RosBridge.Simulator.SimulatedComponent
 
   alias Cantastic.Signal
 
@@ -25,7 +25,7 @@ defmodule RosBridge.Simulator.Devices.ServoSteering do
   @half_travel 0.05
   @duty_cycle_range 65_535
 
-  @impl RosBridge.Simulator.Device
+  @impl RosBridge.Simulator.SimulatedComponent
   def init(opts) do
     opts = Map.new(opts)
     controller = Map.get(opts, :controller, "main_controller")
@@ -40,7 +40,7 @@ defmodule RosBridge.Simulator.Devices.ServoSteering do
     {state, [{network, "#{controller}_external_pwm#{Map.get(opts, :pwm, 0)}_request"}], []}
   end
 
-  @impl RosBridge.Simulator.Device
+  @impl RosBridge.Simulator.SimulatedComponent
   def handle_frame(
         _name,
         %{"enabled" => %Signal{value: true}, "duty_cycle" => duty},
@@ -51,10 +51,10 @@ defmodule RosBridge.Simulator.Devices.ServoSteering do
 
   def handle_frame(_name, _signals, state, _now_ms), do: state
 
-  @impl RosBridge.Simulator.Device
+  @impl RosBridge.Simulator.SimulatedComponent
   def actuations(state, _vehicle, _now_ms), do: [{:steering, state.angle}]
 
-  @impl RosBridge.Simulator.Device
+  @impl RosBridge.Simulator.SimulatedComponent
   def step(state, _vehicle, _dt_s, _now_ms), do: {state, []}
 
   @doc "The REP-103 steering angle for a duty cycle fraction of the period."

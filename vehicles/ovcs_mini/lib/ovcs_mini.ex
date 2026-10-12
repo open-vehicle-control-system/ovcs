@@ -185,23 +185,23 @@ defmodule OvcsMini do
       # Shaft-driven 4WD: the motor turns at the four wheels' mean.
       wheel_joints: ~w(front_left_wheel_joint front_right_wheel_joint
                        rear_left_wheel_joint rear_right_wheel_joint),
-      devices: [
-        {RosBridge.Simulator.Devices.Vesc,
+      simulated_components: [
+        {RosBridge.Simulator.SimulatedComponents.Vesc.MotorController,
          pole_pairs: drivetrain.pole_pairs,
          motor_to_wheel_ratio: drivetrain.motor_to_wheel_ratio,
          min_erpm: vesc_minimum_erpm,
          acceleration_per_ampere: @simulated_acceleration_per_ampere,
          input_voltage: @simulated_battery_voltage},
-        {RosBridge.Simulator.Devices.GenericController,
+        {RosBridge.Simulator.SimulatedComponents.OVCS.GenericController,
          analog_pins: %{1 => pm12s3_reading(@simulated_battery_voltage)},
          pulse: %{
            shaft_turns_per_wheel_turn:
              drivetrain.motor_to_wheel_ratio * drivetrain.pinion_teeth / drivetrain.spur_teeth,
            pulses_per_revolution: drivetrain.pulses_per_revolution
          }},
-        {RosBridge.Simulator.Devices.ServoSteering,
+        {RosBridge.Simulator.SimulatedComponents.Traxxas.Steering,
          steering_limit_rad: geometry().steering_limit, neutral: drivetrain.steering_trim},
-        {RosBridge.Simulator.Devices.RadioControl, radio_control_script()}
+        {RosBridge.Simulator.SimulatedComponents.OVCS.RadioControl, radio_control_script()}
       ]
     ]
   end

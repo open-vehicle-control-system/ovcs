@@ -33,8 +33,8 @@ defmodule RosBridge.Components do
       `RosBridge.Clock` for what that breaks.
     * `:simulator_plant` — `RosBridge.Simulator.Plant`, emulating the
       vehicle's hardware on CAN so the VMS drives a simulated vehicle.
-      **Simulation only.** Opts: `:vehicle`, `:devices` (required),
-      `:drive_topic`; see the module.
+      **Simulation only.** Opts: `:vehicle`, `:simulated_components`
+      (required), `:drive_topic`, `:wheel_joints`; see the module.
     * `:imu_publisher` — starts the named driver (any
       `OvcsDrivers.Imu` implementation) followed by
       `RosBridge.Publishers.Imu`. Opts:

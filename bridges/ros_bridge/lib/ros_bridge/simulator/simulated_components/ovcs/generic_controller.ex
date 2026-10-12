@@ -1,4 +1,4 @@
-defmodule RosBridge.Simulator.Devices.GenericController do
+defmodule RosBridge.Simulator.SimulatedComponents.OVCS.GenericController do
   @moduledoc """
   An OVCS generic controller, the inverse of
   `VmsCore.Components.OVCS.GenericController`: alive with status `OK`,
@@ -6,8 +6,8 @@ defmodule RosBridge.Simulator.Devices.GenericController do
   counter.
 
   It drives nothing itself. An actuator wired to one of its outputs is
-  a device of its own that reads the controller's request frame, such
-  as `RosBridge.Simulator.Devices.ServoSteering`.
+  a simulated component of its own that reads the controller's request frame, such
+  as `RosBridge.Simulator.SimulatedComponents.Traxxas.Steering`.
 
   ## Options
 
@@ -19,7 +19,7 @@ defmodule RosBridge.Simulator.Devices.GenericController do
       `%{shaft_turns_per_wheel_turn: ratio, pulses_per_revolution: n}`.
       Without it no pulse counter frame is emitted.
   """
-  @behaviour RosBridge.Simulator.Device
+  @behaviour RosBridge.Simulator.SimulatedComponent
 
   @digital_pins 0..18
                 |> Map.new(fn pin -> {"digital_pin#{pin}_enabled", false} end)
@@ -30,7 +30,7 @@ defmodule RosBridge.Simulator.Devices.GenericController do
   # The alive frame's period: its counter steps once per frame sent.
   @alive_period_s 0.1
 
-  @impl RosBridge.Simulator.Device
+  @impl RosBridge.Simulator.SimulatedComponent
   def init(opts) do
     opts = Map.new(opts)
     name = Map.get(opts, :name, "main_controller")
@@ -59,7 +59,7 @@ defmodule RosBridge.Simulator.Devices.GenericController do
     {state, [], emitted}
   end
 
-  @impl RosBridge.Simulator.Device
+  @impl RosBridge.Simulator.SimulatedComponent
   def step(state, vehicle, dt_s, _now_ms) do
     state = %{state | elapsed_s: state.elapsed_s + dt_s}
 

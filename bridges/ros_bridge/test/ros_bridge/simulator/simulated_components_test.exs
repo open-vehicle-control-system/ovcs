@@ -1,14 +1,17 @@
-defmodule RosBridge.Simulator.DevicesTest do
+defmodule RosBridge.Simulator.SimulatedComponentsTest do
   @moduledoc """
-  The devices against the VMS components they invert: the frames those
-  components emit are fed in, and what the devices report must read back
+  The simulated components against the VMS components they invert:
+  the frames the VMS components emit are fed in, and what the simulated
+  ones report must read back
   through the same arithmetic the VMS applies, restated here because
   the bridge does not depend on `vms_core`.
   """
   use ExUnit.Case, async: true
 
   alias Cantastic.Signal
-  alias RosBridge.Simulator.Devices.{GenericController, RadioControl, ServoSteering, Vesc}
+  alias RosBridge.Simulator.SimulatedComponents.OVCS.{GenericController, RadioControl}
+  alias RosBridge.Simulator.SimulatedComponents.Traxxas.Steering
+  alias RosBridge.Simulator.SimulatedComponents.Vesc.MotorController
   alias RosBridge.Simulator.Vehicle
 
   @dt 0.01
@@ -30,34 +33,41 @@ defmodule RosBridge.Simulator.DevicesTest do
 
   defp vesc do
     {state, _received, _emitted} =
-      Vesc.init(pole_pairs: @pole_pairs, motor_to_wheel_ratio: @ratio, min_erpm: 300)
+      MotorController.init(pole_pairs: @pole_pairs, motor_to_wheel_ratio: @ratio, min_erpm: 300)
 
     state
   end
 
   defp motor_rpm(speed), do: speed / (2 * :math.pi() * @wheel_radius) * 60 * @ratio
 
-  describe "Vesc" do
+  describe "Vesc.MotorController" do
     test "set_rpm holds its speed against rolling resistance" do
       erpm = round(motor_rpm(0.5) * @pole_pairs)
-      state = Vesc.handle_frame("vesc_set_rpm", signals(%{"erpm" => erpm}), vesc(), 0)
+      state = MotorController.handle_frame("vesc_set_rpm", signals(%{"erpm" => erpm}), vesc(), 0)
       at_speed = %{vehicle(0.5) | rolling_deceleration_m_s2: 2.0}
 
-      [{:acceleration, a}] = Vesc.actuations(state, at_speed, 10)
+      [{:acceleration, a}] = MotorController.actuations(state, at_speed, 10)
       assert_in_delta a, 2.0, 0.01
     end
 
     test "a set_rpm under the minimum erpm brakes" do
-      state = Vesc.handle_frame("vesc_set_rpm", signals(%{"erpm" => 200}), vesc(), 0)
-      assert [{:deceleration, _}] = Vesc.actuations(state, vehicle(0.3), 10)
+      state = MotorController.handle_frame("vesc_set_rpm", signals(%{"erpm" => 200}), vesc(), 0)
+      assert [{:deceleration, _}] = MotorController.actuations(state, vehicle(0.3), 10)
     end
 
     test "the motor is released once commands stop for the timeout" do
       current = Decimal.new("8.0")
-      state = Vesc.handle_frame("vesc_set_current", signals(%{"current" => current}), vesc(), 0)
 
-      assert [{:acceleration, _}] = Vesc.actuations(state, vehicle(0.0), 500)
-      assert Vesc.actuations(state, vehicle(0.0), 1_500) == []
+      state =
+        MotorController.handle_frame(
+          "vesc_set_current",
+          signals(%{"current" => current}),
+          vesc(),
+          0
+        )
+
+      assert [{:acceleration, _}] = MotorController.actuations(state, vehicle(0.0), 500)
+      assert MotorController.actuations(state, vehicle(0.0), 1_500) == []
     end
 
     test "the tachometer reads back as the motor's rotation through the VMS's arithmetic" do
@@ -71,7 +81,7 @@ defmodule RosBridge.Simulator.DevicesTest do
 
       {state, _} =
         Enum.reduce(1..steps, {vesc(), []}, fn _, {state, _} ->
-          Vesc.step(state, moving, @dt, 0)
+          MotorController.step(state, moving, @dt, 0)
         end)
 
       # `MotorController.revolutions/2`: six steps per electrical turn.
@@ -81,12 +91,12 @@ defmodule RosBridge.Simulator.DevicesTest do
 
     test "the erpm reads back as the motor's rpm" do
       # `MotorController.rotation_per_minute/2`.
-      rpm = Vesc.erpm(vesc(), vehicle(1.0)) / @pole_pairs
+      rpm = MotorController.erpm(vesc(), vehicle(1.0)) / @pole_pairs
       assert_in_delta rpm, motor_rpm(1.0), 1.0
     end
   end
 
-  describe "GenericController" do
+  describe "OVCS.GenericController" do
     test "the pulse frequency agrees with the VESC through the spur ratio" do
       spur_per_wheel = @ratio * 13 / 54
 
@@ -129,31 +139,31 @@ defmodule RosBridge.Simulator.DevicesTest do
     end
   end
 
-  describe "ServoSteering" do
+  describe "Traxxas.Steering" do
     setup do
-      {state, _, _} = ServoSteering.init(steering_limit_rad: 0.52, neutral: 0.05)
+      {state, _, _} = Steering.init(steering_limit_rad: 0.52, neutral: 0.05)
       %{servo: state}
     end
 
     test "the trimmed centre drives straight", %{servo: servo} do
-      assert_in_delta ServoSteering.angle(0.15 + 0.05 * 0.05, servo), 0.0, 1.0e-9
+      assert_in_delta Steering.angle(0.15 + 0.05 * 0.05, servo), 0.0, 1.0e-9
     end
 
     test "a positive request steers right, a negative REP-103 angle", %{servo: servo} do
-      assert ServoSteering.angle(0.19, servo) < 0
-      assert ServoSteering.angle(0.11, servo) > 0
+      assert Steering.angle(0.19, servo) < 0
+      assert Steering.angle(0.11, servo) > 0
     end
 
     test "a disabled PWM holds the wheels", %{servo: servo} do
       turned = %{servo | angle: 0.2}
       frame = signals(%{"enabled" => false, "duty_cycle" => 0})
 
-      assert ServoSteering.handle_frame("main_controller_external_pwm0_request", frame, turned, 0) ==
+      assert Steering.handle_frame("main_controller_external_pwm0_request", frame, turned, 0) ==
                turned
     end
   end
 
-  describe "RadioControl" do
+  describe "OVCS.RadioControl" do
     test "the script waits for the VMS, then applies each step at its time" do
       {state, _, _} =
         RadioControl.init(
