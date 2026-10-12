@@ -174,11 +174,12 @@ another publishing meanwhile is ignored until the first stops for
 
 A profile is a YAML file per controller
 (`RosBridge.Consumers.Joy.Profile` describes the format). The
-framework ships two in `bridges/ros_bridge/priv/joy/`:
+framework ships three in `bridges/ros_bridge/priv/joy/`:
 
 | Profile | Controls |
 |---|---|
 | `xbox.yml` | right stick steers, and drives (up) or brakes (down) in the gear the triggers hold: RT forward, LT backward, neither neutral |
+| `f310.yml` | the Logitech F310 with its back switch on X, mapped as `xbox.yml` |
 | `g923.yml` | the wheel steers, full lock at ±90°, and springs back to centre while the `joy` service runs; the accelerator drives and the brake brakes, the brake winning when both are pressed, in the gear of the Driving Force Shifter: 1 to 6 forward, reverse backward |
 
 In neutral the throttle only brakes. As with the radio's reverse

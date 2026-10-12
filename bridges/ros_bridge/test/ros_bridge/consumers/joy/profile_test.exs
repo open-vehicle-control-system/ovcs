@@ -103,12 +103,28 @@ defmodule RosBridge.Consumers.Joy.ProfileTest do
     end
   end
 
-  test "the framework ships the Xbox controller and the G923" do
+  test "the framework ships the Xbox controller, the F310 and the G923" do
     assert Profile.framework_dir()
            |> Profile.load_dir!()
            |> Enum.map(&{&1.name, &1.device})
-           |> Enum.sort() ==
-             [{"g923", "G923 Racing Wheel"}, {"xbox", "(?i)x-?box.*(pad|controller)"}]
+           |> Enum.sort() == [
+             {"f310", "(?i)gamepad f310"},
+             {"g923", "G923 Racing Wheel"},
+             {"xbox", "(?i)x-?box.*(pad|controller)"}
+           ]
+  end
+
+  test "each shipped controller's kernel name picks its profile alone" do
+    profiles = Profile.load_dir!(Profile.framework_dir())
+
+    for {kernel_name, profile} <- [
+          {"Logitech Gamepad F310", "f310"},
+          {"Microsoft X-Box 360 pad", "xbox"},
+          {"Logitech G923 Racing Wheel for PlayStation and PC", "g923"}
+        ] do
+      assert for(p <- profiles, Regex.match?(Regex.compile!(p.device), kernel_name), do: p.name) ==
+               [profile]
+    end
   end
 
   defp xbox_profile, do: Profile.framework_dir() |> Path.join("xbox.yml") |> Profile.load!()

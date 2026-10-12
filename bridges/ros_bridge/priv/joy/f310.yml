@@ -1,0 +1,16 @@
+# A Logitech F310 with its back switch on X, where it reports the Xbox
+# controller's layout: the right stick steers, and drives (up) or brakes
+# (down) in the gear the triggers hold: RT forward, LT backward,
+# neither neutral.
+device: "(?i)gamepad f310"
+steering:
+  - axis: 3
+    # Negative: joy_linux reports left as positive, steering is positive right.
+    gain: -1.0
+throttle:
+  - axis: 4
+gears:
+  forward:
+    - trigger: 5
+  backward:
+    - trigger: 2
