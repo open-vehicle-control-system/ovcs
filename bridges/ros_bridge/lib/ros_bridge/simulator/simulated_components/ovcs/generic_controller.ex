@@ -76,7 +76,7 @@ defmodule RosBridge.Simulator.SimulatedComponents.OVCS.GenericController do
         state = count(state, step_pulses, dt_s)
 
         frequency =
-          abs(vehicle.wall_speed_m_s) / (2 * :math.pi() * vehicle.wheel_radius_m) *
+          abs(vehicle.measured_speed_m_s) / (2 * :math.pi() * vehicle.wheel_radius_m) *
             pulses_per_wheel_turn
 
         {state, [alive, {state.network, state.pulse_counter, pulse_counter(state, frequency)}]}

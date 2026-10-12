@@ -44,44 +44,49 @@ defmodule RosBridge.Simulator.VehicleTest do
     assert_in_delta rolled.wheel_turns, 1.0 / (2 * :math.pi() * 0.05), 0.01
   end
 
-  test "a simulator at half real time reads half the speed on the wall clock" do
+  test "without a measurement the commanded speed is the measured one" do
     cruising = vehicle(%{rolling_deceleration_m_s2: 0.0, speed_m_s: 1.0})
-
-    observed =
-      Enum.reduce(1..100, cruising, fn _, v -> Vehicle.step(v, [], @dt / 2, wall_dt_s: @dt) end)
-
-    assert observed.speed_m_s == 1.0
-    assert_in_delta observed.wall_speed_m_s, 0.5, 0.01
-  end
-
-  test "a stopped vehicle reads exactly zero on the wall clock" do
-    stopping = vehicle(%{speed_m_s: 0.01, wall_speed_m_s: 0.3})
-    assert Vehicle.step(stopping, [{:deceleration, 10.0}], @dt).wall_speed_m_s == 0.0
+    assert Vehicle.step(cruising, [], @dt).measured_speed_m_s == 1.0
   end
 
   test "a vehicle the simulator holds still rolls nowhere, however hard it is driven" do
     held =
       Enum.reduce(1..100, vehicle(), fn _, v ->
-        Vehicle.step(v, [{:acceleration, 3.0}], @dt, measured_speed_m_s: 0.0)
+        Vehicle.step(v, [{:acceleration, 3.0}], @dt, 0.0)
       end)
 
     assert held.speed_m_s > 0.0 and held.speed_m_s <= 0.25
     assert held.measured_speed_m_s == 0.0
     assert held.wheel_turns == 0.0
-    assert held.wall_speed_m_s == 0.0
   end
 
-  test "the distance follows the measured speed, not the commanded one" do
+  test "the counters follow the measured turns, not the commanded speed" do
     rolled =
       Enum.reduce(1..100, vehicle(%{rolling_deceleration_m_s2: 0.0}), fn _, v ->
-        Vehicle.step(v, [{:acceleration, 1.0}], @dt, measured_speed_m_s: 0.25)
+        Vehicle.step(v, [{:acceleration, 1.0}], @dt, 0.01)
       end)
 
-    assert_in_delta rolled.wheel_turns, 0.25 / (2 * :math.pi() * 0.05), 0.001
+    assert_in_delta rolled.wheel_turns, 1.0, 1.0e-9
+    assert_in_delta rolled.measured_speed_m_s, 0.01 * 2 * :math.pi() * 0.05 / @dt, 1.0e-3
+  end
+
+  test "rates from uneven measurements integrate back to the distance" do
+    # Two turns' worth arriving in alternate steps, then nothing.
+    steps = List.flatten(List.duplicate([0.02, 0.0], 50)) ++ List.duplicate(0.0, 200)
+
+    {rolled, integrated_m} =
+      Enum.reduce(steps, {vehicle(%{rolling_deceleration_m_s2: 0.0}), 0.0}, fn turns, {v, m} ->
+        v = Vehicle.step(v, [], @dt, turns)
+        {v, m + v.measured_speed_m_s * @dt}
+      end)
+
+    assert_in_delta rolled.wheel_turns, 1.0, 1.0e-9
+    assert_in_delta integrated_m, 2 * :math.pi() * 0.05, 0.005
+    assert rolled.measured_speed_m_s == 0.0
   end
 
   test "physics jitter at rest measures as standstill" do
-    resting = Vehicle.step(vehicle(), [], @dt, measured_speed_m_s: 0.002)
+    resting = Vehicle.step(%{vehicle() | measured_speed_m_s: 0.002}, [], @dt, 0.0)
     assert resting.measured_speed_m_s == 0.0
   end
 

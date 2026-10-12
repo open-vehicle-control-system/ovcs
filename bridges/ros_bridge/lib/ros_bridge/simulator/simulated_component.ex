@@ -43,9 +43,9 @@ defmodule RosBridge.Simulator.SimulatedComponent do
   @callback actuations(state :: term(), Vehicle.t(), now_ms :: integer()) :: [actuation()]
 
   @doc """
-  Follows the vehicle's motion over the last `dt_s` of wall time,
-  returning the new state and the signals to emit. Rates are reported
-  from `wall_speed_m_s`, see `RosBridge.Simulator.Vehicle`.
+  Follows the vehicle's motion over the last `dt_s`, returning the new
+  state and the signals to emit: counters from `wheel_turns_step`,
+  rates from `measured_speed_m_s`; see `RosBridge.Simulator.Vehicle`.
   """
   @callback step(state :: term(), Vehicle.t(), dt_s :: float(), now_ms :: integer()) ::
               {term(), [update()]}

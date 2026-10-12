@@ -6,15 +6,20 @@ defmodule RosBridge.Simulator.PlantTest do
 
   @wheels ["left_wheel", "right_wheel"]
 
-  defp joint_state(velocities),
-    do: %JointState{name: ["steering", "left_wheel", "right_wheel"], velocity: velocities}
+  defp joint_state(positions),
+    do: %JointState{name: ["steering", "left_wheel", "right_wheel"], position: positions}
 
-  test "measures the wheels' mean angular velocity times their radius" do
-    assert Plant.wheel_speed(joint_state([0.3, 10.0, 12.0]), @wheels, 0.05) == 0.55
+  test "reads the wheels' mean position in turns" do
+    assert_in_delta Plant.wheel_turns(
+                      joint_state([0.3, 2 * :math.pi(), 6 * :math.pi()]),
+                      @wheels
+                    ),
+                    2.0,
+                    1.0e-9
   end
 
-  test "measures nothing when a wheel or its velocity is missing" do
-    assert Plant.wheel_speed(joint_state([]), @wheels, 0.05) == nil
-    assert Plant.wheel_speed(joint_state([0.3, 10.0, 12.0]), ["other_wheel"], 0.05) == nil
+  test "reads nothing when a wheel or its position is missing" do
+    assert Plant.wheel_turns(joint_state([]), @wheels) == nil
+    assert Plant.wheel_turns(joint_state([0.3, 1.0, 2.0]), ["other_wheel"]) == nil
   end
 end

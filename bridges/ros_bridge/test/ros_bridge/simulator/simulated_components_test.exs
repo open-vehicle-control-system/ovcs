@@ -24,8 +24,7 @@ defmodule RosBridge.Simulator.SimulatedComponentsTest do
       wheelbase_m: 0.324,
       wheel_radius_m: @wheel_radius,
       speed_m_s: speed,
-      measured_speed_m_s: speed,
-      wall_speed_m_s: speed
+      measured_speed_m_s: speed
     }
 
   defp signals(values),

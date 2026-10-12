@@ -14,18 +14,14 @@ defmodule RosBridge.Simulator.Plant do
   from the simulated components' telemetry.
 
   The telemetry measures the simulated wheels, as the vehicle's motor
-  and shaft sensors do: the measured speed, which each step starts from
-  and reports, is the `:wheel_joints`' mean velocity on `joint_states`
-  times the wheel radius. Without a sample in the last
-  `@wheel_speed_stale_ms`, the plant reports its own commanded motion
-  instead.
-
-  The vehicle moves in simulator time, as Gazebo's does, through
-  `RosBridge.Timing`: with `:simulator_clock` listed before this
-  component, a simulator running slower than real time moves the
-  plant's vehicle as far as its own. Command timeouts and the rates the
-  simulated components report stay on the wall clock, the VMS's; see
-  "Two clocks" in `RosBridge.Simulator.Vehicle`.
+  and shaft sensors do. How far they turned is the `:wheel_joints`'
+  mean position on `joint_states`, which the simulator integrates, and
+  how fast is that distance per second of the plant's clock, the wall
+  clock the VMS measures against (see `RosBridge.Simulator.Vehicle`): the counters match the simulator, and
+  the rates match the counters, however fast the simulator runs. The
+  positions are cumulative, so samples arriving late or in bursts lose
+  nothing. Before the first one, or without `:wheel_joints`, the plant
+  reports its own commanded motion instead.
 
   ## Options
 
@@ -46,13 +42,11 @@ defmodule RosBridge.Simulator.Plant do
   alias Ros2.GeometryMsgs.Msg.{Twist, Vector3}
   alias Ros2.SensorMsgs.Msg.JointState
   alias RosBridge.Simulator.Vehicle
-  alias RosBridge.Timing
 
   require Logger
 
   @loop_period_ms 10
   @drive_period_ms 20
-  @wheel_speed_stale_ms 200
 
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -87,11 +81,11 @@ defmodule RosBridge.Simulator.Plant do
        vehicle: Vehicle.new(Map.fetch!(opts, :vehicle)),
        components: components,
        drive_topic: Map.get(opts, :drive_topic, "simulator/drive"),
-       vehicle_time_ns: vehicle_time_ns(),
        last_step_ms: now_ms(),
        last_drive_ms: now_ms() - @drive_period_ms,
        wheel_joints: wheel_joints,
-       wheel_speed: nil
+       wheel_turns: nil,
+       wheel_turns_read: nil
      }}
   end
 
@@ -99,26 +93,17 @@ defmodule RosBridge.Simulator.Plant do
   def handle_info(:loop, state) do
     now_ms = now_ms()
 
-    # Each /clock sample can pull the simulator-time estimate back slightly; time only moves forward.
-    vehicle_time_ns = max(vehicle_time_ns(), state.vehicle_time_ns)
-    dt_s = (vehicle_time_ns - state.vehicle_time_ns) / 1.0e9
-    wall_dt_s = (now_ms - state.last_step_ms) / 1000
+    dt_s = (now_ms - state.last_step_ms) / 1000
     actuations = Enum.flat_map(state.components, &actuations(&1, state.vehicle, now_ms))
-
-    vehicle =
-      Vehicle.step(state.vehicle, actuations, dt_s,
-        wall_dt_s: wall_dt_s,
-        measured_speed_m_s: measured_speed(state.wheel_speed, now_ms)
-      )
-
-    components = Enum.map(state.components, &step(&1, vehicle, wall_dt_s, now_ms))
+    vehicle = Vehicle.step(state.vehicle, actuations, dt_s, wheel_turns_step(state))
+    components = Enum.map(state.components, &step(&1, vehicle, dt_s, now_ms))
 
     state = %{
       state
       | vehicle: vehicle,
         components: components,
-        vehicle_time_ns: vehicle_time_ns,
-        last_step_ms: now_ms
+        last_step_ms: now_ms,
+        wheel_turns_read: state.wheel_turns
     }
 
     {:noreply, publish_drive(state, now_ms)}
@@ -142,27 +127,27 @@ defmodule RosBridge.Simulator.Plant do
   end
 
   def handle_info({:ros_message, {_key_expr, %JointState{} = joint_state}}, state) do
-    case wheel_speed(joint_state, state.wheel_joints, state.vehicle.wheel_radius_m) do
+    case wheel_turns(joint_state, state.wheel_joints) do
       nil -> {:noreply, state}
-      speed -> {:noreply, %{state | wheel_speed: {speed, now_ms()}}}
+      turns -> {:noreply, %{state | wheel_turns: turns}}
     end
   end
 
   def handle_info(_message, state), do: {:noreply, state}
 
-  defp measured_speed({speed, at_ms}, now_ms) when now_ms - at_ms <= @wheel_speed_stale_ms,
-    do: speed
+  defp wheel_turns_step(%{wheel_turns: nil}), do: nil
 
-  defp measured_speed(_wheel_speed, _now_ms), do: nil
+  defp wheel_turns_step(state),
+    do: state.wheel_turns - (state.wheel_turns_read || state.wheel_turns)
 
-  @doc "`wheel_joints`' mean velocity times `wheel_radius_m`; nil if one is missing. Pure."
-  def wheel_speed(%JointState{name: names, velocity: velocities}, wheel_joints, wheel_radius_m) do
-    by_name = Enum.zip(names, velocities) |> Map.new()
-    speeds = Enum.map(wheel_joints, &Map.get(by_name, &1))
+  @doc "`wheel_joints`' mean position in `joint_state`, in turns; nil if one is missing. Pure."
+  def wheel_turns(%JointState{name: names, position: positions}, wheel_joints) do
+    by_name = Enum.zip(names, positions) |> Map.new()
+    radians = Enum.map(wheel_joints, &Map.get(by_name, &1))
 
-    if nil in speeds,
+    if nil in radians,
       do: nil,
-      else: Enum.sum(speeds) / length(speeds) * wheel_radius_m
+      else: Enum.sum(radians) / length(radians) / (2 * :math.pi())
   end
 
   defp actuations(component, vehicle, now_ms) do
@@ -214,6 +199,4 @@ defmodule RosBridge.Simulator.Plant do
   end
 
   defp now_ms, do: System.monotonic_time(:millisecond)
-
-  defp vehicle_time_ns, do: Timing.ros_time_of(System.monotonic_time(:nanosecond))
 end

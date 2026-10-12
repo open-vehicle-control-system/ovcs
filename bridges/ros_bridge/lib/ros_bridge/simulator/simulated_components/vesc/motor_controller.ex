@@ -107,7 +107,12 @@ defmodule RosBridge.Simulator.SimulatedComponents.Vesc.MotorController do
     {state,
      [
        {state.network, state.frames.status,
-        status(state, erpm(state, vehicle), motor_current(state, now_ms), vehicle.wall_speed_m_s)},
+        status(
+          state,
+          erpm(state, vehicle),
+          motor_current(state, now_ms),
+          vehicle.measured_speed_m_s
+        )},
        {state.network, state.frames.status_5, status_5(state)}
      ]}
   end
@@ -157,7 +162,7 @@ defmodule RosBridge.Simulator.SimulatedComponents.Vesc.MotorController do
 
   @doc false
   def erpm(state, vehicle) do
-    wheel_rpm = vehicle.wall_speed_m_s / (2 * :math.pi() * vehicle.wheel_radius_m) * 60
+    wheel_rpm = vehicle.measured_speed_m_s / (2 * :math.pi() * vehicle.wheel_radius_m) * 60
     round(wheel_rpm * state.motor_to_wheel_ratio * state.pole_pairs)
   end
 

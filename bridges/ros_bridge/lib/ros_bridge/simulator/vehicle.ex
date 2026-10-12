@@ -21,26 +21,23 @@ defmodule RosBridge.Simulator.Vehicle do
   ## Commanded and measured
 
   `speed_m_s` is what the drive commands: the speed handed to the
-  simulator. `measured_speed_m_s` is the speed the wheels actually
-  rolled at, the simulator's when a step is given one, and the
-  commanded one otherwise. The commanded speed follows the drive but
-  stays within `@command_lead_m_s` of the measured one, enough to cover
-  the simulator's reply latency and not enough to wind up against an
-  obstacle. The distance, the counters and the rates the simulated components report
-  all follow the measured speed, as the vehicle's wheel and motor
-  sensors would. A measurement
-  within `@standstill_m_s` of zero is zero, physics jitter at rest that
-  would otherwise keep the VMS's standstill gate shut.
+  simulator. `wheel_turns` and `measured_speed_m_s` are how far and how
+  fast the wheels actually turned: the simulator's when a step is given
+  how far they turned, and the commanded motion otherwise. The measured
+  speed is that distance per step, smoothed over
+  `@speed_time_constant_s`: a linear filter keeps the total, so rates
+  integrate back to the counters however unevenly the measurements
+  arrive. The
+  commanded speed follows the drive but stays within `@command_lead_m_s`
+  of the measured one, enough to cover the simulator's reply latency and
+  not enough to wind up against an obstacle. The counters and the rates
+  the simulated components report follow the measurement, as the
+  vehicle's wheel and motor sensors would. A measured speed within
+  `@standstill_m_s` of zero is zero, physics jitter at rest that would
+  otherwise keep the VMS's standstill gate shut.
 
-  ## Two clocks
-
-  The vehicle moves in simulator time: both speeds are per simulated
-  second, and `dt_s` is a simulated step. The VMS measures rates against
-  the wall clock, so a simulated component reporting a rate (an rpm, a pulse
-  frequency) reports `wall_speed_m_s`: the distance rolled per wall
-  second, smoothed over `@wall_speed_time_constant_s`. The two agree
-  when the simulator keeps real time. Counters follow the distance,
-  `wheel_turns`, and need neither.
+  Every speed is per second of the plant's own clock, the wall clock the
+  VMS measures rates against, and `dt_s` is a step of it.
 
   ## Parameters
 
@@ -50,7 +47,7 @@ defmodule RosBridge.Simulator.Vehicle do
 
   @type t :: %__MODULE__{}
 
-  @wall_speed_time_constant_s 0.1
+  @speed_time_constant_s 0.1
   @standstill_m_s 0.005
   @command_lead_m_s 0.25
 
@@ -62,7 +59,6 @@ defmodule RosBridge.Simulator.Vehicle do
     rolling_deceleration_m_s2: 0.5,
     speed_m_s: 0.0,
     measured_speed_m_s: 0.0,
-    wall_speed_m_s: 0.0,
     steering_rad: 0.0,
     wheel_turns: 0.0,
     wheel_turns_step: 0.0
@@ -72,28 +68,33 @@ defmodule RosBridge.Simulator.Vehicle do
   def new(parameters), do: struct!(__MODULE__, parameters)
 
   @doc """
-  Advances the vehicle by `dt_s` of simulator time under `actuations`.
-
-  Options: `:wall_dt_s`, the wall time the step took (`dt_s` when
-  omitted), and `:measured_speed_m_s`, the speed the simulator measured
-  (the commanded speed when omitted or nil).
+  Advances the vehicle by `dt_s` under `actuations`. `wheel_turns_step`
+  is how far the simulator measured the wheels turned in the step, or
+  nil to follow the commanded motion.
   """
-  def step(vehicle, actuations, dt_s, opts \\ []) do
-    measured = opts |> Keyword.get(:measured_speed_m_s) |> standstill()
-    wall_dt_s = Keyword.get(opts, :wall_dt_s) || dt_s
+  def step(vehicle, actuations, dt_s, wheel_turns_step \\ nil) do
     {drive, brake, steering} = combine(actuations, vehicle.steering_rad)
     resistance = brake + vehicle.rolling_deceleration_m_s2
     speed = next_speed(vehicle.speed_m_s, drive, resistance, dt_s, vehicle.max_speed_m_s)
-    speed = if is_nil(measured), do: speed, else: within_lead(speed, measured)
-    rolled_at = if is_nil(measured), do: speed, else: measured
-    wheel_turns_step = rolled_at * dt_s / (2 * :math.pi() * vehicle.wheel_radius_m)
+
+    {speed, measured_speed, wheel_turns_step} =
+      case wheel_turns_step do
+        nil ->
+          {speed, speed, speed * dt_s / (2 * :math.pi() * vehicle.wheel_radius_m)}
+
+        wheel_turns_step ->
+          distance_m = wheel_turns_step * 2 * :math.pi() * vehicle.wheel_radius_m
+
+          measured_speed =
+            vehicle.measured_speed_m_s |> smoothed(distance_m, dt_s) |> standstill()
+
+          {within_lead(speed, measured_speed), measured_speed, wheel_turns_step}
+      end
 
     %{
       vehicle
       | speed_m_s: speed,
-        measured_speed_m_s: rolled_at,
-        wall_speed_m_s:
-          wall_speed(vehicle.wall_speed_m_s, rolled_at, rolled_at * dt_s, wall_dt_s),
+        measured_speed_m_s: measured_speed,
         steering_rad: steering,
         wheel_turns: vehicle.wheel_turns + wheel_turns_step,
         wheel_turns_step: wheel_turns_step
@@ -103,18 +104,13 @@ defmodule RosBridge.Simulator.Vehicle do
   defp within_lead(speed, measured),
     do: speed |> max(measured - @command_lead_m_s) |> min(measured + @command_lead_m_s)
 
-  defp standstill(nil), do: nil
+  defp smoothed(previous, _distance_m, dt_s) when dt_s <= 0, do: previous
+
+  defp smoothed(previous, distance_m, dt_s),
+    do: previous + (distance_m / dt_s - previous) * dt_s / (@speed_time_constant_s + dt_s)
+
   defp standstill(speed) when abs(speed) < @standstill_m_s, do: 0.0
   defp standstill(speed), do: speed * 1.0
-
-  # A stopped vehicle reads exactly zero: the VMS's standstill gate waits for it.
-  defp wall_speed(_previous, speed, _distance, _wall_dt_s) when speed == 0.0, do: 0.0
-  defp wall_speed(previous, _speed, _distance, wall_dt_s) when wall_dt_s <= 0, do: previous
-
-  defp wall_speed(previous, _speed, distance, wall_dt_s) do
-    weight = wall_dt_s / (@wall_speed_time_constant_s + wall_dt_s)
-    previous + (distance / wall_dt_s - previous) * weight
-  end
 
   defp combine(actuations, steering) do
     Enum.reduce(actuations, {0.0, 0.0, steering}, fn
