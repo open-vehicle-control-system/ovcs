@@ -82,7 +82,7 @@ its package, and the stacks take it from there:
 |---|---|---|
 | `nav2/` | `nav2.yaml` and the behaviour trees it names | baked into the onboard Nav2 image by `ovcs compute stage`; mounted by both local `nav2` services |
 | `description/` | the URDF/xacro model | mounted into the simulator |
-| `description/simulation.yaml` | the sensors Gazebo bridges and the spawn height | `sim.launch.py` |
+| `description/simulation.yaml` | the sensors Gazebo bridges and the spawn height | `gazebo.launch.py` |
 | `foxglove/` | Foxglove layouts for the vehicle's topics | Foxglove Studio, imported by hand |
 
 The local stacks take the vehicle from `OVCS_VEHICLE` (its directory

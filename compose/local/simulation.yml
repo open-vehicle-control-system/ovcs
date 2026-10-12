@@ -69,7 +69,7 @@ services:
     command:
       - bash
       - -lc
-      - "ros2 launch /opt/ovcs/launch/sim.launch.py vehicle:=${OVCS_VEHICLE}"
+      - "ros2 launch /opt/ovcs/launch/gazebo.launch.py vehicle:=${OVCS_VEHICLE}"
 
   nav2:
     # Nav2, behind a profile so the plain `up -d` above stays a bare

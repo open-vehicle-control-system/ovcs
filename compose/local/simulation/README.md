@@ -16,7 +16,7 @@ The simulator speaks Zenoh like everything else, so a simulated vehicle appears 
 compose/local/
   simulation.yml          the stack: gazebo, gazebo-gui, nav2
   images/gazebo/          the Gazebo Jetty image
-  simulation/             worlds, shared macros, sim.launch.py
+  simulation/             worlds, shared macros, gazebo.launch.py
 
 vehicles/<vehicle>/
   description/            the URDF/xacro model and simulation.yaml, mounted into the container

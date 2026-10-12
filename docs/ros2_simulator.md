@@ -40,7 +40,7 @@ Everything containerised lives under `compose/`, split by one question: is it pu
 
 ## What the simulator starts
 
-`compose/local/simulation/launch/sim.launch.py` brings up one vehicle in one world, in this order:
+`compose/local/simulation/launch/gazebo.launch.py` brings up one vehicle in one world, in this order:
 
 1. `robot_state_publisher` expands the xacro and publishes `/robot_description`.
 2. `gz sim -s -r` loads the world, server-only, running.
@@ -64,7 +64,7 @@ The model lives with its vehicle, in `vehicles/<vehicle>/description/` beside th
 
 ## Topics: who publishes what
 
-The boundary between Gazebo's transport and ROS is exactly the list in `sim.launch.py`.
+The boundary between Gazebo's transport and ROS is exactly the list in `gazebo.launch.py`.
 
 | Topic | Type | Publisher | Consumer |
 |---|---|---|---|
@@ -162,7 +162,7 @@ The plant is framework; what it emulates is the vehicle's. Each piece of hardwar
 
 Three things are particular to the simulator:
 
-- **Gazebo is told the motion, and measures it back.** The plant publishes its vehicle's commanded speed and Ackermann yaw rate on `/simulator/drive`, which `sim.launch.py` bridges to the plugin; the plugin's own odometry and its `odom → base_link` are not bridged. What the simulated components report follows the wheels, as the vehicle's motor and shaft sensors do: the mean of the `:wheel_joints`' velocities on `/joint_states` times the wheel radius, with the command kept just ahead of it. A wheel that spins without the model moving reads as moving. `AckermannSteering` drives the wheels at the commanded velocity, but no harder than their joints' effort limit, which the OVCS Mini's model sets to what its motor's current gives each wheel: commanded at 0.3 m/s against `workshop.sdf`'s first box, the wheels stalled and the bridge's `/odom` stopped 1.8 cm short of the model. The bridge's `Publishers.Odometry` owns `/odom`, from `0x60B` and the simulated IMU, as on the vehicle.
+- **Gazebo is told the motion, and measures it back.** The plant publishes its vehicle's commanded speed and Ackermann yaw rate on `/simulator/drive`, which `gazebo.launch.py` bridges to the plugin; the plugin's own odometry and its `odom → base_link` are not bridged. What the simulated components report follows the wheels, as the vehicle's motor and shaft sensors do: the mean of the `:wheel_joints`' velocities on `/joint_states` times the wheel radius, with the command kept just ahead of it. A wheel that spins without the model moving reads as moving. `AckermannSteering` drives the wheels at the commanded velocity, but no harder than their joints' effort limit, which the OVCS Mini's model sets to what its motor's current gives each wheel: commanded at 0.3 m/s against `workshop.sdf`'s first box, the wheels stalled and the bridge's `/odom` stopped 1.8 cm short of the model. The bridge's `Publishers.Odometry` owns `/odom`, from `0x60B` and the simulated IMU, as on the vehicle.
 - **Two clocks.** The plant's vehicle moves in simulator time, so it covers the distance Gazebo does when Gazebo runs slower than real time; the rates its simulated components report are per wall second, the clock the VMS measures against. Reported on the VMS's clock, a VESC and a pulse sensor that agree in simulator time still agree, and the cross-check between them holds. See `RosBridge.Simulator.Vehicle`. One consequence reaches Nav2: `/odom`'s pose advances per simulated second, but its twist is the VMS's speed, per wall second, so below real time Nav2 reads a car slower than it commanded while its position tracks.
 - **The switches are scripted.** `SimulatedComponents.OVCS.RadioControl` moves channels 6 and 5 through `:radio` to `:ros` and the commander once the VMS's `vms_status` appears, and back to the start when it disappears, so a restarted VMS goes through the same transitions.
 
@@ -328,7 +328,7 @@ Or open Foxglove Studio against `ws://<docker-host>:8765` and subscribe to `/ovc
 | To understand | Read | Then |
 |---|---|---|
 | how to run any of this | [Simulation](../compose/local/simulation/README.md) | `compose/local/simulation.yml` |
-| the launch order and bridged topics | `compose/local/simulation/launch/sim.launch.py` (its docstrings are the design notes) | `compose/compute/images/nav2/launch/nav2.launch.py` |
+| the launch order and bridged topics | `compose/local/simulation/launch/gazebo.launch.py` (its docstrings are the design notes) | `compose/compute/images/nav2/launch/nav2.launch.py` |
 | the rmw_zenoh wire format | [`bridges/ros_bridge/README.md`](../bridges/ros_bridge/README.md) | `bridges/ros_bridge/lib/ros2/rmw_zenoh.ex`, `zenoh_client.ex` |
 | time | `bridges/ros_bridge/lib/ros_bridge/clock.ex` | `timing.ex`, `publishers/static_transform.ex` |
 | what a vehicle's bridge runs | `vehicles/ovcs_mini/lib/ovcs_mini.ex` (`ros_bridge_config/2`) | `bridges/ros_bridge/lib/ros_bridge/components.ex` |
