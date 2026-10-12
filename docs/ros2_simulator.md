@@ -44,7 +44,7 @@ Everything containerised lives under `compose/`, split by one question: is it pu
 
 1. `robot_state_publisher` expands the xacro and publishes `/robot_description`.
 2. `gz sim -s -r` loads the world, server-only, running.
-3. A `parameter_bridge` bridges `/clock`, `/joint_states`, the ground truth on `/simulator/odom`, `/imu_raw`, `/scan_raw`, `/ultrasound/rear_{left,right}_raw`, both `camera_info` topics and the drive command, `/simulator/drive`.
+3. A `parameter_bridge` bridges `/clock`, `/joint_states`, the ground truth on `/simulator/odom`, the sensor topics the vehicle's `description/simulation.yaml` lists, and the drive command, `/simulator/drive`.
 4. One `image_bridge` per camera (compressed).
 5. `ros_gz_sim create` spawns the model from `/robot_description`. The model exists only now, so it comes last.
 
@@ -57,7 +57,7 @@ Details that read like bugs until you know them:
 - **Cameras go through `image_bridge`**, for bandwidth ([Perception](#perception-against-the-simulator)).
 - **`use_sim_time: true`** on every node ([Time](#time)).
 - **`GZ_IP=127.0.0.1`** on the `gazebo` and `gazebo-gui` services. They share the host's network, which has several interfaces, and without it gz-transport discovery leaves some subscriptions unconnected: on about one start in two a bridged topic (`/clock`, `/simulator/odom`, `/imu_raw`) never reached ROS, for every subscriber, until another Gazebo subscriber to it appeared ([gz-transport#225](https://github.com/gazebosim/gz-transport/issues/225) has the same symptom). Pinned, ten starts out of ten delivered every topic.
-- **The world steps every 5 ms.** Gazebo publishes `/clock` once per step, so that is also the clock's rate, 200 Hz, which every node with `use_sim_time` receives. On the OVCS Mini reference vehicle a steady arc steers and turns the same as with a 1 ms step (0.5835 ± 0.008 rad/s for 0.6 commanded, either way).
+- **The world steps every 5 ms.** Gazebo publishes `/clock` once per step, so that is also the clock's rate, 200 Hz, which every node with `use_sim_time` receives.
 - **`/joint_states` at 50 Hz**, set on the model's `JointStatePublisher`; unset, it publishes every step, and `robot_state_publisher` republishes each one on `/tf`.
 
 The model lives with its vehicle, in `vehicles/<vehicle>/description/` beside the `simulation.yaml` that names its sensors, and is mounted into the container rather than baked in. `OVCS_VEHICLE` in `compose/local/.env` picks the vehicle; the OVCS Mini reference vehicle's is the worked example ([Simulation](../compose/local/simulation/README.md#your-vehicle-in-the-simulator)).
@@ -73,8 +73,7 @@ The boundary between Gazebo's transport and ROS is exactly the list in `gazebo.l
 | `/tf_static` | `tf2_msgs/TFMessage` | `robot_state_publisher` **and** `RosBridge.Publishers.StaticTransform` | Nav2, Foxglove |
 | `/joint_states` | `sensor_msgs/JointState` | Gazebo | `RosBridge.Simulator.Plant` (the wheel speed), Foxglove |
 | `/imu_raw` | `sensor_msgs/Imu` | the model's IMU sensor | `RosBridge.Imu.Zenoh`, republished on `/imu` by `Publishers.Imu` |
-| `/scan_raw` | `sensor_msgs/LaserScan` | the model's lidar, a 500-ray `gpu_lidar` | `RosBridge.Lidar.Zenoh`, republished on `/scan` by `Publishers.LaserScan` |
-| `/ultrasound/rear_{left,right}_raw` | `sensor_msgs/LaserScan` | a 13-ray, 60° `gpu_lidar` fan per rear ultrasonic | `RosBridge.Rangefinder.Zenoh`, republished on `/ultrasound/rear_{left,right}` by `Publishers.Range` |
+| a ray sensor's `*_raw` topic | `sensor_msgs/LaserScan` | a `gpu_lidar` in the model | `RosBridge.Lidar.Zenoh` for a lidar, `RosBridge.Rangefinder.Zenoh` for a fan standing in for one rangefinder beam; republished as on the vehicle |
 | `/stereo/{left,right}/image_raw/compressed` | `sensor_msgs/CompressedImage` | `image_bridge` | `RosBridge.Camera.Zenoh` |
 | `/stereo/{left,right}/camera_info` | `sensor_msgs/CameraInfo` | Gazebo **and** the perception bridge (from its calibration YAML) | Foxglove, the calibrator |
 | `/cmd_vel_nav_raw` | `geometry_msgs/TwistStamped` | Nav2 `controller_server`, `behavior_server` | Nav2 `velocity_smoother` |
@@ -149,9 +148,9 @@ On the vehicle (OVCS Mini)
 In the simulator the same loop drives Gazebo. A plant (`RosBridge.Simulator.Plant`, the `:simulator_plant` component) stands in for the hardware on virtual CAN: it reads what the VMS commands, moves its own model of the vehicle, reports what the real hardware would, and hands Gazebo the resulting motion.
 
 ```text
-Nav2 ──/cmd_vel_nav──► Consumers.Velocity ──0x2B1──► VMS ──vesc_set_rpm, external PWM──► plant
+Nav2 ──/cmd_vel_nav──► Consumers.Velocity ──0x2B1──► VMS ──actuator commands───────────► plant
                                                        ▲                                  │
-                       VESC status, pulse counter, alive ◄────────────────────────────────┤
+                            the hardware's status frames ◄────────────────────────────────┤
                                                                                          │ /simulator/drive
 Nav2 ◄── /odom + /tf ── Publishers.Odometry ◄── 0x60B ── VMS          Gazebo AckermannSteering
                                 ▲                                                         │
@@ -162,7 +161,7 @@ The plant is framework; what it emulates is the vehicle's. Each piece of hardwar
 
 Three things are particular to the simulator:
 
-- **Gazebo is told the motion, and measures it back.** The plant publishes its vehicle's commanded speed and Ackermann yaw rate on `/simulator/drive`, which `gazebo.launch.py` bridges to the plugin; the plugin's own odometry and its `odom → base_link` are not bridged. What the simulated components report follows the wheels, as the vehicle's motor and shaft sensors do: the mean of the `:wheel_joints`' velocities on `/joint_states` times the wheel radius, with the command kept just ahead of it. A wheel that spins without the model moving reads as moving. `AckermannSteering` drives the wheels at the commanded velocity, but no harder than their joints' effort limit, which the OVCS Mini's model sets to what its motor's current gives each wheel: commanded at 0.3 m/s against `workshop.sdf`'s first box, the wheels stalled and the bridge's `/odom` stopped 1.8 cm short of the model. The bridge's `Publishers.Odometry` owns `/odom`, from `0x60B` and the simulated IMU, as on the vehicle.
+- **Gazebo is told the motion, and measures it back.** The plant publishes its vehicle's commanded speed and Ackermann yaw rate on `/simulator/drive`, which `gazebo.launch.py` bridges to the plugin; the plugin's own odometry and its `odom → base_link` are not bridged. What the simulated components report follows the wheels, as the vehicle's motor and shaft sensors do: the mean of the `:wheel_joints`' velocities on `/joint_states` times the wheel radius, with the command kept just ahead of it. A wheel that spins without the model moving reads as moving. `AckermannSteering` drives the wheels at the commanded velocity, but no harder than their joints' effort limit: set to what the motor gives each wheel, a wheel held back stalls instead of spinning. The bridge's `Publishers.Odometry` owns `/odom`, from `0x60B` and the simulated IMU, as on the vehicle.
 - **Two clocks.** The plant's vehicle moves in simulator time, so it covers the distance Gazebo does when Gazebo runs slower than real time; the rates its simulated components report are per wall second, the clock the VMS measures against. Reported on the VMS's clock, a VESC and a pulse sensor that agree in simulator time still agree, and the cross-check between them holds. See `RosBridge.Simulator.Vehicle`. One consequence reaches Nav2: `/odom`'s pose advances per simulated second, but its twist is the VMS's speed, per wall second, so below real time Nav2 reads a car slower than it commanded while its position tracks.
 - **The switches are scripted.** `SimulatedComponents.OVCS.RadioControl` moves channels 6 and 5 through `:radio` to `:ros` and the commander once the VMS's `vms_status` appears, and back to the start when it disappears, so a restarted VMS goes through the same transitions.
 
@@ -229,19 +228,16 @@ The file holds the vehicle's values (`use_sim_time: false`); the simulator overr
 
 ```text
 NavigateToPose goal ─► bt_navigator ─► planner_server (NavFn) ─► path
-                                   └─► controller_server (MPPI) ◄─ /odom, /tf, costmaps (/stereo/points, /scan, /ultrasound/*)
+                                   └─► controller_server (MPPI) ◄─ /odom, /tf, costmaps (the vehicle's obstacle sources)
 controller_server, behavior_server ─/cmd_vel_nav_raw─► velocity_smoother ─/cmd_vel_nav @ 20 Hz─►
 ```
 
 What is deliberately unusual:
 
 - **No map, no AMCL.** Every frame is `odom` and both costmaps roll with the vehicle: enough to prove the velocity path drives an Ackermann vehicle without the SLAM question, and no fake static `map → odom`, which looks like localisation and is not.
-- **Stereo, lidar and the rear ultrasonics are the obstacle sources.** Both costmaps mark `/stereo/points` between 12 cm and 60 cm above the ground, up to 3 m: a glossy floor's reflections read 7–10 cm high, so lower obstacles go unseen. The global costmap clears by raytracing to 3.5 m. The local costmap uses the spatio-temporal voxel layer: its marks expire after 15 s, and faster inside the camera's frustum (0.55–3 m, the matched part of the image) when they are no longer seen, because a forward-only camera never looks again at what it turned away from. A voxel becomes an obstacle only after three clouds have hit it, and a denoise layer in both costmaps drops obstacle groups smaller than five cells: stereo mismatches rarely repeat in the same place or form large groups, walls and furniture do. Without the perception pipeline running they stay inflation-only, and nothing is avoided. The lidar's `/scan` adds a 360° plane at its height, marked up to 4 m and cleared up to 5 m, after the denoise layer, so a chair leg one cell wide stays. A bin that got no return is `+Inf`, which `inf_is_valid` clears through; an unmeasured bin is 0.0 and ignored. The rear ultrasonics see below that plane, through `RangeSensorLayer`, also after the denoise layer: a close obstacle is an arc of two or three cells.
 - **`AckermannConstraints`.** MPPI's `motion_model` names a plugin *instance*; the class, `mppi::AckermannMotionModel`, comes from `<instance>.plugin`. It clamps yaw rate to `|vx| / min_turning_r` inside the sampler, so infeasible arcs are never considered. `min_turning_r` is `0.324 / tan(0.52) = 0.566 m`, rounded up to 0.6.
 - **`TwistStamped` on `/cmd_vel_nav`.** `nav2_util::TwistPublisher` defaults `enable_stamped_cmd_vel` to true; its header comment says otherwise, and the code wins.
-- **A 0.15 m/s floor, in the VMS.** Below its Minimum ERPM (300) the Mini's VESC brakes instead of driving, 0.07 m/s through the gearing ([VESC drivetrain](./vesc_drivetrain.md)). `RosVelocityCommand`'s `:min_speed_m_s` drives any slower non-zero velocity at 0.15 m/s, so a planner easing in near its goal neither stops and restarts the car nor loses a slow turn. `velocity_smoother`'s `deadband_velocity` is only 0.02 m/s: a wider band zeroed MPPI's slow speeds while passing their yaw rate, which a car cannot turn without moving. DriveOnHeading floors at `minimum_speed: 0.10`.
-- **Reverse at up to 0.3 m/s, forward at 0.8 m/s, 1 m/s².** Behind the car only the lidar and the two rear ultrasonics see, so MPPI's `vx_min` is −0.3 m/s and `PreferForwardCritic` keeps reversing a last resort. `vx_max` is 0.8 m/s, and acceleration 1 m/s² (braking 2): from standstill MPPI reaches two steps of `ax_max × model_dt`, 0.20 m/s.
-- **`BackUp` reverses 30 cm, at 0.10 m/s.** A car that cannot turn tighter than its radius otherwise stays stuck facing an obstacle. The rear ultrasonics reach the costmaps through Nav2's `RangeSensorLayer`, which ignores REP 117's `+Inf` and clears only on a reading of exactly `max_range`: their `range_publisher` entries set `beyond_range: :max_range`.
+- **The rest is the vehicle's.** Obstacle sources, speed limits, reverse and recovery distances follow from a vehicle's sensors and drivetrain; the OVCS Mini reference vehicle's are in [its README](../vehicles/ovcs_mini/README.md#navigation).
 - **No `Spin` in either behaviour tree.** A car produces no motion from a spin, so it ran its full duration and burned a recovery slot. The spin *server* stays loaded because `bt_navigator` resolves every action at activation.
 - **NavFn, not Smac.** No `nav2_smac_planner` in the archive, so the global plan knows nothing about turning radius; MPPI carries the corners the car cannot cut.
 - **`yaw_goal_tolerance` is 3.15.** A car cannot rotate in place to a final heading.

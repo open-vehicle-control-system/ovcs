@@ -25,8 +25,8 @@ vehicles/<vehicle>/
 ```
 
 ```text
-Nav2 ──/cmd_vel_nav──► ROS bridge ──0x2B1──► VMS ──VESC and servo commands──► plant ──/simulator/drive──► Gazebo
-                         ▲                      ◄──VESC status, pulse counter───┘                          │
+Nav2 ──/cmd_vel_nav──► ROS bridge ──0x2B1──► VMS ──actuator commands────────► plant ──/simulator/drive──► Gazebo
+                         ▲                      ◄──their status frames──────────┘                          │
                          └──── /odom ◄── 0x60B ── VMS          IMU heading ◄── /imu_raw ◄──────────────────┘
 ```
 
