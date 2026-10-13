@@ -176,7 +176,7 @@ Host 10.42.0.*
 
 ### Stereo depth is empty, or coverage is a few percent
 
-**Cause:** the world has no texture (`empty.sdf` gives SGBM nothing to correlate), or the bridge uses the real Mini's calibration against Gazebo's ideal pinhole. **Fix:** use `workshop.sdf` for anything involving depth, and let `OVCS_SIM=1` select the simulator calibration in `vehicles/ovcs_mini/priv/calibration/sim/`.
+**Cause:** the world has no texture (`empty.sdf` gives SGBM nothing to correlate), or the bridge uses the real Mini's calibration against Gazebo's ideal pinhole. **Fix:** use `workshop.sdf` for anything involving depth, and let `OVCS_SIM=1` select the simulator calibration in `vehicles/ovcs_mini/priv/calibration/simulation/`.
 
 ### Nav2 drops every point cloud: "the timestamp on the message is earlier than all the data in the transform cache"
 

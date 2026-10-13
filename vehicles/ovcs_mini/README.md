@@ -65,7 +65,7 @@ foxglove/                          — Foxglove layouts
 
 ## In the simulator
 
-`description/` is the Gazebo model ([Simulation](../../compose/local/simulation/README.md)); `ros_simulation_config/0` in `lib/ovcs_mini.ex` and `priv/can/bridges/ros_simulated_components.yml` wire the simulated hardware to it.
+`description/` is the Gazebo model ([Simulation](../../compose/local/simulation/README.md)); `ros_bridge_simulation_config/0` in `lib/ovcs_mini.ex` and `priv/can/bridges/ros_simulated_components.yml` wire the simulated hardware to it.
 
 | Sensor | Gazebo topic | Model | Republished on |
 |---|---|---|---|

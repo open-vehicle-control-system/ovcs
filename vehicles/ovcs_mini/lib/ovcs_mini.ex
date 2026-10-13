@@ -44,7 +44,7 @@ defmodule OvcsMini do
         default_can_mapping: %{host: "ovcs:vcan0", target: "ovcs:spi0.0"}
       },
       # On the host it also declares the frames of the hardware its
-      # simulated hardware answers for, see `ros_simulation_config/0`.
+      # simulated hardware answers for, see `ros_bridge_simulation_config/0`.
       "ros" => %{
         target: :ovcs_base_can_system_rpi4,
         bridges: [RosBridge],
@@ -92,17 +92,21 @@ defmodule OvcsMini do
     }
 
   @impl RosBridge
-  def ros_bridge_config(:host, "ros_perception"),
-    do: if(simulation?(), do: perception_sim_config(), else: perception_host_config())
+  def ros_bridge_config(:host, "ros_perception") do
+    if simulation?(),
+      do: ros_perception_bridge_simulation_config(),
+      else: ros_perception_bridge_host_config()
+  end
 
   def ros_bridge_config(:target, "ros_perception"),
-    do: perception_target_config()
+    do: ros_perception_bridge_target_config()
 
-  def ros_bridge_config(:host, _firmware_id),
-    do: if(simulation?(), do: ros_simulation_config(), else: ros_host_config())
+  def ros_bridge_config(:host, _firmware_id) do
+    if simulation?(), do: ros_bridge_simulation_config(), else: ros_bridge_host_config()
+  end
 
   def ros_bridge_config(:target, _firmware_id),
-    do: ros_target_config()
+    do: ros_bridge_target_config()
 
   defp simulation?, do: System.get_env("OVCS_SIM") in ["1", "true"]
 
@@ -110,7 +114,7 @@ defmodule OvcsMini do
   # the perception Pi), so each names its ROS node explicitly —
   # otherwise both announce `ovcs_bridge` and the ROS graph cannot
   # tell them apart.
-  defp ros_host_config,
+  defp ros_bridge_host_config,
     do: %RosBridge.Config{
       zenoh_endpoint_ip: System.get_env("ZENOH_ENDPOINT_IP", "127.0.0.1"),
       node_name: "ovcs_bridge_ros",
@@ -137,7 +141,7 @@ defmodule OvcsMini do
   # The `ros` bridge against the simulator, chosen with OVCS_SIM: its
   # simulated hardware answers for the Mini's, so the VMS commands Gazebo's
   # physics over CAN, and the IMU is Gazebo's.
-  defp ros_simulation_config do
+  defp ros_bridge_simulation_config do
     %RosBridge.Config{
       zenoh_endpoint_ip: System.get_env("ZENOH_ENDPOINT_IP", "127.0.0.1"),
       node_name: "ovcs_bridge_ros",
@@ -220,7 +224,7 @@ defmodule OvcsMini do
     ]
   end
 
-  defp ros_target_config,
+  defp ros_bridge_target_config,
     do: %RosBridge.Config{
       zenoh_endpoint_ip: Application.get_env(:ros_bridge, :zenoh_endpoint_ip, "127.0.0.1"),
       node_name: "ovcs_bridge_ros",
@@ -295,7 +299,7 @@ defmodule OvcsMini do
     }
   end
 
-  defp perception_host_config do
+  defp ros_perception_bridge_host_config do
     %RosBridge.Config{
       zenoh_endpoint_ip: System.get_env("ZENOH_ENDPOINT_IP", "127.0.0.1"),
       node_name: "ovcs_bridge_perception",
@@ -317,12 +321,12 @@ defmodule OvcsMini do
   # would start, log that it is unavailable and publish nothing, which
   # is correct but pointless.
   #
-  # Chosen with VEHICLE=OvcsMini and OVCS_SIM=1, so the sim wiring
+  # Chosen with VEHICLE=OvcsMini and OVCS_SIM=1, so the simulation wiring
   # cannot be selected by accident on the vehicle.
-  defp perception_sim_config do
+  defp ros_perception_bridge_simulation_config do
     %RosBridge.Config{
       zenoh_endpoint_ip: System.get_env("ZENOH_ENDPOINT_IP", "127.0.0.1"),
-      node_name: "ovcs_bridge_perception_sim",
+      node_name: "ovcs_bridge_perception_simulation",
       components:
         [
           :heartbeat,
@@ -330,15 +334,15 @@ defmodule OvcsMini do
           # and /odom, which Nav2's costmaps require.
           :simulator_clock,
           stereo_transforms(),
-          stereo_component(RosBridge.Camera.Zenoh, :sim)
-        ] ++ sim_detector()
+          stereo_component(RosBridge.Camera.Zenoh, :simulation)
+        ] ++ simulation_detector()
     }
   end
 
-  # Detection on a workstation, so the sim runs the *whole* stack
+  # Detection on a workstation, so the simulation runs the *whole* stack
   # rather than everything-but-the-detector. Off unless a model is
   # present: the ONNX weights are not in the repo, so the default
-  # remains a stereo-only sim rather than a detector that logs a
+  # remains a stereo-only simulation rather than a detector that logs a
   # missing file on every start.
   #
   # OVCS_DETECTOR picks the backend, defaulting to the DNN one when a
@@ -354,8 +358,8 @@ defmodule OvcsMini do
   #
   # `detect_every_n: 3` because CPU inference shares this machine with
   # SGBM and Gazebo. On the car the accelerator runs every frame.
-  defp sim_detector do
-    case sim_detector_choice() do
+  defp simulation_detector do
+    case simulation_detector_choice() do
       :off ->
         []
 
@@ -366,7 +370,7 @@ defmodule OvcsMini do
         [
           {:detector,
            backend: RosBridge.Inference.Dnn,
-           model_path: sim_model_path(),
+           model_path: simulation_model_path(),
            target: target,
            score_threshold: 0.4,
            detect_every_n: 3,
@@ -375,20 +379,20 @@ defmodule OvcsMini do
     end
   end
 
-  defp sim_detector_choice do
+  defp simulation_detector_choice do
     case System.get_env("OVCS_DETECTOR") do
       "gpu" -> :opencl_fp16
       "dnn" -> :cpu
       "stub" -> :stub
       "off" -> :off
       # Unset: only if the weights are actually there.
-      _ -> if File.exists?(sim_model_path()), do: :cpu, else: :off
+      _ -> if File.exists?(simulation_model_path()), do: :cpu, else: :off
     end
   end
 
-  defp sim_model_path, do: Path.join(priv_models_dir(), "yolov8n.onnx")
+  defp simulation_model_path, do: Path.join(priv_models_dir(), "yolov8n.onnx")
 
-  defp perception_target_config do
+  defp ros_perception_bridge_target_config do
     %RosBridge.Config{
       zenoh_endpoint_ip: Application.get_env(:ros_bridge, :zenoh_endpoint_ip, "127.0.0.1"),
       node_name: "ovcs_bridge_perception",
@@ -627,14 +631,14 @@ defmodule OvcsMini do
   # In simulation the "camera" is a topic. Gazebo publishes on the
   # same names the vehicle does, so left really is left here — the
   # transposition that catches physical modules cannot happen.
-  defp camera_addressing(:sim, side),
+  defp camera_addressing(:simulation, side),
     do: [topic: "/stereo/#{side}/image_raw/compressed"]
 
   # The simulator gets its own calibration, and must: Gazebo renders an
   # ideal pinhole, so applying the physical lens's distortion and
   # rectification to it warps the two views apart rather than into
   # alignment. Measured, that dropped stereo coverage to 5.4%.
-  defp priv_calibration_dir(:sim), do: Path.join(priv_calibration_dir(), "sim")
+  defp priv_calibration_dir(:simulation), do: Path.join(priv_calibration_dir(), "simulation")
   defp priv_calibration_dir(_arm), do: priv_calibration_dir()
 
   # The firmware's root filesystem is read-only: a calibration

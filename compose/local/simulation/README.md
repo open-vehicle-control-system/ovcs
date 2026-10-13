@@ -117,7 +117,7 @@ Measured against `workshop.sdf`: 30.3 Hz, 61.2 % depth coverage, median depth 0.
 Two things produce **no disparity at all**:
 
 - **An untextured world.** SGBM correlates local patches; a flat plane under a blank sky gives it nothing. Use `workshop.sdf`, the default, for anything involving depth.
-- **The vehicle's own calibration.** Gazebo renders an ideal pinhole, and real distortion coefficients and rectification rotations warp the views apart: 5.4 % coverage. The simulator's calibration, `vehicles/ovcs_mini/priv/calibration/sim/`, has D = 0 and R = I, with the real focal length scaled to the capture resolution: the optics match the vehicle, the distortion model matches the simulator.
+- **The vehicle's own calibration.** Gazebo renders an ideal pinhole, and real distortion coefficients and rectification rotations warp the views apart: 5.4 % coverage. The simulator's calibration, `vehicles/ovcs_mini/priv/calibration/simulation/`, has D = 0 and R = I, with the real focal length scaled to the capture resolution: the optics match the vehicle, the distortion model matches the simulator.
 
 ## Navigating with Nav2
 
@@ -142,7 +142,7 @@ The simulator reads three things from `vehicles/<vehicle>/`:
 | `description/simulation.yaml` | under `gazebo`: the sensor topics to bridge to ROS, the cameras, the spawn height. |
 | `nav2/` | `nav2.yaml` and the behaviour trees it references under `/opt/ovcs/config/`. |
 
-The ROS bridge needs two more things from the vehicle package: a `:simulated_hardware` in its host `ros_bridge_config/2` against the simulator, listing a `RosBridge.Simulator.SimulatedComponent` for each piece of hardware the VMS drives, and their frames in its host CAN topology, through a `%{host: _, target: _}` `can_config_path` (see `OvcsVehicle`). The OVCS Mini's `ros_simulation_config/0` and `priv/can/bridges/ros_simulated_components.yml` are the worked example; hardware with no simulated component yet, such as the OVCS1 reference vehicle's inverter or brake booster, needs one written first.
+The ROS bridge needs two more things from the vehicle package: a `:simulated_hardware` in its host `ros_bridge_config/2` against the simulator, listing a `RosBridge.Simulator.SimulatedComponent` for each piece of hardware the VMS drives, and their frames in its host CAN topology, through a `%{host: _, target: _}` `can_config_path` (see `OvcsVehicle`). The OVCS Mini's `ros_bridge_simulation_config/0` and `priv/can/bridges/ros_simulated_components.yml` are the worked example; hardware with no simulated component yet, such as the OVCS1 reference vehicle's inverter or brake booster, needs one written first.
 
 The OVCS Mini reference vehicle's model is the worked example: [`vehicles/ovcs_mini/description/`](../../../vehicles/ovcs_mini/description/README.md) documents its dimensions and which of them are estimates, and `inertial_macros.xacro` comes from the earlier [traxxas](https://github.com/open-vehicle-control-system/traxxas) model, which targeted Gazebo Classic. A centre of gravity at half the body height rolls a model over in its first corner; the Mini carries its chassis mass in a low tub for that reason.
 

@@ -167,7 +167,7 @@ Nav2 ── /cmd_vel_nav ──► Consumers.Velocity ── 0x2B1 ──► VMS
                                                       Gazebo ─────────────────────┘
 ```
 
-The simulated hardware is framework; what it emulates is the vehicle's. Each piece of hardware is a `RosBridge.Simulator.SimulatedComponent`, the inverse of the VMS component that drives it, named after it and reading and writing its frames by name: `SimulatedComponents.Vesc.MotorController`, `SimulatedComponents.OVCS.GenericController`, `SimulatedComponents.Traxxas.Steering` and `SimulatedComponents.OVCS.RadioControl` are the OVCS Mini reference vehicle's set. A vehicle with other hardware adds simulated components; `RosBridge.Simulator.Vehicle`, the motion they act on, knows none of them. The OVCS Mini wires it into its `ros` bridge with `OVCS_SIM`, in `ros_simulation_config/0`, and declares its frames in `priv/can/bridges/ros_simulated_components.yml`, merged into the bridge's CAN topology on the host only.
+The simulated hardware is framework; what it emulates is the vehicle's. Each piece of hardware is a `RosBridge.Simulator.SimulatedComponent`, the inverse of the VMS component that drives it, named after it and reading and writing its frames by name: `SimulatedComponents.Vesc.MotorController`, `SimulatedComponents.OVCS.GenericController`, `SimulatedComponents.Traxxas.Steering` and `SimulatedComponents.OVCS.RadioControl` are the OVCS Mini reference vehicle's set. A vehicle with other hardware adds simulated components; `RosBridge.Simulator.Vehicle`, the motion they act on, knows none of them. The OVCS Mini wires it into its `ros` bridge with `OVCS_SIM`, in `ros_bridge_simulation_config/0`, and declares its frames in `priv/can/bridges/ros_simulated_components.yml`, merged into the bridge's CAN topology on the host only.
 
 A frame from the VMS only updates the command its simulated component holds. The work happens on a 20 ms wall-clock tick:
 
@@ -274,10 +274,10 @@ Gazebo cameras ─► image_bridge ─/stereo/{left,right}/image_raw/compressed�
                              └─► detector (optional: Stub or Dnn) ─► /stereo/detections
 ```
 
-`RosBridge.Camera.Zenoh` subscribes to a `CompressedImage` topic and emits the same `{:camera_frame, %Frame{}}` casts a physical driver does. Swapping it in for `RosBridge.Camera.LibCamera` is the entire difference between the car and the simulated car; in the OVCS Mini, `OVCS_SIM=1` (or `true`) selects it (`perception_sim_config/0` in `vehicles/ovcs_mini/lib/ovcs_mini.ex`).
+`RosBridge.Camera.Zenoh` subscribes to a `CompressedImage` topic and emits the same `{:camera_frame, %Frame{}}` casts a physical driver does. Swapping it in for `RosBridge.Camera.LibCamera` is the entire difference between the car and the simulated car; in the OVCS Mini, `OVCS_SIM=1` (or `true`) selects it (`ros_perception_bridge_simulation_config/0` in `vehicles/ovcs_mini/lib/ovcs_mini.ex`).
 
 - **Compressed, not raw.** A 480×270 rgb8 frame is 389 KB; at 30 Hz, 11.6 MB/s. Over Zenoh, a subscriber that cannot drain that receives one frame every fifteen seconds, which looks like a dead topic. JPEG is about 6.5 KB a frame. Compression belongs upstream of the fabric, as on the vehicle.
-- **The simulator has its own calibration.** Gazebo renders an ideal pinhole; the vehicle's distortion coefficients and rectification rotations warp its views apart. `vehicles/ovcs_mini/priv/calibration/sim/` has D = 0 and R = I: 61.2 % coverage on the same scene, against 5.4 % with the vehicle's calibration.
+- **The simulator has its own calibration.** Gazebo renders an ideal pinhole; the vehicle's distortion coefficients and rectification rotations warp its views apart. `vehicles/ovcs_mini/priv/calibration/simulation/` has D = 0 and R = I: 61.2 % coverage on the same scene, against 5.4 % with the vehicle's calibration.
 - **One topic name, two roles.** `Publishers.StereoCamera` republishes each frame on `<topic_prefix>/<side>/image_raw/compressed`, and the prefix is `stereo`, so against the simulator the bridge publishes onto the name it consumes from `image_bridge`. The measured 30 Hz suggests a session does not hear its own publications; if the stereo rate ever looks doubled, look here first.
 - **`workshop.sdf`, not `empty.sdf`, for depth.** SGBM correlates texture; a flat plane under a blank sky yields no disparity.
 
@@ -288,7 +288,7 @@ Detection on the Hailo-8 and its backends are in [Perception: object detection](
 This is the framework/vehicle boundary on the ROS side. Apart from `ZenohClient`, every feature of `RosBridge` is a component the vehicle opts into through `%RosBridge.Config{}`, returned by its `ros_bridge_config(:host | :target)`, or `ros_bridge_config(:host | :target, firmware_id)` when one vehicle bundles `RosBridge` in several `bridge_firmwares/0` entries, as the OVCS Mini does. The host arm is where a dummy IMU lets `./ovcs run` work without a sensor; the target arm has the real `BNO085.I2C`. From the OVCS Mini reference vehicle, abridged:
 
 ```elixir
-defp ros_target_config,
+defp ros_bridge_target_config,
   do: %RosBridge.Config{
     zenoh_endpoint_ip: Application.get_env(:ros_bridge, :zenoh_endpoint_ip, "127.0.0.1"),
     node_name: "ovcs_bridge_ros",
@@ -305,7 +305,7 @@ defp ros_target_config,
   }
 ```
 
-A bare atom is shorthand for `{atom, []}`, and an unknown name raises at supervisor boot. `RosBridge.Components` lists and documents every component. Order matters where one component listens to another: `:odometry_publisher` after `:imu_publisher`. Two bridges on one fabric need distinct `node_name`s, or they collide in the ROS graph and Foxglove renders them as one node; the Mini uses `ovcs_bridge_ros` and `ovcs_bridge_perception` (`ovcs_bridge_perception_sim` against the simulator).
+A bare atom is shorthand for `{atom, []}`, and an unknown name raises at supervisor boot. `RosBridge.Components` lists and documents every component. Order matters where one component listens to another: `:odometry_publisher` after `:imu_publisher`. Two bridges on one fabric need distinct `node_name`s, or they collide in the ROS graph and Foxglove renders them as one node; the Mini uses `ovcs_bridge_ros` and `ovcs_bridge_perception` (`ovcs_bridge_perception_simulation` against the simulator).
 
 ## Version pins
 
@@ -350,7 +350,7 @@ Or open Foxglove Studio against `ws://<docker-host>:8765` and subscribe to `/ovc
 | the actuator command path | `bridges/ros_bridge/lib/ros_bridge/consumers/joy.ex` | `libraries/ovcs_can/priv/can/components/ovcs/0x2B0_ros_actuator_command.yml`, `vms/core/lib/vms_core/components/ovcs/ros_actuator_command/` |
 | the velocity command path | `bridges/ros_bridge/lib/ros_bridge/consumers/velocity.ex` | `0x2B1_ros_velocity_command.yml`, `vms/core/lib/vms_core/components/ovcs/ros_velocity_command.ex` |
 | odometry on the vehicle | `bridges/ros_bridge/lib/ros_bridge/publishers/odometry.ex` | `0x60B_vehicle_motion.yml`, `vms/core/lib/vms_core/components/ovcs/vehicle_motion.ex` |
-| the VMS in the simulator's loop | `bridges/ros_bridge/lib/ros_bridge/simulator/hardware.ex` | `simulator/vehicle.ex`, `simulator/simulated_components/`, `ros_simulation_config/0` in `vehicles/ovcs_mini/lib/ovcs_mini.ex` |
+| the VMS in the simulator's loop | `bridges/ros_bridge/lib/ros_bridge/simulator/hardware.ex` | `simulator/vehicle.ex`, `simulator/simulated_components/`, `ros_bridge_simulation_config/0` in `vehicles/ovcs_mini/lib/ovcs_mini.ex` |
 | who commands the vehicle | [Your vehicle package](./vehicle_package.md#control-levels-who-commands-and-which-ros-node) | `vms/core/lib/vms_core/managers/control_level.ex` |
 | Nav2's configuration | `vehicles/ovcs_mini/nav2/nav2.yaml`, the OVCS Mini reference vehicle's (heavily commented) | `nav2_ackermann_bt.xml` beside it |
 | the perception pipeline | [Perception: object detection](./ros2_perception.md) | `bridges/ros_bridge/lib/ros_bridge/camera/zenoh.ex`, `stereo_camera/supervisor.ex` |
