@@ -59,6 +59,9 @@ defmodule OvcsMini.Vms.Composer do
                                    @motor_to_wheel_ratio
   # Hobbywing Xerun AXE540 R2, a 4-pole motor.
   @motor_pole_pairs 2
+  # Measured on the servo: a REP-103 positive yaw rate (Nav2 turning
+  # left) drove it right, so a positive request turns right.
+  @steering_sign -1
 
   @impl VmsCore.Vehicle
   def children do
@@ -87,16 +90,13 @@ defmodule OvcsMini.Vms.Composer do
       # vehicle's own geometry. Started unconditionally — it emits
       # zeros until something publishes, and whether the drivetrain
       # *reads* it is the channel-5 switch's decision, below.
-      # `steering_sign: -1` was measured on the servo: a REP-103
-      # positive yaw rate (Nav2 turning left) drove this servo right, so
-      # the sign is inverted to match the drivetrain's convention.
       {OVCS.RosVelocityCommand,
        %{
          wheelbase_m: OvcsMini.geometry().wheelbase,
          steering_limit_rad: OvcsMini.geometry().steering_limit,
          max_speed_m_s: @max_speed_m_s,
          min_speed_m_s: @min_speed_m_s,
-         steering_sign: -1
+         steering_sign: @steering_sign
        }},
       {OVCS.RadioControl.Steering,
        %{
@@ -271,9 +271,8 @@ defmodule OvcsMini.Vms.Composer do
        }},
       # The vehicle's own motion, published on the bus for the
       # manager's standstill gate and emitted on 0x60B for the ROS
-      # bridge's odometry. `steering_sign` must match
-      # `RosVelocityCommand`'s so the reported angle converts back to
-      # REP-103.
+      # bridge's odometry. Its steering sign is `RosVelocityCommand`'s,
+      # so the reported angle converts back to REP-103.
       {OVCS.VehicleMotion,
        %{
          rotation_source: Vms.MotorRotation,
@@ -284,7 +283,7 @@ defmodule OvcsMini.Vms.Composer do
          wheel_radius_m: OvcsMini.geometry().wheel_radius,
          selected_control_level_source: Managers.ControlLevel,
          steering_limit_rad: OvcsMini.geometry().steering_limit,
-         steering_sign: 1
+         steering_sign: @steering_sign
        }},
       {VmsCore.Status,
        %{
