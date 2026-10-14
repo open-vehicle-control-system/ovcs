@@ -1,8 +1,13 @@
 <!--
   NavigateToPose for a vehicle that cannot rotate on the spot.
 
-  This is Nav2's default nav-to-pose tree with two changes: the recovery
-  fallback drops `Spin`, and `BackUp` is slower. On an Ackermann vehicle a spin command produces
+  This is Nav2's default nav-to-pose tree with three changes: the recovery
+  fallback drops `Spin`, `BackUp` is slower, and the path is kept while
+  the goal is near and the rest of the path stays valid, as the stock
+  through-poses tree does. Replanned every second from wherever the car
+  is, Hybrid-A* returns a different route each time, and the car chases
+  each in turn. A kept path is replanned when the controller gives up on
+  it, for instance once the car has overshot its end. On an Ackermann vehicle a spin command produces
   no motion at all — `AckermannSteering` needs forward speed to generate
   yaw — so the behaviour runs its full duration, achieves nothing, and
   the RecoveryNode burns a retry. With Spin first in the list, a single
@@ -25,13 +30,26 @@
         <PlannerSelector selected_planner="{selected_planner}" default_planner="GridBased" topic_name="planner_selector"/>
         <RateController hz="1.0">
           <RecoveryNode number_of_retries="1" name="ComputePathToPose">
-            <ComputePathToPose goal="{goal}" path="{path}" planner_id="{selected_planner}"/>
+            <Fallback name="FallbackComputePathToPose">
+              <ReactiveSequence name="CheckIfNewPathNeeded">
+                <Inverter>
+                  <GlobalUpdatedGoal/>
+                </Inverter>
+                <IsGoalNearby path="{path}" proximity_threshold="4.0" max_robot_pose_search_dist="1.5"/>
+                <TruncatePathLocal input_path="{path}" output_path="{remaining_path}" distance_forward="-1" distance_backward="0.0"/>
+                <ValidatePath path="{remaining_path}"/>
+              </ReactiveSequence>
+              <ComputePathToPose goal="{goal}" path="{path}" planner_id="{selected_planner}"/>
+            </Fallback>
             <ClearEntireCostmap name="ClearGlobalCostmap-Context" service_name="global_costmap/clear_entirely_global_costmap"/>
           </RecoveryNode>
         </RateController>
         <RecoveryNode number_of_retries="1" name="FollowPath">
           <FollowPath path="{path}" controller_id="{selected_controller}" goal_checker_id="goal_checker" progress_checker_id="progress_checker" path_handler_id="PathHandler"/>
-          <ClearEntireCostmap name="ClearLocalCostmap-Context" service_name="local_costmap/clear_entirely_local_costmap"/>
+          <Sequence name="ReplanAfterFollowPathFailure">
+            <ClearEntireCostmap name="ClearLocalCostmap-Context" service_name="local_costmap/clear_entirely_local_costmap"/>
+            <ComputePathToPose goal="{goal}" path="{path}" planner_id="{selected_planner}"/>
+          </Sequence>
         </RecoveryNode>
       </PipelineSequence>
       <!-- One action per recovery, in turn, so six retries reverse at most twice. -->

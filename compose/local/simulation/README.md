@@ -154,7 +154,7 @@ ROS 2 Jazzy supports only Gazebo Harmonic; Jetty, the current LTS, needs ROS 2 *
 
 - **Gazebo can run slower than real time**, without a GPU or on a loaded machine. Nav2 follows its clock, so goals take longer in wall time; the VMS's watchdogs stay on the wall clock, and `/odom`'s twist is per wall second.
 - **Gazebo needs the GPU.** The `gazebo` and `gazebo-gui` services mount `/dev/dri`; without a GPU there, Mesa renders the cameras on the CPU (`llvmpipe`). Measured on an Intel Iris Xe, that is about 1040 % of CPU against 130 % with the GPU, and enough contention for the simulated controller's frames to arrive later than the VMS's frame watchers allow, which shows as a VMS `FAILURE`. An NVIDIA GPU needs the NVIDIA Container Toolkit as well.
-- Global plans come from NavFn (`nav2_smac_planner` is absent from the Lyrical archive), so they are **not kinematically feasible**: MPPI carries the corners the car cannot cut. Fine in an open workshop, a real constraint in tight spaces.
+- **The Smac planners are built from source** in the Nav2 image: they are released for Lyrical but absent from its archive. Bumping the image's ROS snapshot means bumping `SMAC_RELEASE` with it.
 - `yaw_goal_tolerance` is deliberately about π. A car cannot rotate to a commanded final heading.
 
 ## Next steps

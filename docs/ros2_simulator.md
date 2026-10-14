@@ -245,7 +245,7 @@ One configuration, three deployments. The parameter file and behaviour trees are
 The file holds the vehicle's values (`use_sim_time: false`); the simulator overrides the clock with a launch argument rather than keeping a copy that would drift.
 
 ```text
-NavigateToPose goal ─► bt_navigator ─► planner_server (NavFn) ─► path
+NavigateToPose goal ─► bt_navigator ─► planner_server (Smac Hybrid-A*) ─► path
                                    └─► controller_server (MPPI) ◄─ /odom, /tf, costmaps (the vehicle's obstacle sources)
 controller_server, behavior_server ─/cmd_vel_nav_raw─► velocity_smoother ─/cmd_vel_nav @ 20 Hz─►
 ```
@@ -257,7 +257,8 @@ What is deliberately unusual:
 - **`TwistStamped` on `/cmd_vel_nav`.** `nav2_util::TwistPublisher` defaults `enable_stamped_cmd_vel` to true; its header comment says otherwise, and the code wins.
 - **The rest is the vehicle's.** Obstacle sources, speed limits, reverse and recovery distances follow from a vehicle's sensors and drivetrain; the OVCS Mini reference vehicle's are in [its README](../vehicles/ovcs_mini/README.md#navigation).
 - **No `Spin` in either behaviour tree.** A car produces no motion from a spin, so it ran its full duration and burned a recovery slot. The spin *server* stays loaded because `bt_navigator` resolves every action at activation.
-- **NavFn, not Smac.** No `nav2_smac_planner` in the archive, so the global plan knows nothing about turning radius; MPPI carries the corners the car cannot cut.
+- **Smac Hybrid-A\*, built from source.** `nav2_smac_planner` is released for Lyrical but absent from its archive, so the Nav2 image builds it from that release's source, at the version of the Nav2 packages it installs. It plans arcs the vehicle can drive; a grid planner such as NavFn plans corners and sideways steps, and MPPI shuffles forward and back against them. Its `configure` must finish inside rmw_zenoh's 10 s service timeout, or the lifecycle manager gives up: the Reeds-Shepp `lookup_table_size` is what sets that time.
+- **`default_server_timeout` is 1 s.** A behaviour-tree node waits that long for a server to accept its request. The default 20 ms is missed over Zenoh while the planner is searching, and a missed acknowledgment fails the whole goal.
 - **`yaw_goal_tolerance` is 3.15.** A car cannot rotate in place to a final heading.
 
 ### Arriving proves almost nothing
