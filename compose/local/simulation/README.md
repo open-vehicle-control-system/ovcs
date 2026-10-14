@@ -40,7 +40,7 @@ The stack simulates the vehicle named by `OVCS_VEHICLE` in `compose/local/.env`.
 
 ## Quickstart
 
-The first run pulls and builds images; budget a few minutes. From the repository root, on the OVCS Mini reference vehicle (the same on yours):
+The first run pulls and builds images; budget a few minutes, and over ten more the first time Nav2 starts, while its image compiles the Smac planners from source. From the repository root, on the OVCS Mini reference vehicle (the same on yours):
 
 ```sh
 cd compose/local
