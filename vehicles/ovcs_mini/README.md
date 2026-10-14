@@ -5,7 +5,7 @@ OVCS software/hardware stack. Used for safe development and testing of
 radio-control and ROS2 features before deploying to OVCS1.
 
 This directory is a standalone Mix app implementing the
-[`OvcsVehicle`](../../libraries/ovcs_vehicle) behaviour. Select it with
+[`OvcsVehicle`](https://github.com/open-vehicle-control-system/ovcs/tree/main/libraries/ovcs_vehicle) behaviour. Select it with
 `VEHICLE=OvcsMini` (or pass `ovcs_mini` to the `ovcs` CLI).
 
 OVCS Mini has **no infotainment side** — there's no head unit on the RC
@@ -54,18 +54,18 @@ foxglove/                          — Foxglove layouts
 
 ## Navigation
 
-`nav2/` holds the parameters and the two behaviour trees the framework's Nav2 image loads; [ROS 2 and the simulator](../../docs/ros2_simulator.md#nav2-as-configured-here) has how, and what any Ackermann vehicle needs. What is particular to this car:
+`nav2/` holds the parameters and the two behaviour trees the framework's Nav2 image loads; [ROS 2 and the simulator](https://ovcs.be/docs/ros2_simulator#nav2-as-configured-here) has how, and what any Ackermann vehicle needs. What is particular to this car:
 
 - **Stereo is the forward obstacle source.** Both costmaps mark `/stereo/points` between 12 cm and 60 cm above the ground, up to 3 m: a glossy floor's reflections read 7–10 cm high, so lower obstacles go unseen. The global costmap clears by raytracing to 3.5 m. The local costmap uses the spatio-temporal voxel layer: its marks expire after 15 s, and faster inside the camera's frustum (0.55–3 m, the matched part of the image) when they are no longer seen, because a forward-only camera never looks again at what it turned away from. A voxel becomes an obstacle only after three clouds have hit it, and a denoise layer in both costmaps drops obstacle groups smaller than five cells: stereo mismatches rarely repeat in the same place or form large groups, walls and furniture do. Without the perception pipeline running they stay inflation-only, and nothing is avoided.
 - **The lidar sees all around.** Its `/scan` adds a 360° plane at its height, marked up to 4 m and cleared up to 5 m, after the denoise layer, so a chair leg one cell wide stays. A bin that got no return is `+Inf`, which `inf_is_valid` clears through; an unmeasured bin is 0.0 and ignored.
 - **The rear ultrasonics see below the lidar's plane,** through `RangeSensorLayer`, also after the denoise layer: a close obstacle is an arc of two or three cells.
-- **A 0.15 m/s floor, in the VMS.** Below its Minimum ERPM (300) the Mini's VESC brakes instead of driving, 0.07 m/s through the gearing ([VESC drivetrain](../../docs/vesc_drivetrain.md)). `RosVelocityCommand`'s `:min_speed_m_s` drives any slower non-zero velocity at 0.15 m/s, so a planner easing in near its goal neither stops and restarts the car nor loses a slow turn. `velocity_smoother`'s `deadband_velocity` is only 0.02 m/s: a wider band zeroed MPPI's slow speeds while passing their yaw rate, which a car cannot turn without moving. DriveOnHeading floors at `minimum_speed: 0.10`.
+- **A 0.15 m/s floor, in the VMS.** Below its Minimum ERPM (300) the Mini's VESC brakes instead of driving, 0.07 m/s through the gearing ([VESC drivetrain](https://ovcs.be/docs/vesc_drivetrain)). `RosVelocityCommand`'s `:min_speed_m_s` drives any slower non-zero velocity at 0.15 m/s, so a planner easing in near its goal neither stops and restarts the car nor loses a slow turn. `velocity_smoother`'s `deadband_velocity` is only 0.02 m/s: a wider band zeroed MPPI's slow speeds while passing their yaw rate, which a car cannot turn without moving. DriveOnHeading floors at `minimum_speed: 0.10`.
 - **Reverse at up to 0.3 m/s, forward at 0.8 m/s, 1 m/s².** Behind the car only the lidar and the two rear ultrasonics see, so MPPI's `vx_min` is −0.3 m/s and `PreferForwardCritic` keeps reversing a last resort. `vx_max` is 0.8 m/s, and acceleration 1 m/s² (braking 2): from standstill MPPI reaches two steps of `ax_max × model_dt`, 0.20 m/s.
 - **`BackUp` reverses 30 cm, at 0.10 m/s,** which the VMS drives at its 0.15 m/s floor. A car that cannot turn tighter than its radius otherwise stays stuck facing an obstacle. The rear ultrasonics reach the costmaps through Nav2's `RangeSensorLayer`, which ignores REP 117's `+Inf` and clears only on a reading of exactly `max_range`: their `range_publisher` entries set `beyond_range: :max_range`.
 
 ## In the simulator
 
-`description/` is the Gazebo model ([Simulation](../../compose/local/simulation/README.md)); `ros_bridge_simulation_config/0` in `lib/ovcs_mini.ex` and `priv/can/bridges/ros_simulated_components.yml` wire the simulated hardware to it.
+`description/` is the Gazebo model ([Simulation](https://ovcs.be/docs/simulation)); `ros_bridge_simulation_config/0` in `lib/ovcs_mini.ex` and `priv/can/bridges/ros_simulated_components.yml` wire the simulated hardware to it.
 
 | Sensor | Gazebo topic | Model | Republished on |
 |---|---|---|---|
@@ -77,5 +77,5 @@ foxglove/                          — Foxglove layouts
 
 Deploy the compute node with `../../ovcs compute push ovcs_mini <fleet>`.
 
-See [`docs/hardware.md`](../../docs/hardware.md#ovcs-mini-hardware)
+See [`docs/hardware.md`](https://ovcs.be/docs/hardware#ovcs-mini-hardware)
 for the RC-car hardware breakdown.

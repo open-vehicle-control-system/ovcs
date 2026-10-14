@@ -5,7 +5,7 @@ Polo converted to an electric vehicle with a Nissan Leaf AZE0 drivetrain,
 Bosch iBooster Gen2, Orion BMS2, and custom OVCS controllers.
 
 This directory is a standalone Mix app implementing the
-[`OvcsVehicle`](../../libraries/ovcs_vehicle) behaviour. Select it with
+[`OvcsVehicle`](https://github.com/open-vehicle-control-system/ovcs/tree/main/libraries/ovcs_vehicle) behaviour. Select it with
 `VEHICLE=Ovcs1` (or pass `ovcs1` to the `ovcs` CLI).
 
 ## What this package contributes
@@ -25,8 +25,8 @@ entry).
 
 ## Quick start
 
-See the [main README](../../README.md#quick-start) and
-[Getting Started](../../docs/getting_started.md). In short:
+See the [main README](https://github.com/open-vehicle-control-system/ovcs#quick-start) and
+[Getting Started](https://ovcs.be/docs/getting_started). In short:
 
 ```sh
 ../../ovcs run ovcs1                     # provision vcan + spawn one BEAM per firmware
@@ -57,4 +57,4 @@ priv/firmware/{vms,infotainment,bridges}/  — Per-side fwup overrides
 
 See [`WIRING.md`](./WIRING.md) for harness-level pin notes. The full
 vehicle topology (CAN buses, controllers) is in
-[`docs/hardware.md`](../../docs/hardware.md).
+[`docs/hardware.md`](https://ovcs.be/docs/hardware).

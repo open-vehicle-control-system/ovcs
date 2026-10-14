@@ -6,7 +6,7 @@ plug. Useful for sanity-checking the OVCS stack against a real vehicle
 without an OVCS-specific harness.
 
 This directory is a standalone Mix app implementing the
-[`OvcsVehicle`](../../libraries/ovcs_vehicle) behaviour. Select it with
+[`OvcsVehicle`](https://github.com/open-vehicle-control-system/ovcs/tree/main/libraries/ovcs_vehicle) behaviour. Select it with
 `VEHICLE=Obd2` (or pass `obd2` to the `ovcs` CLI).
 
 ## What this package contributes
@@ -42,5 +42,5 @@ priv/can/infotainment.yml          — Infotainment CAN topology
 priv/firmware/{vms,infotainment}/  — Per-side fwup overrides
 ```
 
-See [`libraries/cantastic/README.md`](../../libraries/cantastic/README.md#obd2-request-definitions)
+See [`libraries/cantastic/README.md`](https://github.com/open-vehicle-control-system/cantastic#obd2-request-definitions)
 for the OBD2 request YAML schema.
