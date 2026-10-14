@@ -16,6 +16,10 @@ set -euo pipefail
 # Parameters only for the stereo unit, whose sliders the
 # ovcs_stereo_tuning layout drives. foxglove_bridge still asks every node
 # once; Nav2's internal navigator nodes time out and it then ignores them.
+#
+# Hidden names included: an action's services and topics live under
+# `_action`, and a layout cancels a Nav2 goal through
+# /navigate_to_pose/_action/cancel_goal.
 
 echo "foxglove_bridge: listening on ws://0.0.0.0:${FOXGLOVE_BRIDGE_PORT}, peering with ${ZENOH_ENDPOINT_IP}:7447"
 
@@ -36,6 +40,7 @@ trap 'exit 0' INT TERM
   -p port:="${FOXGLOVE_BRIDGE_INTERNAL_PORT}" \
   -p address:=127.0.0.1 \
   -p message_backlog_size:="${FOXGLOVE_MESSAGE_BACKLOG_SIZE}" \
+  -p include_hidden:=true \
   -p capabilities:="['clientPublish', 'parameters', 'parametersSubscribe', 'services', 'connectionGraph', 'assets']" \
   -p param_whitelist:='["^/ovcs_bridge_perception\\.stereo\\..*$"]' &
 child_pids+=("$!")
