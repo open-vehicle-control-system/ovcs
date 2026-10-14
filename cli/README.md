@@ -34,7 +34,7 @@ mise run cli       # cargo build --release, stripped and copied to cli/ovcs
 | `host-keys verify` | `<vehicle>` | Check every role has a complete key set (exit 1 if not) |
 | `host-keys export` | `<vehicle> [-o FILE]` | Bundle the keys into an archive (default `<vehicle>-host-keys.tar.gz`) |
 | `host-keys import` | `<vehicle> -i\|--from FILE [--force]` | Restore keys from an archive |
-| `compute stage` | `<vehicle> -o\|--out DIR [--tag T \| --build]` | Write the vehicle's compute node balena source root to an empty or absent directory |
+| `compute stage` | `<vehicle> [-o\|--out DIR] [--tag T \| --build]` | Write the vehicle's compute node balena source root to an empty or absent directory, or by default to a new private temporary one |
 | `compute push` | `[<vehicle>] <target> [--tag T \| --build] [-- ARGS]` | Stage into a temporary directory and `balena push` it to a fleet, or to `<device>.local` in local mode; `ARGS` go to `balena push` |
 
 `./ovcs --help` and `./ovcs <command> --help` print every option. [Running on hardware](../docs/running_hardware.md) walks through build, burn, upload and host keys.
