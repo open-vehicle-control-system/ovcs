@@ -33,20 +33,15 @@ defmodule RosBridge.Camera.Zenoh do
 
   ## Time
 
-  Frames are stamped with local `System.monotonic_time/1` on arrival,
-  not with the stamp they carry. `Frame.capture_ns` means Erlang
-  monotonic time everywhere in this bridge — `RosBridge.Timing` is
-  built on that and converts foreign clocks at the driver boundary —
-  and a simulator's clock starts at zero and advances with physics, so
-  passing it through would project to a wall-clock time nearly two
-  decades wrong.
-
-  Outgoing headers still line up with `/clock`: `RosBridge.Clock`
-  keeps a monotonic-to-simulator offset and `RosBridge.Timing` projects
-  through it, so arrival time lands on the simulator's timescale.
-
-  Both sides are published together and arrive within a millisecond of
-  each other, well inside `:pair_tolerance_ms`, so pairing holds.
+  `Frame.capture_ns` means Erlang monotonic time everywhere in this
+  bridge, so the stamp a frame carries, on the simulator's clock, is
+  converted back through `RosBridge.Timing.monotonic_from_ros_time/1`. Both
+  sides of a pair carry the same render stamp, so the stereo
+  publisher pairs them exactly; their arrival times differ by tens of
+  milliseconds, enough to pair a frame with its neighbour's, which
+  reads as phantom depth once the car moves. Until `RosBridge.Clock`
+  has seen `/clock` there is no conversion, and frames are stamped on
+  arrival.
   """
   @behaviour RosBridge.Camera
 
@@ -56,6 +51,7 @@ defmodule RosBridge.Camera.Zenoh do
 
   alias Ros2.SensorMsgs.Msg.CompressedImage
   alias RosBridge.Camera.Frame
+  alias RosBridge.Timing
 
   def start_link(opts) do
     label = Keyword.fetch!(opts, :label)
@@ -101,7 +97,7 @@ defmodule RosBridge.Camera.Zenoh do
           label: state.label,
           width: width,
           height: height,
-          capture_ns: System.monotonic_time(:nanosecond),
+          capture_ns: capture_ns(image),
           jpeg: image.data
         }
 
@@ -122,6 +118,12 @@ defmodule RosBridge.Camera.Zenoh do
   end
 
   def handle_info(_message, state), do: {:noreply, state}
+
+  defp capture_ns(%CompressedImage{header: %{stamp: %{sec: sec, nanosec: nanosec}}}) do
+    if RosBridge.Clock.following?(),
+      do: Timing.monotonic_from_ros_time(sec * 1_000_000_000 + nanosec),
+      else: System.monotonic_time(:nanosecond)
+  end
 
   @doc """
   Read a JPEG's pixel dimensions from its header.

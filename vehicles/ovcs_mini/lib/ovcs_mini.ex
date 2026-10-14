@@ -43,10 +43,16 @@ defmodule OvcsMini do
         bridges: [RadioControlBridge],
         default_can_mapping: %{host: "ovcs:vcan0", target: "ovcs:spi0.0"}
       },
+      # On the host it also declares the frames of the hardware its
+      # simulated hardware answers for, see `ros_bridge_simulation_config/0`.
       "ros" => %{
         target: :ovcs_base_can_system_rpi4,
         bridges: [RosBridge],
-        default_can_mapping: %{host: "ovcs:vcan0", target: "ovcs:spi0.0"}
+        can_config_path: %{
+          host: ["can/bridges/ros.yml", "can/bridges/ros_simulated_components.yml"],
+          target: "can/bridges/ros.yml"
+        },
+        default_can_mapping: %{host: "ovcs:vcan0,misc:vcan1", target: "ovcs:spi0.0"}
       },
       # Perception bridge: stereo Pi cameras + Hailo inference on a
       # Pi 5 + Hailo hat. Uses upstream nerves_system_rpi5 (libcamera
@@ -87,79 +93,138 @@ defmodule OvcsMini do
 
   @impl RosBridge
   def ros_bridge_config(:host, "ros_perception") do
-    if System.get_env("OVCS_SIM") in ["1", "true"] do
-      perception_sim_config()
-    else
-      perception_host_config()
-    end
+    if simulation?(),
+      do: ros_perception_bridge_simulation_config(),
+      else: ros_perception_bridge_host_config()
   end
 
   def ros_bridge_config(:target, "ros_perception"),
-    do: perception_target_config()
+    do: ros_perception_bridge_target_config()
 
-  def ros_bridge_config(:host, _firmware_id),
-    do: ros_host_config()
+  def ros_bridge_config(:host, _firmware_id) do
+    if simulation?(), do: ros_bridge_simulation_config(), else: ros_bridge_host_config()
+  end
 
   def ros_bridge_config(:target, _firmware_id),
-    do: ros_target_config()
+    do: ros_bridge_target_config()
+
+  defp simulation?, do: System.get_env("OVCS_SIM") in ["1", "true"]
 
   # The Mini runs two ROS bridges on one Zenoh fabric (this one and
   # the perception Pi), so each names its ROS node explicitly —
   # otherwise both announce `ovcs_bridge` and the ROS graph cannot
   # tell them apart.
-  defp ros_host_config do
-    sim? = System.get_env("OVCS_SIM") in ["1", "true"]
-
-    # Against the simulator the IMU driver is the simulated BNO085 —
-    # Gazebo publishes it on `imu_raw`, `RosBridge.Imu.Zenoh` consumes
-    # it, and `/imu` is still published by this bridge's own
-    # `Publishers.Imu`, exactly as on the vehicle. Only the driver
-    # changes, the same pattern as the cameras.
-    imu_driver = if sim?, do: RosBridge.Imu.Zenoh, else: OvcsDrivers.Imu.Dummy
-
-    components = [
-      :heartbeat,
-      :joy_interpreter,
-      # Nav2 publishes TwistStamped on /cmd_vel_nav; teleop_twist_joy
-      # publishes plain Twist on /cmd_vel. Subscribing to the stamped
-      # one keeps the joystick path on 0x2B0 and the planner path on
-      # 0x2B1, so both can be present without racing.
-      {:velocity_interpreter,
-       %{topic: "cmd_vel_nav", message: Ros2.GeometryMsgs.Msg.TwistStamped}},
-      {:imu_publisher, driver: imu_driver}
-    ]
-
-    # Against the simulator, Gazebo's AckermannSteering already
-    # publishes /odom and odom -> base_link, and a second publisher on
-    # either would hand every consumer two contradictory poses — the
-    # tf tree interpolates across both rather than picking a winner.
-    # One odometry owner per fabric: the bench (no Gazebo) gets this
-    # bridge's dead reckoning, a simulated run gets Gazebo's.
-    odometry =
-      if sim? do
-        []
-      else
+  defp ros_bridge_host_config,
+    do: %RosBridge.Config{
+      zenoh_endpoint_ip: System.get_env("ZENOH_ENDPOINT_IP", "127.0.0.1"),
+      node_name: "ovcs_bridge_ros",
+      components: [
+        :heartbeat,
+        :joy_interpreter,
+        # Nav2 publishes TwistStamped on /cmd_vel_nav, the planner path
+        # on 0x2B1; the joystick path stays on 0x2B0.
+        {:velocity_interpreter,
+         %{topic: "cmd_vel_nav", message: Ros2.GeometryMsgs.Msg.TwistStamped}},
+        {:imu_publisher, driver: OvcsDrivers.Imu.Dummy},
         # After :imu_publisher, which starts the driver this listens
         # to. Reads the VMS's vehicle_motion frame off CAN and
         # publishes /odom and odom -> base_link, which is everything
         # Nav2 needs in the map-less setup.
-        [
-          {:odometry_publisher,
-           driver: OvcsDrivers.Imu.Dummy, base_ahead_of_rear_axle: base_ahead_of_rear_axle()}
-        ]
-      end
-
-    %RosBridge.Config{
-      zenoh_endpoint_ip: System.get_env("ZENOH_ENDPOINT_IP", "127.0.0.1"),
-      node_name: "ovcs_bridge_ros",
-      components: components ++ odometry
+        {:odometry_publisher,
+         driver: OvcsDrivers.Imu.Dummy, base_ahead_of_rear_axle: base_ahead_of_rear_axle()}
+      ]
     }
-  end
 
   # base_link sits midway between the axles.
   defp base_ahead_of_rear_axle, do: geometry().wheelbase / 2
 
-  defp ros_target_config,
+  # The `ros` bridge against the simulator, chosen with OVCS_SIM: its
+  # simulated hardware answers for the Mini's, so the VMS commands Gazebo's
+  # physics over CAN, and the IMU is Gazebo's.
+  defp ros_bridge_simulation_config do
+    %RosBridge.Config{
+      zenoh_endpoint_ip: System.get_env("ZENOH_ENDPOINT_IP", "127.0.0.1"),
+      node_name: "ovcs_bridge_ros",
+      components: [
+        :simulator_clock,
+        :heartbeat,
+        :joy_interpreter,
+        {:velocity_interpreter,
+         %{topic: "cmd_vel_nav", message: Ros2.GeometryMsgs.Msg.TwistStamped}},
+        {:imu_publisher, driver: RosBridge.Imu.Zenoh},
+        {:odometry_publisher,
+         driver: RosBridge.Imu.Zenoh, base_ahead_of_rear_axle: base_ahead_of_rear_axle()},
+        {:lidar_publisher, driver: RosBridge.Lidar.Zenoh, bins: 500},
+        rear_ultrasound(:left, RosBridge.Rangefinder.Zenoh, topic: "ultrasound/rear_left_raw"),
+        rear_ultrasound(:right, RosBridge.Rangefinder.Zenoh, topic: "ultrasound/rear_right_raw"),
+        {:static_transforms, transforms: [lidar_transform() | rear_ultrasound_transforms()]},
+        {:simulated_hardware, simulated_hardware()}
+      ]
+    }
+  end
+
+  # Not measured: plausible figures for a 1/10 truck on a 2S pack.
+  @simulated_battery_voltage 7.4
+  @simulated_acceleration_per_ampere 0.5
+  # The Mini's VESC Tool setting, see docs/vesc_drivetrain.md.
+  @vesc_minimum_erpm 300
+
+  @doc false
+  def simulated_acceleration_per_ampere, do: @simulated_acceleration_per_ampere
+
+  defp simulated_hardware do
+    drivetrain = OvcsMini.Vms.Composer.drivetrain()
+
+    [
+      vehicle: %{
+        wheelbase_m: geometry().wheelbase,
+        wheel_radius_m: geometry().wheel_radius,
+        # Friction is the motor current the Mini needs to start rolling.
+        rolling_deceleration_m_s2:
+          drivetrain.min_motor_current * @simulated_acceleration_per_ampere
+      },
+      # Shaft-driven 4WD: the motor turns at the four wheels' mean.
+      wheel_joints: ~w(front_left_wheel_joint front_right_wheel_joint
+                       rear_left_wheel_joint rear_right_wheel_joint),
+      simulated_components: [
+        {RosBridge.Simulator.SimulatedComponents.Vesc.MotorController,
+         pole_pairs: drivetrain.pole_pairs,
+         motor_to_wheel_ratio: drivetrain.motor_to_wheel_ratio,
+         min_erpm: @vesc_minimum_erpm,
+         acceleration_per_ampere: @simulated_acceleration_per_ampere,
+         input_voltage: @simulated_battery_voltage},
+        {RosBridge.Simulator.SimulatedComponents.OVCS.GenericController,
+         analog_pins: %{1 => pm12s3_reading(@simulated_battery_voltage)},
+         pulse: %{
+           shaft_turns_per_wheel_turn:
+             drivetrain.motor_to_wheel_ratio * drivetrain.pinion_teeth / drivetrain.spur_teeth,
+           pulses_per_revolution: drivetrain.pulses_per_revolution
+         }},
+        {RosBridge.Simulator.SimulatedComponents.Traxxas.Steering,
+         steering_limit_rad: geometry().steering_limit,
+         steering_sign: drivetrain.steering_sign,
+         neutral: drivetrain.steering_trim},
+        {RosBridge.Simulator.SimulatedComponents.OVCS.RadioControl, radio_control_script()}
+      ]
+    ]
+  end
+
+  # The PM12S-3's 1:21 divider read by the controller's 14-bit, 5 V ADC.
+  defp pm12s3_reading(voltage), do: round(voltage / 21 / 5 * 16_383)
+
+  # Sticks centred, then channel 6 through :radio to :ros, and channel 5
+  # to the commander `OVCS_SIMULATOR_COMMANDER` names (`teleop`, or
+  # `autonomous` by default), each a second apart.
+  defp radio_control_script do
+    commander = if System.get_env("OVCS_SIMULATOR_COMMANDER") == "teleop", do: 1000, else: 2000
+
+    [
+      channels: %{1 => 1500, 2 => 1500, 5 => 1000, 6 => 1000},
+      steps: [{3_000, %{6 => 1500}}, {4_000, %{6 => 2000}}, {5_000, %{5 => commander}}]
+    ]
+  end
+
+  defp ros_bridge_target_config,
     do: %RosBridge.Config{
       zenoh_endpoint_ip: Application.get_env(:ros_bridge, :zenoh_endpoint_ip, "127.0.0.1"),
       node_name: "ovcs_bridge_ros",
@@ -184,19 +249,20 @@ defmodule OvcsMini do
          bins: 500},
         # A02YYUW ultrasonic sensors on the rear bumper, each on a CP2104
         # found by its serial number.
-        rear_ultrasound(:left, "01D9EBFA"),
-        rear_ultrasound(:right, "02PW2EBP"),
+        rear_ultrasound(:left, A02YYUW.UART, serial_number: "01D9EBFA"),
+        rear_ultrasound(:right, A02YYUW.UART, serial_number: "02PW2EBP"),
         {:static_transforms, transforms: [lidar_transform() | rear_ultrasound_transforms()]}
       ]
     }
 
-  defp rear_ultrasound(side, serial_number) do
+  defp rear_ultrasound(side, driver, driver_opts) do
     {:range_publisher,
-     driver: A02YYUW.UART,
+     driver: driver,
      name: :"ultrasound_rear_#{side}",
-     driver_opts: [serial_number: serial_number],
+     driver_opts: driver_opts,
      topic: "ultrasound/rear_#{side}",
-     frame_id: "ultrasound_rear_#{side}"}
+     frame_id: "ultrasound_rear_#{side}",
+     beyond_range: :max_range}
   end
 
   # On the rear bumper's support: its back face 125 mm behind the rear
@@ -233,7 +299,7 @@ defmodule OvcsMini do
     }
   end
 
-  defp perception_host_config do
+  defp ros_perception_bridge_host_config do
     %RosBridge.Config{
       zenoh_endpoint_ip: System.get_env("ZENOH_ENDPOINT_IP", "127.0.0.1"),
       node_name: "ovcs_bridge_perception",
@@ -255,32 +321,28 @@ defmodule OvcsMini do
   # would start, log that it is unavailable and publish nothing, which
   # is correct but pointless.
   #
-  # Chosen with VEHICLE=OvcsMini and OVCS_SIM=1, so the sim wiring
+  # Chosen with VEHICLE=OvcsMini and OVCS_SIM=1, so the simulation wiring
   # cannot be selected by accident on the vehicle.
-  defp perception_sim_config do
+  defp ros_perception_bridge_simulation_config do
     %RosBridge.Config{
       zenoh_endpoint_ip: System.get_env("ZENOH_ENDPOINT_IP", "127.0.0.1"),
-      node_name: "ovcs_bridge_perception_sim",
+      node_name: "ovcs_bridge_perception_simulation",
       components:
         [
           :heartbeat,
-          # First, and only here. Gazebo owns the clock in simulation,
-          # so every stamp this bridge publishes has to be on
-          # simulator time or it will not line up with /tf and /odom —
-          # Nav2's costmaps drop point clouds that do not. On the
-          # vehicle there is no /clock and wall clock is correct, which
-          # is why this appears in no other configuration.
+          # Gazebo owns the clock: stamps on its time line up with /tf
+          # and /odom, which Nav2's costmaps require.
           :simulator_clock,
           stereo_transforms(),
-          stereo_component(RosBridge.Camera.Zenoh, :sim)
-        ] ++ sim_detector()
+          stereo_component(RosBridge.Camera.Zenoh, :simulation)
+        ] ++ simulation_detector()
     }
   end
 
-  # Detection on a workstation, so the sim runs the *whole* stack
+  # Detection on a workstation, so the simulation runs the *whole* stack
   # rather than everything-but-the-detector. Off unless a model is
   # present: the ONNX weights are not in the repo, so the default
-  # remains a stereo-only sim rather than a detector that logs a
+  # remains a stereo-only simulation rather than a detector that logs a
   # missing file on every start.
   #
   # OVCS_DETECTOR picks the backend, defaulting to the DNN one when a
@@ -296,8 +358,8 @@ defmodule OvcsMini do
   #
   # `detect_every_n: 3` because CPU inference shares this machine with
   # SGBM and Gazebo. On the car the accelerator runs every frame.
-  defp sim_detector do
-    case sim_detector_choice() do
+  defp simulation_detector do
+    case simulation_detector_choice() do
       :off ->
         []
 
@@ -308,7 +370,7 @@ defmodule OvcsMini do
         [
           {:detector,
            backend: RosBridge.Inference.Dnn,
-           model_path: sim_model_path(),
+           model_path: simulation_model_path(),
            target: target,
            score_threshold: 0.4,
            detect_every_n: 3,
@@ -317,20 +379,20 @@ defmodule OvcsMini do
     end
   end
 
-  defp sim_detector_choice do
+  defp simulation_detector_choice do
     case System.get_env("OVCS_DETECTOR") do
       "gpu" -> :opencl_fp16
       "dnn" -> :cpu
       "stub" -> :stub
       "off" -> :off
       # Unset: only if the weights are actually there.
-      _ -> if File.exists?(sim_model_path()), do: :cpu, else: :off
+      _ -> if File.exists?(simulation_model_path()), do: :cpu, else: :off
     end
   end
 
-  defp sim_model_path, do: Path.join(priv_models_dir(), "yolov8n.onnx")
+  defp simulation_model_path, do: Path.join(priv_models_dir(), "yolov8n.onnx")
 
-  defp perception_target_config do
+  defp ros_perception_bridge_target_config do
     %RosBridge.Config{
       zenoh_endpoint_ip: Application.get_env(:ros_bridge, :zenoh_endpoint_ip, "127.0.0.1"),
       node_name: "ovcs_bridge_perception",
@@ -501,6 +563,8 @@ defmodule OvcsMini do
       # a phantom obstacle is not. Keep CLAHE: without it those
       # phantoms multiply.
       # The rectified pair, to check the calibration's row alignment.
+      # No raw images in simulation: Gazebo already publishes the frames
+      # Camera.Zenoh reads there.
       driver: camera_driver,
       calibration_dir: priv_calibration_dir(arm),
       calibration_store_dir: calibration_store_dir(arm),
@@ -509,6 +573,7 @@ defmodule OvcsMini do
       fps: 30,
       pair_tolerance_ms: 100,
       publish_rectified_image: true,
+      publish_raw_images: arm != :simulation,
       backend_opts: [
         num_disparities: 96,
         block_size: 9,
@@ -569,14 +634,14 @@ defmodule OvcsMini do
   # In simulation the "camera" is a topic. Gazebo publishes on the
   # same names the vehicle does, so left really is left here — the
   # transposition that catches physical modules cannot happen.
-  defp camera_addressing(:sim, side),
+  defp camera_addressing(:simulation, side),
     do: [topic: "/stereo/#{side}/image_raw/compressed"]
 
   # The simulator gets its own calibration, and must: Gazebo renders an
   # ideal pinhole, so applying the physical lens's distortion and
   # rectification to it warps the two views apart rather than into
   # alignment. Measured, that dropped stereo coverage to 5.4%.
-  defp priv_calibration_dir(:sim), do: Path.join(priv_calibration_dir(), "sim")
+  defp priv_calibration_dir(:simulation), do: Path.join(priv_calibration_dir(), "simulation")
   defp priv_calibration_dir(_arm), do: priv_calibration_dir()
 
   # The firmware's root filesystem is read-only: a calibration

@@ -1,14 +1,22 @@
-"""Bring up a vehicle in Gazebo Jetty.
+"""Bring up a vehicle in Gazebo Jetty, for the VMS to drive.
 
-Starts four things, in the order they depend on each other:
+Starts, in the order they depend on each other:
 
 1. ``robot_state_publisher`` — expands the xacro and publishes
    ``/robot_description`` plus the fixed transforms.
 2. ``gz sim`` — the physics server, loading the world.
 3. ``ros_gz_bridge`` — the only path between the Gazebo transport and
    ROS. Nothing crosses that boundary unless it is listed here.
-4. ``ros_gz_sim create`` — spawns the robot from
+4. one ``image_bridge`` per camera.
+5. ``ros_gz_sim create`` — spawns the robot from
    ``/robot_description``, which is why it comes last.
+
+Nothing here commands the vehicle. The VMS does, over virtual CAN,
+through the simulated hardware in the vehicle's ROS bridge
+(``RosBridge.Simulator.Hardware``), which hands Gazebo the resulting motion
+on ``/simulator/drive``. The bridge also owns ``/odom`` and
+``odom -> base_link``, so the steering system's own odometry is not
+bridged.
 
 Gazebo runs **server-only** here; the GUI is a separate compose
 service. ``use_sim_time`` is set on every ROS node. Without it, nodes stamp
@@ -23,7 +31,6 @@ import yaml
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
-from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import Command, LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
@@ -31,7 +38,6 @@ from launch_ros.parameter_descriptions import ParameterValue
 
 VEHICLES_DIR = os.environ.get("OVCS_VEHICLES_DIR", "/opt/ovcs/vehicles")
 WORLDS_DIR = "/opt/ovcs/worlds"
-CONFIG_DIR = "/opt/ovcs/config"
 
 # Topics that cross between Gazebo and ROS, and which way they go.
 # The direction arrow matters:
@@ -43,9 +49,10 @@ BRIDGE_TOPICS = [
     # The physics clock. First because everything else depends on
     # nodes agreeing what time it is.
     "/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock",
-    "/odom@nav_msgs/msg/Odometry[gz.msgs.Odometry",
-    "/tf@tf2_msgs/msg/TFMessage[gz.msgs.Pose_V",
     "/joint_states@sensor_msgs/msg/JointState[gz.msgs.Model",
+    # Ground truth, from the model's OdometryPublisher; nothing
+    # navigates by it.
+    "/simulator/odom@nav_msgs/msg/Odometry[gz.msgs.Odometry",
 ]
 
 # Cameras (the vehicle's `camera_topics`) go through `ros_gz_image
@@ -59,27 +66,16 @@ BRIDGE_TOPICS = [
 # failure looks like a broken topic rather than a saturated one.
 #
 # image_bridge publishes through image_transport, which offers a
-# `/compressed` JPEG variant at roughly 30 KB — the same thing the real
-# vehicle publishes, and about 13x less. Raw pixels stay inside
-# gz-transport, where they are cheap.
+# `/compressed` JPEG variant, the same thing the real vehicle publishes,
+# and a fraction of the size. Raw pixels stay inside gz-transport, where
+# they are cheap.
 
-# The drive command is separate because its Gazebo-side name contains
-# the model name. AckermannSteering has no verified tag for renaming
-# its command topic, so it keeps the documented default
-# `/model/<name>/cmd_vel` and the bridge remaps it to `/cmd_vel` — an
-# ignored tag would leave the car silently immobile.
-CMD_VEL_GZ = "/cmd_vel@geometry_msgs/msg/Twist]gz.msgs.Twist"
-
-# Nav2 publishes `TwistStamped`, not `Twist` —
-# `nav2_util::TwistPublisher` defaults `enable_stamped_cmd_vel` to
-# true. One topic cannot carry both types and one `parameter_bridge`
-# cannot map two ROS topics onto the same Gazebo topic, so the
-# autonomous command gets its own ROS topic and its own bridge node,
-# feeding the same `/model/<name>/cmd_vel` that teleop does.
-#
-# Without this, a Nav2 stack that looks entirely healthy moves nothing
-# at all: the type never matches, so the bridge simply never fires.
-NAV_CMD_VEL_GZ = "/cmd_vel@geometry_msgs/msg/TwistStamped]gz.msgs.Twist"
+# The drive command's Gazebo-side name contains the model name.
+# AckermannSteering has no verified tag for renaming its command topic,
+# so it keeps the documented default `/model/<name>/cmd_vel` and the
+# bridge remaps it to `/simulator/drive` — an ignored tag would leave
+# the car silently immobile.
+DRIVE_GZ = "/cmd_vel@geometry_msgs/msg/Twist]gz.msgs.Twist"
 
 
 def generate_launch_description():
@@ -104,11 +100,6 @@ def generate_launch_description():
                     "will produce no disparity at all."
                 ),
             ),
-            DeclareLaunchArgument(
-                "teleop",
-                default_value="true",
-                description="Run joy + teleop_twist_joy to drive from a gamepad.",
-            ),
             OpaqueFunction(function=spawn),
         ]
     )
@@ -119,7 +110,6 @@ def spawn(context):
     use_sim_time = {"use_sim_time": True}
 
     world = LaunchConfiguration("world")
-    teleop = LaunchConfiguration("teleop")
     vehicle = context.perform_substitution(LaunchConfiguration("vehicle"))
     vehicle_dir = os.path.join(VEHICLES_DIR, vehicle)
 
@@ -172,23 +162,9 @@ def spawn(context):
             package="ros_gz_bridge",
             executable="parameter_bridge",
             name="parameter_bridge",
-            arguments=BRIDGE_TOPICS
-            + gazebo["bridge_topics"]
-            + [f"/model/{vehicle}{CMD_VEL_GZ}"],
+            arguments=BRIDGE_TOPICS + gazebo["bridge_topics"] + [f"/model/{vehicle}{DRIVE_GZ}"],
             parameters=[use_sim_time],
-            remappings=[(f"/model/{vehicle}/cmd_vel", "/cmd_vel")],
-            output="screen",
-        ),
-        # Second bridge, stamped, for Nav2. Named explicitly because
-        # two nodes from the same executable would otherwise collide
-        # on the default node name.
-        Node(
-            package="ros_gz_bridge",
-            executable="parameter_bridge",
-            name="parameter_bridge_nav",
-            arguments=[f"/model/{vehicle}{NAV_CMD_VEL_GZ}"],
-            parameters=[use_sim_time],
-            remappings=[(f"/model/{vehicle}/cmd_vel", "/cmd_vel_nav")],
+            remappings=[(f"/model/{vehicle}/cmd_vel", "/simulator/drive")],
             output="screen",
         ),
         # One image_bridge per camera; each offers raw and
@@ -216,26 +192,6 @@ def spawn(context):
                 str(gazebo["spawn_z"]),
             ],
             parameters=[use_sim_time],
-            output="screen",
-        ),
-        Node(
-            package="joy_linux",
-            executable="joy_linux_node",
-            condition=IfCondition(teleop),
-            parameters=[use_sim_time],
-            output="screen",
-        ),
-        # The gamepad mapping is the one from the original traxxas
-        # repo, reused unchanged — it was already correct for this
-        # controller.
-        Node(
-            package="teleop_twist_joy",
-            executable="teleop_node",
-            condition=IfCondition(teleop),
-            parameters=[
-                os.path.join(CONFIG_DIR, "logitech_f310.yaml"),
-                use_sim_time,
-            ],
             output="screen",
         ),
     ]

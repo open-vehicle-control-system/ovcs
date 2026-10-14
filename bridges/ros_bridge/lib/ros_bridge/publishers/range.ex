@@ -10,14 +10,18 @@ defmodule RosBridge.Publishers.Range do
     * `:name` (required) — the driver instance's name
     * `:topic`, `:frame_id` (required)
     * `:radiation_type` — `:ultrasound` (default) or `:infrared`
+    * `:beyond_range` — what a reading beyond the sensor's range
+      publishes: `:infinity` (default, REP 117) or `:max_range`, for
+      Nav2's `RangeSensorLayer`, which drops infinities and clears only
+      on a reading of exactly `max_range`
   """
   use GenServer
   require Logger
 
   alias OvcsDrivers.Rangefinder.Sample
-  alias Ros2.BuiltinInterfaces.Msg.Time
   alias Ros2.SensorMsgs.Msg.Range
   alias Ros2.StdMsgs.Msg.Header
+  alias RosBridge.Timing
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts)
 
@@ -31,7 +35,8 @@ defmodule RosBridge.Publishers.Range do
     state = %{
       topic: Keyword.fetch!(opts, :topic),
       frame_id: Keyword.fetch!(opts, :frame_id),
-      radiation_type: Keyword.get(opts, :radiation_type, :ultrasound)
+      radiation_type: Keyword.get(opts, :radiation_type, :ultrasound),
+      beyond_range: Keyword.get(opts, :beyond_range, :infinity)
     }
 
     driver.register_listener(Keyword.fetch!(opts, :name), self())
@@ -49,7 +54,10 @@ defmodule RosBridge.Publishers.Range do
   @doc "The `Range` for `sample`. Pure."
   def range(%Sample{range: {min_range_m, max_range_m}} = sample, state) do
     %Range{
-      header: %Header{stamp: time_message(sample.measured_at), frame_id: state.frame_id},
+      header: %Header{
+        stamp: Timing.stamp_from_system_time(sample.measured_at),
+        frame_id: state.frame_id
+      },
       radiation_type: state.radiation_type,
       field_of_view: sample.field_of_view,
       min_range: min_range_m,
@@ -57,12 +65,10 @@ defmodule RosBridge.Publishers.Range do
       range:
         case sample.distance do
           :below_range -> :neg_infinity
+          :beyond_range when state.beyond_range == :max_range -> max_range_m
           :beyond_range -> :infinity
           metres -> metres
         end
     }
   end
-
-  defp time_message(system_ns),
-    do: %Time{sec: div(system_ns, 1_000_000_000), nanosec: rem(system_ns, 1_000_000_000)}
 end

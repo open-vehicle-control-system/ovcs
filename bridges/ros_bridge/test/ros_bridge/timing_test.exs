@@ -7,28 +7,31 @@ defmodule RosBridge.TimingTest do
   # confusing the two monotonic clocks (~18 years apart) can't pass.
   @tolerance_ns 500_000_000
 
-  describe "wallclock_of/1" do
+  describe "system_time_from_monotonic/1" do
     test "projects an Erlang monotonic timestamp onto wall clock" do
       now = System.monotonic_time(:nanosecond)
-      assert_in_delta Timing.wallclock_of(now), System.system_time(:nanosecond), @tolerance_ns
+
+      assert_in_delta Timing.system_time_from_monotonic(now),
+                      System.system_time(:nanosecond),
+                      @tolerance_ns
     end
   end
 
-  describe "from_kernel_monotonic/1" do
+  describe "monotonic_from_kernel/1" do
     test "converts a kernel CLOCK_MONOTONIC timestamp onto the Erlang timescale" do
       kernel_now = :os.perf_counter(:nanosecond)
 
-      assert_in_delta Timing.from_kernel_monotonic(kernel_now),
+      assert_in_delta Timing.monotonic_from_kernel(kernel_now),
                       System.monotonic_time(:nanosecond),
                       @tolerance_ns
     end
 
     # The bug this guards: feeding a kernel timestamp straight to
-    # wallclock_of/1 lands ~18 years out, and since
+    # system_time_from_monotonic/1 lands ~18 years out, and since
     # builtin_interfaces/Time.sec is an int32 the stamp wraps negative.
     test "a converted kernel timestamp yields a sane wall-clock stamp" do
       kernel_now = :os.perf_counter(:nanosecond)
-      wallclock = Timing.wallclock_of(Timing.from_kernel_monotonic(kernel_now))
+      wallclock = Timing.system_time_from_monotonic(Timing.monotonic_from_kernel(kernel_now))
 
       assert_in_delta wallclock, System.system_time(:nanosecond), @tolerance_ns
 
@@ -40,14 +43,24 @@ defmodule RosBridge.TimingTest do
     test "an unconverted kernel timestamp would not fit int32 seconds" do
       # Documents why the conversion exists rather than asserting on
       # the broken path in production code.
-      unconverted = Timing.wallclock_of(:os.perf_counter(:nanosecond))
+      unconverted = Timing.system_time_from_monotonic(:os.perf_counter(:nanosecond))
       assert div(unconverted, 1_000_000_000) > 2_147_483_647
     end
   end
 
-  describe "time_message_for/1" do
+  describe "monotonic_from_ros_time/1" do
+    test "undoes ros_time_from_monotonic/1" do
+      now = System.monotonic_time(:nanosecond)
+
+      assert_in_delta Timing.monotonic_from_ros_time(Timing.ros_time_from_monotonic(now)),
+                      now,
+                      @tolerance_ns
+    end
+  end
+
+  describe "stamp_from_monotonic/1" do
     test "builds a Time message with a nanosec field inside one second" do
-      message = Timing.time_message_for(System.monotonic_time(:nanosecond))
+      message = Timing.stamp_from_monotonic(System.monotonic_time(:nanosecond))
       assert message.nanosec >= 0
       assert message.nanosec < 1_000_000_000
       assert message.sec > 0

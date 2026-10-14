@@ -34,8 +34,16 @@ defmodule RosBridge.Publishers.LaserScanTest do
     assert message.header.stamp.sec == 1 and message.header.stamp.nanosec == 500_000_000
   end
 
-  test "drops returns outside the sensor's range" do
-    message = LaserScan.laser_scan(scan([{0.0, 0.0, 0}, {0.0, 20.0, 5}]), 4, "laser")
-    assert message.ranges == [0.0, 0.0, 0.0, 0.0]
+  test "reports a slot whose points all came back empty as +Inf, an empty slot as 0.0" do
+    # Slot 2 holds a point beyond the range, slot 3 one below it.
+    message = LaserScan.laser_scan(scan([{0.0, 20.0, 5}, {:math.pi() / 2, 0.01, 3}]), 4, "laser")
+    assert message.ranges == [0.0, 0.0, :infinity, 0.0]
+  end
+
+  test "keeps a slot's return over its empty points" do
+    message =
+      LaserScan.laser_scan(scan([{0.0, 0.0, 0}, {0.001, 2.0, 9}, {0.002, 0.0, 0}]), 4, "laser")
+
+    assert Enum.at(message.ranges, 2) == 2.0
   end
 end

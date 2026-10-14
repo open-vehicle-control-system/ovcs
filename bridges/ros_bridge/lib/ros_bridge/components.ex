@@ -31,6 +31,10 @@ defmodule RosBridge.Components do
       **Simulation only.** Without it every stamp is wall clock, which
       is correct on a vehicle and wrong against Gazebo — see
       `RosBridge.Clock` for what that breaks.
+    * `:simulated_hardware` — `RosBridge.Simulator.Hardware`, emulating the
+      vehicle's hardware on CAN so the VMS drives a simulated vehicle.
+      **Simulation only.** Opts: `:vehicle`, `:simulated_components`
+      (required), `:drive_topic`, `:wheel_joints`; see the module.
     * `:imu_publisher` — starts the named driver (any
       `OvcsDrivers.Imu` implementation) followed by
       `RosBridge.Publishers.Imu`. Opts:
@@ -41,17 +45,20 @@ defmodule RosBridge.Components do
     * `:lidar_publisher` — starts the named driver (any
       `OvcsDrivers.Lidar` implementation) followed by
       `RosBridge.Publishers.LaserScan`. Opts:
-        * `:driver` (required, module — `RPLidar.UART`)
+        * `:driver` (required, module — `RPLidar.UART`,
+          `RosBridge.Lidar.Zenoh`)
         * `:driver_opts` — forwarded to the driver (`device:`, ...)
         * `:topic`, `:frame_id`, `:bins` — forwarded to
           `RosBridge.Publishers.LaserScan` (see its defaults).
     * `:range_publisher` — one rangefinder: starts the named driver
       instance (any `OvcsDrivers.Rangefinder` implementation) followed
       by `RosBridge.Publishers.Range`. List it once per sensor. Opts:
-        * `:driver` (required, module — `A02YYUW.UART`)
+        * `:driver` (required, module — `A02YYUW.UART`,
+          `RosBridge.Rangefinder.Zenoh`)
         * `:name` (required) — the instance's name, unique per sensor
         * `:driver_opts` — forwarded to the driver (`serial_number:`, ...)
-        * `:topic`, `:frame_id` (required), `:radiation_type`
+        * `:topic`, `:frame_id` (required), `:radiation_type`,
+          `:beyond_range`
     * `:odometry_publisher` — `RosBridge.Publishers.Odometry`,
       dead-reckoning `/odom` and the `odom → base_link` transform from
       the VMS's `vehicle_motion` CAN frame and the IMU heading. Opts:
@@ -97,11 +104,13 @@ defmodule RosBridge.Components do
        topic: "ovcs_heartbeat",
        message_module: Ros2.StdMsgs.Msg.String,
        interval_ms: Keyword.get(opts, :interval_ms, 1_000),
-       build: &heartbeat_message/1}
+       build: &heartbeat_message/2}
     ]
   end
 
   def start(:simulator_clock, opts), do: [{RosBridge.Clock, opts}]
+
+  def start(:simulated_hardware, opts), do: [{RosBridge.Simulator.Hardware, opts}]
 
   def start(:joy_interpreter, opts), do: [{RosBridge.Consumers.Joy, opts}]
 
@@ -150,9 +159,9 @@ defmodule RosBridge.Components do
     [{RosBridge.StereoCamera.Supervisor, opts}]
   end
 
-  defp heartbeat_message(counter) do
+  defp heartbeat_message(counter, node_name) do
     %Ros2.StdMsgs.Msg.String{
-      data: "heartbeat #{counter} @ #{System.system_time(:millisecond)}"
+      data: "#{node_name} heartbeat #{counter} @ #{System.system_time(:millisecond)}"
     }
   end
 end

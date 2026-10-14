@@ -19,24 +19,30 @@
   ## Layout
 
   The vehicle spawns at the origin facing +x. Obstacles sit at known
-  distances along that axis so depth can be *checked* rather than
-  admired — at 480x270 with a 90 mm baseline the near clip is 0.36 m
-  and precision falls off as Z², so the useful band is roughly
-  0.4-3 m. The boxes bracket it:
+  distances ahead so depth can be *checked* rather than admired, the
+  nearer ones beside the axis so the car can drive out of the spawn
+  point. They bracket the useful band of the OVCS Mini reference
+  vehicle's stereo, about 0.4-3 m (480x270, a 90 mm baseline, a 0.36 m
+  near clip, precision falling off as Z²):
 
       1.0 m   small box      inside the good range
       2.0 m   tall box       mid range, and a person-height target
       3.5 m   cylinder       approaching the noise floor
       6.0 m   back wall      beyond useful precision, gives context
 
+  Side walls at y = ±4 m and a rear wall at x = -2 m close the room.
+
   The 2.0 m box is 1.7 m tall on purpose: it is roughly person-sized,
-  which is what the Hailo detector is looking for.
+  which is what a person detector looks for.
 -->
 <sdf version="1.10">
   <world name="workshop">
 
-    <physics name="1ms" type="ignored">
-      <max_step_size>0.001</max_step_size>
+    <!-- Gazebo publishes /clock once per step, so the step is also the
+         clock's rate, which every ROS node with use_sim_time receives.
+         Sensor and plugin periods should be multiples of it. -->
+    <physics name="5ms" type="ignored">
+      <max_step_size>0.005</max_step_size>
       <real_time_factor>1.0</real_time_factor>
     </physics>
 
@@ -127,7 +133,7 @@
     <!-- 1.0 m: a low obstacle, comfortably inside the good range. -->
     <model name="box_1m">
       <static>true</static>
-      <pose>1.0 0 0.15 0 0 0</pose>
+      <pose>1.0 -0.55 0.15 0 0 0</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.3 0.3 0.3</size></box></geometry>
@@ -193,10 +199,75 @@
     </model>
 
     <!-- 6.0 m: past useful precision, but it fills the frame so the
-         upper half of the image is not empty sky. -->
+         upper half of the image is not empty sky. The other three walls
+         close the room for a car facing any other way: the matcher
+         finds false, near matches in a featureless sky. -->
     <model name="back_wall">
       <static>true</static>
       <pose>6.0 0 1.25 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.2 8.0 2.5</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.2 8.0 2.5</size></box></geometry>
+          <material>
+            <diffuse>1 1 1 1</diffuse>
+            <pbr>
+              <metal>
+                <albedo_map>materials/textures/noise.png</albedo_map>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="left_wall">
+      <static>true</static>
+      <pose>2.0 4.0 1.25 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>8.2 0.2 2.5</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>8.2 0.2 2.5</size></box></geometry>
+          <material>
+            <diffuse>1 1 1 1</diffuse>
+            <pbr>
+              <metal>
+                <albedo_map>materials/textures/noise.png</albedo_map>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="right_wall">
+      <static>true</static>
+      <pose>2.0 -4.0 1.25 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>8.2 0.2 2.5</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>8.2 0.2 2.5</size></box></geometry>
+          <material>
+            <diffuse>1 1 1 1</diffuse>
+            <pbr>
+              <metal>
+                <albedo_map>materials/textures/noise.png</albedo_map>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="rear_wall">
+      <static>true</static>
+      <pose>-2.0 0 1.25 0 0 0</pose>
       <link name="link">
         <collision name="collision">
           <geometry><box><size>0.2 8.0 2.5</size></box></geometry>

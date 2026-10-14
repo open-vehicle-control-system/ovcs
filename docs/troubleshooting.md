@@ -168,7 +168,7 @@ Host 10.42.0.*
 
 ### Nav2 looks healthy but the simulated car doesn't move
 
-**Cause:** Nav2 publishes `TwistStamped`; the Gazebo `/cmd_vel` bridge expects `Twist`, and a bridge fed the wrong type never fires. **Fix:** Nav2 publishes on `/cmd_vel_nav`, which has its own bridge node; the shipped launch files already do this. The mirror image exists on the vehicle: a `TwistStamped` body parsed as `Twist` decodes to denormals near zero, and the bridge warns about surplus bytes. That warning is the tell.
+**Cause:** the ROS bridge is not running its simulated hardware, or the VMS is on the `teleop` commander. **Fix:** run with `OVCS_SIM=1` and without `OVCS_SIMULATOR_COMMANDER=teleop`; the simulated radio takes the VMS to `:ros` a few seconds after it appears. On the OVCS Mini reference vehicle, `candump vcan1` then shows the VESC commands.
 
 ### Topics appear on one machine and not another
 
@@ -176,7 +176,7 @@ Host 10.42.0.*
 
 ### Stereo depth is empty, or coverage is a few percent
 
-**Cause:** the world has no texture (`empty.sdf` gives SGBM nothing to correlate), or the bridge uses the real Mini's calibration against Gazebo's ideal pinhole. **Fix:** use `workshop.sdf` for anything involving depth, and let `OVCS_SIM=1` select the simulator calibration in `vehicles/ovcs_mini/priv/calibration/sim/`.
+**Cause:** the world has no texture (`empty.sdf` gives SGBM nothing to correlate), or the bridge uses the real Mini's calibration against Gazebo's ideal pinhole. **Fix:** use `workshop.sdf` for anything involving depth, and let `OVCS_SIM=1` select the simulator calibration in `vehicles/ovcs_mini/priv/calibration/simulation/`.
 
 ### Nav2 drops every point cloud: "the timestamp on the message is earlier than all the data in the transform cache"
 

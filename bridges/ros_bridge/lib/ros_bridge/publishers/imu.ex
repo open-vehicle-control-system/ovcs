@@ -28,11 +28,11 @@ defmodule RosBridge.Publishers.Imu do
   use GenServer
 
   alias OvcsDrivers.Imu.Sample
-  alias Ros2.BuiltinInterfaces.Msg.Time
   alias Ros2.GeometryMsgs.Msg.{Quaternion, Vector3}
   alias Ros2.SensorMsgs.Msg.Imu
   alias Ros2.StdMsgs.Msg.Header
   alias RosBridge.Publishers.Imu.State
+  alias RosBridge.Timing
 
   require Logger
 
@@ -107,14 +107,9 @@ defmodule RosBridge.Publishers.Imu do
   end
 
   defp publish_imu(%State{} = state) do
-    now_ns = System.system_time(:nanosecond)
-
     message = %Imu{
       header: %Header{
-        stamp: %Time{
-          sec: div(now_ns, 1_000_000_000),
-          nanosec: rem(now_ns, 1_000_000_000)
-        },
+        stamp: Timing.stamp_from_monotonic(System.monotonic_time(:nanosecond)),
         frame_id: state.frame_id
       },
       orientation: state.latest_orientation,

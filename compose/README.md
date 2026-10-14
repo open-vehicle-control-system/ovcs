@@ -14,9 +14,9 @@ compose/
 └── local/            NEVER PUSHED — the operator's machine and the simulation workstation
     ├── common.yml            the shared service definitions the two stacks `extends:`
     ├── base.yml              operator laptop: ros2 shell, joy, calibrator, standalone router, nav2 profile
-    ├── simulation.yml        Gazebo: sim, teleop, gz-gui, nav2 against the simulator
-    ├── images/sim/           the Gazebo image — the only one that never goes near the car
-    ├── simulation/           worlds, macros, launch files, gamepad mapping, test scripts
+    ├── simulation.yml        Gazebo: gazebo, gazebo-gui, nav2 against the simulator
+    ├── images/gazebo/        the Gazebo image — the only one that never goes near the car
+    ├── simulation/           worlds, macros, launch files
     ├── scripts/              calibrate.sh
     ├── udev/                 host rules for controllers (the G923 wheel's mode switch)
     └── calibration_output/   where the stereo calibrator drops its tarball
@@ -45,7 +45,7 @@ multicast, just TCP peerings to `zenohd`.
 | `ros2` (tooling shell) | local/base | interactive, `docker compose exec` |
 | `joy` | local/base | the game controller is with the operator, not the car |
 | `calibrator` | local/base | one-shot X11 GUI |
-| `sim`, `teleop`, `gz-gui` | local/simulation | Gazebo and its operator-side extras |
+| `gazebo`, `gazebo-gui` | local/simulation | Gazebo and its viewer |
 
 `local/base.yml` also carries `standalone` copies of `zenohd` and
 `foxglove_bridge` behind a compose profile, and the car's Nav2 behind
@@ -66,10 +66,9 @@ make a plain `up -d` fail**. Nothing is behind a profile for tidiness.
 | `base.yml` | `standalone` | `zenohd`, `foxglove_bridge` | stands in for `compute/`; two routers on one LAN is two fabrics |
 | `base.yml` | `nav2` | `nav2` (wall clock, container `ovcs-nav2-vehicle`) | stands in for the car's planner; two planners fight over `/cmd_vel_nav` |
 | `base.yml` | `calibration` | `calibrator` | one-shot X11 GUI |
-| `simulation.yml` | *(none)* | `sim` | headless Gazebo |
+| `simulation.yml` | *(none)* | `gazebo` | headless Gazebo |
 | `simulation.yml` | `nav2` | `nav2` (`use_sim_time:=true`, container `ovcs-nav2`) | the same image against the simulator's clock |
-| `simulation.yml` | `teleop` | `teleop` | `devices: /dev/input/js0` fails `up` without a controller |
-| `simulation.yml` | `gui` | `gz-gui` | needs an X socket |
+| `simulation.yml` | `gui` | `gazebo-gui` | needs an X socket |
 
 The two `nav2` profiles are the same image with different clocks; start
 one or the other, never both.
@@ -83,7 +82,7 @@ its package, and the stacks take it from there:
 |---|---|---|
 | `nav2/` | `nav2.yaml` and the behaviour trees it names | baked into the onboard Nav2 image by `ovcs compute stage`; mounted by both local `nav2` services |
 | `description/` | the URDF/xacro model | mounted into the simulator |
-| `description/simulation.yaml` | the sensors Gazebo bridges and the spawn height | `sim.launch.py` |
+| `description/simulation.yaml` | the sensors Gazebo bridges and the spawn height | `gazebo.launch.py` |
 | `foxglove/` | Foxglove layouts for the vehicle's topics | Foxglove Studio, imported by hand |
 
 The local stacks take the vehicle from `OVCS_VEHICLE` (its directory
@@ -111,7 +110,7 @@ runs, never a copy of them. One Dockerfile, one tag, on both sides:
 | shared ROS 2 | `compute/images/ros2/` | `ovcs/ros2:lyrical` | CI (GHCR); `local/base.yml` (`ros2` service) |
 | Nav2 | `compute/images/nav2/` | `ovcs/nav2:lyrical` | CI (GHCR); `local/base.yml` and `local/simulation.yml` (`nav2`) |
 | Wi-Fi firmware, Wi-Fi AP fix, bridge NAT fix, NTP | `compute/images/{wifi-firmware,wifi-ap-radio,bridge-no-nat,ntp}/` | — | CI (GHCR) only |
-| Gazebo | `local/images/sim/` | `ovcs/sim:jetty` | `local/simulation.yml` only |
+| Gazebo | `local/images/gazebo/` | `ovcs/gazebo:jetty` | `local/simulation.yml` only |
 
 The same direction holds for Nav2's parameters: the vehicle's `nav2/`
 is baked into the onboard image and bind-mounted by the simulator, so
@@ -175,11 +174,12 @@ another publishing meanwhile is ignored until the first stops for
 
 A profile is a YAML file per controller
 (`RosBridge.Consumers.Joy.Profile` describes the format). The
-framework ships two in `bridges/ros_bridge/priv/joy/`:
+framework ships three in `bridges/ros_bridge/priv/joy/`:
 
 | Profile | Controls |
 |---|---|
 | `xbox.yml` | right stick steers, and drives (up) or brakes (down) in the gear the triggers hold: RT forward, LT backward, neither neutral |
+| `f310.yml` | the Logitech F310 with its back switch on X, mapped as `xbox.yml` |
 | `g923.yml` | the wheel steers, full lock at ±90°, and springs back to centre while the `joy` service runs; the accelerator drives and the brake brakes, the brake winning when both are pressed, in the gear of the Driving Force Shifter: 1 to 6 forward, reverse backward |
 
 In neutral the throttle only brakes. As with the radio's reverse
@@ -294,8 +294,8 @@ The pins below have to move together. CI (`pins` job in
 | zenoh router image | `eclipse/zenoh:1.8.0` | `compute/docker-compose.yml`, `local/base.yml` |
 | zenoh Python client | `eclipse-zenoh==1.8.0` | `compute/images/ros2/Dockerfile` |
 | zenoh in the Elixir bridge | `zenohex 0.8.0` (pins zenoh 1.8.0) | `bridges/ros_bridge/mix.exs` |
-| ROS 2 distribution | `ros:lyrical-ros-base` | `compute/images/ros2/`, `compute/images/nav2/`, `local/images/sim/` |
-| Gazebo | Jetty, via `ros-lyrical-ros-gz` | `local/images/sim/Dockerfile` |
+| ROS 2 distribution | `ros:lyrical-ros-base` | `compute/images/ros2/`, `compute/images/nav2/`, `local/images/gazebo/` |
+| Gazebo | Jetty, via `ros-lyrical-ros-gz` | `local/images/gazebo/Dockerfile` |
 | Wi-Fi firmware | linux-firmware `20260810`, checksummed | `compute/images/wifi-firmware/Dockerfile` |
 
 ## Notes

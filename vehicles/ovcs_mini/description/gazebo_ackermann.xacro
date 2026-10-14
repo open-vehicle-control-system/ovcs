@@ -1,40 +1,15 @@
 <?xml version="1.0"?>
 <!--
-  Ackermann drive for Gazebo Jetty (gz-sim 10).
+  Gazebo's AckermannSteering system drives the model; the ROS bridge's
+  simulated hardware commands it on `/simulator/drive`, bridged from the
+  system's default command topic, `/model/ovcs_mini/cmd_vel`, which no
+  tag renames. Every geometry value is read from `ovcs_mini.urdf.xacro`'s
+  properties. The system's own odometry is not bridged: the bridge owns
+  `/odom`, and `OdometryPublisher` gives ground truth on `/simulator/odom`.
 
-  This is the part that could not be carried over from
-  open-vehicle-control-system/traxxas. That model used
-  `libgazebo_ros_ackermann_drive.so`, a **Gazebo Classic** plugin.
-  Classic is end-of-life and the plugin exists in no modern Gazebo;
-  the replacement is Gazebo's own `AckermannSteering` system, reached
-  through `ros_gz_bridge` rather than by linking ROS into the plugin.
-
-  Every geometry value below is read from the properties in
-  `ovcs_mini.urdf.xacro`, never retyped. That matters because of the
-  failure the previous model shipped with: 0.1 m wheels declared
-  against a real 0.0548.
-
-  The shape of that failure under gz-sim 10 is the opposite of what
-  one would expect, and was measured rather than assumed. The radius cancels in the
-  plugin — commanded speed is divided by it to get a joint velocity,
-  and the joint velocity is multiplied by it again to get odometry —
-  so `/odom` reads a flawless 1.000 m/s while the car actually crawls
-  at 0.548. The vehicle *reports* correctly and **drives** wrong.
-
-  Which means `/odom` cannot catch it: compare the physical joint
-  velocity from `/joint_states` against what odometry claims.
-
-  Tag names here were read out of the shipped
-  `libgz-sim-ackermann-steering-system.so` and the reference world
-  `worlds/ackermann_steering.sdf`, not recalled — and re-checked
-  against gz-sim 10 after the move from Harmonic, where the set turned
-  out to be unchanged. An unrecognised tag is silently ignored and the
-  car simply does not move, so guessing is expensive.
-
-  Note the absence of a `<topic>` tag: the command topic is left at
-  the system's default, `/model/ovcs_mini/cmd_vel`, and bridged to
-  `/cmd_vel` on the ROS side. `<odom_topic>`, `<tf_topic>` and
-  `<child_frame_id>` are set because they are confirmed to exist.
+  Tag names come from the shipped
+  `libgz-sim-ackermann-steering-system.so`: an unrecognised tag is
+  ignored without a word.
 -->
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
   <gazebo>
@@ -64,6 +39,9 @@
            as the URDF. See the parameter conversion in ovcs_mini.urdf.xacro. -->
       <kingpin_width>${kingpin_width}</kingpin_width>
       <steering_limit>${gazebo_steering_limit}</steering_limit>
+      <!-- Steering joint speed per radian of error, capped by the joint's
+           velocity limit. -->
+      <steer_p_gain>${steering_servo_gain}</steer_p_gain>
 
       <!-- ESTIMATE. A stock Slash 4x4 does roughly 30 mph; reverse is
            geared slower. Acceleration limits keep the velocity
@@ -73,26 +51,28 @@
       <max_velocity>13.0</max_velocity>
       <min_acceleration>-10.0</min_acceleration>
       <max_acceleration>10.0</max_acceleration>
-
-      <odom_topic>/odom</odom_topic>
-      <tf_topic>/tf</tf_topic>
-      <!-- Without this the plugin derives the odometry frame from the
-           model name and publishes `ovcs_mini/odom`, which is not the
-           ROS convention and which Nav2 rejects outright: every costmap
-           logs `Invalid frame ID "odom" ... frame does not exist` and
-           never activates. `frame_id` was read out of the shipped
-           libgz-sim-ackermann-steering-system.so, like the rest of
-           these tags. -->
-      <frame_id>odom</frame_id>
-      <child_frame_id>base_link</child_frame_id>
-      <odom_publish_frequency>50</odom_publish_frequency>
     </plugin>
 
-    <!-- Joint positions, so robot_state_publisher can move the wheels
-         and steering in a viewer rather than showing a rigid model. -->
+    <!-- Ground truth: the model's pose as the physics has it. Its
+         transform goes to a topic nothing bridges: the odom frame belongs
+         to the odometry Nav2 navigates by. -->
+    <plugin filename="gz-sim-odometry-publisher-system"
+            name="gz::sim::systems::OdometryPublisher">
+      <odom_frame>odom</odom_frame>
+      <robot_base_frame>base_link</robot_base_frame>
+      <odom_topic>/simulator/odom</odom_topic>
+      <tf_topic>/simulator/tf</tf_topic>
+      <dimensions>2</dimensions>
+      <odom_publish_frequency>50</odom_publish_frequency>
+    </plugin>
+    <!-- Joint positions: the simulated hardware measures the wheels from
+         them, and robot_state_publisher moves the wheels in a viewer. -->
     <plugin filename="gz-sim-joint-state-publisher-system"
             name="gz::sim::systems::JointStatePublisher">
       <topic>/joint_states</topic>
+      <!-- Without it the system publishes every physics step,
+           and robot_state_publisher turns each into a /tf message. -->
+      <update_rate>50</update_rate>
     </plugin>
   </gazebo>
 </robot>

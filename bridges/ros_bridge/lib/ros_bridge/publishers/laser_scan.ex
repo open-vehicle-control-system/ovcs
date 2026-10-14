@@ -6,9 +6,11 @@ defmodule RosBridge.Publishers.LaserScan do
   `LaserScan` wants ranges at evenly spaced angles, and a spinning
   sensor's measurements are not, so each revolution is binned into
   `:bins` slots over `[-π, π)`, each keeping its nearest return (an
-  obstacle is never hidden by a farther point in the same slot) and
-  0.0 when it has none. `time_increment` is 0: the bins are not in
-  measurement order.
+  obstacle is never hidden by a farther point in the same slot). A slot
+  whose points all came back empty (a distance of 0.0, or beyond the
+  range) is `+Inf`, REP 117's no return, which a costmap clears
+  through; a slot with no point at all is 0.0, invalid.
+  `time_increment` is 0: the bins are not in measurement order.
 
   ## Options
 
@@ -20,9 +22,9 @@ defmodule RosBridge.Publishers.LaserScan do
   require Logger
 
   alias OvcsDrivers.Lidar.Scan
-  alias Ros2.BuiltinInterfaces.Msg.Time
   alias Ros2.SensorMsgs.Msg.LaserScan
   alias Ros2.StdMsgs.Msg.Header
+  alias RosBridge.Timing
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 
@@ -63,12 +65,16 @@ defmodule RosBridge.Publishers.LaserScan do
 
     slots =
       Enum.reduce(scan.points, %{}, fn
-        {_angle, distance, _quality}, slots when distance < range_min or distance > range_max ->
+        {angle, distance, _quality}, slots when distance == 0.0 or distance > range_max ->
+          Map.put_new(slots, slot_index(angle, angle_increment_rad, bins), {:infinity, 0})
+
+        {_angle, distance, _quality}, slots when distance < range_min ->
           slots
 
         {angle, distance, quality}, slots ->
           slot = slot_index(angle, angle_increment_rad, bins)
 
+          # An atom, `:infinity` sorts after every distance.
           Map.update(slots, slot, {distance, quality}, fn {kept_distance, _} = existing ->
             if distance < kept_distance, do: {distance, quality}, else: existing
           end)
@@ -78,7 +84,10 @@ defmodule RosBridge.Publishers.LaserScan do
       Enum.map(0..(bins - 1), &Map.get(slots, &1, {0.0, 0})) |> Enum.unzip()
 
     %LaserScan{
-      header: %Header{stamp: time_message(scan.started_at), frame_id: frame_id},
+      header: %Header{
+        stamp: Timing.stamp_from_system_time(scan.started_at),
+        frame_id: frame_id
+      },
       angle_min: -:math.pi(),
       angle_max: :math.pi() - angle_increment_rad,
       angle_increment: angle_increment_rad,
@@ -96,7 +105,4 @@ defmodule RosBridge.Publishers.LaserScan do
     wrapped = if angle >= :math.pi(), do: angle - 2 * :math.pi(), else: angle
     min(trunc((wrapped + :math.pi()) / angle_increment_rad), bins - 1)
   end
-
-  defp time_message(system_ns),
-    do: %Time{sec: div(system_ns, 1_000_000_000), nanosec: rem(system_ns, 1_000_000_000)}
 end

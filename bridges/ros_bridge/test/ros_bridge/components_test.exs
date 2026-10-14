@@ -9,7 +9,14 @@ defmodule RosBridge.ComponentsTest do
       assert opts[:topic] == "ovcs_heartbeat"
       assert opts[:message_module] == Ros2.StdMsgs.Msg.String
       assert opts[:interval_ms] == 1_000
-      assert is_function(opts[:build], 1)
+      assert is_function(opts[:build], 2)
+    end
+
+    test "each heartbeat names the bridge that sent it" do
+      [{RosBridge.Publishers.Heartbeat, opts}] = Components.start(:heartbeat, [])
+
+      assert %{data: "ovcs_bridge_ros heartbeat 7 @ " <> _ms} =
+               opts[:build].(7, "ovcs_bridge_ros")
     end
 
     test ":interval_ms overrides the default" do

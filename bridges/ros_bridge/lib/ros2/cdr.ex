@@ -23,11 +23,12 @@ defmodule Ros2.Cdr do
   def f64(message, value), do: pad(message, 8) <> <<value * 1.0::little-float-64>>
 
   @doc """
-  A `float32`. `:infinity` and `:neg_infinity` encode the IEEE
-  infinities, which Elixir floats lack and REP 117 range sensors need.
+  A `float32`. `:infinity`, `:neg_infinity` and `:nan` encode the IEEE
+  special values, which Elixir floats lack and REP 117 range sensors need.
   """
   def f32(message, :infinity), do: pad(message, 4) <> <<0x7F800000::little-32>>
   def f32(message, :neg_infinity), do: pad(message, 4) <> <<0xFF800000::little-32>>
+  def f32(message, :nan), do: pad(message, 4) <> <<0x7FC00000::little-32>>
   def f32(message, value), do: pad(message, 4) <> <<value * 1.0::little-float-32>>
 
   def string(message, string), do: u32(message, byte_size(string) + 1) <> string <> <<0>>
@@ -68,6 +69,17 @@ defmodule Ros2.Cdr do
     {<<value::little-float-64, rest::binary>>, offset} = skip_pad(input, 8)
     {value, {rest, offset + 8}}
   end
+
+  @doc "A `float32`; IEEE infinities decode to `:infinity` / `:neg_infinity`, NaN to `:nan`."
+  def read_f32(input) do
+    {<<bits::binary-size(4), rest::binary>>, offset} = skip_pad(input, 4)
+    {f32_value(bits), {rest, offset + 4}}
+  end
+
+  defp f32_value(<<0x7F800000::little-32>>), do: :infinity
+  defp f32_value(<<0xFF800000::little-32>>), do: :neg_infinity
+  defp f32_value(<<value::little-float-32>>), do: value
+  defp f32_value(_nan), do: :nan
 
   def read_string(input) do
     {size_with_null, {binary, offset}} = read_u32(input)

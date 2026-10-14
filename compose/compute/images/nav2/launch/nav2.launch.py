@@ -21,24 +21,18 @@ default of **true**, and `controller_server::publishVelocity` takes a
 `TwistStamped`. (The doc comment in `twist_publisher.hpp` still claims
 unstamped is the default; the code disagrees, and the code wins.)
 
-So Nav2's final output is `/cmd_vel_nav`, and `sim.launch.py`
-bridges that as `TwistStamped` alongside the existing unstamped
-`/cmd_vel` that teleop uses. Two separate bridge
-nodes, both feeding the same Gazebo topic: one `parameter_bridge`
-cannot map two ROS topics onto one Gazebo topic, and one topic cannot
-carry two ROS types.
-
-That split mirrors the vehicle's own CAN protocol, where a joystick
-and a planner arrive on two different frames (`0x2B0` actuator
-command, `0x2B1` velocity command). On the vehicle the control level
-manager arbitrates between them; nothing does here — run one or the
-other.
+So Nav2's final output is `/cmd_vel_nav`, as `TwistStamped`, and the
+vehicle's ROS bridge subscribes to it with that type, on the vehicle
+and against the simulator alike. It reaches the VMS as `0x2B1`, the
+velocity command, apart from a joystick's `0x2B0`; the control level
+manager arbitrates between them.
 
 The controller and the behaviours do not publish `/cmd_vel_nav`
 themselves: they publish `/cmd_vel_nav_raw`, and the velocity smoother
 republishes it on `/cmd_vel_nav` with its limits and deadband applied.
-The deadband keeps every non-zero linear velocity at or above the
-vehicle's slowest drivable speed; see the vehicle's `nav2.yaml`.
+The deadband zeroes noise; a vehicle whose `RosVelocityCommand` sets
+`:min_speed_m_s` floors slower non-zero speeds there, see its
+`nav2.yaml`.
 """
 
 from launch import LaunchDescription

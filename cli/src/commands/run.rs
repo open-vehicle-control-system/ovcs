@@ -74,8 +74,10 @@ pub fn run(vehicle_arg: Option<String>, no_addons: bool) -> Result<()> {
                 "--sname",
                 &sname,
                 // The BEAM disables `IO.ANSI` on a piped stdout; keep Logger's colours.
+                // No scheduler busy-wait, as in the firmware's vm.args: on a
+                // many-core host the idle schedulers spin.
                 "--erl",
-                "-elixir ansi_enabled true",
+                "-elixir ansi_enabled true +sbwt none +sbwtdcpu none +sbwtdio none",
                 "-S",
                 "mix",
                 "run",

@@ -5,7 +5,7 @@ defmodule RosBridge.Publishers.RangeTest do
   alias Ros2.SensorMsgs.Msg.Range
   alias RosBridge.Publishers.Range, as: RangePublisher
 
-  @state %{frame_id: "ultrasound_rear_left", radiation_type: :ultrasound}
+  @state %{frame_id: "ultrasound_rear_left", radiation_type: :ultrasound, beyond_range: :infinity}
 
   defp sample(distance),
     do: %Sample{
@@ -28,6 +28,14 @@ defmodule RosBridge.Publishers.RangeTest do
 
     encoded = Range.encode(RangePublisher.range(sample(:beyond_range), @state))
     assert binary_part(encoded, byte_size(encoded) - 8, 4) == <<0, 0, 0x80, 0x7F>>
+  end
+
+  test "reports a reading beyond the range as max_range when asked to" do
+    message = RangePublisher.range(sample(:beyond_range), %{@state | beyond_range: :max_range})
+    assert message.range == message.max_range
+
+    assert RangePublisher.range(sample(:below_range), %{@state | beyond_range: :max_range}).range ==
+             :neg_infinity
   end
 
   test "places the radiation type right after the frame id, as CDR does" do

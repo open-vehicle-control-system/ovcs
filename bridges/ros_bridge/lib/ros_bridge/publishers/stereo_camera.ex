@@ -77,6 +77,10 @@ defmodule RosBridge.Publishers.StereoCamera do
       cameras with a stable phase offset.
     * `:camera_info_interval_frames` — republish CameraInfo every
       Nth frame. Default 30.
+    * `:publish_raw_images` (`true`) — republish each camera frame on
+      `<prefix>/<side>/image_raw/compressed`. Off when the frames
+      already come from that topic, as `RosBridge.Camera.Zenoh`'s do
+      against a simulator: republishing them would feed them back in.
     * `:depth_camera_info_topic`, `:cloud_topic`,
       `:disparity_image_topic`, `:rectified_image_topic`,
       `:right_rectified_image_topic` — each output is published only
@@ -114,6 +118,7 @@ defmodule RosBridge.Publishers.StereoCamera do
     cloud_topic = Keyword.get(opts, :cloud_topic)
     rectified_image_topic = Keyword.get(opts, :rectified_image_topic)
     right_rectified_image_topic = Keyword.get(opts, :right_rectified_image_topic)
+    publish_raw_images = Keyword.get(opts, :publish_raw_images, true)
     left_opts = Keyword.fetch!(opts, :left)
     right_opts = Keyword.fetch!(opts, :right)
     width = Keyword.fetch!(opts, :width)
@@ -139,8 +144,10 @@ defmodule RosBridge.Publishers.StereoCamera do
     {:ok,
      %{
        sides: %{
-         "left" => build_side_state("left", topic_prefix, left_opts, width, height),
-         "right" => build_side_state("right", topic_prefix, right_opts, width, height)
+         "left" =>
+           build_side_state("left", topic_prefix, left_opts, width, height, publish_raw_images),
+         "right" =>
+           build_side_state("right", topic_prefix, right_opts, width, height, publish_raw_images)
        },
        camera_info_interval_frames: camera_info_interval_frames,
        disparity_topic: disparity_topic,
@@ -221,12 +228,14 @@ defmodule RosBridge.Publishers.StereoCamera do
     case Map.fetch(state.sides, label) do
       {:ok, side} ->
         header = %Header{
-          stamp: Timing.time_message_for(frame.capture_ns),
+          stamp: Timing.stamp_from_monotonic(frame.capture_ns),
           frame_id: side.frame_id
         }
 
         {publish_ns, _} =
-          measure_ns(fn -> publish_compressed_image(side.image_topic, header, frame) end)
+          measure_ns(fn ->
+            if side.image_topic, do: publish_compressed_image(side.image_topic, header, frame)
+          end)
 
         if rem(side.frame_counter, state.camera_info_interval_frames) == 0 do
           publish_camera_info(side.camera_info_topic, header, side.camera_info, frame)
@@ -358,7 +367,7 @@ defmodule RosBridge.Publishers.StereoCamera do
 
   defp publish_stereo(state, %Result{} = result) do
     header = %Header{
-      stamp: Timing.time_message_for(result.capture_ns),
+      stamp: Timing.stamp_from_monotonic(result.capture_ns),
       frame_id: state.stereo_frame_id
     }
 
@@ -453,10 +462,18 @@ defmodule RosBridge.Publishers.StereoCamera do
     end
   end
 
-  defp build_side_state(side, topic_prefix, side_opts, fallback_width, fallback_height) do
+  @doc false
+  def build_side_state(
+        side,
+        topic_prefix,
+        side_opts,
+        fallback_width,
+        fallback_height,
+        publish_raw_images
+      ) do
     %{
       frame_id: Keyword.fetch!(side_opts, :frame_id),
-      image_topic: "#{topic_prefix}/#{side}/image_raw/compressed",
+      image_topic: publish_raw_images && "#{topic_prefix}/#{side}/image_raw/compressed",
       camera_info_topic: "#{topic_prefix}/#{side}/camera_info",
       camera_info:
         load_camera_info(
