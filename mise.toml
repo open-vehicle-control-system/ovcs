@@ -68,6 +68,10 @@ done
 description = "Download + verify the detection models (not vendored — see scripts/models.tsv for why)"
 run = "./scripts/fetch_models.sh"
 
+[tasks.urdf]
+description = "Expand each vehicle's xacro into the URDF its package reads (needs ROS's xacro on the PATH)"
+run = "./scripts/expand_urdf.sh"
+
 [tasks.cli]
 description = "Build the ovcs CLI (Rust release binary → cli/ovcs)"
 run = "cd cli && cargo build --release && strip --strip-all target/release/ovcs && cp target/release/ovcs ovcs && chmod +x ovcs"

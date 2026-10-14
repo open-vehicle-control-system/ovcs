@@ -10,6 +10,7 @@ fallbacks and developer-side tooling.
 | [`bind_remote_can.rb`](./bind_remote_can.rb) | Tunnels CAN frames between a remote Nerves device and the local host using `socketcand` + `socketcand_client`. Example: `./bind_remote_can.rb ovcs1-vms.local can0,vcan0 can1,vcan1`. Useful for running the Vue dashboard on a laptop against CAN traffic on the vehicle. |
 | [`faker.rb`](./faker.rb) | Generates synthetic CAN traffic for stress-testing the dashboard / decoders. Edit the script to pick frame IDs and networks. |
 | [`check_docs.exs`](./check_docs.exs) | Checks the guides linked from `docs/README.md` against the documentation rules in `CLAUDE.md` (frontmatter, no H1, no Mermaid or raw HTML, fence languages, vocabulary, relative links and anchors). Runs in CI. |
+| [`expand_urdf.sh`](./expand_urdf.sh) | Expands each `vehicles/<name>/description/*.urdf.xacro` into the `.urdf` committed beside it, which the vehicle package reads at compile time (`mise run urdf`, needs ROS's `xacro`). CI fails while one is stale. |
 | [`sleep_loop.rb`](./sleep_loop.rb) | Toggles a specific CAN frame on/off on a loop — quick demo / debugging aid. |
 
 For replaying real-vehicle CAN captures, see

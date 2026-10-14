@@ -12,7 +12,7 @@ defmodule OvcsVehicle.MixProject do
   end
 
   def application do
-    [extra_applications: [:logger, :eex, :mix]]
+    [extra_applications: [:logger, :eex, :mix, :xmerl]]
   end
 
   defp deps do

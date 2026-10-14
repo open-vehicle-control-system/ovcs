@@ -1,0 +1,48 @@
+<?xml version="1.0" ?>
+<robot name="fixture">
+  <!-- Non-ASCII comment: ── base_link ── -->
+  <link name="base_link"/>
+  <joint name="chassis_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="chassis"/>
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+  </joint>
+  <link name="chassis"/>
+  <link name="wheel">
+    <collision>
+      <geometry>
+        <cylinder length="0.045" radius="0.0522"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="wheel_joint" type="continuous">
+    <parent link="chassis"/>
+    <child link="wheel"/>
+    <origin rpy="-1.5707963267948966 0 0" xyz="-0.162 0.148 0.0522"/>
+  </joint>
+  <link name="steering_link"/>
+  <joint name="steering_joint" type="revolute">
+    <parent link="chassis"/>
+    <child link="steering_link"/>
+    <origin xyz="0.162 0.148 0.0522"/>
+    <limit effort="10" lower="-0.66" upper="0.66" velocity="5.0"/>
+  </joint>
+  <link name="camera_link"/>
+  <joint name="camera_joint" type="fixed">
+    <parent link="chassis"/>
+    <child link="camera_link"/>
+    <origin rpy="0 0 0" xyz="0.042 0.045 0.185"/>
+  </joint>
+  <link name="camera_optical"/>
+  <joint name="camera_optical_joint" type="fixed">
+    <parent link="camera_link"/>
+    <child link="camera_optical"/>
+    <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0"/>
+  </joint>
+  <link name="lidar_link"/>
+  <joint name="lidar_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="lidar_link"/>
+    <origin rpy="0 0 3.141592653589793" xyz="-0.137 0 0.205"/>
+  </joint>
+</robot>
