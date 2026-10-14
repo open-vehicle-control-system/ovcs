@@ -172,10 +172,14 @@ The simulated hardware is framework; what it emulates is the vehicle's. Each pie
 A frame from the VMS only updates the command its simulated component holds. The work happens on a 20 ms wall-clock tick:
 
 1. Each simulated component turns its command into actuations on `RosBridge.Simulator.Vehicle`: a speed setpoint, an acceleration from a motor current, a deceleration from a brake, a steering angle.
-2. The vehicle combines them into a commanded speed and steering angle. A setpoint is taken as it is; accelerations are integrated against rolling resistance. The command stays just ahead of the measured speed, so it cannot wind up against an obstacle.
-3. The wheels' turn since the last tick is the change in the `:wheel_joints`' mean position on `/joint_states`, and the measured speed is that distance per wall second, smoothed by a filter that keeps the total.
-4. Each simulated component updates its CAN frames from that measurement, counters from the distance and rates from the speed; Cantastic sends them on their own timers.
-5. The commanded speed and its Ackermann yaw rate go to Gazebo on `/simulator/drive`.
+2. The vehicle steps, in three parts:
+   - **What to ask for.** The actuations become a commanded speed and steering angle. A setpoint is taken as it is; otherwise the speed changes by the drive, less any brake and the rolling resistance, over the tick.
+   - **What the wheels did.** Their turn since the last tick is the change in the `:wheel_joints`' mean position on `/joint_states`, cumulative, so samples arriving late or in bursts lose nothing. The measured speed is that distance per wall second, smoothed by a filter that keeps the total.
+   - **Keeping the request honest.** The commanded speed may lead the measured one by at most 0.25 m/s in its own direction: against a wall the wheels stall and the request holds at 0.25 m/s instead of winding up. The measurement only ever lowers the request: a burst of late samples reads as a speed spike, and a car asked to stop still stops.
+3. Each simulated component reports what its hardware would measure: counters from the wheel turns and rates from the measured speed, into its CAN frames, which Cantastic sends on their own timers.
+4. The commanded speed and its Ackermann yaw rate go to Gazebo on `/simulator/drive`.
+
+`RosBridge.Simulator.Vehicle`'s documentation works three of these steps through with the OVCS Mini's numbers.
 
 Three things are particular to the simulator:
 

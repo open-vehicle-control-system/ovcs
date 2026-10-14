@@ -3,6 +3,8 @@ defmodule RosBridge.Simulator.VehicleTest do
 
   alias RosBridge.Simulator.Vehicle
 
+  doctest Vehicle
+
   @dt 0.01
 
   defp vehicle(overrides \\ %{}) do
