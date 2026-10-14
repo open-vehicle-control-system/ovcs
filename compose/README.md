@@ -258,11 +258,12 @@ sudo udevadm control --reload
 Import from file…* a layout. The framework ships the stereo tuning
 layout in [`local/foxglove/`](./local/foxglove/); layouts for a
 vehicle's own topics live in its `foxglove/` directory. The OVCS Mini
-reference vehicle has the first two:
+reference vehicle has the first three:
 
 | Layout | For | Shows |
 |---|---|---|
-| `ovcs_nav2.json` | the planner drive | both costmaps, global and local plan, footprint and odometry in the `odom` frame; commanded vs measured velocity; dead-reckoned position; IMU vs odometry yaw rate; the IMU's acceleration and angular velocity; the joystick axes; the odometry stamp (silence there is what halts Nav2); MPPI's candidate trajectories, Nav2's warnings and errors and its behaviour tree's last transitions, for a goal that is not reached. Clicking in the 3D panel publishes a `/goal_pose`. |
+| `ovcs_drive.json` | driving with a gamepad | the left camera's raw stream, the lowest-latency image; the control level, ROS commander, gear, ready to drive, VMS status and forced level (`/vehicle/*`); requested throttle and steering against the measured speed; the gamepad's axes; the lidar and ultrasonics around the car |
+| `ovcs_nav2.json` | the planner drive | both costmaps, global and local plan, footprint and odometry in the `odom` frame; whether Nav2 is active, the control level and ROS commander; the current goal, an abort button and the goal's tracking (distance, remaining path, errors); the camera with detections; commanded vs measured velocity; dead-reckoned position; IMU vs odometry yaw rate; MPPI's candidate trajectories; Nav2's warnings and errors and its behaviour tree's last transitions, for a goal that is not reached. Clicking in the 3D panel publishes a `/goal_pose`. |
 | `ovcs_stereo.json` | the stereo pipeline | left/right images with detection boxes, depth, point cloud with 3D detections, the lidar and ultrasonics in 3D, the diagnostics, the cameras' sync offset |
 | `ovcs_stereo_tuning.json` | tuning the stereo cameras | both cameras rectified (rows aligned) and the depth next to the camera and matching settings as sliders, menus and toggles (the `extensions/parameter-sliders` Foxglove panel, installed once), the cameras' diagnostics and a plot of their sync offset, exposure and gain (see `bridges/ros_bridge/README.md`) |
 
