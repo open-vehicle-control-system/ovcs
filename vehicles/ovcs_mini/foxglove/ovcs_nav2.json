@@ -333,9 +333,8 @@
           "label": "forced down"
         }
       ],
-      "isSynced": true,
+      "isSynced": false,
       "showPoints": false,
-      "xAxisRange": 60,
       "foxglovePanelTitle": "Nav2 and who drives"
     },
     "Plot!tracking": {

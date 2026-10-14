@@ -56,9 +56,8 @@
           "label": "forced down"
         }
       ],
-      "isSynced": true,
+      "isSynced": false,
       "showPoints": false,
-      "xAxisRange": 30,
       "foxglovePanelTitle": "Who drives, gear, readiness"
     },
     "Plot!requests": {
