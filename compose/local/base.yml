@@ -65,8 +65,8 @@ services:
     #
     #   docker compose -f base.yml --profile nav2 up -d
     #
-    # The parameters are the vehicle's (OVCS_VEHICLE, set in .env),
-    # mounted where the car's image has them baked in.
+    # The parameters and the URDF are the vehicle's (OVCS_VEHICLE, set
+    # in .env), mounted where the car's image has them baked in.
     extends:
       file: common.yml
       service: fabric-client
@@ -78,6 +78,7 @@ services:
       dockerfile: images/nav2/Dockerfile
     volumes:
       - ../../vehicles/${OVCS_VEHICLE:?set OVCS_VEHICLE in compose/local/.env}/nav2:/opt/ovcs/config:ro
+      - ../../vehicles/${OVCS_VEHICLE}/description/${OVCS_VEHICLE}.urdf:/opt/ovcs/description/robot.urdf:ro
 
   foxglove_bridge:
     # Also standalone-only: with a vehicle present, Foxglove Studio

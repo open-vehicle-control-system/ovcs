@@ -258,7 +258,7 @@ local_costmap:
           filter: "passthrough"
           clear_after_reading: true
         stereo_clearing:
-          # The frustum of stereo_left, an optical frame (z forward).
+          # The frustum of stereo_left_optical (z forward).
           # Symmetric, so as wide as the narrower side of the matched
           # band: the leftmost num_disparities columns see nothing.
           # It starts at the stereo's near limit, f * B / num_disparities,

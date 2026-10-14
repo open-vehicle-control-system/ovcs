@@ -74,11 +74,10 @@ These links identify the vehicle; they do not certify measurements of the OVCS b
 | Chassis clearance | 30 mm | Estimate; depends on suspension setup and load |
 | Total mass | 2.41 kg | Unverified for this battery/electronics configuration |
 
-Do not claim full dimensional validation from matching two declarations in code.
 Before changing the dynamics, measure outside tyre width, tyre width, axle spacing,
 steering-pivot spacing, ride height, shell mounting height and ready-to-run mass including OVCS equipment.
 At zero toe/camber, centre track is outside tyre width minus one tyre width.
-`OvcsMini.geometry/0` and the geometry tests must agree with any accepted change.
+After any change, run `mise run urdf`: `OvcsMini.geometry/0` and the compute node's `robot_state_publisher` read the expanded `ovcs_mini.urdf`.
 
 ## Geometry and dynamics checks
 

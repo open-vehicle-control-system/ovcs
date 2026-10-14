@@ -6,7 +6,7 @@ name: ROS 2
 # as firmware not being built on pull requests, which cost us four
 # rounds of red CI before it was closed.
 #
-# Four levels, cheapest first:
+# Five levels, cheapest first:
 #
 #   * `compose-config` validates every compose file in seconds. It
 #     catches the mistakes that are both most likely and most annoying:
@@ -23,6 +23,9 @@ name: ROS 2
 #     `decompress_stereo.py` — which runs on the *vehicle* — are only
 #     ever parsed when something starts them, so an undefined name in
 #     an error path shipped and waited.
+#   * `urdf` re-expands each vehicle's xacro and fails if the committed
+#     `.urdf` differs: the vehicle package reads that file at compile
+#     time, so a stale one ships the old geometry.
 #   * `image` builds every image the compute node runs, for amd64 (the
 #     workstations) and arm64 (the compute node), when their sources
 #     change. On `main`, `manifest` then publishes each to GHCR as
@@ -155,6 +158,22 @@ jobs:
       # `ruff format` is deliberately not checked — see that file.
       - name: ruff check
         run: ruff check --output-format=github .
+
+  urdf:
+    name: expanded URDFs are current
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: mise run urdf
+        run: |
+          docker run --rm -v "$PWD:/repo" -w /repo ros:lyrical-ros-base@sha256:0c19f326a339ed770ef1d4c0646a8b53bdb49dd5ff74b6de41ebdb8ac21e1806 bash -c '
+            apt-get update -qq && apt-get install -y -qq --no-install-recommends ros-lyrical-xacro >/dev/null
+            . /opt/ros/lyrical/setup.bash
+            scripts/expand_urdf.sh'
+          git diff --exit-code -- 'vehicles/*/description/*.urdf' \
+            || { echo "::error::an expanded URDF is stale: run \`mise run urdf\`"; exit 1; }
 
   image:
     name: build ${{ matrix.image }} (${{ matrix.platform.arch }})

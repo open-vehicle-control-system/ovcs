@@ -8,27 +8,35 @@ defmodule OvcsMini do
   @behaviour RadioControlBridge
   @behaviour RosBridge
 
+  alias OvcsVehicle.URDF
+
   @impl OvcsVehicle
   def name, do: "OVCS Mini"
   @impl OvcsVehicle
   def vms, do: OvcsMini.Vms.Composer
-  # Measured, in metres and radians. These are declared twice on
-  # purpose: here, and as `<xacro:property>` values in
-  # `description/ovcs_mini.urdf.xacro`, because xacro cannot read
-  # Elixir and the simulator needs them at model-generation time.
-  #
-  # `test/geometry_test.exs` asserts the two declarations agree, which
-  # is what makes the duplication safe rather than silent. That check
-  # is not decoration: a wheel radius wrong by 2x already shipped in
-  # this model once, drove convincingly, and reported nonsense.
+  @urdf_path Path.expand("../description/ovcs_mini.urdf", __DIR__)
+  @external_resource @urdf_path
+  @urdf URDF.read!(@urdf_path)
+
+  # Read off the URDF, which `mise run urdf` expands from the xacro.
   @impl OvcsVehicle
-  def geometry,
-    do: %{
-      wheelbase: 0.324,
-      track: 0.296,
-      wheel_radius: 0.0522,
-      steering_limit: 0.52
+  def geometry do
+    {front_x, kingpin_left, _} = URDF.joint!(@urdf, "front_left_steering_joint").xyz
+    {_, kingpin_right, _} = URDF.joint!(@urdf, "front_right_steering_joint").xyz
+    {_, inner_wheel_limit} = URDF.joint!(@urdf, "front_left_steering_joint").limit
+    {rear_x, rear_left, _} = URDF.joint!(@urdf, "rear_left_wheel_joint").xyz
+    {_, rear_right, _} = URDF.joint!(@urdf, "rear_right_wheel_joint").xyz
+    wheelbase = front_x - rear_x
+    turning_radius = wheelbase / :math.tan(inner_wheel_limit) + (kingpin_left - kingpin_right) / 2
+
+    %{
+      wheelbase: wheelbase,
+      track: rear_left - rear_right,
+      wheel_radius: URDF.collision_cylinder!(@urdf, "rear_left_wheel").radius,
+      # The bicycle model's angle at the inner wheel's limit.
+      steering_limit: :math.atan(wheelbase / turning_radius)
     }
+  end
 
   @impl OvcsVehicle
   def can_config_otp_app, do: :ovcs_mini
@@ -154,10 +162,9 @@ defmodule OvcsMini do
         {:imu_publisher, driver: RosBridge.Imu.Zenoh},
         {:odometry_publisher,
          driver: RosBridge.Imu.Zenoh, base_ahead_of_rear_axle: base_ahead_of_rear_axle()},
-        {:lidar_publisher, driver: RosBridge.Lidar.Zenoh, bins: 500},
+        {:lidar_publisher, driver: RosBridge.Lidar.Zenoh, bins: 500, frame_id: "lidar_link"},
         rear_ultrasound(:left, RosBridge.Rangefinder.Zenoh, topic: "ultrasound/rear_left_raw"),
         rear_ultrasound(:right, RosBridge.Rangefinder.Zenoh, topic: "ultrasound/rear_right_raw"),
-        {:static_transforms, transforms: [lidar_transform() | rear_ultrasound_transforms()]},
         {:simulated_hardware, simulated_hardware()}
       ]
     }
@@ -246,12 +253,12 @@ defmodule OvcsMini do
         {:lidar_publisher,
          driver: RPLidar.UART,
          driver_opts: [serial_number: "bafb4ecd0064ef11858ee0a9c169b110"],
-         bins: 500},
+         bins: 500,
+         frame_id: "lidar_link"},
         # A02YYUW ultrasonic sensors on the rear bumper, each on a CP2104
         # found by its serial number.
         rear_ultrasound(:left, A02YYUW.UART, serial_number: "01D9EBFA"),
-        rear_ultrasound(:right, A02YYUW.UART, serial_number: "02PW2EBP"),
-        {:static_transforms, transforms: [lidar_transform() | rear_ultrasound_transforms()]}
+        rear_ultrasound(:right, A02YYUW.UART, serial_number: "02PW2EBP")
       ]
     }
 
@@ -261,42 +268,8 @@ defmodule OvcsMini do
      name: :"ultrasound_rear_#{side}",
      driver_opts: driver_opts,
      topic: "ultrasound/rear_#{side}",
-     frame_id: "ultrasound_rear_#{side}",
+     frame_id: "ultrasound_rear_#{side}_link",
      beyond_range: :max_range}
-  end
-
-  # On the rear bumper's support: its back face 125 mm behind the rear
-  # axle, so 287 mm behind base_link (midway between the axles), and
-  # each sensor's face 10.6 mm further back, 41.8 mm either side of the
-  # centreline, 110 mm above the ground (with the suspension at rest).
-  # Each faces backwards toed 10 degrees outward: 170 and -170 degrees
-  # about z.
-  defp rear_ultrasound_transforms do
-    for {side, {y, yaw_degrees}} <- [left: {0.0418, 170}, right: {-0.0418, -170}] do
-      half_yaw = yaw_degrees * :math.pi() / 360
-
-      %{
-        parent: "base_link",
-        child: "ultrasound_rear_#{side}",
-        translation: {-0.2976, y, 0.110},
-        rotation: {0.0, 0.0, :math.sin(half_yaw), :math.cos(half_yaw)}
-      }
-    end
-  end
-
-  # Where the lidar sits on the car, so `laser` resolves: its centre 25
-  # mm ahead of the rear axle, so 137 mm behind base_link, on the
-  # centreline, its base 205 mm above the ground (20 mm above the stereo
-  # lenses). The frame is at the base; the scan plane is a little
-  # higher. The C1's zero angle is taken as the car's forward, not yet
-  # checked against an object in front.
-  defp lidar_transform do
-    %{
-      parent: "base_link",
-      child: "laser",
-      translation: {-0.137, 0.0, 0.205},
-      rotation: {0.0, 0.0, 0.0, 1.0}
-    }
   end
 
   defp ros_perception_bridge_host_config do
@@ -333,7 +306,6 @@ defmodule OvcsMini do
           # Gazebo owns the clock: stamps on its time line up with /tf
           # and /odom, which Nav2's costmaps require.
           :simulator_clock,
-          stereo_transforms(),
           stereo_component(RosBridge.Camera.Zenoh, :simulation)
         ] ++ simulation_detector()
     }
@@ -364,7 +336,7 @@ defmodule OvcsMini do
         []
 
       :stub ->
-        [{:detector, backend: RosBridge.Inference.Stub, frame_id: "stereo_left"}]
+        [{:detector, backend: RosBridge.Inference.Stub, frame_id: "stereo_left_optical"}]
 
       target ->
         [
@@ -374,7 +346,7 @@ defmodule OvcsMini do
            target: target,
            score_threshold: 0.4,
            detect_every_n: 3,
-           frame_id: "stereo_left"}
+           frame_id: "stereo_left_optical"}
         ]
     end
   end
@@ -398,52 +370,12 @@ defmodule OvcsMini do
       node_name: "ovcs_bridge_perception",
       components: [
         :heartbeat,
-        stereo_transforms(),
         stereo_component(RosBridge.Camera.LibCamera, :target),
         # After :stereo_camera — the detector registers on that
         # unit's backend while starting.
         hailo_detector()
       ]
     }
-  end
-
-  # Where the stereo bar sits on the car. Without this, `stereo_left`
-  # is a label nothing can resolve: a consumer knows a point is 1.2 m
-  # in front of the camera but not where the camera is, so it cannot
-  # express the measurement in the car's own terms — and Foxglove's 3D
-  # panel reports the frame missing and draws nothing.
-  #
-  # The rotation is the standard body -> optical frame change, not a
-  # mounting angle: base_link is REP-103 (x forward, y left, z up)
-  # while an optical frame is x right, y down, z into the image. That
-  # is what the (-0.5, 0.5, -0.5, 0.5) quaternion does.
-  #
-  # x and z are measured.
-  #
-  # `base_link` sits midway between the axles, so with a 324 mm
-  # wheelbase the front axle is 162 mm ahead of it. The camera bar is
-  # 120 mm behind the front axle, which puts the lenses at
-  # 162 - 120 = 42 mm forward of base_link. The value here was 100 mm
-  # — a guess that placed the cameras 58 mm too far forward and shifted
-  # every detection on the vehicle by that much.
-  #
-  # y is 0: the bar straddles the centreline, and the pair's own 90 mm
-  # baseline is carried by the calibration, not by this transform,
-  # which locates `stereo_left` — the frame the depth image and
-  # detections are published in.
-  #
-  # z is the lens centres' height above the ground, where base_link
-  # sits: 185 mm.
-  defp stereo_transforms do
-    {:static_transforms,
-     transforms: [
-       %{
-         parent: "base_link",
-         child: "stereo_left",
-         translation: {0.042, 0.0, 0.185},
-         rotation: {-0.5, 0.5, -0.5, 0.5}
-       }
-     ]}
   end
 
   # YOLO on the Hailo-8, fused with the stereo depth map. Target
@@ -477,7 +409,7 @@ defmodule OvcsMini do
       # rectified pixels.
       hef_path: Path.join(priv_models_dir(), "#{hailo_model()}.hef"),
       score_threshold: 0.4,
-      frame_id: "stereo_left"
+      frame_id: "stereo_left_optical"
     }
   end
 
@@ -496,9 +428,9 @@ defmodule OvcsMini do
 
   # Self-contained stereo perception block. Inherits most defaults
   # from `RosBridge.StereoCamera.Supervisor` (backend
-  # `StereoCamera.OpenCV`, topic prefix `"stereo"`, frame_ids
-  # `stereo_left` / `stereo_right`, calibration paths
-  # `<calibration_dir>/stereo_<side>.yaml`). We override resolution
+  # `StereoCamera.OpenCV`, topic prefix `"stereo"`, calibration paths
+  # `<calibration_dir>/stereo_<side>.yaml`), with the URDF's optical
+  # frames as frame_ids. We override resolution
   # and SGBM parameters here to keep the disparity rate usable on a
   # laptop CPU (≈ 2 Hz at 640×480, vs ≈ 0.7 Hz at 1280×720).
   #
@@ -585,8 +517,8 @@ defmodule OvcsMini do
         uniqueness_ratio: 20,
         clahe_clip_limit: 3.0
       ],
-      left: camera_addressing(arm, :left),
-      right: camera_addressing(arm, :right)
+      left: [frame_id: "stereo_left_optical"] ++ camera_addressing(arm, :left),
+      right: [frame_id: "stereo_right_optical"] ++ camera_addressing(arm, :right)
     }
   end
 

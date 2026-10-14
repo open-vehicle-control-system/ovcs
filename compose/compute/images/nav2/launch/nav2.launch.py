@@ -33,14 +33,24 @@ republishes it on `/cmd_vel_nav` with its limits and deadband applied.
 The deadband zeroes noise; a vehicle whose `RosVelocityCommand` sets
 `:min_speed_m_s` floors slower non-zero speeds there, see its
 `nav2.yaml`.
+
+`robot_state_publisher` publishes the vehicle's URDF
+(`/opt/ovcs/description/robot.urdf`, expanded from
+`vehicles/<vehicle>/description/`): its fixed joints on `/tf_static`,
+which place the frames the sensors are stamped with on `base_link`.
+`robot_state_publisher:=false` leaves it to the simulator, whose launch
+runs its own.
 """
 
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
-from launch.substitutions import LaunchConfiguration
+from launch.conditions import IfCondition
+from launch.substitutions import Command, LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 CONFIG = "/opt/ovcs/config/nav2.yaml"
+URDF = "/opt/ovcs/description/robot.urdf"
 
 NAV_CMD_VEL_RAW = "/cmd_vel_nav_raw"
 NAV_CMD_VEL = "/cmd_vel_nav"
@@ -75,6 +85,22 @@ def generate_launch_description():
                 default_value="false",
                 description="Overlay the parameter file's clock source; "
                 "true only against a simulator publishing /clock.",
+            ),
+            DeclareLaunchArgument(
+                "robot_state_publisher",
+                default_value="true",
+                description="Publish the vehicle's URDF; false where something else does.",
+            ),
+            Node(
+                package="robot_state_publisher",
+                executable="robot_state_publisher",
+                output="screen",
+                condition=IfCondition(LaunchConfiguration("robot_state_publisher")),
+                parameters=[
+                    # `value_type=str`, or launch parses the XML as YAML.
+                    {"robot_description": ParameterValue(Command(["cat ", URDF]), value_type=str)},
+                    use_sim_time,
+                ],
             ),
             *[
                 Node(

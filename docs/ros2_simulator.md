@@ -70,7 +70,7 @@ The boundary between Gazebo's transport and ROS is exactly the list in `gazebo.l
 |---|---|---|---|
 | `/clock` | `rosgraph_msgs/Clock` | Gazebo | every node, `RosBridge.Clock` |
 | `/odom`, `/tf` (`odom → base_link`) | `nav_msgs/Odometry`, `tf2_msgs/TFMessage` | `RosBridge.Publishers.Odometry` | Nav2, Foxglove |
-| `/tf_static` | `tf2_msgs/TFMessage` | `robot_state_publisher` **and** `RosBridge.Publishers.StaticTransform` | Nav2, Foxglove |
+| `/tf_static` | `tf2_msgs/TFMessage` | `robot_state_publisher` | Nav2, Foxglove |
 | `/joint_states` | `sensor_msgs/JointState` | Gazebo | `RosBridge.Simulator.Hardware` (the wheel speed), Foxglove |
 | `/imu_raw` | `sensor_msgs/Imu` | the model's IMU sensor | `RosBridge.Imu.Zenoh`, republished on `/imu` by `Publishers.Imu` |
 | a ray sensor's `*_raw` topic | `sensor_msgs/LaserScan` | a `gpu_lidar` in the model | `RosBridge.Lidar.Zenoh` for a lidar, `RosBridge.Rangefinder.Zenoh` for a fan standing in for one rangefinder beam; republished as on the vehicle |
@@ -84,7 +84,7 @@ The boundary between Gazebo's transport and ROS is exactly the list in `gazebo.l
 | `/stereo/...` disparity, depth, points, detections | `stereo_msgs`, `sensor_msgs`, `vision_msgs` | perception bridge | Foxglove |
 | `/ovcs_heartbeat` | `std_msgs/String` | every `RosBridge` that lists `:heartbeat` | you, to see the BEAM is alive |
 
-**Two transform buffers, three publishers.** `/tf` is time-indexed: `tf2` stores each sample against its stamp and interpolates. `/tf_static` is timeless, and two things publish on it: `robot_state_publisher` with the URDF's fixed joints, and the bridge with `base_link → stereo_left`, the frame its image headers name. They don't collide, because the URDF's camera frames are `stereo_left_link` and `stereo_left_optical`; the simulated camera and the bridge describe one sensor under different frame names. The bridge's transform is static rather than on `/tf` at a rate because a point cloud stamped after the newest `/tf` sample cannot be transformed, and Nav2 drops it.
+**Two transform buffers.** `/tf` is time-indexed: `tf2` stores each sample against its stamp and interpolates. `/tf_static` is timeless, and carries the URDF's fixed joints, the sensor mounts among them; a point cloud stamped after the newest `/tf` sample could not be transformed, and Nav2 would drop it. `robot_state_publisher` publishes them: the simulator's launch runs it here, and the Nav2 image runs it on the vehicle, so the nav2 service in this stack starts with `robot_state_publisher:=false`. The bridges stamp their messages with the URDF's frame names (`lidar_link`, `stereo_left_optical`, ...) in both.
 
 ## Time
 
@@ -238,7 +238,7 @@ A yaw rate the steering cannot achieve collapses to full lock rather than an err
 
 Nav2 1.5.1: a lifecycle manager and four servers (`controller_server`, `planner_server`, `behavior_server`, `bt_navigator`) plus `velocity_smoother`. Not `nav2_bringup`, which is absent from the Lyrical archive and would pull in map_server and AMCL.
 
-One configuration, three deployments. The parameter file and behaviour trees are the vehicle's, in `vehicles/<vehicle>/nav2/`; the image and its launch file are the framework's, in `compose/compute/images/nav2/`, tagged `ovcs/nav2:lyrical` wherever it is built. `./ovcs compute stage` bakes the vehicle's parameters into the onboard image; the local stacks mount them.
+One configuration, three deployments. The parameter file and behaviour trees are the vehicle's, in `vehicles/<vehicle>/nav2/`; the image and its launch file are the framework's, in `compose/compute/images/nav2/`, tagged `ovcs/nav2:lyrical` wherever it is built. `./ovcs compute stage` bakes the vehicle's parameters and its expanded URDF into the onboard image; the local stacks mount them.
 
 | Where | Compose | Clock |
 |---|---|---|
@@ -360,4 +360,4 @@ Or open Foxglove Studio against `ws://<docker-host>:8765` and subscribe to `/ovc
 | Nav2's configuration | `vehicles/ovcs_mini/nav2/nav2.yaml`, the OVCS Mini reference vehicle's (heavily commented) | `nav2_ackermann_bt.xml` beside it |
 | the perception pipeline | [Perception: object detection](./ros2_perception.md) | `bridges/ros_bridge/lib/ros_bridge/camera/zenoh.ex`, `stereo_camera/supervisor.ex` |
 | the vehicle's ROS computer | [ROS compute node](./ros2_compute_node.md) | `compose/compute/`, [`compose/README.md`](../compose/README.md) |
-| the model's geometry | `vehicles/ovcs_mini/description/ovcs_mini.urdf.xacro`, the OVCS Mini reference vehicle's | `gazebo_ackermann.xacro`, `simulation.yaml`, `OvcsMini.geometry/0` |
+| the model's geometry | `vehicles/ovcs_mini/description/ovcs_mini.urdf.xacro`, the OVCS Mini reference vehicle's | `gazebo_ackermann.xacro`, `simulation.yaml`; `ovcs_mini.urdf`, which `mise run urdf` expands from it and `OvcsMini.geometry/0` reads |

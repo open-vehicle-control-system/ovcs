@@ -73,10 +73,10 @@ The detector is a component of the perception bridge's `RosBridge.Config`, liste
 {:hailo_detector,
  hef_path: Path.join(priv_models_dir(), "#{hailo_model()}.hef"),
  score_threshold: 0.4,
- frame_id: "stereo_left"}
+ frame_id: "stereo_left_optical"}
 ```
 
-`frame_id` is the stereo unit's own frame, since boxes are positioned in its rectified pixels. Your vehicle also needs a `base_link` → `stereo_left` static transform (the `:static_transforms` component) so consumers can place detections relative to the vehicle.
+`frame_id` is the stereo unit's left frame, since boxes are positioned in its rectified pixels. Your vehicle also needs that frame on `base_link` in `/tf_static` so consumers can place detections relative to the vehicle: a link of its URDF, which the compute node's `robot_state_publisher` publishes, or the bridge's `:static_transforms` component.
 
 ## Checking it works
 
@@ -179,10 +179,6 @@ position: x 0.0  y 0.0  z 0.8088 m
 ```
 
 and the world puts that box's front face 0.808 m from the lens: correct to the millimetre on the optical axis, which checks the fusion geometry against ground truth.
-
-## Known limitation
-
-In the OVCS Mini's `base_link` → `stereo_left` transform (`vehicles/ovcs_mini/lib/ovcs_mini.ex`), `{0.042, 0.0, 0.12}`, x is measured but z (the lens height) isn't. Detections are correct relative to the camera and inherit that error relative to the vehicle.
 
 ## Model licensing
 

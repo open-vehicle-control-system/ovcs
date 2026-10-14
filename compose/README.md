@@ -81,7 +81,7 @@ its package, and the stacks take it from there:
 | In `vehicles/<vehicle>/` | What | Used by |
 |---|---|---|
 | `nav2/` | `nav2.yaml` and the behaviour trees it names | baked into the onboard Nav2 image by `ovcs compute stage`; mounted by both local `nav2` services |
-| `description/` | the URDF/xacro model | mounted into the simulator |
+| `description/` | the xacro model, and the URDF `mise run urdf` expands from it | the xacro mounted into the simulator; the URDF baked into the onboard Nav2 image by `ovcs compute stage`, which publishes it, and mounted by the local `nav2` service in `base.yml` |
 | `description/simulation.yaml` | the sensors Gazebo bridges and the spawn height | `gazebo.launch.py` |
 | `foxglove/` | Foxglove layouts for the vehicle's topics | Foxglove Studio, imported by hand |
 
