@@ -7,4 +7,7 @@ can_networks:
       - import!:@ovcs_can:can/components/ovcs/0x2B0_ros_actuator_command.yml
       - import!:@ovcs_can:can/components/ovcs/0x2B1_ros_velocity_command.yml
     received_frames:
+      - import!:@ovcs_can:can/components/ovcs/0x1A0_vms_status.yml
+      - import!:@ovcs_can:can/components/ovcs/0x600_gear_status.yml
       - import!:@ovcs_can:can/components/ovcs/0x60B_vehicle_motion.yml
+      - import!:@ovcs_can:can/components/ovcs/0x60C_control_status.yml

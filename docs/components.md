@@ -153,6 +153,7 @@ Speaks the `rmw_zenoh` wire format natively over Zenoh, linking nothing from ROS
 - a heartbeat on `/ovcs_heartbeat`, and a simulator clock;
 - `Consumers.Joy`: a `sensor_msgs/Joy` becomes the `0x2B0` actuator command;
 - `Consumers.Velocity`: a planner `Twist` becomes the `0x2B1` velocity command;
+- `Publishers.VehicleStatus`: the VMS's status, gear and control level on `/vehicle/*`;
 - `Publishers.Imu` from any `OvcsDrivers.Imu` driver (`OvcsDrivers.Imu.Dummy` on the host, the BNO085 on target), `Publishers.Odometry`, static transforms;
 - `Publishers.LaserScan` from any `OvcsDrivers.Lidar` driver (an RPLIDAR over USB serial), and `Publishers.Range` per rangefinder (A02YYUW ultrasonic sensors over USB serial);
 - a stereo camera pipeline and a Hailo-8 object detector.

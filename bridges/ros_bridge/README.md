@@ -126,6 +126,7 @@ Catalogue (extend by adding a clause to
 | `:joy_interpreter`| `:profiles_dir`: the vehicle's own joystick profiles, added to the framework's in `priv/joy` (`RosBridge.Consumers.Joy.Profile`) | `RosBridge.Consumers.Joy`                |
 | `:imu_publisher`  | `:driver` (required, an `OvcsDrivers.Imu` module); plus `:topic`, `:frame_id`, `:publish_interval_ms` forwarded | the driver, then `RosBridge.Publishers.Imu` |
 | `:lidar_publisher` | `:driver` (required, an `OvcsDrivers.Lidar` module), `:driver_opts` (e.g. `serial_number: "..."`); plus `:topic` (`scan`), `:frame_id` (`laser`), `:bins` forwarded | the driver, then `RosBridge.Publishers.LaserScan` |
+| `:vehicle_status_publisher` | `:topic_prefix` (`vehicle`) | `RosBridge.Publishers.VehicleStatus`: the VMS's status, gear and control level on `/vehicle/*`, from `0x1A0`, `0x600` and `0x60C` |
 | `:range_publisher` | once per sensor: `:driver` (required, an `OvcsDrivers.Rangefinder` module), `:name` (required, unique), `:driver_opts`, `:topic` and `:frame_id` (required), `:radiation_type` | the driver instance, then `RosBridge.Publishers.Range` |
 | `:hailo_detector` | `:hef_path` (required); plus `:score_threshold`, `:frame_id`, `:min_score`, `:max_detections`, `:depth_sample_fraction`, `:marker_lifetime_ms`, `:detect_every_n` | `RosBridge.Inference.Supervisor` (the `hailo_detect` Port owner, then `RosBridge.Publishers.Detections`) |
 
