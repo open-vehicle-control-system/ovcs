@@ -60,9 +60,10 @@ OVCS_SIM=1 ZENOH_ENDPOINT_IP=127.0.0.1 ./ovcs run ovcs_mini
 
 ```sh
 cd compose/local && docker compose -f simulation.yml --profile nav2 up -d nav2
+docker compose -f base.yml --profile standalone up -d foxglove_bridge
 ```
 
-and send Nav2 a goal from Foxglove or `ros2 action send_goal`, in the `odom` frame. `candump vcan1` shows the VESC commands it becomes.
+Open Foxglove against `ws://localhost:8765`, with a layout from your vehicle's `foxglove/` directory, and send Nav2 a goal from it or with `ros2 action send_goal`, in the `odom` frame. `candump vcan1` shows the VESC commands it becomes.
 
 See it. The GUI is a separate service, because Qt in a headless container takes the physics down with it:
 
@@ -71,7 +72,7 @@ xhost +local:docker
 docker compose -f simulation.yml --profile gui up -d gazebo-gui
 ```
 
-Tear down with `docker compose -f simulation.yml --profile nav2 --profile gui down`, plus `docker compose -f base.yml rm -sf zenohd`.
+Tear down with `docker compose -f simulation.yml --profile nav2 --profile gui down`, plus `docker compose -f base.yml rm -sf zenohd foxglove_bridge`.
 
 > [!TIP]
 > If the VMS dashboard shows a `FAILURE` status, the VMS finished booting before the simulated controller answered; its `reset_status` action clears it. On the vehicle the same happens when a controller boots late.
