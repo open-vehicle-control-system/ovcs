@@ -13,13 +13,12 @@ path = "src/main.rs"
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }
 anyhow = "1.0"
-thiserror = "2.0"
 owo-colors = "4.1"
-ratatui = "0.29"
-crossterm = "0.28"
+ratatui = "0.30"
+crossterm = "0.29"
 regex = "1.11"
 glob = "0.3"
-ansi-to-tui = "7"
+ansi-to-tui = "8"
 russh = { version = "0.62", default-features = false, features = ["flate2", "aws-lc-rs"] }
 tokio = { version = "1.42", features = ["rt", "macros", "io-util", "net", "time", "sync"] }
 libc = "0.2"

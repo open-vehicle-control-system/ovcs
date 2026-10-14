@@ -25,4 +25,32 @@ defmodule OvcsVehicleTest do
     polo = OvcsVehicle.min_turning_radius(%{wheelbase: 2.466, steering_limit: 0.52})
     assert polo > tight
   end
+
+  describe "OvcsVehicle.Scaffold" do
+    alias OvcsVehicle.Scaffold
+
+    test "a display name is plain text" do
+      assert Scaffold.valid_display_name?("OVCS Mini #2")
+      refute Scaffold.valid_display_name?(~S|Shop "car"|)
+      refute Scaffold.valid_display_name?(~S|Shop \ car|)
+      refute Scaffold.valid_display_name?(~S|Shop #{System.halt(9)}|)
+    end
+
+    test "generate refuses a display name it cannot insert" do
+      dir = Path.join(System.tmp_dir!(), "ovcs_scaffold_#{System.unique_integer([:positive])}")
+
+      assert {:error, {:invalid_display_name, _}} =
+               Scaffold.generate(dir,
+                 module: "Car",
+                 name: "car",
+                 display_name: ~S|#{oops}|,
+                 vms_target: "ovcs_base_can_system_rpi4",
+                 infotainment_target: nil,
+                 infotainment: false,
+                 bridges: false
+               )
+
+      refute File.exists?(dir)
+    end
+  end
 end

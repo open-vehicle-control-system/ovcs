@@ -10,18 +10,19 @@ pub fn run() -> Result<()> {
     let list = vehicles::list(&root)?;
     step("Discovered vehicles:");
     println!();
-    for v in &list {
-        println!("  {}  ({})", v.dir.cyan(), v.module);
-        let vms = nerves_target(v, "vms")?.unwrap_or_else(|| "—".to_string());
-        let info = nerves_target(v, "infotainment")?.unwrap_or_else(|| "—".to_string());
-        println!("    vms          → {}", vms);
-        println!("    infotainment → {}", info);
+    for vehicle in &list {
+        println!("  {}  ({})", vehicle.dir.cyan(), vehicle.module);
+        let vms_target = nerves_target(vehicle, "vms")?.unwrap_or_else(|| "—".to_string());
+        let infotainment_target =
+            nerves_target(vehicle, "infotainment")?.unwrap_or_else(|| "—".to_string());
+        println!("    vms          → {}", vms_target);
+        println!("    infotainment → {}", infotainment_target);
 
-        let bridges = bridge_firmwares(v).unwrap_or_default();
+        let bridges = bridge_firmwares(vehicle).unwrap_or_default();
         if !bridges.is_empty() {
             let mut entries: Vec<(String, String)> = bridges
                 .into_iter()
-                .map(|(id, fw)| (id, fw.target))
+                .map(|(id, bridge)| (id, bridge.target))
                 .collect();
             entries.sort_by(|a, b| a.0.cmp(&b.0));
             println!("    bridges");

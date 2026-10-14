@@ -19,7 +19,7 @@ mise run cli       # cargo build --release, stripped and copied to cli/ovcs
 | Command | Arguments | What it does |
 |---|---|---|
 | `vehicles` | | List every vehicle under `vehicles/` with its Nerves targets |
-| `doctor` | | Check the toolchain binaries (required: mise, Elixir, Mix, Node, Python, fwup; optional: Ruby, Flutter, can-utils, PlatformIO), the `nerves_bootstrap` archive, the `libsocketcan` headers, each vehicle's Nerves targets and its SSH host keys |
+| `doctor` | | Check the toolchain binaries (required: mise, Elixir, Mix, Node, Python, fwup; optional: Ruby, Flutter, can-utils, balena, Docker, PlatformIO), the `nerves_bootstrap` archive, the `libsocketcan` headers, each vehicle's Nerves targets and its SSH host keys |
 | `new` | `<name> [--vms-target T] [--infotainment-target T] [--no-infotainment] [--no-bridges] [--display-name DN]` | Scaffold a vehicle under `vehicles/<name>/` (targets default to `ovcs_base_can_system_rpi4` and `ovcs_base_can_system_rpi5`) |
 | `can setup` | `<vehicle>` | Create and bring up the vcan interfaces the vehicle's host mapping names (sudo; idempotent) |
 | `can status` | `<vehicle>` | Report which vcan interfaces the vehicle needs and whether they're up |
@@ -34,6 +34,8 @@ mise run cli       # cargo build --release, stripped and copied to cli/ovcs
 | `host-keys verify` | `<vehicle>` | Check every role has a complete key set (exit 1 if not) |
 | `host-keys export` | `<vehicle> [-o FILE]` | Bundle the keys into an archive (default `<vehicle>-host-keys.tar.gz`) |
 | `host-keys import` | `<vehicle> -i\|--from FILE [--force]` | Restore keys from an archive |
+| `compute stage` | `<vehicle> -o\|--out DIR [--tag T \| --build]` | Write the vehicle's compute node balena source root to an empty or absent directory |
+| `compute push` | `[<vehicle>] <target> [--tag T \| --build] [-- ARGS]` | Stage into a temporary directory and `balena push` it to a fleet, or to `<device>.local` in local mode; `ARGS` go to `balena push` |
 
 `./ovcs --help` and `./ovcs <command> --help` print every option. [Running on hardware](../docs/running_hardware.md) walks through build, burn, upload and host keys.
 
@@ -42,7 +44,7 @@ mise run cli       # cargo build --release, stripped and copied to cli/ovcs
 - `<vehicle>` is the snake_case directory name of a vehicle package under `vehicles/`, for example `ovcs_mini` or `my_car`.
 - `<role>` is `vms`, `infotainment`, or `bridge-<id>` for any id in the vehicle's `bridge_firmwares/0`, for example `bridge-radio_control`. The `bridge-` prefix is required: a bare id is rejected, and the error lists the valid roles.
 - The two positional arguments of `build`, `burn`, `clean`, `upload` and `connect` are order-independent: the resolver picks the vehicle out of the two and treats the other as the role.
-- A missing argument opens an interactive picker. On a non-tty stdin the command exits with status 2 instead.
+- A missing argument opens an interactive picker. On a non-tty stdin the command exits with status 2 instead. `compute push` picks only the vehicle: its target has no picker.
 
 ### How it finds a vehicle
 
@@ -56,7 +58,7 @@ The CLI converts the directory name to UpperCamelCase (`ovcs_mini` becomes `Ovcs
 
 The CLI separates **booting** a vehicle from **observing** it.
 
-`./ovcs run <vehicle>` provisions vcan, compiles each firmware project for the host, then spawns `elixir --sname <vehicle>-<role> --cookie ovcs -S mix run --no-halt` per role from its project directory (every underscore, in the vehicle and in the role, becomes a dash: `ovcs-mini-bridge-radio-control`, the name `OvcsBus.Cluster` dials), with `VEHICLE` (and `BRIDGE_FIRMWARE_ID` plus the bridge's host CAN mapping for bridges) in its environment. `OvcsBus.Cluster` joins the BEAMs into one Erlang cluster, as on the vehicle. Each child's output is line-prefixed (`[vms] …`, `[bridge-ros] …`). There is no TUI and no IEx; `Ctrl-C` stops everything.
+`./ovcs run <vehicle>` provisions vcan, compiles each firmware project for the host, then spawns `elixir --sname <vehicle>-<role> -S mix run --no-halt` per role from its project directory (every underscore, in the vehicle and in the role, becomes a dash: `ovcs-mini-bridge-radio-control`, the name `OvcsBus.Cluster` dials), with `VEHICLE` (and `BRIDGE_FIRMWARE_ID` plus the bridge's host CAN mapping for bridges) in its environment. `OvcsBus.Cluster` joins the BEAMs into one Erlang cluster, as on the vehicle. Each child's output is line-prefixed (`[vms] …`, `[bridge-ros] …`). There is no TUI and no IEx; `Ctrl-C` stops everything. When a BEAM exits on its own, the other children get SIGTERM (SIGKILL after 10 seconds) and `run` exits with an error naming it; a dev add-on exiting is only reported.
 
 `run` also starts each firmware's **dev add-ons**, declared by the firmware in `dev_addons/0` and prefixed `[<firmware>-<addon>] …`. The only one today is the VMS dashboard's Vite dev server, on `http://localhost:5173`; use it rather than `:4000`, which serves the last prebuilt bundle and doesn't hot-reload. When the add-on's `node_modules` is missing, `run` installs it first. A missing toolchain or a failed start is a warning, not an error. `--no-addons` boots only the BEAMs.
 
@@ -66,7 +68,7 @@ The Flutter infotainment dashboard isn't an add-on: its hot reload reads keypres
 mise run infotainment-dashboard   # cd infotainment/dashboard && flutter run -d linux
 ```
 
-`./ovcs attach <vehicle>` works from any shell, or another machine. It looks for deployed boards first, probing `<vehicle>-<role>.local` on port 22 for each role (underscores become dashes: `ovcs-mini-vms.local`), and opens an SSH session per board. When none answers, it falls back to the local BEAMs registered in `epmd` under `<vehicle>-*` (hyphenated, e.g. `ovcs-mini-*`) and opens an `iex --remsh` per BEAM. Both transports reconnect on their own: an `epmd` poll locally, SSH retries with exponential backoff when deployed.
+`./ovcs attach <vehicle>` works from any shell, or another machine. It looks for deployed boards first, probing `<vehicle>-<role>.local` on port 22 for each role (underscores become dashes: `ovcs-mini-vms.local`), and opens three SSH sessions per board: logs, IEx shell and monitor. A board's host key must match the vehicle's pinned key for its role, from `./ovcs host-keys`, or, for a role without one, your `~/.ssh/known_hosts` entry (`./ovcs connect` adds it once); anything else is refused. When none answers, it falls back to the local BEAMs registered in `epmd` under `<vehicle>-*` (hyphenated, e.g. `ovcs-mini-*`) and opens three `iex --remsh` sessions per BEAM: logs, IEx shell and monitor. Both transports reconnect on their own: an `epmd` poll locally, SSH retries with exponential backoff when deployed.
 
 ```sh
 ./ovcs run ovcs1       # terminal A
@@ -105,7 +107,7 @@ Four panes:
 
 ### Clipboard
 
-Mouse drag or `Ctrl-Y` copies to the system clipboard. The CLI tries helpers in order and stops at the first that works: `wl-copy` (Wayland), `xclip -selection clipboard`, `xsel --clipboard --input`, `pbcopy` (macOS), and finally the OSC 52 escape sequence. Install one native helper on Linux: tmux, gnome-terminal and konsole drop OSC 52 by default, so the copy would reach the terminal but not the clipboard. The footer names the path used. Every copy also writes the full pane to `/tmp/ovcs_attach_copy_<pane>.txt`, since the clipboard payload is capped at 64 KB.
+Mouse drag or `Ctrl-Y` copies to the system clipboard. The CLI tries helpers in order and stops at the first that works: `wl-copy` (Wayland), `xclip -selection clipboard`, `xsel --clipboard --input`, `pbcopy` (macOS), and finally the OSC 52 escape sequence. Install one native helper on Linux: tmux, gnome-terminal and konsole drop OSC 52 by default, so the copy would reach the terminal but not the clipboard. The footer names the path used. Every copy also writes the full pane to `ovcs_attach_copy_<pane>.txt` in `$XDG_RUNTIME_DIR` (or `~/.cache/ovcs`), readable only by you, since the clipboard payload is capped at 64 KB.
 
 ### CAN decoding
 
@@ -139,7 +141,7 @@ cli/
     ├── repo_root.rs      # OVCS_ROOT, or climb from the cwd
     ├── vehicles.rs       # vehicle discovery and `mix run -e` metadata probes
     ├── firmware.rs       # role → firmware project and environment
-    ├── resolve_args.rs   # order-independent (app, role) argument resolution
+    ├── resolve_args.rs   # order-independent (vehicle, role) argument resolution
     ├── build_runner.rs   # parallel build.sh lanes for `build --all` and `run`
     ├── shell.rs          # run() inherits stdio; run_capture() for mix probes
     ├── prompt.rs         # Ratatui single-select picker

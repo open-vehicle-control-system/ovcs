@@ -20,4 +20,9 @@ defmodule OvcsMini.Vms.ComposerTest do
 
     assert state.radio_braking_source == OVCS.RadioControl.Throttle
   end
+
+  test "the reported steering angle converts back with the commanded one's sign" do
+    assert child_arguments(OVCS.VehicleMotion).steering_sign ==
+             child_arguments(OVCS.RosVelocityCommand).steering_sign
+  end
 end

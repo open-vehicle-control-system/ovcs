@@ -10,8 +10,7 @@ pub struct RunOpts<'a> {
 }
 
 /// Spawn a subprocess with inherited stdio so output streams live. Exits
-/// the current process with the child's exit code on failure. Successor
-/// to Elixir's OvcsCli.Shell.run!/2.
+/// the current process with the child's exit code on failure.
 pub fn run(argv: &[&str], opts: &RunOpts) -> Result<()> {
     let joined = argv.join(" ");
     println!(
@@ -36,22 +35,23 @@ pub fn run(argv: &[&str], opts: &RunOpts) -> Result<()> {
     Ok(())
 }
 
-/// Run a subprocess and capture stdout; stderr is suppressed. Used for
-/// the `mix run -e <snippet>` vehicle metadata probes. Returns (exit_code,
-/// stdout) so the caller can decide how to interpret failures.
+/// Run a subprocess and capture its stdout and stderr. Used for
+/// the `mix run -e <snippet>` vehicle metadata probes. Returns the exit
+/// code, stdout and stderr so the caller can decide how to report failures.
 pub fn run_capture(
     argv: &[&str],
     cwd: &Path,
     env: &HashMap<String, String>,
-) -> Result<(i32, String)> {
-    let out = Command::new(argv[0])
+) -> Result<(i32, String, String)> {
+    let output = Command::new(argv[0])
         .args(&argv[1..])
         .current_dir(cwd)
         .envs(env)
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .output()
         .with_context(|| format!("failed to spawn {}", argv[0]))?;
-    let code = out.status.code().unwrap_or(-1);
-    let stdout = String::from_utf8_lossy(&out.stdout).to_string();
-    Ok((code, stdout))
+    let code = output.status.code().unwrap_or(-1);
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    Ok((code, stdout, stderr))
 }

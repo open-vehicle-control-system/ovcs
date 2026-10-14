@@ -4,17 +4,14 @@ use std::os::unix::process::CommandExt;
 use std::thread::sleep;
 use std::time::Duration;
 
-use crate::resolve_args::resolve_vehicle_app;
+use crate::resolve_args::resolve_vehicle_role;
 use crate::ui::{step, sub, sub_miss, sub_ok};
 use crate::vehicles;
 
 const SSH_USER: &str = "root";
 const PROBE_TIMEOUT: Duration = Duration::from_millis(500);
-// mDNS (.local) resolution and a freshly-booting Nerves device are often
-// transiently slow, so a single probe miss isn't conclusive. Retry several
-// times with a small exponential backoff before giving up. Delays grow
-// 0.5s, 1s, 2s, 4s, … capped at PROBE_RETRY_MAX. With these values the total
-// wait before bailing is ~30s.
+// mDNS resolution and a booting Nerves device are often transiently slow,
+// so one probe miss isn't conclusive.
 const PROBE_ATTEMPTS: u32 = 10;
 const PROBE_RETRY_BASE: Duration = Duration::from_millis(500);
 const PROBE_RETRY_MAX: Duration = Duration::from_secs(5);
@@ -24,9 +21,8 @@ pub fn run(
     role: Option<String>,
     host_override: Option<String>,
 ) -> Result<()> {
-    let args = resolve_vehicle_app(vehicle, role)?;
-    let host =
-        host_override.unwrap_or_else(|| vehicles::host_for(&args.vehicle.dir, &args.application));
+    let args = resolve_vehicle_role(vehicle, role)?;
+    let host = host_override.unwrap_or_else(|| vehicles::host_for(&args.vehicle.dir, &args.role));
 
     step(&format!("connecting → {}@{}", SSH_USER, host));
     if !probe_with_retry(&host) {
@@ -38,14 +34,12 @@ pub fn run(
     }
     sub_ok("reachable");
 
-    // Replace the CLI process with `ssh root@<host>` so OpenSSH owns
-    // the terminal directly (PTY, raw mode, SIGWINCH, signal handling).
-    // Nerves devices boot with IEx as the SSH login shell, so this drops
-    // the user straight into an IEx prompt.
-    let err = std::process::Command::new("ssh")
+    // exec so OpenSSH owns the terminal (PTY, raw mode, SIGWINCH, signals).
+    // The device's SSH login shell is IEx.
+    let error = std::process::Command::new("ssh")
         .arg(format!("{}@{}", SSH_USER, host))
         .exec();
-    Err(err.into())
+    Err(error.into())
 }
 
 /// Probe :22 up to [`PROBE_ATTEMPTS`] times with a small exponential backoff
@@ -68,12 +62,13 @@ fn probe_with_retry(host: &str) -> bool {
     false
 }
 
-fn tcp_open(host: &str, port: u16, timeout: Duration) -> bool {
-    let addrs = match (host, port).to_socket_addrs() {
-        Ok(a) => a.collect::<Vec<_>>(),
+/// True when a TCP connection to `host:port` opens within `timeout`.
+pub(crate) fn tcp_open(host: &str, port: u16, timeout: Duration) -> bool {
+    let addresses = match (host, port).to_socket_addrs() {
+        Ok(addresses) => addresses.collect::<Vec<_>>(),
         Err(_) => return false,
     };
-    addrs
+    addresses
         .into_iter()
-        .any(|a| TcpStream::connect_timeout(&a, timeout).is_ok())
+        .any(|address| TcpStream::connect_timeout(&address, timeout).is_ok())
 }

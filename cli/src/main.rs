@@ -4,11 +4,14 @@ use clap::{Parser, Subcommand};
 mod ansi;
 mod build_runner;
 mod commands;
+mod erlang_cookie;
 mod firmware;
+mod lines;
 mod prompt;
 mod repo_root;
 mod resolve_args;
 mod shell;
+mod terminal;
 mod ui;
 mod vehicles;
 
@@ -27,8 +30,8 @@ struct Cli {
 /// Most subcommands take a (vehicle, role) pair where:
 /// - `vehicle` is the snake_case directory under `vehicles/` (e.g.
 ///   `ovcs1`, `ovcs_mini`, `obd2`).
-/// - `role` is `vms`, `infotainment`, or any bridge firmware id declared
-///   in the vehicle's `bridge_firmwares/0` callback.
+/// - `role` is `vms`, `infotainment`, or `bridge-<id>` for any id in the
+///   vehicle's `bridge_firmwares/0` callback.
 ///
 /// Both positional args are **order-independent** — the resolver picks
 /// the vehicle out of the two values and treats the other as the role.
@@ -169,9 +172,11 @@ enum ComputeAction {
     },
     /// Stage into a temporary directory and `balena push` it
     Push {
-        vehicle: String,
+        #[arg(value_name = "VEHICLE")]
+        vehicle: Option<String>,
         /// balena fleet, or `<device>.local` for local mode
-        target: String,
+        #[arg(value_name = "TARGET")]
+        target: Option<String>,
         #[command(flatten)]
         images: ImageArgs,
         /// Extra `balena push` arguments, after `--`
@@ -230,6 +235,11 @@ enum HostKeysAction {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+    // Rust ignores SIGPIPE, so printing into a closed pipe (`| head`) panics.
+    // `attach` keeps it ignored: it writes to remsh pipes that may close.
+    if !matches!(cli.command, Commands::Attach { .. }) {
+        unsafe { libc::signal(libc::SIGPIPE, libc::SIG_DFL) };
+    }
     match cli.command {
         Commands::Vehicles => commands::vehicles::run(),
         Commands::Doctor => commands::doctor::run(),
@@ -309,5 +319,16 @@ fn main() -> Result<()> {
             vehicle,
             role,
         } => commands::connect::run(vehicle, role, host),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Cli;
+    use clap::CommandFactory;
+
+    #[test]
+    fn the_command_line_definition_is_consistent() {
+        Cli::command().debug_assert();
     }
 }

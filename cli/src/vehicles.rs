@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use glob::glob;
 use owo_colors::OwoColorize;
 use std::collections::HashMap;
@@ -43,9 +43,9 @@ pub fn list(repo_root: &Path) -> Result<Vec<Vehicle>> {
 
 pub fn module_for(dir: &str) -> String {
     dir.split('_')
-        .filter(|s| !s.is_empty())
-        .map(|s| {
-            let mut chars = s.chars();
+        .filter(|word| !word.is_empty())
+        .map(|word| {
+            let mut chars = word.chars();
             chars.next().unwrap().to_uppercase().to_string() + chars.as_str()
         })
         .collect()
@@ -72,15 +72,15 @@ end
 pub fn host_can_interfaces(vehicle: &Vehicle) -> Result<Vec<String>> {
     let snippet = format!(
         r#"
-m = {module}
+vehicle = {module}
 sides =
-  [m.vms()] ++
-    if function_exported?(m, :infotainment, 0), do: [m.infotainment()], else: []
+  [vehicle.vms()] ++
+    if function_exported?(vehicle, :infotainment, 0), do: [vehicle.infotainment()], else: []
 sides
 |> Enum.map(& &1.default_can_mapping(:host))
 |> Enum.join(",")
 |> String.split(",", trim: true)
-|> Enum.map(fn kv -> kv |> String.split(":", trim: true) |> List.last() end)
+|> Enum.map(fn mapping -> mapping |> String.split(":", trim: true) |> List.last() end)
 |> Enum.uniq()
 |> Enum.join("\n")
 |> IO.puts()
@@ -91,7 +91,7 @@ sides
         None => Ok(Vec::new()),
         Some(output) => Ok(output
             .lines()
-            .filter(|l| !l.is_empty())
+            .filter(|line| !line.is_empty())
             .map(String::from)
             .collect()),
     }
@@ -129,22 +129,22 @@ fn node_prefix(vehicle_dir: &str, role: &str) -> String {
 pub fn has_infotainment(vehicle: &Vehicle) -> Result<bool> {
     let snippet = format!(
         r#"
-m = {module}
-Code.ensure_loaded(m)
-IO.write(if function_exported?(m, :infotainment, 0), do: "yes", else: "no")
+vehicle = {module}
+Code.ensure_loaded(vehicle)
+IO.write(if function_exported?(vehicle, :infotainment, 0), do: "yes", else: "no")
 "#,
         module = vehicle.module,
     );
-    Ok(matches!(run_snippet(&vehicle.path, &snippet)?, Some(s) if s.trim() == "yes"))
+    Ok(matches!(run_snippet(&vehicle.path, &snippet)?, Some(answer) if answer.trim() == "yes"))
 }
 
 pub fn bridge_firmwares(vehicle: &Vehicle) -> Result<HashMap<String, BridgeFirmware>> {
     let snippet = format!(
         r##"
-m = {module}
-Code.ensure_loaded(m)
-if function_exported?(m, :bridge_firmwares, 0) do
-  m.bridge_firmwares()
+vehicle = {module}
+Code.ensure_loaded(vehicle)
+if function_exported?(vehicle, :bridge_firmwares, 0) do
+  vehicle.bridge_firmwares()
   |> Enum.map(fn {{id, entry}} -> "#{{id}}\t#{{entry[:target]}}" end)
   |> Enum.join("\n")
   |> IO.puts()
@@ -155,10 +155,10 @@ end
     let Some(output) = run_snippet(&vehicle.path, &snippet)? else {
         return Ok(HashMap::new());
     };
-    let mut map = HashMap::new();
-    for line in output.lines().filter(|l| !l.is_empty()) {
+    let mut bridges = HashMap::new();
+    for line in output.lines().filter(|line| !line.is_empty()) {
         if let Some((id, target)) = line.split_once('\t') {
-            map.insert(
+            bridges.insert(
                 id.to_string(),
                 BridgeFirmware {
                     target: target.to_string(),
@@ -166,7 +166,7 @@ end
             );
         }
     }
-    Ok(map)
+    Ok(bridges)
 }
 
 /// A dev-time companion process a firmware declares via `dev_addons/0`.
@@ -187,7 +187,7 @@ pub struct DevAddon {
     /// `install` first.
     pub ready_marker: Option<String>,
     /// Optional one-line hint shown when the add-on starts (e.g. which URL
-    /// to open). Keeps URL/port specifics in the app, not the CLI.
+    /// to open). Keeps URL/port specifics in the firmware, not the CLI.
     pub note: Option<String>,
 }
 
@@ -199,20 +199,20 @@ pub struct DevAddon {
 pub fn dev_addons(firmware_dir: &Path) -> Result<Vec<DevAddon>> {
     let snippet = r##"
 app = Mix.Project.config()[:app]
-m = Module.concat([Macro.camelize(to_string(app))])
-Code.ensure_loaded(m)
-if function_exported?(m, :dev_addons, 0) do
-  m.dev_addons()
-  |> Enum.map(fn a ->
-    run = a |> Map.get(:run, []) |> Enum.join(" ")
-    install = a |> Map.get(:install, []) |> Enum.join(" ")
+firmware = Module.concat([Macro.camelize(to_string(app))])
+Code.ensure_loaded(firmware)
+if function_exported?(firmware, :dev_addons, 0) do
+  firmware.dev_addons()
+  |> Enum.map(fn addon ->
+    run = addon |> Map.get(:run, []) |> Enum.join(" ")
+    install = addon |> Map.get(:install, []) |> Enum.join(" ")
     [
-      Map.fetch!(a, :name),
-      Map.fetch!(a, :dir),
+      Map.fetch!(addon, :name),
+      Map.fetch!(addon, :dir),
       run,
       install,
-      Map.get(a, :ready_marker, ""),
-      Map.get(a, :note, "")
+      Map.get(addon, :ready_marker, ""),
+      Map.get(addon, :note, "")
     ]
     |> Enum.join("\t")
   end)
@@ -223,45 +223,38 @@ end
     let Some(output) = run_snippet(firmware_dir, snippet)? else {
         return Ok(Vec::new());
     };
-    let split = |s: &str| -> Vec<String> { s.split_whitespace().map(String::from).collect() };
+    let split_words =
+        |text: &str| -> Vec<String> { text.split_whitespace().map(String::from).collect() };
     let mut addons = Vec::new();
-    for line in output.lines().filter(|l| !l.is_empty()) {
-        let f: Vec<&str> = line.split('\t').collect();
-        if f.len() < 6 {
+    for line in output.lines().filter(|line| !line.is_empty()) {
+        let fields: Vec<&str> = line.split('\t').collect();
+        if fields.len() < 6 {
             continue;
         }
-        let run = split(f[2]);
+        let run = split_words(fields[2]);
         if run.is_empty() {
             continue;
         }
-        let install = split(f[3]);
+        let install = split_words(fields[3]);
         addons.push(DevAddon {
-            name: f[0].to_string(),
-            dir: f[1].to_string(),
+            name: fields[0].to_string(),
+            dir: fields[1].to_string(),
             run,
             install: if install.is_empty() {
                 None
             } else {
                 Some(install)
             },
-            ready_marker: (!f[4].is_empty()).then(|| f[4].to_string()),
-            note: (!f[5].is_empty()).then(|| f[5].to_string()),
+            ready_marker: (!fields[4].is_empty()).then(|| fields[4].to_string()),
+            note: (!fields[5].is_empty()).then(|| fields[5].to_string()),
         });
     }
     Ok(addons)
 }
 
-/// Printed by every probe before its payload, so compiler chatter can be
-/// separated from the answer.
-///
-/// `mix run` compiles the project before evaluating `-e`, and that output
-/// goes to stdout: "Compiling 10 files (.ex)", "Generated ovcs_mini app".
-/// Returning raw stdout meant every caller parsed those lines as data.
-/// `host_can_interfaces` took them for interface names and `ovcs can
-/// setup` duly offered to `ip link add dev "Compiling 10 files (.ex)"`;
-/// `has_infotainment` compares the whole output to "yes", so chatter made
-/// it answer no. It only ever misbehaved on a cold build, which is why it
-/// went unnoticed.
+/// Printed by every probe before its payload. `mix run` compiles the
+/// project before evaluating `-e` and prints that to stdout too, so
+/// without the marker a cold build's compiler output would read as data.
 const PROBE_MARKER: &str = "__OVCS_PROBE__";
 
 /// Everything the probe printed after the marker, or `None` if it printed
@@ -270,8 +263,7 @@ const PROBE_MARKER: &str = "__OVCS_PROBE__";
 fn probe_payload(stdout: &str) -> Option<String> {
     let payload = match stdout.rsplit_once(PROBE_MARKER) {
         Some((_chatter, payload)) => payload,
-        // No marker: an older/hand-built snippet, or mix failed before
-        // evaluating. Fall back to the whole output rather than losing it.
+        // No marker: mix failed before evaluating. Keep the whole output.
         None => stdout,
     };
     let trimmed = payload.trim();
@@ -286,7 +278,7 @@ pub(crate) fn run_snippet(path: &Path, snippet: &str) -> Result<Option<String>> 
     let env: HashMap<String, String> =
         std::iter::once(("MIX_ENV".to_string(), "dev".to_string())).collect();
     let marked = format!("IO.write(\"{PROBE_MARKER}\")\n{snippet}");
-    let (code, stdout) = run_capture(
+    let (code, stdout, _stderr) = run_capture(
         &["mix", "run", "--no-start", "--no-deps-check", "-e", &marked],
         path,
         &env,
@@ -294,17 +286,15 @@ pub(crate) fn run_snippet(path: &Path, snippet: &str) -> Result<Option<String>> 
     if code == 0 {
         return Ok(probe_payload(&stdout));
     }
-    // The retry gets the same marked snippet: it runs right after a
-    // `deps.get` + `compile`, which is precisely when the chatter this
-    // marker exists to skip is loudest.
+    // The retry runs right after `deps.get` + `compile`, so it needs the marker most.
     retry_with_deps(path, &marked)
 }
 
 fn retry_with_deps(path: &Path, marked: &str) -> Result<Option<String>> {
-    let rel = path.strip_prefix(std::env::current_dir()?).unwrap_or(path);
+    let relative_path = path.strip_prefix(std::env::current_dir()?).unwrap_or(path);
     println!(
         "{}",
-        format!("Preparing vehicle {} (first run)…", rel.display()).dimmed()
+        format!("Preparing vehicle {} (first run)…", relative_path.display()).dimmed()
     );
     let env: HashMap<String, String> =
         std::iter::once(("MIX_ENV".to_string(), "dev".to_string())).collect();
@@ -316,12 +306,13 @@ fn retry_with_deps(path: &Path, marked: &str) -> Result<Option<String>> {
             .stdin(Stdio::inherit())
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit())
-            .status()?;
+            .status()
+            .context("failed to spawn mix")?;
         if !status.success() {
-            return Ok(None);
+            bail!("`mix {}` failed in {}", args[0], relative_path.display());
         }
     }
-    let (code, stdout) = run_capture(
+    let (code, stdout, stderr) = run_capture(
         &["mix", "run", "--no-start", "--no-deps-check", "-e", marked],
         path,
         &env,
@@ -329,12 +320,49 @@ fn retry_with_deps(path: &Path, marked: &str) -> Result<Option<String>> {
     if code == 0 {
         return Ok(probe_payload(&stdout));
     }
-    Ok(None)
+    Err(probe_failure(
+        &relative_path.display().to_string(),
+        &stdout,
+        &stderr,
+    ))
+}
+
+/// The error for a probe `mix run` that failed: its exception header (or
+/// last line) first, so a one-line summary is useful, then the end of its
+/// output.
+fn probe_failure(dir: &str, stdout: &str, stderr: &str) -> anyhow::Error {
+    const SHOWN_LINES: usize = 15;
+    let lines: Vec<&str> = stderr
+        .lines()
+        .chain(stdout.lines())
+        .filter(|line| !line.trim().is_empty() && !line.contains(PROBE_MARKER))
+        .collect();
+    let summary = lines
+        .iter()
+        .rev()
+        .find(|line| line.trim_start().starts_with("** ("))
+        .or(lines.last())
+        .map(|line| line.trim())
+        .unwrap_or("no output");
+    let tail = &lines[lines.len().saturating_sub(SHOWN_LINES)..];
+    anyhow!("probing {} failed: {}\n{}", dir, summary, tail.join("\n"))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{host_for, local_sname, local_sname_prefix, probe_payload, PROBE_MARKER};
+    use super::{
+        host_for, local_sname, local_sname_prefix, module_for, probe_failure, probe_payload,
+        PROBE_MARKER,
+    };
+
+    #[test]
+    fn module_names_camelize_the_vehicle_directory() {
+        assert_eq!(module_for("ovcs_mini"), "OvcsMini");
+        assert_eq!(module_for("obd2"), "Obd2");
+        assert_eq!(module_for("ovcs1"), "Ovcs1");
+        assert_eq!(module_for("roadster"), "Roadster");
+        assert_eq!(module_for("my_first_car"), "MyFirstCar");
+    }
 
     #[test]
     fn local_snames_hyphenate_the_vehicle_and_the_role() {
@@ -356,8 +384,7 @@ mod tests {
         );
     }
 
-    // The exact chatter that caused `ovcs can setup ovcs_mini` to offer
-    // to create interfaces named "Compiling 10 files (.ex)".
+    // What `mix run` prints before evaluating `-e` on a cold build.
     const CHATTER: &str = "Compiling 10 files (.ex)\nGenerated ovcs_mini app\n";
 
     #[test]
@@ -374,8 +401,7 @@ mod tests {
 
     #[test]
     fn an_empty_payload_is_none_even_behind_chatter() {
-        // Otherwise the chatter itself reads as the answer — which is how
-        // has_infotainment came to answer "no" on a cold build.
+        // Otherwise the chatter itself reads as the answer.
         let stdout = format!("{CHATTER}{PROBE_MARKER}\n");
         assert_eq!(probe_payload(&stdout), None);
     }
@@ -391,5 +417,18 @@ mod tests {
     fn the_last_marker_wins() {
         let stdout = format!("{PROBE_MARKER}stale{PROBE_MARKER}fresh");
         assert_eq!(probe_payload(&stdout).as_deref(), Some("fresh"));
+    }
+
+    #[test]
+    fn a_failed_probe_leads_with_its_exception() {
+        let stderr =
+            "** (RuntimeError) broken CAN mapping\n    (car 0.1.0) lib/car.ex:27: Car.f/1\n";
+        let error = probe_failure("vehicles/car", "Compiling 2 files (.ex)\n", stderr);
+        let message = error.to_string();
+        assert_eq!(
+            message.lines().next(),
+            Some("probing vehicles/car failed: ** (RuntimeError) broken CAN mapping")
+        );
+        assert!(message.contains("lib/car.ex:27"));
     }
 }

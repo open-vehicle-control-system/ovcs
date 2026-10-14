@@ -289,9 +289,8 @@ defmodule OvcsMini.Vms.Composer do
        }},
       # The vehicle's own motion, published on the bus for the
       # manager's standstill gate and emitted on 0x60B for the ROS
-      # bridge's odometry. `steering_sign` must match
-      # `RosVelocityCommand`'s so the reported angle converts back to
-      # REP-103.
+      # bridge's odometry. Its steering sign is `RosVelocityCommand`'s,
+      # so the reported angle converts back to REP-103.
       {OVCS.VehicleMotion,
        %{
          rotation_source: Vms.MotorRotation,
@@ -302,7 +301,7 @@ defmodule OvcsMini.Vms.Composer do
          wheel_radius_m: OvcsMini.geometry().wheel_radius,
          selected_control_level_source: Managers.ControlLevel,
          steering_limit_rad: OvcsMini.geometry().steering_limit,
-         steering_sign: 1
+         steering_sign: @steering_sign
        }},
       {VmsCore.Status,
        %{

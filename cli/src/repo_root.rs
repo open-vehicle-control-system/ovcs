@@ -2,8 +2,8 @@ use anyhow::{bail, Result};
 use std::path::{Path, PathBuf};
 
 pub fn repo_root() -> Result<PathBuf> {
-    if let Ok(env) = std::env::var("OVCS_ROOT") {
-        return Ok(PathBuf::from(env));
+    if let Ok(root) = std::env::var("OVCS_ROOT") {
+        return Ok(PathBuf::from(root));
     }
     let cwd = std::env::current_dir()?;
     find_root(&cwd)
