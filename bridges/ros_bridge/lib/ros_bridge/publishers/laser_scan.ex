@@ -85,7 +85,7 @@ defmodule RosBridge.Publishers.LaserScan do
 
     %LaserScan{
       header: %Header{
-        stamp: Timing.time_message_for_system_time(scan.started_at),
+        stamp: Timing.stamp_from_system_time(scan.started_at),
         frame_id: frame_id
       },
       angle_min: -:math.pi(),

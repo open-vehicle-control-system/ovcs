@@ -540,7 +540,7 @@ defmodule RosBridge.Camera.LibCamera do
        # libcamera's SensorTimestamp (and the helper's steady_clock
        # fallback) are kernel CLOCK_MONOTONIC; Frame.capture_ns is
        # always Erlang monotonic time.
-       capture_ns: RosBridge.Timing.from_kernel_monotonic(capture_ns),
+       capture_ns: RosBridge.Timing.monotonic_from_kernel(capture_ns),
        jpeg: jpeg
      }}
   end
@@ -559,7 +559,7 @@ defmodule RosBridge.Camera.LibCamera do
           do: {key, metadata_value(key, value)}
 
     {:metadata,
-     Map.put(reported, :capture_ns, RosBridge.Timing.from_kernel_monotonic(capture_ns))}
+     Map.put(reported, :capture_ns, RosBridge.Timing.monotonic_from_kernel(capture_ns))}
   end
 
   def parse_record(_other), do: {:error, :malformed_record}
