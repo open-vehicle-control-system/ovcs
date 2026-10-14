@@ -171,7 +171,9 @@ fn main_tag() -> Result<String> {
         .success();
     if !unchanged {
         bail!(
-            "the image sources ({}) differ from origin/main at {}; pass --build",
+            "the image sources ({}) differ from the images published at {}, the latest your \
+             origin/main knows of: `git fetch origin` if it is behind, or pass --build to build \
+             them from this checkout",
             IMAGE_SOURCES.join(", "),
             &published[..7]
         );
