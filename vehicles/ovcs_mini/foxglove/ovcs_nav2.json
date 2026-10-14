@@ -432,6 +432,16 @@
       "diffTopicPath": "",
       "showFullMessageForDiff": false,
       "expansion": "all"
+    },
+    "CallService!abort_goal": {
+      "serviceName": "/navigate_to_pose/_action/cancel_goal",
+      "requestPayload": "{}",
+      "layout": "vertical",
+      "advancedView": false,
+      "editingMode": false,
+      "buttonText": "Abort goal",
+      "buttonTooltip": "Cancel every NavigateToPose goal; the car stops",
+      "buttonColor": "#c62828"
     }
   },
   "globalVariables": {},
@@ -444,7 +454,12 @@
       "first": "3D!nav",
       "second": {
         "first": "RosOut!nav2",
-        "second": "RawMessages!bt_log",
+        "second": {
+          "first": "CallService!abort_goal",
+          "second": "RawMessages!bt_log",
+          "direction": "column",
+          "splitPercentage": 18
+        },
         "direction": "row",
         "splitPercentage": 60
       },
