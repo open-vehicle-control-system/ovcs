@@ -113,7 +113,7 @@ Each `/clock` sample gives a simulator time and, read alongside it, a local mono
 driver frame (capture_ns, Erlang monotonic) ─► Timing: capture_ns + offset ─► builtin_interfaces/Time
 ```
 
-Drivers never see simulator time: camera frames carry an Erlang-monotonic `capture_ns`, lidar and rangefinder samples carry system time, and `Timing` is the one place either is converted. Without a `/clock` the offset is `nil` and `Timing` stamps wall clock, so the vehicle path is untouched.
+Drivers never see simulator time: camera frames carry an Erlang-monotonic `capture_ns`, lidar and rangefinder samples carry system time, and `Timing` is the one place either is converted. `RosBridge.Camera.Zenoh` converts the other way, through `Timing.from_ros_time/1`: a simulated frame's `capture_ns` is Gazebo's render stamp, so both sides of a stereo pair carry the same time and pair exactly. Stamped on arrival instead, they arrive tens of milliseconds apart, enough to pair a frame with its neighbour's, which reads as phantom depth once the car moves. Without a `/clock` the offset is `nil` and `Timing` stamps wall clock, so the vehicle path is untouched.
 
 ### Two monotonic clocks, not one
 

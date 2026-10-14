@@ -45,6 +45,13 @@ defmodule RosBridge.TimingTest do
     end
   end
 
+  describe "from_ros_time/1" do
+    test "undoes ros_time_of/1" do
+      now = System.monotonic_time(:nanosecond)
+      assert_in_delta Timing.from_ros_time(Timing.ros_time_of(now)), now, @tolerance_ns
+    end
+  end
+
   describe "time_message_for/1" do
     test "builds a Time message with a nanosec field inside one second" do
       message = Timing.time_message_for(System.monotonic_time(:nanosecond))

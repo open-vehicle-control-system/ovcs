@@ -84,6 +84,17 @@ defmodule RosBridge.Timing do
   end
 
   @doc """
+  The inverse of `ros_time_of/1`: a stamp on the timescale this
+  bridge publishes on, in nanoseconds, back to Erlang monotonic time.
+  """
+  def from_ros_time(ros_nanoseconds) when is_integer(ros_nanoseconds) do
+    case RosBridge.Clock.offset_ns() do
+      nil -> ros_nanoseconds - System.time_offset(:nanosecond)
+      offset_ns -> ros_nanoseconds - offset_ns
+    end
+  end
+
+  @doc """
   Build a `builtin_interfaces/Time` message from a monotonic
   capture timestamp. Most publishers want this directly — they
   have a `frame.capture_ns` in hand and need a `%Time{sec,
