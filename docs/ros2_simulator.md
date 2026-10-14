@@ -82,6 +82,7 @@ The boundary between Gazebo's transport and ROS is exactly the list in `gazebo.l
 | `/simulator/drive` | `geometry_msgs/Twist` | `RosBridge.Simulator.Hardware` ([simulated hardware](#the-vms-drives-the-simulator)) | `AckermannSteering` |
 | `/simulator/odom` | `nav_msgs/Odometry` | the model's `OdometryPublisher`: [ground truth](#ground-truth) | you, to compare with `/odom` |
 | `/stereo/...` disparity, depth, points, detections | `stereo_msgs`, `sensor_msgs`, `vision_msgs` | perception bridge | Foxglove |
+| `/vehicle/*` | `std_msgs/String`, `Bool`, `Float64` | `RosBridge.Publishers.VehicleStatus`, from the VMS's `0x1A0`, `0x600` and `0x60C` | Foxglove: the control level, ROS commander, gear, ready to drive, VMS status and requested throttle and steering |
 | `/ovcs_heartbeat` | `std_msgs/String` | every `RosBridge` that lists `:heartbeat` | you, to see the BEAM is alive |
 
 **Two transform buffers.** `/tf` is time-indexed: `tf2` stores each sample against its stamp and interpolates. `/tf_static` is timeless, and carries the URDF's fixed joints, the sensor mounts among them; a point cloud stamped after the newest `/tf` sample could not be transformed, and Nav2 would drop it. `robot_state_publisher` publishes them: the simulator's launch runs it here, and the Nav2 image runs it on the vehicle, so the nav2 service in this stack starts with `robot_state_publisher:=false`. The bridges stamp their messages with the URDF's frame names (`lidar_link`, `stereo_left_optical`, ...) in both. The wheels' joints move, so their transforms are on `/tf`, from `/joint_states`: Gazebo's here, the ROS bridge's `:ackermann_joint_states` on the vehicle, from the VMS's commanded steering and the wheels' distance.
@@ -359,6 +360,7 @@ Or open Foxglove Studio against `ws://<docker-host>:8765` and subscribe to `/ovc
 | odometry on the vehicle | `bridges/ros_bridge/lib/ros_bridge/publishers/odometry.ex` | `0x60B_vehicle_motion.yml`, `vms/core/lib/vms_core/components/ovcs/vehicle_motion.ex` |
 | the VMS in the simulator's loop | `bridges/ros_bridge/lib/ros_bridge/simulator/hardware.ex` | `simulator/vehicle.ex`, `simulator/simulated_components/`, `ros_bridge_simulation_config/0` in `vehicles/ovcs_mini/lib/ovcs_mini.ex` |
 | who commands the vehicle | [Your vehicle package](./vehicle_package.md#control-levels-who-commands-and-which-ros-node) | `vms/core/lib/vms_core/managers/control_level.ex` |
+| the vehicle's state on ROS | `bridges/ros_bridge/lib/ros_bridge/publishers/vehicle_status.ex` | `0x60C_control_status.yml`, `vms/core/lib/vms_core/components/ovcs/control_status.ex` |
 | Nav2's configuration | `vehicles/ovcs_mini/nav2/nav2.yaml`, the OVCS Mini reference vehicle's (heavily commented) | `nav2_ackermann_bt.xml` beside it |
 | the perception pipeline | [Perception: object detection](./ros2_perception.md) | `bridges/ros_bridge/lib/ros_bridge/camera/zenoh.ex`, `stereo_camera/supervisor.ex` |
 | the vehicle's ROS computer | [ROS compute node](./ros2_compute_node.md) | `compose/compute/`, [`compose/README.md`](../compose/README.md) |

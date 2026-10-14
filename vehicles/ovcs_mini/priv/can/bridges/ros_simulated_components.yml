@@ -12,7 +12,6 @@ can_networks:
       - import!:../generic_controller/0x704_main_controller_digital_and_analog_pin_status.yml
       - import!:../generic_controller/0x709_main_controller_pulse_counter_status.yml
     received_frames:
-      - import!:@ovcs_can:can/components/ovcs/0x1A0_vms_status.yml
       - import!:../generic_controller/0x705_main_controller_external_pwm0_request.yml
   misc:
     bitrate: 500000

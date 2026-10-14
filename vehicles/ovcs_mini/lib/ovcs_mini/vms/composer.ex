@@ -234,6 +234,7 @@ defmodule OvcsMini.Vms.Composer do
          speed_source: OVCS.VehicleMotion,
          contact_source: nil
        }},
+      {OVCS.ControlStatus, %{selected_control_level_source: Managers.ControlLevel}},
       # The manager owns the choice now, so the drivetrain follows
       # whichever source it names rather than being wired to one
       # commander for the life of the process.

@@ -104,6 +104,7 @@ the library.
 | `Components.OVCS.PulseRotationSensor` | `components/ovcs/pulse_rotation_sensor.ex` | Rotation of a shaft from a pulse counted by a generic controller |
 | `Components.OVCS.RotationFusion` | `components/ovcs/rotation_fusion.ex` | One shaft's rotation from several sensors, with a cross-check fault when they disagree |
 | `Components.OVCS.VehicleMotion` | `components/ovcs/vehicle_motion.ex` | Vehicle speed from a driveline shaft's rotation, on the bus and on `vehicle_motion` (`0x60B`) |
+| `Components.OVCS.ControlStatus` | `components/ovcs/control_status.ex` | The control level, ROS commander and requested throttle and steering on `control_status` (`0x60C`), for displays off the VMS |
 | `Components.OVCS.InputCurve` | `components/ovcs/input_curve.ex` | Dead zone and expo applied to a throttle request |
 | `Components.OVCS.Status` | `components/ovcs/status.ex` | Forwards the battery state to the infotainment |
 

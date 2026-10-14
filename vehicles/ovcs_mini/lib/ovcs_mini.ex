@@ -134,6 +134,7 @@ defmodule OvcsMini do
       node_name: "ovcs_bridge_ros",
       components: [
         :heartbeat,
+        :vehicle_status_publisher,
         :joy_interpreter,
         # Nav2 publishes TwistStamped on /cmd_vel_nav, the planner path
         # on 0x2B1; the joystick path stays on 0x2B0.
@@ -163,6 +164,7 @@ defmodule OvcsMini do
       components: [
         :simulator_clock,
         :heartbeat,
+        :vehicle_status_publisher,
         :joy_interpreter,
         {:velocity_interpreter,
          %{topic: "cmd_vel_nav", message: Ros2.GeometryMsgs.Msg.TwistStamped}},
@@ -244,6 +246,7 @@ defmodule OvcsMini do
       node_name: "ovcs_bridge_ros",
       components: [
         :heartbeat,
+        :vehicle_status_publisher,
         :joy_interpreter,
         # Same subscription as the host config. This is the list the
         # burned firmware runs, so the planner path exists on the

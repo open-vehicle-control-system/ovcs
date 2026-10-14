@@ -73,6 +73,10 @@ defmodule RosBridge.Components do
       its own. Opts: `:steering_joints`, `:wheel_joints`, `:wheelbase`,
       `:kingpin_width`, `:wheel_radius` (required), `:topic` — see the
       module.
+    * `:vehicle_status_publisher` — `RosBridge.Publishers.VehicleStatus`,
+      the VMS's status, gear and control level on `/vehicle/*`, from the
+      `vms_status`, `gear_status` and `control_status` CAN frames the
+      vehicle's bridge topology receives. Opts: `:topic_prefix`.
     * `:static_transforms` — publishes the vehicle's fixed frame
       relationships on `/tf_static`, republished at 1 Hz. Opts: `:transforms` (required, a list of
       `%{parent:, child:, translation: {x,y,z}, rotation: {x,y,z,w}}`),
@@ -151,6 +155,10 @@ defmodule RosBridge.Components do
 
   def start(:ackermann_joint_states, opts) do
     [{RosBridge.Publishers.AckermannJointStates, opts}]
+  end
+
+  def start(:vehicle_status_publisher, opts) do
+    [{RosBridge.Publishers.VehicleStatus, opts}]
   end
 
   def start(:static_transforms, opts) do

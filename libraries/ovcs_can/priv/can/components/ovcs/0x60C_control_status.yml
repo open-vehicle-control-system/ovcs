@@ -1,0 +1,46 @@
+---
+# Who commands the vehicle and what it asks for, from the VMS's control
+# level manager. Requests are in [-1, 1]; zero while no source commands.
+name: control_status
+id: 0x60C
+frequency: 20
+signals:
+  - name: requested_throttle
+    value_start: 0
+    value_length: 16
+    sign: signed
+    scale: "0.001"
+    precision: 3
+  - name: requested_steering
+    value_start: 16
+    value_length: 16
+    sign: signed
+    scale: "0.001"
+    precision: 3
+  - name: control_level
+    kind: enum
+    value_start: 32
+    value_length: 8
+    mapping:
+      0x00: manual
+      0x01: radio
+      0x02: ros
+  - name: ros_commander
+    kind: enum
+    value_start: 40
+    value_length: 8
+    mapping:
+      0x00: teleop
+      0x01: autonomous
+  - name: control_level_forced
+    kind: enum
+    value_start: 48
+    value_length: 1
+    mapping:
+      0x00: false
+      0x01: true
+  - name: filler0
+    kind: static
+    value_start: 49
+    value_length: 7
+    value: 0x00
