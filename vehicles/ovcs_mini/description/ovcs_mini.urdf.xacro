@@ -105,6 +105,8 @@
     value="${atan(wheelbase / (min_turning_radius - kingpin_width / 2))}" />
   <!-- Gazebo 10 velocity mode uses L / sin(parameter), not L / tan(parameter). -->
   <xacro:property name="gazebo_steering_limit" value="${asin(tan(steering_limit))}" />
+  <!-- ESTIMATE: an RC servo settles in tens of milliseconds. -->
+  <xacro:property name="steering_servo_gain" value="20.0" />
 
   <!-- Stereo geometry. -->
   <xacro:property name="baseline" value="0.090" />

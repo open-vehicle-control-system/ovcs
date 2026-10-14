@@ -39,6 +39,9 @@
            as the URDF. See the parameter conversion in ovcs_mini.urdf.xacro. -->
       <kingpin_width>${kingpin_width}</kingpin_width>
       <steering_limit>${gazebo_steering_limit}</steering_limit>
+      <!-- Steering joint speed per radian of error, capped by the joint's
+           velocity limit. -->
+      <steer_p_gain>${steering_servo_gain}</steer_p_gain>
 
       <!-- ESTIMATE. A stock Slash 4x4 does roughly 30 mph; reverse is
            geared slower. Acceleration limits keep the velocity
