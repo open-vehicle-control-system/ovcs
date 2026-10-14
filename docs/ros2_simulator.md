@@ -106,18 +106,18 @@ ROS nodes get this from the parameter. The Elixir bridge is not a ROS node, and 
 
 ### The bridge tracks an offset, not the clock
 
-Each `/clock` sample gives a simulator time and, read alongside it, a local monotonic time; `RosBridge.Clock` stores the difference in `:atomics` for lock-free reads. `RosBridge.Timing.time_message_for/1` projects any monotonic capture time through it:
+Each `/clock` sample gives a simulator time and, read alongside it, a local monotonic time; `RosBridge.Clock` stores the difference in `:atomics` for lock-free reads. `RosBridge.Timing.stamp_from_monotonic/1` projects any monotonic capture time through it:
 
 ```text
 /clock sample t_sim ─► RosBridge.Clock: offset = t_sim − t_mono ─► :atomics
 driver frame (capture_ns, Erlang monotonic) ─► Timing: capture_ns + offset ─► builtin_interfaces/Time
 ```
 
-Drivers never see simulator time: camera frames carry an Erlang-monotonic `capture_ns`, lidar and rangefinder samples carry system time, and `Timing` is the one place either is converted. `RosBridge.Camera.Zenoh` converts the other way, through `Timing.from_ros_time/1`: a simulated frame's `capture_ns` is Gazebo's render stamp, so both sides of a stereo pair carry the same time and pair exactly. Stamped on arrival instead, they arrive tens of milliseconds apart, enough to pair a frame with its neighbour's, which reads as phantom depth once the car moves. Without a `/clock` the offset is `nil` and `Timing` stamps wall clock, so the vehicle path is untouched.
+Drivers never see simulator time: camera frames carry an Erlang-monotonic `capture_ns`, lidar and rangefinder samples carry system time, and `Timing` is the one place either is converted. `RosBridge.Camera.Zenoh` converts the other way, through `Timing.monotonic_from_ros_time/1`: a simulated frame's `capture_ns` is Gazebo's render stamp, so both sides of a stereo pair carry the same time and pair exactly. Stamped on arrival instead, they arrive tens of milliseconds apart, enough to pair a frame with its neighbour's, which reads as phantom depth once the car moves. Without a `/clock` the offset is `nil` and `Timing` stamps wall clock, so the vehicle path is untouched.
 
 ### Two monotonic clocks, not one
 
-Erlang's monotonic time is not the kernel's `CLOCK_MONOTONIC`: the VM picks its own zero, about 5.8e17 ns away. libcamera's `SensorTimestamp` is kernel-monotonic. Project one clock's timestamp with the other's offset and it lands decades off, and `builtin_interfaces/Time.sec` is an `int32`, so it wraps negative. `Timing.from_kernel_monotonic/1` converts once, at the driver boundary.
+Erlang's monotonic time is not the kernel's `CLOCK_MONOTONIC`: the VM picks its own zero, about 5.8e17 ns away. libcamera's `SensorTimestamp` is kernel-monotonic. Project one clock's timestamp with the other's offset and it lands decades off, and `builtin_interfaces/Time.sec` is an `int32`, so it wraps negative. `Timing.monotonic_from_kernel/1` converts once, at the driver boundary.
 
 ### Why `Clock.init/1` blocks
 
@@ -172,10 +172,14 @@ The simulated hardware is framework; what it emulates is the vehicle's. Each pie
 A frame from the VMS only updates the command its simulated component holds. The work happens on a 20 ms wall-clock tick:
 
 1. Each simulated component turns its command into actuations on `RosBridge.Simulator.Vehicle`: a speed setpoint, an acceleration from a motor current, a deceleration from a brake, a steering angle.
-2. The vehicle combines them into a commanded speed and steering angle. A setpoint is taken as it is; accelerations are integrated against rolling resistance. The command stays just ahead of the measured speed, so it cannot wind up against an obstacle.
-3. The wheels' turn since the last tick is the change in the `:wheel_joints`' mean position on `/joint_states`, and the measured speed is that distance per wall second, smoothed by a filter that keeps the total.
-4. Each simulated component updates its CAN frames from that measurement, counters from the distance and rates from the speed; Cantastic sends them on their own timers.
-5. The commanded speed and its Ackermann yaw rate go to Gazebo on `/simulator/drive`.
+2. The vehicle steps, in three parts:
+   - **What to ask for.** The actuations become a commanded speed and steering angle. A setpoint is taken as it is; otherwise the speed changes by the drive, less any brake and the rolling resistance, over the tick.
+   - **What the wheels did.** Their turn since the last tick is the change in the `:wheel_joints`' mean position on `/joint_states`, cumulative, so samples arriving late or in bursts lose nothing. The measured speed is that distance per wall second, smoothed by a filter that keeps the total.
+   - **Keeping the request honest.** The commanded speed may lead the measured one by at most 0.25 m/s in its own direction: against a wall the wheels stall and the request holds at 0.25 m/s instead of winding up. The measurement only ever lowers the request: a burst of late samples reads as a speed spike, and a car asked to stop still stops.
+3. Each simulated component reports what its hardware would measure: counters from the wheel turns and rates from the measured speed, into its CAN frames, which Cantastic sends on their own timers.
+4. The commanded speed and its Ackermann yaw rate go to Gazebo on `/simulator/drive`.
+
+`RosBridge.Simulator.Vehicle`'s documentation works three of these steps through with the OVCS Mini's numbers.
 
 Three things are particular to the simulator:
 

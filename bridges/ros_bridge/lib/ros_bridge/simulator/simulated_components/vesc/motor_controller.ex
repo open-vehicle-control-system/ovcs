@@ -96,7 +96,7 @@ defmodule RosBridge.Simulator.SimulatedComponents.Vesc.MotorController do
   end
 
   @impl RosBridge.Simulator.SimulatedComponent
-  def step(state, vehicle, _dt_s, now_ms) do
+  def report(state, vehicle, now_ms) do
     motor_turns = vehicle.wheel_turns_step * state.motor_to_wheel_ratio
     state = %{state | tachometer: state.tachometer + motor_turns * 6 * state.pole_pairs}
 

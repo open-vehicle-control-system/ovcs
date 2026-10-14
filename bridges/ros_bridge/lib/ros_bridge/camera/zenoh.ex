@@ -35,7 +35,7 @@ defmodule RosBridge.Camera.Zenoh do
 
   `Frame.capture_ns` means Erlang monotonic time everywhere in this
   bridge, so the stamp a frame carries, on the simulator's clock, is
-  converted back through `RosBridge.Timing.from_ros_time/1`. Both
+  converted back through `RosBridge.Timing.monotonic_from_ros_time/1`. Both
   sides of a pair carry the same render stamp, so the stereo
   publisher pairs them exactly; their arrival times differ by tens of
   milliseconds, enough to pair a frame with its neighbour's, which
@@ -121,7 +121,7 @@ defmodule RosBridge.Camera.Zenoh do
 
   defp capture_ns(%CompressedImage{header: %{stamp: %{sec: sec, nanosec: nanosec}}}) do
     if RosBridge.Clock.following?(),
-      do: Timing.from_ros_time(sec * 1_000_000_000 + nanosec),
+      do: Timing.monotonic_from_ros_time(sec * 1_000_000_000 + nanosec),
       else: System.monotonic_time(:nanosecond)
   end
 

@@ -39,7 +39,7 @@ This runs `OvcsVehicle.Scaffold.generate/3` against `libraries/ovcs_vehicle/priv
 - the CAN topology YAMLs and an `.env.exs.example`;
 - `priv/firmware/vms/` and `priv/firmware/infotainment/` holding `config.txt`, `cmdline-a.txt` and `cmdline-b.txt` copied from each target's defaults. `fwup.conf` is not copied: it stays shared with the target (see [Toolchain and OTP](./toolchain_and_otp.md#what-the-ab-layout-requires)).
 
-`--no-infotainment` and `--no-bridges` trim the template; `--display-name` sets the human-readable name. Drop the components you don't need, add the ones your hardware needs, fill in the CAN YAMLs under `priv/can/`, then boot it like any vehicle:
+The name must map back to itself through the module name, since the firmware finds the directory with `Macro.underscore/1`: `my_car` becomes `MyCar` and back, but `car_2` would be looked for as `car2`, so `ovcs new` refuses it and suggests the name that works. `--no-infotainment` and `--no-bridges` trim the template; `--display-name` sets the human-readable name, which may not contain `"`, `\` or `#{` since it is written into Elixir strings. Drop the components you don't need, add the ones your hardware needs, fill in the CAN YAMLs under `priv/can/`, then boot it like any vehicle:
 
 ```sh
 ./ovcs run my_car            # every firmware of your vehicle on virtual CAN
@@ -214,7 +214,7 @@ Peer node names come from the vehicle module's declared roles plus the naming co
 
 On the host, `./ovcs run` names each BEAM with `--sname`. A deployed firmware boots unnamed; `OvcsBus.Distribution` starts distribution on the first cluster tick with long names, after `epmd -daemon`, on the hostname erlinit set from `hostname_pattern`. Peers resolve each other's `.local` names through mdns_lite's DNS bridge, which each firmware's target config enables and puts first in VintageNet's `additional_name_servers`.
 
-Every node uses the cookie `ovcs`: `./ovcs run` and `./ovcs attach` pass `--cookie ovcs`, and each firmware release sets `cookie: "ovcs"` in its `mix.exs`, handed to the VM by `-setcookie` in `rel/vm.args.eex`.
+Every firmware release sets the cookie `ovcs` in its `mix.exs`, handed to the VM by `-setcookie` in `rel/vm.args.eex`. On the host, `./ovcs run` and `./ovcs attach` use your `~/.erlang.cookie` instead, which the CLI creates with a random value if it is missing.
 
 ## Control levels: who commands, and which ROS node
 

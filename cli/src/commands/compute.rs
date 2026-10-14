@@ -9,13 +9,13 @@
 use anyhow::{bail, Context, Result};
 use regex::Regex;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use crate::repo_root::repo_root;
 use crate::resolve_args::resolve_vehicle;
 use crate::ui;
-use crate::vehicles::Vehicle;
+use crate::vehicles::{self, Vehicle};
 
 const REGISTRY: &str = "ghcr.io/open-vehicle-control-system/ovcs";
 
@@ -47,52 +47,87 @@ pub fn images(tag: Option<String>, build: bool) -> Result<Images> {
 
 pub fn stage(vehicle: Option<String>, out: String, images: Images) -> Result<()> {
     let vehicle = resolve_vehicle(vehicle)?;
-    let out = Path::new(&out);
-    if out.exists() && fs::read_dir(out)?.next().is_some() {
-        bail!("{} is not empty", out.display());
+    let destination = Path::new(&out);
+    if destination.exists() && fs::read_dir(destination)?.next().is_some() {
+        bail!("{} is not empty", destination.display());
     }
-    stage_into(&vehicle, out, &images)?;
-    ui::sub_ok(&format!("staged {} into {}", vehicle.dir, out.display()));
+    stage_into(&vehicle, destination, &images)?;
+    ui::sub_ok(&format!(
+        "staged {} into {}",
+        vehicle.dir,
+        destination.display()
+    ));
     Ok(())
 }
 
+/// A new staging directory only the user can open, so nobody else on the
+/// machine can swap files in before `balena push` reads them.
+fn private_staging_dir(vehicle_dir: &str) -> Result<PathBuf> {
+    use std::os::unix::fs::DirBuilderExt;
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.subsec_nanos())
+        .unwrap_or(0);
+    let dir = std::env::temp_dir().join(format!(
+        "ovcs-compute-{}-{}-{}",
+        vehicle_dir,
+        std::process::id(),
+        nanos
+    ));
+    fs::DirBuilder::new()
+        .mode(0o700)
+        .create(&dir)
+        .with_context(|| format!("creating the staging directory {}", dir.display()))?;
+    Ok(dir)
+}
+
+/// `./ovcs compute push [<vehicle>] <target>`: a single argument that is
+/// not a vehicle is the target, and the vehicle picker opens.
 pub fn push(
-    vehicle: String,
-    target: String,
+    vehicle: Option<String>,
+    target: Option<String>,
     images: Images,
     balena_args: Vec<String>,
 ) -> Result<()> {
-    let vehicle = resolve_vehicle(Some(vehicle))?;
-    let out = std::env::temp_dir().join(format!(
-        "ovcs-compute-{}-{}",
-        vehicle.dir,
-        std::process::id()
-    ));
-    let staged = stage_into(&vehicle, &out, &images);
+    let (vehicle, target) = match (vehicle, target) {
+        (Some(vehicle), Some(target)) => (resolve_vehicle(Some(vehicle))?, target),
+        (Some(single), None) if !is_vehicle_dir(&single)? => (resolve_vehicle(None)?, single),
+        _ => bail!("missing the push target: a balena fleet, or `<device>.local`"),
+    };
+    let staging_dir = private_staging_dir(&vehicle.dir)?;
+    let staged = stage_into(&vehicle, &staging_dir, &images);
     if staged.is_err() {
-        let _ = fs::remove_dir_all(&out);
+        let _ = fs::remove_dir_all(&staging_dir);
     }
     staged?;
 
     ui::step(&format!(
         "balena push {} (source {})",
         target,
-        out.display()
+        staging_dir.display()
     ));
     let status = Command::new("balena")
         .arg("push")
         .arg(&target)
         .arg("--source")
-        .arg(&out)
+        .arg(&staging_dir)
         .args(&balena_args)
         .status()
         .context("failed to spawn balena (run `mise install`)");
-    fs::remove_dir_all(&out)?;
+    let cleanup = fs::remove_dir_all(&staging_dir)
+        .with_context(|| format!("removing the staging directory {}", staging_dir.display()));
     let status = status?;
+    cleanup?;
     if !status.success() {
         std::process::exit(status.code().unwrap_or(1));
     }
     Ok(())
+}
+
+fn is_vehicle_dir(name: &str) -> Result<bool> {
+    Ok(vehicles::list(&repo_root()?)?
+        .iter()
+        .any(|vehicle| vehicle.dir == name))
 }
 
 /// `sha-<short>` of the last `main` commit, up to the one this checkout
@@ -135,19 +170,19 @@ fn main_tag() -> Result<String> {
 }
 
 fn git(root: &Path, args: &[&str]) -> Result<String> {
-    let out = Command::new("git")
+    let output = Command::new("git")
         .args(args)
         .current_dir(root)
         .stderr(Stdio::null())
         .output()
         .context("failed to spawn git")?;
-    if !out.status.success() {
+    if !output.status.success() {
         bail!("git {} failed", args.join(" "));
     }
-    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
-fn stage_into(vehicle: &Vehicle, out: &Path, images: &Images) -> Result<()> {
+fn stage_into(vehicle: &Vehicle, destination: &Path, images: &Images) -> Result<()> {
     let root = repo_root()?;
     let compute = root.join("compose/compute");
     let nav2 = vehicle.path.join("nav2");
@@ -159,7 +194,7 @@ fn stage_into(vehicle: &Vehicle, out: &Path, images: &Images) -> Result<()> {
     }
 
     ui::step(&format!("Staging the compute node for {}", vehicle.dir));
-    fs::create_dir_all(out)?;
+    fs::create_dir_all(destination)?;
     match images {
         Images::Build => {
             for entry in fs::read_dir(&compute)? {
@@ -167,7 +202,7 @@ fn stage_into(vehicle: &Vehicle, out: &Path, images: &Images) -> Result<()> {
                 if NOT_STAGED.iter().any(|name| entry.file_name() == *name) {
                     continue;
                 }
-                copy_tree(&entry.path(), &out.join(entry.file_name()))?;
+                copy_tree(&entry.path(), &destination.join(entry.file_name()))?;
             }
             ui::sub("framework images built from this checkout");
         }
@@ -175,19 +210,22 @@ fn stage_into(vehicle: &Vehicle, out: &Path, images: &Images) -> Result<()> {
             check_published(&format!("{REGISTRY}/nav2:{tag}"))?;
             let compose = fs::read_to_string(compute.join("docker-compose.yml"))?;
             fs::write(
-                out.join("docker-compose.yml"),
+                destination.join("docker-compose.yml"),
                 published_compose(&compose, tag)?,
             )?;
-            fs::copy(compute.join(".dockerignore"), out.join(".dockerignore"))?;
-            fs::create_dir_all(out.join("vehicle"))?;
+            fs::copy(
+                compute.join(".dockerignore"),
+                destination.join(".dockerignore"),
+            )?;
+            fs::create_dir_all(destination.join("vehicle"))?;
             fs::write(
-                out.join("vehicle/Dockerfile"),
+                destination.join("vehicle/Dockerfile"),
                 format!("FROM {REGISTRY}/nav2:{tag}\nCOPY nav2 /opt/ovcs/config\n"),
             )?;
             ui::sub(&format!("framework images {REGISTRY}/*:{tag}"));
         }
     }
-    copy_tree(&nav2, &out.join("vehicle/nav2"))?;
+    copy_tree(&nav2, &destination.join("vehicle/nav2"))?;
     ui::sub(&format!(
         "Nav2 parameters from vehicles/{}/nav2",
         vehicle.dir

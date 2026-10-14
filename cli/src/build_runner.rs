@@ -9,22 +9,18 @@
 //! still touch the same `vehicles/<dir>` host app, but Mix's build-path
 //! lock (Elixir ≥ 1.15) serialises those compiles safely.
 //!
-//! On a TTY every step's `panes` render as live spinner lines
-//! (buildkit-style) showing the build's latest log line; queued steps read
-//! `queued…` until their turn. On failure the offending step's full
-//! buffered output is dumped and later steps in that lane are skipped.
-//! Off a TTY (CI, pipes) we fall back to line-prefixed `[<label>] …`
-//! interleaved output so logs stay greppable.
+//! On a TTY every step's `panes` render as live spinner lines showing the
+//! build's latest log line. A failure skips the later steps of its lane.
+//! Off a TTY (CI, pipes) output is line-prefixed `[<label>] …` instead.
 //!
-//! A failing lane doesn't abort its siblings — every lane runs to
-//! completion so the user sees all failures, and the first failure's log
-//! is surfaced at the end.
+//! A failing lane doesn't abort the others; the first failure's log is
+//! printed at the end.
 
 use anyhow::{bail, Result};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use owo_colors::OwoColorize;
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, IsTerminal, Write};
+use std::io::{BufReader, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
@@ -32,12 +28,10 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::ansi::{is_blank_after_ansi, strip_ansi};
+use crate::lines::lossy_lines;
 
 /// One `build.sh` invocation in a lane's directory, with its env.
-///
-/// `panes` are the labels shown as separate progress lines that all track
-/// this single process — usually one label, but `run`'s host warm-up
-/// shares one `bridges/firmware` build across several bridge roles.
+/// `panes` are the labels of the progress lines that track it.
 pub struct BuildStep {
     pub panes: Vec<String>,
     pub env: HashMap<String, String>,
@@ -75,12 +69,12 @@ struct Failure {
 }
 
 fn run_panes(lanes: Vec<BuildLane>) -> Result<()> {
-    let mp = MultiProgress::new();
+    let progress = MultiProgress::new();
     let tag_width = lanes
         .iter()
-        .flat_map(|l| l.steps.iter())
-        .flat_map(|s| s.panes.iter())
-        .map(|p| p.len())
+        .flat_map(|lane| lane.steps.iter())
+        .flat_map(|step| step.panes.iter())
+        .map(|pane| pane.len())
         .max()
         .unwrap_or(0);
     // Two leading spaces line the spinner up with the `·` column of the
@@ -100,7 +94,7 @@ fn run_panes(lanes: Vec<BuildLane>) -> Result<()> {
                 step.panes
                     .iter()
                     .map(|pane| {
-                        let bar = mp.add(ProgressBar::new_spinner());
+                        let bar = progress.add(ProgressBar::new_spinner());
                         bar.set_style(style.clone());
                         bar.set_prefix(format!("{:<width$}", pane, width = tag_width));
                         bar.set_message("queued…".to_string());
@@ -116,26 +110,26 @@ fn run_panes(lanes: Vec<BuildLane>) -> Result<()> {
         }));
     }
 
-    let mut first_err: Option<Failure> = None;
-    for h in handles {
-        if let Err(e) = h.join().unwrap() {
-            if first_err.is_none() {
-                first_err = Some(e);
+    let mut first_failure: Option<Failure> = None;
+    for handle in handles {
+        if let Err(failure) = handle.join().unwrap() {
+            if first_failure.is_none() {
+                first_failure = Some(failure);
             }
         }
     }
 
     // Drop MultiProgress before any eprintln! so its terminal state isn't
     // tangled with the dumped log.
-    drop(mp);
+    drop(progress);
 
-    if let Some(f) = first_err {
+    if let Some(failure) = first_failure {
         eprintln!();
-        eprintln!("{}", format!("── {} log ──", f.label).red().bold());
-        for line in &f.lines {
+        eprintln!("{}", format!("── {} log ──", failure.label).red().bold());
+        for line in &failure.lines {
             eprintln!("{}", line);
         }
-        bail!("{} failed (exit {:?})", f.label, f.code);
+        bail!("{} failed (exit {:?})", failure.label, failure.code);
     }
 
     Ok(())
@@ -146,21 +140,20 @@ fn run_lane_panes(
     steps: Vec<BuildStep>,
     step_bars: Vec<Vec<ProgressBar>>,
 ) -> Result<(), Failure> {
-    for (i, step) in steps.into_iter().enumerate() {
-        let bars = &step_bars[i];
+    for (index, step) in steps.into_iter().enumerate() {
+        let bars = &step_bars[index];
         for bar in bars {
             bar.set_message("starting…".to_string());
             bar.enable_steady_tick(Duration::from_millis(100));
         }
-        if let Err(f) = run_step_panes(cwd, &step.env, bars) {
-            // Skip the rest of this lane — they depend on the shared dir
-            // the failed step left in an unknown state.
-            for later in &step_bars[i + 1..] {
+        if let Err(failure) = run_step_panes(cwd, &step.env, bars) {
+            // The failed step left the shared dir in an unknown state.
+            for later in &step_bars[index + 1..] {
                 for bar in later {
                     bar.finish_with_message("skipped".dimmed().to_string());
                 }
             }
-            return Err(f);
+            return Err(failure);
         }
     }
     Ok(())
@@ -173,25 +166,25 @@ fn run_step_panes(
 ) -> Result<(), Failure> {
     let label = bars
         .iter()
-        .map(|b| b.prefix().trim_end().to_string())
+        .map(|bar| bar.prefix().trim_end().to_string())
         .collect::<Vec<_>>()
         .join("+");
-    let buf: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let log_lines: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let start = Instant::now();
-    let finish_all = |msg: String| {
+    let finish_all = |message: String| {
         for bar in bars {
-            bar.finish_with_message(msg.clone());
+            bar.finish_with_message(message.clone());
         }
     };
 
     let mut child = match spawn_build(cwd, env) {
-        Ok(c) => c,
-        Err(e) => {
-            let msg = format!("spawn failed: {}", e);
-            finish_all(msg.clone().red().to_string());
+        Ok(child) => child,
+        Err(error) => {
+            let message = format!("spawn failed: {}", error);
+            finish_all(message.clone().red().to_string());
             return Err(Failure {
                 label,
-                lines: vec![msg],
+                lines: vec![message],
                 code: None,
             });
         }
@@ -199,39 +192,39 @@ fn run_step_panes(
 
     let stdout = child.stdout.take().unwrap();
     let stderr = child.stderr.take().unwrap();
-    let bars_arc: Arc<Vec<ProgressBar>> = Arc::new(bars.to_vec());
-    let b1 = Arc::clone(&bars_arc);
-    let buf1 = Arc::clone(&buf);
-    let t1 = thread::spawn(move || capture_stream(stdout, &b1, &buf1));
-    let b2 = Arc::clone(&bars_arc);
-    let buf2 = Arc::clone(&buf);
-    let t2 = thread::spawn(move || capture_stream(stderr, &b2, &buf2));
+    let shared_bars: Arc<Vec<ProgressBar>> = Arc::new(bars.to_vec());
+    let stdout_bars = Arc::clone(&shared_bars);
+    let stdout_log = Arc::clone(&log_lines);
+    let stdout_reader = thread::spawn(move || capture_stream(stdout, &stdout_bars, &stdout_log));
+    let stderr_bars = Arc::clone(&shared_bars);
+    let stderr_log = Arc::clone(&log_lines);
+    let stderr_reader = thread::spawn(move || capture_stream(stderr, &stderr_bars, &stderr_log));
 
     let status = child.wait();
-    let _ = t1.join();
-    let _ = t2.join();
+    let _ = stdout_reader.join();
+    let _ = stderr_reader.join();
 
-    let lines = buf.lock().unwrap().clone();
+    let lines = log_lines.lock().unwrap().clone();
     let elapsed = fmt_elapsed(start.elapsed());
     match status {
-        Ok(s) if s.success() => {
+        Ok(status) if status.success() => {
             finish_all(format!("done ({})", elapsed).green().to_string());
             Ok(())
         }
-        Ok(s) => {
+        Ok(status) => {
             finish_all(
-                format!("FAILED (exit {}, {})", s.code().unwrap_or(-1), elapsed)
+                format!("FAILED (exit {}, {})", status.code().unwrap_or(-1), elapsed)
                     .red()
                     .to_string(),
             );
             Err(Failure {
                 label,
                 lines,
-                code: s.code(),
+                code: status.code(),
             })
         }
-        Err(e) => {
-            finish_all(format!("wait failed: {}", e).red().to_string());
+        Err(error) => {
+            finish_all(format!("wait failed: {}", error).red().to_string());
             Err(Failure {
                 label,
                 lines,
@@ -244,11 +237,11 @@ fn run_step_panes(
 /// Fan one build's output across every pane tracking it — each pane shows
 /// the same live log line — while buffering every line so a failed build
 /// can dump its full log afterwards.
-fn capture_stream<R>(reader: R, bars: &[ProgressBar], buf: &Arc<Mutex<Vec<String>>>)
+fn capture_stream<R>(reader: R, bars: &[ProgressBar], log_lines: &Arc<Mutex<Vec<String>>>)
 where
     R: std::io::Read + Send + 'static,
 {
-    for line in BufReader::new(reader).lines().map_while(|l| l.ok()) {
+    for line in lossy_lines(BufReader::new(reader)) {
         if is_blank_after_ansi(&line) {
             continue;
         }
@@ -256,7 +249,7 @@ where
         for bar in bars {
             bar.set_message(display.clone());
         }
-        buf.lock().unwrap().push(line);
+        log_lines.lock().unwrap().push(line);
     }
 }
 
@@ -269,11 +262,11 @@ fn run_plain(lanes: Vec<BuildLane>) -> Result<()> {
                 println!("[{}] starting build…", label);
 
                 let mut child = match spawn_build(&lane.cwd, &step.env) {
-                    Ok(c) => c,
-                    Err(e) => {
+                    Ok(child) => child,
+                    Err(error) => {
                         return Err(Failure {
                             label,
-                            lines: vec![format!("spawn failed: {}", e)],
+                            lines: vec![format!("spawn failed: {}", error)],
                             code: None,
                         })
                     }
@@ -281,28 +274,30 @@ fn run_plain(lanes: Vec<BuildLane>) -> Result<()> {
 
                 let stdout = child.stdout.take().unwrap();
                 let stderr = child.stderr.take().unwrap();
-                let l1 = label.clone();
-                let l2 = label.clone();
-                let t1 = thread::spawn(move || prefix_stream(stdout, &l1, std::io::stdout()));
-                let t2 = thread::spawn(move || prefix_stream(stderr, &l2, std::io::stderr()));
+                let stdout_label = label.clone();
+                let stderr_label = label.clone();
+                let stdout_reader =
+                    thread::spawn(move || prefix_stream(stdout, &stdout_label, std::io::stdout()));
+                let stderr_reader =
+                    thread::spawn(move || prefix_stream(stderr, &stderr_label, std::io::stderr()));
 
                 let status = child.wait();
-                let _ = t1.join();
-                let _ = t2.join();
+                let _ = stdout_reader.join();
+                let _ = stderr_reader.join();
 
                 match status {
-                    Ok(s) if s.success() => println!("[{}] done", label),
-                    Ok(s) => {
+                    Ok(status) if status.success() => println!("[{}] done", label),
+                    Ok(status) => {
                         return Err(Failure {
                             label,
                             lines: vec![],
-                            code: s.code(),
+                            code: status.code(),
                         })
                     }
-                    Err(e) => {
+                    Err(error) => {
                         return Err(Failure {
                             label,
-                            lines: vec![format!("wait failed: {}", e)],
+                            lines: vec![format!("wait failed: {}", error)],
                             code: None,
                         })
                     }
@@ -312,31 +307,32 @@ fn run_plain(lanes: Vec<BuildLane>) -> Result<()> {
         }));
     }
 
-    let mut first_err: Option<Failure> = None;
-    for h in handles {
-        if let Err(e) = h.join().unwrap() {
-            if first_err.is_none() {
-                first_err = Some(e);
+    let mut first_failure: Option<Failure> = None;
+    for handle in handles {
+        if let Err(failure) = handle.join().unwrap() {
+            if first_failure.is_none() {
+                first_failure = Some(failure);
             }
         }
     }
 
-    if let Some(f) = first_err {
-        bail!("{} failed (exit {:?})", f.label, f.code);
+    if let Some(failure) = first_failure {
+        bail!("{} failed (exit {:?})", failure.label, failure.code);
     }
     Ok(())
 }
 
 fn spawn_build(cwd: &Path, env: &HashMap<String, String>) -> std::io::Result<std::process::Child> {
-    let mut cmd = Command::new(cwd.join("build.sh"));
-    cmd.current_dir(cwd)
+    let mut command = Command::new(cwd.join("build.sh"));
+    command
+        .current_dir(cwd)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    for (k, v) in env {
-        cmd.env(k, v);
+    for (name, value) in env {
+        command.env(name, value);
     }
-    cmd.spawn()
+    command.spawn()
 }
 
 fn prefix_stream<R, W>(reader: R, label: &str, mut sink: W)
@@ -344,7 +340,7 @@ where
     R: std::io::Read + Send + 'static,
     W: Write + Send + 'static,
 {
-    for line in BufReader::new(reader).lines().map_while(|l| l.ok()) {
+    for line in lossy_lines(BufReader::new(reader)) {
         if is_blank_after_ansi(&line) {
             continue;
         }
@@ -353,11 +349,11 @@ where
     }
 }
 
-pub fn fmt_elapsed(d: Duration) -> String {
-    let secs = d.as_secs();
-    if secs >= 60 {
-        format!("{}m{:02}s", secs / 60, secs % 60)
+pub fn fmt_elapsed(elapsed: Duration) -> String {
+    let seconds = elapsed.as_secs();
+    if seconds >= 60 {
+        format!("{}m{:02}s", seconds / 60, seconds % 60)
     } else {
-        format!("{}s", secs)
+        format!("{}s", seconds)
     }
 }

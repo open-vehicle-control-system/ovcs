@@ -22,23 +22,56 @@ defmodule RosBridge.Simulator.Vehicle do
 
   ## Commanded and measured
 
-  `commanded_speed_m_s` is the speed handed to the simulator.
-  `wheel_turns_step` and `measured_speed_m_s` are how far and how fast
-  the wheels turned in the step: the simulator's wheel joints when
-  `step/4` is given them, the command otherwise. The measured speed is
-  the step's distance smoothed over `@speed_time_constant_s`, by a filter
-  whose output integrates back to the distance. The commanded speed is
-  at most `@command_lead_m_s` faster than the measured one in its own
-  direction, so it cannot wind up against an obstacle, and within
-  `:max_speed_m_s`. The measurement only ever lowers it: wheel samples
-  that arrive in a burst read as a speed spike, which must not drive
-  the vehicle. A measured speed
-  under `@standstill_m_s` is zero, so physics jitter at rest does not
-  keep the VMS's standstill gate shut through the rates; the counters
-  follow the wheels as they are.
+  Each `step/4` produces the four fields the rest of the tick uses:
+
+    * `commanded_speed_m_s` and `steering_rad` — what the simulator is
+      asked for;
+    * `measured_speed_m_s` — how fast the wheels turned, for the
+      simulated components' rates;
+    * `wheel_turns_step` — how far they turned in the step, for their
+      counters.
+
+  The wheel turns are the simulator's wheel joints when `step/4` is
+  given them, the command otherwise. The measured speed is the step's
+  distance smoothed over `@speed_time_constant_s`, by a filter whose
+  output integrates back to the distance; under `@standstill_m_s` it is
+  zero, so physics jitter at rest does not keep the VMS's standstill
+  gate shut through the rates, while the counters follow the wheels as
+  they are.
+
+  The commanded speed is at most `@command_lead_m_s` faster than the
+  measured one in its own direction, so it cannot wind up against an
+  obstacle, and within `:max_speed_m_s`. The measurement only ever
+  lowers it: wheel samples that arrive in a burst read as a speed
+  spike, which must not drive the vehicle.
 
   Speeds are per wall second, the clock the VMS measures against, and
-  `dt_s` is a step of it.
+  `dt_s` is the step's length in wall seconds.
+
+  ## Examples
+
+  The OVCS Mini's geometry, a 20 ms step, starting at 0.30 m/s:
+
+      iex> alias RosBridge.Simulator.Vehicle
+      iex> circumference = 2 * :math.pi() * 0.0522
+      iex> cruising = %{Vehicle.new(%{wheelbase_m: 0.324, wheel_radius_m: 0.0522}) |
+      ...>   commanded_speed_m_s: 0.3, measured_speed_m_s: 0.3}
+      iex> # Asked for more while rolling 6 mm: the setpoint, within the lead.
+      iex> faster = Vehicle.step(cruising, [{:speed, 0.4}, {:steering, 0.2}], 0.02, 0.006 / circumference)
+      iex> {faster.commanded_speed_m_s, Float.round(faster.measured_speed_m_s, 3), faster.steering_rad}
+      {0.4, 0.3, 0.2}
+      iex> # A burst of late samples, 15 cm in one step: the rate spikes, the command stays.
+      iex> burst = Vehicle.step(cruising, [{:speed, 0.0}], 0.02, 0.15 / circumference)
+      iex> {burst.commanded_speed_m_s, Float.round(burst.measured_speed_m_s, 3)}
+      {0.0, 1.5}
+
+  Held against a wall, the wheels do not turn and the command stops at
+  the lead:
+
+      iex> alias RosBridge.Simulator.Vehicle
+      iex> stalled = Vehicle.new(%{wheelbase_m: 0.324, wheel_radius_m: 0.0522})
+      iex> Vehicle.step(stalled, [{:speed, 1.0}], 0.02, 0.0).commanded_speed_m_s
+      0.25
 
   ## Parameters
 

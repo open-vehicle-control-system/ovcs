@@ -90,7 +90,7 @@ defmodule RosBridge.ClockTest do
     test "Timing stays on wall clock" do
       # Stamps must still land near system time, not near zero.
       monotonic_ns = System.monotonic_time(:nanosecond)
-      stamp_ns = Timing.ros_time_of(monotonic_ns)
+      stamp_ns = Timing.ros_time_from_monotonic(monotonic_ns)
       assert_in_delta stamp_ns, System.system_time(:nanosecond), 1_000_000_000
     end
   end
@@ -103,21 +103,21 @@ defmodule RosBridge.ClockTest do
 
       # A capture taken now stamps at roughly the simulator time just
       # received, not at wall-clock seconds.
-      stamp_ns = Timing.ros_time_of(System.monotonic_time(:nanosecond))
+      stamp_ns = Timing.ros_time_from_monotonic(System.monotonic_time(:nanosecond))
       assert_in_delta stamp_ns, 58_643_000_000, 100_000_000
     end
 
     test "a system-time sample stamps on the simulator's time too" do
       {:noreply, _state} = Clock.handle_info(clock_message(58, 643_000_000), tracking_state())
 
-      stamp = Timing.time_message_for_system_time(System.system_time(:nanosecond))
+      stamp = Timing.stamp_from_system_time(System.system_time(:nanosecond))
       assert_in_delta stamp.sec * 1_000_000_000 + stamp.nanosec, 58_643_000_000, 100_000_000
     end
 
     test "a stamp is nowhere near wall clock, which is the whole point" do
       {:noreply, _state} = Clock.handle_info(clock_message(58, 0), tracking_state())
 
-      stamp_ns = Timing.ros_time_of(System.monotonic_time(:nanosecond))
+      stamp_ns = Timing.ros_time_from_monotonic(System.monotonic_time(:nanosecond))
       wall_ns = System.system_time(:nanosecond)
 
       assert abs(wall_ns - stamp_ns) > 1_000_000_000_000_000,
@@ -142,7 +142,7 @@ defmodule RosBridge.ClockTest do
       # offset was applied the wrong way round.
       {:noreply, _state} = Clock.handle_info(clock_message(58, 643_000_000), tracking_state())
 
-      time = Timing.time_message_for(System.monotonic_time(:nanosecond))
+      time = Timing.stamp_from_monotonic(System.monotonic_time(:nanosecond))
       assert time.sec > 0
       assert time.sec < 2_147_483_647
       assert time.nanosec >= 0 and time.nanosec < 1_000_000_000
@@ -158,7 +158,7 @@ defmodule RosBridge.ClockTest do
 
       assert Clock.following?()
 
-      assert_in_delta Timing.ros_time_of(System.monotonic_time(:nanosecond)),
+      assert_in_delta Timing.ros_time_from_monotonic(System.monotonic_time(:nanosecond)),
                       58_000_000_000,
                       100_000_000
     end
@@ -173,7 +173,7 @@ defmodule RosBridge.ClockTest do
              "a stopped clock left a frozen offset behind, so every stamp would drift for ever"
 
       # And Timing is back on wall clock rather than using it.
-      assert_in_delta Timing.ros_time_of(System.monotonic_time(:nanosecond)),
+      assert_in_delta Timing.ros_time_from_monotonic(System.monotonic_time(:nanosecond)),
                       System.system_time(:nanosecond),
                       1_000_000_000
     end
@@ -187,7 +187,7 @@ defmodule RosBridge.ClockTest do
 
       refute Clock.following?()
 
-      assert_in_delta Timing.ros_time_of(System.monotonic_time(:nanosecond)),
+      assert_in_delta Timing.ros_time_from_monotonic(System.monotonic_time(:nanosecond)),
                       System.system_time(:nanosecond),
                       1_000_000_000
     end

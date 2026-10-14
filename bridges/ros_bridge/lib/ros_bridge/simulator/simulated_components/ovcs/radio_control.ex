@@ -48,7 +48,7 @@ defmodule RosBridge.Simulator.SimulatedComponents.OVCS.RadioControl do
     do: %{state | started_at_ms: state.started_at_ms || now_ms, last_seen_ms: now_ms}
 
   @impl RosBridge.Simulator.SimulatedComponent
-  def step(state, _vehicle, _dt_s, now_ms) do
+  def report(state, _vehicle, now_ms) do
     state =
       if state.started_at_ms && now_ms - state.last_seen_ms > state.rewind_after_ms,
         do: %{state | started_at_ms: nil},

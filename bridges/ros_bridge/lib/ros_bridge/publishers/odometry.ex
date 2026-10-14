@@ -299,7 +299,7 @@ defmodule RosBridge.Publishers.Odometry do
   end
 
   defp publish(%State{} = state) do
-    stamp = Timing.time_message_for(System.monotonic_time(:nanosecond))
+    stamp = Timing.stamp_from_monotonic(System.monotonic_time(:nanosecond))
     {x, y} = base_position(state)
 
     orientation = %Quaternion{

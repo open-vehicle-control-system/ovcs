@@ -180,7 +180,7 @@ mise run cli      # cargo build --release, stripped and copied to cli/ovcs
 ./ovcs doctor
 ```
 
-`./ovcs` at the repository root is a symlink to `cli/ovcs`, which is gitignored: every contributor builds it. `doctor` checks the toolchain binaries (required: mise, Elixir, Mix, Node, Python, fwup; optional, a warning when missing: Ruby, Flutter, can-utils, PlatformIO), the `nerves_bootstrap` archive, the `libsocketcan` headers (warning), each vehicle's Nerves targets under `vehicles/`, and their SSH host keys. Missing host keys are a warning: you only need them before burning firmware.
+`./ovcs` at the repository root is a symlink to `cli/ovcs`, which is gitignored: every contributor builds it. `doctor` checks the toolchain binaries (required: mise, Elixir, Mix, Node, Python, fwup; optional, a warning when missing: Ruby, Flutter, can-utils, balena, Docker, PlatformIO), the `nerves_bootstrap` archive, the `libsocketcan` headers (warning), each vehicle's Nerves targets under `vehicles/`, and their SSH host keys. Missing host keys are a warning: you only need them before burning firmware.
 
 ### 6. Optional: firmware builds
 

@@ -13,7 +13,7 @@ of the vehicle package.
 
 For the physical topology (which bus runs at what bitrate, which Pi owns
 which connector), see
-[`docs/hardware.md`](../../docs/hardware.md).
+[`docs/hardware.md`](https://ovcs.be/docs/hardware).
 
 ## Leaf harness
 

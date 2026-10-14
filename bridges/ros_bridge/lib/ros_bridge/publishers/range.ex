@@ -55,7 +55,7 @@ defmodule RosBridge.Publishers.Range do
   def range(%Sample{range: {min_range_m, max_range_m}} = sample, state) do
     %Range{
       header: %Header{
-        stamp: Timing.time_message_for_system_time(sample.measured_at),
+        stamp: Timing.stamp_from_system_time(sample.measured_at),
         frame_id: state.frame_id
       },
       radiation_type: state.radiation_type,

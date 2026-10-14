@@ -65,7 +65,7 @@ defmodule RosBridge.Simulator.SimulatedComponentsTest do
       assert MotorController.actuations(state, vehicle(0.5), 10) == [{:deceleration, 2.0}]
 
       {_state, [{_, "vesc_status", status}, _]} =
-        MotorController.step(state, vehicle(0.5), @dt, 10)
+        MotorController.report(state, vehicle(0.5), 10)
 
       assert Decimal.equal?(status["motor_current"], Decimal.new("-4.0"))
     end
@@ -74,7 +74,7 @@ defmodule RosBridge.Simulator.SimulatedComponentsTest do
       state = %{vesc() | tachometer: 2_147_483_647.0 + 10}
 
       {_state, [_, {_, "vesc_status_5", status_5}]} =
-        MotorController.step(state, vehicle(0.0), @dt, 0)
+        MotorController.report(state, vehicle(0.0), 0)
 
       assert status_5["tachometer"] == -2_147_483_639
     end
@@ -105,7 +105,7 @@ defmodule RosBridge.Simulator.SimulatedComponentsTest do
 
       {state, _} =
         Enum.reduce(1..steps, {vesc(), []}, fn _, {state, _} ->
-          MotorController.step(state, moving, @dt, 0)
+          MotorController.report(state, moving, 0)
         end)
 
       # `MotorController.revolutions/2`: six steps per electrical turn.
@@ -138,7 +138,7 @@ defmodule RosBridge.Simulator.SimulatedComponentsTest do
 
       {_state, updates} =
         Enum.reduce(1..100, {state, []}, fn _, {state, _} ->
-          GenericController.step(state, moving, @dt, 0)
+          GenericController.report(state, moving, 0)
         end)
 
       {_, _, pulse} = List.keyfind(updates, "main_controller_pulse_counter_status", 1)
@@ -154,19 +154,19 @@ defmodule RosBridge.Simulator.SimulatedComponentsTest do
 
       one_turn = %{vehicle(1.0) | wheel_turns_step: 1.0}
       state = %{state | pulses: 65_535.0}
-      {state, [{_, _, counting}]} = GenericController.step(state, one_turn, @dt, 0)
+      {state, [{_, _, counting}]} = GenericController.report(state, one_turn, 0)
       assert counting["pulse_pin0_count"] == 0
       assert Decimal.to_float(counting["pulse_pin0_frequency"]) > 0
 
       still = %{vehicle(1.0) | wheel_turns_step: 0.0}
-      {_state, [{_, _, stopped}]} = GenericController.step(state, still, 2.5, 0)
+      {_state, [{_, _, stopped}]} = GenericController.report(state, still, 2_500)
       assert Decimal.to_float(stopped["pulse_pin0_frequency"]) == 0.0
     end
 
     test "no pulse frame without a pulse sensor, and nothing to report each tick" do
       {state, [], emitted} = GenericController.init([])
       refute List.keymember?(emitted, "main_controller_pulse_counter_status", 1)
-      assert GenericController.step(state, vehicle(0.0), @dt, 0) == {state, []}
+      assert GenericController.report(state, vehicle(0.0), 0) == {state, []}
     end
   end
 
@@ -212,15 +212,15 @@ defmodule RosBridge.Simulator.SimulatedComponentsTest do
           steps: [{1_000, %{6 => 1500}}, {2_000, %{6 => 2000}}]
         )
 
-      {state, [_, {_, _, waiting}]} = RadioControl.step(state, nil, @dt, 5_000)
+      {state, [_, {_, _, waiting}]} = RadioControl.report(state, nil, 5_000)
       assert waiting["channel6"] == 1000
 
       state = RadioControl.handle_frame("vms_status", %{}, state, 10_000)
       state = RadioControl.handle_frame("vms_status", %{}, state, 10_900)
-      {state, [_, {_, _, radio}]} = RadioControl.step(state, nil, @dt, 11_000)
+      {state, [_, {_, _, radio}]} = RadioControl.report(state, nil, 11_000)
       assert radio["channel6"] == 1500
       state = RadioControl.handle_frame("vms_status", %{}, state, 11_900)
-      {_state, [_, {_, _, ros}]} = RadioControl.step(state, nil, @dt, 12_000)
+      {_state, [_, {_, _, ros}]} = RadioControl.report(state, nil, 12_000)
       assert ros["channel6"] == 2000
     end
 
@@ -228,7 +228,7 @@ defmodule RosBridge.Simulator.SimulatedComponentsTest do
       {state, _, _} = RadioControl.init(channels: %{6 => 1000}, steps: [{1_000, %{6 => 2000}}])
       state = RadioControl.handle_frame("vms_status", %{}, state, 0)
 
-      {state, [_, {_, _, silent}]} = RadioControl.step(state, nil, @dt, 2_000)
+      {state, [_, {_, _, silent}]} = RadioControl.report(state, nil, 2_000)
       assert silent["channel6"] == 1000
       assert state.started_at_ms == nil
     end
