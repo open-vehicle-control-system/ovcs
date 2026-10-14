@@ -1,0 +1,18 @@
+defmodule RosBridge.Publishers.StereoCameraTest do
+  use ExUnit.Case, async: true
+
+  alias RosBridge.Publishers.StereoCamera
+
+  @side_opts [frame_id: "left_camera"]
+
+  test "republishes the raw images by default" do
+    side = StereoCamera.build_side_state("left", "stereo", @side_opts, 4, 4, true)
+    assert side.image_topic == "stereo/left/image_raw/compressed"
+  end
+
+  test "keeps the camera info but not the raw images when told not to republish them" do
+    side = StereoCamera.build_side_state("left", "stereo", @side_opts, 4, 4, false)
+    refute side.image_topic
+    assert side.camera_info_topic == "stereo/left/camera_info"
+  end
+end

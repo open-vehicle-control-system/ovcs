@@ -61,6 +61,9 @@ defmodule RosBridge.StereoCamera.Supervisor do
       pair as the matcher does. The left one's intrinsics are
       `<topic_prefix>/depth/camera_info`;
       `<topic_prefix>/left/camera_info` describes the raw image.
+    * `:publish_raw_images` (`true`) — republish the camera frames on
+      `<topic_prefix>/<side>/image_raw/compressed`. Off when the cameras
+      already publish there, as a simulator's do.
     * `:topic_prefix` (`"stereo"`) — root of every topic this
       unit publishes. Also drives the default `frame_id` for each
       side (`<prefix>_left`, `<prefix>_right`).
@@ -126,6 +129,7 @@ defmodule RosBridge.StereoCamera.Supervisor do
       pair_tolerance_ms: Keyword.get(opts, :pair_tolerance_ms, @default_pair_tolerance_ms),
       publish_disparity_image: Keyword.get(opts, :publish_disparity_image, false),
       publish_rectified_image: Keyword.get(opts, :publish_rectified_image, false),
+      publish_raw_images: Keyword.get(opts, :publish_raw_images, true),
       backend_opts: Keyword.get(opts, :backend_opts, []),
       left: left,
       right: right
@@ -298,7 +302,8 @@ defmodule RosBridge.StereoCamera.Supervisor do
         config.publish_rectified_image && "#{config.topic_prefix}/left/image_rect/compressed",
       right_rectified_image_topic:
         config.publish_rectified_image && "#{config.topic_prefix}/right/image_rect/compressed",
-      pair_tolerance_ms: config.pair_tolerance_ms
+      pair_tolerance_ms: config.pair_tolerance_ms,
+      publish_raw_images: config.publish_raw_images
     ]
 
     {StereoCameraPublisher, publisher_opts}

@@ -563,6 +563,8 @@ defmodule OvcsMini do
       # a phantom obstacle is not. Keep CLAHE: without it those
       # phantoms multiply.
       # The rectified pair, to check the calibration's row alignment.
+      # No raw images in simulation: Gazebo already publishes the frames
+      # Camera.Zenoh reads there.
       driver: camera_driver,
       calibration_dir: priv_calibration_dir(arm),
       calibration_store_dir: calibration_store_dir(arm),
@@ -571,6 +573,7 @@ defmodule OvcsMini do
       fps: 30,
       pair_tolerance_ms: 100,
       publish_rectified_image: true,
+      publish_raw_images: arm != :simulation,
       backend_opts: [
         num_disparities: 96,
         block_size: 9,
