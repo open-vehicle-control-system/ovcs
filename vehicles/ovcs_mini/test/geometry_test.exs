@@ -7,6 +7,8 @@ defmodule OvcsMini.GeometryTest do
 
   @xacro Path.expand("../description/ovcs_mini.urdf.xacro", __DIR__)
 
+  defp urdf, do: OvcsVehicle.URDF.read!(Path.expand("../description/ovcs_mini.urdf", __DIR__))
+
   # `<xacro:property name="wheelbase" value="0.324" />`, tolerating
   # arbitrary whitespace and attribute order as written today.
   defp xacro_property(name) do
@@ -81,9 +83,7 @@ defmodule OvcsMini.GeometryTest do
     end
 
     defp urdf_links do
-      %{joints: joints} =
-        OvcsVehicle.URDF.read!(Path.expand("../description/ovcs_mini.urdf", __DIR__))
-
+      %{joints: joints} = urdf()
       joints |> Map.values() |> Enum.flat_map(&[&1.parent, &1.child]) |> MapSet.new()
     end
 
@@ -99,6 +99,27 @@ defmodule OvcsMini.GeometryTest do
           ],
           frame,
           do: frame
+    end
+  end
+
+  describe "joint states" do
+    test "the car's bridge publishes the URDF's moving joints" do
+      %RosBridge.Config{components: components} = OvcsMini.ros_bridge_config(:target, "ros")
+      {:ackermann_joint_states, opts} = List.keyfind(components, :ackermann_joint_states, 0)
+      {left, right} = opts[:steering_joints]
+      %{joints: joints} = urdf()
+
+      moving = for {name, %{type: type}} <- joints, type != "fixed", into: MapSet.new(), do: name
+
+      assert MapSet.new([left, right | opts[:wheel_joints]]) == moving
+    end
+
+    test "not against the simulator, which publishes its own" do
+      System.put_env("OVCS_SIM", "1")
+      on_exit(fn -> System.delete_env("OVCS_SIM") end)
+
+      %RosBridge.Config{components: components} = OvcsMini.ros_bridge_config(:host, "ros")
+      refute List.keymember?(components, :ackermann_joint_states, 0)
     end
   end
 

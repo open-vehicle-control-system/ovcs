@@ -66,6 +66,13 @@ defmodule RosBridge.Components do
           driver; list `:imu_publisher` first, it starts the driver.
         * `:topic`, `:odom_frame_id`, `:base_frame_id`,
           `:stale_after_ms`, `:base_ahead_of_rear_axle` — see the module.
+    * `:ackermann_joint_states` — `RosBridge.Publishers.AckermannJointStates`,
+      an Ackermann vehicle's steered and rolling wheels on
+      `/joint_states` from the VMS's `vehicle_motion` CAN frame, for
+      `robot_state_publisher`. Not against a simulator, which publishes
+      its own. Opts: `:steering_joints`, `:wheel_joints`, `:wheelbase`,
+      `:kingpin_width`, `:wheel_radius` (required), `:topic` — see the
+      module.
     * `:static_transforms` — publishes the vehicle's fixed frame
       relationships on `/tf_static`, republished at 1 Hz. Opts: `:transforms` (required, a list of
       `%{parent:, child:, translation: {x,y,z}, rotation: {x,y,z,w}}`),
@@ -140,6 +147,10 @@ defmodule RosBridge.Components do
     # Fetched only to fail at boot when missing; `:imu_publisher` starts the driver.
     _driver = Keyword.fetch!(opts, :driver)
     [{RosBridge.Publishers.Odometry, opts}]
+  end
+
+  def start(:ackermann_joint_states, opts) do
+    [{RosBridge.Publishers.AckermannJointStates, opts}]
   end
 
   def start(:static_transforms, opts) do

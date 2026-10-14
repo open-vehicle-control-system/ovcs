@@ -71,7 +71,7 @@ The boundary between Gazebo's transport and ROS is exactly the list in `gazebo.l
 | `/clock` | `rosgraph_msgs/Clock` | Gazebo | every node, `RosBridge.Clock` |
 | `/odom`, `/tf` (`odom → base_link`) | `nav_msgs/Odometry`, `tf2_msgs/TFMessage` | `RosBridge.Publishers.Odometry` | Nav2, Foxglove |
 | `/tf_static` | `tf2_msgs/TFMessage` | `robot_state_publisher` | Nav2, Foxglove |
-| `/joint_states` | `sensor_msgs/JointState` | Gazebo | `RosBridge.Simulator.Hardware` (the wheel speed), Foxglove |
+| `/joint_states` | `sensor_msgs/JointState` | Gazebo; on the vehicle, `RosBridge.Publishers.AckermannJointStates` | `RosBridge.Simulator.Hardware` (the wheel speed), `robot_state_publisher` |
 | `/imu_raw` | `sensor_msgs/Imu` | the model's IMU sensor | `RosBridge.Imu.Zenoh`, republished on `/imu` by `Publishers.Imu` |
 | a ray sensor's `*_raw` topic | `sensor_msgs/LaserScan` | a `gpu_lidar` in the model | `RosBridge.Lidar.Zenoh` for a lidar, `RosBridge.Rangefinder.Zenoh` for a fan standing in for one rangefinder beam; republished as on the vehicle |
 | `/stereo/{left,right}/image_raw/compressed` | `sensor_msgs/CompressedImage` | `image_bridge` | `RosBridge.Camera.Zenoh` |
@@ -84,7 +84,9 @@ The boundary between Gazebo's transport and ROS is exactly the list in `gazebo.l
 | `/stereo/...` disparity, depth, points, detections | `stereo_msgs`, `sensor_msgs`, `vision_msgs` | perception bridge | Foxglove |
 | `/ovcs_heartbeat` | `std_msgs/String` | every `RosBridge` that lists `:heartbeat` | you, to see the BEAM is alive |
 
-**Two transform buffers.** `/tf` is time-indexed: `tf2` stores each sample against its stamp and interpolates. `/tf_static` is timeless, and carries the URDF's fixed joints, the sensor mounts among them; a point cloud stamped after the newest `/tf` sample could not be transformed, and Nav2 would drop it. `robot_state_publisher` publishes them: the simulator's launch runs it here, and the Nav2 image runs it on the vehicle, so the nav2 service in this stack starts with `robot_state_publisher:=false`. The bridges stamp their messages with the URDF's frame names (`lidar_link`, `stereo_left_optical`, ...) in both.
+**Two transform buffers.** `/tf` is time-indexed: `tf2` stores each sample against its stamp and interpolates. `/tf_static` is timeless, and carries the URDF's fixed joints, the sensor mounts among them; a point cloud stamped after the newest `/tf` sample could not be transformed, and Nav2 would drop it. `robot_state_publisher` publishes them: the simulator's launch runs it here, and the Nav2 image runs it on the vehicle, so the nav2 service in this stack starts with `robot_state_publisher:=false`. The bridges stamp their messages with the URDF's frame names (`lidar_link`, `stereo_left_optical`, ...) in both. The wheels' joints move, so their transforms are on `/tf`, from `/joint_states`: Gazebo's here, the ROS bridge's `:ackermann_joint_states` on the vehicle, from the VMS's commanded steering and the wheels' distance.
+
+**Meshes.** Foxglove fetches a model's meshes through `foxglove_bridge` only when they are `package://` URIs, so the framework expands your model with its meshes in the `ovcs_description` package, through a `mesh_uri` xacro argument (`package://ovcs_description/meshes`). The shared ROS image registers that package at `/opt/ovcs/description`, where `ovcs compute stage` bakes your vehicle's `description/` on the vehicle and the local `foxglove_bridge` mounts it; Gazebo finds it on `GZ_SIM_RESOURCE_PATH`. Enable `/robot_description` in a 3D panel to draw the model, with the panel's mesh up axis set to Z-up (`scene.meshUpAxis: z_up`), as ROS meshes are: Foxglove assumes Y-up and turns them 90°.
 
 ## Time
 

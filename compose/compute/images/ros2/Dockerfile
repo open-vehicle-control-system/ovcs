@@ -8,15 +8,18 @@
 #
 # Lives under compose/compute/ because balena requires every build
 # context to sit inside the pushed source root; the local stacks reach
-# across to it (`context: ../compute/images/ros2`), which plain
-# `docker compose` is happy to do. The direction matters: a workstation
-# runs the image the car runs, never a copy of it.
+# across to it (`context: ../compute`), which plain `docker compose` is
+# happy to do. The direction matters: a workstation runs the image the
+# car runs, never a copy of it. The context is that source root, like
+# Nav2's, for the vehicle's description `ovcs compute stage` puts in
+# vehicle/: foxglove_bridge serves its meshes. Built from the repo,
+# vehicle/description is empty.
 # Pinned: the base by digest (its ROS packages are the 2026-08-12 sync)
 # and apt to the ROS snapshot of 2026-08-19, so every build installs the
 # same packages. Bump both together; the snapshot key expires 2027-06-01.
 FROM ros:lyrical-ros-base@sha256:0c19f326a339ed770ef1d4c0646a8b53bdb49dd5ff74b6de41ebdb8ac21e1806
 
-COPY ros-snapshots.asc /usr/share/keyrings/ros-snapshots.asc
+COPY images/ros2/ros-snapshots.asc /usr/share/keyrings/ros-snapshots.asc
 RUN printf '%s\n' \
         'Types: deb' \
         'URIs: http://snapshots.ros.org/lyrical/2026-08-19/ubuntu' \
@@ -67,21 +70,21 @@ RUN cd /opt/ros/lyrical/lib/python3.14/site-packages/camera_calibration \
 # Baked in rather than bind-mounted: balenaOS has no host bind mounts,
 # and keeping one mechanism means the vehicle and the base station read
 # the identical template. Editing it means a rebuild.
-COPY zenoh/session.json5.template /etc/zenoh/session.json5.template
+COPY images/ros2/zenoh/session.json5.template /etc/zenoh/session.json5.template
 
 # `COPY --chmod=` would be tidier, but it is a BuildKit-only feature and
 # balenaEngine does not implement BuildKit — the build fails outright on
 # the device and on balena's builders. Copy, then chmod in one layer,
 # which every builder understands. The chmod is not belt-and-braces:
 # docker/calibrator.sh is mode 644 in git.
-COPY docker/entrypoint.sh         /usr/local/bin/entrypoint
-COPY docker/foxglove_bridge.sh    /usr/local/bin/foxglove_bridge
-COPY docker/foxglove_compression.py /usr/local/bin/foxglove_compression
-COPY docker/foxglove_watchdog.py  /usr/local/bin/foxglove_watchdog
-COPY docker/joy.sh                /usr/local/bin/joy
-COPY docker/joy_centring.py       /usr/local/bin/joy_centring
-COPY docker/calibrator.sh         /usr/local/bin/calibrator
-COPY docker/decompress_stereo.py  /usr/local/bin/decompress_stereo
+COPY images/ros2/docker/entrypoint.sh         /usr/local/bin/entrypoint
+COPY images/ros2/docker/foxglove_bridge.sh    /usr/local/bin/foxglove_bridge
+COPY images/ros2/docker/foxglove_compression.py /usr/local/bin/foxglove_compression
+COPY images/ros2/docker/foxglove_watchdog.py  /usr/local/bin/foxglove_watchdog
+COPY images/ros2/docker/joy.sh                /usr/local/bin/joy
+COPY images/ros2/docker/joy_centring.py       /usr/local/bin/joy_centring
+COPY images/ros2/docker/calibrator.sh         /usr/local/bin/calibrator
+COPY images/ros2/docker/decompress_stereo.py  /usr/local/bin/decompress_stereo
 RUN chmod 0755 \
         /usr/local/bin/entrypoint \
         /usr/local/bin/foxglove_bridge \
@@ -89,6 +92,14 @@ RUN chmod 0755 \
         /usr/local/bin/joy_centring \
         /usr/local/bin/calibrator \
         /usr/local/bin/decompress_stereo
+
+COPY vehicle/description /opt/ovcs/description
+# The description as the `ovcs_description` package, which the
+# `package://` mesh URIs name; foxglove_bridge.sh puts the prefix on
+# AMENT_PREFIX_PATH.
+RUN mkdir -p /opt/ovcs/ament/share/ament_index/resource_index/packages \
+    && touch /opt/ovcs/ament/share/ament_index/resource_index/packages/ovcs_description \
+    && ln -s /opt/ovcs/description /opt/ovcs/ament/share/ovcs_description
 
 ENTRYPOINT ["/usr/local/bin/entrypoint"]
 # Default CMD idles so `docker compose up ros2` keeps the container

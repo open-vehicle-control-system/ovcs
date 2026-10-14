@@ -86,11 +86,11 @@ A vehicle with a ROS compute node or a simulator model adds three directories be
 ```text
 vehicles/ovcs_mini/
   nav2/                          nav2.yaml + behaviour trees: baked into the compute node, mounted by the local stacks
-  description/                   the URDF/xacro model and simulation.yaml, mounted into the simulator
+  description/                   the xacro model, its meshes and simulation.yaml, and the URDF expanded from them
   foxglove/                      Foxglove layouts for the vehicle's topics
 ```
 
-`./ovcs compute push <vehicle> <fleet>` deploys the compute node with your vehicle's `nav2/`; `OVCS_VEHICLE=<vehicle>` in `compose/local/.env` selects it for the local stacks. See [`compose/README.md`](../compose/README.md#what-comes-from-your-vehicle).
+`./ovcs compute push <vehicle> <fleet>` deploys the compute node with your vehicle's `nav2/`, its expanded `description/<vehicle>.urdf` and its meshes; `OVCS_VEHICLE=<vehicle>` in `compose/local/.env` selects it for the local stacks. `mise run urdf` expands the URDF; the model names its meshes under a `mesh_uri` xacro argument, which the framework sets to `package://ovcs_description/meshes`, the scheme Foxglove fetches through `foxglove_bridge`. See [`compose/README.md`](../compose/README.md#what-comes-from-your-vehicle).
 
 ### Why the vehicle depends on the firmwares
 

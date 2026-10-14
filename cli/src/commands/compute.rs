@@ -19,6 +19,10 @@ use crate::vehicles::{self, Vehicle};
 
 const REGISTRY: &str = "ghcr.io/open-vehicle-control-system/ovcs";
 
+/// The framework images that carry the vehicle's files, so that a release
+/// on published images builds a layer of the vehicle's on each.
+const VEHICLE_LAYERS: &[&str] = &["nav2", "ros2"];
+
 /// Keyfiles hold PSKs and are installed on the host by hand, never pushed.
 const NOT_STAGED: &[&str] = &["host"];
 
@@ -229,7 +233,9 @@ fn stage_into(vehicle: &Vehicle, destination: &Path, images: &Images) -> Result<
             ui::sub("framework images built from this checkout");
         }
         Images::Published(tag) => {
-            check_published(&format!("{REGISTRY}/nav2:{tag}"))?;
+            for name in VEHICLE_LAYERS {
+                check_published(&format!("{REGISTRY}/{name}:{tag}"))?;
+            }
             let compose = fs::read_to_string(compute.join("docker-compose.yml"))?;
             fs::write(
                 destination.join("docker-compose.yml"),
@@ -240,12 +246,12 @@ fn stage_into(vehicle: &Vehicle, destination: &Path, images: &Images) -> Result<
                 destination.join(".dockerignore"),
             )?;
             fs::create_dir_all(destination.join("vehicle"))?;
-            fs::write(
-                destination.join("vehicle/Dockerfile"),
-                format!(
-                    "FROM {REGISTRY}/nav2:{tag}\nCOPY nav2 /opt/ovcs/config\nCOPY description /opt/ovcs/description\n"
-                ),
-            )?;
+            for name in VEHICLE_LAYERS {
+                fs::write(
+                    destination.join(format!("vehicle/{name}.Dockerfile")),
+                    vehicle_layer(name, tag),
+                )?;
+            }
             ui::sub(&format!("framework images {REGISTRY}/*:{tag}"));
         }
     }
@@ -260,23 +266,55 @@ fn stage_into(vehicle: &Vehicle, destination: &Path, images: &Images) -> Result<
         "URDF from vehicles/{}/description/{}.urdf",
         vehicle.dir, vehicle.dir
     ));
+    let meshes = vehicle.path.join("description/meshes");
+    if meshes.is_dir() {
+        copy_tree(&meshes, &destination.join("vehicle/description/meshes"))?;
+        ui::sub(&format!(
+            "meshes from vehicles/{}/description/meshes",
+            vehicle.dir
+        ));
+    }
     Ok(())
 }
 
+/// The vehicle's files on top of the published image `name`, which has
+/// them where its own Dockerfile COPYs them from `vehicle/`.
+fn vehicle_layer(name: &str, tag: &str) -> String {
+    let config = if name == "nav2" {
+        "COPY nav2 /opt/ovcs/config\n"
+    } else {
+        ""
+    };
+    format!("FROM {REGISTRY}/{name}:{tag}\n{config}COPY description /opt/ovcs/description\n")
+}
+
 /// The compute compose file with each framework `build:` replaced by its
-/// published image, and Nav2 built from the vehicle's layer on top of it.
+/// published image, and the images that carry the vehicle's files built
+/// from the vehicle's layer on top of theirs.
 fn published_compose(compose: &str, tag: &str) -> Result<String> {
-    let nav2 =
-        Regex::new(r"(?m)^( +)build:\n +context: \.\n +dockerfile: images/nav2/Dockerfile\n")?;
-    if !nav2.is_match(compose) {
-        bail!("compose/compute/docker-compose.yml: the nav2 build block is not recognised");
+    let layered = Regex::new(
+        r"(?m)^( +)build:\n +context: \.\n +dockerfile: images/([a-z0-9-]+)/Dockerfile\n",
+    )?;
+    let mut names: Vec<&str> = layered
+        .captures_iter(compose)
+        .map(|captures| captures.get(2).unwrap().as_str())
+        .collect();
+    names.sort_unstable();
+    if names != VEHICLE_LAYERS {
+        bail!(
+            "compose/compute/docker-compose.yml: the source-root builds are {names:?}, not {VEHICLE_LAYERS:?}"
+        );
     }
-    let compose = nav2.replace(compose, "${1}build: ./vehicle\n");
+    let compose = layered.replace_all(
+        compose,
+        "${1}build:\n${1}  context: ./vehicle\n${1}  dockerfile: ${2}.Dockerfile\n",
+    );
     let image = Regex::new(r"(?m)^( +)build: \./images/([a-z0-9-]+)$")?;
     let compose = image.replace_all(&compose, format!("${{1}}image: {REGISTRY}/${{2}}:{tag}"));
     if compose
         .lines()
-        .any(|line| line.trim_start().starts_with("build:") && line.trim() != "build: ./vehicle")
+        .map(str::trim_start)
+        .any(|line| line.starts_with("build: ./images/") || line.starts_with("dockerfile: images/"))
     {
         bail!("compose/compute/docker-compose.yml: a build: has no published image");
     }
@@ -323,18 +361,18 @@ mod tests {
         let compose = fs::read_to_string(root.join("compose/compute/docker-compose.yml")).unwrap();
         let published = published_compose(&compose, "sha-abc1234").unwrap();
 
-        for name in [
-            "wifi-firmware",
-            "wifi-ap-radio",
-            "bridge-no-nat",
-            "ntp",
-            "ros2",
-        ] {
+        for name in ["wifi-firmware", "wifi-ap-radio", "bridge-no-nat", "ntp"] {
             assert!(published.contains(&format!("image: {REGISTRY}/{name}:sha-abc1234")));
         }
-        assert!(published.contains("build: ./vehicle\n"));
+        for name in VEHICLE_LAYERS {
+            assert!(published.contains(&format!(
+                "context: ./vehicle\n      dockerfile: {name}.Dockerfile\n"
+            )));
+        }
         assert!(!published
             .lines()
-            .any(|line| line.trim_start().starts_with("build: ./images")));
+            .map(str::trim_start)
+            .any(|line| line.starts_with("build: ./images")
+                || line.starts_with("dockerfile: images/")));
     }
 }

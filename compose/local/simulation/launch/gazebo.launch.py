@@ -120,7 +120,16 @@ def spawn(context):
     # parse the expanded URDF as YAML and fails on the first colon in
     # the XML, with an error that says nothing about xacro.
     robot_description = ParameterValue(
-        Command(["xacro ", os.path.join(vehicle_dir, f"{vehicle}.urdf.xacro")]),
+        # The meshes as foxglove_bridge serves them, see
+        # scripts/expand_urdf.sh; Gazebo finds the package through
+        # GZ_SIM_RESOURCE_PATH.
+        Command(
+            [
+                "xacro ",
+                os.path.join(vehicle_dir, f"{vehicle}.urdf.xacro"),
+                " mesh_uri:=package://ovcs_description/meshes",
+            ]
+        ),
         value_type=str,
     )
 

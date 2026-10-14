@@ -107,20 +107,15 @@ defmodule RosBridge.Publishers.Odometry do
   alias Ros2.StdMsgs.Msg.Header
   alias Ros2.Tf2Msgs.Msg.TFMessage
   alias RosBridge.Publishers.Odometry.State
-  alias RosBridge.Timing
+  alias RosBridge.{Timing, VehicleMotion}
 
   require Logger
 
-  @frame_name "vehicle_motion"
   @default_topic "odom"
   @default_stale_after_ms 300
   # A longer interval means the stream was interrupted; the path across
   # the gap is unknown, so the step is dropped rather than integrated.
   @max_step_s 0.5
-  # The frame's distance signal is 16 bits unsigned at 1 mm per count.
-  @distance_wrap_m 65.536
-  # A larger step is a restarted counter, not distance rolled.
-  @max_distance_step_m 0.5
 
   @default_pose_variance [1.0e-4, 1.0e-4, 1.0e6, 1.0e6, 1.0e6, 3.0e-4]
   # No slip: the only sideways speed is the turn's, ω · base_offset.
@@ -147,7 +142,7 @@ defmodule RosBridge.Publishers.Odometry do
       twist_covariance: diagonal(Keyword.get(opts, :twist_variance, @default_twist_variance))
     }
 
-    :ok = Receiver.subscribe(self(), :ovcs, @frame_name)
+    :ok = Receiver.subscribe(self(), :ovcs, VehicleMotion.frame_name())
     driver.register_listener(self())
 
     Logger.info(
@@ -159,7 +154,7 @@ defmodule RosBridge.Publishers.Odometry do
   end
 
   @impl GenServer
-  def handle_info({:handle_frame, %Frame{name: @frame_name, signals: signals}}, state) do
+  def handle_info({:handle_frame, %Frame{name: "vehicle_motion", signals: signals}}, state) do
     %{
       "speed" => %Signal{value: speed},
       "steering_angle" => %Signal{value: steering_angle},
@@ -251,16 +246,10 @@ defmodule RosBridge.Publishers.Odometry do
          _elapsed_s
        )
        when is_float(previous_distance_m) and is_float(distance_m) do
-    step_m = unwrap_distance_step(distance_m - previous_distance_m)
-    if abs(step_m) <= @max_distance_step_m, do: step_m
+    VehicleMotion.distance_step(previous_distance_m, distance_m)
   end
 
   defp step_metres(state, _sample, elapsed_s), do: state.speed * elapsed_s
-
-  defp unwrap_distance_step(delta_m) do
-    half_wrap_m = @distance_wrap_m / 2
-    delta_m - @distance_wrap_m * Float.floor((delta_m + half_wrap_m) / @distance_wrap_m)
-  end
 
   defp step_seconds(nil, _now_ms), do: nil
   defp step_seconds(last_ms, now_ms), do: (now_ms - last_ms) / 1000
