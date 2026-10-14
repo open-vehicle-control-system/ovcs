@@ -67,7 +67,7 @@ defmodule RosBridge.Simulator.SimulatedComponents.OVCS.GenericController do
   end
 
   @impl RosBridge.Simulator.SimulatedComponent
-  def step(state, vehicle, dt_s, _now_ms) do
+  def report(state, vehicle, dt_s, _now_ms) do
     case state.pulse do
       nil ->
         {state, []}
