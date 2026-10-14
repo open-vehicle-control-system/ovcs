@@ -45,13 +45,23 @@ pub fn images(tag: Option<String>, build: bool) -> Result<Images> {
     }
 }
 
-pub fn stage(vehicle: Option<String>, out: String, images: Images) -> Result<()> {
+pub fn stage(vehicle: Option<String>, out: Option<String>, images: Images) -> Result<()> {
     let vehicle = resolve_vehicle(vehicle)?;
-    let destination = Path::new(&out);
-    if destination.exists() && fs::read_dir(destination)?.next().is_some() {
-        bail!("{} is not empty", destination.display());
+    let (destination, created) = match out {
+        Some(out) => {
+            let destination = PathBuf::from(out);
+            if destination.exists() && fs::read_dir(&destination)?.next().is_some() {
+                bail!("{} is not empty", destination.display());
+            }
+            (destination, false)
+        }
+        None => (private_staging_dir(&vehicle.dir)?, true),
+    };
+    let staged = stage_into(&vehicle, &destination, &images);
+    if staged.is_err() && created {
+        let _ = fs::remove_dir_all(&destination);
     }
-    stage_into(&vehicle, destination, &images)?;
+    staged?;
     ui::sub_ok(&format!(
         "staged {} into {}",
         vehicle.dir,
@@ -161,7 +171,9 @@ fn main_tag() -> Result<String> {
         .success();
     if !unchanged {
         bail!(
-            "the image sources ({}) differ from origin/main at {}; pass --build",
+            "the image sources ({}) differ from the images published at {}, the latest your \
+             origin/main knows of: `git fetch origin` if it is behind, or pass --build to build \
+             them from this checkout",
             IMAGE_SOURCES.join(", "),
             &published[..7]
         );

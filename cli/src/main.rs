@@ -164,9 +164,9 @@ enum ComputeAction {
     /// Write the compute node's balena source root to a directory
     Stage {
         vehicle: Option<String>,
-        /// Output directory (must be empty or absent)
+        /// Output directory, empty or absent [default: a new private temporary directory]
         #[arg(short = 'o', long)]
-        out: String,
+        out: Option<String>,
         #[command(flatten)]
         images: ImageArgs,
     },
