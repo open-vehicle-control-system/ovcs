@@ -21,13 +21,12 @@ defmodule OvcsMini do
   # Read off the URDF, which `mise run urdf` expands from the xacro.
   @impl OvcsVehicle
   def geometry do
-    {front_x, kingpin_left, _} = URDF.joint!(@urdf, "front_left_steering_joint").xyz
-    {_, kingpin_right, _} = URDF.joint!(@urdf, "front_right_steering_joint").xyz
+    {front_x, _, _} = URDF.joint!(@urdf, "front_left_steering_joint").xyz
     {_, inner_wheel_limit} = URDF.joint!(@urdf, "front_left_steering_joint").limit
     {rear_x, rear_left, _} = URDF.joint!(@urdf, "rear_left_wheel_joint").xyz
     {_, rear_right, _} = URDF.joint!(@urdf, "rear_right_wheel_joint").xyz
     wheelbase = front_x - rear_x
-    turning_radius = wheelbase / :math.tan(inner_wheel_limit) + (kingpin_left - kingpin_right) / 2
+    turning_radius = wheelbase / :math.tan(inner_wheel_limit) + kingpin_width() / 2
 
     %{
       wheelbase: wheelbase,
@@ -36,6 +35,13 @@ defmodule OvcsMini do
       # The bicycle model's angle at the inner wheel's limit.
       steering_limit: :math.atan(wheelbase / turning_radius)
     }
+  end
+
+  # The steering pivots' spacing.
+  defp kingpin_width do
+    {_, left, _} = URDF.joint!(@urdf, "front_left_steering_joint").xyz
+    {_, right, _} = URDF.joint!(@urdf, "front_right_steering_joint").xyz
+    left - right
   end
 
   @impl OvcsVehicle
@@ -139,7 +145,8 @@ defmodule OvcsMini do
         # publishes /odom and odom -> base_link, which is everything
         # Nav2 needs in the map-less setup.
         {:odometry_publisher,
-         driver: OvcsDrivers.Imu.Dummy, base_ahead_of_rear_axle: base_ahead_of_rear_axle()}
+         driver: OvcsDrivers.Imu.Dummy, base_ahead_of_rear_axle: base_ahead_of_rear_axle()},
+        ackermann_joint_states()
       ]
     }
 
@@ -258,9 +265,21 @@ defmodule OvcsMini do
         # A02YYUW ultrasonic sensors on the rear bumper, each on a CP2104
         # found by its serial number.
         rear_ultrasound(:left, A02YYUW.UART, serial_number: "01D9EBFA"),
-        rear_ultrasound(:right, A02YYUW.UART, serial_number: "02PW2EBP")
+        rear_ultrasound(:right, A02YYUW.UART, serial_number: "02PW2EBP"),
+        ackermann_joint_states()
       ]
     }
+
+  # The wheels robot_state_publisher places; Gazebo publishes them in simulation.
+  defp ackermann_joint_states do
+    {:ackermann_joint_states,
+     steering_joints: {"front_left_steering_joint", "front_right_steering_joint"},
+     wheel_joints:
+       ~w(front_left_wheel_joint front_right_wheel_joint rear_left_wheel_joint rear_right_wheel_joint),
+     wheelbase: geometry().wheelbase,
+     kingpin_width: kingpin_width(),
+     wheel_radius: geometry().wheel_radius}
+  end
 
   defp rear_ultrasound(side, driver, driver_opts) do
     {:range_publisher,
