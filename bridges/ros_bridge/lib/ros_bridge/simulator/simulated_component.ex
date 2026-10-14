@@ -46,15 +46,15 @@ defmodule RosBridge.Simulator.SimulatedComponent do
   @callback actuations(state :: term(), Vehicle.t(), now_ms :: integer()) :: [actuation()]
 
   @doc """
-  Reports the vehicle's motion over the last `dt_s` as the hardware it
+  Reports the vehicle's motion over the last tick as the hardware it
   stands in for would: the new state and the signals to emit, counters
   from `wheel_turns_step` and rates from `measured_speed_m_s`; see
   `RosBridge.Simulator.Vehicle`.
   """
-  @callback report(state :: term(), Vehicle.t(), dt_s :: float(), now_ms :: integer()) ::
+  @callback report(state :: term(), Vehicle.t(), now_ms :: integer()) ::
               {term(), [update()]}
 
-  @optional_callbacks handle_frame: 4, actuations: 3, report: 4
+  @optional_callbacks handle_frame: 4, actuations: 3, report: 3
 
   @typedoc "A running simulated component, as `RosBridge.Simulator.Hardware` holds it."
   @type running :: %{module: module(), state: term(), received: MapSet.t(frame())}
@@ -103,9 +103,9 @@ defmodule RosBridge.Simulator.SimulatedComponent do
   end
 
   @doc "Emits what the component reports, if it reports anything."
-  def report(running, vehicle, dt_s, now_ms) do
-    if function_exported?(running.module, :report, 4) do
-      {state, updates} = running.module.report(running.state, vehicle, dt_s, now_ms)
+  def report(running, vehicle, now_ms) do
+    if function_exported?(running.module, :report, 3) do
+      {state, updates} = running.module.report(running.state, vehicle, now_ms)
 
       Enum.each(updates, fn {network, frame_name, signals} ->
         :ok = Cantastic.Emitter.update(network, frame_name, &Map.merge(&1, signals))

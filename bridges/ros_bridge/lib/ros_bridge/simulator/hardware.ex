@@ -87,7 +87,7 @@ defmodule RosBridge.Simulator.Hardware do
 
     wheel_turns_step = wheel_turns_step(state.wheel_turns, state.wheel_turns_read)
     vehicle = Vehicle.step(state.vehicle, actuations, dt_s, wheel_turns_step)
-    components = Enum.map(state.components, &SimulatedComponent.report(&1, vehicle, dt_s, now_ms))
+    components = Enum.map(state.components, &SimulatedComponent.report(&1, vehicle, now_ms))
     publish_drive(vehicle)
 
     {:noreply,

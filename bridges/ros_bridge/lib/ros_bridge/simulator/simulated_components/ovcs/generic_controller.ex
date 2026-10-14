@@ -35,7 +35,7 @@ defmodule RosBridge.Simulator.SimulatedComponents.OVCS.GenericController do
                 |> Map.new(fn pin -> {"digital_pin#{pin}_enabled", false} end)
                 |> Map.put("filler0", 0)
   # The controller reports zero once no edge has arrived for this long.
-  @pulse_timeout_s 2.0
+  @pulse_timeout_ms 2_000
   @counter_range 65_536
 
   @impl RosBridge.Simulator.SimulatedComponent
@@ -50,7 +50,7 @@ defmodule RosBridge.Simulator.SimulatedComponents.OVCS.GenericController do
       pulse_counter: "#{name}_pulse_counter_status",
       pulse: Map.get(opts, :pulse),
       pulses: 0.0,
-      since_pulse_s: nil
+      last_pulse_ms: nil
     }
 
     emitted =
@@ -59,7 +59,7 @@ defmodule RosBridge.Simulator.SimulatedComponents.OVCS.GenericController do
         {state.network, state.pin_status, pin_status(Map.get(opts, :analog_pins, %{}))}
       ] ++
         if(state.pulse,
-          do: [{state.network, state.pulse_counter, pulse_counter(state, 0.0)}],
+          do: [{state.network, state.pulse_counter, pulse_counter(state, 0.0, 0)}],
           else: []
         )
 
@@ -67,7 +67,7 @@ defmodule RosBridge.Simulator.SimulatedComponents.OVCS.GenericController do
   end
 
   @impl RosBridge.Simulator.SimulatedComponent
-  def report(state, vehicle, dt_s, _now_ms) do
+  def report(state, vehicle, now_ms) do
     case state.pulse do
       nil ->
         {state, []}
@@ -75,32 +75,28 @@ defmodule RosBridge.Simulator.SimulatedComponents.OVCS.GenericController do
       pulse ->
         pulses_per_wheel_turn = pulse.shaft_turns_per_wheel_turn * pulse.pulses_per_revolution
         step_pulses = abs(vehicle.wheel_turns_step) * pulses_per_wheel_turn
-        state = count(state, step_pulses, dt_s)
+        state = count(state, step_pulses, now_ms)
 
         frequency =
           abs(vehicle.measured_speed_m_s) / (2 * :math.pi() * vehicle.wheel_radius_m) *
             pulses_per_wheel_turn
 
-        {state, [{state.network, state.pulse_counter, pulse_counter(state, frequency)}]}
+        {state, [{state.network, state.pulse_counter, pulse_counter(state, frequency, now_ms)}]}
     end
   end
 
-  defp count(state, step_pulses, dt_s) do
+  defp count(state, step_pulses, now_ms) do
     pulses = state.pulses + step_pulses
 
-    since_pulse_s =
-      cond do
-        floor(pulses) > floor(state.pulses) -> 0.0
-        is_nil(state.since_pulse_s) -> nil
-        true -> state.since_pulse_s + dt_s
-      end
+    last_pulse_ms =
+      if floor(pulses) > floor(state.pulses), do: now_ms, else: state.last_pulse_ms
 
-    %{state | pulses: pulses, since_pulse_s: since_pulse_s}
+    %{state | pulses: pulses, last_pulse_ms: last_pulse_ms}
   end
 
-  defp pulse_counter(state, frequency) do
+  defp pulse_counter(state, frequency, now_ms) do
     reported =
-      if is_nil(state.since_pulse_s) or state.since_pulse_s > @pulse_timeout_s,
+      if is_nil(state.last_pulse_ms) or now_ms - state.last_pulse_ms > @pulse_timeout_ms,
         do: 0.0,
         else: frequency
 
