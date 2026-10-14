@@ -79,9 +79,10 @@ pub fn run(vehicle_arg: Option<String>, no_addons: bool) -> Result<()> {
             "ovcs",
             // BEAM disables `IO.ANSI` when stdout is piped; force it back
             // on so Logger emits coloured `[info]` / `[debug]` etc. into
-            // our line-prefixing pipe.
+            // our line-prefixing pipe. No scheduler busy-wait, as in the
+            // firmware's vm.args: on a many-core host the idle schedulers spin.
             "--erl",
-            "-elixir ansi_enabled true",
+            "-elixir ansi_enabled true +sbwt none +sbwtdcpu none +sbwtdio none",
             "-S",
             "mix",
             "run",
