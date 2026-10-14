@@ -73,7 +73,7 @@ defmodule RosBridge.Publishers.StaticTransform do
 
   @impl GenServer
   def handle_info(:tick, state) do
-    stamp = Timing.time_message_for(System.monotonic_time(:nanosecond))
+    stamp = Timing.stamp_from_monotonic(System.monotonic_time(:nanosecond))
 
     message = %TFMessage{
       transforms:

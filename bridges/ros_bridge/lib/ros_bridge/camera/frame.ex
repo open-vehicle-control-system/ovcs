@@ -11,7 +11,7 @@ defmodule RosBridge.Camera.Frame do
       Erlang monotonic timescale (`System.monotonic_time/1`). Drivers
       backed by hardware (libcamera) read the sensor's
       `SensorTimestamp`, which is kernel `CLOCK_MONOTONIC`, and so
-      must convert with `RosBridge.Timing.from_kernel_monotonic/1`
+      must convert with `RosBridge.Timing.monotonic_from_kernel/1`
       before populating this field — the two clocks differ by ~18
       years. See `RosBridge.Timing`.
     * `:jpeg` — the JPEG-compressed image bytes.

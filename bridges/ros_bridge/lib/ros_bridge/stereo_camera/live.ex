@@ -103,7 +103,7 @@ defmodule RosBridge.StereoCamera.Live do
         [sync_status(state, live_metadata, now_ms)]
 
     message = %DiagnosticArray{
-      header: %Header{stamp: Timing.time_message_for(System.monotonic_time(:nanosecond))},
+      header: %Header{stamp: Timing.stamp_from_monotonic(System.monotonic_time(:nanosecond))},
       status: statuses
     }
 

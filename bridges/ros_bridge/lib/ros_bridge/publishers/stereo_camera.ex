@@ -228,7 +228,7 @@ defmodule RosBridge.Publishers.StereoCamera do
     case Map.fetch(state.sides, label) do
       {:ok, side} ->
         header = %Header{
-          stamp: Timing.time_message_for(frame.capture_ns),
+          stamp: Timing.stamp_from_monotonic(frame.capture_ns),
           frame_id: side.frame_id
         }
 
@@ -367,7 +367,7 @@ defmodule RosBridge.Publishers.StereoCamera do
 
   defp publish_stereo(state, %Result{} = result) do
     header = %Header{
-      stamp: Timing.time_message_for(result.capture_ns),
+      stamp: Timing.stamp_from_monotonic(result.capture_ns),
       frame_id: state.stereo_frame_id
     }
 

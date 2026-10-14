@@ -228,7 +228,7 @@ defmodule RosBridge.Publishers.Detections do
   def handle_info(_message, state), do: {:noreply, state}
 
   defp publish(detections, %Result{} = result, state) do
-    stamp = Timing.time_message_for(result.capture_ns)
+    stamp = Timing.stamp_from_monotonic(result.capture_ns)
     header = %Header{stamp: stamp, frame_id: state.frame_id}
 
     positioned =

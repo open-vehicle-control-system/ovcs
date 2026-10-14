@@ -106,18 +106,18 @@ ROS nodes get this from the parameter. The Elixir bridge is not a ROS node, and 
 
 ### The bridge tracks an offset, not the clock
 
-Each `/clock` sample gives a simulator time and, read alongside it, a local monotonic time; `RosBridge.Clock` stores the difference in `:atomics` for lock-free reads. `RosBridge.Timing.time_message_for/1` projects any monotonic capture time through it:
+Each `/clock` sample gives a simulator time and, read alongside it, a local monotonic time; `RosBridge.Clock` stores the difference in `:atomics` for lock-free reads. `RosBridge.Timing.stamp_from_monotonic/1` projects any monotonic capture time through it:
 
 ```text
 /clock sample t_sim ─► RosBridge.Clock: offset = t_sim − t_mono ─► :atomics
 driver frame (capture_ns, Erlang monotonic) ─► Timing: capture_ns + offset ─► builtin_interfaces/Time
 ```
 
-Drivers never see simulator time: camera frames carry an Erlang-monotonic `capture_ns`, lidar and rangefinder samples carry system time, and `Timing` is the one place either is converted. `RosBridge.Camera.Zenoh` converts the other way, through `Timing.from_ros_time/1`: a simulated frame's `capture_ns` is Gazebo's render stamp, so both sides of a stereo pair carry the same time and pair exactly. Stamped on arrival instead, they arrive tens of milliseconds apart, enough to pair a frame with its neighbour's, which reads as phantom depth once the car moves. Without a `/clock` the offset is `nil` and `Timing` stamps wall clock, so the vehicle path is untouched.
+Drivers never see simulator time: camera frames carry an Erlang-monotonic `capture_ns`, lidar and rangefinder samples carry system time, and `Timing` is the one place either is converted. `RosBridge.Camera.Zenoh` converts the other way, through `Timing.monotonic_from_ros_time/1`: a simulated frame's `capture_ns` is Gazebo's render stamp, so both sides of a stereo pair carry the same time and pair exactly. Stamped on arrival instead, they arrive tens of milliseconds apart, enough to pair a frame with its neighbour's, which reads as phantom depth once the car moves. Without a `/clock` the offset is `nil` and `Timing` stamps wall clock, so the vehicle path is untouched.
 
 ### Two monotonic clocks, not one
 
-Erlang's monotonic time is not the kernel's `CLOCK_MONOTONIC`: the VM picks its own zero, about 5.8e17 ns away. libcamera's `SensorTimestamp` is kernel-monotonic. Project one clock's timestamp with the other's offset and it lands decades off, and `builtin_interfaces/Time.sec` is an `int32`, so it wraps negative. `Timing.from_kernel_monotonic/1` converts once, at the driver boundary.
+Erlang's monotonic time is not the kernel's `CLOCK_MONOTONIC`: the VM picks its own zero, about 5.8e17 ns away. libcamera's `SensorTimestamp` is kernel-monotonic. Project one clock's timestamp with the other's offset and it lands decades off, and `builtin_interfaces/Time.sec` is an `int32`, so it wraps negative. `Timing.monotonic_from_kernel/1` converts once, at the driver boundary.
 
 ### Why `Clock.init/1` blocks
 

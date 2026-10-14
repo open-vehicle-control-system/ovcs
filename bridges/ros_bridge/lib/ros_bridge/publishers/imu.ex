@@ -109,7 +109,7 @@ defmodule RosBridge.Publishers.Imu do
   defp publish_imu(%State{} = state) do
     message = %Imu{
       header: %Header{
-        stamp: Timing.time_message_for(System.monotonic_time(:nanosecond)),
+        stamp: Timing.stamp_from_monotonic(System.monotonic_time(:nanosecond)),
         frame_id: state.frame_id
       },
       orientation: state.latest_orientation,
