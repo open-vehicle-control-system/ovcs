@@ -12,7 +12,7 @@
         "flipHorizontal": false,
         "flipVertical": false
       },
-      "followTf": "stereo_left",
+      "followTf": "stereo_left_optical",
       "scene": {},
       "transforms": {},
       "topics": {},
@@ -31,7 +31,7 @@
         "flipHorizontal": false,
         "flipVertical": false
       },
-      "followTf": "stereo_right",
+      "followTf": "stereo_right_optical",
       "scene": {},
       "transforms": {},
       "topics": {},
@@ -55,7 +55,7 @@
         "colorMode": "colormap",
         "colorMap": "turbo"
       },
-      "followTf": "stereo_left",
+      "followTf": "stereo_left_optical",
       "scene": {},
       "transforms": {},
       "topics": {},

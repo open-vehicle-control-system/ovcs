@@ -12,8 +12,8 @@
 
     wheelbase   324 mm
     track       296 mm (centre-to-centre in this model; UNVERIFIED)
-    wheel radius 52.2 mm, as `OvcsMini.geometry/0` (the catalogue's
-                109.5 mm tyre diameter gives 54.75 mm)
+    wheel radius 52.2 mm (the catalogue's 109.5 mm tyre diameter
+                gives 54.75 mm)
     stock envelope 568 x 296 x 193 mm (not the Baja shell)
     mass        2.41 kg (UNVERIFIED with battery and OVCS equipment)
 
@@ -32,6 +32,12 @@
   REP-103 orientation: x forward, y left, z up. Placing it at ground
   level rather than at the chassis makes sensor offsets (the stereo
   bar's height above the ground) read directly off the vehicle.
+
+  ## The expanded URDF
+
+  `OvcsMini` reads its geometry and the sensor mounts its ROS bridges
+  publish from `ovcs_mini.urdf`, expanded from this file. After an
+  edit, run `mise run urdf`; CI fails while the two differ.
 -->
 <robot name="ovcs_mini" xmlns:xacro="http://www.ros.org/wiki/xacro">
 
@@ -166,6 +172,7 @@
 
          baseline  90 mm, straddling the centreline
          position  120 mm behind the front axle
+         height    185 mm, the lens centres above the ground
 
        The front axle is half a wheelbase ahead of base_link, so the
        bar sits at 162 - 120 = 42 mm forward of it — not the 100 mm
@@ -184,8 +191,6 @@
        rectification, and it is what makes the simulated depth behave
        like the real one: f*B = 34.1, so the near clip lands at
        34.1 / 96 = 0.36 m. -->
-  <!-- TODO: still unmeasured. Lens centre height above the ground. -->
-
   <!-- Left is +y in REP-103. -->
   <xacro:sim_camera name="stereo_left"  x="${camera_x}" y="${baseline / 2}"
                     z="${camera_z}" topic="stereo/left/image_raw"
@@ -200,9 +205,9 @@
        only orientation is consumed. 100 Hz is the BNO085's cadence. -->
   <xacro:sim_imu name="imu" x="0" y="0" z="0.05" rate="100" />
 
-  <!-- Mounts as the ROS bridge's static transforms have them; geometry_test.exs
-       checks them. The lidar's row stops a step short of +π, which would
-       repeat its first ray. -->
+  <!-- The lidar's row stops a step short of +π, which would repeat its
+       first ray. Its zero angle is taken as forward, not yet checked
+       against an object in front. -->
   <xacro:sim_ray name="lidar" x="-0.137" y="0" z="0.205" yaw="0"
                  topic="scan_raw" samples="500"
                  min_angle="${-pi}" max_angle="${pi - 2 * pi / 500}" min_range="0.05" max_range="12.0" rate="10" />

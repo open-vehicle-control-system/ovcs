@@ -1,19 +1,7 @@
 defmodule OvcsMini.GeometryTest do
   @moduledoc """
-  Keeps `OvcsMini.geometry/0` and the simulation model telling the same
-  story.
-
-  The vehicle's dimensions are declared twice and have to be: xacro
-  cannot read Elixir, and the simulator needs them at
-  model-generation time. Duplication is the price; this test is what
-  stops it being silent.
-
-  It is not a hypothetical. This model shipped with a wheel radius
-  wrong by a factor of two — it drove convincingly and reported
-  nonsense, and `/odom` could not catch it because the plugin's
-  arithmetic cancels the radius out. A comparison of the two
-  declarations catches that class of error in milliseconds, where the
-  simulator needs a full drive to.
+  Keeps the URDF `OvcsMini` reads in step with the xacro it is expanded
+  from, and every frame the car's bridges stamp placed on `base_link`.
   """
   use ExUnit.Case, async: true
 
@@ -37,33 +25,27 @@ defmodule OvcsMini.GeometryTest do
         No <xacro:property name="#{name}"> in #{@xacro}.
 
         Either it was renamed, or the property is now computed. Either
-        way this test cannot check it any more and needs updating —
-        do not delete the assertion, because that is the check that
-        keeps the two declarations honest.
+        way this test cannot check it any more and needs updating.
         """)
     end
   end
 
-  describe "geometry/0 agrees with the simulation model" do
+  describe "geometry/0, read off the URDF, matches the xacro" do
     for key <- [:wheelbase, :track, :wheel_radius, :steering_limit] do
       test "#{key}" do
         key = unquote(key)
-        declared = Map.fetch!(OvcsMini.geometry(), key)
+        read = Map.fetch!(OvcsMini.geometry(), key)
         modelled = xacro_property(to_string(key))
 
-        assert_in_delta declared,
+        assert_in_delta read,
                         modelled,
                         1.0e-9,
-                        "OvcsMini.geometry()[#{inspect(key)}] is #{declared}, " <>
-                          "but the xacro says #{modelled}. One of them is wrong; " <>
-                          "measure the vehicle rather than picking a side."
+                        "OvcsMini.geometry()[#{inspect(key)}] is #{read}, " <>
+                          "but the xacro says #{modelled}: `mise run urdf`."
       end
     end
 
-    test "every measured quantity is checked" do
-      # Guards against adding a field to geometry/0 and forgetting to
-      # cover it here, which would reintroduce exactly the silent
-      # duplication this file exists to prevent.
+    test "every quantity is checked" do
       assert MapSet.new(Map.keys(OvcsMini.geometry())) ==
                MapSet.new([:wheelbase, :track, :wheel_radius, :steering_limit])
     end
@@ -81,51 +63,35 @@ defmodule OvcsMini.GeometryTest do
     end
   end
 
-  describe "the simulated sensors sit where the ROS bridge's transforms put them" do
-    # `<xacro:sim_ray name="lidar" x="-0.137" y="0" z="0.205" yaw="0"`, the
-    # yaw either a number or `${radians(n)}`.
-    defp sim_ray(name) do
-      [_, x, y, z, yaw] =
-        Regex.run(
-          ~r/<xacro:sim_ray name="#{name}" x="([^"]+)" y="([^"]+)" z="([^"]+)"\s+yaw="([^"]+)"/,
-          File.read!(@xacro)
-        ) || flunk("No <xacro:sim_ray name=\"#{name}\"> in #{@xacro}.")
+  describe "the car's bridges place every frame they stamp" do
+    for firmware_id <- ["ros", "ros_perception"] do
+      test firmware_id do
+        %RosBridge.Config{components: components} =
+          OvcsMini.ros_bridge_config(:target, unquote(firmware_id))
 
-      yaw =
-        case Regex.run(~r/^\$\{radians\((-?[\d.]+)\)\}$/, yaw) do
-          [_, degrees] -> number(degrees) * :math.pi() / 180
-          nil -> number(yaw)
-        end
+        {:static_transforms, transforms: transforms} =
+          List.keyfind(components, :static_transforms, 0)
 
-      {number(x), number(y), number(z), yaw}
-    end
+        placed = MapSet.new(transforms, & &1.child)
+        stamped = stamped_frames(components)
 
-    defp number(text) do
-      {value, ""} = Float.parse(text)
-      value
-    end
-
-    defp transforms do
-      %RosBridge.Config{components: components} = OvcsMini.ros_bridge_config(:target, "ros")
-
-      {:static_transforms, transforms: transforms} =
-        List.keyfind(components, :static_transforms, 0)
-
-      Map.new(transforms, &{&1.child, &1})
-    end
-
-    for {ray, frame} <- [
-          {"lidar", "laser"},
-          {"ultrasound_rear_left", "ultrasound_rear_left"},
-          {"ultrasound_rear_right", "ultrasound_rear_right"}
-        ] do
-      test "#{ray}" do
-        {x, y, z, yaw} = sim_ray(unquote(ray))
-        %{translation: {tx, ty, tz}, rotation: {_qx, _qy, qz, qw}} = transforms()[unquote(frame)]
-
-        for {modelled, declared} <- [{x, tx}, {y, ty}, {z, tz}, {yaw, 2 * :math.atan2(qz, qw)}],
-            do: assert_in_delta(modelled, declared, 1.0e-6)
+        assert stamped != []
+        assert Enum.reject(stamped, &(&1 in placed)) == []
       end
+    end
+
+    # `frame_id` options, the stereo unit's per side, and the IMU
+    # publisher's default.
+    defp stamped_frames(components) do
+      for {component, opts} when is_list(opts) <- components,
+          frame <- [
+            opts[:frame_id],
+            opts[:left][:frame_id],
+            opts[:right][:frame_id],
+            component == :imu_publisher && "imu_link"
+          ],
+          frame,
+          do: frame
     end
   end
 
