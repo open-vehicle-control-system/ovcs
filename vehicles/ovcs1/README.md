@@ -26,15 +26,15 @@ entry).
 ## Quick start
 
 See the [main README](https://github.com/open-vehicle-control-system/ovcs#quick-start) and
-[Getting Started](https://ovcs.be/docs/getting_started). In short:
+[Getting Started](https://ovcs.be/docs/getting_started). In short, with the `ovcs` CLI on your `PATH`:
 
 ```sh
-../../ovcs run ovcs1                     # provision vcan + spawn one BEAM per firmware
-../../ovcs attach ovcs1                  # split-pane log + IEx TUI (another terminal)
-../../ovcs build ovcs1 vms               # build VMS firmware
-../../ovcs build ovcs1 infotainment
-../../ovcs build ovcs1 bridge-radio_control
-../../ovcs build ovcs1 bridge-ros
+ovcs run ovcs1                     # provision vcan + spawn one BEAM per firmware
+ovcs attach ovcs1                  # split-pane log + IEx TUI (another terminal)
+ovcs build ovcs1 vms               # build VMS firmware
+ovcs build ovcs1 infotainment
+ovcs build ovcs1 bridge-radio_control
+ovcs build ovcs1 bridge-ros
 ```
 
 Before the first build, copy `.env.exs.example` to `.env.exs` and fill

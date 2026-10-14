@@ -22,11 +22,13 @@ renders them on the head unit.
 
 ## Quick start
 
+With the framework's `ovcs` CLI on your `PATH` ([Getting Started](https://ovcs.be/docs/getting_started)):
+
 ```sh
-../../ovcs run obd2                      # provision vcan + spawn VMS + infotainment BEAMs
-../../ovcs attach obd2
-../../ovcs build obd2 vms
-../../ovcs build obd2 infotainment
+ovcs run obd2                      # provision vcan + spawn VMS + infotainment BEAMs
+ovcs attach obd2
+ovcs build obd2 vms
+ovcs build obd2 infotainment
 ```
 
 Before the first build, copy `.env.exs.example` to `.env.exs` (gitignored).

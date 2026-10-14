@@ -28,13 +28,15 @@ bridge has no CAN controller: it reaches the vehicle over Zenoh.
 
 ## Quick start
 
+With the framework's `ovcs` CLI on your `PATH` ([Getting Started](https://ovcs.be/docs/getting_started)):
+
 ```sh
-../../ovcs run ovcs_mini                 # provision vcan + spawn VMS + bridge BEAMs
-../../ovcs attach ovcs_mini
-../../ovcs build ovcs_mini vms
-../../ovcs build ovcs_mini bridge-radio_control
-../../ovcs build ovcs_mini bridge-ros
-../../ovcs build ovcs_mini bridge-ros_perception
+ovcs run ovcs_mini                 # provision vcan + spawn VMS + bridge BEAMs
+ovcs attach ovcs_mini
+ovcs build ovcs_mini vms
+ovcs build ovcs_mini bridge-radio_control
+ovcs build ovcs_mini bridge-ros
+ovcs build ovcs_mini bridge-ros_perception
 ```
 
 Before the first build, copy `.env.exs.example` to `.env.exs` (gitignored).
@@ -75,7 +77,7 @@ foxglove/                          — Foxglove layouts
 
 - **The wheels stall.** Each wheel joint's effort limit, `wheel_max_torque` in `description/ovcs_mini.urdf.xacro`, is what the simulated VESC's 10 A of motor current gives a wheel. Commanded at 0.3 m/s into `workshop.sdf`'s back wall, the wheels stalled, the simulated hardware held its command at 0.25 m/s, and the bridge's `/odom` stopped 2 mm short of the model.
 
-Deploy the compute node with `../../ovcs compute push ovcs_mini <fleet>`.
+Deploy the compute node with `ovcs compute push ovcs_mini <fleet>`.
 
 See [`docs/hardware.md`](https://ovcs.be/docs/hardware#ovcs-mini-hardware)
 for the RC-car hardware breakdown.
