@@ -50,6 +50,12 @@ defmodule OvcsVehicle.URDFTest do
     end
   end
 
+  test "refuses a frame the URDF does not have" do
+    assert_raise ArgumentError, ~r/camera_lnk is not a link in the URDF/, fn ->
+      URDF.static_transforms(@urdf, ["camera_lnk"])
+    end
+  end
+
   test "refuses a frame a moving joint places" do
     assert_raise ArgumentError, ~r/wheel_joint places wheel but is continuous/, fn ->
       URDF.static_transforms(@urdf, ["wheel"])

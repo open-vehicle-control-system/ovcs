@@ -65,11 +65,17 @@ defmodule OvcsVehicle.URDF do
   The fixed joints that place each of `frames` on the tree's root, one
   transform per joint, parents before children and each joint once.
 
-  Raises when a joint on the way moves: its transform is not static.
+  Raises when a frame is not in the URDF, or when a joint on the way
+  moves: its transform is not static.
   """
   @spec static_transforms(t(), [String.t()]) :: [transform()]
   def static_transforms(%{joints: joints}, frames) do
     by_child = Map.new(joints, fn {_name, joint} -> {joint.child, joint} end)
+    links = joints |> Map.values() |> Enum.flat_map(&[&1.parent, &1.child]) |> MapSet.new()
+
+    for frame <- frames,
+        frame not in links,
+        do: raise(ArgumentError, "#{frame} is not a link in the URDF")
 
     frames
     |> Enum.flat_map(&chain(by_child, &1, []))
