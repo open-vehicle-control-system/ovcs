@@ -1,10 +1,10 @@
 //! The compute node's balena release for a vehicle: `compose/compute/`
-//! plus the vehicle's Nav2 parameters, staged into one source root since
+//! plus the vehicle's Nav2 parameters and URDF, staged into one source root since
 //! balena needs every build context inside the pushed directory.
 //!
 //! By default the release pulls the framework images CI publishes from
-//! `main` when their sources change, and builds only the vehicle's Nav2
-//! layer; `--build` stages the image sources instead.
+//! `main` when their sources change, and builds only the vehicle's layer
+//! on the Nav2 image; `--build` stages the image sources instead.
 
 use anyhow::{bail, Context, Result};
 use regex::Regex;
@@ -204,6 +204,16 @@ fn stage_into(vehicle: &Vehicle, destination: &Path, images: &Images) -> Result<
             vehicle.dir
         );
     }
+    let urdf = vehicle
+        .path
+        .join(format!("description/{}.urdf", vehicle.dir));
+    if !urdf.is_file() {
+        bail!(
+            "{} has no description/{}.urdf: the compute node publishes the vehicle's frames from it",
+            vehicle.dir,
+            vehicle.dir
+        );
+    }
 
     ui::step(&format!("Staging the compute node for {}", vehicle.dir));
     fs::create_dir_all(destination)?;
@@ -232,7 +242,9 @@ fn stage_into(vehicle: &Vehicle, destination: &Path, images: &Images) -> Result<
             fs::create_dir_all(destination.join("vehicle"))?;
             fs::write(
                 destination.join("vehicle/Dockerfile"),
-                format!("FROM {REGISTRY}/nav2:{tag}\nCOPY nav2 /opt/ovcs/config\n"),
+                format!(
+                    "FROM {REGISTRY}/nav2:{tag}\nCOPY nav2 /opt/ovcs/config\nCOPY description /opt/ovcs/description\n"
+                ),
             )?;
             ui::sub(&format!("framework images {REGISTRY}/*:{tag}"));
         }
@@ -241,6 +253,12 @@ fn stage_into(vehicle: &Vehicle, destination: &Path, images: &Images) -> Result<
     ui::sub(&format!(
         "Nav2 parameters from vehicles/{}/nav2",
         vehicle.dir
+    ));
+    fs::create_dir_all(destination.join("vehicle/description"))?;
+    fs::copy(&urdf, destination.join("vehicle/description/robot.urdf"))?;
+    ui::sub(&format!(
+        "URDF from vehicles/{}/description/{}.urdf",
+        vehicle.dir, vehicle.dir
     ));
     Ok(())
 }

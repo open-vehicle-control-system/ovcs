@@ -35,9 +35,9 @@
 
   ## The expanded URDF
 
-  `OvcsMini` reads its geometry and the sensor mounts its ROS bridges
-  publish from `ovcs_mini.urdf`, expanded from this file. After an
-  edit, run `mise run urdf`; CI fails while the two differ.
+  `OvcsMini` reads its geometry from `ovcs_mini.urdf`, expanded from
+  this file, and the compute node's robot_state_publisher publishes it.
+  After an edit, run `mise run urdf`; CI fails while the two differ.
 -->
 <robot name="ovcs_mini" xmlns:xacro="http://www.ros.org/wiki/xacro">
 

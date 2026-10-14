@@ -1,7 +1,7 @@
 defmodule OvcsVehicle.URDF do
   @moduledoc """
-  A vehicle's expanded URDF, read for the joints that place its frames
-  and the dimensions they carry.
+  A vehicle's expanded URDF, read for the dimensions its joints and
+  links carry.
 
   The xacro is the source; `mise run urdf` (`scripts/expand_urdf.sh`)
   expands it into the `.urdf` committed beside it, and CI checks the
@@ -32,14 +32,6 @@ defmodule OvcsVehicle.URDF do
           collision_cylinders: %{String.t() => cylinder()}
         }
 
-  @typedoc "A fixed transform as `RosBridge.Publishers.StaticTransform` publishes it."
-  @type transform :: %{
-          parent: String.t(),
-          child: String.t(),
-          translation: vector(),
-          rotation: {float(), float(), float(), float()}
-        }
-
   @spec read!(Path.t()) :: t()
   def read!(path) do
     {robot, _rest} = path |> String.to_charlist() |> :xmerl_scan.file(quiet: true)
@@ -60,60 +52,6 @@ defmodule OvcsVehicle.URDF do
   @spec collision_cylinder!(t(), String.t()) :: cylinder()
   def collision_cylinder!(%{collision_cylinders: cylinders}, link),
     do: Map.fetch!(cylinders, link)
-
-  @doc """
-  The fixed joints that place each of `frames` on the tree's root, one
-  transform per joint, parents before children and each joint once.
-
-  Raises when a frame is not in the URDF, or when a joint on the way
-  moves: its transform is not static.
-  """
-  @spec static_transforms(t(), [String.t()]) :: [transform()]
-  def static_transforms(%{joints: joints}, frames) do
-    by_child = Map.new(joints, fn {_name, joint} -> {joint.child, joint} end)
-    links = joints |> Map.values() |> Enum.flat_map(&[&1.parent, &1.child]) |> MapSet.new()
-
-    for frame <- frames,
-        frame not in links,
-        do: raise(ArgumentError, "#{frame} is not a link in the URDF")
-
-    frames
-    |> Enum.flat_map(&chain(by_child, &1, []))
-    |> Enum.uniq()
-    |> Enum.map(&transform/1)
-  end
-
-  defp chain(by_child, frame, chain) do
-    case Map.fetch(by_child, frame) do
-      :error ->
-        chain
-
-      {:ok, %{type: "fixed"} = joint} ->
-        chain(by_child, joint.parent, [joint | chain])
-
-      {:ok, joint} ->
-        raise ArgumentError, "#{joint.name} places #{frame} but is #{joint.type}, not fixed"
-    end
-  end
-
-  defp transform(joint) do
-    %{
-      parent: joint.parent,
-      child: joint.child,
-      translation: joint.xyz,
-      rotation: quaternion(joint.rpy)
-    }
-  end
-
-  # URDF's rpy is fixed-axis: roll about x, then pitch about y, then yaw about z.
-  defp quaternion({roll, pitch, yaw}) do
-    {sr, cr} = {:math.sin(roll / 2), :math.cos(roll / 2)}
-    {sp, cp} = {:math.sin(pitch / 2), :math.cos(pitch / 2)}
-    {sy, cy} = {:math.sin(yaw / 2), :math.cos(yaw / 2)}
-
-    {sr * cp * cy - cr * sp * sy, cr * sp * cy + sr * cp * sy, cr * cp * sy - sr * sp * cy,
-     cr * cp * cy + sr * sp * sy}
-  end
 
   defp joint(node) do
     %{

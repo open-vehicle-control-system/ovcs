@@ -76,7 +76,7 @@ The detector is a component of the perception bridge's `RosBridge.Config`, liste
  frame_id: "stereo_left_optical"}
 ```
 
-`frame_id` is the stereo unit's left frame, since boxes are positioned in its rectified pixels. Your vehicle also needs that frame on `base_link` in `/tf_static` (the `:static_transforms` component, or `robot_state_publisher`) so consumers can place detections relative to the vehicle. The OVCS Mini reads it from its URDF with `OvcsVehicle.URDF`.
+`frame_id` is the stereo unit's left frame, since boxes are positioned in its rectified pixels. Your vehicle also needs that frame on `base_link` in `/tf_static` so consumers can place detections relative to the vehicle: a link of its URDF, which the compute node's `robot_state_publisher` publishes, or the bridge's `:static_transforms` component.
 
 ## Checking it works
 

@@ -16,12 +16,12 @@ compute/
 ├── .dockerignore         keeps host/ and this file out of the pushed tarball
 ├── images/
 │   ├── ros2/             the shared ROS 2 image: entrypoint, Zenoh template, launchers
-│   ├── nav2/             the Nav2 image and its launch file; it COPYs ../ros2 and ../../vehicle/nav2
+│   ├── nav2/             the Nav2 image and its launch file, which also runs robot_state_publisher; it COPYs ../ros2 and ../../vehicle/
 │   ├── wifi-firmware/    AX210 firmware staged into balenaOS's extra-firmware volume
 │   ├── wifi-ap-radio/    keeps the AP's channel 149 center and transmit power right
 │   ├── bridge-no-nat/    exempts frames bridged between eth0 and the AP from the host's NAT
 │   └── ntp/              serves this node's clock to the vehicle network
-├── vehicle/nav2/         empty here; `ovcs compute stage` copies vehicles/<vehicle>/nav2 into it
+├── vehicle/              empty here; `ovcs compute stage` copies vehicles/<vehicle>/nav2 and the expanded URDF into it
 └── host/                 NetworkManager keyfiles for balenaOS itself — installed by hand, once
 ```
 
@@ -99,7 +99,7 @@ python3 -m unittest discover -s images/ros2/docker/tests -v
 The file is plain Compose (a subset of it), so it also runs on any
 Docker host, which is the closest check of the file itself short of a
 `balena push`. Run it from a staged tree, which carries the vehicle's
-Nav2 parameters:
+Nav2 parameters and URDF:
 
 ```sh
 ./ovcs compute stage <vehicle> --out /tmp/compute

@@ -3,7 +3,7 @@ defmodule OvcsMini.GeometryTest do
   Keeps the URDF `OvcsMini` reads in step with the xacro it is expanded
   from, and every frame the car's bridges stamp placed on `base_link`.
   """
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   @xacro Path.expand("../description/ovcs_mini.urdf.xacro", __DIR__)
 
@@ -63,21 +63,28 @@ defmodule OvcsMini.GeometryTest do
     end
   end
 
-  describe "the car's bridges place every frame they stamp" do
-    for firmware_id <- ["ros", "ros_perception"] do
-      test firmware_id do
+  describe "the bridges stamp the URDF's links" do
+    # robot_state_publisher places only the URDF's links on base_link.
+    for {arm, simulation} <- [target: nil, host: "1"], firmware_id <- ["ros", "ros_perception"] do
+      test "#{arm}#{simulation && " simulation"} #{firmware_id}" do
+        if unquote(simulation), do: System.put_env("OVCS_SIM", unquote(simulation))
+        on_exit(fn -> System.delete_env("OVCS_SIM") end)
+
         %RosBridge.Config{components: components} =
-          OvcsMini.ros_bridge_config(:target, unquote(firmware_id))
+          OvcsMini.ros_bridge_config(unquote(arm), unquote(firmware_id))
 
-        {:static_transforms, transforms: transforms} =
-          List.keyfind(components, :static_transforms, 0)
-
-        placed = MapSet.new(transforms, & &1.child)
         stamped = stamped_frames(components)
 
         assert stamped != []
-        assert Enum.reject(stamped, &(&1 in placed)) == []
+        assert Enum.reject(stamped, &(&1 in urdf_links())) == []
       end
+    end
+
+    defp urdf_links do
+      %{joints: joints} =
+        OvcsVehicle.URDF.read!(Path.expand("../description/ovcs_mini.urdf", __DIR__))
+
+      joints |> Map.values() |> Enum.flat_map(&[&1.parent, &1.child]) |> MapSet.new()
     end
 
     # `frame_id` options, the stereo unit's per side, and the IMU

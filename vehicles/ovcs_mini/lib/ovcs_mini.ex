@@ -148,8 +148,7 @@ defmodule OvcsMini do
 
   # The `ros` bridge against the simulator, chosen with OVCS_SIM: its
   # simulated hardware answers for the Mini's, so the VMS commands Gazebo's
-  # physics over CAN, and the IMU is Gazebo's. No static transforms:
-  # the simulator's robot_state_publisher publishes the URDF's.
+  # physics over CAN, and the IMU is Gazebo's.
   defp ros_bridge_simulation_config do
     %RosBridge.Config{
       zenoh_endpoint_ip: System.get_env("ZENOH_ENDPOINT_IP", "127.0.0.1"),
@@ -259,10 +258,7 @@ defmodule OvcsMini do
         # A02YYUW ultrasonic sensors on the rear bumper, each on a CP2104
         # found by its serial number.
         rear_ultrasound(:left, A02YYUW.UART, serial_number: "01D9EBFA"),
-        rear_ultrasound(:right, A02YYUW.UART, serial_number: "02PW2EBP"),
-        static_transforms(
-          ~w(imu_link lidar_link ultrasound_rear_left_link ultrasound_rear_right_link)
-        )
+        rear_ultrasound(:right, A02YYUW.UART, serial_number: "02PW2EBP")
       ]
     }
 
@@ -275,10 +271,6 @@ defmodule OvcsMini do
      frame_id: "ultrasound_rear_#{side}_link",
      beyond_range: :max_range}
   end
-
-  # The frames a bridge stamps, placed on base_link as the URDF has them.
-  defp static_transforms(frames),
-    do: {:static_transforms, transforms: URDF.static_transforms(@urdf, frames)}
 
   defp ros_perception_bridge_host_config do
     %RosBridge.Config{
@@ -378,7 +370,6 @@ defmodule OvcsMini do
       node_name: "ovcs_bridge_perception",
       components: [
         :heartbeat,
-        static_transforms(~w(stereo_left_optical stereo_right_optical)),
         stereo_component(RosBridge.Camera.LibCamera, :target),
         # After :stereo_camera — the detector registers on that
         # unit's backend while starting.

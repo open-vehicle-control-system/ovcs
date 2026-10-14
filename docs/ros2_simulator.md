@@ -84,7 +84,7 @@ The boundary between Gazebo's transport and ROS is exactly the list in `gazebo.l
 | `/stereo/...` disparity, depth, points, detections | `stereo_msgs`, `sensor_msgs`, `vision_msgs` | perception bridge | Foxglove |
 | `/ovcs_heartbeat` | `std_msgs/String` | every `RosBridge` that lists `:heartbeat` | you, to see the BEAM is alive |
 
-**Two transform buffers.** `/tf` is time-indexed: `tf2` stores each sample against its stamp and interpolates. `/tf_static` is timeless, and carries the URDF's fixed joints, the sensor mounts among them; a point cloud stamped after the newest `/tf` sample could not be transformed, and Nav2 would drop it. In simulation `robot_state_publisher` publishes them. On the vehicle, which runs no `robot_state_publisher`, the bridges' `:static_transforms` components publish the same joints, read from the expanded URDF at compile time (`OvcsVehicle.URDF`). Either way the bridges stamp their messages with the URDF's frame names (`lidar_link`, `stereo_left_optical`, ...).
+**Two transform buffers.** `/tf` is time-indexed: `tf2` stores each sample against its stamp and interpolates. `/tf_static` is timeless, and carries the URDF's fixed joints, the sensor mounts among them; a point cloud stamped after the newest `/tf` sample could not be transformed, and Nav2 would drop it. `robot_state_publisher` publishes them: the simulator's launch runs it here, and the Nav2 image runs it on the vehicle, so the nav2 service in this stack starts with `robot_state_publisher:=false`. The bridges stamp their messages with the URDF's frame names (`lidar_link`, `stereo_left_optical`, ...) in both.
 
 ## Time
 
@@ -238,7 +238,7 @@ A yaw rate the steering cannot achieve collapses to full lock rather than an err
 
 Nav2 1.5.1: a lifecycle manager and four servers (`controller_server`, `planner_server`, `behavior_server`, `bt_navigator`) plus `velocity_smoother`. Not `nav2_bringup`, which is absent from the Lyrical archive and would pull in map_server and AMCL.
 
-One configuration, three deployments. The parameter file and behaviour trees are the vehicle's, in `vehicles/<vehicle>/nav2/`; the image and its launch file are the framework's, in `compose/compute/images/nav2/`, tagged `ovcs/nav2:lyrical` wherever it is built. `./ovcs compute stage` bakes the vehicle's parameters into the onboard image; the local stacks mount them.
+One configuration, three deployments. The parameter file and behaviour trees are the vehicle's, in `vehicles/<vehicle>/nav2/`; the image and its launch file are the framework's, in `compose/compute/images/nav2/`, tagged `ovcs/nav2:lyrical` wherever it is built. `./ovcs compute stage` bakes the vehicle's parameters and its expanded URDF into the onboard image; the local stacks mount them.
 
 | Where | Compose | Clock |
 |---|---|---|

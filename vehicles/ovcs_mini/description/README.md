@@ -77,7 +77,7 @@ These links identify the vehicle; they do not certify measurements of the OVCS b
 Before changing the dynamics, measure outside tyre width, tyre width, axle spacing,
 steering-pivot spacing, ride height, shell mounting height and ready-to-run mass including OVCS equipment.
 At zero toe/camber, centre track is outside tyre width minus one tyre width.
-After any change, run `mise run urdf`: `OvcsMini.geometry/0` and the sensor mounts the ROS bridges publish are read from the expanded `ovcs_mini.urdf`.
+After any change, run `mise run urdf`: `OvcsMini.geometry/0` and the compute node's `robot_state_publisher` read the expanded `ovcs_mini.urdf`.
 
 ## Geometry and dynamics checks
 
