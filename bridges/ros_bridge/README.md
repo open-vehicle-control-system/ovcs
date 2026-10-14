@@ -92,7 +92,7 @@ collide in the ROS graph, which `ros2 node list` reports as "nodes in
 the graph that share an exact name" and Foxglove renders as a single
 merged node. The OVCS Mini reference vehicle is a worked example of the
 two-bridge case: `vehicles/ovcs_mini/lib/ovcs_mini.ex` runs
-`ovcs_bridge_ros` and `ovcs_bridge_perception`.
+`ovcs_bridge_ros` and `ovcs_bridge_ros_vision`.
 
 Endpoint comes from the vehicle's `RosBridge.Config.zenoh_endpoint_ip`
 — set per-vehicle in `vehicles/<vehicle>/lib/<vehicle>.ex`. Override at

@@ -33,7 +33,7 @@ The vehicle is the router. Everything else (the Nerves bridges, the on-vehicle n
 Keep it a separate Pi:
 
 - The **VMS** is vehicle control. Coupling it to the ROS fabric puts a container runtime in the safety path.
-- A **perception bridge** (on the Mini, the `ros_perception` Pi 5 running stereo depth and Hailo detection in Elixir, see [Perception: object detection](./ros2_perception.md)) stays Nerves and joins the fabric as a client like the other bridges.
+- A **perception bridge** (on the Mini, the `ros_vision` Pi 5 running stereo depth and Hailo detection in Elixir, see [Perception: object detection](./ros2_perception.md)) stays Nerves and joins the fabric as a client like the other bridges.
 
 ## Operating system
 
@@ -146,7 +146,7 @@ Two networks, each doing one job:
           eth0                      wlP1p1s0  (AX210 AP, 5 GHz)
      vehicle switch:                a laptop with no site Wi-Fi,
      VMS, bridge-ros,               or one that wants the fabric
-     bridge-ros_perception          at full rate
+     bridge-ros_vision          at full rate
 ```
 
 `eth0` and the access point are **ports on one bridge**: the wired boards and a laptop on the access point share one L2 domain and one DHCP server, and reach `tcp/10.42.0.1:7447` without the compute node routing between them.
@@ -257,7 +257,7 @@ The kernel line is the one to keep an eye on: if the boot-time probe races the v
 
 1. Set the compute node up as the vehicle network (see [Networking](#networking)). Its bridge address (`10.42.0.1` in the templates) is the router address.
 2. Set `ZENOH_ENDPOINT_IP` to that address in `vehicles/<vehicle>/.env.exs`, and the site Wi-Fi in `WIFI_NETWORKS` next to it.
-3. **Rebuild and re-upload every firmware of the vehicle**: the `RosBridge` hosts (`bridge-ros` and `bridge-ros_perception` on the Mini) for the endpoint, and all of them, the VMS included, for the Wi-Fi. The endpoint is baked into application config at build time (`bridges/firmware/config/target.exs`), not read at boot: `.env.exs` only calls `System.put_env` on the build host. A firmware that isn't rebuilt keeps peering with the old address; one built without `ZENOH_ENDPOINT_IP` falls back to `127.0.0.1`, where no router listens.
+3. **Rebuild and re-upload every firmware of the vehicle**: the `RosBridge` hosts (`bridge-ros` and `bridge-ros_vision` on the Mini) for the endpoint, and all of them, the VMS included, for the Wi-Fi. The endpoint is baked into application config at build time (`bridges/firmware/config/target.exs`), not read at boot: `.env.exs` only calls `System.put_env` on the build host. A firmware that isn't rebuilt keeps peering with the old address; one built without `ZENOH_ENDPOINT_IP` falls back to `127.0.0.1`, where no router listens.
 4. Point the base station at it: `ZENOH_ENDPOINT_IP` in `compose/local/.env` (`10.42.0.1` from a laptop on the access point, the compute node's site address otherwise), and Foxglove Studio at `ws://<compute node address>:8765`.
 
 Because the compute node hands out the addresses, the router address is a constant and step 3 is one-time setup. Adding a site to `WIFI_NETWORKS` still means a rebuild.

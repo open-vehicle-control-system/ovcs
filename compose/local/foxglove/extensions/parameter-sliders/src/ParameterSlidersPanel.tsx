@@ -102,7 +102,7 @@ function parameterValue(type: number, value: Scalar): object {
 
 function ParameterSlidersPanel({ context }: { context: PanelExtensionContext }): ReactElement {
   const [config, setConfig] = useState<Config>(() => ({
-    node: "/ovcs_bridge_perception",
+    node: "/ovcs_bridge_ros_vision",
     prefix: "stereo.",
     ...(context.initialState as Partial<Config>),
   }));

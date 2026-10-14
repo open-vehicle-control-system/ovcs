@@ -1,5 +1,5 @@
 ---
-# CAN topology for the `ros_perception` bridge firmware on OVCS Mini.
+# CAN topology for the `ros_vision` bridge firmware on OVCS Mini.
 #
 # The perception bridge doesn't actually use the CAN bus — it publishes
 # stereo camera images and Hailo inference outputs over Zenoh only. But

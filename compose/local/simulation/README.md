@@ -103,14 +103,14 @@ The stereo stack (SGBM, rectification, publishers, detector) is framework code i
 
 cd bridges/firmware
 VEHICLE=OvcsMini OVCS_SIM=1 ZENOH_ENDPOINT_IP=127.0.0.1 \
-  BRIDGE_FIRMWARE_ID=ros_perception CAN_NETWORK_MAPPINGS=ovcs:vcan0 \
+  BRIDGE_FIRMWARE_ID=ros_vision CAN_NETWORK_MAPPINGS=ovcs:vcan0 \
   iex -S mix
 ```
 
 Three details fail misleadingly if wrong:
 
 - **Start from `bridges/firmware`, not `bridges/ros_bridge`.** The library has no `config/`, so `CAN_NETWORK_MAPPINGS` is never read there and Cantastic dies with "CAN network mappings are missing from the Cantastic configuratiion". The firmware project is what `./ovcs run` starts; its `config/runtime.exs` consumes the variable.
-- **`BRIDGE_FIRMWARE_ID=ros_perception` is required.** On the host it otherwise defaults to `radio_control`, so no ROS bridge starts at all.
+- **`BRIDGE_FIRMWARE_ID=ros_vision` is required.** On the host it otherwise defaults to `radio_control`, so no ROS bridge starts at all.
 - **`OVCS_SIM=1` selects the simulated wiring**, so it cannot be picked up by accident on the vehicle. No Hailo detector there, since a workstation has no accelerator; `OVCS_DETECTOR` picks a backend instead ([Perception: object detection](../../../docs/ros2_perception.md)).
 
 Measured against `workshop.sdf`: 30.3 Hz, 61.2 % depth coverage, median depth 0.81 m and p75 1.75 m, on the world's two boxes.
