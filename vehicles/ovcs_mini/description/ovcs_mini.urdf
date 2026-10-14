@@ -292,14 +292,14 @@
     <visual name="tyre">
       <origin xyz="0 0 0"/>
       <geometry>
-        <mesh filename="file://meshes/tyre.stl" scale="0.0522 0.0522 0.045"/>
+        <mesh filename="package://ovcs_description/meshes/tyre.stl" scale="0.0522 0.0522 0.045"/>
       </geometry>
       <material name="rubber"/>
     </visual>
     <visual name="rim">
       <origin xyz="0 0 0"/>
       <geometry>
-        <mesh filename="file://meshes/rim.stl" scale="0.0522 0.0522 0.045"/>
+        <mesh filename="package://ovcs_description/meshes/rim.stl" scale="0.0522 0.0522 0.045"/>
       </geometry>
       <material name="alloy"/>
     </visual>
@@ -339,14 +339,14 @@
     <visual name="tyre">
       <origin xyz="0 0 0"/>
       <geometry>
-        <mesh filename="file://meshes/tyre.stl" scale="0.0522 0.0522 0.045"/>
+        <mesh filename="package://ovcs_description/meshes/tyre.stl" scale="0.0522 0.0522 0.045"/>
       </geometry>
       <material name="rubber"/>
     </visual>
     <visual name="rim">
       <origin xyz="0 0 0"/>
       <geometry>
-        <mesh filename="file://meshes/rim.stl" scale="0.0522 0.0522 0.045"/>
+        <mesh filename="package://ovcs_description/meshes/rim.stl" scale="0.0522 0.0522 0.045"/>
       </geometry>
       <material name="alloy"/>
     </visual>
@@ -409,14 +409,14 @@
     <visual name="tyre">
       <origin xyz="0 0 0"/>
       <geometry>
-        <mesh filename="file://meshes/tyre.stl" scale="0.0522 0.0522 0.045"/>
+        <mesh filename="package://ovcs_description/meshes/tyre.stl" scale="0.0522 0.0522 0.045"/>
       </geometry>
       <material name="rubber"/>
     </visual>
     <visual name="rim">
       <origin xyz="0 0 0"/>
       <geometry>
-        <mesh filename="file://meshes/rim.stl" scale="0.0522 0.0522 0.045"/>
+        <mesh filename="package://ovcs_description/meshes/rim.stl" scale="0.0522 0.0522 0.045"/>
       </geometry>
       <material name="alloy"/>
     </visual>
@@ -479,14 +479,14 @@
     <visual name="tyre">
       <origin xyz="0 0 0"/>
       <geometry>
-        <mesh filename="file://meshes/tyre.stl" scale="0.0522 0.0522 0.045"/>
+        <mesh filename="package://ovcs_description/meshes/tyre.stl" scale="0.0522 0.0522 0.045"/>
       </geometry>
       <material name="rubber"/>
     </visual>
     <visual name="rim">
       <origin xyz="0 0 0"/>
       <geometry>
-        <mesh filename="file://meshes/rim.stl" scale="0.0522 0.0522 0.045"/>
+        <mesh filename="package://ovcs_description/meshes/rim.stl" scale="0.0522 0.0522 0.045"/>
       </geometry>
       <material name="alloy"/>
     </visual>

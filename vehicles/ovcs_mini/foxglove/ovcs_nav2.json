@@ -33,7 +33,8 @@
           "showLabel": true,
           "labelSize": 0.1,
           "axisScale": 0.3
-        }
+        },
+        "meshUpAxis": "z_up"
       },
       "transforms": {},
       "topics": {
@@ -115,6 +116,9 @@
           "visible": true
         },
         "/goal_pose": {
+          "visible": true
+        },
+        "/robot_description": {
           "visible": true
         }
       },

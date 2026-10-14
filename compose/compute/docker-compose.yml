@@ -11,7 +11,8 @@
 #   ./ovcs compute push <vehicle> <device>.local     # local mode, no cloud
 #
 # The command swaps each `build: ./images/<name>` for the image CI
-# published from main, unless given --build.
+# published from main, and builds nav2 and ros2, which carry the
+# vehicle's files, as a layer on theirs, unless given --build.
 # `./ovcs compute stage <vehicle> --out <dir>` writes the same tree
 # without pushing; `docker compose up -d` there is a bare-metal
 # rehearsal on any aarch64 box.
@@ -119,8 +120,11 @@ services:
   foxglove_bridge:
     # ROS 2 → WebSocket bridge. Foxglove Studio on the base station
     # connects to ws://<compute-node-ip>:8765 and sees everything on the
-    # fabric, including the Elixir bridge's topics.
-    build: ./images/ros2
+    # fabric, including the Elixir bridge's topics, and fetches the
+    # vehicle's meshes from it. Context is the source root, for those.
+    build:
+      context: .
+      dockerfile: images/ros2/Dockerfile
     restart: always
     network_mode: host
     depends_on:

@@ -24,6 +24,8 @@ set -euo pipefail
 echo "foxglove_bridge: listening on ws://0.0.0.0:${FOXGLOVE_BRIDGE_PORT}, peering with ${ZENOH_ENDPOINT_IP}:7447"
 
 bridge_executable="$(ros2 pkg prefix foxglove_bridge)/lib/foxglove_bridge/foxglove_bridge"
+# The vehicle's meshes, which Foxglove fetches as package://ovcs_description/...
+export AMENT_PREFIX_PATH="/opt/ovcs/ament:${AMENT_PREFIX_PATH}"
 child_pids=()
 cleanup() {
   trap - EXIT INT TERM

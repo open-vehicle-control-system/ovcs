@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
-  <xacro:arg name="mesh_dir" default="${xacro.abs_filename('meshes')}" />
+  <xacro:arg name="mesh_uri" default="file://${xacro.abs_filename('meshes')}" />
   <xacro:arg name="show_body" default="false" />
-  <xacro:property name="mesh_dir" value="$(arg mesh_dir)" />
+  <xacro:property name="mesh_uri" value="$(arg mesh_uri)" />
 
   <material name="shell_blue"><color rgba="0.025 0.24 0.75 1" /></material>
   <material name="window_dark"><color rgba="0.025 0.045 0.065 1" /></material>
@@ -20,7 +20,7 @@
   <xacro:macro name="visual_mesh" params="name material scale z:=0">
     <visual name="${name}">
       <origin xyz="0 0 ${z}" />
-      <geometry><mesh filename="file://${mesh_dir}/${name}.stl" scale="${scale}" /></geometry>
+      <geometry><mesh filename="${mesh_uri}/${name}.stl" scale="${scale}" /></geometry>
       <material name="${material}" />
     </visual>
   </xacro:macro>

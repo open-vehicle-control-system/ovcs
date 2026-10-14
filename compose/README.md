@@ -81,7 +81,7 @@ its package, and the stacks take it from there:
 | In `vehicles/<vehicle>/` | What | Used by |
 |---|---|---|
 | `nav2/` | `nav2.yaml` and the behaviour trees it names | baked into the onboard Nav2 image by `ovcs compute stage`; mounted by both local `nav2` services |
-| `description/` | the xacro model, and the URDF `mise run urdf` expands from it | the xacro mounted into the simulator; the URDF baked into the onboard Nav2 image by `ovcs compute stage`, which publishes it, and mounted by the local `nav2` service in `base.yml` |
+| `description/` | the xacro model, its meshes, and the URDF `mise run urdf` expands from them | the xacro mounted into the simulator; the URDF baked into the onboard Nav2 image by `ovcs compute stage`, which publishes it, and mounted by the local `nav2` service in `base.yml`; the meshes baked into the onboard shared ROS image, whose `foxglove_bridge` serves them, and mounted by the simulator and the local `foxglove_bridge` |
 | `description/simulation.yaml` | the sensors Gazebo bridges and the spawn height | `gazebo.launch.py` |
 | `foxglove/` | Foxglove layouts for the vehicle's topics | Foxglove Studio, imported by hand |
 
@@ -98,12 +98,11 @@ takes it from the command that deploys it:
 The images the car runs are built **only** from `compute/images/`. CI
 builds them on each push to `main` that changes them and publishes them to
 `ghcr.io/open-vehicle-control-system/ovcs/<name>` as `sha-<short>` and
-`latest`; a deploy pulls them and builds only the vehicle's Nav2 layer
-(`./ovcs compute push --build` builds them from the checkout instead).
-The local stacks reach across to build the very same Dockerfiles —
-`context: ../compute/images/ros2` for the shared ROS image,
-`context: ../compute` for Nav2 — so a workstation runs the bits the car
-runs, never a copy of them. One Dockerfile, one tag, on both sides:
+`latest`; a deploy pulls them and builds only the vehicle's layers on
+the Nav2 and shared ROS images (`./ovcs compute push --build` builds
+them from the checkout instead). The local stacks reach across to build
+the very same Dockerfiles, with `context: ../compute` for both, so a
+workstation runs the bits the car runs, never a copy of them. One Dockerfile, one tag, on both sides:
 
 | Image | Dockerfile | Tag | Built by |
 |---|---|---|---|

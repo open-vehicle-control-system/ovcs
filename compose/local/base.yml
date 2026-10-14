@@ -36,15 +36,15 @@ services:
     command: ["-l", "tcp/0.0.0.0:7447"]
 
   ros2:
-    # The one service that builds the shared image. The context is the
-    # car's own image directory: a workstation runs what the car runs.
+    # The one service that builds the shared image, from the car's own
+    # source root: a workstation runs what the car runs.
     extends:
       file: common.yml
       service: ros2-image
     container_name: ovcs-ros2
     build:
-      context: ../compute/images/ros2
-      dockerfile: Dockerfile
+      context: ../compute
+      dockerfile: images/ros2/Dockerfile
     volumes:
       # Drop ROS 2 packages you write here; the entrypoint sources
       # /opt/ros/$ROS_DISTRO + this overlay before running the CMD.
@@ -91,6 +91,9 @@ services:
     profiles: ["standalone"]
     environment:
       FOXGLOVE_BRIDGE_PORT: ${FOXGLOVE_BRIDGE_PORT:-8765}
+    # The vehicle's description, the ovcs_description package its meshes are named in.
+    volumes:
+      - ../../vehicles/${OVCS_VEHICLE:?set OVCS_VEHICLE in compose/local/.env}/description:/opt/ovcs/description:ro
     command: ["foxglove_bridge"]
 
   calibrator:

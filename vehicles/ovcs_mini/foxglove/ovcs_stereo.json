@@ -116,7 +116,8 @@
         "transforms": {
           "showLabel": true,
           "labelSize": 0.1
-        }
+        },
+        "meshUpAxis": "z_up"
       },
       "transforms": {},
       "topics": {
@@ -143,6 +144,9 @@
           "visible": true
         },
         "/ultrasound/rear_right": {
+          "visible": true
+        },
+        "/robot_description": {
           "visible": true
         }
       },

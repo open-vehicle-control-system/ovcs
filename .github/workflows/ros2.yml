@@ -207,15 +207,16 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Nav2's Dockerfile COPYs from its sibling ros2/ and from the
-      # empty vehicle/nav2, so its context is the whole source root.
-      # Every other image is self-contained in its own directory.
+      # Nav2's and ros2's Dockerfiles COPY from the empty vehicle/, and
+      # Nav2's from its sibling ros2/, so their context is the whole
+      # source root. Every other image is self-contained in its own
+      # directory.
       - name: Build${{ github.event_name == 'push' && ' and push by digest' || '' }}
         id: build
         uses: docker/build-push-action@v6
         with:
-          context: ${{ matrix.image == 'nav2' && 'compose/compute' || format('compose/compute/images/{0}', matrix.image) }}
-          file: ${{ matrix.image == 'nav2' && 'compose/compute/images/nav2/Dockerfile' || '' }}
+          context: ${{ contains(fromJSON('["nav2", "ros2"]'), matrix.image) && 'compose/compute' || format('compose/compute/images/{0}', matrix.image) }}
+          file: ${{ contains(fromJSON('["nav2", "ros2"]'), matrix.image) && format('compose/compute/images/{0}/Dockerfile', matrix.image) || '' }}
           platforms: linux/${{ matrix.platform.arch }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}

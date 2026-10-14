@@ -139,7 +139,7 @@ The simulator reads three things from `vehicles/<vehicle>/`:
 
 | File | Contents |
 |---|---|
-| `description/<vehicle>.urdf.xacro` | the model, with Gazebo's `AckermannSteering` system taking its drive command, an `OdometryPublisher` system publishing ground truth on `/simulator/odom`, and its sensors' Gazebo plugins. Shared macros are at `../../common` relative to it, inside the container. |
+| `description/<vehicle>.urdf.xacro` | the model, with Gazebo's `AckermannSteering` system taking its drive command, an `OdometryPublisher` system publishing ground truth on `/simulator/odom`, and its sensors' Gazebo plugins. Shared macros are at `../../common` relative to it, inside the container. Meshes are named under the `mesh_uri` xacro argument, which the framework sets to `package://ovcs_description/meshes`: Gazebo and `foxglove_bridge` resolve that package to the vehicle's `description/`. |
 | `description/simulation.yaml` | under `gazebo`: the sensor topics to bridge to ROS, the cameras, the spawn height. |
 | `nav2/` | `nav2.yaml` and the behaviour trees it references under `/opt/ovcs/config/`. |
 

@@ -37,10 +37,9 @@ services:
     image: ovcs/gazebo:jetty
     container_name: ovcs-gazebo
     environment:
-      # Gazebo finds meshes and models through this. Only the world
-      # directory for now — the model is spawned from
-      # /robot_description, not from the resource path.
-      GZ_SIM_RESOURCE_PATH: /opt/ovcs/worlds
+      # Gazebo finds the world here, and the model's package://
+      # ovcs_description meshes under /opt/ovcs/ament/share.
+      GZ_SIM_RESOURCE_PATH: /opt/ovcs/worlds:/opt/ovcs/ament/share
       # Every Gazebo process runs on this host, and the host network
       # has several interfaces. Unpinned, gz-transport discovery picks
       # among them and some subscriptions never connect: a bridged
@@ -50,6 +49,8 @@ services:
       # The vehicle's model and simulation.yaml, mounted under its own
       # name.
       - ../../vehicles/${OVCS_VEHICLE:?set OVCS_VEHICLE in compose/local/.env}/description:/opt/ovcs/vehicles/${OVCS_VEHICLE}:ro
+      # Again as the ovcs_description package its meshes are named in.
+      - ../../vehicles/${OVCS_VEHICLE}/description:/opt/ovcs/ament/share/ovcs_description:ro
       # Macros shared by every model. The xacros reach it as
       # ../../common relative to themselves, which resolves inside the
       # container regardless of where the files sit in the repo.
@@ -123,6 +124,7 @@ services:
       QT_X11_NO_MITSHM: 1
       # As for `gazebo`, which it must share an interface with.
       GZ_IP: 127.0.0.1
+      GZ_SIM_RESOURCE_PATH: /opt/ovcs/worlds:/opt/ovcs/ament/share
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       # The GPU, as for `gazebo`.
@@ -130,6 +132,7 @@ services:
       # The GUI loads its own copies of the model's meshes, from the
       # path the server spawned it with.
       - ../../vehicles/${OVCS_VEHICLE}/description:/opt/ovcs/vehicles/${OVCS_VEHICLE}:ro
+      - ../../vehicles/${OVCS_VEHICLE}/description:/opt/ovcs/ament/share/ovcs_description:ro
     device_cgroup_rules:
       - 'c 226:* rmw'
     command:

@@ -30,7 +30,7 @@ def generate_launch_description():
         str(description_dir / "ovcs_mini.urdf.xacro"),
         mappings={
             "common_dir": str(repository / "compose/local/simulation/common"),
-            "mesh_dir": str(description_dir / "meshes"),
+            "mesh_uri": f"file://{description_dir / 'meshes'}",
         },
     ).toxml()
     description = split_preview_visuals(description)

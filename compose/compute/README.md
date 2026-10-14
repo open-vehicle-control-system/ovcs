@@ -15,7 +15,7 @@ compute/
 ├── docker-compose.yml    the stack: wifi_firmware, wifi_ap_radio, bridge_no_nat, ntp, zenohd, foxglove_bridge, nav2
 ├── .dockerignore         keeps host/ and this file out of the pushed tarball
 ├── images/
-│   ├── ros2/             the shared ROS 2 image: entrypoint, Zenoh template, launchers
+│   ├── ros2/             the shared ROS 2 image: entrypoint, Zenoh template, launchers; it COPYs ../../vehicle/
 │   ├── nav2/             the Nav2 image and its launch file, which also runs robot_state_publisher; it COPYs ../ros2 and ../../vehicle/
 │   ├── wifi-firmware/    AX210 firmware staged into balenaOS's extra-firmware volume
 │   ├── wifi-ap-radio/    keeps the AP's channel 149 center and transmit power right
