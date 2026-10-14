@@ -281,7 +281,7 @@ Gazebo cameras ─► image_bridge ─/stereo/{left,right}/image_raw/compressed�
                              └─► detector (optional: Stub or Dnn) ─► /stereo/detections
 ```
 
-`RosBridge.Camera.Zenoh` subscribes to a `CompressedImage` topic and emits the same `{:camera_frame, %Frame{}}` casts a physical driver does. Swapping it in for `RosBridge.Camera.LibCamera` is the entire difference between the car and the simulated car; in the OVCS Mini, `OVCS_SIM=1` (or `true`) selects it (`ros_perception_bridge_simulation_config/0` in `vehicles/ovcs_mini/lib/ovcs_mini.ex`).
+`RosBridge.Camera.Zenoh` subscribes to a `CompressedImage` topic and emits the same `{:camera_frame, %Frame{}}` casts a physical driver does. Swapping it in for `RosBridge.Camera.LibCamera` is the entire difference between the car and the simulated car; in the OVCS Mini, `OVCS_SIM=1` (or `true`) selects it (`ros_vision_bridge_simulation_config/0` in `vehicles/ovcs_mini/lib/ovcs_mini.ex`).
 
 - **Compressed, not raw.** A 480×270 rgb8 frame is 389 KB; at 30 Hz, 11.6 MB/s. Over Zenoh, a subscriber that cannot drain that receives one frame every fifteen seconds, which looks like a dead topic. JPEG is about 6.5 KB a frame. Compression belongs upstream of the fabric, as on the vehicle.
 - **The simulator has its own calibration.** Gazebo renders an ideal pinhole; the vehicle's distortion coefficients and rectification rotations warp its views apart. `vehicles/ovcs_mini/priv/calibration/simulation/` has D = 0 and R = I: 61.2 % coverage on the same scene, against 5.4 % with the vehicle's calibration.
@@ -312,7 +312,7 @@ defp ros_bridge_target_config,
   }
 ```
 
-A bare atom is shorthand for `{atom, []}`, and an unknown name raises at supervisor boot. `RosBridge.Components` lists and documents every component. Order matters where one component listens to another: `:odometry_publisher` after `:imu_publisher`. Two bridges on one fabric need distinct `node_name`s, or they collide in the ROS graph and Foxglove renders them as one node; the Mini uses `ovcs_bridge_ros` and `ovcs_bridge_perception` (`ovcs_bridge_perception_simulation` against the simulator).
+A bare atom is shorthand for `{atom, []}`, and an unknown name raises at supervisor boot. `RosBridge.Components` lists and documents every component. Order matters where one component listens to another: `:odometry_publisher` after `:imu_publisher`. Two bridges on one fabric need distinct `node_name`s, or they collide in the ROS graph and Foxglove renders them as one node; the Mini uses `ovcs_bridge_ros` and `ovcs_bridge_ros_vision`.
 
 ## Version pins
 

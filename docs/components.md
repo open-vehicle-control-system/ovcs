@@ -228,7 +228,7 @@ Each firmware's `runtime.exs` writes the side composer (`Ovcs1.Vms.Composer`, fo
 |---|---|---|
 | `VEHICLE` | Top-level module name of the vehicle to load (case-sensitive) | `Ovcs1`, `OvcsMini`, `Obd2`, or your own |
 | `CAN_NETWORK_MAPPINGS` | Overrides the vehicle's `default_can_mapping/1` (host or target arm) | `ovcs:can0,leaf_drive:vcan1,polo_drive:vcan2` |
-| `BRIDGE_FIRMWARE_ID` | Bridge firmware only: picks one entry from the vehicle's `bridge_firmwares/0` | `radio_control`, `ros`, `ros_perception` |
+| `BRIDGE_FIRMWARE_ID` | Bridge firmware only: picks one entry from the vehicle's `bridge_firmwares/0` | `radio_control`, `ros`, `ros_vision` |
 
 ## Local development
 

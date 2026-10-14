@@ -67,7 +67,7 @@ defmodule OvcsMini.GeometryTest do
 
   describe "the bridges stamp the URDF's links" do
     # robot_state_publisher places only the URDF's links on base_link.
-    for {arm, simulation} <- [target: nil, host: "1"], firmware_id <- ["ros", "ros_perception"] do
+    for {arm, simulation} <- [target: nil, host: "1"], firmware_id <- ["ros", "ros_vision"] do
       test "#{arm}#{simulation && " simulation"} #{firmware_id}" do
         if unquote(simulation), do: System.put_env("OVCS_SIM", unquote(simulation))
         on_exit(fn -> System.delete_env("OVCS_SIM") end)

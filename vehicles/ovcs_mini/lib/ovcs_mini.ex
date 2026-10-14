@@ -78,7 +78,7 @@ defmodule OvcsMini do
       # point it at a virtual CAN device. Cantastic auto-creates
       # vcan0 at boot (`ip link add dev vcan0 type vcan`), so this
       # is zero-config on the Pi 5; no SPI/MCP251xFD wait needed.
-      "ros_perception" => %{
+      "ros_vision" => %{
         target: :rpi5,
         bridges: [RosBridge],
         default_can_mapping: %{host: "ovcs:vcan0", target: "ovcs:vcan0"},
@@ -106,14 +106,14 @@ defmodule OvcsMini do
     }
 
   @impl RosBridge
-  def ros_bridge_config(:host, "ros_perception") do
+  def ros_bridge_config(:host, "ros_vision") do
     if simulation?(),
-      do: ros_perception_bridge_simulation_config(),
-      else: ros_perception_bridge_host_config()
+      do: ros_vision_bridge_simulation_config(),
+      else: ros_vision_bridge_host_config()
   end
 
-  def ros_bridge_config(:target, "ros_perception"),
-    do: ros_perception_bridge_target_config()
+  def ros_bridge_config(:target, "ros_vision"),
+    do: ros_vision_bridge_target_config()
 
   def ros_bridge_config(:host, _firmware_id) do
     if simulation?(), do: ros_bridge_simulation_config(), else: ros_bridge_host_config()
@@ -291,10 +291,10 @@ defmodule OvcsMini do
      beyond_range: :max_range}
   end
 
-  defp ros_perception_bridge_host_config do
+  defp ros_vision_bridge_host_config do
     %RosBridge.Config{
       zenoh_endpoint_ip: System.get_env("ZENOH_ENDPOINT_IP", "127.0.0.1"),
-      node_name: "ovcs_bridge_perception",
+      node_name: "ovcs_bridge_ros_vision",
       components: [
         :heartbeat,
         stereo_component(RosBridge.Camera.GStreamer, :host)
@@ -315,10 +315,10 @@ defmodule OvcsMini do
   #
   # Chosen with VEHICLE=OvcsMini and OVCS_SIM=1, so the simulation wiring
   # cannot be selected by accident on the vehicle.
-  defp ros_perception_bridge_simulation_config do
+  defp ros_vision_bridge_simulation_config do
     %RosBridge.Config{
       zenoh_endpoint_ip: System.get_env("ZENOH_ENDPOINT_IP", "127.0.0.1"),
-      node_name: "ovcs_bridge_perception_simulation",
+      node_name: "ovcs_bridge_ros_vision",
       components:
         [
           :heartbeat,
@@ -383,10 +383,10 @@ defmodule OvcsMini do
 
   defp simulation_model_path, do: Path.join(priv_models_dir(), "yolov8n.onnx")
 
-  defp ros_perception_bridge_target_config do
+  defp ros_vision_bridge_target_config do
     %RosBridge.Config{
       zenoh_endpoint_ip: Application.get_env(:ros_bridge, :zenoh_endpoint_ip, "127.0.0.1"),
-      node_name: "ovcs_bridge_perception",
+      node_name: "ovcs_bridge_ros_vision",
       components: [
         :heartbeat,
         stereo_component(RosBridge.Camera.LibCamera, :target),

@@ -23,7 +23,7 @@ The CLI:
 
 1. Loads the `vcan` kernel module and creates the virtual CAN interfaces the vehicle declares, if they aren't up already. On the host the Mini maps `ovcs` to `vcan0` and `misc` to `vcan1`.
 2. Compiles, for the host, each framework firmware project the vehicle uses (`build.sh` with `MIX_TARGET=host`), in parallel: `vms/firmware`, and `bridges/firmware` once for all three bridges.
-3. Spawns one BEAM per role from that firmware's directory: `vms`, then `bridge-radio_control`, `bridge-ros` and `bridge-ros_perception`.
+3. Spawns one BEAM per role from that firmware's directory: `vms`, then `bridge-radio_control`, `bridge-ros` and `bridge-ros_vision`.
 
 The first run takes a while. It fetches and builds every dependency of both firmware projects, the ROS bridge's native ones (`evision`, `zenohex`) among them, and installs the VMS dashboard's Node packages. Later runs only recompile what changed.
 

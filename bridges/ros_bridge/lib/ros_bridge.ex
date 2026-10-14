@@ -61,7 +61,7 @@ defmodule RosBridge do
 
   @doc """
   Per-deployment config that also takes the `bridge_firmwares/0`
-  entry id (e.g. `"ros"`, `"ros_perception"`), letting a single
+  entry id (e.g. `"ros"`, `"ros_vision"`), letting a single
   vehicle return a different `RosBridge.Config` per bridge BEAM.
   """
   @callback ros_bridge_config(

@@ -19,7 +19,7 @@ firmware is never built for this vehicle.
 | VMS | `OvcsMini.Vms.Composer` | `:ovcs_base_can_system_rpi4` |
 | Radio-control bridge | `RadioControlBridge` | `:ovcs_base_can_system_rpi3a` |
 | ROS bridge | `RosBridge` | `:ovcs_base_can_system_rpi4` |
-| Perception bridge (`ros_perception`) | `RosBridge` | `:rpi5` |
+| Perception bridge (`ros_vision`) | `RosBridge` | `:rpi5` |
 
 Two CAN buses: `ovcs` carries the VMS, the main generic controller and
 the CAN-connected bridges; `misc`, on the VMS's second SPI CAN
@@ -36,7 +36,7 @@ ovcs attach ovcs_mini
 ovcs build ovcs_mini vms
 ovcs build ovcs_mini bridge-radio_control
 ovcs build ovcs_mini bridge-ros
-ovcs build ovcs_mini bridge-ros_perception
+ovcs build ovcs_mini bridge-ros_vision
 ```
 
 Before the first build, copy `.env.exs.example` to `.env.exs` (gitignored).

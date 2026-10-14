@@ -136,7 +136,7 @@
       "foxglovePanelTitle": "Analogue gain"
     },
     "parameter-sliders.Parameter sliders!stereo": {
-      "node": "/ovcs_bridge_perception",
+      "node": "/ovcs_bridge_ros_vision",
       "prefix": "stereo."
     }
   },

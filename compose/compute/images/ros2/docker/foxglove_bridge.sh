@@ -44,7 +44,7 @@ trap 'exit 0' INT TERM
   -p message_backlog_size:="${FOXGLOVE_MESSAGE_BACKLOG_SIZE}" \
   -p include_hidden:=true \
   -p capabilities:="['clientPublish', 'parameters', 'parametersSubscribe', 'services', 'connectionGraph', 'assets']" \
-  -p param_whitelist:='["^/ovcs_bridge_perception\\.stereo\\..*$"]' &
+  -p param_whitelist:='["^/ovcs_bridge_ros_vision\\.stereo\\..*$"]' &
 child_pids+=("$!")
 
 # Exits when the bridge stops draining its Zenoh session.

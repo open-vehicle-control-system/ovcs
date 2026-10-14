@@ -3,7 +3,7 @@ title: "Perception: object detection"
 description: Object detection on a Hailo-8 fused with stereo depth into 3D detections, the topics it publishes, the CPU/GPU backends for the simulator, and model licensing.
 ---
 
-`RosBridge` can run object detection next to its stereo depth pipeline and fuse the two into 3D detections. The OVCS Mini reference vehicle is the worked example: its `ros_perception` bridge (a Pi 5) runs SGBM stereo depth on the CPU and detection on a Hailo-8. Numbers on this page are measured on that board. The component reference is [`bridges/ros_bridge/README.md`](../bridges/ros_bridge/README.md).
+`RosBridge` can run object detection next to its stereo depth pipeline and fuse the two into 3D detections. The OVCS Mini reference vehicle is the worked example: its `ros_vision` bridge (a Pi 5) runs SGBM stereo depth on the CPU and detection on a Hailo-8. Numbers on this page are measured on that board. The component reference is [`bridges/ros_bridge/README.md`](../bridges/ros_bridge/README.md).
 
 ## Why detection and not depth
 
@@ -154,7 +154,7 @@ The DNN path needs an ONNX export of a YOLOv8-shaped model at `vehicles/ovcs_min
 ```sh
 cd bridges/firmware
 VEHICLE=OvcsMini OVCS_SIM=1 OVCS_DETECTOR=gpu ZENOH_ENDPOINT_IP=127.0.0.1 \
-  BRIDGE_FIRMWARE_ID=ros_perception CAN_NETWORK_MAPPINGS=ovcs:vcan0 \
+  BRIDGE_FIRMWARE_ID=ros_vision CAN_NETWORK_MAPPINGS=ovcs:vcan0 \
   iex -S mix
 ```
 

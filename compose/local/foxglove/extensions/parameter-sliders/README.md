@@ -9,7 +9,7 @@ shows the node's reason under its control. A changed parameter gets a
 reset button back to the value the node declared it with (`default:`
 in its constraints), and *Reset all* resets every one.
 
-The panel settings choose the node (default `/ovcs_bridge_perception`)
+The panel settings choose the node (default `/ovcs_bridge_ros_vision`)
 and the name prefix of the parameters to show (default `stereo.`).
 Foxglove lists it as "Parameter sliders", marked `[local]` because it
 is installed from this folder rather than its extension registry.
