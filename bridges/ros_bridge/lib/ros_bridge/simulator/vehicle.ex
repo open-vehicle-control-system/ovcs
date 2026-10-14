@@ -27,9 +27,12 @@ defmodule RosBridge.Simulator.Vehicle do
   the wheels turned in the step: the simulator's wheel joints when
   `step/4` is given them, the command otherwise. The measured speed is
   the step's distance smoothed over `@speed_time_constant_s`, by a filter
-  whose output integrates back to the distance. The commanded speed stays
-  within `@command_lead_m_s` of the measured one, so it cannot wind up
-  against an obstacle, and within `:max_speed_m_s`. A measured speed
+  whose output integrates back to the distance. The commanded speed is
+  at most `@command_lead_m_s` faster than the measured one in its own
+  direction, so it cannot wind up against an obstacle, and within
+  `:max_speed_m_s`. The measurement only ever lowers it: wheel samples
+  that arrive in a burst read as a speed spike, which must not drive
+  the vehicle. A measured speed
   under `@standstill_m_s` is zero, so physics jitter at rest does not
   keep the VMS's standstill gate shut through the rates; the counters
   follow the wheels as they are.
@@ -86,7 +89,7 @@ defmodule RosBridge.Simulator.Vehicle do
             |> smoothed(wheel_turns_step * circumference(vehicle), dt_s)
             |> standstill()
 
-          commanded = commanded |> within_lead(measured) |> clamp(vehicle.max_speed_m_s)
+          commanded = commanded |> lead_limited(measured) |> clamp(vehicle.max_speed_m_s)
           {commanded, measured, wheel_turns_step}
       end
 
@@ -105,8 +108,10 @@ defmodule RosBridge.Simulator.Vehicle do
 
   defp circumference(vehicle), do: 2 * :math.pi() * vehicle.wheel_radius_m
 
-  defp within_lead(speed, measured),
-    do: speed |> max(measured - @command_lead_m_s) |> min(measured + @command_lead_m_s)
+  defp lead_limited(speed, measured) when speed >= 0,
+    do: min(speed, max(measured, 0.0) + @command_lead_m_s)
+
+  defp lead_limited(speed, measured), do: max(speed, min(measured, 0.0) - @command_lead_m_s)
 
   defp clamp(speed, max_speed), do: speed |> max(-max_speed) |> min(max_speed)
 

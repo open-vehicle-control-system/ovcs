@@ -108,6 +108,21 @@ defmodule RosBridge.Simulator.VehicleTest do
     assert rolled.measured_speed_m_s == 0.0
   end
 
+  test "a burst of wheel samples does not drive the vehicle past its command" do
+    # Half a second of travel at 0.3 m/s, delivered in one 20 ms step.
+    burst = 0.15 / (2 * :math.pi() * 0.05)
+    cruising = %{vehicle() | commanded_speed_m_s: 0.3, measured_speed_m_s: 0.3}
+    stepped = Vehicle.step(cruising, [{:speed, 0.0}], @dt, burst)
+
+    assert stepped.measured_speed_m_s > 1.0
+    assert stepped.commanded_speed_m_s == 0.0
+  end
+
+  test "reversing into an obstacle does not wind up" do
+    held = Vehicle.step(vehicle(), [{:speed, -1.0}], @dt, 0.0)
+    assert_in_delta held.commanded_speed_m_s, -0.25, 1.0e-9
+  end
+
   test "physics jitter at rest measures as standstill" do
     resting = Vehicle.step(%{vehicle() | measured_speed_m_s: 0.002}, [], @dt, 0.0)
     assert resting.measured_speed_m_s == 0.0
