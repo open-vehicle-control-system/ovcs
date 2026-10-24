@@ -1,0 +1,16 @@
+# A Meta Quest's Touch controllers, in the Xbox profile's layout: the right
+# stick steers, and drives (up) or brakes (down) in the gear the triggers
+# hold: right forward, left backward, neither neutral.
+# The headset app publishes on joy/quest itself; no kernel device has this name.
+device: "^Meta Quest Touch$"
+steering:
+  - axis: 3
+    # Negative: the headset app reports left as positive, as joy_linux does.
+    gain: -1.0
+throttle:
+  - axis: 4
+gears:
+  forward:
+    - trigger: 5
+  backward:
+    - trigger: 2
