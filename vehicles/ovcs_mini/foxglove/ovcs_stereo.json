@@ -175,7 +175,7 @@
       "legendDisplay": "floating",
       "showXAxisLabels": true,
       "showYAxisLabels": true,
-      "isSynced": true,
+      "isSynced": false,
       "xAxisVal": "timestamp",
       "followingViewWidth": 30,
       "foxglovePanelTitle": "Camera sync offset"

@@ -82,7 +82,7 @@
       "legendDisplay": "floating",
       "showXAxisLabels": true,
       "showYAxisLabels": true,
-      "isSynced": true,
+      "isSynced": false,
       "xAxisVal": "timestamp",
       "followingViewWidth": 30,
       "foxglovePanelTitle": "Sync offset, right - left (ms)"
@@ -106,7 +106,7 @@
       "legendDisplay": "floating",
       "showXAxisLabels": true,
       "showYAxisLabels": true,
-      "isSynced": true,
+      "isSynced": false,
       "xAxisVal": "timestamp",
       "followingViewWidth": 30,
       "foxglovePanelTitle": "Exposure (us)"
@@ -130,7 +130,7 @@
       "legendDisplay": "floating",
       "showXAxisLabels": true,
       "showYAxisLabels": true,
-      "isSynced": true,
+      "isSynced": false,
       "xAxisVal": "timestamp",
       "followingViewWidth": 30,
       "foxglovePanelTitle": "Analogue gain"
