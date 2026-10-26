@@ -62,6 +62,8 @@ The boundary between Gazebo's transport and ROS is exactly the list in `gazebo.l
 | `/simulator/drive` | `geometry_msgs/Twist` | `RosBridge.Simulator.Hardware` ([simulated hardware](./commands.md#the-vms-drives-the-simulator)) | `AckermannSteering` |
 | `/simulator/odom` | `nav_msgs/Odometry` | the model's `OdometryPublisher`: [ground truth](./commands.md#ground-truth) | you, to compare with `/odom` |
 | `/stereo/...` disparity, depth, points, detections | `stereo_msgs`, `sensor_msgs`, `vision_msgs` | the vision unit | Nav2, Foxglove |
+| `/octomap/point_cloud_centers` | `sensor_msgs/PointCloud2` | the Nav2 image's `octomap_server`, from `/stereo/points`, for a vehicle with `nav2/octomap.yaml` | displays, Foxglove |
+| `<cloud>/draco` | `point_cloud_interfaces/CompressedPointCloud2` | the Nav2 image's `point_cloud_transport`, for `/stereo/points` and the OctoMap map, for a vehicle with `nav2/draco.yaml` | displays over a wireless link |
 | `/vehicle/*` | `std_msgs/String`, `Bool`, `Float64` | `RosBridge.Publishers.VehicleStatus`, from the VMS's `0x1A0`, `0x600` and `0x60C` | Foxglove: the control level, ROS commander, gear, ready to drive, VMS status and requested throttle and steering |
 | `/vehicle/predicted_path`, `/vehicle/predicted_pose` | `nav_msgs/Path`, `geometry_msgs/PoseStamped` | `RosBridge.Publishers.PathPrediction`, from the VMS's `0x60B` and `0x600` | displays drawing where the vehicle heads |
 | `/proximity/nearest`, `/proximity/labels` | `sensor_msgs/Range`, `visualization_msgs/MarkerArray` | `RosBridge.Publishers.Proximity`, from `/scan` | displays, Foxglove |

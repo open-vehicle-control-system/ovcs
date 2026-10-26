@@ -18,7 +18,7 @@ The goal is that this machine is immutable in the same sense the Nerves boards a
                  └──────────────────────────────────────────┘
 ```
 
-The vehicle is the router. Everything else (the Nerves bridges, the on-vehicle nodes, the operator's laptop) is a Zenoh **client**, so the fabric survives the base station driving away. Compose files for both sides live in [`compose/`](../../compose/README.md): what runs on the vehicle in `compose/compute/`, what stays on a workstation in `compose/local/`.
+The vehicle is the router. Everything else (the Nerves bridges, the on-vehicle nodes, the operator's laptop) is a Zenoh **client**, so the fabric survives the base station driving away. The Nav2 image also maps the stereo cloud with `octomap_server` when your vehicle's `nav2/` has an `octomap.yaml`, and republishes clouds compressed with Draco when it has a `draco.yaml`, for displays over a wireless link; [`nav2.launch.py`](../../compose/compute/images/nav2/launch/nav2.launch.py) describes both. Compose files for both sides live in [`compose/`](../../compose/README.md): what runs on the vehicle in `compose/compute/`, what stays on a workstation in `compose/local/`.
 
 ## Hardware
 

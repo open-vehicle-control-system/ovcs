@@ -80,7 +80,9 @@ FROM ros-snapshot
 # `ros-lyrical-navigation2` or `ros-lyrical-nav2-bringup` in the
 # Lyrical archive, and naming what we run keeps the image honest
 # about it. ompl and backward_ros are the Smac planners' runtime
-# dependencies.
+# dependencies. octomap_server, topic_tools and point_cloud_transport are not
+# Nav2's: they map and compress the stereo cloud for the displays, see the
+# launch file.
 # Upgrade first, so the base's packages match the snapshot's: packages
 # built against a newer rosidl fail at load with undefined symbols.
 RUN apt-get update \
@@ -102,6 +104,10 @@ RUN apt-get update \
         ros-lyrical-nav2-simple-commander \
         ros-lyrical-nav2-msgs \
         ros-lyrical-robot-state-publisher \
+        ros-lyrical-octomap-server \
+        ros-lyrical-topic-tools \
+        ros-lyrical-point-cloud-transport \
+        ros-lyrical-draco-point-cloud-transport \
         gettext-base \
     && rm -rf /var/lib/apt/lists/*
 

@@ -1,0 +1,20 @@
+# point_cloud_transport's Draco republishers: the stereo cloud and the
+# OctoMap map compressed for the displays, on <cloud>/draco. Launched by
+# nav2.launch.py because this file exists. The parameters take the output
+# topic's name.
+point_cloud_draco:
+  ros__parameters:
+    # Draco compresses floats only once quantised.
+    stereo.points.draco.force_quantization: true
+    # Positions to about 2 mm across the stereo cloud's few metres, finer than
+    # stereo depth resolves.
+    stereo.points.draco.quantization_POSITION: 11
+    stereo.points.draco.encode_speed: 3
+    stereo.points.draco.decode_speed: 3
+octomap_draco:
+  ros__parameters:
+    octomap.point_cloud_centers.draco.force_quantization: true
+    # The map's voxels are 5 cm apart, across tens of metres.
+    octomap.point_cloud_centers.draco.quantization_POSITION: 12
+    octomap.point_cloud_centers.draco.encode_speed: 3
+    octomap.point_cloud_centers.draco.decode_speed: 3
