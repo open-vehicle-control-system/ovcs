@@ -86,7 +86,7 @@
       "showLegend": true,
       "legendDisplay": "floating",
       "showPlotValuesInLegend": true,
-      "isSynced": true,
+      "isSynced": false,
       "xAxisVal": "timestamp",
       "followingViewWidth": 20,
       "foxglovePanelTitle": "Requests vs measured speed"
@@ -141,7 +141,7 @@
       "showLegend": true,
       "legendDisplay": "floating",
       "showPlotValuesInLegend": true,
-      "isSynced": true,
+      "isSynced": false,
       "xAxisVal": "timestamp",
       "followingViewWidth": 20,
       "foxglovePanelTitle": "Gamepad axes"

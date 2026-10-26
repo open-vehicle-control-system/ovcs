@@ -178,7 +178,7 @@
       "showLegend": true,
       "legendDisplay": "floating",
       "showPlotValuesInLegend": true,
-      "isSynced": true,
+      "isSynced": false,
       "xAxisVal": "timestamp",
       "followingViewWidth": 20,
       "foxglovePanelTitle": "Commanded velocity"
@@ -204,7 +204,7 @@
       "showLegend": true,
       "legendDisplay": "floating",
       "showPlotValuesInLegend": true,
-      "isSynced": true,
+      "isSynced": false,
       "xAxisVal": "timestamp",
       "followingViewWidth": 20,
       "foxglovePanelTitle": "Measured velocity"
@@ -230,7 +230,7 @@
       "showLegend": true,
       "legendDisplay": "floating",
       "showPlotValuesInLegend": true,
-      "isSynced": true,
+      "isSynced": false,
       "xAxisVal": "timestamp",
       "followingViewWidth": 60,
       "foxglovePanelTitle": "Position in odom"
@@ -256,7 +256,7 @@
       "showLegend": true,
       "legendDisplay": "floating",
       "showPlotValuesInLegend": true,
-      "isSynced": true,
+      "isSynced": false,
       "xAxisVal": "timestamp",
       "followingViewWidth": 20,
       "foxglovePanelTitle": "Yaw rate: IMU vs odometry"
@@ -369,7 +369,7 @@
       "showLegend": true,
       "legendDisplay": "floating",
       "showPlotValuesInLegend": true,
-      "isSynced": true,
+      "isSynced": false,
       "xAxisVal": "timestamp",
       "followingViewWidth": 60,
       "foxglovePanelTitle": "Goal tracking"
