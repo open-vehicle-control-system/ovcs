@@ -73,6 +73,18 @@ defmodule RosBridge.Components do
       its own. Opts: `:steering_joints`, `:wheel_joints`, `:wheelbase`,
       `:kingpin_width`, `:wheel_radius` (required), `:topic` — see the
       module.
+    * `:path_prediction` — `RosBridge.Publishers.PathPrediction`, the
+      arc the vehicle will follow at its commanded steering angle on
+      `/vehicle/predicted_path` and where it will be in a second on
+      `/vehicle/predicted_pose`, from the `vehicle_motion` and
+      `gear_status` CAN frames. Opts: `:wheelbase` (required),
+      `:base_ahead_of_rear_axle`, `:length_m`, `:horizon_s` — see the
+      module.
+    * `:proximity` — `RosBridge.Perception.Proximity`, the lidar's
+      nearest return on `/proximity/nearest` and the nearest return of
+      each sector, labelled with its distance, on `/proximity/labels`,
+      from `/scan`. Opts: `:scan_topic`, `:within_m`, `:sector_deg` —
+      see the module.
     * `:vehicle_status_publisher` — `RosBridge.Publishers.VehicleStatus`,
       the VMS's status, gear and control level on `/vehicle/*`, from the
       `vms_status`, `gear_status` and `control_status` CAN frames the
@@ -156,6 +168,10 @@ defmodule RosBridge.Components do
   def start(:ackermann_joint_states, opts) do
     [{RosBridge.Publishers.AckermannJointStates, opts}]
   end
+
+  def start(:path_prediction, opts), do: [{RosBridge.Publishers.PathPrediction, opts}]
+
+  def start(:proximity, opts), do: [{RosBridge.Perception.Proximity, opts}]
 
   def start(:vehicle_status_publisher, opts) do
     [{RosBridge.Publishers.VehicleStatus, opts}]

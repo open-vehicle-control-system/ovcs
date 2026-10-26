@@ -7,7 +7,9 @@ defmodule VmsCore.Managers.Gear do
   `VmsCore.Managers.ControlLevel` currently names. Parking, reverse and
   drive are engaged only near standstill with the throttle released;
   the contact off forces parking and a vehicle not ready to drive drops
-  to neutral.
+  to neutral. A request for the opposite direction that cannot be served
+  yet also drops to neutral, so the throttle meant for it never drives
+  the vehicle the other way.
   """
   use GenServer
   alias Cantastic.Emitter
@@ -167,6 +169,16 @@ defmodule VmsCore.Managers.Gear do
   end
 
   defp select_gear(state) do
+    case next_gear(state) do
+      nil -> state
+      gear -> apply_gear(state, gear)
+    end
+  end
+
+  @doc """
+  The gear to engage for `state`, or `nil` to keep the selected one.
+  """
+  def next_gear(state) do
     %{
       contact: contact,
       requested_gear: requested_gear,
@@ -181,33 +193,36 @@ defmodule VmsCore.Managers.Gear do
       not is_nil(speed) and D.abs(speed) |> D.lt?(@gear_shift_speed_limit_km_h)
 
     throttle_near_zero = D.lt?(requested_throttle, @gear_shift_throttle_limit)
+    can_engage = speed_near_zero && throttle_near_zero
 
     cond do
       contact == :off && selected_gear != :parking ->
-        apply_gear(state, :parking)
+        :parking
 
       !ready_to_drive && selected_gear in [:reverse, :drive] ->
-        apply_gear(state, :neutral)
+        :neutral
 
-      selected_gear != :parking && requested_gear == :parking && speed_near_zero &&
-          throttle_near_zero ->
-        apply_gear(state, :parking)
+      selected_gear != :parking && requested_gear == :parking && can_engage ->
+        :parking
 
       selected_gear != :neutral && requested_gear == :neutral && ready_to_drive ->
-        apply_gear(state, :neutral)
+        :neutral
 
-      selected_gear != :reverse && requested_gear == :reverse && speed_near_zero &&
-        throttle_near_zero && ready_to_drive ->
-        apply_gear(state, :reverse)
+      reversal?(selected_gear, requested_gear) && !can_engage ->
+        :neutral
 
-      selected_gear != :drive && requested_gear == :drive && speed_near_zero && throttle_near_zero &&
+      selected_gear != requested_gear && requested_gear in [:reverse, :drive] && can_engage &&
           ready_to_drive ->
-        apply_gear(state, :drive)
+        requested_gear
 
       true ->
-        state
+        nil
     end
   end
+
+  defp reversal?(:drive, :reverse), do: true
+  defp reversal?(:reverse, :drive), do: true
+  defp reversal?(_selected_gear, _requested_gear), do: false
 
   defp emit_metrics(state) do
     Bus.broadcast("messages", %Bus.Message{

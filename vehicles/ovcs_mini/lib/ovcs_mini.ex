@@ -147,6 +147,7 @@ defmodule OvcsMini do
         # Nav2 needs in the map-less setup.
         {:odometry_publisher,
          driver: OvcsDrivers.Imu.Dummy, base_ahead_of_rear_axle: base_ahead_of_rear_axle()},
+        path_prediction(),
         ackermann_joint_states()
       ]
     }
@@ -172,6 +173,8 @@ defmodule OvcsMini do
         {:odometry_publisher,
          driver: RosBridge.Imu.Zenoh, base_ahead_of_rear_axle: base_ahead_of_rear_axle()},
         {:lidar_publisher, driver: RosBridge.Lidar.Zenoh, bins: 500, frame_id: "lidar_link"},
+        :proximity,
+        path_prediction(),
         rear_ultrasound(:left, RosBridge.Rangefinder.Zenoh, topic: "ultrasound/rear_left_raw"),
         rear_ultrasound(:right, RosBridge.Rangefinder.Zenoh, topic: "ultrasound/rear_right_raw"),
         {:simulated_hardware, simulated_hardware()}
@@ -265,6 +268,8 @@ defmodule OvcsMini do
          driver_opts: [serial_number: "bafb4ecd0064ef11858ee0a9c169b110"],
          bins: 500,
          frame_id: "lidar_link"},
+        :proximity,
+        path_prediction(),
         # A02YYUW ultrasonic sensors on the rear bumper, each on a CP2104
         # found by its serial number.
         rear_ultrasound(:left, A02YYUW.UART, serial_number: "01D9EBFA"),
@@ -272,6 +277,11 @@ defmodule OvcsMini do
         ackermann_joint_states()
       ]
     }
+
+  defp path_prediction do
+    {:path_prediction,
+     wheelbase: geometry().wheelbase, base_ahead_of_rear_axle: base_ahead_of_rear_axle()}
+  end
 
   # The wheels robot_state_publisher places; Gazebo publishes them in simulation.
   defp ackermann_joint_states do
