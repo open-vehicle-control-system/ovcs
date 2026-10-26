@@ -1,8 +1,8 @@
 defmodule VmsCore.Managers.GearTest do
   @moduledoc """
-  The gear manager's source gating: every inbound message is acted on
-  only when its source is the configured one. Driven through
-  `handle_info/2` against a stub state.
+  The gear manager's source gating, every inbound message acted on only
+  when its source is the configured one, and the gear it chooses. Driven
+  through `handle_info/2` and `next_gear/1` against a stub state.
   """
   use ExUnit.Case, async: true
 
@@ -194,6 +194,39 @@ defmodule VmsCore.Managers.GearTest do
         )
 
       assert state.contact == :on
+    end
+  end
+
+  describe "next_gear/1" do
+    defp driving(overrides) do
+      stub_state(
+        Map.merge(
+          %{contact: :on, ready_to_drive: true, selected_gear: :reverse, requested_gear: :drive},
+          overrides
+        )
+      )
+    end
+
+    test "engages the requested direction at standstill with the throttle released" do
+      assert Gear.next_gear(driving(%{})) == :drive
+    end
+
+    test "drops to neutral when the opposite direction comes with the throttle held" do
+      assert Gear.next_gear(driving(%{requested_throttle: Decimal.new("0.4")})) == :neutral
+    end
+
+    test "drops to neutral when the opposite direction comes while moving" do
+      assert Gear.next_gear(driving(%{speed: Decimal.new("3")})) == :neutral
+    end
+
+    test "engages from neutral once the throttle is released at standstill" do
+      held = driving(%{selected_gear: :neutral, requested_throttle: Decimal.new("0.4")})
+      assert Gear.next_gear(held) == nil
+      assert Gear.next_gear(%{held | requested_throttle: Decimal.new(0)}) == :drive
+    end
+
+    test "keeps the gear the request already has" do
+      assert Gear.next_gear(driving(%{selected_gear: :drive})) == nil
     end
   end
 
