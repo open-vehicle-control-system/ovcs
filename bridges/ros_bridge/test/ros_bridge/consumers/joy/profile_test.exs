@@ -62,6 +62,23 @@ defmodule RosBridge.Consumers.Joy.ProfileTest do
              ["joy/g923", "joy/gamepad"]
   end
 
+  describe "the framework's quest profile" do
+    defp quest, do: Profile.load!(Path.join(Profile.framework_dir(), "quest.yml"))
+
+    test "reads the headset's axes: steering right-positive, the right trigger forward" do
+      axes = [0.0, 0.0, 1.0, -0.5, 0.8, -1.0]
+      assert {steering, throttle, _released} = Profile.command(quest(), axes)
+      assert_in_delta steering, 0.5, 1.0e-9
+      assert_in_delta throttle, 0.8, 1.0e-9
+      assert Profile.direction(quest(), axes, []) == :forward
+    end
+
+    test "is neutral at rest, and backward on the left trigger" do
+      assert Profile.direction(quest(), [0.0, 0.0, 1.0, 0.0, 0.0, 1.0], []) == :neutral
+      assert Profile.direction(quest(), [0.0, 0.0, -1.0, 0.0, 0.0, 1.0], []) == :backward
+    end
+  end
+
   describe "direction/3" do
     defp buttons(held), do: for(i <- 0..22, do: if(i in held, do: 1, else: 0))
 
@@ -103,13 +120,14 @@ defmodule RosBridge.Consumers.Joy.ProfileTest do
     end
   end
 
-  test "the framework ships the Xbox controller, the F310 and the G923" do
+  test "the framework ships the Xbox controller, the F310, the G923 and the Quest" do
     assert Profile.framework_dir()
            |> Profile.load_dir!()
            |> Enum.map(&{&1.name, &1.device})
            |> Enum.sort() == [
              {"f310", "(?i)gamepad f310"},
              {"g923", "G923 Racing Wheel"},
+             {"quest", "^Meta Quest Touch$"},
              {"xbox", "(?i)x-?box.*(pad|controller)"}
            ]
   end
