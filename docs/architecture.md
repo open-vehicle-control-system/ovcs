@@ -49,9 +49,11 @@ The Vue dashboard runs off the vehicle, on a laptop, and talks to the VMS API. T
 
 ### One Erlang mesh, no broker
 
-Every BEAM of a running vehicle joins one Erlang-distribution cluster through `OvcsBus.Cluster`: at boot each node calls `Node.connect/1` on its declared peers until the mesh forms. No MQTT broker, no relay.
+Every BEAM of a running vehicle joins one Erlang-distribution cluster through `OvcsBus.Cluster`: at boot each node calls `Node.connect/1` on its declared peers until the mesh forms. The nodes talk to each other directly: no broker, no relay between them.
 
 `OvcsBus.broadcast/2` delivers to subscribers on the local node. Set `config :ovcs_bus, cluster_broadcast: true` to have it reach every node through `Phoenix.PubSub`. It is off by default: a cluster broadcast suspends the publishing process while the link to any peer is saturated, so one slow link can stall a drivetrain component.
+
+`OvcsBus.Forwarder` is the only cross-node path of bus traffic besides that opt-in broadcast: it coalesces a node's messages into batches sent with `:nosuspend`, so it never suspends a publisher. The [bus gateway](./bus_gateway.md) uses it to carry the bus out of the mesh, to an MQTT broker among others.
 
 The transport is the same in both environments: `./ovcs run <vehicle>` clusters one BEAM per role over loopback; a deployed vehicle clusters one BEAM per Raspberry Pi over the vehicle LAN.
 
