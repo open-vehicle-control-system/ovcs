@@ -1,0 +1,10 @@
+{
+  "name": "@ovcs/ui",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./tokens.css": "./tokens.css",
+    "./tailwind-preset": "./tailwind-preset.js"
+  }
+}

@@ -72,6 +72,8 @@ jobs:
             vue:
               - *shared
               - vms/dashboard/**
+              - libraries/ovcs_bus_gateway/dashboard/**
+              - libraries/ovcs_ui/**
             flutter:
               - *shared
               - infotainment/dashboard/**
@@ -243,6 +245,30 @@ jobs:
           path: ~/.npm
           key: npm-vms-dashboard-${{ hashFiles('mise.toml') }}-${{ hashFiles('vms/dashboard/package-lock.json') }}
           restore-keys: npm-vms-dashboard-${{ hashFiles('mise.toml') }}-
+      - run: npm ci
+      - name: Audit deps
+        # Only the packages that ship in the built dashboard, not the build and test tools.
+        run: npm audit --omit=dev
+      - run: npm run test:unit
+      - run: npm run build
+
+  bus-gateway-dashboard:
+    name: Vue · libraries/ovcs_bus_gateway/dashboard
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.vue == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: libraries/ovcs_bus_gateway/dashboard
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup-mise
+      - uses: actions/cache@v5
+        with:
+          path: ~/.npm
+          key: npm-bus-gateway-dashboard-${{ hashFiles('mise.toml') }}-${{ hashFiles('libraries/ovcs_bus_gateway/dashboard/package-lock.json') }}
+          restore-keys: npm-bus-gateway-dashboard-${{ hashFiles('mise.toml') }}-
       - run: npm ci
       - name: Audit deps
         # Only the packages that ship in the built dashboard, not the build and test tools.
