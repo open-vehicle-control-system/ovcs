@@ -100,6 +100,13 @@ services:
     restart: always
     network_mode: host
 
+  mosquitto:
+    # The MQTT broker the OVCS bus gateway publishes every signal to.
+    # Host networking so clients reach tcp/1883 on the node.
+    build: ./images/mosquitto
+    restart: always
+    network_mode: host
+
   zenohd:
     # The vehicle *is* the router for the OVCS fabric, so the fabric
     # survives the base station disconnecting. Everything else —
