@@ -103,6 +103,28 @@ defmodule OvcsBus.Cluster do
     end
   end
 
+  @doc """
+  Role of `node` within `vehicle_module`'s cluster, e.g. `"vms"` or
+  `"bridge-ros"`.
+
+  Reads the sname on host dev, or the first hostname label on a deployed
+  firmware (sname `nerves`). A node outside the vehicle's naming keeps its
+  full name.
+  """
+  @spec role(node(), module()) :: String.t()
+  def role(node, vehicle_module) do
+    full_name = Atom.to_string(node)
+    prefix = vehicle_dir_hyphen(vehicle_module) <> "-"
+
+    with [sname, hostname] <- String.split(full_name, "@", parts: 2),
+         label = if(sname == "nerves", do: hostname |> String.split(".") |> hd(), else: sname),
+         true <- String.starts_with?(label, prefix) do
+      String.replace_prefix(label, prefix, "")
+    else
+      _ -> full_name
+    end
+  end
+
   # `"ovcs1-vms.local"` -> `".local"`; `"ovcs1-vms"` -> `""`.
   defp domain_suffix(hostname) do
     case String.split(hostname, ".", parts: 2) do
