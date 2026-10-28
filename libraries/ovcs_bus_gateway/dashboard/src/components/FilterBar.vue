@@ -14,14 +14,10 @@ defineExpose({ focus: () => input.value?.focus() })
 </script>
 
 <template>
-  <header class="sticky top-0 z-10 border-b border-ovcs-border bg-ovcs-surface">
+  <header class="ovcs-header">
     <div class="mx-auto flex max-w-5xl flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
       <h1 class="text-lg font-semibold">OVCS Bus</h1>
-      <span class="flex items-center gap-2 text-sm text-ovcs-muted">
-        <span
-          class="inline-block h-2.5 w-2.5 rounded-full"
-          :class="connected ? 'bg-ovcs-ok' : 'bg-ovcs-error'"
-        />
+      <span class="ovcs-status text-sm" :class="connected ? 'ovcs-status--ok' : 'ovcs-status--error'">
         {{ connected ? `Live · ${count} signals` : 'Disconnected, retrying' }}
       </span>
       <input
@@ -35,8 +31,8 @@ defineExpose({ focus: () => input.value?.focus() })
       />
     </div>
     <p class="mx-auto max-w-5xl px-4 pb-2 text-xs text-ovcs-muted">
-      <span class="text-ovcs-accent">●</span> value changed in the last {{ LIVE_MS / 1000 }} s ·
-      <span class="rounded bg-ovcs-warn px-1 text-[10px] font-semibold uppercase text-ovcs-bg">stale</span>
+      <span class="ovcs-dot ovcs-dot--on align-middle" /> value changed in the last {{ LIVE_MS / 1000 }} s ·
+      <span class="ovcs-badge ovcs-badge--warn">stale</span>
       no longer received by the gateway · faint “Published” times are current
     </p>
   </header>

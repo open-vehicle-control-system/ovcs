@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     "./tokens.css": "./tokens.css",
+    "./components.css": "./components.css",
     "./tailwind-preset": "./tailwind-preset.js"
   }
 }

@@ -31,14 +31,11 @@ const columns = 'grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 sm:grid-cols-[minma
   >
     <header class="mb-2 flex flex-wrap items-baseline gap-x-4 gap-y-1">
       <h2 class="text-xl font-semibold">{{ node.node }}</h2>
-      <span class="flex items-center gap-1.5 text-sm" :class="nodeStatus(node).text">
-        <span class="inline-block h-2 w-2 rounded-full" :class="nodeStatus(node).dot" />
-        {{ nodeStatus(node).label }}
-      </span>
+      <span class="ovcs-status text-sm" :class="nodeStatus(node).modifier">{{ nodeStatus(node).label }}</span>
       <span v-if="staleCount(node)" class="text-sm text-ovcs-warn">{{ staleCount(node) }} stale</span>
     </header>
 
-    <div class="overflow-hidden rounded border border-ovcs-border bg-ovcs-surface">
+    <div class="ovcs-card overflow-hidden p-0">
       <div
         :class="columns"
         class="hidden border-b border-ovcs-border px-3 py-1.5 text-xs uppercase tracking-wide text-ovcs-muted sm:grid"
@@ -69,14 +66,11 @@ const columns = 'grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 sm:grid-cols-[minma
           <div
             v-for="signal in source.signals"
             :key="signal.name"
-            :class="[columns, { 'signal-row--live': isLive(signal, now) }]"
-            class="signal-row items-baseline border-b border-ovcs-border px-3 py-1.5 text-sm last:border-b-0"
+            :class="[columns, { 'ovcs-row--live': isLive(signal, now) }]"
+            class="ovcs-row items-baseline border-b border-ovcs-border px-3 py-1.5 text-sm last:border-b-0"
           >
             <span class="col-span-2 flex min-w-0 items-center gap-2 sm:col-span-1">
-              <span
-                class="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
-                :class="isLive(signal, now) ? 'bg-ovcs-accent' : 'bg-transparent'"
-              />
+              <span class="ovcs-dot" :class="{ 'ovcs-dot--on': isLive(signal, now) }" />
               <span class="truncate" :title="signal.name">{{ signal.name }}</span>
             </span>
 
@@ -89,12 +83,7 @@ const columns = 'grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 sm:grid-cols-[minma
                 {{ formatValue(signal.value).text }}
               </span>
               <span v-if="signal.unit" class="shrink-0 text-xs text-ovcs-muted">{{ signal.unit }}</span>
-              <span
-                v-if="signal.stale === true"
-                class="shrink-0 rounded bg-ovcs-warn px-1 text-[10px] font-semibold uppercase text-ovcs-bg"
-              >
-                stale
-              </span>
+              <span v-if="signal.stale === true" class="ovcs-badge ovcs-badge--warn shrink-0">stale</span>
             </span>
 
             <span class="flex justify-end gap-3 text-right text-xs text-ovcs-muted sm:contents">

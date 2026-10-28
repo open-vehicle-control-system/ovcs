@@ -15,15 +15,11 @@ defineProps({
       v-for="node in tree"
       :key="node.node"
       :href="node.sources.length ? `#node-${node.node}` : undefined"
-      class="block rounded border border-ovcs-border bg-ovcs-surface px-4 py-3"
-      :class="{ 'hover:border-ovcs-accent': node.sources.length }"
+      class="ovcs-card"
     >
       <div class="flex items-center justify-between gap-2">
         <span class="font-semibold">{{ node.node }}</span>
-        <span class="flex items-center gap-1.5 text-xs" :class="nodeStatus(node).text">
-          <span class="inline-block h-2 w-2 rounded-full" :class="nodeStatus(node).dot" />
-          {{ nodeStatus(node).label }}
-        </span>
+        <span class="ovcs-status text-xs" :class="nodeStatus(node).modifier">{{ nodeStatus(node).label }}</span>
       </div>
       <p class="mt-1 text-xs text-ovcs-muted">
         <template v-if="node.sources.length">

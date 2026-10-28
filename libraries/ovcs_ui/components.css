@@ -1,0 +1,99 @@
+/* Shared components, built on the tokens of tokens.css. */
+
+/* A bordered block on the surface colour. */
+.ovcs-card {
+  display: block;
+  border: 1px solid var(--ovcs-border);
+  border-radius: 0.25rem;
+  background-color: var(--ovcs-surface);
+  padding: 0.75rem 1rem;
+}
+
+a.ovcs-card:hover {
+  border-color: var(--ovcs-accent);
+}
+
+/* The page's sticky top bar. */
+.ovcs-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  border-bottom: 1px solid var(--ovcs-border);
+  background-color: var(--ovcs-surface);
+}
+
+/* A coloured dot followed by its label: <span class="ovcs-status ovcs-status--ok">Connected</span>. */
+.ovcs-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  color: var(--ovcs-text-muted);
+}
+
+.ovcs-status::before {
+  content: "";
+  width: 0.5rem;
+  height: 0.5rem;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  background-color: currentColor;
+}
+
+.ovcs-status--ok {
+  color: var(--ovcs-ok);
+}
+
+.ovcs-status--warn {
+  color: var(--ovcs-warn);
+}
+
+.ovcs-status--error {
+  color: var(--ovcs-error);
+}
+
+/* A short uppercase label: <span class="ovcs-badge ovcs-badge--warn">stale</span>. */
+.ovcs-badge {
+  display: inline-block;
+  border-radius: 0.25rem;
+  padding: 0 0.25rem;
+  font-size: 0.625rem;
+  font-weight: 600;
+  line-height: 1rem;
+  text-transform: uppercase;
+  background-color: var(--ovcs-border);
+  color: var(--ovcs-text);
+}
+
+.ovcs-badge--warn {
+  background-color: var(--ovcs-warn);
+  color: var(--ovcs-bg);
+}
+
+.ovcs-badge--error {
+  background-color: var(--ovcs-error);
+  color: var(--ovcs-bg);
+}
+
+/* A small dot marking a row, shown with --on: <span class="ovcs-dot ovcs-dot--on"></span>. */
+.ovcs-dot {
+  display: inline-block;
+  width: 0.375rem;
+  height: 0.375rem;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  background-color: transparent;
+}
+
+.ovcs-dot--on {
+  background-color: var(--ovcs-accent);
+}
+
+/* A row that lights up while --live is set and fades back when it is removed. */
+.ovcs-row {
+  transition: background-color 1.5s ease-out;
+}
+
+.ovcs-row--live {
+  background-color: color-mix(in srgb, var(--ovcs-accent) 12%, transparent);
+  transition: none;
+}

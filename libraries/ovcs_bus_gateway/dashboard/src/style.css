@@ -5,12 +5,3 @@
 body {
   @apply bg-ovcs-bg text-ovcs-text font-sans;
 }
-
-.signal-row {
-  transition: background-color 1.5s ease-out;
-}
-
-.signal-row--live {
-  background-color: color-mix(in srgb, var(--ovcs-accent) 12%, transparent);
-  transition: none;
-}
