@@ -1,6 +1,6 @@
 [tools]
-# OTP 28 to match every Nerves target: the base systems and the bridges
-# Pi 5 system all ship the OTP 28 line (nerves_system_br 1.33.7). Mix
+# OTP 29 to match every Nerves target: the base systems and the bridges
+# Pi 5 system all ship the OTP 29 line (nerves_system_br 1.35.3). Nerves
 # refuses to cross-compile across major OTP versions, so the host pin has
 # to track the targets. See docs/toolchain_and_otp.md.
 erlang  = "29.1.2"

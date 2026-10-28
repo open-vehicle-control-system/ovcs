@@ -47,7 +47,7 @@ defmodule BridgeFirmware.MixProject do
     [
       {:ovcs_base_can_system_rpi3a,
        github: "open-vehicle-control-system/ovcs_base_can_system_rpi3a",
-       tag: "v2.0.4",
+       tag: "v3.0.0-rc.0",
        runtime: false,
        nerves: [compile: false]}
     ]
@@ -57,7 +57,7 @@ defmodule BridgeFirmware.MixProject do
     [
       {:ovcs_base_can_system_rpi4,
        github: "open-vehicle-control-system/ovcs_base_can_system_rpi4",
-       tag: "v2.0.4",
+       tag: "v3.0.0-rc.0",
        runtime: false,
        nerves: [compile: false]}
     ]
@@ -65,13 +65,14 @@ defmodule BridgeFirmware.MixProject do
 
   defp system_deps(:rpi5) do
     [
-      # OVCS Pi 5 system rebased on upstream nerves_system_rpi5 v2.0.3 with
-      # CAN tooling + IPROUTE/IPTABLES + Intel Wi-Fi 6 firmware added.
+      # OVCS Pi 5 system rebased on upstream nerves_system_rpi5 v2.2.1 with
+      # CAN tooling + IPROUTE + Intel Wi-Fi 6 firmware + the Hailo-8
+      # PCIe driver added.
       # Ships libcamera with PISP pipeline support (the original purpose of
       # this perception bridge — Camera Module 3 stereo on the Pi 5 PiSP FE).
       {:ovcs_bridges_system_rpi5,
        github: "open-vehicle-control-system/ovcs_bridges_system_rpi5",
-       tag: "v2.0.9",
+       tag: "v3.0.0-rc.1",
        runtime: false,
        nerves: [compile: false]}
     ]

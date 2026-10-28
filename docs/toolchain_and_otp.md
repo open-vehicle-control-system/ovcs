@@ -9,18 +9,20 @@ The host toolchain pinned in [`mise.toml`](../mise.toml) is not a free choice: e
 
 Nerves cross-compiles: the **host** Elixir/OTP produces the BEAM files, which are then packaged with the **target system's** ERTS. Both must be on the same OTP major. Bytecode from a newer OTP won't load on an older ERTS, so a mismatch gives you a build failure or, worse, an image that flashes and then fails at boot.
 
-`mix firmware`'s `compiler_check/0` doesn't catch this. It compares the host's Erlang compiler against the OTP its Elixir was built with, and both come from `mise.toml`. Nothing in the toolchain compares host against target. Building each firmware in CI does, which is why the `firmware.yml` workflow runs on pull requests as well as on pushes to `main`.
+Nerves checks the major: a firmware build stops with `Major version mismatch between host and target Erlang/OTP versions` when they differ. It does not check minors, and the error only appears once a build reaches that step, so the `firmware.yml` workflow builds every firmware on pull requests as well as on pushes to `main`. The host toolchain comes from `mise.toml` only in a shell where mise is active: run builds from such a shell, or through `mise exec --`, or the system Erlang on `PATH` is used instead.
 
 ## Current pins
 
-Every system is on OTP 28 (`nerves_system_br` 1.33.7), and `mise.toml` pins Erlang 28.4.1 / Elixir 1.19.5-otp-28 to match. Those entries are exact, not minimums.
+Every system is on OTP 29 (`nerves_system_br` 1.35.3, Linux 6.18), and `mise.toml` pins Erlang 29.1.2 / Elixir 1.20.4-otp-29 to match. Those entries are exact, not minimums.
 
 | Target | Used by | System release |
 |---|---|---|
-| `ovcs_base_can_system_rpi3a` | `bridges/firmware` (radio control) | v2.0.4 |
-| `ovcs_base_can_system_rpi4` | `vms/firmware`, `bridges/firmware` (ROS) | v2.0.4 |
-| `ovcs_base_can_system_rpi5` | `infotainment/firmware` | v2.0.4 |
-| `rpi5` (`ovcs_bridges_system_rpi5`) | `bridges/firmware` (perception) | v2.0.9 |
+| `ovcs_base_can_system_rpi3a` | `bridges/firmware` (radio control) | v3.0.0-rc.0 |
+| `ovcs_base_can_system_rpi4` | `vms/firmware`, `bridges/firmware` (ROS) | v3.0.0-rc.0 |
+| `ovcs_base_can_system_rpi5` | `infotainment/firmware` | v3.0.0-rc.0 |
+| `rpi5` (`ovcs_bridges_system_rpi5`) | `bridges/firmware` (perception) | v3.0.0-rc.1 |
+
+The perception system ships the Hailo-8 kernel driver and firmware but not the userspace library: `libraries/hailort` builds `libhailort` from source, at the same HailoRT version as the driver.
 
 Which of these your vehicle builds depends on the targets its `OvcsVehicle` module declares; the reference vehicles use all four between them.
 
@@ -30,7 +32,7 @@ Every system is pinned to a **tag**, never to a branch. A branch moves with each
 
 ## What the A/B layout requires
 
-The v2.0 systems use A/B firmware slots on the MicroSD/eMMC with automatic rollback. Two consequences are easy to break by accident.
+The systems use A/B firmware slots on the MicroSD/eMMC with automatic rollback. Two consequences are easy to break by accident.
 
 > [!WARNING]
 > **Firmware must mark itself good.** An image that doesn't call `Nerves.Runtime.validate_firmware/0` is reverted on the next boot. `OvcsVehicle.FirmwareValidator` does this in `vms_firmware`, `infotainment_firmware` and `bridge_firmware`, on target only, so every vehicle gets it for free. Remove it and every OTA update silently rolls back, NervesHub's included.
