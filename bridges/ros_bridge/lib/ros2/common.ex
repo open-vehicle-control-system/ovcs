@@ -72,7 +72,7 @@ defmodule Ros2.Common do
         payload =
           case byte_size(payload) do
             size when size > padding ->
-              <<_padding::binary-size(padding), payload::binary>> = payload
+              <<_padding::binary-size(^padding), payload::binary>> = payload
               payload
 
             _ ->
@@ -86,7 +86,7 @@ defmodule Ros2.Common do
 
       # Fixed-size `float64[count]`: CDR omits the length prefix.
       defp parse_float64_array(payload, count) do
-        <<floats::binary-size(count * 8), payload::binary>> = payload
+        <<floats::binary-size(^count * 8), payload::binary>> = payload
         array = for <<element::little-signed-float-size(64) <- floats>>, do: element
         {:ok, array, payload}
       rescue
@@ -94,7 +94,7 @@ defmodule Ros2.Common do
       end
 
       defp parse_float32_array(<<count::little-integer-size(32), payload::binary>>) do
-        <<floats::binary-size(count * 4), payload::binary>> = payload
+        <<floats::binary-size(^count * 4), payload::binary>> = payload
         array = for <<element::little-signed-float-size(32) <- floats>>, do: element
         {:ok, array, payload}
       rescue
@@ -102,7 +102,7 @@ defmodule Ros2.Common do
       end
 
       defp parse_int32_array(<<count::little-unsigned-integer-size(32), payload::binary>>) do
-        <<integers::binary-size(count * 4), payload::binary>> = payload
+        <<integers::binary-size(^count * 4), payload::binary>> = payload
         array = for <<element::little-signed-integer-size(32) <- integers>>, do: element
         {:ok, array, payload}
       rescue
@@ -216,7 +216,8 @@ defmodule Ros2.Common do
         bytes_needed = count * 8
 
         case rest do
-          <<_padding::binary-size(padding_size), floats::binary-size(bytes_needed), tail::binary>> ->
+          <<_padding::binary-size(^padding_size), floats::binary-size(^bytes_needed),
+            tail::binary>> ->
             values = for <<element::little-signed-float-size(64) <- floats>>, do: element
             {:ok, values, tail}
 
@@ -228,7 +229,7 @@ defmodule Ros2.Common do
       # `current_offset` is measured from the body origin.
       defp consume_alignment(payload, alignment, current_offset) do
         padding_size = rem(alignment - rem(current_offset, alignment), alignment)
-        <<_skip::binary-size(padding_size), rest::binary>> = payload
+        <<_skip::binary-size(^padding_size), rest::binary>> = payload
         rest
       end
     end

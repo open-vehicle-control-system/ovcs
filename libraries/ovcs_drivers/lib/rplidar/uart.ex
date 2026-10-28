@@ -266,7 +266,7 @@ defmodule RPLidar.UART do
     case :binary.match(buffer, <<0xA5, 0x5A>>) do
       {at, 2} ->
         case binary_part(buffer, at, byte_size(buffer) - at) do
-          <<0xA5, 0x5A, _length_and_mode::little-32, ^type, payload::binary-size(length),
+          <<0xA5, 0x5A, _length_and_mode::little-32, ^type, payload::binary-size(^length),
             rest::binary>> ->
             {:ok, payload, rest}
 

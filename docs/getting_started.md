@@ -15,8 +15,8 @@ Most of the toolchain is pinned in [`mise.toml`](../mise.toml) and installed by 
 | Tool | Version | Purpose | Installed by |
 |---|---|---|---|
 | mise | latest | Version manager for every runtime below | you, once |
-| Erlang/OTP | 28.4.1 | Runtime for Elixir | mise |
-| Elixir | 1.19.5-otp-28 | The primary language | mise |
+| Erlang/OTP | 29.1.2 | Runtime for Elixir | mise |
+| Elixir | 1.20.4-otp-29 | The primary language | mise |
 | Rust | 1.90 | Compiles the `ovcs` CLI | mise |
 | Node.js | 24 | VMS debug dashboard (Vue) | mise |
 | Ruby | 3.3 | Utility scripts under `scripts/` | mise |
@@ -32,7 +32,7 @@ Most of the toolchain is pinned in [`mise.toml`](../mise.toml) and installed by 
 | nerves_bootstrap | latest | Nerves Mix archive | `mise install` hook |
 
 > [!WARNING]
-> The Erlang and Elixir versions are exact, not minimums. Every Nerves target ships the OTP 28 line, and nothing in the toolchain compares the host's OTP with the target's: a host on another OTP major either fails the build or produces an image that flashes and then fails at boot. mise pins Elixir 1.19.5 built against OTP 28 to match. [Toolchain and OTP](./toolchain_and_otp.md) explains the coupling.
+> The Erlang and Elixir versions are exact, not minimums. Every Nerves target ships the OTP 29 line, and a firmware build on a host with another OTP major stops with a version-mismatch error. mise pins Elixir 1.20.4 built against OTP 29 to match; build from a shell where mise is active, or through `mise exec --`. [Toolchain and OTP](./toolchain_and_otp.md) explains the coupling.
 
 ## Set up your machine
 

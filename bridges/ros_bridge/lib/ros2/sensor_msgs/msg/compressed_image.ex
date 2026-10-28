@@ -34,7 +34,7 @@ defmodule Ros2.SensorMsgs.Msg.CompressedImage do
     with {:ok, header, payload} <- Header.parse(payload),
          {:ok, format, payload} <- parse_string(payload),
          <<data_length::little-unsigned-integer-size(32), payload::binary>> <- payload,
-         <<data::binary-size(data_length), payload::binary>> <- payload do
+         <<data::binary-size(^data_length), payload::binary>> <- payload do
       {:ok, %__MODULE__{header: header, format: format, data: data}, payload}
     else
       _ -> {:error, :malformed, __MODULE__}

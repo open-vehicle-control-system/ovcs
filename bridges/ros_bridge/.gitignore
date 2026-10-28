@@ -1,0 +1,3 @@
+# Port binaries the rpi5 firmware build compiles into priv/.
+/priv/camera_capture
+/priv/hailo_detect

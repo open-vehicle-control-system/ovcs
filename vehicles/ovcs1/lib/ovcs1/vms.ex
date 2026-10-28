@@ -3,7 +3,6 @@ defmodule Ovcs1.Vms do
     Implements the OVCS1 specific logic (when is the vehicle ready, ...)
   """
   use GenServer
-  require Logger
   alias OvcsBus, as: Bus
   alias VmsCore.Status
 

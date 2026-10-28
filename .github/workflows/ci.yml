@@ -135,6 +135,7 @@ jobs:
           - libraries/ovcs_bridge
           - libraries/ovcs_bus_gateway
           - libraries/ovcs_drivers
+          - libraries/hailort
           - vms/core
           - vms/api
           - vms/firmware

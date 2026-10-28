@@ -117,7 +117,7 @@ defmodule RosBridge.Perception.Fusion do
     offset = (row * width + column) * 4
 
     case map_binary do
-      <<_skip::binary-size(offset), raw_x::little-signed-16, raw_y::little-signed-16,
+      <<_skip::binary-size(^offset), raw_x::little-signed-16, raw_y::little-signed-16,
         _rest::binary>> ->
         {raw_x / 1.0, raw_y / 1.0}
 

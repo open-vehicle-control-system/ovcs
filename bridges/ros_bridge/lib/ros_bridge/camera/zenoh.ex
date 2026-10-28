@@ -165,7 +165,7 @@ defmodule RosBridge.Camera.Zenoh do
   defp scan_segments(<<0xFF, _marker, length::big-16, rest::binary>>) do
     # `length` counts itself, so the payload is length - 2 bytes.
     case rest do
-      <<_skip::binary-size(length - 2), tail::binary>> -> scan_segments(tail)
+      <<_skip::binary-size(^length - 2), tail::binary>> -> scan_segments(tail)
       _ -> :error
     end
   end

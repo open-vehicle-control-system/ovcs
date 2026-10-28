@@ -20,6 +20,7 @@ side-by-side:
 | [`express_lrs/`](./express_lrs) | **sideloaded** — [open-vehicle-control-system/express_lrs](https://github.com/open-vehicle-control-system/express_lrs) | MAVLink v2 receive-only decoder for ExpressLRS handsets |
 | [`msp_osd/`](./msp_osd) | **sideloaded** — [open-vehicle-control-system/msp_osd](https://github.com/open-vehicle-control-system/msp_osd) | MSP / DisplayPort OSD stack for HDZero / Walksnail / DJI VTXs |
 | [`ovcs_control/`](./ovcs_control) | **sideloaded** — [open-vehicle-control-system/ovcs_control](https://github.com/open-vehicle-control-system/ovcs_control) | PID controller + input filters + interactive tuning sim |
+| [`hailort/`](./hailort) | in-tree | HailoRT's `libhailort` built from source for Nerves targets (Hailo-8 runtime) |
 | [`ovcs_bridge/`](./ovcs_bridge) | in-tree | `OvcsBridge` behaviour + supervisor for bridge libraries |
 | [`ovcs_bus/`](./ovcs_bus) | in-tree | Cluster-wide pub/sub over Erlang distribution |
 | [`ovcs_bus_gateway/`](./ovcs_bus_gateway) | in-tree | Library exposing the bus over MQTT, HTTP and Phoenix Channels |
@@ -54,6 +55,6 @@ directory first and re-run the task.
 Sideloaded libraries (`cantastic`, `express_lrs`, `msp_osd`,
 `ovcs_control`) are reusable outside OVCS — they're published as their
 own repos so external projects can depend on them without pulling the
-whole OVCS monorepo. The in-tree libraries (`ovcs_bridge`, `ovcs_bus`,
+whole OVCS monorepo. The in-tree libraries (`hailort`, `ovcs_bridge`, `ovcs_bus`,
 `ovcs_bus_gateway`, `ovcs_can`, `ovcs_ui`, `ovcs_vehicle`) are OVCS-internal contracts and evolve in
 lockstep with the rest of the codebase, so they live here.

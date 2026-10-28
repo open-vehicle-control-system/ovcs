@@ -1,6 +1,5 @@
 defmodule Ovcs1.Infotainment do
   use GenServer
-  require Logger
 
   alias Cantastic.{Emitter, Receiver, ReceivedFrameWatcher, Frame, Signal}
   alias Decimal, as: D

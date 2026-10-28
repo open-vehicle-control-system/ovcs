@@ -28,13 +28,13 @@ defmodule RosBridge.Camera.MjpegStream do
         case find_marker(buffer, 0xD9, soi_offset + 2) do
           nil ->
             # Bytes before the SOI are subprocess prologue or a partial frame.
-            <<_::binary-size(soi_offset), tail::binary>> = buffer
+            <<_::binary-size(^soi_offset), tail::binary>> = buffer
             {Enum.reverse(frames), tail}
 
           eoi_offset ->
             frame_end = eoi_offset + 2
 
-            <<_pre::binary-size(soi_offset), frame::binary-size(frame_end - soi_offset),
+            <<_pre::binary-size(^soi_offset), frame::binary-size(^frame_end - ^soi_offset),
               rest::binary>> = buffer
 
             split(rest, [frame | frames])
@@ -44,13 +44,13 @@ defmodule RosBridge.Camera.MjpegStream do
 
   defp find_marker(buffer, marker_byte, start_offset) do
     case buffer do
-      <<_::binary-size(start_offset), _::binary>> -> scan(buffer, marker_byte, start_offset)
+      <<_::binary-size(^start_offset), _::binary>> -> scan(buffer, marker_byte, start_offset)
       _ -> nil
     end
   end
 
   defp scan(buffer, marker_byte, index) when index + 1 < byte_size(buffer) do
-    <<_::binary-size(index), first_byte, second_byte, _::binary>> = buffer
+    <<_::binary-size(^index), first_byte, second_byte, _::binary>> = buffer
 
     cond do
       first_byte == 0xFF and second_byte == marker_byte -> index

@@ -43,7 +43,7 @@ defmodule RosBridge.Publishers.RangeTest do
     encoded = Range.encode(RangePublisher.range(sample(1.5), @state))
     frame_end = 8 + 4 + byte_size("ultrasound_rear_left") + 1
 
-    <<_::binary-size(frame_end), radiation, _padding::binary-size(2),
+    <<_::binary-size(^frame_end), radiation, _padding::binary-size(2),
       field_of_view::little-float-32, min_range::little-float-32, _::binary>> = encoded
 
     assert radiation == 0
