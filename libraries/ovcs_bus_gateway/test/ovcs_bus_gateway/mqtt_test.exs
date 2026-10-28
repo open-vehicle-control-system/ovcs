@@ -27,7 +27,7 @@ defmodule OvcsBusGateway.MqttTest do
     start_supervised!(
       {Mqtt,
        Keyword.merge(
-         [vehicle: OvcsMini, client_id: client_id(), host: "127.0.0.1", port: 1883],
+         [client_id: client_id(), host: "127.0.0.1", port: 1883],
          opts
        )}
     )
@@ -48,8 +48,8 @@ defmodule OvcsBusGateway.MqttTest do
   end
 
   test "topic" do
-    assert Mqtt.topic("ovcs_mini", env("VmsCore.Vehicle", "speed", 1)) ==
-             "ovcs/ovcs_mini/vms/VmsCore.Vehicle/speed"
+    assert Mqtt.topic(env("VmsCore.Vehicle", "speed", 1)) ==
+             "ovcs/vms/VmsCore.Vehicle/speed"
   end
 
   defp client_id, do: "ovcs_bus_gateway_test"
@@ -73,7 +73,7 @@ defmodule OvcsBusGateway.MqttTest do
     Subscribers.dispatch([env("A", "speed", 1)])
 
     client_id = client_id()
-    assert_receive {:pub, ^client_id, "ovcs/ovcs_mini/vms/A/speed", payload, opts}
+    assert_receive {:pub, ^client_id, "ovcs/vms/A/speed", payload, opts}
 
     assert %{"value" => 1, "published_at" => 5} = Jason.decode!(payload)
     assert opts[:retain] == true
@@ -95,9 +95,9 @@ defmodule OvcsBusGateway.MqttTest do
       )
 
     up(pid)
-    assert_receive {:pub, "ovcs/ovcs_mini/gateway/online", true}
-    assert_receive {:pub, "ovcs/ovcs_mini/vms/A/speed", true}
-    assert_receive {:pub, "ovcs/ovcs_mini/vms/B/ready", true}
+    assert_receive {:pub, "ovcs/gateway/online", true}
+    assert_receive {:pub, "ovcs/vms/A/speed", true}
+    assert_receive {:pub, "ovcs/vms/B/ready", true}
 
     up(pid)
     :sys.get_state(pid)
@@ -105,8 +105,8 @@ defmodule OvcsBusGateway.MqttTest do
 
     down(pid)
     up(pid)
-    assert_receive {:pub, "ovcs/ovcs_mini/vms/A/speed", true}
-    assert_receive {:pub, "ovcs/ovcs_mini/vms/B/ready", true}
+    assert_receive {:pub, "ovcs/vms/A/speed", true}
+    assert_receive {:pub, "ovcs/vms/B/ready", true}
   end
 
   test "survives a failing publish" do
@@ -129,7 +129,7 @@ defmodule OvcsBusGateway.MqttTest do
     up(pid)
     for name <- ~w(a b c d), do: Subscribers.dispatch([env("A", name, 1)])
 
-    assert_receive {:pub, _, "ovcs/ovcs_mini/vms/A/d", _, _}
+    assert_receive {:pub, _, "ovcs/vms/A/d", _, _}
     assert Process.alive?(pid)
   end
 
@@ -148,11 +148,11 @@ defmodule OvcsBusGateway.MqttTest do
       )
 
     up(pid)
-    assert_receive {:pub, "ovcs/ovcs_mini/gateway/online"}
+    assert_receive {:pub, "ovcs/gateway/online"}
     Subscribers.dispatch([unencodable, env("A", "good", 1)])
 
-    assert_receive {:pub, "ovcs/ovcs_mini/vms/A/good"}
-    refute_received {:pub, "ovcs/ovcs_mini/vms/A/bad"}
+    assert_receive {:pub, "ovcs/vms/A/good"}
+    refute_received {:pub, "ovcs/vms/A/bad"}
     assert Process.alive?(pid)
   end
 
@@ -173,9 +173,9 @@ defmodule OvcsBusGateway.MqttTest do
     refute_received {:pub, _}
 
     up(pid)
-    assert_receive {:pub, "ovcs/ovcs_mini/gateway/online"}
+    assert_receive {:pub, "ovcs/gateway/online"}
     Subscribers.dispatch([env("A", "speed", 2)])
-    assert_receive {:pub, "ovcs/ovcs_mini/vms/A/speed"}
+    assert_receive {:pub, "ovcs/vms/A/speed"}
 
     down(pid)
     Subscribers.dispatch([env("A", "speed", 3)])
@@ -242,12 +242,12 @@ defmodule OvcsBusGateway.MqttTest do
 
     up(pid)
     assert_receive {:pub, topic, payload, retain}
-    assert {topic, payload, retain} == {"ovcs/ovcs_mini/gateway/online", "true", true}
-    assert_receive {:pub, "ovcs/ovcs_mini/vms/A/speed", _, true}
+    assert {topic, payload, retain} == {"ovcs/gateway/online", "true", true}
+    assert_receive {:pub, "ovcs/vms/A/speed", _, true}
 
     down(pid)
     up(pid)
-    assert_receive {:pub, "ovcs/ovcs_mini/gateway/online", "true", true}
+    assert_receive {:pub, "ovcs/gateway/online", "true", true}
   end
 
   test "drops batches while its mailbox is over the queue limit" do
@@ -264,14 +264,14 @@ defmodule OvcsBusGateway.MqttTest do
       )
 
     up(pid)
-    assert_receive {:pub, "ovcs/ovcs_mini/gateway/online"}
+    assert_receive {:pub, "ovcs/gateway/online"}
 
     :sys.suspend(pid)
     for name <- ~w(a b c d e), do: Subscribers.dispatch([env("A", name, 1)])
     :sys.resume(pid)
     :sys.get_state(pid)
 
-    published = for name <- ~w(a b c d e), received_pub?("ovcs/ovcs_mini/vms/A/#{name}"), do: name
+    published = for name <- ~w(a b c d e), received_pub?("ovcs/vms/A/#{name}"), do: name
     assert "a" not in published
     assert "b" not in published
     assert "d" in published
@@ -351,7 +351,7 @@ defmodule OvcsBusGateway.MqttTest do
     # Connect flags: will retain (0x20) and will (0x04).
     [_, <<4, flags, _rest::binary>>] = :binary.split(packet, <<0, 4, "MQTT">>)
     assert Bitwise.band(flags, 0x24) == 0x24
-    assert packet =~ "ovcs/ovcs_mini/gateway/online"
+    assert packet =~ "ovcs/gateway/online"
     assert String.ends_with?(packet, <<0, 5, "false">>)
 
     await_up(pid)

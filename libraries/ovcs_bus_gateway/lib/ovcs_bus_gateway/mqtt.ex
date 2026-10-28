@@ -2,14 +2,15 @@ defmodule OvcsBusGateway.Mqtt do
   @moduledoc """
   MQTT adapter: publishes every envelope, retained, as JSON.
 
-  Topics are `ovcs/<vehicle>/<node>/<source>/<name>`, published at QoS 0. The process owns
+  Topics are `ovcs/<node>/<source>/<name>`, published at QoS 0: a broker serves one
+  vehicle. The process owns
   the `Tortoise311` connection to the broker. `Tortoise311` retries an unreachable broker on its own; when the
   connection process itself exits, this process traps the exit and starts a new one after
   the reconnect interval, so a broker fault never takes the gateway's supervision tree
   down. A lost connection is logged once as a warning, then at debug level until it is up
   again.
 
-  The connection's last will publishes `false`, retained, on `ovcs/<vehicle>/gateway/online`.
+  The connection's last will publishes `false`, retained, on `ovcs/gateway/online`.
   Each time the connection comes up, the gateway publishes `true` there, then every
   envelope in `OvcsBusGateway.Cache`, so the broker's retained values cover every signal,
   including those that do not change.
@@ -21,7 +22,6 @@ defmodule OvcsBusGateway.Mqtt do
 
   Options:
 
-  - `:vehicle` - vehicle module; `<vehicle>` is `OvcsBusGateway.vehicle_id/1` of it.
   - `:client_id` - MQTT client id.
   - `:host` - broker host.
   - `:port` - broker port.
@@ -47,25 +47,23 @@ defmodule OvcsBusGateway.Mqtt do
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts)
 
   @doc "The MQTT topic `envelope` is published on."
-  @spec topic(String.t(), Envelope.t()) :: String.t()
-  def topic(vehicle_id, %Envelope{} = envelope),
-    do: "ovcs/#{vehicle_id}/#{envelope.node}/#{envelope.source}/#{envelope.name}"
+  @spec topic(Envelope.t()) :: String.t()
+  def topic(%Envelope{} = envelope),
+    do: "ovcs/#{envelope.node}/#{envelope.source}/#{envelope.name}"
 
   @doc "The MQTT topic telling whether the gateway is connected to the broker."
-  @spec online_topic(String.t()) :: String.t()
-  def online_topic(vehicle_id), do: "ovcs/#{vehicle_id}/gateway/online"
+  @spec online_topic() :: String.t()
+  def online_topic, do: "ovcs/gateway/online"
 
   @impl GenServer
   def init(opts) do
     Process.flag(:trap_exit, true)
-    vehicle_id = OvcsBusGateway.vehicle_id(Keyword.fetch!(opts, :vehicle))
-    online_topic = online_topic(vehicle_id)
+    online_topic = online_topic()
     Subscribers.subscribe()
     send(self(), :connect)
 
     {:ok,
      %{
-       vehicle_id: vehicle_id,
        client_id: Keyword.fetch!(opts, :client_id),
        online_topic: online_topic,
        host: Keyword.fetch!(opts, :host),
@@ -148,7 +146,7 @@ defmodule OvcsBusGateway.Mqtt do
   end
 
   defp publish_envelope(envelope, state) do
-    publish(topic(state.vehicle_id, envelope), Jason.encode!(envelope), state)
+    publish(topic(envelope), Jason.encode!(envelope), state)
   rescue
     error -> Logger.debug("MQTT envelope not encodable: #{Exception.message(error)}")
   end

@@ -108,20 +108,20 @@ Values are encoded so any JSON client can read them: numbers, booleans, `null` a
 With `:mqtt` set, the gateway keeps a connection to the broker and publishes each envelope as JSON, retained, at QoS 0, on:
 
 ```text
-ovcs/<vehicle>/<node>/<source>/<name>
+ovcs/<node>/<source>/<name>
 ```
 
-`<vehicle>` is the underscored vehicle module name (`ovcs_mini`); the other segments are the envelope's fields. A client subscribed to `ovcs/ovcs_mini/#` receives the last value of every signal immediately, then each change and each refresh.
+The segments are the envelope's fields; the topics carry no vehicle name, since a broker serves one vehicle (on a vehicle with a compute node, the broker runs there). A client subscribed to `ovcs/#` receives the last value of every signal immediately, then each change and each refresh.
 
-- The gateway connects with its `:mqtt_client_id`. The Mini's are `ovcs_bus_gateway_ovcs_mini_ros_host` and `ovcs_bus_gateway_ovcs_mini_ros_target`, so the vehicle's gateway and one started with `./ovcs run` can share a broker; give each gateway of your vehicle its own.
-- `ovcs/<vehicle>/gateway/online` tells whether the gateway is connected: it publishes `true` there, retained, on every connect, and its last will has the broker publish `false`, retained, when the connection is lost. A client that sees `false` knows every other retained value may be stale.
+- The gateway connects with its `:mqtt_client_id`. The Mini's are `ovcs_bus_gateway_ovcs_mini_ros_host` and `ovcs_bus_gateway_ovcs_mini_ros_target`, unique per firmware and build; a gateway started with `./ovcs run` publishes to its own local broker, since two gateways on one broker would overwrite each other's topics.
+- `ovcs/gateway/online` tells whether the gateway is connected: it publishes `true` there, retained, on every connect, and its last will has the broker publish `false`, retained, when the connection is lost. A client that sees `false` knows every other retained value may be stale.
 - On every connect and reconnect, after `online`, the gateway republishes its whole cache, so the retained values cover every signal, including those that never change.
 - Publishing never blocks the gateway. While the broker is unreachable nothing is published and nothing is buffered; the client retries with a backoff of up to 30 seconds. A send stuck for a second closes the connection, and batches that arrive while more than 1000 messages wait are dropped; the republish on the next connect restores the retained values.
 
 Subscribe from any machine that reaches the broker:
 
 ```sh
-mosquitto_sub -h <broker> -t 'ovcs/<vehicle>/#' -v
+mosquitto_sub -h <broker> -t 'ovcs/#' -v
 ```
 
 The broker also accepts MQTT over WebSocket at `ws://<broker>:9001`, for clients running in a browser. To browse its topics from a laptop, a desktop client such as MQTT Explorer pointed at `<broker>:1883` keeps the connection between sessions.

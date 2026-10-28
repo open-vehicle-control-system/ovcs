@@ -68,7 +68,6 @@ defmodule OvcsBusGatewayTest do
   test "the MQTT client id defaults to one per vehicle" do
     assert {OvcsBusGateway.Mqtt,
             [
-              vehicle: OvcsMini,
               client_id: "ovcs_bus_gateway_ovcs_mini",
               host: "127.0.0.1",
               port: 1883
@@ -79,8 +78,7 @@ defmodule OvcsBusGatewayTest do
   end
 
   test "takes an explicit MQTT client id" do
-    assert {OvcsBusGateway.Mqtt,
-            [vehicle: OvcsMini, client_id: "gateway_ros", host: "127.0.0.1", port: 1883]} in children(
+    assert {OvcsBusGateway.Mqtt, [client_id: "gateway_ros", host: "127.0.0.1", port: 1883]} in children(
              vehicle: OvcsMini,
              config: @mqtt_config,
              mqtt_client_id: "gateway_ros"

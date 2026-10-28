@@ -59,7 +59,7 @@ defmodule OvcsBusGateway do
         {__MODULE__, :start_link,
          [
            core_children ++
-             http_children(config) ++ mqtt_children(mqtt_client_id, vehicle, config),
+             http_children(config) ++ mqtt_children(mqtt_client_id, config),
            [
              strategy: :rest_for_one,
              max_restarts: 10,
@@ -92,10 +92,10 @@ defmodule OvcsBusGateway do
   @spec vehicle_id(module()) :: String.t()
   def vehicle_id(vehicle), do: Macro.underscore(inspect(vehicle))
 
-  defp mqtt_children(_client_id, _vehicle, %OvcsBusGateway.Config{mqtt: nil}), do: []
+  defp mqtt_children(_client_id, %OvcsBusGateway.Config{mqtt: nil}), do: []
 
-  defp mqtt_children(client_id, vehicle, %OvcsBusGateway.Config{mqtt: mqtt}),
-    do: [{OvcsBusGateway.Mqtt, [vehicle: vehicle, client_id: client_id] ++ mqtt}]
+  defp mqtt_children(client_id, %OvcsBusGateway.Config{mqtt: mqtt}),
+    do: [{OvcsBusGateway.Mqtt, [client_id: client_id] ++ mqtt}]
 
   defp http_children(%OvcsBusGateway.Config{http: nil}), do: []
   defp http_children(%OvcsBusGateway.Config{http: http}), do: [{OvcsBusGateway.Http, http}]
