@@ -97,7 +97,7 @@ defmodule VisionCore.ApplicationTest do
     start_pipeline(%VisionCore.Config{
       zenoh_endpoint_ip: "127.0.0.1",
       components: [
-        {:stereo_camera,
+        {:stereo,
          driver: LibCamera,
          width: 64,
          height: 48,
@@ -115,7 +115,7 @@ defmodule VisionCore.ApplicationTest do
       ]
     })
 
-    stereo = VisionCore.StereoCamera.Supervisor
+    stereo = VisionCore.Stereo.Supervisor
     first_driver = child_pid(stereo, {:stereo, :driver, :left})
     LibCamera.register_listener(first_driver, self())
     assert_receive {:"$gen_cast", {:camera_frame, _frame}}, 5_000
@@ -135,7 +135,7 @@ defmodule VisionCore.ApplicationTest do
   test "a camera Port that keeps exiting stops the stereo unit, not the pipeline",
        %{tmp_dir: tmp_dir} do
     start_failing_cameras(tmp_dir, "sleep 0.3\nexit 3")
-    assert Process.whereis(VisionCore.StereoCamera.Supervisor)
+    assert Process.whereis(VisionCore.Stereo.Supervisor)
     assert_stereo_unit_down()
   end
 
@@ -147,7 +147,7 @@ defmodule VisionCore.ApplicationTest do
     start_pipeline(%VisionCore.Config{
       zenoh_endpoint_ip: "127.0.0.1",
       components: [
-        {:stereo_camera,
+        {:stereo,
          driver: LibCamera,
          width: 64,
          height: 48,
@@ -169,7 +169,7 @@ defmodule VisionCore.ApplicationTest do
   defp assert_stereo_unit_down do
     pipeline = Process.whereis(VisionCore.Supervisor)
     status = Process.whereis(VisionCore.Status)
-    wait_until_stopped(VisionCore.StereoCamera.Supervisor)
+    wait_until_stopped(VisionCore.Stereo.Supervisor)
 
     assert Process.whereis(VisionCore.Supervisor) == pipeline
     assert Process.whereis(VisionCore.Status) == status

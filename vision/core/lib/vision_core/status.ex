@@ -4,7 +4,7 @@ defmodule VisionCore.Status do
   frame rate and exposure, the pair's sync, the Hailo detector, the depth
   rate and the Zenoh session.
 
-  Started last in `VisionCore.Supervisor`. Without a `:stereo_camera`
+  Started last in `VisionCore.Supervisor`. Without a `:stereo`
   component the cameras and sync are reported absent and the depth rate
   is zero.
 
@@ -13,10 +13,11 @@ defmodule VisionCore.Status do
   """
   use GenServer
 
-  alias VisionCore.Ros2.{StereoDiagnostics, ZenohClient}
-  alias VisionCore.StereoSources
-  alias VisionCore.Inference.Hailo
-  alias VisionCore.StereoCamera.Result
+  alias VisionCore.Ros2.Stereo.Diagnostics
+  alias VisionCore.Ros2.ZenohClient
+  alias VisionCore.Stereo.Sources
+  alias VisionCore.Detection.Backend.Hailo
+  alias VisionCore.Stereo.Pair
   alias VisionCore.Camera.Frame
 
   @default_tick_ms 1_000
@@ -50,14 +51,14 @@ defmodule VisionCore.Status do
   def init(opts) do
     config = Keyword.fetch!(opts, :config)
     tick_ms = Keyword.get(opts, :tick_ms, @default_tick_ms)
-    sources = StereoSources.from_config(config)
+    sources = Sources.from_config(config)
     Process.send_after(self(), :tick, tick_ms)
 
     {:ok,
      %{
        tick_ms: tick_ms,
        sources: sources,
-       monitors: StereoSources.register(sources),
+       monitors: Sources.register(sources),
        hailo_configured?: hailo_configured?(config),
        subscribers: %{},
        counts: %{left: 0, right: 0, depth: 0},
@@ -76,7 +77,7 @@ defmodule VisionCore.Status do
   end
 
   @impl GenServer
-  def handle_cast({:stereo_result, %Result{}}, state), do: {:noreply, count(state, :depth)}
+  def handle_cast({:stereo_pair, %Pair{}}, state), do: {:noreply, count(state, :depth)}
 
   def handle_cast({:camera_frame, %Frame{label: label}}, state) when label in ["left", "right"],
     do: {:noreply, count(state, String.to_existing_atom(label))}
@@ -93,10 +94,10 @@ defmodule VisionCore.Status do
   end
 
   def handle_info({:register_source, source}, state),
-    do: {:noreply, %{state | monitors: StereoSources.retry(source, state.monitors)}}
+    do: {:noreply, %{state | monitors: Sources.retry(source, state.monitors)}}
 
   def handle_info({:DOWN, monitor_reference, :process, pid, _reason}, state) do
-    case StereoSources.down(monitor_reference, state.monitors) do
+    case Sources.down(monitor_reference, state.monitors) do
       {:ok, monitors} -> {:noreply, %{state | monitors: monitors}}
       :error -> {:noreply, %{state | subscribers: Map.delete(state.subscribers, pid)}}
     end
@@ -129,7 +130,7 @@ defmodule VisionCore.Status do
 
   defp camera(%{sources: []}, _side), do: %{present: false}
 
-  defp camera(%{sources: [_backend, left, right]} = state, side) do
+  defp camera(%{sources: [_pipeline, left, right]} = state, side) do
     {driver, server} = if side == :left, do: left, else: right
 
     if GenServer.whereis(server) do
@@ -153,7 +154,7 @@ defmodule VisionCore.Status do
   defp sync(%{sources: []}), do: %{present: false}
 
   defp sync(_state) do
-    call_within_timeout(fn -> Map.put(StereoDiagnostics.sync(), :present, true) end, %{
+    call_within_timeout(fn -> Map.put(Diagnostics.sync(), :present, true) end, %{
       present: false
     })
   end

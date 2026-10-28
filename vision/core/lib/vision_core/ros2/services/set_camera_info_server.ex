@@ -4,8 +4,8 @@ defmodule VisionCore.Ros2.Services.SetCameraInfoServer do
   instance per camera side; together they make the
   `cameracalibrator` GUI's **COMMIT** button work — clicking it
   delivers the freshly-solved `CameraInfo` over Zenoh, this persists
-  it to the side's YAML and triggers a hot-reload of the SGBM
-  backend so the new geometry takes effect on the next frame.
+  it to the side's YAML and triggers a hot-reload of the stereo
+  pipeline so the new geometry takes effect on the next frame.
 
   ## Required opts
 
@@ -18,7 +18,7 @@ defmodule VisionCore.Ros2.Services.SetCameraInfoServer do
       YAML; informational only.
     * `:reload` — `{module, function, args}` invoked with no extra
       args after a successful write. Lets the calling
-      supervisor wire in the stereo backend's reload without
+      supervisor wire in the stereo pipeline's reload without
       coupling this module to it.
   """
   use GenServer

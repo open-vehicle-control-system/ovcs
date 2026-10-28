@@ -13,7 +13,7 @@ The unit follows the same split as the VMS and the infotainment: a core, an API,
 
 | Layer | Path | What it is |
 |---|---|---|
-| Core | [`vision/core`](../vision/core/README.md) | `VisionCore`: the Zenoh client, camera drivers, SGBM stereo depth, rectification, publishers and detector backends. No vehicle knowledge, no web dependencies. |
+| Core | [`vision/core`](../vision/core/README.md) | `VisionCore`: camera drivers, the stereo pipeline and its stages (rectification, SGBM matching, depth), detection, and the ROS 2 side under `VisionCore.Ros2`. No vehicle knowledge, no web dependencies. |
 | API | [`vision/api`](../vision/api/README.md) | `VisionApi`: a Phoenix endpoint with a `/api/settings` route and channels that stream status and camera previews. |
 | Firmware | [`vision/firmware`](../vision/firmware/README.md) | The Nerves image for the `rpi5` target. At boot it reads `VEHICLE` and loads the vehicle's composer. |
 | Dashboard | [`vision/dashboard`](../vision/dashboard/README.md) | A Vue app showing the left, right and depth previews, status cards and the active settings. |
@@ -35,7 +35,7 @@ def vision_target, do: :rpi5
 
 `vision/0` returns a module implementing `VisionCore.Composer`: `config/1` returns a `VisionCore.Config` for the `:host` or `:target` arm (Zenoh endpoint, ROS node name, components and their drivers), and the optional `required_files/0` lists files, relative to your vehicle app, that the image needs and the repository does not carry, such as a detection model. The build fails when one is missing. The behaviour is documented in `VisionCore.Composer`, and the components you can list in `VisionCore.Components`; see also [Your vehicle package](./vehicle_package.md#the-five-behaviours).
 
-Everything the unit needs from a vehicle lives in the package: resolution, SGBM tuning, calibration, topic prefix, frame ids, detection model and thresholds. Boot files for the Pi go in `vehicles/<vehicle>/priv/firmware/vision/`.
+Everything the unit needs from a vehicle lives in the package: resolution, the stereo stages and their settings, calibration, topic prefix, frame ids, detection model and thresholds. Boot files for the Pi go in `vehicles/<vehicle>/priv/firmware/vision/`.
 
 ## Build, burn, upload
 

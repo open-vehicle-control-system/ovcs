@@ -1,34 +1,17 @@
 defmodule VisionCore.StatusTest do
   use ExUnit.Case, async: false
 
-  alias VisionCore.StereoCamera.Result
+  alias VisionCore.Camera.Frame
   alias VisionCore.Ros2.ZenohClient
   alias VisionCore.Status
+  alias VisionCore.Stereo.Pair
 
   defp config(components),
     do: %VisionCore.Config{zenoh_endpoint_ip: "127.0.0.1", components: components}
 
-  defp result do
-    %Result{
-      capture_ns: 0,
-      width: 2,
-      height: 2,
-      disparity: <<>>,
-      disparity_step: 8,
-      depth: <<>>,
-      depth_step: 4,
-      focal_length: 1.0,
-      baseline: 0.1,
-      min_disparity: 0.0,
-      max_disparity: 64.0,
-      delta_d: 0.0625,
-      valid_x: 0,
-      valid_y: 0,
-      valid_w: 2,
-      valid_h: 2,
-      cloud: nil,
-      cloud_points: 0
-    }
+  defp pair do
+    frame = %Frame{label: "left", width: 2, height: 2, capture_ns: 0, jpeg: <<>>}
+    %Pair{left_frame: frame, right_frame: %{frame | label: "right"}}
   end
 
   test "snapshot reports zenoh disconnected with no router" do
@@ -52,7 +35,7 @@ defmodule VisionCore.StatusTest do
 
   test "a detector that does not answer is reported failed without stalling the snapshot" do
     silent = spawn(fn -> Process.sleep(:infinity) end)
-    Process.register(silent, VisionCore.Inference.Hailo)
+    Process.register(silent, VisionCore.Detection.Backend.Hailo)
     on_exit(fn -> Process.exit(silent, :kill) end)
     start_supervised!({Status, config: config([:hailo_detector])})
 
@@ -74,7 +57,7 @@ defmodule VisionCore.StatusTest do
     :ok = Status.subscribe()
 
     assert_receive {:vision_status, %{depth_hz: +0.0}}
-    for _ <- 1..4, do: GenServer.cast(Status, {:stereo_result, result()})
+    for _ <- 1..4, do: GenServer.cast(Status, {:stereo_pair, pair()})
 
     assert_receive {:vision_status, %{depth_hz: depth_hz}}, 500
     assert depth_hz > 0.0

@@ -17,23 +17,25 @@ defmodule VisionCore.Components do
       **Simulation only.** Without it every stamp is wall clock, which
       is correct on a vehicle and wrong against Gazebo — see
       `VisionCore.Ros2.Clock` for what that breaks.
-    * `:stereo_camera` — self-contained stereo perception unit (cameras,
-      per-side image and camera_info publishers, SGBM backend,
-      disparity/depth publisher). All orchestration lives in
-      `VisionCore.StereoCamera.Supervisor`; see its `@moduledoc` for the
-      authoritative opts reference. Minimal wiring:
+    * `:stereo` — the stereo unit: two cameras, the pairer, the
+      `VisionCore.Stereo.Pipeline` turning pairs into disparity and
+      depth, and their ROS publishers. `VisionCore.Stereo.Supervisor`
+      documents the opts. Minimal wiring:
 
-          {:stereo_camera,
+          {:stereo,
            driver: VisionCore.Camera.GStreamer,
            calibration_dir: calibration_dir,
            left: [device: "/dev/video2"],
            right: [device: "/dev/video0"]}
 
-      The stereo-depth backend is `VisionCore.StereoCamera.OpenCV`.
-    * `:detector` — `VisionCore.Inference.Supervisor` with the `:backend`
-      given in the opts (`VisionCore.Inference.Hailo`, `.Dnn`, `.Stub`).
-      List it after `:stereo_camera`: the detector registers on that
-      unit's backend while starting.
+      `:stages` replaces the pipeline's default stages; see
+      `VisionCore.Stereo.Pipeline.default_stages/1`.
+    * `:detector` — `VisionCore.Detection.Supervisor`: the `:backend`
+      given in the opts (`VisionCore.Detection.Backend.Hailo`, `.Dnn`,
+      `.Stub`), the `VisionCore.Detection.Pipeline` placing its boxes
+      in 3D, and their ROS publisher. List it after `:stereo`: the
+      detection pipeline registers on the stereo pipeline while
+      starting.
     * `:hailo_detector` — `:detector` with the Hailo backend.
   """
 
@@ -56,17 +58,17 @@ defmodule VisionCore.Components do
   def start(:simulator_clock, opts), do: [{VisionCore.Ros2.Clock, opts}]
 
   def start(:hailo_detector, opts) do
-    start(:detector, Keyword.put_new(opts, :backend, VisionCore.Inference.Hailo))
+    start(:detector, Keyword.put_new(opts, :backend, VisionCore.Detection.Backend.Hailo))
   end
 
   def start(:detector, opts) do
-    # Its own supervisor, so a crashing detector cannot exhaust the pipeline's restart budget.
-    [{VisionCore.Inference.Supervisor, opts}]
+    # Its own supervisor, so a crashing detector cannot exhaust the vision core's restart budget.
+    [{VisionCore.Detection.Supervisor, opts}]
   end
 
-  def start(:stereo_camera, opts) do
-    # Not restarted once it gives up, so a dead camera cannot exhaust the pipeline's budget.
-    [Supervisor.child_spec({VisionCore.StereoCamera.Supervisor, opts}, restart: :transient)]
+  def start(:stereo, opts) do
+    # Not restarted once it gives up, so a dead camera cannot exhaust the vision core's budget.
+    [Supervisor.child_spec({VisionCore.Stereo.Supervisor, opts}, restart: :transient)]
   end
 
   defp heartbeat_message(counter, node_name) do

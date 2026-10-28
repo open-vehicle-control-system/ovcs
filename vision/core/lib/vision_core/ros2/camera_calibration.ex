@@ -8,9 +8,9 @@ defmodule VisionCore.Ros2.CameraCalibration do
   tensors or Evision Mats is the consumer's responsibility.
   Two consumers:
 
-    * `VisionCore.Ros2.Publishers.StereoCamera` — populates the outgoing
+    * `VisionCore.Ros2.Publishers.Stereo` — populates the outgoing
       `sensor_msgs/CameraInfo` directly from these fields.
-    * `VisionCore.StereoCamera.OpenCV` — builds undistortion +
+    * `VisionCore.Stereo.Pipeline` — builds undistortion +
       rectification look-up tables via
       `Evision.initUndistortRectifyMap/6`.
 
@@ -35,7 +35,7 @@ defmodule VisionCore.Ros2.CameraCalibration do
 
   Every numeric spelling the calibration tools emit is accepted, which
   `String.to_float/1` is too strict for. `load!/1` runs inside
-  `VisionCore.StereoCamera.OpenCV.init/1`, so an `ArgumentError` there
+  `VisionCore.Stereo.Pipeline.init/1`, so an `ArgumentError` there
   takes the whole vision core down at boot with nothing logged:
 
     * `"0."` / `"1."` — cameracalibrator writes whole numbers with a

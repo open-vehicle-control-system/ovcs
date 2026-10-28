@@ -5,7 +5,7 @@ defmodule VisionCore.PreviewTest do
 
   alias VisionCore.Camera.Frame
   alias VisionCore.Preview
-  alias VisionCore.StereoCamera.Result
+  alias VisionCore.Stereo.Pair
 
   @config %VisionCore.Config{zenoh_endpoint_ip: "127.0.0.1", components: []}
 
@@ -14,28 +14,9 @@ defmodule VisionCore.PreviewTest do
     GenServer.cast(Preview, {:camera_frame, frame})
   end
 
-  defp result(depth_m \\ nil) do
-    %Result{
-      capture_ns: 0,
-      width: 4,
-      height: 4,
-      disparity: <<>>,
-      disparity_step: 16,
-      depth: <<>>,
-      depth_step: 8,
-      focal_length: 1.0,
-      baseline: 0.1,
-      min_disparity: 0.0,
-      max_disparity: 64.0,
-      delta_d: 0.0625,
-      valid_x: 0,
-      valid_y: 0,
-      valid_w: 4,
-      valid_h: 4,
-      cloud: nil,
-      cloud_points: 0,
-      depth_m: depth_m
-    }
+  defp pair(depth_m \\ nil) do
+    frame = %Frame{label: "left", width: 4, height: 4, capture_ns: 0, jpeg: <<>>}
+    %Pair{left_frame: frame, right_frame: %{frame | label: "right"}, depth_m: depth_m}
   end
 
   defp receive_and_ack_until(deadline_ms, frames) do
@@ -85,7 +66,7 @@ defmodule VisionCore.PreviewTest do
   test "depth is not encoded without subscribers" do
     test_pid = self()
 
-    encode_depth = fn _result ->
+    encode_depth = fn _pair ->
       send(test_pid, :depth_encoded)
       "depth jpeg"
     end
@@ -93,21 +74,21 @@ defmodule VisionCore.PreviewTest do
     start_supervised!({Preview, config: @config, depth_encoder: encode_depth})
     depth_m = Evision.Mat.zeros({4, 4}, :f32)
 
-    GenServer.cast(Preview, {:stereo_result, result(depth_m)})
+    GenServer.cast(Preview, {:stereo_pair, pair(depth_m)})
     refute_receive :depth_encoded, 200
 
     :ok = Preview.subscribe(:depth)
-    GenServer.cast(Preview, {:stereo_result, result(depth_m)})
+    GenServer.cast(Preview, {:stereo_pair, pair(depth_m)})
 
     assert_receive :depth_encoded, 500
     assert_receive {:vision_preview, :depth, "depth jpeg"}, 500
   end
 
-  test "a result without a depth map is not previewed" do
+  test "a pair without a depth map is not previewed" do
     preview = start_supervised!({Preview, config: @config})
     :ok = Preview.subscribe(:depth)
 
-    GenServer.cast(Preview, {:stereo_result, result()})
+    GenServer.cast(Preview, {:stereo_pair, pair()})
 
     refute_receive {:vision_preview, :depth, _jpeg}, 200
     assert Process.alive?(preview)
@@ -121,7 +102,7 @@ defmodule VisionCore.PreviewTest do
     log =
       capture_log(fn ->
         for _ <- 1..3 do
-          GenServer.cast(Preview, {:stereo_result, result(two_channel)})
+          GenServer.cast(Preview, {:stereo_pair, pair(two_channel)})
           :sys.get_state(Preview)
           Process.sleep(30)
         end
@@ -132,7 +113,7 @@ defmodule VisionCore.PreviewTest do
     assert Process.alive?(preview)
     assert length(String.split(log, "depth preview")) == 2
 
-    GenServer.cast(Preview, {:stereo_result, result(Evision.Mat.zeros({4, 4}, :f32))})
+    GenServer.cast(Preview, {:stereo_pair, pair(Evision.Mat.zeros({4, 4}, :f32))})
     assert_receive {:vision_preview, :depth, <<0xFF, 0xD8, _::binary>>}, 500
   end
 
@@ -160,6 +141,6 @@ defmodule VisionCore.PreviewTest do
   test "the depth map is colourised into a JPEG" do
     depth_m = Evision.Mat.from_nx(Nx.iota({4, 4}, type: :f32))
 
-    assert <<0xFF, 0xD8, _::binary>> = Preview.encode_depth(result(depth_m))
+    assert <<0xFF, 0xD8, _::binary>> = Preview.encode_depth(pair(depth_m))
   end
 end

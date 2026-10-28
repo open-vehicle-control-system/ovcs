@@ -11,11 +11,11 @@ defmodule VisionCore.Preview do
   gets the latest frame, never a backlog.
 
   The depth map is colourised and encoded only when a depth subscriber
-  is due a frame, once per result whatever the number of subscribers.
-  Results without a `depth_m` map are skipped, and so is a depth map
+  is due a frame, once per pair whatever the number of subscribers.
+  Pairs without a `depth_m` map are skipped, and so is a depth map
   that fails to encode, with one error logged until an encode succeeds.
 
-  Started last in `VisionCore.Supervisor`; without a `:stereo_camera`
+  Started last in `VisionCore.Supervisor`; without a `:stereo`
   component it runs with nothing to preview.
 
   ## Options
@@ -24,15 +24,15 @@ defmodule VisionCore.Preview do
     * `:max_hz` (`5`) — frames per second per subscriber.
     * `:depth_range_m` (`10.0`) — the distance the colour map spans,
       from red at the camera to blue at this range.
-    * `:depth_encoder` — `(VisionCore.StereoCamera.Result.t() -> jpeg)`,
+    * `:depth_encoder` — `(VisionCore.Stereo.Pair.t() -> jpeg)`,
       replacing `encode_depth/2`.
   """
   use GenServer
   require Logger
 
   alias VisionCore.Camera.Frame
-  alias VisionCore.StereoCamera.Result
-  alias VisionCore.StereoSources
+  alias VisionCore.Stereo.Pair
+  alias VisionCore.Stereo.Sources
 
   @streams [:left, :right, :depth]
   @default_max_hz 5
@@ -54,11 +54,11 @@ defmodule VisionCore.Preview do
   def ack(stream) when stream in @streams, do: GenServer.cast(__MODULE__, {:ack, self(), stream})
 
   @doc """
-  The depth map of `result` as a colour JPEG: near is red, `range_m` and
+  The depth map of `pair` as a colour JPEG: near is red, `range_m` and
   beyond is blue, pixels without depth are black.
   """
-  @spec encode_depth(Result.t(), float()) :: binary()
-  def encode_depth(%Result{depth_m: depth_m}, range_m \\ @default_depth_range_m) do
+  @spec encode_depth(Pair.t(), float()) :: binary()
+  def encode_depth(%Pair{depth_m: depth_m}, range_m \\ @default_depth_range_m) do
     no_depth = Evision.compare(depth_m, 0.0, Evision.Constant.cv_CMP_LE())
 
     near_is_bright =
@@ -76,15 +76,15 @@ defmodule VisionCore.Preview do
 
   @impl GenServer
   def init(opts) do
-    sources = opts |> Keyword.fetch!(:config) |> StereoSources.from_config()
+    sources = opts |> Keyword.fetch!(:config) |> Sources.from_config()
     depth_range_m = Keyword.get(opts, :depth_range_m, @default_depth_range_m)
 
     {:ok,
      %{
        interval_ms: div(1_000, Keyword.get(opts, :max_hz, @default_max_hz)),
        depth_encoder:
-         Keyword.get(opts, :depth_encoder, fn result -> encode_depth(result, depth_range_m) end),
-       monitors: StereoSources.register(sources),
+         Keyword.get(opts, :depth_encoder, fn pair -> encode_depth(pair, depth_range_m) end),
+       monitors: Sources.register(sources),
        latest: Map.new(@streams, &{&1, %{sequence: 0, frame: nil}}),
        encoded_depth: {0, nil},
        depth_failure_logged: false,
@@ -115,10 +115,10 @@ defmodule VisionCore.Preview do
       when label in ["left", "right"],
       do: {:noreply, store_frame(state, String.to_existing_atom(label), jpeg)}
 
-  def handle_cast({:stereo_result, %Result{depth_m: nil}}, state), do: {:noreply, state}
+  def handle_cast({:stereo_pair, %Pair{depth_m: nil}}, state), do: {:noreply, state}
 
-  def handle_cast({:stereo_result, %Result{} = result}, state),
-    do: {:noreply, store_frame(state, :depth, result)}
+  def handle_cast({:stereo_pair, %Pair{} = pair}, state),
+    do: {:noreply, store_frame(state, :depth, pair)}
 
   def handle_cast({:ack, pid, stream}, state) do
     key = {pid, stream}
@@ -148,10 +148,10 @@ defmodule VisionCore.Preview do
   end
 
   def handle_info({:register_source, source}, state),
-    do: {:noreply, %{state | monitors: StereoSources.retry(source, state.monitors)}}
+    do: {:noreply, %{state | monitors: Sources.retry(source, state.monitors)}}
 
   def handle_info({:DOWN, monitor_reference, :process, _pid, _reason}, state) do
-    case StereoSources.down(monitor_reference, state.monitors) do
+    case Sources.down(monitor_reference, state.monitors) do
       {:ok, monitors} ->
         {:noreply, %{state | monitors: monitors}}
 
@@ -214,9 +214,9 @@ defmodule VisionCore.Preview do
        do: {jpeg, state}
 
   defp jpeg(state, :depth) do
-    %{sequence: sequence, frame: result} = state.latest.depth
+    %{sequence: sequence, frame: pair} = state.latest.depth
 
-    case encode_depth_safely(state.depth_encoder, result) do
+    case encode_depth_safely(state.depth_encoder, pair) do
       {:ok, jpeg} ->
         {jpeg, %{state | encoded_depth: {sequence, jpeg}, depth_failure_logged: false}}
 
@@ -230,8 +230,8 @@ defmodule VisionCore.Preview do
 
   defp jpeg(state, stream), do: {state.latest[stream].frame, state}
 
-  defp encode_depth_safely(depth_encoder, result) do
-    case depth_encoder.(result) do
+  defp encode_depth_safely(depth_encoder, pair) do
+    case depth_encoder.(pair) do
       jpeg when is_binary(jpeg) -> {:ok, jpeg}
       other -> {:error, inspect(other)}
     end

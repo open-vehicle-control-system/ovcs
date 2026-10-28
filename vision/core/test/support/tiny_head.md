@@ -4,7 +4,7 @@ A 1.5 KB ONNX model, **written for this repo**, shaped like a yolov8
 detection head: `[1, 3, 2, 2]` in, `[1, 84, 4]` out.
 
 It is not a YOLO and it detects nothing. It exists so
-`dnn_integration_test.exs` can run `VisionCore.Inference.Dnn` for real —
+`dnn_integration_test.exs` can run `VisionCore.Detection.Backend.Dnn` for real —
 load, blob, `forward`, decode — without a downloaded model.
 
 ## Why not a real yolov8n.onnx

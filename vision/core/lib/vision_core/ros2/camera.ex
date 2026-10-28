@@ -5,7 +5,7 @@ defmodule VisionCore.Ros2.Camera do
   had captured them.
 
   This is what lets the whole perception stack run against Gazebo. The
-  stereo supervisor, the SGBM backend, the publishers and the Hailo
+  stereo supervisor, the stereo pipeline, the publishers and the Hailo
   detector see `{:camera_frame, %Frame{}}` casts and cannot tell
   whether the pixels came from a sensor or a simulator — which is the
   point. Swapping `driver: VisionCore.Camera.LibCamera` for this module
@@ -106,7 +106,7 @@ defmodule VisionCore.Ros2.Camera do
 
       :error ->
         # A frame whose dimensions cannot be read is not one the
-        # stereo backend can pair or rectify, so it is dropped rather
+        # stereo pipeline can pair or rectify, so it is dropped rather
         # than passed on with guessed values.
         Logger.warning(
           "#{__MODULE__}[#{state.label}] dropping frame: not a readable JPEG " <>
@@ -131,7 +131,7 @@ defmodule VisionCore.Ros2.Camera do
   `CompressedImage` carries no width or height — unlike `Image`, which
   does — so the only place the dimensions exist is the JPEG itself.
   Reading them from the SOF marker avoids decoding the whole frame
-  here just to fill in two integers the backend rediscovers when it
+  here just to fill in two integers the pipeline rediscovers when it
   decodes for real.
 
   Segments are `FF <marker> <2-byte length> <payload>`; SOF0/1/2 and
@@ -140,7 +140,7 @@ defmodule VisionCore.Ros2.Camera do
   standalone and carry no length.
 
   Public because it is worth testing on its own: a wrong answer here
-  hands the stereo backend a frame whose declared size disagrees with
+  hands the stereo pipeline a frame whose declared size disagrees with
   its pixels.
   """
   @spec decode_dimensions(binary()) :: {:ok, pos_integer(), pos_integer()} | :error

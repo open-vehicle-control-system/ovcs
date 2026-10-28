@@ -53,7 +53,7 @@ defmodule VisionCore.Ros2.ZenohClient do
 
   The actual ROS 2 message generation (heartbeats, images, detections)
   lives in caller GenServers — `VisionCore.Ros2.Publishers.Heartbeat`,
-  `VisionCore.Ros2.Publishers.StereoCamera` and friends — that use the API
+  `VisionCore.Ros2.Publishers.Stereo` and friends — that use the API
   exposed here.
 
   ## Subscriptions
