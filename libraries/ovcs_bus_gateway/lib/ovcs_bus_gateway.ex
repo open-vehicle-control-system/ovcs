@@ -18,10 +18,14 @@ defmodule OvcsBusGateway do
   cache, the collector, then the configured adapters, so a restart of an
   upstream child restarts everything that depends on it. The subtree is
   `:temporary` with its own restart intensity: a gateway that exhausts it
-  stops alone, without restarting its parent.
+  stops alone, without restarting its parent. A gateway that cannot start,
+  for example because its HTTP port is taken, logs the error and is ignored,
+  so its parent starts without it.
 
   Its processes are registered under fixed names, so a BEAM runs one gateway.
   """
+
+  require Logger
 
   @typedoc "Selects signals by `:node`, `:source` and `:name`; a missing key matches everything."
   @type filter :: %{optional(:node | :source | :name) => String.t()}
@@ -52,7 +56,7 @@ defmodule OvcsBusGateway do
       type: :supervisor,
       restart: :temporary,
       start:
-        {Supervisor, :start_link,
+        {__MODULE__, :start_link,
          [
            core_children ++
              http_children(config) ++ mqtt_children(mqtt_client_id, vehicle, config),
@@ -64,6 +68,24 @@ defmodule OvcsBusGateway do
            ]
          ]}
     }
+  end
+
+  @doc """
+  Starts the gateway's supervisor with `children` and `opts`, as
+  `Supervisor.start_link/2` does, but returns `:ignore` after logging the
+  error when it cannot start.
+  """
+  @spec start_link([Supervisor.child_spec() | {module(), term()} | module()], keyword()) ::
+          Supervisor.on_start()
+  def start_link(children, opts) do
+    case Supervisor.start_link(children, opts) do
+      {:error, reason} ->
+        Logger.error("Bus gateway not started: #{inspect(reason)}")
+        :ignore
+
+      started ->
+        started
+    end
   end
 
   @doc "The `<vehicle>` topic segment: the underscored vehicle module name."

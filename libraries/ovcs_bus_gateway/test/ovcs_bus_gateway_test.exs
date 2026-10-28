@@ -4,7 +4,10 @@ defmodule OvcsBusGatewayTest do
   @mqtt_config %OvcsBusGateway.Config{mqtt: [host: "127.0.0.1", port: 1883]}
 
   defp supervisor(opts) do
-    assert %{id: OvcsBusGateway, start: {Supervisor, :start_link, [children, supervisor_opts]}} =
+    assert %{
+             id: OvcsBusGateway,
+             start: {OvcsBusGateway, :start_link, [children, supervisor_opts]}
+           } =
              spec = OvcsBusGateway.child_spec(opts)
 
     {spec, children, supervisor_opts}

@@ -3,7 +3,7 @@ title: Bus gateway
 description: The library that exposes every signal on the OVCS bus over MQTT, HTTP and Phoenix Channels, and how to enable it in your vehicle, with the OVCS Mini reference vehicle as the worked example.
 ---
 
-The bus gateway, `OvcsBusGateway`, carries the signals of the [OVCS bus](./bus.md) out of the Erlang mesh: to an MQTT broker, to HTTP clients, and to a browser dashboard. It is a library in the framework and contains nothing vehicle-specific. Any OVCS firmware can host it by adding its child spec, `{OvcsBusGateway, vehicle: ..., config: ...}`; the bridge firmware does so for an entry of your vehicle's `bridge_firmwares/0` that carries a `bus_gateway:` key.
+The bus gateway, `OvcsBusGateway`, carries the signals of the [OVCS bus](./bus.md) out of the Erlang mesh: to an MQTT broker, to HTTP clients, and to a browser dashboard. It is a library in the framework and contains nothing vehicle-specific. Any OVCS firmware can host it by adding its child spec, `{OvcsBusGateway, vehicle: ..., config: ...}`; your vehicle declares it among the `children:` of a `bridge_firmwares/0` entry to run it in that bridge firmware.
 
 ## How a signal gets out
 
@@ -23,24 +23,40 @@ Each envelope carries two times: `changed_at`, the last change of the value, and
 
 To tell a quiet node from a node that is gone, the collector also publishes each node's presence as a signal of its own: source `OvcsBusGateway.Collector`, name `connected`, `node` the node's role, `true` when it starts a forwarder on the node, `false` when the node leaves the mesh. It goes through the cache and every adapter like any other signal. It is not refreshed, since it is sent only when the collector starts a forwarder on the node or loses the node, so the stale rule does not apply to it: it carries `stale: null`.
 
-Nothing safety-relevant depends on the gateway. It only reads the bus. The gateway's subtree is a temporary child with its own restart limit (10 restarts in 60 seconds). In a bridge firmware, a gateway that cannot start, for example because the HTTP port is already taken, or that keeps crashing stops alone with an error in the log, and the bridges of the firmware keep running.
+Nothing safety-relevant depends on the gateway. It only reads the bus. The gateway's subtree is a temporary child with its own restart limit (10 restarts in 60 seconds). A gateway that cannot start, for example because the HTTP port is already taken, or that keeps crashing stops alone with an error in the log, and the rest of the firmware keeps running.
 
 ## Enable it in your vehicle
 
-The bridge firmware runs the gateway for a `bridge_firmwares/0` entry that has a `bus_gateway:` key, after the entry's bridges. See [Your vehicle package](./vehicle_package.md) for bridge firmwares.
+Your vehicle runs the gateway in a bridge firmware by listing its child spec in the `children:` of that firmware's `bridge_firmwares/0` entry. `OvcsBridge.Supervisor` starts these children after the entry's bridges; a `%{host: [...], target: [...]}` map picks them per build target. See [Your vehicle package](./vehicle_package.md) for bridge firmwares.
 
-The OVCS Mini reference vehicle runs it in its `"ros"` bridge firmware. The same key works in an entry of your vehicle:
+The child spec takes:
+
+| Option | Default | Effect |
+|---|---|---|
+| `:vehicle` | required | your vehicle module: names the node roles and the `<vehicle>` MQTT topic segment |
+| `:config` | `%OvcsBusGateway.Config{}` | the adapters, below |
+| `:mqtt_client_id` | `ovcs_bus_gateway_<vehicle>` | the MQTT client id, unique per gateway on one broker |
+
+The OVCS Mini reference vehicle runs it in its `"ros"` bridge firmware. The same works in an entry of your vehicle:
 
 ```elixir
 # in bridge_firmwares/0
 "ros" => %{
   target: :ovcs_base_can_system_rpi4,
   bridges: [RosBridge],
-  bus_gateway: %OvcsBusGateway.Config{
-    mqtt: [host: Application.get_env(:ovcs_bus_gateway, :mqtt_host, "127.0.0.1"), port: 1883]
-  },
+  children: %{host: [bus_gateway(:host)], target: [bus_gateway(:target)]},
   # ...
 }
+
+defp bus_gateway(arm) do
+  {OvcsBusGateway,
+   vehicle: __MODULE__,
+   config: %OvcsBusGateway.Config{mqtt: [host: mqtt_broker(arm), port: 1883]},
+   mqtt_client_id: "ovcs_bus_gateway_ovcs_mini_ros_#{arm}"}
+end
+
+defp mqtt_broker(:host), do: "127.0.0.1"
+defp mqtt_broker(:target), do: "10.42.0.1"
 ```
 
 `OvcsBusGateway.Config` selects the adapters:
@@ -53,7 +69,7 @@ The OVCS Mini reference vehicle runs it in its `"ros"` bridge firmware. The same
 
 Rebuild and upload every firmware of your vehicle (VMS, infotainment and every bridge), not only the bridge that hosts the gateway. A node whose firmware predates `OvcsBus.Forwarder` has no forwarder module, so its signals never appear; the collector keeps retrying such a mesh peer every second and logs it at info level. A node whose forwarder predates `published_at` still delivers its signals, with `published_at` and `stale` set to `null`: that forwarder does not refresh, so the gateway cannot tell whether its signals are stale.
 
-The bridge firmware sets `:mqtt_host` from `MQTT_HOST`, default `127.0.0.1`. On the host it is read when `./ovcs run` starts the bridge. On a target, like `ZENOH_ENDPOINT_IP`, it is baked into the bridge firmware at build time: set it in `vehicles/<vehicle>/.env.exs` to the broker's address, the compute node, and rebuild the bridge to change it.
+Your vehicle package chooses the broker address. The Mini publishes to a broker on the host under `./ovcs run`, and on the vehicle to its compute node at `10.42.0.1`, the node's fixed address on the vehicle network. Changing it on the vehicle means rebuilding the bridge firmware that hosts the gateway.
 
 Building a bridge firmware for a target also builds the [dashboard](#dashboard), so it needs Node.js and npm.
 
@@ -97,7 +113,7 @@ ovcs/<vehicle>/<node>/<source>/<name>
 
 `<vehicle>` is the underscored vehicle module name (`ovcs_mini`); the other segments are the envelope's fields. A client subscribed to `ovcs/ovcs_mini/#` receives the last value of every signal immediately, then each change and each refresh.
 
-- In a bridge firmware the gateway connects with client id `ovcs_bus_gateway_<vehicle>_<firmware>_<arm>`, `<firmware>` being the bridge firmware's id (`ros`) and `<arm>` `host` or `target`, so the vehicle's gateways and one started with `./ovcs run` can share a broker. A firmware hosting it elsewhere passes its own `:mqtt_client_id`.
+- The gateway connects with its `:mqtt_client_id`. The Mini's are `ovcs_bus_gateway_ovcs_mini_ros_host` and `ovcs_bus_gateway_ovcs_mini_ros_target`, so the vehicle's gateway and one started with `./ovcs run` can share a broker; give each gateway of your vehicle its own.
 - `ovcs/<vehicle>/gateway/online` tells whether the gateway is connected: it publishes `true` there, retained, on every connect, and its last will has the broker publish `false`, retained, when the connection is lost. A client that sees `false` knows every other retained value may be stale.
 - On every connect and reconnect, after `online`, the gateway republishes its whole cache, so the retained values cover every signal, including those that never change.
 - Publishing never blocks the gateway. While the broker is unreachable nothing is published and nothing is buffered; the client retries with a backoff of up to 30 seconds. A send stuck for a second closes the connection, and batches that arrive while more than 1000 messages wait are dropped; the republish on the next connect restores the retained values.
@@ -159,7 +175,7 @@ Its design tokens and Tailwind preset come from [`@ovcs/ui`](../libraries/ovcs_u
 
 ## Developing on the host
 
-`./ovcs run <vehicle>` starts the bridge firmware with the gateway on the host, publishing to `MQTT_HOST` (default `127.0.0.1`). Start a broker without a vehicle with the `standalone` profile of [`compose/local`](../compose/README.md):
+`./ovcs run <vehicle>` starts the bridge firmware with the gateway on the host, publishing to the broker your vehicle names for the host arm (`127.0.0.1` on the Mini). Start a broker without a vehicle with the `standalone` profile of [`compose/local`](../compose/README.md):
 
 ```sh
 docker compose -f compose/local/base.yml --profile standalone up -d mosquitto

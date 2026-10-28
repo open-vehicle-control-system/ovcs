@@ -54,7 +54,10 @@ matching entry in `vehicle.bridge_firmwares/0`, and:
    (no-op on target; explicit on host dev where bridges are
    `runtime: false`);
 3. flat-maps `children/0` from every bundled bridge module;
-4. runs everything under `:one_for_one`.
+4. adds the entry's own `children`, a list of child specs or a
+   `%{host: [...], target: [...]}` map picked per build target,
+   after starting each child module's OTP application;
+5. runs everything under `:one_for_one`.
 
 Bridge libraries get `OvcsBus` for free — this lib depends on
 `ovcs_bus`, so `OvcsBus.subscribe/1` and `broadcast/2` work out of

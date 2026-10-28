@@ -18,7 +18,7 @@ A firmware hosts the gateway by adding its child spec to a supervisor:
 {OvcsBusGateway, vehicle: MyVehicle, config: %OvcsBusGateway.Config{}, mqtt_client_id: "..."}
 ```
 
-The bridge firmware does so for a `bridge_firmwares/0` entry with a `bus_gateway:` key. See the [Bus gateway guide](../../docs/bus_gateway.md).
+A vehicle runs it in a bridge firmware by listing that child spec in the `children:` of a `bridge_firmwares/0` entry. See the [Bus gateway guide](../../docs/bus_gateway.md).
 
 ## Dashboard
 

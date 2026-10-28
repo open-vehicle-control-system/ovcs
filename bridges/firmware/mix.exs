@@ -18,9 +18,7 @@ defmodule BridgeFirmware.MixProject do
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       releases: [{@app, release()}],
-      preferred_cli_target: [run: :host, test: :host],
-      # `runtime: false` on host, so not in the PLT unless added.
-      dialyzer: [plt_add_apps: [:ovcs_bus_gateway]]
+      preferred_cli_target: [run: :host, test: :host]
     ]
   end
 
