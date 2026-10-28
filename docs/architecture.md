@@ -18,7 +18,7 @@ An internal bus, `ovcs`, carries framework traffic: heartbeats, controller adopt
 
 ### The framework knows no vehicle
 
-The cores (`vms_core`, `infotainment_core`), firmware shells, bridge libraries and shared libraries contain no vehicle-specific code. Every vehicle is a Mix package under `vehicles/<name>/` that implements `OvcsVehicle` and bundles its supervision tree, CAN topology YAMLs and Nerves targets. `VEHICLE`, set to the package's top-level module name, selects it at boot. [Your vehicle package](./vehicle_package.md) follows that selection through the boot sequence.
+The cores (`vms_core`, `infotainment_core`, `vision_core`), firmware shells, bridge libraries and shared libraries contain no vehicle-specific code. Every vehicle is a Mix package under `vehicles/<name>/` that implements `OvcsVehicle` and bundles its supervision tree, CAN topology YAMLs and Nerves targets. `VEHICLE`, set to the package's top-level module name, selects it at boot. [Your vehicle package](./vehicle_package.md) follows that selection through the boot sequence.
 
 ## Where the line is drawn
 
@@ -26,8 +26,9 @@ The cores (`vms_core`, `infotainment_core`), firmware shells, bridge libraries a
 |---|---|
 | `vms_core`: component drivers, managers, metrics, the `VmsCore.Vehicle` behaviour | `<Vehicle>.Vms.Composer` implementing it |
 | `infotainment_core`: layout model, the `InfotainmentCore.Vehicle` behaviour | `<Vehicle>.Infotainment.Composer` (optional) |
-| VMS and infotainment Phoenix APIs, Vue and Flutter dashboards | `children/0`: which drivers and GenServers to supervise |
-| Firmware shells (`vms/firmware`, `infotainment/firmware`, `bridges/firmware`) that read `VEHICLE` | Nerves targets per role (`vms_target/0`, `infotainment_target/0`) |
+| `vision_core`: camera drivers, stereo depth, detector backends, the `VisionCore.Composer` behaviour | `<Vehicle>.Vision.Composer` (optional) |
+| VMS, infotainment and vision Phoenix APIs, Vue and Flutter dashboards | `children/0`: which drivers and GenServers to supervise |
+| Firmware shells (`vms/firmware`, `infotainment/firmware`, `vision/firmware`, `bridges/firmware`) that read `VEHICLE` | Nerves targets per role (`vms_target/0`, `infotainment_target/0`, `vision_target/0`) |
 | Bridge libraries (`RadioControlBridge`, `RosBridge`) and the `OvcsBridge` contract | `bridge_firmwares/0`: which bridges to build, on which target |
 | Shared CAN frame specs in `ovcs_can` | CAN topology YAMLs under `priv/can/` |
 | The generic controller firmware and its adoption protocol | Controller pinout maps (`generic_controllers/0`) |
@@ -42,6 +43,7 @@ A running vehicle is a small fleet of BEAMs:
 
 - **VMS**: the only firmware on the vehicle CAN buses, so all isolation between manufacturers happens there. Raspberry Pi 4 with a multi-CAN SPI hub.
 - **Infotainment** (optional): the in-car touchscreen on a Raspberry Pi 5, on the `ovcs` bus only.
+- **Vision** (optional): stereo depth and object detection on a Raspberry Pi 5 with a Hailo accelerator, publishing ROS 2 topics over Zenoh. No CAN. See [Vision unit](./vision.md).
 - **Bridges** (zero or more): each ferries data between the `ovcs` bus and a non-CAN world, such as an ExpressLRS radio link or a ROS 2 graph. The vehicle declares which bridges it ships and on which target.
 - **Generic controllers**: Arduino R4 Minima boards running one shared firmware. They receive their pinout from the VMS at runtime through an adoption frame. See [Generic controllers](./generic_controllers.md).
 
@@ -64,7 +66,7 @@ Erlang's own resolver knows nothing about mDNS. Each firmware enables mdns_lite'
 
 ## Three layers per system
 
-VMS and infotainment share one layered shape. Each layer is its own Mix project referencing the one below through a relative `path:` dependency; this is a monorepo, not an umbrella.
+VMS, infotainment and the vision unit share one layered shape. Each layer is its own Mix project referencing the one below through a relative `path:` dependency; this is a monorepo, not an umbrella.
 
 ```text
 +------------+     +------------+     +----------------+
@@ -79,9 +81,9 @@ VMS and infotainment share one layered shape. Each layer is its own Mix project 
                     +------------+      +--------------+
 ```
 
-- **Core**: component drivers, managers, and the `VmsCore.Vehicle` or `InfotainmentCore.Vehicle` behaviour. No web dependencies, no vehicle code.
+- **Core**: component drivers, managers, and the `VmsCore.Vehicle`, `InfotainmentCore.Vehicle` or `VisionCore.Composer` behaviour. No web dependencies, no vehicle code. `vision_core` has no CAN: it talks Zenoh instead of Cantastic.
 - **API**: a Phoenix project exposing a JSON API and WebSocket channels. Depends on Core.
-- **Dashboard**: Vue for the VMS debug dashboard, Flutter for the head unit.
+- **Dashboard**: Vue for the VMS debug dashboard and the vision dashboard, Flutter for the head unit.
 - **Firmware**: a Nerves project packaging the API (and Core) into a bootable image. At boot it reads `VEHICLE` and loads the vehicle package.
 
 The vehicle package sits beside these layers: the firmware reaches it through `Code.prepend_path`, and no framework project depends on it. Every Elixir project runs on a host against virtual CAN. The inventory is in [Framework components](./components.md).

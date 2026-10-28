@@ -20,9 +20,9 @@ Every system is on OTP 29 (`nerves_system_br` 1.35.3, Linux 6.18), and `mise.tom
 | `ovcs_base_can_system_rpi3a` | `bridges/firmware` (radio control) | v3.0.0-rc.1 |
 | `ovcs_base_can_system_rpi4` | `vms/firmware`, `bridges/firmware` (ROS) | v3.0.0-rc.1 |
 | `ovcs_base_can_system_rpi5` | `infotainment/firmware` | v3.0.0-rc.1 |
-| `rpi5` (`ovcs_bridges_system_rpi5`) | `bridges/firmware` (perception) | v3.0.0-rc.2 |
+| `rpi5` (`ovcs_bridges_system_rpi5`) | `bridges/firmware` (perception), `vision/firmware` | v3.0.0-rc.2 |
 
-The perception system ships the Hailo-8 kernel driver and firmware but not the userspace library: `libraries/hailort` builds `libhailort` from source, at the same HailoRT version as the driver.
+The Pi 5 system ships the Hailo-8 kernel driver and firmware but not the userspace library: `libraries/hailort` builds `libhailort` from source, at the same HailoRT version as the driver.
 
 Which of these your vehicle builds depends on the targets its `OvcsVehicle` module declares; the reference vehicles use all four between them.
 

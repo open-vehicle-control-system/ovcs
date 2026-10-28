@@ -16,6 +16,7 @@ The firmware projects, the Nerves systems and the `ovcs` CLI are the framework. 
 | `bridge-radio_control` (reference vehicles) | Raspberry Pi 3A | [`ovcs_base_can_system_rpi3a`](https://github.com/open-vehicle-control-system/ovcs_base_can_system_rpi3a) |
 | `bridge-ros` (reference vehicles) | Raspberry Pi 4 | [`ovcs_base_can_system_rpi4`](https://github.com/open-vehicle-control-system/ovcs_base_can_system_rpi4) |
 | `bridge-ros_vision` (OVCS Mini) | Raspberry Pi 5 + Hailo-8 | [`ovcs_bridges_system_rpi5`](https://github.com/open-vehicle-control-system/ovcs_bridges_system_rpi5) (Mix target `rpi5`) |
+| `vision` | Raspberry Pi 5 + Hailo-8 | [`ovcs_bridges_system_rpi5`](https://github.com/open-vehicle-control-system/ovcs_bridges_system_rpi5) (Mix target `rpi5`) |
 | Generic controller | Arduino R4 Minima | none (PlatformIO) |
 
 These are the reference vehicles' choices. The target of each role is a per-vehicle decision, read from your top-level module: `vms_target/0`, `infotainment_target/0`, and the `:target` key of each `bridge_firmwares/0` entry. The `:target` value is the Mix target, which usually but not always equals the system's name. To deploy on other hardware, change those values in `vehicles/<vehicle>/lib/<vehicle>.ex` and add the matching system dependency to the firmware project's `mix.exs` (see the [Nerves custom-systems guide](https://hexdocs.pm/nerves/customizing-systems.html)).
@@ -33,12 +34,12 @@ Every build, burn and upload goes through `./ovcs` (built by `mise run cli`, see
 ```
 
 - `<vehicle>` is the snake_case directory name of a vehicle under `vehicles/`.
-- `<role>` is `vms`, `infotainment`, or `bridge-<id>` for any id in the vehicle's `bridge_firmwares/0` (`bridge-radio_control`, `bridge-ros`, `bridge-ros_vision` in the reference vehicles). The `bridge-` prefix is required: a bare id is rejected, and the error lists the valid roles.
+- `<role>` is `vms`, `infotainment`, `vision`, or `bridge-<id>` for any id in the vehicle's `bridge_firmwares/0` (`bridge-radio_control`, `bridge-ros`, `bridge-ros_vision` in the reference vehicles). `vision` exists when the vehicle implements `vision/0` ([Vision unit](./vision.md)). The `bridge-` prefix is required: a bare id is rejected, and the error lists the valid roles.
 - The two positional arguments are order-independent. A missing one opens an interactive picker; on a non-tty stdin the command exits with status 2.
 
 ## Build
 
-1. **Configure the vehicle's secrets.** Copy `vehicles/<vehicle>/.env.exs.example` to `vehicles/<vehicle>/.env.exs` and fill in `AUTHORIZED_SSH_KEYS` (your SSH public keys), `WIFI_NETWORKS`, the Phoenix `SECRET_KEY_BASE` and `SIGNING_SALT`, and, for a vehicle with a ROS bridge, `ZENOH_ENDPOINT_IP`. The file is gitignored and shared by every firmware of the vehicle.
+1. **Configure the vehicle's secrets.** Copy `vehicles/<vehicle>/.env.exs.example` to `vehicles/<vehicle>/.env.exs` and fill in `AUTHORIZED_SSH_KEYS` (your SSH public keys), `WIFI_NETWORKS`, the Phoenix `SECRET_KEY_BASE` and `SIGNING_SALT`, and, for a vehicle with a ROS bridge or a vision unit, `ZENOH_ENDPOINT_IP`. The file is gitignored and shared by every firmware of the vehicle.
 2. **Generate stable SSH host keys**, once per vehicle ([below](#stable-ssh-host-keys-across-burns)):
 
    ```sh
