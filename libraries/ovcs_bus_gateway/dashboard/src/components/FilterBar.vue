@@ -1,10 +1,11 @@
 <script setup>
+import { OvcsBadge, OvcsDot, OvcsHeader, OvcsStatus } from '@ovcs/ui/vue'
 import { ref } from 'vue'
 import { LIVE_MS } from '../format'
 
 defineProps({
   modelValue: { type: String, required: true },
-  connected: { type: Boolean, required: true },
+  status: { type: String, required: true },
   count: { type: Number, required: true }
 })
 defineEmits(['update:modelValue'])
@@ -14,12 +15,12 @@ defineExpose({ focus: () => input.value?.focus() })
 </script>
 
 <template>
-  <header class="ovcs-header">
+  <OvcsHeader>
     <div class="mx-auto flex max-w-5xl flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
-      <h1 class="text-lg font-semibold">OVCS Bus</h1>
-      <span class="ovcs-status text-sm" :class="connected ? 'ovcs-status--ok' : 'ovcs-status--error'">
-        {{ connected ? `Live · ${count} signals` : 'Disconnected, retrying' }}
-      </span>
+      <h1 class="text-lg font-semibold">OVCS Bus Gateway</h1>
+      <OvcsStatus v-if="status === 'live'" tone="ok" class="text-sm">Live · {{ count }} signals</OvcsStatus>
+      <OvcsStatus v-else-if="status === 'connecting'" class="text-sm">Connecting…</OvcsStatus>
+      <OvcsStatus v-else tone="error" class="text-sm">Disconnected, retrying</OvcsStatus>
       <input
         ref="input"
         :value="modelValue"
@@ -31,9 +32,9 @@ defineExpose({ focus: () => input.value?.focus() })
       />
     </div>
     <p class="mx-auto max-w-5xl px-4 pb-2 text-xs text-ovcs-muted">
-      <span class="ovcs-dot ovcs-dot--on align-middle" /> value changed in the last {{ LIVE_MS / 1000 }} s ·
-      <span class="ovcs-badge ovcs-badge--warn">stale</span>
+      <OvcsDot on class="align-middle" /> value changed in the last {{ LIVE_MS / 1000 }} s ·
+      <OvcsBadge tone="warn">stale</OvcsBadge>
       no longer received by the gateway · faint “Published” times are current
     </p>
-  </header>
+  </OvcsHeader>
 </template>

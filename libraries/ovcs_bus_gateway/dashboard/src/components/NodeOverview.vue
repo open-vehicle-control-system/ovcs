@@ -1,4 +1,5 @@
 <script setup>
+import { OvcsCard, OvcsStatus } from '@ovcs/ui/vue'
 import { ago } from '../format'
 import { nodeStatus, signalCount, staleCount } from '../signals'
 
@@ -10,16 +11,14 @@ defineProps({
 
 <template>
   <nav class="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-    <component
-      :is="node.sources.length ? 'a' : 'div'"
+    <OvcsCard
       v-for="node in tree"
       :key="node.node"
-      :href="node.sources.length ? `#node-${node.node}` : undefined"
-      class="ovcs-card"
+      :href="node.sources.length ? `#node-${node.node}` : null"
     >
       <div class="flex items-center justify-between gap-2">
         <span class="font-semibold">{{ node.node }}</span>
-        <span class="ovcs-status text-xs" :class="nodeStatus(node).modifier">{{ nodeStatus(node).label }}</span>
+        <OvcsStatus :tone="nodeStatus(node).tone" class="text-xs">{{ nodeStatus(node).label }}</OvcsStatus>
       </div>
       <p class="mt-1 text-xs text-ovcs-muted">
         <template v-if="node.sources.length">
@@ -28,6 +27,6 @@ defineProps({
         </template>
         <template v-else>Publishes no signals</template>
       </p>
-    </component>
+    </OvcsCard>
   </nav>
 </template>

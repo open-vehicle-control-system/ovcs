@@ -6,7 +6,7 @@ import FilterBar from './components/FilterBar.vue'
 import NodeOverview from './components/NodeOverview.vue'
 import SignalTree from './components/SignalTree.vue'
 
-const { signals, connected } = useBusSocket()
+const { signals, status } = useBusSocket()
 const filter = ref('')
 const now = ref(Date.now())
 const filterBar = ref(null)
@@ -33,10 +33,11 @@ const signalCount = computed(() => [...signals.value.values()].filter((signal) =
 
 <template>
   <div class="min-h-screen">
-    <FilterBar ref="filterBar" v-model="filter" :connected="connected" :count="signalCount" />
+    <FilterBar ref="filterBar" v-model="filter" :status="status" :count="signalCount" />
     <main class="mx-auto max-w-5xl px-4 py-6">
-      <p v-if="!tree.length" class="text-ovcs-muted">
-        {{ connected ? 'No signals match.' : 'Waiting for the gateway...' }}
+      <p v-if="status === 'connecting'" class="text-ovcs-muted">Loading signals…</p>
+      <p v-else-if="!tree.length" class="text-ovcs-muted">
+        {{ filter ? 'No signals match.' : 'The gateway has no signals yet.' }}
       </p>
       <template v-else>
         <NodeOverview :tree="tree" :now="now" />

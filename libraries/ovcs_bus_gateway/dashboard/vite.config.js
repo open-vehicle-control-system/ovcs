@@ -11,7 +11,9 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url))
-    }
+    },
+    // @ovcs/ui is linked by path and has its own Vue for its tests: use this app's.
+    dedupe: ['vue']
   },
   build: {
     outDir: '../priv/static',

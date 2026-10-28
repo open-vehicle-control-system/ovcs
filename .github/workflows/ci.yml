@@ -276,6 +276,26 @@ jobs:
       - run: npm run test:unit
       - run: npm run build
 
+  ovcs-ui:
+    name: Vue · libraries/ovcs_ui
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.vue == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: libraries/ovcs_ui
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup-mise
+      - uses: actions/cache@v5
+        with:
+          path: ~/.npm
+          key: npm-ovcs-ui-${{ hashFiles('mise.toml') }}-${{ hashFiles('libraries/ovcs_ui/package-lock.json') }}
+          restore-keys: npm-ovcs-ui-${{ hashFiles('mise.toml') }}-
+      - run: npm ci
+      - run: npm run test:unit
+
   flutter-dashboard:
     name: Flutter · infotainment/dashboard
     needs: changes

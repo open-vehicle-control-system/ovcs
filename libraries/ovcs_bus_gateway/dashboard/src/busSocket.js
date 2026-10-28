@@ -1,11 +1,14 @@
 import { onScopeDispose, ref, shallowRef } from 'vue'
+
 import { applyFrame } from './signals'
 
 const RECONNECT_MS = 1000
 
+// `status` is 'connecting' until the gateway's first snapshot, 'live' after it, and
+// 'disconnected' while the socket is down and retrying.
 export function useBusSocket() {
   const signals = shallowRef(new Map())
-  const connected = ref(false)
+  const status = ref('connecting')
   let socket = null
   let timer = null
   let disposed = false
@@ -14,14 +17,13 @@ export function useBusSocket() {
     const scheme = location.protocol === 'https:' ? 'wss' : 'ws'
     socket = new WebSocket(`${scheme}://${location.host}/ws`)
 
-    socket.onopen = () => {
-      connected.value = true
-    }
     socket.onmessage = (event) => {
-      signals.value = applyFrame(signals.value, JSON.parse(event.data))
+      const frame = JSON.parse(event.data)
+      signals.value = applyFrame(signals.value, frame)
+      if (frame.type === 'snapshot') status.value = 'live'
     }
     socket.onclose = () => {
-      connected.value = false
+      status.value = 'disconnected'
       if (!disposed) timer = setTimeout(connect, RECONNECT_MS)
     }
   }
@@ -34,5 +36,5 @@ export function useBusSocket() {
     socket.close()
   })
 
-  return { signals, connected }
+  return { signals, status }
 }

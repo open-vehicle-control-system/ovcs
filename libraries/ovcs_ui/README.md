@@ -15,6 +15,18 @@ Design tokens, shared components and a Tailwind preset for OVCS web UIs. Plain C
   | `ovcs-row` + `--live` | row that lights up while `--live` is set and fades back after |
 
 - `tailwind-preset.js`: maps the tokens to `ovcs-*` colors (`bg-ovcs-surface`, `text-ovcs-muted`, ...) and the sans and mono font families.
+- `vue`: Vue 3 components over those classes. Importing it loads `tokens.css` and `components.css`. Vue is an optional peer dependency: the CSS works without it.
+
+  | Component | Props | Content |
+  |---|---|---|
+  | `OvcsCard` | `href` (renders a link), `as` (element, default `div`) | default slot |
+  | `OvcsHeader` | | default slot |
+  | `OvcsStatus` | `tone`: `ok`, `warn`, `error`, `muted` (default) | label |
+  | `OvcsBadge` | `tone`: `neutral` (default), `warn`, `error` | label |
+  | `OvcsDot` | `on` | |
+  | `OvcsRow` | `live`, `as` (element, default `div`) | default slot |
+
+  Classes on a component (`<OvcsCard class="p-0">`) add to its own.
 
 ## Use
 
@@ -34,6 +46,28 @@ import "@ovcs/ui/components.css";
 ```html
 <span class="ovcs-status ovcs-status--ok">Connected</span>
 <span class="ovcs-badge ovcs-badge--warn">stale</span>
+```
+
+Or, in a Vue app (import `@ovcs/ui/vue` once in the entry script, before the app's own styles, so Tailwind utilities override the components):
+
+```vue
+<script setup>
+import { OvcsBadge, OvcsStatus } from "@ovcs/ui/vue";
+</script>
+
+<template>
+  <OvcsStatus tone="ok">Connected</OvcsStatus>
+  <OvcsBadge tone="warn">stale</OvcsBadge>
+</template>
+```
+
+A Vite app linking the package by path adds `resolve: { dedupe: ["vue"] }`, so the components use the app's Vue rather than the copy installed for this package's tests.
+
+## Develop
+
+```sh
+npm install
+npm run test:unit
 ```
 
 In `tailwind.config.js`:

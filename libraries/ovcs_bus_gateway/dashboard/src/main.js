@@ -1,6 +1,6 @@
 import { createApp } from 'vue'
-import '@ovcs/ui/tokens.css'
-import '@ovcs/ui/components.css'
+// Before the app's styles, so Tailwind utilities override the shared components.
+import '@ovcs/ui/vue'
 import './style.css'
 import App from './App.vue'
 

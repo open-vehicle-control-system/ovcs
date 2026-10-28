@@ -30,11 +30,11 @@ export function applyFrame(state, frame, receivedAt = Date.now()) {
   return state
 }
 
-// Labels and `@ovcs/ui` status modifiers for a node's presence.
+// Labels and `OvcsStatus` tones for a node's presence.
 const STATUS = {
-  true: { label: 'Connected', modifier: 'ovcs-status--ok' },
-  false: { label: 'Disconnected', modifier: 'ovcs-status--error' },
-  null: { label: 'Status unknown', modifier: '' }
+  true: { label: 'Connected', tone: 'ok' },
+  false: { label: 'Disconnected', tone: 'error' },
+  null: { label: 'Status unknown', tone: 'muted' }
 }
 
 export const nodeStatus = (node) => STATUS[node.connected]

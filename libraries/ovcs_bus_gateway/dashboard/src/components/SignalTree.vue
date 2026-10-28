@@ -1,4 +1,5 @@
 <script setup>
+import { OvcsBadge, OvcsCard, OvcsDot, OvcsRow, OvcsStatus } from '@ovcs/ui/vue'
 import { ref } from 'vue'
 import { duration, formatValue, isFresh, isLive } from '../format'
 import { nodeStatus, splitSource, staleCount } from '../signals'
@@ -31,11 +32,11 @@ const columns = 'grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 sm:grid-cols-[minma
   >
     <header class="mb-2 flex flex-wrap items-baseline gap-x-4 gap-y-1">
       <h2 class="text-xl font-semibold">{{ node.node }}</h2>
-      <span class="ovcs-status text-sm" :class="nodeStatus(node).modifier">{{ nodeStatus(node).label }}</span>
+      <OvcsStatus :tone="nodeStatus(node).tone" class="text-sm">{{ nodeStatus(node).label }}</OvcsStatus>
       <span v-if="staleCount(node)" class="text-sm text-ovcs-warn">{{ staleCount(node) }} stale</span>
     </header>
 
-    <div class="ovcs-card overflow-hidden p-0">
+    <OvcsCard class="overflow-hidden p-0">
       <div
         :class="columns"
         class="hidden border-b border-ovcs-border px-3 py-1.5 text-xs uppercase tracking-wide text-ovcs-muted sm:grid"
@@ -63,14 +64,15 @@ const columns = 'grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 sm:grid-cols-[minma
         </button>
 
         <template v-if="!collapsed.has(sourceKey(node, source))">
-          <div
+          <OvcsRow
             v-for="signal in source.signals"
             :key="signal.name"
-            :class="[columns, { 'ovcs-row--live': isLive(signal, now) }]"
-            class="ovcs-row items-baseline border-b border-ovcs-border px-3 py-1.5 text-sm last:border-b-0"
+            :live="isLive(signal, now)"
+            :class="columns"
+            class="items-baseline border-b border-ovcs-border px-3 py-1.5 text-sm last:border-b-0"
           >
             <span class="col-span-2 flex min-w-0 items-center gap-2 sm:col-span-1">
-              <span class="ovcs-dot" :class="{ 'ovcs-dot--on': isLive(signal, now) }" />
+              <OvcsDot :on="isLive(signal, now)" />
               <span class="truncate" :title="signal.name">{{ signal.name }}</span>
             </span>
 
@@ -83,7 +85,7 @@ const columns = 'grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 sm:grid-cols-[minma
                 {{ formatValue(signal.value).text }}
               </span>
               <span v-if="signal.unit" class="shrink-0 text-xs text-ovcs-muted">{{ signal.unit }}</span>
-              <span v-if="signal.stale === true" class="ovcs-badge ovcs-badge--warn shrink-0">stale</span>
+              <OvcsBadge v-if="signal.stale === true" tone="warn" class="shrink-0">stale</OvcsBadge>
             </span>
 
             <span class="flex justify-end gap-3 text-right text-xs text-ovcs-muted sm:contents">
@@ -99,9 +101,9 @@ const columns = 'grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 sm:grid-cols-[minma
               </span>
               <span v-else title="This node's firmware does not report publications">—</span>
             </span>
-          </div>
+          </OvcsRow>
         </template>
       </template>
-    </div>
+    </OvcsCard>
   </section>
 </template>
