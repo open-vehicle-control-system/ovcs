@@ -413,7 +413,7 @@ defmodule OvcsMini do
   end
 
   # YOLO on the Hailo-8, fused with the stereo depth map. Target
-  # only: the accelerator is a physical card on the perception Pi, and
+  # only: the accelerator is a physical card on the `ros_vision` Pi, and
   # on the host the component would start, fail to find /dev/hailo0,
   # and log an error every boot for no benefit.
   #

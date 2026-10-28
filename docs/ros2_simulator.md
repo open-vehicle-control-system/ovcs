@@ -6,7 +6,7 @@ description: The Zenoh fabric, who publishes which topic, simulator time, the co
 A map, not a manual: what runs when OVCS talks to ROS 2, who owns time, which command path is real. [Simulation](../compose/local/simulation/README.md) tells you how to run the simulator; read it first.
 
 > [!NOTE]
-> The ROS bridge library, the Zenoh client, the message codecs, the VMS command components and the container images are framework. Which topics a bridge publishes and consumes, which drivers it uses and where the router lives are decided by the **vehicle**, in its `ros_bridge_config/1` or `/2` (see [Vehicle package](./vehicle_package.md)). Everything here was built and measured on the **OVCS Mini reference vehicle**, the one that runs a ROS bridge, a perception bridge and a compute node: treat its wiring as a worked example for your own.
+> The ROS bridge library, the Zenoh client, the message codecs, the VMS command components and the container images are framework. Which topics a bridge publishes and consumes, which drivers it uses and where the router lives are decided by the **vehicle**, in its `ros_bridge_config/1` or `/2` (see [Vehicle package](./vehicle_package.md)). Everything here was built and measured on the **OVCS Mini reference vehicle**, the one that runs the ROS bridge in two bridge firmwares (`ros` and `ros_vision`, which adds perception) and a compute node: treat its wiring as a worked example for your own.
 
 ## The fabric: one Zenoh router, everything a client
 
