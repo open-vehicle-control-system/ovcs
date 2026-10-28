@@ -61,8 +61,8 @@ matching entry in `vehicle.bridge_firmwares/0`, and:
 
 Bridge libraries get `OvcsBus` for free — this lib depends on
 `ovcs_bus`, so `OvcsBus.subscribe/1` and `broadcast/2` work out of
-the box. A broadcast reaches peer BEAMs only with `:cluster_broadcast`
-set (see [`OvcsBus`](../ovcs_bus)).
+the box. A broadcast stays on the bridge's BEAM (see
+[`OvcsBus`](../ovcs_bus)).
 
 ## Layout
 

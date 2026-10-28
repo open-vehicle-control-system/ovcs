@@ -14,7 +14,7 @@ defmodule OvcsBridge do
   `ovcs_bridge` brings `ovcs_bus` along, so a bridge child can
   `OvcsBus.subscribe("messages")` / `OvcsBus.broadcast/2` exactly
   like any `vms_core` component. A broadcast stays on the bridge's
-  BEAM unless `:cluster_broadcast` is set (see `OvcsBus`).
+  BEAM (see `OvcsBus`).
 
   Keep the behaviour tight — anything vehicle-specific belongs in
   the vehicle's `bridge_firmwares/0` entry (target, CAN config,
