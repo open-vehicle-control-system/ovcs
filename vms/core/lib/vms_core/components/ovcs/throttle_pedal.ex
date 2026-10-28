@@ -25,7 +25,6 @@ defmodule VmsCore.Components.OVCS.ThrottlePedal do
     Repo
   }
 
-  require Logger
   alias Decimal, as: D
 
   # Full scale of the generic controller's 14-bit ADC.

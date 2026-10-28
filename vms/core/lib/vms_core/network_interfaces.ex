@@ -4,7 +4,6 @@ defmodule VmsCore.NetworkInterfaces do
   `ip` link statistics, for the VMS API.
   """
   use GenServer
-  require Logger
   alias Cantastic.ConfigurationStore
 
   def start_link(_) do

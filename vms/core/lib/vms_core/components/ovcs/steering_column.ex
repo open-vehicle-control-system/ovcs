@@ -40,7 +40,6 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
   alias Decimal, as: D
   alias OvcsControl.{InputFilter, PID}
   alias VmsCore.Components.OVCS.GenericController
-  require Logger
 
   @zero D.new(0)
   @loop_period_ms 10
