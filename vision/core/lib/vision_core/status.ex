@@ -1,0 +1,193 @@
+defmodule VisionCore.Status do
+  @moduledoc """
+  The vision unit's health at a glance, for the dashboard: each camera's
+  frame rate and exposure, the pair's sync, the Hailo detector, the depth
+  rate and the Zenoh session.
+
+  Started last in `VisionCore.Supervisor`. Without a `:stereo_camera`
+  component the cameras and sync are reported absent and the depth rate
+  is zero.
+
+  Rates are counted over the last tick, one second by default (`:tick_ms`),
+  and every subscriber receives `{:vision_status, snapshot}` each tick.
+  """
+  use GenServer
+
+  alias VisionCore.Ros2.{StereoDiagnostics, ZenohClient}
+  alias VisionCore.StereoSources
+  alias VisionCore.Inference.Hailo
+  alias VisionCore.StereoCamera.Result
+  alias VisionCore.Camera.Frame
+
+  @default_tick_ms 1_000
+  @call_timeout_ms 200
+  @camera_metadata_keys [:exposure_time_us, :analogue_gain, :lens_position, :colour_temperature]
+
+  @type camera :: %{required(:present) => boolean(), optional(atom()) => term()}
+  @type snapshot :: %{
+          cameras: %{left: camera(), right: camera()},
+          sync: map(),
+          hailo: :running | :absent | :failed,
+          depth_hz: float(),
+          zenoh: :connected | :disconnected
+        }
+
+  @doc """
+  Starts the status server. Options: `:config`, the active
+  `VisionCore.Config` (required), and `:tick_ms`.
+  """
+  def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+
+  @doc "The unit's status now, with the rates of the last tick."
+  @spec snapshot() :: snapshot()
+  def snapshot, do: GenServer.call(__MODULE__, :snapshot)
+
+  @doc "Sends the caller `{:vision_status, snapshot}` now and every tick until it exits."
+  @spec subscribe() :: :ok
+  def subscribe, do: GenServer.call(__MODULE__, {:subscribe, self()})
+
+  @impl GenServer
+  def init(opts) do
+    config = Keyword.fetch!(opts, :config)
+    tick_ms = Keyword.get(opts, :tick_ms, @default_tick_ms)
+    sources = StereoSources.from_config(config)
+    Process.send_after(self(), :tick, tick_ms)
+
+    {:ok,
+     %{
+       tick_ms: tick_ms,
+       sources: sources,
+       monitors: StereoSources.register(sources),
+       hailo_configured?: hailo_configured?(config),
+       subscribers: %{},
+       counts: %{left: 0, right: 0, depth: 0},
+       window_start_ms: now_ms(),
+       rates_hz: %{left: 0.0, right: 0.0, depth: 0.0}
+     }}
+  end
+
+  @impl GenServer
+  def handle_call(:snapshot, _from, state), do: {:reply, build_snapshot(state), state}
+
+  def handle_call({:subscribe, pid}, _from, state) do
+    subscribers = Map.put_new_lazy(state.subscribers, pid, fn -> Process.monitor(pid) end)
+    send(pid, {:vision_status, build_snapshot(state)})
+    {:reply, :ok, %{state | subscribers: subscribers}}
+  end
+
+  @impl GenServer
+  def handle_cast({:stereo_result, %Result{}}, state), do: {:noreply, count(state, :depth)}
+
+  def handle_cast({:camera_frame, %Frame{label: label}}, state) when label in ["left", "right"],
+    do: {:noreply, count(state, String.to_existing_atom(label))}
+
+  def handle_cast(_message, state), do: {:noreply, state}
+
+  @impl GenServer
+  def handle_info(:tick, state) do
+    Process.send_after(self(), :tick, state.tick_ms)
+    state = close_window(state)
+    snapshot = build_snapshot(state)
+    Enum.each(Map.keys(state.subscribers), &send(&1, {:vision_status, snapshot}))
+    {:noreply, state}
+  end
+
+  def handle_info({:register_source, source}, state),
+    do: {:noreply, %{state | monitors: StereoSources.retry(source, state.monitors)}}
+
+  def handle_info({:DOWN, monitor_reference, :process, pid, _reason}, state) do
+    case StereoSources.down(monitor_reference, state.monitors) do
+      {:ok, monitors} -> {:noreply, %{state | monitors: monitors}}
+      :error -> {:noreply, %{state | subscribers: Map.delete(state.subscribers, pid)}}
+    end
+  end
+
+  def handle_info(_message, state), do: {:noreply, state}
+
+  defp count(state, key), do: %{state | counts: Map.update!(state.counts, key, &(&1 + 1))}
+
+  defp close_window(state) do
+    now = now_ms()
+    elapsed_s = max(now - state.window_start_ms, 1) / 1_000
+    rates_hz = Map.new(state.counts, fn {key, count} -> {key, count / elapsed_s} end)
+    %{state | rates_hz: rates_hz, counts: %{left: 0, right: 0, depth: 0}, window_start_ms: now}
+  end
+
+  defp build_snapshot(state) do
+    %{
+      cameras: %{left: camera(state, :left), right: camera(state, :right)},
+      sync: sync(state),
+      hailo: hailo(state),
+      depth_hz: state.rates_hz.depth,
+      zenoh:
+        if(call_within_timeout(&ZenohClient.connected?/0, false),
+          do: :connected,
+          else: :disconnected
+        )
+    }
+  end
+
+  defp camera(%{sources: []}, _side), do: %{present: false}
+
+  defp camera(%{sources: [_backend, left, right]} = state, side) do
+    {driver, server} = if side == :left, do: left, else: right
+
+    if GenServer.whereis(server) do
+      %{present: true, fps: state.rates_hz[side]}
+      |> Map.merge(camera_metadata(driver, server))
+    else
+      %{present: false}
+    end
+  end
+
+  defp camera_metadata(driver, server) do
+    if function_exported?(driver, :live, 1),
+      do:
+        call_within_timeout(
+          fn -> Map.take(driver.live(server) || %{}, @camera_metadata_keys) end,
+          %{}
+        ),
+      else: %{}
+  end
+
+  defp sync(%{sources: []}), do: %{present: false}
+
+  defp sync(_state) do
+    call_within_timeout(fn -> Map.put(StereoDiagnostics.sync(), :present, true) end, %{
+      present: false
+    })
+  end
+
+  defp hailo(%{hailo_configured?: false}), do: :absent
+
+  defp hailo(_state),
+    do: if(call_within_timeout(&Hailo.available?/0, false), do: :running, else: :failed)
+
+  defp hailo_configured?(%VisionCore.Config{components: components}),
+    do: Enum.any?(components, &hailo_component?/1)
+
+  defp hailo_component?(:hailo_detector), do: true
+  defp hailo_component?({:hailo_detector, _options}), do: true
+  defp hailo_component?(:detector), do: true
+  defp hailo_component?({:detector, options}), do: Keyword.get(options, :backend, Hailo) == Hailo
+  defp hailo_component?(_component), do: false
+
+  defp now_ms, do: System.monotonic_time(:millisecond)
+
+  # A callee stuck in its own work must not hold back the tick.
+  defp call_within_timeout(fun, fallback) do
+    task =
+      Task.async(fn ->
+        try do
+          fun.()
+        catch
+          _kind, _reason -> fallback
+        end
+      end)
+
+    case Task.yield(task, @call_timeout_ms) || Task.shutdown(task, :brutal_kill) do
+      {:ok, reply} -> reply
+      _timeout -> fallback
+    end
+  end
+end

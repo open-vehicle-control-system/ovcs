@@ -1,0 +1,10 @@
+/_build/
+/cover/
+/deps/
+/doc/
+/.fetch
+erl_crash.dump
+*.ez
+/tmp/
+/priv/camera_capture
+/priv/hailo_detect
