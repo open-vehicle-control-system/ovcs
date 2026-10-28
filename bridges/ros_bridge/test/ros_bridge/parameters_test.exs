@@ -1,8 +1,8 @@
 defmodule RosBridge.ParametersTest do
   use ExUnit.Case, async: true
 
-  import Ros2.Cdr
-  alias Ros2.RclInterfaces.Parameters, as: Codec
+  import Ros2Zenoh.Cdr
+  alias Ros2Zenoh.RclInterfaces.Parameters, as: Codec
   alias RosBridge.Parameters
 
   # A ParameterValue as ROS clients send it: every field present.

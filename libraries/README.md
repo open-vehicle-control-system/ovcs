@@ -27,6 +27,7 @@ side-by-side:
 | [`ovcs_can/`](./ovcs_can) | in-tree | Shared per-component CAN frame YAMLs (no runtime logic) |
 | [`ovcs_ui/`](./ovcs_ui) | in-tree | `@ovcs/ui` design tokens + Tailwind preset for web UIs (npm) |
 | [`ovcs_vehicle/`](./ovcs_vehicle) | in-tree | `OvcsVehicle` behaviour + `ovcs new` scaffold |
+| [`ros2_zenoh/`](./ros2_zenoh) | in-tree | ROS 2 message codecs (CDR) and the `rmw_zenoh` wire format, for talking to ROS 2 over plain Zenoh |
 
 Each library has its own README — start there for usage and design notes.
 

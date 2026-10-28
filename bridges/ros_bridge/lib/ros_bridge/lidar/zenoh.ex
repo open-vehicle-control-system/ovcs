@@ -21,7 +21,7 @@ defmodule RosBridge.Lidar.Zenoh do
   require Logger
 
   alias OvcsDrivers.Lidar.Scan
-  alias Ros2.SensorMsgs.Msg.LaserScan
+  alias Ros2Zenoh.SensorMsgs.Msg.LaserScan
 
   @default_topic "scan_raw"
 

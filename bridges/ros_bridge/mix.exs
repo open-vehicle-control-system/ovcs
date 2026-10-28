@@ -28,6 +28,7 @@ defmodule RosBridge.MixProject do
     [
       {:ovcs_bridge, path: "../../libraries/ovcs_bridge"},
       {:ovcs_drivers, path: "../../libraries/ovcs_drivers"},
+      {:ros2_zenoh, path: "../../libraries/ros2_zenoh"},
       {:hailort, path: "../../libraries/hailort", targets: [:host, :rpi5]},
       {:zenohex, "~> 0.8.0"},
       # Joy profiles (`RosBridge.Consumers.Joy.Profile`).

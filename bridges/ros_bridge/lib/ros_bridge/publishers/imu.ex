@@ -28,9 +28,9 @@ defmodule RosBridge.Publishers.Imu do
   use GenServer
 
   alias OvcsDrivers.Imu.Sample
-  alias Ros2.GeometryMsgs.Msg.{Quaternion, Vector3}
-  alias Ros2.SensorMsgs.Msg.Imu
-  alias Ros2.StdMsgs.Msg.Header
+  alias Ros2Zenoh.GeometryMsgs.Msg.{Quaternion, Vector3}
+  alias Ros2Zenoh.SensorMsgs.Msg.Imu
+  alias Ros2Zenoh.StdMsgs.Msg.Header
   alias RosBridge.Publishers.Imu.State
   alias RosBridge.Timing
 
@@ -64,7 +64,7 @@ defmodule RosBridge.Publishers.Imu do
     Process.send_after(self(), :tick, state.publish_interval_ms)
 
     Logger.info(
-      "#{__MODULE__} publishing Ros2.SensorMsgs.Msg.Imu on " <>
+      "#{__MODULE__} publishing Ros2Zenoh.SensorMsgs.Msg.Imu on " <>
         "#{state.topic} every #{state.publish_interval_ms}ms " <>
         "(frame #{state.frame_id}, driver #{inspect(driver)})"
     )

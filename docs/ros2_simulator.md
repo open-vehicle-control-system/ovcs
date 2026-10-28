@@ -304,7 +304,7 @@ defp ros_bridge_target_config,
       :heartbeat,
       :joy_interpreter,
       {:velocity_interpreter,
-       %{topic: "cmd_vel_nav", message: Ros2.GeometryMsgs.Msg.TwistStamped}},
+       %{topic: "cmd_vel_nav", message: Ros2Zenoh.GeometryMsgs.Msg.TwistStamped}},
       {:imu_publisher, driver: BNO085.I2C},
       {:odometry_publisher,
        driver: BNO085.I2C, base_ahead_of_rear_axle: base_ahead_of_rear_axle()}
@@ -352,7 +352,7 @@ Or open Foxglove Studio against `ws://<docker-host>:8765` and subscribe to `/ovc
 |---|---|---|
 | how to run any of this | [Simulation](../compose/local/simulation/README.md) | `compose/local/simulation.yml` |
 | the launch order and bridged topics | `compose/local/simulation/launch/gazebo.launch.py` (its docstrings are the design notes) | `compose/compute/images/nav2/launch/nav2.launch.py` |
-| the rmw_zenoh wire format | [`bridges/ros_bridge/README.md`](../bridges/ros_bridge/README.md) | `bridges/ros_bridge/lib/ros2/rmw_zenoh.ex`, `zenoh_client.ex` |
+| the rmw_zenoh wire format | [`libraries/ros2_zenoh/README.md`](../libraries/ros2_zenoh/README.md) | `libraries/ros2_zenoh/lib/ros2_zenoh/rmw_zenoh.ex`, `bridges/ros_bridge/lib/zenoh_client.ex` |
 | time | `bridges/ros_bridge/lib/ros_bridge/clock.ex` | `timing.ex`, `publishers/static_transform.ex` |
 | what a vehicle's ROS bridge runs | `vehicles/ovcs_mini/lib/ovcs_mini.ex` (`ros_bridge_config/2`) | `bridges/ros_bridge/lib/ros_bridge/components.ex` |
 | the actuator command path | `bridges/ros_bridge/lib/ros_bridge/consumers/joy.ex` | `libraries/ovcs_can/priv/can/components/ovcs/0x2B0_ros_actuator_command.yml`, `vms/core/lib/vms_core/components/ovcs/ros_actuator_command/` |

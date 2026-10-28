@@ -4,8 +4,8 @@ defmodule RosBridge.ClockTest.AcquiringSubscriber do
   process, so the sample is in its mailbox before the selective receive
   runs. That tests the real lifecycle without a live ZenohClient.
   """
-  alias Ros2.BuiltinInterfaces.Msg.Time
-  alias Ros2.RosgraphMsgs.Msg.Clock, as: ClockMessage
+  alias Ros2Zenoh.BuiltinInterfaces.Msg.Time
+  alias Ros2Zenoh.RosgraphMsgs.Msg.Clock, as: ClockMessage
 
   def subscribe(topic, _module) do
     send(self(), {:ros_message, {topic, %ClockMessage{clock: %Time{sec: 58, nanosec: 0}}}})
@@ -39,7 +39,7 @@ defmodule RosBridge.ClockTest do
   """
   use ExUnit.Case, async: false
 
-  alias Ros2.RosgraphMsgs.Msg.Clock, as: ClockMessage
+  alias Ros2Zenoh.RosgraphMsgs.Msg.Clock, as: ClockMessage
   alias RosBridge.{Clock, Timing}
   alias RosBridge.ClockTest.{AcquiringSubscriber, SilentSubscriber}
 
@@ -47,7 +47,7 @@ defmodule RosBridge.ClockTest do
 
   # Verbatim from `rclpy.serialization.serialize_message` on a Lyrical
   # runtime, including the 4-byte CDR encapsulation header that
-  # `Ros2.RmwZenoh` strips before any `parse/1`.
+  # `Ros2Zenoh.RmwZenoh` strips before any `parse/1`.
   @clock_hex "000100003a000000c0665326"
 
   setup do
@@ -70,7 +70,8 @@ defmodule RosBridge.ClockTest do
 
   defp clock_message(sec, nanosec) do
     {:ros_message,
-     {"clock", %ClockMessage{clock: %Ros2.BuiltinInterfaces.Msg.Time{sec: sec, nanosec: nanosec}}}}
+     {"clock",
+      %ClockMessage{clock: %Ros2Zenoh.BuiltinInterfaces.Msg.Time{sec: sec, nanosec: nanosec}}}}
   end
 
   describe "parsing rosgraph_msgs/Clock" do
@@ -199,7 +200,8 @@ defmodule RosBridge.ClockTest do
       send(
         clock_pid,
         {:ros_message,
-         {"clock", %ClockMessage{clock: %Ros2.BuiltinInterfaces.Msg.Time{sec: 58, nanosec: 0}}}}
+         {"clock",
+          %ClockMessage{clock: %Ros2Zenoh.BuiltinInterfaces.Msg.Time{sec: 58, nanosec: 0}}}}
       )
 
       # Round-trip so the message above is definitely handled.

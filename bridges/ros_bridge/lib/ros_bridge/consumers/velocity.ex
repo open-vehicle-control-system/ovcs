@@ -69,7 +69,7 @@ defmodule RosBridge.Consumers.Velocity do
   use GenServer
 
   alias Cantastic.Emitter
-  alias Ros2.GeometryMsgs.Msg.{Twist, TwistStamped}
+  alias Ros2Zenoh.GeometryMsgs.Msg.{Twist, TwistStamped}
   alias RosBridge.Consumers.Velocity.State
   alias RosBridge.InputWatchdog
 

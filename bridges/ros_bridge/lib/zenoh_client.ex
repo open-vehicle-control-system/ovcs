@@ -96,7 +96,7 @@ defmodule RosBridge.ZenohClient do
   use GenServer
 
   alias RosBridge.ZenohClient.State
-  alias Ros2.RmwZenoh
+  alias Ros2Zenoh.RmwZenoh
 
   require Logger
 
@@ -288,7 +288,7 @@ defmodule RosBridge.ZenohClient do
         encapsulated_response = <<0x00, 0x01, 0x00, 0x00>> <> response_payload
 
         # Echoes the request's sequence number so the client matches the
-        # reply; same layout as `Ros2.RmwZenoh.attachment/3`.
+        # reply; same layout as `Ros2Zenoh.RmwZenoh.attachment/3`.
         attachment =
           case query.attachment do
             <<sequence_number::little-signed-integer-size(64), _source_timestamp::binary-size(8),

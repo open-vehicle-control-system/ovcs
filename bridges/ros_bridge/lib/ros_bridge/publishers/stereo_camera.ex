@@ -94,9 +94,17 @@ defmodule RosBridge.Publishers.StereoCamera do
   alias RosBridge.Camera.{Calibration, Frame}
   alias RosBridge.StereoCamera.{OpenCV, Result, Telemetry}
   alias RosBridge.Timing
-  alias Ros2.SensorMsgs.Msg.{CameraInfo, CompressedImage, Image, PointCloud2, RegionOfInterest}
-  alias Ros2.StdMsgs.Msg.Header
-  alias Ros2.StereoMsgs.Msg.DisparityImage
+
+  alias Ros2Zenoh.SensorMsgs.Msg.{
+    CameraInfo,
+    CompressedImage,
+    Image,
+    PointCloud2,
+    RegionOfInterest
+  }
+
+  alias Ros2Zenoh.StdMsgs.Msg.Header
+  alias Ros2Zenoh.StereoMsgs.Msg.DisparityImage
 
   @default_pair_tolerance_ms 33
   # A few frame periods: enough to find the closest pair.

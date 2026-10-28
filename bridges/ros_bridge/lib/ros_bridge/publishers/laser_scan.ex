@@ -22,8 +22,8 @@ defmodule RosBridge.Publishers.LaserScan do
   require Logger
 
   alias OvcsDrivers.Lidar.Scan
-  alias Ros2.SensorMsgs.Msg.LaserScan
-  alias Ros2.StdMsgs.Msg.Header
+  alias Ros2Zenoh.SensorMsgs.Msg.LaserScan
+  alias Ros2Zenoh.StdMsgs.Msg.Header
   alias RosBridge.Timing
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)

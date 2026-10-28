@@ -2,7 +2,7 @@ defmodule RosBridge.Lidar.ZenohTest do
   use ExUnit.Case, async: true
 
   alias OvcsDrivers.Lidar.Scan
-  alias Ros2.SensorMsgs.Msg.LaserScan
+  alias Ros2Zenoh.SensorMsgs.Msg.LaserScan
   alias RosBridge.Lidar.Zenoh
 
   test "places each ray at its angle in [0, 2π), passing finite ranges and no return as 0.0" do
