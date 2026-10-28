@@ -1,6 +1,6 @@
 <script setup>
 import { ago, duration, formatValue, isLive } from '../format'
-import { splitSource } from '../signals'
+import { splitSource, staleCount } from '../signals'
 
 defineProps({
   tree: { type: Array, required: true },
@@ -29,17 +29,19 @@ const signalCount = (node) => node.sources.reduce((count, source) => count + sou
       <span v-if="node.sources.length" class="text-sm text-ovcs-muted">
         {{ signalCount(node) }} signals · last change {{ ago(now - node.lastChange) }}
       </span>
+      <span v-if="staleCount(node)" class="text-sm text-ovcs-warn">{{ staleCount(node) }} stale</span>
     </header>
 
     <p v-if="!node.sources.length" class="text-sm text-ovcs-muted">Publishes no signals.</p>
 
     <div v-else class="rounded border border-ovcs-border bg-ovcs-surface">
       <div
-        class="grid grid-cols-[1fr_minmax(9rem,auto)_6rem] gap-4 border-b border-ovcs-border px-3 py-1.5 text-xs uppercase tracking-wide text-ovcs-muted"
+        class="grid grid-cols-[1fr_minmax(9rem,auto)_6rem_7rem] gap-4 border-b border-ovcs-border px-3 py-1.5 text-xs uppercase tracking-wide text-ovcs-muted"
       >
         <span>Signal</span>
         <span>Value</span>
         <span class="text-right">Last change</span>
+        <span class="text-right">Last published</span>
       </div>
 
       <template v-for="source in node.sources" :key="source.source">
@@ -50,7 +52,7 @@ const signalCount = (node) => node.sources.reduce((count, source) => count + sou
         <div
           v-for="signal in source.signals"
           :key="signal.name"
-          class="signal-row grid grid-cols-[1fr_minmax(9rem,auto)_6rem] items-baseline gap-4 border-b border-ovcs-border px-3 py-1 text-sm last:border-b-0"
+          class="signal-row grid grid-cols-[1fr_minmax(9rem,auto)_6rem_7rem] items-baseline gap-4 border-b border-ovcs-border px-3 py-1 text-sm last:border-b-0"
           :class="{ 'signal-row--live': isLive(signal, now) }"
         >
           <span class="flex items-center gap-2 pl-3">
@@ -60,13 +62,22 @@ const signalCount = (node) => node.sources.reduce((count, source) => count + sou
             />
             {{ signal.name }}
           </span>
-          <span class="font-mono" :class="tone[formatValue(signal.value).tone]">
+          <span class="font-mono" :class="signal.stale === true ? 'text-ovcs-muted' : tone[formatValue(signal.value).tone]">
             {{ formatValue(signal.value).text }}
             <span v-if="signal.unit" class="ml-1 font-sans text-xs text-ovcs-muted">{{ signal.unit }}</span>
+            <span v-if="signal.stale === true" class="ml-2 font-sans text-xs text-ovcs-warn">stale</span>
           </span>
-          <span class="text-right text-xs text-ovcs-muted" :title="new Date(signal.timestamp).toISOString()">
-            {{ duration(now - signal.timestamp) }}
+          <span class="text-right text-xs text-ovcs-muted" :title="new Date(signal.changed_at).toISOString()">
+            {{ duration(now - signal.changed_at) }}
           </span>
+          <span
+            v-if="signal.published_at != null"
+            class="text-right text-xs text-ovcs-muted"
+            :title="new Date(signal.published_at).toISOString()"
+          >
+            {{ duration(now - signal.published_at) }}
+          </span>
+          <span v-else class="text-right text-xs text-ovcs-muted">—</span>
         </div>
       </template>
     </div>

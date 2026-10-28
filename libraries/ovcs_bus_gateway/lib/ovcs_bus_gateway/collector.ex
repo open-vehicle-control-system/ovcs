@@ -12,16 +12,27 @@ defmodule OvcsBusGateway.Collector do
   `OvcsBusGateway.Envelope`s, tagged with the role of the publishing node
   (`OvcsBus.Cluster.role/2`), written to `OvcsBusGateway.Cache` and dispatched through
   `OvcsBusGateway.Subscribers`. Forwarders push batches without waiting, so publishers never
-  wait on the collector.
+  wait on the collector. Each envelope it receives has `stale: false`. A `{message, timestamp}`
+  entry, from the forwarder of an older firmware, gets `timestamp` as its change time and
+  `nil` as its publish time and staleness, since that forwarder does not refresh; an entry of
+  any other shape is skipped.
+
+  Every stale check interval, the collector marks `stale: true` each envelope with
+  `stale: false` that it has not received for the stale delay, and dispatches it again, so
+  every adapter sees the signal go stale.
 
   The collector also reports each node's presence the same way: a `connected` signal,
   sourced by this module and tagged with the node's role, set to `true` when it starts a
-  forwarder on the node at start or on `:nodeup`, and to `false` on `:nodedown`.
+  forwarder on the node at start or on `:nodeup`, and to `false` on `:nodedown`. Its
+  staleness is `nil`.
 
   Options:
 
   - `:vehicle` - vehicle module the node roles are derived from.
   - `:forwarder_opts` - keyword list passed to `OvcsBus.Forwarder.run/2`, default `[]`.
+  - `:stale_after` - milliseconds without receiving a signal before it is stale, default
+    `3_000`.
+  - `:stale_check_interval` - milliseconds between stale checks, default `1_000`.
   - `:alive?` - `(-> boolean())` distribution check, replaceable in tests only.
   - `:peers` - `(-> [node()])` the mesh's node names, replaceable in tests only.
   """
@@ -32,6 +43,8 @@ defmodule OvcsBusGateway.Collector do
   alias OvcsBusGateway.{Cache, Envelope, Subscribers}
 
   @retry_interval 1_000
+  @stale_after 3_000
+  @stale_check_interval 1_000
 
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts)
@@ -42,6 +55,8 @@ defmodule OvcsBusGateway.Collector do
     send(self(), :start)
 
     vehicle = Keyword.fetch!(opts, :vehicle)
+    stale_check_interval = Keyword.get(opts, :stale_check_interval, @stale_check_interval)
+    Process.send_after(self(), :check_stale, stale_check_interval)
 
     {:ok,
      %{
@@ -49,6 +64,8 @@ defmodule OvcsBusGateway.Collector do
        peers: Keyword.get(opts, :peers, fn -> OvcsBus.Cluster.peers_for(vehicle) end),
        forwarder_opts: Keyword.get(opts, :forwarder_opts, []),
        alive?: Keyword.get(opts, :alive?, &Node.alive?/0),
+       stale_after: Keyword.get(opts, :stale_after, @stale_after),
+       stale_check_interval: stale_check_interval,
        forwarders: %{},
        roles: %{}
      }}
@@ -105,17 +122,51 @@ defmodule OvcsBusGateway.Collector do
       else: {:noreply, state}
   end
 
-  def handle_info({:ovcs_bus_batch, node, entries}, state) do
+  def handle_info({:ovcs_bus_batch, node, entries}, state) when is_list(entries) do
     {role, state} = role(node, state)
 
     entries
-    |> Enum.map(fn {message, timestamp} -> Envelope.new(role, message, timestamp) end)
+    |> Enum.flat_map(&envelopes(&1, role, node))
     |> deliver()
 
     {:noreply, state}
   end
 
+  def handle_info({:ovcs_bus_batch, node, batch}, state) do
+    Logger.debug(
+      "OvcsBusGateway.Collector skipped an unknown batch from #{node}: #{inspect(batch)}"
+    )
+
+    {:noreply, state}
+  end
+
+  def handle_info(:check_stale, state) do
+    Process.send_after(self(), :check_stale, state.stale_check_interval)
+
+    case Cache.mark_stale(System.monotonic_time(:millisecond) - state.stale_after) do
+      [] -> :ok
+      stale -> Subscribers.dispatch(stale)
+    end
+
+    {:noreply, state}
+  end
+
   def handle_info(_message, state), do: {:noreply, state}
+
+  defp envelopes({%OvcsBus.Message{} = message, changed_at, published_at}, role, _node),
+    do: [%{Envelope.new(role, message, changed_at, published_at) | stale: false}]
+
+  # The entry shape of a forwarder that does not track publish times.
+  defp envelopes({%OvcsBus.Message{} = message, timestamp}, role, _node),
+    do: [Envelope.new(role, message, timestamp, nil)]
+
+  defp envelopes(entry, _role, node) do
+    Logger.debug(
+      "OvcsBusGateway.Collector skipped an unknown batch entry from #{node}: #{inspect(entry)}"
+    )
+
+    []
+  end
 
   defp deliver(envelopes) do
     Cache.put_all(envelopes)
@@ -131,7 +182,8 @@ defmodule OvcsBusGateway.Collector do
   defp publish_presence(node, connected?, state) do
     {role, state} = role(node, state)
     message = %OvcsBus.Message{source: __MODULE__, name: :connected, value: connected?}
-    deliver([Envelope.new(role, message, System.os_time(:millisecond))])
+    now = System.os_time(:millisecond)
+    deliver([Envelope.new(role, message, now, now)])
     state
   end
 

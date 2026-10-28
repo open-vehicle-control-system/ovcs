@@ -12,7 +12,7 @@ defmodule OvcsBusGateway.Http.SocketTest do
   end
 
   defp env(node, name) do
-    %Envelope{node: node, source: "A", name: name, value: 1, timestamp: 0}
+    %Envelope{node: node, source: "A", name: name, value: 1, changed_at: 0, published_at: 5}
   end
 
   test "sends a snapshot on connect" do
@@ -32,7 +32,9 @@ defmodule OvcsBusGateway.Http.SocketTest do
     message = {:ovcs_bus_gateway, [env("vms", "gear"), env("ros", "yaw")]}
 
     assert {:push, {:text, json}, ^state} = Socket.handle_info(message, state)
-    assert %{"type" => "update", "signals" => [%{"name" => "gear"}]} = Jason.decode!(json)
+
+    assert %{"type" => "update", "signals" => [%{"name" => "gear", "published_at" => 5}]} =
+             Jason.decode!(json)
   end
 
   test "pushes nothing when no envelope matches" do

@@ -1,4 +1,4 @@
-const LIVE_MS = 2000
+export const LIVE_MS = 2000
 
 export function duration(ms) {
   const seconds = Math.floor(ms / 1000)
@@ -22,4 +22,4 @@ export function formatValue(value) {
   return { text: String(value), tone: 'plain' }
 }
 
-export const isLive = (signal, now) => signal.receivedAt !== null && now - signal.receivedAt < LIVE_MS
+export const isLive = (signal, now) => signal.changeSeenAt !== null && now - signal.changeSeenAt < LIVE_MS

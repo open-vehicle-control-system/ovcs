@@ -61,6 +61,88 @@ defmodule OvcsBusGateway.CollectorTest do
     assert [%{name: "speed"}] = Cache.select(%{name: "speed"})
   end
 
+  test "stamps each envelope with the change and publish times of its batch entry" do
+    collector = start_supervised!({Collector, vehicle: OvcsMini, alive?: fn -> false end})
+    Subscribers.subscribe()
+
+    send(collector, {:ovcs_bus_batch, node(), [{message(:speed, 6), 1_000, 4_000}]})
+
+    assert_receive {:ovcs_bus_gateway,
+                    [%{name: "speed", changed_at: 1_000, published_at: 4_000, stale: false}]},
+                   200
+  end
+
+  test "accepts the two-element entries of an older forwarder and skips unknown ones" do
+    collector = start_supervised!({Collector, vehicle: OvcsMini, alive?: fn -> false end})
+    Subscribers.subscribe()
+
+    entries = [{message(:speed, 6), 2_000}, :unknown, {message(:gear, :drive), 1_000, 3_000}]
+
+    log =
+      capture_log([level: :debug], fn ->
+        send(collector, {:ovcs_bus_batch, node(), entries})
+
+        assert_receive {:ovcs_bus_gateway,
+                        [
+                          %{name: "speed", changed_at: 2_000, published_at: nil, stale: nil},
+                          %{name: "gear", changed_at: 1_000, published_at: 3_000, stale: false}
+                        ]},
+                       200
+      end)
+
+    assert log =~ "skipped an unknown batch entry from #{node()}: :unknown"
+    assert Process.alive?(collector)
+  end
+
+  test "skips a batch that is not a list" do
+    collector = start_supervised!({Collector, vehicle: OvcsMini, alive?: fn -> false end})
+    Subscribers.subscribe()
+
+    log =
+      capture_log([level: :debug], fn ->
+        send(collector, {:ovcs_bus_batch, node(), :not_a_list})
+        refute_receive {:ovcs_bus_gateway, _}, 50
+      end)
+
+    assert log =~ "skipped an unknown batch from #{node()}: :not_a_list"
+    assert Process.alive?(collector)
+  end
+
+  defp start_sweeping_collector do
+    start_supervised!(
+      {Collector,
+       vehicle: OvcsMini, alive?: fn -> false end, stale_after: 50, stale_check_interval: 10}
+    )
+  end
+
+  test "marks a signal stale once it was not received for the stale delay, once" do
+    collector = start_sweeping_collector()
+    Subscribers.subscribe()
+
+    send(collector, {:ovcs_bus_batch, node(), [{message(:speed, 6), 1_000, 4_000}]})
+    assert_receive {:ovcs_bus_gateway, [%{name: "speed", stale: false}]}, 100
+    refute_receive {:ovcs_bus_gateway, _}, 30
+
+    assert_receive {:ovcs_bus_gateway, [%{name: "speed", published_at: 4_000, stale: true}]}, 100
+
+    assert {:ok, %{stale: true}} =
+             Cache.fetch({Atom.to_string(node()), "VmsCore.Vehicle", "speed"})
+
+    refute_receive {:ovcs_bus_gateway, _}, 150
+
+    send(collector, {:ovcs_bus_batch, node(), [{message(:speed, 6), 1_000, 5_000}]})
+    assert_receive {:ovcs_bus_gateway, [%{name: "speed", published_at: 5_000, stale: false}]}, 100
+  end
+
+  test "never sweeps signals of unknown staleness" do
+    collector = start_sweeping_collector()
+    Subscribers.subscribe()
+
+    send(collector, {:ovcs_bus_batch, node(), [{message(:speed, 6), 2_000}]})
+    assert_receive {:ovcs_bus_gateway, [%{name: "speed", stale: nil}]}, 100
+    refute_receive {:ovcs_bus_gateway, _}, 200
+  end
+
   defp presence(node_name, value) do
     %{node: node_name, source: "OvcsBusGateway.Collector", name: "connected", value: value}
   end
@@ -73,7 +155,9 @@ defmodule OvcsBusGateway.CollectorTest do
 
     assert_receive {:ovcs_bus_gateway, [connected]}, 200
     assert Map.take(connected, [:node, :source, :name, :value]) == presence(local, true)
-    assert connected.timestamp >= before
+    assert connected.changed_at >= before
+    assert connected.published_at == connected.changed_at
+    assert connected.stale == nil
     assert [^connected] = Cache.select(%{source: "OvcsBusGateway.Collector"})
 
     send(collector, {:nodedown, :"gone@127.0.0.1"})

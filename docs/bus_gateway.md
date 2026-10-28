@@ -18,12 +18,15 @@ Every component of a vehicle publishes its state as `%OvcsBus.Message{}` on the 
 The gateway's `OvcsBusGateway.Collector` starts one `OvcsBus.Forwarder` on every node of the mesh, including nodes that join later. Each forwarder subscribes to its node's `"messages"` topic and sends batches to the collector:
 
 - Between two ticks it keeps only the latest value of each `{source, name}` signal, and drops a value equal to the one it last sent. A chatty signal costs one entry per change, not one per publication.
+- About once a second it refreshes every signal republished since the previous refresh: the last value goes out again with a new publish time. A signal whose component stopped publishing is not refreshed.
 - Batches go out with `:nosuspend`. When the distribution link is saturated the batch stays pending for the next tick, so no publisher ever waits on the mesh. This is why the gateway uses the forwarder rather than `OvcsBus.broadcast/2` with `cluster_broadcast: true`.
-- A skipped tick is counted and reported as the `skipped_ticks` signal, sourced by `OvcsBus.Forwarder`. It appears on the gateway like any other signal.
+- A skipped tick is counted. Once a tick was skipped, the running total is published every second as the `skipped_ticks` signal, sourced by `OvcsBus.Forwarder`. It appears on the gateway like any other signal.
 
 The collector turns each batch into `OvcsBusGateway.Envelope`s, stores the latest one per signal in `OvcsBusGateway.Cache`, and dispatches them to the adapters through `OvcsBusGateway.Subscribers`. The batch interval is `forward_interval` in the gateway config.
 
-Because repeats are dropped, a signal that holds its value sends nothing, and its envelope keeps the timestamp of its last change. To tell a steady signal from a node that is gone, the collector also publishes each node's presence as a signal of its own: source `OvcsBusGateway.Collector`, name `connected`, `node` the node's role, `true` when it starts a forwarder on the node, `false` when the node leaves the mesh. It goes through the cache and every adapter like any other signal.
+Each envelope carries two times: `changed_at`, the last change of the value, and `published_at`, the last time the component published it. A signal that holds its value is refreshed while its component keeps publishing, so `published_at` advances about once a second. The gateway decides staleness: once a second it sets `stale: true` on every signal it has not received for 3 seconds and sends that envelope out again, and the next envelope it receives for the signal clears it to `stale: false`. A component that publishes a signal less often than every few seconds shows it as stale between publications.
+
+To tell a quiet node from a node that is gone, the collector also publishes each node's presence as a signal of its own: source `OvcsBusGateway.Collector`, name `connected`, `node` the node's role, `true` when it starts a forwarder on the node, `false` when the node leaves the mesh. It goes through the cache and every adapter like any other signal. It is not refreshed, since it is sent only when the collector starts a forwarder on the node or loses the node, so the stale rule does not apply to it: it carries `stale: null`.
 
 Nothing safety-relevant depends on the gateway. It only reads the bus. The gateway's subtree is a temporary child of the bridge supervisor with its own restart limit (10 restarts in 60 seconds): a gateway that keeps crashing stops alone and leaves the other bridges of the firmware running. A failure while the subtree starts at boot, such as the HTTP port already being taken, still fails the start of the bridge supervisor.
 
@@ -63,7 +66,7 @@ def ovcs_bus_gateway_config(:target),
 | `:mqtt` | `nil` | MQTT adapter, `[host: ..., port: ...]`; `nil` leaves it off |
 | `:forward_interval` | `20` | milliseconds between batches from each node |
 
-Rebuild and upload every firmware of your vehicle (VMS, infotainment and every bridge), not only the bridge that hosts the gateway. A node whose firmware predates `OvcsBus.Forwarder` has no forwarder module, so its signals never appear; the collector keeps retrying such a mesh peer every second and logs it at info level.
+Rebuild and upload every firmware of your vehicle (VMS, infotainment and every bridge), not only the bridge that hosts the gateway. A node whose firmware predates `OvcsBus.Forwarder` has no forwarder module, so its signals never appear; the collector keeps retrying such a mesh peer every second and logs it at info level. A node whose forwarder predates `published_at` still delivers its signals, with `published_at` and `stale` set to `null`: that forwarder does not refresh, so the gateway cannot tell whether its signals are stale.
 
 On the Mini's firmware the broker address comes from `MQTT_HOST`, which defaults to `ZENOH_ENDPOINT_IP` and then `127.0.0.1`: the broker runs on the compute node next to the Zenoh router. Like `ZENOH_ENDPOINT_IP`, it is baked into the bridge firmware at build time: set it in `vehicles/<vehicle>/.env.exs` and rebuild the bridge to change it.
 
@@ -80,7 +83,9 @@ Every signal leaves the gateway as one JSON object, built by `OvcsBusGateway.Env
   "name": "ready_to_drive",
   "value": true,
   "unit": null,
-  "timestamp": 1761565200123
+  "changed_at": 1761565200123,
+  "published_at": 1761565204310,
+  "stale": false
 }
 ```
 
@@ -91,7 +96,9 @@ Every signal leaves the gateway as one JSON object, built by `OvcsBusGateway.Env
 | `name` | the signal name |
 | `value` | the value, encoded as below |
 | `unit` | the unit of a physical value, or `null` |
-| `timestamp` | milliseconds since the Unix epoch, taken on the publishing node when its forwarder received the message; since repeats are dropped, the time of the value's last change, not of its last publication |
+| `changed_at` | milliseconds since the Unix epoch, taken on the publishing node when its forwarder received the message that last changed the value |
+| `published_at` | milliseconds since the Unix epoch, taken the same way on the last message, changed or not; refreshed about once a second while the component publishes; `null` from a node whose firmware does not report it |
+| `stale` | `true` when the gateway has not received the signal for 3 seconds, `false` while it does, `null` when unknown: presence signals and nodes whose firmware does not refresh |
 
 Values are encoded so any JSON client can read them: numbers, booleans, `null` and UTF-8 strings are kept; a finite `Decimal` becomes an exact JSON number; any other atom becomes its name; anything else, including non-UTF-8 binaries and non-finite decimals, becomes its `inspect/1` text.
 
@@ -103,7 +110,7 @@ With `:mqtt` set, the gateway keeps a connection to the broker and publishes eac
 ovcs/<vehicle>/<node>/<source>/<name>
 ```
 
-`<vehicle>` is the underscored vehicle module name (`ovcs_mini`); the other segments are the envelope's fields. A client subscribed to `ovcs/ovcs_mini/#` receives the last value of every signal immediately, then each change.
+`<vehicle>` is the underscored vehicle module name (`ovcs_mini`); the other segments are the envelope's fields. A client subscribed to `ovcs/ovcs_mini/#` receives the last value of every signal immediately, then each change and each refresh.
 
 - The gateway connects with client id `ovcs_bus_gateway_<vehicle>_<firmware>_<arm>`, `<firmware>` being the bridge firmware's id (`ros`) and `<arm>` `host` or `target`, so the vehicle's gateways and one started with `./ovcs run` can share a broker.
 - `ovcs/<vehicle>/gateway/online` tells whether the gateway is connected: it publishes `true` there, retained, on every connect, and its last will has the broker publish `false`, retained, when the connection is lost. A client that sees `false` knows every other retained value may be stale.
@@ -135,17 +142,17 @@ With `:http` set, the gateway serves on port 4100:
 curl 'http://<bridge-host>:4100/api/signals?node=vms&name=ready_to_drive'
 ```
 
-The WebSocket is server to client only. It sends a `snapshot` frame with the cached envelopes of the filter on connect, then an `update` frame for each batch that contains a matching envelope:
+The WebSocket is server to client only. It sends a `snapshot` frame with the cached envelopes of the filter on connect, then an `update` frame for each batch that contains a matching envelope, refreshes included:
 
 ```json
-{"type": "update", "signals": [{"node": "vms", "source": "VmsCore.Vehicle", "name": "ready_to_drive", "value": true, "unit": null, "timestamp": 1761565200123}]}
+{"type": "update", "signals": [{"node": "vms", "source": "VmsCore.Vehicle", "name": "ready_to_drive", "value": true, "unit": null, "changed_at": 1761565200123, "published_at": 1761565204310, "stale": false}]}
 ```
 
-The first `update` frames may repeat envelopes of the snapshot or carry older ones: compare `timestamp` and keep the newer. The server pings every 30 seconds so a quiet stream stays open. A client that falls behind, with more than 1000 messages queued, is closed with code 1013: reconnect and use the new snapshot.
+The first `update` frames may repeat envelopes of the snapshot or carry older ones: compare `published_at` (or `changed_at` when `published_at` is `null`) and keep the newer. A signal turning stale arrives as an `update` with `stale: true`. The server pings every 30 seconds so a quiet stream stays open. A client that falls behind, with more than 1000 messages queued, is closed with code 1013: reconnect and use the new snapshot.
 
 ## Dashboard
 
-`libraries/ovcs_bus_gateway/dashboard/` is a Vue app that groups every signal by node and source, with a filter box and a connection indicator, fed by `/ws`. It is built into `priv/static` and served at `/` by the gateway. `bridges/firmware/build.sh` builds it before every non-host firmware build, so a burned bridge serves it at `http://<bridge-host>:4100/`.
+`libraries/ovcs_bus_gateway/dashboard/` is a Vue app that groups every signal by node and source, with a filter box and a connection indicator, fed by `/ws`. Each row shows how long ago the value last changed and was last published; a dot marks a value that changed in the last 2 seconds, and a signal the gateway flags as stale is muted and labelled. It is built into `priv/static` and served at `/` by the gateway. `bridges/firmware/build.sh` builds it before every non-host firmware build, so a burned bridge serves it at `http://<bridge-host>:4100/`.
 
 Its design tokens and Tailwind preset come from [`@ovcs/ui`](../libraries/ovcs_ui/README.md), shared by OVCS web UIs.
 

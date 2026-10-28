@@ -34,9 +34,9 @@ describe('formatValue', () => {
 })
 
 describe('isLive', () => {
-  test('is true only for a signal that arrived as an update within the window', () => {
-    expect(isLive({ receivedAt: 10_000 }, 11_500)).toBe(true)
-    expect(isLive({ receivedAt: 10_000 }, 13_000)).toBe(false)
-    expect(isLive({ receivedAt: null }, 10_000)).toBe(false)
+  test('is true only for a signal whose value changed within the window', () => {
+    expect(isLive({ changeSeenAt: 10_000 }, 11_500)).toBe(true)
+    expect(isLive({ changeSeenAt: 10_000 }, 13_000)).toBe(false)
+    expect(isLive({ changeSeenAt: null }, 10_000)).toBe(false)
   })
 })

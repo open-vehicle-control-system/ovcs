@@ -10,8 +10,22 @@ defmodule OvcsBusGateway.Http.RouterTest do
     start_supervised!(Cache)
 
     Cache.put_all([
-      %Envelope{node: "vms", source: "VmsCore.Vehicle", name: "speed", value: 3, timestamp: 0},
-      %Envelope{node: "ros", source: "Ros.Bridge", name: "yaw", value: 1, timestamp: 0}
+      %Envelope{
+        node: "vms",
+        source: "VmsCore.Vehicle",
+        name: "speed",
+        value: 3,
+        changed_at: 0,
+        published_at: 5
+      },
+      %Envelope{
+        node: "ros",
+        source: "Ros.Bridge",
+        name: "yaw",
+        value: 1,
+        changed_at: 0,
+        published_at: 5
+      }
     ])
 
     :ok
@@ -38,7 +52,7 @@ defmodule OvcsBusGateway.Http.RouterTest do
     conn = get("/api/signals/vms/VmsCore.Vehicle/speed")
 
     assert conn.status == 200
-    assert %{"value" => 3} = Jason.decode!(conn.resp_body)
+    assert %{"value" => 3, "changed_at" => 0, "published_at" => 5} = Jason.decode!(conn.resp_body)
   end
 
   test "404 on an unknown signal" do

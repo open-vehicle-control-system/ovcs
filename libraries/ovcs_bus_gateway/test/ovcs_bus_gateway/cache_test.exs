@@ -9,7 +9,14 @@ defmodule OvcsBusGateway.CacheTest do
   end
 
   defp env(node, source, name, value) do
-    %Envelope{node: node, source: source, name: name, value: value, timestamp: 0}
+    %Envelope{
+      node: node,
+      source: source,
+      name: name,
+      value: value,
+      changed_at: 0,
+      published_at: 5
+    }
   end
 
   test "keeps only the latest envelope per signal" do
@@ -40,6 +47,23 @@ defmodule OvcsBusGateway.CacheTest do
 
     assert [{"bridge", "Z", "a"}, {"vms", "A", "gear"}, {"vms", "A", "speed"}] =
              Enum.map(Cache.select(%{}), &Envelope.key/1)
+  end
+
+  test "mark_stale marks and returns the fresh envelopes received before a time" do
+    Cache.put_all([%{env("vms", "A", "old", 1) | stale: false}])
+    received_before = System.monotonic_time(:millisecond) + 1
+    Process.sleep(2)
+
+    Cache.put_all([
+      %{env("vms", "A", "new", 1) | stale: false},
+      %{env("vms", "A", "unknown", 1) | stale: nil}
+    ])
+
+    assert [%{name: "old", stale: true}] = Cache.mark_stale(received_before)
+    assert {:ok, %{stale: true}} = Cache.fetch({"vms", "A", "old"})
+    assert [] = Cache.mark_stale(received_before)
+    assert [%{name: "new"}] = Cache.mark_stale(System.monotonic_time(:millisecond) + 1)
+    assert {:ok, %{stale: nil}} = Cache.fetch({"vms", "A", "unknown"})
   end
 
   test "fetch returns the envelope of a signal" do

@@ -4,12 +4,15 @@ export const keyOf = ({ node, source, name }) => `${node}/${source}/${name}`
 export const PRESENCE_SOURCE = 'OvcsBusGateway.Collector'
 export const isPresence = (signal) => signal.source === PRESENCE_SOURCE && signal.name === 'connected'
 
-// Returns a new Map. A snapshot replaces the state; an update merges newer signals into it.
-// `receivedAt` is the browser time an update arrived, null for snapshot signals: the gateway
-// sends only changes, so it marks the rows that are moving, whatever the node clocks say.
+// A signal from a forwarder that does not report publish times has a null `published_at`.
+const publishedAt = (signal) => signal.published_at ?? signal.changed_at
+
+// Returns a new Map. A snapshot replaces the state; an update merges more recently published
+// signals into it. `changeSeenAt` is the browser time of the last update changing the value,
+// null when none did since the snapshot.
 export function applyFrame(state, frame, receivedAt = Date.now()) {
   if (frame.type === 'snapshot') {
-    return new Map(frame.signals.map((signal) => [keyOf(signal), { ...signal, receivedAt: null }]))
+    return new Map(frame.signals.map((signal) => [keyOf(signal), { ...signal, changeSeenAt: null }]))
   }
 
   if (frame.type === 'update') {
@@ -17,13 +20,18 @@ export function applyFrame(state, frame, receivedAt = Date.now()) {
     for (const signal of frame.signals) {
       const key = keyOf(signal)
       const stored = next.get(key)
-      if (!stored || signal.timestamp >= stored.timestamp) next.set(key, { ...signal, receivedAt })
+      if (stored && publishedAt(signal) < publishedAt(stored)) continue
+      const changeSeenAt = stored && signal.changed_at === stored.changed_at ? stored.changeSeenAt : receivedAt
+      next.set(key, { ...signal, changeSeenAt })
     }
     return next
   }
 
   return state
 }
+
+export const staleCount = (node) =>
+  node.sources.reduce((count, source) => count + source.signals.filter((signal) => signal.stale === true).length, 0)
 
 const byName = (field) => (a, b) => (a[field] < b[field] ? -1 : a[field] > b[field] ? 1 : 0)
 
@@ -45,7 +53,7 @@ export function groupTree(state, filterText) {
       continue
     }
 
-    node.lastChange = Math.max(node.lastChange ?? 0, signal.timestamp)
+    node.lastChange = Math.max(node.lastChange ?? 0, signal.changed_at)
     if (!matches(signal)) continue
     node.shown = true
     if (!node.sources.has(signal.source)) node.sources.set(signal.source, [])

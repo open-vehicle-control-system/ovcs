@@ -14,7 +14,14 @@ defmodule OvcsBusGateway.MqttTest do
   end
 
   defp env(source, name, value),
-    do: %Envelope{node: "vms", source: source, name: name, value: value, timestamp: 0}
+    do: %Envelope{
+      node: "vms",
+      source: source,
+      name: name,
+      value: value,
+      changed_at: 0,
+      published_at: 5
+    }
 
   defp start_mqtt(opts) do
     start_supervised!(
@@ -68,7 +75,7 @@ defmodule OvcsBusGateway.MqttTest do
     client_id = client_id()
     assert_receive {:pub, ^client_id, "ovcs/ovcs_mini/vms/A/speed", payload, opts}
 
-    assert %{"value" => 1} = Jason.decode!(payload)
+    assert %{"value" => 1, "published_at" => 5} = Jason.decode!(payload)
     assert opts[:retain] == true
     assert opts[:qos] == 0
     assert opts[:timeout] == 0

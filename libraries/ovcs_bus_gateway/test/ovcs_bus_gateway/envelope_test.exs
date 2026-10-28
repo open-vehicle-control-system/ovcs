@@ -7,13 +7,13 @@ defmodule OvcsBusGateway.EnvelopeTest do
     message = %OvcsBus.Message{name: :signal, value: value, source: VmsCore.Vehicle}
 
     "vms"
-    |> Envelope.new(message, 0)
+    |> Envelope.new(message, 0, 0)
     |> Jason.encode!()
     |> Jason.decode!()
     |> Map.fetch!("value")
   end
 
-  test "new/3 builds the envelope" do
+  test "new/4 builds the envelope" do
     message = %OvcsBus.Message{
       name: :speed,
       value: Decimal.new("12.5"),
@@ -21,7 +21,7 @@ defmodule OvcsBusGateway.EnvelopeTest do
       unit: "km/h"
     }
 
-    envelope = Envelope.new("vms", message, 1_700_000_000_000)
+    envelope = Envelope.new("vms", message, 1_700_000_000_000, 1_700_000_004_000)
 
     assert Jason.decode!(Jason.encode!(envelope)) == %{
              "node" => "vms",
@@ -29,18 +29,27 @@ defmodule OvcsBusGateway.EnvelopeTest do
              "name" => "speed",
              "value" => 12.5,
              "unit" => "km/h",
-             "timestamp" => 1_700_000_000_000
+             "changed_at" => 1_700_000_000_000,
+             "published_at" => 1_700_000_004_000,
+             "stale" => nil
            }
   end
 
-  test "new/3 accepts a signal name that is not an atom" do
+  test "encodes the stale flag" do
+    message = %OvcsBus.Message{name: :speed, value: 1, source: VmsCore.Vehicle}
+    envelope = %{Envelope.new("vms", message, 0, 0) | stale: true}
+
+    assert %{"stale" => true} = Jason.decode!(Jason.encode!(envelope))
+  end
+
+  test "new/4 accepts a signal name that is not an atom" do
     for {name, expected} <- [{"speed", "speed"}, {{:wheel, 1}, "{:wheel, 1}"}] do
       message = %OvcsBus.Message{name: name, value: 1, source: VmsCore.Vehicle}
-      assert Envelope.new("vms", message, 0).name == expected
+      assert Envelope.new("vms", message, 0, 0).name == expected
     end
   end
 
-  test "new/3 makes any unit JSON-safe" do
+  test "new/4 makes any unit JSON-safe" do
     for {unit, expected} <- [
           {nil, nil},
           {"km/h", "km/h"},
@@ -49,7 +58,7 @@ defmodule OvcsBusGateway.EnvelopeTest do
           {<<0xFF>>, "<<255>>"}
         ] do
       message = %OvcsBus.Message{name: :speed, value: 1, source: VmsCore.Vehicle, unit: unit}
-      envelope = Envelope.new("vms", message, 0)
+      envelope = Envelope.new("vms", message, 0, 0)
       assert envelope.unit == expected
       assert {:ok, _json} = Jason.encode(envelope)
     end
@@ -58,7 +67,7 @@ defmodule OvcsBusGateway.EnvelopeTest do
   test "key/1 is the node, source and name" do
     message = %OvcsBus.Message{name: :speed, value: 1, source: VmsCore.Vehicle}
 
-    assert "vms" |> Envelope.new(message, 0) |> Envelope.key() ==
+    assert "vms" |> Envelope.new(message, 0, 0) |> Envelope.key() ==
              {"vms", "VmsCore.Vehicle", "speed"}
   end
 
@@ -81,7 +90,7 @@ defmodule OvcsBusGateway.EnvelopeTest do
       source: VmsCore.Vehicle
     }
 
-    assert "vms" |> Envelope.new(message, 0) |> Jason.encode!() =~
+    assert "vms" |> Envelope.new(message, 0, 0) |> Jason.encode!() =~
              ~s("value":0.1000000000000000055)
   end
 
@@ -94,7 +103,7 @@ defmodule OvcsBusGateway.EnvelopeTest do
   test "encodes non-finite decimals as valid JSON strings" do
     for value <- ["NaN", "Infinity", "-Infinity"] do
       message = %OvcsBus.Message{name: :soc, value: Decimal.new(value), source: VmsCore.Vehicle}
-      json = "vms" |> Envelope.new(message, 0) |> Jason.encode!()
+      json = "vms" |> Envelope.new(message, 0, 0) |> Jason.encode!()
 
       assert is_binary(Jason.decode!(json)["value"])
     end

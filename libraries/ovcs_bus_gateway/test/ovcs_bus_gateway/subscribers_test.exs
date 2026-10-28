@@ -8,7 +8,8 @@ defmodule OvcsBusGateway.SubscribersTest do
     :ok
   end
 
-  defp env(name), do: %Envelope{node: "vms", source: "A", name: name, value: 1, timestamp: 0}
+  defp env(name),
+    do: %Envelope{node: "vms", source: "A", name: name, value: 1, changed_at: 0, published_at: 5}
 
   test "dispatch reaches every subscriber" do
     Subscribers.subscribe()

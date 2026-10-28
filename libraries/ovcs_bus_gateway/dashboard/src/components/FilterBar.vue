@@ -1,4 +1,6 @@
 <script setup>
+import { LIVE_MS } from '../format'
+
 defineProps({
   modelValue: { type: String, required: true },
   connected: { type: Boolean, required: true },
@@ -26,5 +28,9 @@ defineEmits(['update:modelValue'])
         @input="$emit('update:modelValue', $event.target.value)"
       />
     </div>
+    <p class="mx-auto max-w-5xl px-4 pb-2 text-xs text-ovcs-muted">
+      <span class="text-ovcs-accent">●</span> changed in the last {{ LIVE_MS / 1000 }} s ·
+      <span class="text-ovcs-warn">stale</span>: no longer received by the gateway
+    </p>
   </header>
 </template>

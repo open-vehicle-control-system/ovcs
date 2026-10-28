@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'vitest'
-import { applyFrame, groupTree, PRESENCE_SOURCE, splitSource } from './signals'
+import { applyFrame, groupTree, PRESENCE_SOURCE, splitSource, staleCount } from './signals'
 
-const sig = (node, source, name, value, timestamp = 1000) => ({
-  node, source, name, value, unit: null, timestamp
+const sig = (node, source, name, value, changedAt = 1000, publishedAt = changedAt, stale = false) => ({
+  node, source, name, value, unit: null, changed_at: changedAt, published_at: publishedAt, stale
 })
 
 const stateOf = (signals) => applyFrame(new Map(), { type: 'snapshot', signals })
@@ -17,13 +17,29 @@ describe('applyFrame', () => {
     expect(s.size).toBe(0)
   })
 
-  test('an update older than the stored signal is ignored', () => {
-    let s = stateOf([sig('vms', 'A', 'speed', 2, 2000)])
+  test('an update published before the stored signal is ignored', () => {
+    let s = stateOf([sig('vms', 'A', 'speed', 2, 2000, 3000)])
+    s = applyFrame(s, { type: 'update', signals: [sig('vms', 'A', 'speed', 2, 2000, 2500)] })
+    expect(s.get('vms/A/speed').published_at).toBe(3000)
     s = applyFrame(s, { type: 'update', signals: [sig('vms', 'A', 'speed', 1, 1000)] })
     expect(s.get('vms/A/speed').value).toBe(2)
   })
 
-  test('an update with an equal timestamp replaces the stored signal', () => {
+  test('orders signals without a publish time by their change time', () => {
+    let s = stateOf([sig('vms', 'A', 'speed', 2, 2000, null)])
+    s = applyFrame(s, { type: 'update', signals: [sig('vms', 'A', 'speed', 1, 1000, null)] })
+    expect(s.get('vms/A/speed').value).toBe(2)
+    s = applyFrame(s, { type: 'update', signals: [sig('vms', 'A', 'speed', 3, 3000, null)] })
+    expect(s.get('vms/A/speed').value).toBe(3)
+  })
+
+  test('a stale flag update replaces the stored signal', () => {
+    let s = stateOf([sig('vms', 'A', 'speed', 1, 1000, 2000)])
+    s = applyFrame(s, { type: 'update', signals: [sig('vms', 'A', 'speed', 1, 1000, 2000, true)] })
+    expect(s.get('vms/A/speed').stale).toBe(true)
+  })
+
+  test('an update published at the same time replaces the stored signal', () => {
     let s = stateOf([sig('vms', 'A', 'speed', 1, 1000)])
     s = applyFrame(s, { type: 'update', signals: [sig('vms', 'A', 'speed', 2, 1000)] })
     expect(s.get('vms/A/speed').value).toBe(2)
@@ -34,11 +50,20 @@ describe('applyFrame', () => {
     expect(applyFrame(s, { type: 'other', signals: [] })).toBe(s)
   })
 
-  test('stamps updated signals with the time they arrived, snapshot signals with none', () => {
+  test('stamps changeSeenAt only when an update changes changed_at', () => {
     let s = applyFrame(new Map(), { type: 'snapshot', signals: [sig('vms', 'A', 'speed', 1)] }, 5000)
-    expect(s.get('vms/A/speed').receivedAt).toBeNull()
-    s = applyFrame(s, { type: 'update', signals: [sig('vms', 'A', 'speed', 2, 2000)] }, 6000)
-    expect(s.get('vms/A/speed').receivedAt).toBe(6000)
+    expect(s.get('vms/A/speed').changeSeenAt).toBeNull()
+    s = applyFrame(s, { type: 'update', signals: [sig('vms', 'A', 'speed', 1, 1000, 2000)] }, 6000)
+    expect(s.get('vms/A/speed').changeSeenAt).toBeNull()
+    s = applyFrame(s, { type: 'update', signals: [sig('vms', 'A', 'speed', 2, 3000)] }, 7000)
+    expect(s.get('vms/A/speed').changeSeenAt).toBe(7000)
+    s = applyFrame(s, { type: 'update', signals: [sig('vms', 'A', 'speed', 2, 3000, 4000)] }, 8000)
+    expect(s.get('vms/A/speed').changeSeenAt).toBe(7000)
+  })
+
+  test('a signal first seen in an update has changed', () => {
+    const s = applyFrame(new Map(), { type: 'update', signals: [sig('vms', 'A', 'speed', 1)] }, 6000)
+    expect(s.get('vms/A/speed').changeSeenAt).toBe(6000)
   })
 })
 
@@ -91,6 +116,20 @@ describe('groupTree', () => {
     expect(tree[1].sources.map((s) => s.source)).toEqual(['A', 'B'])
     expect(tree[1].sources[0].signals.map((s) => s.name)).toEqual(['alpha', 'beta'])
     expect(groupTree(state, 'VMS/a/BE')[0].sources[0].signals.map((s) => s.name)).toEqual(['beta'])
+  })
+})
+
+describe('staleCount', () => {
+  test('counts the signals of a node the gateway marked stale', () => {
+    const [node] = groupTree(
+      stateOf([
+        sig('vms', 'A', 'speed', 1, 1000, 1000, true),
+        sig('vms', 'A', 'gear', 1, 1000, 1000, false),
+        sig('vms', 'B', 'old', 1, 1000, null, null)
+      ]),
+      ''
+    )
+    expect(staleCount(node)).toBe(1)
   })
 })
 

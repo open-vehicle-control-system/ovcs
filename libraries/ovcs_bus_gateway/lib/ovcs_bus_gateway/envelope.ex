@@ -8,14 +8,19 @@ defmodule OvcsBusGateway.Envelope do
     its `inspect/1` text.
   - `:value` — JSON-safe value, see `encode_value/1`.
   - `:unit` — unit of a physical value as a string, made JSON-safe like `:name`, or `nil`.
-  - `:timestamp` — milliseconds since the Unix epoch, stamped by the forwarder on the
-    publishing node when it receives the message. The forwarder drops repeated values, so
-    this is when the value last changed, not when it was last published.
+  - `:changed_at` — milliseconds since the Unix epoch, stamped by the forwarder on the
+    publishing node when it receives the message that last changed the value.
+  - `:published_at` — milliseconds since the Unix epoch, stamped the same way on the last
+    message published, changed or not, or `nil` when the forwarder does not report it. The
+    forwarder refreshes a steadily published signal every refresh interval.
+  - `:stale` — set by `OvcsBusGateway.Collector`: `true` when the signal has not been received
+    for its stale delay, `false` once it is received again, `nil` when unknown: presence
+    signals and signals from a forwarder that does not refresh.
   """
 
   @derive Jason.Encoder
-  @enforce_keys [:node, :source, :name, :timestamp]
-  defstruct [:node, :source, :name, :value, :unit, :timestamp]
+  @enforce_keys [:node, :source, :name, :changed_at, :published_at]
+  defstruct [:node, :source, :name, :value, :unit, :changed_at, :published_at, :stale]
 
   @type t :: %__MODULE__{
           node: String.t(),
@@ -23,21 +28,26 @@ defmodule OvcsBusGateway.Envelope do
           name: String.t(),
           value: term(),
           unit: String.t() | nil,
-          timestamp: integer()
+          changed_at: integer(),
+          published_at: integer() | nil,
+          stale: boolean() | nil
         }
 
   @doc """
-  Builds the envelope of `message`, published on the node playing `role`.
+  Builds the envelope of `message`, published on the node playing `role`, whose value last
+  changed at `changed_at` and which was last published at `published_at`. Its `:stale` is
+  `nil`.
   """
-  @spec new(String.t(), OvcsBus.Message.t(), integer()) :: t()
-  def new(role, %OvcsBus.Message{} = message, timestamp) do
+  @spec new(String.t(), OvcsBus.Message.t(), integer(), integer() | nil) :: t()
+  def new(role, %OvcsBus.Message{} = message, changed_at, published_at) do
     %__MODULE__{
       node: role,
       source: inspect(message.source),
       name: encode_text(message.name),
       value: encode_value(message.value),
       unit: if(message.unit, do: encode_text(message.unit)),
-      timestamp: timestamp
+      changed_at: changed_at,
+      published_at: published_at
     }
   end
 

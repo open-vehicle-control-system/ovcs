@@ -4,7 +4,8 @@ Exposes the signals on the OVCS bus to the outside world.
 
 Every bus signal leaves the gateway as an `OvcsBusGateway.Envelope`: a JSON object
 carrying the originating node, the publishing module, the signal name, its value,
-its unit and a millisecond timestamp.
+its unit, when its value last changed, when it was last published, and whether
+the gateway considers it stale.
 
 ## Adapters
 
