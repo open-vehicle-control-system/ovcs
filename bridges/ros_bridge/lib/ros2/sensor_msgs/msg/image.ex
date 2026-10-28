@@ -73,7 +73,7 @@ defmodule Ros2.SensorMsgs.Msg.Image do
          rest = consume_alignment(rest, 4, byte_size(body) - byte_size(rest)),
          <<step::little-unsigned-32, rest::binary>> <- rest,
          <<data_length::little-unsigned-32, rest::binary>> <- rest,
-         <<data::binary-size(data_length), rest::binary>> <- rest do
+         <<data::binary-size(^data_length), rest::binary>> <- rest do
       {:ok,
        %__MODULE__{
          header: header,

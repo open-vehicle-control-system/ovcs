@@ -1,6 +1,5 @@
 defmodule InfotainmentApiWeb.MetricsChannel do
   use Phoenix.Channel
-  require Logger
 
   intercept ["update"]
 

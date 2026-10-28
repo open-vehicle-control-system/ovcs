@@ -564,7 +564,7 @@ defmodule RosBridge.Camera.LibCamera do
 
   def parse_record(_other), do: {:error, :malformed_record}
 
-  defp chunks(binary, size), do: for(<<chunk::binary-size(size) <- binary>>, do: chunk)
+  defp chunks(binary, size), do: for(<<chunk::binary-size(^size) <- binary>>, do: chunk)
 
   defp metadata_value(:sync_ready, value), do: value != 0
 

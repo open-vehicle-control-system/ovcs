@@ -39,7 +39,7 @@ defmodule Ros2.Cdr do
 
   def skip_pad({binary, offset}, alignment) do
     padding_size = rem(alignment - rem(offset, alignment), alignment)
-    <<_::binary-size(padding_size), rest::binary>> = binary
+    <<_::binary-size(^padding_size), rest::binary>> = binary
     {rest, offset + padding_size}
   end
 
@@ -83,7 +83,7 @@ defmodule Ros2.Cdr do
 
   def read_string(input) do
     {size_with_null, {binary, offset}} = read_u32(input)
-    <<string::binary-size(size_with_null - 1), 0, rest::binary>> = binary
+    <<string::binary-size(^size_with_null - 1), 0, rest::binary>> = binary
     {string, {rest, offset + size_with_null}}
   end
 
