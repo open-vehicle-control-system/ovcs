@@ -67,7 +67,7 @@ The detector is fed the pipeline's existing grayscale frame. Against ultralytics
 
 ## Wiring it into your vehicle
 
-The detector is a component of the perception bridge's `RosBridge.Config`, listed after `:stereo_camera` (it registers on that unit's backend while starting). The OVCS Mini's `vehicles/ovcs_mini/lib/ovcs_mini.ex`:
+The detector is a `RosBridge.Config` component of the bridge firmware that runs perception (`ros_vision` on the OVCS Mini), listed after `:stereo_camera` (it registers on that unit's backend while starting). The OVCS Mini's `vehicles/ovcs_mini/lib/ovcs_mini.ex`:
 
 ```elixir
 {:hailo_detector,
@@ -215,4 +215,4 @@ Avoid YOLOv5/v8/v10/v11 (Ultralytics, AGPL-3.0), YOLOv6 and YOLOv7 (GPL-3.0; `yo
 
 - [ROS 2 and the simulator](./ros2_simulator.md): the fabric and simulator time.
 - [ROS compute node](./ros2_compute_node.md): the router and `foxglove_bridge` these topics reach.
-- [Simulation](../compose/local/simulation/README.md): running the perception bridge against Gazebo.
+- [Simulation](../compose/local/simulation/README.md): running perception against Gazebo.

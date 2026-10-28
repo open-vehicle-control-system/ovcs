@@ -128,7 +128,7 @@ A **bridge** is an Elixir library under `bridges/<name>/` that ferries data betw
 | **Module** | `BridgeFirmware` |
 | **Targets** | `ovcs_base_can_system_rpi3a`, `ovcs_base_can_system_rpi4`, `rpi5` |
 
-Reads `VEHICLE` and `BRIDGE_FIRMWARE_ID` at boot, looks up the matching entry in the vehicle's `bridge_firmwares/0`, and supervises each listed bridge's `children/0` under `OvcsBridge.Supervisor`.
+The Nerves image that hosts a vehicle's extensions next to the `ovcs` bus: the bridges, and any other child an entry lists, such as the [bus gateway](./bus_gateway.md). It reads `VEHICLE` and `BRIDGE_FIRMWARE_ID` at boot, looks up the matching entry in the vehicle's `bridge_firmwares/0`, and supervises each listed bridge's `children/0`, then the entry's `children`, under `OvcsBridge.Supervisor`.
 
 ### Radio control bridge
 
@@ -219,7 +219,7 @@ A vehicle is a standalone Mix package under `vehicles/<name>/` whose top-level m
 | Package | Top-level module | What it demonstrates |
 |---|---|---|
 | `vehicles/ovcs1/` | `Ovcs1` | Full-size EV conversion: VMS on five isolated buses, infotainment, radio-control and ROS bridges, generic controllers |
-| `vehicles/ovcs_mini/` | `OvcsMini` | RC car on two buses (`ovcs`, and `misc` for the VESC): no infotainment side; radio-control, ROS and perception bridges; a compute node |
+| `vehicles/ovcs_mini/` | `OvcsMini` | RC car on two buses (`ovcs`, and `misc` for the VESC): no infotainment side; the radio control and ROS bridges in three bridge firmwares (`radio_control`, `ros`, `ros_vision`); a compute node |
 | `vehicles/obd2/` | `Obd2` | Diagnostics only: VMS and infotainment, no bridges, no drivetrain |
 | `vehicles/<yours>/` | `<Yours>` | Scaffolded by `./ovcs new`; keep the components you need, drop the rest |
 

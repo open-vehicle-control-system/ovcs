@@ -13,9 +13,9 @@ defmodule RosBridge.Config do
       `RosBridge.Components` for the catalogue.
     * `:node_name` — the ROS 2 node name this bridge announces in its
       rmw_zenoh liveliness tokens. Defaults to `ZenohClient`'s
-      `"ovcs_bridge"`. Set it per firmware whenever a vehicle runs
-      more than one ROS bridge on the same fabric: two bridges sharing
-      a name collide in the ROS graph, and `ros2 node list` warns about
+      `"ovcs_bridge"`. Set it per firmware whenever more than one
+      bridge firmware of a vehicle runs this bridge on the same fabric:
+      two sharing a name collide in the ROS graph, and `ros2 node list` warns about
       it while Foxglove merges them into one entry.
   """
   @enforce_keys [:zenoh_endpoint_ip]
@@ -42,12 +42,12 @@ defmodule RosBridge do
   `RosBridge.Consumers.Joy`, `RosBridge.Publishers.Imu`,
   `RosBridge.Publishers.StereoCamera`, …). The bridge passes the active
   `:host`/`:target` arm and the bridge firmware id, so vehicles
-  running this bridge on more than one physical device (e.g. an IMU
-  bridge on a Pi 4 alongside a perception bridge on a Pi 5) can
-  return a different component list per deployment.
+  running this bridge in more than one bridge firmware (e.g. the IMU
+  on a Pi 4 and perception on a Pi 5) can return a different
+  component list per firmware.
 
-  Vehicles with a single ROS bridge can ignore the firmware id and
-  keep implementing `ros_bridge_config/1`.
+  Vehicles running it in a single bridge firmware can ignore the
+  firmware id and keep implementing `ros_bridge_config/1`.
   """
   @behaviour OvcsBridge
 

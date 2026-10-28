@@ -1,6 +1,6 @@
 ---
-# The ROS bridge's CAN topology: the actuator and velocity commands it
-# turns ROS 2 messages into.
+# The `ros` bridge firmware's CAN topology: the actuator and velocity
+# commands its ROS bridge turns ROS 2 messages into.
 can_networks:
   ovcs:
     bitrate: 1000000

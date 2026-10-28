@@ -75,13 +75,13 @@ The boundary between Gazebo's transport and ROS is exactly the list in `gazebo.l
 | `/imu_raw` | `sensor_msgs/Imu` | the model's IMU sensor | `RosBridge.Imu.Zenoh`, republished on `/imu` by `Publishers.Imu` |
 | a ray sensor's `*_raw` topic | `sensor_msgs/LaserScan` | a `gpu_lidar` in the model | `RosBridge.Lidar.Zenoh` for a lidar, `RosBridge.Rangefinder.Zenoh` for a fan standing in for one rangefinder beam; republished as on the vehicle |
 | `/stereo/{left,right}/image_raw/compressed` | `sensor_msgs/CompressedImage` | `image_bridge` | `RosBridge.Camera.Zenoh` |
-| `/stereo/{left,right}/camera_info` | `sensor_msgs/CameraInfo` | Gazebo **and** the perception bridge (from its calibration YAML) | Foxglove, the calibrator |
+| `/stereo/{left,right}/camera_info` | `sensor_msgs/CameraInfo` | Gazebo **and** the ROS bridge's stereo camera (from its calibration YAML) | Foxglove, the calibrator |
 | `/cmd_vel_nav_raw` | `geometry_msgs/TwistStamped` | Nav2 `controller_server`, `behavior_server` | Nav2 `velocity_smoother` |
 | `/cmd_vel_nav` | `geometry_msgs/TwistStamped` | Nav2 `velocity_smoother` | `RosBridge.Consumers.Velocity` |
 | `/joy/<profile>` | `sensor_msgs/Joy` | the operator's `joy` service | `RosBridge.Consumers.Joy` |
 | `/simulator/drive` | `geometry_msgs/Twist` | `RosBridge.Simulator.Hardware` ([simulated hardware](#the-vms-drives-the-simulator)) | `AckermannSteering` |
 | `/simulator/odom` | `nav_msgs/Odometry` | the model's `OdometryPublisher`: [ground truth](#ground-truth) | you, to compare with `/odom` |
-| `/stereo/...` disparity, depth, points, detections | `stereo_msgs`, `sensor_msgs`, `vision_msgs` | perception bridge | Foxglove |
+| `/stereo/...` disparity, depth, points, detections | `stereo_msgs`, `sensor_msgs`, `vision_msgs` | the ROS bridge's perception components | Foxglove |
 | `/vehicle/*` | `std_msgs/String`, `Bool`, `Float64` | `RosBridge.Publishers.VehicleStatus`, from the VMS's `0x1A0`, `0x600` and `0x60C` | Foxglove: the control level, ROS commander, gear, ready to drive, VMS status and requested throttle and steering |
 | `/ovcs_heartbeat` | `std_msgs/String` | every `RosBridge` that lists `:heartbeat` | you, to see the BEAM is alive |
 
@@ -354,7 +354,7 @@ Or open Foxglove Studio against `ws://<docker-host>:8765` and subscribe to `/ovc
 | the launch order and bridged topics | `compose/local/simulation/launch/gazebo.launch.py` (its docstrings are the design notes) | `compose/compute/images/nav2/launch/nav2.launch.py` |
 | the rmw_zenoh wire format | [`bridges/ros_bridge/README.md`](../bridges/ros_bridge/README.md) | `bridges/ros_bridge/lib/ros2/rmw_zenoh.ex`, `zenoh_client.ex` |
 | time | `bridges/ros_bridge/lib/ros_bridge/clock.ex` | `timing.ex`, `publishers/static_transform.ex` |
-| what a vehicle's bridge runs | `vehicles/ovcs_mini/lib/ovcs_mini.ex` (`ros_bridge_config/2`) | `bridges/ros_bridge/lib/ros_bridge/components.ex` |
+| what a vehicle's ROS bridge runs | `vehicles/ovcs_mini/lib/ovcs_mini.ex` (`ros_bridge_config/2`) | `bridges/ros_bridge/lib/ros_bridge/components.ex` |
 | the actuator command path | `bridges/ros_bridge/lib/ros_bridge/consumers/joy.ex` | `libraries/ovcs_can/priv/can/components/ovcs/0x2B0_ros_actuator_command.yml`, `vms/core/lib/vms_core/components/ovcs/ros_actuator_command/` |
 | the velocity command path | `bridges/ros_bridge/lib/ros_bridge/consumers/velocity.ex` | `0x2B1_ros_velocity_command.yml`, `vms/core/lib/vms_core/components/ovcs/ros_velocity_command.ex` |
 | odometry on the vehicle | `bridges/ros_bridge/lib/ros_bridge/publishers/odometry.ex` | `0x60B_vehicle_motion.yml`, `vms/core/lib/vms_core/components/ovcs/vehicle_motion.ex` |

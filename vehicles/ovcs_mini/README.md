@@ -14,12 +14,12 @@ firmware is never built for this vehicle.
 
 ## What this package contributes
 
-| Side | Composer | Nerves target |
-|------|----------|---------------|
+| Side | Composer or bridges | Nerves target |
+|------|---------------------|---------------|
 | VMS | `OvcsMini.Vms.Composer` | `:ovcs_base_can_system_rpi4` |
-| Radio-control bridge | `RadioControlBridge` | `:ovcs_base_can_system_rpi3a` |
-| ROS bridge | `RosBridge` | `:ovcs_base_can_system_rpi4` |
-| Perception bridge (`ros_vision`) | `RosBridge` | `:rpi5` |
+| Bridge firmware `radio_control` | `RadioControlBridge` | `:ovcs_base_can_system_rpi3a` |
+| Bridge firmware `ros` | `RosBridge`, plus the bus gateway | `:ovcs_base_can_system_rpi4` |
+| Bridge firmware `ros_vision` | `RosBridge` with its perception components | `:rpi5` |
 
 Two CAN buses: `ovcs` carries the VMS, the main generic controller and
 the CAN-connected bridges; `misc`, on the VMS's second SPI CAN

@@ -43,7 +43,7 @@ defmodule RosBridge.Inference do
   A backend that cannot work — no accelerator, no model file, no
   OpenCL device — must start anyway, log once, and answer
   `{:error, :unavailable}` for every frame. Raising in `init/1` would
-  take down the supervision tree, and a perception bridge that loses
+  take down the supervision tree, and a firmware that loses
   *stereo depth* because a detector could not find its model file is a
   far worse outcome than one that publishes no detections.
 

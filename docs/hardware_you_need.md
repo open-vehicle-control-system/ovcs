@@ -116,13 +116,13 @@ The firmware runs CAN at 500 kbps by default (`CAN_BITRATE` in `Can.h`), and the
 
 ## Bridges and extras
 
-Each of these is optional and gets its own Pi on the reference vehicles; [Hardware](./hardware.md#why-every-bridge-is-its-own-pi) explains why. A bridge Pi with a CAN connection needs one CAN controller on the `ovcs` bus. The reference bridges use `mcp251xfd,spi0-0,oscillator=40000000,interrupt=4`, mapped as `ovcs:spi0.0` in the vehicle's `bridge_firmwares/0`.
+Each of these is optional. On the reference vehicles each runs in a bridge firmware on its own Pi; [Hardware](./hardware.md#why-every-bridge-firmware-is-its-own-pi) explains why. A bridge firmware Pi with a CAN connection needs one CAN controller on the `ovcs` bus. The reference bridges use `mcp251xfd,spi0-0,oscillator=40000000,interrupt=4`, mapped as `ovcs:spi0.0` in the vehicle's `bridge_firmwares/0`.
 
 | Extra | Hardware | What the repository configures |
 |---|---|---|
-| Radio control bridge | Raspberry Pi 3A, an ExpressLRS receiver that outputs MAVLink, an ExpressLRS handset | The reference `config.txt` loads `sc16is75x-spi` for the SC16IS752; the vehicle's `radio_control_bridge_config(:target)` reads the receiver on `ttySC0` at 460800 baud ([`vehicles/ovcs_mini/lib/ovcs_mini.ex`](../vehicles/ovcs_mini/lib/ovcs_mini.ex), [radio control bridge](../bridges/radio_control_bridge/README.md)) |
-| ROS bridge | Raspberry Pi 4 (or 5), optional BNO085 IMU on I2C, optional SLAMTEC RPLIDAR C1 and DFRobot A02YYUW ultrasonic sensors on USB serial adapters | `{:imu_publisher, driver: BNO085.I2C}`, `{:lidar_publisher, driver: RPLidar.UART}` and one `{:range_publisher, driver: A02YYUW.UART}` per sensor on target, `OvcsDrivers.Imu.Dummy` on the host ([ROS bridge](../bridges/ros_bridge/README.md)) |
-| Perception bridge | Raspberry Pi 5, two Camera Module 3 (IMX708) on `cam0` and `cam1`, a Hailo-8 on a Hailo hat | No CAN controller: it maps `ovcs:vcan0` and reaches the vehicle over Zenoh ([Perception](./ros2_perception.md), [`ros_vision/config.txt`](../vehicles/ovcs_mini/priv/firmware/bridges/ros_vision/config.txt)) |
+| Radio control (`RadioControlBridge`) | Raspberry Pi 3A, an ExpressLRS receiver that outputs MAVLink, an ExpressLRS handset | The reference `config.txt` loads `sc16is75x-spi` for the SC16IS752; the vehicle's `radio_control_bridge_config(:target)` reads the receiver on `ttySC0` at 460800 baud ([`vehicles/ovcs_mini/lib/ovcs_mini.ex`](../vehicles/ovcs_mini/lib/ovcs_mini.ex), [radio control bridge](../bridges/radio_control_bridge/README.md)) |
+| ROS (`RosBridge`) | Raspberry Pi 4 (or 5), optional BNO085 IMU on I2C, optional SLAMTEC RPLIDAR C1 and DFRobot A02YYUW ultrasonic sensors on USB serial adapters | `{:imu_publisher, driver: BNO085.I2C}`, `{:lidar_publisher, driver: RPLidar.UART}` and one `{:range_publisher, driver: A02YYUW.UART}` per sensor on target, `OvcsDrivers.Imu.Dummy` on the host ([ROS bridge](../bridges/ros_bridge/README.md)) |
+| Perception (`RosBridge` components) | Raspberry Pi 5, two Camera Module 3 (IMX708) on `cam0` and `cam1`, a Hailo-8 on a Hailo hat | No CAN controller: it maps `ovcs:vcan0` and reaches the vehicle over Zenoh ([Perception](./ros2_perception.md), [`ros_vision/config.txt`](../vehicles/ovcs_mini/priv/firmware/bridges/ros_vision/config.txt)) |
 | ROS compute node | Raspberry Pi 5 (8 GB), NVMe SSD in a USB enclosure, Intel AX210 on M.2, Pi 5 RTC battery | balenaOS, not Nerves; no CAN ([ROS compute node](./ros2_compute_node.md#hardware)) |
 | Infotainment | Raspberry Pi 5, a 10-inch touchscreen, one CAN controller on `ovcs` | The reference `config.txt` loads `mcp251xfd,spi0-0,oscillator=40000000,interrupt=25`; the composer maps `ovcs:can0` ([Framework components](./components.md)) |
 
@@ -172,7 +172,7 @@ A Traxxas 4WD RC chassis, two buses, no infotainment ([Hardware](./hardware.md#o
 | Steering | Traxxas servo on PWM hat output 0, 100 Hz |
 | Speed sensing | Hall-effect sensor on the spur gear, on the controller's A1 |
 | Radio control | ExpressLRS receiver on a Pi 3A |
-| ROS | ROS bridge on a Pi 4; perception bridge on a Pi 5 with two IMX708 cameras and a Hailo-8 |
+| ROS | The `ros` bridge firmware on a Pi 4; the `ros_vision` bridge firmware on a Pi 5 with two IMX708 cameras and a Hailo-8 |
 | Compute node | Raspberry Pi 5 on balenaOS from NVMe over USB |
 
 ### OBD2

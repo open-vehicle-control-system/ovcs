@@ -48,7 +48,7 @@ That is the whole contract. [Your vehicle package](./vehicle_package.md) walks t
 ## The reference vehicles, and what each one teaches
 
 - **OVCS1** ([hardware](./hardware.md)): a 2007 VW Polo converted to electric. Every side of the framework in use: VMS, infotainment, radio-control and ROS bridges, three controllers, five isolated buses. Multi-manufacturer integration done for real.
-- **OVCS Mini** ([simulation](../compose/local/simulation/README.md)): a Traxxas RC car with a VESC-driven motor. Two buses (`ovcs` and the VESC's `misc`), no infotainment, radio-control, ROS and perception bridges. The smallest drivable vehicle, and the one the Gazebo simulator models.
+- **OVCS Mini** ([simulation](../compose/local/simulation/README.md)): a Traxxas RC car with a VESC-driven motor. Two buses (`ovcs` and the VESC's `misc`), no infotainment, the radio control and ROS bridges in three bridge firmwares. The smallest drivable vehicle, and the one the Gazebo simulator models.
 - **OBD2** ([guide](./obd2.md)): no drivetrain. The VMS as an OBD2 / UDS scan tool for any car. How little a vehicle package needs.
 
 All three are ordinary vehicles. Nothing in the framework treats them specially, and `./ovcs vehicles` lists them next to whatever you add under `vehicles/`.

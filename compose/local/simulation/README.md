@@ -56,7 +56,7 @@ cd ../..
 OVCS_SIM=1 ZENOH_ENDPOINT_IP=127.0.0.1 ./ovcs run ovcs_mini
 ```
 
-`OVCS_SIM=1` gives every bridge its simulated wiring: the ROS bridge runs the simulated hardware and reads the simulated IMU, the perception bridge reads the simulated cameras. Within seconds of the VMS appearing, the simulated radio's scripted switches take it through `:radio` to `:ros` with the `autonomous` commander (`OVCS_SIMULATOR_COMMANDER=teleop` for the gamepad instead). Then:
+`OVCS_SIM=1` gives every bridge its simulated wiring: the ROS bridge runs the simulated hardware and reads the simulated IMU, and its perception components read the simulated cameras. Within seconds of the VMS appearing, the simulated radio's scripted switches take it through `:radio` to `:ros` with the `autonomous` commander (`OVCS_SIMULATOR_COMMANDER=teleop` for the gamepad instead). Then:
 
 ```sh
 cd compose/local && docker compose -f simulation.yml --profile nav2 up -d nav2
@@ -94,7 +94,7 @@ The VMS takes the gamepad only with the `teleop` commander selected: run with `O
 
 `/odom` and `odom → base_link` are the ROS bridge's, from the VMS's `0x60B` (the wheel distance) and the IMU heading, as on the vehicle. The wheel distance is the simulated wheels': the simulated hardware reports how far the wheel joints on `/joint_states` turned, as the vehicle's motor and shaft sensors measure the wheels, so a wheel spinning in place reads as moving, and one the model's effort limit stalls against an obstacle reads as stopped. `/simulator/odom` is ground truth, the model's pose from the physics, which nothing navigates by: compare the two from a common start to see the dead reckoning drift. The steering system's own odometry follows the wheels rather than the body and is not bridged. See [Ground truth](../../../docs/ros2_simulator.md#ground-truth).
 
-## Running the perception bridge against it
+## Running perception against it
 
 The stereo stack (SGBM, rectification, publishers, detector) is framework code in `bridges/ros_bridge` and runs unchanged against the simulator; `./ovcs run` with `OVCS_SIM=1` already starts it. Only the camera driver differs: `RosBridge.Camera.Zenoh` subscribes to a ROS image topic and emits the same frames a physical driver does. To run it on its own:
 

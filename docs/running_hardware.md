@@ -13,9 +13,9 @@ The firmware projects, the Nerves systems and the `ovcs` CLI are the framework. 
 |---|---|---|
 | VMS | Raspberry Pi 4 | [`ovcs_base_can_system_rpi4`](https://github.com/open-vehicle-control-system/ovcs_base_can_system_rpi4) |
 | Infotainment | Raspberry Pi 5 | [`ovcs_base_can_system_rpi5`](https://github.com/open-vehicle-control-system/ovcs_base_can_system_rpi5) |
-| Radio control bridge | Raspberry Pi 3A | [`ovcs_base_can_system_rpi3a`](https://github.com/open-vehicle-control-system/ovcs_base_can_system_rpi3a) |
-| ROS bridge | Raspberry Pi 4 | [`ovcs_base_can_system_rpi4`](https://github.com/open-vehicle-control-system/ovcs_base_can_system_rpi4) |
-| Perception bridge | Raspberry Pi 5 + Hailo-8 | [`ovcs_bridges_system_rpi5`](https://github.com/open-vehicle-control-system/ovcs_bridges_system_rpi5) (Mix target `rpi5`) |
+| `bridge-radio_control` (reference vehicles) | Raspberry Pi 3A | [`ovcs_base_can_system_rpi3a`](https://github.com/open-vehicle-control-system/ovcs_base_can_system_rpi3a) |
+| `bridge-ros` (reference vehicles) | Raspberry Pi 4 | [`ovcs_base_can_system_rpi4`](https://github.com/open-vehicle-control-system/ovcs_base_can_system_rpi4) |
+| `bridge-ros_vision` (OVCS Mini) | Raspberry Pi 5 + Hailo-8 | [`ovcs_bridges_system_rpi5`](https://github.com/open-vehicle-control-system/ovcs_bridges_system_rpi5) (Mix target `rpi5`) |
 | Generic controller | Arduino R4 Minima | none (PlatformIO) |
 
 These are the reference vehicles' choices. The target of each role is a per-vehicle decision, read from your top-level module: `vms_target/0`, `infotainment_target/0`, and the `:target` key of each `bridge_firmwares/0` entry. The `:target` value is the Mix target, which usually but not always equals the system's name. To deploy on other hardware, change those values in `vehicles/<vehicle>/lib/<vehicle>.ex` and add the matching system dependency to the firmware project's `mix.exs` (see the [Nerves custom-systems guide](https://hexdocs.pm/nerves/customizing-systems.html)).

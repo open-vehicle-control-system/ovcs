@@ -1,6 +1,6 @@
 ---
-# The radio control bridge's CAN topology: the eight receiver channels on
-# the ovcs bus, as two frames the VMS reads.
+# The `radio_control` bridge firmware's CAN topology: the eight receiver
+# channels on the ovcs bus, as two frames the VMS reads.
 can_networks:
   ovcs:
     bitrate: 1000000

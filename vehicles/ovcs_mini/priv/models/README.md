@@ -1,6 +1,7 @@
 # models
 
-Compiled Hailo models (`.hef`) for the Mini's perception bridge.
+Compiled Hailo models (`.hef`) for the ROS bridge's detector in the Mini's
+`ros_vision` bridge firmware.
 
 **Nothing in this directory is committed.** Run
 
