@@ -34,6 +34,9 @@ Every system is pinned to a **tag**, never to a branch. A branch moves with each
 
 The systems use A/B firmware slots on the MicroSD/eMMC with automatic rollback. Two consequences are easy to break by accident.
 
+> [!NOTE]
+> **Every firmware pins the CPUs to the `performance` governor.** Under `schedutil`, Linux's default, interrupt latency at low clock speeds overruns the FIFO of an SPI-attached UART such as the radio control bridge's SC16IS752, and control input arrives late. `OvcsVehicle.CpuGovernor` sets `performance` at boot in `vms_firmware`, `infotainment_firmware` and `bridge_firmware`, on target only.
+
 > [!WARNING]
 > **Firmware must mark itself good.** An image that doesn't call `Nerves.Runtime.validate_firmware/0` is reverted on the next boot. `OvcsVehicle.FirmwareValidator` does this in `vms_firmware`, `infotainment_firmware` and `bridge_firmware`, on target only, so every vehicle gets it for free. Remove it and every OTA update silently rolls back, NervesHub's included.
 

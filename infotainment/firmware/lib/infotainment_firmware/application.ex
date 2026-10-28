@@ -58,6 +58,8 @@ defmodule InfotainmentFirmware.Application do
       # systems revert to the previous slot on next boot otherwise.
       # See `OvcsVehicle.FirmwareValidator`.
       OvcsVehicle.FirmwareValidator,
+      # See `OvcsVehicle.CpuGovernor`.
+      OvcsVehicle.CpuGovernor,
       # Create a child that runs the Flutter embedder.
       # The `:app_name` matches this application, since it contains the AOT bundle at `priv/flutter_app`.
       # See the doc annotation for `create_child/1` for all valid options.
