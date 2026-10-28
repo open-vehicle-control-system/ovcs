@@ -43,6 +43,9 @@ defmodule RosBridge.Inference.Hailo do
 
   require Logger
 
+  # :hailort is a dependency only on targets that build hailo_detect.
+  @compile {:no_warn_undefined, Hailort}
+
   # Port protocol tags; must match `hailo_detect`.
   @detect_request_tag 1
   @detections_reply_tag 1
@@ -144,6 +147,7 @@ defmodule RosBridge.Inference.Hailo do
         :exit_status,
         {:packet, 4},
         {:cd, ~c"/data"},
+        {:env, [{~c"LD_LIBRARY_PATH", String.to_charlist(Hailort.lib_dir())}]},
         {:args, [hef_path, to_string(score_threshold)]}
       ])
 

@@ -14,7 +14,7 @@ defmodule RosBridge.MixProject do
     ]
   end
 
-  # The native binaries link libcamera and libhailort, present only in the rpi5 sysroot.
+  # camera_capture links libcamera, present only in the rpi5 sysroot.
   defp compilers do
     base = Mix.compilers()
     if Mix.target() == :rpi5, do: [:elixir_make] ++ base, else: base
@@ -28,6 +28,7 @@ defmodule RosBridge.MixProject do
     [
       {:ovcs_bridge, path: "../../libraries/ovcs_bridge"},
       {:ovcs_drivers, path: "../../libraries/ovcs_drivers"},
+      {:hailort, path: "../../libraries/hailort", targets: [:host, :rpi5]},
       {:zenohex, "~> 0.8.0"},
       # Joy profiles (`RosBridge.Consumers.Joy.Profile`).
       {:yaml_elixir, "~> 2.12"},
