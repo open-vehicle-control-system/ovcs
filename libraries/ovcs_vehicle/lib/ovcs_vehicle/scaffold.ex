@@ -29,8 +29,6 @@ defmodule OvcsVehicle.Scaffold do
   when a target file already exists.
   """
 
-  require Mix.Generator
-
   @type assigns :: [
           module: String.t(),
           name: String.t(),
