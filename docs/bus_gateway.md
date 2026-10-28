@@ -167,4 +167,6 @@ npm install
 npm run dev
 ```
 
+The dev server proxies `/api` and `/ws` to `http://localhost:4100`. Point it at a vehicle's gateway with `OVCS_BUS_GATEWAY`, for example `OVCS_BUS_GATEWAY=http://ovcs-mini-bridge-ros.local:4100 npm run dev` on the OVCS Mini reference vehicle, or the same on your vehicle's bridge.
+
 Vite proxies `/api` and `/ws` to `localhost:4100`. If `priv/static` has not been built, `GET /` answers 404 with a note to run `npm run build`.
