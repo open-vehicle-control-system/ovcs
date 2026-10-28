@@ -47,7 +47,7 @@ defmodule BridgeFirmware.MixProject do
     [
       {:ovcs_base_can_system_rpi3a,
        github: "open-vehicle-control-system/ovcs_base_can_system_rpi3a",
-       tag: "v3.0.0-rc.0",
+       tag: "v3.0.0-rc.1",
        runtime: false,
        nerves: [compile: false]}
     ]
@@ -57,7 +57,7 @@ defmodule BridgeFirmware.MixProject do
     [
       {:ovcs_base_can_system_rpi4,
        github: "open-vehicle-control-system/ovcs_base_can_system_rpi4",
-       tag: "v3.0.0-rc.0",
+       tag: "v3.0.0-rc.1",
        runtime: false,
        nerves: [compile: false]}
     ]
@@ -70,7 +70,7 @@ defmodule BridgeFirmware.MixProject do
       # and libcamera with PiSP pipeline support.
       {:ovcs_bridges_system_rpi5,
        github: "open-vehicle-control-system/ovcs_bridges_system_rpi5",
-       tag: "v3.0.0-rc.1",
+       tag: "v3.0.0-rc.2",
        runtime: false,
        nerves: [compile: false]}
     ]
