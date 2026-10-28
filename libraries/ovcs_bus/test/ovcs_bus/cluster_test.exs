@@ -8,19 +8,9 @@ defmodule ClusterPlainVehicle do
 end
 
 defmodule OvcsBus.ClusterTest do
-  use ExUnit.Case, async: false
+  use ExUnit.Case, async: true
 
   alias OvcsBus.Cluster
-
-  setup do
-    on_exit(fn -> Node.stop() end)
-    :ok
-  end
-
-  defp start_node(name, type) do
-    Node.stop()
-    {:ok, _} = Node.start(name, type)
-  end
 
   test "host dev node names carry the role in the sname" do
     assert OvcsBus.Cluster.role(:"ovcs-mini-vms@laptop", OvcsMini) == "vms"
@@ -37,24 +27,22 @@ defmodule OvcsBus.ClusterTest do
   end
 
   test "peers include vision when the vehicle declares vision/0 (host dev)" do
-    start_node(:"cluster-vision-vehicle-vms@127.0.0.1", :longnames)
-
-    assert :"cluster-vision-vehicle-vision@127.0.0.1" in Cluster.peers_for(ClusterVisionVehicle)
+    assert :"cluster-vision-vehicle-vision@127.0.0.1" in Cluster.peers_for(
+             ClusterVisionVehicle,
+             :"cluster-vision-vehicle-vms@127.0.0.1"
+           )
   end
 
   test "peers include vision when the vehicle declares vision/0 (deployed)" do
-    start_node(:"nerves@cluster-vision-vehicle-vms.local", :longnames)
-
     assert :"nerves@cluster-vision-vehicle-vision.local" in Cluster.peers_for(
-             ClusterVisionVehicle
+             ClusterVisionVehicle,
+             :"nerves@cluster-vision-vehicle-vms.local"
            )
   end
 
   test "peers exclude vision otherwise" do
-    start_node(:"cluster-plain-vehicle-vms@127.0.0.1", :longnames)
-
     refute Enum.any?(
-             Cluster.peers_for(ClusterPlainVehicle),
+             Cluster.peers_for(ClusterPlainVehicle, :"cluster-plain-vehicle-vms@127.0.0.1"),
              &String.contains?(Atom.to_string(&1), "vision")
            )
   end

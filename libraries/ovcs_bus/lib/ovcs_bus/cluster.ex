@@ -79,7 +79,15 @@ defmodule OvcsBus.Cluster do
   """
   @spec peers_for(module()) :: [node()]
   def peers_for(vehicle_module) do
-    case Node.alive?() && String.split(Atom.to_string(Node.self()), "@", parts: 2) do
+    if Node.alive?(), do: peers_for(vehicle_module, Node.self()), else: []
+  end
+
+  @doc """
+  Derive the peer node list for `vehicle_module` as seen from `self_node`.
+  """
+  @spec peers_for(module(), node()) :: [node()]
+  def peers_for(vehicle_module, self_node) do
+    case String.split(Atom.to_string(self_node), "@", parts: 2) do
       [sname, hostname] ->
         vehicle_hyphen = vehicle_dir_hyphen(vehicle_module)
         roles = declared_roles(vehicle_module)
