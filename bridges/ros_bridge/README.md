@@ -86,8 +86,9 @@ Init opts: `:endpoint_ip` (required), `:node_name` (default
 `:node_name` is what the bridge announces in its rmw_zenoh liveliness
 tokens, i.e. the name `ros2 node list` and Foxglove show. Vehicles set
 it through `RosBridge.Config.node_name`; leave it unset for a vehicle
-with a single ROS bridge. **A vehicle running two bridges on one fabric
-must give each its own name** — two bridges announcing `ovcs_bridge`
+that runs this bridge in a single bridge firmware. **A vehicle running
+it in two bridge firmwares on one fabric must give each its own name**
+— two bridges announcing `ovcs_bridge`
 collide in the ROS graph, which `ros2 node list` reports as "nodes in
 the graph that share an exact name" and Foxglove renders as a single
 merged node. The OVCS Mini reference vehicle is a worked example of the
@@ -155,8 +156,8 @@ end
 def ros_bridge_config(:target) do
   %RosBridge.Config{
     zenoh_endpoint_ip: Application.get_env(:ros_bridge, :zenoh_endpoint_ip, "127.0.0.1"),
-    # Optional; required only when the vehicle runs more than one
-    # ROS bridge on the same Zenoh fabric.
+    # Optional; required only when more than one bridge firmware of the
+    # vehicle runs the ROS bridge on the same Zenoh fabric.
     node_name: "ovcs_bridge_ros",
     components: [
       :heartbeat,

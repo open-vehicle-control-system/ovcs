@@ -33,7 +33,7 @@ The vehicle is the router. Everything else (the Nerves bridges, the on-vehicle n
 Keep it a separate Pi:
 
 - The **VMS** is vehicle control. Coupling it to the ROS fabric puts a container runtime in the safety path.
-- A **perception bridge** (on the Mini, the `ros_vision` Pi 5 running stereo depth and Hailo detection in Elixir, see [Perception: object detection](./ros2_perception.md)) stays Nerves and joins the fabric as a client like the other bridges.
+- **Perception** (on the Mini, the `ros_vision` bridge firmware on a Pi 5, whose ROS bridge runs stereo depth and Hailo detection in Elixir, see [Perception: object detection](./ros2_perception.md)) stays on Nerves and joins the fabric as a client like the other bridge firmwares.
 
 ## Operating system
 
@@ -279,6 +279,6 @@ The gamepad (`joy`) stays on the base station, in `compose/local/base.yml`: the 
 
 ## Next steps
 
-- [Perception: object detection](./ros2_perception.md): what the perception bridge publishes on the fabric this node routes.
+- [Perception: object detection](./ros2_perception.md): what the ROS bridge's perception components publish on the fabric this node routes.
 - [Running on hardware](./running_hardware.md): building and uploading the Nerves firmwares that join it.
 - [Troubleshooting](./troubleshooting.md): symptoms and fixes across the stack.

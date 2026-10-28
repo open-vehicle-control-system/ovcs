@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Fetch the detection models the perception bridge uses, verify them,
+# Fetch the detection models the ROS bridge's detector uses, verify them,
 # and put them where the vehicle packages expect them.
 #
 #   mise run fetch-models          # fetch anything missing or corrupt

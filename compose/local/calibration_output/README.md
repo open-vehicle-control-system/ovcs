@@ -8,7 +8,7 @@ not source-of-truth artifacts.
 
 ## One-shot stereo calibration workflow
 
-Prerequisite: the Elixir perception bridge is already running so
+Prerequisite: the ROS bridge's stereo camera is already running so
 that `/stereo/{left,right}/image_raw/compressed` are live. Verify
 with `docker compose exec ros2 ros2 topic list`.
 

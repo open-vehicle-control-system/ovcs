@@ -228,7 +228,8 @@ throttle released.
    framework's profiles, so start it with `JOY_PROFILE=<name>` for one
    only your vehicle has.
 
-5. Flash or restart the ROS bridge, restart the `joy` service, and check
+5. Flash or restart the bridge firmware that runs the ROS bridge, restart
+   the `joy` service, and check
    its log names your profile. Test with the vehicle lifted or the
    motor disabled first.
 

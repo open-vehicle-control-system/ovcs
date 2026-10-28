@@ -1,7 +1,7 @@
 ---
 # CAN topology for the `ros_vision` bridge firmware on OVCS Mini.
 #
-# The perception bridge doesn't actually use the CAN bus — it publishes
+# This firmware doesn't actually use the CAN bus — its ROS bridge publishes
 # stereo camera images and Hailo inference outputs over Zenoh only. But
 # Cantastic auto-starts as part of `bridge_firmware`'s OTP app tree and
 # refuses to boot without a valid network configuration, so we declare

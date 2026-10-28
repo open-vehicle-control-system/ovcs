@@ -1,9 +1,10 @@
 # Bridge Firmware
 
-Shared Nerves firmware image hosting one or more
-[`OvcsBridge`](../../libraries/ovcs_bridge) libraries per build. A
-vehicle declares which bridges to bundle (and on which Nerves target)
-via its `bridge_firmwares/0` callback — one Nerves image per entry.
+Shared Nerves firmware image that hosts a vehicle's extensions next to
+the `ovcs` bus: one or more [`OvcsBridge`](../../libraries/ovcs_bridge)
+libraries plus any other child an entry lists. A vehicle declares what
+each image runs, and on which Nerves target, via its
+`bridge_firmwares/0` callback — one Nerves image per entry.
 
 See [`docs/vehicle_package.md`](../../docs/vehicle_package.md#bridge-firmwares)
 for the boot flow and [`libraries/ovcs_bridge/README.md`](../../libraries/ovcs_bridge/README.md)
@@ -11,13 +12,14 @@ for the supervision contract.
 
 ## Targets
 
-The `mix.exs` target-gates the bridge libraries it pulls in:
+The `mix.exs` target-gates the bridge libraries it pulls in. An entry's
+`:target` picks one of:
 
-| Target | Typical use |
-|--------|-------------|
-| `:ovcs_base_can_system_rpi3a` | Radio-control bridge on a Pi 3A |
-| `:ovcs_base_can_system_rpi4` | ROS bridge on a Pi 4 |
-| `:rpi5` | ROS / perception bridges on a Pi 5 (system `ovcs_bridges_system_rpi5`) |
+| Target | Board |
+|--------|-------|
+| `:ovcs_base_can_system_rpi3a` | Raspberry Pi 3A |
+| `:ovcs_base_can_system_rpi4` | Raspberry Pi 4 |
+| `:rpi5` | Raspberry Pi 5, with libcamera and the Hailo-8 driver (system `ovcs_bridges_system_rpi5`) |
 
 Custom Nerves systems live in their own repos under
 [`open-vehicle-control-system`](https://github.com/open-vehicle-control-system).
@@ -27,14 +29,14 @@ Custom Nerves systems live in their own repos under
 Preferred, from the repo root:
 
 ```sh
-./ovcs build  <vehicle> <bridge_firmware_id>   # e.g. ovcs1 radio_control
-./ovcs burn   <vehicle> <bridge_firmware_id>
-./ovcs upload <vehicle> <bridge_firmware_id> [--host HOST]
-./ovcs clean  <vehicle> <bridge_firmware_id>
+./ovcs build  <vehicle> bridge-<id>
+./ovcs burn   <vehicle> bridge-<id>
+./ovcs upload <vehicle> bridge-<id> [--host HOST]
+./ovcs clean  <vehicle> bridge-<id>
 ```
 
-`<bridge_firmware_id>` is a key in the active vehicle's
-`bridge_firmwares/0` map (e.g. `radio_control`, `ros`). The CLI resolves
+`<id>` is a key in the vehicle's `bridge_firmwares/0` map; the
+`bridge-` prefix is required. The CLI resolves
 the target from that entry, sets `VEHICLE` + `BRIDGE_FIRMWARE_ID` +
 `MIX_TARGET`, and delegates to `build.sh` / `burn.sh` / `upload.sh` /
 `clean.sh` in this directory.

@@ -1,4 +1,4 @@
-# Raspberry Pi 5 boot config for OvcsMini's perception bridge.
+# Raspberry Pi 5 boot config for OvcsMini's `ros_vision` bridge firmware.
 #
 # Override of the rpi5 default (which doesn't exist yet — see
 # bridges/firmware/mix.exs for the nerves_system_rpi5 enablement
@@ -6,8 +6,8 @@
 # vehicle_firmware_dir = this directory because config.txt is
 # present here (see bridges/firmware/config/config.exs).
 #
-# What's different from the Pi 4 ros bridge config.txt:
-#   - No mcp251xfd dtoverlay: the perception Pi connects to the
+# What's different from the Pi 4 `ros` bridge firmware's config.txt:
+#   - No mcp251xfd dtoverlay: this Pi connects to the
 #     bus via the shared zenoh router on another Pi, not a local
 #     CAN transceiver.
 #   - Pi 5 firmware filenames are unused: the Pi 5 bootloader is
@@ -39,8 +39,7 @@ camera_auto_detect=0
 dtoverlay=imx708,cam0
 dtoverlay=imx708,cam1
 
-# Don't auto-load any DSI display overlay — the perception Pi is
-# headless.
+# Don't auto-load any DSI display overlay — this Pi is headless.
 display_auto_detect=0
 
 # Enable the Pi 5 KMS video driver (vc4-kms-v3d-pi5 — note the

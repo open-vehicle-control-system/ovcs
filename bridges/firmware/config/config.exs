@@ -2,12 +2,11 @@
 #
 # The firmware is parameterised by two env vars (set by the CLI or by
 # hand):
-#   VEHICLE              — e.g. "Ovcs1"
+#   VEHICLE              — the vehicle package's top-level module name
 #   BRIDGE_FIRMWARE_ID   — key into the vehicle's bridge_firmwares/0
-#                          (e.g. "radio_control", "autonomy")
 #
-# Runtime resolution of which bridges to supervise happens in
-# `BridgeFirmware.Resolver` so the config here can stay static.
+# `OvcsBridge.Supervisor` resolves at boot what the entry runs, so the
+# config here can stay static.
 import Config
 
 Application.start(:nerves_bootstrap)
@@ -33,8 +32,8 @@ vehicle_name =
     else
       Mix.raise("""
       VEHICLE env var is required for bridge firmware builds.
-      Set it to the vehicle package's top-level module name, e.g.:
-        VEHICLE=Ovcs1 BRIDGE_FIRMWARE_ID=radio_control mix firmware
+      Set it to the vehicle package's top-level module name:
+        VEHICLE=<Vehicle> BRIDGE_FIRMWARE_ID=<id> mix firmware
       """)
     end
 

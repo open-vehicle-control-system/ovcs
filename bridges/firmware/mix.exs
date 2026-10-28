@@ -65,11 +65,9 @@ defmodule BridgeFirmware.MixProject do
 
   defp system_deps(:rpi5) do
     [
-      # OVCS Pi 5 system rebased on upstream nerves_system_rpi5 v2.2.1 with
-      # CAN tooling + IPROUTE + Intel Wi-Fi 6 firmware + the Hailo-8
-      # PCIe driver added.
-      # Ships libcamera with PISP pipeline support (the original purpose of
-      # this perception bridge — Camera Module 3 stereo on the Pi 5 PiSP FE).
+      # OVCS Pi 5 system: upstream nerves_system_rpi5 v2.2.1 plus CAN
+      # tooling, IPROUTE, Intel Wi-Fi 6 firmware, the Hailo-8 PCIe driver
+      # and libcamera with PiSP pipeline support.
       {:ovcs_bridges_system_rpi5,
        github: "open-vehicle-control-system/ovcs_bridges_system_rpi5",
        tag: "v3.0.0-rc.1",
@@ -107,10 +105,9 @@ defmodule BridgeFirmware.MixProject do
       # it here + target gates.
       #
       # On host dev every bridge matches (targets include `:host`), so
-      # both ros + radio_control would sit in bridge_firmware's dep
-      # tree at once and OTP would auto-start each one's Application —
-      # including the inactive bridge's supervision stack (e.g. the
-      # Mavlink Parser shows up inside the ros BEAM and spams logs).
+      # every bridge library sits in bridge_firmware's dep tree at once
+      # and OTP would auto-start each one's Application, including the
+      # supervision stacks of bridges the running entry doesn't list.
       # Mark them `runtime: false` on host to let `OvcsBridge.Supervisor`
       # be the sole authority on which bridge actually boots; on target
       # only the matching bridge is in the dep tree anyway, so OTP
@@ -134,12 +131,6 @@ defmodule BridgeFirmware.MixProject do
       {:tortoise311, "~> 0.12", targets: [:host, :ovcs_base_can_system_rpi4, :rpi5]},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}
-
-      # Bridge libraries are added as each is migrated out of its
-      # legacy bridges/<name>/firmware/ project. The supervisor only
-      # starts children from the bridges declared by the active
-      # vehicle's bridge_firmwares/0 entry, so bundling a lib here
-      # doesn't force it to run.
     ]
   end
 

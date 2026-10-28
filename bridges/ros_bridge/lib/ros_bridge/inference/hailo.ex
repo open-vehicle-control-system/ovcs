@@ -33,7 +33,7 @@ defmodule RosBridge.Inference.Hailo do
   accelerator — is logged and leaves this process alive but
   inference-less, answering `{:error, :unavailable}`. Raising in
   `init/1` would take down the supervision tree at boot, and a
-  perception bridge that loses stereo depth because a detector could
+  firmware that loses stereo depth because a detector could
   not find its model file is a worse outcome than one that simply
   publishes no detections.
   """

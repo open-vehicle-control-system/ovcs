@@ -21,8 +21,8 @@ The framework targets off-the-shelf boards: Raspberry Pis for the Elixir firmwar
 |---|---|---|
 | Raspberry Pi 4 | Vehicle Management System (VMS) | All of the vehicle's CAN buses, through the multi-CAN SPI hub |
 | Raspberry Pi 5 | Infotainment (optional) | The `ovcs` bus |
-| Raspberry Pi 3A | Radio control bridge (optional) | The `ovcs` bus |
-| Raspberry Pi 4 or 5 | ROS 2 bridge (optional) | The `ovcs` bus (a perception bridge may have none and reach the vehicle over Zenoh) |
+| Raspberry Pi 3A | Bridge firmware running the radio control bridge (optional) | The `ovcs` bus |
+| Raspberry Pi 4 or 5 | Bridge firmware running the ROS bridge (optional) | The `ovcs` bus (one running only perception may have none and reach the vehicle over Zenoh) |
 | Raspberry Pi 5 (8 GB) | ROS compute node: balenaOS, not Nerves (optional) | None; it runs the Zenoh router the bridges peer with |
 | Arduino R4 Minima | Generic controllers, as many as the vehicle declares | The `ovcs` bus |
 
@@ -109,13 +109,13 @@ OVCS1 is a 2007 Volkswagen Polo 9N converted to an electric vehicle. It uses eve
 
 ### Topology
 
-Every vehicle CAN bus terminates on the VMS Pi 4, so components on different buses never see each other's traffic and identifier collisions can't happen. The `ovcs` bus connects the VMS to the infotainment Pi, the two bridges and the Arduino controllers. The VMS, infotainment and bridge BEAMs also form one Erlang-distribution mesh.
+Every vehicle CAN bus terminates on the VMS Pi 4, so components on different buses never see each other's traffic and identifier collisions can't happen. The `ovcs` bus connects the VMS to the infotainment Pi, the two bridge firmwares and the Arduino controllers. The VMS, infotainment and bridge firmware BEAMs also form one Erlang-distribution mesh.
 
 ```text
                  ExpressLRS handset       ROS 2 / Foxglove        Vue dashboard (laptop)
                         | MAVLink UART         | Zenoh                 | HTTP + WebSocket
                         v                      v                       |
-               Radio control bridge       ROS bridge                   |
+               radio_control firmware     ros firmware                 |
                (Pi 3A)                    (Pi 4, BNO085 IMU)           |
                         |                      |                       |
   ovcs (1 Mbps) ========+======================+==========+============+=========
@@ -130,7 +130,7 @@ Every vehicle CAN bus terminates on the VMS Pi 4, so components on different bus
 
 | Network | Bitrate | Purpose | Connected components |
 |---|---|---|---|
-| `ovcs` | 1 Mbps | Framework-internal communication | VMS, infotainment, controllers, radio control bridge, ROS bridge |
+| `ovcs` | 1 Mbps | Framework-internal communication | VMS, infotainment, controllers, `radio_control` and `ros` bridge firmwares |
 | `leaf_drive` | 500 kbps | Nissan Leaf drivetrain | Leaf inverter |
 | `polo_drive` | 500 kbps | Original VW Polo systems | ABS, dashboard, ignition lock, airbag |
 | `orion_bms` | 500 kbps | Battery management | Orion BMS2, EVPT23 charger |
@@ -147,11 +147,11 @@ The hub gives OVCS1's VMS five MCP2517FD controllers: `spi0.0` (`ovcs`), `spi0.1
 | Controls controller (`0x72x`) | `0x721`–`0x725` | Steering column PWM, throttle pedal DAC, control inputs |
 | Test controller (`0x73x`) | `0x731`–`0x738` | Development and testing, all pin types |
 
-### Why every bridge is its own Pi
+### Why every bridge firmware is its own Pi
 
 - **Failure isolation.** A misbehaving radio link or ROS publisher can hang its own BEAM without taking the VMS supervision tree down.
-- **Cabling.** RC receivers live near the antenna and the ROS bridge rides with the autonomy stack; both are far from the VMS bay.
-- **Targets.** The Pi 3A is cheap and adequate for the RC bridge; ROS needs the memory of a Pi 4 or 5.
+- **Cabling.** RC receivers live near the antenna and the ROS sensors ride with the autonomy stack; both are far from the VMS bay.
+- **Targets.** The Pi 3A is cheap and adequate for the radio control bridge; the ROS bridge needs the memory of a Pi 4 or 5.
 
 The BEAMs still join one Erlang cluster through `OvcsBus.Cluster`, so at the application level they talk as if they were processes in one VM. Any vehicle can make the same choice, or bundle several bridges into one image through `bridge_firmwares/0`.
 
@@ -166,18 +166,18 @@ The OVCS Mini reference vehicle runs the same framework on a Traxxas 4WD chassis
 | Motor | Hobbywing Xerun AXE540 R2 sensored brushless motor, driven by a Flipsky Mini FSESC 6.7 Pro (VESC) on `misc`; see [VESC drivetrain](./vesc_drivetrain.md) |
 | Steering | Traxxas servo, driven through external PWM |
 | Spur rotation | Hall-effect sensor on the main controller's A1, counted by interrupt and reported as a frequency on `0x709` |
-| Radio control | ExpressLRS receiver through the radio control bridge on a Pi 3A |
-| ROS 2 | ROS bridge on a Pi 4; perception bridge (stereo cameras and Hailo-8) on a Pi 5 |
+| Radio control | ExpressLRS receiver on a Pi 3A running the `radio_control` bridge firmware |
+| ROS 2 | The `ros` bridge firmware on a Pi 4; the `ros_vision` bridge firmware (stereo cameras and Hailo-8) on a Pi 5 |
 | Compute node | Raspberry Pi 5 running balenaOS from an NVMe SSD in a USB enclosure: Zenoh router, Foxglove bridge, Nav2, the vehicle's Wi-Fi access point. The bootloader EEPROM needs `PSU_MAX_CURRENT=5000` to boot from USB on the vehicle's supply; see [ROS compute node, Boot media](./ros2_compute_node.md#boot-media) |
 
 The Mini's VMS has two buses:
 
 | Network | Bitrate | Interface | Connected components |
 |---|---|---|---|
-| `ovcs` | 500 kbps | `spi0.0` | Main controller, radio control bridge, ROS bridge |
+| `ovcs` | 500 kbps | `spi0.0` | Main controller, `radio_control` and `ros` bridge firmwares |
 | `misc` | 500 kbps | `spi1.0` | Third-party components: the traction motor's VESC (id 1) |
 
-The bridges sit only on `ovcs`; `misc` is the VMS's alone, so third-party traffic and identifiers never mix with the controller and bridge frames. The VESC is a CAN node of its own, commanded with closed-loop speed and reporting motor rpm, current and battery voltage. Its frames use 29-bit extended identifiers, which coexist with standard frames on the same bus.
+The bridge firmwares sit only on `ovcs`; `misc` is the VMS's alone, so third-party traffic and identifiers never mix with the controller and bridge frames. The VESC is a CAN node of its own, commanded with closed-loop speed and reporting motor rpm, current and battery voltage. Its frames use 29-bit extended identifiers, which coexist with standard frames on the same bus.
 
 ## Supported hardware and Nerves systems
 
@@ -185,8 +185,8 @@ The bridges sit only on `ovcs`; `misc` is the VMS's alone, so third-party traffi
 |---|---|---|
 | VMS | Raspberry Pi 4 | [`ovcs_base_can_system_rpi4`](https://github.com/open-vehicle-control-system/ovcs_base_can_system_rpi4) |
 | Infotainment | Raspberry Pi 5 | [`ovcs_base_can_system_rpi5`](https://github.com/open-vehicle-control-system/ovcs_base_can_system_rpi5) |
-| Radio control bridge | Raspberry Pi 3A | [`ovcs_base_can_system_rpi3a`](https://github.com/open-vehicle-control-system/ovcs_base_can_system_rpi3a) |
-| ROS bridge | Raspberry Pi 4 or 5 | `ovcs_base_can_system_rpi4`, or `rpi5` (the `ovcs_bridges_system_rpi5` system) |
+| Bridge firmware running the radio control bridge | Raspberry Pi 3A | [`ovcs_base_can_system_rpi3a`](https://github.com/open-vehicle-control-system/ovcs_base_can_system_rpi3a) |
+| Bridge firmware running the ROS bridge | Raspberry Pi 4 or 5 | `ovcs_base_can_system_rpi4`, or `rpi5` (the `ovcs_bridges_system_rpi5` system) |
 | Generic controller | Arduino R4 Minima | PlatformIO, not Nerves |
 
 The custom systems add the CAN kernel modules and device-tree overlays the SPI CAN boards need. They matter only when building firmware for physical hardware; local development never touches them. Each role's Nerves target comes from the vehicle's module (`vms_target/0`, `infotainment_target/0`, the `:target` key of each `bridge_firmwares/0` entry), so moving a vehicle to different boards means changing those values and adding the matching system dependency to the framework firmware's `mix.exs`, plus a `targets/<target>/fwup.conf` in that firmware, and for bridges a `system_deps/1` clause and the bridge library's `targets:` list. Why the host Elixir/OTP pin is tied to these systems is in [Toolchain and OTP](./toolchain_and_otp.md).

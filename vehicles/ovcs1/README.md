@@ -10,12 +10,12 @@ This directory is a standalone Mix app implementing the
 
 ## What this package contributes
 
-| Side | Composer | Nerves target |
-|------|----------|---------------|
+| Side | Composer or bridges | Nerves target |
+|------|---------------------|---------------|
 | VMS | `Ovcs1.Vms.Composer` | `:ovcs_base_can_system_rpi4` |
 | Infotainment | `Ovcs1.Infotainment.Composer` | `:ovcs_base_can_system_rpi5` |
-| Radio-control bridge | `RadioControlBridge` | `:ovcs_base_can_system_rpi3a` |
-| ROS bridge | `RosBridge` | `:ovcs_base_can_system_rpi4` |
+| Bridge firmware `radio_control` | `RadioControlBridge` | `:ovcs_base_can_system_rpi3a` |
+| Bridge firmware `ros` | `RosBridge` | `:ovcs_base_can_system_rpi4` |
 
 The VMS side wires every Polo / Leaf / iBooster / BMS / Orion / OVCS
 component driver under one supervision tree. The infotainment side

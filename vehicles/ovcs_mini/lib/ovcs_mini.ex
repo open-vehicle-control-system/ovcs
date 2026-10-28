@@ -69,11 +69,11 @@ defmodule OvcsMini do
         },
         default_can_mapping: %{host: "ovcs:vcan0,misc:vcan1", target: "ovcs:spi0.0"}
       },
-      # Perception bridge: stereo Pi cameras + Hailo inference on a
-      # Pi 5 + Hailo hat. Uses upstream nerves_system_rpi5 (libcamera
-      # and HailoRT are already in the system; see
-      # bridges/firmware/mix.exs).
-      # Perception bridge: no local CAN transceiver — it joins the
+      # Perception: the ROS bridge's stereo Pi cameras + Hailo
+      # inference on a Pi 5 + Hailo hat. libcamera and the Hailo
+      # driver come from the system (see bridges/firmware/mix.exs),
+      # libhailort from libraries/hailort.
+      # No local CAN transceiver — this firmware joins the
       # bus over Zenoh on a separate Pi. The target mapping still
       # has to satisfy Cantastic's "valid network" contract, so we
       # point it at a virtual CAN device. Cantastic auto-creates
@@ -136,8 +136,8 @@ defmodule OvcsMini do
 
   defp simulation?, do: System.get_env("OVCS_SIM") in ["1", "true"]
 
-  # The Mini runs two ROS bridges on one Zenoh fabric (this one and
-  # the perception Pi), so each names its ROS node explicitly —
+  # The Mini runs the ROS bridge in two bridge firmwares on one Zenoh
+  # fabric (`ros` and `ros_vision`), so each names its ROS node explicitly —
   # otherwise both announce `ovcs_bridge` and the ROS graph cannot
   # tell them apart.
   defp ros_bridge_host_config,
@@ -413,7 +413,7 @@ defmodule OvcsMini do
   end
 
   # YOLO on the Hailo-8, fused with the stereo depth map. Target
-  # only: the accelerator is a physical card on the perception Pi, and
+  # only: the accelerator is a physical card on the `ros_vision` Pi, and
   # on the host the component would start, fail to find /dev/hailo0,
   # and log an error every boot for no benefit.
   #

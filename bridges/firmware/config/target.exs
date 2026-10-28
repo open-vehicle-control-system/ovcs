@@ -28,7 +28,7 @@ if config_env() in [:dev, :test, :prod] do
   # A missing env file is fatal for a real firmware build. Without it
   # the device is built with generated Phoenix secrets, NO SSH keys —
   # you are locked out — a reset Wi-Fi list, and
-  # ZENOH_ENDPOINT_IP=127.0.0.1, so ros_bridge reaches no router. That
+  # ZENOH_ENDPOINT_IP=127.0.0.1, so a Zenoh client reaches no router. That
   # firmware is worse than a failed build: it boots and strands the
   # vehicle. CI builds firmware only to check it compiles and never
   # deploys it, so there the defaults are fine — GitHub sets CI=true.
@@ -41,7 +41,7 @@ if config_env() in [:dev, :test, :prod] do
     else
       raise "no .env.exs for vehicle #{inspect(vehicle_dir)}: a firmware built without it " <>
               "has generated secrets, no SSH keys (you would be locked out), a reset " <>
-              "Wi-Fi list, and ZENOH_ENDPOINT_IP=127.0.0.1 (the bridge reaches no router). " <>
+              "Wi-Fi list, and ZENOH_ENDPOINT_IP=127.0.0.1 (a Zenoh client reaches no router). " <>
               "Copy vehicles/#{vehicle_dir}/.env.exs.example to .env.exs and fill it in. " <>
               "Set CI=true to build with defaults anyway."
     end

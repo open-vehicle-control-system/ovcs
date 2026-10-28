@@ -158,7 +158,7 @@ Host 10.42.0.*
 
 ### A bridge peers with the wrong Zenoh router, or with `127.0.0.1`
 
-**Cause:** `ZENOH_ENDPOINT_IP` is baked into the bridge firmware **at build time**, not read at boot. A firmware built before the address changed keeps the old one; one built without it falls back to loopback. **Fix:** set it in `vehicles/<vehicle>/.env.exs`, then rebuild and re-upload every `RosBridge` firmware of that vehicle.
+**Cause:** `ZENOH_ENDPOINT_IP` is baked into the bridge firmware **at build time**, not read at boot. A firmware built before the address changed keeps the old one; one built without it falls back to loopback. **Fix:** set it in `vehicles/<vehicle>/.env.exs`, then rebuild and re-upload every bridge firmware of that vehicle that runs the ROS bridge.
 
 ## ROS 2 and simulation
 

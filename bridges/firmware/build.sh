@@ -15,13 +15,13 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-: "${VEHICLE:?VEHICLE env var is required (e.g. Ovcs1)}"
+: "${VEHICLE:?VEHICLE env var is required (the top-level module name of the vehicle package)}"
 : "${MIX_TARGET:?MIX_TARGET env var is required (Nerves target atom, or 'host')}"
 
 if [ "$MIX_TARGET" = "host" ]; then
   : "${BRIDGE_FIRMWARE_ID:=radio_control}"
 else
-  : "${BRIDGE_FIRMWARE_ID:?BRIDGE_FIRMWARE_ID env var is required (e.g. radio_control)}"
+  : "${BRIDGE_FIRMWARE_ID:?BRIDGE_FIRMWARE_ID env var is required (a key of bridge_firmwares/0 in the vehicle package)}"
 fi
 # See vms/firmware/build.sh for why we override the application
 # partition target to /data.

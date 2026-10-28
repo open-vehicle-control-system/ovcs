@@ -41,10 +41,10 @@ Everything lives under the [open-vehicle-control-system](https://github.com/open
 | [msp_osd](https://github.com/open-vehicle-control-system/msp_osd) | MSP / DisplayPort OSD stack for HDZero, Walksnail and DJI video transmitters |
 | [ovcs_control](https://github.com/open-vehicle-control-system/ovcs_control) | PID controller, input filters, and an interactive tuning simulator |
 | [presentations](https://github.com/open-vehicle-control-system/presentations) | Slide decks from the talks |
-| [ovcs_base_can_system_rpi4](https://github.com/open-vehicle-control-system/ovcs_base_can_system_rpi4) | Nerves system: Raspberry Pi 4 with CAN, for the VMS and the ROS bridge |
+| [ovcs_base_can_system_rpi4](https://github.com/open-vehicle-control-system/ovcs_base_can_system_rpi4) | Nerves system: Raspberry Pi 4 with CAN, for the VMS and bridge firmwares |
 | [ovcs_base_can_system_rpi5](https://github.com/open-vehicle-control-system/ovcs_base_can_system_rpi5) | Nerves system: Raspberry Pi 5 with CAN and display, for the infotainment |
-| [ovcs_base_can_system_rpi3a](https://github.com/open-vehicle-control-system/ovcs_base_can_system_rpi3a) | Nerves system: Raspberry Pi 3A, for the radio control bridge |
-| [ovcs_bridges_system_rpi5](https://github.com/open-vehicle-control-system/ovcs_bridges_system_rpi5) | Nerves system: Raspberry Pi 5 for the perception bridge (stereo cameras, Hailo-8) |
+| [ovcs_base_can_system_rpi3a](https://github.com/open-vehicle-control-system/ovcs_base_can_system_rpi3a) | Nerves system: Raspberry Pi 3A with CAN, for bridge firmwares such as radio control |
+| [ovcs_bridges_system_rpi5](https://github.com/open-vehicle-control-system/ovcs_bridges_system_rpi5) | Nerves system: Raspberry Pi 5 for bridge firmwares with stereo cameras and a Hailo-8 (perception) |
 
 `mise run libraries` sideloads the four libraries into `libraries/`, because they are useful outside OVCS. The framework-internal contracts (`ovcs_bridge`, `ovcs_bus`, `ovcs_can`, `ovcs_vehicle`, `ovcs_drivers`) live in the monorepo. See [Framework components](./components.md).
 
