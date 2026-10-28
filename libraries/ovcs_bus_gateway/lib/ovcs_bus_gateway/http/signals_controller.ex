@@ -1,4 +1,4 @@
-defmodule OvcsBusGateway.Http.SignalController do
+defmodule OvcsBusGateway.Http.SignalsController do
   @moduledoc """
   JSON API over `OvcsBusGateway.Cache`; answers `{"error": "not_found"}` with a 404 for an
   unknown signal or route.

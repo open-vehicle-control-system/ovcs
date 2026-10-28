@@ -12,9 +12,9 @@ defmodule OvcsBusGateway.Http.Router do
   scope "/", OvcsBusGateway.Http do
     pipe_through :query
 
-    get "/api/signals", SignalController, :index
-    get "/api/signals/:node/:source/:name", SignalController, :show
+    get "/api/signals", SignalsController, :index
+    get "/api/signals/:node/:source/:name", SignalsController, :show
     get "/", DashboardController, :index
-    match :*, "/*path", SignalController, :not_found
+    match :*, "/*path", SignalsController, :not_found
   end
 end
