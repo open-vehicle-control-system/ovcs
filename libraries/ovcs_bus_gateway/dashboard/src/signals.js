@@ -30,6 +30,16 @@ export function applyFrame(state, frame, receivedAt = Date.now()) {
   return state
 }
 
+const STATUS = {
+  true: { label: 'Connected', dot: 'bg-ovcs-ok', text: 'text-ovcs-ok' },
+  false: { label: 'Disconnected', dot: 'bg-ovcs-error', text: 'text-ovcs-error' },
+  null: { label: 'Status unknown', dot: 'bg-ovcs-muted', text: 'text-ovcs-muted' }
+}
+
+export const nodeStatus = (node) => STATUS[node.connected]
+
+export const signalCount = (node) => node.sources.reduce((count, source) => count + source.signals.length, 0)
+
 export const staleCount = (node) =>
   node.sources.reduce((count, source) => count + source.signals.filter((signal) => signal.stale === true).length, 0)
 

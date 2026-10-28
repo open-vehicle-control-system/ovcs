@@ -1,5 +1,14 @@
 import { describe, expect, test } from 'vitest'
-import { applyFrame, groupTree, PRESENCE_SOURCE, splitSource, staleCount } from './signals'
+import { applyFrame, groupTree, nodeStatus, PRESENCE_SOURCE, signalCount, splitSource, staleCount } from './signals'
+
+describe('nodeStatus and signalCount', () => {
+  test('label the presence and count the signals of a node', () => {
+    const node = { connected: false, sources: [{ signals: [{}, {}] }, { signals: [{}] }] }
+    expect(nodeStatus(node).label).toBe('Disconnected')
+    expect(nodeStatus({ ...node, connected: null }).label).toBe('Status unknown')
+    expect(signalCount(node)).toBe(3)
+  })
+})
 
 const sig = (node, source, name, value, changedAt = 1000, publishedAt = changedAt, stale = false) => ({
   node, source, name, value, unit: null, changed_at: changedAt, published_at: publishedAt, stale

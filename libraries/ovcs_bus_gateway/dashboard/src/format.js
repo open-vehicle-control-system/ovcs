@@ -22,4 +22,7 @@ export function formatValue(value) {
   return { text: String(value), tone: 'plain' }
 }
 
+// Published within the live window: the usual case, shown faint so the exceptions stand out.
+export const isFresh = (signal, now) => signal.published_at != null && now - signal.published_at < LIVE_MS
+
 export const isLive = (signal, now) => signal.changeSeenAt !== null && now - signal.changeSeenAt < LIVE_MS
