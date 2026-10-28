@@ -9,7 +9,8 @@ defmodule OvcsBus do
   one distributed Erlang cluster. `broadcast/2` stays on the local
   node unless `config :ovcs_bus, cluster_broadcast: true`: a cluster
   broadcast suspends the publisher while the link to any peer is
-  saturated, which stalls the component that published.
+  saturated, which stalls the component that published. `OvcsBus.Forwarder`
+  carries a node's messages to a collector on another node without that stall.
 
   Usage:
 

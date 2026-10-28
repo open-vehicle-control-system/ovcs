@@ -35,6 +35,16 @@ services:
     network_mode: host
     command: ["-l", "tcp/0.0.0.0:7447"]
 
+  mosquitto:
+    # Only for working without a vehicle: on the car, the broker runs on
+    # the compute node under balena.
+    build:
+      context: ../compute/images/mosquitto
+    container_name: ovcs-mosquitto
+    profiles: ["standalone"]
+    restart: unless-stopped
+    network_mode: host
+
   ros2:
     # The one service that builds the shared image, from the car's own
     # source root: a workstation runs what the car runs.

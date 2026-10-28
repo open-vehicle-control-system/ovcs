@@ -19,12 +19,16 @@ defmodule OvcsVehicle do
   `can_config_path`, under the vehicle's `priv/`, defaults to
   `can/bridges/<id>.yml`; a list of paths is merged, and a
   `%{host: _, target: _}` map picks one per build target, so a host
-  run can declare frames the burned firmware never needs.
+  run can declare frames the burned firmware never needs. Its
+  `children`, child specs started after the bridges' children, take
+  the same form: a list, or a `%{host: _, target: _}` map.
   """
 
   @type bridge_firmware_id :: String.t()
 
   @type can_config_path :: String.t() | [String.t()]
+
+  @type child :: Supervisor.child_spec() | {module(), term()} | module()
 
   @type bridge_firmware :: %{
           required(:target) => atom(),
@@ -32,6 +36,7 @@ defmodule OvcsVehicle do
           optional(:can_config_path) =>
             can_config_path() | %{host: can_config_path(), target: can_config_path()},
           optional(:required_files) => [String.t()],
+          optional(:children) => [child()] | %{host: [child()], target: [child()]},
           optional(:default_can_mapping) => %{
             host: String.t(),
             target: String.t()

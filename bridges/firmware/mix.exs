@@ -122,6 +122,15 @@ defmodule BridgeFirmware.MixProject do
        path: "../ros_bridge",
        targets: [:host, :ovcs_base_can_system_rpi4, :rpi5],
        runtime: Mix.target() != :host},
+      {:ovcs_bus_gateway,
+       path: "../../libraries/ovcs_bus_gateway",
+       targets: [:host, :ovcs_base_can_system_rpi4, :rpi5],
+       runtime: Mix.target() != :host},
+      # Optional deps of `ovcs_bus_gateway`: its adapters run only where
+      # the firmware lists them.
+      {:bandit, "~> 1.14", targets: [:host, :ovcs_base_can_system_rpi4, :rpi5]},
+      {:phoenix, "~> 1.7.24", targets: [:host, :ovcs_base_can_system_rpi4, :rpi5]},
+      {:tortoise311, "~> 0.12", targets: [:host, :ovcs_base_can_system_rpi4, :rpi5]},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}
 

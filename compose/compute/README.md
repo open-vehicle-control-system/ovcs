@@ -12,7 +12,7 @@ either.
 
 ```
 compute/
-├── docker-compose.yml    the stack: wifi_firmware, wifi_ap_radio, bridge_no_nat, ntp, zenohd, foxglove_bridge, nav2
+├── docker-compose.yml    the stack: wifi_firmware, wifi_ap_radio, bridge_no_nat, ntp, mosquitto, zenohd, foxglove_bridge, nav2
 ├── .dockerignore         keeps host/ and this file out of the pushed tarball
 ├── images/
 │   ├── ros2/             the shared ROS 2 image: entrypoint, Zenoh template, launchers; it COPYs ../../vehicle/
@@ -20,7 +20,8 @@ compute/
 │   ├── wifi-firmware/    AX210 firmware staged into balenaOS's extra-firmware volume
 │   ├── wifi-ap-radio/    keeps the AP's channel 149 center and transmit power right
 │   ├── bridge-no-nat/    exempts frames bridged between eth0 and the AP from the host's NAT
-│   └── ntp/              serves this node's clock to the vehicle network
+│   ├── ntp/              serves this node's clock to the vehicle network
+│   └── mosquitto/        the MQTT broker the OVCS bus gateway publishes to
 ├── vehicle/              empty here; `ovcs compute stage` copies vehicles/<vehicle>/nav2 and the expanded URDF into it
 └── host/                 NetworkManager keyfiles for balenaOS itself — installed by hand, once
 ```

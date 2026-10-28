@@ -49,9 +49,9 @@ The Vue dashboard runs off the vehicle, on a laptop, and talks to the VMS API. T
 
 ### One Erlang mesh, no broker
 
-Every BEAM of a running vehicle joins one Erlang-distribution cluster through `OvcsBus.Cluster`: at boot each node calls `Node.connect/1` on its declared peers until the mesh forms. No MQTT broker, no relay.
+Every BEAM of a running vehicle joins one Erlang-distribution cluster through `OvcsBus.Cluster`: at boot each node calls `Node.connect/1` on its declared peers until the mesh forms. The nodes talk to each other directly: no broker, no relay between them.
 
-`OvcsBus.broadcast/2` delivers to subscribers on the local node. Set `config :ovcs_bus, cluster_broadcast: true` to have it reach every node through `Phoenix.PubSub`. It is off by default: a cluster broadcast suspends the publishing process while the link to any peer is saturated, so one slow link can stall a drivetrain component.
+A bus message is delivered on its own node only, so a slow link cannot stall a drivetrain component. `OvcsBus.Forwarder` is the cross-node path of bus traffic, and the [bus gateway](./bus_gateway.md) uses it to carry the bus out of the mesh. See [The OVCS bus](./bus.md).
 
 The transport is the same in both environments: `./ovcs run <vehicle>` clusters one BEAM per role over loopback; a deployed vehicle clusters one BEAM per Raspberry Pi over the vehicle LAN.
 
@@ -114,7 +114,7 @@ def handle_info(%Bus.Message{name: :speed, value: speed, source: source}, state)
 end
 ```
 
-With `:cluster_broadcast` set, a subscriber in a bridge BEAM on another Pi receives it too. The framework ships drivers for the components its reference vehicles use (Leaf inverter, Bosch iBooster, Orion BMS, Polo body modules, VESC motor controller, Traxxas steering, …); your vehicle picks the ones it needs and adds its own the same way.
+A message reaches the subscribers of its own node; see [The OVCS bus](./bus.md). The framework ships drivers for the components its reference vehicles use (Leaf inverter, Bosch iBooster, Orion BMS, Polo body modules, VESC motor controller, Traxxas steering, …); your vehicle picks the ones it needs and adds its own the same way.
 
 ### Managers
 

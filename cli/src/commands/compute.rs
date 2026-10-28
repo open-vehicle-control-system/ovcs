@@ -361,7 +361,13 @@ mod tests {
         let compose = fs::read_to_string(root.join("compose/compute/docker-compose.yml")).unwrap();
         let published = published_compose(&compose, "sha-abc1234").unwrap();
 
-        for name in ["wifi-firmware", "wifi-ap-radio", "bridge-no-nat", "ntp"] {
+        for name in [
+            "wifi-firmware",
+            "wifi-ap-radio",
+            "bridge-no-nat",
+            "ntp",
+            "mosquitto",
+        ] {
             assert!(published.contains(&format!("image: {REGISTRY}/{name}:sha-abc1234")));
         }
         for name in VEHICLE_LAYERS {

@@ -40,4 +40,44 @@ defmodule OvcsBridge do
   @callback apply_runtime_config(vehicle :: module(), build_target :: atom()) :: any()
 
   @optional_callbacks apply_runtime_config: 2
+
+  @doc """
+  The active bridge firmware: `{vehicle, firmware_id, entry}`, `entry`
+  being the vehicle's `bridge_firmwares/0` entry for `firmware_id`.
+
+  `VEHICLE` and `BRIDGE_FIRMWARE_ID` win over the `:ovcs_bridge`
+  `:vehicle` and `:firmware_id` baked at build time: on the host every
+  bridge BEAM shares one build, and each is launched with its own env.
+  Raises when either is unset or the entry does not exist.
+  """
+  @spec firmware_entry() :: {module(), String.t(), OvcsVehicle.bridge_firmware()}
+  def firmware_entry do
+    vehicle = vehicle_module()
+    firmware_id = firmware_id()
+
+    case Map.fetch(vehicle.bridge_firmwares(), firmware_id) do
+      {:ok, entry} ->
+        {vehicle, firmware_id, entry}
+
+      :error ->
+        raise """
+        OvcsBridge: no entry #{inspect(firmware_id)} in #{inspect(vehicle)}.bridge_firmwares/0.
+        Known ids: #{Map.keys(vehicle.bridge_firmwares()) |> Enum.join(", ")}
+        """
+    end
+  end
+
+  defp vehicle_module do
+    name =
+      System.get_env("VEHICLE") || Application.get_env(:ovcs_bridge, :vehicle) ||
+        raise "OvcsBridge: :vehicle not set (set VEHICLE at build/run time)"
+
+    Module.concat([name])
+  end
+
+  defp firmware_id do
+    System.get_env("BRIDGE_FIRMWARE_ID") ||
+      Application.get_env(:ovcs_bridge, :firmware_id) ||
+      raise "OvcsBridge: firmware id not set (set BRIDGE_FIRMWARE_ID env or :ovcs_bridge :firmware_id)"
+  end
 end

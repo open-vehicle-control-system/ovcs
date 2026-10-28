@@ -8,7 +8,7 @@ vehicle, or does it never leave a workstation?**
 compose/
 ├── compute/          PUSHED TO BALENA — the vehicle's compute node, one deployable unit
 │   ├── docker-compose.yml    the on-vehicle stack (name and place imposed by balena)
-│   ├── images/               every image the car runs: ros2/, nav2/ (with its launch file), wifi-firmware/, wifi-ap-radio/, bridge-no-nat/, ntp/
+│   ├── images/               every image the car runs: ros2/, nav2/ (with its launch file), wifi-firmware/, wifi-ap-radio/, bridge-no-nat/, ntp/, mosquitto/
 │   ├── vehicle/              empty; `ovcs compute stage` fills it with the vehicle's files
 │   └── host/                 balenaOS network config (copied to the device once, never pushed)
 └── local/            NEVER PUSHED — the operator's machine and the simulation workstation
@@ -42,6 +42,7 @@ multicast, just TCP peerings to `zenohd`.
 | `wifi_ap_radio` | compute | keeps the access point's channel and transmit power right — not ROS either |
 | `bridge_no_nat` | compute | one nat rule so mDNS crosses the vehicle bridge — not ROS either |
 | `ntp` | compute | the boards take their time from the node Nav2 runs on, online or not |
+| `mosquitto` | compute | the MQTT broker the bus gateway publishes to; it runs on the vehicle, so it outlives the base station |
 | `ros2` (tooling shell) | local/base | interactive, `docker compose exec` |
 | `joy` | local/base | the game controller is with the operator, not the car |
 | `calibrator` | local/base | one-shot X11 GUI |
@@ -108,7 +109,7 @@ workstation runs the bits the car runs, never a copy of them. One Dockerfile, on
 |---|---|---|---|
 | shared ROS 2 | `compute/images/ros2/` | `ovcs/ros2:lyrical` | CI (GHCR); `local/base.yml` (`ros2` service) |
 | Nav2 | `compute/images/nav2/` | `ovcs/nav2:lyrical` | CI (GHCR); `local/base.yml` and `local/simulation.yml` (`nav2`) |
-| Wi-Fi firmware, Wi-Fi AP fix, bridge NAT fix, NTP | `compute/images/{wifi-firmware,wifi-ap-radio,bridge-no-nat,ntp}/` | — | CI (GHCR) only |
+| Wi-Fi firmware, Wi-Fi AP fix, bridge NAT fix, NTP, Mosquitto | `compute/images/{wifi-firmware,wifi-ap-radio,bridge-no-nat,ntp,mosquitto}/` | — | CI (GHCR) only |
 | Gazebo | `local/images/gazebo/` | `ovcs/gazebo:jetty` | `local/simulation.yml` only |
 
 The same direction holds for Nav2's parameters: the vehicle's `nav2/`

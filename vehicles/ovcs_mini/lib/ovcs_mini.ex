@@ -62,6 +62,7 @@ defmodule OvcsMini do
       "ros" => %{
         target: :ovcs_base_can_system_rpi4,
         bridges: [RosBridge],
+        children: %{host: [bus_gateway(:host)], target: [bus_gateway(:target)]},
         can_config_path: %{
           host: ["can/bridges/ros.yml", "can/bridges/ros_simulated_components.yml"],
           target: "can/bridges/ros.yml"
@@ -121,6 +122,17 @@ defmodule OvcsMini do
 
   def ros_bridge_config(:target, _firmware_id),
     do: ros_bridge_target_config()
+
+  defp bus_gateway(arm) do
+    {OvcsBusGateway,
+     vehicle: __MODULE__,
+     config: %OvcsBusGateway.Config{mqtt: [host: mqtt_broker(arm), port: 1883]},
+     mqtt_client_id: "ovcs_bus_gateway_ovcs_mini_ros_#{arm}"}
+  end
+
+  defp mqtt_broker(:host), do: "127.0.0.1"
+  # The compute node's fixed address on the vehicle network, the one `.env.exs` gives Zenoh.
+  defp mqtt_broker(:target), do: "10.42.0.1"
 
   defp simulation?, do: System.get_env("OVCS_SIM") in ["1", "true"]
 

@@ -1,5 +1,7 @@
 # OvcsBus
 
+The guide, [The OVCS bus](../../docs/bus.md), explains the bus, its messages and the mesh. This README keeps the library's developer details.
+
 Pub/sub bus of the VMS, infotainment, and bridge firmwares. Thin
 wrapper around `Phoenix.PubSub`, with `OvcsBus.Cluster` stitching
 every OVCS BEAM into a distributed Erlang mesh at boot. `broadcast/2`
@@ -34,7 +36,8 @@ are free-form strings — add more if you need fan-out isolation.
 in the cluster instead. That is off by default: a cluster broadcast
 suspends the publisher while the link to any peer is saturated, so a
 slow link stalls the component that published. `local_broadcast/2`
-always stays node-local.
+always stays node-local. `OvcsBus.Forwarder` batches a node's messages
+to a collector on another node without that stall.
 
 `OvcsBus.Message`:
 - `:name`          — short atom (e.g. `:ready_to_drive`, `:speed`).
@@ -125,6 +128,7 @@ lib/
     application.ex          — starts Phoenix.PubSub(name: OvcsBus)
     cluster.ex              — boot-time Node.connect/1 retry loop
     distribution.ex         — starts distribution on deployed firmware
+    forwarder.ex            — batches a node's messages to a remote collector
     message.ex              — %OvcsBus.Message{} struct
 ```
 

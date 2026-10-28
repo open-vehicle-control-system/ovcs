@@ -30,6 +30,15 @@ export VEHICLE BRIDGE_FIRMWARE_ID MIX_TARGET NERVES_FW_APPLICATION_PART0_TARGET
 
 step() { printf "\n\033[1;36m==> %s\033[0m\n" "$*"; }
 
+if [ "$MIX_TARGET" != "host" ]; then
+  step "Building the bus gateway dashboard"
+  (
+    cd ../../libraries/ovcs_bus_gateway/dashboard
+    npm ci
+    npm run build
+  )
+fi
+
 step "Fetching Mix dependencies (VEHICLE=$VEHICLE, BRIDGE_FIRMWARE_ID=$BRIDGE_FIRMWARE_ID, MIX_TARGET=$MIX_TARGET)"
 mix deps.get
 

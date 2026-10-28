@@ -8,7 +8,7 @@ defmodule OvcsMini.MixProject do
       elixir: "~> 1.15",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
-      dialyzer: [plt_add_apps: [:radio_control_bridge, :ros_bridge]]
+      dialyzer: [plt_add_apps: [:radio_control_bridge, :ros_bridge, :ovcs_bus_gateway]]
     ]
   end
 

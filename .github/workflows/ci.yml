@@ -72,6 +72,8 @@ jobs:
             vue:
               - *shared
               - vms/dashboard/**
+              - libraries/ovcs_bus_gateway/dashboard/**
+              - libraries/ovcs_ui/**
             flutter:
               - *shared
               - infotainment/dashboard/**
@@ -131,6 +133,7 @@ jobs:
           - libraries/ovcs_vehicle
           - libraries/ovcs_bus
           - libraries/ovcs_bridge
+          - libraries/ovcs_bus_gateway
           - libraries/ovcs_drivers
           - vms/core
           - vms/api
@@ -248,6 +251,50 @@ jobs:
         run: npm audit --omit=dev
       - run: npm run test:unit
       - run: npm run build
+
+  bus-gateway-dashboard:
+    name: Vue · libraries/ovcs_bus_gateway/dashboard
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.vue == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: libraries/ovcs_bus_gateway/dashboard
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup-mise
+      - uses: actions/cache@v5
+        with:
+          path: ~/.npm
+          key: npm-bus-gateway-dashboard-${{ hashFiles('mise.toml') }}-${{ hashFiles('libraries/ovcs_bus_gateway/dashboard/package-lock.json') }}
+          restore-keys: npm-bus-gateway-dashboard-${{ hashFiles('mise.toml') }}-
+      - run: npm ci
+      - name: Audit deps
+        # Only the packages that ship in the built dashboard, not the build and test tools.
+        run: npm audit --omit=dev
+      - run: npm run test:unit
+      - run: npm run build
+
+  ovcs-ui:
+    name: Vue · libraries/ovcs_ui
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.vue == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: libraries/ovcs_ui
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup-mise
+      - uses: actions/cache@v5
+        with:
+          path: ~/.npm
+          key: npm-ovcs-ui-${{ hashFiles('mise.toml') }}-${{ hashFiles('libraries/ovcs_ui/package-lock.json') }}
+          restore-keys: npm-ovcs-ui-${{ hashFiles('mise.toml') }}-
+      - run: npm ci
+      - run: npm run test:unit
 
   flutter-dashboard:
     name: Flutter · infotainment/dashboard
