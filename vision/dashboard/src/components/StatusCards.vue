@@ -1,0 +1,61 @@
+<template>
+  <p v-if="!status" class="text-sm text-gray-500">Waiting for the vision unit…</p>
+  <div v-else class="grid grid-cols-2 gap-4 lg:grid-cols-6">
+    <div
+      v-for="card in cards"
+      :key="card.id"
+      :data-card="card.id"
+      class="rounded-lg bg-white p-4 shadow"
+    >
+      <p class="text-sm font-medium text-gray-500">{{ card.title }}</p>
+      <p :class="['mt-1 text-xl font-semibold', card.healthy ? 'text-green-700' : 'text-red-700']">
+        {{ card.value }}
+      </p>
+      <p v-if="card.detail" class="mt-1 text-xs text-gray-500">{{ card.detail }}</p>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { computed } from 'vue'
+
+const props = defineProps({
+  status: { type: Object, default: null }
+})
+
+const formatNumber = (number, decimals = 1) => (number == null ? '–' : Number(number).toFixed(decimals))
+
+function cameraCard(id, title, camera) {
+  if (!camera || !camera.present) {
+    return { id, title, value: 'absent', healthy: false }
+  }
+  const details = []
+  if (camera.exposure_time_us != null) details.push(`exposure ${formatNumber(camera.exposure_time_us / 1000, 2)} ms`)
+  if (camera.analogue_gain != null) details.push(`gain ${formatNumber(camera.analogue_gain, 2)}`)
+  return { id, title, value: `${formatNumber(camera.fps)} fps`, healthy: camera.fps > 0, detail: details.join(', ') }
+}
+
+function syncCard(sync) {
+  if (!sync || !sync.present) return { id: 'sync', title: 'Sync', value: 'absent', healthy: false }
+  if (sync.offset_median_ms == null) return { id: 'sync', title: 'Sync', value: 'no pairs', healthy: false }
+  return {
+    id: 'sync',
+    title: 'Sync',
+    value: `${formatNumber(sync.offset_median_ms, 2)} ms`,
+    healthy: Math.abs(sync.offset_median_ms) <= 1,
+    detail: `max ${formatNumber(sync.offset_max_ms, 2)} ms over ${sync.pairs} pairs`
+  }
+}
+
+const cards = computed(() => {
+  const status = props.status
+  return [
+    cameraCard('left', 'Left camera', status.cameras?.left),
+    cameraCard('right', 'Right camera', status.cameras?.right),
+    syncCard(status.sync),
+    { id: 'depth', title: 'Depth', value: `${formatNumber(status.depth_hz)} Hz`, healthy: status.depth_hz > 0 },
+    { id: 'hailo', title: 'Hailo', value: status.hailo, healthy: status.hailo === 'running' },
+    { id: 'zenoh', title: 'Zenoh', value: status.zenoh, healthy: status.zenoh === 'connected' }
+  ]
+})
+</script>
