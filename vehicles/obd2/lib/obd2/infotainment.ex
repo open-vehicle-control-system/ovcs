@@ -3,7 +3,6 @@ defmodule Obd2.Infotainment do
     Implements a basic OBD2 mapper reading RPM and speed
   """
   use GenServer
-  require Logger
   alias Decimal, as: D
   alias Cantastic.{Signal, Receiver, Frame}
 

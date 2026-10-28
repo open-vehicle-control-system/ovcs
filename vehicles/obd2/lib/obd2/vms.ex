@@ -18,7 +18,6 @@ defmodule Obd2.Vms do
   channel picks them up automatically.
   """
   use GenServer
-  require Logger
   alias Decimal, as: D
   alias Cantastic.{OBD2, Emitter}
 

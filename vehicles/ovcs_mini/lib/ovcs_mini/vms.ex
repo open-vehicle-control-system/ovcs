@@ -3,7 +3,6 @@ defmodule OvcsMini.Vms do
     Implements the OVCS Mini specific logic (when is the vehicle ready, ...)
   """
   use GenServer
-  require Logger
   alias OvcsBus, as: Bus
   alias VmsCore.Status
   alias OvcsMini.Vms.MainController
