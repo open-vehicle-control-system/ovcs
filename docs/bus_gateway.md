@@ -3,7 +3,7 @@ title: Bus gateway
 description: The library that exposes every signal on the OVCS bus over MQTT, HTTP and Phoenix Channels, and how to enable it in your vehicle, with the OVCS Mini reference vehicle as the worked example.
 ---
 
-Every component of a vehicle publishes its state as `%OvcsBus.Message{}` on the OVCS bus, and the bus stops at the Erlang mesh. The bus gateway, `OvcsBusGateway`, is a library that carries those signals out: to an MQTT broker, to HTTP clients, and to a browser dashboard. It is part of the framework and contains nothing vehicle-specific. Any OVCS firmware can host it by adding its child spec, `{OvcsBusGateway, vehicle: ..., config: ...}`; the bridge firmware does so for an entry of your vehicle's `bridge_firmwares/0` that carries a `bus_gateway:` key.
+The bus gateway, `OvcsBusGateway`, carries the signals of the [OVCS bus](./bus.md) out of the Erlang mesh: to an MQTT broker, to HTTP clients, and to a browser dashboard. It is a library in the framework and contains nothing vehicle-specific. Any OVCS firmware can host it by adding its child spec, `{OvcsBusGateway, vehicle: ..., config: ...}`; the bridge firmware does so for an entry of your vehicle's `bridge_firmwares/0` that carries a `bus_gateway:` key.
 
 ## How a signal gets out
 
@@ -15,12 +15,7 @@ Every component of a vehicle publishes its state as `%OvcsBus.Message{}` on the 
                                               └──────────────────> Http (Phoenix)
 ```
 
-The gateway's `OvcsBusGateway.Collector` starts one `OvcsBus.Forwarder` on every node of the mesh, including nodes that join later. Each forwarder subscribes to its node's `"messages"` topic and sends batches to the collector:
-
-- Between two ticks it keeps only the latest value of each `{source, name}` signal, and drops a value equal to the one it last sent. A chatty signal costs one entry per change, not one per publication.
-- About once a second it refreshes every signal republished since the previous refresh: the last value goes out again with a new publish time. A signal whose component stopped publishing is not refreshed.
-- Batches go out with `:nosuspend`. When the distribution link is saturated the batch stays pending for the next tick, so no publisher ever waits on the mesh. This is why the gateway uses the forwarder rather than `OvcsBus.broadcast/2` with `cluster_broadcast: true`.
-- A skipped tick is counted. Once a tick was skipped, the running total is published every second as the `skipped_ticks` signal, sourced by `OvcsBus.Forwarder`. It appears on the gateway like any other signal.
+The gateway's `OvcsBusGateway.Collector` starts one [`OvcsBus.Forwarder`](./bus.md#seeing-the-bus-from-outside) on every node of the mesh, including nodes that join later, and receives their batches. Once a forwarder has skipped a tick, its running total appears on the gateway as the `skipped_ticks` signal, sourced by `OvcsBus.Forwarder`, like any other signal.
 
 The collector turns each batch into `OvcsBusGateway.Envelope`s, stores the latest one per signal in `OvcsBusGateway.Cache`, and dispatches them to the adapters through `OvcsBusGateway.Subscribers`. The batch interval is `forward_interval` in the gateway config.
 

@@ -13,6 +13,7 @@ These guides are published on [ovcs.be/docs](https://ovcs.be/docs). This index i
 
 - [Architecture](./architecture.md)
 - [Framework components](./components.md)
+- [The OVCS bus](./bus.md)
 - [Bus gateway](./bus_gateway.md)
 - [Hardware you need](./hardware_you_need.md)
 - [Hardware](./hardware.md)

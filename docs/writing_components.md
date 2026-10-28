@@ -225,7 +225,7 @@ Bus.broadcast("messages", %Bus.Message{
 })
 ```
 
-`%OvcsBus.Message{}` enforces `:name` and `:source`, and `OvcsBus.broadcast/2` rejects a `nil` source. `:unit` is optional and comes from [`OvcsBus.Units`](../libraries/ovcs_bus/lib/ovcs_bus/units.ex) (`Units.volt()`, `Units.revolution_per_minute()`, …), one function per unit so a typo fails to compile. The broadcast reaches every BEAM in the vehicle's mesh; [`libraries/ovcs_bus/README.md`](../libraries/ovcs_bus/README.md) has the transport.
+`%OvcsBus.Message{}` enforces `:name` and `:source`, and `OvcsBus.broadcast/2` rejects a `nil` source. `:unit` is optional and comes from [`OvcsBus.Units`](../libraries/ovcs_bus/lib/ovcs_bus/units.ex) (`Units.volt()`, `Units.revolution_per_minute()`, …), one function per unit so a typo fails to compile. The message reaches the subscribers of its own node; [The OVCS bus](./bus.md) covers messages, scope and the mesh.
 
 An actuator adds one step: it does not follow a fixed commander, it follows whichever one `Managers.ControlLevel` currently names. The manager publishes `:requested_throttle_source` (and the steering, direction and gear equivalents); the actuator stores it, then gates the request on it. From the Leaf inverter:
 

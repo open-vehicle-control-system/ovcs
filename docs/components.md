@@ -196,7 +196,7 @@ Two kinds live side by side under `libraries/`. **In-tree** libraries are framew
 |---|---|---|---|
 | `ovcs_vehicle/` | `OvcsVehicle` | [in-tree](../libraries/ovcs_vehicle/README.md) | The top-level behaviour every vehicle implements, and the `ovcs new` scaffold |
 | `ovcs_can/` | `OvcsCan` | [in-tree](../libraries/ovcs_can/README.md) | Shared per-component CAN frame YAMLs under `priv/can/components/`, no runtime logic |
-| `ovcs_bus/` | `OvcsBus` | [in-tree](../libraries/ovcs_bus/README.md) | Cluster-wide pub/sub over Erlang distribution |
+| `ovcs_bus/` | `OvcsBus` | [in-tree](../libraries/ovcs_bus/README.md) | Per-firmware pub/sub, and the Erlang mesh joining the firmwares; see [The OVCS bus](./bus.md) |
 | `ovcs_bridge/` | `OvcsBridge` | [in-tree](../libraries/ovcs_bridge/README.md) | Behaviour and supervisor for bridge libraries |
 | `ovcs_bus_gateway/` | `OvcsBusGateway` | [in-tree](../libraries/ovcs_bus_gateway/README.md) | Library exposing the bus over MQTT, HTTP and Phoenix Channels, with a dashboard, run by a bridge firmware; see [Bus gateway](./bus_gateway.md) |
 | `ovcs_ui/` | `@ovcs/ui` | [in-tree](../libraries/ovcs_ui/README.md) | Design tokens and Tailwind preset shared by OVCS web UIs (npm package) |
@@ -248,7 +248,7 @@ This provisions the vehicle's vcan interfaces (`./ovcs can setup <vehicle>` does
 - the VMS API on `http://localhost:4000`, in the `<vehicle>-vms` BEAM;
 - the infotainment API on `http://localhost:4001`, in `<vehicle>-infotainment`, for vehicles that implement `infotainment/0`;
 - one BEAM per bridge firmware, named `<vehicle>-bridge-<id>` (every node name turns underscores into dashes, in `<vehicle>` and `<id>` alike);
-- an Erlang-distribution cluster stitched together by `OvcsBus.Cluster`: each BEAM `Node.connect/1`s the others, and `OvcsBus.broadcast/2` reaches every node when `:cluster_broadcast` is set. Deployed firmware uses the same transport.
+- an Erlang-distribution cluster stitched together by `OvcsBus.Cluster`: each BEAM `Node.connect/1`s the others, as [The OVCS bus](./bus.md#the-mesh) describes. Deployed firmware uses the same transport.
 
 The Vue dashboard starts alongside as a dev add-on (`--no-addons` skips it). The Flutter dashboard needs its own terminal, because its hot reload is keyboard-driven:
 
