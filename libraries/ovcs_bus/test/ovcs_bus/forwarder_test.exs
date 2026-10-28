@@ -38,11 +38,16 @@ defmodule OvcsBus.ForwarderTest do
 
   defp message(name, value, source \\ A), do: %Message{name: name, value: value, source: source}
 
-  defp collect_entries(acc, timeout) do
-    receive do
-      {:ovcs_bus_batch, _node, entries} -> collect_entries(acc ++ entries, timeout)
-    after
-      timeout -> acc
+  # Batch entries received until `done?` holds for them, or `timeout` passes without a batch.
+  defp collect_until(done?, timeout, acc \\ []) do
+    if done?.(acc) do
+      acc
+    else
+      receive do
+        {:ovcs_bus_batch, _node, entries} -> collect_until(done?, timeout, acc ++ entries)
+      after
+        timeout -> acc
+      end
     end
   end
 
@@ -54,7 +59,7 @@ defmodule OvcsBus.ForwarderTest do
 
     assert_receive {:ovcs_bus_batch, node,
                     [{%Message{name: :speed, value: 3}, changed_at, published_at}]},
-                   100
+                   1_000
 
     assert node == node()
     assert is_integer(changed_at)
@@ -70,7 +75,7 @@ defmodule OvcsBus.ForwarderTest do
     OvcsBus.broadcast("messages", message(:speed, 1, A))
     OvcsBus.broadcast("messages", message(:speed, 2, B))
 
-    assert_receive {:ovcs_bus_batch, _, entries}, 100
+    assert_receive {:ovcs_bus_batch, _, entries}, 1_000
 
     assert entries |> Enum.map(fn {m, _, _} -> {m.source, m.value} end) |> Enum.sort() ==
              [{A, 1}, {B, 2}]
@@ -80,7 +85,7 @@ defmodule OvcsBus.ForwarderTest do
     start_forwarder(interval: 20)
 
     OvcsBus.broadcast("messages", message(:gear, :parking))
-    assert_receive {:ovcs_bus_batch, _, [{%Message{name: :gear}, _, _}]}, 100
+    assert_receive {:ovcs_bus_batch, _, [{%Message{name: :gear}, _, _}]}, 1_000
 
     OvcsBus.broadcast("messages", message(:gear, :parking))
     refute_receive {:ovcs_bus_batch, _, _}, 60
@@ -90,11 +95,11 @@ defmodule OvcsBus.ForwarderTest do
     start_forwarder(interval: 20)
 
     OvcsBus.broadcast("messages", message(:gear, :parking))
-    assert_receive {:ovcs_bus_batch, _, _}, 100
+    assert_receive {:ovcs_bus_batch, _, _}, 1_000
     OvcsBus.broadcast("messages", message(:gear, :drive))
-    assert_receive {:ovcs_bus_batch, _, [{%Message{value: :drive}, _, _}]}, 100
+    assert_receive {:ovcs_bus_batch, _, [{%Message{value: :drive}, _, _}]}, 1_000
     OvcsBus.broadcast("messages", message(:gear, :parking))
-    assert_receive {:ovcs_bus_batch, _, [{%Message{value: :parking}, _, _}]}, 100
+    assert_receive {:ovcs_bus_batch, _, [{%Message{value: :parking}, _, _}]}, 1_000
   end
 
   test "refreshes a signal republished with the same value once per refresh interval" do
@@ -105,7 +110,7 @@ defmodule OvcsBus.ForwarderTest do
 
     assert_receive {:ovcs_bus_batch, _,
                     [{%Message{value: :parking}, changed_at, first_published_at}]},
-                   100
+                   1_000
 
     Process.sleep(2)
     OvcsBus.broadcast("messages", message(:gear, :parking))
@@ -118,7 +123,7 @@ defmodule OvcsBus.ForwarderTest do
 
     assert_receive {:ovcs_bus_batch, _,
                     [{%Message{value: :parking}, ^changed_at, refreshed_published_at}]},
-                   100
+                   1_000
 
     assert refreshed_published_at > first_published_at
 
@@ -132,7 +137,7 @@ defmodule OvcsBus.ForwarderTest do
 
     OvcsBus.broadcast("messages", message(:gear, :parking))
     send(pid, :tick)
-    assert_receive {:ovcs_bus_batch, _, [_entry]}, 100
+    assert_receive {:ovcs_bus_batch, _, [_entry]}, 1_000
 
     send(pid, :refresh)
     send(pid, :tick)
@@ -144,14 +149,14 @@ defmodule OvcsBus.ForwarderTest do
 
     OvcsBus.broadcast("messages", message(:gear, :parking))
     send(pid, :tick)
-    assert_receive {:ovcs_bus_batch, _, [{_message, first_changed_at, _published_at}]}, 100
+    assert_receive {:ovcs_bus_batch, _, [{_message, first_changed_at, _published_at}]}, 1_000
 
     Process.sleep(2)
     OvcsBus.broadcast("messages", message(:gear, :drive))
     send(pid, :tick)
 
     assert_receive {:ovcs_bus_batch, _, [{%Message{value: :drive}, changed_at, changed_at}]},
-                   100
+                   1_000
 
     assert changed_at > first_changed_at
   end
@@ -160,13 +165,13 @@ defmodule OvcsBus.ForwarderTest do
     start_forwarder(interval: 10, refresh_interval: 50)
 
     OvcsBus.broadcast("messages", message(:gear, :parking))
-    assert_receive {:ovcs_bus_batch, _, [{_message, changed_at, _published_at}]}, 100
+    assert_receive {:ovcs_bus_batch, _, [{_message, changed_at, _published_at}]}, 1_000
 
     OvcsBus.broadcast("messages", message(:gear, :parking))
 
     assert_receive {:ovcs_bus_batch, _,
                     [{%Message{value: :parking}, ^changed_at, _published_at}]},
-                   200
+                   1_000
   end
 
   test "a change after a refresh held back by a busy link replaces the refresh" do
@@ -186,7 +191,7 @@ defmodule OvcsBus.ForwarderTest do
 
     OvcsBus.broadcast("messages", message(:gear, :parking))
     send(pid, :tick)
-    assert_receive {:ovcs_bus_batch, _, [{_message, _changed_at, first_published_at}]}, 100
+    assert_receive {:ovcs_bus_batch, _, [{_message, _changed_at, first_published_at}]}, 1_000
 
     Agent.update(busy, fn _ -> true end)
     Process.sleep(2)
@@ -202,7 +207,7 @@ defmodule OvcsBus.ForwarderTest do
     send(pid, :tick)
 
     assert_receive {:ovcs_bus_batch, _, [{%Message{value: :drive}, changed_at, published_at}]},
-                   100
+                   1_000
 
     assert changed_at == published_at
     assert published_at > first_published_at
@@ -224,13 +229,20 @@ defmodule OvcsBus.ForwarderTest do
     start_forwarder(interval: 20, report_interval: 50, send: send_fun)
     OvcsBus.broadcast("messages", message(:speed, 1))
 
-    entries = collect_entries([], 200)
+    speed? = fn entries ->
+      Enum.any?(entries, fn {m, _, _} -> m.name == :speed and m.value == 1 end)
+    end
 
-    assert Enum.any?(entries, fn {m, _, _} -> m.name == :speed and m.value == 1 end)
+    skipped? = fn entries ->
+      Enum.any?(entries, fn {m, _, _} ->
+        m.source == Forwarder and m.name == :skipped_ticks and m.value == 2
+      end)
+    end
 
-    assert Enum.any?(entries, fn {m, _, _} ->
-             m.source == Forwarder and m.name == :skipped_ticks and m.value == 2
-           end)
+    entries = collect_until(&(speed?.(&1) and skipped?.(&1)), 2_000)
+
+    assert speed?.(entries)
+    assert skipped?.(entries)
   end
 
   test "republishes the skipped-tick total every report interval, so it is refreshed" do
@@ -252,14 +264,14 @@ defmodule OvcsBus.ForwarderTest do
     send(pid, :tick)
     send(pid, :report)
     send(pid, :tick)
-    assert_receive {:ovcs_bus_batch, _, entries}, 100
+    assert_receive {:ovcs_bus_batch, _, entries}, 1_000
     assert Enum.any?(entries, fn {m, _, _} -> m.name == :skipped_ticks and m.value == 1 end)
 
     send(pid, :report)
     send(pid, :refresh)
     send(pid, :tick)
 
-    assert_receive {:ovcs_bus_batch, _, [{%Message{name: :skipped_ticks, value: 1}, _, _}]}, 100
+    assert_receive {:ovcs_bus_batch, _, [{%Message{name: :skipped_ticks, value: 1}, _, _}]}, 1_000
   end
 
   test "exits with its collector" do

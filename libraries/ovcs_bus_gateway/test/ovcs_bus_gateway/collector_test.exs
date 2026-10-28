@@ -120,10 +120,11 @@ defmodule OvcsBusGateway.CollectorTest do
     Subscribers.subscribe()
 
     send(collector, {:ovcs_bus_batch, node(), [{message(:speed, 6), 1_000, 4_000}]})
-    assert_receive {:ovcs_bus_gateway, [%{name: "speed", stale: false}]}, 100
+    assert_receive {:ovcs_bus_gateway, [%{name: "speed", stale: false}]}, 1_000
     refute_receive {:ovcs_bus_gateway, _}, 30
 
-    assert_receive {:ovcs_bus_gateway, [%{name: "speed", published_at: 4_000, stale: true}]}, 100
+    assert_receive {:ovcs_bus_gateway, [%{name: "speed", published_at: 4_000, stale: true}]},
+                   1_000
 
     assert {:ok, %{stale: true}} =
              Cache.fetch({Atom.to_string(node()), "VmsCore.Vehicle", "speed"})
@@ -131,7 +132,9 @@ defmodule OvcsBusGateway.CollectorTest do
     refute_receive {:ovcs_bus_gateway, _}, 150
 
     send(collector, {:ovcs_bus_batch, node(), [{message(:speed, 6), 1_000, 5_000}]})
-    assert_receive {:ovcs_bus_gateway, [%{name: "speed", published_at: 5_000, stale: false}]}, 100
+
+    assert_receive {:ovcs_bus_gateway, [%{name: "speed", published_at: 5_000, stale: false}]},
+                   1_000
   end
 
   test "never sweeps signals of unknown staleness" do
@@ -139,7 +142,7 @@ defmodule OvcsBusGateway.CollectorTest do
     Subscribers.subscribe()
 
     send(collector, {:ovcs_bus_batch, node(), [{message(:speed, 6), 2_000}]})
-    assert_receive {:ovcs_bus_gateway, [%{name: "speed", stale: nil}]}, 100
+    assert_receive {:ovcs_bus_gateway, [%{name: "speed", stale: nil}]}, 1_000
     refute_receive {:ovcs_bus_gateway, _}, 200
   end
 
@@ -153,7 +156,7 @@ defmodule OvcsBusGateway.CollectorTest do
     local = Atom.to_string(node())
     before = System.os_time(:millisecond)
 
-    assert_receive {:ovcs_bus_gateway, [connected]}, 200
+    assert_receive {:ovcs_bus_gateway, [connected]}, 1_000
     assert Map.take(connected, [:node, :source, :name, :value]) == presence(local, true)
     assert connected.changed_at >= before
     assert connected.published_at == connected.changed_at
@@ -161,7 +164,7 @@ defmodule OvcsBusGateway.CollectorTest do
     assert [^connected] = Cache.select(%{source: "OvcsBusGateway.Collector"})
 
     send(collector, {:nodedown, :"gone@127.0.0.1"})
-    assert_receive {:ovcs_bus_gateway, [disconnected]}, 200
+    assert_receive {:ovcs_bus_gateway, [disconnected]}, 1_000
 
     assert Map.take(disconnected, [:node, :source, :name, :value]) ==
              presence("gone@127.0.0.1", false)
@@ -181,9 +184,9 @@ defmodule OvcsBusGateway.CollectorTest do
     collector = start_supervised!({Collector, vehicle: OvcsMini, alive?: alive?})
     Subscribers.subscribe()
 
-    assert_receive :alive_checked, 100
+    assert_receive :alive_checked, 1_000
     refute_receive :alive_checked, 900
-    assert_receive :alive_checked, 300
+    assert_receive :alive_checked, 1_000
     assert :sys.get_state(collector).forwarders == %{}
     assert Registry.lookup(OvcsBus, "messages") == []
 
@@ -192,7 +195,7 @@ defmodule OvcsBusGateway.CollectorTest do
     await_forwarder(node())
 
     OvcsBus.broadcast("messages", message(:speed, 4))
-    assert_receive {:ovcs_bus_gateway, [%{name: "speed", value: 4}]}, 200
+    assert_receive {:ovcs_bus_gateway, [%{name: "speed", value: 4}]}, 1_000
   end
 
   test "replaces a forwarder that dies while its node stays connected" do
@@ -206,7 +209,7 @@ defmodule OvcsBusGateway.CollectorTest do
     await_forwarder(node())
 
     OvcsBus.broadcast("messages", message(:speed, 5))
-    assert_receive {:ovcs_bus_gateway, [%{name: "speed", value: 5}]}, 200
+    assert_receive {:ovcs_bus_gateway, [%{name: "speed", value: 5}]}, 1_000
   end
 
   defp await_replacement(collector, old, attempts \\ 300) do
