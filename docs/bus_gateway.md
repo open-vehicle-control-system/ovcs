@@ -116,6 +116,8 @@ Subscribe from any machine that reaches the broker:
 mosquitto_sub -h <broker> -t 'ovcs/<vehicle>/#' -v
 ```
 
+The broker also accepts MQTT over WebSocket at `ws://<broker>:9001`, for clients running in a browser. To browse its topics from a laptop, a desktop client such as MQTT Explorer pointed at `<broker>:1883` keeps the connection between sessions.
+
 ## HTTP and WebSocket
 
 With `:http` set, the gateway serves on port 4100:
