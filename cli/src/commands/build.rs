@@ -25,7 +25,7 @@ pub fn run(all: bool, vehicle: Option<String>, role: Option<String>) -> Result<(
     )
 }
 
-/// Build every role the vehicle declares (vms, infotainment, each bridge)
+/// Build every role the vehicle declares (vms, infotainment, vision, each bridge)
 /// concurrently. Each role is its own build (its own MIX_TARGET and
 /// BRIDGE_FIRMWARE_ID) even when two share a firmware directory.
 fn run_all(vehicle: Option<String>, role: Option<String>) -> Result<()> {

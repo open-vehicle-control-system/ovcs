@@ -118,6 +118,23 @@ fn expected_devices(vehicle: &vehicles::Vehicle) -> Result<Vec<(String, String)>
         )),
     }
 
+    match vehicles::nerves_target(vehicle, "vision") {
+        Ok(Some(_)) => {
+            let host = vehicles::host_for(&vehicle.dir, "vision");
+            sub_ok(&format!("{:<14} {}", "vision", host));
+            devices.push(("vision".into(), host));
+        }
+        Ok(None) => sub(&format!(
+            "{:<14} skipped (vehicle declares no vision unit)",
+            "vision"
+        )),
+        Err(error) => sub(&format!(
+            "{:<14} skipped ({})",
+            "vision",
+            error.to_string().lines().next().unwrap_or("probe failed")
+        )),
+    }
+
     match vehicles::bridge_firmwares(vehicle) {
         Ok(bridges) if bridges.is_empty() => {
             sub(&format!("{:<14} none declared", "bridges"));
@@ -224,7 +241,7 @@ fn epmd_snames(output: &str) -> Vec<&str> {
 
 /// The snames `./ovcs run` gives `vehicle_dir`'s BEAMs
 /// (`vehicles::local_sname`), as `(role, sname)`: vms first, then
-/// infotainment, then bridges in sname order.
+/// infotainment, then vision, then bridges in sname order.
 fn local_beams_for<'a>(vehicle_dir: &str, snames: &[&'a str]) -> Vec<(String, &'a str)> {
     let mut sorted = snames.to_vec();
     sorted.sort();
@@ -233,6 +250,7 @@ fn local_beams_for<'a>(vehicle_dir: &str, snames: &[&'a str]) -> Vec<(String, &'
 
     let mut vms = None;
     let mut infotainment = None;
+    let mut vision = None;
     let mut bridges: Vec<(String, &str)> = Vec::new();
 
     for sname in sorted {
@@ -240,6 +258,7 @@ fn local_beams_for<'a>(vehicle_dir: &str, snames: &[&'a str]) -> Vec<(String, &'
             match role {
                 "vms" => vms = Some((role.to_string(), sname)),
                 "infotainment" => infotainment = Some((role.to_string(), sname)),
+                "vision" => vision = Some((role.to_string(), sname)),
                 _ if firmware::bridge_id(role).is_some_and(|id| !id.is_empty()) => {
                     bridges.push((role.to_string(), sname))
                 }
@@ -249,7 +268,11 @@ fn local_beams_for<'a>(vehicle_dir: &str, snames: &[&'a str]) -> Vec<(String, &'
         }
     }
 
-    vms.into_iter().chain(infotainment).chain(bridges).collect()
+    vms.into_iter()
+        .chain(infotainment)
+        .chain(vision)
+        .chain(bridges)
+        .collect()
 }
 
 // ---------- local transport: three remsh subprocesses (logs + shell + monitor) -
@@ -1767,6 +1790,21 @@ name ovcs_attach_log_4242_0_0 at port 41001
                 ("bridge-ros".to_string(), "ovcs-mini-bridge-ros"),
             ]
         );
+    }
+
+    #[test]
+    fn local_vision_beam_sits_between_infotainment_and_bridges() {
+        let snames = [
+            "ovcs-mini-bridge-ros",
+            "ovcs-mini-vision",
+            "ovcs-mini-infotainment",
+            "ovcs-mini-vms",
+        ];
+        let roles: Vec<String> = local_beams_for("ovcs_mini", &snames)
+            .into_iter()
+            .map(|(role, _)| role)
+            .collect();
+        assert_eq!(roles, ["vms", "infotainment", "vision", "bridge-ros"]);
     }
 
     #[test]

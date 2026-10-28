@@ -51,11 +51,19 @@ pub fn module_for(dir: &str) -> String {
         .collect()
 }
 
+/// Vehicle callback naming the Nerves target of a fixed role.
+fn target_callback(side: &str) -> Option<&'static str> {
+    match side {
+        "vms" => Some("vms_target"),
+        "infotainment" => Some("infotainment_target"),
+        "vision" => Some("vision_target"),
+        _ => None,
+    }
+}
+
 pub fn nerves_target(vehicle: &Vehicle, side: &str) -> Result<Option<String>> {
-    let callback = match side {
-        "vms" => "vms_target",
-        "infotainment" => "infotainment_target",
-        _ => return Ok(None),
+    let Some(callback) = target_callback(side) else {
+        return Ok(None);
     };
     let snippet = format!(
         r#"
@@ -352,7 +360,7 @@ fn probe_failure(dir: &str, stdout: &str, stderr: &str) -> anyhow::Error {
 mod tests {
     use super::{
         host_for, local_sname, local_sname_prefix, module_for, probe_failure, probe_payload,
-        PROBE_MARKER,
+        target_callback, PROBE_MARKER,
     };
 
     #[test]
@@ -374,6 +382,19 @@ mod tests {
         );
         assert_eq!(local_sname("ovcs1", "infotainment"), "ovcs1-infotainment");
         assert!(local_sname("ovcs_mini", "vms").starts_with(&local_sname_prefix("ovcs_mini")));
+    }
+
+    #[test]
+    fn host_for_vision() {
+        assert_eq!(host_for("ovcs_mini", "vision"), "ovcs-mini-vision.local");
+        assert_eq!(local_sname("ovcs_mini", "vision"), "ovcs-mini-vision");
+    }
+
+    #[test]
+    fn nerves_target_callback_per_side() {
+        assert_eq!(target_callback("vms"), Some("vms_target"));
+        assert_eq!(target_callback("vision"), Some("vision_target"));
+        assert_eq!(target_callback("bridge-ros"), None);
     }
 
     #[test]

@@ -141,7 +141,7 @@ mod tests {
     }
 
     fn ovcs1_roles() -> Vec<String> {
-        strings(&["vms", "infotainment", "bridge-ros"])
+        strings(&["vms", "infotainment", "vision", "bridge-ros"])
     }
 
     #[test]
@@ -151,6 +151,17 @@ mod tests {
             assert_eq!(
                 role_among(&values, "ovcs1", &ovcs1_roles()),
                 RoleChoice::Role("vms".to_string())
+            );
+        }
+    }
+
+    #[test]
+    fn resolve_args_accepts_vision_role() {
+        for values in [strings(&["ovcs1", "vision"]), strings(&["vision", "ovcs1"])] {
+            assert_eq!(vehicle_among(&values, &vehicle_dirs()), Some("ovcs1"));
+            assert_eq!(
+                role_among(&values, "ovcs1", &ovcs1_roles()),
+                RoleChoice::Role("vision".to_string())
             );
         }
     }

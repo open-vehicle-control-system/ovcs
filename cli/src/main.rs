@@ -30,7 +30,7 @@ struct Cli {
 /// Most subcommands take a (vehicle, role) pair where:
 /// - `vehicle` is the snake_case directory under `vehicles/` (e.g.
 ///   `ovcs1`, `ovcs_mini`, `obd2`).
-/// - `role` is `vms`, `infotainment`, or `bridge-<id>` for any id in the
+/// - `role` is `vms`, `infotainment`, `vision`, or `bridge-<id>` for any id in the
 ///   vehicle's `bridge_firmwares/0` callback.
 ///
 /// Both positional args are **order-independent** — the resolver picks
@@ -45,7 +45,7 @@ enum Commands {
     Doctor,
     /// Build firmware for a (vehicle, role) pair
     Build {
-        /// Build every role of the vehicle (vms, infotainment, each
+        /// Build every role of the vehicle (vms, infotainment, vision, each
         /// bridge). The role argument is ignored when set.
         #[arg(long)]
         all: bool,
@@ -119,7 +119,7 @@ enum Commands {
     },
     /// Boot a vehicle locally — one BEAM per role
     #[command(long_about = "\
-Provision vcan and spawn one BEAM per role (vms, infotainment, each \
+Provision vcan and spawn one BEAM per role (vms, infotainment, vision, each \
 bridge), all joined by OvcsBus.Cluster (Erlang distribution), \
 mirroring the deployed topology. Attach with `./ovcs attach` from \
 another terminal for logs + IEx.")]

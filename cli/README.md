@@ -42,13 +42,13 @@ mise run cli       # cargo build --release, stripped and copied to cli/ovcs
 ### Arguments
 
 - `<vehicle>` is the snake_case directory name of a vehicle package under `vehicles/`, for example `ovcs_mini` or `my_car`.
-- `<role>` is `vms`, `infotainment`, or `bridge-<id>` for any id in the vehicle's `bridge_firmwares/0`, for example `bridge-radio_control`. The `bridge-` prefix is required: a bare id is rejected, and the error lists the valid roles.
+- `<role>` is `vms`, `infotainment`, `vision`, or `bridge-<id>` for any id in the vehicle's `bridge_firmwares/0`, for example `bridge-radio_control`. The `bridge-` prefix is required: a bare id is rejected, and the error lists the valid roles.
 - The two positional arguments of `build`, `burn`, `clean`, `upload` and `connect` are order-independent: the resolver picks the vehicle out of the two and treats the other as the role.
 - A missing argument opens an interactive picker. On a non-tty stdin the command exits with status 2 instead. `compute push` picks only the vehicle: its target has no picker.
 
 ### How it finds a vehicle
 
-The CLI converts the directory name to UpperCamelCase (`ovcs_mini` becomes `OvcsMini`) and asks that module, through short `mix run --no-start` spawns, for the `OvcsVehicle` callbacks every vehicle implements: `vms_target/0`, `infotainment_target/0`, `bridge_firmwares/0`, and the composers' `default_can_mapping/1`. It then passes `VEHICLE` and `MIX_TARGET` (plus `BRIDGE_FIRMWARE_ID` for bridges) to the firmware projects' `build.sh` scripts in `vms/firmware/`, `infotainment/firmware/` and `bridges/firmware/`.
+The CLI converts the directory name to UpperCamelCase (`ovcs_mini` becomes `OvcsMini`) and asks that module, through short `mix run --no-start` spawns, for the `OvcsVehicle` callbacks every vehicle implements: `vms_target/0`, `infotainment_target/0`, `vision_target/0`, `bridge_firmwares/0`, and the composers' `default_can_mapping/1`. It then passes `VEHICLE` and `MIX_TARGET` (plus `BRIDGE_FIRMWARE_ID` for bridges) to the firmware projects' `build.sh` scripts in `vms/firmware/`, `infotainment/firmware/`, `vision/firmware/` and `bridges/firmware/`.
 
 `build --all` builds the firmware projects in parallel, one lane per project directory. Roles sharing a directory (every bridge lives in `bridges/firmware`) build one after another, since they share its `deps/` and `mix.lock`. A failure skips the rest of its lane; the other lanes finish, and the first failure's log is printed at the end.
 

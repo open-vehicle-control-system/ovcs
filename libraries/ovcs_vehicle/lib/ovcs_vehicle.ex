@@ -3,11 +3,17 @@ defmodule OvcsVehicle do
   Top-level contract for an OVCS vehicle package.
 
   A vehicle package is a single Mix app that bundles the VMS,
-  infotainment, and any bridge firmwares for a vehicle. The
+  infotainment, vision, and any bridge firmwares for a vehicle. The
   top-level module implements this behaviour; it exposes the
-  side-specific composers so `vms_core`, `infotainment_core`, and
-  the shared bridge firmware can dispatch through a single reference
-  configured as `:vehicle` in their application environment.
+  side-specific composers so `vms_core`, `infotainment_core`,
+  `vision_core`, and the shared bridge firmware can dispatch through a
+  single reference configured as `:vehicle` in their application
+  environment.
+
+  The infotainment and vision sides are optional: a vehicle opts into
+  each by implementing `infotainment/0` and `infotainment_target/0`, or
+  `vision/0` and `vision_target/0`. `vision/0` returns the vision
+  composer module.
 
   Bridge firmwares are declared via `bridge_firmwares/0`, which
   returns a map keyed by firmware id. Each entry picks a Nerves
@@ -76,6 +82,15 @@ defmodule OvcsVehicle do
   @callback infotainment_target() :: atom()
 
   @doc """
+  The vision composer, a module implementing `VisionCore.Composer`.
+  Optional: a vehicle without a vision unit omits it.
+  """
+  @callback vision() :: module()
+
+  @doc "The vision unit's Nerves target, such as `:rpi5`. Required with `vision/0`."
+  @callback vision_target() :: atom()
+
+  @doc """
   The vehicle's measured physical geometry.
 
   Optional: a package that only ever reads a bus — `Obd2` is one — has
@@ -89,6 +104,8 @@ defmodule OvcsVehicle do
   @optional_callbacks [
     infotainment: 0,
     infotainment_target: 0,
+    vision: 0,
+    vision_target: 0,
     bridge_firmwares: 0,
     geometry: 0
   ]

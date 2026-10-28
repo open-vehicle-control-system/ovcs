@@ -203,6 +203,9 @@ pub fn run() -> Result<()> {
                     if let Some(target) = &infotainment_target {
                         parts.push(format!("infotainment → {}", target));
                     }
+                    if let Ok(Some(target)) = vehicles::nerves_target(vehicle, "vision") {
+                        parts.push(format!("vision → {}", target));
+                    }
                     print_row(Mark::Ok, &vehicle.dir, &parts.join(", "));
                 }
             }
