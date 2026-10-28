@@ -17,10 +17,10 @@ Every system is on OTP 29 (`nerves_system_br` 1.35.3, Linux 6.18), and `mise.tom
 
 | Target | Used by | System release |
 |---|---|---|
-| `ovcs_base_can_system_rpi3a` | `bridges/firmware` (radio control) | v3.0.0-rc.0 |
-| `ovcs_base_can_system_rpi4` | `vms/firmware`, `bridges/firmware` (ROS) | v3.0.0-rc.0 |
-| `ovcs_base_can_system_rpi5` | `infotainment/firmware` | v3.0.0-rc.0 |
-| `rpi5` (`ovcs_bridges_system_rpi5`) | `bridges/firmware` (perception) | v3.0.0-rc.1 |
+| `ovcs_base_can_system_rpi3a` | `bridges/firmware` (radio control) | v3.0.0-rc.1 |
+| `ovcs_base_can_system_rpi4` | `vms/firmware`, `bridges/firmware` (ROS) | v3.0.0-rc.1 |
+| `ovcs_base_can_system_rpi5` | `infotainment/firmware` | v3.0.0-rc.1 |
+| `rpi5` (`ovcs_bridges_system_rpi5`) | `bridges/firmware` (perception) | v3.0.0-rc.2 |
 
 The perception system ships the Hailo-8 kernel driver and firmware but not the userspace library: `libraries/hailort` builds `libhailort` from source, at the same HailoRT version as the driver.
 
@@ -35,7 +35,7 @@ Every system is pinned to a **tag**, never to a branch. A branch moves with each
 The systems use A/B firmware slots on the MicroSD/eMMC with automatic rollback. Two consequences are easy to break by accident.
 
 > [!NOTE]
-> **Every firmware pins the CPUs to the `performance` governor.** Under `schedutil`, Linux's default, interrupt latency at low clock speeds overruns the FIFO of an SPI-attached UART such as the radio control bridge's SC16IS752, and control input arrives late. `OvcsVehicle.CpuGovernor` sets `performance` at boot in `vms_firmware`, `infotainment_firmware` and `bridge_firmware`, on target only.
+> **Every firmware pins the CPUs to the `performance` governor.** Under `schedutil`, Linux's default, interrupt latency at low clock speeds overruns the FIFO of an SPI-attached UART such as the radio control bridge's SC16IS752, and control input arrives late. Every system's kernel defaults to `performance` (`CONFIG_CPU_FREQ_DEFAULT_GOV_PERFORMANCE`), and `OvcsVehicle.CpuGovernor` sets it again at boot in `vms_firmware`, `infotainment_firmware` and `bridge_firmware`, on target only, so a system image with another default still runs `performance`.
 
 > [!WARNING]
 > **Firmware must mark itself good.** An image that doesn't call `Nerves.Runtime.validate_firmware/0` is reverted on the next boot. `OvcsVehicle.FirmwareValidator` does this in `vms_firmware`, `infotainment_firmware` and `bridge_firmware`, on target only, so every vehicle gets it for free. Remove it and every OTA update silently rolls back, NervesHub's included.
