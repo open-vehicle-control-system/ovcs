@@ -169,7 +169,7 @@ The first `update` events may repeat envelopes of the snapshot or carry older on
 
 ## Dashboard
 
-`libraries/ovcs_bus_gateway/dashboard/` is a Vue app that groups every signal by node and source, with a filter box and a connection indicator, fed by the `signals` channel. Each row shows how long ago the value last changed and was last published; a dot marks a value that changed in the last 2 seconds, and a signal the gateway flags as stale is muted and labelled. It is built into `priv/static` and served at `/` by the gateway. `bridges/firmware/build.sh` builds it before every non-host firmware build, so a burned bridge serves it at `http://<bridge-host>:4100/`.
+`libraries/ovcs_bus_gateway/dashboard/` is a Vue app that groups every signal by node and source, with a filter box and a connection indicator, fed by the `signals` channel. Each row shows how long ago the value last changed and was last published; a dot marks a value that changed in the last 2 seconds, and a signal the gateway flags as stale is muted and labelled. It is built into `priv/static` and served at `/` by the gateway. The library builds it whenever it is compiled for a Nerves target, so every bridge firmware that runs the gateway serves it at `http://<bridge-host>:4100/`; a host build skips it.
 
 Its design tokens and Tailwind preset come from [`@ovcs/ui`](../libraries/ovcs_ui/README.md), shared by OVCS web UIs.
 

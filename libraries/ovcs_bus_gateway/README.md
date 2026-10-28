@@ -22,7 +22,9 @@ A vehicle runs it in a bridge firmware by listing that child spec in the `childr
 
 ## Dashboard
 
-`dashboard/` is a Vue app built into `priv/static`:
+`dashboard/` is a Vue app built into `priv/static`. Compiling the library
+for a Nerves target builds it (`Makefile`, through `elixir_make`), so a
+firmware that runs the gateway ships it; on the host, build it by hand:
 
 ```sh
 cd dashboard

@@ -21,15 +21,13 @@ if Mix.target() != :host do
   config :nerves, source_date_epoch: "1729155399"
 end
 
-# Host-target mix commands (deps.get, test, compile) don't need a pinned
-# vehicle/firmware-id — runtime.exs short-circuits the vehicle-specific
-# block when config_env() == :test, and the stubs below are never acted on
-# at :host. Firmware cross-compile (Mix.target() != :host) still enforces.
+# Host-target mix commands (deps.get, test, compile) run without a
+# vehicle or firmware id; a host BEAM started without them stops in
+# config/runtime.exs. Firmware cross-compile
+# (Mix.target() != :host) requires both here.
 vehicle_name =
   System.get_env("VEHICLE") ||
-    if Mix.target() == :host do
-      "Ovcs1"
-    else
+    if Mix.target() != :host do
       Mix.raise("""
       VEHICLE env var is required for bridge firmware builds.
       Set it to the vehicle package's top-level module name:
@@ -39,16 +37,14 @@ vehicle_name =
 
 bridge_firmware_id =
   System.get_env("BRIDGE_FIRMWARE_ID") ||
-    if Mix.target() == :host do
-      "radio_control"
-    else
+    if Mix.target() != :host do
       Mix.raise("""
       BRIDGE_FIRMWARE_ID env var is required for bridge firmware builds.
       Set it to a key from the vehicle's bridge_firmwares/0 map.
       """)
     end
 
-vehicle_dir = Macro.underscore(vehicle_name)
+vehicle_dir = vehicle_name && Macro.underscore(vehicle_name)
 target = Mix.target() |> to_string()
 
 # Same per-file fallback as vms/firmware: a vehicle override at
@@ -102,7 +98,7 @@ config :ovcs_bridge,
 # `ip link` anyway — so this is target-only.
 config :cantastic,
   setup_can_interfaces: Mix.target() != :host,
-  otp_app: String.to_atom(vehicle_dir),
+  otp_app: vehicle_dir && String.to_atom(vehicle_dir),
   enable_socketcand: false
 
 if Mix.target() != :host do

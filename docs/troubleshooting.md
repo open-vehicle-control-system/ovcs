@@ -63,7 +63,7 @@ sudo modprobe vcan
 
 **Check:** the environment the bridge was started with.
 
-**Cause:** without `BRIDGE_FIRMWARE_ID`, the bridge falls back to the id compiled into the host build (`radio_control`) and silently starts the joy and IMU wiring. **Fix:** `BRIDGE_FIRMWARE_ID=ros_vision` together with `OVCS_SIM=1`, as in [Simulation](../compose/local/simulation/README.md).
+**Cause:** the bridge firmware was started without `BRIDGE_FIRMWARE_ID`, and stops at boot with `bridge firmware: set VEHICLE and BRIDGE_FIRMWARE_ID`, or with the id of an entry that runs no perception. **Fix:** `BRIDGE_FIRMWARE_ID=ros_vision` together with `OVCS_SIM=1`, as in [Simulation](../compose/local/simulation/README.md).
 
 ### Cantastic dies: "CAN network mappings are missing"
 

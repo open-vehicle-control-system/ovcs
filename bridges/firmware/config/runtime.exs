@@ -1,12 +1,22 @@
 import Config
 
+bridge_firmware_id =
+  System.get_env("BRIDGE_FIRMWARE_ID") || Application.compile_env(:ovcs_bridge, :firmware_id)
+
+vehicle_name = System.get_env("VEHICLE") || Application.compile_env(:ovcs_bridge, :vehicle)
+
+# Without this, a missing vehicle or id surfaces as Cantastic's "CAN
+# network mappings are missing", since nothing below configures it.
+if config_env() != :test and (is_nil(vehicle_name) or is_nil(bridge_firmware_id)) do
+  raise "bridge firmware: set VEHICLE and BRIDGE_FIRMWARE_ID " <>
+          "(got VEHICLE=#{inspect(vehicle_name)}, BRIDGE_FIRMWARE_ID=#{inspect(bridge_firmware_id)})"
+end
+
 case OvcsVehicle.Firmware.resolve_bridge(
        __DIR__,
        config_env(),
-       System.get_env("BRIDGE_FIRMWARE_ID") ||
-         Application.compile_env(:ovcs_bridge, :firmware_id),
-       System.get_env("VEHICLE") ||
-         Application.compile_env(:ovcs_bridge, :vehicle)
+       bridge_firmware_id,
+       vehicle_name
      ) do
   nil ->
     :ok

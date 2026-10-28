@@ -8,8 +8,17 @@ defmodule OvcsBusGateway.MixProject do
       elixir: "~> 1.15",
       start_permanent: Mix.env() == :prod,
       elixirc_paths: elixirc_paths(Mix.env()),
+      compilers: compilers(),
+      make_targets: ["all"],
+      make_clean: ["clean"],
       deps: deps()
     ]
+  end
+
+  # The dashboard is built only when compiling for a Nerves target.
+  defp compilers do
+    base = Mix.compilers()
+    if Mix.target() == :host, do: base, else: [:elixir_make] ++ base
   end
 
   def application do
@@ -31,6 +40,7 @@ defmodule OvcsBusGateway.MixProject do
       {:bandit, "~> 1.14", optional: true},
       {:phoenix, "~> 1.7.24", optional: true},
       {:tortoise311, "~> 0.12", optional: true},
+      {:elixir_make, "~> 0.7", runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}
     ]

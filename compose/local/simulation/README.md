@@ -110,7 +110,7 @@ VEHICLE=OvcsMini OVCS_SIM=1 ZENOH_ENDPOINT_IP=127.0.0.1 \
 Three details fail misleadingly if wrong:
 
 - **Start from `bridges/firmware`, not `bridges/ros_bridge`.** The library has no `config/`, so `CAN_NETWORK_MAPPINGS` is never read there and Cantastic dies with "CAN network mappings are missing from the Cantastic configuratiion". The firmware project is what `./ovcs run` starts; its `config/runtime.exs` consumes the variable.
-- **`BRIDGE_FIRMWARE_ID=ros_vision` is required.** On the host it otherwise defaults to `radio_control`, so no ROS bridge starts at all.
+- **`BRIDGE_FIRMWARE_ID=ros_vision` is required.** Without it the bridge firmware stops at boot with `bridge firmware: set VEHICLE and BRIDGE_FIRMWARE_ID`.
 - **`OVCS_SIM=1` selects the simulated wiring**, so it cannot be picked up by accident on the vehicle. No Hailo detector there, since a workstation has no accelerator; `OVCS_DETECTOR` picks a backend instead ([Perception: object detection](../../../docs/ros2_perception.md)).
 
 Measured against `workshop.sdf`: 30.3 Hz, 61.2 % depth coverage, median depth 0.81 m and p75 1.75 m, on the world's two boxes.
