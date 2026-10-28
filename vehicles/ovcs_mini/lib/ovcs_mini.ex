@@ -7,7 +7,6 @@ defmodule OvcsMini do
   @behaviour OvcsVehicle
   @behaviour RadioControlBridge
   @behaviour RosBridge
-  @behaviour OvcsBusGateway
 
   alias OvcsVehicle.URDF
 
@@ -62,7 +61,14 @@ defmodule OvcsMini do
       # simulated hardware answers for, see `ros_bridge_simulation_config/0`.
       "ros" => %{
         target: :ovcs_base_can_system_rpi4,
-        bridges: [RosBridge, OvcsBusGateway],
+        bridges: [RosBridge],
+        # `bridges/firmware` sets `:mqtt_host` from MQTT_HOST.
+        bus_gateway: %OvcsBusGateway.Config{
+          mqtt: [
+            host: Application.get_env(:ovcs_bus_gateway, :mqtt_host, "127.0.0.1"),
+            port: 1883
+          ]
+        },
         can_config_path: %{
           host: ["can/bridges/ros.yml", "can/bridges/ros_simulated_components.yml"],
           target: "can/bridges/ros.yml"
@@ -122,17 +128,6 @@ defmodule OvcsMini do
 
   def ros_bridge_config(:target, _firmware_id),
     do: ros_bridge_target_config()
-
-  @impl OvcsBusGateway
-  def ovcs_bus_gateway_config(:host),
-    do: %OvcsBusGateway.Config{
-      mqtt: [host: System.get_env("MQTT_HOST", "127.0.0.1"), port: 1883]
-    }
-
-  def ovcs_bus_gateway_config(:target),
-    do: %OvcsBusGateway.Config{
-      mqtt: [host: Application.get_env(:ovcs_bus_gateway, :mqtt_host, "127.0.0.1"), port: 1883]
-    }
 
   defp simulation?, do: System.get_env("OVCS_SIM") in ["1", "true"]
 

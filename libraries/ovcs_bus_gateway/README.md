@@ -10,9 +10,15 @@ the gateway considers it stale.
 ## Adapters
 
 - MQTT: every envelope retained on `ovcs/<vehicle>/<node>/<source>/<name>`.
-- HTTP on port 4100: `/api/signals`, `/api/signals/:node/:source/:name`, a `/ws` WebSocket and the dashboard at `/`.
+- HTTP on port 4100, a Phoenix endpoint: `/api/signals`, `/api/signals/:node/:source/:name`, a Phoenix Channels socket at `/socket` streaming the `signals` topic, and the dashboard at `/`.
 
-A vehicle enables the gateway with a `bridges:` entry and an `ovcs_bus_gateway_config/1` callback. See the [Bus gateway guide](../../docs/bus_gateway.md).
+A firmware hosts the gateway by adding its child spec to a supervisor:
+
+```elixir
+{OvcsBusGateway, vehicle: MyVehicle, config: %OvcsBusGateway.Config{}, mqtt_client_id: "..."}
+```
+
+The bridge firmware does so for a `bridge_firmwares/0` entry with a `bus_gateway:` key. See the [Bus gateway guide](../../docs/bus_gateway.md).
 
 ## Dashboard
 
@@ -21,7 +27,7 @@ A vehicle enables the gateway with a `bridges:` entry and an `ovcs_bus_gateway_c
 ```sh
 cd dashboard
 npm install
-npm run dev     # hot reload, proxies /api and /ws to localhost:4100
+npm run dev     # hot reload, proxies /api and /socket to localhost:4100
 npm run build
 npm run test:unit
 ```

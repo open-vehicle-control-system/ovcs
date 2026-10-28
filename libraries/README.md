@@ -22,7 +22,7 @@ side-by-side:
 | [`ovcs_control/`](./ovcs_control) | **sideloaded** — [open-vehicle-control-system/ovcs_control](https://github.com/open-vehicle-control-system/ovcs_control) | PID controller + input filters + interactive tuning sim |
 | [`ovcs_bridge/`](./ovcs_bridge) | in-tree | `OvcsBridge` behaviour + supervisor for bridge libraries |
 | [`ovcs_bus/`](./ovcs_bus) | in-tree | Cluster-wide pub/sub over Erlang distribution |
-| [`ovcs_bus_gateway/`](./ovcs_bus_gateway) | in-tree | Bridge library exposing the bus over MQTT, HTTP and WebSocket |
+| [`ovcs_bus_gateway/`](./ovcs_bus_gateway) | in-tree | Library exposing the bus over MQTT, HTTP and Phoenix Channels |
 | [`ovcs_can/`](./ovcs_can) | in-tree | Shared per-component CAN frame YAMLs (no runtime logic) |
 | [`ovcs_ui/`](./ovcs_ui) | in-tree | `@ovcs/ui` design tokens + Tailwind preset for web UIs (npm) |
 | [`ovcs_vehicle/`](./ovcs_vehicle) | in-tree | `OvcsVehicle` behaviour + `ovcs new` scaffold |

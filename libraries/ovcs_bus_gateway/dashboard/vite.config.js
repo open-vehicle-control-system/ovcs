@@ -22,7 +22,7 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': gateway,
-      '/ws': { target: gateway, ws: true }
+      '/socket': { target: gateway, ws: true }
     }
   }
 })

@@ -13,7 +13,11 @@ defmodule OvcsBusGateway.MixProject do
   end
 
   def application do
-    [extra_applications: [:logger]]
+    [
+      extra_applications: [:logger],
+      # `OvcsBusGateway.Http` configures the endpoint from its child spec.
+      env: [{OvcsBusGateway.Http.Endpoint, []}]
+    ]
   end
 
   defp elixirc_paths(:test), do: ["lib", "test/support"]
@@ -21,12 +25,11 @@ defmodule OvcsBusGateway.MixProject do
 
   defp deps do
     [
-      {:ovcs_bridge, path: "../ovcs_bridge"},
+      {:ovcs_bus, path: "../ovcs_bus"},
       {:jason, "~> 1.4"},
       {:decimal, "~> 2.0 or ~> 3.0"},
       {:bandit, "~> 1.14", optional: true},
-      {:websock_adapter, "~> 0.5", optional: true},
-      {:plug, "~> 1.16", optional: true},
+      {:phoenix, "~> 1.7.24", optional: true},
       {:tortoise311, "~> 0.12", optional: true},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}

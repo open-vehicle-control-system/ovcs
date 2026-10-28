@@ -2,20 +2,9 @@ defmodule OvcsBridge.Supervisor do
   @moduledoc """
   Root supervisor for an OVCS bridge firmware image.
 
-  Parameters come from the `VEHICLE` / `BRIDGE_FIRMWARE_ID` env vars when
-  set (each BEAM `./ovcs run` launches gets its own), falling back to the
-  `:ovcs_bridge` application environment baked at compile time:
-
-      config :ovcs_bridge,
-        vehicle: "Ovcs1",
-        firmware_id: "radio_control"
-
-  The env-first order matters on host dev, where every bridge role shares
-  one compiled build — the baked `:firmware_id` would otherwise make all
-  bridge BEAMs run the same bridge.
-
   At boot the supervisor:
-    * looks up the entry in the vehicle's `bridge_firmwares/0` map;
+    * looks up the entry in the vehicle's `bridge_firmwares/0` map with
+      `OvcsBridge.firmware_entry/0`;
     * supervises `OvcsBus.Cluster` so this BEAM joins the vehicle's
       distributed-Erlang mesh;
     * ensures each bundled bridge's OTP application is started
@@ -35,7 +24,7 @@ defmodule OvcsBridge.Supervisor do
 
   @impl Supervisor
   def init(_opts) do
-    entry = resolve_entry!()
+    {vehicle, firmware_id, entry} = OvcsBridge.firmware_entry()
 
     bridges = Map.get(entry, :bridges, [])
 
@@ -55,7 +44,7 @@ defmodule OvcsBridge.Supervisor do
     cluster_children = cluster_child()
 
     Logger.info(
-      "OvcsBridge.Supervisor starting #{vehicle_name()}/#{firmware_id()} " <>
+      "OvcsBridge.Supervisor starting #{inspect(vehicle)}/#{firmware_id} " <>
         "with #{length(bridge_children)} bridge child(ren)"
     )
 
@@ -88,43 +77,5 @@ defmodule OvcsBridge.Supervisor do
             Logger.error("OvcsBridge.Supervisor: failed to start #{app}: #{inspect(reason)}")
         end
     end
-  end
-
-  defp resolve_entry! do
-    vehicle = vehicle_module()
-    id = firmware_id()
-
-    case Map.fetch(vehicle.bridge_firmwares(), id) do
-      {:ok, entry} ->
-        entry
-
-      :error ->
-        raise """
-        OvcsBridge.Supervisor: no entry #{inspect(id)} in #{inspect(vehicle)}.bridge_firmwares/0.
-        Known ids: #{Map.keys(vehicle.bridge_firmwares()) |> Enum.join(", ")}
-        """
-    end
-  end
-
-  defp vehicle_module do
-    name = vehicle_name() || raise "OvcsBridge: :vehicle not set (set VEHICLE at build/run time)"
-    Module.concat([name])
-  end
-
-  # On host (`./ovcs run`) every bridge role shares one compiled
-  # bridges/firmware build, so the compile-time `:vehicle` / `:firmware_id`
-  # are whatever VEHICLE / BRIDGE_FIRMWARE_ID happened to be set to at build
-  # time (the build.sh host defaults). Each BEAM is launched with its own
-  # env, so prefer that — otherwise both bridge BEAMs would run the same
-  # bridge. On target the env isn't present at runtime, so we fall back to
-  # the value baked per-firmware at build time. Mirrors config/runtime.exs.
-  defp vehicle_name do
-    System.get_env("VEHICLE") || Application.get_env(:ovcs_bridge, :vehicle)
-  end
-
-  defp firmware_id do
-    System.get_env("BRIDGE_FIRMWARE_ID") ||
-      Application.get_env(:ovcs_bridge, :firmware_id) ||
-      raise "OvcsBridge: firmware id not set (set BRIDGE_FIRMWARE_ID env or :ovcs_bridge :firmware_id)"
   end
 end

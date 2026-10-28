@@ -1,9 +1,9 @@
 ---
 title: Bus gateway
-description: The bridge that exposes every signal on the OVCS bus over MQTT, HTTP and WebSocket, and how to enable it in your vehicle, with the OVCS Mini reference vehicle as the worked example.
+description: The library that exposes every signal on the OVCS bus over MQTT, HTTP and Phoenix Channels, and how to enable it in your vehicle, with the OVCS Mini reference vehicle as the worked example.
 ---
 
-Every component of a vehicle publishes its state as `%OvcsBus.Message{}` on the OVCS bus, and the bus stops at the Erlang mesh. The bus gateway, `OvcsBusGateway`, is a bridge library that carries those signals out: to an MQTT broker, to HTTP clients, and to a browser dashboard. It is part of the framework and contains nothing vehicle-specific; a vehicle opts in with one bridge entry and one config callback.
+Every component of a vehicle publishes its state as `%OvcsBus.Message{}` on the OVCS bus, and the bus stops at the Erlang mesh. The bus gateway, `OvcsBusGateway`, is a library that carries those signals out: to an MQTT broker, to HTTP clients, and to a browser dashboard. It is part of the framework and contains nothing vehicle-specific. Any OVCS firmware can host it by adding its child spec, `{OvcsBusGateway, vehicle: ..., config: ...}`; the bridge firmware does so for an entry of your vehicle's `bridge_firmwares/0` that carries a `bus_gateway:` key.
 
 ## How a signal gets out
 
@@ -12,7 +12,7 @@ Every component of a vehicle publishes its state as `%OvcsBus.Message{}` on the 
  OvcsBus            OvcsBus                Collector ──> Cache (ETS)
    │ Forwarder        │ Forwarder             │
    └──────── batch ───┴────────────────────> ├──> Subscribers ──> Mqtt
-                                              └──────────────────> Http / WebSocket
+                                              └──────────────────> Http (Phoenix)
 ```
 
 The gateway's `OvcsBusGateway.Collector` starts one `OvcsBus.Forwarder` on every node of the mesh, including nodes that join later. Each forwarder subscribes to its node's `"messages"` topic and sends batches to the collector:
@@ -28,47 +28,37 @@ Each envelope carries two times: `changed_at`, the last change of the value, and
 
 To tell a quiet node from a node that is gone, the collector also publishes each node's presence as a signal of its own: source `OvcsBusGateway.Collector`, name `connected`, `node` the node's role, `true` when it starts a forwarder on the node, `false` when the node leaves the mesh. It goes through the cache and every adapter like any other signal. It is not refreshed, since it is sent only when the collector starts a forwarder on the node or loses the node, so the stale rule does not apply to it: it carries `stale: null`.
 
-Nothing safety-relevant depends on the gateway. It only reads the bus. The gateway's subtree is a temporary child of the bridge supervisor with its own restart limit (10 restarts in 60 seconds): a gateway that keeps crashing stops alone and leaves the other bridges of the firmware running. A failure while the subtree starts at boot, such as the HTTP port already being taken, still fails the start of the bridge supervisor.
+Nothing safety-relevant depends on the gateway. It only reads the bus. The gateway's subtree is a temporary child with its own restart limit (10 restarts in 60 seconds). In a bridge firmware, a gateway that cannot start, for example because the HTTP port is already taken, or that keeps crashing stops alone with an error in the log, and the bridges of the firmware keep running.
 
 ## Enable it in your vehicle
 
-The gateway runs in a bridge firmware, so it needs an entry in your vehicle's `bridge_firmwares/0` and a config callback. See [Your vehicle package](./vehicle_package.md) for bridge firmwares.
+The bridge firmware runs the gateway for a `bridge_firmwares/0` entry that has a `bus_gateway:` key, after the entry's bridges. See [Your vehicle package](./vehicle_package.md) for bridge firmwares.
 
-The OVCS Mini reference vehicle adds it to its `"ros"` bridge. The same two changes work on your vehicle:
+The OVCS Mini reference vehicle runs it in its `"ros"` bridge firmware. The same key works in an entry of your vehicle:
 
 ```elixir
-@behaviour OvcsBusGateway
-
 # in bridge_firmwares/0
 "ros" => %{
   target: :ovcs_base_can_system_rpi4,
-  bridges: [RosBridge, OvcsBusGateway],
+  bridges: [RosBridge],
+  bus_gateway: %OvcsBusGateway.Config{
+    mqtt: [host: Application.get_env(:ovcs_bus_gateway, :mqtt_host, "127.0.0.1"), port: 1883]
+  },
   # ...
 }
-
-@impl OvcsBusGateway
-def ovcs_bus_gateway_config(:host),
-  do: %OvcsBusGateway.Config{
-    mqtt: [host: System.get_env("MQTT_HOST", "127.0.0.1"), port: 1883]
-  }
-
-def ovcs_bus_gateway_config(:target),
-  do: %OvcsBusGateway.Config{
-    mqtt: [host: Application.get_env(:ovcs_bus_gateway, :mqtt_host, "127.0.0.1"), port: 1883]
-  }
 ```
 
 `OvcsBusGateway.Config` selects the adapters:
 
 | Field | Default | Effect |
 |---|---|---|
-| `:http` | `[port: 4100]` | HTTP and WebSocket adapter; `nil` turns it off |
+| `:http` | `[port: 4100]` | HTTP and Phoenix Channels adapter; `nil` turns it off |
 | `:mqtt` | `nil` | MQTT adapter, `[host: ..., port: ...]`; `nil` leaves it off |
 | `:forward_interval` | `20` | milliseconds between batches from each node |
 
 Rebuild and upload every firmware of your vehicle (VMS, infotainment and every bridge), not only the bridge that hosts the gateway. A node whose firmware predates `OvcsBus.Forwarder` has no forwarder module, so its signals never appear; the collector keeps retrying such a mesh peer every second and logs it at info level. A node whose forwarder predates `published_at` still delivers its signals, with `published_at` and `stale` set to `null`: that forwarder does not refresh, so the gateway cannot tell whether its signals are stale.
 
-On the Mini's firmware the broker address comes from `MQTT_HOST`, which defaults to `ZENOH_ENDPOINT_IP` and then `127.0.0.1`: the broker runs on the compute node next to the Zenoh router. Like `ZENOH_ENDPOINT_IP`, it is baked into the bridge firmware at build time: set it in `vehicles/<vehicle>/.env.exs` and rebuild the bridge to change it.
+The bridge firmware sets `:mqtt_host` from `MQTT_HOST`, default `127.0.0.1`. On the host it is read when `./ovcs run` starts the bridge. On a target, like `ZENOH_ENDPOINT_IP`, it is baked into the bridge firmware at build time: set it in `vehicles/<vehicle>/.env.exs` to the broker's address, the compute node, and rebuild the bridge to change it.
 
 Building a bridge firmware for a target also builds the [dashboard](#dashboard), so it needs Node.js and npm.
 
@@ -112,7 +102,7 @@ ovcs/<vehicle>/<node>/<source>/<name>
 
 `<vehicle>` is the underscored vehicle module name (`ovcs_mini`); the other segments are the envelope's fields. A client subscribed to `ovcs/ovcs_mini/#` receives the last value of every signal immediately, then each change and each refresh.
 
-- The gateway connects with client id `ovcs_bus_gateway_<vehicle>_<firmware>_<arm>`, `<firmware>` being the bridge firmware's id (`ros`) and `<arm>` `host` or `target`, so the vehicle's gateways and one started with `./ovcs run` can share a broker.
+- In a bridge firmware the gateway connects with client id `ovcs_bus_gateway_<vehicle>_<firmware>_<arm>`, `<firmware>` being the bridge firmware's id (`ros`) and `<arm>` `host` or `target`, so the vehicle's gateways and one started with `./ovcs run` can share a broker. A firmware hosting it elsewhere passes its own `:mqtt_client_id`.
 - `ovcs/<vehicle>/gateway/online` tells whether the gateway is connected: it publishes `true` there, retained, on every connect, and its last will has the broker publish `false`, retained, when the connection is lost. A client that sees `false` knows every other retained value may be stale.
 - On every connect and reconnect, after `online`, the gateway republishes its whole cache, so the retained values cover every signal, including those that never change.
 - Publishing never blocks the gateway. While the broker is unreachable nothing is published and nothing is buffered; the client retries with a backoff of up to 30 seconds. A send stuck for a second closes the connection, and batches that arrive while more than 1000 messages wait are dropped; the republish on the next connect restores the retained values.
@@ -125,34 +115,50 @@ mosquitto_sub -h <broker> -t 'ovcs/<vehicle>/#' -v
 
 The broker also accepts MQTT over WebSocket at `ws://<broker>:9001`, for clients running in a browser. To browse its topics from a laptop, a desktop client such as MQTT Explorer pointed at `<broker>:1883` keeps the connection between sessions.
 
-## HTTP and WebSocket
+## HTTP and Phoenix Channels
 
-With `:http` set, the gateway serves on port 4100:
+With `:http` set, the gateway runs a Phoenix endpoint, `OvcsBusGateway.Http.Endpoint`, on port 4100:
 
 | Route | Returns |
 |---|---|
 | `GET /api/signals` | the latest envelopes, as a JSON list |
 | `GET /api/signals/:node/:source/:name` | one envelope, or 404 |
-| `GET /ws` | a WebSocket stream of envelopes |
+| `/socket` | a Phoenix Channels socket streaming envelopes on the `signals` topic |
 | `GET /` | the [dashboard](#dashboard) |
 
-`/api/signals` and `/ws` take optional `node`, `source` and `name` query parameters; a missing one matches everything:
+`/api/signals` takes optional `node`, `source` and `name` query parameters; a missing or empty one matches everything:
 
 ```sh
 curl 'http://<bridge-host>:4100/api/signals?node=vms&name=ready_to_drive'
 ```
 
-The WebSocket is server to client only. It sends a `snapshot` frame with the cached envelopes of the filter on connect, then an `update` frame for each batch that contains a matching envelope, refreshes included:
+The live stream is the `signals` channel of the `/socket` socket. The join parameters are the filter, with the same three optional keys. After the join the channel pushes:
 
-```json
-{"type": "update", "signals": [{"node": "vms", "source": "VmsCore.Vehicle", "name": "ready_to_drive", "value": true, "unit": null, "changed_at": 1761565200123, "published_at": 1761565204310, "stale": false}]}
+| Event | Payload |
+|---|---|
+| `snapshot` | `{"signals": [...]}`, the cached envelopes of the filter |
+| `update` | `{"signals": [...]}`, the matching envelopes of each batch, refreshes included; nothing for a batch without any |
+| `overloaded` | `{}`, then the channel closes: the client fell behind, with more than 1000 messages queued |
+
+A Phoenix channel client exists for JavaScript, the `phoenix` npm package the dashboard uses, and for other languages. It rejoins after a dropped connection and receives a new `snapshot`; after `overloaded` the client joins again itself. With the JavaScript client:
+
+```javascript
+import { Socket } from 'phoenix'
+
+const socket = new Socket('ws://<bridge-host>:4100/socket')
+socket.connect()
+
+const channel = socket.channel('signals', { node: 'vms' })
+channel.on('snapshot', ({ signals }) => console.log('snapshot', signals))
+channel.on('update', ({ signals }) => console.log('update', signals))
+channel.join()
 ```
 
-The first `update` frames may repeat envelopes of the snapshot or carry older ones: compare `published_at` (or `changed_at` when `published_at` is `null`) and keep the newer. A signal turning stale arrives as an `update` with `stale: true`. The server pings every 30 seconds so a quiet stream stays open. A client that falls behind, with more than 1000 messages queued, is closed with code 1013: reconnect and use the new snapshot.
+The first `update` events may repeat envelopes of the snapshot or carry older ones: compare `published_at` (or `changed_at` when `published_at` is `null`) and keep the newer. A signal turning stale arrives in an `update` with `stale: true`. A client that cannot speak Phoenix Channels subscribes to the broker instead: MQTT is the protocol-neutral way out of the gateway.
 
 ## Dashboard
 
-`libraries/ovcs_bus_gateway/dashboard/` is a Vue app that groups every signal by node and source, with a filter box and a connection indicator, fed by `/ws`. Each row shows how long ago the value last changed and was last published; a dot marks a value that changed in the last 2 seconds, and a signal the gateway flags as stale is muted and labelled. It is built into `priv/static` and served at `/` by the gateway. `bridges/firmware/build.sh` builds it before every non-host firmware build, so a burned bridge serves it at `http://<bridge-host>:4100/`.
+`libraries/ovcs_bus_gateway/dashboard/` is a Vue app that groups every signal by node and source, with a filter box and a connection indicator, fed by the `signals` channel. Each row shows how long ago the value last changed and was last published; a dot marks a value that changed in the last 2 seconds, and a signal the gateway flags as stale is muted and labelled. It is built into `priv/static` and served at `/` by the gateway. `bridges/firmware/build.sh` builds it before every non-host firmware build, so a burned bridge serves it at `http://<bridge-host>:4100/`.
 
 Its design tokens and Tailwind preset come from [`@ovcs/ui`](../libraries/ovcs_ui/README.md), shared by OVCS web UIs.
 
@@ -174,6 +180,6 @@ npm install
 npm run dev
 ```
 
-The dev server proxies `/api` and `/ws` to `http://localhost:4100`. Point it at a vehicle's gateway with `OVCS_BUS_GATEWAY`, for example `OVCS_BUS_GATEWAY=http://ovcs-mini-bridge-ros.local:4100 npm run dev` on the OVCS Mini reference vehicle, or the same on your vehicle's bridge.
+The dev server proxies `/api` and `/socket` to `http://localhost:4100`. Point it at a vehicle's gateway with `OVCS_BUS_GATEWAY`, for example `OVCS_BUS_GATEWAY=http://ovcs-mini-bridge-ros.local:4100 npm run dev` on the OVCS Mini reference vehicle, or the same on your vehicle's bridge.
 
-Vite proxies `/api` and `/ws` to `localhost:4100`. If `priv/static` has not been built, `GET /` answers 404 with a note to run `npm run build`.
+If `priv/static` has not been built, `GET /` answers 404 with a note to run `npm run build`.

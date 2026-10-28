@@ -18,7 +18,9 @@ defmodule BridgeFirmware.MixProject do
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       releases: [{@app, release()}],
-      preferred_cli_target: [run: :host, test: :host]
+      preferred_cli_target: [run: :host, test: :host],
+      # `runtime: false` on host, so not in the PLT unless added.
+      dialyzer: [plt_add_apps: [:ovcs_bus_gateway]]
     ]
   end
 
@@ -129,8 +131,7 @@ defmodule BridgeFirmware.MixProject do
       # Optional deps of `ovcs_bus_gateway`: its adapters run only where
       # the firmware lists them.
       {:bandit, "~> 1.14", targets: [:host, :ovcs_base_can_system_rpi4, :rpi5]},
-      {:plug, "~> 1.16", targets: [:host, :ovcs_base_can_system_rpi4, :rpi5]},
-      {:websock_adapter, "~> 0.5", targets: [:host, :ovcs_base_can_system_rpi4, :rpi5]},
+      {:phoenix, "~> 1.7.24", targets: [:host, :ovcs_base_can_system_rpi4, :rpi5]},
       {:tortoise311, "~> 0.12", targets: [:host, :ovcs_base_can_system_rpi4, :rpi5]},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}

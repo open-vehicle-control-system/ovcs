@@ -1,11 +1,10 @@
 defmodule OvcsBusGateway.Config do
   @moduledoc """
-  Per-vehicle configuration for `OvcsBusGateway`. Vehicles return one of
-  these from their `c:OvcsBusGateway.ovcs_bus_gateway_config/1` callback.
+  Configuration of one `OvcsBusGateway`, passed as its `:config` option.
 
     * `:mqtt` — broker `[host: ..., port: ...]` for the MQTT adapter;
       `nil` leaves the adapter off.
-    * `:http` — `[port: ...]` for the HTTP/WebSocket adapter; `nil`
+    * `:http` — `[port: ...]` for the HTTP adapter, `OvcsBusGateway.Http`; `nil`
       leaves the adapter off.
     * `:forward_interval` — milliseconds between batches the collector
       forwards to the gateway.

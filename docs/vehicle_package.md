@@ -58,7 +58,7 @@ The name must map back to itself through the module name, since the firmware fin
 | `InfotainmentCore.Vehicle` | `infotainment/core/lib/infotainment_core/vehicle.ex` | Infotainment composer: `children/0`, CAN config, optional `infotainment_configuration/0`. Implemented by `<Vehicle>.Infotainment.Composer`. |
 | `OvcsBridge` | `libraries/ovcs_bridge/lib/ovcs_bridge.ex` | One per bridge **library** in the framework, not per vehicle: `children/0`, and an optional `apply_runtime_config/2` that `bridges/firmware`'s `runtime.exs` calls before any application starts. Vehicles pick which bridges to bundle via `bridge_firmwares/0`. |
 
-Bridge libraries define their own config behaviour, which your vehicle module implements for each bridge it bundles. Bundling `RadioControlBridge` requires `@behaviour RadioControlBridge` and `radio_control_bridge_config/1` returning `%RadioControlBridge.Config{}`. Bundling `RosBridge` requires `@behaviour RosBridge` and `ros_bridge_config/1` (or `/2`, which also receives the `bridge_firmwares/0` entry id) returning `%RosBridge.Config{}`. Bundling `OvcsBusGateway` requires `@behaviour OvcsBusGateway` and `ovcs_bus_gateway_config/1` returning `%OvcsBusGateway.Config{}`; see [Bus gateway](./bus_gateway.md). The first argument is the arm, `:host` or `:target`.
+Bridge libraries define their own config behaviour, which your vehicle module implements for each bridge it bundles. Bundling `RadioControlBridge` requires `@behaviour RadioControlBridge` and `radio_control_bridge_config/1` returning `%RadioControlBridge.Config{}`. Bundling `RosBridge` requires `@behaviour RosBridge` and `ros_bridge_config/1` (or `/2`, which also receives the `bridge_firmwares/0` entry id) returning `%RosBridge.Config{}`. The first argument is the arm, `:host` or `:target`.
 
 ## Package layout
 
@@ -180,6 +180,8 @@ Each key becomes a CLI role with the `bridge-` prefix:
 ```
 
 An entry can also list `required_files`, paths relative to your vehicle app, for files a bridge needs but the repository doesn't carry. The OVCS Mini's perception entry names its detection model this way (`required_files: ["priv/models/nanodet_repvgg.hef"]`, fetched by `mise run fetch-models`), and the firmware build fails when one is missing rather than producing an image that boots without it.
+
+An entry with a `bus_gateway:` key, an `%OvcsBusGateway.Config{}`, also runs the [bus gateway](./bus_gateway.md) in that bridge firmware.
 
 The shared `bridges/firmware` image is built once per entry. At boot, `OvcsBridge.Supervisor` reads `VEHICLE` and `BRIDGE_FIRMWARE_ID`, looks up the entry, and supervises each listed bridge's `children/0`.
 

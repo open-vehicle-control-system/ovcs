@@ -22,7 +22,7 @@ defmodule OvcsBusGateway.Mqtt do
   Options:
 
   - `:vehicle` - vehicle module; `<vehicle>` is `OvcsBusGateway.vehicle_id/1` of it.
-  - `:client_id` - MQTT client id, see `OvcsBusGateway.mqtt_client_id/3`.
+  - `:client_id` - MQTT client id.
   - `:host` - broker host.
   - `:port` - broker port.
   - `:publish` - `(client_id, topic, payload, opts -> term())`, default `&Tortoise311.publish/4`.

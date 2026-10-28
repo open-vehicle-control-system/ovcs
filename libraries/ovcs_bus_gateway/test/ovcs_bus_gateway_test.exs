@@ -1,55 +1,37 @@
 defmodule OvcsBusGatewayTest do
   use ExUnit.Case, async: true
 
-  defmodule DefaultVehicle do
-    @behaviour OvcsBusGateway
+  @mqtt_config %OvcsBusGateway.Config{mqtt: [host: "127.0.0.1", port: 1883]}
 
-    @impl OvcsBusGateway
-    def ovcs_bus_gateway_config(_arm), do: %OvcsBusGateway.Config{}
+  defp supervisor(opts) do
+    assert %{id: OvcsBusGateway, start: {Supervisor, :start_link, [children, supervisor_opts]}} =
+             spec = OvcsBusGateway.child_spec(opts)
+
+    {spec, children, supervisor_opts}
   end
 
-  defmodule MqttVehicle do
-    @behaviour OvcsBusGateway
-
-    @impl OvcsBusGateway
-    def ovcs_bus_gateway_config(_arm),
-      do: %OvcsBusGateway.Config{mqtt: [host: "127.0.0.1", port: 1883]}
-  end
-
-  defmodule NoHttpVehicle do
-    @behaviour OvcsBusGateway
-
-    @impl OvcsBusGateway
-    def ovcs_bus_gateway_config(_arm), do: %OvcsBusGateway.Config{http: nil}
-  end
-
-  defp supervisor_children(vehicle, arm) do
-    assert [%{id: OvcsBusGateway.Supervisor, start: {Supervisor, :start_link, [children, opts]}}] =
-             OvcsBusGateway.children(vehicle, arm, "ros")
-
-    assert opts[:strategy] == :rest_for_one
+  defp children(opts) do
+    {_spec, children, _supervisor_opts} = supervisor(opts)
     children
   end
 
-  test "an exhausted gateway stops alone instead of restarting its parent" do
-    assert [%{restart: :temporary, start: {Supervisor, :start_link, [_children, opts]}}] =
-             OvcsBusGateway.children(DefaultVehicle, :host, "ros")
-
-    assert opts[:max_restarts] == 10
-    assert opts[:max_seconds] == 60
-  end
-
-  defp child_ids(vehicle, arm) do
-    vehicle
-    |> supervisor_children(arm)
-    |> Enum.map(&child_id/1)
-  end
+  defp child_ids(opts), do: opts |> children() |> Enum.map(&child_id/1)
 
   defp child_id({module, _opts}), do: module
   defp child_id(module) when is_atom(module), do: module
 
+  test "an exhausted gateway stops alone instead of restarting its parent" do
+    {spec, _children, supervisor_opts} = supervisor(vehicle: OvcsMini)
+
+    assert spec.restart == :temporary
+    assert spec.type == :supervisor
+    assert supervisor_opts[:strategy] == :rest_for_one
+    assert supervisor_opts[:max_restarts] == 10
+    assert supervisor_opts[:max_seconds] == 60
+  end
+
   test "defaults to the collector and the HTTP adapter" do
-    assert child_ids(DefaultVehicle, :host) == [
+    assert child_ids(vehicle: OvcsMini) == [
              OvcsBusGateway.Subscribers,
              OvcsBusGateway.Cache,
              OvcsBusGateway.Collector,
@@ -58,7 +40,7 @@ defmodule OvcsBusGatewayTest do
   end
 
   test "adds the MQTT adapter last when configured" do
-    assert child_ids(MqttVehicle, :target) == [
+    assert child_ids(vehicle: OvcsMini, config: @mqtt_config) == [
              OvcsBusGateway.Subscribers,
              OvcsBusGateway.Cache,
              OvcsBusGateway.Collector,
@@ -68,26 +50,38 @@ defmodule OvcsBusGatewayTest do
   end
 
   test "skips HTTP when disabled" do
-    refute OvcsBusGateway.Http in child_ids(NoHttpVehicle, :host)
+    refute OvcsBusGateway.Http in child_ids(
+             vehicle: OvcsMini,
+             config: %OvcsBusGateway.Config{http: nil}
+           )
   end
 
   test "passes the vehicle and forward interval to the collector" do
-    children = supervisor_children(MqttVehicle, :host)
-
-    assert {OvcsBusGateway.Collector, [vehicle: MqttVehicle, forwarder_opts: [interval: 20]]} in children
-
-    assert {OvcsBusGateway.Mqtt,
-            [
-              vehicle: MqttVehicle,
-              client_id: "ovcs_bus_gateway_#{OvcsBusGateway.vehicle_id(MqttVehicle)}_ros_host",
-              host: "127.0.0.1",
-              port: 1883
-            ]} in children
+    assert {OvcsBusGateway.Collector, [vehicle: OvcsMini, forwarder_opts: [interval: 20]]} in children(
+             vehicle: OvcsMini
+           )
   end
 
-  test "the MQTT client id names the vehicle, the bridge firmware and the arm" do
-    assert OvcsBusGateway.mqtt_client_id(OvcsMini, "ros", :target) ==
-             "ovcs_bus_gateway_ovcs_mini_ros_target"
+  test "the MQTT client id defaults to one per vehicle" do
+    assert {OvcsBusGateway.Mqtt,
+            [
+              vehicle: OvcsMini,
+              client_id: "ovcs_bus_gateway_ovcs_mini",
+              host: "127.0.0.1",
+              port: 1883
+            ]} in children(
+             vehicle: OvcsMini,
+             config: @mqtt_config
+           )
+  end
+
+  test "takes an explicit MQTT client id" do
+    assert {OvcsBusGateway.Mqtt,
+            [vehicle: OvcsMini, client_id: "gateway_ros", host: "127.0.0.1", port: 1883]} in children(
+             vehicle: OvcsMini,
+             config: @mqtt_config,
+             mqtt_client_id: "gateway_ros"
+           )
   end
 
   test "vehicle_id/1 is the underscored module name" do
