@@ -60,7 +60,7 @@ end
 
 The `source` field enables decoupling: components don't import each other directly. Instead, they receive source module atoms through their init configuration from the Composer.
 
-Every BEAM in the vehicle (VMS, infotainment, each bridge) is joined into a distributed Erlang mesh by `OvcsBus.Cluster`. `OvcsBus.broadcast/2` stays on the local node unless `:cluster_broadcast` is set. See [`OvcsBus`](../../libraries/ovcs_bus) for details.
+Every BEAM in the vehicle (VMS, infotainment, each bridge) is joined into a distributed Erlang mesh by `OvcsBus.Cluster`. `OvcsBus.broadcast/2` stays on the local node. See [`OvcsBus`](../../libraries/ovcs_bus) for details.
 
 ### 4. Manager Pattern
 

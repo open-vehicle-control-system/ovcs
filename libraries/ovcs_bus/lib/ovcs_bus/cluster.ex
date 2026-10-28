@@ -31,8 +31,8 @@ defmodule OvcsBus.Cluster do
 
   Calls `Node.connect/1` on every peer at boot and retries on a
   `@retry_interval` timer, so a peer that comes up later is pulled
-  into the mesh. `OvcsBus.broadcast/2` uses it only when
-  `:cluster_broadcast` is set.
+  into the mesh. `OvcsBus.broadcast/2` does not use it: bus messages
+  stay on their node.
   """
   use GenServer
   require Logger

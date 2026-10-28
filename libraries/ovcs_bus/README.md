@@ -5,7 +5,7 @@ The guide, [The OVCS bus](../../docs/bus.md), explains the bus, its messages and
 Pub/sub bus of the VMS, infotainment, and bridge firmwares. Thin
 wrapper around `Phoenix.PubSub`, with `OvcsBus.Cluster` stitching
 every OVCS BEAM into a distributed Erlang mesh at boot. `broadcast/2`
-stays on the local node unless `:cluster_broadcast` is set.
+stays on the local node.
 
 ## Why
 
@@ -31,13 +31,12 @@ used and subscribers discriminate in `handle_info` using the
 `%OvcsBus.Message{}` struct's `:name` + `:source` fields. Topics
 are free-form strings — add more if you need fan-out isolation.
 
-`broadcast/2` delivers to subscribers on the local node. With
-`config :ovcs_bus, cluster_broadcast: true` it fans out to every node
-in the cluster instead. That is off by default: a cluster broadcast
-suspends the publisher while the link to any peer is saturated, so a
-slow link stalls the component that published. `local_broadcast/2`
-always stays node-local. `OvcsBus.Forwarder` batches a node's messages
-to a collector on another node without that stall.
+`broadcast/2` delivers to subscribers on the local node only. A send
+across the cluster suspends the publisher while the link to a peer is
+saturated, so a slow link would stall the component that published;
+components on different boards coordinate over CAN instead.
+`OvcsBus.Forwarder` batches a node's messages to a collector on
+another node without that stall.
 
 `OvcsBus.Message`:
 - `:name`          — short atom (e.g. `:ready_to_drive`, `:speed`).
@@ -63,9 +62,9 @@ become dashes: the OVCS Mini's VMS is `ovcs-mini-vms@<host>` on the
 host, and its `radio_control` bridge `ovcs-mini-bridge-radio-control`.
 
 It calls `Node.connect/1` on each peer and retries on a 2-second
-tick so nodes that boot later are folded into the mesh. With
-`:cluster_broadcast` set, `Phoenix.PubSub.broadcast/3` then carries
-each message to all subscribers on all nodes natively.
+tick so nodes that boot later are folded into the mesh. Bus messages
+do not travel over it; it lets processes and remote shells on one node
+reach the others.
 
 On the host, `./ovcs run` starts each BEAM with `--sname` and the
 user's `~/.erlang.cookie`. A Nerves release boots unnamed, so
@@ -98,7 +97,6 @@ through to the DHCP-supplied servers.
 └──────────────────┘       └──────────────────────┘       └──────────────────┘
 ```
 
-No MQTT broker, no separate protocol — just Erlang distribution.
 The cookie `ovcs` is shared by every firmware release (`cookie:
 "ovcs"` in its `mix.exs`, passed to the VM by `-setcookie` in
 `rel/vm.args.eex`), and the `./ovcs run` children share the user's
@@ -107,10 +105,8 @@ peers resolve.
 
 ### When a node is down
 
-`Node.connect/1` returns `false`, the peer stays out of the mesh,
-and `broadcast/3` silently skips it — same QoS-0 semantics you'd
-get from MQTT at QoS 0. The retry loop reconnects as soon as the
-peer comes back.
+`Node.connect/1` returns `false` and the peer stays out of the mesh.
+The retry loop reconnects as soon as the peer comes back.
 
 ### Security
 
@@ -123,7 +119,7 @@ network.
 
 ```
 lib/
-  ovcs_bus.ex               — subscribe/broadcast/local_broadcast wrapper
+  ovcs_bus.ex               — subscribe/unsubscribe/broadcast wrapper
   ovcs_bus/
     application.ex          — starts Phoenix.PubSub(name: OvcsBus)
     cluster.ex              — boot-time Node.connect/1 retry loop

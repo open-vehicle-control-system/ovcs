@@ -205,7 +205,7 @@ def radio_control_bridge_config(:target),
 
 ## Bus wiring and node names
 
-Every firmware image runs `OvcsBus` (a thin `Phoenix.PubSub` wrapper) and `OvcsBus.Cluster`, which calls `Node.connect/1` against each declared peer on a retry loop until the BEAMs form a distributed Erlang mesh. With `config :ovcs_bus, cluster_broadcast: true`, `OvcsBus.broadcast/2` then reaches subscribers on every node; by default it stays local. No broker, no relay.
+Every firmware image runs `OvcsBus` (a thin `Phoenix.PubSub` wrapper) and `OvcsBus.Cluster`, which calls `Node.connect/1` against each declared peer on a retry loop until the BEAMs form a distributed Erlang mesh. `OvcsBus.broadcast/2` delivers only on its own node: a send across the mesh would make the publishing component wait whenever a link is busy. Components on different boards coordinate over CAN.
 
 Peer node names come from the vehicle module's declared roles plus the naming convention parsed from `Node.self()`:
 

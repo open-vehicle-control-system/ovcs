@@ -6,11 +6,11 @@ defmodule OvcsBus do
 
   Every OVCS firmware image that depends on `ovcs_bus` gets its own
   `Phoenix.PubSub` instance, and `OvcsBus.Cluster` connects them into
-  one distributed Erlang cluster. `broadcast/2` stays on the local
-  node unless `config :ovcs_bus, cluster_broadcast: true`: a cluster
-  broadcast suspends the publisher while the link to any peer is
-  saturated, which stalls the component that published. `OvcsBus.Forwarder`
-  carries a node's messages to a collector on another node without that stall.
+  one distributed Erlang cluster. `broadcast/2` only ever delivers on
+  the local node: a send across the cluster suspends the publisher
+  while the link to a peer is saturated, which would stall the
+  component that published. `OvcsBus.Forwarder` carries a node's
+  messages to a collector on another node without that stall.
 
   Usage:
 
@@ -26,20 +26,8 @@ defmodule OvcsBus do
   @doc "Unsubscribe from `topic`. Processes exiting drop their subscriptions automatically."
   def unsubscribe(topic), do: Phoenix.PubSub.unsubscribe(__MODULE__, topic)
 
-  @doc """
-  Deliver `message` to every subscriber of `topic` on the local node,
-  or on every node in the cluster when `:cluster_broadcast` is set.
-  """
+  @doc "Deliver `message` to every subscriber of `topic` on the local node."
   def broadcast(topic, message) do
-    check_source!(message)
-
-    if Application.get_env(:ovcs_bus, :cluster_broadcast, false),
-      do: Phoenix.PubSub.broadcast(__MODULE__, topic, message),
-      else: Phoenix.PubSub.local_broadcast(__MODULE__, topic, message)
-  end
-
-  @doc "Deliver `message` only to subscribers on the local node, whatever `:cluster_broadcast` says."
-  def local_broadcast(topic, message) do
     check_source!(message)
     Phoenix.PubSub.local_broadcast(__MODULE__, topic, message)
   end
