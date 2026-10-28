@@ -2,8 +2,8 @@ defmodule RosBridge.Publishers.VehicleStatusTest do
   use ExUnit.Case, async: true
 
   alias Cantastic.Signal
-  alias Ros2.StdMsgs.Msg.{Bool, Float64}
-  alias Ros2.StdMsgs.Msg.String, as: RosString
+  alias Ros2Zenoh.StdMsgs.Msg.{Bool, Float64}
+  alias Ros2Zenoh.StdMsgs.Msg.String, as: RosString
   alias RosBridge.Publishers.VehicleStatus
 
   defp signals(values) do

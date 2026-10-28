@@ -25,8 +25,8 @@ defmodule RosBridge.Services.SetCameraInfoServer do
   require Logger
 
   alias RosBridge.Camera.Calibration
-  alias Ros2.SensorMsgs.Srv.SetCameraInfo
-  alias Ros2.SensorMsgs.Srv.SetCameraInfo.{Request, Response}
+  alias Ros2Zenoh.SensorMsgs.Srv.SetCameraInfo
+  alias Ros2Zenoh.SensorMsgs.Srv.SetCameraInfo.{Request, Response}
 
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: name_for(Keyword.fetch!(opts, :service_name)))

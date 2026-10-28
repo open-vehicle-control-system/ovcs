@@ -1,0 +1,26 @@
+defmodule Ros2Zenoh.StdMsgs.Msg.String do
+  @moduledoc """
+  ROS 2 `std_msgs/String`: a single length-prefixed, null-terminated
+  string. CDR encapsulation header is stripped upstream by
+  `Ros2Zenoh.RmwZenoh.decode_payload/1`.
+  """
+  use Ros2Zenoh.Common
+
+  defstruct data: ""
+
+  # RIHS01 hash for ROS 2 Lyrical; it changes with the distro.
+  @dds_type "std_msgs::msg::dds_::String_"
+  @type_hash "RIHS01_df668c740482bbd48fb39d76a70dfd4bd59db1288021743503259e948f6b1a18"
+
+  def dds_type, do: @dds_type
+  def type_hash, do: @type_hash
+
+  def encode(%__MODULE__{data: data}), do: encode_string(data)
+
+  def parse(payload) do
+    case parse_string(payload) do
+      {:ok, string, rest} -> {:ok, %__MODULE__{data: string}, rest}
+      error -> error
+    end
+  end
+end

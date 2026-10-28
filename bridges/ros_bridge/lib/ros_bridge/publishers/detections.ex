@@ -99,13 +99,21 @@ defmodule RosBridge.Publishers.Detections do
 
   require Logger
 
-  alias Ros2.BuiltinInterfaces.Msg.Duration
-  alias Ros2.GeometryMsgs.Msg.{Point, Pose, PoseWithCovariance, Quaternion, Vector3}
-  alias Ros2.StdMsgs.Msg.{ColorRGBA, Header}
-  alias Ros2.VisionMsgs.Msg.{BoundingBox3D, Detection3D, Detection3DArray}
-  alias Ros2.VisionMsgs.Msg.{ObjectHypothesis, ObjectHypothesisWithPose}
-  alias Ros2.FoxgloveMsgs.Msg.{Color, ImageAnnotations, Point2, PointsAnnotation, TextAnnotation}
-  alias Ros2.VisualizationMsgs.Msg.{Marker, MarkerArray}
+  alias Ros2Zenoh.BuiltinInterfaces.Msg.Duration
+  alias Ros2Zenoh.GeometryMsgs.Msg.{Point, Pose, PoseWithCovariance, Quaternion, Vector3}
+  alias Ros2Zenoh.StdMsgs.Msg.{ColorRGBA, Header}
+  alias Ros2Zenoh.VisionMsgs.Msg.{BoundingBox3D, Detection3D, Detection3DArray}
+  alias Ros2Zenoh.VisionMsgs.Msg.{ObjectHypothesis, ObjectHypothesisWithPose}
+
+  alias Ros2Zenoh.FoxgloveMsgs.Msg.{
+    Color,
+    ImageAnnotations,
+    Point2,
+    PointsAnnotation,
+    TextAnnotation
+  }
+
+  alias Ros2Zenoh.VisualizationMsgs.Msg.{Marker, MarkerArray}
   alias RosBridge.Perception.Fusion
   alias RosBridge.StereoCamera.Result
   alias RosBridge.Timing

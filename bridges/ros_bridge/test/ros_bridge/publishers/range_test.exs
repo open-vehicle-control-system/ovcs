@@ -2,7 +2,7 @@ defmodule RosBridge.Publishers.RangeTest do
   use ExUnit.Case, async: true
 
   alias OvcsDrivers.Rangefinder.Sample
-  alias Ros2.SensorMsgs.Msg.Range
+  alias Ros2Zenoh.SensorMsgs.Msg.Range
   alias RosBridge.Publishers.Range, as: RangePublisher
 
   @state %{frame_id: "ultrasound_rear_left", radiation_type: :ultrasound, beyond_range: :infinity}

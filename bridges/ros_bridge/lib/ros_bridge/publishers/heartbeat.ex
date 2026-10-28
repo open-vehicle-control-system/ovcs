@@ -17,10 +17,10 @@ defmodule RosBridge.Publishers.Heartbeat do
 
       {RosBridge.Publishers.Heartbeat,
        topic: "ovcs_heartbeat",
-       message_module: Ros2.StdMsgs.Msg.String,
+       message_module: Ros2Zenoh.StdMsgs.Msg.String,
        interval_ms: 5_000,
        build: fn counter, node_name ->
-         %Ros2.StdMsgs.Msg.String{data: "#\{node_name} heartbeat #\{counter}"}
+         %Ros2Zenoh.StdMsgs.Msg.String{data: "#\{node_name} heartbeat #\{counter}"}
        end}
   """
   use GenServer

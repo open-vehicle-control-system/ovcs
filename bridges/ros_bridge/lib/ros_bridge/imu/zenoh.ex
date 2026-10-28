@@ -34,7 +34,7 @@ defmodule RosBridge.Imu.Zenoh do
   require Logger
 
   alias OvcsDrivers.Imu.Sample
-  alias Ros2.SensorMsgs.Msg.Imu
+  alias Ros2Zenoh.SensorMsgs.Msg.Imu
 
   @default_topic "imu_raw"
 

@@ -38,8 +38,8 @@ defmodule RosBridge.Simulator.Hardware do
   use GenServer
 
   alias Cantastic.Frame
-  alias Ros2.GeometryMsgs.Msg.{Twist, Vector3}
-  alias Ros2.SensorMsgs.Msg.JointState
+  alias Ros2Zenoh.GeometryMsgs.Msg.{Twist, Vector3}
+  alias Ros2Zenoh.SensorMsgs.Msg.JointState
   alias RosBridge.Simulator.{SimulatedComponent, Vehicle}
 
   require Logger

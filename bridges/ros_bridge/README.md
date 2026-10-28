@@ -15,55 +15,16 @@ lib/
     imu_publisher.ex         # OvcsDrivers.Imu consumer → sensor_msgs/Imu over Zenoh
     consumers/joy.ex         # ROS 2 /joy/<profile> → Cantastic emitter (steering, throttle, direction)
     consumers/joy/profile.ex # joy profile files: a controller's axes, pedals and gears
-  ros2/                      # ROS 2 message codecs (CDR encode + parse)
-    common.ex                # Shared encoder/parser primitives (encode_string, …)
-    rmw_zenoh.ex             # rmw_zenoh wire-format helpers (key_expr, payload, attachment, liveliness)
-    std_msgs/msg/string.ex   # std_msgs/String + DDS type name + RIHS01 type hash
-    sensor_msgs/, geometry_msgs/, builtin_interfaces/, std_msgs/msg/header.ex
 priv/joy/                    # the framework's joy profiles, one per controller
 ```
 
-## Native rmw_zenoh wire format
+## ROS 2 messages and the rmw_zenoh wire format
 
-Reaching ROS 2 nodes (Foxglove, `ros2 topic echo`, rclpy) over plain
-Zenoh requires three things plain `Zenohex.Publisher.put/3` does not
-give you. `Ros2.RmwZenoh` builds them:
-
-1. **Data keyexpr** — `<domain>/<topic>/<dds_type>/<type_hash>`.
-   Example: `0/ovcs_heartbeat/std_msgs::msg::dds_::String_/RIHS01_df66…`.
-   The DDS type name and RIHS01 hash come from each message module
-   (`dds_type/0` + `type_hash/0`); the hash is per-distro and must
-   be refreshed if the ROS distro changes — verify against a live
-   node with `ros2 topic info -v <topic>` (the "Topic type hash" line).
-2. **Payload** — CDR little-endian, prefixed with the encapsulation
-   header `00 01 00 00`. Each message module exposes `encode/1`
-   producing the CDR body; `Ros2.RmwZenoh.encode_payload/1` prepends
-   the header.
-3. **Publisher attachment** — 33 bytes carrying sequence number
-   (i64 LE), source timestamp ns (i64 LE), GID length byte (= 16),
-   and a 16-byte GID. Subscribers drop samples without a well-formed
-   attachment. `Ros2.RmwZenoh.attachment/3` builds it; the GID is
-   generated once per `ZenohClient` process and reused across
-   reconnects so subscribers see a stable publisher identity.
-
-In addition, the publisher must declare an rmw_zenoh
-**liveliness token** of kind `MP` so graph introspection
-(`ros2 topic list`, Foxglove's topic panel) can see the topic at all
-— without it the data still flows on the right keyexpr but no node
-knows the publisher exists. Format:
-
-```
-@ros2_lv/<domain>/<zid>/<nid>/<eid>/MP/<enclave>/<ns>/<node>/<topic>/<type>/<hash>/<qos>
-```
-
-Where `/` in enclave / namespace / topic is mangled to `%`, `<zid>`
-is the Zenoh session ZID (from `Zenohex.Session.info/1`), `nid` and
-`eid` are session-local counters (we use `0/0`), and `<qos>` is the
-default reliable-volatile profile encoded as `::,:,:,:,,`. Built by
-`Ros2.RmwZenoh.liveliness_key/5` and registered through
-`Zenohex.Liveliness.declare_token/2`. The returned token reference
-must stay in `ZenohClient`'s state — if it's GC'd, the token is
-undeclared and the topic disappears from `ros2 topic list`.
+The message codecs and the `rmw_zenoh` key expressions, payloads,
+attachments and liveliness tokens come from
+[`libraries/ros2_zenoh`](../../libraries/ros2_zenoh/README.md), which
+also explains how to add a message type. `RosBridge.ZenohClient` holds
+the Zenoh session and uses them to publish and subscribe.
 
 ## `RosBridge.ZenohClient`
 
@@ -212,27 +173,6 @@ the depth next to the stereo parameters as sliders, menus
 and toggles (the `compose/local/foxglove/extensions/parameter-sliders`
 panel, installed once in Foxglove), the diagnostics and
 plots of the sync offset, exposure and gain.
-
-## Adding a new ROS message type
-
-1. Drop the codec under `lib/ros2/<pkg>/msg/<name>.ex`.
-2. For **publishing** add three things alongside any existing
-   `parse/1`:
-   - `def dds_type, do: "<pkg>::msg::dds_::<Name>_"`
-   - `def type_hash, do: "RIHS01_<64-hex>"` — copy from
-     `ros2 topic info -v` of any live publisher of this type.
-   - `def encode(%__MODULE__{...})` returning the CDR-encoded body
-     (no encapsulation header — that's added by
-     `Ros2.RmwZenoh.encode_payload/1`).
-3. For **subscribing** only `parse/1` is needed — the rmw_zenoh
-   keyexpr is matched on the `<domain>/<topic>/**` wildcard, so the
-   message's DDS type name and hash don't have to be hard-coded.
-4. Use it: `RmwZenoh.key_expr/3` and `RmwZenoh.encode_payload/1` work
-   uniformly across types for the publisher side;
-   `RosBridge.ZenohClient.subscribe/2` covers the subscriber side.
-
-The hand-rolled CDR encoders/parsers in `Ros2.Common` are growing
-ad-hoc; consolidate when you need the third or fourth message type.
 
 ## Host vs. target
 
