@@ -7,7 +7,7 @@ The vision unit: stereo depth and object detection on a single board, published 
 | [`core`](./core/README.md) | `vision_core`: camera drivers, rectification, stereo matching, detection and the ROS publishers |
 | [`api`](./api/README.md) | `vision_api`: the Phoenix endpoint and channels behind the dashboard |
 | [`firmware`](./firmware/README.md) | `vision_firmware`: the Nerves image |
-| [`dashboard`](./dashboard/README.md) | The Vue dashboard: previews, status and settings |
+| [`dashboard`](./dashboard/README.md) | The Vue dashboard: previews, status, parameters and settings |
 | [`rust`](./rust/README.md) | The capture and inference programs `vision_core` runs as Ports |
 
 ## Boards

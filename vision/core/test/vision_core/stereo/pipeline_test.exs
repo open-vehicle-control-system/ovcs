@@ -1,12 +1,12 @@
 defmodule VisionCore.Stereo.PipelineTest do
   use ExUnit.Case, async: false
 
-  alias VisionCore.Stereo.Pipeline
+  alias VisionCore.Stereo.{NxSegment, Pipeline}
   alias VisionCore.Stereo.Stage
 
   @calibration Path.expand("../../support/calibration", __DIR__)
 
-  # A stage with a runtime setting, which the Nx stages do not have.
+  # A CPU stage with a runtime setting.
   defmodule Gain do
     @behaviour VisionCore.Stereo.Stage
     def init(opts, _context), do: {:ok, %{gain: Keyword.get(opts, :gain, 1)}}
@@ -70,11 +70,34 @@ defmodule VisionCore.Stereo.PipelineTest do
     assert {:error, "gain out of range" <> _} = Pipeline.set_options(pipeline, gain: 20)
   end
 
+  test "changes the match penalties without compiling again" do
+    {:ok, pipeline} = start(Pipeline.default_stages())
+    specs = Pipeline.option_specs(pipeline)
+    assert Enum.all?([:p1, :p2, :uniqueness], &Keyword.has_key?(specs, &1))
+    [%{state: segment}] = segments(pipeline)
+
+    assert {:ok, %{p1: 4, p2: 40, uniqueness: 1.2}} =
+             Pipeline.set_options(pipeline, p1: 4, p2: 40, uniqueness: 1.2)
+
+    [%{state: changed}] = segments(pipeline)
+    assert changed.function == segment.function
+    match = Enum.find(changed.params, fn {_index, params} -> Map.has_key?(params, :p1) end)
+    assert {_index, %{p1: p1, p2: p2}} = match
+    assert {Nx.to_number(p1), Nx.to_number(p2)} == {4.0, 40.0}
+
+    assert {:error, "p2 must exceed p1" <> _} = Pipeline.set_options(pipeline, p1: 40)
+    assert {:error, "p1 and p2 must be integers" <> _} = Pipeline.set_options(pipeline, p2: 100)
+    assert Pipeline.options(pipeline).p1 == 4
+  end
+
+  defp segments(pipeline),
+    do: :sys.get_state(pipeline).stages |> Enum.filter(&(&1.module == NxSegment))
+
   test "keeps settings changed at runtime across a calibration reload" do
     {:ok, pipeline} = start(Pipeline.default_stages() ++ [Gain])
-    {:ok, _} = Pipeline.set_options(pipeline, gain: 4)
+    {:ok, _} = Pipeline.set_options(pipeline, gain: 4, p1: 5)
 
     assert :ok = Pipeline.reload_calibration(pipeline)
-    assert Pipeline.options(pipeline).gain == 4
+    assert %{gain: 4, p1: 5} = Pipeline.options(pipeline)
   end
 end

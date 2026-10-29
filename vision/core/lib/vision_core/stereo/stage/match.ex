@@ -9,9 +9,12 @@ defmodule VisionCore.Stereo.Stage.Match do
 
     * `:num_disparities` (64) — 64 or 128.
     * `:p1` (8), `:p2` (64) — penalties for a disparity change of one, and
-      of more, between neighbours; `:p2` must exceed `:p1`.
+      of more, between neighbours: integers up to 79, `:p2` above `:p1`.
     * `:uniqueness` (1.0526) — a match is kept when the second-best cost
       is at least this factor above the best.
+
+  `:p1`, `:p2` and `:uniqueness` are inputs of the compiled function, so
+  they also change while running (`option_specs/0`).
     * `:paths` (8) — aggregation paths, 8 or 3: 3 takes about a quarter of
       the GPU time and leaves more pixels unmatched on dark or textureless
       surfaces.
@@ -22,6 +25,26 @@ defmodule VisionCore.Stereo.Stage.Match do
 
   # The Census window is 9 pixels wide: the border it cannot match.
   @census_width 9
+  # Path costs are bytes in the shaders: NxStereo.sgm/3 bounds P2 so they cannot overflow.
+  @max_penalty 79
+
+  @option_specs [
+    p1: %{
+      type: :integer,
+      range: {0, @max_penalty - 1},
+      description: "Penalty for a disparity change of one between neighbours"
+    },
+    p2: %{
+      type: :integer,
+      range: {1, @max_penalty},
+      description: "Penalty for a larger disparity change; above p1"
+    },
+    uniqueness: %{
+      type: :double,
+      range: {1, 3},
+      description: "Factor the second-best cost must exceed the best by"
+    }
+  ]
 
   @impl VisionCore.Stereo.NxStage
   def init(opts, _context) do
@@ -35,14 +58,40 @@ defmodule VisionCore.Stereo.Stage.Match do
       disparities not in [64, 128] ->
         {:error, "nx_stereo searches 64 or 128 disparities, got #{inspect(disparities)}"}
 
-      not (is_integer(p1) and is_integer(p2) and p2 > p1) ->
-        {:error, "nx_stereo needs integer penalties with p2 > p1, got #{p1} and #{p2}"}
-
       paths not in [3, 8] ->
         {:error, "nx_stereo aggregates along 3 or 8 paths, got #{inspect(paths)}"}
 
       true ->
-        {:ok, [disparities: disparities, p1: p1, p2: p2, uniqueness: uniqueness, paths: paths]}
+        validate(disparities: disparities, paths: paths, p1: p1, p2: p2, uniqueness: uniqueness)
+    end
+  end
+
+  @impl VisionCore.Stereo.NxStage
+  def option_specs, do: @option_specs
+
+  @impl VisionCore.Stereo.NxStage
+  def options(sgm_opts), do: Map.new(Keyword.take(sgm_opts, Keyword.keys(@option_specs)))
+
+  @impl VisionCore.Stereo.NxStage
+  def set_option(sgm_opts, key, value) when key in [:p1, :p2, :uniqueness],
+    do: validate(Keyword.put(sgm_opts, key, value))
+
+  defp validate(sgm_opts) do
+    {p1, p2, uniqueness} = {sgm_opts[:p1], sgm_opts[:p2], sgm_opts[:uniqueness]}
+
+    cond do
+      not (is_integer(p1) and is_integer(p2) and p1 in 0..@max_penalty and
+               p2 in 0..@max_penalty) ->
+        {:error, "p1 and p2 must be integers from 0 to #{@max_penalty}, got #{p1} and #{p2}"}
+
+      p2 <= p1 ->
+        {:error, "p2 must exceed p1, got #{p1} and #{p2}"}
+
+      not (is_number(uniqueness) and uniqueness >= 1) ->
+        {:error, "uniqueness must be at least 1, got #{inspect(uniqueness)}"}
+
+      true ->
+        {:ok, Keyword.put(sgm_opts, :uniqueness, uniqueness * 1.0)}
     end
   end
 
@@ -53,11 +102,13 @@ defmodule VisionCore.Stereo.Stage.Match do
   def provides, do: [:disparity, :disparity_range]
 
   @impl VisionCore.Stereo.NxStage
-  def params(_state, _context), do: %{}
+  def params(sgm_opts, _context), do: options(sgm_opts)
 
   @impl VisionCore.Stereo.NxStage
-  def step(tensors, _params, sgm_opts),
-    do: Map.put(tensors, :disparity, NxStereo.sgm(tensors.left, tensors.right, sgm_opts))
+  def step(tensors, params, sgm_opts) do
+    sgm_opts = Keyword.merge(sgm_opts, Map.to_list(params))
+    Map.put(tensors, :disparity, NxStereo.sgm(tensors.left, tensors.right, sgm_opts))
+  end
 
   @impl VisionCore.Stereo.NxStage
   def finish(%Pair{} = pair, outputs, sgm_opts) do

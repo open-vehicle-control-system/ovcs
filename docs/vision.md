@@ -16,7 +16,7 @@ The unit follows the same split as the VMS and the infotainment: a core, an API,
 | Core | [`vision/core`](../vision/core/README.md) | `VisionCore`: camera drivers, the stereo pipeline and its stages (rectification, matching, depth, in Nx), detection, and the ROS 2 side under `VisionCore.Ros2`. No vehicle knowledge, no web dependencies. |
 | API | [`vision/api`](../vision/api/README.md) | `VisionApi`: a Phoenix endpoint with a `/api/settings` route and channels that stream status and camera previews. |
 | Firmware | [`vision/firmware`](../vision/firmware/README.md) | The Nerves image for the `rpi5` and `okdo_c100` targets. At boot it reads `VEHICLE` and loads the vehicle's composer. |
-| Dashboard | [`vision/dashboard`](../vision/dashboard/README.md) | A Vue app showing the left, right and depth previews, status cards and the active settings. |
+| Dashboard | [`vision/dashboard`](../vision/dashboard/README.md) | A Vue app showing the left, right and depth previews, status cards, the runtime parameters and the active settings. |
 | Ports | [`vision/rust`](../vision/rust/README.md) | `camera_capture` and `hailo_detect`, the Rust programs the core drives as Ports. |
 
 The [ROS bridge](../bridges/ros_bridge/README.md) carries the same stereo and detection stack as components; a vehicle runs it in one or the other.
@@ -90,6 +90,8 @@ The dashboard and the API are served from the board on port 4100:
 ```text
 http://<vehicle>-vision.local:4100
 ```
+
+The Parameters panel lists the unit's ROS 2 parameters and changes them while it runs: the cameras' controls, the preview settings and the stereo settings, among them the matcher's `p1`, `p2` and `uniqueness`. These are inputs of the compiled depth pipeline, so a change applies from the next pair without compiling. The same parameters are reachable with `ros2 param set` and Foxglove's Parameters panel; changes last until the unit restarts, and values worth keeping go back into the vehicle's composer.
 
 On the host, `./ovcs run <vehicle>` starts a BEAM for the role and the dashboard's Vite dev server as an add-on, like the VMS dashboard, on `http://localhost:5174`.
 

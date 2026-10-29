@@ -1,6 +1,6 @@
 # vision dashboard
 
-Vue app for the vision unit: the left, right and depth previews, status cards and the active settings. It talks to [`vision_api`](../api) over HTTP and Phoenix Channels.
+Vue app for the vision unit: the left, right and depth previews, status cards, the runtime parameters (editable) and the active settings. It talks to [`vision_api`](../api) over HTTP and Phoenix Channels.
 
 ```sh
 npm install

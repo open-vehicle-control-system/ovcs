@@ -38,6 +38,18 @@ defmodule VisionCore.Ros2.Parameters do
   @doc "Declares the calling process's parameters, replacing any it declared before."
   def declare(parameters), do: GenServer.call(__MODULE__, {:declare, self(), parameters})
 
+  @doc """
+  Every parameter, sorted by name, with its value and constraints:
+  `:name`, `:type`, `:value`, `:read_only`, and when declared
+  `:description`, `:range` and `:values`.
+  """
+  @spec list() :: [map()]
+  def list, do: GenServer.call(__MODULE__, :list)
+
+  @doc "Sets parameter `name` as a ROS set request would: `{:ok, value}` or `{:error, reason}`."
+  @spec set_value(String.t(), term()) :: {:ok, term()} | {:error, String.t()}
+  def set_value(name, value), do: GenServer.call(__MODULE__, {:set_value, name, value})
+
   @impl GenServer
   def init(_opts) do
     node_name = ZenohClient.node_name()
@@ -53,6 +65,30 @@ defmodule VisionCore.Ros2.Parameters do
   end
 
   @impl GenServer
+  def handle_call(:list, _from, state) do
+    listed =
+      state.parameters
+      |> Map.values()
+      |> Enum.sort_by(& &1.name)
+      |> Enum.map(
+        &Map.take(&1, [:name, :type, :value, :read_only, :description, :range, :values])
+      )
+
+    {:reply, listed, state}
+  end
+
+  def handle_call({:set_value, name, value}, _from, state) do
+    case set(state.parameters[name], value) do
+      {:ok, value} ->
+        {:reply, {:ok, value},
+         %{state | parameters: maybe_put_value(state.parameters, name, value)}}
+
+      {:error, reason} = error ->
+        {error, _parameters} = log_refusal(name, value, reason, error, state.parameters)
+        {:reply, error, state}
+    end
+  end
+
   def handle_call({:declare, owner, parameters}, _from, state) do
     state = drop_owner(state, owner)
     monitor_reference = Process.monitor(owner)

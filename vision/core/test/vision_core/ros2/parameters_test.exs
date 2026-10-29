@@ -119,4 +119,52 @@ defmodule VisionCore.Ros2.ParametersTest do
       assert Parameters.describe(auto).constraints == "one of: off, fast"
     end
   end
+
+  describe "for the dashboard" do
+    setup do
+      start_supervised!({VisionCore.Ros2.ZenohClient, endpoint_ip: "127.0.0.1"})
+      start_supervised!(Parameters)
+      test_pid = self()
+
+      :ok =
+        Parameters.declare([
+          %{
+            name: "stereo.match.paths",
+            type: :integer,
+            value: 8,
+            values: [3, 8],
+            description: "Aggregation paths",
+            set: fn value -> send(test_pid, {:set, value}) && :ok end
+          },
+          %{name: "stereo.width", type: :integer, value: 768, read_only: true}
+        ])
+
+      :ok
+    end
+
+    test "lists every parameter with its value and constraints, sorted by name" do
+      assert [
+               %{
+                 name: "stereo.match.paths",
+                 type: :integer,
+                 value: 8,
+                 values: [3, 8],
+                 read_only: false
+               },
+               %{name: "stereo.width", value: 768, read_only: true}
+             ] = Parameters.list()
+
+      refute Map.has_key?(hd(Parameters.list()), :set)
+    end
+
+    test "sets a value through its owner, or says why not" do
+      assert {:ok, 3} = Parameters.set_value("stereo.match.paths", 3)
+      assert_received {:set, 3}
+      assert [%{value: 3} | _] = Parameters.list()
+
+      assert {:error, "expected one of 3, 8"} = Parameters.set_value("stereo.match.paths", 4)
+      assert {:error, "read-only" <> _} = Parameters.set_value("stereo.width", 640)
+      assert {:error, "unknown parameter"} = Parameters.set_value("nope", 1)
+    end
+  end
 end
