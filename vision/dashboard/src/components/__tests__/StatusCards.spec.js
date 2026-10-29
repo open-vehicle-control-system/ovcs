@@ -9,7 +9,7 @@ const snapshot = {
   depth_hz: 12.8,
   zenoh: 'disconnected',
   cpu_percent: 37.25,
-  stereo_gpu_percent: 81.5
+  stereo_segment_percent: 81.5
 }
 
 describe('StatusCards', () => {
@@ -28,11 +28,11 @@ describe('StatusCards', () => {
     expect(wrapper.get('[data-card="zenoh"]').text()).toContain('disconnected')
   })
 
-  it('shows the CPU usage and the stereo GPU time', () => {
+  it('shows the CPU usage and the stereo segment time', () => {
     const wrapper = mount(StatusCards, { props: { status: snapshot } })
 
     expect(wrapper.get('[data-card="cpu"]').text()).toContain('37 %')
-    expect(wrapper.get('[data-card="gpu"]').text()).toContain('82 %')
+    expect(wrapper.get('[data-card="segment"]').text()).toContain('82 %')
   })
 
   it('shows an unknown CPU usage as a dash', () => {

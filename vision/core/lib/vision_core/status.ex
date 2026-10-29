@@ -4,7 +4,9 @@ defmodule VisionCore.Status do
   frame rate and exposure, the pair's sync, the Hailo detector, the depth
   rate, the Zenoh session, the CPU's busy share (`VisionCore.SystemLoad`)
   and the share of time the stereo pipeline spent in its compiled Nx
-  segments, on the GPU where they run there (`Pair` `:device_ms`).
+  segments (`Pair` `:device_ms`). Where they run on the GPU, that time
+  includes uploading the frames and waiting for the results, so it is
+  not the GPU's busy share.
 
   Started last in `VisionCore.Supervisor`. Without a `:stereo`
   component the cameras and sync are reported absent and the depth rate
@@ -35,7 +37,7 @@ defmodule VisionCore.Status do
           depth_hz: float(),
           zenoh: :connected | :disconnected,
           cpu_percent: float() | nil,
-          stereo_gpu_percent: float()
+          stereo_segment_percent: float()
         }
 
   @doc """
@@ -70,7 +72,7 @@ defmodule VisionCore.Status do
        device_ms: 0.0,
        cpu_times: SystemLoad.cpu_times(),
        cpu_percent: nil,
-       stereo_gpu_percent: 0.0,
+       stereo_segment_percent: 0.0,
        window_start_ms: now_ms(),
        rates_hz: %{left: 0.0, right: 0.0, depth: 0.0}
      }}
@@ -130,7 +132,7 @@ defmodule VisionCore.Status do
         window_start_ms: now,
         cpu_percent: SystemLoad.cpu_percent(state.cpu_times, cpu_times),
         cpu_times: cpu_times,
-        stereo_gpu_percent: min(100 * state.device_ms / elapsed_ms, 100.0),
+        stereo_segment_percent: min(100 * state.device_ms / elapsed_ms, 100.0),
         device_ms: 0.0
     }
   end
@@ -142,7 +144,7 @@ defmodule VisionCore.Status do
       hailo: hailo(state),
       depth_hz: state.rates_hz.depth,
       cpu_percent: state.cpu_percent,
-      stereo_gpu_percent: state.stereo_gpu_percent,
+      stereo_segment_percent: state.stereo_segment_percent,
       zenoh:
         if(call_within_timeout(&ZenohClient.connected?/0, false),
           do: :connected,
