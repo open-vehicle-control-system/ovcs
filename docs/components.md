@@ -27,11 +27,11 @@ ovcs/
 |   +-- radio_control_bridge/   MAVLink RC transmitter bridge library
 |   +-- ros_bridge/             Native rmw_zenoh ROS 2 bridge library
 +-- vision/                   FRAMEWORK · Vision unit (stereo depth and detection)
-|   +-- core/                   Elixir library: cameras, SGBM, detectors, Zenoh publishers (no vehicle code)
+|   +-- core/                   Elixir library: cameras, Nx stereo stages, detectors, Zenoh publishers (no vehicle code)
 |   +-- api/                    Phoenix endpoint for the dashboard
 |   +-- dashboard/              Vue dashboard
-|   +-- firmware/               Nerves firmware shell targeting Raspberry Pi 5
-|   +-- rust/                   camera_capture and hailo_detect Ports
+|   +-- firmware/               Nerves firmware shell targeting Raspberry Pi 5 and OKdo Nano C100
+|   +-- rust/                   camera_capture, v4l2_capture, hailo_detect and jpeg_codec Ports
 +-- controllers/              FRAMEWORK
 |   +-- generic_controller/     PlatformIO C++ project for Arduino R4 Minima
 +-- libraries/                FRAMEWORK · Shared Elixir libraries (in-tree and sideloaded)

@@ -1,50 +1,43 @@
 defmodule VisionCore.Stereo.Stage.Depth do
   @moduledoc """
-  Turns disparity into metric depth, `Z = f × B / d`, with the
-  rectified focal length and the baseline of the calibration. Fills the
-  published 32-bit float disparity, the 16-bit millimetre depth and the
-  metres `Mat`; unmatched pixels carry no depth.
+  Turns the disparity in pixels into metric depth, `Z = f × B / d`:
+  fills the 32-bit float disparity, the 16-bit millimetre depth and the
+  metres tensor; unmatched pixels carry no depth. The focal length and
+  baseline are inputs, so a reloaded calibration needs no new compiled
+  module.
   """
-  @behaviour VisionCore.Stereo.Stage
+  @behaviour VisionCore.Stereo.NxStage
 
   alias VisionCore.Stereo.Pair
 
-  @impl VisionCore.Stereo.Stage
-  def init(_opts, context),
-    do: {:ok, %{focal_length_px: context.focal_length_px, baseline_m: context.baseline_m}}
+  @impl VisionCore.Stereo.NxStage
+  def init(_opts, _context), do: {:ok, nil}
 
-  @impl VisionCore.Stereo.Stage
+  @impl VisionCore.Stereo.NxStage
   def requires, do: [:disparity]
 
-  @impl VisionCore.Stereo.Stage
+  @impl VisionCore.Stereo.NxStage
   def provides, do: [:disparity_bytes, :depth, :depth_m]
 
-  @impl VisionCore.Stereo.Stage
-  def run(%Pair{disparity: disparity, disparity_scale: scale} = pair, state) do
-    disparity_f32 = Evision.Mat.as_type(disparity, :f32)
+  @impl VisionCore.Stereo.NxStage
+  def params(_state, context),
+    do: %{focal_length_px: context.focal_length_px, baseline_m: context.baseline_m}
 
-    # Unclamped: unmatched pixels stay below min_disparity, as consumers expect.
-    disparity_bytes = disparity_f32 |> Evision.divide(scale) |> Evision.Mat.to_binary()
+  @impl VisionCore.Stereo.NxStage
+  def step(tensors, params, _state) do
+    {depth_mm, depth_m} =
+      NxStereo.Depth.depth(tensors.disparity, params.focal_length_px, params.baseline_m)
 
-    # Metres to millimetres in the same divide, so there is no extra pass over the image.
-    depth_mm =
-      Evision.divide(state.focal_length_px * state.baseline_m * scale * 1000.0, disparity_f32)
+    tensors |> Map.put(:depth_mm, depth_mm) |> Map.put(:depth_m, depth_m)
+  end
 
-    invalid_mask = Evision.compare(disparity, 0, Evision.Constant.cv_CMP_LE())
-    depth_mm = Evision.Mat.setTo(depth_mm, 0.0, invalid_mask)
-
-    depth =
-      depth_mm
-      # Saturates: a far reading pins at the ceiling instead of aliasing near.
-      |> Evision.Mat.as_type(:u16)
-      |> Evision.Mat.to_binary()
-
-    {:ok,
-     %{
-       pair
-       | disparity_bytes: disparity_bytes,
-         depth: depth,
-         depth_m: Evision.divide(depth_mm, 1000.0)
-     }, state}
+  @impl VisionCore.Stereo.NxStage
+  def finish(%Pair{} = pair, outputs, _state) do
+    %{
+      pair
+      | disparity_bytes: Nx.to_binary(outputs.disparity),
+        depth: Nx.to_binary(outputs.depth_mm),
+        depth_m: outputs.depth_m
+    }
   end
 end

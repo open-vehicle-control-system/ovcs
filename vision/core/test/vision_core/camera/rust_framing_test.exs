@@ -1,7 +1,7 @@
 defmodule VisionCore.Camera.RustFramingTest do
   use ExUnit.Case, async: true
 
-  alias VisionCore.Camera.{Frame, LibCamera}
+  alias VisionCore.Camera.{Frame, LibCamera, V4L2}
 
   @moduletag :rust
 
@@ -13,7 +13,7 @@ defmodule VisionCore.Camera.RustFramingTest do
         cd: @rust_workspace
       )
 
-    assert [frame, log, metadata] = split_packets(output)
+    assert [frame, log, metadata, pair] = split_packets(output)
 
     assert {:ok, %Frame{width: 640, height: 480, jpeg: <<0xFF, 0xD8, 0xFF, 0xD9>>}} =
              LibCamera.parse_record(frame)
@@ -33,6 +33,9 @@ defmodule VisionCore.Camera.RustFramingTest do
     refute Map.has_key?(reported, :lens_position)
     refute Map.has_key?(reported, :colour_temperature)
     refute Map.has_key?(reported, :sync_timer_us)
+
+    assert {:pair, %Frame{width: 2, height: 1, grey: <<1, 2>>}, %Frame{grey: <<3, 4>>}} =
+             V4L2.parse_record(pair)
   end
 
   defp split_packets(<<>>), do: []

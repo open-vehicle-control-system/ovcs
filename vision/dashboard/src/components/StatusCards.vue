@@ -1,6 +1,6 @@
 <template>
   <p v-if="!status" class="text-sm text-gray-500">Waiting for the vision unit…</p>
-  <div v-else class="grid grid-cols-2 gap-4 lg:grid-cols-6">
+  <div v-else class="grid grid-cols-2 gap-4 lg:grid-cols-4">
     <div
       v-for="card in cards"
       :key="card.id"
@@ -47,6 +47,16 @@ function syncCard(sync) {
   }
 }
 
+function loadCard(id, title, percent, detail) {
+  return {
+    id,
+    title,
+    value: percent == null ? '–' : `${formatNumber(percent, 0)} %`,
+    healthy: percent != null && percent < 90,
+    detail
+  }
+}
+
 const cards = computed(() => {
   const status = props.status
   return [
@@ -55,7 +65,9 @@ const cards = computed(() => {
     syncCard(status.sync),
     { id: 'depth', title: 'Depth', value: `${formatNumber(status.depth_hz)} Hz`, healthy: status.depth_hz > 0 },
     { id: 'hailo', title: 'Hailo', value: status.hailo, healthy: status.hailo === 'running' },
-    { id: 'zenoh', title: 'Zenoh', value: status.zenoh, healthy: status.zenoh === 'connected' }
+    { id: 'zenoh', title: 'Zenoh', value: status.zenoh, healthy: status.zenoh === 'connected' },
+    loadCard('cpu', 'CPU', status.cpu_percent, 'all cores'),
+    loadCard('gpu', 'GPU (stereo)', status.stereo_gpu_percent, 'time in the compiled stereo stages')
   ]
 })
 </script>

@@ -31,7 +31,7 @@ defmodule VisionCore.Components do
       `:stages` replaces the pipeline's default stages; see
       `VisionCore.Stereo.Pipeline.default_stages/1`.
     * `:detector` — `VisionCore.Detection.Supervisor`: the `:backend`
-      given in the opts (`VisionCore.Detection.Backend.Hailo`, `.Dnn`,
+      given in the opts (`VisionCore.Detection.Backend.Hailo` or
       `.Stub`), the `VisionCore.Detection.Pipeline` placing its boxes
       in 3D, and their ROS publisher. List it after `:stereo`: the
       detection pipeline registers on the stereo pipeline while

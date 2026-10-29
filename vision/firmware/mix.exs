@@ -3,7 +3,7 @@ defmodule VisionFirmware.MixProject do
 
   @app :vision_firmware
   @version "0.1.0"
-  @all_targets [:rpi5]
+  @all_targets [:rpi5, :okdo_c100]
 
   def project do
     [
@@ -59,6 +59,9 @@ defmodule VisionFirmware.MixProject do
       {:nerves_pack, "~> 0.7.1", targets: @all_targets},
       {:nerves_hub_link, "~> 2.12", targets: @all_targets},
       {:vision_api, path: "../api"},
+      # Compiles the Nx stereo stages on a workstation; boards load
+      # precompiled modules.
+      {:exla, "~> 1.0", targets: :host},
       # `OvcsVehicle.Firmware.resolve_side/4` is used from
       # `config/runtime.exs` to prepend the vehicle's ebin.
       {:ovcs_vehicle, path: "../../libraries/ovcs_vehicle"},
@@ -69,6 +72,14 @@ defmodule VisionFirmware.MixProject do
        tag: "v3.0.0-rc.2",
        runtime: false,
        targets: :rpi5,
+       nerves: [compile: false]},
+      # The OKdo Nano C100 (Jetson Nano): the CSI camera drivers
+      # `v4l2_capture` reads, and Mesa NVK for `nx_stereo` on Vulkan.
+      {:nerves_system_okdo_c100,
+       github: "Spin42/nerves_system_okdo_c100",
+       tag: "v0.2.0",
+       runtime: false,
+       targets: :okdo_c100,
        nerves: [compile: false]},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}

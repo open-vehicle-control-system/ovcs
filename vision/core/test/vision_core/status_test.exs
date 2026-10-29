@@ -62,4 +62,17 @@ defmodule VisionCore.StatusTest do
     assert_receive {:vision_status, %{depth_hz: depth_hz}}, 500
     assert depth_hz > 0.0
   end
+
+  test "each tick reports the CPU usage and the stereo pipeline's GPU time" do
+    start_supervised!({Status, config: config([]), tick_ms: 200})
+    :ok = Status.subscribe()
+    assert_receive {:vision_status, _first}
+
+    # Four pairs of 25 ms in a 200 ms window: half the time in the GPU stages.
+    for _ <- 1..4, do: GenServer.cast(Status, {:stereo_pair, %{pair() | device_ms: 25.0}})
+
+    assert_receive {:vision_status, %{cpu_percent: cpu, stereo_gpu_percent: gpu}}, 500
+    assert cpu >= 0.0 and cpu <= 100.0
+    assert_in_delta gpu, 50.0, 15.0
+  end
 end

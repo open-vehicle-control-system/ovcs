@@ -53,10 +53,13 @@ config :shoehorn, init: [:nerves_runtime, :nerves_pack, :nerves_hub_link]
 
 # The system's erlinit mounts the application partition at `/root`;
 # NervesSSH, nerves_time and the rest of the codebase expect `/data`.
+app_partition =
+  Map.fetch!(%{rpi5: "/dev/mmcblk0p3", okdo_c100: "/dev/rootdisk0p6"}, Mix.target())
+
 config :nerves, :erlinit,
   update_clock: true,
   hostname_pattern: vehicle_host,
-  mount: "/dev/mmcblk0p3:/data:f2fs:nodev:"
+  mount: "#{app_partition}:/data:f2fs:nodev:"
 
 config :nerves_ssh,
   authorized_keys: (System.get_env("AUTHORIZED_SSH_KEYS") || "") |> String.split(",", trim: true),

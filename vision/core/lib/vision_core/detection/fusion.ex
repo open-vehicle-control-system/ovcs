@@ -11,6 +11,8 @@ defmodule VisionCore.Detection.Fusion do
   computes depth from the same rectified pair.
   """
 
+  alias VisionCore.Ros2.CameraCalibration
+
   @doc """
   Median of the valid depths in the central `fraction` of `box`.
 
@@ -25,7 +27,7 @@ defmodule VisionCore.Detection.Fusion do
   untextured surfaces, and the caller is expected to drop the
   detection rather than invent a range for it.
   """
-  @spec median_depth(Evision.Mat.t(), map(), float()) :: float() | nil
+  @spec median_depth(Nx.Tensor.t(), map(), float()) :: float() | nil
   def median_depth(depth_m, box, fraction) do
     {height, width} = height_and_width(depth_m)
 
@@ -34,7 +36,7 @@ defmodule VisionCore.Detection.Fusion do
 
     if x1 > x0 and y1 > y0 do
       depth_m[[y0..(y1 - 1)//1, x0..(x1 - 1)//1]]
-      |> Evision.Mat.to_binary()
+      |> Nx.to_binary()
       |> valid_depths()
       |> median()
     end
@@ -97,10 +99,38 @@ defmodule VisionCore.Detection.Fusion do
   end
 
   @doc """
-  Map a rectified pixel back to its raw camera pixel, using the
-  fixed-point rectification map OpenCV produced (`CV_16SC2` —
-  interleaved int16 x, y per rectified pixel), passed in as its raw
-  binary.
+  The rectification map of `calibration` as `remap/4` reads it: for each
+  rectified pixel, row-major, the raw pixel's `x, y` as little-endian
+  int16, OpenCV's `CV_16SC2` layout. Computed on the CPU, once per
+  calibration.
+  """
+  @spec rectification_map(CameraCalibration.t()) :: binary()
+  def rectification_map(%CameraCalibration{} = calibration) do
+    camera =
+      NxStereo.Rectify.camera(
+        calibration.camera_matrix,
+        calibration.distortion_coefficients,
+        calibration.rectification_matrix,
+        calibration.projection_matrix
+      )
+
+    image = Nx.broadcast(Nx.tensor(0, type: :u8), {calibration.height, calibration.width})
+
+    {map_x, map_y} =
+      Nx.Defn.jit(&NxStereo.Rectify.maps/2, compiler: Nx.Defn.Evaluator).(image, camera)
+
+    # OpenCV's fixed point: 1/32 pixel, rounded down to the integer part.
+    [map_x, map_y]
+    |> Enum.map(&(&1 |> Nx.multiply(32) |> Nx.round() |> Nx.divide(32) |> Nx.floor()))
+    |> Nx.stack(axis: -1)
+    |> Nx.as_type(:s16)
+    |> Nx.to_binary()
+  end
+
+  @doc """
+  Map a rectified pixel back to its raw camera pixel through a
+  rectification map (`rectification_map/1`): interleaved int16 x, y per
+  rectified pixel, as a binary.
 
   This is what lets a box computed in rectified coordinates be drawn
   on the raw image the pipeline actually publishes, rather than
@@ -158,10 +188,8 @@ defmodule VisionCore.Detection.Fusion do
     end
   end
 
-  defp height_and_width(mat) do
-    case Evision.Mat.shape(mat) do
-      {height, width} -> {height, width}
-      {height, width, _channels} -> {height, width}
-    end
+  defp height_and_width(depth_m) do
+    {height, width} = Nx.shape(depth_m)
+    {height, width}
   end
 end

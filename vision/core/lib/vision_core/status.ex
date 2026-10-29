@@ -2,7 +2,9 @@ defmodule VisionCore.Status do
   @moduledoc """
   The vision unit's health at a glance, for the dashboard: each camera's
   frame rate and exposure, the pair's sync, the Hailo detector, the depth
-  rate and the Zenoh session.
+  rate, the Zenoh session, the CPU's busy share (`VisionCore.SystemLoad`)
+  and the share of time the stereo pipeline spent in its compiled Nx
+  segments, on the GPU where they run there (`Pair` `:device_ms`).
 
   Started last in `VisionCore.Supervisor`. Without a `:stereo`
   component the cameras and sync are reported absent and the depth rate
@@ -16,6 +18,7 @@ defmodule VisionCore.Status do
   alias VisionCore.Ros2.Stereo.Diagnostics
   alias VisionCore.Ros2.ZenohClient
   alias VisionCore.Stereo.Sources
+  alias VisionCore.SystemLoad
   alias VisionCore.Detection.Backend.Hailo
   alias VisionCore.Stereo.Pair
   alias VisionCore.Camera.Frame
@@ -30,7 +33,9 @@ defmodule VisionCore.Status do
           sync: map(),
           hailo: :running | :absent | :failed,
           depth_hz: float(),
-          zenoh: :connected | :disconnected
+          zenoh: :connected | :disconnected,
+          cpu_percent: float() | nil,
+          stereo_gpu_percent: float()
         }
 
   @doc """
@@ -62,6 +67,10 @@ defmodule VisionCore.Status do
        hailo_configured?: hailo_configured?(config),
        subscribers: %{},
        counts: %{left: 0, right: 0, depth: 0},
+       device_ms: 0.0,
+       cpu_times: SystemLoad.cpu_times(),
+       cpu_percent: nil,
+       stereo_gpu_percent: 0.0,
        window_start_ms: now_ms(),
        rates_hz: %{left: 0.0, right: 0.0, depth: 0.0}
      }}
@@ -77,7 +86,8 @@ defmodule VisionCore.Status do
   end
 
   @impl GenServer
-  def handle_cast({:stereo_pair, %Pair{}}, state), do: {:noreply, count(state, :depth)}
+  def handle_cast({:stereo_pair, %Pair{device_ms: device_ms}}, state),
+    do: {:noreply, %{count(state, :depth) | device_ms: state.device_ms + device_ms}}
 
   def handle_cast({:camera_frame, %Frame{label: label}}, state) when label in ["left", "right"],
     do: {:noreply, count(state, String.to_existing_atom(label))}
@@ -109,9 +119,20 @@ defmodule VisionCore.Status do
 
   defp close_window(state) do
     now = now_ms()
-    elapsed_s = max(now - state.window_start_ms, 1) / 1_000
-    rates_hz = Map.new(state.counts, fn {key, count} -> {key, count / elapsed_s} end)
-    %{state | rates_hz: rates_hz, counts: %{left: 0, right: 0, depth: 0}, window_start_ms: now}
+    elapsed_ms = max(now - state.window_start_ms, 1)
+    rates_hz = Map.new(state.counts, fn {key, count} -> {key, count * 1_000 / elapsed_ms} end)
+    cpu_times = SystemLoad.cpu_times()
+
+    %{
+      state
+      | rates_hz: rates_hz,
+        counts: %{left: 0, right: 0, depth: 0},
+        window_start_ms: now,
+        cpu_percent: SystemLoad.cpu_percent(state.cpu_times, cpu_times),
+        cpu_times: cpu_times,
+        stereo_gpu_percent: min(100 * state.device_ms / elapsed_ms, 100.0),
+        device_ms: 0.0
+    }
   end
 
   defp build_snapshot(state) do
@@ -120,6 +141,8 @@ defmodule VisionCore.Status do
       sync: sync(state),
       hailo: hailo(state),
       depth_hz: state.rates_hz.depth,
+      cpu_percent: state.cpu_percent,
+      stereo_gpu_percent: state.stereo_gpu_percent,
       zenoh:
         if(call_within_timeout(&ZenohClient.connected?/0, false),
           do: :connected,

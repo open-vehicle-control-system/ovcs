@@ -7,7 +7,9 @@ const snapshot = {
   sync: { present: true, offset_median_ms: 0.12, offset_max_ms: 0.4, pairs: 150 },
   hailo: 'absent',
   depth_hz: 12.8,
-  zenoh: 'disconnected'
+  zenoh: 'disconnected',
+  cpu_percent: 37.25,
+  stereo_gpu_percent: 81.5
 }
 
 describe('StatusCards', () => {
@@ -24,6 +26,19 @@ describe('StatusCards', () => {
     expect(wrapper.get('[data-card="right"]').text()).toContain('absent')
     expect(wrapper.get('[data-card="depth"]').text()).toContain('12.8')
     expect(wrapper.get('[data-card="zenoh"]').text()).toContain('disconnected')
+  })
+
+  it('shows the CPU usage and the stereo GPU time', () => {
+    const wrapper = mount(StatusCards, { props: { status: snapshot } })
+
+    expect(wrapper.get('[data-card="cpu"]').text()).toContain('37 %')
+    expect(wrapper.get('[data-card="gpu"]').text()).toContain('82 %')
+  })
+
+  it('shows an unknown CPU usage as a dash', () => {
+    const wrapper = mount(StatusCards, { props: { status: { ...snapshot, cpu_percent: null } } })
+
+    expect(wrapper.get('[data-card="cpu"]').text()).toContain('–')
   })
 
   it('waits for the first status', () => {
