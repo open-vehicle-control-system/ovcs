@@ -67,7 +67,7 @@ const cards = computed(() => {
     { id: 'hailo', title: 'Hailo', value: status.hailo, healthy: status.hailo === 'running' },
     { id: 'zenoh', title: 'Zenoh', value: status.zenoh, healthy: status.zenoh === 'connected' },
     loadCard('cpu', 'CPU', status.cpu_percent, 'all cores'),
-    loadCard('gpu', 'GPU (stereo)', status.stereo_gpu_percent, 'time in the compiled stereo stages')
+    loadCard('segment', 'Stereo segment time', status.stereo_segment_percent, 'of each frame, GPU transfers included')
   ]
 })
 </script>
