@@ -1,4 +1,4 @@
-//! `hailo_detect <model.hef> [score_threshold]`: the Port behind `VisionCore.Inference.Hailo`.
+//! `hailo_detect <model.hef> [score_threshold]`: the Port behind `VisionCore.Detection.Backend.Hailo`.
 //! The HEF carries its NMS in-graph, so this binary letterboxes pixels in and reads boxes back out.
 //!
 //! Request (stdin): u8 tag 1, u32 seq, u16 width, u16 height, u8 channels (1 gray, 3 BGR), pixels.
@@ -22,7 +22,7 @@ use framing::Writer;
 
 const DEFAULT_SCORE_THRESHOLD: f32 = 0.4;
 
-/// stderr, not LOG records: `VisionCore.Inference.Hailo` reads only detections records.
+/// stderr, not LOG records: `VisionCore.Detection.Backend.Hailo` reads only detections records.
 fn log(message: &str) {
     eprintln!("[hailo_detect] {message}");
 }

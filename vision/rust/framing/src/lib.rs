@@ -10,6 +10,7 @@ use std::sync::Mutex;
 const TAG_FRAME: u8 = 1;
 const TAG_LOG: u8 = 2;
 const TAG_METADATA: u8 = 3;
+const TAG_PAIR: u8 = 4;
 
 pub const METADATA_FIELDS: usize = 8;
 
@@ -114,6 +115,26 @@ pub fn metadata_record(capture_ns: i64, present: u8, values: &[f64; METADATA_FIE
     out
 }
 
+/// Two 8-bit grey frames of `width` x `height`, row-major, with their start times.
+pub fn pair_record(
+    width: u16,
+    height: u16,
+    left_ns: i64,
+    right_ns: i64,
+    left: &[u8],
+    right: &[u8],
+) -> Vec<u8> {
+    let mut out = Vec::with_capacity(21 + left.len() + right.len());
+    out.push(TAG_PAIR);
+    out.extend_from_slice(&width.to_le_bytes());
+    out.extend_from_slice(&height.to_le_bytes());
+    out.extend_from_slice(&left_ns.to_le_bytes());
+    out.extend_from_slice(&right_ns.to_le_bytes());
+    out.extend_from_slice(left);
+    out.extend_from_slice(right);
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -143,6 +164,15 @@ mod tests {
         want.extend_from_slice(&1.0f64.to_le_bytes());
         want.extend_from_slice(&[0; 48]);
         want.extend_from_slice(&(-2.0f64).to_le_bytes());
+        assert_eq!(got, want);
+    }
+
+    #[test]
+    fn pair_record_layout() {
+        let got = pair_record(2, 1, 5, 6, &[1, 2], &[3, 4]);
+        let want = [
+            4, 2, 0, 1, 0, 5, 0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4,
+        ];
         assert_eq!(got, want);
     }
 

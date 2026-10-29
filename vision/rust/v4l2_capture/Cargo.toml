@@ -1,0 +1,8 @@
+[package]
+name = "v4l2_capture"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+framing = { path = "../framing" }
+libc = "0.2"
