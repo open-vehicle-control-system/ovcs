@@ -38,7 +38,8 @@ defmodule VisionCore.Ros2.Publishers.Detections do
   box visibly beside the object.
 
   Rather than publish a second, rectified image stream, each outline
-  vertex is mapped back through OpenCV's rectification map. A
+  vertex is mapped back through the left camera's rectification map
+  (`VisionCore.Detection.Fusion.rectification_map/1`). A
   straight edge in rectified space is a curve in raw space, so edges
   are subdivided (`:outline_segments`) and each vertex mapped
   individually.
@@ -94,7 +95,7 @@ defmodule VisionCore.Ros2.Publishers.Detections do
         |> Duration.from_milliseconds(),
       outline_segments: Keyword.get(opts, :outline_segments, @default_outline_segments),
       label_font_size: Keyword.get(opts, :label_font_size, @default_label_font_size),
-      # Keyed on the Mat itself, so a calibration reload invalidates it.
+      # Keyed on the calibration, so a calibration reload rebuilds it.
       rectification_map_cache: nil,
       published_count: 0,
       # Detection indexes drawn last frame; those not redrawn get an explicit DELETE.
@@ -284,13 +285,17 @@ defmodule VisionCore.Ros2.Publishers.Detections do
         }
       end)
 
-    VisionCore.Ros2.ZenohClient.publish(state.overlay_topic, ImageAnnotations, %ImageAnnotations{
-      timestamp: header.stamp,
-      circles: [],
-      points: boxes,
-      texts: labels,
-      metadata: []
-    })
+    VisionCore.Ros2.ZenohClient.publish(
+      state.overlay_topic,
+      ImageAnnotations,
+      %ImageAnnotations{
+        timestamp: header.stamp,
+        circles: [],
+        points: boxes,
+        texts: labels,
+        metadata: []
+      }
+    )
 
     state
   end
@@ -306,28 +311,39 @@ defmodule VisionCore.Ros2.Publishers.Detections do
   end
 
   # Without a calibration, rectified and raw pixels are the same.
-  defp to_raw_pixel(vertex, nil, _pair), do: vertex
+  defp to_raw_pixel(vertex, nil, pair), do: to_frame_scale(vertex, pair)
 
   defp to_raw_pixel(vertex, map_binary, %Pair{} = pair) do
     {width, height} = Pair.size(pair)
-    Fusion.remap(map_binary, width, height, vertex)
+
+    case Fusion.remap(map_binary, width, height, vertex) do
+      nil -> nil
+      raw -> to_frame_scale(raw, pair)
+    end
   end
 
-  defp rectification_map_binary(%Pair{rectification_map_left: nil}, state) do
-    {nil, state}
+  # The pipeline may match at a smaller size than the camera delivers.
+  defp to_frame_scale({x, y}, %Pair{left_frame: frame} = pair) do
+    {width, height} = Pair.size(pair)
+    {x * frame.width / width, y * frame.height / height}
   end
+
+  defp rectification_map_binary(%Pair{geometry: %{left_calibration: nil}}, state),
+    do: {nil, state}
 
   defp rectification_map_binary(
-         %Pair{rectification_map_left: map_mat},
-         %{rectification_map_cache: {map_mat, map_binary}} = state
+         %Pair{geometry: %{left_calibration: calibration}},
+         %{rectification_map_cache: {calibration, map_binary}} = state
        ) do
     {map_binary, state}
   end
 
-  defp rectification_map_binary(%Pair{rectification_map_left: map_mat}, state) do
-    map_binary = Evision.Mat.to_binary(map_mat)
-    {map_binary, %{state | rectification_map_cache: {map_mat, map_binary}}}
+  defp rectification_map_binary(%Pair{geometry: %{left_calibration: calibration}}, state) do
+    map_binary = Fusion.rectification_map(calibration)
+    {map_binary, %{state | rectification_map_cache: {calibration, map_binary}}}
   end
+
+  defp rectification_map_binary(%Pair{}, state), do: {nil, state}
 
   defp pose_for(detection) do
     %Pose{

@@ -40,8 +40,8 @@ defmodule VisionCore.Detection.Backend.Stub do
   end
 
   @impl VisionCore.Detection.Backend
-  def detect(server \\ __MODULE__, sequence, mat) do
-    GenServer.call(server, {:detect, sequence, mat, self()})
+  def detect(server \\ __MODULE__, sequence, image) do
+    GenServer.call(server, {:detect, sequence, image, self()})
   end
 
   @impl VisionCore.Detection.Backend
@@ -63,8 +63,8 @@ defmodule VisionCore.Detection.Backend.Stub do
   end
 
   @impl GenServer
-  def handle_call({:detect, sequence, mat, reply_to}, _from, state) do
-    {height, width} = height_and_width(mat)
+  def handle_call({:detect, sequence, image, reply_to}, _from, state) do
+    {height, width} = height_and_width(image)
 
     detections =
       for {class_id, score, {x0, y0, x1, y1}} <- state.boxes do
@@ -82,8 +82,8 @@ defmodule VisionCore.Detection.Backend.Stub do
     {:reply, :ok, state}
   end
 
-  defp height_and_width(mat) do
-    case Evision.Mat.shape(mat) do
+  defp height_and_width(image) do
+    case Nx.shape(image) do
       {height, width} -> {height, width}
       {height, width, _channels} -> {height, width}
     end

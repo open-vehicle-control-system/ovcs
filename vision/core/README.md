@@ -6,7 +6,9 @@ Stereo depth and object detection for a vehicle, published over native Zenoh as 
 
 `VisionCore.Application` starts the composer set in `:vision_core, :vehicle` under `VisionCore.Supervisor`, with `VisionCore.Ros2.ZenohClient` first. With no composer it starts nothing.
 
-On the `rpi5` target, compiling this app cross-builds the `camera_capture` and `hailo_detect` Ports from [`../rust`](../rust) through `Makefile` into `priv/`.
+On a vision target, compiling this app cross-builds the Ports from [`../rust`](../rust) through `Makefile` into `priv/`: `camera_capture`, `hailo_detect` and `jpeg_codec` on `rpi5`, `v4l2_capture` and `jpeg_codec` on `okdo_c100`.
+
+The stereo stages (`VisionCore.Stereo.Pipeline.default_stages/1`) are written in Nx and compiled through `nx_iree`, for a Vulkan GPU or a CPU. The tests run them on EXLA and check them against OpenCV (evision, a test dependency); `--include vulkan` also runs them on the host's Vulkan devices, `--include iree` compiles them with IREE. The first build compiles the IREE runtime with CMake.
 
 The vision unit as a whole is described in [Vision unit](../../docs/vision.md).
 

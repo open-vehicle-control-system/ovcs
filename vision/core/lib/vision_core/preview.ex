@@ -12,7 +12,7 @@ defmodule VisionCore.Preview do
 
   The depth map is colourised and encoded only when a depth subscriber
   is due a frame, once per pair whatever the number of subscribers.
-  Pairs without a `depth_m` map are skipped, and so is a depth map
+  Pairs without a depth image are skipped, and so is a depth map
   that fails to encode, with one error logged until an encode succeeds.
 
   Started last in `VisionCore.Supervisor`; without a `:stereo`
@@ -21,9 +21,14 @@ defmodule VisionCore.Preview do
   ## Options
 
     * `:config` — the active `VisionCore.Config` (required).
-    * `:max_hz` (`5`) — frames per second per subscriber.
-    * `:depth_range_m` (`10.0`) — the distance the colour map spans,
-      from red at the camera to blue at this range.
+    * `:max_hz` (`10`) — frames per second per subscriber.
+    * `:depth_range_m` (`0.0`) — the distance the colour map spans,
+      from red at the camera to blue at this range; 0 spans the measured
+      depths of each frame, from their 2nd to their 98th percentile.
+
+  `:max_hz` and `:depth_range_m` change while running with
+  `set_options/1`, and are the stereo unit's ROS 2 parameters
+  `<topic_prefix>.preview.*`.
     * `:depth_encoder` — `(VisionCore.Stereo.Pair.t() -> jpeg)`,
       replacing `encode_depth/2`.
   """
@@ -35,8 +40,23 @@ defmodule VisionCore.Preview do
   alias VisionCore.Stereo.Sources
 
   @streams [:left, :right, :depth]
-  @default_max_hz 5
-  @default_depth_range_m 10.0
+  @default_max_hz 10
+  @default_depth_range_m 0.0
+
+  @option_specs [
+    max_hz: %{
+      type: :integer,
+      range: {1, 30},
+      default: @default_max_hz,
+      description: "Preview frames per second per viewer"
+    },
+    depth_range_m: %{
+      type: :double,
+      range: {0, 50},
+      default: @default_depth_range_m,
+      description: "Distance the depth colours span, in metres; 0 for the measured depths"
+    }
+  ]
   @jpeg_quality 80
 
   @type stream :: :left | :right | :depth
@@ -54,36 +74,44 @@ defmodule VisionCore.Preview do
   def ack(stream) when stream in @streams, do: GenServer.cast(__MODULE__, {:ack, self(), stream})
 
   @doc """
-  The depth map of `pair` as a colour JPEG: near is red, `range_m` and
-  beyond is blue, pixels without depth are black.
+  The depth of `pair` as a colour JPEG: near is red, `range_m` and beyond
+  is blue, pixels without depth are black; a `range_m` of 0 spans the
+  2nd to the 98th percentile of the measured depths. Coloured and encoded
+  on the CPU by `VisionCore.Jpeg`, from the millimetre depth image.
   """
-  @spec encode_depth(Pair.t(), float()) :: binary()
-  def encode_depth(%Pair{depth_m: depth_m}, range_m \\ @default_depth_range_m) do
-    no_depth = Evision.compare(depth_m, 0.0, Evision.Constant.cv_CMP_LE())
+  @spec encode_depth(Pair.t(), float()) :: binary() | {:error, term()}
+  def encode_depth(%Pair{depth: depth} = pair, range_m \\ @default_depth_range_m)
+      when is_binary(depth) do
+    {width, height} = Pair.size(pair)
+    far_mm = round(range_m * 1_000)
 
-    near_is_bright =
-      depth_m
-      |> Evision.min(range_m)
-      |> Evision.convertScaleAbs(alpha: -255.0 / range_m, beta: 255.0)
-
-    colourised =
-      Evision.applyColorMap(src: near_is_bright, colormap: Evision.Constant.cv_COLORMAP_TURBO())
-
-    Evision.imencode(".jpg", Evision.Mat.setTo(colourised, 0, no_depth),
-      params: [Evision.Constant.cv_IMWRITE_JPEG_QUALITY(), @jpeg_quality]
-    )
+    case VisionCore.Jpeg.encode_depth(depth, width, height, 0, far_mm, @jpeg_quality) do
+      {:ok, jpeg} -> jpeg
+      {:error, _reason} = error -> error
+    end
   end
+
+  @doc "The settings `set_options/1` takes, as `{key, spec}`."
+  def option_specs, do: @option_specs
+
+  @doc "The settings in force."
+  def options, do: GenServer.call(__MODULE__, :options)
+
+  @doc "Changes settings, or says why it cannot; none change on a refusal."
+  @spec set_options(keyword()) :: {:ok, map()} | {:error, String.t()}
+  def set_options(options), do: GenServer.call(__MODULE__, {:set_options, options})
 
   @impl GenServer
   def init(opts) do
     sources = opts |> Keyword.fetch!(:config) |> Sources.from_config()
-    depth_range_m = Keyword.get(opts, :depth_range_m, @default_depth_range_m)
+    max_hz = Keyword.get(opts, :max_hz, @default_max_hz)
 
     {:ok,
      %{
-       interval_ms: div(1_000, Keyword.get(opts, :max_hz, @default_max_hz)),
-       depth_encoder:
-         Keyword.get(opts, :depth_encoder, fn pair -> encode_depth(pair, depth_range_m) end),
+       max_hz: max_hz,
+       depth_range_m: Keyword.get(opts, :depth_range_m, @default_depth_range_m) * 1.0,
+       interval_ms: div(1_000, max_hz),
+       depth_encoder: Keyword.get(opts, :depth_encoder),
        monitors: Sources.register(sources),
        latest: Map.new(@streams, &{&1, %{sequence: 0, frame: nil}}),
        encoded_depth: {0, nil},
@@ -93,6 +121,22 @@ defmodule VisionCore.Preview do
   end
 
   @impl GenServer
+  def handle_call(:options, _from, state),
+    do: {:reply, Map.take(state, [:max_hz, :depth_range_m]), state}
+
+  def handle_call({:set_options, options}, _from, state) do
+    case Enum.find(options, fn {key, value} -> not valid_option?(key, value) end) do
+      nil ->
+        state =
+          Enum.reduce(options, state, fn {key, value}, state -> put_option(state, key, value) end)
+
+        {:reply, {:ok, Map.take(state, [:max_hz, :depth_range_m])}, state}
+
+      {key, value} ->
+        {:reply, {:error, "#{key}: invalid value #{inspect(value)}"}, state}
+    end
+  end
+
   def handle_call({:subscribe, pid, stream}, _from, state)
       when is_map_key(state.subscribers, {pid, stream}),
       do: {:reply, :ok, state}
@@ -111,11 +155,11 @@ defmodule VisionCore.Preview do
   end
 
   @impl GenServer
-  def handle_cast({:camera_frame, %Frame{label: label, jpeg: jpeg}}, state)
+  def handle_cast({:camera_frame, %Frame{label: label} = frame}, state)
       when label in ["left", "right"],
-      do: {:noreply, store_frame(state, String.to_existing_atom(label), jpeg)}
+      do: {:noreply, store_frame(state, String.to_existing_atom(label), frame)}
 
-  def handle_cast({:stereo_pair, %Pair{depth_m: nil}}, state), do: {:noreply, state}
+  def handle_cast({:stereo_pair, %Pair{depth: nil}}, state), do: {:noreply, state}
 
   def handle_cast({:stereo_pair, %Pair{} = pair}, state),
     do: {:noreply, store_frame(state, :depth, pair)}
@@ -216,7 +260,7 @@ defmodule VisionCore.Preview do
   defp jpeg(state, :depth) do
     %{sequence: sequence, frame: pair} = state.latest.depth
 
-    case encode_depth_safely(state.depth_encoder, pair) do
+    case encode_depth_safely(state, pair) do
       {:ok, jpeg} ->
         {jpeg, %{state | encoded_depth: {sequence, jpeg}, depth_failure_logged: false}}
 
@@ -228,10 +272,27 @@ defmodule VisionCore.Preview do
     end
   end
 
-  defp jpeg(state, stream), do: {state.latest[stream].frame, state}
+  # Encoded on send: a grey frame costs an encode, and most are replaced unsent.
+  defp jpeg(state, stream) do
+    case Frame.to_jpeg(state.latest[stream].frame) do
+      {:ok, jpeg} -> {jpeg, state}
+      {:error, _reason} -> {nil, state}
+    end
+  end
 
-  defp encode_depth_safely(depth_encoder, pair) do
-    case depth_encoder.(pair) do
+  defp valid_option?(:max_hz, value), do: is_integer(value) and value in 1..30
+  defp valid_option?(:depth_range_m, value), do: is_number(value) and value >= 0 and value <= 50
+  defp valid_option?(_key, _value), do: false
+
+  defp put_option(state, :max_hz, max_hz),
+    do: %{state | max_hz: max_hz, interval_ms: div(1_000, max_hz)}
+
+  defp put_option(state, :depth_range_m, range_m), do: %{state | depth_range_m: range_m * 1.0}
+
+  defp encode_depth_safely(state, pair) do
+    encode = state.depth_encoder || (&encode_depth(&1, state.depth_range_m))
+
+    case encode.(pair) do
       jpeg when is_binary(jpeg) -> {:ok, jpeg}
       other -> {:error, inspect(other)}
     end

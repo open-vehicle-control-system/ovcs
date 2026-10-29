@@ -58,14 +58,14 @@ defmodule VisionCore.Detection.Backend.Hailo do
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 
   @doc """
-  Submit a single-channel (or 3-channel BGR) `Evision.Mat` for
-  detection. Returns `:ok` when the frame was handed to the
+  Submit a `u8` `{height, width}` (or `{height, width, 3}` BGR) tensor
+  for detection. Returns `:ok` when the frame was handed to the
   accelerator, `{:error, :busy}` when one is already in flight, and
   `{:error, :unavailable}` when the Port never started.
   """
   @impl VisionCore.Detection.Backend
-  def detect(server \\ __MODULE__, sequence, mat) do
-    GenServer.call(server, {:detect, sequence, mat, self()})
+  def detect(server \\ __MODULE__, sequence, image) do
+    GenServer.call(server, {:detect, sequence, image, self()})
   catch
     :exit, _ -> {:error, :unavailable}
   end
@@ -165,18 +165,18 @@ defmodule VisionCore.Detection.Backend.Hailo do
     {:reply, not is_nil(state.inflight), state}
   end
 
-  def handle_call({:detect, _sequence, _mat, _reply_to}, _from, %{port: nil} = state) do
+  def handle_call({:detect, _sequence, _image, _reply_to}, _from, %{port: nil} = state) do
     {:reply, {:error, :unavailable}, state}
   end
 
-  def handle_call({:detect, _sequence, _mat, _reply_to}, _from, %{inflight: inflight} = state)
+  def handle_call({:detect, _sequence, _image, _reply_to}, _from, %{inflight: inflight} = state)
       when not is_nil(inflight) do
     {:reply, {:error, :busy}, %{state | dropped: state.dropped + 1}}
   end
 
-  def handle_call({:detect, sequence, mat, reply_to}, _from, state) do
-    {height, width, channels} = mat_shape(mat)
-    pixels = Evision.Mat.to_binary(mat)
+  def handle_call({:detect, sequence, image, reply_to}, _from, state) do
+    {height, width, channels} = image_shape(image)
+    pixels = Nx.to_binary(image)
 
     Port.command(
       state.port,
@@ -249,8 +249,8 @@ defmodule VisionCore.Detection.Backend.Hailo do
   defp take_detections(_malformed, _count, detections), do: Enum.reverse(detections)
 
   # Single-channel Mats report a 2-tuple shape.
-  defp mat_shape(mat) do
-    case Evision.Mat.shape(mat) do
+  defp image_shape(image) do
+    case Nx.shape(image) do
       {height, width} -> {height, width, 1}
       {height, width, channels} -> {height, width, channels}
     end

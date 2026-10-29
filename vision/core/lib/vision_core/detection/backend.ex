@@ -3,16 +3,12 @@ defmodule VisionCore.Detection.Backend do
   What a detection backend has to do, so `VisionCore.Detection.Pipeline`
   does not care which one it is talking to.
 
-  There are three, and they differ only in where the arithmetic
-  happens:
+  There are two:
 
     * `VisionCore.Detection.Backend.Hailo` — a YOLO HEF on a Hailo-8, via a
       Port. The accelerator path, for a vehicle fitted with one.
-    * `VisionCore.Detection.Backend.Dnn` — OpenCV's DNN module, on the CPU or
-      on a GPU through OpenCL. What lets the full stack run on a
-      workstation, simulator included.
     * `VisionCore.Detection.Backend.Stub` — fixed boxes, no model. For proving
-      the plumbing when neither of the above is available.
+      the plumbing without an accelerator.
 
   ## The contract
 
@@ -65,14 +61,15 @@ defmodule VisionCore.Detection.Backend do
   @type server :: GenServer.server()
 
   @doc """
-  Submit one `Evision.Mat` for detection, tagged with `sequence`.
+  Submit one image, a `u8` `{height, width}` tensor, for detection,
+  tagged with `sequence`.
 
   `:ok` means the frame was accepted and a reply will follow.
   `{:error, :busy}` means one is already in flight and this frame was
   dropped. `{:error, :unavailable}` means the backend is not working
   and never will be without a restart.
   """
-  @callback detect(server(), sequence :: non_neg_integer(), mat :: Evision.Mat.maybe_mat_in()) ::
+  @callback detect(server(), sequence :: non_neg_integer(), image :: Nx.Tensor.t()) ::
               :ok | {:error, :busy | :unavailable}
 
   @doc "False when the backend could not initialise. Never raises."

@@ -1,37 +1,29 @@
 defmodule VisionCore.Stereo.Stage.Decode do
   @moduledoc """
-  Decodes both JPEG frames to single-channel images: matching works on
-  one channel, and rectification then remaps one channel instead of
-  three.
+  Turns both camera frames into images at the pipeline's size: grey
+  frames as they are, JPEG frames decoded to their luma
+  (`VisionCore.Camera.Frame.to_tensor/1`), shrunk by area averaging when
+  larger, so the matcher can work on fewer pixels than the cameras
+  deliver.
   """
-  @behaviour VisionCore.Stereo.Stage
+  @behaviour VisionCore.Stereo.NxStage
 
-  alias VisionCore.Camera.Frame
-  alias VisionCore.Stereo.Pair
+  @impl VisionCore.Stereo.NxStage
+  def init(_opts, context), do: {:ok, %{size: {context.height, context.width}}}
 
-  @impl VisionCore.Stereo.Stage
-  def init(_opts, _context), do: {:ok, nil}
-
-  @impl VisionCore.Stereo.Stage
+  @impl VisionCore.Stereo.NxStage
   def requires, do: [:left_frame, :right_frame]
 
-  @impl VisionCore.Stereo.Stage
+  @impl VisionCore.Stereo.NxStage
   def provides, do: [:left, :right]
 
-  @impl VisionCore.Stereo.Stage
-  def run(%Pair{} = pair, state) do
-    with {:ok, left} <- decode(pair.left_frame),
-         {:ok, right} <- decode(pair.right_frame) do
-      {:ok, %{pair | left: left, right: right}, state}
-    else
-      {:error, reason} -> {:error, reason, state}
-    end
-  end
+  @impl VisionCore.Stereo.NxStage
+  def params(_state, _context), do: %{}
 
-  defp decode(%Frame{jpeg: jpeg}) do
-    case Evision.imdecode(jpeg, Evision.Constant.cv_IMREAD_GRAYSCALE()) do
-      %Evision.Mat{} = mat -> {:ok, mat}
-      other -> {:error, {:imdecode_failed, other}}
-    end
+  @impl VisionCore.Stereo.NxStage
+  def step(tensors, _params, %{size: size}) do
+    tensors
+    |> Map.put(:left, NxStereo.Image.resize_area(tensors.left_frame, size))
+    |> Map.put(:right, NxStereo.Image.resize_area(tensors.right_frame, size))
   end
 end

@@ -4,7 +4,7 @@ defmodule VisionCore.Detection.FusionTest do
   alias VisionCore.Detection.Fusion
 
   # A hand-built depth map from `rows` in metres, so the expected answer is arithmetic.
-  defp depth_mat(rows) do
+  defp depth_map(rows) do
     height = length(rows)
     width = rows |> hd() |> length()
 
@@ -13,7 +13,7 @@ defmodule VisionCore.Detection.FusionTest do
       |> List.flatten()
       |> Enum.reduce(<<>>, fn value, acc -> acc <> <<value::little-float-32>> end)
 
-    Evision.Mat.from_binary(binary, {:f, 32}, height, width, 1)
+    binary |> Nx.from_binary(:f32) |> Nx.reshape({height, width})
   end
 
   defp box(x0, y0, x1, y1), do: %{x0: x0 / 1.0, y0: y0 / 1.0, x1: x1 / 1.0, y1: y1 / 1.0}
@@ -29,7 +29,7 @@ defmodule VisionCore.Detection.FusionTest do
           end
         end
 
-      assert Fusion.median_depth(depth_mat(rows), box(0, 0, 8, 8), 0.5) == 2.0
+      assert Fusion.median_depth(depth_map(rows), box(0, 0, 8, 8), 0.5) == 2.0
     end
 
     test "ignores the background a whole-box sample would include" do
@@ -43,7 +43,7 @@ defmodule VisionCore.Detection.FusionTest do
           end
         end
 
-      assert Fusion.median_depth(depth_mat(rows), box(0, 0, 8, 8), 1.0) == 5.0
+      assert Fusion.median_depth(depth_map(rows), box(0, 0, 8, 8), 1.0) == 5.0
     end
 
     test "treats zero as no measurement rather than as 0 m" do
@@ -56,23 +56,23 @@ defmodule VisionCore.Detection.FusionTest do
         [0.0, 0.0, 0.0, 0.0]
       ]
 
-      assert Fusion.median_depth(depth_mat(rows), box(0, 0, 4, 4), 1.0) == 2.0
+      assert Fusion.median_depth(depth_map(rows), box(0, 0, 4, 4), 1.0) == 2.0
     end
 
     test "returns nil when nothing inside the box was measured" do
       rows = for _ <- 0..3, do: for(_ <- 0..3, do: 0.0)
-      assert Fusion.median_depth(depth_mat(rows), box(0, 0, 4, 4), 1.0) == nil
+      assert Fusion.median_depth(depth_map(rows), box(0, 0, 4, 4), 1.0) == nil
     end
 
     test "clamps a box that runs off the edge of the frame" do
       rows = for _ <- 0..3, do: for(_ <- 0..3, do: 3.0)
       # A person cut off at the right edge: x1 beyond the width.
-      assert Fusion.median_depth(depth_mat(rows), box(2, 0, 40, 4), 1.0) == 3.0
+      assert Fusion.median_depth(depth_map(rows), box(2, 0, 40, 4), 1.0) == 3.0
     end
 
     test "averages the two middle values for an even sample count" do
       rows = [[1.0, 2.0], [3.0, 4.0]]
-      assert Fusion.median_depth(depth_mat(rows), box(0, 0, 2, 2), 1.0) == 2.5
+      assert Fusion.median_depth(depth_map(rows), box(0, 0, 2, 2), 1.0) == 2.5
     end
   end
 
@@ -167,5 +167,42 @@ defmodule VisionCore.Detection.FusionTest do
     test "returns nil when the map is too short for the coordinate" do
       assert Fusion.remap(<<0, 0, 0, 0>>, 8, 8, {7, 7}) == nil
     end
+  end
+
+  describe "rectification_map/1" do
+    @calibration Path.expand("../../support/calibration", __DIR__)
+
+    test "maps a rectified pixel to the raw pixel OpenCV's map gives" do
+      calibration =
+        @calibration
+        |> Path.join("stereo_left.yaml")
+        |> VisionCore.Ros2.CameraCalibration.load!()
+        |> VisionCore.Ros2.CameraCalibration.scale_to(480, 270)
+
+      map = Fusion.rectification_map(calibration)
+
+      {opencv_map, _fractions} =
+        Evision.initUndistortRectifyMap(
+          matrix(calibration.camera_matrix),
+          Evision.Mat.from_nx_2d(Nx.tensor([calibration.distortion_coefficients], type: :f64)),
+          matrix(calibration.rectification_matrix),
+          calibration.projection_matrix
+          |> then(fn p -> Enum.map([0, 1, 2, 4, 5, 6, 8, 9, 10], &Enum.at(p, &1)) end)
+          |> matrix(),
+          {480, 270},
+          Evision.Constant.cv_16SC2()
+        )
+
+      opencv_binary = Evision.Mat.to_binary(opencv_map)
+
+      for vertex <- [{0, 0}, {240, 135}, {479, 269}, {100.4, 30.6}] do
+        {x, y} = Fusion.remap(map, 480, 270, vertex)
+        {opencv_x, opencv_y} = Fusion.remap(opencv_binary, 480, 270, vertex)
+        assert abs(x - opencv_x) <= 1 and abs(y - opencv_y) <= 1
+      end
+    end
+
+    defp matrix(values),
+      do: values |> Nx.tensor(type: :f64) |> Nx.reshape({3, 3}) |> Evision.Mat.from_nx_2d()
   end
 end

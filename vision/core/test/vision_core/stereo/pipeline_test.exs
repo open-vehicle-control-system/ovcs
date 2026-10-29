@@ -6,6 +6,20 @@ defmodule VisionCore.Stereo.PipelineTest do
 
   @calibration Path.expand("../../support/calibration", __DIR__)
 
+  # A stage with a runtime setting, which the Nx stages do not have.
+  defmodule Gain do
+    @behaviour VisionCore.Stereo.Stage
+    def init(opts, _context), do: {:ok, %{gain: Keyword.get(opts, :gain, 1)}}
+    def requires, do: [:depth]
+    def provides, do: [:depth]
+    def run(pair, state), do: {:ok, pair, state}
+    def option_specs, do: [gain: %{type: :integer, range: {1, 10}}]
+    def options(state), do: %{gain: state.gain}
+
+    def set_option(state, :gain, gain) when gain in 1..10, do: {:ok, %{state | gain: gain}}
+    def set_option(_state, :gain, gain), do: {:error, "gain out of range: #{inspect(gain)}"}
+  end
+
   defp start(stages) do
     Pipeline.start_link(
       name: :pipeline_test,
@@ -23,55 +37,44 @@ defmodule VisionCore.Stereo.PipelineTest do
   end
 
   test "starts with the default stages" do
-    assert {:ok, pipeline} = start(Pipeline.default_stages())
-    assert Map.has_key?(Pipeline.options(pipeline), :num_disparities)
-    assert Map.has_key?(Pipeline.options(pipeline), :clahe)
+    assert {:ok, _pipeline} = start(Pipeline.default_stages())
   end
 
   test "refuses a stage whose inputs no stage before it provides" do
-    stages = [Stage.Sgbm, Stage.Decode, Stage.Depth]
+    stages = [Stage.Match, Stage.Decode, Stage.Depth]
 
     assert {:error, {%ArgumentError{message: message}, _}} = start(stages)
-    assert message =~ "Sgbm"
+    assert message =~ "Match"
   end
 
   test "refuses a stage list that never produces depth" do
-    assert {:error, {%ArgumentError{message: message}, _}} = start([Stage.Decode, Stage.Sgbm])
+    assert {:error, {%ArgumentError{message: message}, _}} = start([Stage.Decode, Stage.Match])
     assert message =~ "depth"
   end
 
   test "default_stages/1 passes overrides to the stage they name" do
-    stages = Pipeline.default_stages(sgbm: [num_disparities: 96])
-    assert {Stage.Sgbm, [num_disparities: 96]} in stages
+    stages = Pipeline.default_stages(match: [num_disparities: 128], point_cloud: [decimation: 2])
 
-    {:ok, pipeline} = start(stages)
-    assert Pipeline.options(pipeline).num_disparities == 96
+    assert {Stage.Match, [num_disparities: 128]} in stages
+    assert {Stage.PointCloud, [decimation: 2]} in stages
   end
 
   test "routes each setting to the stage that declares it" do
-    {:ok, pipeline} = start(Pipeline.default_stages())
+    {:ok, pipeline} = start(Pipeline.default_stages() ++ [Gain])
 
-    assert {:ok, %{uniqueness_ratio: 20, clahe: false}} =
-             Pipeline.set_options(pipeline, uniqueness_ratio: 20, clahe: false)
+    assert {:ok, %{gain: 3}} = Pipeline.set_options(pipeline, gain: 3)
 
     assert {:error, "unknown or invalid stereo setting" <> _} =
              Pipeline.set_options(pipeline, block_size: 7)
-  end
 
-  test "lists only the settings of the stages it runs" do
-    stages = Enum.reject(Pipeline.default_stages(), &match?({Stage.Clahe, _}, &1))
-    {:ok, pipeline} = start(stages)
-
-    keys = pipeline |> Pipeline.option_specs() |> Keyword.keys()
-    assert :uniqueness_ratio in keys
-    refute :clahe in keys
+    assert {:error, "gain out of range" <> _} = Pipeline.set_options(pipeline, gain: 20)
   end
 
   test "keeps settings changed at runtime across a calibration reload" do
-    {:ok, pipeline} = start(Pipeline.default_stages())
-    {:ok, _} = Pipeline.set_options(pipeline, uniqueness_ratio: 25)
+    {:ok, pipeline} = start(Pipeline.default_stages() ++ [Gain])
+    {:ok, _} = Pipeline.set_options(pipeline, gain: 4)
 
     assert :ok = Pipeline.reload_calibration(pipeline)
-    assert Pipeline.options(pipeline).uniqueness_ratio == 25
+    assert Pipeline.options(pipeline).gain == 4
   end
 end

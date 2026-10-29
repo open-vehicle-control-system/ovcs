@@ -5,14 +5,12 @@ defmodule VisionCore.Ros2.CameraCalibration do
   `cameracalibrator` writes (`left.yaml` / `right.yaml`).
 
   Each matrix is kept as the YAML's flat row-major list; converting to Nx
-  tensors or Evision Mats is the consumer's responsibility.
-  Two consumers:
+  tensors is the consumer's responsibility. Two consumers:
 
     * `VisionCore.Ros2.Publishers.Stereo` — populates the outgoing
       `sensor_msgs/CameraInfo` directly from these fields.
-    * `VisionCore.Stereo.Pipeline` — builds undistortion +
-      rectification look-up tables via
-      `Evision.initUndistortRectifyMap/6`.
+    * `VisionCore.Stereo.Stage.Rectify` — undistorts and rectifies with
+      `NxStereo.Rectify`.
 
   ## Accepted YAML schema
 

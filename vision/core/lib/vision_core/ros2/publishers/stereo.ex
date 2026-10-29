@@ -17,8 +17,9 @@ defmodule VisionCore.Ros2.Publishers.Stereo do
         * a 16UC1 `sensor_msgs/Image` of **millimetres** on
           `:depth_topic`, the ROS depth-image convention.
         * `sensor_msgs/CameraInfo` on `:depth_camera_info_topic` when
-          set — the left camera's intrinsics, since the depth image is
-          in the rectified left frame. Without a camera_info sibling a
+          set — the left camera's intrinsics at the matching size, from
+          the pair's geometry, since the depth image is in the rectified
+          left frame. Without a camera_info sibling a
           viewer cannot project the depth image. Its `K` is `P`'s 3x3
           block and `D` is zero: the image is rectified, so a consumer
           that reaches for `K` instead of `P` still unprojects
@@ -58,6 +59,9 @@ defmodule VisionCore.Ros2.Publishers.Stereo do
       `<prefix>/<side>/image_raw/compressed`. Off when the frames
       already come from that topic, as `VisionCore.Ros2.Camera`'s do
       against a simulator: republishing them would feed them back in.
+    * `:raw_image_max_hz` (10) — the most raw images a second, per side,
+      for grey frames, which are JPEG-encoded here; JPEG frames are
+      republished as they arrive.
     * `:depth_camera_info_topic`, `:cloud_topic`,
       `:disparity_image_topic`, `:rectified_image_topic`,
       `:right_rectified_image_topic` — each output is published only
@@ -84,6 +88,7 @@ defmodule VisionCore.Ros2.Publishers.Stereo do
   alias Ros2Zenoh.StereoMsgs.Msg.DisparityImage
 
   @default_camera_info_interval_frames 30
+  @default_raw_image_max_hz 10
 
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -131,6 +136,7 @@ defmodule VisionCore.Ros2.Publishers.Stereo do
            build_side_state("right", topic_prefix, right_opts, width, height, publish_raw_images)
        },
        camera_info_interval_frames: camera_info_interval_frames,
+       raw_image_max_hz: Keyword.get(opts, :raw_image_max_hz, @default_raw_image_max_hz),
        disparity_topic: disparity_topic,
        disparity_image_topic: disparity_image_topic,
        depth_topic: depth_topic,
@@ -183,9 +189,27 @@ defmodule VisionCore.Ros2.Publishers.Stereo do
           frame_id: side.frame_id
         }
 
-        {publish_ns, _} =
+        slot =
+          if is_binary(side.image_topic),
+            do:
+              image_slot(
+                side.next_image_ms,
+                frame,
+                System.monotonic_time(:millisecond),
+                state.raw_image_max_hz
+              ),
+            else: :skip
+
+        {publish_ns, side} =
           measure_ns(fn ->
-            if side.image_topic, do: publish_compressed_image(side.image_topic, header, frame)
+            case slot do
+              {:publish, next_ms} ->
+                publish_compressed_image(side.image_topic, header, frame)
+                %{side | next_image_ms: next_ms}
+
+              :skip ->
+                side
+            end
           end)
 
         if rem(side.frame_counter, state.camera_info_interval_frames) == 0 do
@@ -197,7 +221,7 @@ defmodule VisionCore.Ros2.Publishers.Stereo do
         state
         |> update_in([:telemetry], &StageTimer.record(&1, stage, publish_ns))
         |> update_in([:telemetry], &StageTimer.bump(&1, String.to_atom("frames_#{label}")))
-        |> put_in([:sides, label, :frame_counter], side.frame_counter + 1)
+        |> put_in([:sides, label], %{side | frame_counter: side.frame_counter + 1})
 
       :error ->
         Logger.warning(
@@ -208,21 +232,48 @@ defmodule VisionCore.Ros2.Publishers.Stereo do
     end
   end
 
-  defp publish_compressed_image(topic, header, %Frame{jpeg: jpeg}) do
-    message = %CompressedImage{header: header, format: "jpeg", data: jpeg}
-    VisionCore.Ros2.ZenohClient.publish(topic, CompressedImage, message)
+  @doc """
+  Whether to publish `frame` as a raw image at `now_ms`. A JPEG frame is
+  always published. A grey frame, which has to be encoded, is published
+  once the side's next slot, `next_ms`, has opened: slots are
+  `1000 / max_hz` ms apart, so frames on a coarser grid still average
+  `max_hz`. Returns the next slot when the frame is published.
+  """
+  def image_slot(next_ms, %Frame{jpeg: jpeg}, _now_ms, _max_hz) when is_binary(jpeg),
+    do: {:publish, next_ms}
+
+  def image_slot(nil, %Frame{}, now_ms, max_hz), do: {:publish, now_ms + 1_000 / max_hz}
+
+  def image_slot(next_ms, %Frame{}, now_ms, max_hz) when now_ms >= next_ms,
+    do: {:publish, max(next_ms + 1_000 / max_hz, now_ms)}
+
+  def image_slot(_next_ms, %Frame{}, _now_ms, _max_hz), do: :skip
+
+  defp publish_compressed_image(topic, header, %Frame{} = frame) do
+    with {:ok, jpeg} <- Frame.to_jpeg(frame) do
+      message = %CompressedImage{header: header, format: "jpeg", data: jpeg}
+      VisionCore.Ros2.ZenohClient.publish(topic, CompressedImage, message)
+    end
   end
 
+  @doc "A rectified image as a JPEG."
+  @spec encode_image(Nx.Tensor.t() | nil) :: {:ok, binary()} | {:error, term()}
+  def encode_image(%Nx.Tensor{} = image), do: VisionCore.Jpeg.encode_tensor(image)
+  def encode_image(_image), do: {:error, :no_image}
+
   # Rectified image: K is P's 3x3 block and D is zero; see the moduledoc.
-  defp depth_camera_info(%CameraInfo{p: projection} = camera_info, header) do
+  defp depth_camera_info(%CameraCalibration{projection_matrix: projection} = calibration, header) do
     [fx, skew, cx, _tx, _, fy, cy, _ty, _, _, _, _] = projection
 
     %CameraInfo{
-      camera_info
-      | header: header,
-        k: [fx, skew, cx, 0.0, fy, cy, 0.0, 0.0, 1.0],
-        d: [0.0, 0.0, 0.0, 0.0, 0.0],
-        r: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+      header: header,
+      width: calibration.width,
+      height: calibration.height,
+      distortion_model: calibration.distortion_model,
+      k: [fx, skew, cx, 0.0, fy, cy, 0.0, 0.0, 1.0],
+      d: [0.0, 0.0, 0.0, 0.0, 0.0],
+      r: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+      p: projection
     }
   end
 
@@ -318,9 +369,7 @@ defmodule VisionCore.Ros2.Publishers.Stereo do
           {state.right_rectified_image_topic, pair.right}
         ],
         is_binary(topic),
-        match?(%Evision.Mat{}, image),
-        jpeg = Evision.imencode(".jpg", image),
-        is_binary(jpeg) do
+        {:ok, jpeg} <- [encode_image(image)] do
       VisionCore.Ros2.ZenohClient.publish(topic, CompressedImage, %CompressedImage{
         header: header,
         format: "jpeg",
@@ -329,12 +378,11 @@ defmodule VisionCore.Ros2.Publishers.Stereo do
     end
 
     # Consumers look for camera_info next to the depth image topic.
-    with topic when is_binary(topic) <- state.depth_camera_info_topic,
-         {:ok, %{camera_info: %CameraInfo{} = left_camera_info}} <- Map.fetch(state.sides, "left") do
+    if state.depth_camera_info_topic do
       VisionCore.Ros2.ZenohClient.publish(
-        topic,
+        state.depth_camera_info_topic,
         CameraInfo,
-        depth_camera_info(left_camera_info, header)
+        depth_camera_info(pair.geometry.left_calibration, header)
       )
     end
 
@@ -364,7 +412,8 @@ defmodule VisionCore.Ros2.Publishers.Stereo do
           fallback_height,
           side
         ),
-      frame_counter: 0
+      frame_counter: 0,
+      next_image_ms: nil
     }
   end
 

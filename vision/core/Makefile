@@ -1,14 +1,21 @@
-# :elixir_make entry on :rpi5: cross-builds the camera_capture and
-# hailo_detect Port binaries (vision/rust) into priv/. camera_capture links
-# libcamera from the rpi5 sysroot; hailo_detect links libhailort from the
-# :hailort dependency. The toolchain and sysroot come from the env
+# :elixir_make entry on a vision target: cross-builds the Port binaries
+# (vision/rust) into priv/. On :rpi5, camera_capture links libcamera from
+# its sysroot and hailo_detect links libhailort from the :hailort
+# dependency; on :okdo_c100, v4l2_capture needs only libc; jpeg_codec,
+# on both, is pure Rust. The toolchain and sysroot come from the env
 # Nerves exports for a target compile (CC, CXX, AR, CFLAGS, CXXFLAGS,
 # NERVES_SDK_SYSROOT, NERVES_TOOLCHAIN, PKG_CONFIG_LIBDIR, TARGET_*).
 
 PRIV_DIR := $(MIX_APP_PATH)/priv
 RUST_DIR := $(CURDIR)/../rust
 HAILORT_DIR := $(MIX_BUILD_PATH)/lib/hailort
-BINARIES := camera_capture hailo_detect
+ifeq ($(MIX_TARGET),okdo_c100)
+BINARIES := v4l2_capture jpeg_codec
+FEATURES :=
+else
+BINARIES := camera_capture hailo_detect jpeg_codec
+FEATURES := --features device
+endif
 CARGO ?= cargo
 
 SYSROOT := $(NERVES_SDK_SYSROOT)
@@ -48,15 +55,23 @@ CARGO_ENV := env -u CC -u CXX -u AR -u CFLAGS -u CXXFLAGS -u LDFLAGS \
 	CARGO_TARGET_$(RUST_TARGET_ENV_UPPER)_LINKER="$(CC)" \
 	CARGO_TARGET_$(RUST_TARGET_ENV_UPPER)_RUSTFLAGS="-C link-arg=--sysroot=$(SYSROOT)"
 
+ifeq ($(MIX_TARGET),host)
+# A workstation run builds jpeg_codec natively, for JPEG camera frames.
+all:
+	cd $(RUST_DIR) && $(CARGO) build --release --locked -p jpeg_codec
+	mkdir -p $(PRIV_DIR)
+	install -m 755 $(RUST_DIR)/target/release/jpeg_codec $(PRIV_DIR)/jpeg_codec
+else
 all: cargo
 	mkdir -p $(PRIV_DIR)
 	for binary in $(BINARIES); do install -m 755 $(RUST_OUT)/$$binary $(PRIV_DIR)/$$binary; done
+endif
 
 # Phony: cargo decides what is stale.
 cargo:
-	@test -n "$(SYSROOT)" || { echo "NERVES_SDK_SYSROOT is unset: compile through vision/firmware with MIX_TARGET=rpi5" >&2; exit 1; }
+	@test -n "$(SYSROOT)" || { echo "NERVES_SDK_SYSROOT is unset: compile through vision/firmware with MIX_TARGET=rpi5 or okdo_c100" >&2; exit 1; }
 	@test -d "$(CXX_INCLUDE)" || { echo "no C++ headers at $(CXX_INCLUDE)" >&2; exit 1; }
-	cd $(RUST_DIR) && $(CARGO_ENV) $(CARGO) build --release --locked --features device \
+	cd $(RUST_DIR) && $(CARGO_ENV) $(CARGO) build --release --locked $(FEATURES) \
 		--target $(RUST_TARGET) $(addprefix -p ,$(BINARIES))
 
 clean:

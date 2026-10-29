@@ -58,7 +58,12 @@ vehicle_firmware_dir =
 
 System.put_env("VEHICLE_FIRMWARE_DIR", vehicle_firmware_dir)
 
-config :nerves, :firmware, fwup_conf: resolve_firmware_file.("fwup.conf")
+fwup_conf = resolve_firmware_file.("fwup.conf")
+
+# A target without a fwup.conf of its own, such as okdo_c100, uses its system's.
+if File.exists?(Path.expand("../#{fwup_conf}", __DIR__)) do
+  config :nerves, :firmware, fwup_conf: fwup_conf
+end
 
 config :vision_firmware, vehicle: vehicle_name
 

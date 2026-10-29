@@ -4,21 +4,26 @@ defmodule VisionCore.Stereo.Pipeline do
   `VisionCore.Stereo.Stage`s and sends the finished
   `VisionCore.Stereo.Pair` to its listeners as `{:stereo_pair, pair}`.
 
-  The default stages, from `default_stages/1`:
+  The default stages, from `default_stages/1`, all but `Quality` written
+  in Nx (`VisionCore.Stereo.NxStage`):
 
-      Decode       # JPEG → single-channel images
+      Decode       # camera frames → grey images at the pipeline's size
       Rectify      # undistortion and rectification
-      Clahe        # contrast equalisation of the images to match
-      Sgbm         # disparity, OpenCV's semi-global block matching
+      Match        # disparity, libSGM's semi-global matching
       PostFilter   # median filter on the disparity
-      Quality      # disparity statistics for the log line
       Depth        # disparity → metric depth
       PointCloud   # depth → decimated point cloud
+      Quality      # disparity statistics for the log line
 
   A stage list is checked at start: every field a stage requires must be
   provided by a stage before it, and the stages together must provide
   the disparity and depth listeners consume. Each stage is timed, and
   the timings are logged with the metrics stages report.
+
+  Consecutive Nx stages are compiled at start into one
+  `VisionCore.Stereo.NxSegment`, and so, through `nx_iree`, one module
+  on the device; it runs and is timed as one stage named after its
+  members.
 
   One pair is processed at a time. Once a pair is done, whether it
   succeeded or not, the process that submitted it receives
@@ -30,10 +35,13 @@ defmodule VisionCore.Stereo.Pipeline do
     * `:left_calibration_path`, `:right_calibration_path` (required) —
       `camera_calibration_parsers` YAMLs. The right camera's projection
       matrix `P_right[0,3] = -fx × T` encodes the baseline.
-    * `:width`, `:height` (required) — the capture resolution. The
-      calibrations are scaled to it, so rectification matches what the
-      cameras deliver.
+    * `:width`, `:height` (required) — the size the stages work at. The
+      calibrations are scaled to it.
+    * `:frame_width`, `:frame_height` (`:width`, `:height`) — the size
+      of the submitted frames.
     * `:stages` (`default_stages/0`) — modules or `{module, opts}`.
+    * `:defn_options` — how Nx stages are compiled; see
+      `VisionCore.Stereo.NxSegment.defn_options/1` for the default.
     * `:name` (`__MODULE__`).
   """
   use GenServer
@@ -41,7 +49,7 @@ defmodule VisionCore.Stereo.Pipeline do
 
   alias VisionCore.Camera.Frame
   alias VisionCore.Ros2.CameraCalibration
-  alias VisionCore.Stereo.{Pair, Stage, StageTimer}
+  alias VisionCore.Stereo.{NxSegment, NxStage, Pair, Stage, StageTimer}
 
   @consumed [:left, :right, :disparity, :disparity_range, :disparity_bytes, :depth, :depth_m]
 
@@ -52,19 +60,18 @@ defmodule VisionCore.Stereo.Pipeline do
 
   @doc """
   The default stages, with `overrides` merged into the options of the
-  stage they name: `default_stages(sgbm: [num_disparities: 96])`.
+  stage they name: `default_stages(match: [num_disparities: 128])`.
   """
   @spec default_stages(keyword()) :: [{module(), keyword()}]
   def default_stages(overrides \\ []) do
     for module <- [
           Stage.Decode,
           Stage.Rectify,
-          Stage.Clahe,
-          Stage.Sgbm,
+          Stage.Match,
           Stage.PostFilter,
-          Stage.Quality,
           Stage.Depth,
-          Stage.PointCloud
+          Stage.PointCloud,
+          Stage.Quality
         ] do
       {module, Keyword.get(overrides, stage_name(module), [])}
     end
@@ -105,7 +112,7 @@ defmodule VisionCore.Stereo.Pipeline do
 
     stages =
       opts
-      |> Keyword.get(:stages, default_stages())
+      |> Keyword.get_lazy(:stages, &default_stages/0)
       |> Enum.map(&normalise_stage/1)
 
     check_order!(stages)
@@ -115,7 +122,10 @@ defmodule VisionCore.Stereo.Pipeline do
      %{
        opts: opts,
        context: context,
-       stages: Enum.map(stages, &init_stage!(&1, context)),
+       stages:
+         stages
+         |> Enum.map(&init_stage!(&1, context))
+         |> group_nx_stages(context, context.defn_options),
        listeners: [],
        timer: StageTimer.new(window: 30, label: "pipeline"),
        last_start_ns: nil
@@ -193,6 +203,10 @@ defmodule VisionCore.Stereo.Pipeline do
           timer = StageTimer.record(timer, stage.name, elapsed_ns)
 
           case result do
+            {:ok, pair, stage_state} when stage.module == NxSegment ->
+              pair = %{pair | device_ms: pair.device_ms + elapsed_ns / 1_000_000}
+              {{:ok, pair}, [%{stage | state: stage_state} | done], timer}
+
             {:ok, pair, stage_state} ->
               {{:ok, pair}, [%{stage | state: stage_state} | done], timer}
 
@@ -254,11 +268,39 @@ defmodule VisionCore.Stereo.Pipeline do
     end
   end
 
+  defp defn_options(opts),
+    do: Keyword.get_lazy(opts, :defn_options, fn -> NxSegment.defn_options(%{}) end)
+
+  # Each run of consecutive Nx stages becomes one segment stage.
+  defp group_nx_stages(stages, context, defn_options) do
+    stages
+    |> Enum.chunk_by(&NxStage.nx_stage?(&1.module))
+    |> Enum.flat_map(fn [first | _] = run ->
+      if NxStage.nx_stage?(first.module),
+        do: [segment_stage!(run, context, defn_options)],
+        else: run
+    end)
+  end
+
+  defp segment_stage!(members, context, defn_options) do
+    name = members |> Enum.map_join("+", & &1.name) |> String.to_atom()
+
+    case NxSegment.build(members, context, defn_options) do
+      {:ok, segment} -> %{module: NxSegment, name: name, opts: [], state: segment}
+      {:error, reason} -> raise ArgumentError, "#{name} cannot start: #{reason}"
+    end
+  end
+
   defp init_stage!(stage, context) do
     case stage.module.init(stage.opts, context) do
       {:ok, stage_state} -> Map.put(stage, :state, stage_state)
       {:error, reason} -> raise ArgumentError, "#{inspect(stage.module)} cannot start: #{reason}"
     end
+  end
+
+  defp reinit_stage!(%{module: NxSegment, state: segment} = stage, context) do
+    members = Enum.map(segment.members, &reinit_stage!(&1, context))
+    %{stage | state: NxSegment.reload(segment, members, context)}
   end
 
   # Settings changed while running survive the rebuild.
@@ -300,9 +342,17 @@ defmodule VisionCore.Stereo.Pipeline do
     end
   end
 
-  defp context(opts) do
+  @doc """
+  The `t:VisionCore.Stereo.Stage.context/0` the stages get from the
+  pipeline options: sizes, both calibrations scaled to the working size,
+  and the stereo geometry derived from them.
+  """
+  @spec context(keyword()) :: Stage.context()
+  def context(opts) do
     width = Keyword.fetch!(opts, :width)
     height = Keyword.fetch!(opts, :height)
+    frame_width = Keyword.get(opts, :frame_width, width)
+    frame_height = Keyword.get(opts, :frame_height, height)
 
     # Scaled to the capture resolution, or rectification would upsample every frame.
     [left, right] =
@@ -321,6 +371,9 @@ defmodule VisionCore.Stereo.Pipeline do
     %{
       width: width,
       height: height,
+      frame_width: frame_width,
+      frame_height: frame_height,
+      defn_options: defn_options(opts),
       left_calibration: left,
       right_calibration: right,
       focal_length_px: fx,

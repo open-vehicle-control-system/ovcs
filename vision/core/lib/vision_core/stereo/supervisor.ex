@@ -59,6 +59,10 @@ defmodule VisionCore.Stereo.Supervisor do
 
     * `:width` (1280), `:height` (720), `:fps` (30) — applied to
       both camera drivers.
+    * `:match_width`, `:match_height` (`:width`, `:height`) — the size
+      the pipeline matches at, and so the size of the disparity, depth
+      and point cloud. Smaller than the capture size, the frames are
+      scaled down to it before rectification.
     * `:publish_disparity_image` (`false`) — also publish the
       disparity pixels as a bare `sensor_msgs/Image`, because viewers
       match on a topic's type and cannot render the `DisparityImage`
@@ -75,6 +79,9 @@ defmodule VisionCore.Stereo.Supervisor do
     * `:publish_raw_images` (`true`) — republish the camera frames on
       `<topic_prefix>/<side>/image_raw/compressed`. Off when the cameras
       already publish there, as a simulator's do.
+    * `:raw_image_max_hz` (10) — the most raw images a second, per side,
+      encoded from drivers that deliver grey frames; JPEG frames are
+      republished as they arrive.
     * `:topic_prefix` (`"stereo"`) — root of every topic this
       unit publishes. Also drives the default `frame_id` for each
       side (`<prefix>_left`, `<prefix>_right`).
@@ -90,7 +97,10 @@ defmodule VisionCore.Stereo.Supervisor do
     * `:pair_tolerance_ms` (33) — see `VisionCore.Stereo.Pairer`.
     * `:stages` (`VisionCore.Stereo.Pipeline.default_stages/0`) — the
       pipeline's stages. The calibration paths and the capture size come
-      from the options above.
+      from the options above, the matching size from `:match_width` and
+      `:match_height`.
+    * `:defn_options` (`config :vision_core, :nx_defn_options`) — how the
+      pipeline compiles Nx stages; see `VisionCore.Stereo.NxSegment`.
   """
   use Supervisor
   require Logger
@@ -102,6 +112,7 @@ defmodule VisionCore.Stereo.Supervisor do
 
   @default_width 1280
   @default_height 720
+  @default_raw_image_max_hz 10
   @default_fps 30
   @default_topic_prefix "stereo"
   @default_pair_tolerance_ms 33
@@ -134,6 +145,17 @@ defmodule VisionCore.Stereo.Supervisor do
     )
   end
 
+  @doc """
+  The `VisionCore.Stereo.Pipeline` options the stereo unit starts with
+  for `opts`, the `:stereo` component's options: what
+  `mix vision_core.nx_cache` compiles for.
+  """
+  @spec pipeline_options(keyword()) :: keyword()
+  def pipeline_options(opts) do
+    {Pipeline, pipeline_opts} = opts |> build_config() |> pipeline_spec()
+    pipeline_opts
+  end
+
   defp build_config(opts) do
     topic_prefix = Keyword.get(opts, :topic_prefix, @default_topic_prefix)
     calibration_dir = Keyword.get(opts, :calibration_dir)
@@ -146,18 +168,24 @@ defmodule VisionCore.Stereo.Supervisor do
       resolve_side_opts(Keyword.fetch!(opts, :right), :right, topic_prefix, calibration_dir)
 
     {left, right} = use_stored_calibration(left, right, store_dir, topic_prefix)
+    width = Keyword.get(opts, :width, @default_width)
+    height = Keyword.get(opts, :height, @default_height)
 
     %{
       driver: Keyword.fetch!(opts, :driver),
-      width: Keyword.get(opts, :width, @default_width),
-      height: Keyword.get(opts, :height, @default_height),
+      width: width,
+      height: height,
+      match_width: Keyword.get(opts, :match_width, width),
+      match_height: Keyword.get(opts, :match_height, height),
       fps: Keyword.get(opts, :fps, @default_fps),
       topic_prefix: topic_prefix,
       pair_tolerance_ms: Keyword.get(opts, :pair_tolerance_ms, @default_pair_tolerance_ms),
       publish_disparity_image: Keyword.get(opts, :publish_disparity_image, false),
       publish_rectified_image: Keyword.get(opts, :publish_rectified_image, false),
       publish_raw_images: Keyword.get(opts, :publish_raw_images, true),
-      stages: Keyword.get(opts, :stages, Pipeline.default_stages()),
+      raw_image_max_hz: Keyword.get(opts, :raw_image_max_hz, @default_raw_image_max_hz),
+      stages: Keyword.get_lazy(opts, :stages, &Pipeline.default_stages/0),
+      defn_options: Keyword.get(opts, :defn_options),
       left: left,
       right: right
     }
@@ -304,12 +332,19 @@ defmodule VisionCore.Stereo.Supervisor do
   end
 
   defp pipeline_spec(config) do
-    {Pipeline,
-     stages: config.stages,
-     left_calibration_path: config.left[:calibration_path],
-     right_calibration_path: config.right[:calibration_path],
-     width: config.width,
-     height: config.height}
+    opts = [
+      stages: config.stages,
+      left_calibration_path: config.left[:calibration_path],
+      right_calibration_path: config.right[:calibration_path],
+      width: config.match_width,
+      height: config.match_height,
+      frame_width: config.width,
+      frame_height: config.height
+    ]
+
+    if config.defn_options,
+      do: {Pipeline, [{:defn_options, config.defn_options} | opts]},
+      else: {Pipeline, opts}
   end
 
   defp publisher_spec(config) do
@@ -330,7 +365,8 @@ defmodule VisionCore.Stereo.Supervisor do
         config.publish_rectified_image && "#{config.topic_prefix}/left/image_rect/compressed",
       right_rectified_image_topic:
         config.publish_rectified_image && "#{config.topic_prefix}/right/image_rect/compressed",
-      publish_raw_images: config.publish_raw_images
+      publish_raw_images: config.publish_raw_images,
+      raw_image_max_hz: config.raw_image_max_hz
     ]
 
     {StereoPublisher, publisher_opts}

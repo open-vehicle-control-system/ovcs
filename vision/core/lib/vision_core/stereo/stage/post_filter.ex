@@ -1,22 +1,28 @@
 defmodule VisionCore.Stereo.Stage.PostFilter do
   @moduledoc """
-  Median filter on the disparity, which removes isolated wrong-disparity
-  pixels. `:kernel_size` (`5`).
+  Median filter on the disparity, which removes isolated
+  wrong-disparity pixels. `:kernel_size` (`5`), 3 or 5.
   """
-  @behaviour VisionCore.Stereo.Stage
+  @behaviour VisionCore.Stereo.NxStage
 
-  alias VisionCore.Stereo.Pair
+  @impl VisionCore.Stereo.NxStage
+  def init(opts, _context) do
+    case Keyword.get(opts, :kernel_size, 5) do
+      size when size in [3, 5] -> {:ok, size}
+      size -> {:error, "kernel_size must be 3 or 5, got #{inspect(size)}"}
+    end
+  end
 
-  @impl VisionCore.Stereo.Stage
-  def init(opts, _context), do: {:ok, Keyword.get(opts, :kernel_size, 5)}
-
-  @impl VisionCore.Stereo.Stage
+  @impl VisionCore.Stereo.NxStage
   def requires, do: [:disparity]
 
-  @impl VisionCore.Stereo.Stage
+  @impl VisionCore.Stereo.NxStage
   def provides, do: [:disparity]
 
-  @impl VisionCore.Stereo.Stage
-  def run(%Pair{} = pair, kernel_size),
-    do: {:ok, %{pair | disparity: Evision.medianBlur(pair.disparity, kernel_size)}, kernel_size}
+  @impl VisionCore.Stereo.NxStage
+  def params(_state, _context), do: %{}
+
+  @impl VisionCore.Stereo.NxStage
+  def step(tensors, _params, kernel_size),
+    do: Map.put(tensors, :disparity, NxStereo.Image.median(tensors.disparity, kernel_size))
 end

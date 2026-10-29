@@ -73,6 +73,26 @@ defmodule VisionCore.ApplicationTest do
     assert Process.whereis(VisionCore.Ros2.ZenohClient) |> Process.alive?()
   end
 
+  # The first start of a 64x48 pipeline compiles the Nx stages with EXLA,
+  # which takes longer than the cameras below live; later starts reuse it.
+  setup_all do
+    compile_pipeline()
+    :ok
+  end
+
+  defp compile_pipeline do
+    {:ok, pipeline} =
+      VisionCore.Stereo.Pipeline.start_link(
+        name: :application_test_compile,
+        left_calibration_path: Path.join(@calibration_dir, "stereo_left.yaml"),
+        right_calibration_path: Path.join(@calibration_dir, "stereo_right.yaml"),
+        width: 64,
+        height: 48
+      )
+
+    GenServer.stop(pipeline)
+  end
+
   test "a camera Port that exits restarts the stereo unit", %{tmp_dir: tmp_dir} do
     jpeg = Evision.imencode(".jpg", Evision.Mat.zeros({48, 64}, :u8))
     frame = <<1, 64::little-16, 48::little-16, 0::little-64, byte_size(jpeg)::little-32>> <> jpeg

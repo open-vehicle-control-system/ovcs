@@ -43,7 +43,8 @@ defmodule VisionCore.Application do
   defp pipeline_child(%VisionCore.Config{} = config) do
     core_children = [
       {VisionCore.Ros2.ZenohClient, zenoh_client_opts(config)},
-      VisionCore.Ros2.Parameters
+      VisionCore.Ros2.Parameters,
+      VisionCore.Jpeg
     ]
 
     component_children = Enum.flat_map(config.components, &resolve_component/1)

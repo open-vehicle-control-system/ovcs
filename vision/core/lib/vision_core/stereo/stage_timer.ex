@@ -10,7 +10,7 @@ defmodule VisionCore.Stereo.StageTimer do
       state = %{timer: StageTimer.new(window: 30, label: "pipeline")}
 
       {duration_ns, value} = :timer.tc(fn -> work() end, :nanosecond)
-      state = update_in(state.timer, &StageTimer.record(&1, :sgbm, duration_ns))
+      state = update_in(state.timer, &StageTimer.record(&1, :match, duration_ns))
 
       # Increment a counter (drops, etc.) without timing
       state = update_in(state.timer, &StageTimer.bump(&1, :drop_busy))

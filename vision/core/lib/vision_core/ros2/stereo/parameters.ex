@@ -7,6 +7,8 @@ defmodule VisionCore.Ros2.Stereo.Parameters do
       the driver's `control_specs/0` (`VisionCore.Camera.LibCamera`)
     * `<prefix>.<setting>` — the settings of the pipeline's stages,
       from `VisionCore.Stereo.Pipeline.option_specs/1`
+    * `<prefix>.preview.<setting>` — the dashboard previews' settings,
+      from `VisionCore.Preview.option_specs/0`.
     * read-only, the settings fixed at start: each camera's addressing,
       sync role, sensor mode and calibration file, and the resolution
       and frame rate
@@ -22,6 +24,7 @@ defmodule VisionCore.Ros2.Stereo.Parameters do
 
   use GenServer
 
+  alias VisionCore.Preview
   alias VisionCore.Stereo.Pipeline
 
   @startup_keys [:camera_id, :device, :sync, :sensor_mode, :rotation, :calibration_path]
@@ -45,6 +48,7 @@ defmodule VisionCore.Ros2.Stereo.Parameters do
     camera_parameters(prefix, driver, :left) ++
       camera_parameters(prefix, driver, :right) ++
       pipeline_parameters(prefix, pipeline) ++
+      preview_parameters(prefix) ++
       startup_parameters(prefix, opts)
   end
 
@@ -75,6 +79,19 @@ defmodule VisionCore.Ros2.Stereo.Parameters do
         name: "#{prefix}.#{key}",
         value: values[key],
         set: &drop_reply_value(Pipeline.set_options(pipeline, [{key, &1}]))
+      })
+    end
+  end
+
+  # The preview starts after the stereo unit: its settings start at their defaults.
+  defp preview_parameters(prefix) do
+    for {key, spec} <- Preview.option_specs() do
+      spec
+      |> Map.take([:type, :range, :description])
+      |> Map.merge(%{
+        name: "#{prefix}.preview.#{key}",
+        value: spec.default,
+        set: &drop_reply_value(Preview.set_options([{key, &1}]))
       })
     end
   end

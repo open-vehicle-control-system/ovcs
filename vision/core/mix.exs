@@ -14,10 +14,10 @@ defmodule VisionCore.MixProject do
     ]
   end
 
-  # camera_capture links libcamera, present only in the rpi5 sysroot.
+  # The Port binaries are cross-built for the vision targets only.
   defp compilers do
     base = Mix.compilers()
-    if Mix.target() == :rpi5, do: [:elixir_make] ++ base, else: base
+    if Mix.target() in [:host, :rpi5, :okdo_c100], do: [:elixir_make] ++ base, else: base
   end
 
   def application do
@@ -33,10 +33,18 @@ defmodule VisionCore.MixProject do
       {:ros2_zenoh, path: "../../libraries/ros2_zenoh"},
       {:hailort, path: "../../libraries/hailort", targets: [:host, :rpi5]},
       {:zenohex, "~> 0.8.0"},
-      # `VisionCore.StereoCamera.OpenCV`; its precompiled NIF bundles OpenCV.
-      {:evision, "~> 0.2"},
-      {:nx, "~> 0.7"},
+      # nx_stereo and nx_iree need Nx 1.0; evision, which works with it, still asks for < 1.0.
+      {:nx, "~> 1.0", override: true},
+      # Stereo matching on a Vulkan GPU through nx_iree; without a compiler
+      # configured it runs on Nx's evaluator. nx_stereo needs nx_iree to compile.
+      {:nx_stereo, github: "Spin42/nx_stereo", ref: "86eb83ed1c3962b51d89a9c54de440c3fd8e09e4"},
+      {:nx_iree,
+       github: "Spin42/nx_iree", ref: "b9257ba76d4848cd00ef996cd9bd20c647e6d018", override: true},
       {:yaml_elixir, "~> 2.12"},
+      # OpenCV, the reference the Nx stages are tested against.
+      {:evision, "~> 0.2", only: :test},
+      # Runs nx_stereo in tests, and compiles its modules for the device on a host.
+      {:exla, "~> 1.0", only: [:dev, :test]},
       {:elixir_make, "~> 0.7", runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}

@@ -14,9 +14,17 @@ defmodule VisionCore.PreviewTest do
     GenServer.cast(Preview, {:camera_frame, frame})
   end
 
-  defp pair(depth_m \\ nil) do
-    frame = %Frame{label: "left", width: 4, height: 4, capture_ns: 0, jpeg: <<>>}
-    %Pair{left_frame: frame, right_frame: %{frame | label: "right"}, depth_m: depth_m}
+  # A pair whose depth image is `width` x `height` millimetres from `depth_mm`.
+  defp pair(depth_mm \\ nil, {width, height} \\ {4, 4}) do
+    frame = %Frame{label: "left", width: width, height: height, capture_ns: 0, jpeg: <<>>}
+    depth = depth_mm && for(d <- depth_mm, into: <<>>, do: <<d::little-16>>)
+
+    %Pair{
+      left_frame: frame,
+      right_frame: %{frame | label: "right"},
+      depth: depth,
+      geometry: %{width: width, height: height}
+    }
   end
 
   defp receive_and_ack_until(deadline_ms, frames) do
@@ -48,6 +56,18 @@ defmodule VisionCore.PreviewTest do
     assert length(frames) >= 3
   end
 
+  @tag :jpeg
+  test "a grey frame is previewed as a JPEG" do
+    start_supervised!(VisionCore.Jpeg)
+    start_supervised!({Preview, config: @config, max_hz: 5})
+    :ok = Preview.subscribe(:left)
+
+    frame = %Frame{label: "left", width: 2, height: 2, capture_ns: 1, grey: <<0, 64, 128, 255>>}
+    GenServer.cast(Preview, {:camera_frame, frame})
+
+    assert_receive {:vision_preview, :left, <<0xFF, 0xD8, _rest::binary>>}, 1_000
+  end
+
   test "preview delivers only the latest frame to a slow subscriber" do
     start_supervised!({Preview, config: @config, max_hz: 50})
     :ok = Preview.subscribe(:left)
@@ -72,13 +92,13 @@ defmodule VisionCore.PreviewTest do
     end
 
     start_supervised!({Preview, config: @config, depth_encoder: encode_depth})
-    depth_m = Evision.Mat.zeros({4, 4}, :f32)
+    depth_mm = List.duplicate(0, 16)
 
-    GenServer.cast(Preview, {:stereo_pair, pair(depth_m)})
+    GenServer.cast(Preview, {:stereo_pair, pair(depth_mm)})
     refute_receive :depth_encoded, 200
 
     :ok = Preview.subscribe(:depth)
-    GenServer.cast(Preview, {:stereo_pair, pair(depth_m)})
+    GenServer.cast(Preview, {:stereo_pair, pair(depth_mm)})
 
     assert_receive :depth_encoded, 500
     assert_receive {:vision_preview, :depth, "depth jpeg"}, 500
@@ -94,15 +114,18 @@ defmodule VisionCore.PreviewTest do
     assert Process.alive?(preview)
   end
 
+  @tag :jpeg
   test "a depth map that fails to encode is skipped, logged once" do
+    start_supervised!(VisionCore.Jpeg)
     preview = start_supervised!({Preview, config: @config, max_hz: 50})
     :ok = Preview.subscribe(:depth)
-    two_channel = Evision.Mat.zeros({4, 4, 2}, :f32)
+    # A depth image shorter than its size says.
+    truncated = %{pair(List.duplicate(1000, 16)) | geometry: %{width: 8, height: 8}}
 
     log =
       capture_log(fn ->
         for _ <- 1..3 do
-          GenServer.cast(Preview, {:stereo_pair, pair(two_channel)})
+          GenServer.cast(Preview, {:stereo_pair, truncated})
           :sys.get_state(Preview)
           Process.sleep(30)
         end
@@ -113,7 +136,7 @@ defmodule VisionCore.PreviewTest do
     assert Process.alive?(preview)
     assert length(String.split(log, "depth preview")) == 2
 
-    GenServer.cast(Preview, {:stereo_pair, pair(Evision.Mat.zeros({4, 4}, :f32))})
+    GenServer.cast(Preview, {:stereo_pair, pair(List.duplicate(1000, 16))})
     assert_receive {:vision_preview, :depth, <<0xFF, 0xD8, _::binary>>}, 500
   end
 
@@ -138,9 +161,60 @@ defmodule VisionCore.PreviewTest do
     assert :sys.get_state(Preview).subscribers == %{}
   end
 
-  test "the depth map is colourised into a JPEG" do
-    depth_m = Evision.Mat.from_nx(Nx.iota({4, 4}, type: :f32))
+  describe "the depth preview" do
+    @describetag :jpeg
 
-    assert <<0xFF, 0xD8, _::binary>> = Preview.encode_depth(pair(depth_m))
+    # The decoded preview's mean {blue, green, red} over the columns `columns`.
+    defp colour(jpeg, columns) do
+      jpeg
+      |> Evision.imdecode(Evision.Constant.cv_IMREAD_COLOR())
+      |> Evision.Mat.to_nx(Nx.BinaryBackend)
+      |> then(& &1[[.., columns, ..]])
+      |> Nx.reshape({:auto, 3})
+      |> Nx.mean(axes: [0])
+      |> Nx.to_list()
+    end
+
+    test "is black without depth" do
+      start_supervised!(VisionCore.Jpeg)
+      jpeg = Preview.encode_depth(pair(List.duplicate(0, 256), {16, 16}), 10.0)
+
+      assert colour(jpeg, 0..15) |> Enum.all?(&(&1 < 4))
+    end
+
+    test "is red near the camera over a fixed range" do
+      start_supervised!(VisionCore.Jpeg)
+
+      [blue, green, red] =
+        colour(Preview.encode_depth(pair(List.duplicate(10, 256), {16, 16}), 10.0), 0..15)
+
+      assert red > 100 and green < 30 and blue < 30
+    end
+
+    test "spans the measured depths when the range is automatic" do
+      start_supervised!(VisionCore.Jpeg)
+      # Left half at 1 m, right half at 3 m.
+      depth_mm = for _row <- 1..16, column <- 0..15, do: if(column < 8, do: 1000, else: 3000)
+      jpeg = Preview.encode_depth(pair(depth_mm, {16, 16}), 0.0)
+
+      [_blue, _green, near_red] = colour(jpeg, 1..5)
+      [far_blue, _green, far_red] = colour(jpeg, 10..14)
+      assert near_red > 100
+      assert far_blue > far_red
+    end
+  end
+
+  describe "settings" do
+    test "change the rate and the depth range while running" do
+      start_supervised!({Preview, config: @config})
+
+      assert %{max_hz: 10, depth_range_m: +0.0} = Preview.options()
+
+      assert {:ok, %{max_hz: 15, depth_range_m: 4.0}} =
+               Preview.set_options(max_hz: 15, depth_range_m: 4.0)
+
+      assert :sys.get_state(Preview).interval_ms == div(1_000, 15)
+      assert {:error, "max_hz" <> _} = Preview.set_options(max_hz: 0)
+    end
   end
 end

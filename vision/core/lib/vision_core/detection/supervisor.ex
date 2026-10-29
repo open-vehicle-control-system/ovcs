@@ -7,8 +7,7 @@ defmodule VisionCore.Detection.Supervisor do
 
   Which backend is `:backend`, defaulting to the accelerator,
   `VisionCore.Detection.Backend.Hailo`. See `VisionCore.Detection.Backend`
-  for the alternatives — `Dnn` for CPU or OpenCL on a workstation,
-  `Stub` for plumbing only.
+  for `Stub`, for plumbing only.
 
   Exists to contain failure rather than to organise code. The vision
   core's own supervisor is `:rest_for_one` with the default restart

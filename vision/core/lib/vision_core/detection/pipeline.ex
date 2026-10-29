@@ -169,7 +169,11 @@ defmodule VisionCore.Detection.Pipeline do
 
       depth_m ->
         detection
-        |> Fusion.unproject(depth_m, pair.geometry.principal_point, pair.geometry.focal_length_px)
+        |> Fusion.unproject(
+          depth_m,
+          pair.geometry.principal_point,
+          pair.geometry.focal_length_px
+        )
         |> Map.merge(%{
           box: detection,
           class_id: detection.class_id,
