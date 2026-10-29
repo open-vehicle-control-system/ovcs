@@ -7,8 +7,7 @@ defmodule VisionCore.Stereo.Pipeline do
   The default stages, from `default_stages/1`, all but `Quality` written
   in Nx (`VisionCore.Stereo.NxStage`):
 
-      Decode       # camera frames → grey images at the pipeline's size
-      Rectify      # undistortion and rectification
+      Rectify      # camera frames → rectified grey images at the pipeline's size
       Match        # disparity, libSGM's semi-global matching
       PostFilter   # median filter on the disparity
       Depth        # disparity → metric depth
@@ -65,7 +64,6 @@ defmodule VisionCore.Stereo.Pipeline do
   @spec default_stages(keyword()) :: [{module(), keyword()}]
   def default_stages(overrides \\ []) do
     for module <- [
-          Stage.Decode,
           Stage.Rectify,
           Stage.Match,
           Stage.PostFilter,

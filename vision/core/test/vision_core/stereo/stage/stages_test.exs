@@ -123,8 +123,12 @@ defmodule VisionCore.Stereo.Stage.StagesTest do
     test "Rectify rectifies as initUndistortRectifyMap and remap do" do
       context = context(:stereo, 480, 270)
       image = smooth(270, 480)
-      input = %Pair{left_frame: nil, right_frame: nil, left: image, right: image}
-      pair = run_nx([{Stage.Rectify, []}], context, input)
+
+      pair =
+        run_nx([{Stage.Rectify, []}], context, %Pair{
+          left_frame: frame(image),
+          right_frame: frame(image)
+        })
 
       for {rectified, calibration} <- [
             {pair.left, context.left_calibration},
@@ -141,6 +145,46 @@ defmodule VisionCore.Stereo.Stage.StagesTest do
         difference = Nx.subtract(Nx.as_type(rectified, :s16), Nx.as_type(reference, :s16))
         within_one = difference |> Nx.abs() |> Nx.less_equal(1) |> Nx.mean() |> Nx.to_number()
         assert within_one >= 0.999
+      end
+    end
+
+    test "Rectify shrinks 768x432 frames to 480x270 close to INTER_AREA then remap" do
+      context = context(:stereo, 480, 270, {768, 432})
+      image = smooth(432, 768)
+
+      pair =
+        run_nx([{Stage.Rectify, []}], context, %Pair{
+          left_frame: frame(image),
+          right_frame: frame(image)
+        })
+
+      assert Nx.shape(pair.left) == {270, 480}
+
+      shrunk =
+        image
+        |> Evision.Mat.from_nx_2d()
+        |> Evision.resize({480, 270}, interpolation: Evision.Constant.cv_INTER_AREA())
+
+      for {rectified, calibration} <- [
+            {pair.left, context.left_calibration},
+            {pair.right, context.right_calibration}
+          ] do
+        {map1, map2} = opencv_maps(calibration)
+
+        reference =
+          shrunk |> Evision.remap(map1, map2, Evision.Constant.cv_INTER_LINEAR()) |> to_tensor()
+
+        # Away from the image's edge, where OpenCV blends with a zero border.
+        interior = fn t -> t[[20..249, 20..459]] end
+
+        difference =
+          Nx.subtract(
+            Nx.as_type(interior.(rectified), :s16),
+            Nx.as_type(interior.(reference), :s16)
+          )
+
+        within_two = difference |> Nx.abs() |> Nx.less_equal(2) |> Nx.mean() |> Nx.to_number()
+        assert within_two >= 0.999
       end
     end
 

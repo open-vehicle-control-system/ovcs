@@ -4,7 +4,8 @@ defmodule VisionCore.Stereo.Stage.Decode do
   frames as they are, JPEG frames decoded to their luma
   (`VisionCore.Camera.Frame.to_tensor/1`), shrunk by area averaging when
   larger, so the matcher can work on fewer pixels than the cameras
-  deliver.
+  deliver. For stage lists without `VisionCore.Stereo.Stage.Rectify`,
+  which shrinks the frames itself.
   """
   @behaviour VisionCore.Stereo.NxStage
 
