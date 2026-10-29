@@ -13,8 +13,10 @@ defmodule VisionCore.Stereo.NxStage do
 
   The compiled function keeps every value in `state` as a constant, and
   takes `params/2` as inputs: what may change without compiling again,
-  such as calibration values, which a calibration reload replaces. Nx
-  stages take no runtime settings, since the device cannot compile.
+  such as calibration values, which a calibration reload replaces. A
+  stage's runtime settings (`option_specs/0`, `options/1`,
+  `set_option/3`, as for a `VisionCore.Stereo.Stage`) must be among its
+  params, since the device cannot compile.
   """
 
   alias VisionCore.Stereo.{Pair, Stage}
@@ -46,7 +48,16 @@ defmodule VisionCore.Stereo.NxStage do
   """
   @callback finish(Pair.t(), outputs :: map(), state()) :: Pair.t()
 
-  @optional_callbacks finish: 3
+  @doc "The settings `set_option/3` accepts."
+  @callback option_specs() :: [{atom(), Stage.option_spec()}]
+
+  @doc "The settings in force."
+  @callback options(state()) :: %{atom() => term()}
+
+  @doc "Changes one setting from the next pair on, or says why it cannot."
+  @callback set_option(state(), atom(), term()) :: {:ok, state()} | {:error, String.t()}
+
+  @optional_callbacks finish: 3, option_specs: 0, options: 1, set_option: 3
 
   @doc "Whether `module` is an Nx stage."
   @spec nx_stage?(module()) :: boolean()

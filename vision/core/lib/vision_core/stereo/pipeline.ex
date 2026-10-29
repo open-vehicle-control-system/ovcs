@@ -309,6 +309,9 @@ defmodule VisionCore.Stereo.Pipeline do
     init_stage!(%{stage | opts: opts}, context)
   end
 
+  defp stage_option_specs(%{module: NxSegment, state: segment}),
+    do: NxSegment.option_specs(segment)
+
   defp stage_option_specs(stage) do
     if function_exported?(stage.module, :option_specs, 0),
       do: stage.module.option_specs(),
