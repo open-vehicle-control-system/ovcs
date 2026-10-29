@@ -222,10 +222,14 @@ defmodule VisionCore.Stereo.Stage.StagesTest do
     assert Nx.to_number(depth_mm[[0, 191]]) == 0
     assert pair.disparity_bytes == Nx.to_binary(disparity)
 
-    # One point every 4 pixels, in the matched half.
-    assert pair.cloud_points == div(108, 4) * div(96, 4)
+    # One point every 4 pixels as an organized grid, NaN outside the matched half.
+    assert pair.cloud_size == {27, 48}
+    assert byte_size(pair.cloud) == 27 * 48 * 12
+    assert pair.cloud_points == 27 * 24
     <<_x::little-float-32, _y::little-float-32, z::little-float-32, _rest::binary>> = pair.cloud
     assert_in_delta z, 1.0, 1.0e-6
+    <<_::binary-size(47 * 12 + 8), unmatched_z::binary-size(4), _::binary>> = pair.cloud
+    refute match?(<<_::little-float-32>>, unmatched_z)
   end
 
   describe "the default pipeline" do

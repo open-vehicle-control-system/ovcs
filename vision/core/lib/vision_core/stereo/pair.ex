@@ -26,9 +26,10 @@ defmodule VisionCore.Stereo.Pair do
       bytes of 32-bit metres.
     * `:depth_m` — the same depth as an `f32` tensor in metres, for the
       geometry: a detection's distance is a median over its box.
-    * `:cloud`, `:cloud_points` — packed `x, y, z` 32-bit float points
-      in the left optical frame and their count; unmatched pixels are
-      dropped, not encoded.
+    * `:cloud`, `:cloud_size`, `:cloud_points` — an organized grid of
+      `x, y, z` 32-bit float points in the left optical frame, row-major,
+      its `{height, width}`, and how many points are measured: the others,
+      unmatched pixels among them, are NaN.
     * `:metrics` — `{name, value, unit}` samples a stage reports for the
       pipeline's log line.
     * `:device_ms` — the time the pair spent in compiled Nx segments, on
@@ -48,6 +49,7 @@ defmodule VisionCore.Stereo.Pair do
     :depth,
     :depth_m,
     :cloud,
+    :cloud_size,
     cloud_points: 0,
     disparity_scale: 1.0,
     device_ms: 0.0,
