@@ -349,18 +349,19 @@ defmodule VisionCore.Ros2.Publishers.Stereo do
     VisionCore.Ros2.ZenohClient.publish(state.depth_topic, Image, depth_message)
 
     if state.cloud_topic && pair.cloud && pair.cloud_points > 0 do
+      {cloud_height, cloud_width} = pair.cloud_size
+
       VisionCore.Ros2.ZenohClient.publish(state.cloud_topic, PointCloud2, %PointCloud2{
         header: header,
-        height: 1,
-        width: pair.cloud_points,
+        height: cloud_height,
+        width: cloud_width,
         fields: PointCloud2.xyz_fields(),
         is_bigendian: 0,
         point_step: PointCloud2.point_step(),
-        row_step: pair.cloud_points * PointCloud2.point_step(),
+        row_step: cloud_width * PointCloud2.point_step(),
         data: pair.cloud,
-        # Unmatched pixels are dropped, not encoded as sentinels, so
-        # every point here is a real measurement.
-        is_dense: 1
+        # Points without a measurement are NaN.
+        is_dense: 0
       })
     end
 
