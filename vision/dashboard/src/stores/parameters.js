@@ -3,9 +3,18 @@ import * as service from '../services/parameters.js'
 
 let timer = null
 let loading = false
-const changing = new Set()
+let reloadRequested = false
+let generation = 0
+const changing = new Map()
 
 const message = (error) => (error instanceof Error ? error.message : String(error))
+
+const protect = (id) => changing.set(id, (changing.get(id) ?? 0) + 1)
+const release = (id) => {
+  const count = (changing.get(id) ?? 1) - 1
+  if (count > 0) changing.set(id, count)
+  else changing.delete(id)
+}
 
 export const useParameters = create((set, get) => ({
   groups: [],
@@ -13,23 +22,41 @@ export const useParameters = create((set, get) => ({
   unsaved: 0,
   selectedGroupId: null,
   error: null,
+  errorSource: null,
   editing: new Set(),
 
   async load() {
-    if (loading) return
+    if (loading) {
+      reloadRequested = true
+      return
+    }
     loading = true
+    const started = generation
     try {
       const snapshot = await service.fetchGroups()
-      const { parameters: current, editing } = get()
-      const parameters = { ...snapshot.parameters }
-      for (const id of [...editing, ...changing]) {
-        if (current[id] && parameters[id]) parameters[id] = current[id]
+      if (started !== generation) {
+        reloadRequested = true
+      } else {
+        const { parameters: current, editing } = get()
+        const parameters = { ...snapshot.parameters }
+        for (const id of [...editing, ...changing.keys()]) {
+          if (current[id] && parameters[id]) parameters[id] = current[id]
+        }
+        set((state) => ({
+          groups: snapshot.groups,
+          parameters,
+          unsaved: snapshot.unsaved,
+          ...(state.errorSource === 'load' ? { error: null, errorSource: null } : {})
+        }))
       }
-      set({ groups: snapshot.groups, parameters, unsaved: snapshot.unsaved })
     } catch (error) {
-      set({ error: message(error) })
+      set({ error: message(error), errorSource: 'load' })
     } finally {
       loading = false
+    }
+    if (reloadRequested) {
+      reloadRequested = false
+      await get().load()
     }
   },
 
@@ -37,16 +64,19 @@ export const useParameters = create((set, get) => ({
     const previous = get().parameters[id]
     if (!previous) return
     const replace = (next) => set((state) => ({ parameters: { ...state.parameters, [id]: next } }))
-    changing.add(id)
+    protect(id)
     replace({ ...previous, value })
     try {
-      replace(await service.setParameter(id, value))
-      set({ error: null })
+      const accepted = await service.setParameter(id, value)
+      const delta = Number(accepted.state === 'unsaved') - Number(previous.state === 'unsaved')
+      replace(accepted)
+      set((state) => ({ unsaved: Math.max(0, state.unsaved + delta), error: null, errorSource: null }))
     } catch (error) {
       replace({ ...get().parameters[id], value: previous.value })
-      set({ error: message(error) })
+      set({ error: message(error), errorSource: 'action' })
     } finally {
-      changing.delete(id)
+      release(id)
+      generation += 1
     }
   },
 
@@ -58,8 +88,11 @@ export const useParameters = create((set, get) => ({
 
   startPolling(intervalMs = 1000) {
     if (timer) return
-    get().load()
-    timer = setInterval(() => get().load(), intervalMs)
+    const poll = () => {
+      if (!loading) get().load()
+    }
+    poll()
+    timer = setInterval(poll, intervalMs)
   },
 
   stopPolling() {
@@ -76,16 +109,20 @@ export const useParameters = create((set, get) => ({
       return { editing }
     }),
 
+  dismissError: () => set({ error: null, errorSource: null }),
+
   select: (groupId) => set({ selectedGroupId: groupId })
 }))
 
 async function perform(action, set, get) {
   try {
     await action()
-    set({ error: null })
+    set({ error: null, errorSource: null })
   } catch (error) {
-    set({ error: message(error) })
+    set({ error: message(error), errorSource: 'action' })
     return
+  } finally {
+    generation += 1
   }
   await get().load()
 }
