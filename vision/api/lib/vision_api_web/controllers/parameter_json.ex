@@ -1,5 +1,10 @@
 defmodule VisionApiWeb.ParameterJSON do
-  @moduledoc "The JSON:API resource objects of `parameters` and `parameter-groups`."
+  @moduledoc """
+  The JSON:API resource objects of `parameters` and `stages`. A stage is a
+  `VisionCore.Parameters.Group`; its `role` is `source` for a component in the
+  pipeline flow, `step` for a pipeline stage in it, `branch` for anything
+  beside it.
+  """
   alias VisionApiWeb.JsonApi
   alias VisionCore.Parameters.{Group, Parameter}
 
@@ -10,7 +15,7 @@ defmodule VisionApiWeb.ParameterJSON do
       parameter.id,
       %{
         name: parameter.name,
-        type: parameter.type,
+        valueType: parameter.type,
         constraint: constraint(parameter.constraint),
         applies: applies(parameter.applies),
         description: parameter.description,
@@ -20,9 +25,9 @@ defmodule VisionApiWeb.ParameterJSON do
         state: parameter.state
       },
       %{
-        group: to_one("parameter-groups", parameter.group),
-        controller: to_one("parameters", controller(parameter.applies)),
-        "greater-than": to_one("parameters", parameter.greater_than)
+        stage: to_one("stages", parameter.group),
+        controlledBy: to_one("parameters", controller(parameter.applies)),
+        greaterThan: to_one("parameters", parameter.greater_than)
       }
     )
   end
@@ -35,16 +40,15 @@ defmodule VisionApiWeb.ParameterJSON do
   @spec unsaved([Group.t()]) :: non_neg_integer()
   def unsaved(groups), do: groups |> parameters() |> Enum.count(&(&1.state == :unsaved))
 
-  @spec group(Group.t()) :: map()
-  def group(%Group{} = group) do
+  @spec stage(Group.t()) :: map()
+  def stage(%Group{} = group) do
     JsonApi.resource(
-      "parameter-groups",
+      "stages",
       group.id,
       %{
         name: group.name,
         summary: group.summary,
-        kind: group.kind,
-        placement: group.placement,
+        role: role(group),
         position: group.position,
         status: status(group.status)
       },
@@ -55,6 +59,10 @@ defmodule VisionApiWeb.ParameterJSON do
       }
     )
   end
+
+  defp role(%Group{placement: :side}), do: "branch"
+  defp role(%Group{kind: :component}), do: "source"
+  defp role(%Group{kind: :stage}), do: "step"
 
   defp constraint(nil), do: nil
 

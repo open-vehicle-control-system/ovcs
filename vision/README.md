@@ -33,7 +33,7 @@ A vehicle picks the board with `vision_target/0`, and the capture driver, the st
 | [`ros2_zenoh`](../libraries/ros2_zenoh/README.md) | The ROS 2 message types, their CDR encoding and `rmw_zenoh`'s key expressions and attachments, shared with `ros_bridge`. |
 | [zenohex](https://github.com/biyooon-ex/zenohex) | Zenoh from Elixir: publishes and subscribes ROS 2 topics through the router `rmw_zenoh` uses. |
 | [yaml_elixir](https://github.com/KrisKennaway/yaml-elixir) | Reads the camera calibration files. |
-| [Phoenix](https://www.phoenixframework.org/), [Bandit](https://github.com/mtrudel/bandit) | The API: the HTTP endpoint, `/api/settings` and the preview channels. |
+| [Phoenix](https://www.phoenixframework.org/), [Bandit](https://github.com/mtrudel/bandit) | The API: the HTTP endpoint, the JSON:API resources and the status and preview channels. |
 | [Nerves](https://nerves-project.org/) | The firmware image, on `ovcs_bridges_system_rpi5` or `nerves_system_okdo_c100`. |
 
 ### Rust

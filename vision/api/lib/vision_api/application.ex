@@ -1,7 +1,7 @@
 defmodule VisionApi.Application do
   @moduledoc """
-  Serves the vision dashboard: its build from `priv/static`, the
-  `/api/settings` endpoint and the status and preview channels, all fed by
+  Serves the vision dashboard: its build from `priv/static`, the `/api`
+  JSON:API resources and the status and preview channels, all fed by
   `vision_core`.
   """
 

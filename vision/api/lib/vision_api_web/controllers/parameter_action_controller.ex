@@ -1,14 +1,15 @@
 defmodule VisionApiWeb.ParameterActionController do
   @moduledoc """
   Save, discard and reset of the vision parameters, created as action
-  resources, and the read-only export.
+  resources. A reset targets one of the `parameters` or `stages`, or every
+  parameter without a target.
   """
   use VisionApiWeb, :controller
 
   alias VisionApiWeb.JsonApi
   alias VisionCore.Parameters
 
-  @target_types %{"parameter-groups" => :group, "parameters" => :parameter}
+  @target_types %{"stages" => :group, "parameters" => :parameter}
 
   def save(conn, params) do
     act(conn, params, "parameter-saves", fn _data ->
@@ -33,16 +34,6 @@ defmodule VisionApiWeb.ParameterActionController do
         end
       end
     end)
-  end
-
-  def export(conn, _params) do
-    JsonApi.send_document(conn, 200, %{
-      data: %{
-        type: "parameter-exports",
-        id: "current",
-        attributes: %{snippet: Parameters.export()}
-      }
-    })
   end
 
   defp act(conn, params, type, run) do
@@ -70,7 +61,7 @@ defmodule VisionApiWeb.ParameterActionController do
         {:ok, {Map.fetch!(@target_types, type), id}}
 
       _target ->
-        {:error, 400, "Bad Request", "target must be a parameter or a parameter group",
+        {:error, 400, "Bad Request", "target must be a parameter or a stage",
          "/data/relationships/target/data"}
     end
   end
@@ -82,7 +73,7 @@ defmodule VisionApiWeb.ParameterActionController do
   defp check_scope({:group, id}) do
     if Enum.any?(Parameters.groups(), &(&1.id == id)),
       do: :ok,
-      else: {:error, 404, "Not Found", "no parameter group #{id}", nil}
+      else: {:error, 404, "Not Found", "no stage #{id}", nil}
   end
 
   defp check_scope({:parameter, id}) do
