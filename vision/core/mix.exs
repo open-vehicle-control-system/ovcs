@@ -39,9 +39,8 @@ defmodule VisionCore.MixProject do
       {:nx, "~> 1.0", override: true},
       # Stereo matching on a Vulkan GPU through nx_iree; without a compiler
       # configured it runs on Nx's evaluator. nx_stereo needs nx_iree to compile.
-      {:nx_stereo, github: "Spin42/nx_stereo", ref: "b5bcbbd5074f66ee6e1e85a415342d7ec6b32ff3"},
-      {:nx_iree,
-       github: "Spin42/nx_iree", ref: "b9257ba76d4848cd00ef996cd9bd20c647e6d018", override: true},
+      {:nx_stereo, github: "Spin42/nx_stereo"},
+      {:nx_iree, github: "Spin42/nx_iree", override: true},
       {:yaml_elixir, "~> 2.12"},
       # OpenCV, the reference the Nx stages are tested against.
       {:evision, "~> 0.2", only: :test},
