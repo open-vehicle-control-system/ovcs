@@ -1,16 +1,11 @@
-import { defineStore } from 'pinia'
+import { create } from 'zustand'
 
-export const useStatus = defineStore('status', {
-  state: () => ({
-    snapshot: null
-  }),
-  actions: {
-    listen(socket) {
-      const channel = socket.channel('status', {})
-      channel.on('status', (snapshot) => {
-        this.snapshot = snapshot
-      })
-      channel.join()
-    }
+export const useStatus = create((set) => ({
+  snapshot: null,
+  listen(socket) {
+    const channel = socket.channel('status', {})
+    channel.on('status', (snapshot) => set({ snapshot }))
+    channel.join()
+    return () => channel.leave()
   }
-})
+}))
