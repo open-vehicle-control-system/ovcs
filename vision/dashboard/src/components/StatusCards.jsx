@@ -1,3 +1,5 @@
+import { OvcsCard, OvcsStatus } from '@ovcs/ui/react'
+
 const formatNumber = (number, decimals = 1) => (number == null ? '–' : Number(number).toFixed(decimals))
 
 function cameraCard(id, title, camera) {
@@ -78,13 +80,13 @@ export default function StatusCards({ status }) {
   return (
     <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
       {buildCards(status).map((card) => (
-        <div key={card.id} data-card={card.id} className="ovcs-card">
+        <OvcsCard key={card.id} data-card={card.id}>
           <p className="text-sm font-medium text-ovcs-muted">{card.title}</p>
-          <p className={`ovcs-status ${card.healthy ? 'ovcs-status--ok' : 'ovcs-status--error'} mt-1 text-xl font-semibold tabular-nums`}>
+          <OvcsStatus tone={card.healthy ? 'ok' : 'error'} className="mt-1 text-xl font-semibold tabular-nums">
             {card.value}
-          </p>
+          </OvcsStatus>
           {card.detail && <p className="mt-1 text-xs text-ovcs-muted tabular-nums">{card.detail}</p>}
-        </div>
+        </OvcsCard>
       ))}
     </div>
   )

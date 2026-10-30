@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
-import ParameterControl, { formatValue } from '../ParameterControl.jsx'
+import { OvcsParameterControl as ParameterControl, formatValue } from './index.js'
 
 const p1 = {
   id: 'stereo.match.p1',

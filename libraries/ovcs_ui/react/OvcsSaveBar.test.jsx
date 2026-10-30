@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, act } from '@testing-library/react'
-import SaveBar from '../SaveBar.jsx'
+import { OvcsSaveBar as SaveBar } from './index.js'
 
 const SNIPPET = 'stereo: [match: [p1: 8]]'
 

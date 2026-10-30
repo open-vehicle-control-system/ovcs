@@ -258,7 +258,7 @@ function allowed(constraint, bounds) {
  * `bounds` narrows a range (for relations between parameters); `onChange` receives a committed
  * value, `onEditStart` and `onEditEnd` wrap a slider drag.
  */
-export default function ParameterControl({ parameter, bounds, controllerName, onChange, onReset, onEditStart, onEditEnd }) {
+export default function OvcsParameterControl({ parameter, bounds, controllerName, onChange, onReset, onEditStart, onEditEnd }) {
   const labelId = useId()
   const locked = parameter.applies === 'build'
   const automatic = !locked && parameter.state === 'automatic'
