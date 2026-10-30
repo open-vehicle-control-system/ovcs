@@ -76,7 +76,7 @@ defmodule VisionCore.Ros2.ParametersTest do
     defp parameter(fields) do
       struct(
         %Parameter{
-          group: "stereo.match",
+          group: "stereo.disparity",
           type: :integer,
           applies: :live,
           constraint: %{kind: :range, min: 1, max: 79, step: nil},
@@ -89,14 +89,14 @@ defmodule VisionCore.Ros2.ParametersTest do
     end
 
     test "describes a range parameter with its range, default and relation" do
-      p2 = parameter(id: "stereo.match.p2", name: "p2", greater_than: "stereo.match.p1")
+      p2 = parameter(id: "stereo.disparity.p2", name: "p2", greater_than: "stereo.disparity.p1")
 
       assert %{
-               name: "stereo.match.p2",
+               name: "stereo.disparity.p2",
                type: :integer,
                read_only: false,
                range: {1, 79},
-               constraints: "above stereo.match.p1; default: 64"
+               constraints: "above stereo.disparity.p1; default: 64"
              } = Parameters.describe(p2)
     end
 

@@ -231,14 +231,14 @@ defmodule VisionCore.Stereo.Supervisor do
   @doc """
   Reloads the pipeline's calibration and starts the row correction
   (`VisionCore.Stereo.AlignmentCorrection`) over: a new calibration
-  lines the rows up itself, so Rectify's `right_row_offset` returns to
+  lines the rows up itself, so Rectification's `right_row_offset` returns to
   0 and its saved value under `prefix` is forgotten.
   """
   def reload_calibration(pipeline, prefix, paths \\ []) do
     with :ok <- Pipeline.reload_calibration(pipeline, paths) do
-      if Enum.any?(Pipeline.stage_options(pipeline), &(&1.stage == :rectify)) do
-        {:ok, _values} = Pipeline.set_options(pipeline, :rectify, right_row_offset: 0.0)
-        forget_parameter("#{prefix}.rectify.right_row_offset")
+      if Enum.any?(Pipeline.stage_options(pipeline), &(&1.stage == :rectification)) do
+        {:ok, _values} = Pipeline.set_options(pipeline, :rectification, right_row_offset: 0.0)
+        forget_parameter("#{prefix}.rectification.right_row_offset")
       end
 
       :ok

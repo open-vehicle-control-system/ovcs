@@ -15,12 +15,12 @@ defmodule VisionCore.Stereo.Parameters do
       on, and then read what the sensor applies. Their defaults are the
       manual settings the composer gives the camera.
     * `<prefix>.<stage>` — each stage of `VisionCore.Stereo.Pipeline`, in
-      pipeline order, with its settings; Rectify also carries the matching
+      pipeline order, with its settings; Rectification also carries the matching
       size.
-    * `<prefix>.alignment.correction` — switches
+    * `<prefix>.row_alignment.correction` — switches
       `VisionCore.Stereo.AlignmentCorrection` on or off while it runs and
-      the pipeline has an Alignment stage; it
-      then sets Rectify's `right_row_offset`. The alignment group's status
+      the pipeline has a RowAlignment stage; it
+      then sets Rectification's `right_row_offset`. The row alignment group's status
       is the row offset `VisionCore.Status` measures.
 
   Declares nothing when the registry is not running.
@@ -61,10 +61,10 @@ defmodule VisionCore.Stereo.Parameters do
     pipeline = Keyword.get(opts, :pipeline, Pipeline)
     stage_options = Pipeline.stage_options(pipeline)
 
-    # The correction is declared on the alignment stage's group, so it needs both.
+    # The correction is declared on the row alignment stage's group, so it needs both.
     correction? =
       Process.whereis(AlignmentCorrection) != nil and
-        Enum.any?(stage_options, &(&1.stage == :alignment))
+        Enum.any?(stage_options, &(&1.stage == :row_alignment))
 
     stages =
       stage_options
@@ -313,19 +313,19 @@ defmodule VisionCore.Stereo.Parameters do
     |> get_in([:values, key])
   end
 
-  defp stage_applies(:rectify, :right_row_offset, _spec, prefix, true),
-    do: {:auto, "#{prefix}.alignment.correction"}
+  defp stage_applies(:rectification, :right_row_offset, _spec, prefix, true),
+    do: {:auto, "#{prefix}.row_alignment.correction"}
 
   defp stage_applies(_stage, _key, spec, _prefix, _correction?),
     do: Map.get(spec, :applies, :live)
 
-  defp extra_parameters(:rectify, opts, _correction?) do
+  defp extra_parameters(:rectification, opts, _correction?) do
     for key <- [:match_width, :match_height], Keyword.has_key?(opts, key) do
       build_parameter({key, opts[key]})
     end
   end
 
-  defp extra_parameters(:alignment, _opts, true) do
+  defp extra_parameters(:row_alignment, _opts, true) do
     [
       %{
         name: "correction",
@@ -342,7 +342,7 @@ defmodule VisionCore.Stereo.Parameters do
 
   defp extra_parameters(_stage, _opts, _correction?), do: []
 
-  defp extra_group_fields(:alignment), do: %{status: &alignment_status/0}
+  defp extra_group_fields(:row_alignment), do: %{status: &alignment_status/0}
   defp extra_group_fields(_stage), do: %{}
 
   defp alignment_status do

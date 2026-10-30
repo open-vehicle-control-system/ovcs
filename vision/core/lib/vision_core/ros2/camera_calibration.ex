@@ -9,7 +9,7 @@ defmodule VisionCore.Ros2.CameraCalibration do
 
     * `VisionCore.Ros2.Publishers.Stereo` — populates the outgoing
       `sensor_msgs/CameraInfo` directly from these fields.
-    * `VisionCore.Stereo.Stage.Rectify` — undistorts and rectifies with
+    * `VisionCore.Stereo.Stage.Rectification` — undistorts and rectifies with
       `NxStereo.Rectify`.
 
   ## Accepted YAML schema

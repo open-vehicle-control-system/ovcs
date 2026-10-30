@@ -1,4 +1,4 @@
-defmodule VisionCore.Stereo.Stage.TemporalTest do
+defmodule VisionCore.Stereo.Stage.TemporalFilterTest do
   use ExUnit.Case, async: true
 
   alias VisionCore.Stereo.{NxSegment, Pair, Pipeline, Stage}
@@ -14,8 +14,8 @@ defmodule VisionCore.Stereo.Stage.TemporalTest do
         height: 2
       )
 
-    {:ok, state} = Stage.Temporal.init(opts, context)
-    member = %{module: Stage.Temporal, name: :temporal, state: state}
+    {:ok, state} = Stage.TemporalFilter.init(opts, context)
+    member = %{module: Stage.TemporalFilter, name: :temporal_filter, state: state}
     {:ok, segment} = NxSegment.build([member], context, compiler: EXLA)
     segment
   end
@@ -75,8 +75,13 @@ defmodule VisionCore.Stereo.Stage.TemporalTest do
 
   test "refuses settings out of range" do
     context = %{height: 2, width: 4}
-    assert {:error, "temporal alpha" <> _} = Stage.Temporal.init([alpha: 0.0], context)
-    assert {:error, "temporal delta" <> _} = Stage.Temporal.init([delta: -1], context)
-    assert {:error, "temporal hold" <> _} = Stage.Temporal.init([hold: -1], context)
+
+    assert {:error, "temporal_filter alpha" <> _} =
+             Stage.TemporalFilter.init([alpha: 0.0], context)
+
+    assert {:error, "temporal_filter delta" <> _} =
+             Stage.TemporalFilter.init([delta: -1], context)
+
+    assert {:error, "temporal_filter hold" <> _} = Stage.TemporalFilter.init([hold: -1], context)
   end
 end

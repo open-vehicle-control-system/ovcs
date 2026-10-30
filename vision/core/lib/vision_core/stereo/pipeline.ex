@@ -7,16 +7,16 @@ defmodule VisionCore.Stereo.Pipeline do
   The default stages, from `default_stages/1`, all written in Nx
   (`VisionCore.Stereo.NxStage`):
 
-      Rectify      # camera frames → rectified grey images at the pipeline's size
-      Sharpness    # each image's sharpness, to compare the cameras' focus
-      Match        # disparity, libSGM's semi-global matching
-      PostFilter   # median filter on the disparity
-      Speckle      # drops small islands of disparity
-      Alignment    # measures the rectified images' row offset
-      Temporal     # smoothing of the disparity over time
-      Depth        # disparity → metric depth
-      PointCloud   # depth → decimated point cloud
-      Quality      # disparity statistics for the log line
+      Rectification   # camera frames → rectified grey images at the pipeline's size
+      Sharpness       # each image's sharpness, to compare the cameras' focus
+      Disparity       # disparity, libSGM's semi-global matching
+      MedianFilter    # median filter on the disparity
+      SpeckleFilter   # drops small islands of disparity
+      RowAlignment    # measures the rectified images' row offset
+      TemporalFilter  # smoothing of the disparity over time
+      Depth           # disparity → metric depth
+      PointCloud      # depth → decimated point cloud
+      Quality         # disparity statistics for the log line
 
   A stage list is checked at start: every field a stage requires must be
   provided by a stage before it, and the stages together must provide
@@ -70,18 +70,18 @@ defmodule VisionCore.Stereo.Pipeline do
 
   @doc """
   The default stages, with `overrides` merged into the options of the
-  stage they name: `default_stages(match: [num_disparities: 128])`.
+  stage they name: `default_stages(disparity: [num_disparities: 128])`.
   """
   @spec default_stages(keyword()) :: [{module(), keyword()}]
   def default_stages(overrides \\ []) do
     for module <- [
-          Stage.Rectify,
+          Stage.Rectification,
           Stage.Sharpness,
-          Stage.Match,
-          Stage.PostFilter,
-          Stage.Speckle,
-          Stage.Alignment,
-          Stage.Temporal,
+          Stage.Disparity,
+          Stage.MedianFilter,
+          Stage.SpeckleFilter,
+          Stage.RowAlignment,
+          Stage.TemporalFilter,
           Stage.Depth,
           Stage.PointCloud,
           Stage.Quality

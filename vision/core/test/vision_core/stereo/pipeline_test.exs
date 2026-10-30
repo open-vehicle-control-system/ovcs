@@ -50,21 +50,24 @@ defmodule VisionCore.Stereo.PipelineTest do
   end
 
   test "refuses a stage whose inputs no stage before it provides" do
-    stages = [Stage.Match, Stage.Decode, Stage.Depth]
+    stages = [Stage.Disparity, Stage.Decode, Stage.Depth]
 
     assert {:error, {%ArgumentError{message: message}, _}} = start(stages)
-    assert message =~ "Match"
+    assert message =~ "Disparity"
   end
 
   test "refuses a stage list that never produces depth" do
-    assert {:error, {%ArgumentError{message: message}, _}} = start([Stage.Decode, Stage.Match])
+    assert {:error, {%ArgumentError{message: message}, _}} =
+             start([Stage.Decode, Stage.Disparity])
+
     assert message =~ "depth"
   end
 
   test "default_stages/1 passes overrides to the stage they name" do
-    stages = Pipeline.default_stages(match: [num_disparities: 128], point_cloud: [decimation: 2])
+    stages =
+      Pipeline.default_stages(disparity: [num_disparities: 128], point_cloud: [decimation: 2])
 
-    assert {Stage.Match, [num_disparities: 128]} in stages
+    assert {Stage.Disparity, [num_disparities: 128]} in stages
     assert {Stage.PointCloud, [decimation: 2]} in stages
   end
 
@@ -73,13 +76,13 @@ defmodule VisionCore.Stereo.PipelineTest do
     stages = Pipeline.stage_options(pipeline)
 
     assert Enum.map(stages, & &1.stage) == [
-             :rectify,
+             :rectification,
              :sharpness,
-             :match,
-             :post_filter,
-             :speckle,
-             :alignment,
-             :temporal,
+             :disparity,
+             :median_filter,
+             :speckle_filter,
+             :row_alignment,
+             :temporal_filter,
              :depth,
              :point_cloud,
              :quality,
@@ -88,8 +91,8 @@ defmodule VisionCore.Stereo.PipelineTest do
 
     assert [
              %{
-               stage: :rectify,
-               module: Stage.Rectify,
+               stage: :rectification,
+               module: Stage.Rectification,
                summary: "" <> _,
                specs: [right_row_offset: _]
              }
@@ -125,14 +128,14 @@ defmodule VisionCore.Stereo.PipelineTest do
     assert {:error, "gain out of range" <> _} =
              Pipeline.set_options(pipeline, :gain, gain: 2, gain: 20)
 
-    assert {:error, "match.paths" <> _} = Pipeline.set_options(pipeline, :match, paths: 3)
+    assert {:error, "disparity.paths" <> _} = Pipeline.set_options(pipeline, :disparity, paths: 3)
 
     assert {:error, "p2 must exceed p1" <> _} =
-             Pipeline.set_options(pipeline, :match, p1: 4, p1: 70)
+             Pipeline.set_options(pipeline, :disparity, p1: 4, p1: 70)
 
     values = Map.new(Pipeline.stage_options(pipeline), &{&1.stage, &1.values})
     assert values.gain == %{gain: 1, size: 3}
-    assert %{p1: 8, paths: 8} = values.match
+    assert %{p1: 8, paths: 8} = values.disparity
   end
 
   test "changes the match penalties without compiling again" do
@@ -140,7 +143,7 @@ defmodule VisionCore.Stereo.PipelineTest do
     [%{state: segment}] = segments(pipeline)
 
     assert {:ok, %{p1: 4, p2: 40, uniqueness: 1.2}} =
-             Pipeline.set_options(pipeline, :match, p1: 4, p2: 40, uniqueness: 1.2)
+             Pipeline.set_options(pipeline, :disparity, p1: 4, p2: 40, uniqueness: 1.2)
 
     [%{state: changed}] = segments(pipeline)
     assert changed.function == segment.function
@@ -149,13 +152,13 @@ defmodule VisionCore.Stereo.PipelineTest do
     assert params |> Map.keys() |> Enum.sort() == [:p1, :p2, :uniqueness]
     assert {Nx.to_number(p1), Nx.to_number(p2)} == {4.0, 40.0}
 
-    assert {:error, "p2 must exceed p1" <> _} = Pipeline.set_options(pipeline, :match, p1: 40)
+    assert {:error, "p2 must exceed p1" <> _} = Pipeline.set_options(pipeline, :disparity, p1: 40)
 
     assert {:error, "p1 and p2 must be integers" <> _} =
-             Pipeline.set_options(pipeline, :match, p2: 100)
+             Pipeline.set_options(pipeline, :disparity, p2: 100)
 
     assert %{values: %{p1: 4}} =
-             Enum.find(Pipeline.stage_options(pipeline), &(&1.stage == :match))
+             Enum.find(Pipeline.stage_options(pipeline), &(&1.stage == :disparity))
   end
 
   defp segments(pipeline),
@@ -210,11 +213,11 @@ defmodule VisionCore.Stereo.PipelineTest do
   test "keeps settings changed at runtime across a calibration reload" do
     {:ok, pipeline} = start(Pipeline.default_stages() ++ [Gain])
     {:ok, _} = Pipeline.set_options(pipeline, :gain, gain: 4)
-    {:ok, _} = Pipeline.set_options(pipeline, :match, p1: 5)
+    {:ok, _} = Pipeline.set_options(pipeline, :disparity, p1: 5)
 
     assert :ok = Pipeline.reload_calibration(pipeline)
     values = Map.new(Pipeline.stage_options(pipeline), &{&1.stage, &1.values})
     assert %{gain: 4} = values.gain
-    assert %{p1: 5} = values.match
+    assert %{p1: 5} = values.disparity
   end
 end

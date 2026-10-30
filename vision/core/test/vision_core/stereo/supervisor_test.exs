@@ -63,13 +63,13 @@ defmodule VisionCore.Stereo.SupervisorTest do
           height: 48
         )
 
-      {:ok, _} = Pipeline.set_options(pipeline, :rectify, right_row_offset: 2.0)
-      {:ok, _} = Pipeline.set_options(pipeline, :match, p1: 5)
+      {:ok, _} = Pipeline.set_options(pipeline, :rectification, right_row_offset: 2.0)
+      {:ok, _} = Pipeline.set_options(pipeline, :disparity, p1: 5)
       assert :ok = StereoSupervisor.reload_calibration(pipeline, "stereo")
 
       values = Map.new(Pipeline.stage_options(pipeline), &{&1.stage, &1.values})
-      assert values.rectify.right_row_offset == 0.0
-      assert values.match.p1 == 5
+      assert values.rectification.right_row_offset == 0.0
+      assert values.disparity.p1 == 5
     end
   end
 

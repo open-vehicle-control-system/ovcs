@@ -1,4 +1,4 @@
-defmodule VisionCore.Stereo.Stage.Temporal do
+defmodule VisionCore.Stereo.Stage.TemporalFilter do
   @moduledoc """
   Smooths the disparity over time, on the device. Where a pixel matched
   in this pair and the previous one, within `:delta` pixels of each
@@ -117,7 +117,7 @@ defmodule VisionCore.Stereo.Stage.Temporal do
     do: {:ok, %{state | hold: value}}
 
   defp validate(_state, key, value),
-    do: {:error, "temporal #{key} out of range: #{inspect(value)}"}
+    do: {:error, "temporal_filter #{key} out of range: #{inspect(value)}"}
 
   defp smooth(current, previous, alpha, delta) do
     agree =

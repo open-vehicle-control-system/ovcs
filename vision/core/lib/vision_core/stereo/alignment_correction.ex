@@ -2,9 +2,9 @@ defmodule VisionCore.Stereo.AlignmentCorrection do
   @moduledoc """
   Keeps the rectified images on the same rows when the cameras shift a
   little after their calibration: reads the row offset
-  (`VisionCore.Stereo.Stage.Alignment`) from each `VisionCore.Status`
+  (`VisionCore.Stereo.Stage.RowAlignment`) from each `VisionCore.Status`
   tick, and when the median of the last five stays beyond a tenth of a
-  row, moves the right image through the Rectify stage's
+  row, moves the right image through the Rectification stage's
   `right_row_offset`, up to six rows. On a real scene the measurement
   reads about half of the true offset, so each correction moves one and
   a half times the reading; it then waits for five fresh measurements
@@ -12,7 +12,7 @@ defmodule VisionCore.Stereo.AlignmentCorrection do
   does not steer it.
 
   It can be switched off while running (`set_enabled/2`, the
-  `<prefix>.alignment.correction` parameter), so a `right_row_offset` set
+  `<prefix>.row_alignment.correction` parameter), so a `right_row_offset` set
   by hand stays.
 
   It corrects only rows: a camera that moved sideways changes every
@@ -64,12 +64,13 @@ defmodule VisionCore.Stereo.AlignmentCorrection do
          Keyword.get(opts, :current_offset, fn ->
            pipeline
            |> Pipeline.stage_options()
-           |> Enum.find(&(&1.stage == :rectify))
+           |> Enum.find(&(&1.stage == :rectification))
            |> get_in([:values, :right_row_offset])
          end),
        set_offset:
          Keyword.get(opts, :set_offset, fn rows ->
-           with {:ok, _values} <- Pipeline.set_options(pipeline, :rectify, right_row_offset: rows),
+           with {:ok, _values} <-
+                  Pipeline.set_options(pipeline, :rectification, right_row_offset: rows),
                 do: :ok
          end)
      }}

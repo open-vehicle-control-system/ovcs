@@ -17,9 +17,9 @@ defmodule VisionCore.Parameters.StoreTest do
 
   test "writes values and loads them back with their types" do
     values = %{
-      "stereo.match.p1" => 10,
-      "stereo.temporal.alpha" => 0.5,
-      "stereo.alignment.correction" => false,
+      "stereo.disparity.p1" => 10,
+      "stereo.temporal_filter.alpha" => 0.5,
+      "stereo.row_alignment.correction" => false,
       "stereo.cameras.rotation" => 180
     }
 
