@@ -86,6 +86,39 @@ describe('ParameterControl', () => {
     expect(handlers.onChange.mock.invocationCallOrder[0]).toBeLessThan(handlers.onEditEnd.mock.invocationCallOrder[0])
   })
 
+  it('commits once when the pointer is released outside the slider', () => {
+    const handlers = show(p1)
+    const slider = screen.getByRole('slider', { name: 'p1' })
+
+    fireEvent.pointerDown(slider)
+    fireEvent.change(slider, { target: { value: '20' } })
+    fireEvent.lostPointerCapture(slider)
+    fireEvent.blur(slider)
+
+    expect(handlers.onChange).toHaveBeenCalledTimes(1)
+    expect(handlers.onChange).toHaveBeenCalledWith(20)
+    expect(handlers.onEditEnd).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not write back a polled value on blur when you typed nothing', () => {
+    const handlers = { onChange: vi.fn(), onReset: vi.fn() }
+    const { rerender } = render(<ParameterControl parameter={p1} {...handlers} />)
+    const input = screen.getByRole('textbox', { name: 'p1 value' })
+
+    fireEvent.focus(input)
+    rerender(<ParameterControl parameter={{ ...p1, value: 20 }} {...handlers} />)
+    expect(input.value).toBe('20')
+    fireEvent.blur(input)
+
+    expect(handlers.onChange).not.toHaveBeenCalled()
+  })
+
+  it('shows a double without float noise', () => {
+    show({ ...p1, name: 'uniqueness', type: 'double', constraint: { kind: 'range', min: 1, max: 3, step: null }, value: 0.1 + 0.2, default: 0.3 })
+
+    expect(screen.getByRole('textbox', { name: 'uniqueness value' }).value).toBe('0.3')
+  })
+
   it('commits a keyboard change when the key is released', () => {
     const handlers = show(p1)
     const slider = screen.getByRole('slider', { name: 'p1' })
@@ -136,6 +169,7 @@ describe('ParameterControl', () => {
     expect(screen.queryByRole('textbox')).toBeNull()
     expect(screen.queryByRole('button')).toBeNull()
     expect(screen.queryByText('live')).toBeNull()
+    expect(screen.getByText('built-in')).toBeTruthy()
   })
 
   it('shows an automatic parameter read-only with its controller', () => {

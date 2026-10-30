@@ -1,8 +1,7 @@
 import { useId, useMemo } from 'react'
-import { useParameters } from '../stores/parameters.js'
+import { groupParameters, useParameters } from '../stores/parameters.js'
 import ParameterControl, { formatValue, rangeStep, tidy } from './ParameterControl.jsx'
-
-const FOCUS = 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ovcs-accent'
+import { FOCUS } from './styles.js'
 
 // A relation is strict: the margin is the smallest step between two values.
 const margin = (parameter) => (parameter.type === 'integer' ? 1 : rangeStep(parameter))
@@ -32,10 +31,7 @@ export default function ParameterPanel({ groupId }) {
 
   const group = groups.find((candidate) => candidate.id === groupId)
 
-  const members = useMemo(
-    () => (group ? group.parameterIds.map((id) => parameters[id]).filter(Boolean) : []),
-    [group, parameters]
-  )
+  const members = useMemo(() => groupParameters({ groups, parameters }, groupId), [groups, parameters, groupId])
 
   // Parameters that must stay below another, by the id of the one above.
   const below = useMemo(() => {
@@ -62,7 +58,7 @@ export default function ParameterPanel({ groupId }) {
         <button
           type="button"
           onClick={() => reset({ type: 'parameter-groups', id: group.id })}
-          className={`min-h-8 shrink-0 rounded border border-ovcs-border px-2 text-sm ${FOCUS}`}
+          className={`min-h-8 shrink-0 rounded border border-ovcs-border px-2 text-sm hover:border-ovcs-accent ${FOCUS}`}
         >
           Reset {group.name}
         </button>

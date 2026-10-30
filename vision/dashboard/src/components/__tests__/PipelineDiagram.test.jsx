@@ -67,6 +67,8 @@ describe('PipelineDiagram', () => {
 
     expect(screen.getByRole('button', { name: 'Match' }).getAttribute('aria-current')).toBe('true')
     expect(screen.getByRole('button', { name: 'Cameras' }).getAttribute('aria-current')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Match' }).className).toContain('bg-[color-mix(')
+    expect(screen.getByRole('button', { name: 'Cameras' }).className).not.toContain('bg-[color-mix(')
 
     fireEvent.click(screen.getByRole('button', { name: 'Cameras' }))
     expect(select).toHaveBeenCalledWith('cameras')
