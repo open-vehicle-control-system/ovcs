@@ -1,7 +1,8 @@
 defmodule VisionCore.Parameters.Group do
   @moduledoc """
   A component or pipeline stage and its parameters, as `VisionCore.Parameters`
-  lists it.
+  lists it. `:placement` is where the dashboard draws it: `:flow` in the
+  pipeline, `:side` beside it.
   """
   alias VisionCore.Parameters.Parameter
 

@@ -5,7 +5,7 @@ defmodule VisionCore.Ros2.Parameters do
   Foxglove's Parameters panel list, describe and change them.
 
   Every request is answered from `VisionCore.Parameters`. A ROS name is the
-  parameter's id (`stereo.match.p1`). A set request is a
+  parameter's id (`stereo.disparity.p1`). A set request is a
   `VisionCore.Parameters.set/3`, an unsaved change; saving is not exposed. A
   set request is answered per parameter; the atomic variant is refused.
 

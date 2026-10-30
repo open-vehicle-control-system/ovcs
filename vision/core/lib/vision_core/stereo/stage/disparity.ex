@@ -1,4 +1,4 @@
-defmodule VisionCore.Stereo.Stage.Match do
+defmodule VisionCore.Stereo.Stage.Disparity do
   @moduledoc """
   Matches the rectified pair with `NxStereo.sgm/3`: libSGM's
   semi-global matching, as compute shaders on a Vulkan GPU through

@@ -1,4 +1,4 @@
-defmodule VisionCore.Stereo.Stage.Alignment do
+defmodule VisionCore.Stereo.Stage.RowAlignment do
   @moduledoc """
   Measures how well the rectified images line up: a point should sit on
   the same row in both, and a calibration that no longer fits the

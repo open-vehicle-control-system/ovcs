@@ -120,12 +120,12 @@ defmodule VisionCore.Stereo.Stage.StagesTest do
       assert Nx.to_list(pair.left) == Nx.to_list(image)
     end
 
-    test "Rectify rectifies as initUndistortRectifyMap and remap do" do
+    test "Rectification rectifies as initUndistortRectifyMap and remap do" do
       context = context(:stereo, 480, 270)
       image = smooth(270, 480)
 
       pair =
-        run_nx([{Stage.Rectify, []}], context, %Pair{
+        run_nx([{Stage.Rectification, []}], context, %Pair{
           left_frame: frame(image),
           right_frame: frame(image)
         })
@@ -148,12 +148,12 @@ defmodule VisionCore.Stereo.Stage.StagesTest do
       end
     end
 
-    test "Rectify shrinks 768x432 frames to 480x270 close to INTER_AREA then remap" do
+    test "Rectification shrinks 768x432 frames to 480x270 close to INTER_AREA then remap" do
       context = context(:stereo, 480, 270, {768, 432})
       image = smooth(432, 768)
 
       pair =
-        run_nx([{Stage.Rectify, []}], context, %Pair{
+        run_nx([{Stage.Rectification, []}], context, %Pair{
           left_frame: frame(image),
           right_frame: frame(image)
         })
@@ -188,25 +188,25 @@ defmodule VisionCore.Stereo.Stage.StagesTest do
       end
     end
 
-    test "PostFilter filters as medianBlur does" do
+    test "MedianFilter filters as medianBlur does" do
       context = context(:stereo, 64, 48)
       disparity = Nx.divide(Nx.as_type(texture(48, 64, 3), :f32), 4)
       input = %Pair{left_frame: nil, right_frame: nil, disparity: disparity}
-      pair = run_nx([{Stage.PostFilter, []}], context, input)
+      pair = run_nx([{Stage.MedianFilter, []}], context, input)
 
       reference = disparity |> Evision.Mat.from_nx_2d() |> Evision.medianBlur(5) |> to_tensor()
       assert Nx.to_list(pair.disparity) == Nx.to_list(reference)
     end
   end
 
-  test "Rectify moves the right image by right_row_offset rows, and only it" do
+  test "Rectification moves the right image by right_row_offset rows, and only it" do
     context = context(:identity, 96, 64)
     image = smooth(64, 96)
     input = %Pair{left_frame: frame(image), right_frame: frame(image)}
 
     rectify = fn opts ->
-      {:ok, state} = Stage.Rectify.init(opts, context)
-      member = %{module: Stage.Rectify, name: :rectify, state: state}
+      {:ok, state} = Stage.Rectification.init(opts, context)
+      member = %{module: Stage.Rectification, name: :rectification, state: state}
       {:ok, segment} = NxSegment.build([member], context, compiler: EXLA)
       {:ok, pair, _segment} = NxSegment.run(%{input | geometry: context}, segment)
       pair
@@ -216,66 +216,66 @@ defmodule VisionCore.Stereo.Stage.StagesTest do
     assert Nx.to_list(shifted.left) == Nx.to_list(plain.left)
     assert Nx.to_list(shifted.right[[10..50, ..]]) == Nx.to_list(plain.right[[11..51, ..]])
 
-    assert [right_row_offset: %{type: :double}] = Stage.Rectify.option_specs()
-    {:ok, state} = Stage.Rectify.init([], context)
-    assert {:ok, state} = Stage.Rectify.set_option(state, :right_row_offset, -2.5)
-    assert Stage.Rectify.options(state) == %{right_row_offset: -2.5}
-    assert {:error, _} = Stage.Rectify.set_option(state, :right_row_offset, 20)
+    assert [right_row_offset: %{type: :double}] = Stage.Rectification.option_specs()
+    {:ok, state} = Stage.Rectification.init([], context)
+    assert {:ok, state} = Stage.Rectification.set_option(state, :right_row_offset, -2.5)
+    assert Stage.Rectification.options(state) == %{right_row_offset: -2.5}
+    assert {:error, _} = Stage.Rectification.set_option(state, :right_row_offset, 20)
   end
 
-  test "Match aggregates along 8 paths, or 3 when asked" do
+  test "Disparity aggregates along 8 paths, or 3 when asked" do
     context = context(:identity, 192, 108)
-    assert {:ok, opts} = Stage.Match.init([], context)
+    assert {:ok, opts} = Stage.Disparity.init([], context)
     assert opts[:paths] == 8
-    assert {:ok, opts} = Stage.Match.init([paths: 3], context)
+    assert {:ok, opts} = Stage.Disparity.init([paths: 3], context)
     assert opts[:paths] == 3
 
     assert {:error, "nx_stereo aggregates along 3 or 8 paths" <> _} =
-             Stage.Match.init([paths: 4], context)
+             Stage.Disparity.init([paths: 4], context)
   end
 
-  test "Match declares p2 above p1, and its disparities and paths as build settings" do
-    specs = Stage.Match.option_specs()
+  test "Disparity declares p2 above p1, and its disparities and paths as build settings" do
+    specs = Stage.Disparity.option_specs()
 
     assert %{greater_than: :p1} = specs[:p2]
     assert %{values: [64, 128], applies: :build} = specs[:num_disparities]
     assert %{values: [3, 8], applies: :build} = specs[:paths]
-    assert %{values: [3, 5], applies: :build} = Stage.PostFilter.option_specs()[:kernel_size]
+    assert %{values: [3, 5], applies: :build} = Stage.MedianFilter.option_specs()[:kernel_size]
     assert %{type: :integer, applies: :build} = Stage.PointCloud.option_specs()[:decimation]
   end
 
-  test "Match lists its build settings with the values it runs with" do
+  test "Disparity lists its build settings with the values it runs with" do
     context = context(:identity, 192, 108)
-    {:ok, state} = Stage.Match.init([num_disparities: 64, paths: 3], context)
+    {:ok, state} = Stage.Disparity.init([num_disparities: 64, paths: 3], context)
 
-    assert %{num_disparities: 64, paths: 3, p1: 8, p2: 64} = Stage.Match.options(state)
+    assert %{num_disparities: 64, paths: 3, p1: 8, p2: 64} = Stage.Disparity.options(state)
 
-    assert Stage.Match.params(state, context) |> Map.keys() |> Enum.sort() == [
+    assert Stage.Disparity.params(state, context) |> Map.keys() |> Enum.sort() == [
              :p1,
              :p2,
              :uniqueness
            ]
 
-    {:ok, size} = Stage.PostFilter.init([kernel_size: 3], context)
-    assert Stage.PostFilter.options(size) == %{kernel_size: 3}
+    {:ok, size} = Stage.MedianFilter.init([kernel_size: 3], context)
+    assert Stage.MedianFilter.options(size) == %{kernel_size: 3}
     {:ok, decimation} = Stage.PointCloud.init([decimation: 2], context)
     assert Stage.PointCloud.options(decimation) == %{decimation: 2}
     assert {:error, _} = Stage.PointCloud.init([decimation: 0], context)
   end
 
-  test "Speckle and Temporal settings are named as their composer options" do
+  test "SpeckleFilter and TemporalFilter settings are named as their composer options" do
     context = context(:identity, 192, 108)
-    {:ok, speckle} = Stage.Speckle.init([min_support: 10, max_diff: 2.0], context)
-    assert Stage.Speckle.options(speckle) == %{min_support: 10, max_diff: 2.0}
-    assert {:ok, speckle} = Stage.Speckle.set_option(speckle, :min_support, 6)
-    assert Stage.Speckle.options(speckle).min_support == 6
-    assert Keyword.keys(Stage.Speckle.option_specs()) == [:min_support, :max_diff]
+    {:ok, speckle} = Stage.SpeckleFilter.init([min_support: 10, max_diff: 2.0], context)
+    assert Stage.SpeckleFilter.options(speckle) == %{min_support: 10, max_diff: 2.0}
+    assert {:ok, speckle} = Stage.SpeckleFilter.set_option(speckle, :min_support, 6)
+    assert Stage.SpeckleFilter.options(speckle).min_support == 6
+    assert Keyword.keys(Stage.SpeckleFilter.option_specs()) == [:min_support, :max_diff]
 
-    {:ok, temporal} = Stage.Temporal.init([alpha: 0.5, delta: 1.0, hold: 3], context)
-    assert Stage.Temporal.options(temporal) == %{alpha: 0.5, delta: 1.0, hold: 3}
-    assert {:ok, temporal} = Stage.Temporal.set_option(temporal, :hold, 0)
-    assert Stage.Temporal.options(temporal).hold == 0
-    assert Keyword.keys(Stage.Temporal.option_specs()) == [:alpha, :delta, :hold]
+    {:ok, temporal} = Stage.TemporalFilter.init([alpha: 0.5, delta: 1.0, hold: 3], context)
+    assert Stage.TemporalFilter.options(temporal) == %{alpha: 0.5, delta: 1.0, hold: 3}
+    assert {:ok, temporal} = Stage.TemporalFilter.set_option(temporal, :hold, 0)
+    assert Stage.TemporalFilter.options(temporal).hold == 0
+    assert Keyword.keys(Stage.TemporalFilter.option_specs()) == [:alpha, :delta, :hold]
   end
 
   test "Depth and PointCloud measure f·B/d and keep the points from 5 cm to 20 m" do

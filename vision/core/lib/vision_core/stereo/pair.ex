@@ -33,7 +33,7 @@ defmodule VisionCore.Stereo.Pair do
     * `:alignment` — how far the right image's rows sit from the left
       one's, in rows: `%{offset_rows: float, band_offset_rows: [float]}`,
       over the whole image and per vertical band from left to right
-      (`VisionCore.Stereo.Stage.Alignment`); `nil` before it is measured.
+      (`VisionCore.Stereo.Stage.RowAlignment`); `nil` before it is measured.
     * `:sharpness` — each rectified image's sharpness,
       `%{left: float, right: float}`, comparable between the two
       (`VisionCore.Stereo.Stage.Sharpness`); `nil` before it is measured.

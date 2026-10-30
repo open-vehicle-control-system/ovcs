@@ -1,4 +1,4 @@
-defmodule VisionCore.Stereo.Stage.PostFilter do
+defmodule VisionCore.Stereo.Stage.MedianFilter do
   @moduledoc """
   Median filter on the disparity, which removes isolated
   wrong-disparity pixels. `:kernel_size` (`5`), 3 or 5.

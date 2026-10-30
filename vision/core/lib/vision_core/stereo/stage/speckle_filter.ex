@@ -1,4 +1,4 @@
-defmodule VisionCore.Stereo.Stage.Speckle do
+defmodule VisionCore.Stereo.Stage.SpeckleFilter do
   @moduledoc """
   Drops speckles, small islands of disparity that agree with nothing
   around them, on the device. A matched pixel is kept when at least
@@ -84,7 +84,7 @@ defmodule VisionCore.Stereo.Stage.Speckle do
     do: {:ok, %{state | max_diff: value * 1.0}}
 
   defp validate(_state, key, value),
-    do: {:error, "speckle #{key} out of range: #{inspect(value)}"}
+    do: {:error, "speckle_filter #{key} out of range: #{inspect(value)}"}
 
   # One gather of all 48 neighbours, unmatched outside the image, compiles to one pass.
   defp despeckle(disparity, min_support, max_diff) do

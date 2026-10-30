@@ -1,4 +1,4 @@
-defmodule VisionCore.Stereo.Stage.Rectify do
+defmodule VisionCore.Stereo.Stage.Rectification do
   @moduledoc """
   Undistorts and rectifies both camera frames with `NxStereo.Rectify`,
   so a point lies on the same row in each, and shrinks frames larger

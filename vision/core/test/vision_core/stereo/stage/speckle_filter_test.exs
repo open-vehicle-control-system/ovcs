@@ -1,4 +1,4 @@
-defmodule VisionCore.Stereo.Stage.SpeckleTest do
+defmodule VisionCore.Stereo.Stage.SpeckleFilterTest do
   use ExUnit.Case, async: true
 
   alias VisionCore.Stereo.{NxSegment, Pair, Stage}
@@ -6,8 +6,8 @@ defmodule VisionCore.Stereo.Stage.SpeckleTest do
   defp filter(disparity, opts \\ []) do
     {height, width} = Nx.shape(disparity)
     context = %{height: height, width: width}
-    {:ok, state} = Stage.Speckle.init(opts, context)
-    member = %{module: Stage.Speckle, name: :speckle, state: state}
+    {:ok, state} = Stage.SpeckleFilter.init(opts, context)
+    member = %{module: Stage.SpeckleFilter, name: :speckle_filter, state: state}
     {:ok, segment} = NxSegment.build([member], context, compiler: EXLA)
 
     {:ok, pair, _segment} =
@@ -46,7 +46,11 @@ defmodule VisionCore.Stereo.Stage.SpeckleTest do
 
   test "refuses settings out of range" do
     context = %{height: 2, width: 4}
-    assert {:error, "speckle min_support" <> _} = Stage.Speckle.init([min_support: 49], context)
-    assert {:error, "speckle max_diff" <> _} = Stage.Speckle.init([max_diff: -1], context)
+
+    assert {:error, "speckle_filter min_support" <> _} =
+             Stage.SpeckleFilter.init([min_support: 49], context)
+
+    assert {:error, "speckle_filter max_diff" <> _} =
+             Stage.SpeckleFilter.init([max_diff: -1], context)
   end
 end

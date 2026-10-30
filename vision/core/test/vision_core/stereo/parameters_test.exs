@@ -81,14 +81,14 @@ defmodule VisionCore.Stereo.ParametersTest do
 
   @stages [
     %{
-      stage: :rectify,
+      stage: :rectification,
       summary: "Rectifies",
       specs: [right_row_offset: %{type: :double, range: {-8, 8}, applies: :live}],
       values: %{right_row_offset: 0.0}
     },
     %{stage: :sharpness, summary: "Sharpness", specs: [], values: %{}},
     %{
-      stage: :match,
+      stage: :disparity,
       summary: "Matches",
       specs: [
         p1: %{type: :integer, range: {0, 78}, applies: :live},
@@ -99,12 +99,12 @@ defmodule VisionCore.Stereo.ParametersTest do
       values: %{p1: 8, p2: 40, num_disparities: 64, paths: 8}
     },
     %{
-      stage: :post_filter,
+      stage: :median_filter,
       summary: "Filters",
       specs: [median: %{type: :bool, applies: :live}],
       values: %{median: true}
     },
-    %{stage: :alignment, summary: "Measures", specs: [], values: %{}}
+    %{stage: :row_alignment, summary: "Measures", specs: [], values: %{}}
   ]
 
   @controls Map.new(VisionCore.Camera.V4L2.control_specs(), &{&1.key, &1.default})
@@ -140,16 +140,18 @@ defmodule VisionCore.Stereo.ParametersTest do
 
     assert Enum.map(groups, & &1.id) == [
              "stereo.cameras",
-             "stereo.rectify",
+             "stereo.rectification",
              "stereo.sharpness",
-             "stereo.match",
-             "stereo.post_filter",
-             "stereo.alignment"
+             "stereo.disparity",
+             "stereo.median_filter",
+             "stereo.row_alignment"
            ]
 
     assert Enum.map(groups, & &1.position) == [0, 1, 2, 3, 4, 5]
     assert %{name: "Cameras", kind: :component, placement: :flow} = hd(groups)
-    assert %{name: "Post filter", kind: :stage, summary: "Filters"} = group("stereo.post_filter")
+
+    assert %{name: "Median filter", kind: :stage, summary: "Filters"} =
+             group("stereo.median_filter")
   end
 
   describe "the LibCamera driver" do
@@ -446,7 +448,7 @@ defmodule VisionCore.Stereo.ParametersTest do
 
   test "build parameters carry the capture and matching sizes" do
     cameras = group("stereo.cameras")
-    rectify = group("stereo.rectify")
+    rectification = group("stereo.rectification")
 
     for {group, name, value} <- [
           {cameras, "width", 1280},
@@ -455,8 +457,8 @@ defmodule VisionCore.Stereo.ParametersTest do
           {cameras, "left_device", "/dev/video0"},
           {cameras, "left_sync", "server"},
           {cameras, "right_device", "/dev/video1"},
-          {rectify, "match_width", 640},
-          {rectify, "match_height", 360}
+          {rectification, "match_width", 640},
+          {rectification, "match_height", 360}
         ] do
       assert %{applies: :build} = parameter = parameter(group, name)
       assert parameter.get.() == value
@@ -465,52 +467,52 @@ defmodule VisionCore.Stereo.ParametersTest do
     refute parameter(cameras, "left_calibration_path")
   end
 
-  test "Match's p2 is declared above p1, its disparities and paths as build parameters" do
-    match = group("stereo.match")
+  test "Disparity's p2 is declared above p1, its disparities and paths as build parameters" do
+    disparity = group("stereo.disparity")
 
     assert %{greater_than: "p1", constraint: %{kind: :range, min: 1, max: 79}} =
-             parameter(match, "p2")
+             parameter(disparity, "p2")
 
     assert %{applies: :build, constraint: %{kind: :choices, values: [64, 128]}} =
-             parameter(match, "num_disparities")
+             parameter(disparity, "num_disparities")
 
-    assert %{applies: :build} = paths = parameter(match, "paths")
+    assert %{applies: :build} = paths = parameter(disparity, "paths")
     assert paths.get.() == 8
-    assert parameter(match, "p1").export == [:components, :stereo, :stages, :match, :p1]
-    assert parameter(group("stereo.post_filter"), "median").constraint == %{kind: :bool}
+    assert parameter(disparity, "p1").export == [:components, :stereo, :stages, :disparity, :p1]
+    assert parameter(group("stereo.median_filter"), "median").constraint == %{kind: :bool}
   end
 
   test "a stage setting changed through its parameter reaches the pipeline" do
-    p1 = parameter(group("stereo.match"), "p1")
+    p1 = parameter(group("stereo.disparity"), "p1")
     assert :ok = p1.set.(12)
-    assert_received {:set_options, :match, [p1: 12]}
+    assert_received {:set_options, :disparity, [p1: 12]}
     assert p1.get.() == 12
   end
 
   test "right_row_offset is set by the alignment correction while it runs, live otherwise" do
-    offset = fn -> parameter(group("stereo.rectify"), "right_row_offset") end
+    offset = fn -> parameter(group("stereo.rectification"), "right_row_offset") end
     assert offset.().applies == :live
 
     start_supervised!({AlignmentCorrection, subscribe: false})
-    assert offset.().applies == {:auto, "stereo.alignment.correction"}
+    assert offset.().applies == {:auto, "stereo.row_alignment.correction"}
   end
 
-  test "right_row_offset stays live without an alignment stage to declare the correction" do
+  test "right_row_offset stays live without a row alignment stage to declare the correction" do
     stop_supervised!(Pipeline)
-    start_supervised!({Pipeline, Enum.reject(@stages, &(&1.stage == :alignment))})
+    start_supervised!({Pipeline, Enum.reject(@stages, &(&1.stage == :row_alignment))})
     start_supervised!({AlignmentCorrection, subscribe: false})
 
-    assert parameter(group("stereo.rectify"), "right_row_offset").applies == :live
-    refute group("stereo.alignment")
+    assert parameter(group("stereo.rectification"), "right_row_offset").applies == :live
+    refute group("stereo.row_alignment")
   end
 
-  test "the alignment group carries the correction switch and the row offset as its status" do
-    refute parameter(group("stereo.alignment"), "correction")
-    assert group("stereo.alignment").status.() == nil
+  test "the row alignment group carries the correction switch and the row offset as its status" do
+    refute parameter(group("stereo.row_alignment"), "correction")
+    assert group("stereo.row_alignment").status.() == nil
 
     start_supervised!({AlignmentCorrection, subscribe: false})
     start_supervised!({Status, %{alignment: %{offset_rows: 0.7, band_offset_rows: []}}})
-    alignment = group("stereo.alignment")
+    alignment = group("stereo.row_alignment")
     correction = parameter(alignment, "correction")
 
     assert %{type: :bool, export: [:components, :stereo, :align_correction]} = correction
@@ -532,7 +534,7 @@ defmodule VisionCore.Stereo.ParametersTest do
 
     ids = Enum.map(VisionCore.Parameters.groups(), & &1.id)
     assert "stereo.cameras" in ids
-    assert {:ok, %{value: 8}} = VisionCore.Parameters.get("stereo.match.p1")
+    assert {:ok, %{value: 8}} = VisionCore.Parameters.get("stereo.disparity.p1")
   end
 
   test "exposure and gain default to their manual settings while auto exposure runs" do
@@ -597,19 +599,21 @@ defmodule VisionCore.Stereo.ParametersTest do
       )
 
     start_supervised!(
-      {MemoryStore, %{"stereo.rectify.right_row_offset" => 1.5, "stereo.match.p1" => 5}}
+      {MemoryStore, %{"stereo.rectification.right_row_offset" => 1.5, "stereo.disparity.p1" => 5}}
     )
 
     start_supervised!({VisionCore.Parameters, store: MemoryStore})
 
     start_supervised!({Parameters, topic_prefix: "stereo", driver: Driver, pipeline: pipeline})
 
-    assert {:ok, %{value: 1.5}} = VisionCore.Parameters.get("stereo.rectify.right_row_offset")
+    assert {:ok, %{value: 1.5}} =
+             VisionCore.Parameters.get("stereo.rectification.right_row_offset")
+
     assert :ok = StereoSupervisor.reload_calibration(pipeline, "stereo")
 
-    assert MemoryStore.rows() == %{"stereo.match.p1" => 5}
+    assert MemoryStore.rows() == %{"stereo.disparity.p1" => 5}
 
     assert {:ok, %{value: +0.0, state: :builtin}} =
-             VisionCore.Parameters.get("stereo.rectify.right_row_offset")
+             VisionCore.Parameters.get("stereo.rectification.right_row_offset")
   end
 end

@@ -98,7 +98,7 @@ defmodule VisionCore.Stereo.AlignmentCorrectionTest do
     refute_receive {:set, _rows}, 100
   end
 
-  test "moves the pipeline's Rectify stage by default" do
+  test "moves the pipeline's Rectification stage by default" do
     calibration = Path.expand("../../support/calibration", __DIR__)
 
     {:ok, pipeline} =
@@ -110,12 +110,12 @@ defmodule VisionCore.Stereo.AlignmentCorrectionTest do
         height: 48
       )
 
-    {:ok, _} = Pipeline.set_options(pipeline, :rectify, right_row_offset: 1.0)
+    {:ok, _} = Pipeline.set_options(pipeline, :rectification, right_row_offset: 1.0)
     {:ok, pid} = AlignmentCorrection.start_link(name: nil, subscribe: false, pipeline: pipeline)
     for _ <- 1..5, do: tick(pid, 1.0)
     :sys.get_state(pid)
 
-    rectify = Enum.find(Pipeline.stage_options(pipeline), &(&1.stage == :rectify))
-    assert_in_delta rectify.values.right_row_offset, 2.5, 1.0e-6
+    rectification = Enum.find(Pipeline.stage_options(pipeline), &(&1.stage == :rectification))
+    assert_in_delta rectification.values.right_row_offset, 2.5, 1.0e-6
   end
 end
