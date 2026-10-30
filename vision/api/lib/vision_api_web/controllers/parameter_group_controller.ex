@@ -20,7 +20,7 @@ defmodule VisionApiWeb.ParameterGroupController do
 
     document = %{
       data: Enum.map(groups, &ParameterJSON.group/1),
-      meta: %{unsaved: Parameters.unsaved_count()}
+      meta: %{unsaved: ParameterJSON.unsaved(groups)}
     }
 
     document =
