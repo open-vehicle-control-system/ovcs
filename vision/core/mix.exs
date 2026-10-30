@@ -10,7 +10,9 @@ defmodule VisionCore.MixProject do
       compilers: compilers(),
       make_targets: ["all"],
       make_clean: ["clean"],
-      deps: deps()
+      deps: deps(),
+      # The module cache builder is a Mix task.
+      dialyzer: [plt_add_apps: [:mix]]
     ]
   end
 
