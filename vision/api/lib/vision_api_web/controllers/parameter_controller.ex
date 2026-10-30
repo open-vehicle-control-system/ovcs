@@ -55,7 +55,13 @@ defmodule VisionApiWeb.ParameterController do
   defp check_resource(%{"id" => id}, _type, expected) when id != expected,
     do: {:error, 409, "Conflict", "id must be #{expected}", "/data/id"}
 
-  defp check_resource(%{}, _type, _id), do: :ok
+  defp check_resource(%{"type" => _type, "id" => _id}, _expected_type, _expected_id), do: :ok
+
+  defp check_resource(%{"type" => _type}, _expected_type, _expected_id),
+    do: {:error, 400, "Bad Request", "data.id is required", "/data/id"}
+
+  defp check_resource(%{}, _expected_type, _expected_id),
+    do: {:error, 400, "Bad Request", "data.type is required", "/data/type"}
 
   defp check_resource(_data, _type, _id),
     do: {:error, 400, "Bad Request", "data is required", "/data"}

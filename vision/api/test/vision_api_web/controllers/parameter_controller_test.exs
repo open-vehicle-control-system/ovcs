@@ -93,7 +93,8 @@ defmodule VisionApiWeb.ParameterControllerTest do
              conn |> patch_value("nope", body("nope", 1)) |> json_response(404)
   end
 
-  test "PATCH answers 409 for another type or id, and 400 without a value", %{conn: conn} do
+  test "PATCH answers 409 for another type or id, and 400 without a value, type or id",
+       %{conn: conn} do
     id = "test.match.p1"
     wrong_type = %{data: %{type: "groups", id: id, attributes: %{value: 1}}}
 
@@ -114,6 +115,16 @@ defmodule VisionApiWeb.ParameterControllerTest do
 
     assert %{"errors" => [%{"status" => "400", "source" => %{"pointer" => "/data"}}]} =
              conn |> patch_value(id, %{}) |> json_response(400)
+
+    assert %{"errors" => [%{"status" => "400", "source" => %{"pointer" => "/data/type"}}]} =
+             conn
+             |> patch_value(id, %{data: %{id: id, attributes: %{value: 1}}})
+             |> json_response(400)
+
+    assert %{"errors" => [%{"status" => "400", "source" => %{"pointer" => "/data/id"}}]} =
+             conn
+             |> patch_value(id, %{data: %{type: "parameters", attributes: %{value: 1}}})
+             |> json_response(400)
 
     assert %{"attributes" => %{"state" => "builtin"}} = parameter(conn, id)
   end
