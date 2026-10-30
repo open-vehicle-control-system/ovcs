@@ -57,6 +57,7 @@ defmodule VisionCore.ApplicationTest do
     ids = child_ids(VisionCore.Supervisor)
     assert VisionCore.Ros2.ZenohClient in ids
     assert VisionCore.Ros2.Parameters in ids
+    assert VisionCore.Ros2.Topics in ids
     assert VisionCore.Ros2.Publishers.Heartbeat in ids
     assert Enum.take(ids, 2) == [VisionCore.Preview, VisionCore.Status]
   end
@@ -77,20 +78,22 @@ defmodule VisionCore.ApplicationTest do
 
   test "a Zenoh client restart keeps the unsaved changes" do
     start_pipeline(%VisionCore.Config{zenoh_endpoint_ip: "127.0.0.1"})
-    assert {:ok, %{state: :unsaved}} = VisionCore.Parameters.set("preview.max_hz", 5)
+    declare_sample()
+    assert {:ok, %{state: :unsaved}} = VisionCore.Parameters.set("test.sample.value", 5)
 
     preview = Process.whereis(VisionCore.Preview)
     Process.exit(Process.whereis(VisionCore.Ros2.ZenohClient), :kill)
     wait_for_restart(VisionCore.Preview, preview)
 
-    assert {:ok, %{value: 5, state: :unsaved}} = VisionCore.Parameters.get("preview.max_hz")
+    assert {:ok, %{value: 5, state: :unsaved}} = VisionCore.Parameters.get("test.sample.value")
   end
 
   test "the pipeline starts on an empty store with its own Repo" do
     start_pipeline(%VisionCore.Config{zenoh_endpoint_ip: "127.0.0.1"})
 
     assert is_pid(child_pid(VisionCore.Supervisor, VisionCore.Parameters.Storage))
-    assert {:ok, %{value: 10, saved: nil}} = VisionCore.Parameters.get("preview.max_hz")
+    declare_sample()
+    assert {:ok, %{value: 1, saved: nil}} = VisionCore.Parameters.get("test.sample.value")
   end
 
   test "the config's preview options reach the preview" do
@@ -118,7 +121,8 @@ defmodule VisionCore.ApplicationTest do
 
     assert Process.alive?(Process.whereis(VisionCore.Parameters))
     assert Process.alive?(Process.whereis(VisionCore.Preview))
-    assert {:ok, _parameter} = VisionCore.Parameters.set("preview.max_hz", 5)
+    declare_sample()
+    assert {:ok, _parameter} = VisionCore.Parameters.set("test.sample.value", 5)
     assert {{:error, _reason}, _log} = with_log(fn -> VisionCore.Parameters.save() end)
   end
 
@@ -310,5 +314,33 @@ defmodule VisionCore.ApplicationTest do
       _ ->
         flunk("the left camera driver was not restarted")
     end
+  end
+
+  # A group owned by the test: a bare configuration declares none.
+  defp declare_sample do
+    {:ok, value} = Agent.start_link(fn -> 1 end)
+
+    :ok =
+      VisionCore.Parameters.declare([
+        %{
+          id: "test.sample",
+          name: "Sample",
+          summary: "A test parameter.",
+          kind: :component,
+          placement: :side,
+          position: 0,
+          parameters: [
+            %{
+              name: "value",
+              type: :integer,
+              get: fn -> Agent.get(value, & &1) end,
+              set: fn new -> Agent.update(value, fn _old -> new end) end,
+              constraint: %{kind: :range, min: 0, max: 10, step: nil},
+              description: "A sample value",
+              export: [:test, :value]
+            }
+          ]
+        }
+      ])
   end
 end

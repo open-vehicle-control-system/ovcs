@@ -11,7 +11,8 @@ defmodule VisionCore.Application do
   parameters and a restart of anything after them keeps the unsaved changes.
   `VisionCore.Ros2.ZenohClient` follows them. Consumers subscribe only from
   `init/1`, so they must restart with the client to get their subscriptions
-  back. `VisionCore.Status` and
+  back. `VisionCore.Ros2.Topics`, which counts what the components publish,
+  starts before them. `VisionCore.Status` and
   `VisionCore.Preview`, the dashboard's sources, start after the components.
   """
   use Application
@@ -49,7 +50,8 @@ defmodule VisionCore.Application do
       VisionCore.Parameters,
       {VisionCore.Ros2.ZenohClient, zenoh_client_opts(config)},
       VisionCore.Ros2.Parameters,
-      VisionCore.Jpeg
+      VisionCore.Jpeg,
+      VisionCore.Ros2.Topics
     ]
 
     component_children = Enum.flat_map(config.components, &resolve_component/1)

@@ -127,8 +127,11 @@ defmodule VisionCore.Ros2.ZenohClient do
   silently and tallied (the heartbeat re-fires on its own timer, IMU
   streams self-recover on the next sample); the drop count is logged
   once when the session opens. Returns `:ok` immediately.
+
+  Each call is counted in `VisionCore.Ros2.Topics`, dropped or not.
   """
   def publish(topic, message_module, message, opts \\ []) do
+    VisionCore.Ros2.Topics.count(topic, message_module)
     GenServer.cast(__MODULE__, {:publish, topic, message_module, message, opts})
   end
 
@@ -194,6 +197,32 @@ defmodule VisionCore.Ros2.ZenohClient do
     :exit, _reason -> false
   end
 
+  @doc """
+  The node and its link to the router: the node name, whether a session is
+  open, the router endpoint, and the services this client answers, by full
+  name and ROS type, sorted by name. When the client is not running, the
+  node is the configured one, down, with no endpoint and no service.
+  """
+  @spec link() :: %{
+          node_name: String.t(),
+          connected: boolean(),
+          endpoint: String.t() | nil,
+          services: [%{name: String.t(), type: String.t()}]
+        }
+  def link do
+    GenServer.call(__MODULE__, :link)
+  catch
+    :exit, _reason ->
+      %{node_name: configured_node_name(), connected: false, endpoint: nil, services: []}
+  end
+
+  defp configured_node_name do
+    case VisionCore.Application.active_config() do
+      %VisionCore.Config{node_name: node_name} when is_binary(node_name) -> node_name
+      _none -> @default_node_name
+    end
+  end
+
   @impl GenServer
   def init(opts) do
     state = %State{
@@ -209,6 +238,26 @@ defmodule VisionCore.Ros2.ZenohClient do
   @impl GenServer
   def handle_call(:node_name, _from, state), do: {:reply, state.node_name, state}
   def handle_call(:connected?, _from, state), do: {:reply, not is_nil(state.session), state}
+
+  def handle_call(:link, _from, state) do
+    services =
+      state.services
+      |> Enum.map(fn {name, service} ->
+        %{
+          name: VisionCore.Ros2.Topics.full_name(name),
+          type: VisionCore.Ros2.Topics.ros_type(service.service_module)
+        }
+      end)
+      |> Enum.sort_by(& &1.name)
+
+    {:reply,
+     %{
+       node_name: state.node_name,
+       connected: not is_nil(state.session),
+       endpoint: "tcp/#{state.endpoint_ip}:#{@zenoh_port}",
+       services: services
+     }, state}
+  end
 
   def handle_call({:subscribe, topic, message_module, pid, _opts}, _from, state) do
     key_expr = subscription_key_expr(state.domain_id, topic)
