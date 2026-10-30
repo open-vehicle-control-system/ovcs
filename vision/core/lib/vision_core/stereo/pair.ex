@@ -34,6 +34,9 @@ defmodule VisionCore.Stereo.Pair do
       one's, in rows: `%{offset_rows: float, band_offset_rows: [float]}`,
       over the whole image and per vertical band from left to right
       (`VisionCore.Stereo.Stage.Alignment`); `nil` before it is measured.
+    * `:sharpness` — each rectified image's sharpness,
+      `%{left: float, right: float}`, comparable between the two
+      (`VisionCore.Stereo.Stage.Sharpness`); `nil` before it is measured.
     * `:metrics` — `{name, value, unit}` samples a stage reports for the
       pipeline's log line.
     * `:device_ms` — the time the pair spent in compiled Nx segments, on
@@ -55,6 +58,7 @@ defmodule VisionCore.Stereo.Pair do
     :cloud,
     :cloud_size,
     :alignment,
+    :sharpness,
     cloud_points: 0,
     disparity_scale: 1.0,
     device_ms: 0.0,

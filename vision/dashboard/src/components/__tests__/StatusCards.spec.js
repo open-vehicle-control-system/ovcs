@@ -10,7 +10,8 @@ const snapshot = {
   zenoh: 'disconnected',
   cpu_percent: 37.25,
   stereo_segment_percent: 81.5,
-  alignment: { offset_rows: -1.43, band_offset_rows: [-1.9, -1.6, -1.2, -1.0] }
+  alignment: { offset_rows: -1.43, band_offset_rows: [-1.9, -1.6, -1.2, -1.0] },
+  sharpness: { left: 0.0312, right: 0.0218 }
 }
 
 describe('StatusCards', () => {
@@ -56,6 +57,21 @@ describe('StatusCards', () => {
     const wrapper = mount(StatusCards, { props: { status: { ...snapshot, alignment: null } } })
 
     expect(wrapper.get('[data-card="alignment"]').text()).toContain('–')
+  })
+
+  it("compares the cameras' sharpness, right to left", () => {
+    const card = mount(StatusCards, { props: { status: snapshot } }).get('[data-card="sharpness"]')
+
+    expect(card.text()).toContain('0.70')
+    expect(card.text()).toContain('left 0.0312 · right 0.0218')
+    expect(card.find('.text-red-700').exists()).toBe(true)
+  })
+
+  it('shows matching sharpness as healthy', () => {
+    const matched = { ...snapshot, sharpness: { left: 0.03, right: 0.028 } }
+    const card = mount(StatusCards, { props: { status: matched } }).get('[data-card="sharpness"]')
+
+    expect(card.find('.text-green-700').exists()).toBe(true)
   })
 
   it('shows an unknown CPU usage as a dash', () => {
