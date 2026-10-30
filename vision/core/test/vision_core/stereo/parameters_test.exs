@@ -218,6 +218,15 @@ defmodule VisionCore.Stereo.ParametersTest do
     assert offset.().applies == {:auto, "stereo.alignment.correction"}
   end
 
+  test "right_row_offset stays live without an alignment stage to declare the correction" do
+    stop_supervised!(Pipeline)
+    start_supervised!({Pipeline, Enum.reject(@stages, &(&1.stage == :alignment))})
+    start_supervised!({AlignmentCorrection, subscribe: false})
+
+    assert parameter(group("stereo.rectify"), "right_row_offset").applies == :live
+    refute group("stereo.alignment")
+  end
+
   test "the alignment group carries the correction switch and the row offset as its status" do
     refute parameter(group("stereo.alignment"), "correction")
     assert group("stereo.alignment").status.() == nil
@@ -249,6 +258,24 @@ defmodule VisionCore.Stereo.ParametersTest do
     assert {:ok, %{value: 8}} = VisionCore.Parameters.get("stereo.match.p1")
   end
 
+  test "exposure and gain default to their manual settings while auto exposure runs" do
+    Agent.update(Driver, fn state ->
+      %{
+        controls: %{state.controls | exposure_us: 5000, analogue_gain: 1.0},
+        live: %{exposure_time_us: 8000, analogue_gain: 2.0}
+      }
+    end)
+
+    start_supervised!({VisionCore.Parameters, store: MemoryStore})
+    start_supervised!({Parameters, topic_prefix: "stereo", driver: Driver, pipeline: Pipeline})
+
+    assert {:ok, %{value: 8000, default: 5000, state: :automatic}} =
+             VisionCore.Parameters.get("stereo.cameras.exposure_us")
+
+    assert {:ok, %{value: 2.0, default: 1.0}} =
+             VisionCore.Parameters.get("stereo.cameras.analogue_gain")
+  end
+
   test "starts without a registry" do
     assert {:ok, _pid} =
              start_supervised(
@@ -259,13 +286,14 @@ defmodule VisionCore.Stereo.ParametersTest do
   test "a calibration reload forgets the saved right_row_offset" do
     calibration = Path.expand("../../support/calibration", __DIR__)
 
-    {:ok, pipeline} =
-      VisionCore.Stereo.Pipeline.start_link(
-        name: :parameters_reload,
-        left_calibration_path: Path.join(calibration, "identity_left.yaml"),
-        right_calibration_path: Path.join(calibration, "identity_right.yaml"),
-        width: 64,
-        height: 48
+    pipeline =
+      start_supervised!(
+        {VisionCore.Stereo.Pipeline,
+         name: :parameters_reload,
+         left_calibration_path: Path.join(calibration, "identity_left.yaml"),
+         right_calibration_path: Path.join(calibration, "identity_right.yaml"),
+         width: 64,
+         height: 48}
       )
 
     start_supervised!(
