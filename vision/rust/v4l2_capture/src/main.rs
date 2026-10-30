@@ -28,6 +28,8 @@ const LEFT_SENSOR: &str = "imx708 5-001a";
 const RIGHT_VIDEO: &str = "54080000.vi-output-4";
 const RIGHT_SENSOR: &str = "imx708 6-001a";
 const BUFFERS: u32 = 4;
+// Metadata slots 0 (exposure) and 1 (gain).
+const EXPOSURE_GAIN_PRESENT: u8 = 0b11;
 // How long the sensors may take to register after the program starts.
 const NODE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
 const PAIR_TOLERANCE_NS: i64 = 1_000_000;
@@ -119,7 +121,7 @@ fn run(args: &args::Args, writer: &Writer, log: &dyn Fn(LogLevel, &str)) -> io::
         let mut values = [0.0; framing::METADATA_FIELDS];
         values[0] = exposure_us;
         values[1] = gain;
-        writer.write_record(&metadata_record(capture_ns, 0b11, &values))
+        writer.write_record(&metadata_record(capture_ns, EXPOSURE_GAIN_PRESENT, &values))
     };
     for camera in [&left, &right] {
         camera.sensor.set_control(v4l2::CID_VBLANK, vblank0)?;
