@@ -52,7 +52,7 @@ export default function ParameterPanel({ groupId }) {
     <section aria-labelledby={headingId} className="border-t border-ovcs-border pt-4">
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
-          <h3 id={headingId} className="text-lg font-semibold">
+          <h3 id={headingId} translate="no" className="text-lg font-semibold">
             {group.name}
           </h3>
           {group.summary ? <p className="text-sm text-ovcs-muted">{group.summary}</p> : null}
@@ -62,7 +62,7 @@ export default function ParameterPanel({ groupId }) {
           onClick={() => reset({ type: 'parameter-groups', id: group.id })}
           className={`min-h-8 shrink-0 rounded border border-ovcs-border px-2 text-sm hover:border-ovcs-accent ${FOCUS}`}
         >
-          Reset {group.name}
+          Reset <span translate="no">{group.name}</span>
         </button>
       </div>
       <p aria-live="polite" className="sr-only">

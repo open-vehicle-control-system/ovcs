@@ -54,6 +54,14 @@ describe('ParameterPanel', () => {
     expect(screen.getAllByRole('slider')).toHaveLength(3)
   })
 
+  it("keeps the group's name from being translated", () => {
+    render(<ParameterPanel groupId="stereo.match" />)
+
+    expect(screen.getByRole('heading', { name: 'Match' }).getAttribute('translate')).toBe('no')
+    const reset = screen.getByRole('button', { name: 'Reset Match' })
+    expect(reset.querySelector('[translate="no"]')?.textContent).toBe('Match')
+  })
+
   it('bounds p2 below by p1 and p1 above by p2', () => {
     render(<ParameterPanel groupId="stereo.match" />)
 
