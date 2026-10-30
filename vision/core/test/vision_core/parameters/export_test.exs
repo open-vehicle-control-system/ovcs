@@ -27,6 +27,15 @@ defmodule VisionCore.Parameters.ExportTest do
            """
   end
 
+  test "renders a config field named stages as plain options" do
+    rows = [{[:stages, :match], "stages.match", 1}]
+
+    assert Export.render(rows) == """
+           # In the composer's VisionCore.Config:
+           stages: [match: 1]
+           """
+  end
+
   test "renders nothing saved as a line saying so",
     do: assert(Export.render([]) == "# Nothing saved.\n")
 end

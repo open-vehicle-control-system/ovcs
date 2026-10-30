@@ -10,10 +10,12 @@ defmodule VisionCore.Parameters do
   use. A parameter with `applies: {:auto, controller}` is set by that
   controller's automatic mode while the controller is `true`.
 
-  Saved values are applied when their group is declared; one the parameter
-  refuses, or of a parameter its group no longer declares, is dropped from the
-  store with a log line. Values set since the last `save/1` are applied after
-  them. Both are applied again when a restarted owner declares its groups.
+  Saved values are applied when their group is declared. One that no longer
+  fits the parameter's type, constraint or relation, or of a parameter its
+  group no longer declares, is dropped from the store with a log line; one the
+  owner fails to set is kept for the next declaration. Values set since the
+  last `save/1` are applied after them. Both are applied again when a
+  restarted owner declares its groups.
   A parameter whose value cannot be read is never unsaved.
 
   ROS 2 and the API are adapters reading and setting parameters here.
@@ -229,7 +231,9 @@ defmodule VisionCore.Parameters do
         default = fn declared, values ->
           value = values[declared.id]
           default = state.defaults[declared.id]
-          if not is_nil(value) and value != default, do: {:ok, default}
+
+          if not is_nil(value) and not is_nil(default) and value != default,
+            do: {:ok, default}
         end
 
         {set_ids, applied, refused} = apply_values(state, parameters, default, &apply_value/4)
@@ -261,7 +265,14 @@ defmodule VisionCore.Parameters do
     state = %{state | exports: Map.merge(state.exports, exports)}
 
     saved = fn parameter, _values -> Map.fetch(state.saved, parameter.id) end
-    {_ids, _applied, refused} = apply_values(state, declared, saved, &set_back/4)
+    {_ids, _applied, refused} = apply_values(state, declared, saved, &apply_saved/4)
+    {not_set, refused} = Enum.split_with(refused, &match?({_, _, {:owner, _}}, &1))
+
+    log_refused(
+      for({declared, value, {:owner, reason}} <- not_set, do: {declared, value, reason}),
+      "kept, not applied"
+    )
+
     state = drop_saved(state, undeclared_saved(state, groups) ++ refused)
 
     changed = fn parameter, _values -> Map.fetch(state.changed, parameter.id) end
@@ -310,6 +321,16 @@ defmodule VisionCore.Parameters do
     with {:ok, value} <- check_value(state, declared, value, values),
          :ok <- call_set(declared, value) do
       {:ok, %{declared.id => value}}
+    end
+  end
+
+  # As set_back/4, with the owner's refusal told apart from the model's.
+  defp apply_saved(state, declared, value, values) do
+    with {:ok, value} <- check_value(state, declared, value, values) do
+      case call_set(declared, value) do
+        :ok -> {:ok, %{declared.id => value}}
+        {:error, reason} -> {:error, {:owner, reason}}
+      end
     end
   end
 
@@ -480,6 +501,8 @@ defmodule VisionCore.Parameters do
   end
 
   defp check_constraint(_constraint, _value), do: :ok
+
+  defp render_choice(nil), do: inspect(nil)
 
   defp render_choice(choice) when is_binary(choice) or is_atom(choice) or is_number(choice),
     do: to_string(choice)

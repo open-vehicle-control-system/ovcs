@@ -69,7 +69,7 @@ defmodule VisionCore.ParametersTest do
              {:error, "expected one of jet, gray"}
 
     assert Parameters.set(server, "preview.mode", "manual") ==
-             {:error, "expected one of {:fixed, 2}, auto"}
+             {:error, "expected one of {:fixed, 2}, auto, nil"}
 
     assert {:ok, %{value: 55}} = Parameters.set(server, "preview.quality", 55)
     assert {:ok, %{value: "gray"}} = Parameters.set(server, "preview.colormap", "gray")
@@ -299,6 +299,16 @@ defmodule VisionCore.ParametersTest do
                Parameters.get(server, "stereo.match.p1")
     end
 
+    @tag saved: %{"failing.refuses" => 3}
+    test "a saved value its owner fails to set is kept and not applied", %{server: server} do
+      log = capture_log(fn -> start_owner(server, &failing_groups/1) end)
+
+      assert log =~ "failing.refuses = 3 kept, not applied: busy"
+      refute log =~ "dropped"
+      assert MemoryStore.rows() == %{"failing.refuses" => 3}
+      assert {:ok, %{value: 0}} = Parameters.get(server, "failing.refuses")
+    end
+
     @tag saved: %{"stereo.match.p3" => 1, "stereo.match.p1" => 10}
     test "a saved value of a parameter its group no longer declares is dropped",
          %{server: server} do
@@ -376,6 +386,20 @@ defmodule VisionCore.ParametersTest do
       assert Parameters.discard(server) == {:ok, []}
       assert Parameters.reset(server, :all) == {:ok, []}
       refute_receive {:set, _name, nil}
+    end
+
+    test "reset skips a parameter without a default", %{server: server} do
+      unread_p1 = fn test ->
+        {groups, agent} = match_groups(test)
+        Agent.update(agent, &Map.put(&1, "p1", nil))
+        {groups, agent}
+      end
+
+      {_owner, agent} = start_owner(server, unread_p1)
+      Agent.update(agent, &Map.put(&1, "p1", 12))
+
+      assert Parameters.reset(server, :all) == {:ok, []}
+      assert Agent.get(agent, & &1["p1"]) == 12
     end
 
     @tag store: __MODULE__.FailingStore
@@ -585,7 +609,7 @@ defmodule VisionCore.ParametersTest do
       parameters: [
         backed(agent, test, "quality", :integer, %{kind: :range, min: 10, max: 100, step: 5}),
         backed(agent, test, "colormap", :string, %{kind: :choices, values: ["jet", "gray"]}),
-        backed(agent, test, "mode", :string, %{kind: :choices, values: [{:fixed, 2}, :auto]})
+        backed(agent, test, "mode", :string, %{kind: :choices, values: [{:fixed, 2}, :auto, nil]})
       ]
     }
 

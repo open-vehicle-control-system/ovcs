@@ -27,7 +27,7 @@ defmodule VisionCore.Parameters.Export do
   defp config_section([]), do: []
 
   defp config_section(rows),
-    do: ["# In the composer's VisionCore.Config:\n" <> render_options(tree(rows))]
+    do: ["# In the composer's VisionCore.Config:\n" <> render_options(tree(rows), false)]
 
   defp component_sections(rows) do
     rows
@@ -40,7 +40,7 @@ defmodule VisionCore.Parameters.Export do
         |> tree()
 
       "# In the options of the {#{inspect(component)}, opts} component:\n" <>
-        render_options(options)
+        render_options(options, true)
     end)
   end
 
@@ -61,11 +61,11 @@ defmodule VisionCore.Parameters.Export do
     end)
   end
 
-  defp render_options(tree) do
+  defp render_options(tree, component?) do
     tree
     |> Enum.sort()
     |> Enum.map_join(",\n", fn
-      {:stages, stages} when is_map(stages) ->
+      {:stages, stages} when component? and is_map(stages) ->
         "stages: Pipeline.default_stages(#{render_keyword(stages)})"
 
       {key, subtree} ->
