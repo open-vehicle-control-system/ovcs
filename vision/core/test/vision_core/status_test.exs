@@ -91,6 +91,33 @@ defmodule VisionCore.StatusTest do
     assert_in_delta right, 0.03, 1.0e-9
   end
 
+  test "each tick reports the depth's quality averaged over its pairs" do
+    start_supervised!({Status, config: config([]), tick_ms: 200})
+    :ok = Status.subscribe()
+    assert_receive {:vision_status, %{quality: nil}}
+
+    for valid <- [60.0, 70.0] do
+      metrics = [
+        {:align_rows, 0.1, "rows"},
+        {:valid, valid, "%"},
+        {:mean_disp, 18.0, "px"},
+        {:std_disp, 6.0, "px"},
+        {:jitter, 0.3, "px"}
+      ]
+
+      GenServer.cast(Status, {:stereo_pair, %{pair() | metrics: metrics}})
+    end
+
+    assert_receive {:vision_status, %{quality: quality}} when quality != nil, 500
+
+    assert quality == %{
+             matched_percent: 65.0,
+             mean_disparity_px: 18.0,
+             spread_px: 6.0,
+             jitter_px: 0.3
+           }
+  end
+
   test "each tick reports the CPU usage and the stereo segment time" do
     start_supervised!({Status, config: config([]), tick_ms: 200})
     :ok = Status.subscribe()
