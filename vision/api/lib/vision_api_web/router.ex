@@ -5,11 +5,20 @@ defmodule VisionApiWeb.Router do
     plug :accepts, ["json"]
   end
 
+  pipeline :jsonapi do
+    plug :accepts, ["jsonapi", "json"]
+  end
+
+  scope "/api", VisionApiWeb do
+    pipe_through :jsonapi
+    get "/parameter-groups", ParameterGroupController, :index
+    get "/parameters", ParameterController, :index
+    get "/parameters/:id", ParameterController, :show
+  end
+
   scope "/api", VisionApiWeb do
     pipe_through :api
     get "/settings", SettingsController, :show
-    get "/parameters", ParametersController, :index
-    put "/parameters/:name", ParametersController, :update
     match :*, "/*path", NotFoundController, :show
   end
 
