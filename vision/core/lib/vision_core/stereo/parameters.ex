@@ -31,6 +31,7 @@ defmodule VisionCore.Stereo.Parameters do
 
   @side_keys [:device, :sync, :sensor_mode]
   @half_row 0.5
+  @side_build_keys [:camera_id, :sync, :sensor_mode]
   @manual_keys [:exposure_time_us, :analogue_gain]
   @auto_switch_of %{exposure_time_us: :auto_exposure, analogue_gain: :auto_gain}
   @auto_switches [
@@ -94,7 +95,7 @@ defmodule VisionCore.Stereo.Parameters do
           position: 0,
           parameters:
             Enum.map(driver.control_specs(), &control(&1, driver, server, id, controls)) ++
-              camera_build_parameters(opts)
+              camera_build_parameters(opts, [:left, :right])
         }
       ]
     else
@@ -125,8 +126,17 @@ defmodule VisionCore.Stereo.Parameters do
           Enum.map(
             driver.control_specs(),
             &side_control(&1, driver, server, id, side, configured)
-          )
+          ) ++ side_build_parameters(opts, side)
     }
+  end
+
+  defp side_build_parameters(opts, side) do
+    general = camera_build_parameters(opts, [])
+
+    own =
+      for {key, value} <- Keyword.get(opts, side, []), key in @side_build_keys, do: {key, value}
+
+    general ++ Enum.map(own, &build_parameter/1)
   end
 
   defp auto_switch({name, key, description}, driver, server) do
@@ -150,7 +160,7 @@ defmodule VisionCore.Stereo.Parameters do
     %{
       name: Atom.to_string(spec.key),
       type: spec.type,
-      get: side_get(spec.key, driver, server),
+      get: side_get(spec.key, driver, server, configured[spec.key]),
       set: &ok(driver.set_controls(server, [{spec.key, &1}])),
       constraint: side_constraint(spec),
       applies: side_applies(spec.key, group_id),
@@ -160,16 +170,23 @@ defmodule VisionCore.Stereo.Parameters do
     |> put_configured_default(spec.key, configured[spec.key])
   end
 
-  defp side_get(key, driver, server) when key in @manual_keys do
+  # While automatic and nothing is live, the manual setting (never 0): releasing it keeps the camera's value.
+  defp side_get(key, driver, server, configured) when key in @manual_keys do
     fn ->
-      controls = driver.controls(server)
-      value = controls[key]
-      applied = automatic_value?(value) && live(driver, server)
-      if applied, do: applied[key] || value, else: value
+      value = driver.controls(server)[key]
+
+      if automatic_value?(value) do
+        applied = live(driver, server)
+        (applied && applied[key]) || manual_value(configured)
+      else
+        value
+      end
     end
   end
 
-  defp side_get(key, driver, server), do: fn -> driver.controls(server)[key] end
+  defp side_get(key, driver, server, _configured), do: fn -> driver.controls(server)[key] end
+
+  defp manual_value(configured), do: if(automatic_value?(configured), do: 1, else: configured)
 
   defp side_applies(key, group_id) when key in @manual_keys,
     do: {:auto, "#{group_id}.#{@auto_switch_of[key]}"}
@@ -242,17 +259,17 @@ defmodule VisionCore.Stereo.Parameters do
 
   defp control_applies(_key, _group_id), do: :live
 
-  defp camera_build_parameters(opts) do
+  defp camera_build_parameters(opts, sides) do
     general =
       for key <- [:width, :height, :fps], Keyword.has_key?(opts, key), do: {key, opts[key]}
 
-    sides =
-      for side <- [:left, :right],
+    per_side =
+      for side <- sides,
           {key, value} <- Keyword.get(opts, side, []),
           key in @side_keys,
           do: {:"#{side}_#{key}", value}
 
-    Enum.map(general ++ sides, &build_parameter/1)
+    Enum.map(general ++ per_side, &build_parameter/1)
   end
 
   defp stage_group(prefix, pipeline, stage, position, opts, correction?) do

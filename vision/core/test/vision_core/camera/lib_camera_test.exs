@@ -146,6 +146,38 @@ defmodule VisionCore.Camera.LibCameraTest do
     end
   end
 
+  describe "start controls on the first frame" do
+    test "are applied once, not on later frames" do
+      port = Port.open({:spawn_executable, "/bin/cat"}, [:binary])
+      packet = <<1, 2::little-16, 2::little-16, 0::little-signed-64, 1::little-32, 0>>
+
+      state = %{
+        label: "left",
+        listeners: [],
+        port: port,
+        controls: %{},
+        start_controls: [exposure_time_us: 8000],
+        last_frame_at: nil
+      }
+
+      assert {:noreply, state} = LibCamera.handle_info({port, {:data, packet}}, state)
+      assert state.start_controls == []
+      assert state.controls == %{exposure_time_us: 8000}
+      assert {:noreply, _state} = LibCamera.handle_info({port, {:data, packet}}, state)
+
+      assert collect(port, "") == "ExposureTimeMode=1ExposureTime=8000"
+      Port.close(port)
+    end
+
+    defp collect(port, acc) do
+      receive do
+        {^port, {:data, data}} -> collect(port, acc <> data)
+      after
+        300 -> acc
+      end
+    end
+  end
+
   describe "metadata records" do
     test "carry the values reported, the others absent" do
       values =
