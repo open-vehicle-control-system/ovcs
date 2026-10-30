@@ -61,18 +61,29 @@ defmodule VisionCore.ApplicationTest do
     assert Enum.take(ids, 2) == [VisionCore.Preview, VisionCore.Status]
   end
 
-  test "the core starts the parameter storage and registry before the components" do
+  test "the core starts the parameter storage and registry first, before the components" do
     start_pipeline(%VisionCore.Config{zenoh_endpoint_ip: "127.0.0.1", components: [:heartbeat]})
 
     ids = VisionCore.Supervisor |> child_ids() |> Enum.reverse()
 
     assert Enum.take(ids, 5) == [
-             VisionCore.Ros2.ZenohClient,
              VisionCore.Parameters.Storage,
              VisionCore.Parameters,
+             VisionCore.Ros2.ZenohClient,
              VisionCore.Ros2.Parameters,
              VisionCore.Jpeg
            ]
+  end
+
+  test "a Zenoh client restart keeps the unsaved changes" do
+    start_pipeline(%VisionCore.Config{zenoh_endpoint_ip: "127.0.0.1"})
+    assert {:ok, %{state: :unsaved}} = VisionCore.Parameters.set("preview.max_hz", 5)
+
+    preview = Process.whereis(VisionCore.Preview)
+    Process.exit(Process.whereis(VisionCore.Ros2.ZenohClient), :kill)
+    wait_for_restart(VisionCore.Preview, preview)
+
+    assert {:ok, %{value: 5, state: :unsaved}} = VisionCore.Parameters.get("preview.max_hz")
   end
 
   test "the pipeline starts on an empty store with its own Repo" do
@@ -270,6 +281,20 @@ defmodule VisionCore.ApplicationTest do
 
       true ->
         flunk("#{inspect(name)} kept running")
+    end
+  end
+
+  defp wait_for_restart(name, old_pid, attempts \\ 100) do
+    case Process.whereis(name) do
+      pid when is_pid(pid) and pid != old_pid ->
+        :sys.get_state(pid)
+
+      _ when attempts > 0 ->
+        Process.sleep(50)
+        wait_for_restart(name, old_pid, attempts - 1)
+
+      _ ->
+        flunk("#{inspect(name)} was not restarted")
     end
   end
 
