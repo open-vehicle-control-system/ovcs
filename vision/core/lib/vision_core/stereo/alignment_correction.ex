@@ -12,7 +12,7 @@ defmodule VisionCore.Stereo.AlignmentCorrection do
   does not steer it.
 
   It can be switched off while running (`set_enabled/2`, the
-  `<prefix>.alignment_correction` parameter), so a `right_row_offset` set
+  `<prefix>.alignment.correction` parameter), so a `right_row_offset` set
   by hand stays.
 
   It corrects only rows: a camera that moved sideways changes every

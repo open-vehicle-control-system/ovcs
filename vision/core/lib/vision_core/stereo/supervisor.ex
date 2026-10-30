@@ -24,8 +24,8 @@ defmodule VisionCore.Stereo.Supervisor do
          - `<topic_prefix>/{left,right}/image_rect/compressed` (JPEG)
            only when `:publish_rectified_image` is set — see below.
 
-    5. `VisionCore.Ros2.Stereo.Parameters`, the unit's settings as ROS
-       2 parameters of the vision core's node.
+    5. `VisionCore.Stereo.Parameters`, which declares the unit's
+       parameter groups in `VisionCore.Parameters`.
     6. `VisionCore.Ros2.Stereo.Diagnostics`, what the cameras actually
        apply and their sync, on `/diagnostics` and `<topic_prefix>/live/*`.
 
@@ -109,8 +109,8 @@ defmodule VisionCore.Stereo.Supervisor do
 
   alias VisionCore.Ros2.Publishers.Stereo, as: StereoPublisher
   alias VisionCore.Ros2.Services.SetCameraInfoServer
-  alias VisionCore.Ros2.Stereo.{Diagnostics, Parameters}
-  alias VisionCore.Stereo.{AlignmentCorrection, Pairer, Pipeline}
+  alias VisionCore.Ros2.Stereo.Diagnostics
+  alias VisionCore.Stereo.{AlignmentCorrection, Pairer, Parameters, Pipeline}
 
   @default_width 1280
   @default_height 720
@@ -291,7 +291,9 @@ defmodule VisionCore.Stereo.Supervisor do
            right: config.right,
            width: config.width,
            height: config.height,
-           fps: config.fps},
+           fps: config.fps,
+           match_width: config.match_width,
+           match_height: config.match_height},
           id: {:stereo, :parameters}
         ),
         Supervisor.child_spec(

@@ -16,7 +16,7 @@ defmodule VisionCore.ParametersTest do
 
   @auto_exposure "stereo.cameras.auto_exposure"
 
-  # MemoryStore is one named Agent: only this module uses it, and its tests run one at a time.
+  # MemoryStore is one named Agent: other modules using it are synchronous, so run after these tests.
   setup context do
     if saved = context[:saved], do: start_supervised!({MemoryStore, saved})
 

@@ -34,5 +34,8 @@ defmodule VisionCore.Camera do
   @doc "The controls in force, as last set."
   @callback controls(GenServer.server()) :: map()
 
-  @optional_callbacks set_controls: 2, controls: 1
+  @doc "Whether one set of controls drives both cameras of a stereo pair."
+  @callback shared_controls?() :: boolean()
+
+  @optional_callbacks set_controls: 2, controls: 1, shared_controls?: 0
 end
