@@ -74,7 +74,10 @@ defmodule VisionCore.Stereo.PipelineTest do
     {:ok, pipeline} = start(Pipeline.default_stages())
     specs = Pipeline.option_specs(pipeline)
 
-    assert Enum.all?([:p1, :p2, :uniqueness], &Keyword.has_key?(specs, &1))
+    assert Enum.all?(
+             [:p1, :p2, :uniqueness, :temporal_alpha, :temporal_delta],
+             &Keyword.has_key?(specs, &1)
+           )
 
     [%{state: segment}] = segments(pipeline)
 
