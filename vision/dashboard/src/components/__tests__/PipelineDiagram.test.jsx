@@ -62,22 +62,24 @@ describe('PipelineDiagram', () => {
     expect(screen.getByRole('button', { name: 'Cameras' })).toBeTruthy()
   })
 
-  it('shows the selection with one border colour, a warning box included', () => {
+  it('shows the selection with a bottom bar, not a frame, a warning box included', () => {
     const borders = (button) => button.className.split(/\s+/).filter((name) => /^border-ovcs-/.test(name))
+    const BAR = 'shadow-[inset_0_-3px_0_var(--ovcs-accent)]'
 
     useParameters.setState({ selectedGroupId: 'stereo.match' })
     const { unmount } = render(<PipelineDiagram />)
     const match = screen.getByRole('button', { name: 'Match' })
-    expect(borders(match)).toEqual(['border-ovcs-accent'])
-    expect(match.className).toContain('ring-ovcs-accent')
+    expect(borders(match)).toEqual(['border-ovcs-border'])
+    expect(match.className).toContain(BAR)
+    expect(match.className).not.toMatch(/(^|\s)ring-/)
     unmount()
 
     useParameters.setState({ selectedGroupId: 'stereo.alignment' })
     render(<PipelineDiagram />)
     const alignment = screen.getByRole('button', { name: /^Alignment/ })
     expect(borders(alignment)).toEqual(['border-ovcs-error'])
-    expect(alignment.className).toContain('ring-ovcs-accent')
-    expect(screen.getByRole('button', { name: 'Cameras' }).className).not.toContain('ring-ovcs-accent')
+    expect(alignment.className).toContain(BAR)
+    expect(screen.getByRole('button', { name: 'Cameras' }).className).not.toContain(BAR)
   })
 
   it('selects a group on click', () => {
