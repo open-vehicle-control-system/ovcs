@@ -43,6 +43,28 @@ defmodule VisionApiWeb.PreviewChannelTest do
     assert Base.decode64!(second) == "second"
   end
 
+  test "the depth stream sets the depth video's colour range and answers the one in force" do
+    {:ok, _reply, socket} = join("preview:depth")
+
+    ref = push(socket, "depth_range", %{})
+    assert_reply ref, :ok, %{metres: +0.0}
+
+    ref = push(socket, "depth_range", %{"metres" => 8.5})
+    assert_reply ref, :ok, %{metres: 8.5}
+    assert VisionCore.Preview.options().depth_range_m == 8.5
+
+    ref = push(socket, "depth_range", %{"metres" => -1})
+    assert_reply ref, :error, %{reason: "depth_range_m" <> _}
+    assert VisionCore.Preview.options().depth_range_m == 8.5
+  end
+
+  test "a camera stream has no colour range" do
+    {:ok, _reply, socket} = join("preview:left")
+
+    ref = push(socket, "depth_range", %{"metres" => 8.5})
+    assert_reply ref, :error, %{reason: "only the depth stream has a colour range"}
+  end
+
   test "the channel stops when the preview server restarts" do
     Process.flag(:trap_exit, true)
     {:ok, _reply, socket} = join("preview:left")
