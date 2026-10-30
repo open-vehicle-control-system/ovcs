@@ -102,7 +102,7 @@ describe('parameters store', () => {
     await state().set('stereo.match.p1', 99)
 
     expect(state().parameters['stereo.match.p1'].value).toBe(12)
-    expect(state().error).toBe('must be at most 15')
+    expect(state().error).toBe('stereo.match.p1: must be at most 15')
   })
 
   it.each([
