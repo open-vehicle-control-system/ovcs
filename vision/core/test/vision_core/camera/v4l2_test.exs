@@ -100,4 +100,46 @@ defmodule VisionCore.Camera.V4L2Test do
     assert_receive {:"$gen_cast", {:camera_frame, %Frame{label: "right", grey: <<3, 4>>}}}, 2_000
     assert_receive {:DOWN, ^ref, :process, _, {:v4l2_capture_exit, 0}}, 2_000
   end
+
+  defp metadata_record(exposure_us, gain) do
+    values =
+      for v <- [exposure_us, gain, 0, 0, 0, 0, 0, 0], into: <<>>, do: <<v::little-float-64>>
+
+    <<3, 0b11, 1_000::little-signed-64, values::binary>>
+  end
+
+  test "parses a metadata record into what the sensors apply" do
+    assert {:metadata, %{exposure_time_us: 8000, analogue_gain: 2.0}} =
+             V4L2.parse_record(metadata_record(8_000.0, 2.0))
+  end
+
+  test "live is nil before any metadata and the latest record after, on either side" do
+    File.mkdir_p!(@tmp)
+    script = Path.join(@tmp, "idle.sh")
+    File.write!(script, "#!/bin/sh\nsleep 5\n")
+    File.chmod!(script, 0o755)
+
+    start_supervised!(Supervisor.child_spec({V4L2, label: "right"}, id: :right))
+
+    left =
+      start_supervised!(
+        Supervisor.child_spec(
+          {V4L2, label: "left", executable: script, width: 2, height: 1, fps: 30},
+          id: :left
+        )
+      )
+
+    assert V4L2.live(V4L2.name_for("right")) == nil
+
+    %{port: port} = :sys.get_state(left)
+    send(left, {port, {:data, metadata_record(8_000.0, 2.0)}})
+    send(left, {port, {:data, metadata_record(4_000.0, 4.0)}})
+
+    for label <- ["left", "right"] do
+      assert %{exposure_time_us: 4000, analogue_gain: 4.0, received_ms: received_ms} =
+               V4L2.live(V4L2.name_for(label))
+
+      assert_in_delta received_ms, System.system_time(:millisecond), 1_000
+    end
+  end
 end

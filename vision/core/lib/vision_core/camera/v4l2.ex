@@ -26,11 +26,17 @@ defmodule VisionCore.Camera.V4L2 do
       bytes   left                # width * height
       bytes   right               # width * height
 
-  or a log line, as `VisionCore.Camera.LibCamera` reads it:
+  a log line, as `VisionCore.Camera.LibCamera` reads it:
 
       uint8   tag                 # 2 = LOG
       uint8   level               # 0 info, 1 warning, 2 error
       bytes   message
+
+  or the exposure and gain the program just applied, in
+  `VisionCore.Camera.LibCamera`'s metadata record (tag 3): the present
+  bits are 0 and 1, `values[0]` is the exposure in microseconds,
+  `values[1]` the analogue gain, and the time is the left frame's start
+  (0 before the first frame). `live/1` returns the latest.
 
   Records the other way, on the program's stdin, change a setting each:
   `name=value`, as `control_commands/1` builds them. Closing stdin stops
@@ -63,6 +69,7 @@ defmodule VisionCore.Camera.V4L2 do
 
   @pair_tag 4
   @log_tag 2
+  @metadata_tag 3
   @watchdog_interval_ms 1_000
   @stall_timeout_ms 2_000
   @startup_timeout_ms 15_000
@@ -221,6 +228,15 @@ defmodule VisionCore.Camera.V4L2 do
   @impl VisionCore.Camera
   def controls(server), do: GenServer.call(server, :controls)
 
+  @doc """
+  The exposure and gain the capture program applies, as
+  `VisionCore.Camera.LibCamera.live/1` reports them: `:exposure_time_us`,
+  `:analogue_gain`, `:capture_ns` and `:received_ms` (system time). `nil`
+  before the first report. The right camera asks the left.
+  """
+  @spec live(GenServer.server()) :: map() | nil
+  def live(server), do: GenServer.call(server, :live)
+
   @doc false
   def parse_record(
         <<@pair_tag, width::little-16, height::little-16, left_ns::little-signed-64,
@@ -234,6 +250,7 @@ defmodule VisionCore.Camera.V4L2 do
   end
 
   def parse_record(<<@log_tag, level, message::binary>>), do: {:log, log_level(level), message}
+  def parse_record(<<@metadata_tag, _rest::binary>> = record), do: LibCamera.parse_record(record)
   def parse_record(_other), do: {:error, :malformed_record}
 
   defp frame(label, width, height, kernel_ns, grey) do
@@ -262,7 +279,7 @@ defmodule VisionCore.Camera.V4L2 do
         {spec.key, normalise(spec, Keyword.get(opts, spec.key, spec.default))}
       end)
 
-    state = %{label: label, listeners: [], port: nil, controls: controls}
+    state = %{label: label, listeners: [], port: nil, controls: controls, applied: nil}
 
     if label == "left" do
       {:ok, open_port(state, opts)}
@@ -305,6 +322,7 @@ defmodule VisionCore.Camera.V4L2 do
   end
 
   def handle_call(:controls, _from, state), do: {:reply, state.controls, state}
+  def handle_call(:live, _from, state), do: {:reply, state.applied, state}
 
   def handle_call({:set_controls, controls}, _from, state) do
     case control_commands(controls) do
@@ -339,6 +357,10 @@ defmodule VisionCore.Camera.V4L2 do
         fan_out(state, left)
         GenServer.cast(name_for("right"), {:pair_frame, right})
         {:noreply, %{state | last_frame_at: now_ms()}}
+
+      {:metadata, metadata} ->
+        applied = Map.put(metadata, :received_ms, System.system_time(:millisecond))
+        {:noreply, %{state | applied: applied}}
 
       {:log, level, message} ->
         Logger.log(level, "#{__MODULE__} v4l2_capture: #{message}")

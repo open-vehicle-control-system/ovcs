@@ -17,7 +17,7 @@ use std::process::ExitCode;
 
 use bayer::Tone;
 use exposure::AutoExposure;
-use framing::{log_record, pair_record, LogLevel, Writer};
+use framing::{log_record, metadata_record, pair_record, LogLevel, Writer};
 use lock::PhaseLock;
 use pairing::{Pairer, Side};
 use settings::Settings;
@@ -102,14 +102,24 @@ fn run(args: &args::Args, writer: &Writer, log: &dyn Fn(LogLevel, &str)) -> io::
     let gain_range = left.sensor.control_range(v4l2::CID_ANALOGUE_GAIN)?;
     let frame_us = period_ns as f64 / 1_000.0;
     let max_exposure_lines = sensor_height as i32 + vblank0 - EXPOSURE_MARGIN_LINES;
-    let set_exposure = |exposure_us: f64, gain: f64| -> io::Result<()> {
+    let set_exposure = |exposure_us: f64, gain: f64| -> io::Result<(f64, f64)> {
         let lines = ((exposure_us * 1_000.0 / line_ns).round() as i32).clamp(1, max_exposure_lines);
         let code = sensor::imx708_gain_code(gain, gain_range.0, gain_range.1);
         for camera in [&left, &right] {
             camera.sensor.set_control(v4l2::CID_EXPOSURE, lines)?;
             camera.sensor.set_control(v4l2::CID_ANALOGUE_GAIN, code)?;
         }
-        Ok(())
+        Ok((
+            f64::from(lines) * line_ns / 1_000.0,
+            sensor::imx708_gain(code),
+        ))
+    };
+    // Tells the host the exposure and gain just applied, stamped with the left frame start.
+    let report_exposure = |(exposure_us, gain): (f64, f64), capture_ns: i64| -> io::Result<()> {
+        let mut values = [0.0; framing::METADATA_FIELDS];
+        values[0] = exposure_us;
+        values[1] = gain;
+        writer.write_record(&metadata_record(capture_ns, 0b11, &values))
     };
     for camera in [&left, &right] {
         camera.sensor.set_control(v4l2::CID_VBLANK, vblank0)?;
@@ -140,7 +150,11 @@ fn run(args: &args::Args, writer: &Writer, log: &dyn Fn(LogLevel, &str)) -> io::
         );
     }
     let mut auto_exposure = auto_exposure(&settings, frame_us);
-    set_exposure(f64::from(settings.exposure_us), settings.analogue_gain)?;
+    let mut last_left_ns = None;
+    report_exposure(
+        set_exposure(f64::from(settings.exposure_us), settings.analogue_gain)?,
+        0,
+    )?;
     log(
         LogLevel::Info,
         &format!(
@@ -152,7 +166,6 @@ fn run(args: &args::Args, writer: &Writer, log: &dyn Fn(LogLevel, &str)) -> io::
 
     let mut lock = PhaseLock::new(period_ns, line_ns, vblank0, vblank_min, vblank_max);
     let mut pairer = Pairer::new(PAIR_TOLERANCE_NS);
-    let mut last_left_ns = None;
     let mut stats = [0u64; 3];
     let mut convert_ns = 0u128;
     let mut stats_at = std::time::Instant::now();
@@ -179,7 +192,13 @@ fn run(args: &args::Args, writer: &Writer, log: &dyn Fn(LogLevel, &str)) -> io::
                         let running = (auto_exposure.exposure_us, auto_exposure.gain);
                         auto_exposure = auto_exposure_from(&settings, frame_us, running);
                         if !settings.auto_exposure {
-                            set_exposure(f64::from(settings.exposure_us), settings.analogue_gain)?;
+                            report_exposure(
+                                set_exposure(
+                                    f64::from(settings.exposure_us),
+                                    settings.analogue_gain,
+                                )?,
+                                last_left_ns.unwrap_or(0),
+                            )?;
                         }
                         set_focus(settings.focus);
                         log(LogLevel::Info, &format!("settings: {settings:?}"));
@@ -226,7 +245,7 @@ fn run(args: &args::Args, writer: &Writer, log: &dyn Fn(LogLevel, &str)) -> io::
                         {
                             let mean = exposure::mean(&grey, EXPOSURE_SAMPLE_STRIDE);
                             if let Some((exposure_us, gain)) = auto_exposure.observe(mean) {
-                                set_exposure(exposure_us, gain)?;
+                                report_exposure(set_exposure(exposure_us, gain)?, frame.start_ns)?;
                             }
                         }
                     }

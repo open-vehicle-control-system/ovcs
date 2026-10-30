@@ -10,6 +10,11 @@ pub fn imx708_gain_code(gain: f64, min: i32, max: i32) -> i32 {
     ((1024.0 - 1024.0 / gain).round() as i32).clamp(min, max)
 }
 
+/// The gain an IMX708 analogue gain `code` stands for: the inverse of `imx708_gain_code`.
+pub fn imx708_gain(code: i32) -> f64 {
+    1024.0 / f64::from(1024 - code)
+}
+
 /// The V4L2 name of the lens actuator on the Camera Module 3 whose sensor is
 /// named `sensor` (`imx708 <bus>-001a`): the DW9817 at 0x0c on the same bus.
 pub fn lens_name(sensor: &str) -> Option<String> {
@@ -34,6 +39,20 @@ mod tests {
             Some("dw9807 5-000c".to_string())
         );
         assert_eq!(lens_name("imx708"), None);
+    }
+
+    #[test]
+    fn a_gain_code_reads_back_as_the_gain_it_stands_for() {
+        for gain in [2.0, 4.0, 8.0] {
+            let code = imx708_gain_code(gain, 112, 960);
+            assert!((imx708_gain(code) - gain).abs() < 0.02);
+        }
+    }
+
+    #[test]
+    fn a_gain_below_the_lowest_code_reads_back_as_that_code_gain() {
+        let code = imx708_gain_code(1.0, 112, 960);
+        assert!((imx708_gain(code) - 1024.0 / 912.0).abs() < 1e-9);
     }
 
     #[test]
