@@ -3,6 +3,11 @@
 {:ok, _apps} = Application.ensure_all_started(:exla)
 Application.put_env(:vision_core, :nx_defn_options, compiler: EXLA)
 
+# The saved parameter values' database.
+{:ok, _apps} = Application.ensure_all_started(:ecto_sqlite3)
+{:ok, _pid} = VisionCore.Repo.start_link()
+Ecto.Migrator.run(VisionCore.Repo, :up, all: true, log: false)
+
 # VisionCore.Jpeg's Port (jpeg_codec), built from the Rust workspace; the :jpeg tests need it.
 rust_workspace = Path.expand("../../rust", __DIR__)
 

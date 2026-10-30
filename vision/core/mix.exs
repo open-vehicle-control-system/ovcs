@@ -10,6 +10,7 @@ defmodule VisionCore.MixProject do
       compilers: compilers(),
       make_targets: ["all"],
       make_clean: ["clean"],
+      elixirc_paths: elixirc_paths(Mix.env()),
       deps: deps(),
       # The module cache builder is a Mix task.
       dialyzer: [plt_add_apps: [:mix]]
@@ -21,6 +22,9 @@ defmodule VisionCore.MixProject do
     base = Mix.compilers()
     if Mix.target() in [:host, :rpi5, :okdo_c100], do: [:elixir_make] ++ base, else: base
   end
+
+  defp elixirc_paths(:test), do: ["lib", "test/support"]
+  defp elixirc_paths(_env), do: ["lib"]
 
   def application do
     [
@@ -42,6 +46,9 @@ defmodule VisionCore.MixProject do
       {:nx_stereo, github: "Spin42/nx_stereo"},
       {:nx_iree, github: "Spin42/nx_iree", override: true},
       {:yaml_elixir, "~> 2.12"},
+      {:ecto_sql, "~> 3.10"},
+      {:ecto_sqlite3, ">= 0.0.0"},
+      {:jason, "~> 1.4"},
       # OpenCV, the reference the Nx stages are tested against.
       {:evision, "~> 0.2", only: :test},
       # Runs nx_stereo in tests, and compiles its modules for the device on a host.
