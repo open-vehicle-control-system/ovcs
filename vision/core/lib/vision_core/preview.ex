@@ -15,6 +15,10 @@ defmodule VisionCore.Preview do
   Pairs without a depth image are skipped, and so is a depth map
   that fails to encode, with one error logged until an encode succeeds.
 
+  `:max_hz` and `:depth_range_m` are the vehicle's `VisionCore.Config`
+  `:preview` options, change while running with `set_options/1`, and are
+  the parameters of the `preview` group in `VisionCore.Parameters`.
+
   Started last in `VisionCore.Supervisor`; without a `:stereo`
   component it runs with nothing to preview.
 
@@ -25,10 +29,6 @@ defmodule VisionCore.Preview do
     * `:depth_range_m` (`0.0`) — the distance coloured blue; 0 colours
       blue only what is infinitely far, so the colours stay put from one
       frame to the next. Red is the nearest measured depths.
-
-  `:max_hz` and `:depth_range_m` change while running with
-  `set_options/1`, and are the stereo unit's ROS 2 parameters
-  `<topic_prefix>.preview.*`.
     * `:depth_encoder` — `(VisionCore.Stereo.Pair.t() -> jpeg)`,
       replacing `encode_depth/2`.
   """
@@ -101,10 +101,45 @@ defmodule VisionCore.Preview do
   @spec set_options(keyword()) :: {:ok, map()} | {:error, String.t()}
   def set_options(options), do: GenServer.call(__MODULE__, {:set_options, options})
 
+  @doc "The preview's parameter group, declared in `VisionCore.Parameters` at start."
+  @spec group() :: VisionCore.Parameters.group_declaration()
+  def group do
+    %{
+      id: "preview",
+      name: "Preview",
+      summary: "Dashboard previews of the cameras and the depth map.",
+      kind: :component,
+      placement: :side,
+      position: 100,
+      parameters: Enum.map(@option_specs, &option_parameter/1)
+    }
+  end
+
+  defp option_parameter({key, spec}) do
+    {min, max} = spec.range
+
+    %{
+      name: Atom.to_string(key),
+      type: spec.type,
+      get: fn -> Map.fetch!(options(), key) end,
+      set: fn value ->
+        case set_options([{key, value}]) do
+          {:ok, _options} -> :ok
+          {:error, _reason} = error -> error
+        end
+      end,
+      constraint: %{kind: :range, min: min, max: max, step: nil},
+      description: spec.description,
+      export: [:preview, key]
+    }
+  end
+
   @impl GenServer
   def init(opts) do
     sources = opts |> Keyword.fetch!(:config) |> Sources.from_config()
     max_hz = Keyword.get(opts, :max_hz, @default_max_hz)
+
+    if Process.whereis(VisionCore.Parameters), do: :ok = VisionCore.Parameters.declare([group()])
 
     {:ok,
      %{

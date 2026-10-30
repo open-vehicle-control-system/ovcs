@@ -12,15 +12,18 @@ defmodule VisionCore.Config do
       liveliness tokens. Defaults to `VisionCore.Ros2.ZenohClient`'s default.
       Set it whenever another ROS 2 node on the same fabric could share
       the name: two nodes with one name collide in the ROS graph.
+    * `:preview` — options of `VisionCore.Preview` (`:max_hz`,
+      `:depth_range_m`).
   """
   @enforce_keys [:zenoh_endpoint_ip]
-  defstruct [:zenoh_endpoint_ip, :node_name, components: []]
+  defstruct [:zenoh_endpoint_ip, :node_name, components: [], preview: []]
 
   @type component :: atom() | {atom(), keyword()}
   @type t :: %__MODULE__{
           zenoh_endpoint_ip: String.t(),
           node_name: String.t() | nil,
-          components: [component()]
+          components: [component()],
+          preview: keyword()
         }
 end
 

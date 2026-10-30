@@ -106,8 +106,29 @@ defmodule VisionCore.Detection.Pipeline do
       pending: nil
     }
 
+    if Process.whereis(VisionCore.Parameters),
+      do: :ok = VisionCore.Parameters.declare([group(state)])
+
     VisionCore.Stereo.Pipeline.register_listener(VisionCore.Stereo.Pipeline, self())
     {:ok, state}
+  end
+
+  @doc "The detection's parameter group for a running `state`: its settings, fixed at start."
+  @spec group(map()) :: VisionCore.Parameters.group_declaration()
+  def group(state) do
+    %{
+      id: "detection",
+      name: "Detection",
+      summary: "Object detection on the rectified left image, placed with the depth map.",
+      kind: :component,
+      placement: :side,
+      position: 101,
+      parameters:
+        Enum.map(
+          [:detect_every_n, :min_score, :max_detections, :depth_sample_fraction],
+          &VisionCore.Stereo.Parameters.build_parameter({&1, Map.fetch!(state, &1)})
+        )
+    }
   end
 
   @impl GenServer

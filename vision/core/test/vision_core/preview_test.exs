@@ -217,4 +217,44 @@ defmodule VisionCore.PreviewTest do
       assert {:error, "max_hz" <> _} = Preview.set_options(max_hz: 0)
     end
   end
+
+  describe "parameters" do
+    test "the preview's settings come from the composer's preview options" do
+      start_supervised!({Preview, config: @config, max_hz: 15})
+
+      assert %{max_hz: 15} = Preview.options()
+    end
+
+    test "the preview group declares max_hz and depth_range_m with their composer paths" do
+      start_supervised!({Preview, config: @config})
+
+      assert %{id: "preview", name: "Preview", kind: :component, placement: :side} =
+               group = Preview.group()
+
+      assert group.position == 100
+      assert [max_hz, depth_range_m] = group.parameters
+
+      assert {max_hz.name, max_hz.type, max_hz.export} ==
+               {"max_hz", :integer, [:preview, :max_hz]}
+
+      assert max_hz.constraint == %{kind: :range, min: 1, max: 30, step: nil}
+      assert max_hz.get.() == 10
+      assert max_hz.set.(20) == :ok
+      assert Preview.options().max_hz == 20
+      assert max_hz.set.(0) == {:error, "max_hz: invalid value 0"}
+
+      assert {depth_range_m.name, depth_range_m.type, depth_range_m.export} ==
+               {"depth_range_m", :double, [:preview, :depth_range_m]}
+
+      assert depth_range_m.constraint == %{kind: :range, min: 0, max: 50, step: nil}
+    end
+
+    test "the preview declares its group in the registry when it runs" do
+      start_supervised!({VisionCore.Parameters, store: VisionCore.Parameters.MemoryStore})
+      start_supervised!({Preview, config: @config})
+
+      assert {:ok, %{value: 12}} = VisionCore.Parameters.set("preview.max_hz", 12)
+      assert Preview.options().max_hz == 12
+    end
+  end
 end

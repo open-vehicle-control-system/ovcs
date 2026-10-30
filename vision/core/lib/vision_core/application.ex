@@ -51,7 +51,7 @@ defmodule VisionCore.Application do
     # Last, so they register on the components while starting.
     dashboard_children = [
       {VisionCore.Status, config: config},
-      {VisionCore.Preview, config: config}
+      {VisionCore.Preview, [config: config] ++ config.preview}
     ]
 
     %{
