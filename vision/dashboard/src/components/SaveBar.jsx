@@ -12,7 +12,7 @@ const changes = (count, kind = '') => `${count} ${kind}${count === 1 ? 'change' 
 
 const message = (error) => (error instanceof Error ? error.message : String(error))
 
-function ExportSnippet({ snippet, onClose }) {
+function ExportSnippet({ snippet, request, onClose }) {
   const headingId = useId()
   const snippetRef = useRef(null)
   const [copy, setCopy] = useState('')
@@ -20,7 +20,7 @@ function ExportSnippet({ snippet, onClose }) {
   useEffect(() => {
     snippetRef.current.focus()
     snippetRef.current.scrollIntoView?.({ block: 'nearest' })
-  }, [])
+  }, [request])
 
   useEffect(() => {
     if (copy !== 'Copied') return undefined
@@ -97,11 +97,14 @@ const SaveBar = forwardRef(function SaveBar(
   const [snippet, setSnippet] = useState(null)
   const [exportError, setExportError] = useState(null)
   const [running, setRunning] = useState(null)
+  const [exportRequest, setExportRequest] = useState(0)
 
   const run = async (name, action) => {
     setRunning(name)
     try {
       await action()
+    } catch {
+      // The caller reports a failed action through `error`.
     } finally {
       setRunning(null)
     }
@@ -122,6 +125,7 @@ const SaveBar = forwardRef(function SaveBar(
   const exportSnippet = async () => {
     try {
       setSnippet(await onExport())
+      setExportRequest((count) => count + 1)
       setExportError(null)
     } catch (failure) {
       setExportError(`Export failed: ${message(failure)}`)
@@ -132,7 +136,7 @@ const SaveBar = forwardRef(function SaveBar(
 
   return (
     <>
-      {snippet != null ? <ExportSnippet snippet={snippet} onClose={() => setSnippet(null)} /> : null}
+      {snippet != null ? <ExportSnippet snippet={snippet} request={exportRequest} onClose={() => setSnippet(null)} /> : null}
       <div ref={ref} className={`flex flex-col gap-3 ${className}`}>
         <div className="flex flex-wrap items-center gap-2">
           <p aria-live="polite" className="mr-auto text-sm tabular-nums">

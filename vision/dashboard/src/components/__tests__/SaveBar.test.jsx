@@ -102,6 +102,28 @@ describe('SaveBar', () => {
     expect(screen.getByRole('button', { name: 'Reset all' }).disabled).toBe(false)
   })
 
+  it('takes a failed action back without an unhandled rejection', async () => {
+    props.onSave = vi.fn(async () => {
+      throw new Error('Saved values unavailable')
+    })
+    render(<SaveBar unsaved={2} error={null} {...props} />)
+
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Save 2 changes' })))
+
+    expect(screen.getByRole('button', { name: 'Save 2 changes' }).disabled).toBe(false)
+  })
+
+  it('brings the open snippet back into focus on Export', async () => {
+    render(<SaveBar unsaved={0} error={null} {...props} />)
+
+    await openExport()
+    const exportButton = screen.getByRole('button', { name: 'Export' })
+    exportButton.focus()
+    await openExport()
+
+    expect(document.activeElement).toBe(screen.getByText(SNIPPET))
+  })
+
   it('shows the export snippet, focused, copies it and closes it', async () => {
     const writeText = vi.fn(async () => {})
     replaceClipboard({ writeText })
