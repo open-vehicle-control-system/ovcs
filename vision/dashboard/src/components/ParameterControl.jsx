@@ -1,13 +1,17 @@
 import { useId, useRef, useState } from 'react'
+import { FOCUS } from './styles.js'
 
-const FOCUS = 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ovcs-accent'
-const BUTTON = `min-h-8 rounded border border-ovcs-border px-2 text-sm disabled:cursor-not-allowed disabled:opacity-50 ${FOCUS}`
+const BUTTON = `min-h-8 rounded border border-ovcs-border px-2 text-sm enabled:hover:border-ovcs-accent disabled:cursor-not-allowed disabled:opacity-50 ${FOCUS}`
 const KEYS_THAT_STEP = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End'])
-const STATE_LABELS = { builtin: 'built-in', saved: 'saved', unsaved: 'unsaved' }
+const STATE_LABELS = { builtin: 'built-in', saved: 'saved' }
+
+/** Rounds away floating-point noise from sums of steps. */
+export const tidy = (number) => Number(number.toPrecision(12))
 
 export const formatValue = (value) => {
   if (value == null) return '–'
   if (typeof value === 'boolean') return value ? 'on' : 'off'
+  if (typeof value === 'number') return String(tidy(value))
   return String(value)
 }
 
@@ -17,9 +21,6 @@ export function rangeStep({ type, constraint }) {
   if (type === 'integer') return 1
   return tidy((constraint.max - constraint.min) / 100)
 }
-
-/** Rounds away floating-point noise from sums of steps. */
-export const tidy = (number) => Number(number.toPrecision(12))
 
 const sameValue = (a, b) => a === b || (typeof a === 'number' && typeof b === 'number' && tidy(a) === tidy(b))
 
@@ -61,10 +62,12 @@ function ValueField({ parameter, shown, bounds, label, onChange }) {
     <input
       type="text"
       inputMode={numeric ? 'decimal' : 'text'}
+      name={label}
       aria-label={label}
+      autoComplete="off"
+      spellCheck={false}
       disabled={disabled}
       value={disabled ? '–' : text ?? formatValue(shown)}
-      onFocus={() => setText(formatValue(shown))}
       onChange={(event) => setText(event.target.value)}
       onBlur={commit}
       onKeyDown={(event) => {
@@ -152,7 +155,7 @@ function ChoiceControl({ parameter, labelId, onChange }) {
             aria-pressed={choice === parameter.value}
             disabled={disabled}
             onClick={() => onChange(choice)}
-            className={`${BUTTON} aria-pressed:border-ovcs-accent aria-pressed:bg-ovcs-accent aria-pressed:text-ovcs-bg`}
+            className={`${BUTTON} bg-ovcs-surface text-ovcs-text aria-pressed:border-ovcs-accent aria-pressed:font-semibold aria-pressed:ring-1 aria-pressed:ring-ovcs-accent`}
           >
             {formatValue(choice)}
           </button>
@@ -173,10 +176,10 @@ function SwitchControl({ parameter, labelId, onChange }) {
       aria-labelledby={labelId}
       disabled={parameter.value == null}
       onClick={() => onChange(!on)}
-      className={`inline-flex min-h-8 items-center gap-2 rounded px-1 text-sm disabled:cursor-not-allowed disabled:opacity-50 ${FOCUS}`}
+      className={`group inline-flex min-h-8 items-center gap-2 rounded px-1 text-sm disabled:cursor-not-allowed disabled:opacity-50 ${FOCUS}`}
     >
-      <span aria-hidden="true" className={`relative h-5 w-9 rounded-full transition-colors ${on ? 'bg-ovcs-accent' : 'bg-ovcs-border'}`}>
-        <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-ovcs-surface transition-transform ${on ? 'translate-x-4' : 'translate-x-0.5'}`} />
+      <span aria-hidden="true" className={`relative h-5 w-9 rounded-full transition-colors group-enabled:group-hover:ring-1 group-enabled:group-hover:ring-ovcs-accent motion-reduce:transition-none ${on ? 'bg-ovcs-accent' : 'bg-ovcs-border'}`}>
+        <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-ovcs-surface transition-transform motion-reduce:transition-none ${on ? 'translate-x-4' : 'translate-x-0.5'}`} />
       </span>
       <span>{formatValue(parameter.value)}</span>
     </button>
@@ -275,19 +278,20 @@ export default function ParameterControl({ parameter, bounds, controllerName, on
   return (
     <div className="flex flex-col gap-1.5 py-3">
       <div className="flex items-center gap-2">
-        <span id={labelId} className="font-mono text-sm font-medium">
+        <span id={labelId} translate="no" className="font-mono text-sm font-medium">
           {parameter.name}
         </span>
         <span className="ovcs-badge">{badge}</span>
         {automatic ? <span className="text-xs text-ovcs-muted">set by {controllerName ?? 'an automatic mode'}</span> : null}
-        {editable && STATE_LABELS[parameter.state] ? (
-          <span className={`ml-auto text-xs ${parameter.state === 'unsaved' ? 'text-ovcs-warn' : 'text-ovcs-muted'}`}>
-            {STATE_LABELS[parameter.state]}
+        {parameter.state === 'unsaved' ? (
+          <span className="ovcs-status ovcs-status--warn ml-auto text-xs">
+            <span className="text-ovcs-text">unsaved</span>
           </span>
         ) : null}
+        {STATE_LABELS[parameter.state] ? <span className="ml-auto text-xs text-ovcs-muted">{STATE_LABELS[parameter.state]}</span> : null}
       </div>
       {control}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ovcs-muted">
+      <div className="flex min-h-8 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ovcs-muted">
         {parameter.description ? <span>{parameter.description}</span> : null}
         {allows ? <span className="tabular-nums">{allows}</span> : null}
         {changed ? (

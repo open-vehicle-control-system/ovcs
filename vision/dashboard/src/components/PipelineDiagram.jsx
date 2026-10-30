@@ -1,7 +1,8 @@
 import { useId, useMemo } from 'react'
-import { useParameters } from '../stores/parameters.js'
+import { flowGroups, groupUnsaved, sideGroups, useParameters } from '../stores/parameters.js'
+import { FOCUS } from './styles.js'
 
-const FOCUS = 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ovcs-accent'
+const SELECTED = 'border-ovcs-accent bg-[color-mix(in_srgb,var(--ovcs-accent)_12%,var(--ovcs-surface))]'
 
 const STATUS_STYLES = {
   ok: { box: 'border-ovcs-border', dot: 'ovcs-status ovcs-status--ok' },
@@ -25,17 +26,15 @@ function GroupBox({ group, unsaved, selected, onSelect }) {
       aria-current={selected ? 'true' : undefined}
       title={group.status?.detail}
       onClick={() => onSelect(group.id)}
-      className={`inline-flex min-h-9 items-center gap-2 rounded border bg-ovcs-surface px-3 text-sm ${style.box} ${
-        selected ? 'ring-2 ring-ovcs-accent' : ''
+      className={`inline-flex min-h-9 items-center gap-2 rounded border px-3 text-sm hover:border-ovcs-accent ${style.box} ${
+        selected ? SELECTED : 'bg-ovcs-surface'
       } ${FOCUS}`}
     >
       {group.status ? <span aria-hidden="true" className={style.dot} /> : null}
-      <span>{group.name}</span>
-      {unsaved > 0 ? (
-        <span aria-hidden="true" className="ovcs-badge ovcs-badge--warn tabular-nums">
-          {unsaved}
-        </span>
-      ) : null}
+      <span translate="no">{group.name}</span>
+      <span aria-hidden="true" className={`ovcs-badge ovcs-badge--warn min-w-4 text-center tabular-nums ${unsaved > 0 ? '' : 'invisible'}`}>
+        {unsaved}
+      </span>
     </button>
   )
 }
@@ -48,15 +47,9 @@ export default function PipelineDiagram() {
   const selectedGroupId = useParameters((state) => state.selectedGroupId)
   const select = useParameters((state) => state.select)
 
-  const { flow, side } = useMemo(() => {
-    const ordered = groups.toSorted((a, b) => a.position - b.position)
-    return {
-      flow: ordered.filter((group) => group.placement === 'flow'),
-      side: ordered.filter((group) => group.placement === 'side')
-    }
-  }, [groups])
+  const { flow, side } = useMemo(() => ({ flow: flowGroups({ groups }), side: sideGroups({ groups }) }), [groups])
 
-  const unsaved = (group) => group.parameterIds.filter((id) => parameters[id]?.state === 'unsaved').length
+  const unsaved = (group) => groupUnsaved({ groups, parameters }, group.id)
 
   const box = (group) => (
     <GroupBox group={group} unsaved={unsaved(group)} selected={group.id === selectedGroupId} onSelect={select} />
