@@ -6,7 +6,7 @@ defmodule VisionApiWeb.ParameterController do
   alias VisionCore.Parameters
 
   def index(conn, _params) do
-    parameters = Parameters.groups() |> Enum.flat_map(& &1.parameters)
+    parameters = Parameters.groups() |> ParameterJSON.parameters()
 
     JsonApi.send_document(conn, 200, %{
       data: Enum.map(parameters, &ParameterJSON.parameter/1),
