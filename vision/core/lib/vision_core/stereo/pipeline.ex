@@ -4,8 +4,8 @@ defmodule VisionCore.Stereo.Pipeline do
   `VisionCore.Stereo.Stage`s and sends the finished
   `VisionCore.Stereo.Pair` to its listeners as `{:stereo_pair, pair}`.
 
-  The default stages, from `default_stages/1`, all but `Quality` written
-  in Nx (`VisionCore.Stereo.NxStage`):
+  The default stages, from `default_stages/1`, all written in Nx
+  (`VisionCore.Stereo.NxStage`):
 
       Rectify      # camera frames → rectified grey images at the pipeline's size
       Match        # disparity, libSGM's semi-global matching

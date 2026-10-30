@@ -19,6 +19,7 @@ defmodule VisionCore.Stereo.Stage.Alignment do
 
   @bands 4
   @reach 2
+  @row_step 4
 
   @impl VisionCore.Stereo.NxStage
   def init(_opts, context), do: {:ok, %{size: {context.height, context.width}}}
@@ -71,12 +72,15 @@ defmodule VisionCore.Stereo.Stage.Alignment do
     end
   end
 
-  # Per band, the summed |left - right| at each row offset, then the matched pixels counted.
+  # Per band, the summed |left - right| per row offset on sampled rows, then the matched count.
   defp band_sums(left, right, disparity) do
     {height, width} = Nx.shape(left)
+    sample = &Nx.slice(&1, [0, 0], [height, width], strides: [@row_step, 1])
+    {left, disparity} = {sample.(left), sample.(disparity)}
+    sampled_height = Nx.axis_size(left, 0)
     matched = Nx.greater_equal(disparity, 0)
-    columns = Nx.iota({height, width}, axis: 1)
-    rows = Nx.iota({height, width}, axis: 0)
+    columns = Nx.iota({sampled_height, width}, axis: 1)
+    rows = Nx.multiply(Nx.iota({sampled_height, width}, axis: 0), @row_step)
     source_columns = columns |> Nx.subtract(Nx.round(disparity)) |> Nx.clip(0, width - 1)
 
     right = right |> Nx.as_type(:f32) |> Nx.reshape({:auto, 1})
@@ -97,7 +101,7 @@ defmodule VisionCore.Stereo.Stage.Alignment do
 
         right
         |> Nx.gather(indices)
-        |> Nx.reshape({height, width})
+        |> Nx.reshape({sampled_height, width})
         |> Nx.subtract(left)
         |> Nx.abs()
         |> Nx.multiply(matched)
@@ -108,8 +112,8 @@ defmodule VisionCore.Stereo.Stage.Alignment do
 
     # Rows first: summing a band's columns first needs more GPU shared memory than there is.
     Nx.stack(differences ++ [matched])
-    |> Nx.slice([0, 0, 0], [planes, height, band_width * @bands])
-    |> Nx.reshape({planes, height, @bands, band_width})
+    |> Nx.slice([0, 0, 0], [planes, sampled_height, band_width * @bands])
+    |> Nx.reshape({planes, sampled_height, @bands, band_width})
     |> Nx.sum(axes: [1])
     |> Nx.sum(axes: [2])
     |> Nx.transpose()

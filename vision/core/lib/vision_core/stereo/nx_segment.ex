@@ -131,8 +131,8 @@ defmodule VisionCore.Stereo.NxSegment do
 
   @doc """
   Compiles everything the pipeline started with `pipeline_opts` compiles
-  (its segments, and stages such as `VisionCore.Stereo.Stage.Quality`)
-  into the module cache `dir`, with the compiler and flags of its
+  (its segments, and any stage compiling its own function) into the
+  module cache `dir`, with the compiler and flags of its
   `:defn_options`, without loading them: a host with EXLA builds it for
   any device.
   """
