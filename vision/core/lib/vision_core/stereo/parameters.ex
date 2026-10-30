@@ -7,12 +7,14 @@ defmodule VisionCore.Stereo.Parameters do
       of controls drives both cameras (`c:VisionCore.Camera.shared_controls?/0`),
       with the capture size, frame rate and each side's addressing as build
       parameters. Exposure and gain are set by auto exposure while it is on,
-      and then read what the sensors apply.
+      and then read what the sensors apply; their defaults are the manual
+      settings.
     * `<prefix>.<stage>` — each stage of `VisionCore.Stereo.Pipeline`, in
       pipeline order, with its settings; Rectify also carries the matching
       size.
     * `<prefix>.alignment.correction` — switches
-      `VisionCore.Stereo.AlignmentCorrection` on or off while it runs; it
+      `VisionCore.Stereo.AlignmentCorrection` on or off while it runs and
+      the pipeline has an Alignment stage; it
       then sets Rectify's `right_row_offset`. The alignment group's status
       is the row offset `VisionCore.Status` measures.
 
@@ -45,11 +47,15 @@ defmodule VisionCore.Stereo.Parameters do
   def groups(opts) do
     prefix = Keyword.fetch!(opts, :topic_prefix)
     pipeline = Keyword.get(opts, :pipeline, Pipeline)
-    correction? = Process.whereis(AlignmentCorrection) != nil
+    stage_options = Pipeline.stage_options(pipeline)
+
+    # The correction is declared on the alignment stage's group, so it needs both.
+    correction? =
+      Process.whereis(AlignmentCorrection) != nil and
+        Enum.any?(stage_options, &(&1.stage == :alignment))
 
     stages =
-      pipeline
-      |> Pipeline.stage_options()
+      stage_options
       |> Enum.with_index(1)
       |> Enum.map(fn {stage, position} ->
         stage_group(prefix, pipeline, stage, position, opts, correction?)
@@ -65,6 +71,7 @@ defmodule VisionCore.Stereo.Parameters do
     if function_exported?(driver, :shared_controls?, 0) and driver.shared_controls?() do
       id = "#{prefix}.cameras"
       server = driver.name_for("left")
+      controls = driver.controls(server)
 
       [
         %{
@@ -75,7 +82,7 @@ defmodule VisionCore.Stereo.Parameters do
           placement: :flow,
           position: 0,
           parameters:
-            Enum.map(driver.control_specs(), &control(&1, driver, server, id)) ++
+            Enum.map(driver.control_specs(), &control(&1, driver, server, id, controls)) ++
               camera_build_parameters(opts)
         }
       ]
@@ -84,7 +91,7 @@ defmodule VisionCore.Stereo.Parameters do
     end
   end
 
-  defp control(spec, driver, server, group_id) do
+  defp control(spec, driver, server, group_id, controls) do
     %{
       name: Atom.to_string(spec.key),
       type: spec.type,
@@ -95,7 +102,14 @@ defmodule VisionCore.Stereo.Parameters do
       description: spec.description,
       export: [:components, :stereo, :left, spec.key]
     }
+    |> put_manual_default(spec.key, controls)
   end
+
+  # Auto exposure's first values are not the built-in ones: the manual settings are.
+  defp put_manual_default(declaration, key, controls) when key in [:exposure_us, :analogue_gain],
+    do: put_present(declaration, :default, controls[key])
+
+  defp put_manual_default(declaration, _key, _controls), do: declaration
 
   defp control_get(key, driver, server) when key in [:exposure_us, :analogue_gain] do
     fn ->

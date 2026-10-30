@@ -38,6 +38,19 @@ defmodule VisionCore.ParametersTest do
     assert %{id: "stereo.match.p2", greater_than: "stereo.match.p1", state: :builtin} = p2
   end
 
+  test "a declared default wins over the first read", %{server: server} do
+    start_owner(server, fn test ->
+      {[group], agent} = match_groups(test)
+      [p1, p2] = group.parameters
+      {[%{group | parameters: [Map.put(p1, :default, 5), p2]}], agent}
+    end)
+
+    assert {:ok, %{value: 8, default: 5, state: :unsaved}} =
+             Parameters.get(server, "stereo.match.p1")
+
+    assert {:ok, %{default: 64}} = Parameters.get(server, "stereo.match.p2")
+  end
+
   test "lists groups sorted by position", %{server: server} do
     start_owner(server, &match_groups/1)
     start_owner(server, &cameras_groups(&1, false))

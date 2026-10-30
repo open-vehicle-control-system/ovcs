@@ -18,6 +18,9 @@ defmodule VisionCore.Parameters do
   restarted owner declares its groups.
   A parameter whose value cannot be read is never unsaved.
 
+  A parameter's default is the `default` it is first declared with, or else
+  the first value its `get` returns; either is kept while the registry runs.
+
   ROS 2 and the API are adapters reading and setting parameters here.
   """
   use GenServer
@@ -42,7 +45,8 @@ defmodule VisionCore.Parameters do
           optional(:applies) => applies(),
           optional(:greater_than) => String.t(),
           optional(:description) => String.t(),
-          optional(:export) => [atom()]
+          optional(:export) => [atom()],
+          optional(:default) => term()
         }
   @type group_declaration :: %{
           required(:id) => String.t(),
@@ -141,11 +145,18 @@ defmodule VisionCore.Parameters do
   @impl GenServer
   def handle_call({:declare, groups}, {owner, _tag}, state) do
     state = drop_owner(state, owner)
+    groups = Enum.map(groups, &normalize_group/1)
+
+    declared_defaults =
+      for group <- groups, %{default: default} = parameter <- group.parameters, into: %{} do
+        {parameter.id, default}
+      end
 
     state = %{
       state
-      | groups: Map.put(state.groups, owner, Enum.map(groups, &normalize_group/1)),
-        owners: Map.put(state.owners, owner, Process.monitor(owner))
+      | groups: Map.put(state.groups, owner, groups),
+        owners: Map.put(state.owners, owner, Process.monitor(owner)),
+        defaults: Map.merge(declared_defaults, state.defaults)
     }
 
     {:reply, :ok, state, {:continue, {:apply, owner}}}
