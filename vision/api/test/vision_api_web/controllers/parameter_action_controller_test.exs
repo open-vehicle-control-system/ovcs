@@ -17,7 +17,7 @@ defmodule VisionApiWeb.ParameterActionControllerTest do
     do: %{type: "parameter-resets", relationships: %{target: %{data: %{type: type, id: id}}}}
 
   test "POST /api/parameter-saves saves and lists what it saved", %{conn: conn} do
-    set("test.match.p1", 12)
+    set("test.disparity.p1", 12)
     assert unsaved(conn) == 1
 
     conn = post_action(conn, "/api/parameter-saves", %{type: "parameter-saves"})
@@ -27,7 +27,7 @@ defmodule VisionApiWeb.ParameterActionControllerTest do
              "data" => %{
                "type" => "parameter-saves",
                "id" => id,
-               "attributes" => %{"parameters" => ["test.match.p1"]}
+               "attributes" => %{"parameters" => ["test.disparity.p1"]}
              }
            } = json_response(conn, 201)
 
@@ -37,7 +37,7 @@ defmodule VisionApiWeb.ParameterActionControllerTest do
 
   test "POST /api/parameter-saves answers 503 when the values cannot be stored", %{conn: conn} do
     :sys.replace_state(VisionCore.Parameters, &%{&1 | store: VisionApiWeb.FailingStore})
-    set("test.match.p1", 12)
+    set("test.disparity.p1", 12)
 
     conn = post_action(conn, "/api/parameter-saves", %{type: "parameter-saves"})
 
@@ -55,48 +55,48 @@ defmodule VisionApiWeb.ParameterActionControllerTest do
   end
 
   test "POST /api/parameter-discards puts unsaved changes back", %{conn: conn} do
-    set("test.match.p1", 12)
+    set("test.disparity.p1", 12)
 
     conn = post_action(conn, "/api/parameter-discards", %{type: "parameter-discards"})
 
     assert %{
              "data" => %{
                "type" => "parameter-discards",
-               "attributes" => %{"parameters" => ["test.match.p1"]}
+               "attributes" => %{"parameters" => ["test.disparity.p1"]}
              }
            } = json_response(conn, 201)
 
-    assert %{"attributes" => %{"value" => 8}} = parameter(conn, "test.match.p1")
+    assert %{"attributes" => %{"value" => 8}} = parameter(conn, "test.disparity.p1")
   end
 
-  test "POST /api/parameter-resets resets a parameter, a group, or everything without a target",
+  test "POST /api/parameter-resets resets a parameter, a stage, or everything without a target",
        %{conn: conn} do
-    set("test.match.p1", 12)
-    set("test.match.p2", 70)
+    set("test.disparity.p1", 12)
+    set("test.disparity.p2", 70)
 
     assert %{"data" => %{"type" => "parameter-resets", "attributes" => %{"parameters" => ids}}} =
              conn
-             |> post_action("/api/parameter-resets", target("parameters", "test.match.p1"))
+             |> post_action("/api/parameter-resets", target("parameters", "test.disparity.p1"))
              |> json_response(201)
 
-    assert ids == ["test.match.p1"]
-    assert %{"attributes" => %{"value" => 8}} = parameter(conn, "test.match.p1")
+    assert ids == ["test.disparity.p1"]
+    assert %{"attributes" => %{"value" => 8}} = parameter(conn, "test.disparity.p1")
 
-    assert %{"data" => %{"attributes" => %{"parameters" => ["test.match.p2"]}}} =
+    assert %{"data" => %{"attributes" => %{"parameters" => ["test.disparity.p2"]}}} =
              conn
-             |> post_action("/api/parameter-resets", target("parameter-groups", "test.match"))
+             |> post_action("/api/parameter-resets", target("stages", "test.disparity"))
              |> json_response(201)
 
-    set("test.match.p1", 12)
+    set("test.disparity.p1", 12)
 
-    assert %{"data" => %{"attributes" => %{"parameters" => ["test.match.p1"]}}} =
+    assert %{"data" => %{"attributes" => %{"parameters" => ["test.disparity.p1"]}}} =
              conn
              |> post_action("/api/parameter-resets", %{type: "parameter-resets"})
              |> json_response(201)
   end
 
   test "POST /api/parameter-resets answers 404 for an unknown target", %{conn: conn} do
-    for {type, id} <- [{"parameters", "nope"}, {"parameter-groups", "nope"}] do
+    for {type, id} <- [{"parameters", "nope"}, {"stages", "nope"}] do
       assert %{"errors" => [%{"status" => "404"}]} =
                conn
                |> post_action("/api/parameter-resets", target(type, id))
@@ -154,20 +154,5 @@ defmodule VisionApiWeb.ParameterActionControllerTest do
              |> put_req_header("content-type", "application/vnd.api+json")
              |> post("/api/parameter-saves", "{}")
              |> json_response(400)
-  end
-
-  test "GET /api/parameter-export answers the snippet", %{conn: conn} do
-    conn = get(conn, "/api/parameter-export")
-    assert get_resp_header(conn, "content-type") == ["application/vnd.api+json"]
-
-    assert %{
-             "data" => %{
-               "type" => "parameter-exports",
-               "id" => "current",
-               "attributes" => %{"snippet" => snippet}
-             }
-           } = json_response(conn, 200)
-
-    assert snippet =~ "# Nothing saved."
   end
 end

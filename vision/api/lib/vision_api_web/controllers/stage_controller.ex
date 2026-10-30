@@ -1,5 +1,8 @@
-defmodule VisionApiWeb.ParameterGroupController do
-  @moduledoc "The vision parameter groups, with their parameters when `include=parameters`."
+defmodule VisionApiWeb.StageController do
+  @moduledoc """
+  The vision `stages`, one per `VisionCore.Parameters.Group`: the components
+  and pipeline stages, with their parameters when `include=parameters`.
+  """
   use VisionApiWeb, :controller
 
   alias VisionApiWeb.{JsonApi, ParameterJSON}
@@ -8,18 +11,18 @@ defmodule VisionApiWeb.ParameterGroupController do
   def index(conn, params) do
     case includes(params) do
       {:ok, include?} ->
-        send_groups(conn, include?)
+        send_stages(conn, include?)
 
       :error ->
         JsonApi.error(conn, 400, "Bad Request", "unsupported include", %{parameter: "include"})
     end
   end
 
-  defp send_groups(conn, include?) do
+  defp send_stages(conn, include?) do
     groups = Parameters.groups()
 
     document = %{
-      data: Enum.map(groups, &ParameterJSON.group/1),
+      data: Enum.map(groups, &ParameterJSON.stage/1),
       meta: %{unsaved: ParameterJSON.unsaved(groups)}
     }
 

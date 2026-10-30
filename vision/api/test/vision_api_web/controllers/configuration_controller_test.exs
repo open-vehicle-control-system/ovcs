@@ -1,4 +1,4 @@
-defmodule VisionApiWeb.SettingsControllerTest do
+defmodule VisionApiWeb.ConfigurationControllerTest do
   use VisionApiWeb.ConnCase, async: false
 
   defmodule Composer do
@@ -29,12 +29,26 @@ defmodule VisionApiWeb.SettingsControllerTest do
   describe "with a running pipeline" do
     setup :start_pipeline
 
-    test "GET /api/settings returns the active config", %{conn: conn} do
-      assert json_response(get(conn, "/api/settings"), 200) == %{
-               "zenoh_endpoint_ip" => "127.0.0.1",
-               "node_name" => "vision_test",
-               "components" => [%{"name" => "heartbeat", "options" => %{"interval_ms" => 5_000}}],
-               "preview" => []
+    test "GET /api/configuration answers the active composer config", %{conn: conn} do
+      conn = get(conn, "/api/configuration")
+      assert get_resp_header(conn, "content-type") == ["application/vnd.api+json"]
+
+      assert json_response(conn, 200) == %{
+               "data" => %{
+                 "type" => "configurations",
+                 "id" => "current",
+                 "attributes" => %{
+                   "composer" => %{
+                     "zenoh_endpoint_ip" => "127.0.0.1",
+                     "node_name" => "vision_test",
+                     "components" => [
+                       %{"name" => "heartbeat", "options" => %{"interval_ms" => 5_000}}
+                     ],
+                     "preview" => []
+                   }
+                 },
+                 "relationships" => %{}
+               }
              }
     end
   end

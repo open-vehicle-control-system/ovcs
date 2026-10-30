@@ -5,34 +5,43 @@ defmodule VisionApiWeb.ParameterControllerTest do
     assert %{
              "attributes" => %{
                "constraint" => %{"kind" => "range", "min" => 0, "max" => 78, "step" => nil},
+               "valueType" => "integer",
                "applies" => "live",
                "state" => "builtin",
                "default" => 8,
                "value" => 8
              },
-             "relationships" => %{"group" => %{"data" => %{"id" => "test.match"}}}
-           } = parameter(conn, "test.match.p1")
+             "relationships" => %{
+               "stage" => %{"data" => %{"type" => "stages", "id" => "test.disparity"}}
+             }
+           } = parameter(conn, "test.disparity.p1")
 
     assert %{
              "relationships" => %{
-               "greater-than" => %{"data" => %{"type" => "parameters", "id" => "test.match.p1"}}
+               "greaterThan" => %{
+                 "data" => %{"type" => "parameters", "id" => "test.disparity.p1"}
+               }
              }
-           } = parameter(conn, "test.match.p2")
+           } = parameter(conn, "test.disparity.p2")
 
     assert %{
              "attributes" => %{"state" => "automatic", "applies" => "live"},
-             "relationships" => %{"controller" => %{"data" => %{"id" => "test.match.auto"}}}
-           } = parameter(conn, "test.match.exposure")
+             "relationships" => %{
+               "controlledBy" => %{
+                 "data" => %{"type" => "parameters", "id" => "test.disparity.auto"}
+               }
+             }
+           } = parameter(conn, "test.disparity.exposure")
 
     assert %{"attributes" => %{"applies" => "build", "constraint" => nil}} =
-             parameter(conn, "test.match.width")
+             parameter(conn, "test.disparity.width")
   end
 
   test "GET /api/parameters lists every parameter", %{conn: conn} do
     assert %{"data" => data, "meta" => %{"unsaved" => 0}} =
              json_response(get(conn, "/api/parameters"), 200)
 
-    assert Enum.count(data, &String.starts_with?(&1["id"], "test.match.")) == 5
+    assert Enum.count(data, &String.starts_with?(&1["id"], "test.disparity.")) == 5
   end
 
   test "GET /api/parameters/:id answers 404 as an error object for an unknown id", %{conn: conn} do
@@ -62,29 +71,29 @@ defmodule VisionApiWeb.ParameterControllerTest do
   end
 
   test "PATCH sets a value and answers the parameter, now unsaved", %{conn: conn} do
-    conn = patch_value(conn, "test.match.p1", body("test.match.p1", 12))
+    conn = patch_value(conn, "test.disparity.p1", body("test.disparity.p1", 12))
     assert get_resp_header(conn, "content-type") == ["application/vnd.api+json"]
 
     assert %{"data" => %{"attributes" => %{"value" => 12, "state" => "unsaved"}}} =
              json_response(conn, 200)
 
-    assert %{"attributes" => %{"value" => 12}} = parameter(conn, "test.match.p1")
+    assert %{"attributes" => %{"value" => 12}} = parameter(conn, "test.disparity.p1")
   end
 
   test "PATCH refuses a value as a 422 error pointing at the value", %{conn: conn} do
     assert %{"errors" => [refusal("expected integer, got \"8\"")]} ==
              conn
-             |> patch_value("test.match.p1", body("test.match.p1", "8"))
+             |> patch_value("test.disparity.p1", body("test.disparity.p1", "8"))
              |> json_response(422)
 
-    assert %{"errors" => [refusal("must be above test.match.p1 (8)")]} ==
+    assert %{"errors" => [refusal("must be above test.disparity.p1 (8)")]} ==
              conn
-             |> patch_value("test.match.p2", body("test.match.p2", 8))
+             |> patch_value("test.disparity.p2", body("test.disparity.p2", 8))
              |> json_response(422)
 
     assert %{"errors" => [refusal("fixed in the build")]} ==
              conn
-             |> patch_value("test.match.width", body("test.match.width", 1))
+             |> patch_value("test.disparity.width", body("test.disparity.width", 1))
              |> json_response(422)
   end
 
@@ -95,7 +104,7 @@ defmodule VisionApiWeb.ParameterControllerTest do
 
   test "PATCH answers 409 for another type or id, and 400 without a value, type or id",
        %{conn: conn} do
-    id = "test.match.p1"
+    id = "test.disparity.p1"
     wrong_type = %{data: %{type: "groups", id: id, attributes: %{value: 1}}}
 
     assert %{"errors" => [%{"status" => "409"}]} =

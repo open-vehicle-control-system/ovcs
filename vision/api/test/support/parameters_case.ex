@@ -1,6 +1,6 @@
 defmodule VisionApiWeb.ParametersCase do
   @moduledoc """
-  Test case declaring the group `test.match` in a restarted `:vision_core`
+  Test case declaring the group `test.disparity` in a restarted `:vision_core`
   whose registry saves into memory. The declaring process is the test
   process, which stays alive for the test.
   """
@@ -52,8 +52,8 @@ defmodule VisionApiWeb.ParametersCase do
     :ok =
       VisionCore.Parameters.declare([
         %{
-          id: "test.match",
-          name: "Match",
+          id: "test.disparity",
+          name: "Disparity",
           summary: "Matches.",
           kind: :stage,
           placement: :flow,
@@ -80,7 +80,7 @@ defmodule VisionApiWeb.ParametersCase do
               type: :integer,
               get: get.(:exposure),
               set: set.(:exposure),
-              applies: {:auto, "test.match.auto"}
+              applies: {:auto, "test.disparity.auto"}
             },
             %{
               name: "auto",

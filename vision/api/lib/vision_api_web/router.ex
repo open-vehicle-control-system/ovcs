@@ -11,19 +11,20 @@ defmodule VisionApiWeb.Router do
 
   scope "/api", VisionApiWeb do
     pipe_through :jsonapi
-    get "/parameter-groups", ParameterGroupController, :index
+    get "/stages", StageController, :index
     get "/parameters", ParameterController, :index
     get "/parameters/:id", ParameterController, :show
     patch "/parameters/:id", ParameterController, :update
     post "/parameter-saves", ParameterActionController, :save
     post "/parameter-discards", ParameterActionController, :discard
     post "/parameter-resets", ParameterActionController, :reset
-    get "/parameter-export", ParameterActionController, :export
+    get "/composer-snippet", ComposerSnippetController, :show
+    get "/configuration", ConfigurationController, :show
+    get "/ros2-node", Ros2NodeController, :show
   end
 
   scope "/api", VisionApiWeb do
     pipe_through :api
-    get "/settings", SettingsController, :show
     match :*, "/*path", NotFoundController, :show
   end
 
