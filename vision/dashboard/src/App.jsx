@@ -34,18 +34,6 @@ function useSelectionInUrl() {
   return selectedGroupId
 }
 
-function useLeaveGuard(active) {
-  useEffect(() => {
-    if (!active) return undefined
-    const ask = (event) => {
-      event.preventDefault()
-      event.returnValue = ''
-    }
-    window.addEventListener('beforeunload', ask)
-    return () => window.removeEventListener('beforeunload', ask)
-  }, [active])
-}
-
 // Keeps focused controls clear of the sticky bar when the browser scrolls them into view.
 function useScrollPaddingFor(ref) {
   useEffect(() => {
@@ -96,7 +84,6 @@ export default function App() {
   const listen = useStatus((state) => state.listen)
   const startPolling = useParameters((state) => state.startPolling)
   const stopPolling = useParameters((state) => state.stopPolling)
-  const hasUnsaved = useParameters((state) => state.unsaved > 0)
 
   useEffect(() => listen(dashboardSocket), [listen])
 
@@ -106,7 +93,6 @@ export default function App() {
   }, [startPolling, stopPolling])
 
   const selectedGroupId = useSelectionInUrl()
-  useLeaveGuard(hasUnsaved)
 
   return (
     <main className="mx-auto max-w-7xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
