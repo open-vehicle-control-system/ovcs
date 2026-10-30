@@ -29,7 +29,7 @@ defmodule VisionApiWeb.ParameterActionController do
            :ok <- check_scope(scope) do
         case Parameters.reset(scope) do
           {:ok, ids} -> {:ok, ids}
-          {:error, reason} -> {:error, 422, "Invalid value", reason, nil}
+          {:error, reason} -> {:error, 422, "Not reset", reason, nil}
         end
       end
     end)
