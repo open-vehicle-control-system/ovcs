@@ -365,6 +365,8 @@ defmodule VisionCore.Stereo.Parameters do
   defp constraint(%{range: {min, max}} = spec),
     do: %{kind: :range, min: min, max: max, step: spec[:step]}
 
+  defp constraint(_spec), do: nil
+
   @doc "A build parameter declaration for `{key, value}`: read-only, fixed at start."
   @spec build_parameter({atom(), term()}) :: VisionCore.Parameters.declaration()
   def build_parameter({key, value}) do
