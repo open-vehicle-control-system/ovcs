@@ -32,8 +32,12 @@ defmodule VisionCore.Stereo.NxStage do
   @doc "The `Pair` fields the stage fills, once `finish/3` has run."
   @callback provides() :: [atom()]
 
-  @doc "The compiled function's inputs for this stage: tensors or numbers."
-  @callback params(state(), Stage.context()) :: %{atom() => Nx.Tensor.t() | number()}
+  @doc """
+  The compiled function's inputs for this stage: tensors, numbers, or
+  maps of tensors such as a camera model.
+  """
+  @callback params(state(), Stage.context()) ::
+              %{atom() => Nx.Tensor.t() | number() | %{atom() => Nx.Tensor.t()}}
 
   @doc """
   Called while tracing: takes the named tensors so far and returns them
