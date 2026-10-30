@@ -43,9 +43,10 @@ defmodule VisionCore.Jpeg do
 
   @doc """
   `depth_mm`, a row-major u16 depth image in millimetres (0 where
-  unmeasured), as a JPEG coloured with the turbo map: `near_mm` red,
-  `far_mm` blue, no depth black. A `far_mm` of 0 spans the 2nd to the
-  98th percentile of the measured depths.
+  unmeasured), as a JPEG coloured with the turbo map by 1/depth, so near
+  differences show: `near_mm` red, `far_mm` blue, no depth black. A
+  `near_mm` of 0 is the 2nd percentile of the measured depths, a
+  `far_mm` of 0 infinitely far.
   """
   @spec encode_depth(
           binary(),

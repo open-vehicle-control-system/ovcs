@@ -8,8 +8,10 @@
 //!   then its luma plane, one byte a pixel.
 //! - 2, depth: `width: u16, height: u16, quality: u8, near_mm: u16, far_mm:
 //!   u16`, then the depth in millimetres as u16, 0 where unmeasured; the reply
-//!   is the depth coloured with OpenCV's turbo map, near red and far blue, as a
-//!   JPEG. A `far_mm` of 0 spans the 2nd to the 98th percentile of the depth.
+//!   is the depth coloured with OpenCV's turbo map by 1/depth, near red and far
+//!   blue, as a JPEG. A `near_mm` of 0 is the 2nd percentile of the depth; a
+//!   `far_mm` of 0 is infinitely far, so the colours do not follow the
+//!   farthest stray matches from one image to the next.
 //!
 //! A malformed request gets an empty reply.
 
@@ -350,11 +352,13 @@ fn encode_depth(request: &[u8]) -> Option<Vec<u8>> {
         .chunks_exact(2)
         .map(|b| u16::from_le_bytes([b[0], b[1]]))
         .collect();
-    let range = if far_mm == 0 {
-        percentile_range(&depth)
+    let near = if near_mm == 0 {
+        near_percentile(&depth)
     } else {
-        Some((near_mm, far_mm))
+        Some(near_mm)
     };
+    let far = if far_mm == 0 { u16::MAX } else { far_mm };
+    let range = near.map(|near| (near, far.max(near.saturating_add(1))));
     let mut jpeg = Vec::new();
     Encoder::new(&mut jpeg, quality.clamp(1, 100))
         .encode(&depth_colours(&depth, range), width, height, ColorType::Rgb)
@@ -362,9 +366,9 @@ fn encode_depth(request: &[u8]) -> Option<Vec<u8>> {
     Some(jpeg)
 }
 
-/// The 2nd and 98th percentiles of the measured depths, so a few stray far or
-/// near matches do not stretch the colours; `None` without any.
-fn percentile_range(depth_mm: &[u16]) -> Option<(u16, u16)> {
+/// The 2nd percentile of the measured depths, so a few stray near matches do
+/// not set the colours' near end; `None` without any.
+fn near_percentile(depth_mm: &[u16]) -> Option<u16> {
     let mut histogram = vec![0u32; 65_536];
     let mut measured = 0u32;
     for &d in depth_mm.iter().filter(|&&d| d > 0) {
@@ -385,20 +389,24 @@ fn percentile_range(depth_mm: &[u16]) -> Option<(u16, u16)> {
             })
             .unwrap_or(0) as u16
     };
-    Some((at(2), at(98)))
+    Some(at(2))
 }
 
 /// RGB per pixel: `near_mm` red through `far_mm` blue, black without depth.
+/// The colours follow 1/depth, as disparity does, so the near metres a
+/// stereo pair measures best spread over the map and far ones share its end.
 fn depth_colours(depth_mm: &[u16], range: Option<(u16, u16)>) -> Vec<u8> {
-    let (near, far) = range.unwrap_or((0, 1));
-    let span = f32::from(far.saturating_sub(near).max(1));
+    let (near, far) = range.unwrap_or((1, 2));
+    let inverse = |mm: u16| 1.0 / f32::from(mm.max(1));
+    let (inverse_near, inverse_far) = (inverse(near), inverse(far.max(near.saturating_add(1))));
     depth_mm
         .iter()
         .flat_map(|&d| {
             if d == 0 {
                 [0, 0, 0]
             } else {
-                let t = (f32::from(d.saturating_sub(near)) / span).min(1.0);
+                let t =
+                    ((inverse_near - inverse(d)) / (inverse_near - inverse_far)).clamp(0.0, 1.0);
                 TURBO[255 - (t * 255.0).round() as usize]
             }
         })
@@ -494,11 +502,20 @@ mod tests {
     }
 
     #[test]
-    fn the_automatic_range_ignores_outliers() {
+    fn colours_by_inverse_depth_so_near_differences_show() {
+        // 1.5 m is halfway between 1 m and 3 m in 1/depth.
+        let colours = depth_colours(&[1_500], Some((1_000, 3_000)));
+        assert!(
+            colours == TURBO[127] || colours == TURBO[128],
+            "{colours:?}"
+        );
+    }
+
+    #[test]
+    fn the_automatic_near_end_ignores_outliers() {
         let mut depth = vec![2_000u16; 98];
-        depth.extend([1_000, 60_000]);
-        let (near, far) = percentile_range(&depth).unwrap();
-        assert!(near >= 1_000 && far <= 2_000 + 1, "{near}..{far}");
+        depth.extend([100, 60_000]);
+        assert_eq!(near_percentile(&depth), Some(2_000));
     }
 
     #[test]

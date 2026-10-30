@@ -22,9 +22,9 @@ defmodule VisionCore.Preview do
 
     * `:config` — the active `VisionCore.Config` (required).
     * `:max_hz` (`10`) — frames per second per subscriber.
-    * `:depth_range_m` (`0.0`) — the distance the colour map spans,
-      from red at the camera to blue at this range; 0 spans the measured
-      depths of each frame, from their 2nd to their 98th percentile.
+    * `:depth_range_m` (`0.0`) — the distance coloured blue; 0 colours
+      blue only what is infinitely far, so the colours stay put from one
+      frame to the next. Red is the nearest measured depths.
 
   `:max_hz` and `:depth_range_m` change while running with
   `set_options/1`, and are the stereo unit's ROS 2 parameters
@@ -54,7 +54,7 @@ defmodule VisionCore.Preview do
       type: :double,
       range: {0, 50},
       default: @default_depth_range_m,
-      description: "Distance the depth colours span, in metres; 0 for the measured depths"
+      description: "Distance coloured blue, in metres; 0 for infinitely far"
     }
   ]
   @jpeg_quality 80
@@ -74,10 +74,10 @@ defmodule VisionCore.Preview do
   def ack(stream) when stream in @streams, do: GenServer.cast(__MODULE__, {:ack, self(), stream})
 
   @doc """
-  The depth of `pair` as a colour JPEG: near is red, `range_m` and beyond
-  is blue, pixels without depth are black; a `range_m` of 0 spans the
-  2nd to the 98th percentile of the measured depths. Coloured and encoded
-  on the CPU by `VisionCore.Jpeg`, from the millimetre depth image.
+  The depth of `pair` as a colour JPEG, by 1/depth: the nearest measured
+  depths are red, `range_m` and beyond blue (with 0, infinitely far),
+  pixels without depth black. Coloured and encoded on the CPU by
+  `VisionCore.Jpeg`, from the millimetre depth image.
   """
   @spec encode_depth(Pair.t(), float()) :: binary() | {:error, term()}
   def encode_depth(%Pair{depth: depth} = pair, range_m \\ @default_depth_range_m)
