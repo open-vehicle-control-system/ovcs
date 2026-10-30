@@ -73,7 +73,9 @@ defmodule VisionCore.Stereo.PipelineTest do
   test "changes the match penalties without compiling again" do
     {:ok, pipeline} = start(Pipeline.default_stages())
     specs = Pipeline.option_specs(pipeline)
+
     assert Enum.all?([:p1, :p2, :uniqueness], &Keyword.has_key?(specs, &1))
+
     [%{state: segment}] = segments(pipeline)
 
     assert {:ok, %{p1: 4, p2: 40, uniqueness: 1.2}} =
@@ -92,6 +94,52 @@ defmodule VisionCore.Stereo.PipelineTest do
 
   defp segments(pipeline),
     do: :sys.get_state(pipeline).stages |> Enum.filter(&(&1.module == NxSegment))
+
+  describe "with a compiled segment first" do
+    defp textured_pair(seed) do
+      {texture, _key} =
+        Nx.Random.randint(Nx.Random.key(seed), 0, 256, shape: {48, 76}, type: :s32)
+
+      texture = Nx.as_type(texture, :u8)
+
+      for {label, image} <- [left: texture[[.., 0..63]], right: texture[[.., 12..75]]] do
+        %VisionCore.Camera.Frame{
+          label: to_string(label),
+          grey: Nx.to_binary(image),
+          width: 64,
+          height: 48,
+          capture_ns: seed
+        }
+      end
+    end
+
+    test "is ready for the next pair before it publishes the previous one" do
+      {:ok, pipeline} = start(Pipeline.default_stages())
+      Pipeline.register_listener(pipeline, self())
+
+      [left, right] = textured_pair(1)
+      Pipeline.submit(pipeline, left, right)
+      assert_receive :stereo_pipeline_ready, 60_000
+      refute_received {:"$gen_cast", {:stereo_pair, _}}
+
+      [left, right] = textured_pair(2)
+      Pipeline.submit(pipeline, left, right)
+      assert_receive {:"$gen_cast", {:stereo_pair, %VisionCore.Stereo.Pair{} = first}}, 60_000
+      assert first.left_frame.capture_ns == 1
+      assert_receive :stereo_pipeline_ready, 60_000
+    end
+
+    test "publishes the last pair when no other follows" do
+      {:ok, pipeline} = start(Pipeline.default_stages())
+      Pipeline.register_listener(pipeline, self())
+
+      [left, right] = textured_pair(3)
+      Pipeline.submit(pipeline, left, right)
+      assert_receive :stereo_pipeline_ready, 60_000
+      assert_receive {:"$gen_cast", {:stereo_pair, %VisionCore.Stereo.Pair{} = pair}}, 1_000
+      assert pair.left_frame.capture_ns == 3
+    end
+  end
 
   test "keeps settings changed at runtime across a calibration reload" do
     {:ok, pipeline} = start(Pipeline.default_stages() ++ [Gain])

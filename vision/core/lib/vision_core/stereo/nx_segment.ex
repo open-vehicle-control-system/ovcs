@@ -216,17 +216,32 @@ defmodule VisionCore.Stereo.NxSegment do
   @doc "Runs the segment on `pair`, in the shape of `c:VisionCore.Stereo.Stage.run/2`."
   @spec run(Pair.t(), t()) :: {:ok, Pair.t(), t()} | {:error, term(), t()}
   def run(%Pair{} = pair, %__MODULE__{} = segment) do
-    case entry_values(pair, segment) do
-      {:ok, entry} ->
-        outputs =
-          segment.function.(entry, segment.params)
-          |> Map.new(fn {key, tensor} -> {key, Nx.backend_transfer(tensor, Nx.BinaryBackend)} end)
-
-        {:ok, Enum.reduce(segment.members, pair, &finish(&1, &2, outputs)), segment}
-
-      {:error, reason} ->
-        {:error, reason, segment}
+    case dispatch(pair, segment) do
+      {:ok, outputs} -> {:ok, collect(pair, outputs, segment), segment}
+      {:error, reason} -> {:error, reason, segment}
     end
+  end
+
+  @doc """
+  The first half of `run/2`: the segment's outputs for `pair`, left on
+  the device. It changes nothing, so it may run in another process while
+  the previous pair is collected.
+  """
+  @spec dispatch(Pair.t(), t()) :: {:ok, map()} | {:error, term()}
+  def dispatch(%Pair{} = pair, %__MODULE__{} = segment) do
+    with {:ok, entry} <- entry_values(pair, segment),
+         do: {:ok, segment.function.(entry, segment.params)}
+  end
+
+  @doc "The second half of `run/2`: downloads `outputs` and fills `pair` from them."
+  @spec collect(Pair.t(), map(), t()) :: Pair.t()
+  def collect(%Pair{} = pair, outputs, %__MODULE__{} = segment) do
+    outputs =
+      Map.new(outputs, fn {key, tensor} ->
+        {key, Nx.backend_transfer(tensor, Nx.BinaryBackend)}
+      end)
+
+    Enum.reduce(segment.members, pair, &finish(&1, &2, outputs))
   end
 
   defp run_steps(members, tensors, params) do
