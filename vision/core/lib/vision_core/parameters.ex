@@ -10,15 +10,18 @@ defmodule VisionCore.Parameters do
   use. A parameter with `applies: {:auto, controller}` is set by that
   controller's automatic mode while the controller is `true`.
 
-  Groups go when their owner exits. Values set through `set/3` are kept and
-  set again when a restarted owner declares its groups.
+  Saved values are applied when their group is declared; one the parameter
+  refuses, or of a parameter its group no longer declares, is dropped from the
+  store with a log line. Values set since the last `save/1` are applied after
+  them. Both are applied again when a restarted owner declares its groups.
+  A parameter whose value cannot be read is never unsaved.
 
   ROS 2 and the API are adapters reading and setting parameters here.
   """
   use GenServer
   require Logger
 
-  alias VisionCore.Parameters.{Group, Parameter, Store}
+  alias VisionCore.Parameters.{Export, Group, Parameter, Store}
 
   @type id :: String.t()
   @type type :: :integer | :double | :bool | :string
@@ -89,12 +92,48 @@ defmodule VisionCore.Parameters do
   @spec unsaved_count(GenServer.server()) :: non_neg_integer()
   def unsaved_count(server \\ __MODULE__), do: GenServer.call(server, :unsaved_count)
 
+  @doc """
+  Stores the value of every live parameter that differs from its default and
+  deletes the saved value of the others, in one write. Values set by an
+  automatic mode are not stored. Returns the ids whose saved value changed.
+  """
+  @spec save(GenServer.server()) :: {:ok, [id()]} | {:error, String.t()}
+  def save(server \\ __MODULE__), do: GenServer.call(server, :save)
+
+  @doc "Sets every unsaved parameter back to its saved value, or its default without one."
+  @spec discard(GenServer.server()) :: {:ok, [id()]}
+  def discard(server \\ __MODULE__), do: GenServer.call(server, :discard)
+
+  @doc """
+  Sets the live parameters in scope back to their default, as unsaved
+  changes. Parameters set by an automatic mode are left alone.
+  """
+  @spec reset(GenServer.server(), :all | {:group, String.t()} | {:parameter, id()}) ::
+          {:ok, [id()]} | {:error, String.t()}
+  def reset(server \\ __MODULE__, scope), do: GenServer.call(server, {:reset, scope})
+
+  @doc "Deletes the saved value of `id` now and forgets its unsaved change."
+  @spec forget(GenServer.server(), id()) :: :ok
+  def forget(server \\ __MODULE__, id), do: GenServer.call(server, {:forget, id})
+
+  @doc "The saved values as composer snippets; see `VisionCore.Parameters.Export`."
+  @spec export(GenServer.server()) :: String.t()
+  def export(server \\ __MODULE__), do: GenServer.call(server, :export)
+
   @impl GenServer
   def init(opts) do
     store = Keyword.get(opts, :store, Store)
 
     {:ok,
-     %{store: store, saved: store.load(), groups: %{}, owners: %{}, defaults: %{}, changed: %{}}}
+     %{
+       store: store,
+       saved: store.load(),
+       groups: %{},
+       owners: %{},
+       defaults: %{},
+       changed: %{},
+       exports: %{}
+     }}
   end
 
   @impl GenServer
@@ -146,16 +185,88 @@ defmodule VisionCore.Parameters do
     {:reply, count, state}
   end
 
+  def handle_call(:save, _from, state) do
+    parameters = Enum.reject(all_parameters(state), &(&1.applies == :build))
+    {values, state} = read_values(state, Enum.flat_map(parameters, &related_ids(state, &1)))
+    readable = Enum.reject(parameters, &is_nil(values[&1.id]))
+    rows = Enum.flat_map(readable, &saved_row(&1, values, state))
+    changes = row_changes(Enum.map(readable, & &1.id), Map.new(rows), state.saved)
+
+    case write_changes(state.store, changes) do
+      :ok ->
+        saved =
+          Enum.reduce(changes, state.saved, fn
+            {id, :delete}, saved -> Map.delete(saved, id)
+            {id, value}, saved -> Map.put(saved, id, value)
+          end)
+
+        changed = Map.drop(state.changed, Enum.map(readable, & &1.id))
+        {:reply, {:ok, Map.keys(changes)}, %{state | saved: saved, changed: changed}}
+
+      {:error, reason} ->
+        {:reply, {:error, reason}, state}
+    end
+  end
+
+  def handle_call(:discard, _from, state) do
+    reference = fn declared, values ->
+      if parameter_state(declared, values, state) == :unsaved,
+        do: {:ok, Map.get(state.saved, declared.id, state.defaults[declared.id])}
+    end
+
+    {set_ids, applied, refused} =
+      apply_values(state, all_parameters(state), reference, &apply_value/4)
+
+    log_refused(refused, "not set back")
+    kept = for {declared, _value, _reason} <- refused, do: declared.id
+    changed = Map.drop(state.changed, Map.keys(applied) -- kept)
+    {:reply, {:ok, set_ids}, %{state | changed: changed}}
+  end
+
+  def handle_call({:reset, scope}, _from, state) do
+    case in_scope(state, scope) do
+      {:ok, parameters} ->
+        default = fn declared, values ->
+          value = values[declared.id]
+          default = state.defaults[declared.id]
+          if not is_nil(value) and value != default, do: {:ok, default}
+        end
+
+        {set_ids, applied, refused} = apply_values(state, parameters, default, &apply_value/4)
+        log_refused(refused, "not reset")
+        state = %{state | changed: Map.merge(state.changed, applied)}
+        {:reply, reset_reply(set_ids, refused), state}
+
+      {:error, reason} ->
+        {:reply, {:error, reason}, state}
+    end
+  end
+
+  def handle_call({:forget, id}, _from, state) do
+    state = delete_saved(state, Enum.filter([id], &Map.has_key?(state.saved, &1)))
+    {:reply, :ok, %{state | changed: Map.delete(state.changed, id)}}
+  end
+
+  def handle_call(:export, _from, state) do
+    rows = for {id, value} <- state.saved, do: {state.exports[id], id, value}
+    {:reply, Export.render(rows), state}
+  end
+
   @impl GenServer
   def handle_continue({:apply, owner}, state) do
-    declared = state.groups |> Map.get(owner, []) |> Enum.flat_map(& &1.parameters)
+    groups = Map.get(state.groups, owner, [])
+    declared = Enum.flat_map(groups, & &1.parameters)
     {_values, state} = read_values(state, Enum.map(declared, & &1.id))
-    controllers = MapSet.new(all_parameters(state), &controller/1)
+    exports = Map.new(declared, &{&1.id, &1.export})
+    state = %{state | exports: Map.merge(state.exports, exports)}
 
-    declared
-    |> Enum.filter(&(&1.applies != :build and Map.has_key?(state.changed, &1.id)))
-    |> Enum.sort_by(&(not MapSet.member?(controllers, &1.id)))
-    |> Enum.each(&apply_changed(state, &1))
+    saved = fn parameter, _values -> Map.fetch(state.saved, parameter.id) end
+    {_ids, _applied, refused} = apply_values(state, declared, saved, &set_back/4)
+    state = drop_saved(state, undeclared_saved(state, groups) ++ refused)
+
+    changed = fn parameter, _values -> Map.fetch(state.changed, parameter.id) end
+    {_ids, _applied, refused} = apply_values(state, declared, changed, &set_back/4)
+    log_refused(refused, "not set back")
 
     {:noreply, state}
   end
@@ -187,15 +298,154 @@ defmodule VisionCore.Parameters do
 
   # The values applied by id, or the first refusal.
   defp apply_value(state, declared, value, values) do
-    with :ok <- check_settable(declared, values),
-         {:ok, value} <- check_type(declared.type, value),
-         :ok <- check_constraint(declared.constraint, value),
-         :ok <- check_order(state, declared, value, values),
+    with {:ok, value} <- check_value(state, declared, value, values),
          {:ok, released} <- release_controlled(state, declared, value, values),
          :ok <- call_set(declared, value) do
       {:ok, Map.put(released, declared.id, value)}
     end
   end
+
+  # As apply_value/4, without setting what an automatic mode switched off leaves.
+  defp set_back(state, declared, value, values) do
+    with {:ok, value} <- check_value(state, declared, value, values),
+         :ok <- call_set(declared, value) do
+      {:ok, %{declared.id => value}}
+    end
+  end
+
+  defp check_value(state, declared, value, values) do
+    with :ok <- check_settable(declared, values),
+         {:ok, value} <- check_type(declared.type, value),
+         :ok <- check_constraint(declared.constraint, value),
+         :ok <- check_order(state, declared, value, values) do
+      {:ok, value}
+    end
+  end
+
+  # Sets each `{:ok, value}` from `target`, controllers first: {ids set, values applied, refusals}.
+  defp apply_values(state, parameters, target, apply) do
+    controllers = MapSet.new(all_parameters(state), &controller/1)
+
+    parameters
+    |> Enum.reject(&(&1.applies == :build))
+    |> Enum.split_with(&MapSet.member?(controllers, &1.id))
+    |> Tuple.to_list()
+    |> Enum.reduce({[], %{}, []}, fn batch, {ids, applied, refused} ->
+      {values, _state} = read_values(state, Enum.flat_map(batch, &related_ids(state, &1)))
+
+      targets =
+        for parameter <- batch,
+            {:ok, value} <- [target.(parameter, values)],
+            do: {parameter, value}
+
+      {batch_ids, batch_applied, batch_refused} = apply_batch(state, targets, apply)
+      {ids ++ batch_ids, Map.merge(applied, batch_applied), refused ++ batch_refused}
+    end)
+  end
+
+  # Refusals are retried while others go through: a relation may hold only once its other side is set.
+  defp apply_batch(state, targets, apply) do
+    {ids, applied, refused} =
+      Enum.reduce(targets, {[], %{}, []}, fn {declared, value}, {ids, applied, refused} ->
+        {values, _state} = read_values(state, related_ids(state, declared))
+
+        if automatic?(declared, values) do
+          {ids, applied, refused}
+        else
+          case apply.(state, declared, value, values) do
+            {:ok, set} -> {[declared.id | ids], Map.merge(applied, set), refused}
+            {:error, reason} -> {ids, applied, [{declared, value, reason} | refused]}
+          end
+        end
+      end)
+
+    ids = Enum.reverse(ids)
+    refused = Enum.reverse(refused)
+
+    if ids != [] and refused != [] do
+      retry = for {declared, value, _reason} <- refused, do: {declared, value}
+      {more_ids, more_applied, refused} = apply_batch(state, retry, apply)
+      {ids ++ more_ids, Map.merge(applied, more_applied), refused}
+    else
+      {ids, applied, refused}
+    end
+  end
+
+  defp log_refused(refused, outcome) do
+    for {declared, value, reason} <- refused do
+      Logger.warning("vision parameter #{declared.id} = #{inspect(value)} #{outcome}: #{reason}")
+    end
+  end
+
+  # Saved values under the groups' ids that match none of their parameters.
+  defp undeclared_saved(state, groups) do
+    group_ids = MapSet.new(groups, & &1.id)
+
+    for {id, value} <- state.saved,
+        MapSet.member?(group_ids, group_id(id)),
+        is_nil(find(state, id)),
+        do: {%{id: id}, value, "no such parameter"}
+  end
+
+  defp group_id(id), do: id |> String.split(".") |> Enum.drop(-1) |> Enum.join(".")
+
+  defp drop_saved(state, refused) do
+    log_refused(refused, "dropped")
+    delete_saved(state, for({declared, _value, _reason} <- refused, do: declared.id))
+  end
+
+  defp delete_saved(state, []), do: state
+
+  defp delete_saved(state, ids) do
+    write_changes(state.store, Map.new(ids, &{&1, :delete}))
+    %{state | saved: Map.drop(state.saved, ids)}
+  end
+
+  defp write_changes(_store, changes) when changes == %{}, do: :ok
+  defp write_changes(store, changes), do: store.write(changes)
+
+  defp saved_row(declared, values, state) do
+    value = values[declared.id]
+
+    if automatic?(declared, values) or value == state.defaults[declared.id],
+      do: [],
+      else: [{declared.id, value}]
+  end
+
+  # The store changes turning the saved values of `ids` into `rows`.
+  defp row_changes(ids, rows, saved) do
+    for id <- ids, Map.fetch(rows, id) != Map.fetch(saved, id), into: %{} do
+      case Map.fetch(rows, id) do
+        {:ok, value} -> {id, value}
+        :error -> {id, :delete}
+      end
+    end
+  end
+
+  defp in_scope(state, :all), do: {:ok, all_parameters(state)}
+
+  defp in_scope(state, {:group, group_id}) do
+    case Enum.filter(all_parameters(state), &(&1.group == group_id)) do
+      [] -> {:error, "unknown group"}
+      parameters -> {:ok, parameters}
+    end
+  end
+
+  defp in_scope(state, {:parameter, id}) do
+    case find(state, id) do
+      nil -> {:error, "unknown parameter"}
+      declared -> {:ok, [declared]}
+    end
+  end
+
+  defp reset_reply(ids, []), do: {:ok, ids}
+
+  defp reset_reply(_ids, refused),
+    do:
+      {:error,
+       Enum.map_join(refused, "; ", fn {declared, _value, reason} ->
+         "#{declared.id}: #{reason}"
+       end)}
 
   defp check_settable(%{applies: :build}, _values), do: {:error, "fixed in the build"}
 
@@ -224,10 +474,17 @@ defmodule VisionCore.Parameters do
   end
 
   defp check_constraint(%{kind: :choices, values: choices}, value) do
-    if value in choices, do: :ok, else: {:error, "expected one of #{Enum.join(choices, ", ")}"}
+    if value in choices,
+      do: :ok,
+      else: {:error, "expected one of #{Enum.map_join(choices, ", ", &render_choice/1)}"}
   end
 
   defp check_constraint(_constraint, _value), do: :ok
+
+  defp render_choice(choice) when is_binary(choice) or is_atom(choice) or is_number(choice),
+    do: to_string(choice)
+
+  defp render_choice(choice), do: inspect(choice)
 
   defp check_order(state, declared, value, values) do
     above = if declared.greater_than, do: [{:above, declared.greater_than}], else: []
@@ -279,19 +536,6 @@ defmodule VisionCore.Parameters do
     end
   end
 
-  defp apply_changed(state, declared) do
-    {values, _state} = read_values(state, related_ids(state, declared))
-    value = Map.fetch!(state.changed, declared.id)
-
-    unless automatic?(declared, values) do
-      with {:error, reason} <- call_set(declared, value) do
-        Logger.warning(
-          "vision parameter #{declared.id} = #{inspect(value)} not set back: #{reason}"
-        )
-      end
-    end
-  end
-
   defp call_set(declared, value) do
     case declared.set.(value) do
       :ok -> :ok
@@ -301,7 +545,7 @@ defmodule VisionCore.Parameters do
   rescue
     error -> {:error, Exception.message(error)}
   catch
-    :exit, reason -> {:error, "not applied: #{inspect(reason)}"}
+    _kind, reason -> {:error, "not applied: #{inspect(reason)}"}
   end
 
   defp read(declared) do
@@ -309,7 +553,7 @@ defmodule VisionCore.Parameters do
   rescue
     _error -> nil
   catch
-    :exit, _reason -> nil
+    _kind, _reason -> nil
   end
 
   defp read_status(%{status: status}) when is_function(status, 0) do
@@ -317,7 +561,7 @@ defmodule VisionCore.Parameters do
   rescue
     _error -> nil
   catch
-    :exit, _reason -> nil
+    _kind, _reason -> nil
   end
 
   defp read_status(_group), do: nil
@@ -383,7 +627,7 @@ defmodule VisionCore.Parameters do
       declared.applies == :build ->
         :builtin
 
-      values[declared.id] != Map.get(state.saved, declared.id, state.defaults[declared.id]) ->
+      unsaved?(declared, values, state) ->
         :unsaved
 
       Map.has_key?(state.saved, declared.id) ->
@@ -392,6 +636,13 @@ defmodule VisionCore.Parameters do
       true ->
         :builtin
     end
+  end
+
+  defp unsaved?(declared, values, state) do
+    value = values[declared.id]
+
+    not is_nil(value) and
+      value != Map.get(state.saved, declared.id, state.defaults[declared.id])
   end
 
   defp automatic?(declared, values) do
@@ -417,6 +668,7 @@ defmodule VisionCore.Parameters do
     |> Map.merge(%{id: "#{group_id}.#{declared.name}", group: group_id})
     |> Map.put_new(:applies, :live)
     |> Map.put_new(:constraint, nil)
+    |> Map.put_new(:export, nil)
     |> Map.update(:greater_than, nil, &"#{group_id}.#{&1}")
   end
 
