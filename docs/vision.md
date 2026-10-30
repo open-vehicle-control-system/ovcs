@@ -93,6 +93,8 @@ http://<vehicle>-vision.local:4100
 
 The Row alignment card shows how many rows the right image's matches sit from the left image's, over the whole image and in four bands from left to right. A calibration that still fits the cameras reads within half a row; a larger offset means the cameras or their lenses have moved since the calibration, and depth degrades until you recalibrate. Offsets that change across the bands are a rotation.
 
+The Sharpness card compares the two cameras' focus: the right image's sharpness over the left's, green between 0.8 and 1.25. Its absolute value depends on the scene, the ratio does not. On a unit whose cameras have lens actuators, such as the Camera Module 3, both lenses follow one `focus` camera setting; `VisionCore.Camera.FocusSweep.run/1`, from IEx on the unit facing a textured scene at the distance that matters, steps it through a range, sets the position best for both cameras and returns the sharpness curve. Recalibrate after changing the focus.
+
 The Parameters panel lists the unit's ROS 2 parameters and changes them while it runs: the cameras' controls, the preview settings and the stereo settings, among them the matcher's `p1`, `p2` and `uniqueness`. These are inputs of the compiled depth pipeline, so a change applies from the next pair without compiling. The same parameters are reachable with `ros2 param set` and Foxglove's Parameters panel; changes last until the unit restarts, and values worth keeping go back into the vehicle's composer.
 
 On the host, `./ovcs run <vehicle>` starts a BEAM for the role and the dashboard's Vite dev server as an add-on, like the VMS dashboard, on `http://localhost:5174`.
