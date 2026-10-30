@@ -8,3 +8,4 @@ erl_crash.dump
 /tmp/
 /priv/camera_capture
 /priv/hailo_detect
+/vision_core_dev.db*
