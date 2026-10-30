@@ -45,7 +45,7 @@ export const useParameters = create((set, get) => ({
       set((state) => ({ unsaved: Math.max(0, state.unsaved + delta), error: null, errorSource: null }))
     } catch (error) {
       replace({ ...get().parameters[id], value: previous.value })
-      set({ error: message(error), errorSource: 'action' })
+      set({ error: `${previous.name}: ${message(error)}`, errorSource: 'action' })
     } finally {
       release(id)
       generation += 1
