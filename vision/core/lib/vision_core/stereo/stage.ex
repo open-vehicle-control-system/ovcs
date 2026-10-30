@@ -9,10 +9,13 @@ defmodule VisionCore.Stereo.Stage do
   A vehicle swaps, drops or adds stages in its composer; see
   `VisionCore.Stereo.Pipeline.default_stages/1` for the default list.
 
-  A stage whose settings can change while running declares them with
-  `option_specs/0` and implements `options/1` and `set_option/3`. Their
-  keys are unique across the stages of a pipeline, and become the stereo
-  unit's ROS 2 parameters (`VisionCore.Ros2.Stereo.Parameters`).
+  A stage with settings declares them with `option_specs/0`, under the
+  names of its options, and implements `options/1` and `set_option/3`.
+  Live settings change while running; build settings (`applies:
+  :build`) are fixed when the stage starts, and listed so they can be
+  shown. Keys are unique within a stage, and the settings become the
+  unit's vision parameters (`VisionCore.Parameters`), addressed by
+  stage (`VisionCore.Stereo.Pipeline.set_options/3`).
   """
 
   alias VisionCore.Stereo.Pair
@@ -42,8 +45,22 @@ defmodule VisionCore.Stereo.Stage do
           principal_point: {float(), float()}
         }
 
-  @typedoc "A runtime setting: `:type` (`:integer`, `:double` or `:bool`), `:range`, `:description`."
-  @type option_spec :: %{required(:type) => atom(), optional(atom()) => term()}
+  @typedoc """
+  A setting: its `:type` (`:integer`, `:double` or `:bool`), its `:range`
+  `{min, max}` with an optional `:step`, or its `:values`, the setting of
+  the same stage it must exceed (`:greater_than`), whether it changes
+  while running (`applies: :live`, the default) or is fixed at start
+  (`:build`), and a `:description`.
+  """
+  @type option_spec :: %{
+          required(:type) => :integer | :double | :bool,
+          optional(:range) => {number(), number()},
+          optional(:step) => number(),
+          optional(:values) => [term()],
+          optional(:greater_than) => atom(),
+          optional(:applies) => :live | :build,
+          optional(:description) => String.t()
+        }
 
   @doc "Builds the stage's state from its options and the pipeline's context."
   @callback init(opts :: keyword(), context()) :: {:ok, state()} | {:error, String.t()}
@@ -57,14 +74,17 @@ defmodule VisionCore.Stereo.Stage do
   @doc "The `Pair` fields the stage fills."
   @callback provides() :: [atom()]
 
-  @doc "The settings `set_option/3` accepts."
+  @doc "One line on what the stage does."
+  @callback summary() :: String.t()
+
+  @doc "The stage's settings: the live ones `set_option/3` accepts, and its build settings."
   @callback option_specs() :: [{atom(), option_spec()}]
 
-  @doc "The settings in force."
+  @doc "The value of every setting in `option_specs/0`."
   @callback options(state()) :: %{atom() => term()}
 
-  @doc "Changes one setting from the next pair on, or says why it cannot."
+  @doc "Changes one live setting from the next pair on, or says why it cannot."
   @callback set_option(state(), atom(), term()) :: {:ok, state()} | {:error, String.t()}
 
-  @optional_callbacks option_specs: 0, options: 1, set_option: 3
+  @optional_callbacks summary: 0, option_specs: 0, options: 1, set_option: 3
 end

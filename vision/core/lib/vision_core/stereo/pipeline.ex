@@ -98,17 +98,32 @@ defmodule VisionCore.Stereo.Pipeline do
   def submit(server, %Frame{} = left, %Frame{} = right),
     do: GenServer.cast(server, {:submit, left, right, self()})
 
-  @doc "The settings the stages accept while running, as `{key, spec}`."
-  def option_specs(server), do: GenServer.call(server, :option_specs)
-
-  @doc "The settings in force."
-  def options(server), do: GenServer.call(server, :options)
+  @typedoc "A stage's settings, as `stage_options/1` lists them."
+  @type stage_options :: %{
+          stage: atom(),
+          module: module(),
+          summary: String.t(),
+          specs: [{atom(), Stage.option_spec()}],
+          values: %{atom() => term()}
+        }
 
   @doc """
-  Changes settings from the next pair on. Returns the settings now in
-  force, or why the request was refused, in which case none changed.
+  Every stage in pipeline order, the members of a compiled segment
+  among them: its name, module, summary, settings (`applies` filled in)
+  and their values.
   """
-  def set_options(server, options), do: GenServer.call(server, {:set_options, options})
+  @spec stage_options(GenServer.server()) :: [stage_options()]
+  def stage_options(server), do: GenServer.call(server, :stage_options)
+
+  @doc """
+  Changes live settings of `stage` from the next pair on. Returns the
+  stage's values now in force, or why the request was refused, in
+  which case none changed.
+  """
+  @spec set_options(GenServer.server(), atom(), keyword()) ::
+          {:ok, %{atom() => term()}} | {:error, String.t()}
+  def set_options(server, stage, options),
+    do: GenServer.call(server, {:set_options, stage, options})
 
   @doc """
   Reloads the calibration from the YAMLs on disk and rebuilds every
@@ -148,19 +163,18 @@ defmodule VisionCore.Stereo.Pipeline do
   end
 
   @impl GenServer
-  def handle_call(:option_specs, _from, state),
-    do: {:reply, Enum.flat_map(state.stages, &stage_option_specs/1), state}
+  def handle_call(:stage_options, _from, state) do
+    stages = for stage <- state.stages, member <- members(stage), do: describe(member)
+    {:reply, stages, state}
+  end
 
-  def handle_call(:options, _from, state), do: {:reply, current_options(state), state}
-
-  def handle_call({:set_options, options}, _from, state) do
-    case Enum.reduce_while(options, {:ok, state.stages}, &set_option/2) do
-      {:ok, stages} ->
-        state = %{state | stages: stages}
-        {:reply, {:ok, current_options(state)}, state}
-
-      {:error, _reason} = error ->
-        {:reply, error, state}
+  def handle_call({:set_options, name, options}, _from, state) do
+    with {:ok, location, stage} <- find_stage(state.stages, name),
+         {:ok, stage_state} <- apply_options(stage, options) do
+      stages = put_stage_state(state.stages, location, stage_state)
+      {:reply, {:ok, values(%{stage | state: stage_state})}, %{state | stages: stages}}
+    else
+      {:error, _reason} = error -> {:reply, error, state}
     end
   end
 
@@ -367,44 +381,88 @@ defmodule VisionCore.Stereo.Pipeline do
 
   # Settings changed while running survive the rebuild.
   defp reinit_stage!(stage, context) do
-    opts = Keyword.merge(stage.opts, Map.to_list(stage_options(stage)))
+    opts = Keyword.merge(stage.opts, Map.to_list(values(stage)))
     init_stage!(%{stage | opts: opts}, context)
   end
 
-  defp stage_option_specs(%{module: NxSegment, state: segment}),
-    do: NxSegment.option_specs(segment)
+  defp members(%{module: NxSegment, state: segment}), do: segment.members
+  defp members(stage), do: [stage]
 
-  defp stage_option_specs(stage) do
-    if function_exported?(stage.module, :option_specs, 0),
-      do: stage.module.option_specs(),
+  defp describe(stage) do
+    %{
+      stage: stage.name,
+      module: stage.module,
+      summary: summary(stage.module),
+      specs: option_specs(stage.module),
+      values: values(stage)
+    }
+  end
+
+  defp summary(module) do
+    if function_exported?(module, :summary, 0), do: module.summary(), else: ""
+  end
+
+  defp option_specs(module) do
+    if function_exported?(module, :option_specs, 0),
+      do:
+        Enum.map(module.option_specs(), fn {key, spec} ->
+          {key, Map.put_new(spec, :applies, :live)}
+        end),
       else: []
   end
 
-  defp stage_options(stage) do
+  defp values(stage) do
     if function_exported?(stage.module, :options, 1),
       do: stage.module.options(stage.state),
       else: %{}
   end
 
-  defp current_options(state),
-    do: Enum.reduce(state.stages, %{}, &Map.merge(&2, stage_options(&1)))
-
-  defp set_option({key, value}, {:ok, stages}) do
-    case Enum.find_index(stages, &List.keymember?(stage_option_specs(&1), key, 0)) do
-      nil ->
-        {:halt, {:error, "unknown or invalid stereo setting #{inspect(key)}: #{inspect(value)}"}}
-
-      index ->
-        stage = Enum.at(stages, index)
-
-        case stage.module.set_option(stage.state, key, value) do
-          {:ok, stage_state} ->
-            {:cont, {:ok, List.replace_at(stages, index, %{stage | state: stage_state})}}
-
-          {:error, _reason} = error ->
-            {:halt, error}
+  # `{index, nil}` for a stage, `{index, member_index}` for a member of a segment.
+  defp find_stage(stages, name) do
+    stages
+    |> Enum.with_index()
+    |> Enum.find_value({:error, "no stereo stage #{inspect(name)}"}, fn
+      {%{module: NxSegment, state: segment}, index} ->
+        case Enum.find_index(segment.members, &(&1.name == name)) do
+          nil -> nil
+          member -> {:ok, {index, member}, Enum.at(segment.members, member)}
         end
-    end
+
+      {stage, index} ->
+        if stage.name == name, do: {:ok, {index, nil}, stage}
+    end)
+  end
+
+  defp apply_options(stage, options) do
+    specs = option_specs(stage.module)
+
+    Enum.reduce_while(options, {:ok, stage.state}, fn {key, value}, {:ok, stage_state} ->
+      case specs[key] do
+        nil ->
+          {:halt, {:error, "#{stage.name}.#{key} is not a setting of the stage"}}
+
+        %{applies: :build} ->
+          {:halt, {:error, "#{stage.name}.#{key} is fixed when the stage starts"}}
+
+        _live ->
+          case stage.module.set_option(stage_state, key, value) do
+            {:ok, stage_state} -> {:cont, {:ok, stage_state}}
+            {:error, _reason} = error -> {:halt, error}
+          end
+      end
+    end)
+  end
+
+  defp put_stage_state(stages, {index, nil}, stage_state),
+    do: List.update_at(stages, index, &%{&1 | state: stage_state})
+
+  defp put_stage_state(stages, {index, member}, stage_state) do
+    List.update_at(stages, index, fn segment_stage ->
+      %{
+        segment_stage
+        | state: NxSegment.put_member_state(segment_stage.state, member, stage_state)
+      }
+    end)
   end
 
   @doc """

@@ -231,25 +231,32 @@ defmodule VisionCore.Stereo.Supervisor do
   @doc """
   Reloads the pipeline's calibration and starts the row correction
   (`VisionCore.Stereo.AlignmentCorrection`) over: a new calibration
-  lines the rows up itself.
+  lines the rows up itself, so Rectify's `right_row_offset` returns to
+  0 and its saved value under `prefix` is forgotten.
   """
-  def reload_calibration(pipeline, paths \\ []) do
+  def reload_calibration(pipeline, prefix, paths \\ []) do
     with :ok <- Pipeline.reload_calibration(pipeline, paths) do
-      if Keyword.has_key?(Pipeline.option_specs(pipeline), :right_row_offset),
-        do: {:ok, _options} = Pipeline.set_options(pipeline, right_row_offset: 0.0)
+      if Enum.any?(Pipeline.stage_options(pipeline), &(&1.stage == :rectify)) do
+        {:ok, _values} = Pipeline.set_options(pipeline, :rectify, right_row_offset: 0.0)
+        forget_parameter("#{prefix}.rectify.right_row_offset")
+      end
 
       :ok
     end
   end
 
+  defp forget_parameter(id) do
+    if Process.whereis(VisionCore.Parameters), do: VisionCore.Parameters.forget(id)
+  end
+
   @doc """
   Reloads the pipeline from the stored calibration once both sides
-  are stored, as `reload_calibration/2`. COMMIT stores one side at a
+  are stored, as `reload_calibration/3`. COMMIT stores one side at a
   time.
   """
-  def reload_stored_calibration(pipeline, left_store, right_store) do
+  def reload_stored_calibration(pipeline, prefix, left_store, right_store) do
     if File.exists?(left_store) and File.exists?(right_store) do
-      reload_calibration(pipeline,
+      reload_calibration(pipeline, prefix,
         left_calibration_path: left_store,
         right_calibration_path: right_store
       )
@@ -331,10 +338,11 @@ defmodule VisionCore.Stereo.Supervisor do
   defp reload_callback(config) do
     case {config.left[:calibration_store_path], config.right[:calibration_store_path]} do
       {nil, nil} ->
-        {__MODULE__, :reload_calibration, [Pipeline]}
+        {__MODULE__, :reload_calibration, [Pipeline, config.topic_prefix]}
 
       {left_store, right_store} ->
-        {__MODULE__, :reload_stored_calibration, [Pipeline, left_store, right_store]}
+        {__MODULE__, :reload_stored_calibration,
+         [Pipeline, config.topic_prefix, left_store, right_store]}
     end
   end
 

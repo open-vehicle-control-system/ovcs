@@ -12,6 +12,9 @@ defmodule VisionCore.Stereo.Stage.Sharpness do
   alias VisionCore.Stereo.Pair
 
   @impl VisionCore.Stereo.NxStage
+  def summary, do: "Measures each rectified image's sharpness, to compare the cameras' focus."
+
+  @impl VisionCore.Stereo.NxStage
   def init(_opts, context), do: {:ok, %{size: {context.height, context.width}}}
 
   @impl VisionCore.Stereo.NxStage

@@ -14,9 +14,11 @@ defmodule VisionCore.Stereo.NxStage do
   The compiled function keeps every value in `state` as a constant, and
   takes `params/2` as inputs: what may change without compiling again,
   such as calibration values, which a calibration reload replaces. A
-  stage's runtime settings (`option_specs/0`, `options/1`,
-  `set_option/3`, as for a `VisionCore.Stereo.Stage`) must be among its
-  params, since the device cannot compile.
+  stage's settings (`option_specs/0`, `options/1`, `set_option/3`, as
+  for a `VisionCore.Stereo.Stage`) are the unit's vision parameters
+  (`VisionCore.Parameters`), keys unique within the stage; its live
+  settings must be among its params, since the device cannot compile,
+  and its build settings are fixed in the compiled function.
   """
 
   alias VisionCore.Stereo.{Pair, Stage}
@@ -52,13 +54,16 @@ defmodule VisionCore.Stereo.NxStage do
   """
   @callback finish(Pair.t(), outputs :: map(), state()) :: Pair.t()
 
-  @doc "The settings `set_option/3` accepts."
+  @doc "One line on what the stage does."
+  @callback summary() :: String.t()
+
+  @doc "The stage's settings: the live ones `set_option/3` accepts, and its build settings."
   @callback option_specs() :: [{atom(), Stage.option_spec()}]
 
-  @doc "The settings in force."
+  @doc "The value of every setting in `option_specs/0`."
   @callback options(state()) :: %{atom() => term()}
 
-  @doc "Changes one setting from the next pair on, or says why it cannot."
+  @doc "Changes one live setting from the next pair on, or says why it cannot."
   @callback set_option(state(), atom(), term()) :: {:ok, state()} | {:error, String.t()}
 
   @doc """
@@ -69,7 +74,12 @@ defmodule VisionCore.Stereo.NxStage do
   """
   @callback carry(state(), Stage.context()) :: %{atom() => Nx.Tensor.t()}
 
-  @optional_callbacks finish: 3, option_specs: 0, options: 1, set_option: 3, carry: 2
+  @optional_callbacks summary: 0,
+                      finish: 3,
+                      option_specs: 0,
+                      options: 1,
+                      set_option: 3,
+                      carry: 2
 
   @doc "Whether `module` is an Nx stage."
   @spec nx_stage?(module()) :: boolean()

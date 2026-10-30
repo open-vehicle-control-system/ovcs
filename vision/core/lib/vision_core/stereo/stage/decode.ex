@@ -10,6 +10,9 @@ defmodule VisionCore.Stereo.Stage.Decode do
   @behaviour VisionCore.Stereo.NxStage
 
   @impl VisionCore.Stereo.NxStage
+  def summary, do: "Turns both camera frames into grey images at the pipeline's size."
+
+  @impl VisionCore.Stereo.NxStage
   def init(_opts, context), do: {:ok, %{size: {context.height, context.width}}}
 
   @impl VisionCore.Stereo.NxStage

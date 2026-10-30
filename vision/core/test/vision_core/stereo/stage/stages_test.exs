@@ -234,6 +234,50 @@ defmodule VisionCore.Stereo.Stage.StagesTest do
              Stage.Match.init([paths: 4], context)
   end
 
+  test "Match declares p2 above p1, and its disparities and paths as build settings" do
+    specs = Stage.Match.option_specs()
+
+    assert %{greater_than: :p1} = specs[:p2]
+    assert %{values: [64, 128], applies: :build} = specs[:num_disparities]
+    assert %{values: [3, 8], applies: :build} = specs[:paths]
+    assert %{values: [3, 5], applies: :build} = Stage.PostFilter.option_specs()[:kernel_size]
+    assert %{type: :integer, applies: :build} = Stage.PointCloud.option_specs()[:decimation]
+  end
+
+  test "Match lists its build settings with the values it runs with" do
+    context = context(:identity, 192, 108)
+    {:ok, state} = Stage.Match.init([num_disparities: 64, paths: 3], context)
+
+    assert %{num_disparities: 64, paths: 3, p1: 8, p2: 64} = Stage.Match.options(state)
+
+    assert Stage.Match.params(state, context) |> Map.keys() |> Enum.sort() == [
+             :p1,
+             :p2,
+             :uniqueness
+           ]
+
+    {:ok, size} = Stage.PostFilter.init([kernel_size: 3], context)
+    assert Stage.PostFilter.options(size) == %{kernel_size: 3}
+    {:ok, decimation} = Stage.PointCloud.init([decimation: 2], context)
+    assert Stage.PointCloud.options(decimation) == %{decimation: 2}
+    assert {:error, _} = Stage.PointCloud.init([decimation: 0], context)
+  end
+
+  test "Speckle and Temporal settings are named as their composer options" do
+    context = context(:identity, 192, 108)
+    {:ok, speckle} = Stage.Speckle.init([min_support: 10, max_diff: 2.0], context)
+    assert Stage.Speckle.options(speckle) == %{min_support: 10, max_diff: 2.0}
+    assert {:ok, speckle} = Stage.Speckle.set_option(speckle, :min_support, 6)
+    assert Stage.Speckle.options(speckle).min_support == 6
+    assert Keyword.keys(Stage.Speckle.option_specs()) == [:min_support, :max_diff]
+
+    {:ok, temporal} = Stage.Temporal.init([alpha: 0.5, delta: 1.0, hold: 3], context)
+    assert Stage.Temporal.options(temporal) == %{alpha: 0.5, delta: 1.0, hold: 3}
+    assert {:ok, temporal} = Stage.Temporal.set_option(temporal, :hold, 0)
+    assert Stage.Temporal.options(temporal).hold == 0
+    assert Keyword.keys(Stage.Temporal.option_specs()) == [:alpha, :delta, :hold]
+  end
+
   test "Depth and PointCloud measure f·B/d and keep the points from 5 cm to 20 m" do
     context = context(:identity, 192, 108)
     matched = Nx.iota({108, 192}, axis: 1) |> Nx.less(96)

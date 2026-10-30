@@ -12,6 +12,9 @@ defmodule VisionCore.Stereo.Stage.Quality do
   alias VisionCore.Stereo.Pair
 
   @impl VisionCore.Stereo.NxStage
+  def summary, do: "Measures the share of matched pixels, the disparity spread and its jitter."
+
+  @impl VisionCore.Stereo.NxStage
   def init(_opts, context), do: {:ok, %{size: {context.height, context.width}}}
 
   @impl VisionCore.Stereo.NxStage
