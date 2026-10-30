@@ -8,8 +8,10 @@ defmodule VisionCore.Status do
   includes uploading the frames and waiting for the results, so it is
   not the GPU's busy share. `:alignment` is the rectified images' row
   offset (`Pair` `:alignment`) and `:sharpness` each camera's sharpness
-  (`Pair` `:sharpness`), averaged over the tick's pairs; `nil` without
-  any.
+  (`Pair` `:sharpness`), and `:quality` the depth's quality
+  (`VisionCore.Stereo.Stage.Quality`'s metrics: the share of matched
+  pixels, the disparity's mean and spread, and its jitter), each averaged
+  over the tick's pairs; `nil` without any.
 
   Started last in `VisionCore.Supervisor`. Without a `:stereo`
   component the cameras and sync are reported absent and the depth rate
@@ -31,6 +33,12 @@ defmodule VisionCore.Status do
   @default_tick_ms 1_000
   @call_timeout_ms 200
   @camera_metadata_keys [:exposure_time_us, :analogue_gain, :lens_position, :colour_temperature]
+  @quality_metrics %{
+    valid: :matched_percent,
+    mean_disp: :mean_disparity_px,
+    std_disp: :spread_px,
+    jitter: :jitter_px
+  }
 
   @type camera :: %{required(:present) => boolean(), optional(atom()) => term()}
   @type snapshot :: %{
@@ -42,7 +50,15 @@ defmodule VisionCore.Status do
           cpu_percent: float() | nil,
           stereo_segment_percent: float(),
           alignment: %{offset_rows: float(), band_offset_rows: [float()]} | nil,
-          sharpness: %{left: float(), right: float()} | nil
+          sharpness: %{left: float(), right: float()} | nil,
+          quality:
+            %{
+              matched_percent: float(),
+              mean_disparity_px: float(),
+              spread_px: float(),
+              jitter_px: float()
+            }
+            | nil
         }
 
   @doc """
@@ -82,6 +98,8 @@ defmodule VisionCore.Status do
        alignment: nil,
        sharpnesses: [],
        sharpness: nil,
+       qualities: [],
+       quality: nil,
        window_start_ms: now_ms(),
        rates_hz: %{left: 0.0, right: 0.0, depth: 0.0}
      }}
@@ -104,7 +122,8 @@ defmodule VisionCore.Status do
      %{
        state
        | alignments: prepend(pair.alignment, state.alignments),
-         sharpnesses: prepend(pair.sharpness, state.sharpnesses)
+         sharpnesses: prepend(pair.sharpness, state.sharpnesses),
+         qualities: prepend(quality(pair.metrics), state.qualities)
      }}
   end
 
@@ -154,12 +173,32 @@ defmodule VisionCore.Status do
         alignment: mean_alignment(state.alignments),
         alignments: [],
         sharpness: mean_sharpness(state.sharpnesses),
-        sharpnesses: []
+        sharpnesses: [],
+        quality: mean_quality(state.qualities),
+        qualities: []
     }
   end
 
   defp prepend(nil, list), do: list
   defp prepend(value, list), do: [value | list]
+
+  defp quality(metrics) do
+    quality =
+      for {name, value, _unit} <- metrics,
+          key = @quality_metrics[name],
+          into: %{},
+          do: {key, value}
+
+    if map_size(quality) == map_size(@quality_metrics), do: quality
+  end
+
+  defp mean_quality([]), do: nil
+
+  defp mean_quality(qualities) do
+    Map.new(Map.values(@quality_metrics), fn key ->
+      {key, Enum.sum(Enum.map(qualities, & &1[key])) / length(qualities)}
+    end)
+  end
 
   defp mean_sharpness([]), do: nil
 
@@ -190,6 +229,7 @@ defmodule VisionCore.Status do
       stereo_segment_percent: state.stereo_segment_percent,
       alignment: state.alignment,
       sharpness: state.sharpness,
+      quality: state.quality,
       zenoh:
         if(call_within_timeout(&ZenohClient.connected?/0, false),
           do: :connected,
