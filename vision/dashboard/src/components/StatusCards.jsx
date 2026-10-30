@@ -1,28 +1,3 @@
-<template>
-  <p v-if="!status" class="text-sm text-gray-500">Waiting for the vision unit…</p>
-  <div v-else class="grid grid-cols-2 gap-4 lg:grid-cols-4">
-    <div
-      v-for="card in cards"
-      :key="card.id"
-      :data-card="card.id"
-      class="rounded-lg bg-white p-4 shadow"
-    >
-      <p class="text-sm font-medium text-gray-500">{{ card.title }}</p>
-      <p :class="['mt-1 text-xl font-semibold', card.healthy ? 'text-green-700' : 'text-red-700']">
-        {{ card.value }}
-      </p>
-      <p v-if="card.detail" class="mt-1 text-xs text-gray-500">{{ card.detail }}</p>
-    </div>
-  </div>
-</template>
-
-<script setup>
-import { computed } from 'vue'
-
-const props = defineProps({
-  status: { type: Object, default: null }
-})
-
 const formatNumber = (number, decimals = 1) => (number == null ? '–' : Number(number).toFixed(decimals))
 
 function cameraCard(id, title, camera) {
@@ -82,8 +57,7 @@ function sharpnessCard(sharpness) {
   }
 }
 
-const cards = computed(() => {
-  const status = props.status
+function buildCards(status) {
   return [
     cameraCard('left', 'Left camera', status.cameras?.left),
     cameraCard('right', 'Right camera', status.cameras?.right),
@@ -96,5 +70,22 @@ const cards = computed(() => {
     alignmentCard(status.alignment),
     sharpnessCard(status.sharpness)
   ]
-})
-</script>
+}
+
+export default function StatusCards({ status }) {
+  if (!status) return <p className="text-sm text-ovcs-muted">Waiting for the vision unit…</p>
+
+  return (
+    <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      {buildCards(status).map((card) => (
+        <div key={card.id} data-card={card.id} className="ovcs-card">
+          <p className="text-sm font-medium text-ovcs-muted">{card.title}</p>
+          <p className={`ovcs-status ${card.healthy ? 'ovcs-status--ok' : 'ovcs-status--error'} mt-1 text-xl font-semibold tabular-nums`}>
+            {card.value}
+          </p>
+          {card.detail && <p className="mt-1 text-xs text-ovcs-muted tabular-nums">{card.detail}</p>}
+        </div>
+      ))}
+    </div>
+  )
+}
