@@ -8,11 +8,11 @@ defmodule VisionApiWeb.ParameterController do
   @value_pointer "/data/attributes/value"
 
   def index(conn, _params) do
-    parameters = Parameters.groups() |> ParameterJSON.parameters()
+    groups = Parameters.groups()
 
     JsonApi.send_document(conn, 200, %{
-      data: Enum.map(parameters, &ParameterJSON.parameter/1),
-      meta: %{unsaved: Parameters.unsaved_count()}
+      data: groups |> ParameterJSON.parameters() |> Enum.map(&ParameterJSON.parameter/1),
+      meta: %{unsaved: ParameterJSON.unsaved(groups)}
     })
   end
 

@@ -31,6 +31,10 @@ defmodule VisionApiWeb.ParameterJSON do
   @spec parameters([Group.t()]) :: [Parameter.t()]
   def parameters(groups), do: Enum.flat_map(groups, & &1.parameters)
 
+  @doc "How many parameters of `groups` are unsaved."
+  @spec unsaved([Group.t()]) :: non_neg_integer()
+  def unsaved(groups), do: groups |> parameters() |> Enum.count(&(&1.state == :unsaved))
+
   @spec group(Group.t()) :: map()
   def group(%Group{} = group) do
     JsonApi.resource(
