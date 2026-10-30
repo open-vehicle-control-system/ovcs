@@ -71,7 +71,7 @@ import { OvcsBadge, OvcsStatus } from "@ovcs/ui/vue";
 </template>
 ```
 
-In a React app (same rule on the import):
+Or, in a React app (import `@ovcs/ui/react` once in the entry script, before the app's own styles, for the same reason):
 
 ```jsx
 import { OvcsBadge, OvcsStatus } from "@ovcs/ui/react";

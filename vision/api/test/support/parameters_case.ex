@@ -1,7 +1,8 @@
 defmodule VisionApiWeb.ParametersCase do
   @moduledoc """
   Test case declaring the group `test.match` in a restarted `:vision_core`
-  whose registry saves into memory; the declaring process is the test process, which stays alive for the test.
+  whose registry saves into memory. The declaring process is the test
+  process, which stays alive for the test.
   """
   use ExUnit.CaseTemplate
 
