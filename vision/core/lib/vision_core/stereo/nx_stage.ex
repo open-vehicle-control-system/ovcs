@@ -57,7 +57,15 @@ defmodule VisionCore.Stereo.NxStage do
   @doc "Changes one setting from the next pair on, or says why it cannot."
   @callback set_option(state(), atom(), term()) :: {:ok, state()} | {:error, String.t()}
 
-  @optional_callbacks finish: 3, option_specs: 0, options: 1, set_option: 3
+  @doc """
+  Values the stage carries from one pair to the next, with their values
+  before the first pair. `step/3` reads them among its params and puts
+  their next values in its tensors as `{:carry, name}`; they stay on the
+  device.
+  """
+  @callback carry(state(), Stage.context()) :: %{atom() => Nx.Tensor.t()}
+
+  @optional_callbacks finish: 3, option_specs: 0, options: 1, set_option: 3, carry: 2
 
   @doc "Whether `module` is an Nx stage."
   @spec nx_stage?(module()) :: boolean()

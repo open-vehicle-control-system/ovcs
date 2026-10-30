@@ -217,20 +217,32 @@ defmodule VisionCore.Stereo.NxSegment do
   @spec run(Pair.t(), t()) :: {:ok, Pair.t(), t()} | {:error, term(), t()}
   def run(%Pair{} = pair, %__MODULE__{} = segment) do
     case dispatch(pair, segment) do
-      {:ok, outputs} -> {:ok, collect(pair, outputs, segment), segment}
+      {:ok, outputs, segment} -> {:ok, collect(pair, outputs, segment), segment}
       {:error, reason} -> {:error, reason, segment}
     end
   end
 
   @doc """
   The first half of `run/2`: the segment's outputs for `pair`, left on
-  the device. It changes nothing, so it may run in another process while
-  the previous pair is collected.
+  the device, and the segment carrying its stages' values to the next
+  pair (`c:VisionCore.Stereo.NxStage.carry/2`). It changes no process
+  state, so it may run in another process while the previous pair is
+  collected.
   """
-  @spec dispatch(Pair.t(), t()) :: {:ok, map()} | {:error, term()}
+  @spec dispatch(Pair.t(), t()) :: {:ok, map(), t()} | {:error, term()}
   def dispatch(%Pair{} = pair, %__MODULE__{} = segment) do
-    with {:ok, entry} <- entry_values(pair, segment),
-         do: {:ok, segment.function.(entry, segment.params)}
+    with {:ok, entry} <- entry_values(pair, segment) do
+      {carried, outputs} =
+        segment.function.(entry, segment.params)
+        |> Map.split_with(fn {key, _tensor} -> match?({:carry, _index, _name}, key) end)
+
+      params =
+        Enum.reduce(carried, segment.params, fn {{:carry, index, name}, tensor}, params ->
+          put_in(params, [index, name], tensor)
+        end)
+
+      {:ok, outputs, %{segment | params: params}}
+    end
   end
 
   @doc "The second half of `run/2`: downloads `outputs` and fills `pair` from them."
@@ -248,7 +260,12 @@ defmodule VisionCore.Stereo.NxSegment do
     members
     |> Enum.with_index()
     |> Enum.reduce(tensors, fn {member, index}, tensors ->
-      member.module.step(tensors, Map.fetch!(params, index), member.state)
+      tensors
+      |> member.module.step(Map.fetch!(params, index), member.state)
+      |> Map.new(fn
+        {{:carry, name}, tensor} -> {{:carry, index, name}, tensor}
+        entry -> entry
+      end)
     end)
     |> Map.drop(@frames)
   end
@@ -270,11 +287,15 @@ defmodule VisionCore.Stereo.NxSegment do
     members
     |> Enum.with_index()
     |> Map.new(fn {member, index} ->
-      {index,
-       Map.new(member.module.params(member.state, context), fn {key, value} ->
-         {key, to_input(value)}
-       end)}
+      values = Map.merge(member.module.params(member.state, context), carry(member, context))
+      {index, Map.new(values, fn {key, value} -> {key, to_input(value)} end)}
     end)
+  end
+
+  defp carry(member, context) do
+    if function_exported?(member.module, :carry, 2),
+      do: member.module.carry(member.state, context),
+      else: %{}
   end
 
   defp to_input(value) when is_number(value), do: Nx.tensor(value, type: :f32)
