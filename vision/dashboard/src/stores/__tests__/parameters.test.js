@@ -130,6 +130,98 @@ describe('parameters store', () => {
     expect(state().unsaved).toBe(3)
   })
 
+  it('clears an error that came from a load once a load succeeds', async () => {
+    service.fetchGroups.mockRejectedValueOnce(new Error('GET failed: 500'))
+    await state().load()
+    expect(state().error).toBe('GET failed: 500')
+
+    service.fetchGroups.mockResolvedValueOnce(snapshot())
+    await state().load()
+    expect(state().error).toBeNull()
+  })
+
+  it('keeps an error from an action when a load succeeds', async () => {
+    service.saveParameters.mockRejectedValue(new Error('database unavailable'))
+    service.fetchGroups.mockResolvedValue(snapshot())
+    await state().save()
+
+    await state().load()
+
+    expect(state().error).toBe('database unavailable')
+  })
+
+  it('dismisses the error', async () => {
+    service.saveParameters.mockRejectedValue(new Error('database unavailable'))
+    await state().save()
+
+    state().dismissError()
+
+    expect(state().error).toBeNull()
+  })
+
+  it('drops a snapshot requested before a change completed, then reloads', async () => {
+    service.fetchGroups.mockResolvedValueOnce(snapshot(12))
+    await state().load()
+    let finish
+    service.fetchGroups.mockReturnValueOnce(new Promise((resolve) => { finish = resolve }))
+    service.fetchGroups.mockResolvedValue(snapshot(8))
+    const poll = state().load()
+    service.setParameter.mockResolvedValue(parameter('stereo.match.p1', 'stereo.match', { value: 8, state: 'unsaved' }))
+
+    await state().set('stereo.match.p1', 8)
+    finish(snapshot(12))
+    await poll
+
+    expect(state().parameters['stereo.match.p1'].value).toBe(8)
+    expect(service.fetchGroups).toHaveBeenCalledTimes(3)
+  })
+
+  it('reloads once more when an action asks for a load during one', async () => {
+    let finish
+    service.fetchGroups.mockReturnValueOnce(new Promise((resolve) => { finish = resolve }))
+    service.fetchGroups.mockResolvedValue(snapshot(12, 0))
+    service.discardParameters.mockResolvedValue([])
+    const poll = state().load()
+
+    await state().discard()
+    expect(service.fetchGroups).toHaveBeenCalledTimes(1)
+    finish(snapshot(12, 5))
+    await poll
+
+    expect(service.fetchGroups).toHaveBeenCalledTimes(2)
+    expect(state().unsaved).toBe(0)
+  })
+
+  it('updates the unsaved count at once from the change of state', async () => {
+    service.fetchGroups.mockResolvedValue(snapshot(12, 1))
+    await state().load()
+
+    service.setParameter.mockResolvedValue(parameter('stereo.match.p1', 'stereo.match', { value: 8, state: 'unsaved' }))
+    await state().set('stereo.match.p1', 8)
+    expect(state().unsaved).toBe(2)
+
+    service.setParameter.mockResolvedValue(parameter('stereo.match.p1', 'stereo.match', { value: 12, state: 'builtin' }))
+    await state().set('stereo.match.p1', 12)
+    expect(state().unsaved).toBe(1)
+  })
+
+  it('keeps a parameter protected until overlapping changes all finish', async () => {
+    service.fetchGroups.mockResolvedValue(snapshot(12))
+    await state().load()
+    const accept = []
+    service.setParameter.mockImplementation(() => new Promise((resolve) => accept.push(resolve)))
+
+    const first = state().set('stereo.match.p1', 5)
+    const second = state().set('stereo.match.p1', 6)
+    accept[0](parameter('stereo.match.p1', 'stereo.match', { value: 5, state: 'unsaved' }))
+    await first
+    await state().load()
+    expect(state().parameters['stereo.match.p1'].value).toBe(5)
+
+    accept[1](parameter('stereo.match.p1', 'stereo.match', { value: 6, state: 'unsaved' }))
+    await second
+  })
+
   it('returns the export snippet', async () => {
     service.fetchExport.mockResolvedValue('config :a')
 
