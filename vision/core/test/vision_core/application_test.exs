@@ -1,6 +1,8 @@
 defmodule VisionCore.ApplicationTest do
   use ExUnit.Case, async: false
 
+  import ExUnit.CaptureLog
+
   alias VisionCore.Camera.LibCamera
 
   @moduletag :tmp_dir
@@ -49,6 +51,55 @@ defmodule VisionCore.ApplicationTest do
     assert VisionCore.Ros2.Parameters in ids
     assert VisionCore.Ros2.Publishers.Heartbeat in ids
     assert Enum.take(ids, 2) == [VisionCore.Preview, VisionCore.Status]
+  end
+
+  test "the core starts the parameter storage and registry before the components" do
+    start_pipeline(%VisionCore.Config{zenoh_endpoint_ip: "127.0.0.1", components: [:heartbeat]})
+
+    ids = VisionCore.Supervisor |> child_ids() |> Enum.reverse()
+
+    assert Enum.take(ids, 5) == [
+             VisionCore.Ros2.ZenohClient,
+             VisionCore.Parameters.Storage,
+             VisionCore.Parameters,
+             VisionCore.Ros2.Parameters,
+             VisionCore.Jpeg
+           ]
+  end
+
+  test "the config's preview options reach the preview" do
+    start_pipeline(%VisionCore.Config{
+      zenoh_endpoint_ip: "127.0.0.1",
+      preview: [max_hz: 4, depth_range_m: 12]
+    })
+
+    assert VisionCore.Preview.options() == %{max_hz: 4, depth_range_m: 12.0}
+  end
+
+  test "the vision core starts with its parameters when the database cannot open" do
+    repo_config = Application.get_env(:vision_core, VisionCore.Repo)
+    :ok = Supervisor.stop(VisionCore.Repo)
+
+    on_exit(fn ->
+      Application.put_env(:vision_core, VisionCore.Repo, repo_config)
+      {:ok, pid} = VisionCore.Repo.start_link()
+      Process.unlink(pid)
+    end)
+
+    Application.put_env(
+      :vision_core,
+      VisionCore.Repo,
+      Keyword.put(repo_config, :database, "/nonexistent/dir/vision.db")
+    )
+
+    capture_log(fn ->
+      start_pipeline(%VisionCore.Config{zenoh_endpoint_ip: "127.0.0.1"})
+    end)
+
+    assert Process.alive?(Process.whereis(VisionCore.Parameters))
+    assert Process.alive?(Process.whereis(VisionCore.Preview))
+    assert {:ok, _parameter} = VisionCore.Parameters.set("preview.max_hz", 5)
+    assert {{:error, _reason}, _log} = with_log(fn -> VisionCore.Parameters.save() end)
   end
 
   test "settings are the config the pipeline started with" do

@@ -3,6 +3,7 @@ defmodule VisionCore.Ros2.ParametersTest do
 
   import Ros2Zenoh.Cdr
   alias Ros2Zenoh.RclInterfaces.Parameters, as: Codec
+  alias VisionCore.Parameters.Parameter
   alias VisionCore.Ros2.Parameters
 
   # A ParameterValue as ROS clients send it: every field present.
@@ -71,100 +72,165 @@ defmodule VisionCore.Ros2.ParametersTest do
     {{type, Enum.at([nil, bool, integer], type)}, input}
   end
 
-  describe "set/2" do
-    defp gain, do: %{type: :double, range: {0, 16}, set: fn _ -> :ok end}
-
-    test "applies a value that passes the checks, an integer as a double" do
-      assert Parameters.set(gain(), 2) == {:ok, 2.0}
+  describe "the ROS view of a parameter" do
+    defp parameter(fields) do
+      struct(
+        %Parameter{
+          group: "stereo.match",
+          type: :integer,
+          applies: :live,
+          constraint: %{kind: :range, min: 1, max: 79, step: nil},
+          default: 64,
+          value: 64,
+          state: :builtin
+        },
+        fields
+      )
     end
 
-    test "refuses unknown, read-only, mistyped and out-of-range values" do
-      assert Parameters.set(nil, 1) == {:error, "unknown parameter"}
+    test "describes a range parameter with its range, default and relation" do
+      p2 = parameter(id: "stereo.match.p2", name: "p2", greater_than: "stereo.match.p1")
 
-      assert {:error, "read-only" <> _} =
-               Parameters.set(%{gain() | set: nil} |> Map.put(:read_only, true), 1.0)
-
-      assert {:error, "expected double" <> _} = Parameters.set(gain(), "loud")
-      assert {:error, "out of range 0..16"} = Parameters.set(gain(), 17)
+      assert %{
+               name: "stereo.match.p2",
+               type: :integer,
+               read_only: false,
+               range: {1, 79},
+               constraints: "above stereo.match.p1; default: 64"
+             } = Parameters.describe(p2)
     end
 
-    test "checks a string against its accepted values" do
-      mode = %{type: :string, values: ~w(normal short), set: fn _ -> :ok end}
-      assert Parameters.set(mode, "short") == {:ok, "short"}
-      assert {:error, "expected one of normal, short"} = Parameters.set(mode, "fast")
+    test "gives a double's range as floats" do
+      gain =
+        parameter(
+          id: "stereo.cameras.analogue_gain",
+          type: :double,
+          constraint: %{kind: :range, min: 1, max: 16, step: nil},
+          default: 1.0
+        )
+
+      assert %{range: {1.0, 16.0}} = Parameters.describe(gain)
     end
 
-    test "reports why the owner refused" do
-      refusing = %{gain() | set: fn _ -> {:error, "camera busy"} end}
-      assert Parameters.set(refusing, 1.0) == {:error, "camera busy"}
+    test "describes a choice parameter with its values" do
+      rotation =
+        parameter(
+          id: "stereo.left.rotation",
+          constraint: %{kind: :choices, values: [0, 180]},
+          default: 0
+        )
+
+      description = Parameters.describe(rotation)
+      assert description.constraints =~ "one of: 0, 180"
+      refute Map.has_key?(description, :range)
+    end
+
+    test "gives no default outside the accepted values" do
+      noise =
+        parameter(
+          id: "stereo.left.noise_reduction",
+          type: :string,
+          constraint: %{kind: :choices, values: ~w(off fast)},
+          default: "auto"
+        )
+
+      assert Parameters.describe(noise).constraints == "one of: off, fast"
+    end
+
+    test "describes a build parameter as read-only" do
+      width =
+        parameter(id: "stereo.cameras.width", applies: :build, constraint: nil, default: 768)
+
+      assert %{read_only: true, constraints: ""} = Parameters.describe(width)
+    end
+
+    test "describes an automatic parameter with what sets it" do
+      exposure =
+        parameter(
+          id: "stereo.cameras.exposure",
+          applies: {:auto, "stereo.cameras.auto_exposure"},
+          state: :automatic
+        )
+
+      description = Parameters.describe(exposure)
+      assert description.read_only == false
+      assert description.constraints =~ "set by stereo.cameras.auto_exposure while it is on"
+    end
+
+    test "gives a value with its type, nil when unread" do
+      assert Parameters.ros_value(parameter(value: 12)) == {:integer, 12}
+      assert Parameters.ros_value(parameter(type: :double, value: 2)) == {:double, 2.0}
+      assert Parameters.ros_value(parameter(value: nil)) == nil
     end
   end
 
-  describe "describe/1" do
-    test "gives the declared value and the accepted values in the constraints" do
-      mode = %{name: "m", type: :string, values: ~w(normal short), default: "short"}
-      assert Parameters.describe(mode).constraints == "default: short; one of: normal, short"
-
-      assert Parameters.describe(%{name: "g", type: :double, default: 1.5}).constraints ==
-               "default: 1.5"
-    end
-
-    test "gives no default for read-only or unset parameters, nor one that cannot be set" do
-      assert Parameters.describe(%{name: "s", type: :string, default: "x", read_only: true}).constraints ==
-               ""
-
-      assert Parameters.describe(%{name: "l", type: :double, default: nil}).constraints == ""
-
-      auto = %{name: "n", type: :string, values: ~w(off fast), default: "auto"}
-      assert Parameters.describe(auto).constraints == "one of: off, fast"
-    end
+  defmodule NoStore do
+    @moduledoc false
+    def load, do: %{}
+    def write(_changes), do: :ok
   end
 
-  describe "for the dashboard" do
-    setup do
-      start_supervised!({VisionCore.Ros2.ZenohClient, endpoint_ip: "127.0.0.1"})
-      start_supervised!(Parameters)
-      test_pid = self()
+  describe "requests" do
+    setup context do
+      registry = :"#{__MODULE__}.#{context.test}"
+      start_supervised!({VisionCore.Parameters, name: registry, store: NoStore})
+      gain = start_supervised!({Agent, fn -> 2 end})
 
       :ok =
-        Parameters.declare([
+        VisionCore.Parameters.declare(registry, [
           %{
-            name: "stereo.match.paths",
-            type: :integer,
-            value: 8,
-            values: [3, 8],
-            description: "Aggregation paths",
-            set: fn value -> send(test_pid, {:set, value}) && :ok end
-          },
-          %{name: "stereo.width", type: :integer, value: 768, read_only: true}
+            id: "test.group",
+            name: "Test",
+            summary: "A test group.",
+            kind: :component,
+            placement: :side,
+            position: 0,
+            parameters: [
+              %{
+                name: "gain",
+                type: :integer,
+                get: fn -> Agent.get(gain, & &1) end,
+                set: fn value -> Agent.update(gain, fn _ -> value end) end,
+                constraint: %{kind: :range, min: 1, max: 10, step: nil}
+              }
+            ]
+          }
         ])
 
-      :ok
+      %{registry: registry, gain: gain}
     end
 
-    test "lists every parameter with its value and constraints, sorted by name" do
-      assert [
-               %{
-                 name: "stereo.match.paths",
-                 type: :integer,
-                 value: 8,
-                 values: [3, 8],
-                 read_only: false
-               },
-               %{name: "stereo.width", value: 768, read_only: true}
-             ] = Parameters.list()
+    @tag :capture_log
+    test "a set request is a registry set", %{registry: registry, gain: gain} do
+      payload =
+        sequence(
+          <<>>,
+          [
+            {"test.group.gain", :integer, false, 7, 0.0, ""},
+            {"nope", :integer, false, 1, 0.0, ""}
+          ],
+          &encode_parameter/2
+        )
 
-      refute Map.has_key?(hd(Parameters.list()), :set)
+      {results, _rest} =
+        read_sequence({Parameters.respond("set_parameters", payload, registry), 0}, fn input ->
+          {successful, input} = read_bool(input)
+          {reason, input} = read_string(input)
+          {{successful, reason}, input}
+        end)
+
+      assert results == [{true, ""}, {false, "unknown parameter"}]
+      assert Agent.get(gain, & &1) == 7
+
+      assert {:ok, %{value: 7, state: :unsaved}} =
+               VisionCore.Parameters.get(registry, "test.group.gain")
     end
 
-    test "sets a value through its owner, or says why not" do
-      assert {:ok, 3} = Parameters.set_value("stereo.match.paths", 3)
-      assert_received {:set, 3}
-      assert [%{value: 3} | _] = Parameters.list()
+    test "lists the registry's ids", %{registry: registry} do
+      {names, _rest} =
+        read_sequence({Parameters.respond("list_parameters", <<>>, registry), 0}, &read_string/1)
 
-      assert {:error, "expected one of 3, 8"} = Parameters.set_value("stereo.match.paths", 4)
-      assert {:error, "read-only" <> _} = Parameters.set_value("stereo.width", 640)
-      assert {:error, "unknown parameter"} = Parameters.set_value("nope", 1)
+      assert names == ["test.group.gain"]
     end
   end
 end

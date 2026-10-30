@@ -7,6 +7,12 @@ import_config "../../api/config/config.exs"
 
 config :vision_api, VisionApiWeb.Endpoint, server: true
 
+config :vision_core, ecto_repos: [VisionCore.Repo]
+
+config :vision_core, VisionCore.Repo,
+  database: Path.expand("../vision_core_dev.db", __DIR__),
+  pool_size: 1
+
 # In-memory substitute for the Nerves KV store — see
 # https://hexdocs.pm/nerves_runtime/readme.html#using-nerves_runtime-in-tests
 config :nerves_runtime,

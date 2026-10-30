@@ -8,8 +8,10 @@ defmodule VisionCore.Application do
   The pipeline is one `:rest_for_one` supervisor, `VisionCore.Supervisor`,
   with `VisionCore.Ros2.ZenohClient` first. Consumers subscribe only from
   `init/1`, so they must restart with the client to get their
-  subscriptions back. `VisionCore.Status` and `VisionCore.Preview`, the
-  dashboard's sources, start after the components.
+  subscriptions back. `VisionCore.Parameters.Storage` and the
+  `VisionCore.Parameters` registry follow it, so saved values are loaded
+  before any component declares its parameters. `VisionCore.Status` and
+  `VisionCore.Preview`, the dashboard's sources, start after the components.
   """
   use Application
 
@@ -43,6 +45,8 @@ defmodule VisionCore.Application do
   defp pipeline_child(%VisionCore.Config{} = config) do
     core_children = [
       {VisionCore.Ros2.ZenohClient, zenoh_client_opts(config)},
+      VisionCore.Parameters.Storage,
+      VisionCore.Parameters,
       VisionCore.Ros2.Parameters,
       VisionCore.Jpeg
     ]

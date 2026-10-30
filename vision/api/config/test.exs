@@ -8,3 +8,10 @@ config :vision_api, VisionApiWeb.Endpoint,
 config :logger, level: :warning
 
 config :phoenix, :plug_init_mode, :runtime
+
+config :vision_core, ecto_repos: [VisionCore.Repo]
+
+config :vision_core, VisionCore.Repo,
+  database:
+    Path.join(System.tmp_dir!(), "vision_api_test_#{System.unique_integer([:positive])}.db"),
+  pool_size: 1

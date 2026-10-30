@@ -33,7 +33,8 @@ defmodule VisionApiWeb.SettingsControllerTest do
       assert json_response(get(conn, "/api/settings"), 200) == %{
                "zenoh_endpoint_ip" => "127.0.0.1",
                "node_name" => "vision_test",
-               "components" => [%{"name" => "heartbeat", "options" => %{"interval_ms" => 5_000}}]
+               "components" => [%{"name" => "heartbeat", "options" => %{"interval_ms" => 5_000}}],
+               "preview" => []
              }
     end
   end

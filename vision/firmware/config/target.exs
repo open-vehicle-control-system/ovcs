@@ -87,6 +87,10 @@ end
 # into the app config for the vehicle's vision composer to read.
 config :vision_core, zenoh_endpoint_ip: System.get_env("ZENOH_ENDPOINT_IP", "127.0.0.1")
 
+# Saved vision parameters, on the application partition so they survive firmware updates.
+config :vision_core, ecto_repos: [VisionCore.Repo]
+config :vision_core, VisionCore.Repo, database: "/data/vision_core.db", pool_size: 1
+
 # The Zenoh router is the vehicle's compute node, which also serves the
 # vehicle network's time (`ntp` in compose/compute).
 ntp_pool = ["0.pool.ntp.org", "1.pool.ntp.org", "2.pool.ntp.org", "3.pool.ntp.org"]

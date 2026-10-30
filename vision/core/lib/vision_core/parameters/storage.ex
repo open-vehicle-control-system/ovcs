@@ -14,6 +14,10 @@ defmodule VisionCore.Parameters.Storage do
 
   alias VisionCore.Repo
 
+  @spec child_spec(keyword()) :: Supervisor.child_spec()
+  def child_spec(opts),
+    do: %{id: __MODULE__, start: {__MODULE__, :start_link, [opts]}, type: :supervisor}
+
   @spec start_link(keyword()) :: Supervisor.on_start() | :ignore
   def start_link(opts \\ []) do
     {name, repo_opts} = Keyword.pop(opts, :name, Repo)

@@ -5,7 +5,8 @@ defmodule VisionCore.Config do
 
     * `:zenoh_endpoint_ip` — the Zenoh router the pipeline peers with.
     * `:components` — the pipeline's components on top of the always-on
-      `VisionCore.Ros2.ZenohClient` and `VisionCore.Ros2.Parameters`. Each entry is
+      `VisionCore.Ros2.ZenohClient`, `VisionCore.Parameters` and
+      `VisionCore.Ros2.Parameters`. Each entry is
       a bare component atom (`:heartbeat`) or a `{name, opts}` tuple. See
       `VisionCore.Components` for the catalogue.
     * `:node_name` — the ROS 2 node name announced in the rmw_zenoh
