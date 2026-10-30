@@ -21,12 +21,6 @@ const groups = [
 
 const initial = useParameters.getState()
 
-const beforeUnload = () => {
-  const event = new Event('beforeunload', { cancelable: true })
-  window.dispatchEvent(event)
-  return event.defaultPrevented
-}
-
 describe('App', () => {
   let actions
   beforeEach(() => {
@@ -68,17 +62,6 @@ describe('App', () => {
 
     act(() => useParameters.getState().select('stereo.match'))
     expect(window.location.search).toBe('?box=stereo.match')
-  })
-
-  it('asks before leaving with unsaved changes only', () => {
-    render(<App />)
-    expect(beforeUnload()).toBe(false)
-
-    act(() => useParameters.setState({ unsaved: 2 }))
-    expect(beforeUnload()).toBe(true)
-
-    act(() => useParameters.setState({ unsaved: 0 }))
-    expect(beforeUnload()).toBe(false)
   })
 
   it('shows the save bar with the unsaved count', () => {

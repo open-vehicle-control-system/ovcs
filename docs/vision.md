@@ -99,14 +99,14 @@ The vision parameters are the unit's own settings, grouped by component and pipe
 
 The dashboard draws the unit as its pipeline: the cameras, then each stereo stage your vehicle composes, in order, with the components that sit beside it, such as the preview, apart. A box shows its status and how many of its parameters are unsaved; selecting it opens its panel, and the selected box stays in the URL (`?box=stereo.match`), so a link opens it again. The panel lists the box's parameters with their constraints and defaults: a live parameter changes while the unit runs, a parameter fixed in the build is shown but locked, and a parameter set by an automatic mode shows the mode that sets it. A relation between two parameters, such as `p2` above `p1`, bounds each control by the other's value.
 
-A change is unsaved until you save it. The save bar below the panel counts the unsaved changes and offers:
+A change is unsaved until you save it. Unsaved changes live on the unit, not in the page: reloading the dashboard or opening it elsewhere loses nothing, and a reboot drops them. The save bar below the panel counts the unsaved changes and offers:
 
 - **Save**: stores the unsaved values on the unit, in `/data/vision_core.db`, where they are applied again at every boot.
 - **Discard**: returns every unsaved parameter to its saved value.
 - **Reset**: a box's Reset, or a parameter's, returns it to the defaults; **Reset all** returns every parameter.
 - **Export**: the saved values as a composer snippet, to make them the vehicle's defaults.
 
-Discard and Reset all ask first, and so does leaving the page with unsaved changes. The same actions are `VisionCore.Parameters.save/1`, `discard/1`, `reset/2` and `export/1` from IEx. The parameters are also reachable with `ros2 param` and Foxglove's Parameters panel under their ids, `<group>.<name>` (`stereo.match.p1`); a change made there is unsaved too.
+Discard and Reset all ask first. The same actions are `VisionCore.Parameters.save/1`, `discard/1`, `reset/2` and `export/1` from IEx. The parameters are also reachable with `ros2 param` and Foxglove's Parameters panel under their ids, `<group>.<name>` (`stereo.match.p1`); a change made there is unsaved too.
 
 The API follows [JSON:API](https://jsonapi.org/); its routes are listed in [`vision/api/README.md`](../vision/api/README.md).
 
