@@ -6,11 +6,22 @@ defmodule VisionCore.ParametersTest do
   alias VisionCore.Parameters
   alias VisionCore.Parameters.MemoryStore
 
+  import ExUnit.CaptureLog
+
+  defmodule FailingStore do
+    @moduledoc false
+    def load, do: %{}
+    def write(_changes), do: {:error, "saved parameters unavailable"}
+  end
+
   @auto_exposure "stereo.cameras.auto_exposure"
 
+  # MemoryStore is one named Agent: only this module uses it, and its tests run one at a time.
   setup context do
+    if saved = context[:saved], do: start_supervised!({MemoryStore, saved})
+
     server = :"#{__MODULE__}.#{context.test}"
-    start_supervised!({Parameters, name: server, store: MemoryStore})
+    start_supervised!({Parameters, name: server, store: context[:store] || MemoryStore})
     %{server: server}
   end
 
@@ -56,6 +67,9 @@ defmodule VisionCore.ParametersTest do
 
     assert Parameters.set(server, "preview.colormap", "hot") ==
              {:error, "expected one of jet, gray"}
+
+    assert Parameters.set(server, "preview.mode", "manual") ==
+             {:error, "expected one of {:fixed, 2}, auto"}
 
     assert {:ok, %{value: 55}} = Parameters.set(server, "preview.quality", 55)
     assert {:ok, %{value: "gray"}} = Parameters.set(server, "preview.colormap", "gray")
@@ -227,6 +241,241 @@ defmodule VisionCore.ParametersTest do
     assert Parameters.unsaved_count(server) == 0
   end
 
+  test "a get, set or status that throws is read as nil or refused", %{server: server} do
+    start_owner(server, &throwing_groups/1)
+
+    assert [%{status: nil, parameters: [%{value: nil}]}] = Parameters.groups(server)
+    assert Parameters.set(server, "throwing.throws", 1) == {:error, "not applied: :busy"}
+  end
+
+  test "a parameter whose value cannot be read is never unsaved", %{server: server} do
+    {_owner, agent} = start_owner(server, &match_groups/1)
+    assert {:ok, _parameter} = Parameters.set(server, "stereo.match.p1", 12)
+    Agent.update(agent, &Map.put(&1, "p1", nil))
+
+    assert {:ok, %{value: nil, default: 8, state: :builtin}} =
+             Parameters.get(server, "stereo.match.p1")
+
+    assert Parameters.unsaved_count(server) == 0
+  end
+
+  describe "saved values" do
+    @describetag saved: %{}
+
+    @tag saved: %{"stereo.match.p1" => 10}
+    test "a declared group gets its saved values", %{server: server} do
+      start_owner(server, &match_groups/1)
+
+      assert_receive {:set, "p1", 10}
+      refute_receive {:set, "p2", _value}
+
+      assert {:ok, %{value: 10, default: 8, saved: 10, state: :saved}} =
+               Parameters.get(server, "stereo.match.p1")
+
+      assert Parameters.unsaved_count(server) == 0
+    end
+
+    @tag saved: %{"stereo.match.p1" => 70, "stereo.match.p2" => 75}
+    test "saved values of a related pair are applied in an order that keeps the relation",
+         %{server: server} do
+      log = capture_log(fn -> start_owner(server, &match_groups/1) end)
+
+      assert receive_sets(2) == [{"p2", 75}, {"p1", 70}]
+      refute log =~ "dropped"
+      assert MemoryStore.rows() == %{"stereo.match.p1" => 70, "stereo.match.p2" => 75}
+      assert {:ok, %{value: 70, state: :saved}} = Parameters.get(server, "stereo.match.p1")
+    end
+
+    @tag saved: %{"stereo.match.p1" => 200}
+    test "a saved value that no longer fits is dropped and logged, and the group starts on its defaults",
+         %{server: server} do
+      log = capture_log(fn -> start_owner(server, &match_groups/1) end)
+
+      assert log =~ "stereo.match.p1 = 200 dropped: out of range 0..78"
+      refute_receive {:set, _name, _value}
+      assert MemoryStore.rows() == %{}
+
+      assert {:ok, %{value: 8, saved: nil, state: :builtin}} =
+               Parameters.get(server, "stereo.match.p1")
+    end
+
+    @tag saved: %{"stereo.match.p3" => 1, "stereo.match.p1" => 10}
+    test "a saved value of a parameter its group no longer declares is dropped",
+         %{server: server} do
+      log = capture_log(fn -> start_owner(server, &match_groups/1) end)
+
+      assert log =~ "stereo.match.p3 = 1 dropped: no such parameter"
+      assert MemoryStore.rows() == %{"stereo.match.p1" => 10}
+    end
+
+    @tag saved: %{"detection.min_score" => 0.5, "stereo.match_extra.p1" => 3}
+    test "saved values of groups not declared yet are kept", %{server: server} do
+      start_owner(server, &match_groups/1)
+
+      assert MemoryStore.rows() == %{"detection.min_score" => 0.5, "stereo.match_extra.p1" => 3}
+    end
+
+    @tag saved: %{"stereo.cameras.auto_exposure" => false, "stereo.cameras.exposure_us" => 5000}
+    test "a saved automatic mode is applied before the values it controls", %{server: server} do
+      start_owner(server, &cameras_groups(&1, true))
+
+      assert receive_sets(2) == [{"auto_exposure", false}, {"exposure_us", 5000}]
+      refute_receive {:set, _name, _value}
+      assert Parameters.unsaved_count(server) == 0
+    end
+
+    @tag saved: %{"stereo.cameras.exposure_us" => 5000}
+    test "a saved value is not applied while its automatic mode is on", %{server: server} do
+      start_owner(server, &cameras_groups(&1, true))
+
+      refute_receive {:set, _name, _value}
+      assert MemoryStore.rows() == %{"stereo.cameras.exposure_us" => 5000}
+    end
+
+    @tag saved: %{"stereo.match.p1" => 10}
+    test "a re-declared group gets its saved values back after its owner restarts",
+         %{server: server} do
+      {owner, _agent} = start_owner(server, &match_groups/1)
+      assert_receive {:set, "p1", 10}
+      stop_owner(owner)
+
+      {_owner, agent} = start_owner(server, &match_groups/1)
+
+      assert_receive {:set, "p1", 10}
+      assert Agent.get(agent, & &1["p1"]) == 10
+      assert {:ok, %{state: :saved}} = Parameters.get(server, "stereo.match.p1")
+    end
+
+    @tag saved: %{"stereo.match.p2" => 70, "stereo.cameras.exposure_us" => 5000}
+    test "save stores changed values, drops values back at their default and saved automatic values",
+         %{server: server} do
+      start_owner(server, &match_groups/1)
+      start_owner(server, &cameras_groups(&1, true))
+
+      assert {:ok, _parameter} = Parameters.set(server, "stereo.match.p1", 12)
+      assert {:ok, _parameter} = Parameters.set(server, "stereo.match.p2", 64)
+
+      assert {:ok, ids} = Parameters.save(server)
+
+      assert Enum.sort(ids) ==
+               ["stereo.cameras.exposure_us", "stereo.match.p1", "stereo.match.p2"]
+
+      assert MemoryStore.rows() == %{"stereo.match.p1" => 12}
+      assert Parameters.unsaved_count(server) == 0
+      assert {:ok, %{saved: 12, state: :saved}} = Parameters.get(server, "stereo.match.p1")
+      assert Parameters.save(server) == {:ok, []}
+    end
+
+    test "save leaves out a parameter whose value cannot be read", %{server: server} do
+      {_owner, agent} = start_owner(server, &match_groups/1)
+      assert {:ok, _parameter} = Parameters.set(server, "stereo.match.p1", 12)
+      Agent.update(agent, &Map.put(&1, "p1", nil))
+
+      assert Parameters.save(server) == {:ok, []}
+      assert MemoryStore.rows() == %{}
+      assert Parameters.discard(server) == {:ok, []}
+      assert Parameters.reset(server, :all) == {:ok, []}
+      refute_receive {:set, _name, nil}
+    end
+
+    @tag store: __MODULE__.FailingStore
+    test "save answers the store's error and keeps the changes unsaved", %{server: server} do
+      start_owner(server, &match_groups/1)
+      assert {:ok, _parameter} = Parameters.set(server, "stereo.match.p1", 12)
+
+      assert Parameters.save(server) == {:error, "saved parameters unavailable"}
+      assert Parameters.unsaved_count(server) == 1
+      assert {:ok, %{saved: nil, state: :unsaved}} = Parameters.get(server, "stereo.match.p1")
+    end
+
+    @tag saved: %{"stereo.match.p1" => 10}
+    test "discard sets unsaved values back to their saved value, or their default",
+         %{server: server} do
+      {owner, agent} = start_owner(server, &match_groups/1)
+      assert_receive {:set, "p1", 10}
+      assert {:ok, _parameter} = Parameters.set(server, "stereo.match.p2", 70)
+      assert {:ok, _parameter} = Parameters.set(server, "stereo.match.p1", 20)
+      assert length(receive_sets(2)) == 2
+
+      assert {:ok, ids} = Parameters.discard(server)
+      assert Enum.sort(ids) == ["stereo.match.p1", "stereo.match.p2"]
+      assert Agent.get(agent, & &1) == %{"p1" => 10, "p2" => 64}
+      assert Parameters.unsaved_count(server) == 0
+      assert length(receive_sets(2)) == 2
+
+      stop_owner(owner)
+      start_owner(server, &match_groups/1)
+      assert_receive {:set, "p1", 10}
+      refute_receive {:set, _name, _value}
+    end
+
+    test "discard and reset leave a parameter its automatic mode controls alone",
+         %{server: server} do
+      {_owner, agent} = start_owner(server, &cameras_groups(&1, true))
+      Agent.update(agent, &%{&1 | "exposure_us" => 8000})
+
+      assert Parameters.discard(server) == {:ok, []}
+      assert Parameters.reset(server, :all) == {:ok, []}
+      refute_receive {:set, _name, _value}
+      assert Agent.get(agent, & &1["exposure_us"]) == 8000
+    end
+
+    @tag saved: %{"stereo.match.p1" => 10}
+    test "reset sets a parameter, a group or everything to defaults, unsaved until saved",
+         %{server: server} do
+      {owner, _agent} = start_owner(server, &match_groups/1)
+      start_owner(server, &preview_groups/1)
+
+      assert Parameters.reset(server, {:parameter, "stereo.match.p1"}) ==
+               {:ok, ["stereo.match.p1"]}
+
+      assert {:ok, %{value: 8, saved: 10, state: :unsaved}} =
+               Parameters.get(server, "stereo.match.p1")
+
+      assert {:ok, _parameter} = Parameters.set(server, "stereo.match.p2", 70)
+      assert {:ok, _parameter} = Parameters.set(server, "preview.quality", 55)
+      assert Parameters.reset(server, {:group, "stereo.match"}) == {:ok, ["stereo.match.p2"]}
+      assert Parameters.reset(server, :all) == {:ok, ["preview.quality"]}
+      assert Parameters.unsaved_count(server) == 1
+
+      assert Parameters.reset(server, {:parameter, "stereo.match.p9"}) ==
+               {:error, "unknown parameter"}
+
+      assert Parameters.reset(server, {:group, "stereo.nothing"}) == {:error, "unknown group"}
+
+      stop_owner(owner)
+      {_owner, agent} = start_owner(server, &match_groups/1)
+      assert Agent.get(agent, & &1["p1"]) == 8
+
+      assert Parameters.save(server) == {:ok, ["stereo.match.p1"]}
+      assert MemoryStore.rows() == %{}
+    end
+
+    @tag saved: %{"stereo.match.p1" => 10}
+    test "forget deletes the saved value at once", %{server: server} do
+      start_owner(server, &match_groups/1)
+
+      assert Parameters.forget(server, "stereo.match.p1") == :ok
+      assert MemoryStore.rows() == %{}
+
+      assert {:ok, %{value: 10, saved: nil, state: :unsaved}} =
+               Parameters.get(server, "stereo.match.p1")
+    end
+
+    @tag saved: %{"stereo.match.p1" => 10, "stereo.match.p2" => 70, "detection.min_score" => 0.5}
+    test "export renders the saved values with their composer paths", %{server: server} do
+      start_owner(server, &match_groups/1)
+
+      assert Parameters.export(server) == """
+             # In the options of the {:stereo, opts} component:
+             stages: Pipeline.default_stages(match: [p1: 10, p2: 70])
+
+             # Not settable in the composer:
+             # detection.min_score = 0.5
+             """
+    end
+  end
+
   # An owner process holding the Agent behind its parameters; both go when it is killed.
   defp start_owner(server, groups_fun) do
     test = self()
@@ -279,9 +528,10 @@ defmodule VisionCore.ParametersTest do
       position: 2,
       status: fn -> {:ok, "matching"} end,
       parameters: [
-        backed(agent, test, "p1", :integer, %{kind: :range, min: 0, max: 78, step: nil}),
+        backed(agent, test, "p1", :integer, %{kind: :range, min: 0, max: 78, step: nil})
+        |> Map.put(:export, [:components, :stereo, :stages, :match, :p1]),
         backed(agent, test, "p2", :integer, %{kind: :range, min: 1, max: 79, step: nil})
-        |> Map.put(:greater_than, "p1")
+        |> Map.merge(%{greater_than: "p1", export: [:components, :stereo, :stages, :match, :p2]})
       ]
     }
 
@@ -322,7 +572,8 @@ defmodule VisionCore.ParametersTest do
   end
 
   defp preview_groups(test) do
-    {:ok, agent} = Agent.start_link(fn -> %{"quality" => 80, "colormap" => "jet"} end)
+    {:ok, agent} =
+      Agent.start_link(fn -> %{"quality" => 80, "colormap" => "jet", "mode" => :auto} end)
 
     group = %{
       id: "preview",
@@ -333,7 +584,8 @@ defmodule VisionCore.ParametersTest do
       position: 5,
       parameters: [
         backed(agent, test, "quality", :integer, %{kind: :range, min: 10, max: 100, step: 5}),
-        backed(agent, test, "colormap", :string, %{kind: :choices, values: ["jet", "gray"]})
+        backed(agent, test, "colormap", :string, %{kind: :choices, values: ["jet", "gray"]}),
+        backed(agent, test, "mode", :string, %{kind: :choices, values: [{:fixed, 2}, :auto]})
       ]
     }
 
@@ -374,6 +626,29 @@ defmodule VisionCore.ParametersTest do
           constraint: range,
           get: readable,
           set: fn _value -> exit(:gone) end
+        }
+      ]
+    }
+
+    {[group], nil}
+  end
+
+  defp throwing_groups(_test) do
+    group = %{
+      id: "throwing",
+      name: "Throwing",
+      summary: "Throws",
+      kind: :stage,
+      placement: :side,
+      position: 9,
+      status: fn -> throw(:no_status) end,
+      parameters: [
+        %{
+          name: "throws",
+          type: :integer,
+          constraint: %{kind: :range, min: 0, max: 10, step: nil},
+          get: fn -> throw(:gone) end,
+          set: fn _value -> throw(:busy) end
         }
       ]
     }
