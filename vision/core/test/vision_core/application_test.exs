@@ -4,8 +4,11 @@ defmodule VisionCore.ApplicationTest do
   import ExUnit.CaptureLog
 
   alias VisionCore.Camera.LibCamera
+  alias VisionCore.Parameters.SavedValue
+  alias VisionCore.Repo
 
   @moduletag :tmp_dir
+  @moduletag :capture_log
   @calibration_dir Path.expand("../support/calibration", __DIR__)
 
   defmodule Composer do
@@ -15,14 +18,19 @@ defmodule VisionCore.ApplicationTest do
     def config(_arm), do: Application.fetch_env!(:vision_core, :test_config)
   end
 
+  # The pipeline's Storage owns VisionCore.Repo here, on an empty store; test_helper's Repo is back after.
   setup do
     Application.stop(:vision_core)
+    Repo.delete_all(SavedValue)
+    :ok = Supervisor.stop(Repo)
 
     on_exit(fn ->
       Application.stop(:vision_core)
       Application.delete_env(:vision_core, :vehicle)
       Application.delete_env(:vision_core, :test_config)
       Application.ensure_all_started(:vision_core)
+      {:ok, pid} = Repo.start_link()
+      Process.unlink(pid)
     end)
   end
 
@@ -67,6 +75,13 @@ defmodule VisionCore.ApplicationTest do
            ]
   end
 
+  test "the pipeline starts on an empty store with its own Repo" do
+    start_pipeline(%VisionCore.Config{zenoh_endpoint_ip: "127.0.0.1"})
+
+    assert is_pid(child_pid(VisionCore.Supervisor, VisionCore.Parameters.Storage))
+    assert {:ok, %{value: 10, saved: nil}} = VisionCore.Parameters.get("preview.max_hz")
+  end
+
   test "the config's preview options reach the preview" do
     start_pipeline(%VisionCore.Config{
       zenoh_endpoint_ip: "127.0.0.1",
@@ -77,18 +92,12 @@ defmodule VisionCore.ApplicationTest do
   end
 
   test "the vision core starts with its parameters when the database cannot open" do
-    repo_config = Application.get_env(:vision_core, VisionCore.Repo)
-    :ok = Supervisor.stop(VisionCore.Repo)
-
-    on_exit(fn ->
-      Application.put_env(:vision_core, VisionCore.Repo, repo_config)
-      {:ok, pid} = VisionCore.Repo.start_link()
-      Process.unlink(pid)
-    end)
+    repo_config = Application.get_env(:vision_core, Repo)
+    on_exit(fn -> Application.put_env(:vision_core, Repo, repo_config) end)
 
     Application.put_env(
       :vision_core,
-      VisionCore.Repo,
+      Repo,
       Keyword.put(repo_config, :database, "/nonexistent/dir/vision.db")
     )
 

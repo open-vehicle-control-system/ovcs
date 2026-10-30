@@ -3,7 +3,12 @@
 {:ok, _apps} = Application.ensure_all_started(:exla)
 Application.put_env(:vision_core, :nx_defn_options, compiler: EXLA)
 
-# The saved parameter values' database.
+# The saved parameter values' database: one file per run, removed after it.
+database = Application.fetch_env!(:vision_core, VisionCore.Repo)[:database]
+remove_database = fn -> Enum.each(["", "-wal", "-shm"], &File.rm(database <> &1)) end
+remove_database.()
+ExUnit.after_suite(fn _results -> remove_database.() end)
+
 {:ok, _apps} = Application.ensure_all_started(:ecto_sqlite3)
 {:ok, _pid} = VisionCore.Repo.start_link()
 Ecto.Migrator.run(VisionCore.Repo, :up, all: true, log: false)

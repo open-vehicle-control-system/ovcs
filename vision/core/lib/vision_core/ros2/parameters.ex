@@ -98,8 +98,12 @@ defmodule VisionCore.Ros2.Parameters do
     |> Codec.decode_parameters()
     |> Enum.map(fn {name, value} ->
       case call(registry, &VisionCore.Parameters.set(&1, name, value), {:error, "not applied"}) do
-        {:ok, _parameter} -> :ok
-        {:error, _reason} = error -> error
+        {:ok, _parameter} ->
+          :ok
+
+        {:error, reason} = error ->
+          Logger.info("#{__MODULE__}: #{name} = #{inspect(value)} refused: #{reason}")
+          error
       end
     end)
     |> Codec.encode_results()

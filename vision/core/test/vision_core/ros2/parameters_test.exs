@@ -175,6 +175,7 @@ defmodule VisionCore.Ros2.ParametersTest do
       registry = :"#{__MODULE__}.#{context.test}"
       start_supervised!({VisionCore.Parameters, name: registry, store: NoStore})
       gain = start_supervised!({Agent, fn -> 2 end})
+      exposure = start_supervised!({Agent, fn -> 100 end}, id: :exposure)
 
       :ok =
         VisionCore.Parameters.declare(registry, [
@@ -192,12 +193,27 @@ defmodule VisionCore.Ros2.ParametersTest do
                 get: fn -> Agent.get(gain, & &1) end,
                 set: fn value -> Agent.update(gain, fn _ -> value end) end,
                 constraint: %{kind: :range, min: 1, max: 10, step: nil}
+              },
+              %{
+                name: "auto_exposure",
+                type: :bool,
+                get: fn -> true end,
+                set: fn _value -> :ok end,
+                constraint: %{kind: :bool}
+              },
+              %{
+                name: "exposure",
+                type: :integer,
+                get: fn -> Agent.get(exposure, & &1) end,
+                set: fn value -> Agent.update(exposure, fn _ -> value end) end,
+                constraint: %{kind: :range, min: 1, max: 1000, step: nil},
+                applies: {:auto, "test.group.auto_exposure"}
               }
             ]
           }
         ])
 
-      %{registry: registry, gain: gain}
+      %{registry: registry, gain: gain, exposure: exposure}
     end
 
     @tag :capture_log
@@ -212,25 +228,45 @@ defmodule VisionCore.Ros2.ParametersTest do
           &encode_parameter/2
         )
 
-      {results, _rest} =
-        read_sequence({Parameters.respond("set_parameters", payload, registry), 0}, fn input ->
-          {successful, input} = read_bool(input)
-          {reason, input} = read_string(input)
-          {{successful, reason}, input}
-        end)
-
-      assert results == [{true, ""}, {false, "unknown parameter"}]
+      assert set_results(payload, registry) == [{true, ""}, {false, "unknown parameter"}]
       assert Agent.get(gain, & &1) == 7
 
       assert {:ok, %{value: 7, state: :unsaved}} =
                VisionCore.Parameters.get(registry, "test.group.gain")
     end
 
+    @tag :capture_log
+    test "a set request on an automatic parameter answers why it is refused",
+         %{registry: registry, exposure: exposure} do
+      payload =
+        sequence(
+          <<>>,
+          [{"test.group.exposure", :integer, false, 50, 0.0, ""}],
+          &encode_parameter/2
+        )
+
+      assert set_results(payload, registry) ==
+               [{false, "set by test.group.auto_exposure while it is on"}]
+
+      assert Agent.get(exposure, & &1) == 100
+    end
+
     test "lists the registry's ids", %{registry: registry} do
       {names, _rest} =
         read_sequence({Parameters.respond("list_parameters", <<>>, registry), 0}, &read_string/1)
 
-      assert names == ["test.group.gain"]
+      assert names == ["test.group.auto_exposure", "test.group.exposure", "test.group.gain"]
     end
+  end
+
+  defp set_results(payload, registry) do
+    {results, _rest} =
+      read_sequence({Parameters.respond("set_parameters", payload, registry), 0}, fn input ->
+        {successful, input} = read_bool(input)
+        {reason, input} = read_string(input)
+        {{successful, reason}, input}
+      end)
+
+    results
   end
 end

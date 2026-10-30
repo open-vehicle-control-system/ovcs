@@ -13,5 +13,8 @@ config :vision_core, ecto_repos: [VisionCore.Repo]
 
 config :vision_core, VisionCore.Repo,
   database:
-    Path.join(System.tmp_dir!(), "vision_api_test_#{System.unique_integer([:positive])}.db"),
+    Path.join(
+      System.tmp_dir!(),
+      "vision_api_test_#{System.os_time()}_#{:rand.uniform(1_000_000)}.db"
+    ),
   pool_size: 1
