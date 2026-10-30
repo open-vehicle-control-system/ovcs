@@ -293,7 +293,7 @@ jobs:
       - run: npm run build
 
   ovcs-ui:
-    name: Vue · libraries/ovcs_ui
+    name: Vue + React · libraries/ovcs_ui
     needs: changes
     if: github.event_name != 'pull_request' || needs.changes.outputs.vue == 'true'
     runs-on: ubuntu-latest
@@ -339,7 +339,7 @@ jobs:
       - run: cargo test
 
   vision-dashboard:
-    name: Vue · vision/dashboard
+    name: React · vision/dashboard
     needs: changes
     if: github.event_name != 'pull_request' || needs.changes.outputs.vision_vue == 'true'
     runs-on: ubuntu-latest
