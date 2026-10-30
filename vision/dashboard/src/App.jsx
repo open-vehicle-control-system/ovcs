@@ -1,37 +1,42 @@
-import { useEffect, useId, useRef } from 'react'
-import StatusCards from './components/StatusCards.jsx'
-import Preview from './components/Preview.jsx'
-import PipelineDiagram from './components/PipelineDiagram.jsx'
+import { useEffect, useRef } from 'react'
+import UnitStatus from './components/UnitStatus.jsx'
+import Previews from './components/Previews.jsx'
+import Menu from './components/Menu.jsx'
+import OverviewPage from './pages/OverviewPage.jsx'
+import CalibrationPage from './pages/CalibrationPage.jsx'
+import Ros2Page from './pages/Ros2Page.jsx'
+import ApiPage from './pages/ApiPage.jsx'
 import ParameterPanel from './components/ParameterPanel.jsx'
-import { OvcsCard, OvcsSaveBar } from '@ovcs/ui/react'
+import { OvcsCard, OvcsHeader, OvcsSaveBar, focusClass as FOCUS } from '@ovcs/ui/react'
 import { dashboardSocket } from './services/socket.js'
 import { useStatus } from './stores/status.js'
 import { flowGroups, useParameters } from './stores/parameters.js'
+import { useNavigation, writeUrl } from './stores/navigation.js'
 
 const BOX_PARAM = 'box'
 
-// Selects the box named in the URL once the groups are known, else the first of the flow.
-function useSelectionInUrl() {
+// On the pipeline, selects the box named in the URL once the groups are known, else the first of the flow; keeps the
+// page and the box in the URL.
+function useNavigationInUrl() {
+  const page = useNavigation((state) => state.page)
   const loaded = useParameters((state) => state.groups.length > 0)
   const selectedGroupId = useParameters((state) => state.selectedGroupId)
 
   useEffect(() => {
-    if (!loaded || selectedGroupId != null) return
+    if (page !== 'pipeline' || !loaded || selectedGroupId != null) return
     const state = useParameters.getState()
     const wanted = new URLSearchParams(window.location.search).get(BOX_PARAM)
     const known = state.groups.some((group) => group.id === wanted)
     const id = known ? wanted : flowGroups(state)[0]?.id
     if (id != null) state.select(id)
-  }, [loaded, selectedGroupId])
+  }, [page, loaded, selectedGroupId])
 
+  // Until a box is selected, the URL keeps the one it names.
   useEffect(() => {
-    if (selectedGroupId == null) return
-    const url = new URL(window.location.href)
-    url.searchParams.set(BOX_PARAM, selectedGroupId)
-    window.history.replaceState(window.history.state, '', url)
-  }, [selectedGroupId])
+    if (page !== 'pipeline' || selectedGroupId != null) writeUrl(page, selectedGroupId)
+  }, [page, selectedGroupId])
 
-  return selectedGroupId
+  return { page, selectedGroupId }
 }
 
 // Keeps focused controls clear of the sticky bar when the browser scrolls them into view.
@@ -51,15 +56,38 @@ function useScrollPaddingFor(ref) {
   }, [ref])
 }
 
+/** The parameters' error: a failed load until the next one succeeds, a failed action until dismissed. */
+function ParameterError() {
+  const error = useParameters((state) => state.error)
+  const errorSource = useParameters((state) => state.errorSource)
+  const dismissError = useParameters((state) => state.dismissError)
+
+  if (!error) return null
+
+  return (
+    <div role="alert" className="flex min-w-0 items-center gap-2 rounded border border-ovcs-error px-2 py-1 text-sm">
+      <p className="ovcs-status ovcs-status--error min-w-0 break-words">{error}</p>
+      {errorSource === 'load' ? null : (
+        <button
+          type="button"
+          aria-label="Dismiss error"
+          onClick={dismissError}
+          className={`min-h-7 shrink-0 rounded border border-ovcs-border px-2 text-xs hover:border-ovcs-accent ${FOCUS}`}
+        >
+          Dismiss
+        </button>
+      )}
+    </div>
+  )
+}
+
 function ParameterSaveBar() {
   const barRef = useRef(null)
   const unsaved = useParameters((state) => state.unsaved)
-  const error = useParameters((state) => state.error)
   const save = useParameters((state) => state.save)
   const discard = useParameters((state) => state.discard)
   const reset = useParameters((state) => state.reset)
   const exportSnippet = useParameters((state) => state.exportSnippet)
-  const dismissError = useParameters((state) => state.dismissError)
 
   useScrollPaddingFor(barRef)
 
@@ -67,19 +95,35 @@ function ParameterSaveBar() {
     <OvcsSaveBar
       ref={barRef}
       unsaved={unsaved}
-      error={error}
       onSave={save}
       onDiscard={discard}
       onResetAll={() => reset()}
       onExport={exportSnippet}
-      onDismissError={dismissError}
       className="sticky bottom-0 z-10 -mx-4 -mb-3 border-t border-ovcs-border bg-ovcs-surface px-4 pb-3 pt-4"
     />
   )
 }
 
+function PipelinePage({ groupId, snapshot }) {
+  return (
+    <div className="grid min-w-0 gap-4 lg:min-h-0 lg:grid-cols-[minmax(24rem,30rem)_minmax(0,1fr)] lg:grid-rows-1">
+      <OvcsCard className="flex min-w-0 flex-col gap-4 lg:min-h-0">
+        <div data-scroll="panel" className="lg:-mx-4 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:px-4">
+          <ParameterPanel groupId={groupId} />
+        </div>
+        <ParameterSaveBar />
+      </OvcsCard>
+
+      <div className="flex min-w-0 flex-col lg:min-h-0">
+        <Previews status={snapshot} socket={dashboardSocket} />
+      </div>
+    </div>
+  )
+}
+
+const PAGES = { overview: OverviewPage, calibration: CalibrationPage, ros2: Ros2Page, api: ApiPage }
+
 export default function App() {
-  const parametersHeadingId = useId()
   const snapshot = useStatus((state) => state.snapshot)
   const listen = useStatus((state) => state.listen)
   const startPolling = useParameters((state) => state.startPolling)
@@ -92,34 +136,28 @@ export default function App() {
     return stopPolling
   }, [startPolling, stopPolling])
 
-  const selectedGroupId = useSelectionInUrl()
+  const { page, selectedGroupId } = useNavigationInUrl()
+  const Page = PAGES[page]
 
+  // On a laptop the page is the screen: only a page's own content scrolls.
   return (
-    <main className="mx-auto max-w-7xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
-      <h1 className="text-2xl font-semibold text-ovcs-text">Vision</h1>
+    <div className="flex min-h-screen flex-col lg:h-screen lg:overflow-hidden">
+      <OvcsHeader className="flex min-h-14 shrink-0 flex-wrap items-center gap-x-8 gap-y-2 px-4 py-2 lg:px-6">
+        <h1 className="text-lg font-semibold text-ovcs-text">
+          OVCS <span className="font-normal text-ovcs-muted">Vision</span>
+        </h1>
+        <ParameterError />
+        <div className="ml-auto">
+          <UnitStatus status={snapshot} />
+        </div>
+      </OvcsHeader>
 
-      <section>
-        <StatusCards status={snapshot} />
-      </section>
-
-      <div className="grid items-start gap-4 lg:grid-cols-2">
-        <section aria-label="Previews" className="grid min-w-0 grid-cols-2 gap-4 lg:sticky lg:top-4 lg:self-start">
-          <Preview stream="left" socket={dashboardSocket} />
-          <Preview stream="right" socket={dashboardSocket} />
-          <div className="col-span-2">
-            <Preview stream="depth" socket={dashboardSocket} />
-          </div>
-        </section>
-
-        <OvcsCard as="section" aria-labelledby={parametersHeadingId} className="flex min-w-0 flex-col gap-4">
-          <h2 id={parametersHeadingId} className="text-lg font-semibold">
-            Parameters
-          </h2>
-          <PipelineDiagram />
-          <ParameterPanel groupId={selectedGroupId} />
-          <ParameterSaveBar />
-        </OvcsCard>
+      <div className="flex flex-1 flex-col lg:min-h-0 lg:flex-row">
+        <Menu />
+        <main className="flex min-w-0 flex-1 flex-col p-4 lg:min-h-0 lg:p-6">
+          {page === 'pipeline' ? <PipelinePage groupId={selectedGroupId} snapshot={snapshot} /> : <Page />}
+        </main>
       </div>
-    </main>
+    </div>
   )
 }

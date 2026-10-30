@@ -10,7 +10,7 @@ const range = (min, max) => ({ kind: 'range', min, max, step: null })
 const parameter = (id, extra = {}) => ({
   id,
   name: id.split('.').pop(),
-  type: 'integer',
+  valueType: 'integer',
   constraint: range(0, 255),
   applies: 'live',
   description: '',
@@ -18,8 +18,8 @@ const parameter = (id, extra = {}) => ({
   value: 8,
   saved: 8,
   state: 'builtin',
-  group: 'stereo.match',
-  controller: null,
+  stage: 'stereo.match',
+  controlledBy: null,
   greaterThan: null,
   ...extra
 })
@@ -27,14 +27,14 @@ const parameter = (id, extra = {}) => ({
 const parameters = {
   'stereo.match.p1': parameter('stereo.match.p1'),
   'stereo.match.p2': parameter('stereo.match.p2', { constraint: range(1, 256), value: 64, default: 64, greaterThan: 'stereo.match.p1' }),
-  'stereo.match.uniqueness': parameter('stereo.match.uniqueness', { type: 'double', constraint: range(1, 3), value: 1.2, default: 1.2 }),
-  'cameras.auto_exposure': parameter('cameras.auto_exposure', { name: 'auto exposure', type: 'bool', constraint: { kind: 'bool' }, value: true, default: true, group: 'cameras' }),
-  'cameras.exposure_us': parameter('cameras.exposure_us', { name: 'exposure', state: 'automatic', controller: 'cameras.auto_exposure', value: 8000, default: 10000, group: 'cameras' })
+  'stereo.match.uniqueness': parameter('stereo.match.uniqueness', { valueType: 'double', constraint: range(1, 3), value: 1.2, default: 1.2 }),
+  'cameras.auto_exposure': parameter('cameras.auto_exposure', { name: 'auto exposure', valueType: 'bool', constraint: { kind: 'bool' }, value: true, default: true, stage: 'cameras' }),
+  'cameras.exposure_us': parameter('cameras.exposure_us', { name: 'exposure', state: 'automatic', controlledBy: 'cameras.auto_exposure', value: 8000, default: 10000, stage: 'cameras' })
 }
 
 const groups = [
-  { id: 'cameras', name: 'Cameras', summary: 'Capture both images', kind: 'component', placement: 'flow', position: 1, status: null, parameterIds: ['cameras.auto_exposure', 'cameras.exposure_us'] },
-  { id: 'stereo.match', name: 'Match', summary: 'Find each pixel in the other image', kind: 'stage', placement: 'flow', position: 3, status: null, parameterIds: ['stereo.match.p1', 'stereo.match.p2', 'stereo.match.uniqueness'] }
+  { id: 'cameras', name: 'Cameras', summary: 'Capture both images', role: 'source', position: 1, status: null, parameterIds: ['cameras.auto_exposure', 'cameras.exposure_us'] },
+  { id: 'stereo.match', name: 'Match', summary: 'Find each pixel in the other image', role: 'step', position: 3, status: null, parameterIds: ['stereo.match.p1', 'stereo.match.p2', 'stereo.match.uniqueness'] }
 ]
 
 const actions = () => ({ set: vi.fn(), reset: vi.fn(), beginEdit: vi.fn(), endEdit: vi.fn() })
@@ -74,8 +74,8 @@ describe('ParameterPanel', () => {
     useParameters.setState({
       parameters: {
         ...parameters,
-        'stereo.match.p1': parameter('stereo.match.p1', { type: 'double', constraint: range(0, 10), value: 2 }),
-        'stereo.match.p2': parameter('stereo.match.p2', { type: 'double', constraint: range(0, 10), value: 5, greaterThan: 'stereo.match.p1' })
+        'stereo.match.p1': parameter('stereo.match.p1', { valueType: 'double', constraint: range(0, 10), value: 2 }),
+        'stereo.match.p2': parameter('stereo.match.p2', { valueType: 'double', constraint: range(0, 10), value: 5, greaterThan: 'stereo.match.p1' })
       }
     })
     render(<ParameterPanel groupId="stereo.match" />)
@@ -105,7 +105,7 @@ describe('ParameterPanel', () => {
     expect(stubs.reset).toHaveBeenCalledWith({ type: 'parameters', id: 'stereo.match.p1' })
 
     fireEvent.click(screen.getByRole('button', { name: 'Reset Match' }))
-    expect(stubs.reset).toHaveBeenCalledWith({ type: 'parameter-groups', id: 'stereo.match' })
+    expect(stubs.reset).toHaveBeenCalledWith({ type: 'stages', id: 'stereo.match' })
   })
 
   it('names the controller of an automatic parameter', () => {

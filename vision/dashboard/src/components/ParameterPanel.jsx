@@ -3,7 +3,7 @@ import { groupParameters, useParameters } from '../stores/parameters.js'
 import { OvcsParameterControl, formatValue, rangeStep, tidy, focusClass as FOCUS } from '@ovcs/ui/react'
 
 // A relation is strict: the margin is the smallest step between two values.
-const margin = (parameter) => (parameter.type === 'integer' ? 1 : rangeStep(parameter))
+const margin = (parameter) => (parameter.valueType === 'integer' ? 1 : rangeStep(parameter))
 
 function relationBounds(parameter, parameters, below) {
   const { constraint } = parameter
@@ -49,17 +49,17 @@ export default function ParameterPanel({ groupId }) {
     .map((parameter) => `${parameter.name} ${formatValue(parameter.value)}`).join(', ')
 
   return (
-    <section aria-labelledby={headingId} className="border-t border-ovcs-border pt-4">
+    <section aria-labelledby={headingId}>
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
-          <h3 id={headingId} translate="no" className="text-lg font-semibold">
+          <h2 id={headingId} translate="no" className="text-lg font-semibold">
             {group.name}
-          </h3>
+          </h2>
           {group.summary ? <p className="text-sm text-ovcs-muted">{group.summary}</p> : null}
         </div>
         <button
           type="button"
-          onClick={() => reset({ type: 'parameter-groups', id: group.id })}
+          onClick={() => reset({ type: 'stages', id: group.id })}
           className={`min-h-8 shrink-0 rounded border border-ovcs-border px-2 text-sm hover:border-ovcs-accent ${FOCUS}`}
         >
           Reset <span translate="no">{group.name}</span>
@@ -74,7 +74,7 @@ export default function ParameterPanel({ groupId }) {
             key={parameter.id}
             parameter={parameter}
             bounds={relationBounds(parameter, parameters, below)}
-            controllerName={parameters[parameter.controller]?.name}
+            controllerName={parameters[parameter.controlledBy]?.name}
             onChange={(value) => set(parameter.id, value)}
             onReset={() => reset({ type: 'parameters', id: parameter.id })}
             onEditStart={() => beginEdit(parameter.id)}

@@ -2,7 +2,7 @@ const MEDIA_TYPE = 'application/vnd.api+json'
 
 const url = (path) => `${import.meta.env.VITE_BASE_URL}/api/${path}`
 
-async function request(path, { method = 'GET', body } = {}) {
+export async function request(path, { method = 'GET', body } = {}) {
   const response = await fetch(url(path), {
     method,
     headers: { Accept: MEDIA_TYPE, 'Content-Type': MEDIA_TYPE },
@@ -20,9 +20,9 @@ const relatedId = (resource, name) => resource.relationships?.[name]?.data?.id ?
 const toParameter = (resource) => ({
   ...resource.attributes,
   id: resource.id,
-  group: relatedId(resource, 'group'),
-  controller: relatedId(resource, 'controller'),
-  greaterThan: relatedId(resource, 'greater-than')
+  stage: relatedId(resource, 'stage'),
+  controlledBy: relatedId(resource, 'controlledBy'),
+  greaterThan: relatedId(resource, 'greaterThan')
 })
 
 const toGroup = (resource) => ({
@@ -32,7 +32,7 @@ const toGroup = (resource) => ({
 })
 
 export async function fetchGroups() {
-  const document = await request('parameter-groups?include=parameters')
+  const document = await request('stages?include=parameters')
   const parameters = {}
   for (const resource of document.included ?? []) {
     if (resource.type === 'parameters') parameters[resource.id] = toParameter(resource)
@@ -59,7 +59,7 @@ export const saveParameters = () => act('parameter-saves')
 export const discardParameters = () => act('parameter-discards')
 export const resetParameters = (target) => act('parameter-resets', target)
 
-export async function fetchExport() {
-  const document = await request('parameter-export')
+export async function fetchComposerSnippet() {
+  const document = await request('composer-snippet')
   return document.data.attributes.snippet
 }

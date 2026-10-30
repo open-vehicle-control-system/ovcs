@@ -1,27 +1,27 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
-  fetchGroups, setParameter, saveParameters, discardParameters, resetParameters, fetchExport
+  fetchGroups, setParameter, saveParameters, discardParameters, resetParameters, fetchComposerSnippet
 } from '../parameters.js'
 
 const respond = (status, body) => ({ ok: status < 400, status, json: async () => body })
 
-const parameterResource = (id, group, extra = {}) => ({
+const parameterResource = (id, stage, extra = {}) => ({
   type: 'parameters',
   id,
-  attributes: { name: id, type: 'integer', value: 12, saved: 12, state: 'builtin', ...extra },
+  attributes: { name: id, valueType: 'integer', value: 12, saved: 12, state: 'builtin', ...extra },
   relationships: {
-    group: { data: { type: 'parameter-groups', id: group } },
-    controller: { data: null },
-    'greater-than': { data: null }
+    stage: { data: { type: 'stages', id: stage } },
+    controlledBy: { data: null },
+    greaterThan: { data: null }
   }
 })
 
 const document_ = {
   data: [
     {
-      type: 'parameter-groups',
+      type: 'stages',
       id: 'stereo.match',
-      attributes: { name: 'Match', kind: 'stage', placement: 'flow', position: 1, status: null },
+      attributes: { name: 'Match', role: 'step', position: 1, status: null },
       relationships: { parameters: { data: [{ type: 'parameters', id: 'stereo.match.p1' }, { type: 'parameters', id: 'stereo.match.p2' }] } }
     }
   ],
@@ -33,8 +33,8 @@ const document_ = {
   ],
   meta: { unsaved: 2 }
 }
-document_.included[1].relationships.controller = { data: { type: 'parameters', id: 'stereo.match.p1' } }
-document_.included[1].relationships['greater-than'] = { data: { type: 'parameters', id: 'stereo.match.p1' } }
+document_.included[1].relationships.controlledBy = { data: { type: 'parameters', id: 'stereo.match.p1' } }
+document_.included[1].relationships.greaterThan = { data: { type: 'parameters', id: 'stereo.match.p1' } }
 
 describe('parameters service', () => {
   let fetchMock
@@ -50,12 +50,12 @@ describe('parameters service', () => {
     return { url, options, body: options?.body ? JSON.parse(options.body) : undefined }
   }
 
-  it('flattens groups and parameters out of the JSON:API document', async () => {
+  it('flattens stages and parameters out of the JSON:API document', async () => {
     fetchMock.mockResolvedValue(respond(200, document_))
 
     const { groups, parameters, unsaved } = await fetchGroups()
 
-    expect(lastRequest().url).toMatch(/\/api\/parameter-groups\?include=parameters$/)
+    expect(lastRequest().url).toMatch(/\/api\/stages\?include=parameters$/)
     expect(lastRequest().options.headers).toMatchObject({
       Accept: 'application/vnd.api+json',
       'Content-Type': 'application/vnd.api+json'
@@ -63,15 +63,15 @@ describe('parameters service', () => {
     expect(unsaved).toBe(2)
     expect(groups).toEqual([
       expect.objectContaining({
-        id: 'stereo.match', name: 'Match', placement: 'flow', position: 1,
+        id: 'stereo.match', name: 'Match', role: 'step', position: 1,
         parameterIds: ['stereo.match.p1', 'stereo.match.p2']
       })
     ])
     expect(parameters['stereo.match.p1']).toMatchObject({
-      id: 'stereo.match.p1', value: 12, group: 'stereo.match', controller: null, greaterThan: null
+      id: 'stereo.match.p1', valueType: 'integer', value: 12, stage: 'stereo.match', controlledBy: null, greaterThan: null
     })
     expect(parameters['stereo.match.p2']).toMatchObject({
-      state: 'automatic', controller: 'stereo.match.p1', greaterThan: 'stereo.match.p1'
+      state: 'automatic', controlledBy: 'stereo.match.p1', greaterThan: 'stereo.match.p1'
     })
   })
 
@@ -121,12 +121,12 @@ describe('parameters service', () => {
       data: { type: 'parameter-resets', id: '2', attributes: { parameters: ['a'] } }
     }))
 
-    await resetParameters({ type: 'parameter-groups', id: 'stereo.match' })
+    await resetParameters({ type: 'stages', id: 'stereo.match' })
     expect(lastRequest().url).toMatch(/\/api\/parameter-resets$/)
     expect(lastRequest().body).toEqual({
       data: {
         type: 'parameter-resets',
-        relationships: { target: { data: { type: 'parameter-groups', id: 'stereo.match' } } }
+        relationships: { target: { data: { type: 'stages', id: 'stereo.match' } } }
       }
     })
 
@@ -134,12 +134,12 @@ describe('parameters service', () => {
     expect(lastRequest().body).toEqual({ data: { type: 'parameter-resets' } })
   })
 
-  it('returns the export snippet', async () => {
+  it('returns the composer snippet', async () => {
     fetchMock.mockResolvedValue(respond(200, {
-      data: { type: 'parameter-exports', id: 'current', attributes: { snippet: 'config :a, b: 1' } }
+      data: { type: 'composer-snippets', id: 'current', attributes: { snippet: 'config :a, b: 1' } }
     }))
 
-    expect(await fetchExport()).toBe('config :a, b: 1')
-    expect(lastRequest().url).toMatch(/\/api\/parameter-export$/)
+    expect(await fetchComposerSnippet()).toBe('config :a, b: 1')
+    expect(lastRequest().url).toMatch(/\/api\/composer-snippet$/)
   })
 })

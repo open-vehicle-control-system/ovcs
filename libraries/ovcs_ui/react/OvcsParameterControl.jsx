@@ -21,9 +21,9 @@ export const formatValue = (value) => {
 }
 
 /** The step of a range: its own, else 1 for an integer and a hundredth of the range for a double. */
-export function rangeStep({ type, constraint }) {
+export function rangeStep({ valueType, constraint }) {
   if (constraint?.step) return constraint.step
-  if (type === 'integer') return 1
+  if (valueType === 'integer') return 1
   return tidy((constraint.max - constraint.min) / 100)
 }
 
@@ -31,17 +31,17 @@ const decimalsOf = (number) => (String(tidy(number)).split('.')[1] ?? '').length
 
 // A double in a range is written to the precision of its step.
 function formatField(value, parameter) {
-  if (typeof value !== 'number' || parameter.type !== 'double' || parameter.constraint?.kind !== 'range') return formatValue(value)
+  if (typeof value !== 'number' || parameter.valueType !== 'double' || parameter.constraint?.kind !== 'range') return formatValue(value)
   return round(value, Math.min(decimalsOf(rangeStep(parameter)), DISPLAY_DECIMALS))
 }
 
 const sameValue = (a, b) => a === b || (typeof a === 'number' && typeof b === 'number' && tidy(a) === tidy(b))
 
 function fit(number, parameter, bounds) {
-  const { type, constraint } = parameter
+  const { valueType, constraint } = parameter
   let value = number
   if (constraint?.step) value = tidy(constraint.min + Math.round((value - constraint.min) / constraint.step) * constraint.step)
-  else if (type === 'integer') value = Math.round(value)
+  else if (valueType === 'integer') value = Math.round(value)
   if (bounds) value = Math.min(bounds.max, Math.max(bounds.min, value))
   return value
 }
@@ -57,7 +57,7 @@ function parseNumber(text) {
 function ValueField({ parameter, shown, bounds, label, onChange }) {
   const [text, setText] = useState(null)
   const disabled = parameter.value == null
-  const numeric = parameter.type === 'integer' || parameter.type === 'double'
+  const numeric = parameter.valueType === 'integer' || parameter.valueType === 'double'
 
   const commit = () => {
     if (text === null) return

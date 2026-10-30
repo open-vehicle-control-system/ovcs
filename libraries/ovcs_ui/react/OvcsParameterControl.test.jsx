@@ -5,7 +5,7 @@ import { OvcsParameterControl as ParameterControl, formatValue } from './index.j
 const p1 = {
   id: 'stereo.match.p1',
   name: 'p1',
-  type: 'integer',
+  valueType: 'integer',
   constraint: { kind: 'range', min: 0, max: 255, step: null },
   applies: 'live',
   description: 'Penalty for a disparity change of one',
@@ -13,7 +13,7 @@ const p1 = {
   value: 8,
   saved: 8,
   state: 'builtin',
-  controller: null,
+  controlledBy: null,
   greaterThan: null
 }
 
@@ -31,8 +31,8 @@ const show = (parameter, props = {}) => {
 describe('ParameterControl', () => {
   it('renders a slider for a range, buttons for choices, a switch for a bool', () => {
     show(p1)
-    show({ ...p1, id: 'mode', name: 'mode', type: 'string', constraint: { kind: 'choices', values: ['sgbm', 'bm'] }, value: 'bm', default: 'bm' })
-    show({ ...p1, id: 'on', name: 'temporal', type: 'bool', constraint: { kind: 'bool' }, value: true, default: true })
+    show({ ...p1, id: 'mode', name: 'mode', valueType: 'string', constraint: { kind: 'choices', values: ['sgbm', 'bm'] }, value: 'bm', default: 'bm' })
+    show({ ...p1, id: 'on', name: 'temporal', valueType: 'bool', constraint: { kind: 'bool' }, value: true, default: true })
 
     expect(screen.getByRole('slider', { name: 'p1' })).toBeTruthy()
     expect(screen.getByRole('textbox', { name: 'p1 value' })).toBeTruthy()
@@ -43,11 +43,11 @@ describe('ParameterControl', () => {
   })
 
   it('changes a choice and toggles a switch', () => {
-    const choice = show({ ...p1, name: 'mode', type: 'string', constraint: { kind: 'choices', values: ['sgbm', 'bm'] }, value: 'bm', default: 'bm' })
+    const choice = show({ ...p1, name: 'mode', valueType: 'string', constraint: { kind: 'choices', values: ['sgbm', 'bm'] }, value: 'bm', default: 'bm' })
     fireEvent.click(screen.getByRole('button', { name: 'sgbm' }))
     expect(choice.onChange).toHaveBeenCalledWith('sgbm')
 
-    const toggle = show({ ...p1, name: 'temporal', type: 'bool', constraint: { kind: 'bool' }, value: true, default: true })
+    const toggle = show({ ...p1, name: 'temporal', valueType: 'bool', constraint: { kind: 'bool' }, value: true, default: true })
     fireEvent.click(screen.getByRole('switch', { name: 'temporal' }))
     expect(toggle.onChange).toHaveBeenCalledWith(false)
   })
@@ -63,7 +63,7 @@ describe('ParameterControl', () => {
   })
 
   it('steps a double without a step by a hundredth of its range', () => {
-    show({ ...p1, name: 'uniqueness', type: 'double', constraint: { kind: 'range', min: 1, max: 3, step: null }, value: 1.2, default: 1.2 })
+    show({ ...p1, name: 'uniqueness', valueType: 'double', constraint: { kind: 'range', min: 1, max: 3, step: null }, value: 1.2, default: 1.2 })
 
     expect(screen.getByRole('slider', { name: 'uniqueness' }).getAttribute('step')).toBe('0.02')
   })
@@ -114,7 +114,7 @@ describe('ParameterControl', () => {
   })
 
   it('shows a double without float noise', () => {
-    show({ ...p1, name: 'uniqueness', type: 'double', constraint: { kind: 'range', min: 1, max: 3, step: null }, value: 0.1 + 0.2, default: 0.3 })
+    show({ ...p1, name: 'uniqueness', valueType: 'double', constraint: { kind: 'range', min: 1, max: 3, step: null }, value: 0.1 + 0.2, default: 0.3 })
 
     expect(screen.getByRole('textbox', { name: 'uniqueness value' }).value).toBe('0.3')
   })
@@ -126,13 +126,13 @@ describe('ParameterControl', () => {
   })
 
   it('fills the number field of a double up to its step', () => {
-    show({ ...p1, name: 'uniqueness', type: 'double', constraint: { kind: 'range', min: 1, max: 3, step: 0.01 }, value: 1.23456, default: 1.2 })
+    show({ ...p1, name: 'uniqueness', valueType: 'double', constraint: { kind: 'range', min: 1, max: 3, step: 0.01 }, value: 1.23456, default: 1.2 })
 
     expect(screen.getByRole('textbox', { name: 'uniqueness value' }).value).toBe('1.23')
   })
 
   it('keeps the switch to its own width with the knob on its track', () => {
-    show({ ...p1, name: 'auto exposure', type: 'bool', constraint: { kind: 'bool' }, value: false, default: false })
+    show({ ...p1, name: 'auto exposure', valueType: 'bool', constraint: { kind: 'bool' }, value: false, default: false })
 
     const toggle = screen.getByRole('switch', { name: 'auto exposure' })
     expect(toggle.className).toContain('self-start')
@@ -194,7 +194,7 @@ describe('ParameterControl', () => {
   })
 
   it('shows an automatic parameter read-only with its controller', () => {
-    show({ ...p1, name: 'exposure_us', state: 'automatic', controller: 'cameras.auto_exposure', value: 8000, default: 10000 }, { controllerName: 'auto_exposure' })
+    show({ ...p1, name: 'exposure_us', state: 'automatic', controlledBy: 'cameras.auto_exposure', value: 8000, default: 10000 }, { controllerName: 'auto_exposure' })
 
     expect(screen.getByText('automatic')).toBeTruthy()
     expect(screen.getByText(/set by auto_exposure/)).toBeTruthy()
@@ -229,10 +229,10 @@ describe('ParameterControl', () => {
     expect(input.value).toBe('–')
     expect(screen.queryByRole('button', { name: 'Reset p1' })).toBeNull()
 
-    show({ ...p1, name: 'temporal', type: 'bool', constraint: { kind: 'bool' }, value: null, default: true })
+    show({ ...p1, name: 'temporal', valueType: 'bool', constraint: { kind: 'bool' }, value: null, default: true })
     expect(screen.getByRole('switch', { name: 'temporal' }).disabled).toBe(true)
 
-    show({ ...p1, name: 'mode', type: 'string', constraint: { kind: 'choices', values: ['sgbm', 'bm'] }, value: null, default: 'bm' })
+    show({ ...p1, name: 'mode', valueType: 'string', constraint: { kind: 'choices', values: ['sgbm', 'bm'] }, value: null, default: 'bm' })
     expect(screen.getByRole('button', { name: 'bm' }).disabled).toBe(true)
     expect(screen.getAllByText('–').length).toBeGreaterThanOrEqual(2)
   })
