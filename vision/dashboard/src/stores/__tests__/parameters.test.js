@@ -167,7 +167,9 @@ describe('parameters store', () => {
 
   it('dismisses the error', async () => {
     service.saveParameters.mockRejectedValue(new Error('database unavailable'))
+    service.fetchGroups.mockResolvedValue(snapshot())
     await state().save()
+    expect(state().error).toBe('database unavailable')
 
     state().dismissError()
 
