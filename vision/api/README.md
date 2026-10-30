@@ -9,7 +9,7 @@ The parameter routes follow [JSON:API](https://jsonapi.org/): every response is 
 | `GET /api/parameter-groups?include=parameters` | The groups (`VisionCore.Parameters`) by position, their parameters in `included`, the unsaved count in `meta.unsaved`. |
 | `GET /api/parameters` | Every parameter, the unsaved count in `meta.unsaved`. |
 | `GET /api/parameters/:id` | One parameter; 404 when unknown. |
-| `PATCH /api/parameters/:id` | Sets one as an unsaved change: 200 with the parameter, 422 when refused, 404 when unknown, 409 on a `type` or `id` mismatch, 400 without `data.attributes.value`. |
+| `PATCH /api/parameters/:id` | Sets one as an unsaved change: 200 with the parameter, 422 when refused, 404 when unknown, 409 on a `type` or `id` mismatch, 400 without `data.type`, `data.id` or `data.attributes.value`. |
 | `POST /api/parameter-saves` | Saves the unsaved changes: 201 with the saved parameter ids; 503 when the store fails. |
 | `POST /api/parameter-discards` | Discards the unsaved changes: 201 with their ids. |
 | `POST /api/parameter-resets` | Resets the `target` relationship (a `parameter-groups` or `parameters` resource), or everything without one: 201 with the reset ids. |
