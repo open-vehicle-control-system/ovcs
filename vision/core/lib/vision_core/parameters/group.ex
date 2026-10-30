@@ -1,0 +1,20 @@
+defmodule VisionCore.Parameters.Group do
+  @moduledoc """
+  A component or pipeline stage and its parameters, as `VisionCore.Parameters`
+  lists it.
+  """
+  alias VisionCore.Parameters.Parameter
+
+  defstruct [:id, :name, :summary, :kind, :placement, :position, :status, parameters: []]
+
+  @type t :: %__MODULE__{
+          id: String.t(),
+          name: String.t(),
+          summary: String.t(),
+          kind: :component | :stage,
+          placement: :flow | :side,
+          position: non_neg_integer(),
+          status: {:ok | :warning | :off, String.t()} | nil,
+          parameters: [Parameter.t()]
+        }
+end
