@@ -79,6 +79,20 @@ defmodule VisionCore.StatusTest do
     assert bands == [1.5, 1.5, 1.5, 1.5]
   end
 
+  test "each tick reports the cameras' sharpness averaged over its pairs" do
+    start_supervised!({Status, config: config([]), tick_ms: 200})
+    :ok = Status.subscribe()
+    assert_receive {:vision_status, %{sharpness: nil}}
+
+    for right <- [0.02, 0.04] do
+      GenServer.cast(Status, {:stereo_pair, %{pair() | sharpness: %{left: 0.04, right: right}}})
+    end
+
+    assert_receive {:vision_status, %{sharpness: %{left: left, right: right}}}, 500
+    assert_in_delta left, 0.04, 1.0e-9
+    assert_in_delta right, 0.03, 1.0e-9
+  end
+
   test "each tick reports the CPU usage and the stereo segment time" do
     start_supervised!({Status, config: config([]), tick_ms: 200})
     :ok = Status.subscribe()

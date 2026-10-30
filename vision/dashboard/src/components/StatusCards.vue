@@ -69,6 +69,19 @@ function alignmentCard(alignment) {
   }
 }
 
+// The right camera's sharpness over the left's; far from 1, their focus differs.
+function sharpnessCard(sharpness) {
+  if (!sharpness || !sharpness.left) return { id: 'sharpness', title: 'Sharpness, right / left', value: '–', healthy: false }
+  const ratio = sharpness.right / sharpness.left
+  return {
+    id: 'sharpness',
+    title: 'Sharpness, right / left',
+    value: formatNumber(ratio, 2),
+    healthy: ratio >= 0.8 && ratio <= 1.25,
+    detail: `left ${formatNumber(sharpness.left, 4)} · right ${formatNumber(sharpness.right, 4)}`
+  }
+}
+
 const cards = computed(() => {
   const status = props.status
   return [
@@ -80,7 +93,8 @@ const cards = computed(() => {
     { id: 'zenoh', title: 'Zenoh', value: status.zenoh, healthy: status.zenoh === 'connected' },
     loadCard('cpu', 'CPU', status.cpu_percent, 'all cores'),
     loadCard('segment', 'Stereo segment time', status.stereo_segment_percent, 'of each frame, GPU transfers included'),
-    alignmentCard(status.alignment)
+    alignmentCard(status.alignment),
+    sharpnessCard(status.sharpness)
   ]
 })
 </script>

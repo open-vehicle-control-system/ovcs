@@ -8,6 +8,7 @@ defmodule VisionCore.Stereo.Pipeline do
   (`VisionCore.Stereo.NxStage`):
 
       Rectify      # camera frames → rectified grey images at the pipeline's size
+      Sharpness    # each image's sharpness, to compare the cameras' focus
       Match        # disparity, libSGM's semi-global matching
       PostFilter   # median filter on the disparity
       Speckle      # drops small islands of disparity
@@ -75,6 +76,7 @@ defmodule VisionCore.Stereo.Pipeline do
   def default_stages(overrides \\ []) do
     for module <- [
           Stage.Rectify,
+          Stage.Sharpness,
           Stage.Match,
           Stage.PostFilter,
           Stage.Speckle,
