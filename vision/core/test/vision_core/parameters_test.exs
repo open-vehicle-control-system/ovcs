@@ -560,16 +560,37 @@ defmodule VisionCore.ParametersTest do
                Parameters.get(server, "stereo.match.p1")
     end
 
-    @tag saved: %{"stereo.match.p1" => 10, "stereo.match.p2" => 70, "detection.min_score" => 0.5}
+    @tag saved: %{
+           "stereo.match.p1" => 10,
+           "stereo.match.p2" => 70,
+           "stereo.cameras.auto_exposure" => false,
+           "detection.min_score" => 0.5
+         }
     test "export renders the saved values with their composer paths", %{server: server} do
       start_owner(server, &match_groups/1)
+      start_owner(server, &cameras_groups(&1, true))
 
       assert Parameters.export(server) == """
-             # In the options of the {:stereo, opts} component:
-             stages: Pipeline.default_stages(match: [p1: 10, p2: 70])
+             # In the options of the stereo component ({:stereo, opts}):
+             stages: VisionCore.Stereo.Pipeline.default_stages(match: [p1: 10, p2: 70])
 
              # Not settable in the composer:
+             # stereo.cameras.auto_exposure = false
+
+             # Saved for parameters not running now:
              # detection.min_score = 0.5
+             """
+    end
+
+    @tag saved: %{"stereo.match.p1" => 10}
+    test "export lists the saved values of a group whose owner is down as not running now",
+         %{server: server} do
+      {owner, _agent} = start_owner(server, &match_groups/1)
+      stop_owner(owner)
+
+      assert Parameters.export(server) == """
+             # Saved for parameters not running now:
+             # stereo.match.p1 = 10
              """
     end
   end

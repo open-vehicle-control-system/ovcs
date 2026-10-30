@@ -138,8 +138,7 @@ defmodule VisionCore.Parameters do
        groups: %{},
        owners: %{},
        defaults: %{},
-       changed: %{},
-       exports: %{}
+       changed: %{}
      }}
   end
 
@@ -264,7 +263,14 @@ defmodule VisionCore.Parameters do
   end
 
   def handle_call(:export, _from, state) do
-    rows = for {id, value} <- state.saved, do: {state.exports[id], id, value}
+    rows =
+      for {id, value} <- state.saved do
+        case find(state, id) do
+          nil -> {:not_running, id, value}
+          declared -> {declared.export, id, value}
+        end
+      end
+
     {:reply, Export.render(rows), state}
   end
 
@@ -273,8 +279,6 @@ defmodule VisionCore.Parameters do
     groups = Map.get(state.groups, owner, [])
     declared = Enum.flat_map(groups, & &1.parameters)
     {_values, state} = read_values(state, Enum.map(declared, & &1.id))
-    exports = Map.new(declared, &{&1.id, &1.export})
-    state = %{state | exports: Map.merge(state.exports, exports)}
 
     saved = fn parameter, _values -> Map.fetch(state.saved, parameter.id) end
     {_ids, _applied, refused} = apply_values(state, declared, saved, &apply_saved/4)
