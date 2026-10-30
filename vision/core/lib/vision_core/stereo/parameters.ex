@@ -9,6 +9,11 @@ defmodule VisionCore.Stereo.Parameters do
       parameters. Exposure and gain are set by auto exposure while it is on,
       and then read what the sensors apply; their defaults are the manual
       settings.
+    * `<prefix>.left_camera` and `<prefix>.right_camera` — the same, for a
+      driver with controls per camera. Auto exposure and auto gain are
+      switches of their own; exposure and gain are set by them while they are
+      on, and then read what the sensor applies. Their defaults are the
+      manual settings the composer gives the camera.
     * `<prefix>.<stage>` — each stage of `VisionCore.Stereo.Pipeline`, in
       pipeline order, with its settings; Rectify also carries the matching
       size.
@@ -26,6 +31,12 @@ defmodule VisionCore.Stereo.Parameters do
 
   @side_keys [:device, :sync, :sensor_mode]
   @half_row 0.5
+  @manual_keys [:exposure_time_us, :analogue_gain]
+  @auto_switch_of %{exposure_time_us: :auto_exposure, analogue_gain: :auto_gain}
+  @auto_switches [
+    {:auto_exposure, :exposure_time_us, "Let the camera choose the shutter time"},
+    {:auto_gain, :analogue_gain, "Let the camera choose the analogue gain"}
+  ]
 
   @doc """
   Declares the unit's groups. Options: `:topic_prefix`, `:driver`,
@@ -87,9 +98,104 @@ defmodule VisionCore.Stereo.Parameters do
         }
       ]
     else
-      []
+      side_camera_groups(prefix, driver, opts)
     end
   end
+
+  defp side_camera_groups(prefix, driver, opts) do
+    if function_exported?(driver, :control_specs, 0),
+      do: Enum.map([:left, :right], &side_camera_group(prefix, driver, opts, &1)),
+      else: []
+  end
+
+  defp side_camera_group(prefix, driver, opts, side) do
+    id = "#{prefix}.#{side}_camera"
+    server = driver.name_for(Atom.to_string(side))
+    configured = Keyword.get(opts, side, [])
+
+    %{
+      id: id,
+      name: "#{humanise(side)} camera",
+      summary: "Capture settings of the #{side} camera.",
+      kind: :component,
+      placement: :flow,
+      position: 0,
+      parameters:
+        Enum.map(@auto_switches, &auto_switch(&1, driver, server)) ++
+          Enum.map(
+            driver.control_specs(),
+            &side_control(&1, driver, server, id, side, configured)
+          )
+    }
+  end
+
+  defp auto_switch({name, key, description}, driver, server) do
+    %{
+      name: Atom.to_string(name),
+      type: :bool,
+      get: fn -> automatic_value?(driver.controls(server)[key]) end,
+      set: &automatic_set(&1, driver, server, key),
+      constraint: %{kind: :bool},
+      description: description
+    }
+  end
+
+  # Off is applied by the registry setting the controlled value first.
+  defp automatic_set(true, driver, server, key), do: ok(driver.set_controls(server, [{key, 0}]))
+  defp automatic_set(false, _driver, _server, _key), do: :ok
+
+  defp automatic_value?(value), do: is_nil(value) or value == 0
+
+  defp side_control(spec, driver, server, group_id, side, configured) do
+    %{
+      name: Atom.to_string(spec.key),
+      type: spec.type,
+      get: side_get(spec.key, driver, server),
+      set: &ok(driver.set_controls(server, [{spec.key, &1}])),
+      constraint: side_constraint(spec),
+      applies: side_applies(spec.key, group_id),
+      description: side_description(spec),
+      export: [:components, :stereo, side, spec.key]
+    }
+    |> put_configured_default(spec.key, configured[spec.key])
+  end
+
+  defp side_get(key, driver, server) when key in @manual_keys do
+    fn ->
+      controls = driver.controls(server)
+      value = controls[key]
+      applied = automatic_value?(value) && live(driver, server)
+      if applied, do: applied[key] || value, else: value
+    end
+  end
+
+  defp side_get(key, driver, server), do: fn -> driver.controls(server)[key] end
+
+  defp side_applies(key, group_id) when key in @manual_keys,
+    do: {:auto, "#{group_id}.#{@auto_switch_of[key]}"}
+
+  defp side_applies(_key, _group_id), do: :live
+
+  # 0 is how the driver is told to go automatic, so a manual value starts at 1.
+  defp side_constraint(%{key: :exposure_time_us}),
+    do: %{kind: :range, min: 1, max: 1_000_000, step: nil}
+
+  defp side_constraint(%{key: :analogue_gain}), do: %{kind: :range, min: 1, max: 16, step: nil}
+  defp side_constraint(spec), do: constraint(spec)
+
+  defp side_description(%{key: :exposure_time_us}),
+    do: "Shutter time in microseconds; set by auto exposure while it is on"
+
+  defp side_description(%{key: :analogue_gain}),
+    do: "Analogue gain; set by auto gain while it is on"
+
+  defp side_description(spec), do: spec.description
+
+  defp put_configured_default(declaration, key, value) when key in @manual_keys do
+    if automatic_value?(value), do: declaration, else: Map.put(declaration, :default, value)
+  end
+
+  defp put_configured_default(declaration, _key, _value), do: declaration
 
   defp control(spec, driver, server, group_id, controls) do
     %{
@@ -261,8 +367,8 @@ defmodule VisionCore.Stereo.Parameters do
   defp parameter_value(value) when is_atom(value), do: {:string, Atom.to_string(value)}
   defp parameter_value(value), do: {:string, to_string(value)}
 
-  defp humanise(stage),
-    do: stage |> Atom.to_string() |> String.replace("_", " ") |> String.capitalize()
+  defp humanise(name),
+    do: name |> Atom.to_string() |> String.replace("_", " ") |> String.capitalize()
 
   defp put_present(map, _key, nil), do: map
   defp put_present(map, key, value), do: Map.put(map, key, value)

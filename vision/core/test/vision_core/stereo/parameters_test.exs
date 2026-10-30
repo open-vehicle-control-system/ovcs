@@ -42,6 +42,30 @@ defmodule VisionCore.Stereo.ParametersTest do
     end
   end
 
+  # A driver with controls per camera, as LibCamera's, recording what it is sent.
+  defmodule SideDriver do
+    use Agent
+
+    def start_link(state), do: Agent.start_link(fn -> state end, name: __MODULE__)
+    def name_for(label), do: label
+    def control_specs, do: VisionCore.Camera.LibCamera.control_specs()
+    def controls(label), do: Agent.get(__MODULE__, & &1.controls[label])
+    def live(label), do: Agent.get(__MODULE__, & &1.live[label])
+    def calls, do: Agent.get(__MODULE__, &Enum.reverse(&1.calls))
+
+    def set_controls(label, controls) do
+      Agent.update(__MODULE__, fn state ->
+        %{
+          state
+          | calls: [{label, controls} | state.calls],
+            controls: Map.update!(state.controls, label, &Map.merge(&1, Map.new(controls)))
+        }
+      end)
+
+      {:ok, controls(label)}
+    end
+  end
+
   # Answers `VisionCore.Status.snapshot/0` with the snapshot it holds.
   defmodule Status do
     use GenServer
@@ -130,6 +154,131 @@ defmodule VisionCore.Stereo.ParametersTest do
 
   test "a driver without shared controls declares no cameras group" do
     refute Enum.any?(groups(driver: VisionCore.Camera.LibCamera), &(&1.id == "stereo.cameras"))
+  end
+
+  describe "a driver with controls per camera" do
+    @side_controls %{
+      exposure_mode: "normal",
+      exposure_time_us: 0,
+      analogue_gain: 0.0,
+      lens_position: nil,
+      brightness: 0.0,
+      contrast: 1.0,
+      sharpness: 1.0,
+      noise_reduction: "auto"
+    }
+
+    setup do
+      start_supervised!(
+        {SideDriver,
+         %{
+           controls: %{"left" => @side_controls, "right" => @side_controls},
+           live: %{"left" => %{exposure_time_us: 8000, analogue_gain: 2.5}, "right" => nil},
+           calls: []
+         }}
+      )
+
+      :ok
+    end
+
+    defp side_groups(opts \\ []), do: groups(Keyword.merge([driver: SideDriver], opts))
+
+    test "a LibCamera unit gets a group per camera" do
+      groups = side_groups()
+      ids = Enum.map(groups, & &1.id)
+
+      assert Enum.take(ids, 2) == ["stereo.left_camera", "stereo.right_camera"]
+      refute "stereo.cameras" in ids
+
+      assert %{name: "Left camera", kind: :component, placement: :flow, position: 0} =
+               hd(groups)
+
+      left = Enum.find(groups, &(&1.id == "stereo.left_camera"))
+      right = Enum.find(groups, &(&1.id == "stereo.right_camera"))
+
+      assert parameter(left, "lens_position").export == [
+               :components,
+               :stereo,
+               :left,
+               :lens_position
+             ]
+
+      assert parameter(right, "lens_position").export ==
+               [:components, :stereo, :right, :lens_position]
+
+      refute Map.has_key?(parameter(left, "auto_exposure"), :export)
+    end
+
+    test "auto exposure is on while the exposure is 0, and switching it on sets 0" do
+      left = Enum.find(side_groups(), &(&1.id == "stereo.left_camera"))
+      auto = parameter(left, "auto_exposure")
+      exposure = parameter(left, "exposure_time_us")
+
+      assert auto.get.() == true
+      assert exposure.applies == {:auto, "stereo.left_camera.auto_exposure"}
+      assert exposure.constraint == %{kind: :range, min: 1, max: 1_000_000, step: nil}
+      assert exposure.get.() == 8000
+
+      assert :ok = exposure.set.(5000)
+      assert auto.get.() == false
+      assert exposure.get.() == 5000
+
+      assert :ok = auto.set.(true)
+
+      assert SideDriver.calls() == [
+               {"left", [exposure_time_us: 5000]},
+               {"left", [exposure_time_us: 0]}
+             ]
+
+      assert auto.get.() == true
+    end
+
+    test "gain follows its own switch and range" do
+      left = Enum.find(side_groups(), &(&1.id == "stereo.left_camera"))
+      gain = parameter(left, "analogue_gain")
+
+      assert gain.applies == {:auto, "stereo.left_camera.auto_gain"}
+      assert gain.constraint == %{kind: :range, min: 1, max: 16, step: nil}
+      assert gain.get.() == 2.5
+      assert parameter(left, "auto_gain").get.() == true
+      assert :ok = parameter(left, "auto_gain").set.(false)
+      assert SideDriver.calls() == []
+    end
+
+    test "an automatic value falls back to the controls before the camera reports" do
+      right = Enum.find(side_groups(), &(&1.id == "stereo.right_camera"))
+      assert parameter(right, "exposure_time_us").get.() == 0
+    end
+
+    test "exposure and gain default to the composer's manual values" do
+      groups = side_groups(left: [exposure_time_us: 6000, analogue_gain: 1.5])
+      left = Enum.find(groups, &(&1.id == "stereo.left_camera"))
+      right = Enum.find(groups, &(&1.id == "stereo.right_camera"))
+
+      assert %{default: 6000} = parameter(left, "exposure_time_us")
+      assert %{default: 1.5} = parameter(left, "analogue_gain")
+      refute Map.has_key?(parameter(right, "exposure_time_us"), :default)
+    end
+
+    test "switching auto exposure off keeps the exposure the camera applied" do
+      start_supervised!({VisionCore.Parameters, store: MemoryStore})
+
+      start_supervised!(
+        {Parameters, topic_prefix: "stereo", driver: SideDriver, pipeline: Pipeline}
+      )
+
+      assert {:ok, %{value: true, state: :builtin}} =
+               VisionCore.Parameters.get("stereo.left_camera.auto_exposure")
+
+      assert {:ok, %{value: false}} =
+               VisionCore.Parameters.set("stereo.left_camera.auto_exposure", false)
+
+      assert SideDriver.calls() == [{"left", [exposure_time_us: 8000]}]
+      assert SideDriver.controls("left").exposure_time_us == 8000
+
+      assert {:ok, %{value: 8000, state: :builtin}} =
+               VisionCore.Parameters.get("stereo.left_camera.exposure_time_us")
+    end
   end
 
   test "exposure and gain are set by auto exposure, and read what the sensors apply" do
