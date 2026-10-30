@@ -1,4 +1,6 @@
 # Nx stages on Nx's evaluator take minutes per frame; EXLA compiles them for the CPU.
+# CI runs `mix test --no-start`, so its client is started here.
+{:ok, _apps} = Application.ensure_all_started(:exla)
 Application.put_env(:vision_core, :nx_defn_options, compiler: EXLA)
 
 # VisionCore.Jpeg's Port (jpeg_codec), built from the Rust workspace; the :jpeg tests need it.
