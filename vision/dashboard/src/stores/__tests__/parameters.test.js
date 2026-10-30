@@ -119,6 +119,21 @@ describe('parameters store', () => {
     expect(service.fetchGroups).toHaveBeenCalledTimes(1)
   })
 
+  it.each([
+    ['save', 'saveParameters', []],
+    ['discard', 'discardParameters', []],
+    ['reset', 'resetParameters', [{ type: 'parameter-groups', id: 'stereo.match' }]]
+  ])('reloads after a failed %s, which may have changed some values', async (action, call, args) => {
+    service[call].mockRejectedValue(new Error('stereo.match.p1: owner is busy'))
+    service.fetchGroups.mockResolvedValue(snapshot(12, 0))
+
+    await state()[action](...args)
+
+    expect(service.fetchGroups).toHaveBeenCalledTimes(1)
+    expect(state().groups).toHaveLength(3)
+    expect(state().error).toBe('stereo.match.p1: owner is busy')
+  })
+
   it('keeps the error of a failed save and the unsaved count', async () => {
     service.fetchGroups.mockResolvedValue(snapshot(8, 3))
     await state().load()
@@ -182,13 +197,38 @@ describe('parameters store', () => {
     service.fetchGroups.mockResolvedValue(snapshot(12, 0))
     service.discardParameters.mockResolvedValue([])
     const poll = state().load()
+    let settled = false
 
-    await state().discard()
+    const discarding = state().discard().then(() => { settled = true })
+    await Promise.resolve()
+    await Promise.resolve()
     expect(service.fetchGroups).toHaveBeenCalledTimes(1)
+    expect(settled).toBe(false)
+
     finish(snapshot(12, 5))
+    await discarding
     await poll
 
     expect(service.fetchGroups).toHaveBeenCalledTimes(2)
+    expect(state().unsaved).toBe(0)
+  })
+
+  it('settles an action only once the reload that reflects it has finished', async () => {
+    let finishPoll
+    let finishReload
+    service.fetchGroups.mockReturnValueOnce(new Promise((resolve) => { finishPoll = resolve }))
+    service.fetchGroups.mockReturnValueOnce(new Promise((resolve) => { finishReload = resolve }))
+    service.saveParameters.mockResolvedValue(['stereo.match.p1'])
+    state().load()
+    let settled = false
+
+    const saving = state().save().then(() => { settled = true })
+    finishPoll(snapshot(8, 1))
+    await vi.waitFor(() => expect(service.fetchGroups).toHaveBeenCalledTimes(2))
+    expect(settled).toBe(false)
+
+    finishReload(snapshot(12, 0))
+    await saving
     expect(state().unsaved).toBe(0)
   })
 
