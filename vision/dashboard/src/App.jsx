@@ -3,7 +3,7 @@ import StatusCards from './components/StatusCards.jsx'
 import Preview from './components/Preview.jsx'
 import PipelineDiagram from './components/PipelineDiagram.jsx'
 import ParameterPanel from './components/ParameterPanel.jsx'
-import SaveBar from './components/SaveBar.jsx'
+import { OvcsCard, OvcsSaveBar } from '@ovcs/ui/react'
 import { dashboardSocket } from './services/socket.js'
 import { useStatus } from './stores/status.js'
 import { flowGroups, useParameters } from './stores/parameters.js'
@@ -76,7 +76,7 @@ function ParameterSaveBar() {
   useScrollPaddingFor(barRef)
 
   return (
-    <SaveBar
+    <OvcsSaveBar
       ref={barRef}
       unsaved={unsaved}
       error={error}
@@ -125,14 +125,14 @@ export default function App() {
           </div>
         </section>
 
-        <section aria-labelledby={parametersHeadingId} className="ovcs-card flex min-w-0 flex-col gap-4">
+        <OvcsCard as="section" aria-labelledby={parametersHeadingId} className="flex min-w-0 flex-col gap-4">
           <h2 id={parametersHeadingId} className="text-lg font-semibold">
             Parameters
           </h2>
           <PipelineDiagram />
           <ParameterPanel groupId={selectedGroupId} />
           <ParameterSaveBar />
-        </section>
+        </OvcsCard>
       </div>
     </main>
   )

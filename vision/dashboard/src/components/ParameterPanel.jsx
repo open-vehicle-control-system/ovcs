@@ -1,7 +1,6 @@
 import { useId, useMemo } from 'react'
 import { groupParameters, useParameters } from '../stores/parameters.js'
-import ParameterControl, { formatValue, rangeStep, tidy } from './ParameterControl.jsx'
-import { FOCUS } from './styles.js'
+import { OvcsParameterControl, formatValue, rangeStep, tidy, focusClass as FOCUS } from '@ovcs/ui/react'
 
 // A relation is strict: the margin is the smallest step between two values.
 const margin = (parameter) => (parameter.type === 'integer' ? 1 : rangeStep(parameter))
@@ -71,7 +70,7 @@ export default function ParameterPanel({ groupId }) {
       </p>
       <div className="divide-y divide-ovcs-border">
         {members.map((parameter) => (
-          <ParameterControl
+          <OvcsParameterControl
             key={parameter.id}
             parameter={parameter}
             bounds={relationBounds(parameter, parameters, below)}

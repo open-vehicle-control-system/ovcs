@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { OvcsCard } from '@ovcs/ui/react'
 
 export default function Preview({ stream, socket }) {
   const [frame, setFrame] = useState(null)
@@ -26,7 +27,7 @@ export default function Preview({ stream, socket }) {
   }, [stream, socket])
 
   return (
-    <figure className="ovcs-card overflow-hidden p-0">
+    <OvcsCard as="figure" className="overflow-hidden p-0">
       <div className="flex aspect-video items-center justify-center bg-black">
         {frame ? (
           <img
@@ -41,6 +42,6 @@ export default function Preview({ stream, socket }) {
         )}
       </div>
       <figcaption className="px-4 py-2 text-sm font-medium capitalize text-ovcs-text">{stream}</figcaption>
-    </figure>
+    </OvcsCard>
   )
 }

@@ -90,7 +90,7 @@ function Alert({ text, dismissLabel, onDismiss }) {
  * The callbacks may return promises; the actions stay disabled until they settle. `onExport`
  * resolves to the snippet, shown above the bar. `className` and `ref` go to the bar itself.
  */
-const SaveBar = forwardRef(function SaveBar(
+const OvcsSaveBar = forwardRef(function OvcsSaveBar(
   { unsaved, error, onSave, onDiscard, onResetAll, onExport, onDismissError, className = '' },
   ref
 ) {
@@ -162,4 +162,4 @@ const SaveBar = forwardRef(function SaveBar(
   )
 })
 
-export default SaveBar
+export default OvcsSaveBar

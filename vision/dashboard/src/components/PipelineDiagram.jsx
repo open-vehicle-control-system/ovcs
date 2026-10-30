@@ -1,6 +1,6 @@
 import { useId, useMemo } from 'react'
 import { flowGroups, groupUnsaved, sideGroups, useParameters } from '../stores/parameters.js'
-import { FOCUS } from './styles.js'
+import { OvcsBadge, focusClass as FOCUS } from '@ovcs/ui/react'
 
 // Selection is a tint and a bar on the bottom edge, unlike the focus outline; a warning box keeps its red border.
 const SELECTED = 'shadow-[inset_0_-3px_0_var(--ovcs-accent)] bg-[color-mix(in_srgb,var(--ovcs-accent)_12%,var(--ovcs-surface))]'
@@ -33,9 +33,9 @@ function GroupBox({ group, unsaved, selected, onSelect }) {
     >
       {group.status ? <span aria-hidden="true" className={style.dot} /> : null}
       <span translate="no">{group.name}</span>
-      <span aria-hidden="true" className={`ovcs-badge ovcs-badge--warn min-w-4 text-center tabular-nums ${unsaved > 0 ? '' : 'invisible'}`}>
+      <OvcsBadge tone="warn" aria-hidden="true" className={`min-w-4 text-center tabular-nums ${unsaved > 0 ? '' : 'invisible'}`}>
         {unsaved}
-      </span>
+      </OvcsBadge>
     </button>
   )
 }
