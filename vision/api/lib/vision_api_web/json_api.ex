@@ -29,4 +29,9 @@ defmodule VisionApiWeb.JsonApi do
   def resource(type, id, attributes, relationships \\ %{}) do
     %{type: type, id: id, attributes: attributes, relationships: relationships}
   end
+
+  @doc "The resource object of a created action, listing the parameters it touched."
+  @spec action(String.t(), String.t(), [String.t()]) :: map()
+  def action(type, id, parameters),
+    do: %{type: type, id: id, attributes: %{parameters: parameters}}
 end

@@ -14,6 +14,11 @@ defmodule VisionApiWeb.Router do
     get "/parameter-groups", ParameterGroupController, :index
     get "/parameters", ParameterController, :index
     get "/parameters/:id", ParameterController, :show
+    patch "/parameters/:id", ParameterController, :update
+    post "/parameter-saves", ParameterActionController, :save
+    post "/parameter-discards", ParameterActionController, :discard
+    post "/parameter-resets", ParameterActionController, :reset
+    get "/parameter-export", ParameterActionController, :export
   end
 
   scope "/api", VisionApiWeb do

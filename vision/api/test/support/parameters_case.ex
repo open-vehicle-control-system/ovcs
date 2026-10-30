@@ -1,7 +1,7 @@
 defmodule VisionApiWeb.ParametersCase do
   @moduledoc """
-  Test case declaring the group `test.match` in a restarted `:vision_core`; the
-  declaring process is the test process, which stays alive for the test.
+  Test case declaring the group `test.match` in a restarted `:vision_core`
+  whose registry saves into memory; the declaring process is the test process, which stays alive for the test.
   """
   use ExUnit.CaseTemplate
 
@@ -36,6 +36,13 @@ defmodule VisionApiWeb.ParametersCase do
       Application.delete_env(:vision_core, :vehicle)
       Application.ensure_all_started(:vision_core)
     end)
+
+    start_supervised!(VisionApiWeb.MemoryStore)
+
+    :sys.replace_state(
+      VisionCore.Parameters,
+      &%{&1 | store: VisionApiWeb.MemoryStore, saved: %{}}
+    )
 
     values = start_supervised!({Agent, fn -> %{p1: 8, p2: 64, exposure: 100, auto: true} end})
     get = fn key -> fn -> Agent.get(values, & &1[key]) end end
