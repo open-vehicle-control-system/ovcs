@@ -1,57 +1,33 @@
 defmodule VisionCore.Ros2.Parameters do
   @moduledoc """
-  The vision core node's ROS 2 parameters: the six `rcl_interfaces`
-  services under `/<node_name>/`, so `ros2 param` and Foxglove's
-  Parameters panel list, describe and change them.
+  The vision parameters as the vision core node's ROS 2 parameters: the six
+  `rcl_interfaces` services under `/<node_name>/`, so `ros2 param` and
+  Foxglove's Parameters panel list, describe and change them.
 
-  Components declare their parameters with `declare/1`; they are
-  removed when the declaring process exits, and declared again when it
-  restarts. Each parameter is a map:
+  Every request is answered from `VisionCore.Parameters`. A ROS name is the
+  parameter's id (`stereo.match.p1`). A set request is a
+  `VisionCore.Parameters.set/3`, an unsaved change; saving is not exposed. A
+  set request is answered per parameter; the atomic variant is refused.
 
-    * `:name` — dotted, e.g. `"stereo.left.lens_position"`
-    * `:type` — `:bool`, `:integer`, `:double` or `:string`
-    * `:value` — the value in force
-    * `:description`, `:constraints` — free text for viewers
-    * `:range` — `{low, high}` for numbers, checked before `:set`
-    * `:values` — the accepted strings, checked before `:set`
-    * `:read_only` — refused on set (settings fixed at start)
-    * `:set` — `fn value -> :ok | {:error, reason} end`, run in this
-      process, applying a value that passed the checks
+  A description is read-only for a parameter fixed in the build, carries the
+  range of a numeric range constraint, and gives in its constraints, separated
+  by `; `, the accepted values (`one of: <a>, <b>`), the parameter it must stay
+  above, the automatic mode setting it, and its default when it can be set back.
 
-  An integer is accepted for a `:double` parameter. A set request is
-  answered per parameter; the atomic variant is refused.
-
-  A description's constraints carry the value declared, as `default:
-  <value>` when it can be set again, and a string's accepted values, as
-  `one of: <a>, <b>`, separated by `; `, so a viewer can offer to reset
-  a parameter.
+  Options: `:registry`, the registry answering (`VisionCore.Parameters`).
   """
 
   use GenServer
   require Logger
 
   alias Ros2Zenoh.RclInterfaces.Parameters, as: Codec
+  alias VisionCore.Parameters.Parameter
   alias VisionCore.Ros2.ZenohClient
 
   def start_link(opts \\ []), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 
-  @doc "Declares the calling process's parameters, replacing any it declared before."
-  def declare(parameters), do: GenServer.call(__MODULE__, {:declare, self(), parameters})
-
-  @doc """
-  Every parameter, sorted by name, with its value and constraints:
-  `:name`, `:type`, `:value`, `:read_only`, and when declared
-  `:description`, `:range` and `:values`.
-  """
-  @spec list() :: [map()]
-  def list, do: GenServer.call(__MODULE__, :list)
-
-  @doc "Sets parameter `name` as a ROS set request would: `{:ok, value}` or `{:error, reason}`."
-  @spec set_value(String.t(), term()) :: {:ok, term()} | {:error, String.t()}
-  def set_value(name, value), do: GenServer.call(__MODULE__, {:set_value, name, value})
-
   @impl GenServer
-  def init(_opts) do
+  def init(opts) do
     node_name = ZenohClient.node_name()
 
     services =
@@ -61,50 +37,7 @@ defmodule VisionCore.Ros2.Parameters do
         {name, service}
       end)
 
-    {:ok, %{services: services, parameters: %{}, owners: %{}}}
-  end
-
-  @impl GenServer
-  def handle_call(:list, _from, state) do
-    listed =
-      state.parameters
-      |> Map.values()
-      |> Enum.sort_by(& &1.name)
-      |> Enum.map(
-        &Map.take(&1, [:name, :type, :value, :read_only, :description, :range, :values])
-      )
-
-    {:reply, listed, state}
-  end
-
-  def handle_call({:set_value, name, value}, _from, state) do
-    case set(state.parameters[name], value) do
-      {:ok, value} ->
-        {:reply, {:ok, value},
-         %{state | parameters: maybe_put_value(state.parameters, name, value)}}
-
-      {:error, reason} = error ->
-        {error, _parameters} = log_refusal(name, value, reason, error, state.parameters)
-        {:reply, error, state}
-    end
-  end
-
-  def handle_call({:declare, owner, parameters}, _from, state) do
-    state = drop_owner(state, owner)
-    monitor_reference = Process.monitor(owner)
-
-    declared =
-      Map.new(parameters, fn p ->
-        {p.name,
-         Map.merge(%{read_only: false}, p) |> Map.merge(%{owner: owner, default: p[:value]})}
-      end)
-
-    {:reply, :ok,
-     %{
-       state
-       | parameters: Map.merge(state.parameters, declared),
-         owners: Map.put(state.owners, owner, monitor_reference)
-     }}
+    {:ok, %{services: services, registry: Keyword.get(opts, :registry, VisionCore.Parameters)}}
   end
 
   @impl GenServer
@@ -112,147 +45,155 @@ defmodule VisionCore.Ros2.Parameters do
         {:service_request, %{service_name: service, query: query, request_payload: payload}},
         state
       ) do
-    {response, state} = handle_request(state.services[service], payload, state)
-    ZenohClient.respond(service, query, response)
+    ZenohClient.respond(service, query, respond(state.services[service], payload, state.registry))
     {:noreply, state}
   end
 
-  def handle_info({:DOWN, _ref, :process, owner, _reason}, state),
-    do: {:noreply, drop_owner(state, owner)}
-
   def handle_info(_message, state), do: {:noreply, state}
 
-  defp handle_request("list_parameters", _payload, state),
-    do: {Codec.encode_list(state.parameters |> Map.keys() |> Enum.sort()), state}
+  @doc false
+  @spec respond(String.t(), binary(), GenServer.server()) :: binary()
+  def respond("list_parameters", _payload, registry) do
+    registry
+    |> call(&VisionCore.Parameters.groups/1, [])
+    |> Enum.flat_map(& &1.parameters)
+    |> Enum.map(& &1.id)
+    |> Enum.sort()
+    |> Codec.encode_list()
+  end
 
-  defp handle_request("get_parameters", payload, state) do
-    values =
-      for name <- Codec.decode_names(payload) do
-        case state.parameters[name] do
-          %{value: value, type: type} when not is_nil(value) -> {type, value}
-          _ -> nil
-        end
+  def respond("get_parameters", payload, registry) do
+    payload
+    |> Codec.decode_names()
+    |> Enum.map(&(registry |> find(&1) |> ros_value()))
+    |> Codec.encode_values()
+  end
+
+  def respond("get_parameter_types", payload, registry) do
+    payload
+    |> Codec.decode_names()
+    |> Enum.map(fn name ->
+      case find(registry, name) do
+        %Parameter{type: type} -> type
+        nil -> :not_set
       end
-
-    {Codec.encode_values(values), state}
+    end)
+    |> Codec.encode_types()
   end
 
-  defp handle_request("get_parameter_types", payload, state) do
-    types =
-      for name <- Codec.decode_names(payload),
-          do: get_in(state.parameters, [name, :type]) || :not_set
-
-    {Codec.encode_types(types), state}
-  end
-
-  defp handle_request("describe_parameters", payload, state) do
-    descriptors =
-      for name <- Codec.decode_names(payload) do
-        Map.get(state.parameters, name, %{name: name, type: :not_set}) |> describe()
+  def respond("describe_parameters", payload, registry) do
+    payload
+    |> Codec.decode_names()
+    |> Enum.map(fn name ->
+      case find(registry, name) do
+        %Parameter{} = parameter -> describe(parameter)
+        nil -> %{name: name, type: :not_set}
       end
-
-    {Codec.encode_descriptors(descriptors), state}
+    end)
+    |> Codec.encode_descriptors()
   end
 
-  defp handle_request("set_parameters", payload, state) do
-    {results, parameters} =
-      Enum.map_reduce(Codec.decode_parameters(payload), state.parameters, fn {name, value},
-                                                                             parameters ->
-        case set(parameters[name], value) do
-          {:ok, value} -> {:ok, maybe_put_value(parameters, name, value)}
-          {:error, reason} = error -> log_refusal(name, value, reason, error, parameters)
-        end
-      end)
-
-    {Codec.encode_results(results), %{state | parameters: parameters}}
+  def respond("set_parameters", payload, registry) do
+    payload
+    |> Codec.decode_parameters()
+    |> Enum.map(fn {name, value} ->
+      case call(registry, &VisionCore.Parameters.set(&1, name, value), {:error, "not applied"}) do
+        {:ok, _parameter} -> :ok
+        {:error, _reason} = error -> error
+      end
+    end)
+    |> Codec.encode_results()
   end
 
-  defp handle_request("set_parameters_atomically", _payload, state),
+  def respond("set_parameters_atomically", _payload, _registry),
     do:
-      {Codec.encode_result(
-         {:error, "atomic sets are not supported; set the parameters one by one"}
-       ), state}
-
-  defp log_refusal(name, value, reason, error, parameters) do
-    Logger.warning("#{__MODULE__}: #{name} = #{inspect(value)} refused: #{reason}")
-    {error, parameters}
-  end
-
-  @doc """
-  Checks `value` against `parameter` and applies it with its `:set`;
-  `{:ok, value}` with the value as stored, or `{:error, reason}`.
-  """
-  def set(nil, _value), do: {:error, "unknown parameter"}
-  def set(%{read_only: true}, _value), do: {:error, "read-only: fixed at start"}
-
-  def set(parameter, value) do
-    with {:ok, value} <- check_type(parameter.type, value),
-         :ok <- check_range(parameter, value),
-         :ok <- check_values(parameter, value),
-         :ok <- parameter.set.(value) do
-      {:ok, value}
-    end
-  rescue
-    error -> {:error, Exception.message(error)}
-  catch
-    :exit, reason -> {:error, "not applied: #{inspect(reason)}"}
-  end
-
-  defp check_type(:bool, value) when is_boolean(value), do: {:ok, value}
-  defp check_type(:integer, value) when is_integer(value), do: {:ok, value}
-  defp check_type(:double, value) when is_number(value), do: {:ok, value * 1.0}
-  defp check_type(:string, value) when is_binary(value), do: {:ok, value}
-  defp check_type(type, value), do: {:error, "expected #{type}, got #{inspect(value)}"}
-
-  defp check_range(%{range: {low, high}}, value) when value < low or value > high,
-    do: {:error, "out of range #{low}..#{high}"}
-
-  defp check_range(_parameter, _value), do: :ok
-
-  defp check_values(%{values: values}, value) do
-    if value in values, do: :ok, else: {:error, "expected one of #{Enum.join(values, ", ")}"}
-  end
-
-  defp check_values(_parameter, _value), do: :ok
+      Codec.encode_result(
+        {:error, "atomic sets are not supported; set the parameters one by one"}
+      )
 
   @doc false
-  def describe(parameter) do
+  @spec describe(Parameter.t()) :: map()
+  def describe(%Parameter{} = parameter) do
     constraints =
       [
-        Map.get(parameter, :constraints, ""),
-        if(resettable?(parameter), do: "default: #{parameter.default}"),
-        if(parameter[:values], do: "one of: " <> Enum.join(parameter.values, ", "))
+        choices(parameter.constraint),
+        parameter.greater_than && "above #{parameter.greater_than}",
+        automatic_controller(parameter.applies),
+        settable_default(parameter)
       ]
-      |> Enum.reject(&(&1 in [nil, ""]))
+      |> Enum.reject(&is_nil/1)
       |> Enum.join("; ")
 
-    Map.take(parameter, [:name, :type, :description, :read_only, :range])
-    |> Map.put(:constraints, constraints)
+    %{
+      name: parameter.id,
+      type: parameter.type,
+      description: parameter.description || "",
+      read_only: parameter.applies == :build,
+      constraints: constraints
+    }
+    |> put_range(parameter)
   end
 
-  # A default outside the accepted values (libcamera's "auto") cannot be set back.
-  defp resettable?(parameter) do
-    not is_nil(parameter[:default]) and not Map.get(parameter, :read_only, false) and
-      match?({:ok, _}, check_type(parameter.type, parameter.default)) and
-      check_range(parameter, parameter.default) == :ok and
-      check_values(parameter, parameter.default) == :ok
+  @doc false
+  @spec ros_value(Parameter.t() | nil) :: {VisionCore.Parameters.type(), term()} | nil
+  def ros_value(%Parameter{value: value, type: type}) when not is_nil(value),
+    do: {type, ros_term(type, value)}
+
+  def ros_value(_parameter), do: nil
+
+  defp ros_term(:double, value), do: value * 1.0
+  defp ros_term(_type, value), do: value
+
+  defp choices(%{kind: :choices, values: values}),
+    do: "one of: " <> Enum.map_join(values, ", ", &to_string/1)
+
+  defp choices(_constraint), do: nil
+
+  defp automatic_controller({:auto, controller}), do: "set by #{controller} while it is on"
+  defp automatic_controller(_applies), do: nil
+
+  # A default the constraint refuses (libcamera's "auto") cannot be set back.
+  defp settable_default(%Parameter{applies: :build}), do: nil
+  defp settable_default(%Parameter{default: nil}), do: nil
+
+  defp settable_default(%Parameter{default: default, constraint: constraint}) do
+    if accepts?(constraint, default), do: "default: #{default}"
   end
 
-  defp maybe_put_value(parameters, name, value) do
-    if Map.has_key?(parameters, name),
-      do: put_in(parameters, [name, :value], value),
-      else: parameters
-  end
+  defp accepts?(%{kind: :choices, values: values}, value), do: value in values
 
-  defp drop_owner(state, owner) do
-    case Map.pop(state.owners, owner) do
-      {nil, _} ->
-        state
+  defp accepts?(%{kind: :range, min: min, max: max}, value),
+    do: is_number(value) and value >= min and value <= max
 
-      {monitor_reference, owners} ->
-        Process.demonitor(monitor_reference, [:flush])
-        parameters = Map.reject(state.parameters, fn {_, p} -> p.owner == owner end)
-        %{state | owners: owners, parameters: parameters}
+  defp accepts?(_constraint, _value), do: true
+
+  defp put_range(description, %Parameter{
+         type: :integer,
+         constraint: %{kind: :range, min: min, max: max}
+       }),
+       do: Map.put(description, :range, {min, max})
+
+  defp put_range(description, %Parameter{
+         type: :double,
+         constraint: %{kind: :range, min: min, max: max}
+       }),
+       do: Map.put(description, :range, {min * 1.0, max * 1.0})
+
+  defp put_range(description, _parameter), do: description
+
+  defp find(registry, name) do
+    case call(registry, &VisionCore.Parameters.get(&1, name), {:error, :not_found}) do
+      {:ok, parameter} -> parameter
+      {:error, _reason} -> nil
     end
+  end
+
+  # A busy or stopped registry answers as one with nothing, so this process keeps serving.
+  defp call(registry, request, fallback) do
+    request.(registry)
+  catch
+    :exit, reason ->
+      Logger.warning("#{__MODULE__}: vision parameters unavailable: #{inspect(reason)}")
+      fallback
   end
 end

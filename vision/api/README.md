@@ -3,8 +3,8 @@
 Phoenix endpoint of the vision unit. It serves the [dashboard](../dashboard) build and exposes `VisionCore` to it.
 
 - `GET /api/settings`: the active vision configuration.
-- `GET /api/parameters`: the unit's ROS 2 parameters, with their values and constraints.
-- `PUT /api/parameters/:name` with `{"value": ...}`: sets one, as a ROS set request would; a refusal is a 422 with its reason.
+- `GET /api/parameters`: the unit's vision parameters (`VisionCore.Parameters`) by id, with their values and constraints.
+- `PUT /api/parameters/:name` with `{"value": ...}`: sets one as an unsaved change; a refusal is a 422 with its reason.
 - `status` channel: a `VisionCore.Status` snapshot on join, then one a second.
 - `preview:left`, `preview:right` and `preview:depth` channels: JPEG frames, one at a time, sent when the client acknowledges the previous one.
 - Any other path serves the dashboard.
