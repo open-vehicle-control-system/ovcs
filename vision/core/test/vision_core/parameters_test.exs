@@ -142,6 +142,27 @@ defmodule VisionCore.ParametersTest do
     assert Parameters.unsaved_count(server) == 3
   end
 
+  test "switching an automatic mode off brings the value it left within the controlled range",
+       %{server: server} do
+    {_owner, agent} = start_owner(server, &cameras_groups(&1, true))
+    Agent.update(agent, &%{&1 | "exposure_us" => 50, "analogue_gain" => 20.0})
+
+    assert {:ok, %{value: false}} = Parameters.set(server, @auto_exposure, false)
+
+    assert receive_sets(3) == [
+             {"exposure_us", 100},
+             {"analogue_gain", 16.0},
+             {"auto_exposure", false}
+           ]
+  end
+
+  test "a refused set is logged once, at info", %{server: server} do
+    log = capture_log([level: :info], fn -> Parameters.set(server, "stereo.match.p9", 1) end)
+
+    assert log =~ "[info]"
+    assert log =~ "vision parameter stereo.match.p9 = 1 refused: unknown parameter"
+  end
+
   test "a refused set changes nothing", %{server: server} do
     {_owner, agent} = start_owner(server, &match_groups/1)
 
@@ -203,7 +224,9 @@ defmodule VisionCore.ParametersTest do
 
     start_owner(server, &cameras_groups(&1, true))
 
-    assert receive_sets(3) == [
+    assert receive_sets(5) == [
+             {"exposure_us", 10_000},
+             {"analogue_gain", 1.0},
              {"auto_exposure", false},
              {"exposure_us", 5000},
              {"analogue_gain", 1.0}
@@ -331,6 +354,17 @@ defmodule VisionCore.ParametersTest do
       assert MemoryStore.rows() == %{"stereo.match.p1" => 10}
     end
 
+    @tag saved: %{"stereo.cameras.width" => 640, "stereo.cameras.exposure_us" => 5000}
+    test "a saved value of a parameter now fixed in the build is dropped", %{server: server} do
+      log = capture_log(fn -> start_owner(server, &cameras_groups(&1, false)) end)
+
+      assert log =~ "stereo.cameras.width = 640 dropped: fixed in the build"
+      assert MemoryStore.rows() == %{"stereo.cameras.exposure_us" => 5000}
+
+      assert {:ok, %{saved: nil, state: :builtin}} =
+               Parameters.get(server, "stereo.cameras.width")
+    end
+
     @tag saved: %{"detection.min_score" => 0.5, "stereo.match_extra.p1" => 3}
     test "saved values of groups not declared yet are kept", %{server: server} do
       start_owner(server, &match_groups/1)
@@ -342,9 +376,36 @@ defmodule VisionCore.ParametersTest do
     test "a saved automatic mode is applied before the values it controls", %{server: server} do
       start_owner(server, &cameras_groups(&1, true))
 
-      assert receive_sets(2) == [{"auto_exposure", false}, {"exposure_us", 5000}]
+      assert receive_sets(4) == [
+               {"exposure_us", 10_000},
+               {"analogue_gain", 1.0},
+               {"auto_exposure", false},
+               {"exposure_us", 5000}
+             ]
+
       refute_receive {:set, _name, _value}
       assert Parameters.unsaved_count(server) == 0
+    end
+
+    @tag saved: %{"camera.auto_exposure" => false, "camera.exposure_us" => 20_000}
+    test "a saved automatic mode whose owner's off does nothing is applied with its values",
+         %{server: server} do
+      {_owner, exposure} = start_owner(server, &switch_only_groups/1)
+
+      assert Agent.get(exposure, & &1) == 20_000
+
+      assert {:ok, %{value: false, state: :saved}} =
+               Parameters.get(server, "camera.auto_exposure")
+
+      assert {:ok, %{value: 20_000, state: :saved}} =
+               Parameters.get(server, "camera.exposure_us")
+
+      assert Parameters.save(server) == {:ok, []}
+
+      assert MemoryStore.rows() == %{
+               "camera.auto_exposure" => false,
+               "camera.exposure_us" => 20_000
+             }
     end
 
     @tag saved: %{"stereo.cameras.exposure_us" => 5000}
@@ -606,6 +667,43 @@ defmodule VisionCore.ParametersTest do
     }
 
     {[group], agent}
+  end
+
+  # A camera automatic while its exposure is 0, whose switch off does nothing: what it controls must be set.
+  defp switch_only_groups(_test) do
+    {:ok, exposure} = Agent.start_link(fn -> 0 end)
+
+    group = %{
+      id: "camera",
+      name: "Camera",
+      summary: "Captures",
+      kind: :component,
+      placement: :flow,
+      position: 0,
+      parameters: [
+        %{
+          name: "auto_exposure",
+          type: :bool,
+          constraint: %{kind: :bool},
+          get: fn -> Agent.get(exposure, & &1) == 0 end,
+          set: fn
+            true -> Agent.update(exposure, fn _ -> 0 end)
+            false -> :ok
+          end
+        },
+        %{
+          name: "exposure_us",
+          type: :integer,
+          constraint: %{kind: :range, min: 1, max: 1_000_000, step: nil},
+          applies: {:auto, "camera.auto_exposure"},
+          default: 10_000,
+          get: fn -> with 0 <- Agent.get(exposure, & &1), do: 10_000 end,
+          set: &Agent.update(exposure, fn _ -> &1 end)
+        }
+      ]
+    }
+
+    {[group], exposure}
   end
 
   defp preview_groups(test) do

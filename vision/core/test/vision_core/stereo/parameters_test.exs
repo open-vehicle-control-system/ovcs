@@ -312,6 +312,37 @@ defmodule VisionCore.Stereo.ParametersTest do
              ]
     end
 
+    test "a saved manual exposure over an automatic composer is applied and kept on save" do
+      start_supervised!(
+        {MemoryStore,
+         %{
+           "stereo.left_camera.auto_exposure" => false,
+           "stereo.left_camera.exposure_time_us" => 20_000
+         }}
+      )
+
+      start_supervised!({VisionCore.Parameters, store: MemoryStore})
+
+      start_supervised!(
+        {Parameters, topic_prefix: "stereo", driver: SideDriver, pipeline: Pipeline}
+      )
+
+      assert {:ok, %{value: false, state: :saved}} =
+               VisionCore.Parameters.get("stereo.left_camera.auto_exposure")
+
+      assert SideDriver.controls("left").exposure_time_us == 20_000
+
+      assert {:ok, %{value: 20_000, state: :saved}} =
+               VisionCore.Parameters.get("stereo.left_camera.exposure_time_us")
+
+      assert VisionCore.Parameters.save() == {:ok, []}
+
+      assert MemoryStore.rows() == %{
+               "stereo.left_camera.auto_exposure" => false,
+               "stereo.left_camera.exposure_time_us" => 20_000
+             }
+    end
+
     test "switching auto exposure off keeps the exposure the camera applied" do
       start_supervised!({VisionCore.Parameters, store: MemoryStore})
 
