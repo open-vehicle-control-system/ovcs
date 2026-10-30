@@ -2,7 +2,6 @@ defmodule VisionCore.StatusTest do
   use ExUnit.Case, async: false
 
   alias VisionCore.Camera.Frame
-  alias VisionCore.Ros2.ZenohClient
   alias VisionCore.Status
   alias VisionCore.Stereo.Pair
 
@@ -14,8 +13,7 @@ defmodule VisionCore.StatusTest do
     %Pair{left_frame: frame, right_frame: %{frame | label: "right"}}
   end
 
-  test "snapshot reports zenoh disconnected with no router" do
-    start_supervised!({ZenohClient, endpoint_ip: "127.0.0.1"})
+  test "snapshot reports zenoh disconnected without a session" do
     start_supervised!({Status, config: config([])})
 
     snapshot = Status.snapshot()

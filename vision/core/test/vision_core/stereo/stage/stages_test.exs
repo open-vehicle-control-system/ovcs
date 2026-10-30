@@ -199,6 +199,30 @@ defmodule VisionCore.Stereo.Stage.StagesTest do
     end
   end
 
+  test "Rectify moves the right image by right_row_offset rows, and only it" do
+    context = context(:identity, 96, 64)
+    image = smooth(64, 96)
+    input = %Pair{left_frame: frame(image), right_frame: frame(image)}
+
+    rectify = fn opts ->
+      {:ok, state} = Stage.Rectify.init(opts, context)
+      member = %{module: Stage.Rectify, name: :rectify, state: state}
+      {:ok, segment} = NxSegment.build([member], context, compiler: EXLA)
+      {:ok, pair, _segment} = NxSegment.run(%{input | geometry: context}, segment)
+      pair
+    end
+
+    {plain, shifted} = {rectify.([]), rectify.(right_row_offset: 1.0)}
+    assert Nx.to_list(shifted.left) == Nx.to_list(plain.left)
+    assert Nx.to_list(shifted.right[[10..50, ..]]) == Nx.to_list(plain.right[[11..51, ..]])
+
+    assert [right_row_offset: %{type: :double}] = Stage.Rectify.option_specs()
+    {:ok, state} = Stage.Rectify.init([], context)
+    assert {:ok, state} = Stage.Rectify.set_option(state, :right_row_offset, -2.5)
+    assert Stage.Rectify.options(state) == %{right_row_offset: -2.5}
+    assert {:error, _} = Stage.Rectify.set_option(state, :right_row_offset, 20)
+  end
+
   test "Match aggregates along 8 paths, or 3 when asked" do
     context = context(:identity, 192, 108)
     assert {:ok, opts} = Stage.Match.init([], context)
