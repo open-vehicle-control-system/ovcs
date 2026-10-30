@@ -9,6 +9,8 @@ defmodule VisionCore.Ros2.Stereo.Parameters do
       from `VisionCore.Stereo.Pipeline.option_specs/1`
     * `<prefix>.preview.<setting>` — the dashboard previews' settings,
       from `VisionCore.Preview.option_specs/0`.
+    * `<prefix>.alignment_correction` — switches
+      `VisionCore.Stereo.AlignmentCorrection` on or off, while it runs
     * read-only, the settings fixed at start: each camera's addressing,
       sync role, sensor mode and calibration file, and the resolution
       and frame rate
@@ -25,7 +27,7 @@ defmodule VisionCore.Ros2.Stereo.Parameters do
   use GenServer
 
   alias VisionCore.Preview
-  alias VisionCore.Stereo.Pipeline
+  alias VisionCore.Stereo.{AlignmentCorrection, Pipeline}
 
   @startup_keys [:camera_id, :device, :sync, :sensor_mode, :rotation, :calibration_path]
 
@@ -49,6 +51,7 @@ defmodule VisionCore.Ros2.Stereo.Parameters do
       camera_parameters(prefix, driver, :right) ++
       pipeline_parameters(prefix, pipeline) ++
       preview_parameters(prefix) ++
+      alignment_correction_parameters(prefix) ++
       startup_parameters(prefix, opts)
   end
 
@@ -93,6 +96,23 @@ defmodule VisionCore.Ros2.Stereo.Parameters do
         value: spec.default,
         set: &drop_reply_value(Preview.set_options([{key, &1}]))
       })
+    end
+  end
+
+  defp alignment_correction_parameters(prefix) do
+    if Process.whereis(AlignmentCorrection) do
+      [
+        %{
+          name: "#{prefix}.alignment_correction",
+          type: :bool,
+          value: AlignmentCorrection.enabled?(),
+          description:
+            "Keep the rows lined up by moving the right image; off, right_row_offset stays as set",
+          set: &AlignmentCorrection.set_enabled/1
+        }
+      ]
+    else
+      []
     end
   end
 

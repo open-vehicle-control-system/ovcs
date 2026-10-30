@@ -95,6 +95,8 @@ defmodule VisionCore.Stereo.Supervisor do
       a calibration survives a restart on a read-only root
       filesystem. Without it, COMMIT writes to `calibration_path`.
     * `:pair_tolerance_ms` (33) — see `VisionCore.Stereo.Pairer`.
+    * `:align_correction` (`true`) — keep the rectified rows lined up
+      with `VisionCore.Stereo.AlignmentCorrection`.
     * `:stages` (`VisionCore.Stereo.Pipeline.default_stages/0`) — the
       pipeline's stages. The calibration paths and the capture size come
       from the options above, the matching size from `:match_width` and
@@ -108,7 +110,7 @@ defmodule VisionCore.Stereo.Supervisor do
   alias VisionCore.Ros2.Publishers.Stereo, as: StereoPublisher
   alias VisionCore.Ros2.Services.SetCameraInfoServer
   alias VisionCore.Ros2.Stereo.{Diagnostics, Parameters}
-  alias VisionCore.Stereo.{Pairer, Pipeline}
+  alias VisionCore.Stereo.{AlignmentCorrection, Pairer, Pipeline}
 
   @default_width 1280
   @default_height 720
@@ -183,6 +185,7 @@ defmodule VisionCore.Stereo.Supervisor do
       publish_disparity_image: Keyword.get(opts, :publish_disparity_image, false),
       publish_rectified_image: Keyword.get(opts, :publish_rectified_image, false),
       publish_raw_images: Keyword.get(opts, :publish_raw_images, true),
+      align_correction: Keyword.get(opts, :align_correction, true),
       raw_image_max_hz: Keyword.get(opts, :raw_image_max_hz, @default_raw_image_max_hz),
       stages: Keyword.get_lazy(opts, :stages, &Pipeline.default_stages/0),
       defn_options: Keyword.get(opts, :defn_options),
@@ -226,12 +229,27 @@ defmodule VisionCore.Stereo.Supervisor do
   end
 
   @doc """
+  Reloads the pipeline's calibration and starts the row correction
+  (`VisionCore.Stereo.AlignmentCorrection`) over: a new calibration
+  lines the rows up itself.
+  """
+  def reload_calibration(pipeline, paths \\ []) do
+    with :ok <- Pipeline.reload_calibration(pipeline, paths) do
+      if Keyword.has_key?(Pipeline.option_specs(pipeline), :right_row_offset),
+        do: {:ok, _options} = Pipeline.set_options(pipeline, right_row_offset: 0.0)
+
+      :ok
+    end
+  end
+
+  @doc """
   Reloads the pipeline from the stored calibration once both sides
-  are stored. COMMIT stores one side at a time.
+  are stored, as `reload_calibration/2`. COMMIT stores one side at a
+  time.
   """
   def reload_stored_calibration(pipeline, left_store, right_store) do
     if File.exists?(left_store) and File.exists?(right_store) do
-      Pipeline.reload_calibration(pipeline,
+      reload_calibration(pipeline,
         left_calibration_path: left_store,
         right_calibration_path: right_store
       )
@@ -254,29 +272,36 @@ defmodule VisionCore.Stereo.Supervisor do
       {Pairer,
        cameras: [{config.driver, "left"}, {config.driver, "right"}],
        pair_tolerance_ms: config.pair_tolerance_ms},
-      publisher_spec(config),
-      Supervisor.child_spec(
-        {Parameters,
-         topic_prefix: config.topic_prefix,
-         driver: config.driver,
-         left: config.left,
-         right: config.right,
-         width: config.width,
-         height: config.height,
-         fps: config.fps},
-        id: {:stereo, :parameters}
-      ),
-      Supervisor.child_spec(
-        {Diagnostics,
-         topic_prefix: config.topic_prefix,
-         driver: config.driver,
-         left: config.left,
-         right: config.right,
-         fps: config.fps},
-        id: {:stereo, :live}
-      )
-    ] ++ set_camera_info_specs(config)
+      publisher_spec(config)
+    ] ++
+      alignment_correction_specs(config) ++
+      [
+        Supervisor.child_spec(
+          {Parameters,
+           topic_prefix: config.topic_prefix,
+           driver: config.driver,
+           left: config.left,
+           right: config.right,
+           width: config.width,
+           height: config.height,
+           fps: config.fps},
+          id: {:stereo, :parameters}
+        ),
+        Supervisor.child_spec(
+          {Diagnostics,
+           topic_prefix: config.topic_prefix,
+           driver: config.driver,
+           left: config.left,
+           right: config.right,
+           fps: config.fps},
+          id: {:stereo, :live}
+        )
+      ] ++ set_camera_info_specs(config)
   end
+
+  # Before the parameters, which declare its switch.
+  defp alignment_correction_specs(%{align_correction: true}), do: [AlignmentCorrection]
+  defp alignment_correction_specs(_config), do: []
 
   # `cameracalibrator`'s COMMIT persists the calibration and hot-reloads the pipeline.
   defp set_camera_info_specs(config) do
@@ -306,7 +331,7 @@ defmodule VisionCore.Stereo.Supervisor do
   defp reload_callback(config) do
     case {config.left[:calibration_store_path], config.right[:calibration_store_path]} do
       {nil, nil} ->
-        {Pipeline, :reload_calibration, [Pipeline]}
+        {__MODULE__, :reload_calibration, [Pipeline]}
 
       {left_store, right_store} ->
         {__MODULE__, :reload_stored_calibration, [Pipeline, left_store, right_store]}

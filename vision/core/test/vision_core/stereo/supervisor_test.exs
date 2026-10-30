@@ -49,6 +49,26 @@ defmodule VisionCore.Stereo.SupervisorTest do
     end
   end
 
+  describe "reload_calibration/1" do
+    test "starts the row correction over from the new calibration" do
+      calibration = Path.expand("../../support/calibration", __DIR__)
+
+      {:ok, pipeline} =
+        VisionCore.Stereo.Pipeline.start_link(
+          name: :reload_row_offset,
+          left_calibration_path: Path.join(calibration, "identity_left.yaml"),
+          right_calibration_path: Path.join(calibration, "identity_right.yaml"),
+          width: 64,
+          height: 48
+        )
+
+      {:ok, _} = VisionCore.Stereo.Pipeline.set_options(pipeline, right_row_offset: 2.0, p1: 5)
+      assert :ok = StereoSupervisor.reload_calibration(pipeline)
+
+      assert %{right_row_offset: +0.0, p1: 5} = VisionCore.Stereo.Pipeline.options(pipeline)
+    end
+  end
+
   describe "reload_stored_calibration/3" do
     test "waits for the second side before reloading", %{tmp_dir: tmp_dir} do
       left_path = Path.join(tmp_dir, "stereo_left.yaml")
