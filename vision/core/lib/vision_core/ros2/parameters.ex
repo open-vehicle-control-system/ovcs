@@ -9,10 +9,11 @@ defmodule VisionCore.Ros2.Parameters do
   `VisionCore.Parameters.set/3`, an unsaved change; saving is not exposed. A
   set request is answered per parameter; the atomic variant is refused.
 
-  A description is read-only for a parameter fixed in the build, carries the
-  range of a numeric range constraint, and gives in its constraints, separated
-  by `; `, the accepted values (`one of: <a>, <b>`), the parameter it must stay
-  above, the automatic mode setting it, and its default when it can be set back.
+  A description is read-only for a parameter fixed in the build or set by its
+  automatic mode at the time, carries the range of a numeric range constraint,
+  and gives in its constraints, separated by `; `, the accepted values
+  (`one of: <a>, <b>`), the parameter it must stay above, the automatic mode
+  setting it, and its default when it can be set back.
 
   Options: `:registry`, the registry answering (`VisionCore.Parameters`).
   """
@@ -128,7 +129,7 @@ defmodule VisionCore.Ros2.Parameters do
       name: parameter.id,
       type: parameter.type,
       description: parameter.description || "",
-      read_only: parameter.applies == :build,
+      read_only: parameter.applies == :build or parameter.state == :automatic,
       constraints: constraints
     }
     |> put_range(parameter)

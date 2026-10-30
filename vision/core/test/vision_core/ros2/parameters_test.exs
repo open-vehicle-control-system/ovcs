@@ -144,7 +144,7 @@ defmodule VisionCore.Ros2.ParametersTest do
       assert %{read_only: true, constraints: ""} = Parameters.describe(width)
     end
 
-    test "describes an automatic parameter with what sets it" do
+    test "describes an automatic parameter as read-only while its mode is on, with what sets it" do
       exposure =
         parameter(
           id: "stereo.cameras.exposure",
@@ -153,7 +153,8 @@ defmodule VisionCore.Ros2.ParametersTest do
         )
 
       description = Parameters.describe(exposure)
-      assert description.read_only == false
+      assert description.read_only == true
+      assert Parameters.describe(%{exposure | state: :unsaved}).read_only == false
       assert description.constraints =~ "set by stereo.cameras.auto_exposure while it is on"
     end
 
