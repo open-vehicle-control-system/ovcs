@@ -63,7 +63,8 @@ defmodule VisionCore.Camera.LibCamera do
 
   ## Exposure
 
-  `:exposure_mode` (`:normal`, `:short`, `:long`) picks the
+  `:exposure_mode` (`:normal`, `:short`, `:long`, or the same as a
+  string) picks the
   auto-exposure mode of the sensor's tuning file. On a Camera
   Module 3, for example, `:normal` keeps the shutter open up to 30 ms before raising
   the gain, which smears a moving image; `:short` caps it at 10 ms
@@ -97,11 +98,13 @@ defmodule VisionCore.Camera.LibCamera do
   `control_specs/0` lists them with their types and ranges: exposure
   mode, shutter time and gain (0 for automatic), focus, brightness,
   contrast, sharpness and noise reduction. `controls/1` starts from
-  libcamera's defaults, with the focus nil unless `:lens_position` is
-  set.
+  these keys given in the camera's options, libcamera's defaults for the
+  others, with the focus nil.
 
-  Any of these keys given in the camera's options is applied once the
-  first frame arrives, as `set_controls/2` would; see `start_controls/1`.
+  The keys given in the camera's options are applied once the first frame
+  arrives, as `set_controls/2` would, except those `set_controls/2` set
+  before it; see `start_controls/1`. One the camera refuses is logged and
+  left out.
 
   The sync role, sensor mode, resolution and frame rate are fixed at
   start.
@@ -192,6 +195,9 @@ defmodule VisionCore.Camera.LibCamera do
   def exposure_mode_args(mode) when mode in [:normal, :short, :long],
     do: ["--exposure-mode", Atom.to_string(mode)]
 
+  def exposure_mode_args(mode) when mode in ["normal", "short", "long"],
+    do: ["--exposure-mode", mode]
+
   @doc false
   def sensor_mode_args(nil), do: []
 
@@ -260,6 +266,7 @@ defmodule VisionCore.Camera.LibCamera do
     )
 
     Process.send_after(self(), :watchdog, @watchdog_interval_ms)
+    start_controls = accepted_start_controls(opts, label)
 
     {:ok,
      %{
@@ -267,9 +274,9 @@ defmodule VisionCore.Camera.LibCamera do
        camera_id: camera_id,
        port: port,
        listeners: [],
-       controls: initial_controls(exposure_mode, lens_position),
+       controls: Map.merge(initial_controls(), Map.new(start_controls, &normalise_control/1)),
        applied_metadata: nil,
-       start_controls: start_controls(opts),
+       start_controls: start_controls,
        started_at: now_ms(),
        last_frame_at: nil,
        stall_timeout_ms: Keyword.get(opts, :stall_timeout_ms, @default_stall_timeout_ms),
@@ -364,8 +371,9 @@ defmodule VisionCore.Camera.LibCamera do
     case control_commands(controls) do
       {:ok, commands} ->
         Enum.each(commands, &Port.command(state.port, &1))
+        start_controls = Keyword.drop(state.start_controls, Keyword.keys(controls))
         controls = Map.merge(state.controls, Map.new(controls, &normalise_control/1))
-        {:reply, {:ok, controls}, %{state | controls: controls}}
+        {:reply, {:ok, controls}, %{state | controls: controls, start_controls: start_controls}}
 
       {:error, _} = error ->
         {:reply, error, state}
@@ -513,13 +521,26 @@ defmodule VisionCore.Camera.LibCamera do
   defp libcamera_controls(:noise_reduction, mode),
     do: ["NoiseReductionMode=#{@noise_reduction_modes[mode]}"]
 
+  defp accepted_start_controls(opts, label) do
+    Enum.filter(start_controls(opts), fn control ->
+      case control_commands([control]) do
+        {:ok, _commands} ->
+          true
+
+        {:error, reason} ->
+          Logger.warning("#{__MODULE__}[#{label}] start control refused: #{reason}")
+          false
+      end
+    end)
+  end
+
   # "auto" is libcamera's own noise reduction; once a mode is set it cannot be requested back.
-  defp initial_controls(exposure_mode, lens_position) do
+  defp initial_controls do
     %{
-      exposure_mode: Atom.to_string(exposure_mode || :normal),
+      exposure_mode: "normal",
       exposure_time_us: 0,
       analogue_gain: 0.0,
-      lens_position: lens_position && lens_position * 1.0,
+      lens_position: nil,
       brightness: 0.0,
       contrast: 1.0,
       sharpness: 1.0,
