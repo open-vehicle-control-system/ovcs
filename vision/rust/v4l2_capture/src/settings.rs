@@ -17,6 +17,9 @@ pub struct Settings {
     /// The raw sample value of black, and the gamma the grey image is encoded with.
     pub black_level: u16,
     pub gamma: f64,
+    /// Both lens actuators' position, 0 to 1023 (512 unpowered); 428 is about
+    /// 1.5 to 2 m on the Camera Module 3 Wide.
+    pub focus: u16,
 }
 
 impl Default for Settings {
@@ -31,6 +34,7 @@ impl Default for Settings {
             max_gain: 16.0,
             black_level: 64,
             gamma: 2.2,
+            focus: 428,
         }
     }
 }
@@ -72,6 +76,7 @@ impl Settings {
                 self.black_level = in_range(value, 0.0, 1022.0).ok_or_else(invalid)? as u16
             }
             "gamma" => self.gamma = in_range(value, 0.5, 4.0).ok_or_else(invalid)?,
+            "focus" => self.focus = in_range(value, 0.0, 1023.0).ok_or_else(invalid)? as u16,
             _ => return Err(format!("unknown setting {name}")),
         }
         Ok(())
@@ -108,6 +113,15 @@ mod tests {
         assert_eq!(settings.rotation, 180);
         assert!(!settings.auto_exposure);
         assert_eq!(settings.gamma, 1.8);
+    }
+
+    #[test]
+    fn focuses_both_lenses_at_about_one_and_a_half_to_two_metres_by_default() {
+        let mut settings = Settings::default();
+        assert_eq!(settings.focus, 428);
+        settings.apply(b"focus=512").unwrap();
+        assert_eq!(settings.focus, 512);
+        assert!(settings.apply(b"focus=1024").is_err());
     }
 
     #[test]

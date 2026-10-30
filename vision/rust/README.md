@@ -6,7 +6,7 @@ Cargo workspace of the programs `vision_core` runs as Ports.
 |---|---|
 | `camera_capture` | Captures frames through libcamera and writes them as JPEG records |
 | `hailo_detect` | Runs a compiled model on a Hailo accelerator through HailoRT and writes detections |
-| `v4l2_capture` | Captures the OKdo Nano C100's two CSI cameras over raw V4L2, locks the right sensor's frame starts to the left one's by adjusting its vertical blanking, and writes grey frame pairs |
+| `v4l2_capture` | Captures the OKdo Nano C100's two CSI cameras over raw V4L2, locks the right sensor's frame starts to the left one's by adjusting its vertical blanking, holds both lens actuators at the `focus` setting when the system drives them, and writes grey frame pairs |
 | `jpeg_codec` | Encodes grey or RGB images as JPEG, colours depth previews, and decodes JPEG frames to grey, for `VisionCore.Jpeg` |
 | `framing` | The `{:packet, 4}` framing the binaries share: a big-endian length prefix, little-endian scalars |
 

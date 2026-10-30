@@ -33,6 +33,7 @@ pub const CID_VBLANK: u32 = 0x009e_0901;
 pub const CID_HBLANK: u32 = 0x009e_0902;
 pub const CID_ANALOGUE_GAIN: u32 = 0x009e_0903;
 pub const CID_PIXEL_RATE: u32 = 0x009f_0902;
+pub const CID_FOCUS_ABSOLUTE: u32 = 0x009a_090a;
 
 #[repr(C)]
 struct PixFormat {
