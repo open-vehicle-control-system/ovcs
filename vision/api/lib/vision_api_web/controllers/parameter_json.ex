@@ -27,6 +27,10 @@ defmodule VisionApiWeb.ParameterJSON do
     )
   end
 
+  @doc "The parameters of `groups`, in order."
+  @spec parameters([Group.t()]) :: [Parameter.t()]
+  def parameters(groups), do: Enum.flat_map(groups, & &1.parameters)
+
   @spec group(Group.t()) :: map()
   def group(%Group{} = group) do
     JsonApi.resource(
@@ -49,7 +53,10 @@ defmodule VisionApiWeb.ParameterJSON do
   end
 
   defp constraint(nil), do: nil
-  defp constraint(%{kind: :range} = range), do: Map.take(range, [:kind, :min, :max, :step])
+
+  defp constraint(%{kind: :range} = range),
+    do: %{kind: :range, min: range.min, max: range.max, step: Map.get(range, :step)}
+
   defp constraint(%{kind: :choices} = choices), do: Map.take(choices, [:kind, :values])
   defp constraint(%{kind: :bool}), do: %{kind: :bool}
 

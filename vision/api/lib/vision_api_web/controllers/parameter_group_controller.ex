@@ -6,6 +6,16 @@ defmodule VisionApiWeb.ParameterGroupController do
   alias VisionCore.Parameters
 
   def index(conn, params) do
+    case includes(params) do
+      {:ok, include?} ->
+        send_groups(conn, include?)
+
+      :error ->
+        JsonApi.error(conn, 400, "Bad Request", "unsupported include", %{parameter: "include"})
+    end
+  end
+
+  defp send_groups(conn, include?) do
     groups = Parameters.groups()
 
     document = %{
@@ -14,18 +24,23 @@ defmodule VisionApiWeb.ParameterGroupController do
     }
 
     document =
-      if included?(params),
-        do:
-          Map.put(
-            document,
-            :included,
-            groups |> Enum.flat_map(& &1.parameters) |> Enum.map(&ParameterJSON.parameter/1)
-          ),
-        else: document
+      if include? do
+        included = groups |> ParameterJSON.parameters() |> Enum.map(&ParameterJSON.parameter/1)
+        Map.put(document, :included, included)
+      else
+        document
+      end
 
     JsonApi.send_document(conn, 200, document)
   end
 
-  defp included?(%{"include" => include}), do: "parameters" in String.split(include, ",")
-  defp included?(_params), do: false
+  defp includes(%{"include" => include}) do
+    case String.split(include, ",", trim: true) do
+      [] -> {:ok, false}
+      ["parameters"] -> {:ok, true}
+      _unsupported -> :error
+    end
+  end
+
+  defp includes(_params), do: {:ok, false}
 end

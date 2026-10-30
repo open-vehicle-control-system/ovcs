@@ -8,18 +8,21 @@ defmodule VisionApiWeb.JsonApi do
   @spec send_document(Plug.Conn.t(), pos_integer(), map()) :: Plug.Conn.t()
   def send_document(conn, status, document) do
     conn
-    |> put_resp_content_type(@media_type)
+    |> put_resp_content_type(@media_type, nil)
     |> send_resp(status, Jason.encode!(document))
   end
 
-  @doc "Sends an error object; `pointer` is the JSON pointer of the offending member."
-  @spec error(Plug.Conn.t(), pos_integer(), String.t(), String.t(), String.t() | nil) ::
+  @doc "Sends an error object; `source` is a JSON pointer, or a map such as `%{parameter: \"include\"}`."
+  @spec error(Plug.Conn.t(), pos_integer(), String.t(), String.t(), map() | String.t() | nil) ::
           Plug.Conn.t()
-  def error(conn, status, title, detail, pointer \\ nil) do
+  def error(conn, status, title, detail, source \\ nil) do
     error = %{status: Integer.to_string(status), title: title, detail: detail}
-    error = if pointer, do: Map.put(error, :source, %{pointer: pointer}), else: error
+    error = if source, do: Map.put(error, :source, source(source)), else: error
     send_document(conn, status, %{errors: [error]})
   end
+
+  defp source(pointer) when is_binary(pointer), do: %{pointer: pointer}
+  defp source(source) when is_map(source), do: source
 
   @doc "A resource object."
   @spec resource(String.t(), String.t(), map(), map()) :: map()
