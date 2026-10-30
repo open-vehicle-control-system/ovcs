@@ -100,6 +100,9 @@ defmodule VisionCore.Camera.LibCamera do
   libcamera's defaults, with the focus nil unless `:lens_position` is
   set.
 
+  Any of these keys given in the camera's options is applied once the
+  first frame arrives, as `set_controls/2` would; see `start_controls/1`.
+
   The sync role, sensor mode, resolution and frame rate are fixed at
   start.
 
@@ -199,6 +202,12 @@ defmodule VisionCore.Camera.LibCamera do
   def lens_position_args(nil), do: []
   def lens_position_args(dioptres), do: ["--lens-position", Float.to_string(dioptres * 1.0)]
 
+  @doc "The runtime control settings among the camera `opts`, in their order."
+  def start_controls(opts) do
+    keys = Enum.map(control_specs(), & &1.key)
+    Enum.filter(opts, fn {key, _value} -> key in keys end)
+  end
+
   @impl GenServer
   def init(opts) do
     label = Keyword.fetch!(opts, :label)
@@ -260,6 +269,7 @@ defmodule VisionCore.Camera.LibCamera do
        listeners: [],
        controls: initial_controls(exposure_mode, lens_position),
        applied_metadata: nil,
+       start_controls: start_controls(opts),
        started_at: now_ms(),
        last_frame_at: nil,
        stall_timeout_ms: Keyword.get(opts, :stall_timeout_ms, @default_stall_timeout_ms),
@@ -273,7 +283,7 @@ defmodule VisionCore.Camera.LibCamera do
       {:ok, %Frame{} = frame} ->
         frame = %{frame | label: state.label}
         Enum.each(state.listeners, &GenServer.cast(&1, {:camera_frame, frame}))
-        {:noreply, %{state | last_frame_at: now_ms()}}
+        {:noreply, apply_start_controls(%{state | last_frame_at: now_ms()})}
 
       {:log, level, message} ->
         Logger.log(level, "#{__MODULE__}[#{state.label}] camera_capture: #{message}")
@@ -364,6 +374,21 @@ defmodule VisionCore.Camera.LibCamera do
 
   def handle_call(:controls, _from, state), do: {:reply, state.controls, state}
   def handle_call(:live, _from, state), do: {:reply, state.applied_metadata, state}
+
+  defp apply_start_controls(%{start_controls: []} = state), do: state
+
+  defp apply_start_controls(%{start_controls: controls} = state) do
+    state = %{state | start_controls: []}
+
+    case handle_call({:set_controls, controls}, nil, state) do
+      {:reply, {:ok, _controls}, state} ->
+        state
+
+      {:reply, {:error, reason}, state} ->
+        Logger.warning("#{__MODULE__}[#{state.label}] start controls refused: #{reason}")
+        state
+    end
+  end
 
   defp normalise_control({key, value}) when is_atom(value) and not is_boolean(value),
     do: {key, Atom.to_string(value)}

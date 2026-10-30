@@ -137,6 +137,15 @@ defmodule VisionCore.Camera.LibCameraTest do
     end
   end
 
+  describe "start_controls/1" do
+    test "picks the control settings out of the camera opts" do
+      assert LibCamera.start_controls(camera_id: 0, lens_position: 1.5, exposure_time_us: 8000) ==
+               [lens_position: 1.5, exposure_time_us: 8000]
+
+      assert LibCamera.start_controls(camera_id: 0, sync: :server) == []
+    end
+  end
+
   describe "metadata records" do
     test "carry the values reported, the others absent" do
       values =
