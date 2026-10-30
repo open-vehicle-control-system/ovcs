@@ -20,6 +20,7 @@ defmodule VisionCore.Camera.V4L2Test do
     assert settings["--analogue-gain"] == "2.0"
     assert settings["--auto-exposure"] == "true"
     assert settings["--gamma"] == "2.2"
+    assert settings["--focus"] == "428"
     assert map_size(settings) == length(V4L2.control_specs())
   end
 

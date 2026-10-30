@@ -43,6 +43,8 @@ const EXPOSURE_MARGIN_LINES: i32 = 8;
 struct Camera {
     capture: Capture,
     sensor: Node,
+    /// The lens actuator, held while open; `None` on a system without its driver.
+    lens: Option<Node>,
 }
 
 fn main() -> ExitCode {
@@ -69,13 +71,17 @@ fn main() -> ExitCode {
     }
 }
 
-fn open_camera(video: &str, sensor: &str, width: u32, height: u32) -> io::Result<Camera> {
+fn open_camera(video: &str, sensor_name: &str, width: u32, height: u32) -> io::Result<Camera> {
     let open = || -> io::Result<Camera> {
-        let sensor = Node::open(&v4l2::wait_for_node(sensor, NODE_TIMEOUT)?)?;
+        let sensor = Node::open(&v4l2::wait_for_node(sensor_name, NODE_TIMEOUT)?)?;
         let node = Node::open(&v4l2::wait_for_node(video, NODE_TIMEOUT)?)?;
+        let lens = sensor::lens_name(sensor_name)
+            .and_then(|name| v4l2::node_named(&name).ok())
+            .and_then(|path| Node::open(&path).ok());
         Ok(Camera {
             capture: Capture::start(node, width, height, BUFFERS)?,
             sensor,
+            lens,
         })
     };
     open().map_err(|error| io::Error::new(error.kind(), format!("{video}: {error}")))
@@ -108,8 +114,31 @@ fn run(args: &args::Args, writer: &Writer, log: &dyn Fn(LogLevel, &str)) -> io::
     for camera in [&left, &right] {
         camera.sensor.set_control(v4l2::CID_VBLANK, vblank0)?;
     }
+    let set_focus = |focus: u16| {
+        for (side, camera) in [("left", &left), ("right", &right)] {
+            if let Some(lens) = &camera.lens {
+                if let Err(error) = lens.set_control(v4l2::CID_FOCUS_ABSOLUTE, i32::from(focus)) {
+                    log(
+                        LogLevel::Warning,
+                        &format!("{side} lens: focus {focus}: {error}"),
+                    );
+                }
+            }
+        }
+    };
     let mut settings = args.settings.clone();
     let mut tone = Tone::new(settings.black_level, settings.gamma);
+    set_focus(settings.focus);
+    if left.lens.is_none() || right.lens.is_none() {
+        log(
+            LogLevel::Info,
+            &format!(
+                "lens actuators: left {}, right {}; focus is not set without one",
+                left.lens.is_some(),
+                right.lens.is_some()
+            ),
+        );
+    }
     let mut auto_exposure = auto_exposure(&settings, frame_us);
     set_exposure(f64::from(settings.exposure_us), settings.analogue_gain)?;
     log(
@@ -152,6 +181,7 @@ fn run(args: &args::Args, writer: &Writer, log: &dyn Fn(LogLevel, &str)) -> io::
                         if !settings.auto_exposure {
                             set_exposure(f64::from(settings.exposure_us), settings.analogue_gain)?;
                         }
+                        set_focus(settings.focus);
                         log(LogLevel::Info, &format!("settings: {settings:?}"));
                     }
                     Err(message) => log(LogLevel::Warning, &message),
