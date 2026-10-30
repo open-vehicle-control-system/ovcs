@@ -152,6 +152,51 @@ defmodule VisionCore.Stereo.ParametersTest do
     assert %{name: "Post filter", kind: :stage, summary: "Filters"} = group("stereo.post_filter")
   end
 
+  describe "the LibCamera driver" do
+    @describetag :tmp_dir
+
+    test "declares the composer's camera settings as defaults before the first frame",
+         %{tmp_dir: tmp_dir} do
+      executable = Path.join(tmp_dir, "camera_capture")
+      File.write!(executable, "#!/bin/sh\nexec cat > /dev/null\n")
+      File.chmod!(executable, 0o755)
+      left = [brightness: 0.2, exposure_time_us: 6000]
+
+      for {side, opts} <- [left: left, right: []] do
+        label = Atom.to_string(side)
+
+        start_supervised!(
+          {VisionCore.Camera.LibCamera,
+           [label: label, camera_id: 0, executable: executable] ++ opts},
+          id: side
+        )
+      end
+
+      start_supervised!({VisionCore.Parameters, store: MemoryStore})
+
+      start_supervised!(
+        {Parameters,
+         topic_prefix: "stereo",
+         driver: VisionCore.Camera.LibCamera,
+         pipeline: Pipeline,
+         left: left,
+         right: []}
+      )
+
+      assert {:ok, %{value: 0.2, default: 0.2, state: :builtin}} =
+               VisionCore.Parameters.get("stereo.left_camera.brightness")
+
+      assert {:ok, %{value: false, default: false}} =
+               VisionCore.Parameters.get("stereo.left_camera.auto_exposure")
+
+      assert {:ok, %{value: 6000, default: 6000}} =
+               VisionCore.Parameters.get("stereo.left_camera.exposure_time_us")
+
+      assert {:ok, %{value: true, default: true}} =
+               VisionCore.Parameters.get("stereo.right_camera.auto_exposure")
+    end
+  end
+
   test "a driver without shared controls declares no cameras group" do
     refute Enum.any?(groups(driver: VisionCore.Camera.LibCamera), &(&1.id == "stereo.cameras"))
   end

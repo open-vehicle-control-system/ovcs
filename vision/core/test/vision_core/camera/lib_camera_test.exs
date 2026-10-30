@@ -65,6 +65,11 @@ defmodule VisionCore.Camera.LibCameraTest do
     test "a mode is passed by name" do
       assert LibCamera.exposure_mode_args(:short) == ["--exposure-mode", "short"]
     end
+
+    test "a mode is accepted as the string the controls and the export give" do
+      assert LibCamera.exposure_mode_args("short") == ["--exposure-mode", "short"]
+      assert_raise FunctionClauseError, fn -> LibCamera.exposure_mode_args("fastest") end
+    end
   end
 
   describe "sensor_mode_args/1" do
@@ -169,6 +174,28 @@ defmodule VisionCore.Camera.LibCameraTest do
       Port.close(port)
     end
 
+    test "do not overwrite a control set before the first frame" do
+      port = Port.open({:spawn_executable, "/bin/cat"}, [:binary])
+      packet = <<1, 2::little-16, 2::little-16, 0::little-signed-64, 1::little-32, 0>>
+
+      state = %{
+        label: "left",
+        listeners: [],
+        port: port,
+        controls: %{brightness: 0.2, contrast: 1.0},
+        start_controls: [brightness: 0.2, contrast: 2.0],
+        last_frame_at: nil
+      }
+
+      assert {:reply, {:ok, _controls}, state} =
+               LibCamera.handle_call({:set_controls, [brightness: 0.5]}, nil, state)
+
+      assert state.start_controls == [contrast: 2.0]
+      assert {:noreply, state} = LibCamera.handle_info({port, {:data, packet}}, state)
+      assert %{brightness: 0.5, contrast: 2.0} = state.controls
+      Port.close(port)
+    end
+
     defp collect(port, acc) do
       receive do
         {^port, {:data, data}} -> collect(port, acc <> data)
@@ -203,5 +230,58 @@ defmodule VisionCore.Camera.LibCameraTest do
 
       refute Map.has_key?(live, :digital_gain)
     end
+  end
+
+  describe "controls before the first frame" do
+    @describetag :tmp_dir
+
+    test "are the composer's settings", %{tmp_dir: tmp_dir} do
+      camera =
+        start_camera(tmp_dir, "seeded",
+          brightness: 0.2,
+          exposure_time_us: 6000,
+          exposure_mode: :short,
+          lens_position: 1
+        )
+
+      assert %{
+               brightness: 0.2,
+               exposure_time_us: 6000,
+               exposure_mode: "short",
+               lens_position: 1.0,
+               contrast: 1.0
+             } = LibCamera.controls(camera)
+    end
+
+    test "take the exposure mode as the export renders it", %{tmp_dir: tmp_dir} do
+      rows = [
+        {[:components, :stereo, :left, :exposure_mode], "stereo.left.exposure_mode", "long"}
+      ]
+
+      "# In the options" <> _ = snippet = VisionCore.Parameters.Export.render(rows)
+      [_header, options] = String.split(snippet, "\n", parts: 2)
+      {[left: left], _binding} = Code.eval_string("[" <> options <> "]")
+
+      camera = start_camera(tmp_dir, "string_mode", left)
+      assert %{exposure_mode: "long"} = LibCamera.controls(camera)
+    end
+
+    @tag :capture_log
+    test "leave out a setting the camera refuses", %{tmp_dir: tmp_dir} do
+      camera = start_camera(tmp_dir, "refused", brightness: 5.0, contrast: 2)
+      assert %{brightness: +0.0, contrast: 2.0} = LibCamera.controls(camera)
+    end
+  end
+
+  # A driver on a capture program that reads its commands and sends nothing.
+  defp start_camera(tmp_dir, label, opts) do
+    executable = Path.join(tmp_dir, "camera_capture")
+    File.write!(executable, "#!/bin/sh\nexec cat > /dev/null\n")
+    File.chmod!(executable, 0o755)
+
+    start_supervised!(
+      {LibCamera, [label: label, camera_id: 0, executable: executable] ++ opts},
+      id: label
+    )
   end
 end
