@@ -29,24 +29,27 @@ defmodule VisionCore.Stereo.Stage.PointCloud do
 
   @impl VisionCore.Stereo.NxStage
   def step(tensors, params, decimation) do
+    # NaN depth unprojects to a NaN point: x and y scale with z.
+    in_range =
+      Nx.logical_and(
+        Nx.greater(tensors.depth_m, @min_depth_m),
+        Nx.less(tensors.depth_m, @max_depth_m)
+      )
+
+    depth_m = Nx.select(in_range, tensors.depth_m, Nx.Constants.nan(:f32))
+
     grid =
       NxStereo.Depth.cloud_grid(
-        tensors.depth_m,
+        depth_m,
         params.focal_length_px,
         params.cx,
         params.cy,
         decimation
       )
 
-    z = grid[[.., .., 2]]
-    kept = Nx.logical_and(Nx.greater(z, @min_depth_m), Nx.less(z, @max_depth_m))
-
     tensors
-    |> Map.put(
-      :cloud_grid,
-      Nx.select(Nx.broadcast(Nx.new_axis(kept, -1), grid), grid, Nx.Constants.nan(:f32))
-    )
-    |> Map.put(:cloud_points, total(kept))
+    |> Map.put(:cloud_grid, grid)
+    |> Map.put(:cloud_points, total(Nx.logical_not(Nx.is_nan(grid[[.., .., 2]]))))
   end
 
   # Rows, then their sums: IREE's Vulkan reduction of a whole grid runs on one thread.
