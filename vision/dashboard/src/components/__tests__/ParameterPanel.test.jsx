@@ -115,6 +115,12 @@ describe('ParameterPanel', () => {
     expect(regions[0].textContent).toBe('p1 8, p2 64, uniqueness 1.2')
   })
 
+  it('leaves the values set by an automatic mode out of the live summary', () => {
+    const { container } = render(<ParameterPanel groupId="cameras" />)
+
+    expect(container.querySelector('[aria-live]').textContent).toBe('auto exposure on')
+  })
+
   it('asks you to choose a box when none is selected', () => {
     render(<ParameterPanel groupId={null} />)
 

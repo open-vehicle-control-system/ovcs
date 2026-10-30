@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
-import ParameterControl from '../ParameterControl.jsx'
+import ParameterControl, { formatValue } from '../ParameterControl.jsx'
 
 const p1 = {
   id: 'stereo.match.p1',
@@ -117,6 +117,27 @@ describe('ParameterControl', () => {
     show({ ...p1, name: 'uniqueness', type: 'double', constraint: { kind: 'range', min: 1, max: 3, step: null }, value: 0.1 + 0.2, default: 0.3 })
 
     expect(screen.getByRole('textbox', { name: 'uniqueness value' }).value).toBe('0.3')
+  })
+
+  it('shows a double with at most three decimals and an integer exactly', () => {
+    expect(formatValue(1.23456789)).toBe('1.235')
+    expect(formatValue(0.5)).toBe('0.5')
+    expect(formatValue(123456789)).toBe('123456789')
+  })
+
+  it('fills the number field of a double up to its step', () => {
+    show({ ...p1, name: 'uniqueness', type: 'double', constraint: { kind: 'range', min: 1, max: 3, step: 0.01 }, value: 1.23456, default: 1.2 })
+
+    expect(screen.getByRole('textbox', { name: 'uniqueness value' }).value).toBe('1.23')
+  })
+
+  it('keeps the switch to its own width with the knob on its track', () => {
+    show({ ...p1, name: 'auto exposure', type: 'bool', constraint: { kind: 'bool' }, value: false, default: false })
+
+    const toggle = screen.getByRole('switch', { name: 'auto exposure' })
+    expect(toggle.className).toContain('self-start')
+    expect(toggle.querySelector('[aria-hidden] > span').className).toContain('left-0')
+    expect(toggle.textContent).toBe('off')
   })
 
   it('commits a keyboard change when the key is released', () => {

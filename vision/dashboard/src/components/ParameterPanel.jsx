@@ -44,7 +44,10 @@ export default function ParameterPanel({ groupId }) {
 
   if (!group) return <p className="text-sm text-ovcs-muted">Choose a box in the pipeline to see its parameters.</p>
 
-  const summary = members.map((parameter) => `${parameter.name} ${formatValue(parameter.value)}`).join(', ')
+  // Values set by an automatic mode change at every poll; announcing them would be noise.
+  const summary = members
+    .filter((parameter) => parameter.state !== 'automatic')
+    .map((parameter) => `${parameter.name} ${formatValue(parameter.value)}`).join(', ')
 
   return (
     <section aria-labelledby={headingId} className="border-t border-ovcs-border pt-4">
