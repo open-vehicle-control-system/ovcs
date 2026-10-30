@@ -251,6 +251,16 @@ defmodule VisionCore.Ros2.ParametersTest do
       assert Agent.get(exposure, & &1) == 100
     end
 
+    test "a refused set request is logged once", %{registry: registry} do
+      payload =
+        sequence(<<>>, [{"test.group.gain", :integer, false, 70, 0.0, ""}], &encode_parameter/2)
+
+      log =
+        ExUnit.CaptureLog.capture_log([level: :info], fn -> set_results(payload, registry) end)
+
+      assert [_line] = Regex.scan(~r/refused/, log)
+    end
+
     test "lists the registry's ids", %{registry: registry} do
       {names, _rest} =
         read_sequence({Parameters.respond("list_parameters", <<>>, registry), 0}, &read_string/1)

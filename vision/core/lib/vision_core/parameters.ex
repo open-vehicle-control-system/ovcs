@@ -12,10 +12,10 @@ defmodule VisionCore.Parameters do
 
   Saved values are applied when their group is declared. One that no longer
   fits the parameter's type, constraint or relation, or of a parameter its
-  group no longer declares, is dropped from the store with a log line; one the
-  owner fails to set is kept for the next declaration. Values set since the
-  last `save/1` are applied after them. Both are applied again when a
-  restarted owner declares its groups.
+  group no longer declares or now fixes in the build, is dropped from the
+  store with a log line; one the owner fails to set is kept for the next
+  declaration. Values set since the last `save/1` are applied after them.
+  Both are applied again when a restarted owner declares its groups.
   A parameter whose value cannot be read is never unsaved.
 
   A parameter's default is the `default` it is first declared with, or else
@@ -89,7 +89,8 @@ defmodule VisionCore.Parameters do
 
   @doc """
   Checks `value` against parameter `id` and applies it. Switching an automatic
-  mode off first sets each parameter it controls to the value it left.
+  mode off, here or when a saved or unsaved value is applied, first sets each
+  parameter it controls to the value it left, brought within its range.
   """
   @spec set(GenServer.server(), id(), term()) :: {:ok, Parameter.t()} | {:error, String.t()}
   def set(server \\ __MODULE__, id, value), do: GenServer.call(server, {:set, id, value})
@@ -284,10 +285,14 @@ defmodule VisionCore.Parameters do
       "kept, not applied"
     )
 
-    state = drop_saved(state, undeclared_saved(state, groups) ++ refused)
+    state =
+      drop_saved(
+        state,
+        undeclared_saved(state, groups) ++ build_saved(state, declared) ++ refused
+      )
 
     changed = fn parameter, _values -> Map.fetch(state.changed, parameter.id) end
-    {_ids, _applied, refused} = apply_values(state, declared, changed, &set_back/4)
+    {_ids, _applied, refused} = apply_values(state, declared, changed, &apply_value/4)
     log_refused(refused, "not set back")
 
     {:noreply, state}
@@ -314,34 +319,31 @@ defmodule VisionCore.Parameters do
   end
 
   defp refuse(id, value, reason, state) do
-    Logger.warning("vision parameter #{id} = #{inspect(value)} refused: #{reason}")
+    Logger.info("vision parameter #{id} = #{inspect(value)} refused: #{reason}")
     {:reply, {:error, reason}, state}
   end
 
   # The values applied by id, or the first refusal.
   defp apply_value(state, declared, value, values) do
-    with {:ok, value} <- check_value(state, declared, value, values),
-         {:ok, released} <- release_controlled(state, declared, value, values),
-         :ok <- call_set(declared, value) do
-      {:ok, Map.put(released, declared.id, value)}
+    with {:ok, value} <- check_value(state, declared, value, values) do
+      apply_checked(state, declared, value, values)
     end
   end
 
-  # As apply_value/4, without setting what an automatic mode switched off leaves.
-  defp set_back(state, declared, value, values) do
-    with {:ok, value} <- check_value(state, declared, value, values),
-         :ok <- call_set(declared, value) do
-      {:ok, %{declared.id => value}}
-    end
-  end
-
-  # As set_back/4, with the owner's refusal told apart from the model's.
+  # As apply_value/4, with the owner's refusal told apart from the model's.
   defp apply_saved(state, declared, value, values) do
     with {:ok, value} <- check_value(state, declared, value, values) do
-      case call_set(declared, value) do
-        :ok -> {:ok, %{declared.id => value}}
+      case apply_checked(state, declared, value, values) do
+        {:ok, applied} -> {:ok, applied}
         {:error, reason} -> {:error, {:owner, reason}}
       end
+    end
+  end
+
+  defp apply_checked(state, declared, value, values) do
+    with {:ok, released} <- release_controlled(state, declared, value, values),
+         :ok <- call_set(declared, value) do
+      {:ok, Map.put(released, declared.id, value)}
     end
   end
 
@@ -417,6 +419,12 @@ defmodule VisionCore.Parameters do
         MapSet.member?(group_ids, group_id(id)),
         is_nil(find(state, id)),
         do: {%{id: id}, value, "no such parameter"}
+  end
+
+  defp build_saved(state, declared) do
+    for %{applies: :build} = parameter <- declared,
+        {:ok, value} <- [Map.fetch(state.saved, parameter.id)],
+        do: {parameter, value, "fixed in the build"}
   end
 
   defp group_id(id), do: id |> String.split(".") |> Enum.drop(-1) |> Enum.join(".")
@@ -563,12 +571,22 @@ defmodule VisionCore.Parameters do
         {:cont, {:ok, released}}
 
       value ->
+        value = within(controlled, value)
+
         case call_set(controlled, value) do
           :ok -> {:cont, {:ok, Map.put(released, controlled.id, value)}}
           error -> {:halt, error}
         end
     end
   end
+
+  defp within(%{constraint: %{kind: :range, min: min, max: max}, type: type}, value)
+       when is_number(value) do
+    value = value |> max(min) |> min(max)
+    if type == :double, do: value * 1.0, else: value
+  end
+
+  defp within(_declared, value), do: value
 
   defp call_set(declared, value) do
     case declared.set.(value) do
