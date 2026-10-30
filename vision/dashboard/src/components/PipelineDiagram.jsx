@@ -2,12 +2,13 @@ import { useId, useMemo } from 'react'
 import { flowGroups, groupUnsaved, sideGroups, useParameters } from '../stores/parameters.js'
 import { FOCUS } from './styles.js'
 
-const SELECTED = 'border-ovcs-accent bg-[color-mix(in_srgb,var(--ovcs-accent)_12%,var(--ovcs-surface))]'
+// Selection is a ring, so a warning box keeps its red border when selected.
+const SELECTED = 'ring-2 ring-ovcs-accent bg-[color-mix(in_srgb,var(--ovcs-accent)_12%,var(--ovcs-surface))]'
 
 const STATUS_STYLES = {
-  ok: { box: 'border-ovcs-border', dot: 'ovcs-status ovcs-status--ok' },
-  warning: { box: 'border-ovcs-error', dot: 'ovcs-status ovcs-status--error' },
-  off: { box: 'border-dashed border-ovcs-border text-ovcs-muted', dot: 'ovcs-status' }
+  ok: { border: 'border-ovcs-border', selectedBorder: 'border-ovcs-accent', dot: 'ovcs-status ovcs-status--ok' },
+  warning: { border: 'border-ovcs-error', selectedBorder: 'border-ovcs-error', dot: 'ovcs-status ovcs-status--error' },
+  off: { border: 'border-dashed border-ovcs-border text-ovcs-muted', selectedBorder: 'border-dashed border-ovcs-accent text-ovcs-muted', dot: 'ovcs-status' }
 }
 
 function accessibleName(group, unsaved) {
@@ -26,8 +27,8 @@ function GroupBox({ group, unsaved, selected, onSelect }) {
       aria-current={selected ? 'true' : undefined}
       title={group.status?.detail}
       onClick={() => onSelect(group.id)}
-      className={`inline-flex min-h-9 items-center gap-2 rounded border px-3 text-sm hover:border-ovcs-accent ${style.box} ${
-        selected ? SELECTED : 'bg-ovcs-surface'
+      className={`inline-flex min-h-9 items-center gap-2 rounded border px-3 text-sm hover:border-ovcs-accent ${
+        selected ? `${style.selectedBorder} ${SELECTED}` : `${style.border} bg-ovcs-surface`
       } ${FOCUS}`}
     >
       {group.status ? <span aria-hidden="true" className={style.dot} /> : null}

@@ -8,10 +8,15 @@ const STATE_LABELS = { builtin: 'built-in', saved: 'saved' }
 /** Rounds away floating-point noise from sums of steps. */
 export const tidy = (number) => Number(number.toPrecision(12))
 
+const DISPLAY_DECIMALS = 3
+
+const round = (number, decimals) => String(Number(number.toFixed(decimals)))
+
+/** A value as shown: on/off for a bool, a non-integer with at most three decimals. */
 export const formatValue = (value) => {
   if (value == null) return '–'
   if (typeof value === 'boolean') return value ? 'on' : 'off'
-  if (typeof value === 'number') return String(tidy(value))
+  if (typeof value === 'number') return Number.isInteger(value) ? String(value) : round(value, DISPLAY_DECIMALS)
   return String(value)
 }
 
@@ -20,6 +25,14 @@ export function rangeStep({ type, constraint }) {
   if (constraint?.step) return constraint.step
   if (type === 'integer') return 1
   return tidy((constraint.max - constraint.min) / 100)
+}
+
+const decimalsOf = (number) => (String(tidy(number)).split('.')[1] ?? '').length
+
+// A double in a range is written to the precision of its step.
+function formatField(value, parameter) {
+  if (typeof value !== 'number' || parameter.type !== 'double' || parameter.constraint?.kind !== 'range') return formatValue(value)
+  return round(value, Math.min(decimalsOf(rangeStep(parameter)), DISPLAY_DECIMALS))
 }
 
 const sameValue = (a, b) => a === b || (typeof a === 'number' && typeof b === 'number' && tidy(a) === tidy(b))
@@ -67,7 +80,7 @@ function ValueField({ parameter, shown, bounds, label, onChange }) {
       autoComplete="off"
       spellCheck={false}
       disabled={disabled}
-      value={disabled ? '–' : text ?? formatValue(shown)}
+      value={disabled ? '–' : text ?? formatField(shown, parameter)}
       onChange={(event) => setText(event.target.value)}
       onBlur={commit}
       onKeyDown={(event) => {
@@ -176,10 +189,10 @@ function SwitchControl({ parameter, labelId, onChange }) {
       aria-labelledby={labelId}
       disabled={parameter.value == null}
       onClick={() => onChange(!on)}
-      className={`group inline-flex min-h-8 items-center gap-2 rounded px-1 text-sm disabled:cursor-not-allowed disabled:opacity-50 ${FOCUS}`}
+      className={`group inline-flex min-h-8 items-center gap-2 self-start rounded px-1 text-sm disabled:cursor-not-allowed disabled:opacity-50 ${FOCUS}`}
     >
       <span aria-hidden="true" className={`relative h-5 w-9 rounded-full transition-colors group-enabled:group-hover:ring-1 group-enabled:group-hover:ring-ovcs-accent motion-reduce:transition-none ${on ? 'bg-ovcs-accent' : 'bg-ovcs-border'}`}>
-        <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-ovcs-surface transition-transform motion-reduce:transition-none ${on ? 'translate-x-4' : 'translate-x-0.5'}`} />
+        <span className={`absolute left-0 top-0.5 h-4 w-4 rounded-full bg-ovcs-surface transition-transform motion-reduce:transition-none ${on ? 'translate-x-4' : 'translate-x-0.5'}`} />
       </span>
       <span>{formatValue(parameter.value)}</span>
     </button>
@@ -229,7 +242,7 @@ function EditableControl({ parameter, bounds, labelId, onChange, onEditStart, on
 function allowed(constraint, bounds) {
   switch (constraint?.kind) {
     case 'range':
-      return `allows ${bounds.min} to ${bounds.max}${constraint.step ? `, step ${constraint.step}` : ''}`
+      return `allows ${formatValue(bounds.min)} to ${formatValue(bounds.max)}${constraint.step ? `, step ${formatValue(constraint.step)}` : ''}`
     case 'choices':
       return `one of ${constraint.values.map(formatValue).join(', ')}`
     case 'bool':

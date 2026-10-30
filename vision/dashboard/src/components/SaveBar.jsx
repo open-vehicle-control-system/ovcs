@@ -1,10 +1,12 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { forwardRef, useEffect, useId, useRef, useState } from 'react'
 import { FOCUS } from './styles.js'
 
 const BUTTON = `min-h-9 rounded border border-ovcs-border px-3 text-sm enabled:hover:border-ovcs-accent disabled:cursor-not-allowed disabled:opacity-50 ${FOCUS}`
 const PRIMARY = `${BUTTON} enabled:border-ovcs-accent font-semibold`
 
 const COPIED_MS = 2000
+
+const RUNNING = { save: 'Saving…', discard: 'Discarding…', reset: 'Resetting…' }
 
 const changes = (count, kind = '') => `${count} ${kind}${count === 1 ? 'change' : 'changes'}`
 
@@ -14,6 +16,11 @@ function ExportSnippet({ snippet, onClose }) {
   const headingId = useId()
   const snippetRef = useRef(null)
   const [copy, setCopy] = useState('')
+
+  useEffect(() => {
+    snippetRef.current.focus()
+    snippetRef.current.scrollIntoView?.({ block: 'nearest' })
+  }, [])
 
   useEffect(() => {
     if (copy !== 'Copied') return undefined
@@ -32,7 +39,7 @@ function ExportSnippet({ snippet, onClose }) {
       await navigator.clipboard.writeText(snippet)
       setCopy('Copied')
     } catch {
-      setCopy(copyBySelection() ? 'Copied' : 'Press Ctrl+C to copy')
+      setCopy(copyBySelection() ? 'Copied' : 'Press Ctrl+C (⌘C on Mac) to copy')
     }
   }
 
@@ -46,29 +53,62 @@ function ExportSnippet({ snippet, onClose }) {
           {copy}
         </span>
         <button type="button" onClick={copySnippet} className={`${BUTTON} ml-auto`}>
-          Copy
+          Copy snippet
         </button>
         <button type="button" aria-label="Close export" onClick={onClose} className={BUTTON}>
           Close
         </button>
       </div>
-      <pre ref={snippetRef} translate="no" className="max-h-64 overflow-auto rounded border border-ovcs-border bg-ovcs-bg p-3 font-mono text-xs">
+      <pre
+        ref={snippetRef}
+        tabIndex={-1}
+        translate="no"
+        className={`max-h-64 overflow-auto rounded border border-ovcs-border bg-ovcs-bg p-3 font-mono text-xs ${FOCUS}`}
+      >
         {snippet}
       </pre>
     </section>
   )
 }
 
+function Alert({ text, dismissLabel, onDismiss }) {
+  return (
+    <div role="alert" className="flex items-start gap-2 rounded border border-ovcs-error p-2 text-sm">
+      <p className="ovcs-status ovcs-status--error min-w-0 flex-1 break-words">
+        <span className="text-ovcs-text">{text}</span>
+      </p>
+      <button type="button" aria-label={dismissLabel} onClick={onDismiss} className={BUTTON}>
+        Dismiss
+      </button>
+    </div>
+  )
+}
+
 /**
- * The unsaved count with Save and Discard, Reset all, Export and the last error.
- * `onExport` resolves to the snippet it shows.
+ * The unsaved count with Save and Discard, Reset all, Export and the errors.
+ *
+ * The callbacks may return promises; the actions stay disabled until they settle. `onExport`
+ * resolves to the snippet, shown above the bar. `className` and `ref` go to the bar itself.
  */
-export default function SaveBar({ unsaved, error, onSave, onDiscard, onResetAll, onExport, onDismissError }) {
+const SaveBar = forwardRef(function SaveBar(
+  { unsaved, error, onSave, onDiscard, onResetAll, onExport, onDismissError, className = '' },
+  ref
+) {
   const [snippet, setSnippet] = useState(null)
   const [exportError, setExportError] = useState(null)
+  const [running, setRunning] = useState(null)
+
+  const run = async (name, action) => {
+    setRunning(name)
+    try {
+      await action()
+    } finally {
+      setRunning(null)
+    }
+  }
 
   const discard = () => {
-    if (window.confirm(`Discard ${changes(unsaved, 'unsaved ')}?`)) onDiscard()
+    if (window.confirm(`Discard ${changes(unsaved, 'unsaved ')}?`)) run('discard', onDiscard)
   }
 
   const resetAll = () => {
@@ -76,7 +116,7 @@ export default function SaveBar({ unsaved, error, onSave, onDiscard, onResetAll,
       unsaved > 0
         ? `Reset every parameter to its default? This also drops ${changes(unsaved, 'unsaved ')}.`
         : 'Reset every parameter to its default?'
-    if (window.confirm(question)) onResetAll()
+    if (window.confirm(question)) run('reset', onResetAll)
   }
 
   const exportSnippet = async () => {
@@ -88,41 +128,34 @@ export default function SaveBar({ unsaved, error, onSave, onDiscard, onResetAll,
     }
   }
 
+  const label = (name, idle) => (running === name ? RUNNING[name] : idle)
+
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <p aria-live="polite" className="mr-auto text-sm tabular-nums">
-          {unsaved > 0 ? changes(unsaved, 'unsaved ') : 'No unsaved changes'}
-        </p>
-        <button type="button" disabled={unsaved === 0} onClick={onSave} className={`${PRIMARY} tabular-nums`}>
-          {unsaved > 0 ? `Save ${changes(unsaved)}` : 'Save'}
-        </button>
-        <button type="button" disabled={unsaved === 0} onClick={discard} className={BUTTON}>
-          Discard
-        </button>
-        <button type="button" onClick={resetAll} className={BUTTON}>
-          Reset all
-        </button>
-        <button type="button" onClick={exportSnippet} className={BUTTON}>
-          Export
-        </button>
-      </div>
-      {error || exportError ? (
-        <div role="alert" className="flex items-start gap-2 rounded border border-ovcs-error p-2 text-sm">
-          <p className="ovcs-status ovcs-status--error min-w-0 flex-1 break-words">
-            <span className="text-ovcs-text">{error ?? exportError}</span>
+    <>
+      {snippet != null ? <ExportSnippet snippet={snippet} onClose={() => setSnippet(null)} /> : null}
+      <div ref={ref} className={`flex flex-col gap-3 ${className}`}>
+        <div className="flex flex-wrap items-center gap-2">
+          <p aria-live="polite" className="mr-auto text-sm tabular-nums">
+            {unsaved > 0 ? changes(unsaved, 'unsaved ') : 'No unsaved changes'}
           </p>
-          <button
-            type="button"
-            aria-label="Dismiss error"
-            onClick={error ? onDismissError : () => setExportError(null)}
-            className={BUTTON}
-          >
-            Dismiss
+          <button type="button" disabled={unsaved === 0 || running != null} onClick={() => run('save', onSave)} className={`${PRIMARY} tabular-nums`}>
+            {label('save', unsaved > 0 ? `Save ${changes(unsaved)}` : 'Save')}
+          </button>
+          <button type="button" disabled={unsaved === 0 || running != null} onClick={discard} className={`${BUTTON} tabular-nums`}>
+            {label('discard', unsaved > 0 ? `Discard ${changes(unsaved)}` : 'Discard')}
+          </button>
+          <button type="button" disabled={running != null} onClick={resetAll} className={BUTTON}>
+            {label('reset', 'Reset all')}
+          </button>
+          <button type="button" onClick={exportSnippet} className={BUTTON}>
+            Export
           </button>
         </div>
-      ) : null}
-      {snippet != null ? <ExportSnippet snippet={snippet} onClose={() => setSnippet(null)} /> : null}
-    </div>
+        {error ? <Alert text={error} dismissLabel="Dismiss error" onDismiss={onDismissError} /> : null}
+        {exportError ? <Alert text={exportError} dismissLabel="Dismiss export error" onDismiss={() => setExportError(null)} /> : null}
+      </div>
+    </>
   )
-}
+})
+
+export default SaveBar

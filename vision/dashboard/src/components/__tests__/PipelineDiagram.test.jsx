@@ -62,6 +62,24 @@ describe('PipelineDiagram', () => {
     expect(screen.getByRole('button', { name: 'Cameras' })).toBeTruthy()
   })
 
+  it('shows the selection with one border colour, a warning box included', () => {
+    const borders = (button) => button.className.split(/\s+/).filter((name) => /^border-ovcs-/.test(name))
+
+    useParameters.setState({ selectedGroupId: 'stereo.match' })
+    const { unmount } = render(<PipelineDiagram />)
+    const match = screen.getByRole('button', { name: 'Match' })
+    expect(borders(match)).toEqual(['border-ovcs-accent'])
+    expect(match.className).toContain('ring-ovcs-accent')
+    unmount()
+
+    useParameters.setState({ selectedGroupId: 'stereo.alignment' })
+    render(<PipelineDiagram />)
+    const alignment = screen.getByRole('button', { name: /^Alignment/ })
+    expect(borders(alignment)).toEqual(['border-ovcs-error'])
+    expect(alignment.className).toContain('ring-ovcs-accent')
+    expect(screen.getByRole('button', { name: 'Cameras' }).className).not.toContain('ring-ovcs-accent')
+  })
+
   it('selects a group on click', () => {
     render(<PipelineDiagram />)
 

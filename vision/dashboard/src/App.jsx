@@ -1,4 +1,4 @@
-import { useEffect, useId } from 'react'
+import { useEffect, useId, useRef } from 'react'
 import StatusCards from './components/StatusCards.jsx'
 import Preview from './components/Preview.jsx'
 import PipelineDiagram from './components/PipelineDiagram.jsx'
@@ -46,7 +46,25 @@ function useLeaveGuard(active) {
   }, [active])
 }
 
+// Keeps focused controls clear of the sticky bar when the browser scrolls them into view.
+function useScrollPaddingFor(ref) {
+  useEffect(() => {
+    const bar = ref.current
+    if (!bar || typeof ResizeObserver === 'undefined') return undefined
+    const root = document.documentElement
+    const observer = new ResizeObserver(() => {
+      root.style.scrollPaddingBottom = `${bar.offsetHeight}px`
+    })
+    observer.observe(bar)
+    return () => {
+      observer.disconnect()
+      root.style.scrollPaddingBottom = ''
+    }
+  }, [ref])
+}
+
 function ParameterSaveBar() {
+  const barRef = useRef(null)
   const unsaved = useParameters((state) => state.unsaved)
   const error = useParameters((state) => state.error)
   const save = useParameters((state) => state.save)
@@ -55,18 +73,20 @@ function ParameterSaveBar() {
   const exportSnippet = useParameters((state) => state.exportSnippet)
   const dismissError = useParameters((state) => state.dismissError)
 
+  useScrollPaddingFor(barRef)
+
   return (
-    <div className="border-t border-ovcs-border pt-4">
-      <SaveBar
-        unsaved={unsaved}
-        error={error}
-        onSave={save}
-        onDiscard={discard}
-        onResetAll={() => reset()}
-        onExport={exportSnippet}
-        onDismissError={dismissError}
-      />
-    </div>
+    <SaveBar
+      ref={barRef}
+      unsaved={unsaved}
+      error={error}
+      onSave={save}
+      onDiscard={discard}
+      onResetAll={() => reset()}
+      onExport={exportSnippet}
+      onDismissError={dismissError}
+      className="sticky bottom-0 z-10 -mx-4 -mb-3 border-t border-ovcs-border bg-ovcs-surface px-4 pb-3 pt-4"
+    />
   )
 }
 
@@ -97,7 +117,7 @@ export default function App() {
       </section>
 
       <div className="grid items-start gap-4 lg:grid-cols-2">
-        <section aria-label="Previews" className="grid min-w-0 grid-cols-2 gap-4">
+        <section aria-label="Previews" className="grid min-w-0 grid-cols-2 gap-4 lg:sticky lg:top-4 lg:self-start">
           <Preview stream="left" socket={dashboardSocket} />
           <Preview stream="right" socket={dashboardSocket} />
           <div className="col-span-2">

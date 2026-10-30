@@ -77,7 +77,9 @@ VMS, infotainment and the vision unit share one layered shape. Each layer is its
                           |                    |
                     +-----+------+      +------+-------+
                     |  Dashboard |      |  Cantastic   |
-                    | (Vue/Dart) |      |  (CAN lib)   |
+                    | (Vue,      |      |  (CAN lib)   |
+                    |  React,    |      |              |
+                    |  Flutter)  |      |              |
                     +------------+      +--------------+
 ```
 
