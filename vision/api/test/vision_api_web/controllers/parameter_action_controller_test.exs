@@ -132,7 +132,9 @@ defmodule VisionApiWeb.ParameterActionControllerTest do
              |> post_action("/api/parameter-resets", target("parameters", "test.stubborn.level"))
              |> json_response(422)
 
-    assert %{"status" => "422", "detail" => "test.stubborn.level: " <> _} = error
+    assert %{"status" => "422", "title" => "Not reset", "detail" => "test.stubborn.level: " <> _} =
+             error
+
     refute Map.has_key?(error, "source")
 
     assert %{"errors" => [%{"status" => "400"}]} =
