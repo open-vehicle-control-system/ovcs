@@ -37,7 +37,7 @@ jobs:
       docs: ${{ steps.filter.outputs.docs }}
       cli: ${{ steps.filter.outputs.cli }}
       vue: ${{ steps.filter.outputs.vue }}
-      vision_vue: ${{ steps.filter.outputs.vision_vue }}
+      vision_dashboard: ${{ steps.filter.outputs.vision_dashboard }}
       vision_rust: ${{ steps.filter.outputs.vision_rust }}
       flutter: ${{ steps.filter.outputs.flutter }}
       platformio: ${{ steps.filter.outputs.platformio }}
@@ -79,9 +79,10 @@ jobs:
               - vms/dashboard/**
               - libraries/ovcs_bus_gateway/dashboard/**
               - libraries/ovcs_ui/**
-            vision_vue:
+            vision_dashboard:
               - *shared
               - vision/dashboard/**
+              - libraries/ovcs_ui/**
             vision_rust:
               - *shared
               - vision/rust/**
@@ -341,7 +342,7 @@ jobs:
   vision-dashboard:
     name: React · vision/dashboard
     needs: changes
-    if: github.event_name != 'pull_request' || needs.changes.outputs.vision_vue == 'true'
+    if: github.event_name != 'pull_request' || needs.changes.outputs.vision_dashboard == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
