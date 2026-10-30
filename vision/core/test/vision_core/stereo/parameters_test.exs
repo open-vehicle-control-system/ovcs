@@ -508,6 +508,29 @@ defmodule VisionCore.Stereo.ParametersTest do
              VisionCore.Parameters.get("stereo.cameras.analogue_gain")
   end
 
+  test "a stage setting without a type constraint, values or range takes any value of its type" do
+    stop_supervised!(Pipeline)
+
+    start_supervised!(
+      {Pipeline,
+       [
+         %{
+           stage: :blur,
+           summary: "Blurs",
+           specs: [radius: %{type: :integer}],
+           values: %{radius: 2}
+         }
+       ]}
+    )
+
+    start_supervised!({VisionCore.Parameters, store: MemoryStore})
+    start_supervised!({Parameters, topic_prefix: "stereo", driver: Driver, pipeline: Pipeline})
+
+    assert {:ok, %{constraint: nil}} = VisionCore.Parameters.get("stereo.blur.radius")
+    assert {:ok, %{value: 1_000}} = VisionCore.Parameters.set("stereo.blur.radius", 1_000)
+    assert {:error, _reason} = VisionCore.Parameters.set("stereo.blur.radius", 1.5)
+  end
+
   test "starts without a registry" do
     assert {:ok, _pid} =
              start_supervised(
