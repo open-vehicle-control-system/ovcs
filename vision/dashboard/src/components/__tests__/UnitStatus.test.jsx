@@ -1,6 +1,9 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import StatusCards from '../StatusCards.jsx'
+import UnitStatus from '../UnitStatus.jsx'
+import Previews from '../Previews.jsx'
+
+const socket = { channel: vi.fn(() => ({ on: vi.fn(), join: vi.fn(), push: vi.fn(() => ({ receive() { return this } })), leave: vi.fn() })) }
 
 const snapshot = {
   cameras: { left: { present: true, fps: 29.6, exposure_time_us: 8000, analogue_gain: 2.0 }, right: { present: false } },
@@ -14,9 +17,15 @@ const snapshot = {
   sharpness: { left: 0.0312, right: 0.0218 }
 }
 
-describe('StatusCards', () => {
+describe('UnitStatus and the pair status', () => {
   const card = (id) => document.querySelector(`[data-card="${id}"]`)
-  const show = (status) => render(<StatusCards status={status} />)
+  const show = (status) =>
+    render(
+      <>
+        <UnitStatus status={status} />
+        <Previews status={status} socket={socket} />
+      </>
+    )
 
   it('shows Hailo absent', () => {
     show(snapshot)
@@ -24,27 +33,26 @@ describe('StatusCards', () => {
     expect(card('hailo').textContent).toContain('absent')
   })
 
-  it('shows each camera, the depth rate and Zenoh', () => {
+  it('shows Zenoh in the top bar', () => {
     show(snapshot)
 
-    expect(card('left').textContent).toContain('29.6')
-    expect(card('right').textContent).toContain('absent')
-    expect(card('depth').textContent).toContain('12.8')
     expect(card('zenoh').textContent).toContain('disconnected')
   })
 
-  it('shows the CPU usage and the stereo segment time', () => {
+  it('shows the CPU usage, and the stereo segment time as the GPU, explained by its hint', () => {
     show(snapshot)
 
     expect(card('cpu').textContent).toContain('37 %')
+    expect(card('segment').textContent).toContain('GPU')
     expect(card('segment').textContent).toContain('82 %')
+    expect(card('segment').querySelector('button').getAttribute('aria-label')).toBe('About GPU')
   })
 
   it('shows the row alignment, overall and from left to right', () => {
     show(snapshot)
 
     expect(card('alignment').textContent).toContain('-1.4 rows')
-    expect(card('alignment').textContent).toContain('-1.9 · -1.6 · -1.2 · -1.0')
+    expect(card('alignment').textContent).toContain('left to right -1.9 · -1.6 · -1.2 · -1.0')
     expect(card('alignment').querySelector('.ovcs-status--error')).not.toBeNull()
   })
 

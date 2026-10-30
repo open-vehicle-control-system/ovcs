@@ -52,6 +52,18 @@ describe('Preview', () => {
     expect(socket.fakeChannel.push).toHaveBeenCalledWith('ack', {})
   })
 
+  it("shows the frame's resolution once it has loaded", () => {
+    const socket = fakeSocket()
+    render(<Preview stream="depth" socket={socket} />)
+    sendFrame(socket, 'Zmlyc3Q=')
+
+    const image = screen.getByRole('img')
+    Object.defineProperties(image, { naturalWidth: { value: 480 }, naturalHeight: { value: 270 } })
+    fireEvent.load(image)
+
+    expect(screen.getByText('480 × 270')).toBeTruthy()
+  })
+
   it('leaves its channel when unmounted', () => {
     const socket = fakeSocket()
     const { unmount } = render(<Preview stream="depth" socket={socket} />)

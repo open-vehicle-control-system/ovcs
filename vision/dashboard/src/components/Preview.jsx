@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { OvcsCard } from '@ovcs/ui/react'
 
-export default function Preview({ stream, socket }) {
+/** A stream's latest frame, with its resolution; `children` sit in the caption, under the stream's name, and `onChannel` gets the stream's channel. */
+export default function Preview({ stream, socket, onChannel, className = '', frameClassName = '', children }) {
   const [frame, setFrame] = useState(null)
+  const [size, setSize] = useState(null)
   const frameRef = useRef(null)
   const channelRef = useRef(null)
 
@@ -20,28 +22,44 @@ export default function Preview({ stream, socket }) {
       setFrame(source)
     })
     channel.join()
+    onChannel?.(channel)
     return () => {
       channelRef.current = null
+      onChannel?.(null)
       channel.leave()
     }
-  }, [stream, socket])
+  }, [stream, socket, onChannel])
 
   return (
-    <OvcsCard as="figure" className="overflow-hidden p-0">
-      <div className="flex aspect-video items-center justify-center bg-black">
+    <OvcsCard as="figure" className={`overflow-hidden p-0 ${className}`}>
+      <div className={`flex aspect-video items-center justify-center bg-black ${frameClassName}`}>
         {frame ? (
           <img
             src={frame}
             alt={`${stream} preview`}
             className="h-full w-full object-contain"
-            onLoad={ack}
+            onLoad={(event) => {
+              const { naturalWidth: width, naturalHeight: height } = event.currentTarget
+              setSize((last) => (last?.width === width && last?.height === height ? last : { width, height }))
+              ack()
+            }}
             onError={ack}
           />
         ) : (
           <p className="text-sm text-ovcs-muted">No frame</p>
         )}
       </div>
-      <figcaption className="px-4 py-2 text-sm font-medium capitalize text-ovcs-text">{stream}</figcaption>
+      <figcaption className="flex flex-col gap-1.5 px-3 py-2 text-sm">
+        <div className="flex items-baseline gap-2">
+          <span className="font-medium capitalize text-ovcs-text">{stream}</span>
+          {size ? (
+            <span data-resolution className="text-xs text-ovcs-muted tabular-nums">
+              {size.width} × {size.height}
+            </span>
+          ) : null}
+        </div>
+        {children}
+      </figcaption>
     </OvcsCard>
   )
 }

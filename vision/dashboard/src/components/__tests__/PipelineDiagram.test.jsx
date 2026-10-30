@@ -2,20 +2,21 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, within } from '@testing-library/react'
 import PipelineDiagram from '../PipelineDiagram.jsx'
 import { useParameters } from '../../stores/parameters.js'
+import { useNavigation } from '../../stores/navigation.js'
 
 vi.mock('../../services/parameters.js')
 
 const group = (id, name, position, extra = {}) => ({
-  id, name, summary: '', kind: 'stage', placement: 'flow', position, status: null, parameterIds: [], ...extra
+  id, name, summary: '', role: 'step', position, status: null, parameterIds: [], ...extra
 })
 
 const groups = [
-  group('preview', 'Preview', 10, { kind: 'component', placement: 'side' }),
+  group('preview', 'Preview', 10, { role: 'branch' }),
   group('stereo.alignment', 'Alignment', 3, {
     status: { level: 'warning', detail: 'rows off by 1.4' },
     parameterIds: ['stereo.alignment.a', 'stereo.alignment.b']
   }),
-  group('cameras', 'Cameras', 1, { kind: 'component' }),
+  group('cameras', 'Cameras', 1, { role: 'source' }),
   group('stereo.temporal', 'Temporal', 4, { status: { level: 'off', detail: 'switched off' } }),
   group('stereo.match', 'Match', 2)
 ]
@@ -30,6 +31,7 @@ describe('PipelineDiagram', () => {
   beforeEach(() => {
     select = vi.fn()
     useParameters.setState({ groups, parameters, selectedGroupId: 'stereo.match', select })
+    useNavigation.setState({ page: 'pipeline' })
   })
 
   it('draws flow groups in order with arrows, and side groups apart', () => {
@@ -62,14 +64,27 @@ describe('PipelineDiagram', () => {
     expect(screen.getByRole('button', { name: 'Cameras' })).toBeTruthy()
   })
 
-  it('shows the selection with a bottom bar, not a frame, a warning box included', () => {
+  it('shows a status dot only when a step is not fine, after its name', () => {
+    useParameters.setState({
+      groups: groups.map((g) => (g.id === 'stereo.match' ? { ...g, status: { level: 'ok', detail: 'fine' } } : g))
+    })
+    render(<PipelineDiagram />)
+
+    expect(screen.getByRole('button', { name: /^Match/ }).querySelector('.ovcs-status')).toBeNull()
+    const alignment = screen.getByRole('button', { name: /^Alignment/ })
+    const dot = alignment.querySelector('.ovcs-status--error')
+    expect(dot).not.toBeNull()
+    expect(alignment.firstElementChild.textContent).toBe('Alignment')
+  })
+
+  it('shows the selection with a left bar, not a frame, a warning item included', () => {
     const borders = (button) => button.className.split(/\s+/).filter((name) => /^border-ovcs-/.test(name))
-    const BAR = 'shadow-[inset_0_-3px_0_var(--ovcs-accent)]'
+    const BAR = 'shadow-[inset_3px_0_0_var(--ovcs-accent)]'
 
     useParameters.setState({ selectedGroupId: 'stereo.match' })
     const { unmount } = render(<PipelineDiagram />)
     const match = screen.getByRole('button', { name: 'Match' })
-    expect(borders(match)).toEqual(['border-ovcs-border'])
+    expect(borders(match)).toEqual([])
     expect(match.className).toContain(BAR)
     expect(match.className).not.toMatch(/(^|\s)ring-/)
     unmount()
@@ -92,5 +107,13 @@ describe('PipelineDiagram', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Cameras' }))
     expect(select).toHaveBeenCalledWith('cameras')
+    expect(useNavigation.getState().page).toBe('pipeline')
+  })
+
+  it('shows no stage as selected on another page', () => {
+    useNavigation.setState({ page: 'ros2' })
+    render(<PipelineDiagram />)
+
+    expect(screen.getByRole('button', { name: 'Match' }).getAttribute('aria-current')).toBeNull()
   })
 })

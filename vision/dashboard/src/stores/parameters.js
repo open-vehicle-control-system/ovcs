@@ -7,7 +7,11 @@ let reloadRequested = false
 let generation = 0
 const changing = new Map()
 
-const message = (error) => (error instanceof Error ? error.message : String(error))
+// fetch rejects with a TypeError, worded by each browser, when no answer came back.
+const message = (error) => {
+  if (error instanceof TypeError) return 'Cannot reach the vision unit'
+  return error instanceof Error ? error.message : String(error)
+}
 
 const protect = (id) => changing.set(id, (changing.get(id) ?? 0) + 1)
 const release = (id) => {
@@ -56,7 +60,7 @@ export const useParameters = create((set, get) => ({
   discard: () => perform(service.discardParameters, set, get),
   reset: (target) => perform(() => service.resetParameters(target), set, get),
 
-  exportSnippet: () => service.fetchExport(),
+  exportSnippet: () => service.fetchComposerSnippet(),
 
   startPolling(intervalMs = 1000) {
     if (timer) return
@@ -137,8 +141,8 @@ async function perform(action, set, get) {
 const EMPTY = []
 
 export const orderedGroups = (state) => [...state.groups].sort((a, b) => a.position - b.position)
-export const flowGroups = (state) => orderedGroups(state).filter((group) => group.placement === 'flow')
-export const sideGroups = (state) => orderedGroups(state).filter((group) => group.placement === 'side')
+export const flowGroups = (state) => orderedGroups(state).filter((group) => group.role !== 'branch')
+export const sideGroups = (state) => orderedGroups(state).filter((group) => group.role === 'branch')
 
 export const groupParameters = (state, groupId) => {
   const group = state.groups.find((candidate) => candidate.id === groupId)

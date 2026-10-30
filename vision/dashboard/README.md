@@ -15,7 +15,7 @@ The page is laid out for a laptop screen:
 - below, on the left, the left and right camera previews and the depth preview;
 - on the right, the parameters: the pipeline diagram, the selected box's panel and the save bar (Save, Discard, Reset all, Export).
 
-The selected box is kept in the URL as `?box=<group id>` (`?box=stereo.match`). The parameters are polled every second, so values set by an automatic mode stay current.
+The selected box is kept in the URL as `?box=<group id>` (`?box=stereo.disparity`). The parameters are polled every second, so values set by an automatic mode stay current.
 
 `src/stores/parameters.js` holds the groups and parameters; the controls and the save bar are `OvcsParameterControl` and `OvcsSaveBar` from `@ovcs/ui/react`.
 

@@ -6,15 +6,15 @@ import * as service from '../../services/parameters.js'
 
 vi.mock('../../services/parameters.js')
 
-const parameter = (id, group, extra = {}) => ({
-  id, group, name: id, value: 12, saved: 12, state: 'builtin', controller: null, greaterThan: null, ...extra
+const parameter = (id, stage, extra = {}) => ({
+  id, stage, name: id, value: 12, saved: 12, state: 'builtin', controlledBy: null, greaterThan: null, ...extra
 })
 
 const snapshot = (p1 = 12, unsaved = 0) => ({
   groups: [
-    { id: 'side', name: 'Side', placement: 'side', position: 3, parameterIds: ['side.p'] },
-    { id: 'stereo.match', name: 'Match', placement: 'flow', position: 2, parameterIds: ['stereo.match.p1', 'stereo.match.p2'] },
-    { id: 'camera', name: 'Camera', placement: 'flow', position: 1, parameterIds: [] }
+    { id: 'side', name: 'Side', role: 'branch', position: 3, parameterIds: ['side.p'] },
+    { id: 'stereo.match', name: 'Match', role: 'step', position: 2, parameterIds: ['stereo.match.p1', 'stereo.match.p2'] },
+    { id: 'camera', name: 'Camera', role: 'source', position: 1, parameterIds: [] }
   ],
   parameters: {
     'stereo.match.p1': parameter('stereo.match.p1', 'stereo.match', { value: p1, saved: 12, state: p1 === 12 ? 'builtin' : 'unsaved' }),
@@ -122,7 +122,7 @@ describe('parameters store', () => {
   it.each([
     ['save', 'saveParameters', []],
     ['discard', 'discardParameters', []],
-    ['reset', 'resetParameters', [{ type: 'parameter-groups', id: 'stereo.match' }]]
+    ['reset', 'resetParameters', [{ type: 'stages', id: 'stereo.match' }]]
   ])('reloads after a failed %s, which may have changed some values', async (action, call, args) => {
     service[call].mockRejectedValue(new Error('stereo.match.p1: owner is busy'))
     service.fetchGroups.mockResolvedValue(snapshot(12, 0))
@@ -265,7 +265,7 @@ describe('parameters store', () => {
   })
 
   it('returns the export snippet', async () => {
-    service.fetchExport.mockResolvedValue('config :a')
+    service.fetchComposerSnippet.mockResolvedValue('config :a')
 
     expect(await state().exportSnippet()).toBe('config :a')
   })
@@ -276,6 +276,14 @@ describe('parameters store', () => {
     await state().load()
 
     expect(state().error).toBe('GET failed: 500')
+  })
+
+  it('says the unit cannot be reached when the request never got an answer', async () => {
+    service.fetchGroups.mockRejectedValue(new TypeError('NetworkError when attempting to fetch resource.'))
+
+    await state().load()
+
+    expect(state().error).toBe('Cannot reach the vision unit')
   })
 
   describe('polling', () => {
@@ -323,7 +331,7 @@ describe('parameters store', () => {
   describe('selectors', () => {
     beforeEach(() => useParameters.setState({ ...snapshot(), selectedGroupId: null }))
 
-    it('orders groups by position and splits them by placement', () => {
+    it('orders groups by position and splits them by role', () => {
       expect(orderedGroups(state()).map((g) => g.id)).toEqual(['camera', 'stereo.match', 'side'])
       expect(flowGroups(state()).map((g) => g.id)).toEqual(['camera', 'stereo.match'])
       expect(sideGroups(state()).map((g) => g.id)).toEqual(['side'])
