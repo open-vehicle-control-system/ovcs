@@ -30,6 +30,10 @@ defmodule VisionCore.Stereo.Pair do
       `x, y, z` 32-bit float points in the left optical frame, row-major,
       its `{height, width}`, and how many points are measured: the others,
       unmatched pixels among them, are NaN.
+    * `:alignment` — how far the right image's rows sit from the left
+      one's, in rows: `%{offset_rows: float, band_offset_rows: [float]}`,
+      over the whole image and per vertical band from left to right
+      (`VisionCore.Stereo.Stage.Alignment`); `nil` before it is measured.
     * `:metrics` — `{name, value, unit}` samples a stage reports for the
       pipeline's log line.
     * `:device_ms` — the time the pair spent in compiled Nx segments, on
@@ -50,6 +54,7 @@ defmodule VisionCore.Stereo.Pair do
     :depth_m,
     :cloud,
     :cloud_size,
+    :alignment,
     cloud_points: 0,
     disparity_scale: 1.0,
     device_ms: 0.0,

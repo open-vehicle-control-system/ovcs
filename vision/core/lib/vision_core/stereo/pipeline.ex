@@ -11,6 +11,7 @@ defmodule VisionCore.Stereo.Pipeline do
       Match        # disparity, libSGM's semi-global matching
       PostFilter   # median filter on the disparity
       Speckle      # drops small islands of disparity
+      Alignment    # measures the rectified images' row offset
       Temporal     # smoothing of the disparity over time
       Depth        # disparity → metric depth
       PointCloud   # depth → decimated point cloud
@@ -77,6 +78,7 @@ defmodule VisionCore.Stereo.Pipeline do
           Stage.Match,
           Stage.PostFilter,
           Stage.Speckle,
+          Stage.Alignment,
           Stage.Temporal,
           Stage.Depth,
           Stage.PointCloud,

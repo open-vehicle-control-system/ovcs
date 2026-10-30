@@ -57,6 +57,18 @@ function loadCard(id, title, percent, detail) {
   }
 }
 
+// Rows the right image is offset by; past half a row the calibration no longer fits.
+function alignmentCard(alignment) {
+  if (!alignment) return { id: 'alignment', title: 'Row alignment', value: '–', healthy: false }
+  return {
+    id: 'alignment',
+    title: 'Row alignment',
+    value: `${formatNumber(alignment.offset_rows)} rows`,
+    healthy: Math.abs(alignment.offset_rows) <= 0.5,
+    detail: `left to right: ${alignment.band_offset_rows.map((rows) => formatNumber(rows)).join(' · ')}`
+  }
+}
+
 const cards = computed(() => {
   const status = props.status
   return [
@@ -67,7 +79,8 @@ const cards = computed(() => {
     { id: 'hailo', title: 'Hailo', value: status.hailo, healthy: status.hailo === 'running' },
     { id: 'zenoh', title: 'Zenoh', value: status.zenoh, healthy: status.zenoh === 'connected' },
     loadCard('cpu', 'CPU', status.cpu_percent, 'all cores'),
-    loadCard('segment', 'Stereo segment time', status.stereo_segment_percent, 'of each frame, GPU transfers included')
+    loadCard('segment', 'Stereo segment time', status.stereo_segment_percent, 'of each frame, GPU transfers included'),
+    alignmentCard(status.alignment)
   ]
 })
 </script>
