@@ -3,7 +3,7 @@ title: Framework components
 description: What the framework ships (cores, APIs, dashboards, firmware shells, bridges, controllers, shared libraries, the CLI) and how to run them on a laptop.
 ---
 
-OVCS is a monorepo holding the framework's components and, under `vehicles/`, the vehicles built on it. The framework side is a set of independent projects: Elixir Mix projects, a C++/PlatformIO project, a Vue app, a Flutter app and a Rust CLI. Each has its own dependencies, configuration and build; the Elixir projects reference each other through relative `path:` dependencies. It is **not** an Elixir umbrella. This page is the inventory: what each component is, what it depends on, and how to run it.
+OVCS is a monorepo holding the framework's components and, under `vehicles/`, the vehicles built on it. The framework side is a set of independent projects: Elixir Mix projects, a C++/PlatformIO project, Vue and React apps, a Flutter app and a Rust CLI. Each has its own dependencies, configuration and build; the Elixir projects reference each other through relative `path:` dependencies. It is **not** an Elixir umbrella. This page is the inventory: what each component is, what it depends on, and how to run it.
 
 > [!NOTE]
 > Here, *component* or *project* means a piece of the framework, and *vehicle* means a package under `vehicles/`. Every component below is vehicle-agnostic. See [Framework and vehicles](./framework.md).
@@ -29,7 +29,7 @@ ovcs/
 +-- vision/                   FRAMEWORK · Vision unit (stereo depth and detection)
 |   +-- core/                   Elixir library: cameras, Nx stereo stages, detectors, Zenoh publishers (no vehicle code)
 |   +-- api/                    Phoenix endpoint for the dashboard
-|   +-- dashboard/              Vue dashboard
+|   +-- dashboard/              React dashboard
 |   +-- firmware/               Nerves firmware shell targeting Raspberry Pi 5 and OKdo Nano C100
 |   +-- rust/                   camera_capture, v4l2_capture, hailo_detect and jpeg_codec Ports
 +-- controllers/              FRAMEWORK
@@ -205,7 +205,7 @@ Two kinds live side by side under `libraries/`. **In-tree** libraries are framew
 | `ovcs_bus/` | `OvcsBus` | [in-tree](../libraries/ovcs_bus/README.md) | Per-firmware pub/sub, and the Erlang mesh joining the firmwares; see [The OVCS bus](./bus.md) |
 | `ovcs_bridge/` | `OvcsBridge` | [in-tree](../libraries/ovcs_bridge/README.md) | Behaviour and supervisor for bridge libraries |
 | `ovcs_bus_gateway/` | `OvcsBusGateway` | [in-tree](../libraries/ovcs_bus_gateway/README.md) | Library exposing the bus over MQTT, HTTP and Phoenix Channels, with a dashboard, run by a bridge firmware; see [Bus gateway](./bus_gateway.md) |
-| `ovcs_ui/` | `@ovcs/ui` | [in-tree](../libraries/ovcs_ui/README.md) | Design tokens and Tailwind preset shared by OVCS web UIs (npm package) |
+| `ovcs_ui/` | `@ovcs/ui` | [in-tree](../libraries/ovcs_ui/README.md) | Design tokens, Tailwind preset, and Vue and React components shared by OVCS web UIs (npm package) |
 | `ovcs_drivers/` | `OvcsDrivers` | [in-tree](../libraries/ovcs_drivers/README.md) | Hardware chip drivers grouped by kind: the BNO085 IMU, the RPLIDAR scanning lidar, the A02YYUW ultrasonic rangefinder |
 | `cantastic/` | `Cantastic` | [sideloaded](https://github.com/open-vehicle-control-system/cantastic) | CAN library: YAML frame specs, SocketCAN, emitter/receiver, ISO-TP, OBD2, `socketcand`, received-frame watchdog |
 | `express_lrs/` | `ExpressLrs` | [sideloaded](https://github.com/open-vehicle-control-system/express_lrs) | MAVLink decoder for ExpressLRS links |
@@ -257,7 +257,7 @@ This provisions the vehicle's vcan interfaces (`./ovcs can setup <vehicle>` does
 - one BEAM per bridge firmware, named `<vehicle>-bridge-<id>` (every node name turns underscores into dashes, in `<vehicle>` and `<id>` alike);
 - an Erlang-distribution cluster stitched together by `OvcsBus.Cluster`: each BEAM `Node.connect/1`s the others, as [The OVCS bus](./bus.md#the-mesh) describes. Deployed firmware uses the same transport.
 
-The Vue dashboard starts alongside as a dev add-on (`--no-addons` skips it). The Flutter dashboard needs its own terminal, because its hot reload is keyboard-driven:
+The web dashboards start alongside as dev add-ons (`--no-addons` skips them). The Flutter dashboard needs its own terminal, because its hot reload is keyboard-driven:
 
 ```sh
 mise run infotainment-dashboard   # cd infotainment/dashboard && flutter run -d linux

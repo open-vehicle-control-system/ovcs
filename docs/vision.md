@@ -102,7 +102,7 @@ The dashboard draws the unit as its pipeline: the cameras, then each stereo stag
 A change is unsaved until you save it. Unsaved changes live on the unit, not in the page: reloading the dashboard or opening it elsewhere loses nothing, and a reboot drops them. The save bar below the panel counts the unsaved changes and offers:
 
 - **Save**: stores the unsaved values on the unit, in `/data/vision_core.db`, where they are applied again at every boot.
-- **Discard**: returns every unsaved parameter to its saved value.
+- **Discard**: returns every unsaved parameter to its saved value, or to its default without one.
 - **Reset**: a box's Reset, or a parameter's, returns it to the defaults; **Reset all** returns every parameter.
 - **Export**: the saved values as a composer snippet, to make them the vehicle's defaults.
 

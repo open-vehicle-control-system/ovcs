@@ -7,7 +7,7 @@ The vision unit: stereo depth and object detection on a single board, published 
 | [`core`](./core/README.md) | `vision_core`: camera drivers, rectification, stereo matching, detection and the ROS publishers |
 | [`api`](./api/README.md) | `vision_api`: the Phoenix endpoint and channels behind the dashboard |
 | [`firmware`](./firmware/README.md) | `vision_firmware`: the Nerves image |
-| [`dashboard`](./dashboard/README.md) | The Vue dashboard: previews, status, parameters and settings |
+| [`dashboard`](./dashboard/README.md) | The React dashboard: previews, status, parameters and settings |
 | [`rust`](./rust/README.md) | The capture and inference programs `vision_core` runs as Ports |
 
 ## Boards
@@ -47,4 +47,4 @@ A vehicle picks the board with `vision_target/0`, and the capture driver, the st
 
 ### Dashboard
 
-[Vue 3](https://vuejs.org/), [Pinia](https://pinia.vuejs.org/) for its state, the [Phoenix](https://hexdocs.pm/phoenix/js/) JavaScript client for the channels, built with [Vite](https://vite.dev/).
+[React 18](https://react.dev/), [Zustand](https://zustand.docs.pmnd.rs/) for its state, `@ovcs/ui` for its styles and generic components, the [Phoenix](https://hexdocs.pm/phoenix/js/) JavaScript client for the channels, built with [Vite](https://vite.dev/).
