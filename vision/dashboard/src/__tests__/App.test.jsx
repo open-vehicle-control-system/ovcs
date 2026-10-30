@@ -89,6 +89,7 @@ describe('App', () => {
 
   it('shows a failed save in the save bar and keeps the count', async () => {
     vi.mocked(service.saveParameters).mockRejectedValue(new Error('Saved values unavailable'))
+    vi.mocked(service.fetchGroups).mockResolvedValue({ groups, parameters: {}, unsaved: 2 })
     useParameters.setState({ groups, unsaved: 2 })
     render(<App />)
 

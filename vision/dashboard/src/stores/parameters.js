@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import * as service from '../services/parameters.js'
 
 let timer = null
-let loading = false
+let loading = null
 let reloadRequested = false
 let generation = 0
 const changing = new Map()
@@ -25,39 +25,11 @@ export const useParameters = create((set, get) => ({
   errorSource: null,
   editing: new Set(),
 
-  async load() {
-    if (loading) {
-      reloadRequested = true
-      return
-    }
-    loading = true
-    const started = generation
-    try {
-      const snapshot = await service.fetchGroups()
-      if (started !== generation) {
-        reloadRequested = true
-      } else {
-        const { parameters: current, editing } = get()
-        const parameters = { ...snapshot.parameters }
-        for (const id of [...editing, ...changing.keys()]) {
-          if (current[id] && parameters[id]) parameters[id] = current[id]
-        }
-        set((state) => ({
-          groups: snapshot.groups,
-          parameters,
-          unsaved: snapshot.unsaved,
-          ...(state.errorSource === 'load' ? { error: null, errorSource: null } : {})
-        }))
-      }
-    } catch (error) {
-      set({ error: message(error), errorSource: 'load' })
-    } finally {
-      loading = false
-    }
-    if (reloadRequested) {
-      reloadRequested = false
-      await get().load()
-    }
+  // Callers during a load get its promise, which settles after the reload they asked for.
+  load() {
+    reloadRequested = true
+    loading ??= loadUntilCurrent(set, get)
+    return loading
   },
 
   async set(id, value) {
@@ -114,13 +86,48 @@ export const useParameters = create((set, get) => ({
   select: (groupId) => set({ selectedGroupId: groupId })
 }))
 
+async function loadUntilCurrent(set, get) {
+  try {
+    while (reloadRequested) {
+      reloadRequested = false
+      await loadOnce(set, get)
+    }
+  } finally {
+    loading = null
+  }
+}
+
+async function loadOnce(set, get) {
+  const started = generation
+  try {
+    const snapshot = await service.fetchGroups()
+    if (started !== generation) {
+      reloadRequested = true
+      return
+    }
+    const { parameters: current, editing } = get()
+    const parameters = { ...snapshot.parameters }
+    for (const id of [...editing, ...changing.keys()]) {
+      if (current[id] && parameters[id]) parameters[id] = current[id]
+    }
+    set((state) => ({
+      groups: snapshot.groups,
+      parameters,
+      unsaved: snapshot.unsaved,
+      ...(state.errorSource === 'load' ? { error: null, errorSource: null } : {})
+    }))
+  } catch (error) {
+    set({ error: message(error), errorSource: 'load' })
+  }
+}
+
+// A failed action may still have changed values, such as a partial reset, so it reloads too.
 async function perform(action, set, get) {
   try {
     await action()
     set({ error: null, errorSource: null })
   } catch (error) {
     set({ error: message(error), errorSource: 'action' })
-    return
   } finally {
     generation += 1
   }
