@@ -14,9 +14,9 @@ The unit follows the same split as the VMS and the infotainment: a core, an API,
 | Layer | Path | What it is |
 |---|---|---|
 | Core | [`vision/core`](../vision/core/README.md) | `VisionCore`: camera drivers, the stereo pipeline and its stages (rectification, matching, depth, in Nx), detection, and the ROS 2 side under `VisionCore.Ros2`. No vehicle knowledge, no web dependencies. |
-| API | [`vision/api`](../vision/api/README.md) | `VisionApi`: a Phoenix endpoint with a `/api/settings` route and channels that stream status and camera previews. |
+| API | [`vision/api`](../vision/api/README.md) | `VisionApi`: a Phoenix endpoint serving the vision parameters as JSON:API resources and the active settings, with channels that stream status and camera previews. |
 | Firmware | [`vision/firmware`](../vision/firmware/README.md) | The Nerves image for the `rpi5` and `okdo_c100` targets. At boot it reads `VEHICLE` and loads the vehicle's composer. |
-| Dashboard | [`vision/dashboard`](../vision/dashboard/README.md) | A Vue app showing the left, right and depth previews, status cards, the runtime parameters and the active settings. |
+| Dashboard | [`vision/dashboard`](../vision/dashboard/README.md) | A React app showing the status cards, the left, right and depth previews, and the unit as its pipeline with each box's parameters. |
 | Ports | [`vision/rust`](../vision/rust/README.md) | `camera_capture` and `hailo_detect`, the Rust programs the core drives as Ports. |
 
 The [ROS bridge](../bridges/ros_bridge/README.md) carries the same stereo and detection stack as components; a vehicle runs it in one or the other.
@@ -95,7 +95,20 @@ The Row alignment card shows how many rows the right image's matches sit from th
 
 The Sharpness card compares the two cameras' focus: the right image's sharpness over the left's, green between 0.8 and 1.25. Its absolute value depends on the scene, the ratio does not. On a unit whose cameras have lens actuators, such as the Camera Module 3, both lenses follow one `focus` camera setting; `VisionCore.Camera.FocusSweep.run/1`, from IEx on the unit facing a textured scene at the distance that matters, steps it through a range, sets the position best for both cameras and returns the sharpness curve. Recalibrate after changing the focus.
 
-The vision parameters are the unit's own settings, grouped by component and pipeline stage: the cameras' controls, the preview settings and the stereo settings, among them the matcher's `p1`, `p2` and `uniqueness`. Most apply live: the stereo settings are inputs of the compiled depth pipeline, so a change applies from the next pair without compiling. Others are fixed in the build, such as the image size, and some are set by an automatic mode while it is on, such as the exposure under auto exposure. The Parameters panel lists them and changes them while the unit runs. A change is unsaved until you save it on the unit, in `/data/vision_core.db` (`VisionCore.Parameters.save()` from IEx), where it is applied again at every boot; `VisionCore.Parameters.export()` gives the saved values as a composer snippet, to make them the vehicle's defaults. The same parameters are reachable with `ros2 param` and Foxglove's Parameters panel under their ids, `<group>.<name>` (`stereo.match.p1`); a change made there is unsaved too.
+The vision parameters are the unit's own settings, grouped by component and pipeline stage: the cameras' controls, the preview settings and the stereo settings, among them the matcher's `p1`, `p2` and `uniqueness`. Most apply live: the stereo settings are inputs of the compiled depth pipeline, so a change applies from the next pair without compiling. Others are fixed in the build, such as the image size, and some are set by an automatic mode while it is on, such as the exposure under auto exposure.
+
+The dashboard draws the unit as its pipeline: the cameras, then each stereo stage your vehicle composes, in order, with the components that sit beside it, such as the preview, apart. A box shows its status and how many of its parameters are unsaved; selecting it opens its panel, and the selected box stays in the URL (`?box=stereo.match`), so a link opens it again. The panel lists the box's parameters with their constraints and defaults: a live parameter changes while the unit runs, a parameter fixed in the build is shown but locked, and a parameter set by an automatic mode shows the mode that sets it. A relation between two parameters, such as `p2` above `p1`, bounds each control by the other's value.
+
+A change is unsaved until you save it. The save bar below the panel counts the unsaved changes and offers:
+
+- **Save**: stores the unsaved values on the unit, in `/data/vision_core.db`, where they are applied again at every boot.
+- **Discard**: returns every unsaved parameter to its saved value.
+- **Reset**: a box's Reset, or a parameter's, returns it to the defaults; **Reset all** returns every parameter.
+- **Export**: the saved values as a composer snippet, to make them the vehicle's defaults.
+
+Discard and Reset all ask first, and so does leaving the page with unsaved changes. The same actions are `VisionCore.Parameters.save/1`, `discard/1`, `reset/2` and `export/1` from IEx. The parameters are also reachable with `ros2 param` and Foxglove's Parameters panel under their ids, `<group>.<name>` (`stereo.match.p1`); a change made there is unsaved too.
+
+The API follows [JSON:API](https://jsonapi.org/); its routes are listed in [`vision/api/README.md`](../vision/api/README.md).
 
 On the host, `./ovcs run <vehicle>` starts a BEAM for the role and the dashboard's Vite dev server as an add-on, like the VMS dashboard, on `http://localhost:5174`.
 

@@ -47,12 +47,12 @@ export default function ParameterPanel({ groupId }) {
   const summary = members.map((parameter) => `${parameter.name} ${formatValue(parameter.value)}`).join(', ')
 
   return (
-    <section aria-labelledby={headingId} className="ovcs-card">
+    <section aria-labelledby={headingId} className="border-t border-ovcs-border pt-4">
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
-          <h2 id={headingId} className="text-lg font-semibold">
+          <h3 id={headingId} className="text-lg font-semibold">
             {group.name}
-          </h2>
+          </h3>
           {group.summary ? <p className="text-sm text-ovcs-muted">{group.summary}</p> : null}
         </div>
         <button
