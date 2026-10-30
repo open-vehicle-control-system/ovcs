@@ -24,10 +24,13 @@ defmodule VisionCore.Stereo.Pipeline do
   on the device; it runs and is timed as one stage named after its
   members.
 
-  One pair is processed at a time. Once a pair is done, whether it
-  succeeded or not, the process that submitted it receives
-  `:stereo_pipeline_ready`; `VisionCore.Stereo.Pairer` submits the next
-  pair then.
+  Once a pair is done, whether it succeeded or not, the process that
+  submitted it receives `:stereo_pipeline_ready`;
+  `VisionCore.Stereo.Pairer` submits the next pair then. When the stage
+  list starts with a segment, a pair is done once that segment's device
+  work is: the pair's outputs are downloaded and the later stages run
+  while the next pair's device work does, and it reaches the listeners
+  then, or after `:flush_after_ms` if no pair follows.
 
   ## Options
 
@@ -41,10 +44,14 @@ defmodule VisionCore.Stereo.Pipeline do
     * `:stages` (`default_stages/0`) — modules or `{module, opts}`.
     * `:defn_options` — how Nx stages are compiled; see
       `VisionCore.Stereo.NxSegment.defn_options/1` for the default.
+    * `:flush_after_ms` (`100`) — how long a pair waits for the next one
+      before it is finished alone; see below.
     * `:name` (`__MODULE__`).
   """
   use GenServer
   require Logger
+
+  @default_flush_after_ms 100
 
   alias VisionCore.Camera.Frame
   alias VisionCore.Ros2.CameraCalibration
@@ -126,7 +133,9 @@ defmodule VisionCore.Stereo.Pipeline do
          |> group_nx_stages(context, context.defn_options),
        listeners: [],
        timer: StageTimer.new(window: 30, label: "pipeline"),
-       last_start_ns: nil
+       last_start_ns: nil,
+       pending: nil,
+       flush_after_ms: Keyword.get(opts, :flush_after_ms, @default_flush_after_ms)
      }}
   end
 
@@ -172,8 +181,56 @@ defmodule VisionCore.Stereo.Pipeline do
   def handle_cast({:submit, %Frame{} = left, %Frame{} = right, submitter}, state) do
     start_ns = System.monotonic_time(:nanosecond)
     pair = %Pair{left_frame: left, right_frame: right, geometry: state.context}
-    {outcome, stages, timer} = run_stages(pair, state.stages, state.timer)
 
+    case state.stages do
+      [%{module: NxSegment} = first | _rest] ->
+        {:noreply, dispatch(pair, first, start_ns, submitter, state)}
+
+      stages ->
+        {outcome, stages, timer} = run_stages(pair, stages, state.timer)
+        send(submitter, :stereo_pipeline_ready)
+        {:noreply, finish_pair(outcome, start_ns, %{state | stages: stages, timer: timer})}
+    end
+  end
+
+  @impl GenServer
+  def handle_info({:flush, ref}, %{pending: %{ref: ref}} = state), do: {:noreply, flush(state)}
+  def handle_info({:flush, _stale}, state), do: {:noreply, state}
+
+  # `pair`'s device work runs while the pending pair is finished; it then becomes the pending one.
+  defp dispatch(pair, first, start_ns, submitter, state) do
+    task = Task.async(fn -> timed(fn -> NxSegment.dispatch(pair, first.state) end) end)
+    state = flush(state)
+    {dispatch_ns, result} = Task.await(task, :infinity)
+    send(submitter, :stereo_pipeline_ready)
+
+    case result do
+      {:ok, outputs} ->
+        ref = make_ref()
+        Process.send_after(self(), {:flush, ref}, state.flush_after_ms)
+        pending = %{ref: ref, pair: pair, outputs: outputs, ns: dispatch_ns, start_ns: start_ns}
+        %{state | pending: pending}
+
+      {:error, reason} ->
+        finish_pair({:error, NxSegment, reason}, start_ns, state)
+    end
+  end
+
+  defp flush(%{pending: nil} = state), do: state
+
+  defp flush(%{pending: pending, stages: [first | rest]} = state) do
+    {collect_ns, pair} =
+      timed(fn -> NxSegment.collect(pending.pair, pending.outputs, first.state) end)
+
+    segment_ns = pending.ns + collect_ns
+    pair = %{pair | device_ms: segment_ns / 1_000_000}
+    timer = StageTimer.record(state.timer, first.name, segment_ns)
+    {outcome, rest, timer} = run_stages(pair, rest, timer)
+    state = %{state | stages: [first | rest], timer: timer, pending: nil}
+    finish_pair(outcome, pending.start_ns, state)
+  end
+
+  defp finish_pair(outcome, start_ns, state) do
     case outcome do
       {:ok, %Pair{} = pair} ->
         Enum.each(state.listeners, &GenServer.cast(&1, {:stereo_pair, pair}))
@@ -182,15 +239,13 @@ defmodule VisionCore.Stereo.Pipeline do
         Logger.warning("#{__MODULE__}: #{inspect(module)} failed: #{inspect(reason)}")
     end
 
-    send(submitter, :stereo_pipeline_ready)
-
     timer =
-      timer
+      state.timer
       |> StageTimer.record(:total, System.monotonic_time(:nanosecond) - start_ns)
       |> StageTimer.record(:wall, elapsed_since(state.last_start_ns, start_ns))
       |> StageTimer.tick()
 
-    {:noreply, %{state | stages: stages, timer: timer, last_start_ns: start_ns}}
+    %{state | timer: timer, last_start_ns: start_ns}
   end
 
   defp run_stages(pair, stages, timer) do
