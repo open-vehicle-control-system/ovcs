@@ -141,5 +141,14 @@ defmodule VisionCore.Camera.V4L2Test do
 
       assert_in_delta received_ms, System.system_time(:millisecond), 1_000
     end
+
+    %{received_ms: before_ms} = V4L2.live(V4L2.name_for("left"))
+    Process.sleep(20)
+    send(left, {port, {:data, pair_record(5, 6)}})
+
+    assert %{exposure_time_us: 4000, analogue_gain: 4.0, received_ms: after_ms} =
+             V4L2.live(V4L2.name_for("right"))
+
+    assert after_ms > before_ms
   end
 end

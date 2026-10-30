@@ -356,7 +356,7 @@ defmodule VisionCore.Camera.V4L2 do
       {:pair, left, right} ->
         fan_out(state, left)
         GenServer.cast(name_for("right"), {:pair_frame, right})
-        {:noreply, %{state | last_frame_at: now_ms()}}
+        {:noreply, %{state | last_frame_at: now_ms(), applied: refreshed(state.applied)}}
 
       {:metadata, metadata} ->
         applied = Map.put(metadata, :received_ms, System.system_time(:millisecond))
@@ -390,6 +390,10 @@ defmodule VisionCore.Camera.V4L2 do
   end
 
   def handle_info(_message, state), do: {:noreply, state}
+
+  # The program reports only when the exposure changes; frames keep it fresh.
+  defp refreshed(nil), do: nil
+  defp refreshed(applied), do: %{applied | received_ms: System.system_time(:millisecond)}
 
   defp fan_out(state, frame),
     do: Enum.each(state.listeners, &GenServer.cast(&1, {:camera_frame, frame}))
