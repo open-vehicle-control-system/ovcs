@@ -5,8 +5,8 @@ defmodule VisionCore.Ros2.Stereo.Parameters do
 
     * `<prefix>.<side>.<control>` — each camera's runtime controls, from
       the driver's `control_specs/0` (`VisionCore.Camera.LibCamera`)
-    * `<prefix>.<setting>` — the settings of the pipeline's stages,
-      from `VisionCore.Stereo.Pipeline.option_specs/1`
+    * `<prefix>.<stage>.<setting>` — the live settings of the pipeline's
+      stages, from `VisionCore.Stereo.Pipeline.stage_options/1`
     * `<prefix>.preview.<setting>` — the dashboard previews' settings,
       from `VisionCore.Preview.option_specs/0`.
     * `<prefix>.alignment_correction` — switches
@@ -75,13 +75,14 @@ defmodule VisionCore.Ros2.Stereo.Parameters do
   end
 
   defp pipeline_parameters(prefix, pipeline) do
-    values = Pipeline.options(pipeline)
-
-    for {key, spec} <- Pipeline.option_specs(pipeline) do
-      Map.merge(spec, %{
-        name: "#{prefix}.#{key}",
+    for %{stage: stage, specs: specs, values: values} <- Pipeline.stage_options(pipeline),
+        {key, %{applies: :live} = spec} <- specs do
+      spec
+      |> Map.take([:type, :range, :values, :description])
+      |> Map.merge(%{
+        name: "#{prefix}.#{stage}.#{key}",
         value: values[key],
-        set: &drop_reply_value(Pipeline.set_options(pipeline, [{key, &1}]))
+        set: &drop_reply_value(Pipeline.set_options(pipeline, stage, [{key, &1}]))
       })
     end
   end

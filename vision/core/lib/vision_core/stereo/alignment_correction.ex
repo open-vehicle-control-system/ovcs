@@ -62,11 +62,14 @@ defmodule VisionCore.Stereo.AlignmentCorrection do
        offsets: [],
        current_offset:
          Keyword.get(opts, :current_offset, fn ->
-           Pipeline.options(pipeline).right_row_offset
+           pipeline
+           |> Pipeline.stage_options()
+           |> Enum.find(&(&1.stage == :rectify))
+           |> get_in([:values, :right_row_offset])
          end),
        set_offset:
          Keyword.get(opts, :set_offset, fn rows ->
-           with {:ok, _options} <- Pipeline.set_options(pipeline, right_row_offset: rows),
+           with {:ok, _values} <- Pipeline.set_options(pipeline, :rectify, right_row_offset: rows),
                 do: :ok
          end)
      }}

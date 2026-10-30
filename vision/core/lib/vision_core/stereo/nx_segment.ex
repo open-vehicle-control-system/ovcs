@@ -183,34 +183,11 @@ defmodule VisionCore.Stereo.NxSegment do
   def reload(%__MODULE__{} = segment, members, context),
     do: %{segment | members: members, params: params(members, context), context: context}
 
-  @doc "The runtime settings of the segment's stages."
-  @spec option_specs(t()) :: [{atom(), Stage.option_spec()}]
-  def option_specs(%__MODULE__{members: members}), do: Enum.flat_map(members, &member_specs/1)
-
-  @doc "The settings in force."
-  @spec options(t()) :: map()
-  def options(%__MODULE__{members: members}) do
-    members
-    |> Enum.filter(&function_exported?(&1.module, :options, 1))
-    |> Enum.reduce(%{}, &Map.merge(&2, &1.module.options(&1.state)))
-  end
-
-  @doc "Changes one setting of the stage that declares it: new inputs, the same function."
-  @spec set_option(t(), atom(), term()) :: {:ok, t()} | {:error, String.t()}
-  def set_option(%__MODULE__{members: members} = segment, key, value) do
-    index = Enum.find_index(members, &List.keymember?(member_specs(&1), key, 0))
-    member = Enum.at(members, index)
-
-    with {:ok, state} <- member.module.set_option(member.state, key, value) do
-      {:ok,
-       reload(segment, List.replace_at(members, index, %{member | state: state}), segment.context)}
-    end
-  end
-
-  defp member_specs(member) do
-    if function_exported?(member.module, :option_specs, 0),
-      do: member.module.option_specs(),
-      else: []
+  @doc "The segment with the member at `index` in a new `state`: new inputs, the same function."
+  @spec put_member_state(t(), non_neg_integer(), term()) :: t()
+  def put_member_state(%__MODULE__{members: members} = segment, index, state) do
+    members = List.update_at(members, index, &%{&1 | state: state})
+    reload(segment, members, segment.context)
   end
 
   @doc "Runs the segment on `pair`, in the shape of `c:VisionCore.Stereo.Stage.run/2`."

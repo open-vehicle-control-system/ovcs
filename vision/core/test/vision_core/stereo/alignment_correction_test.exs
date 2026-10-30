@@ -1,7 +1,7 @@
 defmodule VisionCore.Stereo.AlignmentCorrectionTest do
   use ExUnit.Case, async: true
 
-  alias VisionCore.Stereo.AlignmentCorrection
+  alias VisionCore.Stereo.{AlignmentCorrection, Pipeline}
 
   defp start(offset \\ 0.0, opts \\ []) do
     test_pid = self()
@@ -96,5 +96,26 @@ defmodule VisionCore.Stereo.AlignmentCorrectionTest do
     assert_receive {:set, _rows}
     for _ <- 1..4, do: tick(pid, 1.0)
     refute_receive {:set, _rows}, 100
+  end
+
+  test "moves the pipeline's Rectify stage by default" do
+    calibration = Path.expand("../../support/calibration", __DIR__)
+
+    {:ok, pipeline} =
+      Pipeline.start_link(
+        name: :alignment_correction_pipeline,
+        left_calibration_path: Path.join(calibration, "identity_left.yaml"),
+        right_calibration_path: Path.join(calibration, "identity_right.yaml"),
+        width: 64,
+        height: 48
+      )
+
+    {:ok, _} = Pipeline.set_options(pipeline, :rectify, right_row_offset: 1.0)
+    {:ok, pid} = AlignmentCorrection.start_link(name: nil, subscribe: false, pipeline: pipeline)
+    for _ <- 1..5, do: tick(pid, 1.0)
+    :sys.get_state(pid)
+
+    rectify = Enum.find(Pipeline.stage_options(pipeline), &(&1.stage == :rectify))
+    assert_in_delta rectify.values.right_row_offset, 2.5, 1.0e-6
   end
 end

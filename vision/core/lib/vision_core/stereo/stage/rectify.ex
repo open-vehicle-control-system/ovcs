@@ -28,6 +28,9 @@ defmodule VisionCore.Stereo.Stage.Rectify do
   ]
 
   @impl VisionCore.Stereo.NxStage
+  def summary, do: "Undistorts and rectifies both frames so a point lies on the same row in each."
+
+  @impl VisionCore.Stereo.NxStage
   def init(opts, context) do
     state = %{size: {context.height, context.width}, right_row_offset: 0.0}
     set_option(state, :right_row_offset, Keyword.get(opts, :right_row_offset, 0.0))

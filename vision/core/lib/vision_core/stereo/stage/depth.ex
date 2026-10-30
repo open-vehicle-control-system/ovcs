@@ -11,6 +11,9 @@ defmodule VisionCore.Stereo.Stage.Depth do
   alias VisionCore.Stereo.Pair
 
   @impl VisionCore.Stereo.NxStage
+  def summary, do: "Turns the disparity into metric depth."
+
+  @impl VisionCore.Stereo.NxStage
   def init(_opts, _context), do: {:ok, nil}
 
   @impl VisionCore.Stereo.NxStage

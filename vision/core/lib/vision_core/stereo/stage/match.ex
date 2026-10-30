@@ -12,12 +12,13 @@ defmodule VisionCore.Stereo.Stage.Match do
       of more, between neighbours: integers up to 79, `:p2` above `:p1`.
     * `:uniqueness` (1.0526) — a match is kept when the second-best cost
       is at least this factor above the best.
-
-  `:p1`, `:p2` and `:uniqueness` are inputs of the compiled function, so
-  they also change while running (`option_specs/0`).
     * `:paths` (8) — aggregation paths, 8 or 3: 3 takes about a quarter of
       the GPU time and leaves more pixels unmatched on dark or textureless
       surfaces.
+
+  `:p1`, `:p2` and `:uniqueness` are inputs of the compiled function, so
+  they also change while running; `:num_disparities` and `:paths` are
+  fixed in it (`option_specs/0`).
   """
   @behaviour VisionCore.Stereo.NxStage
 
@@ -28,6 +29,8 @@ defmodule VisionCore.Stereo.Stage.Match do
   # Path costs are bytes in the shaders: NxStereo.sgm/3 bounds P2 so they cannot overflow.
   @max_penalty 79
 
+  @live [:p1, :p2, :uniqueness]
+
   @option_specs [
     p1: %{
       type: :integer,
@@ -37,14 +40,30 @@ defmodule VisionCore.Stereo.Stage.Match do
     p2: %{
       type: :integer,
       range: {1, @max_penalty},
+      greater_than: :p1,
       description: "Penalty for a larger disparity change; above p1"
     },
     uniqueness: %{
       type: :double,
       range: {1, 3},
       description: "Factor the second-best cost must exceed the best by"
+    },
+    num_disparities: %{
+      type: :integer,
+      values: [64, 128],
+      applies: :build,
+      description: "Disparities searched, from 0"
+    },
+    paths: %{
+      type: :integer,
+      values: [3, 8],
+      applies: :build,
+      description: "Aggregation paths; 3 is faster and leaves more pixels unmatched"
     }
   ]
+
+  @impl VisionCore.Stereo.NxStage
+  def summary, do: "Matches the rectified pair into a disparity with semi-global matching."
 
   @impl VisionCore.Stereo.NxStage
   def init(opts, _context) do
@@ -70,10 +89,14 @@ defmodule VisionCore.Stereo.Stage.Match do
   def option_specs, do: @option_specs
 
   @impl VisionCore.Stereo.NxStage
-  def options(sgm_opts), do: Map.new(Keyword.take(sgm_opts, Keyword.keys(@option_specs)))
+  def options(sgm_opts) do
+    sgm_opts
+    |> live()
+    |> Map.merge(%{num_disparities: sgm_opts[:disparities], paths: sgm_opts[:paths]})
+  end
 
   @impl VisionCore.Stereo.NxStage
-  def set_option(sgm_opts, key, value) when key in [:p1, :p2, :uniqueness],
+  def set_option(sgm_opts, key, value) when key in @live,
     do: validate(Keyword.put(sgm_opts, key, value))
 
   defp validate(sgm_opts) do
@@ -102,7 +125,9 @@ defmodule VisionCore.Stereo.Stage.Match do
   def provides, do: [:disparity, :disparity_range]
 
   @impl VisionCore.Stereo.NxStage
-  def params(sgm_opts, _context), do: options(sgm_opts)
+  def params(sgm_opts, _context), do: live(sgm_opts)
+
+  defp live(sgm_opts), do: Map.new(Keyword.take(sgm_opts, @live))
 
   @impl VisionCore.Stereo.NxStage
   def step(tensors, params, sgm_opts) do

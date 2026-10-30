@@ -22,6 +22,9 @@ defmodule VisionCore.Stereo.Stage.Alignment do
   @row_step 4
 
   @impl VisionCore.Stereo.NxStage
+  def summary, do: "Measures the row offset between the rectified images."
+
+  @impl VisionCore.Stereo.NxStage
   def init(_opts, context), do: {:ok, %{size: {context.height, context.width}}}
 
   @impl VisionCore.Stereo.NxStage

@@ -6,15 +6,24 @@ defmodule VisionCore.Stereo.PipelineTest do
 
   @calibration Path.expand("../../support/calibration", __DIR__)
 
-  # A CPU stage with a runtime setting.
+  # A CPU stage with a runtime setting and a build setting.
   defmodule Gain do
     @behaviour VisionCore.Stereo.Stage
-    def init(opts, _context), do: {:ok, %{gain: Keyword.get(opts, :gain, 1)}}
+
+    def init(opts, _context),
+      do: {:ok, %{gain: Keyword.get(opts, :gain, 1), size: Keyword.get(opts, :size, 3)}}
+
     def requires, do: [:depth]
     def provides, do: [:depth]
     def run(pair, state), do: {:ok, pair, state}
-    def option_specs, do: [gain: %{type: :integer, range: {1, 10}}]
-    def options(state), do: %{gain: state.gain}
+
+    def option_specs,
+      do: [
+        gain: %{type: :integer, range: {1, 10}},
+        size: %{type: :integer, values: [3, 5], applies: :build}
+      ]
+
+    def options(state), do: %{gain: state.gain, size: state.size}
 
     def set_option(state, :gain, gain) when gain in 1..10, do: {:ok, %{state | gain: gain}}
     def set_option(_state, :gain, gain), do: {:error, "gain out of range: #{inspect(gain)}"}
@@ -59,40 +68,94 @@ defmodule VisionCore.Stereo.PipelineTest do
     assert {Stage.PointCloud, [decimation: 2]} in stages
   end
 
-  test "routes each setting to the stage that declares it" do
+  test "lists each stage's settings and values in pipeline order" do
+    {:ok, pipeline} = start(Pipeline.default_stages() ++ [Gain])
+    stages = Pipeline.stage_options(pipeline)
+
+    assert Enum.map(stages, & &1.stage) == [
+             :rectify,
+             :sharpness,
+             :match,
+             :post_filter,
+             :speckle,
+             :alignment,
+             :temporal,
+             :depth,
+             :point_cloud,
+             :quality,
+             :gain
+           ]
+
+    assert [
+             %{
+               stage: :rectify,
+               module: Stage.Rectify,
+               summary: "" <> _,
+               specs: [right_row_offset: _]
+             }
+             | _
+           ] = stages
+
+    assert %{specs: [], values: %{}} = Enum.find(stages, &(&1.stage == :depth))
+
+    assert %{
+             module: Gain,
+             summary: "",
+             specs: [gain: %{applies: :live}, size: %{applies: :build}],
+             values: %{gain: 1, size: 3}
+           } = List.last(stages)
+  end
+
+  test "sets a stage's live settings by stage" do
     {:ok, pipeline} = start(Pipeline.default_stages() ++ [Gain])
 
-    assert {:ok, %{gain: 3}} = Pipeline.set_options(pipeline, gain: 3)
+    assert {:ok, %{gain: 3, size: 3}} = Pipeline.set_options(pipeline, :gain, gain: 3)
 
-    assert {:error, "unknown or invalid stereo setting" <> _} =
-             Pipeline.set_options(pipeline, block_size: 7)
+    assert %{values: %{gain: 3}} =
+             Enum.find(Pipeline.stage_options(pipeline), &(&1.stage == :gain))
+  end
 
-    assert {:error, "gain out of range" <> _} = Pipeline.set_options(pipeline, gain: 20)
+  test "refuses a build setting, an unknown stage or setting, and an invalid value, changing nothing" do
+    {:ok, pipeline} = start(Pipeline.default_stages() ++ [Gain])
+
+    assert {:error, "gain.size" <> _} = Pipeline.set_options(pipeline, :gain, gain: 2, size: 5)
+    assert {:error, "no stereo stage" <> _} = Pipeline.set_options(pipeline, :nope, gain: 2)
+    assert {:error, "gain.block_size" <> _} = Pipeline.set_options(pipeline, :gain, block_size: 7)
+
+    assert {:error, "gain out of range" <> _} =
+             Pipeline.set_options(pipeline, :gain, gain: 2, gain: 20)
+
+    assert {:error, "match.paths" <> _} = Pipeline.set_options(pipeline, :match, paths: 3)
+
+    assert {:error, "p2 must exceed p1" <> _} =
+             Pipeline.set_options(pipeline, :match, p1: 4, p1: 70)
+
+    values = Map.new(Pipeline.stage_options(pipeline), &{&1.stage, &1.values})
+    assert values.gain == %{gain: 1, size: 3}
+    assert %{p1: 8, paths: 8} = values.match
   end
 
   test "changes the match penalties without compiling again" do
     {:ok, pipeline} = start(Pipeline.default_stages())
-    specs = Pipeline.option_specs(pipeline)
-
-    assert Enum.all?(
-             [:p1, :p2, :uniqueness, :temporal_alpha, :temporal_delta],
-             &Keyword.has_key?(specs, &1)
-           )
-
     [%{state: segment}] = segments(pipeline)
 
     assert {:ok, %{p1: 4, p2: 40, uniqueness: 1.2}} =
-             Pipeline.set_options(pipeline, p1: 4, p2: 40, uniqueness: 1.2)
+             Pipeline.set_options(pipeline, :match, p1: 4, p2: 40, uniqueness: 1.2)
 
     [%{state: changed}] = segments(pipeline)
     assert changed.function == segment.function
     match = Enum.find(changed.params, fn {_index, params} -> Map.has_key?(params, :p1) end)
-    assert {_index, %{p1: p1, p2: p2}} = match
+    assert {_index, %{p1: p1, p2: p2} = params} = match
+    assert params |> Map.keys() |> Enum.sort() == [:p1, :p2, :uniqueness]
     assert {Nx.to_number(p1), Nx.to_number(p2)} == {4.0, 40.0}
 
-    assert {:error, "p2 must exceed p1" <> _} = Pipeline.set_options(pipeline, p1: 40)
-    assert {:error, "p1 and p2 must be integers" <> _} = Pipeline.set_options(pipeline, p2: 100)
-    assert Pipeline.options(pipeline).p1 == 4
+    assert {:error, "p2 must exceed p1" <> _} = Pipeline.set_options(pipeline, :match, p1: 40)
+
+    assert {:error, "p1 and p2 must be integers" <> _} =
+             Pipeline.set_options(pipeline, :match, p2: 100)
+
+    assert %{values: %{p1: 4}} =
+             Enum.find(Pipeline.stage_options(pipeline), &(&1.stage == :match))
   end
 
   defp segments(pipeline),
@@ -146,9 +209,12 @@ defmodule VisionCore.Stereo.PipelineTest do
 
   test "keeps settings changed at runtime across a calibration reload" do
     {:ok, pipeline} = start(Pipeline.default_stages() ++ [Gain])
-    {:ok, _} = Pipeline.set_options(pipeline, gain: 4, p1: 5)
+    {:ok, _} = Pipeline.set_options(pipeline, :gain, gain: 4)
+    {:ok, _} = Pipeline.set_options(pipeline, :match, p1: 5)
 
     assert :ok = Pipeline.reload_calibration(pipeline)
-    assert %{gain: 4, p1: 5} = Pipeline.options(pipeline)
+    values = Map.new(Pipeline.stage_options(pipeline), &{&1.stage, &1.values})
+    assert %{gain: 4} = values.gain
+    assert %{p1: 5} = values.match
   end
 end

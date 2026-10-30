@@ -13,8 +13,7 @@ defmodule VisionCore.Stereo.Stage.Speckle do
     * `:min_support` (`12`) — neighbours that must agree, 0 to 48.
     * `:max_diff` (`1.0`) — how close, in pixels, a neighbour must be.
 
-  Both change while running, as `speckle_min_support` and
-  `speckle_max_diff`.
+  Both change while running.
   """
   @behaviour VisionCore.Stereo.NxStage
 
@@ -22,18 +21,21 @@ defmodule VisionCore.Stereo.Stage.Speckle do
   @neighbours (2 * @radius + 1) * (2 * @radius + 1) - 1
 
   @option_specs [
-    speckle_min_support: %{
+    min_support: %{
       type: :integer,
       range: {0, @neighbours},
       description:
         "Neighbours in the 7x7 window that must agree for a pixel to be kept; 0 turns the filter off"
     },
-    speckle_max_diff: %{
+    max_diff: %{
       type: :double,
       range: {0, 8},
       description: "How close, in pixels, a neighbour's disparity must be to agree"
     }
   ]
+
+  @impl VisionCore.Stereo.NxStage
+  def summary, do: "Drops small islands of disparity that agree with nothing around them."
 
   @impl VisionCore.Stereo.NxStage
   def init(opts, _context) do
@@ -68,12 +70,11 @@ defmodule VisionCore.Stereo.Stage.Speckle do
   def option_specs, do: @option_specs
 
   @impl VisionCore.Stereo.NxStage
-  def options(state),
-    do: %{speckle_min_support: state.min_support, speckle_max_diff: state.max_diff}
+  def options(state), do: %{min_support: state.min_support, max_diff: state.max_diff}
 
   @impl VisionCore.Stereo.NxStage
-  def set_option(state, :speckle_min_support, value), do: validate(state, :min_support, value)
-  def set_option(state, :speckle_max_diff, value), do: validate(state, :max_diff, value)
+  def set_option(state, key, value) when key in [:min_support, :max_diff],
+    do: validate(state, key, value)
 
   defp validate(state, :min_support, value)
        when is_integer(value) and value >= 0 and value <= @neighbours,

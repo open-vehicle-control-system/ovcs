@@ -1,6 +1,6 @@
 defmodule VisionCore.Stereo.Stage.PointCloud do
   @moduledoc """
-  Unprojects one depth pixel every `:decimation` (`4`) in each
+  Unprojects one depth pixel every `:decimation` (`4`, 1 to 16) in each
   direction into an organized grid of `x, y, z` points in the left
   optical frame, on the device. Points outside 5 cm to 20 m, unmatched
   pixels among them, are NaN, as ROS organized clouds mark them.
@@ -11,9 +11,38 @@ defmodule VisionCore.Stereo.Stage.PointCloud do
 
   @min_depth_m 0.05
   @max_depth_m 20.0
+  @max_decimation 16
 
   @impl VisionCore.Stereo.NxStage
-  def init(opts, _context), do: {:ok, Keyword.get(opts, :decimation, 4)}
+  def summary, do: "Unprojects the depth into a decimated point cloud."
+
+  @impl VisionCore.Stereo.NxStage
+  def init(opts, _context) do
+    case Keyword.get(opts, :decimation, 4) do
+      decimation when decimation in 1..@max_decimation//1 ->
+        {:ok, decimation}
+
+      decimation ->
+        {:error,
+         "decimation must be an integer from 1 to #{@max_decimation}, got #{inspect(decimation)}"}
+    end
+  end
+
+  @impl VisionCore.Stereo.NxStage
+  def option_specs do
+    [
+      decimation: %{
+        type: :integer,
+        range: {1, @max_decimation},
+        step: 1,
+        applies: :build,
+        description: "Depth pixels per cloud point in each direction"
+      }
+    ]
+  end
+
+  @impl VisionCore.Stereo.NxStage
+  def options(decimation), do: %{decimation: decimation}
 
   @impl VisionCore.Stereo.NxStage
   def requires, do: [:depth_m]

@@ -17,30 +17,32 @@ defmodule VisionCore.Stereo.Stage.Temporal do
     * `:hold` (`2`) — how many pairs a lost match is held; `0` turns
       holding off.
 
-  They change while running, as `temporal_alpha`, `temporal_delta` and
-  `temporal_hold`.
+  They change while running.
   """
   @behaviour VisionCore.Stereo.NxStage
 
   @option_specs [
-    temporal_alpha: %{
+    alpha: %{
       type: :double,
       range: {0.05, 1},
       description:
         "Weight of a new disparity where it agrees with the previous one; 1 turns smoothing off"
     },
-    temporal_delta: %{
+    delta: %{
       type: :double,
       range: {0, 8},
       description: "Largest disparity change, in pixels, that is smoothed"
     },
-    temporal_hold: %{
+    hold: %{
       type: :integer,
       range: {0, 10},
       description:
         "Pairs a pixel that loses its match keeps its last disparity; 0 turns holding off"
     }
   ]
+
+  @impl VisionCore.Stereo.NxStage
+  def summary, do: "Smooths the disparity over time and holds lost matches briefly."
 
   @impl VisionCore.Stereo.NxStage
   def init(opts, context) do
@@ -99,13 +101,11 @@ defmodule VisionCore.Stereo.Stage.Temporal do
   def option_specs, do: @option_specs
 
   @impl VisionCore.Stereo.NxStage
-  def options(state),
-    do: %{temporal_alpha: state.alpha, temporal_delta: state.delta, temporal_hold: state.hold}
+  def options(state), do: %{alpha: state.alpha, delta: state.delta, hold: state.hold}
 
   @impl VisionCore.Stereo.NxStage
-  def set_option(state, :temporal_alpha, value), do: validate(state, :alpha, value)
-  def set_option(state, :temporal_delta, value), do: validate(state, :delta, value)
-  def set_option(state, :temporal_hold, value), do: validate(state, :hold, value)
+  def set_option(state, key, value) when key in [:alpha, :delta, :hold],
+    do: validate(state, key, value)
 
   defp validate(state, :alpha, value) when is_number(value) and value > 0 and value <= 1,
     do: {:ok, %{state | alpha: value * 1.0}}
