@@ -48,9 +48,9 @@ defmodule VisionCore.Camera.V4L2 do
   samples to grey and runs the exposure itself. Its settings apply to
   both sensors, are given in the left camera's opts, and can change
   while running through `set_controls/2` on either camera, so they are
-  also the stereo unit's ROS 2 parameters. `control_specs/0` lists them
-  with their defaults; the lens, which no autofocus drives here, stays
-  at its rest position.
+  also the stereo unit's `<prefix>.cameras` parameters. `control_specs/0`
+  lists them with their defaults; the lens, which no autofocus drives
+  here, stays at its rest position.
 
   ## Opts
 
@@ -221,6 +221,9 @@ defmodule VisionCore.Camera.V4L2 do
   defp encode(%{type: :bool}, value), do: to_string(value == true)
   defp encode(%{type: :integer}, value), do: Integer.to_string(round(value))
   defp encode(%{type: :double}, value), do: Float.to_string(value * 1.0)
+
+  @impl VisionCore.Camera
+  def shared_controls?, do: true
 
   @impl VisionCore.Camera
   def set_controls(server, controls), do: GenServer.call(server, {:set_controls, controls})

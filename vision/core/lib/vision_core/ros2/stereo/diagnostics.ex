@@ -1,7 +1,7 @@
 defmodule VisionCore.Ros2.Stereo.Diagnostics do
   @moduledoc """
   What a stereo unit's cameras actually do, next to the settings asked
-  for in its parameters (`VisionCore.Ros2.Stereo.Parameters`):
+  for in its parameters (`VisionCore.Stereo.Parameters`):
 
     * `/diagnostics` (`diagnostic_msgs/DiagnosticArray`), every second:
       one status per camera with what libcamera applied (shutter, gains,
