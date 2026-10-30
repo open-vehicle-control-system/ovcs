@@ -9,7 +9,8 @@ const snapshot = {
   depth_hz: 12.8,
   zenoh: 'disconnected',
   cpu_percent: 37.25,
-  stereo_segment_percent: 81.5
+  stereo_segment_percent: 81.5,
+  alignment: { offset_rows: -1.43, band_offset_rows: [-1.9, -1.6, -1.2, -1.0] }
 }
 
 describe('StatusCards', () => {
@@ -33,6 +34,28 @@ describe('StatusCards', () => {
 
     expect(wrapper.get('[data-card="cpu"]').text()).toContain('37 %')
     expect(wrapper.get('[data-card="segment"]').text()).toContain('82 %')
+  })
+
+  it('shows the row alignment, overall and from left to right', () => {
+    const wrapper = mount(StatusCards, { props: { status: snapshot } })
+    const card = wrapper.get('[data-card="alignment"]')
+
+    expect(card.text()).toContain('-1.4 rows')
+    expect(card.text()).toContain('-1.9 · -1.6 · -1.2 · -1.0')
+    expect(card.find('.text-red-700').exists()).toBe(true)
+  })
+
+  it('shows an alignment within half a row as healthy', () => {
+    const aligned = { ...snapshot, alignment: { offset_rows: 0.2, band_offset_rows: [0.1, 0.2, 0.2, 0.3] } }
+    const card = mount(StatusCards, { props: { status: aligned } }).get('[data-card="alignment"]')
+
+    expect(card.find('.text-green-700').exists()).toBe(true)
+  })
+
+  it('shows an alignment not yet measured as a dash', () => {
+    const wrapper = mount(StatusCards, { props: { status: { ...snapshot, alignment: null } } })
+
+    expect(wrapper.get('[data-card="alignment"]').text()).toContain('–')
   })
 
   it('shows an unknown CPU usage as a dash', () => {

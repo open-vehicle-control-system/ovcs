@@ -6,7 +6,9 @@ defmodule VisionCore.Status do
   and the share of time the stereo pipeline spent in its compiled Nx
   segments (`Pair` `:device_ms`). Where they run on the GPU, that time
   includes uploading the frames and waiting for the results, so it is
-  not the GPU's busy share.
+  not the GPU's busy share. `:alignment` is the rectified images' row
+  offset (`Pair` `:alignment`), averaged over the tick's pairs; `nil`
+  without any.
 
   Started last in `VisionCore.Supervisor`. Without a `:stereo`
   component the cameras and sync are reported absent and the depth rate
@@ -37,7 +39,8 @@ defmodule VisionCore.Status do
           depth_hz: float(),
           zenoh: :connected | :disconnected,
           cpu_percent: float() | nil,
-          stereo_segment_percent: float()
+          stereo_segment_percent: float(),
+          alignment: %{offset_rows: float(), band_offset_rows: [float()]} | nil
         }
 
   @doc """
@@ -73,6 +76,8 @@ defmodule VisionCore.Status do
        cpu_times: SystemLoad.cpu_times(),
        cpu_percent: nil,
        stereo_segment_percent: 0.0,
+       alignments: [],
+       alignment: nil,
        window_start_ms: now_ms(),
        rates_hz: %{left: 0.0, right: 0.0, depth: 0.0}
      }}
@@ -88,8 +93,11 @@ defmodule VisionCore.Status do
   end
 
   @impl GenServer
-  def handle_cast({:stereo_pair, %Pair{device_ms: device_ms}}, state),
-    do: {:noreply, %{count(state, :depth) | device_ms: state.device_ms + device_ms}}
+  def handle_cast({:stereo_pair, %Pair{device_ms: device_ms, alignment: alignment}}, state) do
+    state = %{count(state, :depth) | device_ms: state.device_ms + device_ms}
+    alignments = if alignment, do: [alignment | state.alignments], else: state.alignments
+    {:noreply, %{state | alignments: alignments}}
+  end
 
   def handle_cast({:camera_frame, %Frame{label: label}}, state) when label in ["left", "right"],
     do: {:noreply, count(state, String.to_existing_atom(label))}
@@ -133,7 +141,21 @@ defmodule VisionCore.Status do
         cpu_percent: SystemLoad.cpu_percent(state.cpu_times, cpu_times),
         cpu_times: cpu_times,
         stereo_segment_percent: min(100 * state.device_ms / elapsed_ms, 100.0),
-        device_ms: 0.0
+        device_ms: 0.0,
+        alignment: mean_alignment(state.alignments),
+        alignments: []
+    }
+  end
+
+  defp mean_alignment([]), do: nil
+
+  defp mean_alignment(alignments) do
+    mean = fn values -> Enum.sum(values) / length(values) end
+
+    %{
+      offset_rows: alignments |> Enum.map(& &1.offset_rows) |> mean.(),
+      band_offset_rows:
+        alignments |> Enum.map(& &1.band_offset_rows) |> Enum.zip_with(& &1) |> Enum.map(mean)
     }
   end
 
@@ -145,6 +167,7 @@ defmodule VisionCore.Status do
       depth_hz: state.rates_hz.depth,
       cpu_percent: state.cpu_percent,
       stereo_segment_percent: state.stereo_segment_percent,
+      alignment: state.alignment,
       zenoh:
         if(call_within_timeout(&ZenohClient.connected?/0, false),
           do: :connected,
