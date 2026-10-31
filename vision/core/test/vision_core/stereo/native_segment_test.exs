@@ -263,7 +263,6 @@ defmodule VisionCore.Stereo.NativeSegmentTest do
 
     assert native.depth == nx.depth
     assert native.disparity_bytes == nx.disparity_bytes
-    assert_same_tensor(native.depth_m, nx.depth_m, "depth_m")
     assert native.cloud_size == nx.cloud_size
     assert native.cloud_points == nx.cloud_points
     assert native.cloud_points > 0
@@ -324,7 +323,6 @@ defmodule VisionCore.Stereo.NativeSegmentTest do
           do: assert_same_tensor(native.disparity, nx.disparity, "disparity"),
           else: assert(max_ulps(native.disparity, nx.disparity) <= 1)
 
-        assert max_ulps(native.depth_m, nx.depth_m) <= 2
         assert max_difference(native.depth, nx.depth, :u16) <= 1
 
         for side <- [:left, :right],
@@ -354,7 +352,6 @@ defmodule VisionCore.Stereo.NativeSegmentTest do
       for {native, nx} <-
             Enum.zip(run_native(stages, context, pairs), run_nx(stages, context, pairs)) do
         assert_same_tensor(native.disparity, nx.disparity, "disparity")
-        assert_same_tensor(native.depth_m, nx.depth_m, "depth_m")
 
         for field <- [:depth, :disparity_bytes, :alignment, :cloud_size, :cloud_points],
             do: assert(Map.fetch!(native, field) == Map.fetch!(nx, field), "#{field} differs")

@@ -80,7 +80,7 @@ defmodule VisionCore.Stereo.Pipeline do
   alias VisionCore.Ros2.CameraCalibration
   alias VisionCore.Stereo.{NativeSegment, NxSegment, NxStage, Pair, Stage, StageTimer}
 
-  @consumed [:left, :right, :disparity, :disparity_range, :disparity_bytes, :depth, :depth_m]
+  @consumed [:left, :right, :disparity, :disparity_range, :disparity_bytes, :depth]
   @segments [NxSegment, NativeSegment]
   # Pairs at the Port at once when a native segment runs first.
   @in_flight 2

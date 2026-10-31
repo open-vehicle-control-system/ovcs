@@ -68,7 +68,7 @@ defmodule VisionCore.Stereo.NativeSegment do
 
   @frames [:left_frame, :right_frame]
   @images [:left, :right]
-  @maps [:disparity, :depth_m]
+  @maps [:disparity]
 
   @configure 1
   @run 2

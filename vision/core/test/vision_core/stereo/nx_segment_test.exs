@@ -47,7 +47,7 @@ defmodule VisionCore.Stereo.NxSegmentTest do
     def requires, do: [:left]
 
     def provides,
-      do: [:right, :disparity, :disparity_range, :disparity_bytes, :depth, :depth_m]
+      do: [:right, :disparity, :disparity_range, :disparity_bytes, :depth]
 
     def run(pair, state), do: {:ok, pair, state}
   end
