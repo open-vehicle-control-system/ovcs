@@ -22,7 +22,7 @@ export const HINTS = {
     title: 'Depth rate',
     text:
       'Depth maps the unit computed in the last second. Each needs a left and right image, so it cannot exceed ' +
-      'the cameras’ rate; well below it, the pipeline is the bottleneck (see GPU in the top bar).'
+      'the cameras’ rate; well below it, the pipeline is the bottleneck (see Stereo load in the top bar).'
   },
   matched: {
     title: 'Matched pixels',
@@ -80,10 +80,10 @@ export const HINTS = {
     title: 'CPU',
     text: 'Busy share of all processor cores over the last second.'
   },
-  gpu: {
-    title: 'GPU',
+  stereoLoad: {
+    title: 'Stereo load',
     text:
-      "Share of each second spent in the stereo pipeline's GPU work, uploads and waits included. " +
-      'Near 100 %, the pipeline cannot go faster and the depth rate drops below the cameras’.'
+      'Share of each second spent computing the stereo stages, wherever they run: on the GPU, or on the processor ' +
+      'cores in native code. Near 100 %, the pipeline cannot go faster and the depth rate drops below the cameras’.'
   }
 }

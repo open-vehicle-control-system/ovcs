@@ -106,6 +106,6 @@ export function unitStatus(status) {
     { id: 'zenoh', title: 'Zenoh', value: status.zenoh, healthy: status.zenoh === 'connected', hint: HINTS.zenoh },
     { id: 'hailo', title: 'Hailo', value: status.hailo, healthy: status.hailo === 'running', hint: HINTS.hailo },
     { ...loadStatus('cpu', 'CPU', status.cpu_percent), hint: HINTS.cpu },
-    { ...loadStatus('segment', 'GPU', status.stereo_segment_percent), hint: HINTS.gpu }
+    { ...loadStatus('segment', 'Stereo load', status.stereo_segment_percent), hint: HINTS.stereoLoad }
   ]
 }
