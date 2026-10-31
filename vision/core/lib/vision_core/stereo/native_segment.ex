@@ -75,6 +75,10 @@ defmodule VisionCore.Stereo.NativeSegment do
   @types %{0 => {:u, 8}, 1 => {:u, 16}, 2 => {:f, 32}, 3 => {:s, 32}}
   @type_codes %{{:u, 8} => 0, {:f, 32} => 2}
 
+  @doc "Where a native segment runs: the `stereo_match` Port, on the CPU."
+  @spec compute() :: NxSegment.compute()
+  def compute, do: %{runs_on: :cpu, implementation: :rust, backend: nil}
+
   @doc "Whether `module` has a native implementation."
   @spec supported?(module()) :: boolean()
   def supported?(module), do: Map.has_key?(@kinds, module)

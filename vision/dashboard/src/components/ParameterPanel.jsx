@@ -1,6 +1,7 @@
 import { useId, useMemo } from 'react'
 import { groupParameters, useParameters } from '../stores/parameters.js'
-import { OvcsParameterControl, formatValue, rangeStep, tidy, focusClass as FOCUS } from '@ovcs/ui/react'
+import { OvcsBadge, OvcsParameterControl, formatValue, rangeStep, tidy, focusClass as FOCUS } from '@ovcs/ui/react'
+import { computeTags } from '../compute.js'
 
 // A relation is strict: the margin is the smallest step between two values.
 const margin = (parameter) => (parameter.valueType === 'integer' ? 1 : rangeStep(parameter))
@@ -43,6 +44,8 @@ export default function ParameterPanel({ groupId }) {
 
   if (!group) return <p className="text-sm text-ovcs-muted">Choose a box in the pipeline to see its parameters.</p>
 
+  const tags = computeTags(group.compute)
+
   // Values set by an automatic mode change at every poll; announcing them would be noise.
   const summary = members
     .filter((parameter) => parameter.state !== 'automatic')
@@ -56,6 +59,15 @@ export default function ParameterPanel({ groupId }) {
             {group.name}
           </h2>
           {group.summary ? <p className="text-sm text-ovcs-muted">{group.summary}</p> : null}
+          {tags.length > 0 ? (
+            <ul aria-label="Runs on" className="mt-1.5 flex flex-wrap gap-1.5">
+              {tags.map((tag) => (
+                <li key={tag}>
+                  <OvcsBadge translate="no">{tag}</OvcsBadge>
+                </li>
+              ))}
+            </ul>
+          ) : null}
         </div>
         <button
           type="button"

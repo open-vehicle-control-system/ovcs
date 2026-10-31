@@ -117,6 +117,46 @@ defmodule VisionApiWeb.StageControllerTest do
     end
   end
 
+  test "a stage says where it runs and what it is written in, a component nothing",
+       %{conn: conn} do
+    :ok =
+      VisionCore.Parameters.declare([
+        %{
+          id: "test.camera",
+          name: "Camera",
+          summary: "Captures.",
+          kind: :component,
+          placement: :flow,
+          position: 0,
+          parameters: []
+        },
+        %{
+          id: "test.match",
+          name: "Match",
+          summary: "Matches.",
+          kind: :stage,
+          placement: :flow,
+          position: 1,
+          compute: %{runs_on: :gpu, implementation: :nx, backend: :vulkan},
+          parameters: []
+        }
+      ])
+
+    computes =
+      for %{"id" => id, "attributes" => %{"compute" => compute}} <-
+            json_response(get(conn, "/api/stages"), 200)["data"],
+          into: %{},
+          do: {id, compute}
+
+    assert computes["test.camera"] == nil
+
+    assert computes["test.match"] == %{
+             "runs_on" => "gpu",
+             "implementation" => "nx",
+             "backend" => "vulkan"
+           }
+  end
+
   test "GET /api/stages leaves the parameters out unless included", %{conn: conn} do
     assert %{"data" => [_ | _]} = body = json_response(get(conn, "/api/stages"), 200)
     refute Map.has_key?(body, "included")

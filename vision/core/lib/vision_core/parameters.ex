@@ -56,6 +56,7 @@ defmodule VisionCore.Parameters do
           required(:placement) => :flow | :side,
           required(:position) => non_neg_integer(),
           optional(:status) => (-> {:ok | :warning | :off, String.t()} | nil),
+          optional(:compute) => VisionCore.Stereo.NxSegment.compute(),
           required(:parameters) => [declaration()]
         }
 
@@ -662,6 +663,7 @@ defmodule VisionCore.Parameters do
       placement: group.placement,
       position: group.position,
       status: read_status(group),
+      compute: Map.get(group, :compute),
       parameters: Enum.map(group.parameters, &to_parameter(&1, values, state))
     }
   end

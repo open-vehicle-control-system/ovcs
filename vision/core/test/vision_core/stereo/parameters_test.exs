@@ -102,7 +102,8 @@ defmodule VisionCore.Stereo.ParametersTest do
       stage: :median_filter,
       summary: "Filters",
       specs: [median: %{type: :bool, applies: :live}],
-      values: %{median: true}
+      values: %{median: true},
+      compute: %{runs_on: :cpu, implementation: :rust, backend: nil}
     },
     %{stage: :row_alignment, summary: "Measures", specs: [], values: %{}}
   ]
@@ -152,6 +153,13 @@ defmodule VisionCore.Stereo.ParametersTest do
 
     assert %{name: "Median filter", kind: :stage, summary: "Filters"} =
              group("stereo.median_filter")
+  end
+
+  test "a stage's group says where the stage runs, and the cameras' group says nothing" do
+    assert group("stereo.median_filter").compute ==
+             %{runs_on: :cpu, implementation: :rust, backend: nil}
+
+    refute Map.has_key?(group("stereo.cameras"), :compute)
   end
 
   describe "the LibCamera driver" do

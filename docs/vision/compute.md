@@ -14,6 +14,8 @@ The [stereo stages](./stages.md) are written once and run one of two ways, depen
 
 Both give the same results: the native stages are tested against the Nx ones, image for image.
 
+To see where each stage of a running unit is computed, select it on the dashboard: its panel is tagged with where it runs (CPU or GPU), what it is written in (Rust, Elixir or Elixir Nx) and, for Nx, what compiles it (Vulkan, LLVM, EXLA or the Nx evaluator). `GET /api/stages` returns the same as each stage's `compute` attribute.
+
 ## Nx: the stages as tensor programs
 
 [Nx](https://github.com/elixir-nx/nx) is Elixir's library for numerical computing: a function written with `defn` works on whole tensors, and a compiler turns it into code for a CPU or a GPU. Each stage implements `VisionCore.Stereo.NxStage`, whose `step` is such a function. The image algorithms come from [`nx_stereo`](https://github.com/Spin42/nx_stereo):
