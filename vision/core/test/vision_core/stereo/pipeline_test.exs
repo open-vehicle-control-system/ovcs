@@ -265,7 +265,6 @@ defmodule VisionCore.Stereo.PipelineTest do
       assert %{min_disparity: 0, num_disparities: 64, block_size: 9} = pair.disparity_range
       assert pair.disparity |> Nx.greater_equal(0) |> Nx.sum() |> Nx.to_number() > 0
       assert byte_size(pair.depth) == 48 * 64 * 2
-      assert %Nx.Tensor{shape: {48, 64}} = pair.depth_m
     end
 
     test "applies a live p1 change from the next pair, as NxStereo.sgm/3 would" do
@@ -333,7 +332,6 @@ defmodule VisionCore.Stereo.PipelineTest do
       assert %Nx.Tensor{shape: {48, 64}, type: {:f, 32}} = pair.disparity
       assert pair.disparity_bytes == Nx.to_binary(pair.disparity)
       assert byte_size(pair.depth) == 48 * 64 * 2
-      assert %Nx.Tensor{shape: {48, 64}, type: {:f, 32}} = pair.depth_m
       assert {12, 16} = pair.cloud_size
       assert byte_size(pair.cloud) == 12 * 16 * 12
       assert %{left: left, right: right} = pair.sharpness
@@ -356,7 +354,7 @@ defmodule VisionCore.Stereo.PipelineTest do
              ]
 
       Pipeline.register_listener(pipeline, self())
-      assert %Nx.Tensor{shape: {48, 64}} = receive_pair(pipeline, textured_pair(8)).depth_m
+      assert byte_size(receive_pair(pipeline, textured_pair(8)).depth) == 48 * 64 * 2
     end
 
     test "compiles a stage that asks for Nx" do

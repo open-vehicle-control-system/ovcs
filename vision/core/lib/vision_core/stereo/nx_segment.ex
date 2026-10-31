@@ -25,7 +25,7 @@ defmodule VisionCore.Stereo.NxSegment do
 
   @frames [:left_frame, :right_frame]
   @images [:left, :right]
-  @maps [:disparity, :depth_m]
+  @maps [:disparity]
 
   # The Vulkan features Mesa NVK supports on the OKdo Nano C100's GPU.
   @c100_vulkan_features ~w(spirv:v1.3 cap:Shader cap:StorageBuffer8BitAccess cap:Int8

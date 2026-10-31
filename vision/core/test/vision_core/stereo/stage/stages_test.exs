@@ -342,10 +342,12 @@ defmodule VisionCore.Stereo.Stage.StagesTest do
       assert_receive {:"$gen_cast", {:stereo_pair, %Pair{} = pair}}, 60_000
       assert_receive :stereo_pipeline_ready
 
-      depths = pair.depth_m |> Nx.to_flat_list() |> Enum.filter(&(&1 > 0)) |> Enum.sort()
+      depths =
+        for(<<millimetres::little-16 <- pair.depth>>, millimetres > 0, do: millimetres / 1000)
+        |> Enum.sort()
 
       %{
-        share: length(depths) / Nx.size(pair.depth_m),
+        share: length(depths) / div(byte_size(pair.depth), 2),
         median_m: Enum.at(depths, div(length(depths), 2))
       }
     end

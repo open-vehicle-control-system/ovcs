@@ -141,7 +141,7 @@ defmodule VisionCore.Detection.Pipeline do
 
     cond do
       rem(pair_count, state.detect_every_n) != 0 -> {:noreply, state}
-      is_nil(pair.left) or is_nil(pair.depth_m) -> {:noreply, state}
+      is_nil(pair.left) or is_nil(pair.depth) -> {:noreply, state}
       true -> {:noreply, submit(pair, state)}
     end
   end
@@ -184,7 +184,9 @@ defmodule VisionCore.Detection.Pipeline do
   def handle_info(_message, state), do: {:noreply, state}
 
   defp position(detection, %Pair{} = pair, state) do
-    case Fusion.median_depth(pair.depth_m, detection, state.depth_sample_fraction) do
+    {height, width} = Nx.shape(pair.left)
+
+    case Fusion.median_depth(pair.depth, {width, height}, detection, state.depth_sample_fraction) do
       nil ->
         nil
 

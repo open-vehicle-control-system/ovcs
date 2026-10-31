@@ -61,7 +61,8 @@ pub struct Segment {
     stages: Vec<Stage>,
 }
 
-/// The tensors each stage fills: what a run returns, once each.
+/// The tensors each stage returns, once each. The depth in metres stays in
+/// the segment, for the point cloud.
 fn outputs(stage: &Stage) -> &'static [&'static str] {
     match stage {
         Stage::Rectification { .. } => &["left", "right"],
@@ -71,7 +72,7 @@ fn outputs(stage: &Stage) -> &'static [&'static str] {
         | Stage::SpeckleFilter
         | Stage::TemporalFilter(_) => &["disparity"],
         Stage::RowAlignment => &["alignment_sums"],
-        Stage::Depth => &["depth_mm", "depth_m"],
+        Stage::Depth => &["depth_mm"],
         Stage::PointCloud { .. } => &["cloud_grid", "cloud_points"],
         Stage::Quality(_) => &["quality_sums"],
     }
@@ -448,7 +449,7 @@ mod tests {
         let tensors = Tensors::from([("disparity".to_string(), disparity)]);
         let (outputs, times) = segment.run(&inputs, tensors).unwrap();
         let names: Vec<&str> = outputs.iter().map(|(name, _)| name.as_str()).collect();
-        assert_eq!(names, ["disparity", "depth_mm", "depth_m"]);
+        assert_eq!(names, ["disparity", "depth_mm"]);
         assert_eq!(times.len(), 3);
         assert_eq!(outputs[0].1.data, Data::F32(vec![-1.0; 32 * 24]));
         assert_eq!(outputs[1].1.data, Data::U16(vec![1000; 32 * 24]));

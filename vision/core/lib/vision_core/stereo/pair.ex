@@ -24,8 +24,6 @@ defmodule VisionCore.Stereo.Pair do
     * `:depth` — 16-bit depth in millimetres, row-major, 0 where there
       is no measurement: the ROS depth-image convention, at half the
       bytes of 32-bit metres.
-    * `:depth_m` — the same depth as an `f32` tensor in metres, for the
-      geometry: a detection's distance is a median over its box.
     * `:cloud`, `:cloud_size`, `:cloud_points` — an organized grid of
       `x, y, z` 32-bit float points in the left optical frame, row-major,
       its `{height, width}`, and how many points are measured: the others,
@@ -55,7 +53,6 @@ defmodule VisionCore.Stereo.Pair do
     :disparity_range,
     :disparity_bytes,
     :depth,
-    :depth_m,
     :cloud,
     :cloud_size,
     :alignment,

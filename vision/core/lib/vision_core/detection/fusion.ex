@@ -1,9 +1,9 @@
 defmodule VisionCore.Detection.Fusion do
   @moduledoc """
-  Turns a 2D detection box plus a metric depth map into a position
+  Turns a 2D detection box plus a depth image into a position
   and size in metres. Pure geometry — no processes, no publishing —
   so the arithmetic that decides where a detection *is* can be tested
-  against a hand-built depth map rather than only against the road.
+  against a hand-built depth image rather than only against the road.
 
   Both inputs live in the rectified left camera's frame, pixel for
   pixel, which is what makes this a lookup rather than a registration
@@ -14,7 +14,9 @@ defmodule VisionCore.Detection.Fusion do
   alias VisionCore.Ros2.CameraCalibration
 
   @doc """
-  Median of the valid depths in the central `fraction` of `box`.
+  Median of the valid depths in the central `fraction` of `box`, in
+  metres, from `depth_mm`: the pair's depth image, `{width, height}`
+  16-bit millimetres, row-major.
 
   Median rather than mean because a box drawn around a person still
   contains background at its corners, and a mean is dragged towards
@@ -27,17 +29,14 @@ defmodule VisionCore.Detection.Fusion do
   untextured surfaces, and the caller is expected to drop the
   detection rather than invent a range for it.
   """
-  @spec median_depth(Nx.Tensor.t(), map(), float()) :: float() | nil
-  def median_depth(depth_m, box, fraction) do
-    {height, width} = height_and_width(depth_m)
-
+  @spec median_depth(binary(), {pos_integer(), pos_integer()}, map(), float()) :: float() | nil
+  def median_depth(depth_mm, {width, height}, box, fraction) do
     {x0, x1} = shrink(box.x0, box.x1, fraction, width)
     {y0, y1} = shrink(box.y0, box.y1, fraction, height)
 
     if x1 > x0 and y1 > y0 do
-      depth_m[[y0..(y1 - 1)//1, x0..(x1 - 1)//1]]
-      |> Nx.to_binary()
-      |> valid_depths()
+      y0..(y1 - 1)//1
+      |> Enum.flat_map(&row_depths(depth_mm, (&1 * width + x0) * 2, (x1 - x0) * 2))
       |> median()
     end
   end
@@ -167,11 +166,10 @@ defmodule VisionCore.Detection.Fusion do
     }
   end
 
-  # The upper bound drops the infinities a zero disparity produces.
-  defp valid_depths(binary) do
-    for <<depth_m::little-float-32 <- binary>>,
-        depth_m > 0.0 and depth_m < 1.0e6,
-        do: depth_m
+  defp row_depths(depth_mm, offset, size) do
+    for <<millimetres::little-16 <- binary_part(depth_mm, offset, size)>>,
+        millimetres > 0,
+        do: millimetres / 1000.0
   end
 
   defp median([]), do: nil
@@ -186,10 +184,5 @@ defmodule VisionCore.Detection.Fusion do
     else
       (Enum.at(sorted, middle - 1) + Enum.at(sorted, middle)) / 2.0
     end
-  end
-
-  defp height_and_width(depth_m) do
-    {height, width} = Nx.shape(depth_m)
-    {height, width}
   end
 end

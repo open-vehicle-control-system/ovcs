@@ -3,22 +3,20 @@ defmodule VisionCore.Detection.FusionTest do
 
   alias VisionCore.Detection.Fusion
 
-  # A hand-built depth map from `rows` in metres, so the expected answer is arithmetic.
+  # A hand-built depth image from `rows` in metres, as the pipeline's
+  # millimetres, so the expected answer is arithmetic.
   defp depth_map(rows) do
-    height = length(rows)
-    width = rows |> hd() |> length()
-
-    binary =
-      rows
-      |> List.flatten()
-      |> Enum.reduce(<<>>, fn value, acc -> acc <> <<value::little-float-32>> end)
-
-    binary |> Nx.from_binary(:f32) |> Nx.reshape({height, width})
+    size = {rows |> hd() |> length(), length(rows)}
+    binary = for value <- List.flatten(rows), into: <<>>, do: <<round(value * 1000)::little-16>>
+    {binary, size}
   end
+
+  defp median_depth({binary, size}, box, fraction),
+    do: Fusion.median_depth(binary, size, box, fraction)
 
   defp box(x0, y0, x1, y1), do: %{x0: x0 / 1.0, y0: y0 / 1.0, x1: x1 / 1.0, y1: y1 / 1.0}
 
-  describe "median_depth/3" do
+  describe "median_depth/4" do
     test "takes the median over the central fraction of the box" do
       # 8x8 of 5.0 m with a 4x4 block of 2.0 m in the middle. With
       # fraction 0.5 the sample window is exactly that middle block.
@@ -29,7 +27,7 @@ defmodule VisionCore.Detection.FusionTest do
           end
         end
 
-      assert Fusion.median_depth(depth_map(rows), box(0, 0, 8, 8), 0.5) == 2.0
+      assert median_depth(depth_map(rows), box(0, 0, 8, 8), 0.5) == 2.0
     end
 
     test "ignores the background a whole-box sample would include" do
@@ -43,7 +41,7 @@ defmodule VisionCore.Detection.FusionTest do
           end
         end
 
-      assert Fusion.median_depth(depth_map(rows), box(0, 0, 8, 8), 1.0) == 5.0
+      assert median_depth(depth_map(rows), box(0, 0, 8, 8), 1.0) == 5.0
     end
 
     test "treats zero as no measurement rather than as 0 m" do
@@ -56,23 +54,28 @@ defmodule VisionCore.Detection.FusionTest do
         [0.0, 0.0, 0.0, 0.0]
       ]
 
-      assert Fusion.median_depth(depth_map(rows), box(0, 0, 4, 4), 1.0) == 2.0
+      assert median_depth(depth_map(rows), box(0, 0, 4, 4), 1.0) == 2.0
     end
 
     test "returns nil when nothing inside the box was measured" do
       rows = for _ <- 0..3, do: for(_ <- 0..3, do: 0.0)
-      assert Fusion.median_depth(depth_map(rows), box(0, 0, 4, 4), 1.0) == nil
+      assert median_depth(depth_map(rows), box(0, 0, 4, 4), 1.0) == nil
     end
 
     test "clamps a box that runs off the edge of the frame" do
       rows = for _ <- 0..3, do: for(_ <- 0..3, do: 3.0)
       # A person cut off at the right edge: x1 beyond the width.
-      assert Fusion.median_depth(depth_map(rows), box(2, 0, 40, 4), 1.0) == 3.0
+      assert median_depth(depth_map(rows), box(2, 0, 40, 4), 1.0) == 3.0
+    end
+
+    test "reads the box's rows, not the image's first ones" do
+      rows = [[9.0, 9.0, 9.0], [9.0, 9.0, 9.0], [9.0, 1.5, 9.0]]
+      assert median_depth(depth_map(rows), box(1, 2, 2, 3), 1.0) == 1.5
     end
 
     test "averages the two middle values for an even sample count" do
       rows = [[1.0, 2.0], [3.0, 4.0]]
-      assert Fusion.median_depth(depth_map(rows), box(0, 0, 2, 2), 1.0) == 2.5
+      assert median_depth(depth_map(rows), box(0, 0, 2, 2), 1.0) == 2.5
     end
   end
 

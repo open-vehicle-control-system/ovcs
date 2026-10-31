@@ -1,8 +1,9 @@
 defmodule VisionCore.Stereo.Stage.Depth do
   @moduledoc """
   Turns the disparity in pixels into metric depth, `Z = f × B / d`:
-  fills the 32-bit float disparity, the 16-bit millimetre depth and the
-  metres tensor; unmatched pixels carry no depth. The focal length and
+  fills the 32-bit float disparity and the 16-bit millimetre depth, and
+  gives the stages after it in the same segment the depth in metres
+  (`:depth_m`); unmatched pixels carry no depth. The focal length and
   baseline are inputs, so a reloaded calibration needs no new compiled
   module.
   """
@@ -39,8 +40,7 @@ defmodule VisionCore.Stereo.Stage.Depth do
     %{
       pair
       | disparity_bytes: Nx.to_binary(outputs.disparity),
-        depth: Nx.to_binary(outputs.depth_mm),
-        depth_m: outputs.depth_m
+        depth: Nx.to_binary(outputs.depth_mm)
     }
   end
 end
