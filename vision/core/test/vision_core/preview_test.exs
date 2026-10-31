@@ -83,6 +83,38 @@ defmodule VisionCore.PreviewTest do
     refute_receive {:vision_preview, :left, _}, 200
   end
 
+  test "a camera frame is encoded once, however many subscribers receive it" do
+    test_pid = self()
+
+    encode_frame = fn frame ->
+      send(test_pid, :frame_encoded)
+      {:ok, frame.jpeg}
+    end
+
+    start_supervised!({Preview, config: @config, max_hz: 50, frame_encoder: encode_frame})
+    subscribers = for _ <- 1..3, do: spawn_subscriber(test_pid)
+    for pid <- subscribers, do: assert_receive({:subscribed, ^pid}, 500)
+
+    feed_left(1)
+
+    for _ <- subscribers, do: assert_receive({:previewed, "1"}, 500)
+    assert_received :frame_encoded
+    refute_received :frame_encoded
+  end
+
+  defp spawn_subscriber(test_pid) do
+    spawn_link(fn ->
+      :ok = Preview.subscribe(:left)
+      send(test_pid, {:subscribed, self()})
+
+      receive do
+        {:vision_preview, :left, jpeg} -> send(test_pid, {:previewed, jpeg})
+      end
+
+      Process.sleep(:infinity)
+    end)
+  end
+
   test "depth is not encoded without subscribers" do
     test_pid = self()
 
