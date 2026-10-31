@@ -1,7 +1,8 @@
 import { HINTS } from './hints.js'
 
 /**
- * What the dashboard shows of the status snapshot: `{ id, title, value, healthy, detail }` items, and
+ * What the dashboard shows of the status snapshot: `{ id, title, value, healthy, tone, detail }` items, `tone`
+ * overriding the health colour, and
  * each preview's figures as `{ label, value, tone }`, `tone` set on the one that tells the stream's health.
  */
 
@@ -109,7 +110,8 @@ export function pairStatus(status) {
 export function unitStatus(status) {
   return [
     { id: 'zenoh', title: 'Zenoh', value: status.zenoh, healthy: status.zenoh === 'connected', hint: HINTS.zenoh },
-    { id: 'hailo', title: 'Hailo', value: status.hailo, healthy: status.hailo === 'running', hint: HINTS.hailo },
+    // Absent is a unit built without an accelerator, not a fault.
+    { id: 'hailo', title: 'Hailo', value: status.hailo, healthy: status.hailo === 'running', tone: status.hailo === 'absent' ? 'muted' : undefined, hint: HINTS.hailo },
     { ...loadStatus('cpu', 'CPU', status.cpu_percent), hint: HINTS.cpu },
     { ...loadStatus('segment', 'Stereo load', status.stereo_segment_percent), hint: HINTS.stereoLoad }
   ]

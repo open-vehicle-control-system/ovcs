@@ -26,7 +26,7 @@ export default function UnitStatus({ status }) {
             {item.title}
             <Hint hint={item.hint} />
           </span>
-          <OvcsStatus tone={item.healthy ? 'ok' : 'error'} className="font-medium tabular-nums">
+          <OvcsStatus tone={item.tone ?? (item.healthy ? 'ok' : 'error')} className="font-medium tabular-nums">
             {item.value}
           </OvcsStatus>
         </li>
