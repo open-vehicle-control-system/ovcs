@@ -2,11 +2,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, act } from '@testing-library/react'
 import DepthRange from '../DepthRange.jsx'
 
-// A channel whose pushes answer `ok` with the range in force, or `error` when told to refuse.
+// A channel whose pushes answer `ok` with the range in force, or `error` when told to refuse;
+// `announce` pushes a range from the unit, as when another dashboard sets it.
 function fakeChannel(initial) {
   let range = initial
+  const handlers = {}
   const channel = {
     refuse: false,
+    on: vi.fn((event, handler) => (handlers[event] = handler)),
+    off: vi.fn(),
+    announce: (metres) => act(() => handlers.depth_range({ metres })),
     push: vi.fn((event, payload) => {
       const replies = {}
       const push = { receive: (status, callback) => ((replies[status] = callback), push) }
@@ -24,7 +29,6 @@ function fakeChannel(initial) {
 const flush = () => act(() => Promise.resolve())
 
 describe('DepthRange', () => {
-  beforeEach(() => window.localStorage.clear())
 
   it('shows the range in force on the depth stream once known', async () => {
     const channel = fakeChannel(8)
@@ -35,7 +39,7 @@ describe('DepthRange', () => {
     expect(screen.getByText('8.0 m')).toBeTruthy()
   })
 
-  it('sets the range once released, with nothing to save, and remembers it', async () => {
+  it('sets the range on the unit once released, with nothing to save', async () => {
     const channel = fakeChannel(8)
     render(<DepthRange channel={channel} />)
     await flush()
@@ -49,17 +53,20 @@ describe('DepthRange', () => {
     fireEvent.pointerUp(slider)
     await flush()
     expect(channel.push).toHaveBeenLastCalledWith('depth_range', { metres: 12.5 })
-    expect(window.localStorage.getItem('vision.v1.depth_range_m')).toBe('12.5')
+    expect(window.localStorage.length).toBe(0)
   })
 
-  it('applies the range this browser remembers when the stream joins', async () => {
-    window.localStorage.setItem('vision.v1.depth_range_m', '20')
+  it('follows a range set from another dashboard, and never pushes one of its own on joining', async () => {
+    window.localStorage.setItem('vision.depth_range_m', '20')
     const channel = fakeChannel(8)
     render(<DepthRange channel={channel} />)
     await flush()
+    expect(channel.push).toHaveBeenCalledTimes(1)
+    expect(channel.push).toHaveBeenCalledWith('depth_range', {})
 
-    expect(channel.push).toHaveBeenCalledWith('depth_range', { metres: 20 })
-    expect(screen.getByText('20.0 m')).toBeTruthy()
+    channel.announce(15)
+    expect(screen.getByText('15.0 m')).toBeTruthy()
+    window.localStorage.clear()
   })
 
   it('puts infinity, a range of 0, at the far end of the slider', async () => {

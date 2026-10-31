@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react'
 import UnitStatus from '../UnitStatus.jsx'
 import Previews from '../Previews.jsx'
 
-const socket = { channel: vi.fn(() => ({ on: vi.fn(), join: vi.fn(), push: vi.fn(() => ({ receive() { return this } })), leave: vi.fn() })) }
+const socket = { channel: vi.fn(() => ({ on: vi.fn(), join: vi.fn(), push: vi.fn(() => ({ receive() { return this } })), off: vi.fn(), leave: vi.fn() })) }
 
 const snapshot = {
   cameras: { left: { present: true, fps: 29.6, exposure_time_us: 8000, analogue_gain: 2.0 }, right: { present: false } },

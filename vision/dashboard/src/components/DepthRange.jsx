@@ -3,7 +3,6 @@ import { focusClass as FOCUS } from '@ovcs/ui/react'
 import Hint from './Hint.jsx'
 import { HINTS } from '../hints.js'
 
-const STORAGE_KEY = 'vision.v1.depth_range_m'
 const MIN = 0.5
 const MAX = 50
 const STEP = 0.5
@@ -15,26 +14,10 @@ const show = (metres) => (metres === 0 ? '∞' : `${metres.toFixed(1)} m`)
 const toSlider = (metres) => (metres === 0 ? INFINITY : metres)
 const fromSlider = (position) => (position > MAX ? 0 : position)
 
-function remembered() {
-  try {
-    const value = window.localStorage.getItem(STORAGE_KEY)
-    return value === null ? null : Number(value)
-  } catch {
-    return null
-  }
-}
-
-function remember(metres) {
-  try {
-    window.localStorage.setItem(STORAGE_KEY, String(metres))
-  } catch {
-    // Without storage the range lasts until the page reloads.
-  }
-}
-
 /**
  * The depth video's colour range, the distance coloured blue, set on the depth stream's `channel` as soon as it is
- * released; 0, the slider's last notch, is ∞. It is a view setting: nothing to save, and this browser remembers it.
+ * released; 0, the slider's last notch, is ∞. It is the unit's, shared by every dashboard and following a change made
+ * from any of them, and a view setting: nothing to save, back to the composer's at the next boot.
  */
 export default function DepthRange({ channel }) {
   const labelId = useId()
@@ -42,11 +25,10 @@ export default function DepthRange({ channel }) {
   const [draft, setDraft] = useState(null)
 
   useEffect(() => {
-    if (!channel) return
-    const stored = remembered()
-    channel
-      .push('depth_range', stored === null ? {} : { metres: stored })
-      .receive('ok', ({ metres }) => setValue(metres))
+    if (!channel) return undefined
+    const reference = channel.on('depth_range', ({ metres }) => setValue(metres))
+    channel.push('depth_range', {}).receive('ok', ({ metres }) => setValue(metres))
+    return () => channel.off('depth_range', reference)
   }, [channel])
 
   if (!channel || value === null) return null
@@ -60,10 +42,7 @@ export default function DepthRange({ channel }) {
     setValue(metres)
     channel
       .push('depth_range', { metres })
-      .receive('ok', (reply) => {
-        setValue(reply.metres)
-        remember(reply.metres)
-      })
+      .receive('ok', (reply) => setValue(reply.metres))
       .receive('error', () => setValue(value))
   }
 

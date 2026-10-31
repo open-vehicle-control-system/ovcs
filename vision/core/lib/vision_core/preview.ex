@@ -18,6 +18,9 @@ defmodule VisionCore.Preview do
   `:max_hz` and `:depth_range_m` are the vehicle's `VisionCore.Config`
   `:preview` options and change while running with `set_options/1`; the
   dashboard sets the depth range through `VisionApiWeb.PreviewChannel`.
+  The depth range is the unit's, shared by every dashboard: a change is
+  sent to each depth subscriber as `{:vision_preview_options,
+  %{depth_range_m: metres}}`.
 
   Started last in `VisionCore.Supervisor`; without a `:stereo`
   component it runs with nothing to preview.
@@ -133,6 +136,7 @@ defmodule VisionCore.Preview do
         state =
           Enum.reduce(options, state, fn {key, value}, state -> put_option(state, key, value) end)
 
+        if Keyword.has_key?(options, :depth_range_m), do: announce_depth_range(state)
         {:reply, {:ok, Map.take(state, [:max_hz, :depth_range_m])}, state}
 
       {key, value} ->
@@ -287,6 +291,12 @@ defmodule VisionCore.Preview do
       {:ok, jpeg} -> {jpeg, state}
       {:error, _reason} -> {nil, state}
     end
+  end
+
+  # The depth range is the unit's, shared by every dashboard: each depth subscriber hears a new one.
+  defp announce_depth_range(state) do
+    for {pid, :depth} <- Map.keys(state.subscribers),
+        do: send(pid, {:vision_preview_options, %{depth_range_m: state.depth_range_m}})
   end
 
   defp valid_option?(:max_hz, value), do: is_integer(value) and value in 1..30

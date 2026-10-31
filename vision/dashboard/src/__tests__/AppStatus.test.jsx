@@ -6,7 +6,7 @@ import { useParameters } from '../stores/parameters.js'
 
 vi.mock('../services/parameters.js')
 vi.mock('../services/socket.js', () => ({
-  dashboardSocket: { channel: () => ({ on: () => {}, join: () => {}, leave: () => {}, push: () => ({ receive() { return this } }) }) }
+  dashboardSocket: { channel: () => ({ on: () => {}, join: () => {}, off: () => {}, leave: () => {}, push: () => ({ receive() { return this } }) }) }
 }))
 
 const menuRenders = vi.hoisted(() => ({ count: 0 }))

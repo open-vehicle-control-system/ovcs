@@ -8,7 +8,9 @@ defmodule VisionApiWeb.PreviewChannel do
   the next one sent, so a slow link gets the latest frame instead of a
   backlog. On the depth stream it pushes `"depth_range"`, with `"metres"`
   to set the depth video's colour range or without to read it; the reply
-  is the range in force, `%{metres: float}`. Stops when
+  is the range in force, `%{metres: float}`. The range is the unit's,
+  shared by every dashboard: whoever changes it, the depth stream pushes
+  the new one as a `"depth_range"` event, `%{metres: float}`. Stops when
   `VisionCore.Preview` restarts, and refuses the join while it is not
   running; see `VisionApiWeb.SourceMonitor`.
   """
@@ -56,6 +58,11 @@ defmodule VisionApiWeb.PreviewChannel do
   @impl Phoenix.Channel
   def handle_info({:vision_preview, _stream, jpeg}, socket) do
     push(socket, "frame", {:binary, jpeg})
+    {:noreply, socket}
+  end
+
+  def handle_info({:vision_preview_options, %{depth_range_m: metres}}, socket) do
+    push(socket, "depth_range", %{metres: metres})
     {:noreply, socket}
   end
 
