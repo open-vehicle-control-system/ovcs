@@ -5,7 +5,7 @@ defmodule VisionApiWeb.StageController do
   """
   use VisionApiWeb, :controller
 
-  alias VisionApiWeb.{JsonApi, ParameterJSON}
+  alias VisionApiWeb.{JsonApi, ParameterPresenter, StagePresenter}
   alias VisionCore.Parameters
 
   def index(conn, params) do
@@ -22,14 +22,13 @@ defmodule VisionApiWeb.StageController do
     groups = Parameters.groups()
 
     document = %{
-      data: Enum.map(groups, &ParameterJSON.stage/1),
-      meta: %{unsaved: ParameterJSON.unsaved(groups)}
+      data: Enum.map(groups, &StagePresenter.present/1),
+      meta: ParameterPresenter.meta(groups)
     }
 
     document =
       if include? do
-        included = groups |> ParameterJSON.parameters() |> Enum.map(&ParameterJSON.parameter/1)
-        Map.put(document, :included, included)
+        Map.put(document, :included, ParameterPresenter.present_all(groups))
       else
         document
       end

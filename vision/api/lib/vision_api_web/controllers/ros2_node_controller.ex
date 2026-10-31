@@ -10,7 +10,7 @@ defmodule VisionApiWeb.Ros2NodeController do
   """
   use VisionApiWeb, :controller
 
-  alias VisionApiWeb.JsonApi
+  alias VisionApiWeb.{JsonApi, Ros2NodePresenter}
   alias VisionCore.Ros2.{Topics, ZenohClient}
 
   @relationships ["topics", "services"]
@@ -27,44 +27,18 @@ defmodule VisionApiWeb.Ros2NodeController do
 
   defp send_node(conn, includes) do
     link = ZenohClient.link()
-    topics = Enum.map(Topics.topics(), &topic/1)
-    services = Enum.map(link.services, &service/1)
-
-    node =
-      JsonApi.resource(
-        "ros2-nodes",
-        link.node_name,
-        %{name: link.node_name, zenohEndpoint: link.endpoint, connected: link.connected},
-        %{topics: to_many(topics), services: to_many(services)}
-      )
+    topics = Topics.topics()
+    node = Ros2NodePresenter.present(link, topics)
 
     included =
       Enum.flat_map(includes, fn
-        "topics" -> topics
-        "services" -> services
+        "topics" -> Enum.map(topics, &Ros2NodePresenter.topic/1)
+        "services" -> Enum.map(link.services, &Ros2NodePresenter.service/1)
       end)
 
     document = if includes == [], do: %{data: node}, else: %{data: node, included: included}
     JsonApi.send_document(conn, 200, document)
   end
-
-  defp topic(topic) do
-    %{
-      type: "ros2-topics",
-      id: topic.name,
-      attributes: %{name: topic.name, messageType: topic.type, rateHz: topic.rate_hz}
-    }
-  end
-
-  defp service(service) do
-    %{
-      type: "ros2-services",
-      id: service.name,
-      attributes: %{name: service.name, serviceType: service.type}
-    }
-  end
-
-  defp to_many(resources), do: %{data: Enum.map(resources, &Map.take(&1, [:type, :id]))}
 
   defp includes(%{"include" => include}) do
     includes = include |> String.split(",", trim: true) |> Enum.uniq()

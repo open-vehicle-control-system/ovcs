@@ -46,8 +46,7 @@ defmodule VisionApiWeb.ConfigurationControllerTest do
                      ],
                      "preview" => []
                    }
-                 },
-                 "relationships" => %{}
+                 }
                }
              }
     end

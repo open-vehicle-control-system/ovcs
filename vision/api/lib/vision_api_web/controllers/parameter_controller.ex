@@ -2,7 +2,7 @@ defmodule VisionApiWeb.ParameterController do
   @moduledoc "The vision parameters (`VisionCore.Parameters`) as JSON:API resources."
   use VisionApiWeb, :controller
 
-  alias VisionApiWeb.{JsonApi, ParameterJSON}
+  alias VisionApiWeb.{JsonApi, ParameterPresenter}
   alias VisionCore.Parameters
 
   @value_pointer "/data/attributes/value"
@@ -11,15 +11,15 @@ defmodule VisionApiWeb.ParameterController do
     groups = Parameters.groups()
 
     JsonApi.send_document(conn, 200, %{
-      data: groups |> ParameterJSON.parameters() |> Enum.map(&ParameterJSON.parameter/1),
-      meta: %{unsaved: ParameterJSON.unsaved(groups)}
+      data: ParameterPresenter.present_all(groups),
+      meta: ParameterPresenter.meta(groups)
     })
   end
 
   def show(conn, %{"id" => id}) do
     case Parameters.get(id) do
       {:ok, parameter} ->
-        JsonApi.send_document(conn, 200, %{data: ParameterJSON.parameter(parameter)})
+        JsonApi.send_document(conn, 200, %{data: ParameterPresenter.present(parameter)})
 
       {:error, :not_found} ->
         JsonApi.error(conn, 404, "Not Found", "no parameter #{id}")
@@ -31,7 +31,7 @@ defmodule VisionApiWeb.ParameterController do
          {:ok, value} <- fetch_value(params["data"]) do
       case Parameters.set(id, value) do
         {:ok, parameter} ->
-          JsonApi.send_document(conn, 200, %{data: ParameterJSON.parameter(parameter)})
+          JsonApi.send_document(conn, 200, %{data: ParameterPresenter.present(parameter)})
 
         {:error, reason} ->
           not_settable(conn, id, reason)
