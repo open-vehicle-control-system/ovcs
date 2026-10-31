@@ -1,7 +1,7 @@
 defmodule VisionCore.Camera.LibCameraTest do
   use ExUnit.Case, async: true
 
-  alias VisionCore.Camera.LibCamera
+  alias VisionCore.Camera.{Frame, LibCamera}
 
   # The driver itself needs the native binary and two cameras; the
   # watchdog's decision is the part that can be wrong, and it is pure.
@@ -80,6 +80,10 @@ defmodule VisionCore.Camera.LibCameraTest do
     test "passes the mode's size" do
       assert LibCamera.sensor_mode_args({2304, 1296}) == ["--sensor-mode", "2304x1296"]
     end
+
+    test "passes the mode's bit depth when given" do
+      assert LibCamera.sensor_mode_args({2028, 1520, 12}) == ["--sensor-mode", "2028x1520:12"]
+    end
   end
 
   describe "lens_position_args/1" do
@@ -90,6 +94,51 @@ defmodule VisionCore.Camera.LibCameraTest do
     test "a position is passed in dioptres, integers included" do
       assert LibCamera.lens_position_args(1.5) == ["--lens-position", "1.5"]
       assert LibCamera.lens_position_args(1) == ["--lens-position", "1.0"]
+    end
+  end
+
+  describe "format_args/1" do
+    test "JPEG frames are the capture program's default" do
+      assert LibCamera.format_args(:jpeg) == []
+    end
+
+    test "grey frames are asked for by name" do
+      assert LibCamera.format_args(:grey) == ["--format", "grey"]
+    end
+
+    test "refuses other formats" do
+      assert_raise FunctionClauseError, fn -> LibCamera.format_args(:rgb) end
+    end
+  end
+
+  describe "grey frame records" do
+    test "carry the frame's luma, row-major" do
+      assert {:ok, %Frame{width: 3, height: 2, grey: <<1, 2, 3, 4, 5, 6>>, jpeg: nil}} =
+               LibCamera.parse_record(
+                 <<5, 3::little-16, 2::little-16, 0::little-signed-64, 1, 2, 3, 4, 5, 6>>
+               )
+    end
+
+    test "are malformed unless they hold width * height bytes" do
+      assert LibCamera.parse_record(<<5, 3::little-16, 2::little-16, 0::little-signed-64, 1>>) ==
+               {:error, :malformed_record}
+    end
+
+    test "reach the listeners as grey frames under the camera's label" do
+      packet = <<5, 2::little-16, 1::little-16, 0::little-signed-64, 7, 8>>
+
+      state = %{
+        label: "left",
+        port: :port,
+        listeners: [self()],
+        start_controls: [],
+        last_frame_at: nil
+      }
+
+      assert {:noreply, _state} = LibCamera.handle_info({:port, {:data, packet}}, state)
+
+      assert_receive {:"$gen_cast",
+                      {:camera_frame, %Frame{label: "left", width: 2, height: 1, grey: <<7, 8>>}}}
     end
   end
 
@@ -273,15 +322,73 @@ defmodule VisionCore.Camera.LibCameraTest do
     end
   end
 
-  # A driver on a capture program that reads its commands and sends nothing.
+  describe "capture program arguments" do
+    @describetag :tmp_dir
+
+    test "ask for grey frames with format: :grey", %{tmp_dir: tmp_dir} do
+      start_camera(tmp_dir, "grey", format: :grey)
+      assert "--format grey" in captured_args(tmp_dir)
+    end
+
+    test "leave the format out by default", %{tmp_dir: tmp_dir} do
+      start_camera(tmp_dir, "jpeg", [])
+      refute Enum.any?(captured_args(tmp_dir), &String.starts_with?(&1, "--format"))
+    end
+
+    @tag :capture_log
+    test "refuse an unknown format", %{tmp_dir: tmp_dir} do
+      executable = fake_capture_program(tmp_dir)
+
+      assert {:error, {{%ArgumentError{message: message}, _stacktrace}, _child}} =
+               start_supervised(
+                 {LibCamera, label: "rgb", camera_id: 0, executable: executable, format: :rgb}
+               )
+
+      assert message =~ ":format"
+    end
+
+    # Flag and value pairs, one per line, as the program received them.
+    defp captured_args(tmp_dir) do
+      path = Path.join(tmp_dir, "args")
+      wait_until(fn -> File.exists?(path) and File.read!(path) =~ "\n" end)
+
+      path
+      |> File.read!()
+      |> String.split("\n", trim: true)
+      |> Enum.chunk_every(2)
+      |> Enum.map(&Enum.join(&1, " "))
+    end
+
+    defp wait_until(check, attempts \\ 50) do
+      cond do
+        check.() -> :ok
+        attempts == 0 -> flunk("timed out")
+        true -> Process.sleep(10) && wait_until(check, attempts - 1)
+      end
+    end
+  end
+
+  # A driver on a capture program that records its arguments, reads its commands and sends nothing.
   defp start_camera(tmp_dir, label, opts) do
-    executable = Path.join(tmp_dir, "camera_capture")
-    File.write!(executable, "#!/bin/sh\nexec cat > /dev/null\n")
-    File.chmod!(executable, 0o755)
+    executable = fake_capture_program(tmp_dir)
 
     start_supervised!(
       {LibCamera, [label: label, camera_id: 0, executable: executable] ++ opts},
       id: label
     )
+  end
+
+  defp fake_capture_program(tmp_dir) do
+    executable = Path.join(tmp_dir, "camera_capture")
+
+    File.write!(executable, """
+    #!/bin/sh
+    dir=$(dirname "$0")
+    printf '%s\\n' "$@" > "$dir/args.tmp" && mv "$dir/args.tmp" "$dir/args"
+    exec cat > /dev/null
+    """)
+
+    File.chmod!(executable, 0o755)
+    executable
   end
 end

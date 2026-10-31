@@ -14,6 +14,13 @@ pub enum ExposureMode {
     Long,
 }
 
+/// How each frame is written: a JPEG FRAME record or a GREY_FRAME record of its luma.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Format {
+    Jpeg,
+    Grey,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SensorMode {
     pub width: u32,
@@ -36,6 +43,7 @@ pub struct Args {
     pub lens_position: Option<f32>,
     /// `None` lets libcamera pick a mode from the output size.
     pub sensor_mode: Option<SensorMode>,
+    pub format: Format,
 }
 
 /// Parses the arguments after the program name. The error is the warning to log.
@@ -50,6 +58,7 @@ pub fn parse(args: &[String]) -> Result<Args, String> {
         exposure_mode: None,
         lens_position: None,
         sensor_mode: None,
+        format: Format::Jpeg,
     };
     let mut rest = args.iter();
     while let Some(flag) = rest.next() {
@@ -89,6 +98,13 @@ pub fn parse(args: &[String]) -> Result<Args, String> {
                     Some(sensor_mode(value).ok_or_else(|| {
                         "--sensor-mode must be WIDTHxHEIGHT[:BITDEPTH]".to_string()
                     })?)
+            }
+            "--format" => {
+                out.format = match value.as_str() {
+                    "jpeg" => Format::Jpeg,
+                    "grey" => Format::Grey,
+                    _ => return Err("--format must be jpeg or grey".to_string()),
+                }
             }
             _ => return Err(format!("unknown arg {flag}")),
         }
@@ -139,6 +155,7 @@ mod tests {
                 exposure_mode: None,
                 lens_position: None,
                 sensor_mode: None,
+                format: Format::Jpeg,
             })
         );
     }
@@ -164,6 +181,8 @@ mod tests {
             "1.5",
             "--sensor-mode",
             "2304x1296:12",
+            "--format",
+            "grey",
         ]);
         assert_eq!(
             parse(&args),
@@ -181,6 +200,7 @@ mod tests {
                     height: 1296,
                     bit_depth: 12
                 }),
+                format: Format::Grey,
             })
         );
     }
@@ -239,6 +259,16 @@ mod tests {
                 height: 1296,
                 bit_depth: 10
             })
+        );
+    }
+
+    #[test]
+    fn parses_jpeg_format_and_rejects_others() {
+        let args = parse(&strings(&["--format", "jpeg"])).unwrap();
+        assert_eq!(args.format, Format::Jpeg);
+        assert_eq!(
+            parse(&strings(&["--format", "rgb"])),
+            Err("--format must be jpeg or grey".to_string())
         );
     }
 

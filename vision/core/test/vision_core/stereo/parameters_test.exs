@@ -310,7 +310,13 @@ defmodule VisionCore.Stereo.ParametersTest do
     test "each camera group carries its build parameters" do
       groups =
         side_groups(
-          left: [camera_id: 0, sync: :server, sensor_mode: {2304, 1296}, label: "x"],
+          left: [
+            camera_id: 0,
+            sync: :server,
+            sensor_mode: {2304, 1296},
+            format: :grey,
+            label: "x"
+          ],
           right: [camera_id: 1]
         )
 
@@ -323,7 +329,8 @@ defmodule VisionCore.Stereo.ParametersTest do
             {"fps", 30},
             {"camera_id", 0},
             {"sync", "server"},
-            {"sensor_mode", "2304x1296"}
+            {"sensor_mode", "2304x1296"},
+            {"format", "grey"}
           ] do
         assert %{applies: :build} = parameter = parameter(left, name)
         assert parameter.get.() == value
@@ -615,5 +622,12 @@ defmodule VisionCore.Stereo.ParametersTest do
 
     assert {:ok, %{value: +0.0, state: :builtin}} =
              VisionCore.Parameters.get("stereo.rectification.right_row_offset")
+  end
+
+  test "a sensor mode with its bit depth reads as one string" do
+    assert %{type: :string, get: get} =
+             VisionCore.Stereo.Parameters.build_parameter({:sensor_mode, {2028, 1520, 12}})
+
+    assert get.() == "2028x1520:12"
   end
 end

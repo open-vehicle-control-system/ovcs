@@ -11,6 +11,7 @@ const TAG_FRAME: u8 = 1;
 const TAG_LOG: u8 = 2;
 const TAG_METADATA: u8 = 3;
 const TAG_PAIR: u8 = 4;
+const TAG_GREY_FRAME: u8 = 5;
 
 pub const METADATA_FIELDS: usize = 8;
 
@@ -95,6 +96,17 @@ pub fn frame_record(width: u16, height: u16, capture_ns: i64, jpeg: &[u8]) -> Ve
     out
 }
 
+/// One 8-bit grey frame of `width` x `height`, row-major.
+pub fn grey_frame_record(width: u16, height: u16, capture_ns: i64, grey: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(13 + grey.len());
+    out.push(TAG_GREY_FRAME);
+    out.extend_from_slice(&width.to_le_bytes());
+    out.extend_from_slice(&height.to_le_bytes());
+    out.extend_from_slice(&capture_ns.to_le_bytes());
+    out.extend_from_slice(grey);
+    out
+}
+
 pub fn log_record(level: LogLevel, message: &str) -> Vec<u8> {
     let mut out = Vec::with_capacity(2 + message.len());
     out.push(TAG_LOG);
@@ -173,6 +185,13 @@ mod tests {
         let want = [
             4, 2, 0, 1, 0, 5, 0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4,
         ];
+        assert_eq!(got, want);
+    }
+
+    #[test]
+    fn grey_frame_record_layout() {
+        let got = grey_frame_record(2, 1, 5, &[7, 8]);
+        let want = [5, 2, 0, 1, 0, 5, 0, 0, 0, 0, 0, 0, 0, 7, 8];
         assert_eq!(got, want);
     }
 

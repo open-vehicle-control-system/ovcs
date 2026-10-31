@@ -20,6 +20,14 @@ defmodule VisionCore.Camera.LibCamera do
       uint32  jpeg_len  LE
       bytes   jpeg
 
+  or, with `format: :grey` (see "Output format"):
+
+      uint8   tag                 # 5 = GREY_FRAME
+      uint16  width   LE
+      uint16  height  LE
+      int64   capture_ns LE
+      bytes   grey                # width * height, row-major
+
   or a log line from the binary, written to the logger under this
   camera's label (the Port does not capture its stderr):
 
@@ -42,6 +50,18 @@ defmodule VisionCore.Camera.LibCamera do
 
   The Port supervises the binary: closing stdin (which happens
   when this GenServer dies) tells the binary to exit cleanly.
+
+  ## Output format
+
+  `:format` picks what each frame carries. `:jpeg` (the default): the
+  ISP's YUV420 output encoded by the capture program, `Frame.jpeg`.
+  `:grey`: the luma plane of the same output, `Frame.grey`, which is
+  all the stereo pipeline uses. It spares the capture program the
+  encoding and the pipeline the decoding; raw images and dashboard
+  previews then encode the frames they send, as for any driver that
+  delivers grey frames (see `VisionCore.Stereo.Supervisor`'s
+  `:raw_image_max_hz` and `VisionCore.Preview`). Rotation, sensor mode,
+  sync and the controls apply to both.
 
   ## Sync
 
@@ -81,13 +101,16 @@ defmodule VisionCore.Camera.LibCamera do
 
   ## Sensor mode
 
-  `:sensor_mode` (`{width, height}`, 10-bit) picks the sensor mode
+  `:sensor_mode` (`{width, height}` for a 10-bit mode, or
+  `{width, height, bit_depth}`) picks the sensor mode
   instead of letting libcamera choose one from the output size. For a
   small output libcamera picks the fastest mode, which on a Camera
   Module 3 (IMX708), for example, is 1536x864: a binned crop of the sensor's centre,
   two thirds of its width, so about 43° of horizontal field of view.
-  `{2304, 1296}` bins the whole sensor (about 66°, up to 56 fps). A
-  stereo calibration holds for one sensor mode only.
+  `{2304, 1296}` bins the whole sensor (about 66°, up to 56 fps). The
+  HQ Camera's (IMX477) binned whole-sensor mode is 12-bit,
+  `{2028, 1520, 12}`. A stereo calibration holds for one sensor mode
+  only.
 
   ## Runtime controls
 
@@ -106,8 +129,8 @@ defmodule VisionCore.Camera.LibCamera do
   before it; see `start_controls/1`. One the camera refuses is logged and
   left out.
 
-  The sync role, sensor mode, resolution and frame rate are fixed at
-  start.
+  The sync role, sensor mode, output format, resolution and frame rate
+  are fixed at start.
 
   ## Stall watchdog
 
@@ -137,6 +160,8 @@ defmodule VisionCore.Camera.LibCamera do
   @frame_tag 1
   @log_tag 2
   @metadata_tag 3
+  @grey_frame_tag 5
+  @formats [:jpeg, :grey]
   @metadata_keys [
     :exposure_time_us,
     :analogue_gain,
@@ -204,6 +229,14 @@ defmodule VisionCore.Camera.LibCamera do
   def sensor_mode_args({width, height}) when is_integer(width) and is_integer(height),
     do: ["--sensor-mode", "#{width}x#{height}"]
 
+  def sensor_mode_args({width, height, bit_depth})
+      when is_integer(width) and is_integer(height) and is_integer(bit_depth),
+      do: ["--sensor-mode", "#{width}x#{height}:#{bit_depth}"]
+
+  @doc false
+  def format_args(:jpeg), do: []
+  def format_args(:grey), do: ["--format", "grey"]
+
   @doc false
   def lens_position_args(nil), do: []
   def lens_position_args(dioptres), do: ["--lens-position", Float.to_string(dioptres * 1.0)]
@@ -226,6 +259,12 @@ defmodule VisionCore.Camera.LibCamera do
     exposure_mode = Keyword.get(opts, :exposure_mode)
     lens_position = Keyword.get(opts, :lens_position)
     sensor_mode = Keyword.get(opts, :sensor_mode)
+    format = Keyword.get(opts, :format, :jpeg)
+
+    unless format in @formats do
+      raise ArgumentError,
+            "#{__MODULE__}[#{label}]: :format must be :jpeg or :grey, got #{inspect(format)}"
+    end
 
     executable = Keyword.get_lazy(opts, :executable, &binary_path/0)
 
@@ -251,7 +290,8 @@ defmodule VisionCore.Camera.LibCamera do
       ] ++
         sync_args(sync_role) ++
         exposure_mode_args(exposure_mode) ++
-        lens_position_args(lens_position) ++ sensor_mode_args(sensor_mode)
+        lens_position_args(lens_position) ++
+        sensor_mode_args(sensor_mode) ++ format_args(format)
 
     port =
       Port.open({:spawn_executable, executable}, [
@@ -262,7 +302,7 @@ defmodule VisionCore.Camera.LibCamera do
       ])
 
     Logger.info(
-      "#{__MODULE__}[#{label}] camera #{camera_id} @ #{width}×#{height}/#{fps}fps via #{executable}"
+      "#{__MODULE__}[#{label}] camera #{camera_id} @ #{width}×#{height}/#{fps}fps, #{format} frames, via #{executable}"
     )
 
     Process.send_after(self(), :watchdog, @watchdog_interval_ms)
@@ -586,6 +626,22 @@ defmodule VisionCore.Camera.LibCamera do
        # always Erlang monotonic time.
        capture_ns: VisionCore.Timing.monotonic_from_kernel(capture_ns),
        jpeg: jpeg
+     }}
+  end
+
+  def parse_record(
+        <<@grey_frame_tag, width::little-unsigned-integer-size(16),
+          height::little-unsigned-integer-size(16), capture_ns::little-signed-integer-size(64),
+          grey::binary>>
+      )
+      when byte_size(grey) == width * height do
+    {:ok,
+     %Frame{
+       label: nil,
+       width: width,
+       height: height,
+       capture_ns: VisionCore.Timing.monotonic_from_kernel(capture_ns),
+       grey: grey
      }}
   end
 

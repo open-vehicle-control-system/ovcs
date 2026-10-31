@@ -14,8 +14,8 @@ defmodule VisionCore.Camera.Frame do
       before populating this field — the two clocks differ by ~18
       years. See `VisionCore.Timing`.
     * `:jpeg` — the JPEG-compressed image bytes, or
-    * `:grey` — `width * height` bytes of 8-bit grey, row-major, from
-      drivers that receive raw frames. Exactly one of the two is set.
+    * `:grey` — `width * height` bytes of 8-bit grey, row-major.
+      Exactly one of the two is set.
   """
   @enforce_keys [:label, :width, :height, :capture_ns]
   defstruct [:label, :width, :height, :capture_ns, jpeg: nil, grey: nil]
