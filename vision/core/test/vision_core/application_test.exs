@@ -67,12 +67,13 @@ defmodule VisionCore.ApplicationTest do
 
     ids = VisionCore.Supervisor |> child_ids() |> Enum.reverse()
 
-    assert Enum.take(ids, 5) == [
+    assert Enum.take(ids, 6) == [
              VisionCore.Parameters.Storage,
              VisionCore.Parameters,
              VisionCore.Ros2.ZenohClient,
              VisionCore.Ros2.Parameters,
-             VisionCore.Jpeg
+             VisionCore.Jpeg,
+             VisionCore.Stereo.Matcher
            ]
   end
 

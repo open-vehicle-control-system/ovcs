@@ -13,30 +13,36 @@ ExUnit.after_suite(fn _results -> remove_database.() end)
 {:ok, _pid} = VisionCore.Repo.start_link()
 Ecto.Migrator.run(VisionCore.Repo, :up, all: true, log: false)
 
-# VisionCore.Jpeg's Port (jpeg_codec), built from the Rust workspace; the :jpeg tests need it.
+# The Ports the tests run, built from the Rust workspace: jpeg_codec
+# (VisionCore.Jpeg) for the :jpeg tests, stereo_match (VisionCore.Stereo.Matcher)
+# for the :stereo_match tests.
 rust_workspace = Path.expand("../../rust", __DIR__)
 
-jpeg_tests =
-  case System.cmd("cargo", ["build", "-q", "--release", "-p", "jpeg_codec"],
+port_tests =
+  case System.cmd(
+         "cargo",
+         ["build", "-q", "--release", "-p", "jpeg_codec", "-p", "stereo_match"],
          cd: rust_workspace,
          stderr_to_stdout: true
        ) do
     {_output, 0} ->
-      Application.put_env(
-        :vision_core,
-        :jpeg_codec_path,
-        Path.join(rust_workspace, "target/release/jpeg_codec")
-      )
+      for {key, binary} <- [jpeg_codec_path: "jpeg_codec", stereo_match_path: "stereo_match"] do
+        Application.put_env(
+          :vision_core,
+          key,
+          Path.join(rust_workspace, "target/release/#{binary}")
+        )
+      end
 
       []
 
     {output, _status} ->
-      IO.puts("jpeg_codec did not build, skipping the :jpeg tests:\n" <> output)
-      [:jpeg]
+      IO.puts("the Ports did not build, skipping the :jpeg and :stereo_match tests:\n" <> output)
+      [:jpeg, :stereo_match]
   end
 
 # The :rust tests build and run the Rust workspace; run them with `--only rust`.
 # The :vulkan tests need a Vulkan device, which CI runners do not have, and
 # the :iree tests run the IREE compiler; run them with `--include vulkan`
 # or `--include iree`.
-ExUnit.start(exclude: [:rust, :vulkan, :iree | jpeg_tests])
+ExUnit.start(exclude: [:rust, :vulkan, :iree | port_tests])

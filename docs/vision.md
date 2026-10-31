@@ -17,7 +17,7 @@ The unit follows the same split as the VMS and the infotainment: a core, an API,
 | API | [`vision/api`](../vision/api/README.md) | `VisionApi`: a Phoenix endpoint serving the vision parameters and the active configuration as JSON:API resources, with channels that stream status and camera previews. |
 | Firmware | [`vision/firmware`](../vision/firmware/README.md) | The Nerves image for the `rpi5` and `okdo_c100` targets. At boot it reads `VEHICLE` and loads the vehicle's composer. |
 | Dashboard | [`vision/dashboard`](../vision/dashboard/README.md) | A React app showing the status cards, the left, right and depth previews, and the unit as its pipeline with each box's parameters. |
-| Ports | [`vision/rust`](../vision/rust/README.md) | `camera_capture` and `hailo_detect`, the Rust programs the core drives as Ports. |
+| Ports | [`vision/rust`](../vision/rust/README.md) | The Rust programs the core drives as Ports: capture, detection, JPEG and stereo matching on the CPU. |
 
 The [ROS bridge](../bridges/ros_bridge/README.md) carries the same stereo and detection stack as components; a vehicle runs it in one or the other.
 
@@ -45,9 +45,9 @@ The OKdo Nano C100 carries a Jetson Nano module: a GPU, two CSI camera ports and
 
 | | Raspberry Pi 5 | OKdo Nano C100 |
 |---|---|---|
-| Capture | `VisionCore.Camera.LibCamera`, JPEG frames | `VisionCore.Camera.V4L2`, grey frames over raw V4L2 |
+| Capture | `VisionCore.Camera.LibCamera`, JPEG frames, or grey frames with `format: :grey` | `VisionCore.Camera.V4L2`, grey frames over raw V4L2 |
 | Synchronisation | the Pi's camera sync | `v4l2_capture` locks the right sensor's frame starts to the left one's |
-| Stereo stages | on the CPU | on the GPU through Vulkan |
+| Stereo stages | on the CPU, in native code (`compute: :native`) | on the GPU through Vulkan |
 | `:defn_options` | `VisionCore.Stereo.NxSegment.rpi5_defn_options/1` | `VisionCore.Stereo.NxSegment.c100_defn_options/1` |
 | Detection | `VisionCore.Detection.Backend.Hailo` | none |
 
@@ -66,7 +66,30 @@ It compiles what the composer's stereo pipeline compiles when it starts. The cac
 
 The cameras can deliver more pixels than the board matches in time: `:match_width` and `:match_height` on the `:stereo` component set the matching size, and the frames are scaled down to it before rectification.
 
-On the Raspberry Pi 5 the stages run on its CPU. Aim for 13 to 15 depth frames a second there: what OpenCV's SGBM gives on that CPU.
+On the Raspberry Pi 5 the stages run on its CPU. Compiled for a CPU, the Nx stages are far too slow there: `nx_iree`'s code runs 15 to 30 times slower on the Pi's cores than on a workstation's. Give the `:stereo` component `compute: :native` and every default stage runs in native code instead, in the `stereo_match` Port, on every core:
+
+```elixir
+{:stereo,
+ [
+   compute: :native,
+   stages: Pipeline.default_stages(disparity: [num_disparities: 64, paths: 3]),
+   # driver, sizes, calibration and cameras as above
+ ]}
+```
+
+The stages keep their names, their parameters (`stereo.disparity.p1`, `stereo.rectification.right_row_offset` and the others, live ones still live) and their outputs, so the publishers, the dashboard and detection work unchanged. Their results are the Nx stages': images, disparities and depths are identical to Nx's evaluator, and the sums behind the sharpness, row alignment and quality figures agree to the rounding of their order. Consecutive native stages run as one segment, so a pair crosses the Port once; a stage without a native implementation, such as one of your own, runs between two segments. The pipeline's log line gives each stage's time in the Port, and the segment's in total.
+
+When the native segment comes first, as with the default stages, the pipeline keeps two pairs at the Port: it computes one while the next one's frames come in and the previous one's outputs go out, so the rate is bound by the computation rather than by the round trip. A pair is published once its outputs are back, in the order the pairs came in, and a live setting applies from the second pair after the change. The pipeline's `total` is then a pair's latency, about two segment times, and `wall` the interval between pairs.
+
+`mix vision_core.nx_cache` then has nothing to compile, unless some stages still run in Nx, and the composer needs no module cache. `config :vision_core, :stereo_match_threads` limits the threads the Port computes on, every core by default; the threads are kept from one pair to the next.
+
+A stage can override the component's choice: `Disparity`'s `matcher: :native` matches natively in a pipeline otherwise compiled with Nx, and `matcher: :nx` compiles the matching in a native one:
+
+```elixir
+Pipeline.default_stages(disparity: [num_disparities: 64, paths: 3, matcher: :native])
+```
+
+Give both cameras `format: :grey` in the `:stereo` component's `:left` and `:right` options so the CPU goes to depth: `camera_capture` then sends the luma it already has instead of encoding JPEG frames that the core decodes again, and only the raw images and dashboard previews actually sent are encoded.
 
 ## Build, burn, upload
 
@@ -116,11 +139,11 @@ On the host, `./ovcs run <vehicle>` starts a BEAM for the role and the dashboard
 
 ## Running it on a workstation
 
-On the host the composer's `:host` arm applies: it can read USB cameras through `VisionCore.Camera.GStreamer`, or a simulator's camera topics through `VisionCore.Ros2.Camera`. No CAN interface is needed. The stereo stages compile with EXLA, and `mix compile` builds `jpeg_codec` for the host, which decodes the cameras' JPEG frames.
+On the host the composer's `:host` arm applies: it can read USB cameras through `VisionCore.Camera.GStreamer`, or a simulator's camera topics through `VisionCore.Ros2.Camera`. No CAN interface is needed. The stereo stages compile with EXLA, and `mix compile` builds `jpeg_codec` for the host, which decodes the cameras' JPEG frames, and `stereo_match`, for a pipeline computing with `compute: :native`.
 
 ## Rust Ports
 
-`camera_capture` (libcamera to JPEG), `hailo_detect` (HailoRT inference), `v4l2_capture` (the C100's paired grey frames) and `jpeg_codec` (JPEG encoding and decoding) are Rust programs that the core starts as Ports, never as NIFs, so a crash in a driver cannot take the BEAM down. They speak a length-prefixed binary protocol over stdin and stdout. Compiling `vision_core` for a vision target cross-builds that target's Ports through `vision/core/Makefile`: `camera_capture`, `hailo_detect` and `jpeg_codec` for `rpi5`, `v4l2_capture` and `jpeg_codec` for `okdo_c100`. The build host needs the `aarch64-unknown-linux-gnu` Rust target, which `mise install` provides, and libclang for bindgen. See [`vision/rust/README.md`](../vision/rust/README.md).
+`camera_capture` (libcamera to JPEG or grey frames), `hailo_detect` (HailoRT inference), `v4l2_capture` (the C100's paired grey frames), `jpeg_codec` (JPEG encoding and decoding) and `stereo_match` (semi-global matching on the CPU) are Rust programs that the core starts as Ports, never as NIFs, so a crash in a driver cannot take the BEAM down. They speak a length-prefixed binary protocol over stdin and stdout. Compiling `vision_core` for a vision target cross-builds that target's Ports through `vision/core/Makefile`: `camera_capture`, `hailo_detect`, `jpeg_codec` and `stereo_match` for `rpi5`, tuned for its Cortex-A76 cores, `v4l2_capture` and `jpeg_codec` for `okdo_c100`. The build host needs the `aarch64-unknown-linux-gnu` Rust target, which `mise install` provides, and libclang for bindgen. See [`vision/rust/README.md`](../vision/rust/README.md).
 
 ## See also
 

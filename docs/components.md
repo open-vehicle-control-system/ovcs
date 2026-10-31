@@ -31,7 +31,7 @@ ovcs/
 |   +-- api/                    Phoenix endpoint for the dashboard
 |   +-- dashboard/              React dashboard
 |   +-- firmware/               Nerves firmware shell targeting Raspberry Pi 5 and OKdo Nano C100
-|   +-- rust/                   camera_capture, v4l2_capture, hailo_detect and jpeg_codec Ports
+|   +-- rust/                   camera_capture, v4l2_capture, hailo_detect, jpeg_codec and stereo_match Ports
 +-- controllers/              FRAMEWORK
 |   +-- generic_controller/     PlatformIO C++ project for Arduino R4 Minima
 +-- libraries/                FRAMEWORK · Shared Elixir libraries (in-tree and sideloaded)

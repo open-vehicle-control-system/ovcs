@@ -19,6 +19,11 @@ defmodule VisionCore.Stereo.NxStage do
   (`VisionCore.Parameters`), keys unique within the stage; its live
   settings must be among its params, since the device cannot compile,
   and its build settings are fixed in the compiled function.
+
+  A stage `VisionCore.Stereo.NativeSegment` implements runs natively
+  instead when the pipeline computes with `compute: :native`, or when
+  its `compute/1` asks for it: consecutive native stages run as one
+  native segment, under the same names and settings.
   """
 
   alias VisionCore.Stereo.{Pair, Stage}
@@ -74,16 +79,30 @@ defmodule VisionCore.Stereo.NxStage do
   """
   @callback carry(state(), Stage.context()) :: %{atom() => Nx.Tensor.t()}
 
+  @doc """
+  Where the stage, in `state`, asks to run: compiled with Nx (`:nx`),
+  natively (`:native`), or as the pipeline's `:compute` says (`nil`, the
+  default).
+  """
+  @callback compute(state()) :: :nx | :native | nil
+
   @optional_callbacks summary: 0,
                       finish: 3,
                       option_specs: 0,
                       options: 1,
                       set_option: 3,
-                      carry: 2
+                      carry: 2,
+                      compute: 1
 
   @doc "Whether `module` is an Nx stage."
   @spec nx_stage?(module()) :: boolean()
   def nx_stage?(module) do
     Code.ensure_loaded?(module) and function_exported?(module, :step, 3)
+  end
+
+  @doc "Where `module`, initialised to `state`, asks to run; see `c:compute/1`."
+  @spec compute(module(), term()) :: :nx | :native | nil
+  def compute(module, state) do
+    if function_exported?(module, :compute, 1), do: module.compute(state)
   end
 end

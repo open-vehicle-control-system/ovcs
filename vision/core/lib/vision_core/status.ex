@@ -3,8 +3,8 @@ defmodule VisionCore.Status do
   The vision unit's health at a glance, for the dashboard: each camera's
   frame rate and exposure, the pair's sync, the Hailo detector, the depth
   rate, the Zenoh session, the CPU's busy share (`VisionCore.SystemLoad`)
-  and the share of time the stereo pipeline spent in its compiled Nx
-  segments (`Pair` `:device_ms`). Where they run on the GPU, that time
+  and the share of time the stereo pipeline spent in its compiled Nx or
+  native segments (`Pair` `:device_ms`). Where they run on the GPU, that time
   includes uploading the frames and waiting for the results, so it is
   not the GPU's busy share. `:alignment` is the rectified images' row
   offset (`Pair` `:alignment`) and `:sharpness` each camera's sharpness

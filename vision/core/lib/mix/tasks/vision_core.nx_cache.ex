@@ -12,7 +12,8 @@ defmodule Mix.Tasks.VisionCore.NxCache do
   brings EXLA. It reads the `:stereo` component of the composer's
   `config(:target)` and compiles, with the compiler and flags of its
   `:defn_options`, everything the pipeline compiles when it starts (see
-  `VisionCore.Stereo.NxSegment.build_cache/2`). The cache keys each
+  `VisionCore.Stereo.NxSegment.build_cache/2`): with `compute: :native`,
+  only the stages without a native implementation, if any. The cache keys each
   module on the stages, their options and the size: run it again after
   changing any of them. A calibration change needs no new module.
   """
@@ -34,8 +35,16 @@ defmodule Mix.Tasks.VisionCore.NxCache do
     pipeline_opts = composer |> stereo_options() |> Supervisor.pipeline_options()
 
     case NxSegment.build_cache(pipeline_opts, dir) do
-      :ok -> Mix.shell().info("#{inspect(composer)}'s Nx stereo code cached in #{dir}")
-      {:error, reason} -> Mix.raise(reason)
+      {:ok, 0} ->
+        Mix.shell().info(
+          "#{inspect(composer)}'s stereo stages compute natively: nothing to compile"
+        )
+
+      {:ok, _segments} ->
+        Mix.shell().info("#{inspect(composer)}'s Nx stereo code cached in #{dir}")
+
+      {:error, reason} ->
+        Mix.raise(reason)
     end
   end
 
