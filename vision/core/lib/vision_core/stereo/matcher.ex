@@ -35,28 +35,15 @@ defmodule VisionCore.Stereo.Matcher do
   def start_link(opts \\ []), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 
   @doc """
-  Runs `request` on segment `segment_id`, first configuring it with
-  `configuration` unless the Port has it at `version`. The segment is
-  released once `owner` exits. Returns the reply's payload, or
-  `{:error, :bad_request}` when the Port refuses either request, having
-  logged why. The protocol is the Port's; see
+  Sends `request` to run on segment `segment_id`, first configuring it
+  with `configuration` unless the Port has it at `version`, without
+  waiting: the caller receives the reply as a message that
+  `:gen_server.check_response/2` recognises from the returned request
+  id, `{:ok, payload}`, or `{:error, :bad_request}` when the Port refuses
+  either request, having logged why. Requests a process sends are
+  computed in the order it sends them. The segment is released once
+  `owner` exits. The protocol is the Port's; see
   `VisionCore.Stereo.NativeSegment`.
-  """
-  @spec run(pid(), non_neg_integer(), non_neg_integer(), iodata(), iodata()) ::
-          {:ok, binary()} | {:error, term()}
-  def run(owner, segment_id, version, configuration, request) do
-    GenServer.call(
-      __MODULE__,
-      {:run, owner, segment_id, version, configuration, request},
-      :infinity
-    )
-  end
-
-  @doc """
-  `run/5` without waiting for the reply: the caller receives it as a
-  message that `:gen_server.check_response/2` recognises from the
-  returned request id. Requests a process sends are computed in the
-  order it sends them.
   """
   @spec send_run(pid(), non_neg_integer(), non_neg_integer(), iodata(), iodata()) ::
           :gen_server.request_id()

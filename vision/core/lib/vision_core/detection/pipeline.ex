@@ -195,7 +195,7 @@ defmodule VisionCore.Detection.Pipeline do
   def handle_info(_message, state), do: {:noreply, state}
 
   defp position(detection, %Pair{} = pair, state) do
-    {height, width} = Nx.shape(pair.left)
+    {width, height} = Pair.size(pair)
 
     case Fusion.median_depth(pair.depth, {width, height}, detection, state.depth_sample_fraction) do
       nil ->

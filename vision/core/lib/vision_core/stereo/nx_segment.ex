@@ -358,19 +358,8 @@ defmodule VisionCore.Stereo.NxSegment do
     end
   end
 
-  @typedoc """
-  Where a stage runs (`:cpu` or `:gpu`), what it is written in (`:nx`,
-  `:rust` or `:elixir`) and, for Nx, what compiles it (`:vulkan` or
-  `:llvm_cpu` through `nx_iree`, `:exla`, or Nx's `:evaluator`).
-  """
-  @type compute :: %{
-          runs_on: :cpu | :gpu,
-          implementation: :nx | :rust | :elixir,
-          backend: :vulkan | :llvm_cpu | :exla | :evaluator | nil
-        }
-
   @doc "Where `defn_options` run a segment, and with what."
-  @spec compute(keyword()) :: compute()
+  @spec compute(keyword()) :: VisionCore.Parameters.Group.compute()
   def compute(defn_options) do
     {runs_on, backend} =
       case Keyword.get(defn_options, :compiler) do
