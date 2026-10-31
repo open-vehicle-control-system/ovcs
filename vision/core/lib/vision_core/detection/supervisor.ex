@@ -2,8 +2,9 @@ defmodule VisionCore.Detection.Supervisor do
   @moduledoc """
   Supervises the detection unit: an inference backend, the
   `VisionCore.Detection.Pipeline` that places its boxes in 3D with the
-  stereo depth, and the `VisionCore.Ros2.Publishers.Detections` that
-  publishes them.
+  stereo depth, the `VisionCore.Ros2.Publishers.Detections` that
+  publishes them, and `VisionCore.Detection.Live`, which hands them to
+  the dashboard.
 
   Which backend is `:backend`, defaulting to the accelerator,
   `VisionCore.Detection.Backend.Hailo`. See `VisionCore.Detection.Backend`
@@ -53,7 +54,8 @@ defmodule VisionCore.Detection.Supervisor do
       # The backend module is also its registered name, so the
       # pipeline needs nothing but the module to reach it.
       {Pipeline, rest |> Keyword.take(pipeline_keys()) |> Keyword.put(:backend, backend)},
-      {Detections, Keyword.drop(rest, pipeline_keys())}
+      {Detections, Keyword.drop(rest, pipeline_keys())},
+      VisionCore.Detection.Live
     ]
 
     Supervisor.init(children,

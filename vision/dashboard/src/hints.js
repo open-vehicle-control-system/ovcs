@@ -80,6 +80,12 @@ export const HINTS = {
     title: 'CPU',
     text: 'Busy share of all processor cores over the last second.'
   },
+  objects: {
+    title: 'Objects',
+    text:
+      'Objects the detector found in the latest image, each outlined on the left video with its distance. ' +
+      'An object with no depth in the middle of its box, such as one nearer than the depth can measure, is left out.'
+  },
   stereoLoad: {
     title: 'Stereo load',
     text:
