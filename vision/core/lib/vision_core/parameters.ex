@@ -56,7 +56,7 @@ defmodule VisionCore.Parameters do
           required(:placement) => :flow | :side,
           required(:position) => non_neg_integer(),
           optional(:status) => (-> {:ok | :warning | :off, String.t()} | nil),
-          optional(:compute) => VisionCore.Stereo.NxSegment.compute(),
+          optional(:compute) => Group.compute(),
           required(:parameters) => [declaration()]
         }
 
