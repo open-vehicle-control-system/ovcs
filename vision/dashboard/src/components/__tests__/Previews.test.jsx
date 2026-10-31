@@ -104,6 +104,22 @@ describe('Previews', () => {
       fireEvent.load(image)
     }
 
+    it("labels an object above its outline's top-left, whichever vertex comes first, and skips one without an outline", () => {
+      const { socket, push } = liveSocket()
+      render(<Previews status={snapshot} socket={socket} />)
+      showLeftFrame(push)
+      const turned = { ...person, outline: [[0.75, 0.8], [0.25, 0.8], [0.25, 0.2], [0.75, 0.2]] }
+      const unplaced = { ...person, label: 'chair', outline: [] }
+
+      push('detections', 'detections', { detections: [turned, unplaced] })
+
+      const overlay = figure('left').querySelector('svg[data-detections]')
+      const label = overlay.querySelector('text')
+      expect([label.getAttribute('x'), label.getAttribute('y')]).toEqual(['123', '50'])
+      expect(overlay.querySelectorAll('text')).toHaveLength(1)
+      expect(overlay.querySelectorAll('polygon')).toHaveLength(1)
+    })
+
     it('counts the objects under the left preview, once detection answers', () => {
       const { socket, push } = liveSocket()
       render(<Previews status={snapshot} socket={socket} />)
