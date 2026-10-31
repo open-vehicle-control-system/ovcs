@@ -220,59 +220,54 @@ defmodule VisionCore.Status do
   end
 
   defp build_snapshot(state) do
+    replies = state |> calls() |> call_all_within_timeout()
+
     %{
-      cameras: %{left: camera(state, :left), right: camera(state, :right)},
-      sync: sync(state),
-      hailo: hailo(state),
+      cameras: %{left: camera(state, :left, replies), right: camera(state, :right, replies)},
+      sync: Map.get(replies, :sync, %{present: false}),
+      hailo: hailo(state, replies),
       depth_hz: state.rates_hz.depth,
       cpu_percent: state.cpu_percent,
       stereo_segment_percent: state.stereo_segment_percent,
       alignment: state.alignment,
       sharpness: state.sharpness,
       quality: state.quality,
-      zenoh:
-        if(call_within_timeout(&ZenohClient.connected?/0, false),
-          do: :connected,
-          else: :disconnected
-        )
+      zenoh: if(replies.zenoh, do: :connected, else: :disconnected)
     }
   end
 
-  defp camera(%{sources: []}, _side), do: %{present: false}
+  # What the snapshot asks other processes, by key: the function and its answer when it fails.
+  defp calls(state) do
+    hailo = if state.hailo_configured?, do: %{hailo: {&Hailo.available?/0, false}}, else: %{}
 
-  defp camera(%{sources: [_pipeline, left, right]} = state, side) do
-    {driver, server} = if side == :left, do: left, else: right
-
-    if GenServer.whereis(server) do
-      %{present: true, fps: state.rates_hz[side]}
-      |> Map.merge(camera_metadata(driver, server))
-    else
-      %{present: false}
-    end
+    %{zenoh: {&ZenohClient.connected?/0, false}}
+    |> Map.merge(hailo)
+    |> Map.merge(stereo_calls(state))
   end
 
-  defp camera_metadata(driver, server) do
-    if function_exported?(driver, :live, 1),
-      do:
-        call_within_timeout(
-          fn -> Map.take(driver.live(server) || %{}, @camera_metadata_keys) end,
-          %{}
-        ),
-      else: %{}
+  defp stereo_calls(%{sources: []}), do: %{}
+
+  defp stereo_calls(%{sources: [_pipeline | cameras]}) do
+    sync = {fn -> Map.put(Diagnostics.sync(), :present, true) end, %{present: false}}
+
+    for {side, {driver, server}} <- Enum.zip([:left, :right], cameras),
+        function_exported?(driver, :live, 1),
+        into: %{sync: sync},
+        do: {side, {fn -> Map.take(driver.live(server) || %{}, @camera_metadata_keys) end, %{}}}
   end
 
-  defp sync(%{sources: []}), do: %{present: false}
+  defp camera(%{sources: []}, _side, _replies), do: %{present: false}
 
-  defp sync(_state) do
-    call_within_timeout(fn -> Map.put(Diagnostics.sync(), :present, true) end, %{
-      present: false
-    })
+  defp camera(%{sources: [_pipeline, left, right]} = state, side, replies) do
+    {_driver, server} = if side == :left, do: left, else: right
+
+    if GenServer.whereis(server),
+      do: Map.merge(%{present: true, fps: state.rates_hz[side]}, Map.get(replies, side, %{})),
+      else: %{present: false}
   end
 
-  defp hailo(%{hailo_configured?: false}), do: :absent
-
-  defp hailo(_state),
-    do: if(call_within_timeout(&Hailo.available?/0, false), do: :running, else: :failed)
+  defp hailo(%{hailo_configured?: false}, _replies), do: :absent
+  defp hailo(_state, %{hailo: available?}), do: if(available?, do: :running, else: :failed)
 
   defp hailo_configured?(%VisionCore.Config{components: components}),
     do: Enum.any?(components, &hailo_component?/1)
@@ -285,20 +280,30 @@ defmodule VisionCore.Status do
 
   defp now_ms, do: System.monotonic_time(:millisecond)
 
-  # A callee stuck in its own work must not hold back the tick.
-  defp call_within_timeout(fun, fallback) do
-    task =
-      Task.async(fn ->
-        try do
-          fun.()
-        catch
-          _kind, _reason -> fallback
-        end
+  # Callees stuck in their own work must not hold back the tick: all at once, late ones get their fallback.
+  defp call_all_within_timeout(calls) do
+    tasks =
+      Map.new(calls, fn {key, {fun, fallback}} ->
+        {key, {Task.async(fn -> call_or(fun, fallback) end), fallback}}
       end)
 
-    case Task.yield(task, @call_timeout_ms) || Task.shutdown(task, :brutal_kill) do
-      {:ok, reply} -> reply
-      _timeout -> fallback
-    end
+    replies =
+      tasks
+      |> Enum.map(fn {_key, {task, _fallback}} -> task end)
+      |> Task.yield_many(@call_timeout_ms)
+      |> Map.new(fn {task, reply} -> {task.ref, reply || Task.shutdown(task, :brutal_kill)} end)
+
+    Map.new(tasks, fn {key, {task, fallback}} ->
+      case replies[task.ref] do
+        {:ok, reply} -> {key, reply}
+        _late -> {key, fallback}
+      end
+    end)
+  end
+
+  defp call_or(fun, fallback) do
+    fun.()
+  catch
+    _kind, _reason -> fallback
   end
 end
