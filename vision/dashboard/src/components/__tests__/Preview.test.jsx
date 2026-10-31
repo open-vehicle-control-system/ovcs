@@ -85,6 +85,8 @@ describe('Preview', () => {
     fireEvent.load(image)
 
     expect(screen.getByText('480 × 270')).toBeTruthy()
+    expect(image.getAttribute('width')).toBe('480')
+    expect(image.getAttribute('height')).toBe('270')
   })
 
   it('leaves its channel when unmounted', () => {

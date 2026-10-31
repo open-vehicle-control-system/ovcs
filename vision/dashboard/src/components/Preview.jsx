@@ -47,6 +47,8 @@ export default function Preview({ stream, socket, onChannel, overlay, className 
           <img
             src={frame}
             alt={`${stream} preview`}
+            width={size?.width}
+            height={size?.height}
             className="h-full w-full object-contain"
             onLoad={(event) => {
               const { naturalWidth: width, naturalHeight: height } = event.currentTarget

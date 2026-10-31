@@ -15,7 +15,7 @@ export const HINTS = {
   gain: {
     title: 'Analogue gain',
     text:
-      "Amplification of the sensor's signal for the latest image. It brightens a dark scene but adds noise, " +
+      "Amplification of the sensor’s signal for the latest image. It brightens a dark scene but adds noise, " +
       'and noise makes the two images harder to match.'
   },
   depthRate: {
@@ -39,7 +39,7 @@ export const HINTS = {
   jitter: {
     title: 'Jitter',
     text:
-      "How much a pixel's disparity changes from one depth map to the next, on average. On a still scene " +
+      "How much a pixel’s disparity changes from one depth map to the next, on average. On a still scene " +
       'nothing moves, so it is the matcher’s noise: the lower, the steadier the depth.'
   },
   sync: {
@@ -58,7 +58,7 @@ export const HINTS = {
   sharpness: {
     title: 'Sharpness, right / left',
     text:
-      "The right image's sharpness divided by the left's. Near 1 both cameras are focused alike; far from 1 " +
+      "The right image’s sharpness divided by the left’s. Near 1 both cameras are focused alike; far from 1 " +
       'one of them is out of focus compared with the other.'
   },
   colourScale: {
