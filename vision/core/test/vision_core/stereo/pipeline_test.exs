@@ -75,6 +75,8 @@ defmodule VisionCore.Stereo.PipelineTest do
     assert message =~ "depth"
   end
 
+  defp without_compute(stages), do: Enum.map(stages, &Map.delete(&1, :compute))
+
   test "default_stages/1 passes overrides to the stage they name" do
     stages =
       Pipeline.default_stages(disparity: [num_disparities: 128], point_cloud: [decimation: 2])
@@ -112,6 +114,11 @@ defmodule VisionCore.Stereo.PipelineTest do
            ] = stages
 
     assert %{specs: [], values: %{}} = Enum.find(stages, &(&1.stage == :depth))
+
+    for stage <- Enum.drop(stages, -1),
+        do: assert(stage.compute == %{runs_on: :cpu, implementation: :nx, backend: :exla})
+
+    assert List.last(stages).compute == %{runs_on: :cpu, implementation: :elixir, backend: nil}
 
     assert %{
              module: Gain,
@@ -251,7 +258,13 @@ defmodule VisionCore.Stereo.PipelineTest do
                :"median_filter+speckle_filter+row_alignment+temporal_filter+depth+point_cloud+quality"
              ]
 
-      assert Pipeline.stage_options(pipeline) == compiled_options
+      options = Pipeline.stage_options(pipeline)
+      assert without_compute(options) == without_compute(compiled_options)
+
+      for stage <- options do
+        implementation = if stage.stage == :disparity, do: :rust, else: :nx
+        assert stage.compute.implementation == implementation
+      end
     end
 
     test "produces a disparity and depth" do
@@ -318,7 +331,11 @@ defmodule VisionCore.Stereo.PipelineTest do
                :"rectification+sharpness+disparity+median_filter+speckle_filter+row_alignment+temporal_filter+depth+point_cloud+quality"
              ]
 
-      assert Pipeline.stage_options(pipeline) == compiled_options
+      options = Pipeline.stage_options(pipeline)
+      assert without_compute(options) == without_compute(compiled_options)
+
+      for stage <- options,
+          do: assert(stage.compute == %{runs_on: :cpu, implementation: :rust, backend: nil})
     end
 
     test "fills every field the listeners read" do

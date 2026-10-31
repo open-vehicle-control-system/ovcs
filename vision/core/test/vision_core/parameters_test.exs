@@ -51,6 +51,35 @@ defmodule VisionCore.ParametersTest do
     assert {:ok, %{default: 64}} = Parameters.get(server, "stereo.disparity.p2")
   end
 
+  test "a group keeps where its work runs, and has none by default", %{server: server} do
+    compute = %{runs_on: :gpu, implementation: :nx, backend: :vulkan}
+
+    :ok =
+      Parameters.declare(server, [
+        %{
+          id: "a",
+          name: "A",
+          summary: "",
+          kind: :stage,
+          placement: :flow,
+          position: 1,
+          compute: compute,
+          parameters: []
+        },
+        %{
+          id: "b",
+          name: "B",
+          summary: "",
+          kind: :component,
+          placement: :flow,
+          position: 0,
+          parameters: []
+        }
+      ])
+
+    assert [%{id: "b", compute: nil}, %{id: "a", compute: ^compute}] = Parameters.groups(server)
+  end
+
   test "lists groups sorted by position", %{server: server} do
     start_owner(server, &match_groups/1)
     start_owner(server, &cameras_groups(&1, false))

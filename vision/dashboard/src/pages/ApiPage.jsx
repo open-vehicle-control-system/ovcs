@@ -2,7 +2,7 @@ import { OvcsCard } from '@ovcs/ui/react'
 import PageFrame from './PageFrame.jsx'
 
 const RESOURCES = [
-  ['GET', 'stages?include=parameters', 'The pipeline stages and components, each with its role and parameters'],
+  ['GET', 'stages?include=parameters', 'The pipeline stages and components, each with its role and parameters, and where each stage runs'],
   ['GET', 'parameters', 'Every parameter: value type, value, default, saved value, state and constraint'],
   ['GET', 'parameters/stereo.disparity.p1', 'One parameter'],
   ['PATCH', 'parameters/{id}', 'Changes a parameter, an unsaved change until saved'],

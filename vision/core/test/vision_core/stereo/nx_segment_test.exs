@@ -156,6 +156,22 @@ defmodule VisionCore.Stereo.NxSegmentTest do
     assert NxSegment.defn_options(%{}) == [compiler: EXLA]
   end
 
+  test "says where its defn options run a segment, and with what" do
+    assert NxSegment.compute(NxSegment.c100_defn_options("cache")) ==
+             %{runs_on: :gpu, implementation: :nx, backend: :vulkan}
+
+    assert NxSegment.compute(NxSegment.rpi5_defn_options("cache")) ==
+             %{runs_on: :cpu, implementation: :nx, backend: :llvm_cpu}
+
+    assert NxSegment.compute(compiler: EXLA) ==
+             %{runs_on: :cpu, implementation: :nx, backend: :exla}
+
+    assert NxSegment.compute(compiler: EXLA, client: :cuda) ==
+             %{runs_on: :gpu, implementation: :nx, backend: :exla}
+
+    assert NxSegment.compute([]) == %{runs_on: :cpu, implementation: :nx, backend: :evaluator}
+  end
+
   test "the Pi 5's options run on IREE's multithreaded CPU driver" do
     options = NxSegment.rpi5_defn_options("cache")
     assert options[:iree_runtime_options] == [device: "local-task://"]

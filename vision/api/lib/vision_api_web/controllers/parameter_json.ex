@@ -50,7 +50,8 @@ defmodule VisionApiWeb.ParameterJSON do
         summary: group.summary,
         role: role(group),
         position: group.position,
-        status: status(group.status)
+        status: status(group.status),
+        compute: group.compute
       },
       %{
         parameters: %{

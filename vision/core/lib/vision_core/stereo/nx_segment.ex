@@ -358,6 +358,39 @@ defmodule VisionCore.Stereo.NxSegment do
     end
   end
 
+  @typedoc """
+  Where a stage runs (`:cpu` or `:gpu`), what it is written in (`:nx`,
+  `:rust` or `:elixir`) and, for Nx, what compiles it (`:vulkan` or
+  `:llvm_cpu` through `nx_iree`, `:exla`, or Nx's `:evaluator`).
+  """
+  @type compute :: %{
+          runs_on: :cpu | :gpu,
+          implementation: :nx | :rust | :elixir,
+          backend: :vulkan | :llvm_cpu | :exla | :evaluator | nil
+        }
+
+  @doc "Where `defn_options` run a segment, and with what."
+  @spec compute(keyword()) :: compute()
+  def compute(defn_options) do
+    {runs_on, backend} =
+      case Keyword.get(defn_options, :compiler) do
+        NxIREE.Compiler -> iree_target(Keyword.get(defn_options, :iree_compiler_flags, []))
+        EXLA -> {exla_device(Keyword.get(defn_options, :client, :host)), :exla}
+        _evaluator -> {:cpu, :evaluator}
+      end
+
+    %{runs_on: runs_on, implementation: :nx, backend: backend}
+  end
+
+  defp iree_target(flags) do
+    if Enum.any?(flags, &String.contains?(&1, "vulkan")),
+      do: {:gpu, :vulkan},
+      else: {:cpu, :llvm_cpu}
+  end
+
+  defp exla_device(client) when client in [:cuda, :rocm], do: :gpu
+  defp exla_device(_client), do: :cpu
+
   @doc "`defn_options` with an `:iree_module_cache` of `{app, path}` resolved to that app's directory."
   @spec resolve_module_cache(keyword()) :: keyword()
   def resolve_module_cache(defn_options) do

@@ -6,7 +6,7 @@ The `/api` routes follow [JSON:API](https://jsonapi.org/): every response is `ap
 
 | Route | Answer |
 |---|---|
-| `GET /api/stages?include=parameters` | The `stages`, one per `VisionCore.Parameters` group, by position: `name`, `summary`, `position`, `status` and `role` (`source` for a component in the pipeline flow, `step` for a pipeline stage in it, `branch` beside it), their parameters in `included`, the unsaved count in `meta.unsaved`; 400 for any other include. |
+| `GET /api/stages?include=parameters` | The `stages`, one per `VisionCore.Parameters` group, by position: `name`, `summary`, `position`, `status`, `role` (`source` for a component in the pipeline flow, `step` for a pipeline stage in it, `branch` beside it) and, for a pipeline stage, `compute`: where it runs (`runs_on`: `cpu` or `gpu`), what it is written in (`implementation`: `nx`, `rust` or `elixir`) and what compiles Nx (`backend`: `vulkan`, `llvm_cpu`, `exla` or `evaluator`), their parameters in `included`, the unsaved count in `meta.unsaved`; 400 for any other include. |
 | `GET /api/parameters` | Every parameter, the unsaved count in `meta.unsaved`. A parameter has `name`, `valueType`, `constraint`, `applies`, `description`, `default`, `value`, `saved` and `state`, and relates to its `stage`, the parameter it must stay `greaterThan`, and the automatic mode it is `controlledBy`. |
 | `GET /api/parameters/:id` | One parameter; 404 when unknown. |
 | `PATCH /api/parameters/:id` | Sets one as an unsaved change: 200 with the parameter, 422 when refused, 404 when unknown, 409 on a `type` or `id` mismatch, 400 without `data.type`, `data.id` or `data.attributes.value`. |

@@ -193,7 +193,11 @@ defmodule VisionCore.Stereo.Pipeline do
 
   @impl GenServer
   def handle_call(:stage_options, _from, state) do
-    stages = for stage <- state.stages, member <- members(stage), do: describe(member)
+    stages =
+      for stage <- state.stages,
+          member <- members(stage),
+          do: Map.put(describe(member), :compute, compute(stage, state.context))
+
     {:reply, stages, state}
   end
 
@@ -531,6 +535,10 @@ defmodule VisionCore.Stereo.Pipeline do
     do: segment.members
 
   defp members(stage), do: [stage]
+
+  defp compute(%{module: NativeSegment}, _context), do: NativeSegment.compute()
+  defp compute(%{module: NxSegment}, context), do: NxSegment.compute(context.defn_options)
+  defp compute(_stage, _context), do: %{runs_on: :cpu, implementation: :elixir, backend: nil}
 
   defp describe(stage) do
     %{

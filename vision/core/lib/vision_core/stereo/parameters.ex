@@ -288,6 +288,7 @@ defmodule VisionCore.Stereo.Parameters do
       parameters: parameters ++ extra_parameters(stage.stage, opts, correction?)
     }
     |> Map.merge(extra_group_fields(stage.stage))
+    |> Map.merge(Map.take(stage, [:compute]))
   end
 
   defp stage_parameter(pipeline, stage, key, spec, prefix, correction?) do
