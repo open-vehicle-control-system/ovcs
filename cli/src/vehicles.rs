@@ -61,20 +61,28 @@ fn target_callback(side: &str) -> Option<&'static str> {
     }
 }
 
-pub fn nerves_target(vehicle: &Vehicle, side: &str) -> Result<Option<String>> {
-    let Some(callback) = target_callback(side) else {
-        return Ok(None);
-    };
-    let snippet = format!(
+/// Elixir printing a fixed role's Nerves target, or nothing when the vehicle has no such role.
+/// The role exists when the vehicle exports its composer callback, as `OvcsBus.Cluster` decides,
+/// and then requires the target callback.
+fn target_snippet(module: &str, side: &str) -> Option<String> {
+    let target = target_callback(side)?;
+    Some(format!(
         r#"
-if function_exported?({module}, :{callback}, 0) do
-  IO.write(to_string({module}.{callback}()))
+if function_exported?({module}, :{side}, 0) do
+  unless function_exported?({module}, :{target}, 0),
+    do: raise("{module} implements {side}/0 without {target}/0")
+
+  IO.write(to_string({module}.{target}()))
 end
-"#,
-        module = vehicle.module,
-        callback = callback,
-    );
-    run_snippet(&vehicle.path, &snippet)
+"#
+    ))
+}
+
+pub fn nerves_target(vehicle: &Vehicle, side: &str) -> Result<Option<String>> {
+    match target_snippet(&vehicle.module, side) {
+        Some(snippet) => run_snippet(&vehicle.path, &snippet),
+        None => Ok(None),
+    }
 }
 
 pub fn host_can_interfaces(vehicle: &Vehicle) -> Result<Vec<String>> {
@@ -360,7 +368,7 @@ fn probe_failure(dir: &str, stdout: &str, stderr: &str) -> anyhow::Error {
 mod tests {
     use super::{
         host_for, local_sname, local_sname_prefix, module_for, probe_failure, probe_payload,
-        target_callback, PROBE_MARKER,
+        target_callback, target_snippet, PROBE_MARKER,
     };
 
     #[test]
@@ -395,6 +403,15 @@ mod tests {
         assert_eq!(target_callback("vms"), Some("vms_target"));
         assert_eq!(target_callback("vision"), Some("vision_target"));
         assert_eq!(target_callback("bridge-ros"), None);
+    }
+
+    #[test]
+    fn a_role_exists_when_its_composer_callback_does_and_needs_its_target() {
+        let snippet = target_snippet("MyCar", "vision").unwrap();
+        assert!(snippet.contains("function_exported?(MyCar, :vision, 0)"));
+        assert!(snippet.contains("function_exported?(MyCar, :vision_target, 0)"));
+        assert!(snippet.contains("implements vision/0 without vision_target/0"));
+        assert!(target_snippet("MyCar", "bridge-ros").is_none());
     }
 
     #[test]
