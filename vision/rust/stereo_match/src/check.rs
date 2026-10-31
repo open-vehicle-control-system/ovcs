@@ -1,6 +1,7 @@
 //! OpenCV's left-right consistency check and the 3x3 median filter, as
 //! `NxStereo` applies them after selection.
 
+use crate::filters::MEDIAN_9;
 use crate::select::INVALID_KEY;
 
 /// One row's disparities with those rejected by the left-right check set
@@ -39,29 +40,6 @@ pub fn consistency_row(disparity: &[f32], keys: &[u32], right: &mut Vec<u32>, ou
         }
     }
 }
-
-/// Devillard's median-of-9 network, as `NxStereo.Image.median/2` applies it.
-const MEDIAN_9: [(usize, usize); 19] = [
-    (1, 2),
-    (4, 5),
-    (7, 8),
-    (0, 1),
-    (3, 4),
-    (6, 7),
-    (1, 2),
-    (4, 5),
-    (7, 8),
-    (0, 3),
-    (5, 8),
-    (4, 7),
-    (3, 6),
-    (1, 4),
-    (2, 5),
-    (4, 7),
-    (4, 2),
-    (6, 4),
-    (4, 2),
-];
 
 const MEDIAN_CHUNK: usize = 64;
 

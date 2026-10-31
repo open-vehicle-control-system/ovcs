@@ -74,12 +74,7 @@ impl Writer {
 
     /// Writes one record. Safe to call from several threads.
     pub fn write_record(&self, data: &[u8]) -> io::Result<()> {
-        let length = u32::try_from(data.len())
-            .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "record too large"))?;
-        let mut out = self.out.lock().unwrap_or_else(|e| e.into_inner());
-        out.write_all(&length.to_be_bytes())?;
-        out.write_all(data)?;
-        out.flush()
+        self.write_record_parts(&[data])
     }
 
     /// Writes one record of `parts`, without joining them first. Safe to
@@ -112,26 +107,41 @@ fn write_parts<W: Write>(out: &mut W, parts: &[&[u8]]) -> io::Result<()> {
     Ok(())
 }
 
+/// The tag, size and capture time an image record starts with.
+fn image_header(tag: u8, width: u16, height: u16, capture_ns: i64) -> [u8; 13] {
+    let mut header = [0; 13];
+    header[0] = tag;
+    header[1..3].copy_from_slice(&width.to_le_bytes());
+    header[3..5].copy_from_slice(&height.to_le_bytes());
+    header[5..13].copy_from_slice(&capture_ns.to_le_bytes());
+    header
+}
+
+/// The start of a FRAME record, which `jpeg_len` bytes of JPEG follow.
+pub fn frame_header(width: u16, height: u16, capture_ns: i64, jpeg_len: usize) -> [u8; 17] {
+    let mut header = [0; 17];
+    header[..13].copy_from_slice(&image_header(TAG_FRAME, width, height, capture_ns));
+    header[13..].copy_from_slice(&(jpeg_len as u32).to_le_bytes());
+    header
+}
+
 pub fn frame_record(width: u16, height: u16, capture_ns: i64, jpeg: &[u8]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(17 + jpeg.len());
-    out.push(TAG_FRAME);
-    out.extend_from_slice(&width.to_le_bytes());
-    out.extend_from_slice(&height.to_le_bytes());
-    out.extend_from_slice(&capture_ns.to_le_bytes());
-    out.extend_from_slice(&(jpeg.len() as u32).to_le_bytes());
-    out.extend_from_slice(jpeg);
-    out
+    [
+        &frame_header(width, height, capture_ns, jpeg.len())[..],
+        jpeg,
+    ]
+    .concat()
+}
+
+/// The start of a GREY_FRAME record, which `width` x `height` 8-bit grey
+/// pixels follow, row-major.
+pub fn grey_frame_header(width: u16, height: u16, capture_ns: i64) -> [u8; 13] {
+    image_header(TAG_GREY_FRAME, width, height, capture_ns)
 }
 
 /// One 8-bit grey frame of `width` x `height`, row-major.
 pub fn grey_frame_record(width: u16, height: u16, capture_ns: i64, grey: &[u8]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(13 + grey.len());
-    out.push(TAG_GREY_FRAME);
-    out.extend_from_slice(&width.to_le_bytes());
-    out.extend_from_slice(&height.to_le_bytes());
-    out.extend_from_slice(&capture_ns.to_le_bytes());
-    out.extend_from_slice(grey);
-    out
+    [&grey_frame_header(width, height, capture_ns)[..], grey].concat()
 }
 
 pub fn log_record(level: LogLevel, message: &str) -> Vec<u8> {

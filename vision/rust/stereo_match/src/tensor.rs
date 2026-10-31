@@ -28,6 +28,16 @@ const TYPE_U16: u8 = 1;
 const TYPE_F32: u8 = 2;
 const TYPE_S32: u8 = 3;
 
+/// The size on the wire of one element of type `type_code`.
+pub fn element_bytes(type_code: u8) -> Result<usize, String> {
+    match type_code {
+        TYPE_U8 => Ok(1),
+        TYPE_U16 => Ok(2),
+        TYPE_F32 | TYPE_S32 => Ok(4),
+        other => Err(format!("unknown element type {other}")),
+    }
+}
+
 impl Tensor {
     pub fn new(shape: Vec<usize>, data: Data) -> Tensor {
         Tensor { shape, data }
@@ -46,12 +56,7 @@ impl Tensor {
     /// elements.
     pub fn from_bytes(type_code: u8, shape: Vec<usize>, bytes: &[u8]) -> Result<Tensor, String> {
         let elements: usize = shape.iter().product();
-        let element_bytes = match type_code {
-            TYPE_U8 => 1,
-            TYPE_U16 => 2,
-            TYPE_F32 | TYPE_S32 => 4,
-            other => return Err(format!("unknown element type {other}")),
-        };
+        let element_bytes = element_bytes(type_code)?;
         if bytes.len() != elements * element_bytes {
             return Err(format!(
                 "a {shape:?} tensor of {element_bytes}-byte elements takes {} bytes, got {}",

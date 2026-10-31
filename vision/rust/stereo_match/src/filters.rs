@@ -7,7 +7,7 @@ use crate::parallel::{on_threads, RowQueue, Shared};
 /// Devillard's median selection networks, as `NxStereo.Image.median/2`
 /// applies them: compare-exchanges leaving the median of 9 and 25 values in
 /// the middle position.
-const MEDIAN_9: [(usize, usize); 19] = [
+pub(crate) const MEDIAN_9: [(usize, usize); 19] = [
     (1, 2),
     (4, 5),
     (7, 8),
