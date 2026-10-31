@@ -84,6 +84,8 @@ The dashboard and the API are served from the board on port 4100:
 http://<vehicle>-vision.local:4100
 ```
 
+On a unit with detection, the left video outlines each detected object with its label and distance, and its caption counts them. An object with no depth in the middle of its box, such as one nearer than the depth can measure, is left out.
+
 The Row alignment card shows how many rows the right image's matches sit from the left image's, over the whole image and in four bands from left to right. A calibration that still fits the cameras reads within half a row; a larger offset means the cameras or their lenses have moved since the calibration, and depth degrades until you recalibrate. Offsets that change across the bands are a rotation.
 
 The Sharpness card compares the two cameras' focus: the right image's sharpness over the left's, green between 0.8 and 1.25. Its absolute value depends on the scene, the ratio does not. On a unit whose cameras have lens actuators, such as the Camera Module 3, both lenses follow one `focus` camera setting; `VisionCore.Camera.FocusSweep.run/1`, from IEx on the unit facing a textured scene at the distance that matters, steps it through a range, sets the position best for both cameras and returns the sharpness curve. Recalibrate after changing the focus.
