@@ -186,21 +186,14 @@ defmodule VisionCore.Stereo.ParametersTest do
       )
 
       assert {:ok, %{value: 0.2, default: 0.2, state: :builtin}} =
-               VisionCore.Parameters.get("stereo.left_camera.brightness")
+               VisionCore.Parameters.get("stereo.cameras.brightness")
 
       assert {:ok, %{value: false, default: false}} =
-               VisionCore.Parameters.get("stereo.left_camera.auto_exposure")
+               VisionCore.Parameters.get("stereo.cameras.auto_exposure")
 
       assert {:ok, %{value: 6000, default: 6000}} =
-               VisionCore.Parameters.get("stereo.left_camera.exposure_time_us")
-
-      assert {:ok, %{value: true, default: true}} =
-               VisionCore.Parameters.get("stereo.right_camera.auto_exposure")
+               VisionCore.Parameters.get("stereo.cameras.exposure_time_us")
     end
-  end
-
-  test "a driver without shared controls declares no cameras group" do
-    refute Enum.any?(groups(driver: VisionCore.Camera.LibCamera), &(&1.id == "stereo.cameras"))
   end
 
   describe "a driver with controls per camera" do
@@ -220,7 +213,10 @@ defmodule VisionCore.Stereo.ParametersTest do
         {SideDriver,
          %{
            controls: %{"left" => @side_controls, "right" => @side_controls},
-           live: %{"left" => %{exposure_time_us: 8000, analogue_gain: 2.5}, "right" => nil},
+           live: %{
+             "left" => %{exposure_time_us: 8000, analogue_gain: 2.5},
+             "right" => %{exposure_time_us: 9000, analogue_gain: 3.0}
+           },
            calls: []
          }}
       )
@@ -228,41 +224,47 @@ defmodule VisionCore.Stereo.ParametersTest do
       :ok
     end
 
-    defp side_groups(opts \\ []), do: groups(Keyword.merge([driver: SideDriver], opts))
-
-    test "a LibCamera unit gets a group per camera" do
-      groups = side_groups()
-      ids = Enum.map(groups, & &1.id)
-
-      assert Enum.take(ids, 2) == ["stereo.left_camera", "stereo.right_camera"]
-      refute "stereo.cameras" in ids
-
-      assert %{name: "Left camera", kind: :component, placement: :flow, position: 0} =
-               hd(groups)
-
-      left = Enum.find(groups, &(&1.id == "stereo.left_camera"))
-      right = Enum.find(groups, &(&1.id == "stereo.right_camera"))
-
-      assert parameter(left, "lens_position").export == [
-               :components,
-               :stereo,
-               :left,
-               :lens_position
-             ]
-
-      assert parameter(right, "lens_position").export ==
-               [:components, :stereo, :right, :lens_position]
-
-      refute Map.has_key?(parameter(left, "auto_exposure"), :export)
+    defp cameras_group(opts \\ []) do
+      [driver: SideDriver]
+      |> Keyword.merge(opts)
+      |> groups()
+      |> Enum.find(&(&1.id == "stereo.cameras"))
     end
 
-    test "auto exposure is on while the exposure is 0, and switching it on sets 0" do
-      left = Enum.find(side_groups(), &(&1.id == "stereo.left_camera"))
-      auto = parameter(left, "auto_exposure")
-      exposure = parameter(left, "exposure_time_us")
+    test "gets one Cameras group, whose settings go to both cameras and to both sides of the composer" do
+      groups = groups(driver: SideDriver)
+      ids = Enum.map(groups, & &1.id)
+
+      assert hd(ids) == "stereo.cameras"
+      refute "stereo.left_camera" in ids
+      refute "stereo.right_camera" in ids
+
+      assert %{name: "Cameras", kind: :component, placement: :flow, position: 0} = hd(groups)
+
+      lens = parameter(hd(groups), "lens_position")
+
+      assert lens.export == [
+               [:components, :stereo, :left, :lens_position],
+               [:components, :stereo, :right, :lens_position]
+             ]
+
+      assert :ok = lens.set.(1.0)
+
+      assert SideDriver.calls() == [
+               {"left", [lens_position: 1.0]},
+               {"right", [lens_position: 1.0]}
+             ]
+
+      refute Map.has_key?(parameter(hd(groups), "auto_exposure"), :export)
+    end
+
+    test "auto exposure is on while the exposure is 0, and switching it on sets 0 on both cameras" do
+      cameras = cameras_group()
+      auto = parameter(cameras, "auto_exposure")
+      exposure = parameter(cameras, "exposure_time_us")
 
       assert auto.get.() == true
-      assert exposure.applies == {:auto, "stereo.left_camera.auto_exposure"}
+      assert exposure.applies == {:auto, "stereo.cameras.auto_exposure"}
       assert exposure.constraint == %{kind: :range, min: 1, max: 1_000_000, step: nil}
       assert exposure.get.() == 8000
 
@@ -274,74 +276,75 @@ defmodule VisionCore.Stereo.ParametersTest do
 
       assert SideDriver.calls() == [
                {"left", [exposure_time_us: 5000]},
-               {"left", [exposure_time_us: 0]}
+               {"right", [exposure_time_us: 5000]},
+               {"left", [exposure_time_us: 0]},
+               {"right", [exposure_time_us: 0]}
              ]
 
       assert auto.get.() == true
     end
 
     test "gain follows its own switch and range" do
-      left = Enum.find(side_groups(), &(&1.id == "stereo.left_camera"))
-      gain = parameter(left, "analogue_gain")
+      cameras = cameras_group()
+      gain = parameter(cameras, "analogue_gain")
 
-      assert gain.applies == {:auto, "stereo.left_camera.auto_gain"}
+      assert gain.applies == {:auto, "stereo.cameras.auto_gain"}
       assert gain.constraint == %{kind: :range, min: 1, max: 16, step: nil}
       assert gain.get.() == 2.5
-      assert parameter(left, "auto_gain").get.() == true
-      assert :ok = parameter(left, "auto_gain").set.(false)
+      assert parameter(cameras, "auto_gain").get.() == true
+      assert :ok = parameter(cameras, "auto_gain").set.(false)
       assert SideDriver.calls() == []
     end
 
-    test "an automatic value falls back to the manual minimum before the camera reports" do
-      right = Enum.find(side_groups(), &(&1.id == "stereo.right_camera"))
-      assert parameter(right, "exposure_time_us").get.() == 1
+    test "an automatic value falls back to the manual minimum before the left camera reports" do
+      Agent.update(
+        SideDriver,
+        &%{&1 | live: %{"left" => nil, "right" => %{exposure_time_us: 9000}}}
+      )
+
+      assert parameter(cameras_group(), "exposure_time_us").get.() == 1
     end
 
-    test "exposure and gain default to the composer's manual values" do
-      groups = side_groups(left: [exposure_time_us: 6000, analogue_gain: 1.5])
-      left = Enum.find(groups, &(&1.id == "stereo.left_camera"))
-      right = Enum.find(groups, &(&1.id == "stereo.right_camera"))
+    test "exposure and gain default to the composer's manual values for the left camera" do
+      cameras = cameras_group(left: [exposure_time_us: 6000, analogue_gain: 1.5])
 
-      assert %{default: 6000} = parameter(left, "exposure_time_us")
-      assert %{default: 1.5} = parameter(left, "analogue_gain")
-      refute Map.has_key?(parameter(right, "exposure_time_us"), :default)
+      assert %{default: 6000} = parameter(cameras, "exposure_time_us")
+      assert %{default: 1.5} = parameter(cameras, "analogue_gain")
+      refute Map.has_key?(parameter(cameras_group(), "exposure_time_us"), :default)
     end
 
-    test "each camera group carries its build parameters" do
-      groups =
-        side_groups(
+    test "carries the capture size and each camera's addressing as build parameters" do
+      cameras =
+        cameras_group(
           left: [
-            camera_id: 0,
+            camera_id: 1,
             sync: :server,
-            sensor_mode: {2304, 1296},
+            sensor_mode: {2028, 1080, 12},
             format: :grey,
             label: "x"
           ],
-          right: [camera_id: 1]
+          right: [camera_id: 0, sync: :client]
         )
-
-      left = Enum.find(groups, &(&1.id == "stereo.left_camera"))
-      right = Enum.find(groups, &(&1.id == "stereo.right_camera"))
 
       for {name, value} <- [
             {"width", 1280},
             {"height", 720},
             {"fps", 30},
-            {"camera_id", 0},
-            {"sync", "server"},
-            {"sensor_mode", "2304x1296"},
-            {"format", "grey"}
+            {"left_camera_id", 1},
+            {"left_sync", "server"},
+            {"left_sensor_mode", "2028x1080:12"},
+            {"left_format", "grey"},
+            {"right_camera_id", 0},
+            {"right_sync", "client"}
           ] do
-        assert %{applies: :build} = parameter = parameter(left, name)
+        assert %{applies: :build} = parameter = parameter(cameras, name)
         assert parameter.get.() == value
       end
 
-      refute parameter(left, "label")
-      assert parameter(right, "camera_id").get.() == 1
-      refute parameter(right, "sync")
+      refute parameter(cameras, "left_label")
     end
 
-    test "switching off before the camera reports sets the manual value, never 0" do
+    test "switching off before the camera reports sets the manual value on both cameras, never 0" do
       Agent.update(SideDriver, &%{&1 | live: %{"left" => nil, "right" => nil}})
       start_supervised!({VisionCore.Parameters, store: MemoryStore})
 
@@ -355,23 +358,20 @@ defmodule VisionCore.Stereo.ParametersTest do
       )
 
       assert {:ok, %{value: false}} =
-               VisionCore.Parameters.set("stereo.left_camera.auto_exposure", false)
-
-      assert {:ok, %{value: false}} =
-               VisionCore.Parameters.set("stereo.right_camera.auto_exposure", false)
+               VisionCore.Parameters.set("stereo.cameras.auto_exposure", false)
 
       assert SideDriver.calls() == [
                {"left", [exposure_time_us: 6000]},
-               {"right", [exposure_time_us: 1]}
+               {"right", [exposure_time_us: 6000]}
              ]
     end
 
-    test "a saved manual exposure over an automatic composer is applied and kept on save" do
+    test "a saved manual exposure over an automatic composer is applied to both and kept on save" do
       start_supervised!(
         {MemoryStore,
          %{
-           "stereo.left_camera.auto_exposure" => false,
-           "stereo.left_camera.exposure_time_us" => 20_000
+           "stereo.cameras.auto_exposure" => false,
+           "stereo.cameras.exposure_time_us" => 20_000
          }}
       )
 
@@ -382,22 +382,23 @@ defmodule VisionCore.Stereo.ParametersTest do
       )
 
       assert {:ok, %{value: false, state: :saved}} =
-               VisionCore.Parameters.get("stereo.left_camera.auto_exposure")
+               VisionCore.Parameters.get("stereo.cameras.auto_exposure")
 
       assert SideDriver.controls("left").exposure_time_us == 20_000
+      assert SideDriver.controls("right").exposure_time_us == 20_000
 
       assert {:ok, %{value: 20_000, state: :saved}} =
-               VisionCore.Parameters.get("stereo.left_camera.exposure_time_us")
+               VisionCore.Parameters.get("stereo.cameras.exposure_time_us")
 
       assert VisionCore.Parameters.save() == {:ok, []}
 
       assert MemoryStore.rows() == %{
-               "stereo.left_camera.auto_exposure" => false,
-               "stereo.left_camera.exposure_time_us" => 20_000
+               "stereo.cameras.auto_exposure" => false,
+               "stereo.cameras.exposure_time_us" => 20_000
              }
     end
 
-    test "switching auto exposure off keeps the exposure the camera applied" do
+    test "switching auto exposure off gives both cameras the exposure the left one applied" do
       start_supervised!({VisionCore.Parameters, store: MemoryStore})
 
       start_supervised!(
@@ -405,16 +406,31 @@ defmodule VisionCore.Stereo.ParametersTest do
       )
 
       assert {:ok, %{value: true, state: :builtin}} =
-               VisionCore.Parameters.get("stereo.left_camera.auto_exposure")
+               VisionCore.Parameters.get("stereo.cameras.auto_exposure")
 
       assert {:ok, %{value: false}} =
-               VisionCore.Parameters.set("stereo.left_camera.auto_exposure", false)
+               VisionCore.Parameters.set("stereo.cameras.auto_exposure", false)
 
-      assert SideDriver.calls() == [{"left", [exposure_time_us: 8000]}]
-      assert SideDriver.controls("left").exposure_time_us == 8000
+      assert SideDriver.calls() == [
+               {"left", [exposure_time_us: 8000]},
+               {"right", [exposure_time_us: 8000]}
+             ]
 
       assert {:ok, %{value: 8000, state: :builtin}} =
-               VisionCore.Parameters.get("stereo.left_camera.exposure_time_us")
+               VisionCore.Parameters.get("stereo.cameras.exposure_time_us")
+    end
+
+    test "a saved value is exported to both cameras' options" do
+      start_supervised!({MemoryStore, %{"stereo.cameras.brightness" => 0.3}})
+      start_supervised!({VisionCore.Parameters, store: MemoryStore})
+
+      start_supervised!(
+        {Parameters, topic_prefix: "stereo", driver: SideDriver, pipeline: Pipeline}
+      )
+
+      export = VisionCore.Parameters.export()
+      assert export =~ ~r/left: \[[^\]]*brightness: 0\.3/
+      assert export =~ ~r/right: \[[^\]]*brightness: 0\.3/
     end
   end
 
