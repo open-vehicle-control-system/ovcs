@@ -1,5 +1,6 @@
 import { useId, useMemo } from 'react'
-import { flowGroups, groupUnsaved, sideGroups, useParameters } from '../stores/parameters.js'
+import { useShallow } from 'zustand/react/shallow'
+import { orderedGroups, unsavedByGroup, useParameters } from '../stores/parameters.js'
 import { OvcsBadge, focusClass as FOCUS } from '@ovcs/ui/react'
 import { SECTION_HEADING, SELECTED } from './menu.js'
 import { useNavigation } from '../stores/navigation.js'
@@ -77,7 +78,8 @@ function Step({ number, first, last, selected }) {
 export default function PipelineDiagram() {
   const sideId = useId()
   const groups = useParameters((state) => state.groups)
-  const parameters = useParameters((state) => state.parameters)
+  // The counts alone, so a value changing every poll, such as an exposure, does not render the menu again.
+  const unsaved = useParameters(useShallow(unsavedByGroup))
   const onPipeline = useNavigation((state) => state.page === 'pipeline')
   const go = useNavigation((state) => state.go)
   const selectedGroupId = useParameters((state) => (onPipeline ? state.selectedGroupId : null))
@@ -87,12 +89,13 @@ export default function PipelineDiagram() {
     go('pipeline')
   }
 
-  const { flow, side } = useMemo(() => ({ flow: flowGroups({ groups }), side: sideGroups({ groups }) }), [groups])
-
-  const unsaved = (group) => groupUnsaved({ groups, parameters }, group.id)
+  const { flow, side } = useMemo(() => {
+    const ordered = orderedGroups({ groups })
+    return { flow: ordered.filter((group) => group.role !== 'branch'), side: ordered.filter((group) => group.role === 'branch') }
+  }, [groups])
 
   const box = (group) => (
-    <GroupBox group={group} unsaved={unsaved(group)} selected={group.id === selectedGroupId} onSelect={select} />
+    <GroupBox group={group} unsaved={unsaved[group.id] ?? 0} selected={group.id === selectedGroupId} onSelect={select} />
   )
 
   return (

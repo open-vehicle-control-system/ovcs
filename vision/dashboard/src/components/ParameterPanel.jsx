@@ -48,8 +48,8 @@ export default function ParameterPanel({ groupId }) {
 
   // Values set by an automatic mode change at every poll; announcing them would be noise.
   const summary = members
-    .filter((parameter) => parameter.state !== 'automatic')
-    .map((parameter) => `${parameter.name} ${formatValue(parameter.value)}`).join(', ')
+    .flatMap((parameter) => (parameter.state === 'automatic' ? [] : [`${parameter.name} ${formatValue(parameter.value)}`]))
+    .join(', ')
 
   return (
     <section aria-labelledby={headingId}>

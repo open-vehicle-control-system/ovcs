@@ -49,11 +49,11 @@ describe('DepthRange', () => {
     fireEvent.pointerUp(slider)
     await flush()
     expect(channel.push).toHaveBeenLastCalledWith('depth_range', { metres: 12.5 })
-    expect(window.localStorage.getItem('vision.depth_range_m')).toBe('12.5')
+    expect(window.localStorage.getItem('vision.v1.depth_range_m')).toBe('12.5')
   })
 
   it('applies the range this browser remembers when the stream joins', async () => {
-    window.localStorage.setItem('vision.depth_range_m', '20')
+    window.localStorage.setItem('vision.v1.depth_range_m', '20')
     const channel = fakeChannel(8)
     render(<DepthRange channel={channel} />)
     await flush()

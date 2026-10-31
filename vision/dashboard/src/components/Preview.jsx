@@ -58,7 +58,7 @@ export default function Preview({ stream, socket, onChannel, overlay, className 
         ) : (
           <p className="text-sm text-ovcs-muted">No frame</p>
         )}
-        {frame && size && overlay ? <FrameSize.Provider value={size}>{overlay}</FrameSize.Provider> : null}
+        {frame && size && overlay ? <FrameSize value={size}>{overlay}</FrameSize> : null}
       </div>
       <figcaption className="flex flex-col gap-1.5 px-3 py-2 text-sm">
         <div className="flex items-baseline gap-2">

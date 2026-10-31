@@ -3,7 +3,7 @@ import { focusClass as FOCUS } from '@ovcs/ui/react'
 import Hint from './Hint.jsx'
 import { HINTS } from '../hints.js'
 
-const STORAGE_KEY = 'vision.depth_range_m'
+const STORAGE_KEY = 'vision.v1.depth_range_m'
 const MIN = 0.5
 const MAX = 50
 const STEP = 0.5

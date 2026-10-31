@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, within } from '@testing-library/react'
+import { Profiler } from 'react'
+import { render, screen, fireEvent, within, act } from '@testing-library/react'
 import PipelineDiagram from '../PipelineDiagram.jsx'
 import { useParameters } from '../../stores/parameters.js'
 import { useNavigation } from '../../stores/navigation.js'
@@ -104,6 +105,31 @@ describe('PipelineDiagram', () => {
     expect([...match.querySelectorAll('[data-tag]')].map((tag) => tag.textContent)).toEqual(['GPU', 'Elixir Nx', 'Vulkan'])
     expect(match.getAttribute('aria-label')).toBe('Match, on GPU, Elixir Nx, Vulkan')
     expect(screen.getByRole('button', { name: /^Cameras/ }).querySelectorAll('[data-tag]')).toHaveLength(0)
+  })
+
+  it('does not render again when a parameter changes without changing any unsaved count', () => {
+    const commits = vi.fn()
+    render(
+      <Profiler id="menu" onRender={commits}>
+        <PipelineDiagram />
+      </Profiler>
+    )
+    commits.mockClear()
+
+    act(() =>
+      useParameters.setState((state) => ({
+        parameters: { ...state.parameters, 'stereo.alignment.a': { ...state.parameters['stereo.alignment.a'], value: 3 } }
+      }))
+    )
+    expect(commits).not.toHaveBeenCalled()
+
+    act(() =>
+      useParameters.setState((state) => ({
+        parameters: { ...state.parameters, 'stereo.alignment.a': { ...state.parameters['stereo.alignment.a'], state: 'builtin' } }
+      }))
+    )
+    expect(commits).toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: /^Alignment/ }).getAttribute('aria-label')).toContain('1 unsaved')
   })
 
   it('selects a group on click', () => {

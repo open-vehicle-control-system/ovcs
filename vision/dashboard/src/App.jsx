@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import UnitStatus from './components/UnitStatus.jsx'
-import Previews from './components/Previews.jsx'
+import LivePreviews from './components/LivePreviews.jsx'
 import Menu from './components/Menu.jsx'
 import OverviewPage from './pages/OverviewPage.jsx'
 import CalibrationPage from './pages/CalibrationPage.jsx'
@@ -104,7 +104,13 @@ function ParameterSaveBar() {
   )
 }
 
-function PipelinePage({ groupId, snapshot }) {
+// The top bar's figures, which a status renders alone.
+function UnitStatusBar() {
+  const snapshot = useStatus((state) => state.snapshot)
+  return <UnitStatus status={snapshot} />
+}
+
+function PipelinePage({ groupId }) {
   return (
     <div className="grid min-w-0 gap-4 lg:min-h-0 lg:grid-cols-[minmax(24rem,30rem)_minmax(0,1fr)] lg:grid-rows-1">
       <OvcsCard className="flex min-w-0 flex-col gap-4 lg:min-h-0">
@@ -115,7 +121,7 @@ function PipelinePage({ groupId, snapshot }) {
       </OvcsCard>
 
       <div className="flex min-w-0 flex-col lg:min-h-0">
-        <Previews status={snapshot} socket={dashboardSocket} />
+        <LivePreviews />
       </div>
     </div>
   )
@@ -124,7 +130,6 @@ function PipelinePage({ groupId, snapshot }) {
 const PAGES = { overview: OverviewPage, calibration: CalibrationPage, ros2: Ros2Page, api: ApiPage }
 
 export default function App() {
-  const snapshot = useStatus((state) => state.snapshot)
   const listen = useStatus((state) => state.listen)
   const startPolling = useParameters((state) => state.startPolling)
   const stopPolling = useParameters((state) => state.stopPolling)
@@ -148,14 +153,14 @@ export default function App() {
         </h1>
         <ParameterError />
         <div className="ml-auto">
-          <UnitStatus status={snapshot} />
+          <UnitStatusBar />
         </div>
       </OvcsHeader>
 
       <div className="flex flex-1 flex-col lg:min-h-0 lg:flex-row">
         <Menu />
         <main className="flex min-w-0 flex-1 flex-col p-4 lg:min-h-0 lg:p-6">
-          {page === 'pipeline' ? <PipelinePage groupId={selectedGroupId} snapshot={snapshot} /> : <Page />}
+          {page === 'pipeline' ? <PipelinePage groupId={selectedGroupId} /> : <Page />}
         </main>
       </div>
     </div>
