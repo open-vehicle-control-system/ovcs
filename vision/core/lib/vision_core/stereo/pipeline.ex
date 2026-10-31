@@ -26,15 +26,30 @@ defmodule VisionCore.Stereo.Pipeline do
   Consecutive Nx stages are compiled at start into one
   `VisionCore.Stereo.NxSegment`, and so, through `nx_iree`, one module
   on the device; it runs and is timed as one stage named after its
-  members.
+  members. With `compute: :native`, consecutive stages that have a
+  native implementation (`VisionCore.Stereo.NativeSegment.supported?/1`),
+  every default one, run instead as one `VisionCore.Stereo.NativeSegment`
+  in the `stereo_match` Port, a pair's one round trip, with each
+  member's time logged under its name too. A stage's
+  `c:VisionCore.Stereo.NxStage.compute/1` overrides the pipeline's
+  choice for that stage, as `Disparity`'s `:matcher` does. Stages
+  without a native implementation run between the segments around them,
+  which take their outputs as inputs.
 
-  Once a pair is done, whether it succeeded or not, the process that
-  submitted it receives `:stereo_pipeline_ready`;
-  `VisionCore.Stereo.Pairer` submits the next pair then. When the stage
-  list starts with a segment, a pair is done once that segment's device
-  work is: the pair's outputs are downloaded and the later stages run
-  while the next pair's device work does, and it reaches the listeners
-  then, or after `:flush_after_ms` if no pair follows.
+  Once the pipeline can take another pair, the process that submitted
+  the last one receives `:stereo_pipeline_ready`;
+  `VisionCore.Stereo.Pairer` submits the next pair then. Without a
+  segment first, that is once the pair is done, whether it succeeded or
+  not. When the stage list starts with a compiled segment, a pair is
+  done once its device work is: the pair's outputs are collected and
+  the later stages run while the next pair's device work does, and it
+  reaches the listeners then, or after `:flush_after_ms` if no pair
+  follows. When it starts with a native segment, two pairs are at the
+  Port at once, so it computes one while the other's frames and outputs
+  go through the pipes: the next pair is taken once the earlier of the
+  two is back, and that one is then collected, run through the later
+  stages and sent to the listeners. A live setting of a native stage
+  then applies from the second pair submitted after the change.
 
   ## Options
 
@@ -46,10 +61,14 @@ defmodule VisionCore.Stereo.Pipeline do
     * `:frame_width`, `:frame_height` (`:width`, `:height`) — the size
       of the submitted frames.
     * `:stages` (`default_stages/0`) — modules or `{module, opts}`.
+    * `:compute` (`:nx`) — `:native` runs the stages that have a native
+      implementation natively, through `VisionCore.Stereo.Matcher`, which
+      must be running; `:nx` compiles them.
     * `:defn_options` — how Nx stages are compiled; see
       `VisionCore.Stereo.NxSegment.defn_options/1` for the default.
-    * `:flush_after_ms` (`100`) — how long a pair waits for the next one
-      before it is finished alone; see below.
+    * `:flush_after_ms` (`100`) — how long a pair a compiled segment
+      returned waits for the next one before it is finished alone; see
+      above.
     * `:name` (`__MODULE__`).
   """
   use GenServer
@@ -59,9 +78,12 @@ defmodule VisionCore.Stereo.Pipeline do
 
   alias VisionCore.Camera.Frame
   alias VisionCore.Ros2.CameraCalibration
-  alias VisionCore.Stereo.{NxSegment, NxStage, Pair, Stage, StageTimer}
+  alias VisionCore.Stereo.{NativeSegment, NxSegment, NxStage, Pair, Stage, StageTimer}
 
   @consumed [:left, :right, :disparity, :disparity_range, :disparity_bytes, :depth, :depth_m]
+  @segments [NxSegment, NativeSegment]
+  # Pairs at the Port at once when a native segment runs first.
+  @in_flight 2
 
   @doc "Starts the pipeline; see the module doc for `opts`."
   def start_link(opts) do
@@ -137,6 +159,10 @@ defmodule VisionCore.Stereo.Pipeline do
   @impl GenServer
   def init(opts) do
     context = context(opts)
+    compute = Keyword.get(opts, :compute, :nx)
+
+    if compute not in [:nx, :native],
+      do: raise(ArgumentError, "compute is :nx or :native, got #{inspect(compute)}")
 
     stages =
       opts
@@ -153,11 +179,14 @@ defmodule VisionCore.Stereo.Pipeline do
        stages:
          stages
          |> Enum.map(&init_stage!(&1, context))
-         |> group_nx_stages(context, context.defn_options),
+         |> group_stages(compute, context),
        listeners: [],
        timer: StageTimer.new(window: 30, label: "pipeline"),
        last_start_ns: nil,
        pending: nil,
+       in_flight: :queue.new(),
+       last_reply_ns: nil,
+       waiting_submitter: nil,
        flush_after_ms: Keyword.get(opts, :flush_after_ms, @default_flush_after_ms)
      }}
   end
@@ -205,7 +234,10 @@ defmodule VisionCore.Stereo.Pipeline do
     pair = %Pair{left_frame: left, right_frame: right, geometry: state.context}
 
     case state.stages do
-      [%{module: NxSegment} = first | _rest] ->
+      [%{module: NativeSegment} = first | _rest] ->
+        {:noreply, send_native(pair, first, start_ns, submitter, state)}
+
+      [%{module: module} = first | _rest] when module in @segments ->
         {:noreply, dispatch(pair, first, start_ns, submitter, state)}
 
       stages ->
@@ -216,12 +248,84 @@ defmodule VisionCore.Stereo.Pipeline do
   end
 
   @impl GenServer
-  def handle_info({:flush, ref}, %{pending: %{ref: ref}} = state), do: {:noreply, flush(state)}
-  def handle_info({:flush, _stale}, state), do: {:noreply, state}
+  def handle_info(message, state) do
+    with {:value, sent} <- :queue.peek(state.in_flight),
+         result when result != :no_reply <-
+           NativeSegment.response(message, sent.request_id, sent.segment) do
+      {:noreply, receive_native(result, sent, state)}
+    else
+      _other -> other_info(message, state)
+    end
+  end
+
+  defp other_info({:flush, ref}, %{pending: %{ref: ref}} = state), do: {:noreply, flush(state)}
+  defp other_info(_message, state), do: {:noreply, state}
+
+  defp send_native(pair, first, start_ns, submitter, state) do
+    case NativeSegment.send_request(pair, first.state) do
+      {:ok, request_id} ->
+        sent = %{
+          request_id: request_id,
+          pair: pair,
+          segment: first.state,
+          start_ns: start_ns,
+          sent_ns: System.monotonic_time(:nanosecond)
+        }
+
+        state = %{state | in_flight: :queue.in(sent, state.in_flight)}
+
+        if :queue.len(state.in_flight) < @in_flight do
+          send(submitter, :stereo_pipeline_ready)
+          state
+        else
+          %{state | waiting_submitter: submitter}
+        end
+
+      {:error, reason} ->
+        send(submitter, :stereo_pipeline_ready)
+        finish_pair({:error, NativeSegment, reason}, start_ns, state)
+    end
+  end
+
+  # The segment's time runs from when the Port could start on the pair.
+  defp receive_native(result, sent, state) do
+    reply_ns = System.monotonic_time(:nanosecond)
+    port_ns = reply_ns - max(sent.sent_ns, state.last_reply_ns || sent.sent_ns)
+    state = %{state | in_flight: :queue.drop(state.in_flight), last_reply_ns: reply_ns}
+
+    state =
+      case result do
+        {:ok, outputs, segment} ->
+          [first | rest] = state.stages
+          {collect_ns, pair} = timed(fn -> NativeSegment.collect(sent.pair, outputs, segment) end)
+          segment_ns = port_ns + collect_ns
+
+          timer =
+            state.timer
+            |> StageTimer.record(first.name, segment_ns)
+            |> record_members(NativeSegment, segment)
+
+          pair = %{pair | device_ms: segment_ns / 1_000_000}
+          {outcome, rest, timer} = run_stages(pair, rest, timer)
+          finish_pair(outcome, sent.start_ns, %{state | stages: [first | rest], timer: timer})
+
+        {:error, reason} ->
+          finish_pair({:error, NativeSegment, reason}, sent.start_ns, state)
+      end
+
+    case state.waiting_submitter do
+      nil ->
+        state
+
+      submitter ->
+        send(submitter, :stereo_pipeline_ready)
+        %{state | waiting_submitter: nil}
+    end
+  end
 
   # `pair`'s device work runs while the pending pair is finished; it then becomes the pending one.
-  defp dispatch(pair, first, start_ns, submitter, state) do
-    task = Task.async(fn -> timed(fn -> NxSegment.dispatch(pair, first.state) end) end)
+  defp dispatch(pair, %{module: module} = first, start_ns, submitter, state) do
+    task = Task.async(fn -> timed(fn -> module.dispatch(pair, first.state) end) end)
     state = flush(state)
     {dispatch_ns, result} = Task.await(task, :infinity)
     send(submitter, :stereo_pipeline_ready)
@@ -235,19 +339,24 @@ defmodule VisionCore.Stereo.Pipeline do
         %{state | pending: pending}
 
       {:error, reason} ->
-        finish_pair({:error, NxSegment, reason}, start_ns, state)
+        finish_pair({:error, module, reason}, start_ns, state)
     end
   end
 
   defp flush(%{pending: nil} = state), do: state
 
-  defp flush(%{pending: pending, stages: [first | rest]} = state) do
+  defp flush(%{pending: pending, stages: [%{module: module} = first | rest]} = state) do
     {collect_ns, pair} =
-      timed(fn -> NxSegment.collect(pending.pair, pending.outputs, first.state) end)
+      timed(fn -> module.collect(pending.pair, pending.outputs, first.state) end)
 
     segment_ns = pending.ns + collect_ns
     pair = %{pair | device_ms: segment_ns / 1_000_000}
-    timer = StageTimer.record(state.timer, first.name, segment_ns)
+
+    timer =
+      state.timer
+      |> StageTimer.record(first.name, segment_ns)
+      |> record_members(module, first.state)
+
     {outcome, rest, timer} = run_stages(pair, rest, timer)
     state = %{state | stages: [first | rest], timer: timer, pending: nil}
     finish_pair(outcome, pending.start_ns, state)
@@ -279,8 +388,9 @@ defmodule VisionCore.Stereo.Pipeline do
           timer = StageTimer.record(timer, stage.name, elapsed_ns)
 
           case result do
-            {:ok, pair, stage_state} when stage.module == NxSegment ->
+            {:ok, pair, stage_state} when stage.module in @segments ->
               pair = %{pair | device_ms: pair.device_ms + elapsed_ns / 1_000_000}
+              timer = record_members(timer, stage.module, stage_state)
               {{:ok, pair}, [%{stage | state: stage_state} | done], timer}
 
             {:ok, pair, stage_state} ->
@@ -296,6 +406,16 @@ defmodule VisionCore.Stereo.Pipeline do
 
     {outcome, Enum.reverse(done), record_metrics(timer, outcome)}
   end
+
+  defp record_members(timer, NativeSegment, segment) do
+    segment.members
+    |> Enum.zip(segment.times_us)
+    |> Enum.reduce(timer, fn {member, time_us}, timer ->
+      StageTimer.record(timer, member.name, time_us * 1_000)
+    end)
+  end
+
+  defp record_members(timer, _module, _segment), do: timer
 
   defp record_metrics(timer, {:ok, %Pair{metrics: metrics}}) do
     Enum.reduce(metrics, timer, fn {name, value, unit}, timer ->
@@ -347,22 +467,43 @@ defmodule VisionCore.Stereo.Pipeline do
   defp defn_options(opts),
     do: Keyword.get_lazy(opts, :defn_options, fn -> NxSegment.defn_options(%{}) end)
 
-  # Each run of consecutive Nx stages becomes one segment stage.
-  defp group_nx_stages(stages, context, defn_options) do
+  # Each run of consecutive native, or compiled, stages becomes one segment stage.
+  defp group_stages(stages, compute, context) do
     stages
-    |> Enum.chunk_by(&NxStage.nx_stage?(&1.module))
+    |> Enum.chunk_by(&placement(&1, compute))
     |> Enum.flat_map(fn [first | _] = run ->
-      if NxStage.nx_stage?(first.module),
-        do: [segment_stage!(run, context, defn_options)],
-        else: run
+      case placement(first, compute) do
+        :native ->
+          [segment_stage!(run, NativeSegment, &NativeSegment.build(&1, context))]
+
+        :compiled ->
+          [segment_stage!(run, NxSegment, &NxSegment.build(&1, context, context.defn_options))]
+
+        :plain ->
+          run
+      end
     end)
   end
 
-  defp segment_stage!(members, context, defn_options) do
+  defp placement(stage, compute) do
+    cond do
+      not NxStage.nx_stage?(stage.module) ->
+        :plain
+
+      NativeSegment.supported?(stage.module) and
+          (NxStage.compute(stage.module, stage.state) || compute) == :native ->
+        :native
+
+      true ->
+        :compiled
+    end
+  end
+
+  defp segment_stage!(members, module, build) do
     name = members |> Enum.map_join("+", & &1.name) |> String.to_atom()
 
-    case NxSegment.build(members, context, defn_options) do
-      {:ok, segment} -> %{module: NxSegment, name: name, opts: [], state: segment}
+    case build.(members) do
+      {:ok, segment} -> %{module: module, name: name, opts: [], state: segment}
       {:error, reason} -> raise ArgumentError, "#{name} cannot start: #{reason}"
     end
   end
@@ -374,9 +515,10 @@ defmodule VisionCore.Stereo.Pipeline do
     end
   end
 
-  defp reinit_stage!(%{module: NxSegment, state: segment} = stage, context) do
+  defp reinit_stage!(%{module: module, state: segment} = stage, context)
+       when module in @segments do
     members = Enum.map(segment.members, &reinit_stage!(&1, context))
-    %{stage | state: NxSegment.reload(segment, members, context)}
+    %{stage | state: module.reload(segment, members, context)}
   end
 
   # Settings changed while running survive the rebuild.
@@ -385,7 +527,9 @@ defmodule VisionCore.Stereo.Pipeline do
     init_stage!(%{stage | opts: opts}, context)
   end
 
-  defp members(%{module: NxSegment, state: segment}), do: segment.members
+  defp members(%{module: module, state: segment}) when module in @segments,
+    do: segment.members
+
   defp members(stage), do: [stage]
 
   defp describe(stage) do
@@ -422,7 +566,7 @@ defmodule VisionCore.Stereo.Pipeline do
     stages
     |> Enum.with_index()
     |> Enum.find_value({:error, "no stereo stage #{inspect(name)}"}, fn
-      {%{module: NxSegment, state: segment}, index} ->
+      {%{module: module, state: segment}, index} when module in @segments ->
         case Enum.find_index(segment.members, &(&1.name == name)) do
           nil -> nil
           member -> {:ok, {index, member}, Enum.at(segment.members, member)}
@@ -457,11 +601,8 @@ defmodule VisionCore.Stereo.Pipeline do
     do: List.update_at(stages, index, &%{&1 | state: stage_state})
 
   defp put_stage_state(stages, {index, member}, stage_state) do
-    List.update_at(stages, index, fn segment_stage ->
-      %{
-        segment_stage
-        | state: NxSegment.put_member_state(segment_stage.state, member, stage_state)
-      }
+    List.update_at(stages, index, fn %{module: module} = segment_stage ->
+      %{segment_stage | state: module.put_member_state(segment_stage.state, member, stage_state)}
     end)
   end
 

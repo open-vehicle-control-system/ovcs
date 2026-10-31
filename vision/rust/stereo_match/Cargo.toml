@@ -1,0 +1,7 @@
+[package]
+name = "stereo_match"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+framing = { path = "../framing" }

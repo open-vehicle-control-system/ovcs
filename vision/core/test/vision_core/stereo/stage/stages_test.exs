@@ -234,6 +234,21 @@ defmodule VisionCore.Stereo.Stage.StagesTest do
              Stage.Disparity.init([paths: 4], context)
   end
 
+  test "Disparity's matcher says where it runs, or leaves it to the pipeline" do
+    context = context(:identity, 192, 108)
+    {:ok, default} = Stage.Disparity.init([paths: 3], context)
+    {:ok, native} = Stage.Disparity.init([matcher: :native, paths: 3], context)
+    {:ok, nx} = Stage.Disparity.init([matcher: :nx, paths: 3], context)
+
+    assert Stage.Disparity.compute(default) == nil
+    assert Stage.Disparity.compute(native) == :native
+    assert Stage.Disparity.compute(nx) == :nx
+    assert Stage.Disparity.options(native) == Stage.Disparity.options(default)
+
+    assert {:error, "the matcher is :nx or :native, got :gpu"} =
+             Stage.Disparity.init([matcher: :gpu], context)
+  end
+
   test "Disparity declares p2 above p1, and its disparities and paths as build settings" do
     specs = Stage.Disparity.option_specs()
 

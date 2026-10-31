@@ -134,9 +134,10 @@ defmodule VisionCore.Stereo.NxSegment do
   (its segments, and any stage compiling its own function) into the
   module cache `dir`, with the compiler and flags of its
   `:defn_options`, without loading them: a host with EXLA builds it for
-  any device.
+  any device. Returns how many segments it compiled: none when every
+  stage computes natively.
   """
-  @spec build_cache(keyword(), Path.t()) :: :ok | {:error, String.t()}
+  @spec build_cache(keyword(), Path.t()) :: {:ok, non_neg_integer()} | {:error, String.t()}
   def build_cache(pipeline_opts, dir) do
     File.mkdir_p!(dir)
 
@@ -159,8 +160,11 @@ defmodule VisionCore.Stereo.NxSegment do
     Task.async(fn ->
       Process.flag(:trap_exit, true)
 
-      with {:ok, pipeline} <- start_pipeline(opts),
-           do: GenServer.stop(pipeline)
+      with {:ok, pipeline} <- start_pipeline(opts) do
+        segments = Enum.count(:sys.get_state(pipeline).stages, &(&1.module == __MODULE__))
+        GenServer.stop(pipeline)
+        {:ok, segments}
+      end
     end)
     |> Task.await(:infinity)
   end
@@ -230,7 +234,7 @@ defmodule VisionCore.Stereo.NxSegment do
         {key, Nx.backend_transfer(tensor, Nx.BinaryBackend)}
       end)
 
-    Enum.reduce(segment.members, pair, &finish(&1, &2, outputs))
+    finish_members(segment.members, pair, outputs)
   end
 
   defp run_steps(members, tensors, params) do
@@ -247,8 +251,9 @@ defmodule VisionCore.Stereo.NxSegment do
     |> Map.drop(@frames)
   end
 
-  # The fields the run reads that no member before the reader provides.
-  defp entry_fields(members) do
+  @doc "The `Pair` fields `members` read that no member before the reader provides."
+  @spec entry_fields([map()]) :: [atom()]
+  def entry_fields(members) do
     {entry, _provided} =
       Enum.reduce(members, {[], MapSet.new()}, fn member, {entry, provided} ->
         needed =
@@ -317,6 +322,15 @@ defmodule VisionCore.Stereo.NxSegment do
       other -> {:error, {:not_a_tensor, field, other}}
     end
   end
+
+  @doc """
+  `pair` filled from a segment's `outputs` by each member's
+  `c:VisionCore.Stereo.NxStage.finish/3`, or with each output named like
+  a field the member provides.
+  """
+  @spec finish_members([map()], Pair.t(), map()) :: Pair.t()
+  def finish_members(members, pair, outputs),
+    do: Enum.reduce(members, pair, &finish(&1, &2, outputs))
 
   defp finish(member, pair, outputs) do
     if function_exported?(member.module, :finish, 3) do

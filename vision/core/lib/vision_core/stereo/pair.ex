@@ -40,7 +40,8 @@ defmodule VisionCore.Stereo.Pair do
     * `:metrics` — `{name, value, unit}` samples a stage reports for the
       pipeline's log line.
     * `:device_ms` — the time the pair spent in compiled Nx segments, on
-      the GPU where they run there.
+      the GPU where they run there, and in native segments, in the
+      `stereo_match` Port.
   """
 
   @enforce_keys [:left_frame, :right_frame]

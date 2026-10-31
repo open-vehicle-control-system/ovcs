@@ -11,8 +11,11 @@ defmodule VisionCore.Application do
   parameters and a restart of anything after them keeps the unsaved changes.
   `VisionCore.Ros2.ZenohClient` follows them. Consumers subscribe only from
   `init/1`, so they must restart with the client to get their subscriptions
-  back. `VisionCore.Ros2.Topics`, which counts what the components publish,
-  starts before them. `VisionCore.Status` and
+  back. The Port servers, `VisionCore.Jpeg` and
+  `VisionCore.Stereo.Matcher`, start before the components and open their
+  Ports on the first request, so a unit that computes no stereo stage
+  natively never starts `stereo_match`. `VisionCore.Ros2.Topics`, which counts what
+  the components publish, starts before them. `VisionCore.Status` and
   `VisionCore.Preview`, the dashboard's sources, start after the components.
   """
   use Application
@@ -51,6 +54,7 @@ defmodule VisionCore.Application do
       {VisionCore.Ros2.ZenohClient, zenoh_client_opts(config)},
       VisionCore.Ros2.Parameters,
       VisionCore.Jpeg,
+      VisionCore.Stereo.Matcher,
       VisionCore.Ros2.Topics
     ]
 

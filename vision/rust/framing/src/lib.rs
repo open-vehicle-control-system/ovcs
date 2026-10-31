@@ -3,7 +3,7 @@
 //! `VisionCore.Camera.LibCamera` byte for byte.
 
 use std::fs::File;
-use std::io::{self, Read, Write};
+use std::io::{self, IoSlice, Read, Write};
 use std::os::fd::{FromRawFd, RawFd};
 use std::sync::Mutex;
 
@@ -76,13 +76,40 @@ impl Writer {
     pub fn write_record(&self, data: &[u8]) -> io::Result<()> {
         let length = u32::try_from(data.len())
             .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "record too large"))?;
-        let mut packet = Vec::with_capacity(4 + data.len());
-        packet.extend_from_slice(&length.to_be_bytes());
-        packet.extend_from_slice(data);
         let mut out = self.out.lock().unwrap_or_else(|e| e.into_inner());
-        out.write_all(&packet)?;
+        out.write_all(&length.to_be_bytes())?;
+        out.write_all(data)?;
         out.flush()
     }
+
+    /// Writes one record of `parts`, without joining them first. Safe to
+    /// call from several threads.
+    pub fn write_record_parts(&self, parts: &[&[u8]]) -> io::Result<()> {
+        let mut out = self.out.lock().unwrap_or_else(|e| e.into_inner());
+        write_parts(&mut *out, parts)?;
+        out.flush()
+    }
+}
+
+/// `parts` as one record, in as few writes as `out` takes.
+fn write_parts<W: Write>(out: &mut W, parts: &[&[u8]]) -> io::Result<()> {
+    let length = u32::try_from(parts.iter().map(|part| part.len()).sum::<usize>())
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "record too large"))?
+        .to_be_bytes();
+    let mut slices: Vec<IoSlice> = std::iter::once(&length[..])
+        .chain(parts.iter().copied())
+        .map(IoSlice::new)
+        .collect();
+    let mut slices = &mut slices[..];
+    while !slices.is_empty() {
+        match out.write_vectored(slices) {
+            Ok(0) => return Err(io::ErrorKind::WriteZero.into()),
+            Ok(written) => IoSlice::advance_slices(&mut slices, written),
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(())
 }
 
 pub fn frame_record(width: u16, height: u16, capture_ns: i64, jpeg: &[u8]) -> Vec<u8> {
@@ -210,5 +237,27 @@ mod tests {
     fn read_record_reads_a_record() {
         let mut input: &[u8] = &[0, 0, 0, 2, 9, 8, 7];
         assert_eq!(read_record(&mut input).unwrap(), Some(vec![9, 8]));
+    }
+
+    /// Takes at most three bytes a write, as a full pipe may.
+    struct Trickle(Vec<u8>);
+
+    impl Write for Trickle {
+        fn write(&mut self, data: &[u8]) -> io::Result<usize> {
+            let taken = data.len().min(3);
+            self.0.extend_from_slice(&data[..taken]);
+            Ok(taken)
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn writes_the_parts_of_a_record_after_its_length() {
+        let mut out = Trickle(Vec::new());
+        write_parts(&mut out, &[&[1, 2], &[], &[3, 4, 5, 6]]).unwrap();
+        assert_eq!(out.0, [0, 0, 0, 6, 1, 2, 3, 4, 5, 6]);
     }
 }

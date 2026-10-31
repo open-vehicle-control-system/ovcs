@@ -5,6 +5,11 @@ defmodule VisionCore.Stereo.Stage.Disparity do
   `nx_iree`, or compiled for the CPU. The disparity stays in `f32` pixels
   (`disparity_scale` 1.0), -1 where unmatched.
 
+  Natively (`VisionCore.Stereo.NativeSegment`), it matches with
+  `NxStereo.sgm/3`'s results, many times faster on a CPU than the
+  compiled Nx, as on a Raspberry Pi 5. It keeps its name, settings and
+  outputs.
+
   ## Options
 
     * `:num_disparities` (64) — 64 or 128.
@@ -15,6 +20,9 @@ defmodule VisionCore.Stereo.Stage.Disparity do
     * `:paths` (8) — aggregation paths, 8 or 3: 3 takes about a quarter of
       the GPU time and leaves more pixels unmatched on dark or textureless
       surfaces.
+    * `:matcher` — `:native` matches natively, `:nx` compiles
+      `NxStereo.sgm/3`, whatever the pipeline's `:compute`; by default,
+      as the pipeline's `:compute` says.
 
   `:p1`, `:p2` and `:uniqueness` are inputs of the compiled function, so
   they also change while running; `:num_disparities` and `:paths` are
@@ -72,6 +80,7 @@ defmodule VisionCore.Stereo.Stage.Disparity do
     p2 = Keyword.get(opts, :p2, 64)
     uniqueness = Keyword.get(opts, :uniqueness, 1.0526315789473684)
     paths = Keyword.get(opts, :paths, 8)
+    matcher = Keyword.get(opts, :matcher)
 
     cond do
       disparities not in [64, 128] ->
@@ -80,10 +89,23 @@ defmodule VisionCore.Stereo.Stage.Disparity do
       paths not in [3, 8] ->
         {:error, "nx_stereo aggregates along 3 or 8 paths, got #{inspect(paths)}"}
 
+      matcher not in [nil, :nx, :native] ->
+        {:error, "the matcher is :nx or :native, got #{inspect(matcher)}"}
+
       true ->
-        validate(disparities: disparities, paths: paths, p1: p1, p2: p2, uniqueness: uniqueness)
+        validate(
+          disparities: disparities,
+          paths: paths,
+          p1: p1,
+          p2: p2,
+          uniqueness: uniqueness,
+          matcher: matcher
+        )
     end
   end
+
+  @impl VisionCore.Stereo.NxStage
+  def compute(sgm_opts), do: sgm_opts[:matcher]
 
   @impl VisionCore.Stereo.NxStage
   def option_specs, do: @option_specs
@@ -131,7 +153,7 @@ defmodule VisionCore.Stereo.Stage.Disparity do
 
   @impl VisionCore.Stereo.NxStage
   def step(tensors, params, sgm_opts) do
-    sgm_opts = Keyword.merge(sgm_opts, Map.to_list(params))
+    sgm_opts = sgm_opts |> Keyword.merge(Map.to_list(params)) |> Keyword.delete(:matcher)
     Map.put(tensors, :disparity, NxStereo.sgm(tensors.left, tensors.right, sgm_opts))
   end
 

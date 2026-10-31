@@ -101,6 +101,9 @@ defmodule VisionCore.Stereo.Supervisor do
       pipeline's stages. The calibration paths and the capture size come
       from the options above, the matching size from `:match_width` and
       `:match_height`.
+    * `:compute` (`:nx`) — `:native` computes every stage that has a
+      native implementation in the `stereo_match` Port, for a CPU; see
+      `VisionCore.Stereo.Pipeline`.
     * `:defn_options` (`config :vision_core, :nx_defn_options`) — how the
       pipeline compiles Nx stages; see `VisionCore.Stereo.NxSegment`.
   """
@@ -189,6 +192,7 @@ defmodule VisionCore.Stereo.Supervisor do
       raw_image_max_hz: Keyword.get(opts, :raw_image_max_hz, @default_raw_image_max_hz),
       stages: Keyword.get_lazy(opts, :stages, &Pipeline.default_stages/0),
       defn_options: Keyword.get(opts, :defn_options),
+      compute: Keyword.get(opts, :compute, :nx),
       left: left,
       right: right
     }
@@ -374,7 +378,8 @@ defmodule VisionCore.Stereo.Supervisor do
       width: config.match_width,
       height: config.match_height,
       frame_width: config.width,
-      frame_height: config.height
+      frame_height: config.height,
+      compute: config.compute
     ]
 
     if config.defn_options,

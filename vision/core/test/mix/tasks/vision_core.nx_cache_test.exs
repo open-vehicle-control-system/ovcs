@@ -3,39 +3,84 @@ defmodule Mix.Tasks.VisionCore.NxCacheTest do
 
   alias VisionCore.Stereo.{NxSegment, Pipeline, Supervisor}
 
-  @moduletag :vulkan
   @moduletag :tmp_dir
   @moduletag timeout: 600_000
 
   defmodule Composer do
     @calibration Path.expand("../../support/calibration", __DIR__)
 
-    def config(:target) do
+    def config(:target),
+      do: config(Pipeline.default_stages(), NxSegment.c100_defn_options("unused"))
+
+    def config(stages, defn_options, extra \\ []) do
       %VisionCore.Config{
         zenoh_endpoint_ip: "127.0.0.1",
         components: [
-          stereo: [
-            driver: VisionCore.Camera.V4L2,
-            width: 192,
-            height: 108,
-            match_width: 96,
-            match_height: 54,
-            stages: Pipeline.default_stages(),
-            defn_options: NxSegment.c100_defn_options("unused"),
-            left: [calibration_path: Path.join(@calibration, "identity_left.yaml")],
-            right: [calibration_path: Path.join(@calibration, "identity_right.yaml")]
-          ]
+          stereo:
+            [
+              driver: VisionCore.Camera.V4L2,
+              width: 192,
+              height: 108,
+              match_width: 96,
+              match_height: 54,
+              stages: stages,
+              defn_options: defn_options,
+              left: [calibration_path: Path.join(@calibration, "identity_left.yaml")],
+              right: [calibration_path: Path.join(@calibration, "identity_right.yaml")]
+            ] ++ extra
         ]
       }
     end
   end
 
-  defp run_task(dir) do
+  defmodule NativeComposer do
+    def config(:target) do
+      Composer.config(
+        Pipeline.default_stages(disparity: [matcher: :native, paths: 3]),
+        NxSegment.rpi5_defn_options("unused")
+      )
+    end
+  end
+
+  defmodule AllNativeComposer do
+    def config(:target) do
+      Composer.config(
+        Pipeline.default_stages(),
+        NxSegment.rpi5_defn_options("unused"),
+        compute: :native
+      )
+    end
+  end
+
+  defp run_task(dir, composer \\ Composer) do
     ExUnit.CaptureIO.capture_io(fn ->
-      Mix.Tasks.VisionCore.NxCache.run(["--composer", inspect(Composer), "--out", dir])
+      Mix.Tasks.VisionCore.NxCache.run(["--composer", inspect(composer), "--out", dir])
     end)
   end
 
+  test "caches nothing when every stage computes natively", %{tmp_dir: dir} do
+    output = run_task(dir, AllNativeComposer)
+
+    assert Path.wildcard(Path.join(dir, "*")) == []
+    assert output =~ "nothing to compile"
+
+    {:stereo, stereo} = List.keyfind(AllNativeComposer.config(:target).components, :stereo, 0)
+    assert Supervisor.pipeline_options(stereo)[:compute] == :native
+  end
+
+  @tag :iree
+  test "caches the segments on either side of a native Disparity", %{tmp_dir: dir} do
+    run_task(dir, NativeComposer)
+    modules = Path.wildcard(Path.join(dir, "*.nxiree"))
+
+    # The segments before and after Disparity.
+    assert length(modules) == 2
+
+    run_task(dir, NativeComposer)
+    assert Path.wildcard(Path.join(dir, "*.nxiree")) == modules
+  end
+
+  @tag :vulkan
   test "caches every module once, as the device finds them", %{tmp_dir: dir} do
     run_task(dir)
     modules = Path.wildcard(Path.join(dir, "*.nxiree"))
