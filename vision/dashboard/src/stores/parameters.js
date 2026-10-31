@@ -116,7 +116,7 @@ async function loadOnce(set, get) {
     }
     set((state) => ({
       groups: keepUnchanged(state.groups, snapshot.groups),
-      parameters: keepUnchangedById(state.parameters, parameters),
+      parameters: keepUnchanged(state.parameters, parameters),
       unsaved: snapshot.unsaved,
       ...(state.errorSource === 'load' ? { error: null, errorSource: null } : {})
     }))
@@ -128,17 +128,13 @@ async function loadOnce(set, get) {
 // A poll mostly answers what is already shown: keeping the objects it did not change spares their components a render.
 const same = (a, b) => a === b || JSON.stringify(a) === JSON.stringify(b)
 
+// `next`, an array or an object, with each item equal to `previous`'s at the same key kept; `previous` itself if all are.
 function keepUnchanged(previous, next) {
-  const kept = next.map((item, index) => (same(previous[index], item) ? previous[index] : item))
-  return kept.length === previous.length && kept.every((item, index) => item === previous[index]) ? previous : kept
-}
-
-function keepUnchangedById(previous, next) {
-  const kept = {}
+  const kept = Array.isArray(next) ? [] : {}
   let changed = Object.keys(previous).length !== Object.keys(next).length
-  for (const [id, item] of Object.entries(next)) {
-    kept[id] = same(previous[id], item) ? previous[id] : item
-    if (kept[id] !== previous[id]) changed = true
+  for (const [key, item] of Object.entries(next)) {
+    kept[key] = same(previous[key], item) ? previous[key] : item
+    if (kept[key] !== previous[key]) changed = true
   }
   return changed ? kept : previous
 }
@@ -159,7 +155,13 @@ async function perform(action, set, get) {
 const EMPTY = []
 
 export const orderedGroups = (state) => state.groups.toSorted((a, b) => a.position - b.position)
-export const flowGroups = (state) => orderedGroups(state).filter((group) => group.role !== 'branch')
+/** The groups in order, split between the pipeline's flow and the branches beside it. */
+export function placedGroups(state) {
+  const ordered = orderedGroups(state)
+  return { flow: ordered.filter((group) => group.role !== 'branch'), side: ordered.filter((group) => group.role === 'branch') }
+}
+
+export const flowGroups = (state) => placedGroups(state).flow
 
 export const groupParameters = (state, groupId) => {
   const group = state.groups.find((candidate) => candidate.id === groupId)
