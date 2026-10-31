@@ -24,7 +24,7 @@
 use std::borrow::Cow;
 
 use crate::segment::{Geometry, Inputs, Options};
-use crate::tensor::{Tensor, Tensors};
+use crate::tensor::{self, Tensor, Tensors};
 
 /// Apart from the tags of `framing`'s records, the log record's among them.
 pub const TAG_CONFIGURED: u8 = 7;
@@ -96,14 +96,8 @@ impl<'a> Reader<'a> {
         let shape = (0..rank)
             .map(|_| self.u32().map(|dimension| dimension as usize))
             .collect::<Result<Vec<_>, _>>()?;
-        let element_bytes = if type_code == 0 {
-            1
-        } else if type_code == 1 {
-            2
-        } else {
-            4
-        };
-        let bytes = self.take(shape.iter().product::<usize>() * element_bytes)?;
+        let bytes =
+            self.take(shape.iter().product::<usize>() * tensor::element_bytes(type_code)?)?;
         Ok((name, Tensor::from_bytes(type_code, shape, bytes)?))
     }
 }

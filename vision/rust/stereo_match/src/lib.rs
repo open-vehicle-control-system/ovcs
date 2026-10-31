@@ -101,10 +101,6 @@ impl Matcher {
         }
     }
 
-    pub fn threads(&self) -> usize {
-        self.threads
-    }
-
     /// The disparity of each pixel of `left`, `-1.0` where unmatched, for
     /// settings that pass `Params::check`.
     pub fn disparity(

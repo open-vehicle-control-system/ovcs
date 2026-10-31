@@ -12,7 +12,7 @@ use std::thread;
 use std::time::Duration;
 
 use framing::{
-    frame_record, grey_frame_record, metadata_record, LogLevel, Writer, METADATA_FIELDS,
+    frame_header, grey_frame_header, metadata_record, LogLevel, Writer, METADATA_FIELDS,
 };
 use libcamera::camera::{Camera, CameraConfigurationStatus, Orientation, SensorConfiguration};
 use libcamera::camera_manager::CameraManager;
@@ -442,31 +442,36 @@ pub fn run(args: &Args, writer: &Arc<Writer>) -> i32 {
 
         // The dmabuf is not cache-coherent: invalidate before the CPU reads what the ISP wrote.
         dmabuf_sync(&view.sync_fds, DMA_BUF_SYNC_START | DMA_BUF_SYNC_READ);
+        let (width, height) = (out_width as u16, out_height as u16);
+        // The record's header, then its pixels, written as they are.
         let record = match &mut output {
             Output::Jpeg(encoder) => encoder
                 .encode(view)
-                .map(|jpeg| frame_record(out_width as u16, out_height as u16, capture_ns, jpeg))
+                .map(|jpeg| {
+                    (
+                        frame_header(width, height, capture_ns, jpeg.len()).to_vec(),
+                        jpeg,
+                    )
+                })
                 .map_err(|message| format!("tjCompressFromYUVPlanes: {message}")),
             Output::Grey(grey) => {
-                let (width, height) = (out_width as usize, out_height as usize);
+                let (columns, rows) = (out_width as usize, out_height as usize);
                 // SAFETY: the Y plane is mapped for `height` rows `y_stride` apart.
                 let luma = unsafe {
-                    std::slice::from_raw_parts(view.planes[0], luma_len(width, height, y_stride))
+                    std::slice::from_raw_parts(view.planes[0], luma_len(columns, rows, y_stride))
                 };
-                pack_luma(grey, luma, width, height, y_stride);
-                Ok(grey_frame_record(
-                    out_width as u16,
-                    out_height as u16,
-                    capture_ns,
-                    grey,
+                pack_luma(grey, luma, columns, rows, y_stride);
+                Ok((
+                    grey_frame_header(width, height, capture_ns).to_vec(),
+                    &grey[..],
                 ))
             }
         };
         dmabuf_sync(&view.sync_fds, DMA_BUF_SYNC_END | DMA_BUF_SYNC_READ);
 
         match record {
-            Ok(record) => {
-                if writer.write_record(&record).is_err() {
+            Ok((header, pixels)) => {
+                if writer.write_record_parts(&[&header, pixels]).is_err() {
                     stop.store(true, Ordering::Relaxed);
                 }
             }
