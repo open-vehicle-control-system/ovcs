@@ -29,9 +29,9 @@ defmodule VisionCore.Stereo.Parameters do
 
   alias VisionCore.Stereo.{AlignmentCorrection, Pipeline}
 
-  @side_keys [:device, :sync, :sensor_mode]
+  @side_keys [:device, :sync, :sensor_mode, :format]
   @half_row 0.5
-  @side_build_keys [:camera_id, :sync, :sensor_mode]
+  @side_build_keys [:camera_id, :sync, :sensor_mode, :format]
   @manual_keys [:exposure_time_us, :analogue_gain]
   @auto_switch_of %{exposure_time_us: :auto_exposure, analogue_gain: :auto_gain}
   @auto_switches [
@@ -385,6 +385,7 @@ defmodule VisionCore.Stereo.Parameters do
   defp parameter_value(value) when is_float(value), do: {:double, value}
   defp parameter_value(value) when is_boolean(value), do: {:bool, value}
   defp parameter_value({width, height}), do: {:string, "#{width}x#{height}"}
+  defp parameter_value({width, height, bits}), do: {:string, "#{width}x#{height}:#{bits}"}
   defp parameter_value(value) when is_atom(value), do: {:string, Atom.to_string(value)}
   defp parameter_value(value), do: {:string, to_string(value)}
 

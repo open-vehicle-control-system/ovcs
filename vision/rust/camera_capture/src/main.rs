@@ -1,12 +1,15 @@
-//! `camera_capture`: one libcamera sensor, YUV420 encoded to JPEG FRAME
-//! records on stdout; `Name=value` controls arrive on stdin, and stdin EOF
-//! stops the capture.
+//! `camera_capture`: one libcamera sensor's YUV420 output, written to stdout
+//! as JPEG FRAME records or, with `--format grey`, as GREY_FRAME records of
+//! its luma; `Name=value` controls arrive on stdin, and stdin EOF stops the
+//! capture.
 
 mod args;
 #[cfg(feature = "device")]
 mod capture;
 #[cfg_attr(not(feature = "device"), allow(dead_code))]
 mod controls;
+#[cfg_attr(not(feature = "device"), allow(dead_code))]
+mod grey;
 
 use std::process::exit;
 use std::sync::Arc;
@@ -46,8 +49,8 @@ fn main() {
         &writer,
         LogLevel::Info,
         &format!(
-            "camera={} {}x{} @{} fps",
-            args.camera_id, args.width, args.height, args.fps
+            "camera={} {}x{} @{} fps, {:?} frames",
+            args.camera_id, args.width, args.height, args.fps, args.format
         ),
     );
 

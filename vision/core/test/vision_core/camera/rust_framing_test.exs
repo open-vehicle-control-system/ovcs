@@ -13,7 +13,7 @@ defmodule VisionCore.Camera.RustFramingTest do
         cd: @rust_workspace
       )
 
-    assert [frame, log, metadata, pair] = split_packets(output)
+    assert [frame, log, metadata, pair, grey] = split_packets(output)
 
     assert {:ok, %Frame{width: 640, height: 480, jpeg: <<0xFF, 0xD8, 0xFF, 0xD9>>}} =
              LibCamera.parse_record(frame)
@@ -36,6 +36,9 @@ defmodule VisionCore.Camera.RustFramingTest do
 
     assert {:pair, %Frame{width: 2, height: 1, grey: <<1, 2>>}, %Frame{grey: <<3, 4>>}} =
              V4L2.parse_record(pair)
+
+    assert {:ok, %Frame{width: 3, height: 2, grey: <<1, 2, 3, 4, 5, 6>>}} =
+             LibCamera.parse_record(grey)
   end
 
   defp split_packets(<<>>), do: []

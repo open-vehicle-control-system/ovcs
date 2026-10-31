@@ -1,4 +1,4 @@
-//! The libcamera capture loop and its JPEG encoder.
+//! The libcamera capture loop, its JPEG encoder and its grey output.
 
 use std::collections::HashMap;
 use std::ffi::{c_char, c_int, c_uchar, c_ulong, c_void, CStr};
@@ -11,7 +11,9 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use framing::{frame_record, metadata_record, LogLevel, Writer, METADATA_FIELDS};
+use framing::{
+    frame_record, grey_frame_record, metadata_record, LogLevel, Writer, METADATA_FIELDS,
+};
 use libcamera::camera::{Camera, CameraConfigurationStatus, Orientation, SensorConfiguration};
 use libcamera::camera_manager::CameraManager;
 use libcamera::control::{ControlEntry, ControlList};
@@ -25,8 +27,9 @@ use libcamera::properties;
 use libcamera::request::{RequestStatus, ReuseFlag};
 use libcamera::stream::StreamRole;
 
-use crate::args::{Args, ExposureMode, SyncMode};
+use crate::args::{Args, ExposureMode, Format, SyncMode};
 use crate::controls::{coerce, parse_control, ControlKind, TypedValue};
+use crate::grey::{luma_len, pack_luma};
 use crate::log;
 
 const METADATA_EVERY_FRAMES: u32 = 5;
@@ -123,8 +126,8 @@ pub fn run(args: &Args, writer: &Arc<Writer>) -> i32 {
         }
     };
 
-    // Rotated in the pipeline: an upside-down sensor gives an upright JPEG.
-    config.set_orientation(match args.rotation {
+    // Rotated in the pipeline: an upside-down sensor gives an upright frame.
+    let orientation = match args.rotation {
         0 => Orientation::Rotate0,
         90 => Orientation::Rotate90,
         180 => Orientation::Rotate180,
@@ -135,7 +138,8 @@ pub fn run(args: &Args, writer: &Arc<Writer>) -> i32 {
             ));
             return 2;
         }
-    });
+    };
+    config.set_orientation(orientation);
 
     if let Some(mut stream_config) = config.get_mut(0) {
         stream_config.set_size(Size::new(args.width, args.height));
@@ -172,6 +176,13 @@ pub fn run(args: &Args, writer: &Arc<Writer>) -> i32 {
             });
             return 1;
         }
+    }
+    if config.orientation() != orientation {
+        warning(format!(
+            "--rotation {} adjusted to {:?}",
+            args.rotation,
+            config.orientation()
+        ));
     }
 
     let pixel_format = config
@@ -269,12 +280,15 @@ pub fn run(args: &Args, writer: &Arc<Writer>) -> i32 {
         requests.push(request);
     }
 
-    let mut encoder = match JpegEncoder::new(out_width, out_height) {
-        Ok(encoder) => encoder,
-        Err(message) => {
-            error(message);
-            return 1;
-        }
+    let mut output = match args.format {
+        Format::Jpeg => match JpegEncoder::new(out_width, out_height) {
+            Ok(encoder) => Output::Jpeg(encoder),
+            Err(message) => {
+                error(message);
+                return 1;
+            }
+        },
+        Format::Grey => Output::Grey(Vec::with_capacity(out_width as usize * out_height as usize)),
     };
 
     let control_ids = control_table(&camera);
@@ -409,17 +423,35 @@ pub fn run(args: &Args, writer: &Arc<Writer>) -> i32 {
 
         // The dmabuf is not cache-coherent: invalidate before the CPU reads what the ISP wrote.
         dmabuf_sync(&view.sync_fds, DMA_BUF_SYNC_START | DMA_BUF_SYNC_READ);
-        let encoded = encoder.encode(view);
+        let record = match &mut output {
+            Output::Jpeg(encoder) => encoder
+                .encode(view)
+                .map(|jpeg| frame_record(out_width as u16, out_height as u16, capture_ns, jpeg))
+                .map_err(|message| format!("tjCompressFromYUVPlanes: {message}")),
+            Output::Grey(grey) => {
+                let (width, height) = (out_width as usize, out_height as usize);
+                // SAFETY: the Y plane is mapped for `height` rows `y_stride` apart.
+                let luma = unsafe {
+                    std::slice::from_raw_parts(view.planes[0], luma_len(width, height, y_stride))
+                };
+                pack_luma(grey, luma, width, height, y_stride);
+                Ok(grey_frame_record(
+                    out_width as u16,
+                    out_height as u16,
+                    capture_ns,
+                    grey,
+                ))
+            }
+        };
         dmabuf_sync(&view.sync_fds, DMA_BUF_SYNC_END | DMA_BUF_SYNC_READ);
 
-        match encoded {
-            Ok(jpeg) => {
-                let record = frame_record(out_width as u16, out_height as u16, capture_ns, jpeg);
+        match record {
+            Ok(record) => {
                 if writer.write_record(&record).is_err() {
                     stop.store(true, Ordering::Relaxed);
                 }
             }
-            Err(message) => warning(format!("tjCompressFromYUVPlanes: {message}")),
+            Err(message) => warning(message),
         }
 
         request.reuse(ReuseFlag::REUSE_BUFFERS);
@@ -610,6 +642,12 @@ impl Drop for FdMapper {
             unsafe { libc::munmap(*base, *length) };
         }
     }
+}
+
+/// How a frame becomes a record: JPEG-encoded, or its luma packed into a reused buffer.
+enum Output {
+    Jpeg(JpegEncoder),
+    Grey(Vec<u8>),
 }
 
 /// Plane pointers of one buffer, resolved once.
