@@ -18,7 +18,7 @@ const groups = [
   }),
   group('cameras', 'Cameras', 1, { role: 'source' }),
   group('stereo.temporal', 'Temporal', 4, { status: { level: 'off', detail: 'switched off' } }),
-  group('stereo.match', 'Match', 2)
+  group('stereo.match', 'Match', 2, { compute: { runs_on: 'gpu', implementation: 'nx', backend: 'vulkan' } })
 ]
 
 const parameters = {
@@ -38,8 +38,8 @@ describe('PipelineDiagram', () => {
     render(<PipelineDiagram />)
 
     const flow = screen.getByRole('list', { name: 'Pipeline' })
-    const names = within(flow).getAllByRole('button').map((button) => button.textContent)
-    expect(names.map((name) => name.split(/\d/)[0].trim())).toEqual(['Cameras', 'Match', 'Alignment', 'Temporal'])
+    const names = within(flow).getAllByRole('button').map((button) => button.querySelector('[translate="no"]').textContent)
+    expect(names).toEqual(['Cameras', 'Match', 'Alignment', 'Temporal'])
     expect(flow.querySelectorAll('[data-arrow]')).toHaveLength(3)
 
     const side = screen.getByRole('list', { name: 'Beside the pipeline' })
@@ -83,7 +83,7 @@ describe('PipelineDiagram', () => {
 
     useParameters.setState({ selectedGroupId: 'stereo.match' })
     const { unmount } = render(<PipelineDiagram />)
-    const match = screen.getByRole('button', { name: 'Match' })
+    const match = screen.getByRole('button', { name: /^Match/ })
     expect(borders(match)).toEqual([])
     expect(match.className).toContain(BAR)
     expect(match.className).not.toMatch(/(^|\s)ring-/)
@@ -97,12 +97,21 @@ describe('PipelineDiagram', () => {
     expect(screen.getByRole('button', { name: 'Cameras' }).className).not.toContain(BAR)
   })
 
+  it('tags each stage with where it runs, under its name, and says it in the box name', () => {
+    render(<PipelineDiagram />)
+
+    const match = screen.getByRole('button', { name: /^Match/ })
+    expect([...match.querySelectorAll('[data-tag]')].map((tag) => tag.textContent)).toEqual(['GPU', 'Elixir Nx', 'Vulkan'])
+    expect(match.getAttribute('aria-label')).toBe('Match, on GPU, Elixir Nx, Vulkan')
+    expect(screen.getByRole('button', { name: /^Cameras/ }).querySelectorAll('[data-tag]')).toHaveLength(0)
+  })
+
   it('selects a group on click', () => {
     render(<PipelineDiagram />)
 
-    expect(screen.getByRole('button', { name: 'Match' }).getAttribute('aria-current')).toBe('true')
+    expect(screen.getByRole('button', { name: /^Match/ }).getAttribute('aria-current')).toBe('true')
     expect(screen.getByRole('button', { name: 'Cameras' }).getAttribute('aria-current')).toBeNull()
-    expect(screen.getByRole('button', { name: 'Match' }).className).toContain('bg-[color-mix(')
+    expect(screen.getByRole('button', { name: /^Match/ }).className).toContain('bg-[color-mix(')
     expect(screen.getByRole('button', { name: 'Cameras' }).className).not.toContain('bg-[color-mix(')
 
     fireEvent.click(screen.getByRole('button', { name: 'Cameras' }))
@@ -114,6 +123,6 @@ describe('PipelineDiagram', () => {
     useNavigation.setState({ page: 'ros2' })
     render(<PipelineDiagram />)
 
-    expect(screen.getByRole('button', { name: 'Match' }).getAttribute('aria-current')).toBeNull()
+    expect(screen.getByRole('button', { name: /^Match/ }).getAttribute('aria-current')).toBeNull()
   })
 })

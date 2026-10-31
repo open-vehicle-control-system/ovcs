@@ -3,6 +3,7 @@ import { flowGroups, groupUnsaved, sideGroups, useParameters } from '../stores/p
 import { OvcsBadge, focusClass as FOCUS } from '@ovcs/ui/react'
 import { SECTION_HEADING, SELECTED } from './menu.js'
 import { useNavigation } from '../stores/navigation.js'
+import { computeTags } from '../compute.js'
 
 // A warning item keeps its red border when selected.
 
@@ -14,6 +15,8 @@ const STATUS_STYLES = {
 
 function accessibleName(group, unsaved) {
   const parts = [group.name]
+  const tags = computeTags(group.compute)
+  if (tags.length > 0) parts.push(`on ${tags.join(', ')}`)
   if (unsaved > 0) parts.push(`${unsaved} unsaved`)
   if (group.status) parts.push(group.status.detail ? `${group.status.level}: ${group.status.detail}` : group.status.level)
   return parts.join(', ')
@@ -21,6 +24,7 @@ function accessibleName(group, unsaved) {
 
 function GroupBox({ group, unsaved, selected, onSelect }) {
   const style = STATUS_STYLES[group.status?.level] ?? STATUS_STYLES.ok
+  const tags = computeTags(group.compute)
   return (
     <button
       type="button"
@@ -28,11 +32,22 @@ function GroupBox({ group, unsaved, selected, onSelect }) {
       aria-current={selected ? 'true' : undefined}
       title={group.status?.detail}
       onClick={() => onSelect(group.id)}
-      className={`flex min-h-9 w-full items-center gap-2 rounded border px-3 text-left text-sm ${style.border} ${
+      className={`flex min-h-9 w-full items-center gap-2 rounded border px-3 py-1 text-left text-sm ${style.border} ${
         selected ? `${SELECTED} font-medium` : 'hover:bg-ovcs-bg'
       } ${FOCUS}`}
     >
-      <span translate="no">{group.name}</span>
+      <span className="flex min-w-0 flex-col gap-0.5">
+        <span translate="no">{group.name}</span>
+        {tags.length > 0 ? (
+          <span aria-hidden="true" className="flex flex-wrap gap-1">
+            {tags.map((tag) => (
+              <span key={tag} data-tag translate="no" className="text-[10px] font-normal leading-none text-ovcs-muted">
+                {tag}
+              </span>
+            ))}
+          </span>
+        ) : null}
+      </span>
       {group.status && style.dot ? <span aria-hidden="true" className={`ml-auto ${style.dot}`} /> : null}
       <OvcsBadge tone="warn" aria-hidden="true" className={`min-w-4 text-center tabular-nums ${unsaved > 0 ? '' : 'invisible'} ${group.status && style.dot ? '' : 'ml-auto'}`}>
         {unsaved}
