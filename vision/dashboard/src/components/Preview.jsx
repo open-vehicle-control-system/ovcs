@@ -1,10 +1,10 @@
-import { createContext, useContext, useEffect, useRef, useState } from 'react'
+import { createContext, use, useEffect, useRef, useState } from 'react'
 import { OvcsCard } from '@ovcs/ui/react'
 
 const FrameSize = createContext(null)
 
 /** The shown frame's natural `{ width, height }`, for an overlay drawn over it. */
-export const useFrameSize = () => useContext(FrameSize)
+export const useFrameSize = () => use(FrameSize)
 
 /**
  * A stream's latest frame, with its resolution; `children` sit in the caption, under the stream's name, `onChannel`

@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { FOCUS } from './styles.js'
 
 const BUTTON = `min-h-9 rounded border border-ovcs-border px-3 text-sm enabled:hover:border-ovcs-accent disabled:cursor-not-allowed disabled:opacity-50 ${FOCUS}`
@@ -90,10 +90,17 @@ function Alert({ text, dismissLabel, onDismiss }) {
  * The callbacks may return promises; the actions stay disabled until they settle. `onExport`
  * resolves to the snippet, shown above the bar. `className` and `ref` go to the bar itself.
  */
-const OvcsSaveBar = forwardRef(function OvcsSaveBar(
-  { unsaved, error, onSave, onDiscard, onResetAll, onExport, onDismissError, className = '' },
+export default function OvcsSaveBar({
+  unsaved,
+  error,
+  onSave,
+  onDiscard,
+  onResetAll,
+  onExport,
+  onDismissError,
+  className = '',
   ref
-) {
+}) {
   const [snippet, setSnippet] = useState(null)
   const [exportError, setExportError] = useState(null)
   const [running, setRunning] = useState(null)
@@ -160,6 +167,4 @@ const OvcsSaveBar = forwardRef(function OvcsSaveBar(
       </div>
     </>
   )
-})
-
-export default OvcsSaveBar
+}

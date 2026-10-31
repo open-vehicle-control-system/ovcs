@@ -28,7 +28,7 @@ Design tokens, shared components and a Tailwind preset for OVCS web UIs. Plain C
 
   Classes on a component (`<OvcsCard class="p-0">`) add to its own.
 
-- `react`: React 18 components over the same classes, with the same names and props, `className` adding to the component's own classes and `children` as the content. Importing it loads `tokens.css` and `components.css`. React is an optional peer dependency.
+- `react`: React 19 components over the same classes, with the same names and props, `className` adding to the component's own classes and `children` as the content, and `ref` a plain prop. Importing it loads `tokens.css` and `components.css`. React is an optional peer dependency.
 
   | Component | Props |
   |---|---|

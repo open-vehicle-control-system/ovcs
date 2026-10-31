@@ -47,4 +47,4 @@ A vehicle picks the board with `vision_target/0`, and the capture driver, the st
 
 ### Dashboard
 
-[React 18](https://react.dev/), [Zustand](https://zustand.docs.pmnd.rs/) for its state, `@ovcs/ui` for its styles and generic components, the [Phoenix](https://hexdocs.pm/phoenix/js/) JavaScript client for the channels, built with [Vite](https://vite.dev/).
+[React 19](https://react.dev/), [Zustand](https://zustand.docs.pmnd.rs/) for its state, `@ovcs/ui` for its styles and generic components, the [Phoenix](https://hexdocs.pm/phoenix/js/) JavaScript client for the channels, built with [Vite](https://vite.dev/).
