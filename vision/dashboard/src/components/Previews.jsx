@@ -73,18 +73,25 @@ function useDetections(socket) {
   return detections
 }
 
+/** The left camera with the detected objects drawn over it and counted; their results re-render it alone. */
+function LeftPreview({ status, socket }) {
+  const detections = useDetections(socket)
+
+  return (
+    <Preview stream="left" socket={socket} overlay={detections ? <DetectionOverlay detections={detections} /> : null}>
+      {status ? <Figures id="left" figures={[...cameraFigures(status.cameras?.left), ...objectFigures(detections)]} /> : null}
+    </Preview>
+  )
+}
+
 /** Both cameras with their rates and how they compare between them, then the depth with its rate, filling the height left. */
 export default function Previews({ status, socket }) {
   const [depthChannel, setDepthChannel] = useState(null)
-  const detections = useDetections(socket)
-  const overlay = detections ? (size) => <DetectionOverlay detections={detections} {...size} /> : undefined
 
   return (
     <section aria-label="Previews" className="flex flex-col gap-3 lg:min-h-0 lg:flex-1">
       <div className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3">
-        <Preview stream="left" socket={socket} overlay={overlay}>
-          {status ? <Figures id="left" figures={[...cameraFigures(status.cameras?.left), ...objectFigures(detections)]} /> : null}
-        </Preview>
+        <LeftPreview status={status} socket={socket} />
         <PairStatus status={status} />
         <Preview stream="right" socket={socket}>
           {status ? <Figures id="right" figures={cameraFigures(status.cameras?.right)} /> : null}

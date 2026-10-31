@@ -1,8 +1,11 @@
+import { useFrameSize } from './Preview.jsx'
+
 /**
- * The detected objects over a preview: each outline, given as fractions of the image, and a label with its
- * distance. The view box is the image's own size, fitted like the image, so the boxes stay on it at any size.
+ * The detected objects over a preview's frame: each outline, given as fractions of the image, and a label with its
+ * distance. The view box is the frame's own size, fitted like the frame, so the boxes stay on it at any size.
  */
-export default function DetectionOverlay({ detections, width, height }) {
+export default function DetectionOverlay({ detections }) {
+  const { width, height } = useFrameSize()
   const fontSize = Math.max(10, height / 20)
 
   return (
@@ -20,8 +23,8 @@ export default function DetectionOverlay({ detections, width, height }) {
           <g key={index}>
             <polygon points={points} fill="none" stroke="currentColor" strokeWidth={Math.max(1.5, width / 300)} />
             <text
-              x={left * width + 3}
-              y={Math.max(top * height - 4, fontSize)}
+              x={round(left * width + 3)}
+              y={round(Math.max(top * height - 4, fontSize))}
               fontSize={fontSize}
               fill="white"
               stroke="black"

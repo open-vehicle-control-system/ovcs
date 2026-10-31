@@ -1,9 +1,14 @@
-import { useEffect, useRef, useState } from 'react'
+import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { OvcsCard } from '@ovcs/ui/react'
+
+const FrameSize = createContext(null)
+
+/** The shown frame's natural `{ width, height }`, for an overlay drawn over it. */
+export const useFrameSize = () => useContext(FrameSize)
 
 /**
  * A stream's latest frame, with its resolution; `children` sit in the caption, under the stream's name, `onChannel`
- * gets the stream's channel, and `overlay`, given the frame's size, draws over it.
+ * gets the stream's channel, and `overlay` is drawn over the frame once its size is known (`useFrameSize`).
  */
 export default function Preview({ stream, socket, onChannel, overlay, className = '', frameClassName = '', children }) {
   const [frame, setFrame] = useState(null)
@@ -53,7 +58,7 @@ export default function Preview({ stream, socket, onChannel, overlay, className 
         ) : (
           <p className="text-sm text-ovcs-muted">No frame</p>
         )}
-        {frame && size && overlay ? overlay(size) : null}
+        {frame && size && overlay ? <FrameSize.Provider value={size}>{overlay}</FrameSize.Provider> : null}
       </div>
       <figcaption className="flex flex-col gap-1.5 px-3 py-2 text-sm">
         <div className="flex items-baseline gap-2">
