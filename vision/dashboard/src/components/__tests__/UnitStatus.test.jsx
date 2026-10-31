@@ -39,13 +39,14 @@ describe('UnitStatus and the pair status', () => {
     expect(card('zenoh').textContent).toContain('disconnected')
   })
 
-  it('shows the CPU usage, and the stereo segment time as the GPU, explained by its hint', () => {
+  it('shows the CPU usage, and the stereo stages\' busy time as the stereo load, explained by its hint', () => {
     show(snapshot)
 
     expect(card('cpu').textContent).toContain('37 %')
-    expect(card('segment').textContent).toContain('GPU')
+    expect(card('segment').textContent).toContain('Stereo load')
+    expect(card('segment').textContent).not.toContain('GPU')
     expect(card('segment').textContent).toContain('82 %')
-    expect(card('segment').querySelector('button').getAttribute('aria-label')).toBe('About GPU')
+    expect(card('segment').querySelector('button').getAttribute('aria-label')).toBe('About Stereo load')
   })
 
   it('shows the row alignment, overall and from left to right', () => {
