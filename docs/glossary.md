@@ -42,7 +42,7 @@ The guides use a small set of words precisely. Each entry below gives the meanin
 | **Nerves target** | The Mix target (`MIX_TARGET`) a role builds for, read from `vms_target/0`, `infotainment_target/0` or a bridge entry's `:target`. It usually equals the system's name; `rpi5` for `ovcs_bridges_system_rpi5` is the exception. [Running on hardware](./running_hardware.md#boards-per-role) |
 | **NervesHub** | A self-hosted update server the VMS firmware can pull signed firmware from, opt-in per vehicle through `NERVES_HUB_*` variables in `.env.exs`, with one NervesHub product per vehicle. [Running on hardware](./running_hardware.md#ota-updates-via-nerveshub) |
 | **OTA** | Updating a deployed board's firmware over the network instead of reburning its SD card. The guides mean NervesHub pulls by "OTA updates"; `./ovcs upload` pushes an image over SSH. [Running on hardware](./running_hardware.md#ota-updates-via-nerveshub) |
-| **Vision unit** | The optional `vision` role: a Raspberry Pi 5 running `VisionCore` stereo depth and object detection, published over Zenoh, with its own dashboard. A vehicle opts in with `vision/0` and `vision_target/0`. [Vision unit](./vision.md) |
+| **Vision unit** | The optional `vision` role: a Raspberry Pi 5 running `VisionCore` stereo depth and object detection, published over Zenoh, with its own dashboard. A vehicle opts in with `vision/0` and `vision_target/0`. [Vision unit](./vision/overview.md) |
 | **System fork** | An OVCS fork of an upstream Nerves system, pinned to a tag; `systems/` holds local clones for patching one. [Toolchain and OTP](./toolchain_and_otp.md#hacking-on-a-system-fork-locally) |
 
 ## CAN

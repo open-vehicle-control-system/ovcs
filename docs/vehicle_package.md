@@ -18,7 +18,7 @@ A standalone Mix package whose top-level module implements the `OvcsVehicle` beh
 | A VMS composer (`VmsCore.Vehicle`): which component drivers run, the CAN topology, dashboard pages, controller pinouts | `vms_core` with the component drivers, managers, metrics, and the dashboard API |
 | An optional infotainment composer (`InfotainmentCore.Vehicle`): head-unit pages and CAN topology | `infotainment_core`, its API, and the Flutter dashboard |
 | Optional bridge firmware entries: which bridge libraries to bundle, on which Pi, with which CAN mapping | The bridge libraries (`RadioControlBridge`, `RosBridge`) and `OvcsBridge.Supervisor` |
-| An optional vision composer (`VisionCore.Composer`): cameras, calibration, stereo tuning and detector for a Pi 5 vision unit ([Vision unit](./vision.md)) | `vision_core`, its API and dashboard, and the Rust camera and Hailo Ports |
+| An optional vision composer (`VisionCore.Composer`): cameras, calibration, stereo tuning and detector for a Pi 5 vision unit ([Vision unit](./vision/overview.md)) | `vision_core`, its API and dashboard, and the Rust camera and Hailo Ports |
 | CAN YAMLs under `priv/can/` that import shared frame specs | `ovcs_can` frame specifications and Cantastic |
 | `.env.exs` with SSH keys, Wi-Fi networks and secrets; SSH host keys | The `ovcs` CLI that builds, burns, uploads and runs any vehicle |
 
@@ -217,7 +217,7 @@ def vision, do: MyCar.Vision.Composer
 def vision_target, do: :rpi5
 ```
 
-`vision/0` returns a module implementing `VisionCore.Composer`, whose `config/1` returns a `VisionCore.Config` for the `:host` or `:target` arm. The optional `required_files/0` lists files relative to your vehicle app, such as a detection model, and the firmware build fails when one is missing. The role is addressed as `vision` (`./ovcs build my_car vision`) and its boot files go in `priv/firmware/vision/`. See [Vision unit](./vision.md).
+`vision/0` returns a module implementing `VisionCore.Composer`, whose `config/1` returns a `VisionCore.Config` for the `:host` or `:target` arm. The optional `required_files/0` lists files relative to your vehicle app, such as a detection model, and the firmware build fails when one is missing. The role is addressed as `vision` (`./ovcs build my_car vision`) and its boot files go in `priv/firmware/vision/`. See [Vision unit](./vision/overview.md).
 
 ## Bus wiring and node names
 
