@@ -6,8 +6,9 @@ defmodule VisionCore.Detection.Pipeline do
   the boxes it returns with that pair's depth map, and sends the result
   to its listeners as `{:detections, pair, detections}`.
 
-  Registers as a listener on `VisionCore.Stereo.Pipeline`, so it sees
-  the pairs every other consumer does, rectified left image and metric
+  Registers as a listener on `VisionCore.Stereo.Pipeline`, and again
+  whenever the stereo unit restarts it (`VisionCore.Stereo.Sources`), so
+  it sees the pairs every other consumer does, rectified left image and metric
   depth included. That is why detection is nearly free here: the pixels
   are already decoded and rectified, the depth is already computed, and
   the accelerator is otherwise idle.
@@ -61,7 +62,7 @@ defmodule VisionCore.Detection.Pipeline do
   use GenServer
 
   alias VisionCore.Detection.Fusion
-  alias VisionCore.Stereo.Pair
+  alias VisionCore.Stereo.{Pair, Sources}
 
   @coco_labels ~w(person bicycle car motorcycle airplane bus train truck boat
                   traffic_light fire_hydrant stop_sign parking_meter bench bird cat
@@ -109,8 +110,8 @@ defmodule VisionCore.Detection.Pipeline do
     if Process.whereis(VisionCore.Parameters),
       do: :ok = VisionCore.Parameters.declare([group(state)])
 
-    VisionCore.Stereo.Pipeline.register_listener(VisionCore.Stereo.Pipeline, self())
-    {:ok, state}
+    monitors = Sources.register([{VisionCore.Stereo.Pipeline, VisionCore.Stereo.Pipeline}])
+    {:ok, Map.put(state, :monitors, monitors)}
   end
 
   @doc "The detection's parameter group for a running `state`: its settings, fixed at start."
@@ -180,6 +181,16 @@ defmodule VisionCore.Detection.Pipeline do
 
   # A reply for a pair no longer waited on.
   def handle_info({:inference_detections, _stale, _detections}, state), do: {:noreply, state}
+
+  def handle_info({:register_source, source}, state),
+    do: {:noreply, %{state | monitors: Sources.retry(source, state.monitors)}}
+
+  def handle_info({:DOWN, monitor_reference, :process, _pid, _reason}, state) do
+    case Sources.down(monitor_reference, state.monitors) do
+      {:ok, monitors} -> {:noreply, %{state | monitors: monitors}}
+      :error -> {:noreply, state}
+    end
+  end
 
   def handle_info(_message, state), do: {:noreply, state}
 

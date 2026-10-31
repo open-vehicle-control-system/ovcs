@@ -1,8 +1,8 @@
 defmodule VisionCore.Stereo.Sources do
   @moduledoc """
   Keeps a process registered as a listener on the stereo unit's camera
-  drivers and pipeline, for `VisionCore.Status` and
-  `VisionCore.Preview`.
+  drivers and pipeline, for `VisionCore.Status`, `VisionCore.Preview`
+  and `VisionCore.Detection.Pipeline`.
 
   Those sources run under `VisionCore.Stereo.Supervisor`, whose
   own restarts do not reach processes outside it, and a restarted source
