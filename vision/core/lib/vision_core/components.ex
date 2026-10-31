@@ -62,8 +62,8 @@ defmodule VisionCore.Components do
   end
 
   def start(:detector, opts) do
-    # Its own supervisor, so a crashing detector cannot exhaust the vision core's restart budget.
-    [{VisionCore.Detection.Supervisor, opts}]
+    # Its own budget, and not restarted once it gives up, so a crashing detector cannot exhaust the vision core's.
+    [Supervisor.child_spec({VisionCore.Detection.Supervisor, opts}, restart: :transient)]
   end
 
   def start(:stereo, opts) do
