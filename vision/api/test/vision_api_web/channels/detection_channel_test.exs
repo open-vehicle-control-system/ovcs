@@ -33,7 +33,7 @@ defmodule VisionApiWeb.DetectionChannelTest do
     )
 
     assert_push "detections", %{detections: [detection]}
-    assert %{label: "person", score: 0.6, distance_m: 1.8, outline: [[0.25, 0.2] | _]} = detection
+    assert %{label: "person", score: 0.6, distanceM: 1.8, outline: [[0.25, 0.2] | _]} = detection
   end
 
   test "joining without detection running is refused as unavailable" do

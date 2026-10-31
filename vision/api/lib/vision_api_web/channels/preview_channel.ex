@@ -16,7 +16,7 @@ defmodule VisionApiWeb.PreviewChannel do
   """
   use VisionApiWeb, :channel
 
-  alias VisionApiWeb.SourceMonitor
+  alias VisionApiWeb.{DepthRangePresenter, SourceMonitor}
 
   @streams %{"left" => :left, "right" => :right, "depth" => :depth}
 
@@ -47,7 +47,7 @@ defmodule VisionApiWeb.PreviewChannel do
       end
 
     case reply do
-      {:ok, options} -> {:reply, {:ok, %{metres: options.depth_range_m}}, socket}
+      {:ok, options} -> {:reply, {:ok, DepthRangePresenter.present(options)}, socket}
       {:error, reason} -> {:reply, {:error, %{reason: reason}}, socket}
     end
   end
@@ -61,8 +61,8 @@ defmodule VisionApiWeb.PreviewChannel do
     {:noreply, socket}
   end
 
-  def handle_info({:vision_preview_options, %{depth_range_m: metres}}, socket) do
-    push(socket, "depth_range", %{metres: metres})
+  def handle_info({:vision_preview_options, options}, socket) do
+    push(socket, "depth_range", DepthRangePresenter.present(options))
     {:noreply, socket}
   end
 

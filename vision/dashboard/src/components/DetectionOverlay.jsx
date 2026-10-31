@@ -1,7 +1,7 @@
 import { useFrameSize } from './Preview.jsx'
 import { formatNumber } from '../status.js'
 
-const distance = (detection) => `${formatNumber(detection.distance_m)}\u00a0m`
+const distance = (detection) => `${formatNumber(detection.distanceM)}\u00a0m`
 
 /**
  * The detected objects over a preview's frame: each outline, given as fractions of the image, and a label with its

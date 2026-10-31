@@ -5,10 +5,10 @@ import Previews from '../Previews.jsx'
 const socket = { channel: vi.fn(() => ({ on: vi.fn(), join: vi.fn(), push: vi.fn(() => ({ receive() { return this } })), off: vi.fn(), leave: vi.fn() })) }
 
 const snapshot = {
-  cameras: { left: { present: true, fps: 29.6, exposure_time_us: 8000, analogue_gain: 2.0 }, right: { present: false } },
-  sync: { present: true, offset_median_ms: 0.12, offset_max_ms: 0.4, pairs: 150 },
-  depth_hz: 12.8,
-  quality: { matched_percent: 61.6, mean_disparity_px: 18.43, spread_px: 6.08, jitter_px: 0.318 }
+  cameras: { left: { present: true, fps: 29.6, exposureTimeUs: 8000, analogueGain: 2.0 }, right: { present: false } },
+  sync: { present: true, offsetMedianMs: 0.12, offsetMaxMs: 0.4, pairs: 150 },
+  depthHz: 12.8,
+  quality: { matchedPercent: 61.6, meanDisparityPx: 18.43, spreadPx: 6.08, jitterPx: 0.318 }
 }
 
 describe('Previews', () => {
@@ -91,7 +91,7 @@ describe('Previews', () => {
     const person = {
       label: 'person',
       score: 0.62,
-      distance_m: 1.84,
+      distanceM: 1.84,
       outline: [[0.25, 0.2], [0.75, 0.2], [0.75, 0.8], [0.25, 0.8]]
     }
 

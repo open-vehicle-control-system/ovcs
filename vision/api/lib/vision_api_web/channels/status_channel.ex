@@ -1,12 +1,12 @@
 defmodule VisionApiWeb.StatusChannel do
   @moduledoc """
-  Pushes `VisionCore.Status` snapshots as `"status"`: one on join, then
-  one a second. Stops when `VisionCore.Status` restarts, and refuses the
+  Pushes `VisionCore.Status` snapshots as `"status"`, presented by
+  `VisionApiWeb.StatusPresenter`: one on join, then one a second. Stops when `VisionCore.Status` restarts, and refuses the
   join while it is not running; see `VisionApiWeb.SourceMonitor`.
   """
   use VisionApiWeb, :channel
 
-  alias VisionApiWeb.SourceMonitor
+  alias VisionApiWeb.{SourceMonitor, StatusPresenter}
 
   @impl Phoenix.Channel
   def join("status", _payload, socket),
@@ -14,7 +14,7 @@ defmodule VisionApiWeb.StatusChannel do
 
   @impl Phoenix.Channel
   def handle_info({:vision_status, snapshot}, socket) do
-    push(socket, "status", snapshot)
+    push(socket, "status", StatusPresenter.present(snapshot))
     {:noreply, socket}
   end
 

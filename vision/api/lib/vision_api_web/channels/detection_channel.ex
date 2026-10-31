@@ -1,15 +1,14 @@
 defmodule VisionApiWeb.DetectionChannel do
   @moduledoc """
   Pushes `VisionCore.Detection.Live`'s results on `"detections"` as
-  `"detections"` events, `%{detections: [%{label:, score:, distance_m:,
-  outline:}]}`: each object's outline on the left camera's image, as
-  fractions of its width and height. Stops when `VisionCore.Detection.Live`
+  `"detections"` events, `%{detections: [detection]}`, each presented by
+  `VisionApiWeb.DetectionPresenter`. Stops when `VisionCore.Detection.Live`
   restarts, and refuses the join while it is not running, as on a unit
   without detection; see `VisionApiWeb.SourceMonitor`.
   """
   use VisionApiWeb, :channel
 
-  alias VisionApiWeb.SourceMonitor
+  alias VisionApiWeb.{DetectionPresenter, SourceMonitor}
 
   @impl Phoenix.Channel
   def join("detections", _payload, socket),
@@ -22,7 +21,7 @@ defmodule VisionApiWeb.DetectionChannel do
 
   @impl Phoenix.Channel
   def handle_info({:vision_detections, detections}, socket) do
-    push(socket, "detections", %{detections: detections})
+    push(socket, "detections", %{detections: Enum.map(detections, &DetectionPresenter.present/1)})
     {:noreply, socket}
   end
 

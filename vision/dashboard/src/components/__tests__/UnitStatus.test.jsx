@@ -6,14 +6,14 @@ import Previews from '../Previews.jsx'
 const socket = { channel: vi.fn(() => ({ on: vi.fn(), join: vi.fn(), push: vi.fn(() => ({ receive() { return this } })), off: vi.fn(), leave: vi.fn() })) }
 
 const snapshot = {
-  cameras: { left: { present: true, fps: 29.6, exposure_time_us: 8000, analogue_gain: 2.0 }, right: { present: false } },
-  sync: { present: true, offset_median_ms: 0.12, offset_max_ms: 0.4, pairs: 150 },
+  cameras: { left: { present: true, fps: 29.6, exposureTimeUs: 8000, analogueGain: 2.0 }, right: { present: false } },
+  sync: { present: true, offsetMedianMs: 0.12, offsetMaxMs: 0.4, pairs: 150 },
   hailo: 'absent',
-  depth_hz: 12.8,
+  depthHz: 12.8,
   zenoh: 'disconnected',
-  cpu_percent: 37.25,
-  stereo_segment_percent: 81.5,
-  alignment: { offset_rows: -1.43, band_offset_rows: [-1.9, -1.6, -1.2, -1.0] },
+  cpuPercent: 37.25,
+  stereoLoadPercent: 81.5,
+  alignment: { offsetRows: -1.43, bandOffsetRows: [-1.9, -1.6, -1.2, -1.0] },
   sharpness: { left: 0.0312, right: 0.0218 }
 }
 
@@ -64,7 +64,7 @@ describe('UnitStatus and the pair status', () => {
   })
 
   it('shows an alignment within half a row as healthy', () => {
-    show({ ...snapshot, alignment: { offset_rows: 0.2, band_offset_rows: [0.1, 0.2, 0.2, 0.3] } })
+    show({ ...snapshot, alignment: { offsetRows: 0.2, bandOffsetRows: [0.1, 0.2, 0.2, 0.3] } })
 
     expect(card('alignment').querySelector('.ovcs-status--ok')).not.toBeNull()
   })
@@ -90,7 +90,7 @@ describe('UnitStatus and the pair status', () => {
   })
 
   it('shows an unknown CPU usage as a dash', () => {
-    show({ ...snapshot, cpu_percent: null })
+    show({ ...snapshot, cpuPercent: null })
 
     expect(card('cpu').textContent).toContain('–')
   })

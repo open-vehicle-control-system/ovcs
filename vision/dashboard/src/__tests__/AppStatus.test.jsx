@@ -23,7 +23,7 @@ describe('App and the status', () => {
     render(<App />)
     const before = menuRenders.count
 
-    act(() => useStatus.setState({ snapshot: { zenoh: 'connected', hailo: 'running', cpu_percent: 40, stereo_segment_percent: 50, cameras: {} } }))
+    act(() => useStatus.setState({ snapshot: { zenoh: 'connected', hailo: 'running', cpuPercent: 40, stereoLoadPercent: 50, cameras: {} } }))
 
     expect(screen.getByText('connected')).toBeTruthy()
     expect(menuRenders.count).toBe(before)

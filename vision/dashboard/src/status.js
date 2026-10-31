@@ -13,11 +13,11 @@ export function cameraFigures(camera) {
   const figures = [
     { label: 'rate', value: `${formatNumber(camera.fps)} fps`, tone: camera.fps > 0 ? 'ok' : 'error', hint: HINTS.cameraRate }
   ]
-  if (camera.exposure_time_us != null) {
-    figures.push({ label: 'exposure', value: `${formatNumber(camera.exposure_time_us / 1000)} ms`, hint: HINTS.exposure })
+  if (camera.exposureTimeUs != null) {
+    figures.push({ label: 'exposure', value: `${formatNumber(camera.exposureTimeUs / 1000)} ms`, hint: HINTS.exposure })
   }
-  if (camera.analogue_gain != null) {
-    figures.push({ label: 'gain', value: formatNumber(camera.analogue_gain), hint: HINTS.gain })
+  if (camera.analogueGain != null) {
+    figures.push({ label: 'gain', value: formatNumber(camera.analogueGain), hint: HINTS.gain })
   }
   return figures
 }
@@ -29,13 +29,13 @@ export function objectFigures(detections) {
 
 export function syncStatus(sync) {
   if (!sync || !sync.present) return { id: 'sync', title: 'Synchronisation', value: 'absent', healthy: false }
-  if (sync.offset_median_ms == null) return { id: 'sync', title: 'Synchronisation', value: 'no pairs', healthy: false }
+  if (sync.offsetMedianMs == null) return { id: 'sync', title: 'Synchronisation', value: 'no pairs', healthy: false }
   return {
     id: 'sync',
     title: 'Synchronisation',
-    value: `${formatNumber(sync.offset_median_ms, 2)} ms`,
-    healthy: Math.abs(sync.offset_median_ms) <= 1,
-    detail: `max ${formatNumber(sync.offset_max_ms, 2)} ms over ${sync.pairs} pairs`,
+    value: `${formatNumber(sync.offsetMedianMs, 2)} ms`,
+    healthy: Math.abs(sync.offsetMedianMs) <= 1,
+    detail: `max ${formatNumber(sync.offsetMaxMs, 2)} ms over ${sync.pairs} pairs`,
     hint: HINTS.sync
   }
 }
@@ -48,17 +48,17 @@ export function depthFigures(hz, quality) {
     ...figures,
     {
       label: 'matched',
-      value: `${formatNumber(quality.matched_percent, 0)} %`,
+      value: `${formatNumber(quality.matchedPercent, 0)} %`,
       hint: HINTS.matched
     },
     {
       label: 'disparity',
-      value: `${formatNumber(quality.mean_disparity_px)} ± ${formatNumber(quality.spread_px)} px`,
+      value: `${formatNumber(quality.meanDisparityPx)} ± ${formatNumber(quality.spreadPx)} px`,
       hint: HINTS.disparity
     },
     {
       label: 'jitter',
-      value: `${formatNumber(quality.jitter_px, 2)} px`,
+      value: `${formatNumber(quality.jitterPx, 2)} px`,
       hint: HINTS.jitter
     }
   ]
@@ -80,10 +80,10 @@ function alignmentStatus(alignment) {
   return {
     id: 'alignment',
     title: 'Row alignment',
-    value: `${formatNumber(alignment.offset_rows)} rows`,
-    healthy: Math.abs(alignment.offset_rows) <= 0.5,
+    value: `${formatNumber(alignment.offsetRows)} rows`,
+    healthy: Math.abs(alignment.offsetRows) <= 0.5,
     hint: HINTS.alignment,
-    detail: `left to right ${alignment.band_offset_rows.map((rows) => formatNumber(rows)).join(' · ')}`
+    detail: `left to right ${alignment.bandOffsetRows.map((rows) => formatNumber(rows)).join(' · ')}`
   }
 }
 
@@ -112,7 +112,7 @@ export function unitStatus(status) {
     { id: 'zenoh', title: 'Zenoh', value: status.zenoh, healthy: status.zenoh === 'connected', hint: HINTS.zenoh },
     // Absent is a unit built without an accelerator, not a fault.
     { id: 'hailo', title: 'Hailo', value: status.hailo, healthy: status.hailo === 'running', tone: status.hailo === 'absent' ? 'muted' : undefined, hint: HINTS.hailo },
-    { ...loadStatus('cpu', 'CPU', status.cpu_percent), hint: HINTS.cpu },
-    { ...loadStatus('segment', 'Stereo load', status.stereo_segment_percent), hint: HINTS.stereoLoad }
+    { ...loadStatus('cpu', 'CPU', status.cpuPercent), hint: HINTS.cpu },
+    { ...loadStatus('segment', 'Stereo load', status.stereoLoadPercent), hint: HINTS.stereoLoad }
   ]
 }

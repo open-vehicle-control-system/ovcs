@@ -104,7 +104,7 @@ export default function Previews({ status, socket }) {
         className="lg:flex lg:min-h-0 lg:flex-1 lg:flex-col"
         frameClassName="lg:aspect-auto lg:min-h-0 lg:flex-1"
       >
-        <Figures id="depth" figures={status ? depthFigures(status.depth_hz, status.quality) : []}>
+        <Figures id="depth" figures={status ? depthFigures(status.depthHz, status.quality) : []}>
           <DepthRange channel={depthChannel} />
         </Figures>
       </Preview>
