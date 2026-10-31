@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
-  useParameters, orderedGroups, flowGroups, sideGroups, groupParameters, groupUnsaved
+  useParameters, orderedGroups, flowGroups, groupParameters, unsavedByGroup
 } from '../parameters.js'
 import * as service from '../../services/parameters.js'
 
@@ -46,6 +46,24 @@ describe('parameters store', () => {
     expect(state().groups).toHaveLength(3)
     expect(state().parameters['stereo.match.p1'].value).toBe(12)
     expect(state().unsaved).toBe(1)
+  })
+
+  it('keeps the objects a poll did not change, so their components need not re-render', async () => {
+    service.fetchGroups.mockResolvedValueOnce(snapshot(12))
+    await state().load()
+    const { groups, parameters } = state()
+
+    service.fetchGroups.mockResolvedValueOnce(snapshot(12))
+    await state().load()
+    expect(state().groups).toBe(groups)
+    expect(state().parameters).toBe(parameters)
+
+    service.fetchGroups.mockResolvedValueOnce(snapshot(20))
+    await state().load()
+    expect(state().groups).toBe(groups)
+    expect(state().parameters).not.toBe(parameters)
+    expect(state().parameters['stereo.match.p1'].value).toBe(20)
+    expect(state().parameters['stereo.match.p2']).toBe(parameters['stereo.match.p2'])
   })
 
   it('keeps the value of a parameter being edited when a poll arrives', async () => {
@@ -331,17 +349,18 @@ describe('parameters store', () => {
   describe('selectors', () => {
     beforeEach(() => useParameters.setState({ ...snapshot(), selectedGroupId: null }))
 
-    it('orders groups by position and splits them by role', () => {
+    it('orders groups by position, the flow without the branches, leaving the groups as they were', () => {
+      const groups = state().groups
       expect(orderedGroups(state()).map((g) => g.id)).toEqual(['camera', 'stereo.match', 'side'])
       expect(flowGroups(state()).map((g) => g.id)).toEqual(['camera', 'stereo.match'])
-      expect(sideGroups(state()).map((g) => g.id)).toEqual(['side'])
+      expect(state().groups).toBe(groups)
+      expect(groups.map((g) => g.id)).toEqual(['side', 'stereo.match', 'camera'])
     })
 
     it('lists the parameters of a group and counts its unsaved ones', () => {
       expect(groupParameters(state(), 'stereo.match').map((p) => p.id)).toEqual(['stereo.match.p1', 'stereo.match.p2'])
       expect(groupParameters(state(), 'nope')).toEqual([])
-      expect(groupUnsaved(state(), 'stereo.match')).toBe(1)
-      expect(groupUnsaved(state(), 'side')).toBe(0)
+      expect(unsavedByGroup(state())).toEqual({ side: 0, 'stereo.match': 1, camera: 0 })
     })
 
     it('selects a group', () => {

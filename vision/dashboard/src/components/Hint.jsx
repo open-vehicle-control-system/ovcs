@@ -5,6 +5,14 @@ import { focusClass as FOCUS } from '@ovcs/ui/react'
 const WIDTH = 288
 const GAP = 8
 
+const ICON = (
+  <svg aria-hidden="true" viewBox="0 0 16 16" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <circle cx="8" cy="8" r="6.75" />
+    <path d="M8 7.25v4" strokeLinecap="round" />
+    <circle cx="8" cy="4.75" r="0.6" fill="currentColor" stroke="none" />
+  </svg>
+)
+
 /**
  * An ⓘ that explains `hint` (`{ title, text }`) in a card on hover or focus. The card is drawn in the page's
  * top layer, so a card clipping its content does not cut it.
@@ -39,11 +47,7 @@ export default function Hint({ hint }) {
         onKeyDown={(event) => event.key === 'Escape' && setOpen(false)}
         className={`inline-flex size-4 shrink-0 items-center justify-center rounded-full text-ovcs-muted hover:text-ovcs-accent ${FOCUS}`}
       >
-        <svg aria-hidden="true" viewBox="0 0 16 16" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="1.5">
-          <circle cx="8" cy="8" r="6.75" />
-          <path d="M8 7.25v4" strokeLinecap="round" />
-          <circle cx="8" cy="4.75" r="0.6" fill="currentColor" stroke="none" />
-        </svg>
+        {ICON}
       </button>
       {open && place
         ? createPortal(

@@ -9,7 +9,7 @@ export function StatusValue({ item, className = 'text-base' }) {
       <OvcsStatus tone={item.healthy ? 'ok' : 'error'} className={`font-semibold tabular-nums ${className}`}>
         {item.value}
       </OvcsStatus>
-      {item.detail && <p className="text-xs text-ovcs-muted tabular-nums">{item.detail}</p>}
+      {item.detail ? <p className="text-xs text-ovcs-muted tabular-nums">{item.detail}</p> : null}
     </>
   )
 }

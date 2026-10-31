@@ -115,14 +115,32 @@ async function loadOnce(set, get) {
       if (current[id] && parameters[id]) parameters[id] = current[id]
     }
     set((state) => ({
-      groups: snapshot.groups,
-      parameters,
+      groups: keepUnchanged(state.groups, snapshot.groups),
+      parameters: keepUnchangedById(state.parameters, parameters),
       unsaved: snapshot.unsaved,
       ...(state.errorSource === 'load' ? { error: null, errorSource: null } : {})
     }))
   } catch (error) {
     set({ error: message(error), errorSource: 'load' })
   }
+}
+
+// A poll mostly answers what is already shown: keeping the objects it did not change spares their components a render.
+const same = (a, b) => a === b || JSON.stringify(a) === JSON.stringify(b)
+
+function keepUnchanged(previous, next) {
+  const kept = next.map((item, index) => (same(previous[index], item) ? previous[index] : item))
+  return kept.length === previous.length && kept.every((item, index) => item === previous[index]) ? previous : kept
+}
+
+function keepUnchangedById(previous, next) {
+  const kept = {}
+  let changed = Object.keys(previous).length !== Object.keys(next).length
+  for (const [id, item] of Object.entries(next)) {
+    kept[id] = same(previous[id], item) ? previous[id] : item
+    if (kept[id] !== previous[id]) changed = true
+  }
+  return changed ? kept : previous
 }
 
 // A failed action may still have changed values, such as a partial reset, so it reloads too.
@@ -140,9 +158,8 @@ async function perform(action, set, get) {
 
 const EMPTY = []
 
-export const orderedGroups = (state) => [...state.groups].sort((a, b) => a.position - b.position)
+export const orderedGroups = (state) => state.groups.toSorted((a, b) => a.position - b.position)
 export const flowGroups = (state) => orderedGroups(state).filter((group) => group.role !== 'branch')
-export const sideGroups = (state) => orderedGroups(state).filter((group) => group.role === 'branch')
 
 export const groupParameters = (state, groupId) => {
   const group = state.groups.find((candidate) => candidate.id === groupId)
@@ -150,5 +167,13 @@ export const groupParameters = (state, groupId) => {
   return group.parameterIds.map((id) => state.parameters[id]).filter(Boolean)
 }
 
-export const groupUnsaved = (state, groupId) =>
-  groupParameters(state, groupId).filter((parameter) => parameter.state === 'unsaved').length
+/** Every group's unsaved count by its id, in one pass over the groups. */
+export function unsavedByGroup(state) {
+  const counts = {}
+  for (const group of state.groups) {
+    let count = 0
+    for (const id of group.parameterIds) if (state.parameters[id]?.state === 'unsaved') count += 1
+    counts[group.id] = count
+  }
+  return counts
+}

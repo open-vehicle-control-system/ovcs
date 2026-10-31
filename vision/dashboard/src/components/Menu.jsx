@@ -4,6 +4,16 @@ import PipelineDiagram from './PipelineDiagram.jsx'
 import { SECTION_HEADING, SELECTED } from './menu.js'
 import { useNavigation } from '../stores/navigation.js'
 
+const MAIN_PAGES = [
+  ['overview', 'Overview'],
+  ['calibration', 'Calibration']
+]
+
+const EXPORTER_PAGES = [
+  ['ros2', 'ROS 2'],
+  ['api', 'API']
+]
+
 function Section({ title, children }) {
   const id = useId()
   return (
@@ -48,25 +58,13 @@ export default function Menu() {
       className="flex shrink-0 flex-col gap-5 border-b border-ovcs-border bg-ovcs-surface px-3 py-4 lg:w-56 lg:overflow-y-auto lg:border-b-0 lg:border-r"
     >
       <Section title="Main">
-        <Pages
-          label="Main"
-          pages={[
-            ['overview', 'Overview'],
-            ['calibration', 'Calibration']
-          ]}
-        />
+        <Pages label="Main" pages={MAIN_PAGES} />
       </Section>
       <Section title="Pipeline">
         <PipelineDiagram />
       </Section>
       <Section title="Exporters">
-        <Pages
-          label="Exporters"
-          pages={[
-            ['ros2', 'ROS 2'],
-            ['api', 'API']
-          ]}
-        />
+        <Pages label="Exporters" pages={EXPORTER_PAGES} />
       </Section>
     </nav>
   )
