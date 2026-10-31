@@ -53,8 +53,9 @@ The OKdo Nano C100 carries a Jetson Nano module: a GPU, two CSI camera ports and
 
 ## Depth
 
-The stereo stages turn each pair of camera frames into a disparity, the horizontal shift of each point between the two images, then a depth image and a point cloud; [Why stereo gives depth](./stages.md#why-stereo-gives-depth) explains the principle. Where they run depends on the board: on the C100's GPU, compiled from Nx, or on the Raspberry Pi 5's CPU cores, in native code. The guides of this section explain them:
+The stereo stages turn each pair of camera frames into a disparity, the horizontal shift of each point between the two images, then a depth image and a point cloud; [Stereo vision basics](./basics.md) explains the principle, from the lens up. Where they run depends on the board: on the C100's GPU, compiled from Nx, or on the Raspberry Pi 5's CPU cores, in native code. The guides of this section explain them:
 
+- [Stereo vision basics](./basics.md): lens, baseline, rectification, disparity, depth and point cloud, with diagrams and a worked example.
 - [How a pair flows](./data_flow.md): the processes a pair goes through, from the cameras to the ROS 2 topics and the dashboard.
 - [Stereo stages](./stages.md): what each stage does, what it reads and fills, and its settings.
 - [Where depth is computed](./compute.md): Nx, `nx_iree`, the `stereo_match` Port, and how each uses the GPU, the CPU cores and memory.
