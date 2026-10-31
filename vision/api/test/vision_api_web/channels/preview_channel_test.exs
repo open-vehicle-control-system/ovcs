@@ -20,27 +20,25 @@ defmodule VisionApiWeb.PreviewChannelTest do
     GenServer.cast(VisionCore.Preview, {:camera_frame, frame})
   end
 
-  test "preview:left pushes frame with base64 jpeg" do
+  test "preview:left pushes each frame as its JPEG bytes" do
     {:ok, _reply, _socket} = join("preview:left")
     jpeg = <<0xFF, 0xD8, 1, 2, 3>>
 
     feed_left(jpeg)
 
-    assert_push "frame", %{jpeg: encoded}
-    assert Base.decode64!(encoded) == jpeg
+    assert_push "frame", {:binary, ^jpeg}
   end
 
   test "the next frame waits for the client's ack" do
     {:ok, _reply, socket} = join("preview:left")
     feed_left("first")
-    assert_push "frame", %{jpeg: _first}
+    assert_push "frame", {:binary, "first"}
 
     feed_left("second")
-    refute_push "frame", %{jpeg: _second}, 200
+    refute_push "frame", {:binary, _second}, 200
 
     push(socket, "ack", %{})
-    assert_push "frame", %{jpeg: second}, 500
-    assert Base.decode64!(second) == "second"
+    assert_push "frame", {:binary, "second"}, 500
   end
 
   test "the depth stream sets the depth video's colour range and answers the one in force" do

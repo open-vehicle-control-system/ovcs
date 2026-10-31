@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest'
-import { render, screen, act, fireEvent } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { render, screen, act, fireEvent, cleanup } from '@testing-library/react'
 import Preview from '../Preview.jsx'
 
 function fakeSocket() {
@@ -13,49 +13,72 @@ function fakeSocket() {
   return { channel: vi.fn(() => channel), handlers, fakeChannel: channel }
 }
 
-const sendFrame = (socket, jpeg) => act(() => socket.handlers.frame({ jpeg }))
+const sendFrame = (socket, bytes) => act(() => socket.handlers.frame(new Uint8Array(bytes).buffer))
 
 describe('Preview', () => {
-  it('renders the latest frame', () => {
+  let urls
+
+  beforeEach(() => {
+    urls = []
+    // jsdom has no object URLs.
+    URL.createObjectURL = vi.fn((blob) => {
+      urls.push(blob)
+      return `blob:frame-${urls.length}`
+    })
+    URL.revokeObjectURL = vi.fn()
+  })
+
+  afterEach(() => {
+    cleanup()
+    delete URL.createObjectURL
+    delete URL.revokeObjectURL
+  })
+
+  it('renders the latest frame from its JPEG bytes', () => {
     const socket = fakeSocket()
     render(<Preview stream="left" socket={socket} />)
 
     expect(socket.channel).toHaveBeenCalledWith('preview:left', {})
-    sendFrame(socket, 'Zmlyc3Q=')
-    sendFrame(socket, 'bGF0ZXN0')
+    sendFrame(socket, [1])
+    sendFrame(socket, [2, 3])
 
-    expect(screen.getByRole('img', { name: 'left preview' }).getAttribute('src')).toBe('data:image/jpeg;base64,bGF0ZXN0')
+    expect(screen.getByRole('img', { name: 'left preview' }).getAttribute('src')).toBe('blob:frame-2')
+    expect(urls[1].type).toBe('image/jpeg')
+    expect(urls[1].size).toBe(2)
+  })
+
+  it('releases a frame once the next one replaces it, and the last one when unmounted', () => {
+    const socket = fakeSocket()
+    const { unmount } = render(<Preview stream="left" socket={socket} />)
+
+    sendFrame(socket, [1])
+    sendFrame(socket, [2])
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:frame-1')
+    expect(URL.revokeObjectURL).not.toHaveBeenCalledWith('blob:frame-2')
+
+    unmount()
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:frame-2')
   })
 
   it('acks a frame once the image has loaded or failed', () => {
     const socket = fakeSocket()
     render(<Preview stream="left" socket={socket} />)
 
-    sendFrame(socket, 'Zmlyc3Q=')
+    sendFrame(socket, [1])
     expect(socket.fakeChannel.push).not.toHaveBeenCalled()
 
     fireEvent.load(screen.getByRole('img'))
     expect(socket.fakeChannel.push).toHaveBeenCalledWith('ack', {})
 
-    sendFrame(socket, 'bGF0ZXN0')
+    sendFrame(socket, [2])
     fireEvent.error(screen.getByRole('img'))
     expect(socket.fakeChannel.push).toHaveBeenCalledTimes(2)
-  })
-
-  it('acks an unchanged frame at once, as it fires no load event', () => {
-    const socket = fakeSocket()
-    render(<Preview stream="left" socket={socket} />)
-
-    sendFrame(socket, 'Zmlyc3Q=')
-    sendFrame(socket, 'Zmlyc3Q=')
-
-    expect(socket.fakeChannel.push).toHaveBeenCalledWith('ack', {})
   })
 
   it("shows the frame's resolution once it has loaded", () => {
     const socket = fakeSocket()
     render(<Preview stream="depth" socket={socket} />)
-    sendFrame(socket, 'Zmlyc3Q=')
+    sendFrame(socket, [1])
 
     const image = screen.getByRole('img')
     Object.defineProperties(image, { naturalWidth: { value: 480 }, naturalHeight: { value: 270 } })

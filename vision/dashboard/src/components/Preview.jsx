@@ -14,19 +14,21 @@ export default function Preview({ stream, socket, onChannel, className = '', fra
   useEffect(() => {
     const channel = socket.channel(`preview:${stream}`, {})
     channelRef.current = channel
-    channel.on('frame', ({ jpeg }) => {
-      const source = `data:image/jpeg;base64,${jpeg}`
-      // An unchanged src fires no load event.
-      if (source === frameRef.current) ack()
+    // Each frame arrives as its JPEG bytes and is shown through an object URL, released once replaced.
+    const show = (source) => {
+      if (frameRef.current) URL.revokeObjectURL(frameRef.current)
       frameRef.current = source
       setFrame(source)
-    })
+    }
+    channel.on('frame', (jpeg) => show(URL.createObjectURL(new Blob([jpeg], { type: 'image/jpeg' }))))
     channel.join()
     onChannel?.(channel)
     return () => {
       channelRef.current = null
       onChannel?.(null)
       channel.leave()
+      if (frameRef.current) URL.revokeObjectURL(frameRef.current)
+      frameRef.current = null
     }
   }, [stream, socket, onChannel])
 
