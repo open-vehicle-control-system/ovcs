@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { createRef } from 'react'
 import { render, screen, fireEvent, act } from '@testing-library/react'
 import { OvcsSaveBar as SaveBar } from './index.js'
 
@@ -18,6 +19,14 @@ const execCommand = document.execCommand
 const replaceClipboard = (value) => Object.defineProperty(navigator, 'clipboard', { value, configurable: true })
 
 const openExport = () => act(async () => fireEvent.click(screen.getByRole('button', { name: 'Export' })))
+
+it('gives its ref the bar itself, as a plain prop', () => {
+  const ref = createRef()
+  render(<SaveBar ref={ref} unsaved={0} {...callbacks()} />)
+
+  expect(ref.current).toBeInstanceOf(HTMLDivElement)
+  expect(ref.current.contains(screen.getByRole('button', { name: 'Export' }))).toBe(true)
+})
 
 describe('SaveBar', () => {
   let props

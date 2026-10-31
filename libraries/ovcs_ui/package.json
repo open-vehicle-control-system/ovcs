@@ -15,8 +15,8 @@
   },
   "peerDependencies": {
     "vue": "^3.4.15",
-    "react": "18.3.1",
-    "react-dom": "18.3.1"
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
   },
   "peerDependenciesMeta": {
     "vue": {
@@ -36,8 +36,8 @@
     "@vitejs/plugin-vue": "^6.0.1",
     "@vue/test-utils": "^2.4.4",
     "jsdom": "^24.0.0",
-    "react": "18.3.1",
-    "react-dom": "18.3.1",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
     "vitest": "^3.2.4",
     "vue": "^3.4.15"
   }
