@@ -227,6 +227,112 @@ defmodule VisionCore.Stereo.PipelineTest do
       assert_receive {:"$gen_cast", {:stereo_pair, %VisionCore.Stereo.Pair{} = pair}}, 1_000
       assert pair.left_frame.capture_ns == 3
     end
+
+    test "publishes pairs taken as soon as it is ready in order, with the results of one at a time" do
+      assert_overlapped_matches_one_at_a_time([])
+    end
+
+    test "logs a pair the segment refuses and takes the next one" do
+      assert_refused_pair_skipped([])
+    end
+
+    test "sends a pair submitted before it is ready once the previous one is back" do
+      assert_early_pair_sent_later(2, [])
+    end
+
+    test "times the segment under its name" do
+      assert_timed(
+        [
+          :"rectification+sharpness+disparity+median_filter+speckle_filter+row_alignment+temporal_filter+depth+point_cloud+quality"
+        ],
+        []
+      )
+    end
+  end
+
+  # Submits each pair once the pipeline is ready for it, as the Pairer does.
+  defp submit_when_ready(pipeline, frames) do
+    for [left, right] <- frames do
+      Pipeline.submit(pipeline, left, right)
+      assert_receive :stereo_pipeline_ready, 60_000
+    end
+
+    for _frames <- frames do
+      assert_receive {:"$gen_cast", {:stereo_pair, pair}}, 60_000
+      pair
+    end
+  end
+
+  defp assert_overlapped_matches_one_at_a_time(opts) do
+    frames = Enum.map(10..13, &textured_pair/1)
+
+    {:ok, pipeline} = start(Pipeline.default_stages(disparity: [paths: 3]), opts)
+    Pipeline.register_listener(pipeline, self())
+    one_at_a_time = Enum.flat_map(frames, &submit_when_ready(pipeline, [&1]))
+    GenServer.stop(pipeline)
+
+    {:ok, pipeline} = start(Pipeline.default_stages(disparity: [paths: 3]), opts)
+    Pipeline.register_listener(pipeline, self())
+    overlapped = submit_when_ready(pipeline, frames)
+
+    assert Enum.map(overlapped, & &1.left_frame.capture_ns) == Enum.to_list(10..13)
+
+    for {got, want} <- Enum.zip(overlapped, one_at_a_time) do
+      assert got.disparity_bytes == want.disparity_bytes
+      assert got.depth == want.depth
+      assert got.metrics == want.metrics
+    end
+  end
+
+  # One pair more than the device takes, submitted without waiting for the pipeline to be ready.
+  defp assert_early_pair_sent_later(count, opts) do
+    frames = Enum.map(30..(30 + count - 1), &textured_pair/1)
+
+    {:ok, pipeline} = start(Pipeline.default_stages(disparity: [paths: 3]), opts)
+    Pipeline.register_listener(pipeline, self())
+    one_at_a_time = Enum.flat_map(frames, &submit_when_ready(pipeline, [&1]))
+    GenServer.stop(pipeline)
+
+    {:ok, pipeline} = start(Pipeline.default_stages(disparity: [paths: 3]), opts)
+    Pipeline.register_listener(pipeline, self())
+    for [left, right] <- frames, do: Pipeline.submit(pipeline, left, right)
+
+    early =
+      for _frames <- frames do
+        assert_receive {:"$gen_cast", {:stereo_pair, pair}}, 60_000
+        pair
+      end
+
+    assert Enum.map(early, & &1.left_frame.capture_ns) == Enum.to_list(30..(30 + count - 1))
+    assert Enum.map(early, & &1.disparity_bytes) == Enum.map(one_at_a_time, & &1.disparity_bytes)
+    assert_receive :stereo_pipeline_ready, 60_000
+  end
+
+  defp assert_refused_pair_skipped(opts) do
+    {:ok, pipeline} = start(Pipeline.default_stages(disparity: [paths: 3]), opts)
+    Pipeline.register_listener(pipeline, self())
+    [left, right] = textured_pair(20)
+    small = %{left | width: 32, height: 48, grey: binary_part(left.grey, 0, 32 * 48)}
+
+    log =
+      ExUnit.CaptureLog.capture_log(fn ->
+        Pipeline.submit(pipeline, small, small)
+        assert_receive :stereo_pipeline_ready, 60_000
+        :sys.get_state(pipeline)
+      end)
+
+    assert log =~ "frame_size"
+    refute_received {:"$gen_cast", {:stereo_pair, _pair}}
+    assert [%{left_frame: %{capture_ns: 20}}] = submit_when_ready(pipeline, [[left, right]])
+  end
+
+  defp assert_timed(names, opts) do
+    {:ok, pipeline} = start(Pipeline.default_stages(disparity: [paths: 3]), opts)
+    Pipeline.register_listener(pipeline, self())
+    submit_when_ready(pipeline, [textured_pair(21)])
+    timed = Map.keys(:sys.get_state(pipeline).timer.stages)
+
+    assert names -- timed == []
   end
 
   describe "with the native matcher" do
@@ -444,6 +550,39 @@ defmodule VisionCore.Stereo.PipelineTest do
         assert got.depth == want.depth
         assert got.metrics == want.metrics
       end
+    end
+
+    test "publishes pairs taken as soon as it is ready in order, with the results of one at a time, natively" do
+      assert_overlapped_matches_one_at_a_time(compute: :native)
+    end
+
+    test "logs a pair the segment refuses and takes the next one, natively" do
+      assert_refused_pair_skipped(compute: :native)
+    end
+
+    test "sends a pair submitted before it is ready once the oldest one is back" do
+      assert_early_pair_sent_later(3, compute: :native)
+    end
+
+    test "times the segment and each member under their names" do
+      segment =
+        :"rectification+sharpness+disparity+median_filter+speckle_filter+row_alignment+temporal_filter+depth+point_cloud+quality"
+
+      members = segment |> to_string() |> String.split("+") |> Enum.map(&String.to_atom/1)
+      assert_timed([segment | members], compute: :native)
+    end
+
+    test "publishes a pair once it is back when no other is at the Port" do
+      {:ok, pipeline} =
+        start(Pipeline.default_stages(disparity: [paths: 3]),
+          compute: :native,
+          flush_after_ms: 60_000
+        )
+
+      Pipeline.register_listener(pipeline, self())
+      [left, right] = textured_pair(22)
+      Pipeline.submit(pipeline, left, right)
+      assert_receive {:"$gen_cast", {:stereo_pair, %{left_frame: %{capture_ns: 22}}}}, 10_000
     end
 
     @tag :tmp_dir

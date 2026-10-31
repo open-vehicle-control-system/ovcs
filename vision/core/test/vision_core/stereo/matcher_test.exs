@@ -57,7 +57,7 @@ defmodule VisionCore.Stereo.MatcherTest do
       message ->
         case NativeSegment.response(message, request_id, segment) do
           :no_reply -> await_response(request_id, segment)
-          {:ok, outputs, _segment} -> {:ok, outputs.disparity}
+          {:ok, outputs, _segment, _done_ns} -> {:ok, outputs.disparity}
           {:error, _reason} = error -> error
         end
     after

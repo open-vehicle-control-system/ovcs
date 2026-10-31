@@ -40,16 +40,18 @@ defmodule VisionCore.Stereo.Pipeline do
   the last one receives `:stereo_pipeline_ready`;
   `VisionCore.Stereo.Pairer` submits the next pair then. Without a
   segment first, that is once the pair is done, whether it succeeded or
-  not. When the stage list starts with a compiled segment, a pair is
-  done once its device work is: the pair's outputs are collected and
-  the later stages run while the next pair's device work does, and it
-  reaches the listeners then, or after `:flush_after_ms` if no pair
-  follows. When it starts with a native segment, two pairs are at the
-  Port at once, so it computes one while the other's frames and outputs
-  go through the pipes: the next pair is taken once the earlier of the
-  two is back, and that one is then collected, run through the later
-  stages and sent to the listeners. A live setting of a native stage
-  then applies from the second pair submitted after the change.
+  not. With a segment first, it is once fewer pairs than the segment's
+  `c:VisionCore.Stereo.Segment.depth/0` are at its device, and pairs
+  reach the listeners in the order submitted. A compiled segment takes
+  one pair at a time, so a pair is done once its device work is: the
+  pair's outputs are collected and the later stages run while the next
+  pair's device work does, and it reaches the listeners then, or after
+  `:flush_after_ms` if no pair follows. A native segment takes two, so
+  the Port computes one while the other's frames and outputs go through
+  the pipes: the next pair is taken once the earlier of the two is
+  back, and that one is then collected, run through the later stages
+  and sent to the listeners. A live setting of a native stage then
+  applies from the second pair submitted after the change.
 
   ## Options
 
@@ -82,8 +84,6 @@ defmodule VisionCore.Stereo.Pipeline do
 
   @consumed [:left, :right, :disparity, :disparity_range, :disparity_bytes, :depth]
   @segments [NxSegment, NativeSegment]
-  # Pairs at the Port at once when a native segment runs first.
-  @in_flight 2
 
   @doc "Starts the pipeline; see the module doc for `opts`."
   def start_link(opts) do
@@ -183,8 +183,10 @@ defmodule VisionCore.Stereo.Pipeline do
        listeners: [],
        timer: StageTimer.new(window: 30, label: "pipeline"),
        last_start_ns: nil,
-       pending: nil,
        in_flight: :queue.new(),
+       held: nil,
+       flush: nil,
+       queued: nil,
        last_reply_ns: nil,
        waiting_submitter: nil,
        flush_after_ms: Keyword.get(opts, :flush_after_ms, @default_flush_after_ms)
@@ -196,7 +198,7 @@ defmodule VisionCore.Stereo.Pipeline do
     stages =
       for stage <- state.stages,
           member <- members(stage),
-          do: Map.put(describe(member), :compute, compute(stage, state.context))
+          do: Map.put(describe(member), :compute, compute(stage))
 
     {:reply, stages, state}
   end
@@ -238,135 +240,130 @@ defmodule VisionCore.Stereo.Pipeline do
     pair = %Pair{left_frame: left, right_frame: right, geometry: state.context}
 
     case state.stages do
-      [%{module: NativeSegment} = first | _rest] ->
-        {:noreply, send_native(pair, first, start_ns, submitter, state)}
-
       [%{module: module} = first | _rest] when module in @segments ->
-        {:noreply, dispatch(pair, first, start_ns, submitter, state)}
+        # A pair submitted before the pipeline was ready is sent once the oldest one is back.
+        if :queue.len(state.in_flight) < module.depth(),
+          do: {:noreply, send_pair(pair, first, start_ns, submitter, state)},
+          else: {:noreply, %{state | queued: {pair, start_ns, submitter}}}
 
       stages ->
         {outcome, stages, timer} = run_stages(pair, stages, state.timer)
         send(submitter, :stereo_pipeline_ready)
-        {:noreply, finish_pair(outcome, start_ns, %{state | stages: stages, timer: timer})}
+        {:noreply, finish_pair(%{state | stages: stages, timer: timer}, outcome, start_ns)}
     end
   end
 
   @impl GenServer
+  def handle_info({:flush, ref}, %{flush: ref} = state), do: {:noreply, finish_held(state)}
+
   def handle_info(message, state) do
     with {:value, sent} <- :queue.peek(state.in_flight),
+         [first | _rest] = state.stages,
          result when result != :no_reply <-
-           NativeSegment.response(message, sent.request_id, sent.segment) do
-      {:noreply, receive_native(result, sent, state)}
+           first.module.response(message, sent.ticket, sent.segment) do
+      {:noreply, receive_reply(result, sent, state)}
     else
-      _other -> other_info(message, state)
+      _other -> {:noreply, state}
     end
   end
 
-  defp other_info({:flush, ref}, %{pending: %{ref: ref}} = state), do: {:noreply, flush(state)}
-  defp other_info(_message, state), do: {:noreply, state}
-
-  defp send_native(pair, first, start_ns, submitter, state) do
-    case NativeSegment.send_request(pair, first.state) do
-      {:ok, request_id} ->
+  defp send_pair(pair, %{module: module} = first, start_ns, submitter, state) do
+    case module.send_request(pair, first.state) do
+      {:ok, ticket} ->
         sent = %{
-          request_id: request_id,
+          ticket: ticket,
           pair: pair,
           segment: first.state,
           start_ns: start_ns,
           sent_ns: System.monotonic_time(:nanosecond)
         }
 
-        state = %{state | in_flight: :queue.in(sent, state.in_flight)}
-
-        if :queue.len(state.in_flight) < @in_flight do
-          send(submitter, :stereo_pipeline_ready)
-          state
-        else
-          %{state | waiting_submitter: submitter}
-        end
+        %{state | in_flight: :queue.in(sent, state.in_flight), waiting_submitter: submitter}
+        |> finish_held()
+        |> ready()
 
       {:error, reason} ->
         send(submitter, :stereo_pipeline_ready)
-        finish_pair({:error, NativeSegment, reason}, start_ns, state)
+        finish_pair(state, {:error, module, reason}, start_ns)
     end
   end
 
-  # The segment's time runs from when the Port could start on the pair.
-  defp receive_native(result, sent, state) do
-    reply_ns = System.monotonic_time(:nanosecond)
-    port_ns = reply_ns - max(sent.sent_ns, state.last_reply_ns || sent.sent_ns)
-    state = %{state | in_flight: :queue.drop(state.in_flight), last_reply_ns: reply_ns}
+  # The segment's device time runs from when the device could start on the pair.
+  defp receive_reply(result, sent, %{stages: [first | rest]} = state) do
+    state = %{state | in_flight: :queue.drop(state.in_flight)}
 
     state =
       case result do
-        {:ok, outputs, segment} ->
-          [first | rest] = state.stages
-          {collect_ns, pair} = timed(fn -> NativeSegment.collect(sent.pair, outputs, segment) end)
-          segment_ns = port_ns + collect_ns
+        {:ok, outputs, segment, done_ns} ->
+          device_ns = done_ns - max(sent.sent_ns, state.last_reply_ns || sent.sent_ns)
 
-          timer =
-            state.timer
-            |> StageTimer.record(first.name, segment_ns)
-            |> record_members(NativeSegment, segment)
+          replied = Map.merge(sent, %{segment: segment, outputs: outputs, device_ns: device_ns})
 
-          pair = %{pair | device_ms: segment_ns / 1_000_000}
-          {outcome, rest, timer} = run_stages(pair, rest, timer)
-          finish_pair(outcome, sent.start_ns, %{state | stages: [first | rest], timer: timer})
+          # What the segment carries to the next pair, unless a setting or reload replaced it.
+          stages =
+            if first.state === sent.segment,
+              do: [%{first | state: segment} | rest],
+              else: state.stages
+
+          state = %{state | stages: stages, last_reply_ns: done_ns}
+
+          # One pair at a time at the device: the pair is finished while the next one's device
+          # work runs, or after :flush_after_ms if none follows.
+          if first.module.depth() == 1 do
+            ref = make_ref()
+            Process.send_after(self(), {:flush, ref}, state.flush_after_ms)
+            state = finish_held(state)
+            %{state | held: replied, flush: ref}
+          else
+            finish_replied(state, replied)
+          end
 
         {:error, reason} ->
-          finish_pair({:error, NativeSegment, reason}, sent.start_ns, state)
+          state = %{state | last_reply_ns: System.monotonic_time(:nanosecond)}
+          finish_pair(state, {:error, first.module, reason}, sent.start_ns)
       end
 
-    case state.waiting_submitter do
-      nil ->
-        state
+    state |> send_queued() |> ready()
+  end
 
-      submitter ->
-        send(submitter, :stereo_pipeline_ready)
-        %{state | waiting_submitter: nil}
+  defp send_queued(%{queued: nil} = state), do: state
+
+  defp send_queued(%{queued: {pair, start_ns, submitter}, stages: [first | _rest]} = state),
+    do: send_pair(pair, first, start_ns, submitter, %{state | queued: nil})
+
+  defp ready(%{waiting_submitter: nil} = state), do: state
+
+  defp ready(%{stages: [%{module: module} | _rest]} = state) do
+    if :queue.len(state.in_flight) < module.depth() do
+      send(state.waiting_submitter, :stereo_pipeline_ready)
+      %{state | waiting_submitter: nil}
+    else
+      state
     end
   end
 
-  # `pair`'s device work runs while the pending pair is finished; it then becomes the pending one.
-  defp dispatch(pair, %{module: module} = first, start_ns, submitter, state) do
-    task = Task.async(fn -> timed(fn -> module.dispatch(pair, first.state) end) end)
-    state = flush(state)
-    {dispatch_ns, result} = Task.await(task, :infinity)
-    send(submitter, :stereo_pipeline_ready)
+  defp finish_held(%{held: nil} = state), do: state
 
-    case result do
-      {:ok, outputs, segment} ->
-        state = %{state | stages: List.replace_at(state.stages, 0, %{first | state: segment})}
-        ref = make_ref()
-        Process.send_after(self(), {:flush, ref}, state.flush_after_ms)
-        pending = %{ref: ref, pair: pair, outputs: outputs, ns: dispatch_ns, start_ns: start_ns}
-        %{state | pending: pending}
+  defp finish_held(%{held: held} = state),
+    do: finish_replied(%{state | held: nil, flush: nil}, held)
 
-      {:error, reason} ->
-        finish_pair({:error, module, reason}, start_ns, state)
-    end
-  end
-
-  defp flush(%{pending: nil} = state), do: state
-
-  defp flush(%{pending: pending, stages: [%{module: module} = first | rest]} = state) do
+  defp finish_replied(%{stages: [%{module: module} = first | rest]} = state, replied) do
     {collect_ns, pair} =
-      timed(fn -> module.collect(pending.pair, pending.outputs, first.state) end)
+      timed(fn -> module.collect(replied.pair, replied.outputs, replied.segment) end)
 
-    segment_ns = pending.ns + collect_ns
+    segment_ns = replied.device_ns + collect_ns
     pair = %{pair | device_ms: segment_ns / 1_000_000}
 
     timer =
       state.timer
       |> StageTimer.record(first.name, segment_ns)
-      |> record_members(module, first.state)
+      |> record_members(module.member_times(replied.segment))
 
     {outcome, rest, timer} = run_stages(pair, rest, timer)
-    state = %{state | stages: [first | rest], timer: timer, pending: nil}
-    finish_pair(outcome, pending.start_ns, state)
+    finish_pair(%{state | stages: [first | rest], timer: timer}, outcome, replied.start_ns)
   end
 
-  defp finish_pair(outcome, start_ns, state) do
+  defp finish_pair(state, outcome, start_ns) do
     case outcome do
       {:ok, %Pair{} = pair} ->
         Enum.each(state.listeners, &GenServer.cast(&1, {:stereo_pair, pair}))
@@ -394,7 +391,7 @@ defmodule VisionCore.Stereo.Pipeline do
           case result do
             {:ok, pair, stage_state} when stage.module in @segments ->
               pair = %{pair | device_ms: pair.device_ms + elapsed_ns / 1_000_000}
-              timer = record_members(timer, stage.module, stage_state)
+              timer = record_members(timer, stage.module.member_times(stage_state))
               {{:ok, pair}, [%{stage | state: stage_state} | done], timer}
 
             {:ok, pair, stage_state} ->
@@ -411,15 +408,11 @@ defmodule VisionCore.Stereo.Pipeline do
     {outcome, Enum.reverse(done), record_metrics(timer, outcome)}
   end
 
-  defp record_members(timer, NativeSegment, segment) do
-    segment.members
-    |> Enum.zip(segment.times_us)
-    |> Enum.reduce(timer, fn {member, time_us}, timer ->
-      StageTimer.record(timer, member.name, time_us * 1_000)
+  defp record_members(timer, member_times) do
+    Enum.reduce(member_times, timer, fn {name, ns}, timer ->
+      StageTimer.record(timer, name, ns)
     end)
   end
-
-  defp record_members(timer, _module, _segment), do: timer
 
   defp record_metrics(timer, {:ok, %Pair{metrics: metrics}}) do
     Enum.reduce(metrics, timer, fn {name, value, unit}, timer ->
@@ -536,9 +529,10 @@ defmodule VisionCore.Stereo.Pipeline do
 
   defp members(stage), do: [stage]
 
-  defp compute(%{module: NativeSegment}, _context), do: NativeSegment.compute()
-  defp compute(%{module: NxSegment}, context), do: NxSegment.compute(context.defn_options)
-  defp compute(_stage, _context), do: %{runs_on: :cpu, implementation: :elixir, backend: nil}
+  defp compute(%{module: module, state: segment}) when module in @segments,
+    do: module.compute(segment)
+
+  defp compute(_stage), do: %{runs_on: :cpu, implementation: :elixir, backend: nil}
 
   defp describe(stage) do
     %{

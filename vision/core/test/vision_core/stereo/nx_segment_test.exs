@@ -119,6 +119,38 @@ defmodule VisionCore.Stereo.NxSegmentTest do
     assert pair.left |> Nx.to_flat_list() |> Enum.uniq() == [6.0]
   end
 
+  test "sends a pair without waiting, and recognises its outputs among other messages" do
+    {:ok, segment} = NxSegment.build(members([AddOne, Double], context()), context(), [])
+    {:ok, ticket} = NxSegment.send_request(grey_pair([0, 1, 2, 3, 4, 5, 6, 7]), segment)
+    assert NxSegment.response(:other, ticket, segment) == :no_reply
+
+    assert {:ok, outputs, _segment, done_ns} = await_response(ticket, segment)
+    assert done_ns <= System.monotonic_time(:nanosecond)
+    assert Nx.to_list(outputs.left) == [[2, 4, 6, 8], [10, 12, 14, 16]]
+    refute_received {:DOWN, _ref, :process, _pid, _reason}
+    assert NxSegment.member_times(segment) == []
+  end
+
+  test "returns a refused frame as the response to its request" do
+    {:ok, segment} = NxSegment.build(members([AddOne], context()), context(), [])
+    frame = %Frame{label: "left", grey: <<0, 0, 0, 0>>, width: 2, height: 2, capture_ns: 0}
+    {:ok, ticket} = NxSegment.send_request(%Pair{left_frame: frame, right_frame: frame}, segment)
+
+    assert {:error, {:frame_size, :left_frame, {2, 2}, {2, 4}}} = await_response(ticket, segment)
+  end
+
+  defp await_response(ticket, segment) do
+    receive do
+      message ->
+        case NxSegment.response(message, ticket, segment) do
+          :no_reply -> await_response(ticket, segment)
+          response -> response
+        end
+    after
+      5_000 -> flunk("no response")
+    end
+  end
+
   @tag :jpeg
   test "decodes a JPEG frame" do
     start_supervised!(VisionCore.Jpeg)

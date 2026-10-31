@@ -34,6 +34,8 @@ defmodule VisionCore.Stereo.NativeSegment do
   sent.
   """
 
+  @behaviour VisionCore.Stereo.Segment
+
   alias VisionCore.Camera.Frame
   alias VisionCore.Stereo.{Matcher, NxSegment, Pair, Stage}
 
@@ -76,8 +78,17 @@ defmodule VisionCore.Stereo.NativeSegment do
   @type_codes %{{:u, 8} => 0, {:f, 32} => 2}
 
   @doc "Where a native segment runs: the `stereo_match` Port, on the CPU."
-  @spec compute() :: VisionCore.Parameters.Group.compute()
-  def compute, do: %{runs_on: :cpu, implementation: :rust, backend: nil}
+  @impl VisionCore.Stereo.Segment
+  @spec compute(t()) :: VisionCore.Parameters.Group.compute()
+  def compute(%__MODULE__{}), do: %{runs_on: :cpu, implementation: :rust, backend: nil}
+
+  @doc """
+  Two pairs: the Port reads one and writes the other's outputs while it
+  computes, and carries its stages' values from one pair to the next.
+  """
+  @impl VisionCore.Stereo.Segment
+  @spec depth() :: pos_integer()
+  def depth, do: 2
 
   @doc "Whether `module` has a native implementation."
   @spec supported?(module()) :: boolean()
@@ -117,11 +128,13 @@ defmodule VisionCore.Stereo.NativeSegment do
   same size: configured again from its next pair on, carrying nothing
   over.
   """
+  @impl VisionCore.Stereo.Segment
   @spec reload(t(), [map()], Stage.context()) :: t()
   def reload(%__MODULE__{} = segment, members, context),
     do: configure(%{segment | members: members, context: context, version: segment.version + 1})
 
   @doc "The segment with the member at `index` in a new `state`, from the next pair on."
+  @impl VisionCore.Stereo.Segment
   @spec put_member_state(t(), non_neg_integer(), term()) :: t()
   def put_member_state(%__MODULE__{members: members} = segment, index, state) do
     members = List.update_at(members, index, &%{&1 | state: state})
@@ -133,6 +146,7 @@ defmodule VisionCore.Stereo.NativeSegment do
   `c:VisionCore.Stereo.Stage.run/2`. The returned segment's `:times_us`
   holds each member's time in the Port, in microseconds.
   """
+  @impl VisionCore.Stereo.Segment
   @spec run(Pair.t(), t()) :: {:ok, Pair.t(), t()} | {:error, term(), t()}
   def run(%Pair{} = pair, %__MODULE__{} = segment) do
     case dispatch(pair, segment) do
@@ -141,11 +155,7 @@ defmodule VisionCore.Stereo.NativeSegment do
     end
   end
 
-  @doc """
-  The first half of `run/2`: the Port's outputs for `pair`. It changes
-  no process state, so it may run in another process while the previous
-  pair is collected.
-  """
+  @doc "The first half of `run/2`: the Port's outputs for `pair`."
   @spec dispatch(Pair.t(), t()) :: {:ok, map(), t()} | {:error, term()}
   def dispatch(%Pair{} = pair, %__MODULE__{} = segment) do
     with {:ok, request_id} <- send_request(pair, segment) do
@@ -162,6 +172,7 @@ defmodule VisionCore.Stereo.NativeSegment do
   process sends are computed in that order, which the stages that carry
   values from one pair to the next rely on.
   """
+  @impl VisionCore.Stereo.Segment
   @spec send_request(Pair.t(), t()) :: {:ok, :gen_server.request_id()} | {:error, term()}
   def send_request(%Pair{} = pair, %__MODULE__{} = segment) do
     with {:ok, entries} <- entries(pair, segment) do
@@ -180,18 +191,32 @@ defmodule VisionCore.Stereo.NativeSegment do
 
   @doc """
   What `dispatch/2` returns for the pair sent as `request_id`, from
-  `segment` (the one it was sent with), when `message` is its reply;
-  `:no_reply` when it is another message.
+  `segment` (the one it was sent with), with the monotonic time it is
+  received at, when `message` is its reply; `:no_reply` when it is
+  another message.
   """
+  @impl VisionCore.Stereo.Segment
   @spec response(term(), :gen_server.request_id(), t()) ::
-          {:ok, map(), t()} | {:error, term()} | :no_reply
+          {:ok, map(), t(), integer()} | {:error, term()} | :no_reply
   def response(message, request_id, %__MODULE__{} = segment) do
     case :gen_server.check_response(message, request_id) do
-      :no_reply -> :no_reply
-      {:reply, reply} -> decoded(reply, segment)
-      {:error, {reason, _matcher}} -> {:error, {:matcher_down, reason}}
+      :no_reply ->
+        :no_reply
+
+      {:reply, reply} ->
+        with {:ok, outputs, segment} <- decoded(reply, segment),
+             do: {:ok, outputs, segment, System.monotonic_time(:nanosecond)}
+
+      {:error, {reason, _matcher}} ->
+        {:error, {:matcher_down, reason}}
     end
   end
+
+  @doc "Each member's name and time in the Port for the pair `segment` was returned with, in nanoseconds."
+  @impl VisionCore.Stereo.Segment
+  @spec member_times(t()) :: [{atom(), non_neg_integer()}]
+  def member_times(%__MODULE__{members: members, times_us: times_us}),
+    do: Enum.zip_with(members, times_us, &{&1.name, &2 * 1_000})
 
   defp decoded({:ok, reply}, segment) do
     with {:ok, times_us, outputs} <- decode(reply),
@@ -201,6 +226,7 @@ defmodule VisionCore.Stereo.NativeSegment do
   defp decoded({:error, _reason} = error, _segment), do: error
 
   @doc "The second half of `run/2`: fills `pair` from `outputs`."
+  @impl VisionCore.Stereo.Segment
   @spec collect(Pair.t(), map(), t()) :: Pair.t()
   def collect(%Pair{} = pair, outputs, %__MODULE__{} = segment) do
     # Entry tensors pass through, as an Nx segment returns them.

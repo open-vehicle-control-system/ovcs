@@ -15,6 +15,8 @@ defmodule VisionCore.Stereo.NxSegment do
   calibration reload needs no new module.
   """
 
+  @behaviour VisionCore.Stereo.Segment
+
   alias VisionCore.Camera.Frame
   alias VisionCore.Stereo.{Pair, Stage}
 
@@ -183,11 +185,13 @@ defmodule VisionCore.Stereo.NxSegment do
   end
 
   @doc "The segment with `members` re-initialised for a new `context` of the same size."
+  @impl VisionCore.Stereo.Segment
   @spec reload(t(), [map()], Stage.context()) :: t()
   def reload(%__MODULE__{} = segment, members, context),
     do: %{segment | members: members, params: params(members, context), context: context}
 
   @doc "The segment with the member at `index` in a new `state`: new inputs, the same function."
+  @impl VisionCore.Stereo.Segment
   @spec put_member_state(t(), non_neg_integer(), term()) :: t()
   def put_member_state(%__MODULE__{members: members} = segment, index, state) do
     members = List.update_at(members, index, &%{&1 | state: state})
@@ -195,6 +199,7 @@ defmodule VisionCore.Stereo.NxSegment do
   end
 
   @doc "Runs the segment on `pair`, in the shape of `c:VisionCore.Stereo.Stage.run/2`."
+  @impl VisionCore.Stereo.Segment
   @spec run(Pair.t(), t()) :: {:ok, Pair.t(), t()} | {:error, term(), t()}
   def run(%Pair{} = pair, %__MODULE__{} = segment) do
     case dispatch(pair, segment) do
@@ -226,7 +231,52 @@ defmodule VisionCore.Stereo.NxSegment do
     end
   end
 
+  @doc """
+  `dispatch/2` in a `Task`, without waiting: returns the request, which
+  `response/3` recognises its outputs by. A pair sent before the
+  previous one's response would start from the values carried before
+  that pair.
+  """
+  @impl VisionCore.Stereo.Segment
+  @spec send_request(Pair.t(), t()) :: {:ok, Task.t()}
+  def send_request(%Pair{} = pair, %__MODULE__{} = segment) do
+    {:ok,
+     Task.async(fn ->
+       with {:ok, outputs, segment} <- dispatch(pair, segment),
+            do: {:ok, outputs, segment, System.monotonic_time(:nanosecond)}
+     end)}
+  end
+
+  @doc """
+  What `dispatch/2` returned for the pair sent as `task`, with the
+  monotonic time it returned at, when `message` is its reply;
+  `:no_reply` when it is another message.
+  """
+  @impl VisionCore.Stereo.Segment
+  @spec response(term(), Task.t(), t()) ::
+          {:ok, map(), t(), integer()} | {:error, term()} | :no_reply
+  def response({ref, result}, %Task{ref: ref}, %__MODULE__{}) do
+    Process.demonitor(ref, [:flush])
+    result
+  end
+
+  def response(_message, %Task{}, %__MODULE__{}), do: :no_reply
+
+  @doc """
+  One pair: a pair's device work starts from the values the previous
+  one carries.
+  """
+  @impl VisionCore.Stereo.Segment
+  @spec depth() :: pos_integer()
+  def depth, do: 1
+
+  @doc "Each member's time on its own: none, since the members run as one function."
+  @impl VisionCore.Stereo.Segment
+  @spec member_times(t()) :: [{atom(), non_neg_integer()}]
+  def member_times(%__MODULE__{}), do: []
+
   @doc "The second half of `run/2`: downloads `outputs` and fills `pair` from them."
+  @impl VisionCore.Stereo.Segment
   @spec collect(Pair.t(), map(), t()) :: Pair.t()
   def collect(%Pair{} = pair, outputs, %__MODULE__{} = segment) do
     outputs =
@@ -358,8 +408,11 @@ defmodule VisionCore.Stereo.NxSegment do
     end
   end
 
-  @doc "Where `defn_options` run a segment, and with what."
-  @spec compute(keyword()) :: VisionCore.Parameters.Group.compute()
+  @doc "Where the segment, or `defn_options`, run a segment, and with what."
+  @impl VisionCore.Stereo.Segment
+  @spec compute(t() | keyword()) :: VisionCore.Parameters.Group.compute()
+  def compute(%__MODULE__{context: context}), do: compute(defn_options(context))
+
   def compute(defn_options) do
     {runs_on, backend} =
       case Keyword.get(defn_options, :compiler) do
