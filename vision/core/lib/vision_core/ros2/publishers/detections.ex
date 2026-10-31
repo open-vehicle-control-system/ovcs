@@ -242,14 +242,15 @@ defmodule VisionCore.Ros2.Publishers.Detections do
 
   # LINE_LOOP closes a box in four points where a LINE_LIST needs eight.
   defp publish_overlay(positioned, header, %Pair{} = pair, state) do
-    {map_binary, state} = rectification_map_binary(pair, state)
+    {map_binary, cache} = Fusion.left_rectification_map(pair, state.rectification_map_cache)
+    state = %{state | rectification_map_cache: cache}
 
     boxes =
       Enum.map(positioned, fn detection ->
         vertices =
           detection.box
           |> Fusion.perimeter(state.outline_segments)
-          |> Enum.map(&to_raw_pixel(&1, map_binary, pair))
+          |> Enum.map(&Fusion.raw_point(&1, map_binary, pair))
           |> Enum.reject(&is_nil/1)
           |> Enum.map(fn {x, y} -> %Point2{x: x, y: y} end)
 
@@ -270,7 +271,7 @@ defmodule VisionCore.Ros2.Publishers.Detections do
         # pixels like everything else in this message.
         {x, y} =
           {detection.box.x0, detection.box.y0}
-          |> to_raw_pixel(map_binary, pair)
+          |> Fusion.raw_point(map_binary, pair)
           |> Kernel.||({detection.box.x0, detection.box.y0})
 
         %TextAnnotation{
@@ -311,40 +312,6 @@ defmodule VisionCore.Ros2.Publishers.Detections do
   end
 
   # Without a calibration, rectified and raw pixels are the same.
-  defp to_raw_pixel(vertex, nil, pair), do: to_frame_scale(vertex, pair)
-
-  defp to_raw_pixel(vertex, map_binary, %Pair{} = pair) do
-    {width, height} = Pair.size(pair)
-
-    case Fusion.remap(map_binary, width, height, vertex) do
-      nil -> nil
-      raw -> to_frame_scale(raw, pair)
-    end
-  end
-
-  # The pipeline may match at a smaller size than the camera delivers.
-  defp to_frame_scale({x, y}, %Pair{left_frame: frame} = pair) do
-    {width, height} = Pair.size(pair)
-    {x * frame.width / width, y * frame.height / height}
-  end
-
-  defp rectification_map_binary(%Pair{geometry: %{left_calibration: nil}}, state),
-    do: {nil, state}
-
-  defp rectification_map_binary(
-         %Pair{geometry: %{left_calibration: calibration}},
-         %{rectification_map_cache: {calibration, map_binary}} = state
-       ) do
-    {map_binary, state}
-  end
-
-  defp rectification_map_binary(%Pair{geometry: %{left_calibration: calibration}}, state) do
-    map_binary = Fusion.rectification_map(calibration)
-    {map_binary, %{state | rectification_map_cache: {calibration, map_binary}}}
-  end
-
-  defp rectification_map_binary(%Pair{}, state), do: {nil, state}
-
   defp pose_for(detection) do
     %Pose{
       position: %Point{x: detection.x, y: detection.y, z: detection.z},

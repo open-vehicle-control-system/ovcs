@@ -21,6 +21,11 @@ export function cameraFigures(camera) {
   return figures
 }
 
+/** How many objects the latest detection result holds, none without detection. */
+export function objectFigures(detections) {
+  return detections ? [{ label: 'objects', value: String(detections.length), hint: HINTS.objects }] : []
+}
+
 export function syncStatus(sync) {
   if (!sync || !sync.present) return { id: 'sync', title: 'Synchronisation', value: 'absent', healthy: false }
   if (sync.offset_median_ms == null) return { id: 'sync', title: 'Synchronisation', value: 'no pairs', healthy: false }

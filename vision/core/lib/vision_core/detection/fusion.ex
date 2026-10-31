@@ -12,6 +12,7 @@ defmodule VisionCore.Detection.Fusion do
   """
 
   alias VisionCore.Ros2.CameraCalibration
+  alias VisionCore.Stereo.Pair
 
   @doc """
   Median of the valid depths in the central `fraction` of `box`, in
@@ -153,6 +154,51 @@ defmodule VisionCore.Detection.Fusion do
       _ ->
         nil
     end
+  end
+
+  @doc """
+  The left camera's rectification map for `pair` (`rectification_map/1`),
+  `nil` without a calibration, and the cache to pass next time: the map
+  is computed once per calibration.
+  """
+  @spec left_rectification_map(Pair.t(), cache) :: {binary() | nil, cache}
+        when cache: {term(), binary()} | nil
+  def left_rectification_map(%Pair{geometry: %{left_calibration: nil}}, cache), do: {nil, cache}
+
+  def left_rectification_map(
+        %Pair{geometry: %{left_calibration: calibration}},
+        {calibration, map_binary} = cache
+      ),
+      do: {map_binary, cache}
+
+  def left_rectification_map(%Pair{geometry: %{left_calibration: calibration}}, _cache) do
+    map_binary = rectification_map(calibration)
+    {map_binary, {calibration, map_binary}}
+  end
+
+  def left_rectification_map(%Pair{}, cache), do: {nil, cache}
+
+  @doc """
+  A rectified pixel of `pair` as a pixel of its left camera frame: mapped
+  back through `map_binary` (`left_rectification_map/2`), then scaled from
+  the matching size to the frame's, which the pipeline may shrink. `nil`
+  when the map sends it outside the image; without a map, only scaled.
+  """
+  @spec raw_point({number(), number()}, binary() | nil, Pair.t()) :: {float(), float()} | nil
+  def raw_point(vertex, nil, pair), do: to_frame_scale(vertex, pair)
+
+  def raw_point(vertex, map_binary, %Pair{} = pair) do
+    {width, height} = Pair.size(pair)
+
+    case remap(map_binary, width, height, vertex) do
+      nil -> nil
+      raw -> to_frame_scale(raw, pair)
+    end
+  end
+
+  defp to_frame_scale({x, y}, %Pair{left_frame: frame} = pair) do
+    {width, height} = Pair.size(pair)
+    {x * frame.width / width, y * frame.height / height}
   end
 
   # Clamped to the image: a box cut off at the frame edge extends past it.

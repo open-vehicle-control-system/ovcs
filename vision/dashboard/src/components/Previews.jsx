@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Preview from './Preview.jsx'
 import { OvcsStatus } from '@ovcs/ui/react'
 import { StatusValue } from './UnitStatus.jsx'
 import DepthRange from './DepthRange.jsx'
+import DetectionOverlay from './DetectionOverlay.jsx'
 import Hint from './Hint.jsx'
-import { cameraFigures, depthFigures, pairStatus } from '../status.js'
+import { cameraFigures, depthFigures, objectFigures, pairStatus } from '../status.js'
 
 const PAIR_TITLES = [
   ['sync', 'Synchronisation'],
@@ -55,15 +56,34 @@ function PairStatus({ status }) {
   )
 }
 
+/** The latest detection result, `null` until one comes or on a unit without detection. */
+function useDetections(socket) {
+  const [detections, setDetections] = useState(null)
+
+  useEffect(() => {
+    const channel = socket.channel('detections', {})
+    channel.on('detections', (payload) => setDetections(payload.detections))
+    channel.join()
+    return () => {
+      channel.leave()
+      setDetections(null)
+    }
+  }, [socket])
+
+  return detections
+}
+
 /** Both cameras with their rates and how they compare between them, then the depth with its rate, filling the height left. */
 export default function Previews({ status, socket }) {
   const [depthChannel, setDepthChannel] = useState(null)
+  const detections = useDetections(socket)
+  const overlay = detections ? (size) => <DetectionOverlay detections={detections} {...size} /> : undefined
 
   return (
     <section aria-label="Previews" className="flex flex-col gap-3 lg:min-h-0 lg:flex-1">
       <div className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3">
-        <Preview stream="left" socket={socket}>
-          {status ? <Figures id="left" figures={cameraFigures(status.cameras?.left)} /> : null}
+        <Preview stream="left" socket={socket} overlay={overlay}>
+          {status ? <Figures id="left" figures={[...cameraFigures(status.cameras?.left), ...objectFigures(detections)]} /> : null}
         </Preview>
         <PairStatus status={status} />
         <Preview stream="right" socket={socket}>

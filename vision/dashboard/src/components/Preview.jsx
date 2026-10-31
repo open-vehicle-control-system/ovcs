@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { OvcsCard } from '@ovcs/ui/react'
 
-/** A stream's latest frame, with its resolution; `children` sit in the caption, under the stream's name, and `onChannel` gets the stream's channel. */
-export default function Preview({ stream, socket, onChannel, className = '', frameClassName = '', children }) {
+/**
+ * A stream's latest frame, with its resolution; `children` sit in the caption, under the stream's name, `onChannel`
+ * gets the stream's channel, and `overlay`, given the frame's size, draws over it.
+ */
+export default function Preview({ stream, socket, onChannel, overlay, className = '', frameClassName = '', children }) {
   const [frame, setFrame] = useState(null)
   const [size, setSize] = useState(null)
   const frameRef = useRef(null)
@@ -34,7 +37,7 @@ export default function Preview({ stream, socket, onChannel, className = '', fra
 
   return (
     <OvcsCard as="figure" className={`overflow-hidden p-0 ${className}`}>
-      <div className={`flex aspect-video items-center justify-center bg-black ${frameClassName}`}>
+      <div className={`relative flex aspect-video items-center justify-center bg-black ${frameClassName}`}>
         {frame ? (
           <img
             src={frame}
@@ -50,6 +53,7 @@ export default function Preview({ stream, socket, onChannel, className = '', fra
         ) : (
           <p className="text-sm text-ovcs-muted">No frame</p>
         )}
+        {frame && size && overlay ? overlay(size) : null}
       </div>
       <figcaption className="flex flex-col gap-1.5 px-3 py-2 text-sm">
         <div className="flex items-baseline gap-2">

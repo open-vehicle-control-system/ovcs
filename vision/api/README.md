@@ -21,6 +21,7 @@ Channels:
 
 - `status`: a `VisionCore.Status` snapshot on join, then one a second.
 - `preview:left`, `preview:right` and `preview:depth`: JPEG frames as binary WebSocket messages, one at a time, sent when the client acknowledges the previous one.
+- `detections`: each detection result, at most ten a second, as `detections` events: every object's label, score, distance in metres and outline on the left camera's image, as fractions of its width and height. Refused on a unit without detection.
 
 Any other path serves the dashboard.
 

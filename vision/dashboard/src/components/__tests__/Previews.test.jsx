@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, act, fireEvent } from '@testing-library/react'
 import Previews from '../Previews.jsx'
 
 const socket = { channel: vi.fn(() => ({ on: vi.fn(), join: vi.fn(), push: vi.fn(() => ({ receive() { return this } })), leave: vi.fn() })) }
@@ -70,5 +70,64 @@ describe('Previews', () => {
     expect(card('left')).toBeNull()
     expect(card('depth').querySelector('[data-figure="rate"]')).toBeNull()
     for (const id of ['sync', 'alignment', 'sharpness']) expect(card(id).textContent).toContain('–')
+  })
+
+  describe('detections', () => {
+    // A socket whose channels keep their handlers, so a test can push to them.
+    function liveSocket() {
+      const handlers = {}
+      const socket = {
+        channel: vi.fn((topic) => ({
+          on: vi.fn((event, handler) => { handlers[`${topic}/${event}`] = handler }),
+          join: vi.fn(() => ({ receive() { return this } })),
+          push: vi.fn(() => ({ receive() { return this } })),
+          leave: vi.fn()
+        }))
+      }
+      return { socket, push: (topic, event, payload) => act(() => handlers[`${topic}/${event}`](payload)) }
+    }
+
+    const person = {
+      label: 'person',
+      score: 0.62,
+      distance_m: 1.84,
+      outline: [[0.25, 0.2], [0.75, 0.2], [0.75, 0.8], [0.25, 0.8]]
+    }
+
+    function showLeftFrame(push) {
+      URL.createObjectURL = vi.fn(() => 'blob:left')
+      URL.revokeObjectURL = vi.fn()
+      push('preview:left', 'frame', new Uint8Array([1]).buffer)
+      const image = screen.getByRole('img', { name: 'left preview' })
+      Object.defineProperties(image, { naturalWidth: { value: 480 }, naturalHeight: { value: 270 } })
+      fireEvent.load(image)
+    }
+
+    it('counts the objects under the left preview, once detection answers', () => {
+      const { socket, push } = liveSocket()
+      render(<Previews status={snapshot} socket={socket} />)
+      expect(card('left').querySelector('[data-figure="objects"]')).toBeNull()
+
+      push('detections', 'detections', { detections: [person] })
+
+      expect(card('left').querySelector('[data-figure="objects"]').textContent).toBe('objects1')
+      expect(screen.getByRole('button', { name: 'About Objects' })).toBeTruthy()
+    })
+
+    it("draws each object's outline and its label with the distance over the left preview", () => {
+      const { socket, push } = liveSocket()
+      render(<Previews status={snapshot} socket={socket} />)
+      showLeftFrame(push)
+
+      push('detections', 'detections', { detections: [person] })
+
+      const overlay = figure('left').querySelector('svg[data-detections]')
+      expect(overlay.getAttribute('viewBox')).toBe('0 0 480 270')
+      expect(overlay.querySelector('polygon').getAttribute('points')).toBe('120,54 360,54 360,216 120,216')
+      expect(overlay.querySelector('text').textContent).toBe('person 1.8 m')
+
+      push('detections', 'detections', { detections: [] })
+      expect(figure('left').querySelectorAll('svg[data-detections] polygon')).toHaveLength(0)
+    })
   })
 })
