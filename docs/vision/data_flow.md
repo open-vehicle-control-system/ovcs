@@ -30,6 +30,7 @@ Each box below is a process on the BEAM, or a Port: a separate program the BEAM 
 | `VisionCore.Ros2.Publishers.Stereo` | `VisionCore.Stereo.Supervisor` | Publishes the raw images, camera infos, disparity, depth and point cloud over Zenoh. |
 | `VisionCore.Stereo.Matcher` | the application | Owns the `stereo_match` Port that computes native stages. |
 | `VisionCore.Detection.Pipeline` | `VisionCore.Detection.Supervisor` | Sends the rectified left image to the detector and places each box with the depth. |
+| `VisionCore.Detection.Live` | `VisionCore.Detection.Supervisor` | Hands each detection result to the dashboard: every object's label, distance and outline on the left camera's image. |
 | `VisionCore.Status` | `VisionCore.Supervisor` | Counts the rates and load the dashboard's top bar and captions show. |
 | `VisionCore.Preview` | `VisionCore.Supervisor` | Encodes the left, right and depth previews for the dashboard. |
 
