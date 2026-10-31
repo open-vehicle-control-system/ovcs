@@ -8,7 +8,7 @@ defmodule VisionCore.Parameters.ExportTest do
       {[:components, :stereo, :stages, :disparity, :p1], "stereo.disparity.p1", 10},
       {[:components, :stereo, :stages, :disparity, :p2], "stereo.disparity.p2", 70},
       {[:components, :stereo, :left, :exposure_us], "stereo.cameras.exposure_us", 8000},
-      {[:components, :stereo, :align_correction], "stereo.row_alignment.correction", false},
+      {[:components, :stereo, :align_correction], "stereo.rectification.auto_row_offset", false},
       {[:preview, :max_hz], "preview.max_hz", 15},
       {nil, "stereo.left_camera.auto_exposure", false},
       {:not_running, "detection.min_score", 0.5}

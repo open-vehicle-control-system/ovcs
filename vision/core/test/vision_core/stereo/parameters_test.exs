@@ -525,7 +525,7 @@ defmodule VisionCore.Stereo.ParametersTest do
     assert offset.().applies == :live
 
     start_supervised!({AlignmentCorrection, subscribe: false})
-    assert offset.().applies == {:auto, "stereo.row_alignment.correction"}
+    assert offset.().applies == {:auto, "stereo.rectification.auto_row_offset"}
   end
 
   test "right_row_offset stays live without a row alignment stage to declare the correction" do
@@ -534,22 +534,32 @@ defmodule VisionCore.Stereo.ParametersTest do
     start_supervised!({AlignmentCorrection, subscribe: false})
 
     assert parameter(group("stereo.rectification"), "right_row_offset").applies == :live
+    refute parameter(group("stereo.rectification"), "auto_row_offset")
     refute group("stereo.row_alignment")
   end
 
-  test "the row alignment group carries the correction switch and the row offset as its status" do
-    refute parameter(group("stereo.row_alignment"), "correction")
+  test "rectification carries the correction's switch, first, next to the offset it sets" do
+    refute parameter(group("stereo.rectification"), "auto_row_offset")
+
+    start_supervised!({AlignmentCorrection, subscribe: false})
+    rectification = group("stereo.rectification")
+    switch = parameter(rectification, "auto_row_offset")
+
+    assert hd(rectification.parameters) == switch
+    assert %{type: :bool, export: [:components, :stereo, :align_correction]} = switch
+    assert switch.get.() == true
+    assert :ok = switch.set.(false)
+    refute AlignmentCorrection.enabled?()
+  end
+
+  test "the row alignment group only measures: no settings, the row offset as its status" do
     assert group("stereo.row_alignment").status.() == nil
 
     start_supervised!({AlignmentCorrection, subscribe: false})
     start_supervised!({Status, %{alignment: %{offset_rows: 0.7, band_offset_rows: []}}})
     alignment = group("stereo.row_alignment")
-    correction = parameter(alignment, "correction")
 
-    assert %{type: :bool, export: [:components, :stereo, :align_correction]} = correction
-    assert correction.get.() == true
-    assert :ok = correction.set.(false)
-    refute AlignmentCorrection.enabled?()
+    assert alignment.parameters == []
     assert alignment.status.() == {:warning, "rows off by 0.7"}
 
     Status.put(%{alignment: %{offset_rows: -0.24}})

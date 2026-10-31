@@ -54,7 +54,7 @@ Undistorts and rectifies both camera frames with each camera's calibration, so a
 |---|---|---|---|
 | `right_row_offset` | 0.0 | live | Rows the right image is moved by, −8 to 8: a correction for cameras that have shifted since the calibration. |
 
-`VisionCore.Stereo.AlignmentCorrection` sets `right_row_offset` for you, on by default (`:align_correction` on the `:stereo` component): when RowAlignment keeps reading an offset beyond a tenth of a row, it moves the right image, up to six rows. It corrects rows only; a camera that moved sideways needs a new calibration. Switch it off with the `<prefix>.row_alignment.correction` parameter to keep an offset you set by hand.
+`VisionCore.Stereo.AlignmentCorrection` sets `right_row_offset` for you, on by default (`:align_correction` on the `:stereo` component): when RowAlignment keeps reading an offset beyond a tenth of a row, it moves the right image, up to six rows. It corrects rows only; a camera that moved sideways needs a new calibration. Its switch, `auto_row_offset`, sits next to `right_row_offset` in the Rectification settings: switch it off to keep the offset it reached, or one you set by hand.
 
 The calibrations are inputs, not compiled in, so a new calibration needs no rebuild. Cost on the Pi 5: about 6 ms.
 
