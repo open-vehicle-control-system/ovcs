@@ -8,6 +8,7 @@ function fakeSocket() {
     on: vi.fn((event, handler) => { handlers[event] = handler }),
     join: vi.fn(() => ({ receive: vi.fn() })),
     push: vi.fn(),
+    off: vi.fn(),
     leave: vi.fn()
   }
   return { channel: vi.fn(() => channel), handlers, fakeChannel: channel }

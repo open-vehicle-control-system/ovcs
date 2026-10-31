@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen, act, fireEvent } from '@testing-library/react'
 import Previews from '../Previews.jsx'
 
-const socket = { channel: vi.fn(() => ({ on: vi.fn(), join: vi.fn(), push: vi.fn(() => ({ receive() { return this } })), leave: vi.fn() })) }
+const socket = { channel: vi.fn(() => ({ on: vi.fn(), join: vi.fn(), push: vi.fn(() => ({ receive() { return this } })), off: vi.fn(), leave: vi.fn() })) }
 
 const snapshot = {
   cameras: { left: { present: true, fps: 29.6, exposure_time_us: 8000, analogue_gain: 2.0 }, right: { present: false } },
@@ -81,6 +81,7 @@ describe('Previews', () => {
           on: vi.fn((event, handler) => { handlers[`${topic}/${event}`] = handler }),
           join: vi.fn(() => ({ receive() { return this } })),
           push: vi.fn(() => ({ receive() { return this } })),
+          off: vi.fn(),
           leave: vi.fn()
         }))
       }

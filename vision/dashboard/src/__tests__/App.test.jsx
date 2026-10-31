@@ -7,7 +7,7 @@ import * as service from '../services/parameters.js'
 
 vi.mock('../services/parameters.js')
 vi.mock('../services/socket.js', () => ({
-  dashboardSocket: { channel: () => ({ on: () => {}, join: () => {}, leave: () => {}, push: () => ({ receive() { return this } }) }) }
+  dashboardSocket: { channel: () => ({ on: () => {}, join: () => {}, off: () => {}, leave: () => {}, push: () => ({ receive() { return this } }) }) }
 }))
 
 const group = (id, name, position, role = 'step') => ({

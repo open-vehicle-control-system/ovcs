@@ -115,6 +115,18 @@ defmodule VisionCore.PreviewTest do
     end)
   end
 
+  test "a new depth range is told to every depth subscriber, whoever set it" do
+    start_supervised!({Preview, config: @config})
+    :ok = Preview.subscribe(:depth)
+    left_only = spawn_subscriber(self())
+    assert_receive {:subscribed, ^left_only}, 500
+
+    assert {:ok, _options} = Preview.set_options(depth_range_m: 8.5)
+
+    assert_receive {:vision_preview_options, %{depth_range_m: 8.5}}, 500
+    refute_receive {:previewed, _jpeg}, 100
+  end
+
   test "depth is not encoded without subscribers" do
     test_pid = self()
 
