@@ -27,10 +27,16 @@ describe('UnitStatus and the pair status', () => {
       </>
     )
 
-  it('shows Hailo absent', () => {
+  it('shows Hailo absent in grey: a unit without an accelerator is not failing', () => {
     show(snapshot)
-
     expect(card('hailo').textContent).toContain('absent')
+    expect(card('hailo').querySelector('.ovcs-status--error')).toBeNull()
+    expect(card('hailo').querySelector('.ovcs-status--ok')).toBeNull()
+  })
+
+  it('shows a Hailo that failed in red', () => {
+    show({ ...snapshot, hailo: 'failed' })
+    expect(card('hailo').querySelector('.ovcs-status--error')).not.toBeNull()
   })
 
   it('shows Zenoh in the top bar', () => {
