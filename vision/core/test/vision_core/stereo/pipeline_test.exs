@@ -39,6 +39,27 @@ defmodule VisionCore.Stereo.PipelineTest do
     def run(pair, state), do: {:ok, %{pair | disparity: Nx.multiply(pair.disparity, 1.0)}, state}
   end
 
+  # A compiled stage that keeps the device busy and whose results take a while to collect.
+  defmodule SlowFinish do
+    @behaviour VisionCore.Stereo.NxStage
+
+    def init(_opts, _context), do: {:ok, nil}
+    def requires, do: [:disparity]
+    def provides, do: [:disparity]
+    def params(_state, _context), do: %{}
+
+    def step(tensors, _params, _state) do
+      busy = Nx.iota({2_500, 2_500}, type: :f32)
+      busy = busy |> Nx.dot(busy) |> Nx.sum() |> Nx.multiply(0)
+      Map.update!(tensors, :disparity, &Nx.add(&1, busy))
+    end
+
+    def finish(pair, _outputs, _state) do
+      Process.sleep(200)
+      pair
+    end
+  end
+
   defp start(stages, opts \\ []) do
     Pipeline.start_link(
       [
@@ -230,6 +251,40 @@ defmodule VisionCore.Stereo.PipelineTest do
 
     test "publishes pairs taken as soon as it is ready in order, with the results of one at a time" do
       assert_overlapped_matches_one_at_a_time([])
+    end
+
+    test "counts device time once while a pair is collected during the next one's device work" do
+      {:ok, pipeline} =
+        start(Pipeline.default_stages(disparity: [paths: 3]) ++ [SlowFinish], flush_after_ms: 0)
+
+      Pipeline.register_listener(pipeline, self())
+      submit_when_ready(pipeline, [textured_pair(40)])
+
+      start_ms = System.monotonic_time(:millisecond)
+      pairs = submit_when_ready(pipeline, Enum.map(41..48, &textured_pair/1))
+      elapsed_ms = System.monotonic_time(:millisecond) - start_ms
+
+      assert pairs |> Enum.map(& &1.device_ms) |> Enum.sum() <= elapsed_ms
+    end
+
+    test "does not count the wait for the next pair as device time" do
+      {:ok, pipeline} =
+        start(Pipeline.default_stages(disparity: [paths: 3]), flush_after_ms: 5_000)
+
+      Pipeline.register_listener(pipeline, self())
+      submit_when_ready(pipeline, [textured_pair(50)])
+
+      [left, right] = textured_pair(51)
+      Pipeline.submit(pipeline, left, right)
+      assert_receive :stereo_pipeline_ready, 60_000
+      Process.sleep(500)
+      [left, right] = textured_pair(52)
+      Pipeline.submit(pipeline, left, right)
+
+      assert_receive {:"$gen_cast", {:stereo_pair, %{left_frame: %{capture_ns: 51}} = pair}},
+                     60_000
+
+      assert pair.device_ms < 500
     end
 
     test "logs a pair the segment refuses and takes the next one" do
