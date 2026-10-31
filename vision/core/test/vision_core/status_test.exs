@@ -43,6 +43,21 @@ defmodule VisionCore.StatusTest do
     assert elapsed_us < 1_000_000
   end
 
+  test "callees that do not answer delay the snapshot by one timeout, not one each" do
+    for name <- [VisionCore.Detection.Backend.Hailo, VisionCore.Ros2.ZenohClient] do
+      silent = spawn(fn -> Process.sleep(:infinity) end)
+      Process.register(silent, name)
+      on_exit(fn -> Process.exit(silent, :kill) end)
+    end
+
+    start_supervised!({Status, config: config([:hailo_detector])})
+
+    {elapsed_us, snapshot} = :timer.tc(&Status.snapshot/0)
+
+    assert %{hailo: :failed, zenoh: :disconnected} = snapshot
+    assert elapsed_us < 350_000
+  end
+
   test "a new subscriber receives a snapshot at once" do
     start_supervised!({Status, config: config([]), tick_ms: 60_000})
     :ok = Status.subscribe()
