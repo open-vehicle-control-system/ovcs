@@ -1,6 +1,6 @@
 import { useId, useMemo } from 'react'
 import { useShallow } from 'zustand/react/shallow'
-import { orderedGroups, unsavedByGroup, useParameters } from '../stores/parameters.js'
+import { placedGroups, unsavedByGroup, useParameters } from '../stores/parameters.js'
 import { OvcsBadge, focusClass as FOCUS } from '@ovcs/ui/react'
 import { SECTION_HEADING, SELECTED } from './menu.js'
 import { useNavigation } from '../stores/navigation.js'
@@ -89,10 +89,7 @@ export default function PipelineDiagram() {
     go('pipeline')
   }
 
-  const { flow, side } = useMemo(() => {
-    const ordered = orderedGroups({ groups })
-    return { flow: ordered.filter((group) => group.role !== 'branch'), side: ordered.filter((group) => group.role === 'branch') }
-  }, [groups])
+  const { flow, side } = useMemo(() => placedGroups({ groups }), [groups])
 
   const box = (group) => (
     <GroupBox group={group} unsaved={unsaved[group.id] ?? 0} selected={group.id === selectedGroupId} onSelect={select} />

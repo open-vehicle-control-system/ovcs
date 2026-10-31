@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
-  useParameters, orderedGroups, flowGroups, groupParameters, unsavedByGroup
+  useParameters, orderedGroups, flowGroups, placedGroups, groupParameters, unsavedByGroup
 } from '../parameters.js'
 import * as service from '../../services/parameters.js'
 
@@ -353,6 +353,7 @@ describe('parameters store', () => {
       const groups = state().groups
       expect(orderedGroups(state()).map((g) => g.id)).toEqual(['camera', 'stereo.match', 'side'])
       expect(flowGroups(state()).map((g) => g.id)).toEqual(['camera', 'stereo.match'])
+      expect(placedGroups(state()).side.map((g) => g.id)).toEqual(['side'])
       expect(state().groups).toBe(groups)
       expect(groups.map((g) => g.id)).toEqual(['side', 'stereo.match', 'camera'])
     })
