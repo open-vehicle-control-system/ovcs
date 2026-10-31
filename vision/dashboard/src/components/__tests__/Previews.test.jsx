@@ -124,10 +124,12 @@ describe('Previews', () => {
       const overlay = figure('left').querySelector('svg[data-detections]')
       expect(overlay.getAttribute('viewBox')).toBe('0 0 480 270')
       expect(overlay.querySelector('polygon').getAttribute('points')).toBe('120,54 360,54 360,216 120,216')
-      expect(overlay.querySelector('text').textContent).toBe('person 1.8 m')
+      expect(overlay.querySelector('text').textContent).toBe('person 1.8\u00a0m')
+      expect(screen.getByRole('img', { name: 'Detected: person at 1.8\u00a0m' })).toBe(overlay)
 
       push('detections', 'detections', { detections: [] })
       expect(figure('left').querySelectorAll('svg[data-detections] polygon')).toHaveLength(0)
+      expect(figure('left').querySelector('svg[data-detections]').getAttribute('aria-hidden')).toBe('true')
     })
   })
 })
