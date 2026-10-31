@@ -19,7 +19,7 @@ defmodule VisionCore.Parameters.StoreTest do
     values = %{
       "stereo.disparity.p1" => 10,
       "stereo.temporal_filter.alpha" => 0.5,
-      "stereo.row_alignment.correction" => false,
+      "stereo.rectification.auto_row_offset" => false,
       "stereo.cameras.rotation" => 180
     }
 

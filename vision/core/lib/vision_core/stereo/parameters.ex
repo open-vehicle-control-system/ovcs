@@ -16,11 +16,12 @@ defmodule VisionCore.Stereo.Parameters do
     * `<prefix>.<stage>` — each stage of `VisionCore.Stereo.Pipeline`, in
       pipeline order, with its settings; Rectification also carries the matching
       size.
-    * `<prefix>.row_alignment.correction` — switches
+    * `<prefix>.rectification.auto_row_offset` — switches
       `VisionCore.Stereo.AlignmentCorrection` on or off while it runs and
-      the pipeline has a RowAlignment stage; it
-      then sets Rectification's `right_row_offset`. The row alignment group's status
-      is the row offset `VisionCore.Status` measures.
+      the pipeline has a RowAlignment stage; on, it sets `right_row_offset`
+      next to it from RowAlignment's measure. The row alignment group has
+      no settings: its status is the row offset `VisionCore.Status`
+      measures.
 
   Declares nothing when the registry is not running.
   """
@@ -59,7 +60,7 @@ defmodule VisionCore.Stereo.Parameters do
     pipeline = Keyword.get(opts, :pipeline, Pipeline)
     stage_options = Pipeline.stage_options(pipeline)
 
-    # The correction is declared on the row alignment stage's group, so it needs both.
+    # The correction steers Rectification from RowAlignment's measure, so it needs both.
     correction? =
       Process.whereis(AlignmentCorrection) != nil and
         Enum.any?(stage_options, &(&1.stage == :row_alignment))
@@ -285,7 +286,9 @@ defmodule VisionCore.Stereo.Parameters do
       kind: :stage,
       placement: :flow,
       position: position,
-      parameters: parameters ++ extra_parameters(stage.stage, opts, correction?)
+      parameters:
+        leading_parameters(stage.stage, correction?) ++
+          parameters ++ extra_parameters(stage.stage, opts)
     }
     |> Map.merge(extra_group_fields(stage.stage))
     |> Map.merge(Map.take(stage, [:compute]))
@@ -313,33 +316,37 @@ defmodule VisionCore.Stereo.Parameters do
   end
 
   defp stage_applies(:rectification, :right_row_offset, _spec, prefix, true),
-    do: {:auto, "#{prefix}.row_alignment.correction"}
+    do: {:auto, "#{prefix}.rectification.auto_row_offset"}
 
   defp stage_applies(_stage, _key, spec, _prefix, _correction?),
     do: Map.get(spec, :applies, :live)
 
-  defp extra_parameters(:rectification, opts, _correction?) do
-    for key <- [:match_width, :match_height], Keyword.has_key?(opts, key) do
-      build_parameter({key, opts[key]})
-    end
-  end
-
-  defp extra_parameters(:row_alignment, _opts, true) do
+  # The automatic switch comes before the value it sets, as auto exposure does.
+  defp leading_parameters(:rectification, true) do
     [
       %{
-        name: "correction",
+        name: "auto_row_offset",
         type: :bool,
         get: fn -> AlignmentCorrection.enabled?() end,
         set: &AlignmentCorrection.set_enabled/1,
         constraint: %{kind: :bool},
         description:
-          "Keep the rows lined up by moving the right image; off, right_row_offset stays as set",
+          "Move the right image to keep the rows lined up, from the row alignment measure; " <>
+            "off, right_row_offset stays as set",
         export: [:components, :stereo, :align_correction]
       }
     ]
   end
 
-  defp extra_parameters(_stage, _opts, _correction?), do: []
+  defp leading_parameters(_stage, _correction?), do: []
+
+  defp extra_parameters(:rectification, opts) do
+    for key <- [:match_width, :match_height], Keyword.has_key?(opts, key) do
+      build_parameter({key, opts[key]})
+    end
+  end
+
+  defp extra_parameters(_stage, _opts), do: []
 
   defp extra_group_fields(:row_alignment), do: %{status: &alignment_status/0}
   defp extra_group_fields(_stage), do: %{}
