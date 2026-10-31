@@ -3,7 +3,7 @@ title: How a pair flows
 description: The processes a pair of camera frames goes through on the vision unit, from capture to the ROS 2 topics, detection and the dashboard, and how the unit keeps up with the cameras.
 ---
 
-This guide follows one pair of frames through the vision unit. The stages themselves, and what disparity and rectification are, are in [Stereo stages](./stages.md); where they run, in [Where depth is computed](./compute.md).
+This guide follows one pair of frames through the vision unit. What disparity and rectification are is in [Stereo vision basics](./basics.md), the stages themselves in [Stereo stages](./stages.md); where they run, in [Where depth is computed](./compute.md).
 
 ## The processes
 

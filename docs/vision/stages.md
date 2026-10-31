@@ -13,7 +13,7 @@ Two cameras side by side see a point at slightly different horizontal positions.
 Z = f × B / d
 ```
 
-`Z` is the depth in metres, `f` the focal length in pixels and `B` the baseline, the distance between the two cameras. Finding `d` for every pixel is the expensive part. It becomes a search along one image row once both images are **rectified**: undistorted and rotated so that a point lies on the same row in both.
+`Z` is the depth in metres, `f` the focal length in pixels and `B` the baseline, the distance between the two cameras; [Stereo vision basics](./basics.md) explains them with diagrams. Finding `d` for every pixel is the expensive part. It becomes a search along one image row once both images are **rectified**: undistorted and rotated so that a point lies on the same row in both.
 
 Two consequences shape the settings below:
 

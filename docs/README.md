@@ -32,6 +32,7 @@ These guides are published on [ovcs.be/docs](https://ovcs.be/docs). This index i
 ## Vision unit
 
 - [Vision unit](./vision/overview.md)
+- [Stereo vision basics](./vision/basics.md)
 - [How a pair flows](./vision/data_flow.md)
 - [Stereo stages](./vision/stages.md)
 - [Where depth is computed](./vision/compute.md)
