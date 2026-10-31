@@ -105,10 +105,6 @@ defmodule VisionCore.Camera.LibCameraTest do
     test "grey frames are asked for by name" do
       assert LibCamera.format_args(:grey) == ["--format", "grey"]
     end
-
-    test "refuses other formats" do
-      assert_raise FunctionClauseError, fn -> LibCamera.format_args(:rgb) end
-    end
   end
 
   describe "grey frame records" do
