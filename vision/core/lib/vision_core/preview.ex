@@ -31,6 +31,8 @@ defmodule VisionCore.Preview do
       frame to the next. Red is the nearest measured depths.
     * `:depth_encoder` — `(VisionCore.Stereo.Pair.t() -> jpeg)`,
       replacing `encode_depth/2`.
+    * `:frame_encoder` — `(VisionCore.Camera.Frame.t() -> {:ok, jpeg} |
+      {:error, reason})`, replacing `VisionCore.Camera.Frame.to_jpeg/1`.
   """
   use GenServer
   require Logger
@@ -112,9 +114,10 @@ defmodule VisionCore.Preview do
        depth_range_m: Keyword.get(opts, :depth_range_m, @default_depth_range_m) * 1.0,
        interval_ms: div(1_000, max_hz),
        depth_encoder: Keyword.get(opts, :depth_encoder),
+       frame_encoder: Keyword.get(opts, :frame_encoder, &Frame.to_jpeg/1),
        monitors: Sources.register(sources),
        latest: Map.new(@streams, &{&1, %{sequence: 0, frame: nil}}),
-       encoded_depth: {0, nil},
+       encoded: Map.new(@streams, &{&1, {0, nil}}),
        depth_failure_logged: false,
        subscribers: %{}
      }}
@@ -251,30 +254,36 @@ defmodule VisionCore.Preview do
     end
   end
 
-  defp jpeg(
-         %{latest: %{depth: %{sequence: sequence}}, encoded_depth: {sequence, jpeg}} = state,
-         :depth
-       ),
-       do: {jpeg, state}
+  # Each stream's latest frame is encoded once, however many subscribers it goes to.
+  defp jpeg(state, stream) do
+    %{sequence: sequence} = state.latest[stream]
 
-  defp jpeg(state, :depth) do
-    %{sequence: sequence, frame: pair} = state.latest.depth
+    case state.encoded[stream] do
+      {^sequence, jpeg} ->
+        {jpeg, state}
 
-    case encode_depth_safely(state, pair) do
+      _stale ->
+        {jpeg, state} = encode(state, stream)
+        {jpeg, put_in(state.encoded[stream], {sequence, jpeg})}
+    end
+  end
+
+  defp encode(state, :depth) do
+    case encode_depth_safely(state, state.latest.depth.frame) do
       {:ok, jpeg} ->
-        {jpeg, %{state | encoded_depth: {sequence, jpeg}, depth_failure_logged: false}}
+        {jpeg, %{state | depth_failure_logged: false}}
 
       {:error, reason} ->
         unless state.depth_failure_logged,
           do: Logger.error("#{__MODULE__} cannot encode the depth preview: #{reason}")
 
-        {nil, %{state | encoded_depth: {sequence, nil}, depth_failure_logged: true}}
+        {nil, %{state | depth_failure_logged: true}}
     end
   end
 
   # Encoded on send: a grey frame costs an encode, and most are replaced unsent.
-  defp jpeg(state, stream) do
-    case Frame.to_jpeg(state.latest[stream].frame) do
+  defp encode(state, stream) do
+    case state.frame_encoder.(state.latest[stream].frame) do
       {:ok, jpeg} -> {jpeg, state}
       {:error, _reason} -> {nil, state}
     end
