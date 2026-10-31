@@ -24,11 +24,18 @@ These guides are published on [ovcs.be/docs](https://ovcs.be/docs). This index i
 - [Writing a component](./writing_components.md)
 - [CAN frames and topology](./can_frames.md)
 - [Dashboard pages](./dashboard_pages.md)
-- [Vision unit](./vision.md)
 - [Generic controllers](./generic_controllers.md)
 - [Testing with CAN](./testing_with_can.md)
 - [Running on hardware](./running_hardware.md)
 - [VESC drivetrain](./vesc_drivetrain.md)
+
+## Vision unit
+
+- [Vision unit](./vision/overview.md)
+- [How a pair flows](./vision/data_flow.md)
+- [Stereo stages](./vision/stages.md)
+- [Where depth is computed](./vision/compute.md)
+- [Vision performance](./vision/performance.md)
 
 ## ROS 2
 

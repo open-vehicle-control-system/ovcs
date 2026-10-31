@@ -43,7 +43,7 @@ A running vehicle is a small fleet of BEAMs:
 
 - **VMS**: the only firmware on the vehicle CAN buses, so all isolation between manufacturers happens there. Raspberry Pi 4 with a multi-CAN SPI hub.
 - **Infotainment** (optional): the in-car touchscreen on a Raspberry Pi 5, on the `ovcs` bus only.
-- **Vision** (optional): stereo depth and object detection on a Raspberry Pi 5 with a Hailo accelerator, publishing ROS 2 topics over Zenoh. No CAN. See [Vision unit](./vision.md).
+- **Vision** (optional): stereo depth and object detection on a Raspberry Pi 5 with a Hailo accelerator, publishing ROS 2 topics over Zenoh. No CAN. See [Vision unit](./vision/overview.md).
 - **Bridges** (zero or more): each ferries data between the `ovcs` bus and a non-CAN world, such as an ExpressLRS radio link or a ROS 2 graph. The vehicle declares which bridges it ships and on which target.
 - **Generic controllers**: Arduino R4 Minima boards running one shared firmware. They receive their pinout from the VMS at runtime through an adoption frame. See [Generic controllers](./generic_controllers.md).
 

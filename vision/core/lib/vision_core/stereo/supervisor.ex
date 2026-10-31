@@ -13,7 +13,7 @@ defmodule VisionCore.Stereo.Supervisor do
          - per-side `<topic_prefix>/<side>/image_raw/compressed`
            + `<topic_prefix>/<side>/camera_info`,
          - `<topic_prefix>/disparity` (DisparityImage),
-         - `<topic_prefix>/depth/image_rect` (Image 32FC1, metres),
+         - `<topic_prefix>/depth/image_rect` (Image 16UC1, millimetres),
          - `<topic_prefix>/depth/camera_info` — the same intrinsics as
            the left camera, republished as a *sibling* of the depth
            image. Consumers resolve a camera_info by convention from

@@ -24,7 +24,7 @@ Channels:
 
 Any other path serves the dashboard.
 
-The endpoint listens on port 4100. `vision_api` holds no vehicle knowledge; [`../firmware`](../firmware) boots it with the vehicle's composer. See [Vision unit](../../docs/vision.md).
+The endpoint listens on port 4100. `vision_api` holds no vehicle knowledge; [`../firmware`](../firmware) boots it with the vehicle's composer. See [Vision unit](../../docs/vision/overview.md).
 
 ```sh
 mix deps.get

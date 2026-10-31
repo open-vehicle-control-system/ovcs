@@ -10,7 +10,7 @@ On a vision target, compiling this app cross-builds the Ports from [`../rust`](.
 
 The stereo stages (`VisionCore.Stereo.Pipeline.default_stages/1`) are written in Nx and compiled through `nx_iree`, for a Vulkan GPU or a CPU. The tests run them on EXLA and check them against OpenCV (evision, a test dependency); `--include vulkan` also runs them on the host's Vulkan devices, `--include iree` compiles them with IREE. The first build compiles the IREE runtime with CMake. With `compute: :native` the stages run natively in the `stereo_match` Port instead (`VisionCore.Stereo.NativeSegment`), whose tests compare each stage with its Nx implementation on the same inputs: on Nx's evaluator, bit for bit, and the disparity with `NxStereo.sgm/3` on EXLA.
 
-The vision unit as a whole is described in [Vision unit](../../docs/vision.md).
+The vision unit as a whole is described in [Vision unit](../../docs/vision/overview.md).
 
 ```sh
 mix deps.get
