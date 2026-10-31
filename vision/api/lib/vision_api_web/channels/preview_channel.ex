@@ -1,15 +1,16 @@
 defmodule VisionApiWeb.PreviewChannel do
   @moduledoc """
-  Pushes one `VisionCore.Preview` stream as `"frame"` events,
-  `%{jpeg: base64}`. The topic names the stream: `"preview:left"`,
-  `"preview:right"` or `"preview:depth"`.
+  Pushes one `VisionCore.Preview` stream as `"frame"` events whose
+  binary payload is the JPEG itself. The topic names the stream:
+  `"preview:left"`, `"preview:right"` or `"preview:depth"`.
 
   The client pushes `"ack"` once it has shown a frame, and only then is
   the next one sent, so a slow link gets the latest frame instead of a
   backlog. On the depth stream it pushes `"depth_range"`, with `"metres"`
   to set the depth video's colour range or without to read it; the reply
-  is the range in force, `%{metres: float}`. Stops when `VisionCore.Preview` restarts, and refuses the
-  join while it is not running; see `VisionApiWeb.SourceMonitor`.
+  is the range in force, `%{metres: float}`. Stops when
+  `VisionCore.Preview` restarts, and refuses the join while it is not
+  running; see `VisionApiWeb.SourceMonitor`.
   """
   use VisionApiWeb, :channel
 
@@ -54,7 +55,7 @@ defmodule VisionApiWeb.PreviewChannel do
 
   @impl Phoenix.Channel
   def handle_info({:vision_preview, _stream, jpeg}, socket) do
-    push(socket, "frame", %{jpeg: Base.encode64(jpeg)})
+    push(socket, "frame", {:binary, jpeg})
     {:noreply, socket}
   end
 

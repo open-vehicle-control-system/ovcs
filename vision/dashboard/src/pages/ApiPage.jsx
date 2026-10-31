@@ -16,8 +16,8 @@ const RESOURCES = [
 
 const CHANNELS = [
   ['status', 'The unit status every second, as the top bar and the video captions show it'],
-  ['preview:left, preview:right', 'Camera frames as JPEG; the client acks each frame to get the next'],
-  ['preview:depth', 'The coloured depth map; push depth_range to read or set its colour range']
+  ['preview:left, preview:right', 'Camera frames as binary JPEG messages; the client acks each frame to get the next'],
+  ['preview:depth', 'The coloured depth map, as binary JPEG messages; push depth_range to read or set its colour range']
 ]
 
 const base = () => `${import.meta.env.VITE_BASE_URL || window.location.origin}/api/`

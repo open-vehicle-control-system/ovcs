@@ -20,7 +20,7 @@ The `/api` routes follow [JSON:API](https://jsonapi.org/): every response is `ap
 Channels:
 
 - `status`: a `VisionCore.Status` snapshot on join, then one a second.
-- `preview:left`, `preview:right` and `preview:depth`: JPEG frames, one at a time, sent when the client acknowledges the previous one.
+- `preview:left`, `preview:right` and `preview:depth`: JPEG frames as binary WebSocket messages, one at a time, sent when the client acknowledges the previous one.
 
 Any other path serves the dashboard.
 
