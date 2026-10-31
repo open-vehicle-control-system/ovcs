@@ -149,24 +149,27 @@ fn zeroed<T>() -> T {
 /// `node_named`, waiting up to `timeout` for a node the kernel has not
 /// registered yet, as when the program starts while the sensors still probe.
 pub fn wait_for_node(name: &str, timeout: std::time::Duration) -> io::Result<String> {
-    retry(timeout, std::time::Duration::from_millis(200), || {
-        node_named(name)
-    })
+    retry(
+        timeout,
+        std::time::Duration::from_millis(200),
+        io::ErrorKind::NotFound,
+        || node_named(name),
+    )
 }
 
-/// Calls `attempt` until it is not `NotFound` or `timeout` has passed.
+/// Calls `attempt` until it fails with another error than `waiting`, such as
+/// `NotFound` for a node not there yet or `ResourceBusy` for a device another
+/// process still holds, or until `timeout` has passed.
 pub fn retry<T>(
     timeout: std::time::Duration,
     interval: std::time::Duration,
+    waiting: io::ErrorKind,
     mut attempt: impl FnMut() -> io::Result<T>,
 ) -> io::Result<T> {
     let deadline = std::time::Instant::now() + timeout;
     loop {
         match attempt() {
-            Err(error)
-                if error.kind() == io::ErrorKind::NotFound
-                    && std::time::Instant::now() < deadline =>
-            {
+            Err(error) if error.kind() == waiting && std::time::Instant::now() < deadline => {
                 std::thread::sleep(interval)
             }
             result => return result,
@@ -372,33 +375,63 @@ mod tests {
     use std::time::Duration;
 
     #[test]
+    fn retry_waits_for_a_busy_device_to_be_released() {
+        let mut calls = 0;
+        let opened = retry(
+            Duration::from_secs(1),
+            Duration::from_millis(1),
+            io::ErrorKind::ResourceBusy,
+            || {
+                calls += 1;
+                if calls < 3 {
+                    Err(io::Error::from_raw_os_error(libc::EBUSY))
+                } else {
+                    Ok(calls)
+                }
+            },
+        );
+        assert_eq!(opened.unwrap(), 3);
+    }
+
+    #[test]
     fn retry_waits_for_a_node_that_appears() {
         let mut calls = 0;
-        let found = retry(Duration::from_secs(1), Duration::from_millis(1), || {
-            calls += 1;
-            if calls < 3 {
-                Err(io::Error::new(io::ErrorKind::NotFound, "not yet"))
-            } else {
-                Ok(calls)
-            }
-        });
+        let found = retry(
+            Duration::from_secs(1),
+            Duration::from_millis(1),
+            io::ErrorKind::NotFound,
+            || {
+                calls += 1;
+                if calls < 3 {
+                    Err(io::Error::new(io::ErrorKind::NotFound, "not yet"))
+                } else {
+                    Ok(calls)
+                }
+            },
+        );
         assert_eq!(found.unwrap(), 3);
     }
 
     #[test]
     fn retry_gives_up_after_the_timeout_and_on_other_errors() {
-        let missing: io::Result<()> =
-            retry(Duration::from_millis(5), Duration::from_millis(1), || {
-                Err(io::Error::new(io::ErrorKind::NotFound, "never"))
-            });
+        let missing: io::Result<()> = retry(
+            Duration::from_millis(5),
+            Duration::from_millis(1),
+            io::ErrorKind::NotFound,
+            || Err(io::Error::new(io::ErrorKind::NotFound, "never")),
+        );
         assert_eq!(missing.unwrap_err().kind(), io::ErrorKind::NotFound);
 
         let mut calls = 0;
-        let denied: io::Result<()> =
-            retry(Duration::from_secs(1), Duration::from_millis(1), || {
+        let denied: io::Result<()> = retry(
+            Duration::from_secs(1),
+            Duration::from_millis(1),
+            io::ErrorKind::NotFound,
+            || {
                 calls += 1;
                 Err(io::Error::new(io::ErrorKind::PermissionDenied, "no"))
-            });
+            },
+        );
         assert_eq!(denied.unwrap_err().kind(), io::ErrorKind::PermissionDenied);
         assert_eq!(calls, 1);
     }

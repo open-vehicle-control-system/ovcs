@@ -32,6 +32,7 @@ const BUFFERS: u32 = 4;
 const EXPOSURE_GAIN_PRESENT: u8 = 0b11;
 // How long the sensors may take to register after the program starts.
 const NODE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
+const BUSY_RETRY: std::time::Duration = std::time::Duration::from_millis(200);
 const PAIR_TOLERANCE_NS: i64 = 1_000_000;
 const STATS_EVERY_S: u64 = 60;
 // Auto exposure measures every this many left frames: the sensor applies a
@@ -86,7 +87,9 @@ fn open_camera(video: &str, sensor_name: &str, width: u32, height: u32) -> io::R
             lens,
         })
     };
-    open().map_err(|error| io::Error::new(error.kind(), format!("{video}: {error}")))
+    // A capture that just stopped may still be releasing the device.
+    v4l2::retry(NODE_TIMEOUT, BUSY_RETRY, io::ErrorKind::ResourceBusy, open)
+        .map_err(|error| io::Error::new(error.kind(), format!("{video}: {error}")))
 }
 
 fn run(args: &args::Args, writer: &Writer, log: &dyn Fn(LogLevel, &str)) -> io::Result<()> {
