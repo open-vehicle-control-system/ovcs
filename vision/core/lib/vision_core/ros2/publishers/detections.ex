@@ -38,8 +38,8 @@ defmodule VisionCore.Ros2.Publishers.Detections do
   box visibly beside the object.
 
   Rather than publish a second, rectified image stream, each outline
-  vertex is mapped back through the left camera's rectification map
-  (`VisionCore.Detection.Fusion.rectification_map/1`). A
+  vertex is mapped back through the left camera's calibration
+  (`VisionCore.Detection.Fusion.raw_point/2`). A
   straight edge in rectified space is a curve in raw space, so edges
   are subdivided (`:outline_segments`) and each vertex mapped
   individually.
@@ -95,8 +95,6 @@ defmodule VisionCore.Ros2.Publishers.Detections do
         |> Duration.from_milliseconds(),
       outline_segments: Keyword.get(opts, :outline_segments, @default_outline_segments),
       label_font_size: Keyword.get(opts, :label_font_size, @default_label_font_size),
-      # Keyed on the calibration, so a calibration reload rebuilds it.
-      rectification_map_cache: nil,
       published_count: 0,
       # Detection indexes drawn last frame; those not redrawn get an explicit DELETE.
       previous_indexes: MapSet.new()
@@ -124,7 +122,7 @@ defmodule VisionCore.Ros2.Publishers.Detections do
 
     publish_markers(positioned, header, state)
     publish_detections(positioned, header, state)
-    state = publish_overlay(positioned, header, pair, state)
+    publish_overlay(positioned, header, pair, state)
 
     %{
       state
@@ -242,17 +240,15 @@ defmodule VisionCore.Ros2.Publishers.Detections do
 
   # LINE_LOOP closes a box in four points where a LINE_LIST needs eight.
   defp publish_overlay(positioned, header, %Pair{} = pair, state) do
-    {map_binary, cache} = Fusion.left_rectification_map(pair, state.rectification_map_cache)
-    state = %{state | rectification_map_cache: cache}
-
     boxes =
       Enum.map(positioned, fn detection ->
         vertices =
           detection.box
           |> Fusion.perimeter(state.outline_segments)
-          |> Enum.map(&Fusion.raw_point(&1, map_binary, pair))
-          |> Enum.reject(&is_nil/1)
-          |> Enum.map(fn {x, y} -> %Point2{x: x, y: y} end)
+          |> Enum.map(fn vertex ->
+            {x, y} = Fusion.raw_point(vertex, pair)
+            %Point2{x: x, y: y}
+          end)
 
         %PointsAnnotation{
           timestamp: header.stamp,
@@ -269,10 +265,7 @@ defmodule VisionCore.Ros2.Publishers.Detections do
       Enum.map(positioned, fn detection ->
         # Anchored just above the box's top-left corner, in raw
         # pixels like everything else in this message.
-        {x, y} =
-          {detection.box.x0, detection.box.y0}
-          |> Fusion.raw_point(map_binary, pair)
-          |> Kernel.||({detection.box.x0, detection.box.y0})
+        {x, y} = Fusion.raw_point({detection.box.x0, detection.box.y0}, pair)
 
         %TextAnnotation{
           timestamp: header.stamp,
@@ -297,8 +290,6 @@ defmodule VisionCore.Ros2.Publishers.Detections do
         metadata: []
       }
     )
-
-    state
   end
 
   defp label_text(detection) do
@@ -311,7 +302,6 @@ defmodule VisionCore.Ros2.Publishers.Detections do
     %Color{r: 1.0 - score, g: score, b: 0.15, a: 1.0}
   end
 
-  # Without a calibration, rectified and raw pixels are the same.
   defp pose_for(detection) do
     %Pose{
       position: %Point{x: detection.x, y: detection.y, z: detection.z},

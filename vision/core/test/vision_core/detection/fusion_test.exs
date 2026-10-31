@@ -137,54 +137,17 @@ defmodule VisionCore.Detection.FusionTest do
     end
   end
 
-  describe "remap/4" do
-    # A 2x2 CV_16SC2 map, interleaved int16 x, y per rectified pixel.
-    defp map_binary(pairs) do
-      Enum.reduce(pairs, <<>>, fn {x, y}, acc ->
-        acc <> <<x::little-signed-16, y::little-signed-16>>
-      end)
-    end
-
-    test "reads the raw pixel for a rectified coordinate" do
-      # Row-major: (0,0) (1,0) / (0,1) (1,1)
-      binary = map_binary([{10, 20}, {11, 21}, {12, 22}, {13, 23}])
-
-      assert Fusion.remap(binary, 2, 2, {0, 0}) == {10.0, 20.0}
-      assert Fusion.remap(binary, 2, 2, {1, 0}) == {11.0, 21.0}
-      assert Fusion.remap(binary, 2, 2, {0, 1}) == {12.0, 22.0}
-      assert Fusion.remap(binary, 2, 2, {1, 1}) == {13.0, 23.0}
-    end
-
-    test "clamps a coordinate outside the frame rather than reading past the map" do
-      binary = map_binary([{10, 20}, {11, 21}, {12, 22}, {13, 23}])
-
-      assert Fusion.remap(binary, 2, 2, {99, 99}) == {13.0, 23.0}
-      assert Fusion.remap(binary, 2, 2, {-5, -5}) == {10.0, 20.0}
-    end
-
-    test "rounds a fractional coordinate to the nearest pixel" do
-      binary = map_binary([{10, 20}, {11, 21}, {12, 22}, {13, 23}])
-      assert Fusion.remap(binary, 2, 2, {0.6, 0.4}) == {11.0, 21.0}
-    end
-
-    test "returns nil when the map is too short for the coordinate" do
-      assert Fusion.remap(<<0, 0, 0, 0>>, 8, 8, {7, 7}) == nil
-    end
-  end
-
-  describe "rectification_map/1" do
+  describe "raw_pixel/2" do
     @calibration Path.expand("../../support/calibration", __DIR__)
 
-    test "maps a rectified pixel to the raw pixel OpenCV's map gives" do
+    test "maps a rectified pixel to the raw pixel OpenCV's rectification map gives" do
       calibration =
         @calibration
         |> Path.join("stereo_left.yaml")
         |> VisionCore.Ros2.CameraCalibration.load!()
         |> VisionCore.Ros2.CameraCalibration.scale_to(480, 270)
 
-      map = Fusion.rectification_map(calibration)
-
-      {opencv_map, _fractions} =
+      {opencv_x, opencv_y} =
         Evision.initUndistortRectifyMap(
           matrix(calibration.camera_matrix),
           Evision.Mat.from_nx_2d(Nx.tensor([calibration.distortion_coefficients], type: :f64)),
@@ -193,15 +156,17 @@ defmodule VisionCore.Detection.FusionTest do
           |> then(fn p -> Enum.map([0, 1, 2, 4, 5, 6, 8, 9, 10], &Enum.at(p, &1)) end)
           |> matrix(),
           {480, 270},
-          Evision.Constant.cv_16SC2()
+          Evision.Constant.cv_32FC1()
         )
 
-      opencv_binary = Evision.Mat.to_binary(opencv_map)
+      {opencv_x, opencv_y} =
+        {Evision.Mat.to_nx(opencv_x, Nx.BinaryBackend),
+         Evision.Mat.to_nx(opencv_y, Nx.BinaryBackend)}
 
-      for vertex <- [{0, 0}, {240, 135}, {479, 269}, {100.4, 30.6}] do
-        {x, y} = Fusion.remap(map, 480, 270, vertex)
-        {opencv_x, opencv_y} = Fusion.remap(opencv_binary, 480, 270, vertex)
-        assert abs(x - opencv_x) <= 1 and abs(y - opencv_y) <= 1
+      for {u, v} <- [{0, 0}, {240, 135}, {479, 269}, {100, 30}] do
+        {x, y} = Fusion.raw_pixel(calibration, {u, v})
+        assert_in_delta x, Nx.to_number(opencv_x[v][u]), 0.01
+        assert_in_delta y, Nx.to_number(opencv_y[v][u]), 0.01
       end
     end
 
