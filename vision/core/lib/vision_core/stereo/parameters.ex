@@ -3,17 +3,16 @@ defmodule VisionCore.Stereo.Parameters do
   Declares a stereo unit's parameter groups in `VisionCore.Parameters`,
   under its topic prefix `<prefix>`:
 
-    * `<prefix>.cameras` — the capture settings, for a driver whose one set
-      of controls drives both cameras (`c:VisionCore.Camera.shared_controls?/0`),
-      with the capture size, frame rate and each side's addressing as build
+    * `<prefix>.cameras` — the capture settings of both cameras, with the
+      capture size, frame rate and each side's addressing as build
       parameters. Exposure and gain are set by auto exposure while it is on,
       and then read what the sensors apply; their defaults are the manual
-      settings.
-    * `<prefix>.left_camera` and `<prefix>.right_camera` — the same, for a
-      driver with controls per camera. Auto exposure and auto gain are
-      switches of their own; exposure and gain are set by them while they are
-      on, and then read what the sensor applies. Their defaults are the
-      manual settings the composer gives the camera.
+      settings. For a driver whose one set of controls drives both cameras
+      (`c:VisionCore.Camera.shared_controls?/0`), they are that driver's
+      controls. For a driver with controls per camera, each setting is
+      applied to both cameras and read from the left one; auto exposure and
+      auto gain are switches of their own, and the defaults are the
+      composer's settings for the left camera.
     * `<prefix>.<stage>` — each stage of `VisionCore.Stereo.Pipeline`, in
       pipeline order, with its settings; Rectification also carries the matching
       size.
@@ -29,9 +28,8 @@ defmodule VisionCore.Stereo.Parameters do
 
   alias VisionCore.Stereo.{AlignmentCorrection, Pipeline}
 
-  @side_keys [:device, :sync, :sensor_mode, :format]
+  @side_keys [:device, :camera_id, :sync, :sensor_mode, :format]
   @half_row 0.5
-  @side_build_keys [:camera_id, :sync, :sensor_mode, :format]
   @manual_keys [:exposure_time_us, :analogue_gain]
   @auto_switch_of %{exposure_time_us: :auto_exposure, analogue_gain: :auto_gain}
   @auto_switches [
@@ -80,92 +78,92 @@ defmodule VisionCore.Stereo.Parameters do
     driver = Keyword.fetch!(opts, :driver)
     Code.ensure_loaded(driver)
 
-    if function_exported?(driver, :shared_controls?, 0) and driver.shared_controls?() do
-      id = "#{prefix}.cameras"
-      server = driver.name_for("left")
-      controls = driver.controls(server)
+    cond do
+      function_exported?(driver, :shared_controls?, 0) and driver.shared_controls?() ->
+        [shared_cameras_group(prefix, driver, opts)]
 
-      [
-        %{
-          id: id,
-          name: "Cameras",
-          summary: "Capture settings, applied to both cameras.",
-          kind: :component,
-          placement: :flow,
-          position: 0,
-          parameters:
-            Enum.map(driver.control_specs(), &control(&1, driver, server, id, controls)) ++
-              camera_build_parameters(opts, [:left, :right])
-        }
-      ]
-    else
-      side_camera_groups(prefix, driver, opts)
+      function_exported?(driver, :control_specs, 0) ->
+        [paired_cameras_group(prefix, driver, opts)]
+
+      true ->
+        []
     end
   end
 
-  defp side_camera_groups(prefix, driver, opts) do
-    if function_exported?(driver, :control_specs, 0),
-      do: Enum.map([:left, :right], &side_camera_group(prefix, driver, opts, &1)),
-      else: []
-  end
-
-  defp side_camera_group(prefix, driver, opts, side) do
-    id = "#{prefix}.#{side}_camera"
-    server = driver.name_for(Atom.to_string(side))
-    configured = Keyword.get(opts, side, [])
+  defp shared_cameras_group(prefix, driver, opts) do
+    id = "#{prefix}.cameras"
+    server = driver.name_for("left")
+    controls = driver.controls(server)
 
     %{
       id: id,
-      name: "#{humanise(side)} camera",
-      summary: "Capture settings of the #{side} camera.",
+      name: "Cameras",
+      summary: "Capture settings, applied to both cameras.",
       kind: :component,
       placement: :flow,
       position: 0,
       parameters:
-        Enum.map(@auto_switches, &auto_switch(&1, driver, server)) ++
-          Enum.map(
-            driver.control_specs(),
-            &side_control(&1, driver, server, id, side, configured)
-          ) ++ side_build_parameters(opts, side)
+        Enum.map(driver.control_specs(), &control(&1, driver, server, id, controls)) ++
+          camera_build_parameters(opts, [:left, :right])
     }
   end
 
-  defp side_build_parameters(opts, side) do
-    general = camera_build_parameters(opts, [])
+  # Each setting goes to both cameras' drivers; values are read from the left one.
+  defp paired_cameras_group(prefix, driver, opts) do
+    id = "#{prefix}.cameras"
+    servers = Enum.map(["left", "right"], &driver.name_for/1)
+    configured = Keyword.get(opts, :left, [])
 
-    own =
-      for {key, value} <- Keyword.get(opts, side, []), key in @side_build_keys, do: {key, value}
-
-    general ++ Enum.map(own, &build_parameter/1)
+    %{
+      id: id,
+      name: "Cameras",
+      summary: "Capture settings, applied to both cameras.",
+      kind: :component,
+      placement: :flow,
+      position: 0,
+      parameters:
+        Enum.map(@auto_switches, &auto_switch(&1, driver, servers)) ++
+          Enum.map(driver.control_specs(), &paired_control(&1, driver, servers, id, configured)) ++
+          camera_build_parameters(opts, [:left, :right])
+    }
   end
 
-  defp auto_switch({name, key, description}, driver, server) do
+  defp auto_switch({name, key, description}, driver, [left | _] = servers) do
     %{
       name: Atom.to_string(name),
       type: :bool,
-      get: fn -> automatic_value?(driver.controls(server)[key]) end,
-      set: &automatic_set(&1, driver, server, key),
+      get: fn -> automatic_value?(driver.controls(left)[key]) end,
+      set: &automatic_set(&1, driver, servers, key),
       constraint: %{kind: :bool},
       description: description
     }
   end
 
   # Off is applied by the registry setting the controlled value first.
-  defp automatic_set(true, driver, server, key), do: ok(driver.set_controls(server, [{key, 0}]))
-  defp automatic_set(false, _driver, _server, _key), do: :ok
+  defp automatic_set(true, driver, servers, key), do: set_all(driver, servers, [{key, 0}])
+  defp automatic_set(false, _driver, _servers, _key), do: :ok
+
+  defp set_all(driver, servers, controls) do
+    Enum.reduce_while(servers, :ok, fn server, :ok ->
+      case ok(driver.set_controls(server, controls)) do
+        :ok -> {:cont, :ok}
+        error -> {:halt, error}
+      end
+    end)
+  end
 
   defp automatic_value?(value), do: is_nil(value) or value == 0
 
-  defp side_control(spec, driver, server, group_id, side, configured) do
+  defp paired_control(spec, driver, [left | _] = servers, group_id, configured) do
     %{
       name: Atom.to_string(spec.key),
       type: spec.type,
-      get: side_get(spec.key, driver, server, configured[spec.key]),
-      set: &ok(driver.set_controls(server, [{spec.key, &1}])),
+      get: side_get(spec.key, driver, left, configured[spec.key]),
+      set: &set_all(driver, servers, [{spec.key, &1}]),
       constraint: side_constraint(spec),
       applies: side_applies(spec.key, group_id),
       description: side_description(spec),
-      export: [:components, :stereo, side, spec.key]
+      export: Enum.map([:left, :right], &[:components, :stereo, &1, spec.key])
     }
     |> put_configured_default(spec.key, configured[spec.key])
   end

@@ -45,7 +45,7 @@ defmodule VisionCore.Parameters do
           optional(:applies) => applies(),
           optional(:greater_than) => String.t(),
           optional(:description) => String.t(),
-          optional(:export) => [atom()],
+          optional(:export) => [atom()] | [[atom()]],
           optional(:default) => term()
         }
   @type group_declaration :: %{
@@ -264,15 +264,17 @@ defmodule VisionCore.Parameters do
 
   def handle_call(:export, _from, state) do
     rows =
-      for {id, value} <- state.saved do
-        case find(state, id) do
-          nil -> {:not_running, id, value}
-          declared -> {declared.export, id, value}
-        end
-      end
+      for {id, value} <- state.saved,
+          path <- export_paths(find(state, id)),
+          do: {path, id, value}
 
     {:reply, Export.render(rows), state}
   end
+
+  # A parameter applied to several places, such as both cameras, has a path for each.
+  defp export_paths(nil), do: [:not_running]
+  defp export_paths(%{export: [path | _] = paths}) when is_list(path), do: paths
+  defp export_paths(%{export: path}), do: [path]
 
   @impl GenServer
   def handle_continue({:apply, owner}, state) do
