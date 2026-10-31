@@ -81,13 +81,32 @@ pub fn forward_stderr(read_fd: RawFd, writer: Arc<Writer>) {
     });
 }
 
+// How long a start waits for libcamera to list the camera: at boot the sensors
+// can still be probing when the first capture starts.
+const DISCOVERY_TIMEOUT: Duration = Duration::from_secs(10);
+const DISCOVERY_RETRY: Duration = Duration::from_millis(500);
+
+/// A camera manager listing `camera_id`, or the last one started once
+/// `DISCOVERY_TIMEOUT` has passed, so the caller reports what it lists.
+fn camera_manager(camera_id: usize) -> std::io::Result<CameraManager> {
+    let deadline = std::time::Instant::now() + DISCOVERY_TIMEOUT;
+    loop {
+        let manager = CameraManager::new()?;
+        if manager.cameras().len() > camera_id || std::time::Instant::now() >= deadline {
+            return Ok(manager);
+        }
+        drop(manager);
+        thread::sleep(DISCOVERY_RETRY);
+    }
+}
+
 /// Captures until stdin closes; the process exit status.
 pub fn run(args: &Args, writer: &Arc<Writer>) -> i32 {
     let info = |message: String| log(writer, LogLevel::Info, &message);
     let warning = |message: String| log(writer, LogLevel::Warning, &message);
     let error = |message: String| log(writer, LogLevel::Error, &message);
 
-    let manager = match CameraManager::new() {
+    let manager = match camera_manager(args.camera_id as usize) {
         Ok(manager) => manager,
         Err(e) => {
             error(format!("CameraManager::start failed ({e})"));
