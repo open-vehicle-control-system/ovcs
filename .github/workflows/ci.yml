@@ -205,7 +205,9 @@ jobs:
       - name: Test
         run: mix test --no-start
       - name: Dialyzer
-        run: mix dialyzer --format github
+        # The cached PLT is keyed on mix.lock, which a sibling path dependency
+        # changes without touching: check it against the compiled modules.
+        run: mix dialyzer --force-check --format github
 
   cli-build:
     name: CLI · cargo build
