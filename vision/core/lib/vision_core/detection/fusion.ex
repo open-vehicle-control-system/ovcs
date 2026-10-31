@@ -99,13 +99,13 @@ defmodule VisionCore.Detection.Fusion do
   end
 
   @doc """
-  The rectification map of `calibration` as `remap/4` reads it: for each
-  rectified pixel, row-major, the raw pixel's `x, y` as little-endian
-  int16, OpenCV's `CV_16SC2` layout. Computed on the CPU, once per
-  calibration.
+  Where rectification samples rectified pixel `{u, v}` of `calibration`'s
+  camera: the raw pixel, through the inverse rectifying projection, the
+  lens's plumb_bob distortion and the camera matrix, as OpenCV's
+  `initUndistortRectifyMap` computes it for every pixel.
   """
-  @spec rectification_map(CameraCalibration.t()) :: binary()
-  def rectification_map(%CameraCalibration{} = calibration) do
+  @spec raw_pixel(CameraCalibration.t(), {number(), number()}) :: {float(), float()}
+  def raw_pixel(%CameraCalibration{} = calibration, {u, v}) do
     camera =
       NxStereo.Rectify.camera(
         calibration.camera_matrix,
@@ -114,87 +114,36 @@ defmodule VisionCore.Detection.Fusion do
         calibration.projection_matrix
       )
 
-    image = Nx.broadcast(Nx.tensor(0, type: :u8), {calibration.height, calibration.width})
+    [i0, i1, i2, i3, i4, i5, i6, i7, i8] = Nx.to_flat_list(camera.inverse_pr)
+    [k1, k2, p1, p2, k3] = Nx.to_flat_list(camera.d)
+    [fx, skew, cx, _, fy, cy | _] = Nx.to_flat_list(camera.k)
 
-    {map_x, map_y} =
-      Nx.Defn.jit(&NxStereo.Rectify.maps/2, compiler: Nx.Defn.Evaluator).(image, camera)
+    w = i6 * u + i7 * v + i8
+    x = (i0 * u + i1 * v + i2) / w
+    y = (i3 * u + i4 * v + i5) / w
 
-    # OpenCV's fixed point: 1/32 pixel, rounded down to the integer part.
-    [map_x, map_y]
-    |> Enum.map(&(&1 |> Nx.multiply(32) |> Nx.round() |> Nx.divide(32) |> Nx.floor()))
-    |> Nx.stack(axis: -1)
-    |> Nx.as_type(:s16)
-    |> Nx.to_binary()
+    r2 = x * x + y * y
+    radial = 1 + k1 * r2 + k2 * r2 * r2 + k3 * r2 * r2 * r2
+    xd = x * radial + 2 * p1 * x * y + p2 * (r2 + 2 * x * x)
+    yd = y * radial + p1 * (r2 + 2 * y * y) + 2 * p2 * x * y
+
+    {fx * xd + skew * yd + cx, fy * yd + cy}
   end
-
-  @doc """
-  Map a rectified pixel back to its raw camera pixel through a
-  rectification map (`rectification_map/1`): interleaved int16 x, y per
-  rectified pixel, as a binary.
-
-  This is what lets a box computed in rectified coordinates be drawn
-  on the raw image the pipeline actually publishes, rather than
-  putting a second, rectified image stream on the wire.
-
-  Out-of-range coordinates return `nil`; the caller drops that vertex
-  rather than drawing to a garbage position.
-  """
-  @spec remap(binary(), pos_integer(), pos_integer(), {number(), number()}) ::
-          {float(), float()} | nil
-  def remap(map_binary, width, height, {x, y}) do
-    column = x |> round() |> min(width - 1) |> max(0)
-    row = y |> round() |> min(height - 1) |> max(0)
-    offset = (row * width + column) * 4
-
-    case map_binary do
-      <<_skip::binary-size(^offset), raw_x::little-signed-16, raw_y::little-signed-16,
-        _rest::binary>> ->
-        {raw_x / 1.0, raw_y / 1.0}
-
-      _ ->
-        nil
-    end
-  end
-
-  @doc """
-  The left camera's rectification map for `pair` (`rectification_map/1`),
-  `nil` without a calibration, and the cache to pass next time: the map
-  is computed once per calibration.
-  """
-  @spec left_rectification_map(Pair.t(), cache) :: {binary() | nil, cache}
-        when cache: {term(), binary()} | nil
-  def left_rectification_map(%Pair{geometry: %{left_calibration: nil}}, cache), do: {nil, cache}
-
-  def left_rectification_map(
-        %Pair{geometry: %{left_calibration: calibration}},
-        {calibration, map_binary} = cache
-      ),
-      do: {map_binary, cache}
-
-  def left_rectification_map(%Pair{geometry: %{left_calibration: calibration}}, _cache) do
-    map_binary = rectification_map(calibration)
-    {map_binary, {calibration, map_binary}}
-  end
-
-  def left_rectification_map(%Pair{}, cache), do: {nil, cache}
 
   @doc """
   A rectified pixel of `pair` as a pixel of its left camera frame: mapped
-  back through `map_binary` (`left_rectification_map/2`), then scaled from
-  the matching size to the frame's, which the pipeline may shrink. `nil`
-  when the map sends it outside the image; without a map, only scaled.
+  back through the left calibration (`raw_pixel/2`), then scaled from
+  the matching size to the frame's, which the pipeline may shrink.
+  Without a calibration, only scaled.
   """
-  @spec raw_point({number(), number()}, binary() | nil, Pair.t()) :: {float(), float()} | nil
-  def raw_point(vertex, nil, pair), do: to_frame_scale(vertex, pair)
+  @spec raw_point({number(), number()}, Pair.t()) :: {float(), float()}
+  def raw_point(
+        vertex,
+        %Pair{geometry: %{left_calibration: %CameraCalibration{} = calibration}} = pair
+      ),
+      do: calibration |> raw_pixel(vertex) |> to_frame_scale(pair)
 
-  def raw_point(vertex, map_binary, %Pair{} = pair) do
-    {width, height} = Pair.size(pair)
-
-    case remap(map_binary, width, height, vertex) do
-      nil -> nil
-      raw -> to_frame_scale(raw, pair)
-    end
-  end
+  def raw_point(vertex, %Pair{} = pair), do: to_frame_scale(vertex, pair)
 
   defp to_frame_scale({x, y}, %Pair{left_frame: frame} = pair) do
     {width, height} = Pair.size(pair)

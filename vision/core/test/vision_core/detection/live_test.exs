@@ -2,7 +2,7 @@ defmodule VisionCore.Detection.LiveTest do
   use ExUnit.Case, async: false
 
   alias VisionCore.Camera.Frame
-  alias VisionCore.Detection.Live
+  alias VisionCore.Detection.{Fusion, Live}
   alias VisionCore.Stereo.Pair
 
   # Matched at half the camera's size, with no calibration, so outlines only scale.
@@ -24,6 +24,8 @@ defmodule VisionCore.Detection.LiveTest do
       box: %{x0: x0 / 1.0, y0: y0 / 1.0, x1: x1 / 1.0, y1: y1 / 1.0}
     }
   end
+
+  defp subscriber_count, do: map_size(:sys.get_state(Live).subscribers)
 
   defp results(positioned), do: GenServer.cast(Live, {:detections, pair(), positioned})
 
@@ -66,7 +68,7 @@ defmodule VisionCore.Detection.LiveTest do
     refute_receive {:vision_detections, _}, 300
   end
 
-  test "answers while it computes a calibration's map, and draws with it once ready" do
+  test "maps each outline vertex back through the left calibration's lens model" do
     calibration =
       VisionCore.Ros2.CameraCalibration.load!(
         Path.expand("../../support/calibration/distorted_left.yaml", __DIR__)
@@ -85,47 +87,11 @@ defmodule VisionCore.Detection.LiveTest do
     :ok = Live.subscribe()
     GenServer.cast(Live, {:detections, pair, [%{label: "person", score: 0.6, z: 2.0, box: box}]})
 
-    assert {elapsed_us, 1} = :timer.tc(&Live.subscriber_count/0)
-    assert elapsed_us < 50_000
-    assert_receive {:vision_detections, [%{outline: scaled}]}
-    assert [x, y] = hd(scaled)
-    assert_in_delta x, 0.25, 1.0e-9
-    assert_in_delta y, 0.2, 1.0e-9
-
-    mapped =
-      Enum.find_value(1..100, fn _attempt ->
-        Process.sleep(50)
-
-        GenServer.cast(
-          Live,
-          {:detections, pair, [%{label: "person", score: 0.6, z: 2.0, box: box}]}
-        )
-
-        assert_receive {:vision_detections, [%{outline: outline}]}
-        if outline != scaled, do: outline
-      end)
-
-    assert mapped, "the outline was never mapped through the calibration"
-  end
-
-  @tag :capture_log
-  test "keeps running with scaled outlines when a calibration's map cannot be computed" do
-    stop_supervised!(Live)
-    failing = fn _calibration -> raise ArgumentError, "no map" end
-
-    live =
-      start_supervised!({Live, max_hz: 1_000, outline_segments: 1, rectification_map: failing})
-
-    :ok = Live.subscribe()
-    pair = %{pair() | geometry: %{width: 480, height: 270, left_calibration: :a_calibration}}
-
-    for _result <- 1..3 do
-      GenServer.cast(Live, {:detections, pair, [person(120, 54, 360, 216, 1.8)]})
-      assert_receive {:vision_detections, [%{outline: [[0.25, 0.2] | _]}]}, 500
-      Process.sleep(20)
-    end
-
-    assert Process.alive?(live)
+    assert_receive {:vision_detections, [%{outline: [[x, y] | _]}]}
+    {raw_x, raw_y} = Fusion.raw_pixel(calibration, {box.x0, box.y0})
+    assert_in_delta x, raw_x / width, 1.0e-9
+    assert_in_delta y, raw_y / height, 1.0e-9
+    refute_in_delta x, 0.25, 1.0e-3
   end
 
   test "counts a process that subscribes twice once" do
@@ -137,20 +103,20 @@ defmodule VisionCore.Detection.LiveTest do
       end)
 
     Process.sleep(50)
-    assert Live.subscriber_count() == 1
+    assert subscriber_count() == 1
     assert {:monitors, [{:process, ^subscriber}]} = Process.info(Process.whereis(Live), :monitors)
     Process.exit(subscriber, :kill)
     Process.sleep(50)
-    assert Live.subscriber_count() == 0
+    assert subscriber_count() == 0
   end
 
   test "forgets a subscriber that exits" do
     subscriber = spawn(fn -> Live.subscribe() && Process.sleep(:infinity) end)
     Process.sleep(50)
-    assert Live.subscriber_count() == 1
+    assert subscriber_count() == 1
 
     Process.exit(subscriber, :kill)
     Process.sleep(50)
-    assert Live.subscriber_count() == 0
+    assert subscriber_count() == 0
   end
 end

@@ -12,13 +12,11 @@ defmodule VisionCore.Detection.Live do
   has passed, unless a newer one replaces it, so the latest always
   arrives. Each detection is `%{label:, score:, distance_m:, outline:}`, the
   outline a closed list of `[x, y]` vertices as fractions of the image's
-  width and height. The box is computed on the rectified image, so it is
-  mapped back to the captured one, like the ROS 2 overlay of
+  width and height. The box is computed on the rectified image, so each
+  vertex is mapped back to the captured one through the left calibration
+  (`VisionCore.Detection.Fusion.raw_point/2`), like the ROS 2 overlay of
   `VisionCore.Ros2.Publishers.Detections`, and its edges are subdivided
-  so they can follow the lens distortion. The map that does it is
-  computed once per calibration, in a process of its own: until it is
-  ready, or if it fails, the outlines are only scaled to the captured
-  image.
+  so they can follow the lens distortion.
 
   Started by `VisionCore.Detection.Supervisor` after the pipeline.
 
@@ -26,8 +24,6 @@ defmodule VisionCore.Detection.Live do
 
     * `:max_hz` (`10`) — results a second sent to each subscriber.
     * `:outline_segments` (`4`) — pieces each box edge is cut into.
-    * `:rectification_map` (`VisionCore.Detection.Fusion.rectification_map/1`)
-      — computes a calibration's map.
   """
   use GenServer
 
@@ -43,10 +39,6 @@ defmodule VisionCore.Detection.Live do
   @spec subscribe() :: :ok
   def subscribe, do: GenServer.call(__MODULE__, {:subscribe, self()})
 
-  @doc "How many processes are subscribed."
-  @spec subscriber_count() :: non_neg_integer()
-  def subscriber_count, do: GenServer.call(__MODULE__, :subscriber_count)
-
   @impl GenServer
   def init(opts) do
     Pipeline.register_listener(Pipeline, self())
@@ -55,12 +47,9 @@ defmodule VisionCore.Detection.Live do
      %{
        interval_ms: div(1_000, Keyword.get(opts, :max_hz, @default_max_hz)),
        outline_segments: Keyword.get(opts, :outline_segments, @default_outline_segments),
-       rectification_map: Keyword.get(opts, :rectification_map, &Fusion.rectification_map/1),
        subscribers: %{},
        sent_at_ms: nil,
-       held: nil,
-       map: nil,
-       mapping: nil
+       held: nil
      }}
   end
 
@@ -70,26 +59,25 @@ defmodule VisionCore.Detection.Live do
     {:reply, :ok, %{state | subscribers: subscribers}}
   end
 
-  def handle_call(:subscriber_count, _from, state),
-    do: {:reply, map_size(state.subscribers), state}
-
   @impl GenServer
+  def handle_cast({:detections, _pair, _positioned}, %{subscribers: subscribers} = state)
+      when map_size(subscribers) == 0,
+      do: {:noreply, state}
+
   def handle_cast({:detections, %Pair{} = pair, positioned}, state) do
+    detections = Enum.map(positioned, &describe(&1, pair, state.outline_segments))
     now_ms = System.monotonic_time(:millisecond)
 
     cond do
-      map_size(state.subscribers) == 0 ->
-        {:noreply, state}
-
       due?(state, now_ms) ->
-        {:noreply, send_result({pair, positioned}, now_ms, state)}
+        {:noreply, send_detections(detections, now_ms, state)}
+
+      is_nil(state.held) ->
+        Process.send_after(self(), :send_held, state.sent_at_ms + state.interval_ms - now_ms)
+        {:noreply, %{state | held: detections}}
 
       true ->
-        if is_nil(state.held),
-          do:
-            Process.send_after(self(), :send_held, state.sent_at_ms + state.interval_ms - now_ms)
-
-        {:noreply, %{state | held: {pair, positioned}}}
+        {:noreply, %{state | held: detections}}
     end
   end
 
@@ -99,63 +87,29 @@ defmodule VisionCore.Detection.Live do
   def handle_info(:send_held, %{held: nil} = state), do: {:noreply, state}
 
   def handle_info(:send_held, state),
-    do: {:noreply, send_result(state.held, System.monotonic_time(:millisecond), state)}
-
-  # The map process exits with the map; any other exit leaves this calibration without one.
-  def handle_info(
-        {:DOWN, reference, :process, _pid, reason},
-        %{mapping: {reference, calibration}} = state
-      ) do
-    map_binary =
-      case reason do
-        {:map, map_binary} -> map_binary
-        _failure -> nil
-      end
-
-    {:noreply, %{state | map: {calibration, map_binary}, mapping: nil}}
-  end
+    do: {:noreply, send_detections(state.held, System.monotonic_time(:millisecond), state)}
 
   def handle_info({:DOWN, _reference, :process, pid, _reason}, state),
     do: {:noreply, %{state | subscribers: Map.delete(state.subscribers, pid)}}
 
   def handle_info(_message, state), do: {:noreply, state}
 
-  defp send_result({pair, positioned}, now_ms, state) do
-    {map_binary, state} = map_for(pair, state)
-    detections = Enum.map(positioned, &describe(&1, pair, map_binary, state))
+  defp send_detections(detections, now_ms, state) do
     for pid <- Map.keys(state.subscribers), do: send(pid, {:vision_detections, detections})
     %{state | sent_at_ms: now_ms, held: nil}
   end
 
-  # The map of the pair's calibration; nil while it is computed, or when it could not be.
-  defp map_for(%Pair{geometry: %{left_calibration: calibration}}, state)
-       when not is_nil(calibration) do
-    case state do
-      %{map: {^calibration, map_binary}} ->
-        {map_binary, state}
-
-      %{mapping: {_reference, ^calibration}} ->
-        {nil, state}
-
-      _other ->
-        compute = state.rectification_map
-        {_pid, reference} = spawn_monitor(fn -> exit({:map, compute.(calibration)}) end)
-        {nil, %{state | mapping: {reference, calibration}}}
-    end
-  end
-
-  defp map_for(_pair, state), do: {nil, state}
-
   defp due?(%{sent_at_ms: nil}, _now_ms), do: true
   defp due?(state, now_ms), do: now_ms - state.sent_at_ms >= state.interval_ms
 
-  defp describe(detection, %Pair{left_frame: frame} = pair, map_binary, state) do
+  defp describe(detection, %Pair{left_frame: frame} = pair, outline_segments) do
     outline =
       detection.box
-      |> Fusion.perimeter(state.outline_segments)
-      |> Enum.map(&Fusion.raw_point(&1, map_binary, pair))
-      |> Enum.reject(&is_nil/1)
-      |> Enum.map(fn {x, y} -> [x / frame.width, y / frame.height] end)
+      |> Fusion.perimeter(outline_segments)
+      |> Enum.map(fn vertex ->
+        {x, y} = Fusion.raw_point(vertex, pair)
+        [x / frame.width, y / frame.height]
+      end)
 
     %{label: detection.label, score: detection.score, distance_m: detection.z, outline: outline}
   end
