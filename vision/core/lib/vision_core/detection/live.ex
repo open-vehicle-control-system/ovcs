@@ -16,8 +16,9 @@ defmodule VisionCore.Detection.Live do
   mapped back to the captured one, like the ROS 2 overlay of
   `VisionCore.Ros2.Publishers.Detections`, and its edges are subdivided
   so they can follow the lens distortion. The map that does it is
-  computed once per calibration, in a task: until it is ready, the
-  outlines are only scaled to the captured image.
+  computed once per calibration, in a process of its own: until it is
+  ready, or if it fails, the outlines are only scaled to the captured
+  image.
 
   Started by `VisionCore.Detection.Supervisor` after the pipeline.
 
@@ -25,6 +26,8 @@ defmodule VisionCore.Detection.Live do
 
     * `:max_hz` (`10`) — results a second sent to each subscriber.
     * `:outline_segments` (`4`) — pieces each box edge is cut into.
+    * `:rectification_map` (`VisionCore.Detection.Fusion.rectification_map/1`)
+      — computes a calibration's map.
   """
   use GenServer
 
@@ -52,6 +55,7 @@ defmodule VisionCore.Detection.Live do
      %{
        interval_ms: div(1_000, Keyword.get(opts, :max_hz, @default_max_hz)),
        outline_segments: Keyword.get(opts, :outline_segments, @default_outline_segments),
+       rectification_map: Keyword.get(opts, :rectification_map, &Fusion.rectification_map/1),
        subscribers: %{},
        sent_at_ms: nil,
        held: nil,
@@ -61,8 +65,10 @@ defmodule VisionCore.Detection.Live do
   end
 
   @impl GenServer
-  def handle_call({:subscribe, pid}, _from, state),
-    do: {:reply, :ok, put_in(state.subscribers[pid], Process.monitor(pid))}
+  def handle_call({:subscribe, pid}, _from, state) do
+    subscribers = Map.put_new_lazy(state.subscribers, pid, fn -> Process.monitor(pid) end)
+    {:reply, :ok, %{state | subscribers: subscribers}}
+  end
 
   def handle_call(:subscriber_count, _from, state),
     do: {:reply, map_size(state.subscribers), state}
@@ -95,16 +101,19 @@ defmodule VisionCore.Detection.Live do
   def handle_info(:send_held, state),
     do: {:noreply, send_result(state.held, System.monotonic_time(:millisecond), state)}
 
-  def handle_info({reference, map_binary}, %{mapping: {reference, calibration}} = state) do
-    Process.demonitor(reference, [:flush])
+  # The map process exits with the map; any other exit leaves this calibration without one.
+  def handle_info(
+        {:DOWN, reference, :process, _pid, reason},
+        %{mapping: {reference, calibration}} = state
+      ) do
+    map_binary =
+      case reason do
+        {:map, map_binary} -> map_binary
+        _failure -> nil
+      end
+
     {:noreply, %{state | map: {calibration, map_binary}, mapping: nil}}
   end
-
-  def handle_info(
-        {:DOWN, reference, :process, _pid, _reason},
-        %{mapping: {reference, _}} = state
-      ),
-      do: {:noreply, %{state | mapping: nil}}
 
   def handle_info({:DOWN, _reference, :process, pid, _reason}, state),
     do: {:noreply, %{state | subscribers: Map.delete(state.subscribers, pid)}}
@@ -118,7 +127,7 @@ defmodule VisionCore.Detection.Live do
     %{state | sent_at_ms: now_ms, held: nil}
   end
 
-  # The map of the pair's calibration, or nil while a task computes it.
+  # The map of the pair's calibration; nil while it is computed, or when it could not be.
   defp map_for(%Pair{geometry: %{left_calibration: calibration}}, state)
        when not is_nil(calibration) do
     case state do
@@ -129,8 +138,9 @@ defmodule VisionCore.Detection.Live do
         {nil, state}
 
       _other ->
-        task = Task.async(fn -> Fusion.rectification_map(calibration) end)
-        {nil, %{state | mapping: {task.ref, calibration}}}
+        compute = state.rectification_map
+        {_pid, reference} = spawn_monitor(fn -> exit({:map, compute.(calibration)}) end)
+        {nil, %{state | mapping: {reference, calibration}}}
     end
   end
 

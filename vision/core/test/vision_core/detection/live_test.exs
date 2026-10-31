@@ -108,6 +108,42 @@ defmodule VisionCore.Detection.LiveTest do
     assert mapped, "the outline was never mapped through the calibration"
   end
 
+  @tag :capture_log
+  test "keeps running with scaled outlines when a calibration's map cannot be computed" do
+    stop_supervised!(Live)
+    failing = fn _calibration -> raise ArgumentError, "no map" end
+
+    live =
+      start_supervised!({Live, max_hz: 1_000, outline_segments: 1, rectification_map: failing})
+
+    :ok = Live.subscribe()
+    pair = %{pair() | geometry: %{width: 480, height: 270, left_calibration: :a_calibration}}
+
+    for _result <- 1..3 do
+      GenServer.cast(Live, {:detections, pair, [person(120, 54, 360, 216, 1.8)]})
+      assert_receive {:vision_detections, [%{outline: [[0.25, 0.2] | _]}]}, 500
+      Process.sleep(20)
+    end
+
+    assert Process.alive?(live)
+  end
+
+  test "counts a process that subscribes twice once" do
+    subscriber =
+      spawn(fn ->
+        Live.subscribe()
+        Live.subscribe()
+        Process.sleep(:infinity)
+      end)
+
+    Process.sleep(50)
+    assert Live.subscriber_count() == 1
+    assert {:monitors, [{:process, ^subscriber}]} = Process.info(Process.whereis(Live), :monitors)
+    Process.exit(subscriber, :kill)
+    Process.sleep(50)
+    assert Live.subscriber_count() == 0
+  end
+
   test "forgets a subscriber that exits" do
     subscriber = spawn(fn -> Live.subscribe() && Process.sleep(:infinity) end)
     Process.sleep(50)
