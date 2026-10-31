@@ -39,7 +39,8 @@ defmodule VisionCore.Stereo.Pair do
       pipeline's log line.
     * `:device_ms` — the time the pair spent in compiled Nx segments, on
       the GPU where they run there, and in native segments, in the
-      `stereo_match` Port.
+      `stereo_match` Port, less what overlaps the previous pair's, so
+      successive pairs' times add up to the time the segments were busy.
   """
 
   @enforce_keys [:left_frame, :right_frame]

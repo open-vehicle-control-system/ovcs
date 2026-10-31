@@ -188,6 +188,7 @@ defmodule VisionCore.Stereo.Pipeline do
        flush: nil,
        queued: nil,
        last_reply_ns: nil,
+       collected_ns: nil,
        waiting_submitter: nil,
        flush_after_ms: Keyword.get(opts, :flush_after_ms, @default_flush_after_ms)
      }}
@@ -297,7 +298,13 @@ defmodule VisionCore.Stereo.Pipeline do
         {:ok, outputs, segment, done_ns} ->
           device_ns = done_ns - max(sent.sent_ns, state.last_reply_ns || sent.sent_ns)
 
-          replied = Map.merge(sent, %{segment: segment, outputs: outputs, device_ns: device_ns})
+          replied =
+            Map.merge(sent, %{
+              segment: segment,
+              outputs: outputs,
+              device_ns: device_ns,
+              done_ns: done_ns
+            })
 
           # What the segment carries to the next pair, unless a setting or reload replaced it.
           stages =
@@ -351,8 +358,13 @@ defmodule VisionCore.Stereo.Pipeline do
     {collect_ns, pair} =
       timed(fn -> module.collect(replied.pair, replied.outputs, replied.segment) end)
 
+    collected_ns = System.monotonic_time(:nanosecond)
     segment_ns = replied.device_ns + collect_ns
-    pair = %{pair | device_ms: segment_ns / 1_000_000}
+
+    # The previous pair is collected while this one's device work runs: that time counts once.
+    device_start_ns = max(replied.done_ns - replied.device_ns, state.collected_ns || 0)
+    busy_ns = max(replied.done_ns - device_start_ns, 0) + collect_ns
+    pair = %{pair | device_ms: busy_ns / 1_000_000}
 
     timer =
       state.timer
@@ -360,7 +372,12 @@ defmodule VisionCore.Stereo.Pipeline do
       |> record_members(module.member_times(replied.segment))
 
     {outcome, rest, timer} = run_stages(pair, rest, timer)
-    finish_pair(%{state | stages: [first | rest], timer: timer}, outcome, replied.start_ns)
+
+    finish_pair(
+      %{state | stages: [first | rest], timer: timer, collected_ns: collected_ns},
+      outcome,
+      replied.start_ns
+    )
   end
 
   defp finish_pair(state, outcome, start_ns) do
