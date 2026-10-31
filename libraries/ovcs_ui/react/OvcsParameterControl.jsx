@@ -199,13 +199,11 @@ function SwitchControl({ parameter, labelId, onChange }) {
   )
 }
 
-function LockIcon() {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 16 16" className="h-3.5 w-3.5 fill-current">
-      <path d="M5 7V5a3 3 0 0 1 6 0v2h1v7H4V7h1Zm1.5 0h3V5a1.5 1.5 0 0 0-3 0v2Z" />
-    </svg>
-  )
-}
+const LOCK_ICON = (
+  <svg aria-hidden="true" viewBox="0 0 16 16" className="h-3.5 w-3.5 fill-current">
+    <path d="M5 7V5a3 3 0 0 1 6 0v2h1v7H4V7h1Zm1.5 0h3V5a1.5 1.5 0 0 0-3 0v2Z" />
+  </svg>
+)
 
 function ReadOnlyValue({ parameter, icon }) {
   return (
@@ -273,7 +271,7 @@ export default function OvcsParameterControl({ parameter, bounds, controllerName
   if (automatic) badge = 'automatic'
 
   let control
-  if (locked) control = <ReadOnlyValue parameter={parameter} icon={<LockIcon />} />
+  if (locked) control = <ReadOnlyValue parameter={parameter} icon={LOCK_ICON} />
   else if (automatic) control = <ReadOnlyValue parameter={parameter} />
   else {
     control = (
