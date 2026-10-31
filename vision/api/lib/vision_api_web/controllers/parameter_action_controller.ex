@@ -6,7 +6,7 @@ defmodule VisionApiWeb.ParameterActionController do
   """
   use VisionApiWeb, :controller
 
-  alias VisionApiWeb.JsonApi
+  alias VisionApiWeb.{JsonApi, ParameterActionPresenter}
   alias VisionCore.Parameters
 
   @target_types %{"stages" => :group, "parameters" => :parameter}
@@ -40,7 +40,7 @@ defmodule VisionApiWeb.ParameterActionController do
     with {:ok, data} <- fetch_data(params, type),
          {:ok, ids} <- run.(data) do
       id = Integer.to_string(System.unique_integer([:positive, :monotonic]))
-      JsonApi.send_document(conn, 201, %{data: JsonApi.action(type, id, ids)})
+      JsonApi.send_document(conn, 201, %{data: ParameterActionPresenter.present(type, id, ids)})
     else
       {:error, status, title, detail, pointer} ->
         JsonApi.error(conn, status, title, detail, pointer)

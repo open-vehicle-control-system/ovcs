@@ -6,12 +6,10 @@ defmodule VisionApiWeb.ConfigurationController do
   """
   use VisionApiWeb, :controller
 
-  alias VisionApiWeb.JsonApi
+  alias VisionApiWeb.{ConfigurationPresenter, JsonApi}
 
   def show(conn, _params) do
-    configuration =
-      JsonApi.resource("configurations", "current", %{composer: VisionCore.settings()})
-
+    configuration = ConfigurationPresenter.present(VisionCore.settings())
     JsonApi.send_document(conn, 200, %{data: configuration})
   end
 end

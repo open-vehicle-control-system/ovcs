@@ -6,11 +6,11 @@ defmodule VisionApiWeb.ComposerSnippetController do
   """
   use VisionApiWeb, :controller
 
-  alias VisionApiWeb.JsonApi
+  alias VisionApiWeb.{ComposerSnippetPresenter, JsonApi}
   alias VisionCore.Parameters
 
   def show(conn, _params) do
-    snippet = JsonApi.resource("composer-snippets", "current", %{snippet: Parameters.export()})
+    snippet = ComposerSnippetPresenter.present(Parameters.export())
     JsonApi.send_document(conn, 200, %{data: snippet})
   end
 end

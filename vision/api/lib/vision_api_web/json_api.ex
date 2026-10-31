@@ -1,5 +1,5 @@
 defmodule VisionApiWeb.JsonApi do
-  @moduledoc "JSON:API 1.1 responses: the media type and the error objects."
+  @moduledoc "JSON:API 1.1 responses: the media type, the error objects and the resource objects presenters build."
   import Plug.Conn
 
   @media_type "application/vnd.api+json"
@@ -24,14 +24,22 @@ defmodule VisionApiWeb.JsonApi do
   defp source(pointer) when is_binary(pointer), do: %{pointer: pointer}
   defp source(source) when is_map(source), do: source
 
-  @doc "A resource object."
+  @doc "A resource object, without `relationships` when it has none."
   @spec resource(String.t(), String.t(), map(), map()) :: map()
-  def resource(type, id, attributes, relationships \\ %{}) do
-    %{type: type, id: id, attributes: attributes, relationships: relationships}
-  end
+  def resource(type, id, attributes, relationships \\ %{})
 
-  @doc "The resource object of a created action, listing the parameters it touched."
-  @spec action(String.t(), String.t(), [String.t()]) :: map()
-  def action(type, id, parameters),
-    do: %{type: type, id: id, attributes: %{parameters: parameters}}
+  def resource(type, id, attributes, relationships) when relationships == %{},
+    do: %{type: type, id: id, attributes: attributes}
+
+  def resource(type, id, attributes, relationships),
+    do: %{type: type, id: id, attributes: attributes, relationships: relationships}
+
+  @doc "A to-one relationship; `id` is `nil` when there is none."
+  @spec to_one(String.t(), String.t() | nil) :: map()
+  def to_one(_type, nil), do: %{data: nil}
+  def to_one(type, id), do: %{data: %{type: type, id: id}}
+
+  @doc "A to-many relationship."
+  @spec to_many(String.t(), [String.t()]) :: map()
+  def to_many(type, ids), do: %{data: Enum.map(ids, &%{type: type, id: &1})}
 end
