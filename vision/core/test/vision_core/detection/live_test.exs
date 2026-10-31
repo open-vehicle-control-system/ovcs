@@ -66,6 +66,48 @@ defmodule VisionCore.Detection.LiveTest do
     refute_receive {:vision_detections, _}, 300
   end
 
+  test "answers while it computes a calibration's map, and draws with it once ready" do
+    calibration =
+      VisionCore.Ros2.CameraCalibration.load!(
+        Path.expand("../../support/calibration/distorted_left.yaml", __DIR__)
+      )
+
+    {width, height} = {calibration.width, calibration.height}
+    frame = %Frame{label: "left", width: width, height: height, capture_ns: 0, grey: <<>>}
+
+    pair = %Pair{
+      left_frame: frame,
+      right_frame: frame,
+      geometry: %{width: width, height: height, left_calibration: calibration}
+    }
+
+    box = %{x0: width * 0.25, y0: height * 0.2, x1: width * 0.75, y1: height * 0.8}
+    :ok = Live.subscribe()
+    GenServer.cast(Live, {:detections, pair, [%{label: "person", score: 0.6, z: 2.0, box: box}]})
+
+    assert {elapsed_us, 1} = :timer.tc(&Live.subscriber_count/0)
+    assert elapsed_us < 50_000
+    assert_receive {:vision_detections, [%{outline: scaled}]}
+    assert [x, y] = hd(scaled)
+    assert_in_delta x, 0.25, 1.0e-9
+    assert_in_delta y, 0.2, 1.0e-9
+
+    mapped =
+      Enum.find_value(1..100, fn _attempt ->
+        Process.sleep(50)
+
+        GenServer.cast(
+          Live,
+          {:detections, pair, [%{label: "person", score: 0.6, z: 2.0, box: box}]}
+        )
+
+        assert_receive {:vision_detections, [%{outline: outline}]}
+        if outline != scaled, do: outline
+      end)
+
+    assert mapped, "the outline was never mapped through the calibration"
+  end
+
   test "forgets a subscriber that exits" do
     subscriber = spawn(fn -> Live.subscribe() && Process.sleep(:infinity) end)
     Process.sleep(50)

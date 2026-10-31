@@ -15,7 +15,9 @@ defmodule VisionCore.Detection.Live do
   width and height. The box is computed on the rectified image, so it is
   mapped back to the captured one, like the ROS 2 overlay of
   `VisionCore.Ros2.Publishers.Detections`, and its edges are subdivided
-  so they can follow the lens distortion.
+  so they can follow the lens distortion. The map that does it is
+  computed once per calibration, in a task: until it is ready, the
+  outlines are only scaled to the captured image.
 
   Started by `VisionCore.Detection.Supervisor` after the pipeline.
 
@@ -53,7 +55,8 @@ defmodule VisionCore.Detection.Live do
        subscribers: %{},
        sent_at_ms: nil,
        held: nil,
-       map_cache: nil
+       map: nil,
+       mapping: nil
      }}
   end
 
@@ -92,17 +95,46 @@ defmodule VisionCore.Detection.Live do
   def handle_info(:send_held, state),
     do: {:noreply, send_result(state.held, System.monotonic_time(:millisecond), state)}
 
+  def handle_info({reference, map_binary}, %{mapping: {reference, calibration}} = state) do
+    Process.demonitor(reference, [:flush])
+    {:noreply, %{state | map: {calibration, map_binary}, mapping: nil}}
+  end
+
+  def handle_info(
+        {:DOWN, reference, :process, _pid, _reason},
+        %{mapping: {reference, _}} = state
+      ),
+      do: {:noreply, %{state | mapping: nil}}
+
   def handle_info({:DOWN, _reference, :process, pid, _reason}, state),
     do: {:noreply, %{state | subscribers: Map.delete(state.subscribers, pid)}}
 
   def handle_info(_message, state), do: {:noreply, state}
 
   defp send_result({pair, positioned}, now_ms, state) do
-    {map_binary, cache} = Fusion.left_rectification_map(pair, state.map_cache)
+    {map_binary, state} = map_for(pair, state)
     detections = Enum.map(positioned, &describe(&1, pair, map_binary, state))
     for pid <- Map.keys(state.subscribers), do: send(pid, {:vision_detections, detections})
-    %{state | sent_at_ms: now_ms, held: nil, map_cache: cache}
+    %{state | sent_at_ms: now_ms, held: nil}
   end
+
+  # The map of the pair's calibration, or nil while a task computes it.
+  defp map_for(%Pair{geometry: %{left_calibration: calibration}}, state)
+       when not is_nil(calibration) do
+    case state do
+      %{map: {^calibration, map_binary}} ->
+        {map_binary, state}
+
+      %{mapping: {_reference, ^calibration}} ->
+        {nil, state}
+
+      _other ->
+        task = Task.async(fn -> Fusion.rectification_map(calibration) end)
+        {nil, %{state | mapping: {task.ref, calibration}}}
+    end
+  end
+
+  defp map_for(_pair, state), do: {nil, state}
 
   defp due?(%{sent_at_ms: nil}, _now_ms), do: true
   defp due?(state, now_ms), do: now_ms - state.sent_at_ms >= state.interval_ms
