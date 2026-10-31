@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { Profiler } from 'react'
 import { render, screen, fireEvent, within, act } from '@testing-library/react'
-import PipelineDiagram from '../PipelineDiagram.jsx'
+import PipelineDiagram, { SideGroups } from '../PipelineDiagram.jsx'
 import { useParameters } from '../../stores/parameters.js'
 import { useNavigation } from '../../stores/navigation.js'
 
@@ -35,17 +35,23 @@ describe('PipelineDiagram', () => {
     useNavigation.setState({ page: 'pipeline' })
   })
 
-  it('draws flow groups in order with arrows, and side groups apart', () => {
-    render(<PipelineDiagram />)
+  it('draws the flow groups in order with arrows, and the groups beside the pipeline apart from it', () => {
+    render(
+      <>
+        <PipelineDiagram />
+        <SideGroups />
+      </>
+    )
 
     const flow = screen.getByRole('list', { name: 'Pipeline' })
     const names = within(flow).getAllByRole('button').map((button) => button.querySelector('[translate="no"]').textContent)
     expect(names).toEqual(['Cameras', 'Match', 'Alignment', 'Temporal'])
     expect(flow.querySelectorAll('[data-arrow]')).toHaveLength(3)
 
-    const side = screen.getByRole('list', { name: 'Beside the pipeline' })
+    const side = screen.getByRole('list', { name: 'Components' })
     expect(within(side).getAllByRole('button')).toHaveLength(1)
     expect(within(side).getByRole('button').textContent).toContain('Preview')
+    expect(flow.contains(side)).toBe(false)
   })
 
   it('marks a box with its unsaved count and its warning status', () => {

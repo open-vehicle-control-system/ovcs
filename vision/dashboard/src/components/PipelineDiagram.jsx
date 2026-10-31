@@ -1,8 +1,8 @@
-import { useId, useMemo } from 'react'
+import { useMemo } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { placedGroups, unsavedByGroup, useParameters } from '../stores/parameters.js'
 import { OvcsBadge, focusClass as FOCUS } from '@ovcs/ui/react'
-import { SECTION_HEADING, SELECTED } from './menu.js'
+import { SELECTED } from './menu.js'
 import { useNavigation } from '../stores/navigation.js'
 import { computeTags } from '../compute.js'
 
@@ -74,9 +74,8 @@ function Step({ number, first, last, selected }) {
   )
 }
 
-/** The vision unit as a menu: its flow of boxes, one per line, the side groups apart; a box selects its group. */
-export default function PipelineDiagram() {
-  const sideId = useId()
+// The groups split between the pipeline and beside it, and how to draw one as a box that selects it.
+function useGroupBoxes() {
   const groups = useParameters((state) => state.groups)
   // The counts alone, so a value changing every poll, such as an exposure, does not render the menu again.
   const unsaved = useParameters(useShallow(unsavedByGroup))
@@ -95,28 +94,35 @@ export default function PipelineDiagram() {
     <GroupBox group={group} unsaved={unsaved[group.id] ?? 0} selected={group.id === selectedGroupId} onSelect={select} />
   )
 
+  return { flow, side, selectedGroupId, box }
+}
+
+/** The vision unit's pipeline as a menu: its flow of boxes, one per line; a box selects its group. */
+export default function PipelineDiagram() {
+  const { flow, selectedGroupId, box } = useGroupBoxes()
+
   return (
-    <div className="flex flex-col gap-4">
-      <ol aria-label="Pipeline" className="flex flex-col">
-        {flow.map((group, index) => (
-          <li key={group.id} className="grid grid-cols-[1.5rem_minmax(0,1fr)] items-center gap-2 py-0.5">
-            <Step number={index + 1} first={index === 0} last={index === flow.length - 1} selected={group.id === selectedGroupId} />
-            {box(group)}
-          </li>
-        ))}
-      </ol>
-      {side.length > 0 ? (
-        <div className="flex flex-col gap-2 border-t border-dashed border-ovcs-border pt-3">
-          <span id={sideId} className={SECTION_HEADING}>
-            Beside the pipeline
-          </span>
-          <ul aria-labelledby={sideId} className="flex flex-col gap-2">
-            {side.map((group) => (
-              <li key={group.id}>{box(group)}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-    </div>
+    <ol aria-label="Pipeline" className="flex flex-col">
+      {flow.map((group, index) => (
+        <li key={group.id} className="grid grid-cols-[1.5rem_minmax(0,1fr)] items-center gap-2 py-0.5">
+          <Step number={index + 1} first={index === 0} last={index === flow.length - 1} selected={group.id === selectedGroupId} />
+          {box(group)}
+        </li>
+      ))}
+    </ol>
+  )
+}
+
+/** The components beside the pipeline, such as detection, as boxes that select them. */
+export function SideGroups() {
+  const { side, box } = useGroupBoxes()
+  if (side.length === 0) return null
+
+  return (
+    <ul aria-label="Components" className="flex flex-col gap-1">
+      {side.map((group) => (
+        <li key={group.id}>{box(group)}</li>
+      ))}
+    </ul>
   )
 }
