@@ -213,7 +213,7 @@ fn host_keys_dir(vehicle: &Vehicle) -> PathBuf {
 }
 
 /// Directory holding `role`'s host keys (`role` as `roles_for`
-/// names it: `vms`, `infotainment` or `bridge-<id>`).
+/// names it: `vms`, `infotainment`, `vision` or `bridge-<id>`).
 pub(crate) fn role_dir(vehicle: &Vehicle, role: &str) -> PathBuf {
     let base = host_keys_dir(vehicle);
     // bridges/firmware's config/runtime.exs reads a bridge's keys from

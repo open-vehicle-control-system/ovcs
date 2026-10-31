@@ -1,0 +1,347 @@
+defmodule VisionCore.ApplicationTest do
+  use ExUnit.Case, async: false
+
+  import ExUnit.CaptureLog
+
+  alias VisionCore.Camera.LibCamera
+  alias VisionCore.Parameters.SavedValue
+  alias VisionCore.Repo
+
+  @moduletag :tmp_dir
+  @moduletag :capture_log
+  @calibration_dir Path.expand("../support/calibration", __DIR__)
+
+  defmodule Composer do
+    @behaviour VisionCore.Composer
+
+    @impl VisionCore.Composer
+    def config(_arm), do: Application.fetch_env!(:vision_core, :test_config)
+  end
+
+  # The pipeline's Storage owns VisionCore.Repo here, on an empty store; test_helper's Repo is back after.
+  setup do
+    Application.stop(:vision_core)
+    Repo.delete_all(SavedValue)
+    :ok = Supervisor.stop(Repo)
+
+    on_exit(fn ->
+      Application.stop(:vision_core)
+      Application.delete_env(:vision_core, :vehicle)
+      Application.delete_env(:vision_core, :test_config)
+      Application.ensure_all_started(:vision_core)
+      {:ok, pid} = Repo.start_link()
+      Process.unlink(pid)
+    end)
+  end
+
+  defp start_pipeline(config) do
+    Application.put_env(:vision_core, :test_config, config)
+    Application.put_env(:vision_core, :vehicle, Composer)
+    {:ok, _apps} = Application.ensure_all_started(:vision_core)
+  end
+
+  defp child_ids(supervisor) do
+    supervisor |> Supervisor.which_children() |> Enum.map(&elem(&1, 0))
+  end
+
+  defp child_pid(supervisor, id) do
+    {_id, pid, _type, _modules} =
+      supervisor |> Supervisor.which_children() |> List.keyfind(id, 0)
+
+    pid
+  end
+
+  test "a composer's components start under VisionCore.Supervisor" do
+    start_pipeline(%VisionCore.Config{zenoh_endpoint_ip: "127.0.0.1", components: [:heartbeat]})
+
+    ids = child_ids(VisionCore.Supervisor)
+    assert VisionCore.Ros2.ZenohClient in ids
+    assert VisionCore.Ros2.Parameters in ids
+    assert VisionCore.Ros2.Topics in ids
+    assert VisionCore.Ros2.Publishers.Heartbeat in ids
+    assert Enum.take(ids, 2) == [VisionCore.Preview, VisionCore.Status]
+  end
+
+  test "the core starts the parameter storage and registry first, before the components" do
+    start_pipeline(%VisionCore.Config{zenoh_endpoint_ip: "127.0.0.1", components: [:heartbeat]})
+
+    ids = VisionCore.Supervisor |> child_ids() |> Enum.reverse()
+
+    assert Enum.take(ids, 6) == [
+             VisionCore.Parameters.Storage,
+             VisionCore.Parameters,
+             VisionCore.Ros2.ZenohClient,
+             VisionCore.Ros2.Parameters,
+             VisionCore.Jpeg,
+             VisionCore.Stereo.Matcher
+           ]
+  end
+
+  test "a Zenoh client restart keeps the unsaved changes" do
+    start_pipeline(%VisionCore.Config{zenoh_endpoint_ip: "127.0.0.1"})
+    declare_sample()
+    assert {:ok, %{state: :unsaved}} = VisionCore.Parameters.set("test.sample.value", 5)
+
+    preview = Process.whereis(VisionCore.Preview)
+    Process.exit(Process.whereis(VisionCore.Ros2.ZenohClient), :kill)
+    wait_for_restart(VisionCore.Preview, preview)
+
+    assert {:ok, %{value: 5, state: :unsaved}} = VisionCore.Parameters.get("test.sample.value")
+  end
+
+  test "the pipeline starts on an empty store with its own Repo" do
+    start_pipeline(%VisionCore.Config{zenoh_endpoint_ip: "127.0.0.1"})
+
+    assert is_pid(child_pid(VisionCore.Supervisor, VisionCore.Parameters.Storage))
+    declare_sample()
+    assert {:ok, %{value: 1, saved: nil}} = VisionCore.Parameters.get("test.sample.value")
+  end
+
+  test "the config's preview options reach the preview" do
+    start_pipeline(%VisionCore.Config{
+      zenoh_endpoint_ip: "127.0.0.1",
+      preview: [max_hz: 4, depth_range_m: 12]
+    })
+
+    assert VisionCore.Preview.options() == %{max_hz: 4, depth_range_m: 12.0}
+  end
+
+  test "the vision core starts with its parameters when the database cannot open" do
+    repo_config = Application.get_env(:vision_core, Repo)
+    on_exit(fn -> Application.put_env(:vision_core, Repo, repo_config) end)
+
+    Application.put_env(
+      :vision_core,
+      Repo,
+      Keyword.put(repo_config, :database, "/nonexistent/dir/vision.db")
+    )
+
+    capture_log(fn ->
+      start_pipeline(%VisionCore.Config{zenoh_endpoint_ip: "127.0.0.1"})
+    end)
+
+    assert Process.alive?(Process.whereis(VisionCore.Parameters))
+    assert Process.alive?(Process.whereis(VisionCore.Preview))
+    declare_sample()
+    assert {:ok, _parameter} = VisionCore.Parameters.set("test.sample.value", 5)
+    assert {{:error, _reason}, _log} = with_log(fn -> VisionCore.Parameters.save() end)
+  end
+
+  test "settings are the config the pipeline started with" do
+    start_pipeline(%VisionCore.Config{zenoh_endpoint_ip: "127.0.0.1", components: [:heartbeat]})
+
+    Application.put_env(:vision_core, :test_config, %VisionCore.Config{
+      zenoh_endpoint_ip: "10.0.0.9"
+    })
+
+    assert %{"zenoh_endpoint_ip" => "127.0.0.1"} = VisionCore.settings()
+
+    Application.stop(:vision_core)
+    assert VisionCore.settings() == %{}
+  end
+
+  test "the pipeline keeps running with no Zenoh router" do
+    start_pipeline(%VisionCore.Config{zenoh_endpoint_ip: "127.0.0.1", components: [:heartbeat]})
+
+    Process.sleep(2_000)
+
+    assert Process.whereis(VisionCore.Supervisor) |> Process.alive?()
+    assert Process.whereis(VisionCore.Ros2.ZenohClient) |> Process.alive?()
+  end
+
+  # The first start of a 64x48 pipeline compiles the Nx stages with EXLA,
+  # which takes longer than the cameras below live; later starts reuse it.
+  setup_all do
+    compile_pipeline()
+    :ok
+  end
+
+  defp compile_pipeline do
+    {:ok, pipeline} =
+      VisionCore.Stereo.Pipeline.start_link(
+        name: :application_test_compile,
+        left_calibration_path: Path.join(@calibration_dir, "stereo_left.yaml"),
+        right_calibration_path: Path.join(@calibration_dir, "stereo_right.yaml"),
+        width: 64,
+        height: 48
+      )
+
+    GenServer.stop(pipeline)
+  end
+
+  test "a camera Port that exits restarts the stereo unit", %{tmp_dir: tmp_dir} do
+    jpeg = Evision.imencode(".jpg", Evision.Mat.zeros({48, 64}, :u8))
+    frame = <<1, 64::little-16, 48::little-16, 0::little-64, byte_size(jpeg)::little-32>> <> jpeg
+    frame_path = Path.join(tmp_dir, "frame.bin")
+    File.write!(frame_path, <<byte_size(frame)::big-32>> <> frame)
+
+    exiting = Path.join(tmp_dir, "exiting_camera.sh")
+
+    File.write!(exiting, """
+    #!/bin/sh
+    sleep 1.5
+    cat "#{frame_path}"
+    sleep 0.3
+    exit 3
+    """)
+
+    idle = Path.join(tmp_dir, "idle_camera.sh")
+    File.write!(idle, "#!/bin/sh\ncat > /dev/null\n")
+    File.chmod!(exiting, 0o755)
+    File.chmod!(idle, 0o755)
+
+    start_pipeline(%VisionCore.Config{
+      zenoh_endpoint_ip: "127.0.0.1",
+      components: [
+        {:stereo,
+         driver: LibCamera,
+         width: 64,
+         height: 48,
+         fps: 5,
+         left: [
+           camera_id: 0,
+           executable: exiting,
+           calibration_path: Path.join(@calibration_dir, "stereo_left.yaml")
+         ],
+         right: [
+           camera_id: 1,
+           executable: idle,
+           calibration_path: Path.join(@calibration_dir, "stereo_right.yaml")
+         ]}
+      ]
+    })
+
+    stereo = VisionCore.Stereo.Supervisor
+    first_driver = child_pid(stereo, {:stereo, :driver, :left})
+    LibCamera.register_listener(first_driver, self())
+    assert_receive {:"$gen_cast", {:camera_frame, _frame}}, 5_000
+
+    second_driver = wait_for_new_driver(stereo, first_driver)
+    refute second_driver == first_driver
+    LibCamera.register_listener(second_driver, self())
+    assert_receive {:"$gen_cast", {:camera_frame, _frame}}, 5_000
+  end
+
+  test "a camera Port that exits at start leaves the stereo unit down, not the pipeline",
+       %{tmp_dir: tmp_dir} do
+    start_failing_cameras(tmp_dir, "exit 3")
+    assert_stereo_unit_down()
+  end
+
+  test "a camera Port that keeps exiting stops the stereo unit, not the pipeline",
+       %{tmp_dir: tmp_dir} do
+    start_failing_cameras(tmp_dir, "sleep 0.3\nexit 3")
+    assert Process.whereis(VisionCore.Stereo.Supervisor)
+    assert_stereo_unit_down()
+  end
+
+  defp start_failing_cameras(tmp_dir, script) do
+    failing = Path.join(tmp_dir, "failing_camera.sh")
+    File.write!(failing, "#!/bin/sh\n#{script}\n")
+    File.chmod!(failing, 0o755)
+
+    start_pipeline(%VisionCore.Config{
+      zenoh_endpoint_ip: "127.0.0.1",
+      components: [
+        {:stereo,
+         driver: LibCamera,
+         width: 64,
+         height: 48,
+         fps: 5,
+         left: [
+           camera_id: 0,
+           executable: failing,
+           calibration_path: Path.join(@calibration_dir, "stereo_left.yaml")
+         ],
+         right: [
+           camera_id: 1,
+           executable: failing,
+           calibration_path: Path.join(@calibration_dir, "stereo_right.yaml")
+         ]}
+      ]
+    })
+  end
+
+  defp assert_stereo_unit_down do
+    pipeline = Process.whereis(VisionCore.Supervisor)
+    status = Process.whereis(VisionCore.Status)
+    wait_until_stopped(VisionCore.Stereo.Supervisor)
+
+    assert Process.whereis(VisionCore.Supervisor) == pipeline
+    assert Process.whereis(VisionCore.Status) == status
+    assert Process.alive?(Process.whereis(VisionCore.Preview))
+
+    assert %{cameras: %{left: %{present: false}, right: %{present: false}}} =
+             VisionCore.Status.snapshot()
+  end
+
+  defp wait_until_stopped(name, attempts \\ 300) do
+    cond do
+      Process.whereis(name) == nil ->
+        :ok
+
+      attempts > 0 ->
+        Process.sleep(50)
+        wait_until_stopped(name, attempts - 1)
+
+      true ->
+        flunk("#{inspect(name)} kept running")
+    end
+  end
+
+  defp wait_for_restart(name, old_pid, attempts \\ 100) do
+    case Process.whereis(name) do
+      pid when is_pid(pid) and pid != old_pid ->
+        :sys.get_state(pid)
+
+      _ when attempts > 0 ->
+        Process.sleep(50)
+        wait_for_restart(name, old_pid, attempts - 1)
+
+      _ ->
+        flunk("#{inspect(name)} was not restarted")
+    end
+  end
+
+  defp wait_for_new_driver(stereo, old_pid, attempts \\ 100) do
+    case child_pid(stereo, {:stereo, :driver, :left}) do
+      pid when is_pid(pid) and pid != old_pid ->
+        pid
+
+      _ when attempts > 0 ->
+        Process.sleep(50)
+        wait_for_new_driver(stereo, old_pid, attempts - 1)
+
+      _ ->
+        flunk("the left camera driver was not restarted")
+    end
+  end
+
+  # A group owned by the test: a bare configuration declares none.
+  defp declare_sample do
+    {:ok, value} = Agent.start_link(fn -> 1 end)
+
+    :ok =
+      VisionCore.Parameters.declare([
+        %{
+          id: "test.sample",
+          name: "Sample",
+          summary: "A test parameter.",
+          kind: :component,
+          placement: :side,
+          position: 0,
+          parameters: [
+            %{
+              name: "value",
+              type: :integer,
+              get: fn -> Agent.get(value, & &1) end,
+              set: fn new -> Agent.update(value, fn _old -> new end) end,
+              constraint: %{kind: :range, min: 0, max: 10, step: nil},
+              description: "A sample value",
+              export: [:test, :value]
+            }
+          ]
+        }
+      ])
+  end
+end

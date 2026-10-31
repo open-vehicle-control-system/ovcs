@@ -28,6 +28,16 @@ Design tokens, shared components and a Tailwind preset for OVCS web UIs. Plain C
 
   Classes on a component (`<OvcsCard class="p-0">`) add to its own.
 
+- `react`: React 19 components over the same classes, with the same names and props, `className` adding to the component's own classes and `children` as the content, and `ref` a plain prop. Importing it loads `tokens.css` and `components.css`. React is an optional peer dependency.
+
+  | Component | Props |
+  |---|---|
+  | `OvcsCard`, `OvcsHeader`, `OvcsStatus`, `OvcsBadge`, `OvcsDot`, `OvcsRow` | as the Vue ones |
+  | `OvcsParameterControl` | `parameter`, `bounds`, `controllerName`, `onChange`, `onReset`, `onEditStart`, `onEditEnd`: one parameter with its control, badge, description, allowed values, saved state and default |
+  | `OvcsSaveBar` | `unsaved`, `error`, `onSave`, `onDiscard`, `onResetAll`, `onExport`, `onDismissError`, `className`, `ref`: the unsaved count with Save, Discard, Reset all and Export |
+
+  It also exports `focusClass` (the focus ring utilities) and the helpers `formatValue`, `rangeStep` and `tidy`. The two parameter components use Tailwind utilities: add `../../libraries/ovcs_ui/react/**/*.{js,jsx}` (relative to the app) to its `content`.
+
 ## Use
 
 In the consumer's `package.json`:
@@ -61,7 +71,20 @@ import { OvcsBadge, OvcsStatus } from "@ovcs/ui/vue";
 </template>
 ```
 
-A Vite app linking the package by path adds `resolve: { dedupe: ["vue"] }`, so the components use the app's Vue rather than the copy installed for this package's tests.
+Or, in a React app (import `@ovcs/ui/react` once in the entry script, before the app's own styles, for the same reason):
+
+```jsx
+import { OvcsBadge, OvcsStatus } from "@ovcs/ui/react";
+
+export const Health = () => (
+  <>
+    <OvcsStatus tone="ok">Connected</OvcsStatus>
+    <OvcsBadge tone="warn">stale</OvcsBadge>
+  </>
+);
+```
+
+A Vite app linking the package by path adds `resolve: { dedupe: ["vue"] }` (`["react", "react-dom"]` for React), so the components use the app's copy rather than the copy installed for this package's tests.
 
 ## Develop
 
@@ -69,6 +92,8 @@ A Vite app linking the package by path adds `resolve: { dedupe: ["vue"] }`, so t
 npm install
 npm run test:unit
 ```
+
+Vitest runs both halves in one jsdom environment with the Vue and React plugins; each transforms only its own file types.
 
 In `tailwind.config.js`:
 

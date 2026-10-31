@@ -29,6 +29,15 @@ These guides are published on [ovcs.be/docs](https://ovcs.be/docs). This index i
 - [Running on hardware](./running_hardware.md)
 - [VESC drivetrain](./vesc_drivetrain.md)
 
+## Vision unit
+
+- [Vision unit](./vision/overview.md)
+- [Stereo vision basics](./vision/basics.md)
+- [How a pair flows](./vision/data_flow.md)
+- [Stereo stages](./vision/stages.md)
+- [Where depth is computed](./vision/compute.md)
+- [Vision performance](./vision/performance.md)
+
 ## ROS 2
 
 - [Simulation](../compose/local/simulation/README.md)

@@ -1,0 +1,13 @@
+[package]
+name = "hailo_detect"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+device = ["dep:bindgen"]
+
+[dependencies]
+framing = { path = "../framing" }
+
+[build-dependencies]
+bindgen = { version = "0.70", optional = true }

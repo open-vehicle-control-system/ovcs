@@ -1,0 +1,7 @@
+import ovcsPreset from '@ovcs/ui/tailwind-preset'
+
+/** @type {import('tailwindcss').Config} */
+export default {
+  presets: [ovcsPreset],
+  content: ['./index.html', './src/**/*.{js,jsx}', '../../libraries/ovcs_ui/react/**/*.{js,jsx}'],
+}

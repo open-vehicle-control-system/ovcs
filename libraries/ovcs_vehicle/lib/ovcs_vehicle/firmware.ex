@@ -3,11 +3,12 @@ defmodule OvcsVehicle.Firmware do
   Runtime helpers for each firmware's `config/runtime.exs`.
 
   Every OVCS firmware image (`vms/firmware`, `infotainment/firmware`,
-  `bridges/firmware`) is parameterised by the `VEHICLE` env var: the
-  top-level module name of a vehicle package under `vehicles/`. The
-  vehicle is NOT a Mix dep of the firmware — firmwares run from their
-  own project directory, so the vehicle's compiled ebin has to be
-  added to the code path at boot before the module can resolve.
+  `vision/firmware`, `bridges/firmware`) is parameterised by the
+  `VEHICLE` env var: the top-level module name of a vehicle package
+  under `vehicles/`. The vehicle is NOT a Mix dep of the firmware —
+  firmwares run from their own project directory, so the vehicle's
+  compiled ebin has to be added to the code path at boot before the
+  module can resolve.
 
   `resolve_vehicle/3` is the one-call bootstrap: read the env, prepend
   the vehicle's `_build/<env>/lib/<name>/ebin`, and return the module
@@ -22,16 +23,16 @@ defmodule OvcsVehicle.Firmware do
   the resolve + nil-check + composer-fetch shuffle each firmware's
   `runtime.exs` would otherwise duplicate.
 
-  * `side` — `:vms` or `:infotainment`. Calls the corresponding
+  * `side` — `:vms`, `:infotainment` or `:vision`. Calls the corresponding
     callback on the vehicle module to get the composer.
   * `config_dir` / `config_env` — same as `resolve_vehicle/3`.
   * `vehicle_name` — optional override (typically the firmware's
     `Application.compile_env(...)`).
   """
-  @spec resolve_side(:vms | :infotainment, Path.t(), atom(), String.t() | nil) ::
+  @spec resolve_side(:vms | :infotainment | :vision, Path.t(), atom(), String.t() | nil) ::
           {module(), module()} | nil
   def resolve_side(side, config_dir, config_env, vehicle_name \\ nil)
-      when side in [:vms, :infotainment] do
+      when side in [:vms, :infotainment, :vision] do
     # Short-circuit before resolve_vehicle/3: each firmware's config.exs
     # pins a default `:vehicle` (e.g. "Ovcs1") for host builds, so test
     # runs would otherwise hit locate_vehicle_ebin!/3 even though no
@@ -75,7 +76,7 @@ defmodule OvcsVehicle.Firmware do
 
   The path is `Application.app_dir(vehicle, "priv/host_keys/<role>")`.
   Roles match the CLI's firmware role names: `"vms"`, `"infotainment"`,
-  or `"bridges/<bridge_firmware_id>"`. When the directory exists and
+  `"vision"`, or `"bridges/<bridge_firmware_id>"`. When the directory exists and
   contains at least one `ssh_host_*_key` file, callers can plug it
   into `:nerves_ssh, :system_dir` so the firmware boots with stable
   host keys regardless of how many times the SD card has been burned.

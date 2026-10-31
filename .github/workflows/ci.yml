@@ -37,6 +37,8 @@ jobs:
       docs: ${{ steps.filter.outputs.docs }}
       cli: ${{ steps.filter.outputs.cli }}
       vue: ${{ steps.filter.outputs.vue }}
+      vision_dashboard: ${{ steps.filter.outputs.vision_dashboard }}
+      vision_rust: ${{ steps.filter.outputs.vision_rust }}
       flutter: ${{ steps.filter.outputs.flutter }}
       platformio: ${{ steps.filter.outputs.platformio }}
     steps:
@@ -62,6 +64,9 @@ jobs:
               - infotainment/firmware/**
               - bridges/**
               - vehicles/**
+              - vision/core/**
+              - vision/api/**
+              - vision/firmware/**
             docs:
               - *shared
               - scripts/check_docs.exs
@@ -74,6 +79,13 @@ jobs:
               - vms/dashboard/**
               - libraries/ovcs_bus_gateway/dashboard/**
               - libraries/ovcs_ui/**
+            vision_dashboard:
+              - *shared
+              - vision/dashboard/**
+              - libraries/ovcs_ui/**
+            vision_rust:
+              - *shared
+              - vision/rust/**
             flutter:
               - *shared
               - infotainment/dashboard/**
@@ -149,6 +161,9 @@ jobs:
           - vehicles/ovcs1
           - vehicles/ovcs_mini
           - vehicles/obd2
+          - vision/core
+          - vision/api
+          - vision/firmware
     defaults:
       run:
         working-directory: ${{ matrix.project }}
@@ -190,7 +205,9 @@ jobs:
       - name: Test
         run: mix test --no-start
       - name: Dialyzer
-        run: mix dialyzer --format github
+        # The cached PLT is keyed on mix.lock, which a sibling path dependency
+        # changes without touching: check it against the compiled modules.
+        run: mix dialyzer --force-check --format github
 
   cli-build:
     name: CLI · cargo build
@@ -279,7 +296,7 @@ jobs:
       - run: npm run build
 
   ovcs-ui:
-    name: Vue · libraries/ovcs_ui
+    name: Vue + React · libraries/ovcs_ui
     needs: changes
     if: github.event_name != 'pull_request' || needs.changes.outputs.vue == 'true'
     runs-on: ubuntu-latest
@@ -297,6 +314,56 @@ jobs:
           restore-keys: npm-ovcs-ui-${{ hashFiles('mise.toml') }}-
       - run: npm ci
       - run: npm run test:unit
+
+  vision-rust:
+    # Host build: without the `device` feature nothing links libcamera or HailoRT.
+    name: Rust · vision/rust
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.vision_rust == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: vision/rust
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup-mise
+      - name: Install clippy
+        run: rustup component add clippy
+      - uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            vision/rust/target
+          key: cargo-vision-${{ hashFiles('mise.toml') }}-${{ hashFiles('vision/rust/Cargo.lock') }}
+          restore-keys: cargo-vision-${{ hashFiles('mise.toml') }}-
+      - run: cargo clippy -- -D warnings
+      - run: cargo test
+
+  vision-dashboard:
+    name: React · vision/dashboard
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.vision_dashboard == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: vision/dashboard
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup-mise
+      - uses: actions/cache@v5
+        with:
+          path: ~/.npm
+          key: npm-vision-dashboard-${{ hashFiles('mise.toml') }}-${{ hashFiles('vision/dashboard/package-lock.json') }}
+          restore-keys: npm-vision-dashboard-${{ hashFiles('mise.toml') }}-
+      - run: npm ci
+      - name: Audit deps
+        # Only the packages that ship in the built dashboard, not the build and test tools.
+        run: npm audit --omit=dev
+      - run: npm run test:unit -- --run
+      - run: npm run build
 
   flutter-dashboard:
     name: Flutter · infotainment/dashboard

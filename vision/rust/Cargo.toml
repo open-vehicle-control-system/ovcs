@@ -1,0 +1,3 @@
+[workspace]
+resolver = "2"
+members = ["camera_capture", "framing", "hailo_detect", "jpeg_codec", "stereo_match", "v4l2_capture"]

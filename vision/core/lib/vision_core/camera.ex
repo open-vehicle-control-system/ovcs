@@ -1,0 +1,41 @@
+defmodule VisionCore.Camera do
+  @moduledoc """
+  Contract for the one-camera drivers under `VisionCore.Camera.*`. A driver
+  represents a single image sensor: it captures, compresses to JPEG,
+  and fans frames out to registered listeners. Stereo / multi-camera
+  setups wire up several driver instances and tag them via `:label`.
+
+  A driver implementing this behaviour MUST:
+
+    * Be a uniquely-named `GenServer` (vehicles instantiate more
+      than one — the supervisor identifies each by a distinct name,
+      typically derived from `:label`).
+    * Accept `register_listener/2` at any time. Listeners receive
+      `{:camera_frame, %VisionCore.Camera.Frame{}}` casts as new
+      frames become available.
+    * Accept `enable/1` to start capture. The driver owns any
+      hardware-specific gating so callers can fire-and-forget.
+
+  Drivers stay in raw-capture vocabulary — libcamera/V4L2 details,
+  JPEG framing, port lifecycle. Application-side translation (to
+  `sensor_msgs/CompressedImage`, etc.) lives in publishers.
+  """
+
+  @callback register_listener(GenServer.server(), pid()) :: :ok
+  @callback enable(GenServer.server()) :: :ok
+
+  @doc """
+  Change sensor controls while capturing (exposure, focus, ...).
+  Returns the controls now in force, or why the request was refused.
+  Optional: a driver without runtime controls does not implement it.
+  """
+  @callback set_controls(GenServer.server(), keyword()) :: {:ok, map()} | {:error, String.t()}
+
+  @doc "The controls in force, as last set."
+  @callback controls(GenServer.server()) :: map()
+
+  @doc "Whether one set of controls drives both cameras of a stereo pair."
+  @callback shared_controls?() :: boolean()
+
+  @optional_callbacks set_controls: 2, controls: 1, shared_controls?: 0
+end

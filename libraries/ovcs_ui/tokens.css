@@ -1,4 +1,5 @@
 :root {
+  color-scheme: light dark;
   --ovcs-bg: #f3f4f6;
   --ovcs-surface: #ffffff;
   --ovcs-border: #d1d5db;
@@ -14,6 +15,7 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
+    color-scheme: dark;
     --ovcs-bg: #111827;
     --ovcs-surface: #1f2937;
     --ovcs-border: #374151;
@@ -26,7 +28,12 @@
   }
 }
 
+[data-theme="light"] {
+  color-scheme: light;
+}
+
 [data-theme="dark"] {
+  color-scheme: dark;
   --ovcs-bg: #111827;
   --ovcs-surface: #1f2937;
   --ovcs-border: #374151;

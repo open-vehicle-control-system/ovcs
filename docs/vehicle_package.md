@@ -14,10 +14,11 @@ A standalone Mix package whose top-level module implements the `OvcsVehicle` beh
 
 | The vehicle provides | The framework provides |
 |---|---|
-| A top-level module (`OvcsVehicle`): name, composer pointers, CAN config app, Nerves targets, bridge firmware map, optional geometry | The firmware shells that boot and read that module: `vms/firmware`, `infotainment/firmware`, `bridges/firmware` |
+| A top-level module (`OvcsVehicle`): name, composer pointers, CAN config app, Nerves targets, bridge firmware map, optional geometry | The firmware shells that boot and read that module: `vms/firmware`, `infotainment/firmware`, `vision/firmware`, `bridges/firmware` |
 | A VMS composer (`VmsCore.Vehicle`): which component drivers run, the CAN topology, dashboard pages, controller pinouts | `vms_core` with the component drivers, managers, metrics, and the dashboard API |
 | An optional infotainment composer (`InfotainmentCore.Vehicle`): head-unit pages and CAN topology | `infotainment_core`, its API, and the Flutter dashboard |
 | Optional bridge firmware entries: which bridge libraries to bundle, on which Pi, with which CAN mapping | The bridge libraries (`RadioControlBridge`, `RosBridge`) and `OvcsBridge.Supervisor` |
+| An optional vision composer (`VisionCore.Composer`): cameras, calibration, stereo tuning and detector for a Pi 5 vision unit ([Vision unit](./vision/overview.md)) | `vision_core`, its API and dashboard, and the Rust camera and Hailo Ports |
 | CAN YAMLs under `priv/can/` that import shared frame specs | `ovcs_can` frame specifications and Cantastic |
 | `.env.exs` with SSH keys, Wi-Fi networks and secrets; SSH host keys | The `ovcs` CLI that builds, burns, uploads and runs any vehicle |
 
@@ -49,13 +50,14 @@ The name must map back to itself through the module name, since the firmware fin
 > [!TIP]
 > `./ovcs vehicles` lists every discovered vehicle with its Nerves targets; `./ovcs doctor` checks each package's metadata. Run both after scaffolding.
 
-## The four behaviours
+## The five behaviours
 
 | Behaviour | Where | What it is |
 |---|---|---|
 | `OvcsVehicle` | `libraries/ovcs_vehicle/lib/ovcs_vehicle.ex` | Top-level vehicle module: name, composer pointers, Nerves targets, bridge firmware map. Every `vehicles/<name>/lib/<name>.ex` implements it. |
 | `VmsCore.Vehicle` | `vms/core/lib/vms_core/vehicle.ex` | VMS composer: `children/0`, CAN config (`can_config_otp_app/0`, `can_config_path/0`, `default_can_mapping/1`), optional `dashboard_configuration/0` and `generic_controllers/0`. Implemented by `<Vehicle>.Vms.Composer`. |
 | `InfotainmentCore.Vehicle` | `infotainment/core/lib/infotainment_core/vehicle.ex` | Infotainment composer: `children/0`, CAN config, optional `infotainment_configuration/0`. Implemented by `<Vehicle>.Infotainment.Composer`. |
+| `VisionCore.Composer` | `vision/core/lib/vision_core/composer.ex` | Vision composer (optional): `config/1` returning a `VisionCore.Config` per arm, optional `required_files/0`. Implemented by `<Vehicle>.Vision.Composer`. See [Vision unit](#vision-unit). |
 | `OvcsBridge` | `libraries/ovcs_bridge/lib/ovcs_bridge.ex` | One per bridge **library** in the framework, not per vehicle: `children/0`, and an optional `apply_runtime_config/2` that `bridges/firmware`'s `runtime.exs` calls before any application starts. Vehicles pick which bridges to bundle via `bridge_firmwares/0`. |
 
 Bridge libraries define their own config behaviour, which your vehicle module implements for each bridge it bundles. Bundling `RadioControlBridge` requires `@behaviour RadioControlBridge` and `radio_control_bridge_config/1` returning `%RadioControlBridge.Config{}`. Bundling `RosBridge` requires `@behaviour RosBridge` and `ros_bridge_config/1` (or `/2`, which also receives the `bridge_firmwares/0` entry id) returning `%RosBridge.Config{}`. The first argument is the arm, `:host` or `:target`.
@@ -78,7 +80,7 @@ vehicles/ovcs1/
   priv/can/infotainment.yml      Cantastic topology for the infotainment side
   priv/can/generic_controller/   per-controller CAN YAMLs
   priv/can/bridges/<id>.yml      per-bridge YAMLs, one per bridge_firmwares entry
-  priv/firmware/{vms,infotainment,bridges/<id>}/   boot overrides: config.txt + cmdline-a/b.txt, optional fwup.conf
+  priv/firmware/{vms,infotainment,vision,bridges/<id>}/   boot overrides: config.txt + cmdline-a/b.txt, optional fwup.conf
 ```
 
 A vehicle with a ROS compute node or a simulator model adds three directories beside `lib/`, outside `priv/` because no firmware reads them. The OVCS Mini reference vehicle has all three:
@@ -185,7 +187,7 @@ An entry's `children` are child specs the bridge firmware starts after its bridg
 
 The shared `bridges/firmware` image is built once per entry. At boot, `OvcsBridge.Supervisor` reads `VEHICLE` and `BRIDGE_FIRMWARE_ID`, looks up the entry, and supervises each listed bridge's `children/0`, then the entry's `children`.
 
-Each bundled bridge reads its configuration from a callback on your vehicle module (see [The four behaviours](#the-four-behaviours)). From the OVCS Mini reference vehicle:
+Each bundled bridge reads its configuration from a callback on your vehicle module (see [The five behaviours](#the-five-behaviours)). From the OVCS Mini reference vehicle:
 
 ```elixir
 @behaviour RadioControlBridge
@@ -202,6 +204,20 @@ def radio_control_bridge_config(:target),
 
 > [!NOTE]
 > A bare id such as `radio_control` is rejected, and the error lists the valid roles for that vehicle. The prefix is what tells `build`, `burn` and `upload` to target the bridge image.
+
+## Vision unit
+
+A vehicle with stereo cameras and a Hailo accelerator adds two optional callbacks to its top-level module:
+
+```elixir
+@impl OvcsVehicle
+def vision, do: MyCar.Vision.Composer
+
+@impl OvcsVehicle
+def vision_target, do: :rpi5
+```
+
+`vision/0` returns a module implementing `VisionCore.Composer`, whose `config/1` returns a `VisionCore.Config` for the `:host` or `:target` arm. The optional `required_files/0` lists files relative to your vehicle app, such as a detection model, and the firmware build fails when one is missing. The role is addressed as `vision` (`./ovcs build my_car vision`) and its boot files go in `priv/firmware/vision/`. See [Vision unit](./vision/overview.md).
 
 ## Bus wiring and node names
 

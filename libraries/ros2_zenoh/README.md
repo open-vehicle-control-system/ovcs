@@ -2,7 +2,7 @@
 
 ROS 2 messages over [Zenoh](https://zenoh.io), without ROS installed: CDR codecs for the standard message types and the [`rmw_zenoh`](https://github.com/ros2/rmw_zenoh) wire format, so an Elixir process with a plain Zenoh session publishes and subscribes to topics that ROS 2 nodes, `ros2 topic echo` and Foxglove see as native.
 
-It is pure Elixir with no runtime dependencies and holds no Zenoh session: the caller brings its own client, such as [`zenohex`](https://github.com/biyooon-ex/zenohex). In OVCS, `RosBridge.ZenohClient` is that client.
+It is pure Elixir with no runtime dependencies and holds no Zenoh session: the caller brings its own client, such as [`zenohex`](https://github.com/biyooon-ex/zenohex). In OVCS, `RosBridge.ZenohClient` and `VisionCore.Ros2.ZenohClient` are that client.
 
 ## What it covers
 

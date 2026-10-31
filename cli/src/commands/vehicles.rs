@@ -17,6 +17,9 @@ pub fn run() -> Result<()> {
             nerves_target(vehicle, "infotainment")?.unwrap_or_else(|| "—".to_string());
         println!("    vms          → {}", vms_target);
         println!("    infotainment → {}", infotainment_target);
+        if let Some(vision_target) = nerves_target(vehicle, "vision")? {
+            println!("    vision       → {}", vision_target);
+        }
 
         let bridges = bridge_firmwares(vehicle).unwrap_or_default();
         if !bridges.is_empty() {
