@@ -44,7 +44,7 @@ defmodule VisionCore.Status do
           zenoh: :connected | :disconnected,
           cpu_percent: float() | nil,
           stereo_segment_percent: float(),
-          alignment: %{offset_rows: float(), band_offset_rows: [float()]} | nil,
+          alignment: %{offset_rows: float(), band_offset_rows: [float() | nil]} | nil,
           sharpness: %{left: float(), right: float()} | nil,
           quality:
             %{
@@ -218,13 +218,22 @@ defmodule VisionCore.Status do
   defp mean_alignment([]), do: nil
 
   defp mean_alignment(alignments) do
-    mean = fn values -> Enum.sum(values) / length(values) end
-
     %{
-      offset_rows: alignments |> Enum.map(& &1.offset_rows) |> mean.(),
+      offset_rows: alignments |> Enum.map(& &1.offset_rows) |> mean_of_measured(),
       band_offset_rows:
-        alignments |> Enum.map(& &1.band_offset_rows) |> Enum.zip_with(& &1) |> Enum.map(mean)
+        alignments
+        |> Enum.map(& &1.band_offset_rows)
+        |> Enum.zip_with(& &1)
+        |> Enum.map(&mean_of_measured/1)
     }
+  end
+
+  # `nil` stands for a band no pair measured.
+  defp mean_of_measured(values) do
+    case Enum.reject(values, &is_nil/1) do
+      [] -> nil
+      measured -> Enum.sum(measured) / length(measured)
+    end
   end
 
   defp build_snapshot(state) do

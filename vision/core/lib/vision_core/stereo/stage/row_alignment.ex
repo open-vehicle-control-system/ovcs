@@ -10,8 +10,8 @@ defmodule VisionCore.Stereo.Stage.RowAlignment do
   lowest sum of each band, refined between its neighbours, is the row
   offset there: positive when the right image's match sits lower. The
   pair's `:alignment` holds the offset over the whole image and per band,
-  from left to right; offsets that change across the bands are a
-  rotation. It is also reported as the `align_rows` metric.
+  from left to right, `nil` for a band without a matched pixel; offsets
+  that change across the bands are a rotation. It is also reported as the `align_rows` metric.
   """
   @behaviour VisionCore.Stereo.NxStage
 
@@ -52,7 +52,9 @@ defmodule VisionCore.Stereo.Stage.RowAlignment do
     counts = List.flatten(counts)
     total = costs |> Enum.zip_with(& &1) |> Enum.map(&Enum.sum/1)
     offset = offset(total)
-    alignment = %{offset_rows: offset, band_offset_rows: Enum.map(costs, &offset/1)}
+    # A band without a matched pixel has nothing to measure.
+    bands = Enum.zip_with(costs, counts, fn band, count -> if count > 0, do: offset(band) end)
+    alignment = %{offset_rows: offset, band_offset_rows: bands}
 
     if Enum.sum(counts) > 0 do
       %{pair | alignment: alignment, metrics: pair.metrics ++ [{:align_rows, offset, "rows"}]}

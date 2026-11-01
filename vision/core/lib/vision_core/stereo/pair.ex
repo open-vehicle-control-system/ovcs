@@ -29,8 +29,9 @@ defmodule VisionCore.Stereo.Pair do
       its `{height, width}`, and how many points are measured: the others,
       unmatched pixels among them, are NaN.
     * `:alignment` — how far the right image's rows sit from the left
-      one's, in rows: `%{offset_rows: float, band_offset_rows: [float]}`,
-      over the whole image and per vertical band from left to right
+      one's, in rows: `%{offset_rows: float, band_offset_rows: [float | nil]}`,
+      over the whole image and per vertical band from left to right, `nil`
+      for a band without a matched pixel
       (`VisionCore.Stereo.Stage.RowAlignment`); `nil` before it is measured.
     * `:sharpness` — each rectified image's sharpness,
       `%{left: float, right: float}`, comparable between the two
