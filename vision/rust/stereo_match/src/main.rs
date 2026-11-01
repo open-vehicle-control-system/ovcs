@@ -90,7 +90,7 @@ fn serve() -> io::Result<()> {
         Ok(threads) => threads,
         Err(reason) => {
             stdout.write_record(&log_record(LogLevel::Error, &reason))?;
-            return Ok(());
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, reason));
         }
     };
     stdout.write_record(&log_record(

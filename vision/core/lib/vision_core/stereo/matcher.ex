@@ -16,11 +16,11 @@ defmodule VisionCore.Stereo.Matcher do
 
   The binary is `priv/stereo_match`, or `config :vision_core,
   :stereo_match_path`; it works on `config :vision_core,
-  :stereo_match_threads` threads, or one per core. The Port opens on the
-  first request and reopens after it exits. A request without a reply
-  within `:timeout_ms` (`5000`) of being sent closes the Port, failing
-  every request still waiting, so a late reply cannot answer another
-  one. The Port's log lines go to the `Logger`.
+  :stereo_match_threads` threads, a positive integer, or one per core.
+  The Port opens on the first request and reopens after it exits. A
+  request without a reply within `:timeout_ms` (`5000`) of being sent
+  closes the Port, failing every request still waiting, so a late reply
+  cannot answer another one. The Port's log lines go to the `Logger`.
   """
   use GenServer
   require Logger
@@ -198,7 +198,8 @@ defmodule VisionCore.Stereo.Matcher do
     path = executable()
 
     if File.exists?(path) do
-      options = [:binary, {:packet, 4}, :exit_status, args: arguments()]
+      threads = Application.get_env(:vision_core, :stereo_match_threads)
+      options = [:binary, {:packet, 4}, :exit_status, args: port_arguments(threads)]
       {:ok, %{state | port: Port.open({:spawn_executable, path}, options)}}
     else
       {:error, {:no_matcher, path}, state}
@@ -207,11 +208,19 @@ defmodule VisionCore.Stereo.Matcher do
 
   defp ensure_port(state), do: {:ok, state}
 
-  defp arguments do
-    case Application.get_env(:vision_core, :stereo_match_threads) do
-      nil -> []
-      threads -> ["--threads", Integer.to_string(threads)]
-    end
+  @doc false
+  def port_arguments(nil), do: []
+
+  def port_arguments(threads) when is_integer(threads) and threads > 0,
+    do: ["--threads", Integer.to_string(threads)]
+
+  def port_arguments(threads) do
+    Logger.warning(
+      "#{__MODULE__}: :stereo_match_threads must be a positive integer, got " <>
+        "#{inspect(threads)}; computing on one thread per core"
+    )
+
+    []
   end
 
   defp executable do
