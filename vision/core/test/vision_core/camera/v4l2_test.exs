@@ -1,10 +1,18 @@
 defmodule VisionCore.Camera.V4L2Test do
   use ExUnit.Case, async: false
 
+  import ExUnit.CaptureLog
+
   alias VisionCore.Camera.{Frame, V4L2}
   alias VisionCore.Timing
 
-  @scratch_directory Path.join(System.tmp_dir!(), "v4l2_test")
+  defp eventually(check, attempts \\ 100) do
+    cond do
+      check.() -> :ok
+      attempts == 0 -> flunk("condition not met")
+      true -> Process.sleep(20) && eventually(check, attempts - 1)
+    end
+  end
 
   defp pair_record(left_ns, right_ns) do
     <<4, 2::little-16, 1::little-16, left_ns::little-signed-64, right_ns::little-signed-64, 1, 2,
@@ -55,11 +63,10 @@ defmodule VisionCore.Camera.V4L2Test do
     assert {:error, "unknown camera setting zoom"} = V4L2.control_commands(zoom: 2)
   end
 
-  test "a setting changed on either side reaches the capture program" do
-    File.mkdir_p!(@scratch_directory)
-    commands = Path.join(@scratch_directory, "commands.bin")
-    File.rm(commands)
-    script = Path.join(@scratch_directory, "listen.sh")
+  @tag :tmp_dir
+  test "a setting changed on either side reaches the capture program", %{tmp_dir: tmp_dir} do
+    commands = Path.join(tmp_dir, "commands.bin")
+    script = Path.join(tmp_dir, "listen.sh")
     File.write!(script, "#!/bin/sh\ncat > #{commands}\n")
     File.chmod!(script, 0o755)
 
@@ -75,8 +82,35 @@ defmodule VisionCore.Camera.V4L2Test do
     assert {:ok, %{gamma: 1.8}} = V4L2.set_controls(V4L2.name_for("right"), gamma: 1.8)
     assert %{gamma: 1.8, rotation: 0} = V4L2.controls(V4L2.name_for("right"))
 
-    Process.sleep(200)
-    assert File.read!(commands) == <<9::32, "gamma=1.8">>
+    eventually(fn -> File.read(commands) == {:ok, <<9::32, "gamma=1.8">>} end)
+  end
+
+  @tag :tmp_dir
+  test "drops a setting the capture program would refuse, with a warning", %{tmp_dir: tmp_dir} do
+    arguments = Path.join(tmp_dir, "arguments.txt")
+    script = Path.join(tmp_dir, "capture.sh")
+    File.write!(script, "#!/bin/sh\necho \"$@\" > #{arguments}\nsleep 1\n")
+    File.chmod!(script, 0o755)
+
+    log =
+      capture_log(fn ->
+        start_supervised!(
+          {V4L2,
+           label: "left",
+           executable: script,
+           width: 2,
+           height: 1,
+           fps: 30,
+           gamma: 9.0,
+           rotation: 180}
+        )
+
+        eventually(fn -> File.exists?(arguments) end)
+      end)
+
+    assert log =~ "gamma: invalid value 9.0"
+    assert %{gamma: 2.2, rotation: 180} = V4L2.controls(V4L2.name_for("left"))
+    eventually(fn -> File.read!(arguments) =~ "--gamma 2.2" end)
   end
 
   test "a pair record becomes a left and a right grey frame" do
@@ -94,12 +128,13 @@ defmodule VisionCore.Camera.V4L2Test do
     assert V4L2.parse_record(<<4, 2::little-16>>) == {:error, :malformed_record}
   end
 
-  test "the left camera runs the capture program and hands the right frame on, then stops with it" do
-    File.mkdir_p!(@scratch_directory)
-    records = Path.join(@scratch_directory, "records.bin")
+  @tag :tmp_dir
+  test "the left camera runs the capture program and hands the right frame on, then stops with it",
+       %{tmp_dir: tmp_dir} do
+    records = Path.join(tmp_dir, "records.bin")
     record = pair_record(5, 6)
     File.write!(records, <<byte_size(record)::32, record::binary>>)
-    script = Path.join(@scratch_directory, "capture.sh")
+    script = Path.join(tmp_dir, "capture.sh")
     File.write!(script, "#!/bin/sh\nsleep 0.3\ncat #{records}\n")
     File.chmod!(script, 0o755)
 
@@ -137,9 +172,11 @@ defmodule VisionCore.Camera.V4L2Test do
              V4L2.parse_record(metadata_record(8_000.0, 2.0))
   end
 
-  test "live is nil before any metadata and the latest record after, on either side" do
-    File.mkdir_p!(@scratch_directory)
-    script = Path.join(@scratch_directory, "idle.sh")
+  @tag :tmp_dir
+  test "live is nil before any metadata and the latest record after, on either side", %{
+    tmp_dir: tmp_dir
+  } do
+    script = Path.join(tmp_dir, "idle.sh")
     File.write!(script, "#!/bin/sh\nsleep 5\n")
     File.chmod!(script, 0o755)
 

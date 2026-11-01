@@ -289,6 +289,7 @@ defmodule VisionCore.Camera.V4L2 do
   @impl GenServer
   def init(opts) do
     label = Keyword.fetch!(opts, :label)
+    opts = accepted_settings(opts, label)
 
     controls =
       Map.new(@settings, fn spec ->
@@ -302,6 +303,24 @@ defmodule VisionCore.Camera.V4L2 do
     else
       {:ok, state}
     end
+  end
+
+  # v4l2_capture exits on a setting it refuses, at every restart: such a setting keeps its default.
+  defp accepted_settings(opts, label) do
+    Enum.filter(opts, fn {key, value} ->
+      case Enum.find(@settings, &(&1.key == key)) do
+        nil ->
+          true
+
+        spec ->
+          if valid?(spec, value) do
+            true
+          else
+            Logger.warning("#{__MODULE__}[#{label}] #{key}: invalid value #{inspect(value)}")
+            false
+          end
+      end
+    end)
   end
 
   defp open_port(state, opts) do
