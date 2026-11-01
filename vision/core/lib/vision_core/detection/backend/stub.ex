@@ -47,9 +47,6 @@ defmodule VisionCore.Detection.Backend.Stub do
   @impl VisionCore.Detection.Backend
   def available?(_server \\ __MODULE__), do: true
 
-  @impl VisionCore.Detection.Backend
-  def busy?(_server \\ __MODULE__), do: false
-
   @impl GenServer
   def init(opts) do
     boxes = Keyword.get(opts, :boxes, @default_boxes)

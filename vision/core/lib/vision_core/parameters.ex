@@ -107,10 +107,6 @@ defmodule VisionCore.Parameters do
   def set_and_save(server \\ __MODULE__, id, value),
     do: GenServer.call(server, {:set_and_save, id, value})
 
-  @doc "The number of parameters whose value differs from their saved value or default."
-  @spec unsaved_count(GenServer.server()) :: non_neg_integer()
-  def unsaved_count(server \\ __MODULE__), do: GenServer.call(server, :unsaved_count)
-
   @doc """
   Stores the value of every live parameter that differs from its default and
   deletes the saved value of the others, in one write. Values set by an
@@ -215,13 +211,6 @@ defmodule VisionCore.Parameters do
       {refused, state} ->
         {:reply, refused, state}
     end
-  end
-
-  def handle_call(:unsaved_count, _from, state) do
-    parameters = all_parameters(state)
-    {values, state} = read_values(state, Enum.map(parameters, & &1.id))
-    count = Enum.count(parameters, &(parameter_state(&1, values, state) == :unsaved))
-    {:reply, count, state}
   end
 
   def handle_call(:save, _from, state) do

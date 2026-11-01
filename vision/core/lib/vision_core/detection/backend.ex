@@ -74,7 +74,4 @@ defmodule VisionCore.Detection.Backend do
 
   @doc "False when the backend could not initialise. Never raises."
   @callback available?(server()) :: boolean()
-
-  @doc "True while an inference is in flight."
-  @callback busy?(server()) :: boolean()
 end

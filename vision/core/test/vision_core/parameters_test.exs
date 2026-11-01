@@ -168,7 +168,7 @@ defmodule VisionCore.ParametersTest do
     assert {:ok, %{state: :unsaved, value: 8000, default: 10_000}} =
              Parameters.get(server, "stereo.cameras.exposure_us")
 
-    assert Parameters.unsaved_count(server) == 3
+    assert unsaved_count(server) == 3
   end
 
   test "switching an automatic mode off brings the value it left within the controlled range",
@@ -199,7 +199,7 @@ defmodule VisionCore.ParametersTest do
     refute_receive {:set, _name, _value}
     assert Agent.get(agent, & &1["p1"]) == 8
     assert {:ok, %{value: 8, state: :builtin}} = Parameters.get(server, "stereo.disparity.p1")
-    assert Parameters.unsaved_count(server) == 0
+    assert unsaved_count(server) == 0
   end
 
   test "a set the owner refuses, raises on or exits from is refused with its reason",
@@ -294,16 +294,16 @@ defmodule VisionCore.ParametersTest do
     assert statuses == %{"stereo.disparity" => {:ok, "matching"}, "failing" => nil}
   end
 
-  test "unsaved_count counts parameters whose value differs from their default",
+  test "a parameter is unsaved while its value differs from its default",
        %{server: server} do
     start_owner(server, &match_groups/1)
-    assert Parameters.unsaved_count(server) == 0
+    assert unsaved_count(server) == 0
 
     assert {:ok, _parameter} = Parameters.set(server, "stereo.disparity.p1", 12)
-    assert Parameters.unsaved_count(server) == 1
+    assert unsaved_count(server) == 1
 
     assert {:ok, _parameter} = Parameters.set(server, "stereo.disparity.p1", 8)
-    assert Parameters.unsaved_count(server) == 0
+    assert unsaved_count(server) == 0
   end
 
   test "a get, set or status that throws is read as nil or refused", %{server: server} do
@@ -321,7 +321,7 @@ defmodule VisionCore.ParametersTest do
     assert {:ok, %{value: nil, default: 8, state: :builtin}} =
              Parameters.get(server, "stereo.disparity.p1")
 
-    assert Parameters.unsaved_count(server) == 0
+    assert unsaved_count(server) == 0
   end
 
   describe "saved values" do
@@ -337,7 +337,7 @@ defmodule VisionCore.ParametersTest do
       assert {:ok, %{value: 10, default: 8, saved: 10, state: :saved}} =
                Parameters.get(server, "stereo.disparity.p1")
 
-      assert Parameters.unsaved_count(server) == 0
+      assert unsaved_count(server) == 0
     end
 
     @tag saved: %{"stereo.disparity.p1" => 70, "stereo.disparity.p2" => 75}
@@ -416,7 +416,7 @@ defmodule VisionCore.ParametersTest do
              ]
 
       refute_receive {:set, _name, _value}
-      assert Parameters.unsaved_count(server) == 0
+      assert unsaved_count(server) == 0
     end
 
     @tag saved: %{"camera.auto_exposure" => false, "camera.exposure_us" => 20_000}
@@ -477,7 +477,7 @@ defmodule VisionCore.ParametersTest do
                ["stereo.cameras.exposure_us", "stereo.disparity.p1", "stereo.disparity.p2"]
 
       assert MemoryStore.rows() == %{"stereo.disparity.p1" => 12}
-      assert Parameters.unsaved_count(server) == 0
+      assert unsaved_count(server) == 0
       assert {:ok, %{saved: 12, state: :saved}} = Parameters.get(server, "stereo.disparity.p1")
       assert Parameters.save(server) == {:ok, []}
     end
@@ -553,7 +553,7 @@ defmodule VisionCore.ParametersTest do
       assert {:ok, _parameter} = Parameters.set(server, "stereo.disparity.p1", 12)
 
       assert Parameters.save(server) == {:error, "saved parameters unavailable"}
-      assert Parameters.unsaved_count(server) == 1
+      assert unsaved_count(server) == 1
       assert {:ok, %{saved: nil, state: :unsaved}} = Parameters.get(server, "stereo.disparity.p1")
     end
 
@@ -569,7 +569,7 @@ defmodule VisionCore.ParametersTest do
       assert {:ok, ids} = Parameters.discard(server)
       assert Enum.sort(ids) == ["stereo.disparity.p1", "stereo.disparity.p2"]
       assert Agent.get(agent, & &1) == %{"p1" => 10, "p2" => 64}
-      assert Parameters.unsaved_count(server) == 0
+      assert unsaved_count(server) == 0
       assert length(receive_sets(2)) == 2
 
       stop_owner(owner)
@@ -608,7 +608,7 @@ defmodule VisionCore.ParametersTest do
                {:ok, ["stereo.disparity.p2"]}
 
       assert Parameters.reset(server, :all) == {:ok, ["preview.quality"]}
-      assert Parameters.unsaved_count(server) == 1
+      assert unsaved_count(server) == 1
 
       assert Parameters.reset(server, {:parameter, "stereo.disparity.p9"}) ==
                {:error, :not_found}
@@ -633,6 +633,13 @@ defmodule VisionCore.ParametersTest do
       assert {:ok, %{value: 10, saved: nil, state: :unsaved}} =
                Parameters.get(server, "stereo.disparity.p1")
     end
+  end
+
+  defp unsaved_count(server) do
+    server
+    |> Parameters.groups()
+    |> Enum.flat_map(& &1.parameters)
+    |> Enum.count(&(&1.state == :unsaved))
   end
 
   # An owner process holding the Agent behind its parameters; both go when it is killed.

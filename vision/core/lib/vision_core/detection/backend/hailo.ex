@@ -85,25 +85,12 @@ defmodule VisionCore.Detection.Backend.Hailo do
   end
 
   @doc """
-  Whether the accelerator is loaded and answering.
-
-  Deliberately *not* "and idle". At the stereo frame rate there is
-  usually an inference in flight, so an idle-aware answer reads false
-  most of the time it is asked — which makes it useless as the health
-  check the docs point people at. Use `busy?/1` for the other
-  question.
+  Whether the accelerator is loaded and answering, an inference in
+  flight or not: at the stereo frame rate there usually is one.
   """
   @impl VisionCore.Detection.Backend
   def available?(server \\ __MODULE__) do
     GenServer.call(server, :available?)
-  catch
-    :exit, _ -> false
-  end
-
-  @doc "Whether an inference is in flight right now."
-  @impl VisionCore.Detection.Backend
-  def busy?(server \\ __MODULE__) do
-    GenServer.call(server, :busy?)
   catch
     :exit, _ -> false
   end
@@ -185,10 +172,6 @@ defmodule VisionCore.Detection.Backend.Hailo do
   @impl GenServer
   def handle_call(:available?, _from, state) do
     {:reply, not is_nil(state.port), state}
-  end
-
-  def handle_call(:busy?, _from, state) do
-    {:reply, not is_nil(state.inflight), state}
   end
 
   def handle_call({:detect, _sequence, _image, _reply_to}, _from, %{port: nil} = state) do

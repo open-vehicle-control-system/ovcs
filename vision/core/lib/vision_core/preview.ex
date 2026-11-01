@@ -48,20 +48,6 @@ defmodule VisionCore.Preview do
   @default_max_hz 10
   @default_depth_range_m 0.0
 
-  @option_specs [
-    max_hz: %{
-      type: :integer,
-      range: {1, 30},
-      default: @default_max_hz,
-      description: "Preview frames per second per viewer"
-    },
-    depth_range_m: %{
-      type: :double,
-      range: {0, 50},
-      default: @default_depth_range_m,
-      description: "Distance coloured blue, in metres; 0 for infinitely far"
-    }
-  ]
   @jpeg_quality 80
 
   @type stream :: :left | :right | :depth
@@ -95,9 +81,6 @@ defmodule VisionCore.Preview do
       {:error, _reason} = error -> error
     end
   end
-
-  @doc "The settings `set_options/1` takes, as `{key, spec}`."
-  def option_specs, do: @option_specs
 
   @doc "The settings in force."
   def options, do: GenServer.call(__MODULE__, :options)

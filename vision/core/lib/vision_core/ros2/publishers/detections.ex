@@ -95,7 +95,6 @@ defmodule VisionCore.Ros2.Publishers.Detections do
         |> Duration.from_milliseconds(),
       outline_segments: Keyword.get(opts, :outline_segments, @default_outline_segments),
       label_font_size: Keyword.get(opts, :label_font_size, @default_label_font_size),
-      published_count: 0,
       # Detection indexes drawn last frame; those not redrawn get an explicit DELETE.
       previous_indexes: MapSet.new()
     }
@@ -126,8 +125,7 @@ defmodule VisionCore.Ros2.Publishers.Detections do
 
     %{
       state
-      | published_count: state.published_count + length(positioned),
-        previous_indexes: MapSet.new(Enum.with_index(positioned), fn {_, index} -> index end)
+      | previous_indexes: MapSet.new(Enum.with_index(positioned), fn {_, index} -> index end)
     }
   end
 
