@@ -238,6 +238,14 @@ defmodule VisionCore.Stereo.PipelineTest do
       assert_receive :stereo_pipeline_ready, 60_000
     end
 
+    test "stops when the device does not answer in time, for its supervisor to restart it" do
+      {:ok, pipeline} = start(Pipeline.default_stages(), device_timeout_ms: 1)
+
+      [left, right] = textured_pair(4)
+      Pipeline.submit(pipeline, left, right)
+      assert_receive {:EXIT, ^pipeline, {:device_timeout, 1}}, 60_000
+    end
+
     test "publishes the last pair when no other follows" do
       {:ok, pipeline} = start(Pipeline.default_stages())
       Pipeline.register_listener(pipeline, self())

@@ -71,12 +71,16 @@ defmodule VisionCore.Stereo.Pipeline do
     * `:flush_after_ms` (`100`) — how long a pair a compiled segment
       returned waits for the next one before it is finished alone; see
       above.
+    * `:device_timeout_ms` (`10000`) — how long a pair may stay at the
+      device: past it the pipeline stops, for its supervisor to start it
+      again, rather than wait on a device that no longer answers.
     * `:name` (`__MODULE__`).
   """
   use GenServer
   require Logger
 
   @default_flush_after_ms 100
+  @default_device_timeout_ms 10_000
 
   alias VisionCore.Camera.Frame
   alias VisionCore.Ros2.CameraCalibration
@@ -190,7 +194,8 @@ defmodule VisionCore.Stereo.Pipeline do
        last_reply_ns: nil,
        collected_ns: nil,
        waiting_submitter: nil,
-       flush_after_ms: Keyword.get(opts, :flush_after_ms, @default_flush_after_ms)
+       flush_after_ms: Keyword.get(opts, :flush_after_ms, @default_flush_after_ms),
+       device_timeout_ms: Keyword.get(opts, :device_timeout_ms, @default_device_timeout_ms)
      }}
   end
 
@@ -257,6 +262,15 @@ defmodule VisionCore.Stereo.Pipeline do
   @impl GenServer
   def handle_info({:flush, ref}, %{flush: ref} = state), do: {:noreply, finish_held(state)}
 
+  def handle_info({:device_deadline, deadline}, state) do
+    if Enum.any?(:queue.to_list(state.in_flight), &(&1.deadline == deadline)) do
+      Logger.error("#{__MODULE__}: no answer from the device in #{state.device_timeout_ms} ms")
+      {:stop, {:device_timeout, state.device_timeout_ms}, state}
+    else
+      {:noreply, state}
+    end
+  end
+
   def handle_info(message, state) do
     with {:value, sent} <- :queue.peek(state.in_flight),
          [first | _rest] = state.stages,
@@ -271,12 +285,17 @@ defmodule VisionCore.Stereo.Pipeline do
   defp send_pair(pair, %{module: module} = first, start_ns, submitter, state) do
     case module.send_request(pair, first.state) do
       {:ok, ticket} ->
+        deadline = make_ref()
+        timer = Process.send_after(self(), {:device_deadline, deadline}, state.device_timeout_ms)
+
         sent = %{
           ticket: ticket,
           pair: pair,
           segment: first.state,
           start_ns: start_ns,
-          sent_ns: System.monotonic_time(:nanosecond)
+          sent_ns: System.monotonic_time(:nanosecond),
+          deadline: deadline,
+          deadline_timer: timer
         }
 
         %{state | in_flight: :queue.in(sent, state.in_flight), waiting_submitter: submitter}
@@ -291,6 +310,7 @@ defmodule VisionCore.Stereo.Pipeline do
 
   # The segment's device time runs from when the device could start on the pair.
   defp receive_reply(response, sent, %{stages: [first | rest]} = state) do
+    Process.cancel_timer(sent.deadline_timer)
     state = %{state | in_flight: :queue.drop(state.in_flight)}
 
     state =
