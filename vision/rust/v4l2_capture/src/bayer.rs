@@ -31,19 +31,24 @@ impl Tone {
 
 /// Averages each 2x2 RGGB cell of 10-bit little-endian samples into one grey
 /// pixel through `tone`, halving both dimensions; `rotate_180` turns the image
-/// for a sensor mounted upside down.
+/// for a sensor mounted upside down. Rows start every `row_stride` bytes, at
+/// least `width * 2`, and `raw` holds `height` of them.
 pub fn grey_half(
     raw: &[u8],
     width: usize,
     height: usize,
+    row_stride: usize,
     tone: &Tone,
     rotate_180: bool,
 ) -> Vec<u8> {
     let row_bytes = width * 2;
     let mut grey = Vec::with_capacity((width / 2) * (height / 2));
-    for rows in raw[..row_bytes * height].chunks_exact(row_bytes * 2) {
-        let (top, bottom) = rows.split_at(row_bytes);
-        for (top_pair, bottom_pair) in top.chunks_exact(4).zip(bottom.chunks_exact(4)) {
+    for rows in raw[..row_stride * height].chunks_exact(row_stride * 2) {
+        let (top, bottom) = rows.split_at(row_stride);
+        for (top_pair, bottom_pair) in top[..row_bytes]
+            .chunks_exact(4)
+            .zip(bottom[..row_bytes].chunks_exact(4))
+        {
             let sum = u32::from(u16::from_le_bytes([top_pair[0], top_pair[1]]))
                 + u32::from(u16::from_le_bytes([top_pair[2], top_pair[3]]))
                 + u32::from(u16::from_le_bytes([bottom_pair[0], bottom_pair[1]]))
@@ -69,7 +74,10 @@ mod tests {
     #[test]
     fn averages_each_rggb_cell_into_one_grey_byte() {
         let raw = little_endian_samples(&[1023, 1023, 400, 800, 1023, 1023, 800, 400]);
-        assert_eq!(grey_half(&raw, 4, 2, &Tone::new(0, 1.0), false), [255, 150]);
+        assert_eq!(
+            grey_half(&raw, 4, 2, 8, &Tone::new(0, 1.0), false),
+            [255, 150]
+        );
     }
 
     #[test]
@@ -79,6 +87,7 @@ mod tests {
                 &little_endian_samples(&[0, 0, 0, 0]),
                 2,
                 2,
+                4,
                 &Tone::imx708(),
                 false
             ),
@@ -102,7 +111,21 @@ mod tests {
         let raw = little_endian_samples(&[
             64, 64, 64, 64, 1023, 1023, 1023, 1023, 64, 64, 64, 64, 1023, 1023, 1023, 1023,
         ]);
-        assert_eq!(grey_half(&raw, 8, 2, &tone, false), [0, 0, 255, 255]);
-        assert_eq!(grey_half(&raw, 8, 2, &tone, true), [255, 255, 0, 0]);
+        assert_eq!(grey_half(&raw, 8, 2, 16, &tone, false), [0, 0, 255, 255]);
+        assert_eq!(grey_half(&raw, 8, 2, 16, &tone, true), [255, 255, 0, 0]);
+    }
+
+    #[test]
+    fn padding_at_the_end_of_each_row_is_skipped() {
+        let tone = Tone::new(0, 1.0);
+        let packed = little_endian_samples(&[1023, 1023, 400, 800, 1023, 1023, 800, 400]);
+        let padded: Vec<u8> = packed
+            .chunks_exact(8)
+            .flat_map(|row| [row, &[0xff; 8][..]].concat())
+            .collect();
+        assert_eq!(
+            grey_half(&padded, 4, 2, 16, &tone, false),
+            grey_half(&packed, 4, 2, 8, &tone, false)
+        );
     }
 }

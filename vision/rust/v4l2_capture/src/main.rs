@@ -179,7 +179,8 @@ fn run(
 
     let mut lock = PhaseLock::new(period_ns, line_ns, nominal_vblank, vblank_min, vblank_max);
     let mut pairer = Pairer::new(PAIR_TOLERANCE_NS);
-    let mut statistics = [0u64; 3];
+    // Frames left and right, pairs, and frames dropped as incomplete.
+    let mut statistics = [0u64; 4];
     let mut conversion_ns = 0u128;
     let mut statistics_since = std::time::Instant::now();
     let mut input = input::unbuffered(io::stdin().as_fd())?;
@@ -226,25 +227,33 @@ fn run(
             log(
                 LogLevel::Info,
                 &format!(
-                    "last {STATISTICS_EVERY_S} s: frames left {} right {}, pairs {}, {} us per conversion",
+                    "last {STATISTICS_EVERY_S} s: frames left {} right {}, pairs {}, \
+                     incomplete {}, {} us per conversion",
                     statistics[0],
                     statistics[1],
                     statistics[2],
+                    statistics[3],
                     conversion_ns / 1_000 / frames
                 ),
             );
-            statistics = [0; 3];
+            statistics = [0; 4];
             conversion_ns = 0;
             statistics_since = std::time::Instant::now();
         }
         for (side, camera) in [(Side::Left, &left), (Side::Right, &right)] {
             while let Some(frame) = camera.capture.dequeue()? {
+                if !camera.capture.complete(&frame) {
+                    statistics[3] += 1;
+                    camera.capture.queue(frame.index)?;
+                    continue;
+                }
                 statistics[side as usize] += 1;
                 let converting = std::time::Instant::now();
                 let grey = bayer::grey_half(
                     camera.capture.pixels(&frame),
                     sensor_width as usize,
                     sensor_height as usize,
+                    camera.capture.row_stride,
                     &tone,
                     settings.rotation == 180,
                 );

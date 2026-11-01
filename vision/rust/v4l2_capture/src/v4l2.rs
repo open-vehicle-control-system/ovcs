@@ -26,6 +26,7 @@ const MEMORY_MMAP: u32 = 1;
 /// Cached buffers, synced for the CPU at each dequeue: the default mapping is
 /// uncached, which makes reading a frame several times slower.
 const MEMORY_FLAG_NON_COHERENT: u8 = 1;
+const BUF_FLAG_ERROR: u32 = 0x0000_0040;
 const PIX_FMT_SRGGB10: u32 = u32::from_le_bytes(*b"RG10");
 
 pub const CID_EXPOSURE: u32 = 0x0098_0911;
@@ -256,14 +257,25 @@ impl Drop for Node {
 /// A capture node streaming raw 10-bit RGGB into mmapped buffers.
 pub struct Capture {
     pub node: Node,
+    /// Bytes from one row's start to the next, padding included.
+    pub row_stride: usize,
+    height: usize,
     buffers: Vec<(*mut libc::c_void, usize)>,
 }
 
-/// A dequeued frame: its buffer index and the frame start in CLOCK_MONOTONIC ns.
+/// A dequeued frame: its buffer index, the frame start in CLOCK_MONOTONIC ns,
+/// the bytes the driver filled and its flags.
 pub struct Dequeued {
     pub index: u32,
     pub start_ns: i64,
     pub bytes: usize,
+    flags: u32,
+}
+
+/// Whether a frame holds a whole image: not flagged as damaged by the
+/// driver, and `bytes` long enough for `height` rows of `row_stride`.
+fn complete(flags: u32, bytes: usize, row_stride: usize, height: usize) -> bool {
+    flags & BUF_FLAG_ERROR == 0 && bytes >= row_stride * height
 }
 
 impl Capture {
@@ -286,6 +298,15 @@ impl Capture {
                 ),
             ));
         }
+        if format.pix.bytesperline < width * 2 {
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                format!(
+                    "{} bytes per row for {width} 16-bit samples",
+                    format.pix.bytesperline
+                ),
+            ));
+        }
 
         let mut request = RequestBuffers {
             count,
@@ -299,6 +320,8 @@ impl Capture {
 
         let mut capture = Capture {
             node,
+            row_stride: format.pix.bytesperline as usize,
+            height: height as usize,
             buffers: Vec::new(),
         };
         for index in 0..request.count {
@@ -346,10 +369,16 @@ impl Capture {
                 index: buffer.index,
                 start_ns: buffer.tv_sec * 1_000_000_000 + buffer.tv_usec * 1_000,
                 bytes: buffer.bytesused as usize,
+                flags: buffer.flags,
             })),
             Err(error) if error.raw_os_error() == Some(libc::EAGAIN) => Ok(None),
             Err(error) => Err(error),
         }
+    }
+
+    /// Whether `frame` holds a whole, undamaged image.
+    pub fn complete(&self, frame: &Dequeued) -> bool {
+        complete(frame.flags, frame.bytes, self.row_stride, self.height)
     }
 
     pub fn pixels(&self, frame: &Dequeued) -> &[u8] {
@@ -373,6 +402,19 @@ impl Drop for Capture {
 mod tests {
     use super::*;
     use std::time::Duration;
+
+    #[test]
+    fn a_frame_is_complete_with_every_row_and_no_error_flag() {
+        assert!(complete(0, 3_072 * 1_080, 3_072, 1_080));
+        assert!(complete(0x01, 3_072 * 1_080 + 64, 3_072, 1_080));
+    }
+
+    #[test]
+    fn a_frame_flagged_as_damaged_or_short_is_not_complete() {
+        assert!(!complete(BUF_FLAG_ERROR, 3_072 * 1_080, 3_072, 1_080));
+        assert!(!complete(0, 3_072 * 1_079, 3_072, 1_080));
+        assert!(!complete(0, 0, 3_072, 1_080));
+    }
 
     #[test]
     fn retry_waits_for_a_busy_device_to_be_released() {
