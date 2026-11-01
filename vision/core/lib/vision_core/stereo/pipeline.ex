@@ -637,7 +637,7 @@ defmodule VisionCore.Stereo.Pipeline do
     frame_width = Keyword.get(opts, :frame_width, width)
     frame_height = Keyword.get(opts, :frame_height, height)
 
-    # Scaled to the capture resolution, or rectification would upsample every frame.
+    # Scaled to the working size, which rectification writes its images at.
     [left, right] =
       for key <- [:left_calibration_path, :right_calibration_path] do
         opts

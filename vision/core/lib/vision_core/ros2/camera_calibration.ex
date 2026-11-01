@@ -32,9 +32,9 @@ defmodule VisionCore.Ros2.CameraCalibration do
   ## Numbers
 
   Every numeric spelling the calibration tools emit is accepted, which
-  `String.to_float/1` is too strict for. `load!/1` runs inside
-  `VisionCore.Stereo.Pipeline.init/1`, so an `ArgumentError` there
-  takes the whole vision core down at boot with nothing logged:
+  `String.to_float/1` is too strict for; `load!/1` runs inside
+  `VisionCore.Stereo.Pipeline.init/1`, and a calibration it cannot read
+  leaves the stereo unit down:
 
     * `"0."` / `"1."` — cameracalibrator writes whole numbers with a
       bare trailing dot, which `Float.parse/1` leaves as a `"."`
@@ -77,7 +77,7 @@ defmodule VisionCore.Ros2.CameraCalibration do
              ])
 
   @doc """
-  Load a calibration YAML. Returns `{:ok, %Calibration{}}` or
+  Load a calibration YAML. Returns `{:ok, %CameraCalibration{}}` or
   `{:error, reason}` if the file is unreadable. Missing fields
   inside the YAML are populated with sensible defaults
   (zero-matrices, `"plumb_bob"`, etc.).

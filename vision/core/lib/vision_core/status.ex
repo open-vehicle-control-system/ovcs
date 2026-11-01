@@ -13,7 +13,7 @@ defmodule VisionCore.Status do
   pixels, the disparity's mean and spread, and its jitter), each averaged
   over the tick's pairs; `nil` without any.
 
-  Started last in `VisionCore.Supervisor`. Without a `:stereo`
+  Started after the components in `VisionCore.Supervisor`. Without a `:stereo`
   component the cameras and sync are reported absent and the depth rate
   is zero.
 

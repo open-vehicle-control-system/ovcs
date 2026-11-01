@@ -1,11 +1,5 @@
-# :elixir_make entry on a vision target: cross-builds the Port binaries
-# (vision/rust) into priv/. On :rpi5, camera_capture links libcamera from
-# its sysroot, hailo_detect links libhailort from the :hailort dependency,
-# and everything is tuned for the Cortex-A76; on :okdo_c100, v4l2_capture
-# needs only libc; jpeg_codec, on both, and stereo_match, on :rpi5, are
-# pure Rust. The toolchain and sysroot come from the env
-# Nerves exports for a target compile (CC, CXX, AR, CFLAGS, CXXFLAGS,
-# NERVES_SDK_SYSROOT, NERVES_TOOLCHAIN, PKG_CONFIG_LIBDIR, TARGET_*).
+# Builds the Port binaries (vision/rust) into priv/; vision_core's README lists them per target.
+# A target's toolchain and sysroot come from the env Nerves exports for its compile.
 
 PRIV_DIR := $(MIX_APP_PATH)/priv
 RUST_DIR := $(CURDIR)/../rust

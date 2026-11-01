@@ -23,8 +23,8 @@ defmodule VisionCore.Camera.GStreamer do
 
   ## Framing
 
-  Same `VisionCore.Camera.MjpegStream` splitter as the ffmpeg
-  driver — see that module's doc for details.
+  The stream is split into JPEG frames by `VisionCore.Camera.MjpegStream`;
+  see that module's doc for details.
   """
   @behaviour VisionCore.Camera
 

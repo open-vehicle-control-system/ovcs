@@ -36,8 +36,8 @@ defmodule VisionCore.Detection.Backend do
 
   ## Unavailable is a normal state, not an error
 
-  A backend that cannot work — no accelerator, no model file, no
-  OpenCL device — must start anyway, log once, and answer
+  A backend that cannot work — no accelerator, no model file — must
+  start anyway, log once, and answer
   `{:error, :unavailable}` for every frame. Raising in `init/1` would
   take down the supervision tree, and a perception node that loses
   *stereo depth* because a detector could not find its model file is a

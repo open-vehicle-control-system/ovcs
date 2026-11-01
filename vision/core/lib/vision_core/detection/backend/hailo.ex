@@ -300,7 +300,7 @@ defmodule VisionCore.Detection.Backend.Hailo do
 
   defp take_detections(_malformed, _count, detections), do: Enum.reverse(detections)
 
-  # Single-channel Mats report a 2-tuple shape.
+  # A grey image is a 2-tuple shape.
   defp image_shape(image) do
     case Nx.shape(image) do
       {height, width} -> {height, width, 1}

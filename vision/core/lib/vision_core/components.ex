@@ -33,9 +33,8 @@ defmodule VisionCore.Components do
     * `:detector` — `VisionCore.Detection.Supervisor`: the `:backend`
       given in the opts (`VisionCore.Detection.Backend.Hailo` or
       `.Stub`), the `VisionCore.Detection.Pipeline` placing its boxes
-      in 3D, and their ROS publisher. List it after `:stereo`: the
-      detection pipeline registers on the stereo pipeline while
-      starting.
+      in 3D, and their ROS publisher. The detection pipeline registers
+      on the stereo pipeline whenever that one starts, in either order.
     * `:hailo_detector` — `:detector` with the Hailo backend.
   """
 

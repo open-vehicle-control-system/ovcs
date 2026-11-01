@@ -17,7 +17,7 @@ defmodule VisionCore.MixProject do
     ]
   end
 
-  # The Port binaries are cross-built for the vision targets only.
+  # The Port binaries: built for the host's tests, cross-built for the vision targets.
   defp compilers do
     base = Mix.compilers()
     if Mix.target() in [:host, :rpi5, :okdo_c100], do: [:elixir_make] ++ base, else: base

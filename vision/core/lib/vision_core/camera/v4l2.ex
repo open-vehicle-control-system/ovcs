@@ -50,8 +50,8 @@ defmodule VisionCore.Camera.V4L2 do
   both sensors, are given in the left camera's opts, and can change
   while running through `set_controls/2` on either camera, so they are
   also the stereo unit's `<prefix>.cameras` parameters. `control_specs/0`
-  lists them with their defaults; the lens, which no autofocus drives
-  here, stays at its rest position.
+  lists them with their defaults. No autofocus runs: the program holds
+  both lenses at the `focus` setting.
 
   ## Opts
 

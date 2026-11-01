@@ -124,9 +124,9 @@ defmodule VisionCore.Ros2.ZenohClient do
   and its rmw_zenoh liveliness token; subsequent calls reuse them.
 
   Fire-and-forget — calls before the session is connected are dropped
-  silently and tallied (the heartbeat re-fires on its own timer, IMU
-  streams self-recover on the next sample); the drop count is logged
-  once when the session opens. Returns `:ok` immediately.
+  silently and tallied (the heartbeat re-fires on its own timer, a stream
+  sends its next message soon after); the drop count is logged once when
+  the session opens. Returns `:ok` immediately.
 
   Each call is counted in `VisionCore.Ros2.Topics`, dropped or not.
   """

@@ -621,9 +621,8 @@ defmodule VisionCore.Camera.LibCamera do
        label: nil,
        width: width,
        height: height,
-       # libcamera's SensorTimestamp (and the helper's steady_clock
-       # fallback) are kernel CLOCK_MONOTONIC; Frame.capture_ns is
-       # always Erlang monotonic time.
+       # libcamera's SensorTimestamp, and the capture program's fallback, are kernel
+       # CLOCK_MONOTONIC; Frame.capture_ns is always Erlang monotonic time.
        capture_ns: VisionCore.Timing.monotonic_from_kernel(capture_ns),
        jpeg: jpeg
      }}

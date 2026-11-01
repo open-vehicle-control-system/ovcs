@@ -24,10 +24,14 @@ defmodule VisionCore.Stereo.Supervisor do
          - `<topic_prefix>/{left,right}/image_rect/compressed` (JPEG)
            only when `:publish_rectified_image` is set — see below.
 
-    5. `VisionCore.Stereo.Parameters`, which declares the unit's
+    5. With `:align_correction`, `VisionCore.Stereo.AlignmentCorrection`,
+       before the parameters that declare its switch.
+    6. `VisionCore.Stereo.Parameters`, which declares the unit's
        parameter groups in `VisionCore.Parameters`.
-    6. `VisionCore.Ros2.Stereo.Diagnostics`, what the cameras actually
+    7. `VisionCore.Ros2.Stereo.Diagnostics`, what the cameras actually
        apply and their sync, on `/diagnostics` and `<topic_prefix>/live/*`.
+    8. A `VisionCore.Ros2.Services.SetCameraInfoServer` per side with a
+       calibration path, for `cameracalibrator`'s commit.
 
   Children start in that order so each downstream child can register
   on its upstream during `init/1`. The strategy is `:rest_for_one`
@@ -62,7 +66,7 @@ defmodule VisionCore.Stereo.Supervisor do
     * `:match_width`, `:match_height` (`:width`, `:height`) — the size
       the pipeline matches at, and so the size of the disparity, depth
       and point cloud. Smaller than the capture size, the frames are
-      scaled down to it before rectification.
+      shrunk to it while they are rectified.
     * `:publish_disparity_image` (`false`) — also publish the
       disparity pixels as a bare `sensor_msgs/Image`, because viewers
       match on a topic's type and cannot render the `DisparityImage`
