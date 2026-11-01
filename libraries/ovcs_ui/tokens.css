@@ -10,7 +10,9 @@
   --ovcs-warn: #d97706;
   --ovcs-error: #dc2626;
   --ovcs-font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --ovcs-font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  /* Linux fonts by name: some browsers resolve the generic `monospace` to a serif fallback. */
+  --ovcs-font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "DejaVu Sans Mono", "Liberation Mono",
+    "Ubuntu Mono", "Noto Sans Mono", monospace;
 }
 
 @media (prefers-color-scheme: dark) {
