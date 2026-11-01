@@ -208,11 +208,12 @@ pub struct DevAddon {
 }
 
 /// Ask a firmware project (by its directory) for the dev add-ons it
-/// declares. The firmware's top-level module is named after its OTP app
+/// declares, with the role's `env`: the firmware's runtime config needs
+/// its vehicle. The firmware's top-level module is named after its OTP app
 /// (`Macro.camelize(app)`), so the same snippet works for every firmware
 /// without the CLI hardcoding module names. Firmwares with no
 /// `dev_addons/0` simply yield none.
-pub fn dev_addons(firmware_dir: &Path) -> Result<Vec<DevAddon>> {
+pub fn dev_addons(firmware_dir: &Path, env: &[(String, String)]) -> Result<Vec<DevAddon>> {
     let snippet = r##"
 app = Mix.Project.config()[:app]
 firmware = Module.concat([Macro.camelize(to_string(app))])
@@ -236,7 +237,7 @@ if function_exported?(firmware, :dev_addons, 0) do
   |> IO.puts()
 end
 "##;
-    let Some(output) = run_snippet(firmware_dir, snippet)? else {
+    let Some(output) = run_snippet_with_env(firmware_dir, snippet, env)? else {
         return Ok(Vec::new());
     };
     let split_words =
@@ -291,8 +292,15 @@ fn probe_payload(stdout: &str) -> Option<String> {
 }
 
 pub(crate) fn run_snippet(path: &Path, snippet: &str) -> Result<Option<String>> {
-    let env: HashMap<String, String> =
-        std::iter::once(("MIX_ENV".to_string(), "dev".to_string())).collect();
+    run_snippet_with_env(path, snippet, &[])
+}
+
+fn run_snippet_with_env(
+    path: &Path,
+    snippet: &str,
+    extra_env: &[(String, String)],
+) -> Result<Option<String>> {
+    let env = probe_env(extra_env);
     let marked = format!("IO.write(\"{PROBE_MARKER}\")\n{snippet}");
     let (code, stdout, _stderr) = run_capture(
         &["mix", "run", "--no-start", "--no-deps-check", "-e", &marked],
@@ -303,22 +311,31 @@ pub(crate) fn run_snippet(path: &Path, snippet: &str) -> Result<Option<String>> 
         return Ok(probe_payload(&stdout));
     }
     // The retry runs right after `deps.get` + `compile`, so it needs the marker most.
-    retry_with_deps(path, &marked)
+    retry_with_deps(path, &marked, &env)
 }
 
-fn retry_with_deps(path: &Path, marked: &str) -> Result<Option<String>> {
+/// A probe's environment: the dev Mix environment, plus `extra_env`.
+fn probe_env(extra_env: &[(String, String)]) -> HashMap<String, String> {
+    let mut env: HashMap<String, String> = extra_env.iter().cloned().collect();
+    env.insert("MIX_ENV".to_string(), "dev".to_string());
+    env
+}
+
+fn retry_with_deps(
+    path: &Path,
+    marked: &str,
+    env: &HashMap<String, String>,
+) -> Result<Option<String>> {
     let relative_path = path.strip_prefix(std::env::current_dir()?).unwrap_or(path);
     println!(
         "{}",
         format!("Preparing vehicle {} (first run)…", relative_path.display()).dimmed()
     );
-    let env: HashMap<String, String> =
-        std::iter::once(("MIX_ENV".to_string(), "dev".to_string())).collect();
     for args in [["deps.get"], ["compile"]] {
         let status = Command::new("mix")
             .args(args)
             .current_dir(path)
-            .envs(&env)
+            .envs(env)
             .stdin(Stdio::inherit())
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit())
@@ -331,7 +348,7 @@ fn retry_with_deps(path: &Path, marked: &str) -> Result<Option<String>> {
     let (code, stdout, stderr) = run_capture(
         &["mix", "run", "--no-start", "--no-deps-check", "-e", marked],
         path,
-        &env,
+        env,
     )?;
     if code == 0 {
         return Ok(probe_payload(&stdout));
@@ -367,9 +384,20 @@ fn probe_failure(dir: &str, stdout: &str, stderr: &str) -> anyhow::Error {
 #[cfg(test)]
 mod tests {
     use super::{
-        host_for, local_sname, local_sname_prefix, module_for, probe_failure, probe_payload,
-        target_callback, target_snippet, PROBE_MARKER,
+        host_for, local_sname, local_sname_prefix, module_for, probe_env, probe_failure,
+        probe_payload, target_callback, target_snippet, PROBE_MARKER,
     };
+
+    #[test]
+    fn a_probe_runs_in_dev_with_the_role_environment() {
+        let env = probe_env(&[
+            ("VEHICLE".to_string(), "Roadster".to_string()),
+            ("MIX_ENV".to_string(), "prod".to_string()),
+        ]);
+        assert_eq!(env["VEHICLE"], "Roadster");
+        assert_eq!(env["MIX_ENV"], "dev");
+        assert_eq!(probe_env(&[]).len(), 1);
+    }
 
     #[test]
     fn module_names_camelize_the_vehicle_directory() {

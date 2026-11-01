@@ -269,7 +269,7 @@ fn discover_addons(roles: &[Role]) -> Result<Vec<Addon>> {
             .and_then(|s| s.to_str())
             .unwrap_or("addon")
             .to_string();
-        for addon in vehicles::dev_addons(&role.cwd)? {
+        for addon in vehicles::dev_addons(&role.cwd, &role.env)? {
             let dir = role.cwd.join(&addon.dir);
             let dir = dir.canonicalize().unwrap_or(dir);
             addons.push(Addon {
