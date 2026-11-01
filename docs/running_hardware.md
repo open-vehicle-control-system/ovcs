@@ -20,7 +20,7 @@ The firmware projects, the Nerves systems and the `ovcs` CLI are the framework. 
 | `vision` | OKdo Nano C100 | [`nerves_system_okdo_c100`](https://github.com/Spin42/nerves_system_okdo_c100) (Mix target `okdo_c100`) |
 | Generic controller | Arduino R4 Minima | none (PlatformIO) |
 
-These are the reference vehicles' choices, except `vision`: none of them runs it, and its two rows are the boards `vision/firmware` builds for. The target of each role is a per-vehicle decision, read from your top-level module: `vms_target/0`, `infotainment_target/0`, and the `:target` key of each `bridge_firmwares/0` entry. The `:target` value is the Mix target, which usually but not always equals the system's name. To deploy on other hardware, change those values in `vehicles/<vehicle>/lib/<vehicle>.ex` and add the matching system dependency to the firmware project's `mix.exs` (see the [Nerves custom-systems guide](https://hexdocs.pm/nerves/customizing-systems.html)).
+These are the reference vehicles' choices, except `vision`: none of them runs it, and its two rows are the boards `vision/firmware` builds for. The target of each role is a per-vehicle decision, read from your top-level module: `vms_target/0`, `infotainment_target/0`, `vision_target/0`, and the `:target` key of each `bridge_firmwares/0` entry. The `:target` value is the Mix target, which usually but not always equals the system's name. To deploy on other hardware, change those values in `vehicles/<vehicle>/lib/<vehicle>.ex` and add the matching system dependency to the firmware project's `mix.exs` (see the [Nerves custom-systems guide](https://hexdocs.pm/nerves/customizing-systems.html)).
 
 The OVCS systems add the CAN kernel modules and device-tree overlays the SPI-CAN hardware needs. The host OTP pinned in `mise.toml` must match the OTP they ship: [Toolchain and OTP](./toolchain_and_otp.md) explains why.
 
@@ -67,7 +67,7 @@ A fresh SD-card burn regenerates the device's SSH host key, so every reflash tri
 ./ovcs host-keys generate ovcs1
 ```
 
-This creates an RSA and an ed25519 key pair per role under `vehicles/<vehicle>/priv/host_keys/`: `vms/`, `infotainment/`, and `bridges/<id>/` for each bridge. The files are gitignored. The firmware ships them in the vehicle's `priv` and points `:nerves_ssh, :system_dir` at them at boot. Re-run with `--force` to rotate; `./ovcs doctor` warns about any vehicle missing keys.
+This creates an RSA and an ed25519 key pair per role under `vehicles/<vehicle>/priv/host_keys/`: `vms/`, `infotainment/`, `vision/`, and `bridges/<id>/` for each bridge. The files are gitignored. The firmware ships them in the vehicle's `priv` and points `:nerves_ssh, :system_dir` at them at boot. Re-run with `--force` to rotate; `./ovcs doctor` warns about any vehicle missing keys.
 
 To share one identity across a team:
 

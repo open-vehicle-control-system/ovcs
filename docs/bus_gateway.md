@@ -67,7 +67,7 @@ defp mqtt_broker(:target), do: "10.42.0.1"
 | `:mqtt` | `nil` | MQTT adapter, `[host: ..., port: ...]`; `nil` leaves it off |
 | `:forward_interval` | `20` | milliseconds between batches from each node |
 
-Rebuild and upload every firmware of your vehicle (VMS, infotainment and every bridge), not only the bridge that hosts the gateway. A node whose firmware predates `OvcsBus.Forwarder` has no forwarder module, so its signals never appear; the collector keeps retrying such a mesh peer every second and logs it at info level. A node whose forwarder predates `published_at` still delivers its signals, with `published_at` and `stale` set to `null`: that forwarder does not refresh, so the gateway cannot tell whether its signals are stale.
+Rebuild and upload every firmware of your vehicle (VMS, infotainment, vision unit and every bridge), not only the bridge that hosts the gateway. A node whose firmware predates `OvcsBus.Forwarder` has no forwarder module, so its signals never appear; the collector keeps retrying such a mesh peer every second and logs it at info level. A node whose forwarder predates `published_at` still delivers its signals, with `published_at` and `stale` set to `null`: that forwarder does not refresh, so the gateway cannot tell whether its signals are stale.
 
 Your vehicle package chooses the broker address. The Mini publishes to a broker on the host under `./ovcs run`, and on the vehicle to its compute node at `10.42.0.1`, the node's fixed address on the vehicle network. Changing it on the vehicle means rebuilding the bridge firmware that hosts the gateway.
 
@@ -92,7 +92,7 @@ Every signal leaves the gateway as one JSON object, built by `OvcsBusGateway.Env
 
 | Field | Meaning |
 |---|---|
-| `node` | role of the node that published the signal: `vms`, `infotainment`, `bridge-<id>` |
+| `node` | role of the node that published the signal: `vms`, `infotainment`, `vision`, `bridge-<id>` |
 | `source` | the publishing module, as `inspect/1` prints it |
 | `name` | the signal name |
 | `value` | the value, encoded as below |

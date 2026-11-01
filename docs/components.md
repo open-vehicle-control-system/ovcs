@@ -229,7 +229,7 @@ A vehicle is a standalone Mix package under `vehicles/<name>/` whose top-level m
 | `vehicles/obd2/` | `Obd2` | Diagnostics only: VMS and infotainment, no bridges, no drivetrain |
 | `vehicles/<yours>/` | `<Yours>` | Scaffolded by `./ovcs new`; keep the components you need, drop the rest |
 
-Each firmware's `runtime.exs` writes the side composer (`Ovcs1.Vms.Composer`, for example) into `:vms_core, :vehicle` or `:infotainment_core, :vehicle`. The wiring and the scaffold are in [Your vehicle package](./vehicle_package.md).
+Each firmware's `runtime.exs` writes the side composer (`Ovcs1.Vms.Composer`, for example) into `:vms_core, :vehicle`, `:infotainment_core, :vehicle` or `:vision_core, :vehicle`. The wiring and the scaffold are in [Your vehicle package](./vehicle_package.md).
 
 ## Environment variables
 
@@ -253,11 +253,11 @@ This provisions the vehicle's vcan interfaces (`./ovcs can setup <vehicle>` does
 
 - the VMS API on `http://localhost:4000`, in the `<vehicle>-vms` BEAM;
 - the infotainment API on `http://localhost:4001`, in `<vehicle>-infotainment`, for vehicles that implement `infotainment/0`;
-- the vision unit's API and dashboard on `http://localhost:4100`, in `<vehicle>-vision`, for vehicles that implement `vision/0`;
+- the vision API on `http://localhost:4100`, in `<vehicle>-vision`, for vehicles that implement `vision/0`;
 - one BEAM per bridge firmware, named `<vehicle>-bridge-<id>` (every node name turns underscores into dashes, in `<vehicle>` and `<id>` alike);
 - an Erlang-distribution cluster stitched together by `OvcsBus.Cluster`: each BEAM `Node.connect/1`s the others, as [The OVCS bus](./bus.md#the-mesh) describes. Deployed firmware uses the same transport.
 
-The web dashboards start alongside as dev add-ons (`--no-addons` skips them). The Flutter dashboard needs its own terminal, because its hot reload is keyboard-driven:
+The web dashboards start alongside as dev add-ons, Vite dev servers with hot reload: the VMS dashboard on `http://localhost:5173`, the vision dashboard on `http://localhost:5174` (`--no-addons` skips them). The Flutter dashboard needs its own terminal, because its hot reload is keyboard-driven:
 
 ```sh
 mise run infotainment-dashboard   # cd infotainment/dashboard && flutter run -d linux

@@ -3,7 +3,7 @@ title: The OVCS bus
 description: The in-process message bus every OVCS firmware runs, the messages on it, how components publish and subscribe, and how its signals reach other boards and the outside world.
 ---
 
-Components do not call each other. They publish what they know on a bus and subscribe to what they need. Each firmware of a vehicle (VMS, infotainment, every bridge) runs its own bus, `OvcsBus`, a thin wrapper around `Phoenix.PubSub`. It starts with the `ovcs_bus` application, so a firmware that depends on the library has it without any supervision wiring. Not to be confused with the `ovcs` CAN bus, the internal network described in [Architecture](./architecture.md#bus-isolation).
+Components do not call each other. They publish what they know on a bus and subscribe to what they need. Each firmware of a vehicle (VMS, infotainment, vision unit, every bridge) runs its own bus, `OvcsBus`, a thin wrapper around `Phoenix.PubSub`. It starts with the `ovcs_bus` application, so a firmware that depends on the library has it without any supervision wiring. Not to be confused with the `ovcs` CAN bus, the internal network described in [Architecture](./architecture.md#bus-isolation).
 
 ## Messages
 
@@ -58,7 +58,7 @@ A message is delivered to subscribers on its own node only. A send across the Er
 
 ## The mesh
 
-`OvcsBus.Cluster` joins every BEAM of the vehicle into one Erlang-distribution cluster: at boot, and on a 2-second tick afterwards, it calls `Node.connect/1` on every peer the vehicle declares, so a board that starts later is pulled in. The peers are the VMS, the infotainment side if your vehicle has one, and one per entry of `bridge_firmwares/0`. The mesh is what the bus gateway's forwarders and remote shells run over.
+`OvcsBus.Cluster` joins every BEAM of the vehicle into one Erlang-distribution cluster: at boot, and on a 2-second tick afterwards, it calls `Node.connect/1` on every peer the vehicle declares, so a board that starts later is pulled in. The peers are the VMS, the infotainment side and the vision unit if your vehicle has them, and one per entry of `bridge_firmwares/0`. The mesh is what the bus gateway's forwarders and remote shells run over.
 
 Node names follow the vehicle and the role, with underscores written as dashes:
 
@@ -67,7 +67,7 @@ Node names follow the vehicle and the role, with underscores written as dashes:
 | Host, `./ovcs run` | `<vehicle>-<role>@<host>` | `ovcs-mini-vms@<host>` |
 | Deployed Nerves | `nerves@<vehicle>-<role>.local` | `nerves@ovcs-mini-bridge-ros.local` |
 
-A role is `vms`, `infotainment` or `bridge-<id>`. On the host the CLI starts each BEAM with a name and your `~/.erlang.cookie`. A Nerves release boots unnamed, so `OvcsBus.Distribution` starts distribution on the first cluster tick that can, once the firmware's target config sets `config :ovcs_bus, :distribution, domain: "local"`; it needs no IP address. [Architecture](./architecture.md#one-erlang-mesh-no-broker) covers cookies and `.local` name resolution; the module docs of [`OvcsBus.Cluster`](../libraries/ovcs_bus/lib/ovcs_bus/cluster.ex) and [`OvcsBus.Distribution`](../libraries/ovcs_bus/lib/ovcs_bus/distribution.ex) cover the rest.
+A role is `vms`, `infotainment`, `vision` or `bridge-<id>`. On the host the CLI starts each BEAM with a name and your `~/.erlang.cookie`. A Nerves release boots unnamed, so `OvcsBus.Distribution` starts distribution on the first cluster tick that can, once the firmware's target config sets `config :ovcs_bus, :distribution, domain: "local"`; it needs no IP address. [Architecture](./architecture.md#one-erlang-mesh-no-broker) covers cookies and `.local` name resolution; the module docs of [`OvcsBus.Cluster`](../libraries/ovcs_bus/lib/ovcs_bus/cluster.ex) and [`OvcsBus.Distribution`](../libraries/ovcs_bus/lib/ovcs_bus/distribution.ex) cover the rest.
 
 A peer that is down stays out of the mesh and nothing waits for it. Anyone who reaches the Erlang port mapper with the cookie can join the mesh, so run it on the vehicle's own network.
 
