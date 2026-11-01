@@ -6,6 +6,7 @@
 mod arguments;
 mod bayer;
 mod exposure;
+mod input;
 mod lock;
 mod pairing;
 mod sensor;
@@ -13,6 +14,7 @@ mod settings;
 mod v4l2;
 
 use std::io;
+use std::os::fd::{AsFd, AsRawFd};
 use std::process::ExitCode;
 
 use bayer::Tone;
@@ -180,10 +182,11 @@ fn run(
     let mut statistics = [0u64; 3];
     let mut conversion_ns = 0u128;
     let mut statistics_since = std::time::Instant::now();
+    let mut input = input::unbuffered(io::stdin().as_fd())?;
     let mut poll_descriptors = [
         pollfd(left.capture.node.fd),
         pollfd(right.capture.node.fd),
-        pollfd(libc::STDIN_FILENO),
+        pollfd(input.as_raw_fd()),
     ];
     loop {
         // SAFETY: `poll_descriptors` is a valid array of three pollfds.
@@ -195,7 +198,7 @@ fn run(
             return Err(error);
         }
         if poll_descriptors[2].revents != 0 {
-            match framing::read_record(&mut io::stdin().lock())? {
+            match framing::read_record(&mut input)? {
                 None => return Ok(()),
                 Some(record) => match settings.apply(&record) {
                     Ok(()) => {
