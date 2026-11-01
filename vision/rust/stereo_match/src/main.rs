@@ -153,7 +153,10 @@ fn compute(
                     segments.insert(segment, configured);
                     Reply::Configured
                 }
-                Err(reason) => Reply::Refused(reason),
+                Err(reason) => {
+                    segments.remove(&segment);
+                    Reply::Refused(reason)
+                }
             },
             Ok(Request::Run {
                 segment,
@@ -181,6 +184,46 @@ fn compute(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use stereo_match::segment::{Geometry, Options};
+    use stereo_match::tensor::Tensors;
+
+    #[test]
+    fn a_refused_reconfigure_leaves_the_segment_unconfigured() {
+        let geometry = Geometry {
+            width: 32,
+            height: 24,
+            frame_width: 32,
+            frame_height: 24,
+        };
+        let configure = |kind: &str| {
+            Ok(Request::Configure {
+                segment: 1,
+                geometry,
+                members: vec![(kind.to_string(), Options::new())],
+            })
+        };
+        let (requests, parsed) = mpsc::sync_channel(3);
+        let (replies, computed) = mpsc::sync_channel(3);
+        requests.send(configure("depth")).unwrap();
+        requests.send(configure("decode")).unwrap();
+        requests
+            .send(Ok(Request::Run {
+                segment: 1,
+                inputs: Vec::new(),
+                entries: Tensors::new(),
+            }))
+            .unwrap();
+        drop(requests);
+
+        compute(1, parsed, replies);
+
+        let replies: Vec<Reply> = computed.into_iter().collect();
+        assert!(matches!(replies[0], Reply::Configured));
+        assert!(matches!(replies[1], Reply::Refused(_)));
+        assert!(
+            matches!(&replies[2], Reply::Refused(reason) if reason == "segment 1 is not configured")
+        );
+    }
 
     #[test]
     fn takes_a_thread_count() {
