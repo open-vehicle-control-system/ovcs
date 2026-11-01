@@ -17,8 +17,7 @@ pub struct Settings {
     /// The raw sample value of black, and the gamma the grey image is encoded with.
     pub black_level: u16,
     pub gamma: f64,
-    /// Both lens actuators' position, 0 to 1023 (512 unpowered); 428 is about
-    /// 1.5 to 2 m on the Camera Module 3 Wide.
+    /// Both lens actuators' position, 0 to 1023 (512 unpowered).
     pub focus: u16,
 }
 
@@ -116,7 +115,7 @@ mod tests {
     }
 
     #[test]
-    fn focuses_both_lenses_at_about_one_and_a_half_to_two_metres_by_default() {
+    fn holds_both_lenses_at_428_by_default() {
         let mut settings = Settings::default();
         assert_eq!(settings.focus, 428);
         settings.apply(b"focus=512").unwrap();

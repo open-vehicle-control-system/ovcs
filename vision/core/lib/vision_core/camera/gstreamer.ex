@@ -56,9 +56,8 @@ defmodule VisionCore.Camera.GStreamer do
 
     pipeline_arguments = pipeline_arguments(device, width, height, fps)
 
-    # Do NOT merge stderr into stdout — gst-launch error prints
-    # would corrupt the JPEG byte stream. Stderr is left inherited
-    # from the BEAM so errors still surface in the parent's tty.
+    # Stderr stays apart from stdout, where gst-launch's error lines would
+    # corrupt the JPEG stream; inherited from the BEAM, it reaches its tty.
     port =
       Port.open({:spawn_executable, gst_launch}, [
         :binary,

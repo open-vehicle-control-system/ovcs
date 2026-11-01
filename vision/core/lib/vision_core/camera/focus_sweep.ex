@@ -10,7 +10,7 @@ defmodule VisionCore.Camera.FocusSweep do
       VisionCore.Camera.FocusSweep.run(from: 380, to: 480, step: 10)
 
   Each step waits a status tick for the lenses and the averages to
-  settle, then reads the next, about two seconds a step by default.
+  settle, then reads the next.
   """
 
   alias VisionCore.Camera.V4L2

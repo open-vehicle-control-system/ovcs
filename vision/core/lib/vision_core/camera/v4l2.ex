@@ -168,8 +168,7 @@ defmodule VisionCore.Camera.V4L2 do
       type: :integer,
       range: {0, 1023},
       default: 428,
-      description:
-        "Both lens actuators' position, 512 unpowered; 428 focuses the Camera Module 3 Wide at about 1.5 to 2 m"
+      description: "Both lens actuators' position, 512 unpowered"
     }
   ]
 

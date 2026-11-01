@@ -4,8 +4,8 @@ defmodule VisionCore.Stereo.Stage.SpeckleFilter do
   around them, on the device. A matched pixel is kept when at least
   `:min_support` of the 48 others in its 7x7 neighbourhood matched within
   `:max_diff` pixels of it; the others become unmatched. Isolated blobs
-  smaller than about 4x4 lose their support, while surfaces keep theirs
-  up to their corners. It plays the part of OpenCV's `filterSpeckles`,
+  too small to give their pixels that support are dropped, while
+  surfaces keep theirs up to their corners. It plays the part of OpenCV's `filterSpeckles`,
   which labels connected regions instead, a poor fit for a GPU.
 
   ## Options

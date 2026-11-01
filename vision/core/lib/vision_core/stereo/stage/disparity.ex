@@ -17,9 +17,8 @@ defmodule VisionCore.Stereo.Stage.Disparity do
       of more, between neighbours: integers up to 79, `:p2` above `:p1`.
     * `:uniqueness` (1.0526) — a match is kept when the second-best cost
       is at least this factor above the best.
-    * `:paths` (8) — aggregation paths, 8 or 3: 3 takes about a quarter of
-      the GPU time and leaves more pixels unmatched on dark or textureless
-      surfaces.
+    * `:paths` (8) — aggregation paths, 8 or 3: 3 takes much less time
+      and leaves more pixels unmatched on dark or textureless surfaces.
     * `:matcher` — `:native` matches natively, `:nx` compiles
       `NxStereo.sgm/3`, whatever the pipeline's `:compute`; by default,
       as the pipeline's `:compute` says.

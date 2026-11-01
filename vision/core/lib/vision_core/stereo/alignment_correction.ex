@@ -3,13 +3,13 @@ defmodule VisionCore.Stereo.AlignmentCorrection do
   Keeps the rectified images on the same rows when the cameras shift a
   little after their calibration: reads the row offset
   (`VisionCore.Stereo.Stage.RowAlignment`) from each `VisionCore.Status`
-  tick, and when the median of the last five stays beyond a tenth of a
-  row, moves the right image through the Rectification stage's
-  `right_row_offset`, up to six rows. On a real scene the measurement
-  reads about half of the true offset, so each correction moves one and
-  a half times the reading; it then waits for five fresh measurements
-  before it corrects again, so a moving scene or one odd measurement
-  does not steer it.
+  tick, and when the median of the last few stays beyond a threshold,
+  moves the right image through the Rectification stage's
+  `right_row_offset`, within a limit. On a real scene the measurement
+  reads short of the true offset, so each correction moves further than
+  the reading; it then waits for as many fresh measurements before it
+  corrects again, so a moving scene or one odd measurement does not
+  steer it.
 
   It can be switched off while running (`set_enabled/2`, the
   `<prefix>.rectification.auto_row_offset` parameter), so a `right_row_offset` set
