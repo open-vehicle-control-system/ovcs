@@ -22,24 +22,27 @@ Each box below is a process on the BEAM, or a Port: a separate program the BEAM 
              Preview ──► jpeg_codec Port ──► dashboard channels
 ```
 
-| Process | Started by | What it does |
+A Port's row below names the process that owns it.
+
+| Box | Process | Started by |
 |---|---|---|
-| Camera driver | `VisionCore.Stereo.Supervisor` | `VisionCore.Camera.LibCamera` on the Pi 5 starts one `camera_capture` Port per camera; `VisionCore.Camera.V4L2` on the C100 starts one `v4l2_capture` Port for both. Each frame arrives as a `VisionCore.Camera.Frame`, grey or JPEG, with its capture time. |
-| `VisionCore.Stereo.Pairer` | `VisionCore.Stereo.Supervisor` | Keeps the last few frames of each side and pairs the two whose capture times are closest, within `:pair_tolerance_ms`. |
-| `VisionCore.Stereo.Pipeline` | `VisionCore.Stereo.Supervisor` | Runs the pair through the stages and sends the finished `VisionCore.Stereo.Pair` to its listeners. |
-| `VisionCore.Ros2.Publishers.Stereo` | `VisionCore.Stereo.Supervisor` | Publishes the raw images, camera infos, disparity, depth and point cloud over Zenoh. |
-| `VisionCore.Stereo.Matcher` | the application | Owns the `stereo_match` Port that computes native stages. |
-| `VisionCore.Detection.Pipeline` | `VisionCore.Detection.Supervisor` | Sends the rectified left image to the detector and places each box with the depth. |
-| `VisionCore.Detection.Live` | `VisionCore.Detection.Supervisor` | Hands each detection result to the dashboard: every object's label, distance and outline on the left camera's image. |
-| `VisionCore.Status` | `VisionCore.Supervisor` | Counts the rates and load the dashboard's top bar and captions show. |
-| `VisionCore.Preview` | `VisionCore.Supervisor` | Encodes the left, right and depth previews for the dashboard. |
+| LibCamera / V4L2 driver | [`VisionCore.Camera.LibCamera`](../../vision/core/lib/vision_core/camera/lib_camera.ex) on the Pi 5, [`VisionCore.Camera.V4L2`](../../vision/core/lib/vision_core/camera/v4l2.ex) on the C100, one per side | `VisionCore.Stereo.Supervisor` |
+| Pairer | [`VisionCore.Stereo.Pairer`](../../vision/core/lib/vision_core/stereo/pairer.ex) | `VisionCore.Stereo.Supervisor` |
+| Pipeline | [`VisionCore.Stereo.Pipeline`](../../vision/core/lib/vision_core/stereo/pipeline.ex) | `VisionCore.Stereo.Supervisor` |
+| `stereo_match` Port | [`VisionCore.Stereo.Matcher`](../../vision/core/lib/vision_core/stereo/matcher.ex) | `VisionCore.Supervisor` |
+| ROS 2 publishers | [`VisionCore.Ros2.Publishers.Stereo`](../../vision/core/lib/vision_core/ros2/publishers/stereo.ex) | `VisionCore.Stereo.Supervisor` |
+| Detection pipeline | [`VisionCore.Detection.Pipeline`](../../vision/core/lib/vision_core/detection/pipeline.ex), with [`VisionCore.Detection.Live`](../../vision/core/lib/vision_core/detection/live.ex) passing its results to the dashboard | `VisionCore.Detection.Supervisor` |
+| `hailo_detect` Port | [`VisionCore.Detection.Backend.Hailo`](../../vision/core/lib/vision_core/detection/backend/hailo.ex) | `VisionCore.Detection.Supervisor` |
+| Status | [`VisionCore.Status`](../../vision/core/lib/vision_core/status.ex) | `VisionCore.Supervisor` |
+| Preview | [`VisionCore.Preview`](../../vision/core/lib/vision_core/preview.ex) | `VisionCore.Supervisor` |
+| `jpeg_codec` Port | [`VisionCore.Jpeg`](../../vision/core/lib/vision_core/jpeg.ex) | `VisionCore.Supervisor` |
 
 `VisionCore.Stereo.Supervisor` is one stereo unit. It starts its children in order and restarts everything after a child that fails (`:rest_for_one`): a restarted driver or pipeline has no listeners, so the processes after it start again and register on it. The unit has its own restart budget; a camera that keeps failing stops the unit and leaves the rest of the vision core running.
 
 ## One pair, step by step
 
 1. **Capture.** Each camera Port reads its sensor and writes frames on its stdout. On the Pi 5, libcamera's image signal processor debayers and scales the sensor's output to the configured size in hardware; with `format: :grey`, `camera_capture` sends the luma plane as it is, one byte per pixel. With `sync: :server` on the left camera and `sync: :client` on the right one, the right camera follows the left one's frame timing through libcamera's software sync, which the sensor's tuning file must support; on the C100, `v4l2_capture` locks the right sensor's frame starts to the left one's and sends the two frames as one pair.
-2. **Pairing.** The Pairer submits a pair only when the Pipeline says it can take one. Pairs that are ready while the Pipeline is busy are dropped, not queued: a queue would only make the depth older.
+2. **Pairing.** The Pairer pairs a left and a right frame by their capture times, and submits a pair only when the Pipeline says it can take one. Pairs that are ready while the Pipeline is busy are dropped, not queued: a queue would only make the depth older.
 3. **Stages.** The Pipeline runs the stages in order. Consecutive stages that run on the same device form one segment, so a pair crosses to the GPU, or to the `stereo_match` Port, once and comes back once. The [stages guide](./stages.md) describes each one.
 4. **Listeners.** The finished `Pair` goes to every listener as a message. On the BEAM, a large binary such as an image is shared between processes by reference, not copied, so five listeners cost no more memory than one.
 5. **Publishing.** The ROS 2 publishers send the disparity, depth and point cloud of every pair, and the raw camera images as frames arrive, at most `:raw_image_max_hz` a second per side; detection runs on every `:detect_every_n`-th pair; the dashboard's previews are encoded only when a dashboard is open.
