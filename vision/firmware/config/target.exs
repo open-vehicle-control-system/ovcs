@@ -48,7 +48,8 @@ if config_env() == :prod and System.get_env("SECRET_KEY_BASE") in [nil, ""] do
   """
 end
 
-config :logger, backends: [RingLogger]
+# RingLogger keeps the last 1024 entries: at debug, an open dashboard's requests fill them.
+config :logger, backends: [RingLogger], level: :info
 
 # `:nerves_hub_link` boots before the main app so a unit whose
 # application crashes at startup stays reachable for an OTA fix.
