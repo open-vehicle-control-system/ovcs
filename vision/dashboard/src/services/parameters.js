@@ -2,11 +2,15 @@ const MEDIA_TYPE = 'application/vnd.api+json'
 
 const url = (path) => `${import.meta.env.VITE_BASE_URL}/api/${path}`
 
+/** Sends a JSON:API request and answers its document; throws the first error's detail, or why there is none. */
 export async function request(path, { method = 'GET', body } = {}) {
   const response = await fetch(url(path), {
     method,
     headers: { Accept: MEDIA_TYPE, 'Content-Type': MEDIA_TYPE },
     body: body === undefined ? undefined : JSON.stringify(body)
+  }).catch((error) => {
+    // fetch rejects with a TypeError, worded by each browser, when no answer came back.
+    throw error instanceof TypeError ? new Error('Cannot reach the vision unit', { cause: error }) : error
   })
   const document = await response.json().catch(() => ({}))
   if (!response.ok) {

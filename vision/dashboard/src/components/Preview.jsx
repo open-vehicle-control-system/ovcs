@@ -35,6 +35,8 @@ export default function Preview({ stream, socket, onChannel, overlay, className 
     return () => {
       channelRef.current = null
       onChannel?.(null)
+      // A frame already on its way would otherwise get an object URL nothing releases.
+      channel.off('frame')
       channel.leave()
       if (frameRef.current) URL.revokeObjectURL(frameRef.current)
       frameRef.current = null

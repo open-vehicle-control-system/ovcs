@@ -4,10 +4,13 @@ import App from '../App.jsx'
 import { useParameters } from '../stores/parameters.js'
 import { pageFromUrl, useNavigation } from '../stores/navigation.js'
 import * as service from '../services/parameters.js'
+import { dashboardSocket } from '../services/socket.js'
 
 vi.mock('../services/parameters.js')
 vi.mock('../services/socket.js', () => ({
-  dashboardSocket: { channel: () => ({ on: () => {}, join: () => {}, off: () => {}, leave: () => {}, push: () => ({ receive() { return this } }) }) }
+  dashboardSocket: {
+    channel: vi.fn(() => ({ on: () => {}, join: () => {}, off: () => {}, leave: vi.fn(), push: () => ({ receive() { return this } }) }))
+  }
 }))
 
 const group = (id, name, position, role = 'step') => ({
@@ -26,6 +29,7 @@ describe('App', () => {
   let actions
   beforeEach(() => {
     actions = { startPolling: vi.fn(), stopPolling: vi.fn() }
+    dashboardSocket.channel.mockClear()
     useParameters.setState({ ...initial, ...actions, groups: [], parameters: {}, unsaved: 0, selectedGroupId: null })
     visit('/')
   })
@@ -126,6 +130,23 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Calibration' }))
     expect(window.location.search).toBe('?page=calibration')
     expect(screen.getByRole('heading', { name: 'Calibration' })).toBeTruthy()
+  })
+
+  it('keeps the videos playing between the overview and a stage, which show the same previews', () => {
+    useParameters.setState({ groups })
+    render(<App />)
+    const channels = () => dashboardSocket.channel.mock.results.map((result) => result.value)
+    const opened = channels().length
+    const previews = () => screen.getByRole('region', { name: 'Previews' })
+    const shown = previews()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Match' }))
+    expect(screen.getByRole('heading', { name: 'Match' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Overview' }))
+
+    expect(previews()).toBe(shown)
+    expect(channels()).toHaveLength(opened)
+    expect(channels().filter((channel) => channel.leave.mock.calls.length > 0)).toEqual([])
   })
 
   it('opens a stage from the menu on the pipeline page, then leaves it for another page', () => {

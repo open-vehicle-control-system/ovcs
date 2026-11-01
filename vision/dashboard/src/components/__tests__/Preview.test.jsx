@@ -8,13 +8,14 @@ function fakeSocket() {
     on: vi.fn((event, handler) => { handlers[event] = handler }),
     join: vi.fn(() => ({ receive: vi.fn() })),
     push: vi.fn(),
-    off: vi.fn(),
+    off: vi.fn((event) => { delete handlers[event] }),
     leave: vi.fn()
   }
   return { channel: vi.fn(() => channel), handlers, fakeChannel: channel }
 }
 
-const sendFrame = (socket, bytes) => act(() => socket.handlers.frame(new Uint8Array(bytes).buffer))
+// As phoenix.js, a frame reaches the handler bound at the time it arrives, if any.
+const sendFrame = (socket, bytes) => act(() => socket.handlers.frame?.(new Uint8Array(bytes).buffer))
 
 describe('Preview', () => {
   let urls
@@ -59,6 +60,18 @@ describe('Preview', () => {
 
     unmount()
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:frame-2')
+  })
+
+  it('drops a frame that arrives while leaving, so no object URL outlives it', () => {
+    const socket = fakeSocket()
+    const { unmount } = render(<Preview stream="left" socket={socket} />)
+    sendFrame(socket, [1])
+
+    unmount()
+    sendFrame(socket, [2])
+
+    expect(URL.createObjectURL).toHaveBeenCalledTimes(1)
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:frame-1')
   })
 
   it('acks a frame once the image has loaded or failed', () => {

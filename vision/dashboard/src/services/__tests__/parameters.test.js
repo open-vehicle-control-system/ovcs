@@ -96,6 +96,14 @@ describe('parameters service', () => {
     await expect(setParameter('stereo.match.p1', 99)).rejects.toThrow('must be at most 15')
   })
 
+  it('says the unit cannot be reached when no answer came back, whatever the browser calls it', async () => {
+    for (const wording of ['Failed to fetch', 'NetworkError when attempting to fetch resource.']) {
+      fetchMock.mockRejectedValueOnce(new TypeError(wording))
+
+      await expect(fetchGroups()).rejects.toThrow(new Error('Cannot reach the vision unit'))
+    }
+  })
+
   it('falls back to the status when the error has no detail', async () => {
     fetchMock.mockResolvedValue(respond(500, {}))
 

@@ -2,7 +2,6 @@ import { useEffect, useRef } from 'react'
 import UnitStatus from './components/UnitStatus.jsx'
 import LivePreviews from './components/LivePreviews.jsx'
 import Menu from './components/Menu.jsx'
-import OverviewPage from './pages/OverviewPage.jsx'
 import CalibrationPage from './pages/CalibrationPage.jsx'
 import Ros2Page from './pages/Ros2Page.jsx'
 import ApiPage from './pages/ApiPage.jsx'
@@ -108,15 +107,26 @@ function UnitStatusBar() {
   return <UnitStatus status={snapshot} />
 }
 
-function PipelinePage({ groupId }) {
+/**
+ * The videos and their figures: at the full width on the overview, beside the selected stage's panel on the pipeline.
+ * Both pages render them at the same place, so going from one to the other keeps the videos playing.
+ */
+function PreviewsPage({ page, groupId }) {
+  const pipeline = page === 'pipeline'
+  const layout = pipeline
+    ? 'grid min-w-0 gap-4 lg:min-h-0 lg:grid-cols-[minmax(24rem,30rem)_minmax(0,1fr)] lg:grid-rows-1'
+    : 'flex min-w-0 flex-col lg:min-h-0'
+
   return (
-    <div className="grid min-w-0 gap-4 lg:min-h-0 lg:grid-cols-[minmax(24rem,30rem)_minmax(0,1fr)] lg:grid-rows-1">
-      <OvcsCard className="flex min-w-0 flex-col gap-4 lg:min-h-0">
-        <div data-scroll="panel" className="lg:-mx-4 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:px-4">
-          <ParameterPanel groupId={groupId} />
-        </div>
-        <ParameterSaveBar />
-      </OvcsCard>
+    <div className={layout}>
+      {pipeline ? (
+        <OvcsCard className="flex min-w-0 flex-col gap-4 lg:min-h-0">
+          <div data-scroll="panel" className="lg:-mx-4 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:px-4">
+            <ParameterPanel groupId={groupId} />
+          </div>
+          <ParameterSaveBar />
+        </OvcsCard>
+      ) : null}
 
       <div className="flex min-w-0 flex-col lg:min-h-0">
         <LivePreviews />
@@ -125,7 +135,7 @@ function PipelinePage({ groupId }) {
   )
 }
 
-const PAGES = { overview: OverviewPage, calibration: CalibrationPage, ros2: Ros2Page, api: ApiPage }
+const PAGES = { calibration: CalibrationPage, ros2: Ros2Page, api: ApiPage }
 
 export default function App() {
   const listen = useStatus((state) => state.listen)
@@ -158,7 +168,7 @@ export default function App() {
       <div className="flex flex-1 flex-col lg:min-h-0 lg:flex-row">
         <Menu />
         <main className="flex min-w-0 flex-1 flex-col p-4 lg:min-h-0 lg:p-6">
-          {page === 'pipeline' ? <PipelinePage groupId={selectedGroupId} /> : <Page />}
+          {Page ? <Page /> : <PreviewsPage page={page} groupId={selectedGroupId} />}
         </main>
       </div>
     </div>

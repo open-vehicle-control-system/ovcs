@@ -7,11 +7,7 @@ let reloadRequested = false
 let generation = 0
 const changing = new Map()
 
-// fetch rejects with a TypeError, worded by each browser, when no answer came back.
-const message = (error) => {
-  if (error instanceof TypeError) return 'Cannot reach the vision unit'
-  return error instanceof Error ? error.message : String(error)
-}
+const message = (error) => (error instanceof Error ? error.message : String(error))
 
 const protect = (id) => changing.set(id, (changing.get(id) ?? 0) + 1)
 const release = (id) => {
@@ -44,7 +40,8 @@ export const useParameters = create((set, get) => ({
     replace({ ...previous, value })
     try {
       const accepted = await service.setParameter(id, value)
-      const delta = Number(accepted.state === 'unsaved') - Number(previous.state === 'unsaved')
+      // Against the state shown now, which an overlapping change accepted meanwhile has updated.
+      const delta = Number(accepted.state === 'unsaved') - Number(get().parameters[id]?.state === 'unsaved')
       replace(accepted)
       set((state) => ({ unsaved: Math.max(0, state.unsaved + delta), error: null, errorSource: null }))
     } catch (error) {

@@ -282,20 +282,46 @@ describe('parameters store', () => {
     await second
   })
 
+  describe('with two overlapping changes to one parameter', () => {
+    let accept
+    beforeEach(async () => {
+      service.fetchGroups.mockResolvedValue(snapshot(12, 1))
+      await state().load()
+      accept = []
+      service.setParameter.mockImplementation(() => new Promise((resolve) => accept.push(resolve)))
+    })
+
+    const answer = async (pending, value, parameterState) => {
+      accept[pending.index](parameter('stereo.match.p1', 'stereo.match', { value, state: parameterState }))
+      await pending.done
+    }
+    const change = (value) => ({ index: accept.length, done: state().set('stereo.match.p1', value) })
+
+    it('counts the parameter unsaved once', async () => {
+      const first = change(5)
+      const second = change(6)
+      await answer(first, 5, 'unsaved')
+      await answer(second, 6, 'unsaved')
+
+      expect(state().unsaved).toBe(2)
+    })
+
+    it('counts nothing more when the second puts it back', async () => {
+      const away = change(5)
+      const back = change(12)
+      await answer(away, 5, 'unsaved')
+      await answer(back, 12, 'builtin')
+
+      expect(state().unsaved).toBe(1)
+    })
+  })
+
   it('records a failed load', async () => {
     service.fetchGroups.mockRejectedValue(new Error('GET failed: 500'))
 
     await state().load()
 
     expect(state().error).toBe('GET failed: 500')
-  })
-
-  it('says the unit cannot be reached when the request never got an answer', async () => {
-    service.fetchGroups.mockRejectedValue(new TypeError('NetworkError when attempting to fetch resource.'))
-
-    await state().load()
-
-    expect(state().error).toBe('Cannot reach the vision unit')
   })
 
   describe('polling', () => {

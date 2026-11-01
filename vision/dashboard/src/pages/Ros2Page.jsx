@@ -11,17 +11,26 @@ export default function Ros2Page() {
   const [node, setNode] = useState(null)
   const [error, setError] = useState(null)
 
+  // The next request waits for the previous answer, so a slow one never overlaps it.
   useEffect(() => {
     let live = true
-    const load = () =>
-      fetchRos2Node()
-        .then((next) => live && (setNode(next), setError(null)))
-        .catch((failure) => live && setError(failure.message))
+    let timer = null
+    const load = async () => {
+      try {
+        const next = await fetchRos2Node()
+        if (live) {
+          setNode(next)
+          setError(null)
+        }
+      } catch (failure) {
+        if (live) setError(failure.message)
+      }
+      if (live) timer = setTimeout(load, POLL_MS)
+    }
     load()
-    const timer = setInterval(load, POLL_MS)
     return () => {
       live = false
-      clearInterval(timer)
+      clearTimeout(timer)
     }
   }, [])
 
