@@ -146,7 +146,7 @@ defmodule VisionCore.Stereo.Parameters do
 
   defp set_all(driver, servers, controls) do
     Enum.reduce_while(servers, :ok, fn server, :ok ->
-      case ok(driver.set_controls(server, controls)) do
+      case set_result(driver.set_controls(server, controls)) do
         :ok -> {:cont, :ok}
         error -> {:halt, error}
       end
@@ -225,7 +225,7 @@ defmodule VisionCore.Stereo.Parameters do
       name: Atom.to_string(spec.key),
       type: spec.type,
       get: control_get(spec.key, driver, server),
-      set: &ok(driver.set_controls(server, [{spec.key, &1}])),
+      set: &set_result(driver.set_controls(server, [{spec.key, &1}])),
       constraint: control_constraint(spec),
       applies: control_applies(spec.key, group_id),
       description: spec.description
@@ -305,7 +305,7 @@ defmodule VisionCore.Stereo.Parameters do
       name: Atom.to_string(key),
       type: spec.type,
       get: fn -> stage_value(pipeline, stage, key) end,
-      set: &ok(Pipeline.set_options(pipeline, stage, [{key, &1}])),
+      set: &set_result(Pipeline.set_options(pipeline, stage, [{key, &1}])),
       constraint: constraint(spec),
       applies: stage_applies(stage, key, spec, prefix, correction?)
     }
@@ -405,6 +405,7 @@ defmodule VisionCore.Stereo.Parameters do
   defp put_present(map, _key, nil), do: map
   defp put_present(map, key, value), do: Map.put(map, key, value)
 
-  defp ok({:ok, _values}), do: :ok
-  defp ok({:error, _reason} = error), do: error
+  # A set's reply as the registry takes it: `:ok`, or the refusal.
+  defp set_result({:ok, _values}), do: :ok
+  defp set_result({:error, _reason} = error), do: error
 end

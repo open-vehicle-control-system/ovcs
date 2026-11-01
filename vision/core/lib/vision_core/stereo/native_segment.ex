@@ -160,7 +160,7 @@ defmodule VisionCore.Stereo.NativeSegment do
   def dispatch(%Pair{} = pair, %__MODULE__{} = segment) do
     with {:ok, request_id} <- send_request(pair, segment) do
       case :gen_server.receive_response(request_id, :infinity) do
-        {:reply, reply} -> decoded(reply, segment)
+        {:reply, reply} -> run_outputs(reply, segment)
         {:error, {reason, _matcher}} -> {:error, {:matcher_down, reason}}
       end
     end
@@ -204,7 +204,7 @@ defmodule VisionCore.Stereo.NativeSegment do
         :no_reply
 
       {:reply, reply} ->
-        with {:ok, outputs, segment} <- decoded(reply, segment),
+        with {:ok, outputs, segment} <- run_outputs(reply, segment),
              do: {:ok, outputs, segment, System.monotonic_time(:nanosecond)}
 
       {:error, {reason, _matcher}} ->
@@ -218,12 +218,12 @@ defmodule VisionCore.Stereo.NativeSegment do
   def member_times(%__MODULE__{members: members, times_us: times_us}),
     do: Enum.zip_with(members, times_us, &{&1.name, &2 * 1_000})
 
-  defp decoded({:ok, reply}, segment) do
+  defp run_outputs({:ok, reply}, segment) do
     with {:ok, times_us, outputs} <- decode(reply),
          do: {:ok, outputs, %{segment | times_us: times_us}}
   end
 
-  defp decoded({:error, _reason} = error, _segment), do: error
+  defp run_outputs({:error, _reason} = error, _segment), do: error
 
   @doc "The second half of `run/2`: fills `pair` from `outputs`."
   @impl VisionCore.Stereo.Segment
@@ -251,9 +251,11 @@ defmodule VisionCore.Stereo.NativeSegment do
         settings = build_settings(member)
 
         [
-          name(Map.fetch!(@kinds, member.module)),
+          length_prefixed(Map.fetch!(@kinds, member.module)),
           length(settings),
-          Enum.map(settings, fn {key, value} -> [name(key), <<value::little-float-64>>] end)
+          Enum.map(settings, fn {key, value} ->
+            [length_prefixed(key), <<value::little-float-64>>]
+          end)
         ]
       end)
     ]
@@ -264,16 +266,16 @@ defmodule VisionCore.Stereo.NativeSegment do
     if function_exported?(member.module, :options, 1) do
       for {key, value} <- member.module.options(member.state),
           is_number(value) or is_boolean(value) do
-        {key, number(value)}
+        {key, setting_float(value)}
       end
     else
       []
     end
   end
 
-  defp number(true), do: 1.0
-  defp number(false), do: 0.0
-  defp number(value), do: value * 1.0
+  defp setting_float(true), do: 1.0
+  defp setting_float(false), do: 0.0
+  defp setting_float(value), do: value * 1.0
 
   # Each member's params, as the f32 values a compiled segment takes.
   defp inputs(members, context) do
@@ -285,7 +287,7 @@ defmodule VisionCore.Stereo.NativeSegment do
         [
           length(values),
           Enum.map(values, fn {key, binary} ->
-            [name(key), <<div(byte_size(binary), 4)::little-16>>, binary]
+            [length_prefixed(key), <<div(byte_size(binary), 4)::little-16>>, binary]
           end)
         ]
       end)
@@ -308,7 +310,7 @@ defmodule VisionCore.Stereo.NativeSegment do
 
   defp f32_binary(tensor), do: tensor |> Nx.as_type(:f32) |> Nx.to_binary()
 
-  defp name(key) do
+  defp length_prefixed(key) do
     key = to_string(key)
     [byte_size(key), key]
   end
@@ -327,7 +329,7 @@ defmodule VisionCore.Stereo.NativeSegment do
           {height, width} = expected
 
           tensor = [
-            name(field),
+            length_prefixed(field),
             <<Map.fetch!(@type_codes, type), 2, height::little-32, width::little-32>>,
             binary
           ]
