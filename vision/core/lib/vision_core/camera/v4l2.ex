@@ -90,14 +90,12 @@ defmodule VisionCore.Camera.V4L2 do
   end
 
   @doc "The registered name of the driver for `label`."
+  @impl VisionCore.Camera
   def name_for(label), do: Module.concat([__MODULE__, "L_#{label}"])
 
   @impl VisionCore.Camera
   def register_listener(server, listener),
     do: GenServer.cast(server, {:register_listener, listener})
-
-  @impl VisionCore.Camera
-  def enable(_server), do: :ok
 
   @settings [
     %{
@@ -176,6 +174,7 @@ defmodule VisionCore.Camera.V4L2 do
   The capture settings, applied to both sensors: `%{key:, type:, range:,
   default:, description:}`.
   """
+  @impl VisionCore.Camera
   def control_specs, do: @settings
 
   @doc false
@@ -251,6 +250,7 @@ defmodule VisionCore.Camera.V4L2 do
   before the first report. The right camera asks the left.
   """
   @spec live(GenServer.server()) :: map() | nil
+  @impl VisionCore.Camera
   def live(server), do: GenServer.call(server, :live)
 
   @doc false

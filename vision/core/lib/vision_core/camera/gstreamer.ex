@@ -40,6 +40,7 @@ defmodule VisionCore.Camera.GStreamer do
   end
 
   @doc "The registered name of the driver for `label`."
+  @impl VisionCore.Camera
   def name_for(label), do: Module.concat([__MODULE__, "L_#{label}"])
 
   @impl GenServer
@@ -118,9 +119,6 @@ defmodule VisionCore.Camera.GStreamer do
   def register_listener(server, listener) do
     GenServer.cast(server, {:register_listener, listener})
   end
-
-  @impl VisionCore.Camera
-  def enable(_server), do: :ok
 
   # `-q` keeps routine progress off the inherited stderr; errors still print.
   defp pipeline_arguments(device, width, height, fps) do

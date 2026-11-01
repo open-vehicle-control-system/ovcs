@@ -59,15 +59,13 @@ defmodule VisionCore.Ros2.Camera do
   end
 
   @doc "The registered name of the driver for `label`."
+  @impl VisionCore.Camera
   def name_for(label), do: Module.concat([__MODULE__, "L_#{label}"])
 
   @impl VisionCore.Camera
   def register_listener(server, listener) do
     GenServer.cast(server, {:register_listener, listener})
   end
-
-  @impl VisionCore.Camera
-  def enable(_server), do: :ok
 
   @impl GenServer
   def init(opts) do

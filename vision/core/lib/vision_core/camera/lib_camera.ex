@@ -185,6 +185,7 @@ defmodule VisionCore.Camera.LibCamera do
   end
 
   @doc "The registered name of the driver for `label`."
+  @impl VisionCore.Camera
   def name_for(label), do: Module.concat([__MODULE__, "L_#{label}"])
 
   @doc false
@@ -388,9 +389,6 @@ defmodule VisionCore.Camera.LibCamera do
   end
 
   @impl VisionCore.Camera
-  def enable(_server), do: :ok
-
-  @impl VisionCore.Camera
   def set_controls(server, controls), do: GenServer.call(server, {:set_controls, controls})
 
   @impl VisionCore.Camera
@@ -404,6 +402,7 @@ defmodule VisionCore.Camera.LibCamera do
   reported, plus `:capture_ns` and `:received_ms` (system time). `nil`
   before the first report.
   """
+  @impl VisionCore.Camera
   def live(server), do: GenServer.call(server, :live)
 
   @impl GenServer
@@ -496,6 +495,7 @@ defmodule VisionCore.Camera.LibCamera do
   (`:string`, `:integer` or `:double`), `:range` or `:values`, and a
   `:description`.
   """
+  @impl VisionCore.Camera
   def control_specs, do: @control_specs
 
   @doc """

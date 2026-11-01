@@ -1,28 +1,28 @@
 defmodule VisionCore.Camera do
   @moduledoc """
-  Contract for the one-camera drivers under `VisionCore.Camera.*`. A driver
-  represents a single image sensor: it captures, compresses to JPEG,
-  and fans frames out to registered listeners. Stereo / multi-camera
-  setups wire up several driver instances and tag them via `:label`.
+  Contract for the camera drivers under `VisionCore.Camera.*`. A driver
+  instance represents one image sensor, named by its `:label`: it
+  captures and fans frames out to registered listeners, as JPEG or grey
+  `VisionCore.Camera.Frame`s. A stereo pair is two instances, `"left"` and
+  `"right"`.
 
-  A driver implementing this behaviour MUST:
+  A driver MUST:
 
-    * Be a uniquely-named `GenServer` (vehicles instantiate more
-      than one — the supervisor identifies each by a distinct name,
-      typically derived from `:label`).
-    * Accept `register_listener/2` at any time. Listeners receive
-      `{:camera_frame, %VisionCore.Camera.Frame{}}` casts as new
-      frames become available.
-    * Accept `enable/1` to start capture. The driver owns any
-      hardware-specific gating so callers can fire-and-forget.
+    * register each instance under `name_for/1` of its label, which the
+      stereo unit, its publishers and its parameters use to reach it;
+    * accept `register_listener/2` at any time. Listeners receive
+      `{:camera_frame, %VisionCore.Camera.Frame{}}` casts as new frames
+      become available.
 
   Drivers stay in raw-capture vocabulary — libcamera/V4L2 details,
-  JPEG framing, port lifecycle. Application-side translation (to
+  framing, Port lifecycle. Application-side translation (to
   `sensor_msgs/CompressedImage`, etc.) lives in publishers.
   """
 
+  @doc "The registered name of the instance labelled `label`."
+  @callback name_for(label :: String.t()) :: atom()
+
   @callback register_listener(GenServer.server(), pid()) :: :ok
-  @callback enable(GenServer.server()) :: :ok
 
   @doc """
   Change sensor controls while capturing (exposure, focus, ...).
@@ -37,5 +37,18 @@ defmodule VisionCore.Camera do
   @doc "Whether one set of controls drives both cameras of a stereo pair."
   @callback shared_controls?() :: boolean()
 
-  @optional_callbacks set_controls: 2, controls: 1, shared_controls?: 0
+  @doc """
+  The controls `set_controls/2` accepts: `:key`, `:type`, `:range` or
+  `:values`, a `:description` and, where the driver has one, a `:default`.
+  """
+  @callback control_specs() :: [map()]
+
+  @doc "What the camera applied to a recent frame, as it reports it; `nil` before a report."
+  @callback live(GenServer.server()) :: map() | nil
+
+  @optional_callbacks set_controls: 2,
+                      controls: 1,
+                      shared_controls?: 0,
+                      control_specs: 0,
+                      live: 1
 end
