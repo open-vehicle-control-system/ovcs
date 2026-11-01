@@ -42,6 +42,19 @@ defmodule VisionCore.Stereo.PairerTest do
     assert capture_ms(Pairer.ready_pair(state([0, 33, 66], [0, 33, 66], 5))) == {66, 66}
   end
 
+  test "among nearly equally close pairs, the newest" do
+    # Synchronised cameras whose frame starts differ by a few microseconds, a different few each time.
+    at = fn label, capture_ns -> %{frame(label, 0) | capture_ns: capture_ns} end
+
+    state = %{
+      left_frames: Enum.map([66_000_000, 33_000_000, 0], &at.("left", &1)),
+      right_frames: Enum.map([66_040_000, 33_010_000, 2_000], &at.("right", &1)),
+      pair_tolerance_ns: 5_000_000
+    }
+
+    assert capture_ms(Pairer.ready_pair(state)) == {66, 66}
+  end
+
   test "with a steady phase offset, the pairs one offset apart rather than a cycle apart" do
     # The right camera shoots 13 ms before the left one.
     pair = Pairer.ready_pair(state([13, 46], [0, 33, 66], 100))

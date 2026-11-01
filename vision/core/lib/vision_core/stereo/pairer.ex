@@ -5,7 +5,8 @@ defmodule VisionCore.Stereo.Pairer do
 
   Both sides arrive independently; the last few frames of each are kept,
   and the pair submitted is the one whose `Frame.capture_ns` are closest,
-  the newest among equals, within `:pair_tolerance_ms`. The newest frame
+  the newest among those within a millisecond of each other, within
+  `:pair_tolerance_ms`. The newest frame
   of each side is not a pair: one side's next frame often lands before
   the other's, and pairing them mixes two capture instants.
 
@@ -31,6 +32,8 @@ defmodule VisionCore.Stereo.Pairer do
   @default_pair_tolerance_ms 33
   # A few frame periods: enough to find the closest pair.
   @frames_kept_per_side 4
+  # Gaps closer than this are equally good: the newest pair is the one with least latency.
+  @gap_resolution_ns 1_000_000
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 
@@ -128,15 +131,15 @@ defmodule VisionCore.Stereo.Pairer do
       }) do
     candidates =
       for left <- left_frames, right <- right_frames do
-        {abs(left.capture_ns - right.capture_ns), -max(left.capture_ns, right.capture_ns), left,
-         right}
+        delta_ns = abs(left.capture_ns - right.capture_ns)
+
+        {div(delta_ns, @gap_resolution_ns), -max(left.capture_ns, right.capture_ns), delta_ns,
+         left, right}
       end
 
     # Closest capture times first, then the newest.
-    {delta_ns, _newest, left, right} =
-      Enum.min(candidates, fn {delta_a, newest_a, _, _}, {delta_b, newest_b, _, _} ->
-        {delta_a, newest_a} <= {delta_b, newest_b}
-      end)
+    {_gap, _newest, delta_ns, left, right} =
+      Enum.min_by(candidates, fn {gap, newest, _delta_ns, _left, _right} -> {gap, newest} end)
 
     if delta_ns <= tolerance_ns do
       {:ok, left, right, delta_ns}
