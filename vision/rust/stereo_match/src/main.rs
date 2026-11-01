@@ -40,7 +40,7 @@ fn threads(arguments: &[String]) -> Result<usize, String> {
 #[cfg(all(target_os = "linux", target_env = "gnu"))]
 extern "C" {
     fn mallopt(parameter: i32, value: i32) -> i32;
-    fn fcntl(fd: i32, command: i32, value: i32) -> i32;
+    fn fcntl(fd: i32, command: i32, ...) -> i32;
 }
 
 #[cfg(all(target_os = "linux", target_env = "gnu"))]
