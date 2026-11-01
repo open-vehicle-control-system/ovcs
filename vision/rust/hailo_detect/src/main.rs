@@ -3,7 +3,8 @@
 //!
 //! Request (stdin): u8 tag 1, u32 sequence, u16 width, u16 height, u8 channels (1 gray, 3 BGR), pixels.
 //! Response (stdout): u8 tag 1, u32 sequence, u16 count, count × {u16 class_id, f32 score, x0, y0, x1, y1}
-//! in the caller's pixel coordinates. Scalars are little-endian.
+//! in the caller's pixel coordinates, or a LOG record (`framing::log_record`). Scalars are
+//! little-endian.
 
 #[cfg(feature = "device")]
 mod hailo;
@@ -18,38 +19,37 @@ mod protocol;
 
 use std::process::exit;
 
-use framing::Writer;
+use framing::{log_record, LogLevel, Writer};
 
 const DEFAULT_SCORE_THRESHOLD: f32 = 0.4;
 
-/// stderr, not LOG records: `VisionCore.Detection.Backend.Hailo` reads only detections records.
-fn log(message: &str) {
-    eprintln!("[hailo_detect] {message}");
+/// A LOG record, which `VisionCore.Detection.Backend.Hailo` hands to the Logger.
+fn log(writer: &Writer, level: LogLevel, message: &str) {
+    let _ = writer.write_record(&log_record(level, message));
+}
+
+/// A failure before stdout carries records goes to stderr.
+fn exit_early(message: &str, status: i32) -> ! {
+    eprintln!("hailo_detect: {message}");
+    exit(status)
 }
 
 fn main() {
     let command_line: Vec<String> = std::env::args().collect();
     if command_line.len() < 2 {
-        log("usage: hailo_detect <model.hef> [score_threshold]");
-        exit(2);
+        exit_early("usage: hailo_detect <model.hef> [score_threshold]", 2);
     }
     let hef_path = &command_line[1];
     let score_threshold = match command_line.get(2).map(|s| s.parse::<f32>()) {
         None => DEFAULT_SCORE_THRESHOLD,
         Some(Ok(threshold)) => threshold,
-        Some(Err(_)) => {
-            log(&format!("bad score threshold {}", command_line[2]));
-            exit(2);
-        }
+        Some(Err(_)) => exit_early(&format!("bad score threshold {}", command_line[2]), 2),
     };
 
     // Before any HailoRT call: libhailort may log onto stdout.
     let writer = match Writer::from_stdout_redirecting() {
         Ok(writer) => writer,
-        Err(_) => {
-            log("could not dup stdout");
-            exit(1);
-        }
+        Err(error) => exit_early(&format!("stdout: {error}"), 1),
     };
 
     #[cfg(feature = "device")]
@@ -57,8 +57,8 @@ fn main() {
 
     #[cfg(not(feature = "device"))]
     {
-        let _ = (hef_path, score_threshold, writer);
-        log("built without the device feature");
+        let _ = (hef_path, score_threshold);
+        log(&writer, LogLevel::Error, "built without the device feature");
         exit(1);
     }
 }
@@ -72,7 +72,7 @@ fn run(hef_path: &str, score_threshold: f32, writer: &Writer) -> i32 {
     let mut detector = match hailo::Detector::open(hef_path) {
         Ok(detector) => detector,
         Err(message) => {
-            log(&message);
+            log(writer, LogLevel::Error, &message);
             return 1;
         }
     };
@@ -80,9 +80,13 @@ fn run(hef_path: &str, score_threshold: f32, writer: &Writer) -> i32 {
     let class_count = detector.class_count;
     let output_floats = detector.output_bytes / std::mem::size_of::<f32>();
 
-    log(&format!(
-        "ready: {hef_path} {model_size}x{model_size}, {class_count} classes, threshold {score_threshold}"
-    ));
+    log(
+        writer,
+        LogLevel::Info,
+        &format!(
+            "ready: {hef_path} {model_size}x{model_size}, {class_count} classes, threshold {score_threshold}"
+        ),
+    );
 
     let mut model_input = vec![0u8; model_size as usize * model_size as usize * 3];
     let mut output = vec![0f32; detector.output_bytes.div_ceil(std::mem::size_of::<f32>())];
@@ -96,7 +100,7 @@ fn run(hef_path: &str, score_threshold: f32, writer: &Writer) -> i32 {
         let letterbox = letterbox_for(width, height, model_size);
         let outcome = match request.check() {
             Err(message) => {
-                log(&message);
+                log(writer, LogLevel::Warning, &message);
                 FrameOutcome::Rejected
             }
             Ok(()) => {
@@ -113,7 +117,7 @@ fn run(hef_path: &str, score_threshold: f32, writer: &Writer) -> i32 {
                 match detector.infer(&model_input, &mut output) {
                     Ok(()) => FrameOutcome::Inferred,
                     Err(failure) => {
-                        log(&failure.message);
+                        log(writer, LogLevel::Error, &failure.message);
                         failure.outcome
                     }
                 }
@@ -132,7 +136,11 @@ fn run(hef_path: &str, score_threshold: f32, writer: &Writer) -> i32 {
                 continue;
             }
             Reply::EmptyThenExit => {
-                log("vstreams may hold a frame in flight; exiting for a restart");
+                log(
+                    writer,
+                    LogLevel::Warning,
+                    "vstreams may hold a frame in flight; exiting for a restart",
+                );
                 let _ = writer.write_record(&detections_record(request.sequence, &[]));
                 return 1;
             }

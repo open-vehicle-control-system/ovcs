@@ -26,7 +26,7 @@ pub struct Detection {
     pub y1: f32,
 }
 
-/// `None` for a short record or a wrong tag, which are skipped without a log.
+/// `None` for a short record or a wrong tag: with no sequence to answer, it is skipped.
 pub fn parse_request(record: &[u8]) -> Option<Request<'_>> {
     if record.len() < DETECT_HEADER_BYTES || record[0] != TAG_DETECT {
         return None;
@@ -41,7 +41,8 @@ pub fn parse_request(record: &[u8]) -> Option<Request<'_>> {
 }
 
 impl Request<'_> {
-    /// The channel count and pixel byte count; `Err` is the message to log before skipping.
+    /// The channel count and pixel byte count; `Err` is the message to log before
+    /// answering with no detections.
     pub fn check(&self) -> Result<(), String> {
         if self.channels != 1 && self.channels != 3 {
             return Err(format!(

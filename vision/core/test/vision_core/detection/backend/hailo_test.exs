@@ -53,6 +53,17 @@ defmodule VisionCore.Detection.Backend.HailoTest do
     assert_in_delta detection.score, 0.9, 1.0e-6
   end
 
+  test "hands hailo_detect's log lines to the Logger", %{tmp_dir: tmp_dir} do
+    log =
+      ExUnit.CaptureLog.capture_log(fn ->
+        start_backend(tmp_dir, "answer")
+        assert Hailo.detect(1, @image) == :ok
+        assert_receive {:inference_detections, 1, _detections}, 2_000
+      end)
+
+    assert log =~ "hailo_detect: ready"
+  end
+
   test "answers busy while a frame is in flight", %{tmp_dir: tmp_dir} do
     start_backend(tmp_dir, "hang", infer_timeout_ms: 5_000)
 

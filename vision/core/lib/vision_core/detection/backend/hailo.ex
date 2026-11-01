@@ -61,6 +61,7 @@ defmodule VisionCore.Detection.Backend.Hailo do
   # Port protocol tags; must match `hailo_detect`.
   @detect_request_tag 1
   @detections_reply_tag 1
+  @log_tag 2
 
   @default_score_threshold 0.4
 
@@ -216,6 +217,11 @@ defmodule VisionCore.Detection.Backend.Hailo do
   end
 
   @impl GenServer
+  def handle_info({port, {:data, <<@log_tag, level, message::binary>>}}, %{port: port} = state) do
+    Logger.log(log_level(level), "#{__MODULE__} hailo_detect: #{message}")
+    {:noreply, state}
+  end
+
   def handle_info({port, {:data, packet}}, %{port: port} = state) do
     case parse_detections(packet) do
       {:ok, sequence, detections} -> {:noreply, deliver(state, sequence, detections)}
@@ -275,6 +281,10 @@ defmodule VisionCore.Detection.Backend.Hailo do
   end
 
   defp parse_detections(_packet), do: :error
+
+  defp log_level(0), do: :info
+  defp log_level(1), do: :warning
+  defp log_level(_level), do: :error
 
   defp take_detections(_rest, 0, detections), do: Enum.reverse(detections)
 
