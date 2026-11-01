@@ -574,7 +574,7 @@ defmodule VisionCore.Camera.LibCamera do
     end)
   end
 
-  # "auto" is libcamera's own noise reduction; once a mode is set it cannot be requested back.
+  # Until set, the noise reduction is the Raspberry Pi pipeline's own, its high quality mode.
   defp initial_controls do
     %{
       exposure_mode: "normal",
@@ -584,7 +584,7 @@ defmodule VisionCore.Camera.LibCamera do
       brightness: 0.0,
       contrast: 1.0,
       sharpness: 1.0,
-      noise_reduction: "auto"
+      noise_reduction: "high_quality"
     }
   end
 

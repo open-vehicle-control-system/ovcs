@@ -181,7 +181,7 @@ defmodule VisionCore.Ros2.Parameters do
   defp automatic_controller({:auto, controller}), do: "set by #{controller} while it is on"
   defp automatic_controller(_applies), do: nil
 
-  # A default the constraint refuses (libcamera's "auto") cannot be set back.
+  # A default the constraint refuses cannot be set back.
   defp settable_default(%Parameter{applies: :build}), do: nil
   defp settable_default(%Parameter{default: nil}), do: nil
 

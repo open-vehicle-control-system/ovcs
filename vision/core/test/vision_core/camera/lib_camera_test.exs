@@ -301,6 +301,19 @@ defmodule VisionCore.Camera.LibCameraTest do
              } = LibCamera.controls(camera)
     end
 
+    test "are values the camera accepts back, the unset lens position aside", %{
+      tmp_dir: tmp_dir
+    } do
+      controls = tmp_dir |> start_camera("defaults", []) |> LibCamera.controls()
+
+      for {key, value} <- controls, not is_nil(value) do
+        assert {:ok, _commands} = LibCamera.control_commands([{key, value}])
+      end
+
+      assert controls.lens_position == nil
+      assert controls.noise_reduction == "high_quality"
+    end
+
     @tag :capture_log
     test "leave out a setting the camera refuses", %{tmp_dir: tmp_dir} do
       camera = start_camera(tmp_dir, "refused", brightness: 5.0, contrast: 2)

@@ -182,6 +182,14 @@ defmodule VisionCore.Stereo.Parameters do
     end
   end
 
+  # Until set, where libcamera holds the lens, as it reports it.
+  defp side_get(:lens_position, driver, server, _configured) do
+    fn ->
+      driver.controls(server)[:lens_position] ||
+        (live(driver, server) || %{})[:lens_position]
+    end
+  end
+
   defp side_get(key, driver, server, _configured), do: fn -> driver.controls(server)[key] end
 
   defp manual_value(configured), do: if(automatic_value?(configured), do: 1, else: configured)

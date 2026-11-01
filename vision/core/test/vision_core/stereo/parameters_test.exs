@@ -213,7 +213,7 @@ defmodule VisionCore.Stereo.ParametersTest do
       brightness: 0.0,
       contrast: 1.0,
       sharpness: 1.0,
-      noise_reduction: "auto"
+      noise_reduction: "high_quality"
     }
 
     setup do
@@ -365,6 +365,50 @@ defmodule VisionCore.Stereo.ParametersTest do
                {"left", [exposure_time_us: 6000]},
                {"right", [exposure_time_us: 6000]}
              ]
+    end
+
+    test "the lens position reads where libcamera holds the lens until set, and is saved and reset" do
+      Agent.update(
+        SideDriver,
+        &put_in(&1.live["left"][:lens_position], 1.0)
+      )
+
+      start_supervised!({MemoryStore, %{}})
+      start_supervised!({VisionCore.Parameters, store: MemoryStore})
+
+      start_supervised!(
+        {Parameters, topic_prefix: "stereo", driver: SideDriver, pipeline: Pipeline}
+      )
+
+      assert {:ok, %{value: 1.0, default: 1.0, state: :builtin}} =
+               VisionCore.Parameters.get("stereo.cameras.lens_position")
+
+      assert {:ok, %{value: 2.5, state: :unsaved}} =
+               VisionCore.Parameters.set("stereo.cameras.lens_position", 2.5)
+
+      assert {:ok, ["stereo.cameras.lens_position"]} = VisionCore.Parameters.save()
+      assert MemoryStore.rows() == %{"stereo.cameras.lens_position" => 2.5}
+
+      assert {:ok, ["stereo.cameras.lens_position"]} =
+               VisionCore.Parameters.reset({:parameter, "stereo.cameras.lens_position"})
+
+      assert {"right", [lens_position: 1.0]} = List.last(SideDriver.calls())
+    end
+
+    test "a changed noise reduction is discarded back to libcamera's mode" do
+      start_supervised!({VisionCore.Parameters, store: MemoryStore})
+
+      start_supervised!(
+        {Parameters, topic_prefix: "stereo", driver: SideDriver, pipeline: Pipeline}
+      )
+
+      assert {:ok, %{state: :unsaved}} =
+               VisionCore.Parameters.set("stereo.cameras.noise_reduction", "off")
+
+      assert {:ok, ["stereo.cameras.noise_reduction"]} = VisionCore.Parameters.discard()
+
+      assert {:ok, %{value: "high_quality", state: :builtin}} =
+               VisionCore.Parameters.get("stereo.cameras.noise_reduction")
     end
 
     test "a saved manual exposure over an automatic composer is applied to both and kept on save" do
