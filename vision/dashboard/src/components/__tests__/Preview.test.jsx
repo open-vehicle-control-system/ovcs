@@ -90,6 +90,15 @@ describe('Preview', () => {
     expect(image.getAttribute('height')).toBe('270')
   })
 
+  it('hands its channel over before joining, so the events bound on it miss no push', () => {
+    const socket = fakeSocket()
+    const onChannel = vi.fn()
+    render(<Preview stream="depth" socket={socket} onChannel={onChannel} />)
+
+    expect(onChannel).toHaveBeenCalledWith(socket.fakeChannel)
+    expect(onChannel.mock.invocationCallOrder[0]).toBeLessThan(socket.fakeChannel.join.mock.invocationCallOrder[0])
+  })
+
   it('leaves its channel when unmounted', () => {
     const socket = fakeSocket()
     const { unmount } = render(<Preview stream="depth" socket={socket} />)

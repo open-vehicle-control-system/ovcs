@@ -1,7 +1,8 @@
 defmodule VisionApiWeb do
   @moduledoc """
   The vision API's web layer: `use VisionApiWeb, :router | :controller |
-  :channel`.
+  :channel`, or `{:channel, options}` to pass `Phoenix.Channel` its
+  options, such as `:log_join`.
   """
 
   @doc "The `priv/static` entries `Plug.Static` serves; the rest falls through to the dashboard."
@@ -24,10 +25,14 @@ defmodule VisionApiWeb do
     end
   end
 
-  def channel do
+  def channel(options \\ []) do
     quote do
-      use Phoenix.Channel
+      use Phoenix.Channel, unquote(options)
     end
+  end
+
+  defmacro __using__({which, options}) when is_atom(which) do
+    apply(__MODULE__, which, [options])
   end
 
   defmacro __using__(which) when is_atom(which) do

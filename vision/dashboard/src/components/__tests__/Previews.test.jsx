@@ -11,6 +11,26 @@ const snapshot = {
   quality: { matchedPercent: 61.6, meanDisparityPx: 18.43, spreadPx: 6.08, jitterPx: 0.318 }
 }
 
+// A socket whose channels keep their handlers, so a test can push to them. Like the unit, the depth stream pushes
+// `depthRange` as it joins, before anything bound later could hear it.
+function liveSocket({ depthRange = null } = {}) {
+  const handlers = {}
+  const deliver = (topic, event, payload) => handlers[`${topic}/${event}`]?.(payload)
+  const socket = {
+    channel: vi.fn((topic) => ({
+      on: vi.fn((event, handler) => { handlers[`${topic}/${event}`] = handler }),
+      join: vi.fn(() => {
+        if (topic === 'preview:depth' && depthRange !== null) deliver(topic, 'depth_range', { metres: depthRange })
+        return { receive() { return this } }
+      }),
+      push: vi.fn(() => ({ receive() { return this } })),
+      off: vi.fn(),
+      leave: vi.fn()
+    }))
+  }
+  return { socket, push: (topic, event, payload) => act(() => handlers[`${topic}/${event}`](payload)) }
+}
+
 describe('Previews', () => {
   const card = (id) => document.querySelector(`[data-card="${id}"]`)
   const figure = (stream) => screen.getByText(stream, { selector: 'figcaption span' }).closest('figure')
@@ -72,22 +92,24 @@ describe('Previews', () => {
     for (const id of ['sync', 'alignment', 'sharpness']) expect(card(id).textContent).toContain('–')
   })
 
-  describe('detections', () => {
-    // A socket whose channels keep their handlers, so a test can push to them.
-    function liveSocket() {
-      const handlers = {}
-      const socket = {
-        channel: vi.fn((topic) => ({
-          on: vi.fn((event, handler) => { handlers[`${topic}/${event}`] = handler }),
-          join: vi.fn(() => ({ receive() { return this } })),
-          push: vi.fn(() => ({ receive() { return this } })),
-          off: vi.fn(),
-          leave: vi.fn()
-        }))
-      }
-      return { socket, push: (topic, event, payload) => act(() => handlers[`${topic}/${event}`](payload)) }
-    }
+  describe('colour range', () => {
+    const scale = () => card('depth').querySelector('[data-figure="colour scale"]')
 
+    it('shows the range the depth stream pushes as it joins, then each one pushed after a rejoin or a change', () => {
+      const { socket, push } = liveSocket({ depthRange: 8 })
+      render(<Previews status={snapshot} socket={socket} />)
+      expect(scale().textContent).toContain('8.0 m')
+
+      // phoenix.js rejoins on the same channel, as after the unit restarted, and the unit pushes its range again.
+      push('preview:depth', 'depth_range', { metres: 12 })
+      expect(scale().textContent).toContain('12.0 m')
+
+      push('preview:depth', 'depth_range', { metres: 0 })
+      expect(scale().textContent).toContain('∞')
+    })
+  })
+
+  describe('detections', () => {
     const person = {
       label: 'person',
       score: 0.62,

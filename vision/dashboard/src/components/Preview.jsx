@@ -8,7 +8,8 @@ export const useFrameSize = () => use(FrameSize)
 
 /**
  * A stream's latest frame, with its resolution; `children` sit in the caption, under the stream's name, `onChannel`
- * gets the stream's channel, and `overlay` is drawn over the frame once its size is known (`useFrameSize`).
+ * gets the stream's channel before it joins, to bind its own events, and `overlay` is drawn over the frame once its
+ * size is known (`useFrameSize`).
  */
 export default function Preview({ stream, socket, onChannel, overlay, className = '', frameClassName = '', children }) {
   const [frame, setFrame] = useState(null)
@@ -29,8 +30,8 @@ export default function Preview({ stream, socket, onChannel, overlay, className 
       setFrame(source)
     }
     channel.on('frame', (jpeg) => show(URL.createObjectURL(new Blob([jpeg], { type: 'image/jpeg' }))))
-    channel.join()
     onChannel?.(channel)
+    channel.join()
     return () => {
       channelRef.current = null
       onChannel?.(null)

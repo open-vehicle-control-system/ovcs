@@ -9,12 +9,14 @@ defmodule VisionApiWeb.PreviewChannel do
   backlog. On the depth stream it pushes `"depth_range"`, with `"metres"`
   to set the depth video's colour range or without to read it; the reply
   is the range in force, `%{metres: float}`. The range is the unit's,
-  shared by every dashboard: whoever changes it, the depth stream pushes
-  the new one as a `"depth_range"` event, `%{metres: float}`. Stops when
-  `VisionCore.Preview` restarts, and refuses the join while it is not
-  running; see `VisionApiWeb.SourceMonitor`.
+  shared by every dashboard: the depth stream pushes it as a
+  `"depth_range"` event, `%{metres: float}`, after every join and on
+  every change, whoever makes it. Stops when `VisionCore.Preview`
+  restarts, and refuses the join while it is not running; see
+  `VisionApiWeb.SourceMonitor`.
   """
-  use VisionApiWeb, :channel
+  # The client acks every frame it shows: logged, the acks would push everything else out of the log.
+  use VisionApiWeb, {:channel, log_handle_in: false}
 
   alias VisionApiWeb.{DepthRangePresenter, SourceMonitor}
 
@@ -26,7 +28,7 @@ defmodule VisionApiWeb.PreviewChannel do
       {:ok, stream} ->
         socket
         |> assign(:stream, stream)
-        |> SourceMonitor.join(VisionCore.Preview, fn -> VisionCore.Preview.subscribe(stream) end)
+        |> SourceMonitor.join(VisionCore.Preview, fn -> subscribe(stream) end)
 
       :error ->
         {:error, %{reason: "unknown stream"}}
@@ -68,4 +70,13 @@ defmodule VisionApiWeb.PreviewChannel do
 
   def handle_info({:DOWN, monitor_reference, :process, _pid, _reason}, socket),
     do: SourceMonitor.handle_down(monitor_reference, socket)
+
+  # Every join hears the range in force, as after a change: a client rejoining may have missed one.
+  defp subscribe(:depth) do
+    :ok = VisionCore.Preview.subscribe(:depth)
+    send(self(), {:vision_preview_options, VisionCore.Preview.options()})
+    :ok
+  end
+
+  defp subscribe(stream), do: VisionCore.Preview.subscribe(stream)
 end

@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react'
+import { useId, useState } from 'react'
 import { focusClass as FOCUS } from '@ovcs/ui/react'
 import Hint from './Hint.jsx'
 import { HINTS } from '../hints.js'
@@ -15,35 +15,28 @@ const toSlider = (metres) => (metres === 0 ? INFINITY : metres)
 const fromSlider = (position) => (position > MAX ? 0 : position)
 
 /**
- * The depth video's colour range, the distance coloured blue, set on the depth stream's `channel` as soon as it is
- * released; 0, the slider's last notch, is ∞. It is the unit's, shared by every dashboard and following a change made
- * from any of them, and a view setting: nothing to save, back to the composer's at the next boot.
+ * The depth video's colour range, `metres`, the distance coloured blue, set on the depth stream's `channel` as soon as
+ * it is released; 0, the slider's last notch, is ∞. `onChange` gets the range to show: the one chosen, then the
+ * unit's answer, or the previous one again when the unit refuses it. It is the unit's, shared by every dashboard, and
+ * a view setting: nothing to save, back to the composer's at the next boot.
  */
-export default function DepthRange({ channel }) {
+export default function DepthRange({ channel, metres, onChange }) {
   const labelId = useId()
-  const [value, setValue] = useState(null)
   const [draft, setDraft] = useState(null)
 
-  useEffect(() => {
-    if (!channel) return undefined
-    const reference = channel.on('depth_range', ({ metres }) => setValue(metres))
-    channel.push('depth_range', {}).receive('ok', ({ metres }) => setValue(metres))
-    return () => channel.off('depth_range', reference)
-  }, [channel])
+  if (!channel || metres === null) return null
 
-  if (!channel || value === null) return null
-
-  const shown = draft ?? value
+  const shown = draft ?? metres
   const finish = () => {
     if (draft === null) return
-    const metres = draft
+    const chosen = draft
     setDraft(null)
-    if (metres === value) return
-    setValue(metres)
+    if (chosen === metres) return
+    onChange(chosen)
     channel
-      .push('depth_range', { metres })
-      .receive('ok', (reply) => setValue(reply.metres))
-      .receive('error', () => setValue(value))
+      .push('depth_range', { metres: chosen })
+      .receive('ok', (reply) => onChange(reply.metres))
+      .receive('error', () => onChange(metres))
   }
 
   return (

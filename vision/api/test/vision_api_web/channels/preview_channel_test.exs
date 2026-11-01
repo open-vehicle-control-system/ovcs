@@ -56,6 +56,22 @@ defmodule VisionApiWeb.PreviewChannelTest do
     assert VisionCore.Preview.options().depth_range_m == 8.5
   end
 
+  test "the depth stream pushes the colour range in force after every join" do
+    {:ok, _options} = VisionCore.Preview.set_options(depth_range_m: 6.0)
+
+    {:ok, _reply, _socket} = join("preview:depth")
+    assert_push "depth_range", %{metres: 6.0}
+
+    {:ok, _reply, _socket} = join("preview:depth")
+    assert_push "depth_range", %{metres: 6.0}
+  end
+
+  test "a camera stream pushes no colour range on joining" do
+    {:ok, _reply, _socket} = join("preview:left")
+
+    refute_push "depth_range", _range
+  end
+
   test "the depth stream pushes a colour range set from anywhere" do
     {:ok, _reply, _socket} = join("preview:depth")
 

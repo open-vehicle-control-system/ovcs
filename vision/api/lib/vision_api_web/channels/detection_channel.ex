@@ -6,7 +6,8 @@ defmodule VisionApiWeb.DetectionChannel do
   restarts, and refuses the join while it is not running, as on a unit
   without detection; see `VisionApiWeb.SourceMonitor`.
   """
-  use VisionApiWeb, :channel
+  # On a unit without detection, the client keeps retrying the refused join.
+  use VisionApiWeb, {:channel, log_join: :debug}
 
   alias VisionApiWeb.{DetectionPresenter, SourceMonitor}
 

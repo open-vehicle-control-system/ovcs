@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Preview from './Preview.jsx'
 import { OvcsStatus } from '@ovcs/ui/react'
 import { StatusValue } from './UnitStatus.jsx'
@@ -84,10 +84,37 @@ function LeftPreview({ status, socket }) {
   )
 }
 
+/**
+ * The depth with its rate and quality, and its colour range, which the unit pushes after every join, a rejoin
+ * included, and on every change; the handler is bound before the join, so it misses none.
+ */
+function DepthPreview({ status, socket }) {
+  const [channel, setChannel] = useState(null)
+  const [metres, setMetres] = useState(null)
+
+  const follow = useCallback((next) => {
+    if (next) next.on('depth_range', (range) => setMetres(range.metres))
+    else setMetres(null)
+    setChannel(next)
+  }, [])
+
+  return (
+    <Preview
+      stream="depth"
+      socket={socket}
+      onChannel={follow}
+      className="lg:flex lg:min-h-0 lg:flex-1 lg:flex-col"
+      frameClassName="lg:aspect-auto lg:min-h-0 lg:flex-1"
+    >
+      <Figures id="depth" figures={status ? depthFigures(status.depthHz, status.quality) : []}>
+        <DepthRange channel={channel} metres={metres} onChange={setMetres} />
+      </Figures>
+    </Preview>
+  )
+}
+
 /** Both cameras with their rates and how they compare between them, then the depth with its rate, filling the height left. */
 export default function Previews({ status, socket }) {
-  const [depthChannel, setDepthChannel] = useState(null)
-
   return (
     <section aria-label="Previews" className="flex flex-col gap-3 lg:min-h-0 lg:flex-1">
       <div className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3">
@@ -97,17 +124,7 @@ export default function Previews({ status, socket }) {
           {status ? <Figures id="right" figures={cameraFigures(status.cameras?.right)} /> : null}
         </Preview>
       </div>
-      <Preview
-        stream="depth"
-        socket={socket}
-        onChannel={setDepthChannel}
-        className="lg:flex lg:min-h-0 lg:flex-1 lg:flex-col"
-        frameClassName="lg:aspect-auto lg:min-h-0 lg:flex-1"
-      >
-        <Figures id="depth" figures={status ? depthFigures(status.depthHz, status.quality) : []}>
-          <DepthRange channel={depthChannel} />
-        </Figures>
-      </Preview>
+      <DepthPreview status={status} socket={socket} />
     </section>
   )
 }
