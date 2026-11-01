@@ -241,7 +241,7 @@ Each firmware's `runtime.exs` writes the side composer (`Ovcs1.Vms.Composer`, fo
 
 ## Local development
 
-Host development needs SocketCAN kernel support and `can-utils` (see [Getting started](./getting_started.md)). The vehicle package depends on `vms_firmware`, `infotainment_firmware` (when it has that side) and `bridge_firmware` (when it declares bridges), so one `mix compile` in the package directory builds every framework firmware it needs into its own `_build` tree. The dependency points vehicle → framework, never the reverse: each firmware reaches the vehicle's compiled code at boot through `Code.prepend_path`.
+Host development needs SocketCAN kernel support and `can-utils` (see [Getting started](./getting_started.md)). The vehicle package depends on `vms_firmware`, `infotainment_firmware` (when it has that side), `vision_firmware` (when it has a vision unit) and `bridge_firmware` (when it declares bridges), so one `mix compile` in the package directory builds every framework firmware it needs into its own `_build` tree. The dependency points vehicle → framework, never the reverse: each firmware reaches the vehicle's compiled code at boot through `Code.prepend_path`.
 
 ### One-command boot
 

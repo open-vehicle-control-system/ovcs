@@ -104,14 +104,14 @@ The default host is `<vehicle>-<role>.local`, with every underscore turned into 
 
 ## OTA updates via NervesHub
 
-The VMS firmware ships [NervesHubLink](https://hexdocs.pm/nerves_hub_link/), so deployed vehicles can pull signed updates from a self-hosted [NervesHub](https://github.com/nerves-hub/nerves_hub_web) instance instead of being flashed over SSH. It is opt-in per vehicle: set three variables in `vehicles/<vehicle>/.env.exs` before building (`.env.exs.example` has them commented out).
+The VMS and vision firmwares ship [NervesHubLink](https://hexdocs.pm/nerves_hub_link/), so deployed vehicles can pull signed updates from a self-hosted [NervesHub](https://github.com/nerves-hub/nerves_hub_web) instance instead of being flashed over SSH. It is opt-in per vehicle: set three variables in `vehicles/<vehicle>/.env.exs` before building (`.env.exs.example` has them commented out).
 
 - `NERVES_HUB_HOST`: the instance's device endpoint, a bare hostname (`wss` on port 443) or a full `wss://host:port` URL.
 - `NERVES_HUB_PRODUCT_KEY` and `NERVES_HUB_PRODUCT_SECRET`: the shared-secret pair from the product's settings on the instance.
 
 Without `NERVES_HUB_HOST`, the firmware never contacts NervesHub.
 
-**One NervesHub product per vehicle.** The build stamps a product name into the image's `meta-product`, derived from the `VEHICLE` module name: `Ovcs1 - VMS`, `Ovcs Mini - VMS`. NervesHub only accepts firmware whose metadata matches the product it's uploaded to, so create one product per vehicle with that name and put its shared-secret pair in that vehicle's `.env.exs`. A device then only ever sees its own vehicle's firmware.
+**One NervesHub product per vehicle.** The build stamps a product name into the image's `meta-product`, derived from the `VEHICLE` module name and the firmware: `Ovcs1 - VMS`, `Ovcs Mini - VMS`, `<Vehicle> - Vision`. NervesHub only accepts firmware whose metadata matches the product it's uploaded to, so create one product per vehicle with that name and put its shared-secret pair in that vehicle's `.env.exs`. A device then only ever sees its own vehicle's firmware. Both firmwares of a vehicle read that one pair, so it serves the VMS or the vision unit, not both.
 
 Publish with the [`nh` CLI](https://github.com/nerves-hub/nerves_hub_cli):
 

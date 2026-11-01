@@ -96,7 +96,7 @@ vehicles/ovcs_mini/
 
 ### Why the vehicle depends on the firmwares
 
-`vehicles/<name>/mix.exs` lists `vms_firmware`, `infotainment_firmware` (when the vehicle has an infotainment side) and `bridge_firmware` (when it declares bridges) as path dependencies:
+`vehicles/<name>/mix.exs` lists `vms_firmware`, `infotainment_firmware` (when the vehicle has an infotainment side), `vision_firmware` (when it has a vision unit) and `bridge_firmware` (when it declares bridges) as path dependencies:
 
 ```elixir
 defp deps do
@@ -137,7 +137,7 @@ Each firmware's `config.exs` and `runtime.exs` run in Mix's standard order:
    ```
 
    `resolve_side/4` takes the vehicle name baked in by `config.exs` (from `VEHICLE`, default `Ovcs1` on host), prepends the vehicle's ebin (`vehicles/<name>/_build/<env>/lib/<name>/ebin` on host, `<release>/lib/<name>-<vsn>/ebin` on target) and returns `{vehicle, composer}`, or `nil` under `MIX_ENV=test`.
-3. **`Application.start/2`** of the core (`VmsCore.Application` or `InfotainmentCore.Application`) reads `:*_core, :vehicle`, calls `composer.children/0`, and supervises the result under its root supervisor. It also supervises `OvcsBus.Cluster`, which connects this BEAM to its siblings.
+3. **`Application.start/2`** of the core (`VmsCore.Application` or `InfotainmentCore.Application`) reads `:*_core, :vehicle`, calls `composer.children/0`, and supervises the result under its root supervisor. It also supervises `OvcsBus.Cluster`, which connects this BEAM to its siblings. `VisionCore.Application` reads `:vision_core, :vehicle` the same way, but its composer returns a `VisionCore.Config` rather than children; see [Vision unit](./vision/overview.md).
 
 Bridges follow the same pattern with `OvcsBridge.Supervisor` in place of a core application; the entry it reads is `vehicle.bridge_firmwares()[bridge_firmware_id]`.
 

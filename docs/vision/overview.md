@@ -16,7 +16,7 @@ The unit follows the same split as the VMS and the infotainment: a core, an API,
 | Core | [`vision/core`](../../vision/core/README.md) | `VisionCore`: camera drivers, the stereo pipeline and its stages (rectification, matching, depth, in Nx), detection, and the ROS 2 side under `VisionCore.Ros2`. No vehicle knowledge, no web dependencies. |
 | API | [`vision/api`](../../vision/api/README.md) | `VisionApi`: a Phoenix endpoint serving the vision parameters and the active configuration as JSON:API resources, with channels that stream status and camera previews. |
 | Firmware | [`vision/firmware`](../../vision/firmware/README.md) | The Nerves image for the `rpi5` and `okdo_c100` targets. At boot it reads `VEHICLE` and loads the vehicle's composer. |
-| Dashboard | [`vision/dashboard`](../../vision/dashboard/README.md) | A React app showing the status cards, the left, right and depth previews, and the unit as its pipeline with each box's parameters. |
+| Dashboard | [`vision/dashboard`](../../vision/dashboard/README.md) | A React app showing the unit's status, the left, right and depth previews, and the unit as its pipeline with each box's parameters. |
 | Ports | [`vision/rust`](../../vision/rust/README.md) | The Rust programs the core drives as Ports: capture, detection, JPEG and stereo matching on the CPU. |
 
 The [ROS bridge](../../bridges/ros_bridge/README.md) has stereo depth and detection components of its own, built on OpenCV: it matches with OpenCV's semi-global block matching (`StereoSGBM`), through evision. The vision unit runs no OpenCV: its stages are Nx, compiled for the board, or native in the `stereo_match` Port. A vehicle runs stereo in one or the other.

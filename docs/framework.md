@@ -25,6 +25,7 @@ The framework never imports a vehicle. At boot each firmware reads one environme
 - **A Vehicle Management System** that speaks CAN to any number of isolated buses, translates between manufacturers, and exposes metrics and actions over HTTP and WebSocket.
 - **An infotainment side** with the same shape, driving a Flutter touchscreen.
 - **Bridges** to non-CAN worlds: an ExpressLRS radio link, a ROS 2 graph over Zenoh.
+- **A vision unit**: stereo depth and object detection on its own board, published as ROS 2 topics over Zenoh, with a dashboard to tune it.
 - **Generic controllers**: one Arduino firmware for every board, configured over CAN by the VMS.
 - **One Erlang mesh** joining every firmware BEAM, with no broker.
 - **A CLI** that boots everything on a laptop with virtual CAN, builds and burns Nerves images, pushes firmware to a running board over SSH, and attaches a debugging TUI.
