@@ -63,7 +63,7 @@ pub fn parse(command_line: &[String]) -> Result<Arguments, String> {
     let mut rest = command_line.iter();
     while let Some(flag) = rest.next() {
         let Some(value) = rest.next() else {
-            return Err(format!("unknown arg {flag}"));
+            return Err(format!("unknown argument {flag}"));
         };
         match flag.as_str() {
             "--camera" => arguments.camera_id = unsigned(flag, value)?,
@@ -106,7 +106,7 @@ pub fn parse(command_line: &[String]) -> Result<Arguments, String> {
                     _ => return Err("--format must be jpeg or grey".to_string()),
                 }
             }
-            _ => return Err(format!("unknown arg {flag}")),
+            _ => return Err(format!("unknown argument {flag}")),
         }
     }
     Ok(arguments)
@@ -276,7 +276,7 @@ mod tests {
     fn rejects_unknown_flag() {
         assert_eq!(
             parse(&strings(&["--zoom", "2"])),
-            Err("unknown arg --zoom".to_string())
+            Err("unknown argument --zoom".to_string())
         );
     }
 
@@ -284,7 +284,7 @@ mod tests {
     fn rejects_flag_without_value() {
         assert_eq!(
             parse(&strings(&["--width"])),
-            Err("unknown arg --width".to_string())
+            Err("unknown argument --width".to_string())
         );
     }
 

@@ -36,18 +36,18 @@ pub fn decode_nms_by_class(
             _ => break,
         };
 
-        for bbox in output[offset..end].chunks_exact(FLOATS_PER_BOX) {
-            let score = bbox[4];
+        for bounding_box in output[offset..end].chunks_exact(FLOATS_PER_BOX) {
+            let score = bounding_box[4];
             if score < score_threshold {
                 continue;
             }
             let [x0, y0, x1, y1] = to_caller(
                 letterbox,
                 [
-                    bbox[1] * model,
-                    bbox[0] * model,
-                    bbox[3] * model,
-                    bbox[2] * model,
+                    bounding_box[1] * model,
+                    bounding_box[0] * model,
+                    bounding_box[3] * model,
+                    bounding_box[2] * model,
                 ],
             );
             // A box may extend into the padding when an object is cut off at the frame edge.

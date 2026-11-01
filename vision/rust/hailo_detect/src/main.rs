@@ -209,14 +209,18 @@ fn dump_debug(
         };
         if count > 0 && end <= nms_output.len() {
             let _ = write!(text, "class {class_id} count {count}:");
-            for bbox in nms_output[offset..]
+            for bounding_box in nms_output[offset..]
                 .chunks_exact(nms::FLOATS_PER_BOX)
                 .take(count.min(4))
             {
                 let _ = write!(
                     text,
                     "  [y0={:.3} x0={:.3} y1={:.3} x1={:.3} s={:.3}]",
-                    bbox[0], bbox[1], bbox[2], bbox[3], bbox[4]
+                    bounding_box[0],
+                    bounding_box[1],
+                    bounding_box[2],
+                    bounding_box[3],
+                    bounding_box[4]
                 );
             }
             text.push('\n');

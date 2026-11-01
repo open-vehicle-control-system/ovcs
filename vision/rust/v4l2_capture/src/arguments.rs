@@ -44,10 +44,8 @@ pub fn parse(arguments: &[String]) -> Result<Arguments, String> {
             "--right-video" => right_video = Some(value.clone()),
             "--right-sensor" => right_sensor = Some(value.clone()),
             setting => match setting.strip_prefix("--") {
-                Some(name) => settings
-                    .set(&name.replace('-', "_"), value)
-                    .map_err(|error| error.replace("unknown setting", "unknown arg"))?,
-                None => return Err(format!("unknown arg {flag}")),
+                Some(name) => settings.set(&name.replace('-', "_"), value)?,
+                None => return Err(format!("unknown argument {flag}")),
             },
         }
     }
