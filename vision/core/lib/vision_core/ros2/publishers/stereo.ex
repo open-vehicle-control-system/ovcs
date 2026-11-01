@@ -94,6 +94,15 @@ defmodule VisionCore.Ros2.Publishers.Stereo do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
 
+  @doc """
+  Reloads each side's camera info from its calibration file, or from
+  `:left_calibration_path` / `:right_calibration_path` in `paths` when
+  given, as after a calibration commit.
+  """
+  @spec reload_calibration(GenServer.server(), keyword()) :: :ok
+  def reload_calibration(server \\ __MODULE__, paths),
+    do: GenServer.call(server, {:reload_calibration, paths})
+
   @impl GenServer
   def init(opts) do
     cameras = Keyword.fetch!(opts, :cameras)
@@ -150,6 +159,16 @@ defmodule VisionCore.Ros2.Publishers.Stereo do
        telemetry: StageTimer.new(window: 30, label: "publisher"),
        last_pair_at_ns: nil
      }}
+  end
+
+  @impl GenServer
+  def handle_call({:reload_calibration, paths}, _from, state) do
+    sides = %{
+      "left" => reload_side_calibration(state.sides["left"], paths[:left_calibration_path]),
+      "right" => reload_side_calibration(state.sides["right"], paths[:right_calibration_path])
+    }
+
+    {:reply, :ok, %{state | sides: sides}}
   end
 
   @impl GenServer
@@ -413,9 +432,23 @@ defmodule VisionCore.Ros2.Publishers.Stereo do
           fallback_height,
           side
         ),
+      calibration_path: Keyword.get(side_opts, :calibration_path),
+      label: side,
+      fallback_width: fallback_width,
+      fallback_height: fallback_height,
       frame_counter: 0,
       next_image_ms: nil
     }
+  end
+
+  @doc false
+  def reload_side_calibration(side, calibration_path) do
+    path = calibration_path || side.calibration_path
+
+    camera_info =
+      load_camera_info(path, side.fallback_width, side.fallback_height, side.label)
+
+    %{side | camera_info: camera_info, calibration_path: path}
   end
 
   defp load_camera_info(nil, width, height, side) do

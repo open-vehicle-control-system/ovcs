@@ -233,13 +233,17 @@ defmodule VisionCore.Stereo.Supervisor do
   end
 
   @doc """
-  Reloads the pipeline's calibration and starts the row correction
-  (`VisionCore.Stereo.AlignmentCorrection`) over: a new calibration
-  lines the rows up itself, so Rectification's `right_row_offset` returns to
-  0 and its saved value under `prefix` is forgotten.
+  Reloads the pipeline's calibration and the raw camera info
+  `VisionCore.Ros2.Publishers.Stereo` publishes, and starts the row
+  correction (`VisionCore.Stereo.AlignmentCorrection`) over: a new
+  calibration lines the rows up itself, so Rectification's
+  `right_row_offset` returns to 0 and its saved value under `prefix` is
+  forgotten.
   """
   def reload_calibration(pipeline, prefix, paths \\ []) do
     with :ok <- Pipeline.reload_calibration(pipeline, paths) do
+      if Process.whereis(StereoPublisher), do: StereoPublisher.reload_calibration(paths)
+
       if Enum.any?(Pipeline.stage_options(pipeline), &(&1.stage == :rectification)) do
         {:ok, _values} = Pipeline.set_options(pipeline, :rectification, right_row_offset: 0.0)
         forget_parameter("#{prefix}.rectification.right_row_offset")
