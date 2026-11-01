@@ -130,7 +130,7 @@ defmodule VisionCore.ParametersTest do
   end
 
   test "refuses an unknown parameter", %{server: server} do
-    assert Parameters.set(server, "stereo.disparity.p9", 1) == {:error, "unknown parameter"}
+    assert Parameters.set(server, "stereo.disparity.p9", 1) == {:error, :not_found}
     assert Parameters.get(server, "stereo.disparity.p9") == {:error, :not_found}
   end
 
@@ -572,9 +572,9 @@ defmodule VisionCore.ParametersTest do
       assert Parameters.unsaved_count(server) == 1
 
       assert Parameters.reset(server, {:parameter, "stereo.disparity.p9"}) ==
-               {:error, "unknown parameter"}
+               {:error, :not_found}
 
-      assert Parameters.reset(server, {:group, "stereo.nothing"}) == {:error, "unknown group"}
+      assert Parameters.reset(server, {:group, "stereo.nothing"}) == {:error, :not_found}
 
       stop_owner(owner)
       {_owner, agent} = start_owner(server, &match_groups/1)

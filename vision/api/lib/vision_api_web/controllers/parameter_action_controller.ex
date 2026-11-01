@@ -26,10 +26,10 @@ defmodule VisionApiWeb.ParameterActionController do
 
   def reset(conn, params) do
     act(conn, params, "parameter-resets", fn data ->
-      with {:ok, scope} <- scope(data),
-           :ok <- check_scope(scope) do
+      with {:ok, scope} <- scope(data) do
         case Parameters.reset(scope) do
           {:ok, ids} -> {:ok, ids}
+          {:error, :not_found} -> {:error, 404, "Not Found", not_found(scope), nil}
           {:error, reason} -> {:error, 422, "Not reset", reason, nil}
         end
       end
@@ -68,18 +68,6 @@ defmodule VisionApiWeb.ParameterActionController do
 
   defp scope(_data), do: {:ok, :all}
 
-  defp check_scope(:all), do: :ok
-
-  defp check_scope({:group, id}) do
-    if Enum.any?(Parameters.groups(), &(&1.id == id)),
-      do: :ok,
-      else: {:error, 404, "Not Found", "no stage #{id}", nil}
-  end
-
-  defp check_scope({:parameter, id}) do
-    case Parameters.get(id) do
-      {:ok, _parameter} -> :ok
-      {:error, :not_found} -> {:error, 404, "Not Found", "no parameter #{id}", nil}
-    end
-  end
+  defp not_found({:group, id}), do: "no stage #{id}"
+  defp not_found({:parameter, id}), do: "no parameter #{id}"
 end

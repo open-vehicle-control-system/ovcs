@@ -100,6 +100,7 @@ defmodule VisionCore.Ros2.Parameters do
     |> Enum.map(fn {name, value} ->
       case call(registry, &VisionCore.Parameters.set(&1, name, value), {:error, "not applied"}) do
         {:ok, _parameter} -> :ok
+        {:error, :not_found} -> {:error, "unknown parameter"}
         {:error, _reason} = error -> error
       end
     end)

@@ -33,19 +33,15 @@ defmodule VisionApiWeb.ParameterController do
         {:ok, parameter} ->
           JsonApi.send_document(conn, 200, %{data: ParameterPresenter.present(parameter)})
 
+        {:error, :not_found} ->
+          JsonApi.error(conn, 404, "Not Found", "no parameter #{id}")
+
         {:error, reason} ->
-          not_settable(conn, id, reason)
+          JsonApi.error(conn, 422, "Invalid value", reason, @value_pointer)
       end
     else
       {:error, status, title, detail, pointer} ->
         JsonApi.error(conn, status, title, detail, pointer)
-    end
-  end
-
-  defp not_settable(conn, id, reason) do
-    case Parameters.get(id) do
-      {:error, :not_found} -> JsonApi.error(conn, 404, "Not Found", "no parameter #{id}")
-      {:ok, _parameter} -> JsonApi.error(conn, 422, "Invalid value", reason, @value_pointer)
     end
   end
 

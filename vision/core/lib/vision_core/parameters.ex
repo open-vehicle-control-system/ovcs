@@ -88,11 +88,13 @@ defmodule VisionCore.Parameters do
   def get(server \\ __MODULE__, id), do: GenServer.call(server, {:get, id})
 
   @doc """
-  Checks `value` against parameter `id` and applies it. Switching an automatic
+  Checks `value` against parameter `id` and applies it;
+  `{:error, :not_found}` when there is no such parameter. Switching an automatic
   mode off, here or when a saved or unsaved value is applied, first sets each
   parameter it controls to the value it left, brought within its range.
   """
-  @spec set(GenServer.server(), id(), term()) :: {:ok, Parameter.t()} | {:error, String.t()}
+  @spec set(GenServer.server(), id(), term()) ::
+          {:ok, Parameter.t()} | {:error, :not_found | String.t()}
   def set(server \\ __MODULE__, id, value), do: GenServer.call(server, {:set, id, value})
 
   @doc "The number of parameters whose value differs from their saved value or default."
@@ -114,9 +116,10 @@ defmodule VisionCore.Parameters do
   @doc """
   Sets the live parameters in scope back to their default, as unsaved
   changes. Parameters set by an automatic mode are left alone.
+  `{:error, :not_found}` when the group or parameter does not exist.
   """
   @spec reset(GenServer.server(), :all | {:group, String.t()} | {:parameter, id()}) ::
-          {:ok, [id()]} | {:error, String.t()}
+          {:ok, [id()]} | {:error, :not_found | String.t()}
   def reset(server \\ __MODULE__, scope), do: GenServer.call(server, {:reset, scope})
 
   @doc "Deletes the saved value of `id` now and forgets its unsaved change."
@@ -181,10 +184,8 @@ defmodule VisionCore.Parameters do
   end
 
   def handle_call({:set, id, value}, _from, state) do
-    case find(state, id) do
-      nil -> refuse(id, value, "unknown parameter", state)
-      declared -> set_declared(state, declared, value)
-    end
+    {reply, state} = set_value(state, id, value)
+    {:reply, reply, state}
   end
 
   def handle_call(:unsaved_count, _from, state) do
@@ -292,24 +293,30 @@ defmodule VisionCore.Parameters do
 
   def handle_info(_message, state), do: {:noreply, state}
 
-  defp set_declared(state, declared, value) do
-    {values, state} = read_values(state, related_ids(state, declared))
+  defp set_value(state, id, value) do
+    case find(state, id) do
+      nil ->
+        log_refused_set(id, value, "unknown parameter")
+        {{:error, :not_found}, state}
 
-    case apply_value(state, declared, value, values) do
-      {:ok, applied} ->
-        state = %{state | changed: Map.merge(state.changed, applied)}
-        {parameter, state} = read_parameter(state, declared)
-        {:reply, {:ok, parameter}, state}
+      declared ->
+        {values, state} = read_values(state, related_ids(state, declared))
 
-      {:error, reason} ->
-        refuse(declared.id, value, reason, state)
+        case apply_value(state, declared, value, values) do
+          {:ok, applied} ->
+            state = %{state | changed: Map.merge(state.changed, applied)}
+            {parameter, state} = read_parameter(state, declared)
+            {{:ok, parameter}, state}
+
+          {:error, reason} ->
+            log_refused_set(id, value, reason)
+            {{:error, reason}, state}
+        end
     end
   end
 
-  defp refuse(id, value, reason, state) do
-    Logger.info("vision parameter #{id} = #{inspect(value)} refused: #{reason}")
-    {:reply, {:error, reason}, state}
-  end
+  defp log_refused_set(id, value, reason),
+    do: Logger.info("vision parameter #{id} = #{inspect(value)} refused: #{reason}")
 
   # The values applied by id, or the first refusal.
   defp apply_value(state, declared, value, values) do
@@ -454,14 +461,14 @@ defmodule VisionCore.Parameters do
 
   defp in_scope(state, {:group, group_id}) do
     case Enum.filter(all_parameters(state), &(&1.group == group_id)) do
-      [] -> {:error, "unknown group"}
+      [] -> {:error, :not_found}
       parameters -> {:ok, parameters}
     end
   end
 
   defp in_scope(state, {:parameter, id}) do
     case find(state, id) do
-      nil -> {:error, "unknown parameter"}
+      nil -> {:error, :not_found}
       declared -> {:ok, [declared]}
     end
   end
