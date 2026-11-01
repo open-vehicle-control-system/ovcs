@@ -35,7 +35,7 @@ defmodule VisionCore.Ros2.Camera do
 
   `Frame.capture_ns` means Erlang monotonic time everywhere in this
   vision core, so the stamp a frame carries, on the simulator's clock, is
-  converted back through `VisionCore.Stamp.monotonic_from_ros_time/1`. Both
+  converted back through `VisionCore.Ros2.Stamp.monotonic_from_ros_time/1`. Both
   sides of a pair carry the same render stamp, so the stereo
   publisher pairs them exactly; their arrival times differ by tens of
   milliseconds, enough to pair a frame with its neighbour's, which

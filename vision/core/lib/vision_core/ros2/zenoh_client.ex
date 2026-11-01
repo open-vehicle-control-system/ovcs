@@ -82,14 +82,14 @@ defmodule VisionCore.Ros2.ZenohClient do
   Every message module is entered through one guarded call. The
   parsers are binary pattern matches, and a short or malformed body
   raises (`FunctionClauseError`, `MatchError`, `ArgumentError`) rather
-  than returning a tagged error. The vision core subtree is `:rest_for_one`
-  (`VisionCore.children/0`), so a raise would restart every consumer at
-  the publisher's frequency; a malformed frame is data, not a fault.
+  than returning a tagged error. `VisionCore.Supervisor` is `:rest_for_one`,
+  so a raise would restart every consumer at the publisher's frequency; a
+  malformed frame is data, not a fault.
 
   Bytes left over after a successful parse mean the wrong message
-  module: a `TwistStamped` body handed to `Twist.parse/1` reads the
-  header as float64s and succeeds with denormals, so the vehicle
-  ignores every command while the stream looks healthy. Messages ending
+  module: a stamped message's body handed to its unstamped type's
+  `parse/1` reads the header as data and can succeed with nonsense
+  values while the stream looks healthy. Messages ending
   in a variable-length field can carry up to 7 bytes of CDR alignment
   padding, so only a surplus of 8 bytes or more is warned about, at
   most once per period per keyexpr.

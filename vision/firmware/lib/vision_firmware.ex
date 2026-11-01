@@ -1,7 +1,7 @@
 defmodule VisionFirmware do
   @moduledoc """
   Nerves firmware for a vehicle's vision unit: `vision_api` and
-  `vision_core` on a Raspberry Pi 5.
+  `vision_core` on a Raspberry Pi 5 or an OKdo Nano C100.
   """
 
   @doc """
