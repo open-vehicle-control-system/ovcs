@@ -29,4 +29,20 @@ describe('Menu', () => {
     expect(within(pipeline).queryByRole('button', { name: /^Detection/ })).toBeNull()
     expect(screen.queryByText('Beside the pipeline')).toBeNull()
   })
+
+  it('shows Detection disabled on a unit without a detector', () => {
+    useParameters.setState({ groups: [group('cameras', 'Cameras', 0, 'source')] })
+    render(<Menu />)
+
+    const detection = within(screen.getByRole('region', { name: 'Main' })).getByRole('button', { name: /^Detection/ })
+    expect(detection.disabled).toBe(true)
+    expect(detection.getAttribute('aria-label')).toBe('Detection, disabled: no detector on this unit')
+  })
+
+  it('shows no Detection entry before the stages have loaded', () => {
+    useParameters.setState({ groups: [] })
+    render(<Menu />)
+
+    expect(screen.queryByRole('button', { name: /^Detection/ })).toBeNull()
+  })
 })

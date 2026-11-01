@@ -49,8 +49,9 @@ describe('PipelineDiagram', () => {
     expect(flow.querySelectorAll('[data-arrow]')).toHaveLength(3)
 
     const side = screen.getByRole('list', { name: 'Components' })
-    expect(within(side).getAllByRole('button')).toHaveLength(1)
-    expect(within(side).getByRole('button').textContent).toContain('Preview')
+    const [preview, detection] = within(side).getAllByRole('button')
+    expect(preview.textContent).toContain('Preview')
+    expect(detection.disabled).toBe(true)
     expect(flow.contains(side)).toBe(false)
   })
 

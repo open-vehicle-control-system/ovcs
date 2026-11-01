@@ -94,7 +94,7 @@ function useGroupBoxes() {
     <GroupBox group={group} unsaved={unsaved[group.id] ?? 0} selected={group.id === selectedGroupId} onSelect={select} />
   )
 
-  return { flow, side, selectedGroupId, box }
+  return { groups, flow, side, selectedGroupId, box }
 }
 
 /** The vision unit's pipeline as a menu: its flow of boxes, one per line; a box selects its group. */
@@ -113,16 +113,40 @@ export default function PipelineDiagram() {
   )
 }
 
-/** The components beside the pipeline, such as detection, as boxes that select them. */
+// Detection on a unit built without a detector: listed, so the menu is the same on every unit, but not selectable.
+function DisabledDetection() {
+  return (
+    <button
+      type="button"
+      disabled
+      aria-label="Detection, disabled: no detector on this unit"
+      title="No detector on this unit"
+      className={`flex min-h-9 w-full items-center gap-2 rounded border px-3 py-1 text-left text-sm ${STATUS_STYLES.off.border}`}
+    >
+      <span translate="no">Detection</span>
+      <span aria-hidden="true" className="ml-auto text-[10px] leading-none">
+        disabled
+      </span>
+    </button>
+  )
+}
+
+/** The components beside the pipeline, such as detection, as boxes that select them; Detection disabled without a detector. */
 export function SideGroups() {
-  const { side, box } = useGroupBoxes()
-  if (side.length === 0) return null
+  const { groups, side, box } = useGroupBoxes()
+  const withoutDetector = groups.length > 0 && !side.some((group) => group.id === 'detection')
+  if (side.length === 0 && !withoutDetector) return null
 
   return (
     <ul aria-label="Components" className="flex flex-col gap-1">
       {side.map((group) => (
         <li key={group.id}>{box(group)}</li>
       ))}
+      {withoutDetector ? (
+        <li>
+          <DisabledDetection />
+        </li>
+      ) : null}
     </ul>
   )
 }
