@@ -375,12 +375,9 @@ defmodule VisionCore.Stereo.NativeSegmentTest do
       {:ok, native_second, _native} =
         NativeSegment.run(second, NativeSegment.put_member_state(native, 0, speckle))
 
-      # The Nx segment starts its carried values over on a new setting: they are put back.
       {:ok, nx} = NxSegment.build(members(stages, context), context, compiler: Nx.Defn.Evaluator)
       {:ok, _pair, nx} = NxSegment.run(first, nx)
-      carried = Map.take(nx.params[1], [:previous, :missed])
       nx = NxSegment.put_member_state(nx, 0, speckle)
-      nx = %{nx | params: Map.update!(nx.params, 1, &Map.merge(&1, carried))}
       {:ok, nx_second, _nx} = NxSegment.run(second, nx)
 
       assert_same_tensor(native_second.disparity, nx_second.disparity, "disparity")

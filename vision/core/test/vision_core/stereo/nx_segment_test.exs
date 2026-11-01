@@ -33,6 +33,24 @@ defmodule VisionCore.Stereo.NxSegmentTest do
       do: Map.put(tensors, :left, Nx.add(Nx.as_type(tensors.left, :f32), params.offset))
   end
 
+  # Adds its live `step` to a total it carries from pair to pair.
+  defmodule Count do
+    @behaviour VisionCore.Stereo.NxStage
+    def init(_opts, _context), do: {:ok, 1}
+    def requires, do: [:left]
+    def provides, do: [:left]
+    def params(step, _context), do: %{step: step}
+    def carry(_step, _context), do: %{total: Nx.f32(0)}
+
+    def step(tensors, params, _state) do
+      total = Nx.add(params.total, params.step)
+
+      tensors
+      |> Map.put(:left, Nx.add(Nx.as_type(tensors.left, :f32), total))
+      |> Map.put({:carry, :total}, total)
+    end
+  end
+
   defmodule Halve do
     @behaviour VisionCore.Stereo.Stage
     def init(_opts, _context), do: {:ok, nil}
@@ -117,6 +135,17 @@ defmodule VisionCore.Stereo.NxSegmentTest do
     segment = NxSegment.reload(segment, members([AddOne, Offset], reloaded), reloaded)
     {:ok, pair, _segment} = NxSegment.run(grey_pair(List.duplicate(0, 8)), segment)
     assert pair.left |> Nx.to_flat_list() |> Enum.uniq() == [6.0]
+  end
+
+  test "a new live setting applies from the next pair, keeping what the stages carry" do
+    {:ok, segment} = NxSegment.build(members([AddOne, Count], context()), context(), [])
+    {:ok, _pair, segment} = NxSegment.run(grey_pair(List.duplicate(0, 8)), segment)
+    {:ok, _pair, segment} = NxSegment.run(grey_pair(List.duplicate(0, 8)), segment)
+
+    segment = NxSegment.put_member_state(segment, 1, 10)
+    {:ok, pair, _segment} = NxSegment.run(grey_pair(List.duplicate(0, 8)), segment)
+
+    assert pair.left |> Nx.to_flat_list() |> Enum.uniq() == [13.0]
   end
 
   test "sends a pair without waiting, and recognises its outputs among other messages" do

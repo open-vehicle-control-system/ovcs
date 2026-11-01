@@ -190,12 +190,27 @@ defmodule VisionCore.Stereo.NxSegment do
   def reload(%__MODULE__{} = segment, members, context),
     do: %{segment | members: members, params: params(members, context), context: context}
 
-  @doc "The segment with the member at `index` in a new `state`: new inputs, the same function."
+  @doc """
+  The segment with the member at `index` in a new `state`: its new
+  inputs, the same function, and what every stage carries kept.
+  """
   @impl VisionCore.Stereo.Segment
   @spec put_member_state(t(), non_neg_integer(), term()) :: t()
   def put_member_state(%__MODULE__{members: members} = segment, index, state) do
     members = List.update_at(members, index, &%{&1 | state: state})
-    reload(segment, members, segment.context)
+    member = Enum.at(members, index)
+
+    inputs =
+      member.module.params(member.state, segment.context)
+      |> Map.new(fn {key, value} -> {key, to_input(value)} end)
+
+    carried = Map.take(segment.params[index], Map.keys(carry(member, segment.context)))
+
+    %{
+      segment
+      | members: members,
+        params: Map.put(segment.params, index, Map.merge(inputs, carried))
+    }
   end
 
   @doc "Runs the segment on `pair`, in the shape of `c:VisionCore.Stereo.Stage.run/2`."
