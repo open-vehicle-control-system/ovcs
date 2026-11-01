@@ -236,6 +236,15 @@ defmodule VisionCore.Stereo.MatcherTest do
     assert Enum.map(sent, &await_response(&1, segment)) == expected
   end
 
+  test "replaces a Port that exited before its exit status was handled, without writing to it" do
+    closed = Port.open({:spawn_executable, "/bin/true"}, [:exit_status])
+    assert_receive {^closed, {:exit_status, 0}}
+    :sys.replace_state(Matcher, &%{&1 | port: closed})
+
+    image = Nx.iota({24, 48}, type: :u8)
+    assert {:ok, _disparity} = match(image, image, sgm_opts([]))
+  end
+
   test "a Port that exits fails every request waiting for it" do
     {left, right} = textured_pair(7, {360, 480}, 8)
     opts = sgm_opts(paths: 8, disparities: 128)

@@ -206,7 +206,10 @@ defmodule VisionCore.Stereo.Matcher do
     end
   end
 
-  defp ensure_port(state), do: {:ok, state}
+  # A Port that has exited, its exit status not handled yet, cannot be written to.
+  defp ensure_port(%{port: port} = state) do
+    if Port.info(port), do: {:ok, state}, else: state |> closed(:exited) |> ensure_port()
+  end
 
   @doc false
   def port_arguments(nil), do: []
