@@ -5,7 +5,7 @@ description: The vision role, a Raspberry Pi 5 or an OKdo Nano C100 that turns s
 
 The vision unit is an optional fourth role next to `vms`, `infotainment` and the bridges. It runs stereo depth, and optionally object detection, on a Raspberry Pi 5 or an OKdo Nano C100, publishes the results as ROS 2 messages over Zenoh, and serves its own dashboard. It has no CAN controller and does not touch the `ovcs` bus: it reaches the vehicle through the Zenoh router of the [ROS compute node](../ros2_compute_node.md), and the rest of the vehicle through the [Erlang mesh](../architecture.md#one-erlang-mesh-no-broker).
 
-A vehicle without cameras omits the role and nothing is built for it. None of the reference vehicles runs it yet: the OVCS Mini runs the same stack inside its `ros_vision` bridge firmware ([Perception](../ros2_perception.md)).
+A vehicle without cameras omits the role and nothing is built for it. None of the reference vehicles runs it yet: the OVCS Mini runs stereo depth and detection in its `ros_vision` bridge firmware instead, with the ROS bridge's own stack ([Perception](../ros2_perception.md)).
 
 ## Layers
 
@@ -19,7 +19,7 @@ The unit follows the same split as the VMS and the infotainment: a core, an API,
 | Dashboard | [`vision/dashboard`](../../vision/dashboard/README.md) | A React app showing the status cards, the left, right and depth previews, and the unit as its pipeline with each box's parameters. |
 | Ports | [`vision/rust`](../../vision/rust/README.md) | The Rust programs the core drives as Ports: capture, detection, JPEG and stereo matching on the CPU. |
 
-The [ROS bridge](../../bridges/ros_bridge/README.md) carries the same stereo and detection stack as components; a vehicle runs it in one or the other.
+The [ROS bridge](../../bridges/ros_bridge/README.md) has stereo depth and detection components of its own, built on OpenCV: it matches with OpenCV's semi-global block matching (`StereoSGBM`), through evision. The vision unit runs no OpenCV: its stages are Nx, compiled for the board, or native in the `stereo_match` Port. A vehicle runs stereo in one or the other.
 
 ## Opting in
 
@@ -115,6 +115,6 @@ On the host the composer's `:host` arm applies: it can read USB cameras through 
 ## See also
 
 - [Where depth is computed](./compute.md#rust-ports): the Rust Ports the core drives and how they are built.
-- [Perception: object detection](../ros2_perception.md): the detector, the Hailo backend and the topics.
+- [Perception: object detection](../ros2_perception.md): the ROS bridge's detector, its Hailo backend and its topics.
 - [ROS compute node](../ros2_compute_node.md): the router the unit peers with.
 - [Hardware you need](../hardware_you_need.md#bridges-and-extras): the boards, the cameras and the optional Hailo-8.
