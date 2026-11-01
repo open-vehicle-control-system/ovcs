@@ -1,5 +1,5 @@
 defmodule VisionCore.Camera.FocusSweepTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias VisionCore.Camera.FocusSweep
 
@@ -47,6 +47,68 @@ defmodule VisionCore.Camera.FocusSweepTest do
     after
       0 -> []
     end
+  end
+
+  test "refuses a range with no position in it" do
+    assert {:error, "no focus position" <> _} = sweep(from: 480, to: 380, step: 10)
+  end
+
+  test "fails when the best position cannot be set at the end" do
+    calls = :counters.new(1, [])
+
+    set_focus = fn _focus ->
+      :counters.add(calls, 1, 1)
+      if :counters.get(calls, 1) > 3, do: {:error, :lens_gone}, else: :ok
+    end
+
+    assert {:error, "focus 420 not set" <> _} =
+             FocusSweep.run(
+               from: 420,
+               to: 440,
+               step: 10,
+               set_focus: set_focus,
+               measure: fn -> {:ok, %{left: 1.0, right: 1.0}} end
+             )
+  end
+
+  # Stands in for VisionCore.Status: a snapshot with both cameras' sharpness every 5 ms.
+  defmodule Status do
+    use GenServer
+
+    def start_link(_opts), do: GenServer.start_link(__MODULE__, nil, name: VisionCore.Status)
+    def subscribers, do: GenServer.call(VisionCore.Status, :subscribers)
+
+    @impl GenServer
+    def init(nil) do
+      :timer.send_interval(5, :tick)
+      {:ok, MapSet.new()}
+    end
+
+    @impl GenServer
+    def handle_call({:subscribe, pid}, _from, subscribers),
+      do: {:reply, :ok, MapSet.put(subscribers, pid)}
+
+    def handle_call({:unsubscribe, pid}, _from, subscribers),
+      do: {:reply, :ok, MapSet.delete(subscribers, pid)}
+
+    def handle_call(:subscribers, _from, subscribers), do: {:reply, subscribers, subscribers}
+
+    @impl GenServer
+    def handle_info(:tick, subscribers) do
+      snapshot = %{sharpness: %{left: 0.02, right: 0.03}}
+      Enum.each(subscribers, &send(&1, {:vision_status, snapshot}))
+      {:noreply, subscribers}
+    end
+  end
+
+  test "measures through the status and leaves the caller unsubscribed" do
+    start_supervised!(Status)
+
+    assert {:ok, %{results: [_one, _two]}} =
+             FocusSweep.run(from: 420, to: 430, step: 10, set_focus: fn _ -> :ok end)
+
+    assert Status.subscribers() == MapSet.new()
+    refute_receive {:vision_status, _snapshot}, 50
   end
 
   test "stops at the first value it cannot measure" do

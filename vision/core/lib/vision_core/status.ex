@@ -66,9 +66,16 @@ defmodule VisionCore.Status do
   @spec snapshot() :: snapshot()
   def snapshot, do: GenServer.call(__MODULE__, :snapshot)
 
-  @doc "Sends the caller `{:vision_status, snapshot}` now and every tick until it exits."
+  @doc """
+  Sends the caller `{:vision_status, snapshot}` now and every tick, until
+  it exits or unsubscribes.
+  """
   @spec subscribe() :: :ok
   def subscribe, do: GenServer.call(__MODULE__, {:subscribe, self()})
+
+  @doc "Stops the caller's snapshots; one sent before may still arrive."
+  @spec unsubscribe() :: :ok
+  def unsubscribe, do: GenServer.call(__MODULE__, {:unsubscribe, self()})
 
   @impl GenServer
   def init(opts) do
@@ -106,6 +113,12 @@ defmodule VisionCore.Status do
   def handle_call({:subscribe, pid}, _from, state) do
     subscribers = Map.put_new_lazy(state.subscribers, pid, fn -> Process.monitor(pid) end)
     send(pid, {:vision_status, build_snapshot(state)})
+    {:reply, :ok, %{state | subscribers: subscribers}}
+  end
+
+  def handle_call({:unsubscribe, pid}, _from, state) do
+    {monitor_reference, subscribers} = Map.pop(state.subscribers, pid)
+    if monitor_reference, do: Process.demonitor(monitor_reference, [:flush])
     {:reply, :ok, %{state | subscribers: subscribers}}
   end
 

@@ -28,20 +28,54 @@ defmodule VisionCore.Camera.FocusSweep do
     * `:set` (`true`) — set the best position at the end.
     * `:set_focus`, `:measure` — how a position is set and both cameras'
       sharpness read: the stereo unit's V4L2 cameras and status by default.
+      Measuring through the status subscribes the caller for the sweep only.
   """
   @spec run(keyword()) ::
           {:ok, %{best: non_neg_integer(), results: [result()]}} | {:error, String.t()}
   def run(opts \\ []) do
+    case Keyword.fetch(opts, :measure) do
+      {:ok, measure} ->
+        sweep_and_set(opts, measure)
+
+      :error ->
+        :ok = Status.subscribe()
+
+        try do
+          sweep_and_set(opts, &measure_status/0)
+        after
+          Status.unsubscribe()
+          flush_status()
+        end
+    end
+  end
+
+  defp sweep_and_set(opts, measure) do
     set_focus = Keyword.get_lazy(opts, :set_focus, fn -> &set_v4l2_focus/1 end)
-    measure = Keyword.get_lazy(opts, :measure, &status_measure/0)
 
-    positions =
-      Keyword.get(opts, :from, 380)..Keyword.get(opts, :to, 480)//Keyword.get(opts, :step, 10)
+    from = Keyword.get(opts, :from, 380)
+    to = Keyword.get(opts, :to, 480)
+    positions = from..to//Keyword.get(opts, :step, 10)
 
-    with {:ok, results} <- sweep(positions, set_focus, measure) do
-      best = best(results)
-      if Keyword.get(opts, :set, true), do: set_focus.(best)
+    with :ok <- check_positions(positions, from, to),
+         {:ok, results} <- sweep(positions, set_focus, measure),
+         best = best(results),
+         :ok <- set_best(Keyword.get(opts, :set, true), set_focus, best) do
       {:ok, %{best: best, results: results}}
+    end
+  end
+
+  defp check_positions(positions, from, to) do
+    if Enum.empty?(positions),
+      do: {:error, "no focus position from #{from} to #{to}"},
+      else: :ok
+  end
+
+  defp set_best(false, _set_focus, _best), do: :ok
+
+  defp set_best(true, set_focus, best) do
+    case set_focus.(best) do
+      :ok -> :ok
+      other -> {:error, "focus #{best} not set: #{inspect(other)}"}
     end
   end
 
@@ -74,16 +108,13 @@ defmodule VisionCore.Camera.FocusSweep do
     end
   end
 
-  defp status_measure do
-    :ok = Status.subscribe()
+  # Lets one status tick pass for the lens and the averages to settle, then reads the next.
+  defp measure_status do
+    flush_status()
 
-    fn ->
-      flush_status()
-
-      with {:ok, _settling} <- next_status(),
-           {:ok, %{sharpness: %{} = sharpness}} <- next_status(),
-           do: {:ok, sharpness}
-    end
+    with {:ok, _settling} <- next_status(),
+         {:ok, %{sharpness: %{} = sharpness}} <- next_status(),
+         do: {:ok, sharpness}
   end
 
   defp next_status do

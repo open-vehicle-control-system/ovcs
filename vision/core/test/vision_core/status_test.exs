@@ -65,6 +65,25 @@ defmodule VisionCore.StatusTest do
     assert_receive {:vision_status, %{zenoh: :disconnected}}, 500
   end
 
+  test "an unsubscribed process receives no more snapshots" do
+    start_supervised!({Status, config: config([]), tick_ms: 20})
+    :ok = Status.subscribe()
+    assert_receive {:vision_status, _snapshot}, 500
+
+    :ok = Status.unsubscribe()
+    Process.sleep(30)
+    flush_snapshots()
+    refute_receive {:vision_status, _snapshot}, 100
+  end
+
+  defp flush_snapshots do
+    receive do
+      {:vision_status, _snapshot} -> flush_snapshots()
+    after
+      0 -> :ok
+    end
+  end
+
   test "subscribers receive a snapshot every tick, with the depth rate" do
     start_supervised!({Status, config: config([]), tick_ms: 200})
     :ok = Status.subscribe()
