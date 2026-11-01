@@ -99,57 +99,59 @@ defmodule VisionFirmware.MixProject do
     ]
   end
 
-  # See vms/firmware/mix.exs:copy_vehicle_app/1 for the full rationale:
-  # the vehicle (`vehicles/<dir>/`) is its own Mix project and not a dep
-  # here, so its OTP app dir (ebin + priv + .app) is hand-copied into the
-  # release.
+  # The vehicle is its own Mix project, not a dep: its app is copied into the release.
   defp copy_vehicle_app(release) do
     if vehicle_name = System.get_env("VEHICLE") do
-      dir = Macro.underscore(vehicle_name)
-      src = Path.expand("../../vehicles/#{dir}/_build/dev/lib/#{dir}", __DIR__)
+      vehicle_directory = Macro.underscore(vehicle_name)
 
-      unless File.dir?(src) do
+      vehicle_app_path =
+        Path.expand(
+          "../../vehicles/#{vehicle_directory}/_build/dev/lib/#{vehicle_directory}",
+          __DIR__
+        )
+
+      unless File.dir?(vehicle_app_path) do
         Mix.raise("""
         Vehicle app dir not found at:
 
-            #{src}
+            #{vehicle_app_path}
 
         Compile the vehicle first (the `./ovcs build` helper does this
         for you):
 
-            (cd vehicles/#{dir} && MIX_TARGET=host mix compile)
+            (cd vehicles/#{vehicle_directory} && MIX_TARGET=host mix compile)
         """)
       end
 
-      vsn = read_app_vsn!(src, dir)
-      dst = Path.join([release.path, "lib", "#{dir}-#{vsn}"])
+      version = read_app_version!(vehicle_app_path, vehicle_directory)
+      release_app_path = Path.join([release.path, "lib", "#{vehicle_directory}-#{version}"])
 
-      File.rm_rf!(dst)
-      File.mkdir_p!(dst)
+      File.rm_rf!(release_app_path)
+      File.mkdir_p!(release_app_path)
 
       # ebin/ and priv/ only, not consolidated/: see vms/firmware/mix.exs.
       # `cp -rL` dereferences the priv/ symlink in `_build`.
-      for sub <- ["ebin", "priv"] do
-        sub_src = Path.join(src, sub)
+      for subdirectory <- ["ebin", "priv"] do
+        source = Path.join(vehicle_app_path, subdirectory)
 
-        if File.exists?(sub_src) do
-          {_, 0} = System.cmd("cp", ["-rL", sub_src, Path.join(dst, sub)])
+        if File.exists?(source) do
+          {_, 0} = System.cmd("cp", ["-rL", source, Path.join(release_app_path, subdirectory)])
         end
       end
 
-      Mix.shell().info("Bundled vehicle #{vehicle_name} (ebin + priv) from #{src} → #{dst}")
-      check_required_files!(vehicle_name, src, dst)
+      Mix.shell().info(
+        "Bundled vehicle #{vehicle_name} (ebin + priv) from #{vehicle_app_path} → #{release_app_path}"
+      )
+
+      check_required_files!(vehicle_name, vehicle_app_path, release_app_path)
     end
 
     release
   end
 
-  # Files the vision composer lists in `required_files/0` (relative to
-  # the vehicle app, e.g. a model under priv/) that are not committed. A
-  # vision unit missing one boots but cannot do its job, so the build
-  # fails instead.
-  defp check_required_files!(vehicle_name, src, dst) do
-    Code.prepend_path(Path.join(src, "ebin"))
+  # A vision unit missing a file its composer requires boots but cannot do its job.
+  defp check_required_files!(vehicle_name, vehicle_app_path, release_app_path) do
+    Code.prepend_path(Path.join(vehicle_app_path, "ebin"))
     vehicle = Module.concat([vehicle_name])
 
     unless Code.ensure_loaded?(vehicle) and function_exported?(vehicle, :vision, 0) do
@@ -167,7 +169,7 @@ defmodule VisionFirmware.MixProject do
         do: composer.required_files(),
         else: []
 
-    missing = Enum.reject(required_files, &File.exists?(Path.join(dst, &1)))
+    missing = Enum.reject(required_files, &File.exists?(Path.join(release_app_path, &1)))
 
     if missing != [] do
       Mix.raise("""
@@ -183,18 +185,18 @@ defmodule VisionFirmware.MixProject do
     end
   end
 
-  defp read_app_vsn!(src_dir, dir) do
-    app_file = Path.join([src_dir, "ebin", "#{dir}.app"])
+  defp read_app_version!(app_path, app_name) do
+    app_file = Path.join([app_path, "ebin", "#{app_name}.app"])
 
     case :file.consult(String.to_charlist(app_file)) do
-      {:ok, [{:application, _name, props}]} ->
-        case Keyword.fetch(props, :vsn) do
-          {:ok, vsn} -> List.to_string(vsn)
+      {:ok, [{:application, _name, properties}]} ->
+        case Keyword.fetch(properties, :vsn) do
+          {:ok, version} -> List.to_string(version)
           :error -> Mix.raise("No :vsn in #{app_file}")
         end
 
-      other ->
-        Mix.raise("Could not read #{app_file}: #{inspect(other)}")
+      failure ->
+        Mix.raise("Could not read #{app_file}: #{inspect(failure)}")
     end
   end
 end
