@@ -508,12 +508,17 @@ defmodule VisionCore.ParametersTest do
     @tag store: FailingStore
     test "set_and_save keeps the value applied and unsaved when it cannot be stored",
          %{server: server} do
-      start_owner(server, &match_groups/1)
+      {owner, _agent} = start_owner(server, &match_groups/1)
 
       assert Parameters.set_and_save(server, "stereo.disparity.p1", 12) ==
                {:error, "applied but not saved: saved parameters unavailable"}
 
       assert {:ok, %{value: 12, state: :unsaved}} = Parameters.get(server, "stereo.disparity.p1")
+      assert_receive {:set, "p1", 12}
+      stop_owner(owner)
+
+      start_owner(server, &match_groups/1)
+      assert_receive {:set, "p1", 12}
     end
 
     test "save leaves out a parameter whose value cannot be read", %{server: server} do

@@ -199,14 +199,21 @@ defmodule VisionCore.Parameters do
   end
 
   def handle_call({:set_and_save, id, value}, _from, state) do
-    with {{:ok, _parameter}, state} <- set_value(state, id, value),
-         declared = find(state, id),
-         {:ok, _ids, state} <- store_values(state, [declared]) do
-      {parameter, state} = read_parameter(state, declared)
-      {:reply, {:ok, parameter}, state}
-    else
-      {{:error, _reason} = refused, state} -> {:reply, refused, state}
-      {:error, reason} -> {:reply, {:error, "applied but not saved: #{reason}"}, state}
+    case set_value(state, id, value) do
+      {{:ok, _parameter}, state} ->
+        declared = find(state, id)
+
+        case store_values(state, [declared]) do
+          {:ok, _ids, state} ->
+            {parameter, state} = read_parameter(state, declared)
+            {:reply, {:ok, parameter}, state}
+
+          {:error, reason, state} ->
+            {:reply, {:error, "applied but not saved: #{reason}"}, state}
+        end
+
+      {refused, state} ->
+        {:reply, refused, state}
     end
   end
 
@@ -222,7 +229,7 @@ defmodule VisionCore.Parameters do
 
     case store_values(state, parameters) do
       {:ok, ids, state} -> {:reply, {:ok, ids}, state}
-      {:error, reason} -> {:reply, {:error, reason}, state}
+      {:error, reason, state} -> {:reply, {:error, reason}, state}
     end
   end
 
@@ -444,7 +451,7 @@ defmodule VisionCore.Parameters do
     %{state | saved: Map.drop(state.saved, ids)}
   end
 
-  # Stores the values of `parameters`, returning the ids whose saved value changed.
+  # Stores the values of `parameters`; a failed write keeps the unsaved changes.
   defp store_values(state, parameters) do
     {values, state} = read_values(state, Enum.flat_map(parameters, &related_ids(state, &1)))
     readable = Enum.reject(parameters, &is_nil(values[&1.id]))
@@ -463,7 +470,7 @@ defmodule VisionCore.Parameters do
         {:ok, Map.keys(changes), %{state | saved: saved, changed: changed}}
 
       {:error, reason} ->
-        {:error, reason}
+        {:error, reason, state}
     end
   end
 
