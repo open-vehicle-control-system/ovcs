@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::ffi::{c_char, c_int, c_uchar, c_ulong, c_void, CStr};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::os::fd::{FromRawFd, RawFd};
+use std::os::fd::{AsFd, FromRawFd, RawFd};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::RecvTimeoutError;
 use std::sync::{Arc, Mutex};
@@ -91,6 +91,10 @@ const DISCOVERY_RETRY: Duration = Duration::from_millis(500);
 fn camera_manager(camera_id: usize) -> std::io::Result<CameraManager> {
     let deadline = std::time::Instant::now() + DISCOVERY_TIMEOUT;
     loop {
+        // The host closed the Port: a capture left starting would hold the camera.
+        if framing::hung_up(std::io::stdin().as_fd()) {
+            std::process::exit(0);
+        }
         let manager = CameraManager::new()?;
         if manager.cameras().len() > camera_id || std::time::Instant::now() >= deadline {
             return Ok(manager);

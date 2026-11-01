@@ -146,18 +146,6 @@ fn zeroed<T>() -> T {
     unsafe { std::mem::zeroed() }
 }
 
-/// The `/dev` path of the V4L2 node whose sysfs name is `name`.
-/// `node_named`, waiting up to `timeout` for a node the kernel has not
-/// registered yet, as when the program starts while the sensors still probe.
-pub fn wait_for_node(name: &str, timeout: std::time::Duration) -> io::Result<String> {
-    retry(
-        timeout,
-        std::time::Duration::from_millis(200),
-        io::ErrorKind::NotFound,
-        || node_named(name),
-    )
-}
-
 /// Calls `attempt` until it fails with another error than `waiting`, such as
 /// `NotFound` for a node not there yet or `ResourceBusy` for a device another
 /// process still holds, or until `timeout` has passed.
@@ -178,6 +166,7 @@ pub fn retry<T>(
     }
 }
 
+/// The `/dev` path of the V4L2 node whose sysfs name is `name`.
 pub fn node_named(name: &str) -> io::Result<String> {
     for entry in fs::read_dir("/sys/class/video4linux")? {
         let entry = entry?;

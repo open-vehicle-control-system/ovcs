@@ -31,6 +31,7 @@ const BUFFERS: u32 = 4;
 const EXPOSURE_GAIN_PRESENT: u8 = 0b11;
 // How long the sensors may take to register after the program starts.
 const NODE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
+const NODE_RETRY: std::time::Duration = std::time::Duration::from_millis(200);
 const BUSY_RETRY: std::time::Duration = std::time::Duration::from_millis(200);
 const PAIR_TOLERANCE_NS: i64 = 1_000_000;
 const STATISTICS_EVERY_S: u64 = 60;
@@ -67,6 +68,8 @@ fn main() -> ExitCode {
         .and_then(|arguments| run(&arguments, &writer, &log))
     {
         Ok(()) => ExitCode::SUCCESS,
+        // The host closed the Port, at startup or by closing stdout.
+        Err(error) if error.kind() == io::ErrorKind::BrokenPipe => ExitCode::SUCCESS,
         Err(error) => {
             log(LogLevel::Error, &error.to_string());
             ExitCode::FAILURE
@@ -74,10 +77,32 @@ fn main() -> ExitCode {
     }
 }
 
+/// `Err(BrokenPipe)` once the host has closed stdin, which ends a startup wait.
+fn host_present() -> io::Result<()> {
+    if framing::hung_up(io::stdin().as_fd()) {
+        Err(io::Error::new(
+            io::ErrorKind::BrokenPipe,
+            "the host closed stdin",
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+/// The `/dev` path of the node named `name`, waiting for a node the kernel has
+/// not registered yet, as when the program starts while the sensors still probe.
+fn wait_for_node(name: &str) -> io::Result<String> {
+    v4l2::retry(NODE_TIMEOUT, NODE_RETRY, io::ErrorKind::NotFound, || {
+        host_present()?;
+        v4l2::node_named(name)
+    })
+}
+
 fn open_camera(nodes: &arguments::Nodes, width: u32, height: u32) -> io::Result<Camera> {
     let open = || -> io::Result<Camera> {
-        let sensor = Node::open(&v4l2::wait_for_node(&nodes.sensor, NODE_TIMEOUT)?)?;
-        let node = Node::open(&v4l2::wait_for_node(&nodes.video, NODE_TIMEOUT)?)?;
+        host_present()?;
+        let sensor = Node::open(&wait_for_node(&nodes.sensor)?)?;
+        let node = Node::open(&wait_for_node(&nodes.video)?)?;
         let lens = sensor::lens_name(&nodes.sensor)
             .and_then(|name| v4l2::node_named(&name).ok())
             .and_then(|path| Node::open(&path).ok());

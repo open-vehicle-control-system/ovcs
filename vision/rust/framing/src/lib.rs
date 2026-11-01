@@ -4,7 +4,7 @@
 
 use std::fs::File;
 use std::io::{self, IoSlice, Read, Write};
-use std::os::fd::{FromRawFd, RawFd};
+use std::os::fd::{AsRawFd, BorrowedFd, FromRawFd, RawFd};
 use std::sync::{Arc, Mutex, TryLockError};
 
 const TAG_FRAME: u8 = 1;
@@ -22,9 +22,19 @@ pub enum LogLevel {
     Error = 2,
 }
 
+#[repr(C)]
+struct PollDescriptor {
+    fd: RawFd,
+    events: i16,
+    revents: i16,
+}
+
+const POLLHUP: i16 = 0x10;
+
 extern "C" {
     fn dup(fd: RawFd) -> RawFd;
     fn dup2(old: RawFd, new: RawFd) -> RawFd;
+    fn poll(descriptors: *mut PollDescriptor, count: std::ffi::c_ulong, timeout_ms: i32) -> i32;
     #[cfg(test)]
     #[link_name = "pipe"]
     fn libc_pipe(ends: *mut RawFd) -> i32;
@@ -49,6 +59,19 @@ fn read_exact_or_eof<R: Read>(reader: &mut R, buffer: &mut [u8]) -> io::Result<b
         Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => Ok(false),
         Err(error) => Err(error),
     }
+}
+
+/// Whether the other end of the pipe `descriptor` reads from has closed, as
+/// the host does when it closes the Port: a program waiting at startup stops
+/// then instead of holding its devices.
+pub fn hung_up(descriptor: BorrowedFd<'_>) -> bool {
+    let mut polled = PollDescriptor {
+        fd: descriptor.as_raw_fd(),
+        events: 0,
+        revents: 0,
+    };
+    // SAFETY: one valid descriptor, polled without waiting.
+    unsafe { poll(&mut polled, 1, 0) == 1 && polled.revents & POLLHUP != 0 }
 }
 
 /// Record output on the real stdout. Libraries that print to stdout would
@@ -215,6 +238,21 @@ pub fn pair_record(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::fd::AsFd;
+
+    #[test]
+    fn a_pipe_hangs_up_once_its_writing_end_closes() {
+        let mut ends = [0; 2];
+        // SAFETY: `ends` has room for the two descriptors.
+        assert_eq!(unsafe { libc_pipe(ends.as_mut_ptr()) }, 0);
+        // SAFETY: both descriptors were just created and nothing else owns them.
+        let (pipe_out, pipe_in) =
+            unsafe { (File::from_raw_fd(ends[0]), File::from_raw_fd(ends[1])) };
+
+        assert!(!hung_up(pipe_out.as_fd()));
+        drop(pipe_in);
+        assert!(hung_up(pipe_out.as_fd()));
+    }
 
     #[test]
     fn a_panic_is_sent_as_an_error_log_record() {
