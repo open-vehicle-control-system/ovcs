@@ -5,7 +5,8 @@ defmodule OvcsVehicle.FirmwareTest do
 
   @vehicle_dir "firmware_test_vehicle"
 
-  setup do
+  # Once for the module: compiling the vehicle in each test would redefine its module.
+  setup_all do
     root =
       Path.join(System.tmp_dir!(), "ovcs_vehicle_firmware_#{System.unique_integer([:positive])}")
 
@@ -27,7 +28,12 @@ defmodule OvcsVehicle.FirmwareTest do
       ~s|{application, #{@vehicle_dir}, [{vsn, "0.0.0"}, {modules, ['#{module}']}]}.|
     )
 
-    on_exit(fn -> File.rm_rf!(root) end)
+    on_exit(fn ->
+      Code.delete_path(ebin)
+      :application.unload(String.to_atom(@vehicle_dir))
+      File.rm_rf!(root)
+    end)
+
     {:ok, config_dir: Path.join(root, "a/b/c")}
   end
 

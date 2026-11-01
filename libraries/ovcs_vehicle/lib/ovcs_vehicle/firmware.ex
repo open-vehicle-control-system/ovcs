@@ -33,10 +33,10 @@ defmodule OvcsVehicle.Firmware do
           {module(), module()} | nil
   def resolve_side(side, config_dir, config_env, vehicle_name \\ nil)
       when side in [:vms, :infotainment, :vision] do
-    # Short-circuit before resolve_vehicle/3: each firmware's config.exs
-    # pins a default `:vehicle` (e.g. "Ovcs1") for host builds, so test
-    # runs would otherwise hit locate_vehicle_ebin!/3 even though no
-    # vehicle is needed — and CI doesn't compile vehicles/<dir>/.
+    # Short-circuit before resolve_vehicle/3: the VMS and infotainment
+    # firmwares' config.exs pin a default `:vehicle` ("Ovcs1") for host
+    # builds, so test runs would otherwise hit locate_vehicle_ebin!/3 even
+    # though no vehicle is needed — and CI doesn't compile vehicles/<dir>/.
     cond do
       config_env == :test ->
         nil
