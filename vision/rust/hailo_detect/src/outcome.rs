@@ -3,6 +3,8 @@
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FrameOutcome {
     Inferred,
+    /// The request's pixels do not match its size or channel count; nothing was queued.
+    Rejected,
     /// Nothing was queued. `streams_cleared`: the vstreams were emptied afterwards.
     WriteFailed {
         streams_cleared: bool,
@@ -23,7 +25,8 @@ pub enum Reply {
 pub fn reply_for(outcome: FrameOutcome) -> Reply {
     match outcome {
         FrameOutcome::Inferred => Reply::Detections,
-        FrameOutcome::WriteFailed {
+        FrameOutcome::Rejected
+        | FrameOutcome::WriteFailed {
             streams_cleared: true,
         } => Reply::Empty,
         FrameOutcome::WriteFailed {
@@ -36,6 +39,11 @@ pub fn reply_for(outcome: FrameOutcome) -> Reply {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rejected_frame_answers_empty_and_continues() {
+        assert_eq!(reply_for(FrameOutcome::Rejected), Reply::Empty);
+    }
 
     #[test]
     fn inferred_frame_answers_detections() {

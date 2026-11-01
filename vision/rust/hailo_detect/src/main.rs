@@ -92,28 +92,31 @@ fn run(hef_path: &str, score_threshold: f32, writer: &Writer) -> i32 {
         let Some(request) = parse_request(&record) else {
             continue;
         };
-        if let Err(message) = request.check() {
-            log(&message);
-            continue;
-        }
         let (width, height) = (i32::from(request.width), i32::from(request.height));
-
         let b = letterbox_for(width, height, model_size);
-        letterbox_into(
-            request.pixels,
-            width,
-            height,
-            request.channels,
-            &mut model_input,
-            model_size,
-            &b,
-        );
+        let outcome = match request.check() {
+            Err(message) => {
+                log(&message);
+                FrameOutcome::Rejected
+            }
+            Ok(()) => {
+                letterbox_into(
+                    request.pixels,
+                    width,
+                    height,
+                    request.channels,
+                    &mut model_input,
+                    model_size,
+                    &b,
+                );
 
-        let outcome = match detector.infer(&model_input, &mut output) {
-            Ok(()) => FrameOutcome::Inferred,
-            Err(failure) => {
-                log(&failure.message);
-                failure.outcome
+                match detector.infer(&model_input, &mut output) {
+                    Ok(()) => FrameOutcome::Inferred,
+                    Err(failure) => {
+                        log(&failure.message);
+                        failure.outcome
+                    }
+                }
             }
         };
         match reply_for(outcome) {
