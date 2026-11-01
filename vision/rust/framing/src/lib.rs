@@ -28,30 +28,30 @@ extern "C" {
 }
 
 /// Reads one length-prefixed record. `None` on clean EOF or a truncated record.
-pub fn read_record<R: Read>(r: &mut R) -> io::Result<Option<Vec<u8>>> {
+pub fn read_record<R: Read>(reader: &mut R) -> io::Result<Option<Vec<u8>>> {
     let mut length = [0u8; 4];
-    if !read_exact_or_eof(r, &mut length)? {
+    if !read_exact_or_eof(reader, &mut length)? {
         return Ok(None);
     }
     let mut body = vec![0u8; u32::from_be_bytes(length) as usize];
-    if !read_exact_or_eof(r, &mut body)? {
+    if !read_exact_or_eof(reader, &mut body)? {
         return Ok(None);
     }
     Ok(Some(body))
 }
 
-fn read_exact_or_eof<R: Read>(r: &mut R, buf: &mut [u8]) -> io::Result<bool> {
-    match r.read_exact(buf) {
+fn read_exact_or_eof<R: Read>(reader: &mut R, buffer: &mut [u8]) -> io::Result<bool> {
+    match reader.read_exact(buffer) {
         Ok(()) => Ok(true),
-        Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => Ok(false),
-        Err(e) => Err(e),
+        Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => Ok(false),
+        Err(error) => Err(error),
     }
 }
 
 /// Record output on the real stdout. Libraries that print to stdout would
 /// corrupt the framing, so fd 1 is pointed at stderr.
 pub struct Writer {
-    out: Mutex<File>,
+    stdout: Mutex<File>,
 }
 
 impl Writer {
@@ -62,32 +62,32 @@ impl Writer {
             if saved < 0 {
                 return Err(io::Error::last_os_error());
             }
-            let out = File::from_raw_fd(saved);
+            let stdout = File::from_raw_fd(saved);
             if dup2(2, 1) < 0 {
                 return Err(io::Error::last_os_error());
             }
             Ok(Writer {
-                out: Mutex::new(out),
+                stdout: Mutex::new(stdout),
             })
         }
     }
 
     /// Writes one record. Safe to call from several threads.
-    pub fn write_record(&self, data: &[u8]) -> io::Result<()> {
-        self.write_record_parts(&[data])
+    pub fn write_record(&self, record: &[u8]) -> io::Result<()> {
+        self.write_record_parts(&[record])
     }
 
     /// Writes one record of `parts`, without joining them first. Safe to
     /// call from several threads.
     pub fn write_record_parts(&self, parts: &[&[u8]]) -> io::Result<()> {
-        let mut out = self.out.lock().unwrap_or_else(|e| e.into_inner());
-        write_parts(&mut *out, parts)?;
-        out.flush()
+        let mut stdout = self.stdout.lock().unwrap_or_else(|e| e.into_inner());
+        write_parts(&mut *stdout, parts)?;
+        stdout.flush()
     }
 }
 
-/// `parts` as one record, in as few writes as `out` takes.
-fn write_parts<W: Write>(out: &mut W, parts: &[&[u8]]) -> io::Result<()> {
+/// `parts` as one record, in as few writes as `output` takes.
+fn write_parts<W: Write>(output: &mut W, parts: &[&[u8]]) -> io::Result<()> {
     let length = u32::try_from(parts.iter().map(|part| part.len()).sum::<usize>())
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "record too large"))?
         .to_be_bytes();
@@ -97,11 +97,11 @@ fn write_parts<W: Write>(out: &mut W, parts: &[&[u8]]) -> io::Result<()> {
         .collect();
     let mut slices = &mut slices[..];
     while !slices.is_empty() {
-        match out.write_vectored(slices) {
+        match output.write_vectored(slices) {
             Ok(0) => return Err(io::ErrorKind::WriteZero.into()),
             Ok(written) => IoSlice::advance_slices(&mut slices, written),
-            Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
-            Err(e) => return Err(e),
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+            Err(error) => return Err(error),
         }
     }
     Ok(())
@@ -117,11 +117,11 @@ fn image_header(tag: u8, width: u16, height: u16, capture_ns: i64) -> [u8; 13] {
     header
 }
 
-/// The start of a FRAME record, which `jpeg_len` bytes of JPEG follow.
-pub fn frame_header(width: u16, height: u16, capture_ns: i64, jpeg_len: usize) -> [u8; 17] {
+/// The start of a FRAME record, which `jpeg_length` bytes of JPEG follow.
+pub fn frame_header(width: u16, height: u16, capture_ns: i64, jpeg_length: usize) -> [u8; 17] {
     let mut header = [0; 17];
     header[..13].copy_from_slice(&image_header(TAG_FRAME, width, height, capture_ns));
-    header[13..].copy_from_slice(&(jpeg_len as u32).to_le_bytes());
+    header[13..].copy_from_slice(&(jpeg_length as u32).to_le_bytes());
     header
 }
 
@@ -145,23 +145,23 @@ pub fn grey_frame_record(width: u16, height: u16, capture_ns: i64, grey: &[u8]) 
 }
 
 pub fn log_record(level: LogLevel, message: &str) -> Vec<u8> {
-    let mut out = Vec::with_capacity(2 + message.len());
-    out.push(TAG_LOG);
-    out.push(level as u8);
-    out.extend_from_slice(message.as_bytes());
-    out
+    let mut record = Vec::with_capacity(2 + message.len());
+    record.push(TAG_LOG);
+    record.push(level as u8);
+    record.extend_from_slice(message.as_bytes());
+    record
 }
 
 /// Bit i of `present` is set when `values[i]` was reported.
 pub fn metadata_record(capture_ns: i64, present: u8, values: &[f64; METADATA_FIELDS]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(10 + 8 * METADATA_FIELDS);
-    out.push(TAG_METADATA);
-    out.push(present);
-    out.extend_from_slice(&capture_ns.to_le_bytes());
-    for v in values {
-        out.extend_from_slice(&v.to_le_bytes());
+    let mut record = Vec::with_capacity(10 + 8 * METADATA_FIELDS);
+    record.push(TAG_METADATA);
+    record.push(present);
+    record.extend_from_slice(&capture_ns.to_le_bytes());
+    for value in values {
+        record.extend_from_slice(&value.to_le_bytes());
     }
-    out
+    record
 }
 
 /// Two 8-bit grey frames of `width` x `height`, row-major, with their start times.
@@ -173,15 +173,15 @@ pub fn pair_record(
     left: &[u8],
     right: &[u8],
 ) -> Vec<u8> {
-    let mut out = Vec::with_capacity(21 + left.len() + right.len());
-    out.push(TAG_PAIR);
-    out.extend_from_slice(&width.to_le_bytes());
-    out.extend_from_slice(&height.to_le_bytes());
-    out.extend_from_slice(&left_ns.to_le_bytes());
-    out.extend_from_slice(&right_ns.to_le_bytes());
-    out.extend_from_slice(left);
-    out.extend_from_slice(right);
-    out
+    let mut record = Vec::with_capacity(21 + left.len() + right.len());
+    record.push(TAG_PAIR);
+    record.extend_from_slice(&width.to_le_bytes());
+    record.extend_from_slice(&height.to_le_bytes());
+    record.extend_from_slice(&left_ns.to_le_bytes());
+    record.extend_from_slice(&right_ns.to_le_bytes());
+    record.extend_from_slice(left);
+    record.extend_from_slice(right);
+    record
 }
 
 #[cfg(test)]
@@ -253,9 +253,9 @@ mod tests {
     struct Trickle(Vec<u8>);
 
     impl Write for Trickle {
-        fn write(&mut self, data: &[u8]) -> io::Result<usize> {
-            let taken = data.len().min(3);
-            self.0.extend_from_slice(&data[..taken]);
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            let taken = bytes.len().min(3);
+            self.0.extend_from_slice(&bytes[..taken]);
             Ok(taken)
         }
 
@@ -266,8 +266,8 @@ mod tests {
 
     #[test]
     fn writes_the_parts_of_a_record_after_its_length() {
-        let mut out = Trickle(Vec::new());
-        write_parts(&mut out, &[&[1, 2], &[], &[3, 4, 5, 6]]).unwrap();
-        assert_eq!(out.0, [0, 0, 0, 6, 1, 2, 3, 4, 5, 6]);
+        let mut trickle = Trickle(Vec::new());
+        write_parts(&mut trickle, &[&[1, 2], &[], &[3, 4, 5, 6]]).unwrap();
+        assert_eq!(trickle.0, [0, 0, 0, 6, 1, 2, 3, 4, 5, 6]);
     }
 }

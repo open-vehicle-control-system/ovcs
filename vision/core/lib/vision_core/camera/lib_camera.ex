@@ -188,8 +188,8 @@ defmodule VisionCore.Camera.LibCamera do
   def name_for(label), do: Module.concat([__MODULE__, "L_#{label}"])
 
   @doc false
-  def sync_args(nil), do: []
-  def sync_args(role) when role in [:server, :client], do: ["--sync", Atom.to_string(role)]
+  def sync_arguments(nil), do: []
+  def sync_arguments(role) when role in [:server, :client], do: ["--sync", Atom.to_string(role)]
 
   @doc false
   def sync_route_commands(nil), do: []
@@ -215,31 +215,31 @@ defmodule VisionCore.Camera.LibCamera do
   end
 
   @doc false
-  def exposure_mode_args(nil), do: []
+  def exposure_mode_arguments(nil), do: []
 
-  def exposure_mode_args(mode) when mode in [:normal, :short, :long],
+  def exposure_mode_arguments(mode) when mode in [:normal, :short, :long],
     do: ["--exposure-mode", Atom.to_string(mode)]
 
-  def exposure_mode_args(mode) when mode in ["normal", "short", "long"],
+  def exposure_mode_arguments(mode) when mode in ["normal", "short", "long"],
     do: ["--exposure-mode", mode]
 
   @doc false
-  def sensor_mode_args(nil), do: []
+  def sensor_mode_arguments(nil), do: []
 
-  def sensor_mode_args({width, height}) when is_integer(width) and is_integer(height),
+  def sensor_mode_arguments({width, height}) when is_integer(width) and is_integer(height),
     do: ["--sensor-mode", "#{width}x#{height}"]
 
-  def sensor_mode_args({width, height, bit_depth})
+  def sensor_mode_arguments({width, height, bit_depth})
       when is_integer(width) and is_integer(height) and is_integer(bit_depth),
       do: ["--sensor-mode", "#{width}x#{height}:#{bit_depth}"]
 
   @doc false
-  def format_args(:jpeg), do: []
-  def format_args(:grey), do: ["--format", "grey"]
+  def format_arguments(:jpeg), do: []
+  def format_arguments(:grey), do: ["--format", "grey"]
 
   @doc false
-  def lens_position_args(nil), do: []
-  def lens_position_args(dioptres), do: ["--lens-position", Float.to_string(dioptres * 1.0)]
+  def lens_position_arguments(nil), do: []
+  def lens_position_arguments(dioptres), do: ["--lens-position", Float.to_string(dioptres * 1.0)]
 
   @doc "The runtime control settings among the camera `opts`, in their order."
   def start_controls(opts) do
@@ -288,10 +288,10 @@ defmodule VisionCore.Camera.LibCamera do
         "--rotation",
         Integer.to_string(rotation)
       ] ++
-        sync_args(sync_role) ++
-        exposure_mode_args(exposure_mode) ++
-        lens_position_args(lens_position) ++
-        sensor_mode_args(sensor_mode) ++ format_args(format)
+        sync_arguments(sync_role) ++
+        exposure_mode_arguments(exposure_mode) ++
+        lens_position_arguments(lens_position) ++
+        sensor_mode_arguments(sensor_mode) ++ format_arguments(format)
 
     port =
       Port.open({:spawn_executable, executable}, [

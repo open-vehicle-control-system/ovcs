@@ -140,9 +140,9 @@ pub fn median(
     kernel_size: usize,
     threads: usize,
 ) -> Vec<f32> {
-    let mut out = vec![0.0; width * height];
+    let mut filtered = vec![0.0; width * height];
     let rows = RowQueue::new(height);
-    let shared = Shared::new(&mut out);
+    let shared = Shared::new(&mut filtered);
     on_threads(threads, &|_thread| {
         let mut values = Vec::new();
         let network: &[(usize, usize)] = if kernel_size == 3 {
@@ -153,7 +153,7 @@ pub fn median(
         while let Some(range) = rows.take() {
             for y in range {
                 // SAFETY: the queue hands each row to one thread.
-                let out = unsafe { shared.slice_mut(y * width..(y + 1) * width) };
+                let filtered_row = unsafe { shared.slice_mut(y * width..(y + 1) * width) };
                 median_row(
                     image,
                     (width, height),
@@ -161,12 +161,12 @@ pub fn median(
                     kernel_size,
                     network,
                     &mut values,
-                    out,
+                    filtered_row,
                 );
             }
         }
     });
-    out
+    filtered
 }
 
 /// Row `y` of the median over the `side` x `side` window: each window
@@ -179,7 +179,7 @@ fn median_row(
     side: usize,
     network: &[(usize, usize)],
     values: &mut Vec<f32>,
-    out: &mut [f32],
+    filtered_row: &mut [f32],
 ) {
     let radius = side / 2;
     values.resize(side * side * width, 0.0);
@@ -198,12 +198,18 @@ fn median_row(
             row[width - shift..].fill(source[width - 1]);
         }
     }
-    for &(a, b) in network {
-        let (first, second) = values.split_at_mut(a.max(b) * width);
-        let (low, high) = if a < b {
-            (&mut first[a * width..(a + 1) * width], &mut second[..width])
+    for &(lower, upper) in network {
+        let (first, second) = values.split_at_mut(lower.max(upper) * width);
+        let (low, high) = if lower < upper {
+            (
+                &mut first[lower * width..(lower + 1) * width],
+                &mut second[..width],
+            )
         } else {
-            (&mut second[..width], &mut first[b * width..(b + 1) * width])
+            (
+                &mut second[..width],
+                &mut first[upper * width..(upper + 1) * width],
+            )
         };
         for (low, high) in low.iter_mut().zip(high.iter_mut()) {
             let (smaller, larger) = (low.min(*high), low.max(*high));
@@ -211,7 +217,7 @@ fn median_row(
             *high = larger;
         }
     }
-    out.copy_from_slice(&values[side * side / 2 * width..][..width]);
+    filtered_row.copy_from_slice(&values[side * side / 2 * width..][..width]);
 }
 
 /// The radius of the speckle filter's window.
@@ -219,13 +225,13 @@ const SPECKLE_RADIUS: usize = 3;
 
 /// The disparity with each matched pixel kept only where at least
 /// `min_support` of the 48 others in its 7x7 window matched within
-/// `max_diff` of it, unmatched (`-1.0`) outside the image.
+/// `max_difference` of it, unmatched (`-1.0`) outside the image.
 pub fn despeckle(
     disparity: &[f32],
     width: usize,
     height: usize,
     min_support: f32,
-    max_diff: f32,
+    max_difference: f32,
     threads: usize,
 ) -> Vec<f32> {
     let stride = width + 2 * SPECKLE_RADIUS;
@@ -234,9 +240,9 @@ pub fn despeckle(
         let start = (y + SPECKLE_RADIUS) * stride + SPECKLE_RADIUS;
         padded[start..start + width].copy_from_slice(row);
     }
-    let mut out = vec![0.0; width * height];
+    let mut despeckled = vec![0.0; width * height];
     let rows = RowQueue::new(height);
-    let shared = Shared::new(&mut out);
+    let shared = Shared::new(&mut despeckled);
     let padded = &padded;
     on_threads(threads, &|_thread| {
         let mut support = vec![0u32; width];
@@ -254,21 +260,23 @@ pub fn despeckle(
                             support.iter_mut().zip(neighbours).zip(centre)
                         {
                             let agrees =
-                                (neighbour >= 0.0) & ((neighbour - centre).abs() <= max_diff);
+                                (neighbour >= 0.0) & ((neighbour - centre).abs() <= max_difference);
                             *support += u32::from(agrees);
                         }
                     }
                 }
                 // SAFETY: the queue hands each row to one thread.
-                let out = unsafe { shared.slice_mut(y * width..(y + 1) * width) };
-                for ((out, &centre), &support) in out.iter_mut().zip(centre).zip(&support) {
+                let despeckled_row = unsafe { shared.slice_mut(y * width..(y + 1) * width) };
+                for ((pixel, &centre), &support) in
+                    despeckled_row.iter_mut().zip(centre).zip(&support)
+                {
                     let kept = centre >= 0.0 && support as f32 >= min_support;
-                    *out = if kept { centre } else { -1.0 };
+                    *pixel = if kept { centre } else { -1.0 };
                 }
             }
         }
     });
-    out
+    despeckled
 }
 
 /// What the temporal filter carries from one pair to the next: the last
@@ -341,9 +349,9 @@ mod tests {
                     let mut window: Vec<f32> = (-radius..=radius)
                         .flat_map(|dy| (-radius..=radius).map(move |dx| (dy, dx)))
                         .map(|(dy, dx)| {
-                            let sy = (y + dy).clamp(0, height as isize - 1) as usize;
-                            let sx = (x + dx).clamp(0, width as isize - 1) as usize;
-                            image[sy * width + sx]
+                            let source_y = (y + dy).clamp(0, height as isize - 1) as usize;
+                            let source_x = (x + dx).clamp(0, width as isize - 1) as usize;
+                            image[source_y * width + source_x]
                         })
                         .collect();
                     assert_eq!(

@@ -46,64 +46,67 @@ defmodule VisionCore.Camera.LibCameraTest do
     end
   end
 
-  describe "sync_args/1" do
+  describe "sync_arguments/1" do
     test "no role runs the camera free" do
-      assert LibCamera.sync_args(nil) == []
+      assert LibCamera.sync_arguments(nil) == []
     end
 
     test "a role is passed as server or client" do
-      assert LibCamera.sync_args(:server) == ["--sync", "server"]
-      assert LibCamera.sync_args(:client) == ["--sync", "client"]
+      assert LibCamera.sync_arguments(:server) == ["--sync", "server"]
+      assert LibCamera.sync_arguments(:client) == ["--sync", "client"]
     end
   end
 
-  describe "exposure_mode_args/1" do
+  describe "exposure_mode_arguments/1" do
     test "no mode leaves libcamera's default" do
-      assert LibCamera.exposure_mode_args(nil) == []
+      assert LibCamera.exposure_mode_arguments(nil) == []
     end
 
     test "a mode is passed by name" do
-      assert LibCamera.exposure_mode_args(:short) == ["--exposure-mode", "short"]
+      assert LibCamera.exposure_mode_arguments(:short) == ["--exposure-mode", "short"]
     end
 
     test "a mode is accepted as the string the controls and the export give" do
-      assert LibCamera.exposure_mode_args("short") == ["--exposure-mode", "short"]
-      assert_raise FunctionClauseError, fn -> LibCamera.exposure_mode_args("fastest") end
+      assert LibCamera.exposure_mode_arguments("short") == ["--exposure-mode", "short"]
+      assert_raise FunctionClauseError, fn -> LibCamera.exposure_mode_arguments("fastest") end
     end
   end
 
-  describe "sensor_mode_args/1" do
+  describe "sensor_mode_arguments/1" do
     test "lets libcamera pick the mode by default" do
-      assert LibCamera.sensor_mode_args(nil) == []
+      assert LibCamera.sensor_mode_arguments(nil) == []
     end
 
     test "passes the mode's size" do
-      assert LibCamera.sensor_mode_args({2304, 1296}) == ["--sensor-mode", "2304x1296"]
+      assert LibCamera.sensor_mode_arguments({2304, 1296}) == ["--sensor-mode", "2304x1296"]
     end
 
     test "passes the mode's bit depth when given" do
-      assert LibCamera.sensor_mode_args({2028, 1520, 12}) == ["--sensor-mode", "2028x1520:12"]
+      assert LibCamera.sensor_mode_arguments({2028, 1520, 12}) == [
+               "--sensor-mode",
+               "2028x1520:12"
+             ]
     end
   end
 
-  describe "lens_position_args/1" do
+  describe "lens_position_arguments/1" do
     test "no position leaves the lens alone" do
-      assert LibCamera.lens_position_args(nil) == []
+      assert LibCamera.lens_position_arguments(nil) == []
     end
 
     test "a position is passed in dioptres, integers included" do
-      assert LibCamera.lens_position_args(1.5) == ["--lens-position", "1.5"]
-      assert LibCamera.lens_position_args(1) == ["--lens-position", "1.0"]
+      assert LibCamera.lens_position_arguments(1.5) == ["--lens-position", "1.5"]
+      assert LibCamera.lens_position_arguments(1) == ["--lens-position", "1.0"]
     end
   end
 
-  describe "format_args/1" do
+  describe "format_arguments/1" do
     test "JPEG frames are the capture program's default" do
-      assert LibCamera.format_args(:jpeg) == []
+      assert LibCamera.format_arguments(:jpeg) == []
     end
 
     test "grey frames are asked for by name" do
-      assert LibCamera.format_args(:grey) == ["--format", "grey"]
+      assert LibCamera.format_arguments(:grey) == ["--format", "grey"]
     end
   end
 
@@ -241,11 +244,11 @@ defmodule VisionCore.Camera.LibCameraTest do
       Port.close(port)
     end
 
-    defp collect(port, acc) do
+    defp collect(port, received) do
       receive do
-        {^port, {:data, data}} -> collect(port, acc <> data)
+        {^port, {:data, chunk}} -> collect(port, received <> chunk)
       after
-        300 -> acc
+        300 -> received
       end
     end
   end
@@ -253,9 +256,9 @@ defmodule VisionCore.Camera.LibCameraTest do
   describe "metadata records" do
     test "carry the values reported, the others absent" do
       values =
-        for v <- [9_990.0, 2.5, 1.0, 1.2, 33_333.0, 4_100.0, 1.0, -12.0],
+        for field <- [9_990.0, 2.5, 1.0, 1.2, 33_333.0, 4_100.0, 1.0, -12.0],
             into: <<>>,
-            do: <<v::little-float-64>>
+            do: <<field::little-float-64>>
 
       # Everything reported but the digital gain (bit 2).
       present = 0b11111011
@@ -310,12 +313,12 @@ defmodule VisionCore.Camera.LibCameraTest do
 
     test "ask for grey frames with format: :grey", %{tmp_dir: tmp_dir} do
       start_camera(tmp_dir, "grey", format: :grey)
-      assert "--format grey" in captured_args(tmp_dir)
+      assert "--format grey" in captured_arguments(tmp_dir)
     end
 
     test "leave the format out by default", %{tmp_dir: tmp_dir} do
       start_camera(tmp_dir, "jpeg", [])
-      refute Enum.any?(captured_args(tmp_dir), &String.starts_with?(&1, "--format"))
+      refute Enum.any?(captured_arguments(tmp_dir), &String.starts_with?(&1, "--format"))
     end
 
     @tag :capture_log
@@ -331,7 +334,7 @@ defmodule VisionCore.Camera.LibCameraTest do
     end
 
     # Flag and value pairs, one per line, as the program received them.
-    defp captured_args(tmp_dir) do
+    defp captured_arguments(tmp_dir) do
       path = Path.join(tmp_dir, "args")
       wait_until(fn -> File.exists?(path) and File.read!(path) =~ "\n" end)
 

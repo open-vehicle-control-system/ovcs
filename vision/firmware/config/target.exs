@@ -3,8 +3,8 @@ import Config
 vehicle_name =
   System.get_env("VEHICLE") || raise "VEHICLE env var is required for firmware builds"
 
-vehicle_dir = Macro.underscore(vehicle_name)
-vehicle_host = "#{vehicle_dir |> String.replace("_", "-")}-vision"
+vehicle_directory = Macro.underscore(vehicle_name)
+vehicle_host = "#{vehicle_directory |> String.replace("_", "-")}-vision"
 
 # Per-vehicle environment overrides (SSH keys, Wi-Fi creds, Phoenix
 # secrets, Zenoh router), shared by every firmware of one vehicle.
@@ -13,8 +13,8 @@ if config_env() in [:dev, :test, :prod] do
   env_files = [".env.exs", ".env.#{config_env()}.exs"]
 
   for filename <- env_files do
-    abs = Path.expand("../../../vehicles/#{vehicle_dir}/#{filename}", __DIR__)
-    if File.exists?(abs), do: import_config(abs)
+    env_file_path = Path.expand("../../../vehicles/#{vehicle_directory}/#{filename}", __DIR__)
+    if File.exists?(env_file_path), do: import_config(env_file_path)
   end
 
   # A firmware built without the env file boots with generated secrets,
@@ -22,16 +22,19 @@ if config_env() in [:dev, :test, :prod] do
   # fails instead. CI only checks that firmware compiles (GitHub sets
   # CI=true).
   unless Enum.any?(env_files, fn filename ->
-           Path.expand("../../../vehicles/#{vehicle_dir}/#{filename}", __DIR__)
+           Path.expand("../../../vehicles/#{vehicle_directory}/#{filename}", __DIR__)
            |> File.exists?()
          end) do
     if System.get_env("CI") == "true" do
-      IO.warn("no .env.exs for vehicle #{inspect(vehicle_dir)}: building with defaults (CI).", [])
+      IO.warn(
+        "no .env.exs for vehicle #{inspect(vehicle_directory)}: building with defaults (CI).",
+        []
+      )
     else
-      raise "no .env.exs for vehicle #{inspect(vehicle_dir)}: a firmware built without it " <>
+      raise "no .env.exs for vehicle #{inspect(vehicle_directory)}: a firmware built without it " <>
               "has generated secrets, no SSH keys (you would be locked out), a reset " <>
               "Wi-Fi list, and ZENOH_ENDPOINT_IP=127.0.0.1 (the vision unit reaches no " <>
-              "router). Copy vehicles/#{vehicle_dir}/.env.exs.example to .env.exs and fill " <>
+              "router). Copy vehicles/#{vehicle_directory}/.env.exs.example to .env.exs and fill " <>
               "it in. Set CI=true to build with defaults anyway."
     end
   end
@@ -110,8 +113,8 @@ wifi_networks =
     blank when blank in [nil, ""] ->
       []
 
-    src ->
-      {parsed, _} = Code.eval_string(src)
+    networks_literal ->
+      {parsed, _} = Code.eval_string(networks_literal)
 
       Enum.map(parsed, fn {ssid, psk} ->
         %{key_mgmt: :wpa_psk, ssid: ssid, psk: psk}

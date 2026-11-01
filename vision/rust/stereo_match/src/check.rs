@@ -9,7 +9,12 @@ use crate::select::INVALID_KEY;
 /// it, ties favouring the larger disparity; a left pixel is rejected when
 /// neither adjacent integer disparity agrees with it within one. `right` is
 /// scratch space.
-pub fn consistency_row(disparity: &[f32], keys: &[u32], right: &mut Vec<u32>, out: &mut [f32]) {
+pub fn consistency_row(
+    disparity: &[f32],
+    keys: &[u32],
+    right: &mut Vec<u32>,
+    consistent: &mut [f32],
+) {
     let width = keys.len();
     right.clear();
     right.resize(width, INVALID_KEY);
@@ -21,21 +26,21 @@ pub fn consistency_row(disparity: &[f32], keys: &[u32], right: &mut Vec<u32>, ou
             *target = (*target).min(candidate);
         }
     }
-    let disagrees = |right_x: i64, d: i64| {
+    let disagrees = |right_x: i64, disparity: i64| {
         if right_x < 0 || right_x >= width as i64 {
             return false;
         }
         let found = right[right_x as usize];
-        found != INVALID_KEY && (65_535 - i64::from(found & 0xFFFF) - d).abs() > 1
+        found != INVALID_KEY && (65_535 - i64::from(found & 0xFFFF) - disparity).abs() > 1
     };
-    for (x, (&value, out)) in disparity.iter().zip(out.iter_mut()).enumerate() {
-        *out = -1.0;
+    for (x, (&value, kept)) in disparity.iter().zip(consistent.iter_mut()).enumerate() {
+        *kept = -1.0;
         if value >= 0.0 {
             // Floor and ceiling of a non-negative value.
             let low = value as i64;
             let high = low + i64::from(low as f32 != value);
             if !(disagrees(x as i64 - low, low) && disagrees(x as i64 - high, high)) {
-                *out = value;
+                *kept = value;
             }
         }
     }
@@ -47,8 +52,8 @@ const MEDIAN_CHUNK: usize = 64;
 /// the row below, borders replicated. The values, -1.0 or non-negative,
 /// are compared by their bits as `i32`, which orders them as `f32` does.
 /// `keys` is scratch space.
-pub fn median_row(rows: [&[f32]; 3], keys: &mut Vec<i32>, out: &mut [f32]) {
-    let width = out.len();
+pub fn median_row(rows: [&[f32]; 3], keys: &mut Vec<i32>, filtered: &mut [f32]) {
+    let width = filtered.len();
     keys.clear();
     for row in rows {
         keys.push(row[0].to_bits() as i32);
@@ -59,22 +64,22 @@ pub fn median_row(rows: [&[f32]; 3], keys: &mut Vec<i32>, out: &mut [f32]) {
     for start in (0..width).step_by(MEDIAN_CHUNK) {
         let count = MEDIAN_CHUNK.min(width - start);
         let mut values = [[0i32; MEDIAN_CHUNK]; 9];
-        for (k, values) in values.iter_mut().enumerate() {
-            let from = (k / 3) * stride + start + k % 3;
+        for (neighbour, values) in values.iter_mut().enumerate() {
+            let from = (neighbour / 3) * stride + start + neighbour % 3;
             values[..count].copy_from_slice(&keys[from..from + count]);
         }
-        for (a, b) in MEDIAN_9 {
-            for i in 0..MEDIAN_CHUNK {
+        for (lower, upper) in MEDIAN_9 {
+            for lane in 0..MEDIAN_CHUNK {
                 let (low, high) = (
-                    values[a][i].min(values[b][i]),
-                    values[a][i].max(values[b][i]),
+                    values[lower][lane].min(values[upper][lane]),
+                    values[lower][lane].max(values[upper][lane]),
                 );
-                values[a][i] = low;
-                values[b][i] = high;
+                values[lower][lane] = low;
+                values[upper][lane] = high;
             }
         }
-        for (out, &median) in out[start..start + count].iter_mut().zip(&values[4]) {
-            *out = f32::from_bits(median as u32);
+        for (pixel, &median) in filtered[start..start + count].iter_mut().zip(&values[4]) {
+            *pixel = f32::from_bits(median as u32);
         }
     }
 }
@@ -134,8 +139,8 @@ mod tests {
         let mut disparity = vec![-1.0; 16];
         disparity[10] = 5.0;
         disparity[12] = 7.0;
-        let mut out = vec![0.0; 16];
-        consistency_row(&disparity, &keys, &mut Vec::new(), &mut out);
-        assert_eq!((out[10], out[12]), (-1.0, 7.0));
+        let mut consistent = vec![0.0; 16];
+        consistency_row(&disparity, &keys, &mut Vec::new(), &mut consistent);
+        assert_eq!((consistent[10], consistent[12]), (-1.0, 7.0));
     }
 }

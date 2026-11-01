@@ -12,8 +12,8 @@ use crate::depth::{self, Intrinsics};
 use crate::filters::{self, Temporal, TemporalSettings};
 use crate::measures::{self, Quality, BANDS, PLANES};
 use crate::rectify::{self, Camera, Map};
-use crate::tensor::{f32_map, u8_image, Data, Tensor, Tensors};
-use crate::{Matcher, Params};
+use crate::tensor::{f32_map, u8_image, Elements, Tensor, Tensors};
+use crate::{Matcher, Parameters};
 
 /// The sizes every stage works with: the rectified images' and the
 /// submitted frames'.
@@ -85,11 +85,11 @@ fn option(options: &Options, kind: &str, name: &str) -> Result<f64, String> {
         .ok_or_else(|| format!("{kind} needs its {name} setting"))
 }
 
-fn input<'a>(inputs: &'a Inputs, name: &str, len: usize) -> Result<&'a [f32], String> {
+fn input<'a>(inputs: &'a Inputs, name: &str, length: usize) -> Result<&'a [f32], String> {
     match inputs.get(name) {
-        Some(values) if values.len() == len => Ok(values),
+        Some(values) if values.len() == length => Ok(values),
         Some(values) => Err(format!(
-            "{name} has {} values, expected {len}",
+            "{name} has {} values, expected {length}",
             values.len()
         )),
         None => Err(format!("no {name} among the stage's inputs")),
@@ -113,10 +113,10 @@ fn penalty(inputs: &Inputs, name: &str) -> Result<u8, String> {
 }
 
 fn camera(inputs: &Inputs, side: &str) -> Result<Camera, String> {
-    let values = |name: &str, len| input(inputs, &format!("{side}.{name}"), len);
+    let values = |name: &str, length| input(inputs, &format!("{side}.{name}"), length);
     Ok(Camera {
-        k: values("k", 9)?.try_into().unwrap(),
-        d: values("d", 5)?.try_into().unwrap(),
+        camera_matrix: values("k", 9)?.try_into().unwrap(),
+        distortion: values("d", 5)?.try_into().unwrap(),
         inverse_pr: values("inverse_pr", 9)?.try_into().unwrap(),
     })
 }
@@ -158,8 +158,8 @@ impl Segment {
                     "disparity" => {
                         let disparities = integer_option(options, kind, "num_disparities", &[64, 128])?;
                         let paths = integer_option(options, kind, "paths", &[3, 8])? as u8;
-                        let params = Params { disparities, paths, p1: 8, p2: 64, uniqueness: 1.0 };
-                        params.check(geometry.width, geometry.height)?;
+                        let parameters = Parameters { disparities, paths, p1: 8, p2: 64, uniqueness: 1.0 };
+                        parameters.check(geometry.width, geometry.height)?;
                         Stage::Disparity { disparities, paths, matcher: Box::new(Matcher::new(threads)) }
                     }
                     "median_filter" => Stage::MedianFilter {
@@ -234,7 +234,7 @@ fn run_stage(
 ) -> Result<(), String> {
     let (width, height) = (geometry.width, geometry.height);
     let size = [height, width];
-    let image = |data: Data| Tensor::new(size.to_vec(), data);
+    let image = |elements: Elements| Tensor::new(size.to_vec(), elements);
     match stage {
         Stage::Rectification { maps } => {
             let frame_shape = [geometry.frame_height, geometry.frame_width];
@@ -262,8 +262,8 @@ fn run_stage(
                 [&mut left, &mut right],
                 threads,
             );
-            tensors.insert("left".into(), image(Data::U8(left)));
-            tensors.insert("right".into(), image(Data::U8(right)));
+            tensors.insert("left".into(), image(Elements::U8(left)));
+            tensors.insert("right".into(), image(Elements::U8(right)));
         }
         Stage::Sharpness => {
             let sums = measures::sharpness_sums(
@@ -273,7 +273,7 @@ fn run_stage(
             );
             tensors.insert(
                 "sharpness_sums".into(),
-                Tensor::new(vec![5], Data::F32(sums.to_vec())),
+                Tensor::new(vec![5], Elements::F32(sums.to_vec())),
             );
         }
         Stage::Disparity {
@@ -281,22 +281,22 @@ fn run_stage(
             paths,
             matcher,
         } => {
-            let params = Params {
+            let parameters = Parameters {
                 disparities: *disparities,
                 paths: *paths,
                 p1: penalty(inputs, "p1")?,
                 p2: penalty(inputs, "p2")?,
                 uniqueness: scalar(inputs, "uniqueness")?,
             };
-            params.check(width, height)?;
+            parameters.check(width, height)?;
             let disparity = matcher.disparity(
                 u8_image(tensors, "left", size)?,
                 u8_image(tensors, "right", size)?,
                 width,
                 height,
-                &params,
+                &parameters,
             );
-            tensors.insert("disparity".into(), image(Data::F32(disparity)));
+            tensors.insert("disparity".into(), image(Elements::F32(disparity)));
         }
         Stage::MedianFilter { kernel_size } => {
             let filtered = filters::median(
@@ -306,7 +306,7 @@ fn run_stage(
                 *kernel_size,
                 threads,
             );
-            tensors.insert("disparity".into(), image(Data::F32(filtered)));
+            tensors.insert("disparity".into(), image(Elements::F32(filtered)));
         }
         Stage::SpeckleFilter => {
             let filtered = filters::despeckle(
@@ -317,7 +317,7 @@ fn run_stage(
                 scalar(inputs, "max_diff")?,
                 threads,
             );
-            tensors.insert("disparity".into(), image(Data::F32(filtered)));
+            tensors.insert("disparity".into(), image(Elements::F32(filtered)));
         }
         Stage::RowAlignment => {
             let sums = measures::alignment_sums(
@@ -330,7 +330,7 @@ fn run_stage(
             let flat = sums.iter().flatten().copied().collect();
             tensors.insert(
                 "alignment_sums".into(),
-                Tensor::new(vec![BANDS, PLANES], Data::F32(flat)),
+                Tensor::new(vec![BANDS, PLANES], Elements::F32(flat)),
             );
         }
         Stage::TemporalFilter(temporal) => {
@@ -341,7 +341,7 @@ fn run_stage(
             };
             f32_map(tensors, "disparity", size)?;
             let Some(Tensor {
-                data: Data::F32(disparity),
+                elements: Elements::F32(disparity),
                 ..
             }) = tensors.get_mut("disparity")
             else {
@@ -357,8 +357,8 @@ fn run_stage(
                 scalar(inputs, "baseline_m")?,
                 threads,
             );
-            tensors.insert("depth_mm".into(), image(Data::U16(depth_mm)));
-            tensors.insert("depth_m".into(), image(Data::F32(depth_m)));
+            tensors.insert("depth_mm".into(), image(Elements::U16(depth_mm)));
+            tensors.insert("depth_m".into(), image(Elements::F32(depth_m)));
         }
         Stage::PointCloud { decimation } => {
             let intrinsics = Intrinsics {
@@ -374,17 +374,20 @@ fn run_stage(
                 &intrinsics,
             );
             let grid = vec![height / *decimation, width / *decimation, 3];
-            tensors.insert("cloud_grid".into(), Tensor::new(grid, Data::F32(points)));
+            tensors.insert(
+                "cloud_grid".into(),
+                Tensor::new(grid, Elements::F32(points)),
+            );
             tensors.insert(
                 "cloud_points".into(),
-                Tensor::new(vec![], Data::S32(vec![kept as i32])),
+                Tensor::new(vec![], Elements::S32(vec![kept as i32])),
             );
         }
         Stage::Quality(quality) => {
             let sums = quality.sums(f32_map(tensors, "disparity", size)?, width);
             tensors.insert(
                 "quality_sums".into(),
-                Tensor::new(vec![5], Data::F32(sums.to_vec())),
+                Tensor::new(vec![5], Elements::F32(sums.to_vec())),
             );
         }
     }
@@ -445,21 +448,21 @@ mod tests {
                 .map(|(name, value)| (name.to_string(), vec![value]))
                 .into(),
         ];
-        let disparity = Tensor::new(vec![24, 32], Data::F32(vec![10.0; 32 * 24]));
+        let disparity = Tensor::new(vec![24, 32], Elements::F32(vec![10.0; 32 * 24]));
         let tensors = Tensors::from([("disparity".to_string(), disparity)]);
         let (outputs, times) = segment.run(&inputs, tensors).unwrap();
         let names: Vec<&str> = outputs.iter().map(|(name, _)| name.as_str()).collect();
         assert_eq!(names, ["disparity", "depth_mm"]);
         assert_eq!(times.len(), 3);
-        assert_eq!(outputs[0].1.data, Data::F32(vec![-1.0; 32 * 24]));
-        assert_eq!(outputs[1].1.data, Data::U16(vec![1000; 32 * 24]));
+        assert_eq!(outputs[0].1.elements, Elements::F32(vec![-1.0; 32 * 24]));
+        assert_eq!(outputs[1].1.elements, Elements::U16(vec![1000; 32 * 24]));
     }
 
     #[test]
     fn says_which_input_is_missing_or_of_the_wrong_shape() {
         let members = [("depth".to_string(), Options::new())];
         let mut segment = Segment::new(geometry(), &members, 1).unwrap();
-        let wrong = Tensor::new(vec![2, 2], Data::F32(vec![0.0; 4]));
+        let wrong = Tensor::new(vec![2, 2], Elements::F32(vec![0.0; 4]));
         let error = segment
             .run(
                 &[Inputs::new()],

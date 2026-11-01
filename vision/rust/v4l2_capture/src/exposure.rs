@@ -43,8 +43,8 @@ pub fn mean(image: &[u8], stride: usize) -> f64 {
     let (sum, count) = image
         .iter()
         .step_by(stride.max(1))
-        .fold((0u64, 0u64), |(sum, count), v| {
-            (sum + u64::from(*v), count + 1)
+        .fold((0u64, 0u64), |(sum, count), sample| {
+            (sum + u64::from(*sample), count + 1)
         });
     if count == 0 {
         0.0
@@ -75,32 +75,32 @@ mod tests {
 
     #[test]
     fn a_dark_image_raises_exposure_before_gain() {
-        let mut ae = auto_exposure(4_000.0, 1.0);
-        let (exposure_us, gain) = ae.observe(20.0).unwrap();
+        let mut auto_exposure = auto_exposure(4_000.0, 1.0);
+        let (exposure_us, gain) = auto_exposure.observe(20.0).unwrap();
         assert!(exposure_us > 4_000.0);
         assert_eq!(gain, 1.0);
     }
 
     #[test]
     fn past_the_exposure_cap_it_raises_gain() {
-        let mut ae = auto_exposure(20_000.0, 2.0);
-        let (exposure_us, gain) = ae.observe(20.0).unwrap();
+        let mut auto_exposure = auto_exposure(20_000.0, 2.0);
+        let (exposure_us, gain) = auto_exposure.observe(20.0).unwrap();
         assert_eq!(exposure_us, 20_000.0);
         assert!(gain > 2.0);
     }
 
     #[test]
     fn a_bright_image_lowers_gain_before_exposure() {
-        let mut ae = auto_exposure(20_000.0, 4.0);
-        let (exposure_us, gain) = ae.observe(250.0).unwrap();
+        let mut auto_exposure = auto_exposure(20_000.0, 4.0);
+        let (exposure_us, gain) = auto_exposure.observe(250.0).unwrap();
         assert!(gain < 4.0);
         assert_eq!(exposure_us, 20_000.0);
     }
 
     #[test]
     fn steps_are_bounded() {
-        let mut ae = auto_exposure(8_000.0, 2.0);
-        let (exposure_us, gain) = ae.observe(1.0).unwrap();
+        let mut auto_exposure = auto_exposure(8_000.0, 2.0);
+        let (exposure_us, gain) = auto_exposure.observe(1.0).unwrap();
         assert!(exposure_us * gain <= 2.0 * 8_000.0 * 2.0 + 1.0);
     }
 

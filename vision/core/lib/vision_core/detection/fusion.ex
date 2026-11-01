@@ -92,9 +92,9 @@ defmodule VisionCore.Detection.Fusion do
 
   # Excludes the end corner, which starts the next edge.
   defp subdivide({x0, y0}, {x1, y1}, segments) do
-    Enum.map(0..(segments - 1), fn i ->
-      t = i / segments
-      {x0 + (x1 - x0) * t, y0 + (y1 - y0) * t}
+    Enum.map(0..(segments - 1), fn step ->
+      fraction = step / segments
+      {x0 + (x1 - x0) * fraction, y0 + (y1 - y0) * fraction}
     end)
   end
 

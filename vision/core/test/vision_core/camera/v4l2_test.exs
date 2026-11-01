@@ -4,7 +4,7 @@ defmodule VisionCore.Camera.V4L2Test do
   alias VisionCore.Camera.{Frame, V4L2}
   alias VisionCore.Timing
 
-  @tmp Path.join(System.tmp_dir!(), "v4l2_test")
+  @scratch_directory Path.join(System.tmp_dir!(), "v4l2_test")
 
   defp pair_record(left_ns, right_ns) do
     <<4, 2::little-16, 1::little-16, left_ns::little-signed-64, right_ns::little-signed-64, 1, 2,
@@ -12,10 +12,14 @@ defmodule VisionCore.Camera.V4L2Test do
   end
 
   test "port arguments carry the size and every setting, defaults included" do
-    args = V4L2.port_args(width: 768, height: 432, fps: 30, rotation: 180, analogue_gain: 2)
+    arguments =
+      V4L2.port_arguments(width: 768, height: 432, fps: 30, rotation: 180, analogue_gain: 2)
 
-    assert Enum.take(args, 6) == ~w(--width 768 --height 432 --fps 30)
-    settings = args |> Enum.drop(6) |> Enum.chunk_every(2) |> Map.new(fn [k, v] -> {k, v} end)
+    assert Enum.take(arguments, 6) == ~w(--width 768 --height 432 --fps 30)
+
+    settings =
+      arguments |> Enum.drop(6) |> Enum.chunk_every(2) |> Map.new(fn [k, v] -> {k, v} end)
+
     assert settings["--rotation"] == "180"
     assert settings["--analogue-gain"] == "2.0"
     assert settings["--auto-exposure"] == "true"
@@ -34,10 +38,10 @@ defmodule VisionCore.Camera.V4L2Test do
   end
 
   test "a setting changed on either side reaches the capture program" do
-    File.mkdir_p!(@tmp)
-    commands = Path.join(@tmp, "commands.bin")
+    File.mkdir_p!(@scratch_directory)
+    commands = Path.join(@scratch_directory, "commands.bin")
     File.rm(commands)
-    script = Path.join(@tmp, "listen.sh")
+    script = Path.join(@scratch_directory, "listen.sh")
     File.write!(script, "#!/bin/sh\ncat > #{commands}\n")
     File.chmod!(script, 0o755)
 
@@ -73,11 +77,11 @@ defmodule VisionCore.Camera.V4L2Test do
   end
 
   test "the left camera runs the capture program and hands the right frame on, then stops with it" do
-    File.mkdir_p!(@tmp)
-    records = Path.join(@tmp, "records.bin")
+    File.mkdir_p!(@scratch_directory)
+    records = Path.join(@scratch_directory, "records.bin")
     record = pair_record(5, 6)
     File.write!(records, <<byte_size(record)::32, record::binary>>)
-    script = Path.join(@tmp, "capture.sh")
+    script = Path.join(@scratch_directory, "capture.sh")
     File.write!(script, "#!/bin/sh\nsleep 0.3\ncat #{records}\n")
     File.chmod!(script, 0o755)
 
@@ -103,7 +107,9 @@ defmodule VisionCore.Camera.V4L2Test do
 
   defp metadata_record(exposure_us, gain) do
     values =
-      for v <- [exposure_us, gain, 0, 0, 0, 0, 0, 0], into: <<>>, do: <<v::little-float-64>>
+      for field <- [exposure_us, gain, 0, 0, 0, 0, 0, 0],
+          into: <<>>,
+          do: <<field::little-float-64>>
 
     <<3, 0b11, 1_000::little-signed-64, values::binary>>
   end
@@ -114,8 +120,8 @@ defmodule VisionCore.Camera.V4L2Test do
   end
 
   test "live is nil before any metadata and the latest record after, on either side" do
-    File.mkdir_p!(@tmp)
-    script = Path.join(@tmp, "idle.sh")
+    File.mkdir_p!(@scratch_directory)
+    script = Path.join(@scratch_directory, "idle.sh")
     File.write!(script, "#!/bin/sh\nsleep 5\n")
     File.chmod!(script, 0o755)
 

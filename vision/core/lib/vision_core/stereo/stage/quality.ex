@@ -45,10 +45,10 @@ defmodule VisionCore.Stereo.Stage.Quality do
     variance = max(squares / max(matched, 1) - mean * mean, 0.0)
 
     metrics = [
-      {:valid, 100.0 * matched / (height * width), "%"},
-      {:mean_disp, mean, "px"},
-      {:std_disp, :math.sqrt(variance), "px"},
-      {:jitter, change / max(both, 1), "px"}
+      {:matched_percent, 100.0 * matched / (height * width), "%"},
+      {:mean_disparity_px, mean, "px"},
+      {:spread_px, :math.sqrt(variance), "px"},
+      {:jitter_px, change / max(both, 1), "px"}
     ]
 
     %{pair | metrics: pair.metrics ++ metrics}

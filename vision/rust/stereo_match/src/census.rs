@@ -11,9 +11,9 @@ const COLUMN_OFFSETS: [isize; 8] = [-4, -3, -2, -1, 1, 2, 3, 4];
 pub const PLANES: usize = ROW_OFFSETS.len();
 const HALF_WIDTH: usize = 4;
 
-/// Row `y`'s features as `out[k * width + x]`: bit `j` of plane `k` set
-/// where the neighbour at `ROW_OFFSETS[k]`, `COLUMN_OFFSETS[j]` is more than
-/// one level below the centre, borders replicated. Plane `k` is byte `k` of
+/// Row `y`'s features as `planes[plane * width + x]`: bit `bit` of plane `plane` set
+/// where the neighbour at `ROW_OFFSETS[plane]`, `COLUMN_OFFSETS[bit]` is more than
+/// one level below the centre, borders replicated. Plane `plane` is byte `plane` of
 /// `NxStereo`'s 48-bit feature. `padded` is scratch space.
 pub fn census_row(
     image: &[u8],
@@ -21,7 +21,7 @@ pub fn census_row(
     height: usize,
     y: usize,
     padded: &mut Vec<u8>,
-    out: &mut [u8],
+    planes: &mut [u8],
 ) {
     let stride = width + 2 * HALF_WIDTH;
     padded.resize(7 * stride, 0);
@@ -34,7 +34,7 @@ pub fn census_row(
         row[HALF_WIDTH + width..].fill(source[width - 1]);
     }
     let centre = &padded[3 * stride + HALF_WIDTH..][..width];
-    for (row_offset, plane) in ROW_OFFSETS.iter().zip(out.chunks_exact_mut(width)) {
+    for (row_offset, plane) in ROW_OFFSETS.iter().zip(planes.chunks_exact_mut(width)) {
         let row = &padded[(3 + row_offset) as usize * stride..][..stride];
         plane.fill(0);
         for (bit, column_offset) in COLUMN_OFFSETS.iter().enumerate() {
@@ -49,7 +49,7 @@ pub fn census_row(
 
 /// Each of the right row's planes reversed and followed by `disparities`
 /// zeros, so the right features a left pixel at `x` is compared with,
-/// `x - d` for `d` from 0 up, are contiguous from `width - 1 - x`, and
+/// `x - disparity` for each disparity from 0 up, are contiguous from `width - 1 - x`, and
 /// those left of the image are zero.
 pub fn reverse_right(right: &[u8], width: usize, disparities: usize, reversed: &mut Vec<u8>) {
     reversed.clear();
@@ -59,12 +59,17 @@ pub fn reverse_right(right: &[u8], width: usize, disparities: usize, reversed: &
     }
 }
 
-/// `out[x * D + d]`, the Hamming distance between left feature `x` and
-/// right feature `x - d`, from planes as `census_row` and `reverse_right`
+/// `row_costs[x * D + disparity]`, the Hamming distance between left feature `x` and
+/// right feature `x - disparity`, from planes as `census_row` and `reverse_right`
 /// lay them out.
-pub fn costs_row<const D: usize>(left: &[u8], reversed_right: &[u8], width: usize, out: &mut [u8]) {
+pub fn costs_row<const D: usize>(
+    left: &[u8],
+    reversed_right: &[u8],
+    width: usize,
+    row_costs: &mut [u8],
+) {
     let reversed_stride = width + D;
-    for (x, costs) in out.chunks_exact_mut(D).enumerate().take(width) {
+    for (x, costs) in row_costs.chunks_exact_mut(D).enumerate().take(width) {
         let costs: &mut [u8; D] = costs.try_into().unwrap();
         costs.fill(0);
         for plane in 0..PLANES {
@@ -88,7 +93,7 @@ mod tests {
         (0..width)
             .map(|x| {
                 (0..PLANES)
-                    .map(|k| u64::from(planes[k * width + x]) << (8 * k))
+                    .map(|plane| u64::from(planes[plane * width + x]) << (8 * plane))
                     .sum()
             })
             .collect()

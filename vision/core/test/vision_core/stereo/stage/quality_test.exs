@@ -37,15 +37,17 @@ defmodule VisionCore.Stereo.Stage.QualityTest do
     deviation = :math.sqrt(Enum.sum(Enum.map(matched, &((&1 - mean) ** 2))) / length(matched))
 
     both =
-      for {a, b} <- Enum.zip(values, Nx.to_flat_list(first)), a > 0 and b > 0, do: abs(a - b)
+      for {current, previous} <- Enum.zip(values, Nx.to_flat_list(first)),
+          current > 0 and previous > 0,
+          do: abs(current - previous)
 
-    assert_in_delta metrics.valid, 100 * length(matched) / length(values), 1.0e-3
-    assert_in_delta metrics.mean_disp, mean, 1.0e-3
-    assert_in_delta metrics.std_disp, deviation, 1.0e-2
-    assert_in_delta metrics.jitter, Enum.sum(both) / length(both), 1.0e-3
+    assert_in_delta metrics.matched_percent, 100 * length(matched) / length(values), 1.0e-3
+    assert_in_delta metrics.mean_disparity_px, mean, 1.0e-3
+    assert_in_delta metrics.spread_px, deviation, 1.0e-2
+    assert_in_delta metrics.jitter_px, Enum.sum(both) / length(both), 1.0e-3
   end
 
   test "has no jitter on the first pair" do
-    assert {%{jitter: +0.0}, _segment} = run(segment(), disparity(1))
+    assert {%{jitter_px: +0.0}, _segment} = run(segment(), disparity(1))
   end
 end

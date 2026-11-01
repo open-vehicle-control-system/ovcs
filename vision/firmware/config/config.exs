@@ -29,32 +29,32 @@ vehicle_name =
       """)
     end
 
-vehicle_dir = vehicle_name && Macro.underscore(vehicle_name)
+vehicle_directory = vehicle_name && Macro.underscore(vehicle_name)
 target = Mix.target() |> to_string()
 
 # Per-file fallback, as in vms/firmware: a vehicle's
 # priv/firmware/vision/<file> wins over targets/<mix-target>/<file>.
 # `fwup_conf` must be relative (Nerves joins it to the app dir).
-vehicle_override_rel = "../../vehicles/#{vehicle_dir}/priv/firmware/vision"
-target_default_rel = "targets/#{target}"
+vehicle_override_relative = "../../vehicles/#{vehicle_directory}/priv/firmware/vision"
+target_default_relative = "targets/#{target}"
 
-vehicle_override_abs = Path.expand("../#{vehicle_override_rel}", __DIR__)
-target_default_abs = Path.expand("../#{target_default_rel}", __DIR__)
+vehicle_override_absolute = Path.expand("../#{vehicle_override_relative}", __DIR__)
+target_default_absolute = Path.expand("../#{target_default_relative}", __DIR__)
 
 resolve_firmware_file = fn file ->
-  if File.exists?(Path.join(vehicle_override_abs, file)),
-    do: Path.join(vehicle_override_rel, file),
-    else: Path.join(target_default_rel, file)
+  if File.exists?(Path.join(vehicle_override_absolute, file)),
+    do: Path.join(vehicle_override_relative, file),
+    else: Path.join(target_default_relative, file)
 end
 
 # The boot files are taken as a set: a vehicle overriding config.txt
 # ships cmdline-a.txt and cmdline-b.txt too.
-vehicle_firmware_dir =
-  if File.exists?(Path.join(vehicle_override_abs, "config.txt")),
-    do: vehicle_override_abs,
-    else: target_default_abs
+vehicle_firmware_directory =
+  if File.exists?(Path.join(vehicle_override_absolute, "config.txt")),
+    do: vehicle_override_absolute,
+    else: target_default_absolute
 
-System.put_env("VEHICLE_FIRMWARE_DIR", vehicle_firmware_dir)
+System.put_env("VEHICLE_FIRMWARE_DIR", vehicle_firmware_directory)
 
 fwup_conf = resolve_firmware_file.("fwup.conf")
 

@@ -27,9 +27,14 @@ pub fn depth(
                     metres.slice_mut(pixels.clone()),
                 )
             };
-            for ((&d, metres), millimetres) in disparity[pixels].iter().zip(metres).zip(millimetres)
+            for ((&pixel_disparity, metres), millimetres) in
+                disparity[pixels].iter().zip(metres).zip(millimetres)
             {
-                *metres = if d > 0.0 { focal_baseline / d } else { 0.0 };
+                *metres = if pixel_disparity > 0.0 {
+                    focal_baseline / pixel_disparity
+                } else {
+                    0.0
+                };
                 *millimetres = (*metres * 1000.0).round().clamp(0.0, 65_535.0) as u16;
             }
         }
@@ -71,10 +76,10 @@ pub fn cloud(
             let z = depth_m[y * width + source(column, width, grid_width)];
             if z > MIN_DEPTH_M && z < MAX_DEPTH_M {
                 let u = column as f32 * decimation as f32;
-                let z_over_f = z / intrinsics.focal_length_px;
+                let z_over_focal_length = z / intrinsics.focal_length_px;
                 points.extend([
-                    (u - intrinsics.cx) * z_over_f,
-                    (v - intrinsics.cy) * z_over_f,
+                    (u - intrinsics.cx) * z_over_focal_length,
+                    (v - intrinsics.cy) * z_over_focal_length,
                     z,
                 ]);
                 kept += 1;

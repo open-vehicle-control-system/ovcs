@@ -29,7 +29,7 @@ pub struct SensorMode {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct Args {
+pub struct Arguments {
     pub camera_id: u32,
     pub width: u32,
     pub height: u32,
@@ -47,8 +47,8 @@ pub struct Args {
 }
 
 /// Parses the arguments after the program name. The error is the warning to log.
-pub fn parse(args: &[String]) -> Result<Args, String> {
-    let mut out = Args {
+pub fn parse(command_line: &[String]) -> Result<Arguments, String> {
+    let mut arguments = Arguments {
         camera_id: 0,
         width: 1280,
         height: 720,
@@ -60,26 +60,26 @@ pub fn parse(args: &[String]) -> Result<Args, String> {
         sensor_mode: None,
         format: Format::Jpeg,
     };
-    let mut rest = args.iter();
+    let mut rest = command_line.iter();
     while let Some(flag) = rest.next() {
         let Some(value) = rest.next() else {
             return Err(format!("unknown arg {flag}"));
         };
         match flag.as_str() {
-            "--camera" => out.camera_id = unsigned(flag, value)?,
-            "--width" => out.width = unsigned(flag, value)?,
-            "--height" => out.height = unsigned(flag, value)?,
-            "--fps" => out.fps = unsigned(flag, value)?,
-            "--rotation" => out.rotation = unsigned(flag, value)?,
+            "--camera" => arguments.camera_id = unsigned(flag, value)?,
+            "--width" => arguments.width = unsigned(flag, value)?,
+            "--height" => arguments.height = unsigned(flag, value)?,
+            "--fps" => arguments.fps = unsigned(flag, value)?,
+            "--rotation" => arguments.rotation = unsigned(flag, value)?,
             "--sync" => {
-                out.sync_mode = match value.as_str() {
+                arguments.sync_mode = match value.as_str() {
                     "server" => SyncMode::Server,
                     "client" => SyncMode::Client,
                     _ => return Err("--sync must be server or client".to_string()),
                 }
             }
             "--exposure-mode" => {
-                out.exposure_mode = Some(match value.as_str() {
+                arguments.exposure_mode = Some(match value.as_str() {
                     "normal" => ExposureMode::Normal,
                     "short" => ExposureMode::Short,
                     "long" => ExposureMode::Long,
@@ -87,20 +87,20 @@ pub fn parse(args: &[String]) -> Result<Args, String> {
                 })
             }
             "--lens-position" => {
-                out.lens_position = Some(
+                arguments.lens_position = Some(
                     value
                         .parse()
                         .map_err(|_| format!("{flag} must be a number, got {value}"))?,
                 )
             }
             "--sensor-mode" => {
-                out.sensor_mode =
+                arguments.sensor_mode =
                     Some(sensor_mode(value).ok_or_else(|| {
                         "--sensor-mode must be WIDTHxHEIGHT[:BITDEPTH]".to_string()
                     })?)
             }
             "--format" => {
-                out.format = match value.as_str() {
+                arguments.format = match value.as_str() {
                     "jpeg" => Format::Jpeg,
                     "grey" => Format::Grey,
                     _ => return Err("--format must be jpeg or grey".to_string()),
@@ -109,7 +109,7 @@ pub fn parse(args: &[String]) -> Result<Args, String> {
             _ => return Err(format!("unknown arg {flag}")),
         }
     }
-    Ok(out)
+    Ok(arguments)
 }
 
 fn unsigned(flag: &str, value: &str) -> Result<u32, String> {
@@ -137,15 +137,15 @@ fn sensor_mode(value: &str) -> Option<SensorMode> {
 mod tests {
     use super::*;
 
-    fn strings(args: &[&str]) -> Vec<String> {
-        args.iter().map(|a| a.to_string()).collect()
+    fn strings(arguments: &[&str]) -> Vec<String> {
+        arguments.iter().map(|a| a.to_string()).collect()
     }
 
     #[test]
     fn parses_defaults() {
         assert_eq!(
             parse(&[]),
-            Ok(Args {
+            Ok(Arguments {
                 camera_id: 0,
                 width: 1280,
                 height: 720,
@@ -162,7 +162,7 @@ mod tests {
 
     #[test]
     fn parses_every_flag() {
-        let args = strings(&[
+        let arguments = strings(&[
             "--camera",
             "1",
             "--width",
@@ -185,8 +185,8 @@ mod tests {
             "grey",
         ]);
         assert_eq!(
-            parse(&args),
-            Ok(Args {
+            parse(&arguments),
+            Ok(Arguments {
                 camera_id: 1,
                 width: 640,
                 height: 480,
@@ -207,11 +207,11 @@ mod tests {
 
     #[test]
     fn parses_server_sync_and_other_exposure_modes() {
-        let args = parse(&strings(&["--sync", "server", "--exposure-mode", "long"])).unwrap();
-        assert_eq!(args.sync_mode, SyncMode::Server);
-        assert_eq!(args.exposure_mode, Some(ExposureMode::Long));
-        let args = parse(&strings(&["--exposure-mode", "normal"])).unwrap();
-        assert_eq!(args.exposure_mode, Some(ExposureMode::Normal));
+        let arguments = parse(&strings(&["--sync", "server", "--exposure-mode", "long"])).unwrap();
+        assert_eq!(arguments.sync_mode, SyncMode::Server);
+        assert_eq!(arguments.exposure_mode, Some(ExposureMode::Long));
+        let arguments = parse(&strings(&["--exposure-mode", "normal"])).unwrap();
+        assert_eq!(arguments.exposure_mode, Some(ExposureMode::Normal));
     }
 
     #[test]
@@ -251,9 +251,9 @@ mod tests {
 
     #[test]
     fn sensor_mode_without_bits_defaults_to_10() {
-        let args = parse(&strings(&["--sensor-mode", "2304x1296"])).unwrap();
+        let arguments = parse(&strings(&["--sensor-mode", "2304x1296"])).unwrap();
         assert_eq!(
-            args.sensor_mode,
+            arguments.sensor_mode,
             Some(SensorMode {
                 width: 2304,
                 height: 1296,
@@ -264,8 +264,8 @@ mod tests {
 
     #[test]
     fn parses_jpeg_format_and_rejects_others() {
-        let args = parse(&strings(&["--format", "jpeg"])).unwrap();
-        assert_eq!(args.format, Format::Jpeg);
+        let arguments = parse(&strings(&["--format", "jpeg"])).unwrap();
+        assert_eq!(arguments.format, Format::Jpeg);
         assert_eq!(
             parse(&strings(&["--format", "rgb"])),
             Err("--format must be jpeg or grey".to_string())

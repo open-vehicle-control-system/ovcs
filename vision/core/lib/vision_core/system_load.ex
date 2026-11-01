@@ -27,8 +27,9 @@ defmodule VisionCore.SystemLoad do
 
   @doc "The busy percentage between two `cpu_times/0` readings."
   @spec cpu_percent(tuple() | nil, tuple() | nil) :: float() | nil
-  def cpu_percent({busy_a, total_a}, {busy_b, total_b}) when total_b > total_a,
-    do: 100 * (busy_b - busy_a) / (total_b - total_a)
+  def cpu_percent({earlier_busy, earlier_total}, {later_busy, later_total})
+      when later_total > earlier_total,
+      do: 100 * (later_busy - earlier_busy) / (later_total - earlier_total)
 
   def cpu_percent(_earlier, _later), do: nil
 end

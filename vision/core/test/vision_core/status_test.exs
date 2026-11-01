@@ -114,10 +114,10 @@ defmodule VisionCore.StatusTest do
     for valid <- [60.0, 70.0] do
       metrics = [
         {:align_rows, 0.1, "rows"},
-        {:valid, valid, "%"},
-        {:mean_disp, 18.0, "px"},
-        {:std_disp, 6.0, "px"},
-        {:jitter, 0.3, "px"}
+        {:matched_percent, valid, "%"},
+        {:mean_disparity_px, 18.0, "px"},
+        {:spread_px, 6.0, "px"},
+        {:jitter_px, 0.3, "px"}
       ]
 
       GenServer.cast(Status, {:stereo_pair, %{pair() | metrics: metrics}})

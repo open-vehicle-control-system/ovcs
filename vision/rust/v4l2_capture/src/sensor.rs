@@ -6,8 +6,8 @@ pub fn line_ns(sensor_width: u32, hblank: u32, pixel_rate_hz: u64) -> f64 {
 }
 
 /// The IMX708's analogue gain code for `gain`, where gain = 1024 / (1024 - code).
-pub fn imx708_gain_code(gain: f64, min: i32, max: i32) -> i32 {
-    ((1024.0 - 1024.0 / gain).round() as i32).clamp(min, max)
+pub fn imx708_gain_code(gain: f64, min_code: i32, max_code: i32) -> i32 {
+    ((1024.0 - 1024.0 / gain).round() as i32).clamp(min_code, max_code)
 }
 
 /// The gain an IMX708 analogue gain `code` stands for: the inverse of `imx708_gain_code`.

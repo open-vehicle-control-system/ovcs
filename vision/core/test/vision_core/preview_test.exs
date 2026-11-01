@@ -17,7 +17,7 @@ defmodule VisionCore.PreviewTest do
   # A pair whose depth image is `width` x `height` millimetres from `depth_mm`.
   defp pair(depth_mm \\ nil, {width, height} \\ {4, 4}) do
     frame = %Frame{label: "left", width: width, height: height, capture_ns: 0, jpeg: <<>>}
-    depth = depth_mm && for(d <- depth_mm, into: <<>>, do: <<d::little-16>>)
+    depth = depth_mm && for(millimetres <- depth_mm, into: <<>>, do: <<millimetres::little-16>>)
 
     %Pair{
       left_frame: frame,

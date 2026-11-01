@@ -111,8 +111,8 @@ defmodule VisionCore.Ros2.CameraCalibrationTest do
 
       scaled = CameraCalibration.scale_to(right, 480, 270)
 
-      baseline = fn c ->
-        [fx, _, _, tx | _] = c.projection_matrix
+      baseline = fn calibration ->
+        [fx, _, _, tx | _] = calibration.projection_matrix
         -tx / fx
       end
 

@@ -13,7 +13,7 @@ pub fn decode_nms_by_class(
     class_count: usize,
     source_width: i32,
     source_height: i32,
-    b: &Letterbox,
+    letterbox: &Letterbox,
     model: i32,
     score_threshold: f32,
 ) -> Vec<Detection> {
@@ -42,7 +42,7 @@ pub fn decode_nms_by_class(
                 continue;
             }
             let [x0, y0, x1, y1] = to_caller(
-                b,
+                letterbox,
                 [
                     bbox[1] * model,
                     bbox[0] * model,
@@ -79,17 +79,20 @@ mod tests {
     use super::*;
     use crate::letterbox::letterbox_for;
 
-    fn assert_near(d: &Detection, want: [f32; 4]) {
-        let got = [d.x0, d.y0, d.x1, d.y1];
-        for (g, w) in got.iter().zip(want) {
-            assert!((g - w).abs() < 1e-3, "{got:?} != {want:?}");
+    fn assert_near(detection: &Detection, want: [f32; 4]) {
+        let got = [detection.x0, detection.y0, detection.x1, detection.y1];
+        for (got_coordinate, want_coordinate) in got.iter().zip(want) {
+            assert!(
+                (got_coordinate - want_coordinate).abs() < 1e-3,
+                "{got:?} != {want:?}"
+            );
         }
     }
 
     #[test]
     fn decodes_by_class_with_swapped_axes_threshold_and_clamp() {
         // 480x270 into 640: scale 4/3, offset_y 140.
-        let b = letterbox_for(480, 270, 640);
+        let letterbox = letterbox_for(480, 270, 640);
         let output = [
             // class 0: one box, below threshold
             1.0, 0.5, 0.5, 0.6, 0.6, 0.3, //
@@ -99,7 +102,7 @@ mod tests {
             2.0, 0.5, 0.25, 0.625, 0.5, 0.9, //
             0.5, 0.0, 1.0, 0.5, 0.4,
         ];
-        let got = decode_nms_by_class(&output, 3, 480, 270, &b, 640, 0.4);
+        let got = decode_nms_by_class(&output, 3, 480, 270, &letterbox, 640, 0.4);
         assert_eq!(got.len(), 2);
         assert_eq!(got[0].class_id, 2);
         assert_eq!(got[0].score, 0.9);
@@ -109,26 +112,26 @@ mod tests {
 
     #[test]
     fn drops_degenerate_boxes() {
-        let b = letterbox_for(480, 270, 640);
+        let letterbox = letterbox_for(480, 270, 640);
         // Entirely inside the top padding: clamps to zero height.
         let output = [1.0, 0.0, 0.1, 0.1, 0.2, 0.9];
-        assert!(decode_nms_by_class(&output, 1, 480, 270, &b, 640, 0.4).is_empty());
+        assert!(decode_nms_by_class(&output, 1, 480, 270, &letterbox, 640, 0.4).is_empty());
     }
 
     #[test]
     fn stops_on_a_count_that_overflows() {
-        let b = letterbox_for(480, 270, 640);
+        let letterbox = letterbox_for(480, 270, 640);
         let output = [1.0e30, 0.5, 0.25, 0.625, 0.5, 0.9];
-        assert!(decode_nms_by_class(&output, 2, 480, 270, &b, 640, 0.4).is_empty());
+        assert!(decode_nms_by_class(&output, 2, 480, 270, &letterbox, 640, 0.4).is_empty());
         assert_eq!(class_end(1, usize::MAX), None);
         assert_eq!(class_end(usize::MAX, 1), None);
     }
 
     #[test]
     fn stops_on_truncated_output() {
-        let b = letterbox_for(480, 270, 640);
+        let letterbox = letterbox_for(480, 270, 640);
         let output = [1.0, 0.5, 0.25, 0.625, 0.5, 0.9, 3.0, 0.5];
-        let got = decode_nms_by_class(&output, 5, 480, 270, &b, 640, 0.4);
+        let got = decode_nms_by_class(&output, 5, 480, 270, &letterbox, 640, 0.4);
         assert_eq!(got.len(), 1);
     }
 }

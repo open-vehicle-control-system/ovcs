@@ -49,12 +49,14 @@ pub fn coerce(value: ControlValue, kind: ControlKind) -> Option<TypedValue> {
     match (kind, value) {
         (ControlKind::Bool, ControlValue::Integer(0)) => Some(TypedValue::Bool(false)),
         (ControlKind::Bool, ControlValue::Integer(1)) => Some(TypedValue::Bool(true)),
-        (ControlKind::Int32, ControlValue::Integer(i)) => {
-            i32::try_from(i).ok().map(TypedValue::Int32)
+        (ControlKind::Int32, ControlValue::Integer(integer)) => {
+            i32::try_from(integer).ok().map(TypedValue::Int32)
         }
-        (ControlKind::Int64, ControlValue::Integer(i)) => Some(TypedValue::Int64(i)),
-        (ControlKind::Float, ControlValue::Integer(i)) => Some(TypedValue::Float(i as f32)),
-        (ControlKind::Float, ControlValue::Float(f)) => Some(TypedValue::Float(f)),
+        (ControlKind::Int64, ControlValue::Integer(integer)) => Some(TypedValue::Int64(integer)),
+        (ControlKind::Float, ControlValue::Integer(integer)) => {
+            Some(TypedValue::Float(integer as f32))
+        }
+        (ControlKind::Float, ControlValue::Float(float)) => Some(TypedValue::Float(float)),
         _ => None,
     }
 }

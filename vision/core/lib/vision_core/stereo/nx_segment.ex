@@ -255,9 +255,9 @@ defmodule VisionCore.Stereo.NxSegment do
   @impl VisionCore.Stereo.Segment
   @spec response(term(), Task.t(), t()) ::
           {:ok, map(), t(), integer()} | {:error, term()} | :no_reply
-  def response({ref, result}, %Task{ref: ref}, %__MODULE__{}) do
+  def response({ref, dispatched}, %Task{ref: ref}, %__MODULE__{}) do
     Process.demonitor(ref, [:flush])
-    result
+    dispatched
   end
 
   def response(_message, %Task{}, %__MODULE__{}), do: :no_reply

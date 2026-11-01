@@ -164,7 +164,7 @@ defmodule VisionCore.Stereo.Supervisor do
   defp build_config(opts) do
     topic_prefix = Keyword.get(opts, :topic_prefix, @default_topic_prefix)
     calibration_dir = Keyword.get(opts, :calibration_dir)
-    store_dir = Keyword.get(opts, :calibration_store_dir)
+    store_directory = Keyword.get(opts, :calibration_store_dir)
 
     left =
       resolve_side_opts(Keyword.fetch!(opts, :left), :left, topic_prefix, calibration_dir)
@@ -172,7 +172,7 @@ defmodule VisionCore.Stereo.Supervisor do
     right =
       resolve_side_opts(Keyword.fetch!(opts, :right), :right, topic_prefix, calibration_dir)
 
-    {left, right} = use_stored_calibration(left, right, store_dir, topic_prefix)
+    {left, right} = use_stored_calibration(left, right, store_directory, topic_prefix)
     width = Keyword.get(opts, :width, @default_width)
     height = Keyword.get(opts, :height, @default_height)
 
@@ -210,20 +210,20 @@ defmodule VisionCore.Stereo.Supervisor do
 
   @doc """
   The per-side opts with `:calibration_store_path` set from
-  `store_dir`, and `:calibration_path` pointing at the stored files
+  `store_directory`, and `:calibration_path` pointing at the stored files
   when both sides are stored: one stored side alone would pair two
-  calibrations solved apart. Unchanged when `store_dir` is `nil`.
+  calibrations solved apart. Unchanged when `store_directory` is `nil`.
   """
   def use_stored_calibration(left, right, nil, _topic_prefix), do: {left, right}
 
-  def use_stored_calibration(left, right, store_dir, topic_prefix) do
-    left_store = Path.join(store_dir, "#{topic_prefix}_left.yaml")
-    right_store = Path.join(store_dir, "#{topic_prefix}_right.yaml")
+  def use_stored_calibration(left, right, store_directory, topic_prefix) do
+    left_store = Path.join(store_directory, "#{topic_prefix}_left.yaml")
+    right_store = Path.join(store_directory, "#{topic_prefix}_right.yaml")
     left = Keyword.put(left, :calibration_store_path, left_store)
     right = Keyword.put(right, :calibration_store_path, right_store)
 
     if File.exists?(left_store) and File.exists?(right_store) do
-      Logger.info("#{__MODULE__} using the calibration stored in #{store_dir}")
+      Logger.info("#{__MODULE__} using the calibration stored in #{store_directory}")
 
       {Keyword.put(left, :calibration_path, left_store),
        Keyword.put(right, :calibration_path, right_store)}

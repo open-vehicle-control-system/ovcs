@@ -27,21 +27,21 @@ defmodule Mix.Tasks.VisionCore.NxCache do
   def run(args) do
     {parsed, _rest} = OptionParser.parse!(args, strict: @switches)
     composer = Module.concat([fetch!(parsed, :composer)])
-    dir = Path.expand(fetch!(parsed, :out))
+    cache_directory = Path.expand(fetch!(parsed, :out))
 
     Mix.Task.run("compile")
     {:ok, _apps} = Application.ensure_all_started([:exla, :nx_iree])
 
     pipeline_opts = composer |> stereo_options() |> Supervisor.pipeline_options()
 
-    case NxSegment.build_cache(pipeline_opts, dir) do
+    case NxSegment.build_cache(pipeline_opts, cache_directory) do
       {:ok, 0} ->
         Mix.shell().info(
           "#{inspect(composer)}'s stereo stages compute natively: nothing to compile"
         )
 
       {:ok, _segments} ->
-        Mix.shell().info("#{inspect(composer)}'s Nx stereo code cached in #{dir}")
+        Mix.shell().info("#{inspect(composer)}'s Nx stereo code cached in #{cache_directory}")
 
       {:error, reason} ->
         Mix.raise(reason)

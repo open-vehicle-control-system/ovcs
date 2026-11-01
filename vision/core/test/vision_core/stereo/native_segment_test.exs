@@ -109,13 +109,13 @@ defmodule VisionCore.Stereo.NativeSegmentTest do
     got = Map.new(got, fn {name, value, _unit} -> {name, value} end)
     want = Map.new(want, fn {name, value, _unit} -> {name, value} end)
 
-    for {name, value} <- Map.drop(want, [:std_disp]),
+    for {name, value} <- Map.drop(want, [:spread_px]),
         do: assert_close(got[name], value, 1.0e-5, name)
 
     variance = &(&1 * &1)
 
-    assert abs(variance.(got.std_disp) - variance.(want.std_disp)) <=
-             1.0e-5 * variance.(want.mean_disp)
+    assert abs(variance.(got.spread_px) - variance.(want.spread_px)) <=
+             1.0e-5 * variance.(want.mean_disparity_px)
   end
 
   defp max_ulps(got, want) do

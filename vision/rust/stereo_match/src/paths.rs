@@ -29,10 +29,13 @@ pub fn step<const D: usize>(
     let next: &mut [u8; D] = (&mut next[1..D + 1]).try_into().unwrap();
     let jump = previous_minimum + p2;
     let mut minimum = u8::MAX;
-    for d in 0..D {
-        let neighbour = previous[d].min(previous[d + 2]).saturating_add(p1);
-        let value = previous[d + 1].min(jump).min(neighbour) - previous_minimum + costs[d];
-        next[d] = value;
+    for disparity in 0..D {
+        let neighbour = previous[disparity]
+            .min(previous[disparity + 2])
+            .saturating_add(p1);
+        let value =
+            previous[disparity + 1].min(jump).min(neighbour) - previous_minimum + costs[disparity];
+        next[disparity] = value;
         minimum = minimum.min(value);
     }
     minimum
@@ -45,12 +48,12 @@ pub fn reset_state<const D: usize>(state: &mut [u8]) {
     state[D + 1] = SENTINEL;
 }
 
-/// `out[x * D + d]`, the sum of the left-to-right and right-to-left paths of
+/// `sums[x * D + disparity]`, the sum of the left-to-right and right-to-left paths of
 /// one row of `costs`. The two paths are followed in the same loop, as
-/// independent chains, into `out` and `backward`, which is scratch space.
+/// independent chains, into `sums` and `backward`, which is scratch space.
 pub fn horizontal_row<const D: usize>(
     costs: &[u8],
-    out: &mut [u8],
+    sums: &mut [u8],
     backward: &mut [u8],
     p1: u8,
     p2: u8,
@@ -64,7 +67,7 @@ pub fn horizontal_row<const D: usize>(
         states.each_mut();
     let (mut forward_minimum, mut backward_minimum) = (0, 0);
     for x in 0..width {
-        let back_x = width - 1 - x;
+        let backward_x = width - 1 - x;
         forward_minimum = step::<D>(
             &forward_previous[..],
             forward_minimum,
@@ -76,17 +79,17 @@ pub fn horizontal_row<const D: usize>(
         backward_minimum = step::<D>(
             &backward_previous[..],
             backward_minimum,
-            &costs[back_x * D..],
+            &costs[backward_x * D..],
             &mut backward_next[..],
             p1,
             p2,
         );
-        out[x * D..(x + 1) * D].copy_from_slice(&forward_next[1..D + 1]);
-        backward[back_x * D..(back_x + 1) * D].copy_from_slice(&backward_next[1..D + 1]);
+        sums[x * D..(x + 1) * D].copy_from_slice(&forward_next[1..D + 1]);
+        backward[backward_x * D..(backward_x + 1) * D].copy_from_slice(&backward_next[1..D + 1]);
         std::mem::swap(&mut forward_previous, &mut forward_next);
         std::mem::swap(&mut backward_previous, &mut backward_next);
     }
-    for (sum, &cost) in out[..width * D].iter_mut().zip(&backward[..width * D]) {
+    for (sum, &cost) in sums[..width * D].iter_mut().zip(&backward[..width * D]) {
         *sum += cost;
     }
 }
@@ -222,13 +225,22 @@ mod tests {
     /// The recurrence as `NxStereo`'s `scan/3` writes it.
     fn reference_step(previous: &[i32], costs: &[u8], p1: i32, p2: i32) -> Vec<i32> {
         let minimum = *previous.iter().min().unwrap();
-        let a: Vec<i32> = previous.iter().map(|v| v - minimum).collect();
-        let last = a.len() - 1;
-        (0..a.len())
-            .map(|d| {
-                let lower = if d == 0 { p2 - p1 } else { a[d - 1] };
-                let upper = if d == last { p2 - p1 } else { a[d + 1] };
-                a[d].min(p2).min(lower.min(upper) + p1) + i32::from(costs[d])
+        let normalized: Vec<i32> = previous.iter().map(|v| v - minimum).collect();
+        let last = normalized.len() - 1;
+        (0..normalized.len())
+            .map(|disparity| {
+                let lower = if disparity == 0 {
+                    p2 - p1
+                } else {
+                    normalized[disparity - 1]
+                };
+                let upper = if disparity == last {
+                    p2 - p1
+                } else {
+                    normalized[disparity + 1]
+                };
+                normalized[disparity].min(p2).min(lower.min(upper) + p1)
+                    + i32::from(costs[disparity])
             })
             .collect()
     }

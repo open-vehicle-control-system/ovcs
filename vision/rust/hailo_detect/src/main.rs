@@ -1,8 +1,8 @@
 //! `hailo_detect <model.hef> [score_threshold]`: the Port behind `VisionCore.Detection.Backend.Hailo`.
 //! The HEF carries its NMS in-graph, so this binary letterboxes pixels in and reads boxes back out.
 //!
-//! Request (stdin): u8 tag 1, u32 seq, u16 width, u16 height, u8 channels (1 gray, 3 BGR), pixels.
-//! Response (stdout): u8 tag 1, u32 seq, u16 count, count × {u16 class_id, f32 score, x0, y0, x1, y1}
+//! Request (stdin): u8 tag 1, u32 sequence, u16 width, u16 height, u8 channels (1 gray, 3 BGR), pixels.
+//! Response (stdout): u8 tag 1, u32 sequence, u16 count, count × {u16 class_id, f32 score, x0, y0, x1, y1}
 //! in the caller's pixel coordinates. Scalars are little-endian.
 
 #[cfg(feature = "device")]
@@ -28,17 +28,17 @@ fn log(message: &str) {
 }
 
 fn main() {
-    let argv: Vec<String> = std::env::args().collect();
-    if argv.len() < 2 {
+    let command_line: Vec<String> = std::env::args().collect();
+    if command_line.len() < 2 {
         log("usage: hailo_detect <model.hef> [score_threshold]");
         exit(2);
     }
-    let hef_path = &argv[1];
-    let score_threshold = match argv.get(2).map(|s| s.parse::<f32>()) {
+    let hef_path = &command_line[1];
+    let score_threshold = match command_line.get(2).map(|s| s.parse::<f32>()) {
         None => DEFAULT_SCORE_THRESHOLD,
         Some(Ok(threshold)) => threshold,
         Some(Err(_)) => {
-            log(&format!("bad score threshold {}", argv[2]));
+            log(&format!("bad score threshold {}", command_line[2]));
             exit(2);
         }
     };
@@ -93,7 +93,7 @@ fn run(hef_path: &str, score_threshold: f32, writer: &Writer) -> i32 {
             continue;
         };
         let (width, height) = (i32::from(request.width), i32::from(request.height));
-        let b = letterbox_for(width, height, model_size);
+        let letterbox = letterbox_for(width, height, model_size);
         let outcome = match request.check() {
             Err(message) => {
                 log(&message);
@@ -107,7 +107,7 @@ fn run(hef_path: &str, score_threshold: f32, writer: &Writer) -> i32 {
                     request.channels,
                     &mut model_input,
                     model_size,
-                    &b,
+                    &letterbox,
                 );
 
                 match detector.infer(&model_input, &mut output) {
@@ -121,10 +121,10 @@ fn run(hef_path: &str, score_threshold: f32, writer: &Writer) -> i32 {
         };
         match reply_for(outcome) {
             Reply::Detections => {}
-            // The Elixir side holds per-seq state until it gets an answer.
+            // The Elixir side holds per-sequence state until it gets an answer.
             Reply::Empty => {
                 if writer
-                    .write_record(&detections_record(request.seq, &[]))
+                    .write_record(&detections_record(request.sequence, &[]))
                     .is_err()
                 {
                     break;
@@ -133,15 +133,15 @@ fn run(hef_path: &str, score_threshold: f32, writer: &Writer) -> i32 {
             }
             Reply::EmptyThenExit => {
                 log("vstreams may hold a frame in flight; exiting for a restart");
-                let _ = writer.write_record(&detections_record(request.seq, &[]));
+                let _ = writer.write_record(&detections_record(request.sequence, &[]));
                 return 1;
             }
         }
 
         let nms_output = &output[..output_floats];
-        if let Some(dir) = std::env::var_os("HAILO_DEBUG_DUMP") {
+        if let Some(dump_directory) = std::env::var_os("HAILO_DEBUG_DUMP") {
             dump_debug(
-                std::path::Path::new(&dir),
+                std::path::Path::new(&dump_directory),
                 &model_input,
                 model_size,
                 nms_output,
@@ -154,12 +154,12 @@ fn run(hef_path: &str, score_threshold: f32, writer: &Writer) -> i32 {
             class_count,
             width,
             height,
-            &b,
+            &letterbox,
             model_size,
             score_threshold,
         );
         if writer
-            .write_record(&detections_record(request.seq, &detections))
+            .write_record(&detections_record(request.sequence, &detections))
             .is_err()
         {
             break;
@@ -173,7 +173,7 @@ fn run(hef_path: &str, score_threshold: f32, writer: &Writer) -> i32 {
 /// to see a wrong letterbox or a misread output layout.
 #[cfg(feature = "device")]
 fn dump_debug(
-    dir: &std::path::Path,
+    dump_directory: &std::path::Path,
     rgb: &[u8],
     size: i32,
     nms_output: &[f32],
@@ -183,7 +183,7 @@ fn dump_debug(
 
     let mut ppm = format!("P6\n{size} {size}\n255\n").into_bytes();
     ppm.extend_from_slice(rgb);
-    let _ = std::fs::write(dir.join("hailo_input.ppm"), ppm);
+    let _ = std::fs::write(dump_directory.join("hailo_input.ppm"), ppm);
 
     // One line per class that reported any box, so a non-empty result is obvious
     // even when every score is below threshold.
@@ -214,5 +214,5 @@ fn dump_debug(
         }
         offset = end;
     }
-    let _ = std::fs::write(dir.join("hailo_output.txt"), text);
+    let _ = std::fs::write(dump_directory.join("hailo_output.txt"), text);
 }

@@ -178,7 +178,7 @@ defmodule VisionCore.Stereo.Pipeline do
        context: context,
        stages:
          stages
-         |> Enum.map(&init_stage!(&1, context))
+         |> Enum.map(&initialise_stage!(&1, context))
          |> group_stages(compute, context),
        listeners: [],
        timer: StageTimer.new(window: 30, label: "pipeline"),
@@ -217,7 +217,7 @@ defmodule VisionCore.Stereo.Pipeline do
   def handle_call({:reload_calibration, paths}, _from, state) do
     opts = Keyword.merge(state.opts, paths)
     context = context(opts)
-    stages = Enum.map(state.stages, &reinit_stage!(&1, context))
+    stages = Enum.map(state.stages, &reinitialise_stage!(&1, context))
 
     Logger.info(
       "#{__MODULE__} reloaded calibration " <>
@@ -260,9 +260,9 @@ defmodule VisionCore.Stereo.Pipeline do
   def handle_info(message, state) do
     with {:value, sent} <- :queue.peek(state.in_flight),
          [first | _rest] = state.stages,
-         result when result != :no_reply <-
+         response when response != :no_reply <-
            first.module.response(message, sent.ticket, sent.segment) do
-      {:noreply, receive_reply(result, sent, state)}
+      {:noreply, receive_reply(response, sent, state)}
     else
       _other -> {:noreply, state}
     end
@@ -290,11 +290,11 @@ defmodule VisionCore.Stereo.Pipeline do
   end
 
   # The segment's device time runs from when the device could start on the pair.
-  defp receive_reply(result, sent, %{stages: [first | rest]} = state) do
+  defp receive_reply(response, sent, %{stages: [first | rest]} = state) do
     state = %{state | in_flight: :queue.drop(state.in_flight)}
 
     state =
-      case result do
+      case response do
         {:ok, outputs, segment, done_ns} ->
           device_ns = done_ns - max(sent.sent_ns, state.last_reply_ns || sent.sent_ns)
 
@@ -402,10 +402,10 @@ defmodule VisionCore.Stereo.Pipeline do
     {outcome, done, timer} =
       Enum.reduce(stages, {{:ok, pair}, [], timer}, fn
         stage, {{:ok, pair}, done, timer} ->
-          {elapsed_ns, result} = timed(fn -> stage.module.run(pair, stage.state) end)
+          {elapsed_ns, stage_outcome} = timed(fn -> stage.module.run(pair, stage.state) end)
           timer = StageTimer.record(timer, stage.name, elapsed_ns)
 
-          case result do
+          case stage_outcome do
             {:ok, pair, stage_state} when stage.module in @segments ->
               pair = %{pair | device_ms: pair.device_ms + elapsed_ns / 1_000_000}
               timer = record_members(timer, stage.module.member_times(stage_state))
@@ -426,8 +426,8 @@ defmodule VisionCore.Stereo.Pipeline do
   end
 
   defp record_members(timer, member_times) do
-    Enum.reduce(member_times, timer, fn {name, ns}, timer ->
-      StageTimer.record(timer, name, ns)
+    Enum.reduce(member_times, timer, fn {name, duration_ns}, timer ->
+      StageTimer.record(timer, name, duration_ns)
     end)
   end
 
@@ -522,23 +522,23 @@ defmodule VisionCore.Stereo.Pipeline do
     end
   end
 
-  defp init_stage!(stage, context) do
+  defp initialise_stage!(stage, context) do
     case stage.module.init(stage.opts, context) do
       {:ok, stage_state} -> Map.put(stage, :state, stage_state)
       {:error, reason} -> raise ArgumentError, "#{inspect(stage.module)} cannot start: #{reason}"
     end
   end
 
-  defp reinit_stage!(%{module: module, state: segment} = stage, context)
+  defp reinitialise_stage!(%{module: module, state: segment} = stage, context)
        when module in @segments do
-    members = Enum.map(segment.members, &reinit_stage!(&1, context))
+    members = Enum.map(segment.members, &reinitialise_stage!(&1, context))
     %{stage | state: module.reload(segment, members, context)}
   end
 
   # Settings changed while running survive the rebuild.
-  defp reinit_stage!(stage, context) do
+  defp reinitialise_stage!(stage, context) do
     opts = Keyword.merge(stage.opts, Map.to_list(values(stage)))
-    init_stage!(%{stage | opts: opts}, context)
+    initialise_stage!(%{stage | opts: opts}, context)
   end
 
   defp members(%{module: module, state: segment}) when module in @segments,

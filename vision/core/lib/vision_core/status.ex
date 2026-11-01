@@ -33,12 +33,7 @@ defmodule VisionCore.Status do
   @default_tick_ms 1_000
   @call_timeout_ms 200
   @camera_metadata_keys [:exposure_time_us, :analogue_gain, :lens_position, :colour_temperature]
-  @quality_metrics %{
-    valid: :matched_percent,
-    mean_disp: :mean_disparity_px,
-    std_disp: :spread_px,
-    jitter: :jitter_px
-  }
+  @quality_metrics [:matched_percent, :mean_disparity_px, :spread_px, :jitter_px]
 
   @type camera :: %{required(:present) => boolean(), optional(atom()) => term()}
   @type snapshot :: %{
@@ -185,17 +180,17 @@ defmodule VisionCore.Status do
   defp quality(metrics) do
     quality =
       for {name, value, _unit} <- metrics,
-          key = @quality_metrics[name],
+          name in @quality_metrics,
           into: %{},
-          do: {key, value}
+          do: {name, value}
 
-    if map_size(quality) == map_size(@quality_metrics), do: quality
+    if map_size(quality) == length(@quality_metrics), do: quality
   end
 
   defp mean_quality([]), do: nil
 
   defp mean_quality(qualities) do
-    Map.new(Map.values(@quality_metrics), fn key ->
+    Map.new(@quality_metrics, fn key ->
       {key, Enum.sum(Enum.map(qualities, & &1[key])) / length(qualities)}
     end)
   end

@@ -143,13 +143,13 @@ impl Detector {
             }
             input_params.truncate(input_count);
             output_params.truncate(output_count);
-            for p in &mut input_params {
-                p.params.timeout_ms = HAILO_DEFAULT_VSTREAM_TIMEOUT_MS;
-                p.params.queue_size = HAILO_DEFAULT_VSTREAM_QUEUE_SIZE;
+            for input_param in &mut input_params {
+                input_param.params.timeout_ms = HAILO_DEFAULT_VSTREAM_TIMEOUT_MS;
+                input_param.params.queue_size = HAILO_DEFAULT_VSTREAM_QUEUE_SIZE;
             }
-            for p in &mut output_params {
-                p.params.timeout_ms = HAILO_DEFAULT_VSTREAM_TIMEOUT_MS;
-                p.params.queue_size = HAILO_DEFAULT_VSTREAM_QUEUE_SIZE;
+            for output_param in &mut output_params {
+                output_param.params.timeout_ms = HAILO_DEFAULT_VSTREAM_TIMEOUT_MS;
+                output_param.params.queue_size = HAILO_DEFAULT_VSTREAM_QUEUE_SIZE;
             }
 
             let mut inputs = vec![ptr::null_mut(); input_count];
@@ -175,12 +175,12 @@ impl Detector {
             )?;
             detector.outputs = outputs;
 
-            let mut input_info = MaybeUninit::<hailo_vstream_info_t>::zeroed();
+            let mut input_vstream_info = MaybeUninit::<hailo_vstream_info_t>::zeroed();
             check(
-                hailo_get_input_vstream_info(detector.inputs[0], input_info.as_mut_ptr()),
+                hailo_get_input_vstream_info(detector.inputs[0], input_vstream_info.as_mut_ptr()),
                 "hailo_get_input_vstream_info",
             )?;
-            let shape = input_info.assume_init().__bindgen_anon_1.shape;
+            let shape = input_vstream_info.assume_init().__bindgen_anon_1.shape;
             if shape.height != shape.width || shape.features != 3 {
                 return Err(format!(
                     "expected a square 3-channel input, got {}x{}x{}",
@@ -201,12 +201,15 @@ impl Detector {
                 ));
             }
 
-            let mut output_info = MaybeUninit::<hailo_vstream_info_t>::zeroed();
+            let mut output_vstream_info = MaybeUninit::<hailo_vstream_info_t>::zeroed();
             check(
-                hailo_get_output_vstream_info(detector.outputs[0], output_info.as_mut_ptr()),
+                hailo_get_output_vstream_info(
+                    detector.outputs[0],
+                    output_vstream_info.as_mut_ptr(),
+                ),
                 "hailo_get_output_vstream_info",
             )?;
-            detector.class_count = output_info
+            detector.class_count = output_vstream_info
                 .assume_init()
                 .__bindgen_anon_1
                 .nms_shape
@@ -247,8 +250,8 @@ impl Detector {
                         streams_cleared: true,
                     },
                 },
-                Err(clear) => InferFailure {
-                    message: format!("{message}; {clear}"),
+                Err(clear_message) => InferFailure {
+                    message: format!("{message}; {clear_message}"),
                     outcome: FrameOutcome::WriteFailed {
                         streams_cleared: false,
                     },

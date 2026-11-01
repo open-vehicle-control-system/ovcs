@@ -13,7 +13,7 @@ use std::time::Duration;
 /// meanwhile.
 pub struct Shared<T> {
     pointer: *mut T,
-    len: usize,
+    length: usize,
 }
 
 // SAFETY: access goes through the unsafe methods, whose callers keep
@@ -25,7 +25,7 @@ impl<T> Shared<T> {
     pub fn new(buffer: &mut [T]) -> Shared<T> {
         Shared {
             pointer: buffer.as_mut_ptr(),
-            len: buffer.len(),
+            length: buffer.len(),
         }
     }
 
@@ -33,14 +33,14 @@ impl<T> Shared<T> {
     /// No other thread may access `range` while the slice lives.
     #[allow(clippy::mut_from_ref)]
     pub unsafe fn slice_mut(&self, range: Range<usize>) -> &mut [T] {
-        assert!(range.start <= range.end && range.end <= self.len);
+        assert!(range.start <= range.end && range.end <= self.length);
         std::slice::from_raw_parts_mut(self.pointer.add(range.start), range.end - range.start)
     }
 
     /// # Safety
     /// No other thread may write `range` while the slice lives.
     pub unsafe fn slice(&self, range: Range<usize>) -> &[T] {
-        assert!(range.start <= range.end && range.end <= self.len);
+        assert!(range.start <= range.end && range.end <= self.length);
         std::slice::from_raw_parts(self.pointer.add(range.start), range.end - range.start)
     }
 }

@@ -42,8 +42,8 @@ defmodule VisionCore.Parameters.Store do
     :exit, reason -> failed(reason)
   end
 
-  defp decode_into(%SavedValue{parameter_id: id, value: json}, values) do
-    case Jason.decode(json) do
+  defp decode_into(%SavedValue{parameter_id: id, value: encoded}, values) do
+    case Jason.decode(encoded) do
       {:ok, value} ->
         Map.put(values, id, value)
 
@@ -54,7 +54,7 @@ defmodule VisionCore.Parameters.Store do
   end
 
   defp write_one({id, :delete}) do
-    Repo.delete_all(from(v in SavedValue, where: v.parameter_id == ^id))
+    Repo.delete_all(from(saved_value in SavedValue, where: saved_value.parameter_id == ^id))
   end
 
   defp write_one({id, value}) do

@@ -5,8 +5,8 @@ use std::fs;
 use std::io;
 use std::ptr;
 
-const fn ioc(dir: u64, nr: u64, size: u64) -> u64 {
-    (dir << 30) | (size << 16) | ((b'V' as u64) << 8) | nr
+const fn ioc(direction: u64, number: u64, size: u64) -> u64 {
+    (direction << 30) | (size << 16) | ((b'V' as u64) << 8) | number
 }
 const READ_WRITE: u64 = 3;
 const WRITE: u64 = 1;
@@ -127,10 +127,10 @@ struct ExtControls {
     controls: *mut ExtControl,
 }
 
-fn xioctl<T>(fd: i32, request: u64, arg: &mut T) -> io::Result<()> {
+fn xioctl<T>(fd: i32, request: u64, argument: &mut T) -> io::Result<()> {
     loop {
-        // SAFETY: `arg` is the struct the request's size encodes.
-        if unsafe { libc::ioctl(fd, request as _, arg as *mut T) } == 0 {
+        // SAFETY: `argument` is the struct the request's size encodes.
+        if unsafe { libc::ioctl(fd, request as _, argument as *mut T) } == 0 {
             return Ok(());
         }
         let error = io::Error::last_os_error();
@@ -172,7 +172,7 @@ pub fn retry<T>(
             Err(error) if error.kind() == waiting && std::time::Instant::now() < deadline => {
                 std::thread::sleep(interval)
             }
-            result => return result,
+            finished => return finished,
         }
     }
 }
@@ -197,8 +197,8 @@ pub struct Node {
 
 impl Node {
     pub fn open(path: &str) -> io::Result<Node> {
-        let c_path =
-            CString::new(path).map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+        let c_path = CString::new(path)
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error))?;
         // SAFETY: a NUL-terminated path.
         let fd = unsafe { libc::open(c_path.as_ptr(), libc::O_RDWR | libc::O_NONBLOCK) };
         if fd < 0 {
@@ -347,8 +347,8 @@ impl Capture {
                 start_ns: buffer.tv_sec * 1_000_000_000 + buffer.tv_usec * 1_000,
                 bytes: buffer.bytesused as usize,
             })),
-            Err(e) if e.raw_os_error() == Some(libc::EAGAIN) => Ok(None),
-            Err(e) => Err(e),
+            Err(error) if error.raw_os_error() == Some(libc::EAGAIN) => Ok(None),
+            Err(error) => Err(error),
         }
     }
 

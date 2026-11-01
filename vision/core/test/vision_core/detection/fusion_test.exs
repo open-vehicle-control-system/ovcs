@@ -153,7 +153,9 @@ defmodule VisionCore.Detection.FusionTest do
           Evision.Mat.from_nx_2d(Nx.tensor([calibration.distortion_coefficients], type: :f64)),
           matrix(calibration.rectification_matrix),
           calibration.projection_matrix
-          |> then(fn p -> Enum.map([0, 1, 2, 4, 5, 6, 8, 9, 10], &Enum.at(p, &1)) end)
+          |> then(fn projection ->
+            Enum.map([0, 1, 2, 4, 5, 6, 8, 9, 10], &Enum.at(projection, &1))
+          end)
           |> matrix(),
           {480, 270},
           Evision.Constant.cv_32FC1()

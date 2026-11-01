@@ -3,7 +3,7 @@
 //! `{:packet, 4}` records on stdout. Records on stdin change a setting each
 //! (`name=value`, see `settings`); stdin EOF stops it.
 
-mod args;
+mod arguments;
 mod bayer;
 mod exposure;
 mod lock;
@@ -34,7 +34,7 @@ const EXPOSURE_GAIN_PRESENT: u8 = 0b11;
 const NODE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
 const BUSY_RETRY: std::time::Duration = std::time::Duration::from_millis(200);
 const PAIR_TOLERANCE_NS: i64 = 1_000_000;
-const STATS_EVERY_S: u64 = 60;
+const STATISTICS_EVERY_S: u64 = 60;
 // Auto exposure measures every this many left frames: the sensor applies a
 // change a few frames after it is set.
 const EXPOSURE_EVERY_FRAMES: u32 = 4;
@@ -61,11 +61,11 @@ fn main() -> ExitCode {
     let log = |level, message: &str| {
         let _ = writer.write_record(&log_record(level, message));
     };
-    let argv: Vec<String> = std::env::args().skip(1).collect();
-    let result = args::parse(&argv)
+    let command_line: Vec<String> = std::env::args().skip(1).collect();
+    match arguments::parse(&command_line)
         .map_err(|message| io::Error::new(io::ErrorKind::InvalidInput, message))
-        .and_then(|args| run(&args, &writer, &log));
-    match result {
+        .and_then(|arguments| run(&arguments, &writer, &log))
+    {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             log(LogLevel::Error, &error.to_string());
@@ -92,8 +92,12 @@ fn open_camera(video: &str, sensor_name: &str, width: u32, height: u32) -> io::R
         .map_err(|error| io::Error::new(error.kind(), format!("{video}: {error}")))
 }
 
-fn run(args: &args::Args, writer: &Writer, log: &dyn Fn(LogLevel, &str)) -> io::Result<()> {
-    let (sensor_width, sensor_height) = (args.width * 2, args.height * 2);
+fn run(
+    arguments: &arguments::Arguments,
+    writer: &Writer,
+    log: &dyn Fn(LogLevel, &str),
+) -> io::Result<()> {
+    let (sensor_width, sensor_height) = (arguments.width * 2, arguments.height * 2);
     let left = open_camera(LEFT_VIDEO, LEFT_SENSOR, sensor_width, sensor_height)?;
     let right = open_camera(RIGHT_VIDEO, RIGHT_SENSOR, sensor_width, sensor_height)?;
 
@@ -101,12 +105,12 @@ fn run(args: &args::Args, writer: &Writer, log: &dyn Fn(LogLevel, &str)) -> io::
     let pixel_rate = left.sensor.control64(v4l2::CID_PIXEL_RATE)?;
     let line_ns = sensor::line_ns(sensor_width, hblank as u32, pixel_rate as u64);
     let (vblank_min, vblank_max) = right.sensor.control_range(v4l2::CID_VBLANK)?;
-    let frame_lines = (1e9 / f64::from(args.fps) / line_ns).round() as i32;
-    let vblank0 = (frame_lines - sensor_height as i32).clamp(vblank_min, vblank_max);
-    let period_ns = (f64::from(sensor_height as i32 + vblank0) * line_ns).round() as i64;
+    let frame_lines = (1e9 / f64::from(arguments.fps) / line_ns).round() as i32;
+    let nominal_vblank = (frame_lines - sensor_height as i32).clamp(vblank_min, vblank_max);
+    let period_ns = (f64::from(sensor_height as i32 + nominal_vblank) * line_ns).round() as i64;
     let gain_range = left.sensor.control_range(v4l2::CID_ANALOGUE_GAIN)?;
     let frame_us = period_ns as f64 / 1_000.0;
-    let max_exposure_lines = sensor_height as i32 + vblank0 - EXPOSURE_MARGIN_LINES;
+    let max_exposure_lines = sensor_height as i32 + nominal_vblank - EXPOSURE_MARGIN_LINES;
     let set_exposure = |exposure_us: f64, gain: f64| -> io::Result<(f64, f64)> {
         let lines = ((exposure_us * 1_000.0 / line_ns).round() as i32).clamp(1, max_exposure_lines);
         let code = sensor::imx708_gain_code(gain, gain_range.0, gain_range.1);
@@ -127,7 +131,9 @@ fn run(args: &args::Args, writer: &Writer, log: &dyn Fn(LogLevel, &str)) -> io::
         writer.write_record(&metadata_record(capture_ns, EXPOSURE_GAIN_PRESENT, &values))
     };
     for camera in [&left, &right] {
-        camera.sensor.set_control(v4l2::CID_VBLANK, vblank0)?;
+        camera
+            .sensor
+            .set_control(v4l2::CID_VBLANK, nominal_vblank)?;
     }
     let set_focus = |focus: u16| {
         for (side, camera) in [("left", &left), ("right", &right)] {
@@ -141,7 +147,7 @@ fn run(args: &args::Args, writer: &Writer, log: &dyn Fn(LogLevel, &str)) -> io::
             }
         }
     };
-    let mut settings = args.settings.clone();
+    let mut settings = arguments.settings.clone();
     let mut tone = Tone::new(settings.black_level, settings.gamma);
     set_focus(settings.focus);
     if left.lens.is_none() || right.lens.is_none() {
@@ -163,32 +169,32 @@ fn run(args: &args::Args, writer: &Writer, log: &dyn Fn(LogLevel, &str)) -> io::
     log(
         LogLevel::Info,
         &format!(
-            "{sensor_width}x{sensor_height} line {line_ns:.1} ns, vblank {vblank0}, \
+            "{sensor_width}x{sensor_height} line {line_ns:.1} ns, vblank {nominal_vblank}, \
              period {period_ns} ns, {settings:?}"
         ),
     );
     let mut left_frames = 0u32;
 
-    let mut lock = PhaseLock::new(period_ns, line_ns, vblank0, vblank_min, vblank_max);
+    let mut lock = PhaseLock::new(period_ns, line_ns, nominal_vblank, vblank_min, vblank_max);
     let mut pairer = Pairer::new(PAIR_TOLERANCE_NS);
-    let mut stats = [0u64; 3];
-    let mut convert_ns = 0u128;
-    let mut stats_at = std::time::Instant::now();
-    let mut fds = [
+    let mut statistics = [0u64; 3];
+    let mut conversion_ns = 0u128;
+    let mut statistics_since = std::time::Instant::now();
+    let mut poll_descriptors = [
         pollfd(left.capture.node.fd),
         pollfd(right.capture.node.fd),
         pollfd(libc::STDIN_FILENO),
     ];
     loop {
-        // SAFETY: `fds` is a valid array of three pollfds.
-        if unsafe { libc::poll(fds.as_mut_ptr(), 3, 1_000) } < 0 {
+        // SAFETY: `poll_descriptors` is a valid array of three pollfds.
+        if unsafe { libc::poll(poll_descriptors.as_mut_ptr(), 3, 1_000) } < 0 {
             let error = io::Error::last_os_error();
             if error.raw_os_error() == Some(libc::EINTR) {
                 continue;
             }
             return Err(error);
         }
-        if fds[2].revents != 0 {
+        if poll_descriptors[2].revents != 0 {
             match framing::read_record(&mut io::stdin().lock())? {
                 None => return Ok(()),
                 Some(record) => match settings.apply(&record) {
@@ -212,25 +218,25 @@ fn run(args: &args::Args, writer: &Writer, log: &dyn Fn(LogLevel, &str)) -> io::
                 },
             }
         }
-        if stats_at.elapsed().as_secs() >= STATS_EVERY_S {
-            let frames = u128::from((stats[0] + stats[1]).max(1));
+        if statistics_since.elapsed().as_secs() >= STATISTICS_EVERY_S {
+            let frames = u128::from((statistics[0] + statistics[1]).max(1));
             log(
                 LogLevel::Info,
                 &format!(
-                    "last {STATS_EVERY_S} s: frames left {} right {}, pairs {}, {} us per conversion",
-                    stats[0],
-                    stats[1],
-                    stats[2],
-                    convert_ns / 1_000 / frames
+                    "last {STATISTICS_EVERY_S} s: frames left {} right {}, pairs {}, {} us per conversion",
+                    statistics[0],
+                    statistics[1],
+                    statistics[2],
+                    conversion_ns / 1_000 / frames
                 ),
             );
-            stats = [0; 3];
-            convert_ns = 0;
-            stats_at = std::time::Instant::now();
+            statistics = [0; 3];
+            conversion_ns = 0;
+            statistics_since = std::time::Instant::now();
         }
         for (side, camera) in [(Side::Left, &left), (Side::Right, &right)] {
             while let Some(frame) = camera.capture.dequeue()? {
-                stats[side as usize] += 1;
+                statistics[side as usize] += 1;
                 let converting = std::time::Instant::now();
                 let grey = bayer::grey_half(
                     camera.capture.pixels(&frame),
@@ -239,7 +245,7 @@ fn run(args: &args::Args, writer: &Writer, log: &dyn Fn(LogLevel, &str)) -> io::
                     &tone,
                     settings.rotation == 180,
                 );
-                convert_ns += converting.elapsed().as_nanos();
+                conversion_ns += converting.elapsed().as_nanos();
                 camera.capture.queue(frame.index)?;
                 match side {
                     Side::Left => {
@@ -263,10 +269,10 @@ fn run(args: &args::Args, writer: &Writer, log: &dyn Fn(LogLevel, &str)) -> io::
                     }
                 }
                 if let Some(pair) = pairer.push(side, frame.start_ns, grey) {
-                    stats[2] += 1;
+                    statistics[2] += 1;
                     writer.write_record(&pair_record(
-                        args.width as u16,
-                        args.height as u16,
+                        arguments.width as u16,
+                        arguments.height as u16,
                         pair.left_ns,
                         pair.right_ns,
                         &pair.left,

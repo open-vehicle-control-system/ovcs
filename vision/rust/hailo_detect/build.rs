@@ -24,8 +24,9 @@ fn hailort() {
         .generate()
         .expect("bindgen failed on hailo/hailort.h");
 
-    let out = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("hailort.rs");
+    let bindings_path =
+        std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("hailort.rs");
     bindings
-        .write_to_file(out)
+        .write_to_file(bindings_path)
         .expect("could not write hailort.rs");
 }

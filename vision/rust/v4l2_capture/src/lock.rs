@@ -16,7 +16,7 @@ const HISTORY: usize = 15;
 pub struct PhaseLock {
     period_ns: i64,
     line_ns: f64,
-    vblank0: i32,
+    nominal_vblank: i32,
     vblank_min: i32,
     vblank_max: i32,
     settling: bool,
@@ -28,14 +28,14 @@ impl PhaseLock {
     pub fn new(
         period_ns: i64,
         line_ns: f64,
-        vblank0: i32,
+        nominal_vblank: i32,
         vblank_min: i32,
         vblank_max: i32,
     ) -> PhaseLock {
         PhaseLock {
             period_ns,
             line_ns,
-            vblank0,
+            nominal_vblank,
             vblank_min,
             vblank_max,
             settling: false,
@@ -51,7 +51,7 @@ impl PhaseLock {
     pub fn observe(&mut self, left_ns: i64, right_ns: i64) -> Option<i32> {
         if self.settling {
             self.settling = false;
-            return Some(self.vblank0);
+            return Some(self.nominal_vblank);
         }
 
         let offset = self.wrap(right_ns - left_ns);
@@ -72,15 +72,15 @@ impl PhaseLock {
         }
         let lines = (-GAIN * offset as f64 / self.line_ns).round() as i32;
         self.settling = true;
-        Some((self.vblank0 + lines).clamp(self.vblank_min, self.vblank_max))
+        Some((self.nominal_vblank + lines).clamp(self.vblank_min, self.vblank_max))
     }
 
     fn wrap(&self, offset: i64) -> i64 {
-        let x = offset.rem_euclid(self.period_ns);
-        if x > self.period_ns / 2 {
-            x - self.period_ns
+        let wrapped = offset.rem_euclid(self.period_ns);
+        if wrapped > self.period_ns / 2 {
+            wrapped - self.period_ns
         } else {
-            x
+            wrapped
         }
     }
 
@@ -100,41 +100,41 @@ mod tests {
 
     const PERIOD: i64 = 33_333_333;
 
-    fn lock() -> PhaseLock {
+    fn phase_lock() -> PhaseLock {
         PhaseLock::new(PERIOD, 9_227.0, 2752, 40, 8_387_616)
     }
 
     #[test]
     fn leaves_the_sensor_alone_inside_the_deadband() {
-        assert_eq!(lock().observe(0, 10_000), None);
+        assert_eq!(phase_lock().observe(0, 10_000), None);
     }
 
     #[test]
     fn shortens_a_late_right_frame_then_restores_it() {
-        let mut l = lock();
-        assert_eq!(l.observe(0, 1_000_000), Some(2752 - 54));
-        assert_eq!(l.observe(0, 500_000), Some(2752));
+        let mut phase_lock = phase_lock();
+        assert_eq!(phase_lock.observe(0, 1_000_000), Some(2752 - 54));
+        assert_eq!(phase_lock.observe(0, 500_000), Some(2752));
     }
 
     #[test]
     fn wraps_the_offset_into_half_a_period() {
-        assert_eq!(lock().observe(0, PERIOD - 1_000_000), Some(2752 + 54));
+        assert_eq!(phase_lock().observe(0, PERIOD - 1_000_000), Some(2752 + 54));
     }
 
     #[test]
     fn ignores_a_late_timestamp_while_locked_until_it_repeats() {
-        let mut l = lock();
+        let mut phase_lock = phase_lock();
         for _ in 0..15 {
-            assert_eq!(l.observe(0, 10_000), None);
+            assert_eq!(phase_lock.observe(0, 10_000), None);
         }
-        assert_eq!(l.observe(0, 4_000_000), None);
-        assert_eq!(l.observe(0, 4_000_000), None);
-        assert_eq!(l.observe(0, 4_000_000), Some(2752 - 217));
+        assert_eq!(phase_lock.observe(0, 4_000_000), None);
+        assert_eq!(phase_lock.observe(0, 4_000_000), None);
+        assert_eq!(phase_lock.observe(0, 4_000_000), Some(2752 - 217));
     }
 
     #[test]
     fn clamps_to_the_sensor_range() {
-        let mut l = PhaseLock::new(PERIOD, 9_227.0, 2752, 2700, 8_387_616);
-        assert_eq!(l.observe(0, 1_000_000), Some(2700));
+        let mut phase_lock = PhaseLock::new(PERIOD, 9_227.0, 2752, 2700, 8_387_616);
+        assert_eq!(phase_lock.observe(0, 1_000_000), Some(2700));
     }
 }

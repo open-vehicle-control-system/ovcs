@@ -27,9 +27,9 @@ use libcamera::properties;
 use libcamera::request::{RequestStatus, ReuseFlag};
 use libcamera::stream::StreamRole;
 
-use crate::args::{Args, ExposureMode, Format, SyncMode};
+use crate::arguments::{Arguments, ExposureMode, Format, SyncMode};
 use crate::controls::{coerce, parse_control, ControlKind, TypedValue};
-use crate::grey::{luma_len, pack_luma};
+use crate::grey::{luma_length, pack_luma};
 use crate::log;
 
 const METADATA_EVERY_FRAMES: u32 = 5;
@@ -50,16 +50,16 @@ const SYNC_MODE_CLIENT: i32 = 2;
 
 /// Points stderr at a pipe and returns its read end, for `forward_stderr`.
 pub fn redirect_stderr() -> Option<RawFd> {
-    let mut fds = [0 as c_int; 2];
+    let mut pipe_fds = [0 as c_int; 2];
     // SAFETY: plain fd syscalls on fds this function owns.
     unsafe {
-        if libc::pipe(fds.as_mut_ptr()) != 0 {
+        if libc::pipe(pipe_fds.as_mut_ptr()) != 0 {
             return None;
         }
-        libc::dup2(fds[1], libc::STDERR_FILENO);
-        libc::close(fds[1]);
+        libc::dup2(pipe_fds[1], libc::STDERR_FILENO);
+        libc::close(pipe_fds[1]);
     }
-    Some(fds[0])
+    Some(pipe_fds[0])
 }
 
 /// libcamera writes its own log to stderr: each line becomes a LOG record.
@@ -101,15 +101,15 @@ fn camera_manager(camera_id: usize) -> std::io::Result<CameraManager> {
 }
 
 /// Captures until stdin closes; the process exit status.
-pub fn run(args: &Args, writer: &Arc<Writer>) -> i32 {
+pub fn run(arguments: &Arguments, writer: &Arc<Writer>) -> i32 {
     let info = |message: String| log(writer, LogLevel::Info, &message);
     let warning = |message: String| log(writer, LogLevel::Warning, &message);
     let error = |message: String| log(writer, LogLevel::Error, &message);
 
-    let manager = match camera_manager(args.camera_id as usize) {
+    let manager = match camera_manager(arguments.camera_id as usize) {
         Ok(manager) => manager,
-        Err(e) => {
-            error(format!("CameraManager::start failed ({e})"));
+        Err(start_error) => {
+            error(format!("CameraManager::start failed ({start_error})"));
             return 1;
         }
     };
@@ -118,10 +118,10 @@ pub fn run(args: &Args, writer: &Arc<Writer>) -> i32 {
         error("no cameras detected by libcamera".to_string());
         return 1;
     }
-    let Some(camera) = cameras.get(args.camera_id as usize) else {
+    let Some(camera) = cameras.get(arguments.camera_id as usize) else {
         error(format!(
             "camera_id {} out of range (have {} cameras)",
-            args.camera_id,
+            arguments.camera_id,
             cameras.len()
         ));
         return 1;
@@ -131,14 +131,14 @@ pub fn run(args: &Args, writer: &Arc<Writer>) -> i32 {
         Err(_) => {
             error(format!(
                 "Camera::acquire failed (camera {})",
-                args.camera_id
+                arguments.camera_id
             ));
             return 1;
         }
     };
 
-    let mut config = match camera.generate_configuration(&[StreamRole::VideoRecording]) {
-        Some(config) if config.len() == 1 => config,
+    let mut configuration = match camera.generate_configuration(&[StreamRole::VideoRecording]) {
+        Some(configuration) if configuration.len() == 1 => configuration,
         _ => {
             error("generateConfiguration failed".to_string());
             return 1;
@@ -146,7 +146,7 @@ pub fn run(args: &Args, writer: &Arc<Writer>) -> i32 {
     };
 
     // Rotated in the pipeline: an upside-down sensor gives an upright frame.
-    let orientation = match args.rotation {
+    let orientation = match arguments.rotation {
         0 => Orientation::Rotate0,
         90 => Orientation::Rotate90,
         180 => Orientation::Rotate180,
@@ -158,35 +158,35 @@ pub fn run(args: &Args, writer: &Arc<Writer>) -> i32 {
             return 2;
         }
     };
-    config.set_orientation(orientation);
+    configuration.set_orientation(orientation);
 
-    if let Some(mut stream_config) = config.get_mut(0) {
-        stream_config.set_size(Size::new(args.width, args.height));
-        stream_config.set_pixel_format(YUV420);
-        stream_config.set_buffer_count(BUFFER_COUNT);
+    if let Some(mut stream_configuration) = configuration.get_mut(0) {
+        stream_configuration.set_size(Size::new(arguments.width, arguments.height));
+        stream_configuration.set_pixel_format(YUV420);
+        stream_configuration.set_buffer_count(BUFFER_COUNT);
     }
 
-    if let Some(mode) = args.sensor_mode {
+    if let Some(mode) = arguments.sensor_mode {
         let mut sensor = SensorConfiguration::new();
         sensor.set_bit_depth(mode.bit_depth);
         sensor.set_output_size(mode.width, mode.height);
-        config.set_sensor_configuration(sensor);
+        configuration.set_sensor_configuration(sensor);
     }
 
-    match config.validate() {
+    match configuration.validate() {
         CameraConfigurationStatus::Valid => {}
         CameraConfigurationStatus::Adjusted => {
-            let stream_config = config.get(0).expect("one stream configuration");
-            let size = stream_config.get_size();
+            let stream_configuration = configuration.get(0).expect("one stream configuration");
+            let size = stream_configuration.get_size();
             info(format!(
                 "configuration adjusted to {}x{} {}",
                 size.width,
                 size.height,
-                stream_config.get_pixel_format()
+                stream_configuration.get_pixel_format()
             ));
         }
         CameraConfigurationStatus::Invalid => {
-            error(match args.sensor_mode {
+            error(match arguments.sensor_mode {
                 Some(mode) => format!(
                     "configuration invalid: no {}x{} {}-bit sensor mode?",
                     mode.width, mode.height, mode.bit_depth
@@ -196,15 +196,15 @@ pub fn run(args: &Args, writer: &Arc<Writer>) -> i32 {
             return 1;
         }
     }
-    if config.orientation() != orientation {
+    if configuration.orientation() != orientation {
         warning(format!(
             "--rotation {} adjusted to {:?}",
-            args.rotation,
-            config.orientation()
+            arguments.rotation,
+            configuration.orientation()
         ));
     }
 
-    let pixel_format = config
+    let pixel_format = configuration
         .get(0)
         .expect("one stream configuration")
         .get_pixel_format();
@@ -215,21 +215,21 @@ pub fn run(args: &Args, writer: &Arc<Writer>) -> i32 {
         return 1;
     }
 
-    if camera.configure(&mut config).is_err() {
+    if camera.configure(&mut configuration).is_err() {
         error("Camera::configure failed".to_string());
         return 1;
     }
 
-    let stream_config = config.get(0).expect("one stream configuration");
-    let Some(stream) = stream_config.stream() else {
+    let stream_configuration = configuration.get(0).expect("one stream configuration");
+    let Some(stream) = stream_configuration.stream() else {
         error("no stream after Camera::configure".to_string());
         return 1;
     };
     let Size {
-        width: out_width,
-        height: out_height,
-    } = stream_config.get_size();
-    let y_stride = stream_config.get_stride() as usize;
+        width: output_width,
+        height: output_height,
+    } = stream_configuration.get_size();
+    let y_stride = stream_configuration.get_stride() as usize;
     // libcamera's YUV420 packs U and V at half the line stride: the I420 layout turbojpeg expects.
     let uv_stride = y_stride / 2;
 
@@ -252,8 +252,8 @@ pub fn run(args: &Args, writer: &Arc<Writer>) -> i32 {
                 error("buffer has no planes".to_string());
                 return 1;
             }
-            let plane = |i: usize| {
-                let plane = planes.get(i).expect("plane in range");
+            let plane = |plane_index: usize| {
+                let plane = planes.get(plane_index).expect("plane in range");
                 (plane.fd(), plane.offset().unwrap_or(0), plane.len())
             };
             let mut sync_fds = Vec::new();
@@ -261,16 +261,16 @@ pub fn run(args: &Args, writer: &Arc<Writer>) -> i32 {
                 if !sync_fds.contains(&fd) {
                     sync_fds.push(fd);
                 }
-                mapper.map_plane(fd, offset, length).map_err(|e| {
-                    error(format!("mmap(fd={fd}) failed: {e}"));
+                mapper.map_plane(fd, offset, length).map_err(|map_error| {
+                    error(format!("mmap(fd={fd}) failed: {map_error}"));
                 })
             };
             let mapped = if planes.len() >= 3 {
                 (|| Ok((map(plane(0))?, map(plane(1))?, map(plane(2))?)))()
             } else {
                 // Single-plane dmabuf: Y, U and V at known offsets within it.
-                let y_size = y_stride * out_height as usize;
-                let uv_size = uv_stride * (out_height as usize / 2);
+                let y_size = y_stride * output_height as usize;
+                let uv_size = uv_stride * (output_height as usize / 2);
                 let (fd, offset, _) = plane(0);
                 // SAFETY: the mapping covers y_size + 2 * uv_size bytes from base.
                 map((fd, offset, y_size + 2 * uv_size))
@@ -299,15 +299,17 @@ pub fn run(args: &Args, writer: &Arc<Writer>) -> i32 {
         requests.push(request);
     }
 
-    let mut output = match args.format {
-        Format::Jpeg => match JpegEncoder::new(out_width, out_height) {
+    let mut output = match arguments.format {
+        Format::Jpeg => match JpegEncoder::new(output_width, output_height) {
             Ok(encoder) => Output::Jpeg(encoder),
             Err(message) => {
                 error(message);
                 return 1;
             }
         },
-        Format::Grey => Output::Grey(Vec::with_capacity(out_width as usize * out_height as usize)),
+        Format::Grey => Output::Grey(Vec::with_capacity(
+            output_width as usize * output_height as usize,
+        )),
     };
 
     let control_ids = control_table(&camera);
@@ -324,7 +326,7 @@ pub fn run(args: &Args, writer: &Arc<Writer>) -> i32 {
     ];
 
     let mut start_controls = ControlList::new();
-    let period_us = 1_000_000 / i64::from(args.fps.max(1));
+    let period_us = 1_000_000 / i64::from(arguments.fps.max(1));
     let _ = start_controls.set(controls::FrameDurationLimits([period_us, period_us]));
 
     // The widest crop the sensor mode allows; a mode can itself be a centre crop of the sensor.
@@ -339,11 +341,11 @@ pub fn run(args: &Args, writer: &Arc<Writer>) -> i32 {
         Err(_) => warning("ScalerCropMaximum unavailable; FoV may be cropped".to_string()),
     }
 
-    if args.sync_mode != SyncMode::Off {
+    if arguments.sync_mode != SyncMode::Off {
         match camera.controls().count(SYNC_MODE_ID) {
             0 => warning("no camera sync on this pipeline; --sync ignored".to_string()),
             _ => {
-                let (value, role) = match args.sync_mode {
+                let (value, role) = match arguments.sync_mode {
                     SyncMode::Server => (SYNC_MODE_SERVER, "server"),
                     _ => (SYNC_MODE_CLIENT, "client"),
                 };
@@ -353,7 +355,7 @@ pub fn run(args: &Args, writer: &Arc<Writer>) -> i32 {
         }
     }
 
-    if let Some(mode) = args.exposure_mode {
+    if let Some(mode) = arguments.exposure_mode {
         let mode = match mode {
             ExposureMode::Normal => controls::AeExposureMode::ExposureNormal,
             ExposureMode::Short => controls::AeExposureMode::ExposureShort,
@@ -364,7 +366,7 @@ pub fn run(args: &Args, writer: &Arc<Writer>) -> i32 {
     }
 
     // A stereo calibration holds only while the lens stays put: focus is manual and fixed.
-    if let Some(position) = args.lens_position.filter(|p| *p >= 0.0) {
+    if let Some(position) = arguments.lens_position.filter(|p| *p >= 0.0) {
         if camera.controls().count(controls::AfMode::ID) > 0
             && camera.controls().count(controls::LensPosition::ID) > 0
         {
@@ -415,7 +417,7 @@ pub fn run(args: &Args, writer: &Arc<Writer>) -> i32 {
         };
         let metadata = FrameMetadata::read(request.metadata(), &metadata_ids);
 
-        if args.sync_mode != SyncMode::Off && !sync_reported {
+        if arguments.sync_mode != SyncMode::Off && !sync_reported {
             frames_without_sync += 1;
             if metadata.is_present(SYNC_READY_FIELD) && metadata.values[SYNC_READY_FIELD] != 0.0 {
                 info(format!(
@@ -442,7 +444,7 @@ pub fn run(args: &Args, writer: &Arc<Writer>) -> i32 {
 
         // The dmabuf is not cache-coherent: invalidate before the CPU reads what the ISP wrote.
         dmabuf_sync(&view.sync_fds, DMA_BUF_SYNC_START | DMA_BUF_SYNC_READ);
-        let (width, height) = (out_width as u16, out_height as u16);
+        let (width, height) = (output_width as u16, output_height as u16);
         // The record's header, then its pixels, written as they are.
         let record = match &mut output {
             Output::Jpeg(encoder) => encoder
@@ -455,10 +457,10 @@ pub fn run(args: &Args, writer: &Arc<Writer>) -> i32 {
                 })
                 .map_err(|message| format!("tjCompressFromYUVPlanes: {message}")),
             Output::Grey(grey) => {
-                let (columns, rows) = (out_width as usize, out_height as usize);
+                let (columns, rows) = (output_width as usize, output_height as usize);
                 // SAFETY: the Y plane is mapped for `height` rows `y_stride` apart.
                 let luma = unsafe {
-                    std::slice::from_raw_parts(view.planes[0], luma_len(columns, rows, y_stride))
+                    std::slice::from_raw_parts(view.planes[0], luma_length(columns, rows, y_stride))
                 };
                 pack_luma(grey, luma, columns, rows, y_stride);
                 Ok((
@@ -493,10 +495,10 @@ pub fn run(args: &Args, writer: &Arc<Writer>) -> i32 {
 /// Every scalar libcamera control by name, with its id and type.
 fn control_table(camera: &Camera) -> HashMap<String, (u32, ControlKind)> {
     let mut table = HashMap::new();
-    let Some(list) = ControlList::from_info_map(camera.controls()) else {
+    let Some(control_list) = ControlList::from_info_map(camera.controls()) else {
         return table;
     };
-    let Some(ids) = list.id_map().and_then(|map| map.iter()) else {
+    let Some(ids) = control_list.id_map().and_then(|map| map.iter()) else {
         return table;
     };
     let mut ids: Vec<_> = ids.map(|(_, id)| id).collect();
@@ -556,10 +558,10 @@ fn spawn_stdin_reader(
 
 fn libcamera_value(value: TypedValue) -> LibcameraValue {
     match value {
-        TypedValue::Bool(v) => v.into(),
-        TypedValue::Int32(v) => v.into(),
-        TypedValue::Int64(v) => v.into(),
-        TypedValue::Float(v) => v.into(),
+        TypedValue::Bool(flag) => flag.into(),
+        TypedValue::Int32(integer) => integer.into(),
+        TypedValue::Int64(integer) => integer.into(),
+        TypedValue::Float(float) => float.into(),
     }
 }
 
@@ -571,20 +573,20 @@ struct FrameMetadata {
 }
 
 impl FrameMetadata {
-    fn read(list: &ControlList, ids: &[u32; METADATA_FIELDS]) -> FrameMetadata {
+    fn read(control_list: &ControlList, ids: &[u32; METADATA_FIELDS]) -> FrameMetadata {
         let mut metadata = FrameMetadata {
             sensor_timestamp: None,
             present: 0,
             values: [0.0; METADATA_FIELDS],
         };
-        for (id, value) in list {
+        for (id, value) in control_list {
             if id == controls::SensorTimestamp::ID {
-                if let LibcameraValue::Int64(v) = &value {
-                    metadata.sensor_timestamp = v.first().copied();
+                if let LibcameraValue::Int64(timestamps) = &value {
+                    metadata.sensor_timestamp = timestamps.first().copied();
                 }
             } else if let Some(field) = ids.iter().position(|field_id| *field_id == id) {
-                if let Some(v) = scalar(&value) {
-                    metadata.values[field] = v;
+                if let Some(number) = scalar(&value) {
+                    metadata.values[field] = number;
                     metadata.present |= 1 << field;
                 }
             }
@@ -599,10 +601,10 @@ impl FrameMetadata {
 
 fn scalar(value: &LibcameraValue) -> Option<f64> {
     match value {
-        LibcameraValue::Bool(v) => v.first().map(|b| f64::from(u8::from(*b))),
-        LibcameraValue::Int32(v) => v.first().map(|i| f64::from(*i)),
-        LibcameraValue::Int64(v) => v.first().map(|i| *i as f64),
-        LibcameraValue::Float(v) => v.first().map(|f| f64::from(*f)),
+        LibcameraValue::Bool(values) => values.first().map(|flag| f64::from(u8::from(*flag))),
+        LibcameraValue::Int32(values) => values.first().map(|integer| f64::from(*integer)),
+        LibcameraValue::Int64(values) => values.first().map(|integer| *integer as f64),
+        LibcameraValue::Float(values) => values.first().map(|float| f64::from(*float)),
         _ => None,
     }
 }
@@ -687,8 +689,8 @@ const DMA_BUF_SYNC_END: u64 = 1 << 2;
 // _IOW('b', 0, struct dma_buf_sync)
 const DMA_BUF_IOCTL_SYNC: libc::c_ulong = 0x4008_6200;
 
-fn dmabuf_sync(fds: &[RawFd], flags: u64) {
-    for fd in fds {
+fn dmabuf_sync(sync_fds: &[RawFd], flags: u64) {
+    for fd in sync_fds {
         // Failure ignored: the worst case is one stale cache line.
         // SAFETY: `flags` matches struct dma_buf_sync, a single u64.
         unsafe { libc::ioctl(*fd, DMA_BUF_IOCTL_SYNC as _, &flags) };

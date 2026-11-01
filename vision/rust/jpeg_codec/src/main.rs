@@ -286,7 +286,7 @@ const TURBO: [[u8; 3]; 256] = [
     [122, 4, 3],
 ];
 
-fn handle(request: &[u8]) -> Option<Vec<u8>> {
+fn reply_to(request: &[u8]) -> Option<Vec<u8>> {
     match request.split_first()? {
         (&ENCODE, body) => encode(body),
         (&DECODE, body) => decode_luma(body),
@@ -324,15 +324,15 @@ fn encode(request: &[u8]) -> Option<Vec<u8>> {
 fn decode_luma(jpeg: &[u8]) -> Option<Vec<u8>> {
     let mut decoder = Decoder::new(jpeg);
     let samples = decoder.decode().ok()?;
-    let info = decoder.info()?;
-    let mut reply = Vec::with_capacity(4 + info.width as usize * info.height as usize);
-    reply.extend_from_slice(&info.width.to_le_bytes());
-    reply.extend_from_slice(&info.height.to_le_bytes());
-    match info.pixel_format {
+    let properties = decoder.info()?;
+    let mut reply = Vec::with_capacity(4 + properties.width as usize * properties.height as usize);
+    reply.extend_from_slice(&properties.width.to_le_bytes());
+    reply.extend_from_slice(&properties.height.to_le_bytes());
+    match properties.pixel_format {
         PixelFormat::L8 => reply.extend_from_slice(&samples),
         PixelFormat::RGB24 => reply.extend(samples.chunks_exact(3).map(|rgb| {
-            let [r, g, b] = [rgb[0], rgb[1], rgb[2]].map(u32::from);
-            ((77 * r + 150 * g + 29 * b + 128) >> 8) as u8
+            let [red, green, blue] = [rgb[0], rgb[1], rgb[2]].map(u32::from);
+            ((77 * red + 150 * green + 29 * blue + 128) >> 8) as u8
         })),
         _ => return None,
     }
@@ -341,7 +341,7 @@ fn decode_luma(jpeg: &[u8]) -> Option<Vec<u8>> {
 
 fn encode_depth(request: &[u8]) -> Option<Vec<u8>> {
     let header = request.get(..DEPTH_HEADER)?;
-    let u16_at = |i: usize| u16::from_le_bytes([header[i], header[i + 1]]);
+    let u16_at = |offset: usize| u16::from_le_bytes([header[offset], header[offset + 1]]);
     let (width, height, quality) = (u16_at(0), u16_at(2), header[4]);
     let (near_mm, far_mm) = (u16_at(5), u16_at(7));
     let samples = &request[DEPTH_HEADER..];
@@ -350,7 +350,7 @@ fn encode_depth(request: &[u8]) -> Option<Vec<u8>> {
     }
     let depth: Vec<u16> = samples
         .chunks_exact(2)
-        .map(|b| u16::from_le_bytes([b[0], b[1]]))
+        .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
         .collect();
     let near = if near_mm == 0 {
         near_percentile(&depth)
@@ -371,14 +371,14 @@ fn encode_depth(request: &[u8]) -> Option<Vec<u8>> {
 fn near_percentile(depth_mm: &[u16]) -> Option<u16> {
     let mut histogram = vec![0u32; 65_536];
     let mut measured = 0u32;
-    for &d in depth_mm.iter().filter(|&&d| d > 0) {
-        histogram[usize::from(d)] += 1;
+    for &depth in depth_mm.iter().filter(|&&depth| depth > 0) {
+        histogram[usize::from(depth)] += 1;
         measured += 1;
     }
     if measured == 0 {
         return None;
     }
-    let at = |share: u32| {
+    let percentile = |share: u32| {
         let wanted = (measured * share).div_ceil(100).max(1);
         let mut seen = 0;
         histogram
@@ -389,7 +389,7 @@ fn near_percentile(depth_mm: &[u16]) -> Option<u16> {
             })
             .unwrap_or(0) as u16
     };
-    Some(at(2))
+    Some(percentile(2))
 }
 
 /// RGB per pixel: `near_mm` red through `far_mm` blue, black without depth.
@@ -397,17 +397,17 @@ fn near_percentile(depth_mm: &[u16]) -> Option<u16> {
 /// stereo pair measures best spread over the map and far ones share its end.
 fn depth_colours(depth_mm: &[u16], range: Option<(u16, u16)>) -> Vec<u8> {
     let (near, far) = range.unwrap_or((1, 2));
-    let inverse = |mm: u16| 1.0 / f32::from(mm.max(1));
+    let inverse = |depth: u16| 1.0 / f32::from(depth.max(1));
     let (inverse_near, inverse_far) = (inverse(near), inverse(far.max(near.saturating_add(1))));
     depth_mm
         .iter()
-        .flat_map(|&d| {
-            if d == 0 {
+        .flat_map(|&depth| {
+            if depth == 0 {
                 [0, 0, 0]
             } else {
-                let t =
-                    ((inverse_near - inverse(d)) / (inverse_near - inverse_far)).clamp(0.0, 1.0);
-                TURBO[255 - (t * 255.0).round() as usize]
+                let position = ((inverse_near - inverse(depth)) / (inverse_near - inverse_far))
+                    .clamp(0.0, 1.0);
+                TURBO[255 - (position * 255.0).round() as usize]
             }
         })
         .collect()
@@ -417,7 +417,7 @@ fn main() -> io::Result<()> {
     let mut input = io::stdin().lock();
     let mut output = io::stdout().lock();
     while let Some(request) = framing::read_record(&mut input)? {
-        let reply = handle(&request).unwrap_or_default();
+        let reply = reply_to(&request).unwrap_or_default();
         output.write_all(&(reply.len() as u32).to_be_bytes())?;
         output.write_all(&reply)?;
         output.flush()?;
@@ -445,10 +445,10 @@ mod tests {
     #[test]
     fn encodes_grey_and_rgb() {
         let grey: Vec<u8> = (0..16 * 8).map(|i| i as u8).collect();
-        assert!(is_jpeg(&handle(&request(16, 8, 1, &grey)).unwrap()));
+        assert!(is_jpeg(&reply_to(&request(16, 8, 1, &grey)).unwrap()));
 
         let rgb = vec![200u8; 16 * 8 * 3];
-        assert!(is_jpeg(&handle(&request(16, 8, 3, &rgb)).unwrap()));
+        assert!(is_jpeg(&reply_to(&request(16, 8, 3, &rgb)).unwrap()));
     }
 
     fn decode_request(jpeg: &[u8]) -> Vec<u8> {
@@ -460,8 +460,8 @@ mod tests {
     #[test]
     fn decodes_to_the_luma_plane() {
         let grey: Vec<u8> = (0..32 * 16).map(|i| (i % 32 * 8) as u8).collect();
-        let jpeg = handle(&request(32, 16, 1, &grey)).unwrap();
-        let reply = handle(&decode_request(&jpeg)).unwrap();
+        let jpeg = reply_to(&request(32, 16, 1, &grey)).unwrap();
+        let reply = reply_to(&decode_request(&jpeg)).unwrap();
 
         assert_eq!(&reply[..4], &[32, 0, 16, 0]);
         let pixels = &reply[4..];
@@ -472,8 +472,8 @@ mod tests {
     #[test]
     fn decodes_a_colour_jpeg_to_its_luma() {
         let rgb: Vec<u8> = [128u8, 128, 128].repeat(16 * 8);
-        let jpeg = handle(&request(16, 8, 3, &rgb)).unwrap();
-        let reply = handle(&decode_request(&jpeg)).unwrap();
+        let jpeg = reply_to(&request(16, 8, 3, &rgb)).unwrap();
+        let reply = reply_to(&decode_request(&jpeg)).unwrap();
 
         assert!(reply[4..].iter().all(|v| v.abs_diff(128) <= 2));
     }
@@ -521,22 +521,22 @@ mod tests {
     #[test]
     fn encodes_a_depth_preview() {
         let depth: Vec<u16> = (0..16 * 8).map(|i| 500 + i * 20).collect();
-        let jpeg = handle(&depth_request(16, 8, 0, 0, &depth)).unwrap();
+        let jpeg = reply_to(&depth_request(16, 8, 0, 0, &depth)).unwrap();
         assert!(is_jpeg(&jpeg));
-        assert_eq!(handle(&depth_request(16, 8, 0, 0, &depth[..10])), None);
+        assert_eq!(reply_to(&depth_request(16, 8, 0, 0, &depth[..10])), None);
     }
 
     #[test]
     fn refuses_data_that_is_not_a_jpeg() {
-        assert_eq!(handle(&decode_request(b"not a jpeg")), None);
+        assert_eq!(reply_to(&decode_request(b"not a jpeg")), None);
     }
 
     #[test]
     fn refuses_a_malformed_request() {
-        assert_eq!(handle(&request(16, 8, 1, &[0; 10])), None);
-        assert_eq!(handle(&request(16, 8, 2, &[0; 256])), None);
-        assert_eq!(handle(&[ENCODE, 1, 2]), None);
-        assert_eq!(handle(&[9]), None);
-        assert_eq!(handle(&[]), None);
+        assert_eq!(reply_to(&request(16, 8, 1, &[0; 10])), None);
+        assert_eq!(reply_to(&request(16, 8, 2, &[0; 256])), None);
+        assert_eq!(reply_to(&[ENCODE, 1, 2]), None);
+        assert_eq!(reply_to(&[9]), None);
+        assert_eq!(reply_to(&[]), None);
     }
 }

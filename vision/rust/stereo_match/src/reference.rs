@@ -1,7 +1,7 @@
 //! `NxStereo.sgm_n` transcribed step by step on full `i32` volumes, the
 //! reference the optimised code is tested against.
 
-use crate::Params;
+use crate::Parameters;
 
 const INVALID_KEY: u32 = 0xFFFF_FFFF;
 
@@ -37,7 +37,7 @@ pub fn census(image: &[u8], width: usize, height: usize) -> Vec<u64> {
     features
 }
 
-/// `costs[(y * width + x) * disparities + d]`
+/// `costs[(y * width + x) * disparities + disparity]`
 pub fn matching_costs(
     left: &[u64],
     right: &[u64],
@@ -48,9 +48,13 @@ pub fn matching_costs(
     let mut costs = vec![0; width * height * disparities];
     for y in 0..height {
         for x in 0..width {
-            for d in 0..disparities {
-                let feature = if x >= d { right[y * width + x - d] } else { 0 };
-                costs[(y * width + x) * disparities + d] =
+            for disparity in 0..disparities {
+                let feature = if x >= disparity {
+                    right[y * width + x - disparity]
+                } else {
+                    0
+                };
+                costs[(y * width + x) * disparities + disparity] =
                     (left[y * width + x] ^ feature).count_ones() as i32;
             }
         }
@@ -67,41 +71,49 @@ fn path(
     height: usize,
     disparities: usize,
     (dy, dx): (i32, i32),
-    params: &Params,
+    parameters: &Parameters,
 ) -> Vec<i32> {
-    let (p1, p2) = (i32::from(params.p1), i32::from(params.p2));
+    let (p1, p2) = (i32::from(parameters.p1), i32::from(parameters.p2));
     let mut paths = vec![0; costs.len()];
-    let ys: Vec<i32> = if dy < 0 {
+    let rows: Vec<i32> = if dy < 0 {
         (0..height as i32).rev().collect()
     } else {
         (0..height as i32).collect()
     };
-    let xs: Vec<i32> = if dx < 0 {
+    let columns: Vec<i32> = if dx < 0 {
         (0..width as i32).rev().collect()
     } else {
         (0..width as i32).collect()
     };
-    for &y in &ys {
-        for &x in &xs {
-            let (py, px) = (y - dy, x - dx);
-            let previous: Vec<i32> =
-                if py >= 0 && py < height as i32 && px >= 0 && px < width as i32 {
-                    let at = (py as usize * width + px as usize) * disparities;
-                    paths[at..at + disparities].to_vec()
-                } else {
-                    vec![0; disparities]
-                };
+    for &y in &rows {
+        for &x in &columns {
+            let (previous_y, previous_x) = (y - dy, x - dx);
+            let previous: Vec<i32> = if previous_y >= 0
+                && previous_y < height as i32
+                && previous_x >= 0
+                && previous_x < width as i32
+            {
+                let at = (previous_y as usize * width + previous_x as usize) * disparities;
+                paths[at..at + disparities].to_vec()
+            } else {
+                vec![0; disparities]
+            };
             let minimum = *previous.iter().min().unwrap();
-            let a: Vec<i32> = previous.iter().map(|v| v - minimum).collect();
+            let normalized: Vec<i32> = previous.iter().map(|v| v - minimum).collect();
             let at = (y as usize * width + x as usize) * disparities;
-            for d in 0..disparities {
-                let lower = if d == 0 { p2 - p1 } else { a[d - 1] };
-                let upper = if d == disparities - 1 {
+            for disparity in 0..disparities {
+                let lower = if disparity == 0 {
                     p2 - p1
                 } else {
-                    a[d + 1]
+                    normalized[disparity - 1]
                 };
-                paths[at + d] = a[d].min(p2).min(lower.min(upper) + p1) + costs[at + d];
+                let upper = if disparity == disparities - 1 {
+                    p2 - p1
+                } else {
+                    normalized[disparity + 1]
+                };
+                paths[at + disparity] = normalized[disparity].min(p2).min(lower.min(upper) + p1)
+                    + costs[at + disparity];
             }
         }
     }
@@ -116,16 +128,16 @@ pub fn directions(paths: u8) -> Vec<(i32, i32)> {
     directions
 }
 
-pub fn aggregate(costs: &[i32], width: usize, height: usize, params: &Params) -> Vec<i32> {
+pub fn aggregate(costs: &[i32], width: usize, height: usize, parameters: &Parameters) -> Vec<i32> {
     let mut sums = vec![0; costs.len()];
-    for direction in directions(params.paths) {
+    for direction in directions(parameters.paths) {
         for (sum, value) in sums.iter_mut().zip(path(
             costs,
             width,
             height,
-            params.disparities,
+            parameters.disparities,
             direction,
-            params,
+            parameters,
         )) {
             *sum += value;
         }
@@ -134,8 +146,13 @@ pub fn aggregate(costs: &[i32], width: usize, height: usize, params: &Params) ->
 }
 
 /// `(disparity, key)` per pixel.
-pub fn select(sums: &[i32], width: usize, height: usize, params: &Params) -> (Vec<f32>, Vec<u32>) {
-    let disparities = params.disparities;
+pub fn select(
+    sums: &[i32],
+    width: usize,
+    height: usize,
+    parameters: &Parameters,
+) -> (Vec<f32>, Vec<u32>) {
+    let disparities = parameters.disparities;
     let mut disparity = vec![0.0; width * height];
     let mut keys = vec![0; width * height];
     for y in 0..height {
@@ -153,9 +170,9 @@ pub fn select(sums: &[i32], width: usize, height: usize, params: &Params) -> (Ve
                 .unwrap_or(i32::MAX);
             let lower = values[(winner - 1).max(0) as usize] as f32;
             let upper = values[(winner + 1).min(disparities as i32 - 1) as usize] as f32;
-            let minimum_f = minimum as f32;
-            let accepted = second as f32 > minimum_f * params.uniqueness;
-            let denominator = lower + upper - 2.0 * minimum_f;
+            let minimum_f32 = minimum as f32;
+            let accepted = second as f32 > minimum_f32 * parameters.uniqueness;
+            let denominator = lower + upper - 2.0 * minimum_f32;
             let correction = ((lower - upper) / (2.0 * denominator.max(1.0))).clamp(-0.5, 0.5);
             let refine =
                 denominator > 0.0 && winner > 0 && winner < (disparities as i32 - 1).min(x as i32);
@@ -175,20 +192,20 @@ pub fn consistency(
     height: usize,
     disparities: usize,
 ) -> Vec<f32> {
-    let mut out = vec![0.0; width * height];
+    let mut consistent = vec![0.0; width * height];
     for y in 0..height {
         let row = &keys[y * width..(y + 1) * width];
         let right: Vec<u32> = (0..width)
-            .map(|rx| {
+            .map(|right_x| {
                 (0..disparities)
-                    .map(|d| {
-                        let key = if rx + d < width {
-                            row[rx + d]
+                    .map(|disparity| {
+                        let key = if right_x + disparity < width {
+                            row[right_x + disparity]
                         } else {
                             INVALID_KEY
                         };
-                        if key != INVALID_KEY && (key & 0xFFFF) as usize == d {
-                            (key & 0xFFFF_0000) | (65_535 - d as u32)
+                        if key != INVALID_KEY && (key & 0xFFFF) as usize == disparity {
+                            (key & 0xFFFF_0000) | (65_535 - disparity as u32)
                         } else {
                             INVALID_KEY
                         }
@@ -197,24 +214,24 @@ pub fn consistency(
                     .unwrap()
             })
             .collect();
-        let disagrees = |rx: i32, d: i32| {
-            let inside = rx >= 0 && rx < width as i32;
-            let found = right[rx.clamp(0, width as i32 - 1) as usize];
-            let right_d = 65_535 - (found & 0xFFFF) as i32;
-            inside && found != INVALID_KEY && (right_d - d).abs() > 1
+        let disagrees = |right_x: i32, disparity: i32| {
+            let inside = right_x >= 0 && right_x < width as i32;
+            let found = right[right_x.clamp(0, width as i32 - 1) as usize];
+            let right_disparity = 65_535 - (found & 0xFFFF) as i32;
+            inside && found != INVALID_KEY && (right_disparity - disparity).abs() > 1
         };
         for x in 0..width {
             let value = disparity[y * width + x];
-            let (lo, hi) = (value.floor() as i32, value.ceil() as i32);
-            let rejected = disagrees(x as i32 - lo, lo) && disagrees(x as i32 - hi, hi);
-            out[y * width + x] = if value >= 0.0 && !rejected {
+            let (low, high) = (value.floor() as i32, value.ceil() as i32);
+            let rejected = disagrees(x as i32 - low, low) && disagrees(x as i32 - high, high);
+            consistent[y * width + x] = if value >= 0.0 && !rejected {
                 value
             } else {
                 -1.0
             };
         }
     }
-    out
+    consistent
 }
 
 pub fn median3(image: &[f32], width: usize, height: usize) -> Vec<f32> {
@@ -222,7 +239,7 @@ pub fn median3(image: &[f32], width: usize, height: usize) -> Vec<f32> {
         image
             [y.clamp(0, height as i32 - 1) as usize * width + x.clamp(0, width as i32 - 1) as usize]
     };
-    let mut out = vec![0.0; width * height];
+    let mut filtered = vec![0.0; width * height];
     for y in 0..height as i32 {
         for x in 0..width as i32 {
             let mut values: Vec<f32> = (-1..=1)
@@ -230,24 +247,30 @@ pub fn median3(image: &[f32], width: usize, height: usize) -> Vec<f32> {
                 .map(|(dy, dx)| at(y + dy, x + dx))
                 .collect();
             values.sort_by(f32::total_cmp);
-            out[y as usize * width + x as usize] = values[4];
+            filtered[y as usize * width + x as usize] = values[4];
         }
     }
-    out
+    filtered
 }
 
-pub fn sgm(left: &[u8], right: &[u8], width: usize, height: usize, params: &Params) -> Vec<f32> {
+pub fn sgm(
+    left: &[u8],
+    right: &[u8],
+    width: usize,
+    height: usize,
+    parameters: &Parameters,
+) -> Vec<f32> {
     let costs = matching_costs(
         &census(left, width, height),
         &census(right, width, height),
         width,
         height,
-        params.disparities,
+        parameters.disparities,
     );
-    let sums = aggregate(&costs, width, height, params);
-    let (disparity, keys) = select(&sums, width, height, params);
+    let sums = aggregate(&costs, width, height, parameters);
+    let (disparity, keys) = select(&sums, width, height, parameters);
     median3(
-        &consistency(&disparity, &keys, width, height, params.disparities),
+        &consistency(&disparity, &keys, width, height, parameters.disparities),
         width,
         height,
     )

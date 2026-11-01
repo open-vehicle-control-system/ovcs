@@ -6,7 +6,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum Data {
+pub enum Elements {
     U8(Vec<u8>),
     U16(Vec<u16>),
     F32(Vec<f32>),
@@ -16,7 +16,7 @@ pub enum Data {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Tensor {
     pub shape: Vec<usize>,
-    pub data: Data,
+    pub elements: Elements,
 }
 
 pub type Tensors = HashMap<String, Tensor>;
@@ -39,16 +39,16 @@ pub fn element_bytes(type_code: u8) -> Result<usize, String> {
 }
 
 impl Tensor {
-    pub fn new(shape: Vec<usize>, data: Data) -> Tensor {
-        Tensor { shape, data }
+    pub fn new(shape: Vec<usize>, elements: Elements) -> Tensor {
+        Tensor { shape, elements }
     }
 
     pub fn type_code(&self) -> u8 {
-        match self.data {
-            Data::U8(_) => TYPE_U8,
-            Data::U16(_) => TYPE_U16,
-            Data::F32(_) => TYPE_F32,
-            Data::S32(_) => TYPE_S32,
+        match self.elements {
+            Elements::U8(_) => TYPE_U8,
+            Elements::U16(_) => TYPE_U16,
+            Elements::F32(_) => TYPE_F32,
+            Elements::S32(_) => TYPE_S32,
         }
     }
 
@@ -64,53 +64,53 @@ impl Tensor {
                 bytes.len()
             ));
         }
-        let data = match type_code {
-            TYPE_U8 => Data::U8(bytes.to_vec()),
-            TYPE_U16 => Data::U16(
+        let elements = match type_code {
+            TYPE_U8 => Elements::U8(bytes.to_vec()),
+            TYPE_U16 => Elements::U16(
                 bytes
                     .chunks_exact(2)
-                    .map(|b| u16::from_le_bytes([b[0], b[1]]))
+                    .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
                     .collect(),
             ),
-            TYPE_F32 => Data::F32(
+            TYPE_F32 => Elements::F32(
                 bytes
                     .chunks_exact(4)
-                    .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+                    .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
                     .collect(),
             ),
-            _ => Data::S32(
+            _ => Elements::S32(
                 bytes
                     .chunks_exact(4)
-                    .map(|b| i32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+                    .map(|chunk| i32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
                     .collect(),
             ),
         };
-        Ok(Tensor { shape, data })
+        Ok(Tensor { shape, elements })
     }
 
     /// The elements' wire bytes, borrowed where the CPU is little-endian.
     pub fn bytes(&self) -> Cow<'_, [u8]> {
-        match &self.data {
-            Data::U8(values) => Cow::Borrowed(values),
-            Data::U16(values) => le_bytes(values, |value| value.to_le_bytes()),
-            Data::F32(values) => le_bytes(values, |value| value.to_le_bytes()),
-            Data::S32(values) => le_bytes(values, |value| value.to_le_bytes()),
+        match &self.elements {
+            Elements::U8(values) => Cow::Borrowed(values),
+            Elements::U16(values) => little_endian_bytes(values, |value| value.to_le_bytes()),
+            Elements::F32(values) => little_endian_bytes(values, |value| value.to_le_bytes()),
+            Elements::S32(values) => little_endian_bytes(values, |value| value.to_le_bytes()),
         }
     }
 
-    pub fn byte_len(&self) -> usize {
-        match &self.data {
-            Data::U8(values) => values.len(),
-            Data::U16(values) => 2 * values.len(),
-            Data::F32(values) => 4 * values.len(),
-            Data::S32(values) => 4 * values.len(),
+    pub fn byte_length(&self) -> usize {
+        match &self.elements {
+            Elements::U8(values) => values.len(),
+            Elements::U16(values) => 2 * values.len(),
+            Elements::F32(values) => 4 * values.len(),
+            Elements::S32(values) => 4 * values.len(),
         }
     }
 }
 
 /// `values` as little-endian bytes: their memory, on a little-endian CPU.
 #[cfg(target_endian = "little")]
-fn le_bytes<T: Copy, const N: usize>(
+fn little_endian_bytes<T: Copy, const N: usize>(
     values: &[T],
     _to_le_bytes: fn(T) -> [u8; N],
 ) -> Cow<'_, [u8]> {
@@ -121,7 +121,10 @@ fn le_bytes<T: Copy, const N: usize>(
 }
 
 #[cfg(not(target_endian = "little"))]
-fn le_bytes<T: Copy, const N: usize>(values: &[T], to_le_bytes: fn(T) -> [u8; N]) -> Cow<'_, [u8]> {
+fn little_endian_bytes<T: Copy, const N: usize>(
+    values: &[T],
+    to_le_bytes: fn(T) -> [u8; N],
+) -> Cow<'_, [u8]> {
     Cow::Owned(
         values
             .iter()
@@ -139,7 +142,7 @@ pub fn u8_image<'a>(
     match tensors.get(name) {
         Some(Tensor {
             shape: found,
-            data: Data::U8(values),
+            elements: Elements::U8(values),
         }) if found[..] == shape => Ok(values),
         Some(tensor) => Err(format!(
             "{name} is a {:?} tensor of type {}, expected a {shape:?} u8 image",
@@ -159,7 +162,7 @@ pub fn f32_map<'a>(
     match tensors.get(name) {
         Some(Tensor {
             shape: found,
-            data: Data::F32(values),
+            elements: Elements::F32(values),
         }) if found[..] == shape => Ok(values),
         Some(tensor) => Err(format!(
             "{name} is a {:?} tensor of type {}, expected a {shape:?} f32 map",
@@ -177,13 +180,13 @@ mod tests {
     #[test]
     fn round_trips_through_its_bytes() {
         for tensor in [
-            Tensor::new(vec![2, 2], Data::U8(vec![1, 2, 3, 255])),
-            Tensor::new(vec![3], Data::U16(vec![0, 1000, 65535])),
-            Tensor::new(vec![1, 2], Data::F32(vec![-1.0, 2.5])),
-            Tensor::new(vec![], Data::S32(vec![-7])),
+            Tensor::new(vec![2, 2], Elements::U8(vec![1, 2, 3, 255])),
+            Tensor::new(vec![3], Elements::U16(vec![0, 1000, 65535])),
+            Tensor::new(vec![1, 2], Elements::F32(vec![-1.0, 2.5])),
+            Tensor::new(vec![], Elements::S32(vec![-7])),
         ] {
             let bytes = tensor.bytes();
-            assert_eq!(bytes.len(), tensor.byte_len());
+            assert_eq!(bytes.len(), tensor.byte_length());
             let back = Tensor::from_bytes(tensor.type_code(), tensor.shape.clone(), &bytes);
             assert_eq!(back, Ok(tensor));
         }

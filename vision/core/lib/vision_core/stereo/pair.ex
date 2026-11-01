@@ -85,8 +85,8 @@ defmodule VisionCore.Stereo.Pair do
     do: {range.min_disparity / 1.0, (range.min_disparity + range.num_disparities - 1) / 1.0}
 
   @doc "The smallest disparity step the disparity encodes, in pixels."
-  @spec delta_d(t()) :: float()
-  def delta_d(%__MODULE__{disparity_scale: scale}), do: 1.0 / scale
+  @spec disparity_step(t()) :: float()
+  def disparity_step(%__MODULE__{disparity_scale: scale}), do: 1.0 / scale
 
   @doc """
   `{x, y, width, height}` of the region where disparity is meaningful:

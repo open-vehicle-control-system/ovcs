@@ -84,16 +84,16 @@ enum Reply {
 
 fn serve() -> io::Result<()> {
     tune_memory_and_pipes();
-    let out = Writer::from_stdout_redirecting()?;
+    let stdout = Writer::from_stdout_redirecting()?;
     let arguments: Vec<String> = std::env::args().skip(1).collect();
     let threads = match threads(&arguments) {
         Ok(threads) => threads,
         Err(reason) => {
-            out.write_record(&log_record(LogLevel::Error, &reason))?;
+            stdout.write_record(&log_record(LogLevel::Error, &reason))?;
             return Ok(());
         }
     };
-    out.write_record(&log_record(
+    stdout.write_record(&log_record(
         LogLevel::Info,
         &format!("computing on {threads} threads"),
     ))?;
@@ -109,19 +109,19 @@ fn serve() -> io::Result<()> {
             }
             Ok(())
         });
-        let out = &out;
+        let stdout = &stdout;
         let writer = scope.spawn(move || -> io::Result<()> {
             for reply in computed {
                 match reply {
-                    Reply::Configured => out.write_record(&[TAG_CONFIGURED])?,
+                    Reply::Configured => stdout.write_record(&[TAG_CONFIGURED])?,
                     Reply::Outputs((outputs, times_us)) => {
                         let parts = protocol::outputs_record(&times_us, &outputs);
                         let parts: Vec<&[u8]> = parts.iter().map(|part| &part[..]).collect();
-                        out.write_record_parts(&parts)?;
+                        stdout.write_record_parts(&parts)?;
                     }
                     Reply::Refused(reason) => {
-                        out.write_record(&log_record(LogLevel::Error, &reason))?;
-                        out.write_record(&[])?;
+                        stdout.write_record(&log_record(LogLevel::Error, &reason))?;
+                        stdout.write_record(&[])?;
                     }
                 }
             }

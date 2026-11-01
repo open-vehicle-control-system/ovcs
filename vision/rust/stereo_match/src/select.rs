@@ -7,10 +7,10 @@ const PAST_EDGE: u16 = 0x8000;
 /// Disparities as `u16` lanes, for the winner's search to stay in vectors.
 const INDICES: [u16; 128] = {
     let mut indices = [0; 128];
-    let mut d = 0;
-    while d < 128 {
-        indices[d] = d as u16;
-        d += 1;
+    let mut disparity = 0;
+    while disparity < 128 {
+        indices[disparity] = disparity as u16;
+        disparity += 1;
     }
     indices
 };
@@ -31,9 +31,9 @@ pub fn select<const D: usize>(sums: &[u16; D], x: usize, uniqueness: f32) -> (f3
     let (lower, upper) = (f32::from(lower), f32::from(upper));
 
     // Without branches: whether a match is kept is as hard to predict as a coin toss.
-    let minimum_f = f32::from(minimum);
-    let accepted = f32::from(second) > minimum_f * uniqueness;
-    let denominator = lower + upper - 2.0 * minimum_f;
+    let minimum_f32 = f32::from(minimum);
+    let accepted = f32::from(second) > minimum_f32 * uniqueness;
+    let denominator = lower + upper - 2.0 * minimum_f32;
     let refine = (denominator > 0.0) & (winner > 0) & (winner < (D - 1).min(x));
     let correction = ((lower - upper) / (2.0 * denominator.max(1.0))).clamp(-0.5, 0.5);
     let disparity = winner as f32 + if refine { correction } else { 0.0 };
@@ -58,11 +58,16 @@ struct Lowest {
     upper: u16,
 }
 
-/// The cost of disparity `d` at column `x`.
+/// The cost of `disparity` at column `x`.
 #[cfg(target_arch = "aarch64")]
 #[inline(always)]
-fn cost<const D: usize>(sums: &[u16; D], x: usize, d: usize) -> u16 {
-    sums[d] + if x < D - 1 && d > x { PAST_EDGE } else { 0 }
+fn cost<const D: usize>(sums: &[u16; D], x: usize, disparity: usize) -> u16 {
+    sums[disparity]
+        + if x < D - 1 && disparity > x {
+            PAST_EDGE
+        } else {
+            0
+        }
 }
 
 /// The disparities next to the winner, within the range.
@@ -77,19 +82,22 @@ fn lowest_lanes<const D: usize>(sums: &[u16; D], x: usize) -> Lowest {
     let mut values = *sums;
     if x < D - 1 {
         let x = x as u16;
-        for (value, &d) in values.iter_mut().zip(&INDICES) {
-            *value += if d > x { PAST_EDGE } else { 0 };
+        for (value, &disparity) in values.iter_mut().zip(&INDICES) {
+            *value += if disparity > x { PAST_EDGE } else { 0 };
         }
     }
-    let minimum = lanes_min::<D>(&values, |_d, value| value);
-    let winner = lanes_min::<D>(
-        &values,
-        |d, value| if value == minimum { d } else { u16::MAX },
-    ) as usize;
+    let minimum = lanes_min::<D>(&values, |_disparity, value| value);
+    let winner = lanes_min::<D>(&values, |disparity, value| {
+        if value == minimum {
+            disparity
+        } else {
+            u16::MAX
+        }
+    }) as usize;
     let (below, above) = neighbours::<D>(winner);
     let (start, span) = (below as u16, (above - below) as u16);
-    let second = lanes_min::<D>(&values, |d, value| {
-        if d.wrapping_sub(start) <= span {
+    let second = lanes_min::<D>(&values, |disparity, value| {
+        if disparity.wrapping_sub(start) <= span {
             u16::MAX
         } else {
             value
@@ -160,15 +168,16 @@ fn lowest<const D: usize>(sums: &[u16; D], x: usize) -> Lowest {
 
 const LANES: usize = 8;
 
-/// The lowest `lane(d, values[d])`, folded over 8 lanes, the width of a
+/// The lowest `lane(disparity, values[disparity])`, folded over 8 lanes, the width of a
 /// 128-bit vector register.
 #[cfg(any(not(target_arch = "aarch64"), test))]
 #[inline(always)]
 fn lanes_min<const D: usize>(values: &[u16; D], lane: impl Fn(u16, u16) -> u16) -> u16 {
     let mut lowest = [u16::MAX; LANES];
     for (chunk, indices) in values.chunks_exact(LANES).zip(INDICES.chunks_exact(LANES)) {
-        for i in 0..LANES {
-            lowest[i] = lowest[i].min(lane(indices[i], chunk[i]));
+        for lane_index in 0..LANES {
+            lowest[lane_index] =
+                lowest[lane_index].min(lane(indices[lane_index], chunk[lane_index]));
         }
     }
     lowest.into_iter().fold(u16::MAX, u16::min)
@@ -178,20 +187,20 @@ fn lanes_min<const D: usize>(values: &[u16; D], lane: impl Fn(u16, u16) -> u16) 
 mod tests {
     use super::*;
     use crate::reference;
-    use crate::Params;
+    use crate::Parameters;
 
     fn select_reference(sums: &[u16; 64], x: usize, uniqueness: f32) -> (f32, u32) {
         let width = x + 1;
         let mut volume = vec![0; width * 64];
         volume[x * 64..].copy_from_slice(&sums.map(i32::from));
-        let params = Params {
+        let parameters = Parameters {
             disparities: 64,
             paths: 3,
             p1: 1,
             p2: 2,
             uniqueness,
         };
-        let (disparity, keys) = reference::select(&volume, width, 1, &params);
+        let (disparity, keys) = reference::select(&volume, width, 1, &parameters);
         (disparity[x], keys[x])
     }
 

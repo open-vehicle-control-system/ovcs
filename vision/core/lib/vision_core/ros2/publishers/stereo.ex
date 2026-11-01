@@ -348,7 +348,7 @@ defmodule VisionCore.Ros2.Publishers.Stereo do
       },
       min_disparity: min_disparity,
       max_disparity: max_disparity,
-      delta_d: Pair.delta_d(pair)
+      delta_d: Pair.disparity_step(pair)
     }
 
     depth_message = %Image{

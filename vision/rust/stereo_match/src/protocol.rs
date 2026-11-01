@@ -140,7 +140,9 @@ pub fn parse(request: &[u8]) -> Result<Request, String> {
                             let values = reader
                                 .take(4 * count)?
                                 .chunks_exact(4)
-                                .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+                                .map(|chunk| {
+                                    f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]])
+                                })
                                 .collect();
                             Ok((name, values))
                         })
@@ -166,9 +168,9 @@ pub fn parse(request: &[u8]) -> Result<Request, String> {
     }
 }
 
-fn push_name(out: &mut Vec<u8>, name: &str) {
-    out.push(name.len() as u8);
-    out.extend_from_slice(name.as_bytes());
+fn push_name(record: &mut Vec<u8>, name: &str) {
+    record.push(name.len() as u8);
+    record.extend_from_slice(name.as_bytes());
 }
 
 /// The reply to a run, each member's time then the tensors they filled, in
@@ -198,10 +200,10 @@ pub fn outputs_record<'a>(times_us: &[u32], outputs: &'a [(String, Tensor)]) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tensor::Data;
+    use crate::tensor::Elements;
 
-    fn name(out: &mut Vec<u8>, name: &str) {
-        push_name(out, name);
+    fn name(record: &mut Vec<u8>, name: &str) {
+        push_name(record, name);
     }
 
     #[test]
@@ -250,7 +252,7 @@ mod tests {
                 inputs: vec![Inputs::from([("p1".into(), vec![8.0])])],
                 entries: Tensors::from([(
                     "left".into(),
-                    Tensor::new(vec![1, 2], Data::U8(vec![5, 6]))
+                    Tensor::new(vec![1, 2], Elements::U8(vec![5, 6]))
                 )]),
             })
         );
@@ -274,7 +276,7 @@ mod tests {
     fn writes_times_then_tensors() {
         let outputs = vec![(
             "cloud_points".to_string(),
-            Tensor::new(vec![], Data::S32(vec![3])),
+            Tensor::new(vec![], Elements::S32(vec![3])),
         )];
         let mut want = vec![8, 1, 10, 0, 0, 0, 1];
         name(&mut want, "cloud_points");

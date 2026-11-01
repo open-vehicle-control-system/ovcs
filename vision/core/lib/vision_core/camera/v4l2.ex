@@ -169,7 +169,7 @@ defmodule VisionCore.Camera.V4L2 do
   def control_specs, do: @settings
 
   @doc false
-  def port_args(opts) do
+  def port_arguments(opts) do
     size =
       for key <- [:width, :height, :fps],
           do: ["--#{key}", Integer.to_string(Keyword.fetch!(opts, key))]
@@ -304,7 +304,7 @@ defmodule VisionCore.Camera.V4L2 do
         :binary,
         :exit_status,
         {:packet, 4},
-        args: port_args(opts)
+        args: port_arguments(opts)
       ])
 
     Process.send_after(self(), :watchdog, @watchdog_interval_ms)
@@ -333,8 +333,8 @@ defmodule VisionCore.Camera.V4L2 do
         Enum.each(commands, &Port.command(state.port, &1))
 
         updated =
-          Enum.reduce(controls, state.controls, fn {key, value}, acc ->
-            Map.put(acc, key, normalise(Enum.find(@settings, &(&1.key == key)), value))
+          Enum.reduce(controls, state.controls, fn {key, value}, controls ->
+            Map.put(controls, key, normalise(Enum.find(@settings, &(&1.key == key)), value))
           end)
 
         {:reply, {:ok, updated}, %{state | controls: updated}}

@@ -3,7 +3,7 @@
 //! its luma; `Name=value` controls arrive on stdin, and stdin EOF stops the
 //! capture.
 
-mod args;
+mod arguments;
 #[cfg(feature = "device")]
 mod capture;
 #[cfg_attr(not(feature = "device"), allow(dead_code))]
@@ -36,9 +36,9 @@ fn main() {
         capture::forward_stderr(read_fd, Arc::clone(&writer));
     }
 
-    let argv: Vec<String> = std::env::args().skip(1).collect();
-    let args = match args::parse(&argv) {
-        Ok(args) => args,
+    let command_line: Vec<String> = std::env::args().skip(1).collect();
+    let arguments = match arguments::parse(&command_line) {
+        Ok(arguments) => arguments,
         Err(message) => {
             log(&writer, LogLevel::Warning, &message);
             exit(2);
@@ -50,12 +50,12 @@ fn main() {
         LogLevel::Info,
         &format!(
             "camera={} {}x{} @{} fps, {:?} frames",
-            args.camera_id, args.width, args.height, args.fps, args.format
+            arguments.camera_id, arguments.width, arguments.height, arguments.fps, arguments.format
         ),
     );
 
     #[cfg(feature = "device")]
-    exit(capture::run(&args, &writer));
+    exit(capture::run(&arguments, &writer));
 
     #[cfg(not(feature = "device"))]
     {

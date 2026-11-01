@@ -27,7 +27,7 @@ defmodule VisionCore.Detection.LiveTest do
 
   defp subscriber_count, do: map_size(:sys.get_state(Live).subscribers)
 
-  defp results(positioned), do: GenServer.cast(Live, {:detections, pair(), positioned})
+  defp cast_detections(positioned), do: GenServer.cast(Live, {:detections, pair(), positioned})
 
   setup do
     start_supervised!({Live, max_hz: 1_000, outline_segments: 1})
@@ -36,7 +36,7 @@ defmodule VisionCore.Detection.LiveTest do
 
   test "sends each result to subscribers: label, score, distance and outline on the raw image" do
     :ok = Live.subscribe()
-    results([person(120, 54, 360, 216, 1.8)])
+    cast_detections([person(120, 54, 360, 216, 1.8)])
 
     assert_receive {:vision_detections, [detection]}
 
@@ -46,10 +46,10 @@ defmodule VisionCore.Detection.LiveTest do
 
   test "sends an empty result, so boxes from the last one go away" do
     :ok = Live.subscribe()
-    results([person(120, 54, 360, 216, 1.8)])
+    cast_detections([person(120, 54, 360, 216, 1.8)])
     assert_receive {:vision_detections, [_detection]}
 
-    results([])
+    cast_detections([])
     assert_receive {:vision_detections, []}
   end
 
@@ -58,9 +58,9 @@ defmodule VisionCore.Detection.LiveTest do
     start_supervised!({Live, max_hz: 4, outline_segments: 1})
     :ok = Live.subscribe()
 
-    results([person(120, 54, 360, 216, 1.8)])
-    results([person(120, 54, 360, 216, 2.5)])
-    results([])
+    cast_detections([person(120, 54, 360, 216, 1.8)])
+    cast_detections([person(120, 54, 360, 216, 2.5)])
+    cast_detections([])
 
     assert_receive {:vision_detections, [_detection]}
     refute_receive {:vision_detections, _}, 150

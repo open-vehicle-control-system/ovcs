@@ -5,7 +5,7 @@ use std::str::FromStr;
 use crate::settings::Settings;
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct Args {
+pub struct Arguments {
     /// Output size; the sensor runs at twice this in each axis.
     pub width: u32,
     pub height: u32,
@@ -16,10 +16,10 @@ pub struct Args {
 /// Parses the arguments after the program name: the size and rate, then any
 /// setting as `--name value`, with dashes for underscores. The error is the
 /// message to log.
-pub fn parse(args: &[String]) -> Result<Args, String> {
+pub fn parse(arguments: &[String]) -> Result<Arguments, String> {
     let (mut width, mut height, mut fps) = (None, None, None);
     let mut settings = Settings::default();
-    let mut rest = args.iter();
+    let mut rest = arguments.iter();
     while let Some(flag) = rest.next() {
         let value = rest
             .next()
@@ -36,7 +36,7 @@ pub fn parse(args: &[String]) -> Result<Args, String> {
             },
         }
     }
-    Ok(Args {
+    Ok(Arguments {
         width: width.ok_or("missing --width")?,
         height: height.ok_or("missing --height")?,
         fps: fps.ok_or("missing --fps")?,

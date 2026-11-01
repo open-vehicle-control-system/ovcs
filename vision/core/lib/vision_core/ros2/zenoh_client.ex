@@ -13,13 +13,13 @@ defmodule VisionCore.Ros2.ZenohClient.State do
       publisher identity; `publisher_id` and `liveliness_token` are
       per session.
     * `subscriptions`: `%{key_expr => %{topic, message_module,
-      subscribers: %{pid => monitor_ref}, subscriber_id,
+      subscribers: %{pid => monitor_reference}, subscriber_id,
       liveliness_token, eid}}`.
     * `services`: `%{service_name => %{service_module, handler,
       key_expr, liveliness_key, queryable_id, liveliness_token}}`. The
       handler pid turns requests into responses; `queryable_id` and
       `liveliness_token` are per session.
-    * `monitors`: `%{monitor_ref => {key_expr, pid}}`, for `:DOWN`.
+    * `monitors`: `%{monitor_reference => {key_expr, pid}}`, for `:DOWN`.
     * `drops_while_offline`: publishes dropped while no session is
       open, logged once on connect, then reset.
   """
@@ -278,14 +278,14 @@ defmodule VisionCore.Ros2.ZenohClient do
       if Map.has_key?(subscription.subscribers, pid) do
         {subscription, state.monitors}
       else
-        monitor_ref = Process.monitor(pid)
+        monitor_reference = Process.monitor(pid)
 
         subscription = %{
           subscription
-          | subscribers: Map.put(subscription.subscribers, pid, monitor_ref)
+          | subscribers: Map.put(subscription.subscribers, pid, monitor_reference)
         }
 
-        monitors = Map.put(state.monitors, monitor_ref, {key_expr, pid})
+        monitors = Map.put(state.monitors, monitor_reference, {key_expr, pid})
         {subscription, monitors}
       end
 
@@ -499,8 +499,8 @@ defmodule VisionCore.Ros2.ZenohClient do
     {:noreply, state}
   end
 
-  def handle_info({:DOWN, monitor_ref, :process, _pid, _reason}, state) do
-    case Map.pop(state.monitors, monitor_ref) do
+  def handle_info({:DOWN, monitor_reference, :process, _pid, _reason}, state) do
+    case Map.pop(state.monitors, monitor_reference) do
       {nil, _} ->
         {:noreply, state}
 
@@ -659,9 +659,9 @@ defmodule VisionCore.Ros2.ZenohClient do
       {nil, _} ->
         {state, subscription}
 
-      {monitor_ref, subscribers} ->
-        Process.demonitor(monitor_ref, [:flush])
-        monitors = Map.delete(state.monitors, monitor_ref)
+      {monitor_reference, subscribers} ->
+        Process.demonitor(monitor_reference, [:flush])
+        monitors = Map.delete(state.monitors, monitor_reference)
         subscription = %{subscription | subscribers: subscribers}
 
         {subscriptions, subscription} =

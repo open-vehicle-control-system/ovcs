@@ -515,7 +515,8 @@ defmodule VisionCore.Stereo.PipelineTest do
       assert %{left: left, right: right} = pair.sharpness
       assert left > 0 and right > 0
 
-      assert [:valid, :mean_disp, :std_disp, :jitter] -- Enum.map(pair.metrics, &elem(&1, 0)) ==
+      assert [:matched_percent, :mean_disparity_px, :spread_px, :jitter_px] --
+               Enum.map(pair.metrics, &elem(&1, 0)) ==
                []
 
       assert pair.device_ms > 0

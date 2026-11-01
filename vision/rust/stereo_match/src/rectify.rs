@@ -12,8 +12,8 @@ use crate::parallel::{on_threads, RowQueue, Shared};
 /// camera matrix times the rectifying rotation, row-major.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Camera {
-    pub k: [f32; 9],
-    pub d: [f32; 5],
+    pub camera_matrix: [f32; 9],
+    pub distortion: [f32; 5],
     pub inverse_pr: [f32; 9],
 }
 
@@ -60,7 +60,7 @@ impl Map {
     }
 
     /// Row `v` of the rectified image of `frame`, a `frame_width` wide image.
-    fn rectify_row(&self, frame: &[u8], frame_width: usize, v: usize, out: &mut [u8]) {
+    fn rectify_row(&self, frame: &[u8], frame_width: usize, v: usize, rectified_row: &mut [u8]) {
         let frame_height = frame.len() / frame_width;
         let row = v * self.width..(v + 1) * self.width;
         let sample = |x: i32, y: i32| -> f32 {
@@ -70,7 +70,7 @@ impl Map {
                 0.0
             }
         };
-        for ((((out, &x0), &y0), &fx), &fy) in out
+        for ((((rectified_pixel, &x0), &y0), &column_weight), &row_weight) in rectified_row
             .iter_mut()
             .zip(&self.columns[row.clone()])
             .zip(&self.rows[row.clone()])
@@ -82,12 +82,12 @@ impl Map {
                 && y0 >= 0
                 && (y0 as usize + 1) < frame_height;
             let [top_left, top_right, bottom_left, bottom_right] = if inside {
-                let at = y0 as usize * frame_width + x0 as usize;
+                let top_left_index = y0 as usize * frame_width + x0 as usize;
                 [
-                    f32::from(frame[at]),
-                    f32::from(frame[at + 1]),
-                    f32::from(frame[at + frame_width]),
-                    f32::from(frame[at + frame_width + 1]),
+                    f32::from(frame[top_left_index]),
+                    f32::from(frame[top_left_index + 1]),
+                    f32::from(frame[top_left_index + frame_width]),
+                    f32::from(frame[top_left_index + frame_width + 1]),
                 ]
             } else {
                 [
@@ -97,10 +97,10 @@ impl Map {
                     sample(x0 + 1, y0 + 1),
                 ]
             };
-            let top = (1.0 - fx) * top_left + fx * top_right;
-            let bottom = (1.0 - fx) * bottom_left + fx * bottom_right;
-            let value = (1.0 - fy) * top + fy * bottom;
-            *out = value.round().clamp(0.0, 255.0) as u8;
+            let top = (1.0 - column_weight) * top_left + column_weight * top_right;
+            let bottom = (1.0 - column_weight) * bottom_left + column_weight * bottom_right;
+            let value = (1.0 - row_weight) * top + row_weight * bottom;
+            *rectified_pixel = value.round().clamp(0.0, 255.0) as u8;
         }
     }
 }
@@ -108,21 +108,24 @@ impl Map {
 /// `NxStereo.Rectify`'s projection of rectified pixel `u`, `v` into the
 /// frame, operation for operation as `Nx.Defn` builds its expression.
 fn project(camera: &Camera, u: f32, v: f32) -> (f32, f32) {
-    let ir = &camera.inverse_pr;
-    let x = ir[0] * u + ir[1] * v + ir[2];
-    let y = ir[3] * u + ir[4] * v + ir[5];
-    let w = ir[6] * u + ir[7] * v + ir[8];
+    let inverse_pr = &camera.inverse_pr;
+    let x = inverse_pr[0] * u + inverse_pr[1] * v + inverse_pr[2];
+    let y = inverse_pr[3] * u + inverse_pr[4] * v + inverse_pr[5];
+    let w = inverse_pr[6] * u + inverse_pr[7] * v + inverse_pr[8];
     let (x, y) = (x / w, y / w);
 
-    let d = &camera.d;
+    let [k1, k2, p1, p2, k3] = camera.distortion;
     let r2 = x * x + y * y;
-    // The order Nx.Defn's expression sums `1 + d0 r2 + d1 r2² + d4 r2³` in.
-    let radial = 1.0 + (d[4] * r2 * r2 * r2 + (d[1] * r2 * r2 + d[0] * r2));
-    let xd = x * radial + 2.0 * d[2] * x * y + d[3] * (r2 + 2.0 * x * x);
-    let yd = y * radial + d[2] * (r2 + 2.0 * y * y) + 2.0 * d[3] * x * y;
+    // The order Nx.Defn's expression sums `1 + k1 r2 + k2 r2² + k3 r2³` in.
+    let radial = 1.0 + (k3 * r2 * r2 * r2 + (k2 * r2 * r2 + k1 * r2));
+    let distorted_x = x * radial + 2.0 * p1 * x * y + p2 * (r2 + 2.0 * x * x);
+    let distorted_y = y * radial + p1 * (r2 + 2.0 * y * y) + 2.0 * p2 * x * y;
 
-    let k = &camera.k;
-    (k[0] * xd + k[1] * yd + k[2], k[4] * yd + k[5])
+    let [fx, skew, cx, _, fy, cy, _, _, _] = camera.camera_matrix;
+    (
+        fx * distorted_x + skew * distorted_y + cx,
+        fy * distorted_y + cy,
+    )
 }
 
 /// Rectifies the left and right frames into `left` and `right`, rows taken
@@ -131,21 +134,21 @@ pub fn rectify_pair(
     maps: [&Map; 2],
     frames: [&[u8]; 2],
     frame_width: usize,
-    outs: [&mut [u8]; 2],
+    outputs: [&mut [u8]; 2],
     threads: usize,
 ) {
     let height = maps[0].height;
     let width = maps[0].width;
     let rows = RowQueue::new(2 * height);
-    let [left, right] = outs;
-    let outs = [Shared::new(left), Shared::new(right)];
+    let [left, right] = outputs;
+    let outputs = [Shared::new(left), Shared::new(right)];
     on_threads(threads, &|_thread| {
         while let Some(range) = rows.take() {
             for row in range {
                 let (side, v) = (row / height, row % height);
                 // SAFETY: the queue hands each row to one thread.
-                let out = unsafe { outs[side].slice_mut(v * width..(v + 1) * width) };
-                maps[side].rectify_row(frames[side], frame_width, v, out);
+                let rectified_row = unsafe { outputs[side].slice_mut(v * width..(v + 1) * width) };
+                maps[side].rectify_row(frames[side], frame_width, v, rectified_row);
             }
         }
     });
@@ -159,8 +162,8 @@ mod tests {
         let (cx, cy) = (width as f32 / 2.0, height as f32 / 2.0);
         // The inverse of K = [[100, 0, cx], [0, 100, cy], [0, 0, 1]].
         Camera {
-            k: [100.0, 0.0, cx, 0.0, 100.0, cy, 0.0, 0.0, 1.0],
-            d: [0.0; 5],
+            camera_matrix: [100.0, 0.0, cx, 0.0, 100.0, cy, 0.0, 0.0, 1.0],
+            distortion: [0.0; 5],
             inverse_pr: [
                 0.01,
                 0.0,

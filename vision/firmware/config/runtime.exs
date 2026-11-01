@@ -20,8 +20,8 @@ case OvcsVehicle.Firmware.resolve_side(
     # Without them NervesSSH generates keys under /data on first boot.
     # `:nerves_ssh` is not a host dep.
     if Application.spec(:nerves_ssh, :vsn) do
-      if dir = OvcsVehicle.Firmware.ssh_system_dir(vehicle, "vision") do
-        config :nerves_ssh, system_dir: String.to_charlist(dir)
+      if system_directory = OvcsVehicle.Firmware.ssh_system_dir(vehicle, "vision") do
+        config :nerves_ssh, system_dir: String.to_charlist(system_directory)
       end
     end
 end

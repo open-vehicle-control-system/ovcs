@@ -93,11 +93,11 @@ impl Settings {
     }
 }
 
-fn in_range(value: &str, min: f64, max: f64) -> Option<f64> {
+fn in_range(value: &str, minimum: f64, maximum: f64) -> Option<f64> {
     value
         .parse::<f64>()
         .ok()
-        .filter(|v| (min..=max).contains(v))
+        .filter(|parsed| (minimum..=maximum).contains(parsed))
 }
 
 #[cfg(test)]

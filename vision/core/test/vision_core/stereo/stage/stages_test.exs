@@ -60,10 +60,10 @@ defmodule VisionCore.Stereo.Stage.StagesTest do
     |> Nx.as_type(:u8)
   end
 
-  defp to_tensor(mat), do: mat |> Evision.Mat.to_nx(Nx.BinaryBackend) |> Nx.squeeze()
+  defp to_tensor(matrix), do: matrix |> Evision.Mat.to_nx(Nx.BinaryBackend) |> Nx.squeeze()
 
-  defp max_difference(a, b) do
-    Nx.subtract(Nx.as_type(a, :f32), Nx.as_type(b, :f32))
+  defp max_difference(first, second) do
+    Nx.subtract(Nx.as_type(first, :f32), Nx.as_type(second, :f32))
     |> Nx.abs()
     |> Nx.reduce_max()
     |> Nx.to_number()
@@ -72,15 +72,17 @@ defmodule VisionCore.Stereo.Stage.StagesTest do
   # OpenCV's rectification maps, CV_16SC2 and its fraction table.
   defp opencv_maps(%CameraCalibration{} = calibration) do
     matrix = fn values -> values |> Nx.tensor(type: :f64) |> Nx.reshape({3, 3}) end
-    p = calibration.projection_matrix
-    p3 = Enum.map([0, 1, 2, 4, 5, 6, 8, 9, 10], &Enum.at(p, &1))
-    d = Enum.take(calibration.distortion_coefficients ++ List.duplicate(0.0, 5), 5)
+
+    projection =
+      Enum.map([0, 1, 2, 4, 5, 6, 8, 9, 10], &Enum.at(calibration.projection_matrix, &1))
+
+    distortion = Enum.take(calibration.distortion_coefficients ++ List.duplicate(0.0, 5), 5)
 
     Evision.initUndistortRectifyMap(
       Evision.Mat.from_nx_2d(matrix.(calibration.camera_matrix)),
-      Evision.Mat.from_nx_2d(Nx.tensor([d], type: :f64)),
+      Evision.Mat.from_nx_2d(Nx.tensor([distortion], type: :f64)),
       Evision.Mat.from_nx_2d(matrix.(calibration.rectification_matrix)),
-      Evision.Mat.from_nx_2d(matrix.(p3)),
+      Evision.Mat.from_nx_2d(matrix.(projection)),
       {calibration.width, calibration.height},
       Evision.Constant.cv_16SC2()
     )
@@ -134,12 +136,12 @@ defmodule VisionCore.Stereo.Stage.StagesTest do
             {pair.left, context.left_calibration},
             {pair.right, context.right_calibration}
           ] do
-        {map1, map2} = opencv_maps(calibration)
+        {integer_map, fraction_map} = opencv_maps(calibration)
 
         reference =
           image
           |> Evision.Mat.from_nx_2d()
-          |> Evision.remap(map1, map2, Evision.Constant.cv_INTER_LINEAR())
+          |> Evision.remap(integer_map, fraction_map, Evision.Constant.cv_INTER_LINEAR())
           |> to_tensor()
 
         difference = Nx.subtract(Nx.as_type(rectified, :s16), Nx.as_type(reference, :s16))
@@ -169,13 +171,15 @@ defmodule VisionCore.Stereo.Stage.StagesTest do
             {pair.left, context.left_calibration},
             {pair.right, context.right_calibration}
           ] do
-        {map1, map2} = opencv_maps(calibration)
+        {integer_map, fraction_map} = opencv_maps(calibration)
 
         reference =
-          shrunk |> Evision.remap(map1, map2, Evision.Constant.cv_INTER_LINEAR()) |> to_tensor()
+          shrunk
+          |> Evision.remap(integer_map, fraction_map, Evision.Constant.cv_INTER_LINEAR())
+          |> to_tensor()
 
         # Away from the image's edge, where OpenCV blends with a zero border.
-        interior = fn t -> t[[20..249, 20..459]] end
+        interior = fn tensor -> tensor[[20..249, 20..459]] end
 
         difference =
           Nx.subtract(
