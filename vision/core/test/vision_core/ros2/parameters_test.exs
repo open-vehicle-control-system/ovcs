@@ -218,7 +218,7 @@ defmodule VisionCore.Ros2.ParametersTest do
     end
 
     @tag :capture_log
-    test "a set request is a registry set", %{registry: registry, gain: gain} do
+    test "a set request is applied and saved", %{registry: registry, gain: gain} do
       payload =
         sequence(
           <<>>,
@@ -232,7 +232,7 @@ defmodule VisionCore.Ros2.ParametersTest do
       assert set_results(payload, registry) == [{true, ""}, {false, "unknown parameter"}]
       assert Agent.get(gain, & &1) == 7
 
-      assert {:ok, %{value: 7, state: :unsaved}} =
+      assert {:ok, %{value: 7, saved: 7, state: :saved}} =
                VisionCore.Parameters.get(registry, "test.group.gain")
     end
 

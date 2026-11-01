@@ -97,6 +97,16 @@ defmodule VisionCore.Parameters do
           {:ok, Parameter.t()} | {:error, :not_found | String.t()}
   def set(server \\ __MODULE__, id, value), do: GenServer.call(server, {:set, id, value})
 
+  @doc """
+  `set/3`, then stores the value of parameter `id` alone, as `save/1` would;
+  other unsaved changes stay unsaved. A value applied but not stored is
+  answered as an error and stays an unsaved change.
+  """
+  @spec set_and_save(GenServer.server(), id(), term()) ::
+          {:ok, Parameter.t()} | {:error, :not_found | String.t()}
+  def set_and_save(server \\ __MODULE__, id, value),
+    do: GenServer.call(server, {:set_and_save, id, value})
+
   @doc "The number of parameters whose value differs from their saved value or default."
   @spec unsaved_count(GenServer.server()) :: non_neg_integer()
   def unsaved_count(server \\ __MODULE__), do: GenServer.call(server, :unsaved_count)
@@ -188,6 +198,18 @@ defmodule VisionCore.Parameters do
     {:reply, reply, state}
   end
 
+  def handle_call({:set_and_save, id, value}, _from, state) do
+    with {{:ok, _parameter}, state} <- set_value(state, id, value),
+         declared = find(state, id),
+         {:ok, _ids, state} <- store_values(state, [declared]) do
+      {parameter, state} = read_parameter(state, declared)
+      {:reply, {:ok, parameter}, state}
+    else
+      {{:error, _reason} = refused, state} -> {:reply, refused, state}
+      {:error, reason} -> {:reply, {:error, "applied but not saved: #{reason}"}, state}
+    end
+  end
+
   def handle_call(:unsaved_count, _from, state) do
     parameters = all_parameters(state)
     {values, state} = read_values(state, Enum.map(parameters, & &1.id))
@@ -197,24 +219,10 @@ defmodule VisionCore.Parameters do
 
   def handle_call(:save, _from, state) do
     parameters = Enum.reject(all_parameters(state), &(&1.applies == :build))
-    {values, state} = read_values(state, Enum.flat_map(parameters, &related_ids(state, &1)))
-    readable = Enum.reject(parameters, &is_nil(values[&1.id]))
-    rows = Enum.flat_map(readable, &saved_row(&1, values, state))
-    changes = row_changes(Enum.map(readable, & &1.id), Map.new(rows), state.saved)
 
-    case write_changes(state.store, changes) do
-      :ok ->
-        saved =
-          Enum.reduce(changes, state.saved, fn
-            {id, :delete}, saved -> Map.delete(saved, id)
-            {id, value}, saved -> Map.put(saved, id, value)
-          end)
-
-        changed = Map.drop(state.changed, Enum.map(readable, & &1.id))
-        {:reply, {:ok, Map.keys(changes)}, %{state | saved: saved, changed: changed}}
-
-      {:error, reason} ->
-        {:reply, {:error, reason}, state}
+    case store_values(state, parameters) do
+      {:ok, ids, state} -> {:reply, {:ok, ids}, state}
+      {:error, reason} -> {:reply, {:error, reason}, state}
     end
   end
 
@@ -434,6 +442,29 @@ defmodule VisionCore.Parameters do
   defp delete_saved(state, ids) do
     write_changes(state.store, Map.new(ids, &{&1, :delete}))
     %{state | saved: Map.drop(state.saved, ids)}
+  end
+
+  # Stores the values of `parameters`, returning the ids whose saved value changed.
+  defp store_values(state, parameters) do
+    {values, state} = read_values(state, Enum.flat_map(parameters, &related_ids(state, &1)))
+    readable = Enum.reject(parameters, &is_nil(values[&1.id]))
+    rows = Enum.flat_map(readable, &saved_row(&1, values, state))
+    changes = row_changes(Enum.map(readable, & &1.id), Map.new(rows), state.saved)
+
+    case write_changes(state.store, changes) do
+      :ok ->
+        saved =
+          Enum.reduce(changes, state.saved, fn
+            {id, :delete}, saved -> Map.delete(saved, id)
+            {id, value}, saved -> Map.put(saved, id, value)
+          end)
+
+        changed = Map.drop(state.changed, Enum.map(readable, & &1.id))
+        {:ok, Map.keys(changes), %{state | saved: saved, changed: changed}}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
   end
 
   defp write_changes(_store, changes) when changes == %{}, do: :ok

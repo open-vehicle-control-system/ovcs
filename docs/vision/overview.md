@@ -100,7 +100,7 @@ A change is unsaved until you save it. Unsaved changes live on the unit, not in 
 - **Discard**: returns every unsaved parameter to its saved value, or to its default without one.
 - **Reset**: a box's Reset, or a parameter's, returns it to the defaults; **Reset all** returns every parameter.
 
-Discard and Reset all ask first. The same actions are `VisionCore.Parameters.save/1`, `discard/1` and `reset/2` from IEx. The parameters are also reachable with `ros2 param` and Foxglove's Parameters panel under their ids, `<prefix>.<stage>.<name>` (`stereo.disparity.p1`); a change made there is unsaved too.
+Discard and Reset all ask first. The same actions are `VisionCore.Parameters.save/1`, `discard/1` and `reset/2` from IEx. The parameters are also reachable with `ros2 param` and Foxglove's Parameters panel under their ids, `<prefix>.<stage>.<name>` (`stereo.disparity.p1`); a change made there is saved at once, and unsaved changes from the dashboard stay unsaved.
 
 The API follows [JSON:API](https://jsonapi.org/); its routes are listed in [`vision/api/README.md`](../../vision/api/README.md).
 

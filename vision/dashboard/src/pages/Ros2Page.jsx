@@ -92,7 +92,7 @@ export default function Ros2Page() {
             <p className="text-sm text-ovcs-muted">
               The pipeline&apos;s settings are ROS 2 parameters: <code className="text-ovcs-text">ros2 param list</code>, then
               for example <code className="text-ovcs-text">ros2 param set &lt;node&gt; stereo.disparity.p1 10</code>. A change
-              made there is an unsaved change here too.
+              made there is saved at once.
             </p>
           </OvcsCard>
         </>

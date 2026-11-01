@@ -482,6 +482,40 @@ defmodule VisionCore.ParametersTest do
       assert Parameters.save(server) == {:ok, []}
     end
 
+    @tag saved: %{}
+    test "set_and_save applies and saves one parameter, leaving other unsaved changes unsaved",
+         %{server: server} do
+      start_owner(server, &match_groups/1)
+      assert {:ok, _parameter} = Parameters.set(server, "stereo.disparity.p2", 70)
+
+      assert {:ok, %{value: 12, saved: 12, state: :saved}} =
+               Parameters.set_and_save(server, "stereo.disparity.p1", 12)
+
+      assert_receive {:set, "p1", 12}
+      assert MemoryStore.rows() == %{"stereo.disparity.p1" => 12}
+      assert {:ok, %{state: :unsaved}} = Parameters.get(server, "stereo.disparity.p2")
+    end
+
+    @tag saved: %{}
+    test "set_and_save saves nothing for a refused or unknown parameter", %{server: server} do
+      start_owner(server, &match_groups/1)
+
+      assert {:error, _reason} = Parameters.set_and_save(server, "stereo.disparity.p1", 500)
+      assert Parameters.set_and_save(server, "stereo.disparity.p9", 1) == {:error, :not_found}
+      assert MemoryStore.rows() == %{}
+    end
+
+    @tag store: FailingStore
+    test "set_and_save keeps the value applied and unsaved when it cannot be stored",
+         %{server: server} do
+      start_owner(server, &match_groups/1)
+
+      assert Parameters.set_and_save(server, "stereo.disparity.p1", 12) ==
+               {:error, "applied but not saved: saved parameters unavailable"}
+
+      assert {:ok, %{value: 12, state: :unsaved}} = Parameters.get(server, "stereo.disparity.p1")
+    end
+
     test "save leaves out a parameter whose value cannot be read", %{server: server} do
       {_owner, agent} = start_owner(server, &match_groups/1)
       assert {:ok, _parameter} = Parameters.set(server, "stereo.disparity.p1", 12)

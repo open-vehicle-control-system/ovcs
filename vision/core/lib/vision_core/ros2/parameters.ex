@@ -6,8 +6,10 @@ defmodule VisionCore.Ros2.Parameters do
 
   Every request is answered from `VisionCore.Parameters`. A ROS name is the
   parameter's id (`stereo.disparity.p1`). A set request is a
-  `VisionCore.Parameters.set/3`, an unsaved change; saving is not exposed. A
-  set request is answered per parameter; the atomic variant is refused.
+  `VisionCore.Parameters.set_and_save/3`: the value is applied and saved, so
+  it outlives a reboot, while unsaved changes from the dashboard stay
+  unsaved. A set request is answered per parameter; the atomic variant is
+  refused.
 
   A description is read-only for a parameter fixed in the build or set by its
   automatic mode at the time, carries the range of a numeric range constraint,
@@ -98,7 +100,11 @@ defmodule VisionCore.Ros2.Parameters do
     payload
     |> Codec.decode_parameters()
     |> Enum.map(fn {name, value} ->
-      case call(registry, &VisionCore.Parameters.set(&1, name, value), {:error, "not applied"}) do
+      case call(
+             registry,
+             &VisionCore.Parameters.set_and_save(&1, name, value),
+             {:error, "not applied"}
+           ) do
         {:ok, _parameter} -> :ok
         {:error, :not_found} -> {:error, "unknown parameter"}
         {:error, _reason} = error -> error
