@@ -9,7 +9,8 @@ case OvcsVehicle.Firmware.resolve_side(
        Application.compile_env(:vision_firmware, :vehicle)
      ) do
   nil ->
-    :ok
+    if config_env() != :test,
+      do: raise("vision firmware: set VEHICLE to the vehicle package's top-level module name")
 
   {vehicle, vision} ->
     config :vision_core, :vehicle, vision

@@ -1,7 +1,7 @@
 # Compile-time configuration for the vision firmware.
 #
 # Parameterised by one env var:
-#   VEHICLE — top-level module name of the vehicle package (e.g. "OvcsMini").
+#   VEHICLE — top-level module name of the vehicle package.
 #
 # The vision composer is resolved in `runtime.exs`, after the vehicle's
 # ebin is on the code path.
@@ -15,23 +15,21 @@ if Mix.target() != :host do
   config :nerves, source_date_epoch: "1761523200"
 end
 
-# Host-target mix commands (deps.get, test, compile) don't need a pinned
-# vehicle: runtime.exs skips the vehicle in `:test`. Firmware builds
-# require one.
+# Host-target mix commands (deps.get, test, compile) run without a
+# vehicle; a host BEAM started without one stops in config/runtime.exs.
+# Firmware builds require one here.
 vehicle_name =
   System.get_env("VEHICLE") ||
-    if Mix.target() == :host do
-      "OvcsMini"
-    else
+    if Mix.target() != :host do
       Mix.raise("""
       VEHICLE env var is required for vision firmware builds.
 
       Set it to the vehicle package's top-level module name, e.g.:
-        VEHICLE=OvcsMini mix firmware
+        VEHICLE=<Vehicle> mix firmware
       """)
     end
 
-vehicle_dir = Macro.underscore(vehicle_name)
+vehicle_dir = vehicle_name && Macro.underscore(vehicle_name)
 target = Mix.target() |> to_string()
 
 # Per-file fallback, as in vms/firmware: a vehicle's
