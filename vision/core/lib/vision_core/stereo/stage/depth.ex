@@ -36,6 +36,9 @@ defmodule VisionCore.Stereo.Stage.Depth do
   end
 
   @impl VisionCore.Stereo.NxStage
+  def device_only, do: [:depth_m]
+
+  @impl VisionCore.Stereo.NxStage
   def finish(%Pair{} = pair, outputs, _state) do
     %{
       pair

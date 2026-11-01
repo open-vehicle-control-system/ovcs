@@ -235,6 +235,7 @@ defmodule VisionCore.Stereo.NxSegment do
     with {:ok, entry} <- entry_values(pair, segment) do
       {carried, outputs} =
         segment.function.(entry, segment.params)
+        |> Map.drop(device_only(segment.members))
         |> Map.split_with(fn {key, _tensor} -> match?({:carry, _index, _name}, key) end)
 
       params =
@@ -336,6 +337,14 @@ defmodule VisionCore.Stereo.NxSegment do
     |> Map.new(fn {member, index} ->
       values = Map.merge(member.module.params(member.state, context), carry(member, context))
       {index, Map.new(values, fn {key, value} -> {key, to_input(value)} end)}
+    end)
+  end
+
+  defp device_only(members) do
+    Enum.flat_map(members, fn member ->
+      if function_exported?(member.module, :device_only, 0),
+        do: member.module.device_only(),
+        else: []
     end)
   end
 

@@ -86,13 +86,20 @@ defmodule VisionCore.Stereo.NxStage do
   """
   @callback compute(state()) :: :nx | :native | nil
 
+  @doc """
+  Tensors the stage fills for the stages after it on the device only:
+  the segment does not download them.
+  """
+  @callback device_only() :: [atom()]
+
   @optional_callbacks summary: 0,
                       finish: 3,
                       option_specs: 0,
                       options: 1,
                       set_option: 3,
                       carry: 2,
-                      compute: 1
+                      compute: 1,
+                      device_only: 0
 
   @doc "Whether `module` is an Nx stage."
   @spec nx_stage?(module()) :: boolean()

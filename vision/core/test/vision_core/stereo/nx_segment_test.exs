@@ -51,6 +51,19 @@ defmodule VisionCore.Stereo.NxSegmentTest do
     end
   end
 
+  # Fills a tensor that only later stages on the device read.
+  defmodule Scratch do
+    @behaviour VisionCore.Stereo.NxStage
+    def init(_opts, _context), do: {:ok, nil}
+    def requires, do: [:left]
+    def provides, do: [:left]
+    def device_only, do: [:scratch]
+    def params(_state, _context), do: %{}
+
+    def step(tensors, _params, _state),
+      do: Map.put(tensors, :scratch, Nx.multiply(tensors.left, 3))
+  end
+
   defmodule Halve do
     @behaviour VisionCore.Stereo.Stage
     def init(_opts, _context), do: {:ok, nil}
@@ -146,6 +159,14 @@ defmodule VisionCore.Stereo.NxSegmentTest do
     {:ok, pair, _segment} = NxSegment.run(grey_pair(List.duplicate(0, 8)), segment)
 
     assert pair.left |> Nx.to_flat_list() |> Enum.uniq() == [13.0]
+  end
+
+  test "leaves the tensors a stage fills for the device only out of its outputs" do
+    {:ok, segment} = NxSegment.build(members([AddOne, Scratch], context()), context(), [])
+    {:ok, outputs, _segment} = NxSegment.dispatch(grey_pair(List.duplicate(0, 8)), segment)
+
+    assert Map.has_key?(outputs, :left)
+    refute Map.has_key?(outputs, :scratch)
   end
 
   test "sends a pair without waiting, and recognises its outputs among other messages" do
