@@ -29,13 +29,25 @@ defmodule VisionCore.Detection.Backend.Hailo do
 
   ## Failure is not fatal
 
-  Every startup failure — missing binary, missing HEF, no
-  accelerator — is logged and leaves this process alive but
-  inference-less, answering `{:error, :unavailable}`. Raising in
-  `init/1` would take down the supervision tree at boot, and a
-  perception pipeline that loses stereo depth because a detector could
-  not find its model file is a worse outcome than one that simply
-  publishes no detections.
+  A missing binary or HEF is logged and leaves this process alive but
+  inference-less, answering `{:error, :unavailable}`. When `hailo_detect`
+  exits, as it does when the accelerator is not ready yet or after a
+  failed read, or leaves a frame unanswered for `:infer_timeout_ms`, the
+  Port is reopened after a wait that grows with each failure in a row
+  (`:reopen_delays_ms`), answering `{:error, :unavailable}` meanwhile. A
+  detection reply starts the waits over. The stereo pipeline never
+  depends on the detector being up.
+
+  ## Options
+
+    * `:hef_path` — the model (required).
+    * `:score_threshold` (`0.4`) — the lowest score `hailo_detect` reports.
+    * `:executable` — the program (default `priv/hailo_detect`).
+    * `:working_directory` (`"/data"`) — where `hailo_detect` runs;
+      libhailort writes its log there.
+    * `:library_path` — where libhailort is (default `Hailort.lib_dir/0`).
+    * `:infer_timeout_ms` (`2000`), `:reopen_delays_ms`
+      (`[1000, 2000, 5000, 10000, 30000]`, the last repeated).
   """
   use GenServer
 
@@ -53,7 +65,8 @@ defmodule VisionCore.Detection.Backend.Hailo do
   @default_score_threshold 0.4
 
   # Detects a wedged Port; not a latency budget.
-  @infer_timeout_ms 2_000
+  @default_infer_timeout_ms 2_000
+  @default_reopen_delays_ms [1_000, 2_000, 5_000, 10_000, 30_000]
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 
@@ -107,6 +120,11 @@ defmodule VisionCore.Detection.Backend.Hailo do
       executable: executable,
       hef_path: hef_path,
       score_threshold: score_threshold,
+      working_directory: Keyword.get(opts, :working_directory, "/data"),
+      library_path: Keyword.get(opts, :library_path),
+      infer_timeout_ms: Keyword.get(opts, :infer_timeout_ms, @default_infer_timeout_ms),
+      reopen_delays_ms: Keyword.get(opts, :reopen_delays_ms, @default_reopen_delays_ms),
+      failures: 0,
       inflight: nil,
       dropped: 0
     }
@@ -130,30 +148,37 @@ defmodule VisionCore.Detection.Backend.Hailo do
     end
   end
 
-  defp open_port(%{executable: executable, hef_path: hef_path, score_threshold: score_threshold}) do
+  defp open_port(%{executable: executable, hef_path: hef_path} = state) do
     cond do
       not File.exists?(executable) -> {:error, {:missing_binary, executable}}
       not File.exists?(hef_path) -> {:error, {:missing_hef, hef_path}}
-      true -> spawn_detector_port(executable, hef_path, score_threshold)
+      true -> spawn_detector_port(state)
     end
   end
 
-  defp spawn_detector_port(executable, hef_path, score_threshold) do
-    # `cd: "/data"` because libhailort wants somewhere writable for
-    # its own log; the rootfs is read-only.
+  defp spawn_detector_port(state) do
     port =
-      Port.open({:spawn_executable, executable}, [
+      Port.open({:spawn_executable, state.executable}, [
         :binary,
         :exit_status,
         {:packet, 4},
-        {:cd, ~c"/data"},
-        {:env, [{~c"LD_LIBRARY_PATH", String.to_charlist(Hailort.lib_dir())}]},
-        {:args, [hef_path, to_string(score_threshold)]}
+        {:cd, String.to_charlist(state.working_directory)},
+        {:env,
+         [{~c"LD_LIBRARY_PATH", String.to_charlist(state.library_path || Hailort.lib_dir())}]},
+        {:args, [state.hef_path, to_string(state.score_threshold)]}
       ])
 
     {:ok, port}
   rescue
     error -> {:error, error}
+  end
+
+  # Fails the frame in flight and reopens the Port after the next wait.
+  defp port_down(state) do
+    if state.inflight, do: Process.cancel_timer(state.inflight.timer)
+    delay_ms = Enum.at(state.reopen_delays_ms, state.failures, List.last(state.reopen_delays_ms))
+    Process.send_after(self(), :reopen, delay_ms)
+    %{state | port: nil, inflight: nil, failures: state.failures + 1}
   end
 
   @impl GenServer
@@ -184,7 +209,7 @@ defmodule VisionCore.Detection.Backend.Hailo do
         pixels::binary>>
     )
 
-    timer = Process.send_after(self(), {:infer_timeout, sequence}, @infer_timeout_ms)
+    timer = Process.send_after(self(), {:infer_timeout, sequence}, state.infer_timeout_ms)
 
     {:reply, :ok,
      %{state | inflight: %{sequence: sequence, reply_to: reply_to, timer: timer, width: width}}}
@@ -199,20 +224,37 @@ defmodule VisionCore.Detection.Backend.Hailo do
   end
 
   def handle_info({:infer_timeout, sequence}, %{inflight: %{sequence: sequence}} = state) do
-    Logger.warning("#{__MODULE__} frame #{sequence} timed out after #{@infer_timeout_ms}ms")
-    {:noreply, %{state | inflight: nil}}
+    Logger.warning(
+      "#{__MODULE__} frame #{sequence} not answered in #{state.infer_timeout_ms} ms; " <>
+        "restarting hailo_detect"
+    )
+
+    Port.close(state.port)
+    {:noreply, port_down(state)}
   end
 
   def handle_info({:infer_timeout, _stale_sequence}, state), do: {:noreply, state}
 
   def handle_info({port, {:exit_status, status}}, %{port: port} = state) do
     Logger.error("#{__MODULE__} hailo_detect exited with status #{status}")
-    {:stop, {:hailo_detect_exit, status}, %{state | port: nil, inflight: nil}}
+    {:noreply, port_down(state)}
   end
 
   def handle_info({:EXIT, port, reason}, %{port: port} = state) do
     Logger.error("#{__MODULE__} Port died: #{inspect(reason)}")
-    {:stop, {:port_died, reason}, %{state | port: nil, inflight: nil}}
+    {:noreply, port_down(state)}
+  end
+
+  def handle_info(:reopen, state) do
+    case open_port(state) do
+      {:ok, port} ->
+        Logger.info("#{__MODULE__} reopened hailo_detect")
+        {:noreply, %{state | port: port}}
+
+      {:error, reason} ->
+        Logger.error("#{__MODULE__} unavailable: #{inspect(reason)}")
+        {:noreply, state}
+    end
   end
 
   def handle_info(_message, state), do: {:noreply, state}
@@ -220,7 +262,7 @@ defmodule VisionCore.Detection.Backend.Hailo do
   defp deliver(%{inflight: %{sequence: sequence} = inflight} = state, sequence, detections) do
     Process.cancel_timer(inflight.timer)
     send(inflight.reply_to, {:inference_detections, sequence, detections})
-    %{state | inflight: nil}
+    %{state | inflight: nil, failures: 0}
   end
 
   # Late reply for a timed-out frame: dropped.
