@@ -29,11 +29,12 @@ defmodule VisionCore.Detection.Supervisor do
   nothing across one.
 
   Options other than the backend's go to the pipeline and the
-  publisher; see their docs.
+  publisher, and `:max_hz` and `:outline_segments` to `Live` too; see
+  their docs.
   """
   use Supervisor
 
-  alias VisionCore.Detection.Pipeline
+  alias VisionCore.Detection.{Live, Pipeline}
   alias VisionCore.Ros2.Publishers.Detections
 
   @default_backend VisionCore.Detection.Backend.Hailo
@@ -55,7 +56,7 @@ defmodule VisionCore.Detection.Supervisor do
       # pipeline needs nothing but the module to reach it.
       {Pipeline, rest |> Keyword.take(pipeline_keys()) |> Keyword.put(:backend, backend)},
       {Detections, Keyword.drop(rest, pipeline_keys())},
-      VisionCore.Detection.Live
+      {Live, Keyword.take(rest, [:max_hz, :outline_segments])}
     ]
 
     Supervisor.init(children,
@@ -65,7 +66,8 @@ defmodule VisionCore.Detection.Supervisor do
     )
   end
 
-  defp split_backend_options(opts) do
+  @doc false
+  def split_backend_options(opts) do
     backend = Keyword.get(opts, :backend, @default_backend)
     {backend, Keyword.take(opts, backend_keys())}
   end
@@ -73,7 +75,9 @@ defmodule VisionCore.Detection.Supervisor do
   defp pipeline_keys,
     do: [:detect_every_n, :labels, :min_score, :max_detections, :depth_sample_fraction]
 
+  # The options of `Backend.Hailo` and `Backend.Stub`.
   defp backend_keys do
-    [:hef_path, :model_path, :target, :score_threshold, :nms_threshold, :input_size, :boxes]
+    [:hef_path, :score_threshold, :executable, :working_directory, :library_path] ++
+      [:infer_timeout_ms, :reopen_delays_ms, :boxes]
   end
 end
