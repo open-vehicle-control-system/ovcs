@@ -68,6 +68,8 @@ fn target_snippet(module: &str, side: &str) -> Option<String> {
     let target = target_callback(side)?;
     Some(format!(
         r#"
+Code.ensure_loaded({module})
+
 if function_exported?({module}, :{side}, 0) do
   unless function_exported?({module}, :{target}, 0),
     do: raise("{module} implements {side}/0 without {target}/0")
@@ -436,6 +438,7 @@ mod tests {
     #[test]
     fn a_role_exists_when_its_composer_callback_does_and_needs_its_target() {
         let snippet = target_snippet("MyCar", "vision").unwrap();
+        assert!(snippet.contains("Code.ensure_loaded(MyCar)"));
         assert!(snippet.contains("function_exported?(MyCar, :vision, 0)"));
         assert!(snippet.contains("function_exported?(MyCar, :vision_target, 0)"));
         assert!(snippet.contains("implements vision/0 without vision_target/0"));
