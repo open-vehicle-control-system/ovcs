@@ -1,10 +1,6 @@
 defmodule VisionApiWeb.Router do
   use VisionApiWeb, :router
 
-  pipeline :api do
-    plug :accepts, ["json"]
-  end
-
   pipeline :jsonapi do
     plug :accepts, ["jsonapi", "json"]
   end
@@ -23,7 +19,6 @@ defmodule VisionApiWeb.Router do
   end
 
   scope "/api", VisionApiWeb do
-    pipe_through :api
     match :*, "/*path", NotFoundController, :show
   end
 

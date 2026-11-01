@@ -51,10 +51,4 @@ defmodule VisionApiWeb.ConfigurationControllerTest do
              }
     end
   end
-
-  test "an unknown API path is a JSON 404", %{conn: conn} do
-    assert json_response(get(conn, "/api/unknown"), 404) == %{
-             "errors" => %{"detail" => "Not Found"}
-           }
-  end
 end

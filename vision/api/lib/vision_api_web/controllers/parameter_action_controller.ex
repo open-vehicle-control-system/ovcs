@@ -2,7 +2,9 @@ defmodule VisionApiWeb.ParameterActionController do
   @moduledoc """
   Save, discard and reset of the vision parameters, created as action
   resources. A reset targets one of the `parameters` or `stages`, or every
-  parameter without a target.
+  parameter without a target. The action is read from the JSON body only:
+  a form or a query string, which another site's page can send without
+  asking, is refused.
   """
   use VisionApiWeb, :controller
 
@@ -11,8 +13,8 @@ defmodule VisionApiWeb.ParameterActionController do
 
   @target_types %{"stages" => :group, "parameters" => :parameter}
 
-  def save(conn, params) do
-    act(conn, params, "parameter-saves", fn _data ->
+  def save(conn, _params) do
+    act(conn, "parameter-saves", fn _data ->
       case Parameters.save() do
         {:ok, ids} -> {:ok, ids}
         {:error, reason} -> {:error, 503, "Saved values unavailable", reason, nil}
@@ -20,12 +22,12 @@ defmodule VisionApiWeb.ParameterActionController do
     end)
   end
 
-  def discard(conn, params) do
-    act(conn, params, "parameter-discards", fn _data -> Parameters.discard() end)
+  def discard(conn, _params) do
+    act(conn, "parameter-discards", fn _data -> Parameters.discard() end)
   end
 
-  def reset(conn, params) do
-    act(conn, params, "parameter-resets", fn data ->
+  def reset(conn, _params) do
+    act(conn, "parameter-resets", fn data ->
       with {:ok, scope} <- scope(data) do
         case Parameters.reset(scope) do
           {:ok, ids} -> {:ok, ids}
@@ -36,8 +38,8 @@ defmodule VisionApiWeb.ParameterActionController do
     end)
   end
 
-  defp act(conn, params, type, run) do
-    with {:ok, data} <- fetch_data(params, type),
+  defp act(conn, type, run) do
+    with {:ok, data} <- fetch_data(conn.body_params, type),
          {:ok, ids} <- run.(data) do
       id = Integer.to_string(System.unique_integer([:positive, :monotonic]))
       JsonApi.send_document(conn, 201, %{data: ParameterActionPresenter.present(type, id, ids)})

@@ -20,12 +20,15 @@ defmodule VisionApiWeb.Endpoint do
   plug Plug.Telemetry, event_prefix: [:phoenix, :endpoint], log: :debug
 
   plug Plug.Parsers,
-    parsers: [:urlencoded, :json],
+    parsers: [:json],
     pass: ["*/*"],
     json_decoder: Phoenix.json_library()
 
   plug Plug.Head
-  # The dashboard's Vite dev server runs on another origin.
-  plug CORSPlug
+
+  if Application.compile_env(:vision_api, :allow_cross_origin, false) do
+    plug CORSPlug
+  end
+
   plug VisionApiWeb.Router
 end

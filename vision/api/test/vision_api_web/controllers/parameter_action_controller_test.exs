@@ -143,6 +143,26 @@ defmodule VisionApiWeb.ParameterActionControllerTest do
              |> json_response(400)
   end
 
+  test "an action sent as a form or in the query string, as another site's page can, is refused",
+       %{conn: conn} do
+    set("test.disparity.p1", 12)
+
+    for {content_type, path, body} <- [
+          {"application/x-www-form-urlencoded", "/api/parameter-saves",
+           "data[type]=parameter-saves"},
+          {"text/plain", "/api/parameter-saves", ~s({"data":{"type":"parameter-saves"}})},
+          {nil, "/api/parameter-resets?data[type]=parameter-resets", nil}
+        ] do
+      conn = if content_type, do: put_req_header(conn, "content-type", content_type), else: conn
+
+      assert %{"errors" => [%{"status" => "400"}]} =
+               conn |> post(path, body) |> json_response(400)
+    end
+
+    assert unsaved(conn) == 1
+    assert %{"attributes" => %{"value" => 12}} = parameter(conn, "test.disparity.p1")
+  end
+
   test "an action with the wrong type answers 409, without data 400", %{conn: conn} do
     assert %{"errors" => [%{"status" => "409"}]} =
              conn

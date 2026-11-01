@@ -1,5 +1,8 @@
 defmodule VisionApiWeb.ParameterController do
-  @moduledoc "The vision parameters (`VisionCore.Parameters`) as JSON:API resources."
+  @moduledoc """
+  The vision parameters (`VisionCore.Parameters`) as JSON:API resources.
+  An update is read from the JSON body only.
+  """
   use VisionApiWeb, :controller
 
   alias VisionApiWeb.{JsonApi, ParameterPresenter}
@@ -26,9 +29,11 @@ defmodule VisionApiWeb.ParameterController do
     end
   end
 
-  def update(conn, %{"id" => id} = params) do
-    with :ok <- check_resource(params["data"], "parameters", id),
-         {:ok, value} <- fetch_value(params["data"]) do
+  def update(conn, %{"id" => id}) do
+    data = conn.body_params["data"]
+
+    with :ok <- check_resource(data, "parameters", id),
+         {:ok, value} <- fetch_value(data) do
       case Parameters.set(id, value) do
         {:ok, parameter} ->
           JsonApi.send_document(conn, 200, %{data: ParameterPresenter.present(parameter)})
