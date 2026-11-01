@@ -72,7 +72,7 @@ defmodule VisionCore.Detection.Fusion do
   corner to corner. A straight edge in rectified pixels is a *curve*
   in raw camera pixels, and the overlay is drawn on the raw image, so
   an undivided edge visibly bows away from the object. Subdividing
-  lets `remap/4` follow the distortion.
+  lets `raw_points/2` follow the distortion.
 
   Returns `4 * segments` vertices.
   """
@@ -105,7 +105,28 @@ defmodule VisionCore.Detection.Fusion do
   `initUndistortRectifyMap` computes it for every pixel.
   """
   @spec raw_pixel(CameraCalibration.t(), {number(), number()}) :: {float(), float()}
-  def raw_pixel(%CameraCalibration{} = calibration, {u, v}) do
+  def raw_pixel(%CameraCalibration{} = calibration, vertex),
+    do: calibration |> lens() |> lens_pixel(vertex)
+
+  @doc """
+  Rectified pixels of `pair` as pixels of its left camera frame: mapped
+  back through the left calibration (`raw_pixel/2`), then scaled from
+  the matching size to the frame's, which the pipeline may shrink.
+  Without a calibration, only scaled.
+  """
+  @spec raw_points([{number(), number()}], Pair.t()) :: [{float(), float()}]
+  def raw_points(
+        vertices,
+        %Pair{geometry: %{left_calibration: %CameraCalibration{} = calibration}} = pair
+      ) do
+    lens = lens(calibration)
+    Enum.map(vertices, &(lens |> lens_pixel(&1) |> to_frame_scale(pair)))
+  end
+
+  def raw_points(vertices, %Pair{} = pair), do: Enum.map(vertices, &to_frame_scale(&1, pair))
+
+  # The calibration's inverse rectifying projection, distortion and camera matrix, as numbers.
+  defp lens(calibration) do
     camera =
       NxStereo.Rectify.camera(
         calibration.camera_matrix,
@@ -114,9 +135,17 @@ defmodule VisionCore.Detection.Fusion do
         calibration.projection_matrix
       )
 
-    [i0, i1, i2, i3, i4, i5, i6, i7, i8] = Nx.to_flat_list(camera.inverse_pr)
-    [k1, k2, p1, p2, k3] = Nx.to_flat_list(camera.d)
-    [fx, skew, cx, _, fy, cy | _] = Nx.to_flat_list(camera.k)
+    %{
+      inverse_projection: Nx.to_flat_list(camera.inverse_pr),
+      distortion: Nx.to_flat_list(camera.d),
+      camera_matrix: Nx.to_flat_list(camera.k)
+    }
+  end
+
+  defp lens_pixel(lens, {u, v}) do
+    [i0, i1, i2, i3, i4, i5, i6, i7, i8] = lens.inverse_projection
+    [k1, k2, p1, p2, k3] = lens.distortion
+    [fx, skew, cx, _, fy, cy | _] = lens.camera_matrix
 
     w = i6 * u + i7 * v + i8
     x = (i0 * u + i1 * v + i2) / w
@@ -124,26 +153,11 @@ defmodule VisionCore.Detection.Fusion do
 
     r2 = x * x + y * y
     radial = 1 + k1 * r2 + k2 * r2 * r2 + k3 * r2 * r2 * r2
-    xd = x * radial + 2 * p1 * x * y + p2 * (r2 + 2 * x * x)
-    yd = y * radial + p1 * (r2 + 2 * y * y) + 2 * p2 * x * y
+    distorted_x = x * radial + 2 * p1 * x * y + p2 * (r2 + 2 * x * x)
+    distorted_y = y * radial + p1 * (r2 + 2 * y * y) + 2 * p2 * x * y
 
-    {fx * xd + skew * yd + cx, fy * yd + cy}
+    {fx * distorted_x + skew * distorted_y + cx, fy * distorted_y + cy}
   end
-
-  @doc """
-  A rectified pixel of `pair` as a pixel of its left camera frame: mapped
-  back through the left calibration (`raw_pixel/2`), then scaled from
-  the matching size to the frame's, which the pipeline may shrink.
-  Without a calibration, only scaled.
-  """
-  @spec raw_point({number(), number()}, Pair.t()) :: {float(), float()}
-  def raw_point(
-        vertex,
-        %Pair{geometry: %{left_calibration: %CameraCalibration{} = calibration}} = pair
-      ),
-      do: calibration |> raw_pixel(vertex) |> to_frame_scale(pair)
-
-  def raw_point(vertex, %Pair{} = pair), do: to_frame_scale(vertex, pair)
 
   defp to_frame_scale({x, y}, %Pair{left_frame: frame} = pair) do
     {width, height} = Pair.size(pair)

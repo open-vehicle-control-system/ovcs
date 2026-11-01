@@ -39,7 +39,7 @@ defmodule VisionCore.Ros2.Publishers.Detections do
 
   Rather than publish a second, rectified image stream, each outline
   vertex is mapped back through the left camera's calibration
-  (`VisionCore.Detection.Fusion.raw_point/2`). A
+  (`VisionCore.Detection.Fusion.raw_points/2`). A
   straight edge in rectified space is a curve in raw space, so edges
   are subdivided (`:outline_segments`) and each vertex mapped
   individually.
@@ -240,20 +240,26 @@ defmodule VisionCore.Ros2.Publishers.Detections do
 
   # LINE_LOOP closes a box in four points where a LINE_LIST needs eight.
   defp publish_overlay(positioned, header, %Pair{} = pair, state) do
-    boxes =
-      Enum.map(positioned, fn detection ->
-        vertices =
-          detection.box
-          |> Fusion.perimeter(state.outline_segments)
-          |> Enum.map(fn vertex ->
-            {x, y} = Fusion.raw_point(vertex, pair)
-            %Point2{x: x, y: y}
-          end)
+    # Every box's outline then its label's anchor, just above its top-left corner, mapped to raw
+    # pixels like everything else in this message in one pass.
+    outline_length = 4 * state.outline_segments
 
+    raw =
+      positioned
+      |> Enum.flat_map(fn detection ->
+        Fusion.perimeter(detection.box, state.outline_segments) ++
+          [{detection.box.x0, detection.box.y0}]
+      end)
+      |> Fusion.raw_points(pair)
+      |> Enum.chunk_every(outline_length + 1)
+      |> Enum.map(&Enum.split(&1, outline_length))
+
+    boxes =
+      Enum.map(Enum.zip(positioned, raw), fn {detection, {outline, _anchor}} ->
         %PointsAnnotation{
           timestamp: header.stamp,
           type: PointsAnnotation.line_loop(),
-          points: vertices,
+          points: Enum.map(outline, fn {x, y} -> %Point2{x: x, y: y} end),
           outline_color: overlay_colour(detection.score),
           outline_colors: [],
           fill_color: %Color{a: 0.0},
@@ -262,11 +268,7 @@ defmodule VisionCore.Ros2.Publishers.Detections do
       end)
 
     labels =
-      Enum.map(positioned, fn detection ->
-        # Anchored just above the box's top-left corner, in raw
-        # pixels like everything else in this message.
-        {x, y} = Fusion.raw_point({detection.box.x0, detection.box.y0}, pair)
-
+      Enum.map(Enum.zip(positioned, raw), fn {detection, {_outline, [{x, y}]}} ->
         %TextAnnotation{
           timestamp: header.stamp,
           position: %Point2{x: x, y: max(y - 4.0, 10.0)},

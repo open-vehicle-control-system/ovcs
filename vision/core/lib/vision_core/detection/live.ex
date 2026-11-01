@@ -14,7 +14,7 @@ defmodule VisionCore.Detection.Live do
   outline a closed list of `[x, y]` vertices as fractions of the image's
   width and height. The box is computed on the rectified image, so each
   vertex is mapped back to the captured one through the left calibration
-  (`VisionCore.Detection.Fusion.raw_point/2`), like the ROS 2 overlay of
+  (`VisionCore.Detection.Fusion.raw_points/2`), like the ROS 2 overlay of
   `VisionCore.Ros2.Publishers.Detections`, and its edges are subdivided
   so they can follow the lens distortion.
 
@@ -65,7 +65,7 @@ defmodule VisionCore.Detection.Live do
       do: {:noreply, state}
 
   def handle_cast({:detections, %Pair{} = pair, positioned}, state) do
-    detections = Enum.map(positioned, &describe(&1, pair, state.outline_segments))
+    detections = describe(positioned, pair, state.outline_segments)
     now_ms = System.monotonic_time(:millisecond)
 
     cond do
@@ -102,15 +102,15 @@ defmodule VisionCore.Detection.Live do
   defp due?(%{sent_at_ms: nil}, _now_ms), do: true
   defp due?(state, now_ms), do: now_ms - state.sent_at_ms >= state.interval_ms
 
-  defp describe(detection, %Pair{left_frame: frame} = pair, outline_segments) do
-    outline =
-      detection.box
-      |> Fusion.perimeter(outline_segments)
-      |> Enum.map(fn vertex ->
-        {x, y} = Fusion.raw_point(vertex, pair)
-        [x / frame.width, y / frame.height]
-      end)
-
-    %{label: detection.label, score: detection.score, distance_m: detection.z, outline: outline}
+  # Every outline mapped to the captured image in one pass.
+  defp describe(positioned, %Pair{left_frame: frame} = pair, outline_segments) do
+    positioned
+    |> Enum.flat_map(&Fusion.perimeter(&1.box, outline_segments))
+    |> Fusion.raw_points(pair)
+    |> Enum.map(fn {x, y} -> [x / frame.width, y / frame.height] end)
+    |> Enum.chunk_every(4 * outline_segments)
+    |> Enum.zip_with(positioned, fn outline, detection ->
+      %{label: detection.label, score: detection.score, distance_m: detection.z, outline: outline}
+    end)
   end
 end

@@ -169,8 +169,59 @@ defmodule VisionCore.Detection.FusionTest do
         assert_in_delta y, Nx.to_number(opencv_y[v][u]), 0.01
       end
     end
-
-    defp matrix(values),
-      do: values |> Nx.tensor(type: :f64) |> Nx.reshape({3, 3}) |> Evision.Mat.from_nx_2d()
   end
+
+  describe "raw_points/2" do
+    alias VisionCore.Camera.Frame
+    alias VisionCore.Ros2.CameraCalibration
+    alias VisionCore.Stereo.Pair
+
+    test "maps rectified vertices through the left calibration, then to the frame's scale" do
+      calibration =
+        CameraCalibration.load!(
+          Path.expand("../../support/calibration/distorted_left.yaml", __DIR__)
+        )
+
+      frame = %Frame{
+        label: "left",
+        width: calibration.width * 2,
+        height: calibration.height * 2,
+        capture_ns: 0,
+        grey: <<>>
+      }
+
+      pair = %Pair{
+        left_frame: frame,
+        right_frame: frame,
+        geometry: %{
+          width: calibration.width,
+          height: calibration.height,
+          left_calibration: calibration
+        }
+      }
+
+      vertices = [{10.0, 20.0}, {30.5, 40.0}]
+
+      assert Fusion.raw_points(vertices, pair) ==
+               Enum.map(vertices, fn vertex ->
+                 {x, y} = Fusion.raw_pixel(calibration, vertex)
+                 {x * 2, y * 2}
+               end)
+    end
+
+    test "only scales without a calibration" do
+      frame = %Frame{label: "left", width: 960, height: 540, capture_ns: 0, grey: <<>>}
+
+      pair = %Pair{
+        left_frame: frame,
+        right_frame: frame,
+        geometry: %{width: 480, height: 270, left_calibration: nil}
+      }
+
+      assert Fusion.raw_points([{120.0, 54.0}], pair) == [{240.0, 108.0}]
+    end
+  end
+
+  defp matrix(values),
+    do: values |> Nx.tensor(type: :f64) |> Nx.reshape({3, 3}) |> Evision.Mat.from_nx_2d()
 end
