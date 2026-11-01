@@ -40,7 +40,7 @@ export const useParameters = create((set, get) => ({
     replace({ ...previous, value })
     try {
       const accepted = await service.setParameter(id, value)
-      // Against the state shown now, which an overlapping change accepted meanwhile has updated.
+      // Against the state shown now: an overlapping change accepted meanwhile may have updated it.
       const delta = Number(accepted.state === 'unsaved') - Number(get().parameters[id]?.state === 'unsaved')
       replace(accepted)
       set((state) => ({ unsaved: Math.max(0, state.unsaved + delta), error: null, errorSource: null }))

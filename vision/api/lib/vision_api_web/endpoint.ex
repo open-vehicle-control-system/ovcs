@@ -16,7 +16,8 @@ defmodule VisionApiWeb.Endpoint do
   end
 
   plug Plug.RequestId
-  # The dashboard polls the parameters.
+
+  # The dashboard polls the parameters: logged, the polls would push everything else out of the log.
   plug Plug.Telemetry, event_prefix: [:phoenix, :endpoint], log: :debug
 
   plug Plug.Parsers,

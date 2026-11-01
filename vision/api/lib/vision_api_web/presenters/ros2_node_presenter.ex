@@ -6,6 +6,7 @@ defmodule VisionApiWeb.Ros2NodePresenter do
   """
   alias VisionApiWeb.JsonApi
 
+  @doc "The `ros2-nodes` resource of `link` (`VisionCore.Ros2.ZenohClient.link/0`), related to its `topics` and services."
   @spec present(map(), [map()]) :: map()
   def present(link, topics) do
     JsonApi.resource(

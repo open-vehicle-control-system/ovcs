@@ -9,4 +9,3 @@ erl_crash.dump
 
 # The dashboard build (`vision/dashboard`, `npm run build`).
 /priv/static/
-!/priv/static/.gitkeep

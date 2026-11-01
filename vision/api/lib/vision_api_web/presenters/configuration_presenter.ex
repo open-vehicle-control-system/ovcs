@@ -6,6 +6,7 @@ defmodule VisionApiWeb.ConfigurationPresenter do
   """
   alias VisionApiWeb.JsonApi
 
+  @doc "The `current` configuration, whose `composer` attribute is `settings` (`VisionCore.settings/0`)."
   @spec present(map()) :: map()
   def present(settings), do: JsonApi.resource("configurations", "current", %{composer: settings})
 end

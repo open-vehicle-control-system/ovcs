@@ -3,6 +3,7 @@ defmodule VisionApiWeb.ParameterPresenter do
   alias VisionApiWeb.JsonApi
   alias VisionCore.Parameters.{Group, Parameter}
 
+  @doc "The `parameters` resource of `parameter`, related to its `stage`, `controlledBy` and `greaterThan` parameters."
   @spec present(Parameter.t()) :: map()
   def present(%Parameter{} = parameter) do
     JsonApi.resource(

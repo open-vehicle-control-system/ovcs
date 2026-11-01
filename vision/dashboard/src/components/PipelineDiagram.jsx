@@ -7,7 +7,6 @@ import { useNavigation } from '../stores/navigation.js'
 import { computeTags } from '../compute.js'
 
 // A warning item keeps its red border when selected.
-
 const STATUS_STYLES = {
   ok: { border: 'border-transparent', dot: null },
   warning: { border: 'border-ovcs-error', dot: 'ovcs-status ovcs-status--error' },

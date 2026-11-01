@@ -5,6 +5,7 @@ defmodule VisionApiWeb.ParameterActionPresenter do
   """
   alias VisionApiWeb.JsonApi
 
+  @doc "The action resource of `type` and `id`, with the ids of the `parameters` it touched."
   @spec present(String.t(), String.t(), [String.t()]) :: map()
   def present(type, id, parameters), do: JsonApi.resource(type, id, %{parameters: parameters})
 end

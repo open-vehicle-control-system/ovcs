@@ -21,6 +21,7 @@ defmodule VisionApiWeb.StatusPresenter do
     offset_median_ms: :offsetMedianMs
   }
 
+  @doc "The `\"status\"` event's payload for `snapshot`."
   @spec present(VisionCore.Status.snapshot()) :: map()
   def present(snapshot) do
     %{

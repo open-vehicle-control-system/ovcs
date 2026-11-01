@@ -1,4 +1,4 @@
-import { cx } from './styles.js'
+import { classNames } from './styles.js'
 
 const TEXT_COLOURS = { ok: 'text-ovcs-ok-text', warn: 'text-ovcs-warn-text', error: 'text-ovcs-error-text' }
 
@@ -8,7 +8,7 @@ const TEXT_COLOURS = { ok: 'text-ovcs-ok-text', warn: 'text-ovcs-warn-text', err
  */
 export default function OvcsStatus({ tone = 'muted', className, children, ...props }) {
   return (
-    <span className={cx('ovcs-status', tone !== 'muted' && `ovcs-status--${tone}`, TEXT_COLOURS[tone], className)} {...props}>
+    <span className={classNames('ovcs-status', tone !== 'muted' && `ovcs-status--${tone}`, TEXT_COLOURS[tone], className)} {...props}>
       {children}
     </span>
   )

@@ -1,10 +1,12 @@
 import { OvcsCard } from '@ovcs/ui/react'
 import PageFrame from './PageFrame.jsx'
+import { orderedGroups, useParameters } from '../stores/parameters.js'
 
-const RESOURCES = [
+// One parameter's path is shown, and linked, with the first of the unit's parameters once they are loaded.
+const resources = (parameterId) => [
   ['GET', 'stages?include=parameters', 'The pipeline stages and components, each with its role and parameters, and where each stage runs'],
   ['GET', 'parameters', 'Every parameter: value type, value, default, saved value, state and constraint'],
-  ['GET', 'parameters/stereo.disparity.p1', 'One parameter'],
+  ['GET', `parameters/${parameterId ?? '{id}'}`, 'One parameter'],
   ['PATCH', 'parameters/{id}', 'Changes a parameter, an unsaved change until saved'],
   ['POST', 'parameter-saves', 'Saves every unsaved change, so it outlives a reboot'],
   ['POST', 'parameter-discards', 'Drops every unsaved change'],
@@ -24,6 +26,8 @@ const base = () => `${import.meta.env.VITE_BASE_URL || window.location.origin}/a
 
 /** How other programs reach the unit: its JSON:API resources and its live channels. */
 export default function ApiPage() {
+  const parameterId = useParameters((state) => orderedGroups(state).flatMap((group) => group.parameterIds)[0])
+
   return (
     <PageFrame title="API" summary="How other programs reach this unit, besides ROS 2.">
       <OvcsCard className="flex flex-col gap-3">
@@ -41,7 +45,7 @@ export default function ApiPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-ovcs-border">
-            {RESOURCES.map(([method, path, summary]) => (
+            {resources(parameterId).map(([method, path, summary]) => (
               <tr key={`${method} ${path}`}>
                 <td className="w-16 py-2 pr-3 font-mono text-xs font-semibold">{method}</td>
                 <td className="py-2 pr-3 font-mono text-xs">

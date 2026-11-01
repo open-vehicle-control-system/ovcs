@@ -10,12 +10,9 @@ import { OvcsCard, OvcsHeader, OvcsSaveBar, focusClass as FOCUS } from '@ovcs/ui
 import { dashboardSocket } from './services/socket.js'
 import { useStatus } from './stores/status.js'
 import { flowGroups, useParameters } from './stores/parameters.js'
-import { useNavigation, writeUrl } from './stores/navigation.js'
+import { boxFromUrl, useNavigation, writeUrl } from './stores/navigation.js'
 
-const BOX_PARAM = 'box'
-
-// On the pipeline, selects the box named in the URL once the groups are known, else the first of the flow; keeps the
-// page and the box in the URL.
+// Keeps the page and the box in the URL; on the pipeline, selects the URL's box once known, else the flow's first.
 function useNavigationInUrl() {
   const page = useNavigation((state) => state.page)
   const loaded = useParameters((state) => state.groups.length > 0)
@@ -24,7 +21,7 @@ function useNavigationInUrl() {
   useEffect(() => {
     if (page !== 'pipeline' || !loaded || selectedGroupId != null) return
     const state = useParameters.getState()
-    const wanted = new URLSearchParams(window.location.search).get(BOX_PARAM)
+    const wanted = boxFromUrl()
     const known = state.groups.some((group) => group.id === wanted)
     const id = known ? wanted : flowGroups(state)[0]?.id
     if (id != null) state.select(id)

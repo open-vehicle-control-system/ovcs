@@ -27,8 +27,6 @@ export default function DetectionOverlay({ detections }) {
       className="pointer-events-none absolute inset-0 h-full w-full text-ovcs-accent"
     >
       {detections.map((detection, index) => {
-        // An outline mapped entirely off the image has nothing to draw or label.
-        if (detection.outline.length === 0) return null
         const points = detection.outline.map(([x, y]) => `${round(x * width)},${round(y * height)}`).join(' ')
         const left = Math.min(...detection.outline.map(([x]) => x))
         const top = Math.min(...detection.outline.map(([, y]) => y))

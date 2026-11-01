@@ -1,9 +1,9 @@
 import { HINTS } from './hints.js'
 
 /**
- * What the dashboard shows of the status snapshot: `{ id, title, value, healthy, tone, detail }` items, `tone`
- * overriding the health colour, and
- * each preview's figures as `{ label, value, tone }`, `tone` set on the one that tells the stream's health.
+ * What the dashboard shows of the status snapshot: `{ id, title, value, healthy, tone, detail, hint }` items, `tone`
+ * overriding the health colour, and each preview's figures as `{ label, value, tone, hint }`, `tone` set on the one
+ * that tells the stream's health.
  */
 
 export const formatNumber = (number, decimals = 1) => (number == null ? '–' : Number(number).toFixed(decimals))

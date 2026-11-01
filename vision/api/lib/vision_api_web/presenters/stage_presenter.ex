@@ -7,6 +7,7 @@ defmodule VisionApiWeb.StagePresenter do
   alias VisionApiWeb.JsonApi
   alias VisionCore.Parameters.Group
 
+  @doc "The `stages` resource of `group`, related to its parameters."
   @spec present(Group.t()) :: map()
   def present(%Group{} = group) do
     JsonApi.resource(

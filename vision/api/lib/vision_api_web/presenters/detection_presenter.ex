@@ -6,6 +6,7 @@ defmodule VisionApiWeb.DetectionPresenter do
   height.
   """
 
+  @doc "One of `VisionCore.Detection.Live`'s detections, as the `\"detections\"` event lists it."
   @spec present(map()) :: map()
   def present(detection) do
     %{

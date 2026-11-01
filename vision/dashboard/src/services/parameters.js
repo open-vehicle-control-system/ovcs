@@ -2,7 +2,10 @@ const MEDIA_TYPE = 'application/vnd.api+json'
 
 const url = (path) => `${import.meta.env.VITE_BASE_URL}/api/${path}`
 
-/** Sends a JSON:API request and answers its document; throws the first error's detail, or why there is none. */
+/**
+ * Sends a JSON:API request and answers its document; throws the first error's detail, else the status, or that the
+ * unit cannot be reached.
+ */
 export async function request(path, { method = 'GET', body } = {}) {
   const response = await fetch(url(path), {
     method,

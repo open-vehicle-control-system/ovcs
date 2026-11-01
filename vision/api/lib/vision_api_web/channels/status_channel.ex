@@ -1,8 +1,9 @@
 defmodule VisionApiWeb.StatusChannel do
   @moduledoc """
   Pushes `VisionCore.Status` snapshots as `"status"`, presented by
-  `VisionApiWeb.StatusPresenter`: one on join, then one a second. Stops when `VisionCore.Status` restarts, and refuses the
-  join while it is not running; see `VisionApiWeb.SourceMonitor`.
+  `VisionApiWeb.StatusPresenter`: one on join, then one a second. Stops
+  when `VisionCore.Status` restarts, and refuses the join while it is
+  not running; see `VisionApiWeb.SourceMonitor`.
   """
   use VisionApiWeb, :channel
 

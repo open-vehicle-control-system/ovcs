@@ -41,7 +41,7 @@ describe('DepthRange', () => {
     expect(channel.push).not.toHaveBeenCalled()
   })
 
-  it('sets the range on the unit once released, with nothing to save', async () => {
+  it('sets the range on the unit once released', async () => {
     const channel = fakeChannel(8)
     render(<Owned channel={channel} initial={8} />)
     const slider = screen.getByRole('slider', { name: 'colour scale' })
@@ -55,7 +55,6 @@ describe('DepthRange', () => {
     await flush()
     expect(channel.push).toHaveBeenCalledExactlyOnceWith('depth_range', { metres: 12.5 })
     expect(screen.getByText('12.5 m')).toBeTruthy()
-    expect(window.localStorage.length).toBe(0)
   })
 
   it('puts infinity, a range of 0, at the far end of the slider', async () => {

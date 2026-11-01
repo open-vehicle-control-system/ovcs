@@ -41,7 +41,8 @@ function useChangedValues(groupId, members) {
       committed.current.delete(parameter.id)
       return !own && parameter.state !== 'automatic'
     })
-    if (brought.length > 0) setChanged(brought.map((parameter) => `${parameter.name} ${formatValue(parameter.value)}`).join(', '))
+    if (brought.length === 0) return
+    setChanged(brought.map((parameter) => `${parameter.name} ${formatValue(parameter.value)}`).join(', '))
   }, [groupId, members])
 
   return { changed, commit: (id, value) => committed.current.set(id, value) }
