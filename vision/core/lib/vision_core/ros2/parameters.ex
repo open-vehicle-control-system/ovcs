@@ -54,9 +54,21 @@ defmodule VisionCore.Ros2.Parameters do
 
   def handle_info(_message, state), do: {:noreply, state}
 
-  @doc false
-  @spec respond(String.t(), binary(), GenServer.server()) :: binary()
-  def respond("list_parameters", _payload, registry) do
+  @doc """
+  The response to a `service` request. A payload that does not decode is
+  logged and answered as a request for nothing, so a malformed request
+  cannot restart this process and the components started after it.
+  """
+  @spec respond(String.t(), binary() | nil, GenServer.server()) :: binary()
+  def respond(service, payload, registry) do
+    answer(service, payload, registry)
+  rescue
+    error ->
+      Logger.warning("#{__MODULE__}: #{service} request not decoded: #{Exception.message(error)}")
+      empty_response(service)
+  end
+
+  defp answer("list_parameters", _payload, registry) do
     registry
     |> call(&VisionCore.Parameters.groups/1, [])
     |> Enum.flat_map(& &1.parameters)
@@ -65,14 +77,14 @@ defmodule VisionCore.Ros2.Parameters do
     |> Codec.encode_list()
   end
 
-  def respond("get_parameters", payload, registry) do
+  defp answer("get_parameters", payload, registry) do
     payload
     |> Codec.decode_names()
     |> Enum.map(&(registry |> find(&1) |> ros_value()))
     |> Codec.encode_values()
   end
 
-  def respond("get_parameter_types", payload, registry) do
+  defp answer("get_parameter_types", payload, registry) do
     payload
     |> Codec.decode_names()
     |> Enum.map(fn name ->
@@ -84,7 +96,7 @@ defmodule VisionCore.Ros2.Parameters do
     |> Codec.encode_types()
   end
 
-  def respond("describe_parameters", payload, registry) do
+  defp answer("describe_parameters", payload, registry) do
     payload
     |> Codec.decode_names()
     |> Enum.map(fn name ->
@@ -96,7 +108,7 @@ defmodule VisionCore.Ros2.Parameters do
     |> Codec.encode_descriptors()
   end
 
-  def respond("set_parameters", payload, registry) do
+  defp answer("set_parameters", payload, registry) do
     payload
     |> Codec.decode_parameters()
     |> Enum.map(fn {name, value} ->
@@ -113,7 +125,16 @@ defmodule VisionCore.Ros2.Parameters do
     |> Codec.encode_results()
   end
 
-  def respond("set_parameters_atomically", _payload, _registry),
+  defp answer("set_parameters_atomically", _payload, _registry), do: atomic_refusal()
+
+  defp empty_response("list_parameters"), do: Codec.encode_list([])
+  defp empty_response("get_parameters"), do: Codec.encode_values([])
+  defp empty_response("get_parameter_types"), do: Codec.encode_types([])
+  defp empty_response("describe_parameters"), do: Codec.encode_descriptors([])
+  defp empty_response("set_parameters"), do: Codec.encode_results([])
+  defp empty_response("set_parameters_atomically"), do: atomic_refusal()
+
+  defp atomic_refusal,
     do:
       Codec.encode_result(
         {:error, "atomic sets are not supported; set the parameters one by one"}

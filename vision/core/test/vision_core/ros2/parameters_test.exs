@@ -217,6 +217,23 @@ defmodule VisionCore.Ros2.ParametersTest do
       %{registry: registry, gain: gain, exposure: exposure}
     end
 
+    test "a request whose payload does not decode is logged and answered as one for nothing",
+         %{registry: registry} do
+      log =
+        ExUnit.CaptureLog.capture_log(fn ->
+          assert Parameters.respond("get_parameters", <<1, 0>>, registry) ==
+                   Codec.encode_values([])
+
+          assert Parameters.respond("set_parameters", nil, registry) == Codec.encode_results([])
+
+          assert Parameters.respond("describe_parameters", <<9::little-32>>, registry) ==
+                   Codec.encode_descriptors([])
+        end)
+
+      assert log =~ "get_parameters request not decoded"
+      assert log =~ "set_parameters request not decoded"
+    end
+
     @tag :capture_log
     test "a set request is applied and saved", %{registry: registry, gain: gain} do
       payload =
