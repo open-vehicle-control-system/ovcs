@@ -14,7 +14,8 @@ defmodule VisionCore.Parameters do
   fits the parameter's type, constraint or relation, or of a parameter its
   group no longer declares or now fixes in the build, is dropped from the
   store with a log line; one the owner fails to set is kept for the next
-  declaration. Values set since the last `save/1` are applied after them.
+  declaration, and left out of `save/1` until it is applied or the parameter
+  is set. Values set since the last `save/1` are applied after them.
   Both are applied again when a restarted owner declares its groups.
   A parameter whose value cannot be read is never unsaved.
 
@@ -143,7 +144,9 @@ defmodule VisionCore.Parameters do
        groups: %{},
        owners: %{},
        defaults: %{},
-       changed: %{}
+       changed: %{},
+       # Ids of saved values their owner failed to set.
+       unapplied_saved: MapSet.new()
      }}
   end
 
@@ -214,7 +217,11 @@ defmodule VisionCore.Parameters do
   end
 
   def handle_call(:save, _from, state) do
-    parameters = Enum.reject(all_parameters(state), &(&1.applies == :build))
+    parameters =
+      Enum.reject(
+        all_parameters(state),
+        &(&1.applies == :build or MapSet.member?(state.unapplied_saved, &1.id))
+      )
 
     case store_values(state, parameters) do
       {:ok, ids, state} -> {:reply, {:ok, ids}, state}
@@ -233,8 +240,8 @@ defmodule VisionCore.Parameters do
 
     log_refused(refused, "not set back")
     kept = for {declared, _value, _reason} <- refused, do: declared.id
-    changed = Map.drop(state.changed, Map.keys(applied) -- kept)
-    {:reply, {:ok, set_ids}, %{state | changed: changed}}
+    state = %{state | changed: Map.take(state.changed, kept)} |> mark_applied(Map.keys(applied))
+    {:reply, {:ok, set_ids}, state}
   end
 
   def handle_call({:reset, scope}, _from, state) do
@@ -250,7 +257,10 @@ defmodule VisionCore.Parameters do
 
         {set_ids, applied, refused} = apply_values(state, parameters, default, &apply_value/4)
         log_refused(refused, "not reset")
-        state = %{state | changed: Map.merge(state.changed, applied)}
+
+        state =
+          %{state | changed: Map.merge(state.changed, applied)} |> mark_applied(Map.keys(applied))
+
         {:reply, reset_reply(set_ids, refused), state}
 
       {:error, reason} ->
@@ -260,7 +270,7 @@ defmodule VisionCore.Parameters do
 
   def handle_call({:forget, id}, _from, state) do
     state = delete_saved(state, Enum.filter([id], &Map.has_key?(state.saved, &1)))
-    {:reply, :ok, %{state | changed: Map.delete(state.changed, id)}}
+    {:reply, :ok, %{state | changed: Map.delete(state.changed, id)} |> mark_applied([id])}
   end
 
   @impl GenServer
@@ -277,6 +287,13 @@ defmodule VisionCore.Parameters do
       for({declared, value, {:owner, reason}} <- not_set, do: {declared, value, reason}),
       "kept, not applied"
     )
+
+    unapplied_saved =
+      state.unapplied_saved
+      |> MapSet.difference(MapSet.new(declared, & &1.id))
+      |> MapSet.union(MapSet.new(not_set, fn {parameter, _value, _reason} -> parameter.id end))
+
+    state = %{state | unapplied_saved: unapplied_saved}
 
     state =
       drop_saved(
@@ -309,6 +326,7 @@ defmodule VisionCore.Parameters do
         case apply_value(state, declared, value, values) do
           {:ok, applied} ->
             state = %{state | changed: Map.merge(state.changed, applied)}
+            state = mark_applied(state, Map.keys(applied))
             {parameter, state} = read_parameter(state, declared)
             {{:ok, parameter}, state}
 
@@ -321,6 +339,10 @@ defmodule VisionCore.Parameters do
 
   defp log_refused_set(id, value, reason),
     do: Logger.info("vision parameter #{id} = #{inspect(value)} refused: #{reason}")
+
+  # A parameter set again no longer waits for its saved value.
+  defp mark_applied(state, ids),
+    do: %{state | unapplied_saved: MapSet.difference(state.unapplied_saved, MapSet.new(ids))}
 
   # The values applied by id, or the first refusal.
   defp apply_value(state, declared, value, values) do

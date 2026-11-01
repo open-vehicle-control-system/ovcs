@@ -227,6 +227,19 @@ defmodule VisionCore.ParametersTest do
     assert ["preview"] = Enum.map(Parameters.groups(server), & &1.id)
   end
 
+  test "a discard also drops the changes of an owner that is down", %{server: server} do
+    {owner, _agent} = start_owner(server, &match_groups/1)
+    assert {:ok, _parameter} = Parameters.set(server, "stereo.disparity.p1", 12)
+    assert_receive {:set, "p1", 12}
+    stop_owner(owner)
+
+    assert {:ok, []} = Parameters.discard(server)
+
+    start_owner(server, &match_groups/1)
+    refute_receive {:set, "p1", 12}
+    assert {:ok, %{value: 8, state: :builtin}} = Parameters.get(server, "stereo.disparity.p1")
+  end
+
   test "a re-declared group gets back the values set through the registry", %{server: server} do
     {owner, _agent} = start_owner(server, &match_groups/1)
     assert {:ok, _parameter} = Parameters.set(server, "stereo.disparity.p1", 12)
@@ -372,6 +385,14 @@ defmodule VisionCore.ParametersTest do
       refute log =~ "dropped"
       assert MemoryStore.rows() == %{"failing.refuses" => 3}
       assert {:ok, %{value: 0}} = Parameters.get(server, "failing.refuses")
+    end
+
+    @tag saved: %{"failing.refuses" => 3}
+    test "a saved value its owner failed to set survives a save", %{server: server} do
+      capture_log(fn -> start_owner(server, &failing_groups/1) end)
+
+      assert {:ok, _ids} = Parameters.save(server)
+      assert MemoryStore.rows() == %{"failing.refuses" => 3}
     end
 
     @tag saved: %{"stereo.disparity.p3" => 1, "stereo.disparity.p1" => 10}
