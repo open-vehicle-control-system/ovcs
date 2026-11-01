@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/usr/bin/env bash
 
 #
 # Upload new firmware to a device running ssh_subsystem_fwup
@@ -29,12 +29,16 @@
 # https://github.com/nerves-project/ssh_subsystem_fwup/blob/main/priv/templates/script.upload.eex
 #
 
-set -e
+set -euo pipefail
 
-DESTINATION=$1
-FILENAME="$2"
+DESTINATION=${1:-}
+FILENAME=${2:-}
+# A firmware path given on the command line is relative to where it was run.
+[ -z "$FILENAME" ] || FILENAME=$(realpath "$FILENAME")
+cd "$(dirname "$0")"
 
 : "${MIX_TARGET:=rpi5}"
+: "${MIX_ENV:=dev}"
 export MIX_TARGET
 
 help() {
@@ -51,8 +55,6 @@ help() {
 
 [ -n "$DESTINATION" ] || DESTINATION=nerves.local
 if [ -z "$FILENAME" ]; then
-  [ -n "$MIX_TARGET" ] || MIX_TARGET=rpi0
-  [ -n "$MIX_ENV" ] || MIX_ENV=dev
   FIRMWARE_PATH="./_build/${MIX_TARGET}_${MIX_ENV}/nerves/images"
   if [ ! -d "$FIRMWARE_PATH" ]; then
       echo "Can't find the build products."
@@ -74,17 +76,20 @@ if [ -z "$FILENAME" ]; then
       exit 1
   fi
 
-  FILENAME=$(ls "$FIRMWARE_PATH/"*.fw 2> /dev/null | head -n 1)
+  FILENAME=$(ls "$FIRMWARE_PATH/"*.fw 2> /dev/null | head -n 1 || true)
   [ -n "$FILENAME" ] || (echo "Error: error determining firmware bundle."; help)
 fi
 
 [ -f "$FILENAME" ] || (echo "Error: can't find '$FILENAME'"; help)
 
 FIRMWARE_METADATA=$(fwup -m -i "$FILENAME" || echo "meta-product=Error reading metadata!")
-FIRMWARE_PRODUCT=$(echo "$FIRMWARE_METADATA" | grep -E "^meta-product=" -m 1 2>/dev/null | cut -d '=' -f 2- | tr -d '"')
-FIRMWARE_VERSION=$(echo "$FIRMWARE_METADATA" | grep -E "^meta-version=" -m 1 2>/dev/null | cut -d '=' -f 2- | tr -d '"')
-FIRMWARE_PLATFORM=$(echo "$FIRMWARE_METADATA" | grep -E "^meta-platform=" -m 1 2>/dev/null | cut -d '=' -f 2- | tr -d '"')
-FIRMWARE_UUID=$(echo "$FIRMWARE_METADATA" | grep -E "^meta-uuid=" -m 1 2>/dev/null | cut -d '=' -f 2- | tr -d '"')
+metadata() {
+  echo "$FIRMWARE_METADATA" | grep -E "^meta-$1=" -m 1 2>/dev/null | cut -d '=' -f 2- | tr -d '"' || true
+}
+FIRMWARE_PRODUCT=$(metadata product)
+FIRMWARE_VERSION=$(metadata version)
+FIRMWARE_PLATFORM=$(metadata platform)
+FIRMWARE_UUID=$(metadata uuid)
 
 echo "Path: $FILENAME"
 echo "Product: $FIRMWARE_PRODUCT $FIRMWARE_VERSION"
@@ -93,4 +98,6 @@ echo "Platform: $FIRMWARE_PLATFORM"
 echo
 echo "Uploading to $DESTINATION..."
 
-cat "$FILENAME" | ssh -s $SSH_OPTIONS $DESTINATION fwup
+# SSH_OPTIONS holds several options: split on purpose.
+# shellcheck disable=SC2086
+ssh -s ${SSH_OPTIONS:-} "$DESTINATION" fwup < "$FILENAME"

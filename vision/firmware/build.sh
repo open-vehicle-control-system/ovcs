@@ -3,7 +3,7 @@
 # Build the vision firmware for the vehicle named by $VEHICLE.
 #
 # Dual-mode:
-#   * Nerves target (rpi5) — builds the dashboard into vision/api's
+#   * Nerves target (rpi5, okdo_c100) — builds the dashboard into vision/api's
 #     priv/static, then a .fw image under _build/<target>_dev/nerves/images/.
 #     Used by `./ovcs build <vehicle> vision` / `burn` / `upload`.
 #   * MIX_TARGET=host — compiles the firmware app for the local machine,
@@ -16,7 +16,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 : "${MIX_TARGET:=rpi5}"
-: "${VEHICLE:?VEHICLE env var is required (e.g. OvcsMini)}"
+: "${VEHICLE:?VEHICLE env var is required: the top-level module name of the vehicle package}"
 export MIX_TARGET VEHICLE
 
 step() { printf "\n\033[1;36m==> %s\033[0m\n" "$*"; }

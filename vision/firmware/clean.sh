@@ -1,7 +1,7 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Remove build artifacts that commonly get stale after switching VEHICLE or
 # upgrading the toolchain or Nerves system. Idempotent.
-set -e
+set -euo pipefail
 cd "$(dirname "$0")"
 
 echo "→ vision/firmware"

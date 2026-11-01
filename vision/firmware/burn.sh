@@ -10,7 +10,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 : "${MIX_TARGET:=rpi5}"
-: "${VEHICLE:?VEHICLE env var is required (e.g. OvcsMini)}"
+: "${VEHICLE:?VEHICLE env var is required: the top-level module name of the vehicle package}"
 export MIX_TARGET VEHICLE
 
 step() { printf "\n\033[1;36m==> %s\033[0m\n" "$*"; }
