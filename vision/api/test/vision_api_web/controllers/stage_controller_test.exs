@@ -151,7 +151,7 @@ defmodule VisionApiWeb.StageControllerTest do
     assert computes["test.camera"] == nil
 
     assert computes["test.match"] == %{
-             "runs_on" => "gpu",
+             "runsOn" => "gpu",
              "implementation" => "nx",
              "backend" => "vulkan"
            }

@@ -5,5 +5,5 @@ const BACKENDS = { vulkan: 'Vulkan', llvm_cpu: 'LLVM', exla: 'EXLA', evaluator: 
 /** A stage's `compute` as tag labels: where it runs, what it is written in and, for Nx, what compiles it. */
 export function computeTags(compute) {
   if (!compute) return []
-  return [RUNS_ON[compute.runs_on], IMPLEMENTATIONS[compute.implementation], BACKENDS[compute.backend]].filter(Boolean)
+  return [RUNS_ON[compute.runsOn], IMPLEMENTATIONS[compute.implementation], BACKENDS[compute.backend]].filter(Boolean)
 }

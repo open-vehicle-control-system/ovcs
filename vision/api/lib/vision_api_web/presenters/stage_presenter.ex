@@ -18,7 +18,7 @@ defmodule VisionApiWeb.StagePresenter do
         role: role(group),
         position: group.position,
         status: status(group.status),
-        compute: group.compute
+        compute: compute(group.compute)
       },
       %{parameters: JsonApi.to_many("parameters", Enum.map(group.parameters, & &1.id))}
     )
@@ -27,6 +27,15 @@ defmodule VisionApiWeb.StagePresenter do
   defp role(%Group{placement: :side}), do: "branch"
   defp role(%Group{kind: :component}), do: "source"
   defp role(%Group{kind: :stage}), do: "step"
+
+  defp compute(nil), do: nil
+
+  defp compute(compute),
+    do: %{
+      runsOn: compute.runs_on,
+      implementation: compute.implementation,
+      backend: compute.backend
+    }
 
   defp status(nil), do: nil
   defp status({level, detail}), do: %{level: level, detail: detail}

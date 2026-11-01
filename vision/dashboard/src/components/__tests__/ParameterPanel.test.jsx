@@ -34,7 +34,7 @@ const parameters = {
 
 const groups = [
   { id: 'cameras', name: 'Cameras', summary: 'Capture both images', role: 'source', position: 1, status: null, parameterIds: ['cameras.auto_exposure', 'cameras.exposure_us'] },
-  { id: 'stereo.match', name: 'Match', summary: 'Find each pixel in the other image', role: 'step', position: 3, status: null, compute: { runs_on: 'gpu', implementation: 'nx', backend: 'vulkan' }, parameterIds: ['stereo.match.p1', 'stereo.match.p2', 'stereo.match.uniqueness'] }
+  { id: 'stereo.match', name: 'Match', summary: 'Find each pixel in the other image', role: 'step', position: 3, status: null, compute: { runsOn: 'gpu', implementation: 'nx', backend: 'vulkan' }, parameterIds: ['stereo.match.p1', 'stereo.match.p2', 'stereo.match.uniqueness'] }
 ]
 
 const actions = () => ({ set: vi.fn(), reset: vi.fn(), beginEdit: vi.fn(), endEdit: vi.fn() })
@@ -63,7 +63,7 @@ describe('ParameterPanel', () => {
 
   it('names a native stage Rust on the CPU, and tags nothing without compute', () => {
     useParameters.setState({
-      groups: [{ ...groups[1], compute: { runs_on: 'cpu', implementation: 'rust', backend: null } }, groups[0]]
+      groups: [{ ...groups[1], compute: { runsOn: 'cpu', implementation: 'rust', backend: null } }, groups[0]]
     })
     const { unmount } = render(<ParameterPanel groupId="stereo.match" />)
     const tags = screen.getByRole('list', { name: 'Runs on' })

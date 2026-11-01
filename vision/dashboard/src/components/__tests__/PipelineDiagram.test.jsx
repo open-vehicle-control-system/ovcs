@@ -19,7 +19,7 @@ const groups = [
   }),
   group('cameras', 'Cameras', 1, { role: 'source' }),
   group('stereo.temporal', 'Temporal', 4, { status: { level: 'off', detail: 'switched off' } }),
-  group('stereo.match', 'Match', 2, { compute: { runs_on: 'gpu', implementation: 'nx', backend: 'vulkan' } })
+  group('stereo.match', 'Match', 2, { compute: { runsOn: 'gpu', implementation: 'nx', backend: 'vulkan' } })
 ]
 
 const parameters = {
