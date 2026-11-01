@@ -73,6 +73,10 @@ defmodule VisionCore.Status do
   @spec subscribe() :: :ok
   def subscribe, do: GenServer.call(__MODULE__, {:subscribe, self()})
 
+  @doc "The row alignment of the last tick, without the snapshot's calls."
+  @spec alignment() :: map() | nil
+  def alignment, do: GenServer.call(__MODULE__, :alignment)
+
   @doc "Stops the caller's snapshots; one sent before may still arrive."
   @spec unsubscribe() :: :ok
   def unsubscribe, do: GenServer.call(__MODULE__, {:unsubscribe, self()})
@@ -115,6 +119,8 @@ defmodule VisionCore.Status do
     send(pid, {:vision_status, build_snapshot(state)})
     {:reply, :ok, %{state | subscribers: subscribers}}
   end
+
+  def handle_call(:alignment, _from, state), do: {:reply, state.alignment, state}
 
   def handle_call({:unsubscribe, pid}, _from, state) do
     {monitor_reference, subscribers} = Map.pop(state.subscribers, pid)

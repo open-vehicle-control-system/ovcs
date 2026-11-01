@@ -111,6 +111,17 @@ defmodule VisionCore.StatusTest do
     assert bands == [1.5, 1.5, 1.5, 1.5]
   end
 
+  test "answers the last tick's alignment without a snapshot" do
+    start_supervised!({Status, config: config([]), tick_ms: 400})
+    assert Status.alignment() == nil
+
+    alignment = %{offset_rows: 0.4, band_offset_rows: [0.4, 0.4, 0.4, 0.4]}
+    GenServer.cast(Status, {:stereo_pair, %{pair() | alignment: alignment}})
+    Process.sleep(600)
+
+    assert %{offset_rows: 0.4} = Status.alignment()
+  end
+
   test "averages each band over the pairs that read it" do
     start_supervised!({Status, config: config([]), tick_ms: 200})
     :ok = Status.subscribe()

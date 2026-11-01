@@ -66,7 +66,7 @@ defmodule VisionCore.Stereo.ParametersTest do
     end
   end
 
-  # Answers `VisionCore.Status.snapshot/0` with the snapshot it holds.
+  # Answers `VisionCore.Status.alignment/0` from the snapshot it holds.
   defmodule Status do
     use GenServer
 
@@ -75,7 +75,7 @@ defmodule VisionCore.Stereo.ParametersTest do
 
     def put(snapshot), do: GenServer.call(VisionCore.Status, {:put, snapshot})
     def init(snapshot), do: {:ok, snapshot}
-    def handle_call(:snapshot, _from, snapshot), do: {:reply, snapshot, snapshot}
+    def handle_call(:alignment, _from, snapshot), do: {:reply, snapshot.alignment, snapshot}
     def handle_call({:put, snapshot}, _from, _snapshot), do: {:reply, :ok, snapshot}
   end
 
@@ -530,16 +530,16 @@ defmodule VisionCore.Stereo.ParametersTest do
     assert %{applies: :build, constraint: %{kind: :choices, values: [64, 128]}} =
              parameter(disparity, "num_disparities")
 
-    assert %{applies: :build} = paths = parameter(disparity, "paths")
-    assert paths.get.() == 8
+    assert %{applies: :build} = parameter(disparity, "paths")
+    assert disparity.values.()["paths"] == 8
     assert parameter(group("stereo.median_filter"), "median").constraint == %{kind: :bool}
   end
 
   test "a stage setting changed through its parameter reaches the pipeline" do
-    p1 = parameter(group("stereo.disparity"), "p1")
-    assert :ok = p1.set.(12)
+    disparity = group("stereo.disparity")
+    assert :ok = parameter(disparity, "p1").set.(12)
     assert_received {:set_options, :disparity, [p1: 12]}
-    assert p1.get.() == 12
+    assert disparity.values.()["p1"] == 12
   end
 
   test "right_row_offset is set by the alignment correction while it runs, live otherwise" do

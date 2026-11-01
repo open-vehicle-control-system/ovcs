@@ -7,7 +7,8 @@ defmodule VisionCore.Parameters do
   The process owning a component or stage declares its groups with
   `declare/2`, giving each parameter a `get` and a `set` function run in this
   process. `get` is read on every listing, so the value listed is the one in
-  use. A parameter with `applies: {:auto, controller}` is set by that
+  use. A group may give its `values` instead, read once per listing for its
+  parameters without a `get`. A parameter with `applies: {:auto, controller}` is set by that
   controller's automatic mode while the controller is `true`.
 
   Saved values are applied when their group is declared. One that no longer
@@ -40,7 +41,7 @@ defmodule VisionCore.Parameters do
   @type declaration :: %{
           required(:name) => String.t(),
           required(:type) => type(),
-          required(:get) => (-> term()),
+          optional(:get) => (-> term()),
           optional(:set) => (term() -> :ok | {:error, String.t()}),
           optional(:constraint) => constraint(),
           optional(:applies) => applies(),
@@ -57,6 +58,7 @@ defmodule VisionCore.Parameters do
           required(:position) => non_neg_integer(),
           optional(:status) => (-> {:ok | :warning | :off, String.t()} | nil),
           optional(:compute) => Group.compute(),
+          optional(:values) => (-> %{String.t() => term()}),
           required(:parameters) => [declaration()]
         }
 
@@ -610,7 +612,9 @@ defmodule VisionCore.Parameters do
   defp release_controlled(_state, _declared, _value, _values), do: {:ok, %{}}
 
   defp release_one(controlled, {:ok, released}) do
-    case read(controlled) do
+    {value, _group_values} = read(controlled, %{})
+
+    case value do
       nil ->
         {:cont, {:ok, released}}
 
@@ -644,8 +648,17 @@ defmodule VisionCore.Parameters do
     _kind, reason -> {:error, "not applied: #{inspect(reason)}"}
   end
 
-  defp read(declared) do
-    declared.get.()
+  defp read(nil, group_values), do: {nil, group_values}
+
+  defp read(%{get: get}, group_values), do: {guarded(get), group_values}
+
+  defp read(%{group: group, values: values} = declared, group_values) do
+    group_values = Map.put_new_lazy(group_values, group, fn -> guarded(values) || %{} end)
+    {Map.get(group_values[group], declared.name), group_values}
+  end
+
+  defp guarded(read) do
+    read.()
   rescue
     _error -> nil
   catch
@@ -664,16 +677,19 @@ defmodule VisionCore.Parameters do
 
   # Values by id; the first value read of each parameter is its default.
   defp read_values(state, ids) do
-    Enum.reduce(Enum.uniq(ids), {%{}, state}, fn id, {values, state} ->
-      value = if declared = find(state, id), do: read(declared)
+    {values, _group_values, state} =
+      Enum.reduce(Enum.uniq(ids), {%{}, %{}, state}, fn id, {values, group_values, state} ->
+        {value, group_values} = read(find(state, id), group_values)
 
-      state =
-        if is_nil(value) or Map.has_key?(state.defaults, id),
-          do: state,
-          else: put_in(state.defaults[id], value)
+        state =
+          if is_nil(value) or Map.has_key?(state.defaults, id),
+            do: state,
+            else: put_in(state.defaults[id], value)
 
-      {Map.put(values, id, value), state}
-    end)
+        {Map.put(values, id, value), group_values, state}
+      end)
+
+    {values, state}
   end
 
   defp read_parameter(state, declared) do
@@ -756,9 +772,13 @@ defmodule VisionCore.Parameters do
     group
     |> Map.put_new(:status, nil)
     |> Map.update!(:parameters, fn parameters ->
-      Enum.map(parameters, &normalize_parameter(&1, group.id))
+      Enum.map(parameters, &(&1 |> normalize_parameter(group.id) |> put_group_values(group)))
     end)
   end
+
+  # A parameter without a `get` reads its value from its group's `values`.
+  defp put_group_values(%{get: _get} = declared, _group), do: declared
+  defp put_group_values(declared, %{values: values}), do: Map.put(declared, :values, values)
 
   defp normalize_parameter(declared, group_id) do
     declared

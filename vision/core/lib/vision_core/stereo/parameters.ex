@@ -292,6 +292,7 @@ defmodule VisionCore.Stereo.Parameters do
       kind: :stage,
       placement: :flow,
       position: position,
+      values: fn -> stage_values(pipeline, stage.stage) end,
       parameters:
         leading_parameters(stage.stage, correction?) ++
           parameters ++ extra_parameters(stage.stage, opts)
@@ -304,7 +305,6 @@ defmodule VisionCore.Stereo.Parameters do
     %{
       name: Atom.to_string(key),
       type: spec.type,
-      get: fn -> stage_value(pipeline, stage, key) end,
       set: &set_result(Pipeline.set_options(pipeline, stage, [{key, &1}])),
       constraint: constraint(spec),
       applies: stage_applies(stage, key, spec, prefix, correction?)
@@ -313,11 +313,12 @@ defmodule VisionCore.Stereo.Parameters do
     |> put_present(:description, spec[:description])
   end
 
-  defp stage_value(pipeline, stage, key) do
-    pipeline
-    |> Pipeline.stage_options()
-    |> Enum.find(&(&1.stage == stage))
-    |> get_in([:values, key])
+  # Every setting of `stage` by name, in one call to the pipeline.
+  defp stage_values(pipeline, stage) do
+    case Enum.find(Pipeline.stage_options(pipeline), &(&1.stage == stage)) do
+      nil -> %{}
+      options -> Map.new(options.values, fn {key, value} -> {Atom.to_string(key), value} end)
+    end
   end
 
   defp stage_applies(:rectification, :right_row_offset, _spec, prefix, true),
@@ -357,8 +358,7 @@ defmodule VisionCore.Stereo.Parameters do
 
   defp alignment_status do
     with pid when is_pid(pid) <- Process.whereis(VisionCore.Status),
-         %{alignment: %{offset_rows: offset}} when is_number(offset) <-
-           VisionCore.Status.snapshot() do
+         %{offset_rows: offset} when is_number(offset) <- VisionCore.Status.alignment() do
       rows = Float.round(offset * 1.0, 2)
 
       if abs(rows) > @half_row,

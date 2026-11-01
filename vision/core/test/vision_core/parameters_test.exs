@@ -307,6 +307,38 @@ defmodule VisionCore.ParametersTest do
     assert statuses == %{"stereo.disparity" => {:ok, "matching"}, "failing" => nil}
   end
 
+  test "a group's values are read once per listing for its parameters without a get",
+       %{server: server} do
+    reads = :counters.new(1, [])
+    range = %{kind: :range, min: 0, max: 100, step: nil}
+
+    group = %{
+      id: "shared",
+      name: "Shared",
+      summary: "Read together",
+      kind: :stage,
+      placement: :flow,
+      position: 5,
+      values: fn ->
+        :counters.add(reads, 1, 1)
+        %{"a" => 1, "b" => 2}
+      end,
+      parameters: [
+        %{name: "a", type: :integer, constraint: range, set: fn _value -> :ok end},
+        %{name: "b", type: :integer, constraint: range, set: fn _value -> :ok end},
+        %{name: "own", type: :integer, constraint: range, get: fn -> 3 end}
+      ]
+    }
+
+    :ok = Parameters.declare(server, [group])
+    :sys.get_state(server)
+    :counters.put(reads, 1, 0)
+
+    assert [%{parameters: parameters}] = Parameters.groups(server)
+    assert Enum.map(parameters, &{&1.name, &1.value}) == [{"a", 1}, {"b", 2}, {"own", 3}]
+    assert :counters.get(reads, 1) == 1
+  end
+
   test "a parameter is unsaved while its value differs from its default",
        %{server: server} do
     start_owner(server, &match_groups/1)
