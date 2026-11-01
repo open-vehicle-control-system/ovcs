@@ -32,6 +32,24 @@ defmodule VisionCore.Ros2.ZenohClientLinkTest do
              } = ZenohClient.link()
     end
 
+    test "forgets a service once its handler exits" do
+      handler =
+        spawn(fn ->
+          :ok = ZenohClient.register_service("stereo/right/set_camera_info", SetCameraInfo)
+
+          receive do
+            :stop -> :ok
+          end
+        end)
+
+      Process.sleep(50)
+      assert [%{name: "/stereo/right/set_camera_info"}] = ZenohClient.link().services
+
+      send(handler, :stop)
+      Process.sleep(50)
+      assert ZenohClient.link().services == []
+    end
+
     test "counts each publish under its topic", %{topics: topics} do
       ZenohClient.publish("ovcs_heartbeat", StringMessage, %StringMessage{data: "test"})
       send(topics, :tick)

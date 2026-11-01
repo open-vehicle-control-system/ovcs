@@ -19,7 +19,9 @@ defmodule VisionCore.Ros2.ZenohClient.State do
       key_expr, liveliness_key, queryable_id, liveliness_token}}`. The
       handler pid turns requests into responses; `queryable_id` and
       `liveliness_token` are per session.
-    * `monitors`: `%{monitor_reference => {key_expr, pid}}`, for `:DOWN`.
+    * `monitors`: `%{monitor_reference => {key_expr, pid}}` for a
+      subscriber, `{:service, service_name, pid}` for a service handler,
+      for `:DOWN`.
     * `drops_while_offline`: publishes dropped while no session is
       open, logged once on connect, then reset.
   """
@@ -319,8 +321,12 @@ defmodule VisionCore.Ros2.ZenohClient do
   end
 
   def handle_call({:register_service, service_name, service_module, handler_pid}, _from, state) do
+    # A handler registering again, as after its own restart, replaces what it declared.
+    if previous = state.services[service_name], do: undeclare_service(previous)
     service = build_service_record(state, service_name, service_module, handler_pid)
     state = put_in(state.services[service_name], service)
+    monitor = Process.monitor(handler_pid)
+    state = put_in(state.monitors[monitor], {:service, service_name, handler_pid})
 
     state =
       if state.session do
@@ -504,6 +510,9 @@ defmodule VisionCore.Ros2.ZenohClient do
       {nil, _} ->
         {:noreply, state}
 
+      {{:service, service_name, pid}, monitors} ->
+        {:noreply, drop_service(%{state | monitors: monitors}, service_name, pid)}
+
       {{key_expr, pid}, monitors} ->
         state = %{state | monitors: monitors}
 
@@ -682,6 +691,23 @@ defmodule VisionCore.Ros2.ZenohClient do
 
         {%{state | subscriptions: subscriptions, monitors: monitors}, subscription}
     end
+  end
+
+  # Only the handler registered now takes the service away with it.
+  defp drop_service(state, service_name, pid) do
+    case state.services[service_name] do
+      %{handler: ^pid} = service ->
+        undeclare_service(service)
+        %{state | services: Map.delete(state.services, service_name)}
+
+      _other ->
+        state
+    end
+  end
+
+  defp undeclare_service(service) do
+    if service.liveliness_token, do: Zenohex.Liveliness.undeclare_token(service.liveliness_token)
+    if service.queryable_id, do: Zenohex.Queryable.undeclare(service.queryable_id)
   end
 
   defp build_service_record(state, service_name, service_module, handler_pid) do
@@ -876,12 +902,7 @@ defmodule VisionCore.Ros2.ZenohClient do
         do: Zenohex.Subscriber.undeclare(subscription.subscriber_id)
     end)
 
-    Enum.each(state.services, fn {_name, service} ->
-      if service.liveliness_token,
-        do: Zenohex.Liveliness.undeclare_token(service.liveliness_token)
-
-      if service.queryable_id, do: Zenohex.Queryable.undeclare(service.queryable_id)
-    end)
+    Enum.each(state.services, fn {_name, service} -> undeclare_service(service) end)
 
     if state.session, do: Zenohex.Session.close(state.session)
     :ok
