@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, act } from '@testing-library/react'
 import ParameterPanel from '../ParameterPanel.jsx'
 import { useParameters } from '../../stores/parameters.js'
 
@@ -134,19 +134,45 @@ describe('ParameterPanel', () => {
     expect(screen.getByText(/set by auto exposure/)).toBeTruthy()
   })
 
-  it('summarises the values in one polite live region', () => {
-    const { container } = render(<ParameterPanel groupId="stereo.match" />)
+  describe('live region', () => {
+    const region = (container) => container.querySelector('[aria-live]')
+    const setValue = (id, value) =>
+      useParameters.setState((state) => ({ parameters: { ...state.parameters, [id]: { ...state.parameters[id], value } } }))
 
-    const regions = container.querySelectorAll('[aria-live]')
-    expect(regions).toHaveLength(1)
-    expect(regions[0].getAttribute('aria-live')).toBe('polite')
-    expect(regions[0].textContent).toBe('p1 8, p2 64, uniqueness 1.2')
-  })
+    it('is one polite region, silent on showing a group or switching to another', () => {
+      const { container, rerender } = render(<ParameterPanel groupId="stereo.match" />)
 
-  it('leaves the values set by an automatic mode out of the live summary', () => {
-    const { container } = render(<ParameterPanel groupId="cameras" />)
+      expect(container.querySelectorAll('[aria-live]')).toHaveLength(1)
+      expect(region(container).getAttribute('aria-live')).toBe('polite')
+      expect(region(container).textContent).toBe('')
 
-    expect(container.querySelector('[aria-live]').textContent).toBe('auto exposure on')
+      rerender(<ParameterPanel groupId="cameras" />)
+      expect(region(container).textContent).toBe('')
+    })
+
+    it('announces only the parameter whose value a poll changed', () => {
+      const { container } = render(<ParameterPanel groupId="stereo.match" />)
+
+      act(() => setValue('stereo.match.p2', 70))
+
+      expect(region(container).textContent).toBe('p2 70')
+    })
+
+    it('announces neither a value committed here nor one set by an automatic mode', () => {
+      stubs.set.mockImplementation(setValue)
+      const { container, rerender } = render(<ParameterPanel groupId="stereo.match" />)
+      const slider = screen.getByRole('slider', { name: 'p1' })
+
+      fireEvent.pointerDown(slider)
+      fireEvent.change(slider, { target: { value: '10' } })
+      fireEvent.pointerUp(slider)
+      expect(useParameters.getState().parameters['stereo.match.p1'].value).toBe(10)
+      expect(region(container).textContent).toBe('')
+
+      rerender(<ParameterPanel groupId="cameras" />)
+      act(() => setValue('cameras.exposure_us', 9000))
+      expect(region(container).textContent).toBe('')
+    })
   })
 
   it('asks you to choose a box when none is selected', () => {

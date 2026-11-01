@@ -5,10 +5,13 @@ import { OvcsBadge, OvcsCard, OvcsDot, OvcsHeader, OvcsRow, OvcsStatus } from '.
 const classesOf = (element) => [...element.classList]
 
 describe('OvcsStatus', () => {
-  test('renders its label with the tone modifier', () => {
+  test("renders its label with the tone modifier, in the tone's text colour", () => {
     const { container } = render(<OvcsStatus tone="ok">Connected</OvcsStatus>)
     expect(container.firstChild.textContent).toBe('Connected')
-    expect(classesOf(container.firstChild)).toEqual(['ovcs-status', 'ovcs-status--ok'])
+    expect(classesOf(container.firstChild)).toEqual(['ovcs-status', 'ovcs-status--ok', 'text-ovcs-ok-text'])
+
+    const failed = render(<OvcsStatus tone="error">Failed</OvcsStatus>).container.firstChild
+    expect(classesOf(failed)).toEqual(['ovcs-status', 'ovcs-status--error', 'text-ovcs-error-text'])
   })
 
   test('is muted without a tone', () => {

@@ -33,13 +33,20 @@ export default function ApiPage() {
           <code className="text-ovcs-text">application/vnd.api+json</code>.
         </p>
         <table className="w-full text-left text-sm">
+          <thead className="text-xs text-ovcs-muted">
+            <tr>
+              <th scope="col" className="pb-2 pr-3 font-medium">method</th>
+              <th scope="col" className="pb-2 pr-3 font-medium">path</th>
+              <th scope="col" className="pb-2 font-medium">answer</th>
+            </tr>
+          </thead>
           <tbody className="divide-y divide-ovcs-border">
             {RESOURCES.map(([method, path, summary]) => (
               <tr key={`${method} ${path}`}>
                 <td className="w-16 py-2 pr-3 font-mono text-xs font-semibold">{method}</td>
                 <td className="py-2 pr-3 font-mono text-xs">
                   {method === 'GET' && !path.includes('{') ? (
-                    <a href={base() + path} target="_blank" rel="noreferrer" className="text-ovcs-accent hover:underline">
+                    <a href={base() + path} target="_blank" rel="noreferrer" className="text-ovcs-accent-text hover:underline">
                       /api/{path}
                     </a>
                   ) : (
@@ -58,6 +65,12 @@ export default function ApiPage() {
           Phoenix channels on the socket <code className="text-ovcs-text">/sockets/dashboard</code>.
         </p>
         <table className="w-full text-left text-sm">
+          <thead className="text-xs text-ovcs-muted">
+            <tr>
+              <th scope="col" className="pb-2 pr-3 font-medium">topic</th>
+              <th scope="col" className="pb-2 font-medium">carries</th>
+            </tr>
+          </thead>
           <tbody className="divide-y divide-ovcs-border">
             {CHANNELS.map(([topic, summary]) => (
               <tr key={topic}>

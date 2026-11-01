@@ -1,4 +1,4 @@
-import { useId, useMemo } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { groupParameters, useParameters } from '../stores/parameters.js'
 import { OvcsBadge, OvcsParameterControl, formatValue, rangeStep, tidy, focusClass as FOCUS } from '@ovcs/ui/react'
 import { computeTags } from '../compute.js'
@@ -17,6 +17,34 @@ function relationBounds(parameter, parameters, below) {
     if (upper != null) max = Math.min(max, tidy(upper - margin(parameter)))
   }
   return { min, max }
+}
+
+/**
+ * What the live region says: the values a poll brought, as `name value`. Showing a group says nothing, nor does a
+ * value committed here (`commit` notes it first) or one set by an automatic mode, which changes at every poll.
+ */
+function useChangedValues(groupId, members) {
+  const shown = useRef(null)
+  const committed = useRef(new Map())
+  const [changed, setChanged] = useState('')
+
+  useEffect(() => {
+    const previous = shown.current
+    shown.current = { groupId, values: new Map(members.map((parameter) => [parameter.id, parameter.value])) }
+    if (previous?.groupId !== groupId) {
+      setChanged('')
+      return
+    }
+    const brought = members.filter((parameter) => {
+      if (!previous.values.has(parameter.id) || previous.values.get(parameter.id) === parameter.value) return false
+      const own = committed.current.get(parameter.id) === parameter.value
+      committed.current.delete(parameter.id)
+      return !own && parameter.state !== 'automatic'
+    })
+    if (brought.length > 0) setChanged(brought.map((parameter) => `${parameter.name} ${formatValue(parameter.value)}`).join(', '))
+  }, [groupId, members])
+
+  return { changed, commit: (id, value) => committed.current.set(id, value) }
 }
 
 /** The selected group's name, summary and parameters, each with its control. */
@@ -42,14 +70,11 @@ export default function ParameterPanel({ groupId }) {
     return index
   }, [parameters])
 
+  const { changed, commit } = useChangedValues(groupId, members)
+
   if (!group) return <p className="text-sm text-ovcs-muted">Choose a box in the pipeline to see its parameters.</p>
 
   const tags = computeTags(group.compute)
-
-  // Values set by an automatic mode change at every poll; announcing them would be noise.
-  const summary = members
-    .flatMap((parameter) => (parameter.state === 'automatic' ? [] : [`${parameter.name} ${formatValue(parameter.value)}`]))
-    .join(', ')
 
   return (
     <section aria-labelledby={headingId}>
@@ -78,7 +103,7 @@ export default function ParameterPanel({ groupId }) {
         </button>
       </div>
       <p aria-live="polite" className="sr-only">
-        {summary}
+        {changed}
       </p>
       <div className="divide-y divide-ovcs-border">
         {members.map((parameter) => (
@@ -87,7 +112,10 @@ export default function ParameterPanel({ groupId }) {
             parameter={parameter}
             bounds={relationBounds(parameter, parameters, below)}
             controllerName={parameters[parameter.controlledBy]?.name}
-            onChange={(value) => set(parameter.id, value)}
+            onChange={(value) => {
+              commit(parameter.id, value)
+              set(parameter.id, value)
+            }}
             onReset={() => reset({ type: 'parameters', id: parameter.id })}
             onEditStart={() => beginEdit(parameter.id)}
             onEditEnd={() => endEdit(parameter.id)}

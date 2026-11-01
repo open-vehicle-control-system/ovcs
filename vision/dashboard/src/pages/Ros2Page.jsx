@@ -36,7 +36,7 @@ export default function Ros2Page() {
 
   return (
     <PageFrame title="ROS 2" summary="What this unit publishes to ROS 2, through Zenoh.">
-      {error ? <p role="alert" className="ovcs-status ovcs-status--error text-sm">{error}</p> : null}
+      {error ? <p role="alert" className="ovcs-status ovcs-status--error text-sm text-ovcs-error-text">{error}</p> : null}
       {node ? (
         <>
           <OvcsCard className="flex flex-wrap items-center gap-x-8 gap-y-2">

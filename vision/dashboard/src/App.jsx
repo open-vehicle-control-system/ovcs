@@ -65,7 +65,7 @@ function ParameterError() {
 
   return (
     <div role="alert" className="flex min-w-0 items-center gap-2 rounded border border-ovcs-error px-2 py-1 text-sm">
-      <p className="ovcs-status ovcs-status--error min-w-0 break-words">{error}</p>
+      <p className="ovcs-status ovcs-status--error min-w-0 break-words text-ovcs-error-text">{error}</p>
       {errorSource === 'load' ? null : (
         <button
           type="button"

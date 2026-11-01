@@ -12,6 +12,10 @@ export default {
           ok: "var(--ovcs-ok)",
           warn: "var(--ovcs-warn)",
           error: "var(--ovcs-error)",
+          "ok-text": "var(--ovcs-ok-text)",
+          "warn-text": "var(--ovcs-warn-text)",
+          "error-text": "var(--ovcs-error-text)",
+          "accent-text": "var(--ovcs-accent-text)",
         },
       },
       fontFamily: {

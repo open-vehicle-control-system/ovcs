@@ -28,4 +28,28 @@ describe('Hint', () => {
     fireEvent.keyDown(button, { key: 'Escape' })
     expect(screen.queryByRole('tooltip')).toBeNull()
   })
+
+  it('stays open while the pointer moves onto the card, and closes once it leaves both', () => {
+    render(<Hint hint={hint} />)
+    const button = screen.getByRole('button', { name: 'About Jitter' })
+    button.getBoundingClientRect = () => ({ top: 100, bottom: 116, left: 50, width: 16 })
+
+    fireEvent.mouseEnter(button)
+    const card = screen.getByRole('tooltip')
+    expect(card.style.top).toBe('116px')
+    fireEvent.mouseLeave(button, { relatedTarget: card })
+    expect(screen.getByRole('tooltip')).toBe(card)
+
+    fireEvent.mouseLeave(card, { relatedTarget: document.body })
+    expect(screen.queryByRole('tooltip')).toBeNull()
+  })
+
+  it('closes on Escape wherever the focus is, as when opened by the pointer', () => {
+    render(<Hint hint={hint} />)
+
+    fireEvent.mouseEnter(screen.getByRole('button', { name: 'About Jitter' }))
+    fireEvent.keyDown(document.body, { key: 'Escape' })
+
+    expect(screen.queryByRole('tooltip')).toBeNull()
+  })
 })

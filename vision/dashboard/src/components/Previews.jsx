@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import Preview from './Preview.jsx'
 import { OvcsStatus } from '@ovcs/ui/react'
-import { StatusValue } from './UnitStatus.jsx'
+import { HealthValue, StatusValue } from './UnitStatus.jsx'
 import DepthRange from './DepthRange.jsx'
 import DetectionOverlay from './DetectionOverlay.jsx'
 import Hint from './Hint.jsx'
@@ -25,7 +25,7 @@ function Figures({ id, figures, children }) {
           </span>
           {tone ? (
             <OvcsStatus tone={tone} className="text-base font-semibold tabular-nums">
-              {value}
+              <HealthValue tone={tone}>{value}</HealthValue>
             </OvcsStatus>
           ) : (
             <span className="text-base font-semibold tabular-nums">{value}</span>

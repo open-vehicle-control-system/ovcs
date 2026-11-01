@@ -95,6 +95,19 @@ describe('UnitStatus and the pair status', () => {
     expect(card('cpu').textContent).toContain('–')
   })
 
+  it('marks an unhealthy value beyond its colour: a warning sign, and words for a screen reader', () => {
+    show(snapshot)
+
+    for (const id of ['zenoh', 'alignment', 'sharpness', 'right']) {
+      expect(card(id).querySelector('[data-warning]')).not.toBeNull()
+      expect(card(id).textContent).toContain(', unhealthy')
+    }
+    for (const id of ['hailo', 'cpu', 'segment', 'sync', 'left']) {
+      expect(card(id).querySelector('[data-warning]')).toBeNull()
+      expect(card(id).textContent).not.toContain('unhealthy')
+    }
+  })
+
   it('waits for the first status', () => {
     show(null)
 
