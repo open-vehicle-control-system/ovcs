@@ -77,7 +77,7 @@ defmodule VisionFirmware.MixProject do
       # `v4l2_capture` reads, and Mesa NVK for `nx_stereo` on Vulkan.
       {:nerves_system_okdo_c100,
        github: "Spin42/nerves_system_okdo_c100",
-       tag: "v0.2.0",
+       tag: "v0.3.0",
        runtime: false,
        targets: :okdo_c100,
        nerves: [compile: false]},
