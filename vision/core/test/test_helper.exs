@@ -15,8 +15,9 @@ Ecto.Migrator.run(VisionCore.Repo, :up, all: true, log: false)
 
 # The Ports the tests run, built from the Rust workspace: jpeg_codec
 # (VisionCore.Jpeg) for the :jpeg tests, stereo_match (VisionCore.Stereo.Matcher)
-# for the :stereo_match tests.
+# for the :stereo_match tests. CI fails rather than skip them.
 rust_workspace = Path.expand("../../rust", __DIR__)
+ci? = System.get_env("CI") == "true"
 
 port_tests =
   case System.cmd(
@@ -36,13 +37,17 @@ port_tests =
 
       []
 
+    {output, _status} when ci? ->
+      raise "the Ports did not build:\n" <> output
+
     {output, _status} ->
       IO.puts("the Ports did not build, skipping the :jpeg and :stereo_match tests:\n" <> output)
       [:jpeg, :stereo_match]
   end
 
-# The :rust tests build and run the Rust workspace; run them with `--only rust`.
+# The :rust tests build and run the Rust workspace: in CI, or with `--include rust`.
 # The :vulkan tests need a Vulkan device, which CI runners do not have, and
 # the :iree tests run the IREE compiler; run them with `--include vulkan`
 # or `--include iree`.
-ExUnit.start(exclude: [:rust, :vulkan, :iree | port_tests])
+rust_tests = if ci?, do: [], else: [:rust]
+ExUnit.start(exclude: rust_tests ++ [:vulkan, :iree | port_tests])
