@@ -6,6 +6,96 @@ defmodule VisionCore.Ros2.Publishers.StereoTest do
   @side_opts [frame_id: "left_camera"]
   @calibration Path.expand("../../../support/calibration", __DIR__)
 
+  describe "a stereo pair" do
+    alias Ros2Zenoh.SensorMsgs.Msg.{Image, PointCloud2}
+    alias Ros2Zenoh.StereoMsgs.Msg.DisparityImage
+    alias VisionCore.Camera.Frame
+    alias VisionCore.Stereo.Pair
+
+    @moduletag :capture_log
+
+    # Stands in for the camera drivers: they only take listeners.
+    defmodule Source do
+      def name_for(label), do: Module.concat(__MODULE__, label)
+      def register_listener(_server, _listener), do: :ok
+    end
+
+    # Stands in for VisionCore.Ros2.ZenohClient: hands every publish to the test.
+    defmodule ZenohClient do
+      use GenServer
+
+      def start_link(test),
+        do: GenServer.start_link(__MODULE__, test, name: VisionCore.Ros2.ZenohClient)
+
+      @impl GenServer
+      def init(test), do: {:ok, test}
+
+      @impl GenServer
+      def handle_cast({:publish, topic, _module, message, _opts}, test) do
+        send(test, {:published, topic, message})
+        {:noreply, test}
+      end
+    end
+
+    setup do
+      start_supervised!({ZenohClient, self()})
+
+      start_supervised!(
+        {Stereo,
+         cameras: [{Source, "left"}, {Source, "right"}],
+         topic_prefix: "stereo",
+         disparity_topic: "stereo/disparity",
+         depth_topic: "stereo/depth/image_rect",
+         cloud_topic: "stereo/points",
+         left: @side_opts,
+         right: @side_opts,
+         width: 8,
+         height: 4,
+         pipeline: Source.name_for("pipeline")}
+      )
+
+      :ok
+    end
+
+    defp pair do
+      frame = %Frame{label: "left", width: 8, height: 4, capture_ns: 0, grey: <<>>}
+
+      %Pair{
+        left_frame: frame,
+        right_frame: frame,
+        left: Nx.broadcast(Nx.u8(0), {4, 8}),
+        geometry: %{focal_length_px: 600.0, baseline_m: 0.08, left_calibration: nil},
+        disparity_range: %{min_disparity: 0, num_disparities: 2, block_size: 1},
+        disparity_scale: 16,
+        disparity_bytes: :binary.copy(<<0::32>>, 32),
+        depth: :binary.copy(<<0::16>>, 32),
+        cloud: :binary.copy(<<0::32>>, 3 * 2),
+        cloud_points: 2,
+        cloud_size: {1, 2}
+      }
+    end
+
+    test "publishes the disparity, the depth in millimetres and the organized point cloud" do
+      GenServer.cast(Stereo, {:stereo_pair, pair()})
+
+      assert_receive {:published, "stereo/disparity", %DisparityImage{} = disparity}
+      assert %{width: 8, height: 4, encoding: "32FC1", step: 32} = disparity.image
+      assert {disparity.f, disparity.t} == {600.0, 0.08}
+
+      assert {disparity.min_disparity, disparity.max_disparity, disparity.delta_d} ==
+               {0.0, 1.0, 0.0625}
+
+      assert %{x_offset: 2, y_offset: 0, width: 5, height: 3} = disparity.valid_window
+
+      assert_receive {:published, "stereo/depth/image_rect", %Image{} = depth}
+      assert %{width: 8, height: 4, encoding: "16UC1", step: 16} = depth
+
+      assert_receive {:published, "stereo/points", %PointCloud2{} = cloud}
+      assert %{height: 1, width: 2, is_dense: 0} = cloud
+      assert cloud.row_step == 2 * cloud.point_step
+    end
+  end
+
   test "republishes the raw images by default" do
     side = Stereo.build_side_state("left", "stereo", @side_opts, 4, 4, true)
     assert side.image_topic == "stereo/left/image_raw/compressed"
