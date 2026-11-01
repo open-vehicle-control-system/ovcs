@@ -1,5 +1,5 @@
 defmodule VisionCore.Stereo.AlignmentCorrectionTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias VisionCore.Stereo.{AlignmentCorrection, Pipeline}
 
@@ -63,11 +63,46 @@ defmodule VisionCore.Stereo.AlignmentCorrectionTest do
     assert_receive {:set, 6.0}
   end
 
-  test "subscribes to the status once it runs, and keeps running" do
-    {:ok, pid} = AlignmentCorrection.start_link(name: nil, set_offset: fn _ -> :ok end)
-    send(pid, :subscribe)
-    Process.sleep(50)
+  test "leaves the rows alone without a rectification stage to move them" do
+    test_pid = self()
+
+    {:ok, pid} =
+      AlignmentCorrection.start_link(
+        name: nil,
+        subscribe: false,
+        current_offset: fn -> nil end,
+        set_offset: fn rows -> send(test_pid, {:set, rows}) end
+      )
+
+    for _ <- 1..5, do: tick(pid, 1.0)
+    refute_receive {:set, _rows}, 100
     assert Process.alive?(pid)
+  end
+
+  # Stands in for VisionCore.Status: tells the test who subscribes.
+  defmodule Status do
+    use GenServer
+
+    def start_link(test), do: GenServer.start_link(__MODULE__, test, name: VisionCore.Status)
+
+    @impl GenServer
+    def init(test), do: {:ok, test}
+
+    @impl GenServer
+    def handle_call({:subscribe, pid}, _from, test) do
+      send(test, {:subscribed, pid})
+      {:reply, :ok, test}
+    end
+  end
+
+  test "subscribes to the status, and again once it restarts" do
+    start_supervised!({Status, self()})
+    {:ok, pid} = AlignmentCorrection.start_link(name: nil, set_offset: fn _ -> :ok end)
+    assert_receive {:subscribed, ^pid}, 1_000
+
+    stop_supervised!(Status)
+    start_supervised!({Status, self()})
+    assert_receive {:subscribed, ^pid}, 2_000
   end
 
   test "corrects nothing while switched off, and starts over when switched on" do

@@ -60,6 +60,7 @@ defmodule VisionCore.Stereo.AlignmentCorrection do
      %{
        enabled: Keyword.get(opts, :enabled, true),
        offsets: [],
+       status_monitor: nil,
        current_offset:
          Keyword.get(opts, :current_offset, fn ->
            pipeline
@@ -85,7 +86,7 @@ defmodule VisionCore.Stereo.AlignmentCorrection do
   @impl GenServer
   def handle_info(:subscribe, state) do
     :ok = Status.subscribe()
-    {:noreply, state}
+    {:noreply, %{state | status_monitor: Process.monitor(Status)}}
   catch
     :exit, _not_started ->
       Process.send_after(self(), :subscribe, @subscribe_retry_ms)
@@ -106,10 +107,26 @@ defmodule VisionCore.Stereo.AlignmentCorrection do
     end
   end
 
+  # A restarted status has no subscribers.
+  def handle_info(
+        {:DOWN, monitor, :process, _status, _reason},
+        %{status_monitor: monitor} = state
+      ) do
+    send(self(), :subscribe)
+    {:noreply, %{state | status_monitor: nil}}
+  end
+
   def handle_info(_message, state), do: {:noreply, state}
 
   defp correct(state, offset) do
-    current = state.current_offset.()
+    case state.current_offset.() do
+      # No rectification stage to move the rows.
+      nil -> state
+      current -> correct(state, offset, current)
+    end
+  end
+
+  defp correct(state, offset, current) do
     rows = (current + @gain * offset) |> max(-@max_rows) |> min(@max_rows)
 
     case state.set_offset.(rows) do
