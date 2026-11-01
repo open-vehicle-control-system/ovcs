@@ -17,9 +17,7 @@ cd "$(dirname "$0")"
 
 : "${MIX_TARGET:=rpi5}"
 : "${VEHICLE:?VEHICLE env var is required (e.g. OvcsMini)}"
-# See vms/firmware/build.sh: the application partition mounts at /data.
-: "${NERVES_FW_APPLICATION_PART0_TARGET:=/data}"
-export MIX_TARGET VEHICLE NERVES_FW_APPLICATION_PART0_TARGET
+export MIX_TARGET VEHICLE
 
 step() { printf "\n\033[1;36m==> %s\033[0m\n" "$*"; }
 

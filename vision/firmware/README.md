@@ -61,7 +61,6 @@ then runs `mix firmware`.
 |----------|:-:|---------|
 | `VEHICLE` | yes | Top-level vehicle module (`<Vehicle>`). `config/runtime.exs` resolves its vision composer with `OvcsVehicle.Firmware.resolve_side/4` and writes it to `:vision_core, :vehicle` |
 | `MIX_TARGET` | no | Nerves target atom, `rpi5` or `okdo_c100` (default: `rpi5`) |
-| `NERVES_FW_APPLICATION_PART0_TARGET` | no | Application partition mount point (default: `/data`) |
 
 `AUTHORIZED_SSH_KEYS`, `SECRET_KEY_BASE`, `ZENOH_ENDPOINT_IP`, `WIFI_NETWORKS`
 and the NervesHub settings live in `vehicles/<vehicle>/.env.exs`

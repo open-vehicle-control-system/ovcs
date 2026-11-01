@@ -55,15 +55,11 @@ config :logger, backends: [RingLogger], level: :info
 # application crashes at startup stays reachable for an OTA fix.
 config :shoehorn, init: [:nerves_runtime, :nerves_pack, :nerves_hub_link]
 
-# NervesSSH, nerves_time and the rest of the codebase expect `/data`. The
-# Raspberry Pi 5 system mounts the application partition at `/root` and links
-# `/data` to it; on the C100 the partition is also mounted at `/data`.
+# Both systems mount the application partition at `/root` and link `/data`, where
+# NervesSSH, nerves_time and the rest of the codebase expect it, to it.
 config :nerves, :erlinit,
   update_clock: true,
   hostname_pattern: vehicle_host
-
-if Mix.target() == :okdo_c100,
-  do: config(:nerves, :erlinit, mount: "/dev/rootdisk0p6:/data:f2fs:nodev:")
 
 config :nerves_ssh,
   authorized_keys: (System.get_env("AUTHORIZED_SSH_KEYS") || "") |> String.split(",", trim: true),
