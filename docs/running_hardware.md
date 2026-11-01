@@ -3,7 +3,7 @@ title: Running on hardware
 description: Build and burn your vehicle's Nerves firmware, update running boards over SSH or through NervesHub, keep SSH host keys stable across burns, and attach to the running boards.
 ---
 
-Everything that runs on your laptop with `./ovcs run` also runs on the vehicle: the same firmware projects, the same vehicle package, the same Erlang cluster. The difference is that each BEAM becomes a Nerves image on its own Raspberry Pi. This guide covers building those images, getting them onto boards, updating them, and watching them run.
+Everything that runs on your laptop with `./ovcs run` also runs on the vehicle: the same firmware projects, the same vehicle package, the same Erlang cluster. The difference is that each BEAM becomes a Nerves image on its own board. This guide covers building those images, getting them onto boards, updating them, and watching them run.
 
 The firmware projects, the Nerves systems and the `ovcs` CLI are the framework. Everything that varies per vehicle (the Nerves target of each role, `.env.exs` with its keys and secrets, the SSH host keys, the CAN mapping) belongs to your vehicle package under `vehicles/<vehicle>/`. The commands below use the `ovcs1` and `ovcs_mini` reference vehicles; substitute your own package name and they work unchanged.
 
@@ -16,10 +16,11 @@ The firmware projects, the Nerves systems and the `ovcs` CLI are the framework. 
 | `bridge-radio_control` (reference vehicles) | Raspberry Pi 3A | [`ovcs_base_can_system_rpi3a`](https://github.com/open-vehicle-control-system/ovcs_base_can_system_rpi3a) |
 | `bridge-ros` (reference vehicles) | Raspberry Pi 4 | [`ovcs_base_can_system_rpi4`](https://github.com/open-vehicle-control-system/ovcs_base_can_system_rpi4) |
 | `bridge-ros_vision` (OVCS Mini) | Raspberry Pi 5 + Hailo-8 | [`ovcs_bridges_system_rpi5`](https://github.com/open-vehicle-control-system/ovcs_bridges_system_rpi5) (Mix target `rpi5`) |
-| `vision` | Raspberry Pi 5 + Hailo-8 | [`ovcs_bridges_system_rpi5`](https://github.com/open-vehicle-control-system/ovcs_bridges_system_rpi5) (Mix target `rpi5`) |
+| `vision` | Raspberry Pi 5, optionally with a Hailo-8 | [`ovcs_bridges_system_rpi5`](https://github.com/open-vehicle-control-system/ovcs_bridges_system_rpi5) (Mix target `rpi5`) |
+| `vision` | OKdo Nano C100 | [`nerves_system_okdo_c100`](https://github.com/Spin42/nerves_system_okdo_c100) (Mix target `okdo_c100`) |
 | Generic controller | Arduino R4 Minima | none (PlatformIO) |
 
-These are the reference vehicles' choices. The target of each role is a per-vehicle decision, read from your top-level module: `vms_target/0`, `infotainment_target/0`, and the `:target` key of each `bridge_firmwares/0` entry. The `:target` value is the Mix target, which usually but not always equals the system's name. To deploy on other hardware, change those values in `vehicles/<vehicle>/lib/<vehicle>.ex` and add the matching system dependency to the firmware project's `mix.exs` (see the [Nerves custom-systems guide](https://hexdocs.pm/nerves/customizing-systems.html)).
+These are the reference vehicles' choices, except `vision`: none of them runs it, and its two rows are the boards `vision/firmware` builds for. The target of each role is a per-vehicle decision, read from your top-level module: `vms_target/0`, `infotainment_target/0`, and the `:target` key of each `bridge_firmwares/0` entry. The `:target` value is the Mix target, which usually but not always equals the system's name. To deploy on other hardware, change those values in `vehicles/<vehicle>/lib/<vehicle>.ex` and add the matching system dependency to the firmware project's `mix.exs` (see the [Nerves custom-systems guide](https://hexdocs.pm/nerves/customizing-systems.html)).
 
 The OVCS systems add the CAN kernel modules and device-tree overlays the SPI-CAN hardware needs. The host OTP pinned in `mise.toml` must match the OTP they ship: [Toolchain and OTP](./toolchain_and_otp.md) explains why.
 

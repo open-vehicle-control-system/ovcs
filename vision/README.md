@@ -1,6 +1,6 @@
 # vision
 
-The vision unit: stereo depth and object detection on a single board, published as ROS 2 messages over Zenoh, with its own dashboard. The guide is [Vision unit](../docs/vision/overview.md).
+The vision unit: stereo depth and, optionally, object detection on a single board, published as ROS 2 messages over Zenoh, with its own dashboard. The guide is [Vision unit](../docs/vision/overview.md).
 
 | Path | What it is |
 |---|---|
@@ -8,13 +8,13 @@ The vision unit: stereo depth and object detection on a single board, published 
 | [`api`](./api/README.md) | `vision_api`: the Phoenix endpoint and channels behind the dashboard |
 | [`firmware`](./firmware/README.md) | `vision_firmware`: the Nerves image |
 | [`dashboard`](./dashboard/README.md) | The React dashboard: previews, status, parameters and settings |
-| [`rust`](./rust/README.md) | The capture and inference programs `vision_core` runs as Ports |
+| [`rust`](./rust/README.md) | The programs `vision_core` runs as Ports: capture, stereo matching, JPEG and detection |
 
 ## Boards
 
 | Target | Board | Capture | Stereo matching | Detection |
 |---|---|---|---|---|
-| `rpi5` | Raspberry Pi 5 with a Hailo-8 | libcamera, frames synced by the Pi's camera sync | `nx_stereo` on the CPU | HailoRT |
+| `rpi5` | Raspberry Pi 5, optionally with a Hailo-8 | libcamera, frames synced by the Pi's camera sync | native, in the `stereo_match` Port on the CPU (`compute: :native`) | HailoRT, when the Hailo-8 is fitted |
 | `okdo_c100` | OKdo Nano C100 (Jetson Nano module) | raw V4L2, right sensor phase-locked to the left | `nx_stereo` on the GPU (Vulkan) | none yet |
 
 A vehicle picks the board with `vision_target/0`, and the capture driver, the stereo stages' options and the compiler options for its board in its vision composer.

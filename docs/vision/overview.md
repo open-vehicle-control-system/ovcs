@@ -3,7 +3,7 @@ title: Vision unit
 description: The vision role, a Raspberry Pi 5 or an OKdo Nano C100 that turns stereo cameras into ROS 2 depth and detection topics, and how a vehicle opts in.
 ---
 
-The vision unit is an optional fourth role next to `vms`, `infotainment` and the bridges. It runs stereo depth and object detection on a Raspberry Pi 5 or an OKdo Nano C100, publishes the results as ROS 2 messages over Zenoh, and serves its own dashboard. It has no CAN controller and does not touch the `ovcs` bus: it reaches the vehicle through the Zenoh router of the [ROS compute node](../ros2_compute_node.md), and the rest of the vehicle through the [Erlang mesh](../architecture.md#one-erlang-mesh-no-broker).
+The vision unit is an optional fourth role next to `vms`, `infotainment` and the bridges. It runs stereo depth, and optionally object detection, on a Raspberry Pi 5 or an OKdo Nano C100, publishes the results as ROS 2 messages over Zenoh, and serves its own dashboard. It has no CAN controller and does not touch the `ovcs` bus: it reaches the vehicle through the Zenoh router of the [ROS compute node](../ros2_compute_node.md), and the rest of the vehicle through the [Erlang mesh](../architecture.md#one-erlang-mesh-no-broker).
 
 A vehicle without cameras omits the role and nothing is built for it. None of the reference vehicles runs it yet: the OVCS Mini runs the same stack inside its `ros_vision` bridge firmware ([Perception](../ros2_perception.md)).
 
@@ -117,4 +117,4 @@ On the host the composer's `:host` arm applies: it can read USB cameras through 
 - [Where depth is computed](./compute.md#rust-ports): the Rust Ports the core drives and how they are built.
 - [Perception: object detection](../ros2_perception.md): the detector, the Hailo backend and the topics.
 - [ROS compute node](../ros2_compute_node.md): the router the unit peers with.
-- [Hardware you need](../hardware_you_need.md#bridges-and-extras): the Pi 5, cameras and Hailo-8.
+- [Hardware you need](../hardware_you_need.md#bridges-and-extras): the boards, the cameras and the optional Hailo-8.

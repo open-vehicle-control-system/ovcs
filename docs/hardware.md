@@ -3,7 +3,7 @@ title: Hardware
 description: The boards the framework targets and the generic Arduino controllers, with the OVCS1 and OVCS Mini builds as worked examples.
 ---
 
-The framework targets off-the-shelf boards: Raspberry Pis for the Elixir firmwares and Arduino R4 Minimas for I/O, joined by custom CAN interface boards. Every vehicle shares that. Which CAN buses exist, at what bitrate, and which manufacturer components hang off them is the vehicle's decision. This page describes what the framework targets, then walks through two reference vehicles: OVCS1 with five isolated buses on a full-size car, and the OVCS Mini with two buses on an RC car.
+The framework targets off-the-shelf boards: Raspberry Pis for the Elixir firmwares, with an OKdo Nano C100 as the vision unit's other board, and Arduino R4 Minimas for I/O, joined by custom CAN interface boards. Every vehicle shares that. Which CAN buses exist, at what bitrate, and which manufacturer components hang off them is the vehicle's decision. This page describes what the framework targets, then walks through two reference vehicles: OVCS1 with five isolated buses on a full-size car, and the OVCS Mini with two buses on an RC car.
 
 > [!NOTE]
 > The boards, the CAN interface hardware and the generic controllers are framework-level: your vehicle uses them as they are. Bus layouts, manufacturer components and controller roles belong to the OVCS1 and OVCS Mini reference vehicles; yours declares its own in its CAN topology YAMLs and composers. See [Framework and vehicles](./framework.md).
@@ -23,6 +23,7 @@ The framework targets off-the-shelf boards: Raspberry Pis for the Elixir firmwar
 | Raspberry Pi 5 | Infotainment (optional) | The `ovcs` bus |
 | Raspberry Pi 3A | Bridge firmware running the radio control bridge (optional) | The `ovcs` bus |
 | Raspberry Pi 4 or 5 | Bridge firmware running the ROS bridge (optional) | The `ovcs` bus (one running only perception may have none and reach the vehicle over Zenoh) |
+| Raspberry Pi 5, or OKdo Nano C100 | Vision unit (optional) | None; it reaches the vehicle over Zenoh |
 | Raspberry Pi 5 (8 GB) | ROS compute node: balenaOS, not Nerves (optional) | None; it runs the Zenoh router the bridges peer with |
 | Arduino R4 Minima | Generic controllers, as many as the vehicle declares | The `ovcs` bus |
 
@@ -187,9 +188,10 @@ The bridge firmwares sit only on `ovcs`; `misc` is the VMS's alone, so third-par
 | Infotainment | Raspberry Pi 5 | [`ovcs_base_can_system_rpi5`](https://github.com/open-vehicle-control-system/ovcs_base_can_system_rpi5) |
 | Bridge firmware running the radio control bridge | Raspberry Pi 3A | [`ovcs_base_can_system_rpi3a`](https://github.com/open-vehicle-control-system/ovcs_base_can_system_rpi3a) |
 | Bridge firmware running the ROS bridge | Raspberry Pi 4 or 5 | `ovcs_base_can_system_rpi4`, or `rpi5` (the `ovcs_bridges_system_rpi5` system) |
+| Vision unit | Raspberry Pi 5, or OKdo Nano C100 | `rpi5` (the `ovcs_bridges_system_rpi5` system), or `okdo_c100` (the [`nerves_system_okdo_c100`](https://github.com/Spin42/nerves_system_okdo_c100) system) |
 | Generic controller | Arduino R4 Minima | PlatformIO, not Nerves |
 
-The custom systems add the CAN kernel modules and device-tree overlays the SPI CAN boards need. They matter only when building firmware for physical hardware; local development never touches them. Each role's Nerves target comes from the vehicle's module (`vms_target/0`, `infotainment_target/0`, the `:target` key of each `bridge_firmwares/0` entry), so moving a vehicle to different boards means changing those values and adding the matching system dependency to the framework firmware's `mix.exs`, plus a `targets/<target>/fwup.conf` in that firmware, and for bridges a `system_deps/1` clause and the bridge library's `targets:` list. Why the host Elixir/OTP pin is tied to these systems is in [Toolchain and OTP](./toolchain_and_otp.md).
+The OVCS systems add the CAN kernel modules and device-tree overlays the SPI CAN boards need. They matter only when building firmware for physical hardware; local development never touches them. Each role's Nerves target comes from the vehicle's module (`vms_target/0`, `infotainment_target/0`, the `:target` key of each `bridge_firmwares/0` entry), so moving a vehicle to different boards means changing those values and adding the matching system dependency to the framework firmware's `mix.exs`, plus a `targets/<target>/fwup.conf` in that firmware, and for bridges a `system_deps/1` clause and the bridge library's `targets:` list. Why the host Elixir/OTP pin is tied to these systems is in [Toolchain and OTP](./toolchain_and_otp.md).
 
 ## Where next
 

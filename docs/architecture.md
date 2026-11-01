@@ -43,7 +43,7 @@ A running vehicle is a small fleet of BEAMs:
 
 - **VMS**: the only firmware on the vehicle CAN buses, so all isolation between manufacturers happens there. Raspberry Pi 4 with a multi-CAN SPI hub.
 - **Infotainment** (optional): the in-car touchscreen on a Raspberry Pi 5, on the `ovcs` bus only.
-- **Vision** (optional): stereo depth and object detection on a Raspberry Pi 5 with a Hailo accelerator, publishing ROS 2 topics over Zenoh. No CAN. See [Vision unit](./vision/overview.md).
+- **Vision** (optional): stereo depth on a Raspberry Pi 5 or an OKdo Nano C100, and object detection where the Pi 5 has a Hailo-8, publishing ROS 2 topics over Zenoh. No CAN. See [Vision unit](./vision/overview.md).
 - **Bridges** (zero or more): each ferries data between the `ovcs` bus and a non-CAN world, such as an ExpressLRS radio link or a ROS 2 graph. The vehicle declares which bridges it ships and on which target.
 - **Generic controllers**: Arduino R4 Minima boards running one shared firmware. They receive their pinout from the VMS at runtime through an adoption frame. See [Generic controllers](./generic_controllers.md).
 
@@ -55,7 +55,7 @@ Every BEAM of a running vehicle joins one Erlang-distribution cluster through `O
 
 A bus message is delivered on its own node only, so a slow link cannot stall a drivetrain component. `OvcsBus.Forwarder` is the cross-node path of bus traffic, and the [bus gateway](./bus_gateway.md) uses it to carry the bus out of the mesh. See [The OVCS bus](./bus.md).
 
-The transport is the same in both environments: `./ovcs run <vehicle>` clusters one BEAM per role over loopback; a deployed vehicle clusters one BEAM per Raspberry Pi over the vehicle LAN.
+The transport is the same in both environments: `./ovcs run <vehicle>` clusters one BEAM per role over loopback; a deployed vehicle clusters one BEAM per board over the vehicle LAN.
 
 On the host, the CLI starts each BEAM with `--sname <vehicle>-<role>` and your `~/.erlang.cookie`, which it creates with a random value if it is missing; the host BEAMs only dial each other, so nobody else on the network can join them. A Nerves release boots without a node name, so on the first `OvcsBus.Cluster` tick `OvcsBus.Distribution` runs `epmd -daemon` and starts distribution as `nerves@<vehicle>-<role>.local` with long names. The hostname part is the device hostname set by erlinit's `hostname_pattern`, which mdns_lite also advertises. Every release's cookie is `ovcs`, passed to the VM by `-setcookie` in `rel/vm.args.eex`, so the devices authenticate each other. Starting distribution needs no IP address; a failed start is logged and retried on the next tick.
 
