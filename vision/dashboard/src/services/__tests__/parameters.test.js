@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
-  fetchGroups, setParameter, saveParameters, discardParameters, resetParameters, fetchComposerSnippet
+  fetchGroups, setParameter, saveParameters, discardParameters, resetParameters
 } from '../parameters.js'
 
 const respond = (status, body) => ({ ok: status < 400, status, json: async () => body })
@@ -132,14 +132,5 @@ describe('parameters service', () => {
 
     await resetParameters(null)
     expect(lastRequest().body).toEqual({ data: { type: 'parameter-resets' } })
-  })
-
-  it('returns the composer snippet', async () => {
-    fetchMock.mockResolvedValue(respond(200, {
-      data: { type: 'composer-snippets', id: 'current', attributes: { snippet: 'config :a, b: 1' } }
-    }))
-
-    expect(await fetchComposerSnippet()).toBe('config :a, b: 1')
-    expect(lastRequest().url).toMatch(/\/api\/composer-snippet$/)
   })
 })

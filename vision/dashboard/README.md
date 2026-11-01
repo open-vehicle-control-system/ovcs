@@ -13,7 +13,7 @@ The page is laid out for a laptop screen:
 
 - the status cards across the top;
 - below, on the left, the left and right camera previews and the depth preview;
-- on the right, the parameters: the pipeline diagram, the selected box's panel and the save bar (Save, Discard, Reset all, Export).
+- on the right, the parameters: the pipeline diagram, the selected box's panel and the save bar (Save, Discard, Reset all).
 
 The selected box is kept in the URL as `?box=<group id>` (`?box=stereo.disparity`). The parameters are polled every second, so values set by an automatic mode stay current.
 

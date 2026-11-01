@@ -594,40 +594,6 @@ defmodule VisionCore.ParametersTest do
       assert {:ok, %{value: 10, saved: nil, state: :unsaved}} =
                Parameters.get(server, "stereo.disparity.p1")
     end
-
-    @tag saved: %{
-           "stereo.disparity.p1" => 10,
-           "stereo.disparity.p2" => 70,
-           "stereo.cameras.auto_exposure" => false,
-           "detection.min_score" => 0.5
-         }
-    test "export renders the saved values with their composer paths", %{server: server} do
-      start_owner(server, &match_groups/1)
-      start_owner(server, &cameras_groups(&1, true))
-
-      assert Parameters.export(server) == """
-             # In the options of the stereo component ({:stereo, opts}):
-             stages: VisionCore.Stereo.Pipeline.default_stages(disparity: [p1: 10, p2: 70])
-
-             # Not settable in the composer:
-             # stereo.cameras.auto_exposure = false
-
-             # Saved for parameters not running now:
-             # detection.min_score = 0.5
-             """
-    end
-
-    @tag saved: %{"stereo.disparity.p1" => 10}
-    test "export lists the saved values of a group whose owner is down as not running now",
-         %{server: server} do
-      {owner, _agent} = start_owner(server, &match_groups/1)
-      stop_owner(owner)
-
-      assert Parameters.export(server) == """
-             # Saved for parameters not running now:
-             # stereo.disparity.p1 = 10
-             """
-    end
   end
 
   # An owner process holding the Agent behind its parameters; both go when it is killed.
@@ -682,13 +648,9 @@ defmodule VisionCore.ParametersTest do
       position: 2,
       status: fn -> {:ok, "matching"} end,
       parameters: [
-        backed(agent, test, "p1", :integer, %{kind: :range, min: 0, max: 78, step: nil})
-        |> Map.put(:export, [:components, :stereo, :stages, :disparity, :p1]),
+        backed(agent, test, "p1", :integer, %{kind: :range, min: 0, max: 78, step: nil}),
         backed(agent, test, "p2", :integer, %{kind: :range, min: 1, max: 79, step: nil})
-        |> Map.merge(%{
-          greater_than: "p1",
-          export: [:components, :stereo, :stages, :disparity, :p2]
-        })
+        |> Map.put(:greater_than, "p1")
       ]
     }
 

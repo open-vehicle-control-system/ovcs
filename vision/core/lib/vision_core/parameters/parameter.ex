@@ -17,8 +17,7 @@ defmodule VisionCore.Parameters.Parameter do
     :default,
     :value,
     :saved,
-    :state,
-    :export
+    :state
   ]
 
   @type t :: %__MODULE__{
@@ -33,7 +32,6 @@ defmodule VisionCore.Parameters.Parameter do
           default: term(),
           value: term(),
           saved: term(),
-          state: Parameters.state(),
-          export: [atom()] | nil
+          state: Parameters.state()
         }
 end

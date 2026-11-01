@@ -18,7 +18,6 @@ defmodule VisionApiWeb.Router do
     post "/parameter-saves", ParameterActionController, :save
     post "/parameter-discards", ParameterActionController, :discard
     post "/parameter-resets", ParameterActionController, :reset
-    get "/composer-snippet", ComposerSnippetController, :show
     get "/configuration", ConfigurationController, :show
     get "/ros2-node", Ros2NodeController, :show
   end

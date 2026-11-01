@@ -337,8 +337,7 @@ defmodule VisionCore.ApplicationTest do
               get: fn -> Agent.get(value, & &1) end,
               set: fn new -> Agent.update(value, fn _old -> new end) end,
               constraint: %{kind: :range, min: 0, max: 10, step: nil},
-              description: "A sample value",
-              export: [:test, :value]
+              description: "A sample value"
             }
           ]
         }

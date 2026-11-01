@@ -58,8 +58,3 @@ const act = async (type, target) => {
 export const saveParameters = () => act('parameter-saves')
 export const discardParameters = () => act('parameter-discards')
 export const resetParameters = (target) => act('parameter-resets', target)
-
-export async function fetchComposerSnippet() {
-  const document = await request('composer-snippet')
-  return document.data.attributes.snippet
-}

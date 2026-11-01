@@ -282,12 +282,6 @@ describe('parameters store', () => {
     await second
   })
 
-  it('returns the export snippet', async () => {
-    service.fetchComposerSnippet.mockResolvedValue('config :a')
-
-    expect(await state().exportSnippet()).toBe('config :a')
-  })
-
   it('records a failed load', async () => {
     service.fetchGroups.mockRejectedValue(new Error('GET failed: 500'))
 

@@ -99,9 +99,8 @@ A change is unsaved until you save it. Unsaved changes live on the unit, not in 
 - **Save**: stores the unsaved values on the unit, in `/data/vision_core.db`, where they are applied again at every boot.
 - **Discard**: returns every unsaved parameter to its saved value, or to its default without one.
 - **Reset**: a box's Reset, or a parameter's, returns it to the defaults; **Reset all** returns every parameter.
-- **Export**: the saved values as a composer snippet, to make them the vehicle's defaults.
 
-Discard and Reset all ask first. The same actions are `VisionCore.Parameters.save/1`, `discard/1`, `reset/2` and `export/1` from IEx. The parameters are also reachable with `ros2 param` and Foxglove's Parameters panel under their ids, `<prefix>.<stage>.<name>` (`stereo.disparity.p1`); a change made there is unsaved too.
+Discard and Reset all ask first. The same actions are `VisionCore.Parameters.save/1`, `discard/1` and `reset/2` from IEx. The parameters are also reachable with `ros2 param` and Foxglove's Parameters panel under their ids, `<prefix>.<stage>.<name>` (`stereo.disparity.p1`); a change made there is unsaved too.
 
 The API follows [JSON:API](https://jsonapi.org/); its routes are listed in [`vision/api/README.md`](../../vision/api/README.md).
 

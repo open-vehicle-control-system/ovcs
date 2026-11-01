@@ -163,8 +163,7 @@ defmodule VisionCore.Stereo.Parameters do
       set: &set_all(driver, servers, [{spec.key, &1}]),
       constraint: side_constraint(spec),
       applies: side_applies(spec.key, group_id),
-      description: side_description(spec),
-      export: Enum.map([:left, :right], &[:components, :stereo, &1, spec.key])
+      description: side_description(spec)
     }
     |> put_configured_default(spec.key, configured[spec.key])
   end
@@ -221,8 +220,7 @@ defmodule VisionCore.Stereo.Parameters do
       set: &ok(driver.set_controls(server, [{spec.key, &1}])),
       constraint: control_constraint(spec),
       applies: control_applies(spec.key, group_id),
-      description: spec.description,
-      export: [:components, :stereo, :left, spec.key]
+      description: spec.description
     }
     |> put_manual_default(spec.key, controls)
   end
@@ -301,8 +299,7 @@ defmodule VisionCore.Stereo.Parameters do
       get: fn -> stage_value(pipeline, stage, key) end,
       set: &ok(Pipeline.set_options(pipeline, stage, [{key, &1}])),
       constraint: constraint(spec),
-      applies: stage_applies(stage, key, spec, prefix, correction?),
-      export: [:components, :stereo, :stages, stage, key]
+      applies: stage_applies(stage, key, spec, prefix, correction?)
     }
     |> put_present(:greater_than, spec[:greater_than] && Atom.to_string(spec.greater_than))
     |> put_present(:description, spec[:description])
@@ -332,8 +329,7 @@ defmodule VisionCore.Stereo.Parameters do
         constraint: %{kind: :bool},
         description:
           "Move the right image to keep the rows lined up, from the row alignment measure; " <>
-            "off, right_row_offset stays as set",
-        export: [:components, :stereo, :align_correction]
+            "off, right_row_offset stays as set"
       }
     ]
   end

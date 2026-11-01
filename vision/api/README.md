@@ -13,7 +13,6 @@ The `/api` routes follow [JSON:API](https://jsonapi.org/): every response is `ap
 | `POST /api/parameter-saves` | Saves the unsaved changes: 201 with the saved parameter ids; 503 when the store fails. |
 | `POST /api/parameter-discards` | Discards the unsaved changes: 201 with their ids. |
 | `POST /api/parameter-resets` | Resets the `target` relationship (a `stages` or `parameters` resource), or everything without one: 201 with the reset ids. |
-| `GET /api/composer-snippet` | The saved values as a composer snippet: `composer-snippets` `current`, attribute `snippet`. |
 | `GET /api/ros2-node` | The ROS 2 node, `ros2-nodes` identified by its node name: `name`, `zenohEndpoint`, `connected`, related `topics` (`ros2-topics`: `name`, `messageType`, `rateHz`) and `services` (`ros2-services`: `name`, `serviceType`), in `included` with `include=topics,services` or either alone; 400 for any other include. |
 | `GET /api/configuration` | The active vision configuration: `configurations` `current`, attribute `composer` holding `VisionCore.settings/0`, keyed by composer option names. |
 

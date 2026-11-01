@@ -26,7 +26,7 @@ defmodule VisionCore.Parameters do
   use GenServer
   require Logger
 
-  alias VisionCore.Parameters.{Export, Group, Parameter, Store}
+  alias VisionCore.Parameters.{Group, Parameter, Store}
 
   @type id :: String.t()
   @type type :: :integer | :double | :bool | :string
@@ -45,7 +45,6 @@ defmodule VisionCore.Parameters do
           optional(:applies) => applies(),
           optional(:greater_than) => String.t(),
           optional(:description) => String.t(),
-          optional(:export) => [atom()] | [[atom()]],
           optional(:default) => term()
         }
   @type group_declaration :: %{
@@ -61,7 +60,7 @@ defmodule VisionCore.Parameters do
         }
 
   @parameter_fields [:id, :group, :name, :type, :constraint, :applies, :greater_than] ++
-                      [:description, :export]
+                      [:description]
 
   @doc """
   Starts the registry. Options: `:store`, the module holding saved values
@@ -123,10 +122,6 @@ defmodule VisionCore.Parameters do
   @doc "Deletes the saved value of `id` now and forgets its unsaved change."
   @spec forget(GenServer.server(), id()) :: :ok
   def forget(server \\ __MODULE__, id), do: GenServer.call(server, {:forget, id})
-
-  @doc "The saved values as composer snippets; see `VisionCore.Parameters.Export`."
-  @spec export(GenServer.server()) :: String.t()
-  def export(server \\ __MODULE__), do: GenServer.call(server, :export)
 
   @impl GenServer
   def init(opts) do
@@ -262,20 +257,6 @@ defmodule VisionCore.Parameters do
     state = delete_saved(state, Enum.filter([id], &Map.has_key?(state.saved, &1)))
     {:reply, :ok, %{state | changed: Map.delete(state.changed, id)}}
   end
-
-  def handle_call(:export, _from, state) do
-    rows =
-      for {id, value} <- state.saved,
-          path <- export_paths(find(state, id)),
-          do: {path, id, value}
-
-    {:reply, Export.render(rows), state}
-  end
-
-  # A parameter applied to several places, such as both cameras, has a path for each.
-  defp export_paths(nil), do: [:not_running]
-  defp export_paths(%{export: [path | _] = paths}) when is_list(path), do: paths
-  defp export_paths(%{export: path}), do: [path]
 
   @impl GenServer
   def handle_continue({:apply, owner}, state) do
@@ -728,7 +709,6 @@ defmodule VisionCore.Parameters do
     |> Map.merge(%{id: "#{group_id}.#{declared.name}", group: group_id})
     |> Map.put_new(:applies, :live)
     |> Map.put_new(:constraint, nil)
-    |> Map.put_new(:export, nil)
     |> Map.update(:greater_than, nil, &"#{group_id}.#{&1}")
   end
 

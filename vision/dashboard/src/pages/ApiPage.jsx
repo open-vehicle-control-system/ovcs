@@ -9,7 +9,6 @@ const RESOURCES = [
   ['POST', 'parameter-saves', 'Saves every unsaved change, so it outlives a reboot'],
   ['POST', 'parameter-discards', 'Drops every unsaved change'],
   ['POST', 'parameter-resets', 'Sets a parameter, a stage or everything back to its built-in value'],
-  ['GET', 'composer-snippet', 'The saved values as a composer snippet'],
   ['GET', 'configuration', 'The active composer configuration'],
   ['GET', 'ros2-node?include=topics,services', 'The ROS 2 node: its Zenoh link, the topics published with their rates, the services answered']
 ]

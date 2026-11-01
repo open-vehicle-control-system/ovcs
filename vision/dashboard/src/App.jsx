@@ -87,7 +87,6 @@ function ParameterSaveBar() {
   const save = useParameters((state) => state.save)
   const discard = useParameters((state) => state.discard)
   const reset = useParameters((state) => state.reset)
-  const exportSnippet = useParameters((state) => state.exportSnippet)
 
   useScrollPaddingFor(barRef)
 
@@ -98,7 +97,6 @@ function ParameterSaveBar() {
       onSave={save}
       onDiscard={discard}
       onResetAll={() => reset()}
-      onExport={exportSnippet}
       className="sticky bottom-0 z-10 -mx-4 -mb-3 border-t border-ovcs-border bg-ovcs-surface px-4 pb-3 pt-4"
     />
   )

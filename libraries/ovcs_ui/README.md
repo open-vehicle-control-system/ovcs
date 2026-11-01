@@ -34,7 +34,7 @@ Design tokens, shared components and a Tailwind preset for OVCS web UIs. Plain C
   |---|---|
   | `OvcsCard`, `OvcsHeader`, `OvcsStatus`, `OvcsBadge`, `OvcsDot`, `OvcsRow` | as the Vue ones |
   | `OvcsParameterControl` | `parameter`, `bounds`, `controllerName`, `onChange`, `onReset`, `onEditStart`, `onEditEnd`: one parameter with its control, badge, description, allowed values, saved state and default |
-  | `OvcsSaveBar` | `unsaved`, `error`, `onSave`, `onDiscard`, `onResetAll`, `onExport`, `onDismissError`, `className`, `ref`: the unsaved count with Save, Discard, Reset all and Export |
+  | `OvcsSaveBar` | `unsaved`, `error`, `onSave`, `onDiscard`, `onResetAll`, `onDismissError`, `className`, `ref`: the unsaved count with Save, Discard and Reset all |
 
   It also exports `focusClass` (the focus ring utilities) and the helpers `formatValue`, `rangeStep` and `tidy`. The two parameter components use Tailwind utilities: add `../../libraries/ovcs_ui/react/**/*.{js,jsx}` (relative to the app) to its `content`.
 

@@ -251,19 +251,12 @@ defmodule VisionCore.Stereo.ParametersTest do
 
       lens = parameter(hd(groups), "lens_position")
 
-      assert lens.export == [
-               [:components, :stereo, :left, :lens_position],
-               [:components, :stereo, :right, :lens_position]
-             ]
-
       assert :ok = lens.set.(1.0)
 
       assert SideDriver.calls() == [
                {"left", [lens_position: 1.0]},
                {"right", [lens_position: 1.0]}
              ]
-
-      refute Map.has_key?(parameter(hd(groups), "auto_exposure"), :export)
     end
 
     test "auto exposure is on while the exposure is 0, and switching it on sets 0 on both cameras" do
@@ -427,19 +420,6 @@ defmodule VisionCore.Stereo.ParametersTest do
       assert {:ok, %{value: 8000, state: :builtin}} =
                VisionCore.Parameters.get("stereo.cameras.exposure_time_us")
     end
-
-    test "a saved value is exported to both cameras' options" do
-      start_supervised!({MemoryStore, %{"stereo.cameras.brightness" => 0.3}})
-      start_supervised!({VisionCore.Parameters, store: MemoryStore})
-
-      start_supervised!(
-        {Parameters, topic_prefix: "stereo", driver: SideDriver, pipeline: Pipeline}
-      )
-
-      export = VisionCore.Parameters.export()
-      assert export =~ ~r/left: \[[^\]]*brightness: 0\.3/
-      assert export =~ ~r/right: \[[^\]]*brightness: 0\.3/
-    end
   end
 
   test "exposure and gain are set by auto exposure, and read what the sensors apply" do
@@ -452,7 +432,6 @@ defmodule VisionCore.Stereo.ParametersTest do
     assert gain.applies == {:auto, "stereo.cameras.auto_exposure"}
     assert exposure.get.() == 8000
     assert gain.get.() == 2.5
-    assert exposure.export == [:components, :stereo, :left, :exposure_us]
 
     Driver.set_controls("left", auto_exposure: false, exposure_us: 3000)
     assert exposure.get.() == 3000
@@ -509,7 +488,6 @@ defmodule VisionCore.Stereo.ParametersTest do
 
     assert %{applies: :build} = paths = parameter(disparity, "paths")
     assert paths.get.() == 8
-    assert parameter(disparity, "p1").export == [:components, :stereo, :stages, :disparity, :p1]
     assert parameter(group("stereo.median_filter"), "median").constraint == %{kind: :bool}
   end
 
@@ -546,7 +524,7 @@ defmodule VisionCore.Stereo.ParametersTest do
     switch = parameter(rectification, "auto_row_offset")
 
     assert hd(rectification.parameters) == switch
-    assert %{type: :bool, export: [:components, :stereo, :align_correction]} = switch
+    assert %{type: :bool} = switch
     assert switch.get.() == true
     assert :ok = switch.set.(false)
     refute AlignmentCorrection.enabled?()

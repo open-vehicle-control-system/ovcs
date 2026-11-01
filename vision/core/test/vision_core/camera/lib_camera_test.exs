@@ -298,19 +298,6 @@ defmodule VisionCore.Camera.LibCameraTest do
              } = LibCamera.controls(camera)
     end
 
-    test "take the exposure mode as the export renders it", %{tmp_dir: tmp_dir} do
-      rows = [
-        {[:components, :stereo, :left, :exposure_mode], "stereo.left.exposure_mode", "long"}
-      ]
-
-      "# In the options" <> _ = snippet = VisionCore.Parameters.Export.render(rows)
-      [_header, options] = String.split(snippet, "\n", parts: 2)
-      {[left: left], _binding} = Code.eval_string("[" <> options <> "]")
-
-      camera = start_camera(tmp_dir, "string_mode", left)
-      assert %{exposure_mode: "long"} = LibCamera.controls(camera)
-    end
-
     @tag :capture_log
     test "leave out a setting the camera refuses", %{tmp_dir: tmp_dir} do
       camera = start_camera(tmp_dir, "refused", brightness: 5.0, contrast: 2)

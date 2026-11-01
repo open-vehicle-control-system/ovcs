@@ -60,8 +60,6 @@ export const useParameters = create((set, get) => ({
   discard: () => perform(service.discardParameters, set, get),
   reset: (target) => perform(() => service.resetParameters(target), set, get),
 
-  exportSnippet: () => service.fetchComposerSnippet(),
-
   startPolling(intervalMs = 1000) {
     if (timer) return
     const poll = () => {
