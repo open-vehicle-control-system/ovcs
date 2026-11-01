@@ -5,7 +5,7 @@
 use std::fs::File;
 use std::io::{self, IoSlice, Read, Write};
 use std::os::fd::{FromRawFd, RawFd};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex, TryLockError};
 
 const TAG_FRAME: u8 = 1;
 const TAG_LOG: u8 = 2;
@@ -25,6 +25,9 @@ pub enum LogLevel {
 extern "C" {
     fn dup(fd: RawFd) -> RawFd;
     fn dup2(old: RawFd, new: RawFd) -> RawFd;
+    #[cfg(test)]
+    #[link_name = "pipe"]
+    fn libc_pipe(ends: *mut RawFd) -> i32;
 }
 
 /// Reads one length-prefixed record. `None` on clean EOF or a truncated record.
@@ -51,7 +54,7 @@ fn read_exact_or_eof<R: Read>(reader: &mut R, buffer: &mut [u8]) -> io::Result<b
 /// Record output on the real stdout. Libraries that print to stdout would
 /// corrupt the framing, so fd 1 is pointed at stderr.
 pub struct Writer {
-    stdout: Mutex<File>,
+    stdout: Arc<Mutex<File>>,
 }
 
 impl Writer {
@@ -66,10 +69,35 @@ impl Writer {
             if dup2(2, 1) < 0 {
                 return Err(io::Error::last_os_error());
             }
-            Ok(Writer {
-                stdout: Mutex::new(stdout),
-            })
+            Ok(Writer::from_file(stdout))
         }
+    }
+
+    fn from_file(output: File) -> Writer {
+        Writer {
+            stdout: Arc::new(Mutex::new(output)),
+        }
+    }
+
+    /// Also sends a panic's message as an error LOG record before the usual
+    /// report on stderr, which the Port does not read. Skipped while another
+    /// thread is writing a record, which it would cut.
+    pub fn log_panics(&self) {
+        let stdout = Arc::clone(&self.stdout);
+        let report = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            let output = match stdout.try_lock() {
+                Ok(output) => Some(output),
+                Err(TryLockError::Poisoned(poisoned)) => Some(poisoned.into_inner()),
+                Err(TryLockError::WouldBlock) => None,
+            };
+            if let Some(mut output) = output {
+                let record = log_record(LogLevel::Error, &format!("panic: {info}"));
+                let _ = write_parts(&mut *output, &[&record]);
+                let _ = output.flush();
+            }
+            report(info);
+        }));
     }
 
     /// Writes one record. Safe to call from several threads.
@@ -187,6 +215,29 @@ pub fn pair_record(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_panic_is_sent_as_an_error_log_record() {
+        let mut ends = [0; 2];
+        // SAFETY: `ends` has room for the two descriptors.
+        assert_eq!(unsafe { libc_pipe(ends.as_mut_ptr()) }, 0);
+        // SAFETY: both descriptors were just created and nothing else owns them.
+        let (mut pipe_out, pipe_in) =
+            unsafe { (File::from_raw_fd(ends[0]), File::from_raw_fd(ends[1])) };
+        let writer = Writer::from_file(pipe_in);
+        writer.log_panics();
+
+        let panicked = std::panic::catch_unwind(|| panic!("no frame left"));
+        let _ = std::panic::take_hook();
+
+        assert!(panicked.is_err());
+        drop(writer);
+        let record = read_record(&mut pipe_out).unwrap().unwrap();
+        assert_eq!(&record[..2], &[TAG_LOG, LogLevel::Error as u8]);
+        let message = String::from_utf8(record[2..].to_vec()).unwrap();
+        assert!(message.starts_with("panic: "), "{message}");
+        assert!(message.contains("no frame left"), "{message}");
+    }
 
     #[test]
     fn frame_record_matches_cpp_layout() {

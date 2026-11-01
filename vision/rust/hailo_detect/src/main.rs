@@ -51,6 +51,7 @@ fn main() {
         Ok(writer) => writer,
         Err(error) => exit_early(&format!("stdout: {error}"), 1),
     };
+    writer.log_panics();
 
     #[cfg(feature = "device")]
     exit(run(hef_path, score_threshold, &writer));

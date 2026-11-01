@@ -85,6 +85,7 @@ enum Reply {
 fn serve() -> io::Result<()> {
     tune_memory_and_pipes();
     let stdout = Writer::from_stdout_redirecting()?;
+    stdout.log_panics();
     let arguments: Vec<String> = std::env::args().skip(1).collect();
     let threads = match threads(&arguments) {
         Ok(threads) => threads,

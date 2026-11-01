@@ -57,6 +57,7 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    writer.log_panics();
     let log = |level, message: &str| {
         let _ = writer.write_record(&log_record(level, message));
     };

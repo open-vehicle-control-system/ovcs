@@ -30,6 +30,7 @@ fn main() {
         Ok(writer) => Arc::new(writer),
         Err(_) => exit(1),
     };
+    writer.log_panics();
 
     #[cfg(feature = "device")]
     if let Some(read_fd) = stderr_pipe {
