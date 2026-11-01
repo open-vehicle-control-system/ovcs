@@ -1,7 +1,8 @@
-//! Captures the OKdo Nano C100's two CSI cameras over V4L2, locks the right
-//! sensor's frame starts to the left one's, and writes grey frame pairs as
-//! `{:packet, 4}` records on stdout. Records on stdin change a setting each
-//! (`name=value`, see `settings`); stdin EOF stops it.
+//! Captures two IMX708 sensors (Raspberry Pi Camera Module 3) over raw V4L2,
+//! locks the right sensor's frame starts to the left one's, and writes grey
+//! frame pairs as `{:packet, 4}` records on stdout. The command line names
+//! each side's capture node and sensor subdevice. Records on stdin change a
+//! setting each (`name=value`, see `settings`); stdin EOF stops it.
 
 mod arguments;
 mod bayer;
@@ -25,10 +26,6 @@ use pairing::{Pairer, Side};
 use settings::Settings;
 use v4l2::{Capture, Node};
 
-const LEFT_VIDEO: &str = "54080000.vi-output-0";
-const LEFT_SENSOR: &str = "imx708 5-001a";
-const RIGHT_VIDEO: &str = "54080000.vi-output-4";
-const RIGHT_SENSOR: &str = "imx708 6-001a";
 const BUFFERS: u32 = 4;
 // Metadata slots 0 (exposure) and 1 (gain).
 const EXPOSURE_GAIN_PRESENT: u8 = 0b11;
@@ -76,11 +73,11 @@ fn main() -> ExitCode {
     }
 }
 
-fn open_camera(video: &str, sensor_name: &str, width: u32, height: u32) -> io::Result<Camera> {
+fn open_camera(nodes: &arguments::Nodes, width: u32, height: u32) -> io::Result<Camera> {
     let open = || -> io::Result<Camera> {
-        let sensor = Node::open(&v4l2::wait_for_node(sensor_name, NODE_TIMEOUT)?)?;
-        let node = Node::open(&v4l2::wait_for_node(video, NODE_TIMEOUT)?)?;
-        let lens = sensor::lens_name(sensor_name)
+        let sensor = Node::open(&v4l2::wait_for_node(&nodes.sensor, NODE_TIMEOUT)?)?;
+        let node = Node::open(&v4l2::wait_for_node(&nodes.video, NODE_TIMEOUT)?)?;
+        let lens = sensor::lens_name(&nodes.sensor)
             .and_then(|name| v4l2::node_named(&name).ok())
             .and_then(|path| Node::open(&path).ok());
         Ok(Camera {
@@ -91,7 +88,7 @@ fn open_camera(video: &str, sensor_name: &str, width: u32, height: u32) -> io::R
     };
     // A capture that just stopped may still be releasing the device.
     v4l2::retry(NODE_TIMEOUT, BUSY_RETRY, io::ErrorKind::ResourceBusy, open)
-        .map_err(|error| io::Error::new(error.kind(), format!("{video}: {error}")))
+        .map_err(|error| io::Error::new(error.kind(), format!("{}: {error}", nodes.video)))
 }
 
 fn run(
@@ -100,8 +97,8 @@ fn run(
     log: &dyn Fn(LogLevel, &str),
 ) -> io::Result<()> {
     let (sensor_width, sensor_height) = (arguments.width * 2, arguments.height * 2);
-    let left = open_camera(LEFT_VIDEO, LEFT_SENSOR, sensor_width, sensor_height)?;
-    let right = open_camera(RIGHT_VIDEO, RIGHT_SENSOR, sensor_width, sensor_height)?;
+    let left = open_camera(&arguments.left, sensor_width, sensor_height)?;
+    let right = open_camera(&arguments.right, sensor_width, sensor_height)?;
 
     let hblank = left.sensor.control(v4l2::CID_HBLANK)?;
     let pixel_rate = left.sensor.control64(v4l2::CID_PIXEL_RATE)?;

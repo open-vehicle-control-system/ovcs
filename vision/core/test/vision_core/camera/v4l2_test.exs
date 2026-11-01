@@ -11,14 +11,32 @@ defmodule VisionCore.Camera.V4L2Test do
       3, 4>>
   end
 
-  test "port arguments carry the size and every setting, defaults included" do
+  test "port arguments carry the size, each side's nodes and every setting, defaults included" do
     arguments =
-      V4L2.port_arguments(width: 768, height: 432, fps: 30, rotation: 180, analogue_gain: 2)
+      V4L2.port_arguments(
+        width: 768,
+        height: 432,
+        fps: 30,
+        right_sensor: "imx708 7-001a",
+        rotation: 180,
+        analogue_gain: 2
+      )
 
     assert Enum.take(arguments, 6) == ~w(--width 768 --height 432 --fps 30)
 
-    settings =
-      arguments |> Enum.drop(6) |> Enum.chunk_every(2) |> Map.new(fn [k, v] -> {k, v} end)
+    {nodes, settings} =
+      arguments
+      |> Enum.drop(6)
+      |> Enum.chunk_every(2)
+      |> Map.new(fn [flag, value] -> {flag, value} end)
+      |> Map.split(~w(--left-video --left-sensor --right-video --right-sensor))
+
+    assert nodes == %{
+             "--left-video" => "54080000.vi-output-0",
+             "--left-sensor" => "imx708 5-001a",
+             "--right-video" => "54080000.vi-output-4",
+             "--right-sensor" => "imx708 7-001a"
+           }
 
     assert settings["--rotation"] == "180"
     assert settings["--analogue-gain"] == "2.0"

@@ -1,8 +1,9 @@
 defmodule VisionCore.Camera.V4L2 do
   @moduledoc """
-  `VisionCore.Camera` driver for a stereo pair captured over raw V4L2 by
-  one `v4l2_capture` program, such as the OKdo Nano C100's two CSI
-  cameras. The program locks the right sensor's frame starts to the left
+  `VisionCore.Camera` driver for a stereo pair of IMX708 sensors
+  (Raspberry Pi Camera Module 3) captured over raw V4L2 by one
+  `v4l2_capture` program, by default on the OKdo Nano C100's two CSI
+  ports. The program locks the right sensor's frame starts to the left
   one's and writes frame pairs, so both sides come from one Port.
 
   The `"left"` instance opens the Port and fans out left frames. It hands
@@ -56,6 +57,9 @@ defmodule VisionCore.Camera.V4L2 do
 
     * `:label` — `"left"` or `"right"`.
     * `:width`, `:height`, `:fps` — the output size and frame rate (left).
+    * `:left_video`, `:left_sensor`, `:right_video`, `:right_sensor` — the
+      V4L2 names (`/sys/class/video4linux/*/name`) of each side's capture
+      node and sensor subdevice (left); the C100's CSI ports by default.
     * any setting of `control_specs/0`, by its key (left).
     * `:executable` — the capture program (default `priv/v4l2_capture`).
   """
@@ -73,6 +77,13 @@ defmodule VisionCore.Camera.V4L2 do
   @watchdog_interval_ms 1_000
   @stall_timeout_ms 2_000
   @startup_timeout_ms 15_000
+  # The OKdo Nano C100's two CSI ports, a Camera Module 3 on each.
+  @default_nodes [
+    left_video: "54080000.vi-output-0",
+    left_sensor: "imx708 5-001a",
+    right_video: "54080000.vi-output-4",
+    right_sensor: "imx708 6-001a"
+  ]
 
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: name_for(Keyword.fetch!(opts, :label)))
@@ -174,14 +185,17 @@ defmodule VisionCore.Camera.V4L2 do
       for key <- [:width, :height, :fps],
           do: ["--#{key}", Integer.to_string(Keyword.fetch!(opts, key))]
 
-    settings =
-      for spec <- @settings do
-        flag = "--" <> String.replace(Atom.to_string(spec.key), "_", "-")
-        [flag, encode(spec, Keyword.get(opts, spec.key, spec.default))]
-      end
+    nodes =
+      for {key, default} <- @default_nodes, do: [flag(key), Keyword.get(opts, key, default)]
 
-    List.flatten(size ++ settings)
+    settings =
+      for spec <- @settings,
+          do: [flag(spec.key), encode(spec, Keyword.get(opts, spec.key, spec.default))]
+
+    List.flatten(size ++ nodes ++ settings)
   end
+
+  defp flag(key), do: "--" <> String.replace(Atom.to_string(key), "_", "-")
 
   @doc """
   The `name=value` commands that set `controls` on the capture program,
