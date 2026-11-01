@@ -203,16 +203,15 @@ fn run(
                     Ok(()) => {
                         tone = Tone::new(settings.black_level, settings.gamma);
                         let running = (auto_exposure.exposure_us, auto_exposure.gain);
-                        auto_exposure = auto_exposure_from(&settings, frame_us, running);
-                        if !settings.auto_exposure {
-                            report_exposure(
-                                set_exposure(
-                                    f64::from(settings.exposure_us),
-                                    settings.analogue_gain,
-                                )?,
-                                last_left_ns.unwrap_or(0),
+                        let resume_from = resume_point(&settings, running, || {
+                            let applied = set_exposure(
+                                f64::from(settings.exposure_us),
+                                settings.analogue_gain,
                             )?;
-                        }
+                            report_exposure(applied, last_left_ns.unwrap_or(0))?;
+                            Ok(applied)
+                        })?;
+                        auto_exposure = auto_exposure_from(&settings, frame_us, resume_from);
                         set_focus(settings.focus);
                         log(LogLevel::Info, &format!("settings: {settings:?}"));
                     }
@@ -299,6 +298,21 @@ fn auto_exposure(settings: &Settings, frame_us: f64) -> AutoExposure {
     auto_exposure_from(settings, frame_us, start)
 }
 
+/// Where auto exposure continues from after a settings change: where it ran,
+/// or, while it is off, the manual values `apply_manual` gives the sensors,
+/// so switching it on again starts from what they hold.
+fn resume_point(
+    settings: &Settings,
+    running: (f64, f64),
+    apply_manual: impl FnOnce() -> io::Result<(f64, f64)>,
+) -> io::Result<(f64, f64)> {
+    if settings.auto_exposure {
+        Ok(running)
+    } else {
+        apply_manual()
+    }
+}
+
 /// Auto exposure from `settings`, continuing from `(exposure_us, gain)`.
 fn auto_exposure_from(
     settings: &Settings,
@@ -320,5 +334,30 @@ fn pollfd(fd: i32) -> libc::pollfd {
         fd,
         events: libc::POLLIN,
         revents: 0,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn auto_exposure_switched_on_again_starts_from_the_manual_values() {
+        let mut settings = Settings::default();
+        let mut auto_exposure = auto_exposure_from(&settings, 33_333.0, (12_000.0, 3.0));
+
+        settings.apply(b"auto_exposure=false").unwrap();
+        settings.apply(b"exposure_us=5000").unwrap();
+        let running = (auto_exposure.exposure_us, auto_exposure.gain);
+        let resume_from = resume_point(&settings, running, || Ok((5_000.0, 1.5))).unwrap();
+        auto_exposure = auto_exposure_from(&settings, 33_333.0, resume_from);
+
+        settings.apply(b"auto_exposure=true").unwrap();
+        let running = (auto_exposure.exposure_us, auto_exposure.gain);
+        let resume_from = resume_point(&settings, running, || {
+            panic!("no manual values while automatic")
+        })
+        .unwrap();
+        assert_eq!(resume_from, (5_000.0, 1.5));
     }
 }
