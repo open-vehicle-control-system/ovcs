@@ -148,6 +148,27 @@ defmodule VisionCore.PreviewTest do
     assert_receive {:vision_preview, :depth, "depth jpeg"}, 500
   end
 
+  test "the latest depth map is coloured again over a new depth range" do
+    test_pid = self()
+
+    encode_depth = fn _pair ->
+      send(test_pid, :depth_encoded)
+      "depth jpeg"
+    end
+
+    start_supervised!({Preview, config: @config, depth_encoder: encode_depth})
+    :ok = Preview.subscribe(:depth)
+    GenServer.cast(Preview, {:stereo_pair, pair(List.duplicate(0, 16))})
+    assert_receive {:vision_preview, :depth, "depth jpeg"}, 500
+    assert_received :depth_encoded
+
+    assert {:ok, _options} = Preview.set_options(depth_range_m: 8.5)
+    Preview.ack(:depth)
+
+    assert_receive :depth_encoded, 500
+    assert_receive {:vision_preview, :depth, "depth jpeg"}, 500
+  end
+
   test "a pair without a depth map is not previewed" do
     preview = start_supervised!({Preview, config: @config})
     :ok = Preview.subscribe(:depth)

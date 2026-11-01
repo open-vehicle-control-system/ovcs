@@ -136,7 +136,11 @@ defmodule VisionCore.Preview do
         state =
           Enum.reduce(options, state, fn {key, value}, state -> put_option(state, key, value) end)
 
-        if Keyword.has_key?(options, :depth_range_m), do: announce_depth_range(state)
+        state =
+          if Keyword.has_key?(options, :depth_range_m),
+            do: state |> announce_depth_range() |> recolour_depth(),
+            else: state
+
         {:reply, {:ok, Map.take(state, [:max_hz, :depth_range_m])}, state}
 
       {key, value} ->
@@ -297,7 +301,13 @@ defmodule VisionCore.Preview do
   defp announce_depth_range(state) do
     for {pid, :depth} <- Map.keys(state.subscribers),
         do: send(pid, {:vision_preview_options, %{depth_range_m: state.depth_range_m}})
+
+    state
   end
+
+  # The latest depth map again, as a new frame, so it is coloured over the new range and sent again.
+  defp recolour_depth(%{latest: %{depth: %{frame: nil}}} = state), do: state
+  defp recolour_depth(state), do: store_frame(state, :depth, state.latest.depth.frame)
 
   defp valid_option?(:max_hz, value), do: is_integer(value) and value in 1..30
   defp valid_option?(:depth_range_m, value), do: is_number(value) and value >= 0 and value <= 50
