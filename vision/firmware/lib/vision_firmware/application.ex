@@ -15,7 +15,7 @@ defmodule VisionFirmware.Application do
       else: [
         OvcsVehicle.CpuGovernor,
         Supervisor.child_spec(
-          {OvcsVehicle.CpuGovernor, glob: "/sys/class/devfreq/*gpu*/governor"},
+          {OvcsVehicle.CpuGovernor, glob: "/sys/class/devfreq/*gpu*/governor", devices: "GPU"},
           id: :gpu_governor
         ),
         OvcsVehicle.FirmwareValidator
