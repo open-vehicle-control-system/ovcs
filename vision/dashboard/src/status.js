@@ -64,13 +64,14 @@ export function depthFigures(hz, quality) {
   ]
 }
 
-function loadStatus(id, title, percent, detail) {
+function loadStatus(id, title, percent) {
   return {
     id,
     title,
     value: percent == null ? '–' : `${formatNumber(percent, 0)} %`,
-    healthy: percent != null && percent < 90,
-    detail
+    widest: '100 %',
+    align: 'end',
+    healthy: percent != null && percent < 90
   }
 }
 
@@ -106,12 +107,20 @@ export function pairStatus(status) {
   return [syncStatus(status.sync), alignmentStatus(status.alignment), sharpnessStatus(status.sharpness)]
 }
 
-/** The unit's links and load. */
+/** The unit's links and load, each with the widest form of its value, which the top bar keeps room for. */
 export function unitStatus(status) {
   return [
-    { id: 'zenoh', title: 'Zenoh', value: status.zenoh, healthy: status.zenoh === 'connected', hint: HINTS.zenoh },
+    { id: 'zenoh', title: 'Zenoh', value: status.zenoh, widest: 'disconnected', healthy: status.zenoh === 'connected', hint: HINTS.zenoh },
     // Absent is a unit built without an accelerator, not a fault.
-    { id: 'hailo', title: 'Hailo', value: status.hailo, healthy: status.hailo === 'running', tone: status.hailo === 'absent' ? 'muted' : undefined, hint: HINTS.hailo },
+    {
+      id: 'hailo',
+      title: 'Hailo',
+      value: status.hailo,
+      widest: 'running',
+      healthy: status.hailo === 'running',
+      tone: status.hailo === 'absent' ? 'muted' : undefined,
+      hint: HINTS.hailo
+    },
     { ...loadStatus('cpu', 'CPU', status.cpuPercent), hint: HINTS.cpu },
     { ...loadStatus('segment', 'Stereo load', status.stereoLoadPercent), hint: HINTS.stereoLoad }
   ]

@@ -108,6 +108,17 @@ describe('UnitStatus and the pair status', () => {
     }
   })
 
+  it('keeps each top bar value as wide as its widest form, warning sign included, so the line does not move', () => {
+    show({ ...snapshot, zenoh: 'connected', stereoLoadPercent: 98 })
+
+    const widest = (id) => card(id).querySelector('[data-widest]').dataset.widest
+    expect(widest('zenoh')).toBe('disconnected')
+    expect(widest('hailo')).toBe('running')
+    expect(widest('cpu')).toBe('100 %')
+    expect(widest('segment')).toBe('100 %')
+    for (const id of ['zenoh', 'hailo', 'cpu', 'segment']) expect(card(id).querySelector('[data-warning-slot]')).not.toBeNull()
+  })
+
   it('waits for the first status', () => {
     show(null)
 

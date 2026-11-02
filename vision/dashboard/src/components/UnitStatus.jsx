@@ -8,18 +8,33 @@ const WARNING_ICON = (
   </svg>
 )
 
+// What marks an unhealthy value beyond its colour: a warning sign, and words for a screen reader.
+const WARNING = (
+  <>
+    {WARNING_ICON}
+    <span className="sr-only">, unhealthy</span>
+  </>
+)
+
 /** A value with its health dot; an unhealthy one also gets a warning sign, and words for a screen reader. */
 export function HealthValue({ tone, children }) {
   return (
     <>
       {children}
-      {tone === 'error' ? (
-        <>
-          {WARNING_ICON}
-          <span className="sr-only">, unhealthy</span>
-        </>
-      ) : null}
+      {tone === 'error' ? WARNING : null}
     </>
+  )
+}
+
+/** `children` in a box as wide as `widest` in the same font, so what follows keeps its place as the value changes. */
+function Widest({ widest, align, children }) {
+  return (
+    <span
+      data-widest={widest}
+      className={`inline-grid after:invisible after:content-[attr(data-widest)] after:[grid-area:1/1] ${align === 'end' ? 'justify-items-end' : ''}`}
+    >
+      <span className="[grid-area:1/1]">{children}</span>
+    </span>
   )
 }
 
@@ -36,7 +51,7 @@ export function StatusValue({ item, className = 'text-base' }) {
   )
 }
 
-/** The unit's links and load, inline for the top bar, each explained by its hint. */
+/** The unit's links and load, inline for the top bar, each explained by its hint; a value changing does not move the line. */
 export default function UnitStatus({ status }) {
   if (!status) return <p className="text-sm text-ovcs-muted">Waiting for the vision unit…</p>
 
@@ -51,7 +66,13 @@ export default function UnitStatus({ status }) {
               <Hint hint={item.hint} />
             </span>
             <OvcsStatus tone={tone} className="font-medium tabular-nums">
-              <HealthValue tone={tone}>{item.value}</HealthValue>
+              <Widest widest={item.widest} align={item.align}>
+                {item.value}
+              </Widest>
+              {/* The sign keeps its room while the value is healthy. */}
+              <span data-warning-slot className="flex size-3.5 shrink-0">
+                {tone === 'error' ? WARNING : null}
+              </span>
             </OvcsStatus>
           </li>
         )
