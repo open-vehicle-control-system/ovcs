@@ -1,4 +1,4 @@
-defmodule VisionApiWeb.ParameterActionPresenter do
+defmodule VisionApiWeb.ParameterActionJSON do
   @moduledoc """
   A created save, discard or reset of the vision parameters as a JSON:API
   resource of `type`, listing the parameters it touched.
@@ -6,6 +6,7 @@ defmodule VisionApiWeb.ParameterActionPresenter do
   alias VisionApiWeb.JsonApi
 
   @doc "The action resource of `type` and `id`, with the ids of the `parameters` it touched."
-  @spec present(String.t(), String.t(), [String.t()]) :: map()
-  def present(type, id, parameters), do: JsonApi.resource(type, id, %{parameters: parameters})
+  @spec show(%{type: String.t(), id: String.t(), parameters: [String.t()]}) :: map()
+  def show(%{type: type, id: id, parameters: parameters}),
+    do: %{data: JsonApi.resource(type, id, %{parameters: parameters})}
 end

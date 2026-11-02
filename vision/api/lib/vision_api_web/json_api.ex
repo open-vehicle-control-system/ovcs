@@ -1,16 +1,16 @@
 defmodule VisionApiWeb.JsonApi do
-  @moduledoc "JSON:API 1.1 responses: the media type, the error objects and the resource objects presenters build."
+  @moduledoc "JSON:API 1.1 responses: the media type, the error objects and the resource objects the `*JSON` modules build."
   import Plug.Conn
 
   @media_type "application/vnd.api+json"
 
-  @doc "Sends `document` as JSON with the JSON:API media type."
-  @spec send_document(Plug.Conn.t(), pos_integer(), map()) :: Plug.Conn.t()
-  def send_document(conn, status, document) do
-    conn
-    |> put_resp_content_type(@media_type, nil)
-    |> send_resp(status, Jason.encode!(document))
-  end
+  @doc """
+  Plug putting the JSON:API media type on the response, without the
+  `charset` parameter JSON:API forbids. `render/3` keeps a content type
+  already set.
+  """
+  @spec put_media_type(Plug.Conn.t(), term()) :: Plug.Conn.t()
+  def put_media_type(conn, _opts), do: put_resp_content_type(conn, @media_type, nil)
 
   @doc "Sends an error object; `source` is a JSON pointer, or a map such as `%{parameter: \"include\"}`."
   @spec error(Plug.Conn.t(), pos_integer(), String.t(), String.t(), map() | String.t() | nil) ::
@@ -18,7 +18,10 @@ defmodule VisionApiWeb.JsonApi do
   def error(conn, status, title, detail, source \\ nil) do
     error = %{status: Integer.to_string(status), title: title, detail: detail}
     error = if source, do: Map.put(error, :source, source(source)), else: error
-    send_document(conn, status, %{errors: [error]})
+
+    conn
+    |> put_media_type([])
+    |> send_resp(status, Jason.encode!(%{errors: [error]}))
   end
 
   defp source(pointer) when is_binary(pointer), do: %{pointer: pointer}

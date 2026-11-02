@@ -1,15 +1,15 @@
 defmodule VisionApiWeb.DetectionChannel do
   @moduledoc """
   Pushes `VisionCore.Detection.Live`'s results on `"detections"` as
-  `"detections"` events, `%{detections: [detection]}`, each presented by
-  `VisionApiWeb.DetectionPresenter`. Stops when `VisionCore.Detection.Live`
-  restarts, and refuses the join while it is not running, as on a unit
-  without detection; see `VisionApiWeb.SourceMonitor`.
+  `"detections"` events, shaped by `VisionApiWeb.DetectionJSON`. Stops
+  when `VisionCore.Detection.Live` restarts, and refuses the join while it
+  is not running, as on a unit without detection; see
+  `VisionApiWeb.SourceMonitor`.
   """
   # On a unit without detection, the client keeps retrying the refused join.
   use VisionApiWeb, {:channel, log_join: :debug}
 
-  alias VisionApiWeb.{DetectionPresenter, SourceMonitor}
+  alias VisionApiWeb.{DetectionJSON, SourceMonitor}
 
   @impl Phoenix.Channel
   def join("detections", _payload, socket),
@@ -22,7 +22,7 @@ defmodule VisionApiWeb.DetectionChannel do
 
   @impl Phoenix.Channel
   def handle_info({:vision_detections, detections}, socket) do
-    push(socket, "detections", %{detections: Enum.map(detections, &DetectionPresenter.present/1)})
+    push(socket, "detections", DetectionJSON.detections(detections))
     {:noreply, socket}
   end
 

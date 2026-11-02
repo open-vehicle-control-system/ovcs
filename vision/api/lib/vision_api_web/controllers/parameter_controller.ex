@@ -5,24 +5,17 @@ defmodule VisionApiWeb.ParameterController do
   """
   use VisionApiWeb, :controller
 
-  alias VisionApiWeb.{JsonApi, ParameterPresenter}
+  alias VisionApiWeb.JsonApi
   alias VisionCore.Parameters
 
   @value_pointer "/data/attributes/value"
 
-  def index(conn, _params) do
-    groups = Parameters.groups()
-
-    JsonApi.send_document(conn, 200, %{
-      data: ParameterPresenter.present_all(groups),
-      meta: ParameterPresenter.meta(groups)
-    })
-  end
+  def index(conn, _params), do: render(conn, :index, groups: Parameters.groups())
 
   def show(conn, %{"id" => id}) do
     case Parameters.get(id) do
       {:ok, parameter} ->
-        JsonApi.send_document(conn, 200, %{data: ParameterPresenter.present(parameter)})
+        render(conn, :show, parameter: parameter)
 
       {:error, :not_found} ->
         JsonApi.error(conn, 404, "Not Found", "no parameter #{id}")
@@ -36,7 +29,7 @@ defmodule VisionApiWeb.ParameterController do
          {:ok, value} <- fetch_value(data) do
       case Parameters.set(id, value) do
         {:ok, parameter} ->
-          JsonApi.send_document(conn, 200, %{data: ParameterPresenter.present(parameter)})
+          render(conn, :show, parameter: parameter)
 
         {:error, :not_found} ->
           JsonApi.error(conn, 404, "Not Found", "no parameter #{id}")

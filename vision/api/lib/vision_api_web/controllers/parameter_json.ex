@@ -1,11 +1,24 @@
-defmodule VisionApiWeb.ParameterPresenter do
-  @moduledoc "A `VisionCore.Parameters.Parameter` as a `parameters` JSON:API resource."
+defmodule VisionApiWeb.ParameterJSON do
+  @moduledoc "Each `VisionCore.Parameters.Parameter` as a `parameters` JSON:API resource."
   alias VisionApiWeb.JsonApi
   alias VisionCore.Parameters.{Group, Parameter}
 
+  @doc "The parameters of `groups`, in order, with how many are unsaved in `meta`."
+  @spec index(%{groups: [Group.t()]}) :: map()
+  def index(%{groups: groups}) do
+    %{
+      data: for(group <- groups, parameter <- group.parameters, do: data(parameter)),
+      meta: meta(groups)
+    }
+  end
+
+  @doc "One `parameter`."
+  @spec show(%{parameter: Parameter.t()}) :: map()
+  def show(%{parameter: parameter}), do: %{data: data(parameter)}
+
   @doc "The `parameters` resource of `parameter`, related to its `stage`, `controlledBy` and `greaterThan` parameters."
-  @spec present(Parameter.t()) :: map()
-  def present(%Parameter{} = parameter) do
+  @spec data(Parameter.t()) :: map()
+  def data(%Parameter{} = parameter) do
     JsonApi.resource(
       "parameters",
       parameter.id,
@@ -27,10 +40,6 @@ defmodule VisionApiWeb.ParameterPresenter do
       }
     )
   end
-
-  @doc "The parameters of `groups`, in order."
-  @spec present_all([Group.t()]) :: [map()]
-  def present_all(groups), do: groups |> Enum.flat_map(& &1.parameters) |> Enum.map(&present/1)
 
   @doc "The document `meta` of a response about `groups`: how many parameters are unsaved."
   @spec meta([Group.t()]) :: map()

@@ -67,6 +67,7 @@ config :vision_firmware, vehicle: vehicle_name
 
 # vision_api serves JSON:API; path deps' config is not loaded here.
 config :mime, :types, %{"application/vnd.api+json" => ["jsonapi"]}
+config :phoenix_template, :format_encoders, jsonapi: Jason
 
 if Mix.target() == :host do
   import_config "host.exs"

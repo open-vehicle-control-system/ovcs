@@ -1,4 +1,4 @@
-defmodule VisionApiWeb.Ros2NodePresenter do
+defmodule VisionApiWeb.Ros2NodeJSON do
   @moduledoc """
   The unit's ROS 2 node (`VisionCore.Ros2.ZenohClient.link/0`) as a
   `ros2-nodes` JSON:API resource, with its `ros2-topics` and
@@ -6,9 +6,25 @@ defmodule VisionApiWeb.Ros2NodePresenter do
   """
   alias VisionApiWeb.JsonApi
 
-  @doc "The `ros2-nodes` resource of `link` (`VisionCore.Ros2.ZenohClient.link/0`), related to its `topics` and services."
-  @spec present(map(), [map()]) :: map()
-  def present(link, topics) do
+  @doc """
+  The node of `link` (`VisionCore.Ros2.ZenohClient.link/0`), related to its
+  `topics` and services, with those `includes` names, `"topics"` or
+  `"services"`, in `included`.
+  """
+  @spec show(%{link: map(), topics: [map()], includes: [String.t()]}) :: map()
+  def show(%{link: link, topics: topics, includes: []}), do: %{data: data(link, topics)}
+
+  def show(%{link: link, topics: topics, includes: includes}) do
+    included =
+      Enum.flat_map(includes, fn
+        "topics" -> Enum.map(topics, &topic/1)
+        "services" -> Enum.map(link.services, &service/1)
+      end)
+
+    %{data: data(link, topics), included: included}
+  end
+
+  defp data(link, topics) do
     JsonApi.resource(
       "ros2-nodes",
       link.node_name,
@@ -20,9 +36,7 @@ defmodule VisionApiWeb.Ros2NodePresenter do
     )
   end
 
-  @doc "A topic the node published (`VisionCore.Ros2.Topics.topics/0`)."
-  @spec topic(map()) :: map()
-  def topic(topic),
+  defp topic(topic),
     do:
       JsonApi.resource("ros2-topics", topic.name, %{
         name: topic.name,
@@ -30,9 +44,7 @@ defmodule VisionApiWeb.Ros2NodePresenter do
         rateHz: topic.rate_hz
       })
 
-  @doc "A service the node answers."
-  @spec service(map()) :: map()
-  def service(service),
+  defp service(service),
     do:
       JsonApi.resource("ros2-services", service.name, %{
         name: service.name,

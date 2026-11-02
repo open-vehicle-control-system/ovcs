@@ -18,7 +18,7 @@ defmodule VisionApiWeb.PreviewChannel do
   # The client acks every frame it shows: logged, the acks would push everything else out of the log.
   use VisionApiWeb, {:channel, log_handle_in: false}
 
-  alias VisionApiWeb.{DepthRangePresenter, SourceMonitor}
+  alias VisionApiWeb.{PreviewJSON, SourceMonitor}
 
   @streams %{"left" => :left, "right" => :right, "depth" => :depth}
 
@@ -49,7 +49,7 @@ defmodule VisionApiWeb.PreviewChannel do
       end
 
     case reply do
-      {:ok, options} -> {:reply, {:ok, DepthRangePresenter.present(options)}, socket}
+      {:ok, options} -> {:reply, {:ok, PreviewJSON.depth_range(options)}, socket}
       {:error, reason} -> {:reply, {:error, %{reason: reason}}, socket}
     end
   end
@@ -64,7 +64,7 @@ defmodule VisionApiWeb.PreviewChannel do
   end
 
   def handle_info({:vision_preview_options, options}, socket) do
-    push(socket, "depth_range", DepthRangePresenter.present(options))
+    push(socket, "depth_range", PreviewJSON.depth_range(options))
     {:noreply, socket}
   end
 

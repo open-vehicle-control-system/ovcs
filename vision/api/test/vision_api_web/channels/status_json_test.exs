@@ -1,9 +1,9 @@
-defmodule VisionApiWeb.StatusPresenterTest do
+defmodule VisionApiWeb.StatusJSONTest do
   use ExUnit.Case, async: true
 
-  alias VisionApiWeb.StatusPresenter
+  alias VisionApiWeb.StatusJSON
 
-  test "presents a snapshot with camelCase keys and string states" do
+  test "gives the snapshot's fields camelCase keys and states as strings" do
     snapshot = %{
       cameras: %{
         left: %{
@@ -27,7 +27,7 @@ defmodule VisionApiWeb.StatusPresenterTest do
       zenoh: :connected
     }
 
-    assert StatusPresenter.present(snapshot) == %{
+    assert StatusJSON.status(snapshot) == %{
              cameras: %{
                left: %{
                  present: true,
@@ -56,7 +56,7 @@ defmodule VisionApiWeb.StatusPresenterTest do
            }
   end
 
-  test "presents what is not measured yet as nil" do
+  test "gives what is not measured yet as nil" do
     snapshot = %{
       cameras: %{left: %{present: false}, right: %{present: false}},
       sync: %{present: false},
@@ -77,6 +77,6 @@ defmodule VisionApiWeb.StatusPresenterTest do
              sharpness: nil,
              quality: nil,
              hailo: "running"
-           } = StatusPresenter.present(snapshot)
+           } = StatusJSON.status(snapshot)
   end
 end

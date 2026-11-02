@@ -13,5 +13,6 @@ config :logger, :console,
 config :phoenix, :json_library, Jason
 
 config :mime, :types, %{"application/vnd.api+json" => ["jsonapi"]}
+config :phoenix_template, :format_encoders, jsonapi: Jason
 
 import_config "#{config_env()}.exs"

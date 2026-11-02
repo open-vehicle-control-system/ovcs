@@ -10,7 +10,7 @@ defmodule VisionApiWeb.Ros2NodeController do
   """
   use VisionApiWeb, :controller
 
-  alias VisionApiWeb.{JsonApi, Ros2NodePresenter}
+  alias VisionApiWeb.JsonApi
   alias VisionCore.Ros2.{Topics, ZenohClient}
 
   @relationships ["topics", "services"]
@@ -18,26 +18,11 @@ defmodule VisionApiWeb.Ros2NodeController do
   def show(conn, params) do
     case includes(params) do
       {:ok, includes} ->
-        send_node(conn, includes)
+        render(conn, :show, link: ZenohClient.link(), topics: Topics.topics(), includes: includes)
 
       :error ->
         JsonApi.error(conn, 400, "Bad Request", "unsupported include", %{parameter: "include"})
     end
-  end
-
-  defp send_node(conn, includes) do
-    link = ZenohClient.link()
-    topics = Topics.topics()
-    node = Ros2NodePresenter.present(link, topics)
-
-    included =
-      Enum.flat_map(includes, fn
-        "topics" -> Enum.map(topics, &Ros2NodePresenter.topic/1)
-        "services" -> Enum.map(link.services, &Ros2NodePresenter.service/1)
-      end)
-
-    document = if includes == [], do: %{data: node}, else: %{data: node, included: included}
-    JsonApi.send_document(conn, 200, document)
   end
 
   defp includes(%{"include" => include}) do

@@ -1,4 +1,4 @@
-defmodule VisionApiWeb.StatusPresenter do
+defmodule VisionApiWeb.StatusJSON do
   @moduledoc """
   A `VisionCore.Status` snapshot as the `"status"` event's payload: the
   same fields with camelCase keys, states as strings, and
@@ -22,8 +22,8 @@ defmodule VisionApiWeb.StatusPresenter do
   }
 
   @doc "The `\"status\"` event's payload for `snapshot`."
-  @spec present(VisionCore.Status.snapshot()) :: map()
-  def present(snapshot) do
+  @spec status(VisionCore.Status.snapshot()) :: map()
+  def status(snapshot) do
     %{
       cameras: %{
         left: rename(snapshot.cameras.left, @camera_keys),

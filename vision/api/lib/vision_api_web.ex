@@ -19,7 +19,8 @@ defmodule VisionApiWeb do
 
   def controller do
     quote do
-      use Phoenix.Controller, formats: [:json]
+      # Both formats the router accepts render with the controller's `*JSON` module.
+      use Phoenix.Controller, formats: [json: "JSON", jsonapi: "JSON"]
 
       import Plug.Conn
     end

@@ -1,8 +1,11 @@
 defmodule VisionApiWeb.Router do
   use VisionApiWeb, :router
 
+  import VisionApiWeb.JsonApi, only: [put_media_type: 2]
+
   pipeline :jsonapi do
     plug :accepts, ["jsonapi", "json"]
+    plug :put_media_type
   end
 
   scope "/api", VisionApiWeb do
