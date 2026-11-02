@@ -1,7 +1,7 @@
 defmodule VisionCore.Stereo.Parameters do
   @moduledoc """
   Declares a stereo unit's parameter groups in `VisionCore.Parameters`,
-  under its topic prefix `<prefix>`:
+  the steps of its `:stereo` pipeline, under its topic prefix `<prefix>`:
 
     * `<prefix>.cameras` — the capture settings of both cameras, with the
       capture size, frame rate and each side's addressing as build
@@ -112,7 +112,7 @@ defmodule VisionCore.Stereo.Parameters do
       summary: "Capture settings, applied to both cameras.",
       explanation: @cameras_explanation,
       kind: :component,
-      placement: :flow,
+      pipeline: :stereo,
       position: 0,
       parameters:
         Enum.map(driver.control_specs(), &control(&1, driver, server, id, controls)) ++
@@ -132,7 +132,7 @@ defmodule VisionCore.Stereo.Parameters do
       summary: "Capture settings, applied to both cameras.",
       explanation: @cameras_explanation,
       kind: :component,
-      placement: :flow,
+      pipeline: :stereo,
       position: 0,
       parameters:
         Enum.map(@auto_switches, &auto_switch(&1, driver, servers)) ++
@@ -302,7 +302,7 @@ defmodule VisionCore.Stereo.Parameters do
       name: humanise(stage.stage),
       summary: stage.summary,
       kind: :stage,
-      placement: :flow,
+      pipeline: :stereo,
       position: position,
       values: fn -> stage_values(pipeline, stage.stage) end,
       parameters:
@@ -391,8 +391,8 @@ defmodule VisionCore.Stereo.Parameters do
   defp constraint(_spec), do: nil
 
   @doc "A build parameter declaration for `{key, value}`: read-only, fixed at start."
-  @spec build_parameter({atom(), term()}) :: VisionCore.Parameters.declaration()
-  def build_parameter({key, value}) do
+  @spec build_parameter({atom(), term()}, String.t()) :: VisionCore.Parameters.declaration()
+  def build_parameter({key, value}, description \\ "Fixed at start") do
     {type, value} = parameter_value(value)
 
     %{
@@ -400,7 +400,7 @@ defmodule VisionCore.Stereo.Parameters do
       type: type,
       get: fn -> value end,
       applies: :build,
-      description: "Fixed at start"
+      description: description
     }
   end
 

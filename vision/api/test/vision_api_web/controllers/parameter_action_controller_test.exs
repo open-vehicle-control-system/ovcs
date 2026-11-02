@@ -113,7 +113,7 @@ defmodule VisionApiWeb.ParameterActionControllerTest do
           name: "Stubborn",
           summary: "Refuses to be set.",
           kind: :component,
-          placement: :side,
+          pipeline: :detection,
           position: 9,
           parameters: [
             %{

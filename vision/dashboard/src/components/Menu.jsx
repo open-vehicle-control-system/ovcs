@@ -1,6 +1,6 @@
 import { useId } from 'react'
 import { focusClass as FOCUS } from '@ovcs/ui/react'
-import PipelineDiagram, { SideGroups } from './PipelineDiagram.jsx'
+import Pipelines from './Pipelines.jsx'
 import { SECTION_HEADING, SELECTED } from './menu.js'
 import { useNavigation } from '../stores/navigation.js'
 
@@ -50,7 +50,7 @@ function Pages({ label, pages }) {
   )
 }
 
-/** The unit's navigation: its own pages and the components beside the pipeline, the pipeline's stages, and what leaves the unit. */
+/** The unit's navigation: its own pages, the steps of its pipelines, and what leaves the unit. */
 export default function Menu() {
   return (
     <nav
@@ -59,10 +59,9 @@ export default function Menu() {
     >
       <Section title="Main">
         <Pages label="Main" pages={MAIN_PAGES} />
-        <SideGroups />
       </Section>
-      <Section title="Pipeline">
-        <PipelineDiagram />
+      <Section title="Pipelines">
+        <Pipelines />
       </Section>
       <Section title="Exporters">
         <Pages label="Exporters" pages={EXPORTER_PAGES} />

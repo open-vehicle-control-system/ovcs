@@ -328,7 +328,7 @@ defmodule VisionCore.ApplicationTest do
           name: "Sample",
           summary: "A test parameter.",
           kind: :component,
-          placement: :side,
+          pipeline: :detection,
           position: 0,
           parameters: [
             %{

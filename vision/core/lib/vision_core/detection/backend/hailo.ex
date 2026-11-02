@@ -55,6 +55,9 @@ defmodule VisionCore.Detection.Backend.Hailo do
 
   require Logger
 
+  alias VisionCore.Detection.Pipeline
+  alias VisionCore.Stereo.Parameters
+
   # :hailort is a dependency only on targets that build hailo_detect.
   @compile {:no_warn_undefined, Hailort}
 
@@ -64,6 +67,12 @@ defmodule VisionCore.Detection.Backend.Hailo do
   @log_tag 2
 
   @default_score_threshold 0.4
+  @explanation "Runs object detection on the Hailo-8 accelerator. It finds people, vehicles, " <>
+                 "animals and everyday objects, the 80 COCO classes, each as a box with a score. " <>
+                 "The model and score_threshold, the lowest score the accelerator reports, are " <>
+                 "fixed in the build. When the accelerator is not ready, inference waits and " <>
+                 "starts again, and the depth carries on without it: Hailo in the top bar shows " <>
+                 "its state."
 
   # Detects a wedged Port; not a latency budget.
   @default_infer_timeout_ms 2_000
@@ -117,6 +126,9 @@ defmodule VisionCore.Detection.Backend.Hailo do
       dropped: 0
     }
 
+    if Process.whereis(VisionCore.Parameters),
+      do: :ok = VisionCore.Parameters.declare([inference_group(state)])
+
     case open_port(state) do
       {:ok, port} ->
         Logger.info(
@@ -134,6 +146,24 @@ defmodule VisionCore.Detection.Backend.Hailo do
 
         {:ok, state}
     end
+  end
+
+  defp inference_group(state) do
+    Pipeline.inference_group(%{
+      summary: "Finds objects in the image on the Hailo-8.",
+      explanation: @explanation,
+      compute: %{runs_on: :npu, implementation: :rust, backend: nil},
+      parameters: [
+        Parameters.build_parameter(
+          {:model, Path.basename(state.hef_path)},
+          "The compiled model the accelerator runs"
+        ),
+        Parameters.build_parameter(
+          {:score_threshold, state.score_threshold},
+          "Lowest score the accelerator reports"
+        )
+      ]
+    })
   end
 
   defp open_port(%{executable: executable, hef_path: hef_path} = state) do

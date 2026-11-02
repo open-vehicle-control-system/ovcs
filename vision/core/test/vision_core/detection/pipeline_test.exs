@@ -100,19 +100,41 @@ defmodule VisionCore.Detection.PipelineTest do
     end
   end
 
-  test "the detection group lists its settings as build parameters" do
+  test "declares the steps around the inference, in the detection pipeline, their settings fixed at start" do
     state = %{detect_every_n: 2, min_score: 0.5, max_detections: 10, depth_sample_fraction: 0.25}
+    groups = Pipeline.groups(state)
 
-    assert %{id: "detection", name: "Detection", kind: :component, placement: :side} =
-             group = Pipeline.group(state)
+    assert Enum.map(groups, &{&1.id, &1.name, &1.position}) == [
+             {"detection.input", "Input", 101},
+             {"detection.filtering", "Filtering", 103},
+             {"detection.placement", "Placement", 104}
+           ]
 
-    assert group.position == 101
+    for group <- groups do
+      assert %{kind: :stage, pipeline: :detection, compute: %{runs_on: :cpu}} = group
+      assert group.summary != "" and group.explanation != ""
+    end
 
-    assert Enum.map(group.parameters, &{&1.name, &1.type, &1.applies, &1.get.()}) == [
+    parameters = Enum.flat_map(groups, & &1.parameters)
+
+    assert Enum.map(parameters, &{&1.name, &1.type, &1.applies, &1.get.()}) == [
              {"detect_every_n", :integer, :build, 2},
              {"min_score", :double, :build, 0.5},
              {"max_detections", :integer, :build, 10},
              {"depth_sample_fraction", :double, :build, 0.25}
            ]
+
+    refute Enum.any?(parameters, &(&1.description == "Fixed at start"))
+  end
+
+  test "the inference step, which its backend declares, sits between the input and the filtering" do
+    assert %{
+             id: "detection.inference",
+             name: "Inference",
+             kind: :stage,
+             pipeline: :detection,
+             position: 102,
+             summary: "Infers"
+           } = Pipeline.inference_group(%{summary: "Infers", parameters: []})
   end
 end

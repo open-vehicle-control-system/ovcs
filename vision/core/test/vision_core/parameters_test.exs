@@ -51,7 +51,8 @@ defmodule VisionCore.ParametersTest do
     assert {:ok, %{default: 64}} = Parameters.get(server, "stereo.disparity.p2")
   end
 
-  test "a group keeps its explanation and where its work runs, both optional", %{server: server} do
+  test "a group keeps its pipeline, its explanation and where its work runs, the last two optional",
+       %{server: server} do
     compute = %{runs_on: :gpu, implementation: :nx, backend: :vulkan}
 
     :ok =
@@ -62,7 +63,7 @@ defmodule VisionCore.ParametersTest do
           summary: "",
           explanation: "What A does and what to watch.",
           kind: :stage,
-          placement: :flow,
+          pipeline: :stereo,
           position: 1,
           compute: compute,
           parameters: []
@@ -72,15 +73,20 @@ defmodule VisionCore.ParametersTest do
           name: "B",
           summary: "",
           kind: :component,
-          placement: :flow,
+          pipeline: :detection,
           position: 0,
           parameters: []
         }
       ])
 
     assert [
-             %{id: "b", explanation: nil, compute: nil},
-             %{id: "a", explanation: "What A does and what to watch.", compute: ^compute}
+             %{id: "b", pipeline: :detection, explanation: nil, compute: nil},
+             %{
+               id: "a",
+               pipeline: :stereo,
+               explanation: "What A does and what to watch.",
+               compute: ^compute
+             }
            ] = Parameters.groups(server)
   end
 
@@ -321,7 +327,7 @@ defmodule VisionCore.ParametersTest do
       name: "Shared",
       summary: "Read together",
       kind: :stage,
-      placement: :flow,
+      pipeline: :stereo,
       position: 5,
       values: fn ->
         :counters.add(reads, 1, 1)
@@ -747,7 +753,7 @@ defmodule VisionCore.ParametersTest do
       name: "Disparity",
       summary: "Matches the rectified rows",
       kind: :stage,
-      placement: :flow,
+      pipeline: :stereo,
       position: 2,
       status: fn -> {:ok, "matching"} end,
       parameters: [
@@ -773,7 +779,7 @@ defmodule VisionCore.ParametersTest do
       name: "Cameras",
       summary: "Captures the left and right frames",
       kind: :component,
-      placement: :flow,
+      pipeline: :stereo,
       position: 0,
       parameters: [
         backed(agent, test, "auto_exposure", :bool, %{kind: :bool}),
@@ -802,7 +808,7 @@ defmodule VisionCore.ParametersTest do
       name: "Camera",
       summary: "Captures",
       kind: :component,
-      placement: :flow,
+      pipeline: :stereo,
       position: 0,
       parameters: [
         %{
@@ -839,7 +845,7 @@ defmodule VisionCore.ParametersTest do
       name: "Preview",
       summary: "Encodes the preview images",
       kind: :component,
-      placement: :side,
+      pipeline: :detection,
       position: 5,
       parameters: [
         backed(agent, test, "quality", :integer, %{kind: :range, min: 10, max: 100, step: 5}),
@@ -860,7 +866,7 @@ defmodule VisionCore.ParametersTest do
       name: "Failing",
       summary: "Fails",
       kind: :stage,
-      placement: :side,
+      pipeline: :detection,
       position: 9,
       status: fn -> raise "no status" end,
       parameters: [
@@ -898,7 +904,7 @@ defmodule VisionCore.ParametersTest do
       name: "Throwing",
       summary: "Throws",
       kind: :stage,
-      placement: :side,
+      pipeline: :detection,
       position: 9,
       status: fn -> throw(:no_status) end,
       parameters: [

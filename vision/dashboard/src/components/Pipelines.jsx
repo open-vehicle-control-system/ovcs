@@ -1,8 +1,8 @@
 import { useMemo } from 'react'
 import { useShallow } from 'zustand/react/shallow'
-import { placedGroups, unsavedByGroup, useParameters } from '../stores/parameters.js'
+import { pipelines as pipelinesOf, unsavedByGroup, useParameters } from '../stores/parameters.js'
 import { OvcsBadge, focusClass as FOCUS } from '@ovcs/ui/react'
-import { SELECTED } from './menu.js'
+import { SELECTED, SUBSECTION_HEADING } from './menu.js'
 import { useNavigation } from '../stores/navigation.js'
 import { computeTags } from '../compute.js'
 
@@ -73,7 +73,7 @@ function Step({ number, first, last, selected }) {
   )
 }
 
-// The groups split between the pipeline and beside it, and how to draw one as a box that selects it.
+// The pipelines with their groups, and how to draw a group as a box that selects it.
 function useGroupBoxes() {
   const groups = useParameters((state) => state.groups)
   // The counts alone, so a value changing every poll, such as an exposure, does not render the menu again.
@@ -87,24 +87,38 @@ function useGroupBoxes() {
     go('pipeline')
   }
 
-  const { flow, side } = useMemo(() => placedGroups({ groups }), [groups])
+  const pipelines = useMemo(() => pipelinesOf({ groups }), [groups])
 
   const box = (group) => (
     <GroupBox group={group} unsaved={unsaved[group.id] ?? 0} selected={group.id === selectedGroupId} onSelect={select} />
   )
 
-  return { groups, flow, side, selectedGroupId, box }
+  return { pipelines, selectedGroupId, box }
 }
 
-/** The vision unit's pipeline as a menu: its flow of boxes, one per line; a box selects its group. */
-export default function PipelineDiagram() {
-  const { flow, selectedGroupId, box } = useGroupBoxes()
+// `lane_detection` reads as "Lane detection".
+const title = (name) => {
+  const words = String(name).replaceAll('_', ' ')
+  return words.charAt(0).toUpperCase() + words.slice(1)
+}
 
+/** A pipeline's name over what it shows. */
+function Pipeline({ name, children }) {
   return (
-    <ol aria-label="Pipeline" className="flex flex-col">
-      {flow.map((group, index) => (
+    <div className="flex flex-col gap-1">
+      <h3 className={SUBSECTION_HEADING}>{title(name)}</h3>
+      {children}
+    </div>
+  )
+}
+
+/** A pipeline's steps as numbered boxes, one per line. */
+function Steps({ name, groups, selectedGroupId, box }) {
+  return (
+    <ol aria-label={title(name)} className="flex flex-col">
+      {groups.map((group, index) => (
         <li key={group.id} className="grid grid-cols-[1.5rem_minmax(0,1fr)] items-center gap-2 py-0.5">
-          <Step number={index + 1} first={index === 0} last={index === flow.length - 1} selected={group.id === selectedGroupId} />
+          <Step number={index + 1} first={index === 0} last={index === groups.length - 1} selected={group.id === selectedGroupId} />
           {box(group)}
         </li>
       ))}
@@ -112,40 +126,27 @@ export default function PipelineDiagram() {
   )
 }
 
-// Detection on a unit built without a detector: listed, so the menu is the same on every unit, but not selectable.
-function DisabledDetection() {
-  return (
-    <button
-      type="button"
-      disabled
-      aria-label="Detection, disabled: no detector on this unit"
-      title="No detector on this unit"
-      className={`flex min-h-9 w-full items-center gap-2 rounded border px-3 py-1 text-left text-sm ${STATUS_STYLES.off.border}`}
-    >
-      <span translate="no">Detection</span>
-      <span aria-hidden="true" className="ml-auto text-[10px] leading-none">
-        disabled
-      </span>
-    </button>
-  )
-}
-
-/** The components beside the pipeline, such as detection, as boxes that select them; Detection disabled without a detector. */
-export function SideGroups() {
-  const { groups, side, box } = useGroupBoxes()
-  const withoutDetector = groups.length > 0 && !side.some((group) => group.id === 'detection')
-  if (side.length === 0 && !withoutDetector) return null
+/**
+ * The vision unit's pipelines as a menu, each a numbered flow of boxes that select their group. Detection is listed on
+ * every unit, so the menu reads the same everywhere: without a detector, as one greyed line.
+ */
+export default function Pipelines() {
+  const { pipelines, selectedGroupId, box } = useGroupBoxes()
+  if (pipelines.length === 0) return null
+  const withDetector = pipelines.some((pipeline) => pipeline.name === 'detection')
 
   return (
-    <ul aria-label="Components" className="flex flex-col gap-1">
-      {side.map((group) => (
-        <li key={group.id}>{box(group)}</li>
+    <div className="flex flex-col gap-3">
+      {pipelines.map(({ name, groups }) => (
+        <Pipeline key={name} name={name}>
+          <Steps name={name} groups={groups} selectedGroupId={selectedGroupId} box={box} />
+        </Pipeline>
       ))}
-      {withoutDetector ? (
-        <li>
-          <DisabledDetection />
-        </li>
-      ) : null}
-    </ul>
+      {withDetector ? null : (
+        <Pipeline name="detection">
+          <p className="px-3 py-1 text-sm text-ovcs-muted">No detector on this unit</p>
+        </Pipeline>
+      )}
+    </div>
   )
 }

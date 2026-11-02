@@ -45,6 +45,13 @@ defmodule VisionCore.Detection.Backend do
 
   `available?/1` exists so a caller can say something useful at
   startup instead of discovering this per-frame.
+
+  ## The inference step
+
+  A backend declares the detection pipeline's inference step in
+  `VisionCore.Parameters` when it starts, built with
+  `VisionCore.Detection.Pipeline.inference_group/1`: what it runs, where,
+  and its settings.
   """
 
   @typedoc "A 2D box in the submitted image's pixel coordinates."

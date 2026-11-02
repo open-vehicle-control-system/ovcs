@@ -18,6 +18,7 @@ defmodule VisionApiWeb.StageControllerTest do
                "name" => "Disparity",
                "summary" => "Matches.",
                "explanation" => "Finds each point of the left image in the right one.",
+               "pipeline" => "stereo",
                "role" => "step",
                "position" => 2,
                "status" => %{"level" => "ok", "detail" => "fine"}
@@ -32,7 +33,7 @@ defmodule VisionApiWeb.StageControllerTest do
     assert Enum.any?(included, &(&1["id"] == "test.disparity.p1"))
   end
 
-  test "a stage's role says where it sits: a source or step in the flow, a branch beside it",
+  test "a stage names the pipeline it is part of and its role there: a source or a step",
        %{conn: conn} do
     :ok =
       VisionCore.Parameters.declare([
@@ -41,7 +42,7 @@ defmodule VisionApiWeb.StageControllerTest do
           name: "Camera",
           summary: "Captures.",
           kind: :component,
-          placement: :flow,
+          pipeline: :stereo,
           position: 0,
           parameters: []
         },
@@ -50,7 +51,7 @@ defmodule VisionApiWeb.StageControllerTest do
           name: "Filter",
           summary: "Filters.",
           kind: :stage,
-          placement: :flow,
+          pipeline: :stereo,
           position: 1,
           parameters: []
         },
@@ -58,23 +59,23 @@ defmodule VisionApiWeb.StageControllerTest do
           id: "test.detector",
           name: "Detector",
           summary: "Detects.",
-          kind: :component,
-          placement: :side,
+          kind: :stage,
+          pipeline: :detection,
           position: 7,
           parameters: []
         }
       ])
 
-    roles =
-      for %{"id" => id, "attributes" => %{"role" => role}} <-
+    places =
+      for %{"id" => id, "attributes" => %{"pipeline" => pipeline, "role" => role}} <-
             json_response(get(conn, "/api/stages"), 200)["data"],
           into: %{},
-          do: {id, role}
+          do: {id, {pipeline, role}}
 
-    assert roles == %{
-             "test.camera" => "source",
-             "test.filter" => "step",
-             "test.detector" => "branch"
+    assert Map.take(places, ["test.camera", "test.filter", "test.detector"]) == %{
+             "test.camera" => {"stereo", "source"},
+             "test.filter" => {"stereo", "step"},
+             "test.detector" => {"detection", "step"}
            }
   end
 
@@ -89,7 +90,7 @@ defmodule VisionApiWeb.StageControllerTest do
           name: "Flicker",
           summary: "Reads differently each time.",
           kind: :component,
-          placement: :side,
+          pipeline: :detection,
           position: 8,
           parameters: [
             %{
@@ -128,7 +129,7 @@ defmodule VisionApiWeb.StageControllerTest do
           name: "Camera",
           summary: "Captures.",
           kind: :component,
-          placement: :flow,
+          pipeline: :stereo,
           position: 0,
           parameters: []
         },
@@ -137,7 +138,7 @@ defmodule VisionApiWeb.StageControllerTest do
           name: "Match",
           summary: "Matches.",
           kind: :stage,
-          placement: :flow,
+          pipeline: :stereo,
           position: 1,
           compute: %{runs_on: :gpu, implementation: :nx, backend: :vulkan},
           parameters: []

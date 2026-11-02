@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
-  useParameters, orderedGroups, flowGroups, placedGroups, groupParameters, unsavedByGroup
+  useParameters, orderedGroups, pipelines, groupParameters, unsavedByGroup
 } from '../parameters.js'
 import * as service from '../../services/parameters.js'
 
@@ -12,14 +12,14 @@ const parameter = (id, stage, extra = {}) => ({
 
 const snapshot = (p1 = 12, unsaved = 0) => ({
   groups: [
-    { id: 'side', name: 'Side', role: 'branch', position: 3, parameterIds: ['side.p'] },
-    { id: 'stereo.match', name: 'Match', role: 'step', position: 2, parameterIds: ['stereo.match.p1', 'stereo.match.p2'] },
-    { id: 'camera', name: 'Camera', role: 'source', position: 1, parameterIds: [] }
+    { id: 'detection.input', name: 'Input', pipeline: 'detection', role: 'step', position: 3, parameterIds: ['detection.input.p'] },
+    { id: 'stereo.match', name: 'Match', pipeline: 'stereo', role: 'step', position: 2, parameterIds: ['stereo.match.p1', 'stereo.match.p2'] },
+    { id: 'camera', name: 'Camera', pipeline: 'stereo', role: 'source', position: 1, parameterIds: [] }
   ],
   parameters: {
     'stereo.match.p1': parameter('stereo.match.p1', 'stereo.match', { value: p1, saved: 12, state: p1 === 12 ? 'builtin' : 'unsaved' }),
     'stereo.match.p2': parameter('stereo.match.p2', 'stereo.match', { state: 'unsaved' }),
-    'side.p': parameter('side.p', 'side')
+    'detection.input.p': parameter('detection.input.p', 'detection.input')
   },
   unsaved
 })
@@ -369,19 +369,21 @@ describe('parameters store', () => {
   describe('selectors', () => {
     beforeEach(() => useParameters.setState({ ...snapshot(), selectedGroupId: null }))
 
-    it('orders groups by position, the flow without the branches, leaving the groups as they were', () => {
+    it('orders groups by position and gathers them by pipeline, leaving the groups as they were', () => {
       const groups = state().groups
-      expect(orderedGroups(state()).map((g) => g.id)).toEqual(['camera', 'stereo.match', 'side'])
-      expect(flowGroups(state()).map((g) => g.id)).toEqual(['camera', 'stereo.match'])
-      expect(placedGroups(state()).side.map((g) => g.id)).toEqual(['side'])
+      expect(orderedGroups(state()).map((g) => g.id)).toEqual(['camera', 'stereo.match', 'detection.input'])
+      expect(pipelines(state()).map(({ name, groups }) => [name, groups.map((g) => g.id)])).toEqual([
+        ['stereo', ['camera', 'stereo.match']],
+        ['detection', ['detection.input']]
+      ])
       expect(state().groups).toBe(groups)
-      expect(groups.map((g) => g.id)).toEqual(['side', 'stereo.match', 'camera'])
+      expect(groups.map((g) => g.id)).toEqual(['detection.input', 'stereo.match', 'camera'])
     })
 
     it('lists the parameters of a group and counts its unsaved ones', () => {
       expect(groupParameters(state(), 'stereo.match').map((p) => p.id)).toEqual(['stereo.match.p1', 'stereo.match.p2'])
       expect(groupParameters(state(), 'nope')).toEqual([])
-      expect(unsavedByGroup(state())).toEqual({ side: 0, 'stereo.match': 1, camera: 0 })
+      expect(unsavedByGroup(state())).toEqual({ 'detection.input': 0, 'stereo.match': 1, camera: 0 })
     })
 
     it('selects a group', () => {

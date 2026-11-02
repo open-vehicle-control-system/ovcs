@@ -34,6 +34,9 @@ defmodule VisionCore.Detection.Backend.Stub do
   require Logger
 
   @default_boxes [{0, 0.99, {0.33, 0.33, 0.67, 0.67}}]
+  @explanation "Returns the same boxes for every image without running any model, to test " <>
+                 "detection's plumbing without an accelerator. Its boxes are not detections: " <>
+                 "never use it on a vehicle. It has no settings."
 
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: Keyword.get(opts, :name, __MODULE__))
@@ -55,6 +58,18 @@ defmodule VisionCore.Detection.Backend.Stub do
       "#{__MODULE__}: fabricating #{length(boxes)} detection(s) per frame — " <>
         "no model is running. Never enable this on a vehicle."
     )
+
+    if Process.whereis(VisionCore.Parameters) do
+      :ok =
+        VisionCore.Parameters.declare([
+          VisionCore.Detection.Pipeline.inference_group(%{
+            summary: "Returns fixed boxes, without a model, to test the plumbing.",
+            explanation: @explanation,
+            compute: %{runs_on: :cpu, implementation: :elixir, backend: nil},
+            parameters: []
+          })
+        ])
+    end
 
     {:ok, %{boxes: boxes}}
   end

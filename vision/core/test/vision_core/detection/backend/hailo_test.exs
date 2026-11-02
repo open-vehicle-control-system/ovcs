@@ -89,6 +89,23 @@ defmodule VisionCore.Detection.Backend.HailoTest do
     assert Hailo.detect(2, @image) == :ok
   end
 
+  test "declares the inference step: its model and threshold, on the accelerator", %{
+    tmp_dir: tmp_dir
+  } do
+    start_supervised!({VisionCore.Parameters, store: VisionCore.Parameters.MemoryStore})
+    start_backend(tmp_dir, "answer", score_threshold: 0.3)
+
+    assert %{
+             pipeline: :detection,
+             position: 102,
+             compute: %{runs_on: :npu, implementation: :rust},
+             parameters: [model, threshold]
+           } = Enum.find(VisionCore.Parameters.groups(), &(&1.id == "detection.inference"))
+
+    assert {model.name, model.value, model.applies} == {"model", "model.hef", :build}
+    assert {threshold.name, threshold.value} == {"score_threshold", 0.3}
+  end
+
   test "stays unavailable without its model", %{tmp_dir: tmp_dir} do
     start_supervised!(
       {Hailo, hef_path: Path.join(tmp_dir, "missing.hef"), executable: @executable}

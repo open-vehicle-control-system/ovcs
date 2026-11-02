@@ -137,7 +137,7 @@ defmodule VisionCore.Stereo.ParametersTest do
   defp group(id), do: Enum.find(groups(), &(&1.id == id))
   defp parameter(group, name), do: Enum.find(group.parameters, &(&1.name == name))
 
-  test "declares the cameras, then one group per stage in pipeline order" do
+  test "declares the cameras, then one group per stage in order, all in the stereo pipeline" do
     groups = groups()
 
     assert Enum.map(groups, & &1.id) == [
@@ -150,10 +150,8 @@ defmodule VisionCore.Stereo.ParametersTest do
            ]
 
     assert Enum.map(groups, & &1.position) == [0, 1, 2, 3, 4, 5]
-
-    assert %{name: "Cameras", kind: :component, placement: :flow, explanation: cameras} =
-             hd(groups)
-
+    assert Enum.all?(groups, &(&1.pipeline == :stereo))
+    assert %{name: "Cameras", kind: :component, explanation: cameras} = hd(groups)
     assert cameras =~ "Both cameras"
 
     assert %{
@@ -258,7 +256,7 @@ defmodule VisionCore.Stereo.ParametersTest do
       refute "stereo.left_camera" in ids
       refute "stereo.right_camera" in ids
 
-      assert %{name: "Cameras", kind: :component, placement: :flow, position: 0} = hd(groups)
+      assert %{name: "Cameras", kind: :component, pipeline: :stereo, position: 0} = hd(groups)
       assert hd(groups).explanation =~ "Both cameras"
 
       lens = parameter(hd(groups), "lens_position")

@@ -1,4 +1,4 @@
-const RUNS_ON = { cpu: 'CPU', gpu: 'GPU' }
+const RUNS_ON = { cpu: 'CPU', gpu: 'GPU', npu: 'NPU' }
 const IMPLEMENTATIONS = { rust: 'Rust', elixir: 'Elixir', nx: 'Elixir Nx' }
 const BACKENDS = { vulkan: 'Vulkan', llvm_cpu: 'LLVM', exla: 'EXLA', evaluator: 'Nx evaluator' }
 

@@ -185,7 +185,7 @@ defmodule VisionCore.Ros2.ParametersTest do
             name: "Test",
             summary: "A test group.",
             kind: :component,
-            placement: :side,
+            pipeline: :detection,
             position: 0,
             parameters: [
               %{

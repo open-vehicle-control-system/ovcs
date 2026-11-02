@@ -1,8 +1,8 @@
 defmodule VisionApiWeb.StagePresenter do
   @moduledoc """
   A `VisionCore.Parameters.Group` as a `stages` JSON:API resource. Its
-  `role` is `source` for a component in the pipeline flow, `step` for a
-  pipeline stage in it, `branch` for anything beside it.
+  `pipeline` is the pipeline it is part of, such as `stereo` or `detection`,
+  and its `role` there `source` for a component, `step` for a stage.
   """
   alias VisionApiWeb.JsonApi
   alias VisionCore.Parameters.Group
@@ -17,6 +17,7 @@ defmodule VisionApiWeb.StagePresenter do
         name: group.name,
         summary: group.summary,
         explanation: group.explanation,
+        pipeline: group.pipeline,
         role: role(group),
         position: group.position,
         status: status(group.status),
@@ -26,7 +27,6 @@ defmodule VisionApiWeb.StagePresenter do
     )
   end
 
-  defp role(%Group{placement: :side}), do: "branch"
   defp role(%Group{kind: :component}), do: "source"
   defp role(%Group{kind: :stage}), do: "step"
 

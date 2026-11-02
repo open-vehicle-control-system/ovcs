@@ -13,14 +13,14 @@ vi.mock('../services/socket.js', () => ({
   }
 }))
 
-const group = (id, name, position, role = 'step') => ({
-  id, name, summary: '', role, position, status: null, parameterIds: []
+const group = (id, name, position, { pipeline = 'stereo', role = 'step' } = {}) => ({
+  id, name, summary: '', pipeline, role, position, status: null, parameterIds: []
 })
 
 const groups = [
-  group('preview', 'Preview', 0, 'branch'),
+  group('detection.input', 'Input', 101, { pipeline: 'detection' }),
   group('stereo.match', 'Match', 2),
-  group('cameras', 'Cameras', 1, 'source')
+  group('cameras', 'Cameras', 1, { role: 'source' })
 ]
 
 const initial = useParameters.getState()
@@ -65,7 +65,7 @@ describe('App', () => {
     expect(screen.getByRole('heading', { name: 'Match' })).toBeTruthy()
   })
 
-  it('selects the first flow box when the URL names an unknown one', () => {
+  it("selects the first pipeline's first box when the URL names an unknown one", () => {
     visit('/?box=gone')
     useParameters.setState({ groups })
     render(<App />)

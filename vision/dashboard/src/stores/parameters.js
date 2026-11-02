@@ -150,13 +150,13 @@ async function perform(action, set, get) {
 const EMPTY = []
 
 export const orderedGroups = (state) => state.groups.toSorted((a, b) => a.position - b.position)
-/** The groups in order, split between the pipeline's flow and the branches beside it. */
-export function placedGroups(state) {
-  const ordered = orderedGroups(state)
-  return { flow: ordered.filter((group) => group.role !== 'branch'), side: ordered.filter((group) => group.role === 'branch') }
-}
 
-export const flowGroups = (state) => placedGroups(state).flow
+/** The pipelines as `{ name, groups }`, each with its groups in order, in the order of their first group. */
+export function pipelines(state) {
+  const byName = new Map()
+  for (const group of orderedGroups(state)) byName.set(group.pipeline, [...(byName.get(group.pipeline) ?? []), group])
+  return Array.from(byName, ([name, groups]) => ({ name, groups }))
+}
 
 export const groupParameters = (state, groupId) => {
   const group = state.groups.find((candidate) => candidate.id === groupId)

@@ -1,18 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { Profiler } from 'react'
 import { render, screen, fireEvent, within, act } from '@testing-library/react'
-import PipelineDiagram, { SideGroups } from '../PipelineDiagram.jsx'
+import Pipelines from '../Pipelines.jsx'
 import { useParameters } from '../../stores/parameters.js'
 import { useNavigation } from '../../stores/navigation.js'
 
 vi.mock('../../services/parameters.js')
 
 const group = (id, name, position, extra = {}) => ({
-  id, name, summary: '', role: 'step', position, status: null, parameterIds: [], ...extra
+  id, name, summary: '', pipeline: 'stereo', role: 'step', position, status: null, parameterIds: [], ...extra
 })
 
 const groups = [
-  group('preview', 'Preview', 10, { role: 'branch' }),
+  group('detection.inference', 'Inference', 102, { pipeline: 'detection', compute: { runsOn: 'npu', implementation: 'rust', backend: null } }),
+  group('detection.input', 'Input', 101, { pipeline: 'detection' }),
   group('stereo.alignment', 'Alignment', 3, {
     status: { level: 'warning', detail: 'rows off by 1.4' },
     parameterIds: ['stereo.alignment.a', 'stereo.alignment.b']
@@ -27,7 +28,7 @@ const parameters = {
   'stereo.alignment.b': { id: 'stereo.alignment.b', name: 'b', state: 'unsaved' }
 }
 
-describe('PipelineDiagram', () => {
+describe('Pipelines', () => {
   let select
   beforeEach(() => {
     select = vi.fn()
@@ -35,28 +36,43 @@ describe('PipelineDiagram', () => {
     useNavigation.setState({ page: 'pipeline' })
   })
 
-  it('draws the flow groups in order with arrows, and the groups beside the pipeline apart from it', () => {
-    render(
-      <>
-        <PipelineDiagram />
-        <SideGroups />
-      </>
-    )
+  it('draws each pipeline as its own numbered flow, in order with arrows, the stereo pipeline first', () => {
+    render(<Pipelines />)
+    const names = (flow) => within(flow).getAllByRole('button').map((button) => button.querySelector('[translate="no"]').textContent)
+    const numbers = (flow) => within(flow).getAllByRole('listitem').map((item) => item.firstElementChild.textContent)
 
-    const flow = screen.getByRole('list', { name: 'Pipeline' })
-    const names = within(flow).getAllByRole('button').map((button) => button.querySelector('[translate="no"]').textContent)
-    expect(names).toEqual(['Cameras', 'Match', 'Alignment', 'Temporal'])
-    expect(flow.querySelectorAll('[data-arrow]')).toHaveLength(3)
+    const stereo = screen.getByRole('list', { name: 'Stereo' })
+    expect(names(stereo)).toEqual(['Cameras', 'Match', 'Alignment', 'Temporal'])
+    expect(numbers(stereo)).toEqual(['1', '2', '3', '4'])
+    expect(stereo.querySelectorAll('[data-arrow]')).toHaveLength(3)
 
-    const side = screen.getByRole('list', { name: 'Components' })
-    const [preview, detection] = within(side).getAllByRole('button')
-    expect(preview.textContent).toContain('Preview')
-    expect(detection.disabled).toBe(true)
-    expect(flow.contains(side)).toBe(false)
+    const detection = screen.getByRole('list', { name: 'Detection' })
+    expect(names(detection)).toEqual(['Input', 'Inference'])
+    expect(numbers(detection)).toEqual(['1', '2'])
+    expect(stereo.compareDocumentPosition(detection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('shows the detection pipeline as one greyed line on a unit without a detector', () => {
+    useParameters.setState({ groups: groups.filter((g) => g.pipeline === 'stereo') })
+    render(<Pipelines />)
+
+    expect(screen.getByRole('heading', { name: 'Detection' })).toBeTruthy()
+    expect(screen.queryByRole('list', { name: 'Detection' })).toBeNull()
+    const line = screen.getByText('No detector on this unit')
+    expect(line.closest('button')).toBeNull()
+    expect(line.className).toContain('text-ovcs-muted')
+  })
+
+  it('shows no pipeline before the stages have loaded', () => {
+    useParameters.setState({ groups: [] })
+    render(<Pipelines />)
+
+    expect(screen.queryByRole('heading')).toBeNull()
+    expect(screen.queryByText('No detector on this unit')).toBeNull()
   })
 
   it('marks a box with its unsaved count and its warning status', () => {
-    render(<PipelineDiagram />)
+    render(<Pipelines />)
 
     const alignment = screen.getByRole('button', { name: /^Alignment/ })
     expect(alignment.textContent).toContain('2')
@@ -76,7 +92,7 @@ describe('PipelineDiagram', () => {
     useParameters.setState({
       groups: groups.map((g) => (g.id === 'stereo.match' ? { ...g, status: { level: 'ok', detail: 'fine' } } : g))
     })
-    render(<PipelineDiagram />)
+    render(<Pipelines />)
 
     expect(screen.getByRole('button', { name: /^Match/ }).querySelector('.ovcs-status')).toBeNull()
     const alignment = screen.getByRole('button', { name: /^Alignment/ })
@@ -90,7 +106,7 @@ describe('PipelineDiagram', () => {
     const BAR = 'shadow-[inset_3px_0_0_var(--ovcs-accent)]'
 
     useParameters.setState({ selectedGroupId: 'stereo.match' })
-    const { unmount } = render(<PipelineDiagram />)
+    const { unmount } = render(<Pipelines />)
     const match = screen.getByRole('button', { name: /^Match/ })
     expect(borders(match)).toEqual([])
     expect(match.className).toContain(BAR)
@@ -98,7 +114,7 @@ describe('PipelineDiagram', () => {
     unmount()
 
     useParameters.setState({ selectedGroupId: 'stereo.alignment' })
-    render(<PipelineDiagram />)
+    render(<Pipelines />)
     const alignment = screen.getByRole('button', { name: /^Alignment/ })
     expect(borders(alignment)).toEqual(['border-ovcs-error'])
     expect(alignment.className).toContain(BAR)
@@ -106,11 +122,13 @@ describe('PipelineDiagram', () => {
   })
 
   it('tags each stage with where it runs, under its name, and says it in the box name', () => {
-    render(<PipelineDiagram />)
+    render(<Pipelines />)
 
     const match = screen.getByRole('button', { name: /^Match/ })
     expect([...match.querySelectorAll('[data-tag]')].map((tag) => tag.textContent)).toEqual(['GPU', 'Elixir Nx', 'Vulkan'])
     expect(match.getAttribute('aria-label')).toBe('Match, on GPU, Elixir Nx, Vulkan')
+    const inference = screen.getByRole('button', { name: /^Inference/ })
+    expect([...inference.querySelectorAll('[data-tag]')].map((tag) => tag.textContent)).toEqual(['NPU', 'Rust'])
     expect(screen.getByRole('button', { name: /^Cameras/ }).querySelectorAll('[data-tag]')).toHaveLength(0)
   })
 
@@ -118,7 +136,7 @@ describe('PipelineDiagram', () => {
     const commits = vi.fn()
     render(
       <Profiler id="menu" onRender={commits}>
-        <PipelineDiagram />
+        <Pipelines />
       </Profiler>
     )
     commits.mockClear()
@@ -140,7 +158,7 @@ describe('PipelineDiagram', () => {
   })
 
   it('selects a group on click', () => {
-    render(<PipelineDiagram />)
+    render(<Pipelines />)
 
     expect(screen.getByRole('button', { name: /^Match/ }).getAttribute('aria-current')).toBe('true')
     expect(screen.getByRole('button', { name: 'Cameras' }).getAttribute('aria-current')).toBeNull()
@@ -154,7 +172,7 @@ describe('PipelineDiagram', () => {
 
   it('shows no stage as selected on another page', () => {
     useNavigation.setState({ page: 'ros2' })
-    render(<PipelineDiagram />)
+    render(<Pipelines />)
 
     expect(screen.getByRole('button', { name: /^Match/ }).getAttribute('aria-current')).toBeNull()
   })

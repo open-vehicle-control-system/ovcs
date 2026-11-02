@@ -4,7 +4,7 @@ import { orderedGroups, useParameters } from '../stores/parameters.js'
 
 // One parameter's path is shown, and linked, with the first of the unit's parameters once they are loaded.
 const resources = (parameterId) => [
-  ['GET', 'stages?include=parameters', 'The pipeline stages and components, each with its role, explanation and parameters, and where each stage runs'],
+  ['GET', 'stages?include=parameters', "The pipelines' steps, each with its pipeline, role, explanation and parameters, and where it runs"],
   ['GET', 'parameters', 'Every parameter: value type, value, default, saved value, state and constraint'],
   ['GET', `parameters/${parameterId ?? '{id}'}`, 'One parameter'],
   ['PATCH', 'parameters/{id}', 'Changes a parameter, an unsaved change until saved'],

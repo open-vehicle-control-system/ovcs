@@ -10,10 +10,10 @@ import ParameterPanel from './components/ParameterPanel.jsx'
 import { OvcsCard, OvcsHeader, OvcsSaveBar, focusClass as FOCUS } from '@ovcs/ui/react'
 import { dashboardSocket } from './services/socket.js'
 import { useStatus } from './stores/status.js'
-import { flowGroups, useParameters } from './stores/parameters.js'
+import { orderedGroups, useParameters } from './stores/parameters.js'
 import { boxFromUrl, useNavigation, writeUrl } from './stores/navigation.js'
 
-// Keeps the page and the box in the URL; on the pipeline, selects the URL's box once known, else the flow's first.
+// Keeps the page and the box in the URL; on the pipeline, selects the URL's box once known, else the first box.
 function useNavigationInUrl() {
   const page = useNavigation((state) => state.page)
   const loaded = useParameters((state) => state.groups.length > 0)
@@ -24,7 +24,7 @@ function useNavigationInUrl() {
     const state = useParameters.getState()
     const wanted = boxFromUrl()
     const known = state.groups.some((group) => group.id === wanted)
-    const id = known ? wanted : flowGroups(state)[0]?.id
+    const id = known ? wanted : orderedGroups(state)[0]?.id
     if (id != null) state.select(id)
   }, [page, loaded, selectedGroupId])
 

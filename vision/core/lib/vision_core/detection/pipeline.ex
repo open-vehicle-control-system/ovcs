@@ -80,6 +80,28 @@ defmodule VisionCore.Detection.Pipeline do
   @default_depth_sample_fraction 0.5
   @default_detect_every_n 1
 
+  @on_the_beam %{runs_on: :cpu, implementation: :elixir, backend: nil}
+  @input_explanation "Takes the rectified left image of the stereo pairs, which the depth " <>
+                       "lines up with pixel for pixel, and hands it to the detector. " <>
+                       "detect_every_n, fixed in the build, runs detection on one pair out of " <>
+                       "n: a higher value leaves the accelerator and the processor more time, " <>
+                       "and updates the boxes less often. A pair that arrives while the " <>
+                       "detector is still busy is skipped."
+  @filtering_explanation "Keeps the detections worth passing on: those scoring at least " <>
+                           "min_score, at most max_detections per image, best first. Raise " <>
+                           "min_score to drop doubtful boxes, at the risk of missing real " <>
+                           "objects; lower it to see more of them, down to the inference " <>
+                           "step's own threshold. Both are fixed in the build."
+  @placement_explanation "Places each box in 3D with the depth, which lines up with the image " <>
+                           "pixel for pixel. It takes the median depth in the middle of the " <>
+                           "box, so the background showing at its corners does not pull the " <>
+                           "distance away, then turns the box's centre and size into metres " <>
+                           "in the left camera's frame. depth_sample_fraction, fixed in the " <>
+                           "build, is the share of the box's width and height it samples. A " <>
+                           "box with no depth in its middle is dropped rather than given a " <>
+                           "guessed distance. Watch the outlines and distances on the left " <>
+                           "video."
+
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 
   @doc "The COCO class names, indexed by class id."
@@ -108,29 +130,75 @@ defmodule VisionCore.Detection.Pipeline do
     }
 
     if Process.whereis(VisionCore.Parameters),
-      do: :ok = VisionCore.Parameters.declare([group(state)])
+      do: :ok = VisionCore.Parameters.declare(groups(state))
 
     monitors = Sources.register([{VisionCore.Stereo.Pipeline, VisionCore.Stereo.Pipeline}])
     {:ok, Map.put(state, :monitors, monitors)}
   end
 
-  @doc "The detection's parameter group for a running `state`: its settings, fixed at start."
-  @spec group(map()) :: VisionCore.Parameters.group_declaration()
-  def group(state) do
-    %{
-      id: "detection",
-      name: "Detection",
-      summary: "Object detection on the rectified left image, placed with the depth map.",
-      kind: :component,
-      placement: :side,
-      position: 101,
-      parameters:
-        Enum.map(
-          [:detect_every_n, :min_score, :max_detections, :depth_sample_fraction],
-          &VisionCore.Stereo.Parameters.build_parameter({&1, Map.fetch!(state, &1)})
-        )
-    }
+  @doc """
+  The detection pipeline's steps around the inference, for a running
+  `state`: their parameter groups, with their settings fixed at start. The
+  backend declares the inference step itself (`inference_group/1`).
+  """
+  @spec groups(map()) :: [VisionCore.Parameters.group_declaration()]
+  def groups(state) do
+    [
+      step("input", "Input", 101, %{
+        summary: "Hands the rectified left image of every nth stereo pair to the detector.",
+        explanation: @input_explanation,
+        compute: @on_the_beam,
+        parameters: [
+          build_parameter(state, :detect_every_n, "Pairs per detection; 1 detects on every pair")
+        ]
+      }),
+      step("filtering", "Filtering", 103, %{
+        summary: "Keeps the most confident detections.",
+        explanation: @filtering_explanation,
+        compute: @on_the_beam,
+        parameters: [
+          build_parameter(state, :min_score, "Lowest score of a detection passed on"),
+          build_parameter(state, :max_detections, "Most detections passed on per image")
+        ]
+      }),
+      step("placement", "Placement", 104, %{
+        summary: "Places each box in 3D with the median depth in its middle.",
+        explanation: @placement_explanation,
+        compute: @on_the_beam,
+        parameters: [
+          build_parameter(
+            state,
+            :depth_sample_fraction,
+            "Share of the box's width and height whose depths are sampled"
+          )
+        ]
+      })
+    ]
   end
+
+  @doc """
+  The detection pipeline's inference step, between its input and its
+  filtering. The backend running the model declares it, `fields` giving
+  its summary, explanation, compute and parameters.
+  """
+  @spec inference_group(map()) :: VisionCore.Parameters.group_declaration()
+  def inference_group(fields), do: step("inference", "Inference", 102, fields)
+
+  defp step(id, name, position, fields) do
+    Map.merge(
+      %{
+        id: "detection.#{id}",
+        name: name,
+        kind: :stage,
+        pipeline: :detection,
+        position: position
+      },
+      fields
+    )
+  end
+
+  defp build_parameter(state, key, description),
+    do: VisionCore.Stereo.Parameters.build_parameter({key, Map.fetch!(state, key)}, description)
 
   @impl GenServer
   def handle_cast({:register_listener, listener}, state),

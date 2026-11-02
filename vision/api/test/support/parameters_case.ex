@@ -57,7 +57,7 @@ defmodule VisionApiWeb.ParametersCase do
           summary: "Matches.",
           explanation: "Finds each point of the left image in the right one.",
           kind: :stage,
-          placement: :flow,
+          pipeline: :stereo,
           position: 2,
           status: fn -> {:ok, "fine"} end,
           parameters: [
