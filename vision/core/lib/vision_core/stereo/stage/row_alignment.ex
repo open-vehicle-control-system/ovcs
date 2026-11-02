@@ -25,6 +25,17 @@ defmodule VisionCore.Stereo.Stage.RowAlignment do
   def summary, do: "Measures the row offset between the rectified images."
 
   @impl VisionCore.Stereo.NxStage
+  def explanation,
+    do:
+      "Checks that the calibration still fits the cameras. After rectification, a point " <>
+        "should be on the same row in both images; this measures how many rows the right " <>
+        "image is off, in four bands from left to right, shown as Row alignment between the " <>
+        "videos and on this step. Within half a row is good. A steady larger offset means a " <>
+        "camera has moved: auto_row_offset in Rectification follows it, or recalibrate. " <>
+        "Offsets that differ from band to band mean a camera has turned, which only a new " <>
+        "calibration fixes. It has no settings."
+
+  @impl VisionCore.Stereo.NxStage
   def init(_opts, context), do: {:ok, %{size: {context.height, context.width}}}
 
   @impl VisionCore.Stereo.NxStage

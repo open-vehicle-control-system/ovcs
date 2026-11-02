@@ -77,6 +77,12 @@ defmodule VisionCore.Stereo.Stage do
   @doc "One line on what the stage does."
   @callback summary() :: String.t()
 
+  @doc """
+  A paragraph for someone tuning the stage: what it does, why it matters,
+  what its settings change and what to watch on the dashboard.
+  """
+  @callback explanation() :: String.t()
+
   @doc "The stage's settings: the live ones `set_option/3` accepts, and its build settings."
   @callback option_specs() :: [{atom(), option_spec()}]
 
@@ -86,5 +92,5 @@ defmodule VisionCore.Stereo.Stage do
   @doc "Changes one live setting from the next pair on, or says why it cannot."
   @callback set_option(state(), atom(), term()) :: {:ok, state()} | {:error, String.t()}
 
-  @optional_callbacks summary: 0, option_specs: 0, options: 1, set_option: 3
+  @optional_callbacks summary: 0, explanation: 0, option_specs: 0, options: 1, set_option: 3
 end

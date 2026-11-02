@@ -15,6 +15,15 @@ defmodule VisionCore.Stereo.Stage.Sharpness do
   def summary, do: "Measures each rectified image's sharpness, to compare the cameras' focus."
 
   @impl VisionCore.Stereo.NxStage
+  def explanation,
+    do:
+      "Measures how sharp each rectified image is. The value itself depends on the scene; " <>
+        "what matters is how the two cameras compare, shown as Sharpness, right / left " <>
+        "between the videos. Near 1, both cameras are focused alike. Far from 1, one of them " <>
+        "is out of focus compared with the other, and matching loses detail: refocus that " <>
+        "camera. It has no settings."
+
+  @impl VisionCore.Stereo.NxStage
   def init(_opts, context), do: {:ok, %{size: {context.height, context.width}}}
 
   @impl VisionCore.Stereo.NxStage

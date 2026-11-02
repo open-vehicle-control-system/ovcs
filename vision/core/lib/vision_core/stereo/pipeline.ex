@@ -129,14 +129,15 @@ defmodule VisionCore.Stereo.Pipeline do
           stage: atom(),
           module: module(),
           summary: String.t(),
+          explanation: String.t() | nil,
           specs: [{atom(), Stage.option_spec()}],
           values: %{atom() => term()}
         }
 
   @doc """
   Every stage in pipeline order, the members of a compiled segment
-  among them: its name, module, summary, settings (`applies` filled in)
-  and their values.
+  among them: its name, module, summary, explanation, settings (`applies`
+  filled in) and their values.
   """
   @spec stage_options(GenServer.server()) :: [stage_options()]
   def stage_options(server), do: GenServer.call(server, :stage_options)
@@ -576,6 +577,7 @@ defmodule VisionCore.Stereo.Pipeline do
       stage: stage.name,
       module: stage.module,
       summary: summary(stage.module),
+      explanation: explanation(stage.module),
       specs: option_specs(stage.module),
       values: values(stage)
     }
@@ -583,6 +585,10 @@ defmodule VisionCore.Stereo.Pipeline do
 
   defp summary(module) do
     if function_exported?(module, :summary, 0), do: module.summary(), else: ""
+  end
+
+  defp explanation(module) do
+    if function_exported?(module, :explanation, 0), do: module.explanation()
   end
 
   defp option_specs(module) do

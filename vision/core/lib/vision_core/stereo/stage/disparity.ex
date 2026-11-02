@@ -73,6 +73,19 @@ defmodule VisionCore.Stereo.Stage.Disparity do
   def summary, do: "Matches the rectified pair into a disparity with semi-global matching."
 
   @impl VisionCore.Stereo.NxStage
+  def explanation,
+    do:
+      "The core of stereo: for each pixel of the left image, it finds the same point in the " <>
+        "right image, along the same row. The shift between the two, the disparity, is larger " <>
+        "for nearer things. Semi-global matching compares the small patterns around pixels " <>
+        "and makes neighbouring pixels agree, except across edges. p1 and p2 penalise small " <>
+        "and large disparity changes between neighbours: higher values give smoother surfaces " <>
+        "and blurrier edges. uniqueness drops pixels whose best match is not clearly better " <>
+        "than the next, as on repetitive patterns. Fixed in the build, num_disparities is the " <>
+        "search range, which sets the nearest distance measured, and more paths leave fewer " <>
+        "holes but take longer. Watch Matched pixels and Jitter under the depth video."
+
+  @impl VisionCore.Stereo.NxStage
   def init(opts, _context) do
     disparities = Keyword.get(opts, :num_disparities, 64)
     p1 = Keyword.get(opts, :p1, 8)

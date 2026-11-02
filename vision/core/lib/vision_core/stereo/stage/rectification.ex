@@ -31,6 +31,18 @@ defmodule VisionCore.Stereo.Stage.Rectification do
   def summary, do: "Undistorts and rectifies both frames so a point lies on the same row in each."
 
   @impl VisionCore.Stereo.NxStage
+  def explanation,
+    do:
+      "Lenses bend straight lines, and two cameras never point exactly the same way. " <>
+        "Rectification undoes both with each camera's calibration, so that a point seen by " <>
+        "the two cameras lands on the same row of each image, and shrinks the images to the " <>
+        "matching size. Matching then only has to search along a row. If a camera shifts " <>
+        "after calibration, the rows drift apart: right_row_offset moves the right image back " <>
+        "into line, and auto_row_offset, when present, sets it for you from the row alignment " <>
+        "measure. A camera that turned, or moved sideways, needs a new calibration. Watch Row " <>
+        "alignment between the videos."
+
+  @impl VisionCore.Stereo.NxStage
   def init(opts, context) do
     state = %{size: {context.height, context.width}, right_row_offset: 0.0}
     set_option(state, :right_row_offset, Keyword.get(opts, :right_row_offset, 0.0))

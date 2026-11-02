@@ -13,6 +13,14 @@ defmodule VisionCore.Stereo.Stage.Decode do
   def summary, do: "Turns both camera frames into grey images at the pipeline's size."
 
   @impl VisionCore.Stereo.NxStage
+  def explanation,
+    do:
+      "Turns both camera frames into grey images at the matching size, without correcting " <>
+        "the lenses. It takes Rectification's place in a stage list without it, for frames " <>
+        "that need no correction; matching then works only as far as the cameras are already " <>
+        "aligned. It has no settings."
+
+  @impl VisionCore.Stereo.NxStage
   def init(_opts, context), do: {:ok, %{size: {context.height, context.width}}}
 
   @impl VisionCore.Stereo.NxStage

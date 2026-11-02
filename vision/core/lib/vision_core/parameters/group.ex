@@ -2,8 +2,11 @@ defmodule VisionCore.Parameters.Group do
   @moduledoc """
   A component or pipeline stage and its parameters, as `VisionCore.Parameters`
   lists it. `:placement` is where the dashboard draws it: `:flow` in the
-  pipeline, `:side` beside it. `:compute` is where a stage runs and what it
-  is written in, `nil` for a group that does not say.
+  pipeline, `:side` beside it. `:summary` is one line on what it does;
+  `:explanation`, when given, a paragraph for someone tuning it: what it
+  does, why it matters, what its settings change and what to watch.
+  `:compute` is where a stage runs and what it is written in, `nil` for a
+  group that does not say.
   """
   alias VisionCore.Parameters.Parameter
 
@@ -11,6 +14,7 @@ defmodule VisionCore.Parameters.Group do
     :id,
     :name,
     :summary,
+    :explanation,
     :kind,
     :placement,
     :position,
@@ -34,6 +38,7 @@ defmodule VisionCore.Parameters.Group do
           id: String.t(),
           name: String.t(),
           summary: String.t(),
+          explanation: String.t() | nil,
           kind: :component | :stage,
           placement: :flow | :side,
           position: non_neg_integer(),

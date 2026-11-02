@@ -34,7 +34,8 @@ const parameters = {
 
 const groups = [
   { id: 'cameras', name: 'Cameras', summary: 'Capture both images', role: 'source', position: 1, status: null, parameterIds: ['cameras.auto_exposure', 'cameras.exposure_us'] },
-  { id: 'stereo.match', name: 'Match', summary: 'Find each pixel in the other image', role: 'step', position: 3, status: null, compute: { runsOn: 'gpu', implementation: 'nx', backend: 'vulkan' }, parameterIds: ['stereo.match.p1', 'stereo.match.p2', 'stereo.match.uniqueness'] }
+  { id: 'stereo.match', name: 'Match', summary: 'Find each pixel in the other image', explanation: 'The shift between the two images is the disparity. Watch Matched pixels.', role: 'step', position: 3, status: null, compute: { runsOn: 'gpu', implementation: 'nx', backend: 'vulkan' }, parameterIds: ['stereo.match.p1', 'stereo.match.p2', 'stereo.match.uniqueness'] },
+  { id: 'stereo.depth', name: 'Depth', summary: 'Turn the disparity into distance', explanation: 'Far points are the least precise.', role: 'step', position: 4, status: null, parameterIds: [] }
 ]
 
 const actions = () => ({ set: vi.fn(), reset: vi.fn(), beginEdit: vi.fn(), endEdit: vi.fn() })
@@ -52,6 +53,40 @@ describe('ParameterPanel', () => {
     expect(screen.getByRole('heading', { name: 'Match' })).toBeTruthy()
     expect(screen.getByText('Find each pixel in the other image')).toBeTruthy()
     expect(screen.getAllByRole('slider')).toHaveLength(3)
+  })
+
+  it('leads with the summary, and explains the step under it on demand', () => {
+    render(<ParameterPanel groupId="stereo.match" />)
+
+    const toggle = screen.getByRole('button', { name: 'How it works' })
+    const explanation = screen.getByText('The shift between the two images is the disparity. Watch Matched pixels.')
+    expect(screen.getByText('Find each pixel in the other image', { exact: false }).contains(toggle)).toBe(true)
+    expect(toggle.getAttribute('aria-controls')).toBe(explanation.id)
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(explanation.hidden).toBe(true)
+
+    fireEvent.click(toggle)
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    expect(explanation.hidden).toBe(false)
+
+    fireEvent.click(toggle)
+    expect(explanation.hidden).toBe(true)
+  })
+
+  it('keeps the explanation open from one step to the next', () => {
+    const { rerender } = render(<ParameterPanel groupId="stereo.match" />)
+    fireEvent.click(screen.getByRole('button', { name: 'How it works' }))
+
+    rerender(<ParameterPanel groupId="stereo.depth" />)
+    expect(screen.getByText('Far points are the least precise.').hidden).toBe(false)
+  })
+
+  it('shows the summary alone for a group without an explanation', () => {
+    const { container } = render(<ParameterPanel groupId="cameras" />)
+
+    expect(screen.getByText('Capture both images')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'How it works' })).toBeNull()
+    expect(container.querySelector('[data-explanation]')).toBeNull()
   })
 
   it('tags a stage with where it runs and what it is written in', () => {

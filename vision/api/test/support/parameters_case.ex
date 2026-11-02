@@ -55,6 +55,7 @@ defmodule VisionApiWeb.ParametersCase do
           id: "test.disparity",
           name: "Disparity",
           summary: "Matches.",
+          explanation: "Finds each point of the left image in the right one.",
           kind: :stage,
           placement: :flow,
           position: 2,

@@ -101,6 +101,7 @@ defmodule VisionCore.Stereo.ParametersTest do
     %{
       stage: :median_filter,
       summary: "Filters",
+      explanation: "Replaces each disparity with its neighbours' median.",
       specs: [median: %{type: :bool, applies: :live}],
       values: %{median: true},
       compute: %{runs_on: :cpu, implementation: :rust, backend: nil}
@@ -149,10 +150,20 @@ defmodule VisionCore.Stereo.ParametersTest do
            ]
 
     assert Enum.map(groups, & &1.position) == [0, 1, 2, 3, 4, 5]
-    assert %{name: "Cameras", kind: :component, placement: :flow} = hd(groups)
 
-    assert %{name: "Median filter", kind: :stage, summary: "Filters"} =
-             group("stereo.median_filter")
+    assert %{name: "Cameras", kind: :component, placement: :flow, explanation: cameras} =
+             hd(groups)
+
+    assert cameras =~ "Both cameras"
+
+    assert %{
+             name: "Median filter",
+             kind: :stage,
+             summary: "Filters",
+             explanation: "Replaces each disparity with its neighbours' median."
+           } = group("stereo.median_filter")
+
+    refute Map.has_key?(group("stereo.sharpness"), :explanation)
   end
 
   test "a stage's group says where the stage runs, and the cameras' group says nothing" do
@@ -248,6 +259,7 @@ defmodule VisionCore.Stereo.ParametersTest do
       refute "stereo.right_camera" in ids
 
       assert %{name: "Cameras", kind: :component, placement: :flow, position: 0} = hd(groups)
+      assert hd(groups).explanation =~ "Both cameras"
 
       lens = parameter(hd(groups), "lens_position")
 

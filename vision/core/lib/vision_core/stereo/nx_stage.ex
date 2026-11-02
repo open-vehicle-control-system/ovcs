@@ -62,6 +62,12 @@ defmodule VisionCore.Stereo.NxStage do
   @doc "One line on what the stage does."
   @callback summary() :: String.t()
 
+  @doc """
+  A paragraph for someone tuning the stage: what it does, why it matters,
+  what its settings change and what to watch on the dashboard.
+  """
+  @callback explanation() :: String.t()
+
   @doc "The stage's settings: the live ones `set_option/3` accepts, and its build settings."
   @callback option_specs() :: [{atom(), Stage.option_spec()}]
 
@@ -93,6 +99,7 @@ defmodule VisionCore.Stereo.NxStage do
   @callback device_only() :: [atom()]
 
   @optional_callbacks summary: 0,
+                      explanation: 0,
                       finish: 3,
                       option_specs: 0,
                       options: 1,

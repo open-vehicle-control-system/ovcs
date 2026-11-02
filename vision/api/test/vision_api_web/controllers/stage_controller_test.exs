@@ -16,6 +16,8 @@ defmodule VisionApiWeb.StageControllerTest do
              "id" => "test.disparity",
              "attributes" => %{
                "name" => "Disparity",
+               "summary" => "Matches.",
+               "explanation" => "Finds each point of the left image in the right one.",
                "role" => "step",
                "position" => 2,
                "status" => %{"level" => "ok", "detail" => "fine"}

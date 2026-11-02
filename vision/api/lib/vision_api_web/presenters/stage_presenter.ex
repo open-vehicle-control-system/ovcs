@@ -16,6 +16,7 @@ defmodule VisionApiWeb.StagePresenter do
       %{
         name: group.name,
         summary: group.summary,
+        explanation: group.explanation,
         role: role(group),
         position: group.position,
         status: status(group.status),

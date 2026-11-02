@@ -45,6 +45,16 @@ defmodule VisionCore.Stereo.Stage.TemporalFilter do
   def summary, do: "Smooths the disparity over time and holds lost matches briefly."
 
   @impl VisionCore.Stereo.NxStage
+  def explanation,
+    do:
+      "Smooths the depth over time, so a still scene stays still. Where a pixel's disparity " <>
+        "changed by less than delta pixels since the previous pair, it moves only alpha of " <>
+        "the way to the new value; a larger change is taken at once, so moving objects and " <>
+        "new edges show without lag. A pixel that loses its match keeps its last value for up " <>
+        "to hold pairs, which fills holes that come and go. A lower alpha is steadier but " <>
+        "slower to follow, and 1.0 turns smoothing off. Watch Jitter under the depth video."
+
+  @impl VisionCore.Stereo.NxStage
   def init(opts, context) do
     state = %{
       alpha: Keyword.get(opts, :alpha, 0.4),

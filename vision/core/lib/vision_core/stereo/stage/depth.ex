@@ -15,6 +15,15 @@ defmodule VisionCore.Stereo.Stage.Depth do
   def summary, do: "Turns the disparity into metric depth."
 
   @impl VisionCore.Stereo.NxStage
+  def explanation,
+    do:
+      "Turns disparity into distance with the focal length and the spacing between the " <>
+        "cameras, taken from the calibration: distance = focal length × spacing ÷ disparity. " <>
+        "Far points have small disparities, so their distance is the least precise: there, a " <>
+        "fraction of a pixel is a large error in metres. It fills the depth image sent to ROS " <>
+        "2 and used by detection; pixels without a match have no depth. It has no settings."
+
+  @impl VisionCore.Stereo.NxStage
   def init(_opts, _context), do: {:ok, nil}
 
   @impl VisionCore.Stereo.NxStage

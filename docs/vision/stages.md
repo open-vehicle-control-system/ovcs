@@ -143,7 +143,7 @@ Measures the disparity on every pair: the share of matched pixels, the mean and 
 
 ## Your own stages
 
-A stage is a module implementing `VisionCore.Stereo.Stage`, or `VisionCore.Stereo.NxStage` for a stage written in Nx; its documentation lists the callbacks. Put it in your composer's `:stages` list. An Nx stage compiles into the segment around it. With `compute: :native`, an Nx stage without a native implementation becomes a compiled segment of its own between the native ones, so the component also needs `:defn_options` and a module cache ([Where depth is computed](./compute.md#nx-the-stages-as-tensor-programs)); a stage not written in Nx runs on the BEAM. [`VisionCore.Stereo.Stage.Decode`](../../vision/core/lib/vision_core/stereo/stage/decode.ex) replaces Rectification in a list without one: it only converts and shrinks the frames.
+A stage is a module implementing `VisionCore.Stereo.Stage`, or `VisionCore.Stereo.NxStage` for a stage written in Nx; its documentation lists the callbacks. Its optional `summary/0` and `explanation/0` are the line and the paragraph the dashboard shows on the stage's panel. Put it in your composer's `:stages` list. An Nx stage compiles into the segment around it. With `compute: :native`, an Nx stage without a native implementation becomes a compiled segment of its own between the native ones, so the component also needs `:defn_options` and a module cache ([Where depth is computed](./compute.md#nx-the-stages-as-tensor-programs)); a stage not written in Nx runs on the BEAM. [`VisionCore.Stereo.Stage.Decode`](../../vision/core/lib/vision_core/stereo/stage/decode.ex) replaces Rectification in a list without one: it only converts and shrinks the frames.
 
 ## See also
 

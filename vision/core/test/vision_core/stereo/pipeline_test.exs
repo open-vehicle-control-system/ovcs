@@ -144,9 +144,16 @@ defmodule VisionCore.Stereo.PipelineTest do
     assert %{
              module: Gain,
              summary: "",
+             explanation: nil,
              specs: [gain: %{applies: :live}, size: %{applies: :build}],
              values: %{gain: 1, size: 3}
            } = List.last(stages)
+  end
+
+  test "every stage the framework provides explains itself" do
+    for {module, _opts} <- [{Stage.Decode, []} | Pipeline.default_stages()] do
+      assert String.length(module.explanation()) > 0, "#{inspect(module)} has no explanation"
+    end
   end
 
   test "sets a stage's live settings by stage" do

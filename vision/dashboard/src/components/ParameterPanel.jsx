@@ -48,7 +48,46 @@ function useChangedValues(groupId, members) {
   return { changed, commit: (id, value) => committed.current.set(id, value) }
 }
 
-/** The selected group's name, summary and parameters, each with its control. */
+/** The group's summary, with its explanation behind a toggle that stays as set from one group to the next. */
+function Summary({ summary, explanation }) {
+  const explanationId = useId()
+  const [open, setOpen] = useState(false)
+  if (!summary && !explanation) return null
+
+  return (
+    <>
+      <p className="mt-3 text-sm text-ovcs-text">
+        {summary}
+        {explanation ? (
+          <button
+            type="button"
+            aria-expanded={open}
+            aria-controls={explanationId}
+            onClick={() => setOpen((shown) => !shown)}
+            className={`ml-2 inline-flex min-h-6 items-center gap-0.5 rounded text-ovcs-accent-text hover:underline ${FOCUS}`}
+          >
+            How it works
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 16 16"
+              fill="currentColor"
+              className={`size-3 transition-transform motion-reduce:transition-none ${open ? 'rotate-90' : ''}`}
+            >
+              <path d="M6 3.5 10.5 8 6 12.5Z" />
+            </svg>
+          </button>
+        ) : null}
+      </p>
+      {explanation ? (
+        <p id={explanationId} data-explanation hidden={!open} className="mt-1.5 text-sm leading-relaxed text-ovcs-muted">
+          {explanation}
+        </p>
+      ) : null}
+    </>
+  )
+}
+
+/** The selected group's name, summary and explanation, and its parameters, each with its control. */
 export default function ParameterPanel({ groupId }) {
   const headingId = useId()
   const groups = useParameters((state) => state.groups)
@@ -84,7 +123,6 @@ export default function ParameterPanel({ groupId }) {
           <h2 id={headingId} translate="no" className="text-lg font-semibold">
             {group.name}
           </h2>
-          {group.summary ? <p className="text-sm text-ovcs-muted">{group.summary}</p> : null}
           {tags.length > 0 ? (
             <ul aria-label="Runs on" className="mt-1.5 flex flex-wrap gap-1.5">
               {tags.map((tag) => (
@@ -103,6 +141,7 @@ export default function ParameterPanel({ groupId }) {
           Reset <span translate="no">{group.name}</span>
         </button>
       </div>
+      <Summary summary={group.summary} explanation={group.explanation} />
       <p aria-live="polite" className="sr-only">
         {changed}
       </p>

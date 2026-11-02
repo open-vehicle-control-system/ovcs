@@ -51,7 +51,7 @@ defmodule VisionCore.ParametersTest do
     assert {:ok, %{default: 64}} = Parameters.get(server, "stereo.disparity.p2")
   end
 
-  test "a group keeps where its work runs, and has none by default", %{server: server} do
+  test "a group keeps its explanation and where its work runs, both optional", %{server: server} do
     compute = %{runs_on: :gpu, implementation: :nx, backend: :vulkan}
 
     :ok =
@@ -60,6 +60,7 @@ defmodule VisionCore.ParametersTest do
           id: "a",
           name: "A",
           summary: "",
+          explanation: "What A does and what to watch.",
           kind: :stage,
           placement: :flow,
           position: 1,
@@ -77,7 +78,10 @@ defmodule VisionCore.ParametersTest do
         }
       ])
 
-    assert [%{id: "b", compute: nil}, %{id: "a", compute: ^compute}] = Parameters.groups(server)
+    assert [
+             %{id: "b", explanation: nil, compute: nil},
+             %{id: "a", explanation: "What A does and what to watch.", compute: ^compute}
+           ] = Parameters.groups(server)
   end
 
   test "lists groups sorted by position", %{server: server} do

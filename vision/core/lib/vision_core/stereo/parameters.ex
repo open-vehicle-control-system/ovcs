@@ -37,6 +37,16 @@ defmodule VisionCore.Stereo.Parameters do
     {:auto_exposure, :exposure_time_us, "Let the camera choose the shutter time"},
     {:auto_gain, :analogue_gain, "Let the camera choose the analogue gain"}
   ]
+  @cameras_explanation "Both cameras capture with the same settings, so that a point looks alike " <>
+                         "in the two images, which matching relies on. Exposure and gain set the " <>
+                         "brightness: a longer exposure brightens the image but blurs what moves, " <>
+                         "and a higher gain brightens it but adds noise, which makes the images " <>
+                         "harder to match. The automatic modes choose them for the scene; switch " <>
+                         "them off to set them yourself. Where the lenses have a focus setting, " <>
+                         "Sharpness, right / left compares the two cameras' focus. The capture " <>
+                         "size, frame rate and each camera's addressing are fixed in the build. " <>
+                         "Watch the frame rate, exposure and gain under each video, and the " <>
+                         "synchronisation between them."
 
   @doc """
   Declares the unit's groups. Options: `:topic_prefix`, `:driver`,
@@ -100,6 +110,7 @@ defmodule VisionCore.Stereo.Parameters do
       id: id,
       name: "Cameras",
       summary: "Capture settings, applied to both cameras.",
+      explanation: @cameras_explanation,
       kind: :component,
       placement: :flow,
       position: 0,
@@ -119,6 +130,7 @@ defmodule VisionCore.Stereo.Parameters do
       id: id,
       name: "Cameras",
       summary: "Capture settings, applied to both cameras.",
+      explanation: @cameras_explanation,
       kind: :component,
       placement: :flow,
       position: 0,
@@ -297,6 +309,7 @@ defmodule VisionCore.Stereo.Parameters do
         leading_parameters(stage.stage, correction?) ++
           parameters ++ extra_parameters(stage.stage, opts)
     }
+    |> put_present(:explanation, stage[:explanation])
     |> Map.merge(extra_group_fields(stage.stage))
     |> Map.merge(Map.take(stage, [:compute]))
   end

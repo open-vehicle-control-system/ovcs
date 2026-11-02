@@ -9,6 +9,14 @@ defmodule VisionCore.Stereo.Stage.MedianFilter do
   def summary, do: "Removes isolated wrong disparities with a median filter."
 
   @impl VisionCore.Stereo.NxStage
+  def explanation,
+    do:
+      "Replaces each disparity with the median of its neighbourhood. A lone wrong value " <>
+        "among good ones disappears, while the edges of objects stay sharp, which an average " <>
+        "would blur. kernel_size, fixed in the build, is the neighbourhood's width: wider " <>
+        "removes larger errors and rounds off fine detail."
+
+  @impl VisionCore.Stereo.NxStage
   def init(opts, _context) do
     case Keyword.get(opts, :kernel_size, 5) do
       size when size in [3, 5] -> {:ok, size}

@@ -15,6 +15,15 @@ defmodule VisionCore.Stereo.Stage.Quality do
   def summary, do: "Measures the share of matched pixels, the disparity spread and its jitter."
 
   @impl VisionCore.Stereo.NxStage
+  def explanation,
+    do:
+      "Measures the depth on every pair: the share of pixels matched, their mean disparity " <>
+        "and its spread, and the jitter, how much a pixel's disparity changes from one pair " <>
+        "to the next. These are the figures under the depth video. Use them when tuning the " <>
+        "other steps: a change that raises Matched pixels without raising Jitter is an " <>
+        "improvement. It has no settings."
+
+  @impl VisionCore.Stereo.NxStage
   def init(_opts, context), do: {:ok, %{size: {context.height, context.width}}}
 
   @impl VisionCore.Stereo.NxStage

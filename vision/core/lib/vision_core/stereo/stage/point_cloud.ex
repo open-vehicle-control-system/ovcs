@@ -17,6 +17,14 @@ defmodule VisionCore.Stereo.Stage.PointCloud do
   def summary, do: "Unprojects the depth into a decimated point cloud."
 
   @impl VisionCore.Stereo.NxStage
+  def explanation,
+    do:
+      "Turns the depth image into 3D points in the left camera's frame, for ROS 2 tools " <>
+        "such as maps and obstacle avoidance. decimation, fixed in the build, keeps one pixel " <>
+        "out of decimation × decimation: a higher value makes a lighter cloud with less " <>
+        "detail. Points too near, too far or without depth are left empty, as ROS expects."
+
+  @impl VisionCore.Stereo.NxStage
   def init(opts, _context) do
     case Keyword.get(opts, :decimation, 4) do
       decimation when decimation in 1..@max_decimation//1 ->

@@ -38,6 +38,16 @@ defmodule VisionCore.Stereo.Stage.SpeckleFilter do
   def summary, do: "Drops small islands of disparity that agree with nothing around them."
 
   @impl VisionCore.Stereo.NxStage
+  def explanation,
+    do:
+      "Removes speckles: small islands of disparity that agree with nothing around them, " <>
+        "usually false matches on reflections or fine repeated patterns. A pixel is kept when " <>
+        "at least min_support of its neighbours have a disparity within max_diff pixels of " <>
+        "its own. Raise min_support to remove more islands; too high, and thin objects and " <>
+        "the corners of surfaces go too. 0 turns the filter off. Watch the depth video for " <>
+        "scattered dots in open space."
+
+  @impl VisionCore.Stereo.NxStage
   def init(opts, _context) do
     state = %{
       min_support: Keyword.get(opts, :min_support, 12),
