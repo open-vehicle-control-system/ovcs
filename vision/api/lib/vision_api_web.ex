@@ -6,7 +6,7 @@ defmodule VisionApiWeb do
   """
 
   @doc "The `priv/static` entries `Plug.Static` serves; the rest falls through to the dashboard."
-  def static_paths, do: ~w(assets favicon.ico)
+  def static_paths, do: ~w(assets favicon.svg)
 
   def router do
     quote do
