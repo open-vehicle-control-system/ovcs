@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, act, fireEvent } from '@testing-library/react'
+import { render, screen, act, fireEvent, within } from '@testing-library/react'
 import App from '../App.jsx'
 import { useParameters } from '../stores/parameters.js'
 import { pageFromUrl, useNavigation } from '../stores/navigation.js'
@@ -47,6 +47,12 @@ describe('App', () => {
 
     unmount()
     expect(actions.stopPolling).toHaveBeenCalledTimes(1)
+  })
+
+  it('offers the dark mode switch in the top bar', () => {
+    render(<App />)
+
+    expect(within(screen.getByRole('banner')).getByRole('switch', { name: 'Dark mode' })).toBeTruthy()
   })
 
   it('selects the box named in the URL once the groups are loaded', () => {

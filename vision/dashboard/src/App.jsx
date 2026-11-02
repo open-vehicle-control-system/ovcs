@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import UnitStatus from './components/UnitStatus.jsx'
 import LivePreviews from './components/LivePreviews.jsx'
 import Menu from './components/Menu.jsx'
+import ThemeSwitch from './components/ThemeSwitch.jsx'
 import CalibrationPage from './pages/CalibrationPage.jsx'
 import Ros2Page from './pages/Ros2Page.jsx'
 import ApiPage from './pages/ApiPage.jsx'
@@ -157,8 +158,9 @@ export default function App() {
           OVCS <span className="font-normal text-ovcs-muted">Vision</span>
         </h1>
         <ParameterError />
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-5">
           <UnitStatusBar />
+          <ThemeSwitch />
         </div>
       </OvcsHeader>
 

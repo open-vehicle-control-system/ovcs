@@ -11,7 +11,7 @@ npm run test:unit
 
 The page is laid out for a laptop screen:
 
-- the header: the title, the parameters' error when there is one, and the unit's status inline (Zenoh, Hailo, CPU and stereo load);
+- the header: the title, the parameters' error when there is one, the unit's status inline (Zenoh, Hailo, CPU and stereo load), and the dark mode switch, whose choice the browser keeps;
 - a menu on the left, in three sections: Main (Overview, Calibration, and the components beside the pipeline, such as Detection), Pipeline (its components and stages in flow order) and Exporters (ROS 2, API);
 - the Overview: the previews at the full width, the left and right cameras with their synchronisation, row alignment and sharpness between them, then the depth with its colour scale;
 - a component's or stage's page: its parameters with the save bar (Save, Discard, Reset all), beside the same previews, which keep playing when you go between it and the Overview;

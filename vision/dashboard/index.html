@@ -7,6 +7,13 @@
     <meta name="theme-color" content="#f3f4f6" media="(prefers-color-scheme: light)">
     <meta name="theme-color" content="#111827" media="(prefers-color-scheme: dark)">
     <title>OVCS Vision</title>
+    <script>
+      // The theme chosen on this browser (src/stores/theme.js), before the first paint.
+      try {
+        const theme = localStorage.getItem('ovcs-theme')
+        if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme
+      } catch {}
+    </script>
   </head>
   <body class="h-full bg-ovcs-bg text-ovcs-text font-sans">
     <div id="app"></div>
