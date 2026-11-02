@@ -204,10 +204,16 @@ describe('ParameterControl', () => {
     expect(screen.queryByRole('button')).toBeNull()
   })
 
+  it('reads the description, what the constraint allows and the default as one line', () => {
+    show({ ...p1, value: 12, state: 'unsaved' })
+
+    expect(screen.getByText('Penalty for a disparity change of one · allows 0 to 255 · default 8')).toBeTruthy()
+  })
+
   it('shows the default next to a changed value, and a reset button', () => {
     const handlers = show({ ...p1, value: 12, state: 'unsaved' })
 
-    expect(screen.getByText('default 8')).toBeTruthy()
+    expect(screen.getByText(/default 8/)).toBeTruthy()
     expect(screen.getByText('unsaved')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Reset p1' }))
     expect(handlers.onReset).toHaveBeenCalled()

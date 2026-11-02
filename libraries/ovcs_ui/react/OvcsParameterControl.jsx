@@ -264,7 +264,9 @@ export default function OvcsParameterControl({ parameter, bounds, controllerName
   const changed = editable && parameter.value != null && !sameValue(parameter.value, parameter.default)
   const constraint = parameter.constraint
   const range = bounds ?? (constraint?.kind === 'range' ? { min: constraint.min, max: constraint.max } : null)
-  const allows = allowed(constraint, range)
+  const details = [parameter.description, allowed(constraint, range), changed ? `default ${formatValue(parameter.default)}` : null]
+    .filter(Boolean)
+    .join(' · ')
 
   let badge = 'live'
   if (locked) badge = 'build'
@@ -303,15 +305,11 @@ export default function OvcsParameterControl({ parameter, bounds, controllerName
       </div>
       {control}
       <div className="flex min-h-8 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ovcs-muted">
-        {parameter.description ? <span>{parameter.description}</span> : null}
-        {allows ? <span className="tabular-nums">{allows}</span> : null}
+        {details ? <p className="tabular-nums">{details}</p> : null}
         {changed ? (
-          <>
-            <span className="tabular-nums">default {formatValue(parameter.default)}</span>
-            <button type="button" onClick={onReset} className={`${BUTTON} ml-auto text-xs`}>
-              Reset {parameter.name}
-            </button>
-          </>
+          <button type="button" onClick={onReset} className={`${BUTTON} ml-auto text-xs`}>
+            Reset {parameter.name}
+          </button>
         ) : null}
       </div>
     </div>
