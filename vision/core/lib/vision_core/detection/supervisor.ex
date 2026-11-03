@@ -65,6 +65,29 @@ defmodule VisionCore.Detection.Supervisor do
     )
   end
 
+  @doc """
+  The output of the detection unit in `config`, with its
+  `VisionCore.Outputs` key: the detection pipeline's detections, as
+  `VisionCore.Exporter` names them. `[]` when no component of `config`
+  starts the unit, as `VisionCore.Components` resolves them.
+  """
+  @spec outputs(VisionCore.Config.t()) :: [
+          {VisionCore.Exporter.output(), VisionCore.Outputs.key()}
+        ]
+  def outputs(%VisionCore.Config{components: components}) do
+    if Enum.any?(components, &starts_unit?/1),
+      do: [detections: {:detections, Pipeline}],
+      else: []
+  end
+
+  defp starts_unit?({name, opts}) do
+    name
+    |> VisionCore.Components.start(opts)
+    |> Enum.any?(&match?(%{start: {__MODULE__, _function, _arguments}}, &1))
+  end
+
+  defp starts_unit?(name), do: starts_unit?({name, []})
+
   @doc false
   def split_backend_options(opts) do
     backend = Keyword.get(opts, :backend, @default_backend)

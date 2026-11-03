@@ -442,7 +442,9 @@ defmodule VisionCore.Stereo.Stage.StagesTest do
 
       [left, right] =
         for frame <- [left, right] do
-          {:ok, jpeg} = VisionCore.Jpeg.encode(frame.grey, frame.width, frame.height, 1, 95)
+          {:ok, jpeg} =
+            VisionCore.Jpeg.encode(frame.grey, frame.width, frame.height, 1, quality: 95)
+
           %{frame | grey: nil, jpeg: jpeg}
         end
 

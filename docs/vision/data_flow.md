@@ -35,7 +35,7 @@ A Port's row below names the process that owns it.
 | `hailo_detect` Port | [`VisionCore.Detection.Backend.Hailo`](../../vision/core/lib/vision_core/detection/backend/hailo.ex) | `VisionCore.Detection.Supervisor` |
 | Status | [`VisionCore.Status`](../../vision/core/lib/vision_core/status.ex) | `VisionCore.Supervisor` |
 | Preview | [`VisionCore.Preview`](../../vision/core/lib/vision_core/preview.ex) | `VisionCore.Supervisor` |
-| `jpeg_codec` Port | [`VisionCore.Jpeg`](../../vision/core/lib/vision_core/jpeg.ex) | `VisionCore.Supervisor` |
+| `jpeg_codec` Port | [`VisionCore.Jpeg`](../../vision/core/lib/vision_core/jpeg.ex), twice: the Pipeline decodes JPEG camera frames on `VisionCore.Jpeg`, the Preview and the exporters encode on `VisionCore.Jpeg.Export` | `VisionCore.Supervisor` |
 
 The drivers, the Pipeline and the Detection pipeline publish their frames, pairs and detections through [`VisionCore.Outputs`](../../vision/core/lib/vision_core/outputs.ex), a registry of subscriptions that `VisionCore.Supervisor` starts before the components. A process subscribes to the outputs it reads, under the name of the process that produces them, and its subscription holds while that process restarts.
 
@@ -79,6 +79,12 @@ Everything the unit publishes goes over Zenoh as ROS 2 messages, under the compo
 | `<prefix>/detections`, `<prefix>/detections/markers` | Detected objects with their position in metres, and markers for RViz or Foxglove. |
 
 Topics that are off unless you turn them on, such as the rectified images, are listed in `VisionCore.Stereo.Supervisor`'s documentation. `GET /api/ros2-node` on the unit lists every topic it has published, with its live rate ([Vision unit](./overview.md#dashboard-and-api)).
+
+## Exporters
+
+An exporter takes the unit's outputs out of it, to a network or to storage. It is a module of plain functions implementing [`VisionCore.Exporter`](../../vision/core/lib/vision_core/exporter.ex): it names the outputs it reads (the stereo pairs, a camera's frames, the detections) and takes each value it is handed. [`VisionCore.Exporter.Runner`](../../vision/core/lib/vision_core/exporter/runner.ex) subscribes to those outputs and hands the exporter the newest value of each, at most the output's `:max_hz` times a second. A value that arrives while the exporter is busy replaces the one before it, so a slow exporter skips values instead of falling behind; an exporter whose transport answers later says it is busy with an output, and is handed its newest value once it says it is ready.
+
+[`VisionCore.Exporters`](../../vision/core/lib/vision_core/exporters.ex) starts last in `VisionCore.Supervisor`, after the components, the Status and the Preview, and runs each exporter under a supervisor with its own restart budget. An exporter that cannot start yet, such as one waiting for its storage, is tried again until it starts, without holding up the rest of the unit. One that keeps crashing stops alone, for good, with an error logged: the cameras, the pipelines and the other exporters keep running.
 
 ## The dashboard's previews
 

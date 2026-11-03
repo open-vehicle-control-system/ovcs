@@ -29,12 +29,18 @@ defmodule VisionCore.Camera.Frame do
           grey: binary() | nil
         }
 
-  @doc "The frame as JPEG bytes, encoding a grey frame through `VisionCore.Jpeg`."
-  @spec to_jpeg(t()) :: {:ok, binary()} | {:error, term()}
-  def to_jpeg(%__MODULE__{jpeg: jpeg}) when is_binary(jpeg), do: {:ok, jpeg}
+  @doc """
+  The frame as JPEG bytes, encoding a grey frame on `jpeg_codec`, a
+  `VisionCore.Jpeg` instance.
+  """
+  @spec to_jpeg(t(), GenServer.server()) :: {:ok, binary()} | {:error, term()}
+  def to_jpeg(frame, jpeg_codec \\ VisionCore.Jpeg)
 
-  def to_jpeg(%__MODULE__{grey: grey, width: width, height: height}) when is_binary(grey),
-    do: VisionCore.Jpeg.encode(grey, width, height, 1)
+  def to_jpeg(%__MODULE__{jpeg: jpeg}, _jpeg_codec) when is_binary(jpeg), do: {:ok, jpeg}
+
+  def to_jpeg(%__MODULE__{grey: grey, width: width, height: height}, jpeg_codec)
+      when is_binary(grey),
+      do: VisionCore.Jpeg.encode(grey, width, height, 1, codec: jpeg_codec)
 
   @doc """
   The frame as a `u8` `{height, width}` tensor, decoding a JPEG frame

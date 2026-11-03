@@ -19,13 +19,21 @@ defmodule VisionCore.Application do
   thread count of `config :vision_core, :stereo_match_path` and
   `:stereo_match_threads`. `VisionCore.Ros2.Topics`, which counts what
   the components publish, starts before them. `VisionCore.Status` and
-  `VisionCore.Preview`, the dashboard's sources, start after the components.
+  `VisionCore.Preview`, the dashboard's sources, start after the
+  components, and `VisionCore.Exporters` last.
+
+  `VisionCore.Jpeg` runs twice: the pipeline decodes JPEG camera frames
+  on `VisionCore.Jpeg`, while `VisionCore.Preview` and the exporters
+  encode on `VisionCore.Jpeg.Export`, apart from those decodes. The
+  second starts after the components, before `VisionCore.Preview`, so
+  that its restart reaches its users only, not the cameras and pipelines.
   """
   use Application
 
   # Not the app env: `stop/1` runs while the application controller is
   # stopping the app, so a call to it from there times out.
   @active_config {__MODULE__, :active_config}
+  @export_jpeg_codec VisionCore.Jpeg.Export
 
   @impl Application
   def start(_type, _args) do
@@ -68,8 +76,11 @@ defmodule VisionCore.Application do
 
     dashboard_children = [
       {VisionCore.Status, config: config},
-      {VisionCore.Preview, [config: config] ++ config.preview}
+      {VisionCore.Jpeg, name: @export_jpeg_codec},
+      {VisionCore.Preview, [config: config, jpeg_codec: @export_jpeg_codec] ++ config.preview}
     ]
+
+    exporters_child = {VisionCore.Exporters, config: config, jpeg_codec: @export_jpeg_codec}
 
     %{
       id: VisionCore.Supervisor,
@@ -77,7 +88,7 @@ defmodule VisionCore.Application do
       start:
         {Supervisor, :start_link,
          [
-           core_children ++ component_children ++ dashboard_children,
+           core_children ++ component_children ++ dashboard_children ++ [exporters_child],
            [strategy: :rest_for_one, name: VisionCore.Supervisor]
          ]}
     }

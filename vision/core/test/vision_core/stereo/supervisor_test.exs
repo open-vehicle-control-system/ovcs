@@ -131,8 +131,11 @@ defmodule VisionCore.Stereo.SupervisorTest do
       assert StereoSupervisor.cameras(config) ==
                [{VisionCore.Camera.V4L2, left}, {VisionCore.Camera.V4L2, right}]
 
-      assert StereoSupervisor.outputs(config) ==
-               [{:stereo_pair, Pipeline}, {:camera_frame, left}, {:camera_frame, right}]
+      assert StereoSupervisor.outputs(config) == [
+               {:stereo_pair, {:stereo_pair, Pipeline}},
+               {{:camera_frame, :left}, {:camera_frame, left}},
+               {{:camera_frame, :right}, {:camera_frame, right}}
+             ]
     end
 
     test "none without a stereo component" do

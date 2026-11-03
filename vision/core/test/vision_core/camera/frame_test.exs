@@ -25,6 +25,12 @@ defmodule VisionCore.Camera.FrameTest do
   end
 
   @tag :jpeg
+  test "a grey frame is encoded on the codec instance given" do
+    start_supervised!({VisionCore.Jpeg, name: :frame_test_codec})
+    assert {:ok, <<0xFF, 0xD8, _rest::binary>>} = Frame.to_jpeg(@grey, :frame_test_codec)
+  end
+
+  @tag :jpeg
   test "a JPEG frame keeps its bytes and decodes to grey" do
     start_supervised!(VisionCore.Jpeg)
     {:ok, jpeg} = Frame.to_jpeg(@grey)

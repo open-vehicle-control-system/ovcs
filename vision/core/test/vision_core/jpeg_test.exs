@@ -43,6 +43,24 @@ defmodule VisionCore.JpegTest do
     assert {:ok, <<0xFF, 0xD8, _rest::binary>>} = Jpeg.encode_tensor(image)
   end
 
+  test "a second instance runs under its own name, on a Port of its own" do
+    start_supervised!({Jpeg, name: :second_codec})
+    image = Nx.broadcast(Nx.tensor(128, type: :u8), {8, 8})
+
+    assert {:ok, jpeg} = Jpeg.encode_tensor(image, codec: :second_codec)
+    assert {:ok, {8, 8, _pixels}} = Jpeg.decode_grey(jpeg, codec: :second_codec)
+    assert :sys.get_state(Jpeg).port == nil
+  end
+
+  test "encodes at the quality asked for" do
+    image = Nx.iota({32, 32}, type: :u8)
+
+    {:ok, low} = Jpeg.encode_tensor(image, quality: 10)
+    {:ok, high} = Jpeg.encode_tensor(image, quality: 95)
+
+    assert byte_size(low) < byte_size(high)
+  end
+
   test "a missing encoder is an error, not a crash" do
     path = Application.get_env(:vision_core, :jpeg_codec_path)
     on_exit(fn -> Application.put_env(:vision_core, :jpeg_codec_path, path) end)

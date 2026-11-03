@@ -31,4 +31,20 @@ defmodule VisionCore.Detection.SupervisorTest do
              {VisionCore.Detection.Backend.Hailo,
               [hef_path: "/models/m.hef", executable: "/bin/hailo_detect"]}
   end
+
+  describe "the detection unit of a config" do
+    defp config(components),
+      do: %VisionCore.Config{zenoh_endpoint_ip: "127.0.0.1", components: components}
+
+    test "its output: the detection pipeline's detections, whichever component starts it" do
+      for detector <- [:detector, {:detector, boxes: []}, :hailo_detector, {:hailo_detector, []}] do
+        assert Supervisor.outputs(config([:heartbeat, detector])) ==
+                 [detections: {:detections, VisionCore.Detection.Pipeline}]
+      end
+    end
+
+    test "none without a component starting it" do
+      assert Supervisor.outputs(config([:heartbeat, {:stereo, []}])) == []
+    end
+  end
 end

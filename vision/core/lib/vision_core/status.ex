@@ -86,7 +86,7 @@ defmodule VisionCore.Status do
   def init(opts) do
     config = Keyword.fetch!(opts, :config)
     tick_ms = Keyword.get(opts, :tick_ms, @default_tick_ms)
-    Enum.each(StereoSupervisor.outputs(config), &Outputs.subscribe/1)
+    for {_output, key} <- StereoSupervisor.outputs(config), do: :ok = Outputs.subscribe(key)
     Process.send_after(self(), :tick, tick_ms)
 
     {:ok,

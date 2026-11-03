@@ -73,6 +73,22 @@ defmodule VisionCore.PreviewTest do
     assert_receive {:vision_preview, :left, <<0xFF, 0xD8, _rest::binary>>}, 1_000
   end
 
+  @tag :jpeg
+  test "encodes on the JPEG codec its :jpeg_codec option names" do
+    start_supervised!({VisionCore.Jpeg, name: :preview_test_codec})
+    start_supervised!({Preview, config: @config, max_hz: 50, jpeg_codec: :preview_test_codec})
+    :ok = Preview.subscribe(:left)
+    :ok = Preview.subscribe(:depth)
+    frame = %Frame{label: "left", width: 2, height: 2, capture_ns: 1, grey: <<0, 64, 128, 255>>}
+
+    GenServer.cast(Preview, {:camera_frame, frame})
+    GenServer.cast(Preview, {:stereo_pair, pair(List.duplicate(1000, 16))})
+
+    assert_receive {:vision_preview, :left, <<0xFF, 0xD8, _rest::binary>>}, 1_000
+    assert_receive {:vision_preview, :depth, <<0xFF, 0xD8, _rest::binary>>}, 1_000
+    assert Process.whereis(VisionCore.Jpeg) == nil
+  end
+
   test "preview delivers only the latest frame to a slow subscriber" do
     start_supervised!({Preview, config: @config, max_hz: 50})
     :ok = Preview.subscribe(:left)

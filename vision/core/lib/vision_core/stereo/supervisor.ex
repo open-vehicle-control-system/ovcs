@@ -199,18 +199,25 @@ defmodule VisionCore.Stereo.Supervisor do
   defp stereo_options(_component), do: nil
 
   @doc """
-  The `VisionCore.Outputs` keys of the stereo unit in `config`: its
-  pipeline's pairs, then its left and right cameras' frames. `[]`
+  The outputs of the stereo unit in `config`, each with its
+  `VisionCore.Outputs` key: its pipeline's pairs, then its left and
+  right cameras' frames, as `VisionCore.Exporter` names them. `[]`
   without a `:stereo` component.
   """
-  @spec outputs(VisionCore.Config.t()) :: [VisionCore.Outputs.key()]
+  @spec outputs(VisionCore.Config.t()) :: [
+          {VisionCore.Exporter.output(), VisionCore.Outputs.key()}
+        ]
   def outputs(config) do
     case cameras(config) do
       [] ->
         []
 
-      cameras ->
-        [{:stereo_pair, Pipeline} | for({_driver, name} <- cameras, do: {:camera_frame, name})]
+      [{_left_driver, left}, {_right_driver, right}] ->
+        [
+          {:stereo_pair, {:stereo_pair, Pipeline}},
+          {{:camera_frame, :left}, {:camera_frame, left}},
+          {{:camera_frame, :right}, {:camera_frame, right}}
+        ]
     end
   end
 

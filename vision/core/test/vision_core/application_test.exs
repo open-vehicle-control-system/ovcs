@@ -3,7 +3,7 @@ defmodule VisionCore.ApplicationTest do
 
   import ExUnit.CaptureLog
 
-  alias VisionCore.Camera.LibCamera
+  alias VisionCore.Camera.{Frame, LibCamera}
   alias VisionCore.Parameters.SavedValue
   alias VisionCore.Repo
 
@@ -63,7 +63,25 @@ defmodule VisionCore.ApplicationTest do
     assert VisionCore.Ros2.Parameters in ids
     assert VisionCore.Ros2.Topics in ids
     assert VisionCore.Ros2.Publishers.Heartbeat in ids
-    assert Enum.take(ids, 2) == [VisionCore.Preview, VisionCore.Status]
+  end
+
+  test "the exporters start last, after the components, the dashboard's sources and their codec" do
+    start_pipeline(%VisionCore.Config{
+      zenoh_endpoint_ip: "127.0.0.1",
+      components: [:heartbeat]
+    })
+
+    assert Enum.take(child_ids(VisionCore.Supervisor), 4) == [
+             VisionCore.Exporters,
+             VisionCore.Preview,
+             VisionCore.Jpeg.Export,
+             VisionCore.Status
+           ]
+
+    assert for(
+             {id, _pid, :supervisor, _} <- Supervisor.which_children(VisionCore.Exporters),
+             do: id
+           ) == []
   end
 
   test "the core starts the parameter storage and registry first, then the outputs registry, before the components" do
@@ -80,6 +98,19 @@ defmodule VisionCore.ApplicationTest do
              VisionCore.Jpeg,
              VisionCore.Stereo.Matcher
            ]
+  end
+
+  @tag :jpeg
+  test "the previews encode JPEG on a codec of their own, not the pipeline's" do
+    start_pipeline(%VisionCore.Config{zenoh_endpoint_ip: "127.0.0.1"})
+    :ok = :sys.suspend(VisionCore.Jpeg)
+    :ok = VisionCore.Preview.subscribe(:left)
+    frame = %Frame{label: "left", width: 2, height: 2, capture_ns: 1, grey: <<0, 64, 128, 255>>}
+
+    GenServer.cast(VisionCore.Preview, {:camera_frame, frame})
+
+    assert_receive {:vision_preview, :left, <<0xFF, 0xD8, _rest::binary>>}, 2_000
+    :ok = :sys.resume(VisionCore.Jpeg)
   end
 
   test "starts the Matcher with the stereo_match binary and thread count of the app env" do

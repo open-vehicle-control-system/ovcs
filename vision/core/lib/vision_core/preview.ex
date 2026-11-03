@@ -22,8 +22,8 @@ defmodule VisionCore.Preview do
   sent to each depth subscriber as `{:vision_preview_options,
   %{depth_range_m: metres}}`.
 
-  Started last in `VisionCore.Supervisor`; without a `:stereo`
-  component it runs with nothing to preview.
+  Started after the components in `VisionCore.Supervisor`; without a
+  `:stereo` component it runs with nothing to preview.
 
   ## Options
 
@@ -32,10 +32,13 @@ defmodule VisionCore.Preview do
     * `:depth_range_m` (`0.0`) — the distance coloured blue; 0 colours
       blue only what is infinitely far, so the colours stay put from one
       frame to the next. Red is the nearest measured depths.
+    * `:jpeg_codec` (`VisionCore.Jpeg`) — the `VisionCore.Jpeg` instance
+      the previews are encoded on. `VisionCore.Application` gives
+      `VisionCore.Jpeg.Export`, apart from the pipeline's.
     * `:depth_encoder` — `(VisionCore.Stereo.Pair.t() -> jpeg)`,
-      replacing `encode_depth/2`.
+      replacing `encode_depth/3`.
     * `:frame_encoder` — `(VisionCore.Camera.Frame.t() -> {:ok, jpeg} |
-      {:error, reason})`, replacing `VisionCore.Camera.Frame.to_jpeg/1`.
+      {:error, reason})`, replacing `VisionCore.Camera.Frame.to_jpeg/2`.
   """
   use GenServer
   require Logger
@@ -68,16 +71,21 @@ defmodule VisionCore.Preview do
   @doc """
   The depth of `pair` as a colour JPEG, by 1/depth: the nearest measured
   depths are red, `range_m` and beyond blue (with 0, infinitely far),
-  pixels without depth black. Coloured and encoded on the CPU by
-  `VisionCore.Jpeg`, from the millimetre depth image.
+  pixels without depth black. Coloured and encoded on the CPU by the
+  `VisionCore.Jpeg` instance `jpeg_codec`, from the millimetre depth image.
   """
-  @spec encode_depth(Pair.t(), float()) :: binary() | {:error, term()}
-  def encode_depth(%Pair{depth: depth} = pair, range_m \\ @default_depth_range_m)
+  @spec encode_depth(Pair.t(), float(), GenServer.server()) :: binary() | {:error, term()}
+  def encode_depth(
+        %Pair{depth: depth} = pair,
+        range_m \\ @default_depth_range_m,
+        jpeg_codec \\ VisionCore.Jpeg
+      )
       when is_binary(depth) do
     {width, height} = Pair.size(pair)
     far_mm = round(range_m * 1_000)
+    options = [quality: @jpeg_quality, codec: jpeg_codec]
 
-    case VisionCore.Jpeg.encode_depth(depth, width, height, 0, far_mm, @jpeg_quality) do
+    case VisionCore.Jpeg.encode_depth(depth, width, height, 0, far_mm, options) do
       {:ok, jpeg} -> jpeg
       {:error, _reason} = error -> error
     end
@@ -92,20 +100,20 @@ defmodule VisionCore.Preview do
 
   @impl GenServer
   def init(opts) do
-    opts
-    |> Keyword.fetch!(:config)
-    |> StereoSupervisor.outputs()
-    |> Enum.each(&Outputs.subscribe/1)
+    for {_output, key} <- StereoSupervisor.outputs(Keyword.fetch!(opts, :config)),
+        do: :ok = Outputs.subscribe(key)
 
     max_hz = Keyword.get(opts, :max_hz, @default_max_hz)
+    jpeg_codec = Keyword.get(opts, :jpeg_codec, VisionCore.Jpeg)
 
     {:ok,
      %{
        max_hz: max_hz,
        depth_range_m: Keyword.get(opts, :depth_range_m, @default_depth_range_m) * 1.0,
        interval_ms: div(1_000, max_hz),
+       jpeg_codec: jpeg_codec,
        depth_encoder: Keyword.get(opts, :depth_encoder),
-       frame_encoder: Keyword.get(opts, :frame_encoder, &Frame.to_jpeg/1),
+       frame_encoder: Keyword.get(opts, :frame_encoder, &Frame.to_jpeg(&1, jpeg_codec)),
        latest: Map.new(@streams, &{&1, %{sequence: 0, frame: nil}}),
        encoded: Map.new(@streams, &{&1, {0, nil}}),
        depth_failure_logged: false,
@@ -297,7 +305,7 @@ defmodule VisionCore.Preview do
   defp put_option(state, :depth_range_m, range_m), do: %{state | depth_range_m: range_m * 1.0}
 
   defp encode_depth_safely(state, pair) do
-    encode = state.depth_encoder || (&encode_depth(&1, state.depth_range_m))
+    encode = state.depth_encoder || (&encode_depth(&1, state.depth_range_m, state.jpeg_codec))
 
     case encode.(pair) do
       jpeg when is_binary(jpeg) -> {:ok, jpeg}
