@@ -49,10 +49,44 @@ defmodule VisionCore.Ros2.TopicsTest do
     assert [%{name: "/plain", type: "String"}] = Topics.topics()
   end
 
+  test "lists no encode failure for a topic that has none", %{topics: pid} do
+    Topics.count("stereo/depth/camera_info", CameraInfo)
+    tick(pid)
+
+    assert [%{name: "/stereo/depth/camera_info", encode_failures: 0}] = Topics.topics()
+  end
+
+  test "counts the messages that could not be encoded apart from the publishes", %{topics: pid} do
+    Topics.count("stereo/points", CameraInfo)
+    Topics.count_encode_failure("stereo/points", CameraInfo)
+    Topics.count_encode_failure("/stereo/points", CameraInfo)
+    tick(pid)
+
+    assert [%{name: "/stereo/points", encode_failures: 2}] = Topics.topics()
+
+    tick(pid)
+    assert [%{name: "/stereo/points", rate_hz: +0.0, encode_failures: 2}] = Topics.topics()
+  end
+
+  test "lists a topic whose every message failed, at no rate", %{topics: pid} do
+    assert Topics.count_encode_failure("stereo/points", CameraInfo) == :ok
+    tick(pid)
+
+    assert [
+             %{
+               name: "/stereo/points",
+               type: "sensor_msgs/msg/CameraInfo",
+               rate_hz: +0.0,
+               encode_failures: 1
+             }
+           ] = Topics.topics()
+  end
+
   test "counting without the table running is a no-op" do
     stop_supervised!(Topics)
 
     assert Topics.count("stereo/points", CameraInfo) == :ok
+    assert Topics.count_encode_failure("stereo/points", CameraInfo) == :ok
     assert Topics.topics() == []
   end
 end

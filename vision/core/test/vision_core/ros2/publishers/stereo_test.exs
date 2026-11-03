@@ -31,7 +31,7 @@ defmodule VisionCore.Ros2.Publishers.StereoTest do
       def init(test), do: {:ok, test}
 
       @impl GenServer
-      def handle_cast({:publish, topic, _module, message, _opts}, test) do
+      def handle_cast({:publish, topic, _module, message, _payload, _opts}, test) do
         send(test, {:published, topic, message})
         {:noreply, test}
       end
@@ -93,6 +93,17 @@ defmodule VisionCore.Ros2.Publishers.StereoTest do
       assert_receive {:published, "stereo/points", %PointCloud2{} = cloud}
       assert %{height: 1, width: 2, is_dense: 0} = cloud
       assert cloud.row_step == 2 * cloud.point_step
+    end
+
+    test "drops a message that does not encode and publishes the rest of the pair" do
+      publisher = Process.whereis(Stereo)
+
+      GenServer.cast(Stereo, {:stereo_pair, %Pair{pair() | depth: nil}})
+
+      assert_receive {:published, "stereo/disparity", %DisparityImage{}}
+      assert_receive {:published, "stereo/points", %PointCloud2{}}
+      refute_receive {:published, "stereo/depth/image_rect", _depth}
+      assert Process.whereis(Stereo) == publisher
     end
   end
 

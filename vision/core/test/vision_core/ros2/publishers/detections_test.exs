@@ -21,7 +21,7 @@ defmodule VisionCore.Ros2.Publishers.DetectionsTest do
     def init(test), do: {:ok, test}
 
     @impl GenServer
-    def handle_cast({:publish, topic, _module, message, _opts}, test) do
+    def handle_cast({:publish, topic, _module, message, _payload, _opts}, test) do
       send(test, {:published, topic, message})
       {:noreply, test}
     end

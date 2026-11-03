@@ -24,12 +24,15 @@ defmodule VisionCore.Ros2.ZenohClient.State do
       for `:DOWN`.
     * `drops_while_offline`: publishes dropped while no session is
       open, logged once on connect, then reset.
+    * `open_session`: how a session is opened, a function from the
+      router's address to `{:ok, session}` or `{:error, reason}`.
   """
 
   defstruct [
     :endpoint_ip,
     :node_name,
     :domain_id,
+    :open_session,
     :session,
     :node_token,
     publishers: %{},
@@ -56,7 +59,7 @@ defmodule VisionCore.Ros2.ZenohClient do
   The actual ROS 2 message generation (heartbeats, images, detections)
   lives in caller GenServers — `VisionCore.Ros2.Publishers.Heartbeat`,
   `VisionCore.Ros2.Publishers.Stereo` and friends — that use the API
-  exposed here.
+  exposed here, and so does the CDR encoding of what they publish.
 
   ## Subscriptions
 
@@ -78,6 +81,26 @@ defmodule VisionCore.Ros2.ZenohClient do
   declared, or a message module without `dds_type/0` and
   `type_hash/0`, is logged and skipped: the subscription still
   receives from ordinary publishers.
+
+  ## Encoding
+
+  `publish/4` encodes in the calling process and casts the encoded
+  payload; the client only numbers it, attaches the publisher's GID and
+  puts it. The encoders are binary constructions guarded on the field
+  types, so a `nil` where a number belongs raises. In the client that
+  raise would restart it and, `VisionCore.Supervisor` being `:rest_for_one`,
+  every consumer behind it, cameras included, at the publisher's rate.
+  In the caller it costs one message: `publish/4` returns
+  `{:error, reason}`, logs once per topic and message type, and counts the
+  failure in `VisionCore.Ros2.Topics`.
+
+  Nothing is encoded while the client has no session, since the client
+  would only drop it. The client keeps a flag in an ETS table it owns, set
+  when its session opens and cleared when the session is lost, and
+  `publish/4` reads it: without a session the client is handed the publish
+  without a payload and tallies the drop. A publish that raced a change of
+  the flag is dropped the same way. Where no client runs there is no flag,
+  and a publish is encoded.
 
   ## Parsing
 
@@ -114,7 +137,16 @@ defmodule VisionCore.Ros2.ZenohClient do
   @surplus_alignment_slack_bytes 8
   # Logs a topic's first put, then one in this many.
   @debug_log_every_puts 30
+  # The session flag's table, owned by the client: it goes when the client does.
+  @session_table __MODULE__
 
+  @doc """
+  Starts the client. Options: `:endpoint_ip`, the Zenoh router's address
+  (required); `:node_name` and `:domain_id`, what its entities are declared
+  under; `:open_session`, a function from the router's address to
+  `{:ok, session}` or `{:error, reason}`, a client-mode session to the router
+  by default.
+  """
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
@@ -125,16 +157,69 @@ defmodule VisionCore.Ros2.ZenohClient do
   for a given topic lazily declares the underlying Zenoh publisher
   and its rmw_zenoh liveliness token; subsequent calls reuse them.
 
-  Fire-and-forget — calls before the session is connected are dropped
-  silently and tallied (the heartbeat re-fires on its own timer, a stream
-  sends its next message soon after); the drop count is logged once when
-  the session opens. Returns `:ok` immediately.
+  The message is CDR-encoded here, in the calling process. One that does
+  not encode never reaches the client: `publish/4` returns
+  `{:error, {:encode_raised, reason}}`, logs it once per topic and message
+  type, and counts it with `VisionCore.Ros2.Topics.count_encode_failure/2`.
 
-  Each call is counted in `VisionCore.Ros2.Topics`, dropped or not.
+  The message is fire-and-forget — calls while no session is open are dropped
+  silently and tallied, without being encoded (the heartbeat re-fires on its
+  own timer, a stream sends its next message soon after); the drop count is
+  logged once when the session opens. Returns `:ok` immediately.
+
+  Each message that encodes, and each one dropped for want of a session, is
+  counted in `VisionCore.Ros2.Topics`.
   """
+  @spec publish(String.t(), module(), struct(), keyword()) ::
+          :ok | {:error, {:encode_raised, String.t()}}
   def publish(topic, message_module, message, opts \\ []) do
-    VisionCore.Ros2.Topics.count(topic, message_module)
-    GenServer.cast(__MODULE__, {:publish, topic, message_module, message, opts})
+    case encode_unless_offline(message) do
+      {:ok, payload} ->
+        VisionCore.Ros2.Topics.count(topic, message_module)
+
+        # The client reads only the payload; the message goes along for the publishers' test doubles.
+        GenServer.cast(__MODULE__, {:publish, topic, message_module, message, payload, opts})
+
+      {:error, {:encode_raised, reason}} = error ->
+        drop_unencodable(topic, message_module, reason)
+        error
+    end
+  end
+
+  # With no session the client drops the publish: no payload, only the drop to tally.
+  defp encode_unless_offline(message) do
+    if session_open?(), do: encode_payload(message), else: {:ok, nil}
+  end
+
+  # Only a client that says it has no session lets a publish go unencoded.
+  defp session_open? do
+    :ets.lookup_element(@session_table, :open, 2)
+  rescue
+    ArgumentError -> true
+  end
+
+  defp put_session_open(open?), do: :ets.insert(@session_table, {:open, open?})
+
+  # A message that does not encode is dropped, not raised; see the moduledoc.
+  defp encode_payload(message) do
+    {:ok, RmwZenoh.encode_payload(message)}
+  rescue
+    exception -> {:error, {:encode_raised, Exception.message(exception)}}
+  end
+
+  # One log line per topic and message type in each publishing process, not one per message.
+  defp drop_unencodable(topic, message_module, reason) do
+    VisionCore.Ros2.Topics.count_encode_failure(topic, message_module)
+    logged_key = {:encode_failure_logged, topic, message_module}
+
+    if is_nil(Process.get(logged_key)) do
+      Process.put(logged_key, true)
+
+      Logger.warning(
+        "#{__MODULE__} cannot encode #{inspect(message_module)} for #{topic}: #{reason}; " <>
+          "dropping it; further failures of this topic and type are counted, not logged"
+      )
+    end
   end
 
   @doc """
@@ -230,9 +315,12 @@ defmodule VisionCore.Ros2.ZenohClient do
     state = %State{
       endpoint_ip: Keyword.fetch!(opts, :endpoint_ip),
       node_name: Keyword.get(opts, :node_name, @default_node_name),
-      domain_id: Keyword.get(opts, :domain_id, @default_domain_id)
+      domain_id: Keyword.get(opts, :domain_id, @default_domain_id),
+      open_session: Keyword.get(opts, :open_session, &open_session/1)
     }
 
+    :ets.new(@session_table, [:named_table, read_concurrency: true])
+    put_session_open(false)
     send(self(), {:connect, @reconnect_initial_ms})
     {:ok, state}
   end
@@ -384,21 +472,22 @@ defmodule VisionCore.Ros2.ZenohClient do
     end
   end
 
+  # No payload: the caller saw no session. No session: it was lost since the caller looked.
   def handle_cast(
-        {:publish, _topic, _message_module, _message, _opts},
-        %State{session: nil} = state
-      ) do
+        {:publish, _topic, _message_module, _message, payload, _opts},
+        %State{session: session} = state
+      )
+      when is_nil(payload) or is_nil(session) do
     # Fire-and-forget: drop silently and tally. Publishers re-fire on
     # their own timers, so a per-drop log just spams while the router is
     # unreachable. The count is summarised when the session opens.
     {:noreply, %{state | drops_while_offline: state.drops_while_offline + 1}}
   end
 
-  def handle_cast({:publish, topic, message_module, message, _opts}, state) do
+  def handle_cast({:publish, topic, message_module, _message, payload, _opts}, state) do
     case ensure_publisher(state, topic, message_module) do
       {:ok, state, publisher} ->
         publisher = %{publisher | sequence_number: publisher.sequence_number + 1}
-        payload = RmwZenoh.encode_payload(message)
 
         attachment =
           RmwZenoh.attachment(
@@ -442,7 +531,7 @@ defmodule VisionCore.Ros2.ZenohClient do
 
   @impl GenServer
   def handle_info({:connect, backoff_ms}, state) do
-    case open_session(state.endpoint_ip) do
+    case state.open_session.(state.endpoint_ip) do
       {:ok, session} ->
         Logger.info("#{__MODULE__} connected to tcp/#{state.endpoint_ip}:#{@zenoh_port}")
 
@@ -453,6 +542,7 @@ defmodule VisionCore.Ros2.ZenohClient do
         end
 
         state = %{state | session: session, drops_while_offline: 0}
+        put_session_open(true)
         state = declare_node(state)
         state = redeclare_publishers(state)
         state = redeclare_subscribers(state)
@@ -922,6 +1012,8 @@ defmodule VisionCore.Ros2.ZenohClient do
 
   # Keeps gids, sequence numbers, subscribers and service handlers.
   defp clear_session_handles(%State{} = state) do
+    put_session_open(false)
+
     publishers =
       Map.new(state.publishers, fn {topic, publisher} ->
         {topic, %{publisher | publisher_id: nil, liveliness_token: nil}}

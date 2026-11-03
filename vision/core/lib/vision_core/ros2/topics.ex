@@ -1,9 +1,10 @@
 defmodule VisionCore.Ros2.Topics do
   @moduledoc """
-  Every topic the vision core has published, with its message type and
-  live rate.
+  Every topic the vision core has published or tried to, with its message
+  type, live rate and the count of its messages that could not be encoded.
 
-  `VisionCore.Ros2.ZenohClient.publish/4` calls `count/2` from the
+  `VisionCore.Ros2.ZenohClient.publish/4` calls `count/2`, or
+  `count_encode_failure/2` for a message it could not encode, from the
   publishing process: one `:ets.update_counter/4` on a public table this
   process owns, so a publisher never waits on a server. Once a second the
   counts since the previous tick become each topic's rate. Names are full
@@ -15,7 +16,12 @@ defmodule VisionCore.Ros2.Topics do
   @table __MODULE__
   @tick_ms 1_000
 
-  @type topic :: %{name: String.t(), type: String.t(), rate_hz: float()}
+  @type topic :: %{
+          name: String.t(),
+          type: String.t(),
+          rate_hz: float(),
+          encode_failures: non_neg_integer()
+        }
 
   def start_link(opts \\ []), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 
@@ -23,7 +29,21 @@ defmodule VisionCore.Ros2.Topics do
   @spec count(String.t(), module()) :: :ok
   def count(topic, message_module) do
     name = full_name(topic)
-    :ets.update_counter(@table, name, {2, 1}, {name, 0, message_module})
+    :ets.update_counter(@table, name, {2, 1}, {name, 0, message_module, 0})
+    :ok
+  rescue
+    ArgumentError -> :ok
+  end
+
+  @doc """
+  Counts one `message_module` message for `topic` that could not be
+  encoded. It is not a publish: it adds nothing to the topic's rate. A
+  no-op while this process is down.
+  """
+  @spec count_encode_failure(String.t(), module()) :: :ok
+  def count_encode_failure(topic, message_module) do
+    name = full_name(topic)
+    :ets.update_counter(@table, name, {4, 1}, {name, 0, message_module, 0})
     :ok
   rescue
     ArgumentError -> :ok
@@ -48,8 +68,13 @@ defmodule VisionCore.Ros2.Topics do
   def handle_call(:topics, _from, state) do
     topics =
       :ets.tab2list(@table)
-      |> Enum.map(fn {name, _count, module} ->
-        %{name: name, type: ros_type(module), rate_hz: Map.get(state.rates, name, 0.0)}
+      |> Enum.map(fn {name, _count, module, encode_failures} ->
+        %{
+          name: name,
+          type: ros_type(module),
+          rate_hz: Map.get(state.rates, name, 0.0),
+          encode_failures: encode_failures
+        }
       end)
       |> Enum.sort_by(& &1.name)
 
@@ -60,7 +85,9 @@ defmodule VisionCore.Ros2.Topics do
   def handle_info(:tick, state) do
     now = System.monotonic_time(:millisecond)
     elapsed_s = max(now - state.ticked_at, 1) / 1_000
-    counts = Map.new(:ets.tab2list(@table), fn {name, count, _module} -> {name, count} end)
+
+    counts =
+      Map.new(:ets.tab2list(@table), fn {name, count, _module, _failures} -> {name, count} end)
 
     rates =
       Map.new(counts, fn {name, count} ->
