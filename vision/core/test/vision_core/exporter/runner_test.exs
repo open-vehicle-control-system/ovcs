@@ -618,6 +618,13 @@ defmodule VisionCore.Exporter.RunnerTest do
     end
   end
 
+  test "answers a call it does not know with an error, and runs on" do
+    runner = start_forwarder([outputs: [:stereo_pair]], config())
+
+    assert GenServer.call(runner, :flush) == {:error, :unknown_call}
+    assert Runner.status(runner) == {:ok, "Running"}
+  end
+
   test "hands the exporter's own messages to its handle_info/2, and drops them without one" do
     start_runner(Counter, [], Counter)
     forwarder = start_forwarder(outputs: [])

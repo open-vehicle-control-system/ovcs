@@ -212,7 +212,9 @@ defmodule VisionCore.Ros2.Exporter.Stereo do
   The messages of a camera's `frame` on its `side` of `stereo` at
   `now_ms`, and the side after it: the frame as a raw image when its
   slot is open (`image_slot/4`), encoded by `encode` when it is grey,
-  then the side's camera info every Nth frame.
+  then the side's camera info every Nth frame. A frame that does not
+  encode takes its slot all the same, so a failing codec is asked at
+  most `:raw_image_max_hz` times a second.
   """
   @spec frame_messages(Frame.t(), side(), t(), number(), (Frame.t() -> encoded())) ::
           {[message()], side()}
@@ -238,13 +240,21 @@ defmodule VisionCore.Ros2.Exporter.Stereo do
     do: {[], side}
 
   defp raw_image(frame, side, header, now_ms, max_hz, encode) do
-    with {:publish, next_ms} <- image_slot(side.next_image_ms, frame, now_ms, max_hz),
-         {:ok, jpeg} <- encode.(frame) do
-      message = %CompressedImage{header: header, format: "jpeg", data: jpeg}
-      {[{side.image_topic, CompressedImage, message}], %{side | next_image_ms: next_ms}}
-    else
-      :skip -> {[], side}
-      {:error, _reason} -> {[], side}
+    case image_slot(side.next_image_ms, frame, now_ms, max_hz) do
+      {:publish, next_ms} ->
+        side = %{side | next_image_ms: next_ms}
+
+        case encode.(frame) do
+          {:ok, jpeg} ->
+            message = %CompressedImage{header: header, format: "jpeg", data: jpeg}
+            {[{side.image_topic, CompressedImage, message}], side}
+
+          {:error, _reason} ->
+            {[], side}
+        end
+
+      :skip ->
+        {[], side}
     end
   end
 

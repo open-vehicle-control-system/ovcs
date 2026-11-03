@@ -21,7 +21,8 @@ defmodule VisionCore.Exporter do
       `VisionCore.Detection.Pipeline` result for `pair`.
 
   An entry is an output, or `{output, options}` whose one option is
-  `:max_hz`, the most values of the output handed over a second:
+  `:max_hz`, the most values of the output handed over a second
+  (`output_specs/2`):
 
       [{:camera_frame, :left}, stereo_pair: [max_hz: 5], detections: []]
 
@@ -86,6 +87,12 @@ defmodule VisionCore.Exporter do
   reason logged, and the unit runs on without it. `c:describe/1` gives
   the id and the name `VisionCore.Exporters.list/0` lists the exporter
   under, the dashboard's Exporters menu among its readers.
+
+  These return at once, as `c:children/1` does: `c:check/1`,
+  `c:children/1` and `c:describe/1` run while `VisionCore.Exporters`
+  starts, which the vision unit's start waits for, and `c:describe/1`
+  and `c:outputs/1` again at each listing, which `VisionCore.Status`
+  makes every second.
 
   ## Example
 
@@ -162,7 +169,7 @@ defmodule VisionCore.Exporter do
   @typedoc "The exporter's own state, from `c:init/1`."
   @type state :: term()
 
-  @doc "The outputs the exporter reads, given its options."
+  @doc "The outputs the exporter reads, given its options; it returns at once."
   @callback outputs(options :: keyword()) :: [output_spec()]
 
   @doc """
@@ -194,7 +201,10 @@ defmodule VisionCore.Exporter do
   """
   @callback status(state()) :: status()
 
-  @doc "Helper processes, started before the runner under the exporter's supervisor."
+  @doc """
+  Helper processes, started before the runner under the exporter's
+  supervisor. It returns at once: the vision unit's start waits for it.
+  """
   @callback children(options :: keyword()) ::
               [Supervisor.child_spec() | {module(), term()} | module()]
 
@@ -203,14 +213,17 @@ defmodule VisionCore.Exporter do
 
   @doc """
   Whether the exporter can run with `options`: `:ok`, or `{:error, reason}`,
-  a sentence saying why not. Without it, every exporter can.
+  a sentence saying why not. Without it, every exporter can. It answers
+  at once, from the options and the configuration: the vision unit's
+  start waits for it.
   """
   @callback check(options :: keyword()) :: :ok | {:error, String.t()}
 
   @doc """
   How the exporter is listed: its id, an atom unique among the unit's
   exporters, and its name, for people. Without it, both are the
-  exporter's module.
+  exporter's module. It answers at once: the vision unit's start and
+  each listing wait for it.
   """
   @callback describe(options :: keyword()) :: %{id: atom(), name: String.t()}
 
@@ -224,6 +237,49 @@ defmodule VisionCore.Exporter do
   @doc "Whether `term` is one of the outputs an exporter can name."
   @spec output?(term()) :: boolean()
   def output?(term), do: is_map_key(@outputs, term)
+
+  @doc """
+  The outputs `exporter` reads with `options`, in its `c:outputs/1`
+  order, each with the most values it is handed a second, `nil` when
+  unbounded. `{:error, {:invalid_output, entry}}` for the first entry
+  that names no output, names one a second time, or has options other
+  than a positive `:max_hz`; `{:error, {:outputs_raised, message}}` when
+  `c:outputs/1` raises.
+  """
+  @spec output_specs(module(), keyword()) ::
+          {:ok, [{output(), number() | nil}]}
+          | {:error, {:invalid_output, term()} | {:outputs_raised, String.t()}}
+  def output_specs(exporter, options) do
+    options
+    |> exporter.outputs()
+    |> Enum.reduce_while({:ok, []}, fn entry, {:ok, specs} ->
+      with {output, _max_hz} = spec <- output_spec(entry),
+           false <- List.keymember?(specs, output, 0) do
+        {:cont, {:ok, [spec | specs]}}
+      else
+        _invalid -> {:halt, {:error, {:invalid_output, entry}}}
+      end
+    end)
+    |> case do
+      {:ok, specs} -> {:ok, Enum.reverse(specs)}
+      error -> error
+    end
+  rescue
+    exception -> {:error, {:outputs_raised, Exception.message(exception)}}
+  end
+
+  defp output_spec({output, options}) when is_list(options) do
+    with true <- output?(output),
+         {:ok, max_hz} <- max_hz(options),
+         do: {output, max_hz},
+         else: (_invalid -> nil)
+  end
+
+  defp output_spec(output), do: output_spec({output, []})
+
+  defp max_hz([]), do: {:ok, nil}
+  defp max_hz(max_hz: max_hz) when is_number(max_hz) and max_hz > 0, do: {:ok, max_hz}
+  defp max_hz(_options), do: :error
 
   @doc """
   The id and name `exporter` is listed under with `options`: those of its

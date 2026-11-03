@@ -66,8 +66,11 @@ defmodule VisionCore.Ros2.Exporter.Detections do
 
   @namespace "detections"
 
-  @typedoc "A message to publish: its topic, its module and the message."
-  @type message :: {String.t(), module(), struct()}
+  @typedoc """
+  A message to publish: its topic, its module and the message, and for the
+  markers the options `VisionCore.Ros2.ZenohClient.publish/4` takes.
+  """
+  @type message :: {String.t(), module(), struct()} | {String.t(), module(), struct(), keyword()}
 
   @typedoc """
   The topics, the frame of a pair that carries none, the marker lifetime
@@ -105,6 +108,8 @@ defmodule VisionCore.Ros2.Exporter.Detections do
   detections and the overlay. The markers of the detections past the
   last of these, among the `drawn` of the result before, are deleted:
   a vanished box would otherwise stay on screen until its lifetime ends.
+  A marker array that deletes is published with `keep: true`, since the
+  arrays after it do not delete those markers again.
   """
   @spec messages([map()], Pair.t(), t(), non_neg_integer()) :: [message()]
   def messages(detections, %Pair{} = pair, settings, drawn) do
@@ -114,7 +119,8 @@ defmodule VisionCore.Ros2.Exporter.Detections do
     }
 
     [
-      {settings.markers_topic, MarkerArray, markers(detections, header, settings, drawn)},
+      {settings.markers_topic, MarkerArray, markers(detections, header, settings, drawn),
+       keep: drawn > length(detections)},
       {settings.detections_topic, Detection3DArray, detection_array(detections, header)},
       {settings.overlay_topic, ImageAnnotations, overlay(detections, header, settings)}
     ]

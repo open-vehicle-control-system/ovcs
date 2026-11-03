@@ -296,8 +296,10 @@ defmodule VisionCore.Ros2.Exporter do
   def handle_output({:camera_frame, side}, %Frame{} = frame, state) do
     label = Atom.to_string(side)
     {publish_stage, frames_counter} = frame_telemetry(side)
+    image_topic = state.stereo.sides[label].image_topic
 
-    {publish_ns, side_state} =
+    # :pub_left and :pub_right time the raw image alone; the camera info goes out after.
+    {publish_ns, {camera_info, side_state}} =
       measure_ns(fn ->
         {messages, side_state} =
           Stereo.frame_messages(
@@ -308,9 +310,12 @@ defmodule VisionCore.Ros2.Exporter do
             &Frame.to_jpeg(&1, state.jpeg_codec)
           )
 
-        publish_all(messages, state)
-        side_state
+        {image, camera_info} = Enum.split_with(messages, &(elem(&1, 0) == image_topic))
+        publish_all(image, state)
+        {camera_info, side_state}
       end)
+
+    publish_all(camera_info, state)
 
     telemetry =
       state.telemetry
@@ -364,7 +369,10 @@ defmodule VisionCore.Ros2.Exporter do
 
   defp publish_all(messages, state), do: Enum.each(messages, &publish(state, &1))
 
-  defp publish(state, {topic, module, message}), do: state.publish.(topic, module, message, [])
+  defp publish(state, {topic, module, message}), do: publish(state, {topic, module, message, []})
+
+  defp publish(state, {topic, module, message, options}),
+    do: state.publish.(topic, module, message, options)
 
   defp measure_ns(fun) do
     start_ns = System.monotonic_time(:nanosecond)

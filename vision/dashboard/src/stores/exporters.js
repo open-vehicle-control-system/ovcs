@@ -1,14 +1,24 @@
 import { create } from 'zustand'
 import { fetchExporters } from '../services/unit.js'
 
-/** The unit's exporters as the API lists them; their live statuses come with the unit status (`exporterStatus`). */
-export const useExporters = create((set) => ({
+const FIRST_RETRY_MS = 1000
+const MAX_RETRY_MS = 30000
+
+/**
+ * The unit's exporters as the API lists them; their live statuses come with the unit status (`exporterStatus`). A
+ * failed load keeps the exporters listed before and is tried again, the delay doubling up to a cap, until one succeeds.
+ */
+export const useExporters = create((set, get) => ({
   exporters: [],
+  retryMs: FIRST_RETRY_MS,
+  retryTimer: null,
   async load() {
+    clearTimeout(get().retryTimer)
     try {
-      set({ exporters: await fetchExporters() })
+      set({ exporters: await fetchExporters(), retryMs: FIRST_RETRY_MS, retryTimer: null })
     } catch {
-      // The exporters listed before stay until a load succeeds, at a later join of the status channel.
+      const { retryMs } = get()
+      set({ retryTimer: setTimeout(() => get().load(), retryMs), retryMs: Math.min(retryMs * 2, MAX_RETRY_MS) })
     }
   }
 }))

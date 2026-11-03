@@ -14,7 +14,7 @@ defmodule VisionApiWeb.ExporterControllerTest do
                "name" => "ROS 2",
                "module" => "VisionCore.Ros2.Exporter",
                "status" => status,
-               "outputs" => [%{"name" => "detections", "maxHz" => nil}]
+               "outputs" => []
              }
            } = ros2
 
@@ -34,6 +34,38 @@ defmodule VisionApiWeb.ExporterControllerTest do
                "outputs" => []
              }
            }
+  end
+end
+
+defmodule VisionApiWeb.ExporterControllerWithUnitTest do
+  use VisionApiWeb.ConnCase, async: false
+
+  @moduletag :capture_log
+
+  # Names the stereo unit's cameras, which do not run.
+  defmodule Camera do
+    def name_for(label), do: Module.concat(__MODULE__, label)
+  end
+
+  test "GET /api/exporters gives each output of the API the most values its channel carries a second",
+       %{conn: conn} do
+    VisionApiWeb.TestUnit.start(%VisionCore.Config{
+      components: [
+        {:stereo, driver: Camera, left: [], right: []},
+        {:detector, backend: VisionCore.Detection.Backend.Stub, max_hz: 4}
+      ],
+      preview: [max_hz: 5]
+    })
+
+    assert %{"data" => [%{"id" => "api", "attributes" => %{"outputs" => outputs}}]} =
+             conn |> get("/api/exporters") |> json_response(200)
+
+    assert outputs == [
+             %{"name" => "camera_frame:left", "maxHz" => 5},
+             %{"name" => "camera_frame:right", "maxHz" => 5},
+             %{"name" => "stereo_pair", "maxHz" => 5},
+             %{"name" => "detections", "maxHz" => 4}
+           ]
   end
 end
 

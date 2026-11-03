@@ -34,7 +34,7 @@ defmodule VisionCore.Ros2.Exporter.DetectionsTest do
 
   defp messages(detections, drawn \\ 0) do
     assert [
-             {"stereo/detections/markers", MarkerArray, %MarkerArray{markers: markers}},
+             {"stereo/detections/markers", MarkerArray, %MarkerArray{markers: markers}, _options},
              {"stereo/detections", Detection3DArray, array},
              {"stereo/left/detections", ImageAnnotations, overlay}
            ] = Detections.messages(detections, pair(), Detections.new([]), drawn)
@@ -66,6 +66,16 @@ defmodule VisionCore.Ros2.Exporter.DetectionsTest do
              {2, Marker.delete()},
              {3, Marker.delete()}
            ]
+  end
+
+  test "keeps a marker array that deletes markers, which the arrays after it do not delete again" do
+    person = [detection("person", square(0.0, 0.0))]
+
+    assert [{_topic, MarkerArray, _array, keep: true} | _messages] =
+             Detections.messages(person, pair(), Detections.new([]), 2)
+
+    assert [{_topic, MarkerArray, _array, keep: false} | _messages] =
+             Detections.messages(person, pair(), Detections.new([]), 1)
   end
 
   test "outlines each box on the captured image, its caption above its first vertex" do

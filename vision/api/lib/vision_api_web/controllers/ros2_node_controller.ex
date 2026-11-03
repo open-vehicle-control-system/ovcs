@@ -6,7 +6,8 @@ defmodule VisionApiWeb.Ros2NodeController do
   `ros2-topics` it has published with its type and rate
   (`VisionCore.Ros2.Topics`), and its `services`, the `ros2-services` it
   answers. `include=topics,services`, or either alone, puts them in
-  `included`.
+  `included`. A unit whose configuration has no `ros2:` section, the
+  ROS 2 link, has no node: 404.
   """
   use VisionApiWeb, :controller
 
@@ -16,12 +17,22 @@ defmodule VisionApiWeb.Ros2NodeController do
   @relationships ["topics", "services"]
 
   def show(conn, params) do
-    case includes(params) do
-      {:ok, includes} ->
-        render(conn, :show, link: ZenohClient.link(), topics: Topics.topics(), includes: includes)
+    with true <- ros2_link?(),
+         {:ok, includes} <- includes(params) do
+      render(conn, :show, link: ZenohClient.link(), topics: Topics.topics(), includes: includes)
+    else
+      false ->
+        JsonApi.error(conn, 404, "Not Found", "the unit has no ROS 2 link: no ros2: section")
 
       :error ->
         JsonApi.error(conn, 400, "Bad Request", "unsupported include", %{parameter: "include"})
+    end
+  end
+
+  defp ros2_link? do
+    case VisionCore.Application.active_config() do
+      %VisionCore.Config{ros2: ros2} -> ros2 != nil
+      nil -> false
     end
   end
 

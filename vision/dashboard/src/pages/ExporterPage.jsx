@@ -60,7 +60,7 @@ function GenericExporterPage({ id }) {
                 <tr key={output.name}>
                   <td className="py-2 pr-3">{OUTPUT_NAMES[output.name] ?? output.name}</td>
                   <td className="py-2 tabular-nums text-ovcs-muted">
-                    {output.maxHz == null ? 'every one' : `at most ${output.maxHz} Hz`}
+                    {output.maxHz == null ? 'the newest, unbounded' : `at most ${output.maxHz} Hz`}
                   </td>
                 </tr>
               ))}

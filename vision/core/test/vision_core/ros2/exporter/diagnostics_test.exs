@@ -94,12 +94,35 @@ defmodule VisionCore.Ros2.Exporter.DiagnosticsTest do
 
     roles = %{left: :server, right: :client}
 
+    measured = fn offset_ms ->
+      %{offset_median_ms: offset_ms, offset_max_ms: offset_ms, pairs: 1}
+    end
+
     assert %DiagnosticArray{status: [_left, _right, sync]} =
-             Diagnostics.diagnostic_array("stereo", roles, [0.2], live.(), 1_500, nil)
+             Diagnostics.diagnostic_array("stereo", roles, measured.(0.2), live.(), 1_500, nil)
 
     assert %{level: :ok, message: "frames 0.20 ms apart"} = sync
 
     assert %DiagnosticArray{status: [_left, _right, %{level: :warn}]} =
-             Diagnostics.diagnostic_array("stereo", roles, [1.5], live.(), 1_500, nil)
+             Diagnostics.diagnostic_array("stereo", roles, measured.(1.5), live.(), 1_500, nil)
+  end
+
+  test "reports the sync stale without recent pairs" do
+    live = %{
+      left: %{received_ms: 1_000, sync_ready: true},
+      right: %{received_ms: 1_000, sync_ready: true}
+    }
+
+    unmeasured = %{offset_median_ms: nil, offset_max_ms: nil, pairs: 0}
+
+    assert %DiagnosticArray{status: [_left, _right, %{level: :stale, values: [{"roles", _}]}]} =
+             Diagnostics.diagnostic_array(
+               "stereo",
+               %{left: nil, right: nil},
+               unmeasured,
+               live,
+               1_500,
+               nil
+             )
   end
 end

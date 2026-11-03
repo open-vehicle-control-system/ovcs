@@ -15,9 +15,12 @@ defmodule VisionCore.Exporters do
   Each exporter's child id is its id (`VisionCore.Exporter.identity/2`).
   An exporter whose id is already taken is not started, with an error
   logged: two of one module need an `:id` each. So is an entry that is
-  not `{module, options}`. The last child, a worker, watches the
-  exporters' supervisors to log those that stop because they kept
-  failing, not those stopped on purpose.
+  neither `{module, options}` nor a module, which runs as
+  `{module, []}`. The last child, a worker, watches the exporters'
+  supervisors to log those that stop because they kept failing, not
+  those stopped on purpose. Why an exporter does not run, refused or
+  failed at start or stopped for failing, is kept for `list/1` while
+  this supervisor runs.
 
   ## Options
 
@@ -25,8 +28,8 @@ defmodule VisionCore.Exporters do
       exporters' outputs resolve, and which each exporter is given in
       its options as `:config`.
     * `:exporters` (the `:exporters` of `:config`) — the exporters to run,
-      each `{module, options}`. A `:name` in the options registers the
-      exporter's runner under it.
+      each `{module, options}` or a module. A `:name` in the options
+      registers the exporter's runner under it.
     * `:jpeg_codec` (`VisionCore.Jpeg`) — the `VisionCore.Jpeg` instance
       the exporters encode on, put in each one's options as
       `:jpeg_codec` unless it has its own. `VisionCore.Application`
@@ -40,6 +43,8 @@ defmodule VisionCore.Exporters do
   alias VisionCore.Exporters.Watch
 
   @default_status_timeout_ms 200
+  # Why each exporter that does not run stopped; it goes with this supervisor.
+  @stops VisionCore.Exporters.Stops
 
   @typedoc "One output an exporter reads, with the most values it is handed a second, if bounded."
   @type listed_output :: %{output: Exporter.output(), max_hz: number() | nil}
@@ -60,22 +65,44 @@ defmodule VisionCore.Exporters do
   The exporters the unit runs, in the order of its configuration: each
   one's id, as text, and name (`VisionCore.Exporter.identity/2`), its
   module, its status (`VisionCore.Exporter.Runner.status/2`) and the
-  outputs it reads. An exporter that is not running, as one refused at
-  start or one that gave up, is off. The statuses are asked all at
-  once, and one that does not come within `timeout_ms` is a warning, so
-  that a stuck exporter holds up neither the others nor the caller. `[]`
-  while the exporters do not run.
+  outputs its runner reads, those the configuration produces
+  (`VisionCore.Exporter.output_specs/2`). An exporter that is not
+  running is off, saying why: not started, with the reason it was
+  refused or failed to start, stopped because it kept failing, or not
+  running. The statuses are asked all at once, and one that does not
+  come within `timeout_ms` is a warning, so that a stuck exporter holds
+  up neither the others nor the caller. `[]` while the exporters do not
+  run.
   """
   @spec list(timeout()) :: [entry()]
   def list(timeout_ms \\ @default_status_timeout_ms) do
     listed =
       for {id, supervisor, :supervisor, _modules} <- children(__MODULE__),
           {:ok, %{start: {_module, _function, [opts]}}} <- [exporter_spec(id)],
-          do: {opts, supervisor}
+          do: {id, opts, supervisor}
 
     listed = Enum.reverse(listed)
-    statuses = statuses(Enum.map(listed, &elem(&1, 1)), timeout_ms)
-    Enum.zip_with(listed, statuses, fn {opts, _supervisor}, status -> entry(opts, status) end)
+    statuses = statuses(listed, timeout_ms)
+
+    Enum.zip_with(listed, statuses, fn {_id, opts, _supervisor}, status -> entry(opts, status) end)
+  end
+
+  @doc false
+  @spec stopped(term(), String.t()) :: :ok
+  def stopped(id, why) do
+    :ets.insert(@stops, {id, why})
+    :ok
+  rescue
+    ArgumentError -> :ok
+  end
+
+  defp stop_reason(id) do
+    case :ets.lookup(@stops, id) do
+      [{^id, why}] -> why
+      [] -> "Not running"
+    end
+  rescue
+    ArgumentError -> "Not running"
   end
 
   defp children(supervisor) do
@@ -94,13 +121,14 @@ defmodule VisionCore.Exporters do
     exporter = Keyword.fetch!(opts, :exporter)
     options = Keyword.get(opts, :options, [])
     %{id: id, name: name} = Exporter.identity(exporter, options)
+    config = Keyword.get_lazy(opts, :config, &VisionCore.Application.active_config/0)
 
     %{
       id: id_text(id),
       name: name,
       module: exporter,
       status: status,
-      outputs: listed_outputs(exporter, options)
+      outputs: listed_outputs(exporter, options, config)
     }
   end
 
@@ -113,43 +141,42 @@ defmodule VisionCore.Exporters do
 
   defp id_text(id), do: inspect(id)
 
-  defp listed_outputs(exporter, options) do
-    for entry <- exporter.outputs(options) do
-      case entry do
-        {output, output_options} when is_list(output_options) ->
-          %{output: output, max_hz: Keyword.get(output_options, :max_hz)}
+  # As the runner reads them: those the configuration produces.
+  defp listed_outputs(exporter, options, config) do
+    case Exporter.output_specs(exporter, options) do
+      {:ok, specs} ->
+        for {output, max_hz} <- specs,
+            Exporter.output_key(output, config) != nil,
+            do: %{output: output, max_hz: max_hz}
 
-        output ->
-          %{output: output, max_hz: nil}
-      end
+      {:error, _reason} ->
+        []
     end
-  rescue
-    _exception -> []
   end
 
-  # An exporter's status is its runner's, asked of each in a task of its own.
-  defp statuses(supervisors, timeout_ms) do
-    tasks =
-      Enum.map(supervisors, fn
-        :undefined -> nil
-        supervisor -> Task.async(fn -> runner_status(supervisor, timeout_ms) end)
+  # An exporter's status is its runner's, asked of each running one in a task of its own.
+  defp statuses(listed, timeout_ms) do
+    asked =
+      Enum.map(listed, fn
+        {id, _opts, :undefined} -> {:off, stop_reason(id)}
+        {_id, _opts, supervisor} -> Task.async(fn -> runner_status(supervisor, timeout_ms) end)
       end)
 
     replies =
-      tasks
-      |> Enum.reject(&is_nil/1)
+      asked
+      |> Enum.filter(&is_struct(&1, Task))
       |> Task.yield_many(timeout_ms)
       |> Map.new(fn {task, reply} -> {task.ref, reply || Task.shutdown(task, :brutal_kill)} end)
 
-    Enum.map(tasks, fn
-      nil ->
-        {:off, "Not running"}
-
-      task ->
-        case replies[task.ref] do
+    Enum.map(asked, fn
+      %Task{ref: ref} ->
+        case replies[ref] do
           {:ok, status} -> status
           _late -> {:warning, "Not answering"}
         end
+
+      off ->
+        off
     end)
   end
 
@@ -164,11 +191,12 @@ defmodule VisionCore.Exporters do
   def init(opts) do
     config = Keyword.fetch!(opts, :config)
     jpeg_codec = Keyword.get(opts, :jpeg_codec, VisionCore.Jpeg)
+    :ets.new(@stops, [:named_table, :public])
 
     exporters =
       opts
       |> Keyword.get(:exporters, config.exporters)
-      |> Enum.filter(&exporter_entry?/1)
+      |> Enum.flat_map(&exporter_entry/1)
       |> Enum.map(fn {exporter, options} ->
         options =
           options |> Keyword.put_new(:jpeg_codec, jpeg_codec) |> Keyword.put_new(:config, config)
@@ -182,19 +210,22 @@ defmodule VisionCore.Exporters do
     Supervisor.init(exporters ++ [{Watch, self()}], strategy: :one_for_one)
   end
 
-  defp exporter_entry?({exporter, options}) when is_atom(exporter) and is_list(options) do
-    if Keyword.keyword?(options), do: true, else: not_an_exporter({exporter, options})
+  defp exporter_entry({exporter, options}) when is_atom(exporter) and is_list(options) do
+    if Keyword.keyword?(options),
+      do: [{exporter, options}],
+      else: not_an_exporter({exporter, options})
   end
 
-  defp exporter_entry?(entry), do: not_an_exporter(entry)
+  defp exporter_entry(exporter) when is_atom(exporter), do: [{exporter, []}]
+  defp exporter_entry(entry), do: not_an_exporter(entry)
 
   defp not_an_exporter(entry) do
     Logger.error(
       "#{inspect(entry)} not started: not an exporter, which :exporters lists as " <>
-        "{module, options}"
+        "{module, options} or a module"
     )
 
-    false
+    []
   end
 
   # A second child under one id would fail this supervisor's start, and with it the vision core's.
@@ -238,7 +269,7 @@ defmodule VisionCore.Exporters.Watch do
   def handle_info(_message, state), do: {:noreply, state}
 
   defp stopped(state, {id, :exporter, _pid}, reason) do
-    if reason == :shutdown and failing?(state, id), do: log_stopped(id)
+    if reason == :shutdown and failing?(state, id), do: gave_up(id)
     %{state | failing: Map.delete(state.failing, id)}
   end
 
@@ -253,8 +284,9 @@ defmodule VisionCore.Exporters.Watch do
   defp crash?({:shutdown, _reason}), do: false
   defp crash?(reason), do: reason not in [:normal, :shutdown, :noproc]
 
-  defp log_stopped(id) do
+  defp gave_up(id) do
     Logger.error("#{inspect(id)} stopped: it kept failing; the vision unit runs on without it")
+    VisionCore.Exporters.stopped(id, "Stopped: it kept failing")
   end
 
   # Monitors each exporter supervisor and child not yet watched; a child seen running is not failing.

@@ -16,6 +16,7 @@ defmodule VisionCore.Exporter.Supervisor do
   Before anything starts, the exporter's `c:VisionCore.Exporter.check/1`,
   when it has one, is asked whether it can run: when it cannot, or
   raises, the exporter is left down the same way, with its reason logged.
+  Why an exporter is left down is kept for `VisionCore.Exporters.list/1`.
 
   Its options are the runner's (`VisionCore.Exporter.Runner`); its child
   id is the exporter's id (`VisionCore.Exporter.identity/2`).
@@ -47,20 +48,35 @@ defmodule VisionCore.Exporter.Supervisor do
   """
   def start_link(opts) do
     exporter = Keyword.fetch!(opts, :exporter)
+    options = Keyword.get(opts, :options, [])
 
-    with :ok <- check(exporter, Keyword.get(opts, :options, [])),
+    with :ok <- check(exporter, options),
          {:ok, _supervisor} = started <- Supervisor.start_link(__MODULE__, opts) do
       started
     else
       {:refused, reason} ->
         Logger.error("#{inspect(exporter)} not started: #{reason}")
-        :ignore
+        not_started(exporter, options, reason)
 
       {:error, reason} ->
         Logger.error("#{inspect(exporter)} failed to start, not exporting: " <> inspect(reason))
-        :ignore
+        not_started(exporter, options, start_failure_text(reason))
     end
   end
+
+  defp not_started(exporter, options, reason) do
+    VisionCore.Exporters.stopped(
+      Exporter.identity(exporter, options).id,
+      "Not started: " <> reason
+    )
+
+    :ignore
+  end
+
+  defp start_failure_text({:shutdown, {:failed_to_start_child, child, reason}}),
+    do: "#{inspect(child)} failed to start: #{inspect(reason)}"
+
+  defp start_failure_text(reason), do: inspect(reason)
 
   defp check(exporter, options) do
     with true <- Code.ensure_loaded?(exporter) and function_exported?(exporter, :check, 1),

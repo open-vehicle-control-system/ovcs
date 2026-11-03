@@ -35,8 +35,8 @@ describe('ExporterPage', () => {
     const rows = within(screen.getByRole('table')).getAllByRole('row').slice(1)
     expect(rows.map((row) => row.textContent)).toEqual([
       'Stereo pairsat most 2 Hz',
-      'Left camera framesevery one',
-      'Detectionsevery one'
+      'Left camera framesthe newest, unbounded',
+      'Detectionsthe newest, unbounded'
     ])
   })
 

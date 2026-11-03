@@ -15,6 +15,8 @@ defmodule VisionCore.Status do
   over the tick's pairs; `nil` without any.
 
   Started after the components and the exporters in `VisionCore.Supervisor`.
+  A listing of the exporters that misses its deadline reports those
+  listed last as not answering.
   The sync is the stereo unit's measure (`VisionCore.Stereo.Pairer.sync/1`).
   Without a `:stereo` component the cameras and sync are reported absent
   and the depth rate is zero; the sync is absent too while neither camera
@@ -97,6 +99,7 @@ defmodule VisionCore.Status do
        tick_ms: tick_ms,
        cameras: StereoSupervisor.cameras(config),
        hailo_configured?: hailo_configured?(config),
+       exporters: [],
        subscribers: %{},
        counts: %{left: 0, right: 0, depth: 0},
        device_ms: 0.0,
@@ -115,11 +118,15 @@ defmodule VisionCore.Status do
   end
 
   @impl GenServer
-  def handle_call(:snapshot, _from, state), do: {:reply, build_snapshot(state), state}
+  def handle_call(:snapshot, _from, state) do
+    {snapshot, state} = build_snapshot(state)
+    {:reply, snapshot, state}
+  end
 
   def handle_call({:subscribe, pid}, _from, state) do
     subscribers = Map.put_new_lazy(state.subscribers, pid, fn -> Process.monitor(pid) end)
-    send(pid, {:vision_status, build_snapshot(state)})
+    {snapshot, state} = build_snapshot(state)
+    send(pid, {:vision_status, snapshot})
     {:reply, :ok, %{state | subscribers: subscribers}}
   end
 
@@ -152,8 +159,7 @@ defmodule VisionCore.Status do
   @impl GenServer
   def handle_info(:tick, state) do
     Process.send_after(self(), :tick, state.tick_ms)
-    state = close_window(state)
-    snapshot = build_snapshot(state)
+    {snapshot, state} = state |> close_window() |> build_snapshot()
     Enum.each(Map.keys(state.subscribers), &send(&1, {:vision_status, snapshot}))
     {:noreply, state}
   end
@@ -241,8 +247,9 @@ defmodule VisionCore.Status do
   defp build_snapshot(state) do
     replies = state |> calls() |> call_all_within_timeout()
     cameras = %{left: camera(state, :left, replies), right: camera(state, :right, replies)}
+    state = listed(state, replies.exporters)
 
-    %{
+    snapshot = %{
       cameras: cameras,
       sync: sync(cameras, replies),
       hailo: hailo(state, replies),
@@ -252,15 +259,25 @@ defmodule VisionCore.Status do
       alignment: state.alignment,
       sharpness: state.sharpness,
       quality: state.quality,
-      exporters: replies.exporters
+      exporters: state.exporters
     }
+
+    {snapshot, state}
   end
+
+  defp listed(state, :late),
+    do: %{
+      state
+      | exporters: Enum.map(state.exporters, &%{&1 | status: {:warning, "Not answering"}})
+    }
+
+  defp listed(state, exporters), do: %{state | exporters: exporters}
 
   # What the snapshot asks other processes, by key: the function and its answer when it fails.
   defp calls(state) do
     hailo = if state.hailo_configured?, do: %{hailo: {&Hailo.available?/0, false}}, else: %{}
 
-    %{exporters: {&exporters/0, []}}
+    %{exporters: {&exporters/0, :late}}
     |> Map.merge(hailo)
     |> Map.merge(stereo_calls(state))
   end
@@ -292,7 +309,7 @@ defmodule VisionCore.Status do
       else: %{present: false}
   end
 
-  # Cameras that are not running have no sync, whatever their diagnostics measured last.
+  # Cameras that are not running have no sync.
   defp sync(%{left: %{present: false}, right: %{present: false}}, _replies), do: %{present: false}
   defp sync(_cameras, replies), do: Map.get(replies, :sync, %{present: false})
 

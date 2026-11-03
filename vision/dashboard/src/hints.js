@@ -67,7 +67,7 @@ export const HINTS = {
     text:
       'How this video colours depth: the nearest red, through yellow and green, to blue at this distance and ' +
       'beyond. At ∞ the colours spread up to infinitely far. Every dashboard on this unit shares it, and only ' +
-      'this video changes; the depth sent to ROS 2 does not.'
+      'this video changes; the depth the exporters publish, such as ROS 2’s, does not.'
   },
   ros2: {
     title: 'ROS 2',

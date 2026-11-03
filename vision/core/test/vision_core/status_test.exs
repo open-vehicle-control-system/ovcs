@@ -10,7 +10,7 @@ defmodule VisionCore.StatusTest do
     def name_for(label), do: Module.concat(__MODULE__, label)
   end
 
-  # An exporter whose status says how it is configured, or that answers too late with `delay_ms:`.
+  # An exporter whose status is linked, answered after `delay_ms:`.
   defmodule Exporter do
     @behaviour VisionCore.Exporter
 
@@ -71,6 +71,20 @@ defmodule VisionCore.StatusTest do
     start_supervised!({Status, config: config([])})
 
     assert Status.snapshot().exporters == [%{id: "probe", name: "Probe", status: {:ok, "Linked"}}]
+  end
+
+  test "a listing that misses its deadline reports the exporters listed before as not answering" do
+    start_exporter([])
+    start_supervised!({Status, config: config([])})
+    assert [%{id: "probe", status: {:ok, "Linked"}}] = Status.snapshot().exporters
+
+    :ok = :sys.suspend(VisionCore.Exporters)
+    snapshot = Status.snapshot()
+    :ok = :sys.resume(VisionCore.Exporters)
+
+    assert snapshot.exporters == [
+             %{id: "probe", name: "Probe", status: {:warning, "Not answering"}}
+           ]
   end
 
   describe "the sync" do

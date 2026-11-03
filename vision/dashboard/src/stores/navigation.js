@@ -10,11 +10,17 @@ const PAGE_PARAMETER = 'page'
 const BOX_PARAMETER = 'box'
 const EXPORTER_PARAMETER = 'exporter'
 
-/** The page the URL names: a `box` is the pipeline, an `exporter` its page, an unknown or missing page the overview. */
+// The `page` values that open an exporter's page: the exporter's id.
+const EXPORTER_PAGES = ['ros2', 'api']
+
+/**
+ * The page the URL names: a `box` is the pipeline, an `exporter`, or a `page` naming one, that exporter's page, an
+ * unknown or missing page the overview.
+ */
 export function pageFromUrl(search = window.location.search) {
   const params = new URLSearchParams(search)
   if (params.has(BOX_PARAMETER)) return 'pipeline'
-  if (params.has(EXPORTER_PARAMETER)) return 'exporter'
+  if (exporterFromUrl(search) != null) return 'exporter'
   const page = params.get(PAGE_PARAMETER)
   return PAGES.includes(page) && page !== 'pipeline' && page !== 'exporter' ? page : 'overview'
 }
@@ -22,8 +28,12 @@ export function pageFromUrl(search = window.location.search) {
 /** The box the URL names, if any. */
 export const boxFromUrl = (search = window.location.search) => new URLSearchParams(search).get(BOX_PARAMETER)
 
-/** The exporter the URL names, if any. */
-export const exporterFromUrl = (search = window.location.search) => new URLSearchParams(search).get(EXPORTER_PARAMETER)
+/** The exporter the URL names, if any: its `exporter`, or a `page` naming one. */
+export function exporterFromUrl(search = window.location.search) {
+  const params = new URLSearchParams(search)
+  const page = params.get(PAGE_PARAMETER)
+  return params.get(EXPORTER_PARAMETER) ?? (EXPORTER_PAGES.includes(page) ? page : null)
+}
 
 /**
  * Writes `page` into the URL without a new history entry: for the pipeline its selected `box`, for an exporter's page

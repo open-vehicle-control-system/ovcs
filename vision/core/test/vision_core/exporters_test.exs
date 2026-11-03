@@ -207,7 +207,21 @@ defmodule VisionCore.ExportersTest do
     def handle_output(_output, _value, state), do: {:ok, state}
   end
 
-  # Answers its status only once the test lets it.
+  # Reads the pairs and the detections, which the test configuration has no detector for.
+  defmodule Detecting do
+    @behaviour VisionCore.Exporter
+
+    @impl VisionCore.Exporter
+    def outputs(_options), do: [:stereo_pair, detections: [max_hz: 2]]
+
+    @impl VisionCore.Exporter
+    def init(_options), do: {:ok, nil}
+
+    @impl VisionCore.Exporter
+    def handle_output(_output, _value, state), do: {:ok, state}
+  end
+
+  # Answers its status a second late.
   defmodule Stuck do
     @behaviour VisionCore.Exporter
 
@@ -275,32 +289,24 @@ defmodule VisionCore.ExportersTest do
     end
   end
 
-  # Returns once the watcher has handled the stop of the exporter `id`, and logged it if it logs it.
-  defp await_watched_stop(id) do
-    {Watch, watch, :worker, _modules} =
-      Exporters |> Supervisor.which_children() |> List.keyfind(Watch, 0)
-
-    eventually(fn ->
-      watch
-      |> :sys.get_state()
-      |> Map.fetch!(:watched)
-      |> Map.values()
-      |> Enum.all?(fn
-        {^id, :exporter, _pid} -> false
-        _other -> true
-      end)
-    end)
+  # The watcher's monitor of `pid` is gone once the :DOWN is in its mailbox, so :sys.get_state/1
+  # then returns after the watcher has handled it.
+  defp sync_watch(pid) do
+    eventually(fn -> not watching?(pid) end)
+    :sys.get_state(watch())
+    :ok
   end
 
-  # Returns once the watcher has seen every child of the exporter `id` running again.
-  defp await_watched_recovery(id) do
+  defp watching?(pid) do
+    {:monitors, monitors} = Process.info(watch(), :monitors)
+    {:process, pid} in monitors
+  end
+
+  defp watch do
     {Watch, watch, :worker, _modules} =
       Exporters |> Supervisor.which_children() |> List.keyfind(Watch, 0)
 
-    eventually(fn ->
-      failing = watch |> :sys.get_state() |> Map.fetch!(:failing) |> Map.get(id)
-      failing in [nil, MapSet.new()]
-    end)
+    watch
   end
 
   defp eventually(check, attempts \\ 200) do
@@ -348,6 +354,12 @@ defmodule VisionCore.ExportersTest do
              ]
     end
 
+    test "lists the outputs the configuration produces, as the runner reads them" do
+      start_supervised!({Exporters, config: config(), exporters: [{Detecting, []}]})
+
+      assert [%{outputs: [%{output: :stereo_pair, max_hz: nil}]}] = Exporters.list()
+    end
+
     test "an :id among an exporter's options replaces its own" do
       start_supervised!({Exporters, config: config(), exporters: [{Described, id: :front}]})
 
@@ -355,13 +367,24 @@ defmodule VisionCore.ExportersTest do
       assert [%{id: "front", name: "Described"}] = Exporters.list()
     end
 
-    test "lists an exporter that is not running as off" do
+    test "lists an exporter that is not running as off, saying why" do
       capture_log(fn ->
-        start_supervised!({Exporters, config: config(), exporters: [{Refusing, []}]})
+        start_supervised!(
+          {Exporters,
+           config: config(), exporters: [{Refusing, []}, {Misnamed, []}, {Steady, test: self()}]}
+        )
       end)
 
-      assert [%{id: "VisionCore.ExportersTest.Refusing", status: {:off, "Not running"}}] =
-               Exporters.list()
+      await_runner(Steady)
+      :ok = Supervisor.terminate_child(Exporters, Steady)
+
+      assert [
+               %{status: {:off, "Not started: no broker to publish to"}},
+               %{status: {:off, "Not started: " <> misnamed}},
+               %{status: {:off, "Not running"}}
+             ] = Exporters.list()
+
+      assert misnamed =~ ":stereo_pairs"
     end
 
     @tag timeout: 10_000
@@ -417,17 +440,24 @@ defmodule VisionCore.ExportersTest do
     assert log =~ ":broker"
   end
 
-  test "an entry that is not {module, options} is left out, logged, and the others start" do
+  test "an entry that is not a module or {module, options} is left out, logged, and the others start" do
     log =
       capture_log(fn ->
         start_supervised!(
-          {Exporters, config: config(), exporters: [Steady, {Steady, test: self()}]}
+          {Exporters,
+           config: config(), exporters: [{Steady, :fast}, "Steady", {Steady, test: self()}]}
         )
       end)
 
     assert exporter_ids() == [Steady]
     assert_receive {:started, _options}
     assert log =~ "not an exporter"
+  end
+
+  test "runs a module alone as an exporter without options" do
+    start_supervised!({Exporters, config: config(), exporters: [Described]})
+
+    assert exporter_ids() == [:described]
   end
 
   test "an exporter that keeps crashing stops alone: the producer and the other exporters run on" do
@@ -449,12 +479,13 @@ defmodule VisionCore.ExportersTest do
     producer = Process.whereis(:producer)
     exporters = Process.whereis(Exporters)
     steady = exporter_pid(Steady)
+    crashing = exporter_pid(Crashing)
     await_runner(Steady)
 
     log =
       capture_log(fn ->
         produce_until_stopped(Crashing)
-        await_watched_stop(Crashing)
+        sync_watch(crashing)
       end)
 
     Producer.produce(:producer, :last)
@@ -464,6 +495,9 @@ defmodule VisionCore.ExportersTest do
     assert Process.whereis(Exporters) == exporters
     assert exporter_pid(Steady) == steady
     assert log =~ "#{inspect(Crashing)} stopped"
+
+    assert [%{status: {:off, "Stopped: it kept failing"}}, %{status: {:ok, _running}}] =
+             Exporters.list()
   end
 
   test "an orderly shutdown logs no exporter as stopped" do
@@ -478,11 +512,13 @@ defmodule VisionCore.ExportersTest do
   test "an exporter stopped on purpose is not logged as one that kept failing" do
     start_supervised!({Exporters, config: config(), exporters: [{Steady, test: self()}]})
     await_runner(Steady)
+    steady = exporter_pid(Steady)
+    eventually(fn -> watching?(steady) end)
 
     log =
       capture_log(fn ->
         :ok = Supervisor.terminate_child(Exporters, Steady)
-        await_watched_stop(Steady)
+        sync_watch(steady)
       end)
 
     refute log =~ "kept failing"
@@ -494,15 +530,17 @@ defmodule VisionCore.ExportersTest do
 
     Outputs.publish(@pairs, {:stereo_pair, :crash})
     eventually(fn -> is_pid(runner_pid(CrashingOnce)) and runner_pid(CrashingOnce) != runner end)
-    await_runner(CrashingOnce)
-    await_watched_recovery(CrashingOnce)
+    restarted = await_runner(CrashingOnce)
+    sync_watch(runner)
+    eventually(fn -> watching?(restarted) end)
     Outputs.publish(@pairs, {:stereo_pair, :pair})
     assert_receive {:exported, :pair}
+    exporter = exporter_pid(CrashingOnce)
 
     log =
       capture_log(fn ->
         :ok = Supervisor.terminate_child(Exporters, CrashingOnce)
-        await_watched_stop(CrashingOnce)
+        sync_watch(exporter)
       end)
 
     refute log =~ "kept failing"

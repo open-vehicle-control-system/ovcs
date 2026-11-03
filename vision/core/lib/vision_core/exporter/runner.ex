@@ -5,7 +5,8 @@ defmodule VisionCore.Exporter.Runner do
   at most each output's `:max_hz` times a second and only while it is
   not busy with that output, passes it the messages sent to the runner
   with `send/2`, and answers its status by a deadline (`status/2`).
-  Casts that are not outputs are dropped.
+  Casts that are not outputs are dropped, and calls other than
+  `status/2`'s answered `{:error, :unknown_call}`.
 
   When the runner takes a value from its mailbox, the newest value of
   the same output waiting there replaces it, so a slow exporter skips
@@ -42,9 +43,8 @@ defmodule VisionCore.Exporter.Runner do
     * `:config` (the active `VisionCore.Config`) — the configuration its
       outputs resolve in (`VisionCore.Exporter.output_key/2`).
 
-  It does not start, with `{:invalid_output, entry}`, when an entry of
-  the exporter's outputs names no output, names one a second time, or
-  has options other than a positive `:max_hz`.
+  It does not start when the exporter's outputs are invalid, with the
+  error `VisionCore.Exporter.output_specs/2` says.
   """
   use GenServer
   require Logger
@@ -83,8 +83,8 @@ defmodule VisionCore.Exporter.Runner do
     exporter = Code.ensure_loaded!(Keyword.fetch!(opts, :exporter))
     options = Keyword.get(opts, :options, [])
 
-    case slots(exporter.outputs(options)) do
-      {:ok, outputs} ->
+    case Exporter.output_specs(exporter, options) do
+      {:ok, specs} ->
         if function_exported?(exporter, :terminate, 2), do: Process.flag(:trap_exit, true)
 
         {:ok,
@@ -92,7 +92,7 @@ defmodule VisionCore.Exporter.Runner do
            exporter: exporter,
            options: options,
            config: Keyword.get_lazy(opts, :config, &VisionCore.Application.active_config/0),
-           outputs: outputs,
+           outputs: slots(specs),
            slots: %{},
            routes: %{},
            started: false,
@@ -116,6 +116,8 @@ defmodule VisionCore.Exporter.Runner do
     {status, state} = status_of(state)
     {:reply, status, state}
   end
+
+  def handle_call(_request, _from, state), do: {:reply, {:error, :unknown_call}, state}
 
   @impl GenServer
   def handle_cast(message, state) do
@@ -243,43 +245,19 @@ defmodule VisionCore.Exporter.Runner do
   end
 
   # Per output: :max_hz interval, last hand-over, held value, slot timer, busy, last failure.
-  defp slots(entries) do
-    Enum.reduce_while(entries, {:ok, %{}}, fn entry, {:ok, slots} ->
-      case entry_slot(entry) do
-        {output, slot} when not is_map_key(slots, output) ->
-          {:cont, {:ok, Map.put(slots, output, slot)}}
-
-        _invalid ->
-          {:halt, {:error, {:invalid_output, entry}}}
-      end
-    end)
-  end
-
-  defp entry_slot({output, options}) when is_list(options) do
-    with true <- Exporter.output?(output),
-         {:ok, interval_ms} <- interval_ms(options) do
+  defp slots(specs) do
+    Map.new(specs, fn {output, max_hz} ->
       {output,
        %{
-         interval_ms: interval_ms,
+         interval_ms: max_hz && round(1_000 / max_hz),
          handed_ms: nil,
          held: nil,
          timer: nil,
          busy: false,
          failed: nil
        }}
-    else
-      _invalid -> nil
-    end
+    end)
   end
-
-  defp entry_slot(output), do: entry_slot({output, []})
-
-  defp interval_ms([]), do: {:ok, nil}
-
-  defp interval_ms(max_hz: max_hz) when is_number(max_hz) and max_hz > 0,
-    do: {:ok, round(1_000 / max_hz)}
-
-  defp interval_ms(_options), do: :error
 
   defp subscribe(outputs, config) do
     outputs

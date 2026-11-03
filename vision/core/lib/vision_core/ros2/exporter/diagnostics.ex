@@ -13,11 +13,13 @@ defmodule VisionCore.Ros2.Exporter.Diagnostics do
       (`std_msgs/Float64`), five times a second, for plotting
 
   The sync offset is measured on every pair of frames taken less than
-  half a frame period apart, right minus left
-  (`VisionCore.Stereo.Sync.pair_offset/4`). The stereo unit measures the
-  same for `VisionCore.Status` (`VisionCore.Stereo.Pairer.sync/1`); this
-  helper measures its own because its plot takes the offsets since the
-  last one, and so that it reports on cameras whose unit gave up.
+  half a frame period apart, right minus left, with
+  `VisionCore.Stereo.Sync`, as the stereo unit measures it for
+  `VisionCore.Status` (`VisionCore.Stereo.Pairer.sync/1`); this helper
+  keeps a measurement of its own because its plot takes the offsets
+  since the last one, and so that it reports on cameras whose unit gave
+  up. The diagnostic summarises the recent pairs, none once no pair
+  formed for two seconds (`VisionCore.Stereo.Sync.summary/2`).
 
   `VisionCore.Ros2.Exporter` starts it as a helper under its own
   supervisor when it publishes a stereo unit. It subscribes to the
@@ -52,8 +54,6 @@ defmodule VisionCore.Ros2.Exporter.Diagnostics do
   @diagnostics_period_ms 1_000
   @stale_ms 2_000
   @max_sync_offset_ms 1.0
-  @recent_frame_count 4
-  @sync_window_size 150
 
   @typedoc "A message to publish: its topic, its module and the message."
   @type message :: {String.t(), module(), struct()}
@@ -89,26 +89,23 @@ defmodule VisionCore.Ros2.Exporter.Diagnostics do
        servers: servers,
        roles: %{left: get_in(opts, [:left, :sync]), right: get_in(opts, [:right, :sync])},
        publish: Keyword.get(opts, :publish, &ZenohClient.publish/4),
-       half_period_ns: div(1_000_000_000, 2 * Keyword.get(opts, :fps, @default_fps)),
-       recent: %{left: [], right: []},
-       offsets_ms: [],
-       recent_offsets_ms: []
+       sync: Sync.new(Keyword.get(opts, :fps, @default_fps)),
+       offsets_ms: []
      }}
   end
 
   @impl GenServer
-  def handle_cast({:camera_frame, %Frame{label: label, capture_ns: capture_ns}}, state) do
+  def handle_cast({:camera_frame, %Frame{label: label, capture_ns: capture_ns}}, state)
+      when label in ["left", "right"] do
     side = String.to_existing_atom(label)
-    other_side = if side == :left, do: :right, else: :left
 
-    state =
-      case Sync.pair_offset(side, capture_ns, state.recent[other_side], state.half_period_ns) do
-        nil -> state
-        offset_ns -> %{state | offsets_ms: [offset_ns / 1.0e6 | state.offsets_ms]}
-      end
+    case Sync.add(state.sync, side, capture_ns, System.monotonic_time(:millisecond)) do
+      {nil, sync} ->
+        {:noreply, %{state | sync: sync}}
 
-    recent = Map.update!(state.recent, side, &Enum.take([capture_ns | &1], @recent_frame_count))
-    {:noreply, %{state | recent: recent}}
+      {offset_ms, sync} ->
+        {:noreply, %{state | sync: sync, offsets_ms: [offset_ms | state.offsets_ms]}}
+    end
   end
 
   def handle_cast(_message, state), do: {:noreply, state}
@@ -121,8 +118,7 @@ defmodule VisionCore.Ros2.Exporter.Diagnostics do
     |> plot_messages(state.offsets_ms, live_metadata(state))
     |> Enum.each(&publish(state, &1))
 
-    recent_offsets_ms = Enum.take(state.offsets_ms ++ state.recent_offsets_ms, @sync_window_size)
-    {:noreply, %{state | offsets_ms: [], recent_offsets_ms: recent_offsets_ms}}
+    {:noreply, %{state | offsets_ms: []}}
   end
 
   def handle_info(:diagnostics, state) do
@@ -132,7 +128,7 @@ defmodule VisionCore.Ros2.Exporter.Diagnostics do
       diagnostic_array(
         state.prefix,
         state.roles,
-        state.recent_offsets_ms,
+        Sync.summary(state.sync, System.monotonic_time(:millisecond)),
         live_metadata(state),
         System.system_time(:millisecond),
         Stamp.stamp_from_monotonic(System.monotonic_time(:nanosecond))
@@ -169,21 +165,21 @@ defmodule VisionCore.Ros2.Exporter.Diagnostics do
   @doc """
   The `/diagnostics` message of the unit under `prefix` at `now_ms`,
   stamped `stamp`: one status per camera, from its `live_metadata` and
-  its sync role in `roles`, then the pair's sync over `offsets_ms`, the
-  recent right minus left offsets.
+  its sync role in `roles`, then the pair's sync, `sync`, the recent
+  right minus left offsets summarised.
   """
   @spec diagnostic_array(
           String.t(),
           %{left: atom() | nil, right: atom() | nil},
-          [float()],
+          Sync.summary(),
           live_metadata(),
           integer(),
           struct()
         ) :: struct()
-  def diagnostic_array(prefix, roles, offsets_ms, live_metadata, now_ms, stamp) do
+  def diagnostic_array(prefix, roles, sync, live_metadata, now_ms, stamp) do
     statuses =
       Enum.map([:left, :right], &camera_status(prefix, roles, &1, live_metadata[&1], now_ms)) ++
-        [sync_status(prefix, roles, offsets_ms, live_metadata, now_ms)]
+        [sync_status(prefix, roles, sync, live_metadata, now_ms)]
 
     %DiagnosticArray{header: %Header{stamp: stamp}, status: statuses}
   end
@@ -249,7 +245,7 @@ defmodule VisionCore.Ros2.Exporter.Diagnostics do
     |> Enum.map(fn {key, value} -> {key, format(value)} end)
   end
 
-  defp sync_status(prefix, roles, window, live_metadata, now_ms) do
+  defp sync_status(prefix, roles, sync, live_metadata, now_ms) do
     base = %{name: "#{prefix} camera sync", hardware_id: prefix}
     labels = "left #{roles.left || "free"}, right #{roles.right || "free"}"
 
@@ -265,27 +261,27 @@ defmodule VisionCore.Ros2.Exporter.Diagnostics do
 
     values =
       [{"roles", labels}] ++
-        if window == [],
+        if sync.pairs == 0,
           do: [],
           else: [
-            {"offset median (ms)", format(Sync.median(window))},
-            {"offset max (ms)", format(Enum.max_by(window, &abs/1))},
-            {"pairs measured", Integer.to_string(length(window))}
+            {"offset median (ms)", format(sync.offset_median_ms)},
+            {"offset max (ms)", format(sync.offset_max_ms)},
+            {"pairs measured", Integer.to_string(sync.pairs)}
           ]
 
     {level, message} =
       cond do
-        not fresh or window == [] ->
+        not fresh or sync.pairs == 0 ->
           {:stale, "no frame pairs"}
 
         Enum.any?(ready, &(&1 != true)) ->
           {:warn, "cameras not synced"}
 
-        abs(Sync.median(window)) > @max_sync_offset_ms ->
-          {:warn, "frames #{format(Sync.median(window))} ms apart"}
+        abs(sync.offset_median_ms) > @max_sync_offset_ms ->
+          {:warn, "frames #{format(sync.offset_median_ms)} ms apart"}
 
         true ->
-          {:ok, "frames #{format(Sync.median(window))} ms apart"}
+          {:ok, "frames #{format(sync.offset_median_ms)} ms apart"}
       end
 
     Map.merge(base, %{level: level, message: message, values: values})

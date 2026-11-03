@@ -455,7 +455,7 @@ defmodule VisionCore.ApplicationTest do
         do: {id, pid}
   end
 
-  # Kills the exporter's child `id` each time its supervisor starts it again, until it gives up.
+  # Kills the exporter's `child` whenever it runs, until the exporter's supervisor gives up.
   defp crash_loop(exporter, child) do
     case child_pid(VisionCore.Exporters, exporter) do
       :undefined ->

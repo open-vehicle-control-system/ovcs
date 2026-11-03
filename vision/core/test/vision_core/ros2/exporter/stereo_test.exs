@@ -170,6 +170,20 @@ defmodule VisionCore.Ros2.Exporter.StereoTest do
 
       assert topics(messages) == ["stereo/left/camera_info"]
     end
+
+    test "takes the raw image's slot with a frame that does not encode: the next one inside it waits" do
+      stereo = stereo(raw_image_max_hz: 10)
+      fail = fn _frame -> {:error, :busy} end
+
+      {_messages, side} =
+        Stereo.frame_messages(grey("left"), stereo.sides["left"], stereo, 0, fail)
+
+      {messages, _side} = Stereo.frame_messages(grey("left"), side, stereo, 33, &encode/1)
+      refute "stereo/left/image_raw/compressed" in topics(messages)
+
+      {messages, _side} = Stereo.frame_messages(grey("left"), side, stereo, 100, &encode/1)
+      assert "stereo/left/image_raw/compressed" in topics(messages)
+    end
   end
 
   describe "a side" do

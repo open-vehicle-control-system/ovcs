@@ -14,7 +14,7 @@ const resources = (parameterId) => [
   ['GET', 'configuration', 'The active composer configuration'],
   ['GET', 'firmware', 'The firmware: the commit it is built from, its target and its Nerves system'],
   ['GET', 'exporters', 'What takes the outputs out of the unit: each exporter with its status and the outputs it reads, this API last'],
-  ['GET', 'ros2-node?include=topics,services', 'The ROS 2 node: its Zenoh link, the topics published with their rates, the services answered']
+  ['GET', 'ros2-node?include=topics,services', 'The ROS 2 node: its Zenoh link, the topics published with their rates, the services answered; 404 without the ROS 2 link']
 ]
 
 const CHANNELS = [

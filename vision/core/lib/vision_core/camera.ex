@@ -12,7 +12,11 @@ defmodule VisionCore.Camera do
       stereo unit, its parameters and the exporters use to reach it;
     * publish each new frame through `VisionCore.Outputs` as
       `{:camera_frame, %VisionCore.Camera.Frame{}}`, under
-      `{:camera_frame, name}`, `name` being the instance's registered name.
+      `{:camera_frame, name}`, `name` being the instance's registered name;
+    * put its `:label` and `:frame_id` options on each
+      `VisionCore.Camera.Frame`: the stereo unit gives each side's
+      `:frame_id`, and the exporters stamp the frame's messages, and its
+      pair's, with it.
 
   Drivers stay in raw-capture vocabulary — libcamera/V4L2 details,
   framing, Port lifecycle. Application-side translation (to

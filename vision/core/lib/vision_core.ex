@@ -8,8 +8,9 @@ defmodule VisionCore.Config do
       `{name, opts}` tuple; see `VisionCore.Components` for the
       catalogue.
     * `:exporters` — what takes the outputs out of the unit, each
-      `{module, options}`, `module` implementing `VisionCore.Exporter`,
-      such as `VisionCore.Ros2.Exporter`; see `VisionCore.Exporters`.
+      `{module, options}`, or a module alone for `{module, []}`, `module`
+      implementing `VisionCore.Exporter`, such as
+      `VisionCore.Ros2.Exporter`; see `VisionCore.Exporters`.
     * `:ros2` — the ROS 2 link, on top of the always-on
       `VisionCore.Parameters`: the Zenoh session the ROS 2 exporter
       publishes through and a `VisionCore.Ros2.Camera` reads from, the
@@ -35,7 +36,7 @@ defmodule VisionCore.Config do
   @type t :: %__MODULE__{
           ros2: keyword() | nil,
           components: [component()],
-          exporters: [{module(), keyword()}],
+          exporters: [{module(), keyword()} | module()],
           preview: keyword()
         }
 end

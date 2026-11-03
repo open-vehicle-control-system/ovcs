@@ -79,15 +79,27 @@ defmodule VisionApiWeb.Ros2NodeControllerTest do
              conn |> get("/api/ros2-node?include=parameters") |> json_response(400)
   end
 
-  test "GET /api/ros2-node without the vision core answers the node as disconnected",
-       %{conn: conn} do
+  test "GET /api/ros2-node answers 404 while the vision core does not run", %{conn: conn} do
     Application.stop(:vision_core)
 
-    assert %{
-             "data" => %{
-               "attributes" => %{"connected" => false, "zenohEndpoint" => nil},
-               "relationships" => %{"topics" => %{"data" => []}, "services" => %{"data" => []}}
-             }
-           } = ros2_node(conn)
+    assert %{"errors" => [%{"status" => "404", "detail" => detail}]} =
+             conn |> get("/api/ros2-node") |> json_response(404)
+
+    assert detail =~ "ros2:"
+  end
+end
+
+defmodule VisionApiWeb.Ros2NodeControllerWithoutLinkTest do
+  use VisionApiWeb.ConnCase, async: false
+
+  @moduletag :capture_log
+
+  test "GET /api/ros2-node answers 404 on a unit without the ROS 2 link", %{conn: conn} do
+    VisionApiWeb.TestUnit.start(%VisionCore.Config{})
+
+    assert %{"errors" => [%{"status" => "404", "title" => "Not Found", "detail" => detail}]} =
+             conn |> get("/api/ros2-node") |> json_response(404)
+
+    assert detail =~ "ros2:"
   end
 end

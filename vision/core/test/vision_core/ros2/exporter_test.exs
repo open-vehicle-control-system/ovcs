@@ -490,6 +490,29 @@ defmodule VisionCore.Ros2.ExporterTest do
     assert_received {:published, "stereo/points", _cloud}
   end
 
+  test "times a camera frame's raw image, not the camera info published with it" do
+    test = self()
+
+    publish = fn
+      _topic, CameraInfo, _message, _options ->
+        Process.sleep(100)
+        :ok
+
+      topic, _module, _message, _options ->
+        send(test, {:published, topic})
+        :ok
+    end
+
+    {:ok, state} = Exporter.init(Keyword.put(options(Camera, stereo: []), :publish, publish))
+    jpeg = %Frame{label: "left", width: 2, height: 2, capture_ns: 1, jpeg: <<0xFF, 0xD8>>}
+
+    {:ok, state} = Exporter.handle_output({:camera_frame, :left}, jpeg, state)
+
+    assert_received {:published, "stereo/left/image_raw/compressed"}
+    assert [publish_ns] = state.telemetry.stages.pub_left
+    assert publish_ns < 100_000_000
+  end
+
   test "publishes the detections in the frame of their pair, deleting the markers of those gone since the last result" do
     {:ok, state} = Exporter.init(options(Camera, detections: []))
 
@@ -512,6 +535,25 @@ defmodule VisionCore.Ros2.ExporterTest do
 
     assert Enum.map(markers, & &1.action) ==
              List.duplicate(Marker.add(), 2) ++ List.duplicate(Marker.delete(), 2)
+  end
+
+  test "has the client keep the marker array that deletes the markers of boxes gone" do
+    test = self()
+    publish = fn topic, _module, _message, options -> send(test, {:published, topic, options}) end
+    {:ok, state} = Exporter.init(Keyword.put(options(Camera, detections: []), :publish, publish))
+
+    {:ok, state} =
+      Exporter.handle_output(
+        :detections,
+        {pair(), [detection("person"), detection("car")]},
+        state
+      )
+
+    assert_received {:published, "stereo/detections/markers", [keep: false]}
+
+    {:ok, _state} = Exporter.handle_output(:detections, {pair(), [detection("person")]}, state)
+
+    assert_received {:published, "stereo/detections/markers", [keep: true]}
   end
 
   describe "on its own JPEG codec" do
