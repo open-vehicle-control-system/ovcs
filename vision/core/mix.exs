@@ -13,7 +13,7 @@ defmodule VisionCore.MixProject do
       elixirc_paths: elixirc_paths(Mix.env()),
       deps: deps(),
       # The module cache builder is a Mix task.
-      dialyzer: [plt_add_apps: [:mix]]
+      dialyzer: [plt_add_apps: [:mix, :ex_unit]]
     ]
   end
 
