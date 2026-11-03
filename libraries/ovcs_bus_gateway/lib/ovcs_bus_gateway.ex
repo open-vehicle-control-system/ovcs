@@ -14,8 +14,9 @@ defmodule OvcsBusGateway do
     * `:mqtt_client_id` - the MQTT client id, unique per gateway on one
       broker; default `"ovcs_bus_gateway_<vehicle>"`.
 
-  The child is one `:rest_for_one` subtree: the subscriber registry, the
-  cache, the collector, then the configured adapters, so a restart of an
+  The child is one `:rest_for_one` subtree: the settings it was started
+  with, the subscriber registry, the cache, the collector, then the
+  configured adapters, so a restart of an
   upstream child restarts everything that depends on it. The subtree is
   `:temporary` with its own restart intensity: a gateway that exhausts it
   stops alone, without restarting its parent. A gateway that cannot start,
@@ -44,7 +45,14 @@ defmodule OvcsBusGateway do
     mqtt_client_id =
       Keyword.get(opts, :mqtt_client_id, "ovcs_bus_gateway_" <> vehicle_id(vehicle))
 
+    settings = %OvcsBusGateway.Settings{
+      vehicle: vehicle,
+      config: config,
+      mqtt_client_id: mqtt_client_id
+    }
+
     core_children = [
+      {OvcsBusGateway.Settings, settings},
       OvcsBusGateway.Subscribers,
       OvcsBusGateway.Cache,
       {OvcsBusGateway.Collector,

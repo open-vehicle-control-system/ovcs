@@ -1,12 +1,14 @@
 defmodule OvcsBusGateway.Http.Socket do
   @moduledoc """
-  Phoenix Channels socket of `OvcsBusGateway.Http`, mounted at `/socket`, with the `signals`
-  channel, `OvcsBusGateway.Http.SignalsChannel`.
+  Phoenix Channels socket of `OvcsBusGateway.Http`, mounted at `/sockets/dashboard`, with the
+  `signals` channel, `OvcsBusGateway.Http.SignalsChannel`, and the `status` channel,
+  `OvcsBusGateway.Http.StatusChannel`.
   """
 
   use Phoenix.Socket
 
   channel "signals", OvcsBusGateway.Http.SignalsChannel
+  channel "status", OvcsBusGateway.Http.StatusChannel
 
   @impl Phoenix.Socket
   def connect(_params, socket, _connect_info), do: {:ok, socket}

@@ -9,10 +9,11 @@ import {
 } from '@ovcs/ui/react'
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 
+import AdapterPage from './components/AdapterPage.jsx'
 import BusMenu from './components/BusMenu.jsx'
 import BusPage from './components/BusPage.jsx'
 import { ConnectionStatus, FilterInput } from './components/TopBarControls.jsx'
-import { groupTree, isPresence } from './signals'
+import { groupTree } from './signals'
 import { useBusSocket } from './useBusSocket'
 import { useSelection } from './useSelection'
 
@@ -40,25 +41,22 @@ function useSlashFocus(input) {
   }, [input])
 }
 
-function countSignals(state) {
-  let count = 0
-  for (const signal of state.values()) if (!isPresence(signal)) count++
-  return count
-}
-
 export default function App() {
-  const { signals, status } = useBusSocket()
+  const { signals, status, nodes, adapters } = useBusSocket()
   const [filter, setFilter] = useState('')
   const deferredFilter = useDeferredValue(filter)
   const now = useNow()
-  const [selection, select] = useSelection()
+  const [selection, select, openAdapter] = useSelection()
   const filterInput = useRef(null)
   useSlashFocus(filterInput)
 
   // The bus and the menu show every node; the tables only what the filter keeps.
-  const bus = useMemo(() => groupTree(signals, ''), [signals])
-  const tree = useMemo(() => (deferredFilter ? groupTree(signals, deferredFilter) : bus), [signals, deferredFilter, bus])
-  const count = useMemo(() => countSignals(signals), [signals])
+  const bus = useMemo(() => groupTree(signals, '', nodes), [signals, nodes])
+  const tree = useMemo(
+    () => (deferredFilter ? groupTree(signals, deferredFilter, nodes) : bus),
+    [signals, deferredFilter, nodes, bus]
+  )
+  const count = signals.size
 
   return (
     <OvcsShell>
@@ -72,17 +70,28 @@ export default function App() {
       </OvcsTopBar>
 
       <OvcsShellBody>
-        <BusMenu bus={bus} count={count} selected={selection.node} onSelect={select} />
+        <BusMenu
+          bus={bus}
+          count={count}
+          adapters={adapters}
+          selection={selection}
+          onSelectNode={select}
+          onOpenAdapter={openAdapter}
+        />
         <OvcsMain>
-          <BusPage
-            status={status}
-            bus={bus}
-            tree={tree}
-            filter={deferredFilter}
-            selection={selection}
-            select={select}
-            now={now}
-          />
+          {selection.adapter ? (
+            <AdapterPage id={selection.adapter} adapters={adapters} />
+          ) : (
+            <BusPage
+              status={status}
+              bus={bus}
+              tree={tree}
+              filter={deferredFilter}
+              selection={selection}
+              select={select}
+              now={now}
+            />
+          )}
         </OvcsMain>
       </OvcsShellBody>
     </OvcsShell>

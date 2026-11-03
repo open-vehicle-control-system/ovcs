@@ -3,9 +3,9 @@ import { ago, duration, formatValue, isFresh, isLive } from './format'
 
 describe('isFresh', () => {
   test('is true while the last publication is within the live window', () => {
-    expect(isFresh({ published_at: 10_000 }, 11_500)).toBe(true)
-    expect(isFresh({ published_at: 10_000 }, 12_500)).toBe(false)
-    expect(isFresh({ published_at: null }, 10_000)).toBe(false)
+    expect(isFresh({ publishedAt: 10_000 }, 11_500)).toBe(true)
+    expect(isFresh({ publishedAt: 10_000 }, 12_500)).toBe(false)
+    expect(isFresh({ publishedAt: null }, 10_000)).toBe(false)
   })
 })
 

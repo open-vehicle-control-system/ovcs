@@ -77,6 +77,30 @@ defmodule OvcsBusGateway.Http.SignalsChannelTest do
     refute_received %Phoenix.Socket.Message{event: "update"}
   end
 
+  test "leaves out the nodes' presence, which the status channel carries" do
+    presence = %Envelope{
+      node: "vms",
+      source: "OvcsBusGateway.Collector",
+      name: "connected",
+      value: true,
+      changed_at: 0,
+      published_at: 0
+    }
+
+    Cache.put_all([presence])
+    join(%{"node" => "vms"})
+    assert_push "snapshot", %{signals: [%Envelope{name: "speed"}]}
+
+    Subscribers.dispatch([presence, envelope("vms", "gear")])
+
+    assert_push "update", %{signals: [%Envelope{name: "gear"}]}
+  end
+
+  test "counts as a client of the HTTP adapter" do
+    join(%{})
+    assert Subscribers.count(:signals_channel) == 1
+  end
+
   test "ignores unrelated messages" do
     socket = join(%{})
     assert {:noreply, ^socket} = SignalsChannel.handle_info(:other, socket)

@@ -44,12 +44,30 @@ defmodule OvcsBusGateway.Mqtt do
   @socket_opts [nodelay: true, send_timeout: 1_000, send_timeout_close: true]
 
   @spec start_link(keyword()) :: GenServer.on_start()
-  def start_link(opts), do: GenServer.start_link(__MODULE__, opts)
+  def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+
+  @doc """
+  Whether the connection to the broker is `:up` or `:down`; `:unknown` when the adapter does not
+  answer within a second, `nil` when it does not run.
+  """
+  @spec connection() :: :up | :down | :unknown | nil
+  def connection do
+    case GenServer.whereis(__MODULE__) do
+      nil -> nil
+      pid -> GenServer.call(pid, :connection, 1_000)
+    end
+  catch
+    :exit, _reason -> :unknown
+  end
 
   @doc "The MQTT topic `envelope` is published on."
   @spec topic(Envelope.t()) :: String.t()
   def topic(%Envelope{} = envelope),
     do: "ovcs/#{envelope.node}/#{envelope.source}/#{envelope.name}"
+
+  @doc "The layout of `topic/1`'s topics."
+  @spec topic_layout() :: String.t()
+  def topic_layout, do: "ovcs/<node>/<source>/<name>"
 
   @doc "The MQTT topic telling whether the gateway is connected to the broker."
   @spec online_topic() :: String.t()
@@ -59,7 +77,7 @@ defmodule OvcsBusGateway.Mqtt do
   def init(opts) do
     Process.flag(:trap_exit, true)
     online_topic = online_topic()
-    Subscribers.subscribe()
+    Subscribers.subscribe(:mqtt)
     send(self(), :connect)
 
     {:ok,
@@ -77,6 +95,10 @@ defmodule OvcsBusGateway.Mqtt do
        warned?: false
      }}
   end
+
+  @impl GenServer
+  def handle_call(:connection, _from, state),
+    do: {:reply, if(state.up?, do: :up, else: :down), state}
 
   @impl GenServer
   def handle_info(:connect, state) do

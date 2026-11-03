@@ -10,7 +10,9 @@ the gateway considers it stale.
 ## Adapters
 
 - MQTT: every envelope retained on `ovcs/<node>/<source>/<name>`.
-- HTTP on port 4100, a Phoenix endpoint: `/api/signals`, `/api/signals/:node/:source/:name`, a Phoenix Channels socket at `/socket` streaming the `signals` topic, and the dashboard at `/`.
+- HTTP on port 4100, a Phoenix endpoint laid out as the vision unit's API: JSON:API resources under `/api` (`signals`, filtered by `filter[node]`, `filter[source]` and `filter[name]`, `nodes` with their presence, `adapters` with their status, and the `configuration`), a Phoenix Channels socket at `/sockets/dashboard` with the `signals` and `status` channels, and the dashboard on every other path.
+
+The MQTT adapter publishes each node's presence as a signal, `OvcsBusGateway.Collector`'s `connected`; the HTTP API serves it as the node's `connected` instead.
 
 A firmware hosts the gateway by adding its child spec to a supervisor:
 
@@ -29,7 +31,7 @@ firmware that runs the gateway ships it; on the host, build it by hand:
 ```sh
 cd dashboard
 npm install
-npm run dev     # hot reload, proxies /api and /socket to localhost:4100
+npm run dev     # hot reload, proxies /api and /sockets to localhost:4100
 npm run build
 npm run test:unit
 ```

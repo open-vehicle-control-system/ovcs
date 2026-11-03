@@ -6,7 +6,7 @@ defmodule OvcsBusGateway.Http.Endpoint do
   use Phoenix.Endpoint, otp_app: :ovcs_bus_gateway
 
   # Clients reach the gateway by whatever address the vehicle network gives it.
-  socket "/socket", OvcsBusGateway.Http.Socket,
+  socket "/sockets/dashboard", OvcsBusGateway.Http.Socket,
     websocket: [check_origin: false],
     longpoll: false
 
@@ -15,5 +15,6 @@ defmodule OvcsBusGateway.Http.Endpoint do
     from: {:ovcs_bus_gateway, "priv/static"},
     only: ~w(assets favicon.ico)
 
+  plug Plug.Head
   plug OvcsBusGateway.Http.Router
 end

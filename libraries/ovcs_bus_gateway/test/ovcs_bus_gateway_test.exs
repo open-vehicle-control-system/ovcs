@@ -35,6 +35,7 @@ defmodule OvcsBusGatewayTest do
 
   test "defaults to the collector and the HTTP adapter" do
     assert child_ids(vehicle: OvcsMini) == [
+             OvcsBusGateway.Settings,
              OvcsBusGateway.Subscribers,
              OvcsBusGateway.Cache,
              OvcsBusGateway.Collector,
@@ -44,6 +45,7 @@ defmodule OvcsBusGatewayTest do
 
   test "adds the MQTT adapter last when configured" do
     assert child_ids(vehicle: OvcsMini, config: @mqtt_config) == [
+             OvcsBusGateway.Settings,
              OvcsBusGateway.Subscribers,
              OvcsBusGateway.Cache,
              OvcsBusGateway.Collector,

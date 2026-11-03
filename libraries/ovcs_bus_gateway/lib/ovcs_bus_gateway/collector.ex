@@ -46,8 +46,15 @@ defmodule OvcsBusGateway.Collector do
   @stale_after 3_000
   @stale_check_interval 1_000
 
+  @presence_source inspect(__MODULE__)
+
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts)
+
+  @doc "Whether `envelope` is a node's presence, the `connected` signal this module publishes."
+  @spec presence?(Envelope.t()) :: boolean()
+  def presence?(%Envelope{source: source, name: name}),
+    do: source == @presence_source and name == "connected"
 
   @impl GenServer
   def init(opts) do

@@ -2,8 +2,9 @@ defmodule OvcsBusGateway.Subscribers do
   @moduledoc """
   Registry of the processes receiving the envelopes the collector publishes.
 
-  A subscriber calls `subscribe/0` and receives `{:ovcs_bus_gateway, [Envelope.t()]}`
-  messages.
+  A subscriber calls `subscribe/1` and receives `{:ovcs_bus_gateway, [Envelope.t()]}`
+  messages. Its role, such as `:signals_channel`, lets `count/1` tell how many of a kind there
+  are.
   """
 
   alias OvcsBusGateway.Envelope
@@ -16,13 +17,19 @@ defmodule OvcsBusGateway.Subscribers do
   end
 
   @doc """
-  Registers the calling process as a subscriber.
+  Registers the calling process as a subscriber playing `role`.
   """
-  @spec subscribe() :: :ok
-  def subscribe do
-    {:ok, _owner} = Registry.register(__MODULE__, @topic, nil)
+  @spec subscribe(term()) :: :ok
+  def subscribe(role \\ nil) do
+    {:ok, _owner} = Registry.register(__MODULE__, @topic, role)
     :ok
   end
+
+  @doc """
+  How many subscribers play `role`.
+  """
+  @spec count(term()) :: non_neg_integer()
+  def count(role), do: Registry.count_match(__MODULE__, @topic, role)
 
   @doc """
   Sends `envelopes` to every subscriber.

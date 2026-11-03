@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { applyFrame, groupTree, nodeStatus, PRESENCE_SOURCE, shortNames, signalCount, splitSource, staleCount } from './signals'
+import { applyFrame, groupTree, nodeStatus, shortNames, signalCount, splitSource, staleCount } from './signals'
 
 describe('nodeStatus and signalCount', () => {
   test('label the presence and count the signals of a node', () => {
@@ -11,7 +11,7 @@ describe('nodeStatus and signalCount', () => {
 })
 
 const sig = (node, source, name, value, changedAt = 1000, publishedAt = changedAt, stale = false) => ({
-  node, source, name, value, unit: null, changed_at: changedAt, published_at: publishedAt, stale
+  node, source, name, value, unit: null, changedAt, publishedAt, stale
 })
 
 const stateOf = (signals) => applyFrame(new Map(), { type: 'snapshot', signals })
@@ -29,7 +29,7 @@ describe('applyFrame', () => {
   test('an update published before the stored signal is ignored', () => {
     let s = stateOf([sig('vms', 'A', 'speed', 2, 2000, 3000)])
     s = applyFrame(s, { type: 'update', signals: [sig('vms', 'A', 'speed', 2, 2000, 2500)] })
-    expect(s.get('vms/A/speed').published_at).toBe(3000)
+    expect(s.get('vms/A/speed').publishedAt).toBe(3000)
     s = applyFrame(s, { type: 'update', signals: [sig('vms', 'A', 'speed', 1, 1000)] })
     expect(s.get('vms/A/speed').value).toBe(2)
   })
@@ -59,7 +59,7 @@ describe('applyFrame', () => {
     expect(applyFrame(s, { type: 'other', signals: [] })).toBe(s)
   })
 
-  test('stamps changeSeenAt only when an update changes changed_at', () => {
+  test('stamps changeSeenAt only when an update changes changedAt', () => {
     let s = applyFrame(new Map(), { type: 'snapshot', signals: [sig('vms', 'A', 'speed', 1)] }, 5000)
     expect(s.get('vms/A/speed').changeSeenAt).toBeNull()
     s = applyFrame(s, { type: 'update', signals: [sig('vms', 'A', 'speed', 1, 1000, 2000)] }, 6000)
@@ -87,15 +87,11 @@ describe('groupTree', () => {
     ])
   })
 
-  test('turns the presence signal into the node status and keeps it out of the sources', () => {
-    const tree = groupTree(
-      stateOf([
-        sig('vms', PRESENCE_SOURCE, 'connected', true, 900),
-        sig('vms', 'A', 'speed', 1, 1500),
-        sig('bridge', PRESENCE_SOURCE, 'connected', false, 800)
-      ]),
-      ''
-    )
+  test("takes each node's presence from the status channel, a node without signals included", () => {
+    const tree = groupTree(stateOf([sig('vms', 'A', 'speed', 1, 1500)]), '', [
+      { id: 'vms', connected: true },
+      { id: 'bridge', connected: false }
+    ])
     expect(tree.map(({ node, connected, lastChange }) => ({ node, connected, lastChange }))).toEqual([
       { node: 'bridge', connected: false, lastChange: null },
       { node: 'vms', connected: true, lastChange: 1500 }
@@ -104,12 +100,12 @@ describe('groupTree', () => {
     expect(tree[0].sources).toEqual([])
   })
 
-  test('a node without a presence signal has an unknown status', () => {
+  test('a node the status channel does not list has an unknown status', () => {
     expect(groupTree(stateOf([sig('vms', 'A', 'speed', 1)]), '')[0].connected).toBeNull()
   })
 
   test('keeps a node whose only match is its name, so its status stays visible', () => {
-    const tree = groupTree(stateOf([sig('bridge', PRESENCE_SOURCE, 'connected', true)]), 'bridge')
+    const tree = groupTree(stateOf([]), 'bridge', [{ id: 'bridge', connected: true }, { id: 'vms', connected: true }])
     expect(tree.map((n) => n.node)).toEqual(['bridge'])
   })
 

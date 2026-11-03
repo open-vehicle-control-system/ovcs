@@ -3,11 +3,13 @@ defmodule OvcsBusGateway.Http do
   HTTP adapter: a Phoenix endpoint, `OvcsBusGateway.Http.Endpoint`, serving the signal cache
   and its live updates.
 
-  - `GET /api/signals?node=&source=&name=` lists the latest envelopes matching the filter.
-  - `GET /api/signals/:node/:source/:name` returns one envelope.
-  - `/socket` is a Phoenix Channels socket; its `signals` channel streams the envelopes, see
-    `OvcsBusGateway.Http.SignalsChannel`.
-  - `GET /` and `/assets` serve the bus dashboard from `priv/static`.
+  - `GET /api/signals?filter[node]=&filter[source]=&filter[name]=` lists the latest signals
+    matching the filter, as JSON:API `signals` resources, see
+    `OvcsBusGateway.Http.SignalsController`.
+  - `GET /api/signals/:node/:source/:name` returns one.
+  - `/sockets/dashboard` is a Phoenix Channels socket; its `signals` channel streams the
+    envelopes, see `OvcsBusGateway.Http.SignalsChannel`.
+  - Any other path serves the bus dashboard from `priv/static`.
 
   Started with the `:http` keyword list of the gateway config, e.g. `[port: 4100]`. The
   endpoint is configured from these options alone, not from the host application's config.
@@ -17,13 +19,18 @@ defmodule OvcsBusGateway.Http do
 
   @default_port 4100
 
+  @doc "The port the endpoint listens on when its options name none."
+  @spec default_port() :: pos_integer()
+  def default_port, do: @default_port
+
   @spec child_spec(keyword()) :: Supervisor.child_spec()
   def child_spec(opts) do
     endpoint_config = [
       adapter: Bandit.PhoenixAdapter,
       http: [port: Keyword.get(opts, :port, @default_port)],
       server: true,
-      pubsub_server: OvcsBusGateway.PubSub
+      pubsub_server: OvcsBusGateway.PubSub,
+      render_errors: [formats: [json: OvcsBusGateway.Http.ErrorJSON], layout: false]
     ]
 
     %{
@@ -39,8 +46,8 @@ defmodule OvcsBusGateway.Http do
   end
 
   @doc """
-  Builds an `t:OvcsBusGateway.filter/0` from the `node`, `source` and `name` params that are
-  present and non-empty.
+  Builds an `t:OvcsBusGateway.filter/0` from the `node`, `source` and `name` join params of the
+  `signals` channel that are present and non-empty.
   """
   @spec filter(map()) :: OvcsBusGateway.filter()
   def filter(params) do

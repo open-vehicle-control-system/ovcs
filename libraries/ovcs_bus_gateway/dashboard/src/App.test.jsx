@@ -2,24 +2,52 @@ import { fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 
 import App from './App.jsx'
-import { applyFrame, PRESENCE_SOURCE } from './signals'
+import { applyFrame } from './signals'
 import { useBusSocket } from './useBusSocket'
 
 vi.mock('./useBusSocket', () => ({ useBusSocket: vi.fn() }))
 
 const sig = (node, source, name, value) => ({
-  node, source, name, value, unit: null, changed_at: 1000, published_at: 1000, stale: false
+  node, source, name, value, unit: null, changedAt: 1000, publishedAt: 1000, stale: false
 })
 
 const SIGNALS = [
-  sig('vms', PRESENCE_SOURCE, 'connected', true),
   sig('vms', 'VmsCore.Managers.Gear', 'selected_gear', 'drive'),
-  sig('vms', 'OvcsMini.Vms.MainController', 'throttle', 0.4),
-  sig('bridge-ros', PRESENCE_SOURCE, 'connected', true)
+  sig('vms', 'OvcsMini.Vms.MainController', 'throttle', 0.4)
 ]
 
-const connect = (status, signals = []) =>
-  useBusSocket.mockReturnValue({ status, signals: applyFrame(new Map(), { type: 'snapshot', signals }) })
+const NODES = [
+  { id: 'bridge-ros', connected: true },
+  { id: 'vms', connected: true }
+]
+
+const ADAPTERS = [
+  {
+    id: 'mqtt',
+    name: 'MQTT',
+    module: 'OvcsBusGateway.Mqtt',
+    status: { level: 'warning', detail: 'Not connected to 10.42.0.1:1883' },
+    broker: '10.42.0.1:1883',
+    clientId: 'ovcs_bus_gateway_ovcs_mini_ros_target',
+    topic: 'ovcs/<node>/<source>/<name>'
+  },
+  {
+    id: 'http',
+    name: 'HTTP',
+    module: 'OvcsBusGateway.Http',
+    status: { level: 'ok', detail: 'Answering on port 4100' },
+    port: 4100,
+    clients: 1
+  }
+]
+
+const connect = (status, signals = [], { nodes = NODES, adapters = ADAPTERS } = {}) =>
+  useBusSocket.mockReturnValue({
+    status,
+    signals: applyFrame(new Map(), { type: 'snapshot', signals }),
+    nodes,
+    adapters
+  })
 
 const filter = () => screen.getByRole('searchbox', { name: 'Filter signals' })
 const menu = () => screen.getByRole('navigation', { name: 'Bus gateway' })
@@ -101,10 +129,54 @@ describe('App', () => {
     expect(within(bus()).getAllByRole('button')).toHaveLength(2)
   })
 
-  test('says when the gateway has no signals', () => {
-    connect('live')
-    render(<App />)
+  test('says when the gateway has no signals, and when its nodes publish none', () => {
+    connect('live', [], { nodes: [] })
+    const { rerender } = render(<App />)
     expect(screen.getByText('The gateway has no signals yet.')).toBeTruthy()
+
+    connect('live')
+    rerender(<App />)
+    expect(screen.getByText('No node publishes signals yet.')).toBeTruthy()
+    expect(within(bus()).getAllByRole('button')).toHaveLength(2)
+  })
+
+  test('lists the adapters with their status and opens one, keeping it in the URL', () => {
+    connect('live', SIGNALS)
+    render(<App />)
+
+    const adapters = screen.getByRole('list', { name: 'Adapters' })
+    const mqtt = within(adapters).getByRole('button', { name: /^MQTT/ })
+    expect(mqtt.querySelector('.ovcs-status--error')).not.toBeNull()
+    expect(within(adapters).getByRole('button', { name: /^HTTP/ }).querySelector('.ovcs-status--ok')).not.toBeNull()
+
+    fireEvent.click(mqtt)
+    expect(window.location.search).toBe('?adapter=mqtt')
+    expect(mqtt.getAttribute('aria-current')).toBe('page')
+    expect(screen.getByRole('heading', { level: 2, name: 'MQTT' })).toBeTruthy()
+    expect(screen.getByText('Not connected to 10.42.0.1:1883')).toBeTruthy()
+    expect(screen.getByText('ovcs/<node>/<source>/<name>')).toBeTruthy()
+    expect(screen.queryByRole('list', { name: 'Nodes on the bus' })).toBeNull()
+
+    fireEvent.click(within(menu()).getByRole('button', { name: /^vms/ }))
+    expect(window.location.search).toBe('?node=vms')
+  })
+
+  test('opens the adapter the URL names', () => {
+    connect('live', SIGNALS)
+    showAt('?adapter=http')
+    expect(screen.getByRole('heading', { level: 2, name: 'HTTP' })).toBeTruthy()
+    expect(screen.getByText('Signal streams open').nextSibling.textContent).toBe('1')
+  })
+
+  test('waits for the adapters, and says when the URL names one the gateway does not have', () => {
+    connect('live', SIGNALS, { adapters: null })
+    const { rerender } = showAt('?adapter=mqtt')
+    expect(screen.getByText('Loading adapters…')).toBeTruthy()
+
+    connect('live', SIGNALS)
+    window.history.replaceState(null, '', '/?adapter=ros2')
+    rerender(<App key="again" />)
+    expect(screen.getByText('The gateway has no adapter ros2.')).toBeTruthy()
   })
 
   test('"/" focuses the filter, but types as usual in a field', () => {
